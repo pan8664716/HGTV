@@ -2,7 +2,6 @@
 package com.hgtv.star.player
 
 import android.app.Activity
-import android.graphics.Color
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -121,6 +120,29 @@ internal class PlaybackMenu(private val activity: Activity) : LinearLayout(activ
             chip.choice.selected = position == index
             chip.paint(chip.hasFocus())
         }
+    }
+
+    /**
+     * 把某一行的选中态同步到 [index]，**不重建任何控件**。
+     *
+     * 面板被缓存复用时会走到这里（见 `MainActivityPlaybackMenu.kt` 的 [obtainPlaybackMenu]）：
+     * 上次打开之后用户可能换过清晰度 / 倍速 / 显示方式，重新挂上去之前要按当前偏好刷一遍。
+     * 滑动条行没有 Chip，`chips()` 为空，这一步自然跳过（它的值由 [sliderValue] 同步）。
+     */
+    fun sync(row: Int, index: Int) {
+        val controls = chips(row)
+        if (index !in controls.indices) return
+        select(row, index)
+    }
+
+    /**
+     * 把某一行的滑动条拨到 [value]（字号 / 透明度那两行）。
+     *
+     * 直接写控件自己的 `value`：那个 setter 只重画、不回调 `onValue`，
+     * 因此同步显示不会把「打开菜单」变成「改设置」。
+     */
+    fun sliderValue(row: Int, value: Float) {
+        (rows.getOrNull(row)?.firstOrNull() as? DanmakuSlider)?.value = value
     }
 
     /** 把焦点放到某个功能的第 [index] 个选项。 */

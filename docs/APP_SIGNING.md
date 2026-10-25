@@ -1,7 +1,7 @@
 # 红果 App 端请求签名算法
 
 适用对象：`https://api5-normal-sinfonlinea.fqnovel.com`、`https://api5-normal-sinfonlineb.fqnovel.com`
-这类字节系 App 接口。官网 SSR 层（`hongguoduanju.com`）不需要签名，不在此文范围。
+这类字节系 App 接口（分类与榜单那条自 2026-10-21 起也要签名，见 [HONGGUO_API.md](HONGGUO_API.md) 4.7）。
 
 算法来源与落点：
 
@@ -367,7 +367,7 @@ JAVA_HOME=$(/usr/libexec/java_home -v 17) HONGGUO_LIVE=1 \
 | --- | --- | --- | --- |
 | `POST /novel/player/multi_video_model/v1/` | POST + body | HTTP 200、`code=0`、24 KB video_model | 通过 |
 | `POST /novel/commentapi/comment/list/{vid}/v1/` | POST + body | HTTP 200、`code=0`、637 B 弹幕 | 通过 |
-| `POST /reading/bookapi/search/tab/v` | POST | HTTP 200 + **空 body** | 无法判定：匿名设备一律空 body（与签名无关） |
+| `GET /reading/bookapi/search/tab/v` | GET | HTTP 200、`code=0`、72 KB | 通过（同一路径 POST 是 404，方法不参与签名） |
 
 ### 11.2 平台实际校验哪些头
 

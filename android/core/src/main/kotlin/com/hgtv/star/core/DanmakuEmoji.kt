@@ -446,14 +446,18 @@ object DanmakuEmoji {
     /** 字形 → 图片文件名；不在表里返回 null（正文里本来就有的 emoji 交给系统字体画）。 */
     fun assetName(glyph: String): String? = assets[glyph]
 
-    /** 表里所有带图片的字形。 */
-    val glyphsWithAssets: Set<String> get() = assets.keys
-
     /** 表里所有标签名（测试与资源核对用）。 */
     val tagNames: Set<String> get() = glyphs.keys
 
-    /** 片段缓存条数上限。 */
-    private const val CACHE_LINES = 512
+    /**
+     * 片段缓存条数上限。
+     *
+     * 一集最多 3000 条（见 `ContentRepository.MAX_DANMAKU`）。原来定 512 就意味着长剧集里
+     * 绝大多数条目永远缓存不上——弹幕是**边拉边画**的（40 个 30 秒窗口），
+     * 每个窗口重排时都要把整集重切一遍。一条弹幕的片段总和就是它自己的长度，
+     * 4096 条撑死几百 KB。
+     */
+    private const val CACHE_LINES = 4096
 
     /**
      * 把文本里的标签换成字形，其余原样保留。

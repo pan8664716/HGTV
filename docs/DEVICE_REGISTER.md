@@ -11,7 +11,7 @@
 
 | 接口 | 未注册设备 | 注册后 |
 | --- | --- | --- |
-| App 搜索 `POST /reading/bookapi/search/tab/v` | `HTTP 200 + 0 字节`（从不返回数据） | `code 0`，一次 6–20 条、带 `has_more` 游标可翻页 |
+| App 搜索 `GET /reading/bookapi/search/tab/v` | `HTTP 200 + 0 字节`（从不返回数据） | `code 0`，一次 6–20 条、带 `has_more` 游标可翻页 |
 | 播放 `POST /novel/player/video_model/v1/` | `101000 服务异常` | `code 0` + 完整播放模型 |
 
 平台认的是 **`device_id` + `install_id` 这一对**，两者绑定：

@@ -52,7 +52,7 @@ internal fun MainActivity.showKeyActionPicker(key: PlayerKey,anchor: View,onChan
         library.keyMap=library.keyMap.customize(key,options[index])
         onChanged()
     }
-    picker.button("取消")
+    picker.button("取消", icon=R.drawable.ic_menu_close)
     picker.show(anchor)
 }
 

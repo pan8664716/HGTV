@@ -1,24 +1,15 @@
 <resources>
     <!--
       系统主题：只负责「窗口还没建出来之前的那一帧」与系统控件（光标、选择手柄）的兜底配色。
-      真正的色板在 TvTheme.kt（四套主题），MainActivity.onCreate 会在建视图之前
-      把窗口底色换成当前主题的底色，因此这里填的是**默认主题「深邃暗调」**的三个色值：
-      底色 #2E3238、抬升面 #353940、深凹槽 #262A2F、强调色 #DFB77C。
-      改色板时这一处要跟着改（它是唯一在 APK 外面也能看到的色值；另一处是桌面图标与电视
-      横幅，那两份由 tools/app-icon.py 生成，色值在脚本顶部的材质表里）。
+      真正的色板在 TvTheme.kt（二十套主题），MainActivity.onCreate 会在建视图之前
+      把窗口底色换成当前主题的底色，因此这里填的是**默认主题「深海蓝」**的色值：
+      底色 #1E2228、抬升面 #2A3038、深凹槽 #12151A、焦点色 #4DA3FF。
+
+      Android 4.4（API 19）上没有 Theme.Material（API 21 才有），父主题退回 Theme.Holo；
+      21+ 的覆盖项放在 values-v21/styles.xml 里，因此两边看到的是同一套色值。
     -->
-    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
-        <item name="android:fontFamily">sans</item>
-        <item name="android:windowActionModeOverlay">true</item>
-        <item name="android:colorAccent">#DFB77C</item>
-        <item name="android:colorPrimary">#2E3238</item>
-        <item name="android:colorPrimaryDark">#262A2F</item>
-        <item name="android:colorBackground">#2E3238</item>
-        <item name="android:windowBackground">#2E3238</item>
-        <item name="android:panelBackground">#353940</item>
-        <item name="android:textColorPrimary">#F4F3F1</item>
-        <item name="android:textColorSecondary">#CCF4F3F1</item>
-        <item name="android:windowLightStatusBar">false</item>
+    <style name="AppTheme" parent="android:style/Theme.Holo.NoActionBar">
+        <item name="android:windowBackground">#1E2228</item>
         <item name="android:windowNoTitle">true</item>
     </style>
 </resources>

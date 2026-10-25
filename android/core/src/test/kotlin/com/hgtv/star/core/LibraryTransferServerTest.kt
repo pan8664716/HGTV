@@ -38,7 +38,9 @@ class LibraryTransferServerTest {
             assertTrue(request(server,host="evil.example").startsWith("HTTP/1.1 404"))
             assertTrue(request(server,"/wrong").startsWith("HTTP/1.1 404"))
             assertTrue(request(server,"/import",backup,"Origin: http://evil.example\r\n").startsWith("HTTP/1.1 403"))
-            assertTrue(request(server,"/download",headers="Sec-Fetch-Site: cross-site\r\n").startsWith("HTTP/1.1 403"))
+            // 能明确指认来源的第三方才拦；`Sec-Fetch-Site: cross-site` 单独出现不算
+            // （扫码 App 的内置浏览器会把本机页面也标成 cross-site，见下面那条测试）。
+            assertTrue(request(server,"/download",headers="Origin: https://evil.example\r\n").startsWith("HTTP/1.1 403"))
             assertTrue(request(server,"/import",backup,"Host: other\r\n").startsWith("HTTP/1.1 400"))
             assertTrue(request(server,"/import","{}").startsWith("HTTP/1.1 400"))
             assertTrue(request(server,"/import",backup,"Transfer-Encoding: chunked\r\n").startsWith("HTTP/1.1 400"))
@@ -50,6 +52,22 @@ class LibraryTransferServerTest {
             assertFalse(imported); assertTrue(request(server,"/download").startsWith("HTTP/1.1 200"))
         }
     }
+    /**
+     * `Origin: null` 与 `Sec-Fetch-Site: cross-site` 都要放行。
+     *
+     * 页面自己带 `Referrer-Policy: no-referrer`，浏览器提交表单时因此把 `Origin` 写成 `null`；
+     * 扫码 App 的内置浏览器（微信 / QQ 的 X5 内核）还会把 `Sec-Fetch-Site` 标成 `cross-site`。
+     * 早先这两条都被当成「来源不匹配」直接 403，手机端读到的就是「来源不匹配」，
+     * 电视那边永远收不到备份。
+     */
+    @Test fun `null origin and opaque cross site are accepted`() {
+        LibraryTransferServer("127.0.0.1",backup,{}).use { server ->
+            val reply=request(server,"/download",headers="Origin: null\r\nSec-Fetch-Site: cross-site\r\n")
+            assertTrue(reply,reply.startsWith("HTTP/1.1 200"))
+            assertTrue(reply.contains("Content-Disposition: attachment"))
+        }
+    }
+
     @Test fun `close interrupts an active incomplete upload and expiry closes idle sessions`() {
         val server=LibraryTransferServer("127.0.0.1",backup,{ fail("must not import") })
         Socket("127.0.0.1",URI(server.url).port).use { socket ->

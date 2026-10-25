@@ -4,13 +4,15 @@ package com.hgtv.star.core
 /**
  * 剧名里的季号解析。
  *
- * 同系列各季由 App 详情页的「相关作品」接口给出
- * （`GET /reading/bookapi/plan/v:version/`，响应里 `show_type=547` 那个 cell 的
- * `video_data[]`，每条都带平台自己的 `season_index`；见 `ContentRepository.related`）。
- * 但**卡片上的季号标注、以及「这一部是第几季」的显示仍然只能从剧名读**：
- * 首页 / 榜单 / 分类 / 搜索这些列表里没有 `season_index`，详情页只有当前这一季的那一个值。
+ * **季号优先用接口给的字段**（[Series.seasonIndex]）：
  *
- * 因此这里做两件纯逻辑的事：
+ * | 接口 | 季号字段 |
+ * | --- | --- |
+ * | 分类 / 榜单（`category/landpage`） | `sub_title_list` 里 `data_type == 0` 的那条「第N季」（单季也写第1季） |
+ * | 详情（`video_detail`）、相关作品（`plan/v:version`） | `season_index`（数字） |
+ * | 搜索（`search/tab`）、提示词（`search/suggest`） | **没有**，只能从剧名读 |
+ *
+ * 剧名解析只当兜底（搜索 / 提示词那两条接口就是兜底场景），因此这里做两件纯逻辑的事：
  *
  * 1. [base]：剥掉剧名尾部的季号，得到「基名」——
  *    `聚宝仙盆之杂灵根才是真BOSS第十三季` → `聚宝仙盆之杂灵根才是真BOSS`；
@@ -94,8 +96,24 @@ object SeriesSeasons {
         return ones[tens]+"十"+(if(rest==0) "" else ones[rest])
     }
 
-    /** 季号；没有季号算 1。 */
+    /** 剧名里的季号；没有季号算 1。 */
     fun season(title: String): Int = parse(title).season
+
+    /** 季号：优先接口字段（[Series.seasonIndex]），接口没给时才从剧名里读。 */
+    fun season(series: Series): Int = series.seasonIndex.takeIf { it>0 } ?: season(series.title)
+
+    /**
+     * 卡片右上角要不要标季号、标什么。
+     *
+     * 条件与以前一致：**剧名里写了季号**，或者**接口说这不是第 1 季**（[Series.seasonIndex] > 1）
+     * 才标——单季的剧（接口一律写「第1季」）不标，否则每张卡都挂一个「第 1 季」。
+     * 命中时文案用接口给的季号（比剧名更准），接口没给才用剧名解析出来的。
+     */
+    fun badge(series: Series): String {
+        val parsed = parse(series.title)
+        if (!parsed.matched && series.seasonIndex <= 1) return ""
+        return "第 ${season(series)} 季"
+    }
 
     /**
      * 卡片右上角标注季号用的文案：`第 13 季`。
@@ -110,9 +128,14 @@ object SeriesSeasons {
      *
      * 平台上的剧名写法并不统一（`一梦青玄，团宠小师妹一剑毁天灭地` 与
      * `一梦青玄,团宠小师妹一剑毁天灭地` 都出现过），只按原串比对会漏掉同一部剧。
+     *
+     * **季号不只在末尾**：`聚宝仙盆第二季：灵根亿点点废，战力亿点强` 这种把季号写在中间的，
+     * [base] 剥不掉（它只管尾部），这里再剥一次「出现在任意位置的季号」，同一部剧才认得回来。
+     * 剥的是「第N季 / 第N部 / N季 / Sx / Season x」这种明显的季号片段，
+     * 剥完剩下的一模一样才算同一部剧。
      */
     fun normalize(title: String): String = buildString {
-        for (ch in base(title)) {
+        for (ch in ANY_SEASON.replace(base(title), "")) {
             val half = when (ch) {
                 in '０'..'９' -> ch - 0xFEE0
                 in 'Ａ'..'Ｚ' -> ch - 0xFEE0
@@ -126,6 +149,14 @@ object SeriesSeasons {
         }
     }
 
+    /** 出现在**任意位置**的季号片段（见 [normalize]）：中英文数字、`第N季` / `第N部` / `Sx` / `Season x`。 */
+    private val ANY_SEASON = Regex(
+        "(?i)(?:第\\s*(?:[0-9]{1,3}|[零〇一二两三四五六七八九十]{1,3})\\s*[季部]" +
+            "|[0-9]{1,3}\\s*[季部]" +
+            "|season\\s*[0-9]{1,3}" +
+            "|s\\s*[0-9]{1,3})"
+    )
+
     /**
      * 从搜索候选里挑出同一部剧的其它季，按季号升序排列。
      *
@@ -135,8 +166,10 @@ object SeriesSeasons {
     fun siblings(current: String, candidates: List<Series>): List<Series> {
         val key = normalize(current)
         if (key.isEmpty()) return emptyList()
+        // 「是不是同一部剧」仍按归一化剧名判断（不同 IP 的季号会各自从 1 开始，只看季号会串），
+        // 但**排序与季号本身用接口给的字段**：相关作品那一条接口每行都带 `season_index`。
         return candidates
             .filter { normalize(it.title) == key }
-            .sortedWith(compareBy({ season(it.title) }, { it.title }))
+            .sortedWith(compareBy({ season(it) }, { it.title }))
     }
 }

@@ -85,8 +85,15 @@ data class DanmakuRepeat(val text: String,val offsets: List<Long>) {
     val count get() = offsets.size
     val firstMs get() = offsets.first()
     val lastMs get() = offsets.last()
-    /** 这一组的身份：同一句文字在后续窗口里还会聚合成新的一轮，因此 key 必须带上起始时间。 */
-    val key get() = "$text@$firstMs"
+    /**
+     * 这一组的身份：同一句文字在后续窗口里还会聚合成新的一轮，因此 key 必须带上起始时间。
+     *
+     * **必须是构造期算好的 `val`，不能写成 getter**：`planHighlights` 每一轮循环都要拿它去查
+     * `used` 集合（`pending.filter { it.key !in used }`），而一集 40 个窗口 × 每窗数百轮 ×
+     * 数千组，写成 getter 就是在主线程上造几十万个短命字符串——CPU 与 GC 全落在 UI 线程，
+     * 表现是「弹幕每半分钟莫名卡一下」。
+     */
+    val key = "$text@${offsets.first()}"
     /** 显示文案：重复过的带数量标记，没重复过的就是原文。 */
     val label get() = if(count>=2) "$text ×$count" else text
     /** 播放到 [nowMs] 为止已经出现过几条：中央那一块的数量标记跟着它往上走。 */

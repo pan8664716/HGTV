@@ -37,7 +37,21 @@ internal class Signer(
         deviceBrand().contains("xiaomi", ignoreCase = true) -> "Xiaomi"
         else -> deviceBrand()
     }
-    data class Request(val url: String, val headers: Map<String, String>, val body: ByteArray?)
+    /**
+     * 一次签好名的请求。
+     *
+     * [method] 单独拎出来，是因为**签名只覆盖 query 与 body，不覆盖方法**：同一条签名
+     * 既可以按 GET 发，也可以按 POST 发。早先靠「有没有 body」隐式决定方法，
+     * 结果 `search/tab` 明明要 GET，却被读成「没 body 就是 GET」这种巧合——
+     * 平台那边 POST 该路径是 404，谁照着旧文档改成 POST 就立刻「搜索暂不可用」。
+     */
+    data class Request(
+        val url: String,
+        val headers: Map<String, String>,
+        val body: ByteArray?,
+        /** 实际要发的 HTTP 方法；默认「有 body 用 POST、没有用 GET」。 */
+        val method: String = if (body == null) "GET" else "POST"
+    )
     private fun rand() = (random() * 4294967296.0).toLong().toInt()
     private fun unsigned(v: Int) = v.toLong() and 0xffffffffL
     private fun varint(value: Long): ByteArray {
@@ -179,7 +193,7 @@ internal class Signer(
         }
         return output.base64()
     }
-    fun sign(base: String, values: Map<String,String>, body: ByteArray? = null): Request {
+    fun sign(base: String, values: Map<String,String>, body: ByteArray? = null, method: String? = null): Request {
         val now = clock(); val ts = (now / 1000).toInt()
         var ticket = now; var query: String
         for (offset in 0..127) {
@@ -187,9 +201,18 @@ internal class Signer(
             if (branch(query,body,ts) == 0) {
                 val url = "$base?$query"
                 val random = (random()*65536).toInt()
-                val headers = linkedMapOf("User-Agent" to (if (body != null) VendorConstants.VIDEO_UA else VendorConstants.APP_UA),"Accept" to "application/json; charset=utf-8,application/x-protobuf", "x-ss-req-ticket" to ticket.toString(),"x-tt-request-tag" to "t=0;n=0","sdk-version" to "2","passport-sdk-version" to "50561","x-xs-from-web" to "0","x-khronos" to ts.toString(),"x-ladon" to be32(ts).base64(),"x-argus" to le32(ts).base64(),"x-gorgon" to gorgon(query,body,ts,random),"x-helios" to helios(ts),"x-medusa" to medusa(url,body,ts),"x-tt-dt" to "")
+                // `passport-sdk-version` 分两档（参考实现 `passport_client.go` 的 `request`）：
+                // Passport 路径用 5051452，其余内容 / 账号接口用 6031190。
+                // 早先一律写 50561，两个都不对。
+                val passportPath = base.contains("/passport/")
+                val headers = linkedMapOf("User-Agent" to VendorConstants.userAgent(device, video = body != null),"Accept" to "application/json; charset=utf-8,application/x-protobuf", "x-ss-req-ticket" to ticket.toString(),"x-tt-request-tag" to "t=0;n=0","sdk-version" to "2","passport-sdk-version" to (if(passportPath) "5051452" else "6031190"),"x-xs-from-web" to "0","x-khronos" to ts.toString(),"x-ladon" to be32(ts).base64(),"x-argus" to le32(ts).base64(),"x-gorgon" to gorgon(query,body,ts,random),"x-helios" to helios(ts),"x-medusa" to medusa(url,body,ts),"x-tt-dt" to "")
+                if(passportPath) {
+                    headers["x-vc-bdturing-sdk-version"]="4.0.3.cn"
+                    headers["lc"]="101"
+                    headers["x-ss-dp"]="8662"
+                }
                 if (body != null) { headers["Content-Type"]="application/json; charset=UTF-8"; headers["x-vc-bdturing-sdk-version"]="3.7.2.cn"; headers["x-ss-stub"]=digest("MD5",body).hex().uppercase() }
-                return Request(url,headers,body)
+                return Request(url,headers,body,method ?: if(body==null) "GET" else "POST")
             }
         }
         error("无法生成请求签名")

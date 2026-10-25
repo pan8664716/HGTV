@@ -3,6 +3,14 @@
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!-- 应用内更新：下载新版 APK 后交给系统安装器覆盖安装（用户仍需在系统界面确认）。 -->
     <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
+    <!--
+      外部存储读写：给会话镜像用——把 device_id / iid 与 sessionid 那一串写到自建的
+      `/sdcard/.hgtv/`（卸载不删），卸载重装后直接恢复登录，不必重新注册、重新收短信验证。
+      4.4–5.1 是安装期权限（装上就有）；6 及以上需要运行时授权（见 MainActivity.requestMirrorStorage）。
+      传统存储模式下（见下面的 requestLegacyExternalStorage）这一个权限就等于整个公共存储的
+      读写权，因此**不设 maxSdkVersion**。
+    -->
+    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-feature android:name="android.software.leanback" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>
     <!--
@@ -11,12 +19,36 @@
       在桌面上是同一块白底 + 同一颗果子，不再由启动器决定底色（透明背景时不同启动器会垫黑 / 深灰底板）。
       前景 @drawable/app_icon 已经把物件缩进安全区，圆形 / 圆角方形遮罩都切不到果叶尖。
     -->
-    <application android:label="红果TV" android:theme="@style/AppTheme" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:banner="@drawable/tv_banner" android:allowBackup="false" android:enableOnBackInvokedCallback="false" android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config" android:supportsRtl="true">
+    <!--
+      requestLegacyExternalStorage：在 targetSdk 29 下退回**传统存储模式**，让
+      `WRITE_EXTERNAL_STORAGE` 覆盖整个 `/sdcard`——会话镜像要写的 `/sdcard/.hgtv/`
+      只有这样才写得进去，而它是唯一「卸载不删」的位置。30 起该属性被系统忽略。
+    -->
+
+    <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
+    <!--
+      语音搜索走系统 RecognizerIntent，**不声明 RECORD_AUDIO**：录音由系统语音服务完成。
+      这里的 <queries> 只为 targetSdk 30+ 之后的包可见性准备——届时 `queryIntentActivities`
+      不加这一条会返回空表，预检会把有语音服务的设备误判成「没有」。
+      当前 targetSdk 仍是 29，这一条在 29 上不生效，也不影响 4.4（更早的系统直接忽略）。
+    -->
+    <queries>
+        <intent><action android:name="android.speech.action.RECOGNIZE_SPEECH"/></intent>
+    </queries>
+
+    <application
+        android:name=".HgtvApplication" android:label="红果TV" android:theme="@style/AppTheme" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:banner="@drawable/tv_banner" android:allowBackup="false" android:enableOnBackInvokedCallback="false" android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config" android:requestLegacyExternalStorage="true" android:supportsRtl="true">
         <!-- 更新用 FileProvider：只暴露 cache/updates 一个目录，安装完即失效。 -->
         <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true">
             <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths"/>
         </provider>
-        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop">
+        <!--
+          不要注册 androidx.media.session.MediaButtonReceiver：它只把媒体键转给本包的
+          MEDIA_BUTTON / MediaBrowserService，本应用没有这类 Service，一旦被系统调用就会在
+          onReceive 里抛 IllegalStateException，直接把进程带崩（1.1.4.1 的线上闪退）。
+          前台收键走 Activity.onKeyDown（4.4–5.1）与 MediaSession callback（21+）。
+        -->
+        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape" android:windowSoftInputMode="adjustResize" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>

@@ -15,8 +15,30 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
     private var watchedIds = data.watched.toSet()
     private var hiddenIds = data.hidden.take(500).toSet()
     private var searchRows = data.searches.take(20)
+    /**
+     * 用户在本机删掉过的观看记录（剧集 ID）。
+     *
+     * 为什么要单独记一份：历史那一栏的内容是**本机进度 + 账号侧历史**合并出来的
+     * （见 `localItems` / `accountItems`），而账号侧那半份是从平台拉回来的。
+     * 平台对「删除观看记录」只认 `read_history/update`（阅读历史那条，小说用的），
+     * 短剧列表走的是 `read_progress/list`——软删不一定真的把它从进度列表里摘掉。
+     * 于是删完那一刻界面上没了，**下次刷新（5 分钟后 / 按刷新 / 重启）它又回来了**，
+     * 用户读到的就是「删了没删掉」。
+     *
+     * 因此本机自己记一份墓碑：删过的 id 在合并时一律过滤掉，不论平台那边还回不回来。
+     * 只有**用户重新看这部剧**（写入新进度）时才摘掉墓碑——那时它本来就该重新出现。
+     */
+    private var deletedHistoryIds: Set<String> = data.historyDeleted.take(500).toSet()
     private var updateRows = updates.filterKeys { it in favoriteIds }
     private var updateCount = updateRows.values.count { it.added > 0 }
+    /**
+     * 本机记下的预约状态（剧集 ID → 是否已预约）。
+     *
+     * 平台只在详情接口给 `online_subscribed`，而那个请求要联网；用户点了「预约」之后
+     * 按钮必须立刻翻成「已预约」、下次进来也还是这个状态。这里存的就是那一份「最后已知」，
+     * 详情页拿到接口值时以接口为准并写回（见 `reserveSeries`）。
+     */
+    private var reserveRows: MutableMap<String,Boolean> = mutableMapOf()
     var settings = data.settings
 
     fun favorites() = favoriteRows
@@ -24,6 +46,9 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
     fun later() = laterRows
     fun queued(id: String) = id in laterIds
     fun history() = historyRows
+    fun historyDeleted(): Set<String> = deletedHistoryIds
+    fun historyDeleted(id: String) = id in deletedHistoryIds
+    fun setHistoryDeleted(ids: Set<String>) { deletedHistoryIds = ids.take(500).toSet() }
     fun progress(id: String) = progressById[id]
     fun watched(id: String) = id in watchedIds
     fun watched() = watchedIds
@@ -31,6 +56,10 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
     fun searches() = searchRows
     fun updates() = updateRows
     fun favoriteUpdate(id: String) = updateRows[id]
+    fun reserves(): Map<String,Boolean> = reserveRows
+    fun reserved(id: String) = reserveRows[id] == true
+    fun reservedKnown(id: String) = reserveRows.containsKey(id)
+    fun setReserved(id: String, value: Boolean) { reserveRows[id] = value }
     fun updatedFavorites() = updateCount
 
     fun toggle(series: Series): Boolean {
@@ -54,6 +83,8 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
         historyRows = (listOf(progress) + historyRows.filterNot { it.series.id == progress.series.id }).take(200).sortedByDescending { it.updatedAt }
         progressById.clear()
         historyRows.forEach { progressById[it.series.id] = it }
+        // 用户重新看了这部剧：墓碑摘掉，账号侧那一条也该重新出现。
+        deletedHistoryIds = deletedHistoryIds - progress.series.id
         return true
     }
     fun setWatched(id: String, value: Boolean): Boolean {
@@ -65,14 +96,41 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
     fun unhideAll() { hiddenIds = emptySet() }
     fun rememberSearch(query: String) { searchRows = SearchHistory.remember(searchRows, query) }
     fun clearSearches() { searchRows = emptyList() }
+    /**
+     * 清空全部观看记录，返回被清掉的剧集 ID（调用方拿它去同步删除云端）。
+     *
+     * 与逐条 [removeHistory] 的区别只是「一次删完」：同样留下墓碑，
+     * 账号侧那半份下次刷新回来照样被过滤（见 [deletedHistoryIds]）。
+     * 收藏、稍后观看、已隐藏的剧集都不动。
+     */
+    fun clearHistory(): List<String> {
+        val removed=historyRows.map { it.series.id }
+        if(removed.isEmpty()) return removed
+        historyRows=emptyList()
+        progressById.clear()
+        watchedIds=watchedIds - removed.toSet()
+        deletedHistoryIds=(deletedHistoryIds + removed).toList().takeLast(500).toSet()
+        return removed
+    }
+    /**
+     * 把一批剧集记为「本机已删除的观看记录」（只留墓碑，不动其它数据）。
+     *
+     * 清空历史时用：账号侧那半份里的条目本机没有进度，[clearHistory] 收不到它们的 id，
+     * 得由调用方把「云端也删了的那一批」补记进来，否则下次刷新它们又会出现在列表里。
+     */
+    fun markHistoryDeleted(ids: Collection<String>) {
+        if(ids.isEmpty()) return
+        deletedHistoryIds=(deletedHistoryIds + ids).toList().takeLast(500).toSet()
+    }
     fun removeHistory(id: String) {
         historyRows = historyRows.filterNot { it.series.id == id }
         progressById.remove(id)
         watchedIds = watchedIds - id
+        // 同时留一块墓碑：账号侧那半份下次刷新回来时照样过滤掉（见 [deletedHistoryIds]）。
+        deletedHistoryIds = (deletedHistoryIds + id).toList().takeLast(500).toSet()
     }
-    fun clearHistory() { historyRows = emptyList(); progressById.clear(); watchedIds = emptySet() }
     fun observeFavorite(id: String, count: Int, now: Long, acknowledge: Boolean): Boolean {
-        if (!favorite(id)) return false
+        if (!favorite(id) || count <= 0) return false
         val previous = updateRows[id]
         val next = previous?.observe(count, now, acknowledge) ?: FavoriteUpdate.first(count, now)
         if (previous == next) return false
@@ -80,7 +138,7 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
         updateCount += (if (next.added > 0) 1 else 0) - (if ((previous?.added ?: 0) > 0) 1 else 0)
         return true
     }
-    fun snapshot() = BackupData(favoriteRows, historyRows, watchedIds, searchRows, settings, laterRows, hiddenIds)
+    fun snapshot() = BackupData(favoriteRows, historyRows, watchedIds, searchRows, settings, laterRows, hiddenIds, deletedHistoryIds)
 }
 
 /** Keeps the native-library-v1 disk keys and rich local metadata compatible with older APKs. */
@@ -109,11 +167,35 @@ object LibraryDisk {
             DanmakuStyle.alpha((values["danmakuAlpha"] as? Number)?.toFloat() ?: 1f),
             DanmakuSpeed.fromStored(values["danmakuSpeed"] as? String),
             // 按键绑定：磁盘上就是 [KeyMap.encode] 的产物（空串 = 全默认），坏值由 decode 逐条丢弃。
-            KeyMap.decode(values["keymap"] as? String).encode())
-        return LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
-            SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden")), updates)
+            KeyMap.decode(values["keymap"] as? String).encode(),
+            VideoDecoderMode.fromStored(values["decoderMode"] as? String),
+            // 相同弹幕聚合：旧版本磁盘没有这个键，按开启处理（与之前的行为一致）。
+            values["danmakuMerge"] as? Boolean ?: true,
+            // 搜索源：旧版本磁盘没有这个键，按 App 处理（与之前的行为一致）。
+            SearchSource.fromStored(values["searchSource"] as? String),
+            // 首页每行卡片数：旧版本磁盘没有这个键，按 6 处理（与之前的行为一致）。
+            (values["homeColumns"] as? Number)?.toInt()?.coerceIn(4,8) ?: 6,
+            // 始终显示时间：旧版本磁盘没有这个键，按关闭处理（与之前的行为一致）。
+            values["alwaysShowClock"] as? Boolean ?: false,
+            // 导航栏圆形入口：逐个开关（值是隐藏的那些 key）；旧版本磁盘没有这个键 = 全部显示。
+            (values["hiddenNav"] as? Set<*>)?.filterIsInstance<String>()?.joinToString(",") ?: "",
+            // 调试模式：旧版本磁盘没有这个键，按关闭处理。
+            values["debugMode"] as? Boolean ?: false,
+            // 启动进入推荐：旧版本磁盘没有这个键，按开启处理（与需求 1 一致）。
+            values["launchRecommend"] as? Boolean ?: true,
+            // 首页本机记录三栏：与 [hiddenNav] 一样存成字符串集合；旧版本磁盘没有这个键 = 三栏全显示。
+            (values["hiddenHome"] as? Set<*>)?.filterIsInstance<String>()?.filter { it in HOME_KEYS }?.joinToString(",") ?: "",
+            // 「减少动画」：旧版本磁盘没有这个键，按关闭处理（与之前的行为一致）。
+            values["reduceAnim"] as? Boolean ?: false)
+        val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())
+        val index = LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
+            SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden"),
+            ids("historyDeleted")), updates)
+        reserves.keys().asSequence().forEach { id -> index.setReserved(id, reserves.optBoolean(id, false)) }
+        return index
     }
     fun series(rows: List<Series>) = JSONArray(rows.map { it.toJson() }).toString()
+    fun reserves(rows: Map<String,Boolean>) = JSONObject().also { out -> rows.forEach { (id,v) -> out.put(id,v) } }.toString()
     fun history(rows: List<BackupProgress>) = JSONArray(rows.map { p ->
         JSONObject().put("series", p.series.toJson()).put("episodeId", p.episodeId).put("episodeIndex", p.episodeIndex)
             .put("position", p.position).put("duration", p.duration).put("completed", p.completed).put("updatedAt", p.updatedAt)

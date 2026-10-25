@@ -2,8 +2,66 @@
 package com.hgtv.star.core
 
 internal object VendorConstants {
-    const val VIDEO_UA = "com.phoenix.read/71332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
-    const val APP_UA = "com.phoenix.read/72232 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3)"
+    /**
+     * 两个 UA 的**模板**：机型 / 系统版本 / 固件串三处按设备档案填。
+     *
+     * 官方 App 的 UA 形如
+     * `com.phoenix.read/<version_code> (Linux; U; Android <os_version>; zh_CN; <机型>; Build/<固件>)`，
+     * 也就是「同一台设备」的又一处体现。早先这里把机型写死成 `25053RT47C`、系统写死 `Android 16`，
+     * 与本机真实设备（以及 query 里的 `device_type`）对不上——同一次会话里出现两台设备。
+     *
+     * 模板里的三个占位符由 [userAgent] 填：
+     * * `%VC%` —— 版本号（视频路径 71332 / App 路径 72232）；
+     * * `%OS%` —— `os_version`；
+     * * `%MODEL%` —— `device_type`（机型）；
+     * * `%BUILD%` —— 固件串（`rom_version`），认不出来时回落到模板里的默认值。
+     */
+    private const val VIDEO_UA_TEMPLATE = "com.phoenix.read/%VC% (Linux; U; Android %OS%; zh_CN; %MODEL%; Build/%BUILD%; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
+    private const val APP_UA_TEMPLATE = "com.phoenix.read/%VC% (Linux; U; Android %OS%; zh_CN; %MODEL%; Build/%BUILD%)"
+    /** 视频路径的版本号（`version_code`）。 */
+    const val VIDEO_VERSION_CODE = "71332"
+    /** App 路径（搜索 / 账号 / 分类）的版本号。 */
+    const val APP_VERSION_CODE = "72232"
+    /** 档案里没有固件串时 UA 里用的那个（与内置档案同源）。 */
+    private const val DEFAULT_BUILD = "BP2A.250605.031.A3"
+    /**
+     * 把档案里的串收成「能放进 HTTP 头」的形态：只留可打印 ASCII（`0x20..0x7e`）。
+     *
+     * 为什么必须有这一层：OkHttp 的 `Headers.checkValue` 只认这一段，头值里出现
+     * `0x7eaa`（「纪」）这类字符时，`Request.Builder.header()` 会直接抛
+     * `IllegalArgumentException: Unexpected char 0x7eaa at 93 in User-Agent`，
+     * 请求根本发不出去——注册就表现为「设备注册失败」，根因却只是这台机器的
+     * `Build.DISPLAY` / `Build.MODEL` 带了汉字（官改 ROM、杂牌机常见）。
+     * 过滤后为空则回落 [fallback]：宁可报成内置那台设备，也不拼出畸形 UA。
+     */
+    fun headerSafe(value: String?, fallback: String): String =
+        value.orEmpty().filter { it in '\u0020'..'\u007e' }.trim().ifBlank { fallback }
+
+    /**
+     * 按设备档案拼 UA；[video] 决定用哪条路径的版本号。
+     *
+     * 档案里没有的字段一律回落到内置值（机型 `25053RT47C` / 系统 `16` / 固件 [DEFAULT_BUILD]），
+     * 因此不注入档案时行为与改动前逐字节一致。
+     *
+     * 三个占位符都过 [headerSafe]：本机档案来自 `Build.*`，官改 ROM 会往里塞汉字，
+     * 一旦原样进头就是上面那条 `Unexpected char`（见 [headerSafe] 的注释）。
+     */
+    fun userAgent(device: Map<String,String>, video: Boolean): String {
+        val version = if(video) VIDEO_VERSION_CODE else APP_VERSION_CODE
+        val os = headerSafe(device["os_version"], "16")
+        val model = headerSafe(device["device_type"], "25053RT47C")
+        // `rom_version` 是 `Build.DISPLAY`（形如 `BP2A.250605.031.A3`）；
+        // 它有时带 `release-keys` 后缀（`W528JS release-keys`），UA 里不带，因此截掉。
+        // 截断放在过滤之后：`P230_纪念版 N2G47H` 过滤成 `P230_ N2G47H`，再取首个 token。
+        val build = headerSafe(device["rom_version"], DEFAULT_BUILD)
+            .substringBefore(" ").ifBlank { DEFAULT_BUILD }
+        return (if(video) VIDEO_UA_TEMPLATE else APP_UA_TEMPLATE)
+            .replace("%VC%", version).replace("%OS%", os)
+            .replace("%MODEL%", model).replace("%BUILD%", build)
+    }
+    /** 没有档案时的兜底 UA（内置那一台设备）。 */
+    val VIDEO_UA: String get() = userAgent(emptyMap(), video = true)
+    val APP_UA: String get() = userAgent(emptyMap(), video = false)
     val device = linkedMapOf(
         "iid" to "1905892595382586",
         "device_id" to "1905892595378490",

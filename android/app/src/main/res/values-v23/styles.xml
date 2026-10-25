@@ -1,0 +1,17 @@
+<resources>
+    <!-- API 23+ 才有 windowLightStatusBar 的完整行为；这里保持与 v21 相同的配色，不额外覆盖。 -->
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">#4DA3FF</item>
+        <item name="android:colorPrimary">#1E2228</item>
+        <item name="android:colorPrimaryDark">#12151A</item>
+        <item name="android:colorBackground">#1E2228</item>
+        <item name="android:windowBackground">#1E2228</item>
+        <item name="android:panelBackground">#2A3038</item>
+        <item name="android:textColorPrimary">#F2F5F8</item>
+        <item name="android:textColorSecondary">#AAF2F5F8</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.player
 
+import com.hgtv.star.compat.drawRoundRectCompat
+
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -12,6 +14,7 @@ import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
+import com.hgtv.star.tv.designPx
 import com.hgtv.star.tv.tvDp
 
 /**
@@ -41,8 +44,8 @@ internal class DanmakuSlider(
     private val dp = { value: Number -> context.tvDp(value) }
     private val bar = Paint(Paint.ANTI_ALIAS_FLAG)
     private val reading = Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        // 与 TextView 的 sp→px 换算走同一条路（复杂单位换算），面板上的读数与按钮文字同高。
-        textSize = TypedValue.applyDimension(TypedValue.COMPLEX_UNIT_SP, TvStyle.BUTTON_TEXT_COMPACT, context.resources.displayMetrics)
+        // 与 TextView 的字号换算走同一条路（设计缩放），面板上的读数与按钮文字同高。
+        textSize = context.designPx(TvStyle.BUTTON_TEXT_COMPACT).toFloat()
         typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.RIGHT
     }
@@ -108,9 +111,9 @@ internal class DanmakuSlider(
 
         bar.color = color
         bar.alpha = 0x38
-        canvas.drawRoundRect(left, middle - radius, trackRight, middle + radius, radius, radius, bar)
+        drawRoundRectCompat(canvas, left, middle - radius, trackRight, middle + radius, radius, bar)
         bar.alpha = 0xFF
-        canvas.drawRoundRect(left, middle - radius, filled, middle + radius, radius, radius, bar)
+        drawRoundRectCompat(canvas, left, middle - radius, filled, middle + radius, radius, bar)
         canvas.drawCircle(filled, middle, knob, bar)
 
         reading.color = color

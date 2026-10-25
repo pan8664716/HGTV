@@ -1,0 +1,16 @@
+<resources>
+    <!-- API 21+：沿用 Material 主题，并补齐 4.4 上不存在的属性。色值与 values/styles.xml 一致。 -->
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">#4DA3FF</item>
+        <item name="android:colorPrimary">#1E2228</item>
+        <item name="android:colorPrimaryDark">#12151A</item>
+        <item name="android:colorBackground">#1E2228</item>
+        <item name="android:windowBackground">#1E2228</item>
+        <item name="android:panelBackground">#2A3038</item>
+        <item name="android:textColorPrimary">#F2F5F8</item>
+        <item name="android:textColorSecondary">#AAF2F5F8</item>
+        <item name="android:windowNoTitle">true</item>
+    </style>
+</resources>

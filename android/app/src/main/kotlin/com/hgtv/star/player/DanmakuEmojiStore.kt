@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.player
 
-import android.app.ActivityManager
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -12,6 +11,8 @@ import com.hgtv.star.core.DanmakuEmoji
 import java.lang.ref.WeakReference
 import java.util.Collections
 import java.util.concurrent.Executors
+import com.hgtv.star.compat.memoryBytes
+import com.hgtv.star.compat.lowEndTv
 
 /**
  * 弹幕表情图的解码与缓存。
@@ -35,10 +36,11 @@ internal class DanmakuEmojiStore private constructor(context: Context) {
     fun interface Listener { fun onEmojiDecoded() }
 
     private val assets = context.applicationContext.assets
-    private val lowRam = context.applicationContext.getSystemService(ActivityManager::class.java)?.isLowRamDevice == true
+    /** 与 `TvStyle.animate` / `ArtworkLoader.lowRam` 同一个判据（见 compat/Platform.kt）。 */
+    private val lowRam = context.applicationContext.lowEndTv()
     private val main = Handler(Looper.getMainLooper())
     private val cache = object : LruCache<String, Bitmap>(if (lowRam) LOW_RAM_BYTES else NORMAL_BYTES) {
-        override fun sizeOf(key: String, value: Bitmap) = value.allocationByteCount
+        override fun sizeOf(key: String, value: Bitmap) = value.memoryBytes
     }
     /** 已经排队、还没解完的文件名：同一次绘制里反复问同一张图不会排很多遍。 */
     private val queued = Collections.synchronizedSet(mutableSetOf<String>())

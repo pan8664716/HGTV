@@ -45,8 +45,4 @@ class MediaCryptoTest {
     }
     @Test(expected=java.io.IOException::class) fun truncatedAuxiliaryDataFailsClosed() { MediaCrypto.prepare(fixture(auxSize=16),key) }
     @Test(expected=java.io.IOException::class) fun oversizedMoovRejected() { MediaCrypto.headerEnd(box("ftyp","isom0000".toByteArray())+be32(9000000)+"moov".toByteArray(),10000000) }
-    @Test fun routerParserHandlesEscapedQuotesAndNestedBraces() {
-        val data=ContentRepository.extractRouter("<script>window._ROUTER_DATA = {\"loaderData\":{\"x\":\"a}\\\"b\",\"list\":[1,2]}};</script>")
-        assertEquals("a}\"b",data.getJSONObject("loaderData").getString("x"))
-    }
 }

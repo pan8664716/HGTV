@@ -60,6 +60,20 @@ class LatestWriteQueue<K, V>(
         }
         worker.shutdown()
     }
+    /**
+     * Drop every pending snapshot and stop the worker **without writing**.
+     *
+     * Used only by the local reset: after this the on-disk state is about to be deleted,
+     * so flushing one last snapshot would recreate exactly the files being removed.
+     */
+    @Synchronized fun discard() {
+        if (closed) return
+        closed = true
+        scheduled?.cancel(false)
+        scheduled = null
+        pending.clear()
+        worker.shutdownNow()
+    }
     /** For deterministic JVM validation; never call this from an Android main thread. */
     fun awaitClosed(timeout: Long, unit: TimeUnit): Boolean = worker.awaitTermination(timeout, unit)
 }

@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- 「回到顶部」：向上的箭头（三角 + 竖杆），与工具栏那一组图标同一套扁平风格。 -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp" android:height="24dp"
+    android:viewportWidth="24" android:viewportHeight="24">
+    <path android:fillColor="#FFFFFFFF"
+        android:pathData="M12,3.6l8.4,8.4h-5v8.4H8.6v-8.4h-5z"/>
+</vector>

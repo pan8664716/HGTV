@@ -23,13 +23,13 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo): Closeab
         synchronized(calls) { if(closed) throw IOException("播放请求已取消"); calls+=call }
         try {
             return RequestScope.execute(call) { response ->
-                if(response.code!=206) throw IOException("视频服务器不支持分段读取（HTTP ${response.code}）")
+                if(response.code()!=206) throw IOException("视频服务器不支持分段读取（HTTP ${response.code()}）")
                 val match=Regex("bytes (\\d+)-(\\d+)/(\\d+)").matchEntire(response.header("Content-Range").orEmpty()) ?: throw IOException("视频分段响应异常")
                 val (begin,finish,size)=match.destructured
                 val full=size.toLong(); val last=minOf(end,full-1)
                 if(begin.toLong()!=start || finish.toLong()!=last || full<=0) throw IOException("视频分段范围不匹配")
                 if(total!=0L && full!=total) throw IOException("视频资源已变化，请重试")
-                val n=(last-start+1).toInt(); val body=response.body ?: throw IOException("视频分段为空")
+                val n=(last-start+1).toInt(); val body=response.body() ?: throw IOException("视频分段为空")
                 val bytes=body.source().readByteArray(n.toLong())
                 Range(bytes,full)
             }
@@ -53,7 +53,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo): Closeab
         return this
     }
     fun read(start: Long,length: Int): ByteArray {
-        require(length in 1..1024*1024 && start>=0)
+        require(length in 1..2*1024*1024 && start>=0)
         if(closed) throw IOException("播放请求已取消")
         if(start>=total) return byteArrayOf()
         val cached=prefix; val end=minOf(total,start+length)
@@ -62,5 +62,15 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo): Closeab
         val raw=if(start+available<end) first+range(start+available,end-1).bytes else first
         return MediaCrypto.decrypt(raw,start,info.key,prepared)
     }
-    override fun close() { synchronized(calls) { closed=true; calls.toList().forEach { it.cancel() }; calls.clear() } }
+    /**
+     * 关掉这一集。
+     *
+     * `prefix` 是**为了少走一次网络**而留的前 1 MB 原始字节（见 [warm]），
+     * 它跟播放器生命周期同长；一集切走之后没有人还会读它，留着就是白占 1 MB——
+     * 切集时 `video` / `queuedVideo` / `retiringVideo` 可能同时存在，最多就是 3 MB。
+     */
+    override fun close() {
+        synchronized(calls) { closed=true; calls.toList().forEach { it.cancel() }; calls.clear() }
+        prefix=byteArrayOf()
+    }
 }

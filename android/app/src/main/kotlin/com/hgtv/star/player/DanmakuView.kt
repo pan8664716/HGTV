@@ -8,6 +8,7 @@ import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.os.SystemClock
 import android.view.View
 import com.hgtv.star.core.Danmaku
 import com.hgtv.star.core.DanmakuEmoji
@@ -19,6 +20,8 @@ import com.hgtv.star.core.DanmakuRepeat
 import com.hgtv.star.core.DanmakuSpeed
 import com.hgtv.star.core.planHighlights
 import com.hgtv.star.core.repeatGroups
+import com.hgtv.star.tv.designSize
+import com.hgtv.star.compat.attachedToWindow
 
 /**
  * 压在播放画面上的弹幕层。
@@ -47,8 +50,8 @@ import com.hgtv.star.core.repeatGroups
  * 同一组只画一次、文案带数量标记；其中数量最多的那几组按 [planHighlights] 排好的次序
  * 上屏幕中央突出显示（同一时间只有一条），中央那一条不再进普通轨道。
  *
- * 位置与播放状态都由宿主（MainActivity）通过 [positionMillis] / [playing] 提供，
- * 弹幕层自己不做时钟，暂停、跳转、倍速都不会和播放器脱节。
+ * 位置与播放状态都由宿主（MainActivity）通过 [setClock] 推过来，绘制时只用系统时钟外推；
+ * 暂停、跳转、倍速都会重新校准，因此弹幕不会和播放器脱节，绘制线程也不会回调播放器。
  *
  * 文本里的表情标签（`[笑哭]`）在 [relayout] 里就被 [DanmakuEmoji.parts] 切成
  * 「文字片段 + 表情片段」：文字照常按字体画，表情按 [DanmakuEmojiStore] 里的图片画。
@@ -85,10 +88,29 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         const val HIGHLIGHT_PAD_DP=13
         /** 表情图相对字号的大小：比汉字略大一点，跟系统 emoji 的观感一致。 */
         const val EMOJI_SCALE=1.2f
+        /**
+         * 片段缓存 / 宽度缓存的条数上限。
+         *
+         * 一集最多 3000 条（见 `ContentRepository.MAX_DANMAKU`），按这个量级封顶，
+         * 让「边拉边画」的 40 个窗口都能命中前 39 次排好的结果。
+         */
+        const val CACHE_LINES=4096
     }
 
-    /** 一条已经排好轨道的普通弹幕：起点（秒）、横穿时长（秒）、整条宽度、所在轨道、切好的片段。 */
-    private class Line(val start: Float,val duration: Float,val width: Float,val lane: Int,val parts: List<DanmakuPart>)
+    /**
+     * 一条已经排好轨道的普通弹幕：起点（秒）、横穿时长（秒）、整条宽度、所在轨道、切好的片段。
+     *
+     * [partWidths] 与 [parts] 一一对应，在排版阶段算好。绘制时**只读**它——
+     * 绝不再调 `measureText`（见 [drawParts]）。
+     */
+    private class Line(
+        val start: Float,
+        val duration: Float,
+        val width: Float,
+        val lane: Int,
+        val parts: List<DanmakuPart>,
+        val partWidths: FloatArray
+    )
 
     private val fill=Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color=Color.WHITE
@@ -122,7 +144,14 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
     private val emojiRect=RectF()
     private val plateRect=RectF()
     private val emoji=DanmakuEmojiStore.get(context)
-    private val density=context.resources.displayMetrics.density
+    /**
+     * 一个「设计单位」等于多少像素。
+     *
+     * 弹幕是自绘的，字号 / 边距全在画布上直接算像素，因此这里不能再乘 density——
+     * 那等于把「设备 dpi」这件事又带回来一次（540dpi 的机器上弹幕会大到铺满屏）。
+     * 与全站其它控件一样，统一按设计画布缩放。
+     */
+    private val density=context.designSize(1f)
     private val lines=mutableListOf<Line>()
     /** 这一集拿到的全部弹幕（按时间排好）；换显示方式、换分辨率、换速度都从它重排。 */
     private var raw: List<Danmaku> = emptyList()
@@ -130,8 +159,31 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
     private var groups: List<DanmakuRepeat> = emptyList()
     /** 中央突出显示的次序（同一条只上一次）；数据补上来时重排一次，见 [planHighlights]。 */
     private var highlights: List<DanmakuHighlightRound> = emptyList()
-    /** 切好的片段缓存：同一条文案（含数量标记）只切一次，避免每帧走正则。 */
-    private val partsCache=mutableMapOf<String,List<DanmakuPart>>()
+    /**
+     * 切好的片段缓存：同一条文案（含数量标记）只切一次，避免每帧走正则。
+     *
+     * **不随每次 relayout 清空**：数据是一窗一窗补上来的（40 个窗口），
+     * 每窗清一次就等于把整集文案重新切一遍，而实际新增的只有一个窗口。
+     * 只按条数封顶做 LRU，换集时在 [clear] 里整份丢掉。
+     */
+    private val partsCache=object: LinkedHashMap<String,List<DanmakuPart>>(64,.75f,true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String,List<DanmakuPart>>)=size>CACHE_LINES
+    }
+    /**
+     * 文案 → 每段的像素宽（排版阶段的 `measureText` 结果）。
+     *
+     * 与 [partsCache] 同寿命：只在字号变了（[applyTextMetrics]）或换集时作废。
+     * 没有它，每个 30 秒窗口都要把整集每一段重新量一遍。
+     */
+    private val widthCache=object: LinkedHashMap<String,FloatArray>(64,.75f,true) {
+        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String,FloatArray>)=size>CACHE_LINES
+    }
+    /** 已经排过表情解码的文本：只把**新出现**的送进 `emoji.prefetch`，不再每窗全量扫一遍。 */
+    private val prefetched=mutableSetOf<String>()
+    /** 中央那一块的排版缓存（它每帧都在画，但一轮之内宽度不会变）。 */
+    private var hlKey=""
+    private var hlWidths=FloatArray(0)
+    private var hlBodyWidth=0f
     /** 当前帧还要画的第一条：按时间排好序，播放推进时只往前走，不回头。 */
     private var cursor=0
     /** 中央那一块当前在画第几轮；只往前挪，跳转时归零。 */
@@ -173,6 +225,20 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         }
 
     /**
+     * 相同弹幕是否聚合。
+     *
+     * 默认开启：同一句文字在 [com.hgtv.star.core.DANMAKU_REPEAT_WINDOW_MS] 内合并成一组，
+     * 只画一次并带 `×N`；关闭后每一条都当作独立弹幕，数量标记与中央突出显示一并消失。
+     * 聚合会影响整批数据的分组，因此改档要整批重排。
+     */
+    var mergeRepeats: Boolean=true
+        set(value) {
+            if(field==value) return
+            field=value
+            relayout()
+        }
+
+    /**
      * 文字不透明度（1f = 完全不透明）。
      *
      * 只改笔的 alpha，不动字号，因此不用重排轨道，重画一帧就够。
@@ -199,10 +265,47 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
             relayout()
         }
 
-    /** 播放位置（毫秒），由宿主每帧提供。 */
-    var positionMillis: () -> Long = { 0L }
-    /** 是否正在播放：暂停时停在当前帧，不继续推进。 */
-    var playing: () -> Boolean = { false }
+    /**
+     * 播放时钟：宿主推进，绘制路径上不再回调播放器。
+     *
+     * 原来 [onDraw] 每帧都去读 `player.currentPosition` / `player.isPlaying`：
+     * 播放器内部一旦出现异常状态（线上见过 `PlaybackInfo.timeline` 为 null），
+     * 异常就从渲染线程直接冒到 `AndroidRuntime`，整个进程被带走。
+     * 现在宿主每秒、以及播放状态 / 跳转 / 倍速变化时调用 [setClock] 校准一次，
+     * [clockPositionMillis] 只用系统时钟外推，绘制线程不碰播放器。
+     */
+    private var clockBaseMs=0L
+    private var clockBaseAt=0L
+    private var clockSpeed=1f
+    private var clockRunning=false
+
+    /**
+     * 校准播放时钟。
+     *
+     * [positionMs] 是这一瞬间的媒体位置，[running] 表示是否在推进，
+     * [speed] 用于外推时把倍速算进去（1.5× / 2× 下弹幕速度才不会落后）。
+     */
+    fun setClock(positionMs: Long,running: Boolean,speed: Float=clockSpeed) {
+        clockBaseMs=positionMs.coerceAtLeast(0)
+        clockBaseAt=SystemClock.elapsedRealtime()
+        clockSpeed=speed.coerceIn(0.25f,4f)
+        clockRunning=running
+        if(running && visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
+    }
+
+    /** 当前媒体位置：暂停时停在基准点，播放时按系统时钟与倍速外推。 */
+    fun clockPositionMillis(): Long {
+        if(!clockRunning) return clockBaseMs
+        val elapsed=(SystemClock.elapsedRealtime()-clockBaseAt).coerceAtLeast(0L)
+        return clockBaseMs+(elapsed*clockSpeed).toLong()
+    }
+
+    /** 离场：停掉外推并回到 0，之后即使还有一帧没画完也不会继续读播放器。 */
+    fun stopClock() {
+        clockRunning=false
+        clockBaseMs=0L
+        clockBaseAt=SystemClock.elapsedRealtime()
+    }
     init {
         isFocusable=false
         importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -221,6 +324,11 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
     /** 清空这一集的弹幕（换集、切到隐藏档）。 */
     fun clear() {
         raw=emptyList()
+        // 换集才整份丢掉三个缓存：纹理与宽度都只跟这一集的文案有关。
+        partsCache.clear()
+        widthCache.clear()
+        prefetched.clear()
+        hlKey=""; hlWidths=FloatArray(0); hlBodyWidth=0f
         relayout()
     }
 
@@ -248,19 +356,22 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
      */
     private fun relayout() {
         lines.clear()
-        partsCache.clear()
+        // `partsCache` / `widthCache` **不清**：它们只跟文案与字号有关，
+        // 与轨道、速度、显示档位都无关（字号变化由 [applyTextMetrics] 负责作废）。
         cursor=0
         lastPosition=-1L
-        groups=repeatGroups(raw)
+        groups=if(mergeRepeats) repeatGroups(raw) else raw.map { DanmakuRepeat(it.text,listOf(it.offsetMs)) }
         // 中央突出显示的次序：传上一份，正在展示的那一条不会被新数据挤掉（见 planHighlights）。
         highlights=planHighlights(groups,highlights)
         highlightCursor=0
         layoutLanes()
         val lanes=if(mode==DanmakuMode.HIDDEN) 0 else laneCount
         if(lanes>0 && width>0 && height>0) schedule(lanes)
-        // 这一集用到的表情图先全部排进解码队列：等画到它们的时候图多半已经在缓存里，
-        // 屏幕上就不会先闪一下字形再换成图片。
-        emoji.prefetch(groups.map { it.text })
+        // 表情图只把**新出现**的文本排进解码队列：每窗全量传一遍等于每 30 秒做几千次带锁查表，
+        // 而那些图早就解好了。等画到它们的时候图在缓存里，屏幕上不会先闪一下字形再换成图片。
+        val fresh=mutableListOf<String>()
+        groups.forEach { if(prefetched.add(it.text)) fresh+=it.text }
+        if(fresh.isNotEmpty()) emoji.prefetch(fresh)
         // 可见性只看「有没有数据」，不看「排没排成轨道」：轨道要等 onSizeChanged 之后才算得出来，
         // 若在这里用 lines.isEmpty() 判空，视图会因为「没尺寸 → 排不出轨道 → 保持不可见 → 不测量」
         // 形成死循环，弹幕接口就算返回几千条也一条都不显示。
@@ -285,9 +396,12 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         val blocked=if(mode==DanmakuMode.SINGLE) highlights.map { it.startMs/1000f to it.endMs/1000f } else emptyList()
         // 已经排上中央的那几组不再进普通轨道：它们由中央那一块展示，避免同一句同时出现两次。
         val planned=highlights.map { it.group.key }.toSet()
+        val emojiSize=fill.textSize*EMOJI_SCALE
         groups.filterNot { it.key in planned }.forEach { group ->
             val parts=partsOf(group.label)
-            val width=measure(parts,fill,fill.textSize*EMOJI_SCALE)
+            val widths=widthsOf(group.label,parts,emojiSize)
+            var width=0f
+            widths.forEach { width+=it }
             val want=group.firstMs/1000f
             val duration=(viewWidth+width)/pixelsPerSecond
             var lane=0
@@ -300,7 +414,7 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
             // 排不下：不强行叠加，直接跳过这一条（需求二「不应强行叠加显示」）。
             if((start-want)*1000f>MAX_DELAY_MS) return@forEach
             laneFree[lane]=start+(width+laneGap)/pixelsPerSecond
-            lines+=Line(start,duration,width,lane,parts)
+            lines+=Line(start,duration,width,lane,parts,widths)
         }
         lines.sortBy { it.start }
     }
@@ -324,12 +438,21 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
     /** 一条弹幕的片段（切成「文字 + 表情」），同一条文案只切一次。 */
     private fun partsOf(text: String): List<DanmakuPart> = partsCache.getOrPut(text) { DanmakuEmoji.parts(text) }
 
-    /** 一段内容的宽度：文字按字体量，表情按图片的显示边长算（[EMOJI_SCALE] × 字号）。 */
-    private fun measure(parts: List<DanmakuPart>,paint: Paint,emojiSize: Float): Float {
-        var width=0f
-        parts.forEach { part -> width+=if(part.asset==null) paint.measureText(part.text) else emojiSize }
-        return width
-    }
+    /**
+     * 每段的像素宽（与 [parts] 一一对应）。
+     *
+     * 结果进 [widthCache]：渲染循环里绝不能再 `measureText`——那要按当前 `Paint`
+     * 走一次 shaping，`MAX_LINES_PER_FRAME=160` 条 × 平均 3 段 × 60 fps 就是
+     * 每秒近三万次，老 GPU 上直接吃掉半帧预算（视频层是硬件独立合成，用户看到的就是
+     * 「画面很顺、弹幕卡」）。文案相同则宽度一定相同，缓存命中率很高。
+     */
+    private fun widthsOf(label: String,parts: List<DanmakuPart>,emojiSize: Float): FloatArray =
+        widthCache.getOrPut(label) {
+            FloatArray(parts.size) { index ->
+                val part=parts[index]
+                if(part.asset==null) fill.measureText(part.text) else emojiSize
+            }
+        }
 
     override fun onSizeChanged(w: Int,h: Int,oldw: Int,oldh: Int) {
         super.onSizeChanged(w,h,oldw,oldh)
@@ -366,6 +489,9 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         emojiPaint.alpha=(255*alpha).toInt().coerceIn(0,255)
         // 底板跟着透明度淡一点：全黑底在暗画面上会把弹幕压成一块黑砖。
         plate.alpha=(0x99*alpha).toInt().coerceIn(0,255)
+        // 字号变了，所有排版阶段的宽度结果作废（透明度不用：它不影响宽度）。
+        widthCache.clear()
+        hlKey=""; hlWidths=FloatArray(0); hlBodyWidth=0f
     }
 
     /**
@@ -410,7 +536,7 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         if(mode==DanmakuMode.HIDDEN || laneCount<=0) return
         if(lines.isEmpty() && highlights.isEmpty()) return
         val viewWidth=width.toFloat()
-        val now=positionMillis()
+        val now=clockPositionMillis()
         val seconds=now/1000f
         // 跳转（前进或后退）之后指针作废，从头找一次；正常播放只往前挪。
         if(now<lastPosition) { cursor=0; highlightCursor=0 }
@@ -425,14 +551,14 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
             if(elapsed<=line.duration) {
                 val x=viewWidth-elapsed/line.duration*(viewWidth+line.width)
                 val baseline=laneTop+(line.lane+1)*laneHeight-fill.textSize*0.28f
-                drawParts(canvas,line.parts,x,baseline,fill,edge,fill.textSize*EMOJI_SCALE)
+                drawParts(canvas,line.parts,line.partWidths,x,baseline,fill,edge,fill.textSize*EMOJI_SCALE)
                 drawn++
             }
             index++
         }
         drawHighlight(canvas,now)
         // 播放中才继续要下一帧：暂停时停在原地，退出播放时视图被移除，循环自然停下。
-        if(playing() && visibility==VISIBLE && isAttachedToWindow) postInvalidateOnAnimation()
+        if(clockRunning && visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
     }
 
     /**
@@ -452,7 +578,10 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         val parts=partsOf(round.group.text)
         val counter=" ×${round.group.countUpTo(nowMs).coerceAtLeast(DanmakuHighlight.MIN_COUNT)}"
         val emojiSize=highlightSize*EMOJI_SCALE
-        val bodyWidth=measure(parts,hlFill,emojiSize)
+        // 中央这一块每帧都在画，但正文宽度在一轮之内不会变：量一次就够。
+        // 只有数量标记会变，它每次重画一次 `measureText` 是可接受的（一条）。
+        val widths=highlightWidths(round,parts,emojiSize)
+        val bodyWidth=hlBodyWidth
         val counterWidth=hlFill.measureText(counter)
         val total=bodyWidth+counterWidth
         val centerY=when(mode) {
@@ -468,7 +597,7 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         canvas.drawRoundRect(plateRect,density*10f,density*10f,plate)
         val metrics=hlFill.fontMetrics
         val baseline=centerY-(metrics.ascent+metrics.descent)/2f
-        drawParts(canvas,parts,left,baseline,hlFill,hlEdge,emojiSize)
+        drawParts(canvas,parts,widths,left,baseline,hlFill,hlEdge,emojiSize)
         // 数量标记接在正文后面：重画一次基线，宽高与正文同一档。
         canvas.drawText(counter,left+bodyWidth,baseline,hlEdge)
         canvas.drawText(counter,left+bodyWidth,baseline,hlFill)
@@ -481,16 +610,53 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
      * 图片没解好时退回画字形（[DanmakuPart.text] 就是字形本身），宽度早就按图片边长算过，
      * 所以换成图片之后这一条的位置和长度都不会跳。
      */
-    private fun drawParts(canvas: Canvas,parts: List<DanmakuPart>,x: Float,baseline: Float,textPaint: Paint,strokePaint: Paint,emojiSize: Float) {
+    /**
+     * 中央那一块的每段宽度：同一轮 + 同一字号只量一次。
+     *
+     * 返回值与 [hlWidths] 是同一份数组；[hlBodyWidth] 是它的总和。
+     */
+    private fun highlightWidths(round: DanmakuHighlightRound,parts: List<DanmakuPart>,emojiSize: Float): FloatArray {
+        val key="${round.group.key}@$highlightSize@$emojiSize"
+        if(key==hlKey) return hlWidths
+        val widths=FloatArray(parts.size)
+        var total=0f
+        parts.forEachIndexed { index,part ->
+            val width=if(part.asset==null) hlFill.measureText(part.text) else emojiSize
+            widths[index]=width; total+=width
+        }
+        hlKey=key; hlWidths=widths; hlBodyWidth=total
+        return widths
+    }
+
+    /**
+     * 画一段内容：文字片段按字体画（先描边后填充），表情片段按图片画。
+     *
+     * [widths] 是排版阶段算好的每段像素宽（见 [widthsOf]）。这里**只读**它，
+     * 绝不再调 `measureText`：那要按当前 `Paint` 走一次 shaping，而这条路径每帧
+     * 要走上千次（160 条 × 平均 3 段 × 60 fps），老 GPU 上直接吃掉半帧预算。
+     *
+     * 表情图贴着文字行的中线居中：字有上伸下伸，图片是方的，按基线直接画会整体偏上。
+     * 图片没解好时退回画字形（[DanmakuPart.text] 就是字形本身），宽度早就按图片边长算过，
+     * 所以换成图片之后这一条的位置和长度都不会跳。
+     */
+    private fun drawParts(
+        canvas: Canvas,
+        parts: List<DanmakuPart>,
+        widths: FloatArray,
+        x: Float,
+        baseline: Float,
+        textPaint: Paint,
+        strokePaint: Paint,
+        emojiSize: Float
+    ) {
         val metrics=textPaint.fontMetrics
         val emojiTop=baseline+(metrics.ascent+metrics.descent)/2f-emojiSize/2f
         var cursorX=x
-        parts.forEach { part ->
+        parts.forEachIndexed { index,part ->
             val asset=part.asset
             if(asset==null) {
                 canvas.drawText(part.text,cursorX,baseline,strokePaint)
                 canvas.drawText(part.text,cursorX,baseline,textPaint)
-                cursorX+=textPaint.measureText(part.text)
             } else {
                 val image: Bitmap?=emoji.bitmap(asset)
                 if(image==null) {
@@ -500,8 +666,8 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
                     emojiRect.set(cursorX,emojiTop,cursorX+emojiSize,emojiTop+emojiSize)
                     canvas.drawBitmap(image,null,emojiRect,emojiPaint)
                 }
-                cursorX+=emojiSize
             }
+            cursorX+=widths[index]
         }
     }
 

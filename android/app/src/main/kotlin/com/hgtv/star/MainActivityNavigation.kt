@@ -2,45 +2,48 @@
 package com.hgtv.star
 
 import android.app.Activity
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.graphics.Color
-import android.graphics.Typeface
 import android.view.*
-import android.view.inputmethod.InputMethodManager
-import android.content.Context
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
 import android.widget.*
-import android.text.TextUtils
-import androidx.media3.common.*
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.ui.PlayerView
+import com.google.android.exoplayer2.*
 import com.hgtv.star.core.*
-import java.util.concurrent.Executors
 import com.hgtv.star.MainActivity.CatalogState
 import com.hgtv.star.tv.ToggleChip
 import com.hgtv.star.list.showCatalog
+import com.hgtv.star.compat.attachedToWindow
 
 // 本文件是从 MainActivity.kt 拆出来的「顶部五个入口、切换页面、分类与榜单芯片、页头导航与页标题」这一块。
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 internal fun MainActivity.switchTab(next: Int) {
+    // 点任何一个标签都先离开「问题反馈」页（它不属于任何标签）。
+    feedbackOpen=false
     // 本次运行第一次进这一页（见 [tabVisited]）。
     val firstVisit=tabVisited.add(next)
-    // 首次进入分类页：回到默认的「漫剧 · 全部」。
-    // [categoryPath] 本来就从默认值起步（见字段声明），这里显式写一次是为了挡住
-    // 「本次运行里先在分类页挑过别的、之后又切走再切回来」——那属于**再次**进入，
-    // 由 [tabVisited] 区分，不会走到这一支。
-    if(firstVisit && next==TAB_CATEGORY) categoryPath=CategoryCatalog.defaultTag.path
+    // 首次进入分类页：回到默认的「全部体裁」。
+    // 面板也一起丢掉，首次进入会重新取一份（主题等随体裁变化）。
+    if(firstVisit && next==TAB_CATEGORY) { categorySelection=CategorySelection(); categoryPanel=null }
     if(next!=TAB_RANK && tab==TAB_RANK) boardButtons.values.firstOrNull { it.hasFocus() }?.clearFocus()
     if(next!=TAB_CATEGORY && tab==TAB_CATEGORY) {
-        (categoryGroupButtons.values + categoryTagButtons.values).firstOrNull { it.hasFocus() }?.clearFocus()
+        categoryFilterButtons.values.flatMap { it.values }.firstOrNull { it.hasFocus() }?.clearFocus()
+    }
+    // 从本机记录集合页（收藏 / 历史 / 稍后观看）切到顶部入口：集合页挂在首页标签上，
+    // 但它是独立的一层。不清理的话，目标页仍会按 [collection] 渲染——标题还是集合名、
+    // 内容还是那一份本机记录，用户读到的就是「点分类 / 榜单，显示的还是当前的数据」。
+    // 同时丢掉目标标签缓存的那份内容 / 页码：集合页的列表不属于任何顶部标签，
+    // 目标页若要内容就重新取一份（见下面的 [needsLoad]）。
+    if(collection!=null) {
+        collection=null
+        catalogFocus=""
+        tabState.remove(next); tabFocus.remove(next)
+    }
+    // 从别的页面重新进搜索页：输入框清空，回到「热搜词 + 空结果」的初始状态。
+    // 上一次的关键词与它那一页结果都属于上一次搜索，留着会让用户以为这次还是搜那个词；
+    // 输入框的初值就取自 [query]（见 searchBar），因此这里必须连同缓存一起清掉。
+    // 只处理「从别的标签进来」：搜索页内部按搜索键、从详情 / 播放返回都还在同一次搜索里。
+    if(next==TAB_SEARCH && tab!=TAB_SEARCH) {
+        query=""
+        tabState.remove(TAB_SEARCH); tabFocus.remove(TAB_SEARCH)
     }
     // 换榜单 / 换分类的请求还在路上时，屏上那份列表属于**上一条**选择：
     // 照存会让用户切回来时看到别的分类 / 榜单的剧集。这时只存一个空页占位，
@@ -63,12 +66,23 @@ internal fun MainActivity.switchTab(next: Int) {
     if(firstVisit && (next==TAB_RANK || next==TAB_CATEGORY || next==TAB_PROFILE)) {
         chipFocusKey=when(next) {
             TAB_RANK -> "board:"+rankBoard.storedValue
-            TAB_CATEGORY -> "tag:"+categoryPath
+            TAB_CATEGORY -> categoryChipKey(CategorySelection.TYPE_GENRE,categorySelection.genre)
             else -> "account:"+accountTab
         }
         focusFirstCardOnLanding=false
     } else if(needsLoad) focusFirstCardOnLanding=true
     showCatalog(load=needsLoad)
+    // 进「我的」页先交代一次「这是第三方客户端」：这一页是唯一会用到账号（登录 / 收藏 / 历史）
+    // 的入口，声明放在这里最贴题。确认过就不再弹（见 [ensureThirdPartyAccepted]）。
+    //
+    // 用 `post` 而不是当场弹：这一次 `showCatalog` 刚把页面建好，弹窗要等它挂上窗口
+    // 才有锚点；而且焦点落点也在这之后才定，抢在它前面弹会让关掉弹窗时焦点无处可去。
+    if(next==TAB_PROFILE && !library.thirdPartyAccepted) {
+        main.post {
+            if(isDestroyed || tab!=TAB_PROFILE) return@post
+            ensureThirdPartyAccepted(navEntry()) {}
+        }
+    }
 }
 /**
  * 切换排行榜页看的榜单。首页四个剧架的「查看全部」走的也是这里——
@@ -103,49 +117,38 @@ internal fun MainActivity.switchRankBoard(board: RankBoard,fromHome: Boolean=fal
     focusFirstCardOnLanding=!fromChip
     showCatalog(load=true)
 }
+/** 分类页某一行里一枚芯片的焦点 key。 */
+internal fun categoryChipKey(type: String,id: String?): String = "filter:$type:${id.orEmpty()}"
+
 /**
- * 切换分类页的大类：选这个大类下的「全部」，并重新取第 1 页。
+ * 选中 / 取消一个筛选条件，并重新取第 1 页。
  *
- * 大类与它的小类是一套联动：换大类时小类那一行整行换掉（见 `showCatalog` 里的分类页分支），
- * 因此这里只管改选择与页码。
+ * * 「体裁」必须有一个值，点同一枚不取消；换体裁判定面板里与它相关的行会变，
+ *   因此把面板置空、下一次请求重新带回整份 `selector_rows`；
+ * * 其余行点已选中的芯片 = 回到「全部」（[id] 传 null）；
+ * * 选中的芯片在重建后由 [categorySelection] 重新算，焦点留在刚点的那一枚上。
  */
-internal fun MainActivity.switchCategoryGroup(group: CategoryGroup) {
-    val tag=group.tags.firstOrNull() ?: return
-    if(tag.path==categoryPath && tab==TAB_CATEGORY) return
-    selectCategory(tag.path)
-}
-/** 切换分类页的小类（同一个大类内）。 */
-internal fun MainActivity.switchCategoryTag(tag: CategoryTag) {
-    if(tag.path==categoryPath && tab==TAB_CATEGORY) return
-    selectCategory(tag.path)
-}
-/**
- * 选中一个分类并重新取第 1 页。
- *
- * 分类页是「往下接」的长列表：换分类等于换一份列表，因此页码与滚动位置都从头开始，
- * 焦点在内容落地后落到第一张卡（与换榜单同一条规则）；
- * 芯片的选中态由重建页面时按 [categoryPath] 重新算。
- */
-internal fun MainActivity.selectCategory(path: String) {
-    // 在分类页里挑过分类就算进过这一页（首次进入的落点规则因此只生效一次）。
+internal fun MainActivity.selectCategoryFilter(type: String,id: String?) {
+    if(tab!=TAB_CATEGORY) return
+    val current=categorySelection.valueOf(type)
+    // 体裁不允许取消；其余行再点一次就是「全部」。
+    if(current==id && type==CategorySelection.TYPE_GENRE) return
+    // 其余行（含「推荐」）再点一次就是「全部」。
+    val target=if(current==id) null else id
     tabVisited.add(TAB_CATEGORY)
-    // 点的是大类还是小类芯片，决定焦点落回哪一行：两者都记进 [chipFocusKey]。
-    // 必须在 [releaseCatalogViews] 之前读——它会把两张芯片表清空。
-    val groupChip=categoryGroupButtons.entries.firstOrNull { it.value.hasFocus() }?.key
-    val tagChip=categoryTagButtons.entries.firstOrNull { it.value.hasFocus() }?.key
-    categoryPath=path
+    val oldGenre=categorySelection.genre
+    categorySelection=if(type==CategorySelection.TYPE_GENRE) {
+        categorySelection.newGenre(target)
+    } else {
+        categorySelection.with(type,target)
+    }
+    // 换体裁：主题 / 设定 / 背景 / 状态的行都会变，旧面板不能再用。
+    if(type==CategorySelection.TYPE_GENRE && oldGenre!=categorySelection.genre) categoryPanel=null
     tabState.remove(TAB_CATEGORY); tabFocus.remove(TAB_CATEGORY)
     releaseCatalogViews()
-    // 同换榜单：只重置页码与记住的焦点卡，旧列表留到新的一页落地再换（见 [showCatalog]）。
     page=1; catalogFocus=""
-    // 换分类就是换一份列表。焦点留在**刚点的那一枚**芯片上：点大类就回大类那一枚，
-    // 点小类就回小类那一枚（不再先跑到一级分类、也不再跟着内容落地跳到第一张卡）。
-    chipFocusKey=when {
-        groupChip!=null -> "group:"+groupChip.path
-        tagChip!=null -> "tag:"+tagChip
-        else -> null
-    }
-    focusFirstCardOnLanding=chipFocusKey==null
+    chipFocusKey=categoryChipKey(type,target)
+    focusFirstCardOnLanding=false
     showCatalog(load=true)
 }
 /** 本机记录集合页（收藏 / 历史 / 稍后观看）；远端列表只有榜单页一种，不再有「热门集合页」。 */
@@ -160,13 +163,15 @@ internal fun MainActivity.collectionName(kind: String)=when(kind) {
  * 顶部导航栏左侧显示的页面名。
  *
  * 首页与搜索 / 设置页显示品牌「红果TV」；二级界面（收藏 / 历史 / 稍后观看）显示自己的名字，
- * 排行榜页显示**当前榜单的名字**——这些页面原来的标题行因此可以整行去掉。
+ * 榜单页统一显示「榜单」——这些页面原来的标题行因此可以整行去掉。
  */
 internal fun MainActivity.pageTitle(): String = when {
+    // 「问题反馈」页优先：它盖在任何一页之上，页面名跟着它走。
+    feedbackOpen -> "问题反馈"
     // 「我的」页优先：它下面那四个栏目也是 collection，但页面名固定是「我的」。
     tab==TAB_PROFILE -> "我的"
     collection!=null -> collectionName(collection.orEmpty())
-    tab==TAB_RANK -> "热播榜"
+    tab==TAB_RANK -> "榜单"
     tab==TAB_CATEGORY -> "分类"
     // 搜索页的导航栏里还挤着输入框与三个按钮，标题只留两个字给它们让宽度。
     tab==TAB_SEARCH -> "搜索"
@@ -180,8 +185,22 @@ internal fun MainActivity.pageTitle(): String = when {
  * 首页（[TAB_HOME]）没有自己的入口：品牌「红果TV」是标识而不是按钮，不参与焦点链，
  * 这里返回 null——调用方跳过聚焦即可（回主界面走返回键）。
  */
-internal fun MainActivity.navEntry(index: Int = tab): View? = nav.getOrNull(index-1)
+internal fun MainActivity.navEntry(index: Int = tab): View? = navKeyed[navKeyOf(index)]
 
+/**
+ * 标签页对应的圆形入口 key（与 [NAV_ENTRIES] 一一对应）。
+ *
+ * 入口可以逐个隐藏，因此不能再按下标去 [MainActivity.nav] 里取——那样一旦隐藏了中间某一枚，
+ * 后面所有页面拿到的都是别人的按钮。这里先映射成 key，再去 [MainActivity.navKeyed] 查。
+ */
+internal fun navKeyOf(tab: Int): String? = when(tab) {
+    TAB_SEARCH -> "search"
+    TAB_CATEGORY -> "category"
+    TAB_RANK -> "rank"
+    TAB_SETTINGS -> "settings"
+    TAB_PROFILE -> "profile"
+    else -> null
+}
 /**
  * 顶部这一排图标入口。
  *
@@ -189,26 +208,47 @@ internal fun MainActivity.navEntry(index: Int = tab): View? = nav.getOrNull(inde
  * 那时 `isShown` 一律是 false，用它过滤会得到一张空表——
  * 于是「圆形入口按下键进内容」这条焦点链根本没接上（表现出来就是「按上回不到按钮 / 按下不动」）。
  */
-internal fun MainActivity.navIcons(): List<View> = nav.filter { it.visibility==View.VISIBLE }
+internal fun MainActivity.navIcons(): List<View> =
+    (listOfNotNull(recommendIcon)+nav).filter { it.visibility==View.VISIBLE }
+
+/**
+ * 导航栏圆形入口关掉之后的**页面切换兜底**：遥控器「菜单」键弹一个页面列表。
+ *
+ * 圆入口是切换五个标签的唯一常驻入口；整排关掉之后，返回键只能回首页、搜索键只能进搜索页，
+ * 分类 / 榜单 / 我的 / 设置就没有别的路了。这里补一条：菜单键在任何内容页都能直达。
+ * 卡片上的菜单键（长按菜单）优先——只有焦点**不在**卡片上时才由这里接管。
+ */
+internal fun MainActivity.showNavPicker(anchor: View?) {
+    val labels=listOf("搜索","分类","榜单","设置","我的")
+    val tabs=listOf(TAB_SEARCH,TAB_CATEGORY,TAB_RANK,TAB_SETTINGS,TAB_PROFILE)
+    tvTools.choose("前往",labels,anchor,{ index -> switchTab(tabs[index]) })
+}
 /**
  * 页头里「把焦点交回页头」时该落到哪一枚控件。
  *
  * 榜单页是四个榜单芯片、分类页是大类芯片（两页都有自己的切换行），其余页面退到顶部圆形入口。
  * 首页返回 null：品牌不是按钮，调用方改落到第一栏第一张卡。
  */
-internal fun MainActivity.firstHeadControl(): View? = when(tab) {
+internal fun MainActivity.firstHeadControl(): View? {
+    // 「问题反馈」页盖在任何一页之上：页头里与内容相邻的就是它自己那枚圆形入口。
+    if(feedbackOpen) return nav.lastOrNull()
+    return when(tab) {
+    // 榜单页是四个榜单芯片、分类页是大类芯片（两页都有自己的切换行）。
     TAB_RANK -> boardButtons[rankBoard]
-    // 分类页：当前这一组的一级分类芯片（不是「第一枚」），与页头里选中的那一枚一致。
-    TAB_CATEGORY -> CategoryCatalog.groupOf(categoryPath)?.let { categoryGroupButtons[it] }
-        ?: categoryGroupButtons.values.firstOrNull()
+    // 分类页：体裁那一行里当前选中的芯片（分类页始终有一个体裁）。
+    TAB_CATEGORY -> categoryFilterButtons[CategorySelection.TYPE_GENRE]?.get(categorySelection.genre.orEmpty())
+        ?: categoryFilterButtons.values.firstOrNull()?.values?.firstOrNull()
     // 搜索页的内容入口就是输入框：焦点落在它上面，而不是顶部那排圆形入口。
     TAB_SEARCH -> searchInput
-    // 「我的」页：页头里与内容直接相邻的是当前那一栏的芯片。
-    // 「我的」页：内容第一行按上键先回身份行（头像 / 重新导入 / 清除 / 重新加载），
+    // 「我的」页：内容第一行按上键先回身份行（头像 / 退出 / 刷新），
     // 那一行在芯片与内容之间，方向上是连续的。
     TAB_PROFILE -> profileHeadControl() ?: accountButtons[accountTab] ?: accountButtons.values.firstOrNull()
+    // 首页：品牌不是按钮，调用方改落到第一栏第一张卡。
     TAB_HOME -> null
+    // 圆形入口整排关掉时 navEntry() 是 null：页头里没有可落的控件，
+    // 调用方退回内容区第一张卡（那是这一页唯一确定的落点）。
     else -> navEntry()
+    }
 }
 /**
  * 把 [chipFocusKey] 的 key 查回页面上**当前那一枚**芯片。
@@ -219,8 +259,12 @@ internal fun MainActivity.chipControl(key: String?): View? {
     val parts=key?.split(':',limit=2)?.takeIf { it.size==2 } ?: return null
     return when(parts[0]) {
         "board" -> RankBoard.entries.firstOrNull { it.storedValue==parts[1] }?.let { boardButtons[it] }
-        "group" -> CategoryCatalog.groups.firstOrNull { it.path==parts[1] }?.let { categoryGroupButtons[it] }
-        "tag" -> categoryTagButtons[parts[1]]
+        "filter" -> {
+            val rest=key.removePrefix("filter:").split(':',limit=2)
+            val type=rest.getOrNull(0).orEmpty()
+            val id=rest.getOrNull(1).orEmpty()
+            categoryFilterButtons[type]?.get(id)
+        }
         "account" -> accountButtons[parts[1]]
         else -> null
     }
@@ -228,21 +272,26 @@ internal fun MainActivity.chipControl(key: String?): View? {
 /**
  * 栅格第一行按上键时该落到哪一枚控件：页头里「与内容直接相邻」的那一个。
  *
- * 搜索页是输入框、分类页是当前二级分类芯片、榜单页是当前榜单芯片、
- * 本机记录页是它自己的动作按钮，其余页面退到顶部圆形入口。
+ * 搜索页是输入框、分类页是当前二级分类芯片、榜单页是当前榜单芯片，
+ * 其余页面退到顶部圆形入口。
  * 没有可落的目标时返回 null，调用方把按键交回框架。
  */
-internal fun MainActivity.headFocusTarget(): View? = when(tab) {
+internal fun MainActivity.headFocusTarget(): View? {
+    if(feedbackOpen) return nav.lastOrNull()
+    return when(tab) {
     // 搜索页：内容第一行按上键先进输入框下面那一行（提示词 / 热搜词），
     // 那一行收起来时才直接回输入框——方向上是连续的。
     TAB_SEARCH -> suggestButtons.firstOrNull() ?: searchInput
-    TAB_CATEGORY -> categoryTagButtons[categoryPath]
-        ?: CategoryCatalog.groupOf(categoryPath)?.let { categoryGroupButtons[it] }
-        ?: categoryGroupButtons.values.firstOrNull()
+    // 分类页：最靠近内容的最后一行筛选（状态 / 时间），优先它的选中项。
+    TAB_CATEGORY -> categoryPanel?.rows?.lastOrNull()?.let { row ->
+        categoryFilterButtons[row.type]?.get(categorySelection.valueOf(row.type).orEmpty())
+            ?: categoryFilterButtons[row.type]?.values?.firstOrNull()
+    }
     TAB_RANK -> boardButtons[rankBoard] ?: boardButtons.values.firstOrNull()
     TAB_PROFILE -> accountButtons[accountTab] ?: accountButtons.values.firstOrNull()
-    TAB_HOME -> navEntry() ?: nav.firstOrNull()
-    else -> historyManage ?: navEntry()
+    TAB_HOME -> nav.firstOrNull() ?: navIcons().firstOrNull()
+    else -> navEntry()
+    }
 }
 /**
  * 把焦点交给页头里的一个控件。
@@ -273,11 +322,27 @@ internal fun MainActivity.restoreChipFocus(prefix: String) {
     // 补的条件收紧到「焦点空着，或落在另一枚芯片上」：用户在这一帧里已经移走焦点时不抢回来。
     chip.post {
         val current=root.findFocus()
-        if(chip.isAttachedToWindow && !chip.hasFocus() && (current==null || current is ToggleChip)) focusHead(chip)
+        if(chip.attachedToWindow && !chip.hasFocus() && (current==null || current is ToggleChip)) focusHead(chip)
     }
 }
-/** 榜单来源说明：四个榜单都来自官网自己的热播榜，带名次与热度，不再有「按播放量排序」的替代品。 */
+/** 榜单来源说明：四个榜单都是 App 分类接口按「最高热度」排出来的，带名次与热度。 */
 internal fun MainActivity.rankSource()=rankBoard.source
+/**
+ * 分类页当前的筛选摘要（空列表文案用）：体裁 + 已选的主题 / 设定 / 背景 / 受众 / 时间 / 状态。
+ * 名字全部来自接口返回的面板，客户端不再维护中文名。
+ */
+internal fun MainActivity.categoryDescription(): String {
+    val panel=categoryPanel
+    val parts=mutableListOf<String>()
+    parts += panel?.labelOf(CategorySelection.TYPE_GENRE,categorySelection.genre) ?: "全部"
+    listOf(
+        CategorySelection.TYPE_THEME,CategorySelection.TYPE_ROLE,CategorySelection.TYPE_EPOCH,
+        CategorySelection.TYPE_GENDER,CategorySelection.TYPE_ONLINE_TIME,CategorySelection.TYPE_CREATION_STATUS
+    ).forEach { type ->
+        panel?.labelOf(type,categorySelection.valueOf(type))?.let { parts+=it }
+    }
+    return parts.joinToString(" · ")
+}
 /**
  * 页头那一行的切换芯片（榜单页的四个榜单、分类页的三个一级分类）是否放进导航栏里。
  * 屏幕窄或字号放大时退回导航栏下方单独一行——芯片本身按文字宽度排布，
@@ -345,7 +410,19 @@ internal fun MainActivity.localCatalog()=collection!=null
  */
 internal fun MainActivity.localItems(): List<Series> = when(collection) {
     "favorites" -> mergeAccount(library.favorites()) { accountData?.favorites?.map { it.series }.orEmpty() }
-    "history" -> mergeAccount(library.history().map { it.series }) { accountData?.history?.map { it.series }.orEmpty() }
+    // 账号那一半带上「第几集 + 集内秒数」（见 accountHistoryCard）：卡片上要看得见看到哪儿了。
+    // 账号侧那半份要滤掉**本机删过的**（[Library.historyDeleted]）：平台的「删除观看记录」
+    // 走的是阅读历史那条软删，短剧进度列表不一定真的摘掉，不滤就会「删了过一会儿又回来」。
+    // 完成度筛选与「我的 → 历史」共用（见 [accountHistoryFilter]）：两处看到的是同一档。
+    "history" -> mergeAccount(
+        library.history().filter { p -> accountHistoryFilter?.let { want -> p.completed==want } ?: true }
+            .map { it.series }
+    ) {
+        accountData?.history
+            ?.filterNot { library.historyDeleted(it.series.id) }
+            ?.filter { row -> accountHistoryFilter?.let { want -> historyFinished(row)==want } ?: true }
+            ?.map(::accountHistoryCard).orEmpty()
+    }
     "later" -> library.later()
     else -> library.history().map { it.series }
 }

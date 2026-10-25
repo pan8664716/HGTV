@@ -44,3 +44,8 @@ docs/preview/.local/
 /outputs/
 .cxx/
 .externalNativeBuild/
+
+# 本机调试与备份产物（不入库）
+.codex/
+android_backup_*/
+android_original_backup_*.zip

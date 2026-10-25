@@ -7,12 +7,12 @@ import org.junit.Test
 class RankBoardTest {
     /**
      * 首页七个栏目与顺序是需求钉死的：
-     * 历史记录 / 我的收藏 / 稍后观看 / 热播漫剧 / 热播短剧 / 热播真人 / 热播AI。
+     * 历史记录 / 我的收藏 / 稍后观看 / 热播漫剧 / 热播真人 / 热播AI / 热播上新。
      */
     @Test fun `home columns follow the requested order and wording`() {
-        assertEquals(listOf("历史记录","我的收藏","稍后观看","热播漫剧","热播短剧","热播真人","热播AI"),
+        assertEquals(listOf("历史记录","我的收藏","稍后观看","热播漫剧","热播真人","热播AI","热播上新"),
             HomeLayout.columns.map { it.title })
-        assertEquals(listOf("热播漫剧","热播短剧","热播真人","热播AI"),RankBoard.entries.map { it.homeTitle })
+        assertEquals(listOf("热播漫剧","热播真人","热播AI","热播上新"),RankBoard.entries.map { it.homeTitle })
     }
 
     /** 前三个栏目是本机记录（没有榜单），后四个各对应一个榜单，顺序与 [RankBoard] 一致。 */
@@ -35,20 +35,24 @@ class RankBoardTest {
     }
 
     /**
-     * 榜单页的四个按钮文案是需求钉死的短名：漫剧 / 短剧 / 真人 / AI；
+     * 榜单页的四个按钮文案是需求钉死的短名：漫剧 / 真人 / AI剧 / 上新；
      * 页面主标题固定「热播榜」，不跟着按钮变（见界面代码）。
      */
     @Test fun `rank switcher uses the four short labels`() {
-        assertEquals(listOf("漫剧","短剧","真人","AI剧"),RankBoard.entries.map { it.label })
-        assertEquals(listOf("hot-comic-drama","hot-drama","hot-real-drama","hot-ai-drama"),RankBoard.entries.map { it.route })
+        assertEquals(listOf("漫剧","真人","AI剧","上新"),RankBoard.entries.map { it.label })
     }
 
-    /** 四个榜单的路由与 `rankKey` 一一对应；`rankKey` 同时是本机缓存的键，写错就会串数据。 */
-    @Test fun `routes and rank keys are distinct and stable`() {
-        assertEquals(listOf("hot-comic-drama","hot-drama","hot-real-drama","hot-ai-drama"),RankBoard.entries.map { it.route })
-        assertEquals(listOf("comic","hongguo","real","ai"),RankBoard.entries.map { it.storedValue })
-        assertEquals(RankBoard.entries.size,RankBoard.entries.map { it.route }.distinct().size)
+    /**
+     * 四个榜单各自的 App 分类与 `rankKey` 都不同：`rankKey` 同时是本机缓存的键，写错就会串数据；
+     * `genre` 为空的那个是「上新」（全站综合，不筛分类），它只能是唯一一个。
+     * 三个热播榜按热度排，上新按上架时间排。
+     */
+    @Test fun `genres and rank keys are distinct and stable`() {
+        assertEquals(listOf("comic_series","short_play","ai_series",null),RankBoard.entries.map { it.genre })
+        assertEquals(listOf("comic","real","ai","new"),RankBoard.entries.map { it.storedValue })
+        assertEquals(listOf("hot_score","hot_score","hot_score","online_time"),RankBoard.entries.map { it.sort })
         assertEquals(RankBoard.entries.size,RankBoard.entries.map { it.storedValue }.distinct().size)
+        assertEquals(1,RankBoard.entries.count { it.genre==null })
     }
 
     /** 旧本机设置 / 缓存里的键读进来要认得；认不出的键退回默认（漫剧榜）。 */

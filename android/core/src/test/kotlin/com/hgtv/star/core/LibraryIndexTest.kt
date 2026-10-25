@@ -81,6 +81,52 @@ class LibraryIndexTest {
         assertEquals(state.settings, merged.settings)
     }
 
+    /**
+     * 删掉的观看记录要在本机留一块墓碑。
+     *
+     * 账号侧那半份（平台拉回来的历史）与本机进度是**合并**显示的，而平台的软删
+     * 对短剧进度列表不一定生效——没有墓碑，删完过一会儿刷新就又回来了。
+     * 墓碑要能落盘（[LibraryDisk] 的 `historyDeleted`）、要能挡住备份合并，
+     * 并且**重新看这部剧**时自动摘掉（那时它本来就该重新出现）。
+     */
+    @Test fun `deleted history leaves a tombstone that survives reload and clears on replay`() {
+        val state = LibraryIndex(data())
+        state.removeHistory("2")
+        assertTrue(state.historyDeleted("2"))
+        assertNull(state.progress("2"))
+        // 落盘 → 读回：墓碑跟着一起回来（否则重启之后账号侧那一条又冒出来）。
+        val reloaded = LibraryDisk.decode(mapOf(
+            "progress" to LibraryDisk.history(state.history()),
+            "historyDeleted" to state.historyDeleted()
+        ))
+        assertTrue(reloaded.historyDeleted("2"))
+        // 恢复备份不该把本机删过的条目带回来；但备份里**真的有**那一条时，墓碑让位。
+        val tombstoned = LibraryBackup.merge(state.snapshot(), data().copy(history = emptyList()), false)
+        assertTrue("2" in tombstoned.historyDeleted)
+        val restored = LibraryBackup.merge(state.snapshot(),
+            data().copy(history = listOf(progress(2, updated = 5))), false)
+        assertFalse("2" in restored.historyDeleted)
+        // 重新看这部剧：墓碑摘掉。
+        state.save(progress(2, updated = 10))
+        assertFalse(state.historyDeleted("2"))
+        assertNotNull(state.progress("2"))
+    }
+
+    /** 清空历史：返回被清掉的 id、本机进度全清、墓碑留下，收藏 / 稍后观看不动。 */
+    @Test fun `clear history returns removed ids and keeps other partitions`() {
+        val state = LibraryIndex(data())
+        val removed = state.clearHistory()
+        assertEquals(200, removed.size)
+        assertTrue(state.history().isEmpty())
+        assertTrue(state.watched().isEmpty())
+        assertEquals(200, state.historyDeleted().size)
+        // 收藏与稍后观看一条不少。
+        assertEquals(500, state.favorites().size)
+        assertEquals(1, state.later().size)
+        // 再清一次：已经没有可清的，返回空表且不重复记墓碑。
+        assertTrue(state.clearHistory().isEmpty())
+    }
+
     @Test fun `malformed rows do not discard valid records`() {
         val favoriteJson = "[null,{},${series(1).toJson()},false]"
         val state = LibraryDisk.decode(mapOf("favorites" to favoriteJson, "progress" to "bad", "favoriteUpdates" to "bad"))

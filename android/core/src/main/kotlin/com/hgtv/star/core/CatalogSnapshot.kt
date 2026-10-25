@@ -7,7 +7,7 @@ import org.json.JSONObject
 /**
  * First-page metadata only; signed playback URLs and account data never go to disk.
  *
- * 首页有四个「热播…」剧架（对应官网的四个热播榜），因此这份快照按**榜单**分别存一份，
+ * 首页有四个「热播…」剧架（对应四个热播榜），因此这份快照按**榜单**分别存一份，
  * 键是 `RankBoard.storedValue`（见 `Library.cacheHome` / `cachedHome`）。
  */
 object CatalogSnapshot {

@@ -1,0 +1,32 @@
+<resources>
+    <!--
+      Android 12（API 31）起系统强制给每个应用加一层启动画面：底色取 windowBackground、
+      图标取应用图标。默认那条路径会把图标铺满 192dp 的容器，1080P / 540dpi 这类
+      「小屏大密度」的设备上看起来就是一颗占掉半屏的果子。
+
+      这里显式接管三件事：
+      1. windowSplashScreenBackground：与 AppTheme 同一块底色，启动第一帧不闪白；
+      2. windowSplashScreenAnimatedIcon：换成缩到 27% 的 @drawable/splash_icon，
+         图标多大由我们自己定，不再跟设备的 density 走；
+      3. windowSplashScreenAnimationDuration = 0：不做缩放动画，避免「从小炸到大」。
+
+      其余条目与 values-v21 / v23 逐项一致，不能少——values-v31 是整份覆盖，不是叠加。
+    -->
+    <style name="AppTheme" parent="android:style/Theme.Material.NoActionBar">
+        <item name="android:fontFamily">sans</item>
+        <item name="android:windowActionModeOverlay">true</item>
+        <item name="android:colorAccent">#4DA3FF</item>
+        <item name="android:colorPrimary">#1E2228</item>
+        <item name="android:colorPrimaryDark">#12151A</item>
+        <item name="android:colorBackground">#1E2228</item>
+        <item name="android:windowBackground">#1E2228</item>
+        <item name="android:panelBackground">#2A3038</item>
+        <item name="android:textColorPrimary">#F2F5F8</item>
+        <item name="android:textColorSecondary">#AAF2F5F8</item>
+        <item name="android:windowLightStatusBar">false</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowSplashScreenBackground">#1E2228</item>
+        <item name="android:windowSplashScreenAnimatedIcon">@drawable/splash_icon</item>
+        <item name="android:windowSplashScreenAnimationDuration">0</item>
+    </style>
+</resources>

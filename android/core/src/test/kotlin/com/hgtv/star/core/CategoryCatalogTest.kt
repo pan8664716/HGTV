@@ -5,39 +5,40 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class CategoryCatalogTest {
-    /** 分类页的三个大类与官网三本目录一一对应。 */
-    @Test fun `three groups map to the three site catalogs`() {
-        // 大类名与榜单页那四枚芯片同一套写法（漫剧 / 短剧 / 真人 / AI）。
+    /** 分类页三个大类与接口的 `genre` 一一对应；顺序就是界面上的顺序。 */
+    @Test fun `three groups map to the three api genres`() {
         assertEquals(listOf("漫剧","真人","AI剧"),CategoryCatalog.groups.map { it.label })
         assertEquals(listOf("comic-drama","real-drama","ai-drama"),CategoryCatalog.groups.map { it.path })
+        assertEquals(listOf("comic_series","short_play","ai_series"),CategoryCatalog.groups.map { it.genre })
     }
 
     /**
-     * 每个大类下面的小类：第一个固定是「全部」（路径就是大类本身），
-     * 之后是官网标签行里的那些子类，路径是 `大类/子类`。数量按官网实测钉住
-     * （漫剧 8、真人 24、AI剧 8，加上「全部」）。
+     * 每个大类下面的小类：第一个固定是「全部」（路径就是大类本身、没有主题标识），
+     * 其余路径是 `大类/cate_*`，标识就是接口要的那个值。
      */
-    @Test fun `each group lists all plus its own sub tags`() {
+    @Test fun `each group lists all plus its own themed tags`() {
         CategoryCatalog.groups.forEach { group ->
             assertEquals("全部",group.tags.first().label)
             assertEquals(group.path,group.tags.first().path)
+            assertNull("「全部」不带主题筛选",group.tags.first().themeId)
             group.tags.drop(1).forEach { tag ->
-                assertTrue(tag.path.startsWith(group.path+"/"))
+                assertTrue(tag.path.startsWith(group.path+"/cate_"))
+                assertEquals(tag.path.removePrefix(group.path+"/"),tag.themeId)
                 assertNotEquals("全部",tag.label)
             }
         }
-        assertEquals(listOf(9,25,9),CategoryCatalog.groups.map { it.tags.size })
+        // 数量：漫剧 12 个题材、真人 29、AI剧 12（各外加「全部」）。
+        assertEquals(listOf(13,30,13),CategoryCatalog.groups.map { it.tags.size })
     }
 
-    /** 官网标签行的中文名与路径逐条对上（抽查每条目录的头尾几条）。 */
-    @Test fun `sub tags match the site labels`() {
+    /** 抽样核对中文名与标识（这几个是接口 `selector_rows` / 内容题材里真实存在的）。 */
+    @Test fun `labels carry the api theme ids`() {
         val comic=CategoryCatalog.groups[0]
-        assertEquals(listOf("全部","脑洞","玄幻","剧情","末世","豪门","奇幻","科幻","冒险"),comic.tags.map { it.label })
-        assertEquals(listOf("全部","爱情","年代","逆袭"),CategoryCatalog.groups[1].tags.take(4).map { it.label })
-        assertEquals(listOf("综艺","剧情"),CategoryCatalog.groups[1].tags.takeLast(2).map { it.label })
-        assertEquals(listOf("全部","脑洞","玄幻","剧情","末世","豪门","奇幻","科幻","冒险"),CategoryCatalog.groups[2].tags.map { it.label })
-        assertEquals("real-drama/action-adventure",CategoryCatalog.groups[1].tags.first { it.label=="动作冒险" }.path)
-        assertEquals("comic-drama/wealthy-family",comic.tags.first { it.label=="豪门" }.path)
+        assertEquals("cate_739",comic.tags.first { it.label=="逆袭" }.themeId)
+        assertEquals("comic-drama/cate_7",comic.tags.first { it.label=="玄幻" }.path)
+        assertEquals("cate_1021",CategoryCatalog.groups[1].tags.first { it.label=="现言" }.themeId)
+        assertEquals("cate_262",CategoryCatalog.groups[1].tags.first { it.label=="脑洞" }.themeId)
+        assertEquals("cate_739",CategoryCatalog.groups[2].tags.first { it.label=="逆袭" }.themeId)
     }
 
     /** 路径在同一份目录里唯一，否则选中的高亮会同时亮起两枚芯片。 */
@@ -52,12 +53,15 @@ class CategoryCatalogTest {
     @Test fun `default selection and describe`() {
         assertEquals("comic-drama",CategoryCatalog.defaultTag.path)
         assertEquals("漫剧 · 全部",CategoryCatalog.describe("comic-drama"))
-        assertEquals("漫剧 · 玄幻",CategoryCatalog.describe("comic-drama/fantasy"))
-        assertEquals("真人 · 动作冒险",CategoryCatalog.describe("real-drama/action-adventure"))
-        assertEquals("AI剧 · 末世",CategoryCatalog.describe("ai-drama/apocalypse"))
-        assertEquals(CategoryCatalog.groups[1],CategoryCatalog.groupOf("real-drama/variety"))
+        assertEquals("漫剧 · 玄幻",CategoryCatalog.describe("comic-drama/cate_7"))
+        assertEquals("真人 · 现言",CategoryCatalog.describe("real-drama/cate_1021"))
+        assertEquals(CategoryCatalog.groups[1],CategoryCatalog.groupOf("real-drama/cate_262"))
         assertNull(CategoryCatalog.groupOf("unknown"))
         // 认不出的路径原样返回，界面不会显示空文案。
         assertEquals("unknown",CategoryCatalog.describe("unknown"))
+        // 「全部」没有中文小类名（`labelOf` 只在真·小类上有意义）；认不出的路径也没有。
+        assertNull(CategoryCatalog.labelOf("comic-drama"))
+        assertNull(CategoryCatalog.labelOf("comic-drama/cate_999999"))
+        assertEquals("玄幻",CategoryCatalog.labelOf("comic-drama/cate_7"))
     }
 }

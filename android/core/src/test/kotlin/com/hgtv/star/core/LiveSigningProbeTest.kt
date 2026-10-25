@@ -3,10 +3,10 @@
 package com.hgtv.star.core
 
 import java.util.concurrent.TimeUnit
-import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
-import okhttp3.RequestBody.Companion.toRequestBody
+import okhttp3.RequestBody
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -30,9 +30,9 @@ class LiveSigningProbeTest {
         val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).callTimeout(45, TimeUnit.SECONDS).build()
         val builder = Request.Builder().url(signed.url)
         signed.headers.forEach { (k, v) -> builder.header(k, v) }
-        signed.body?.let { builder.post(it.toRequestBody("application/json; charset=UTF-8".toMediaType())) }
+        signed.body?.let { builder.post(RequestBody.create(MediaType.parse("application/json; charset=UTF-8"), it)) }
         client.newCall(builder.build()).execute().use { response ->
-            return response.code to (response.body?.string() ?: "")
+            return response.code() to (response.body()?.string() ?: "")
         }
     }
 

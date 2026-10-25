@@ -2,26 +2,11 @@
 package com.hgtv.star
 
 import android.app.Activity
-import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.graphics.Color
 import android.graphics.Typeface
 import android.view.*
-import android.view.inputmethod.InputMethodManager
-import android.content.Context
-import android.net.ConnectivityManager
-import android.net.Network
-import android.net.NetworkCapabilities
 import android.widget.*
-import android.text.TextUtils
-import androidx.media3.common.*
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.ui.PlayerView
+import com.google.android.exoplayer2.*
 import com.hgtv.star.core.*
-import java.util.concurrent.Executors
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
 import com.hgtv.star.tv.SoftStyle
@@ -36,56 +21,122 @@ import com.hgtv.star.list.showCatalog
 
 internal fun MainActivity.profileHead(row: LinearLayout) {
     val credentials=library.account().takeIf { it.configured }
-    val profile=accountData?.profile
+    // 资料只在**真的登录着**时才算数：`accountData` 是内存里的上一份快照，退出 / 被动掉线
+    // 之后它可能还没被清掉，照着它铺昵称与头像，用户看到的就是「明明退出了，一打开还是
+    // 这个账号」。判据统一用凭据，与 [accountNotice] / 四个栏目的空态保持一致。
+    val profile=if(credentials==null) null else accountData?.profile
     // 圆形头像：`ArtworkLoader` 只会把位图设进 ImageView，圆角靠一个圆形遮罩的
     // `SoftDrawable` 做不到（那是背景不是前景），因此这里给 ImageView 挂一个圆形裁剪的
     // `ViewOutlineProvider`（API 21+），加 `clipToOutline` 就得到正圆。
     val avatar=ImageView(this).apply {
         scaleType=ImageView.ScaleType.CENTER_CROP
         contentDescription="账号头像"
-        clipToOutline=true
-        outlineProvider=object: ViewOutlineProvider() {
-            override fun getOutline(view: View,outline: android.graphics.Outline) {
-                outline.setOval(0,0,view.width,view.height)
-            }
-        }
+        // API 19/20 没有 outline 裁剪：那边头像是方形（背景仍是圆形凹槽），不额外画遮罩位图。
+        com.hgtv.star.compat.clipToCircleCompat(this)
         // 还没读到资料时先给一块凹槽色：比空白好认，也不会让这一行忽高忽低。
         background=softPanel(TvStyle.well,TvStyle.RADIUS_PILL,style=SoftStyle.INSET)
     }
+    profileAvatar=avatar
     profile?.avatar?.takeIf { it.isNotBlank() }?.let { loadCover(avatar,it) }
     row.addView(avatar,lp(dp(PROFILE_AVATAR),dp(PROFILE_AVATAR)))
     // 昵称小字（比标题小两档）：它是身份标注，不是这一页的主角。
     val name=profile?.nickname?.takeIf { it.isNotBlank() }
-        ?: if(credentials==null) "未导入账号参数" else "正在读取…"
+        ?: if(credentials==null) "未登录" else "正在读取…"
     val nameView=text(name,14f,if(credentials==null) muted else TvStyle.textDim).apply { maxLines=1 }
     gapInto(row,nameView,lp(-2,-2),TvStyle.GAP_INLINE)
-    // 两个动作按钮：只有导入过参数才给（没登录时它们没有可操作的对象）。
-    if(credentials==null) {
-        lateinit var importButton: TvButton
-        importButton=addButton(row,"导入账号参数",size=ButtonSize.COMPACT) {
-            tvTools.accountImport(importButton,{ text -> importAccount(text,importButton) },{ pickAccountFile() })
+    // 未登录：身份行不再放任何入口，手机号登录表单直接铺在下面（见 ListPage）。
+    if(credentials==null) return
+    // 「已看完 / 未看完」：只在**历史**这一栏出现，紧跟在昵称后面（头像｜昵称｜已看完｜未看完）。
+    // 两枚是互斥开关：点已选中的那一枚 = 回到「全部」；点另一枚就换成那一档。
+    // 这一行左边是身份、右边是账号动作（退出 / 刷新 / 清空），筛选夹在中间，读起来是
+    // 「这是谁 → 看哪一类 → 账号操作」，方向与从左到右的阅读顺序一致。
+    historyFilterButtons.clear()
+    reserveFilterButtons.clear()
+    var filterEnd: View?=null
+    // 「我的」页的筛选芯片只有两处：历史看完成度、预约看上线状态。两处共用这一段：
+    // 位置、间距、互斥语义与焦点链都一致，只是文案与状态字段不同。
+    val filterChips: List<Pair<Boolean,String>>?=when(accountTab) {
+        "history" -> listOf(true to "已看完",false to "未看完")
+        "reserves" -> listOf(true to "已上线",false to "待上线")
+        else -> null
+    }
+    if(filterChips!=null) {
+        val buttons=if(accountTab=="history") historyFilterButtons else reserveFilterButtons
+        fun current()=if(accountTab=="history") accountHistoryFilter else accountReserveFilter
+        fun setCurrent(value: Boolean?) {
+            if(accountTab=="history") accountHistoryFilter=value else accountReserveFilter=value
         }
-        return
+        var previous: View?=null
+        filterChips.forEach { (value,label) ->
+            val chip=ToggleChip(this,label,current()==value,ButtonSize.COMPACT) {
+                // 点已选中的那一枚 = 取消筛选，回到「全部」。
+                setCurrent(if(current()==value) null else value)
+                buttons.forEach { (state,view) -> (view as? ToggleChip)?.setActive(current()==state) }
+                refreshAccountListIfVisible()
+            }
+            buttons[value]=chip
+            gapInto(row,chip,lp(-2,-2),TvStyle.GAP_TIGHT)
+            // 两枚之间左右直连：遥控器右移不会被右边那一段弹性空白或内容区抢走。
+            previous?.let { prev ->
+                prev.nextFocusRightId=chip.id
+                chip.nextFocusLeftId=prev.id
+            }
+            previous=chip
+            filterEnd=chip
+        }
+        buttons[filterChips.first().first]?.let { first -> first.nextFocusLeftId=first.id }
     }
-    lateinit var reimport: TvButton
-    reimport=addButton(row,"重新导入",size=ButtonSize.COMPACT) {
-        tvTools.accountImport(reimport,{ text -> importAccount(text,reimport) },{ pickAccountFile() })
-    }
-    lateinit var clear: TvButton
-    clear=addButton(row,"清除",size=ButtonSize.COMPACT) {
-        tvTools.confirm("清除账号参数","清除后这一页会回到未导入状态，本机收藏与观看记录不受影响。",reimport) {
+    // 已登录：只留「退出」与「刷新」。
+    // 一个吃掉剩余宽度的空位把这两个入口推到行尾：头像与昵称留在左边，
+    // 退出 / 刷新贴右边缘，中间的长昵称也不会把它们挤到名字后面。
+    row.addView(Space(this),lp(0,-2).apply { weight=1f })
+    lateinit var logout: TvButton
+    logout=addButton(row,"退出",size=ButtonSize.COMPACT) {
+        tvTools.confirm("退出账号",
+            "退出后「我的」页会回到未登录状态；本机的收藏与观看记录不受影响，随时可以再登录。",
+            logout) {
+            // 先停心跳再清凭证：反过来的话清完还会再打一次，且可能把刚退掉的会话又确认回来。
+            com.hgtv.star.data.SessionBootstrap.onLogout()
             library.clearAccount()
+            // 退出后回到默认的扫码登录（不是上次选的那一种）：用户下一次进来读到的
+            // 就是「电视上什么都不用敲」的那条路。
+            loginMode=ACCOUNT_PANEL_QR
             applyAccount()
             showCatalog()
         }
     }
-    // 「重新加载」：凭据没变、只是想重取一次账号数据时用（平台偶发空响应体，
-    // 或者另一台设备上刚改过收藏 / 历史）。放在「清除」后面，与它拉开一档间距。
-    addButton(row,"重新加载",size=ButtonSize.COMPACT,gap=TvStyle.GAP_BLOCK) {
-        accountData=null; accountError=null
+    // 「刷新」：凭据没变、只是想重取一次账号数据时用（平台偶发空响应体，
+    // 或者另一台设备上刚改过收藏 / 历史）。
+    val refresh=addButton(row,"刷新",size=ButtonSize.COMPACT,gap=TvStyle.GAP_BLOCK) {
+        // **不把已有内容清掉**：清空之后整页会退回「正在读取账号信息」，
+        // 用户按一下刷新就看不到刚才那些收藏 / 记录了，等请求回来才恢复——观感是「刷没了」。
+        // 现在旧内容留在原地，新数据落地后只重画真正变了的那一栏（见 [refreshAccountViews]）。
+        accountError=null
         loadAccount(force=true)
-        showCatalog()
+        showHint("正在刷新账号信息…")
     }
+    // 「清空全部记录」：只在**历史**这一栏、而且确实有记录时出现，排在「退出 / 刷新」之后。
+    // 它是这一栏的批量动作（收藏 / 点赞 / 预约没有这种「一次清空」的语义），
+    // 放在身份行里与「退出 / 刷新」同一组，比在内容区单独占一行更省地方。
+    val clear=if(accountTab=="history") historyClearButton(row,ButtonSize.COMPACT,gap=TvStyle.GAP_BLOCK) else null
+    // 这三枚在同一行里：左右按顺序走，两端停住。不接的话遥控器右移会被下面内容区抢走
+    // （这一行上面没有别的可聚焦控件，框架会按坐标去内容区里找）。
+    // 筛选芯片（历史栏才有）→ 退出 → 刷新 → 清空，同一行里左右直连，两端停住。
+    val leftOfLogout=filterEnd
+    if(clear!=null) {
+        logout.nextFocusRightId=refresh.id
+        refresh.nextFocusLeftId=logout.id
+        refresh.nextFocusRightId=clear.id
+        clear.nextFocusLeftId=refresh.id
+        clear.nextFocusRightId=clear.id
+        logout.nextFocusLeftId=(leftOfLogout ?: logout).id
+    } else {
+        logout.nextFocusRightId=refresh.id
+        refresh.nextFocusLeftId=logout.id
+        refresh.nextFocusRightId=refresh.id
+        logout.nextFocusLeftId=(leftOfLogout ?: logout).id
+    }
+    leftOfLogout?.let { chip -> chip.nextFocusRightId=logout.id }
     // 资料还没到、而且**一次都还没试过**时主动拉一次（落地后页面自己重建）。
     // 失败过就不再自动重发：否则「失败 → showCatalog → 再拉」会变成无限重试，
     // 重试交给下面 [accountNotice] 里那个按钮。
@@ -101,12 +152,45 @@ internal fun MainActivity.accountItems(key: String): List<Series> {
     val data=accountData ?: return emptyList()
     return when(key) {
         "favorites" -> data.favorites.map { it.series }
-        "history" -> data.history.map { it.series }
+        // 本机删过的那几条不再出现（见 [Library.historyDeleted]），再按「已看完 / 未看完」筛一次。
+        "history" -> data.history
+            .filterNot { library.historyDeleted(it.series.id) }
+            .filter { row -> accountHistoryFilter?.let { want -> historyFinished(row)==want } ?: true }
+            .map(::accountHistoryCard)
         "likes" -> data.likes.map { it.series }
-        "reserves" -> data.reserves.map { it.series }
+        // 预约按「已上线 / 待上线」筛（见 [accountReserveFilter]）。
+        "reserves" -> data.reserves
+            .filter { row -> accountReserveFilter?.let { want -> row.online==want } ?: true }
+            .map { it.series }
         else -> emptyList()
     }
 }
+/**
+ * 账号侧一条历史 → 卡片上用的 [Series]。
+ *
+ * 平台那条记录里「看到第几集」与「集内秒数」是**单独的字段**（`vid_index` 与
+ * `current_play_time`），而栅格里的卡片只认 [Series.badge] 这一个状态行，
+ * 因此这里把它写进那一行：`第 12 集 · 03:21`。
+ *
+ * 不这么写的话，「我的 → 历史」与历史集合页上的卡片只会显示剧集自己的角标（「全 40 集」），
+ * 用户看不出自己看到哪儿了——同步过来的记录尤其明显（这台设备上没有本机进度可显示）。
+ */
+/**
+ * 一条账号历史是不是「已看完」。
+ *
+ * 两个来源任一成立就算看完：
+ * * 平台给了总集数、而且看到的就是最后一集（`episodeIndex` 从 0 起，`episodes` 是总集数）；
+ * * 本机有一条同剧进度、且标着 `completed`（这台设备上看完的，比云端那行更准）。
+ *
+ * 总集数未知（平台没给）时只能靠本机那一条，两者都没有就按「未看完」算——
+ * 把不确定的算成「已看完」会让用户找不到自己还在追的剧。
+ */
+internal fun MainActivity.historyFinished(row: AccountHistory): Boolean {
+    if(library.progress(row.series.id)?.completed==true) return true
+    return row.episodes>0 && row.episodeIndex+1>=row.episodes
+}
+internal fun MainActivity.accountHistoryCard(row: AccountHistory): Series =
+    row.series.copy(badge="第 ${row.episodeIndex+1} 集"+(if(row.position>0) " · ${formatTime(row.position)}" else ""))
 /**
  * 切换「我的」页的栏目。
  *
@@ -151,7 +235,7 @@ internal fun MainActivity.profilePanel(parent: LinearLayout,title: String): Line
  *
  * * **还没导入**（[SignInRequiredException]）——用户不知道这些功能要凭据，得告诉他去哪里导入；
  * * **凭据失效**——平台不报错、只把请求降级成匿名设备，那种情况在导入时就被挡住了
- *   （见 [parseCredentials] 的 `anonymous` 校验），这里只兜底说一句「重新导入」。
+ *   （见 [parseCredentials] 的 `anonymous` 校验），这里只兜底说一句「退出后重新登录」。
  *
  * 其余失败（网络抖动、网关挡掉）不弹：它们会自动重试，弹出来只是噪音。
  */
@@ -191,7 +275,7 @@ internal fun MainActivity.accountNotice(parent: LinearLayout) {
     }
     val card=profilePanel(parent,"参数未通过验证")
     val reason=data.errors["资料"]?.takeIf { it.isNotBlank() } ?: "平台没有返回账号资料"
-    card.addView(text("$reason\n\n参数可能已过期，或 Cookie 不完整。请用页头的「重新导入」换一份新的 cookieStore.xml。",15f,TvStyle.textDim))
+    card.addView(text("$reason\n\n登录状态可能已过期。请用页头的「退出」回到未登录状态，再重新登录。",15f,TvStyle.textDim))
 }
 internal fun MainActivity.shortDate(value: Long): String = if(value<=0) "时间未知" else java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.getDefault()).format(java.util.Date(value))
 /**

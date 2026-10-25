@@ -69,8 +69,9 @@ class AccountImportServer(address: String, private val onImport: (String)->Unit,
         val headers = mutableMapOf<String, String>()
         var size = 0
         while (true) {
-            val next = line(input, 4096); size += next.length + 2
-            if (size > 8192) return respond(socket, 431, "请求过大")
+            // 单个头 8 KB、总量 16 KB：手机浏览器（微信 / QQ 内置）的 UA 与 Sec-CH-UA 系列很长。
+            val next = line(input, 8192); size += next.length + 2
+            if (size > 16384) return respond(socket, 431, "请求过大")
             if (next.isEmpty()) break
             val at = next.indexOf(':'); if (at <= 0) return respond(socket, 400, "请求格式错误")
             if (headers.put(next.substring(0, at).lowercase(Locale.ROOT), next.substring(at + 1).trim()) != null) return respond(socket, 400, "重复请求头")
@@ -140,35 +141,52 @@ class AccountImportServer(address: String, private val onImport: (String)->Unit,
             .firstOrNull { it.size == 2 && it[0] == "payload" }
             ?.let { runCatching { java.net.URLDecoder.decode(it[1], "UTF-8") }.getOrNull() }
 
-    private fun page() = """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1"><title>红果TV · 导入账号参数</title><style>
-body{font:17px/1.6 sans-serif;background:#10131b;color:#f4f5f8;max-width:540px;margin:28px auto;padding:20px}
-h1{font-size:20px}input,button,textarea{box-sizing:border-box;width:100%;font:inherit;padding:14px;margin:8px 0;border-radius:10px}
-button{background:#ff634c;color:#fff;border:0;font-weight:600}textarea{min-height:110px}
-p{color:#a8adba;font-size:14px}code{color:#ffd8a8}
-</style></head><body>
-<h1>导入账号参数</h1>
-<p>在手机上打开红果 App 的沙盒目录，取出 <code>shared_prefs/cookieStore.xml</code> 上传；
-或者从 App 里复制整段 Cookie 粘到下面。</p>
-<p>可选但推荐：再传一份 <code>device_profile.json</code>（<code>tools/login-lab/dump_device.py</code> 的产物）。
-它带的是机型 / 系统版本 / <code>cdid</code> 这些**只能从设备读**的参数，追剧同步会用到。</p>
-<form method="post" enctype="multipart/form-data" action="/$token">
-  <input type="file" name="cookieStore" accept=".xml,text/xml,application/xml,application/json">
-  <button>上传 cookieStore.xml（或 device_profile.json）</button>
-</form>
-<form method="post" action="/$token">
-  <textarea name="payload" placeholder="sessionid=…; uid_tt=…"></textarea>
-  <button>提交 Cookie</button>
-</form>
-<p id="status">只在本机保存；页面仅在电视窗口打开期间有效，最长 5 分钟。</p>
-<script nonce="$token">document.querySelectorAll('form').forEach(function(f){f.onsubmit=function(){document.getElementById('status').textContent='正在导入…'}})</script>
-</body></html>"""
+    /**
+     * 上传页：手机竖屏、一张凸起卡片里两个入口（选文件 / 粘 Cookie）。
+     *
+     * 与其它三个扫码页共用 [PhonePage] 的样式：输入框是凹陷槽、按钮分主次、
+     * 顶部一枚胶囊标签交代这是往电视送什么。
+     */
+    private fun page() = PhonePage.shell("导入账号参数",
+        """<span class="pill">导入参数</span>""" +
+        """<h1>导入账号参数</h1>""" +
+        """<p class="lead">上传 <code>cookieStore.xml</code>，或直接粘贴 Cookie。</p>""" +
+        """<div class="card">""" +
+        """<h2>上传文件</h2>""" +
+        """<form method="post" enctype="multipart/form-data" action="/$token">""" +
+        """<label class="picker"><input id="cookie" type="file" name="cookieStore" """ +
+        """accept=".xml,text/xml,application/xml,application/json">""" +
+        """<span class="picker-tag">选择</span>""" +
+        """<span class="picker-name" id="picked">未选择文件</span></label>""" +
+        """<button class="btn-primary" type="submit">上传到电视</button>""" +
+        """</form>""" +
+        """<p class="hint">可附带 <code>device_profile.json</code>，用于连片同步。</p>""" +
+        """</div>""" +
+        """<div class="card">""" +
+        """<h2>粘贴 Cookie</h2>""" +
+        """<form method="post" action="/$token">""" +
+        """<textarea name="payload" placeholder="sessionid=…; uid_tt=…" autocapitalize="off" spellcheck="false"></textarea>""" +
+        """<button class="btn-ghost" type="submit">提交 Cookie</button>""" +
+        """</form>""" +
+        """</div>""" +
+        """<p id="status" class="hint">正在等待上传…</p>""",
+        footer = "仅本次端口打开期间有效，最长 5 分钟；内容只保存在电视本机。",
+        script = """<script nonce="$token">""" +
+            """document.getElementById('cookie').onchange=function(){""" +
+            """var f=this.files[0];document.getElementById('picked').textContent=f?f.name:'未选择文件'};""" +
+            """document.querySelectorAll('form').forEach(function(f){f.onsubmit=function(){""" +
+            """document.getElementById('status').textContent='正在导入…'}});""" +
+            """</script>""")
 
     private fun respond(socket: Socket, code: Int, message: String) {
-        val body = if (message.startsWith("<h1>") && !message.contains("<html")) {
-            """<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>红果TV · 导入账号参数</title><style>body{font:18px sans-serif;background:#10131b;color:#f4f5f8;max-width:500px;margin:40px auto;padding:20px;line-height:1.6}</style></head><body>$message</body></html>"""
-        } else message
-        val bytes = body.toByteArray(Charsets.UTF_8)
+        // 2xx 的 message 可能是一整页（[page]），也可能是一句结果（成功 / 失败提示）；
+        // 后者与所有 4xx / 5xx 一起套成统一的结果页。
+        val html = when {
+            message.contains("<html") -> message
+            code in 200..299 -> PhonePage.done(message.removePrefix("<h1>").substringBefore("</h1>"))
+            else -> PhonePage.failed("导入账号参数", message, "回到电视重新打开二维码即可。")
+        }
+        val bytes = html.toByteArray(Charsets.UTF_8)
         val header = "HTTP/1.1 $code Response\r\nContent-Type: text/html; charset=utf-8\r\nContent-Length: ${bytes.size}\r\nConnection: close\r\nCache-Control: no-store\r\nReferrer-Policy: no-referrer\r\nX-Content-Type-Options: nosniff\r\nContent-Security-Policy: default-src 'none'; style-src 'unsafe-inline'; script-src 'nonce-$token'; form-action 'self'; frame-ancestors 'none'; base-uri 'none'\r\n\r\n"
         socket.getOutputStream().apply { write(header.toByteArray(Charsets.US_ASCII)); write(bytes); flush() }
     }

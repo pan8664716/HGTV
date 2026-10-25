@@ -39,6 +39,8 @@
 深色新拟态（Neumorphism）风格：全站只有一块材质，层次由「凸起 / 凹陷」与柔光表达；
 播放界面不套新拟态，压在画面上的字与线固定暖白，避免和画面抢注意力。十四套材质主题如下：
 
+交互原型（1280×720，含 20 套主题与各页面焦点态）：[`docs/prototype/index.html`](docs/prototype/index.html)。
+
 <table>
 <tr>
 <td colspan="3" align="center"><img src="docs/preview/theme.png" width="100%" alt="十四套主题对比"></td>

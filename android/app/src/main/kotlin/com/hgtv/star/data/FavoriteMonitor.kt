@@ -53,7 +53,9 @@ class FavoriteMonitor(private val library: Library, source: ContentRepository, p
             lastChangedId = null
             job = worker.submit {
                 if (ticket != epoch) return@submit
+                // 未上架的剧没有分集：把它当成「暂无更新」，不要用 0 覆盖掉已知的集数。
                 val result = runCatching { owned.run { repository.detail(item.id).episodes.size } }
+                    .map { count -> if (count <= 0) error("尚未上线") else count }
                 main.post {
                     if (ticket != epoch) return@post
                     job = null

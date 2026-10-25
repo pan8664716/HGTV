@@ -32,42 +32,35 @@ import android.view.animation.DecelerateInterpolator
  *
  * 低内存设备保留全部视觉层级，只把过渡时长压到 0，并降低柔光强度（[Soft.quality]）。
  *
- * ## 主题（2026-10-07 改版）：十四套材质 + 去掉选框的颜色
+ * ## 主题（2026-10-20 改版）：二十套配色 + 统一的焦点色
  *
- * 上一版是「灰蓝材质 + 高饱和品牌蓝 `#5980FF`」，用户的原话是「边框是蓝色，和整体风格完全不搭」；
- * 换成石墨 + 香槟金之后，问题只解决了一半——**焦点框与选中项仍然是一圈带颜色的线**。
- * 本轮把两件事一起做掉：
+ * 设计稿把每套配色拆成八个语义色：底色、亮阴影、暗阴影、主文字、次文字、焦点色、
+ * 强调色、状态色。[TvTheme] 原样收下这八个值，其余材质档位继续派生。
  *
- * 1. **选框不再有颜色**。焦点不再画强调色细环，选中不再画强调色细环、也不再用强调色写字：
- *    焦点就是「被打亮」，选中就是「被按进去 / 被抬起来」，全部由柔光表达（见上面第 4 条）。
- *    强调色只剩进度条、名次星标两处「线与小色块」（区块标题圆点已于 2026-10-12 去掉）。
- * 2. **材质可选**。设置 → 主题外观里有十四套新拟态材质（12 浅 + 2 深，一行 4 个芯片），
- *    [TvTheme] 每套只写三个色值（背景与元素底色 / 亮部阴影色 / 暗部阴影色），其余档位全部派生。
+ * 全局规则收敛成四条：
  *
- * | 主题 | 背景与元素底色 | 亮部阴影色（左上） | 暗部阴影色（右下） | 适用场景 |
- * | --- | --- | --- | --- | --- |
- * | [TvTheme.SOFT_GRAY] 经典浅灰 | `#E0E5EC` | `#FFFFFF` | `#A3B1C6` | 音乐播放器、智能家居控制台、计算器工具 |
- * | [TvTheme.CREAMY_MILK] 优雅奶白 | `#F0F3F4` | `#FFFFFF` | `#D1D9E6` | 极简笔记应用、生活记录、白噪音软件 |
- * | [TvTheme.DEEP_DARK] 深邃暗调 | `#2E3238` | `#383D44` | `#24272C` | 科技感仪表盘、车载 UI、暗黑模式切换 |
- * | [TvTheme.COOL_MINT] 高级柔冷 | `#DEE4E7` | `#FFFFFF` | `#B8C4C7` | 医疗健康、天气应用、轻量级办公工具 |
+ * 1. **焦点 = 打亮 + 一圈焦点色细环**。亮面板 [lit] 负责「被点亮」，焦点色细环
+ *    （[focusRing]，2dp）负责在彩色封面上也一眼可见；两者都来自当前主题。
+ * 2. **选中 = 按进去 + 细环**。选中态是凹槽 [selectedWell]，主题芯片再加一圈焦点环，
+ *    对应设计稿里 `.theme-btn.active` 的 inset + 2px focus。
+ * 3. **强调色只做线与小色块**：播放进度、名次星标、开关滑块。它不再负责焦点。
+ * 4. **状态色只做破坏性操作与错误**：[danger] 用于删除 / 清空确认和错误提示。
  *
  * 切换主题只改色值，不改任何几何：`TvStyle.applyTheme()` 之后由调用方重建当前页面。
  * 柔光位图里烤着上一套材质的投影色，因此 [applyTheme] 必须丢掉 [Soft] 的缓存
  * （缓存 key 里也带上了主题，见 [themeId]）。
  *
- * 十四套的文字基色是「浅色主题用深墨、深色主题用暖白」，所以 [text] / [muted] 这类令牌
+ * 二十套的文字是「浅色主题用深墨、深色主题用暖白」，所以 [text] / [muted] 这类令牌
  * 在两个方向上都能直接用。唯一不跟主题走的是**播放界面**：它压在视频上，
  * 永远用 [playerText] 的暖白（见下面「播放界面」一节）。
  *
- * 对比度（`tools/theme-preview.py` 逐套打印）：十二套浅色的正文 7.8–9.6:1、两套深色 10.6–11.1:1，
- * 全部过 WCAG AA；最低一档辅助文字 3.1–5.3:1；强调色只做线，最低的象牙沙 3.3:1 也过了非文字 3:1。
- * 十四套排成 7 列 × 2 行并排比过（`python3 tools/theme-preview.py` → `docs/preview/themes.png`）。
+ * 二十套排成 7 列 × 3 行并排比过（`python3 tools/theme-preview.py` → `docs/preview/theme.png`）。
  */
 object TvStyle {
     // —— 主题 ——
 
     /**
-     * 当前主题。默认 [TvTheme.DEEP_DARK]（材质原本的那一套），
+     * 当前主题。默认 [TvTheme.DEEP_SEA_BLUE]（设计稿的第一套），
      * 由 `MainActivity.onCreate` 按本机保存的偏好覆盖，之后只经 [applyTheme] 改动。
      */
     internal var theme: TvTheme = TvTheme.fallback
@@ -116,9 +109,6 @@ object TvStyle {
     /** 更深的凹槽：禁用态、播放器进度轨道。 */
     val wellDeep: Int get() = theme.wellDeep
 
-    /** 纯黑：播放器根背景、海报压暗层。不跟主题走（画面上的东西永远压黑）。 */
-    val black = Color.rgb(0x0A, 0x0B, 0x0F)
-
     /**
      * 焦点面：整个材质里最亮的一档。
      *
@@ -136,6 +126,15 @@ object TvStyle {
     val litGlow: Int get() = theme.litGlow
 
     /**
+     * 卡片 / 按钮焦点描边：主题焦点色压到 90% 不透明。
+     *
+     * 新拟态靠明度差表达层次，但海报卡的封面是彩色图片、底板又只有 3–5% 的明度差，
+     * 光靠「打亮一档」在一屏十几张卡里并不够醒目。这里补一圈**同主题的焦点色**细边：
+     * 颜色来自当前主题，宽度只有 [RING]，又足够让用户一眼认出焦点在哪一张。
+     */
+    val focusRing: Int get() = theme.focusRing
+
+    /**
      * 抬一档的选中面：给「本来就在凹陷背板里」的控件用（顶部当前页图标）。
      * 选集里的当前集比它更高一档，直接用常亮的 [lit]（见 [EpisodeCell]）。
      *
@@ -147,8 +146,8 @@ object TvStyle {
     /**
      * 按进去的选中面：开关、选项、设置项、主题行都用它。
      *
-     * 这是本轮「去掉选框颜色」之后选中态的主要表达：在一堆凸起的按钮里，
-     * 被选中的那一个**凹下去**，凹凸对比比任何一圈彩色描边都清楚，而且不带颜色。
+     * 在一堆凸起的按钮里，被选中的那一个**凹下去**；
+     * 主题芯片再补一圈 [focusRing] 细环（对应设计稿的 active 态）。
      */
     val selectedWell: Int get() = theme.well
 
@@ -171,10 +170,9 @@ object TvStyle {
     val separator: Int get() = theme.separator
 
     /**
-     * 无色焦点线：只在**凹陷控件**（搜索框）上补一条边界。
+     * 凹陷控件的聚焦线：只在**搜索框 / 输入框**上补一条边界。
      *
-     * 凹陷的焦点没法靠「打亮」表达，只能把槽压得更深、再让这条 45% 文字基色的细线加深。
-     * 它是中性色，不是选框的颜色。
+     * 凹陷的焦点没法靠「打亮」表达，只能把槽压得更深、再让这条焦点色细线加深。
      */
     val focusLine: Int get() = theme.focusLine
 
@@ -183,28 +181,35 @@ object TvStyle {
     /**
      * 强调色：**只做线与小色块**——进度条、名次星标。
      *
-     * 上一版它还负责画焦点环与选中项的文字，观感就是「整体风格里贴了一圈别的颜色」。
-     * 本轮把选框交给柔光之后，强调色不再出现在任何焦点 / 选中态上。
-     * 十四套各有一支，全部过非文字 3:1：浅色主题走低饱和的自然色（石板 / 钢蓝 / 青瓷 /
-     * 鼠尾草 / 橄榄 / 玫瑰灰 / 砂金 / 暖棕 / 香槟金 / 墨绿），深色主题走冷调金属（钢蓝 / 冰蓝）。
+     * 焦点环改用独立的焦点色之后，强调色不再出现在任何焦点 / 选中态上。
+     * 二十套各有一支，颜色直接来自设计稿。
      */
     val accent: Int get() = theme.accent
 
-    /** 提示色，只用于评分星标与榜单前三。 */
+    /** 提示色，只用于评分星标与榜单前三：跟随当前主题的强调色。 */
     val tips: Int get() = theme.tips
+
+    /** 焦点色：焦点环、输入框聚焦线。 */
+    val focus: Int get() = theme.focus
+
+    /** 状态色：删除 / 清空 / 错误提示。 */
+    val danger: Int get() = theme.danger
+
+    /** 次文字：说明、辅助信息，直接取主题的 `--sub`。 */
+    val sub: Int get() = theme.sub
 
     // —— 文字四级（浅色主题是深墨、深色主题是暖白） ——
 
     /** 正文。 */
     val text: Int get() = theme.text
 
-    /** 80%：区块标题。 */
+    /** 88%：区块标题。 */
     val textStrong: Int get() = theme.textStrong
 
-    /** 65%：卡片标题、正文。 */
+    /** 主文字与次文字之间：卡片标题、正文。 */
     val textDim: Int get() = theme.textDim
 
-    /** 40%：辅助说明、次要按钮文字。 */
+    /** 次文字：辅助说明、次要按钮文字。 */
     val muted: Int get() = theme.muted
 
     // —— 播放界面：不跟主题走 ——
@@ -231,24 +236,117 @@ object TvStyle {
     /** 海报宽高比（宽 / 高），对应宫格的 357:477（≈3:4）。 */
     const val POSTER_ASPECT = 3f / 4f
 
-    /** 横版卡宽高比（宽 / 高）。 */
-    const val WIDE_ASPECT = 16f / 9f
+    // —— 圆角：按设计稿再放大一档 ——
+    // 新拟态的柔和来自「大圆角 + 柔光」；胶囊一律取 999，由绘制层夹到高度的一半。
 
-    /** 分集卡宽高比。 */
-    const val EPISODE_ASPECT = 200f / 116f
-
-    // —— 圆角：新拟态整体放大一档 ——
-
-    const val RADIUS_POSTER = 12
-    const val RADIUS_CARD = 14
-    const val RADIUS_PILL = 26
+    const val RADIUS_POSTER = 16
+    const val RADIUS_CARD = 20
+    const val RADIUS_PILL = 999
 
     /** 模态框面板的圆角：比卡片大、比胶囊小，一眼能看出是浮层。 */
-    const val RADIUS_DIALOG = 24
+    const val RADIUS_DIALOG = 32
+
+    /**
+     * 弹窗面板的圆角：比卡片大一档（卡片 20），但**不再走设计稿的 56**。
+     *
+     * 56 在 1280 画布上已经接近四分之一面板高度，电视上退开两米看就是一块「椭圆板」，
+     * 与面板里那些胶囊选项叠在一起显得过软。收到 30 之后：
+     * 面板仍是明显的大圆角浮层，边角又收得住，选项的胶囊形状才成为画面里唯一的圆形。
+     */
+    const val RADIUS_DIALOG_PANEL = 30
+
+    // —— 弹窗几何（设计稿 1280 × 720 画布上的数值） ——
+    // 弹窗是一块独立的小面板：宽 472、标题 20、副标题 12.5、选项高 62 / 图标 22 / 字号 19。
+
+    /** 弹窗面板宽度（设计 dp）。窄屏会按「屏宽 − 两侧留白」夹一次。 */
+    const val DIALOG_WIDTH = 472
+
+    /** 弹窗标题字号。 */
+    const val DIALOG_TITLE_TEXT = 20f
+
+    /** 弹窗副标题（集数 / 时长这类一行说明）字号。 */
+    const val DIALOG_SUB_TEXT = 12.5f
+
+    /** 顶部封面缩略图：宽 / 高 / 圆角。 */
+    const val DIALOG_THUMB_WIDTH = 96
+    const val DIALOG_THUMB_HEIGHT = 60
+    const val DIALOG_THUMB_RADIUS = 30
+
+    /** 选项行的高度（底板，不含柔光带）。 */
+    const val DIALOG_ITEM_HEIGHT = 62
+
+    /** 选项行左右内边距（图标 / 文字到面板边缘的距离）。 */
+    const val DIALOG_ITEM_PAD = 30
+
+    /** 选项行图标边长与「图标 → 文字」的间距。 */
+    const val DIALOG_ITEM_ICON = 22
+    const val DIALOG_ITEM_ICON_GAP = 15
+
+    /** 选项行字号。 */
+    const val DIALOG_ITEM_TEXT = 19f
+
+    /** 选项之间的竖向间距。 */
+    const val DIALOG_ITEM_GAP = 11
+
+    // —— 登录界面（设计稿 1280 × 720 画布上的数值） ——
+    // 一张居中的登录卡：宽 680、圆角 32、内边距 40 / 48 / 40；
+    // 卡片里是「小号 logo + 大标题 + 一行说明」，下面两行胶囊输入，最后一条整宽主按钮。
+
+    /** 登录卡宽度（设计 dp）。窄屏按「屏宽 − 两侧留白」夹一次。 */
+    const val LOGIN_CARD_WIDTH = 680
+
+    /** 登录卡圆角：比弹窗小一档，比卡片大一档。 */
+    const val RADIUS_LOGIN_CARD = 32
+
+    /** 登录卡内边距（上 / 左右 / 下）。整体收紧一档：卡片矮一点，一屏里不显得空。 */
+    const val LOGIN_PAD_TOP = 28
+    const val LOGIN_PAD_SIDE = 44
+    const val LOGIN_PAD_BOTTOM = 26
+
+    /** 小号 logo 文字（字母拉开的那种标识行）。 */
+    const val LOGIN_LOGO_TEXT = 12f
+
+    /** 大标题「登录」。 */
+    const val LOGIN_TITLE_TEXT = 30f
+
+    /** 标题下面那行说明。 */
+    const val LOGIN_SUB_TEXT = 14f
+
+    /** 字段上方的小标签（「手机号」「验证码」）。 */
+    const val LOGIN_LABEL_TEXT = 13f
+
+    /** 输入框 / 地区码 / 获取验证码这三件的高度（底板）。 */
+    const val LOGIN_FIELD_HEIGHT = 56
+
+    /** 输入框里的字号。 */
+    const val LOGIN_INPUT_TEXT = 20f
+
+    /** 输入框左右内边距（到面板边缘的距离）。 */
+    const val LOGIN_INPUT_PAD = 30
+
+    /** 地区码按钮的宽度。 */
+    const val LOGIN_REGION_WIDTH = 116
+
+    /** 「获取验证码」按钮的宽度。 */
+    const val LOGIN_SEND_WIDTH = 158
+
+    /** 登录主按钮的高度。 */
+    const val LOGIN_BUTTON_HEIGHT = 60
+
+    /** 登录主按钮的字号。 */
+    const val LOGIN_BUTTON_TEXT = 18f
+
+    /** 登录卡里各字段之间的竖向间距。 */
+    const val LOGIN_FIELD_GAP = 16
+
+    /** 弹窗顶部 / 左右 / 底部的内边距。 */
+    const val DIALOG_PAD_TOP = 26
+    const val DIALOG_PAD_SIDE = 22
+    const val DIALOG_PAD_BOTTOM = 24
     const val RING = 2
 
     /** 焦点描边圆角。 */
-    const val RING_RADIUS = 14
+    const val RING_RADIUS = 20
 
     // —— 柔光带宽 ——
     // 控件四周为投影 / 高光预留的透明带，也是控件自身的内边距。
@@ -261,7 +359,6 @@ object TvStyle {
     const val SOFT_BAND_LARGE = 10
 
     const val FOCUS_SCALE = 1.05f
-    const val PRESS_SCALE = .97f
     const val DURATION = 200L
 
     /**
@@ -287,6 +384,15 @@ object TvStyle {
     /** 紧凑档：菜单选项、行内文字按钮（更多 ›）。 */
     const val BUTTON_COMPACT = 40
 
+    /**
+     * 弹窗档：**只给弹窗里的按钮用**（底部动作行与选项列表）。
+     *
+     * 弹窗是一块浮在页面上的面板，里面的按钮如果与页面上同样大，整框看起来就又宽又重：
+     * 一行「取消 / 确认」各占一百多 dp，视觉上比弹窗标题还抢。这里统一收一档
+     * （36dp 底板 / 14dp 内边距 / 14sp），弹窗内的按钮因此比页面上的常规按钮小一圈。
+     */
+    const val BUTTON_DIALOG = 36
+
     /** 默认档：返回、分页、重试、收藏、刷新这类常规操作。 */
     const val BUTTON_NORMAL = 48
 
@@ -296,10 +402,12 @@ object TvStyle {
     const val BUTTON_PAD_COMPACT = 18
     const val BUTTON_PAD_NORMAL = 28
     const val BUTTON_PAD_HERO = 36
+    const val BUTTON_PAD_DIALOG = 14
 
     const val BUTTON_TEXT_COMPACT = 15f
     const val BUTTON_TEXT_NORMAL = 16f
     const val BUTTON_TEXT_HERO = 17f
+    const val BUTTON_TEXT_DIALOG = 14f
 
     /**
      * 海报卡角标的字号：**右下角状态角标与右上角季号共用这一档**。
@@ -355,16 +463,27 @@ object TvStyle {
         ring: Int = Color.TRANSPARENT,
         ringWidth: Int = 0,
         glow: Int = Color.TRANSPARENT,
-        depth: Float = 1f
+        depth: Float = 1f,
+        /**
+         * 「大面积、一屏十几份」的底板：只有海报卡 / 剧架底板传 true。
+         *
+         * 它们会在低配上关掉预渲染柔光位图（一屏 18 张 × 整卡面积 = 2.0 M 像素/帧，
+         * 见 [Soft.shadowBitmaps]）。按钮与弹窗面板一屏只有三五个、又没有彩色封面兜底，
+         * 保持默认的 false，柔光原样保留。
+         */
+        heavy: Boolean = false
     ) = SoftDrawable(
         fill = fill,
-        radiusPx = radius * context.resources.displayMetrics.density,
-        bandPx = band * context.resources.displayMetrics.density,
+        // 几何一律走 designPx：圆角 / 柔光带必须和控件自己的 tvDp 内边距同一个比例，
+        // 否则小屏上会出现「底板缩了、描边和投影还按 1280dp 画」的错位。
+        radiusPx = context.designPx(radius).toFloat(),
+        bandPx = context.designPx(band).toFloat(),
         style = style,
         ringColor = ring,
-        ringWidthPx = ringWidth * context.resources.displayMetrics.density,
+        ringWidthPx = context.designPx(ringWidth).toFloat(),
         glowColor = glow,
-        depth = depth
+        depth = depth,
+        heavy = heavy
     )
 
     /** 凹陷槽：搜索框、海报井、进度轨道。 */
@@ -395,22 +514,37 @@ object TvStyle {
         radius: Int = RADIUS_POSTER,
         stroke: Int = 1
     ) = GradientDrawable().apply {
-        val density = context.resources.displayMetrics.density
         setColor(color)
-        cornerRadius = radius * density
-        if (stroke > 0) setStroke((stroke * density).toInt(), border)
+        cornerRadius = context.designPx(radius).toFloat()
+        if (stroke > 0) setStroke(context.designPx(stroke), border)
     }
 
     /**
      * 焦点反馈：放大到 1.05。位移会打乱行内对齐，因此只做缩放。
-     * 焦点态的形状变化由控件自己通过 [soft] 完成（打亮的亮面 + 强调色细环 + 外发光）。
+     * 焦点态的形状变化由控件自己通过 [soft] 完成（打亮的亮面 + 焦点色细环 + 外发光）。
      */
     fun focus(view: View, focused: Boolean, scale: Float = FOCUS_SCALE, duration: Long = DURATION) {
+        // 低配（[animate] == false）：**完全不做缩放**，连 1.05 的静态缩放都不留。
+        //
+        // 缩放是 RenderNode 的几何属性：它一变，这张卡里的封面大图、柔光位图、
+        // 径向暗角全部要按新的采样矩阵重新光栅化。而焦点是否醒目已经由
+        // `applyFocus` 的「亮面 + 焦点环 + 外发光」表达完了——那三样只改配色，不动几何。
+        // 2GB 盒子上「缩放」的观感收益远小于它造成的丢帧。
+        val target = if (animate && focused) scale else 1f
+        if (!animate) {
+            // 已经归位就不必再走一遍动画管线（低配上这条路径每次按键都要经过两次：
+            // 旧卡退出、新卡进入）。
+            if (view.scaleX == target && view.scaleY == target) return
+            view.animate().cancel()
+            view.scaleX = target
+            view.scaleY = target
+            return
+        }
         view.animate().cancel()
         view.animate()
-            .scaleX(if (focused) scale else 1f)
-            .scaleY(if (focused) scale else 1f)
-            .setDuration(if (animate) duration else 0L)
+            .scaleX(target)
+            .scaleY(target)
+            .setDuration(duration)
             .setInterpolator(DecelerateInterpolator())
             .start()
     }
@@ -443,20 +577,6 @@ object TvStyle {
      */
     fun overlayPanel() = panel(Color.TRANSPARENT, 0x99000000.toInt(), 0xE0000000.toInt())
 
-    /** 只圆底部的纯色形状：贴在海报底边的进度条不能是方角。 */
-    fun bottomRounded(context: Context, color: Int, radius: Int = RADIUS_POSTER) = GradientDrawable().apply {
-        setColor(color)
-        val r = radius * context.resources.displayMetrics.density
-        cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
-    }
-
-    /** 只圆左下角：进度填充的起点与海报圆角对齐。 */
-    fun bottomLeftRounded(context: Context, color: Int, radius: Int = RADIUS_POSTER) = GradientDrawable().apply {
-        setColor(color)
-        val r = radius * context.resources.displayMetrics.density
-        cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, 0f, 0f, r, r)
-    }
-
     /**
      * 只圆**顶部**两角的竖向渐变：右上角那枚季号角标的压暗层。
      *
@@ -467,8 +587,21 @@ object TvStyle {
         GradientDrawable.Orientation.TOP_BOTTOM,
         intArrayOf(top, bottom)
     ).apply {
-        val r = radius * context.resources.displayMetrics.density
+        val r = context.designPx(radius).toFloat()
         cornerRadii = floatArrayOf(r, r, r, r, 0f, 0f, 0f, 0f)
+    }
+
+    /**
+     * 左上角名次角标的压暗层：横向渐变，最深处贴左上。
+     *
+     * 与右上角那枚（竖向渐变）区分方向：两枚都在封面上缘，方向不同才不会看成一条通栏暗带。
+     */
+    fun scrimTopStart(context: Context, start: Int, end: Int, radius: Int = RADIUS_POSTER) = GradientDrawable(
+        GradientDrawable.Orientation.LEFT_RIGHT,
+        intArrayOf(start, end)
+    ).apply {
+        val r = context.designPx(radius).toFloat()
+        cornerRadii = floatArrayOf(r, r, 0f, 0f, 0f, 0f, r, r)
     }
 
     /** 只圆底部的竖向渐变：角标背后的压暗层，上缘要与封面无缝衔接。 */
@@ -476,10 +609,8 @@ object TvStyle {
         GradientDrawable.Orientation.TOP_BOTTOM,
         intArrayOf(top, bottom)
     ).apply {
-        val r = radius * context.resources.displayMetrics.density
+        val r = context.designPx(radius).toFloat()
         cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
     }
 
-    fun scrimOverlay(topAlpha: Int, bottomAlpha: Int) =
-        gradient(Color.argb(topAlpha, 0, 0, 0), Color.argb(bottomAlpha, 0, 0, 0))
 }

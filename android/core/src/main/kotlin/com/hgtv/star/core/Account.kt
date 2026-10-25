@@ -34,7 +34,7 @@ data class AccountProfile(
     val anonymous: Boolean = false
 )
 
-/** 「我的收藏」里的一项（`/reading/bookapi/bookshelf/video/info/v1/`）。 */
+/** 「我的收藏」里的一项（`/reading/bookapi/bookshelf/video/info/v`）。 */
 data class AccountFavorite(val series: Series, val collectTime: Long, val episodes: Int)
 
 /** 「观看历史」里的一项。 */
@@ -45,10 +45,18 @@ data class AccountHistory(
     val episodeId: String,
     val updatedAt: Long,
     /** 这部剧一共多少集；未知时为 0。 */
-    val episodes: Int = 0
+    val episodes: Int = 0,
+    /**
+     * 这一集看到第几毫秒（平台的 `current_play_time`；上传时用的就是毫秒，见
+     * `ContentRepository.accountUploadProgress`）。
+     *
+     * 有了它，从账号侧的历史点进去才能续到那一集的那个位置，而不是从第 1 集重新开始；
+     * 老数据 / 平台没给时为 0（当作「从这一集开头起」）。
+     */
+    val position: Long = 0
 )
 
-/** 「点赞」里的一项（`/reading/ugc/action/mget/v1/` 的 `action_type=3` 记录）。 */
+/** 「点赞」里的一项（`/reading/ugc/action/mget/v` 的 `action_type=3` 记录）。 */
 data class AccountLike(val series: Series, val updatedAt: Long)
 
 /** 「预约 / 追更」里的一项（`/reading/user/subscribe/list/v0/` 的 `tab_type=13`）。 */
@@ -81,6 +89,16 @@ data class AccountData(
 data class AccountCredentials(
     /** 可直接当 `Cookie:` 头用的整段串（`sessionid=…; uid_tt=…`）。 */
     val cookie: String,
+    /**
+     * 会话 `X-Tt-Token`（响应头）。
+     *
+     * 与 [cookie] 是**两套并行凭证**，必须分头送：`X-Tt-Token` 只放它、`Cookie` 只放 cookie。
+     * 导入 `cookieStore.xml` 时为空（那份文件里不存 token），此时会话靠心跳的响应头把 token
+     * 换回来（见 `SessionKeeper`）；为空就说明还没换到，不代表没登录。
+     */
+    val token: String = "",
+    /** TicketGuard 静态签名（`bd-ticket-guard-sign-res-static-ts-sign`），可空。 */
+    val tsSign: String = "",
     val deviceId: String = "",
     val installId: String = "",
     val cdid: String = "",
@@ -288,7 +306,10 @@ object AccountParser {
 
     /** 从视频条目里取剧集。短剧的封面/标题字段在各接口里名字不同，这里统一兜一遍。 */
     private fun seriesOf(video: JSONObject, outer: JSONObject = JSONObject()): Series {
+        // `v1` 的预约条目里 id 叫 `item_id`（顶层），标题叫 `name`，简介叫 `item_desc`；
+        // 其余接口仍用 `series_id` / `title` / `video_desc`，这里统一兜一遍。
         val id = video.str("series_id").ifEmpty { outer.str("series_id") }.ifEmpty { outer.str("book_id") }
+            .ifEmpty { video.str("item_id") }.ifEmpty { outer.str("item_id") }
         val cover = outer.str("series_cover_url")
             .ifEmpty { video.str("cover") }
             .ifEmpty { video.str("cover_url") }
@@ -297,16 +318,20 @@ object AccountParser {
         val count = video.optInt("episode_cnt").let { if (it > 0) it else video.optInt("episode_count") }
             .let { if (it > 0) it else outer.optInt("episode_cnt") }
             .let { if (it > 0) it else video.str("drama_chapter_number").toIntOrNull() ?: 0 }
-        val tags = runCatching { JSONArray(outer.str("category_schema")) }.getOrNull()
-            ?.objects()?.mapNotNull { it.str("name") }?.take(5)?.joinToString(" · ")
-            .orEmpty()
-            .ifEmpty { video.str("category") }
+        // 题材：外层（书架 / 预约那一层）与 `video_data` 都可能带，两处都认；
+        // 都没有时退回 `category`（旧接口给的那一个字符串）。
+        fun genre(o: JSONObject) = runCatching { JSONArray(o.str("category_schema")) }.getOrNull()
+            ?.objects()?.mapNotNull { it.str("name") }?.take(5)?.joinToString(" · ").orEmpty()
+        val tags = genre(outer).ifEmpty { genre(video) }.ifEmpty { video.str("category") }
         return Series(id,
-            outer.str("series_title").ifEmpty { video.str("title") }.ifEmpty { outer.str("book_name") },
+            outer.str("series_title").ifEmpty { video.str("title") }.ifEmpty { outer.str("book_name") }
+                .ifEmpty { video.str("name") }.ifEmpty { outer.str("name") },
             cleanUrl(cover),
-            outer.str("series_intro").ifEmpty { video.str("video_desc") }.ifEmpty { outer.str("abstract") },
-            if (count > 0) "全 $count 集" else "",
-            tags)
+            outer.str("series_intro").ifEmpty { video.str("video_desc") }.ifEmpty { outer.str("abstract") }
+                .ifEmpty { video.str("item_desc") },
+            EpisodeLabel.of(count),
+            tags,
+            episodeCount = count)
     }
 
     /**
@@ -362,7 +387,7 @@ object AccountParser {
     }
 
     /**
-     * 批量详情：`GET /reading/bookapi/multi-detail/v1/?book_id=<逗号分隔>&book_type=2`
+     * 批量详情：`GET /reading/bookapi/multi-detail/v?book_id=<逗号分隔>&book_type=2`
      * → `data[]`，每条给 `book_id` / `book_name` / `thumb_url` / `abstract` /
      * `drama_chapter_number`（总集数）/ `category`。
      *
@@ -380,8 +405,12 @@ object AccountParser {
             id to Series(id, title,
                 cleanUrl(row.str("thumb_url").ifEmpty { row.str("audio_thumb_uri") }),
                 row.str("abstract"),
-                if (count > 0) "全 $count 集" else "",
-                row.str("category"))
+                EpisodeLabel.of(count),
+                // 类型标签：`multi-detail` 有的条目带 `category_schema`，没有就用 `category`。
+                runCatching { JSONArray(row.str("category_schema")) }.getOrNull()
+                    ?.objects()?.mapNotNull { it.str("name") }?.take(5)?.joinToString(" · ")
+                    .orEmpty().ifEmpty { row.str("category") },
+                episodeCount = count)
         }.toMap()
     }
 
@@ -403,10 +432,13 @@ object AccountParser {
     /**
      * 观看历史。
      *
-     * 平台把它叫「阅读进度」：`GET /reading/bookapi/read_progress/list/v1/?book_types=2&limit=50`
+     * 平台把它叫「阅读进度」：`GET /reading/bookapi/read_progress/list/v?book_types=2&limit=50`
      * 回的是 **`video_data`** 数组（不是 `data`），每项
      * `{series_id, vid, vid_index, episode_count, last_watch_time, current_play_time}`。
      * `vid_index` 从 1 起，因此这里减 1 存成 0 起的集号。
+     *
+     * `current_play_time`（集内毫秒位置）**要一起收下**：少了它，从「我的 → 历史」点进去
+     * 只能从那一集的开头起，用户读到的是「明明看到了第 12 集，怎么又从第一集开始」。
      *
      * `read_history/list` 那条接口对短剧**恒返回空列表**（它是给小说的），不要用。
      */
@@ -419,12 +451,13 @@ object AccountParser {
             if (!id.matches(Regex("[0-9]{1,30}"))) return@mapNotNull null
             val index = (row.optInt("vid_index") - 1).coerceAtLeast(0)
             AccountHistory(Series(id, "", "", "", "", ""), index, row.str("vid"),
-                row.optLong("last_watch_time"), row.optInt("episode_count"))
+                row.optLong("last_watch_time"), row.optInt("episode_count"),
+                row.optLong("current_play_time").coerceAtLeast(0))
         }.distinctBy { it.series.id }.sortedByDescending { it.updatedAt }
     }
 
     /**
-     * 点赞：`GET /reading/ugc/action/mget/v1/?action_type=3&object_type_list=6,15,10`
+     * 点赞：`GET /reading/ugc/action/mget/v?action_type=3&object_type_list=6,15,10`
      * （`action_type=3` = 我的点赞记录；`object_type_list` 里 6/10/15 是短剧相关类型）。
      *
      * 记录在 `data.mixed_data_list[]` 里，每条 `{data_type, video_data:{…, user_digg_timestamp_ms}}`。
@@ -449,11 +482,20 @@ object AccountParser {
     fun reserves(raw: JSONObject): List<AccountReserve> {
         val rows = raw.optJSONObject("data")?.optJSONArray("subscribe_items") ?: return emptyList()
         return rows.objects().mapNotNull { row ->
-            val video = row.optJSONObject("subscribe_data") ?: row.optJSONObject("video_data") ?: return@mapNotNull null
+            // `v1`（当前版本，真机抓包 2026-10-19）的条目**没有** `subscribe_data`：
+            // `item_id` / `name` / `cover` / `item_desc` / `sub_info` 全在顶层。
+            // 老 `v0` 才把详情包在 `subscribe_data` 里。两种形状都要认，
+            // 否则「预约」页会读成空列表。
+            val video = row.optJSONObject("subscribe_data") ?: row.optJSONObject("video_data") ?: row
             val series = seriesOf(video, row)
             if (!series.id.matches(Regex("[0-9]{1,30}")) || series.title.isBlank()) return@mapNotNull null
             val time = row.optLong("schedule_publish_time").let { if (it > 0) it * 1000 else 0 }
-            AccountReserve(series, time, row.optBoolean("is_online", false))
+            val online = row.optBoolean("is_online", false)
+            // 待上线那一栏就是「预约中」：`sub_info` / `sub_title_list` 里有「10月20日上线」这类文案，
+            // 卡片第二行直接显示它（与搜索里那张预告卡一致）。
+            val notice = row.str("sub_info")
+                .ifEmpty { runCatching { JSONArray(row.str("sub_title_list")) }.getOrNull()?.objects()?.mapNotNull { it.str("content") }?.firstOrNull().orEmpty() }
+            AccountReserve(series.copy(upcoming = !online, notice = notice), time, online)
         }.distinctBy { it.series.id }.sortedByDescending { it.updatedAt }
     }
 }

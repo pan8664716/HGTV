@@ -2,7 +2,7 @@
 package com.hgtv.star.core
 
 /**
- * 首页的一栏。[board] 非空表示这一栏来自官网的热播榜（[RankBoard]），
+ * 首页的一栏。[board] 非空表示这一栏是一个热播榜（[RankBoard]），
  * 为空表示来自本机记录（收藏 / 历史 / 稍后观看）。
  *
  * [key] 同时是剧架的 key 与卡片焦点 key 的前缀（界面按 `key:剧集 ID` 记住焦点），
@@ -11,7 +11,7 @@ package com.hgtv.star.core
 data class HomeColumn(val key: String, val title: String, val board: RankBoard?)
 
 /**
- * 首页栏目的**固定顺序**：历史记录 → 我的收藏 → 稍后观看 → 热播漫剧 → 热播短剧 → 热播真人 → 热播AI。
+ * 首页栏目的**固定顺序**：历史记录 → 我的收藏 → 稍后观看 → 热播漫剧 → 热播真人 → 热播AI → 热播上新。
  *
  * 顺序与名字收敛成一个纯函数（不依赖 Android）的原因和 [CardMenu] 一样：
  * 界面上「有哪些栏、谁在前」是一眼可查的需求，散在 `MainActivity` 里的 if 分支一旦顺序写错

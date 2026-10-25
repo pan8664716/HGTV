@@ -19,6 +19,16 @@ cd "$repo_dir"
 mode="${1:-body}"
 version="${HGTV_VERSION:-$(tools/version.sh version)}"
 code="$(tools/version.sh code)"
+min_sdk="$(tools/version.sh min-sdk)"
+# 「最低系统版本」这句话里的数字从 build.gradle.kts 读，避免两边各写一份之后对不上。
+case "$min_sdk" in
+  19) min_android="4.4" ;;
+  21) min_android="5.0" ;;
+  23) min_android="6.0" ;;
+  26) min_android="8.0" ;;
+  28) min_android="9" ;;
+  *)  min_android="API $min_sdk" ;;
+esac
 changelog="docs/CHANGELOG.md"
 [[ -f "$changelog" ]] || { echo "找不到 $changelog" >&2; exit 1; }
 
@@ -79,5 +89,5 @@ fi
   printf '\n---\n\n'
   printf '安装包：`HGTV_%s.apk`\n' "$version"
   printf '校验：`SHA256SUMS`（`sha256sum -c SHA256SUMS`）\n\n'
-  printf '最低 Android 8.0 / API 26，沿用同一发布签名，可覆盖安装并保留本机记录。\n'
+  printf '最低 Android %s（API %s），沿用同一发布签名，可覆盖安装并保留本机记录。\n' "$min_android" "$min_sdk"
 }

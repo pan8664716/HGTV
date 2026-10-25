@@ -1,12 +1,14 @@
 # 红果短剧接口参考
 
 本文件整理红果短剧（`com.phoenix.read`，内容侧与番茄小说同源）的客户端接口。
-内容分两层：
 
-- **官网层**（`https://hongguoduanju.com`）：Next.js SSR 页面，数据藏在 HTML 的 `_ROUTER_DATA` 里，
-  不需要签名，负责分类、片库目录、榜单、详情、官网搜索（App 搜索不可用时的兜底）。
-- **App 层**（`https://api5-normal-*.fqnovel.com`）：字节系 App 接口，需要一整套设备参数与签名头，
-  负责 App 搜索、播放地址解析、弹幕。
+**现在只走 App 层一条路**（`https://api5-normal-*.fqnovel.com`）：分类、榜单（4.7）、
+详情与分集（4.8）、搜索与提示词（4.2 / 4.9）、播放地址、弹幕、账号，全部由它提供；
+需要一整套设备参数，而且现在**每条都要签名**（见 2.1 / 2.2）；分类与榜单那条自 2026-10-21 起也收紧了。
+
+官网层（`https://hongguoduanju.com` 的 Next.js SSR 页面，数据藏在 HTML 的 `_ROUTER_DATA` 里）
+**已经不再使用**：本工程代码里没有任何 `hongguoduanju.com` 请求。它的接口整理保留在第 3 节，
+只作为对照与排错的历史资料（当年分类名、榜单名就是从那里抄的）。
 
 整理来源与可信度：
 
@@ -25,8 +27,8 @@
 
 | 用途 | 地址 |
 | --- | --- |
-| 官网 / SSR 数据 | `https://hongguoduanju.com` |
-| App 接口（主） | `https://api5-normal-sinfonlinea.fqnovel.com` |
+| App 接口（账号 / 搜索 / 提示词） | `https://api5-normal-sinfonlinea.fqnovel.com` |
+| App 接口（分类 / 榜单 / 播放 / 详情） | `https://api5-normal-sinfonlineb.fqnovel.com` |
 | App 接口（备用） | `https://api5-normal-sinfonlinec.fqnovel.com`、`https://api5-normal-sinfonlineb.fqnovel.com` |
 | App 接口（备用） | `https://api5-normal-lf.fqnovel.com`、`https://api5-normal-lq.fqnovel.com`、`https://api5-normal-hl.fqnovel.com` |
 | 播放地址解析 | `https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_model/v1/`（2026-10-14 起；旧路径见 4.3） |
@@ -129,8 +131,6 @@ App 接口的 query 里除了设备参数，还要加两个时间字段，并带
 
 ### 2.3 响应约定
 
-- 官网接口返回 HTML（`text/html`），数据在 `_ROUTER_DATA` 里，需要自己按括号配平截出 JSON
-  （不能正则，字符串里会有 `}`）。
 - App 接口返回 JSON，**成功判定是 `code == 0`**；播放接口大写优先：`Code` 取不到再取 `code`。
 - 响应体上限 16 MiB，超过直接判失败（防止异常响应把内存吃满）。
 - 超时：连接 15s / 读 30s / 整次调用 45s。
@@ -146,11 +146,14 @@ com.phoenix.read/71332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.2506
 com.phoenix.read/72232 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3)
 ```
 
-官网接口统一用播放器 UA + `Accept-Language: zh-CN,zh;q=0.9`。
+`Accept-Language: zh-CN,zh;q=0.9` 每个请求都带。
 
 ---
 
-## 3. 官网层接口（无需签名）
+## 3. 官网层接口（无需签名）——**本工程已不再使用**
+
+> 这一节是历史资料：客户端已全部改走 App 接口（见第 4 节），代码里没有任何 `hongguoduanju.com`
+> 请求。留在这里只为了对照字段与排错（当年分类页的分类名、榜单名都是从这套页面抄下来的）。
 
 ### 3.1 `_ROUTER_DATA` 提取
 
@@ -203,8 +206,9 @@ route-key：`category_$`（**字面量**，不是模板）。
 { "category_$": { "recommendList": [ { "video_data": {} } ], "pagination": { "totalPages": 34 } } }
 ```
 
-官网搜索没有分页参数，能往下翻的只有这本目录，因此 App 搜索接口不可用时，搜索第 2 页起走这里：
-每次往后扫 3 页，只保留**片名包含关键词**（忽略空白、忽略大小写）且界面还没发过的条目。
+片库目录（`comic-drama` / `real-drama`）是官网搜索之外的另一条召回路径：24 部一页、
+`pagination.totalPages` 给出总页数，按片名筛关键词即可。官网搜索已经能翻页（见 3.5），
+因此它现在只是备用手段，不再承担「搜索第 2 页起」的职责。
 
 ### 3.4 剧集详情
 
@@ -278,21 +282,40 @@ route-key：`detail_page`。
 （16 条「看了这部还看什么」的推荐，见 3.4.1），接口整轮失败时用它填那一栏，
 **不发任何搜索请求**。
 
-### 3.5 官网搜索（第 1 页兜底）
+### 3.5 官网搜索（现在支持翻页）
 
 ```
-GET https://hongguoduanju.com/search/{URL 编码后的关键词}?page=1
+GET https://www.hongguoduanju.com/search/{URL 编码后的关键词}?page=N
 ```
 
 route-key：`search_(keyword)/page`（部分响应是 `search_page`）。
 
 ```json
-{ "search_(keyword)/page": { "searchList": [ { "video_data": {} } ] } }
+{ "search_(keyword)/page": {
+    "query": "逆袭", "pageNum": 1, "totalPages": 22, "hasMore": true,
+    "totalCount": "214", "isSuccess": true,
+    "searchList": [ { "video_data": {} } ] } }
 ```
 
-**`page` 参数被服务端忽略**：`page` / `page_num` / `offset` / `page_size` / `count` 试过都一样，
-一次只给相关度最高的约 10 条，`totalCount` 却显示 200 左右。所以它只负责第 1 页：
-App 搜索拿不到数据时（设备未注册），客户端退回到这里取第 1 页，第 2 页起改用片库目录（3.3）。
+**2026-10-21 复测：`page` 已经生效**（早先的「忽略分页、一次只给 10 条」已不成立）：
+
+| 观测项 | 结果 |
+| --- | --- |
+| 每页条数 | **固定 10 条**（末页可能 2~9 条）；`count` / `page_size` / `pageSize` / `size` / `limit` / `num` / `rows` / `per_page` / `pagesize` / `offset` 十种写法实测全部被忽略 |
+| 翻页字段 | `pageNum` / `totalPages` / `hasMore` / `totalCount` 都由服务端给 |
+| 实测「逆袭」 | 22 页、185 条不重复；「甜宠」22 页；「战神」21 页 |
+| 相邻页重复 | 有（同一部剧偶发出现在两页），客户端按 id 去重 |
+| 空页 | 偶发某页 0 条但 `hasMore=true`，下一仍有内容 |
+| 超出末页 | **不报错**：把整份结果一次性塞回（page=99 → 216 条），需按条数上限挡掉 |
+| 查无结果 | 有时 HTTP 500（页面只剩 `search_layout`），按「没有结果」处理 |
+
+客户端据此把官网搜索当作**可翻页**的数据源（`ContentRepository.webSearch`），
+不再「只取第 1 页 + 用片库目录补页」。
+
+**一页 100 条是在客户端拼的**：服务端不给调每页条数，`webSearch` 因此把 10 个物理页
+（`WEB_SEARCH_BATCH=10`）按 5 路并发拉回来、跨页按 id 去重后合成一个逻辑页，
+与 App 搜索的 `LOGICAL_PAGE_SIZE=100` 同量。实测「逆袭」：逻辑页 1 给 88 条（跨页重复被摘掉）、
+逻辑页 2 给 84 条、逻辑页 3 给 12 条并 `hasMore=false`，合计 184 条，约 1 秒一页。
 
 ### 3.5.1 搜索提示词（联想词）
 
@@ -360,6 +383,42 @@ GET https://hongguoduanju.com/incent_resource/suggestion?app_id=8662&web_id={随
 
 ### 3.6 榜单
 
+客户端**优先走 App 分类接口按「最高热度」排**（4.7 那条，2026-10-21 起要签名）：
+一个榜就是该分类里热度最高的一串，名次与热度都由同一条接口给。分类对应用 `select_items.genre` 区分：
+
+| 榜单 | `genre` |
+| --- | --- |
+| 红果热播榜（全站综合） | **不筛分类**（`genre: []`，与不传等价） |
+| 真人剧热播榜 | `short_play` |
+| 漫剧热播榜 | `comic_series` |
+| AI 剧热播榜 | `ai_series` |
+
+请求体（其余字段与 4.4 一致）：
+
+```json
+{ "offset": 0, "limit": 100, "req_type": "only_content",
+  "select_items": { "genre": [], "sort": [ "hot_score" ] } }
+```
+
+- `sort` 的三个可选值就是分类页筛选器里那三项：`online_time`（最新上架）、`hot_score`（**最高热度**）、
+  `hot_collect`（最高收藏）；
+- `limit` 实测给到 100 就真给 100 条，`has_more` + `next_offset` 可一直往后翻；
+  客户端一页按 100 条取，首页那四个剧架只取 20 条（一栏只显示 10 条）；
+- 每条都带 `sub_title_list`，其中 `data_type == 0` 的那条是「第N季」——**单季的剧也写「第1季」**，
+  比从剧名里猜准（`帐中香`→`第1季`、`掀桌2以身入局`→`第2季`）；
+- **名次**取 `video_data[].recommend_info.rank`，**热度**取
+  `video_data[].recommend_reason_list.sub_title_list[]` 里 `data_type == 27` 的那一段 `content`（形如 `9014万`）；
+- **`rank` 是「这一页内」的 1-based 序号，不是全站名次**：`offset=20` 时第一名回的还是 `rank=1`
+  （但它确实就是第 21 名）。客户端按 `offset + 页内序号` 换算成榜单上的名次；
+- 这条接口**不给总数**（只有 `has_more`），更新时间文案也没有。
+
+实测四个榜与该接口逐一对应（漫剧 / 真人 / AI 各取 `genre`，「短剧」榜不加 `genre`）：
+第 1 页前若干名与下面那条官网 SSR 榜**同序同片**（`offset=0` 时 `rank` 恰好等于全站名次）。
+
+#### 3.6.1 官网 SSR 榜单（回退）
+
+App 接口失败时退回这条（本工程 `ContentRepository.rankSsr`）：
+
 ```
 GET https://hongguoduanju.com/rank/{route}[?page=N]
 ```
@@ -400,7 +459,7 @@ GET https://hongguoduanju.com/rank/{route}[?page=N]
 
 ## 4. App 层接口（需要签名）
 
-### 4.1 卡片字段映射（官网与 App 搜索共用）
+### 4.1 卡片字段映射（分类 / 榜单 / 搜索 / 提示词共用）
 
 ```json
 {
@@ -424,6 +483,7 @@ GET https://hongguoduanju.com/rank/{route}[?page=N]
 | `description` | `series_intro` | — |
 | `badge` | `episode_right_text` | `episode_cnt > 0` 时「全 N 集」 |
 | `tags` | `tags[].name`（最多 5 个，` · ` 连接） | `category_list` |
+| `seasonIndex` | 第几季：**列表接口**取 `sub_title_list[]` 里 `data_type == 0` 的那条「第N季」；**详情 / 相关作品**取数字字段 `season_index`。搜索 / 提示词两条接口**没有**季号字段，客户端退回按剧名读 | — |
 
 `episode_cnt` 还可以藏在 `series_episode_info.episode_cnt`。
 入库前统一校验：ID 为 1–30 位数字、标题非空、按 ID 去重。
@@ -431,8 +491,13 @@ GET https://hongguoduanju.com/rank/{route}[?page=N]
 ### 4.2 App 搜索
 
 ```
-POST https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/tab/v?<device + ts + _rticket>
+GET https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/tab/v?<device + ts + _rticket + 查询参数>
 ```
+
+> **是 GET，不是 POST。** 同一路径 POST 一律 `HTTP 404`（2026-10-21 实测，a/b/c 三条线路都一样）；
+> 参数全在 query 里，签名也只覆盖 query + body（方法不参与签名）。
+> 早先文档写成 POST，代码靠「没有 body 就发 GET」碰巧对了；现在方法显式指定
+>（见 `Signer.Request.method`），不会再依赖这种巧合。
 
 query 除设备参数（**App 版本 7.2.2.32**）外：
 
@@ -480,7 +545,8 @@ query 除设备参数（**App 版本 7.2.2.32**）外：
   最多 100 条；漫剧翻页缺游标时抛「搜索结果已过期，请从第 1 页重新搜索」。
 
 > **搜索的路径**：客户端先请求这个接口，第 2 页起带上一页的游标；
-> 拿不到数据时退回官网搜索（第 1 页）+ 片库目录（第 2 页起）。
+> 拿不到数据（空响应 = 设备没在服务端注册）时如实报错，不再用别的数据源顶替：
+> 本工程会先匿名注册一台设备（见 [DEVICE_REGISTER.md](DEVICE_REGISTER.md)）。
 
 > **门槛是「设备已注册」，不是登录态。** 平台按 `device_id` + `install_id` 这一对放行：
 > 注册过的设备回 `code 0` 或间歇性 `100103`，**从不回空响应**；没注册的一律
@@ -696,7 +762,7 @@ Accept-Encoding: identity
 
 ### 4.6 相关作品（详情页「相关作品」那一栏）
 
-App 详情页上「相关作品」那一栏不是官网页面给的，而是详情页自己拉的一个 cell：
+App 详情页上「相关作品」那一栏是详情页自己拉的一个 cell：
 
 ```
 GET https://{线路}/reading/bookapi/plan/v:version/
@@ -728,7 +794,7 @@ GET https://{线路}/reading/bookapi/plan/v:version/
 ```
 
 - 取 `show_type == 547`（或 `cell_name == "相关作品"`）那个 cell 的 `video_data[]`；
-- 每条的卡片字段与官网卡片同构（`series_id` / `title` / `cover` / `video_desc` / `episode_cnt`），
+- 每条的卡片字段与列表卡片同构（`series_id` / `title` / `cover` / `video_desc` / `episode_cnt`），
   另外多两个平台自己算好的字段：
   - `season_index`：这一部是第几季（没有季号的条目为 `null`）；
   - `tag_info.text`：`第N季`（同一部剧的其它季）或 `同IP`（同 IP 的其它剧）。
@@ -741,7 +807,7 @@ GET https://{线路}/reading/bookapi/plan/v:version/
 > **空响应体是常态，而且与注册无关。** 这个接口实测约一半概率回
 > **HTTP 200 + 0 字节**（六条线路的成功率 2/6 ~ 4/6，同一线路连发亦然），
 > 与「设备没注册」那种空响应表现一致。因此客户端**换线重发**（最多 8 次、轮一圈线路），
-> 拿到 `code 0` 就返回；整轮失败才退回官网详情页的 `related_list`（3.4.1）。
+> 拿到 `code 0` 就返回；整轮失败时那一栏就不显示（相关作品只是附加内容）。
 > 实测：一次请求约 0.4~1.1s（含重试），成功即拿到全部条目。
 
 > **别只看 `tag_info` 挑同系列。** `第N季` 那一组里混着同 IP 的**另一个系列**：
@@ -749,6 +815,91 @@ GET https://{线路}/reading/bookapi/plan/v:version/
 > 聚宝仙盆那页里也有「凡人修仙开局捡到聚宝仙鼎第二季」。
 > 因此客户端仍然用 `core/SeriesSeasons.normalize` 按**剧名**筛同系列
 >（剥季号 + 全角转半角 + 去标点后完全相同），`tag_info` 只当参考。
+
+### 4.7 分类 / 榜单（App 分类接口，**需要签名**）
+
+```
+POST https://api5-normal-sinfonlineb.fqnovel.com/reading/distribution/category/landpage/v/?<设备参数 + ts/_rticket>
+Content-Type: application/json; charset=utf-8
+```
+
+App 的分类页与榜单页都走它：分类页用它翻列表，榜单用它按热度取前 N（见 3.6）。
+
+> **2026-10-21 起这条接口也要签名了。** 早先它只带 User-Agent / Accept / Content-Type
+> 就能拿到 JSON，现在这样发一律回 `HTTP 200 + Content-Length: 0`（分类页与四个榜单同时
+> 「暂不可用」就是它）。补上与搜索 / 详情同一套签名头即可，实测 10/10 成功：
+>
+> * 缺 `x-medusa` **或**缺 `x-helios` → 空响应；两者都在 → `code 0` + 完整 `video_data`；
+> * `x-gorgon` / `x-ss-stub` 缺失不影响（网关只校验 medusa + helios 这一对）；
+> * `ts` / `_rticket` 是签名的一部分，query 必须由签名器拼（手拼 URL 会对不上）。
+
+请求体：
+
+```json
+{ "filter_ids": "", "req_scene": "default", "offset": 0, "limit": 100,
+  "need_selector_panel": false, "session_id": "", "req_type": "only_content", "client_req_type": 3,
+  "select_items": { "genre": [ "short_play" ],
+                    "sort": [ "hot_score" ],
+                    "category_dim_theme": [ "cate_262" ] } }
+```
+
+| 字段 | 说明 |
+| --- | --- |
+| `select_items.genre` | 内容分类。可选值来自响应里的 `selector_rows`：`short_play`（真人剧）、`comic_series`（漫剧）、`ai_series`（AI剧）。**空数组 = 全站综合**（不筛分类，也就是官网那个「红果热播榜」） |
+| `select_items.sort` | `online_time`（最新上架）/**`hot_score`（最高热度）**/`hot_collect`（最高收藏） |
+| `select_items.category_dim_theme` | 题材筛选，值是接口自己的 `cate_*` 标识。**各 `genre` 的题材表不是一套**：`short_play` 用 `selector_rows` 里那一行；`comic_series` / `ai_series` 那行是接口的默认行，拿它去筛一律 0 条，得用内容自己 `category_schema` 里的题材（见 `core/CategoryCatalog.kt` 里的说明与那张快照表） |
+| `offset` / `limit` | 游标分页。`limit` 实测给到 100 就真给 100 条，`next_offset` = 已经取过的条数 |
+| `need_selector_panel` | `true` 时响应多一份 `selector_rows`（分类页那几行筛选器的可选值），列表本身不受影响 |
+| `req_type` | `only_content` 只回内容；`default` 时还会回面板/推荐位 |
+
+响应（截取）：
+
+```json
+{ "code": 0,
+  "data": { "has_more": true, "next_offset": 100, "session_id": "……",
+            "video_data": [ { "series_id": "……", "title": "……", "cover": "……",
+                              "video_desc": "……", "episode_cnt": 86, "copyright": "……",
+                              "recommend_info": { "rank": "1" },
+                              "recommend_reason_list": "{\"sub_title_list\":[{\"content\":\"9014万\",\"data_type\":27}]}" } ] } }
+```
+
+- 卡片字段（`title` / `cover` / `video_desc` / `episode_cnt` / `copyright`）见 4.1；
+- `recommend_info.rank` 是**这一页内**的 1-based 序号，不是全站名次；
+- `recommend_reason_list` 是**字符串**（要再解一次 JSON），其中 `data_type == 27` 的 `content`
+  就是热度文案（`9014万`）。同一段里还有 `第14季`（季号）、`玄幻`（`data_type == 3`，题材）；
+- **没有总数**字段，只有 `has_more`。
+
+### 4.8 详情与分集（播放侧）
+
+```
+POST https://api5-normal-sinfonlineb.fqnovel.com/novel/player/video_detail/v1/?<设备 + 签名>
+body: {"series_id":"<剧集 ID>"}
+```
+
+- 参数是**单值 `series_id`**（给 `series_ids` / `book_id` 一律回 `100001 series_id invalid`）；
+- 响应 `data.video_data` 就是这一部的详情：`series_title` / `series_cover` / `series_intro` /
+  `episode_cnt` / `episode_right_text` / `category_schema`（题材，`name` 即中文名）；
+- `data.video_data.season_index` 是这一部是第几季（数字）；
+- **分集在 `data.video_data.video_list[]`**：每条的 `vid` 就是播放与弹幕要的那个分集 ID，
+  `vid_index` 是集号（1 起，按它排序），另外还有 `duration`（秒）、`cover`、`title`（本集剧情简介）；
+- 实测：222 集的那一部一次给全 222 条（一个请求约 145 KB），顺序与集号一致；
+- 空响应体（设备没注册 / 网关挡掉）与 `code != 0` 都要如实报错。
+
+### 4.9 搜索提示词（联想词）
+
+```
+GET https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/suggest/v?query={关键词}
+```
+
+- 要设备参数与签名，**不需要登录态**；空关键词不发请求；
+- `data.query_result_v2[]` 每条的：`name`（兜底 `display_words[0]`）是提示词本身，
+  `word_type_str` 是类型（`short_play_name` / `title` / `album` / `common_query` / `short_play_category`），
+  `video_data` **有 `series_id` 时**才是「这条本身就是一部剧」（可以直接进详情），
+  否则只能当查询词；卡片字段与 4.1 同一套；
+- `data.query_result[]` 是一份纯词表（与 v2 的前几条对应）；
+- 热搜词没有专门接口（`hot_word` / `suggest_word` 这类路径实测全是 404）：
+  客户端拿几个题材种子词各问一次，取「不是某一部剧」的那些词去重、按类型分层，
+  就是搜索页空输入时那一排（见 `ContentRepository.hotSearches`）。
 
 ## 5. 媒体解密
 
@@ -791,18 +942,18 @@ key    = hex( ascii(work[1:33]) )        # 32 个十六进制字符 -> 16 字节
 ## 6. 端到端调用顺序
 
 ```text
-浏览：GET /category?tab=1&sort_type=1            -> 卡片列表 + totalPages
-榜单：GET /rank/hot-comic-drama?page=1           -> rankList + 名次/热度
-搜索：GET /reading/bookapi/search/tab/v          -> tab_type 11=短剧 / 19=漫剧，一次 20 条
+分类：POST /reading/distribution/category/landpage/v/   -> 卡片列表（见 4.7，要签名）
+榜单：POST /reading/distribution/category/landpage/v/   -> 按 hot_score 排 + 名次/热度（见 4.7）
+      └─ select_items.genre = comic_series / short_play / ai_series / 空（全站综合）
+搜索：GET  /reading/bookapi/search/tab/v          -> tab_type 11=短剧 / 19=漫剧，一次 20 条
         └─ 第 2 页起带上一页的 search_id / passback / next_offset（游标缺省即回到第 1 页重搜）
-        └─ 空响应体（设备未注册）/ 失败 -> GET /search/{kw}?page=1           （第 1 页）
-                                      -> GET /category/{comic|real}-drama?page=N 往后扫（第 2 页起）
-提示词：GET /incent_resource/suggestion?app_id=8662&query={kw}&count=10   （免签名、免登录）
-        └─ 热搜词没有专门接口：并发问几个题材种子词，取「不是某部剧」的那些词（见 3.5.1.1）
-详情：GET /detail?series_id={id}                 -> seriesDetail + vid_list[]
+        └─ 空响应体（设备未注册）-> 如实报错；先匿名注册一台设备（见 DEVICE_REGISTER.md）
+提示词：GET /reading/bookapi/search/suggest/v?query={kw}                  -> 联想词（见 4.9）
+        └─ 热搜词没有专门接口：并发问几个题材种子词，取「不是某部剧」的那些词
+详情：POST /novel/player/video_detail/v1/           -> video_data + video_list[].vid（见 4.8）
 相关：GET /reading/bookapi/plan/v:version/         -> 相关作品 cell（show_type=547）的 video_data[]
       └─ scene=10&from=detail_page_more_related&book_id={id}；一次给全，空响应换线重发
-      └─ 整轮失败时退回同一份 HTML 的 mergeLoaderData -> recommendationGroups.related_list[]（相关短剧）
+      └─ 整轮失败时那一栏不显示
 播放：POST /novel/player/video_model/v1/          -> video_model.fallback_api（body 用 video_id 单值）
       └─ 兜底顺序：video_model → multi_video_model/{preload,default,detail}/ → multi_video_model/
       GET  {fallback_api}                        -> video_list + key_seed/spade_a
@@ -813,12 +964,13 @@ key    = hex( ascii(work[1:33]) )        # 32 个十六进制字符 -> 16 字节
 本地联调入口（本工程）：
 
 ```bash
-# 榜单 / 搜索 / 提示词 / 热搜词 / 弹幕 五条探针
+# 季号 / 榜单 / 搜索 / 提示词 / 热搜词 / 弹幕 探针
+./android/gradlew -p android --offline :core:run --args="--season"      # 逐数据源对照「接口季号 vs 剧名读出来的季号」
 ./android/gradlew -p android --offline :core:run --args="--ranking"
 ./android/gradlew -p android --offline :core:run --args="--suggest 仙"
 ./android/gradlew -p android --offline :core:run --args="--hot"
 ./android/gradlew -p android --offline :core:run --args="--search 聚宝 --short"
-# 搜索探针：不带设备注册时退回官网搜索 + 片库目录
+# 搜索探针：设备没注册时接口回空响应（先用 --register-search 注册一台）
 ./android/gradlew -p android --offline :core:run --args="--search 聚宝 --short"
 ./android/gradlew -p android --offline :core:run --args="--danmaku"
 
@@ -832,8 +984,8 @@ key    = hex( ascii(work[1:33]) )        # 32 个十六进制字符 -> 16 字节
 
 | 现象 | 原因 / 处理 |
 | --- | --- |
-| App 搜索返回 HTTP 200 空 body | **这台设备没在服务端注册**（不是登录问题）。空响应一次即判死、回退官网搜索，**不要原地重试**；注册协议见 [DEVICE_REGISTER.md](DEVICE_REGISTER.md) |
-| 官网搜索只有约 10 条、翻页无效 | 服务端忽略所有分页参数；App 搜索不可用时第 2 页起改用片库目录扫描 |
+| App 搜索返回 HTTP 200 空 body | **这台设备没在服务端注册**（不是登录问题）。空响应一次即判死、如实报错，**不要原地重试**；注册协议见 [DEVICE_REGISTER.md](DEVICE_REGISTER.md) |
+| 分类接口按题材筛出 0 条 | `genre` 与题材表不是一套：只有 `short_play` 的 `selector_rows` 可用，漫剧 / AI剧要用内容里的题材（见 4.7） |
 | 提示词接口 500 | `app_id` 缺失或不是 `8662`；`query` 为空也会 500（两条都是实测） |
 | 漫剧搜索报 `A JSONObject text must begin with '{'` | 空 body 直接进 JSON 解析器；先判空即可 |
 | 弹幕条数远少于平台自报 | 匿名设备只下发采样热弹幕，与参数无关 |
@@ -854,8 +1006,7 @@ key    = hex( ascii(work[1:33]) )        # 32 个十六进制字符 -> 16 字节
 
 | 用途 | 路径 | 备注 |
 | --- | --- | --- |
-| 分集详情 | `POST /novel/player/multi_video_detail/v1/` | 与 `vid_list` 同源信息 |
-| 分集详情（预加载） | `POST /novel/player/multi_video_detail/preload/v1` | `zhenyong97/hongguo-downloader` |
+| 分集详情（旧路径） | `POST /novel/player/multi_video_detail/{,preload/}v1` | 试过 body 里 `series_ids` / `book_id` / `mixed_video_id_map` 等十几种形态，一律 `100001 series_ids invalid`；**详情与分集改用 `/novel/player/video_detail/v1/`（见 4.8）** |
 | 视频模型（新） | `POST /novel/player/video_model/v1/` | **已采用**：播放地址解析的第一候选，body 用 `video_id` 单值（见 `ContentRepository.videoModel`） |
 | 视频模型（预加载） | `POST /novel/player/multi_video_model/preload/v1` | 已失效（200 + 0 字节），保留为兜底 |
 | 视频模型（场景段） | `POST /novel/player/multi_video_model/{default,detail}/v1/` | 已失效（200 + 0 字节），保留为兜底 |

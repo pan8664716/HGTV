@@ -35,7 +35,6 @@
 - AndroidX Media3：https://github.com/androidx/media — Apache-2.0
 - OkHttp / Okio：https://github.com/square/okhttp / https://github.com/square/okio — Apache-2.0
 - Bouncy Castle SM3：https://github.com/bcgit/bc-java — MIT
-- jsoup（仅解析官网 HTML，不执行网页脚本）：https://jsoup.org/ — MIT
 - Android desugar_jdk_libs：https://github.com/google/desugar_jdk_libs — GPL-2.0 with Classpath Exception
 - org.json（仅 JVM 工具，APK 使用 Android 内置实现）：https://github.com/stleary/JSON-java — 公有领域声明
 - JUnit（仅测试）：https://github.com/junit-team/junit4 — EPL-1.0

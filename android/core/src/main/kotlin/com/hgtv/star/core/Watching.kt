@@ -19,9 +19,17 @@ class RecoveryBudget {
 
 data class ResumeTarget(val index: Int,val position: Long)
 object ResumePlayback {
-    fun target(episodes: List<String>,episodeId: String?,position: Long,completed: Boolean): ResumeTarget {
+    /**
+     * 续播目标。
+     *
+     * [episodeId] 是本机记录里那一集的标识，按它在 [episodes] 里的下标定位；
+     * 账号侧那条历史只有一个「第几集」的序号（`vid_index`），标识可能与本机这版选集对不上
+     * （平台换过 `vid`、或本机缓存的是另一版），因此给一个 [fallbackIndex]：
+     * 标识找不到时按它定位，而不是一律退回第 1 集——那正是「看了 12 集又从第一集开始」的来源。
+     */
+    fun target(episodes: List<String>,episodeId: String?,position: Long,completed: Boolean,fallbackIndex: Int = -1): ResumeTarget {
         require(episodes.isNotEmpty())
-        val index=episodes.indexOf(episodeId)
+        val index=episodes.indexOf(episodeId).let { if(it>=0) it else fallbackIndex.coerceIn(-1,episodes.lastIndex) }
         if(index<0) return ResumeTarget(0,0)
         return if(completed) ResumeTarget((index+1).coerceAtMost(episodes.lastIndex),0)
             else ResumeTarget(index,position.coerceAtLeast(0))

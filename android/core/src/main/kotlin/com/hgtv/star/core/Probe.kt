@@ -14,22 +14,26 @@ fun main(args: Array<String>) {
         try {
             val boards=if(args.contains("--board")) listOf(RankBoard.fromStored(keywordArg())) else RankBoard.entries.toList()
             boards.forEach { board ->
-                val first=repository.rank(1,board)
-                val metadata=checkNotNull(first.ranking) { "${board.label} 没有名次数据" }
-                check(first.items.isNotEmpty())
                 val seen=mutableSetOf<String>()
-                for(pageNumber in listOf(1,2,metadata.totalPages).distinct().filter { it<=metadata.totalPages }) {
-                    val result=if(pageNumber==1) first else repository.rank(pageNumber,board)
+                var previousLast=0
+                // 最多连看 3 页：App 接口只给 `has_more`、**没有总数**（`totalPages` 只记到当前页），
+                // 因此这里不比对总量，改看两件硬要求——翻页不重复、名次跨页连续。
+                for(pageNumber in 1..3) {
+                    val result=repository.rank(pageNumber,board)
                     val ranking=checkNotNull(result.ranking)
-                    check(result.items.isNotEmpty() && result.items.none { it.id in seen })
+                    check(result.items.isNotEmpty()) { "${board.label} page=$pageNumber 空页" }
+                    check(result.items.none { it.id in seen }) { "${board.label} page=$pageNumber 与前面的页重复" }
                     seen.addAll(result.items.map { it.id })
                     val ranks=result.items.map { checkNotNull(ranking.positions[it.id]).rank }
                     check(ranks.all { it!=null && it>0 } && ranks.filterNotNull().zipWithNext().all { (a,b) -> a<b }) { "${board.label} page=$pageNumber 名次异常：$ranks" }
-                    // 热度偶尔整页缺失（服务端 SSR 抽风），只提示不判失败：名次与分页才是硬要求。
+                    // 跨页连续：这一页的第一名紧接上一页的最后一名（接口给的是页内序号，换算错了这里就会露）。
+                    check(pageNumber==1 || ranks.first()==previousLast+1) { "${board.label} page=$pageNumber 名次没接上：${ranks.first()} != ${previousLast+1}" }
+                    previousLast=ranks.last() ?: 0
+                    // 热度偶尔整页缺失（服务端抽风），只提示不判失败：名次与翻页才是硬要求。
                     val cold=result.items.filter { ranking.positions[it.id]!!.heat.isBlank() }
                     if(cold.isNotEmpty()) println("   注意：page=$pageNumber 有 ${cold.size} 条没有热度")
-                    check(result.hasMore==(pageNumber<ranking.totalPages))
-                    println("board=${board.label} page=$pageNumber/${ranking.totalPages}; items=${result.items.size}; ranks=${ranks.first()}..${ranks.last()}; firstHeat=${ranking.positions[result.items.first().id]!!.heat}; updated=${ranking.updatedText}")
+                    println("board=${board.label} page=$pageNumber; items=${result.items.size}; ranks=${ranks.first()}..${ranks.last()}; firstHeat=${ranking.positions[result.items.first().id]!!.heat}; updated=${ranking.updatedText}")
+                    if(!result.hasMore) break
                 }
             }
             if(!args.contains("--board")) {
@@ -40,7 +44,7 @@ fun main(args: Array<String>) {
                 }
             }
         } finally {
-            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
         }
         return
     }
@@ -48,16 +52,49 @@ fun main(args: Array<String>) {
         // 分类目录联调：逐个大类各取「全部」与第一个小类的第 1 / 2 页。
         try {
             CategoryCatalog.groups.forEach { group ->
-                val picked=listOfNotNull(group.tags.firstOrNull(),group.tags.getOrNull(1))
+                // 每个大类看两个小类：第一个是真·小类（「全部」在每个大类里都一样，看它没意义）。
+                val picked=listOfNotNull(group.tags.firstOrNull(),group.tags.getOrNull(1),group.tags.getOrNull(5))
                 picked.forEach { tag ->
                     val first=repository.category(tag.path)
                     val second=if(first.hasMore) repository.category(tag.path,2) else null
                     val overlap=second?.let { next -> first.items.map { it.id }.intersect(next.items.map { it.id }.toSet()).size } ?: 0
-                    println("${CategoryCatalog.describe(tag.path)}: page1=${first.items.size} page2=${second?.items?.size ?: 0} overlap=$overlap 首部=${first.items.firstOrNull()?.title.orEmpty()}")
+                    println("${CategoryCatalog.describe(tag.path)}: page1=${first.items.size} page2=${second?.items?.size ?: 0} overlap=$overlap 首部=${first.items.firstOrNull()?.title.orEmpty()} 出品方=[${first.items.firstOrNull()?.author.orEmpty()}]")
                 }
             }
         } finally {
-            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+        }
+        return
+    }
+    if(args.contains("--season")) {
+        // 季号联调：逐个数据源对照「接口给的季号」与「剧名里读出来的季号」。
+        // 不一致的都要看一眼——接口字段优先，但兜底（搜索 / 提示词）走的还是剧名解析。
+        try {
+            var mismatches=0
+            fun report(source: String,items: List<Series>) {
+                items.forEach { item ->
+                    val parsed=SeriesSeasons.parse(item.title)
+                    val tag=if(item.seasonIndex>0 && item.seasonIndex!=parsed.season) "  <== 不一致" else ""
+                    if(tag.isNotEmpty()) mismatches++
+                    if(tag.isNotEmpty() || parsed.matched || item.seasonIndex>1)
+                        println("[$source] api=${item.seasonIndex} title=${parsed.season}(matched=${parsed.matched}) 标注=[${SeriesSeasons.badge(item)}] ${item.title}$tag")
+                }
+            }
+            RankBoard.entries.forEach { board -> report("榜单·"+board.label,repository.rankRaw(1,board).items) }
+            CategoryCatalog.groups.forEach { group -> report("分类·"+group.label,repository.category(group.path).items) }
+            val search=runCatching { repository.registerDevice() }.let { runCatching { repository.search("季",1,ContentType.COMIC) }.getOrNull() }
+            report("搜索（接口没有季号字段，靠剧名）",search?.items.orEmpty())
+            val first=repository.homeFeed().values.firstOrNull()?.items?.firstOrNull()
+            if(first!=null) {
+                val detail=repository.detail(first.id)
+                println("[详情] api=${detail.series.seasonIndex} 标注=[${SeriesSeasons.badge(detail.series)}] ${detail.series.title}")
+                val works=repository.related(first.id,detail.series.title)
+                println("[相关] 同系列 ${works.seasons.size} 季："+works.seasons.joinToString("、") { it.title+"(api="+it.seasonIndex+")" })
+                report("相关作品",works.items)
+            }
+            println("季号与剧名不一致的：$mismatches 条")
+        } finally {
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
         }
         return
     }
@@ -70,7 +107,7 @@ fun main(args: Array<String>) {
             for(page in 1..6) {
                 val result=try { repository.search(keyword,page,type) } catch(problem: Exception) {
                     println("search=$keyword type=${type.label} page=$page failed=${problem.message}")
-                    if(repository.sessionToken.isNullOrBlank()) println("   提示：App 搜索接口匿名不可用时已退回官网搜索；两条路都失败请检查网络，或用 --token <x-tt-token> 让搜索直接使用 App 接口。")
+                    if(repository.sessionToken.isNullOrBlank()) println("   提示：空响应体说明这台设备没在服务端注册过（本工程会自动匿名注册，见 DeviceRegister）；也可以用 --token <x-tt-token> 带上账号再试。")
                     break
                 }
                 val fresh=result.items.filter { seen.add(it.id) }
@@ -79,7 +116,7 @@ fun main(args: Array<String>) {
                 if(!result.hasMore) break
             }
         } finally {
-            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
         }
         return
     }
@@ -94,7 +131,7 @@ fun main(args: Array<String>) {
             // 空关键词不该发请求（服务端会 500），这里直接返回空表。
             check(repository.suggestions("   ").isEmpty())
         } finally {
-            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
         }
         return
     }
@@ -108,7 +145,33 @@ fun main(args: Array<String>) {
             check(words.size<=12)
             check(words.distinct().size==words.size)
         } finally {
-            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+        }
+        return
+    }
+    if(args.contains("--register-search")) {
+        val reg=runCatching { repository.registerDevice() }.getOrNull()
+        println("registered=${reg!=null} device=${reg?.deviceId} iid=${reg?.installId}")
+        listOf(ContentType.SHORT,ContentType.COMIC).forEach { type ->
+            val page=runCatching { repository.search(keywordArg() ?: "聚宝",1,type) }.getOrElse { e -> println("search ${type.label} failed: ${e.message}"); null } ?: return@forEach
+            println("type=${type.label} n=${page.items.size}")
+            page.items.take(5).forEach { println("   ${it.id} ${it.title} author=[${it.author}] cnt=${it.episodeCount}") }
+        }
+        repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+        return
+    }
+    if(args.contains("--author")) {
+        // 作者联调：逐部打印详情页拿到的作者（走真实代码路径）。
+        try {
+            val ids=args.filter { it.matches(Regex("[0-9]{10,30}")) }.ifEmpty {
+                repository.rank(1,RankBoard.COMIC).items.take(4).map { it.id }
+            }
+            ids.forEach { id ->
+                val detail=repository.detail(id)
+                println("${detail.series.title} | author=[${detail.series.author}] | episodes=${detail.episodes.size}")
+            }
+        } finally {
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
         }
         return
     }
@@ -139,7 +202,7 @@ fun main(args: Array<String>) {
             println("再取一次 ${System.currentTimeMillis()-againStart}ms（再发一次接口请求）；条数一致=${again.items.size==works.items.size}")
             println("同系列 ${works.seasons.size} 季：${works.seasons.joinToString("、") { it.title }}")
         } finally {
-            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
         }
         return
     }
@@ -159,7 +222,7 @@ fun main(args: Array<String>) {
             }
             println("窗口内共 ${rows.size} 条，带标签的打印了 $printed 条")
         } finally {
-            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
         }
         return
     }
@@ -185,7 +248,7 @@ fun main(args: Array<String>) {
                             tag.findAll(item.text).forEach { match ->
                                 val name=match.groupValues.drop(1).firstOrNull { it.isNotEmpty() } ?: return@forEach
                                 seen[name]=(seen[name] ?: 0)+1
-                                samples.putIfAbsent(name,item.text)
+                                if(!samples.containsKey(name)) samples[name]=item.text
                             }
                         }
                     }
@@ -199,7 +262,7 @@ fun main(args: Array<String>) {
             println("--- 全部标签（按出现次数）---")
             seen.entries.sortedByDescending { it.value }.forEach { println("  ${it.key}\t${it.value}") }
         } finally {
-            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
         }
         return
     }
@@ -214,16 +277,16 @@ fun main(args: Array<String>) {
             println("span=${items.firstOrNull()?.offsetMs}ms..${items.lastOrNull()?.offsetMs}ms; top=${items.maxByOrNull { it.diggCount }?.diggCount}赞")
             items.take(3).forEach { println("  ${it.offsetMs}ms [${it.diggCount}] ${it.text}") }
         } finally {
-            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
+            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
         }
         return
     }
     val keyword=keywordArg() ?: "修仙"
-    // 搜索优先走 App 搜索接口，匿名设备下退回官网搜索；两条路都失败也不打断后面的首页 / 详情 / 播放探测。
+    // 搜索走 App 搜索接口；失败也不打断后面的首页 / 详情 / 播放探测。
     // 顶部那两个「漫剧 / 短剧」开关已经去掉，这里走的就是界面用的那一条：不分类型。
     val search=try { repository.search(keyword) } catch(problem: Exception) {
         println("search failed=${problem.message}")
-        if(repository.sessionToken.isNullOrBlank()) println("   提示：App 搜索接口匿名不可用时已退回官网搜索；两条路都失败请检查网络，或用 --token <x-tt-token> 让搜索直接使用 App 接口。")
+        if(repository.sessionToken.isNullOrBlank()) println("   提示：空响应体说明这台设备没在服务端注册过；也可以用 --token <x-tt-token> 带上账号再试。")
         null
     }
     if(search!=null) {
@@ -244,5 +307,5 @@ fun main(args: Array<String>) {
         println("quality=${stream.quality}; total=${remote.total}; first=${first.size}; tail=${tail.size}; header=${String(first,4,4)}")
         if(args.contains("--save")) java.io.File("/tmp/hongguo-kotlin-first.mp4").writeBytes(first)
     }
-    repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
+    repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
 }
