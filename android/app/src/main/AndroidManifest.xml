@@ -1,8 +1,6 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
-    <!-- 应用内更新：下载新版 APK 后交给系统安装器覆盖安装（用户仍需在系统界面确认）。 -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES"/>
     <!--
       外部存储读写：给会话镜像用——把 device_id / iid 与 sessionid 那一串写到自建的
       `/sdcard/.hgtv/`（卸载不删），卸载重装后直接恢复登录，不必重新注册、重新收短信验证。
@@ -37,11 +35,7 @@
     </queries>
 
     <application
-        android:name=".HgtvApplication" android:label="红果TV" android:theme="@style/AppTheme" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:banner="@drawable/tv_banner" android:allowBackup="false" android:enableOnBackInvokedCallback="false" android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config" android:requestLegacyExternalStorage="true" android:supportsRtl="true">
-        <!-- 更新用 FileProvider：只暴露 cache/updates 一个目录，安装完即失效。 -->
-        <provider android:name="androidx.core.content.FileProvider" android:authorities="${applicationId}.updates" android:exported="false" android:grantUriPermissions="true">
-            <meta-data android:name="android.support.FILE_PROVIDER_PATHS" android:resource="@xml/update_paths"/>
-        </provider>
+        android:name=".HgtvApplication" android:label="HGTV" android:theme="@style/AppTheme" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:banner="@drawable/tv_banner" android:allowBackup="false" android:enableOnBackInvokedCallback="false" android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config" android:requestLegacyExternalStorage="true" android:supportsRtl="true">
         <!--
           不要注册 androidx.media.session.MediaButtonReceiver：它只把媒体键转给本包的
           MEDIA_BUTTON / MediaBrowserService，本应用没有这类 Service，一旦被系统调用就会在

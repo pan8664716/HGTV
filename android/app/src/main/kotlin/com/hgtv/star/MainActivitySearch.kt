@@ -92,9 +92,14 @@ internal fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
         }
     }
     top.addView(input,lp(dp(SEARCH_INPUT_WIDTH),dp(SEARCH_INPUT_HEIGHT+2*TvStyle.SOFT_BAND)).apply {
-        // 固定宽度（不再吃满弹性空间）：搜索框与后面两枚按钮是一组，靠左聚在一起，
-        // 省下来的宽度留给这一组与右边那排圆形入口之间的空白（见本函数末尾的 Space）。
-        leftMargin=dp(TvStyle.GAP_GROUP); rightMargin=dp(TvStyle.GAP_TIGHT)
+        // 初始宽度只是「还没量过之前」的占位：这一行建好之后由 [fitSearchRow] 按实测
+        // 可用宽度重新分配（上限 [SEARCH_INPUT_WIDTH]、下限 [SEARCH_INPUT_MIN_WIDTH]）。
+        //
+        // 为什么不能写死一个宽度：这一行除了输入框与两枚按钮，还要摆七个圆形入口（含「推荐」）。
+        // 在 1080p / 280dpi 这类屏上整行只有约 1083dp，固定 300dp 的输入框必然把右边那排
+        // 圆形入口顶出屏幕——用户看到的就是「搜索一展开，圆形按钮被挤没了」。
+        // 间距也从 GAP_GROUP 收到 GAP_BLOCK：这一组控件是**一整块**，内部不必留那么大的空。
+        leftMargin=dp(TvStyle.GAP_BLOCK); rightMargin=dp(TvStyle.GAP_TIGHT)
     })
     // 输入框为空时按「搜索」= 打开搜索历史（原来这里只是把焦点丢回输入框）。
     // 历史按钮因此可以从导航栏里去掉，把宽度让给右边那排圆形入口。
@@ -112,23 +117,22 @@ internal fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
         runSearch(next)
     }
     searchInput=input
-    // 按钮用紧凑档（40dp 底板 / 15sp）：导航栏那一行要放的东西多，
-    // 常规档（48dp / 16sp）摆进去整行会偏高偏长。
-    // 最小宽度放开到 [SEARCH_BUTTON_MIN_WIDTH]（按文字宽收紧），
-    // 间距用 [TvStyle.GAP_TIGHT]：这几枚按钮与输入框是**一组**，彼此靠近。
+    // 按钮用**收紧档**（[ButtonSize.TIGHT]：40dp 底板 / 15sp 字号 / 12dp 内边距）：
+    // 高度与同一行的输入框对齐，横向比紧凑档再省 12dp（「搜索」90dp、「手机输入」120dp）。
+    // 宽度按内容收紧（见 `paintButton` 里 TIGHT 的分支），不会再被常规档的 92dp 撑开。
+    // 间距用 [SEARCH_BUTTON_GAP]（6dp）：这几枚与输入框是**一组**，彼此靠近。
     // 与回车是同一个动作：空内容按它就是搜索历史（见 [search]）。
-    searchButton=addButton(top,"搜索",size=ButtonSize.COMPACT,gap=TvStyle.GAP_TIGHT,icon=R.drawable.ic_toolbar_search) { search() }
-        .apply { minimumWidth=dp(SEARCH_BUTTON_MIN_WIDTH) }
+    searchButton=addButton(top,"搜索",size=ButtonSize.TIGHT,gap=SEARCH_BUTTON_GAP,icon=R.drawable.ic_toolbar_search) { search() }
     // 「手机输入」：遥控器上敲中文要按几十下方向键，这里把打字整个搬到手机上。
     // 手机扫码 → 竖屏页面里打完 → 按发送，电视立刻按这个词搜索（见 [TvTools.phoneInput]）。
-    // 与「搜索」同一档（COMPACT）并紧挨着：这两枚是同一组动作，右边那排圆形入口另属一组。
-    val phone=addButton(top,"手机输入",size=ButtonSize.COMPACT,gap=TvStyle.GAP_TIGHT,icon=R.drawable.ic_action_phone) {
+    // 与「搜索」同一档（TIGHT）并紧挨着：这两枚是同一组动作，右边那排圆形入口另属一组。
+    val phone=addButton(top,"手机输入",size=ButtonSize.TIGHT,gap=SEARCH_BUTTON_GAP,icon=R.drawable.ic_action_phone) {
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken,0)
         // 收到就先把这句话写进页面提示行，再走搜索：手机那边点了「发送到电视」，
         // 电视上必须**看得见**它收到了什么——否则「手机说已发送、电视没反应」时
         // 分不清是哪一端的问题。
         tvTools.phoneInput(input) { word -> showHint("已从手机收到「$word」"); runSearch(word) }
-    }.apply { minimumWidth=dp(SEARCH_BUTTON_MIN_WIDTH) }
+    }
     searchActions+=phone
     // 语音入口已去掉：搜索页只留「输入框 + 搜索」两件。
     // 电视上用遥控器说话的场景本来就少，识别界面还会把整页切走再切回来；
@@ -164,6 +168,60 @@ internal fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     suppressSearchFocusOnce=false
     if(requestFocus) input.post { if(input.attachedToWindow) input.requestFocus() }
 }
+/**
+ * 按**实测宽度**给搜索页导航栏那一行重新分配宽度：输入框吃「兄弟们剩下多少」。
+ *
+ * ## 为什么必须实测
+ *
+ * 这一行从左到右是：页面标题、输入框、「搜索」、「手机输入」、弹性空白、六枚圆形入口
+ * （五枚标签入口 + 「推荐」）。输入框写死 300dp 时，整行总宽在 1080p / 280dpi 的屏上会超出可用宽度
+ * 一百多 dp——`LinearLayout` 不会压缩子控件，超出部分直接被父容器裁掉，
+ * 用户看到的就是「搜索页一展开，右边那排圆形按钮被挤掉了」。
+ *
+ * 反过来把输入框写死成一个很小的值，4K 电视上又白白浪费一半宽度。
+ * 因此这里在**每次布局**时算一遍：把所有兄弟控件的实测宽度与间距加起来，
+ * 从可用宽度里减掉，剩下的就是输入框的；再夹在
+ * [SEARCH_INPUT_MIN_WIDTH] 与 [SEARCH_INPUT_WIDTH] 之间。
+ *
+ * ## 几个约束
+ *
+ * * **圆形入口一寸不让**：它们与其余兄弟控件一样按实测宽度先占位，输入框只拿剩下的。
+ * * **不会来回抖**：只在算出的宽度与当前不同的时候改一次 `layoutParams`；
+ *   输入框自己的宽度不参与求和，改完再布局一次结果就稳定了。
+ * * **只在搜索页调用**：其余页面这一行没有输入框（只有一段弹性空白）。
+ *
+ * [top] 是导航栏那一行。
+ */
+internal fun MainActivity.fitSearchRow(top: LinearLayout) {
+    top.addOnLayoutChangeListener { view,left,_,right,_,_,_,_,_ ->
+        val input=searchInput as? EditText ?: return@addOnLayoutChangeListener
+        val available=(right-left)-view.paddingLeft-view.paddingRight
+        if(available<=0) return@addOnLayoutChangeListener
+        var used=0
+        for(index in 0 until top.childCount) {
+            val child=top.getChildAt(index)
+            if(child===input) continue
+            val params=child.layoutParams as? LinearLayout.LayoutParams ?: continue
+            // 弹性空白不占宽：它本来就是「剩下的那一段」，算进来会把输入框挤到 0。
+            if(params.weight>0f) continue
+            used+=child.measuredWidth+params.leftMargin+params.rightMargin
+        }
+        val params=input.layoutParams as? LinearLayout.LayoutParams ?: return@addOnLayoutChangeListener
+        val room=available-used-params.leftMargin-params.rightMargin
+        val width=when {
+            room>=dp(SEARCH_INPUT_WIDTH) -> dp(SEARCH_INPUT_WIDTH)
+            room>=dp(SEARCH_INPUT_MIN_WIDTH) -> room
+            // 连下限都放不下（极窄屏 / 系统字号放大）：宁可输入框再窄一点，
+            // 也不许把右边那排圆形入口顶出屏幕——它们才是这一行的固定成员。
+            else -> room.coerceAtLeast(0)
+        }
+        if(params.width!=width) {
+            params.width=width
+            input.layoutParams=params
+        }
+    }
+}
+
 /**
  * 搜索页导航栏里的控件「按上键」都回到那一排圆形入口。
  *

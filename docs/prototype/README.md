@@ -26,7 +26,6 @@
 | 卡片菜单 | `MainActivityHome.quickActions`：继续观看 / 收藏 / 稍后观看 / 详情 / 删除记录 / 不在热播榜中显示 |
 | 备份 | `TvTools.libraryTransfer`：局域网二维码 + 合并恢复 |
 | 清空缓存 | `MainActivityReset.kt`：不可撤销，危险色 |
-| 版本更新 | `AppUpdater`：暂不更新 / 立即更新 |
 | 播完推荐 | `showSeriesFinished`：底部「换一部接着看」 |
 
 ## 修顺的地方

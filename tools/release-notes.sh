@@ -84,7 +84,7 @@ if [[ "$mode" == notes ]]; then
 fi
 
 {
-  printf '红果TV %s（versionCode %s）\n\n' "$version" "$code"
+  printf 'HGTV %s（versionCode %s）\n\n' "$version" "$code"
   printf '%s\n' "$section"
   printf '\n---\n\n'
   printf '安装包：`HGTV_%s.apk`\n' "$version"

@@ -88,6 +88,16 @@ object SessionBootstrap {
     /** 长连接推来会话变更时调（可选）。 */
     fun onFrontierMessage(raw: String) { keeper?.onFrontierMessage(raw) }
 
-    /** 进程退出。 */
-    fun shutdown() { keeper?.shutdown() }
+    /**
+     * 停心跳。用于进程退出，以及「清空应用缓存」——后者从点下确认到进程被杀之间还有约 1 秒，
+     * 心跳正好在这段时间里回写 `native-session-v1`（cookie / token / last-beat-at），
+     * 会把它刚删掉的文件原样写回来。
+     *
+     * 停完把 [keeper] 置空：`onForeground()` / `onAppStart()` 之后都变成空操作，
+     * 不必依赖「用户不会再按一下」这种假设。
+     */
+    fun shutdown() {
+        keeper?.shutdown()
+        keeper=null
+    }
 }

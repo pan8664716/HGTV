@@ -616,9 +616,6 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      */
     private val RECOMMEND_PAGE_SIZE=20
 
-    /** 推荐流游标的上限：超过它就把游标重置回 0（服务端那条流远没有这么深）。 */
-    private val RECOMMEND_MAX_OFFSET=2000
-
     /**
      * **逻辑页**大小：界面上「一页」按这么多条算，不管底层接口一页能给多少。
      *
@@ -667,7 +664,7 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
         val request = Request.Builder().url(url).header("User-Agent",VendorConstants.userAgent(deviceProfile(), video = true)).header("Accept-Language","zh-CN,zh;q=0.9")
         // 账号 / App 接口的公共协议头。参考实现（`passport_client.go` 的 `request`）每一条都带，
         // 早先这里一条都没有：
-        // * `X-SS-DP` = `8662`（红果的 aid，网关按它路由）；
+        // * `X-SS-DP` = `8662`（HGTV的 aid，网关按它路由）；
         // * `X-Tt-Store-Region` / `-Src` —— 平台按区域分流，注册下发的 `store-region`（如 `cn-gd`）
         //   会覆盖默认的 `cn`。
         request.header("X-SS-DP","8662")
@@ -841,7 +838,7 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
         if(items.isEmpty()) throw IOException("${board.label}榜暂无数据")
         // 接口只给 `has_more`，**没有总数**：因此不编造总量，只报「已看到第几页」。
         // 界面「N / M 部」据此显示（见 `moreCountText`），加载到底自然变成「已显示全部 N 部」。
-        // 更新时间这一条接口没有，留空即由界面退回 [RankBoard.source] 那行来源文案。
+        // 更新时间这一条接口没有，留空即由界面把那一行整行收起来（不显示任何来源文案）。
         return CatalogPage(items,payload.optBoolean("has_more",false),ComicRanking(positions,page,""))
     }
 
@@ -949,10 +946,16 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      * * `offset` 用调用方给的值（首次 0，之后用上一页返回的 `next_offset`）。
      *
      * 这两点决定了「每次进推荐是不是同一套列表」：传空 + 0 永远回同一批。
-     * `sort` 不传 = 服务端的推荐序（不是热播榜）；`genre` 由 [selection] 决定（推荐页只取漫剧）。
+     * `sort` 不传 = 服务端的推荐序（不是热播榜）；`genre` 由 [selection] 决定，
+     * 推荐页传的是空选择（`genre` 为空数组 = 全部体裁，真人短剧 / 漫剧 / AI 剧混排）。
+     *
+     * **返回的 `nextOffset` 一定往前推**：早先这里有一句 `.coerceAtMost(2000)`，把游标钳在
+     * 2000 上——实测 `offset=1980/1990/1999/2000` 回的都是 `next=2000`，于是每页都从 2000
+     * 重新开始，用户每次打开推荐看到的永远是同一批（服务端自己也在 2000 钳位）。现在不钳，
+     * 由界面侧按「游标不前进 = 这条流刷不动了」换新流（见 `MainActivity.loadRecommendPage`）。
      */
     fun recommendFeed(selection: CategorySelection, sessionId: String, offset: Int, limit: Int = RECOMMEND_PAGE_SIZE): RecommendFeed {
-        require(offset in 0..RECOMMEND_MAX_OFFSET)
+        require(offset >= 0) { "offset 不能为负" }
         val body=JSONObject()
             .put("filter_ids","")
             .put("req_scene","default")
@@ -974,7 +977,7 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
             reported>offset -> reported
             items.isNotEmpty() -> offset+items.size
             else -> offset+limit
-        }.coerceAtMost(RECOMMEND_MAX_OFFSET)
+        }
         val more=payload.optBoolean("has_more",items.isNotEmpty())
         return RecommendFeed(CatalogPage(items,more),payload.optString("session_id").ifBlank { sessionId },next)
     }
@@ -1665,7 +1668,7 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      * 账号资料。
      *
      * 两个接口一起用，因为信息是分开的（实测）：
-     * * `user/info`（不带参数 = 当前登录用户）——昵称 / 头像 / **红果号**（字段名是 `req_id`）；
+     * * `user/info`（不带参数 = 当前登录用户）——昵称 / 头像 / **平台号**（字段名是 `req_id`）；
      * * `basic_info/get`——关注 / 粉丝 / 获赞三个计数。
      *
      * 注意 `profile/get` **必须带 `user_id`**（`?user_id=1739875314044148`），

@@ -370,6 +370,9 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
     PlaybackDiag.injectedNoFrame=BuildConfig.DEBUG && DebugFaults.mode(this)==DebugFaults.Mode.STALL_FRAME
     PlaybackDiag.begin(session,data.series.title,targetId,selectedIndex,data.episodes.size,library.decoderMode.label,"${library.maxQuality}P")
     panel=false; playError=false; playbackReady=false; quality=""; pausedForLifecycle=!autoplay
+    // 片源尺寸属于「上一集」：新一集要知道自己的尺寸之后才能决定要不要自动全屏，
+    // 不清掉的话第一帧出来之前会沿用上一集的比例（竖屏剧之后接横屏剧会先闪一下裁切）。
+    videoWidth=0; videoHeight=0
     player?.playWhenReady=requestedAutoplay
     prefetchAttempts=0; prefetchAttemptAt=0
     // 常亮由状态推导（`autoplay=false` 的续播不该钉住屏幕），见 [syncKeepScreenOn]。
@@ -378,8 +381,25 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
         root.removeAllViews(); root.setBackgroundColor(Color.BLACK)
         // 整棵树被清空了：触摸层的引用全部作废（控件已经不在树上），
         // 否则下面 `attachTouchLayer()` 会因为「引用非空」而直接返回，平板播放页就没有手势层了。
-        touchLayer=null; touchBar=null; touchPlayLabel=null; touchSeekHint=null; scrubbing=false
-        val view=PlayerView(this).apply {
+        touchLayer=null; touchBar=null; touchPlayLabel=null; touchSeekHint=null; touchBoostHint=null
+        // 横滑调进度那块读数也挂在旧的手势层上，引用一并作废（见 `showScrubHint`）。
+        touchScrubHint=null
+        scrubbing=false; recommendScrubbing=false
+        // 画面之外那一层同样随整棵树作废（见 `overlayLayer`）。
+        overlayLayer=null
+        // 推荐页那枚「剧名」入口同属这一块：整棵树已经换掉，引用必须一起作废。
+        touchEntryTitle=null; touchEntryHint=null
+        // 长按倍速是「手指按住时的临时状态」，换集时一定已经抬手：标志位不能带进新的一集。
+        playbackBoost=false
+        // 「短剧自动全屏」的实现是**把画面转 90°**（见 [autoFullscreenRotated]）。
+        //
+        // 这一步对承载视频的那一层有硬要求：SurfaceView 是独立于窗口的系统图层，
+        // 父视图的旋转不会作用到它的画面上，转完之后看到的只是被拉扁 / 错位的画面
+        // （表现就是「横向拉伸」）。TextureView 是普通视图，跟着父级一起变换，才能真的转过来。
+        //
+        // 因此开关打开时改用 `surface_type=texture_view` 这一版布局；关掉时仍然用默认的
+        // SurfaceView（更省电、4K 更稳，与改动前完全一致）。
+        val view=(if(library.autoFullscreen) layoutInflater.inflate(R.layout.player_surface_texture,root,false) as PlayerView else PlayerView(this)).apply {
             useController=false; resizeMode=frameResizeMode(); isFocusable=false
             setKeepContentOnPlayerReset(true); setShutterBackgroundColor(Color.BLACK); setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
         }
@@ -397,6 +417,18 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
         // 这里必须把新一层的 PlayerView 接上去，否则画面没有输出（黑屏、只有声音）。
         view.player=player
         playerView=view; root.addView(view,FrameLayout.LayoutParams(-1,-1))
+        // 画面之上的一切装在同一层里：弹幕 / 手势层 / 顶部信息条 / 底部控制条。
+        //
+        // 只把视频转 90°（短剧自动全屏）时，这一层要跟着一起转，否则标题条、控制条、
+        // 弹幕都还横在原方向上，和画面互相垂直。装成一层之后，「跟着转」只需要在
+        // 这一层上做一次旋转 + 一次宽高对调（见 `applyOverlayGeometry`），
+        // 里面所有控件（含后挂上来的手势层、触屏按键、快进提示）自动跟着走。
+        val layer=FrameLayout(this).apply { clipChildren=false; clipToPadding=false }
+        overlayLayer=layer
+        root.addView(layer,FrameLayout.LayoutParams(-1,-1))
+        // 画面缩放 / 短剧自动全屏按当前偏好落到这一层上
+        //（100% 且不旋转时就是原来的铺满）。
+        applyVideoGeometry()
         // 弹幕层压在画面之上、标题条与控制层之下：隐藏弹幕时整层不可见，也不参与绘制。
         // 播放位置与播放状态都从播放器现取，因此暂停 / 跳转 / 倍速都不会和画面脱节。
         val overlay=DanmakuView(this).apply {
@@ -411,41 +443,70 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
             setClock(0,false)
         }
         danmakuView=overlay
-        root.addView(overlay,FrameLayout.LayoutParams(-1,-1))
-        // 顶部标题条：对齐爆米花 activity_player —— 整宽 96dp、50% 黑 → 透明，
-        // 左侧 24sp 粗体剧名、右侧同字号时钟，左右安全边距 78dp。
-        // 播放界面压在视频上，文字固定用暖白（TvStyle.playerText），不跟主题：
-        // 浅色主题下如果跟着变成深色字，这条标题条就完全看不见了。
+        layer.addView(overlay,FrameLayout.LayoutParams(-1,-1))
+        // 播放画面顶部的一条常显信息：**左 = 剧名 → 当前集数；右 = 网速 → 时间**。
+        //
+        // 四项各自独立开关（设置页「界面设置 → 播放显示」）。左两组贴左、右两组贴右，
+        // 中间由左组自己的权重吃掉空出来的宽度：某一项关掉（`GONE`）时，
+        // 剩下那一项自然补到它该在的位置（左侧仍靠左、右侧仍靠右），不会留下空档。
+        //
+        // 这一条**常驻**（不跟底部控制条一起收起），因此在顶部压一条 50% 黑 → 透明的渐变，
+        // 亮画面上白字也读得清；文字固定用暖白（TvStyle.playerText），不跟主题，
+        // 否则浅色主题下会变成深色字、整条看不见。
+        val info=row().apply {
+            gravity=Gravity.CENTER_VERTICAL
+            setPadding(dp(78),0,dp(78),0)
+            background=TvStyle.gradient(0x80000000.toInt(),Color.TRANSPARENT)
+        }
+        // 左组：剧名 + 当前集数，两项**都贴左**（剧名在前、集数紧跟其后）。
+        // 整组在 info 里带权重，把右组顶到最右边；组内两项都是 wrap_content，
+        // 因此剧名关掉时集数自动成为最左那一项，反之亦然。
+        val left=row().apply { gravity=Gravity.CENTER_VERTICAL }
+        // 剧名：只写剧名，**不再拼「· 第 N 集」**（集数由右边那一项单独负责）。
         playbackTitle=text("",24f,TvStyle.playerText).apply {
             maxLines=1; ellipsize=TextUtils.TruncateAt.END; setTypeface(null,Typeface.BOLD)
             setShadowLayer(5f,0f,2f,0x80000000.toInt())
+            setPadding(0,0,dp(18),0)
         }
-        // 时间单独成一层（不再塞在标题条里）：默认与标题条同一时机显隐，
-        // 打开「始终显示时间」后，标题条收起时它仍然留在右上角（见 [syncClockVisibility]）。
-        val clock=text("",24f,TvStyle.playerText).apply {
+        left.addView(playbackTitle,lp(-2,-2))
+        // 当前集数 / 总集数：`第 3 / 24 集`。
+        val episode=text("",22f,TvStyle.playerText).apply {
+            maxLines=1
             setShadowLayer(5f,0f,2f,0x80000000.toInt())
-            visibility=View.GONE
+        }
+        playbackEpisode=episode
+        left.addView(episode,lp(-2,-2))
+        // 剧名是 wrap_content（要贴着集数走），长剧名因此需要一条上界才能省略：
+        // 每次布局按「左组可用宽度 − 集数宽度」算一次 maxWidth，超出就由 ellipsize 收成「…」。
+        // 这样既不会把集数挤出画面，也不会在两者之间留一段空白。
+        left.addOnLayoutChangeListener { view,_,_,viewRight,_,_,_,_,_ ->
+            val available=(viewRight-view.left-view.paddingLeft-view.paddingRight).coerceAtLeast(0)
+            val episodeWidth=if(episode.visibility==View.VISIBLE) episode.width else 0
+            val limit=(available-episodeWidth).coerceAtLeast(0)
+            if(playbackTitle.maxWidth!=limit) { playbackTitle.maxWidth=limit; playbackTitle.requestLayout() }
+        }
+        info.addView(left,lp(0,-2).apply { weight=1f })
+        // 右组：网速 + 时间，整体贴右。
+        val right=row().apply { gravity=Gravity.CENTER_VERTICAL }
+        // 网速：本进程实时下行（`↓1.2M/s`），默认关闭。
+        val speed=text("",22f,TvStyle.playerText).apply {
+            maxLines=1
+            setShadowLayer(5f,0f,2f,0x80000000.toInt())
+            setPadding(0,0,dp(18),0)
+        }
+        playbackSpeedText=speed
+        right.addView(speed,lp(-2,-2))
+        // 时间在最右：24sp，与剧名同字号。
+        val clock=text("",24f,TvStyle.playerText).apply {
+            maxLines=1
+            setShadowLayer(5f,0f,2f,0x80000000.toInt())
         }
         playerClock=clock
-        // 顶部标题条：整宽 96dp、50% 黑 → 透明，左侧 24sp 粗体剧名、右侧同字号时钟。
-        // 这一条压在画面上，加柔光底板反而会挡住画面、也不符合「播放界面尽量不打扰」的取向。
-        // 播放时不打扰：默认收起，只有唤出播放界面（底部控制条 / 播放菜单 / 选集面板）才出现，
-        // 平时屏幕上只剩画面和弹幕。
-        val topBar=row().apply {
-            setPadding(dp(78),0,dp(78),0)
-            background=TvStyle.gradient(0x80000000.toInt(),Color.TRANSPARENT)
-            visibility=View.GONE
-        }
-        // 右侧给时间留出固定的空档：标题再长也不会压到时间上。
-        topBar.addView(playbackTitle,lp(-1,-2).apply { rightMargin=dp(96) })
-        root.addView(topBar,FrameLayout.LayoutParams(-1,dp(96),Gravity.TOP))
-        playbackTopBar=topBar
-        // 右上角时间：与标题条同一块 96dp 区域、同一条 78dp 安全线。
-        // 24sp 文字约 30dp 高，垂直居中就是 (96 − 30) / 2 ≈ 33dp。
-        root.addView(clock,FrameLayout.LayoutParams(-2,-2,Gravity.TOP or Gravity.END).apply {
-            rightMargin=dp(78)
-            topMargin=dp(32)
-        })
+        right.addView(clock,lp(-2,-2))
+        info.addView(right,lp(-2,-2))
+        // 整宽、96dp 高，贴着顶边：与原来那条标题条同一块区域、左右同一条 78dp 安全线。
+        layer.addView(info,FrameLayout.LayoutParams(-1,dp(96),Gravity.TOP))
+        playbackInfo=info
 
         // 底部控制层保持原样：透明 → 60% 黑 → 90% 黑的三段渐变，压在画面上自然暗下去。
         // 播放界面（标题条 + 控制层 + 进度条）不套新拟态：任何柔光底板都会和画面抢注意力，
@@ -488,19 +549,24 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
         sleepOption=option("定时 ${sleepTimer.label()}") { showPlaybackMenu(sleepRow(library.danmakuMode.showsStyle)) }
         hud.addView(options,lp(-1,-2))
         // 底部居中的下拉箭头（爆米花 scroll_indicator）：点击直接打开选集。
+        // 触屏的推荐页要把它藏起来（那一页不放选集入口，见 `attachRecommendEntry`），
+        // 因此留一个引用，按页面切换显隐。
+        hudEpisodeArrow=ImageView(this).apply {
+            setVectorIcon(R.drawable.ic_chevron_down)
+            scaleType=ImageView.ScaleType.CENTER_INSIDE
+            importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            setOnClickListener { showEpisodePanel(hud) }
+        }
         hud.addView(
-            ImageView(this).apply {
-                setVectorIcon(R.drawable.ic_chevron_down)
-                scaleType=ImageView.ScaleType.CENTER_INSIDE
-                importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
-                setOnClickListener { showEpisodePanel(hud) }
-            },
+            hudEpisodeArrow,
             lp(dp(75),dp(38)).apply { gravity=Gravity.CENTER_HORIZONTAL; topMargin=dp(8) }
         )
         controls=row().apply { setPadding(0,dp(12),0,0); visibility=View.GONE }; hud.addView(controls)
         // 这个滚动容器高度是 WRAP_CONTENT，内容永远不超过自己，因此不需要外壳裁剪；
         // 容器自己也不裁剪，播放器按钮放大后的底色才能画出来。
-        root.addView(ScrollView(this).apply { isVerticalScrollBarEnabled=false; clipChildren=false; clipToPadding=false; addView(hud) },FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM)) // focus-bleed-exempt: 边界就是整屏宽，播放器按钮离边缘 ≥78dp
+        // 控制条也挂在这一层里（同样会跟着画面一起转）。ScrollView 的高度是 WRAP_CONTENT、
+        // 贴在这一层的底边——旋转之后它就落在屏幕的一条竖边上，与画面同方向。
+        layer.addView(ScrollView(this).apply { isVerticalScrollBarEnabled=false; clipChildren=false; clipToPadding=false; addView(hud) },FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM)) // focus-bleed-exempt: 边界就是整屏宽，播放器按钮离边缘 ≥78dp
         // 触屏设备（平板 / 手机 / 触屏一体机）：在画面之上补一层手势、给控制条补一排可点按钮、
         // 把进度条接成可拖。电视上 `touchArmed` 恒为 false（永远收不到 ACTION_DOWN），
         // 这三步一次都不会执行，播放页的结构与今天逐行一致。
@@ -520,7 +586,13 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
         // 露出正在按新比例拉伸的旧画面。
         reattachRecommendCover()
     }
-    playbackTitle.text="${data.series.title}  ·  第 ${episodeIndex+1} 集"
+    playbackTitle.text=data.series.title
+    playbackEpisode?.text="第 ${episodeIndex+1} / ${data.episodes.size} 集"
+    syncPlaybackInfo()
+    // 复用播放器的那条路不会重建播放层：这一集如果换过缩放比例，在这里重新落一次。
+    applyVideoScale()
+    // 画面模式同理：从设置页回来之后「短剧自动全屏」可能刚被改过。
+    applyResizeMode()
     loadDanmaku(data.episodes[episodeIndex],data.series.id)
     playbackText.text="正在获取播放地址…"; progressBar.progress=0f; progressBar.visibility=View.VISIBLE; hidePlaybackOverlay()
     controls.removeAllViews(); controls.visibility=View.GONE
@@ -675,8 +747,30 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
                 // 免得两个 period 同时抢加载带宽。
                 main.postDelayed({ if(!isDestroyed) maybeQueueNext() },3000)
             }
+            /**
+             * 片源尺寸：**短剧自动全屏的判据之一**（另一个是屏幕尺寸，见 [autoFullscreenRotated]）。
+             *
+             * 换集、换清晰度、软解 / 硬解切换都会重新回调；尺寸没变时也同样会回调，
+             * 因此这里在尺寸没变时也重算一次（屏幕可能刚转过来），但不重建任何视图。
+             */
+            override fun onVideoSizeChanged(videoSize: com.google.android.exoplayer2.video.VideoSize) {
+                if(!active()) return
+                // 像素比不是 1 的片源（老盒子上很常见）：按显示尺寸算比例才是用户看到的形状。
+                val ratio=if(videoSize.pixelWidthHeightRatio>0f) videoSize.pixelWidthHeightRatio else 1f
+                // 带旋转元数据的片源（手机竖拍的常见形态）：解码器还没把那个角度转过来，
+                // 因此这里按「转过来之后」的宽高记，判据才不会反过来。
+                val swapped=videoSize.unappliedRotationDegrees==90 || videoSize.unappliedRotationDegrees==270
+                val rawW=if(swapped) videoSize.height else videoSize.width
+                val rawH=if(swapped) videoSize.width else videoSize.height
+                videoWidth=Math.round(rawW*ratio)
+                videoHeight=rawH
+                applyResizeMode()
+            }
             override fun onRenderedFirstFrame() {
                 if(!active()) return
+                // 首帧的尺寸已经确定：短剧自动全屏在这之后再落一次
+                //（`onVideoSizeChanged` 在个别软解 / 隧道模式下不一定先于首帧回调，这里兜一次底）。
+                applyResizeMode()
                 // 推荐页：新一集的第一帧真的上屏了，过渡黑场这时候才淡出（见 [revealRecommendCover]）。
                 // 用「出帧」而不是 READY：READY 只代表解出了轨道，画面可能还要等几百毫秒。
                 if(screen=="recommend") revealRecommendCover()

@@ -175,8 +175,6 @@ object LibraryDisk {
             SearchSource.fromStored(values["searchSource"] as? String),
             // 首页每行卡片数：旧版本磁盘没有这个键，按 6 处理（与之前的行为一致）。
             (values["homeColumns"] as? Number)?.toInt()?.coerceIn(4,8) ?: 6,
-            // 始终显示时间：旧版本磁盘没有这个键，按关闭处理（与之前的行为一致）。
-            values["alwaysShowClock"] as? Boolean ?: false,
             // 导航栏圆形入口：逐个开关（值是隐藏的那些 key）；旧版本磁盘没有这个键 = 全部显示。
             (values["hiddenNav"] as? Set<*>)?.filterIsInstance<String>()?.joinToString(",") ?: "",
             // 调试模式：旧版本磁盘没有这个键，按关闭处理。
@@ -186,7 +184,16 @@ object LibraryDisk {
             // 首页本机记录三栏：与 [hiddenNav] 一样存成字符串集合；旧版本磁盘没有这个键 = 三栏全显示。
             (values["hiddenHome"] as? Set<*>)?.filterIsInstance<String>()?.filter { it in HOME_KEYS }?.joinToString(",") ?: "",
             // 「减少动画」：旧版本磁盘没有这个键，按关闭处理（与之前的行为一致）。
-            values["reduceAnim"] as? Boolean ?: false)
+            values["reduceAnim"] as? Boolean ?: false,
+            // 播放显示四项：旧版本磁盘没有这些键，按默认值处理（标题 / 集数 / 时间显示，网速关闭）。
+            values["playerTitle"] as? Boolean ?: true,
+            values["playerEpisode"] as? Boolean ?: true,
+            values["playerClock"] as? Boolean ?: true,
+            values["playerSpeed"] as? Boolean ?: false,
+            // 画面缩放：旧版本磁盘没有这个键，按 100%（铺满）处理。
+            ((values["videoScale"] as? Number)?.toFloat() ?: 100f).coerceIn(1f,100f),
+            // 短剧自动全屏：旧版本磁盘没有这个键，按关闭处理（与之前的行为一致）。
+            values["autoFullscreen"] as? Boolean ?: false)
         val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())
         val index = LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
             SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden"),

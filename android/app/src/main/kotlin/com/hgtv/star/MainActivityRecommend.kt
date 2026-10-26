@@ -13,8 +13,6 @@ import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.Series
-import com.hgtv.star.tv.ButtonSize
-import com.hgtv.star.tv.ButtonTone
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.list.showCatalog
 
@@ -30,13 +28,22 @@ import com.hgtv.star.list.showCatalog
 /** 推荐流一次取多少（分类接口的「全部推荐」流第一页就是 20 条，之后每页 100 条）。 */
 internal const val RECOMMEND_SKIP_LIMIT=4
 /**
- * 推荐流只取**漫剧**这一条体裁（接口的 `genre`）。
+ * 一次加载里最多连着取多少页。
  *
- * 不带 `genre` 时接口回的是「全部体裁」混排：真人短剧 / AI 剧会一起进来，
- * 推荐页播的就不是用户想看的漫剧。带上之后仍然是同一条「全部推荐」流
- *（不传 `sort`），只是把体裁钉在漫剧上，见 `ContentRepository.categoryApi`。
+ * 只有「这一页筛完一条不剩」（整页都是本机隐藏的 / 全是推过的）才会接着取下一页，正常一页就返回；
+ * 这个上限是兜底：服务端回空页却还说 `has_more=true` 时也不至于无限递归下去。
  */
-internal const val RECOMMEND_GENRE="comic_series"
+private const val RECOMMEND_MAX_CHAIN=14
+/**
+ * 同一次加载里最多换几次「新流」。
+ *
+ * 换新流解决的是实测到的两处死水：
+ * * 游标撞到服务端天花板——`next_offset` 永远停在 2000，之后每次打开都回同一批；
+ * * 一条流刷到后段（`session_id` 只用 20 多分钟就开始衰减）回的全是推过的。
+ *
+ * 换两次仍然全是旧货，就不再纠缠，交给用户（上下键照样能看）。
+ */
+private const val RECOMMEND_MAX_RESTARTS=2
 /** 切换过渡：黑场淡入（把上一部收住）/ 新画面淡出（把这一部放出来）/ 最长遮挡。 */
 private const val COVER_IN_MS=120L
 private const val COVER_OUT_MS=260L
@@ -67,7 +74,6 @@ internal fun MainActivity.openRecommend() {
     detachPlayerSurface()
     releaseCatalogViews()
     tvTools.close()
-    feedbackOpen=false
     collection=null
     directPlayback=false
     initialCatalogPending=false
@@ -105,14 +111,25 @@ internal fun MainActivity.closeRecommendCache() {
  *
  * [append] 为假是首次进入（重置列表），为真在末尾接一页（上下键走到最后一部时补货）。
  * 结果落地前会核对令牌与当前页面：中途退出 / 重新进入，旧结果直接丢掉。
+ *
+ * [depth] / [restarts] 只给本函数自己递归用：前者数「这一次加载已经连取了几页」，
+ * 后者数「这一次加载已经换了几条新流」，两个上限见 [RECOMMEND_MAX_CHAIN] /
+ * [RECOMMEND_MAX_RESTARTS]。
  */
-internal fun MainActivity.loadRecommendPage(append: Boolean,fromStart: Boolean=false,onReady: () -> Unit) {
+internal fun MainActivity.loadRecommendPage(append: Boolean,depth: Int=0,restarts: Int=0,onReady: () -> Unit) {
     // 这几种情况都**发不出请求**：直接回调，让调用方按手里的列表继续（环绕 / 给提示），
     // 否则上下键走到末尾又恰好碰上补页，就会「按了没反应」。
-    if(recommendLoading) { onReady(); return }
-    if(append && !recommendHasMore) { onReady(); return }
-    val page=if(append) recommendPage+1 else 1
-    if(page>10) { onReady(); return }
+    if(depth>=RECOMMEND_MAX_CHAIN || recommendLoading) { onReady(); return }
+    // 这条流已经到底（`has_more=false`）：不再原地干等，换一条新流接着补货。
+    // 早先这里是直接 `onReady()`——用户上下键走到流尾，之后每次补页都是空回调，
+    // 看上去就是「刷不动了」。
+    if(append && !recommendHasMore) {
+        if(restarts>=RECOMMEND_MAX_RESTARTS) { onReady(); return }
+        restartRecommendStream()
+        loadRecommendPage(append,depth+1,restarts+1,onReady)
+        return
+    }
+    val page=recommendPage+1
     recommendLoading=true
     val token=recommendPageToken.incrementAndGet()
     // 请求从游标位置开始（首次进入 = 落盘游标，补页 = 上一页的 `next_offset`）。
@@ -124,32 +141,55 @@ internal fun MainActivity.loadRecommendPage(append: Boolean,fromStart: Boolean=f
         // 不会重复发请求；冷启动第一次进推荐因此不会因为「还没注册」而空手回来。
         if(!library.deviceRegistered()) registerDeviceOnce()
         val result=runCatching {
-            repository.recommendFeed(CategorySelection(genre=RECOMMEND_GENRE),session,offset)
+            // 全部体裁：真人短剧 / 漫剧 / AI 剧一起进推荐流（不传 `genre`）。
+            // 早先这里钉在 `comic_series` 上，实测那条流的内容池只有 193 部，
+            // 刷完就只剩重复；放开体裁之后池子深得多（实测 500 条仍未到底）。
+            repository.recommendFeed(CategorySelection(),session,offset)
         }
         main.post {
             if(isDestroyed || token!=recommendPageToken.get() || screen!="recommend") return@post
             recommendLoading=false
             result.onSuccess { feed ->
-                // 只留横屏：接口没有「只要横屏」的筛选参数（见 [Series.vertical] 的说明），
-                // 漫剧这条流里仍会混进少量竖屏短剧，客户端在这里按 `vertical` 筛掉。
-                val fresh=feed.page.items.filterNot { it.id in library.hidden() }.filterNot { it.vertical }
+                // 只滤掉本机隐藏的剧。**不再按 `vertical` 筛**：全部体裁里真人短剧占了大头
+                //（实测 500 条里 405 条竖屏），筛掉竖屏等于又只剩漫剧——正是要放开的那个限制。
+                val candidates=feed.page.items.filterNot { it.id in library.hidden() }
+                // 这条流已经刷不动了：游标不前进（服务端把 `next_offset` 钳在同一个数上），
+                // 或者这一页有八成都是刚推过的（`session_id` 衰减之后就是这副样子）。
+                // 两种都是「继续在这一页上打转」，只有换一条新流才有新东西。
+                val known=library.recommendSeen()
+                val repeats=candidates.count { it.id in known }
+                val mostlySeen=candidates.isNotEmpty() && repeats*5>=candidates.size*4
+                // `offset==0` 时不算「撞天花板」：那本来就是流头，`next_offset` 前进与否是下一页的事。
+                val stalled=offset>0 && feed.nextOffset<=offset
+                // `offset==0` 且整页都推过时**不换流**：换一条新流的流头还是这一小批（实测连取
+                // 5 次 `offset=0` 一共只有 22 部不重复），换也换不出新东西，往下走才有效——
+                // 那正好由下面「这一页筛完一条不剩就接着取下一页」接管。
+                val shouldRestart=stalled || (mostlySeen && offset>0)
+                if(shouldRestart && restarts<RECOMMEND_MAX_RESTARTS) {
+                    restartRecommendStream()
+                    loadRecommendPage(append,depth+1,restarts+1,onReady)
+                    return@onSuccess
+                }
                 // 游标前进并立刻落盘：下次进推荐（哪怕换了进程）都接着这里往下取，
                 // 而不是回到 `offset=0` 那套永远相同的默认列表。
                 recommendSession=feed.sessionId
                 recommendNext=feed.nextOffset
                 library.recommendCursor=feed.sessionId+"|"+feed.nextOffset
-                recommendItems=if(append) (recommendItems+fresh).distinctBy { it.id } else fresh
+                // 只把**没推过的**放进列表，并把它们记成「已经推过」：
+                // 推荐页不写观看历史（见 `saveProgress` 的守卫），这份记录就是它的替身。
+                val fresh=candidates.filterNot { it.id in known }
+                if(fresh.isNotEmpty()) library.markRecommended(fresh.map { it.id })
+                // 已经无处可退（后面没有了 / 换流次数用完）而这一页一条没推过的都没有——
+                // 等于用户把能刷的都刷穿了：宁可把这一页照原样放出来重复几部，
+                // 也不要让整屏只剩下「取不到」。
+                val exhausted=!feed.page.hasMore || restarts>=RECOMMEND_MAX_RESTARTS
+                val shown=if(fresh.isEmpty() && exhausted) candidates else fresh
+                recommendItems=if(append) (recommendItems+shown).distinctBy { it.id } else shown
                 recommendPage=page; recommendHasMore=feed.page.hasMore
                 // 这一页筛完一条不剩（整页都是竖屏）而且后面还有：接着取下一页，
                 // 不能让用户看到「推荐暂时取不到」——那只是这一页没货，不是流断了。
-                if(fresh.isEmpty() && feed.page.hasMore && page<10) {
-                    loadRecommendPage(append,fromStart,onReady)
-                    return@onSuccess
-                }
-                // 游标已经走到流尾、这一页又没货：从流头重来一次（只重来一次，避免死循环）。
-                if(recommendItems.isEmpty() && !fromStart && offset>0) {
-                    recommendSession=""; recommendNext=0; library.recommendCursor=""
-                    loadRecommendPage(false,true,onReady)
+                if(shown.isEmpty() && feed.page.hasMore) {
+                    loadRecommendPage(append,depth+1,restarts,onReady)
                     return@onSuccess
                 }
                 if(recommendItems.isEmpty()) {
@@ -169,6 +209,18 @@ internal fun MainActivity.loadRecommendPage(append: Boolean,fromStart: Boolean=f
     }
 }
 
+/**
+ * 丢开当前这条推荐流，回到流头重新取（`session_id` 清空 + `offset=0`）。
+ *
+ * 落盘的游标一起清掉：否则下次进程重开又会从那条已经刷不动的位置取，白换一次流。
+ */
+private fun MainActivity.restartRecommendStream() {
+    recommendSession=""
+    recommendNext=0
+    library.recommendCursor=""
+    recommendHasMore=true
+}
+
 /** 整屏一行说明（首次进入 / 取不到推荐时用；此时还没有播放画面）。 */
 internal fun MainActivity.showRecommendMessage(message: String) {
     // 走到「整屏只有一行字」就说明这一屏没有画面：把播放器那一层收掉再清 root，
@@ -178,6 +230,8 @@ internal fun MainActivity.showRecommendMessage(message: String) {
     dismissRecommendCover()
     if(playerView!=null) detachPlayerSurface()
     root.removeAllViews(); root.setBackgroundColor(Color.BLACK)
+    // 画面之外那一层也随这棵树一起没了（见 `overlayLayer`）。
+    overlayLayer=null
     val label=text(message,20f,TvStyle.playerText).apply {
         gravity=Gravity.CENTER
         setLineSpacing(dp(6).toFloat(),1f)
@@ -191,6 +245,9 @@ internal fun MainActivity.showRecommendMessage(message: String) {
 internal fun MainActivity.showRecommendToast(message: String) {
     recommendNotice=message
     recommendNoticeAt=android.os.SystemClock.elapsedRealtime()
+    // 触屏的推荐页没有那块浮层（见 `attachRecommendOverlay`），这条临时提示改挂在手势层上：
+    // 否则「快退 10 秒 · 00:12」「后面的推荐暂时取不到」这些反馈在触屏上完全看不见。
+    if(touchArmed && recommendOverlay==null) flashSeekHint(message,true,centered=true)
     updateRecommendOverlay()
 }
 
@@ -249,9 +306,10 @@ private fun MainActivity.skipRecommend(series: Series,index: Int,direction: Int,
     val next=index+1
     when {
         next in recommendItems.indices -> playRecommendAt(next,0L,1,skipped+1)
-        // 末尾还没补过页：先补一页再往下走。补页发不出去 / 失败时回调会立刻到，
-        // 那时列表没变长，就环绕回第一部，别让用户停在一屏「放不了」上。
-        recommendHasMore -> {
+        // 末尾先补一页再往下走（这条流到底了，补页那一侧会换一条新流）。
+        // 补页发不出去 / 失败时回调会立刻到，那时列表没变长，就环绕回第一部，
+        // 别让用户停在一屏「放不了」上。
+        else -> {
             // 补页回调可能来得比用户下一手还晚：起播令牌变了（已经换了另一部 / 进了正片）
             // 就说明这一下补页的意图已经过时，直接放弃，别再把人拽回列表开头。
             val guard=recommendToken.get()
@@ -263,8 +321,6 @@ private fun MainActivity.skipRecommend(series: Series,index: Int,direction: Int,
                 else showRecommendMessage("暂时没有可播放的推荐\n按确定键重试，按返回键回主页面")
             }
         }
-        recommendItems.isNotEmpty() -> playRecommendAt(0,0L,1,skipped+1)
-        else -> showRecommendMessage("暂时没有可播放的推荐\n按确定键重试，按返回键回主页面")
     }
 }
 
@@ -303,7 +359,7 @@ private fun MainActivity.startRecommendEpisode(data: Detail,position: Long,autop
     playEpisode(0,position.coerceAtLeast(0),autoplay=autoplay,prepared=prepared)
     screen="recommend"
     hud.visibility=View.GONE
-    playbackTopBar?.visibility=View.GONE
+    syncPlaybackInfo()
     // 底部浮层由 [playEpisode] 收尾统一挂（重建整棵树与复用播放器两条路都会走到那里，
     // 它按新的 `detail.series` 重挂，并带上这一下的滑动方向动画）；这里只把数值刷上去。
     updateRecommendOverlay()
@@ -503,8 +559,14 @@ internal fun MainActivity.revealRecommendCover() {
  */
 private fun MainActivity.attachRecommendCoverView(cover: View) {
     (cover.parent as? android.view.ViewGroup)?.removeView(cover)
-    val overlay=recommendOverlay
-    val index=if(overlay!=null && overlay.parent===root) root.indexOfChild(overlay) else root.childCount
+    // 黑场挂在 root 上（**不进画面之外那一层**）：那一层会跟着画面转 90°，
+    // 黑场进去也会跟着转，转过去之后四个角会露出没盖住的画面。
+    // 它只是一整屏纯黑，挂在 root 上盖住全屏就够了。
+    //
+    // 插在画面那一层**之前**：画面被黑场盖住，而压在画面上的剧名 / 进度 / 控制条
+    // 仍然看得见（过渡期间用户还在看「换到第几部了」）。
+    val layer=overlayLayer
+    val index=if(layer!=null && layer.parent===root) root.indexOfChild(layer) else root.childCount
     root.addView(cover,index.coerceIn(0,root.childCount),FrameLayout.LayoutParams(-1,-1))
 }
 
@@ -548,10 +610,16 @@ internal fun MainActivity.onRecommendScrub(fraction: Float,finished: Boolean) {
     if(duration<=0 || !playbackReady) return
     val target=(duration*fraction).toLong().coerceIn(0,(duration-500).coerceAtLeast(0))
     recommendScrubbing=!finished
+    // 触屏的推荐页拖的是**控制条上那条进度**（浮层不存在），因此两个读数都要写：
+    // 浮层里的（电视）+ 控制条里的（触屏）。两处都是空安全，另一条自然是空操作。
     recommendProgress?.progress=fraction
     recommendSpan?.let { line ->
         val text="${formatTime(target)} / ${formatTime(duration)}"
         if(line.text.toString()!=text) line.text=text
+    }
+    if(touchArmed) {
+        progressBar.progress=fraction
+        playbackText.text="${formatSpan(target)} / ${formatSpan(duration)}"
     }
     if(!finished) return
     main.removeCallbacks(seekRunnable); pendingSeek=null
@@ -562,6 +630,12 @@ internal fun MainActivity.onRecommendScrub(fraction: Float,finished: Boolean) {
 /** 推荐页底部那块信息浮层：进度 + 剧名 + 集数 + 操作说明。 */
 internal fun MainActivity.attachRecommendOverlay(series: Series) {
     dismissRecommendOverlay()
+    // **触屏设备不再建这块浮层**（需求 1）：推荐页改用播放界面那一条控制条
+    //（顶部信息条 + 底部进度 / 状态项 / 六枚可点按钮，见 `attachTouchBar` / `showHud`），
+    // 轻点画面唤出。浮层如果还留着，它就压在控制条上面，而且那排「看正片 / 暂停 / 换一部」
+    // 与六键控制条功能重叠（前者已被用户点名去掉）。
+    // 电视上 `touchArmed` 恒为 false，这条提前返回不会执行，浮层与今天逐行一致。
+    if(touchArmed) return
     val bar=column().apply {
         setPadding(dp(78),dp(28),dp(78),dp(56))
         background=TvStyle.gradient(Color.TRANSPARENT,0xCC000000.toInt())
@@ -604,26 +678,12 @@ internal fun MainActivity.attachRecommendOverlay(series: Series) {
     bar.addView(meta,lp(-1,-2))
     bar.addView(transport,lp(-1,-2))
     bar.addView(hint,lp(-1,-2))
-    // 触屏设备：遥控器那行提示用不上，换成手势说明，并把「看正片 / 暂停 / 换一部」
-    // 三件事做成按钮——这一页没有控制条，手指除了轻点看浮层之外本来什么都做不了。
-    // 电视上 `touchArmed` 恒为 false，这一整块不存在，浮层高度与今天完全一致。
-    if(touchArmed) {
-        // 这一排显示的时候，遥控器左右不是快进退而是「选按钮」（见 `dispatchKeyEvent`），
-        // 因此提示行要把两套操作都说清楚：手上用点、遥控器用键，谁也不猜。
-        hint.text="轻点 显隐 · 上下 换剧 · 确定 追剧 · 菜单 播放设置 · 左右 选按钮 · 返回 收起"
-        val actions=row().apply { setPadding(0,dp(18),0,0) }
-        addButton(actions,"看正片",tone=ButtonTone.PRIMARY,size=ButtonSize.COMPACT,weight=1f,icon=R.drawable.ic_player_play) { enterFormalPlayback() }
-        addButton(actions,"暂停",size=ButtonSize.COMPACT,weight=1f,icon=R.drawable.ic_player_pause) { togglePlayback() }
-        addButton(actions,"换一部",size=ButtonSize.COMPACT,weight=1f,icon=R.drawable.ic_player_forward) { switchRecommend(1) }
-        bar.addView(actions,lp(-1,-2))
-        recommendActions=actions
-    }
     recommendTitle=title; recommendMeta=meta; recommendOverlay=bar
-    // 新挂的浮层默认是显示的：收起状态只属于上一块浮层，换剧 / 进页面都重新露出来。
-    recommendBarHidden=false
     // 播放设置开着时浮层让位（菜单贴底占了下三分之一），收起菜单时再露出来。
     bar.visibility=if(playbackMenu!=null) View.GONE else View.VISIBLE
-    root.addView(bar,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
+    // 挂进「画面之外那一层」：短剧自动全屏把画面转 90° 时，这块浮层要跟着一起转，
+    // 否则剧名 / 进度 / 操作提示会横在转了过来的画面上。电视上不旋转时两者完全等价。
+    (overlayLayer ?: root).addView(bar,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
     // 首帧就把内容填满：集数、时间、进度都在这一刻算出来，不等下一次每秒 tick。
     // 上一版这里是空的——刚进推荐页时浮层比轻点唤出来的那一次「少一行字」，
     // 两条路看上去像两块不同的东西（用户反馈的就是这一条）。
@@ -643,7 +703,6 @@ internal fun MainActivity.attachRecommendOverlay(series: Series) {
 internal fun MainActivity.dismissRecommendOverlay() {
     recommendOverlay?.let { overlay -> (overlay.parent as? android.view.ViewGroup)?.removeView(overlay) }
     recommendOverlay=null; recommendTitle=null; recommendMeta=null
-    recommendActions=null; recommendBarHidden=false
     // 进度条是浮层的子控件，随浮层一起消失；引用一并清掉，免得下一帧刷到已摘下的控件。
     recommendProgress=null; recommendSpan=null
 }
@@ -653,6 +712,10 @@ internal fun MainActivity.updateRecommendOverlay() {
     val data=detail ?: return
     if(screen!="recommend") return
     val p=player
+    // 触屏的推荐页没有浮层：它的读数（进度、时间、集数、清晰度 / 倍速 / 画面 / 弹幕 / 定时）
+    // 全在控制条上，走的是与播放界面同一段 `updatePlaybackText`。
+    // 放在下面那些空安全的浮层写入之前：这一段是这一页**唯一**会刷新控制条的地方。
+    if(touchArmed) { syncRecommendEntry(); updatePlaybackText() }
     // 手指正在拖：这一秒的刷新不能把进度条与时间顶回播放器报的位置（同正式播放的 `scrubbing`）。
     if(recommendScrubbing) return
     // 进度与时间先刷：与正式播放同一套读数（拖动合并窗里显示目标位置）。
@@ -694,9 +757,10 @@ internal fun MainActivity.switchRecommend(direction: Int) {
     val next=from+direction
     when {
         next in recommendItems.indices -> playRecommendAt(next,0L,direction)
-        // 走到末尾：先补一页再往下走。补页发不出去 / 失败时回调会立刻到，
+        // 走到末尾：先补一页再往下走。这条流已经到底（`has_more=false`）时，补页那一侧
+        // 会换一条新流（见 `loadRecommendPage`）。补页发不出去 / 失败时回调会立刻到，
         // 这时列表没变长，就环绕回第一部（抖音式的无限流，不会停在「按了没反应」上）。
-        direction>0 && recommendHasMore -> {
+        direction>0 -> {
             val guard=recommendToken.get()
             loadRecommendPage(true) {
                 if(recommendToken.get()!=guard) return@loadRecommendPage
@@ -738,10 +802,11 @@ internal fun MainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
     recommendToken.incrementAndGet()
     dismissRecommendOverlay()
     hud.visibility=View.GONE
-    playbackTopBar?.visibility=View.GONE
-    // 这一页的控件是「推荐页」那一次建的（`playEpisode` 没有重跑），所以手势层 / 可点控制条 /
-    // 进度拖动要在这里补一次：`screen` 刚变成 `player`，三处判断才会放行（各自幂等）。
-    if(touchArmed) { attachTouchLayer(); attachTouchBar(); wireSeekTouch() }
+    syncPlaybackInfo()
+    // 这一页的控件是「推荐页」那一次建的（`playEpisode` 没有重跑），手势层 / 底部那一块 /
+    // 进度拖动因此在这里重接一次（三者都幂等）。**必须先把推荐页那块摘掉**：
+    // 那一块只有一枚剧名（点它进正片），正片里要的是六枚按键，两者内容不同。
+    if(touchArmed) { attachTouchLayer(); resetTouchBar(); attachTouchBar(); wireSeekTouch() }
     // 进正片 = 开始正式观看：立刻把这一集记进历史。
     // 画面还没 READY 时 `saveProgress` 会拒绝写（时长未知），这时挂一个待写标记，
     // 由播放监听器的 READY 分支补上——「进了正片就一定有历史」不依赖时序。
@@ -785,10 +850,11 @@ internal fun MainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
 /**
  * 推荐页的左右键：快退 / 快进（需求 3）。
  *
- * 与正式播放的 [seek] 同一套步长与手感（短按 10 秒、长按 30 秒、250ms 内合并成一次跳转），
- * 区别只在反馈位置：推荐页没有底部控制条，进度写在底部浮层那一行（[showRecommendToast]）。
- * 这里**不调** `showHud()`：那一层在推荐页本来就不该出现（需求：上下键 / 左右键都只服务于
- * 这一屏的刷剧体验，不弹出播放控制）。
+ * 与正式播放的 [seek] 同一套步长与手感（短按 10 秒、长按 30 秒、250ms 内合并成一次跳转）。
+ * 反馈位置按设备分：电视上写着底部浮层那一行（[showRecommendToast]），触屏上是一条瞬时提示
+ * （同一条 toast 在触屏分支里改挂手势层，见 [showRecommendToast]）。
+ * 这里**不调** `showHud()`：遥控器的左右键只服务于刷剧，不该顺手把控制条弹出来；
+ * 触屏那边唤出控制条是「轻点画面」的事（见 `MainActivityTouch`）。
  */
 internal fun MainActivity.seekRecommend(direction: Int,repeat: Int) {
     if(screen!="recommend") return

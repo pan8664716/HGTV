@@ -246,7 +246,8 @@ internal fun MainActivity.onEpisodeAdvanced(next: Int) {
     // 走到这里说明「下一集」真的接上了：自动重切失败的计数清零。
     // **不**在这里设互斥窗——那会把新一集紧接着发生的真实错误也一起吞掉。
     autoNextFailures=0
-    playbackTitle.text="${data.series.title}  ·  第 ${next+1} 集"
+    // 标题只放剧名：集数由顶部那一项单独显示（见 [syncPlaybackInfo]）。
+    playbackTitle.text=data.series.title
     // 弹幕与界面状态的刷新放到下一帧之后：这一帧正在把新 period 的第一帧推上屏，
     // 主线程上任何一次重排都会把它顶后一帧，用户看到的就是「换集时闪一下」。
     main.post {
@@ -359,9 +360,9 @@ internal fun MainActivity.playerFailure(problem: Throwable) {
         val next=recommendIndex+1
         when {
             next in recommendItems.indices -> main.post { if(!isDestroyed && screen=="recommend") playRecommendAt(next,0L,1) }
-            // 末尾还有下一页：先补一页再从第一部试。补页请求已经在路上时不能干等（那样
-            // 这一屏就停在失败的那一集上），直接环绕回第一部。
-            recommendHasMore -> main.post {
+            // 走到末尾：先补一页再从第一部试（这条流到底了，补页那一侧会换一条新流）。
+            // 补页请求已经在路上时不能干等（那样这一屏就停在失败的那一集上），直接环绕回第一部。
+            else -> main.post {
                 if(isDestroyed || screen!="recommend") return@post
                 if(recommendLoading) {
                     if(recommendItems.isNotEmpty()) playRecommendAt(0,0L,1)
@@ -375,8 +376,6 @@ internal fun MainActivity.playerFailure(problem: Throwable) {
                     }
                 }
             }
-            recommendItems.isNotEmpty() -> main.post { if(!isDestroyed && screen=="recommend") playRecommendAt(0,0L,1) }
-            else -> showRecommendMessage("暂时没有可播放的推荐\n按确定键重试，按返回键回主页面")
         }
         return
     }
@@ -408,8 +407,8 @@ internal fun MainActivity.playerFailure(problem: Throwable) {
     playError=true; player?.pause(); progressBar.visibility=View.GONE; hud.visibility=View.VISIBLE; controls.removeAllViews(); controls.visibility=View.VISIBLE; panel=true
     // 停在错误页上不再需要守着屏幕：用户看完提示可能就走开了（见 [syncKeepScreenOn]）。
     syncKeepScreenOn()
-    // 出错界面要让用户看清是哪一集，标题条这时必须露出来。
-    playbackTopBar?.visibility=View.VISIBLE
+    // 顶部那条信息是常驻的，出错时按当前页再刷一遍（集数不会因为出错而消失）。
+    syncPlaybackInfo()
     dismissPlaybackMenu()
     val decoding=problem is PlaybackException && problem.errorCode in 3000..4999
     val retryable=if(problem is PlaybackException) problem.errorCode in 2000..2999 || problem.errorCode==PlaybackException.ERROR_CODE_TIMEOUT else problem is java.io.IOException
@@ -465,10 +464,9 @@ internal fun MainActivity.playerFailure(problem: Throwable) {
 internal fun MainActivity.hidePlaybackOverlay() {
     main.removeCallbacks(hideHud)
     panel=false; dismissPlaybackMenu(); controls.visibility=View.GONE; controls.clearFocus(); hud.visibility=View.GONE
-    // 标题条跟底部控制条同一套显隐：播放时屏幕上不留任何文字。
-    playbackTopBar?.visibility=View.GONE
-    // 时间那一层例外：打开「始终显示时间」后它继续留在右上角（见 [syncClockVisibility]）。
-    syncClockVisibility()
+    // 顶部那条信息不跟控制条一起收起：它是常驻读数（见 [syncPlaybackInfo]）。
+    // 推荐页（触屏）是例外——那一条跟着控制条一起显隐，因此这里要再同步一次。
+    if(screen=="recommend") syncPlaybackInfo()
 }
 /**
  * 当前这一屏是不是播放页：正式播放与推荐播放。
@@ -507,32 +505,25 @@ internal fun MainActivity.syncKeepScreenOn() {
 
 internal fun MainActivity.showHud() {
     // 设置菜单打开时底部控制条保持收起，避免和菜单抢同一块画面。
-    if(screen!="player" || playbackMenu!=null) return
+    if(playbackMenu!=null) return
+    // 推荐页：只有触屏设备才露这条控制条（它上面的那排按钮本来也只在触屏上存在）。
+    // 电视上推荐页从来没有控制条——那一页的信息在底部浮层里，结构保持不变。
+    if(screen!="player" && !(screen=="recommend" && touchArmed)) return
     hud.visibility=View.VISIBLE; updatePlaybackText(); main.removeCallbacks(hideHud)
-    playbackTopBar?.visibility=View.VISIBLE
-    syncClockVisibility()
+    syncPlaybackInfo()
     if(!panel && player?.isPlaying==true) main.postDelayed(hideHud,4500)
 }
-/**
- * 右上角时间的显隐：控制层 / 标题条 / 播放菜单任一可见时显示，
- * 否则只在「始终显示时间」打开时留在画面上。
- */
-internal fun MainActivity.syncClockVisibility() {
-    val clock=playerClock ?: return
-    val overlay=hud.visibility==View.VISIBLE || playbackTopBar?.visibility==View.VISIBLE || playbackMenu!=null
-    // 推荐页不显示右上角时间：那一页只有画面 + 底部浮层，时间会破坏「上下刷剧」的整屏感。
-    clock.visibility=if(screen=="player" && (overlay || library.alwaysShowClock)) View.VISIBLE else View.GONE
-}
 internal fun MainActivity.updatePlaybackText() {
-    playerClock?.let { clock ->
-        val now=clockFormat.format(java.util.Date())
-        if(clock.text.toString()!=now) clock.text=now
-    }
     // 触屏设备上控制条多一排按钮，播放键的文案也要跟着播放状态改（电视上为空操作）。
     updateTouchPlayLabel()
-    if(screen!="player") return
+    // 推荐页（触屏）用的是**同一条控制条**，读数与状态项这一整段逻辑完全一样，
+    // 因此这里不再只认 `player`——否则唤出来的控制条上进度与「清晰度 / 倍速 / 画面」都是空的。
+    // 电视上的推荐页仍然走它自己的浮层刷新（`updateRecommendOverlay`），这一条不会被执行。
+    if(screen!="player" && !(screen=="recommend" && touchArmed)) return
     // 手指正在拖进度条：这一段时间进度与时间由手指决定，每秒一次的刷新不能把它顶回去。
     if(scrubbing) return
+    // 推荐页拖的是同一条进度条，它的「拖动中」标记在 `onRecommendScrub` 里（见那里）。
+    if(screen=="recommend" && recommendScrubbing) return
     // 播放键图标与选项行的当前值：爆米花把状态放在图标和选项文字里，不额外占一行。
     transportIcon?.setVectorIcon(if(player?.playWhenReady==true) R.drawable.ic_player_pause else R.drawable.ic_player_play)
     qualityOption?.text="清晰度 "+if(quality.isBlank()) "${library.maxQuality}P" else quality
@@ -641,9 +632,199 @@ internal fun MainActivity.frameResizeMode()=when(library.frameMode) {
     VideoFrameMode.ZOOM -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     VideoFrameMode.FILL -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
 }
+/**
+ * 「短剧自动全屏」要不要把画面**转 90°**。
+ *
+ * 需求的原话是「屏幕是 16:9、短剧是 9:16，把短剧旋转一下就可以自动匹配全屏」——
+ * 也就是**画面转向**，不是放大裁切：竖屏片转 90° 之后就是 16:9，
+ * 正好铺满屏幕，一个像素都不用裁。
+ *
+ * 只在这三种情况同时成立时才转：
+ * 1. 开关打开；
+ * 2. 片源是竖屏（高 > 宽），也就是短剧；
+ * 3. 屏幕是横屏（宽 > 高），也就是电视 / 横放的平板。
+ *
+ * 屏幕本身是竖的时候（平板竖着拿、分屏）不转：那时竖屏片本来就是满的，
+ * 转过去反而变成两边黑边。
+ */
+internal fun MainActivity.autoFullscreenRotated(): Boolean {
+    if(!library.autoFullscreen) return false
+    // 视频必须画在 TextureView 上才转得动：SurfaceView 是独立图层，父级旋转不会作用到它，
+    // 硬转会得到一张拉扁的画面。这一条是兜底（开关打开时建的就是 TextureView 那一版）。
+    if(playerView?.videoSurfaceView !is android.view.TextureView) return false
+    val videoW=videoWidth; val videoH=videoHeight
+    if(videoW<=0 || videoH<=0 || videoW>=videoH) return false
+    val screenW=root.width; val screenH=root.height
+    if(screenW<=0 || screenH<=0) return false
+    return screenW>screenH
+}
+
+/**
+ * 转**哪一边**：+90（顺时针）还是 −90（逆时针）。
+ *
+ * ## 为什么需要分方向
+ *
+ * 竖屏短剧转 90° 铺满横屏之后，「片子的上边」只剩两个可能：屏幕左边、屏幕右边。
+ * 哪种才是「正的」，取决于用户此刻是**怎样把手机横过来**的——也就是系统报的
+ * `Display.rotation`：
+ *
+ * | `Display.rotation` | 机身 | 机身的「上边」现在在哪 | 片子该往哪转 |
+ * |---|---|---|---|
+ * | `ROTATION_90`  | 逆时针转了 90°（最常见：手机横过来、上边朝左） | 屏幕左侧 | **−90°**（逆时针，片子的上边跟着朝左） |
+ * | `ROTATION_270` | 顺时针转了 90°（上边朝右）               | 屏幕右侧 | **+90°**（顺时针） |
+ * | `ROTATION_0` / `180` | 电视、原生横屏的平板、显示器 | 就是屏幕上边 | +90°（一直以来的行为，不动） |
+ *
+ * 施工时间顺序上踩过的坑：原来无条件 `+90f`，在手机上（`ROTATION_90`）得到的是
+ * 片子的上边朝**右**——与用户手上那台手机的方向正好相反，读起来就是「上下颠倒」。
+ * 电视是 `ROTATION_0`，`+90f` 一直是对的，因此这里只对 `ROTATION_90` 取负，
+ * 电视与横屏平板的行为一个像素都不变。
+ *
+ * API 30 起 `Activity.display` 取代了 `windowManager.defaultDisplay`（后者已废弃）；
+ * 两条路都包在 `runCatching` 里：拿不到就按 `ROTATION_0`（电视的默认行为）处理。
+ */
+internal fun MainActivity.fullscreenSpinDirection(): Float {
+    // 「使用设备」钉在电视上（或自动判定就是电视）：电视恒为横屏 `ROTATION_0`，
+    // 直接用 `+90`。用户手动选电视多半就是碰上了「旋转方向反了」，
+    // 这一档要能把它掰回来，因此不再看 `Display.rotation`。
+    if(deviceMode()==com.hgtv.star.compat.DeviceForm.TV) return 90f
+    val rotation=runCatching {
+        if(android.os.Build.VERSION.SDK_INT>=30) display?.rotation
+        else @Suppress("DEPRECATION") windowManager.defaultDisplay.rotation
+    }.getOrNull() ?: Surface.ROTATION_0
+    return if(rotation==Surface.ROTATION_90) -90f else 90f
+}
+/**
+ * 画面几何：**缩放比例 + 是否旋转**，一次算完一起落到 [playerView] 上。
+ *
+ * 两者必须一起算：旋转后画面的「宽」其实是屏幕的高，缩放百分比要作用在旋转之后的边上。
+ *
+ * - 不转：`宽 = 屏宽 × 比例`、`高 = 屏高 × 比例`，居中；
+ * - 转 90°：`宽 = 屏高 × 比例`、`高 = 屏宽 × 比例`，同样居中。旋转是绕自身中心的，
+ *   因此这个「横过来」的框转动 90° 之后，正好落在屏幕的 `屏宽 × 屏高` 上；
+ * - 100% 时不做任何乘法，直接铺满（与改动前完全一致）。
+ *
+ * 转的方向交给 [fullscreenSpinDirection]（手机 `−90`、电视 / 横屏平板 `+90`）：
+ * 框的尺寸对两个方向是对称的，因此换方向不需要动这里的任何算式。
+ */
+internal fun MainActivity.applyVideoGeometry() {
+    val view=playerView ?: return
+    val params=view.layoutParams as? FrameLayout.LayoutParams ?: return
+    val rootW=root.width; val rootH=root.height
+    if(rootW<=0 || rootH<=0) return
+    val percent=library.videoScale.coerceIn(1f,100f)
+    val rotated=autoFullscreenRotated()
+    // 旋转后要按「屏幕的高」当宽、「屏幕的宽」当高来排版。
+    val baseW=if(rotated) rootH else rootW
+    val baseH=if(rotated) rootW else rootH
+    val width=if(percent>=100f) baseW else (baseW*percent/100f).toInt().coerceAtLeast(1)
+    val height=if(percent>=100f) baseH else (baseH*percent/100f).toInt().coerceAtLeast(1)
+    val rotation=if(rotated) fullscreenSpinDirection() else 0f
+    // 界面那一层跟着画面一起转（见 [applyOverlayGeometry]）：两者必须同一次落下去，
+    // 否则会出现「画面转了、控制条还横着」的那一两帧。
+    //
+    // **必须放在下面那条提前返回之前**：画面这一层没变、界面那一层可能变了
+    //（例如刚从别的页面回来、`overlayLayer` 刚建好还没摆过），
+    // 提前返回会把那一层漏掉，表现就是「转了画面、界面没转」。
+    applyOverlayGeometry()
+    if(params.width==width && params.height==height &&
+        params.gravity==Gravity.CENTER && view.rotation==rotation
+    ) return
+    params.width=width; params.height=height; params.gravity=Gravity.CENTER
+    view.rotation=rotation
+    view.layoutParams=params
+}
+/**
+ * 画面之外那一层（弹幕 / 手势层 / 顶部信息条 / 底部控制条）的几何。
+ *
+ * 与 [applyVideoGeometry] 同一套算式，**只有一处不同：不乘画面缩放的比例**。
+ *
+ * 缩放的语义是「只缩画面，弹幕照旧铺满整屏」（见 [applyVideoScale] 的说明）：
+ * 把控制条也按 50% 摆到中间，用户就点不到、也看不清了。因此这里恒按 100% 排版，
+ * 只在「短剧自动全屏」要求旋转时，才和画面取同一个角度、同一组对调过的宽高。
+ *
+ * 转动方向必须与画面**完全一致**（都走 [fullscreenSpinDirection]）：
+ * 两个方向反了的话，界面会对着画面的反面，读起来是倒的。
+ */
+internal fun MainActivity.applyOverlayGeometry() {
+    val view=overlayLayer ?: return
+    val params=view.layoutParams as? FrameLayout.LayoutParams ?: return
+    val rootW=root.width; val rootH=root.height
+    if(rootW<=0 || rootH<=0) return
+    val rotated=autoFullscreenRotated()
+    val width=if(rotated) rootH else rootW
+    val height=if(rotated) rootW else rootH
+    val rotation=if(rotated) fullscreenSpinDirection() else 0f
+    if(params.width==width && params.height==height &&
+        params.gravity==Gravity.CENTER && view.rotation==rotation
+    ) return
+    params.width=width; params.height=height; params.gravity=Gravity.CENTER
+    view.rotation=rotation
+    view.layoutParams=params
+}
+/**
+ * 画面模式落到播放器上。
+ *
+ * **短剧自动全屏只靠旋转实现，不改画面模式**：旋转之后那个框已经是 16:9，
+ * 「完整画面」就能铺满，用户自己选的档位（完整 / 等比铺满 / 拉伸）语义保持原样。
+ */
+internal fun MainActivity.applyResizeMode() {
+    playerView?.resizeMode=frameResizeMode()
+    // 旋转 / 缩放与画面模式是同一次「这一集怎么摆」的决策：片源尺寸一变，
+    // 旋转与否可能跟着变（竖屏剧 ⟷ 横屏剧），这里一并落下去。
+    applyVideoGeometry()
+}
+/**
+ * 画面缩放 / 短剧自动全屏：两者的落点都是 [playerView] 这一层的几何，
+ * 因此统一交给 [applyVideoGeometry]（旋转与缩放一起算，缺一个都会排错边）。
+ *
+ * 弹幕层（[danmakuView]）**不受影响**：它仍然占满整屏、按整屏坐标算轨道，
+ * 所以把画面缩到 50%（或转 90°）时，弹幕照旧铺满屏幕横着滚。
+ */
+internal fun MainActivity.applyVideoScale() = applyVideoGeometry()
+/**
+ * 播放画面顶部那一条信息（时间 / 剧名 / 集数 / 网速）的显隐与读数刷新。
+ *
+ * 四项各自独立开关，设置页改完回来立刻反映在这条上；推荐页整条不显示
+ * （那一页要的是整屏一滑到底的观感，与底部浮层同一条取向）。
+ */
+internal fun MainActivity.syncPlaybackInfo() {
+    val bar=playbackInfo
+    if(bar!=null) {
+        // 顶部这条在**触屏的推荐页**上也显示：那一页现在与播放界面共用同一条控制条
+        // （见 `attachTouchBar`），剧名 / 集数 / 网速 / 时间当然也要在同一块位置上。
+        //
+        // 与播放页的唯一区别：推荐页这一条**跟着控制条一起显隐**（轻点唤出、收起时一起收）。
+        // 那一页的本体是整屏连播，常驻一条标题会让「一滑一部」的观感变成「在一个播放器里」。
+        // 电视上的推荐页仍然整条不显示（剧名在底部浮层里，浮层本来就是常驻的）。
+        // `hud` 是 lateinit：扩展函数里读不到 `isInitialized`（背板字段不可见），
+        // 冷启动取不到推荐时这一页还没有播放层，因此用一次受捕的读取兜住。
+        val hudShown=runCatching { hud.visibility==View.VISIBLE || playbackMenu!=null }.getOrDefault(false)
+        val shown=screen=="player" || (screen=="recommend" && touchArmed && hudShown)
+        bar.visibility=if(shown) View.VISIBLE else View.GONE
+        playbackTitle.visibility=if(library.playerTitle) View.VISIBLE else View.GONE
+        playbackEpisode?.visibility=if(library.playerEpisode) View.VISIBLE else View.GONE
+        playerClock?.visibility=if(library.playerClock) View.VISIBLE else View.GONE
+        playbackSpeedText?.visibility=if(library.playerSpeed) View.VISIBLE else View.GONE
+        // 调试面板是**悬浮**在最上层的一块，不参与任何布局：
+        // 这里不按它让位、不改内边距，否则顶部这条会被压窄（用户要求「不要挤压任何元素」）。
+        // 面板盖住哪一格就盖住哪一格，关掉即恢复。
+    }
+    updatePlaybackInfoReadings()
+}
+/** 只换字、不动布局：时间每分钟一格，网速每一秒一格（见每秒一次的 tick）。 */
+internal fun MainActivity.updatePlaybackInfoReadings() {
+    playerClock?.takeIf { it.visibility==View.VISIBLE }?.let { clock ->
+        val now=clockFormat.format(java.util.Date())
+        if(clock.text.toString()!=now) clock.text=now
+    }
+    playbackSpeedText?.takeIf { it.visibility==View.VISIBLE }?.let { speed ->
+        val text=NetSpeed.line()
+        if(speed.text.toString()!=text) speed.text=text
+    }
+}
 internal fun MainActivity.showFramePicker(anchor: TextView,inPlayer: Boolean) {
     tvTools.choose("全局画面模式",listOf("完整画面 · 保留比例与全部内容","等比铺满 · 会裁掉部分画面与字幕","拉伸铺满 · 画面比例会改变"),anchor,{ index ->
-        library.frameMode=VideoFrameMode.entries[index]; playerView?.resizeMode=frameResizeMode()
+        library.frameMode=VideoFrameMode.entries[index]; applyResizeMode()
         if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "画面 " else "画面模式  ·  ")+library.frameMode.label
     })
 }
@@ -748,11 +929,9 @@ internal fun MainActivity.dismissPlaybackMenu() {
     // 菜单已经不在屏幕上：那一位「是被哪一下菜单键按开的」也随之作废，
     // 否则下一次菜单键的抬起会被这条旧标记吞掉（用户会觉得「按了菜单没反应」）。
     playbackMenuOpenPress=false
-    // 菜单收起：推荐页那块信息浮层回到画面上（正式播放里它是 null，空操作）。
-    // 收起状态一并复位：这一行把它重新露出来了，方向键就得跟着回到「选按钮」。
+    // 菜单收起：推荐页那块信息浮层回到画面上（正式播放里它是 null，空操作；
+    // 触屏的推荐页不建这块浮层，同样是空操作——它上面盖着的是同一条控制条）。
     recommendOverlay?.visibility=View.VISIBLE
-    recommendBarHidden=false
-    syncClockVisibility()
 }
 /**
  * 遥控器「上」（或菜单键）打开底部设置面板：

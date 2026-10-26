@@ -38,9 +38,8 @@ internal fun MainActivity.showPlaybackMenu(focusRow: Int=0,focusChoice: Int=-1) 
     hud.visibility=View.GONE
     // 推荐页那块剧名 / 集数浮层也让位：菜单贴底占了下三分之一，两块叠在一起会互相压字。
     recommendOverlay?.visibility=View.GONE
-    // 菜单占着下半屏，标题条这时留在上面才读得出「在放哪一集」。
-    playbackTopBar?.visibility=View.VISIBLE
-    syncClockVisibility()
+    // 菜单占着下半屏，顶部那条信息（剧名 / 集数）这时留在上面才读得出「在放哪一集」。
+    syncPlaybackInfo()
     // 整宽贴在画面下方，**高度锁死在屏幕高度的三分之一**，超出的行靠上下键滚出来。
     // 面板本身就是滚动内容，渐变背板画在外壳上：否则背板会跟着内容一起被拉长，
     // 滚到下半段时面板顶部会变成半黑，而不是「从透明渐渐暗下去」。
@@ -67,7 +66,10 @@ internal fun MainActivity.showPlaybackMenu(focusRow: Int=0,focusChoice: Int=-1) 
     // 面板高度按**设计画布**的三分之一算（720/3 = 240 设计单位）。
     // 原来写的是 `heightPixels/3`：那是物理像素，不跟设计缩放走，
     // 小屏上内容缩了、底板没缩，菜单行就被裁在面板外（540dpi 上只剩两行可见）。
-    root.addView(shell,FrameLayout.LayoutParams(-1,dp(240),Gravity.BOTTOM))
+    // 面板也挂进「画面之外那一层」：短剧自动全屏把画面转 90° 时，设置面板跟着转，
+    // 否则面板还是横的、贴着屏幕底边，与转过来的画面对不上一个方向。
+    // 电视上不旋转，挂在哪里都一样。
+    (overlayLayer ?: root).addView(shell,FrameLayout.LayoutParams(-1,dp(240),Gravity.BOTTOM))
     if(focusChoice<0) menu.focusSelected(focusRow) else menu.focus(focusRow,focusChoice)
 }
 
@@ -82,7 +84,7 @@ internal fun MainActivity.showPlaybackMenu(focusRow: Int=0,focusChoice: Int=-1) 
  * 行结构只有两种形态（弹幕可见时有速度 / 字号 / 透明度三行，隐藏时没有），
  * 因此按 [showsStyle] 缓存一份就够，见 [obtainPlaybackMenu]。
  */
-private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean,showClock: Boolean): PlaybackMenu {
+private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
     // 先建面板再逐行追加：选项的点击回调要引用面板本身，不能在构造链里读还没赋值的变量。
     // **这里不能 `return menu.addRow(...)`**：那样第一条链之后就返回了，弹幕速度 / 字号 /
     // 透明度、定时、时间全成了死代码——表现就是「播放设置里只有弹幕显示，没有别的弹幕项」。
@@ -105,7 +107,7 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean,showClock: Boolea
         })
         .addRow("画面模式",VideoFrameMode.entries.mapIndexed { index,mode ->
             PlaybackMenu.Choice(mode.label,mode==library.frameMode) {
-                library.frameMode=mode; playerView?.resizeMode=frameResizeMode()
+                library.frameMode=mode; applyResizeMode()
                 menu.select(MENU_ROW_FRAME,index); updatePlaybackText()
             }
         })
@@ -149,25 +151,14 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean,showClock: Boolea
         .addSlider("弹幕透明度",DanmakuStyle.ALPHA_MIN,DanmakuStyle.ALPHA_MAX,DanmakuStyle.ALPHA_STEP,library.danmakuAlpha) { value ->
             library.danmakuAlpha=value; danmakuView?.textAlpha=value
         }
+    // 画面缩放：跟在「弹幕透明度」之后、「定时」之前。只缩播放画面本身，
+    // 弹幕层不动（弹幕仍然按整屏坐标滚动）。
+    // 与弹幕大小 / 透明度是同一种控件（[DanmakuSlider]），1..100 直接就是百分比。
+    menu.addSlider("画面缩放",1f,100f,1f,library.videoScale,format={ "${it.toInt()}%" }) { value ->
+        library.videoScale=value
+        applyVideoScale()
+    }
     menu.addRow("定时",sleepChoices(menu))
-    // 时间：始终显示 / 跟随界面。始终显示时，标题条与底部控制条都收起之后，
-    // 右上角的时间仍然留在画面上（见 [syncClockVisibility]）。
-    //
-    // **只在正式播放页出现**（`showClock`）：推荐页整页不显示右上角时间
-    // （见 `syncClockVisibility` 里的 `screen=="player"` 判据），这一行在那里调不出任何效果，
-    // 留着只会让人以为开关坏了。
-    if(showClock) menu.addRow("时间",listOf(
-        PlaybackMenu.Choice("始终显示",library.alwaysShowClock) {
-            library.alwaysShowClock=true
-            syncClockVisibility()
-            menu.select(clockRow(showsStyle),0)
-        },
-        PlaybackMenu.Choice("跟随界面",!library.alwaysShowClock) {
-            library.alwaysShowClock=false
-            syncClockVisibility()
-            menu.select(clockRow(showsStyle),1)
-        }
-    ))
     menu.wire()
     return menu
 }
@@ -180,28 +171,28 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean,showClock: Boolea
  */
 private fun MainActivity.obtainPlaybackMenu(): PlaybackMenu {
     val showsStyle=library.danmakuMode.showsStyle
-    // 行结构由两件事决定：弹幕外观那三行在不在、时间那一行在不在（推荐页没有）。
-    // 因此缓存键是这两位的组合，只有完全一致时才复用。
-    val showClock=screen=="player"
-    val key=menuShape(showsStyle,showClock)
+    // 行结构只由「弹幕外观那三行在不在」决定，因此缓存键就是这一位。
+    val key=menuShape(showsStyle)
     val cached=playbackMenuCache
     if(cached!=null && playbackMenuCacheShape==key) {
-        syncPlaybackMenu(cached,showsStyle,showClock)
+        syncPlaybackMenu(cached,showsStyle)
         return cached
     }
     // 结构变了（弹幕隐藏 ⟷ 可见、推荐页 ⟷ 正片）或者第一次：旧的那一份行长不对，只能重建。
     dropPlaybackMenuCache()
-    val menu=buildPlaybackMenu(showsStyle,showClock)
+    // 长按倍速：离开播放页时把速度还回去（手指可能是在这一页按下的，UP 落在了别的页面）。
+    setPlaybackBoost(false)
+    val menu=buildPlaybackMenu(showsStyle)
     playbackMenuCache=menu
     playbackMenuCacheShape=key
     return menu
 }
 
-/** 面板行结构的指纹：`style` = 有弹幕外观三行，`clock` = 有时间那一行（仅正式播放页）。 */
-private fun menuShape(showsStyle: Boolean,showClock: Boolean)="s${if(showsStyle) 1 else 0}c${if(showClock) 1 else 0}"
+/** 面板行结构的指纹：`style` = 有弹幕外观三行。 */
+private fun menuShape(showsStyle: Boolean)="s${if(showsStyle) 1 else 0}"
 
 /** 把缓存面板的选中态与两条滑块同步到当前偏好：纯配色 / 数值修改，不建视图、不建位图。 */
-private fun MainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boolean,showClock: Boolean) {
+private fun MainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boolean) {
     menu.sync(MENU_ROW_QUALITY,PlaybackQuality.options.indexOf(library.maxQuality))
     menu.sync(MENU_ROW_SPEED,PlaybackSpeed.options.indexOf(library.playbackSpeed))
     menu.sync(MENU_ROW_FRAME,VideoFrameMode.entries.indexOf(library.frameMode))
@@ -212,8 +203,8 @@ private fun MainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boolean
         menu.sliderValue(MENU_ROW_SCALE,library.danmakuScale)
         menu.sliderValue(MENU_ROW_ALPHA,library.danmakuAlpha)
     }
+    menu.sliderValue(videoScaleRow(showsStyle),library.videoScale)
     menu.sync(sleepRow(showsStyle),if(sleepTimer.active) sleepChoice else 0)
-    if(showClock) menu.sync(clockRow(showsStyle),if(library.alwaysShowClock) 0 else 1)
 }
 
 /**
@@ -304,9 +295,8 @@ internal fun MainActivity.showEpisodePanel(anchor: View) {
     if(episodePanel!=null) return
     val ticket=generation
     val overlayWasVisible=hud.visibility==View.VISIBLE
-    // 选集面板也要知道在放哪一集，标题条跟着面板一起露出来。
-    playbackTopBar?.visibility=View.VISIBLE
-    syncClockVisibility()
+    // 选集面板也要知道在放哪一集：顶部那条信息是常驻的，这里只要保证它按当前页刷新一遍。
+    syncPlaybackInfo()
     // 面板内容与简介页共用同一个 EpisodeGrid，只有宿主不同（贴底弹窗 / 页面末尾），
     // 翻页方式一致：左右到行两端、上下到第一行 / 最后一行到边缘翻页。
     val grid=EpisodeGrid(this,data.episodes.size,episodeIndex,player=true,
@@ -315,9 +305,14 @@ internal fun MainActivity.showEpisodePanel(anchor: View) {
             else { episodePanel?.dismiss(); playEpisode(selected) }
         })
     grid.fillHeight=true
-    val next=EpisodePanel(this,grid) {
+    // 短剧自动全屏把画面转 90° 时，选集面板（独立窗口）要按同一个角度摆；
+    // 不转的时候传 0f，走的还是原来那条「贴底整宽」的路，电视上一个像素都不变。
+    val spin=if(autoFullscreenRotated()) fullscreenSpinDirection() else 0f
+    val next=EpisodePanel(this,grid,spin) {
         episodePanel=null
-        if(foreground && generation==ticket && screen=="player") {
+        // 收面板之后把控制条按打开前的样子还回去：推荐页（触屏）现在用的是同一条控制条，
+        // 因此这里从「只认 player」放宽到「在播放页」（见 [onPlaybackPage]）。
+        if(foreground && generation==ticket && onPlaybackPage()) {
             if(anchor.attachedToWindow) anchor.requestFocus()
             if(overlayWasVisible) showHud() else hidePlaybackOverlay()
         }
@@ -366,6 +361,9 @@ internal fun MainActivity.detachPlayerSurface() {
     hideDebugOverlay()
     cancelRecovery(); cancelPrefetch(); mediaSession?.deactivate(); tvTools.close()
     dismissPlaybackMenu()
+    // 长按倍速：手指可能是在这一页按下的、UP 落在了别的页面（返回键 / 手势条）。
+    // 这里把速度还给设置里那一档、把「2 倍速播放中」那块标签摘掉，下一集不会带着 2 倍速起播。
+    setPlaybackBoost(false)
     // 离开播放页：播放设置面板的缓存一并丢掉（见 [dropPlaybackMenuCache]）。
     // 面板里三十来个 View 只在播放页有意义，留着只会白占内存。
     dropPlaybackMenuCache()
@@ -401,10 +399,11 @@ internal fun MainActivity.detachPlayerSurface() {
     video?.close(); video=null; playerView?.player=null; playerView=null; playbackReady=false
     // 在途的弹幕请求作废，弹幕层连同它的轨道一起丢掉。
     danmakuToken.incrementAndGet(); danmakuFor=""; danmakuLoaded=false; danmakuCount=-1; danmakuView=null
-    playbackTopBar=null
-    // 时间那一层也随播放页一起收起（root 会被清掉，这里只是让引用不再指向活动视图）。
-    playerClock?.visibility=View.GONE
-    playerClock=null
+    // 顶部那条信息也随播放页一起收掉（root 会被清掉，这里只是让引用不再指向活动视图）。
+    playbackInfo=null; playbackEpisode=null; playbackSpeedText=null; playerClock=null
+    // 画面之外那一层同理：它随 root 一起没了，引用留着只会让下一次「跟着画面转」
+    // 去改一个已经不在树上的 View（见 `applyOverlayGeometry`）。
+    overlayLayer=null
     closeTransport(playbackHttp); playbackHttp=null
     // 常亮统一由状态推导：这一刻 `player` 已经 pause、页面也即将换掉，
     // 判据两样都不成立，自然就放开了（见 `syncKeepScreenOn`）。

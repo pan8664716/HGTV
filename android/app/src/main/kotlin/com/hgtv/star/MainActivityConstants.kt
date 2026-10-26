@@ -27,7 +27,7 @@ internal const val DEVICE_HEAL_GAP_MS=20_000L
  *
  * 圆形入口的顺序是 **搜索 → 分类 → 榜单 → 设置 → 个人信息**（`nav` 的下标 0..4，
  * 而 [MainActivity.navEntry] 用 `nav[tab-1]` 取，所以这五个标签从 1 开始编号）。
- * 首页是 0：品牌「红果TV」是标识不是按钮，不占入口位。
+ * 首页是 0：品牌「HGTV」是标识不是按钮，不占入口位。
  */
 internal const val TAB_HOME=0
 internal const val TAB_SEARCH=1
@@ -212,22 +212,24 @@ internal const val SEARCH_INPUT_HEIGHT=TvStyle.BUTTON_COMPACT
 internal const val SEARCH_INPUT_TEXT=17f
 
 /**
- * 搜索页导航栏里输入框的固定宽度（dp）。
+ * 搜索页导航栏里输入框的宽度上下限（dp）。
  *
- * 原来输入框吃满中间那段弹性空间（一屏上千 dp），搜索框长得像一整条横幅；
- * 现在给一个固定宽度，省下来的宽度让给「搜索 / 历史」与右边那排圆形入口之间的空白——
- * 那一组控件靠左聚在一起，右边那排入口仍然贴在右边，中间留出距离。
+ * 这一行除了输入框与「搜索 / 手机输入」两枚按钮，还要摆七个圆形入口（含「推荐」），
+ * 而各屏的可用宽度差别很大（1080p / 280dpi 上整行约 1083dp，4K 电视能到两千多）。
+ * 因此输入框的宽度**按实测分配**：先让兄弟控件各自量出真实宽度，剩下的才是输入框的，
+ * 并夹在这两个数之间——窄屏优先保住右边那排圆形入口（它们一寸都不能少），
+ * 宽屏也不至于让输入框长成一条横幅。实现在 `MainActivitySearch.fitSearchRow`。
  */
 internal const val SEARCH_INPUT_WIDTH=300
+internal const val SEARCH_INPUT_MIN_WIDTH=150
 
 /**
- * 「搜索 / 历史」两枚按钮的最小宽度（dp）。
+ * 「搜索 / 手机输入」两枚按钮之间的间距（dp）。
  *
- * 全站按钮默认最小宽度是 [TvStyle.BUTTON_MIN_WIDTH]（92dp），那是给「收藏」「重试」这类
- * 整行按钮用的；这两个按钮只有两个字，按默认宽度摆出来会各占一大块，
- * 与输入框凑在一起就把导航栏占满了。这里只对这两枚放开最小宽度，让它们按文字宽收紧。
+ * 比 [TvStyle.GAP_TIGHT]（8dp）再紧一格：这两枚与输入框是一个动作组，
+ * 彼此靠近才读得出「同一组」，省下来的几 dp 全给输入框。
  */
-internal const val SEARCH_BUTTON_MIN_WIDTH=0
+internal const val SEARCH_BUTTON_GAP=6
 
 /** 搜索提示词一次取几条（接口上限 20，不传按 10）。 */
 internal const val SUGGEST_COUNT=10
@@ -274,8 +276,7 @@ internal const val KEY_GRID_COLUMNS=2
 /**
  * 顶部导航栏里可以单独隐藏的圆形入口（五枚，设置页每行四枚排开）。
  *
- * 「设置」与「问题反馈」不在这里：前者是唯一能回到设置页的入口（关掉就再也打不开），
- * 后者是反馈与社群入口，两者都**始终显示**。
+ * 「设置」不在这里：它是唯一能回到设置页的入口（关掉就再也打不开），**始终显示**。
  * key 同时用于落盘（见 `Library.hiddenNav`）与设置页那一行的 `tag`。
  * 设置页「功能显示」每行放 [NAV_GRID_COLUMNS] 枚（与主题网格同列宽）。
  */
@@ -320,6 +321,33 @@ internal const val SETTINGS_TAG_REDUCE_ANIM="settings-reduce-anim"
 /** 设置页「本机记录显示」那一格的 tag 前缀：`settings-home-<key>`。 */
 internal const val SETTINGS_TAG_HOME_PREFIX="settings-home-"
 
+/** 设置页「播放显示」四格的 tag 前缀：`settings-play-<key>`。 */
+internal const val SETTINGS_TAG_PLAY_PREFIX="settings-play-"
+
+/** 设置页「短剧自动全屏」那一格。 */
+internal const val SETTINGS_TAG_AUTO_FULLSCREEN="settings-auto-fullscreen"
+
+/**
+ * 设置页「使用设备」那一格（自动 / 手机 / 平板 / 电视）。
+ *
+ * 选中之后要按新形态重建整页（触屏手势层 / 底部控制条 / 旋转方向都是建页面时定的），
+ * 重建完焦点按这个 tag 落回同一格。
+ */
+internal const val SETTINGS_TAG_DEVICE_FORM="settings-device-form"
+
+/**
+ * 播放画面左上角那一条里的四项（设置页「播放显示」一行四格）。
+ *
+ * `key` 与 [com.hgtv.star.data.Library] 上的四个偏好一一对应；
+ * 顺序就是画面上的排列顺序：**剧名 → 剧集 → 网速 → 时间**。
+ */
+internal val PLAY_INFO_ENTRIES=listOf(
+    "title" to "剧名",
+    "episode" to "剧集",
+    "speed" to "网速",
+    "clock" to "时间"
+)
+
 /**
  * 播放设置面板的行号。
  *
@@ -345,18 +373,23 @@ internal const val MENU_ROW_DANMAKU=4
 internal const val MENU_ROW_DANMAKU_SPEED=5
 internal const val MENU_ROW_SCALE=6
 internal const val MENU_ROW_ALPHA=7
+/** 「画面缩放」那一行：紧跟「弹幕透明度」，只缩画面，弹幕层保持整屏坐标。 */
+internal const val MENU_ROW_VIDEO_SCALE=8
 
 /**
- * 「定时」那一行的下标。
+ * 「画面缩放」那一行的下标。
  *
- * 弹幕可见时它在三条可调项之后（[MENU_ROW_ALPHA] + 1），隐藏时那三行根本不添加，
- * 它直接跟在「弹幕」后面（[MENU_ROW_DANMAKU] + 1）。判定与设置页同一条规则
- * （[DanmakuMode.showsStyle]），只是这里要显式传进来——它是 Activity 的字段。
+ * 它紧跟在「弹幕透明度」之后；隐藏弹幕时那三行不添加，它就直接跟在「弹幕」后面。
  */
-internal fun sleepRow(showsStyle: Boolean)=if(showsStyle) MENU_ROW_ALPHA+1 else MENU_ROW_DANMAKU+1
+internal fun videoScaleRow(showsStyle: Boolean)=if(showsStyle) MENU_ROW_VIDEO_SCALE else MENU_ROW_DANMAKU+1
 
-/** 播放设置面板里「时间（始终显示）」那一行：紧跟在「定时」之后。 */
-internal fun clockRow(showsStyle: Boolean)=sleepRow(showsStyle)+1
+/**
+ * 「定时」那一行的下标：紧跟在「画面缩放」之后。
+ *
+ * 判定与设置页同一条规则（[DanmakuMode.showsStyle]），只是这里要显式传进来——
+ * 它是 Activity 的字段。
+ */
+internal fun sleepRow(showsStyle: Boolean)=videoScaleRow(showsStyle)+1
 
 /**
  * 列表滚动位置最多记住多少页。

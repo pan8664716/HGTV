@@ -16,8 +16,6 @@ import com.hgtv.star.compat.attachedToWindow
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 internal fun MainActivity.switchTab(next: Int) {
-    // 点任何一个标签都先离开「问题反馈」页（它不属于任何标签）。
-    feedbackOpen=false
     // 本次运行第一次进这一页（见 [tabVisited]）。
     val firstVisit=tabVisited.add(next)
     // 首次进入分类页：回到默认的「全部体裁」。
@@ -162,12 +160,10 @@ internal fun MainActivity.collectionName(kind: String)=when(kind) {
 /**
  * 顶部导航栏左侧显示的页面名。
  *
- * 首页与搜索 / 设置页显示品牌「红果TV」；二级界面（收藏 / 历史 / 稍后观看）显示自己的名字，
+ * 首页与搜索 / 设置页显示品牌「HGTV」；二级界面（收藏 / 历史 / 稍后观看）显示自己的名字，
  * 榜单页统一显示「榜单」——这些页面原来的标题行因此可以整行去掉。
  */
 internal fun MainActivity.pageTitle(): String = when {
-    // 「问题反馈」页优先：它盖在任何一页之上，页面名跟着它走。
-    feedbackOpen -> "问题反馈"
     // 「我的」页优先：它下面那四个栏目也是 collection，但页面名固定是「我的」。
     tab==TAB_PROFILE -> "我的"
     collection!=null -> collectionName(collection.orEmpty())
@@ -176,13 +172,13 @@ internal fun MainActivity.pageTitle(): String = when {
     // 搜索页的导航栏里还挤着输入框与三个按钮，标题只留两个字给它们让宽度。
     tab==TAB_SEARCH -> "搜索"
     tab==TAB_SETTINGS -> "设置"
-    else -> "红果TV"
+    else -> "HGTV"
 }
 /**
  * 当前标签对应的顶部图标入口。`nav` 是五个页面入口（搜索 / 分类 / 榜单 / 设置 / 个人信息），
  * 顺序与 [TAB_SEARCH]…[TAB_SETTINGS] 一一对应。
  *
- * 首页（[TAB_HOME]）没有自己的入口：品牌「红果TV」是标识而不是按钮，不参与焦点链，
+ * 首页（[TAB_HOME]）没有自己的入口：品牌「HGTV」是标识而不是按钮，不参与焦点链，
  * 这里返回 null——调用方跳过聚焦即可（回主界面走返回键）。
  */
 internal fun MainActivity.navEntry(index: Int = tab): View? = navKeyed[navKeyOf(index)]
@@ -230,8 +226,6 @@ internal fun MainActivity.showNavPicker(anchor: View?) {
  * 首页返回 null：品牌不是按钮，调用方改落到第一栏第一张卡。
  */
 internal fun MainActivity.firstHeadControl(): View? {
-    // 「问题反馈」页盖在任何一页之上：页头里与内容相邻的就是它自己那枚圆形入口。
-    if(feedbackOpen) return nav.lastOrNull()
     return when(tab) {
     // 榜单页是四个榜单芯片、分类页是大类芯片（两页都有自己的切换行）。
     TAB_RANK -> boardButtons[rankBoard]
@@ -277,7 +271,6 @@ internal fun MainActivity.chipControl(key: String?): View? {
  * 没有可落的目标时返回 null，调用方把按键交回框架。
  */
 internal fun MainActivity.headFocusTarget(): View? {
-    if(feedbackOpen) return nav.lastOrNull()
     return when(tab) {
     // 搜索页：内容第一行按上键先进输入框下面那一行（提示词 / 热搜词），
     // 那一行收起来时才直接回输入框——方向上是连续的。
@@ -325,8 +318,6 @@ internal fun MainActivity.restoreChipFocus(prefix: String) {
         if(chip.attachedToWindow && !chip.hasFocus() && (current==null || current is ToggleChip)) focusHead(chip)
     }
 }
-/** 榜单来源说明：四个榜单都是 App 分类接口按「最高热度」排出来的，带名次与热度。 */
-internal fun MainActivity.rankSource()=rankBoard.source
 /**
  * 分类页当前的筛选摘要（空列表文案用）：体裁 + 已选的主题 / 设定 / 背景 / 受众 / 时间 / 状态。
  * 名字全部来自接口返回的面板，客户端不再维护中文名。

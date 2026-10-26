@@ -61,10 +61,4 @@ class RankBoardTest {
         assertEquals(RankBoard.COMIC,RankBoard.fromStored(null))
         assertEquals(RankBoard.COMIC,RankBoard.fromStored("unknown"))
     }
-
-    /** 来源行必须点名是哪一个榜，四个榜不能写成同一句。 */
-    @Test fun `each board names its own source`() {
-        assertEquals(RankBoard.entries.size,RankBoard.entries.map { it.source }.distinct().size)
-        RankBoard.entries.forEach { assertTrue(it.source.startsWith("来源：红果")) }
-    }
 }

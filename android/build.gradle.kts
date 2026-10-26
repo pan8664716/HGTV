@@ -1,9 +1,3 @@
-buildscript {
-    dependencies {
-        classpath("com.umeng.umsdk:apm-plugin:2.0.0")
-    }
-}
-
 plugins {
     id("com.android.application") version "8.11.0" apply false
     kotlin("android") version "2.1.20" apply false

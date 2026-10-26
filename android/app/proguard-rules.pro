@@ -20,9 +20,6 @@
     public static *** i(...);
 }
 
-# ========== 友盟统计SDK混淆规则 ==========
--keep class com.umeng.** {*;}
-
 # ========== 会话保活 ==========
 # 心跳与装配入口都是 R8 看不到外部调用者的入口（`Application` 反射式调用链之外、
 # 广播 action 是字符串），改名不会有功能问题，但线上排查时要能对上日志里的类名；
@@ -31,19 +28,8 @@
 -keep class com.hgtv.star.data.SessionEvents { *; }
 -dontwarn okhttp3.**
 -dontwarn okio.**
--keep class org.repackage.** {*;}
--keep class com.uyumao.** { *; }
--keepclassmembers class * {
-   public <init> (org.json.JSONObject);
-}
 
-# ========== 友盟APM SDK混淆规则 ==========
--keep class com.uc.** { *; }
--keep class com.efs.** { *; }
--keepclassmembers class * {
-    public <init>(org.json.JSONObject);
-}
--keepclassmembers enum * {
-    public static **[] values();
-    public static ** valueOf(java.lang.String);
-}
+# ========== 友盟（统计 + APM）已整体移除 ==========
+# 原来这里有四条 keep：`com.umeng.**`（统计）、`com.uyumao.**` / `org.repackage.**`（统计的
+# 安全服务与 spy 原生库）、`com.uc.**` / `com.efs.**`（APM 采集与插桩）。
+# 依赖、插件、初始化与调用点全部删除之后，这些类在包内已不存在，keep 一并删掉。

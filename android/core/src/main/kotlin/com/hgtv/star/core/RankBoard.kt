@@ -32,11 +32,10 @@ enum class RankBoard(
     val label: String,
     /** 首页栏目名。 */
     val homeTitle: String,
-    val source: String,
     /**
      * App 分类接口里的分类标识（`select_items.genre`）。
      *
-     * `null` = 不筛分类：接口按「全站综合热度」排，也就是「红果热播榜」那个全站榜。
+     * `null` = 不筛分类：接口按「全站综合热度」排，也就是「HGTV热播榜」那个全站榜。
      * 三个非空值取自接口自己的 `selector_rows`（`真人剧` / `漫剧` / `AI剧`）。
      */
     val genre: String?,
@@ -45,12 +44,12 @@ enum class RankBoard(
     /** 这一页要不要画名次。时间序的「上新」不画。 */
     val ranked: Boolean = true
 ) {
-    COMIC("comic", "漫剧", "热播漫剧", "来源：红果漫剧热播榜", "comic_series", "hot_score"),
-    REAL("real", "真人", "热播真人", "来源：红果真人剧热播榜", "short_play", "hot_score"),
+    COMIC("comic", "漫剧", "热播漫剧", "comic_series", "hot_score"),
+    REAL("real", "真人", "热播真人", "short_play", "hot_score"),
     // 「AI剧」与分类页那个大类的写法一致（分类页是 漫剧 / 真人 / AI剧）。
-    AI("ai", "AI剧", "热播AI", "来源：红果 AI 剧热播榜", "ai_series", "hot_score"),
+    AI("ai", "AI剧", "热播AI", "ai_series", "hot_score"),
     // 最新上架：不筛分类，全站按 `online_time` 倒序；不是热度榜，因此不画名次。
-    NEW("new", "上新", "热播上新", "来源：红果最新上架", null, "online_time", ranked = false);
+    NEW("new", "上新", "热播上新", null, "online_time", ranked = false);
 
     companion object {
         fun fromStored(value: String?) = entries.firstOrNull { it.storedValue == value } ?: COMIC

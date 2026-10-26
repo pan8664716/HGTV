@@ -80,7 +80,7 @@ class PhoneLogin(
         const val PHONE_MAX_DIGITS = 15
         /** 平台给这次上行短信验证的窗口：从**挑战到达**算起 10 分钟（与参考实现一致）。 */
         const val MFA_WINDOW_MS = 10 * 60 * 1000L
-        /** 验证码形状：4–8 位数字（红果实测是 4 位）。 */
+        /** 验证码形状：4–8 位数字（HGTV实测是 4 位）。 */
         val CODE = Regex("[0-9]{4,8}")
         /**
          * 平台在「这次验证已经结束」时给的措辞。
@@ -312,14 +312,14 @@ class PhoneLogin(
          * 并且带 `upstream_verify_type=1`（H5 里就是这个分支，普通 `verify` 必然对不上）。
          */
         val complex: Boolean = false,
-        /** `data.biz_params` 原文：红果页会把它原样塞进 verify 请求。 */
+        /** `data.biz_params` 原文：HGTV页会把它原样塞进 verify 请求。 */
         val bizParams: String = "",
         /** `data.common_params`（去掉 copywriting）：原样带回去。 */
         val commonParams: String = "",
         /** `data.event_params.verify_reason`（实测 `ato`）。 */
         val verifyReason: String = "",
         /**
-         * `true` = 红果自己的 `passport-second-verification.html` 链路
+         * `true` = HGTV自己的 `passport-second-verification.html` 链路
          * （`url`/`schema` + `verify_ways`），**没有** `gen_verify_ticket` 这一步。
          */
         val novelread: Boolean = false,
@@ -657,7 +657,7 @@ class PhoneLogin(
      * 1. **官方 App 的结构**（`sms_login` 回 `error_code=2046`）：
      *    `data.verify_center_secondary_decision_conf` 是一段 JSON 字符串，里面
      *    `subtype=mobile_up_sms_verify`、`channel_mobile`、`sms_content`、`verify_ticket`。
-     *    红果自己的登录页就是这么把它交给 `RiskInfoRequest` 的（见 `kg7.j`），
+     *    HGTV自己的登录页就是这么把它交给 `RiskInfoRequest` 的（见 `kg7.j`），
      *    它**没有** `verify_ways`，只认后者会让用户连「要发哪条短信」都看不到。
      * 2. **第三方参考实现的结构**：`data.verify_ways[]` 里挑 `verify_way=upsms` 的那一项。
      *
@@ -733,7 +733,7 @@ class PhoneLogin(
                 )
             }
         }
-        // ② 红果自有结构：`verify_ways[]` + `url`/`schema`（passport-second-verification.html）。
+        // ② HGTV自有结构：`verify_ways[]` + `url`/`schema`（passport-second-verification.html）。
         //
         // 这一条**不是** BdTuring 的 rmc 页面：它没有 `gen_verify_ticket`，
         // 直接 POST `/passport/upsms/verify/`，body 只有
@@ -839,7 +839,7 @@ class PhoneLogin(
             // 平台明确结束了这次验证：清掉挑战，让界面引导用户重新获取验证码。
             is UpsmsOutcome.Ended -> {
                 mfa=null; mfaFromSendCode=false
-                UpsmsResult.Failed("红果已结束本次短信验证，请重新获取验证码：${outcome.text}")
+                UpsmsResult.Failed("HGTV已结束本次短信验证，请重新获取验证码：${outcome.text}")
             }
         }
     }
@@ -856,7 +856,7 @@ class PhoneLogin(
      * 平台按原文匹配这次挑战，重排字段 / 改转义就等于换了一次挑战。
      */
     private fun askUpsms(m: Mfa): UpsmsOutcome {
-        // 红果自有页面：没有换票，直接 verify。
+        // HGTV自有页面：没有换票，直接 verify。
         if(m.novelread) return askNovelread(m)
         var ticket=m.verifyTicket
         if(ticket.isBlank()) ticket=genTicket
@@ -919,7 +919,7 @@ class PhoneLogin(
     }
 
     /**
-     * 红果 `passport-second-verification.html` 的确认请求（**与 BdTuring 那条完全不同**）。
+     * HGTV `passport-second-verification.html` 的确认请求（**与 BdTuring 那条完全不同**）。
      *
      * 页面源码（`passport-second-verification.0c646e272f8d5af702e3.js`）里根本没有
      * `gen_verify_ticket`；点「我已发送」后直接：

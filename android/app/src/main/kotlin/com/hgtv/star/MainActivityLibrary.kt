@@ -33,6 +33,10 @@ internal fun MainActivity.loadLibrary() {
             // 必须在建第一页之前跑——首页那一屏的卡片是按当时的档位建的
             //（跑马灯 / 柔光位图都在构造时定下来）。
             applyPerformanceProfile()
+            // 「使用设备」也是本机设置：onCreate 里那一次读到的还是默认的 `auto`，
+            // 用户手动选过的那一档到这里才读回来。第一屏马上要建了，必须在这一步之前
+            // 把形态重新落一次（触屏手势层 / 底部控制条都按它决定建不建）。
+            applyDeviceForm()
             // 凭据就绪之后再起心跳：冷启动那一次 `boot` 心跳必须有完整身份（cookie + 设备档案）。
             com.hgtv.star.data.SessionBootstrap.onAppStart()
             // 冷启动落点是推荐页（需求 1）：本机记录一读起来就直接进推荐、自动起播，
@@ -127,8 +131,6 @@ internal fun MainActivity.releaseCatalogViews() {
     suspendedCovers=0
     nav.clear(); navKeyed.clear(); recommendIcon=null; boardButtons.clear(); accountButtons.clear(); profileHeadRow=null; profileAvatar=null
     historyFilterButtons.clear(); reserveFilterButtons.clear()
-    // 旧页面的卡片随页面一起丢掉：留着会让「重复点入口」把焦点交给已经脱离窗口的控件。
-    feedbackCards=emptyList()
     // 页面整块重建：内嵌登录面板跟着旧页面一起作废，在途的一次性会话立刻关掉。
     closeAccountPanelSession()
     accountPanelHost=null; accountPanelMode=null; accountPanelTrigger=null
@@ -190,7 +192,7 @@ internal fun <T> MainActivity.work(action: ()->T,done: (T)->Unit,failed: (Throwa
     }
 }
 /**
- * 错误页的标题（也是 U-APM 那条自定义异常的标题）：**按异常类型给常量**。
+ * 错误页的标题（也是 logcat 里那条现场行的标题）：**按异常类型给常量**。
  *
  * 不能把 message 拼进来——那里面带主机名、带 HTTP 码、带每次不同的中文，
  * 每台设备都会各自变成一条 issue。

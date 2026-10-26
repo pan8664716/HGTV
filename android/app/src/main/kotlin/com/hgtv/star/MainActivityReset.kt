@@ -49,7 +49,7 @@ private var resetStorageAsked=false
  *
  * 顺序是刻意的：
  *
- * 1. **先停所有会写盘的活**（播放器、收藏检查、更新、预取、封面线程、落盘队列）——
+ * 1. **先停所有会写盘的活**（播放器、收藏检查、预取、封面线程、落盘队列）——
  *    只要还有一个写线程在跑，删掉的目录就可能被它重新建出来；
  * 2. **再删**（后台线程；主线程只做那一次点击的收尾）；
  * 3. **删两遍**，中间隔一小段：三方 SDK 的 `apply()` 是异步落盘的，
@@ -64,7 +64,13 @@ internal fun MainActivity.performLocalReset() {
     // `/sdcard/.hgtv` 在 Android 6–10 上要运行时权限才删得掉（targetSdk 29 + 传统存储模式，
     // 见 manifest）。没授权就先要一次：用户拒绝也照样继续（沙盒与 Android/data 仍然清空），
     // 只是那一份旧镜像可能留在外部存储里——那种情况由 `.reset-pending` 标记兜住。
-    if(Build.VERSION.SDK_INT in 23..29 && !resetStorageGranted()) {
+    // 与启动时那次 [requestMirrorStorage] 用同一个区间（>=23）。
+    //
+    // 早先这里写死 23..29：Android 11+ 上**永远不会**再申请。用户启动时拒绝过一次存储权限、
+    // 之后到设置里点「清空应用缓存」，`/sdcard/.hgtv/hgtv-session.json`（明文凭据）就删不掉，
+    // 永久留在卡上。`.reset-pending` 标记能挡住「下次启动把它捞回来」，
+    // 但文件本身还在——恢复出厂的说法就不成立了。
+    if(Build.VERSION.SDK_INT>=23 && !resetStorageGranted()) {
         if(!resetStorageAsked) {
             resetStorageAsked=true
             runCatching {
@@ -74,10 +80,15 @@ internal fun MainActivity.performLocalReset() {
         }
     }
     resetting = true
-    // 从这一刻起不再落盘：tick 每秒都会调 saveProgress，队列关掉之后再提交会直接抛异常。
+    // 从这一刻起不再落盘。这条标志同时管住 `Library` 的队列（它有自己的 discarding）
+    // 与 `AppSessionStore` 的直写 SP——后者是心跳 / 拦截器在网络线程上做的，
+    // 删完到杀进程之间命中一次就会把刚清空的 `native-session-v1.xml` 写回来。
+    LocalReset.resetting = true
+    // 心跳停掉，并把 `keeper` 置空：之后 `onForeground()` / `onAppStart()` 都是空操作。
+    runCatching { com.hgtv.star.data.SessionBootstrap.shutdown() }
+    // tick 每秒都会调 saveProgress，队列关掉之后再提交会直接抛异常。
     tvTools.close()
     favoriteMonitor.stop()
-    appUpdater.pause()
     mediaSession?.deactivate()
     cancelRecovery()
     cancelPrefetch()

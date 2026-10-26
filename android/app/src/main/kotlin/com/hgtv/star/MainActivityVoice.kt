@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star
 
-import com.umeng.analytics.MobclickAgent
 
 import android.content.ActivityNotFoundException
 import android.content.Context
@@ -151,15 +150,12 @@ internal fun normalizeVoiceQuery(raw: String): String {
     return text
 }
 /**
- * 语音功能的轻量埋点：只记「走到了哪一步」，**不上传识别文本**。
+ * 语音功能的阶段打点：只记「走到了哪一步」，**不上传识别文本**，也不发任何网络。
  *
- * 没有这一步就只能靠用户反馈判断这个入口有没有用、无服务设备占多少；
- * 有了它才能在「隐藏入口 / 换自绘识别」之间做决定。
- *
- * 走统计事件（不是自定义异常）：这是一个**产品侧计数**——想知道「有多少人点了语音、
- * 多少台没有服务」，不需要堆栈，也不该占用 APM 的异常额度。
- * 参数只有阶段名，不含任何识别内容。
+ * 友盟统计已整体移除，这条链路改成**只写 logcat**（`adb logcat -s HGTV-VOICE`）：
+ * 想知道「有多少人点了语音、多少台没有服务」时，在真机上抓一段日志就能看出来，
+ * 不再需要外部统计后台。参数只有阶段名，不含任何识别内容。
  */
 internal fun MainActivity.noteVoice(stage: String) {
-    runCatching { com.umeng.analytics.MobclickAgent.onEvent(this,"voice_search",stage) }
+    Diagnostics.trace("HGTV-VOICE",stage)
 }

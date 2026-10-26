@@ -188,7 +188,7 @@ internal fun MainActivity.localShelf(key: String,entries: List<HomeScreen.Entry>
  * 首页的一个「热播…」栏目：内容是该榜单第 1 页的前十部（已过滤本机隐藏的剧集）。
  *
  * 栏目名与榜单名不一样（见 [RankBoard]）：栏目按用户认得的片库分类写（热播漫剧…），
- * 榜单页里写的是接口那套榜名（红果漫剧热播榜…）。
+ * 榜单页里写的是接口那套榜名（HGTV漫剧热播榜…）。
  */
 internal fun MainActivity.rankShelf(board: RankBoard): HomeScreen.Shelf? {
     val page=homeFeed[board]

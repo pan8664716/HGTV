@@ -10,7 +10,6 @@ import com.google.android.exoplayer2.analytics.AnalyticsListener
 import com.google.android.exoplayer2.decoder.DecoderReuseEvaluation
 import com.google.android.exoplayer2.mediacodec.MediaCodecRenderer
 import com.hgtv.star.compat.isMeteredConnection
-import com.umeng.umcrash.UMCrash
 
 /**
  * 播放失败的可观测层：**正式包里唯一还活着的那份证据**。
@@ -18,25 +17,23 @@ import com.umeng.umcrash.UMCrash
  * 为什么单独做一层：正式包的 proguard 规则把 `Log.i` 整段删掉了（见 proguard-rules.pro），
  * 用户报「解码失败」时本机什么都不剩，而这类故障的成因全在**设备侧**——
  * 哪颗解码器、什么 codec string、多少分辨率帧率、硬解还是软解、
- * 是不是「READY 了但一帧都没出」。这些只能在上报里带回来。
+ * 是不是「READY 了但一帧都没出」。这些只能在本机现场里带回来。
  *
- * 上报走 U-APM 的**自定义异常**（`UMCrash.generateCustomLog`）：
- * 它以 `type` 为聚合键，同一 stage 的所有设备落进同一条 case；
- * message 里是**一行完整现场**——阶段、解码器名、codec string、分辨率帧率、
- * 设备上注册了哪些解码器、播放到哪儿；`withLogcat=true` 还会带上当时的 logcat
- * （OMX / c2 的报错在系统 tag 上，这是唯一能捞到它们的办法）。
+ * U-APM 已整体移除（见 `build.gradle.kts`），这条链路改成**只落本地**：
+ * 一行完整现场——阶段、解码器名、codec string、分辨率帧率、设备上注册了哪些解码器、
+ * 播放到哪儿——写进 logcat，同时进调试面板。用户报「解码失败」时打开调试模式就能读出来。
  *
- * 去重见 [PlaybackDiag.claim]：同一阶段一次启动只报一条，
- * 用户连点三次「立即重试」不会把后台刷成三条一样的记录。
+ * 去重见 [PlaybackDiag.claim]：同一阶段一次启动只记一条，
+ * 用户连点三次「立即重试」不会把记录刷成三条一样的。
  */
 internal object PlaybackDiag {
     /**
-     * 单进程上报上限。
+     * 单进程记录上限。
      *
      * 去重键是**阶段**而不是「阶段+集号」：一台机器的 HEVC 硬解坏了，用户会一集一集往下撞，
      * 按集去重就会把同一件事刷成几十条。按阶段去重之后，每次启动最多也就 7 条
      * （source / io / parse / decoder_init / decoder_query / decoding / limits / unsupported / codec_error），
-     * 后台一眼就能看出「这台是解码器初始化挂」还是「这台根本没缓冲到」。
+     * 一眼就能看出「这台是解码器初始化挂」还是「这台根本没缓冲到」。
      */
     private const val MAX_REPORTS = 12
     /** 解码器自报错误的额度（见 [claim]）。 */
@@ -81,7 +78,7 @@ internal object PlaybackDiag {
     @Volatile var lastFrameAt = 0L
 
     // —— 屏幕版现场（见 `DebugOverlay.kt` 的调试模式面板）——
-    // 上报走的是后台，用户看不到；黑屏时屏幕上那块面板读的就是这三个字段。
+    // 记录只落本地；黑屏时屏幕上那块面板读的就是这三个字段。
     // 只记「用户眼前这一次」：阶段标题、错误码、cause 链压成的一行。
     @Volatile var lastStage = ""
     @Volatile var lastStageTitle = ""
@@ -100,7 +97,7 @@ internal object PlaybackDiag {
     /**
      * 调试注入：画面照常出，但**故意不记账**（见 `DebugFaults.Mode.STALL_FRAME`）。
      *
-     * 有了它，「有声音无画面」这条上报才测得了；同时这里也是**唯一**的注入开关——
+     * 有了它，「有声音无画面」这条记录才测得了；同时这里也是**唯一**的注入开关——
      * 出帧的三条证据链（Player 监听、Analytics 监听、逐帧心跳）都看它，
      * 否则随便哪一条漏判就会把注入测试变成「一切正常」。
      */
@@ -114,7 +111,7 @@ internal object PlaybackDiag {
      */
     @Volatile var stallNoted = false
 
-    /** 记下这一次的现场：屏幕上那块面板与后台上报共用同一份，避免两处描述不一致。 */
+    /** 记下这一次的现场：屏幕上那块面板与调试面板共用同一份，避免两处描述不一致。 */
     @Synchronized fun note(stage: String,title: String,code: Int,error: String) {
         // 错误链最多 6 段、每段 160 字：屏幕上那块板子只放得下两行，截断在记的时候做，
         // 免得每个刷新周期都去切一次长字符串。
@@ -126,8 +123,8 @@ internal object PlaybackDiag {
     /**
      * 清掉屏幕上那条现场（问题已经不再成立）。
      *
-     * 与 [claimed] 无关：那个管的是「后台上报要不要去重」，这里管的是「面板上还挂不挂着」。
-     * 两者必须分开——画面回来了就该从面板上消失，但同一次启动里同一阶段仍只上传一条。
+     * 与 [claimed] 无关：那个管的是「记录要不要去重」，这里管的是「面板上还挂不挂着」。
+     * 两者必须分开——画面回来了就该从面板上消失，但同一次启动里同一阶段仍只记一条。
      */
     @Synchronized fun clearProblem() {
         if(lastStage.isEmpty() && lastError.isEmpty() && lastCode==0) return
@@ -185,7 +182,7 @@ internal object PlaybackDiag {
     }
 
     /**
-     * 认领一次上报。
+     * 认领一次记录。
      *
      * 去重键是**阶段 + 错误码**：同一阶段里 4004（解码失败）与 4100（厂商自定义码）
      * 是两件不同的事，只按阶段去重会让后一条永远记不上——而用户报的正是那串数字。
@@ -247,7 +244,7 @@ internal object PlaybackDiag {
 }
 
 /**
- * 解码失败的上报载体。
+ * 解码失败的记录载体。
  *
  * **堆栈保持原样**，不伪造帧。
  *
@@ -255,7 +252,7 @@ internal object PlaybackDiag {
  * 没有合法的类 / 文件 / 行号，服务端的符号化与聚合解析会判它无效。
  *
  * 现在**堆栈保持原样**（`playerFailure → reportPlaybackFailure`，所有阶段都一样），
- * 阶段靠 U-APM 的 `type` 参数区分——那才是它的聚合键。
+ * 阶段靠 [stage] 字段区分——logcat 与调试面板都按它聚合。
  */
 internal class PlaybackDiagnosticException(
     val stage: String,
@@ -312,14 +309,14 @@ private fun decoderOf(problem: Throwable?): String {
 }
 
 /**
- * cause 链压成一行：只保留类名与 message，够定位，又不会撑爆上报字段。
+ * cause 链压成一行：只保留类名与 message，够定位，又不会撑爆日志行。
  *
  * 实现统一在 [Diagnostics.chainOf]：播放链路与其它模块用同一套格式，
- * 后台按 message 聚合时不会因为两处写法不同而拆成两条 issue。
+ * 两处写法一致，读日志时不会因为措辞不同而当成两件事。
  */
 private fun chainOf(problem: Throwable?): String = Diagnostics.chainOf(problem)
 
-/** 当前播放现场：位置 / 状态 / 轨道 / 网络。上报里的这一行决定了「是没解出来还是没缓冲到」。 */
+/** 当前播放现场：位置 / 状态 / 轨道 / 网络。日志里的这一行决定了「是没解出来还是没缓冲到」。 */
 internal fun MainActivity.playbackScene(): String {
     // 这个函数会被**播放线程**调用（`onVideoCodecError` 就在那条线上），
     // 而 ExoPlayer 的 getter 要求应用线程。全部包进 runCatching：
@@ -378,7 +375,7 @@ private fun availableDecoders(mime: String): String {
             !info.isEncoder && info.supportedTypes.any { it.equals(mime,true) }
         }.map { info ->
             // `isHardwareAccelerated` 是 29 才有的；更早的系统按厂商命名约定判断，
-            // 判错也只是标签不准，不影响这条上报的价值。
+            // 判错也只是标签不准，不影响这条记录的价值。
             val hardware=if(Build.VERSION.SDK_INT>=29) info.isHardwareAccelerated else !looksSoftware(info.name)
             (if(hardware) "hw:" else "sw:")+info.name
         }
@@ -450,9 +447,9 @@ private fun formatLine(): String = buildString {
 /**
  * 阶段 → 一句稳定的话。
  *
- * **必须是常量**：U-APM 按 `type` 聚合，但标题同时会作为人读的标题展示；
- * 一旦掺进集号、解码器名、错误码，后台看到的是一堆碎渣。
- * 动态细节全部进 message（随这条上报一起上传，在 case 详情里可读）。
+ * **必须是常量**：调试面板按 `type` 归并同一类故障，但标题同时会作为人读的标题展示；
+ * 一旦掺进集号、解码器名、错误码，归并出来就是一堆碎渣。
+ * 动态细节全部进 detail（跟着这条记录一起写进日志）。
  */
 internal fun stageTitle(stage: String): String = when(stage) {
     "playback_source" -> "播放失败：资源不可用"
@@ -472,10 +469,10 @@ internal fun stageTitle(stage: String): String = when(stage) {
 }
 
 /**
- * 上报一次播放失败。
+ * 记一次播放失败。
  *
- * [stage] 是聚合键（U-APM 的 `type`）；标题取 [stageTitle]（常量），细节进 message。
- * 这样后台按 stage 分组时，「某型号 HEVC 硬解全挂」是一条清清楚楚的 issue，
+ * [stage] 是聚合键；标题取 [stageTitle]（常量），细节进 detail。
+ * 这样按 stage 分组时，「某型号 HEVC 硬解全挂」是一组清清楚楚的记录，
  * 而不是几千条各不相同的杂音，而每一条的具体现场又都还在。
  */
 internal fun MainActivity.reportPlaybackFailure(problem: Throwable?,stage: String) {
@@ -494,7 +491,7 @@ internal fun MainActivity.reportPlaybackFailure(problem: Throwable?,stage: Strin
         PlaybackDiag.note(stage,stageTitle(stage),(problem as? PlaybackException)?.errorCode ?: 0,chainOf(problem))
     }
     // 错误码（`PlaybackException.errorCode`）与它的常量名：用户报「错误码 4001」时，
-    // 面板的「近况」与后台上报里都要能直接对上，不能只有出错界面上那一行看得见。
+    // 面板的「近况」与日志里都要能直接对上，不能只有出错界面上那一行看得见。
     val code=(problem as? PlaybackException)?.errorCode ?: 0
     val codeName=runCatching { (problem as? PlaybackException)?.errorCodeName.orEmpty() }.getOrDefault("")
     val codeText=when {
@@ -524,22 +521,20 @@ internal fun MainActivity.reportPlaybackFailure(problem: Throwable?,stage: Strin
     val failedDecoder=decoderOf(problem)
     val errorChain=chainOf(problem)
     val title=stageTitle(stage)
-    // 采集与上报全部挪到 io 线程。
+    // 采集与记录全部挪到 io 线程。
     //
     // 为什么必须挪：这条路**只会**在主线程被走到（`onPlayerError`、看门狗 tick、
-    // `onVideoCodecError` 延迟 1.5 秒的那条 Runnable），而它做的两件事都是设备级 I/O：
-    // * `availableDecoders()` 里的 `MediaCodecList(REGULAR_CODECS).codecInfos` 是 Binder 调用，
-    //   1GB 盒子上实测 1–3 秒（同一个坑见 `PlaybackCapability` 的类注释）；
-    // * `UMCrash.generateCustomLog(..., withLogcat = true)` 要读一遍系统环形日志缓冲，0.2–2 秒。
-    // 两者串起来就是一次 1.5–5 秒的主线程阻塞，而用户那一刻正在按「立即重试」——
-    // 输入事件无人处理就是 ANR。出错界面恰恰是最需要界面还能响应的时候。
+    // `onVideoCodecError` 延迟 1.5 秒的那条 Runnable），而 `availableDecoders()` 里的
+    // `MediaCodecList(REGULAR_CODECS).codecInfos` 是 Binder 调用，1GB 盒子上实测 1–3 秒
+    // （同一个坑见 `PlaybackCapability` 的类注释）。主线程卡这么久，用户那一刻正在按
+    // 「立即重试」——输入事件无人处理就是 ANR。出错界面恰恰是最需要界面还能响应的时候。
     runCatching {
         io.execute {
             // 线程池可能在 Activity 销毁时已经 shutdownNow：那条失败不能再抛出来变成新的崩溃源。
             runCatching {
                 val detail=buildString {
                     append("stage=").append(stage)
-                    // 数字错误码 + 常量名：后台按 stage 聚合，但要能和用户报的那串数字直接对上。
+                    // 数字错误码 + 常量名：按 stage 聚合，但要能和用户报的那串数字直接对上。
                     if(code!=0) append(" code=").append(code)
                     if(codeName.isNotBlank()) append('/').append(codeName)
                     append(" ep=").append(episodeIndex+1).append('/').append(episodeCount)
@@ -555,13 +550,9 @@ internal fun MainActivity.reportPlaybackFailure(problem: Throwable?,stage: Strin
                     append(" title=").append(seriesTitle.take(24))
                     append(" err=").append(errorChain)
                 }
-                // 上报。走 U-APM 自定义异常：进程继续跑，后台单独成一条 case。
-                // `type` 是聚合键（阶段），message 里是**一行完整现场**——这一行比堆栈有用得多：
-                // 解码器名、codec string、分辨率帧率、设备上注册了哪些解码器、播放到哪儿，全在里面。
-                // `withLogcat=true`：连当时进程的 logcat 一起带走（OMX / c2 的报错在系统 tag 上）。
-                UMCrash.generateCustomLog(PlaybackDiagnosticException(stage,title,problem),stage,detail.take(900),true,false)
-                // 本地准备失败时，`stage` 之外的这行 message 才是真正的答案（容器 / 索引 / 加密）。
-                android.util.Log.w("HGTV","Playback failure reported stage=$stage $errorChain")
+                // 只落本地：一行完整现场写进 logcat（调试面板另有一份，见上面的 `DebugLog`）。
+                // 解码器名、codec string、分辨率帧率、设备上注册了哪些解码器、播放到哪儿，全在这一行里。
+                android.util.Log.w("HGTV","Playback failure stage=$stage $title | ${detail.take(900)}")
             }
         }
     }
@@ -600,7 +591,7 @@ internal fun MainActivity.playbackDiagnostics()=object: AnalyticsListener {
         // 因此延迟 1.5 秒再报（与 [playerFailure] 的互斥窗同长）：
         // 这期间 `playerFailure` 报过了，说明是同一次，这条作废；没报就是被接住了。
         //
-        // 这条回调在**播放线程**上，而读取播放器状态与上报 SDK 都更适合主线程，
+        // 这条回调在**播放线程**上，而读取播放器状态更适合主线程，
         // 因此转一次主线程；会话号变了（用户已经切走）就丢掉。
         val session=playbackSession
         val pending=Runnable {
@@ -621,7 +612,7 @@ internal fun MainActivity.playbackDiagnostics()=object: AnalyticsListener {
      */
     override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime,output: Any,renderTimeMs: Long) {
         // 注入模式下 `pictureUp()` 返回 false：那时**不撤看门狗**，
-        // 否则「有声音无画面」这条上报就测不出来了。
+        // 否则「有声音无画面」这条记录就测不出来了。
         if(PlaybackDiag.pictureUp()) disarmPlaybackWatchdog()
     }
     override fun onDroppedVideoFrames(eventTime: AnalyticsListener.EventTime,droppedFrames: Int,elapsedMs: Long) {
@@ -789,7 +780,7 @@ internal fun MainActivity.playbackFrameClock()=com.google.android.exoplayer2.vid
  *
  * 用户反馈的「自动播放几集后就黑屏」多数是这个形态：播放器状态还是 READY、进度条还在走、
  * 声音可能也还在，但解码器不再吐帧（或 surface 丢了）。它不抛异常，起播看门狗又已经因为
- * 「出过第一帧」撤掉了，于是屏幕上只剩一块黑，后台一条记录都没有。
+ * 「出过第一帧」撤掉了，于是屏幕上只剩一块黑，调试面板里一条记录都没有。
  *
  * 判据只看「最近一帧上屏是什么时候」：逐帧回调（见 [PlaybackDiag.lastFrameAt]）每次刷新，
  * 超过 [FRAME_STALL_MS] 没有新帧、且播放器确实在播（不是暂停 / 缓冲 / 后台），才判停住。
@@ -817,7 +808,7 @@ internal fun MainActivity.armFrameStallWatchdog(playSession: Int) {
             val stalled=android.os.SystemClock.elapsedRealtime()-last
             if(stalled>=FRAME_STALL_MS) {
                 // 报告会顺带把屏幕上的现场摆出来（见 [reportPlaybackFailure]）。
-                // 去重由 `claim` 负责：同一进程里这条 stage 只上传一次，但面板会一直留着并继续刷新。
+                // 去重由 `claim` 负责：同一进程里这条 stage 只记一次，但面板会一直留着并继续刷新。
                 reportPlaybackFailure(
                     PlaybackDiagnosticException("playback_stall_frame","播放中画面停止刷新 ${stalled/1000} 秒"),
                     "playback_stall_frame"

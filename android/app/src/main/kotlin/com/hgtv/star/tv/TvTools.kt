@@ -24,7 +24,6 @@ import com.hgtv.star.core.PhoneLogin
 import com.hgtv.star.core.PhoneLoginServer
 import com.hgtv.star.core.PhoneSearchServer
 import com.hgtv.star.core.LibraryTransferServer
-import com.hgtv.star.core.UpdateUploadServer
 import com.hgtv.star.core.BackupData
 import com.hgtv.star.compat.activeNetworkOrNull
 import java.net.Inet4Address
@@ -414,7 +413,7 @@ class TvTools(private val activity: Activity) {
         // 输入框只留够 E.164（15 位）加上空格 / 横线 / `+` 的位置，归一在提交时做。
         val phoneField=LoginForm.field(activity,"手机号","请输入手机号",numeric=true,maxLength=20,phoneStyle=true)
         val codeField=LoginForm.field(activity,"验证码","收到短信后填入",numeric=true,maxLength=8)
-        val note=LoginForm.note(activity,"未注册的手机号会自动创建账号。验证码由红果短信发出，我们不会保存它。")
+        val note=LoginForm.note(activity,"未注册的手机号会自动创建账号。验证码由平台短信发出，我们不会保存它。")
         if(prefillPhone.isNotBlank()) {
             // 预填的是上一次归一后的 E.164（`+8613812345678`）：去掉开头的 `+86`
             // 再放进输入框。这个弹窗没有区号选择器，留着区号会让平台把号码当成
@@ -837,7 +836,7 @@ class TvTools(private val activity: Activity) {
         // 或者直接手填 sessionid。三者最终都归一到「一段文本」，
         // 由调用方解析（见 `MainActivity.parseCredentials`）。
         val pick=TvDialog(activity,"导入账号参数")
-        pick.message("需要红果 App 的 cookieStore.xml，或者整段 Cookie；也可以只填 sessionid。\n\n三种方式：\n· 本机文件 —— 电视上已经有这个文件时用（U 盘 / 文件管理应用放进来的）；\n· 手机扫码 —— 手机与电视连同一局域网，用手机把文件或口令传过来；\n· 输入 sessionid —— 只拿到那一串时直接手填（其余字段平台不校验）。")
+        pick.message("需要官方 App 的 cookieStore.xml，或者整段 Cookie；也可以只填 sessionid。\n\n三种方式：\n· 本机文件 —— 电视上已经有这个文件时用（U 盘 / 文件管理应用放进来的）；\n· 手机扫码 —— 手机与电视连同一局域网，用手机把文件或口令传过来；\n· 输入 sessionid —— 只拿到那一串时直接手填（其余字段平台不校验）。")
         pick.button("取消", icon=R.drawable.ic_menu_close) {}
         pick.button("手机扫码", icon=R.drawable.ic_menu_search) { phoneUpload(anchor,onImport) }
         pick.button("本机文件", icon=R.drawable.ic_menu_info) { onLocalFile() }
@@ -858,7 +857,7 @@ class TvTools(private val activity: Activity) {
      */
     private fun sessionIdEntry(anchor: View?,onImport: (String)->Unit) {
         val next=TvDialog(activity,"输入 sessionid")
-        next.message("填红果 App 登录态里的 sessionid：**32 位十六进制**，形如 cf98cf3cd41f0b56188dd3f2226a10c4。\n\n" +
+        next.message("填官方 App 登录态里的 sessionid：**32 位十六进制**，形如 cf98cf3cd41f0b56188dd3f2226a10c4。\n\n" +
             "在 cookieStore.xml 里搜 sessionid 会看到 19 条同名的（不同网址下各一份），值都一样，挑任意一条即可——" +
             "但**不要粘那一长串十六进制**（那是 App 的序列化数据）。\n" +
             "整行 <string …>、整段 Cookie、或直接填那 32 位，这三种都认。")
@@ -974,7 +973,7 @@ class TvTools(private val activity: Activity) {
                 main.post {
                     if(dialog!==next) { session.close(); return@post }
                     phone=session; next.content.removeAllViews()
-                    scanBody("用手机相机扫下面的码，打开电视发的一次性页面上传红果 App 的 cookieStore.xml\n也可以直接粘贴整段 Cookie\n只保存在电视本机，手机与电视要在同一个局域网，最长 5 分钟",session.url,next.content)
+                    scanBody("用手机相机扫下面的码，打开电视发的一次性页面上传官方 App 的 cookieStore.xml\n也可以直接粘贴整段 Cookie\n只保存在电视本机，手机与电视要在同一个局域网，最长 5 分钟",session.url,next.content)
                 }
             } catch(e: Exception) {
                 com.hgtv.star.Diagnostics.warn("HGTV-TOOLS","upload dialog failed: ${e.javaClass.simpleName}: ${e.message}",e)
@@ -982,50 +981,6 @@ class TvTools(private val activity: Activity) {
             }
         }
     }
-    /**
-     * 把安装包从手机传到电视：一枚二维码 + 一个一次性上传页。
-     *
-     * 为什么需要这条路：电视自己下包这一步最容易失败——老电视的 WebView 连不上现代 TLS、
-     * 系统浏览器打不开 GitHub、镜像域名被 DNS 污染，用户最后卡在「下载失败」。
-     * 而手机上这几步几乎不会失败：手机先下好 APK，再用同一个局域网把文件送进电视。
-     *
-     * [onFile] 拿到的文件位于应用的 `cacheDir/updates`，调用方负责搬走 / 安装。
-     * 弹窗关掉就关服务器（见 [open] 的 dismiss 回调），上传页立刻失效。
-     */
-    fun updateUpload(anchor: View?, dir: java.io.File, onFile: (java.io.File)->Unit) {
-        val address=lanAddress()
-        if(address==null) {
-            info("手机传安装包","请让电视和手机连接同一局域网（Wi-Fi 或有线网络）后重试。",anchor); return
-        }
-        val next=TvDialog(activity,"手机传安装包")
-        next.button("关闭")
-        val status=label("正在生成二维码…"); next.content.addView(status)
-        open(next,anchor)
-        worker.execute {
-            try {
-                val target=java.io.File(dir,"incoming.apk")
-                val session=UpdateUploadServer(address,target,
-                    { file -> main.post { if(dialog===next) next.dismiss(); onFile(file) } },
-                    { main.post { if(dialog===next) { next.content.removeAllViews(); next.content.addView(label("上传页已失效，请关闭后重新打开。")) } } })
-                main.post {
-                    if(dialog!==next) { session.close(); return@post }
-                    // 登记在 `phone` 上：弹窗一关就由 [open] 的 dismiss 回调把服务停掉。
-                    // **必须在这条 post 里登记**——建服务器要几十毫秒，这段时间用户可能已经把
-                    // 弹窗关了；那样这里登记下去的对象再没人来关，端口会一直挂到超时。
-                    phone=session
-                    next.content.removeAllViews()
-                    scanBody(
-                        "用手机相机扫下面的码\n在手机上选中已经下好的红果TV新版 APK\n点「上传到电视」，传完电视会自动开始安装\n手机与电视要在同一个局域网，最长 15 分钟",
-                        session.url,next.content
-                    )
-                }
-            } catch(e: Exception) {
-                com.hgtv.star.Diagnostics.warn("HGTV-TOOLS","update upload dialog failed: ${e.javaClass.simpleName}: ${e.message}",e)
-                main.post { if(dialog===next) status.text="无法开启上传页面，请检查网络后重试。" }
-            }
-        }
-    }
-
     fun libraryTransfer(backup: String,anchor: View?,restore: (BackupData,Boolean)->Unit) {
         val address=lanAddress()
         if(address==null) {

@@ -181,7 +181,7 @@ private class CappedScroll(context: Context) : ScrollView(context) {
  *
  * ```
  * 出码 → 轮询（1.1s）→ 拿到 Cookie 落盘
- *          ├ new       → 「请用红果短剧 App 扫码」
+ *          ├ new       → 「请用手机上的官方 App 扫码」
  *          ├ scanned   → 「已扫码，请在手机上确认」
  *          ├ confirmed → hideAccountPanel() + savePhoneLogin()
  *          └ expired   → 平台在同一次响应里给了新码：换图接着轮询（过期自动刷新）
@@ -226,7 +226,7 @@ private fun MainActivity.buildQrLoginPanel(
         dp(TvStyle.LOGIN_PAD_SIDE)+band,
         dp(TvStyle.LOGIN_PAD_BOTTOM)+band
     )
-    LoginForm.header(card,"扫码登录","用红果短剧 App 扫一扫，手机确认后电视即登录")
+    LoginForm.header(card,"扫码登录","用手机上的官方 App 扫一扫，手机确认后电视即登录")
 
     // —— 二维码：白底是**功能需求**（平台给的就是白底黑块 PNG），因此不套主题色，
     //    只在外围留一圈内边距，让白块与卡面之间有一道呼吸。 ——
@@ -345,7 +345,7 @@ private fun MainActivity.buildQrLoginPanel(
                 paint(fresh)
                 renewed=false
                 status.setTextColor(TvStyle.textDim)
-                status.text="请用红果短剧 App 扫码"
+                status.text="请用手机上的官方 App 扫码"
                 // 出码成功才起轮询：这一刻之前没有 token 可问。
                 schedule(QrLogin.POLL_MS)
             }
@@ -375,7 +375,7 @@ private fun MainActivity.buildQrLoginPanel(
                         status.setTextColor(TvStyle.textDim)
                         // 刚自动换过码时保留那一句提示，否则 1.1 秒后就被盖掉，
                         // 用户只看到二维码变了一下、不知道是过期刷新。
-                        if(!renewed) status.text="请用红果短剧 App 扫码"
+                        if(!renewed) status.text="请用手机上的官方 App 扫码"
                     }
                     is QrLogin.Outcome.Scanned -> {
                         renewed=false
@@ -478,7 +478,7 @@ private fun MainActivity.buildPhoneLoginPanel(
     // —— 字段一：手机号（区号 + 输入框同一行） ——
     val phoneField=LoginForm.field(this,"手机号","请输入手机号",numeric=true,maxLength=20,phoneStyle=true)
     val codeField=LoginForm.field(this,"验证码","收到短信后填入",numeric=true,maxLength=8)
-    val note=LoginForm.note(this,"未注册的手机号会自动创建账号。验证码由红果短信发出，我们不会保存它。")
+    val note=LoginForm.note(this,"未注册的手机号会自动创建账号。验证码由平台短信发出，我们不会保存它。")
     /**
      * 预填：把上次那串 E.164（`+8613812345678`）拆成「区号 + 本地号码」。
      *

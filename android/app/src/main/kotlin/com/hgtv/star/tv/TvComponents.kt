@@ -181,6 +181,15 @@ internal enum class ButtonSize(val height: Int, val pad: Int, val text: Float) {
      * 标题与内容重新成为主体。
      */
     DIALOG(TvStyle.BUTTON_DIALOG, TvStyle.BUTTON_PAD_DIALOG, TvStyle.BUTTON_TEXT_DIALOG),
+
+    /**
+     * 收紧档：高度与字号都跟 [COMPACT] 一样，只把左右内边距收到 12dp。
+     *
+     * 搜索页导航栏里那两枚按钮（搜索 / 手机输入）用它：那一行还挤着七个圆形入口，
+     * 横向上每一 dp 都要省，但高度必须与同一行的输入框对齐，否则整行看起来歪的。
+     */
+    TIGHT(TvStyle.BUTTON_COMPACT, TvStyle.BUTTON_PAD_TIGHT, TvStyle.BUTTON_TEXT_COMPACT),
+
     COMPACT(TvStyle.BUTTON_COMPACT, TvStyle.BUTTON_PAD_COMPACT, TvStyle.BUTTON_TEXT_COMPACT),
     NORMAL(TvStyle.BUTTON_NORMAL, TvStyle.BUTTON_PAD_NORMAL, TvStyle.BUTTON_TEXT_NORMAL),
     HERO(TvStyle.BUTTON_HERO, TvStyle.BUTTON_PAD_HERO, TvStyle.BUTTON_TEXT_HERO)
@@ -248,6 +257,8 @@ internal fun paintButton(
     view.minWidth = when {
         tone == ButtonTone.GHOST -> 0
         size == ButtonSize.DENSE -> dp(52) + band * 2
+        // 收紧档（搜索页那两枚）：按内容宽收紧，短文案不再撑到 92dp。
+        size == ButtonSize.TIGHT -> dp(TvStyle.BUTTON_MIN_WIDTH_TIGHT) + band * 2
         // 弹窗档按内容宽收紧：短文案（「取消」「确认」）只有几十 dp，不再撑到常规档的 92dp。
         size == ButtonSize.DIALOG -> dp(64) + band * 2
         else -> dp(TvStyle.BUTTON_MIN_WIDTH) + band * 2

@@ -176,7 +176,7 @@ code.block{display:block;font-size:14px;line-height:1.5;padding:13px 15px;border
         append("""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8">""")
         append("""<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">""")
         append("""<meta name="theme-color" content="#242a35"><meta name="format-detection" content="telephone=no">""")
-        append("<title>红果TV · ").append(title).append("</title>")
+        append("<title>HGTV · ").append(title).append("</title>")
         append("<style>").append(css).append("</style></head><body>")
         append(body)
         if (footer.isNotBlank()) append("<p class=\"foot\">").append(footer).append("</p>")

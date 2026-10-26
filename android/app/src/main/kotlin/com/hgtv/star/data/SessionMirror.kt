@@ -19,7 +19,7 @@ import org.json.JSONObject
  * App 私有的 `SharedPreferences` 里，而**卸载会把私有数据一起删掉**。于是重装之后本机是
  * 一台全新设备：`device_id` / `iid` 重新注册拿到新的一对，`cdid` / `openudid` 也是新随机值。
  * 平台看到「陌生设备 + 老账号」，风控就会再要一次上行短信确认本人——用户得重新走一轮发短信。
- * 真机上的红果不这样：它把这些东西放在**外部存储**，重装先捞回来，于是平台仍认这台设备。
+ * 真机上的HGTV不这样：它把这些东西放在**外部存储**，重装先捞回来，于是平台仍认这台设备。
  *
  * ## 放哪儿、能活多久
  *
@@ -45,7 +45,7 @@ import org.json.JSONObject
  * ## 边界
  *
  * 这个文件是**明文凭据**。Android 9 及以下，任何拿到存储权限的应用都能读到它——
- * 与真机红果同一层级的取舍；用户「清除数据 / 恢复出厂」或换机器时它也一起没了。
+ * 与真机HGTV同一层级的取舍；用户「清除数据 / 恢复出厂」或换机器时它也一起没了。
  */
 internal class SessionMirror(private val app: Context) {
     private companion object {

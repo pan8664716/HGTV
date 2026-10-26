@@ -49,7 +49,7 @@ import com.hgtv.star.dp
 import com.hgtv.star.firstHeadControl
 import com.hgtv.star.categoryDescription
 import com.hgtv.star.categoryFilterWidth
-import com.hgtv.star.feedbackPage
+import com.hgtv.star.fitSearchRow
 import com.hgtv.star.focusHead
 import com.hgtv.star.fullList
 import com.hgtv.star.gapInto
@@ -66,14 +66,12 @@ import com.hgtv.star.localItems
 import com.hgtv.star.lp
 import com.hgtv.star.message
 import com.hgtv.star.historyClearButton
-import com.hgtv.star.openFeedbackPage
 import com.hgtv.star.navEntry
 import com.hgtv.star.navIcons
 import com.hgtv.star.pageBleed
 import com.hgtv.star.pageTitle
 import com.hgtv.star.profileHead
 import com.hgtv.star.profileHeadControl
-import com.hgtv.star.rankSource
 import com.hgtv.star.releaseCatalogViews
 import com.hgtv.star.renderHome
 import com.hgtv.star.restoreChipFocus
@@ -140,7 +138,7 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
     }
     if(!ownsChip) chipFocusKey=null
     if(foreground && library.isLoaded && !favoriteMonitor.running) main.post { if(foreground && screen=="catalog") favoriteMonitor.check() }
-    // 顶部导航栏：左侧是页面名（首页是品牌「红果TV」，二级界面与榜单页显示自己的名字），
+    // 顶部导航栏：左侧是页面名（首页是品牌「HGTV」，二级界面与榜单页显示自己的名字），
     // 右侧是这一页自己的动作与 4 个圆形图标入口（刷新 / 搜索 / 排行榜 / 设置）。
     // 整条**不画底板**：没有边框、也没有可以按进去的面板，文字直接落在内容线上；
     // 品牌是标识而不是按钮，因此不参与焦点链（不可选中、不可点击），回主界面一律走返回键。
@@ -157,8 +155,7 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
     gapInto(top,filterSlot,lp(-2,-2),TvStyle.GAP_GROUP)
     // 搜索页：搜索框与「搜索 / 历史 / 手机输入」就在导航栏里（用户不用先按一下才够得着），
     // 输入框吃掉中间那段弹性空间；其余页面这里是一条弹性空白。
-    // 「问题反馈」页盖在搜索页之上时不再摆搜索框：那一页只有三块码，多一个输入框只会抢焦点。
-    if(tab==TAB_SEARCH && !feedbackOpen) searchBar(top,query.isBlank() && !load && !focusNav)
+    if(tab==TAB_SEARCH) searchBar(top,query.isBlank() && !load && !focusNav)
     else top.addView(Space(this),lp(0,1).apply { weight=1f })
     // 历史集合页：「已看完 / 未看完」紧跟在页面标题后面（**左边**，与标题同一组），
     // 「清空全部记录」仍留在右端、紧挨着那排圆形入口。
@@ -168,7 +165,7 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
     // 放在左边而不是和「清空」挤在右端：这一行右边已经有清空按钮 + 五枚圆形入口，
     // 再加两枚筛选会把它们挤到贴边；而且筛选是「看哪一类」，读起来该紧跟标题。
     var historyFilterEnd: View?=null
-    if(collection=="history" && !feedbackOpen) {
+    if(collection=="history") {
         historyClearInline=true
         historyFilterButtons.clear()
         var previous: View?=null
@@ -191,7 +188,7 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
         historyFilterButtons[true]?.let { first -> first.nextFocusLeftId=first.id }
     }
     // 「清空全部记录」单独放右端：它是这一栏的批量动作，与筛选不属于同一组。
-    if(collection=="history" && !feedbackOpen) {
+    if(collection=="history") {
         historyClearButton(top,ButtonSize.COMPACT,gap=TvStyle.GAP_BLOCK)
     }
     // 「推荐」入口（需求 1 / 5）：圆形，紧挨在搜索按钮**左边**。
@@ -214,18 +211,15 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
         addView(recommendIcon,FrameLayout.LayoutParams(-2,-2))
     } else null
     if(recommendHolder!=null) gapInto(top,recommendHolder,lp(-2,-2),TvStyle.GAP_TIGHT)
-    // 顶部只有四个圆形入口，顺序固定：搜索 → 分类 → 榜单 → 设置。
+    // 顶部五个圆形入口，顺序固定：搜索 → 分类 → 榜单 → 设置 → 我的。
     // 「刷新」按钮整个去掉了：首页、榜单、分类、搜索都是「进页面 / 滚到顶 / 换榜单 / 换分类」时自己重取，
     // 留着它只是多一个入口（职责已经被这些动作覆盖）。
-    // 最后多一枚「问题反馈」：它不在标签里（点它进的是整页说明，不是第五个内容分类），
-    // 因此动作单独给，也不参与「当前页」的小圆点。
     val entries=listOf(
         "search" to Triple(com.hgtv.star.R.drawable.ic_toolbar_search,"搜索",{ switchTab(TAB_SEARCH) }),
         "category" to Triple(com.hgtv.star.R.drawable.ic_toolbar_category,"分类",{ switchTab(TAB_CATEGORY) }),
         "rank" to Triple(com.hgtv.star.R.drawable.ic_toolbar_rank,"榜单",{ switchTab(TAB_RANK) }),
         "settings" to Triple(com.hgtv.star.R.drawable.ic_toolbar_settings,"设置",{ switchTab(TAB_SETTINGS) }),
-        "profile" to Triple(com.hgtv.star.R.drawable.ic_toolbar_profile,"我的",{ switchTab(TAB_PROFILE) }),
-        "feedback" to Triple(com.hgtv.star.R.drawable.ic_toolbar_feedback,"问题反馈",{ openFeedbackPage() })
+        "profile" to Triple(com.hgtv.star.R.drawable.ic_toolbar_profile,"我的",{ switchTab(TAB_PROFILE) })
     )
     // 圆形入口**逐个**可以隐藏（设置 → 界面设置 → 导航栏圆形按钮，六行开关）。
     // 隐藏的那一枚**不建控件**（而不是建成 GONE）：全站的焦点链都按 [navIcons] 接线，
@@ -233,15 +227,11 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
     val hiddenNav=library.hiddenNav
     // index 仍然按完整顺序取：小圆点 / 「当前页」的判断与隐藏与否无关。
     entries.forEachIndexed { index,entry ->
-        // 「设置」与「问题反馈」不在可隐藏列表里，始终显示（见 [NAV_ENTRIES]）。
+        // 「设置」不在可隐藏列表里，始终显示（见 [NAV_ENTRIES]）。
         if(entry.first in hiddenNav && entry.first in NAV_KEYS) return@forEachIndexed
         val item=IconButton(this,entry.second.first,entry.second.second) { entry.second.third() }
-        // 前五枚对应标签（`tab` 从 1 开始编号），最后一枚是「问题反馈」整页。
-        //
-        // 「问题反馈」打开时**只亮它自己**：那时 [tab] 还是进来之前那一页，
-        // 照旧算「当前页」的话，原来那一枚的小圆点会跟反馈那一枚同时亮着，
-        // 看起来像两个页面叠在一起。
-        val active=if(feedbackOpen) entry.first=="feedback" else index<5 && index+1==tab
+        // 五枚依次对应五个标签（`tab` 从 1 开始编号），当前页那一枚亮起来。
+        val active=index+1==tab
         item.setActive(active)
         // 当前页的小圆点放在圆形按钮**外面**的正下方：按钮本身仍是完整圆盘，
         // 不把点挤进圆里，也不改变按钮的点击与焦点区域。
@@ -265,7 +255,7 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
         navKeyed[entry.first]=item
         // 圆形入口之间的间距用 [TvStyle.GAP_TIGHT]（8dp）：圆盘自身四周还有一条柔光带，
         // 实际留白已经是 8 + 6 × 2 = 20dp；用 GAP_BLOCK（16）时两枚之间接近 28dp，
-        // 六枚排下来整排太散，读起来像六个独立的按钮而不是一组入口。
+        // 五枚排下来整排太散，读起来像五个独立的按钮而不是一组入口。
         gapInto(top,holder,lp(-2,-2),TvStyle.GAP_TIGHT)
     }
     // 「推荐」圆形入口的左右邻居：右边就是紧挨着它的搜索按钮（[nav] 里它后面那一枚），
@@ -306,7 +296,10 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
     container.addView(top,lp(-1,dp(TvStyle.TOOLBAR_HEIGHT)))
     registerTopAreaRow(top)
     // 圆形入口建好了：把搜索页导航栏里那几件的「按上」接回它们（见 [wireHeadNavUp]）。
-    if(tab==TAB_SEARCH && !feedbackOpen) wireHeadNavUp()
+    if(tab==TAB_SEARCH) wireHeadNavUp()
+    // 搜索页这一行的宽度按实测分配：输入框只拿「圆形入口与按钮之外剩下的那一段」，
+    // 因此无论屏多宽，右边那排圆形入口都不会被顶出屏幕（见 [fitSearchRow]）。
+    if(tab==TAB_SEARCH) fitSearchRow(top)
     // 页面内提示行：应用里不弹系统 Toast，需要「刚刚发生了什么」这类反馈时显示这一行淡字。
     // 它不参与焦点、不盖画面，几秒后自己消失；页面重建时按 [catalogHint] 复原。
     val hintView=text("",14f,TvStyle.textDim).apply {
@@ -316,26 +309,6 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
     }
     catalogHintView=hintView
     container.addView(hintView,lp(-1,-2))
-    // 「问题反馈」整页：盖在任何一页之上，导航栏仍然在（品牌名换成「问题反馈」），
-    // 内容区整块换成三张二维码卡片。返回键 / 再点一次那枚圆形按钮都回到原来那一页。
-    if(feedbackOpen) {
-        val cards=feedbackPage(container)
-        val first=cards.firstOrNull()
-        // 导航栏最右那一枚（问题反馈）此时已经是「当前页」：它在建的时候按 [feedbackOpen] 亮过了。
-        navIcons().forEach { it.nextFocusDownId=first?.id ?: it.id }
-        // 导航栏首位那枚「推荐」也指向同一处（它不在 nav 里，见上面建它时那段说明）。
-        findTagged(root,"nav:recommend")?.let { it.nextFocusDownId=first?.id ?: it.id }
-        // 卡片按上回那一枚圆形入口：整页只有这一行内容，往回走的方向就是导航栏。
-        val up=nav.lastOrNull()
-        cards.forEach { if(up!=null) it.nextFocusUpId=up.id }
-        // 卡片刚 addView、还没量过尺寸：请求焦点推到下一帧，否则 `requestFocus` 会落空，
-        // 焦点留在刚被摘掉的旧控件上，整页看起来像「按了没反应」。
-        container.post {
-            if(!feedbackOpen) return@post
-            if(focusNav) up?.requestFocus() else first?.requestFocus()
-        }
-        return
-    }
     // 「我的」页的身份行：圆形头像 + 昵称 + 退出 / 刷新。
     // 放在导航栏下面（与分类页的二级分类同一层）：上面一行是「看哪一栏」，这一行是「这是谁」。
     if(tab==TAB_PROFILE) {
@@ -622,10 +595,13 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
         // 点了某一枚筛选芯片：焦点立刻交回那一枚。
         restoreChipFocus("filter:")
     } else if(tab==TAB_RANK) {
-        // 榜单名已经进了导航栏，这一行只剩来源 / 更新时间；
+        // 榜单名已经进了导航栏，这一行只剩更新时间（接口没给就整行不占位）；
         // 「刷新榜单」按钮去掉：进页面、切榜单、滚到顶都会重新取，不需要单独一个入口。
-        val subtitle=text(if(load) "正在读取最新榜单…" else ranking?.updatedText?.ifBlank { rankSource() } ?: rankSource(),13f,muted)
-            .apply { setPadding(pageBleed(),0,pageBleed(),dp(8)) }
+        val subtitle=text(if(load) "正在读取最新榜单…" else ranking?.updatedText.orEmpty(),13f,muted)
+            .apply {
+                setPadding(pageBleed(),0,pageBleed(),dp(8))
+                visibility=if(text.isBlank()) View.GONE else View.VISIBLE
+            }
         rankSubtitle=subtitle
         container.addView(subtitle); registerTopAreaRow(subtitle)
     }
@@ -745,7 +721,7 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
                 val added=page.items.filterNot { item -> catalog.any { it.id==item.id } }
                 val wanted=moreFocus; moreFocus=null
                 catalog=catalog+added; ranking=mergeRanking(ranking,page.ranking); hasMore=page.hasMore
-                rankSubtitle?.text=ranking?.updatedText?.ifBlank { rankSource() } ?: rankSource()
+                setRankSubtitle(ranking?.updatedText.orEmpty())
                 // 栅格还活着（空页那次重建之后又追加）就只往下接，不整页重画。
                 if(gridList!=null && catalogBody===body) appendGridItems(added,wanted)
                 else { body.removeAllViews(); seriesList(body,false) }
@@ -753,7 +729,7 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
                 catalog=page.items; ranking=page.ranking; hasMore=page.hasMore
                 // 拿到内容 = 上一次的加载失败已经过去；空结果那条由下面的 seriesList 重新记。
                 clearDebugProblem()
-                rankSubtitle?.text=ranking?.updatedText?.ifBlank { rankSource() } ?: rankSource()
+                setRankSubtitle(ranking?.updatedText.orEmpty())
                 // 焦点落点按**显式意图**决定（见 [focusFirstCardOnLanding]）：换了一份列表
                 // （换榜单 / 换分类 / 从首页进榜单）就不要留在页头——`focusNav` 置 false 之后，
                 // seriesList 末尾的兜底会把焦点交给第一张卡（`catalogFocus` 在换列表时已清空）。
@@ -782,13 +758,13 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
             if(appending) {
                 // 追加失败不动已经显示的剧集，页码退回待加载的那一页，底部按钮可以直接重试。
                 page=requestPage-1; moreFocus=LOAD_MORE
-                rankSubtitle?.text="加载更多失败 · 当前显示 ${catalog.size} 部"
+                setRankSubtitle("加载更多失败 · 当前显示 ${catalog.size} 部")
                 noteDebugProblem("加载更多失败 · 第 ${requestPage} 页 · 已显示 ${catalog.size} 部")
                 body.removeAllViews(); seriesList(body,false)
                 return@work
             }
             catalog=emptyList(); hasMore=false; ranking=null
-            rankSubtitle?.text=if(tab==TAB_SEARCH) "搜索失败" else "榜单加载失败"
+            setRankSubtitle(if(tab==TAB_SEARCH) "搜索失败" else "榜单加载失败")
             // 服务端不认本机这份设备身份（搜索空响应 / 播放 101000）时**先自愈一次**：
             // 丢掉旧身份重注册，成功之后由 [healDeviceIdentity] 把这一页重取一遍。
             // 这是「升级到 1.2.3 后搜不出东西、清缓存才好」那条反馈的正面修复——
@@ -813,6 +789,19 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
         })
     } else seriesList(body,focusNav,focusType)
 }
+
+/**
+ * 榜单页页头那一行说明（正在读取 / 更新时间 / 失败原因）。
+ *
+ * 接口不给更新时间时**整行不占位**：早先这一行会退回「来源：…热播榜」，
+ * 用户看着像一行没用的字，现在按需求去掉来源文案——只有真有话要说时才显示。
+ */
+internal fun MainActivity.setRankSubtitle(value: String) {
+    val view=rankSubtitle ?: return
+    view.text=value
+    view.visibility=if(value.isBlank()) View.GONE else View.VISIBLE
+}
+
 /**
  * **全站唯一的列表入口**。
  *

@@ -29,6 +29,16 @@ class AppSessionStore(
     /** 外部镜像写入（`Library.mirrorSession`）；为空则只写本机。 */
     private val mirror: (String,String?) -> Unit = { key,value -> SessionBootstrap.mirror?.invoke(key,value) }
 ) : SessionState {
+    /**
+     * 正在「清空应用缓存」：**所有写盘一律丢弃**。
+     *
+     * 这一类的写入口（[saveToken] / [mergeSetCookie] / [replaceCookie] / [saveDeviceCookies] /
+     * [firstBeat] / [lastBeatAtMs]）与 `Library` 那两个队列不同，是**直写 SP** 的：
+     * 心跳与 `SessionInterceptor` 都在网络线程上调它们。删完到杀进程之间那约 1 秒里
+     * 命中一次，刚清掉的 `native-session-v1.xml` 就会被内存里那份 SP 实例原样写回来——
+     * 结果是「恢复出厂之后还是登录着」。见 `LocalReset.resetting`。
+     */
+    private fun discarding(): Boolean = com.hgtv.star.data.LocalReset.resetting
     private val sp: SharedPreferences =
         context.applicationContext.getSharedPreferences(SP_NAME,Context.MODE_PRIVATE)
 
@@ -82,6 +92,7 @@ class AppSessionStore(
      * 否则一次异常响应就能把好会话覆盖成空。
      */
     override fun saveToken(token: String,tsSign: String): Boolean {
+        if(discarding()) return false
         val clean = token.trim()
         if(clean.isEmpty() || clean==TOKEN_PLACEHOLDER) return false
         if(clean==this.token && tsSign.trim()==sp.getString(K_TS_SIGN,"").orEmpty()) return false
@@ -103,6 +114,7 @@ class AppSessionStore(
      * 「我的」页会显示一个假账号，所有账号接口再静默失败。
      */
     override fun mergeSetCookie(setCookies: List<String>): Boolean {
+        if(discarding()) return false
         if(setCookies.isEmpty()) return false
         val wanted = setCookies.filter { raw ->
             val name = raw.substringBefore('=').trim().lowercase()
@@ -139,6 +151,7 @@ class AppSessionStore(
 
     /** 登录成功 / 导入 `cookieStore.xml` 时用整段串覆盖。 */
     fun replaceCookie(header: String): Boolean {
+        if(discarding()) return false
         val clean = header.trim()
         if(clean.isEmpty() || clean==cookieHeader) return false
         val expires = AccountCredentialsParser.expiryOf(CookieRecord.headerToMap(clean))
@@ -152,6 +165,7 @@ class AppSessionStore(
 
     /** 设备注册成功后把 `install_id` / `ttreq` / `store-region` 存下来（匿名时也要带）。 */
     override fun saveDeviceCookies(cookies: Map<String,String>) {
+        if(discarding()) return
         val clean = cookies.filterValues { it.isNotBlank() }
         if(clean.isEmpty()) return
         val json = JSONObject().apply { clean.forEach { (key,value) -> put(key,value) } }.toString()
@@ -166,7 +180,10 @@ class AppSessionStore(
      */
     override var firstBeat: Boolean
         get() = sp.getString(K_FIRST_BEAT,"").orEmpty().ifBlank { "true" }.toBoolean()
-        set(value) { sp.edit().putString(K_FIRST_BEAT,value.toString()).apply() }
+        set(value) {
+            if(discarding()) return
+            sp.edit().putString(K_FIRST_BEAT,value.toString()).apply()
+        }
 
     /**
      * 上一次成功心跳的时刻。存 `Long`（与 `account-expires` 同一个特判口径），
@@ -175,6 +192,7 @@ class AppSessionStore(
     override var lastBeatAtMs: Long
         get() = sp.getLong(K_LAST_BEAT,0L)
         set(value) {
+            if(discarding()) return
             // 10 分钟循环每打一次都会写这里，但落盘 + 镜像是一笔磁盘写：一分钟内的重复
             // 直接跳过（判据只用「多久以前」，秒级精度没有意义）。
             val previous = sp.getLong(K_LAST_BEAT,0L)
@@ -185,6 +203,7 @@ class AppSessionStore(
 
     /** 只清会话，不动设备身份（`registered-*`）与设备档案。 */
     override fun clearSession() {
+        if(discarding()) return
         sp.edit().remove(K_TOKEN).remove(K_TS_SIGN).remove(K_COOKIE).remove(K_EXPIRES).remove(K_LAST_BEAT).apply()
         mirror(K_TOKEN,null)
         mirror(K_TS_SIGN,null)

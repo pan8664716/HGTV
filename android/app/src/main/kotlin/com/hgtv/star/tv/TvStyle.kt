@@ -404,6 +404,18 @@ object TvStyle {
     const val BUTTON_PAD_HERO = 36
     const val BUTTON_PAD_DIALOG = 14
 
+    /**
+     * 收紧档：**只有搜索页导航栏里那两枚按钮用**（搜索 / 手机输入）。
+     *
+     * 那一行还要摆七个圆形入口（含「推荐」），本身就紧；紧凑档的 18dp 内边距
+     * 让「手机输入」占到 132dp，两枚加起来就顶掉了输入框一半的宽度。
+     * 收到 12dp 之后高度与字号都不变，只是横向收窄，与同一行的输入框仍是同一档观感。
+     */
+    const val BUTTON_PAD_TIGHT = 12
+
+    /** 收紧档的最小宽度：两三个字按内容宽收紧，不撑到常规档的 92dp。 */
+    const val BUTTON_MIN_WIDTH_TIGHT = 44
+
     const val BUTTON_TEXT_COMPACT = 15f
     const val BUTTON_TEXT_NORMAL = 16f
     const val BUTTON_TEXT_HERO = 17f

@@ -34,8 +34,29 @@ class Library(context: Context) {
          */
         const val QUEUES_PER_LIBRARY = 3
         const val RETIRED_LIMIT = 2 * QUEUES_PER_LIBRARY
-        /** 平台侧的 `device_id` / `install_id` 形状：15–19 位十进制数字。 */
-        val DEVICE_NUMBER = Regex("[0-9]{15,19}")
+        /**
+         * 推荐页记下多少个「已经推过」的 id（先进先出）。
+         *
+         * 只用来挡住「刚看过的又被推一遍」：800 部按一页 20 条算是 40 页的量，正常刷不穿；
+         * 再多也没有意义——服务端那条流本身就只有几千条的深度，记到更远的地方反而全是
+         * 早就下架的剧。落盘成一串逗号分隔的 id，体积约 8KB。
+         */
+        const val RECOMMEND_SEEN_LIMIT = 800
+        /**
+         * 平台侧的 `device_id` / `install_id` 形状：**不限位数**的十进制数字。
+         *
+         * 早先这里写的是 `[0-9]{15,19}`，而平台下发的是**分片计数器**：水位还没到 `1e14`
+         * 的分片会给 **14 位**号（实测全新注册里约 6–8%，例如 `41154078326090`）。
+         * 14 位被这条正则判死之后，`deviceIdentity()` 返回空表、面板显示「设备 未注册」、
+         * 播放回落到内置那份被拉黑的身份（`110001`）；而重注册又被服务端按 `cdid` 去重、
+         * 原样返回同一对 14 位号——于是**永久卡住**，只有清空缓存换一套 `cdid` 才能出来。
+         * 位数本身不是任何判据，因此这里不再限制：只要是一串十进制数字就算合法。
+         *
+         * 全 `0` 必须排除：`device_id=0` 是服务端**拒绝**这次注册的标记（见 `DeviceRegister.parse`），
+         * 把它当身份用等于拿一个必然失败的设备号去签名。
+         */
+        fun isDeviceNumber(value: String): Boolean =
+            value.isNotEmpty() && value.all { it in '0'..'9' } && value.any { it != '0' }
         /**
          * 会镜像到**外部存储**的那几项：设备身份、设备档案、账号会话与搜索令牌。
          *
@@ -145,6 +166,12 @@ class Library(context: Context) {
                 val loaded = LibraryDisk.decode(values)
                 // 推荐流游标：与其余本机设置一起在这一次读盘里抄进内存（见 [recommendCursor]）。
                 recommendCursorCached = (values["recommendCursor"] as? String).orEmpty()
+                // 推荐页推过的剧：同理，一次读盘抄进内存（见 [recommendSeen]）。
+                recommendSeenCached.clear()
+                (values["recommendSeen"] as? String).orEmpty().split(',')
+                    .filterTo(recommendSeenCached) { it.isNotEmpty() }
+                // 「使用设备」：同理，读一次盘就抄进内存（见 [deviceForm]）。
+                deviceFormCached = (values["deviceForm"] as? String).orEmpty().ifEmpty { "auto" }
                 val now = System.currentTimeMillis()
                 val cached = mutableMapOf<RankBoard, CatalogPage>()
                 val stamps = mutableMapOf<RankBoard, Long>()
@@ -370,6 +397,7 @@ class Library(context: Context) {
     var thirdPartyAccepted: Boolean
         get() = sessionPrefs.getBoolean("third-party-accepted",false)
         set(value) {
+            if(discarding) return
             if(value==thirdPartyAccepted) return
             sessionPrefs.edit().putBoolean("third-party-accepted",value).apply()
         }
@@ -502,7 +530,7 @@ class Library(context: Context) {
         restoreFromMirror()
         val registered=sessionPrefs.getString("registered-device-id","").orEmpty()
         val registeredInstall=sessionPrefs.getString("registered-install-id","").orEmpty()
-        if(registered.matches(DEVICE_NUMBER) && registeredInstall.matches(DEVICE_NUMBER)) {
+        if(isDeviceNumber(registered) && isDeviceNumber(registeredInstall)) {
             // 老版本装过、镜像里还没有这一对的：读的时候补进去，卸载重装才认得回这台设备。
             mirrorSync("registered-device-id",registered); mirrorSync("registered-install-id",registeredInstall)
             return mapOf("device_id" to registered,"iid" to registeredInstall)
@@ -530,7 +558,7 @@ class Library(context: Context) {
         val stamp=profileStamp()
         val registered=sessionPrefs.getString("registered-device-id","").orEmpty()
         val install=sessionPrefs.getString("registered-install-id","").orEmpty()
-        if(!registered.matches(DEVICE_NUMBER) || !install.matches(DEVICE_NUMBER)) return false
+        if(!isDeviceNumber(registered) || !isDeviceNumber(install)) return false
         // 注册下发的 Cookie 里的 `install_id` 必须与这一对身份一致：它们是同一次注册的产物。
         // 从外部镜像救回来的旧 Cookie（重装 / 升级时那一份）与新的 `registered-install-id`
         // 对不上时，请求里会同时带「新 device_id」与「旧 install_id」，服务端按陌生设备处理——
@@ -563,7 +591,7 @@ class Library(context: Context) {
         restoreFromMirror()
         val registered=sessionPrefs.getString("registered-device-id","").orEmpty()
         val install=sessionPrefs.getString("registered-install-id","").orEmpty()
-        if(!registered.matches(DEVICE_NUMBER) || !install.matches(DEVICE_NUMBER)) return false
+        if(!isDeviceNumber(registered) || !isDeviceNumber(install)) return false
         return sessionPrefs.getString("registered-profile-stamp","").orEmpty().isBlank()
     }
     /** 当前档案的指纹（`cdid|openudid`）：只用来判断「注册结果与档案是不是同一套」。 */
@@ -1035,14 +1063,45 @@ class Library(context: Context) {
             if (next != homeColumns) { state().settings = state().settings.copy(homeColumns = next); put("homeColumns", next) }
         }
     /**
-     * 播放时右上角时间是否始终显示（默认关闭）。
+     * 播放画面左上角常显的四项信息：剧集标题 / 当前集数 / 时间 / 网速。
      *
-     * 关闭时与旧版一致：时间跟着顶部标题条一起出现 / 收起；
-     * 打开后标题条收起，时间仍然留在右上角。
+     * 四项各自独立开关（设置页「界面设置 → 播放显示」）。前两项与时间默认开启，
+     * 网速默认关闭——它是排障用的读数，平时不该占着画面。
      */
-    var alwaysShowClock: Boolean
-        get() = state().settings.alwaysShowClock
-        set(value) { if (value != alwaysShowClock) { state().settings = state().settings.copy(alwaysShowClock = value); put("alwaysShowClock", value) } }
+    var playerTitle: Boolean
+        get() = state().settings.playerTitle
+        set(value) { if (value != playerTitle) { state().settings = state().settings.copy(playerTitle = value); put("playerTitle", value) } }
+    var playerEpisode: Boolean
+        get() = state().settings.playerEpisode
+        set(value) { if (value != playerEpisode) { state().settings = state().settings.copy(playerEpisode = value); put("playerEpisode", value) } }
+    var playerClock: Boolean
+        get() = state().settings.playerClock
+        set(value) { if (value != playerClock) { state().settings = state().settings.copy(playerClock = value); put("playerClock", value) } }
+    var playerSpeed: Boolean
+        get() = state().settings.playerSpeed
+        set(value) { if (value != playerSpeed) { state().settings = state().settings.copy(playerSpeed = value); put("playerSpeed", value) } }
+    /**
+     * 画面缩放百分比（1..100，默认 100 = 铺满）。
+     *
+     * 只缩播放画面本身（`playerView` 的框），弹幕层仍然是整屏坐标，
+     * 因此缩小画面时弹幕照旧铺满屏幕（见 `applyVideoScale`）。
+     */
+    var videoScale: Float
+        get() = state().settings.videoScale.coerceIn(1f,100f)
+        set(value) {
+            val next = value.coerceIn(1f,100f).let { Math.round(it).toFloat() }
+            if (next != videoScale) { state().settings = state().settings.copy(videoScale = next); put("videoScale", next) }
+        }
+    /**
+     * 短剧自动全屏（默认关闭）。
+     *
+     * 打开后，**竖屏片源**（短剧）在横屏电视上会被**转 90°**：9:16 旋转后就是 16:9，
+     * 正好铺满屏幕、不裁掉任何内容（见 `autoFullscreenRotated`）。横屏片源不受影响，
+     * 仍然用用户在「画面模式」里选的那一档。
+     */
+    var autoFullscreen: Boolean
+        get() = state().settings.autoFullscreen
+        set(value) { if (value != autoFullscreen) { state().settings = state().settings.copy(autoFullscreen = value); put("autoFullscreen", value) } }
     /**
      * 用户主动要求「减少动画、优先流畅」（默认关闭）。
      *
@@ -1066,13 +1125,13 @@ class Library(context: Context) {
         get() = state().settings.debugMode
         set(value) { if (value != debugMode) { state().settings = state().settings.copy(debugMode = value); put("debugMode", value) } }
     /**
-     * 顶部导航栏里**被隐藏**的圆形入口（`search` / `category` / `rank` / `settings` /
-     * `profile` / `feedback`）。
+     * 顶部导航栏里**被隐藏**的圆形入口（`recommend` / `search` / `category` / `rank` /
+     * `profile`）。
      *
      * 每一项单独开关；空集合 = 全部显示（与旧版一致）。落盘是一个字符串集合。
      */
     var hiddenNav: Set<String>
-        // 只保留「分类 / 榜单 / 我的」三枚：搜索、设置、问题反馈**始终显示**，
+        // 只保留白名单里的几枚：设置**始终显示**，
         // 旧版本磁盘上残留的这几个 key 读回来直接滤掉。
         get() = state().settings.hiddenNav.split(',').filter { it in NAV_KEYS }.toSet()
         private set(value) {
@@ -1157,6 +1216,59 @@ class Library(context: Context) {
             put("recommendCursor", clean)
         }
     @Volatile private var recommendCursorCached: String=""
+    /**
+     * 推荐页**已经推给用户看过**的剧 id（按推出的先后排队）。
+     *
+     * 为什么需要它：推荐流本身不记「这台设备刷过什么」——`saveProgress` 里有一句
+     * `if(screen=="recommend") return`，推荐页刻意不写观看历史；于是上下刷过十几部之后
+     * 再进推荐，服务端回的同一批里有一大半是刚看过的。这里补一份「推荐页看过」的记录，
+     * 由 `MainActivity.loadRecommendPage` 用它过滤 / 判断「这一页是不是又转回老地方」。
+     *
+     * 它只是**去重的提示**，不是记录：不参与首页任何一栏，不进备份（换一台设备应该从头推荐），
+     * 清缓存时随 `shared_prefs` 整个目录一起删（见 `LocalReset.wipe`），不需要单独处理。
+     * 只在主线程读写（取推荐页的回调都在主线程）。
+     */
+    private val recommendSeenCached = java.util.LinkedHashSet<String>()
+    /** 推荐页推过的剧 id 快照（调用方只读，不要改）。 */
+    fun recommendSeen(): Set<String> = recommendSeenCached
+    /**
+     * 记下这一批已经推给用户的剧（先进先出，超过 [RECOMMEND_SEEN_LIMIT] 从队头淘汰）。
+     *
+     * 只落一行逗号分隔的 id：它是本机现场，不是用户数据，因此不进备份、不做迁移。
+     */
+    fun markRecommended(ids: Collection<String>) {
+        if(ids.isEmpty()) return
+        var added=false
+        ids.forEach { id ->
+            if(id.isEmpty() || id.any { it==',' || it.isISOControl() }) return@forEach
+            if(recommendSeenCached.add(id)) added=true
+        }
+        if(!added) return
+        while(recommendSeenCached.size>RECOMMEND_SEEN_LIMIT) {
+            val head=recommendSeenCached.iterator()
+            if(!head.hasNext()) break
+            head.next(); head.remove()
+        }
+        put("recommendSeen", recommendSeenCached.joinToString(","))
+    }
+    /**
+     * 设置页「使用设备」：`auto` / `phone` / `tablet` / `tv`。
+     *
+     * 自动模式按打分判定（见 `com.hgtv.star.compat.detectDeviceForm`）；用户手动选了一档
+     * 就以他选的为准——触屏手势层建不建、「短剧自动全屏」往哪边转，都由它决定。
+     *
+     * 不进备份：它描述的是「这台机器是什么」，换一台机器应该重新自动判定，
+     * 与 [recommendCursor]、`debugMode` 同一类（都是本机现场，不是用户偏好）。
+     */
+    var deviceForm: String
+        get() = deviceFormCached
+        set(value) {
+            val clean=when(value) { "phone","tablet","tv" -> value; else -> "auto" }
+            if(clean==deviceFormCached) return
+            deviceFormCached=clean
+            put("deviceForm", clean)
+        }
+    @Volatile private var deviceFormCached: String="auto"
     var danmakuMode: DanmakuMode
         get() = state().settings.danmaku
         set(value) { if (value != danmakuMode) { state().settings = state().settings.copy(danmaku = value); put("danmakuMode", value.storedValue) } }
@@ -1208,7 +1320,12 @@ class Library(context: Context) {
             "danmakuMerge" to { merged.settings.danmakuMerge },
             "searchSource" to { merged.settings.searchSource.storedValue },
             "homeColumns" to { merged.settings.homeColumns.coerceIn(4, 8) },
-            "alwaysShowClock" to { merged.settings.alwaysShowClock },
+            "playerTitle" to { merged.settings.playerTitle },
+            "playerEpisode" to { merged.settings.playerEpisode },
+            "playerClock" to { merged.settings.playerClock },
+            "playerSpeed" to { merged.settings.playerSpeed },
+            "videoScale" to { merged.settings.videoScale.coerceIn(1f, 100f) },
+            "autoFullscreen" to { merged.settings.autoFullscreen },
             "hiddenNav" to { merged.settings.hiddenNav.split(',').filter { it.isNotBlank() }.toSet() },
             "debugMode" to { merged.settings.debugMode },
             "launchRecommend" to { merged.settings.launchRecommend },

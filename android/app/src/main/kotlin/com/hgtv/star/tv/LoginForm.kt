@@ -222,7 +222,7 @@ internal object LoginForm {
      * 标识行用主题强调色、字距拉开（设计稿的 `letter-spacing: 5px`），
      * 字号只有 12——它是这块面板的「标签」，不跟标题抢。
      */
-    fun header(card: LinearLayout, title: String, subtitle: String, logo: String = "HONGGUO TV") {
+    fun header(card: LinearLayout, title: String, subtitle: String, logo: String = "HGTV") {
         val activity = card.context as Activity
         val dp = { value: Number -> activity.tvDp(value) }
         if (logo.isNotBlank()) {

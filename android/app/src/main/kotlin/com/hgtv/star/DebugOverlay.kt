@@ -54,7 +54,7 @@ private const val DEBUG_ENV_TTL_MS=5_000L
 /**
  * 「性能」那一行的标头。
  *
- * 单独提成常量：它有两个用处——面板按标签找这一行做**定向刷新**（见 [updatePerfRowText]），
+ * 单独提成常量：它有两个用处——面板按标签找这一行做**定向刷新**（见 [updateSampledRows]），
  * 以及 [refreshDebugOverlay] 判断「这一行的变化算不算内容变化」。
  */
 private const val PERF_LABEL="性能"
@@ -112,6 +112,18 @@ internal object DebugEnv {
 private const val DEBUG_PANEL_BG=0x590D0D0D.toInt()
 
 /**
+ * 「TLS」那一行的标头。
+ *
+ * 这一行现在同时带网速（`支持 1.0~1.3 · 启用 1.3/1.2 · ↓1.2M/s ↑8K/s`）：
+ * 一条连接协商成什么样、这条连接现在跑了多少，是同一个问题的两半，
+ * 分两行会把面板拉高，读的时候眼睛还要跨行配对。
+ *
+ * 因为网速每轮都在跳，这一行与 [PERF_LABEL] 一样**不算面板内容变化**
+ * （否则空闲退避永远起不来），由 [updateSampledRows] 定向换字。
+ */
+private const val TLS_LABEL="TLS"
+
+/**
  * 面板宽度（设计单位）。
  *
  * 560 是「贴住右边、又能把异常链读完」的折中：早先 490 时，`问题` / `错误` 那两行
@@ -138,8 +150,8 @@ private const val DEBUG_ROW_LABEL_W=36
 /**
  * 播放页同样贴右上角（用户要求「进播放器也要靠右上角」）。
  *
- * 与页面上的区别只是时钟：那块时间原本就钉在右上角，面板压上去会盖住它，
- * 因此打开调试面板时把时钟**向左让开一个面板宽度**（见 [shiftPlayerClock]）。
+ * 播放画面的时间 / 网速现在都在**左上角那一条**里，与右上角的面板互不遮挡，
+ * 因此不再需要把时钟往左挪（原来那套 [shiftPlayerClock] 已随右上角时钟一起删掉）。
  */
 private const val DEBUG_PANEL_PLAYER_TOP=DEBUG_PANEL_MARGIN
 
@@ -250,7 +262,6 @@ private fun MainActivity.showDebugOverlay() {
             rightMargin=dp(DEBUG_PANEL_MARGIN)
             topMargin=dp(if(screen=="player") DEBUG_PANEL_PLAYER_TOP else DEBUG_PANEL_MARGIN)
         })
-        if(screen=="player") shiftPlayerClock(true)
     }
     debugPanel?.visibility=View.VISIBLE
     startCapabilityProbe()
@@ -287,30 +298,18 @@ private fun MainActivity.debugTickInterval(): Long = when {
 }
 
 internal fun MainActivity.hideDebugOverlay() {
-    shiftPlayerClock(false)
     debugTick?.let { main.removeCallbacks(it) }
     debugTick=null
     // 面板关掉：CPU 的累计基线一起清掉。留着的话下次打开第一轮会拿「很久以前的累计值」
     // 去算差值，得到一个毫无意义的百分比。
     PerfStats.reset()
+    NetSpeed.reset()
     val panel=debugPanel ?: return
     debugPanel=null; debugBody=null
     debugRowLabels=emptyList(); debugRowValues.clear()
     (panel.parent as? android.view.ViewGroup)?.removeView(panel)
 }
 
-/**
- * 播放页右上角那块时间给调试面板让位。
- *
- * 不移的话面板正好盖在时钟上：用户报「几点开始卡的」时反而看不到时间。
- * 让开一个面板宽度 + 10dp 间隙，两者并排。
- */
-private fun MainActivity.shiftPlayerClock(shifted: Boolean) {
-    val clock=playerClock ?: return
-    val params=clock.layoutParams as? FrameLayout.LayoutParams ?: return
-    val target=dp(if(shifted) DEBUG_PANEL_MARGIN+DEBUG_PANEL_WIDTH+10 else 78)
-    if(params.rightMargin!=target) { params.rightMargin=target; clock.layoutParams=params }
-}
 
 /** 页面重建（`root.removeAllViews()`）之后重新挂上；没打开调试模式时什么都不做。 */
 internal fun MainActivity.reattachDebugOverlay() {
@@ -333,7 +332,7 @@ private fun MainActivity.buildDebugPanel(): LinearLayout {
         isClickable=false
         importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
-    panel.addView(text("调试 · 红果TV ${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})",14f,TvStyle.playerText).apply {
+    panel.addView(text("调试 · HGTV ${BuildConfig.VERSION_NAME}(${BuildConfig.VERSION_CODE})",14f,TvStyle.playerText).apply {
         setTypeface(null,Typeface.BOLD)
         // 与下面每一条的标头同一条起始线：整块面板从左边一列对齐。
         gravity=Gravity.START
@@ -416,9 +415,10 @@ internal fun MainActivity.refreshDebugOverlay(): Boolean {
         val view=debugRowValues.getOrNull(index) ?: return@forEachIndexed
         if(view.text.toString()!=row.value) {
             view.text=row.value
-            // 「性能」**不算内容变化**：CPU 百分比每轮都在跳，算进去的话退避永远起不来，
-            // 静态页面也会一直按 1 秒醒。它有独立的刷新路径（见 [updatePerfRowText]）。
-            if(row.label!=PERF_LABEL) changed=true
+            // 「性能」「TLS」**不算内容变化**：CPU 百分比与网速每轮都在跳，算进去的话
+            // 退避永远起不来，静态页面也会一直按 1 秒醒。这两行有独立的刷新路径
+            // （见 [updateSampledRows]）。
+            if(row.label!=PERF_LABEL && row.label!=TLS_LABEL) changed=true
         }
     }
     return changed
@@ -460,8 +460,8 @@ internal fun MainActivity.clearDebugProblem() {
 /**
  * 错误页出现时记一条「这页为什么空」。
  *
- * [stage] 与上报用的是同一套键（`content_home` / `content_search` …），这里翻成用户读得懂的
- * 页面名；后面跟上报里那句常量标题与真实异常链，面板上一行就够定位了。
+ * [stage] 与日志用的是同一套键（`content_home` / `content_search` …），这里翻成用户读得懂的
+ * 页面名；后面跟日志里那句常量标题与真实异常链，面板上一行就够定位了。
  */
 internal fun MainActivity.notePageFailure(stage: String,problem: Throwable) {
     val page=when(stage) {
@@ -525,16 +525,22 @@ private fun MainActivity.capabilityRows(): List<DebugRow> {
 private fun perfRow()=DebugRow(PERF_LABEL,PerfStats.summary.ifBlank { "采样中…" })
 
 /**
- * 只给「性能」那一行换字，**不重排整块面板**。
+ * 只给「性能」「网速」这两行换字，**不重排整块面板**。
  *
  * 采样落地（io → 主线程）之后走这一条。若仍走 [refreshDebugOverlay]，
- * 等于每 2 秒把二十来行重新拼一遍、逐字比较一遍；而这里只需要一个 TextView 换字。
- * 面板上还没有这一行（刚打开、行结构还没建）时什么都不做，乱了就等下一轮采样。
+ * 等于每 2 秒把二十来行重新拼一遍、逐字比较一遍；而这里只需要两个 TextView 换字。
+ * 面板上还没有这些行（刚打开、行结构还没建）时什么都不做，乱了就等下一轮采样。
  */
-private fun MainActivity.updatePerfRowText() {
-    val value=PerfStats.summary
+private fun MainActivity.updateSampledRows() {
+    setRowText(PERF_LABEL,PerfStats.summary)
+    // TLS 与网速同一行：速率变了要连 TLS 那一半一起重给，否则会被旧值覆盖回去。
+    setRowText(TLS_LABEL,tlsNetValue())
+}
+
+/** 按标头找到那一行的值视图，文字真的变了才写。找不到（换页了 / 还没建）就跳过。 */
+private fun MainActivity.setRowText(label: String,value: String) {
     if(value.isBlank()) return
-    val index=debugRowLabels.indexOf(PERF_LABEL)
+    val index=debugRowLabels.indexOf(label)
     if(index<0) return
     val view=debugRowValues.getOrNull(index) ?: return
     if(view.text.toString()!=value) view.text=value
@@ -552,16 +558,41 @@ private fun MainActivity.startPerfProbe() {
     PerfStats.sampledAt=android.os.SystemClock.elapsedRealtime()
     io.submit {
         val text=runCatching { PerfStats.sample(this) }.getOrDefault("")
+        // 网速与性能同一次任务里采：两者都是 2 秒一轮，合成一次 io 提交，少一次线程切换。
+        runCatching { NetSpeed.sample() }
         if(text.isBlank()) return@submit
-        main.post { if(!isDestroyed && debugPanel!=null) updatePerfRowText() }
+        main.post { if(!isDestroyed && debugPanel!=null) updateSampledRows() }
     }
 }
 
 /** 面板第一行：机型 + 系统。放在最上面，是因为客服第一句总是问「什么设备」。 */
 private fun deviceRow()=DebugRow("机型","${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}(${Build.VERSION.SDK_INT})")
 
-/** TLS 那一行：还没建过连接时给一句明确的「未建立」，而不是空白。 */
-private fun tlsRow()=DebugRow("TLS",DebugTls.summary.ifBlank { "尚未建立连接" })
+/**
+ * 形态那一行：这一轮按手机 / 平板 / 电视里的哪一档在跑，以及那一次判定的明细。
+ *
+ * 明细（触屏 / 短边 / 对角线 / 分数 / 命中的证据）是给「判错了」这种情况用的：
+ * 只有一行结论时，除了让用户去设置里手动改一档，没有任何线索可查；
+ * 带上分数与命中项，一眼就能看出是哪条证据把电视认成了平板。
+ */
+private fun MainActivity.deviceFormRow(): DebugRow {
+    val profile=deviceProfile ?: return DebugRow("形态","检测中…")
+    val manual=library.deviceForm
+    val source=if(manual=="phone"||manual=="tablet"||manual=="tv") "手动" else "自动"
+    return DebugRow("形态","${deviceMode().label}（$source） · ${profile.summary}")
+}
+
+/**
+ * TLS 那一行：**握手结果 + 当前网速**，同一行（用户要求）。
+ *
+ * 还没建过连接时 TLS 一半给一句明确的「未建立」，而不是空白；
+ * 网速第一轮没有基线，写「采样中…」，2 秒后换成真实速率。
+ */
+private fun tlsRow()=DebugRow(TLS_LABEL,tlsNetValue())
+
+/** 上面那一行的值：`支持 1.0~1.3 · 启用 1.3/1.2 · ↓1.2M/s ↑8K/s`。 */
+private fun tlsNetValue(): String =
+    DebugTls.summary.ifBlank { "尚未建立连接" }+" · "+NetSpeed.summary.ifBlank { "采样中…" }
 
 private fun MainActivity.startCapabilityProbe() {
     if(debugCapability!=null || debugCapabilityLoading) return
@@ -630,11 +661,12 @@ private fun MainActivity.playerDebugRows(): List<DebugRow> {
     }
     return buildList {
         // **第一行固定是「页面 · 账号 · 设备 · 网络 · 搜索源」**（与首页 / 详情页同一份）：
-        // 播放界面上报问题时，先要说清在哪个播放页、登没登录、什么网络。
+        // 播放界面记问题时，先要说清在哪个播放页、登没登录、什么网络。
         add(pageStatusRow())
-        // 随后三行：机型 → 本机解码（硬解 / 软解）→ TLS。这三样与「哪一集」无关，
+        // 随后：机型 → 本机解码（硬解 / 软解）→ 性能 → TLS（含网速）。这些与「哪一集」无关，
         // 是用户报问题时紧随其后的现场。
         add(deviceRow())
+        add(deviceFormRow())
         addAll(capabilityRows())
         // 性能在 TLS 之上（与页面版同一位置）：两个播放界面的面板顺序保持一致。
         add(perfRow())
@@ -652,9 +684,8 @@ private fun MainActivity.playerDebugRows(): List<DebugRow> {
         // 否则会出现「帧龄 0s 前（帧在走）· 首帧=否」这种自相矛盾的读数。
         // 帧龄同样按这套判据给：注入模式下没有逐帧记账，那时不能显示成「0s 前」。
         add(DebugRow("帧数","首帧=${if(pictureUpNow()) "是" else "否"} · 丢帧=${d.droppedFrames} · 欠载=${d.underruns} · 解码错=${d.codecErrors}"))
-        // 走 5 秒缓存（见 [DebugEnv]）：这一行与上面「页面」那一条问的是同一件事，
-        // 每秒各发一次 Binder 调用没有意义。
-        add(DebugRow("网络",if(DebugEnv.metered(this@playerDebugRows)) "移动" else "wifi"))
+        // 「网络」不再单独一行（用户要求去掉）：第一行 `页面` 里已经写了 `网络 wifi/移动`，
+        // 这里是同一件事的第二份，既占高度又让人以为两处可能不一致。
         // 默认上限与实际播放的档位并排：正片与推荐页（两个播放界面）都走这一份行，
         // 因此两边都能看到「设置里是 1080P、实际放的是 720P」。
         add(DebugRow("默认上限","${if(maxQuality>0) "${maxQuality}P" else "-"} · 实际 ${if(actualQuality>0) "${actualQuality}P" else d.quality.ifBlank { "-" }}"))
@@ -719,6 +750,7 @@ private fun MainActivity.pageDebugRows(): List<DebugRow> {
         // 与播放页同一套固定前几行：页面状态 → 机型 → 本机解码（硬 / 软）→ TLS。
         add(pageStatusRow())
         add(deviceRow())
+        add(deviceFormRow())
         addAll(capabilityRows())
         // 性能在 TLS 之上：先看「这台机器够不够用」，再看一次握手协商的结果。
         add(perfRow())

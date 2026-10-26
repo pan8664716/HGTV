@@ -13,7 +13,7 @@ import java.io.File
  *
  * ```
  * adb shell run-as com.hgtv.star sh -c 'echo DECODER_BOGUS > files/debug-fault'
- * # 进任意一集播放，失败后看友盟 U-APM 后台（或 adb logcat）
+ * # 进任意一集播放，失败后看 adb logcat（tag HGTV）
  * adb shell run-as com.hgtv.star rm files/debug-fault     # 恢复
  * ```
  *
@@ -34,9 +34,9 @@ internal object DebugFaults {
         CONTENT_FAIL,
         /** 画面照常出，但不给「已出帧」记账 → 起播看门狗报「有声音无画面」。 */
         STALL_FRAME,
-        /** 启动后主线程卡死 60 秒 → 真 ANR，由系统与 U-APM 各自捕获。 */
+        /** 启动后主线程卡死 60 秒 → 真 ANR，由系统自己记进 ActivityManager 的 ANR 记录。 */
         ANR,
-        /** 让 native 段直接崩一次 → 验证 U-APM 的 native 采集链路。 */
+        /** 让 native 段直接崩一次 → 验证系统 tombstone 与崩溃对话框这条链路。 */
         NATIVE_CRASH
     }
 
@@ -44,7 +44,7 @@ internal object DebugFaults {
 
     /**
      * 启动期故障：ANR / Native 崩溃只能由进程自己造，且**必须晚一点**——太早会把
-     * 上报 SDK 自己的初始化一起打断，测的就不是上报链路了。
+     * 系统的崩溃 / ANR 现场一起打断，测的就不是那条链路了。
      *
      * 只读一次（启动时），因为这两种故障会把进程带走，改文件后重开应用即可。
      */

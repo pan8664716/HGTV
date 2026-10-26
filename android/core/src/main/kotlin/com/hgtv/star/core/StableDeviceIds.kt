@@ -12,7 +12,7 @@ import java.util.UUID
  * 早先这三项是 `UUID.randomUUID()` / `Random.nextLong()`，而且只存在 App 私有目录里——
  * **卸载重装就是一台全新设备**。平台认设备靠这几项去重（注册请求就带 `cdid` / `openudid`），
  * 于是一个老账号出现在一台「新设备」上，风控就会再要一次上行短信确认本人。
- * 真机上的红果不这样：它的 `openudid` 由 `Settings.Secure.ANDROID_ID` 派生，
+ * 真机上的HGTV不这样：它的 `openudid` 由 `Settings.Secure.ANDROID_ID` 派生，
  * 卸载重装、升级、重启都不变，所以平台一直认这台设备。
  *
  * ## 种子由调用方采集

@@ -8,7 +8,7 @@ import org.json.JSONObject
  * 账号信息。
  *
  * 数据来自两个接口，两者都给得出昵称与头像：
- * * `GET /reading/user/info/v1/`（不带参数 = 当前登录用户）——给昵称 / 头像 / 红果号；
+ * * `GET /reading/user/info/v1/`（不带参数 = 当前登录用户）——给昵称 / 头像 / 平台号；
  * * `GET /reading/user/basic_info/get/v1/`——同一个人，另外给关注 / 粉丝 / 获赞三个计数。
  *
  * [mobile] 平台不给（只在短信里出现），因此留空由界面跳过。
@@ -17,7 +17,7 @@ data class AccountProfile(
     val userId: String,
     val nickname: String,
     val avatar: String,
-    /** 红果号（App 里显示为「红果号：066831371270」）。 */
+    /** 平台号（App 里显示为「平台号：066831371270」）。 */
     val displayId: String = "",
     val signature: String = "",
     /** 关注 / 粉丝 / 获赞；取不到时为 null，界面据此决定要不要显示这一行。 */
@@ -28,7 +28,7 @@ data class AccountProfile(
      * 这份「资料」其实是**匿名设备**的临时账号。
      *
      * 平台对无效 / 过期的 `sessionid` 不报错，而是把请求当成匿名设备，返回一个按
-     * `device_id` 现造的账号（昵称形如「用户19058925」，红果号就是 device_id）。
+     * `device_id` 现造的账号（昵称形如「用户19058925」，平台号就是 device_id）。
      * 这种响应必须挡住——否则一份坏凭据会被当成导入成功，界面上只是「一条记录都没有」。
      */
     val anonymous: Boolean = false
@@ -337,7 +337,7 @@ object AccountParser {
     /**
      * 账号资料。
      *
-     * 优先 `user/info`（红果号在这里，字段名是 `req_id`——不是 `user_id`，那个是加密串）；
+     * 优先 `user/info`（平台号在这里，字段名是 `req_id`——不是 `user_id`，那个是加密串）；
      * 计数从 `basic_info` 里补。两个都失败时返回 null，界面据此提示参数无效。
      */
     fun profile(info: JSONObject?, basic: JSONObject?): AccountProfile? {
@@ -345,8 +345,8 @@ object AccountParser {
         val avatar = info?.str("avatar_url").orEmpty().ifEmpty { info?.str("expand_avatar_url").orEmpty() }
             .ifEmpty { basic?.str("user_avatar").orEmpty() }
         if (name.isEmpty() && avatar.isEmpty()) return null
-        // 红果号：`user/info` 的 `req_id` 是纯数字的那一个；`user_id` 是 `#c1967_…` 形式的加密串。
-        // 红果号是 `biz_user_id`（形如 `066831371270`，12 位、可能带前导零）；
+        // 平台号：`user/info` 的 `req_id` 是纯数字的那一个；`user_id` 是 `#c1967_…` 形式的加密串。
+        // 平台号是 `biz_user_id`（形如 `066831371270`，12 位、可能带前导零）；
         // `req_id` / `user_id` 是内部的 user_id（16 位数字，`1739875314044148`），
         // 两者都不是一回事——显示与判重都要用 `biz_user_id`。
         val display = info?.str("biz_user_id").orEmpty()
@@ -372,10 +372,10 @@ object AccountParser {
      * | | 真实账号 | 匿名设备 |
      * | --- | --- | --- |
      * | `has_set_username` | `true` | `false` |
-     * | `biz_user_id`（红果号） | `066831371270` | **不返回** |
+     * | `biz_user_id`（平台号） | `066831371270` | **不返回** |
      * | `user_name` | 用户自己设的 | `用户19058925`（`用户` + device_id 前 8 位） |
      *
-     * 因此判定按这三条来。**不要**拿 `req_id` / `user_id` 当红果号看位数——
+     * 因此判定按这三条来。**不要**拿 `req_id` / `user_id` 当平台号看位数——
      * 它是 16 位的内部 id（`1739875314044148`），真实账号也是 16 位，
      * 按它判会把正常账号误杀（这就是「导入失败：平台把它当成了匿名设备」那次误报）。
      */

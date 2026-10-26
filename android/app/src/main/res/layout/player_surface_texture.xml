@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  「短剧自动全屏」用的播放器视图：**视频画在 TextureView 上**。
+
+  为什么需要这一份：SurfaceView 是独立于窗口的系统图层，父视图的
+  `setRotation` 不会作用到它的画面上——旋转之后画面会被拉扁 / 错位，
+  看起来就是「横向拉伸」。TextureView 是普通视图，跟着父级一起变换，
+  因此只有在需要把竖屏短剧转 90° 时才换成这一版。
+
+  控件本身其余选项（无控制器、缓冲圈、黑底）仍由代码设置，与
+  `PlayerView(this)` 那一版逐项一致（见 MainActivityPlayer.playEpisode）。
+-->
+<com.google.android.exoplayer2.ui.PlayerView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view" />

@@ -6,6 +6,7 @@ import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.widget.LinearLayout
+import com.hgtv.star.core.DanmakuStyle
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
 import com.hgtv.star.tv.TvButton
@@ -88,7 +89,11 @@ internal class PlaybackMenu(private val activity: Activity) : LinearLayout(activ
      * 值由 [DanmakuSlider] 自己归一后回调，面板只负责转发，因此这里不持有当前值——
      * 同一个值有两份副本就会出现「面板显示 90%、实际写盘 80%」这种对不上的情况。
      */
-    fun addSlider(title: String,min: Float,max: Float,step: Float,value: Float,onValue: (Float) -> Unit): PlaybackMenu {
+    fun addSlider(
+        title: String,min: Float,max: Float,step: Float,value: Float,
+        format: (Float) -> String = DanmakuStyle::percent,
+        onValue: (Float) -> Unit
+    ): PlaybackMenu {
         val line = activity.tvRow().apply {
             clipChildren = false
             clipToPadding = false
@@ -100,7 +105,7 @@ internal class PlaybackMenu(private val activity: Activity) : LinearLayout(activ
             ellipsize = TextUtils.TruncateAt.END
         }
         line.addView(label, LinearLayout.LayoutParams(dp(110), -2))
-        val slider = DanmakuSlider(activity, title, min, max, step, value, onValue)
+        val slider = DanmakuSlider(activity, title, min, max, step, value, onValue, format)
         line.addView(
             slider,
             LinearLayout.LayoutParams(0, dp(TvStyle.BUTTON_COMPACT + 2 * TvStyle.SOFT_BAND)).apply { weight = 1f }

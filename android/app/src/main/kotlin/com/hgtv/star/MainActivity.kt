@@ -17,7 +17,6 @@ import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.*
 import java.util.concurrent.Executors
-import com.hgtv.star.data.AppUpdater
 import com.hgtv.star.data.ArtworkLoader
 import com.hgtv.star.player.DanmakuView
 import com.hgtv.star.player.EpisodePanel
@@ -86,8 +85,8 @@ class MainActivity: Activity() {
     // 网络失败诊断：客户设备上「首页空白」时，这行日志给出主机名与异常类型。
     //
     // 注意：正式包里 `Log.i` 被 R8 整段删掉（见 proguard-rules.pro），只写 logcat 等于线上
-    // 什么都不剩。因此这三处出口都另外走一遍 [Diagnostics]——诊断层会在异常发生时
-    // 把现场带进 U-APM 的自定义异常，平时不产生任何网络开销。
+    // 什么都不剩。因此这三处出口都另外走一遍 [Diagnostics]——诊断层会把现场同时写进
+    // 调试面板与 logcat（U-APM 已移除，不再有任何远端上报），平时不产生任何网络开销。
     init {
         com.hgtv.star.core.NetLog.log={ line ->
             android.util.Log.i("HGTV-NET",line)
@@ -316,8 +315,15 @@ class MainActivity: Activity() {
     internal var playbackStallWatchdog: Runnable?=null
     internal lateinit var playbackTitle: TextView
     internal var playerClock: TextView?=null
-    /** 顶部标题条（剧名 · 第几集 + 时钟）：播放时不打扰，只在唤出播放界面时露出来。 */
-    internal var playbackTopBar: View?=null
+    /** 画面顶部的信息条：时间 / 剧名 / 集数 / 网速四项，各自可在设置页开关（见 [syncPlaybackInfo]）。 */
+    internal var playbackInfo: View?=null
+    /** 当前集数 / 总集数（`第 3 / 24 集`）。 */
+    internal var playbackEpisode: TextView?=null
+    /** 播放画面上的实时网速读数。 */
+    internal var playbackSpeedText: TextView?=null
+    /** 当前这一集片源的像素尺寸（由 `Player.Listener.onVideoSizeChanged` 填，未知时为 0）。 */
+    internal var videoWidth=0
+    internal var videoHeight=0
     internal val clockFormat=java.text.SimpleDateFormat("HH:mm",java.util.Locale.getDefault())
     internal var directPlayback=false
     /**
@@ -726,11 +732,21 @@ class MainActivity: Activity() {
      */
     internal var mediaSession: TvMediaSession?=null
     internal var mediaSessionFailed=false
-    /** 应用内更新：前台空闲时检查新版，下载校验后交给系统安装器。 */
-    internal lateinit var appUpdater: AppUpdater
     internal val sleepTimer=SleepTimer { android.os.SystemClock.elapsedRealtime() }
     internal var sleepStopped=false
     internal var playerView: PlayerView?=null
+    /**
+     * 播放页「画面之外的一切」那一层：弹幕 / 手势层 / 顶部信息条 / 底部控制条 / 触屏按键。
+     *
+     * 单独装一层不是为了排版，是为了**整体旋转**：短剧自动全屏是把画面转 90°
+     *（见 `applyVideoGeometry`），转的只有画面时，标题条、控制条、弹幕全都还横在
+     * 原来的方向上，读起来和画面互相垂直。把这一层按同一个角度、同一套换过的宽高一起转过去，
+     * 界面才和画面朝同一个方向（见 `applyOverlayGeometry`）。
+     *
+     * 电视上没有这一层可转（`autoFullscreenRotated()` 为 false），宽高与角度都是原值，
+     * 旋转为 0° 时与拆之前逐像素一致。
+     */
+    internal var overlayLayer: FrameLayout?=null
     /** 播放画面上的弹幕层；数据来自原 App 的评论接口（见 ContentRepository.danmaku）。 */
     internal var danmakuView: DanmakuView?=null
     /** 已经拿到弹幕的那一集：换清晰度、播放重试这类「同一集重进」不重复拉一遍。 */
@@ -895,16 +911,6 @@ class MainActivity: Activity() {
     internal var recommendSpan: TextView?=null
     /** 手指正在拖推荐页那条进度：每秒一次的刷新不能把显示顶回播放器报的位置。 */
     internal var recommendScrubbing=false
-    /**
-     * 触屏设备上浮层里那一排「看正片 / 暂停 / 换一部」按钮。
-     *
-     * 电视上恒为 null（这一排只在 `touchArmed` 时建）。它存在就说明：这一页的方向键
-     * **先服务这排按钮**——左右在三个按钮之间移动焦点、确定按下当前那一枚，
-     * 不再劫去快进快退（见 `dispatchKeyEvent` 的推荐页分支）。
-     */
-    internal var recommendActions: android.widget.LinearLayout?=null
-    /** 浮层是否被用户轻点收起了。收起时左右键回到「快进退」、返回键回到「回主页面」。 */
-    internal var recommendBarHidden=false
     /** 浮层上那条临时提示（例如「后面的推荐暂时取不到」），几秒内优先于集数那一行显示。 */
     internal var recommendNotice=""
     internal var recommendNoticeAt=0L
@@ -919,16 +925,6 @@ class MainActivity: Activity() {
      * 只影响返回键的去向，不改变播放本身的任何行为；离开播放界面 / 从别处进详情时清掉。
      */
     internal var playbackFromRecommend=false
-    /**
-     * 「问题反馈」整页是否打开（导航栏最右那枚圆形按钮进来的一页）。
-     *
-     * 它不是第五个标签：标签是「看哪一类内容」，这一页只是一张说明卡，
-     * 因此用独立开关而不是 [tab]——切到任何标签都会关掉它（见 [switchTab]），
-     * 返回键也直接回到原来那一页（见 `goBack`）。
-     */
-    internal var feedbackOpen=false
-    /** 「问题反馈」页当前那三张卡片（重复点入口时把焦点交回第一张，不重建页面）。 */
-    internal var feedbackCards: List<View> = emptyList()
     internal var tab=0
     internal var page=1
     internal var query=""
@@ -1175,14 +1171,42 @@ class MainActivity: Activity() {
     // ---- 触屏适配（P0）：只有真的收到过一根手指才会被点亮，电视上恒为 false ----
     /** 这一次运行里是否已经收到过 `ACTION_DOWN`（见 [onTouchSeen]）。 */
     internal var touchArmed=false
+    /**
+     * 启动时那一次形态探测的全部读数（见 `com.hgtv.star.compat.detectDeviceForm`）。
+     *
+     * `null` = 还没探（正常路径上 onCreate 里就探过一次）。只给调试面板与设置页读数用，
+     * 视频几何 / 手势层这些行为判据一律走 [deviceMode]，不要在别处再算一遍。
+     */
+    internal var deviceProfile: com.hgtv.star.compat.DeviceProfile?=null
     /** 播放页手势层（`null` = 电视，或还没进过播放页）。 */
     internal var touchLayer: FrameLayout?=null
     /** 播放控制条上那一排可点按钮（只挂在触屏设备上）。 */
     internal var touchBar: LinearLayout?=null
     /** 控制条上的播放 / 暂停键：文案与图标都跟着播放状态走（见 `updateTouchPlayLabel`）。 */
     internal var touchPlayLabel: com.hgtv.star.tv.TvButton?=null
+    /**
+     * 触屏推荐页底部那一枚「剧名」入口的两行字（见 `attachRecommendEntry`）。
+     *
+     * 推荐页不放播放页那排按键，那一块位置只有这一枚标题——点它进正片。
+     * 换剧 / 切集时由 `syncRecommendEntry` 就地改字，不重建控件。
+     */
+    internal var touchEntryTitle: TextView?=null
+    internal var touchEntryHint: TextView?=null
+    /** 控制条底部那枚居中的「下拉箭头」（点它开选集）。推荐页要把它藏起来。 */
+    internal var hudEpisodeArrow: ImageView?=null
     /** 手势层上「快进 10 秒」那条瞬时提示。 */
     internal var touchSeekHint: TextView?=null
+    /** 触屏长按右半屏时的「2 倍速播放中」提示（抬手即撤）。 */
+    internal var touchBoostHint: TextView?=null
+    /**
+     * 左右滑动调进度时那块读数（`快进 00:00:35` + `目标 / 总长`）。
+     *
+     * 与 [touchSeekHint] 分开：那个是双击 / 按钮的瞬时反馈，900ms 自己消失；
+     * 这一块要一直留到手指抬起（滑动多久就显示多久），生命周期完全不同。
+     */
+    internal var touchScrubHint: TextView?=null
+    /** 长按倍速是否生效中（见 `setPlaybackBoost`）：抬手 / 离开播放页都要恢复原速。 */
+    internal var playbackBoost=false
     /** 手指正在拖进度条：这一段时间进度与时间由手指决定，刷新不能顶回去。 */
     internal var scrubbing=false
     internal var panel=false
@@ -1212,6 +1236,12 @@ class MainActivity: Activity() {
     /** 设置页「每行卡片」选择弹窗（4 / 5 / 6 / 7 / 8 张，全局）；与其余选择器一样防重复打开。 */
     internal var homeColumnsDialog: TvDialog?=null
     /**
+     * 「使用设备」那一枚弹窗（防重复打开，见 [showDeviceFormPicker]）。
+     *
+     * 选中之后整页会重建一次，因此弹窗必须在重建前关掉、重建后也不该留在树里。
+     */
+    internal var deviceFormDialog: TvDialog?=null
+    /**
      * 设置页重建后要落回的那一行（按 `tag` 匹配）。
      *
      * 目前只有「导航栏圆形按钮」这个开关用到：它改的是页面级结构（导航栏整排建 / 不建），
@@ -1238,11 +1268,8 @@ class MainActivity: Activity() {
             if((screen=="player" || screen=="recommend") && ::hud.isInitialized) {
                 if(sleepTimer.poll()) stopForSleep()
                 if(hud.visibility==View.VISIBLE) updatePlaybackText()
-                // 时间单独显示时（「始终显示时间」），控制层收起后也要每分钟跳到新的时间。
-                else playerClock?.takeIf { it.visibility==View.VISIBLE }?.let { clock ->
-                    val now=clockFormat.format(java.util.Date())
-                    if(clock.text.toString()!=now) clock.text=now
-                }
+                // 顶部信息条是常驻的：时间每分钟跳一格、网速每秒刷一次，与控制层收没收起无关。
+                updatePlaybackInfoReadings()
                 maybePrefetch()
                 maybeQueueNext()
                 syncDanmakuClock()
@@ -1260,7 +1287,10 @@ class MainActivity: Activity() {
             main.postDelayed(this,1000)
         }
     }
-    internal val hideHud=Runnable { if(screen=="player" && !panel && player?.isPlaying==true && !playError) hidePlaybackOverlay() }
+    // 自动收起控制条：推荐页（触屏）用的是同一条控制条，因此判据从「是不是 player 页」
+    // 换成「是不是在播放页」（见 [onPlaybackPage]）。电视上推荐页的控制条从不出现，
+    // 这条 Runnable 也就不会被排上。
+    internal val hideHud=Runnable { if(onPlaybackPage() && !panel && player?.isPlaying==true && !playError) hidePlaybackOverlay() }
     internal val seekRunnable=Runnable { pendingSeek?.let { player?.seekTo(it) }; pendingSeek=null }
     // ---- 播放过程中要按「同一个对象」重用的字段 ----
     // 这两枚 Runnable 会在 removeCallbacks 里按身份比对，必须是字段（扩展属性没有初始化器，
@@ -1323,10 +1353,15 @@ class MainActivity: Activity() {
         }
         root=FrameLayout(this).apply { setBackgroundColor(bg); clipChildren=false; clipToPadding=false }
         setContentView(root)
-        // 有触摸屏就在建第一屏之前点亮触屏适配：否则第一屏、第一次点按之前建出来的
-        // 推荐页浮层 / 播放页控制条都是电视形态，点一下之后整块重建成触屏形态，
-        // 两次看到的样子不一样（见 [armTouchIfScreenExists]）。
-        armTouchIfScreenExists()
+        // 画面缩放按整屏尺寸算：屏幕一变（换分辨率 / 投屏）就重算一次，
+        // 否则缩小后的画面会停在旧尺寸上、四周露出一圈黑边。
+        root.addOnLayoutChangeListener { _,_,_,_,_,_,_,_,_ ->
+            if(onPlaybackPage()) { applyVideoScale(); applyResizeMode() }
+        }
+        // 形态判定（手机 / 平板 / 电视）要在建第一屏之前完成：否则第一屏、第一次点按之前
+        // 建出来的推荐页浮层 / 播放页控制条都是电视形态，点一下之后整块重建成触屏形态，
+        // 两次看到的样子不一样（见 [applyDeviceForm]）。
+        applyDeviceForm()
         // 焦点回到页头（品牌 / 分类开关 / 顶部入口）时立刻展开，
         // 否则收起的页头高度是 0，焦点会落在看不见的按钮上。
         root.viewTreeObserver.addOnGlobalFocusChangeListener { _,newFocus ->
@@ -1351,10 +1386,6 @@ class MainActivity: Activity() {
             }
         }
         favoriteMonitor=FavoriteMonitor(library,repository) { refreshFavoriteLabels() }
-        appUpdater=AppUpdater(this,{
-            // 「空闲」= 在前台、不在播放界面、没有模态框。播放中与弹窗里绝不打扰。
-            foreground && screen!="player" && screen!="recommend" && !tvTools.showing
-        }, { anchor, cache, done -> tvTools.updateUpload(anchor,cache,done) })
         // 媒体会话不在这里创建：启动即建会把容器/ROM 的 media_session 故障放大成闪退，
         // 第一次同步播放状态时再按需创建（见 ensureMediaSession）。
         // Android 6–9 还要一次外部存储授权，会话镜像（设备身份 + sessionid）才写得出去——
@@ -1368,8 +1399,7 @@ class MainActivity: Activity() {
                 // `ro.hw_timeout_multiplier` 把它放大（这台是 5 倍 = 25 秒），所以留足余量。
                 // 注意：**必须同时有输入事件在排队**，系统才会判 ANR——注入期间持续按方向键。
                 DebugFaults.Mode.ANR -> Thread.sleep(60_000)
-                // 直接让 native 段崩一次（SIGSEGV）：验证 U-APM 的 native 采集链路。
-                // 不用 SDK 自带的测试接口——友盟没有那个入口，而真实崩溃更接近线上形态。
+                // 直接让 native 段崩一次（SIGSEGV）：验证系统的 tombstone / 崩溃现场这条链路。
                 DebugFaults.Mode.NATIVE_CRASH -> {
                     val crash=(Class.forName("java.lang.Long").getField("TYPE").get(null) as Class<*>)
                     crash.cast(null)
@@ -1447,9 +1477,7 @@ class MainActivity: Activity() {
             // 是「按返回焦点乱跑」；页头收起时那一行的高度是 0，焦点请求根本没有可见的落点，
             // 连下一次「焦点在入口上」的判断都成立不了——表现出来就是「按多少次返回都没反应、
             // 也退不出去」。因此首页的返回一律直接走「再按一次退出」。
-            // 「问题反馈」页：返回键回到进来之前那一页，不再往首页退。
             else -> when {
-                feedbackOpen -> closeFeedbackPage()
                 collection!=null -> { collection=null; catalogFocus=""; showCatalog() }
                 tab!=TAB_HOME -> switchTab(TAB_HOME)
                 else -> confirmExit()
@@ -1549,14 +1577,14 @@ class MainActivity: Activity() {
                     // 返回键收的是一层浮层，**一次一层**，收完最后一层才回主页面：
                     //   1. 播放设置（菜单键打开的那块竖向面板）——它盖住了下半屏，
                     //      用户按返回的意图几乎总是「把这块收掉」，而不是退出这一页；
-                    //   2. 触屏那一排按钮 / 剧名浮层（电视上没有这一排，`recommendBarShown()`
-                    //      恒为 false，这一支在遥控器上不存在）；
+                    //   2. 触屏那边唤出来的控制条（与播放界面同一条，见 `showHud`）——
+                    //      电视上它从不出现，这一支在遥控器上不存在；
                     //   3. 都收干净了，才走 [goBack] 回主页面。
                     // 以前这里没有第 1 层：菜单开着按返回会直接退出推荐页，用户看到的
                     // 是「设置还在屏幕上、画面却换了」。
                     when {
                         playbackMenu!=null -> hidePlaybackOverlay()
-                        recommendBarShown() -> setRecommendBar(false)
+                        ::hud.isInitialized && hud.visibility==View.VISIBLE -> hidePlaybackOverlay()
                         else -> goBack()
                     }
                 }
@@ -1583,21 +1611,11 @@ class MainActivity: Activity() {
                     // 连发只会把中间几部白白跳过。
                     KeyEvent.KEYCODE_DPAD_UP -> if(event.repeatCount==0) { switchRecommend(-1); return true } else Unit
                     KeyEvent.KEYCODE_DPAD_DOWN -> if(event.repeatCount==0) { switchRecommend(1); return true } else Unit
-                    // 左右：浮层露着时是「在这排按钮里选」，收起时才是快退 / 快进（需求 3）。
-                    // 同一枚键在同一页有两种含义，判据只有「看得见与否」——用户看到那排按钮，
-                    // 就期待左右把它选过去，而不是画面在背后快进。
-                    KeyEvent.KEYCODE_DPAD_LEFT -> {
-                        if(recommendBarShown()) moveRecommendBarFocus(-1) else seekRecommend(-1,event.repeatCount)
-                        return true
-                    }
-                    KeyEvent.KEYCODE_DPAD_RIGHT -> {
-                        if(recommendBarShown()) moveRecommendBarFocus(1) else seekRecommend(1,event.repeatCount)
-                        return true
-                    }
-                    // 确定键：焦点已经落在那一排按钮上时**交回焦点系统**去按（返回 false 即可，
-                    // 框架会对焦点控件做 performClick）；没落在按钮上才是「追剧」。
+                    // 左右：快退 / 快进（触屏那边唤出来的控制条属于手指，遥控器不必去选它）。
+                    KeyEvent.KEYCODE_DPAD_LEFT -> { seekRecommend(-1,event.repeatCount); return true }
+                    KeyEvent.KEYCODE_DPAD_RIGHT -> { seekRecommend(1,event.repeatCount); return true }
+                    // 确定键：进入正式播放界面（追剧）。
                     KeyEvent.KEYCODE_DPAD_CENTER,KeyEvent.KEYCODE_ENTER -> {
-                        if(recommendBarShown() && recommendBarFocused()) return false
                         enterFormalPlayback(); return true
                     }
                     // 记下「菜单是被这一下按开的」：它的 UP 随后就到，不能当成再按一次。
@@ -1615,10 +1633,6 @@ class MainActivity: Activity() {
                     KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> { seekRecommend(1,0); return true }
                     KeyEvent.KEYCODE_MEDIA_REWIND -> { seekRecommend(-1,0); return true }
                 }
-                // 确定键落在那一排按钮上时，按下与抬起**都**交回框架：只放行按下的话，
-                // 框架收不到 ACTION_UP，按钮只会高亮而不会真的按下去。
-                if((key==KeyEvent.KEYCODE_DPAD_CENTER || key==KeyEvent.KEYCODE_ENTER) &&
-                    recommendBarShown() && recommendBarFocused()) return false
                 // 推荐页没有可聚焦控件：方向键 / 确定 / 菜单一律吞掉，避免焦点跑出画面。
                 // 音量、电源这类系统键必须交回框架，否则遥控器就调不了音量了。
                 if(key in listOf(
@@ -1716,7 +1730,6 @@ class MainActivity: Activity() {
         // 回前台补一次心跳：设备休眠 / 厂商省电会让后台定时整体推迟，
         // 后台待两小时醒来时上一次心跳可能已隔了几小时。
         com.hgtv.star.data.SessionBootstrap.onForeground()
-        appUpdater.resume()
         if(library.isLoaded) {
             // 冷启动落在推荐页（需求：打开应用自动进入推荐）；设置里关掉之后落点回首页。
             if(initialCatalogPending) {
@@ -1758,7 +1771,7 @@ class MainActivity: Activity() {
     }
     override fun onPause() {
         if(resetting) { super.onPause(); return }
-        foreground=false; main.removeCallbacks(tick); cancelRecovery(); cancelPrefetch(); mediaSession?.deactivate(); appUpdater.pause()
+        foreground=false; main.removeCallbacks(tick); cancelRecovery(); cancelPrefetch(); mediaSession?.deactivate()
         // 退到后台：屏幕常亮跟着松开（见 `syncKeepScreenOn`）。
         syncKeepScreenOn()
         sleepTimer.cancel(); sleepChoice=0; favoriteMonitor.stop(); detailAutoplay=false; requestedAutoplay=false; pausedForLifecycle=true
@@ -1857,7 +1870,7 @@ class MainActivity: Activity() {
         runCatching { unregisterReceiver(sessionExpiredReceiver) }
         runCatching { networkWatch?.cancel() }; networkWatch=null
         recommendToken.incrementAndGet(); recommendPageToken.incrementAndGet(); closeRecommendCache()
-        favoriteMonitor.destroy(); tvTools.destroy(); closeAccountPanelSession(); appUpdater.destroy(); saveProgress(); releasePlayer(); library.close()
+        favoriteMonitor.destroy(); tvTools.destroy(); closeAccountPanelSession(); saveProgress(); releasePlayer(); library.close()
         artwork.close(); releaseCatalogViews(); mediaSession?.release(); mediaSession=null; main.removeCallbacksAndMessages(null)
         io.shutdownNow(); prefetchWorker.shutdownNow(); danmakuWorker.shutdownNow(); networkCleanup.shutdown()
         Thread({ repository.http.dispatcher().cancelAll(); repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown() },"hgtv-network-cleanup").start()

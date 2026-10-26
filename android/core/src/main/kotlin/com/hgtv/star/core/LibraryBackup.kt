@@ -50,15 +50,8 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      */
     val homeColumns: Int=6,
     /**
-     * 播放时是否始终显示右上角时间。
-     *
-     * 默认关闭（与旧版一致：时间跟着标题条一起显隐）；打开后标题条收起，
-     * 右上角的时间仍然留着。旧备份没有这个字段时按关闭处理。
-     */
-    val alwaysShowClock: Boolean=false,
-    /**
-     * 顶部导航栏里**被隐藏**的圆形入口，逗号分隔（search / category / rank / settings /
-     * profile / feedback）。
+     * 顶部导航栏里**被隐藏**的圆形入口，逗号分隔（recommend / search / category / rank /
+     * profile）。
      *
      * 每一项单独开关：默认全空 = 全部显示（与旧版一致）。空串也是旧备份的读回值。
      */
@@ -93,7 +86,30 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      *
      * 后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。
      */
-    val reduceAnim: Boolean=false) {
+    val reduceAnim: Boolean=false,
+    /**
+     * 播放画面左上角的四项常显信息（剧集标题 / 当前集数 / 时间 / 网速）。
+     *
+     * 四项各自独立开关，由设置页「界面设置 → 播放显示」里的四枚按钮控制；
+     * 默认显示前三项、网速关闭（网速是排障信息，默认不占画面）。
+     * 旧备份没有这几个字段时按默认值读回。
+     */
+    val playerTitle: Boolean=true,
+    val playerEpisode: Boolean=true,
+    val playerClock: Boolean=true,
+    val playerSpeed: Boolean=false,
+    /**
+     * 画面缩放百分比（1..100，默认 100 = 铺满屏幕）。
+     *
+     * 只缩播放画面本身，弹幕层仍然是整屏坐标，因此缩小画面时弹幕照旧铺满屏幕。
+     */
+    val videoScale: Float=100f,
+    /**
+     * 短剧自动全屏：竖屏片源按屏幕尺寸等比铺满（裁掉上下），横屏片源仍按「画面模式」。
+     *
+     * 后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。
+     */
+    val autoFullscreen: Boolean=false) {
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("danmaku",danmaku.storedValue)
         .put("danmakuScale",danmakuScale.toDouble()).put("danmakuAlpha",danmakuAlpha.toDouble()).put("danmakuSpeed",danmakuSpeed.storedValue)
         .put("keys",keys)
@@ -101,7 +117,12 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
         .put("danmakuMerge",danmakuMerge)
         .put("searchSource",searchSource.storedValue)
         .put("homeColumns",homeColumns)
-        .put("alwaysShowClock",alwaysShowClock)
+        .put("playerTitle",playerTitle)
+        .put("playerEpisode",playerEpisode)
+        .put("playerClock",playerClock)
+        .put("playerSpeed",playerSpeed)
+        .put("videoScale",videoScale.toDouble())
+        .put("autoFullscreen",autoFullscreen)
         .put("hiddenNav",hiddenNav)
         .put("launchRecommend",launchRecommend)
         .put("hiddenHome",hiddenHome)
@@ -207,8 +228,17 @@ object LibraryBackup {
         val searchSource=SearchSource.fromStored(settings.optString("searchSource").takeIf { settings.has("searchSource") })
         // 首页每行卡片数也是后加字段：只接受 4 / 5 / 6，旧备份与坏值都按 6 处理。
         val homeColumns=if(settings.has("homeColumns")) settings.number("homeColumns",6).toInt().coerceIn(4,8) else 6
-        // 始终显示时间同样是后加字段：旧备份没有它，按关闭处理。
-        val alwaysShowClock=settings.optBoolean("alwaysShowClock",false)
+        // 播放显示四项与画面缩放：后加字段，旧备份没有它们时按默认值处理
+        // （标题 / 集数 / 时间显示，网速关闭，画面 100%）。
+        val playerTitle=settings.optBoolean("playerTitle",true)
+        val playerEpisode=settings.optBoolean("playerEpisode",true)
+        val playerClock=settings.optBoolean("playerClock",true)
+        val playerSpeed=settings.optBoolean("playerSpeed",false)
+        val videoScale=if(settings.has("videoScale")) settings.get("videoScale").let {
+            require(it is Number) { "画面缩放无效" }; it.toFloat()
+        }.coerceIn(1f,100f) else 100f
+        // 短剧自动全屏：后加字段，旧备份没有它时按关闭处理。
+        val autoFullscreen=settings.optBoolean("autoFullscreen",false)
         // 导航栏圆形入口：逐个开关，值是被隐藏的那些 key；旧备份没有这个字段 = 全部显示。
         val hiddenNav=settings.optString("hiddenNav","").takeIf { it.length<=80 && it.none(Char::isISOControl) }.orEmpty()
         // 启动进入推荐：后加字段，旧备份没有它时按开启处理（与需求 1 的默认行为一致）。
@@ -217,7 +247,7 @@ object LibraryBackup {
         val hiddenHome=settings.optString("hiddenHome","").takeIf { it.length<=40 && it.none(Char::isISOControl) }.orEmpty()
         // 「减少动画」：后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。
         val reduceAnim=settings.optBoolean("reduceAnim",false)
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,alwaysShowClock,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim),later,hiddenIds)
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen),later,hiddenIds)
     }
     /** Existing favorites stay first; only newer imported progress replaces a local record. */
     fun merge(local: BackupData,incoming: BackupData,restoreSettings: Boolean): BackupData {

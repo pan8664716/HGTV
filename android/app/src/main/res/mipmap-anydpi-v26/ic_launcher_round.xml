@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  自适应图标：背景层是**纯白不透明**（@color/ic_launcher_background），前景是拟物红果。
+  自适应图标：背景层是**纯白不透明**（@color/ic_launcher_background），前景是拟物果标。
   底板由图标自己给，不再留给启动器决定：透明背景时不同启动器会垫黑 / 深灰底板，
   同一张图在不同设备上看起来像三个应用（见 tools/app-icon.py 文件头的三轮实测）。
   前景 @drawable/app_icon 已经把物件缩进安全区（见 app_icon.xml）。

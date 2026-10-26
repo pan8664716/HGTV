@@ -4,7 +4,7 @@ package com.hgtv.star.core
 /**
  * 一条弹幕。
  *
- * 数据来自红果 / 番茄播放器自己的评论接口
+ * 数据来自HGTV / 番茄播放器自己的评论接口
  * `POST /novel/commentapi/comment/list/{vid}/v1/`（`comment_source=601`、`server_channel=1000`），
  * 与「原 App」播放时看到的是同一份数据：
  * 文本在 `comment.common.content.text`，时间点在 `comment.expand.offset_time`（毫秒），

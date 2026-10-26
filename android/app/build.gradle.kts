@@ -1,7 +1,6 @@
 import java.util.Properties
 
 plugins { id("com.android.application"); kotlin("android") }
-apply(plugin = "com.efs.sdk.plugin")
 val signingProperties = Properties().apply { val config = rootProject.file("keystore.properties"); if (config.exists()) config.inputStream().use { load(it) } }
 fun signingValue(env: String, key: String): String? = System.getenv(env) ?: signingProperties.getProperty(key)
 
@@ -18,8 +17,8 @@ android {
         // 代价：Google Play 要求 34+，本应用是自签分发、不进 Play，不受影响。
         targetSdk = 29
         multiDexEnabled = true
-        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 61
-        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.2.4.2"
+        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 62
+        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.2.5"
     }
     buildFeatures { buildConfig = true }
     signingConfigs {
@@ -59,18 +58,6 @@ android {
     }
 }
 
-// efs 扩展由 APM 插件注册，字段没有 setter；Kotlin DSL 下按声明类反射写入。
-// 不写也能跑（默认全量插桩），显式限定白名单可避免给三方库插桩、控制包体积。
-run {
-    val ext = extensions.getByName("efs")
-    val extClass = Class.forName("com.efs.sdk.plugin.EfsExtension")
-    fun put(name: String, value: Any?) {
-        extClass.getDeclaredField(name).apply { isAccessible = true }.set(ext, value)
-    }
-    put("enable", true)
-    put("whiteList", listOf("com.hgtv.star"))
-    put("blackList", emptyList<String>())
-}
 dependencies {
     implementation("androidx.core:core:1.8.0")
     implementation("androidx.multidex:multidex:2.0.1")
@@ -81,9 +68,6 @@ dependencies {
     implementation(project(":core")) { exclude(group = "org.json") }
     implementation("com.google.android.exoplayer:exoplayer-core:2.19.1")
     implementation("com.google.android.exoplayer:exoplayer-ui:2.19.1")
-    // 友盟：统计 + APM（崩溃 / ANR / 性能）。`common` 与 `asms` 用 `+` 是官方建议的写法，
-    // `apm` 钉版本（1.9.13 是本项目验证过的那一版）。
-    implementation("com.umeng.umsdk:common:+")
-    implementation("com.umeng.umsdk:asms:+")
-    implementation("com.umeng.umsdk:apm:1.9.13")
+    // 友盟（U-App 统计 + U-APM）**已整体移除**：依赖、efs 插桩插件、初始化与全部调用点都已删除。
+    // 包内不再有任何第三方采集 SDK，也没有随之带进来的原生库。
 }

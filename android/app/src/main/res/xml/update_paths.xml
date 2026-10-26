@@ -1,9 +1,0 @@
-<paths xmlns:android="http://schemas.android.com/apk/res/android">
-    <!--
-      更新包现在落在 filesDir/updates（不参与系统 cache 回收，见 AppUpdater.apk）。
-      cache 那一条保留：老版本升级上来的机器上还可能有上一版留下的包，
-      而且「保存到下载」失败时仍会退回 cache 兜底。
-    -->
-    <files-path name="updates" path="updates/"/>
-    <cache-path name="updates-cache" path="updates/"/>
-</paths>

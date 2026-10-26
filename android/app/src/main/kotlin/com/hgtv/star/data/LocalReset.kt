@@ -20,7 +20,7 @@ import java.io.File
  *
  * 为什么删完必须杀进程：Android 在进程内按文件名缓存了 `SharedPreferences` 实例，
  * 只删 XML 文件的话下一次 `getSharedPreferences` 拿到的仍是内存里那份旧值，
- * 并且任何一次提交都会把旧文件重新写出来；上报类 SDK（友盟）也会把设备标识留在内存里再写回。
+ * 并且任何一次提交都会把旧文件重新写出来；会话、设备标识这些对象也都还在内存里，随时会被写回。
  * 杀进程是唯一可靠、且不依赖反射的办法。
  * 杀之前先把主界面重新拉起来（见 [relaunchAndExit]）：用户看到的就是
  * 「应用自己重启并回到第一次安装的状态」。
@@ -28,6 +28,23 @@ import java.io.File
 object LocalReset {
     /** 与 [SessionMirror] 共用的「刚清除过」标记文件名（见 [markPendingReset]）。 */
     const val RESET_MARKER=".reset-pending"
+
+    /**
+     * 正在清空本机数据（从点下确认到进程被杀）。
+     *
+     * 为什么需要它：删除是「删两遍 + 隔 350 ms」，而**共享内存里的 `SharedPreferences`
+     * 实例不受删文件影响**——上一次 `commit()` 之后系统内存里那份仍然在，
+     * 任何一次 `apply()` 都会把它原样写回刚清空的目录。
+     *
+     * 网络回调正好是这类写入方：心跳每 10 分钟一次、`SessionInterceptor` 每收到一个
+     * `Set-Cookie` / `X-Tt-Token` 都会回写 `native-session-v1`。删完到杀进程之间那约 1 秒里
+     * 只要命中一次，`account-cookie` / `session-token` / `registered-cookies` 就复活了，
+     * 重启后用户看到的还是「登录着」或者「设备身份半新半旧」。
+     *
+     * 因此：这条置位之后，所有会话写盘入口一律丢弃（见 `AppSessionStore` 的每个写方法）。
+     * 只在真正开始删之前置位（权限被拒而提前返回时**不能**置位，否则这次操作等于什么都没做）。
+     */
+    @Volatile var resetting=false
 
     /**
      * 删除全部本机数据。返回删不掉的路径（仅用于日志；正常应为空）。

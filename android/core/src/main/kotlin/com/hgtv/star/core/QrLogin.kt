@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-3.0-only
-// 协议见 docs/红果Web扫码登录分析.md（2026-10-23 实测）。
+// 协议见 docs/HGTVWeb扫码登录分析.md（2026-10-23 实测）。
 package com.hgtv.star.core
 
 import java.io.IOException

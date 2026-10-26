@@ -186,7 +186,7 @@ cont=(INSET-BLEED,W-INSET+BLEED)          # 页面容器 71..1849
 # 高度 TOOLBAR_HEIGHT(88)，面板本体 76，内容再内缩 SOFT_BAND+GAP(34)
 top=(INSET-BAND,12,W-INSET+BAND,12+88)
 tp=cv.plate(top,RADIUS_DIALOG,BAND,SURFACE+(255,),depth=.8)
-cv.text((tp[0]+BAND+28,tp[1]+38),"红果TV",30,on_bg(TEXT_STRONG_A),True,"lm")
+cv.text((tp[0]+BAND+28,tp[1]+38),"HGTV",30,on_bg(TEXT_STRONG_A),True,"lm")
 for i,(active,focused) in enumerate([(True,False),(False,False),(False,True)]):
     r=(tp[2]-BAND-28-58-i*74,tp[1]+8,tp[2]-BAND-28-i*74,tp[1]+68)
     pill=RADIUS_PILL

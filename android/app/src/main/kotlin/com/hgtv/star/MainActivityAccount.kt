@@ -153,7 +153,7 @@ internal fun MainActivity.parseCredentials(text: String): AccountCredentials {
         }
         AccountCredentialsParser.parseHeader("sessionid=$id")
     }
-    require(credentials.configured) { "没有解析到 sessionid，请确认上传的是红果 App 的 cookieStore.xml" }
+    require(credentials.configured) { "没有解析到 sessionid，请确认上传的是官方 App 的 cookieStore.xml" }
     repository.credentials=credentials
     val profile=repository.accountProfile()
     require(profile!=null) { "平台没有返回账号资料，参数可能已过期（cookieStore.xml 要取最新的那一份）" }
@@ -162,7 +162,7 @@ internal fun MainActivity.parseCredentials(text: String): AccountCredentials {
     // 这正是「导入后没有任何记录」最常见的原因。
     require(!profile.anonymous) {
         "这份 sessionid 无效或已过期：平台把它当成了匿名设备（返回的账号是「${profile.nickname}」）。\n" +
-        "请重新从红果 App 取一份最新的 cookieStore.xml。"
+        "请重新从官方 App 取一份最新的 cookieStore.xml。"
     }
     return credentials
 }

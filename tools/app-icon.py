@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""红果TV 的应用图标与电视横幅：一份几何、一套配色，出四份产物。
+"""HGTV 的应用图标与电视横幅：一份几何、一套配色，出四份产物。
 
 图标是**扁平风格**的：苹果公司的 Apple 标志（果身 + 果叶）两块纯色——
 果身 `#EE4C33`、果叶 `#6E9F3E`（**一整块纯绿，叶面没有中脉**），就这些；
@@ -30,7 +30,7 @@
    15596 个 `sum(rgb)<40` 的像素）——它跟图标的内容无关，换启动器即消失。
 
 所以底板改由图标自己给：`background` 层是 `@color/ic_launcher_background`（纯白 #FFFFFF），
-API 26 以下的位图兜底同样铺白底。这样任何启动器、任何壁纸上看到的是同一块白底 + 同一颗红果。
+API 26 以下的位图兜底同样铺白底。这样任何启动器、任何壁纸上看到的是同一块白底 + 同一颗果标。
 
 **前景必须待在安全区里**，这一条也在同一台设备上量过：启动器把 108dp 画布画成 192px、
 只露出中央 72dp（128px）的方圆遮罩，越出去就被切。所以物件在画布里缩到 0.80：果身整个
@@ -409,7 +409,7 @@ def graphite_plate(w, h, center=(0.34, 0.5)):
     return Image.fromarray(col.astype(np.uint8), "RGB")
 
 
-def banner_font(d, text, avail, largest=110, smallest=64):
+def banner_font(d, text, avail, largest=152, smallest=64):
     """横幅文字：从 [largest] 往下找第一个整行放得下的字号，返回（字体，墨迹包围盒）。
 
     写死字号会随系统字体的落点变化而溢出卡片（同一句话在不同字号下宽度差一截），
@@ -425,9 +425,9 @@ def banner_font(d, text, avail, largest=110, smallest=64):
 
 
 def banner_mark(height):
-    """横幅左侧的标志：**透明底**的红果，按可见内容裁紧后缩到 [height] 高。
+    """横幅左侧的标志：**透明底的果标**，按可见内容裁紧后缩到 [height] 高。
 
-    透明底这一版直接取 [icon_image] 的透明输出（与桌面图标同一份几何、同一套色值），
+        透明底这一版直接取 [icon_image] 的透明输出（与桌面图标同一份几何、同一套色值），
     再裁掉自适应图标安全区留下的空白、按高度等比缩放——因此物件本身就是图标那么大，
     不再是「一块白底板里的一颗小苹果」。
 
@@ -443,14 +443,14 @@ def banner_mark(height):
 
 
 def banner_image():
-    """电视横幅（320×180dp，出图 640×360）：左边红果标志，右边「红果TV」。
+    """电视横幅（320×180dp，出图 640×360）：左边果标，右边「HGTV」。
 
     2026-10-16 按需求两次重排，这一版是结果：
 
     1. **标志用透明底**（见 [banner_mark]）：不再是一块白底板，直接压在石墨底上；
-    2. **标志尺寸收到卡片高度的 52%**：苹果本体约 187px 高。透明底之后苹果本身就是「图标那么大」，
+    2. **标志尺寸收到卡片高度的 52%**：果标本体约 187px 高。透明底之后果标本身就是「图标那么大」，
        58% 那一版在卡片里显得抢眼，52% 与右侧文字更配；
-    3. **「红果TV」用放得下的最大字号**（640 宽下约 106 号，墨迹约 99px 高）：写死字号会随系统
+    3. **「HGTV」用放得下的最大字号**（640 宽下约 140 号，墨迹约 120px 高）：写死字号会随系统
        字体落点变化而溢出卡片，因此按可用宽度自适应；
     4. **去掉文字下方的金线**：品牌色靠标志本身表达，文字下面不再压一条装饰线；
     5. 左 / 右安全边距与标志、文字之间的间距按「整块 lockup 左右基本等距」重算，
@@ -463,7 +463,7 @@ def banner_image():
     x = int(round(w * 0.0625))
     img.alpha_composite(mark, (x, (h - mark.height) // 2))
     d = ImageDraw.Draw(img)
-    text = "红果TV"
+    text = "HGTV"
     left = x + mark.width + int(round(w * 0.06))
     avail = w - left - int(round(w * 0.06))
     f, box = banner_font(d, text, avail)
@@ -537,7 +537,7 @@ def vector_xml():
 def adaptive_xml():
     return ('<?xml version="1.0" encoding="utf-8"?>\n'
             '<!--\n'
-            '  自适应图标：背景层是**纯白不透明**（@color/ic_launcher_background），前景是拟物红果。\n'
+            '  自适应图标：背景层是**纯白不透明**（@color/ic_launcher_background），前景是拟物果标。\n'
             '  底板由图标自己给，不再留给启动器决定：透明背景时不同启动器会垫黑 / 深灰底板，\n'
             '  同一张图在不同设备上看起来像三个应用（见 tools/app-icon.py 文件头的三轮实测）。\n'
             '  前景 @drawable/app_icon 已经把物件缩进安全区（见 app_icon.xml）。\n'
@@ -587,7 +587,7 @@ def preview_sheet():
     H = head + big + 52 + 34 + len(strips) * (strip_h + 16) + 34 + side + 20 + 46 + 30 + banner.height + 26
     img = Image.new("RGB", (W, H), (0xFA, 0xFA, 0xFB))
     d = ImageDraw.Draw(img)
-    d.text((pad, 26), "红果TV 应用图标 · Apple 标志（扁平 · 纯白背景）",
+    d.text((pad, 26), "HGTV 应用图标 · Apple 标志（扁平 · 纯白背景）",
            font=font(30, bold=True), fill=(0x1A, 0x1D, 0x22))
     d.text((pad, 62), "tools/app-icon.py 生成：两块纯色 + 一块纯白不透明底板，下面是同一张图贴在三种壁纸上。",
            font=font(19), fill=(0x5A, 0x62, 0x6C))

@@ -359,7 +359,7 @@ class PhoneLoginTest {
     }
 
     /**
-     * 红果自有二次验证页（`passport-second-verification.html`）**不换票**。
+     * HGTV自有二次验证页（`passport-second-verification.html`）**不换票**。
      *
      * 实测日志：该页面的 JS 只调 `/passport/upsms/verify/`，
      * body = encrypt_uid + verify_ticket + biz_params + verify_scene + verify_reason + common_params。
