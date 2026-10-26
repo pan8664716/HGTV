@@ -1,9 +1,5 @@
 <p align="center"><img src="docs/preview/app-logo.png" width="192" alt="HGTV 应用图标"></p>
 
-<p align="center">
-  <a href="https://t.me/hgtvhub"><img src="https://img.shields.io/badge/Telegram-%40hgtvhub-26A5E4?logo=telegram&logoColor=white" alt="Telegram"></a>
-</p>
-
 # HGTV（Android TV / 手机 / 平板，4.4+）
 
 短剧客户端：单 APK、Kotlin + ExoPlayer，电视用遥控器、手机平板用触屏，装好联网即可看；不登录也能浏览播放，登录只用来同步云端收藏、历史与预约。
@@ -18,8 +14,7 @@
 - [开发](#开发)
 - [维护者](#维护者)
 - [参与贡献](#参与贡献)
-- [联系](#联系)
-- [许可证](#许可证)
+- [交流](#交流)
 
 ## 功能
 
@@ -49,9 +44,6 @@
 交互原型（1280×720，含 20 套主题与各页面焦点态）：[`docs/prototype/index.html`](docs/prototype/index.html)。
 
 <table>
-<tr>
-<td colspan="3" align="center"><img src="docs/preview/theme.png" width="100%" alt="20 套主题对比"></td>
-</tr>
 <tr>
 <td align="center"><img src="docs/preview/1.jpg" width="100%" alt="界面截图 1"></td>
 <td align="center"><img src="docs/preview/2.jpg" width="100%" alt="界面截图 2"></td>
@@ -119,9 +111,9 @@ android/                Gradle 工程根（Android Studio 直接打开这一层�
 │  └─ src/test/         单元测试与固定向量
 ├─ gradle/ gradlew       Gradle 8.14.3 包装器
 └─ build.gradle.kts     构建脚本与发布签名配置
-docs/                   项目文档；preview/ 放应用图标、主题图与界面截图
+docs/                   项目文档；preview/ 放应用图标与界面截图
 tools/                  图标 / 主题 / 界面校对脚本、静态校验脚本、构建与版本脚本
-README.md NOTICE.md LICENSE
+README.md
 ```
 
 ## 开发
@@ -154,27 +146,9 @@ tools/version.sh                            # 应用名 / 标识 / 版本号 / �
 </tr>
 </table>
 
-本项目是 [N3urda/hongguoTV](https://github.com/N3urda/hongguoTV) 的 fork，按 GPL-3.0-only 派生，上游代码著作权归其作者。**自 2026-10-06 起在上游基础上修改**：移除 React Native 电视版、iOS 工程与
-Node / Docker 内容服务，只保留原生客户端（电视 / 手机 / 平板）并把 Gradle 工程收进 `android/`；包名由 `com.hongguotv.nativeapp` 改为 `com.hgtv.star`，应用名改为「HGTV」；重做界面与发布流程。逐项差异见 [变更记录](docs/CHANGELOG.md)，派生与第三方声明见 [NOTICE.md](NOTICE.md)。
-
 ## 参与贡献
 提问或报 bug 请开 [Issue](https://github.com/pan8664716/HGTV/issues)；提交代码前请先开 Issue 说明意图。
 
-### 贡献者
-<table>
-<tr>
-<td align="center"><a href="https://github.com/pan8664716"><img src="docs/maintainers/pan8664716.png" width="88" alt="pan8664716"><br><sub><b>pan8664716</b></sub></a></td>
-<td align="center"><a href="https://github.com/N3urda"><img src="docs/maintainers/N3urda.png" width="88" alt="N3urda"><br><sub><b>N3urda</b></sub></a></td>
-<td align="center"><img src="docs/maintainers/ermilylu.png" width="88" alt="ermilylu"><br><sub><b>ermilylu</b></sub></td>
-</tr>
-</table>
+## 交流
 
-## 联系
-
-Telegram 频道 / 群组：<https://t.me/hgtvhub>
-
-装不上、播不出、想问新版进度，来这里最快；能复现的问题仍建议开 Issue，方便留档与检索。
-
-## 许可证
-
-[GPL-3.0-only](LICENSE) © 2026 pan8664716；派生自 [N3urda/hongguoTV](https://github.com/N3urda/hongguoTV)（GPL-3.0，上游著作权归其作者）。派生说明与第三方依赖清单见 [NOTICE.md](NOTICE.md)。
+文档里没写到的那些事，仓库主页侧栏留了个去处；能复现的问题仍建议开 Issue，方便留档与检索。
