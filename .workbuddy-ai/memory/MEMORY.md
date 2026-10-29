@@ -20,6 +20,24 @@
   （默认 java 是 26，Gradle 8.14 不支持）。仓库根已有 `.java-version` 与自检。
 - Media3 被 minSdk 19 钉在 **1.4.1**（1.5.0+ 要求 minSdk 21）。
 
+## 测试设备（adb）
+
+- `adb devices` → `192.168.31.121:5555`，S905L3B / Android 9 电视盒子，**已 root**。
+- 应用 `dataDir=/data/user_de/0/com.hgtv.star`（direct-boot aware，**不是** `/data/data/`）。
+  读偏好要 `adb shell su -c "grep ... /data/user_de/0/com.hgtv.star/shared_prefs/*.xml"`。
+- 进度文件：`/data/user_de/0/com.hgtv.star/files/library/progress/<seriesId>.json`。
+- 该机 `deviceForm` 存的是 `auto`，`autoFullscreen` 存的是 `false`。
+  调试面板（`debugMode`）打开时 `uiautomator dump` 能读到播放器状态读数。
+- **改偏好后必须 `am force-stop`**，否则内存里的 SharedPreferences 会把旧值写回。
+
+## 换播放内核 / 大依赖时的检查清单
+
+包名迁移不能只扫 `.kt`，这四处都有类名字符串：
+1. `res/layout/*.xml` 里写死的自定义 View 类名（**编译期查不出，运行时才崩**）
+2. `AndroidManifest.xml`
+3. `baseline-prof.txt`（类不存在时系统**静默跳过**，优化直接失效）
+4. `proguard-rules.pro` 的 keep 规则
+
 ## 约定
 
 - 不主动改版本号 / versionCode，不推送（除非用户明确要求）。
