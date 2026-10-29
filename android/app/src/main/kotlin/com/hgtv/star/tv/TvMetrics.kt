@@ -36,24 +36,21 @@ internal const val DESIGN_SCALE_MIN = .45f
 internal const val DESIGN_SCALE_MAX = 3.2f
 
 /**
- * 当前屏幕的缩放比例：取「宽 / 画布宽」与「高 / 画布高」里**较小的那个**，
+ * 当前屏幕的缩放比例：取「宽 / 1280」与「高 / 720」里**较小的那个**，
  * 夹在 [DESIGN_SCALE_MIN]–[DESIGN_SCALE_MAX]。
  *
- * 取较小值而不是只按高度算：设计画布是 16:9，必须两个方向都装得下，
+ * 取较小值而不是只按高度算：设计画布是 1280×720，必须两个方向都装得下，
  * 否则窄窗口（手机横屏、分屏）上横向还是会溢出。
  *
- * ## 画布按形态分档
+ * **所有形态共用这一块画布**（电视 / 平板 / 手机都是 1280×720）。
  *
- * 电视用 1280×720，手机 / 平板用 960×540。理由只有一个：**字太小**。
+ * 曾经按形态分过档：手机 / 平板换成 960×540，让同一块版面整体放大 1.33 倍，
+ * 理由是「手机横屏 2400×1080 上 16 设计 px 只有约 9.6sp，比系统正文小」。
+ * 但真机装上去的观感是「整块界面明显变大」——版面上所有间距、圆角、按钮高度
+ * 一起放大了，不只是字。用户要的是**原版尺寸**，因此这一档已整体撤销。
  *
- * 1280×720 的画布在电视上是对的——电视是 3 米外看 55 寸，16 设计 px 在 1080P 上
- * 放大 1.5 倍变成 24 物理像素，观感正好。同一块画布搬到手机上就变了：手机横屏
- * 2400×1080 的 `min(2400/1280, 1080/720)` 也是 1.5，24 物理像素在 400dpi 上
- * 只有约 **9.6sp**，而系统正文是 14–16sp——用户读到的是「字明显偏小」。
- *
- * 换成 960×540 之后同一台手机的缩放是 `min(2400/960, 1080/540)=2.0`，
- * 16 设计 px → 32 物理像素 ≈ 12.8sp，接近系统正文，且版面比例完全不变
- * （16:9 不变，所有间距 / 圆角 / 字号同比放大，不需要改任何页面代码）。
+ * 若将来确实要调手机上的可读性，正确做法是只放大字号（[TextView.designTextSize]
+ * 里加一个形态系数），而不是动画布——动画布等于把整套版式等比放大。
  *
  * 只读像素尺寸，**不读 density**，也不做缓存：模拟器上 `wm size` / `wm density`
  * 改完立刻生效，不需要重启应用。
@@ -63,31 +60,9 @@ internal fun Context.designScale(): Float {
     val width = metrics.widthPixels
     val height = metrics.heightPixels
     if (width <= 0 || height <= 0) return 1f
-    val byWidth = width / canvasWidth()
-    val byHeight = height / canvasHeight()
+    val byWidth = width / DESIGN_WIDTH_PX
+    val byHeight = height / DESIGN_HEIGHT_PX
     return minOf(byWidth, byHeight).coerceIn(DESIGN_SCALE_MIN, DESIGN_SCALE_MAX)
-}
-
-/**
- * 当前设计画布的宽（像素）。
- *
- * 由 `applyDeviceForm()` 在启动时按形态定一次；没定过（例如单元测试、或形态探测
- * 之前就有人量尺寸）时退回电视那一档 1280×720——那是改造前的唯一行为。
- */
-internal fun canvasWidth(): Float = canvas.width
-
-internal fun canvasHeight(): Float = canvas.height
-
-/** 设计画布。默认 1280×720（电视档，与改造前一致）。 */
-internal object canvas {
-    @Volatile var width: Float = DESIGN_WIDTH_PX
-    @Volatile var height: Float = DESIGN_HEIGHT_PX
-
-    /** 手机 / 平板：同一块 16:9 版面，画布缩小 → 整体放大。 */
-    fun useHandheld() { width = 960f; height = 540f }
-
-    /** 电视：设计稿原尺寸。 */
-    fun useTelevision() { width = DESIGN_WIDTH_PX; height = DESIGN_HEIGHT_PX }
 }
 
 /** 设计尺寸（dp / sp 数值）→ 像素（浮点，供 Paint 用）。 */

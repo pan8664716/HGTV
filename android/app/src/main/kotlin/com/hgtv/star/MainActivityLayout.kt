@@ -54,19 +54,6 @@ internal fun MainActivity.widthDp(): Float {
 internal fun MainActivity.pageInset()=dp(78)
 
 /**
- * 电视的过扫描安全边距（纵向）。
- *
- * 横向已经有 `pageInset`（78 / 1280 = 6.1%），足够覆盖 5% 的过扫描；纵向原本只有
- * `dp(12)`（1.7%），而工具条本身就贴在 `y = 0` 上——过扫描 5% 的电视会把工具条顶部
- * 与首行海报的上沿切掉。这里补 24 个设计像素（3.3%），与原有的 12 合起来约 5%。
- *
- * 只对电视生效。手机 / 平板的窗口不会被裁，加这条等于白丢版面。
- * 播放页不走 [base]（画面是整屏 `match_parent`），因此不会给视频加黑边。
- */
-internal fun MainActivity.overscanInset(): Int =
-    if(deviceMode()==com.hgtv.star.compat.DeviceForm.TV) dp(TV_OVERSCAN_INSET) else 0
-
-/**
  * 页面容器比内容边距再早开始 [TvStyle.FOCUS_BLEED]。
  *
  * 容器的边界就是裁剪边界：内容从 78dp 开始，容器从 71dp 开始，滚动容器再把这个余量补回来，

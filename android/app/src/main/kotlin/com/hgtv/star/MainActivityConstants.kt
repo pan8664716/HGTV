@@ -460,11 +460,3 @@ internal const val STATE_COLLECTION="hgtv.state.collection"
 internal const val STATE_SERIES="hgtv.state.series"
 internal const val STATE_EPISODE="hgtv.state.episode"
 internal const val STATE_POSITION="hgtv.state.position"
-
-/**
- * 电视的纵向过扫描安全边距（设计像素）。
- *
- * 电视会把画面四周裁掉 3~5%（老机器的「过扫描」）。横向已有 `pageInset`（6.1%），
- * 纵向原本只有 12（1.7%），工具条与首行海报会被切掉一截。补 24 之后合计约 5%。
- */
-internal const val TV_OVERSCAN_INSET=24

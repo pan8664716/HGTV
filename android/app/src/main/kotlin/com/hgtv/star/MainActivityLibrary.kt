@@ -62,9 +62,13 @@ internal fun MainActivity.applySessionToken() { repository.sessionToken=library.
 internal fun MainActivity.base(title: String?=null): LinearLayout {
     root.removeAllViews(); root.setBackgroundColor(bg)
     val container=column().apply { clipChildren=false; clipToPadding=false }
-    // 纵向要多留一条过扫描余量（见 [overscanInset]）：电视会把画面四周裁掉 3~5%，
-    // 而这里原本只有 12 个设计像素（1.7%），工具条顶部与首行海报上沿会被切掉。
-    val horizontal=pageInset()-pageBleed(); val vertical=dp(12)+overscanInset()
+    // 纵向留白保持改造前的 12 个设计像素。
+    //
+    // 曾经为「电视过扫描」在这里补过 24（合计约 5%）。撤销的原因：那一改会改变
+    // 电视上原有的版面留白（一屏行数、首行位置都跟着动），而它只是 P2 级的观感优化，
+    // 不值得拿已经调好的版式去换。真要支持过扫描，应该做成设置项（默认关闭），
+    // 而不是默认加边距。
+    val horizontal=pageInset()-pageBleed(); val vertical=dp(12)
     container.setPadding(horizontal,vertical,horizontal,vertical); root.addView(container,FrameLayout.LayoutParams(-1,-1))
     // 「回到顶部」浮层挂在 root 上：root 刚被清空，这里把它重新挂上（收着，等滚动来定显隐）。
     attachBackToTop()
