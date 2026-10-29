@@ -351,8 +351,18 @@ internal fun MainActivity.inlineHeadChips()=resources.configuration.fontScale<=1
  *
  * 左右键在这里**显式接管**：只写 `nextFocusRightId` 时，遥控器右移会被
  * 行外的控件（导航栏那一排圆形入口）抢走，表现出来就是「右键切不动焦点」。
+ *
+ * [onDown] 按「下」时先问一次（返回 true = 这一下已处理，不再走 `nextFocusDownId`）。
+ * 设置页拿它做「在非当前大项的芯片上按下 → 切到那一块并进它的第一行」：
+ * 那一块在切换前是 `GONE` 的，`nextFocusDownId` 指过去也拿不到焦点。
+ * 默认 `null`，其余页面照旧由 `nextFocusDownId` 决定。
  */
-internal fun MainActivity.wireChipRow(chips: List<View>, up: (Int)->View?, after: View?=null) {
+internal fun MainActivity.wireChipRow(
+    chips: List<View>,
+    up: (Int)->View?,
+    after: View?=null,
+    onDown: ((Int)->Boolean)?=null
+) {
     chips.forEachIndexed { index, chip ->
         val left=chips[(index-1).coerceAtLeast(0)]
         val right=if(index==chips.lastIndex) (after ?: chip) else chips[index+1]
@@ -366,6 +376,7 @@ internal fun MainActivity.wireChipRow(chips: List<View>, up: (Int)->View?, after
                 KeyEvent.KEYCODE_DPAD_LEFT -> { if(left!==view) { focusHead(left); true } else true }
                 KeyEvent.KEYCODE_DPAD_RIGHT -> { if(right!==view) { focusHead(right); true } else true }
                 KeyEvent.KEYCODE_DPAD_UP -> { if(above!==view) { focusHead(above); true } else true }
+                KeyEvent.KEYCODE_DPAD_DOWN -> onDown?.invoke(index) ?: false
                 else -> false
             }
         }

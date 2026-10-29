@@ -72,7 +72,7 @@ object HgtvTls {
      * 每改一次 TLS/证书策略就 +1：客户装的是不是最新包，看日志第一行就知道，
      * 不用再猜「他到底装的哪一版」。
      */
-    private const val TLS_BUILD = "tls-6"
+    private const val TLS_BUILD = "tls-7"
 
     private val LEGACY_CBC_SUITES = listOf(
         CipherSuite.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA,
@@ -160,13 +160,15 @@ object HgtvTls {
         NetLog.log("AndroidCAStore 不可用，退回平台默认信任库：${it.javaClass.simpleName} ${it.message}")
     }.getOrNull()
 
+    /** 内置的那一张根（`DigiCert Global Root G2`），解析只要一两毫秒。 */
+    private val EXTRA_ROOT_CERT: X509Certificate = java.security.cert.CertificateFactory.getInstance("X.509")
+        .generateCertificate(ByteArrayInputStream(EXTRA_ROOT_PEM.toByteArray())) as X509Certificate
+
     /** 只信任上面那一张根的校验器（PKIX，签名与有效期照常检查）。 */
     private val EXTRA_TRUST_MANAGER: X509TrustManager = run {
-        val cert = java.security.cert.CertificateFactory.getInstance("X.509")
-            .generateCertificate(ByteArrayInputStream(EXTRA_ROOT_PEM.toByteArray())) as X509Certificate
         val store = KeyStore.getInstance(KeyStore.getDefaultType()).apply {
             load(null, null)
-            setCertificateEntry("digicert_global_root_g2", cert)
+            setCertificateEntry("digicert_global_root_g2", EXTRA_ROOT_CERT)
         }
         trustManager(store)
     }
@@ -196,27 +198,87 @@ object HgtvTls {
     /** 低于 Android 5.1 的机器跳过证书链校验。 */
     val SKIP_CERT_CHECK: Boolean = SDK_INT < 22
 
-    /** 系统库 + 内置 G2 根，两条都走 PKIX。 */
+    /** 内置 G2 根优先、系统库兜底，两条都走 PKIX。 */
     private val STRICT_TRUST_MANAGER: X509TrustManager = object : X509TrustManager {
         override fun checkClientTrusted(chain: Array<out X509Certificate>, authType: String) =
             SYSTEM_TRUST_MANAGER.checkClientTrusted(chain, authType)
 
+        /**
+         * **先验内置单锚，失败再回退系统 150 锚**（顺序反了会慢，见下）。
+         *
+         * 系统根库那条路要为 150 张根逐张建 `TrustAnchor`、再跑一遍完整的
+         * `CertPathValidator`（PKIX 建链 + 签名 + 基本约束 + 扩展解析）。这台
+         * S905L3B / 2G 盒子冷启动时实测 **1.3~2.9 秒**，且这些类第一次用时全靠
+         * 解释执行；等到第二次握手同类已经 JIT 好，就只剩几十毫秒——日志里
+         * `tls=` 从 2913ms → 1298ms → 20ms 的衰减正是它。
+         *
+         * 本工程要连的域名全部挂在 `DigiCert Global Root G2` 下，服务端也会下发
+         * 完整链（leaf → 中间 CA → G2），所以单锚校验既正确又**更严**（只认这一张根），
+         * 不存在放宽：链断、过期、签名错照样抛 `CertificateException`。
+         *
+         * 单锚这条路的对象在类初始化时就建好了，第一次握手只做一次 `CertPathValidator`
+         * 单链验证，耗时稳定在毫秒级。回退分支兜住「以后换了别的根」的情况。
+         */
         override fun checkServerTrusted(chain: Array<out X509Certificate>, authType: String) {
             try {
-                SYSTEM_TRUST_MANAGER.checkServerTrusted(chain, authType)
-            } catch (systemError: CertificateException) {
-                try {
-                    EXTRA_TRUST_MANAGER.checkServerTrusted(chain, authType)
-                    NetLog.log("证书链改用内置 DigiCert Global Root G2 校验通过 ${chain.firstOrNull()?.subjectDN}")
-                } catch (extraError: CertificateException) {
-                    // 两边都不认：抛系统那条，保持原始错误语义（界面上显示的正是它）。
-                    throw systemError
-                }
+                EXTRA_TRUST_MANAGER.checkServerTrusted(chain, authType)
+                return
+            } catch (_: CertificateException) {
+                // 不是 G2 这条链（或确实有问题）：交给系统根库判定，抛它的原始异常。
             }
+            SYSTEM_TRUST_MANAGER.checkServerTrusted(chain, authType)
         }
 
-        override fun getAcceptedIssuers(): Array<X509Certificate> = SYSTEM_TRUST_MANAGER.acceptedIssuers
+        /**
+         * 系统根证书表**只解一次**。
+         *
+         * OkHttp 每建一个 client（`Builder.sslSocketFactory(...)` → `CertificateChainCleaner.get()`
+         * → `buildTrustRootIndex()`）都会立刻问一遍这里。而
+         * `NetworkSecurityTrustManager.getAcceptedIssuers()` 是**现读现解**：
+         * 把 `/system/etc/security/cacerts` 下每一张 PEM 都 `CertificateFactory` 解一遍，
+         * 再算 `subjectX500Principal`（`X500Name.parseDER` + NFKC 归一化）。
+         *
+         * 实测（S905L3B / 2G 盒子，150 张根证书）这一遍 **2.5~3.0 秒**，
+         * 而且第一个 client 是在 `Application.onCreate` 里建的，等于整段启动都压在它上面
+         * （见 2026-10-27 的线程栈：main 停在 `DerValue.toByteArray`）。
+         *
+         * 证书表在进程生命周期内不会变（系统更新根证书要重启），缓存一份即可。
+         */
+        /**
+         * **不阻塞**地给出信任锚。
+         *
+         * 两条来源，谁先就绪用谁：
+         *
+         * 1. [WARM_ISSUERS]——后台线程解出来的完整系统根表（150 张）；
+         * 2. [BOOTSTRAP_ISSUERS]——只有内置那张 `DigiCert Global Root G2`，构造时就有，**零耗时**。
+         *
+         * 为什么 2 够用：本工程要连的域名（`*.fqnovel.com` / `*.snssdk.com` /
+         * `*.byteimg.com` / `*.fqnovelpic.com` / `hongguoduanju.com`）**服务端都把根证书
+         * 一起下发**（实测三张：leaf → `RapidSSL TLS RSA CA G1` → `DigiCert Global Root G2`），
+         * 而 OkHttp 的 `CertificateChainCleaner` 只要能在这张表里找到链路顶端那张根，
+         * 就不会再走「补下载根证书」的分支。因此在这张表就绪之前，返回这一张也完全正确。
+         *
+         * 早先这里直接读系统表（2.5~3.0 秒，见上）：第一个 client 是在 `Application.onCreate`
+         * 里建的，等于整段启动都压在这上面。改成「先给这一张、后台再补齐」之后，
+         * 建 client 变成零成本，而那 2.5 秒彻底移出启动路径。
+         *
+         * 注意：这只影响**链清理**（`CertificateChainCleaner` 用它反查根）。
+         * 真正校验链的 [checkServerTrusted] 先走内置单锚、再回退系统 PKIX
+         * （[EXTRA_TRUST_MANAGER] → [SYSTEM_TRUST_MANAGER]），不因为这里少给几张就放宽。
+         */
+        override fun getAcceptedIssuers(): Array<X509Certificate> = WARM_ISSUERS ?: BOOTSTRAP_ISSUERS
     }
+
+    /** 只有内置那张根：零成本，供系统根表解好之前使用（见 [STRICT_TRUST_MANAGER] 的说明）。 */
+    private val BOOTSTRAP_ISSUERS: Array<X509Certificate> = arrayOf(EXTRA_ROOT_CERT)
+
+    /**
+     * 后台解出来的完整系统根表；`null` = 还没好。
+     *
+     * 刻意**不用** `lazy`：`lazy` 的求值线程会把「谁先来谁等 2.5 秒」的问题留给
+     * 第一个调用者，而第一个调用者往往就是主线程。这里只暴露「好了没有」。
+     */
+    @Volatile private var WARM_ISSUERS: Array<X509Certificate>? = null
 
     /**
      * 低版本用的「不校验」实现。
@@ -286,7 +348,31 @@ object HgtvTls {
         return builder
             .connectionSpecs(SPECS)
             .sslSocketFactory(socketFactory, TRUST_MANAGER)
+            // 带缓存的解析器：这台盒子的 `getaddrinfo` 单次 60~450ms，而冷启动要碰
+            // 十来个域名、每个域名建连时各问一遍（见 [HgtvDns]）。
+            .dns(HgtvDns)
     }
+
+    /**
+     * 把「解系统根证书表 + 建第一个 client」这两件重活提前做完。
+     *
+     * **必须在后台线程调**（一次 2~3 秒，见 [WARM_ISSUERS] 的说明）。
+     * 由 `HgtvApplication.onCreate` 起一条线程来跑，与界面建视图并行；
+     * 解好之后写进 [WARM_ISSUERS]，此后任何线程建 client 都立刻拿到完整表。
+     * 解好之前也不是「没有」——[BOOTSTRAP_ISSUERS] 那张根对本工程的所有域名都够用。
+     */
+    fun warm() {
+        if(WARM_ISSUERS==null) WARM_ISSUERS=acceptedIssuersFromSystem()
+        runCatching { configure(OkHttpClient.Builder()).build() }
+    }
+
+    /** 真正去解系统根表；失败就留 `null`，让调用方继续用 [BOOTSTRAP_ISSUERS]。 */
+    private fun acceptedIssuersFromSystem(): Array<X509Certificate>? = runCatching {
+        SYSTEM_TRUST_MANAGER.acceptedIssuers
+    }.getOrElse {
+        NetLog.log("系统根证书表读取失败：${it.javaClass.simpleName} ${it.message}")
+        null
+    }?.takeIf { it.isNotEmpty() }
 }
 
 /**

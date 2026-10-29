@@ -17,8 +17,8 @@ import kotlin.math.sqrt
  *
  * 判成什么样只影响三件事：
  * 1. 需不需要触屏手势层、底部触屏控制条（[com.hgtv.star.MainActivity.touchArmed]）；
- * 2. 「短剧自动全屏」旋转的方向（电视 / 横屏平板 `+90`，手机 `−90`）；
- * 3. 设置页里「使用设备」那一格显示当前判定结果。
+ * 2. 「竖屏短剧全屏」旋转的方向（电视 / 横屏平板 `+90`，手机 `−90`）；
+ * 3. 设置页里「设备类型」那一格显示当前判定结果。
  *
  * 因此 [UNKNOWN] 只在探测本身失败时出现，正常路径一定落到前三档之一。
  */
@@ -105,6 +105,8 @@ internal data class DeviceProfile(
  * | 品牌词表（海信 / 创维 / TCL / 小米电视…） | 1 |
  *
  * - `score >= 4` → 电视：任意一条硬证据（uiMode / leanback）或两条软证据成立即可；
+ * - **大屏 + 没有触屏 + 有方向键 → 电视**：不挣分，直接定性。0 分也能落这一档，
+ *   因为「600dp 以上的平板一定带触屏」——反过来推，没有触屏的大屏就是电视 / 盒子；
  * - `score >= 3` 且没有触屏、对角线 ≥ 20 寸 → 也是电视（只有 `FEATURE_TELEVISION`
  *   的盒子、或只有 `characteristics` 的老盒子都落这一档）；
  * - 其余按短边 `swDp` 分：`>= 600` 是平板（Android 官方那条分界线），否则是手机。
@@ -183,8 +185,18 @@ internal fun Context.detectDeviceForm(): DeviceProfile {
         hits += "brand"
     }
 
+    // ⑦ 兜底的一条硬定性：**大屏 + 没有触屏 + 有方向键 = 电视 / 盒子**。
+    //    上面六条都可能一条不中——实测的 S905L3B 盒子就是这样：`characteristics=mbx,nosdcard`、
+    //    机型 `S905L3B`、`uiMode=NORMAL`、没有 leanback / television 能力位，只有
+    //    「没有触屏、但有方向键」那 3 分；而它的 dpi 报 240，对角线算出来才 9 寸，
+    //    于是旧规则把它按短边 720dp 判成**平板**，触屏层跟着亮起来、「竖屏短剧全屏」也跟着变灰。
+    //    但 600dp 以上的平板一定带触屏（那是它的输入方式），没有触屏的大屏只能是电视 / 盒子。
+    val remoteOnly = !touch && dpad && facts.swDp >= 600
+    if (remoteOnly) hits += "大屏遥控"
+
     val form = when {
         score >= 4 -> DeviceForm.TV
+        remoteOnly -> DeviceForm.TV
         score >= 3 && !touch && facts.diagonalIn >= 20f -> DeviceForm.TV
         facts.swDp >= 600 -> DeviceForm.TABLET
         else -> DeviceForm.PHONE

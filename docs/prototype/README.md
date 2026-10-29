@@ -21,7 +21,7 @@
 | 播放 | `MainActivityPlayer.kt`：16:9 画面、顶部剧名与时钟、底部播放键 / 进度 / 状态行 / 下拉箭头 |
 | 播放设置 | `MainActivityPlaybackMenu.kt`：清晰度 / 倍速 / 画面 / 解码 / 弹幕 / 速度 / 字号 / 透明度 / 定时 |
 | 我的 | `MainActivityProfile.kt` + `MainActivityAccountPanel.kt`：未登录整页登录卡；已登录身份行 + 四栏 |
-| 设置 | `MainActivitySettings.kt`：播放偏好 / 片单与设备 / 弹幕 / 按键设置 / 主题外观 |
+| 设置 | `MainActivitySettings.kt`：界面设置 / 推荐范围 / 播放偏好 / 设备调试 / 弹幕 / 按键设置 / 主题外观 |
 | 主题 | `tv/TvTheme.kt`：20 套（10 深 + 10 浅），只换色值 |
 | 卡片菜单 | `MainActivityHome.quickActions`：继续观看 / 收藏 / 稍后观看 / 详情 / 删除记录 / 不在热播榜中显示 |
 | 备份 | `TvTools.libraryTransfer`：局域网二维码 + 合并恢复 |

@@ -192,7 +192,17 @@ internal enum class ButtonSize(val height: Int, val pad: Int, val text: Float) {
 
     COMPACT(TvStyle.BUTTON_COMPACT, TvStyle.BUTTON_PAD_COMPACT, TvStyle.BUTTON_TEXT_COMPACT),
     NORMAL(TvStyle.BUTTON_NORMAL, TvStyle.BUTTON_PAD_NORMAL, TvStyle.BUTTON_TEXT_NORMAL),
-    HERO(TvStyle.BUTTON_HERO, TvStyle.BUTTON_PAD_HERO, TvStyle.BUTTON_TEXT_HERO)
+    HERO(TvStyle.BUTTON_HERO, TvStyle.BUTTON_PAD_HERO, TvStyle.BUTTON_TEXT_HERO),
+
+    /**
+     * 分区芯片档：**高度与常规档完全一致**（[TvStyle.BUTTON_NORMAL] 底板 + 两条柔光带 = 60dp），
+     * 只把字号与左右内边距各收一档。
+     *
+     * 设置页顶部那四枚大项（播放交互 / 外观导航 / 内容推荐 / 系统高级）用它：
+     * 与榜单页的榜单芯片**同高**（同一行里看着是一排控件，不会一高一矮），
+     * 但中文标签按内容宽收紧，四枚并排也不会各占四分之一屏、把右边的圆形入口顶出去。
+     */
+    CHIP(TvStyle.BUTTON_NORMAL, TvStyle.BUTTON_PAD_TIGHT, TvStyle.BUTTON_TEXT_CHIP)
 }
 
 /**
@@ -257,6 +267,9 @@ internal fun paintButton(
     view.minWidth = when {
         tone == ButtonTone.GHOST -> 0
         size == ButtonSize.DENSE -> dp(52) + band * 2
+        // 分区芯片按内容宽收紧（「播放交互」四个字 ≈ 56dp + 两侧 12dp 内边距），
+        // 不撑到常规档的 92dp——四枚并排的宽度直接决定它能不能留在导航栏那一行里。
+        size == ButtonSize.CHIP -> dp(56) + band * 2
         // 收紧档（搜索页那两枚）：按内容宽收紧，短文案不再撑到 92dp。
         size == ButtonSize.TIGHT -> dp(TvStyle.BUTTON_MIN_WIDTH_TIGHT) + band * 2
         // 弹窗档按内容宽收紧：短文案（「取消」「确认」）只有几十 dp，不再撑到常规档的 92dp。
@@ -548,7 +561,7 @@ internal open class TvButton(
  * 左段按可用宽度自动省略，右段固定贴右，值后面跟一枚「>」提示这里还能选别的。
  *
  * 文案仍然沿用全站统一的「项名  ·  当前值」写法：构造时和 [setLabel] 都按这组分隔符
- * 拆成两段，调用方不需要为每个设置项单独传两个字符串。没有值的项（备份、开源许可）
+ * 拆成两段，调用方不需要为每个设置项单独传两个字符串。没有值的项（备份、清空缓存）
  * 右边只留「>」，看起来仍是一条可进入的设置项。
  */
 internal open class TvSettingButton(
@@ -556,8 +569,16 @@ internal open class TvSettingButton(
     label: String,
     size: ButtonSize = ButtonSize.NORMAL,
     tone: ButtonTone = ButtonTone.SECONDARY,
+    /**
+     * 覆盖档位自带的左右内边距；null = 用档位值。
+     *
+     * [com.hgtv.star.tv.SettingSlider] 放在播放界面那块浮层里时要用它：那里的其它行
+     * 是「左端 0dp 起的项目名 + 右侧一排紧凑档选项」，滑动条这一行如果按常规档的 28dp
+     * 内边距起头，项名就会比上下相邻的行往右缩一截。
+     */
+    pad: Int? = null,
     action: () -> Unit = {}
-) : TvButton(context, label, size, tone, alignStart = true, action = action) {
+) : TvButton(context, label, size, tone, alignStart = true, action = action, pad = pad) {
     private var rowName = ""
     private var rowValue = ""
 
@@ -1458,18 +1479,28 @@ internal class DialogItem(
         setPadding(dp(TvStyle.DIALOG_ITEM_PAD) + band, band, dp(TvStyle.DIALOG_ITEM_PAD) + band, band)
         minimumHeight = dp(TvStyle.DIALOG_ITEM_HEIGHT + 2 * TvStyle.SOFT_BAND)
         setTypeface(typeface, Typeface.NORMAL)
+        // 三档状态与页面上每一枚按钮同源，颜色全部取自当前主题（2026-10-27 弹窗配色改版）：
+        //   常态（凸起） = surface      —— 比弹窗面板的 surfaceHigh 低一档，按钮才从面板上浮出来；
+        //   焦点（打亮） = lit + onLit  —— 与页面按钮的焦点同一档，深色主题是亮面近黑字、浅色主题是白面深墨字；
+        //   选中（按进去） = selectedWell + focusRing —— 与设置页的主题芯片、全站的开关同一档。
+        // 早先常态直接取 surfaceHigh（与面板完全同色），按钮只剩下 3–5% 的明度差贴在面板上，
+        // 焦点又用「凹陷」表达，于是「选中」和「焦点」长得一模一样——这正是弹窗看起来不像本应用的原因。
         setTextColor(
             when {
                 !enabledState -> TvStyle.muted
-                focused -> if (danger || outlined) brighten(TvStyle.danger) else TvStyle.text
+                // 亮面板上的字：危险项用状态色（红底上够清楚），其余用亮面的近黑字。
+                focused -> if (danger || outlined) TvStyle.danger else TvStyle.onLit
                 outlined -> TvStyle.danger
-                danger -> dim(TvStyle.danger, .55f)
-                else -> dim(TvStyle.text, .44f)
+                danger -> TvStyle.danger
+                selected -> TvStyle.text
+                else -> TvStyle.textDim
             }
         )
         // 描边项**永远**用凸起那块底板：空心按钮没有「按进去」这一档，
         // 而 INSET 底板会把内阴影画在透明填充上，看起来像一块脏掉的凹陷。
-        val useInset = (selected || focused) && enabledState && !outlined
+        // 焦点**不再**走凹陷（凹陷在按钮上读不出「焦点」，只剩一片比面板更深的槽），
+        // 因此只有「选中且没有焦点」才需要那块 INSET 底板。
+        val useInset = selected && !focused && enabledState && !outlined
         val plate = plates[if (useInset) 1 else 0] ?: run {
             val made = when {
                 useInset -> TvStyle.well(ctx, TvStyle.well, pill, TvStyle.SOFT_BAND, depth = 1.15f)
@@ -1485,9 +1516,8 @@ internal class DialogItem(
             !enabledState -> Color.TRANSPARENT
             // 描边危险项：红环常驻，聚焦时换成更亮的那一档红。
             outlined -> if (focused) brighten(TvStyle.danger) else dim(TvStyle.danger, .80f)
-            danger && focused -> dim(TvStyle.danger, .85f)
-            focused -> TvStyle.focusRing
-            selected -> TvStyle.focusRing
+            focused -> if (danger) TvStyle.danger else TvStyle.focusRing
+            selected -> if (danger) dim(TvStyle.danger, .85f) else TvStyle.focusRing
             else -> Color.TRANSPARENT
         }
         // 描边项的环宽也常驻（聚焦时再粗一档），「边框按钮」这个形态才立得住。
@@ -1499,15 +1529,15 @@ internal class DialogItem(
         }
         plate.restyle(
             fill = when {
-                !enabledState -> TvStyle.well
+                !enabledState -> TvStyle.wellDeep
                 // 描边项常态**不填底色**：只留一圈红环，看起来才是「空心描边按钮」。
                 // 聚焦时补一层极淡的红：空心按钮没有「打亮」那一档，不给一点填充的话
                 // 焦点只剩一圈变粗的红环，在深色面板上不够明显。
                 outlined -> if (focused) dim(TvStyle.danger, .18f) else Color.TRANSPARENT
-                useInset -> TvStyle.well
-                // 常态与面板同色：设计稿里选项不是「另一种材质」，只是被一圈柔光托起来的一条胶囊，
-                // 一列读下来像菜单项，而不是一排抢眼的按钮。
-                else -> TvStyle.surfaceHigh
+                useInset -> TvStyle.selectedWell
+                // 焦点 = 打亮的那一档（与页面按钮一致）；常态 = 凸起面，比弹窗面板低一档。
+                focused -> TvStyle.lit
+                else -> TvStyle.surface
             },
             ring = ringColor,
             ringWidth = ringWidth,
@@ -1516,7 +1546,11 @@ internal class DialogItem(
                 focused -> TvStyle.litGlow
                 else -> Color.TRANSPARENT
             },
-            depth = if (useInset) 1.15f else 1.1f
+            depth = when {
+                useInset -> 1.15f
+                focused -> 1.25f
+                else -> 1.1f
+            }
         )
         if (background !== plate) background = plate
         alpha = if (enabledState) 1f else TvStyle.DISABLED_ALPHA
@@ -1733,6 +1767,17 @@ internal class EpisodeCell(
             paint(focused)
             TvStyle.focus(view, focused)
         }
+    }
+
+    /**
+     * 取消「常规档 60dp」这个高度下限，交给宿主按实测尺寸给高度。
+     *
+     * 选集网格的格子高度是动态算的（见 `EpisodeGrid.fitCells`）：一页集数多、屏幕窄时
+     * 会低于 60dp。`TextView` 测量时会把 `minimumHeight` 顶回来，只改 `LayoutParams` 不够，
+     * 因此由网格在创建格子后调这里把下限清掉；字号与左右内边距不变。
+     */
+    fun allowCompactHeight() {
+        minimumHeight = 0
     }
 
     private fun paint(focused: Boolean) {

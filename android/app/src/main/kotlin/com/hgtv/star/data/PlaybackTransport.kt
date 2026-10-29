@@ -47,6 +47,18 @@ internal object PlaybackTransport {
      */
     private const val MAX_IDLE = 4
 
+    /**
+     * 丢掉池里所有**空闲**连接（在途的那条不动，由 `RemoteVideo.close()` 取消）。
+     *
+     * 自愈路径要用它：路由器 NAT 表项被静默回收之后，池里那条连接「看起来还活着」——
+     * 写得出、读不回，于是每次取流都卡满 `readTimeout`。`OkHttp` 自己不会因此剔除它
+     *（`retryOnConnectionFailure` 只对建连阶段生效），只能由调用方显式清一次，
+     * 下一条请求才会真的重新握手。见 `MainActivity.dropDeadTransport`。
+     */
+    fun evictIdleConnections() {
+        runCatching { client.connectionPool().evictAll() }
+    }
+
     val client: OkHttpClient by lazy {
         com.hgtv.star.core.HgtvTls.configure(OkHttpClient.Builder())
             // **钉死 HTTP/1.1**：见类注释。服务端支持 h2，这里主动不用。

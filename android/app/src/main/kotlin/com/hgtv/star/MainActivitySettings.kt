@@ -14,8 +14,9 @@ import com.google.android.exoplayer2.*
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
-import com.hgtv.star.player.DanmakuSlider
+import com.hgtv.star.tv.SettingSlider
 import com.hgtv.star.tv.IconButton
+import com.hgtv.star.tv.ToggleChip
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvDialog
 import com.hgtv.star.tv.TvSettingButton
@@ -32,41 +33,37 @@ import com.hgtv.star.compat.lowEndTv
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 internal fun MainActivity.settings(parent: LinearLayout) {
-    // 页面名「设置」已经进了顶部导航栏，这里不再重复一行标题，只留一句说明。
+    // —— 四个大项 ——
+    //
+    // 设置页按 [SETTINGS_TABS] 分成四块：播放交互 / 外观导航 / 内容推荐 / 系统高级。
+    // 大项的芯片在**顶部导航栏**里（见 `ListPage.showCatalog` 的 TAB_SETTINGS 那一段），
+    // 这一页只负责四块内容本身，因此这里不再重复一行「设置」标题。
+    //
+    // 四块内容**一次全建好**，只有当前那一个可见，其余 `GONE`：
+    // 切换大项因此只是换一次可见性——不重建页面、不重新联网、不动已经调好的滑块，
+    // 而 `GONE` 的子树既不测量也不参与焦点，四块同时存在不会互相抢焦点。
+    val active=settingsTab.coerceIn(0,SETTINGS_TABS.lastIndex)
+    settingsTab=active
     parent.addView(text("偏好自动保存，下一部剧继续使用。",14f,TvStyle.muted).apply { setPadding(0,dp(10),0,dp(20)) })
-    val groups=row().apply { gravity=Gravity.TOP; clipChildren=false; clipToPadding=false }
-    val playback=column().apply { clipChildren=false; clipToPadding=false }
-    val device=column().apply { clipChildren=false; clipToPadding=false }
     val groupBand=dp(TvStyle.SOFT_BAND_LARGE)
-    /** 一个设置分组：大号凸起面板，内容四周留出柔光带。 */
+    /** 一块设置面板：大号凸起底板，内容四周留出柔光带。 */
     fun groupPanel(group: LinearLayout) {
         group.setPadding(dp(24)+groupBand,dp(20)+groupBand,dp(24)+groupBand,dp(20)+groupBand)
         group.background=softPanel(TvStyle.surfaceHigh,TvStyle.RADIUS_DIALOG,band=TvStyle.SOFT_BAND_LARGE,depth=1.05f)
     }
-    listOf(playback,device).forEachIndexed { i,group ->
-        groupPanel(group)
-        groups.addView(group,lp(0,-2).apply { weight=1f; if(i==0) rightMargin=dp(TvStyle.GAP_GROUP) })
+    /** 一个大项的内容列（带 `settings-page-<n>` 标记，切大项按它取块、按它找回焦点）。 */
+    fun pageColumn(index: Int)=column().apply {
+        clipChildren=false; clipToPadding=false
+        tag=SETTINGS_TAG_PAGE_PREFIX+index
+        visibility=if(index==active) View.VISIBLE else View.GONE
     }
-    parent.addView(groups)
-    /**
-     * 左右两栏底板**同高**：左栏多一条「画面缩放」滑块，右栏少一行，
-     * 直接 wrap_content 会让两块面板的底边一高一低，看起来像右栏缺了一块。
-     *
-     * 高度取两者较大值，两块面板的上下边缘因此落在同两条横线上
-     * （与下面「弹幕 / 按键设置」两栏同一套做法）。只量一次：
-     * 之后各栏内容只是换文字（不增减行），高度不会再变。
-     */
-    groups.addOnLayoutChangeListener(object: View.OnLayoutChangeListener {
-        override fun onLayoutChange(v: View,left: Int,top: Int,right: Int,bottom: Int,oldLeft: Int,oldTop: Int,oldRight: Int,oldBottom: Int) {
-            val height=maxOf(playback.height,device.height)
-            if(height<=0) return
-            v.removeOnLayoutChangeListener(this)
-            listOf(playback,device).forEach { panel ->
-                val params=panel.layoutParams as? LinearLayout.LayoutParams ?: return@forEach
-                if(params.height!=height) { params.height=height; panel.layoutParams=params }
-            }
-        }
-    })
+    /** 大项里的一块整宽面板；[gap] 是它与上一块之间的距离。 */
+    fun panel(page: LinearLayout,gap: Int=TvStyle.GAP_GROUP): LinearLayout {
+        val group=column()
+        groupPanel(group)
+        page.addView(group,lp(-1,-2).apply { topMargin=dp(gap) })
+        return group
+    }
     fun heading(group: LinearLayout,title: String,subtitle: String) {
         group.addView(text(title,18f,TvStyle.text).apply { setTypeface(null,Typeface.BOLD) },lp(-2,-2))
         group.addView(text(subtitle,14f,TvStyle.muted).apply { setPadding(0,dp(TvStyle.GAP_TIGHT),0,dp(TvStyle.GAP_BLOCK)) })
@@ -81,253 +78,466 @@ internal fun MainActivity.settings(parent: LinearLayout) {
         return view
     }
     /**
-     * 网格里的一格（按钮）：与 [setting] 同一个按钮，宽度交给权重（一行两格）。
-     * 行距与格距由外面的行容器给，这里不加 topMargin。
+     * 设置项里的整行开关（左名称 + 右滑块）：与 [setting] 同一行高、同一行距。
+     *
+     * [TvSwitchRow] 本来就继承 [TvSettingButton] 的常规档，因此整栏里「按钮」与「开关」
+     * 看起来是同一块料，不会出现一行高一行矮。
      */
-    fun gridSetting(row: LinearLayout,label: String,action: ()->Unit): TvButton {
-        val view=TvSettingButton(this,label,ButtonSize.NORMAL,ButtonTone.SECONDARY,action=action)
-        row.addView(view,lp(0,-2).apply { weight=1f; if(row.childCount>1) leftMargin=dp(TvStyle.GAP_INLINE) })
+    fun switchSetting(group: LinearLayout,view: TvSwitchRow): TvSwitchRow {
+        group.addView(view,lp(-1,-2).apply { if(group.childCount>1) topMargin=dp(TvStyle.GAP_INLINE) })
         return view
     }
+    /** 面板里的一行（横向）：上下间距由调用方给，行内格距统一 GAP_INLINE。 */
+    fun lineRow(group: LinearLayout,gap: Int=TvStyle.GAP_INLINE): LinearLayout {
+        val line=row().apply { clipChildren=false; clipToPadding=false }
+        group.addView(line,lp(-1,-2).apply { if(group.childCount>1) topMargin=dp(gap) })
+        return line
+    }
+    /** 空的列位：末行不满时占住列宽，前面那一枚不会被拉成半屏宽。 */
+    fun padLine(line: LinearLayout,count: Int) {
+        repeat(count) { index ->
+            line.addView(Space(this),lp(0,1).apply {
+                weight=1f
+                if(line.childCount>1) leftMargin=dp(TvStyle.GAP_INLINE)
+            })
+        }
+    }
     /**
-     * 整栏宽的一行（左标签 + 右滑轨），返回（滑块，这一整行）。
+     * 整栏宽的一行：项名与滑轨**合成同一枚控件**（[SettingSlider]）。
      *
      * 高度与上面那排按钮同一档（[TvStyle.BUTTON_NORMAL] + 两条柔光带 = 60dp），
-     * 因此这一栏的三行看起来是同一块料，而不是「按钮 + 两条另一样的东西」。
+     * 项名的左边缘、右侧读数所在的右边缘都与同一栏的设置项落在同一条竖线上——
+     * 因此这一栏里「按钮 / 开关 / 滑动条」读起来是同一种行，中间不会多出一条缝。
      *
-     * 左侧留白按按钮的文字内边距给（[TvStyle.BUTTON_PAD_NORMAL] + 柔光带 = 34dp）：
-     * `TvButton` 的文字正是从这里起排的，所以上下三行的文字左边缘会落在同一条竖线上；
-     * 右侧同样留出这段距离，滑轨的百分比读数才不会顶到面板边缘。
-     *
-     * 与播放设置面板里那两条共用同一个 [DanmakuSlider]、改的是同一份本机偏好，
-     * 因此设置页调好之后进播放界面立刻就是新的字号 / 透明度。
+     * 与播放设置面板里的弹幕两条共用同一份本机偏好，因此设置页调好之后
+     * 进播放界面立刻就是新的字号 / 透明度。
      */
     fun fullSlider(
         group: LinearLayout,label: String,min: Float,max: Float,step: Float,value: Float,
         format: (Float)->String = DanmakuStyle::percent,
         onValue: (Float)->Unit
-    ): Pair<DanmakuSlider,View> {
-        val line=row().apply {
-            clipChildren=false; clipToPadding=false; gravity=Gravity.CENTER_VERTICAL
-            // 左边与设置项文字同一条线；右边只留「常规按钮内边距 − 紧凑滑块内边距」，
-            // 让滑块自己的右内边距补上剩下的那一段——百分比读数正好落在设置项 `>` 的同一条右边缘上。
-            setPadding(
-                dp(TvStyle.BUTTON_PAD_NORMAL)+dp(TvStyle.SOFT_BAND),0,
-                dp(TvStyle.BUTTON_PAD_NORMAL-TvStyle.BUTTON_PAD_COMPACT),0
-            )
+    ): SettingSlider {
+        // 整行就是一枚控件（[SettingSlider]）：项名画在底板内部左段、滑轨接在右段，
+        // 不再「外面一行、左边一条文字、右边一条滑轨」。行高、左右内边距、焦点反馈
+        // 与同一栏的按钮 / 开关完全一致，因此一栏里三种控件看起来是同一块料。
+        val slider=SettingSlider(this,label,min,max,step,value,onValue,format)
+        group.addView(slider,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_INLINE) })
+        return slider
+    }
+    /**
+     * 每个大项里的行（自上而下），只用一件事：串上下左右的焦点出口。
+     *
+     * 以前这一页是「两栏并排、每栏逐行对齐」，焦点出口要一行一行手写，改一处布局就得
+     * 把几十条 `nextFocus*Id` 跟着改一遍。现在按大项分块之后，块内都是**整宽的行**，
+     * 于是出口全部交给 [wireRows] 按「行号 + 列号」统一算：行内左右相连、行间上下同列。
+     */
+    val pageRows=Array(SETTINGS_TABS.size) { mutableListOf<MutableList<View>>() }
+    fun track(index: Int,vararg views: View) {
+        pageRows[index].add(views.filter { it.isFocusable }.toMutableList())
+    }
+    fun wireRows(index: Int) {
+        val rows=pageRows[index]
+        rows.forEachIndexed { r,line ->
+            if(line.isEmpty()) return@forEachIndexed
+            val above=rows.getOrNull(r-1)?.takeIf { it.isNotEmpty() }
+            val below=rows.getOrNull(r+1)?.takeIf { it.isNotEmpty() }
+            line.forEachIndexed { c,view ->
+                view.nextFocusLeftId=(line.getOrNull(c-1) ?: view).id
+                view.nextFocusRightId=(line.getOrNull(c+1) ?: view).id
+                view.nextFocusUpId=(above?.let { it.getOrNull(c) ?: it.last() } ?: view).id
+                // 最后一行按下停在原地：再按也不会跳到大项外面去。
+                view.nextFocusDownId=(below?.let { it.getOrNull(c) ?: it.last() } ?: view).id
+            }
         }
-        line.addView(
-            text(label,TvStyle.BUTTON_TEXT_NORMAL,TvStyle.text).apply {
-                gravity=Gravity.CENTER_VERTICAL; maxLines=1; ellipsize=TextUtils.TruncateAt.END
-            },
-            lp(dp(110),-2)
-        )
-        val slider=DanmakuSlider(this,label,min,max,step,value,onValue,format)
-        line.addView(slider,lp(0,-1).apply { weight=1f })
-        group.addView(line,lp(-1,dp(TvStyle.BUTTON_NORMAL+2*TvStyle.SOFT_BAND)).apply { topMargin=dp(TvStyle.GAP_INLINE) })
-        return slider to line
     }
+
+    /** 两栏并排：左右各一块面板，各自带柔光带；两栏之间用 GAP_GROUP。 */
+    fun sidePanel(container: LinearLayout): LinearLayout {
+        val group=column()
+        groupPanel(group)
+        container.addView(group,lp(0,-2).apply {
+            weight=1f
+            if(container.childCount>1) leftMargin=dp(TvStyle.GAP_GROUP)
+        })
+        return group
+    }
+    /** 两列网格里的一格（按钮）：宽度交给权重，同面板的格子左右边缘因此对齐。 */
+    fun cellSetting(line: LinearLayout,label: String,action: ()->Unit): TvButton {
+        val view=TvSettingButton(this,label,ButtonSize.NORMAL,ButtonTone.SECONDARY,action=action)
+        line.addView(view,lp(0,-2).apply { weight=1f; if(line.childCount>0) leftMargin=dp(TvStyle.GAP_INLINE) })
+        return view
+    }
+    /**
+     * 两列网格里的一格（滑动条）：与 [cellSetting] 同宽同位。
+     *
+     * 与 [fullSlider] 的区别只有「占多少宽」：这一条按权重占半行，因此可以和另一格并排。
+     * 轨道本身有 `minTrack` 保底（见 `SettingSlider.trackBounds`），半行宽下仍然拖得准。
+     */
+    fun cellSlider(
+        line: LinearLayout,label: String,min: Float,max: Float,step: Float,value: Float,
+        format: (Float)->String,onValue: (Float)->Unit
+    ): SettingSlider {
+        val slider=SettingSlider(this,label,min,max,step,value,onValue,format)
+        line.addView(slider,lp(0,-2).apply { weight=1f; if(line.childCount>0) leftMargin=dp(TvStyle.GAP_INLINE) })
+        return slider
+    }
+    /** 两列网格里的一格（开关）：与 [cellSetting] 同宽同位。 */
+    fun cellSwitch(line: LinearLayout,view: TvSwitchRow): TvSwitchRow {
+        line.addView(view,lp(0,-2).apply { weight=1f; if(line.childCount>0) leftMargin=dp(TvStyle.GAP_INLINE) })
+        return view
+    }
+    /**
+     * 两栏并排时把两块面板的底板拉成**同高**。
+     *
+     * 两栏的行业数往往不同（按键七行、弹幕五行），直接 wrap_content 会让两块底板一高一低，
+     * 看起来像矮的那块缺了一角。只在首次布局后量一次：之后两栏内容都不增删行。
+     */
+    fun equalHeights(container: LinearLayout,panels: List<LinearLayout>) {
+        container.addOnLayoutChangeListener(object: View.OnLayoutChangeListener {
+            override fun onLayoutChange(v: View,left: Int,top: Int,right: Int,bottom: Int,oldLeft: Int,oldTop: Int,oldRight: Int,oldBottom: Int) {
+                val height=panels.maxOfOrNull { it.height } ?: 0
+                if(height<=0) return
+                v.removeOnLayoutChangeListener(this)
+                panels.forEach { panel ->
+                    val params=panel.layoutParams as? LinearLayout.LayoutParams ?: return@forEach
+                    if(params.height!=height) { params.height=height; panel.layoutParams=params }
+                }
+            }
+        })
+    }
+    /**
+     * 并排两栏的竖向出口（在两栏建完之后赋值，见「按键设置 ｜ 弹幕设置」那一段）。
+     *
+     * [wireRows] 按「行号 + 列号」算上下左右，前提是各行格数对齐；并排两栏的行业数不同
+     * （左栏七行、右栏五行），按行号算会把左栏第五行之后的「下 / 上」串到右栏去。因此那一段
+     * 自己把两条竖链重新指一遍，并在这里交给「焦点串联」在 [wireRows] 之后调用。
+     */
+    var rewireSidePanels: ()->Unit={}
+
+    // ══════════════════ 一、播放交互 ══════════════════
+    //
+    // 四块：播放偏好（两列）/ 播放显示（一行四格）/ 按键设置与弹幕设置（左右并排）。
+    // 顺序按「看剧时最常改的在前」：先定清晰度与倍速，再看画面上显示什么，
+    // 最后是并排的两栏——左栏改遥控器键位，右栏调弹幕。
+    val playbackPage=pageColumn(0)
+    parent.addView(playbackPage,lp(-1,-2))
+    // —— 播放偏好：四行两列，全部两格一行 ——
+    //
+    // 六个「点开选一项」的设置 + 两枚滑块 + 两个开关，两两一行排成四行：
+    //   清晰度 / 倍速、画面模式 / 解码、竖屏短剧全屏 / 画面缩放、自动连播 / 快进快退。
+    // 左列是「开关」，右列是「数值与画面」，用户扫一列就能改完一类。
+    //
+    // 滑块也从整宽改成半行：轨道有 `SettingSlider.minTrack` 保底 96dp，
+    // 半行宽下百分比与秒数仍然拨得准，面板高度却省掉两条整宽行。
+    val playback=panel(playbackPage,gap=TvStyle.GAP_INLINE)
     heading(playback,"播放偏好","所有剧集共用，播放中也可调整")
-    heading(device,"片单与设备","保管记录，导入导出")
-    // 这些设置项都是全站统一的常规按钮，声明成 TvButton 才能参与下面几栏的焦点串联。
-    // 搜索源：只影响搜索页（结果、联想词、热搜词），分类 / 榜单 / 详情 / 播放仍然走 App 接口。
-    // App 接口结果全、能一直翻页，但要求这台设备在服务端注册过；官网免登录，一次 10 条按页翻。
-    // 放在「片单与设备」第一项：它是取内容的一条通道，与收藏 / 记录这些「这一台机器怎么取数」同类。
-    lateinit var searchSourceButton: TvButton
-    searchSourceButton=setting(device,"搜索源  ·  ${library.searchSource.label}") {
-        showSearchSourcePicker(searchSourceButton)
-    }
+    val prefRow1=lineRow(playback)
     lateinit var qualityButton: TvButton
-    qualityButton=setting(playback,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
+    qualityButton=cellSetting(prefRow1,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
     lateinit var defaultSpeed: TvButton
-    defaultSpeed=setting(playback,"默认倍速  ·  ${PlaybackSpeed.label(library.playbackSpeed)}") { showSpeedPicker(defaultSpeed,false) }
+    defaultSpeed=cellSetting(prefRow1,"默认倍速  ·  ${PlaybackSpeed.label(library.playbackSpeed)}") { showSpeedPicker(defaultSpeed,false) }
+    val prefRow2=lineRow(playback)
     lateinit var frame: TvButton
-    frame=setting(playback,"画面模式  ·  ${library.frameMode.label}") { showFramePicker(frame,false) }
+    frame=cellSetting(prefRow2,"画面模式  ·  ${library.frameMode.label}") { showFramePicker(frame,false) }
     // 视频解码：硬件 / 软件。硬件省电、4K 更稳；软件兼容性更好，花屏、绿屏、
     // 音画不同步、黑屏有声这类片源问题通常能绕过。改完下一次起播生效；
     // 正在播放时从播放设置面板改，会当场重建播放器并从当前位置续播。
     lateinit var decoderButton: TvButton
-    decoderButton=setting(playback,"视频解码  ·  ${library.decoderMode.label}") { showDecoderPicker(decoderButton,false) }
-    lateinit var autoNextButton: TvButton
-    autoNextButton=setting(playback,"自动连播  ·  ${if(library.autoNext) "开启" else "关闭"}") {
-        library.autoNext=!library.autoNext
-        // 关掉连播时把已经挂进队列的下一集摘掉，否则它还会在片尾自己播下去。
-        if(!library.autoNext) dropQueuedEpisode()
-        autoNextButton.text="自动连播  ·  ${if(library.autoNext) "开启" else "关闭"}"
+    decoderButton=cellSetting(prefRow2,"视频解码  ·  ${library.decoderMode.label}") { showDecoderPicker(decoderButton,false) }
+    // —— 下面两行是「左开关 / 右滑块」——
+    // 左列：竖屏短剧全屏、自动连播（都是开关）；
+    // 右列：画面缩放、快进快退时长（都是「画面与手感」，调完立刻能感觉到）。
+    // 早先画面缩放是一条整宽滑块，右半边全空；现在与另一枚滑块对齐成两列，
+    // 面板高度从四条整宽行压到两条，滑轨也仍然有半行宽（`SettingSlider.minTrack` 保底 96dp）。
+    val prefRow3=lineRow(playback)
+    // 竖屏短剧全屏（左）：竖屏 9:16 放到 16:9 电视上只占中间一条，打开这一项把**画面本身转 90°**，
+    // 铺满屏幕、不裁内容（见 `applyVideoGeometry`）。横屏片源不受影响。
+    //
+    // **只在手机 / 平板上可用**（见 [autoFullscreenAvailable]）：电视是遥控器 + 固定 16:9 大屏，
+    // 竖向画面已经由 `applyVideoGeometry()` 按「等比铺满、不裁内容」摆好，再整屏转一层
+    // 只会让标题条、控制条、弹幕一起歪过去。这一项是留给会竖着拿 / 系统不转屏的手机、平板的。
+    // 形态判定与「设备类型」那一格同源（自动判定 = `detectDeviceForm()` 的打分，
+    // 手动选过就以用户选的为准），因此用户在设置里改完「设备类型」重建这一屏之后，
+    // 这一格的可用性立刻跟着变。
+    val fullscreenAvailable=autoFullscreenAvailable()
+    val fullscreenRow=cellSwitch(prefRow3,TvSwitchRow(this,
+        // 说明写在**项名里**，不用 `·` 分隔：开关这一款只画项名，`·` 后面那段是给
+        // 「点开选一项」的按钮用的（见 `TvSettingButton.applyLabel`），放在这里会看不见。
+        if(fullscreenAvailable) "竖屏短剧全屏" else "竖屏短剧全屏（手机、平板可用）",
+        // 不可用时**显示为关**：存的值原样留着（换回电视就该恢复），但这一格读起来必须是
+        // 「现在没开、也开不了」，而不是「开着却动不了」。
+        checked=fullscreenAvailable && library.autoFullscreen,
+        onToggle={ on ->
+            library.autoFullscreen=on
+            // 改完立即落盘。播放层用的「视频画在哪种视图上」是在建 PlayerView 那一刻定的，
+            // 因此正在播放时只能重建一次播放层（换集入口就在 Activity 上，带上当前位置续播）。
+            if(onPlaybackPage()) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
+        }).apply { tag=SETTINGS_TAG_AUTO_FULLSCREEN })
+    if(!fullscreenAvailable) {
+        // 与「减少动画」那一格同一套禁用写法（见下面 `reduceRow`）：不进焦点链 + 不响应点击 +
+        // 禁用配色，再抬一点整体透明度——3 米外仍要读得清「有这一项、只是这台设备用不上」。
+        fullscreenRow.isEnabled=false
+        fullscreenRow.isFocusable=false
+        fullscreenRow.isFocusableInTouchMode=false
+        fullscreenRow.refresh()
+        fullscreenRow.alpha=.72f
+        fullscreenRow.contentDescription="竖屏短剧全屏，仅手机、平板可用，当前设备类型下不可更改"
     }
-    // 画面缩放：**只缩播放画面本身**，弹幕层仍然是整屏坐标（见 `applyVideoScale`）。
-    // 与「弹幕大小」共用同一种滑动条，1..100 就是百分比读数。
-    // 放在「播放偏好」的最后一行：它调的是画面尺寸，属于「看着不舒服才来改」的一项，
-    // 前面五项（清晰度 / 倍速 / 画面模式 / 解码 / 连播）才是常改的。
-    val videoScaleCell=fullSlider(playback,"画面缩放",1f,100f,1f,library.videoScale,format={ "${it.toInt()}%" }) { value ->
+    // 画面缩放（右）：**只缩播放画面本身**，弹幕层仍然是整屏坐标（见 `applyVideoScale`）。
+    // 1..100 就是百分比读数，与「弹幕大小」共用同一种滑动条。
+    val scaleSlider=cellSlider(
+        prefRow3,"画面缩放",1f,100f,1f,library.videoScale,
+        format={ "${it.toInt()}%" }
+    ) { value ->
         library.videoScale=value
         if(onPlaybackPage()) applyVideoScale()
     }
-    val scaleSlider: DanmakuSlider=videoScaleCell.first
-    val scaleLine: View=videoScaleCell.second
-    lateinit var backup: TvButton
-    backup=setting(device,"手机备份与恢复") {
-        runCatching { LibraryBackup.encode(library.snapshot()) }.onSuccess { encoded ->
-            tvTools.libraryTransfer(encoded,backup) { data,restoreSettings ->
-                favoriteMonitor.stop(); library.restore(data,restoreSettings)
-                // 备份里可能带着「减少动画」（见 BackupSettings.reduceAnim）：
-                // 恢复完立刻按新设置重算档位，否则要等到下次启动才生效。
-                applyPerformanceProfile()
-                tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
-                showCatalog(); favoriteMonitor.check()
-                showHint("记录已合并恢复")
-            }
-        }.onFailure { tvTools.info("无法生成备份","本机记录暂时无法导出，请重试。",backup) }
+    val prefRow4=lineRow(playback)
+    // 自动连播（左）：关掉时把已经挂进队列的下一集摘掉，否则它还会在片尾自己播下去。
+    val autoNextRow=cellSwitch(prefRow4,TvSwitchRow(this,"自动连播",checked=library.autoNext,onToggle={ on ->
+        library.autoNext=on
+        if(!on) dropQueuedEpisode()
+    }))
+    // 快进快退时长（右）：播放界面按左右键单次跳过的秒数，2..20 秒。
+    // 连按加速按同一比例走（见 `MainActivity.seek`）：10 秒档是「连按 5 次后每次 30 秒」，
+    // 20 秒档就是 60 秒，2 秒档就是 6 秒——改档不会让连按手感错位。
+    val seekSlider=cellSlider(
+        prefRow4,"快进快退",2f,20f,1f,library.seekStep.toFloat(),
+        format={ "${it.toInt()} 秒" }
+    ) { value -> library.seekStep=value.toInt() }
+    track(0,qualityButton,defaultSpeed)
+    track(0,frame,decoderButton)
+    track(0,fullscreenRow,scaleSlider)
+    track(0,autoNextRow,seekSlider)
+
+    // —— 播放显示：画面左上角那一条里的四项 ——
+    // 剧集标题 / 当前集数 / 时间 / 网速四项各自开关，排成一行四格，**默认四格全关**。
+    // 关掉不等于看不见：轻点画面 / 唤出任何一块播放菜单时，四项临时全部显示
+    //（用户正在读「这是哪一集、播到哪儿」），收起之后再回到这里的选择——见 `syncPlaybackInfo`。
+    // 它们只决定「常驻的那一条要不要显示这一块」，不改变页面结构，因此改完立刻落盘即可，
+    // 不重建整页：回到播放页时 `syncPlaybackInfo` 会按新设置摆一次。
+    val playInfoPanel=panel(playbackPage)
+    heading(playInfoPanel,"播放显示","默认全关 · 唤出菜单或轻点时四项全部显示")
+    fun playInfoOn(key: String)=when(key) {
+        "title" -> library.playerTitle
+        "episode" -> library.playerEpisode
+        "clock" -> library.playerClock
+        else -> library.playerSpeed
     }
-    // 「清空应用缓存」：把本机恢复成第一次安装的样子（收藏 / 记录 / 设置 / 设备身份 / 会话，
-    // 以及外部存储里那两份镜像一起删）。这是唯一一个不可撤销的操作，放在第三项，
-    // 与「手机备份与恢复」相邻：清之前先导出备份是最自然的顺序。
-    // 名字用「缓存」是用户能理解的叫法，确认框里会写清收藏与记录也会一起清掉。
-    lateinit var reset: TvButton
-    reset=setting(device,resetLabel()) { clearLocalData(reset) }
-    lateinit var license: TvButton
-    license=setting(device,"开源许可") {
-        tvTools.info("开源许可",licenseText(),license)
+    fun setPlayInfo(key: String,on: Boolean) {
+        when(key) {
+            "title" -> library.playerTitle=on
+            "episode" -> library.playerEpisode=on
+            "clock" -> library.playerClock=on
+            else -> library.playerSpeed=on
+        }
+        syncPlaybackInfo()
     }
-    // —— 界面设置：单独一栏，两个选项横向排列 ——
-    // 「每行卡片」与「恢复隐藏的剧集」都是“列表 / 界面”层面的设置，从原来两栏里抽出来
-    // 放在最上面：一个是全局排版，一个是恢复被隐藏的内容，两项并排、各占半栏。
-    // 插在说明文字与下面两栏之间（parent 的第 1 个位置）。
-    val ui=column().apply { clipChildren=false; clipToPadding=false }
-    groupPanel(ui)
-    parent.addView(ui,1,lp(-1,-2).apply { bottomMargin=dp(TvStyle.GAP_GROUP) })
-    heading(ui,"界面设置","列表排版 / 隐藏内容 / 功能显示 / 设备形态 / 调试")
-    val uiRow=row().apply { clipChildren=false; clipToPadding=false }
-    ui.addView(uiRow,lp(-1,-2))
+    val playRow=lineRow(playInfoPanel)
+    val playCells=PLAY_INFO_ENTRIES.mapIndexed { index,(key,name) ->
+        val cell=TvSwitchRow(this,name,checked=playInfoOn(key),onToggle={ on -> setPlayInfo(key,on) })
+        cell.tag=SETTINGS_TAG_PLAY_PREFIX+key
+        playRow.addView(cell,lp(0,-2).apply { weight=1f; if(index>0) leftMargin=dp(TvStyle.GAP_INLINE) })
+        cell
+    }
+    track(0,*playCells.toTypedArray())
+    // —— 播放界面自动消失：播放设置菜单 / 选集面板 / 底部控制条「无操作几秒收起」——
+    // 到点之后与按返回键完全一样：播放设置收起、选集面板收起并把焦点还给控制条 / 下拉箭头、
+    // 控制条收起（含暂停状态）。计时从**最后一次操作**算起（方向键、确定、触摸都算），
+    // 因此调到「15 秒」也不会在用户正按键的时候被收走。
+    //
+    // 项名前先放一行小字：滑块上只有一个读数，读不出「收起来的是哪几块、收了之后会怎样」，
+    // 而这两句正是用户调这一项时最需要先看到的（见需求「上面加一行小字解释」）。
+    playInfoPanel.addView(text(
+        "播放设置、选集面板、底部控制条无操作后自动收起，与按返回键相同。",
+        14f,TvStyle.muted
+    ).apply { setPadding(0,dp(TvStyle.GAP_INLINE),0,0) },lp(-1,-2))
+    val panelTimeout=fullSlider(
+        playInfoPanel,"播放界面自动消失",
+        PLAYER_PANEL_TIMEOUT_RANGE.first.toFloat(),PLAYER_PANEL_TIMEOUT_RANGE.last.toFloat(),1f,
+        library.playerPanelTimeout.toFloat(),
+        format={ "${it.toInt()} 秒" }
+    ) { value -> library.playerPanelTimeout=value.toInt() }
+    track(0,panelTimeout)
+
+    // —— 按键设置 ｜ 弹幕设置：左右并排 ——
+    //
+    // 两块都只作用于「看剧时」，行数也相近（七行 / 五行），并排之后这一大项不再
+    // 一路往下拉长：**左栏改键位、右栏调弹幕**，一眼能同时看到。
+    //
+    // 两栏的头部同高（标题行 [headHeight] + 两行说明），因此下面第一行设置落在同一条横线上。
+    val mid=row().apply { gravity=Gravity.TOP; clipChildren=false; clipToPadding=false }
+    playbackPage.addView(mid,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_GROUP) })
+    val headHeight=dp(TvStyle.BUTTON_COMPACT+2*TvStyle.SOFT_BAND)
+    /** 面板头部：标题一行 + 说明两行；[trailing] 是右侧那枚圆钮（「恢复默认」）。 */
+    fun panelHead(group: LinearLayout,title: String,subtitle: String,trailing: View?=null) {
+        val head=row().apply { gravity=Gravity.CENTER_VERTICAL }
+        head.addView(text(title,18f,TvStyle.text).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
+        if(trailing!=null) head.addView(trailing,lp(-2,-2))
+        group.addView(head,lp(-1,headHeight))
+        group.addView(text(subtitle,14f,TvStyle.muted).apply {
+            minLines=2; maxLines=2; ellipsize=TextUtils.TruncateAt.END
+            setPadding(0,dp(TvStyle.GAP_TIGHT),0,dp(TvStyle.GAP_BLOCK))
+        },lp(-1,-2))
+    }
+    // 按键（左）：标题右侧「恢复默认」圆钮 + 六行设置项（上 / 下 / 左 / 右 / 菜单 / 确定）。
+    //
+    // 作用域是**播放界面**：浏览页面里上下左右就是焦点移动，是遥控器的基本手感，不能改；
+    // 返回键也不在其中——它在任何绑定下都必须是退出播放的出口，否则用户可能把自己锁在播放界面里。
+    // 这两条边界写在 [com.hgtv.star.core.KeyMap] 的注释里，改这里之前先读那一段。
+    val keys=sidePanel(mid)
+    // 动作先挂一个空壳：真正要做的事（恢复绑定 + 就地刷新六格文案）写在下面
+    // [refreshKeyLabels] 之后——Kotlin 的局部函数不能前向引用，圆钮又要建在头部里。
+    var restoreAction: ()->Unit={}
+    val restore=IconButton(
+        this,R.drawable.ic_action_restore,restoreKeysLabel(),TvStyle.BUTTON_COMPACT
+    ) { restoreAction() }
+    panelHead(keys,"按键设置","播放界面：六个键各做什么",restore)
+    var keyCells: List<TvButton> = emptyList()
+    /** 六格的文案：改完一个键就地刷新，不重建整页（焦点仍停在刚点的那一格上）。 */
+    fun refreshKeyLabels() {
+        keyCells.forEachIndexed { index,cell ->
+            val label=keyRowLabel(PlayerKey.entries[index])
+            cell.setLabel(label); cell.contentDescription=label
+        }
+        restore.contentDescription=restoreKeysLabel()
+    }
+    fun keyCell(key: PlayerKey): TvButton {
+        val cell=setting(keys,"") {}
+        cell.setOnClickListener { showKeyActionPicker(key,cell) { refreshKeyLabels() } }
+        return cell
+    }
+    keyCells=PlayerKey.entries.map { keyCell(it) }
+    // 「恢复默认按键」：改回出厂绑定（上 / 菜单 = 播放设置、下 = 选集、左 = 快退、
+    // 右 = 快进、确定 = 播放 / 暂停）。没有文字读数，当前是否默认写在无障碍描述里。
+    restoreAction={
+        library.keyMap=KeyMap.DEFAULT
+        refreshKeyLabels()
+        showHint("已恢复默认按键")
+    }
+    refreshKeyLabels()
+    // 弹幕（右）：显示方式 / 速度 / 聚合 / 字号 / 透明度。五行**始终显示**（不看是否隐藏弹幕）：
+    // 设置页是**配置**而不是预览，用户先把字号调好、再决定要不要显示弹幕是常见顺序，
+    // 一选隐藏就整栏塌下去，反而像「这些设置丢了」。
+    val danmaku=sidePanel(mid)
+    lateinit var danmakuSetting: TvButton
+    lateinit var danmakuSpeedSetting: TvButton
+    lateinit var danmakuScaleRow: SettingSlider
+    lateinit var danmakuAlphaRow: SettingSlider
+    panelHead(danmaku,"弹幕设置","显示方式 / 速度 / 聚合 / 字号 / 透明度")
+    danmakuSetting=setting(danmaku,danmakuLabel("弹幕显示  ·  ")) {}
+    danmakuSetting.setOnClickListener { showDanmakuPicker(danmakuSetting,false) }
+    danmakuSpeedSetting=setting(danmaku,"弹幕速度  ·  ${library.danmakuSpeed.label}") {
+        showDanmakuSpeedPicker(danmakuSpeedSetting,false)
+    }
+    // 相同弹幕聚合：默认开启，与之前的行为一致；关闭后逐条原样滚动，不再合并、不再带 ×N。
+    val danmakuMergeRow=switchSetting(danmaku,TvSwitchRow(this,"相同弹幕聚合",checked=library.danmakuMerge,onToggle={ on ->
+        library.danmakuMerge=on
+        danmakuView?.mergeRepeats=on
+    }))
+    // 聚合条数：同一句在聚合窗口内达到几条才合并（2..10，默认 2 = 出现两次就合并）。
+    // 不到这个条数的照常逐条滚过去、不带 ×N、也不进中央；达到才合成一条。
+    // 关掉「相同弹幕聚合」时这一行仍然显示：设置页是配置页，先把阈值调好再打开聚合是常见顺序。
+    val danmakuMergeMinRow=fullSlider(
+        danmaku,"聚合条数",
+        DANMAKU_MERGE_MIN_RANGE.first.toFloat(),DANMAKU_MERGE_MIN_RANGE.last.toFloat(),1f,
+        library.danmakuMergeMin.toFloat(),
+        format={ "${it.toInt()} 条" }
+    ) { value ->
+        library.danmakuMergeMin=value.toInt(); danmakuView?.mergeMinCount=value.toInt()
+    }
+    // 弹幕大小：整行一条滑块（半屏宽仍足够拨准，读数在轨道右端）。
+    danmakuScaleRow=fullSlider(danmaku,"弹幕大小",DanmakuStyle.SCALE_MIN,DanmakuStyle.SCALE_MAX,DanmakuStyle.SCALE_STEP,library.danmakuScale) { value ->
+        library.danmakuScale=value; danmakuView?.textScale=value
+    }
+    // 弹幕透明度：整行一条滑块。
+    danmakuAlphaRow=fullSlider(danmaku,"弹幕透明度",DanmakuStyle.ALPHA_MIN,DanmakuStyle.ALPHA_MAX,DanmakuStyle.ALPHA_STEP,library.danmakuAlpha) { value ->
+        library.danmakuAlpha=value; danmakuView?.textAlpha=value
+    }
+    // 两栏底板同高：左栏多一行，右边补齐，底边落在同一条横线上。
+    equalHeights(mid,listOf(keys,danmaku))
+    // 行登记：两栏按「行号」并成一行，左栏是「恢复默认」+ 六行按键、右栏是弹幕六行。
+    val danmakuColumn=listOf<View>(danmakuSetting,danmakuSpeedSetting,danmakuMergeRow,danmakuMergeMinRow,danmakuScaleRow,danmakuAlphaRow)
+    val keyColumn=listOf<View>(restore)+keyCells
+    keyColumn.forEachIndexed { i,v -> track(0,*listOfNotNull(v,danmakuColumn.getOrNull(i)).toTypedArray()) }
+    danmakuColumn.drop(keyColumn.size).forEach { track(0,it) }
+    /**
+     * 并排两栏的竖向出口要**各自成链**，不能按「行号 + 列号」算。
+     *
+     * 左栏七行、右栏六行：按行号算的话，左栏第六行之后的「上 / 下」会串到右栏去。
+     * 这里把两条链重新指一遍，并把行号对齐的六行横向接通。
+     */
+    rewireSidePanels={
+        keyColumn.forEachIndexed { i,v ->
+            v.nextFocusUpId=if(i==0) playCells.first().id else keyColumn[i-1].id
+            v.nextFocusDownId=keyColumn.getOrNull(i+1)?.id ?: v.id
+            v.nextFocusLeftId=v.id
+        }
+        danmakuColumn.forEachIndexed { i,v ->
+            v.nextFocusUpId=if(i==0) playCells.last().id else danmakuColumn[i-1].id
+            v.nextFocusDownId=danmakuColumn.getOrNull(i+1)?.id ?: v.id
+            v.nextFocusRightId=v.id
+        }
+        keyColumn.forEachIndexed { i,left ->
+            val right=danmakuColumn.getOrNull(i) ?: return@forEachIndexed
+            left.nextFocusRightId=right.id
+            right.nextFocusLeftId=left.id
+        }
+    }
+
+    // ══════════════════ 二、外观导航 ══════════════════
+    //
+    // 三块：布局启动（两列）/ 导航显隐（四列两行）/ 主题外观（四列五行）。
+    val appearancePage=pageColumn(1)
+    parent.addView(appearancePage,lp(-1,-2))
+    // —— 布局启动：两列 ——
+    // 「每行卡片」是列表排版，「打开应用进入推荐」是启动落点、「返回顶部」是列表页那枚浮层
+    // 何时出现，三件都是「一进应用 / 一进列表就看到」的设置。
+    val layoutPanel=panel(appearancePage,gap=TvStyle.GAP_INLINE)
+    heading(layoutPanel,"布局启动","列表怎么排、进应用先看哪一页、回到顶部何时出现")
+    val layoutRow=lineRow(layoutPanel)
     // 每行卡片数（全局）：4 / 5 / 6 / 7 / 8。首页剧架、榜单 / 分类 / 搜索 / 收藏 / 历史 / 我的 共用。
     // 列数变少时卡片变宽，封面与卡片文字一起放大（见 HomeScreen.slotWidth / textScale
     // 与 SeriesGrid.gridTextScale）。改完回到列表即按新列数排版。
     lateinit var homeColumnsButton: TvButton
-    homeColumnsButton=gridSetting(uiRow,"每行卡片  ·  ${library.homeColumns} 张") { showHomeColumnsPicker(homeColumnsButton) }
-    // 中间留一段弹性空白：第一格贴左、第二格贴右，两枚按钮的左右边缘分别与下面
-    // 两栏里的设置项对齐（见 [alignUiButtons]）。
-    uiRow.addView(Space(this),lp(0,1).apply { weight=1f })
-    lateinit var hidden: TvButton
-    hidden=gridSetting(uiRow,"恢复隐藏的剧集  ·  ${library.hidden().size} 部") {
-        library.unhideAll(); hidden.text="恢复隐藏的剧集  ·  0 部"
-    }
-    // 调试模式：打开后各页面右上角常驻一块现场面板（播放信息 / 接口与登录的近况），
-    // 用户反馈问题拍一张照就能定位。默认关闭；关掉时面板立刻摘掉。
-    // 排在「每行卡片 / 恢复隐藏的剧集」之下、导航开关之上：它只影响「屏幕上多不多一块字」，
-    // 与排版同属界面层面，但不该挤掉那两格并排的版式。
-    //
-    // 这一行与「打开应用进入推荐」并排，两格宽度与上面「每行卡片 / 恢复隐藏的剧集」完全一致
-    // （见 [alignUiButtons]）：设置页里所有成对的开关都落在同两条竖线上。
-    val uiRow2=row().apply { clipChildren=false; clipToPadding=false }
-    ui.addView(uiRow2,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_BLOCK) })
-    val debugRow=TvSwitchRow(this,"调试模式",checked=library.debugMode,onToggle={ on ->
-        library.debugMode=on
-        syncDebugOverlay()
-    }).apply { tag=SETTINGS_TAG_DEBUG }
-    uiRow2.addView(debugRow,lp(0,-2).apply { weight=1f })
-    uiRow2.addView(Space(this),lp(0,1).apply { weight=1f })
-    // 打开应用是否进入推荐：与「功能显示 → 推荐」联动（见 Library.setNavHidden / launchRecommend）。
+    homeColumnsButton=cellSetting(layoutRow,"每行卡片  ·  ${library.homeColumns} 张") { showHomeColumnsPicker(homeColumnsButton) }
+    // 打开应用是否进入推荐：与「导航显隐 → 推荐」联动（见 Library.setNavHidden / launchRecommend）。
     // 关掉「推荐」显示时这一项会被一起关掉；反过来打开这一项时，导航栏那枚入口也会恢复。
-    val launchRecommendRow=TvSwitchRow(this,"打开应用进入推荐",checked=library.launchRecommend,onToggle={ on ->
+    val launchRecommendRow=cellSwitch(layoutRow,TvSwitchRow(this,"打开应用进入推荐",checked=library.launchRecommend,onToggle={ on ->
         library.launchRecommend=on
         // 打开这一项时会把导航栏那枚推荐入口一起恢复（见 Library.launchRecommend），
-        // 「功能显示」那一格的状态跟着变了，因此整页重建一次，并把焦点按回这一行。
+        // 「导航显隐」那一格的状态跟着变了，因此整页重建一次，并把焦点按回这一行。
         settingsPendingFocus=SETTINGS_TAG_LAUNCH_RECOMMEND
         showCatalog()
-    }).apply { tag=SETTINGS_TAG_LAUNCH_RECOMMEND }
-    uiRow2.addView(launchRecommendRow,lp(0,-2).apply { weight=1f })
-    // 「减少动画优化性能」：**只在非低配设备上出现**。
-    //
-    // 低配机（2GB 档电视）本来就强制按低配档跑（见 compat/Platform.kt 的 lowEndTv），
-    // 开关摆在那里永远是「已打开且不能关」，对用户没有意义，因此整行不建。
-    // 非低配用户遇到发热 / 掉帧时可以自己打开它，效果与低配机完全一致：
-    // 关掉焦点缩放、只给焦点卡画柔光位图、不画海报井暗角、不跑马灯、跨栏不做平滑滚动。
-    //
-    // 单独一行（不是塞进上面那一行变成三格）：设置页里所有成对开关都落在同两条竖线上，
-    // 三格会把左右两条线一起挤歪；这一行占左格，右格留给下面的「短剧自动全屏」。
-    val uiRow3=row().apply { clipChildren=false; clipToPadding=false }
-    ui.addView(uiRow3,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_BLOCK) })
-    val reduceRow: TvSwitchRow?=if(!lowEndTv()) {
-        val reduce=TvSwitchRow(this,"减少动画优化性能",checked=library.reduceAnim,onToggle={ on ->
-            library.reduceAnim=on
-            // 先落档位，再重建：已有卡片在构造时就把「是否跑马灯」捉了一份
-            // （见 PosterCard.marqueeOn），只改静态开关不会作用到已经建好的那一屏。
-            applyPerformanceProfile()
-            settingsPendingFocus=SETTINGS_TAG_REDUCE_ANIM
-            showCatalog()
-        }).apply { tag=SETTINGS_TAG_REDUCE_ANIM }
-        uiRow3.addView(reduce,lp(0,-2).apply { weight=1f })
-        reduce
-    } else null
-    // —— 短剧自动全屏 ——
-    // 紧跟在「减少动画」后面，**落在右格**（低配设备上没有「减少动画」时它同样在右格）。
-    //
-    // 竖屏短剧（9:16）放到 16:9 的电视上，「完整画面」只占中间一条、左右两条黑边很宽。
-    // 打开这一项之后把**画面本身转 90°**：9:16 旋转后就是 16:9，正好铺满屏幕、不裁掉任何内容
-    //（见 `applyVideoGeometry`）。转得动的前提是视频画在 TextureView 上（见
-    // `res/layout/player_surface_texture.xml`），因此这一项打开时播放器会用另一版视图。
-    // 横屏片源不受影响，仍按「画面模式」里选的那一档。
-    val fullscreenRow=TvSwitchRow(this,"短剧自动全屏",checked=library.autoFullscreen,onToggle={ on ->
-        library.autoFullscreen=on
-        // 改完立即落盘。播放层用的「视频画在哪种视图上」是在建 PlayerView 那一刻定的，
-        // 因此正在播放时只能重建一次播放层（换集入口就在 Activity 上，带上当前位置续播）。
-        if(onPlaybackPage()) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
-    }).apply { tag=SETTINGS_TAG_AUTO_FULLSCREEN }
-    //
-    // **固定在右格**：它的左右边缘要与上一行的「打开应用进入推荐」落在同一条竖线上
-    //（用户要求这两枚开关对齐）。做法是由中间那格弹性空白把它顶到右边缘——
-    // 不给它 `leftMargin`：留了边距之后它的右边缘会比上行那枚左收一格，
-    // 两行摆在一起就看不出来是同一列了。
-    uiRow3.addView(Space(this),lp(0,1).apply { weight=1f })
-    uiRow3.addView(fullscreenRow,lp(0,-2).apply { weight=1f })
-    // —— 使用设备：自动 / 手机 / 平板 / 电视 ——
-    // 形态判定（见 `compat/DeviceForm.kt`）本身是打分的，遇到谎报能力的盒子 / 触屏一体机
-    // 总有判错的可能；这一格把最终决定权交给用户，选完立刻按新形态重建这一屏。
-    //
-    // 标签里直接写出「自动判定现在是什么」，用户不用点开弹窗就知道系统认成了什么。
-    // 只占左格，右格留空——与上面两行保持同两条竖线（见 [alignUiButtons]）。
-    fun deviceFormLabel(): String {
-        val mode=deviceMode()
-        return when(library.deviceForm) {
-            "phone","tablet","tv" -> "使用设备  ·  ${mode.label}（手动）"
-            else -> "使用设备  ·  自动（${mode.label}）"
-        }
+    }).apply { tag=SETTINGS_TAG_LAUNCH_RECOMMEND })
+    track(1,homeColumnsButton,launchRecommendRow)
+    // 返回顶部按钮：与上面两格**同宽同高**——同一套 [cellSetting]，右半边留空（[padLine]）。
+    // 整宽一行虽然不折行，但宽度是上面那两格的两倍，一栏里会读成「这一项更大」，
+    // 焦点框跳过去时也像换了一个档位；因此宁可让读数取短说法（见 `backToTopShort`）。
+    val backToTopRow=lineRow(layoutPanel)
+    lateinit var backToTopButton: TvButton
+    backToTopButton=cellSetting(backToTopRow,"返回顶部  ·  "+backToTopShort(library.backToTop)) {
+        showBackToTopPicker(backToTopButton)
     }
-    val uiRow4=row().apply { clipChildren=false; clipToPadding=false }
-    ui.addView(uiRow4,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_BLOCK) })
-    lateinit var deviceFormButton: TvButton
-    deviceFormButton=gridSetting(uiRow4,deviceFormLabel()) { showDeviceFormPicker(deviceFormButton) }
-    deviceFormButton.tag=SETTINGS_TAG_DEVICE_FORM
-    uiRow4.addView(Space(this),lp(0,1).apply { weight=1f })
-    // 功能显示：**八枚开关排成一张四列网格**，每格都是一枚独立的开关（左：名称，右：滑块）。
-    // - 前五枚是导航栏的圆形入口（推荐 / 搜索 / 分类 / 榜单 / 我的），关掉那一页就不建它；
-    // - 后三枚是首页的本机记录栏目（历史记录 / 我的收藏 / 稍后观看），关掉首页就不铺那一栏。
+    padLine(backToTopRow,1)
+    backToTopButton.tag=SETTINGS_TAG_BACK_TO_TOP
+    track(1,backToTopButton)
+
+    // —— 导航显隐：十二枚开关排成一张四列网格（三整行）——
+    // 前五枚是导航栏的圆形入口（推荐 / 搜索 / 分类 / 榜单 / 我的），关掉那一页就不建它；
+    // 后七枚是首页的栏目（本机记录三栏 + 热播四栏），关掉首页就不铺那一栏。
     //
     // 两类开关放在同一张网格里，是因为它们回答的是同一个问题——「这个入口 / 这一栏要不要显示」；
     // 分成两个小标题、两张网格只会让同一件事读成两套体系，还白占一屏高度。
-    // 排成四列正好两整行（4 + 4），末行不留空位。
+    // 排成四列正好三整行（4 + 4 + 4），末行不留空位。
     //
     // 设置不在这一组里，始终显示（关掉设置就再也回不来）。
-    // 「推荐」与上面「打开应用进入推荐」联动：关掉它，导航栏里不再有这枚入口，
-    // 打开应用也不再自动进推荐（见 Library.setNavHidden）。
-    //
-    // 关掉导航入口改的是页面级结构（那一枚建 / 不建），必须重建整页；
-    // 先把落点记进 [settingsPendingFocus]，重建后按 `settings-nav-<key>` 找回同一格。
-    // 关掉首页栏目只影响首页铺栏，就地落盘即可，不必重建。
-    ui.addView(
-        text("功能显示",15f,TvStyle.textDim).apply { setTypeface(null,Typeface.BOLD) },
-        lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_BLOCK) }
-    )
-    // 一行四枚与「主题外观」的芯片网格同宽（[NAV_GRID_COLUMNS]）：再挤一枚，
-    // 720p 画布上每格只剩 1/5 屏，名称会被挤成省略号；四枚一行刚好放得下。
-    // 最后一行不满时用空位占住列宽，剩下的那一枚不会被拉成半屏宽。
+    val navPanel=panel(appearancePage)
+    heading(navPanel,"导航显隐","关掉的入口不建控件、关掉的栏目不铺首页，设置始终显示")
     val featureEntries=NAV_ENTRIES+HOME_ENTRIES
-    val navRows=mutableListOf<List<View>>()
-    val navSwitches=featureEntries.chunked(NAV_GRID_COLUMNS).map { line ->
-        val navRow=row().apply { clipChildren=false; clipToPadding=false }
-        ui.addView(navRow,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_INLINE) })
-        // 四列固定网格：每一列（含末行补的空位）都按列号带同一个左间距，
-        // 末行那一枚的宽度与上行第一枚完全相同，左边缘也落在同一条竖线上。
+    featureEntries.chunked(NAV_GRID_COLUMNS).forEachIndexed { rowIndex,line ->
+        // 同一张网格里的行间距比普通行距小一档：八枚开关是一整块，不该读成两段。
+        val navRow=lineRow(navPanel,gap=if(rowIndex==0) TvStyle.GAP_INLINE else TvStyle.GAP_TIGHT)
         val cells=line.mapIndexed { index,(key,name) ->
             // 两类的落盘与副作用不同：导航入口要重建整页（那一枚建 / 不建），
             // 首页栏目只是首页少铺一栏，就地落盘、回到首页即生效。
@@ -350,323 +560,21 @@ internal fun MainActivity.settings(parent: LinearLayout) {
             })
             cell
         }
-        repeat(NAV_GRID_COLUMNS-line.size) { index ->
-            navRow.addView(Space(this),lp(0,1).apply {
-                weight=1f
-                if(line.size+index>0) leftMargin=dp(TvStyle.GAP_INLINE)
-            })
-        }
-        navRows+=cells
-        cells
-    }.flatten()
-    // —— 播放显示：画面左上角那一条里的四项 ——
-    // 剧集标题 / 当前集数 / 时间 / 网速四项各自开关，排在「功能显示」下面一行四格（同列宽）。
-    // 它们只决定「播放画面上要不要显示这一块」，不改变页面结构，因此改完立刻落盘即可，
-    // 不必重建整页：回到播放页时 `syncPlaybackInfo` 会按新设置摆一次。
-    fun playInfoOn(key: String)=when(key) {
-        "title" -> library.playerTitle
-        "episode" -> library.playerEpisode
-        "clock" -> library.playerClock
-        else -> library.playerSpeed
+        padLine(navRow,NAV_GRID_COLUMNS-line.size)
+        track(1,*cells.toTypedArray())
     }
-    fun setPlayInfo(key: String,on: Boolean) {
-        when(key) {
-            "title" -> library.playerTitle=on
-            "episode" -> library.playerEpisode=on
-            "clock" -> library.playerClock=on
-            else -> library.playerSpeed=on
-        }
-        syncPlaybackInfo()
-    }
-    ui.addView(
-        text("播放显示",15f,TvStyle.text).apply { setTypeface(null,Typeface.BOLD) },
-        lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_BLOCK) }
-    )
-    val playRow=row().apply { clipChildren=false; clipToPadding=false }
-    ui.addView(playRow,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_INLINE) })
-    val playCells=PLAY_INFO_ENTRIES.mapIndexed { index,(key,name) ->
-        val cell=TvSwitchRow(this,name,checked=playInfoOn(key),onToggle={ on -> setPlayInfo(key,on) })
-        cell.tag=SETTINGS_TAG_PLAY_PREFIX+key
-        playRow.addView(cell,lp(0,-2).apply { weight=1f; if(index>0) leftMargin=dp(TvStyle.GAP_INLINE) })
-        cell
-    }
-    /**
-     * 两格不与整栏同宽，而是**和下面两栏里的设置项同宽**：
-     * 列宽 =（整行宽 − 栏间距）/ 2，再扣掉栏内左右内边距。
-     *
-     * 整栏通铺会让每一格半屏宽，看上去比别的设置项长一截；这里按列宽反推、
-     * 摆好后校正一次，屏幕宽度变化时也跟着重算（两个按钮的左右边缘因此与
-     * 「默认清晰度 / 搜索源」这两行对齐）。
-     */
-    fun alignUiButtons() {
-        val content=groups.width
-        if(content<=0) return
-        val column=(content-dp(TvStyle.GAP_GROUP))/2
-        val target=(column-2*(dp(24)+dp(TvStyle.SOFT_BAND))).coerceAtLeast(dp(120))
-        // 七格（每行卡片 / 恢复隐藏的剧集 / 调试模式 / 打开应用进入推荐 / 减少动画 / 短剧自动全屏 / 使用设备）
-        // 用同一个宽度：设置页里的成对控件因此落在同两条竖线上。
-        // 低配设备上没有「减少动画」那一枚（见上），「短剧自动全屏」仍在右格——
-        // 它要靠中间那格弹性空白顶到右边缘，因此那一格不能省。
-        listOfNotNull(homeColumnsButton,hidden,debugRow,launchRecommendRow,reduceRow,fullscreenRow,deviceFormButton).forEach { button ->
-            val params=button.layoutParams as? LinearLayout.LayoutParams ?: return@forEach
-            if(params.width!=target || params.weight!=0f) {
-                params.width=target
-                params.weight=0f
-                button.layoutParams=params
-            }
-        }
-    }
-    groups.addOnLayoutChangeListener { _,_,_,right,_,_,_,_,_ -> alignUiButtons() }
-    // —— 弹幕：单独一栏，栏内四行 ——
-    // 上面左列 6 项、右列 4 项，高度相当；弹幕这四项只对弹幕生效，抽出来单独成栏。
-    //
-    // 弹幕与按键两栏并排：左边弹幕、右边按键，与上面「播放偏好 / 片单与设备」同一条版式。
-    // 栏内四项各占一行：显示 / 速度 / 大小 / 透明度。
-    val mid=row().apply { gravity=Gravity.TOP; clipChildren=false; clipToPadding=false }
-    parent.addView(mid,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_GROUP) })
-    val danmaku=column().apply { clipChildren=false; clipToPadding=false }
-    groupPanel(danmaku)
-    mid.addView(danmaku,lp(0,-2).apply { weight=1f; rightMargin=dp(TvStyle.GAP_GROUP) })
-    /**
-     * 并排两栏（弹幕 / 按键设置）共用的头部：标题一行 + 说明两行。
-     *
-     * 两栏的头部必须**同高**，否则下面每一行都会错开半格：
-     * - 按键栏标题右侧有一枚「恢复默认」圆钮（[TvStyle.BUTTON_COMPACT] + 两条柔光带 = 52dp），
-     *   它比一行 18sp 文字高，会把那一栏的标题行撑起来；
-     * - 两栏说明文字长短不同，行数不同同样会把下面的行推开。
-     *
-     * 因此这里把标题行钉死成 [headHeight]、说明行钉死成两行（过长省略）。
-     * 两栏的第一项设置因此落在同一条横线上，往后每一行都按同一条节奏往下排。
-     */
-    val headHeight=dp(TvStyle.BUTTON_COMPACT+2*TvStyle.SOFT_BAND)
-    fun panelHead(group: LinearLayout,title: String,subtitle: String,trailing: View?=null) {
-        val head=row().apply { gravity=Gravity.CENTER_VERTICAL }
-        head.addView(text(title,18f,TvStyle.text).apply { setTypeface(null,Typeface.BOLD) },lp(0,-2).apply { weight=1f })
-        if(trailing!=null) head.addView(trailing,lp(-2,-2))
-        group.addView(head,lp(-1,headHeight))
-        group.addView(text(subtitle,14f,TvStyle.muted).apply {
-            minLines=2; maxLines=2; ellipsize=TextUtils.TruncateAt.END
-            setPadding(0,dp(TvStyle.GAP_TIGHT),0,dp(TvStyle.GAP_BLOCK))
-        },lp(-1,-2))
-    }
-    panelHead(danmaku,"弹幕","显示方式 / 速度 / 字号 / 透明度，正在看剧时也能改")
-    // 四项各占一整行：弹幕栏与按键栏并排后只剩半屏宽，再并两格会把「项名 + 当前值」
-    // 挤成省略号；一行一项读起来也更像设置列表。
-    // 弹幕显示方式：第一行。回调里要用的 syncDanmakuStyleRows 在下面才定义
-    //（它要引用另外三项），因此这里先用空动作建好这一行，等四项齐了再补上回调。
-    lateinit var danmakuSetting: TvButton
-    danmakuSetting=setting(danmaku,danmakuLabel("弹幕显示  ·  ")) {}
-    // 弹幕移动速度：第二行，三档（慢速 / 标准 / 快速）。
-    lateinit var danmakuSpeedSetting: TvButton
-    danmakuSpeedSetting=setting(danmaku,"弹幕速度  ·  ${library.danmakuSpeed.label}") {
-        showDanmakuSpeedPicker(danmakuSpeedSetting,false)
-    }
-    // 相同弹幕聚合：默认开启，与之前的行为一致；关闭后逐条原样滚动，不再合并、不再带 ×N。
-    lateinit var danmakuMergeSetting: TvButton
-    danmakuMergeSetting=setting(danmaku,"相同弹幕聚合  ·  ${if(library.danmakuMerge) "开启" else "关闭"}") {
-        library.danmakuMerge=!library.danmakuMerge
-        danmakuView?.mergeRepeats=library.danmakuMerge
-        danmakuMergeSetting.text="相同弹幕聚合  ·  ${if(library.danmakuMerge) "开启" else "关闭"}"
-    }
-    // 弹幕大小：整行一条滑块。
-    val scaleCell=fullSlider(danmaku,"弹幕大小",DanmakuStyle.SCALE_MIN,DanmakuStyle.SCALE_MAX,DanmakuStyle.SCALE_STEP,library.danmakuScale) { value ->
-        library.danmakuScale=value; danmakuView?.textScale=value
-    }
-    lateinit var danmakuScaleLine: View
-    lateinit var danmakuScaleRow: DanmakuSlider
-    danmakuScaleRow=scaleCell.first
-    danmakuScaleLine=scaleCell.second
-    // 弹幕透明度：整行一条滑块。
-    val alphaCell=fullSlider(danmaku,"弹幕透明度",DanmakuStyle.ALPHA_MIN,DanmakuStyle.ALPHA_MAX,DanmakuStyle.ALPHA_STEP,library.danmakuAlpha) { value ->
-        library.danmakuAlpha=value; danmakuView?.textAlpha=value
-    }
-    lateinit var danmakuAlphaLine: View
-    lateinit var danmakuAlphaRow: DanmakuSlider
-    danmakuAlphaRow=alphaCell.first
-    danmakuAlphaLine=alphaCell.second
-    // 「按键设置」那一栏的六格与「恢复默认」那一行。链的顺序是 弹幕栏 → 按键栏 → 主题网格，
-    // 这里先留好引用，等下面建好那一栏再接线（见 [syncDanmakuStyleRows] 与按键栏那一段）。
-    var keyCells: List<TvButton> = emptyList()
-    var keyRestore: IconButton? = null
-    /**
-     * 弹幕栏的焦点接线（**四行始终显示**，与是否隐藏弹幕无关）。
-     *
-     * 以前「隐藏弹幕」会把速度 / 聚合 / 字号 / 透明度四行收起来，理由是「隐藏了改这些看不到效果」。
-     * 但设置页是**配置**而不是预览：用户先把字号调好、再决定要不要显示弹幕，
-     * 是常见顺序；一选隐藏就整栏塌下去，反而像「这些设置丢了」。
-     * 因此这里固定 [shown] = true，四行永远在，焦点链也按完整的五行接。
-     * （播放界面里的浮层是另一回事：那里是即时预览，隐藏档下那几行仍然不显示。）
-     *
-     * 接线要同时做四件事，缺一件都会出问题：
-     * 1. 收起的单位是**行**：速度、大小、透明度三行一起 `GONE`——只藏控件会留下空行距；
-     * 2. 竖排路径（显示 → 速度 → 大小 → 透明度 → 主题网格，反向逐级回去）按当前档位重指一遍
-     *    ——链是单向写死的，切回可见档之后不会自己长回来；
-     * 3. 横排出口跟着变：可见时四行按行号接到右边按键栏的前四行，隐藏时只有「弹幕显示」
-     *    接到按键栏第一行；
-     * 4. 主题网格首行的上行出口跟着变：可见时整行都回到它正上方那条「弹幕透明度」，
-     *    隐藏时回到「弹幕显示」；焦点若正停在被收起的那几行上，也一并退回「弹幕显示」。
-     */
-    fun syncDanmakuStyleRows() {
-        // 设置页四行始终显示（见上面的说明）：隐藏弹幕只影响画面，不影响这里的可配置项。
-        val shown=true
-        danmakuSpeedSetting.visibility=View.VISIBLE
-        danmakuMergeSetting.visibility=View.VISIBLE
-        danmakuScaleLine.visibility=View.VISIBLE
-        danmakuAlphaLine.visibility=View.VISIBLE
-        danmakuScaleRow.isFocusable=true
-        danmakuAlphaRow.isFocusable=true
-        val themeHead=themeRows[TvTheme.entries.first()] ?: danmakuAlphaRow
-        // 弹幕栏与按键栏并排（再下面才是主题网格）：弹幕栏的下行出口直接接主题网格，
-        // 按键栏的出口留在自己那一列，左右两块之间用左右键相通。
-        val keyTail=keyCells.lastOrNull()?.id ?: themeHead.id
-        // 弹幕五行竖排：显示 ↓ 速度 ↓ 聚合 ↓ 大小 ↓ 透明度 ↓ 主题网格。
-        // 隐藏档下后四行不占位，上下都直接落回「弹幕显示」。
-        danmakuSetting.nextFocusDownId=if(shown) danmakuSpeedSetting.id else themeHead.id
-        danmakuSpeedSetting.nextFocusDownId=if(shown) danmakuMergeSetting.id else danmakuSetting.id
-        danmakuSpeedSetting.nextFocusUpId=danmakuSetting.id
-        danmakuMergeSetting.nextFocusUpId=if(shown) danmakuSpeedSetting.id else danmakuSetting.id
-        danmakuMergeSetting.nextFocusDownId=if(shown) danmakuScaleRow.id else danmakuSetting.id
-        danmakuScaleRow.nextFocusUpId=if(shown) danmakuMergeSetting.id else danmakuSetting.id
-        danmakuScaleRow.nextFocusDownId=if(shown) danmakuAlphaRow.id else danmakuSetting.id
-        danmakuAlphaRow.nextFocusUpId=if(shown) danmakuScaleRow.id else danmakuSetting.id
-        danmakuAlphaRow.nextFocusDownId=themeHead.id
-        // 按键六行竖排：第一行往上回到「恢复默认」圆钮，最后一行往下进主题网格。
-        keyCells.forEachIndexed { index,cell ->
-            cell.nextFocusUpId=keyCells.getOrNull(index-1)?.id ?: (keyRestore?.id ?: themeHead.id)
-            cell.nextFocusDownId=keyCells.getOrNull(index+1)?.id ?: themeHead.id
-        }
-        keyRestore?.nextFocusUpId=license.id
-        keyRestore?.nextFocusDownId=keyCells.firstOrNull()?.id ?: themeHead.id
-        // 横排：左右两栏按行号相通（弹幕五行 → 按键前五行），其余左右键停在自身。
-        danmakuSetting.nextFocusLeftId=danmakuSetting.id
-        danmakuSetting.nextFocusRightId=keyCells.getOrNull(0)?.id ?: danmakuSetting.id
-        danmakuSpeedSetting.nextFocusLeftId=danmakuSpeedSetting.id
-        danmakuSpeedSetting.nextFocusRightId=keyCells.getOrNull(1)?.id ?: danmakuSpeedSetting.id
-        danmakuMergeSetting.nextFocusLeftId=danmakuMergeSetting.id
-        danmakuMergeSetting.nextFocusRightId=keyCells.getOrNull(2)?.id ?: danmakuMergeSetting.id
-        danmakuScaleRow.nextFocusLeftId=danmakuScaleRow.id
-        danmakuScaleRow.nextFocusRightId=keyCells.getOrNull(3)?.id ?: danmakuScaleRow.id
-        danmakuAlphaRow.nextFocusLeftId=danmakuAlphaRow.id
-        danmakuAlphaRow.nextFocusRightId=keyCells.getOrNull(4)?.id ?: danmakuAlphaRow.id
-        keyCells.forEachIndexed { index,cell ->
-            cell.nextFocusLeftId=when {
-                !shown -> if(index==0) danmakuSetting.id else cell.id
-                index==0 -> danmakuSetting.id
-                index==1 -> danmakuSpeedSetting.id
-                index==2 -> danmakuMergeSetting.id
-                index==3 -> danmakuScaleRow.id
-                index==4 -> danmakuAlphaRow.id
-                else -> cell.id
-            }
-            cell.nextFocusRightId=cell.id
-        }
-        keyRestore?.nextFocusLeftId=danmakuSetting.id
-        keyRestore?.let { it.nextFocusRightId=it.id }
-        // 主题网格首行：正上方就是这一栏的最后一行（弹幕透明度；隐藏档下是弹幕显示）。
-        // 主题网格第一行的正上方是「按键设置」那一栏的最后一行（那一栏还没建好时退回弹幕栏）。
-        TvTheme.entries.chunked(THEME_GRID_COLUMNS).firstOrNull().orEmpty().forEach { option ->
-            themeRows[option]?.nextFocusUpId=keyTail
-        }
-        if(!shown && (danmakuSpeedSetting.hasFocus() || danmakuMergeSetting.hasFocus() || danmakuScaleRow.hasFocus() || danmakuAlphaRow.hasFocus())) danmakuSetting.requestFocus()
-    }
-    danmakuSetting.setOnClickListener { showDanmakuPicker(danmakuSetting,false) { syncDanmakuStyleRows() } }
-    // —— 按键设置：标题右侧「恢复默认」圆钮 + 六行设置项 ——
-    // 六个键各占一行（上 / 下 / 左 / 右 / 菜单 / 确定）：每一行都要写出「键名 · 当前动作」，
-    // 半屏宽里再并两格只会全都变成省略号。
-    //
-    // 作用域是**播放界面**：浏览页面里上下左右就是焦点移动，是遥控器的基本手感，不能改；
-    // 返回键也不在其中——它在任何绑定下都必须是退出播放的出口，否则用户可能把自己锁在播放界面里。
-    // 这两条边界写在 [com.hgtv.star.core.KeyMap] 的注释里，改这里之前先读那一段。
-    val keys=column().apply { clipChildren=false; clipToPadding=false }
-    groupPanel(keys)
-    mid.addView(keys,lp(0,-2).apply { weight=1f })
-    // 两栏并排后高度取较高的一栏（按键六行），矮的弹幕栏底部补齐：
-    // 两块面板的底板同高，不会一高一低。只在首次布局后量一次，之后不再改。
-    mid.addOnLayoutChangeListener(object: View.OnLayoutChangeListener {
-        override fun onLayoutChange(v: View,left: Int,top: Int,right: Int,bottom: Int,oldLeft: Int,oldTop: Int,oldRight: Int,oldBottom: Int) {
-            val height=maxOf(danmaku.height,keys.height)
-            if(height<=0) return
-            v.removeOnLayoutChangeListener(this)
-            listOf(danmaku,keys).forEach { panel ->
-                val params=panel.layoutParams as LinearLayout.LayoutParams
-                if(params.height!=height) { params.height=height; panel.layoutParams=params }
-            }
-        }
-    })
-    // 标题与「恢复默认」圆钮同一行：恢复是这一栏的辅助操作，放在头部右侧，
-    // 不再占一整行——六格改完想回出厂时，视线不用再往下找。
-    // 头部与左边「弹幕」那一栏走同一个 [panelHead]：标题行同高、说明行同为两行，
-    // 两栏的第一项设置因此对齐在同一条横线上。
-    //
-    // 动作先挂一个空壳：真正要做的事（恢复绑定 + 就地刷新六格文案）写在下面
-    // [refreshKeyLabels] 之后——Kotlin 的局部函数不能前向引用，圆钮又要建在头部里。
-    var restoreAction: ()->Unit={}
-    val restore=IconButton(
-        this,R.drawable.ic_action_restore,restoreKeysLabel(),TvStyle.BUTTON_COMPACT
-    ) { restoreAction() }
-    keyRestore=restore
-    panelHead(keys,"按键设置","播放界面：上下左右 / 菜单键 / 确定键各做什么，改完立刻生效",restore)
-    /**
-     * 六格 + 「恢复默认」那一行的文案：改完一个键就地刷新，不重建整页。
-     *
-     * 只改文字（[TvButton.setLabel]），不动视图树：焦点仍停在用户刚点的那一格上，
-     * 视线不会因为一次重排而跳走（清晰度 / 倍速那几行也是这么做的）。
-     *
-     * 它写在 [keyCell] 前面：Kotlin 的局部函数不能前向引用，而每一格的点击回调要用它。
-     */
-    fun refreshKeyLabels() {
-        keyCells.forEachIndexed { index,cell ->
-            val label=keyRowLabel(PlayerKey.entries[index])
-            cell.setLabel(label); cell.contentDescription=label
-        }
-        keyRestore?.contentDescription=restoreKeysLabel()
-    }
-    /**
-     * 一格按键：整栏宽的一行，文案是「键名  ·  当前动作」。
-     *
-     * 点击回调在按钮建好之后才挂：它要引用按钮自己（弹窗关掉时把焦点还给这一格），
-     * 与弹幕那一格是同一套写法（见 [gridSetting] 与上面的 `danmakuSetting.setOnClickListener`）。
-     */
-    fun keyCell(key: PlayerKey): TvButton {
-        val cell=setting(keys,"") {}
-        cell.setOnClickListener { showKeyActionPicker(key,cell) { refreshKeyLabels() } }
-        return cell
-    }
-    keyCells=PlayerKey.entries.map { keyCell(it) }
-    keyCells.forEachIndexed { index,cell ->
-        // 六行竖排：上下相邻，左右先停在自身（横向出口由 [syncDanmakuStyleRows] 接到左边弹幕栏）。
-        cell.nextFocusLeftId=cell.id
-        cell.nextFocusRightId=cell.id
-        cell.nextFocusUpId=(keyCells.getOrNull(index-1) ?: cell).id
-        cell.nextFocusDownId=(keyCells.getOrNull(index+1) ?: cell).id
-    }
-    // 「恢复默认按键」：标题右侧的圆形按钮（建在头部里，见上面 [panelHead] 那一段），
-    // 改回出厂绑定（上 / 菜单 = 播放设置、下 = 选集、左 = 快退、右 = 快进、
-    // 确定 = 播放 / 暂停）。没有文字读数，当前是否默认写在无障碍描述里
-    //（[restoreKeysLabel]），恢复后刷新一次。
-    restoreAction={
-        library.keyMap=KeyMap.DEFAULT
-        refreshKeyLabels()
-        showHint("已恢复默认按键")
-    }
-    restore.nextFocusLeftId=danmakuSetting.id
-    restore.nextFocusRightId=restore.id
-    restore.nextFocusUpId=license.id
-    restore.nextFocusDownId=keyCells.firstOrNull()?.id ?: restore.id
-    refreshKeyLabels()
-    // —— 主题外观：整宽分组 + 一行 THEME_GRID_COLUMNS 个芯片 ——
+
+    // —— 主题外观 ——
     // 20 套配色排成 5 行；芯片就是全站统一的按钮（紧凑档），
     // 前置一枚该主题的强调色圆点，选中态是「按进去 + 焦点环」，凹下去的那一枚就是当前主题。
-    val appearance=column().apply { clipChildren=false; clipToPadding=false }
-    groupPanel(appearance)
-    parent.addView(appearance,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_GROUP) })
+    val appearance=panel(appearancePage)
     heading(appearance,"主题外观","${TvTheme.entries.size} 套新拟态材质，选中即生效")
     val themeGrid=column().apply { clipChildren=false; clipToPadding=false }
     appearance.addView(themeGrid,lp(-1,-2))
     themeRows.clear()
-    TvTheme.entries.chunked(THEME_GRID_COLUMNS).forEachIndexed { rowIndex, line ->
+    TvTheme.entries.chunked(THEME_GRID_COLUMNS).forEachIndexed { rowIndex,line ->
         val row=row().apply { if(rowIndex>0) setPadding(0,dp(TvStyle.GAP_INLINE),0,0) }
-        line.forEachIndexed { index, option ->
+        line.forEachIndexed { index,option ->
             val chip=TvButton(this,option.label,ButtonSize.COMPACT,ButtonTone.SECONDARY,action={ switchTheme(option) })
             // 与网页的 theme-btn 一样：芯片前面一枚主题强调色圆点，字号收到 0.72，
             // 名称仍然保持正文大小；圆点只是识别色，不参与焦点态。
@@ -680,7 +588,8 @@ internal fun MainActivity.settings(parent: LinearLayout) {
             themeRows[option]=chip
         }
         // 最后一行不满时用空位占住列宽，芯片不会被拉成半屏宽。
-        repeat(THEME_GRID_COLUMNS-line.size) { row.addView(Space(this),lp(0,1).apply { weight=1f }) }
+        padLine(row,THEME_GRID_COLUMNS-line.size)
+        track(1,*line.mapNotNull { themeRows[it] }.toTypedArray())
         themeGrid.addView(row,lp(-1,-2))
     }
     appearance.addView(
@@ -688,146 +597,396 @@ internal fun MainActivity.settings(parent: LinearLayout) {
             .apply { setPadding(0,dp(TvStyle.GAP_BLOCK),0,0) },
         lp(-1,-2)
     )
+
+    // ══════════════════ 三、内容推荐 ══════════════════
+    //
+    // 两块：推荐范围 / 内容管理与来源（两列）。
+    val recommendPage=pageColumn(2)
+    parent.addView(recommendPage,lp(-1,-2))
+    // —— 推荐范围 ——
+    // 推荐页取的是分类接口的「全部推荐」流，默认把三类混在一起（与旧版完全一致）。
+    // 只想刷某一类（例如只刷漫剧）时，在这里把另外两类关掉：关掉的类不再进请求
+    //（见 `Library.recommendGenres`），上下换剧就只在剩下的大类里切。
+    //
+    // **至少保留一类**：三类全关等于「没有推荐范围」，与「全部体裁」的语义正好相反，
+    // 读起来容易混淆；因此关最后一类会被拦下，并给一句提示、开关按回「开」。
+    //
+    // 改范围**不重置进度**：换的是「取哪几类」，不是「刷到哪儿」。
+    val scope=panel(recommendPage,gap=TvStyle.GAP_INLINE)
+    heading(scope,"推荐范围","推荐页从这里取内容：大类至少留一个，受众可不限")
+    val scopeSummary=text("",13f,TvStyle.textDim)
+    /** 当前范围的读数：三枚开关的状态一眼能看出，但「生效的是哪几类」需要一句能读的话。 */
+    fun scopeLabel(): String {
+        val on=CategoryGenres.recommendable.filter { library.recommendGenreEnabled(it.id.orEmpty()) }
+        val parts=on.map { it.label }.toMutableList()
+        // 受众：只有选过才写进读数，并与大类用同一个分隔符。
+        if(library.recommendGender.isNotEmpty()) {
+            val label=recommendGenderOptions?.firstOrNull { it.id==library.recommendGender }?.label
+            parts+=if(label!=null) "受众 $label" else "已限受众"
+        }
+        return "当前："+parts.joinToString(" · ")
+    }
+    fun refreshScopeLabel() {
+        val label=scopeLabel()
+        scopeSummary.text=label; scopeSummary.contentDescription=label
+    }
+    val scopeRow=lineRow(scope)
+    val scopeCells=mutableListOf<TvSwitchRow>()
+    CategoryGenres.recommendable.forEachIndexed { index,genre ->
+        val id=genre.id.orEmpty()
+        val cell=TvSwitchRow(this,genre.label,checked=library.recommendGenreEnabled(id),onToggle=switch@{ on ->
+            // 关掉最后一类：直接按回「开」并说明原因。`Library` 那边也会挡（它要求至少留一类），
+            // 这里先拦一次是为了让开关不会「点下去没反应」。
+            if(!on && library.recommendGenreOff.size+1>=CategoryGenres.recommendableIds.size) {
+                scopeCells.getOrNull(index)?.setChecked(true)
+                showHint("至少保留一个推荐大类")
+                return@switch
+            }
+            library.setRecommendGenre(id,on)
+            refreshScopeLabel()
+            // 换范围只换「取哪几类」，不动「刷到哪儿」：
+            // - `session_id` 绑着旧体裁那一条流，留着它新范围不生效，所以只清 session；
+            // - 位置（offset）与「推过哪些」都留着——下次进推荐从当前位置接着取新范围的内容。
+            val resume=library.recommendCursor.substringAfter('|',"0").toIntOrNull()?.coerceAtLeast(0) ?: 0
+            recommendSession=""
+            recommendNext=resume
+            library.recommendCursor=if(resume>0) "|$resume" else ""
+            showHint("推荐范围已更新，下次进推荐生效")
+        })
+        cell.tag=SETTINGS_TAG_GENRE_PREFIX+id
+        scopeRow.addView(cell,lp(0,-2).apply { weight=1f; if(index>0) leftMargin=dp(TvStyle.GAP_INLINE) })
+        scopeCells+=cell
+    }
+    // —— 受众（男频 / 女频）：单选一行 ——
+    // 与大类不同，受众是**互斥**的：同时开「男频 + 女频」等于不筛，读起来像两项都选了、
+    // 实际什么都没限。因此这里用一组芯片：全部 / 男频 / 女频，选中哪一枚就带哪一个 `gender`。
+    //
+    // 为什么不写死标识：可选值与它们的 `selector_item_id` 是接口 `selector_rows` 给的
+    //（见 `Library.recommendGender`），代码里猜一个串，猜错就是「一条都推不出来」。
+    // 因此这一行先空着（`GONE`），等面板取回来再建（见 [loadGenderOptions]）；
+    // 取不到就整行不出现，宁可少一个开关。
+    val genderRow=row().apply {
+        clipChildren=false; clipToPadding=false
+        visibility=View.GONE
+    }
+    scope.addView(genderRow,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_INLINE) })
+    val genderCells=mutableListOf<TvButton>()
+    val genderIds=mutableListOf<String>()
+    /** 把芯片的选中态按当前设置重画一遍（点完、或面板回来时都会调）。 */
+    fun refreshGenderChips() {
+        val selected=library.recommendGender
+        genderCells.forEachIndexed { index,chip ->
+            (chip as? ToggleChip)?.setActive(genderIds.getOrNull(index)==selected)
+        }
+    }
+    /**
+     * 换受众：与换大类同一条规则——只清 `session_id`，位置（offset）与「推过哪些」都留着。
+     *
+     * 清 `session` 是因为游标绑着上一条流；不清位置是为了不让用户又被送回列表开头
+     *（早先换范围把游标一起清零，正是「重新开始推荐、列表又被推一遍」的来源）。
+     */
+    fun applyRecommendGender(id: String) {
+        if(library.recommendGender==id) { refreshGenderChips(); return }
+        library.recommendGender=id
+        refreshGenderChips()
+        refreshScopeLabel()
+        val resume=library.recommendCursor.substringAfter('|',"0").toIntOrNull()?.coerceAtLeast(0) ?: 0
+        recommendSession=""
+        recommendNext=resume
+        library.recommendCursor=if(resume>0) "|$resume" else ""
+        showHint("推荐范围已更新，下次进推荐生效")
+    }
+    /**
+     * 建这一行的芯片：第一枚「全部」（= 不传 `gender`），之后按接口给的顺序。
+     *
+     * 只在第一次拿到面板时建一次；之后再调直接返回（设置页重建会重新走一遍）。
+     */
+    fun buildGenderRow(options: List<CategoryFilterOption>) {
+        if(genderCells.isNotEmpty() || options.isEmpty()) return
+        val entries=listOf("" to "全部")+options.map { it.id to it.label }
+        entries.forEachIndexed { index,(id,label) ->
+            val chip=ToggleChip(this,label,library.recommendGender==id,ButtonSize.NORMAL) {
+                applyRecommendGender(id)
+            }
+            genderRow.addView(chip,lp(0,-2).apply { weight=1f; if(index>0) leftMargin=dp(TvStyle.GAP_INLINE) })
+            genderCells+=chip
+            genderIds+=id
+        }
+        genderRow.visibility=View.VISIBLE
+        // 受众芯片是异步建出来的：它固定插在「大类那一行」与「内容管理」之间。
+        // 插入位置按**大类那一行**现找，不按下标写死——面板已缓存时这一行是同步建好的，
+        // 下标会不一样，写死就插错位置，上下左右会串成「受众在大类上面」。
+        val rows=pageRows[2]
+        val genreRow=rows.indexOfFirst { line -> line.firstOrNull()===scopeCells.firstOrNull() }
+        rows.add(if(genreRow>=0) genreRow+1 else rows.size,genderCells.toMutableList<View>())
+        wireRows(2)
+        // [wireRows] 会把每一页的第一行 up 又指回自己；受众芯片是异步到的，
+        // 可能晚于页面那一次 [refreshSettingsTabLanding]，因此这里补一次，
+        // 否则「AI剧 / 真人剧」按上仍旧停在原地。
+        refreshSettingsTabLanding()
+        // 面板回来之前那句读数只能写「已限受众」（不知道中文名），现在能写全了。
+        refreshScopeLabel()
+    }
+    scope.addView(scopeSummary,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_BLOCK) })
+    refreshScopeLabel()
+    // 先登记大类那一行，再取受众：受众芯片插进 [pageRows] 时要按它找位置（见 [buildGenderRow]）。
+    track(2,*scopeCells.toTypedArray())
+    // 面板取回来之后补建这一行（已缓存时这里同步就建好）。
+    loadGenderOptions { options -> buildGenderRow(options) }
+
+    // —— 内容管理与内容来源：一块面板、两列 ——
+    //
+    // 两件回答的是同一件事——**这一份内容从哪儿来**：
+    // 一个是把首页隐藏过的剧恢复回来（本机这份名单里有什么），
+    // 一个是搜索页走哪个接口取结果（远端那份内容从哪儿取）。
+    // 并排一行之后，这一大项不再上下堆两块面板，省下一块的高度，也方便对照着改。
+    //
+    // 恢复隐藏的剧集：首页卡片上的「隐藏」把剧收进了这一份名单，恢复也在这里。
+    // 搜索源：只影响搜索页（结果、联想词、热搜词），分类 / 榜单 / 详情 / 播放仍然走 App 接口。
+    // App 接口结果全、能一直翻页，但要求这台设备在服务端注册过；官网免登录，一次 10 条按页翻。
+    val content=panel(recommendPage)
+    heading(content,"内容管理与来源","恢复隐藏的剧集、换搜索接口、选集分页与翻页")
+    val contentRow=lineRow(content)
+    lateinit var hidden: TvButton
+    hidden=cellSetting(contentRow,"恢复隐藏的剧集  ·  ${library.hidden().size} 部") {
+        library.unhideAll(); hidden.text="恢复隐藏的剧集  ·  0 部"
+    }
+    lateinit var searchSourceButton: TvButton
+    searchSourceButton=cellSetting(contentRow,"搜索源  ·  ${library.searchSource.label}") {
+        showSearchSourcePicker(searchSourceButton)
+    }
+    track(2,hidden,searchSourceButton)
+    // 选集分页：简介页与播放面板的选集网格共用一个分段（见 `EpisodeGrid`），
+    // 改完下次进简介页 / 打开选集面板即按新页长摆格子，已经摆好的那一屏不重建。
+    val contentRow2=lineRow(content)
+    lateinit var pageSizeButton: TvButton
+    pageSizeButton=cellSetting(contentRow2,"选集分页  ·  每页 ${library.episodePageSize} 集") {
+        showEpisodePageSizePicker(pageSizeButton)
+    }
+    // 分页边缘翻页：关掉之后选集网格到边缘不再翻页，改成右端按右选下一集、左端按左选上一集
+    //（见 `EpisodeGrid.pageKey`）。与分页集数同一行，两件都是「选集怎么翻」的设置。
+    val edgeTurnRow=cellSwitch(contentRow2,TvSwitchRow(this,"分页边缘翻页",checked=library.episodeEdgeTurn,onToggle={ on ->
+        library.episodeEdgeTurn=on
+    }))
+    track(2,pageSizeButton,edgeTurnRow)
+
+    // ══════════════════ 四、系统高级 ══════════════════
+    //
+    // 两块：数据维护（两列）/ 设备与性能（两列）。
+    val systemPage=pageColumn(3)
+    parent.addView(systemPage,lp(-1,-2))
+    // —— 数据维护：两列 ——
+    // 「手机备份与恢复」与「清空应用缓存」相邻：清之前先导出备份是最自然的顺序，
+    // 两列并排之后这一块只占一行。
+    val data=panel(systemPage,gap=TvStyle.GAP_INLINE)
+    heading(data,"数据维护","收藏与进度存在本机，可导出到手机")
+    val dataRow=lineRow(data)
+    lateinit var backup: TvButton
+    backup=cellSetting(dataRow,"手机备份与恢复") {
+        runCatching { LibraryBackup.encode(library.snapshot()) }.onSuccess { encoded ->
+            tvTools.libraryTransfer(encoded,backup) { payload,restoreSettings ->
+                favoriteMonitor.stop(); library.restore(payload,restoreSettings)
+                // 备份里可能带着「减少动画」（见 BackupSettings.reduceAnim）：
+                // 恢复完立刻按新设置重算档位，否则要等到下次启动才生效。
+                applyPerformanceProfile()
+                tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
+                showCatalog(); favoriteMonitor.check()
+                showHint("记录已合并恢复")
+            }
+        }.onFailure { tvTools.info("无法生成备份","本机记录暂时无法导出，请重试。",backup) }
+    }
+    // 「清空应用缓存」：把本机恢复成第一次安装的样子（收藏 / 记录 / 设置 / 设备身份 / 会话，
+    // 以及外部存储里那两份镜像一起删）。这是唯一一个不可撤销的操作。
+    // 名字用「缓存」是用户能理解的叫法，确认框里会写清收藏与记录也会一起清掉。
+    lateinit var reset: TvButton
+    reset=cellSetting(dataRow,resetLabel()) { clearLocalData(reset) }
+    track(3,backup,reset)
+
+    // —— 设备与性能：两列 ——
+    //
+    // 「设备形态」的自动判定、「减少动画」的动画开销、「调试模式」的现场面板，
+    // 回答的是同一件事——**这一台机器怎么跑**，因此合成一块两列网格，不再各占一块面板：
+    //   设备类型 ｜ 减少动画优化性能
+    //   调试模式 ｜（空位）
+    //
+    // 低配设备上「减少动画」那一格**照样建**（见下面），只是做成不可更改：
+    // 那一格本身要能读出「这一台机器已经固定开着」，整块网格的版式也不会因为
+    // 少一格而在两种机型上长得不一样。
+    val forcedReduce=lowEndTv()
+    val perf=panel(systemPage)
+    heading(perf,"设备与性能",
+        if(forcedReduce) "低配设备固定开启「减少动画」，不可更改" else "设备形态、动画开销与现场面板")
+    val perfRow1=lineRow(perf)
+    // 形态判定（见 `compat/DeviceForm.kt`）本身是打分的，遇到谎报能力的盒子 / 触屏一体机
+    // 总有判错的可能；这一格把最终决定权交给用户，选完立刻按新形态重建这一屏。
+    // 标签里直接写出「自动判定现在是什么」，用户不用点开弹窗就知道系统认成了什么。
+    fun deviceFormLabel(): String {
+        val mode=deviceMode()
+        return when(library.deviceForm) {
+            "phone","tablet","tv" -> "设备类型  ·  ${mode.label}（手动）"
+            else -> "设备类型  ·  自动（${mode.label}）"
+        }
+    }
+    lateinit var deviceFormButton: TvButton
+    deviceFormButton=cellSetting(perfRow1,deviceFormLabel()) { showDeviceFormPicker(deviceFormButton) }
+    deviceFormButton.tag=SETTINGS_TAG_DEVICE_FORM
+    // 「减少动画优化性能」：**两种机型都建**，低配机上做成不可更改的读数。
+    //
+    // 低配机（2GB 档电视）本来就强制按低配档跑（见 compat/Platform.kt 的 lowEndTv）：
+    // 关掉焦点缩放、只给焦点卡画柔光位图、不画海报井暗角、不跑马灯、跨栏不做平滑滚动。
+    // 以前这一格在低配上整格不建，用户反馈「设置项少了、不知道该不该开」——
+    // 现在照样摆出来并显示为**已开启**，只是不参与焦点、点不动，配色走禁用态。
+    // 非低配用户遇到发热 / 掉帧时可以自己打开它，效果与低配机完全一致。
+    val reduceRow=TvSwitchRow(this,"减少动画优化性能",checked=forcedReduce||library.reduceAnim,onToggle={ on ->
+        library.reduceAnim=on
+        // 先落档位，再重建：已有卡片在构造时就把「是否跑马灯」捉了一份
+        // （见 PosterCard.marqueeOn），只改静态开关不会作用到已经建好的那一屏。
+        applyPerformanceProfile()
+        settingsPendingFocus=SETTINGS_TAG_REDUCE_ANIM
+        showCatalog()
+    }).apply { tag=SETTINGS_TAG_REDUCE_ANIM }
+    if(forcedReduce) {
+        // 不可更改 = 不进焦点链 + 不响应点击。`isEnabled=false` 让 [paintButton] 走禁用配色
+        // （次文字色 + 压平的底板），这里再把整体透明度提到 0.72：3 米外仍要读得清
+        // 「这一项是开着的、只是不能动」，而不是一条看不清的淡字。
+        reduceRow.isEnabled=false
+        reduceRow.isFocusable=false
+        reduceRow.isFocusableInTouchMode=false
+        reduceRow.refresh()
+        reduceRow.alpha=.72f
+        reduceRow.contentDescription="减少动画优化性能，低配设备固定开启，不可更改"
+    }
+    cellSwitch(perfRow1,reduceRow)
+    val perfRow2=lineRow(perf)
+    // 调试模式：打开后各页面右上角常驻一块现场面板（播放信息 / 接口与登录的近况），
+    // 用户反馈问题拍一张照就能定位。默认关闭；关掉时面板立刻摘掉。
+    val debugRow=cellSwitch(perfRow2,TvSwitchRow(this,"调试模式",checked=library.debugMode,onToggle={ on ->
+        library.debugMode=on
+        syncDebugOverlay()
+    })).apply { tag=SETTINGS_TAG_DEBUG }
+    // 末行只占左格：右格留空，调试模式不会被拉成整宽。
+    padLine(perfRow2,1)
+    // 低配上「减少动画」不可聚焦，[track] 会把它过滤掉，这一行于是只有「设备类型」一格，
+    // 竖向出口自然接到下一行的「调试模式」上（见 [wireRows]）。
+    track(3,deviceFormButton,reduceRow)
+    track(3,debugRow)
+
     // —— 焦点串联 ——
-    // 界面栏两格：左右相连，按下分别进下面两列的第一项，按上回顶部入口。
-    homeColumnsButton.nextFocusLeftId=homeColumnsButton.id
-    homeColumnsButton.nextFocusRightId=hidden.id
-    homeColumnsButton.nextFocusUpId=navEntry()?.id ?: homeColumnsButton.id
-    homeColumnsButton.nextFocusDownId=debugRow.id
-    hidden.nextFocusLeftId=homeColumnsButton.id
-    hidden.nextFocusRightId=hidden.id
-    hidden.nextFocusUpId=navEntry()?.id ?: hidden.id
-    hidden.nextFocusDownId=launchRecommendRow.id
-    // 第二行两格（调试模式 / 打开应用进入推荐）：左右相连，上行分别回第一行对应的那一格，
-    // 下行分别进「功能显示」那一行的第一格 / 最后一格。
-    debugRow.nextFocusLeftId=debugRow.id
-    debugRow.nextFocusRightId=launchRecommendRow.id
-    debugRow.nextFocusUpId=homeColumnsButton.id
-    // 有「减少动画」那一行时，两格按下都先落到它（它就摆在这一行正下方、左格的位置）。
-    debugRow.nextFocusDownId=reduceRow?.id ?: deviceFormButton.id
-    launchRecommendRow.nextFocusLeftId=debugRow.id
-    launchRecommendRow.nextFocusRightId=launchRecommendRow.id
-    launchRecommendRow.nextFocusUpId=hidden.id
-    // 按下去第一行的最后一格（与上行「打开应用进入推荐」同一列）。
-    launchRecommendRow.nextFocusDownId=reduceRow?.id ?: deviceFormButton.id
-    // 「减少动画」占左格：左右与「短剧自动全屏」相连，上行回同一列的「调试模式」，
-    // 下行进「使用设备」那一格（它就在这一行正下方、左格）。
-    reduceRow?.let { row ->
-        row.nextFocusLeftId=row.id
-        row.nextFocusRightId=fullscreenRow.id
-        row.nextFocusUpId=debugRow.id
-        row.nextFocusDownId=deviceFormButton.id
-    }
-    // 「短剧自动全屏」在右格：左右相连（低配设备上没有左格，左键停在自己身上），
-    // 上行回同列的「打开应用进入推荐」，下行落到「使用设备」（下一行右格是空位，也只能落它）。
-    fullscreenRow.nextFocusLeftId=reduceRow?.id ?: fullscreenRow.id
-    fullscreenRow.nextFocusRightId=fullscreenRow.id
-    fullscreenRow.nextFocusUpId=launchRecommendRow.id
-    fullscreenRow.nextFocusDownId=deviceFormButton.id
-    // 「使用设备」占左格：右格是空位，右键停在自己身上；上行回同一列的「减少动画」（低配回「调试模式」），
-    // 下行进「功能显示」第一行第一格。
-    deviceFormButton.nextFocusLeftId=deviceFormButton.id
-    deviceFormButton.nextFocusRightId=deviceFormButton.id
-    deviceFormButton.nextFocusUpId=reduceRow?.id ?: debugRow.id
-    deviceFormButton.nextFocusDownId=navSwitches.firstOrNull()?.id ?: deviceFormButton.id
-    // 开关每行四枚：行内左右相连（两端停住）；上下按列号对到相邻那一行的同一格，
-    // 目标行没有这一列（末行不满）时落到那一行的最后一格。
-    // 第一行按上：四格都回「使用设备」（它就摆在这几格正上方，右格是空位）。
-    // 末行按下：左半屏两列进左列「播放偏好」第一项，右半屏两列进右列「片单与设备」第一项
-    //（末行是四枚整行，没有缺列，不需要「落到最后一格」的兜底）。
-    navRows.forEachIndexed { rowIndex,cells ->
-        val above=navRows.getOrNull(rowIndex-1)
-        val below=navRows.getOrNull(rowIndex+1)
-        cells.forEachIndexed { index,cell ->
-            cell.nextFocusLeftId=cells.getOrNull(if(index>0) index-1 else index)?.id ?: cell.id
-            cell.nextFocusRightId=cells.getOrNull(if(index<cells.lastIndex) index+1 else index)?.id ?: cell.id
-            cell.nextFocusUpId=when {
-                above!=null -> (above.getOrNull(index) ?: above.last()).id
-                // 第一行按上：整行都回「使用设备」——它就在这几格正上方，
-                // 而那一行右格是空位（右半屏两列没有正上方的控件）。
-                else -> deviceFormButton.id
-            }
-            cell.nextFocusDownId=when {
-                below!=null -> (below.getOrNull(index) ?: below.last()).id
-                // 末行按下：先进「播放显示」那一行的同一格。
-                else -> playCells.getOrNull(index)?.id ?: playCells.last().id
-            }
-        }
-    }
-    // 「播放显示」四格：行内左右相连、两端停住；上行回到「功能显示」末行同一格，
-    // 下行按左半屏 / 右半屏分别进「播放偏好」与「片单与设备」的第一项。
-    playCells.forEachIndexed { index,cell ->
-        cell.nextFocusLeftId=playCells.getOrNull(index-1)?.id ?: cell.id
-        cell.nextFocusRightId=playCells.getOrNull(index+1)?.id ?: cell.id
-        cell.nextFocusUpId=navRows.lastOrNull()?.getOrNull(index)?.id
-            ?: navRows.lastOrNull()?.lastOrNull()?.id ?: cell.id
-        // 四格按下：左半屏进左列「播放偏好」第一项，右半屏进右列「片单与设备」第一项。
-        cell.nextFocusDownId=if(index<NAV_GRID_COLUMNS/2) qualityButton.id else searchSourceButton.id
-    }
-    // 上面两列：列内上下、列间左右按行号对齐（左列 6 项、右列 4 项）；
-    // 第一行的上行出口回到「界面设置」里对应的那一格。
-    // 末项按下进弹幕那一栏的第一行（左列接「弹幕显示」、右列接「弹幕速度」，与列号对齐）。
-    // 弹幕栏内部的上下左右**全部**由 [syncDanmakuStyleRows] 按当前档位指：那三行只是隐藏档下
-    // 不占位，链必须先在再按档位改，否则在弹窗里切回可见档之后这几行还是选不中
-    //（早先按档位裁剪列内容的写法就栽在这里）。
-    // 「画面缩放」排在最后一格：前五项与右栏「片单与设备」逐行对齐，滑块压在末行。
-    val playbackItems=listOf<View>(qualityButton,defaultSpeed,frame,decoderButton,autoNextButton,scaleSlider)
-    val deviceItems=listOf<View>(searchSourceButton,backup,reset,license)
-    val columns=listOf(playbackItems,deviceItems)
-    columns.forEachIndexed { column,items -> items.forEachIndexed { index,view ->
-        // 第一行按上：左列（播放偏好）回到开关网格末行的第一格，右列（片单与设备）
-        // 回到开关网格里最后一格，方向上是各自上方最近的那一格。
-        view.nextFocusUpId=if(index==0)
-            (if(column==0) playCells.first() else playCells[NAV_GRID_COLUMNS/2]).id
-        else items[index-1].id
-        // 两列的末项按下：左列进弹幕栏第一行，右列进按键栏头部（两栏现在并排）。
-        view.nextFocusDownId=items.getOrNull(index+1)?.id
-            ?: (if(column==0) danmakuSetting.id else (keyRestore?.id ?: keyCells.firstOrNull()?.id ?: danmakuSetting.id))
-    } }
-    // 弹幕与按键两栏并排：第一行两格上行都回到左列末项「自动连播」，
-    // 按键栏头部上行回到右列末项「开源许可」。
-    // 栏内其余的上下左右出口由 [syncDanmakuStyleRows] 按当前档位指（隐藏时那三行不占位）。
-    danmakuSetting.nextFocusUpId=autoNextButton.id
-    danmakuSpeedSetting.nextFocusUpId=autoNextButton.id
-    keyRestore?.nextFocusUpId=license.id
-    columns.forEachIndexed { column,items -> items.forEachIndexed { index,view ->
-        view.nextFocusLeftId=(columns.getOrNull(column-1)?.getOrNull(index) ?: view).id
-        view.nextFocusRightId=(columns.getOrNull(column+1)?.getOrNull(index) ?: view).id
-    } }
-    // 主题网格：行内左右相连、行间上下相连，两端停住；第一行往上回到它正上方那一行，
-    // 也就是弹幕那一栏的最后一行（可见档 → 「弹幕透明度」、隐藏档 → 「弹幕显示」，
-    // 出口按档位现算，见 [syncDanmakuStyleRows]）。
-    val themeLines=TvTheme.entries.mapNotNull { themeRows[it] }.chunked(THEME_GRID_COLUMNS)
-    themeLines.forEachIndexed { rowIndex, line ->
-        line.forEachIndexed { index, chip ->
-            chip.nextFocusLeftId=line.getOrNull(index-1)?.id ?: chip.id
-            chip.nextFocusRightId=line.getOrNull(index+1)?.id ?: chip.id
-            // 第一行的上行出口交给 [syncDanmakuStyleRows] 按当前弹幕档位指过去
-            // （整行都在弹幕那一栏下面，因此整行都回到它的最后一行）。
-            chip.nextFocusUpId=themeLines.getOrNull(rowIndex-1)?.getOrNull(index)?.id ?: (keyRestore?.id ?: danmakuAlphaRow.id)
-            chip.nextFocusDownId=themeLines.getOrNull(rowIndex+1)?.getOrNull(index)?.id ?: chip.id
-        }
-    }
-    // 两列的末项按下都进弹幕栏（见上面的 columns 循环），这里不再单独指右半边。
-    syncDanmakuStyleRows()
-    navIcons().forEach { it.nextFocusDownId=homeColumnsButton.id }
-    // 导航栏首位那枚「推荐」：这一页没有列表，按下键落在第一行设置项上。
-    findTagged(root,"nav:recommend")?.let { it.nextFocusDownId=homeColumnsButton.id }
+    // 每个大项内部：行内左右相连、行间上下同列（末行不满时落到那一行的最后一格）。
+    SETTINGS_TABS.indices.forEach { wireRows(it) }
+    // 并排的两栏（按键 / 弹幕）行数不同，竖向出口各自成链，不能按行号算（见 [rewireSidePanels]）。
+    rewireSidePanels()
+    // 每个大项**最上面那一行**登记给 [settingsTopRows]：那一行的每一格按上都要回导航栏芯片。
+    // [wireRows] 给第一行设的 up 是「自己」（行上方没有东西），这里补一条真出口。
+    settingsTopRows={ index -> pageRows.getOrNull(index)?.firstOrNull { it.isNotEmpty() }.orEmpty() }
     parent.addView(text("HGTV  /  ${BuildConfig.VERSION_NAME}    ·    收藏与进度保存在本机",12f,muted).apply { setPadding(dp(12),dp(20),0,dp(10)) })
-    // 重建后落点：开关那一行整页重建之后焦点回到它自己（见 [settingsPendingFocus]）；
-    // 其余情况照旧落在顶部入口。
-    val pending=settingsPendingFocus
-    if(pending!=null) {
-        settingsPendingFocus=null
-        val target=findTagged(root,pending)
-        if(target!=null) {
-            // 刚建好还没测量，这一帧请求焦点会落空：推到下一帧再落。
-            root.post { target.takeIf { it.attachedToWindow }?.let(::focusHead) }
-            return
+    // —— 落点与「芯片 ↔ 内容」的出口，全部推到下一帧 ——
+    //
+    // 这一帧里 `parent`（滚动内容）还没挂进视图树：调用方是「先建内容、再把滚动容器加进去」
+    // （见 `ListPage.showCatalog` 的 TAB_SETTINGS 那一段）。此刻 `findTagged(root, …)`
+    // 一块内容都查不到，芯片的「按下」会接空、落点也只能退回芯片本身。
+    // 推到下一帧之后两件事都成立：整棵树挂好了、尺寸也量过了，接上的出口立刻可用。
+    //
+    // 落点优先级：
+    // 1. [settingsPendingFocus]：整页重建前记下的那一行（改开关 / 换设备形态 / 恢复备份）；
+    // 2. 当前大项芯片：换主题、改大项之外的偏好之后，用户仍停在原处；
+    // 3. 当前大项第一行：整排圆形入口被关掉时页头没有可聚焦控件，落进内容区。
+    // 已经有焦点（例如从导航栏点进来，`ListPage` 已把焦点放到入口上）时不抢。
+    parent.post {
+        refreshSettingsTabLanding()
+        val pending=settingsPendingFocus
+        if(pending!=null) {
+            settingsPendingFocus=null
+            val target=findTagged(root,pending)
+            if(target!=null) {
+                val page=settingsPageIndexOf(target)
+                if(page!=null && page!=settingsTab) switchSettingsTab(page)
+                target.takeIf { it.attachedToWindow }?.let(::focusHead)
+                return@post
+            }
+        }
+        if(root.findFocus()==null) {
+            val landing=findTagged(root,SETTINGS_TAG_PAGE_PREFIX+settingsTab)?.let(::firstFocusableIn)
+            (settingsTabChips.getOrNull(settingsTab) ?: landing)?.takeIf { it.attachedToWindow }?.requestFocus()
         }
     }
-    // 圆形入口全关掉时页头没有任何可聚焦控件：落点退到「每行卡片」那一格。
-    (navEntry() ?: homeColumnsButton).requestFocus()
+}
+/**
+ * 某一枚控件挂在**哪个大项**的内容块里（按祖先上的 `settings-page-<下标>` 认）。
+ *
+ * 整页重建后要把焦点落回原来那一行，而那一行可能不在当前大项里
+ * （例如在「外观导航」里改了「打开应用进入推荐」，重建后还停在「播放交互」上）。
+ */
+private fun settingsPageIndexOf(view: View): Int? {
+    var node: View?=view
+    while(node!=null) {
+        val tag=node.tag as? String
+        if(tag!=null && tag.startsWith(SETTINGS_TAG_PAGE_PREFIX)) {
+            return tag.removePrefix(SETTINGS_TAG_PAGE_PREFIX).toIntOrNull()
+        }
+        node=node.parent as? View
+    }
+    return null
+}
+/**
+ * 切换设置页的大项（播放交互 / 外观导航 / 内容推荐 / 系统高级）。
+ *
+ * **只换可见性**：四块内容在进这一页时就全部建好了（见 `MainActivity.settings`），
+ * 因此这里不重建页面、不重新联网，滚动位置回到顶部、焦点留在刚点的那枚芯片上，
+ * 正在调的那一块原样保留（弹窗也还开着）。
+ */
+internal fun MainActivity.switchSettingsTab(index: Int,focusContent: Boolean=false) {
+    if(index !in SETTINGS_TABS.indices) return
+    if(index!=settingsTab) {
+        settingsTab=index
+        settingsTabChips.forEachIndexed { i,chip ->
+            (chip as? ToggleChip)?.setActive(i==index)
+            chip.contentDescription=SETTINGS_TABS[i]+if(i==index) "，当前分区" else ""
+        }
+        SETTINGS_TABS.indices.forEach { i ->
+            findTagged(root,SETTINGS_TAG_PAGE_PREFIX+i)?.visibility=if(i==index) View.VISIBLE else View.GONE
+        }
+        settingsScroll?.scrollTo(0,0)
+        refreshSettingsTabLanding()
+    }
+    // 焦点去向：点芯片切换（或按确定）时留在芯片上——用户还在挑大项；
+    // 在芯片上按「下」时进这一块的第一行（[focusContent]），那一下本来就是要往内容里走。
+    if(focusContent) {
+        val first=findTagged(root,SETTINGS_TAG_PAGE_PREFIX+index)?.let(::firstFocusableIn)
+        if(first!=null) { focusHead(first); return }
+    }
+    settingsTabChips.getOrNull(index)?.takeIf { it.attachedToWindow }?.requestFocus()
+}
+/**
+ * 大项芯片与内容块之间的上下出口。
+ *
+ * 每个芯片的「按下」落在**它自己那一块**的第一行、每一块的第一行「按上」回它自己的芯片；
+ * 顶部圆形入口的「按下」落到**当前**大项的第一行（切了大项之后要重算一次）。
+ * `GONE` 的块里没有可聚焦控件，因此这里一律按可见性过滤（[firstFocusableIn]）。
+ */
+internal fun MainActivity.refreshSettingsTabLanding() {
+    val active=settingsTab.coerceIn(0,SETTINGS_TABS.lastIndex)
+    SETTINGS_TABS.indices.forEach { index ->
+        val chip=settingsTabChips.getOrNull(index) ?: return@forEach
+        val first=findTagged(root,SETTINGS_TAG_PAGE_PREFIX+index)?.let(::firstFocusableIn) ?: return@forEach
+        chip.nextFocusDownId=first.id
+        // 这一页**最上面那一行**的每一格都回芯片，不只是第一格：
+        // 推荐范围那一行有三枚开关，只改第一格就会出现「漫剧能上、AI剧 / 真人剧上不去」。
+        // [settingsTopRows] 由 `MainActivity.settings()` 建完页面后赋值；
+        // 页面还没建（或已重建）时退回只修第一格。
+        val top=settingsTopRows(index)
+        (top.ifEmpty { listOf(first) }).forEach { it.nextFocusUpId=chip.id }
+    }
+    val landing=findTagged(root,SETTINGS_TAG_PAGE_PREFIX+active)?.let(::firstFocusableIn) ?: return
+    navIcons().forEach { it.nextFocusDownId=landing.id }
+    findTagged(root,"nav:recommend")?.let { it.nextFocusDownId=landing.id }
+}
+/** 容器里第一枚可聚焦控件（深度优先，只看可见的叶子）。 */
+private fun firstFocusableIn(view: View): View? {
+    if(view.visibility!=View.VISIBLE) return null
+    if(view !is ViewGroup) return if(view.isFocusable) view else null
+    for(index in 0 until view.childCount) firstFocusableIn(view.getChildAt(index))?.let { return it }
+    return null
 }
 /**
  * 页面内提示（替代 Toast）。
@@ -841,34 +1000,6 @@ internal fun MainActivity.showHint(message: String) {
     main.removeCallbacks(hideHint)
     main.postDelayed(hideHint,4000)
 }
-/**
- * 「开源许可」弹窗正文。
- *
- * 信息按当前仓库写：派生来源、源码仓库、GPL-3.0-only 的许可范围、第三方来源
- * （对照 `NOTICE.md`），以及本机记录的边界。发布地址指向本仓库的 Releases，
- * 不再引用已经不存在的公开镜像仓库。
- *
- * **派生来源这一条与 `NOTICE.md` 第 1 节一一对应**：fork 关系、GPL-3.0 派生、
- * 自 2026-10-06 起在上游基础上修改、上游著作权归其作者。改 `NOTICE.md` 时同步改这里。
- */
-internal fun MainActivity.licenseText(): String = listOf(
-    "HGTV ${BuildConfig.VERSION_NAME} · GPL-3.0-only",
-    "",
-    "源码与许可证：github.com/pan8664716/HGTV",
-    "  许可证全文见 LICENSE，第三方声明见 NOTICE.md",
-    "",
-    "派生自 N3urda/hongguoTV（GPL-3.0），自 2026-10-06 起在上游基础上修改；",
-    "  上游著作权归其作者，逐项改动见 NOTICE.md 与 docs/CHANGELOG.md。",
-    "",
-    "内容协议与加密处理移植自 drpys（commit 22261ad，GPL-3.0）。",
-    "",
-    "第三方组件（完整清单见 NOTICE.md）：",
-    "  Kotlin / AndroidX Media3 / OkHttp / ZXing：Apache-2.0",
-    "  Bouncy Castle / Microsoft Fluent Emoji：MIT",
-    "  desugar_jdk_libs：GPL-2.0 with Classpath Exception",
-    "",
-    "本机记录（收藏 / 观看进度 / 设置）只保存在这台设备上，不上传。"
-).joinToString("\n")
 /**
  * 搜索：**不分内容类型**（顶部那两个「漫剧 / 短剧」开关已经去掉）。
  * 漫剧与短剧 / 真人剧的搜索结果合并去重后一起显示，由 [ContentRepository.search] 负责。
@@ -884,7 +1015,7 @@ internal fun MainActivity.licenseText(): String = listOf(
  */
 
 /**
- * 「使用设备」弹窗：自动 / 手机 / 平板 / 电视。
+ * 「设备类型」弹窗：自动 / 手机 / 平板 / 电视。
  *
  * 为什么需要这个手动档：形态判定（见 `compat/DeviceForm.kt`）是打分的，遇到谎报能力位的
  * 国产盒子、或者「电视 + 触摸屏」这种一体机，总有判不到的时候。用户点错了地方
@@ -896,7 +1027,7 @@ internal fun MainActivity.licenseText(): String = listOf(
  * - **手机 / 平板**：一律点亮触屏适配（手势层 + 底部控制条 + 上滑下拉换剧），
  *   旋转方向按屏幕方向走（手机 `−90`、横屏平板 `+90`）；
  * - **电视**：一律按遥控器跑——不建手势层、再有点上去也不点亮，
- *   短剧自动全屏固定顺时针 `+90`。
+ *   竖屏短剧全屏固定顺时针 `+90`。
  *
  * 改完必须**整页重建**：手势层、底部控制条、播放层的旋转方向都是建页面时定的，
  * 就地改字不会让它们跟着变。重建后焦点按 [SETTINGS_TAG_DEVICE_FORM] 落回这一格。
@@ -912,7 +1043,7 @@ internal fun MainActivity.showDeviceFormPicker(anchor: TextView) {
         "电视  ·  遥控器 + 顺时针旋转"
     )
     val selected=options.indexOf(library.deviceForm).coerceAtLeast(0)
-    val picker=TvDialog(this,"使用设备")
+    val picker=TvDialog(this,"设备类型")
     picker.choices(labels,selected) { index ->
         val value=options[index]
         if(value==library.deviceForm) return@choices

@@ -55,8 +55,33 @@ internal class TvDialog(private val activity: Activity, title: String) {
          * 两块**共用一个预算**（而不是各占一个比例）：同时出现内容与列表的弹窗
          * （备份恢复：说明文字 + 选项）加起来才不会顶出一屏。取 .5 加上标题、
          * 按钮行与弹窗四周留白，整框仍在一屏之内，内容区也还读得下十来行。
+         *
+         * **分母是 [usableScreenHeight]（扣掉系统栏之后的高度），不是整屏**：
+         * 原来拿 `displayMetrics.heightPixels` 当分母，这一块按整屏的一半算，
+         * 而弹窗只能落在系统栏之间那一段里，于是在 Android 14 上
+         *（系统栏更高、越界裁剪更严格）面板下面一截直接被裁掉。
          */
         const val SCROLLABLE_MAX_FRACTION = .5f
+
+        /**
+         * 内容区与列表**同时**出现时的合计比例：比 [SCROLLABLE_MAX_FRACTION] 再收一档。
+         *
+         * 两块各占一半时加起来已经是可用高度的 100%，标题与按钮行没地方放；
+         * 两者同时存在（备份恢复那种「说明 + 选项」）时各自少分一点，整框才装得下。
+         */
+        const val SCROLLABLE_BOTH_FRACTION = .42f
+
+        /** 面板上下各自离屏幕边缘的余量（设计 dp）：再差的系统栏组合也留一条缝。 */
+        const val PANEL_SCREEN_MARGIN = 12
+
+        /**
+         * [fitToWindow] 最多重排几轮。
+         *
+         * 一次收小可能让另一块重新量出新的自然高度，因此要再看一轮；两轮足够收干净
+         *（列表一轮、内容一轮）。给 3 是留一次「两块都要收」的余量，超出就停手，
+         * 绝不让布局回调与重排互相触发成死循环。
+         */
+        const val MAX_FIT_PASSES = 3
     }
 
     private val dp = { value: Number -> activity.tvDp(value) }
@@ -191,6 +216,13 @@ internal class TvDialog(private val activity: Activity, title: String) {
     }
     private val buttons = mutableListOf<DialogItem>()
     private var listHeight = 0
+    /**
+     * 内容区上限的**运行期**覆盖值（见 [fitToWindow]）。
+     *
+     * 0 = 按常规预算算；正数 = 这一次弹窗被窗口高度挤过，内容区改用这个更小的上限。
+     * 每次 [show] 归零：窗口尺寸可能已经变了（横竖屏、分屏、字号），不能把上一次的结果带过来。
+     */
+    private var capOverride = 0
     /** 焦点是否优先落内容区（见 [focusContentFirst]）。 */
     private var contentFirst = false
     private var dialog: AlertDialog? = null
@@ -235,12 +267,16 @@ internal class TvDialog(private val activity: Activity, title: String) {
                 contentHost.layoutParams = params
             }
             // 上下焦点余量**只在内容里真有可聚焦控件时**才留（见 [contentScroll]）：
-            // 纯文字弹窗（更新日志、开源许可、二次确认）留了也是白占高度。
+            // 纯文字弹窗（更新日志、备份码、二次确认）留了也是白占高度。
             // 封顶不在这里做——那件事已经交给 [ContentHost] 的测量（见那里的注释）。
             val bleed = if (column.anyFocusable()) dp(TvStyle.FOCUS_BLEED) else 0
             if (contentScroll.paddingTop != bleed || contentScroll.paddingBottom != bleed) {
                 contentScroll.setPadding(0, bleed, 0, bleed)
             }
+            // 内容可能是弹窗弹出**之后**才填进来的（更新日志、备份恢复的状态文字）：
+            // 变长之后整框可能又超出一屏，这时再按真实窗口高度收一次。
+            // [fitToWindow] 只在真的装不下时才动，且收不动就停手，不会与这条回调互相触发。
+            if (isShowing) body.post { fitToWindow() }
         }
     }
 
@@ -402,7 +438,8 @@ internal class TvDialog(private val activity: Activity, title: String) {
         if (isShowing) return
         this.anchor = anchor
         dismissed = onDismiss
-        val metrics = activity.resources.displayMetrics
+        // 每次弹出都按当前窗口重新算：横竖屏、分屏、系统字号都可能已经变了。
+        capOverride = 0
         // 套一层触摸外壳：弹窗是独立窗口，Activity 的 `dispatchTouchEvent` 管不到它。
         // 不套的话，弹窗里点一枚「当前没有焦点」的按钮仍然是两下（见 MainActivityTouch 的说明）。
         val next = AlertDialog.Builder(activity).setView(touchFocusHost(body, fillHeight = false)).create()
@@ -448,13 +485,18 @@ internal class TvDialog(private val activity: Activity, title: String) {
         // 列表与内容区共用 [SCROLLABLE_MAX_FRACTION] 这一份预算（见 [contentCap]）：
         // 两块都在时各分一半，只有一块时那一块独占，加起来始终在一屏之内。
         if (listHeight > 0) {
-            val limit = (metrics.heightPixels * SCROLLABLE_MAX_FRACTION).toInt()
+            // 分母是**可用**高度（扣掉系统栏），不是整屏：整屏的一半在 Android 14 上
+            // 加上标题与按钮行就会把面板顶出窗口。
+            val limit = (activity.usableScreenHeight() * SCROLLABLE_MAX_FRACTION).toInt()
             listHost.layoutParams = listHost.layoutParams.apply { height = listHeight.coerceAtMost(limit) }
         }
         // 焦点落在第一项（列表优先），因此「确认」永远不会是默认落点，误触不会造成破坏。
         // 调用方声明了 [focusContentFirst] 时优先落内容区（数字键盘这类自成一块的输入控件）。
         body.post {
             if (!isShowing) return@post
+            // 按真实窗口高度收进屏幕：比例算不准的那些情况（系统字号放大、系统栏特别高、
+            // 分屏）全靠这一道兜底，按钮行不会再被裁在窗口下面。
+            fitToWindow()
             val landing = if (contentFirst) content.firstFocusable() ?: items.firstChildOrNull() else null
             (landing ?: if (items.childCount > 0) items.getChildAt(0) else buttons.firstOrNull())?.requestFocus()
             // 封顶由 [ContentHost] 的测量负责，这里只补一次焦点接线兜底
@@ -532,10 +574,100 @@ internal class TvDialog(private val activity: Activity, title: String) {
      * 这一块只能用剩下的部分；两块都短就各自按自然高度摆，谁都不封顶。
      */
     private fun contentCap(): Int {
-        val metrics = activity.resources.displayMetrics
-        val budget = (metrics.heightPixels * SCROLLABLE_MAX_FRACTION).toInt()
+        val budget = scrollBudget()
         val used = if (listHeight > 0) listHost.layoutParams.height.coerceAtLeast(0) else 0
-        return (budget - used).coerceAtLeast((metrics.heightPixels * .18f).toInt())
+        val base = (budget - used).coerceAtLeast(dp(48))
+        // 被窗口高度挤过时再收一档（见 [fitToWindow]）：常规预算只是估算，运行期量到的才是真的。
+        return if (capOverride > 0) minOf(base,capOverride) else base
+    }
+
+    /**
+     * 内容区与列表区合计能占多少像素（**可用**高度的一部分，不是整屏）。
+     *
+     * 两块同时出现时按 [SCROLLABLE_BOTH_FRACTION] 收一档：标题、按钮行与两侧留白也在这一屏里，
+     * 各占一半就会把它们顶出去（Android 14 上系统栏更高，这一条正好把面板压出窗口）。
+     */
+    private fun scrollBudget(): Int {
+        val usable = activity.usableScreenHeight()
+        val share = if (listHeight > 0) SCROLLABLE_BOTH_FRACTION else SCROLLABLE_MAX_FRACTION
+        return (usable * share).toInt().coerceAtLeast(dp(64))
+    }
+
+    /**
+     * 面板当前窗口里允许的最大高度（像素）：可用高度再扣掉上下余量。
+     */
+    private fun panelMaxHeight(): Int =
+        (body.visibleWindowHeight() - dp(2 * PANEL_SCREEN_MARGIN)).coerceAtLeast(dp(160))
+
+    /**
+     * 布局完成后按**真实窗口高度**把面板收进屏幕内——最后一道兜底。
+
+     * 前面那些比例（[SCROLLABLE_MAX_FRACTION] / [SCROLLABLE_BOTH_FRACTION]）都是估算：
+     * 系统字体放大、厂商把系统栏做得很高、分屏、投屏比例奇怪……任何一种偏差都会让
+     * 「标题 + 内容 + 列表 + 按钮 + 留白」比窗口高一截，高出来的部分只能被窗口裁掉，
+     * 用户看到的就是「弹窗下面被遮盖」。这里在布局已经量出真实高度之后，按溢出的像素数
+     * 从可滚动的那两块里扣回去：
+     *
+     * 1. 先压列表（它本来就是可滚的，压小只多滚两下，至少留一项可见）；
+     * 2. 还不够再压内容区（同样至少留一段可见）；
+     * 3. 两块都压过仍放不下（标题 + 按钮本身就超过一屏），交回下一次循环，
+     *    由 [MAX_FIT_PASSES] 兜住，不会无限重排。
+     *
+     * 只收不放：面板本来就装得下时这里什么都不做，外观与改动前完全一致。
+     */
+    private fun fitToWindow(passes: Int = MAX_FIT_PASSES) {
+        if (passes <= 0 || !isShowing) return
+        val max = panelMaxHeight()
+        val natural = naturalHeight()
+        if (natural <= 0 || natural <= max) return
+        var overflow = natural - max
+        var changed = false
+        // 1. 列表：按溢出量收小，留一项的高度当底线。
+        val listParams = listHost.layoutParams as? LinearLayout.LayoutParams
+        if (listParams != null && listHeight > 0 && listHost.visibility == View.VISIBLE) {
+            val floor = dp(TvStyle.DIALOG_ITEM_HEIGHT)
+            val next = (listParams.height - overflow).coerceAtLeast(floor)
+            val shrunk = listParams.height - next
+            if (shrunk > 0) {
+                listParams.height = next
+                listHost.layoutParams = listParams
+                overflow -= shrunk
+                changed = true
+            }
+        }
+        // 2. 内容区：仍然放不下就从它这里再扣（它也是可滚的）。
+        if (overflow > 0) {
+            val cap = (contentHost.height - overflow).coerceAtLeast(dp(48))
+            if (cap < contentHost.height) {
+                capOverride = cap
+                changed = true
+            }
+        }
+        // 只有真的收小了才再看一轮：没有可收的（标题 + 按钮本身就超过一屏）就停手，
+        // 否则每一帧都会 post 一次，变成一个永远转下去的重排循环。
+        if (changed) body.post { fitToWindow(passes - 1) }
+    }
+
+    /**
+     * 面板**想**占的高度（像素），不受窗口高度限制。
+     *
+     * 不能用 `body.height`：`body` 是弹窗窗口里唯一的子控件，窗口按 `WRAP_CONTENT` 量它时
+     * 传下来的上限就是「窗口能有多高」，`LinearLayout` 被这个上限压住之后 `height` 会**等于**
+     * 上限——哪怕里面的内容其实更高、底部已经被裁掉。拿这个数去判断「装不装得下」永远成立，
+     * 兜底也就永远不触发。
+     *
+     * 因此这里按同一个宽度、**不限高**地量一次：量出来的是「标题 + 内容 + 列表 + 按钮 + 留白」
+     * 真实想要的高度，与窗口无关。这一次测量不会影响后续布局（下一帧本来就要重新量）。
+     */
+    private fun naturalHeight(): Int {
+        // 宽度取窗口当前的实际宽度（`setLayout(dialogWidth(), WRAP_CONTENT)` 设过），
+        // 还没布局出来时退回同一个规则算出来的值。
+        val w = (dialog?.window?.attributes?.width ?: 0).takeIf { it > 0 } ?: dialogWidth()
+        body.measure(
+            View.MeasureSpec.makeMeasureSpec(w, View.MeasureSpec.EXACTLY),
+            View.MeasureSpec.makeMeasureSpec(0, View.MeasureSpec.UNSPECIFIED)
+        )
+        return body.measuredHeight
     }
 
     /**

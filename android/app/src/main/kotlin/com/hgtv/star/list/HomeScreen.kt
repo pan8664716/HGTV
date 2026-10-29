@@ -141,13 +141,6 @@ class HomeScreen(
     }
     private val rows = mutableListOf<Row>()
 
-    /**
-     * 右下角那枚「回到顶部」浮层（由 MainActivity 渲染前塞进来——首页自己不认识它）。
-     *
-     * 只有**当前屏幕最后一行（剧架）的最后一张卡**按右键才会过去；其余情况右键仍然是
-     * 原来的行为（行内右移 / 行末进集合页）。
-     */
-    var rightTarget: View? = null
     private val cards = linkedMapOf<String, Card>()
     private var shelves = emptyList<Shelf>()
     private var lastFocus = ""
@@ -336,25 +329,6 @@ class HomeScreen(
 
     /** 当前纵向滚动位置。宿主用它把页头的收 / 展状态与真实位置摆一致（见 MainActivity 的页头判据）。 */
     fun scrollY(): Int = scroll.scrollY
-
-    /** 回到顶部（浮层用）：位置归零，页头由调用方按新位置摆正。 */
-    fun scrollToTop() { scroll.scrollTo(0,0) }
-
-    /**
-     * 视口顶部以上已经滚过去的卡片数（「回到顶部」浮层的门槛按它算）。
-     *
-     * 剧架的行高**不一样**（一栏 6~20 张、行末还可能有一张「查看全部」底板），因此这里按
-     * 「整行已经完全滚出视口」累加卡片数，而不是拿总滚动距离除以某个固定行高。
-     */
-    fun cardsScrolledPast(): Int {
-        val top=scroll.scrollY
-        var count=0
-        rows.forEach { row ->
-            if(row.block.bottom>top) return count
-            count+=row.cards.size
-        }
-        return count
-    }
 
     /**
      * 焦点当前落在第几栏（从 0 起）；焦点不在剧架上时返回 -1。
@@ -757,9 +731,7 @@ class HomeScreen(
         // 焦点请求会成功却停在看不见的地方，页头也不会展开——这正是「从收藏页返回首页后
         // 按上键永远出不来页头」的原因。非第一栏按上键是行内移动，不受影响。
         view.setOnKeyListener { _, code, event ->
-            if (code == KeyEvent.KEYCODE_DPAD_RIGHT && event.action == KeyEvent.ACTION_DOWN && event.repeatCount == 0)
-                backToTopFromRight(shelf.key, card, rowCards)
-            else if (code != KeyEvent.KEYCODE_DPAD_UP || event.action != KeyEvent.ACTION_DOWN) false
+            if (code != KeyEvent.KEYCODE_DPAD_UP || event.action != KeyEvent.ACTION_DOWN) false
             else {
                 val first = rows.firstOrNull() ?: return@setOnKeyListener false
                 if (first.key != shelf.key) false
@@ -792,10 +764,7 @@ class HomeScreen(
                     // 本机记录那三栏与热播四栏走的是同一条规则，都是右键直达。
                     code == KeyEvent.KEYCODE_DPAD_RIGHT && event.action == KeyEvent.ACTION_DOWN &&
                         event.repeatCount == 0 && rowCards.lastOrNull { it.entry != null } === card ->
-                        // 先试右下角的「回到顶部」（只有当前屏幕最后一行才成立），
-                        // 不成立再是原来的「行末右键进二级页」。
-                        if (backToTopFromRight(shelf.key, card, rowCards)) true
-                        else shelves.firstOrNull { it.key == shelf.key }?.more?.let { go ->
+                        shelves.firstOrNull { it.key == shelf.key }?.more?.let { go ->
                             lastFocus = key
                             remember(key)
                             go()
@@ -808,40 +777,6 @@ class HomeScreen(
         line.addView(view, LinearLayout.LayoutParams(slotWidth, -2).apply { rightMargin = dp(10) })
         rowCards += card
         cards[key] = card
-    }
-
-    /**
-     * 行末右键 → 右下角的「回到顶部」。
-     *
-     * 三个条件缺一不可：浮层正显示；这一张是**本栏最后一张剧集卡**（「查看全部」底板不算）；
-     * 这一栏是**当前屏幕最下面那一栏**。其余情况返回 false，右键回到原来的行为。
-     */
-    private fun backToTopFromRight(shelfKey: String, card: Card, rowCards: List<Card>): Boolean {
-        val target = rightTarget ?: return false
-        if (target.visibility != View.VISIBLE) return false
-        if (rowCards.lastOrNull { it.entry != null } !== card) return false
-        if (!isBottomVisibleRow(shelfKey)) return false
-        target.requestFocus()
-        return true
-    }
-
-    /**
-     * **屏幕最下面那一栏**的最右一张卡（右下角那枚「回到顶部」按它的右边框定位）。
-     *
-     * 不要求这一栏完整可见：被屏幕截住时浮层会自己夹在屏幕内，因此它始终待在右下角。
-     */
-    fun lastVisibleRowCard(): View? {
-        val viewportBottom=scroll.scrollY+scroll.height-scroll.paddingTop
-        val row=rows.lastOrNull { it.block.top<viewportBottom } ?: rows.lastOrNull() ?: return null
-        return row.cards.lastOrNull()?.view?.takeIf { it.attachedToWindow }
-    }
-
-    /** 这一栏是不是「当前屏幕最下面那一栏」：视口底边落在哪一栏里，哪一栏就是。 */
-    private fun isBottomVisibleRow(shelfKey: String): Boolean {
-        // 内容坐标里的可见底边（ScrollView 的上内边距在内容区里，要先扣掉）。
-        val bottom = scroll.scrollY + scroll.height - scroll.paddingTop
-        val row = rows.lastOrNull { it.block.top < bottom } ?: return false
-        return row.key == shelfKey
     }
 
     private fun blockOf(shelfKey: String): View =

@@ -120,20 +120,21 @@ internal const val HEADER_SHOW_THRESHOLD=12
 internal const val ACCOUNT_FRESH_MS=5*60*1000L
 
 /**
- * 预取下一页的触发点：**已加载的内容被消耗掉这么多**（百分比）就开始取下一页。
+ * 预取下一页的触发点：**已加载的内容只剩下这么多行**就开始取下一页。
  *
- * 判据必须按**比例**算，不能按「还剩几行」算。原先写的是「焦点走到倒数第 2 行」，
- * 按一页 60 部（10 行）折算下来要到第 48 部才触发——用户按住下键时早就撞到底了，
- * 读到的就是「焦点走到哪儿才加载那一片」。
+ * 早先这里按**比例**算（「已加载内容被消耗掉 50%」），那条判据有一个致命的自指：
+ * 追加一页之后，用户的位置恰好落在新总量的 **50%** 上（新页第一张卡就是中点），
+ * 于是「刚接完就满足条件」，接着再取下一页、再落地、再满足……**判定恒为真**。
+ * 表现出来就是「一进榜单页自己一路往下翻」，翻到几千条才因为页码上限停住。
  *
- * 取 50：一页 100 部里走到第 50 部就取下一页，剩下 50 部（约 8 行）当缓冲，
- * 够好几个请求往返（实测一页 794ms）。宁可早取——预取是静默的，早取的代价只是
- * 队列里多几张图；晚取的代价是用户直接看到灰框。
+ * 按「还剩几行」算就没有这个问题：一页 100 部按六列切开是 17 行，
+ * 追加之后用户前面还剩 17 行，远大于这里的 4 行——一次追加只取一页，然后停手。
+ * 用户真往下走、走到离已加载末尾 4 行时，才再取下一页。
  *
- * 之所以用比例而不是固定条数：翻了几页之后已加载的总量在长，缓冲也该跟着长——
- * 固定留 50 部的话，加载到 1000 部时那点缓冲就不够一个往返了。
+ * 4 行 ≈ 2/3 屏，够一个请求往返（实测一页 794ms，用户消费约 1 行/0.6s）。
+ * 判据按**行**而不是按「还剩几部」：每行几张卡是设置项（4~8），按行算与列数无关。
  */
-internal const val PREFETCH_TRIGGER_PERCENT=50
+internal const val PREFETCH_TRIGGER_ROWS=4
 
 /**
  * 一次预取最多**连取几页**。
@@ -152,7 +153,7 @@ internal const val PREFETCH_PAGES=2
  *
  * 一页现在是 100 条（`ContentRepository.LOGICAL_PAGE_SIZE`，各条路统一），
  * 约 17 行；12 行的半径意味着「一页刚看完约 2/3 的时候，下一页的图已经在路上」——
- * 与 `PREFETCH_TRIGGER_PERCENT=50` 那条判据是同一个意图（提前量要够一个请求往返）。
+ * 与 `PREFETCH_TRIGGER_ROWS=4` 那条判据是同一个意图（提前量要够一个请求往返）。
  *
  * 不取更大：排在队尾的来不及在用户看到之前完成，取多了只是把真正要用的那几张挤到后面。
  */
@@ -291,23 +292,51 @@ internal val NAV_ENTRIES=listOf(
 )
 internal val NAV_KEYS=NAV_ENTRIES.map { it.first }.toSet()
 /**
- * 首页三栏本机记录（历史记录 / 我的收藏 / 稍后观看）：设置页里各有一枚「是否显示」的开关。
+ * 首页七栏（本机记录三栏 + 热播四栏）：设置页里各有一枚「是否显示」的开关。
  *
- * 与导航栏那五枚（[NAV_ENTRIES]）不是一组：那五枚管的是**页面入口**，这三枚管的是
+ * 与导航栏那几枚（[NAV_ENTRIES]）不是一组：那些管的是**页面入口**，这些管的是
  * **首页上的栏目**。关掉之后首页不再铺那一栏（也就没有行末「查看全部」的入口），
- * 但记录本身一份不删——重新打开开关，内容原样回来。
- * key 同时用于落盘（见 `Library.hiddenHome`）与设置页那一格的 `tag`。
+ * 但记录本身一份不删——重新打开开关，内容原样回来；热播栏关掉也不影响榜单页。
+ *
+ * key 与名字都**取自** [com.hgtv.star.core.HomeLayout.columns]（顺序、文案只有一个来源），
+ * 落盘见 `Library.hiddenHome`，设置页那一格的 `tag` 是 [SETTINGS_TAG_HOME_PREFIX] + key。
  */
-internal val HOME_ENTRIES=listOf(
-    "history" to "历史记录",
-    "favorites" to "我的收藏",
-    "later" to "稍后观看"
-)
+internal val HOME_ENTRIES=com.hgtv.star.core.HomeLayout.columns.map { it.key to it.title }
 // 白名单只有一个来源（core 的 [com.hgtv.star.core.HOME_KEYS]）：落盘解码与设置页开关
 // 用的是同一份 key，改名时不会出现「界面认这一套、磁盘认另一套」。
 internal val HOME_KEYS=com.hgtv.star.core.HOME_KEYS
 /** 设置页「功能显示」一行放几枚开关（与 [THEME_GRID_COLUMNS] 同列宽，五枚即两行）。 */
 internal const val NAV_GRID_COLUMNS=4
+/**
+ * 设置页的四个大项（顶部导航栏里的四枚芯片，顺序即显示顺序）。
+ *
+ * | 大项 | 内容 |
+ * | --- | --- |
+ * | 播放交互 | 播放偏好 / 播放显示 / 弹幕设置 / 按键设置 |
+ * | 外观导航 | 布局启动 / 导航显隐 / 主题外观 |
+ * | 内容推荐 | 推荐范围 / 内容来源 |
+ * | 系统高级 | 数据维护 / 设备形态 / 高级性能 |
+ *
+ * 四块内容在进设置页时一次性建好，切换只改可见性（见 `MainActivity.switchSettingsTab`），
+ * 因此这里只放显示名，不放任何取值。
+ */
+internal val SETTINGS_TABS=listOf("播放交互","外观导航","内容推荐","系统高级")
+
+/** 设置页某一大项的内容块（`tag = settings-page-<下标>`）：切大项按它取块、按它找回焦点。 */
+internal const val SETTINGS_TAG_PAGE_PREFIX="settings-page-"
+
+/**
+ * 设置页那四枚大项芯片**留在导航栏那一行**所需的最小屏宽（dp）。
+ *
+ * 四枚芯片按内容宽收（每枚约 90dp）+ 页面标题 + 右边那排圆形入口（推荐 + 五个入口 ≈ 410dp），
+ * 加起来要 1000dp 左右；1080p 电视（960dp 画布）塞不下，会把这排入口顶出屏幕，
+ * 因此那一档退回导航栏下面单独一行。4K 画布（1920dp）与 1440p 都能留在同一行里。
+ */
+internal const val SETTINGS_CHIP_INLINE_MIN_WIDTH=1060
+
+/** 设置页顶部大项芯片的 `tag`（`settings-tab-<下标>`）。 */
+internal const val SETTINGS_TAG_TAB_PREFIX="settings-tab-"
+
 /** 「推荐」那一枚入口的 key：它与「打开应用是否进入推荐」联动。 */
 internal const val NAV_KEY_RECOMMEND="recommend"
 /** 设置页某一行重建后的落点前缀：`settings-nav-<key>`。 */
@@ -318,17 +347,22 @@ internal const val SETTINGS_TAG_DEBUG="settings-debug"
 internal const val SETTINGS_TAG_LAUNCH_RECOMMEND="settings-launch-recommend"
 /** 设置页「减少动画优化性能」那一行的 tag（只在非低配设备上出现）。 */
 internal const val SETTINGS_TAG_REDUCE_ANIM="settings-reduce-anim"
+/** 设置页「返回顶部」那一格的 tag（列表页浮层显隐四档）。 */
+internal const val SETTINGS_TAG_BACK_TO_TOP="settings-back-to-top"
 /** 设置页「本机记录显示」那一格的 tag 前缀：`settings-home-<key>`。 */
 internal const val SETTINGS_TAG_HOME_PREFIX="settings-home-"
 
 /** 设置页「播放显示」四格的 tag 前缀：`settings-play-<key>`。 */
 internal const val SETTINGS_TAG_PLAY_PREFIX="settings-play-"
 
-/** 设置页「短剧自动全屏」那一格。 */
+/** 设置页「竖屏短剧全屏」那一格。 */
 internal const val SETTINGS_TAG_AUTO_FULLSCREEN="settings-auto-fullscreen"
 
+/** 设置页「推荐范围」三格的 tag 前缀：`settings-genre-<genre>`。 */
+internal const val SETTINGS_TAG_GENRE_PREFIX="settings-genre-"
+
 /**
- * 设置页「使用设备」那一格（自动 / 手机 / 平板 / 电视）。
+ * 设置页「设备类型」那一格（自动 / 手机 / 平板 / 电视）。
  *
  * 选中之后要按新形态重建整页（触屏手势层 / 底部控制条 / 旋转方向都是建页面时定的），
  * 重建完焦点按这个 tag 落回同一格。
@@ -358,13 +392,6 @@ internal val PLAY_INFO_ENTRIES=listOf(
  * 注意「弹幕速度 / 弹幕大小 / 弹幕透明度」三行在**隐藏弹幕**时不存在（整行不添加），
  * 所以「定时」的行号不是固定的：用 [sleepRow] 现算，不要再写死 7。
  */
-/**
- * 「回到顶部」浮层的门槛：沿着列表第一列往下数，**滚过这么多条目**之后才出现（见
- * [com.hgtv.star.list.itemsScrolledPast]）。按条目而不是像素或行数：六列栅格一行 6 个
- * （50 大约是九行、一屏半），换成别的列数 / 海报尺寸都不用改这里。
- */
-internal const val BACK_TO_TOP_ITEMS=50
-
 internal const val MENU_ROW_QUALITY=0
 internal const val MENU_ROW_SPEED=1
 internal const val MENU_ROW_FRAME=2

@@ -369,9 +369,19 @@ internal fun MainActivity.attachTouchLayer() {
                         deliver=false
                         swipeGesture=false
                         val dy=event.y-swipeStartY
+                        // 抬手速度：**快速一划**不该要求划满 [recommendSwipeDistance]。
+                        // 那一条是按「屏幕高度的 7%」算的（手机竖屏约 170px），抖一下就走完，
+                        // 但真正的「快速上下切换」是一甩几十像素就抬手——早先这种一甩被判成没滑够，
+                        // 用户读到的是「划了没反应、再划一下才换」。
+                        // 门槛只在手势本身判成竖向之后才用得上（见上面 `swipeGesture` 的判定）。
+                        val speed=runCatching {
+                            tracker?.computeCurrentVelocity(1000)
+                            Math.abs(tracker?.yVelocity ?: 0f)
+                        }.getOrDefault(0f)
                         // 上滑（手指向上，dy<0）= 下一部；下拉（dy>0）= 上一部。
                         // 走的是和「上下键」同一条路（[switchRecommend]）：补页 / 环绕 / 过渡黑场全都不用重写。
-                        if(Math.abs(dy)>=recommendSwipeDistance()) switchRecommend(if(dy<0f) 1 else -1)
+                        val threshold=if(speed>=FLING_SWIPE_SPEED) recommendSwipeDistanceFling() else recommendSwipeDistance()
+                        if(Math.abs(dy)>=threshold) switchRecommend(if(dy<0f) 1 else -1)
                     }
                     tracker?.recycle(); tracker=null
                 }
@@ -400,7 +410,7 @@ internal fun MainActivity.attachTouchLayer() {
     // （index=0）不可点、不处理 `MotionEvent`，因此压在它上面不会让手势失效——
     // 事件会一路上浮到这一层。
     //
-    // 挂在这一层里而不是 `root` 上：短剧自动全屏转画面时，这一层跟着一起转，
+    // 挂在这一层里而不是 `root` 上：竖屏短剧全屏转画面时，这一层跟着一起转，
     // 手指按到的位置与看到的控件才对得上（旋转后的命中测试由 `ViewGroup` 反解矩阵完成）。
     val host=overlayLayer ?: root
     host.addView(layer,1.coerceAtMost(host.childCount),FrameLayout.LayoutParams(-1,-1))
@@ -533,6 +543,24 @@ internal fun MainActivity.cancelScrubUi() {
  */
 internal fun MainActivity.recommendSwipeDistance(): Float =
     maxOf(dp(56).toFloat(),resources.displayMetrics.heightPixels*0.07f)
+
+/**
+ * 「快速一甩」的抬手速度门槛（px/s）。
+ *
+ * 800 px/s 大约是「一秒划过大半屏」那一档：再低会把慢拖也当成甩，
+ * 再高就要求用户真的甩出去。这一档与常见短视频客户端的判据同一量级。
+ */
+private const val FLING_SWIPE_SPEED=800f
+
+/**
+ * 快速一甩时要求的位移：比慢拖小得多（约 1/3）。
+ *
+ * 甩的那一下位移本来就短（手指走了 40~80px 就抬起），要求 170px 等于「甩了不算」。
+ * 只认速度够快的那一批，因此不会把误触（手指抖一下）判成换剧——
+ * 竖向手势的门槛（touch slop）已经在判定 `swipeGesture` 时过了一遍。
+ */
+internal fun MainActivity.recommendSwipeDistanceFling(): Float =
+    maxOf(dp(28).toFloat(),resources.displayMetrics.heightPixels*0.025f)
 
 /**
  * 手势层上的瞬时提示（`快进 10 秒`）。
@@ -909,10 +937,22 @@ private fun hitTestFocusable(view: View,x: Float,y: Float,fallback: View?=null):
  * `setContentView(content)` 一致（`FrameLayout` + MATCH_PARENT 的内容）。
  */
 internal class TouchFocusHost(context: android.content.Context) : FrameLayout(context) {
+    /**
+     * 这一次触摸算不算「用户操作」的回调（见 [touchFocusHost] 的 `onTouch`）。
+     *
+     * 在 `ACTION_DOWN` 里调一次就够：拖动进度、连续点按都会各自发一次 DOWN。
+     */
+    var onTouch: (() -> Unit)? = null
+
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         // 与 Activity 里同一条规则：DOWN 之前先把焦点交给手指下面那个控件。
         // 事件真正送到目标时它已经 isFocused()，UP 里 `focusTaken` 为 false，一次点击生效。
-        if(event.actionMasked==MotionEvent.ACTION_DOWN) focusUnderTouch(this,event.x,event.y)
+        // 按下与拖动都算「在操作」：选集面板上按住方向翻页 / 拖着滚动只发 MOVE，
+        // 只看 DOWN 的话，长时间翻页到点就会被自动收走。
+        if(event.actionMasked==MotionEvent.ACTION_DOWN || event.actionMasked==MotionEvent.ACTION_MOVE) onTouch?.invoke()
+        if(event.actionMasked==MotionEvent.ACTION_DOWN) {
+            focusUnderTouch(this,event.x,event.y)
+        }
         return super.dispatchTouchEvent(event)
     }
 }
@@ -926,8 +966,9 @@ internal class TouchFocusHost(context: android.content.Context) : FrameLayout(co
  *
  * 普通弹窗（`TvDialog`）用默认值：内容宽度撑满、高度交给内容自己，与套壳之前完全一致。
  */
-internal fun touchFocusHost(content: View,fillHeight: Boolean=false): View {
+internal fun touchFocusHost(content: View,fillHeight: Boolean=false,onTouch: (() -> Unit)?=null): View {
     val host=TouchFocusHost(content.context)
+    host.onTouch=onTouch
     host.addView(content,FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,
         if(fillHeight) ViewGroup.LayoutParams.MATCH_PARENT else ViewGroup.LayoutParams.WRAP_CONTENT

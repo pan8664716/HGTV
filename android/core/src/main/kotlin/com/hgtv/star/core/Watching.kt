@@ -4,7 +4,15 @@ package com.hgtv.star.core
 import org.json.JSONObject
 
 object PlaybackQuality {
-    val options=listOf(480,720,1080)
+    /**
+     * 可选的清晰度档位：**五档，360 到 1080**。
+     *
+     * 这五档与 `device_level=4/5` + `need_all_video_definition=true` 时下发的那套表一致
+     * （平台按短边给 360/480/576/720/1080，全是 HEVC）。
+     * 档位少一档就少一次选择：`normalize` 会把不在这张表里的值一律按 1080 处理，
+     * 因此这里少写 576 就等于「用户选不到 576，老数据里存着 576 的会被顶到 1080」。
+     */
+    val options=listOf(360,480,576,720,1080)
     fun normalize(value: Int)=value.takeIf { it in options } ?: 1080
 }
 
@@ -12,7 +20,14 @@ object PlaybackQuality {
 class RecoveryBudget {
     var attempts=0; private set
     val remaining get()=attempts<3
-    val delayMillis get()=listOf(1000L,2500L,5000L).getOrNull(attempts)
+    /**
+     * 三次自动重试的间隔。
+     *
+     * 早先是 1s / 2.5s / 5s：整段 8.5 秒里连发几十个取地址请求，而这接口空响应是
+     * 网关按并发挡的（2026-10-27 实测 20 并发 0 命中、单发 50~80% 命中），
+     * 重试越密越起不来。现在拉长到 3s / 6s / 12s，让网关那边的窗口先过去。
+     */
+    val delayMillis get()=listOf(3000L,6000L,12000L).getOrNull(attempts)
     fun consume(): Boolean { if(!remaining) return false; attempts++; return true }
     fun reset() { attempts=0 }
 }

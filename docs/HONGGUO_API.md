@@ -580,12 +580,22 @@ body（`video_id` = 分集 ID，也就是 `vid_list` 里的一项，**单值字�
 {
   "video_id": "7615470177953532991",
   "biz_param": {
-    "detail_page_version": 0, "device_level": 3, "disable_digg_stat": false,
+    "detail_page_version": 0, "device_level": 4, "disable_digg_stat": false,
     "need_all_video_definition": true, "need_mp4_align": false,
     "use_os_player": false, "use_server_dns": false, "video_platform": 1024
   }
 }
 ```
+
+- **`device_level` 只有 4 / 5 两档，默认 4**。两档下发的五档清晰度**全是 HEVC**
+  （`bytevc1` / `h265_hvc1`），区别只在「能不能拿满五档」：4 通常给 4 档左右，5 拿满 5 档。
+  官方值 1/2/3 一律不用——那一档的 360/480/576/720 是 `bytevc2`，Android 没有解码器。
+- **`need_all_video_definition=true` 是「拿满 5 档」的前提**，每个请求都带；不带它只回 1 档。
+  档位只决定这套表里给几档，不会把某一档换成别的编码。
+- **限流处置**：`HTTP 200 + 0 字节` 表示这台设备（`device_id`）被挡。先换一个
+  `device_id`（档位仍是 4）重发；换号之后仍然空响应才升到 5，并再换一次号；
+  5 档还被挡就继续换号。本集升上去不回退，下一集起播重置回 4。
+  详见 [播放降级与重试策略.md](播放降级与重试策略.md) 第 5 节。
 
 响应：
 
@@ -612,6 +622,8 @@ body（`video_id` = 分集 ID，也就是 `vid_list` 里的一项，**单值字�
 - `video_model` 是**字符串化的 JSON**，要再解析一层；`video_list` 是**数组**（旧路径是对象），
   元素里是 `video_meta`（`vwidth`/`vheight`/`bitrate`/`size`）、`gear_des_key`（`…|4:720p|…`）、
   `encrypt_info.spade_a`（`cenc-aes-ctr`）、`main_url` / `backup_url`；
+- **每一档只有一条 `main_url`，音轨在该 MP4 容器内**：服务端不下发独立的音频地址，
+  客户端也从不拼接不同响应的轨道——换档就是整条流一起换，绝不会出现「视频用 A、音频用 B」；
 - 拿到 `video_model.fallback_api` 后**再发一次普通 GET**（播放器 UA，不需要签名）：
 
 ```json
@@ -640,6 +652,9 @@ body（`video_id` = 分集 ID，也就是 `vid_list` 里的一项，**单值字�
 - `spade_a` 非空时用 `MediaCrypto.deriveKey` 得到 16 字节内容密钥（CENC 解密用）；
 - **跳过 `codec_type` 为 `bytevc2` / `bvc2` 的资源**：这类资源在 Android 的 MP4 解析器里
   可能只有音轨、没有画面；
+- **只保留 HEVC**：`bytevc1` / `h265_hvc1` / `hevc` / `h265` / `hvc1` / `hev1` 收；
+  `bytevc2` / `bvc2` / `h264` / `avc` / `avc1` / `h263` / `vp9` / `av01` / `mp4v-es` 剔；
+  **`codec_type` 为空的老片源照收**（容器实测是 hvc1，剔掉等于老剧全不能播）；
 - 清晰度数值由 `quality_desc` / `height` / `vheight` / `quality` / key 依次兜底解析，
   支持 `2160/1440/1080/720/576/540/480/360`，以及 `1920→1080`、`1280→720`、
   `1024→576`、`854→480`、`640→360`；按数值降序取第一个 ≤ 请求上限的，

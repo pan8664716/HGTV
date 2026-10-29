@@ -21,6 +21,36 @@ class MediaCryptoTest {
         assertArrayEquals(expected,MediaCrypto.decrypt(source,0,key,prepared))
         assertArrayEquals(expected.copyOfRange(22,47),MediaCrypto.decrypt(source.copyOfRange(22,47),22,key,prepared))
     }
+    /**
+     * 跨缓冲区的大块：大于 128 KB 的样本会被切成多段（见 `MediaCrypto.Engine.maxData`），
+     * 段与段之间必须正好落在 16 字节的计数器块边界上，否则 keystream 会错位。
+     *
+     * 这里拿 JDK 自带的 `AES/CTR` 当参考答案，逐字节比对；顺带覆盖「起始位置不在块首」。
+     */
+    @Test fun largeSampleMatchesReferenceCtrAcrossChunkBoundaries() {
+        val size=300_000
+        val cipherText=ByteArray(size).also(java.util.Random(7)::nextBytes)
+        // 注意：**不要**写成 `Cipher.apply { init(..., IvParameterSpec(iv)) }`。
+        // `apply` 的接收者是 `Cipher`，而它有 `getIV()`，Kotlin 会把这个**合成属性**
+        // 顶掉外层的 `iv` 字段——拿到的是「还没 init 所以是 null」的 IV，
+        // 报出来的就是 `IvParameterSpec: iv is null`。这里显式取本类的字段。
+        val ivBytes=this.iv
+        val reference=javax.crypto.Cipher.getInstance("AES/CTR/NoPadding").also {
+            it.init(
+                javax.crypto.Cipher.DECRYPT_MODE,
+                javax.crypto.spec.SecretKeySpec(key,"AES"),
+                javax.crypto.spec.IvParameterSpec(ivBytes)
+            )
+        }.doFinal(cipherText)
+        val prepared=MediaCrypto.Prepared(byteArrayOf(),listOf(MediaCrypto.Sample(0,size.toLong(),iv)))
+        assertArrayEquals(reference,MediaCrypto.decrypt(cipherText.copyOf(),0,key,prepared))
+        // 起始位置 5 字节（不在块首）+ 长度跨段：解密结果应与参考实现的同一段一致。
+        val offset=5
+        assertArrayEquals(
+            reference.copyOfRange(offset,size),
+            MediaCrypto.decrypt(cipherText.copyOfRange(offset,size),offset.toLong(),key,prepared)
+        )
+    }
     private fun box(type: String,body: ByteArray)=be32(body.size+8)+type.toByteArray()+body
     private fun fixture(codec: String="avc1",auxSize: Int=8): ByteArray {
         val ftyp=box("ftyp","isom0000".toByteArray())

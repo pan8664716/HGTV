@@ -37,6 +37,7 @@ import com.hgtv.star.tv.TvTools
 import com.hgtv.star.list.gridFocusIndex
 import com.hgtv.star.list.nearGridEnd
 import com.hgtv.star.list.prefetchNextPage
+import com.hgtv.star.list.positionBackToTop
 import com.hgtv.star.list.showCatalog
 import com.hgtv.star.list.updateBackToTop
 import com.hgtv.star.compat.Cancellable
@@ -62,6 +63,17 @@ import com.hgtv.star.compat.lowEndTv
  * 「收藏后焦点跑到上面」「内容落地后焦点从芯片跳到第一张卡」都是它。
  */
 
+/**
+ * 一次在途的「相邻一部预热」。
+ *
+ * 带自己的取消域 [scope]：取消的时候不只是丢弃结果，连它正在拉的那 1MB 也一起掐掉。
+ * 手机上一划一部，被作废的预热很多；只丢结果的话这些连接还会把带宽占满，
+ * 正在放的那一部反而更卡。
+ */
+internal class RecommendWarm {
+    @Volatile internal var future: java.util.concurrent.Future<*>?=null
+    internal val scope=com.hgtv.star.core.RequestScope()
+}
 
 class MainActivity: Activity() {
     /*
@@ -82,6 +94,25 @@ class MainActivity: Activity() {
     internal val themeRows=linkedMapOf<TvTheme,TvButton>()
     internal val main=Handler(Looper.getMainLooper())
     internal val io=Executors.newFixedThreadPool(3)
+    /**
+     * 起播前的「类预热」专用线程（见 [primePlaybackClasses]）。
+     *
+     * 单独一条、**不占 [io]**：那段活儿要枚举本机所有解码器（`MediaCodecList` +
+     * 逐条 `createByCodecName` 试开），实测在这台 2G 盒子上 **550~600ms**。
+     * 原先它排在取播放地址之前、同一个线程上，等于把网络整整推后半秒——
+     * 日志里 `Stage warmPlayer +371ms` → `Stage primeClasses +965ms` 就是它。
+     * 现在与网络并行：网络在等的时候 CPU 正好干这件事。
+     */
+    internal val playbackPrime=Executors.newSingleThreadExecutor()
+    /**
+     * 建播放器实例专用线程（见 [buildPlayerAsync]）。
+     *
+     * 为什么要单独一条：`warmPlayer()` 原来跑在 [io] 上，而那条池子只有 3 条线程，
+     * 冷启动这一刻它同时被「读详情缓存 / 取推荐流 / 心跳 / 账号」占着——
+     * 日志里 `Stage warmPlayer +752ms`（基线 368ms）里有一大半是**排队**，不是真的在建。
+     * 建播放器本身与网络无关，不该排在别人后面。
+     */
+    internal val playerBuildWorker=Executors.newSingleThreadExecutor()
     // 网络失败诊断：客户设备上「首页空白」时，这行日志给出主机名与异常类型。
     //
     // 注意：正式包里 `Log.i` 被 R8 整段删掉（见 proguard-rules.pro），只写 logcat 等于线上
@@ -89,7 +120,10 @@ class MainActivity: Activity() {
     // 调试面板与 logcat（U-APM 已移除，不再有任何远端上报），平时不产生任何网络开销。
     init {
         com.hgtv.star.core.NetLog.log={ line ->
-            android.util.Log.i("HGTV-NET",line)
+            // 只走 [Diagnostics.trace]，它本身就是 `Log.i(tag, line)`。
+            // 早先这里先 `Log.i("HGTV-NET", line)` 再 `Diagnostics.trace("HGTV-NET", line)`，
+            // 同一条日志被写了两遍——`adb logcat` 里每一行网络日志都是双份，
+            // 读起来像「同一个请求发了两次」，排查时会直接把人带沟里。
             Diagnostics.trace("HGTV-NET",line)
             // 调试模式打开时，网络层的每一行都进右上角那块面板：
             // 「搜索接口暂不可用」这类问题在页面上只剩一句中文，真正的原因（哪个主机、什么码）只在这里。
@@ -99,6 +133,11 @@ class MainActivity: Activity() {
                 // TLS 能力是**固定一行**（面板第三行），不再抄进「近况」：
                 // 同一条信息出现两次，用户会以为那是两次不同的连接结果。
                 DebugTls.summary=compactTls(line.removePrefix("TLS "))
+            } else if(!keepNetLine(line)) {
+                // 纯统计行（`total=107ms` / `headers=… read=… chars=…` / 缓存命中）不进面板：
+                // 一次播放能连打十几条，只会把真正的失败挤出「近况」那 8 行。
+                // logcat 里照旧有（上面那一句 [Diagnostics.trace]），性能调优不受影响。
+                // 判据是白名单：见 [keepNetLine]。
             } else if(!line.contains("interrupted",ignoreCase=true) && !line.contains("Canceled",ignoreCase=true)) {
                 // 「线程被打断 / 主动取消」不记：切页、换剧、退出时取消域会打断工作线程，
                 // 每一手都会留下一条 `InterruptedIOException: interrupted`。
@@ -110,7 +149,6 @@ class MainActivity: Activity() {
     internal val repository=ContentRepository().apply {
         // 写接口（收藏 / 进度 / 历史）的诊断日志：`core` 是纯 Kotlin 模块，日志出口由这里接上。
         writeLog={ line ->
-            android.util.Log.i("HGTV",line)
             Diagnostics.trace("HGTV-WRITE",line)
         }
     }
@@ -161,12 +199,53 @@ class MainActivity: Activity() {
     /** 每次换集自增；在途的弹幕请求发现 token 变了就立刻收手。 */
     internal val danmakuToken=java.util.concurrent.atomic.AtomicLong(0)
     internal var prefetchHttp: okhttp3.OkHttpClient?=null
+    /**
+     * 正在起播、且卡在「取播放地址 / 本地准备」这一段。
+     *
+     * 取地址接口对并发极敏感（见 `ContentRepository.videoModel` 的注释），
+     * 起播与下一集预热同时发就是两个并发，会把这一轮两边都压成空响应。
+     * 因此起播这一段在跑时，[maybePrefetch] 直接跳过本次，等下一帧再看。
+     */
+    internal @Volatile var playbackFetching=false
     internal var playbackHttp: okhttp3.OkHttpClient?=null
     internal val preparedNext=PreparedSlot<RemoteVideo>({ android.os.SystemClock.elapsedRealtime() })
     internal var prefetchJob: java.util.concurrent.Future<*>?=null
     internal var prefetchScope: RequestScope?=null
     internal var prefetchedFor=""
     internal var readySince=0L
+    /**
+     * 正式播放页**按集计**的全部重试额度：自动重试 3 次 / 画面重建 1 次 /
+     * 队列项重开 2 次 / 地址自愈每键 1 次。
+     *
+     * 全部收敛在 core 里（见 [com.hgtv.star.core.PlaybackAttemptLedger]）：读写只有一处，
+     * 重置只有三个入口（换集 / 换集但连播链未接上 / 用户手动重试）。
+     * 早先这五份散在本类与 `MainActivityPlayback` 的字段里，各自归零条件不同，
+     * 反复出现「换集之后没有自动重试」「错误页顶着上一集的建议」这类张冠李戴。
+     */
+    internal val ledger=com.hgtv.star.core.PlaybackAttemptLedger()
+    /**
+     * 这一次进推荐页，首屏那一列来自落盘快照（见 `RecommendCache`）。
+     *
+     * 它只改一件事：推荐流回来时不整页替换列表，而是往后接新条目——
+     * 正在播的那一部就在列表头部，整页换会让下标指到别的剧上。
+     */
+    internal var recommendRestored=false
+    /**
+     * 这一次进推荐页**已经起播过**（快照续播 / 列表还在 / 推荐流回来）。
+     *
+     * 起播只许发生一次：早先冷启动靠快照先起播、推荐流回来后再走一遍 `playRecommendAt(0)`，
+     * 等于把已经播着的那一部整条重挂（白等第二次网络）。
+     */
+    internal var recommendStarted=false
+    /**
+     * 冷启动续播时**暂缓**取推荐流（见 `openRecommend`）。
+     *
+     * 续播那一部的首帧全在盘上，只有「解码 + 出帧」在等；这时候再叠一个取流的 POST
+     * 只会分掉那条链路上本来就紧张的一点带宽与 CPU。因此等首帧出来再取（见 `playEpisode`
+     * 的 READY 分支），3 秒还没出画面就按超时取。
+     */
+    internal var recommendFeedPending=false
+    internal var recommendFeedTimer: Runnable?=null
     /**
      * 无感切集（见 [playEpisode] 里的 `seamless`）：下一集已经预热好时，切集不清播放器，
      * 新源直接顶替旧源，画面停在上一集最后一帧上等下一集的第一帧。
@@ -214,8 +293,6 @@ class MainActivity: Activity() {
      */
     internal var failureHandledSession=-1
     internal var failureHandledAt=0L
-    /** 队列里的下一集连续失败次数：只用来决定「还值不值得再自动重切一次」。 */
-    internal var autoNextFailures=0
     /**
      * 播完的那一项是否还挂在播放列表里（等 800ms 后摘）。
      *
@@ -383,16 +460,6 @@ class MainActivity: Activity() {
     internal var backToTopView: View?=null
     /** 浮层当前是否显示（避免每次滚动都写一遍 visibility）。 */
     internal var backToTopShown=false
-    /**
-     * 浮层是不是正等「这一次布局」跑完再摆位置。
-     *
-     * 进页面 / 恢复滚动位置的那一帧里卡片刚物化，窗口坐标还全是 0，按它摆会把浮层
-     * 摆到右上角（见 `list/BackToTop.kt` 的 [positionBackToTop]）；那时挂一个一次性的
-     * 全局布局回调，布局完成立刻重摆，并靠这一位防止重复挂。
-     */
-    internal var backToTopLayoutPending=false
-    /** 为了等布局已经重试了几次（见 `list/BackToTop.kt` 的 [positionBackToTop]）。 */
-    internal var backToTopLayoutWaits=0
     /** 走到浮层之前焦点在哪一张卡（浮层的「上 / 左」按回那里）。 */
     internal var backToTopReturn=View.NO_ID
     internal var catalogScroll: ScrollView?=null
@@ -441,6 +508,33 @@ class MainActivity: Activity() {
      * 默认 true：探测还没回来时按「能」处理，避免一进播放页就先把用户吓一跳。
      */
     internal var playbackHevcSupported=true
+    /**
+     * 本次**播放会话**的降级状态：有效清晰度上限、自动切到的解码方式、每集预算。
+     *
+     * 只活在内存里，退出播放页就整体丢掉（[releasePlayer] 里 `onUserManualChange`）。
+     * 它存在的理由只有一个：降级是「这台机器这一刻放不了」，不是「用户想要更低的清晰度」——
+     * 早先把 `library.maxQuality` 直接写成 480，用户改不回来、重装都恢复不了。
+     */
+    internal val sessionPlayback=com.hgtv.star.core.SessionPlaybackPolicy()
+    /**
+     * [sessionPlayback] 当前记的是**哪一部剧**的降级结论。
+     *
+     * 换剧必须清空会话（见 [playEpisode] 开头）：上一部降下来的上限与「请切换软解」的结论
+     * 与这一部毫无关系。按剧判断而不是按「有没有重建播放层」判断，是因为同一部剧里的
+     * 换集 / 换清晰度 / 重试 / 换解码方式都会重建播放层，而那些场景**必须**沿用上限。
+     */
+    internal var sessionSeriesId=""
+    /** 播放链路的提示去重（同一个 key 一次播放只弹一次，见 [com.hgtv.star.core.ToastDeduper]）。 */
+    internal val playbackToasts=com.hgtv.star.core.ToastDeduper()
+    /**
+     * 本机有没有 **HEVC 硬解**。由 [primePlaybackClasses] 在 io 线程探一次（Binder 调用）。
+     *
+     * 未探测前按 true：宁可先按硬解起播、失败了再提示，也不要凭一个空值把所有人打成软解。
+     *
+     * 结论**只用于提示**（起播 toast / 错误页的「切换软解」按钮 / 调试面板），
+     * **不会**自动改用户的解码方式：优先硬解，本地不支持时由用户手动换软解。
+     */
+    @Volatile internal var hardwareHevcAvailable=true
     /**
      * 「第三方客户端使用须知」是不是正在显示。
      *
@@ -549,7 +643,7 @@ class MainActivity: Activity() {
         updateBackToTop()
         // 手指 / 遥控滚到离底部还有小半屏时就先把下一页取回来：
         // 真滚到底的时候内容已经在手上，接上是瞬间的，用户看不到「正在加载」。
-        // 触发点统一交给 [nearGridEnd]（按「已消耗 2/3」算）：这里只管页头收展。
+        // 触发点统一交给 [nearGridEnd]（按「还剩几行」算）：这里只管页头收展。
         if(nearGridEnd()) prefetchNextPage()
     }
 
@@ -738,12 +832,13 @@ class MainActivity: Activity() {
     /**
      * 播放页「画面之外的一切」那一层：弹幕 / 手势层 / 顶部信息条 / 底部控制条 / 触屏按键。
      *
-     * 单独装一层不是为了排版，是为了**整体旋转**：短剧自动全屏是把画面转 90°
+     * 单独装一层不是为了排版，是为了**整体旋转**：竖屏短剧全屏是把画面转 90°
      *（见 `applyVideoGeometry`），转的只有画面时，标题条、控制条、弹幕全都还横在
      * 原来的方向上，读起来和画面互相垂直。把这一层按同一个角度、同一套换过的宽高一起转过去，
      * 界面才和画面朝同一个方向（见 `applyOverlayGeometry`）。
      *
-     * 电视上没有这一层可转（`autoFullscreenRotated()` 为 false），宽高与角度都是原值，
+     * 电视上（以及任何不支持这一项的形态）没有这一层可转（`autoFullscreenRotated()` 为 false），
+     * 宽高与角度都是原值，
      * 旋转为 0° 时与拆之前逐像素一致。
      */
     internal var overlayLayer: FrameLayout?=null
@@ -779,7 +874,6 @@ class MainActivity: Activity() {
      */
     internal var historyClearInline=false
     internal var episodePanel: EpisodePanel?=null
-    internal val recovery=RecoveryBudget()
     internal var retryPending=false
     internal var autoRecovery=false
     internal var startPosition=0L
@@ -794,8 +888,11 @@ class MainActivity: Activity() {
         retryPending=false
         if(foreground && screen=="player" && playError && autoRecovery) {
             if(!networkAvailable()) scheduleRecovery()
-            else if(recovery.consume()) {
-                android.util.Log.i("HGTV","Automatic playback recovery ${recovery.attempts}/3 at ${retryPosition}ms")
+            else if(ledger.consumeAttempt()) {
+                android.util.Log.i("HGTV","Automatic playback recovery ${ledger.attempts}/3 at ${retryPosition}ms")
+                // 每次自动重试都换一个 `device_id`：平台按设备计额度，同一个号连试三次
+                // 大概率三次同一个结果（见 `ContentRepository.rotateDeviceForRetry`）。
+                runCatching { repository.rotateDeviceForRetry() }
                 playEpisode(episodeIndex,retryPosition,retryAutoplay,recovering=true)
             }
         }
@@ -836,6 +933,71 @@ class MainActivity: Activity() {
     internal var recommendHasMore=true
     internal var recommendLoading=false
     /**
+     * 本机兴趣画像（题材 / 出品方 → 权重）。
+     *
+     * 只在进推荐页时重建一份：它读的是本机观看历史与收藏，刷推荐的过程中这两样不会变，
+     * 每页都重算一遍纯属浪费（历史可以有几百条）。
+     */
+    internal var recommendTasteCache: com.hgtv.star.core.RecommendTaste?=null
+    /**
+     * 一页推荐的本地重排：同题材配额、同剧 / 同出品方间距、兴趣小幅上浮。
+     *
+     * 参数见 [com.hgtv.star.core.RecommendArranger]：约束只作用于**这一页**，
+     * 让不出位置的不删、贴到页尾，避免把内容池抽干（抽干的后果是重复更多）。
+     */
+    internal val recommendArranger=com.hgtv.star.core.RecommendArranger()
+    /**
+     * 带了 `filter_ids` 却回空页的次数。
+     *
+     * 服务端如果不认这个字段、或把整页都滤掉，表现就是「整屏推荐暂时取不到」。
+     * 连续两次就把这一层永久关掉（见 [com.hgtv.star.data.Library.recommendFilterIdsOff]）。
+     */
+    internal var recommendFilterMiss=0
+    /**
+     * 这一次运行里「带 `filter_ids` 就失败」的次数 / 结论。
+     *
+     * 与 [recommendFilterMiss] 分开：那一个由**空页**判定、会落盘永久关掉；
+     * 这一个只覆盖本次运行——请求直接失败（网关不认这个字段 / 体被撑大）时，
+     * 这一轮就不再带，但下次启动照旧试一次。网络抖一下不该让这层去重永久消失。
+     */
+    internal var recommendFilterFail=0
+    internal var recommendFilterUnsupported=false
+    /**
+     * 推荐页正在放的这一部 + 开始的时刻，用来区分「一进来就划走」与「真的看了」。
+     *
+     * 两种结果写进同一个曝光窗口，只是冷却时长不同（划走 14 天、看了 30 天）。
+     */
+    internal var recommendWatchingId=""
+    internal var recommendWatchStart=0L
+    /**
+     * 这一次「进推荐页」的首屏计时起点（`elapsedRealtime`，见 [loadRecommendPage]）。
+     *
+     * 用来给首屏设一个总等待上限：超过预算就不再凑「一条重复都没有」，先放出来能播的。
+     * 只在最外层那次调用时重置，递归取页不会把它一直往后推。
+     */
+    internal var recommendFirstLoadAt=0L
+    /**
+     * 补页在途时又按了几下「下一部」（见 `switchRecommend`）。
+     *
+     * 页回来后一次往前跨这么多部。早先这里什么都没有：补页那 0.8 秒里每按一下都走
+     * 「列表没变长 → 环绕回第 0 部」，于是连按十几下就是从头把刚刷过的那批重放一遍。
+     */
+    internal var recommendAdvancePending=0
+    /**
+     * 上一次「提前取下一页」的时刻（`elapsedRealtime`，见 `ensureRecommendLookahead`）。
+     *
+     * 只是限流：连按上下键时每一下都会走到预取判断，不该每一下都上去要一页。
+     */
+    internal var recommendLookaheadAt=0L
+    /**
+     * 补页在途时排队的回调。
+     *
+     * 以前 `loadRecommendPage` 碰上请求在途会**立刻**回调，调用方按「列表没长」处理，
+     * 这正是上面那个重复的成因。现在排队，等这一次取页真正结束再一起放出来。
+     * 只在主线程读写。
+     */
+    internal val recommendWaiters=mutableListOf<() -> Unit>()
+    /**
      * 推荐流的续流游标（`session_id` + `next_offset`，见 `ContentRepository.recommendFeed`）。
      *
      * 接口是**有状态**的：`session_id` 传空、`offset` 每次归零，服务端永远回同一套默认列表。
@@ -844,10 +1006,20 @@ class MainActivity: Activity() {
      */
     internal var recommendSession=""
     internal var recommendNext=0
+    /**
+     * 「推荐范围 → 受众」的可选值（男频 / 女频 …），来自分类接口的 `gender` 行。
+     *
+     * 标识只能由接口给（见 `Library.recommendGender` 的说明），因此设置页第一次打开时
+     * 现取一次面板，取到就抄进这里：同一次运行里再进设置页不再发请求。
+     * `null` = 还没取到（或取失败），那一行就先不建。
+     */
+    internal var recommendGenderOptions: List<com.hgtv.star.core.CategoryFilterOption>?=null
+    /** 受众面板请求在途（避免同一次运行里连开设置页时重复发）。 */
+    internal var recommendGenderLoading=false
     /** 已经取过的推荐详情（只留最近几部，够左右相邻切换即可）。 */
-    internal val recommendDetails=object: LinkedHashMap<String,Detail>(8,0.75f,true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String,Detail>?)=size>6
-    }
+    // 淘汰走 core 的 `lruPut`，**不用匿名子类重写 `removeEldestEntry`**：那种写法会生成一条
+    // `invoke-super LinkedHashMap.getOrDefault`（API 24）的桥方法，4.4 上是颗雷（见 `lruPut`）。
+    internal val recommendDetails=LinkedHashMap<String,Detail>(8,0.75f,true)
     /** 正在取详情的推荐剧（避免同一部被上下键连按时重复发请求）。只在主线程读写。 */
     internal val recommendDetailLoading=mutableSetOf<String>()
     /**
@@ -855,14 +1027,58 @@ class MainActivity: Activity() {
      *
      * 上下键换剧时详情与首集数据都在本地，`playEpisode` 拿到它就直接起播，不用再等
      * 取地址 + 读索引 + 首批数据那几百毫秒——这是「上下切换不卡」的关键。
-     * 只留最近 3 部（约 3MB），所有权在交给播放器时转移。
+     * 只留最近 6 部（每份约 1MB，见 `RECOMMEND_PREPARED_LIMIT`），所有权在交给播放器时转移。
+     * 电视上一秒一下、3 部就够；手机上一秒两三部，3 部会在连划时被刷空。
      */
     internal val recommendPrepared=LinkedHashMap<String,RemoteVideo>()
-    /** 正在预热的那一集的键（空 = 没有在途任务）；同一时刻只预热一部，避免抢带宽。 */
-    internal var recommendWarming=""
-    internal var recommendWarmJob: java.util.concurrent.Future<*>?=null
-    /** 预热任务的令牌：取消 / 换目标之后，在途那一次回来时必须自己关掉，不能再塞进缓存。 */
-    internal val recommendWarmToken=java.util.concurrent.atomic.AtomicLong(0)
+    /**
+     * 正在预热的那些键（可以有多个在途）。
+     *
+     * 早先是**单槽**（`String`）：一次只预热一部，而且新的一次会被旧的那次挡回去。
+     * 遥控器的节奏是「一秒一下」，单槽够用；手机 / 平板是「一划一部」，
+     * 单槽的结果就是每一次切换都在等一个刚刚被作废的预热——缓存永远是空的，
+     * 于是「同一套加载逻辑」在触屏上就是另一副观感。
+     */
+    internal val recommendWarming=mutableSetOf<String>()
+    /** 每一个在途预热对应的任务（按 key 找，互不牵连；取消时连它自己的 HTTP 一起掐掉）。 */
+    internal val recommendWarmJobs=HashMap<String,RecommendWarm>()
+    /**
+     * 推荐页预热专用线程（2 条）。
+     *
+     * 不复用 [prefetchWorker]：那一条是单线程，正片页的「下一集预取」也排在它上面，
+     * 一次 1MB 的预热会把后面所有预取都堵住。两条刚好够「当前方向两步」。
+     */
+    internal val recommendWarmWorker=Executors.newFixedThreadPool(2)
+    /**
+     * 上一次换剧的时刻（`elapsedRealtime`）与方向（+1 / -1）。
+     *
+     * 方向决定相邻预热的顺序（见 `prefetchRecommendNeighbors`）：手机上一划就是一部，
+     * 只预热 ±1 时第二下必然落空，因此先按用户正在走的方向多预热一步。
+     */
+    internal var recommendLastSwitchAt=0L
+    internal var recommendPrefetchDir=1
+    /**
+     * 双向滑动的窗口与降级规则（见 `core/SlideCache.kt`）。
+     *
+     * 放在 Activity 上而不是全局：它的「当前锚点 / 停留时长 / 连滑计数」都是**这一屏**的语义，
+     * 换一屏（进正片再回来）就该重新起算。
+     */
+    internal val slideCache=com.hgtv.star.core.SlideCacheManager()
+    /** 已经排定、还没开跑的窗口预热（换剧 / 离开页面时取消）。 */
+    internal var recommendPreloadRunnable: Runnable?=null
+    /** 停留 1 秒之后把主方向升回完整预热的那一次排定（见 `scheduleRecommendDwell`）。 */
+    internal var recommendDwellRunnable: Runnable?=null
+    /** 预热好的首集在列表里的下标（方向偏置 LRU 淘汰要它算距离）。 */
+    internal val recommendPreparedIndex=HashMap<String,Int>()
+    /** 预热好的首集最近一次被用到的时刻（同上）。 */
+    internal val recommendPreparedAt=HashMap<String,Long>()
+    /**
+     * 每一部**已经达到**的缓存级别（键 = `集id:清晰度`）。
+     *
+     * 只升不降：ADDRESS 做过就记 ADDRESS，之后要 META 才继续做。
+     * 它让「L3 先铺一层地址、2 秒后再升 L1」这条路不会把同一个地址取两遍。
+     */
+    internal val recommendWarmed=HashMap<String,com.hgtv.star.core.CacheLevel>()
     /** 取详情的令牌：换剧、退出时作废在途结果。 */
     internal val recommendToken=java.util.concurrent.atomic.AtomicLong(0)
     /** 取下一页推荐流的令牌（与详情那条分开：翻页不该作废正在取的那一部详情）。 */
@@ -882,6 +1098,9 @@ class MainActivity: Activity() {
     /** 推荐页画面停住之后自动重建播放层的次数 / 上次时刻（见 [recoverRecommendPicture]）。 */
     internal var pictureRecoveries=0
     internal var pictureRecoveryAt=0L
+    // 正式播放页那一对已经收进 [ledger]（`formalPictureRecoveries` / `pictureCoolingDown`）：
+    // 它与自动重试、队列重开共用同一套按集归零的条件，分开存就会漏清。
+    // 推荐页那一对仍留在这里——它按**剧**计，不走按集账本。
     /**
      * 推荐页切换过渡用的那一层黑。
      *
@@ -1134,9 +1353,16 @@ class MainActivity: Activity() {
     internal val suggestRun=java.util.concurrent.atomic.AtomicReference<Runnable?>(null)
     internal var detail: Detail?=null
     internal var episodeIndex=0
-    internal var synopsisExpanded=false
-    /** 详情页是否正在看「相关剧集」：展开时海报缩到与「开始观看」底边平齐，下方的选集换成相关剧集。 */
+    /** 详情页是否正在看「相关剧集」：展开时下方的选集换成相关剧集（海报高度不变）。 */
     internal var relatedOpen=false
+    /**
+     * 重铺详情页下方那一块（选集 / 相关剧集）的入口，由 [showDetail] 在页面建好时填上。
+     *
+     * 点「相关剧集 / 收起相关」、以及相关剧集结果落地时都走这里：**只换下面那一块**，
+     * 上面的海报与信息列不重建——整页重建会让封面重新解码、海报尺寸回填，页面会闪一下。
+     * 离开详情页时由 [invalidatePage] 清空，旧引用不会指到已经拆掉的树上。
+     */
+    internal var detailBottomRefresh: (() -> Unit)?=null
     /**
      * 相关剧集的取数状态（后台预取，用户无感）。
      *
@@ -1154,8 +1380,63 @@ class MainActivity: Activity() {
     internal var relatedJob: java.util.concurrent.Future<*>?=null
     /** 正在预取 / 已预取的是哪一部剧，避免同一部剧重复发请求。 */
     internal var relatedFor=""
-    internal var player: ExoPlayer?=null
+    /**
+     * 详情页是否正在看「作者作品」：与 [relatedOpen] 互斥，展开时下方的选集换成该作者的作品。
+     *
+     * 数据来自 `multi-detail` 的 `author` 加上按作者名的全站搜索（见 [ContentRepository.authorWorks]）：
+     * 平台没有「作者主页」接口，这一栏只能按作者名把搜索结果里同一作者的作品筛出来。
+     */
+    internal var authorOpen=false
+    internal var authorWorks: List<Series>?=null
+    internal var authorLoading=false
+    internal var authorFailed=false
+    /** 作者作品这条请求自己的令牌与句柄：理由同 [relatedToken]（不能被本页重排取消掉）。 */
+    internal val authorToken=java.util.concurrent.atomic.AtomicLong(0)
+    internal var authorJob: java.util.concurrent.Future<*>?=null
+    /** 正在预取 / 已预取的是哪位作者，避免同一作者重复发请求。 */
+    internal var authorFor=""
+    /**
+     * 播放器实例。
+     *
+     * `@Volatile` 是因为它现在**由 io 线程建**（见 `playEpisode` 的 `warmPlayer`）：
+     * 构造 ExoPlayer 要 0.5 秒（实测 `Stage player +509ms`），原先排在「取地址 + 本地准备」
+     * 之后串行执行；两条都是互不依赖的活，并起来正好省下这半秒。
+     * 建好之后由主线程读它、赋 `playerView.player`，因此必须保证可见性。
+     */
+    @Volatile internal var player: ExoPlayer?=null
+    /**
+     * 建播放器的互斥锁。
+     *
+     * 播放器现在可能被两条路同时建：起播任务在 io 线程预热（[MainActivity.warmPlayer]）、
+     * 以及回调落到主线程时发现还没有播放器而当场补建。上一次起播被取消时它的线程
+     * 也可能还在里面。没有这把锁就会建出两个，其中一个永远没人释放（解码器 + 播放线程都留着）。
+     */
+    internal val playerBuildLock=Any()
+    /**
+     * 播放器是否已被彻底拆除（[MainActivity.releasePlayer] 置位，下一次 [playEpisode] 复位）。
+     *
+     * 预热线程可能正卡在 `newPlayer()` 里（`MediaCodecList` / `AudioManager` 都是 Binder 调用，
+     * 老盒子上要几百毫秒）。没有这条标志，`onDestroy` 里的 release 抢在它前面执行时，
+     * 它会把播放器重新装回来——一个挂了 Surface、还占着解码器与音频输出的孤儿。
+     */
+    @Volatile internal var playerDisposed=false
+    /**
+     * 已经做过构造后配置的那个播放器（见 `MainActivity.configurePlayer`）。
+     *
+     * 配置现在可能从两处到达主线程：预热线程 post 过来的那一次，以及起播回调自己那一次。
+     * 记下来保证同一个实例只配一次（`addAnalyticsListener` 重复调用会把监听挂两遍）。
+     * 播放器被拆除时一并清空。
+     */
+    @Volatile internal var configuredPlayer: ExoPlayer?=null
     internal var video: RemoteVideo?=null
+    /**
+     * 最近一次**真的取到**的播放地址域名（由 [playEpisode] 在 `repository.stream()` 之后写入）。
+     *
+     * 为什么不直接用 [video]`.host`：`video` 只在起播成功之后才有值，而「连接超时 / 被拒」
+     * 恰恰大多发生在 `prepare()` 那一步——那时 [video] 还是**上一集**的，按它清 DNS 等于
+     * 清错对象，重取回来的地址照样落在同一个死 shard 上。
+     */
+    @Volatile internal var lastStreamHost=""
     internal var playbackReady=false
     internal var pausedForLifecycle=false
     internal lateinit var hud: LinearLayout
@@ -1235,8 +1516,10 @@ class MainActivity: Activity() {
     internal var speedDialog: TvDialog?=null
     /** 设置页「每行卡片」选择弹窗（4 / 5 / 6 / 7 / 8 张，全局）；与其余选择器一样防重复打开。 */
     internal var homeColumnsDialog: TvDialog?=null
+    /** 设置页「返回顶部」选择弹窗（始终显示 / 下拉 5 行 / 下拉 8 行 / 始终不显示）。 */
+    internal var backToTopDialog: TvDialog?=null
     /**
-     * 「使用设备」那一枚弹窗（防重复打开，见 [showDeviceFormPicker]）。
+     * 「设备类型」那一枚弹窗（防重复打开，见 [showDeviceFormPicker]）。
      *
      * 选中之后整页会重建一次，因此弹窗必须在重建前关掉、重建后也不该留在树里。
      */
@@ -1248,6 +1531,27 @@ class MainActivity: Activity() {
      * 必须整页重建；不记落点的话焦点会被系统交给新布局里第一个可聚焦控件。
      */
     internal var settingsPendingFocus: String?=null
+    /**
+     * 设置页当前看的那一个大项（[SETTINGS_TABS] 的下标）。
+     *
+     * 与「我的」页的 [accountTab] 同一条思路：切大项只是换一块内容，
+     * 因此记在这里、页面重建（换主题、改设备形态、恢复备份）之后仍然停在原处。
+     */
+    internal var settingsTab=0
+    /** 设置页顶部四枚大项芯片（按 [SETTINGS_TABS] 下标索引），切换时只就地改选中态。 */
+    internal val settingsTabChips=mutableListOf<View>()
+    /**
+     * 设置页每个大项**最上面那一行**的控件（按 [SETTINGS_TABS] 下标取）。
+     *
+     * 按「上」要从这一行的**每一格**回到顶部导航栏的芯片，不能只修第一格：
+     * 推荐范围那一行有三枚开关，「漫剧」能回去、「AI剧 / 真人剧」却停在原地，
+     * 就是这个差别造成的（`wireRows` 给第一行设的 up 是「自己」）。
+     * 由 `MainActivity.settings()` 建完页面后赋值，`refreshSettingsTabLanding()` 每次刷新都按它改。
+     */
+    internal var settingsTopRows: (Int)->List<View> = { emptyList() }
+    /** 设置页的滚动容器：切大项时回到顶部（见 [switchSettingsTab]）。 */
+    internal var settingsScroll: android.widget.ScrollView?=null
+
     /**
      * 「全剧已播完 → 换一部接着看」那一层：底部弹出的相关剧集卡片（见 `showSeriesFinished`）。
      *
@@ -1287,10 +1591,39 @@ class MainActivity: Activity() {
             main.postDelayed(this,1000)
         }
     }
-    // 自动收起控制条：推荐页（触屏）用的是同一条控制条，因此判据从「是不是 player 页」
-    // 换成「是不是在播放页」（见 [onPlaybackPage]）。电视上推荐页的控制条从不出现，
-    // 这条 Runnable 也就不会被排上。
-    internal val hideHud=Runnable { if(onPlaybackPage() && !panel && player?.isPlaying==true && !playError) hidePlaybackOverlay() }
+    /**
+     * 播放页三块浮层（播放设置 / 选集面板 / 底部控制条）共用的「无操作自动消失」定时器。
+     *
+     * 秒数见 `library.playerPanelTimeout`（设置页「播放显示 → 播放界面自动消失」，2–15 秒，默认 6 秒）。
+     * 三块浮层**同一个计时器、同一条规则**：最后一次操作之后再过 N 秒收起来。
+     *
+     * 到点做的事与按返回键**完全一样**，因此这里只调那两条现成的收尾路径：
+     * 播放设置与控制条都走 [hidePlaybackOverlay]（收起菜单与控制条、把顶部四项还回设置值），
+     * 选集走面板自己的 `dismiss()`（`EpisodePanel` 的关闭回调负责把焦点还回去）。
+     *
+     * 判据用「此刻屏幕上有没有这块面板」，而不是「到点时用户有没有在操作」：
+     * 每一次操作都会把定时器重新排一遍（见 [scheduleOverlayAutoHide]），
+     * 因此到点时它还没被取消，就说明这一段时间确实没人动过。
+     *
+     * **暂停也照样收**：原来控制条只在「正在播放」时才排这条定时器，一暂停它就永久留在画面上；
+     * 现在暂停与播放一视同仁，只有出错（`playError`，控制条上是错误文案）时不动。
+     *
+     * **推荐页（手机 / 平板）也算**：那一页用的是同一条控制条，用户的要求是「播放界面」整体
+     * 一个规则。电视上的推荐页不进这一支——它没有这条控制条，`hudShown()` 在
+     * `touchArmed` 为 false 时恒为 false。
+     *
+     * 手指还按在进度条上时不收：那时用户正在挑位置，收起控制条等于把他正在拖的那条抽走
+     *（`MOVE` 会不断重排定时器，这一条只是手指停住时的保险）。两个页面各有一个「拖动中」标记：
+     * 正式播放看 `scrubbing`，推荐页看 `recommendScrubbing`（见 `onRecommendScrub`）。
+     */
+    internal val overlayAutoHide=Runnable {
+        when {
+            playbackMenu!=null -> hidePlaybackOverlay()
+            episodePanel!=null -> episodePanel?.dismiss()
+            onPlaybackPage() && !playError && !scrubbing && !recommendScrubbing && hudShown() ->
+                hidePlaybackOverlay()
+        }
+    }
     internal val seekRunnable=Runnable { pendingSeek?.let { player?.seekTo(it) }; pendingSeek=null }
     // ---- 播放过程中要按「同一个对象」重用的字段 ----
     // 这两枚 Runnable 会在 removeCallbacks 里按身份比对，必须是字段（扩展属性没有初始化器，
@@ -1357,6 +1690,9 @@ class MainActivity: Activity() {
         // 否则缩小后的画面会停在旧尺寸上、四周露出一圈黑边。
         root.addOnLayoutChangeListener { _,_,_,_,_,_,_,_,_ ->
             if(onPlaybackPage()) { applyVideoScale(); applyResizeMode() }
+            // 「回到顶部」浮层的位置只由屏幕尺寸决定（见 list/BackToTop.kt）：
+            // 换分辨率 / 投屏 / 旋转之后要按新尺寸重摆一次，否则它还停在旧屏幕的右下角。
+            positionBackToTop()
         }
         // 形态判定（手机 / 平板 / 电视）要在建第一屏之前完成：否则第一屏、第一次点按之前
         // 建出来的推荐页浮层 / 播放页控制条都是电视形态，点一下之后整块重建成触屏形态，
@@ -1408,6 +1744,10 @@ class MainActivity: Activity() {
             }
         },4000)
         message(base(),"正在读取本机记录…")
+        // 预建到内容接口的连接（DNS + TCP + TLS + 验链），见 [ContentRepository.preconnect]。
+        // 放在 loadLibrary 之前、io 线程上：推荐页那次请求大约在 1 秒后发出，
+        // 那时连接已经在池子里，只剩一个 RTT。失败静默，不影响任何功能。
+        io.execute { runCatching { repository.preconnect() } }
         loadLibrary()
     }
 
@@ -1441,7 +1781,13 @@ class MainActivity: Activity() {
 
     /** 外部存储授权回来：立刻重试一次镜像恢复（见 [onMirrorStorageResult]）。 */
     override fun onRequestPermissionsResult(requestCode: Int,permissions: Array<out String>,results: IntArray) {
-        super.onRequestPermissionsResult(requestCode,permissions,results)
+        // `Activity.onRequestPermissionsResult` 是 **API 23** 才有的方法，4.4 的 `Activity` 里没有它。
+        // 直接 `super` 调用在 4.4 上是 `invoke-super` 一个不存在的方法：Dalvik 校验期把这条指令
+        // 换成「一执行就抛 NoSuchMethodError」的桩（1.2.7 现场日志里那条
+        // `Could not find method android.app.Activity.onRequestPermissionsResult` 就是它）。
+        // 4.4 上系统不会回调这里，所以实际没崩；但同一个类里只要还有一条这样的指令，
+        // 校验期就少一次「这方法能不能调」的判断余量——按版本判掉，彻底不留这条指令。
+        if(android.os.Build.VERSION.SDK_INT>=23) super.onRequestPermissionsResult(requestCode,permissions,results)
         // 清除本地数据：拿到权限（或被拒绝）都继续清，只是 `.hgtv` 那一份删不删得掉的区别。
         if(requestCode==REQUEST_RESET_STORAGE) { performLocalReset(); return }
         if(requestCode!=REQUEST_MIRROR_STORAGE) return
@@ -1528,6 +1874,12 @@ class MainActivity: Activity() {
             // 就不会走 AOSP 那条「取到焦点则吞掉这次点击」的分支。
             focusUnderTouch(event.x,event.y)
         }
+        // 播放设置面板或底部控制条上的一次触摸也算「操作」：无操作自动消失的计时从这一下重新开始。
+        // 拖动滑块 / 拖进度条 / 滚动面板只发 MOVE，因此按下的同时也要看 MOVE——否则手指按着
+        // 好几秒、到点就被收走。选集面板是独立窗口，触摸到不了这里，由它自己的触摸外壳通知。
+        if((playbackMenu!=null || hudShown()) &&
+            (event.actionMasked==MotionEvent.ACTION_DOWN || event.actionMasked==MotionEvent.ACTION_MOVE))
+            scheduleOverlayAutoHide()
         return super.dispatchTouchEvent(event)
     }
 
@@ -1535,6 +1887,9 @@ class MainActivity: Activity() {
         // 正在清除本地数据：所有写盘队列已经关掉，这时任何一次收藏 / 设置改动都会抛异常；
         // 进程马上就会被结束，直接把按键吞掉即可（也避免界面在杀进程前闪一下错误）。
         if(resetting) return true
+        // 播放设置面板 / 控制条开着时的任何一下按键都算「操作」：自动消失的计时从这一下重新开始。
+        // 选集面板是独立窗口，按键走它自己的窗口监听（见 `EpisodePanel`），不经过这里。
+        if(playbackMenu!=null || hudShown()) scheduleOverlayAutoHide()
         // 遥控器「搜索」键（84）：M6 / 10P 这类盒子的 PhoneWindow 会直接调用
         // launchDefaultSearch，把 ACTION_SEARCH 解析到厂商预置、但实际并不存在的
         // com.imtv.speechdemo；该 ROM 又不捕获 ActivityNotFoundException，按键会闪退。
@@ -1738,7 +2093,11 @@ class MainActivity: Activity() {
             else if(restoreStoppedPage) {
                 restoreStoppedPage=false
                 when(screen) {
-                    "player" -> playEpisode(episodeIndex,startPosition,autoplay=false)
+                    // `recovering=playError`：错误页上退到后台再回来，**不是**一次全新尝试。
+                    // 传 false 会走 `onEpisodeStart`，把本集的自动重试 / 降档预算全部还回去
+                    // ——用户按一次 Home 再回来就能白得一轮「重建 1 次 + 降档 2 次」，
+                    // 「每集有界」当场失效。正常播放时 `playError` 是 false，照旧全量归零。
+                    "player" -> playEpisode(episodeIndex,startPosition,autoplay=false,recovering=playError)
                     // 推荐页：列表还在就接着播这一部；列表空了（进程内的推荐状态被别处清过）
                     // 就重新拉一次，别让用户回到一片黑屏上。
                     // 与正式播放一致：从后台回来不自动接着播（用户可能已经按下暂停才切走的）。
@@ -1783,9 +2142,14 @@ class MainActivity: Activity() {
         // 退到后台**不销毁播放器**（进程内复用，见 [detachPlayerSurface] 的说明）：
         // 画面层、传输、弹幕一起收，但 ExoPlayer 实例留着。回到前台由 onResume 的
         // restoreStoppedPage 接着播，不再走一次 `ExoPlayer.Builder.build()`。
-        if(screen=="player") { startPosition=currentPosition(); saveProgress(); detachPlayerSurface() }
+        // `keepSession=true`：退到后台不是离开这一集，回来还要按同一位置接着播。
+        // 保留本次会话的降级结论，否则又会拿刚被证明放不了的上限重撞一次
+        // （见 [com.hgtv.star.core.SessionPlaybackPolicy.onLeavePlaybackToBackground]）。
+        if(screen=="player") { startPosition=currentPosition(); saveProgress(); detachPlayerSurface(keepSession=true) }
         // 推荐页不写进度，只记下位置并卸掉画面；回到前台由 onResume 接着播。
-        else if(screen=="recommend") { startPosition=currentPosition(); detachPlayerSurface() }
+        // 顺手结掉「这一部看了多久」：退到后台的那段时间不算进停留时长，
+        // 否则放着不管一小时再回来，一部本来划走的剧会被记成「看了」。
+        else if(screen=="recommend") { startPosition=currentPosition(); detachPlayerSurface(keepSession=true); settleRecommendWatch() }
         artwork.cancelPage(clearMemory=true); library.flush(); super.onStop()
     }
     /** 栅格里被低内存策略摘掉封面的卡数：>0 时滚动 / 焦点回调才需要检查「是不是回来了」。 */
@@ -1863,6 +2227,13 @@ class MainActivity: Activity() {
             // 推荐页的相邻预热（每部约 1MB）是可重建的纯缓存：内存吃紧时先放掉，
             // 下一次切换会重新预热，不会影响正在放的这一部。
             if(screen!="recommend") closeRecommendCache()
+            // 推荐页**不能整份清掉**（正在播的那一部就在里面），改成降到只保「下一部」：
+            // 窗口收窄到一条、其余按方向偏置 LRU 淘汰到 1 份（文档 7 / 10）。
+            else {
+                cancelScheduledPreload()
+                slideCache.onTrimMemory(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
+                evictRecommendPrepared(limit=1)
+            }
         }
     }
     override fun onDestroy() {
@@ -1872,8 +2243,11 @@ class MainActivity: Activity() {
         recommendToken.incrementAndGet(); recommendPageToken.incrementAndGet(); closeRecommendCache()
         favoriteMonitor.destroy(); tvTools.destroy(); closeAccountPanelSession(); saveProgress(); releasePlayer(); library.close()
         artwork.close(); releaseCatalogViews(); mediaSession?.release(); mediaSession=null; main.removeCallbacksAndMessages(null)
-        io.shutdownNow(); prefetchWorker.shutdownNow(); danmakuWorker.shutdownNow(); networkCleanup.shutdown()
-        Thread({ repository.http.dispatcher().cancelAll(); repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown() },"hgtv-network-cleanup").start()
+        io.shutdownNow(); playbackPrime.shutdownNow(); playerBuildWorker.shutdownNow(); prefetchWorker.shutdownNow(); recommendWarmWorker.shutdownNow(); danmakuWorker.shutdownNow(); networkCleanup.shutdown()
+        // 「这一次根本没发过请求」时不去碰它：取值会把 client 现建出来（见 `hasHttpClient`）。
+        if(repository.hasHttpClient()) {
+            Thread({ repository.http.dispatcher().cancelAll(); repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown() },"hgtv-network-cleanup").start()
+        }
         super.onDestroy()
     }
 }

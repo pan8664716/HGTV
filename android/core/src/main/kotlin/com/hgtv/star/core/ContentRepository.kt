@@ -64,17 +64,33 @@ data class Series(
      * `["0"]` / `["1"]` 回同一批数据），`filter_ids` 传什么都不认。所以只能在客户端按这个
      * 字段筛。默认 false（老数据 / 备份里没有这个字段时按横屏算）。
      */
-    val vertical: Boolean = false
+    val vertical: Boolean = false,
+    /**
+     * 热度（`0` = 接口没给）。
+     *
+     * 搜索接口的卡片自带 `rec_text`（实测形如 `1204万热度`），这里是把它换算成的数字，
+     * **只用于排序**（作者作品按相关度排，见 [ContentRepository.authorWorks]），
+     * 界面上仍然显示接口原串（走 [badge]），不做二次格式化。
+     */
+    val heat: Long = 0,
+    /**
+     * 播放次数（`0` = 接口没给）。
+     *
+     * 搜索卡片的 `play_cnt`。与 [heat] 一样只当排序信号：热度缺失时用它兜底，
+     * 两者都没有（分类 / 榜单 / 详情来的卡片）就退回接口返回的顺序。
+     */
+    val playCount: Int = 0
 ) {
     fun toJson() = JSONObject().put("id",id).put("title",title).put("cover",cover)
         .put("description",description).put("badge",badge).put("tags",tags).put("author",author)
         .put("episodeCount",episodeCount).put("seasonIndex",seasonIndex)
         .put("upcoming",upcoming).put("notice",notice).put("vertical",vertical)
+        .put("heat",heat).put("playCount",playCount)
     companion object {
         fun fromJson(o: JSONObject) = Series(o.str("id"),o.str("title"),o.str("cover"),
             o.str("description"),o.str("badge"),o.str("tags"),o.str("author"),o.optInt("episodeCount"),
             o.optInt("seasonIndex"),o.optBoolean("upcoming",false),o.str("notice"),
-            o.optBoolean("vertical",false))
+            o.optBoolean("vertical",false),o.optLong("heat",0L),o.optInt("playCount",0))
     }
 }
 /**
@@ -102,16 +118,20 @@ data class Detail(val series: Series, val episodes: List<String>, val upcoming: 
  * 拿「进程不被平台 bug 打死」换几个连接，值得。
  * 图片链路（`ArtworkLoader`）不在这里，它仍然用 h2——那里并发多、复用收益真实。
  */
-private fun defaultHttpClient(): OkHttpClient = HgtvTls.configure(OkHttpClient.Builder())
-    .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
-    .connectTimeout(15,TimeUnit.SECONDS)
-    .readTimeout(30,TimeUnit.SECONDS)
-    .callTimeout(45,TimeUnit.SECONDS)
-    // 会话身份（token / cookie / TokenGuard 回写）。四处 `ContentRepository(...)` 只要有默认
-    // client 就都带上；显式传 client 的几个调用点（预取、`FavoriteMonitor` 用业务 client 派生）
-    // 由它们各自的 `.newBuilder()` 继承，见 `SessionInterceptor` 的说明。
-    .addInterceptor(com.hgtv.star.core.session.SessionInterceptor())
-    .build()
+private fun defaultHttpClient(): OkHttpClient {
+    val builder=HgtvTls.configure(OkHttpClient.Builder())
+        .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
+        .connectTimeout(15,TimeUnit.SECONDS)
+        .readTimeout(30,TimeUnit.SECONDS)
+        .callTimeout(45,TimeUnit.SECONDS)
+        // 会话身份（token / cookie / TokenGuard 回写）。四处 `ContentRepository(...)` 只要有默认
+        // client 就都带上；显式传 client 的几个调用点（预取、`FavoriteMonitor` 用业务 client 派生）
+        // 由它们各自的 `.newBuilder()` 继承，见 `SessionInterceptor` 的说明。
+        .addInterceptor(com.hgtv.star.core.session.SessionInterceptor())
+    // 调试包的连接耗时分解（DNS / TCP / TLS / ttfb），正式包不装（见 [NetLog.timing]）。
+    if(NetLog.timing) builder.eventListenerFactory(NetTiming.Factory)
+    return builder.build()
+}
 
 /**
  * 简介页下方那一栏的内容：同系列各季在前（按季号升序），其余相关作品在后，已去重。
@@ -150,7 +170,38 @@ data class CatalogPage(val items: List<Series>, val hasMore: Boolean, val rankin
  * 因此客户端必须把这两个值记下来，下次进推荐接着往下取，而不是从头再来。
  */
 data class RecommendFeed(val page: CatalogPage, val sessionId: String, val nextOffset: Int)
-data class StreamInfo(val url: String, val key: ByteArray?, val quality: String)
+/**
+ * 一次取流的结果。
+ *
+ * [quality] 仍然是给人看的那串（`720P` / `1080P（兼容资源）`），界面与缓存格式都用它；
+ * 后面几个字段是**结构化**的同一份事实，供降级决策使用（见 [PlaybackDegradation]）：
+ *
+ * * [requestedQuality]：用户设的上限；
+ * * [actualQuality]：真正选中那一档（认不出时为 0）；
+ * * [available]：这一次响应里**所有可播档位**（已剔除 `bytevc2` / 非 HEVC / 空地址 / 认不出的），
+ *   降档只能从它里面挑，不能硬编码 480。
+ *
+ * **全站只有一种视频编码（HEVC）**，因此这里不再记录「这一档是什么编码」：
+ * 早期那一维（HEVC ↔ AVC 换编码族）已经整维删除，见 `PlaybackDegradation` 的类注释。
+ */
+data class StreamInfo(
+    val url: String,
+    val key: ByteArray?,
+    val quality: String,
+    val requestedQuality: Int = 0,
+    val actualQuality: Int = 0,
+    val available: List<Int> = emptyList()
+) {
+    /**
+     * 索引 / 首块的缓存键：集 id + **实际档位**。
+     *
+     * 为什么不用请求上限：CDN 在「只有兼容 1080」与「有 720」之间变动时，请求上限没变、
+     * 文件却换了；按上限做键的话旧索引会撞上新文件，只能靠 `VideoChangedException`
+     * 兜一轮才自愈。按实际档位做键，换档就是换键，天然不会串。
+     */
+    fun mediaKey(id: String): String =
+        "$id:${if(actualQuality>0) actualQuality else requestedQuality}"
+}
 class SearchSessionExpiredException: IOException("搜索结果已过期，请从第 1 页重新搜索")
 
 /**
@@ -177,12 +228,166 @@ class DeviceNotRegisteredException(message: String = "设备正在初始化，�
  */
 class SignInRequiredException(message: String = "需要先导入账号参数（sessionid）"): IOException(message)
 
-class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private val clock: () -> Long = System::currentTimeMillis) {
+class ContentRepository(
+    /**
+     * 传输层：显式传进来就用它（预取 / 预热各带自己的 client），不传则**用到时才建**。
+     *
+     * 为什么不是「构造时就建」：`MainActivity` 在字段初始化里建了四个 `ContentRepository`
+     * （见 `MainActivity.kt` 的 `repository` / `prefetchHttp` 那几处），而那些初始化发生在
+     * **主线程**、`onCreate` 之前。建 client 会顺带解析系统根证书表（首次 2~3 秒，
+     * 见 `HgtvTls.ACCEPTED_ISSUERS`），于是冷启动还没开始建视图就先卡在那里。
+     *
+     * 改成懒建之后，第一个真正发请求的地方是 io 线程上的首页 / 推荐取数——那时
+     * `HgtvApplication` 的预热线程通常已经把证书表解完了，这里只花一次数组拷贝。
+     */
+    httpClient: OkHttpClient? = null,
+    private val clock: () -> Long = System::currentTimeMillis,
+    /** 播放接口两次请求之间的最小间隔（见 [waitModelSlot]）；测试里传 0，免得真等 3 秒。 */
+    private val modelSpacing: Long = MODEL_SPACING_MS,
+    /**
+     * 播放模型的合并窗口（见 [videoModel]）；测试里传 0 关掉。
+     *
+     * 缓存在 companion 里（三份实例共用），测试之间会互相污染：同一个 `id@deviceLevel`
+     * 在上一个用例里被缓存过，下一个用例就拿到别人的模型，断言全部错位。
+     */
+    private val modelCacheTtl: Long = MODEL_CACHE_MS
+) {
+    private val httpRef=lazy(LazyThreadSafetyMode.SYNCHRONIZED) { httpClient ?: defaultHttpClient() }
+    val http: OkHttpClient get() = httpRef.value
+    /**
+     * 传输层到底建过没有。
+     *
+     * 销毁路径要用：这一屏如果一次请求都没发过，client 从未建出来，也就不该为了「关掉它」
+     * 现建一个（建一次要解析系统根证书表，见 [httpClient] 上的说明）。
+     */
+    fun hasHttpClient(): Boolean = httpRef.isInitialized()
+    /**
+     * 提前把「到内容接口的 TCP + TLS」建好，留在本实例的连接池里。
+     *
+     * ## 为什么值得
+     *
+     * 冷启动到推荐首屏那段实测（2026-10-27，AOT 之后）里，
+     * `Recommend stage filters +35ms` → `Recommend stage feed +3423ms`：
+     * **3.4 秒全在一次请求里**。DNS 已经不是瓶颈（见 [HgtvDns]），剩下的是
+     * 这条 HTTPS 的首次握手——DNS + TCP 三次握手 + TLS 1.2 两趟 + 我们自己的
+     * PKIX 验链（系统根库 150 张，首验在这台 2G 盒子上要几百毫秒）。
+     * 而只要连接已经在池子里，同一份请求就只剩一个 RTT。
+     *
+     * ## 怎么预热
+     *
+     * 对两个域名各发一个 `HEAD`（不带任何业务参数、不需要登录态）：
+     * 服务器回 200/403/404 都无所谓——握手已经完成，连接按 keep-alive 留在池里，
+     * 5 分钟内随便谁用。返回码与响应体全部丢弃，失败静默。
+     *
+     * 用 `HEAD` 而不是真业务接口：不消耗按设备计的接口额度（见 `modelDeviceId` 那一节的实测），
+     * 也不会在服务端留下「取过一次推荐」的记录。
+     *
+     * **必须在后台线程调**（最长会等一个连接超时）。
+     */
+    fun preconnect() {
+        // 两条域名各建一条连接：**账号/搜索**走 [ACCOUNT_HOST]，**推荐/分类/详情/播放地址**走
+        // [VIDEO_HOST]。推荐首屏那次请求打的是后者，只热前者等于没热（实测那一发仍要自己
+        // 握手 1.3 秒）。
+        //
+        // **两条不再同时发**（2026-10-27 改）：一次 TLS 1.2 握手在这台盒子上的实测是
+        // `tcp=447ms tls=406ms`——两跳 RTT 加密钥交换，两个域名同时来就是两条各 ~700ms 的
+        // 链接同时挤在一个 CDN 边上，而且这两条都在建界面、初始化解码器的那两秒里。
+        // 现在：先热 [VIDEO_HOST]（下一发就是它），[ACCOUNT_HOST] 推后
+        // [ACCOUNT_PRECONNECT_DELAY_MS]，而且**只有登录过才发**。
+        warmAsync(VIDEO_HOST)
+        // [ACCOUNT_HOST] 只在**登录过**才有用武之地：未登录时账号 / 收藏接口一次都不发，
+        // 这一次握手就是纯浪费（这台盒子上 ~700ms 的背景流量 + 一个 RTT 的 CDN 配额）。
+        // 判据在 2 秒后才读：那时 `Library` 已经加载完，`signedIn` 才是可信的。
+        warmAsync(ACCOUNT_HOST,ACCOUNT_PRECONNECT_DELAY_MS) { signedIn }
+    }
+    private fun warmAsync(host: String,delayMs: Long=0L,needed: ()->Boolean={ true }) {
+        val thread=Thread({
+            // 低优先级：这台盒子只有两个核，而一次握手除了两跳 RTT 还有一段纯 CPU
+            // （ECDHE + 150 张系统根证书的 PKIX 验链）。降到 MIN_PRIORITY（ART 上会落到
+            // 后台 nice 档）之后，主线程建视图、解码器初始化都会先拿到 CPU，
+            // 握手只是「把剩下的时间用掉」——它只要在建首帧之前完成就行。
+            // `core` 是纯 JVM 模块（没有 Android 依赖），因此用 Java 的线程优先级。
+            runCatching { Thread.currentThread().priority=Thread.MIN_PRIORITY }
+            if(delayMs>0) runCatching { Thread.sleep(delayMs) }
+            // 到点了再看还要不要：不需要就**一个包都不发**（见 [preconnect] 里 ACCOUNT 那段）。
+            if(!runCatching { needed() }.getOrDefault(true)) {
+                NetLog.log("preconnect $host skipped")
+                return@Thread
+            }
+            val began=System.nanoTime()
+            warmConnection(host)
+            NetLog.log("preconnect $host took=${(System.nanoTime()-began)/1_000_000}ms")
+        },"hgtv-preconnect-$host")
+        thread.isDaemon=true
+        thread.start()
+    }
+    /**
+     * 对某个域名的根路径发一次 `HEAD`，把 DNS + TCP + TLS 全部做完，连接按 keep-alive
+     * 留在 [http] 的连接池里。返回码与响应体全部丢弃，失败静默。
+     *
+     * 只在 [preconnect] 拉起的临时线程上跑，不占用调用方的线程。
+     */
+    private fun warmConnection(host: String) {
+        runCatching {
+            val request=Request.Builder()
+                .url("https://$host/")
+                .head()
+                .header("User-Agent",VendorConstants.userAgent(deviceProfile(),video=false))
+                .build()
+            http.newCall(request).execute().use { it.body()?.close() }
+        }
+    }
+    /**
+     * 提前把「签名」这条路走一遍。
+     *
+     * ## 为什么值得
+     *
+     * 冷启动实测（2026-10-27，AOT 之后）：推荐首屏那 3.1 秒里，
+     * `Stage filters +36ms` → `Stage feed +2459ms`，而这一段的第一笔开销是**签名**——
+     * 日志里 `sign ... body=1054B took=564ms`。同一台机器上第二次签名只要 30~60ms，
+     * 差别全在「第一次」：SM3（BouncyCastle）/ MD5 / 那条 128 轮混淆循环的类加载与
+     * 首轮 JIT，加上 1500 多个请求头的字符串拼接。564ms 里没有一秒是网络。
+     *
+     * 这里就在启动时用一份**和真实推荐请求同样大小、同样字段**的假 body 签一次，
+     * 把这些类先拉起来。真正要发请求时那 500ms 已经花掉了（在后台，和建界面并行）。
+     *
+     * 不消耗任何接口额度：签名是纯本地运算，一个字节都不上网络。
+     * **必须在后台线程调**。
+     */
+    fun warmSignature() {
+        runCatching {
+            val began=System.nanoTime()
+            val body=org.json.JSONObject()
+                .put("filter_ids","0".repeat(96))
+                .put("offset",0)
+                .put("limit",40)
+                .put("session_id","")
+                .put("genre","")
+                .toString()
+                .toByteArray()
+            val valuesAt=System.nanoTime()
+            val values=deviceValues(CATEGORY_VERSION_CODE,CATEGORY_VERSION_NAME)
+            val signAt=System.nanoTime()
+            signer.sign(categoryApiUrl(),values,body,method="POST").withSession()
+            NetLog.log(
+                "sign warm body=${body.size}B values=${(valuesAt-began)/1_000_000}ms"+
+                " sign=${(signAt-valuesAt)/1_000_000}ms total=${(System.nanoTime()-began)/1_000_000}ms"
+            )
+        }
+    }
     private val signer = Signer()
     /** 账号 / 搜索 / 提示词接口的域名。与弹幕同一套（[appValues] 的设备参数对这几个域名都认）。 */
     private val ACCOUNT_HOST = "api5-normal-sinfonlinea.fqnovel.com"
     /** 播放侧（详情 / 分集 / 播放地址）的域名。设备参数与 [ACCOUNT_HOST] 同一套。 */
     private val VIDEO_HOST = "api5-normal-sinfonlineb.fqnovel.com"
+    /**
+     * [ACCOUNT_HOST] 的预热推迟多久（毫秒）。
+     *
+     * 账号 / 收藏 / 搜索在冷启动里**一个都不在首帧路径上**：未登录时一次都不发，
+     * 登录了也只是后台刷一次。而一次 TLS 握手要 450ms 的 CPU，正好撞在建界面 + 建解码器那一段。
+     * 推后 2 秒，等那阵忙过去再握手，两者都不耽误。
+     */
+    private val ACCOUNT_PRECONNECT_DELAY_MS=2_000L
     /** 账号接口空响应体的重试次数。 */
     private val ACCOUNT_RETRIES = 4
     /** 写接口里「短剧」的 `book_type`（App 的 `ReadingBookType.Watch`）。 */
@@ -232,6 +437,32 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
 
     /** 一次删除请求里带多少条（清空历史时按这个分批）。 */
     private val HISTORY_DELETE_BATCH = 50
+    /**
+     * 上一次成功的播放模型路径（进程级）。
+     *
+     * 实测候选路径里通常只有一条能用，而且**同一台设备长期是那一条**
+     *（2026-10-27 实测：只剩 `multi_video_model/v1` 回 `code 0`）。记住它之后，
+     * 正常起播只发一次请求；记错了（路径失效 / 平台改版）也只是多花一次探测，
+     * 随后会被新的成功路径覆盖，失败时立刻清空（见 [videoModel]）。
+     */
+    /**
+     * 合并窗口内取到的播放模型：`<集 id>@<device_level>` → (取到时刻, 模型)。
+     *
+     * **按实例存**（不是 companion）：主实例与预取实例各有一份，重复请求由进程级
+     * [modelGate] 串行化 + 这里各自的短缓存兜住。放成全局的会让测试之间互相污染
+     *（上一个用例缓存过 `123@4`，下一个用例就拿到别人的模型，断言全部错位）。
+     */
+    /**
+     * 播放地址的合并缓存与锁表（见 [stream]）。
+     *
+     * **按实例存**：缓存的是「这一份仓库看到的播放地址」，全局共享会让测试之间、
+     * 以及主实例与预取实例之间的结果互相串味（前者表现为断言错位，后者表现为
+     * 预取实例拿到主实例的旧地址却以为是自己的）。
+     */
+    private val streamCache=java.util.concurrent.ConcurrentHashMap<String,CachedStream>()
+    private val streamLocks=java.util.concurrent.ConcurrentHashMap<String,Any>()
+    private val modelCache=java.util.concurrent.ConcurrentHashMap<String,Pair<Long,JSONObject>>()
+    @Volatile private var preferredModelPath: String=""
     /** 清空历史最多试几轮（删完回读校验，还有余量就再来一轮）。 */
     private val HISTORY_CLEAR_ATTEMPTS = 3
     /** 作者缓存：详情页反复进出时不重复请求（一条几十毫秒，但没必要）。 */
@@ -338,7 +569,15 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      */
     private val webSearchNote=ThreadLocal<String>()
     private data class SearchCursor(val searchId: String, val passback: String, val offset: Int?, val updatedAt: Long)
-    private val searchCursors=linkedMapOf<Triple<ContentType,String,Int>,SearchCursor>()
+    /**
+     * 游标表的键：类型 + 关键词 + 第几页 + **一页多少条**。
+     *
+     * 末位那个 `count` 不能省：用户手动搜一个词是 20 条一页，作者作品是 50 条一页
+     *（见 [AUTHOR_WORKS_PAGE_SIZE]），两套的 `offset` 完全不同。
+     * 若共用同一个键，「作者名恰好也被用户搜过」时就会拿错游标，翻页直接错位。
+     */
+    private data class SearchCursorKey(val type: ContentType, val keyword: String, val page: Int, val count: Int)
+    private val searchCursors=linkedMapOf<SearchCursorKey,SearchCursor>()
     /**
      * 搜索接口还能不能用：空响应体说明这台设备没在服务端注册过（实测所有线路、多组设备参数都一样），
      * 重发多少次都一样。null = 还没试过；判死之后同一进程里不再空跑。
@@ -389,15 +628,26 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
             signer.updateDevice(deviceProfile())
         }
     /**
-     * 共用另一份仓库实例的**设备身份与注册 Cookie**（[deviceIdentity] 与 `registrationCookies`）。
+     * 共用另一份仓库实例的**设备身份、注册 Cookie 与设备档案**
+     *（[deviceIdentity] / `registrationCookies` / [registerProfile]）。
      *
-     * 播放预取会另开一个 [ContentRepository]（独立连接池与超时），它自己没注册过设备：
-     * 不把这两个值带过去，它签名时只能用内置那份档案（`device_id` 被平台拉黑），
-     * 取播放地址必然空响应——那一集永远预取不命中。
+     * 播放预取与推荐页预热会另开一个 [ContentRepository]（独立连接池与超时），它自己没注册过设备。
+     * 只带 `deviceIdentity` 是不够的——2026-10-27 抓到现场：那一份请求的 query 是
+     * `device_id=<本机注册值>&device_type=25053RT47C&device_brand=Redmi&os_version=16`
+     * （内置档案 + 本机身份），**缺 `cdid` / `openudid` / `rom_version`**，
+     * 与主实例那份 `device_type=PHN110&device_brand=OPPO&os_version=12&cdid=…` 完全对不上。
+     * 平台按「身份与指纹不自洽」直接把请求挡成 `200 + 0 字节`：12 条取地址请求里
+     * 11 条是这份错档案、只有 1 条是对的，于是界面永远起不来。
+     *
+     * 因此档案也必须一起带过去（[registerProfile] 就是 `Library.deviceProfile()` 那一份）。
      */
     fun inheritDevice(from: ContentRepository) {
+        registerProfile=from.registerProfile
         deviceIdentity=from.deviceIdentity
         registrationCookies=from.registrationCookies
+        // 档位也要跟着走：换了档位就等于换了一套清晰度表，预热到的地址与起播选中的那一档
+        // 对不上，预热就白做了（见 [deviceLevel]）。
+        deviceLevel=from.deviceLevel
     }
     /**
      * 注册用的设备档案（机型 / 系统 / `cdid` / `openudid` …），与 [deviceIdentity] 分开存：
@@ -553,37 +803,80 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      */
     private val RELATED_CACHE_LIMIT=16
     private val relatedCache=linkedMapOf<String,RelatedWorks>()
+    /** 作者作品的内存缓存条数：按作者名索引（见 [authorWorks]）。 */
+    private val AUTHOR_WORKS_CACHE_LIMIT=8
+    /**
+     * 作者作品**一页要多少条**：`count` 直接给 50。
+     *
+     * 搜索接口的 `count` 是**真的**（实测 `count=20/50/100` 分别回 20/50/100 个 cell，
+     * `next_offset` 也跟着走 20/50/100），与官网搜索那种「`count` 一律被忽略」完全不同。
+     * 因此没必要再用「20 条一页翻 4 次」凑数：
+     *
+     * | 取数方式 | 候选条数 | 命中同一作者的条数 | 请求数 | 耗时 |
+     * | --- | --- | --- | --- | --- |
+     * | 4 页 × 20 | 80 | 30 | 4 | 约 2.5s |
+     * | 2 页 × 50 | 99 | 47 | 2 | 约 2.2s |
+     * | 1 页 × 100 | 100 | 32 | 1 | 约 1.4s |
+     *
+     * （实测对象：`延津县种梦互联网信息服务有限公司`，2026-10-29。）
+     * 100 那档反而更差：服务端对超大页的排序会把「不太相关但热度高」的条目挤进来，
+     * 50 是命中率与单次响应体（约 340 KB）之间的折中。
+     */
+    private val AUTHOR_WORKS_PAGE_SIZE=50
+    /** 按作者名搜多少页：2 页 = 最多 200 个候选（两个 tab × 50，见 [AUTHOR_WORKS_PAGE_SIZE]）。 */
+    private val AUTHOR_WORKS_PAGES=2
+    /**
+     * 一页就够用：筛到这么多条就不再翻页。
+     *
+     * 作者作品那一栏一屏最多显示两张卡片的位置被人一眼看完，20 条已经远超一屏；
+     * 而 2 页 × 2 个 tab 是 4 个请求、约 1.1 MB、4 秒上下（实测），
+     * 高产作者（第 1 页就 30 多条）没必要多付这三秒。
+     */
+    private val AUTHOR_WORKS_ENOUGH=20
+    /** 页数硬上限：再多只是把同一个作者的作品重排一遍，白等 RTT。 */
+    private val AUTHOR_WORKS_PAGES_MAX=4
+    private val authorWorksCache=linkedMapOf<String,List<Series>>()
     private val commentHosts=listOf("api5-normal-sinfonlinea.fqnovel.com","api5-normal-sinfonlinec.fqnovel.com","api5-normal-sinfonlineb.fqnovel.com","api5-normal-lf.fqnovel.com","api5-normal-lq.fqnovel.com","api5-normal-hl.fqnovel.com")
     /**
-     * 播放接口空响应体的原地重发次数。
+     * 播放模型请求里上报的 `device_level`。
      *
-     * 平台 2026-10-15 起对匿名设备一律回 `200 + 0 字节`；带上登录态后基本稳定，
-     * 但仍偶发，因此同一条路径上先重发几次再换下一条——否则会把唯一能用的那条也跳过去。
-     */
-    private val PLAYBACK_RETRIES=3
-    /**
-     * 播放模型请求里上报的 `device_level`（设备档位，官方 App 传 3）。
+     * **只有两档：4 和 5**，两档下发的五档清晰度**全是 HEVC**，区别只在「能不能拿满五档」：
      *
-     * **这个值直接决定服务端给哪一套编码的清晰度表**，也就决定了「默认 480P 到底能不能生效」：
-     *
-     * | `device_level` | `fallback_api` 下发的 360/480/576/720 | 1080 |
+     * | `device_level` | 请求 `need_all_video_definition=true` | 结果 |
      * | --- | --- | --- |
-     * | 2 / 3（官方值） | `bytevc2` | `bytevc1`（HEVC） |
-     * | 4 / 5 | `bytevc1`（HEVC） | `bytevc1`（HEVC） |
+     * | 4（默认） | 是 | 通常给 4 档左右 |
+     * | 5 | 是 | 拿满 5 档 |
      *
-     * 而 `bytevc2` 在 Android 的 MP4 解析器里往往只有音轨、没有画面（见 [stream] 的过滤），
-     * 于是 3 档时**低清晰度全被跳过、只剩 1080P**——用户把默认清晰度设成 480P，
-     * 第一集照样放 1080P；下一集又恰好是另一套编码，于是「一集 480P、一集 1080P」来回跳。
-     * 实测（聚宝仙盆之杂灵根才是真BOSS，99 集）：`device_level=3` 时 53/99 集被顶到 1080P，
-     * `device_level=4` 时 99/99 集都能给到 480P。
+     * 官方值 1/2/3 一律不用：那一档下发的 360/480/576/720 是 `bytevc2`（Android 没有解码器），
+     * 被 [fetchStream] 过滤之后只剩 1080P，「默认 480P」形同虚设，而且会表现成
+     * 「一集 480P、一集 1080P」来回跳（2026-10-27 实测：`device_level=3` 时 53/99 集被顶到 1080P）。
      *
-     * ## 实际取值
+     * ## 什么时候升到 5
      *
-     * 界面层按设备解码能力覆盖 [deviceLevel]（见 `PlaybackCapability.deviceLevel`）：
-     * 能解 HEVC 报 4，解不了就报官方的 3（报 4 只会拿到一套同样解不了的 HEVC）。
-     * 这个字段的默认值因此只是「还没探测出结果时」的兜底。
+     * **默认从 4 开始，只有被限流才升**（见 [tryModelPath]）：空响应 = 这台设备（`device_id`）
+     * 被挡，先换一个 `device_id` 再打；换号之后仍然被挡，才把档位升到 5（多要两档，
+     * 同时也是一次「换一张额度表」）。4 档一直能命中就永远用 4——档位越高服务端算得越久。
+     *
+     * 升到 5 之后**不再降回来**：这个进程后面每一集都按 5 要（[beginEpisode] 会把新一集
+     * 重置回 4，见那里的说明），避免「每集都先被 4 档限流一次」。
      */
     @Volatile var deviceLevel: Int = 4
+        set(value) { field = if(value>=5) 5 else 4 }
+
+    /**
+     * 新一集起播前把档位重置回默认的 4。
+     *
+     * 需求口径是「默认用 4」：限流是**临时**状态，上一集被限流不代表下一集也要多要两档。
+     * 重置只影响请求参数，不碰 `device_id` 的轮换状态（那个是进程级、换号才有意义）。
+     */
+    fun beginEpisode() { deviceLevel=4 }
+
+    /** 4 档换号之后仍然被限流：升到 5（见 [deviceLevel] 与 [tryModelPath]）。 */
+    fun escalateDeviceLevel() {
+        if(deviceLevel>=5) return
+        deviceLevel=5
+        NetLog.emit("model device_level 4 -> 5")
+    }
     /**
      * 分类接口一页的条数。
      *
@@ -595,7 +888,7 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      *
      * 取 100：一屏 6 列 × 约 17 行。实测 100 条一次 794ms，而 15 条也要 600ms——
      * 单条成本差一个数量级，而首包只大一点点。一页铺满近三屏，配合「消耗过半就预取」
-     * （见 `PREFETCH_TRIGGER_PERCENT`）之后，按住下键基本不会撞到还没回来的下一页。
+     * （见 `PREFETCH_TRIGGER_ROWS`）之后，按住下键基本不会撞到还没回来的下一页。
      */
     private val CATEGORY_PAGE_SIZE=100
 
@@ -620,7 +913,7 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      * **逻辑页**大小：界面上「一页」按这么多条算，不管底层接口一页能给多少。
      *
      * 为什么必须统一成同一个数：界面侧那套「消耗过半就预取下一页」的判据是按比例算的
-     * （见 `PREFETCH_TRIGGER_PERCENT`），而它假设「一页 = 一次预取的缓冲量」。
+     * （见 `PREFETCH_TRIGGER_ROWS`），而它假设「一页 = 一次预取的缓冲量」。
      * 各条路的物理页大小差得很远——
      *
      * | 来源 | 物理页 | 备注 |
@@ -650,6 +943,25 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      * 空响应本身只花约 90ms，最坏总耗时约 4s。
      */
     private val CATEGORY_ATTEMPTS=8
+    /**
+     * 推荐流那条的重试次数：3 次（退避 100+180ms）。
+     *
+     * 推荐页的「正在加载推荐…」全压在这条请求上：8 次（最坏 4s）花下去的每一秒，
+     * 用户看到的都是一块静止的黑屏。3 次够覆盖「网关偶发空响应」（实测重发 1~2 次就回），
+     * 再失败就交给界面换流或先放出手里这一页（见 `MainActivity.loadRecommendPage`）。
+     */
+    private val RECOMMEND_ATTEMPTS=3
+    /** 搜索接口空响应的原地补发次数 / 间隔（见 [retryBlankSearch]）。 */
+    private val SEARCH_BLANK_RETRIES=2
+    private val SEARCH_BLANK_RETRY_DELAY_MS=300L
+    /**
+     * App 搜索**一页多少条**（界面侧一页）。
+     *
+     * 搜索接口的 `count` 是真的（见 [AUTHOR_WORKS_PAGE_SIZE] 的实测表），
+     * 但界面侧的翻页手感、缓存与「搜索结果已过期」判定都按 20 这一档验证过，
+     * 因此这里保持 20 不动；只有作者作品那一栏自己用 50（[AUTHOR_WORKS_PAGE_SIZE]）。
+     */
+    private val SEARCH_PAGE_SIZE=20
     private val CATEGORY_RETRY_DELAYS=longArrayOf(100L,180L,300L,450L,650L,900L,1200L)
     /**
      * 分类 / 榜单接口用的客户端版本，与改动前手拼 URL 里的那组一致（`73532` / `7.3.5.32`）。
@@ -660,7 +972,17 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
     private val CATEGORY_VERSION_CODE="73532"
     private val CATEGORY_VERSION_NAME="7.3.5.32"
 
-    private fun text(url: String, signed: Signer.Request? = null): String {
+    private fun text(
+        url: String,
+        signed: Signer.Request? = null,
+        /**
+         * 拿到响应、还没读 body 时回调一次。
+         *
+         * 播放接口被挡时回的是 `200 + 0 字节`，状态码与 body 都看不出区别，
+         * 只有响应头里的 `tt_stable: 1` 能区分（见 [probeModelPath]），因此需要这个口子。
+         */
+        observe: ((okhttp3.Response) -> Unit)? = null
+    ): String {
         val request = Request.Builder().url(url).header("User-Agent",VendorConstants.userAgent(deviceProfile(), video = true)).header("Accept-Language","zh-CN,zh;q=0.9")
         // 账号 / App 接口的公共协议头。参考实现（`passport_client.go` 的 `request`）每一条都带，
         // 早先这里一条都没有：
@@ -686,6 +1008,7 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
             }
         }
         return RequestScope.execute(http.newCall(request.build())) { response ->
+            observe?.invoke(response)
             if (!response.isSuccessful) throw IOException("内容请求失败（HTTP ${response.code()}）")
             val body = response.body() ?: throw IOException("内容响应为空")
             if (body.contentLength() > 16*1024*1024) throw IOException("内容响应过大")
@@ -953,20 +1276,33 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      * 2000 上——实测 `offset=1980/1990/1999/2000` 回的都是 `next=2000`，于是每页都从 2000
      * 重新开始，用户每次打开推荐看到的永远是同一批（服务端自己也在 2000 钳位）。现在不钳，
      * 由界面侧按「游标不前进 = 这条流刷不动了」换新流（见 `MainActivity.loadRecommendPage`）。
+     *
+     * [filterIds] 是**本机已经推给用户看过的剧 id**（文档 §2.1 / §4.4 的 `filter_ids`）：
+     * 传了就请服务端在这一页就把它们滤掉，客户端那层窗口只当兜底。空串 = 不带，
+     * 与旧版请求逐字节一致。长度上限见 [RecommendFlow.FILTER_IDS_LIMIT]。
      */
-    fun recommendFeed(selection: CategorySelection, sessionId: String, offset: Int, limit: Int = RECOMMEND_PAGE_SIZE): RecommendFeed {
+    fun recommendFeed(
+        selection: CategorySelection,
+        sessionId: String,
+        offset: Int,
+        limit: Int = RECOMMEND_PAGE_SIZE,
+        genres: List<String> = emptyList(),
+        filterIds: String = ""
+    ): RecommendFeed {
         require(offset >= 0) { "offset 不能为负" }
         val body=JSONObject()
-            .put("filter_ids","")
+            // 服务端字段是**字符串**（给数组会回 `expected string`，见 `categoryApi` 的说明）。
+            .put("filter_ids",filterIds)
             .put("req_scene","default")
             .put("offset",offset)
             .put("need_selector_panel",false)
             .put("limit",limit)
-            .put("select_items",categorySelectItems(selection,null))
+            .put("select_items",categorySelectItems(selection,null,genres))
             .put("session_id",sessionId)
             .put("req_type","only_content")
             .put("client_req_type",3)
-        val data=JSONObject(categoryApiRaw(body))
+        // 只重试 3 次（≈1.4s 最坏）：推荐页的等待全压在这条请求上，见 [categoryApiRaw]。
+        val data=JSONObject(categoryApiRaw(body,RECOMMEND_ATTEMPTS))
         if(data.optInt("code",-1)!=0) throw IOException("推荐接口暂不可用")
         val payload=data.optJSONObject("data") ?: throw IOException("推荐接口结构已变化")
         val items=valid((payload.optJSONArray("video_data") ?: JSONArray()).objects().map(::apiCard))
@@ -1046,9 +1382,16 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      * `select_items`：每个维度都是数组，未选中的维度不传（与接口的「全部」等价）。
      * `genre` 始终传一个值：分类页与官方 App 一样始终停在一个体裁上。
      */
-    private fun categorySelectItems(selection: CategorySelection,sort: String?): JSONObject {
+    private fun categorySelectItems(
+        selection: CategorySelection,
+        sort: String?,
+        genres: List<String> = emptyList()
+    ): JSONObject {
         // 「全部体裁」= 空数组（与不传等价）；其余体裁传它自己的标识。
-        val select=JSONObject().put("genre",JSONArray().apply { selection.genre?.let { put(it) } })
+        // [genres] 非空时用它替代 [CategorySelection.genre]：推荐页的「推荐范围」可以同时开好几类，
+        // 接口的 `genre` 本来就是数组（分类页始终只传一个，走的是下面这条空列表分支）。
+        val picked=genres.ifEmpty { listOfNotNull(selection.genre) }
+        val select=JSONObject().put("genre",JSONArray().apply { picked.forEach { put(it) } })
         selection.theme?.let { select.put(CategorySelection.TYPE_THEME,JSONArray().put(it)) }
         selection.role?.let { select.put(CategorySelection.TYPE_ROLE,JSONArray().put(it)) }
         selection.epoch?.let { select.put(CategorySelection.TYPE_EPOCH,JSONArray().put(it)) }
@@ -1074,13 +1417,20 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
         }
         return if(parsed.isEmpty()) null else CategoryPanel(parsed)
     }
-    private fun categoryApiRaw(body: JSONObject): String {
+    /**
+     * 分类 / 榜单 / 推荐共用的那条 POST。
+     *
+     * [attempts] 默认 [CATEGORY_ATTEMPTS]（8 次、退避合计 3.8s）：列表页可以慢慢重试，
+     * 用户看得见「加载中」。**推荐页不行**——那 3.8s 全花在一块静止的「正在加载推荐…」上，
+     * 因此 [recommendFeed] 只给 3 次（退避合计 280ms），失败就交给界面换流 / 放出手里这一页。
+     */
+    private fun categoryApiRaw(body: JSONObject,attempts: Int = CATEGORY_ATTEMPTS): String {
         val payload=body.toString().toByteArray()
         var problem: IOException=IOException("分类接口暂无响应")
-        for(attempt in 0 until CATEGORY_ATTEMPTS) {
+        for(attempt in 0 until attempts) {
             if(attempt>0) {
                 try {
-                    Thread.sleep(CATEGORY_RETRY_DELAYS[attempt-1])
+                    Thread.sleep(CATEGORY_RETRY_DELAYS[(attempt-1).coerceAtMost(CATEGORY_RETRY_DELAYS.lastIndex)])
                 } catch(cancelled: InterruptedException) {
                     Thread.currentThread().interrupt()
                     throw IOException("请求已取消",cancelled)
@@ -1089,18 +1439,31 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
             try {
                 // 每次重试都重签：`ts` / `_rticket` 是签名的一部分，复用旧签名会被判过期。
                 // 分类 / 榜单这条只认 POST + JSON body（GET 该路径回 404）。
+                val signAt=System.nanoTime()
                 val signed=signer.sign(categoryApiUrl(),deviceValues(CATEGORY_VERSION_CODE,CATEGORY_VERSION_NAME),payload,method="POST").withSession()
+                if(NetLog.timing) {
+                    NetLog.log("sign ${signed.url.substringAfter("//").substringBefore("/")} body=${payload.size}B took=${(System.nanoTime()-signAt)/1_000_000}ms")
+                }
                 val request=Request.Builder().url(signed.url)
                 signed.headers.forEach { (key,value) -> if(key!="User-Agent" && key!="Accept") request.header(key,value) }
                 // UA / Accept 保持与改动前一致：UA 用 App 那条（签名默认按「有 body」选视频 UA）。
                 request.header("User-Agent",VendorConstants.userAgent(deviceProfile(), video = false))
                 request.header("Accept","application/json; charset=utf-8,application/x-protobuf")
                 request.post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"),payload))
+                val callAt=System.nanoTime()
                 val raw=RequestScope.execute(http.newCall(request.build())) { response ->
                     if(!response.isSuccessful) {
                         throw CatalogHttpException(response.code(),"分类接口失败（HTTP ${response.code()}）")
                     }
-                    response.body()?.string().orEmpty()
+                    val bodyAt=System.nanoTime()
+                    val text=response.body()?.string().orEmpty()
+                    if(NetLog.timing) {
+                        NetLog.log(
+                            "category call headers=${(bodyAt-callAt)/1_000_000}ms"+
+                            " read=${(System.nanoTime()-bodyAt)/1_000_000}ms chars=${text.length}"
+                        )
+                    }
+                    text
                 }
                 if(raw.isNotBlank()) return raw
                 problem=IOException("分类接口暂无响应")
@@ -1515,7 +1878,7 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      * 如实抛错让界面提示，**不再**用别的数据源顶替；游标过期抛 [SearchSessionExpiredException]，
      * 由界面回到第 1 页重搜。
      */
-    private fun search(keyword: String, page: Int, types: List<ContentType>): CatalogPage {
+    private fun search(keyword: String, page: Int, types: List<ContentType>, count: Int = SEARCH_PAGE_SIZE): CatalogPage {
         require(keyword.isNotBlank() && keyword.length<=80 && page in 1..100 && types.isNotEmpty())
         val items=mutableListOf<Series>()
         var hasMore=false; var answered=false; var expired=false
@@ -1528,7 +1891,7 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
             // 多问一次只是把首屏又推后一个 RTT。
             if(appSearchAlive==false && !registered) return@forEach
             try {
-                val result=appSearch(keyword,page,type)
+                val result=appSearch(keyword,page,type,count)
                 answered=true; items+=result.items; if(result.hasMore) hasMore=true
             } catch(e: SearchSessionExpiredException) { expired=true } catch(e: Exception) {
                 failure=e as? IOException ?: IOException(e.message ?: "搜索接口暂不可用")
@@ -1539,13 +1902,34 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
         if(expired) throw SearchSessionExpiredException()
         throw failure ?: SearchApiException(SearchDiag.FAILURE_FORMAT,"接口没有返回任何 tab 数据")
     }
-    private fun appSearch(keyword: String, page: Int, type: ContentType): CatalogPage {
+    /**
+     * 搜索接口空响应时的原地补发（见 [appSearch]）。
+     *
+     * 最多补 [SEARCH_BLANK_RETRIES] 次、每次隔 [SEARCH_BLANK_RETRY_DELAY_MS]。
+     * 间隔不能再省：实测同一条请求连发（0 间隔）几乎全空，隔 300 毫秒才有命中。
+     */
+    private fun retryBlankSearch(raw: String, signed: Signer.Request): String {
+        var current=raw
+        repeat(SEARCH_BLANK_RETRIES) {
+            if(current.isNotBlank()) return current
+            try {
+                Thread.sleep(SEARCH_BLANK_RETRY_DELAY_MS)
+            } catch(e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IOException("请求已取消",e)
+            }
+            current=text(signed.url,signed.withSession())
+        }
+        return current
+    }
+
+    private fun appSearch(keyword: String, page: Int, type: ContentType, count: Int = SEARCH_PAGE_SIZE): CatalogPage {
         val values=appValues()
-        values.putAll(linkedMapOf("query" to keyword,"count" to "20","offset" to ((page-1)*20).toString(),"tab_type" to type.searchTab.toString(),"bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to if(signedIn) "1" else "0"))
+        values.putAll(linkedMapOf("query" to keyword,"count" to count.toString(),"offset" to ((page-1)*count).toString(),"tab_type" to type.searchTab.toString(),"bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to if(signedIn) "1" else "0"))
         val cursor=synchronized(searchCursors) {
             val now=clock()
-            searchCursors.entries.removeAll { now-it.value.updatedAt>300000 || (page==1 && it.key.first==type && it.key.second==keyword) }
-            searchCursors[Triple(type,keyword,page-1)]
+            searchCursors.entries.removeAll { now-it.value.updatedAt>300000 || (page==1 && it.key.type==type && it.key.keyword==keyword) }
+            searchCursors[SearchCursorKey(type,keyword,page-1,count)]
         }
         // 漫剧翻页必须带上一页的游标。接口已经被平台关掉（空响应体）时不再抛「搜索结果已过期」：
         // 那样会把漫剧搜索钉死在第 1 页，用户看到的就是「第 2 页永远搜不出来」。
@@ -1570,13 +1954,21 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
         // 平台对匿名设备返回 HTTP 200 + 空响应体，这里必须先判空：
         // 直接丢给 JSONObject 会抛 JSONException（A JSONObject text must begin with '{'），
         // 那既不是可读的错误，也会把「接口不可用」这个结论说清楚的机会丢掉。
+        //
+        // **空响应不等于「设备没注册」**（2026-10-27 实测修正）：已注册的设备在请求密集时
+        // 同样会被网关挡成 `200 + 0 字节`（同一台设备连打 0.15 秒一发，16 轮里 9 轮是空的），
+        // 而且隔 300 毫秒重发一次就能救回一半以上。原先这里「一次空响应即判死」，
+        // 结果是：正常设备被误判成「未注册」→ 界面层换一套身份重注册 → 新身份在高峰期又被挡
+        // → 再换，越换越乱，用户看到的就是「搜索一会儿能用一会儿不能用」。
+        // 现在空响应先原地补一次（各 300 毫秒），仍然空才当作「这台设备没注册」。
+        raw=retryBlankSearch(raw,signed)
         if(raw.isBlank()) { appSearchAlive=false; noteDeviceRejected(); throw DeviceNotRegisteredException() }
         // `100103` 才是真正的间歇性错误（同一设备约一半概率），短间隔重发几次即可。
         var attempt=0
         while(attempt<3 && raw.startsWith("""{"code":100103""")) {
             attempt++
             Thread.sleep(120L)
-            raw=text(signed.url,signed.withSession())
+            raw=retryBlankSearch(text(signed.url,signed.withSession()),signed)
             if(raw.isBlank()) { appSearchAlive=false; noteDeviceRejected(); throw DeviceNotRegisteredException() }
         }
         appSearchAlive=true
@@ -1603,7 +1995,9 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
                     // 拿不到就留空，卡片第二行退回状态行（热度 / 进度），不拿季号顶替。
                     val tags=tagsOf(video)
                     list+=Series(id,title,cleanUrl(video.str("cover").ifEmpty { video.str("cover_url") }),video.str("video_desc"),EpisodeLabel.of(count).ifEmpty { video.str("rec_text") },tags,
-                        author=publisher(video.str("copyright")),episodeCount=count)
+                        author=publisher(video.str("copyright")),episodeCount=count,
+                        // 排序信号：作者作品那一栏按相关度（热度 → 播放量）排，见 [authorWorks]。
+                        heat=heatValue(video.str("rec_text")),playCount=video.optInt("play_cnt"))
                     continue
                 }
                 // 未上架的剧在搜索里是另一种 cell：`show_type=462`，没有 `video_data`，
@@ -1621,7 +2015,7 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
             }
         }
         synchronized(searchCursors) {
-            searchCursors[Triple(type,keyword,page)]=SearchCursor(tab.str("search_id"),tab.str("passback"),tab.str("next_offset").toIntOrNull(),clock())
+            searchCursors[SearchCursorKey(type,keyword,page,count)]=SearchCursor(tab.str("search_id"),tab.str("passback"),tab.str("next_offset").toIntOrNull(),clock())
             while(searchCursors.size>100) searchCursors.remove(searchCursors.keys.first())
         }
         return CatalogPage(valid(list),tab.optBoolean("has_more",false) && page<100)
@@ -2063,7 +2457,6 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      *（界面上不显示，不编一个名字）。失败不影响详情：这是附加信息，网络抖动时宁可少一行。
      */
     private fun authorOf(id: String): String = authorsOf(listOf(id))[id].orEmpty()
-
     /**
      * 批量取作者：`book_id` 支持逗号分隔，一次最多 [MULTI_DETAIL_LIMIT] 个。
      *
@@ -2128,9 +2521,14 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      *
      * 简介页下方那一栏**不在这里取**：它是「相关作品」接口（见 [related]），要额外发一次请求，
      * 挂在详情上会让每次进简介页都多等一个 RTT。界面在详情上屏之后后台预取。
+     *
+     * [cached] 为真时先看落盘缓存（[DetailCache]，30 分钟）：推荐页起播走这一条——
+     * 那一页要的只是「第 1 集是哪个 vid」，分集表旧半小时完全不影响起播；
+     * 详情页保持默认（现取），用户在那里读的是集数与更新。
      */
-    fun detail(id: String): Detail {
+    fun detail(id: String,cached: Boolean=false): Detail {
         require(id.matches(Regex("[0-9]{1,30}")))
+        if(cached) DetailCache.load(id)?.let { return it }
         val values=appValues()
         values["series_id"]=id
         val signed=signer.sign("https://$VIDEO_HOST/novel/player/video_detail/v1/",values,JSONObject().toString().toByteArray())
@@ -2165,7 +2563,9 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
             EpisodeLabel.normalize(o.str("episode_right_text")).ifEmpty { EpisodeLabel.of(count) },
             tags,author=authorOf(id),episodeCount=count,seasonIndex=o.optInt("season_index",0),
             upcoming=upcoming,notice=notice)
-        return Detail(series,episodes,upcoming,reserved=o.optBoolean("online_subscribed",false))
+        val detail=Detail(series,episodes,upcoming,reserved=o.optBoolean("online_subscribed",false))
+        DetailCache.save(detail)
+        return detail
     }
     /**
      * 相关作品：App 详情页「相关作品」那一栏的内容，**一次请求拿全**（替代原先那套
@@ -2207,6 +2607,181 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
         }
         // 拿不到就空着：相关作品只是详情页的附加内容，不能影响详情本身。
         return RelatedWorks(emptyList(),emptyList())
+    }
+
+    /**
+     * 作者作品：把同一作者名下的作品凑成一栏（详情页的「作者作品」用它）。
+     *
+     * ## 为什么是按作者名搜索，而不是一条「作者」接口
+     *
+     * 平台没有对外的作者主页 / 作者作品接口：`/reading/bookapi/author/...` 全部 404，
+     * 详情（`video_detail`）与批量详情（`multi-detail`）都只给一个 `author` 字符串，
+     * 既没有 `author_id` 也没有头像。能用的只有全站搜索 `search/tab/v1`：
+     *
+     * * 搜索结果的每一条卡片自带 `copyright`（与 [Series.author] 同源），
+     *   因此**不必为了判断归属再打一次 `multi-detail`**；
+     * * 用作者名本身当关键词，服务端会把「大概率是这一家」的作品排前面，
+     *   后面逐渐跑偏成题材相近的别的作品——所以要按 [Series.author] **精确比对**再收下。
+     *
+     * 实测（2026-10-29）：`延津县种梦互联网信息服务有限公司` 一次 50 条的页里能筛出 30~43 部
+     * （每次调用服务端给的池子顺序都不一样，条数因此有浮动）；
+     * 个人昵称类作者（`小橘长`）命中少且排序会漂，只能拿到一部分——
+     * 这就是「按名字搜」的固有上限，不是页数不够。
+     *
+     * ## 一页 50 条，而不是 20 条翻四次
+     *
+     * `count` 参数是**真的**（见 [AUTHOR_WORKS_PAGE_SIZE] 的实测表：20/50/100 分别回 20/50/100 个 cell，
+     * `next_offset` 也跟着走），所以高产作者**一次请求就能拿满一页**，不必再用 4 个 20 条的小页凑。
+     * 界面侧的普通搜索仍然按 20 一页（[SEARCH_PAGE_SIZE]），两边各用各的档位。
+     *
+     * 翻页仍然要带上一页的游标（`search_id` / `passback` / `next_offset`，由 [appSearch] 自己记），
+     * 因此这里**按页顺序**调用，不能并发；换线的重试也在 [appSearch] 里。
+     * 但只有三种情况才会真的翻到第 2 页：第 1 页没筛够 [AUTHOR_WORKS_ENOUGH] 条、
+     * 第 1 页之后服务端还说 `has_more`、且第 2 页又带来了新条目。
+     *
+     * 某一页失败就停在那一页（已经收下的条目照常返回）：作者作品同样只是附加内容，
+     * 不能因为第 2 页抽风就整栏报错。整轮一条都没筛到才返回空表，界面上如实说「没有其他作品」。
+     *
+     * ## 顺序：按**相关度**
+     *
+     * [reference] 是「正在看的那一部」：相关度是**相对它**算的，不是绝对的热度榜。
+     * 返回的表已经排好（同系列相邻、题材越接近越靠前、平台相关度与热度只作后位比较），
+     * 规则见 [rankAuthorWorks]。界面把它摆上去即可，不必再排。
+     *
+     * [reference] 传 null 时退化成「平台相关度 + 热度」——调用方手里没有当前剧时才这么用。
+     */
+    fun authorWorks(author: String, reference: Series? = null, pages: Int = AUTHOR_WORKS_PAGES): List<Series> {
+        val name=author.trim()
+        if(name.isEmpty()) return emptyList()
+        // 缓存的是**平台原始顺序**（未排序）：排序依赖 [reference]，同一作者在不同剧的简介页里
+        // 顺序可以不同（题材接近度不一样），把排好的表缓存起来会串味。重排是纯内存运算，不值得缓存。
+        val cached=synchronized(authorWorksCache) { authorWorksCache[name] }
+        val works=cached ?: collectAuthorWorks(name,pages).also { list ->
+            synchronized(authorWorksCache) {
+                if(authorWorksCache.size>=AUTHOR_WORKS_CACHE_LIMIT) authorWorksCache.keys.firstOrNull()?.let(authorWorksCache::remove)
+                authorWorksCache[name]=list
+            }
+        }
+        return rankAuthorWorks(works,reference)
+    }
+    /**
+     * 取数 + 精筛：把「按作者名搜索」得到的候选里属于该作者的作品收下来，**保持平台返回顺序**。
+     *
+     * 顺序即「平台对『作者名』这个查询自己的相关度排序」，是 [rankAuthorWorks] 的一个比较位，
+     * 因此这里刻意不重排。
+     */
+    private fun collectAuthorWorks(name: String,pages: Int): List<Series> {
+        val found=linkedMapOf<String,Series>()
+        val total=pages.coerceIn(1,AUTHOR_WORKS_PAGES_MAX)
+        var page=1
+        // 至少有一页真的得到回答（哪怕一条都没筛到）才落缓存：设备还没注册时搜索会直接抛，
+        // 那种「失败」不能被记成「这个作者没有作品」。
+        var answered=false
+        while(page<=total) {
+            val result=runCatching {
+                search(name,page,ContentType.entries.toList(),AUTHOR_WORKS_PAGE_SIZE)
+            }.getOrNull() ?: break
+            answered=true
+            val before=found.size
+            result.items.forEach { item -> if(sameAuthor(item.author,name)) found[item.id]=item }
+            if(!result.hasMore || result.items.isEmpty()) break
+            // 第 1 页就够一屏：不再往下翻（高产作者常见，省下的正是最贵的那一串 RTT）。
+            if(found.size>=AUTHOR_WORKS_ENOUGH) break
+            // 新这一页一条新的都没筛到：说明相关度已经漂到别的作者身上，后面的页只会更偏，
+            // 不值得再等一个 RTT（个人昵称类作者常见：第 1 页 5 条，第 2 页 0 条）。
+            if(page>=2 && found.size==before) break
+            page++
+        }
+        // 一页都没被回答（网关空响应 / 设备未注册 / 全部线路超时）：这是「没取到」，不是「没有作品」。
+        // 抛出去让界面显示「加载失败 + 重试」，而不是把一句「这一位只有这一部作品」当成结论。
+        if(!answered) throw IOException("作者作品接口暂无响应")
+        return found.values.toList()
+    }
+    /**
+     * 作者作品按**相关度**排序。
+     *
+     * ## 先定义：这里的「相关度」是相对谁
+     *
+     * 用户在《A》的简介页点「作者作品」，想知道的是「这一家还有哪些和《A》像的作品」，
+     * 而不是「这一家哪几部最火」。所以相关度是**相对当前这一部 [reference]** 算的，
+     * 与热度榜是两个东西：
+     *
+     * * 热度是**绝对**的（1204 万就比 2056 万低）；
+     * * 相关度是**相对**的（同一部作品，在《A》页里可能排第 3，在《B》页里排第 9）。
+     *
+     * ## 四级比较（依次，前者相等才看后者）
+     *
+     * 1. **同系列优先**：剧名归一（剥掉「第N季」，见 [SeriesSeasons.normalize]）后与
+     *    当前这一部相同的，整组提到最前；组内按季号升序。
+     *    不这么做的话，「烬九州：第十八季」和「第二十四季」会被别的剧隔开。
+     * 2. **题材重合度降序**：作品 `tags`（`都市逆袭 · 打脸`）与当前这一部 `tags` 的交集个数。
+     *    同一家出品方往往专攻一类题材，这一位就是「像不像」最直接的信号。
+     * 3. **平台相关度升序**：搜索接口对「作者名」这个查询自己的排序（[collectAuthorWorks] 原样保留），
+     *    也就是服务端手里那个我们看不到的分。它比热度更接近「相关」这个词的原意。
+     * 4. **热度降序**：只在上面全平时兜底（[Series.heat] ← `rec_text`，[Series.playCount] ← `play_cnt`）。
+     *    实测平台另有 `score`（8.1 / 8.2 / 8.3）与 `recommend_info.rank`（恒为 1），粗到不能用，都不取。
+     *
+     * 热度因此**不是**排序的主依据，只是第 4 顺位。表头也不再写「按热度排序」。
+     */
+    private fun rankAuthorWorks(works: List<Series>,reference: Series?): List<Series> {
+        if(works.size<2) return works
+        val refFamily=reference?.let { SeriesSeasons.normalize(it.title) }.orEmpty()
+        val refTags=tagWords(reference?.tags.orEmpty())
+        val families=linkedMapOf<String,MutableList<IndexedValue<Series>>>()
+        works.forEachIndexed { index,item ->
+            // 基名为空（剧名只有季号这种极端情况）就按 id 自成一组，绝不把两部不相干的剧并到一起。
+            val key=SeriesSeasons.normalize(item.title).ifEmpty { item.id }
+            families.getOrPut(key) { mutableListOf() }.add(IndexedValue(index,item))
+        }
+        // 组级信号：题材重合取组内最大（同一部剧的各季题材一样，取最大与取任意一条等价）。
+        fun overlap(rows: List<IndexedValue<Series>>)=rows.maxOf { tagWords(it.value.tags).count { tag -> tag in refTags } }
+        fun platform(rows: List<IndexedValue<Series>>)=rows.minOf { it.index }
+        fun heat(rows: List<IndexedValue<Series>>)=rows.maxOf { it.value.heat }
+        fun plays(rows: List<IndexedValue<Series>>)=rows.maxOf { it.value.playCount }
+        fun sameFamily(key: String)=refFamily.isNotEmpty() && key==refFamily
+        return families.entries
+            .sortedWith(
+                compareBy<Map.Entry<String,MutableList<IndexedValue<Series>>>> { if(sameFamily(it.key)) 0 else 1 }
+                    .thenByDescending { overlap(it.value) }
+                    .thenBy { platform(it.value) }
+                    .thenByDescending { heat(it.value) }
+                    .thenByDescending { plays(it.value) }
+                    .thenBy { it.key }
+            )
+            .flatMap { entry ->
+                entry.value
+                    .sortedWith(compareBy({ SeriesSeasons.season(it.value) },{ it.value.title }))
+                    .map { it.value }
+            }
+    }
+    /** 题材串（`都市逆袭 · 打脸`，见 [tagsOf]）→ 词集合；用于 [rankAuthorWorks] 的重合度。 */
+    private fun tagWords(tags: String): Set<String> =
+        tags.split('·').map { it.trim() }.filter { it.isNotEmpty() }.toSet()
+    /** 卡片的 `rec_text`（`1204万热度` / `1.2亿热度`）→ 数字；认不出单位一律 0（见 [rankAuthorWorks]）。 */
+    internal fun heatValue(raw: String): Long {
+        val text=raw.trim()
+        if(text.isEmpty()) return 0
+        val hit=HEAT_TEXT.find(text) ?: return 0
+        val number=hit.groupValues[1].toDoubleOrNull() ?: return 0
+        val unit=when(hit.groupValues[2]) {
+            "亿" -> 100_000_000.0
+            "万" -> 10_000.0
+            // 没有单位就不是热度（`全40集` / `更新至 12 集` 这类角标文案），不参与排序。
+            else -> return 0
+        }
+        return (number*unit).toLong()
+    }
+    /** 热度文案里的「数字 + 万/亿」；见 [heatValue]。 */
+    private val HEAT_TEXT=Regex("([0-9]+(?:\\.[0-9]+)?)\\s*(亿|万)")
+    /**
+     * 两个作者名是不是同一家。
+     *
+     * 只忽略空白与大小写：`multi-detail` 与列表接口给的是同一个字段（`copyright` → `author`），
+     * 差异只可能出在两端空格与全角 / 半角上，做模糊匹配反而会把「同 IP」的别家作品混进来。
+     */
+    private fun sameAuthor(left: String,right: String): Boolean {
+        fun norm(value: String)=value.filterNot { it.isWhitespace() }.lowercase()
+        return norm(left).isNotEmpty() && norm(left)==norm(right)
     }
 
     /**
@@ -2308,73 +2883,358 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
      * 补的**只有** `Cookie`：这个接口对 `x-tt-token` 的长度敏感（实测 ≥99 字符直接判死），
      * 而账号凭据那份整段 cookie 串有 800 多字符，同时塞进 `x-tt-token` 会让请求回空
      *（搜索接口容忍这种写法，播放接口不容忍——真 App 用的是 355 字符的 hex token）。
+     *
+     * 2026-10-27 现场「所有影片都放不了」：一开始以为又是**路径改版**（当天 `multi_video_model`
+     * 命中、其余路径 0/8~0/12），后来逐条对照才确认真正的原因是**设备被限流**：
+     * 同一个 `device_id` 打多了，这条接口就一律回 `200 + 0 字节`，与走哪条路径无关
+     *（换了 `device_id` 之后，连当时记成「死路」的 `preload` 也回 `code 0`）。
+     * 详见 [modelDeviceId] 与 [probeModelPath] 里的实测表。
+     *
+     * 于是原来的「5 路并发 × 每条 4 次空响应重发」正好把唯一能用的那条压死：
+     * 单次起播 20 个请求，加上下一集预热与 1s/2.5s/5s 的自动重试，形成持续的并发风暴，
+     * 表现就是「突然所有影片都放不了」，且永远报「空响应」（空响应那条要重发 2 秒才抛，
+     * 比业务错误晚，`failure` 被它覆盖）。
+     *
+     * 现在的做法：候选表只留「老路径 + 新路由」两条，**串行**探测；
+     * 队首那条最多试 [MODEL_BLANK_RETRIES] 次，每次空响应都换一个 `device_id`
+     *（见 [rotateModelDevice]，实测换 id 后 0 间隔连打 10/10、8 线程并发 40/40）；
+     * 并放弃并发（[com.hgtv.star.core.RequestScope] 的语义不变，只是不再同时打多条路）。
+     *
+     * 早先还有一条「某条路径连续 2 次空响应就冷却 10 分钟」的机制，已删除：
+     * 空响应是**设备被限流**，不是路径失效，冷却它等于让用户十分钟里一次都试不了
+     *（2026-10-27 现场：两条路径都被判死，界面一直转圈重试）。
      */
     private fun videoModel(id: String): JSONObject {
-        val deviceLevel=this.deviceLevel
         val host="https://api5-normal-sinfonlineb.fqnovel.com"
-        // `biz_param` 必须是**对象**，不是序列化后的字符串。
-        // 早先这里用字符串插值拼 `{"video_id":"…","biz_param":"{…}"}`，平台直接回
-        // `HTTP 400 InvalidRequest: req.BizParam: expected map, actual value: {…} (string)`
-        // （2026-10-16 实测）。参考实现（`hongguo-tv/core/cmd/hongguotv/minireel.go`）用的是
-        // `map[string]any`，这里改成 `JSONObject` 对齐。
+        // 2026-10-27 实测：老路径 `/multi_video_model/v1/` 是最稳的一条
+        //（同一台设备 5/8、4/12、6/12、8/10），10-14 那版新路由 `/video_model/v1/` 当天 0/8。
+        // 当时把 0/8 归因成「路径判死」，事后确认是**设备被限流**（见 [modelDeviceId]）：
+        // 换一个 `device_id` 之后连 `preload` 都回 `code 0`。路径本身没有反转。
+        //
+        // 仍然只留**两条**：起播只需要一条能用的路，多发一条只是多一次往返；
+        // 新路由留作探针——平台真改版时第一发成功就会把 [preferredModelPath] 换成它，
+        // 不必等下一次发版。`preload` / `default` / `detail` 与老路径是同一份 body、
+        // 同一份返回值，留着重试没有意义。
+        val candidates=listOf(
+            "/novel/player/multi_video_model/v1/",
+            "/novel/player/video_model/v1/"
+        )
+        // 播放接口对**匿名设备**也放行（官方 App 冷启动未登录即可播放，见 HAR），
+        // 前提是这台设备已在服务端注册过（见 [registerDevice]）：未注册回 `101000 服务异常`
+        // 或 `200 + 0 字节`，注册后回 `code 0` + 完整播放模型。
+        // 因此这里用合并档案（含本机身份，见 [deviceProfile]），并带上注册下发的设备 Cookie；
+        // 有账号凭据时以凭据的整段 Cookie 为准。
+        // 会话层优先：`sid_guard` 会被心跳续期，凭据对象是登录那一刻的快照。
+        val cookie=com.hgtv.star.core.session.SessionBridge.state?.cookieHeader?.takeIf { it.isNotBlank() }
+            ?: credentials?.cookie?.takeIf { it.isNotBlank() }
+            ?: registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }.takeIf { it.isNotEmpty() }
+        // 记住的那条路径排到最前（见 [preferredModelPath]）。
+        val ordered=if(preferredModelPath.isEmpty()) candidates
+            else candidates.sortedByDescending { it==preferredModelPath }
+        val scope=RequestScope.current()
+        // 同一集刚取过就复用：推荐页预热、正片起播、下一集预取会**同时**要同一集的地址，
+        // 各发一轮就是三份并发（见下面的单飞闸门）。缓存很短（[MODEL_CACHE_MS]），
+        // 地址本身小时级有效，这里只是用来把「同一刻的重复请求」合并掉。
+        // 键里带 [deviceLevel] 与 [modelCacheGen]：换过档位 / 换过 `device_id` 的那一份模型
+        // 就是「旧参数换来的地址」，再拿它去取流等于白换一次（见 [rotateDeviceForRetry]）。
+        val cacheKey=modelCacheKey(id)
+        if(modelCacheTtl>0L) modelCache[cacheKey]?.let { (at,model) ->
+            if(System.currentTimeMillis()-at<=modelCacheTtl) return model
+            modelCache.remove(cacheKey)
+        }
+        // **进程级单飞**：这条接口对并发极敏感（20 并发 0 命中、单发 50~80% 命中），
+        // 而点一次播放就可能同时存在主实例 / 预取实例 / 推荐页预热实例三份请求。
+        // 因此整个取地址段串行化：后来的等前一个结束，然后再查一次上面那份缓存。
+        val gate=modelGate
+        if(!gate.tryAcquire(MODEL_GATE_TIMEOUT_MS,TimeUnit.MILLISECONDS)) {
+            throw IOException("播放接口暂不可用（取地址排队超时）")
+        }
+        try {
+            if(modelCacheTtl>0L) modelCache[cacheKey]?.let { (at,model) ->
+                if(System.currentTimeMillis()-at<=modelCacheTtl) return model
+            }
+            val model=fetchModel(id,scope,ordered,host,cookie)
+            // 缓存键用**真正取成功时**的档位（这一轮可能刚从 4 升到 5，见 [tryModelPath]）。
+            if(modelCacheTtl>0L) modelCache[modelCacheKey(id)]=System.currentTimeMillis() to model
+            return model
+        } finally {
+            gate.release()
+        }
+    }
+
+    /** 播放模型的合并缓存键：集 + 当前档位 + 身份代次（见 [videoModel]）。 */
+    private fun modelCacheKey(id: String)="$id@$deviceLevel@g$modelCacheGen"
+
+    /**
+     * 一次播放模型请求的 body（[deviceLevel] 每次现读，因为一轮里它可能从 4 升到 5）。
+     *
+     * `biz_param` 必须是**对象**，不是序列化后的字符串。早先用字符串插值拼
+     * `{"video_id":"…","biz_param":"{…}"}`，平台直接回
+     * `HTTP 400 InvalidRequest: req.BizParam: expected map, actual value: {…} (string)`
+     * （2026-10-16 实测）。参考实现（`hongguo-tv/core/cmd/hongguotv/minireel.go`）用的是
+     * `map[string]any`，这里改成 `JSONObject` 对齐。
+     *
+     * `need_all_video_definition=true` 是「拿满 5 档」的**前提**：不带它服务端只回 1 档。
+     * 档位（4 / 5）只决定这一套表里给几档，`device_level` 本身不会把某一档变成别的编码。
+     */
+    private fun modelBody(id: String,newRoute: Boolean): String {
         val biz=JSONObject()
             .put("detail_page_version",0).put("device_level",deviceLevel).put("disable_digg_stat",false)
             .put("need_all_video_definition",true).put("need_mp4_align",false)
             .put("use_os_player",false).put("use_server_dns",false).put("video_platform",1024)
-        // 新路由要 `video_id` 单值；带场景段与旧路径要 `mixed_video_id_map`（1004 = 短剧）。
-        val videoMap=JSONObject()
-            .put("biz_param",JSONObject(biz.toString()))
-            .put("mixed_video_id_map",JSONObject().put("1004",JSONArray().put(id)))
-            .toString()
-        val candidates=listOf(
-            "/novel/player/video_model/v1/" to JSONObject()
-                .put("video_id",id).put("biz_param",JSONObject(biz.toString())).toString(),
-            "/novel/player/multi_video_model/preload/v1/" to videoMap,
-            "/novel/player/multi_video_model/default/v1/" to videoMap,
-            "/novel/player/multi_video_model/detail/v1/" to videoMap,
-            "/novel/player/multi_video_model/v1/" to videoMap
-        )
-        var failure: IOException?=null
-        candidates.forEach { (path,body) ->
-            val attempt=runCatching {
-                val payload=body.toByteArray()
-                // 播放接口对**匿名设备**也放行（官方 App 冷启动未登录即可播放，见 HAR），
-                // 前提是这台设备已在服务端注册过（见 [registerDevice]）：未注册回 `101000 服务异常`
-                // 或 `200 + 0 字节`，注册后回 `code 0` + 完整播放模型。
-                // 因此这里用合并档案（含本机身份，见 [deviceProfile]），并带上注册下发的设备 Cookie；
-                // 有账号凭据时以凭据的整段 Cookie 为准。
-                // 会话层优先：`sid_guard` 会被心跳续期，凭据对象是登录那一刻的快照。
-                val cookie=com.hgtv.star.core.session.SessionBridge.state?.cookieHeader?.takeIf { it.isNotBlank() }
-                    ?: credentials?.cookie?.takeIf { it.isNotBlank() }
-                    ?: registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }.takeIf { it.isNotEmpty() }
-                var response=""
-                var blankRetry=0
-                while(true) {
-                    val signed=signer.sign(host+path,deviceProfile(),payload)
-                    val request=if(cookie==null) signed else signed.copy(headers=signed.headers+linkedMapOf("Cookie" to cookie))
-                    response=text(signed.url,request)
-                    // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
-                    // 空响应先原地重发几次再换下一条：否则会把唯一能用的那条路径也跳过去。
-                    if(response.isNotBlank() || blankRetry>=PLAYBACK_RETRIES) break
-                    blankRetry++
-                    Thread.sleep(200L+blankRetry*200L)
-                }
-                // 空响应**不**记「被拒」：播放这条路径上它本来就有约一半概率偶发（见 PLAYBACK_RETRIES），
-                // 拿它当判据会把好设备的身份反复换掉。真正明确的信号是下面的 `101000`。
-                if(response.isBlank()) throw IOException("播放接口暂不可用（空响应）")
-                val data=JSONObject(response)
-                val code=data.optInt("Code",data.optInt("code",0))
-                // 业务码非 0 就是这一条路不通（110001 是旧路径的「未知异常」，100001 是参数错误）。
-                // `101000 服务异常` 正是「这台设备没在服务端注册过」那一条，单独记一笔：
-                // 界面层据此换一份身份重注册，而不是让用户看到「所有影片都放不了」。
-                if(code==101000) noteDeviceRejected()
-                if(code!=0) throw IOException("播放接口暂不可用（${code}）")
-                videoModelOf(data) ?: throw IOException("播放接口暂不可用（没有播放模型）")
-            }
-            attempt.getOrNull()?.let { return it }
-            failure=attempt.exceptionOrNull() as? IOException ?: IOException(attempt.exceptionOrNull()?.message ?: "播放接口暂不可用")
+        return if(newRoute) {
+            // 新路由要 `video_id` 单值（给 `mixed_video_id_map` 会回 `100001 video_id invalid`）。
+            JSONObject().put("video_id",id).put("biz_param",JSONObject(biz.toString())).toString()
+        } else {
+            // 带场景段 / 老路径要 `mixed_video_id_map`（1004 = 短剧）。
+            JSONObject()
+                .put("biz_param",JSONObject(biz.toString()))
+                .put("mixed_video_id_map",JSONObject().put("1004",JSONArray().put(id)))
+                .toString()
         }
+    }
+
+    /**
+     * [videoModel] 里真正打请求的那一段（持锁执行，见那里的 `modelGate`）。
+     *
+     * 只有队首那条路径会**多次**重试，其余路径只试一次。原因见 [probeModelPath]：
+     * 平台是按 `device_id` 计额度挡的，与走哪条路径无关，所以「换路径」几乎没有意义，
+     * 有效动作是**换一个 `device_id` 再打**（见 [rotateModelDevice]）。
+     */
+    private fun fetchModel(
+        id: String,
+        scope: RequestScope?,
+        ordered: List<String>,
+        host: String,
+        cookie: String?
+    ): JSONObject {
+        var failure: IOException?=null
+        ordered.forEachIndexed { index, path ->
+            val model=try {
+                RequestScope.withScope(scope) {
+                    // 队首 3 次、其余 1 次：起播只需要一条能用的路，多发一条只是多一次往返。
+                    // 每次空响应都换 `device_id`，换号之后仍然被挡才升 `device_level`（见 [tryModelPath]）。
+                    tryModelPath(host,path,id,cookie,if(index==0) MODEL_BLANK_RETRIES+1 else 1)
+                }
+            } catch(e: IOException) {
+                // 用户切走了（取消域）：这不是「这条路不通」，不该再往下试另一条。
+                if(isInterruption(e) || e.message=="请求已取消") throw e
+                failure=e
+                null
+            }
+            if(model!=null) {
+                preferredModelPath=path
+                return model
+            }
+        }
+        // 全失败：把记住的那条也作废，下一次从候选表第一条重新开始——
+        // 否则记着的那条死路会一直排在队首，每次起播先白花一次往返。
+        preferredModelPath=""
         throw failure ?: IOException("播放接口暂不可用")
+    }
+
+    /**
+     * 在一条路径上试 [attempts] 次，每次之间隔 [MODEL_SPACING_MS]（见 [waitModelSlot]）。
+     *
+     * 只对**空响应**重试：那是这台设备被挡了（按 `device_id` 计额度），业务错误（`code≠0`）
+     * 说明请求已经到了后端，重发是同一个结果，直接抛出去换下一条路径。
+     *
+     * ## 限流的两级处置（需求口径）
+     *
+     * 1. 第一次空响应 → **换一个 `device_id`**，档位仍是 4；
+     * 2. 换号之后**仍然**空响应 → 档位升到 **5**（同时再换一次号），多要两档；
+     * 3. 5 档还被挡 → 继续换号重试。
+     *
+     * 档位升到 5 之后本集不再回退（见 [deviceLevel]），下一集由 [beginEpisode] 重置回 4。
+     */
+    private fun tryModelPath(host: String,path: String,id: String,cookie: String?,attempts: Int): JSONObject {
+        var last: ModelBlankException?=null
+        var blanksAtCurrentLevel=0
+        for(i in 1..attempts) {
+            try {
+                return probeModelPath(host,path,id,cookie,i)
+            } catch(e: ModelBlankException) {
+                last=e
+                blanksAtCurrentLevel++
+                // 空响应 = **这台设备**被挡了（见 [rotateModelDevice]）。
+                // 换一个 device_id 立刻恢复：实测连打 0 间隔 8/8、8 线程各持一个 id 40/40，
+                // 而同一个 id 在 0.4 秒间隔下只有 5/12、3 秒间隔 5/6。
+                // 因此**每次**空响应都换 id —— 包括这条路径已经没有下一次尝试的情况：
+                // 那次失败会让界面进入自动重试，下一次起播必须拿一个新 id，否则只是
+                // 把同一个被挡的身份再打一遍。
+                rotateModelDevice()
+                // 换号之后仍然被挡：升到 5 档再试（见 [deviceLevel]）。
+                if(blanksAtCurrentLevel>=2) escalateDeviceLevel()
+            }
+        }
+        throw last ?: IOException("播放接口暂不可用")
+    }
+
+    /** 播放请求用的档案：只把 `device_id` 换成当前值，其余字段与本机完全一致（见 [modelDeviceId]）。 */
+    private fun modelProfile(): Map<String,String> =
+        LinkedHashMap(deviceProfile()).apply { put("device_id",currentModelDeviceId()) }
+
+    /**
+     * 当前该用哪个 `device_id`：**从不使用本机真值，第一次调用就现造一个新号**。
+     *
+     * 为什么不先拿本机真值试一发：那个号在这台设备上早就用满了额度，第一发必然是
+     * `200 + 0 字节`（实测固定 450~520ms），白白把起播往后推半秒；随后还得再换一次号重发。
+     * 跳掉这一发，起播路径上只剩一次能命中的请求。
+     *
+     * 本机身份一变（重新注册成功 / 导入凭据），轮换状态整体作废重来：新身份意味着
+     * 额度重新计，之前记下的「已挡」名单没有参考价值。
+     */
+    private fun currentModelDeviceId(): String = synchronized(deviceRotateLock) {
+        val real=deviceIdentity["device_id"].orEmpty()
+        if(real!=modelRealIdSeen) {
+            modelRealIdSeen=real
+            modelBurnedIds.clear()
+            // 身份换过（重新注册 / 导入凭据）：丢掉上一个身份的号，下面现造一个。
+            //
+            // **存档里跨进程复用一个「上次成功过」的 id 是刻意不做的**：
+            // 平台按 `device_id` 计额度，被打满的号恢复得很慢（实测 15 / 30 / 60 秒单发仍全空），
+            // 冷启动拿一个旧号打第一发，等于把唯一一次起播机会押在一个可能已经废掉的号上——
+            // 现场表现就是「起播直接失败，换一个 id 才好」。
+            // 同理，**本机真值也不能拿来打第一发**：它正是最容易早已打满的那个号。
+            modelDeviceId=""
+        }
+        modelDeviceId.takeIf { it.isNotEmpty() }?.let { return@synchronized it }
+        val id=newModelDeviceId()
+        modelDeviceId=id
+        NetLog.emit("model device fresh ${id.takeLast(6)} (real ${real.takeLast(6)})")
+        id
+    }
+
+    /**
+     * 服务端说「这台设备没注册过」（`101000`）时清掉轮换状态。
+     *
+     * 轮换出来的随机 id 天然是「未注册」的：播放接口对这种 id 放行，但一旦平台收紧
+     * （回 `101000`），继续换随机 id 只会一直撞同一句话。此时正确动作是交出本机真值、
+     * 让界面层重新注册一台（见 `MainActivity.healDeviceIdentity`），
+     * 而不是继续制造新身份——那是我们唯一能保证「换完之后是注册过的」的来源。
+     */
+    private fun resetModelRotation() {
+        synchronized(deviceRotateLock) {
+            modelDeviceId=""
+            modelBurnedIds.clear()
+            modelRealIdSeen=""
+            // 身份要重注册：旧身份换来的那份模型也不能再用了（见 [modelCacheGen]）。
+            modelCacheGen++
+        }
+    }
+
+    /**
+     * 换一个 `device_id`（见 [modelDeviceId]），返回新值。
+     *
+     * 两条入口：[tryModelPath] 每次空响应换号（那时持着 `modelGate`），
+     * 以及界面上的重试（[rotateDeviceForRetry]，不持闸门）。因此这里自己用
+     * [deviceRotateLock] 串行：两条线程同时轮换会各造一个号、丢掉其中一个，
+     * 还会把同一个号重复记进 [modelBurnedIds]。
+     */
+    private fun rotateModelDevice(): String {
+        synchronized(deviceRotateLock) {
+            val previous=modelDeviceId
+            if(previous.isNotEmpty()) modelBurnedIds+=previous
+            val next=newModelDeviceId()
+            modelDeviceId=next
+            // 模型缓存作废：那是「用旧身份换来的地址」，给新身份用等于白换一次号
+            //（见 [videoModel] 的 cacheKey 与 [rotateDeviceForRetry]）。
+            modelCacheGen++
+            NetLog.emit("model device rotate ${previous.takeLast(6)} -> ${next.takeLast(6)}")
+            return next
+        }
+    }
+
+    /** 生成一个形状与本机一致的 15 位 `device_id`（`88…`），并避开本机真值和已被挡过的值。 */
+    private fun newModelDeviceId(): String {
+        val real=deviceIdentity["device_id"].orEmpty()
+        while(true) {
+            // 固定 15 位（`1e14`~`1e15`）：与真机 `device_id` 的位数一致。
+            // `nextLong()` 可能为负，直接取模会掉到 14 位，所以这里取正模；
+            // **不能用 `Math.floorMod`**：那是 API 24 的方法，4.4 上是 `NoSuchMethodError`。
+            val span=900_000_000_000_000L
+            val raw=modelIdRandom.nextLong()%span
+            val id=(100_000_000_000_000L+(if(raw<0) raw+span else raw)).toString()
+            if(id!=real && !modelBurnedIds.contains(id) && id!=modelDeviceId) return id
+        }
+    }
+
+    /** 网关挡请求（`200 + 0 字节`）：换 id 再试就能过，所以单独一个类型（见 [tryModelPath]）。 */
+    private class ModelBlankException(message: String): IOException(message)
+
+    /**
+     * 在 [path] 上打**一次**播放模型请求。
+     *
+     * ## 为什么挡请求和参数无关（2026-10-27 实测，这是本方法所有取舍的依据）
+     *
+     * 被挡时是 `200 + Content-Length: 0`，响应头多一个 `tt_stable: 1`（正常响应没有）。
+     * 用**同一份** body / 签名 / Cookie / 设备身份对着同一个 host 打：
+     *
+     * * 3 秒一发：5/6、6/6 命中；500 毫秒一发：基本 0 命中；20 并发：0/20。
+     * * 把 UA 换成仓库内置的 `25053RT47C / Android 16`（`code 0`）、或换成模拟器机型、
+     *   或去掉 / 加上 Cronet 段：都在 3~5/6，**没有一种掉到 0**。
+     * * `Accept-Encoding` / `Accept-Language` / `Connection: close` 逐个换成 App 的写法：同样不变。
+     *
+     * 也就是说：请求内容完全无罪，判据是「这台设备（`device_id`）打了多少次」。
+     * 因此空响应一律换 `device_id` 再试（见 [rotateModelDevice]），并且**不再**用
+     * 「这条路径空响应几次就判死十分钟」那种机制——那是把「设备被限流」误判成
+     * 「路径失效」，会让用户十分钟里一次都试不了（2026-10-27 现场正是如此：
+     * 两条路径都被判死，界面一直转圈重试）。
+     *
+     * 空响应**不**记「设备被拒」：那会把好设备的身份反复换掉。真正明确的信号只有 `101000`。
+     */
+    private fun probeModelPath(host: String,path: String,id: String,cookie: String?,attempt: Int): JSONObject {
+        // body 每次现拼：这一轮里 `device_level` 可能刚从 4 升到 5（见 [tryModelPath]）。
+        val body=modelBody(id,newRoute=!path.contains("multi_video_model"))
+        val payload=body.toByteArray()
+        waitModelSlot()
+        // 只在这里换 `device_id`（见 [modelDeviceId]）：其余接口一律用本机真值。
+        val profile=modelProfile()
+        // 档案要同时交给 query 与密文（`x-medusa` 里编了 device_id），否则服务端回 110001。
+        val signed=signer.sign(host+path,profile,payload,deviceOverride=profile)
+        val extra=linkedMapOf<String,String>()
+        if(cookie!=null) extra["Cookie"]=cookie
+        val request=signed.copy(headers=signed.headers+extra)
+        var stable=false
+        val response=text(signed.url,request) { r -> stable=r.header("tt_stable")=="1" }
+        // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
+        if(response.isBlank()) {
+            NetLog.emit("model path=$path attempt=$attempt level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} bytes=0 stable=$stable")
+            throw ModelBlankException("播放接口暂不可用（空响应）")
+        }
+        val data=JSONObject(response)
+        val code=data.optInt("Code",data.optInt("code",0))
+        NetLog.emit("model path=$path attempt=$attempt level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} bytes=${response.length} code=$code")
+        // 业务码非 0 就是这一条路不通（110001 是旧路径的「未知异常」，100001 是参数错误）。
+        // `101000 服务异常` 正是「这台设备没在服务端注册过」那一条，单独记一笔：
+        // 界面层据此换一份身份重注册，而不是让用户看到「所有影片都放不了」。
+        if(code==101000) { noteDeviceRejected(); resetModelRotation() }
+        if(code!=0) throw IOException("播放接口暂不可用（${code}）")
+        return videoModelOf(data) ?: throw IOException("播放接口暂不可用（没有播放模型）")
+    }
+
+    /**
+     * 两次播放模型请求之间至少隔 [MODEL_SPACING_MS]，**进程级**节流。
+     *
+     * 必须先持有 `modelGate`（见 [videoModel]）：只有全局串行时这个时间戳才说得清
+     * 「上一次是什么时候打的」。第一次不等待（时间戳初值 0）。
+     *
+     * 为什么只剩 200 毫秒：真正的限流是**按 `device_id`** 计的，换 id 比等待有用得多
+     *（换 id 后 0 间隔 10/10，同一个 id 等 3 秒也只有 5/6，见 [modelDeviceId]）。
+     * 这里只挡异常连打，不承担限流职责。
+     */
+    private fun waitModelSlot() {
+        if(modelSpacing<=0L) return
+        val wait=modelLastAttemptAt.get()+modelSpacing-System.currentTimeMillis()
+        if(wait>0L) {
+            try {
+                Thread.sleep(wait)
+            } catch(e: InterruptedException) {
+                Thread.currentThread().interrupt()
+                throw IOException("请求已取消")
+            }
+        }
+        modelLastAttemptAt.set(System.currentTimeMillis())
     }
     /**
      * 从播放接口响应里取出 `video_model`：新路由在 `data.video_model`，
@@ -2392,27 +3252,144 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
         is String -> runCatching { JSONObject(value) }.getOrNull()
         else -> null
     }
+    /**
+     * 取一集的播放地址。
+     *
+     * 全站只有一种视频编码（HEVC），因此这里没有「挑哪条编码」这一维：
+     * 上限之内取最高的一档，上限之内没有就取最低一档（标注「兼容资源」）。
+     */
     fun stream(id: String, maxQuality: Int = 1080): StreamInfo {
         require(id.matches(Regex("[0-9]{1,30}")))
+        // 同一集在两条路上同时被要时（起播 + 预热）只真正取一次：后来的那条等在锁上，
+        // 前一条取回来之后它直接吃缓存。见 [STREAM_CACHE_MS]。
+        val cacheKey=cacheKeyOf(id,maxQuality)
+        val lock=synchronized(streamLocks) { streamLocks.getOrPut(cacheKey) { Any() } }
+        synchronized(lock) {
+            val hit=synchronized(streamCache) { streamCache[cacheKey] }
+            if(hit!=null && clock()-hit.at<STREAM_CACHE_MS) return hit.info
+            // 落盘缓存：冷却启动（进程被杀）、退出再进、同一集重播都走这一条。
+            //
+            // 取一次地址实测 500~1100ms（`net POST … wait=892ms` 是服务端），而这
+            // 500~1100ms 在「已经看过这一集」的所有场景里都是白付的：地址在有效期内
+            // 逐字节相同。这里只缓存 [PlaybackCache.URL_FRESH_MS] 内的那一份，
+            // 过期或 403 就重新取（见 `RemoteVideo.range` 与 [forgetStream]）。
+            PlaybackCache.loadUrl(cacheKey)?.let { cached ->
+                if(NetLog.timing) NetLog.log("stream cache hit id=${id.takeLast(6)} quality=${cached.info.quality} age=${(System.currentTimeMillis()-cached.at)/1000}s")
+                rememberStream(cacheKey,cached.info,clock())
+                return cached.info
+            }
+            val info=fetchStream(id,maxQuality)
+            rememberStream(cacheKey,info,clock())
+            PlaybackCache.saveUrl(cacheKey,info)
+            // 锁表跟着缓存一起收：这里大多是「取完就没人在等」的一次性键，
+            // 不收的话每换一部剧就多留一个对象，长刷推荐会一直涨。
+            synchronized(streamLocks) { if(streamLocks.size>STREAM_CACHE_LIMIT*4) streamLocks.remove(cacheKey) }
+            return info
+        }
+    }
+    /**
+     * 内存 / 落盘缓存与锁表的键：集 id + 请求上限 + `device_level`。
+     *
+     * 档位必须进键：4 与 5 是两套清晰度表，同一集换档之后拿回的是另一份地址，
+     * 缓存互相命中就是「换档没生效」。
+     */
+    private fun cacheKeyOf(id: String,maxQuality: Int): String =
+        "$id:$maxQuality:$deviceLevel"
+    private fun rememberStream(key: String,info: StreamInfo,at: Long) {
+        synchronized(streamCache) {
+            if(streamCache.size>=STREAM_CACHE_LIMIT) streamCache.keys.firstOrNull()?.let(streamCache::remove)
+            streamCache[key]=CachedStream(info,at)
+        }
+    }
+    /**
+     * 这一集取回来的地址不认了（403 / 404）：内存与落盘一起丢掉，下次重新取。
+     *
+     * 界面层在「取地址之后本地准备失败」时调它，然后重来一次——这样用户看到的是
+     * 多等半秒，而不是「解码失败，请换一部」。
+     */
+    /**
+     * [maxQuality] 必须与当初 [stream] 用的那个一致，且**读的是当前档位**：
+     * 键里带着 `device_level`，降档重试时要按新的上限去删，否则删的是另一条
+     *（真正那条还留在盘上，下一次取地址又命中它，白重试一轮）。
+     */
+    fun forgetStream(id: String,maxQuality: Int = 1080) {
+        val key=cacheKeyOf(id,maxQuality)
+        synchronized(streamCache) { streamCache.remove(key) }
+        PlaybackCache.invalidateUrl(key)
+        // 「这条地址不认了」= 下一次取地址当成一次全新尝试：换一个 `device_id`
+        //（见 [rotateDeviceForRetry]）。同一条死地址往往连着同一个已经被挡 / 被限速的身份，
+        // 只重取地址不换号，下一发很可能还是同一个结果。
+        rotateDeviceForRetry()
+    }
+
+    /**
+     * 用户侧「再试一次」时换一个设备身份。
+     *
+     * ## 为什么每试一次就换
+     *
+     * 播放接口按 `device_id` 计额度（实测：同一个号 0.4 秒间隔 5/12、3 秒间隔 5/6；
+     * 换号后 0 间隔 10/10、8 线程并发 40/40；被打满的号 15/30/60 秒后单发仍然全空，
+     * 见 [modelDeviceId]）。「同一个号等一会儿再试」在用户能忍的几十秒里是无效动作，
+     * 有效动作只有换号。
+     *
+     * 三处调用：地址自愈（[forgetStream] → 本方法）、自动重试（`MainActivity.retryRunnable`）、
+     * 错误页的「立即重试」/「换到 xP」。
+     *
+     * 换号顺带让 [modelCache] 里「旧身份换来的模型」失效（见 `modelCacheGen`），
+     * 否则重试会命中 60 秒的模型缓存、拿回一模一样的地址。
+     *
+     * 进程级：三份仓库实例（主 / 下一集预取 / 推荐预热）共用同一份轮换状态，见 companion 的说明。
+     */
+    fun rotateDeviceForRetry(): String = rotateModelDevice()
+    /** 真正去取播放地址（[stream] 的缓存之外那一半）。 */
+    private fun fetchStream(id: String, maxQuality: Int): StreamInfo {
         val model=videoModel(id)
         val raw=model.opt("fallback_api")
         val fallback=when(raw) { is JSONObject -> raw.str("fallback_api"); is JSONArray -> raw.optString(0); else -> runCatching { JSONObject(raw.toString()).str("fallback_api") }.getOrDefault(raw.toString()) }
         if(!fallback.startsWith("https://")) throw IOException("播放地址格式异常")
         val info=JSONObject(text(fallback)).optJSONObject("video_info")?.optJSONObject("data") ?: throw IOException("没有播放资源")
         val videoList=info.optJSONObject("video_list") ?: throw IOException("没有可用清晰度")
-        // ByteVC2 resources can expose playable audio but no video track in Android's MP4 extractor.
-        // Keep missing legacy codec labels usable, but never select a known incompatible variant.
-        val rows=videoList.keys().asSequence().mapNotNull { k -> videoList.optJSONObject(k)?.let { k to it } }.filter {
-            it.second.str("main_url").isNotEmpty() && it.second.str("codec_type").lowercase() !in setOf("bytevc2","bvc2")
-        }.map { (k,o) -> Triple(qualityOf(o,k),k,o) }.sortedByDescending { it.first }.toList()
-        val selected=rows.firstOrNull { it.first<=maxQuality } ?: rows.lastOrNull() ?: throw IOException("没有电视可播放的清晰度，请稍后再试或选择其他剧集")
-        val item=selected.third; var url=cleanUrl(item.str("main_url")); val seed=info.str("key_seed")
+        // 只留 **HEVC** 的档位（全站只有这一种编码）：
+        //
+        // * `bytevc2` / `bvc2` 在 Android 的 MP4 解析器里往往只有音轨、没有画面，而且
+        //   只有 `device_level≤3` 才会下发，现在根本不请求；
+        // * `h264` / `avc` 是更早的片源，同样不在本工程的播放范围内——留着它只会出现
+        //   「同一部剧一集 AVC、一集 HEVC」，解码方式与缓存键都会跟着抖。
+        // * 空 `codec_type` 的老片源（实测大量存在）**照收**：它是 HEVC，只是标签缺了，
+        //   剔掉它会变成「没有可播放的清晰度」，那才是真正的倒退。
+        //
+        // `qualityOf` 认不出档位时返回 0（`quality_desc` / 宽高 / 键名都可能缺），
+        // 而 0 对「≤ 上限」恒成立——早先它会被当成最接近的一档选中，实际可能是 1080。
+        // 这里把 0 直接剔出候选：宁可少一档，也不能选一条不知道是什么的流。
+        val candidates=videoList.keys().asSequence().mapNotNull { k -> videoList.optJSONObject(k)?.let { k to it } }
+            .filter { (k,o) ->
+                o.str("main_url").isNotEmpty() && isHevcCodec(o.str("codec_type"),k)
+            }
+            .map { (k,o) -> qualityOf(o,k) to o }
+            .filter { it.first>0 }
+            .sortedByDescending { it.first }
+            .toList()
+        if(candidates.isEmpty()) throw IOException("没有电视可播放的清晰度，请稍后再试或选择其他剧集")
+        // 选档：上限内取最高的一档；一档都不满足上限时取**最低**的一档（向上兼容），
+        // 并在标签上写清「兼容资源」，界面据此提示。
+        val affordable=candidates.filter { it.first<=maxQuality }
+        val selected=affordable.firstOrNull() ?: candidates.last()
+        val quality=selected.first; val item=selected.second
+        var url=cleanUrl(item.str("main_url")); val seed=info.str("key_seed")
         if(seed.isNotEmpty()) url=MediaCrypto.decryptUrl(url,decode64(seed))
         if(!url.startsWith("https://") && !url.startsWith("http://")) throw IOException("播放地址无效")
         val key=item.str("spade_a").takeIf { it.isNotEmpty() }?.let(MediaCrypto::deriveKey)
-        val quality=if(selected.first>0) "${selected.first}P"+(if(selected.first>maxQuality) "（兼容资源）" else "") else "自动"
-        return StreamInfo(url,key,quality)
+        val label="${quality}P"+(if(quality>maxQuality) "（兼容资源）" else "")
+        return StreamInfo(
+            url=url,
+            key=key,
+            quality=label,
+            requestedQuality=maxQuality,
+            actualQuality=quality,
+            available=candidates.map { it.first }
+        )
     }
+
     /**
      * 取一集的弹幕，也就是「原 App」播放时看到的同一份数据。
      *
@@ -2508,6 +3485,106 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
          * 界面层只看得到主实例那一次，预取被拒就没人处理。
          */
         @Volatile private var deviceRejectedCount: Int = 0
+        /**
+         * 取播放地址的**进程级单飞闸门**（见 [videoModel]）。
+         *
+         * 这条接口对并发极敏感：同一台设备单发 50~80% 命中、20 并发 0 命中（2026-10-27 实测）。
+         * 而一次点播可能同时有主实例 / 下一集预取 / 推荐页预热三份请求，各发一轮就是三份并发。
+         * 拿它串行化之后，同时到达的请求变成「一个人打、其余等结果」，成功率回到单发那一档。
+         */
+        private val modelGate=java.util.concurrent.Semaphore(1,true)
+        /** 等闸门的上限：队首 3 次 + 其余 1 次，每次之间还要隔 [MODEL_SPACING_MS]，留足余量。 */
+        private const val MODEL_GATE_TIMEOUT_MS=25_000L
+        /**
+         * 两次播放模型请求之间的最小间隔（进程级，见 [waitModelSlot]）。
+         *
+         * 只留一个很小的值挡「异常循环里的连打」。真正的限流靠换 `device_id`
+         * （见 [modelDeviceId]）：换 id 之后 0 间隔连打 10/10、8 线程并发 40/40，
+         * 所以这里**不需要**再等几秒——早先那版 3 秒间隔是在同一个 id 上硬等，
+         * 命中率只有 5/6，且每次重试白等 3 秒。
+         */
+        private const val MODEL_SPACING_MS=200L
+        /** 空响应重试次数（不含首发）：每次都换一个 `device_id`，按实测几乎一次就中。 */
+        private const val MODEL_BLANK_RETRIES=2
+        /** 上一次打播放接口的时刻（0 = 本次进程还没打过，第一次不等待）。 */
+        private val modelLastAttemptAt=java.util.concurrent.atomic.AtomicLong(0L)
+        /**
+         * 播放接口专用的 `device_id` 与轮换（见 [currentModelDeviceId] / [rotateModelDevice]）。
+         *
+         * ## 为什么只换 `device_id`、不换别的
+         *
+         * 2026-10-27 用同一台设备的身份做了三组对照（同一份 body / 签名 / Cookie / UA / 出口 IP）：
+         *
+         * | 做法 | 0.4 秒间隔 | 0 间隔 | 8 线程并发 |
+         * |---|---|---|---|
+         * | 固定 `device_id` | 5/12 | — | 23/40 |
+         * | **只换 `device_id`** | **8/8** | **10/10** | **40/40**（每个线程各持一个 id） |
+         * | 连 `iid` 一起换 | 5/12 | — | — |
+         *
+         * 结论：挡的是**这台设备**（按 `device_id` 计额度），不是 IP、不是并发、不是请求内容。
+         * 而且**不能动 `iid`**：`iid` 与 Cookie 里的 `install_id` 是同一台设备的凭据，
+         * 换掉 `iid` 而与 Cookie 对不上，命中率立刻掉回固定 id 那一档（5/12）——那才是真正的
+         * 「身份自相矛盾」。因此这里只覆盖 query 里的 `device_id`，`iid` / `cdid` / `openudid` /
+         * 机型 / 系统全部保持本机真值。
+         *
+         * 换 id 之后服务端照样回 `code 0` + 完整播放模型（20 KB 级，与本机 id 命中时同一形态），
+         * 不需要先注册：这台接口对 `device_id` 只用来计额度。
+         *
+         * ## 被挡过的那台为什么记着不再用
+         *
+         * 实测一个被打满的 id 恢复得很慢：连打 12 次之后，隔 5 秒单发能命中一次，
+         * 之后 15 / 30 / 60 秒单发**仍然全是空响应**。所以「用旧的 id 隔几秒再试」这条路
+         * 在用户的一次起播里根本走不通，必须记下来、别再用（见 [modelBurnedIds]）。
+         * 三份状态都放在 companion 里：主实例 / 下一集预取 / 推荐页预热各有一个 [ContentRepository]，
+         * 但它们认的是**同一台设备**、吃的是同一个额度（与 [modelGate]、[deviceRejectedCount] 同理）。
+         * 放实例字段的话，A 实例换掉的 id 只有 A 知道，B 还会拿被挡的 id 继续打。
+         */
+        /** 播放接口当前在用的 `device_id`（空 = 还没选，见 [currentModelDeviceId]）。 */
+        @Volatile private var modelDeviceId: String=""
+        /**
+         * 轮换用的锁：[tryModelPath] 持着 `modelGate` 换号，界面上的重试不持——
+         * 两条线程同时换会各造一个号、丢掉其中一个（见 [rotateModelDevice]）。
+         */
+        private val deviceRotateLock=Any()
+        /**
+         * 「身份代次」：每换一次 `device_id` 就 +1，并进 [videoModel] 的缓存键。
+         *
+         * 没有它，重试会命中 60 秒的 [MODEL_CACHE_MS] 模型缓存——那份模型里带着
+         * **旧身份签发的 `fallback_api` 地址**，于是「换了号还是同一个地址、还是同一个死 CDN」。
+         * 顺带保证三份仓库实例换号之后不会互相喂旧模型（缓存是实例级的）。
+         */
+        @Volatile private var modelCacheGen: Int=0
+        /** 上一次同步的本机真值 `device_id`：与 [deviceIdentity] 不一致就说明身份换了（见 [currentModelDeviceId]）。 */
+        private var modelRealIdSeen: String=""
+        /**
+         * 本进程里被挡过的 `device_id`：不再使用（恢复时间以分钟计，见 [modelDeviceId]）。
+         *
+         * **不能用 `ConcurrentHashMap.newKeySet()`**：那是 API 24 的方法，`minSdk` 是 19。
+         * 它写在 companion 的静态初始化里，4.4 上一加载 [ContentRepository] 就抛
+         * `NoSuchMethodError` → 类被标记为初始化失败 → `MainActivity` 构造期
+         * `NoClassDefFoundError: com/hgtv/star/core/c`，应用直接闪退（2026-10-28 现场日志）。
+         * `Collections.newSetFromMap` 是 Java 6 的 API（Android 2.3 起就有），
+         * 底层仍是同一个 `ConcurrentHashMap`，语义与并发保证完全一致。
+         */
+        private val modelBurnedIds: MutableSet<String> =
+            java.util.Collections.newSetFromMap(java.util.concurrent.ConcurrentHashMap<String,Boolean>())
+        /** 生成新 id 用；`minSdk 19` 用不了 `ThreadLocalRandom`，普通 `Random` 够了（只在持有闸门时用）。 */
+        private val modelIdRandom=java.util.Random(System.nanoTime())
+        /** 播放模型的合并窗口：同一集在这段时间内只打一次接口（见 [videoModel]）。 */
+        private const val MODEL_CACHE_MS=60_000L
+
+        /**
+         * 播放地址（`fallback_api` 那一份 `video_info`）的缓存条数与有效期。
+         *
+         * 为什么需要：推荐页起播时会**同时**有两条路在取同一集——正在起播的这一部
+         *（[stream]）和相邻两部的预热（`warmRecommendDetail` → `stream` + 前 1MB）。
+         * 两者互相不认识，各自发一次请求，白等一个往返；用户按上下键快速切换时更明显。
+         * 地址本身在两分钟内不会变（签名有效期是小时级），因此按「集 id + 清晰度 + 档位」缓存。
+         */
+        private const val STREAM_CACHE_MS=120_000L
+        private const val STREAM_CACHE_LIMIT=8
+        /** 两条路同时要同一集时，后来的那条等在锁上（见 [stream]）。 */
+        private data class CachedStream(val info: StreamInfo,val at: Long)
         /** 弹幕窗口固定 30 秒一个，与平台的 `next_query_danmaku_list_time` 一致。 */
         private const val COMMENT_WINDOW_MS=30_000L
         private const val COMMENT_SOURCE=601
@@ -2524,6 +3601,27 @@ class ContentRepository(val http: OkHttpClient = defaultHttpClient(), private va
         private const val COMMENT_THROTTLE_MS=180L
         /** 接口给的季号文案：`第14季`。只认这一种形状，别把别的角标文案当季号。 */
         private val SEASON_TEXT = Regex("^第\\s*([0-9]{1,3})\\s*季$")
+
+        /**
+         * 这一档是不是 HEVC（本工程唯一支持的视频编码）。
+         *
+         * 认得的 HEVC 标签：`bytevc1` / `h265_hvc1` / `hevc` / `h265` / `hvc1` / `hev1`。
+         * 明确不是 HEVC 的标签一律剔除：`bytevc2` / `bvc2`（Android 没有解码器）、
+         * `h264` / `avc` / `avc1`（不在本工程的播放范围内）。
+         *
+         * **空标签按 HEVC 收**：老片源大量没有 `codec_type`，实测这些档位的容器编码就是
+         * hvc1；剔掉它们等于「老剧全部不能播」。
+         */
+        fun isHevcCodec(codec: String,key: String = ""): Boolean {
+            val label=codec.trim().lowercase()
+            if(label.isEmpty()) return true
+            return when(label) {
+                "bytevc1","h265_hvc1","hevc","h265","hvc1","hev1" -> true
+                "bytevc2","bvc2","h264","avc","avc1","h263","vp9","av01","mp4v-es" -> false
+                // 认不出的新标签：按 HEVC 处理（平台只下发 HEVC，认不出多半是标签写法变了）。
+                else -> key.lowercase().let { !it.contains("bytevc2") && !it.contains("avc") }
+            }
+        }
 
         fun qualityNumber(value: String): Int = Regex("2160|1440|1080|720|576|540|480|360").find(value)?.value?.toInt() ?: mapOf("1920" to 1080,"1280" to 720,"1024" to 576,"854" to 480,"640" to 360)[value] ?: value.toIntOrNull() ?: 0
         /**

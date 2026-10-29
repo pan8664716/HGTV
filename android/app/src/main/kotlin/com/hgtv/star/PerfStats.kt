@@ -271,6 +271,10 @@ internal object PerfStats {
      * `supportedModes` 是 API 23 才有的，低版本（这台项目的 minSdk 是 19）只能放弃这一项。
      * 每一档还要看 `alternativeRefreshRates`：部分电视把 24/25/50 挂在 60Hz 那一档下面，
      * 不看就会把 120Hz 的屏报成 60Hz。
+     *
+     * `alternativeRefreshRates` 本身是 **API 31** 才加的（不是 23）：23~30 上直接调用会抛
+     * `NoSuchMethodError`，虽然外面套了 `runCatching` 不会崩，但每台模式都要抛一次异常，
+     * 而这里恰好在每轮统计里跑。因此先判版本，31 以下整段跳过。
      */
     private fun maxRefreshRate(display: android.view.Display): Double {
         if(Build.VERSION.SDK_INT<23) return 0.0
@@ -279,9 +283,11 @@ internal object PerfStats {
         modes.forEach { mode ->
             val rate=mode.refreshRate.toDouble()
             if(rate>max) max=rate
-            runCatching { mode.alternativeRefreshRates }.getOrNull()?.forEach { alt ->
-                val value=alt.toDouble()
-                if(value>max) max=value
+            if(Build.VERSION.SDK_INT>=31) {
+                runCatching { mode.alternativeRefreshRates }.getOrNull()?.forEach { alt ->
+                    val value=alt.toDouble()
+                    if(value>max) max=value
+                }
             }
         }
         return max

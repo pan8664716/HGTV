@@ -319,36 +319,36 @@ internal fun MainActivity.applyAccount() {
     accountRetry=0
 }
 /**
- * 按这台设备的解码能力配好播放：`device_level` 与「首次启动的默认清晰度」。
+ * 按这台设备的解码能力配好播放：首次启动的默认清晰度 + 「有没有 HEVC 硬解」。
  *
- * ## 为什么 `device_level` 要按能力给
+ * ## 为什么 `device_level` 不在这里给了
  *
- * 播放接口只下发两种编码（`bytevc1`=HEVC、`bytevc2`=字节自家的 BVC2），而平台按
- * `device_level` 挑「编码族」：报 3（官方值）时 360/480/540/720 全是 BVC2、只有 1080 是 HEVC；
- * 报 4 时五档全是 HEVC。BVC2 在 Android 上没有解码器，于是 3 档时低清晰度会被
- * `stream()` 全部过滤掉、只剩 1080P——用户把默认清晰度设成 480P 也照样放 1080P，
- * 而且因为每集的编码集合不同，会表现成「一集 480P、一集 1080P」来回跳。
+ * `device_level` 现在只有 **4 / 5** 两档（见 `ContentRepository.deviceLevel`）：
+ * 4 是默认，5 只在被限流时由取地址层升上去。它与本机解码能力**无关**——
+ * 两档下发的都是 HEVC，能不能播由硬解决定，而不是由档位决定。
+ * 早先按能力报 3 / 4 的做法已经删除（3 档的低清晰度是 `bytevc2`，Android 没有解码器）。
  *
- * 因此：能解 HEVC 报 4，解不了就报 3（报 4 只会拿到一套同样解不了的 HEVC）。
+ * ## 为什么默认清晰度仍要按能力给
  *
- * ## 为什么默认清晰度也要按能力给
+ * 只在**用户还没自己选过**时给（`Library.qualityChosenByUser`）：没有 HEVC 硬解的盒子
+ * 默认 1080 只会让每次起播都先失败一次再降档。
  *
- * 只在**用户还没自己选过**时给（`Library.qualityChosenByUser`）：解不了 1080 的盒子
- * 默认 1080 只会让每次起播都先失败一次再自动降档。
+ * ## 探测是 Binder 调用
  *
- * 探测本身是 Binder 调用（`MediaCodecList`，电视盒子上能卡 1–3 秒），因此放在 io 线程，
- * 且结果由 [PlaybackCapability] 落盘——之后每次启动都是纯内存读。
+ * `MediaCodecList` 在电视盒子上能卡 1–3 秒，因此放在 io 线程，结果由
+ * [PlaybackCapability] 落盘——之后每次启动都是纯内存读。
  */
 internal fun MainActivity.applyPlaybackCapability() {
     val chosen=library.qualityChosenByUser()
     io.submit {
-        val level=PlaybackCapability.deviceLevel(this)
         val quality=if(chosen) 0 else PlaybackCapability.defaultQuality(this)
         val hevc=PlaybackCapability.canDecodeHevc(this)
+        val hardwareHevc=PlaybackCapability.hasHardwareHevcDecoder(this)
         main.post {
             if(isDestroyed) return@post
-            // 仓库里那份档位是给播放模型请求用的：解不了 HEVC 时报 3，与官方 App 一致。
-            repository.deviceLevel=level
+            // 有没有 HEVC 硬解：只用于提示（起播 toast / 错误页按钮 / 面板读数），
+            // **不自动改解码方式**（见 `playerDecoderMode`）。
+            hardwareHevcAvailable=hardwareHevc
             // 用户选过就不动他的设置；没选过才按能力给一个默认值（写进 `quality` 键，
             // 之后 `qualityChosenByUser` 就是 true，不会再被覆盖）。
             if(quality>0 && !library.qualityChosenByUser()) library.maxQuality=quality
@@ -576,7 +576,7 @@ internal fun MainActivity.healDeviceIdentity(reason: String,retry: ()->Unit): Bo
  * * 搜索那条是 [DeviceNotRegisteredException]（`200 + 0 字节`）——平台对注册过的设备
  *   **从不**回空响应，因此它是强信号；
  * * 播放那条没有专门类型，只认 `101000`（「服务异常」＝没注册过）。
- *   播放的空响应**不算**：那条路径上它本来就有约一半概率偶发（见 `PLAYBACK_RETRIES`），
+ *   播放的空响应**不算**：那条路径上它本来就有约一半概率偶发（平台限流，见 `ContentRepository.probeModelPath`），
  *   拿它当判据会把好设备的身份反复换掉。
  */
 internal fun deviceRejectionOf(problem: Throwable?): Boolean {
@@ -604,10 +604,12 @@ internal fun MainActivity.registerForPhoneLogin(profile: Map<String,String>): co
     library.saveDeviceIdentity(registered.deviceId,registered.installId)
     DebugEnv.invalidate()
     repository.deviceIdentity=library.deviceIdentity()
-        // 注册下发的 Cookie 一起落盘（`install_id` / `ttreq` / `store-region`）：
-        // 它们原本只活在这个进程的内存里，重启后就没了。
-        library.saveRegistrationCookies(repository.deviceCookiesSnapshot())
-        com.hgtv.star.data.SessionBootstrap.sessionStore?.saveDeviceCookies(repository.deviceCookiesSnapshot())
+    // 注册下发的 Cookie 一起落盘（`install_id` / `ttreq` / `store-region`）：
+    // 它们原本只活在这个进程的内存里，重启后就没了。
+    // 快照只取一次：两次调用之间仓库可能已被别的线程改写，两处落盘就成两份不一样的东西。
+    val cookies=repository.deviceCookiesSnapshot()
+    library.saveRegistrationCookies(cookies)
+    com.hgtv.star.data.SessionBootstrap.sessionStore?.saveDeviceCookies(cookies)
     return registered
 }
 

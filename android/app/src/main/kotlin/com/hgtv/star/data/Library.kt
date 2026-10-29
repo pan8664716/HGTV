@@ -6,6 +6,7 @@ import com.hgtv.star.Diagnostics
 import com.hgtv.star.HOME_KEYS
 import com.hgtv.star.NAV_KEYS
 import com.hgtv.star.NAV_KEY_RECOMMEND
+import com.hgtv.star.core.CategoryGenres
 
 import android.content.Context
 import android.content.SharedPreferences
@@ -35,13 +36,12 @@ class Library(context: Context) {
         const val QUEUES_PER_LIBRARY = 3
         const val RETIRED_LIMIT = 2 * QUEUES_PER_LIBRARY
         /**
-         * 推荐页记下多少个「已经推过」的 id（先进先出）。
+         * 推荐页的曝光窗口容量 / 存活时长见 [com.hgtv.star.core.RecommendFlow]。
          *
-         * 只用来挡住「刚看过的又被推一遍」：800 部按一页 20 条算是 40 页的量，正常刷不穿；
-         * 再多也没有意义——服务端那条流本身就只有几千条的深度，记到更远的地方反而全是
-         * 早就下架的剧。落盘成一串逗号分隔的 id，体积约 8KB。
+         * 早先这里是一个 800 条的纯 LRU（官方客户端是 200 条，文档 §4.4 指出它就是
+         * 「刷一会儿就开始重复」的头号原因）。现在换成「条数上限 + 时间窗」，
+         * 上限 1200 条、7 天过期，并且**剧名也进窗口**（挡同剧不同切片 / 同 IP 多版本）。
          */
-        const val RECOMMEND_SEEN_LIMIT = 800
         /**
          * 平台侧的 `device_id` / `install_id` 形状：**不限位数**的十进制数字。
          *
@@ -166,10 +166,15 @@ class Library(context: Context) {
                 val loaded = LibraryDisk.decode(values)
                 // 推荐流游标：与其余本机设置一起在这一次读盘里抄进内存（见 [recommendCursor]）。
                 recommendCursorCached = (values["recommendCursor"] as? String).orEmpty()
-                // 推荐页推过的剧：同理，一次读盘抄进内存（见 [recommendSeen]）。
-                recommendSeenCached.clear()
-                (values["recommendSeen"] as? String).orEmpty().split(',')
-                    .filterTo(recommendSeenCached) { it.isNotEmpty() }
+                // 推荐页的曝光窗口：同理，一次读盘抄进内存（见 [recommendSeen]）。
+                // 旧版本落的是「纯 id 列表」，[RecommendMarks.restore] 会按新曝光补上 7 天。
+                recommendMarks.restore((values["recommendSeen"] as? String).orEmpty())
+                // 「回传 filter_ids」被服务端拒过一次就不再带（见 [recommendFilterIdsOff]）。
+                recommendFilterIdsOffCached = values["recommendFilterIdsOff"] as? Boolean ?: false
+                // 推荐范围（关掉的那些大类）：同样一次读盘抄进内存（见 [recommendGenreOff]）。
+                recommendGenreOffCached = (values["recommendGenreOff"] as? String).orEmpty()
+                // 推荐范围里的受众（男频 / 女频）：同理（见 [recommendGender]）。
+                recommendGenderCached = (values["recommendGender"] as? String).orEmpty()
                 // 「使用设备」：同理，读一次盘就抄进内存（见 [deviceForm]）。
                 deviceFormCached = (values["deviceForm"] as? String).orEmpty().ifEmpty { "auto" }
                 val now = System.currentTimeMillis()
@@ -1063,6 +1068,18 @@ class Library(context: Context) {
             if (next != homeColumns) { state().settings = state().settings.copy(homeColumns = next); put("homeColumns", next) }
         }
     /**
+     * 列表页「回到顶部」浮层的显隐方式（[BACK_TO_TOP_MODES] 四档，默认始终显示）。
+     *
+     * 只管**列表页**那枚浮层：首页剧架、详情页、播放页本来就不挂它（见 `updateBackToTop`）。
+     * 坏值一律回落到「始终显示」，设置页因此不会出现一个选不中任何一项的状态。
+     */
+    var backToTop: String
+        get() = state().settings.backToTop.takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT
+        set(value) {
+            val next = value.takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT
+            if (next != backToTop) { state().settings = state().settings.copy(backToTop = next); put("backToTop", next) }
+        }
+    /**
      * 播放画面左上角常显的四项信息：剧集标题 / 当前集数 / 时间 / 网速。
      *
      * 四项各自独立开关（设置页「界面设置 → 播放显示」）。前两项与时间默认开启，
@@ -1081,6 +1098,30 @@ class Library(context: Context) {
         get() = state().settings.playerSpeed
         set(value) { if (value != playerSpeed) { state().settings = state().settings.copy(playerSpeed = value); put("playerSpeed", value) } }
     /**
+     * 播放设置 / 选集面板「无操作几秒自动消失」（[PLAYER_PANEL_TIMEOUT_RANGE]，默认 6 秒）。
+     *
+     * 到点之后的行为与按返回键一致：播放设置收起、选集面板收起并把焦点还回控制条。
+     */
+    var playerPanelTimeout: Int
+        get() = state().settings.playerPanelTimeout
+        set(value) {
+            val next=value.coerceIn(PLAYER_PANEL_TIMEOUT_RANGE)
+            if (next != playerPanelTimeout) { state().settings = state().settings.copy(playerPanelTimeout = next); put("playerPanelTimeout", next) }
+        }
+    /**
+     * 快进 / 快退单次跳过的秒数（2..20，默认 10）。
+     *
+     * 播放界面按左右键时的跳跃步长（见 `com.hgtv.star.core.KeyMap.SEEK_FORWARD`）。
+     * 长按连按的加速（5 次之后每次 30 秒）仍然按固定档走，这一项只决定**单次**的步长，
+     * 因此调到 20 秒时连按依然是先 20 秒、之后按连按规则加快。
+     */
+    var seekStep: Int
+        get() = state().settings.seekStep
+        set(value) {
+            val next=value.coerceIn(2,20)
+            if (next != seekStep) { state().settings = state().settings.copy(seekStep = next); put("seekStep", next) }
+        }
+    /**
      * 画面缩放百分比（1..100，默认 100 = 铺满）。
      *
      * 只缩播放画面本身（`playerView` 的框），弹幕层仍然是整屏坐标，
@@ -1093,7 +1134,7 @@ class Library(context: Context) {
             if (next != videoScale) { state().settings = state().settings.copy(videoScale = next); put("videoScale", next) }
         }
     /**
-     * 短剧自动全屏（默认关闭）。
+     * 竖屏短剧全屏（默认关闭）。
      *
      * 打开后，**竖屏片源**（短剧）在横屏电视上会被**转 90°**：9:16 旋转后就是 16:9，
      * 正好铺满屏幕、不裁掉任何内容（见 `autoFullscreenRotated`）。横屏片源不受影响，
@@ -1102,6 +1143,31 @@ class Library(context: Context) {
     var autoFullscreen: Boolean
         get() = state().settings.autoFullscreen
         set(value) { if (value != autoFullscreen) { state().settings = state().settings.copy(autoFullscreen = value); put("autoFullscreen", value) } }
+    /**
+     * 选集一页放多少集（10 / 20 / 30 / 40 / 50，默认 20）。
+     *
+     * 简介页与播放界面的选集面板共用这一份：它决定分页行怎么切段
+     *（`1-20 / 21-40 …`）、网格铺几行（固定 10 列 × 一页集数 / 10 行）。
+     * 落盘即生效——下次打开选集就是新的分段，不需要重启。
+     */
+    var episodePageSize: Int
+        get() = state().settings.episodePageSize
+        set(value) {
+            val next = if (value in 10..50) value / 10 * 10 else 20
+            if (next != episodePageSize) { state().settings = state().settings.copy(episodePageSize = next); put("episodePageSize", next) }
+        }
+    /**
+     * 分页边缘翻页（默认开启）。
+     *
+     * 开启：选集网格左右到本行两端、下到最后一行时**翻页**（跳到相邻那一页）。
+     * 关闭：边缘不再翻页，右端按右键选下一集、左端按左键选上一集（跨页自动跟过去），
+     * 换页改由分页行自己选（见 `EpisodeGrid.pageKey`）。
+     *
+     * 落盘即生效：下一次进简介页 / 打开选集面板就按新值走，已经摆好的那一屏不重建。
+     */
+    var episodeEdgeTurn: Boolean
+        get() = state().settings.episodeEdgeTurn
+        set(value) { if (value != episodeEdgeTurn) { state().settings = state().settings.copy(episodeEdgeTurn = value); put("episodeEdgeTurn", value) } }
     /**
      * 用户主动要求「减少动画、优先流畅」（默认关闭）。
      *
@@ -1176,11 +1242,12 @@ class Library(context: Context) {
             put("launchRecommend", value)
         }
     /**
-     * 首页本机记录三栏（`history` / `favorites` / `later`）里**被隐藏**的那些。
+     * 首页七栏里**被隐藏**的那些：本机记录三栏（`history` / `favorites` / `later`）+
+     * 热播四栏（`rank-comic` / `rank-real` / `rank-ai` / `rank-new`）。
      *
-     * 与 [hiddenNav] 不是一组：那五枚管的是顶部导航的页面入口，这三枚管的是首页铺不铺那一栏。
-     * 空集合 = 三栏全显示（与旧版一致）。关掉只让首页不建那一栏（行末「查看全部」也一起没有），
-     * 记录本身一份不删——重新打开开关，内容原样回来。
+     * 与 [hiddenNav] 不是一组：那些管的是顶部导航的页面入口，这些管的是首页铺不铺那一栏。
+     * 空集合 = 七栏全显示（与旧版一致）。关掉只让首页不建那一栏（行末「查看全部」也一起没有）；
+     * 本机记录本身一份不删，热播栏关掉也不影响榜单页与推荐页。
      */
     var hiddenHome: Set<String>
         get() = state().settings.hiddenHome.split(',').filter { it in HOME_KEYS }.toSet()
@@ -1228,34 +1295,158 @@ class Library(context: Context) {
      * 清缓存时随 `shared_prefs` 整个目录一起删（见 `LocalReset.wipe`），不需要单独处理。
      * 只在主线程读写（取推荐页的回调都在主线程）。
      */
-    private val recommendSeenCached = java.util.LinkedHashSet<String>()
+    private val recommendMarks = RecommendMarks()
     /** 推荐页推过的剧 id 快照（调用方只读，不要改）。 */
-    fun recommendSeen(): Set<String> = recommendSeenCached
+    fun recommendSeen(): Set<String> = recommendMarks.ids()
     /**
-     * 记下这一批已经推给用户的剧（先进先出，超过 [RECOMMEND_SEEN_LIMIT] 从队头淘汰）。
+     * 这个剧名（归一化后，剥季号 / 去标点）是不是在窗口里。
      *
-     * 只落一行逗号分隔的 id：它是本机现场，不是用户数据，因此不进备份、不做迁移。
+     * 挡的是文档 §5「原因 3 / 原因 9」那两种重复：同一部剧换了个切片、同一 IP 换了个版本，
+     * `series_id` 不同，只按 id 去重拦不住。
      */
-    fun markRecommended(ids: Collection<String>) {
-        if(ids.isEmpty()) return
-        var added=false
-        ids.forEach { id ->
-            if(id.isEmpty() || id.any { it==',' || it.isISOControl() }) return@forEach
-            if(recommendSeenCached.add(id)) added=true
-        }
-        if(!added) return
-        while(recommendSeenCached.size>RECOMMEND_SEEN_LIMIT) {
-            val head=recommendSeenCached.iterator()
-            if(!head.hasNext()) break
-            head.next(); head.remove()
-        }
-        put("recommendSeen", recommendSeenCached.joinToString(","))
+    fun recommendSeenTitle(title: String): Boolean {
+        val key = RecommendFlow.titleKey(title)
+        return key.isNotEmpty() && recommendMarks.contains(key)
     }
+    /**
+     * 记下这一批已经推给用户的剧（id + 剧名，先进先出 + 7 天过期，见 [RecommendFlow]）。
+     *
+     * 只落一行逗号分隔的 `键@失效时刻`：它是本机现场，不是用户数据，因此不进备份、不做迁移。
+     */
+    fun markRecommended(ids: Collection<String>, titles: Collection<String> = emptyList()) {
+        if(ids.isEmpty() && titles.isEmpty()) return
+        // 没有真正改动（同一条已经记过、且失效时刻不更晚）就不落盘：来回划同一部时不该反复写 30KB。
+        var changed=recommendMarks.mark(ids, RecommendFlow.TTL_SEEN)
+        if(titles.isNotEmpty()) {
+            val keys=titles.mapNotNull { RecommendFlow.titleKey(it).takeIf(String::isNotEmpty) }
+            if(recommendMarks.mark(keys, RecommendFlow.TTL_SEEN)) changed=true
+        }
+        if(changed) put("recommendSeen", recommendMarks.encode())
+    }
+    /** 一进来就划走：冷却 [RecommendFlow.TTL_SKIP]（只延长、不缩短，见 [RecommendMarks.mark]）。 */
+    fun markRecommendSkipped(id: String) {
+        if(id.isEmpty()) return
+        if(recommendMarks.mark(listOf(id), RecommendFlow.TTL_SKIP)) put("recommendSeen", recommendMarks.encode())
+    }
+    /** 真的看了（停留够久 / 进了正片）：冷却 [RecommendFlow.TTL_DONE]。 */
+    fun markRecommendWatched(id: String) {
+        if(id.isEmpty()) return
+        if(recommendMarks.mark(listOf(id), RecommendFlow.TTL_DONE)) put("recommendSeen", recommendMarks.encode())
+    }
+    /**
+     * **已经追完**的剧（看到最后一集，且那一集播完）。
+     *
+     * 文档 §4.2 的第一层硬过滤：「已完播的剧」不该再以「新内容」的身份出现在推荐流里——
+     * 用户刷到一部自己刚看完的剧，读到的就是「推荐不准」。
+     * 判据只用本机观看记录：`episodeIndex` 已经是最后一集、并且那一集标记为播完。
+     * 只看了一部分的剧**不**进这个集合（那是「接着看」，归正式播放的续播，不该被推荐页挡掉）。
+     */
+    fun recommendFinished(): Set<String> {
+        val rows=state().history()
+        if(rows.isEmpty()) return emptySet()
+        val out=HashSet<String>(4)
+        rows.forEach { row ->
+            val total=row.series.episodeCount
+            if(row.completed && total>0 && row.episodeIndex>=total-1) out+=row.series.id
+        }
+        return out
+    }
+    /**
+     * 组装请求里的 `filter_ids`（本机已推过的剧 id，最新的在前面的那一批）。
+     *
+     * 空串 = 不带（服务端按它自己的曝光窗口去重），与旧版请求逐字节一致。
+     */
+    fun recommendFilterIds(limit: Int = RecommendFlow.FILTER_IDS_LIMIT): String =
+        if(recommendFilterIdsOff) "" else recommendMarks.filterIds(limit)
+    /**
+     * 这台设备上「回传 `filter_ids`」是否已经确认不行（服务端照旧回空页 / 回错误码）。
+     *
+     * 一旦确认就**一直不带**：宁可少这一层去重，也不能让推荐页整屏「推荐暂时取不到」。
+     * 与 `recommendSeen` 同属本机现场，不进备份。
+     */
+    var recommendFilterIdsOff: Boolean
+        get() = recommendFilterIdsOffCached
+        set(value) {
+            if(value==recommendFilterIdsOffCached) return
+            recommendFilterIdsOffCached=value
+            put("recommendFilterIdsOff", value)
+        }
+    @Volatile private var recommendFilterIdsOffCached=false
+    /**
+     * 推荐范围：**被关掉的大类**（`comic_series` / `ai_series` / `short_play`）。
+     *
+     * 空集合 = 三类全开，也就是推荐流不带 `genre`（与旧版请求完全一致）。
+     * 设置页「推荐范围」那三枚开关改的就是这里：关掉某一类之后，
+     * 推荐页取流只带剩下的大类，不再往回取那一类的内容（见 [recommendGenres]）。
+     *
+     * 存「关掉的那些」而不是「打开的那些」：默认全开时磁盘上就是一个空串，
+     * 老版本升级上来不需要迁移，也不用区分「磁盘上没有这个键」和「用户把三类全关了」。
+     *
+     * **至少保留一类**（[setRecommendGenre] 会拦住把最后一类也关掉的操作）：
+     * 三类全关等于没有推荐范围，与「全部体裁」的语义正好相反，容易读成同一个东西。
+     *
+     * 不进备份：它描述的是「这台机器想刷什么」，与 [recommendCursor] 属同一类本机现场。
+     */
+    var recommendGenreOff: Set<String>
+        // 磁盘上是一行逗号分隔的标识；读的时候按白名单过滤，坏值直接当没关。
+        get() = recommendGenreOffCached.split(',').filter { it in CategoryGenres.recommendableIds }.toSet()
+        private set(value) {
+            val clean=value.filter { it in CategoryGenres.recommendableIds }.toSet()
+            // 三类全关没有任何意义（等于不筛体裁），一律按「没改」处理。
+            if(clean.size>=CategoryGenres.recommendableIds.size) return
+            if(clean==recommendGenreOff) return
+            val joined=CategoryGenres.recommendableIds.filter { it in clean }.joinToString(",")
+            recommendGenreOffCached=joined
+            put("recommendGenreOff", joined)
+        }
+    @Volatile private var recommendGenreOffCached: String=""
+    /** 某一枚大类是否还在推荐范围里。 */
+    fun recommendGenreEnabled(id: String): Boolean = id !in recommendGenreOff
+    /**
+     * 打开 / 关掉某一枚大类。
+     *
+     * 关掉最后一类会被 [recommendGenreOff] 的 setter 挡回去（它要求至少留一类），
+     * 界面据此把开关按回「开」并给一句提示。
+     */
+    fun setRecommendGenre(id: String, enabled: Boolean) {
+        if(id !in CategoryGenres.recommendableIds) return
+        recommendGenreOff = if(enabled) recommendGenreOff - id else recommendGenreOff + id
+    }
+    /**
+     * 推荐流要带的体裁：**三类全开时返回空**（= 不筛 `genre`，与旧版请求逐字节一致）。
+     *
+     * 返回的顺序固定按 [CategoryGenres.recommendableIds]：请求体是 JSON，
+     * 顺序稳定下来，日志里比对「这次带了哪几类」时不必再算一遍集合差异。
+     */
+    fun recommendGenres(): List<String> {
+        val off=recommendGenreOff
+        return if(off.isEmpty()) emptyList() else CategoryGenres.recommendableIds.filter { it !in off }
+    }
+    /**
+     * 推荐范围的**受众**：`""` = 不限（男女都推），否则是分类接口 `gender` 行里选中的
+     * `selector_item_id`（男频 / 女频各一个，由接口给）。
+     *
+     * 为什么不写死标识：受众行的可选值来自接口的 `selector_rows`，标识是平台自己那一套
+     * （各体裁还可能不同）。写死一个猜出来的串，猜错就是「一条都推不出来」，
+     * 比没有这一项更糟。因此这里只存**用户选中的那个 id**，候选值由设置页
+     * 现取一次面板（见 `MainActivity.loadGenderOptions`）再建芯片。
+     *
+     * 与 [recommendGenreOff] 一样是本机现场，不进备份。
+     */
+    var recommendGender: String
+        get() = recommendGenderCached
+        set(value) {
+            val clean=value.trim().take(64).filter { !it.isISOControl() }
+            if(clean==recommendGenderCached) return
+            recommendGenderCached=clean
+            put("recommendGender", clean)
+        }
+    @Volatile private var recommendGenderCached: String=""
     /**
      * 设置页「使用设备」：`auto` / `phone` / `tablet` / `tv`。
      *
      * 自动模式按打分判定（见 `com.hgtv.star.compat.detectDeviceForm`）；用户手动选了一档
-     * 就以他选的为准——触屏手势层建不建、「短剧自动全屏」往哪边转，都由它决定。
+     * 就以他选的为准——触屏手势层建不建、「竖屏短剧全屏」往哪边转，都由它决定。
      *
      * 不进备份：它描述的是「这台机器是什么」，换一台机器应该重新自动判定，
      * 与 [recommendCursor]、`debugMode` 同一类（都是本机现场，不是用户偏好）。
@@ -1293,6 +1484,17 @@ class Library(context: Context) {
         get() = state().settings.danmakuMerge
         set(value) { if (value != danmakuMerge) { state().settings = state().settings.copy(danmakuMerge = value); put("danmakuMerge", value) } }
     /**
+     * 相同弹幕达到几条才聚合（[DANMAKU_MERGE_MIN_RANGE]，默认 2）。
+     *
+     * 不到这个条数的同一句弹幕照常逐条滚动、不带 `×N`；达到才合并成一条并可能上中央。
+     */
+    var danmakuMergeMin: Int
+        get() = state().settings.danmakuMergeMin
+        set(value) {
+            val next=value.coerceIn(DANMAKU_MERGE_MIN_RANGE)
+            if (next != danmakuMergeMin) { state().settings = state().settings.copy(danmakuMergeMin = next); put("danmakuMergeMin", next) }
+        }
+    /**
      * 播放界面的按键绑定（上 / 下 / 左 / 右 / 菜单 / 确定）。
      *
      * 只存改过的键（见 [KeyMap.encode]），因此默认状态下磁盘上就是一个空串；
@@ -1318,14 +1520,20 @@ class Library(context: Context) {
             "danmakuScale" to { merged.settings.danmakuScale }, "danmakuAlpha" to { merged.settings.danmakuAlpha },
             "danmakuSpeed" to { merged.settings.danmakuSpeed.storedValue },
             "danmakuMerge" to { merged.settings.danmakuMerge },
+            "danmakuMergeMin" to { merged.settings.danmakuMergeMin.coerceIn(DANMAKU_MERGE_MIN_RANGE) },
             "searchSource" to { merged.settings.searchSource.storedValue },
             "homeColumns" to { merged.settings.homeColumns.coerceIn(4, 8) },
             "playerTitle" to { merged.settings.playerTitle },
             "playerEpisode" to { merged.settings.playerEpisode },
             "playerClock" to { merged.settings.playerClock },
             "playerSpeed" to { merged.settings.playerSpeed },
+            "playerPanelTimeout" to { merged.settings.playerPanelTimeout.coerceIn(PLAYER_PANEL_TIMEOUT_RANGE) },
+            "seekStep" to { merged.settings.seekStep.coerceIn(2, 20) },
             "videoScale" to { merged.settings.videoScale.coerceIn(1f, 100f) },
             "autoFullscreen" to { merged.settings.autoFullscreen },
+            "episodePageSize" to { merged.settings.episodePageSize },
+            "episodeEdgeTurn" to { merged.settings.episodeEdgeTurn },
+            "backToTop" to { merged.settings.backToTop },
             "hiddenNav" to { merged.settings.hiddenNav.split(',').filter { it.isNotBlank() }.toSet() },
             "debugMode" to { merged.settings.debugMode },
             "launchRecommend" to { merged.settings.launchRecommend },

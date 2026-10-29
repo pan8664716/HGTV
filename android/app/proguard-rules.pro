@@ -20,6 +20,13 @@
     public static *** i(...);
 }
 
+# 诊断要读**异常类名**：`Diagnostics.chainOf` 与调试面板的「错误」行都是
+# 「类名: message <- 类的 cause」，release 里这些类名会被混淆成 `y1` / `a1` 这种短码，
+# 现场就是「播放失败 · Y1」「y1: 播放地址已失效」——用户报上来对不上任何代码路径（1.2.7 实测）。
+# 只保留名字（-keepnames），不阻止裁剪与优化，也不碰成员：Throwable 子类本来就只有几十个，
+# 体积影响可以忽略。
+-keepnames class * extends java.lang.Throwable
+
 # ========== 会话保活 ==========
 # 心跳与装配入口都是 R8 看不到外部调用者的入口（`Application` 反射式调用链之外、
 # 广播 action 是字符串），改名不会有功能问题，但线上排查时要能对上日志里的类名；

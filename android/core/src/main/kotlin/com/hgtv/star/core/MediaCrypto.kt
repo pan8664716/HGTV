@@ -2,7 +2,6 @@
 package com.hgtv.star.core
 
 import java.io.IOException
-import java.math.BigInteger
 
 object MediaCrypto {
     data class Sample(val start: Long, val end: Long, val iv: ByteArray, val encryptedOffset: Long = 0)
@@ -49,7 +48,9 @@ object MediaCrypto {
         if(key==null) return Prepared(data.copyOf(),emptyList())
         val moov=box(data,data.u32(0).toInt()) ?: throw IOException("视频索引不完整")
         require(moov.type=="moov")
-        val samples=mutableListOf<Sample>(); val header=data.copyOf()
+        // 预分配到底：一次起播要建 n 个样本（实测 4554~22000 个），
+        // 不预分配的话 `ArrayList` 会在中途反复扩容 + 拷数组，这段正好在首帧路径上。
+        val samples=ArrayList<Sample>(16384); val header=data.copyOf()
         var cursor=moov.body
         while(cursor<moov.end) {
             val track=box(data,cursor,moov.end) ?: throw IOException("视频轨道格式异常"); cursor=track.end
@@ -91,7 +92,11 @@ object MediaCrypto {
                 repeat(count.toInt()) {
                     val length=sizes[sampleIndex]; val auxSize=auxSizes[sampleIndex]
                     if(position<0 || length<=0 || position>Long.MAX_VALUE-length || auxSize<8) throw IOException("样本索引异常")
-                    val iv=data.copyOfRange(aux.toInt(),aux.toInt()+8)+ByteArray(8)
+                    // IV 一次分配到位。原来是 `copyOfRange(8) + ByteArray(8)`：每样本三次分配
+                    // （copyOfRange 的数组、8 字节数组、拼接结果），4554 个样本就是一万三千多次小对象
+                    // 分配——这段正好在首帧路径上，2G 盒子上量得出（`video index parse ... took=608ms`）。
+                    val iv=ByteArray(16)
+                    data.copyInto(iv,0,aux.toInt(),aux.toInt()+8)
                     if(auxSize==8) samples+=Sample(position,position+length,iv)
                     else {
                         if(auxSize<10) throw IOException("不支持的加密样本格式")
@@ -127,9 +132,35 @@ object MediaCrypto {
             }
         }
         if(samples.isEmpty()) throw IOException("视频加密索引不可用")
-        val sorted=samples.sortedBy { it.start }
-        if(sorted.zipWithNext().any { (a,b) -> a.end>b.start }) throw IOException("视频样本重叠")
+        val sorted=sortedByStart(samples)
+        // 重叠检查用下标遍历：`zipWithNext()` 会为每一对现做两个 `Pair`，
+        // 两万多个样本就是四万多个对象——起播路径上这点分配在 2G 盒子上是实打实的
+        // GC 压力（实测这一段与首帧前的两次 GC 正好重合）。
+        for(i in 1 until sorted.size) if(sorted[i-1].end>sorted[i].start) throw IOException("视频样本重叠")
         return Prepared(header,sorted)
+    }
+
+    /**
+     * 按 `start` 排序样本，**不做装箱**。
+     *
+     * 早先这里是 `samples.sortedBy { it.start }`：`sortedBy` 走的是
+     * `compareBy` + `Int`/`Long` 装箱，两万多个样本意味着两万多次 `Long.valueOf`
+     * 与同样多次 `Pair`/比较器调用（见 2026-10-27 的线程栈：`TimSort.mergeHi`
+     * 里全是 `Long.valueOf`）。而 mp4 的 `stco` 表本来就是按偏移递增给出的，
+     * 绝大多数片子**根本不需要排序**——因此先花一次 O(n) 的无分配扫描判断，
+     * 已经有序就原样返回。
+     *
+     * 真正乱序时退回 `Arrays.sort(Object[], Comparator)`：比较器直接比 `Long` 原始值，
+     * 只在对象数组上做 TimSort，不产生任何装箱对象。
+     */
+    private fun sortedByStart(samples: List<Sample>): List<Sample> {
+        if(samples.size<2) return samples
+        var ordered=true
+        for(i in 1 until samples.size) if(samples[i-1].start>samples[i].start) { ordered=false; break }
+        if(ordered) return samples
+        val array=samples.toTypedArray()
+        java.util.Arrays.sort(array,Comparator { a,b -> a.start.compareTo(b.start) })
+        return array.asList()
     }
     fun decrypt(data: ByteArray,start: Long,key: ByteArray?,prepared: Prepared): ByteArray {
         require(start>=0)
@@ -139,15 +170,95 @@ object MediaCrypto {
         val samples=prepared.samples
         var low=0; var high=samples.size
         while(low<high) { val middle=(low+high) ushr 1; if(samples[middle].end<=start) low=middle+1 else high=middle }
+        // 这一块完全没有加密样本（moov 区、或者块尾的明文）：别再走 AES 引擎。
+        if(low>=samples.size || samples[low].start>=end) return result
+        // 解密：**ECB 出 keystream，自己异或**，不再用 `AES/CTR/NoPadding`。
+        //
+        // 原因是实测：这台 S905L3B（2G）上 `Cipher.init(CTR, iv)` 单次约 4 ms，
+        // 而一集 2 MB 有几百个加密样本，于是**每 2 MB 固定 2 秒**——日志里
+        // `video read ... decrypt=2003ms / 7547ms / 2214ms`，折合 1 MB/s，
+        // 而且与样本数（不是字节数）成正比，正是逐个 `init` 的账。
+        //
+        // 换成标准做法：AES-ECB（无 IV，**整集只 init 一次**）批量加密计数器块，
+        // 得到的就是 CTR 的 keystream，再异或回数据。每个样本只剩「铺计数器 +
+        // 一次 update + 一段异或」，没有 `init`、没有 `IvParameterSpec` 分配。
+        //
+        // 计数器块 = `iv + (块序号)`，128 位大端自增（见 [fillCounters]）。
+        val engine=engine(key)
         for(i in low until samples.size) {
             val sample=samples[i]; if(sample.start>=end) break
             val begin=maxOf(start,sample.start); val stop=minOf(end,sample.end); if(begin>=stop) continue
-            val relative=begin-sample.start+sample.encryptedOffset; val skip=(relative%16).toInt()
-            val counter=(BigInteger(1,sample.iv)+BigInteger.valueOf(relative/16)).and(BigInteger.ONE.shiftLeft(128)-BigInteger.ONE).toByteArray()
-            val iv=ByteArray(16); counter.copyInto(iv,maxOf(0,16-counter.size),maxOf(0,counter.size-16),counter.size)
-            val decrypted=aes("CTR",key,iv,ByteArray(skip)+result.copyOfRange((begin-start).toInt(),(stop-start).toInt()))
-            decrypted.copyInto(result,(begin-start).toInt(),skip)
+            val relative=begin-sample.start+sample.encryptedOffset
+            var skip=(relative%16).toInt()
+            var blockIndex=relative/16
+            var from=(begin-start).toInt()
+            var length=(stop-begin).toInt()
+            while(length>0) {
+                // 每块最多吃满缓冲区。**除最后一块外都让 `skip+chunk` 落在 16 的整数倍上**：
+                // keystream 是按块生成的，跨块读取必须先对齐，否则下一块的 `skip` 算错。
+                var chunk=minOf(length,engine.maxData)
+                if(chunk<length) {
+                    val misalign=(skip+chunk)%16
+                    if(misalign!=0) chunk-=misalign
+                    if(chunk<=0) chunk=minOf(length,engine.maxData)
+                }
+                val blocks=(skip+chunk+15)/16
+                fillCounters(engine.counters,blocks,sample.iv,blockIndex)
+                engine.cipher.update(engine.counters,0,blocks*16,engine.stream,0)
+                val src=engine.stream
+                for(j in 0 until chunk) result[from+j]=(result[from+j].toInt() xor src[skip+j].toInt()).toByte()
+                from+=chunk; length-=chunk; blockIndex+=blocks.toLong(); skip=0
+            }
         }
         return result
+    }
+    /**
+     * 解密引擎：**按线程一份**。
+     *
+     * `Cipher` 不是线程安全的，而播放读线程与「下一集预热」可能同时在解密，
+     * 所以各自持有一个。key 随剧集变化，变了才重新 `init`（ECB 没有 IV，
+     * 这一次 init 是整集唯一的一次）。
+     *
+     * 两个缓冲区按线程复用，避免每次读 2 MB 就现开 4 MB 临时内存。
+     */
+    private class Engine {
+        val cipher: javax.crypto.Cipher = javax.crypto.Cipher.getInstance("AES/ECB/NoPadding")
+        var keyBytes: ByteArray?=null
+        val counters: ByteArray=ByteArray(CAPACITY)
+        val stream: ByteArray=ByteArray(CAPACITY)
+        /** 一次能解多少明文字节（留足首块空转的 15 字节与对齐余量）。 */
+        val maxData: Int=CAPACITY-32
+        companion object { const val CAPACITY=128*1024 }
+    }
+    private val engineLocal=ThreadLocal<Engine>()
+    private fun engine(key: ByteArray): Engine {
+        val cached=engineLocal.get() ?: Engine().also { engineLocal.set(it) }
+        val known=cached.keyBytes
+        if(known==null || !known.contentEquals(key)) {
+            cached.cipher.init(javax.crypto.Cipher.ENCRYPT_MODE,javax.crypto.spec.SecretKeySpec(key,"AES"))
+            cached.keyBytes=key.copyOf()
+        }
+        return cached
+    }
+    /**
+     * 铺计数器块：第 k 块 = `iv + (base + k)`，128 位大端、溢出截断。
+     *
+     * 早先这里每个样本都现建两个 `BigInteger`（`BigInteger(1,iv)` 还要先解析一遍字节），
+     * 再 `and` 一个 128 位全 1 掩码。一集两万多个加密样本 = 六万多次大整数运算，
+     * 实测与起播前那两次 GC 完全重合（2026-10-27 现场）。现在纯字节加法，零分配。
+     */
+    private fun fillCounters(dst: ByteArray,blocks: Int,iv: ByteArray,base: Long) {
+        var at=0
+        for(k in 0 until blocks) {
+            System.arraycopy(iv,0,dst,at,16)
+            var add=base+k; var i=at+15
+            while(add!=0L && i>=at) {
+                val sum=(dst[i].toInt() and 0xFF)+(add and 0xFF).toInt()
+                dst[i]=sum.toByte()
+                add=(add ushr 8)+(sum ushr 8).toLong()
+                i--
+            }
+            at+=16
+        }
     }
 }

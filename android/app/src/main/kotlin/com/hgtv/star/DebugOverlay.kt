@@ -135,7 +135,12 @@ private const val DEBUG_PANEL_WIDTH=560
 /** 面板贴住右上角的边距（设计单位）：只留一点呼吸位，读起来就是「钉在角上」。 */
 private const val DEBUG_PANEL_MARGIN=14
 
-/** 正文字号（设计单位）。10.5 是「软解那一行 5 种编码仍能挤进一行」的上限。 */
+/**
+ * 正文字号（设计单位）。
+ *
+ * 10.5 是「解码那一行（`硬解 HEVC 2160 · 软解 HEVC 1080`）与性能那一行仍能各占一行」的上限：
+ * 再大一档，这两行就会折成两行，面板高度立刻多出两行。
+ */
 private const val DEBUG_TEXT_SIZE=10.5f
 
 /**
@@ -165,6 +170,48 @@ private const val DEBUG_LOG_LIMIT=40
  * 等于每秒现编一个 `Pattern`。编译一次的正则放这里，之后只做匹配。
  */
 private val QUALITY_TIER=Regex("([0-9]{3,4})P")
+
+/**
+ * 一条网络日志**值不值得进面板**——白名单：只留带结论的行。
+ *
+ * 为什么是白名单而不是黑名单：[`NetLog`] 是网络层的**总出口**，谁都能往里写一行。
+ * 早先写的是「哪些算统计」（`took=` / `cache hit` / `sign ` …），于是每新增一处统计日志
+ * 就得回来补一条；漏掉的那些——`category call headers=866ms read=53ms chars=121721`、
+ * `model device fresh 274899 (real 292666)`——就原样出现在用户拍的照片里，一整屏数字。
+ * 反过来判：**默认丢掉，只有能回答「出没出事 / 是谁」的才留**，新加的统计日志天然被挡住。
+ *
+ * 留下的形状与它的结论：
+ *
+ * ```
+ * net GET api5-normal-sinfonlineb.fqnovel.com failed after 30012ms SocketTimeoutException: …   ← 这次失败了，失败类型
+ * api5-normal-sinfonlinea.fqnovel.com/api/… HTTP 502                                        ← 服务端回了非 2xx（只对非 2xx 写）
+ * dns public fail host=… / dns fallback failed host=…                                       ← 这台设备上域名解析失败
+ * model path=/novel/player/multi_video_model/v1/ … bytes=0                                  ← 模型接口空响应（拿不到档位）
+ * ```
+ *
+ * 另外保留 `model device rotate …` / `model device_level …`：换设备身份、档位跳变是**状态变化**，
+ * 排查「同一台机器两套身份」要看，不是统计。
+ *
+ * 丢掉的是纯数字（`took=` / `total=` / `headers=… read=… chars=…` / `bytes=… code=0` /
+ * `addrs=3` / `entries=12`）、缓存命中、签名、预连接、`model device fresh`。它们只对性能调优有用，
+ * 而 `adb logcat` 里照样有（`Diagnostics.trace` 在过滤**之前**已经写过一次），面板不必再占那 8 行。
+ */
+internal fun keepNetLine(line: String): Boolean = when {
+    // 失败：`net … failed after` / 公共 DNS 失败 / 兜底解析失败
+    line.contains("fail",ignoreCase=true) -> true
+    // 中文结论（官网搜索「…页全部失败」/ 「不可用」）
+    line.contains("失败") || line.contains("不可用") -> true
+    // 非 2xx：`NetLog` 只在 `!response.isSuccessful` 时写这一行
+    line.contains(" HTTP ") -> true
+    // 直接抛出来的异常类型：`SocketTimeoutException: …`
+    line.contains("Exception") || line.contains("超时") -> true
+    // 模型接口：空响应体是结论，`bytes=24201 code=0` 是例行概要
+    line.startsWith("model path=") -> line.contains("bytes=0")
+    // 设备身份 / 档位变化：状态变化，不是统计
+    line.startsWith("model device rotate ") || line.startsWith("model device_level ") -> true
+    // 其余全是统计（耗时 / 缓存命中 / 签名 / 预连接 / DNS 条目数 / 分类调用概要 / 取档）
+    else -> false
+}
 
 /**
  * 最近发生的事：网络、接口、登录、播放失败。
@@ -506,14 +553,18 @@ private fun MainActivity.problemText(primary: String=""): String {
 }
 
 /**
- * 本机解码能力：**硬解一行、软解一行**。
+ * 本机解码能力：**硬解与软解并在一行**（用户要求）。
  *
- * 分开列的理由：同一台机器上 HEVC 可能是硬解、VP9 只有软解，混成一行读不出「哪个会掉帧」；
- * 而软解 1080 在盒子上基本必掉帧，这正是「某部剧黑屏 / 卡顿」最常见的成因。
+ * 早先是两个标头（`硬解` / `软解`）各占一行，面板上两块内容分别只有 5~8 个字符，
+ * 左边一大片空白、右边也读不出「谁跟谁是一对」。合成一行之后写成一个对照句：
+ * `硬解 HEVC 2160 · 软解 HEVC 1080` —— 一屏能直接比较同一台机器两条路的上限，
+ * 而「软解 1080 在盒子上基本必掉帧」正是「某部剧黑屏 / 卡顿」最常见的成因，两者的对比必须同框。
+ *
+ * [PlaybackCapability.debugSummary] 每种编码只报最好的一颗，因此一行不会溢出（见 [DEBUG_TEXT_SIZE]）。
  */
-private fun MainActivity.capabilityRows(): List<DebugRow> {
-    val cap=debugCapability ?: return listOf(DebugRow("硬解","探测中…"),DebugRow("软解","探测中…"))
-    return listOf(DebugRow("硬解",cap.hardware),DebugRow("软解",cap.software))
+private fun MainActivity.capabilityRow(): DebugRow {
+    val cap=debugCapability ?: return DebugRow("解码","硬解 探测中… · 软解 探测中…")
+    return DebugRow("解码","硬解 ${cap.hardware} · 软解 ${cap.software}")
 }
 
 /**
@@ -649,7 +700,11 @@ private fun MainActivity.playerDebugRows(): List<DebugRow> {
     // 与设置里的「默认清晰度上限」不是一回事：CDN 只给到 720P 时，上限 1080P 也放不出 1080P，
     // 这一条要能让用户自己看出来（见下面的「默认上限」行与「问题」行）。
     val actualQuality=QUALITY_TIER.find(d.quality)?.groupValues?.get(1)?.toIntOrNull() ?: 0
-    val maxQuality=runCatching { library.maxQuality }.getOrDefault(0)
+    // 「上限」显示**本次实际生效**的那个（会话降档优先，见 `playbackMaxQuality`），
+    // 否则用户设 1080、实际被降到 720 时，面板会一直说「CDN 中没有 1080P」——
+    // 而 CDN 有没有 1080 已经不是这一刻的结论了，降档是本机解不了。
+    val requestedQuality=runCatching { library.maxQuality }.getOrDefault(0)
+    val maxQuality=runCatching { playbackMaxQuality }.getOrDefault(requestedQuality)
     val qualityProblem=when {
         actualQuality<=0 -> ""      // 还没取到地址 / 正在缓冲：不报
         maxQuality<=0 -> ""
@@ -663,11 +718,11 @@ private fun MainActivity.playerDebugRows(): List<DebugRow> {
         // **第一行固定是「页面 · 账号 · 设备 · 网络 · 搜索源」**（与首页 / 详情页同一份）：
         // 播放界面记问题时，先要说清在哪个播放页、登没登录、什么网络。
         add(pageStatusRow())
-        // 随后：机型 → 本机解码（硬解 / 软解）→ 性能 → TLS（含网速）。这些与「哪一集」无关，
-        // 是用户报问题时紧随其后的现场。
+        // 随后：机型 → 本机解码（硬解 / 软解同一行）→ 性能 → TLS（含网速）。
+        // 这些与「哪一集」无关，是用户报问题时紧随其后的现场。
         add(deviceRow())
         add(deviceFormRow())
-        addAll(capabilityRows())
+        add(capabilityRow())
         // 性能在 TLS 之上（与页面版同一位置）：两个播放界面的面板顺序保持一致。
         add(perfRow())
         add(tlsRow())
@@ -688,7 +743,22 @@ private fun MainActivity.playerDebugRows(): List<DebugRow> {
         // 这里是同一件事的第二份，既占高度又让人以为两处可能不一致。
         // 默认上限与实际播放的档位并排：正片与推荐页（两个播放界面）都走这一份行，
         // 因此两边都能看到「设置里是 1080P、实际放的是 720P」。
-        add(DebugRow("默认上限","${if(maxQuality>0) "${maxQuality}P" else "-"} · 实际 ${if(actualQuality>0) "${actualQuality}P" else d.quality.ifBlank { "-" }}"))
+        add(DebugRow("默认上限","${if(maxQuality>0) "${maxQuality}P" else "-"}"+
+            (if(maxQuality<requestedQuality) "（本次降档）" else "")+
+            " · 实际 ${if(actualQuality>0) "${actualQuality}P" else d.quality.ifBlank { "-" }}"))
+        // 降级这一行只在**真的发生过**时出现：没降过就不占高度（面板是钉子户，行数越少越好）。
+        // 它把「这一次是为什么降、降了几次、还能降几次」放在一起，用户报「老是降清晰度」时
+        // 一眼就能分清是预算没生效（次数超上限）还是片源那几档真的都解不了。
+        val degrade=runCatching { sessionPlayback }.getOrNull()
+        if(degrade!=null && degrade.touched()) {
+            val reason=when(degrade.lastReason) {
+                com.hgtv.star.core.DegradationKind.SAME_QUALITY_REBUILD -> "原档重建"
+                com.hgtv.star.core.DegradationKind.QUALITY_DOWN -> "降清晰度"
+                null -> "待手动处理"
+            }
+            add(DebugRow("降级","$reason · ${degrade.budgetSummary()}"+
+                " · 档位 ${runCatching { repository.deviceLevel }.getOrDefault(4)}"))
+        }
         // 「问题」只写**现在仍然成立**的事（见 [livePlaybackProblem]）：画面已经回来了就不再挂着
         // 「有声音无画面」这类旧结论——那正是用户反馈的「面板显示得不对」。
         val live=livePlaybackProblem()
@@ -747,15 +817,15 @@ private fun MainActivity.pageStatusRow(): DebugRow {
 private fun MainActivity.pageDebugRows(): List<DebugRow> {
     val searching=screen=="catalog" && tab==TAB_SEARCH && query.isNotBlank()
     return buildList {
-        // 与播放页同一套固定前几行：页面状态 → 机型 → 本机解码（硬 / 软）→ TLS。
+        // 与播放页同一套固定前几行：页面状态 → 机型 → 本机解码（硬 / 软同一行）→ TLS。
         add(pageStatusRow())
         add(deviceRow())
         add(deviceFormRow())
-        addAll(capabilityRows())
+        add(capabilityRow())
         // 性能在 TLS 之上：先看「这台机器够不够用」，再看一次握手协商的结果。
         add(perfRow())
         add(tlsRow())
-        add(DebugRow("清晰度","上限 ${library.maxQuality}P"))
+        add(DebugRow("清晰度","上限 ${playbackMaxQuality}P"))
         add(DebugRow("问题",if(searching) searchProblemText() else problemText()))
         // 近况放在最后：前面的固定条目是「现在的现场」，这一段是「刚才发生过什么」。
         val recent=recentRows(8)

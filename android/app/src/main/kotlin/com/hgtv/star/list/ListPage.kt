@@ -79,6 +79,11 @@ import com.hgtv.star.row
 import com.hgtv.star.scheduleSuggestions
 import com.hgtv.star.searchBar
 import com.hgtv.star.settings
+import com.hgtv.star.SETTINGS_TABS
+import com.hgtv.star.SETTINGS_TAG_TAB_PREFIX
+import com.hgtv.star.SETTINGS_CHIP_INLINE_MIN_WIDTH
+import com.hgtv.star.widthDp
+import com.hgtv.star.switchSettingsTab
 import com.hgtv.star.showHint
 import com.hgtv.star.selectLoginMode
 import com.hgtv.star.switchAccountTab
@@ -94,6 +99,27 @@ import com.hgtv.star.error
 // 本文件是从 MainActivity.kt 拆出来的「列表页（分类 / 搜索 / 榜单）整页渲染与栅格排布」这一块。
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
+
+/**
+ * 把一排芯片拉成**同宽**：按各自自然宽量一次，取最宽的那个给每一枚都设上。
+ *
+ * 为什么取最宽而不是最窄：「二维码登录」「手机登录」只差一个字，取最宽时短的那一枚两侧
+ * 只是留白变宽、文字一个不少；取最窄则长的那一枚会被省略号截掉一个汉字，
+ * 两个入口反而读不出区别。量宽用 `UNSPECIFIED`（芯片还没进父容器也能量），
+ * 量完把 `LayoutParams.width` 改成固定值——再按 `WRAP_CONTENT` 排回去就前功尽弃了。
+ */
+private fun equalChipWidths(chips: List<View>) {
+    if(chips.size<2) return
+    val spec=View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED)
+    val widest=chips.maxOf { chip -> chip.measure(spec,spec); chip.measuredWidth }
+    if(widest<=0) return
+    chips.forEach { chip ->
+        val params=chip.layoutParams as? LinearLayout.LayoutParams ?: return@forEach
+        if(params.width==widest) return@forEach
+        params.width=widest
+        chip.layoutParams=params
+    }
+}
 
 internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=false,focusType: Boolean=false,keepChip: Boolean=false) {
     // 推荐页是独立的一层（整屏播放、没有列表）：后台的账号同步 / 会话失效之类
@@ -330,6 +356,13 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
                 gapInto(filterSlot,chip,lp(-2,-2),TvStyle.GAP_INLINE)
                 modeChips+=chip
             }
+            // 两枚入口**同宽**。
+            //
+            // 「二维码登录」五个字、「手机登录」四个字：按内容宽排出来的一长一短，
+            // 并排在这一格里读起来像两枚不同档的控件（宽度差正好一个汉字 + 一段内边距）。
+            // 这里按两枚各自的自然宽量一次，取**宽的那一个**给两枚都设上：
+            // 短的那一枚两侧留白变宽，长的那一枚文字不会被省略，两枚因此完全对齐。
+            equalChipWidths(modeChips)
             // 两枚之间左右直连、按上停在原地；最后一枚往右接同一行里的圆形入口。
             // 不接的话右移会被更右边的圆形入口抢走，表现出来就是「右键切不动」。
             wireChipRow(modeChips,{ modeChips[it] },recommendIcon ?: nav.firstOrNull())
@@ -371,10 +404,57 @@ internal fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=fals
         container.addView(panelHost,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_INLINE) })
     }
     if(tab==TAB_SETTINGS) {
+        // 设置页的四个大项：**放进顶部导航栏**（标题右边、圆形入口左边那一格）。
+        //
+        // 与「我的」页的栏目芯片、榜单页的榜单芯片同一格、同一套写法（见 [inlineHeadChips]）：
+        // 屏幕够宽就塞进导航栏那一行，窄了退回导航栏下面单独一行——
+        // 四枚中文标签（播放交互 / 外观导航 / 内容推荐 / 系统高级）挤在 720p / 1080p 画布上
+        // 会把右边的圆形入口顶出屏幕，那一档必须让开一行（阈值见 [SETTINGS_CHIP_INLINE_MIN_WIDTH]）。
+        //
+        // 芯片用 [ButtonSize.CHIP]：**高度与榜单页的芯片一致**（常规档 48dp 底板 = 60dp 控件），
+        // 只是字号收到 14sp、左右内边距收到 12dp，四枚中文标签因此按内容宽收紧、不各占四分之一屏。
+        //
+        // 留在导航栏那一行还要看屏宽：四枚芯片 + 页面标题 + 右边那排圆形入口大约要 1000dp，
+        // 1080p 电视（960dp 画布）塞不下，必须退回导航栏下面单独一行（见 [SETTINGS_CHIP_INLINE_MIN_WIDTH]）。
+        val inlineTabs=inlineHeadChips() && widthDp()>=SETTINGS_CHIP_INLINE_MIN_WIDTH
+        val chipHost=if(inlineTabs) filterSlot else row().apply {
+            setPadding(pageBleed(),dp(4),pageBleed(),dp(4))
+            gravity=Gravity.CENTER_VERTICAL
+        }
+        settingsTabChips.clear()
+        val chips=mutableListOf<View>()
+        SETTINGS_TABS.forEachIndexed { index,label ->
+            val chip=ToggleChip(this,label,settingsTab==index,ButtonSize.CHIP) { switchSettingsTab(index) }
+            chip.tag=SETTINGS_TAG_TAB_PREFIX+index
+            chip.contentDescription=label+if(settingsTab==index) "，当前分区" else ""
+            // 两种排法都**按内容宽收紧**（不设 weight）：芯片只占四个汉字 + 两侧内边距的宽度，
+            // 不会因为撑满一行而拉成四块大按钮。单独成行时从内容线起排，与下面的内容块左对齐。
+            gapInto(chipHost,chip,lp(-2,-2),TvStyle.GAP_INLINE)
+            settingsTabChips+=chip
+            chips+=chip
+        }
+        // 四枚之间左右直连、两端停住；在导航栏里时最右那枚往右接圆形入口（同一视觉行）。
+        //
+        // 按「下」分两种：在当前大项里 → 交给 `nextFocusDownId`（`refreshSettingsTabLanding`
+        // 接到这一块的第一行）；在**别的**大项芯片上 → 先切到那一块，再进它的第一行
+        // （那一块此刻是 `GONE` 的，直接指过去拿不到焦点，用户只会读到「按下没反应」）。
+        wireChipRow(
+            chips,{ chips[it] },if(inlineTabs) recommendIcon ?: nav.firstOrNull() else null,
+            onDown={ index ->
+                if(settingsTab!=index) { switchSettingsTab(index,focusContent=true); true } else false
+            }
+        )
+        if(!inlineTabs) {
+            container.addView(chipHost)
+            registerTopAreaRow(chipHost)
+        }
         val scroll=ScrollView(this).focusBleed(); val body=column(); scroll.addView(body); container.addView(tvScrollHost(scroll),lp(-1,0).apply { weight=1f })
         listScrollY=scroll.scrollY
+        settingsScroll=scroll
         scroll.onScrollYChanged { y -> onListScroll(y) }
-        settings(body); if(focusNav) navEntry()?.requestFocus(); return
+        settings(body)
+        if(focusNav) navEntry()?.requestFocus()
+        return
     }
     // 「我的」页的四个栏目芯片（收藏 / 历史 / 点赞 / 预约）：**完全照分类页的一级分类那一套**——
     // 屏幕够宽就塞进导航栏（标题右边、那排圆形入口左边），窄了退回导航栏下面单独一行。
@@ -1030,6 +1110,11 @@ internal fun MainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusT
                 // 「换榜单 / 换分类 / 从首页进榜单」这类换列表的动作走的就是这一条。
                 else -> ensureFocus { focusGridIndex(gridItems.indexOfFirst { it.id==catalogFocus }.takeIf { it>=0 } ?: 0,false) }
             }
+            // 焦点落定之后才让「回到顶部」浮层露面（见 `list/BackToTop.kt` 的 updateBackToTop）。
+            // 上面那次 `syncHeaderState()` 排在焦点落地**之前**，那时整棵树还没有焦点，
+            // 浮层会被 `focusableViewAvailable` 抢成「首个可聚焦控件」——必须在这里补一次，
+            // 否则「始终显示」档下浮层要等用户真正滚动一下才出现。
+            updateBackToTop()
         }
     }
     // 首屏刚铺好就先把下一页取回来：用户第一次按下键时内容已经在手上。

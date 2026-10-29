@@ -41,6 +41,13 @@ fun isInterruption(problem: Throwable): Boolean {
 
 object NetLog {
     var log: (String) -> Unit = {}
+    /**
+     * 是否记录每个请求的连接耗时分解（DNS / TCP / TLS / 首字节）。
+     *
+     * 由 `HgtvApplication` 按 `BuildConfig.DEBUG` 置位：只有调试包才装这个监听器
+     * （见 `defaultHttpClient`），正式包一个字节的开销都不加。
+     */
+    @Volatile var timing: Boolean = false
 
     /** 当前线程是否处于「不逐条上报」的静默段（见 [quiet]）。 */
     private val silent=ThreadLocal<Boolean>()

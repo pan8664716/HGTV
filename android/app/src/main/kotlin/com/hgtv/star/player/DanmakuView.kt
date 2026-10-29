@@ -14,9 +14,11 @@ import com.hgtv.star.core.Danmaku
 import com.hgtv.star.core.DanmakuEmoji
 import com.hgtv.star.core.DanmakuHighlight
 import com.hgtv.star.core.DanmakuHighlightRound
+import com.hgtv.star.core.DANMAKU_MERGE_MIN_RANGE
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.DanmakuPart
 import com.hgtv.star.core.DanmakuRepeat
+import com.hgtv.star.core.lruPut
 import com.hgtv.star.core.DanmakuSpeed
 import com.hgtv.star.core.planHighlights
 import com.hgtv.star.core.repeatGroups
@@ -48,7 +50,8 @@ import com.hgtv.star.compat.attachedToWindow
  *
  * **重复弹幕聚合**（需求四）：整集数据先按内容聚合成一组一组（[repeatGroups]），
  * 同一组只画一次、文案带数量标记；其中数量最多的那几组按 [planHighlights] 排好的次序
- * 上屏幕中央突出显示（同一时间只有一条），中央那一条不再进普通轨道。
+ * 上屏幕中央突出显示。中央是**竖排的几格**（见 [highlightSlots]）：只显一行时一格，
+ * 上方显示两格、全屏显示三格，被聚合的弹幕可以同时出现好几条。
  *
  * 位置与播放状态都由宿主（MainActivity）通过 [setClock] 推过来，绘制时只用系统时钟外推；
  * 暂停、跳转、倍速都会重新校准，因此弹幕不会和播放器脱节，绘制线程也不会回调播放器。
@@ -95,6 +98,8 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
          * 让「边拉边画」的 40 个窗口都能命中前 39 次排好的结果。
          */
         const val CACHE_LINES=4096
+        /** 中央那一块宽度缓存的空值（作废时填回去，不用每次 new 一个空数组）。 */
+        val EMPTY_WIDTHS=FloatArray(0)
     }
 
     /**
@@ -157,7 +162,7 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
     private var raw: List<Danmaku> = emptyList()
     /** 聚合出来的每一组（同一组只画一次，文案带数量标记），按时间排好。 */
     private var groups: List<DanmakuRepeat> = emptyList()
-    /** 中央突出显示的次序（同一条只上一次）；数据补上来时重排一次，见 [planHighlights]。 */
+    /** 中央突出显示的次序（同一条只上一次，不同格之间可以重叠）；数据补上来时重排一次，见 [planHighlights]。 */
     private var highlights: List<DanmakuHighlightRound> = emptyList()
     /**
      * 切好的片段缓存：同一条文案（含数量标记）只切一次，避免每帧走正则。
@@ -166,24 +171,22 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
      * 每窗清一次就等于把整集文案重新切一遍，而实际新增的只有一个窗口。
      * 只按条数封顶做 LRU，换集时在 [clear] 里整份丢掉。
      */
-    private val partsCache=object: LinkedHashMap<String,List<DanmakuPart>>(64,.75f,true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String,List<DanmakuPart>>)=size>CACHE_LINES
-    }
+    // 淘汰走 `lruPut`，**不用匿名子类重写 `removeEldestEntry`**：那种写法会生成一条
+    // `invoke-super LinkedHashMap.getOrDefault`（API 24）的桥方法，4.4 上是颗雷（见 core 的 `lruPut`）。
+    private val partsCache=LinkedHashMap<String,List<DanmakuPart>>(64,.75f,true)
     /**
      * 文案 → 每段的像素宽（排版阶段的 `measureText` 结果）。
      *
      * 与 [partsCache] 同寿命：只在字号变了（[applyTextMetrics]）或换集时作废。
      * 没有它，每个 30 秒窗口都要把整集每一段重新量一遍。
      */
-    private val widthCache=object: LinkedHashMap<String,FloatArray>(64,.75f,true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String,FloatArray>)=size>CACHE_LINES
-    }
+    private val widthCache=LinkedHashMap<String,FloatArray>(64,.75f,true)
     /** 已经排过表情解码的文本：只把**新出现**的送进 `emoji.prefetch`，不再每窗全量扫一遍。 */
     private val prefetched=mutableSetOf<String>()
-    /** 中央那一块的排版缓存（它每帧都在画，但一轮之内宽度不会变）。 */
-    private var hlKey=""
-    private var hlWidths=FloatArray(0)
-    private var hlBodyWidth=0f
+    /** 中央那一块的排版缓存（它每帧都在画，但一轮之内宽度不会变）：一格一份。 */
+    private val hlKeys=Array(DanmakuHighlight.MAX_SLOTS){""}
+    private val hlWidths=Array(DanmakuHighlight.MAX_SLOTS){FloatArray(0)}
+    private val hlBodyWidths=FloatArray(DanmakuHighlight.MAX_SLOTS)
     /** 当前帧还要画的第一条：按时间排好序，播放推进时只往前走，不回头。 */
     private var cursor=0
     /** 中央那一块当前在画第几轮；只往前挪，跳转时归零。 */
@@ -239,6 +242,21 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         }
 
     /**
+     * 相同弹幕达到几条才聚合（2..10，设置页那条滑动条）。
+     *
+     * 窗口里同一句不到这个条数就不合并：逐条原样滚过去、不带 `×N`、也不进中央；
+     * 达到才合成一条。默认 2 = 同一句出现两次就合并（与加这一项之前一致）。
+     * 阈值会改变整批数据的分组，因此改档要整批重排。
+     */
+    var mergeMinCount: Int=2
+        set(value) {
+            val next=value.coerceIn(DANMAKU_MERGE_MIN_RANGE)
+            if(field==next) return
+            field=next
+            relayout()
+        }
+
+    /**
      * 文字不透明度（1f = 完全不透明）。
      *
      * 只改笔的 alpha，不动字号，因此不用重排轨道，重画一帧就够。
@@ -263,6 +281,21 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
             if(field==value) return
             field=value
             relayout()
+        }
+
+    /**
+     * 中央那一块同时能放几条：只显一行只有唯一那一行、放一格；
+     * 上方显示放两格、全屏显示放三格（竖着排开，见 [highlightSlots] 的用法）。
+     *
+     * 原来三档都只有一格，几条被聚合的弹幕只能一条接一条轮流上，屏幕上永远只有一句；
+     * 现在同时能看到的聚合弹幕数量跟着画面能用的高度走。
+     */
+    private val highlightSlots: Int
+        get() = when(mode) {
+            DanmakuMode.SINGLE -> 1
+            DanmakuMode.TOP -> 2
+            DanmakuMode.FULL -> DanmakuHighlight.MAX_SLOTS
+            DanmakuMode.HIDDEN -> 1
         }
 
     /**
@@ -328,7 +361,7 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         partsCache.clear()
         widthCache.clear()
         prefetched.clear()
-        hlKey=""; hlWidths=FloatArray(0); hlBodyWidth=0f
+        clearHighlightMetrics()
         relayout()
     }
 
@@ -360,9 +393,9 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         // 与轨道、速度、显示档位都无关（字号变化由 [applyTextMetrics] 负责作废）。
         cursor=0
         lastPosition=-1L
-        groups=if(mergeRepeats) repeatGroups(raw) else raw.map { DanmakuRepeat(it.text,listOf(it.offsetMs)) }
-        // 中央突出显示的次序：传上一份，正在展示的那一条不会被新数据挤掉（见 planHighlights）。
-        highlights=planHighlights(groups,highlights)
+        groups=if(mergeRepeats) repeatGroups(raw,minCount=mergeMinCount) else raw.map { DanmakuRepeat(it.text,listOf(it.offsetMs)) }
+        // 中央突出显示的次序：传上一份，正在展示的那几条不会被新数据挤掉（见 planHighlights）。
+        highlights=planHighlights(groups,highlights,highlightSlots,mergeMinCount)
         highlightCursor=0
         layoutLanes()
         val lanes=if(mode==DanmakuMode.HIDDEN) 0 else laneCount
@@ -391,10 +424,10 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         val viewWidth=width.toFloat()
         val pixelsPerSecond=speedPx(viewWidth/BASE_SCROLL_SECONDS)
         val laneFree=FloatArray(lanes)
-        // 「只显一行」时唯一的轨道还要给中央那一块让路：中央在展示的这段时间里不进普通弹幕
-        //（需求 §4.4「中央突出显示的弹幕使用唯一一行」）。
-        val blocked=if(mode==DanmakuMode.SINGLE) highlights.map { it.startMs/1000f to it.endMs/1000f } else emptyList()
         // 已经排上中央的那几组不再进普通轨道：它们由中央那一块展示，避免同一句同时出现两次。
+        // 其余弹幕**照常排**，包括「只显一行」那唯一一条轨道：中央的底板只是盖在上面，
+        // 其它弹幕从右边滚进来、从底板后面穿过去（原来整条轨道被中央占着，
+        // 聚合期间屏幕上一条普通弹幕都没有，看着像弹幕停了）。
         val planned=highlights.map { it.group.key }.toSet()
         val emojiSize=fill.textSize*EMOJI_SCALE
         groups.filterNot { it.key in planned }.forEach { group ->
@@ -407,8 +440,7 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
             var lane=0
             var start=Float.MAX_VALUE
             for(index in 0 until lanes) {
-                var candidate=maxOf(laneFree[index],want)
-                if(blocked.isNotEmpty()) candidate=avoid(candidate,duration,blocked)
+                val candidate=maxOf(laneFree[index],want)
                 if(candidate<start) { start=candidate; lane=index }
             }
             // 排不下：不强行叠加，直接跳过这一条（需求二「不应强行叠加显示」）。
@@ -419,24 +451,12 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         lines.sortBy { it.start }
     }
 
-    /**
-     * 把 [freeAt] 到 [freeAt]+[avoid] 这段区间里所有「中央占着轨道」的时间段让过去。
-     *
-     * [blocked] 按开始时间排好（[planHighlights] 是按时间往后排的），因此从前往后扫一遍就够。
-     */
-    private fun avoid(from: Float,duration: Float,blocked: List<Pair<Float,Float>>): Float {
-        var start=from
-        blocked.forEach { (begin,end) ->
-            if(start<end && start+duration>begin) start=end
-        }
-        return start
-    }
-
     /** 速度档位换算成每秒多少像素：屏宽定的基准速度 × 档位系数。 */
     private fun speedPx(pixelsPerSecond: Float)=pixelsPerSecond*speed.factor
 
     /** 一条弹幕的片段（切成「文字 + 表情」），同一条文案只切一次。 */
-    private fun partsOf(text: String): List<DanmakuPart> = partsCache.getOrPut(text) { DanmakuEmoji.parts(text) }
+    private fun partsOf(text: String): List<DanmakuPart> =
+        partsCache[text] ?: DanmakuEmoji.parts(text).also { partsCache.lruPut(CACHE_LINES,text,it) }
 
     /**
      * 每段的像素宽（与 [parts] 一一对应）。
@@ -447,11 +467,11 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
      * 「画面很顺、弹幕卡」）。文案相同则宽度一定相同，缓存命中率很高。
      */
     private fun widthsOf(label: String,parts: List<DanmakuPart>,emojiSize: Float): FloatArray =
-        widthCache.getOrPut(label) {
+        widthCache[label] ?: run {
             FloatArray(parts.size) { index ->
                 val part=parts[index]
                 if(part.asset==null) fill.measureText(part.text) else emojiSize
-            }
+            }.also { widthCache.lruPut(CACHE_LINES,label,it) }
         }
 
     override fun onSizeChanged(w: Int,h: Int,oldw: Int,oldh: Int) {
@@ -491,7 +511,14 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
         plate.alpha=(0x99*alpha).toInt().coerceIn(0,255)
         // 字号变了，所有排版阶段的宽度结果作废（透明度不用：它不影响宽度）。
         widthCache.clear()
-        hlKey=""; hlWidths=FloatArray(0); hlBodyWidth=0f
+        clearHighlightMetrics()
+    }
+
+    /** 中央那一块的宽度缓存整份作废（换集、改字号时）。 */
+    private fun clearHighlightMetrics() {
+        hlKeys.fill("")
+        hlWidths.fill(EMPTY_WIDTHS)
+        hlBodyWidths.fill(0f)
     }
 
     /**
@@ -556,39 +583,51 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
             }
             index++
         }
-        drawHighlight(canvas,now)
+        drawHighlights(canvas,now)
         // 播放中才继续要下一帧：暂停时停在原地，退出播放时视图被移除，循环自然停下。
         if(clockRunning && visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
     }
 
     /**
-     * 画中央突出显示的那一条（需求 §4.3）。
+     * 画中央突出显示的那几块（需求 §4.3）。
      *
-     * * 同一时间只有一条：序号 [highlightCursor] 只往前走，当前这一轮没结束就不换下一条；
+     * * 一格一条：指针 [highlightCursor] 只跳过**已经结束**的轮次；同一时刻其它格里的轮次
+     *   也一起画出来，因此被聚合的弹幕可以同时出现好几条（原来只画指针这一条）；
      * * 数量标记跟着播放往上走：`countUpTo(now)` 是「到现在为止已经出现几条」，
      *   重复次数在停留期间继续增加时，标记直接变大（需求 §4.3 规则三）；
-     * * 位置按档位定：只显一行在唯一那一行上，上方显示在上方区域内，全屏显示在画面正中；
+     * * 位置按档位定：只显一行在唯一那一行上，上方显示在上方区域内，全屏显示在画面正中，
+     *   多格以这个位置为中心上下排开（见 [highlightSlots]）；
      * * 隐藏档整层不画，这里根本不会被执行到。
      */
-    private fun drawHighlight(canvas: Canvas,nowMs: Long) {
+    private fun drawHighlights(canvas: Canvas,nowMs: Long) {
         if(mode==DanmakuMode.HIDDEN || highlights.isEmpty()) return
-        while(highlightCursor<highlights.size && nowMs>=highlights[highlightCursor].endMs) highlightCursor++
-        val round=highlights.getOrNull(highlightCursor) ?: return
-        if(nowMs<round.startMs) return
+        while(highlightCursor<highlights.size && highlights[highlightCursor].endMs<=nowMs) highlightCursor++
+        var index=highlightCursor
+        // 扫的条数封顶：正常播放时指针附近只有正在展示的那几轮，
+        // 这个上限只是防止异常数据（大量重叠轮次）把一帧的预算吃光。
+        var scanned=0
+        while(index<highlights.size && scanned<32) {
+            val round=highlights[index]
+            if(round.startMs>nowMs) break
+            if(nowMs<round.endMs) drawHighlightRound(canvas,round,nowMs)
+            index++
+            scanned++
+        }
+    }
+
+    /** 画一格中央弹幕：正文按 [hlFill]，数量标记接在正文后面，底下垫一层半透明底板。 */
+    private fun drawHighlightRound(canvas: Canvas,round: DanmakuHighlightRound,nowMs: Long) {
+        val slot=round.slot.coerceIn(0,DanmakuHighlight.MAX_SLOTS-1)
         val parts=partsOf(round.group.text)
         val counter=" ×${round.group.countUpTo(nowMs).coerceAtLeast(DanmakuHighlight.MIN_COUNT)}"
         val emojiSize=highlightSize*EMOJI_SCALE
-        // 中央这一块每帧都在画，但正文宽度在一轮之内不会变：量一次就够。
-        // 只有数量标记会变，它每次重画一次 `measureText` 是可接受的（一条）。
-        val widths=highlightWidths(round,parts,emojiSize)
-        val bodyWidth=hlBodyWidth
+        // 中央这一块每帧都在画，但正文宽度在一轮之内不会变：量一次就够（每格各缓存一份）。
+        // 只有数量标记会变，它每次重画一次 `measureText` 是可接受的（几条）。
+        val widths=highlightWidths(round,parts,emojiSize,slot)
+        val bodyWidth=hlBodyWidths[slot]
         val counterWidth=hlFill.measureText(counter)
         val total=bodyWidth+counterWidth
-        val centerY=when(mode) {
-            DanmakuMode.SINGLE -> laneTop+laneHeight/2f
-            DanmakuMode.TOP -> laneTop+(height*TOP_MODE_SHARE-laneTop)/2f
-            else -> height/2f
-        }
+        val centerY=highlightCenterY(slot)
         val left=((width-total)/2f).coerceAtLeast(density*8f)
         val padX=HIGHLIGHT_PAD_DP*density
         val padY=HIGHLIGHT_PAD_DP*density*0.5f
@@ -604,27 +643,44 @@ internal class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.L
     }
 
     /**
-     * 画一段内容：文字片段按字体画（先描边后填充），表情片段按图片画。
+     * 第 [slot] 格的竖向中心。
      *
-     * 表情图贴着文字行的中线居中：字有上伸下伸，图片是方的，按基线直接画会整体偏上。
-     * 图片没解好时退回画字形（[DanmakuPart.text] 就是字形本身），宽度早就按图片边长算过，
-     * 所以换成图片之后这一条的位置和长度都不会跳。
+     * 先按档位定「这一组格子的中心」（只显一行是唯一那一行、上方显示是上方区域的中心、
+     * 全屏显示是画面正中），再把各格以它为中心上下排开：
+     * 三格时分别是中心上方一格、中心、中心下方一格，两格时是中心上下一格。
+     * 格子位置固定，不会因为此刻有几条在展示而跳动。
      */
+    private fun highlightCenterY(slot: Int): Float {
+        val anchor=when(mode) {
+            DanmakuMode.SINGLE -> laneTop+laneHeight/2f
+            DanmakuMode.TOP -> laneTop+(height*TOP_MODE_SHARE-laneTop)/2f
+            else -> height/2f
+        }
+        val lanes=highlightSlots
+        if(lanes<=1) return anchor
+        val row=highlightRowHeight()
+        return anchor+(slot-(lanes-1)/2f)*row
+    }
+
+    /** 中央两格之间要留的高度：底板高 + 一点缝，大字号下几块底板也不会贴在一起。 */
+    private fun highlightRowHeight(): Float=highlightSize*0.95f+HIGHLIGHT_PAD_DP*density+density*6f
+
     /**
-     * 中央那一块的每段宽度：同一轮 + 同一字号只量一次。
+     * 第 [slot] 格里那一块的每段宽度：同一轮 + 同一字号只量一次。
      *
-     * 返回值与 [hlWidths] 是同一份数组；[hlBodyWidth] 是它的总和。
+     * 返回值与 `hlWidths[slot]` 是同一份数组；`hlBodyWidths[slot]` 是它的总和。
+     * 缓存按格分开：几格同时在画不同的文案，共用一个缓存会每帧互相冲掉、退化成每帧都量。
      */
-    private fun highlightWidths(round: DanmakuHighlightRound,parts: List<DanmakuPart>,emojiSize: Float): FloatArray {
+    private fun highlightWidths(round: DanmakuHighlightRound,parts: List<DanmakuPart>,emojiSize: Float,slot: Int): FloatArray {
         val key="${round.group.key}@$highlightSize@$emojiSize"
-        if(key==hlKey) return hlWidths
+        if(key==hlKeys[slot]) return hlWidths[slot]
         val widths=FloatArray(parts.size)
         var total=0f
         parts.forEachIndexed { index,part ->
             val width=if(part.asset==null) hlFill.measureText(part.text) else emojiSize
             widths[index]=width; total+=width
         }
-        hlKey=key; hlWidths=widths; hlBodyWidth=total
+        hlKeys[slot]=key; hlWidths[slot]=widths; hlBodyWidths[slot]=total
         return widths
     }
 

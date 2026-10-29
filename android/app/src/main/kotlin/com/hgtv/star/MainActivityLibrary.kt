@@ -119,6 +119,8 @@ internal fun MainActivity.cancelWork() {
 }
 internal fun MainActivity.invalidatePage() {
     generation++; cancelWork(); artwork.cancelPage()
+    // 详情页下方那一块的重铺入口随页面一起作废：旧引用留着会指到已经拆掉的视图树。
+    detailBottomRefresh=null
 }
 internal fun MainActivity.releaseCatalogViews() {
     homeScreen?.let { homePosition=it.capturePosition() }

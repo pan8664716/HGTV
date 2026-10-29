@@ -38,6 +38,15 @@ object CategoryGenres {
         CategoryGenreOption("ai_series","AI剧"),
         CategoryGenreOption("short_play","真人")
     )
+    /**
+     * 设置页「推荐范围」里能开关的那几枚：就是上面带标识的三类（「全部」不是一个类，不能开关）。
+     *
+     * 推荐流本来就是按 `genre` 数组取的（不传 = 全部体裁），因此这三枚开关直接对应
+     * 请求里的体裁列表，不需要另建一套名字到标识的映射。
+     */
+    val recommendable: List<CategoryGenreOption> = options.filter { it.id != null }
+    /** [recommendable] 的标识，顺序一致；用作本机设置的合法值白名单。 */
+    val recommendableIds: List<String> = recommendable.mapNotNull { it.id }
 }
 
 /**

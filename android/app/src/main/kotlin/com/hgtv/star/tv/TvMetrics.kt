@@ -2,6 +2,8 @@
 package com.hgtv.star.tv
 
 import android.content.Context
+import android.graphics.Rect
+import android.view.View
 import android.widget.TextView
 
 /**
@@ -69,4 +71,64 @@ internal fun Context.designPx(value: Number): Int = designSize(value).toInt()
 internal fun TextView.designTextSize(value: Float): TextView = apply {
     val fontScale = context.resources.configuration.fontScale.coerceIn(1f, 1.3f)
     setTextSize(android.util.TypedValue.COMPLEX_UNIT_PX, value * context.designScale() * fontScale)
+}
+
+/**
+ * 系统栏（状态栏 + 导航栏）占掉的高度，像素。
+ *
+ * **为什么不用 `WindowInsets`**：`getInsets(Type.systemBars())` 要 API 30，
+ * 老系统只有已废弃的 `systemWindowInsetTop/Bottom`；而且两条路给的都是
+ * 「**当前这个窗口**被系统栏压住了多少」——窗口自己已经避让过（或者本来就是沉浸式）时
+ * 返回 0，正是「拿不到真实可用高度」的那种情况。这里改成直接读系统资源里的
+ * `status_bar_height` / `navigation_bar_height`：不论窗口怎么摆，这两个数就是系统栏实体尺寸。
+ *
+ * 电视 / 全屏沉浸式设备上这两个资源通常为 0（有的 ROM 干脆没有），结果就是「不扣」，
+ * 与之前的行为一致；手机上会扣掉状态栏与导航栏 / 手势条，弹窗因此不会再被压到屏幕外。
+ *
+ * 宁可少算一点也不能多算：扣多了只是弹窗小一号，扣少了就是把按钮裁掉。
+ */
+internal fun Context.systemBarsHeightPx(): Int {
+    var total = 0
+    for (name in arrayOf("status_bar_height", "navigation_bar_height")) {
+        val id = resources.getIdentifier(name, "dimen", "android")
+        if (id > 0) total += resources.getDimensionPixelSize(id)
+    }
+    return total.coerceAtLeast(0)
+}
+
+/**
+ * 弹窗 / 浮层真正能用的屏幕高度（像素）：整屏高度扣掉系统栏。
+
+ * 全站原来一律拿 `resources.displayMetrics.heightPixels`（**整屏**，含状态栏、导航栏、
+ * 刘海与多窗口的空白）当「能用多高」，于是「内容上限 = 整屏 × 50%」，两块内容各占 50% 时
+ * 加起来就已经等于整屏，再加上标题、按钮行与内外留白必然溢出窗口——Android 14 上系统栏
+ * 更高、越界裁剪更严格，表现出来就是「弹窗下面一截被遮盖」。
+ *
+ * 下限留 [MIN_SHARE] 是为了兜住算出离谱值的 ROM（例如把导航栏高度写成一整屏）：
+ * 那时退回「至少按整屏的六成算」，弹窗照样能摆下标题与按钮。
+ */
+internal fun Context.usableScreenHeight(): Int {
+    val full = resources.displayMetrics.heightPixels.coerceAtLeast(1)
+    return (full - systemBarsHeightPx()).coerceAtLeast((full * MIN_SHARE).toInt()).coerceAtMost(full)
+}
+
+/** [usableScreenHeight] 的兜底下限：任何情况下都按整屏的这么一份给。 */
+private const val MIN_SHARE = .6f
+
+/**
+ * 某个已经在屏幕上的窗口**当前**的可用高度（像素）。
+ *
+ * 与 [usableScreenHeight] 的区别：这条问的是「这一帧真正落在屏幕上的那一段有多高」，
+ * 因此能反映分屏、悬浮窗、输入法这类运行期变化。用 `getWindowVisibleDisplayFrame`（API 1 起就有），
+ * 拿不到合理值（0、负数、比整屏还大）时退回 [usableScreenHeight]。
+ *
+ * 只用来**收小**尺寸，绝不放大：调用方一律取两者里更小的那个。
+ */
+internal fun View.visibleWindowHeight(): Int {
+    val usable = context.usableScreenHeight()
+    val frame = Rect()
+    getWindowVisibleDisplayFrame(frame)
+    val visible = frame.height()
+    // 太小（键盘把可视区压扁、或还没布局完）时不用它：那不是「窗口真实高度」。
+    return if (visible >= usable / 2 && visible <= usable) visible else usable
 }

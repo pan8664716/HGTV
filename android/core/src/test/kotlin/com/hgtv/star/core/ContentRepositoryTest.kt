@@ -29,25 +29,25 @@ class ContentRepositoryTest {
         .toString()
 
     /**
-     * 平台 2026-10-14 又把播放接口换了一条：原先带场景段的
-     * `/novel/player/multi_video_model/:dr_scene/v1/` 现在一律返回 **HTTP 200 + 空响应体**，
-     * 旧路径返回 `Code 110001 未知异常`；能用的只有 `/novel/player/video_model/v1/`，
-     * 且要 `video_id` 单值。这里钉住四件事：新路由排在最前、空响应体必须当失败、
-     * 新路由不通时依次退到带场景段与旧路径、全失败时如实报错。
+     * 平台 2026-10-27 把可用的那条又换回去了：只剩
+     * `/novel/player/multi_video_model/v1/` 回 `code 0`，`/novel/player/video_model/v1/`
+     * 稳定 `200 + 0 字节`。这里钉住三件事：老路径排在最前、业务错误要换下一条、
+     * 全失败时如实报错。
      */
-    @Test fun playbackPrefersTheVideoIdRouteAndIgnoresBusinessErrors() {
+    @Test fun playbackPrefersTheLegacyRouteAndIgnoresBusinessErrors() {
         val paths=mutableListOf<String>()
         val repo=repository { request ->
             if(request.url().host()!="example.com") paths+=request.url().encodedPath()
             when {
-                request.url().host()=="example.com" -> fallbackList("h264" to "https://example.com/stream")
-                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
+                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                request.url().encodedPath()=="/novel/player/multi_video_model/v1/" ->
+                    legacyVideoModel("https://example.com/stream")
                 else -> """{"Code":110001,"Message":"未知异常"}"""
             }
         }
         val stream=repo.stream("123")
         assertEquals("https://example.com/stream",stream.url)
-        assertEquals(listOf("/novel/player/video_model/v1/"),paths)
+        assertEquals(listOf("/novel/player/multi_video_model/v1/"),paths)
     }
 
     /**
@@ -59,13 +59,14 @@ class ContentRepositoryTest {
         val repo=repository { request ->
             if(request.url().host()!="example.com") requests+=request
             when {
-                request.url().host()=="example.com" -> fallbackList("h264" to "https://example.com/stream")
+                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
                 request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
-                else -> ""
+                // 老路径排在最前，这里让它回业务错误，从而走到新路由那一条。
+                else -> """{"Code":110001,"Message":"未知异常"}"""
             }
         }
         assertEquals("https://example.com/stream",repo.stream("123").url)
-        val sent=requests.single()
+        val sent=requests.single { it.url().encodedPath()=="/novel/player/video_model/v1/" }
         assertEquals("/novel/player/video_model/v1/",sent.url().encodedPath())
         val body=sent.body()?.let { payload -> okio.Buffer().also { buffer -> payload.writeTo(buffer) }.readUtf8() } ?: ""
         assertTrue(body,body.contains("\"video_id\":\"123\""))
@@ -81,58 +82,120 @@ class ContentRepositoryTest {
         val repo=repository { request ->
             if(request.url().host()!="example.com") paths+=request.url().encodedPath()
             when {
-                request.url().host()=="example.com" -> fallbackList("h264" to "https://example.com/stream")
-                request.url().encodedPath()=="/novel/player/video_model/v1/" -> ""
-                request.url().encodedPath()=="/novel/player/multi_video_model/preload/v1/" -> legacyVideoModel("https://example.com/stream")
+                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                request.url().encodedPath()=="/novel/player/multi_video_model/v1/" -> ""
+                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
                 else -> """{"Code":110001,"Message":"未知异常"}"""
             }
         }
         assertEquals("https://example.com/stream",repo.stream("123").url)
-        // 空响应会**原地重发几次**再换下一路（网关偶发挡掉时重发即好，见 `PLAYBACK_RETRIES`），
-        // 因此这里只钉住顺序：同一路可以重复，但必须**依次**走过、最终落到下一条。
+        // 空响应会在同一条路上等 `MODEL_SPACING_MS` 重试（测试里间隔传 0），
+        // 因此这里只钉住顺序：同一路会重复，但必须**依次**走过、最终落到下一条。
         assertEquals(
-            listOf("/novel/player/video_model/v1/","/novel/player/multi_video_model/preload/v1/"),
+            listOf("/novel/player/multi_video_model/v1/","/novel/player/video_model/v1/"),
             paths.distinct()
         )
-        assertTrue(paths.first()=="/novel/player/video_model/v1/")
-        assertTrue(paths.last()=="/novel/player/multi_video_model/preload/v1/")
+        assertTrue(paths.first()=="/novel/player/multi_video_model/v1/")
+        assertTrue(paths.last()=="/novel/player/video_model/v1/")
     }
 
-    /** 新路由通了但没给 `video_model`（例如只有 `data.disable_vsr` 这类字段）时也要继续换路。 */
+    /**
+     * 空响应 = **这台设备**被平台限流（不是路径 / 参数 / 网络问题），换一个 `device_id`
+     * 立刻就能过（见 `ContentRepository.modelDeviceId` 里的实测表）。
+     *
+     * 这里钉住：第一次空响应之后**必须换 id 再试**，且换完就用上了新的那一份。
+     */
+    @Test fun blankResponseRotatesTheDeviceId() {
+        val ids=mutableListOf<String>()
+        val repo=repository { request ->
+            when {
+                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                else -> {
+                    val id=request.url().queryParameter("device_id").orEmpty()
+                    ids+=id
+                    // 第一个 id 只挡开头这一次，用来逼出一次换 id；换过之后一律给模型。
+                    if(ids.size==1) "" else legacyVideoModel("https://example.com/stream")
+                }
+            }
+        }
+        assertEquals("https://example.com/stream",repo.stream("123").url)
+        assertEquals(2,ids.size)
+        assertNotEquals(ids[0],ids[1])
+        assertTrue(ids[1].length==15)
+    }
+
+    /**
+     * 业务错误（`code≠0`）**不换** `device_id`：请求已经进了后端，说明这台设备没被限流，
+     * 那是路径 / 参数的问题，换身份没有意义（还会把本机真值记成「已被挡」）。
+     */
+    @Test fun businessErrorDoesNotRotateTheDeviceId() {
+        val ids=mutableListOf<String>()
+        val repo=repository { request ->
+            when {
+                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
+                else -> { ids+=request.url().queryParameter("device_id").orEmpty(); """{"Code":110001,"Message":"未知异常"}""" }
+            }
+        }
+        assertEquals("https://example.com/stream",repo.stream("123").url)
+        assertEquals(1,ids.distinct().size)
+    }
+
+    /**
+     * 搜索接口空响应**不等于**「设备没注册」：已注册设备在请求密集时同样被挡成 `200 + 0 字节`，
+     * 隔几百毫秒补发就能过（2026-10-27 实测：16 轮里 9 轮空、补发救回一半以上）。
+     *
+     * 这里钉住：一次空响应之后要**原地补发**，补到数据就把结果返回，而不是抛
+     * `DeviceNotRegisteredException`（那会让界面层换身份重注册，越换越乱）。
+     */
+    @Test fun searchRetriesBlankThenSucceeds() {
+        val hits=mutableListOf<Int>()
+        val repo=repository { request ->
+            if(request.url().encodedPath().contains("search/tab")) {
+                hits+=1
+                if(hits.size<3) "" else """
+                    {"code":0,"search_tabs":[{"tab_type":11,"data":[{"video_data":[{"series_id":"42","title":"测试"}]}]}]}
+                """.trimIndent()
+            } else """{"code":0}"""
+        }
+        val page=repo.search("修仙",1,ContentType.SHORT)
+        assertEquals("42",page.items.single().id)
+        assertEquals(3,hits.size)
+    }
+
+    /** 老路径通了但没给 `video_model`（例如只有 `data.disable_vsr` 这类字段）时也要继续换路。 */
     @Test fun responseWithoutVideoModelMovesToTheNextRoute() {
         val paths=mutableListOf<String>()
         val repo=repository { request ->
             if(request.url().host()!="example.com") paths+=request.url().encodedPath()
             when {
-                request.url().host()=="example.com" -> fallbackList("h264" to "https://example.com/stream")
-                request.url().encodedPath()=="/novel/player/video_model/v1/" -> """{"code":0,"data":{"disable_vsr":true}}"""
-                request.url().encodedPath()=="/novel/player/multi_video_model/detail/v1/" -> legacyVideoModel("https://example.com/stream")
+                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                request.url().encodedPath()=="/novel/player/multi_video_model/v1/" -> """{"code":0,"data":{"disable_vsr":true}}"""
+                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
                 else -> ""
             }
         }
         assertEquals("https://example.com/stream",repo.stream("123").url)
-        // 同前：每一条都可能重发几次，只钉住「依次走过、最终落到给得出模型的那条」。
+        // 同前：只钉住「依次走过、最终落到给得出模型的那条」。
         assertEquals(listOf(
-            "/novel/player/video_model/v1/",
-            "/novel/player/multi_video_model/preload/v1/",
-            "/novel/player/multi_video_model/default/v1/",
-            "/novel/player/multi_video_model/detail/v1/"
+            "/novel/player/multi_video_model/v1/",
+            "/novel/player/video_model/v1/"
         ),paths.distinct())
     }
 
-    /** 新路由不可用时退回旧路径：老账号 / 灰度环境上仍然要能播。 */
-    @Test fun playbackFallsBackToTheLegacyRouteWhenTheNewRouteFails() {
+    /** 老路径不可用时退回 10-14 那版新路由（平台随时可能再改回去，探针要留着）。 */
+    @Test fun playbackFallsBackToTheVideoIdRouteWhenTheLegacyRouteFails() {
         val paths=mutableListOf<String>()
         val repo=repository { request ->
             if(request.url().host()!="example.com") paths+=request.url().encodedPath()
             when {
-                request.url().host()=="example.com" -> fallbackList("h264" to "https://example.com/legacy")
-                request.url().encodedPath()=="/novel/player/multi_video_model/v1/" -> legacyVideoModel("https://example.com/legacy")
+                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/new")
+                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/new")
                 else -> """{"Code":110001,"Message":"未知异常"}"""
             }
         }
-        assertEquals("https://example.com/legacy",repo.stream("123").url)
-        assertEquals("/novel/player/multi_video_model/v1/",paths.last())
+        assertEquals("https://example.com/new",repo.stream("123").url)
+        assertEquals("/novel/player/video_model/v1/",paths.last())
     }
 
     /** 五条路都只有业务错误码或空响应时必须如实报错，不能把空 data 当成成功往下走。 */
@@ -162,14 +225,58 @@ class ContentRepositoryTest {
         assertEquals("1080P（兼容资源）",result.quality)
     }
 
-    @Test fun compatibleLowerQualityWinsBeforeHigherResolutionFallback() {
+    /** 非 HEVC 的档位一律不进候选：`h264` 也不在播放范围内（全站只有 HEVC）。 */
+    @Test fun nonHevcTiersAreNeverSelected() {
         val repo=streamRepository(Triple(720,"bytevc2","https://example.com/unsupported"),Triple(480,"h264","https://example.com/avc"),Triple(1080,"bytevc1","https://example.com/hevc"))
-        assertEquals("480P",repo.stream("123",720).quality)
+        assertEquals("1080P（兼容资源）",repo.stream("123",720).quality)
     }
 
     @Test fun entirelyIncompatibleSourceFailsBeforeStartingAudio() {
         val repo=streamRepository(Triple(720,"ByteVC2","https://example.com/unsupported"),Triple(480,"bvc2","https://example.com/unsupported2"))
         assertThrows(IOException::class.java) { repo.stream("123",720) }
+    }
+
+    /**
+     * 认不出档位的行（`quality_desc` / 宽高 / 键名全都读不出数字）**不能**进候选。
+     *
+     * 它算出来的档位是 0，而 0 对「≤ 上限」恒成立：早先它会被当成合格候选直接选中，
+     * 用户设 480 却拿到一条不知道多少分辨率的流，标签还写着「自动」，降级决策更是
+     * 连「当前在哪一档」都不知道。现在它被剔除，剩下的 1080 走「兼容资源」这条明路。
+     */
+    @Test fun rowsWithUnknownQualityAreNeverSelected() {
+        val rows=JSONObject()
+            .put("video_0",JSONObject().put("vwidth",1920).put("vheight",1080).put("codec_type","bytevc1").put("main_url","https://example.com/hevc"))
+            // 键名 `video_1` 里也没有档位数字，整行认不出来。
+            .put("video_1",JSONObject().put("codec_type","bytevc1").put("main_url","https://example.com/unknown"))
+        val repo=repository { request ->
+            if(request.url().host()=="example.com")
+                JSONObject().put("video_info",JSONObject().put("data",JSONObject().put("video_list",rows))).toString()
+            else videoModel("https://example.com/stream")
+        }
+        val result=repo.stream("123",480)
+        assertEquals("https://example.com/hevc",result.url)
+        assertEquals("1080P（兼容资源）",result.quality)
+        assertEquals(1080,result.actualQuality)
+        assertEquals(listOf(1080),result.available)
+    }
+
+    /**
+     * 取流结果要带上**结构化**的档位：降级决策只能看这一份（见 [PlaybackDegradation]）。
+     *
+     * 这里钉三件事：`available` 只留 HEVC 档位（`bytevc2` 与 `h264` 都剔除）；
+     * `actualQuality` 是**真正选中**那一档的值（不是用户设的上限）；`mediaKey` 只由集与档位决定。
+     */
+    @Test fun streamResultCarriesStructuredQualityForDegradation() {
+        val repo=streamRepository(
+            Triple(1080,"bytevc1","https://example.com/hevc"),
+            Triple(720,"bytevc2","https://example.com/unsupported"),
+            Triple(480,"h264","https://example.com/avc")
+        )
+        val result=repo.stream("123",1080)
+        assertEquals(1080,result.actualQuality)
+        assertEquals(1080,result.requestedQuality)
+        assertEquals(listOf(1080),result.available)
+        assertEquals("123:1080",result.mediaKey("123"))
     }
 
     /**
@@ -209,49 +316,52 @@ class ContentRepositoryTest {
     }
 
     /**
-     * 播放模型请求必须报 `device_level=4`。
+     * 播放模型请求默认报 `device_level=4`，并带上 `need_all_video_definition=true`。
      *
-     * 平台按这个值决定下发哪一套编码：官方值 3 时 360/480/576/720 全是 `bytevc2`
-     * （Android 的 MP4 解析器里往往只有音轨），被 [ContentRepository.stream] 过滤后
-     * 只剩 1080P —— 于是「默认 480P」形同虚设。这里把请求体钉住，防止再被改回去。
+     * `device_level` 只有 4 / 5 两档（见 [ContentRepository.deviceLevel]）：4 是默认档，
+     * 被限流换号还不行才升 5。`need_all_video_definition=true` 是「拿满 5 档」的前提，
+     * 不带它服务端只回一档。这里把请求体钉住，防止再被改回去。
      */
     @Test fun playbackModelRequestsTheDeviceLevelThatKeepsLowQualitiesDecodable() {
         val bodies=mutableListOf<String>()
         val repo=repository { request ->
-            if(request.url().host()!="example.com" && request.url().encodedPath()=="/novel/player/video_model/v1/")
-                bodies+=request.body()?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty()
+            val model=request.url().host()!="example.com"
+            if(model) bodies+=request.body()?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty()
             when {
-                request.url().host()=="example.com" -> fallbackList("h264" to "https://example.com/stream")
-                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
-                else -> ""
+                !model -> fallbackList("bytevc1" to "https://example.com/stream")
+                else -> videoModel("https://example.com/stream")
             }
         }
         assertEquals("https://example.com/stream",repo.stream("123").url)
         val body=bodies.single()
         assertTrue(body,body.contains("\"device_level\":4"))
+        assertTrue(body,body.contains("\"need_all_video_definition\":true"))
     }
 
     /**
-     * `device_level` 必须能按设备能力覆盖。
+     * `device_level` 只有 4 / 5 两档：默认 4，写别的值都会被夹到这两档之一。
      *
-     * 解不了 HEVC 的盒子要报 3（与官方 App 一致），能解的要报 4（五档全 HEVC，
-     * 「默认 480P」才真的生效）。这里钉住「字段被读进请求体」这件事——
-     * 它是 [PlaybackCapability.deviceLevel] 生效的唯一通道。
+     * 这里同时钉住「字段被读进请求体」这件事，它是 [ContentRepository.deviceLevel] 生效的唯一通道。
      */
-    @Test fun deviceLevelIsInjectedIntoThePlaybackModelRequest() {
+    @Test fun deviceLevelIsClampedToFourOrFiveAndInjectedIntoTheRequest() {
         val bodies=mutableListOf<String>()
         val repo=repository { request ->
-            if(request.url().host()!="example.com" && request.url().encodedPath()=="/novel/player/video_model/v1/")
-                bodies+=request.body()?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty()
+            val model=request.url().host()!="example.com"
+            if(model) bodies+=request.body()?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty()
             when {
-                request.url().host()=="example.com" -> fallbackList("h264" to "https://example.com/stream")
-                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
-                else -> ""
+                !model -> fallbackList("bytevc1" to "https://example.com/stream")
+                else -> videoModel("https://example.com/stream")
             }
         }
+        assertEquals(4,repo.deviceLevel)
         repo.deviceLevel=3
+        assertEquals(4,repo.deviceLevel)
+        repo.deviceLevel=9
+        assertEquals(5,repo.deviceLevel)
+        repo.deviceLevel=4
         assertEquals("https://example.com/stream",repo.stream("123").url)
-        assertTrue(bodies.single(),bodies.single().contains("\"device_level\":3"))
+        assertTrue(bodies.single(),bodies.single().contains("\"device_level\":4"))
+        assertTrue(bodies.single(),bodies.single().contains("\"need_all_video_definition\":true"))
     }
 
     @Test fun legacyMissingCodecLabelKeepsQualityLimit() {
@@ -263,7 +373,7 @@ class ContentRepositoryTest {
         OkHttpClient.Builder().addInterceptor { chain ->
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
 .code(200).message("OK").body(ResponseBody.create(null, respond(chain.request()))).build()
-        }.build(),clock
+        }.build(),clock,0L,0L
     )
 
     /**
@@ -690,10 +800,13 @@ class ContentRepositoryTest {
     @Test fun blankSearchResponseFailsOnceWithoutHammeringTheOtherTab() {
         var requests=0
         val repo=repository { requests++; "" }
+        // 空响应先原地补发 2 次（见 `ContentRepository.retryBlankSearch`），仍空才判死：
+        // 首发 + 2 次补发 = 3 条请求，全部落在第一个 tab 上。
         assertThrows(IOException::class.java) { repo.search("修仙",1,ContentType.COMIC) }
-        assertEquals(1,requests)
+        assertEquals(3,requests)
+        // 判死之后不再问第二个 tab：两个 tab 结论一致，多问一次只是把首屏又推后一个 RTT。
         assertThrows(IOException::class.java) { repo.search("修仙",1,ContentType.SHORT) }
-        assertEquals(1,requests)
+        assertEquals(3,requests)
     }
 
     /** 游标过期要如实抛出（界面据此回到第 1 页重搜），不能拿别的页顶替。 */

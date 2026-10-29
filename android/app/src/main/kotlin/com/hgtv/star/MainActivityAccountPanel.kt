@@ -24,6 +24,7 @@ import com.hgtv.star.tv.SoftStyle
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.ToggleChip
+import com.hgtv.star.tv.usableScreenHeight
 import com.hgtv.star.compat.attachedToWindow
 
 /**
@@ -76,8 +77,10 @@ internal fun MainActivity.showAccountPanel(
         clipChildren=false
         clipToPadding=false
         // 登录卡比「我的」页其他面板高：标题区 + 两行字段 + 说明 + 主按钮约 500 设计单位，
-        // 因此上限按屏高的 80% 给（0.5 会把主按钮裁在滚动区外，用户得先滚动才能看到「登录」）。
-        maxHeight=(resources.displayMetrics.heightPixels*.8f).toInt()
+        // 因此上限按可用高度的 80% 给（0.5 会把主按钮裁在滚动区外，用户得先滚动才能看到「登录」）。
+        // 分母是**扣掉系统栏**之后的高度：按整屏算的话，Android 14 上最后那枚主按钮
+        // 正好落在系统栏底下，用户以为「登录按钮没出来」。
+        maxHeight=(usableScreenHeight()*.8f).toInt()
         addView(card,LinearLayout.LayoutParams(-1,-2))
     }
     // 设计稿是一张 680 宽的居中登录卡；窄屏（手机横屏 / 分屏）上按「屏宽 − 两侧留白」收一次。
@@ -710,7 +713,9 @@ private fun MainActivity.buildPhoneLoginPanel(
         isVerticalScrollBarEnabled=false
         clipChildren=false
         clipToPadding=false
-        maxHeight=(resources.displayMetrics.heightPixels*.45f).toInt()
+        // 国家区号下拉：同样按**可用**高度算（见上面的登录卡），整屏高度会让最后几条
+        // 落在系统栏底下——Android 14 上就是「列表下面少一截」。
+        maxHeight=(usableScreenHeight()*.45f).toInt()
         addView(countryOptionsColumn,LinearLayout.LayoutParams(-1,-2))
     }
     countryPopup.contentView=countryScroll

@@ -48,7 +48,16 @@ internal fun MainActivity.restoreKeysLabel(): String =
  */
 internal fun MainActivity.showKeyActionPicker(key: PlayerKey,anchor: View,onChanged: ()->Unit={}) {
     val options=PlayerKeyAction.entries
-    val picker=TvDialog(this,"${key.label}的动作").choices(options.map { it.hint },options.indexOf(library.keyMap.action(key))) { index ->
+    // 快进 / 快退的说明里写着具体秒数，而秒数现在由设置页的滑块决定（2..20，默认 10）：
+    // 直接抄 [PlayerKeyAction.hint] 那个常量会在用户改成 20 秒之后仍然说「每次 10 秒」，
+    // 因此这两项在弹窗里按当前设置现拼一次。
+    val step=library.seekStep
+    fun hintOf(action: PlayerKeyAction)=when(action) {
+        PlayerKeyAction.SEEK_BACK -> "快退 · 每次 ${step} 秒，连按 5 次后每次 ${step*3} 秒"
+        PlayerKeyAction.SEEK_FORWARD -> "快进 · 每次 ${step} 秒，连按 5 次后每次 ${step*3} 秒"
+        else -> action.hint
+    }
+    val picker=TvDialog(this,"${key.label}的动作").choices(options.map(::hintOf),options.indexOf(library.keyMap.action(key))) { index ->
         library.keyMap=library.keyMap.customize(key,options[index])
         onChanged()
     }

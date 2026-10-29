@@ -22,20 +22,31 @@ internal class Signer(
     /** 账号凭据变化时更新档案；空档案回落到内置那份。 */
     fun updateDevice(values: Map<String, String>) { device = values.filterValues { it.isNotBlank() } }
 
-    /** 档案里没有的字段一律回落到内置默认值。 */
-    private fun deviceValue(key: String, fallback: String): String =
-        device[key]?.takeIf { it.isNotBlank() } ?: fallback
-    private fun deviceValue(key: String, fallback: () -> String): String =
-        device[key]?.takeIf { it.isNotBlank() } ?: fallback()
-    private fun deviceId() = deviceValue("device_id") { VendorConstants.device.getValue("device_id") }
-    private fun deviceType() = deviceValue("device_type", "25053RT47C")
-    private fun deviceBrand() = deviceValue("device_brand", "Redmi")
+    /**
+     * 档案里没有的字段一律回落到内置默认值。
+     *
+     * 参数 `d` 是**这一次签名**用的档案，默认取 [device]。
+     *
+     * 为什么必须能逐次传：签名里有两处会把 `device_id` 编进密文
+     *（`x-medusa` 的 message 第 5 号字段与 deviceProto 第 4 号字段）。
+     * 播放接口要按 `device_id` 换身份时才可能绕过限流（见 `ContentRepository.modelDeviceId`），
+     * 而如果 query 里是新 id、密文里还是旧 id，服务端拿到的就是一份自相矛盾的请求，
+     * 直接回 `110001 未知异常`（2026-10-27 实测：App 换 id 后 117 字节 `code 110001`，
+     * 同一份内容在本机探针里 `code 0`，差别就在这里）。
+     */
+    private fun deviceValue(d: Map<String,String>, key: String, fallback: String): String =
+        d[key]?.takeIf { it.isNotBlank() } ?: fallback
+    private fun deviceValue(d: Map<String,String>, key: String, fallback: () -> String): String =
+        d[key]?.takeIf { it.isNotBlank() } ?: fallback()
+    private fun deviceId(d: Map<String,String>) = deviceValue(d,"device_id") { VendorConstants.device.getValue("device_id") }
+    private fun deviceType(d: Map<String,String>) = deviceValue(d,"device_type", "25053RT47C")
+    private fun deviceBrand(d: Map<String,String>) = deviceValue(d,"device_brand", "Redmi")
     /** 厂商：Samsung / Xiaomi 这类，按品牌推；认不出来就直接用品牌名。 */
-    private fun manufacturer() = when {
-        deviceBrand().contains("samsung", ignoreCase = true) -> "Samsung"
-        deviceBrand().contains("redmi", ignoreCase = true) -> "Xiaomi"
-        deviceBrand().contains("xiaomi", ignoreCase = true) -> "Xiaomi"
-        else -> deviceBrand()
+    private fun manufacturer(d: Map<String,String>) = when {
+        deviceBrand(d).contains("samsung", ignoreCase = true) -> "Samsung"
+        deviceBrand(d).contains("redmi", ignoreCase = true) -> "Xiaomi"
+        deviceBrand(d).contains("xiaomi", ignoreCase = true) -> "Xiaomi"
+        else -> deviceBrand(d)
     }
     /**
      * 一次签好名的请求。
@@ -131,7 +142,7 @@ internal class Signer(
         }
         return (hex("8404") + byteArrayOf(random.toByte(),(random shr 8).toByte(),0x40,1) + out).hex()
     }
-    private fun deviceProto() = proto(f(1,1,"sint"),f(2,2,"sint"),f(3,"8662"),f(4,deviceId()),f(5,"Ai6svO3PyrwDOUSmO6ZcResxu"),f(6,"!noperm!"),f(7,-888888,"sint"),f(8,-888888,"sint"),f(9,3,"sint"),f(10,-888888,"sint"),f(11,"!notset!"),f(12,"Asia/Shanghai,8"),f(13,"zh_CN"),f(14,4,"sint"),f(16,255.24993896484375,"float"),f(17,35.58599090576172,"float"),f(18,3.467449188232422,"float"),f(19,3.467449188232422,"float"),f(20,255.1754913330078,"float"),f(21,42.17544174194336,"float"),f(22,deviceValue("os_version","16")),f(23,41,"sint"),f(24,deviceValue("os_api") { "36" }.toIntOrNull() ?: 36,"sint"),f(25,1728388016635L,"sint"),f(26,1728388016635L,"sint"),f(27,1728388016635L,"sint"),f(28,1728388016637L,"sint"),f(29,-1,"sint"),f(30,deviceType()),f(31,deviceBrand()),f(32,deviceType()),f(33,deviceType()),f(34,manufacturer()),f(35,deviceBrand()),f(36,deviceBrand()),f(38,31,"sint"))
+    private fun deviceProto(d: Map<String,String>) = proto(f(1,1,"sint"),f(2,2,"sint"),f(3,"8662"),f(4,deviceId(d)),f(5,"Ai6svO3PyrwDOUSmO6ZcResxu"),f(6,"!noperm!"),f(7,-888888,"sint"),f(8,-888888,"sint"),f(9,3,"sint"),f(10,-888888,"sint"),f(11,"!notset!"),f(12,"Asia/Shanghai,8"),f(13,"zh_CN"),f(14,4,"sint"),f(16,255.24993896484375,"float"),f(17,35.58599090576172,"float"),f(18,3.467449188232422,"float"),f(19,3.467449188232422,"float"),f(20,255.1754913330078,"float"),f(21,42.17544174194336,"float"),f(22,deviceValue(d,"os_version","16")),f(23,41,"sint"),f(24,deviceValue(d,"os_api") { "36" }.toIntOrNull() ?: 36,"sint"),f(25,1728388016635L,"sint"),f(26,1728388016635L,"sint"),f(27,1728388016635L,"sint"),f(28,1728388016637L,"sint"),f(29,-1,"sint"),f(30,deviceType(d)),f(31,deviceBrand(d)),f(32,deviceType(d)),f(33,deviceType(d)),f(34,manufacturer(d)),f(35,deviceBrand(d)),f(36,deviceBrand(d)),f(38,31,"sint"))
     private fun xmxor(data: ByteArray, key: ByteArray): ByteArray {
         val encoded = IntArray(data.size)
         for (i in data.indices) {
@@ -152,16 +163,16 @@ internal class Signer(
         encoded[0] = ((encoded[0] xor encoded[1]) + encoded.drop(1).sum()) and 255
         return encoded.map { it.toByte() }.toByteArray()
     }
-    fun medusa(url: String, body: ByteArray?, ts: Int): String {
+    fun medusa(url: String, body: ByteArray?, ts: Int, d: Map<String,String> = device): String {
         val bodyMd5 = body?.let { digest("MD5",it) } ?: ByteArray(16)
         val query = url.substringAfter('?').toByteArray(); val querySm3 = sm3(query)
         val queryBodyTs = hashF13(querySm3,bodyMd5,ts)
         val nested = proto(f(1,111,"sint"),f(2,10,"sint"),f(3,694367,"sint"),f(5,586952199,"sint"))
         val messageRand = unsigned(rand()); val envLaunch = (random()*21).toInt()+100; val envPid = (random()*2000).toInt()+10001
-        val version = deviceValue("version_name") { VendorConstants.device.getValue("version_name") }
-        val env = proto(f(1,envLaunch,"sint"),f(2,146331399,"sint"),f(3,146331396,"sint"),f(5,7,"sint"),f(6,"v04.06.04.03-bugfix"),f(7,envPid,"sint"),f(12,deviceProto()),f(13,proto(f(1,clock()/1000,"sint"),f(2,-2,"sint"),f(4,200,"sint"))),f(14,version))
+        val version = deviceValue(d,"version_name") { VendorConstants.device.getValue("version_name") }
+        val env = proto(f(1,envLaunch,"sint"),f(2,146331399,"sint"),f(3,146331396,"sint"),f(5,7,"sint"),f(6,"v04.06.04.03-bugfix"),f(7,envPid,"sint"),f(12,deviceProto(d)),f(13,proto(f(1,clock()/1000,"sint"),f(2,-2,"sint"),f(4,200,"sint"))),f(14,version))
         val queryHash = sm3(query+bodyMd5+"none".toByteArray())
-        val message = proto(f(1,hex("f7e85ffad7d7dc3bd62ac87057cf6118")),f(2,3,"sint"),f(3,messageRand,"sint"),f(4,"8662"),f(5,deviceId()),f(6,"1588093228"),f(7,version),f(8,"v04.06.04-ml-android"),f(9,67503104,"sint"),f(10,hex("4001000000000000")),f(12,ts,"sint"),f(13,queryBodyTs),f(14,querySm3.copyOf(6)),f(15,nested),f(16,"AXYQOS6n2m60x1fVZHIrH3iol"),f(17,ts,"sint"),f(19,queryHash),f(20,"none"),f(21,312,"sint"),f(23,env),f(24,"""{"cmr":16777216,"cmr2":16777216,"un_h":1879194040,"vpn":0,"kd":0,"fkd":3672518972,"pd":-1872573247,"dyn":"","do":0,"tk":true}"""))
+        val message = proto(f(1,hex("f7e85ffad7d7dc3bd62ac87057cf6118")),f(2,3,"sint"),f(3,messageRand,"sint"),f(4,"8662"),f(5,deviceId(d)),f(6,"1588093228"),f(7,version),f(8,"v04.06.04-ml-android"),f(9,67503104,"sint"),f(10,hex("4001000000000000")),f(12,ts,"sint"),f(13,queryBodyTs),f(14,querySm3.copyOf(6)),f(15,nested),f(16,"AXYQOS6n2m60x1fVZHIrH3iol"),f(17,ts,"sint"),f(19,queryHash),f(20,"none"),f(21,312,"sint"),f(23,env),f(24,"""{"cmr":16777216,"cmr2":16777216,"un_h":1879194040,"vpn":0,"kd":0,"fkd":3672518972,"pd":-1872573247,"dyn":"","do":0,"tk":true}"""))
         val r = rand(); val signKey = hex("8ebdfa3806ecc5cee79423e6029ed82540bc2218bb7eaef71cb691f7aa8aa2f5")
         val hash = sm3(signKey+le32(r)+signKey); val d1 = (r shr 16) and 255
         val seed = le32((((d1 shl 11) or (r ushr 24)) xor (d1 shr 5) xor d1).inv())
@@ -193,7 +204,23 @@ internal class Signer(
         }
         return output.base64()
     }
-    fun sign(base: String, values: Map<String,String>, body: ByteArray? = null, method: String? = null): Request {
+    /**
+     * 签名一条请求。
+     *
+     * [deviceOverride] 非空时，**这一次**签名用它的档案（query 参数仍以 [values] 为准）。
+     *
+     * 为什么需要：[values] 里换掉 `device_id` 而 [device] 里还是旧的，`x-medusa` 会编进旧 id，
+     * 服务端看到 query 与密文不一致就回 `110001`。播放接口按 `device_id` 换身份绕限流
+     *（见 `ContentRepository.modelDeviceId`），因此那一条必须把同一份档案同时交给两者。
+     */
+    fun sign(
+        base: String,
+        values: Map<String,String>,
+        body: ByteArray? = null,
+        method: String? = null,
+        deviceOverride: Map<String,String>? = null
+    ): Request {
+        val d=(deviceOverride ?: device).filterValues { it.isNotBlank() }
         val now = clock(); val ts = (now / 1000).toInt()
         var ticket = now; var query: String
         for (offset in 0..127) {
@@ -205,7 +232,7 @@ internal class Signer(
                 // Passport 路径用 5051452，其余内容 / 账号接口用 6031190。
                 // 早先一律写 50561，两个都不对。
                 val passportPath = base.contains("/passport/")
-                val headers = linkedMapOf("User-Agent" to VendorConstants.userAgent(device, video = body != null),"Accept" to "application/json; charset=utf-8,application/x-protobuf", "x-ss-req-ticket" to ticket.toString(),"x-tt-request-tag" to "t=0;n=0","sdk-version" to "2","passport-sdk-version" to (if(passportPath) "5051452" else "6031190"),"x-xs-from-web" to "0","x-khronos" to ts.toString(),"x-ladon" to be32(ts).base64(),"x-argus" to le32(ts).base64(),"x-gorgon" to gorgon(query,body,ts,random),"x-helios" to helios(ts),"x-medusa" to medusa(url,body,ts),"x-tt-dt" to "")
+                val headers = linkedMapOf("User-Agent" to VendorConstants.userAgent(d, video = body != null),"Accept" to "application/json; charset=utf-8,application/x-protobuf", "x-ss-req-ticket" to ticket.toString(),"x-tt-request-tag" to "t=0;n=0","sdk-version" to "2","passport-sdk-version" to (if(passportPath) "5051452" else "6031190"),"x-xs-from-web" to "0","x-khronos" to ts.toString(),"x-ladon" to be32(ts).base64(),"x-argus" to le32(ts).base64(),"x-gorgon" to gorgon(query,body,ts,random),"x-helios" to helios(ts),"x-medusa" to medusa(url,body,ts,d),"x-tt-dt" to "")
                 if(passportPath) {
                     headers["x-vc-bdturing-sdk-version"]="4.0.3.cn"
                     headers["lc"]="101"

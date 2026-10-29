@@ -10,6 +10,8 @@ import com.google.android.exoplayer2.analytics.AnalyticsListener
 import com.google.android.exoplayer2.decoder.DecoderReuseEvaluation
 import com.google.android.exoplayer2.mediacodec.MediaCodecRenderer
 import com.hgtv.star.compat.isMeteredConnection
+import com.hgtv.star.core.DegradationKind
+import com.hgtv.star.core.PlaybackRetryPlan
 
 /**
  * 播放失败的可观测层：**正式包里唯一还活着的那份证据**。
@@ -44,6 +46,16 @@ internal object PlaybackDiag {
     private val claimed = mutableSetOf<String>()
     /** 这一集报过失败没有：用来配对「降级 / 重试之后真的出画面了」。 */
     private var failed = false
+    /**
+     * 这一集有没有做过**自动处置**（同档重建 / 降档）。
+     *
+     * 单独一位而不是直接置 [failed]：那个位的另一处用途是
+     * 「本会话已经报过用户可感知的失败」（[failedThisSession]），
+     * 而自动处置**没有**产出任何上报记录。把它算成「已报过失败」会让随后
+     * 解码器自己报的错（`playback_codec_error`）被吞掉——那恰恰是重建之后
+     * 最需要看到的一条。因此这里只回答「这一次起播失败过」，不影响去重。
+     */
+    private var degraded = false
     private var recovered = false
 
     @Volatile var seriesTitle = ""
@@ -154,7 +166,7 @@ internal object PlaybackDiag {
         // 同一集的重试（用户按「立即重试」/「尝试 720P」/ 自动恢复）**保留**失败标记：
         // 清掉的话，降级救回来这件事就永远记不上（见 [takeRecovered]）。
         // 换了一集才清零——上一集的失败与这一集的成败无关。
-        if(id!=episodeId) { failed=false; recovered=false }
+        if(id!=episodeId) { failed=false; degraded=false; recovered=false }
         // 每一次起播都是**新的一次尝试**：上一次留下的现场（失败阶段 / 错误链 / 停帧计时）
         // 到这一刻起不再成立——播放层正在重建。不清的话面板会把上一轮、上一集的
         // 「有声音无画面」继续挂在新一集上，用户看到的就是「明明有画面却说我黑屏」。
@@ -176,7 +188,7 @@ internal object PlaybackDiag {
      */
     @Synchronized fun nextEpisode(id: String,index: Int,qualityLabel: String) {
         episodeId=id; episodeIndex=index; quality=qualityLabel
-        firstFrame=false; failed=false; recovered=false; lastFrameAt=0
+        firstFrame=false; failed=false; degraded=false; recovered=false; lastFrameAt=0
         // 同一颗解码器换了源：上一集记下的现场同样不再成立。
         clearProblem()
     }
@@ -206,9 +218,18 @@ internal object PlaybackDiag {
     /** 本会话是否已经报过「用户可感知的失败」——用来让 `playback_codec_error` 让位。 */
     @Synchronized fun failedThisSession(): Boolean = failed
 
-    /** 报过失败、之后又真的出了画面：这是「降级 / 重试救回来了」的正样本。 */
+    /**
+     * 记一次**自动处置**（同档重建 / 降档）：这一次起播失败过，只是还没报成一条故障。
+     *
+     * 只置 [degraded]，**不**置 [failed]：那个位的另一处用途是「本会话已经报过用户可感知
+     * 的失败」（[failedThisSession]），而自动处置没有产出任何上报记录。混在一起会让
+     * 解码器随后自己报的错（`playback_codec_error`）被吞掉——那是重建之后最需要的一条。
+     */
+    @Synchronized fun degrade() { degraded=true; recovered=false }
+
+    /** 失败过（报过故障或做过自动处置）、之后又真的出了画面：这是「救回来了」的正样本。 */
     @Synchronized fun takeRecovered(): Boolean {
-        if(!failed || recovered) return false
+        if((!failed && !degraded) || recovered) return false
         recovered=true
         return true
     }
@@ -278,6 +299,10 @@ internal class PlaybackPrepareException(message: String,cause: Throwable?=null):
 internal fun playbackStage(problem: Throwable?): String {
     val code=(problem as? PlaybackException)?.errorCode
     if(code==null) return when(problem) {
+        // 看门狗 / 画面恢复这类**没有 PlaybackException** 的失败自带稳定 stage
+        //（`playback_stall_frame` 等）。不认它就会一律落进 `playback_other`，
+        // 于是「自己重建也没救回来」这条记录和别的杂项混成一组。
+        is PlaybackDiagnosticException -> problem.stage
         is PlaybackPrepareException -> "playback_prepare"
         is java.io.IOException -> "playback_io"
         is OutOfMemoryError -> "playback_oom"
@@ -469,6 +494,35 @@ internal fun stageTitle(stage: String): String = when(stage) {
 }
 
 /**
+ * 记一次「自动处置」（同档重建 / 降一档）。
+ *
+ * 它不是一条故障记录（不打 stage、不进上报去重表），但它必须把这一集标成
+ * 「这一次起播失败过」（[PlaybackDiag.degrade]），于是真的出画面时
+ * [PlaybackDiag.takeRecovered] 才会命中，「降级救回来了」这条正样本才有来源。
+ *
+ * 早先降级路径直接 `playEpisode(..., recovering=true)` 就走了，一个标记都不留，
+ * 于是 `takeRecovered()` 永远返回 false——`QUALITY_DOWN_LIMIT` 到底够不够、
+ * `softwareQuality` 卡的 720 是保守还是过头，全都拿不到现场数据。
+ *
+ * 只在主线程调用（`replayWithPlan` 就在主线程），读的都是本进程的字段。
+ */
+internal fun MainActivity.noteDegrade(plan: PlaybackRetryPlan) {
+    val tier=plan.maxQuality ?: 0
+    val text="自动处置 "+when(plan.reason) {
+        DegradationKind.SAME_QUALITY_REBUILD -> "原档重建 ${playbackMaxQuality}P"
+        DegradationKind.QUALITY_DOWN -> "降档 → ${tier}P"
+    }
+    DebugLog.record("播放",text+" · 预算["+sessionPlayback.budgetSummary()+"]",force=true)
+    PlaybackDiag.degrade()
+    // 这一行是「降级救回率」的唯一来源：`takeRecovered()` 之后会在出帧时再补一条
+    // `HGTV-PLAY recovered … cap=`，两行成对。
+    android.util.Log.w("HGTV-PLAY","degrade reason=${plan.reason.name}"+
+        " target=${if(tier>0) "${tier}P" else "same"}"+
+        " cap=${playbackMaxQuality}P mode=${playbackDecoderMode.name}"+
+        " budget=[${sessionPlayback.budgetSummary()}]")
+}
+
+/**
  * 记一次播放失败。
  *
  * [stage] 是聚合键；标题取 [stageTitle]（常量），细节进 detail。
@@ -521,6 +575,19 @@ internal fun MainActivity.reportPlaybackFailure(problem: Throwable?,stage: Strin
     val failedDecoder=decoderOf(problem)
     val errorChain=chainOf(problem)
     val title=stageTitle(stage)
+    // 降级现场：**必须在这条线程上抄走**（与会话状态同理，几秒后可能已经换集 / 换档）。
+    //
+    // 用户报「老是降清晰度 / 一直弹提示」时，这一行能直接回答三个问题：这一次为什么降
+    // （`plan`）、预算还剩几次（`budget`）、取流有没有指定编码族（`prefer`）。
+    // 早先这些只活在内存里，出错之后一条都留不下，只能靠猜。
+    val degradeInfo=runCatching {
+        val policy=sessionPlayback
+        val info=video?.info
+        "cap=${playbackMaxQuality}P req=${info?.requestedQuality ?: 0}P actual=${info?.actualQuality ?: 0}P"+
+            " level=${repository.deviceLevel} mode=${playerDecoderMode().name}"+
+            " plan=${policy.lastReason?.name ?: "-"} hint=${policy.manualHint?.take(40) ?: "-"}"+
+            " budget=[${policy.budgetSummary()}] avail=${info?.available?.joinToString(",") ?: "-"}"
+    }.getOrDefault("")
     // 采集与记录全部挪到 io 线程。
     //
     // 为什么必须挪：这条路**只会**在主线程被走到（`onPlayerError`、看门狗 tick、
@@ -543,6 +610,7 @@ internal fun MainActivity.reportPlaybackFailure(problem: Throwable?,stage: Strin
                     val decoder=failedDecoder.ifEmpty { decoderName }
                     if(decoder.isNotEmpty() && decoder!=decoderName) append(" failedDecoder=").append(decoder)
                     append(" decoders=").append(availableDecoders(mime))
+                    if(degradeInfo.isNotEmpty()) append(" degrade=").append(degradeInfo)
                     append(' ').append(scene)
                     append(" dev=").append(Build.MANUFACTURER).append(' ').append(Build.MODEL)
                     append(" os=").append(Build.VERSION.RELEASE).append('(').append(Build.VERSION.SDK_INT).append(')')
@@ -631,7 +699,14 @@ internal fun MainActivity.playbackDiagnostics()=object: AnalyticsListener {
  *
  * 判据只用两件事：是否出过第一帧、以及等了多久。出帧即撤，所以正常播放一次都不会触发。
  */
-private const val WATCHDOG_TICK_MS = 15_000L
+/**
+ * 看门狗的巡检周期。
+ *
+ * 必须**远小于**阈值：早先它和 [WATCHDOG_NO_FRAME_MS] 都是 15 秒，于是「READY 了但没画面」
+ * 最坏要等 15（第一次巡检）+15（满阈值）= **30 秒**才动手，用户对着黑屏干等半分钟。
+ * 巡检本身只是几次字段读，3 秒一次的成本可以忽略。
+ */
+private const val WATCHDOG_TICK_MS = 3_000L
 /** READY 之后多久还没出帧就判黑屏。留足解码器首帧 + 首屏合成的时间。 */
 private const val WATCHDOG_NO_FRAME_MS = 15_000L
 /**
@@ -662,6 +737,14 @@ internal fun MainActivity.armPlaybackWatchdog(playSession: Int) {
             val p=player ?: run { main.postDelayed(this,WATCHDOG_TICK_MS); return }
             // 用户自己暂停 / 退到后台 / 本来就是不自动播：不算卡死，继续等。
             if(!foreground || !requestedAutoplay || p.playWhenReady!=true) {
+                // 暂停 / 后台这段**不算「在等画面」**：两个起点都推到这一刻，恢复播放后重新数。
+                // `playbackWatchdogReadyAt` 不推的话，先 READY 再暂停五分钟、回来一按播放会当场
+                // 被判成黑屏并触发一次重建（其实首帧 200ms 后就到了）——那是「看门狗误报」最典型的一种。
+                // `playbackWatchdogAt` 同样要推：它是 [WATCHDOG_STALL_MS]（90 秒「一直没到 READY」）
+                // 的起点，不推的话「在缓冲中暂停两分钟再继续」会立刻命中 stall_buffer，
+                // 白做一次整层重建。
+                playbackWatchdogReadyAt=0L
+                playbackWatchdogAt=android.os.SystemClock.elapsedRealtime()
                 main.postDelayed(this,WATCHDOG_TICK_MS); return
             }
             val now=android.os.SystemClock.elapsedRealtime()
@@ -671,15 +754,15 @@ internal fun MainActivity.armPlaybackWatchdog(playSession: Int) {
                 if(now-playbackWatchdogReadyAt>=WATCHDOG_NO_FRAME_MS) {
                     reportPlaybackFailure(PlaybackDiagnosticException("playback_stall_frame","播放器已就绪但迟迟没有画面"),"playback_stall_frame")
                     playbackWatchdog=null
-                    // 推荐页：报告之后就地自愈，别让用户对着一块黑屏自己找路
-                    //（见 [recoverRecommendPicture]）。
-                    recoverRecommendPicture("no_first_frame")
+                    // 报告之后就地自愈，别让用户对着一块黑屏自己找路
+                    //（正片见 [recoverFormalPicture]，推荐页见 [recoverRecommendPicture]）。
+                    recoverLostPicture("no_first_frame")
                     return
                 }
             } else if(now-playbackWatchdogAt>=WATCHDOG_STALL_MS) {
                 reportPlaybackFailure(PlaybackDiagnosticException("playback_stall_buffer","播放器长时间停在缓冲，未进入可播放状态"),"playback_stall_buffer")
                 playbackWatchdog=null
-                recoverRecommendPicture("stall_buffer")
+                recoverLostPicture("stall_buffer")
                 return
             }
             main.postDelayed(this,WATCHDOG_TICK_MS)
@@ -788,24 +871,60 @@ internal fun MainActivity.playbackFrameClock()=com.google.android.exoplayer2.vid
  *
  * `lastFrameAt == 0`（这一集从没收到过逐帧回调）时**直接让路**：那说明这台设备 /
  * 这条渲染路径根本不走 `VideoFrameMetadataListener`，此时「没有新帧」什么也证明不了。
+ *
+ * 同一个巡检还负责**播到一半掉进 BUFFERING**：起播看门狗在首帧后就撤了，而下面这条
+ * 停帧判据要求 `STATE_READY`，于是「永远转圈」过去没有任何看门狗覆盖（见 [BUFFER_STALL_MS]）。
  */
 private const val FRAME_STALL_TICK_MS = 4_000L
 private const val FRAME_STALL_MS = 12_000L
 
+/**
+ * 已经在播、却停在 BUFFERING 多久算死。
+ *
+ * 判据用**缓冲位置不再前进**而不是绝对时长：弱网下 `bufferedPosition` 一直在涨就还有希望，
+ * 把「慢」误判成「死」比不判更糟。30 秒足够覆盖一次正常的 seek 回填与弱网抖动。
+ */
+private const val BUFFER_STALL_MS = 30_000L
+
 internal fun MainActivity.armFrameStallWatchdog(playSession: Int) {
     disarmFrameStallWatchdog()
+    // 缓冲停滞的计时放在闭包里：看门狗重新挂上（换集 / 重建）时自然归零。
+    var bufferSince=0L
+    var bufferAt=-1L
     val tick=object: Runnable {
         override fun run() {
             if(playbackStallWatchdog!==this) return
             // 推荐页同样要盯（理由见 `armPlaybackWatchdog`）。
             if(!onPlaybackPage() || playError || playbackSession!=playSession) { playbackStallWatchdog=null; return }
             val p=player ?: run { main.postDelayed(this,FRAME_STALL_TICK_MS); return }
-            // 只有「确实在播」才算：暂停 / 后台 / 缓冲中不出帧是正常的。
-            val playing=foreground && requestedAutoplay && p.playWhenReady && p.playbackState==Player.STATE_READY && p.isPlaying
-            if(!playing) { main.postDelayed(this,FRAME_STALL_TICK_MS); return }
+            // 只有「确实该在走」才算：暂停 / 后台 / 用户没让播时不出帧、不缓冲都是正常的。
+            val active=foreground && requestedAutoplay && p.playWhenReady
+            if(!active) { bufferSince=0; main.postDelayed(this,FRAME_STALL_TICK_MS); return }
+            val now=android.os.SystemClock.elapsedRealtime()
+            // ① 播到一半掉进 BUFFERING，而且缓冲位置不再前进。
+            //    这一段过去完全没人管：起播看门狗首帧后就撤了，下面的停帧判据又要求 READY。
+            if(p.playbackState==Player.STATE_BUFFERING) {
+                val buffered=p.bufferedPosition
+                if(buffered>bufferAt) { bufferAt=buffered; bufferSince=now }
+                else if(bufferSince==0L) bufferSince=now
+                else if(now-bufferSince>=BUFFER_STALL_MS) {
+                    reportPlaybackFailure(
+                        PlaybackDiagnosticException("playback_stall_buffer","播放中缓冲停止前进 ${BUFFER_STALL_MS/1000} 秒"),
+                        "playback_stall_buffer"
+                    )
+                    // 先归零再交给恢复路径：推荐页那边被冷却挡掉时不会立刻重建，
+                    // 这一条 tick 每 4 秒还会再来，不归零就会每 4 秒重复触发一次。
+                    bufferSince=0; bufferAt=-1
+                    recoverLostPicture("stall_buffer")
+                }
+                main.postDelayed(this,FRAME_STALL_TICK_MS); return
+            }
+            bufferSince=0; bufferAt=-1
+            // ② 已经在播、却不再出帧。
+            if(p.playbackState!=Player.STATE_READY || !p.isPlaying) { main.postDelayed(this,FRAME_STALL_TICK_MS); return }
             val last=PlaybackDiag.lastFrameAt
             if(last<=0L) { main.postDelayed(this,FRAME_STALL_TICK_MS); return }
-            val stalled=android.os.SystemClock.elapsedRealtime()-last
+            val stalled=now-last
             if(stalled>=FRAME_STALL_MS) {
                 // 报告会顺带把屏幕上的现场摆出来（见 [reportPlaybackFailure]）。
                 // 去重由 `claim` 负责：同一进程里这条 stage 只记一次，但面板会一直留着并继续刷新。
@@ -814,9 +933,10 @@ internal fun MainActivity.armFrameStallWatchdog(playSession: Int) {
                     "playback_stall_frame"
                 )
                 // 推荐页：画面停了但声音还在（用户反馈的那种「刷几部之后黑屏、快进快退都没反应」），
-                // 就地重建播放层。冷却与次数上限在 [recoverRecommendPicture] 里，
-                // 这条 tick 每 4 秒还会再来，不会因此连着重启。
-                recoverRecommendPicture("frame_stall")
+                // 就地重建播放层；正片同样重建一次、再不行落错误页。
+                // 冷却与次数上限在 [recoverLostPicture] 里，这条 tick 每 4 秒还会再来，
+                // 不会因此连着重启。
+                recoverLostPicture("frame_stall")
             }
             main.postDelayed(this,FRAME_STALL_TICK_MS)
         }
@@ -828,4 +948,60 @@ internal fun MainActivity.armFrameStallWatchdog(playSession: Int) {
 internal fun MainActivity.disarmFrameStallWatchdog() {
     playbackStallWatchdog?.let { main.removeCallbacks(it) }
     playbackStallWatchdog=null
+}
+
+/**
+ * 「画面丢了」的统一入口：按页面分派。
+ *
+ * 推荐页换下一部 / 就地重建；正片就地重建一次、再不行落错误页。
+ * 两页的故障是同一种（解码器不再吐帧，不抛异常），只是处置的出口不同。
+ */
+internal fun MainActivity.recoverLostPicture(reason: String) {
+    // 缓冲停住 = 一个字节都没再来，坏的多半是下面那两层缓存（DNS 记了一个已经下线的 IP /
+    // 连接池里那条半死连接）。不先清掉，重建之后命中的还是同一份解析结果、同一条连接。
+    // 出帧类的失败（no_first_frame / frame_stall）不清：那时数据是通的，问题在解码器。
+    if(reason=="stall_buffer") dropDeadTransport()
+    if(screen=="recommend") recoverRecommendPicture(reason) else recoverFormalPicture(reason)
+}
+
+/**
+ * 正式播放页的画面恢复：**同样的故障、同样的修法**，只是这边不换剧。
+ *
+ * 两条看门狗捕的都是「没有异常的解码失败」（READY 了不出帧 / 播着播着不再出帧）。
+ * 推荐页会就地重建播放层，正片早先**只记一条、然后什么都不做**：`playError` 仍是 false，
+ * 控制条还写着「播放中」，看门狗停掉不再重试，用户对着一块黑屏——快进快退也没用，
+ * 拖动同样要解码器吐帧。
+ *
+ * 修法与用户自己试出来的完全一致（换一集 / 重进播放页画面就回来了）：那一步的差别不是
+ * 换了片源，而是整棵树重建——换掉 `PlayerView` / Surface、放掉 MediaCodec 再重建。
+ * 因此这里在原位做同一件事：不换集、不写历史、不动清晰度与解码方式，从当前位置续播。
+ *
+ * **只给一次**：重建一次仍然没画面，就落错误页（那里有重试 / 换清晰度 / 切软解 / 返回选集），
+ * 由用户决定。换解码方式与换清晰度都是他的知情选择，这里不做。
+ * 冷却窗口用于挡掉「起播看门狗与停帧看门狗同时命中」这一类重复触发。
+ */
+private const val FORMAL_PICTURE_RECOVERY_LIMIT=1
+private const val FORMAL_PICTURE_RECOVERY_COOLDOWN_MS=20_000L
+
+internal fun MainActivity.recoverFormalPicture(reason: String) {
+    // 只在正式播放页动手：推荐页有自己的换剧策略（[recoverRecommendPicture]）。
+    if(screen!="player" || !foreground || playError) return
+    val data=detail ?: return
+    if(episodeIndex !in data.episodes.indices) return
+    val p=player ?: return
+    val now=android.os.SystemClock.elapsedRealtime()
+    if(ledger.formalPictureRecoveries>=FORMAL_PICTURE_RECOVERY_LIMIT) {
+        // 已经重建过一次还是没画面：交给错误页，别再自己闪。
+        playerFailure(PlaybackDiagnosticException("playback_stall_frame","画面停止刷新，重建后仍未恢复"))
+        return
+    }
+    if(ledger.pictureCoolingDown(now,FORMAL_PICTURE_RECOVERY_COOLDOWN_MS)) return
+    ledger.notePictureRecovery(now)
+    // 位置直接问播放器：这一路没有 `playbackReady` 参与（它是 true 才会判停帧），
+    // 但 `currentPosition()` 还要看 `pendingSeek`，用播放器自身的读数更准。
+    val at=runCatching { p.currentPosition }.getOrDefault(0L).coerceAtLeast(0)
+    android.util.Log.w("HGTV","Formal picture lost ($reason) episode=${episodeIndex+1} at=${at}ms try=${ledger.formalPictureRecoveries}")
+    // 重建期间画面层会被整块换掉：这一句告诉用户「不是卡死，是在重来」，比一块黑屏强。
+    playbackText.text="画面停止刷新，正在重建播放…"
+    playEpisode(episodeIndex,at,p.playWhenReady,recovering=true)
 }

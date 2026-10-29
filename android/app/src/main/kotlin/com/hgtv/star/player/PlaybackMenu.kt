@@ -9,6 +9,7 @@ import android.widget.LinearLayout
 import com.hgtv.star.core.DanmakuStyle
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
+import com.hgtv.star.tv.SettingSlider
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.tvDp
@@ -18,8 +19,9 @@ import com.hgtv.star.tv.tvText
 /**
  * 播放器的底部设置面板（遥控器「上」打开）。
  *
- * 贴在播放画面下方约三分之一处：整宽、无卡片边框，只在底部压一层
- * 「透明 → 60% 黑 → 88% 黑」的渐变，让画面自然暗下去，而不是盖一块不透明的浮层。
+ * 贴在同一条屏幕底边上、与选集面板**同高**（[TvStyle.PLAYER_PANEL_HEIGHT]）：整宽、
+ * 只圆上缘两角，铺一层**主题材质**的半透明背板（[TvStyle.sheet]，与选集、相关剧集同一份）。
+ * 早先这里是一条「透明 → 60% 黑 → 88% 黑」的黑渐变，浅色主题下与按钮的凸 / 凹 / 亮三档对不上。
  *
  * 四个功能竖排，每个功能的选项在它右侧横向铺满整行：
  * 上下在功能之间移动（列号按上一行就近对齐），左右在选项之间移动，
@@ -35,8 +37,8 @@ internal class PlaybackMenu(private val activity: Activity) : LinearLayout(activ
     /**
      * 每一行的控件。
      *
-     * 大多数行是一排 [Chip]（离散选项），弹幕字号 / 透明度那两行是一个 [DanmakuSlider]
-     * （连续量，左右键滑动）。两者都是可聚焦的控件，四向串联只看这一份列表，
+     * 大多数行是一排 [Chip]（离散选项），弹幕字号 / 透明度 / 画面缩放那三行是一个
+     * [SettingSlider]（连续量，左右键滑动）。两者都是可聚焦的控件，四向串联只看这一份列表，
      * 因此滑动条行天然和选项行串在同一条上下路径上，不需要额外的特例。
      */
     private val rows = mutableListOf<MutableList<View>>()
@@ -45,10 +47,11 @@ internal class PlaybackMenu(private val activity: Activity) : LinearLayout(activ
         orientation = VERTICAL
         clipChildren = false
         clipToPadding = false
-        // 播放界面里的浮层保持原来的样子：透明 → 60% 黑 → 88% 黑的渐变底座，
-        // 压在画面上自然暗下去，而不是盖一块不透明的板子。
-        // 这份渐变与选集面板共用 TvStyle.overlayPanel()，两处的透明度永远一致。
-        background = TvStyle.overlayPanel()
+        // 浮层背板与选集面板、相关剧集共用 [TvStyle.sheet]：主题抬升面 + 只圆上缘两角。
+        // 播放界面过去铺的是黑渐变，浅色主题下那块冷黑与按钮的凸 / 凹 / 亮三档都对不上。
+        // 压在画面上，因此取更透的那一档（[TvStyle.SHEET_ALPHA_VIDEO]）与直角（`radius = 0`），
+        // 与选集面板一致：两块浮层整宽贴底，圆角会在上沿切出两个缺口。
+        background = TvStyle.sheet(activity, alpha = TvStyle.SHEET_ALPHA_VIDEO, radius = 0)
         setPadding(dp(78), dp(24), dp(78), dp(18))
     }
 
@@ -59,8 +62,9 @@ internal class PlaybackMenu(private val activity: Activity) : LinearLayout(activ
             clipToPadding = false
             setPadding(0, dp(4), 0, dp(4))
         }
-        // 项目名压在画面上，固定用播放界面的暖白，不跟主题（浅色主题下也要看得清）。
-        val label = activity.tvText(title, 18f, TvStyle.playerText, bold = true).apply {
+        // 项目名跟着主题走：浮层已经是主题材质，这里再用播放界面的暖白，
+        // 浅色主题下就会变成「白字压在浅灰面板上」。
+        val label = activity.tvText(title, 18f, TvStyle.textStrong, bold = true).apply {
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
@@ -84,9 +88,19 @@ internal class PlaybackMenu(private val activity: Activity) : LinearLayout(activ
     }
 
     /**
-     * 追加一行「滑动条」：左侧项目名与选项行同宽（标签对齐），右侧一条可滑的控件。
+     * 追加一行「滑动条」：**与 [addRow] 同一个骨架**——左边一条 110dp 的项名列，右边一枚
+     * [SettingSlider]，只画轨道与读数（`showName = false`）。
      *
-     * 值由 [DanmakuSlider] 自己归一后回调，面板只负责转发，因此这里不持有当前值——
+     * 早先这里是「整行一枚滑动条、项名画在底板里」：项名左边缘比上一行缩进一条柔光带，
+     * 轨道起点又按各自的项名实测宽度算——「弹幕大小」「弹幕透明度」「画面缩放」三个名字
+     * 长短不同，三条轨道于是从三个不同的位置起头，也都不在上一行的选项列上，整块面板看起来
+     * 是歪的（用户反馈）。现在项名与选项列都沿用 [addRow] 的那两个位置：
+     * 项名贴面板内容边距，底板与轨道从 110dp 起，与上面每一行的选项列对齐。
+     *
+     * 轨道两端仍然各自独立算（左端贴底板内边距、右端让开固定宽度的读数区，见 [SettingSlider]），
+     * 因此读数跨过一位数时轨道也不会伸缩。
+     *
+     * 值由控件自己归一后回调，面板只负责转发，因此这里不持有当前值——
      * 同一个值有两份副本就会出现「面板显示 90%、实际写盘 80%」这种对不上的情况。
      */
     fun addSlider(
@@ -99,17 +113,19 @@ internal class PlaybackMenu(private val activity: Activity) : LinearLayout(activ
             clipToPadding = false
             setPadding(0, dp(4), 0, dp(4))
         }
-        val label = activity.tvText(title, 18f, TvStyle.playerText, bold = true).apply {
+        // 项名列与 [addRow] 完全一致：同宽、同字号、同一条竖线。
+        val label = activity.tvText(title, 18f, TvStyle.textStrong, bold = true).apply {
             gravity = Gravity.CENTER_VERTICAL
             maxLines = 1
             ellipsize = TextUtils.TruncateAt.END
         }
         line.addView(label, LinearLayout.LayoutParams(dp(110), -2))
-        val slider = DanmakuSlider(activity, title, min, max, step, value, onValue, format)
-        line.addView(
-            slider,
-            LinearLayout.LayoutParams(0, dp(TvStyle.BUTTON_COMPACT + 2 * TvStyle.SOFT_BAND)).apply { weight = 1f }
+        // 档位与上面几行的紧凑档选项对齐（52dp 高）；不画内部项名，轨道因此从底板内边距起算。
+        val slider = SettingSlider(
+            activity, title, min, max, step, value, onValue, format,
+            size = ButtonSize.COMPACT, showName = false
         )
+        line.addView(slider, LinearLayout.LayoutParams(0, -2).apply { weight = 1f })
         rows.add(arrayListOf<View>(slider))
         addView(line)
         return this
@@ -147,7 +163,7 @@ internal class PlaybackMenu(private val activity: Activity) : LinearLayout(activ
      * 因此同步显示不会把「打开菜单」变成「改设置」。
      */
     fun sliderValue(row: Int, value: Float) {
-        (rows.getOrNull(row)?.firstOrNull() as? DanmakuSlider)?.value = value
+        (rows.getOrNull(row)?.firstOrNull() as? SettingSlider)?.value = value
     }
 
     /** 把焦点放到某个功能的第 [index] 个选项。 */

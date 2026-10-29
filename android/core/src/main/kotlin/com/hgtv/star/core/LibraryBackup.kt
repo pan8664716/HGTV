@@ -6,13 +6,40 @@ import org.json.JSONObject
 import java.net.URI
 
 /**
- * 首页本机记录三栏的 key（历史记录 / 我的收藏 / 稍后观看）。
+ * 首页七栏的 key：本机记录三栏（历史记录 / 我的收藏 / 稍后观看）+
+ * 热播四栏（热播漫剧 / 热播真人 / 热播AI / 热播上新，key 形如 `rank-comic`）。
  *
- * 与顶部导航那五枚入口不是一组：这三枚管的是**首页铺不铺那一栏**，
+ * 与顶部导航那几枚入口不是一组：这些管的是**首页铺不铺那一栏**，
  * 设置页各有一枚「是否显示」的开关（见 `Library.hiddenHome`）。
  * 放在 core 里是因为落盘解码（[LibraryDisk]）与备份恢复都要用它做白名单。
+ *
+ * 白名单**直接取** [HomeLayout.columns]：首页有哪些栏、谁能被关掉，只有一个来源。
+ * 手写一份 set 的话，以后加一栏就会落进「界面上有关闭开关、磁盘却把它当坏值丢掉」的坑。
  */
-val HOME_KEYS=setOf("history","favorites","later")
+val HOME_KEYS=HomeLayout.columns.map { it.key }.toSet()
+/**
+ * 列表页「回到顶部」浮层的四档显隐（落盘就是这四个字符串）。
+ *
+ * 放在 core：备份解码、磁盘解码与设置页都要认同一组合法值，坏值一律回到
+ * [BACK_TO_TOP_DEFAULT]，不让设置页出现一个选不中任何一项的状态。
+ */
+const val BACK_TO_TOP_ALWAYS="always"
+const val BACK_TO_TOP_ROWS5="rows5"
+const val BACK_TO_TOP_ROWS8="rows8"
+const val BACK_TO_TOP_NEVER="never"
+/** 出厂档：始终显示（与「浮层常驻」的行为一致）。 */
+const val BACK_TO_TOP_DEFAULT=BACK_TO_TOP_ALWAYS
+val BACK_TO_TOP_MODES=setOf(BACK_TO_TOP_ALWAYS,BACK_TO_TOP_ROWS5,BACK_TO_TOP_ROWS8,BACK_TO_TOP_NEVER)
+/**
+ * 播放设置 / 选集面板「无操作几秒自动消失」的取值范围：2..15 秒。
+ *
+ * 下限 2 秒：再短就成了「还没看清就没了」；上限 15 秒：再长等于不消失，那正是加这一项之前的状态。
+ * 默认 [PLAYER_PANEL_TIMEOUT_DEFAULT]（6 秒）取一个「读完一行、按一下方向键」都不至于被打断的值。
+ */
+val PLAYER_PANEL_TIMEOUT_RANGE=2..15
+
+/** 播放设置 / 选集面板自动消失的出厂秒数（见 [PLAYER_PANEL_TIMEOUT_RANGE]）。 */
+const val PLAYER_PANEL_TIMEOUT_DEFAULT=6
 data class BackupProgress(val series: Series,val episodeId: String,val episodeIndex: Int,val position: Long,val duration: Long,val completed: Boolean,val updatedAt: Long) {
     fun json()=JSONObject().put("series",LibraryBackup.seriesJson(series)).put("episodeId",episodeId).put("episodeIndex",episodeIndex).put("position",position).put("duration",duration).put("completed",completed).put("updatedAt",updatedAt)
 }
@@ -71,10 +98,11 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      */
     val launchRecommend: Boolean=true,
     /**
-     * 首页本机记录三栏（历史记录 / 我的收藏 / 稍后观看）里**被隐藏**的那些，逗号分隔。
+     * 首页七栏（本机三栏 + 热播四栏）里**被隐藏**的那些，逗号分隔（key 见 [HOME_KEYS]）。
      *
-     * 默认空串 = 三栏全显示（与旧版一致）；旧备份没有这个字段时读回空串。
-     * 关掉只影响首页铺不铺那一栏，记录本身一份不删。
+     * 默认空串 = 全都显示（与旧版一致）；旧备份没有这个字段时读回空串。
+     * 关掉只影响首页铺不铺那一栏，记录本身一份不删；热播栏关掉后首页不再铺那一条剧架，
+     * 榜单页与推荐页照旧（那是另一个入口）。
      */
     val hiddenHome: String="",
     /**
@@ -90,13 +118,16 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
     /**
      * 播放画面左上角的四项常显信息（剧集标题 / 当前集数 / 时间 / 网速）。
      *
-     * 四项各自独立开关，由设置页「界面设置 → 播放显示」里的四枚按钮控制；
-     * 默认显示前三项、网速关闭（网速是排障信息，默认不占画面）。
-     * 旧备份没有这几个字段时按默认值读回。
+     * 四项各自独立开关，由设置页「播放显示」里的四枚按钮控制。
+     *
+     * **默认四项全关**：干净的画面上什么字都不挂。用户点一下画面、或唤出任何一块
+     * 播放菜单时，四项**临时全部显示**（见 `syncPlaybackInfo`），收起之后回到这里的选择——
+     * 因此「默认不选」并不会让这四项变得不可见，只是不再常驻。
+     * 旧备份没有这几个字段时按默认值（全关）读回。
      */
-    val playerTitle: Boolean=true,
-    val playerEpisode: Boolean=true,
-    val playerClock: Boolean=true,
+    val playerTitle: Boolean=false,
+    val playerEpisode: Boolean=false,
+    val playerClock: Boolean=false,
     val playerSpeed: Boolean=false,
     /**
      * 画面缩放百分比（1..100，默认 100 = 铺满屏幕）。
@@ -105,16 +136,73 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      */
     val videoScale: Float=100f,
     /**
-     * 短剧自动全屏：竖屏片源按屏幕尺寸等比铺满（裁掉上下），横屏片源仍按「画面模式」。
+     * 竖屏短剧全屏：竖屏片源按屏幕尺寸等比铺满（裁掉上下），横屏片源仍按「画面模式」。
      *
      * 后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。
      */
-    val autoFullscreen: Boolean=false) {
+    val autoFullscreen: Boolean=false,
+    /**
+     * 选集一页放多少集（10 / 20 / 30 / 40 / 50，默认 20）。
+     *
+     * 简介页与播放界面的选集面板共用这一份：一页的集数决定分页行有哪几段
+     *（`1-20 / 21-40 …`），也决定网格铺几行（10 列 × N 行）。屏幕小、想少翻页就调小，
+     * 想一屏看全就调大。
+     *
+     * 后加字段：旧备份没有它，读回来按 20 处理（与之前的行为一致）。
+     */
+    val episodePageSize: Int=20,
+    /**
+     * 分页边缘翻页（默认开启）。
+     *
+     * 开启：选集网格的左右两端 / 最后一行按方向键就是**翻页**（跳到相邻那一页）。
+     * 关闭：边缘不再翻页，右端按右键选**下一集**、左端按左键选**上一集**（跨页时自动跟过去），
+     * 换页改由分页行（`1-20 / 21-40 …`）自己选。
+     *
+     * 后加字段：旧备份没有它，读回来按开启处理（与之前的行为一致）。
+     */
+    val episodeEdgeTurn: Boolean=true,
+    /**
+     * 列表页「回到顶部」浮层的显隐方式（见 [BACK_TO_TOP_MODES]）。
+     *
+     * 后加字段：旧备份 / 旧磁盘没有它，读回来按「始终显示」处理——正是加这一项之前的行为。
+     */
+    val backToTop: String=BACK_TO_TOP_DEFAULT,
+    /**
+     * 相同弹幕达到多少条才聚合成一条（[DANMAKU_MERGE_MIN_RANGE]，默认 2）。
+     *
+     * 只影响「聚合」这一件事：达到这个条数的同一句弹幕才合并成一条、带 `×N` 标记、
+     * 才有资格上屏幕中央；不到这个条数的照常逐条滚动，不带数量标记。
+     * 默认 2 = 加这一项之前的行为（同一句出现两次就合并）。
+     *
+     * 后加字段：旧备份 / 旧磁盘没有它，读回来按 2 处理。
+     */
+    val danmakuMergeMin: Int=2,
+    /**
+     * 播放设置 / 选集面板「无操作几秒自动消失」（[PLAYER_PANEL_TIMEOUT_RANGE]，默认 6 秒）。
+     *
+     * 计时从**最后一次操作**算起：面板开着的时候按方向键、按确定、动手指都算操作，重新开始数。
+     * 到点之后与按返回键完全一样——播放设置收起、选集面板收起并把焦点还回去。
+     *
+     * 后加字段：旧备份 / 旧磁盘没有它，读回来按 6 秒处理。
+     */
+    val playerPanelTimeout: Int=PLAYER_PANEL_TIMEOUT_DEFAULT,
+    /**
+     * 快进 / 快退单次跳过的秒数（2..20，默认 10）。
+     *
+     * 设置页「播放偏好 · 快进快退」那条滑块写的就是它，播放界面按左右键时的步长也从这里取
+     *（见 `MainActivity.seek`；连按加速按 3 倍比例走）。
+     *
+     * 后加字段：旧备份 / 旧磁盘没有它，读回来按 10 秒处理——正是加这一项之前的行为。
+     */
+    val seekStep: Int=10) {
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("danmaku",danmaku.storedValue)
         .put("danmakuScale",danmakuScale.toDouble()).put("danmakuAlpha",danmakuAlpha.toDouble()).put("danmakuSpeed",danmakuSpeed.storedValue)
         .put("keys",keys)
         .put("decoder",decoder.name)
         .put("danmakuMerge",danmakuMerge)
+        .put("danmakuMergeMin",danmakuMergeMin)
+        .put("playerPanelTimeout",playerPanelTimeout)
+        .put("seekStep",seekStep)
         .put("searchSource",searchSource.storedValue)
         .put("homeColumns",homeColumns)
         .put("playerTitle",playerTitle)
@@ -123,6 +211,9 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
         .put("playerSpeed",playerSpeed)
         .put("videoScale",videoScale.toDouble())
         .put("autoFullscreen",autoFullscreen)
+        .put("episodePageSize",episodePageSize)
+        .put("episodeEdgeTurn",episodeEdgeTurn)
+        .put("backToTop",backToTop)
         .put("hiddenNav",hiddenNav)
         .put("launchRecommend",launchRecommend)
         .put("hiddenHome",hiddenHome)
@@ -224,30 +315,47 @@ object LibraryBackup {
         val decoder=VideoDecoderMode.fromStored(settings.optString("decoder").takeIf { settings.has("decoder") })
         // 相同弹幕聚合也是后加字段：旧备份没有它，按开启处理。
         val danmakuMerge=settings.optBoolean("danmakuMerge",true)
+        // 聚合条数阈值：后加字段，旧备份没有它时按 2 处理（与之前的行为一致）；坏值夹进合法区间。
+        val danmakuMergeMin=settings.optInt("danmakuMergeMin",2).coerceIn(DANMAKU_MERGE_MIN_RANGE)
+        // 面板自动消失秒数：后加字段，旧备份没有它时按 6 秒处理；坏值夹进 2..15。
+        val playerPanelTimeout=settings.optInt("playerPanelTimeout",PLAYER_PANEL_TIMEOUT_DEFAULT)
+            .coerceIn(PLAYER_PANEL_TIMEOUT_RANGE)
+        // 快进 / 快退单次跳秒：后加字段，旧备份没有它时按 10 秒处理；坏值夹进 2..20。
+        val seekStep=settings.optInt("seekStep",10).coerceIn(2,20)
         // 搜索源同样是后加字段：旧备份没有它，按 App 处理。
         val searchSource=SearchSource.fromStored(settings.optString("searchSource").takeIf { settings.has("searchSource") })
         // 首页每行卡片数也是后加字段：只接受 4 / 5 / 6，旧备份与坏值都按 6 处理。
         val homeColumns=if(settings.has("homeColumns")) settings.number("homeColumns",6).toInt().coerceIn(4,8) else 6
         // 播放显示四项与画面缩放：后加字段，旧备份没有它们时按默认值处理
-        // （标题 / 集数 / 时间显示，网速关闭，画面 100%）。
-        val playerTitle=settings.optBoolean("playerTitle",true)
-        val playerEpisode=settings.optBoolean("playerEpisode",true)
-        val playerClock=settings.optBoolean("playerClock",true)
+        // （四项全关、画面 100%）。旧备份没有这几个键 = 新装的默认状态。
+        val playerTitle=settings.optBoolean("playerTitle",false)
+        val playerEpisode=settings.optBoolean("playerEpisode",false)
+        val playerClock=settings.optBoolean("playerClock",false)
         val playerSpeed=settings.optBoolean("playerSpeed",false)
         val videoScale=if(settings.has("videoScale")) settings.get("videoScale").let {
             require(it is Number) { "画面缩放无效" }; it.toFloat()
         }.coerceIn(1f,100f) else 100f
-        // 短剧自动全屏：后加字段，旧备份没有它时按关闭处理。
+        // 竖屏短剧全屏：后加字段，旧备份没有它时按关闭处理。
         val autoFullscreen=settings.optBoolean("autoFullscreen",false)
+        // 选集一页集数：后加字段，旧备份没有它时按 20 处理；只接受 10/20/30/40/50。
+        val episodePageSize=(settings.optInt("episodePageSize",20).takeIf { settings.has("episodePageSize") } ?: 20)
+            .let { if(it in 10..50) it / 10 * 10 else 20 }
+        // 分页边缘翻页：后加字段，旧备份没有它时按开启处理（与之前的行为一致）。
+        val episodeEdgeTurn=settings.optBoolean("episodeEdgeTurn",true)
+        // 「返回顶部」浮层的显隐方式：后加字段，旧备份没有它、或值不在四档里，
+        // 都按「始终显示」处理（正是加这一项之前的行为）。
+        val backToTop=settings.optString("backToTop",BACK_TO_TOP_DEFAULT).takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT
         // 导航栏圆形入口：逐个开关，值是被隐藏的那些 key；旧备份没有这个字段 = 全部显示。
         val hiddenNav=settings.optString("hiddenNav","").takeIf { it.length<=80 && it.none(Char::isISOControl) }.orEmpty()
         // 启动进入推荐：后加字段，旧备份没有它时按开启处理（与需求 1 的默认行为一致）。
         val launchRecommend=settings.optBoolean("launchRecommend",true)
         // 首页本机记录三栏：同样是后加字段，旧备份没有它 = 三栏全显示。
-        val hiddenHome=settings.optString("hiddenHome","").takeIf { it.length<=40 && it.none(Char::isISOControl) }.orEmpty()
+        // 七栏的 key 全写满约 61 个字符，上限给到 120：留出以后再加几栏的余量，
+        // 又不至于让一份手改过的备份把任意长文本塞进设置（写进去的仍是白名单过滤后的集合）。
+        val hiddenHome=settings.optString("hiddenHome","").takeIf { it.length<=120 && it.none(Char::isISOControl) }.orEmpty()
         // 「减少动画」：后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。
         val reduceAnim=settings.optBoolean("reduceAnim",false)
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen),later,hiddenIds)
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep),later,hiddenIds)
     }
     /** Existing favorites stay first; only newer imported progress replaces a local record. */
     fun merge(local: BackupData,incoming: BackupData,restoreSettings: Boolean): BackupData {

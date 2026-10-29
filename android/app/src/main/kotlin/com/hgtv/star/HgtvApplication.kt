@@ -27,7 +27,85 @@ class HgtvApplication: Application() {
 
     override fun onCreate() {
         super.onCreate()
+        // 调试包才记录每个请求的 DNS / TCP / TLS 分解（见 `NetTiming`）；
+        // 正式包里这个开关恒为 false，连监听器都不会装到 client 上。
+        com.hgtv.star.core.NetLog.timing=BuildConfig.DEBUG
+        startCaches()
+        startTlsWarmup()
+        startDnsWarmup()
+        startSignWarmup()
         initSession()
+    }
+
+    /**
+     * 两处落盘缓存（都只在后台用，主线程零成本）：
+     *
+     * * **DNS**：第二次启动直接命中，省掉 `vas-lf-x` 那 1.6 秒（见 `HgtvDns`）；
+     * * **播放索引 + 播放地址**：第二次播同一集省掉取地址（0.5~1.1s）与 moov 解析
+     *   （0.7~0.9s）（见 `PlaybackCache`）。
+     *
+     * 放在 `onCreate` 而不是第一次用到时：两者的读取都在后台线程里，这里只是把
+     * 「读盘」这条任务排进去，顺便让它在界面还在建视图时就跑完。
+     * 目录都在 `cacheDir` 下——系统存储紧张时可以整目录回收，不会伤到用户数据。
+     */
+    private fun startCaches() {
+        runCatching {
+            com.hgtv.star.core.HgtvDns.init(java.io.File(cacheDir,"dns-v1.txt"))
+            com.hgtv.star.core.PlaybackCache.init(java.io.File(cacheDir,"playback-v1"))
+            com.hgtv.star.core.RecommendCache.init(java.io.File(cacheDir,"feed-v1.json"))
+            com.hgtv.star.core.DetailCache.init(java.io.File(cacheDir,"detail-v1.json"))
+        }.onFailure { problem ->
+            Diagnostics.warn("HGTV-CACHE","缓存目录初始化失败",problem)
+        }
+    }
+
+    /**
+     * 把「第一次签名」挪到进程刚起来的那半秒里。
+     *
+     * 冷启动实测：推荐首屏那 3.1 秒中，`sign ... took=564ms`，而同一进程里第二次签名
+     * 只要 30~60ms——差的全是类加载 + 首轮 JIT（SM3 / MD5 / 那条 128 轮混淆循环），
+     * 与网络无关。这里在 Application 阶段就用一份假 body 签一遍，等推荐页真要发请求时
+     * 这 500ms 已经花完了（而且是在后台、与建界面并行）。
+     *
+     * 用的是**一次性**的仓库实例：它只做本地运算，不建 client、不发请求。
+     * 真正的 `preconnect` 仍然走界面上那个仓库（连接必须落在它自己的池子里才复用得上）。
+     */
+    private fun startSignWarmup() {
+        Thread({
+            runCatching { com.hgtv.star.core.ContentRepository().warmSignature() }
+        }, "hgtv-sign-warm").start()
+    }
+
+    /**
+     * 先把冷启动会碰到的域名解析出来（见 [com.hgtv.star.core.HgtvDns]）。
+     *
+     * 与 [startTlsWarmup] **并行**起两条线程：DNS 是几百毫秒级的活，而 TLS 预热要 2~3 秒，
+     * 串着跑会让「第一条请求」白等 TLS。两条都不碰主线程，也不发应用层请求。
+     */
+    private fun startDnsWarmup() {
+        Thread({
+            runCatching { com.hgtv.star.core.HgtvDns.warm(com.hgtv.star.core.HgtvDns.BOOT_HOSTS) }
+        }, "hgtv-dns-warm").start()
+    }
+
+    /**
+     * 把系统根证书表的第一次解析挪到后台线程。
+     *
+     * 这张表是 `/system/etc/security/cacerts` 下 150 张 PEM，第一次读要逐张
+     * `CertificateFactory.generateCertificate` + 算 `subjectX500Principal`（含 NFKC 归一化）。
+     * 实测这台 2G 盒子 **2.5~3.0 秒**（见 `HgtvTls.ACCEPTED_ISSUERS`）。原先第一个碰它的调用
+     * 是 `initSession()` 里建心跳 client，等于整段冷启动都压在这一次解析上：
+     * 2026-10-27 的线程栈里，main 连续五帧停在 `DerValue.toByteArray`，
+     * 而 Activity 根本还没开始建。
+     *
+     * 起一条线程先解，主线程随后无论从哪条路碰到它都只是拷一份数组。线程结束时通常
+     * 界面还在建视图，两条路完全并行。
+     */
+    private fun startTlsWarmup() {
+        Thread({
+            runCatching { com.hgtv.star.core.HgtvTls.warm() }
+                .onFailure { problem -> Diagnostics.warn("HGTV-TLS","TLS 预热失败",problem) }
+        }, "hgtv-tls-warm").start()
     }
 
     /**

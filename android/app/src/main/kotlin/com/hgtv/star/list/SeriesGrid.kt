@@ -19,7 +19,7 @@ import com.hgtv.star.GRID_WINDOW_MAX_ROWS
 import com.hgtv.star.GRID_WINDOW_MIN_ROWS
 import com.hgtv.star.LOAD_MORE
 import com.hgtv.star.MAX_CATALOG_PAGE
-import com.hgtv.star.PREFETCH_TRIGGER_PERCENT
+import com.hgtv.star.PREFETCH_TRIGGER_ROWS
 import com.hgtv.star.PREFETCH_ROWS
 import com.hgtv.star.PREFETCH_PAGES
 import com.hgtv.star.MainActivity
@@ -114,10 +114,16 @@ internal fun MainActivity.applyNextPage(next: Int,result: CatalogPage,userInitia
     val target=if(userInitiated) added.firstOrNull()?.id ?: LOAD_MORE else null
     if(userInitiated) catalogFocus=added.firstOrNull()?.id.orEmpty()
     appendGridItems(added,target)
-    // 只有用户已经站在底部附近才继续往后取：否则一次预取会连锁把整份目录都拉下来。
-    // 允许**连着再取一页**（[PREFETCH_PAGES]）：用户按住下键时这一页刚落地就又被走穿了，
-    // 只补一页等于永远慢一页。上限两页，保证「一次预取」不会滚成把整份目录拉下来。
-    if(hasMore && nearGridEnd()) { prefetchChain++; if(prefetchChain<PREFETCH_PAGES) prefetchNextPage() }
+    // 只有用户**真的还站在末尾附近**才继续往后取（判据见 [PREFETCH_TRIGGER_ROWS]）。
+    //
+    // 这一条以前是 runaway 的发动机：判据按「整份列表的 50%」算，而追加落地之后
+    // 用户的位置恰好就是新总量的中点——刚接完就满足条件，于是再取、再落地、再满足，
+    // 一路翻到页码上限。按「还剩几行」判之后，追加落地时前面还剩一整页（17 行），
+    // 这里自然返回 false，接完就停手。
+    if(hasMore && rowsLeftAfterConsumed()<=PREFETCH_TRIGGER_ROWS) {
+        prefetchChain++
+        if(prefetchChain<PREFETCH_PAGES) prefetchNextPage()
+    }
 }
 /**
  * 用户是不是已经站在列表底部附近：焦点在倒数两行之内，或者视口已经接近列表末尾。
@@ -125,20 +131,26 @@ internal fun MainActivity.applyNextPage(next: Int,result: CatalogPage,userInitia
  */
 internal fun MainActivity.nearGridEnd(): Boolean {
     if(gridItems.isEmpty()) return false
-    // 判据是**比例**：已加载的内容被消耗掉 [PREFETCH_TRIGGER_PERCENT]% 就取下一页。
+    // 判据是**还剩几行**（见 [PREFETCH_TRIGGER_ROWS]）：离已加载内容的末尾还有多远。
     //
-    // 按一页 60 部算，走到第 40 部就触发，剩下 20 部（约 3 行多）当缓冲——
-    // 够一个请求往返（实测 500~900ms），用户按住下键不会在最后一屏「撞上」还没回来的下一页。
-    //
-    // 早先这里写的是「还剩 2 行就取」，按 60 部折算要到第 48 部才触发，缓冲只有一屏的零头：
-    // 表现出来就是「焦点走到哪儿才开始加载那一片、大片灰框只有文字」。
-    // 也不能改成固定条数：翻了几页之后总量在长，固定 20 部到 600 部时就不够一个往返了。
-    val consumed=gridConsumedIndex()+1
-    // 分类页第一页只有 20 条：按 50% 算是第 10 条就预取，太早。
-    // 需求是「消费到第 12 条」再取下一页（下一页 100 条），这样第一屏还留着缓冲。
-    // 第 2 页起恢复按比例（50%）判断。
-    if(tab==TAB_CATEGORY && page<=1 && gridItems.size<=20) return consumed>=minOf(12,gridItems.size)
-    return consumed*100>=gridItems.size*PREFETCH_TRIGGER_PERCENT
+    // 这里**不能**按「整份列表的比例」算。那套判据在追加落地的瞬间恒为真
+    // （用户的新位置正好是新总量的中点），于是每接一页就再满足一次，
+    // 一进榜单页就会自己一路翻到底——线上反馈的「跑到 5000 多个」正是它。
+    return rowsLeftAfterConsumed()<=PREFETCH_TRIGGER_ROWS
+}
+
+/**
+ * 已加载内容里，**消费位置之后还剩几行**（用户还没看到的行数）。
+ *
+ * 消费位置取 [gridConsumedIndex]（焦点位置与视口底部里更靠后的那个）。
+ * 焦点还没进栅格（刚进页面、焦点在页头）时按「一屏都没消费」处理，
+ * 返回整份列表的行数——此时不该预取，因为用户还在挑榜单 / 挑分类。
+ */
+internal fun MainActivity.rowsLeftAfterConsumed(): Int {
+    val consumed=gridConsumedIndex()
+    if(consumed<0) return gridRowCount()
+    val left=(gridItems.size-(consumed+1)).coerceAtLeast(0)
+    return (left+gridColumns-1)/gridColumns
 }
 
 /**
@@ -636,15 +648,20 @@ internal fun MainActivity.wireGridCard(card: PosterCard) {
                 if(event.action==KeyEvent.ACTION_UP && item!=null) seriesMenu(item,card)
                 true
             }
-            // 右下角那枚「回到顶部」：**只有**从「当前屏幕最后一行的最后一张卡」按右键才过去。
+            // 右下角那枚「回到顶部」：从**本行最后一张卡**按右键过去。
             // 「最后一张」按条目算（不是按列位置）：最后一行不满时它就停在列中间，右键仍然进浮层。
+            //
+            // 判据只看「本行还有没有卡在右边」，不再要求「这一行必须是屏幕最底下那一行」：
+            // 那种几何判据在实机上不可靠——列表底部还有留白 / 底行下面露着一条细边，
+            // 用户焦点停在看得见的最后一张卡上按右键却毫无反应（连续两次反馈都是这一条）。
+            // 而本行最后一张卡按右键本来**什么都不做**（nextFocusRightId 指回自己），
+            // 因此把这一下交给浮层不抢任何已有手势。
             key==KeyEvent.KEYCODE_DPAD_RIGHT && event.action==KeyEvent.ACTION_DOWN -> {
                 val holder=gridRows.firstOrNull { it.line===card.parent } ?: return@setOnKeyListener false
                 val column=holder.cards.indexOf(card)
                 val lastInRow=minOf(gridItems.size-1,(holder.index+1)*gridColumns-1)
-                val top=backToTopView?.takeIf { it.visibility==View.VISIBLE }
-                if(top!=null && holder.index==gridBottomVisibleRow() &&
-                    holder.index*gridColumns+column==lastInRow) { top.requestFocus(); true } else false
+                val top=backToTopTarget()
+                if(top!=null && holder.index*gridColumns+column==lastInRow) { top.requestFocus(); true } else false
             }
             // 焦点在窗口的上下边界上、而目标行还没物化时，先把它物化再按索引落过去。
             // 已经物化的情况交给 nextFocusUpId / nextFocusDownId（框架自己走，不经过这里）。
@@ -688,7 +705,7 @@ internal fun MainActivity.wireGridCard(card: PosterCard) {
                 // resumeVisibleCovers 会按「真的可见」重新挂上，并带上 FOCUSED 优先级）。
                 if(!card.coverSuspended) loadCover(card.image,item.cover)
                 // 焦点走到倒数两行就把下一页取回来，用户真按下去时内容已经在手上。
-                // 焦点一移动就按「已消耗 2/3」判一次（见 [nearGridEnd]）：
+                // 焦点一移动就按「还剩几行」判一次（见 [nearGridEnd]）：
                 // 按住下键时这就是唯一会持续触发的时机。
                 if(holder!=null) prefetchNextPage()
             }
@@ -749,22 +766,6 @@ internal fun MainActivity.ensureFocusView(target: () -> View?): View? {
 internal fun MainActivity.ensureFocus(action: () -> Unit) {
     if(focusHeld()) return
     action()
-}
-
-/**
- * 当前屏幕最下面那一行（栅格行号，从 0 起）。
- *
- * 「回到顶部」的右键入口按它判：只有焦点在**这一行**的最后一张卡上才把右键交给浮层。
- * 用「视口最后一个像素落在哪一行」算，与窗口化的行号口径一致（行号 × [rowStride] 就是坐标）。
- */
-internal fun MainActivity.gridBottomVisibleRow(): Int {
-    val scroll=gridScroll ?: return -1
-    if(scroll.height<=0) return -1
-    val stride=rowStride()
-    if(stride<=0) return -1
-    // 视口高度含内边距（focusBleed）：内容坐标里的可见底边 = scrollY + 视口高 − 上内边距。
-    val row=(scroll.scrollY+scroll.height-scroll.paddingTop-1)/stride
-    return row.coerceIn(0,(gridRowCount()-1).coerceAtLeast(0))
 }
 
 /** 当前有没有控件**真的**握着焦点（被摘掉的控件不算）。 */

@@ -31,10 +31,9 @@ internal fun MainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusT
         { item,resume -> openSeries(item,resume) },{ item,anchor,shelf -> seriesMenu(item,anchor,shelf) },{ catalogFocus=it },
         columns=library.homeColumns)
     homeScreen=home; body.addView(home,lp(-1,0).apply { weight=1f })
-    // 右下角那枚「回到顶部」：首页只从「当前屏幕最后一栏的最后一张卡」按右键过去
-    // （见 HomeScreen.backToTopFromRight）。首页剧架是**一次全量铺出来**的，
-    // 焦点链在 render 里就定死了，因此这里要提前把它交进去。
-    home.rightTarget=backToTopView
+    // 首页**不挂**「回到顶部」：它是剧架（横滑 + 纵向滚动），回到顶部没有意义，
+    // 而按钮压在最后一栏右下角反而挡住卡片。那枚按钮只属于栅格列表页
+    // （榜单 / 分类 / 集合 / 搜索 / 我的，见 [com.hgtv.star.list.updateBackToTop]）。
     // 首页剧架的滚动也走同一套页头收展：向下浏览时把品牌 / 顶部入口收起来。
     //
     // 这里必须和栅格路径（见 [seriesList] 里那段）一样开静默期、并在渲染收尾时
@@ -163,8 +162,9 @@ internal fun MainActivity.homeShelves(): List<HomeScreen.Shelf> {
         "favorites" to localShelf("favorites",favoriteRows(favorites)),
         "later" to localShelf("later",later.take(10).map { HomeScreen.Entry(it,"稍后观看 · 长按管理") })
     ) + RankBoard.entries.associate { board -> "rank-${board.storedValue}" to rankShelf(board) }
-    // 设置 → 界面设置 → 首页栏目：被关掉的那一栏**不渲染**（连行末「查看全部」底板一起没有），
-    // 记录本身不动；榜单那几栏不在 HOME_KEYS 里，永远照常显示。
+    // 设置 → 外观导航 → 导航显隐：被关掉的那一栏**不渲染**（连行末「查看全部」底板一起没有）。
+    // 本机三栏关掉不动记录本身；热播四栏关掉只是首页不铺那条剧架，榜单页 / 推荐页照旧
+    //（那是另一个入口，不由这一枚开关决定）。
     return HomeLayout.columns.filterNot { library.homeHidden(it.key) }.mapNotNull { column -> shelves[column.key] }
 }
 /**

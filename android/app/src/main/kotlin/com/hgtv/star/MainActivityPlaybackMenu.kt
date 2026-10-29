@@ -34,13 +34,14 @@ internal fun MainActivity.showPlaybackMenu(focusRow: Int=0,focusChoice: Int=-1) 
     playbackMenu=menu
     panel=true
     // 设置菜单打开时收起底部控制条：参考界面里菜单就是这一层唯一的浮层。
-    main.removeCallbacks(hideHud)
+    cancelOverlayAutoHide()
     hud.visibility=View.GONE
     // 推荐页那块剧名 / 集数浮层也让位：菜单贴底占了下三分之一，两块叠在一起会互相压字。
     recommendOverlay?.visibility=View.GONE
     // 菜单占着下半屏，顶部那条信息（剧名 / 集数）这时留在上面才读得出「在放哪一集」。
     syncPlaybackInfo()
-    // 整宽贴在画面下方，**高度锁死在屏幕高度的三分之一**，超出的行靠上下键滚出来。
+    // 整宽贴在画面下方，**高度取 [TvStyle.PLAYER_PANEL_HEIGHT]**（与选集面板同高），
+    // 超出的行靠上下键滚出来。
     // 面板本身就是滚动内容，渐变背板画在外壳上：否则背板会跟着内容一起被拉长，
     // 滚到下半段时面板顶部会变成半黑，而不是「从透明渐渐暗下去」。
     // 这里**不补 FOCUS_BLEED_VERTICAL**，只按豁免标注（见 docs/UI_REDESIGN.md 第 3 条）：
@@ -59,18 +60,25 @@ internal fun MainActivity.showPlaybackMenu(focusRow: Int=0,focusChoice: Int=-1) 
         // 上下各留一点余量：焦点放大 1.05 的那圈底色画在行的边界之外，留白不够会被裁掉。
         setPadding(0,dp(TvStyle.SOFT_BAND),0,dp(TvStyle.SOFT_BAND))
         addView(menu,FrameLayout.LayoutParams(-1,-2))
-    }).apply { background=TvStyle.overlayPanel() }
+    // 直角（`radius=0`）：这块浮层整宽贴底、压在视频上，圆角只会把上沿切出两个缺口，
+    // 露出后面一截画面。与选集面板同一套几何。
+    }).apply { background=TvStyle.sheet(this@showPlaybackMenu, alpha=TvStyle.SHEET_ALPHA_VIDEO, radius=0) }
     // 面板自己不再画背板（背板已经在外壳上），否则两层渐变叠起来会比选集面板深一档。
     menu.background=null
     playbackMenuShell=shell
-    // 面板高度按**设计画布**的三分之一算（720/3 = 240 设计单位）。
+    // 面板高度取 [TvStyle.PLAYER_PANEL_HEIGHT]：要与选集面板**同高**，而选集那边还要放下
+    // 「标题 + 集数 + 分页行 + 两行单元格」，因此统一取 300 设计单位（720 画布的三分之一是 240，
+    // 那个高度装不下选集，两块浮层就会一高一矮）。
     // 原来写的是 `heightPixels/3`：那是物理像素，不跟设计缩放走，
     // 小屏上内容缩了、底板没缩，菜单行就被裁在面板外（540dpi 上只剩两行可见）。
-    // 面板也挂进「画面之外那一层」：短剧自动全屏把画面转 90° 时，设置面板跟着转，
+    // 面板也挂进「画面之外那一层」：竖屏短剧全屏把画面转 90° 时，设置面板跟着转，
     // 否则面板还是横的、贴着屏幕底边，与转过来的画面对不上一个方向。
     // 电视上不旋转，挂在哪里都一样。
-    (overlayLayer ?: root).addView(shell,FrameLayout.LayoutParams(-1,dp(240),Gravity.BOTTOM))
+    (overlayLayer ?: root).addView(shell,FrameLayout.LayoutParams(-1,dp(TvStyle.PLAYER_PANEL_HEIGHT),Gravity.BOTTOM))
     if(focusChoice<0) menu.focusSelected(focusRow) else menu.focus(focusRow,focusChoice)
+    // 无操作自动消失从这里开始数（秒数见设置页「播放显示 → 播放界面自动消失」）。
+    // 面板里的每一次按键 / 触摸都会重新排一遍（见 `dispatchKeyEvent` 与 `PlaybackMenu` 的触摸外壳）。
+    scheduleOverlayAutoHide()
 }
 
 /**
@@ -91,9 +99,11 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
     val menu=PlaybackMenu(this)
     menu
         .addRow("清晰度",PlaybackQuality.options.mapIndexed { index,value ->
-            PlaybackMenu.Choice("${value}P",value==library.maxQuality) {
-                val changed=library.maxQuality!=value
+            PlaybackMenu.Choice("${value}P",value==playbackMaxQuality) {
+                val changed=library.maxQuality!=value || sessionPlayback.effectiveMaxQuality!=null
                 library.maxQuality=value
+                // 用户自己选了档位：撤销自动降档与全部预算（见 `SessionPlaybackPolicy`）。
+                sessionPlayback.onManualQualityChange()
                 // 换清晰度要重新解析播放地址，播放器复用后菜单需要按新状态重建。
                 if(changed) { playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay); showPlaybackMenu(MENU_ROW_QUALITY,index) }
                 else { menu.select(MENU_ROW_QUALITY,index); updatePlaybackText() }
@@ -115,8 +125,13 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
         // 解码方式：硬件（省电、4K 稳）/ 软件（兼容性好，花屏、绿屏、音画不同步时用）。
         // 选中会重建播放器并从当前位置续播，画面闪一下属正常。
         .addRow("解码",VideoDecoderMode.entries.mapIndexed { index,mode ->
-            PlaybackMenu.Choice(mode.label,mode==library.decoderMode) {
-                if(library.decoderMode!=mode) { library.decoderMode=mode; applyDecoderMode() }
+            PlaybackMenu.Choice(mode.label,mode==playbackDecoderMode) {
+                if(playbackDecoderMode!=mode) {
+                    library.decoderMode=mode
+                    // 撤销自动切换，并把本集「切软解」的预算还回去（用户是知情选择，见策略）。
+                    sessionPlayback.onManualDecoderChange()
+                    applyDecoderMode()
+                }
                 else { menu.select(MENU_ROW_DECODER,index); updatePlaybackText() }
             }
         })
@@ -153,7 +168,7 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
         }
     // 画面缩放：跟在「弹幕透明度」之后、「定时」之前。只缩播放画面本身，
     // 弹幕层不动（弹幕仍然按整屏坐标滚动）。
-    // 与弹幕大小 / 透明度是同一种控件（[DanmakuSlider]），1..100 直接就是百分比。
+    // 与弹幕大小 / 透明度是同一种控件（[com.hgtv.star.tv.SettingSlider]），1..100 直接就是百分比。
     menu.addSlider("画面缩放",1f,100f,1f,library.videoScale,format={ "${it.toInt()}%" }) { value ->
         library.videoScale=value
         applyVideoScale()
@@ -193,10 +208,10 @@ private fun menuShape(showsStyle: Boolean)="s${if(showsStyle) 1 else 0}"
 
 /** 把缓存面板的选中态与两条滑块同步到当前偏好：纯配色 / 数值修改，不建视图、不建位图。 */
 private fun MainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boolean) {
-    menu.sync(MENU_ROW_QUALITY,PlaybackQuality.options.indexOf(library.maxQuality))
+    menu.sync(MENU_ROW_QUALITY,PlaybackQuality.options.indexOf(playbackMaxQuality))
     menu.sync(MENU_ROW_SPEED,PlaybackSpeed.options.indexOf(library.playbackSpeed))
     menu.sync(MENU_ROW_FRAME,VideoFrameMode.entries.indexOf(library.frameMode))
-    menu.sync(MENU_ROW_DECODER,VideoDecoderMode.entries.indexOf(library.decoderMode))
+    menu.sync(MENU_ROW_DECODER,VideoDecoderMode.entries.indexOf(playbackDecoderMode))
     menu.sync(MENU_ROW_DANMAKU,DanmakuMode.entries.indexOf(library.danmakuMode))
     if(showsStyle) {
         menu.sync(MENU_ROW_DANMAKU_SPEED,DanmakuSpeed.entries.indexOf(library.danmakuSpeed))
@@ -277,6 +292,8 @@ internal fun MainActivity.showQualityPicker(anchor: TextView,inPlayer: Boolean) 
     val picker=TvDialog(this,"全局默认清晰度").choices(options.map { "${it}P" },options.indexOf(library.maxQuality)) { index ->
         val target=options[index]; val changed=library.maxQuality!=target
         library.maxQuality=target
+        // 用户手动改全局默认：会话里的自动降档与预算一起作废（见 `SessionPlaybackPolicy`）。
+        sessionPlayback.onManualQualityChange()
         if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "清晰度 " else "默认清晰度  ·  ")+"${target}P"
         if(inPlayer && changed) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
     }
@@ -303,13 +320,15 @@ internal fun MainActivity.showEpisodePanel(anchor: View) {
         { selected ->
             if(selected==episodeIndex) episodePanel?.dismiss()
             else { episodePanel?.dismiss(); playEpisode(selected) }
-        })
+        },pageSize=library.episodePageSize,edgeTurn=library.episodeEdgeTurn)
     grid.fillHeight=true
-    // 短剧自动全屏把画面转 90° 时，选集面板（独立窗口）要按同一个角度摆；
+    // 竖屏短剧全屏把画面转 90° 时，选集面板（独立窗口）要按同一个角度摆；
     // 不转的时候传 0f，走的还是原来那条「贴底整宽」的路，电视上一个像素都不变。
     val spin=if(autoFullscreenRotated()) fullscreenSpinDirection() else 0f
     val next=EpisodePanel(this,grid,spin) {
         episodePanel=null
+        // 面板收起了（选择完成 / 返回键 / 无操作自动消失）：计时器一并停掉。
+        cancelOverlayAutoHide()
         // 收面板之后把控制条按打开前的样子还回去：推荐页（触屏）现在用的是同一条控制条，
         // 因此这里从「只认 player」放宽到「在播放页」（见 [onPlaybackPage]）。
         if(foreground && generation==ticket && onPlaybackPage()) {
@@ -318,6 +337,12 @@ internal fun MainActivity.showEpisodePanel(anchor: View) {
         }
     }
     episodePanel=next; next.show()
+    // 面板开着也算「浮层唤出」：顶部四项临时全显（见 [syncPlaybackInfo]）。
+    syncPlaybackInfo()
+    // 面板是独立窗口，按键 / 触摸不经过 Activity，因此把「有人在操作」的回调直接挂给它
+    // （见 [EpisodePanel] 的 `onActivity`）。无操作到点之后与按返回键一样：面板收起、焦点还回去。
+    next.onActivity={ scheduleOverlayAutoHide() }
+    scheduleOverlayAutoHide()
 }
 internal fun MainActivity.formatTime(millis: Long): String { val seconds=(millis.coerceAtLeast(0)/1000); return "%02d:%02d".format(seconds/60,seconds%60) }
 /** 播放器时间轴：爆米花固定 hh:mm:ss，短剧也只有几分钟也不会跳字宽。 */
@@ -352,8 +377,14 @@ internal fun MainActivity.saveProgress(completed: Boolean=false) {
  *
  * 真正要销毁实例的只有两处：Activity 销毁（[releasePlayer]）与切换解码方式
  * （`applyDecoderMode`，因为渲染器是构造期定的）。
+ *
+ * @param keepSession 只是**退到后台**（息屏 / 切到别的应用）时为 true：画面与传输照旧收掉，
+ * 但本次播放会话的降级结论（有效清晰度上限 / 预算）保留——`onResume` 会按同一集、
+ * 同一位置接着播，拿刚被证明放不了的上限再撞一次只会多一次黑屏 + 一条重复提示
+ * （见 [com.hgtv.star.core.SessionPlaybackPolicy.onLeavePlaybackToBackground]）。
+ * 真正离开播放页时保持默认 false。
  */
-internal fun MainActivity.detachPlayerSurface() {
+internal fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     // 作废所有认会话号的在途回调（监听器、延迟清理、取地址）。
     playbackSession++
     disarmPlaybackWatchdog(); disarmFrameStallWatchdog()
@@ -377,7 +408,7 @@ internal fun MainActivity.detachPlayerSurface() {
     // 推荐页的信息浮层与切换过渡黑场也属于播放页这一层：离开时一起摘掉，否则会浮在新页面上。
     dismissRecommendOverlay()
     dismissRecommendCover()
-    main.removeCallbacks(hideHud); main.removeCallbacks(seekRunnable); pendingSeek=null
+    cancelOverlayAutoHide(); main.removeCallbacks(seekRunnable); pendingSeek=null
     restoreBufferingUi()
     playedItemPending=false; playedItemId=""
     playerListener?.let { player?.removeListener(it) }; playerListener=null
@@ -397,6 +428,18 @@ internal fun MainActivity.detachPlayerSurface() {
     orphanResources.forEach { (v,h) -> v?.let { runCatching { it.close() } }; closeTransport(h) }
     orphanResources.clear()
     video?.close(); video=null; playerView?.player=null; playerView=null; playbackReady=false
+    // 离开播放页：本次会话的降级状态（有效上限 / 预算）全部作废。
+    // 不清的话，下一部剧会继承上一部降下来的上限——而那是「上一台机器这一刻放不了」的结论，
+    // 与这部剧毫无关系。提示去重表同样清掉：新的一部剧该有自己的第一次提示。
+    //
+    // 退到后台（`keepSession`）是例外：那不是离开这一集，回来的还是同一集同一位置，
+    // 结论当然还成立。见 [com.hgtv.star.core.SessionPlaybackPolicy.onLeavePlaybackToBackground]。
+    if(keepSession) sessionPlayback.onLeavePlaybackToBackground() else {
+        sessionPlayback.onUserManualChange()
+        playbackToasts.clear()
+        // 会话已经清空，记着「这是哪一部剧的结论」也没有意义了（下次进播放页重新判定）。
+        sessionSeriesId=""
+    }
     // 在途的弹幕请求作废，弹幕层连同它的轨道一起丢掉。
     danmakuToken.incrementAndGet(); danmakuFor=""; danmakuLoaded=false; danmakuCount=-1; danmakuView=null
     // 顶部那条信息也随播放页一起收掉（root 会被清掉，这里只是让引用不再指向活动视图）。
@@ -414,6 +457,15 @@ internal fun MainActivity.detachPlayerSurface() {
 internal fun MainActivity.releasePlayer() {
     disarmPlaybackWatchdog()
     detachPlayerSurface()
-    runCatching { player?.release() }
-    player=null
+    // 与 [warmPlayer] 的 io 线程抢同一把锁：预热可能正在 `newPlayer()` 途中，
+    // 不加锁就会出现「刚 release 完又被预热装回来一个」的孤儿播放器（它已经挂不上 Surface，
+    // 却还占着解码器与音频输出）。
+    synchronized(playerBuildLock) {
+        runCatching { player?.release() }
+        player=null
+        // 下一个实例要重新配置一次（见 [MainActivity.configuredPlayer]）。
+        configuredPlayer=null
+        // 置位之后再进 [warmPlayer] 的线程会直接放弃：见 [playerDisposed]。
+        playerDisposed=true
+    }
 }

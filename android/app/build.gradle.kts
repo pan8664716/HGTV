@@ -17,8 +17,8 @@ android {
         // 代价：Google Play 要求 34+，本应用是自签分发、不进 Play，不受影响。
         targetSdk = 29
         multiDexEnabled = true
-        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 62
-        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.2.5"
+        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 65
+        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.2.8"
     }
     buildFeatures { buildConfig = true }
     signingConfigs {
@@ -68,6 +68,14 @@ dependencies {
     implementation(project(":core")) { exclude(group = "org.json") }
     implementation("com.google.android.exoplayer:exoplayer-core:2.19.1")
     implementation("com.google.android.exoplayer:exoplayer-ui:2.19.1")
+    // ART 基线 profile 的落盘者（见 `src/main/baseline-prof.txt`）。
+    //
+    // 作用链：AGP 把 `baseline-prof.txt` 编成 APK 里的 `assets/dexopt/baseline.prof`，
+    // 这个库在**首次启动后**把它写进本应用的 `cur` profile 目录；系统随后的
+    // `bg-dexopt`（这台盒子上 `pm.dexopt.bg-dexopt=speed-profile`）就会按它做 AOT，
+    // 之后每次冷启动都是编译过的代码——否则 `speed-profile` 遇到空 profile 什么都不编，
+    // 应用永远跑在解释执行 + JIT 上（实测 `Displayed +3s380` vs 编译过 `+837ms`）。
+    implementation("androidx.profileinstaller:profileinstaller:1.3.1")
     // 友盟（U-App 统计 + U-APM）**已整体移除**：依赖、efs 插桩插件、初始化与全部调用点都已删除。
     // 包内不再有任何第三方采集 SDK，也没有随之带进来的原生库。
 }

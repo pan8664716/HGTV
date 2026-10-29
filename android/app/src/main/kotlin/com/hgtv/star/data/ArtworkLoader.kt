@@ -318,16 +318,30 @@ class ArtworkLoader(context: Context) {
      * 连接池给到 [MAX_IDLE_CONNECTIONS] 并保活 5 分钟：封面全部来自同两三个 CDN 域名，
      * 连接复用率极高，避免每个请求都重新握手（那正是那 80ms 的主要来源之一）。
      */
-    private val http = com.hgtv.star.core.HgtvTls.configure(OkHttpClient.Builder())
-        .connectTimeout(5, TimeUnit.SECONDS)
-        .readTimeout(8, TimeUnit.SECONDS).callTimeout(12, TimeUnit.SECONDS)
-        .dispatcher(okhttp3.Dispatcher().apply {
-            maxRequests = MAX_REQUESTS
-            maxRequestsPerHost = MAX_REQUESTS
-        })
-        .connectionPool(okhttp3.ConnectionPool(MAX_IDLE_CONNECTIONS, 5, TimeUnit.MINUTES))
-        .eventListener(events)
-        .build()
+    /**
+     * 封面 client：**用到时才建**。
+     *
+     * `ArtworkLoader` 是在 `MainActivity.onCreate` 里建的，构造期就建 client 的话，
+     * 主线程要先付一次「解析系统根证书表」（首次 2~3 秒，见 `HgtvTls.ACCEPTED_ISSUERS`）。
+     * 改成懒建之后，第一个碰它的是第一条封面任务——那是 `hgtv-artwork` 线程。
+     *
+     * [close] / [abandonForReset] 里对连接池的清理也必须先问一句「到底建过没有」：
+     * 没建过就去问，等于在销毁路径上把这张表现解一遍（那一处虽然也在后台线程，
+     * 但没有任何理由白做）。
+     */
+    private val httpRef = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        com.hgtv.star.core.HgtvTls.configure(OkHttpClient.Builder())
+            .connectTimeout(5, TimeUnit.SECONDS)
+            .readTimeout(8, TimeUnit.SECONDS).callTimeout(12, TimeUnit.SECONDS)
+            .dispatcher(okhttp3.Dispatcher().apply {
+                maxRequests = MAX_REQUESTS
+                maxRequestsPerHost = MAX_REQUESTS
+            })
+            .connectionPool(okhttp3.ConnectionPool(MAX_IDLE_CONNECTIONS, 5, TimeUnit.MINUTES))
+            .eventListener(events)
+            .build()
+    }
+    private val http: OkHttpClient get() = httpRef.value
 
     /**
      * 线程数的**临时覆盖**（只认 debug 包）：`filesDir/workers` 里写一个数字即可。
@@ -789,9 +803,12 @@ class ArtworkLoader(context: Context) {
         }
         Thread({
             runCatching {
-                http.dispatcher().cancelAll()
-                http.connectionPool().evictAll()
-                http.dispatcher().executorService().shutdown()
+                // 从没建过 client（这一屏一张图都没取）：没有连接池要收，直接返回。
+                if (httpRef.isInitialized()) {
+                    http.dispatcher().cancelAll()
+                    http.connectionPool().evictAll()
+                    http.dispatcher().executorService().shutdown()
+                }
             }
         }, "hgtv-artwork-reset").start()
         return runCatching { workers.awaitTermination(timeoutMs, TimeUnit.MILLISECONDS) }.getOrDefault(false)
@@ -805,9 +822,11 @@ class ArtworkLoader(context: Context) {
         workers.shutdownNow()
         // TLS socket pool disposal can block and must not happen on the UI thread.
         Thread({
-            http.dispatcher().cancelAll()
-            http.connectionPool().evictAll()
-            http.dispatcher().executorService().shutdown()
+            if (httpRef.isInitialized()) {
+                http.dispatcher().cancelAll()
+                http.connectionPool().evictAll()
+                http.dispatcher().executorService().shutdown()
+            }
         }, "hgtv-artwork-cleanup").start()
     }
 

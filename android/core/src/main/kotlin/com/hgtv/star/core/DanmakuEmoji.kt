@@ -475,10 +475,11 @@ object DanmakuEmoji {
      *
      * 弹幕是**边拉边画**的：每拿到一个 30 秒窗口就整批重排一次轨道，同一批文本要切几十遍。
      * 缓存只按条数封顶（不按字节），一条弹幕的片段总和就是它自己的长度，512 条撑死几十 KB。
+     *
+     * 淘汰走 [lruPut]，**不用匿名子类重写 `removeEldestEntry`**：那种写法会生成一条
+     * `invoke-super LinkedHashMap.getOrDefault`（API 24）的桥方法，4.4 上是颗雷（见 [lruPut]）。
      */
-    private val cache = object : LinkedHashMap<String, List<DanmakuPart>>(64,0.75f,true) {
-        override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, List<DanmakuPart>>) = size > CACHE_LINES
-    }
+    private val cache = LinkedHashMap<String, List<DanmakuPart>>(64,0.75f,true)
 
     /**
      * 把一条弹幕拆成「文字片段 / 表情片段」。
@@ -489,7 +490,7 @@ object DanmakuEmoji {
      * 图片还没解码好时按字形画字，屏幕上不会出现空档。
      */
     fun parts(text: String): List<DanmakuPart> = synchronized(cache) {
-        cache[text] ?: split(text).also { cache[text] = it }
+        cache[text] ?: split(text).also { cache.lruPut(CACHE_LINES,text,it) }
     }
 
     /** 真正做切分的地方；[parts] 负责缓存。返回的列表不可变，调用方可以直接拿着用。 */

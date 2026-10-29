@@ -185,15 +185,30 @@ object LibraryDisk {
             (values["hiddenHome"] as? Set<*>)?.filterIsInstance<String>()?.filter { it in HOME_KEYS }?.joinToString(",") ?: "",
             // 「减少动画」：旧版本磁盘没有这个键，按关闭处理（与之前的行为一致）。
             values["reduceAnim"] as? Boolean ?: false,
-            // 播放显示四项：旧版本磁盘没有这些键，按默认值处理（标题 / 集数 / 时间显示，网速关闭）。
-            values["playerTitle"] as? Boolean ?: true,
-            values["playerEpisode"] as? Boolean ?: true,
-            values["playerClock"] as? Boolean ?: true,
+            // 播放显示四项：旧版本磁盘没有这些键，按默认值处理（**四项全关**：
+            // 常驻画面只在唤出菜单 / 轻点时才显示，见 `syncPlaybackInfo`）。
+            values["playerTitle"] as? Boolean ?: false,
+            values["playerEpisode"] as? Boolean ?: false,
+            values["playerClock"] as? Boolean ?: false,
             values["playerSpeed"] as? Boolean ?: false,
             // 画面缩放：旧版本磁盘没有这个键，按 100%（铺满）处理。
             ((values["videoScale"] as? Number)?.toFloat() ?: 100f).coerceIn(1f,100f),
-            // 短剧自动全屏：旧版本磁盘没有这个键，按关闭处理（与之前的行为一致）。
-            values["autoFullscreen"] as? Boolean ?: false)
+            // 竖屏短剧全屏：旧版本磁盘没有这个键，按关闭处理（与之前的行为一致）。
+            values["autoFullscreen"] as? Boolean ?: false,
+            // 选集一页集数：旧版本磁盘没有这个键，按 20 处理（与之前的行为一致）；
+            // 只认 10 / 20 / 30 / 40 / 50，坏值一律回到 20。
+            (values["episodePageSize"] as? Number)?.toInt()?.takeIf { it in 10..50 }?.let { it / 10 * 10 } ?: 20,
+            // 分页边缘翻页：旧版本磁盘没有这个键，按开启处理（与之前的行为一致）。
+            values["episodeEdgeTurn"] as? Boolean ?: true,
+            // 「返回顶部」浮层显隐：旧版本磁盘没有这个键、或值不在四档里，按「始终显示」处理。
+            (values["backToTop"] as? String)?.takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT,
+            // 聚合条数阈值：旧版本磁盘没有这个键，按 2 处理（与之前的行为一致）；坏值夹进 2..10。
+            (values["danmakuMergeMin"] as? Number)?.toInt()?.coerceIn(DANMAKU_MERGE_MIN_RANGE) ?: 2,
+            // 播放设置 / 选集面板自动消失秒数：旧版本磁盘没有这个键，按 6 秒处理；坏值夹进 2..15。
+            (values["playerPanelTimeout"] as? Number)?.toInt()?.coerceIn(PLAYER_PANEL_TIMEOUT_RANGE)
+                ?: PLAYER_PANEL_TIMEOUT_DEFAULT,
+            // 快进 / 快退单次跳秒：旧版本磁盘没有这个键，按 10 秒处理；坏值夹进 2..20。
+            (values["seekStep"] as? Number)?.toInt()?.coerceIn(2,20) ?: 10)
         val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())
         val index = LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
             SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden"),
