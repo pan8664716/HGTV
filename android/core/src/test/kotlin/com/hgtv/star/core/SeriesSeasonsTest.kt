@@ -98,14 +98,21 @@ class SeriesSeasonsTest {
         assertEquals(2, SeriesSeasons.season(second))
         assertEquals(2, SeriesSeasons.season(mid))
         assertEquals(5, SeriesSeasons.season(conflicting))
-        // 单季的剧（接口一律写「第1季」、剧名里也没提）不标，免得每张卡都挂「第 1 季」。
-        assertEquals("", SeriesSeasons.badge(plain))
+        // **每张卡都标季号**：剧名里没提季号的就是第 1 季（不再返回空串）。
+        //
+        // 早先这里断言空串（「单季的剧不标，免得每张卡都挂第 1 季」），后来改成一律标：
+        // 同一部剧的第一季与第二季并排出现时，空角标那张读不出季数，用户分不清。
+        assertEquals("第 1 季", SeriesSeasons.badge(plain))
         assertEquals("第 2 季", SeriesSeasons.badge(second))
         assertEquals("第 2 季", SeriesSeasons.badge(mid))
         assertEquals("第 5 季", SeriesSeasons.badge(conflicting))
         // 剧名里写了季号但接口没给（搜索 / 提示词那两条接口没有季号字段）：仍按剧名标。
         assertEquals("第 3 季", SeriesSeasons.badge(Series("5","宠妻无度第三季")))
         assertEquals("第 1 季", SeriesSeasons.badge(Series("6","宠妻无度第一季")))
+        // 接口明确给 1（分类 / 榜单对单季的剧都会写「第1季」）也照标。
+        assertEquals("第 1 季", SeriesSeasons.badge(Series("7","帐中香",seasonIndex=1)))
+        // 接口给 0 / 负数等于没给：退回剧名解析，仍然是第 1 季。
+        assertEquals("第 1 季", SeriesSeasons.badge(Series("8","帐中香",seasonIndex=0)))
     }
 
     /**

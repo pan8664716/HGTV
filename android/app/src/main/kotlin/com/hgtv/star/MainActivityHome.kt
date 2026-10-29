@@ -292,7 +292,8 @@ internal fun MainActivity.quickActions(series: Series,anchor: View,shelf: String
         if (item.action == CardAction.DELETE_HISTORY || item.action == CardAction.HIDE_FROM_HOT) index else null
     }.toSet()
     // 顶部信息区：封面 + 剧名 + 「第N季 · 共N集」（没有的项自动省掉）。
-    val season = "第 ${series.seasonIndex.takeIf { it > 0 } ?: SeriesSeasons.parse(series.title).season} 季"
+    // 季号走 [SeriesSeasons.badge]：与卡片右上角同一处口径，不在这里另算一遍。
+    val season = SeriesSeasons.badge(series)
     val count = series.episodeCount.takeIf { it > 0 }?.let { "共 $it 集" }
     val subtitle = listOfNotNull(season, count).joinToString(" · ")
     tvTools.choose(

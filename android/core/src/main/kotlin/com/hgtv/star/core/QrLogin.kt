@@ -200,11 +200,29 @@ class QrLogin(
         return runCatching { decode64(payload) }.getOrNull()?.takeIf { it.isNotEmpty() }
     }
 
+    /**
+     * 拼出一次请求的完整 URL。
+     *
+     * 单独抽出来是为了**能被单测钉住**——这里曾经出过一次只在真机上才暴露的事故：
+     * OkHttp 3 → 4 迁移时把 `HttpUrl.parse(HOST+path)` 机械改写成
+     * `HOST+path.toHttpUrlOrNull()`，**括号丢了**。`path` 是相对路径，解析结果是 null，
+     * 于是 `HOST + null` 拼出 `https://api5-normal-lq.fqnovel.comnull`——
+     * 编译通过、类型正确，只有运行时打到一个不存在的主机上。
+     *
+     * 现在 `(HOST + path)` 先拼成一个绝对地址再解析，返回值可能是 null（地址非法），
+     * 由调用方给出「接口地址无效」。
+     */
+    internal fun endpoint(path: String,params: List<Pair<String,String>>): HttpUrl? {
+        // 空路径会拼出「站点根」，那不是任何一个接口：宁可当非法地址处理。
+        if(path.isBlank()) return null
+        return (HOST + path).toHttpUrlOrNull()?.newBuilder()
+            ?.apply { params.forEach { (key,value) -> addQueryParameter(key,value) } }
+            ?.build()
+    }
+
     /** 一次 GET：收 `Set-Cookie` / `X-Tt-Token`，回 JSON；失败返回 null。 */
     private fun request(path: String,params: List<Pair<String,String>>): JSONObject? = synchronized(lock) {
-        val url = HOST+path.toHttpUrlOrNull()?.newBuilder()
-            ?.apply { params.forEach { (key,value) -> addQueryParameter(key,value) } }
-            ?.build() ?: run { lastError="接口地址无效"; return null }
+        val url = endpoint(path,params) ?: run { lastError="接口地址无效"; return null }
         val builder = Request.Builder().url(url)
             .header("User-Agent",VendorConstants.userAgent(device,video = false))
             .header("Accept","application/json, text/plain, */*")

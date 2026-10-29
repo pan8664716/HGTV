@@ -103,17 +103,19 @@ object SeriesSeasons {
     fun season(series: Series): Int = series.seasonIndex.takeIf { it>0 } ?: season(series.title)
 
     /**
-     * 卡片右上角要不要标季号、标什么。
+     * 卡片右上角要标的季号。
      *
-     * 条件与以前一致：**剧名里写了季号**，或者**接口说这不是第 1 季**（[Series.seasonIndex] > 1）
-     * 才标——单季的剧（接口一律写「第1季」）不标，否则每张卡都挂一个「第 1 季」。
-     * 命中时文案用接口给的季号（比剧名更准），接口没给才用剧名解析出来的。
+     * **每张卡都标**：剧名里没写季号的按第 1 季算（与 [season] 同一套规则）。
+     *
+     * 早先这里对单季的剧返回空串（「平台绝大多数短剧没有分季，给每张卡都补一个
+     * 第 1 季是凭空猜的」）。现在改成一律标：分季信息只写在剧名里，而用户需要
+     * 「每张卡都能一眼读出这是第几季」——同一部剧的第二季与第一季并排出现在列表里时，
+     * 空角标会让人分不清哪一张才是自己在看的。
+     *
+     * 代价是满屏「第 1 季」，但它是**准确的**（没有季号就是第 1 季），
+     * 而准确比留白重要。
      */
-    fun badge(series: Series): String {
-        val parsed = parse(series.title)
-        if (!parsed.matched && series.seasonIndex <= 1) return ""
-        return "第 ${season(series)} 季"
-    }
+    fun badge(series: Series): String = "第 " + season(series) + " 季"
 
     /**
      * 卡片右上角标注季号用的文案：`第 13 季`。

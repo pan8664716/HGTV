@@ -1143,10 +1143,9 @@ internal class PosterCard(
         // 类型标签：列表接口自带（`category_schema`），不需要额外请求。
         tagLine.text = item.tags.trim()
         syncMeta()
-        // 季号只在剧名里真的写了「第 N 季 / S2 / Season 2」时才显示：
-        // 平台绝大多数短剧没有分季，给每张卡都补一个「第 1 季」是凭空猜的，
-        // 满屏同一个角标反而盖住封面。没有季号的剧名，这一角留空。
-        // 季号优先用接口给的字段（见 [SeriesSeasons.badge]）：单季的剧不标，多季或剧名里写了才标。
+        // 季号**每张卡都标**（见 [SeriesSeasons.badge]）：剧名里没写季号的按第 1 季算。
+        // 早先单季的剧留空，结果是同一部剧的第一季与第二季并排时，空角标那张读不出季数。
+        // 季号优先用接口给的字段（[Series.seasonIndex]），接口没给才从剧名里读。
         val seasonText = if (seasonBadge) SeriesSeasons.badge(item) else ""
         season.text = seasonText
         season.visibility = if (seasonText.isBlank()) View.GONE else View.VISIBLE
