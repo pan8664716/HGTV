@@ -5,6 +5,8 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
@@ -44,10 +46,10 @@ class LiveDiagTest {
         b.header("User-Agent", ua)
         b.header("Accept", "application/json")
         b.header("Cookie", cookie)
-        b.post(RequestBody.create(MediaType.parse("application/json; charset=UTF-8"), body))
+        b.post(body.toRequestBody("application/json; charset=UTF-8".toMediaType()))
         client.newCall(b.build()).execute().use { r ->
-            val t = r.body()?.string().orEmpty()
-            println("[diag] $label HTTP ${r.code()} ${t.length}B :: ${t.take(160)}")
+            val t = r.body?.string().orEmpty()
+            println("[diag] $label HTTP ${r.code} ${t.length}B :: ${t.take(160)}")
         }
     }
 
@@ -58,8 +60,8 @@ class LiveDiagTest {
         b.header("User-Agent", ua)
         b.header("Cookie", cookie)
         client.newCall(b.build()).execute().use { r ->
-            val t = r.body()?.string().orEmpty()
-            println("[diag] $label HTTP ${r.code()} ${t.length}B :: ${t.take(160)}")
+            val t = r.body?.string().orEmpty()
+            println("[diag] $label HTTP ${r.code} ${t.length}B :: ${t.take(160)}")
         }
     }
 

@@ -5,6 +5,7 @@ import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.json.JSONArray
 import org.json.JSONObject
 import org.junit.Assert.*
@@ -37,10 +38,10 @@ class ContentRepositoryTest {
     @Test fun playbackPrefersTheLegacyRouteAndIgnoresBusinessErrors() {
         val paths=mutableListOf<String>()
         val repo=repository { request ->
-            if(request.url().host()!="example.com") paths+=request.url().encodedPath()
+            if(request.url.host!="example.com") paths+=request.url.encodedPath
             when {
-                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
-                request.url().encodedPath()=="/novel/player/multi_video_model/v1/" ->
+                request.url.host=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                request.url.encodedPath=="/novel/player/multi_video_model/v1/" ->
                     legacyVideoModel("https://example.com/stream")
                 else -> """{"Code":110001,"Message":"未知异常"}"""
             }
@@ -57,18 +58,18 @@ class ContentRepositoryTest {
     @Test fun videoIdRouteSendsTheSingleVideoIdBodyInsteadOfTheLegacyMap() {
         val requests=mutableListOf<Request>()
         val repo=repository { request ->
-            if(request.url().host()!="example.com") requests+=request
+            if(request.url.host!="example.com") requests+=request
             when {
-                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
-                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
+                request.url.host=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                request.url.encodedPath=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
                 // 老路径排在最前，这里让它回业务错误，从而走到新路由那一条。
                 else -> """{"Code":110001,"Message":"未知异常"}"""
             }
         }
         assertEquals("https://example.com/stream",repo.stream("123").url)
-        val sent=requests.single { it.url().encodedPath()=="/novel/player/video_model/v1/" }
-        assertEquals("/novel/player/video_model/v1/",sent.url().encodedPath())
-        val body=sent.body()?.let { payload -> okio.Buffer().also { buffer -> payload.writeTo(buffer) }.readUtf8() } ?: ""
+        val sent=requests.single { it.url.encodedPath=="/novel/player/video_model/v1/" }
+        assertEquals("/novel/player/video_model/v1/",sent.url.encodedPath)
+        val body=sent.body?.let { payload -> okio.Buffer().also { buffer -> payload.writeTo(buffer) }.readUtf8() } ?: ""
         assertTrue(body,body.contains("\"video_id\":\"123\""))
         assertFalse(body,body.contains("mixed_video_id_map"))
     }
@@ -80,11 +81,11 @@ class ContentRepositoryTest {
     @Test fun blankResponseBodyCountsAsFailureAndMovesToTheNextRoute() {
         val paths=mutableListOf<String>()
         val repo=repository { request ->
-            if(request.url().host()!="example.com") paths+=request.url().encodedPath()
+            if(request.url.host!="example.com") paths+=request.url.encodedPath
             when {
-                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
-                request.url().encodedPath()=="/novel/player/multi_video_model/v1/" -> ""
-                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
+                request.url.host=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                request.url.encodedPath=="/novel/player/multi_video_model/v1/" -> ""
+                request.url.encodedPath=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
                 else -> """{"Code":110001,"Message":"未知异常"}"""
             }
         }
@@ -109,9 +110,9 @@ class ContentRepositoryTest {
         val ids=mutableListOf<String>()
         val repo=repository { request ->
             when {
-                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                request.url.host=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
                 else -> {
-                    val id=request.url().queryParameter("device_id").orEmpty()
+                    val id=request.url.queryParameter("device_id").orEmpty()
                     ids+=id
                     // 第一个 id 只挡开头这一次，用来逼出一次换 id；换过之后一律给模型。
                     if(ids.size==1) "" else legacyVideoModel("https://example.com/stream")
@@ -132,9 +133,9 @@ class ContentRepositoryTest {
         val ids=mutableListOf<String>()
         val repo=repository { request ->
             when {
-                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
-                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
-                else -> { ids+=request.url().queryParameter("device_id").orEmpty(); """{"Code":110001,"Message":"未知异常"}""" }
+                request.url.host=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                request.url.encodedPath=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
+                else -> { ids+=request.url.queryParameter("device_id").orEmpty(); """{"Code":110001,"Message":"未知异常"}""" }
             }
         }
         assertEquals("https://example.com/stream",repo.stream("123").url)
@@ -151,7 +152,7 @@ class ContentRepositoryTest {
     @Test fun searchRetriesBlankThenSucceeds() {
         val hits=mutableListOf<Int>()
         val repo=repository { request ->
-            if(request.url().encodedPath().contains("search/tab")) {
+            if(request.url.encodedPath.contains("search/tab")) {
                 hits+=1
                 if(hits.size<3) "" else """
                     {"code":0,"search_tabs":[{"tab_type":11,"data":[{"video_data":[{"series_id":"42","title":"测试"}]}]}]}
@@ -167,11 +168,11 @@ class ContentRepositoryTest {
     @Test fun responseWithoutVideoModelMovesToTheNextRoute() {
         val paths=mutableListOf<String>()
         val repo=repository { request ->
-            if(request.url().host()!="example.com") paths+=request.url().encodedPath()
+            if(request.url.host!="example.com") paths+=request.url.encodedPath
             when {
-                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
-                request.url().encodedPath()=="/novel/player/multi_video_model/v1/" -> """{"code":0,"data":{"disable_vsr":true}}"""
-                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
+                request.url.host=="example.com" -> fallbackList("bytevc1" to "https://example.com/stream")
+                request.url.encodedPath=="/novel/player/multi_video_model/v1/" -> """{"code":0,"data":{"disable_vsr":true}}"""
+                request.url.encodedPath=="/novel/player/video_model/v1/" -> videoModel("https://example.com/stream")
                 else -> ""
             }
         }
@@ -187,10 +188,10 @@ class ContentRepositoryTest {
     @Test fun playbackFallsBackToTheVideoIdRouteWhenTheLegacyRouteFails() {
         val paths=mutableListOf<String>()
         val repo=repository { request ->
-            if(request.url().host()!="example.com") paths+=request.url().encodedPath()
+            if(request.url.host!="example.com") paths+=request.url.encodedPath
             when {
-                request.url().host()=="example.com" -> fallbackList("bytevc1" to "https://example.com/new")
-                request.url().encodedPath()=="/novel/player/video_model/v1/" -> videoModel("https://example.com/new")
+                request.url.host=="example.com" -> fallbackList("bytevc1" to "https://example.com/new")
+                request.url.encodedPath=="/novel/player/video_model/v1/" -> videoModel("https://example.com/new")
                 else -> """{"Code":110001,"Message":"未知异常"}"""
             }
         }
@@ -211,7 +212,7 @@ class ContentRepositoryTest {
     }
 
     private fun streamRepository(vararg variants: Triple<Int,String,String>) = repository { request ->
-        if(request.url().host()=="example.com") {
+        if(request.url.host=="example.com") {
             val rows=JSONObject()
             variants.forEachIndexed { index,(height,codec,url) -> rows.put("video_$index",JSONObject().put("vheight",height).put("codec_type",codec).put("main_url",url)) }
             JSONObject().put("video_info",JSONObject().put("data",JSONObject().put("video_list",rows))).toString()
@@ -249,7 +250,7 @@ class ContentRepositoryTest {
             // 键名 `video_1` 里也没有档位数字，整行认不出来。
             .put("video_1",JSONObject().put("codec_type","bytevc1").put("main_url","https://example.com/unknown"))
         val repo=repository { request ->
-            if(request.url().host()=="example.com")
+            if(request.url.host=="example.com")
                 JSONObject().put("video_info",JSONObject().put("data",JSONObject().put("video_list",rows))).toString()
             else videoModel("https://example.com/stream")
         }
@@ -291,7 +292,7 @@ class ContentRepositoryTest {
                 .put("codec_type","bytevc1").put("main_url","https://example.com/h$width"))
         }
         val repo=repository { request ->
-            if(request.url().host()=="example.com")
+            if(request.url.host=="example.com")
                 JSONObject().put("video_info",JSONObject().put("data",JSONObject().put("video_list",rows))).toString()
             else videoModel("https://example.com/stream")
         }
@@ -308,7 +309,7 @@ class ContentRepositoryTest {
             .put("video_2",JSONObject().put("quality_desc","1080P").put("vwidth",1080).put("vheight",1920)
                 .put("codec_type","bytevc1").put("main_url","https://example.com/desc1080"))
         val repo=repository { request ->
-            if(request.url().host()=="example.com")
+            if(request.url.host=="example.com")
                 JSONObject().put("video_info",JSONObject().put("data",JSONObject().put("video_list",rows))).toString()
             else videoModel("https://example.com/stream")
         }
@@ -325,8 +326,8 @@ class ContentRepositoryTest {
     @Test fun playbackModelRequestsTheDeviceLevelThatKeepsLowQualitiesDecodable() {
         val bodies=mutableListOf<String>()
         val repo=repository { request ->
-            val model=request.url().host()!="example.com"
-            if(model) bodies+=request.body()?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty()
+            val model=request.url.host!="example.com"
+            if(model) bodies+=request.body?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty()
             when {
                 !model -> fallbackList("bytevc1" to "https://example.com/stream")
                 else -> videoModel("https://example.com/stream")
@@ -346,8 +347,8 @@ class ContentRepositoryTest {
     @Test fun deviceLevelIsClampedToFourOrFiveAndInjectedIntoTheRequest() {
         val bodies=mutableListOf<String>()
         val repo=repository { request ->
-            val model=request.url().host()!="example.com"
-            if(model) bodies+=request.body()?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty()
+            val model=request.url.host!="example.com"
+            if(model) bodies+=request.body?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty()
             when {
                 !model -> fallbackList("bytevc1" to "https://example.com/stream")
                 else -> videoModel("https://example.com/stream")
@@ -372,7 +373,7 @@ class ContentRepositoryTest {
     private fun repository(clock: () -> Long = System::currentTimeMillis, respond: (Request) -> String) = ContentRepository(
         OkHttpClient.Builder().addInterceptor { chain ->
             Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
-.code(200).message("OK").body(ResponseBody.create(null, respond(chain.request()))).build()
+.code(200).message("OK").body(respond(chain.request()).toResponseBody(null)).build()
         }.build(),clock,0L,0L
     )
 
@@ -384,7 +385,7 @@ class ContentRepositoryTest {
      * 客户端要加上这一页之前的条数才是榜单名次——这里把 `offset` 与名次一起钉住。
      */
     private fun rankBody(request: Request): JSONObject {
-        val body=JSONObject(request.body()?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty())
+        val body=JSONObject(request.body?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty())
         val select=body.getJSONObject("select_items")
         val offset=body.getInt("offset")
         val genre=select.getJSONArray("genre").takeIf { it.length()>0 }?.getString(0).orEmpty()
@@ -412,13 +413,13 @@ class ContentRepositoryTest {
 
     /** 请求体（榜单 / 分类共用同一个接口，只能从 body 区分）。 */
     private fun requestBody(request: Request): JSONObject =
-        JSONObject(request.body()?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty())
+        JSONObject(request.body?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty())
 
     /** 每个榜都带上自己的分类与排序：漫剧 / 真人 / AI剧 按热度，「上新」不筛分类、按上架时间。 */
     @Test fun `every board asks the api for its own genre and sort`() {
         val bodies=mutableListOf<JSONObject>()
         val repo=repository { request ->
-            assertEquals("/reading/distribution/category/landpage/v/",request.url().encodedPath())
+            assertEquals("/reading/distribution/category/landpage/v/",request.url.encodedPath)
             bodies+=requestBody(request)
             rankBody(request).toString()
         }
@@ -503,9 +504,9 @@ class ContentRepositoryTest {
         }
         repo.search("修仙",1,ContentType.COMIC)
         repo.search("修仙",2,ContentType.COMIC)
-        assertEquals("comic-session",requests[1].url().queryParameter("search_id"))
-        assertEquals("comic-cursor",requests[1].url().queryParameter("passback"))
-        assertEquals("25",requests[1].url().queryParameter("offset"))
+        assertEquals("comic-session",requests[1].url.queryParameter("search_id"))
+        assertEquals("comic-cursor",requests[1].url.queryParameter("passback"))
+        assertEquals("25",requests[1].url.queryParameter("offset"))
         assertThrows(SearchSessionExpiredException::class.java) { repo.search("重生",2,ContentType.COMIC) }
         assertEquals(2,requests.size)
     }
@@ -522,9 +523,9 @@ class ContentRepositoryTest {
     @Test fun searchIsGetWhileCategoryAndRankArePost() {
         val methods=mutableListOf<Pair<String,String>>()
         val repo=repository { request ->
-            methods+=request.url().encodedPath() to request.method()
+            methods+=request.url.encodedPath to request.method
             when {
-                request.url().encodedPath()=="/reading/bookapi/search/tab/v" ->
+                request.url.encodedPath=="/reading/bookapi/search/tab/v" ->
                     JSONObject().put("code",0).put("search_tabs",JSONArray().put(searchTab(19,"999"))).toString()
                 else -> rankBody(request).toString()
             }
@@ -562,9 +563,9 @@ class ContentRepositoryTest {
         val requests=mutableListOf<Request>()
         val repo=repository { request ->
             requests+=request
-            when(request.url().encodedPath()) {
+            when(request.url.encodedPath) {
                 "/reading/bookapi/read_progress/list/v" -> {
-                    val limit=request.url().queryParameter("limit").orEmpty()
+                    val limit=request.url.queryParameter("limit").orEmpty()
                     val n=limit.toIntOrNull() ?: 0
                     // 模拟平台：limit 大于真实条数时照实际数量返回，且不接受 offset。
                     val count=minOf(n,139)
@@ -574,7 +575,7 @@ class ContentRepositoryTest {
                     }).toString()
                 }
                 else -> {
-                    val ids=request.url().queryParameter("book_id").orEmpty().split(',')
+                    val ids=request.url.queryParameter("book_id").orEmpty().split(',')
                     JSONObject().put("code",0).put("data",JSONArray().also { array ->
                         ids.forEach { id -> array.put(JSONObject().put("book_id",id).put("book_name","剧 $id")) }
                     }).toString()
@@ -584,14 +585,14 @@ class ContentRepositoryTest {
         repo.sessionToken="sessionid=abc"
         val rows=repo.accountHistory()
         assertEquals(139,rows.size)
-        val list=requests.first { it.url().encodedPath()=="/reading/bookapi/read_progress/list/v" }
-        assertTrue("limit 要足够大",(list.url().queryParameter("limit")?.toIntOrNull() ?: 0)>=139)
-        assertNull("不要靠 offset 翻页",list.url().queryParameter("offset"))
+        val list=requests.first { it.url.encodedPath=="/reading/bookapi/read_progress/list/v" }
+        assertTrue("limit 要足够大",(list.url.queryParameter("limit")?.toIntOrNull() ?: 0)>=139)
+        assertNull("不要靠 offset 翻页",list.url.queryParameter("offset"))
         // 元数据按 50 一片分三次要（139 → 50+50+39），每片都不超过上限。
-        val detailCalls=requests.filter { it.url().encodedPath()=="/reading/bookapi/multi-detail/v" }
+        val detailCalls=requests.filter { it.url.encodedPath=="/reading/bookapi/multi-detail/v" }
         assertEquals(3,detailCalls.size)
         detailCalls.forEach { call ->
-            assertTrue((call.url().queryParameter("book_id")?.split(',')?.size ?: 0)<=50)
+            assertTrue((call.url.queryParameter("book_id")?.split(',')?.size ?: 0)<=50)
         }
     }
 
@@ -617,7 +618,7 @@ class ContentRepositoryTest {
         val comic=CategoryCatalog.groups.first()
         val tag=comic.tags[1]
         val first=repo.category(tag.path)
-        assertEquals("/reading/distribution/category/landpage/v/",requests[0].url().encodedPath())
+        assertEquals("/reading/distribution/category/landpage/v/",requests[0].url.encodedPath)
         assertEquals("玄幻漫剧",first.items.single().title)
         assertEquals("9 集",first.items.single().badge)
         assertTrue("has_more=true 还有下一页",first.hasMore)
@@ -687,9 +688,9 @@ class ContentRepositoryTest {
         var requests=0
         val repo=repository { request ->
             requests++
-            assertEquals("19",request.url().queryParameter("tab_type"))
-            assertEquals(if(requests==1) "0" else "20",request.url().queryParameter("offset"))
-            assertEquals("修仙",request.url().queryParameter("query"))
+            assertEquals("19",request.url.queryParameter("tab_type"))
+            assertEquals(if(requests==1) "0" else "20",request.url.queryParameter("offset"))
+            assertEquals("修仙",request.url.queryParameter("query"))
             JSONObject().put("code",0).put("search_tabs",JSONArray()
                 .put(searchTab(11,"111")).put(searchTab(19,"999"))).toString()
         }
@@ -753,8 +754,8 @@ class ContentRepositoryTest {
         assertEquals(7,detail.series.seasonIndex)
         // 参数在 query 里（`series_id` 单值），路径是播放侧那条。
         // （详情还会顺带问一次 `multi-detail` 补出品方，因此这里按路径挑那一条。）
-        val detailRequest=requests.single { it.url().encodedPath()=="/novel/player/video_detail/v1/" }
-        assertEquals("123",detailRequest.url().queryParameter("series_id"))
+        val detailRequest=requests.single { it.url.encodedPath=="/novel/player/video_detail/v1/" }
+        assertEquals("123",detailRequest.url.queryParameter("series_id"))
     }
 
     /** 详情接口回空响应体（设备没注册）/ 业务码非 0 时都要如实报错，不能拿半份数据糊过去。 */
@@ -785,8 +786,8 @@ class ContentRepositoryTest {
         assertEquals("某文化",rows[0].series!!.author)
         assertEquals("short_play_name",rows[0].wordType)
         assertNull("没有 series_id 的只能当查询词",rows[1].series)
-        assertEquals("/reading/bookapi/search/suggest/v",requests.single().url().encodedPath())
-        assertEquals("仙",requests.single().url().queryParameter("query"))
+        assertEquals("/reading/bookapi/search/suggest/v",requests.single().url.encodedPath)
+        assertEquals("仙",requests.single().url.queryParameter("query"))
         // 空关键词不发请求。
         assertTrue(repo.suggestions("  ").isEmpty())
         assertEquals(1,requests.size)
@@ -812,7 +813,7 @@ class ContentRepositoryTest {
     /** 游标过期要如实抛出（界面据此回到第 1 页重搜），不能拿别的页顶替。 */
     @Test fun expiredCursorSurfacesAsSearchSessionExpired() {
         val repo=repository { request ->
-            if(request.url().queryParameter("offset")=="0")
+            if(request.url.queryParameter("offset")=="0")
                 """{"code":0,"search_tabs":[{"tab_type":19,"has_more":true,"data":[],"search_id":"s","passback":"p"}]}"""
             else """{"code":0,"search_tabs":[]}"""
         }

@@ -44,7 +44,7 @@ fun main(args: Array<String>) {
                 }
             }
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -62,7 +62,7 @@ fun main(args: Array<String>) {
                 }
             }
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -94,7 +94,7 @@ fun main(args: Array<String>) {
             }
             println("季号与剧名不一致的：$mismatches 条")
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -116,7 +116,7 @@ fun main(args: Array<String>) {
                 if(!result.hasMore) break
             }
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -131,7 +131,7 @@ fun main(args: Array<String>) {
             // 空关键词不该发请求（服务端会 500），这里直接返回空表。
             check(repository.suggestions("   ").isEmpty())
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -145,7 +145,7 @@ fun main(args: Array<String>) {
             check(words.size<=12)
             check(words.distinct().size==words.size)
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -157,7 +157,7 @@ fun main(args: Array<String>) {
             println("type=${type.label} n=${page.items.size}")
             page.items.take(5).forEach { println("   ${it.id} ${it.title} author=[${it.author}] cnt=${it.episodeCount}") }
         }
-        repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+        repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         return
     }
     if(args.contains("--author")) {
@@ -171,7 +171,7 @@ fun main(args: Array<String>) {
                 println("${detail.series.title} | author=[${detail.series.author}] | episodes=${detail.episodes.size}")
             }
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -202,7 +202,7 @@ fun main(args: Array<String>) {
             println("再取一次 ${System.currentTimeMillis()-againStart}ms（再发一次接口请求）；条数一致=${again.items.size==works.items.size}")
             println("同系列 ${works.seasons.size} 季：${works.seasons.joinToString("、") { it.title }}")
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -222,7 +222,7 @@ fun main(args: Array<String>) {
             }
             println("窗口内共 ${rows.size} 条，带标签的打印了 $printed 条")
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -262,7 +262,7 @@ fun main(args: Array<String>) {
             println("--- 全部标签（按出现次数）---")
             seen.entries.sortedByDescending { it.value }.forEach { println("  ${it.key}\t${it.value}") }
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -277,7 +277,7 @@ fun main(args: Array<String>) {
             println("span=${items.firstOrNull()?.offsetMs}ms..${items.lastOrNull()?.offsetMs}ms; top=${items.maxByOrNull { it.diggCount }?.diggCount}赞")
             items.take(3).forEach { println("  ${it.offsetMs}ms [${it.diggCount}] ${it.text}") }
         } finally {
-            repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+            repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         }
         return
     }
@@ -307,5 +307,5 @@ fun main(args: Array<String>) {
         println("quality=${stream.quality}; total=${remote.total}; first=${first.size}; tail=${tail.size}; header=${String(first,4,4)}")
         if(args.contains("--save")) java.io.File("/tmp/hongguo-kotlin-first.mp4").writeBytes(first)
     }
-    repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+    repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
 }

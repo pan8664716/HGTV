@@ -4,7 +4,8 @@ package com.hgtv.star
 import android.app.Activity
 import android.view.*
 import android.widget.*
-import com.google.android.exoplayer2.*
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
 import com.hgtv.star.core.*
 import com.hgtv.star.player.EpisodeGrid
 import com.hgtv.star.player.EpisodePanel
@@ -386,7 +387,7 @@ internal fun MainActivity.saveProgress(completed: Boolean=false) {
  */
 internal fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     // 作废所有认会话号的在途回调（监听器、延迟清理、取地址）。
-    playbackSession++
+    playback.beginSession()
     disarmPlaybackWatchdog(); disarmFrameStallWatchdog()
     // 整棵树马上会被页面重建换掉；调试面板在新页面上由 [reattachDebugOverlay] 重新挂。
     hideDebugOverlay()
@@ -427,7 +428,9 @@ internal fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     // 极端情况下没能当场关闭的资源，在这里统一收尾。
     orphanResources.forEach { (v,h) -> v?.let { runCatching { it.close() } }; closeTransport(h) }
     orphanResources.clear()
-    video?.close(); video=null; playerView?.player=null; playerView=null; playbackReady=false
+    video?.close(); video=null; playerView?.player=null; playerView=null
+    // 状态机回到 IDLE。`playbackReady` 是它的只读投影，这一句同时把 prepared 清掉。
+    playback.release()
     // 离开播放页：本次会话的降级状态（有效上限 / 预算）全部作废。
     // 不清的话，下一部剧会继承上一部降下来的上限——而那是「上一台机器这一刻放不了」的结论，
     // 与这部剧毫无关系。提示去重表同样清掉：新的一部剧该有自己的第一次提示。

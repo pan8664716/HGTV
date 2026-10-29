@@ -5,6 +5,8 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -39,11 +41,11 @@ class LivePlaybackMatrixTest {
         b.header("User-Agent", ua(uaVc))
         b.header("Accept", "application/json")
         if (withCookie) b.header("Cookie", cookie)
-        b.post(RequestBody.create(MediaType.parse("application/json; charset=UTF-8"), body))
+        b.post(body.toRequestBody("application/json; charset=UTF-8".toMediaType()))
         OkHttpClient.Builder().callTimeout(30, TimeUnit.SECONDS).build().newCall(b.build()).execute().use { r ->
-            val text = r.body()?.string().orEmpty()
+            val text = r.body?.string().orEmpty()
             val code = if (text.isNotBlank()) JSONObject(text).optInt("code", -999) else -1
-            println("[matrix] $label HTTP ${r.code()} ${text.length}B code=$code ${text.take(120)}")
+            println("[matrix] $label HTTP ${r.code} ${text.length}B code=$code ${text.take(120)}")
         }
     }
 

@@ -4,7 +4,6 @@ package com.hgtv.star
 import android.app.Activity
 import android.view.*
 import android.widget.*
-import com.google.android.exoplayer2.*
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.TvStyle
 
@@ -435,3 +434,37 @@ internal const val EXIT_CONFIRM_WINDOW_MS=2000L
 
 /** 首页按第一次返回时的提示（走 [TvTools.toast]，不吃焦点、不吃按键）。 */
 internal const val EXIT_TOAST="再按一次返回键退出"
+
+/**
+ * 播放进度的落盘间隔。
+ *
+ * 改造前是 5 秒。那个数字的代价被严重低估了：`saveProgress()` 会把**最多 200 条**
+ * 观看记录（每条内嵌完整 `Series`）序列化成一整串 JSON，再让 `SharedPreferences`
+ * 重写整份 XML 并 `commit()`（同步 fsync）。按满额估算，播放一小时约 288MB 文件写入
+ * + 720 次 fsync——而真正要保存的只是「这一部剧播到第几秒」。
+ *
+ * 15 秒是「用户能感知的续播精度」的下限：切走再回来最多丢 15 秒，而写放大降到三分之一。
+ * 换集 / 暂停 / 退出 / 退到后台都会额外强制落盘（见 `saveProgress` 的调用点），
+ * 因此正常使用几乎不会真的丢进度。
+ */
+internal const val PROGRESS_SAVE_INTERVAL_MS=15_000L
+
+// —— 进程死亡后的恢复（`onSaveInstanceState` / `onCreate`）——
+//
+// 只存「回到哪里」所需的几个值。**不存整页状态**：`Bundle` 走 Binder，
+// 上限 1MB，塞一个剧集列表进去就会 `TransactionTooLargeException`。
+// 剧集对象本身不用存——它已经在 `Library` 的历史里，按 seriesId 反查即可。
+internal const val STATE_SCREEN="hgtv.state.screen"
+internal const val STATE_TAB="hgtv.state.tab"
+internal const val STATE_COLLECTION="hgtv.state.collection"
+internal const val STATE_SERIES="hgtv.state.series"
+internal const val STATE_EPISODE="hgtv.state.episode"
+internal const val STATE_POSITION="hgtv.state.position"
+
+/**
+ * 电视的纵向过扫描安全边距（设计像素）。
+ *
+ * 电视会把画面四周裁掉 3~5%（老机器的「过扫描」）。横向已有 `pageInset`（6.1%），
+ * 纵向原本只有 12（1.7%），工具条与首行海报会被切掉一截。补 24 之后合计约 5%。
+ */
+internal const val TV_OVERSCAN_INSET=24

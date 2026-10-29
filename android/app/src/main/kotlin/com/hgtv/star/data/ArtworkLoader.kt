@@ -805,9 +805,9 @@ class ArtworkLoader(context: Context) {
             runCatching {
                 // 从没建过 client（这一屏一张图都没取）：没有连接池要收，直接返回。
                 if (httpRef.isInitialized()) {
-                    http.dispatcher().cancelAll()
-                    http.connectionPool().evictAll()
-                    http.dispatcher().executorService().shutdown()
+                    http.dispatcher.cancelAll()
+                    http.connectionPool.evictAll()
+                    http.dispatcher.executorService.shutdown()
                 }
             }
         }, "hgtv-artwork-reset").start()
@@ -823,9 +823,9 @@ class ArtworkLoader(context: Context) {
         // TLS socket pool disposal can block and must not happen on the UI thread.
         Thread({
             if (httpRef.isInitialized()) {
-                http.dispatcher().cancelAll()
-                http.connectionPool().evictAll()
-                http.dispatcher().executorService().shutdown()
+                http.dispatcher.cancelAll()
+                http.connectionPool.evictAll()
+                http.dispatcher.executorService.shutdown()
             }
         }, "hgtv-artwork-cleanup").start()
     }
@@ -1087,9 +1087,9 @@ class ArtworkLoader(context: Context) {
             val tSend = android.os.SystemClock.elapsedRealtime()
             call.execute().use { response ->
                 val tHeaders = android.os.SystemClock.elapsedRealtime()
-                proto = response.protocol().toString()
+                proto = response.protocol.toString()
                 ttfbMs = tHeaders - tSend
-                val body = response.body() ?: return null
+                val body = response.body ?: return null
                 if (!response.isSuccessful || body.contentLength() > MAX_BYTES) return null
                 val data = body.byteStream().use { input ->
                     readBody(input, body.contentLength(), { job.cancelled })

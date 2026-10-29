@@ -113,10 +113,17 @@ internal fun MainActivity.applyDeviceForm() {
     val profile=runCatching { detectDeviceForm() }.getOrNull()
     deviceProfile=profile
     when(deviceMode()) {
-        com.hgtv.star.compat.DeviceForm.TV -> touchArmed=false
+        com.hgtv.star.compat.DeviceForm.TV -> {
+            touchArmed=false
+            // 电视用 1280×720 设计稿原尺寸（3 米外看 55 寸，这个比例是对的）。
+            com.hgtv.star.tv.canvas.useTelevision()
+        }
         com.hgtv.star.compat.DeviceForm.PHONE,
         com.hgtv.star.compat.DeviceForm.TABLET -> {
             touchArmed=true
+            // 手机 / 平板换 960×540 画布：版面比例不变，整体放大 1.33 倍。
+            // 1280 的画布在手机横屏上算出来只有约 9.6sp 的字，明显小于系统正文（见 `designScale`）。
+            com.hgtv.star.tv.canvas.useHandheld()
             wireSystemInsets()
         }
         // 算法都跑不出结果：才退回输入子系统（真有一块屏就点亮）。

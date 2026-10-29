@@ -95,10 +95,10 @@ internal class NetTiming : EventListener() {
         val reused=dnsStart==0L && connectStart==0L && secureStart==0L
         val total=ms(callStart,endAt)
         if(reused && total<SLOW_REUSED_MS) return
-        val host=runCatching { call.request().url().host() }.getOrDefault("?")
+        val host=runCatching { call.request().url.host }.getOrDefault("?")
         val handshakeEnd=if(secureEnd>0L) secureEnd else connectEnd
         NetLog.log(
-            "net ${call.request().method()} $host ${if(reused) "conn=reused" else "conn=new"}"+
+            "net ${call.request().method} $host ${if(reused) "conn=reused" else "conn=new"}"+
             " dns=${ms(dnsStart,dnsEnd)}ms"+
             " tcp=${ms(connectStart,connectEnd)}ms"+
             " tls=${ms(secureStart,secureEnd)}ms"+
@@ -120,9 +120,9 @@ internal class NetTiming : EventListener() {
     override fun callFailed(call: Call,ioe: java.io.IOException) {
         if(logged) return
         logged=true
-        val host=runCatching { call.request().url().host() }.getOrDefault("?")
+        val host=runCatching { call.request().url.host }.getOrDefault("?")
         NetLog.log(
-            "net ${call.request().method()} $host failed after ${ms(callStart,now())}ms ${ioe.javaClass.simpleName}: ${ioe.message}"
+            "net ${call.request().method} $host failed after ${ms(callStart,now())}ms ${ioe.javaClass.simpleName}: ${ioe.message}"
         )
     }
 }

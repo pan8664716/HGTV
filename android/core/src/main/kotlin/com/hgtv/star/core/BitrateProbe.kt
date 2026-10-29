@@ -146,5 +146,5 @@ fun main(args: Array<String>) {
         println("2× 需要的带宽（按最高样本）：${(total.maxOrNull() ?: 0.0)*2/1000} Mbps")
         println("3s 真实缓冲需要的内存（按最高码率 ×2 倍速 × 3s）：${(total.maxOrNull() ?: 0.0)*2*3/8/1024} MB")
     }
-    repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown()
+    repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
 }

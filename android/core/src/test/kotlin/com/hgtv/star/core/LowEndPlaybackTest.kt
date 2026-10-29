@@ -2,6 +2,7 @@ package com.hgtv.star.core
 
 import okhttp3.*
 import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
 import okio.Timeout
 import org.junit.Assert.*
 import org.junit.Test
@@ -18,7 +19,7 @@ class LowEndPlaybackTest {
         override fun execute(): Response {
             started=true
             if(cancelled) throw IOException("cancelled")
-            return Response.Builder().request(request()).protocol(Protocol.HTTP_1_1).code(200).message("OK").body(ResponseBody.create(null, "data")).build()
+            return Response.Builder().request(request()).protocol(Protocol.HTTP_1_1).code(200).message("OK").body("data".toResponseBody(null)).build()
         }
         override fun enqueue(responseCallback: Callback)=error("not used")
         override fun cancel() { cancelled=true }
@@ -29,7 +30,7 @@ class LowEndPlaybackTest {
     }
     @Test fun cancelledNavigationDoesNotStartQueuedNetworkWork() {
         val scope=RequestScope(); val call=FakeCall(); scope.cancel()
-        assertThrows(IOException::class.java) { scope.run { RequestScope.execute(call) { it.body()!!.string() } } }
+        assertThrows(IOException::class.java) { scope.run { RequestScope.execute(call) { it.body!!.string() } } }
         assertFalse(call.started)
     }
     @Test fun cancelStillOwnsCallWhileResponseBodyIsBeingConsumed() {
@@ -43,9 +44,9 @@ class LowEndPlaybackTest {
     }
     @Test fun cancellingOldPageDoesNotCancelAnotherPagesOrCompletedCalls() {
         val old=RequestScope(); val current=RequestScope(); val first=FakeCall(); val next=FakeCall()
-        assertEquals("data",old.run { RequestScope.execute(first) { it.body()!!.string() } })
+        assertEquals("data",old.run { RequestScope.execute(first) { it.body!!.string() } })
         old.cancel(); assertFalse(first.cancelled)
-        assertEquals("data",current.run { RequestScope.execute(next) { it.body()!!.string() } })
+        assertEquals("data",current.run { RequestScope.execute(next) { it.body!!.string() } })
         assertFalse(next.cancelled)
     }
     @Test fun prefetchWindowUsesRemainingWallTimeAndRejectsUnknownDuration() {

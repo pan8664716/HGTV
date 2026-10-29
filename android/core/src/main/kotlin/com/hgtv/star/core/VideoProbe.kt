@@ -4,6 +4,8 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import java.util.concurrent.TimeUnit
 
@@ -59,18 +61,18 @@ fun main() {
             val real = signer.branch(signed.url.substringAfter('?'), payload, signed.headers.getValue("x-khronos").toInt())
             val builder = Request.Builder().url(signed.url)
             signed.headers.forEach { (k, v) -> builder.header(k, v) }
-            builder.post(RequestBody.create(MediaType.parse("application/json; charset=UTF-8"),payload))
+            builder.post(payload.toRequestBody("application/json; charset=UTF-8".toMediaType()))
             val line = try {
                 client.newCall(builder.build()).execute().use { response ->
-                    val text = response.body()?.string() ?: ""
+                    val text = response.body?.string() ?: ""
                     val code = runCatching { JSONObject(text).optInt("Code", JSONObject(text).optInt("code", -1)) }.getOrDefault(-1)
                     val msg = runCatching { JSONObject(text).optString("Message", JSONObject(text).optString("message", "")) }.getOrDefault("")
-                    "HTTP ${response.code()}  code=$code  ${text.length}B  $msg"
+                    "HTTP ${response.code}  code=$code  ${text.length}B  $msg"
                 }
             } catch (e: Exception) { "异常：${e.message}" }
             println("  branch=$wanted(实际 $real, offset=$offset)  $line")
         }
         println()
     }
-    repository.http.connectionPool().evictAll()
+    repository.http.connectionPool.evictAll()
 }

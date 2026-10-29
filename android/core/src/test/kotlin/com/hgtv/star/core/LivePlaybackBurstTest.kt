@@ -5,6 +5,8 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -36,11 +38,11 @@ class LivePlaybackBurstTest {
             b.header("User-Agent", "com.phoenix.read/73532 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)")
             b.header("Accept", "application/json")
             b.header("Cookie", cookie)
-            b.post(RequestBody.create(MediaType.parse("application/json; charset=UTF-8"), body))
+            b.post(body.toRequestBody("application/json; charset=UTF-8".toMediaType()))
             client.newCall(b.build()).execute().use { r ->
-                val text = r.body()?.string().orEmpty()
+                val text = r.body?.string().orEmpty()
                 val code = if (text.isNotBlank()) JSONObject(text).optInt("code", -999) else -1
-                println("[burst] #$i HTTP ${r.code()} ${text.length}B code=$code")
+                println("[burst] #$i HTTP ${r.code} ${text.length}B code=$code")
             }
         }
     }

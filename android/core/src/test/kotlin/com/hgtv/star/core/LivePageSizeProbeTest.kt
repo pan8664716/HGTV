@@ -9,6 +9,8 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.junit.Assume.assumeTrue
 import org.junit.Test
@@ -24,9 +26,9 @@ class LivePageSizeProbeTest {
         val signed = signer.sign(url, values, body)
         val builder = Request.Builder().url(signed.url)
         signed.headers.forEach { (k, v) -> builder.header(k, v) }
-        signed.body?.let { builder.post(RequestBody.create(MediaType.parse("application/json; charset=UTF-8"), it)) }
+        signed.body?.let { builder.post(it.toRequestBody("application/json; charset=UTF-8".toMediaType())) }
         http.newCall(builder.build()).execute().use { response ->
-            return response.body()?.string().orEmpty()
+            return response.body?.string().orEmpty()
         }
     }
 

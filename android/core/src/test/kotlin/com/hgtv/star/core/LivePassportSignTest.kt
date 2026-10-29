@@ -8,6 +8,8 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
@@ -40,9 +42,9 @@ class LivePassportSignTest {
         builder.header("X-SS-DP", "8662")
         headers.forEach { (k, v) -> builder.header(k, v) }
         val client = OkHttpClient.Builder().connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS).callTimeout(45, TimeUnit.SECONDS).build()
-        body?.let { builder.post(RequestBody.create(MediaType.parse("application/x-www-form-urlencoded; charset=UTF-8"), it)) }
+        body?.let { builder.post(it.toRequestBody("application/x-www-form-urlencoded; charset=UTF-8".toMediaType())) }
         client.newCall(builder.build()).execute().use { response ->
-            return response.code() to (response.body()?.string() ?: "")
+            return response.code to (response.body?.string() ?: "")
         }
     }
 

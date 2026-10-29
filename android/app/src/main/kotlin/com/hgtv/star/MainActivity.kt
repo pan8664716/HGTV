@@ -12,11 +12,16 @@ import android.os.Looper
 import android.view.*
 import android.net.ConnectivityManager
 import android.widget.*
-import com.google.android.exoplayer2.*
-import com.google.android.exoplayer2.ExoPlayer
-import com.google.android.exoplayer2.ui.PlayerView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.ui.PlayerView
 import com.hgtv.star.core.*
-import java.util.concurrent.Executors
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import com.hgtv.star.data.ArtworkLoader
 import com.hgtv.star.player.DanmakuView
 import com.hgtv.star.player.EpisodePanel
@@ -43,6 +48,7 @@ import com.hgtv.star.list.updateBackToTop
 import com.hgtv.star.compat.Cancellable
 import com.hgtv.star.compat.attachedToWindow
 import com.hgtv.star.compat.lowEndTv
+import com.hgtv.star.architecture.network
 
 /**
  * 全站焦点原则：**不主动抢焦点**。
@@ -93,26 +99,41 @@ class MainActivity: Activity() {
     /** 设置页里主题外观分组的四行：换主题后重建页面时按 [TvTheme] 重新填充。 */
     internal val themeRows=linkedMapOf<TvTheme,TvButton>()
     internal val main=Handler(Looper.getMainLooper())
-    internal val io=Executors.newFixedThreadPool(3)
     /**
-     * 起播前的「类预热」专用线程（见 [primePlaybackClasses]）。
+     * 页面级协程作用域。
      *
-     * 单独一条、**不占 [io]**：那段活儿要枚举本机所有解码器（`MediaCodecList` +
-     * 逐条 `createByCodecName` 试开），实测在这台 2G 盒子上 **550~600ms**。
-     * 原先它排在取播放地址之前、同一个线程上，等于把网络整整推后半秒——
-     * 日志里 `Stage warmPlayer +371ms` → `Stage primeClasses +965ms` 就是它。
-     * 现在与网络并行：网络在等的时候 CPU 正好干这件事。
+     * 与线程池的分工：**线程池是进程级的资源，作用域是页面级的生命周期**。
+     * `onDestroy` 取消作用域，所有挂在它下面的协程（包括正在等待网络的那一段）一起收手，
+     * 但线程本身留着给下一次重建用。
+     *
+     * `SupervisorJob`：一个子协程失败不应该连带取消其他子协程——播放链路的诊断协程
+     * 挂掉不该把账号刷新一起带走。
      */
-    internal val playbackPrime=Executors.newSingleThreadExecutor()
+    internal val appScope=CoroutineScope(SupervisorJob() + com.hgtv.star.architecture.AppExecutors.main)
     /**
-     * 建播放器实例专用线程（见 [buildPlayerAsync]）。
+     * 线程预算全部收在 [com.hgtv.star.architecture.AppExecutors] 里，这里只做**别名**。
      *
-     * 为什么要单独一条：`warmPlayer()` 原来跑在 [io] 上，而那条池子只有 3 条线程，
-     * 冷启动这一刻它同时被「读详情缓存 / 取推荐流 / 心跳 / 账号」占着——
-     * 日志里 `Stage warmPlayer +752ms`（基线 368ms）里有一大半是**排队**，不是真的在建。
-     * 建播放器本身与网络无关，不该排在别人后面。
+     * 改造前这七个字段各自 `Executors.newXxx()`，属于 Activity 实例：每次重建新建一批、
+     * `onDestroy` 再 `shutdownNow()`。那样做有两个后果——线程数随重建抖动，以及
+     * 「异步回调落到已关闭的池」这类崩溃。现在它们指向进程级的命名车道，
+     * 生命周期与进程一致，不再需要（也不允许）在 [onDestroy] 里关闭。
+     *
+     * 名字保留是为了让 150 多处既有调用点（`io.submit { }` 等）一行不用改；
+     * 新写的代码应该直接用 `AppExecutors.network.dispatcher` 走协程。
      */
-    internal val playerBuildWorker=Executors.newSingleThreadExecutor()
+    internal val io get()=com.hgtv.star.architecture.AppExecutors.network.executor
+    /**
+     * 起播前的「类预热」（见 [primePlaybackClasses]）与建播放器（见 [buildPlayerAsync]）
+     * 共用 `player` 车道。
+     *
+     * 为什么必须与网络分开：这两段活儿一段要枚举本机所有解码器（`MediaCodecList` +
+     * 逐条 `createByCodecName` 试开，实测 2G 盒子 **550~600ms**），一段要构造 `ExoPlayer`
+     * （实测 **0.5 秒**，大头同样是 `MediaCodecList` 全表扫描）。它们与网络无关，
+     * 排在 `io` 后面就是纯排队——日志里 `Stage warmPlayer +752ms`（基线 368ms）就是它。
+     * 车道有 2 条线程，正好容纳「当前这一集 + 下一集预热」。
+     */
+    internal val playbackPrime get()=com.hgtv.star.architecture.AppExecutors.player.executor
+    internal val playerBuildWorker get()=com.hgtv.star.architecture.AppExecutors.player.executor
     // 网络失败诊断：客户设备上「首页空白」时，这行日志给出主机名与异常类型。
     //
     // 注意：正式包里 `Log.i` 被 R8 整段删掉（见 proguard-rules.pro），只写 logcat 等于线上
@@ -171,7 +192,8 @@ class MainActivity: Activity() {
         return "支持 $span · 启用 ${enabled.map(::nice).joinToString("/").ifEmpty { "无" }}"
     }
 
-    internal val networkCleanup=Executors.newSingleThreadExecutor()
+    /** 收掉一条已废弃的传输层（见 [closeTransport]）；走 `network` 车道，不额外开线程。 */
+    internal val networkCleanup get()=com.hgtv.star.architecture.AppExecutors.network.executor
     /**
      * 会话被服务端判死（`data.error_name == session_expired`）时的界面收尾。
      *
@@ -193,9 +215,10 @@ class MainActivity: Activity() {
             runCatching { tvTools.toast("登录已失效，请重新登录") }
         }
     }
-    internal val prefetchWorker=Executors.newSingleThreadExecutor()
-    /** 弹幕单独一条线程：它要按 30 秒窗口连着拉几页，不能占住内容请求的线程池。 */
-    internal val danmakuWorker=Executors.newSingleThreadExecutor()
+    /** 下一集预热：网络 + 本地准备，走 `network` 车道（与起播地址共用预算，见 [playbackFetching]）。 */
+    internal val prefetchWorker get()=com.hgtv.star.architecture.AppExecutors.network.executor
+    /** 弹幕单独一条车道：它要按 30 秒窗口连着拉几页，不能占住内容请求的线程。 */
+    internal val danmakuWorker get()=com.hgtv.star.architecture.AppExecutors.danmaku.executor
     /** 每次换集自增；在途的弹幕请求发现 token 变了就立刻收手。 */
     internal val danmakuToken=java.util.concurrent.atomic.AtomicLong(0)
     internal var prefetchHttp: okhttp3.OkHttpClient?=null
@@ -276,13 +299,34 @@ class MainActivity: Activity() {
     /** 片尾自动推进发生的时刻：用来量「切过去到出画面」的间隔。 */
     internal var advancedAt=0L
     /**
+     * 播放会话的**唯一事实来源**。
+     *
+     * 改造前，「第几次播放、播到哪一步」由七个计数器分担（`playbackSession` /
+     * `generation` / `failureHandledSession` / `playbackWatchdogSession` /
+     * `danmakuToken` / `accountToken` / `recommendToken`），各自定义、各自比较、各自重置。
+     * 现在播放链路的会话号只有 [PlaybackController.sessionId] 一个，[playbackSession]
+     * 是它的只读投影；状态迁移全部收在 `core` 的 `PlaybackMachine` 里（有单测）。
+     */
+    internal val playback=com.hgtv.star.architecture.PlaybackController()
+    /**
+     * 播放期间的电源 / 网络保活（`PARTIAL_WAKE_LOCK` + Wi-Fi 高性能锁）。
+     *
+     * 由 [syncKeepScreenOn] 这**一个**状态同步点驱动：它本来就已经按
+     * 「前台 + 播放页 + 没出错 + 未定时停止 + 正在播」算过一次布尔量，
+     * 两件事用同一个判据，不会出现「屏幕常亮但 Wi-Fi 锁已放」这种错位。
+     */
+    internal val playbackPower by lazy { com.hgtv.star.architecture.PlaybackPower(this) }
+    /**
      * 播放会话号：每次 [playEpisode] / [releasePlayer] 自增。
      *
      * 它补的是「去掉 mediaId 判据」之后的空档：`generation` 只在换页时变，
      * 而同一个播放器里连续切集时它不变。没有这一位，上一次 `playEpisode` 的
      * 异步回调（取地址的 `work`、播放器监听器）就可能落到新的这一集上。
+     *
+     * **只读投影**：递增只能走 [PlaybackController.beginSession]，
+     * 改造前那两处分散的 `++` 已经合并到控制器里。
      */
-    internal var playbackSession=0
+    internal val playbackSession: Int get()=playback.sessionId.toInt()
     /**
      * 同一次播放会话里的故障只处理一次。
      *
@@ -325,6 +369,8 @@ class MainActivity: Activity() {
     }
     internal var deferredWork: DeferredUi?=null
     internal var initialCatalogPending=true
+    /** 进程被回收时留下的现场（见 [onSaveInstanceState] / [restoreLastScreen]）。 */
+    private var restoreBundle: Bundle?=null
     internal var restoreStoppedPage=false
     internal var pendingDetail: Series?=null
     internal var detailAutoplay=true
@@ -1043,12 +1089,13 @@ class MainActivity: Activity() {
     /** 每一个在途预热对应的任务（按 key 找，互不牵连；取消时连它自己的 HTTP 一起掐掉）。 */
     internal val recommendWarmJobs=HashMap<String,RecommendWarm>()
     /**
-     * 推荐页预热专用线程（2 条）。
+     * 推荐页预热走 `network` 车道。
      *
-     * 不复用 [prefetchWorker]：那一条是单线程，正片页的「下一集预取」也排在它上面，
-     * 一次 1MB 的预热会把后面所有预取都堵住。两条刚好够「当前方向两步」。
+     * 改造前这里是独立的 2 线程池，理由是「不能堵住正片页的下一集预取」。现在
+     * 正片预取与推荐预热同在 `network`（4 条），仍然不会互相堵死：推荐页与正片页
+     * **不会同时**出现在屏幕上，两类预热天然互斥。
      */
-    internal val recommendWarmWorker=Executors.newFixedThreadPool(2)
+    internal val recommendWarmWorker get()=com.hgtv.star.architecture.AppExecutors.network.executor
     /**
      * 上一次换剧的时刻（`elapsedRealtime`）与方向（+1 / -1）。
      *
@@ -1437,7 +1484,17 @@ class MainActivity: Activity() {
      * 清错对象，重取回来的地址照样落在同一个死 shard 上。
      */
     @Volatile internal var lastStreamHost=""
-    internal var playbackReady=false
+    /**
+     * 播放器是否**至少 READY 过一次**（进度可信）。
+     *
+     * 兼容层：改造前这是一个 `var`，5 处赋值分散在三个文件里，每处都夹在一长串副作用中间。
+     * 现在它是 [PlaybackController] 的只读投影，写入经 `setPrepared` 走状态机——
+     * 语义仍然唯一（**只进不退**，见 `PlaybackMachine` 规则 2），但不会再出现
+     * 「playbackReady 是 true、player 却是 null」这种自相矛盾的组合。
+     */
+    internal var playbackReady: Boolean
+        get()=playback.prepared
+        set(value) { playback.setPrepared(value) }
     internal var pausedForLifecycle=false
     internal lateinit var hud: LinearLayout
     internal lateinit var playbackText: TextView
@@ -1561,7 +1618,16 @@ class MainActivity: Activity() {
     internal var finishedPanel: com.hgtv.star.player.RelatedPanel?=null
     internal var finishedNotice: TvDialog?=null
     internal var pendingSeek: Long?=null
-    internal var playError=false
+    /**
+     * 是否停在错误页上。
+     *
+     * 兼容层：改造前是一个布尔量，与 `playbackReady` 一起能组合出「出错了但进度可信」
+     * 这类自相矛盾的状态。现在它是 [PlaybackController] 的阶段投影（`FAILED`），
+     * 写入经 `setErrorFlag` 走状态机。
+     */
+    internal var playError: Boolean
+        get()=playback.failed
+        set(value) { playback.setErrorFlag(value) }
     private var lastSaved=0L
     internal var quality=""
     private val tick=object: Runnable {
@@ -1586,7 +1652,15 @@ class MainActivity: Activity() {
                 if(playbackReady && player?.currentMediaItem?.mediaId==current) {
                     player?.duration?.takeIf { it>0 }?.let { lastEpisodeDuration=it }
                 }
-                if(player?.isPlaying==true && now-lastSaved>5000) { saveProgress(); lastSaved=now }
+                // 每秒把进度采样进状态机：这是 [PlaybackState.positionMs] 的唯一来源，
+                // 界面上「已看 / 总长」与断点续播都读它。放在时长更新之后，两者同一帧。
+                if(playbackReady) {
+                    playback.onProgress(player?.currentPosition ?: 0L, lastEpisodeDuration)
+                }
+                // 断点落盘：从 5 秒放宽到 15 秒（见 `Library` 的进度写入说明）。
+                // 用户能感知的续播精度是 15 秒级，5 秒纯属浪费——改造前这里每 5 秒
+                // 会把 200 条历史全量序列化并 fsync 一次。
+                if(player?.isPlaying==true && now-lastSaved>PROGRESS_SAVE_INTERVAL_MS) { saveProgress(); lastSaved=now }
             }
             main.postDelayed(this,1000)
         }
@@ -1639,6 +1713,9 @@ class MainActivity: Activity() {
     // ---- 生命周期与系统回调：扩展成员不能 override，只能留在 Activity 本体里 ----
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+        // 进程死亡后的现场：真正的恢复要等 `library.isLoaded`（onResume 里那次），
+        // 这里先存下来。`state` 只在重建时非空，正常冷启动是 null。
+        restoreBundle=state
         window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         // 主题要在建视图之前定下来：先落盘偏好 → 换色 → 丢掉柔光位图缓存（里面烤着上一套材质的投影）。
         // 窗口底色也跟着换，启动那一帧、页面切换的空档都不会闪出另一套材质。
@@ -1745,10 +1822,63 @@ class MainActivity: Activity() {
         },4000)
         message(base(),"正在读取本机记录…")
         // 预建到内容接口的连接（DNS + TCP + TLS + 验链），见 [ContentRepository.preconnect]。
-        // 放在 loadLibrary 之前、io 线程上：推荐页那次请求大约在 1 秒后发出，
+        // 放在 loadLibrary 之前、`network` 车道上：推荐页那次请求大约在 1 秒后发出，
         // 那时连接已经在池子里，只剩一个 RTT。失败静默，不影响任何功能。
-        io.execute { runCatching { repository.preconnect() } }
+        //
+        // 走协程而不是 `io.execute {}`：它挂在 [appScope] 下，页面销毁时一起取消，
+        // 不会出现「Activity 已经没了、这条线程还在建连」。
+        appScope.network { runCatching { repository.preconnect() } }
         loadLibrary()
+    }
+
+    /**
+     * 进程被回收之后的恢复点。
+     *
+     * 电视盒子（尤其 1–2GB 的）在后台停留几分钟就会被 LMK 回收；改造前全仓没有
+     * `onSaveInstanceState`，用户按 Home 再回来看到的是**首页**——播放位置、导航栈、
+     * 滚动位置全丢。对一个以「续播」为核心体验的短剧应用，这是最刺眼的体验断点。
+     *
+     * 只存六个值：整页状态塞进 `Bundle` 会撞 1MB 的 Binder 上限，而剧集对象本身
+     * 已经在本机历史里（`Library`），按 `seriesId` 反查即可，不必重复保存。
+     */
+    override fun onSaveInstanceState(outState: Bundle) {
+        super.onSaveInstanceState(outState)
+        if(!library.isLoaded) return
+        outState.putString(STATE_SCREEN,screen)
+        outState.putInt(STATE_TAB,tab)
+        outState.putString(STATE_COLLECTION,collection.orEmpty())
+        // 详情页用 `detail`，播放页 / 推荐页可能还没进详情，退回 `pendingDetail`。
+        outState.putString(STATE_SERIES,detail?.series?.id ?: pendingDetail?.id.orEmpty())
+        outState.putInt(STATE_EPISODE,episodeIndex)
+        outState.putLong(STATE_POSITION,runCatching { currentPosition() }.getOrDefault(startPosition))
+    }
+
+    /**
+     * 按 [onSaveInstanceState] 存下的现场回到原来的页面。
+     *
+     * @return 是否真的恢复了。false 表示现场不可用（没存过、或那一部已经不在本机历史里），
+     *         调用方按正常启动路径处理。
+     */
+    private fun restoreLastScreen(state: Bundle): Boolean {
+        val savedScreen=state.getString(STATE_SCREEN).orEmpty()
+        if(savedScreen.isEmpty()) return false
+        val seriesId=state.getString(STATE_SERIES).orEmpty()
+        // 播放页 / 详情页 / 推荐页：回到那一部的详情并接着上次那一集。
+        //
+        // `autoplay=false` 是刻意的：用户可能是按 Home 离开的，回来时不该自动出声。
+        // 位置由本机历史提供（`openDetail` 的 `resumeTargetFor`），与 Bundle 里那份一致。
+        if(savedScreen=="player" || savedScreen=="detail" || savedScreen=="recommend") {
+            val series=library.history().firstOrNull { it.series.id==seriesId }?.series
+            if(series!=null) {
+                openDetail(series,resume=true,autoplay=false)
+                return true
+            }
+        }
+        // 其它页面：回到原来的标签 / 集合页，再按正常路径铺内容。
+        tab=state.getInt(STATE_TAB,TAB_HOME)
+        state.getString(STATE_COLLECTION).orEmpty().takeIf { it.isNotEmpty() }?.let { collection=it }
+        showCatalog(load=true)
+        return true
     }
 
     /** 文件选择器与系统语音的回传入口；真正的读取 / 搜索都交给 [onResume] 末尾消费。 */
@@ -2087,8 +2217,16 @@ class MainActivity: Activity() {
         com.hgtv.star.data.SessionBootstrap.onForeground()
         if(library.isLoaded) {
             // 冷启动落在推荐页（需求：打开应用自动进入推荐）；设置里关掉之后落点回首页。
+            //
+            // 但**进程被回收后重建**是例外：这时用户按 Home 之前停在哪一页，就回哪一页
+            //（见 [restoreLastScreen]）。改造前这里没有这一支，回来永远是首页。
             if(initialCatalogPending) {
-                if(library.launchRecommend) openRecommend() else { initialCatalogPending=false; showCatalog(load=true) }
+                val saved=restoreBundle
+                restoreBundle=null
+                initialCatalogPending=false
+                if(saved!=null && restoreLastScreen(saved)) {
+                    // 已经按现场恢复，走正常启动路径会把它覆盖掉。
+                } else if(library.launchRecommend) openRecommend() else showCatalog(load=true)
             }
             else if(restoreStoppedPage) {
                 restoreStoppedPage=false
@@ -2243,10 +2381,15 @@ class MainActivity: Activity() {
         recommendToken.incrementAndGet(); recommendPageToken.incrementAndGet(); closeRecommendCache()
         favoriteMonitor.destroy(); tvTools.destroy(); closeAccountPanelSession(); saveProgress(); releasePlayer(); library.close()
         artwork.close(); releaseCatalogViews(); mediaSession?.release(); mediaSession=null; main.removeCallbacksAndMessages(null)
-        io.shutdownNow(); playbackPrime.shutdownNow(); playerBuildWorker.shutdownNow(); prefetchWorker.shutdownNow(); recommendWarmWorker.shutdownNow(); danmakuWorker.shutdownNow(); networkCleanup.shutdown()
+        // 页面级协程作用域：只取消「属于这个 Activity」的协程，**不碰**线程池。
+        //
+        // 线程池是进程级的（见 `AppExecutors`），这里绝不能关：重建后的新 Activity 会
+        // 继续往同一批线程上提交任务，关掉就是「提交到已关闭的池」——那正是改造前
+        // 七个 `shutdownNow()` 埋下的崩溃面。
+        appScope.cancel()
         // 「这一次根本没发过请求」时不去碰它：取值会把 client 现建出来（见 `hasHttpClient`）。
         if(repository.hasHttpClient()) {
-            Thread({ repository.http.dispatcher().cancelAll(); repository.http.connectionPool().evictAll(); repository.http.dispatcher().executorService().shutdown() },"hgtv-network-cleanup").start()
+            Thread({ repository.http.dispatcher.cancelAll(); repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown() },"hgtv-network-cleanup").start()
         }
         super.onDestroy()
     }

@@ -26,10 +26,10 @@ class SessionInterceptor(
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
-        val sessionHost = isSessionHost(original.url().host())
+        val sessionHost = isSessionHost(original.url.host)
         // 播放取地址接口（`/novel/player/...`）**只补 Cookie、不补 token**：
         // 这条接口对 `X-Tt-Token` 的长度极其敏感（整段 cookie 串塞进去直接回 `200 + 0 字节`）。
-        val skipToken = original.url().encodedPath().startsWith("/novel/player/")
+        val skipToken = original.url.encodedPath.startsWith("/novel/player/")
         val request = if(sessionHost) {
             SessionBridge.decorate(original.newBuilder(),injectToken && !skipToken).build()
         } else original
@@ -37,8 +37,8 @@ class SessionInterceptor(
         //（这条接口按设备计额度，见 `ContentRepository.modelDeviceId`）。
         // 不再逐条 dump 请求头：`x-medusa` / `x-hellos` 这类字段几百字符，
         // 一条请求就能把十几行刷掉，真正的结论（路径 / 字节数 / 业务码）反而被挤出屏幕。
-        if(request.url().encodedPath().contains("video_model")) {
-            SessionBridge.log("model req ${request.method()} ${request.url()}")
+        if(request.url.encodedPath.contains("video_model")) {
+            SessionBridge.log("model req ${request.method} ${request.url}")
         }
         val response = chain.proceed(request)
         if(sessionHost) {
@@ -54,14 +54,14 @@ class SessionInterceptor(
                 if(sid.isNotBlank() && rotated.length>=SessionBridge.TOKEN_CHECK_LENGTH && !rotated.contains(sid)) {
                     SessionBridge.log("ignored foreign token len=${rotated.length} (sessionid mismatch)")
                 } else if(SessionBridge.saveToken(rotated)) {
-                    SessionBridge.log("token rotated by ${original.url().host()}")
+                    SessionBridge.log("token rotated by ${original.url.host}")
                 }
             }
             val cookies = response.headers("Set-Cookie")
             // 续期（`sid_guard` 每次心跳都会重新签发）就是靠这里落盘的：只在**真的有变化**时记一行，
             // 否则每个业务请求都会刷一条日志。
             if(cookies.isNotEmpty() && SessionBridge.mergeSetCookie(cookies)) {
-                SessionBridge.log("cookie renewed by ${original.url().host()} (${cookies.size} set)")
+                SessionBridge.log("cookie renewed by ${original.url.host} (${cookies.size} set)")
             }
             sniffExpired(response)
         }
@@ -77,15 +77,15 @@ class SessionInterceptor(
      */
     private fun sniffExpired(response: Response) {
         if(SessionBridge.state==null) return
-        if(response.request().url().encodedPath().startsWith("/novel/player/")) return
-        val length = response.body()?.contentLength() ?: -1L
+        if(response.request.url.encodedPath.startsWith("/novel/player/")) return
+        val length = response.body?.contentLength() ?: -1L
         if(length<=0L || length>SNIFF_LIMIT) return
         val text = runCatching { response.peekBody(SNIFF_LIMIT).string() }.getOrNull() ?: return
         if(!text.contains("session_expired",ignoreCase = true)) return
         val flag = runCatching {
             org.json.JSONObject(text).optJSONObject("data")?.optString("error_name").orEmpty()
         }.getOrNull().orEmpty()
-        if(flag.equals(ERR_SESSION_EXPIRED,ignoreCase = true)) SessionBridge.markExpired("http:${response.code()}")
+        if(flag.equals(ERR_SESSION_EXPIRED,ignoreCase = true)) SessionBridge.markExpired("http:${response.code}")
     }
 
     private fun isSessionHost(host: String): Boolean {

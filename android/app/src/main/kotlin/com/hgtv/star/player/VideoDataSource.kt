@@ -2,9 +2,9 @@
 package com.hgtv.star.player
 
 import android.net.Uri
-import com.google.android.exoplayer2.C
-import com.google.android.exoplayer2.upstream.BaseDataSource
-import com.google.android.exoplayer2.upstream.DataSpec
+import androidx.media3.common.C
+import androidx.media3.datasource.BaseDataSource
+import androidx.media3.datasource.DataSpec
 import com.hgtv.star.core.RemoteVideo
 
 class VideoDataSource(private val video: RemoteVideo): BaseDataSource(true) {

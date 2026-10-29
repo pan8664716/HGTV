@@ -7,9 +7,13 @@ import com.hgtv.star.compat.isMeteredConnection
 import android.app.Activity
 import android.view.*
 import android.widget.*
-import com.google.android.exoplayer2.*
-import com.google.android.exoplayer2.source.ProgressiveMediaSource
-import com.google.android.exoplayer2.ui.PlayerView
+import androidx.media3.common.MediaItem
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.mediacodec.MediaCodecRenderer
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.ui.PlayerView
 import com.hgtv.star.core.*
 import com.hgtv.star.data.WatchProgress
 import com.hgtv.star.data.PlaybackCapability
@@ -19,6 +23,7 @@ import com.hgtv.star.player.PlaybackMenu
 import com.hgtv.star.player.TvMediaSession
 import com.hgtv.star.tv.TvDialog
 import com.hgtv.star.compat.attachedToWindow
+import com.hgtv.star.architecture.network
 
 // 本文件是从 MainActivity.kt 拆出来的「播放中控：缓冲抑制、下一集预取、重试恢复、HUD 与传输层回收」这一块。
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
@@ -39,7 +44,7 @@ internal fun MainActivity.closeTransport(http: okhttp3.OkHttpClient?) {
     if (http == null) return
     if (http === com.hgtv.star.data.PlaybackTransport.client) return
     // 兜底：万一以后有别的 client 走到这里（当前没有），仍按老办法收掉。
-    networkCleanup.execute { http.dispatcher().cancelAll(); http.connectionPool().evictAll(); http.dispatcher().executorService().shutdown() }
+    appScope.network { http.dispatcher.cancelAll(); http.connectionPool.evictAll(); http.dispatcher.executorService.shutdown() }
 }
 /**
  * 无感切集时的缓冲指示：过渡那一两百毫秒不转圈，画面停在上一集最后一帧就够了。
@@ -127,7 +132,7 @@ internal fun MainActivity.enqueuePreparedNext() {
     queuedAt=android.os.SystemClock.elapsedRealtime()
     val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }
         .createMediaSource(MediaItem.Builder().setMediaId(id).setUri("hgtv://episode/$id")
-            .setMimeType(com.google.android.exoplayer2.util.MimeTypes.VIDEO_MP4).build())
+            .setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4).build())
     // 挂失败（列表被别处清空、播放器正好在重建）就当没预热过：把资源收回来，
     // 片尾仍然走 `STATE_ENDED → playEpisode` 那条兜底，不会留下半截状态。
     if(runCatching { p.addMediaSource(source) }.isFailure) {
@@ -367,7 +372,7 @@ internal fun MainActivity.scheduleRecovery() {
 internal fun playbackMediaKind(problem: Throwable?): MediaKind {
     var current=problem; var guard=0
     while(current!=null && guard++<8) {
-        if(current is com.google.android.exoplayer2.ExoPlaybackException) {
+        if(current is androidx.media3.exoplayer.ExoPlaybackException) {
             val mime=current.rendererFormat?.sampleMimeType.orEmpty()
             if(mime.startsWith("audio/")) return MediaKind.AUDIO
             if(mime.startsWith("video/")) return MediaKind.VIDEO
@@ -375,7 +380,7 @@ internal fun playbackMediaKind(problem: Throwable?): MediaKind {
             if(name.contains("Audio",true)) return MediaKind.AUDIO
             if(name.contains("Video",true)) return MediaKind.VIDEO
         }
-        if(current is com.google.android.exoplayer2.mediacodec.MediaCodecRenderer.DecoderInitializationException) {
+        if(current is androidx.media3.exoplayer.mediacodec.MediaCodecRenderer.DecoderInitializationException) {
             val mime=current.mimeType.orEmpty()
             if(mime.startsWith("audio/")) return MediaKind.AUDIO
             if(mime.startsWith("video/")) return MediaKind.VIDEO
@@ -1193,6 +1198,9 @@ internal fun MainActivity.syncKeepScreenOn() {
         player?.playWhenReady==true
     if(on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
     else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    // 屏幕常亮只管屏幕，不管 CPU，也不管 Wi-Fi 省电。这两件事与「是否在播」是同一个判据，
+    // 因此在这里一起驱动（见 `PlaybackPower` 的类注释：分散在两处各写一次迟早会漏）。
+    if(on) playbackPower.acquire() else playbackPower.release()
 }
 
 internal fun MainActivity.showHud() {
@@ -1361,9 +1369,9 @@ internal fun MainActivity.sleepChoices(menu: PlaybackMenu): List<PlaybackMenu.Ch
     }
 }
 internal fun MainActivity.frameResizeMode()=when(library.frameMode) {
-    VideoFrameMode.FIT -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-    VideoFrameMode.ZOOM -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-    VideoFrameMode.FILL -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+    VideoFrameMode.FIT -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    VideoFrameMode.ZOOM -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    VideoFrameMode.FILL -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
 }
 /**
  * 「竖屏短剧全屏」**这台设备上能不能用**：只有手机 / 平板可用，电视不可用。

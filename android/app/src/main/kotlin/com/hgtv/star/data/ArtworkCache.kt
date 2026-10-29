@@ -92,19 +92,35 @@ class ArtworkCache(private val directory: File) {
     private var knownBytes = UNKNOWN
     private var knownCount = 0
 
-    @Synchronized fun put(key: String, bytes: ByteArray) {
+    /**
+     * 写入一张封面。
+     *
+     * **文件 IO 不在锁里**。改造前整个方法是 `@Synchronized`，`temp.writeBytes()` 也包在
+     * 监视器内——8 个图片线程全都排在这一次磁盘写后面。注释里当时只把 `prune`（扫目录）
+     * 改成了「涨过上限才做」，但真正占时间的是写盘本身（一张 94KB 的 webp 在 eMMC 上
+     * 5~20ms，8 条线程串起来就是「前几张快、后面越来越慢」）。
+     *
+     * 现在锁只保护两个计数，写盘与 rename 在锁外并发进行：不同 key 落在不同文件上，
+     * 本来就互不影响；同 key 重复写也只是后写的赢，`.tmp` 文件名按 key 派生，不会串。
+     */
+    fun put(key: String, bytes: ByteArray) {
         if (bytes.isEmpty() || bytes.size > MAX_ENTRY_BYTES) return
         runCatching {
             directory.mkdirs()
             val dest = file(key)
             val temp = File(directory, "${dest.name}.tmp")
+            // 锁外：真正的磁盘写。
             temp.writeBytes(bytes)
             if (!temp.renameTo(dest)) { temp.delete(); return@runCatching }
-            if (knownBytes == UNKNOWN) measure()
-            else { knownBytes += bytes.size; knownCount++ }
+            val overLimit = synchronized(this) {
+                if (knownBytes == UNKNOWN) measure()
+                else { knownBytes += bytes.size; knownCount++ }
+                knownBytes > MAX_TOTAL_BYTES || knownCount > MAX_ENTRIES
+            }
             // 只有真的超了才扫目录。清理一次删到 [PRUNE_TARGET]，
             // 因此接下来几百张写入都不会再走到这里（见 [PRUNE_TARGET] 的说明）。
-            if (knownBytes > MAX_TOTAL_BYTES || knownCount > MAX_ENTRIES) prune()
+            // `prune` 自己加锁：它要读全目录，不该和别的写入交错。
+            if (overLimit) prune()
         }
     }
 
@@ -130,6 +146,7 @@ class ArtworkCache(private val directory: File) {
      * 实测把单张耗时从 8ms 抬到 91ms，而 `put` 是 `@Synchronized`，
      * 8 个 worker 全堵在它后面等（那正是「前几百张好、后面退化」的直接原因）。
      */
+    @Synchronized
     private fun prune() {
         val files = directory.listFiles().orEmpty().sortedBy { it.lastModified() }
         var size = files.sumOf { it.length() }

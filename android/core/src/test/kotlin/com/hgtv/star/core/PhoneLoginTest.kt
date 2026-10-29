@@ -6,6 +6,7 @@ import okhttp3.Protocol
 import okhttp3.Request
 import okhttp3.Response
 import okhttp3.ResponseBody
+import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -22,13 +23,13 @@ class PhoneLoginTest {
             log += request
             val (body, headers) = respond(request)
             val builder = Response.Builder().request(request).protocol(Protocol.HTTP_1_1)
-.code(200).message("OK").body(ResponseBody.create(null, body))
+.code(200).message("OK").body(body.toResponseBody(null))
             headers.forEach { (k, v) -> builder.header(k, v) }
             builder.build()
         }.build()
 
     private fun form(request: Request): Map<String, String> {
-        val text = request.body()?.let { okio.Buffer().also { b -> it.writeTo(b) }.readUtf8() }.orEmpty()
+        val text = request.body?.let { okio.Buffer().also { b -> it.writeTo(b) }.readUtf8() }.orEmpty()
         return text.split('&').filter { it.contains('=') }
             .associate { it.substringBefore('=') to java.net.URLDecoder.decode(it.substringAfter('='), "UTF-8") }
     }
@@ -42,7 +43,7 @@ class PhoneLoginTest {
         val login = PhoneLogin(client(log) { """{"data":{"retry_time":60,"error_code":0},"message":"success"}""" to emptyMap() })
         login.device = mapOf("device_id" to "1234567890123456", "iid" to "1234567890123457", "cdid" to "c", "openudid" to "o")
         assertEquals(PhoneLogin.Result.Sent, login.sendCode("17600351236") { null })
-        assertEquals("/passport/mobile/send_code/v1/", log.single().url().encodedPath())
+        assertEquals("/passport/mobile/send_code/v1/", log.single().url.encodedPath)
         val fields = form(log.single())
         // 手机号必须是 `+86` 前缀 XOR 0x05 的 hex；明文会被平台判参数错误。
         assertEquals(encode("+8617600351236"), fields["mobile"])
@@ -71,7 +72,7 @@ class PhoneLoginTest {
         val result = login.login("17600351236", "4263")
         assertTrue("应当登录成功：$result", result is PhoneLogin.Result.LoggedIn)
         val credentials = (result as PhoneLogin.Result.LoggedIn).credentials
-        assertEquals("/passport/mobile/sms_login/", log.single().url().encodedPath())
+        assertEquals("/passport/mobile/sms_login/", log.single().url.encodedPath)
         assertEquals(encode("4263"), form(log.single())["code"])
         assertTrue("会话 Cookie 要收进凭据", credentials.cookie.contains("sessionid=abc123"))
         assertEquals("tok-xyz", login.sessionToken)
@@ -105,7 +106,7 @@ class PhoneLoginTest {
     @Test fun expiredUpsmsDoesNotFallBackToTheConsumedMobileTicket() {
         val log = mutableListOf<Request>()
         val login = PhoneLogin(client(log) { request ->
-            if (request.url().encodedPath() == "/passport/mobile/sms_login/") {
+            if (request.url.encodedPath == "/passport/mobile/sms_login/") {
                 """{"data":{"encrypt_uid":"uid-1","sms_code_key":"key-1","passport_scene":"login",
                     "verify_ticket":"vt-1","mobile_ticket":"mt-1",
                     "verify_ways":[{"verify_way":"upsms","channel_mobile":"9515211003","sms_content":"YZ"}]},
@@ -129,7 +130,7 @@ class PhoneLoginTest {
     @Test fun challengeWithOnlyMobileTicketEndsWhenExchangeSaysExpired() {
         val log = mutableListOf<Request>()
         val login = PhoneLogin(client(log) { request ->
-            when (request.url().encodedPath()) {
+            when (request.url.encodedPath) {
                 "/passport/mobile/sms_login/" ->
                     """{"data":{"encrypt_uid":"uid-1","sms_code_key":"key-1","passport_scene":"login","mobile_ticket":"mt-1",
                         "verify_ways":[{"verify_way":"upsms","channel_mobile":"9515211003","sms_content":"YZ"}]},
@@ -146,7 +147,7 @@ class PhoneLoginTest {
         assertTrue("挑战要清掉", !login.waitingUpsms)
         // 登录 + 换票：换票失败就不再打 verify（拿死票打只会刷 1045）。
         assertEquals(2, log.size)
-        assertEquals("/passport/upsms/gen_verify_ticket/", log[1].url().encodedPath())
+        assertEquals("/passport/upsms/gen_verify_ticket/", log[1].url.encodedPath)
         assertTrue("换票请求不能带 mobile_ticket", form(log[1])["verify_ticket"].isNullOrEmpty())
     }
 
@@ -157,7 +158,7 @@ class PhoneLoginTest {
     @Test fun challengeWithoutAnyTicketTriesExchangeOnceThenFailsFast() {
         val log = mutableListOf<Request>()
         val login = PhoneLogin(client(log) { request ->
-            when (request.url().encodedPath()) {
+            when (request.url.encodedPath) {
                 "/passport/mobile/sms_login/" ->
                     """{"data":{"encrypt_uid":"uid-1","sms_code_key":"key-1","passport_scene":"sms_login",
                         "verify_ways":[{"verify_way":"upsms","channel_mobile":"9515211003","sms_content":"YZ"}]},
@@ -170,7 +171,7 @@ class PhoneLoginTest {
         assertTrue(login.login("17600351236", "4263") is PhoneLogin.Result.NeedUpsms)
         assertTrue("没有票据就别打 verify", login.verifyUpsms() is PhoneLogin.UpsmsResult.Failed)
         assertEquals("登录 + 一次换票", 2, log.size)
-        assertEquals("/passport/upsms/gen_verify_ticket/", log[1].url().encodedPath())
+        assertEquals("/passport/upsms/gen_verify_ticket/", log[1].url.encodedPath)
         assertTrue("挑战要清掉", !login.waitingUpsms)
     }
 
@@ -207,7 +208,7 @@ class PhoneLoginTest {
     @Test fun upsmsVerifySendsNonEmptyTicketAndVerifyData() {
         val log = mutableListOf<Request>()
         val login = PhoneLogin(client(log) { request ->
-            if (request.url().encodedPath() == "/passport/mobile/sms_login/") {
+            if (request.url.encodedPath == "/passport/mobile/sms_login/") {
                 """{"data":{"encrypt_uid":"u","sms_code_key":"k","passport_scene":"login",
                     "verify_ticket":"vt-1","mobile_ticket":"mt-1",
                     "verify_ways":[{"verify_way":"upsms","channel_mobile":"10690000","sms_content":"YZabc"}]},
@@ -220,7 +221,7 @@ class PhoneLoginTest {
         assertTrue(login.login("17600351236", "4263") is PhoneLogin.Result.NeedUpsms)
         assertTrue(login.verifyUpsms() is PhoneLogin.UpsmsResult.Pending)
         val ask = log.last()
-        assertEquals("/passport/upsms/verify/", ask.url().encodedPath())
+        assertEquals("/passport/upsms/verify/", ask.url.encodedPath)
         val fields = form(ask)
         assertEquals("vt-1", fields["verify_ticket"])
         assertEquals("block-upsms", fields["decision_config"])
@@ -242,7 +243,7 @@ class PhoneLoginTest {
     @Test fun mobileTicketIsExchangedForARealTicketBeforeVerify() {
         val log = mutableListOf<Request>()
         val login = PhoneLogin(client(log) { request ->
-            when (request.url().encodedPath()) {
+            when (request.url.encodedPath) {
                 "/passport/mobile/sms_login/" ->
                     """{"data":{"passport_scene":"login","mobile_ticket":"mt-1",
                         "verify_ways":[{"verify_way":"upsms","channel_mobile":"10690000","sms_content":"YZabc"}]},
@@ -255,7 +256,7 @@ class PhoneLoginTest {
         login.device = mapOf("device_id" to "1", "iid" to "2")
         assertTrue(login.login("17600351236", "4263") is PhoneLogin.Result.NeedUpsms)
         assertTrue(login.verifyUpsms() is PhoneLogin.UpsmsResult.Pending)
-        val paths = log.map { it.url().encodedPath() }
+        val paths = log.map { it.url.encodedPath }
         assertEquals(
             listOf("/passport/mobile/sms_login/", "/passport/upsms/gen_verify_ticket/", "/passport/upsms/verify/"),
             paths
@@ -276,7 +277,7 @@ class PhoneLoginTest {
     @Test fun unknownUpsmsErrorKeepsWaitingBeforeGivingUp() {
         val log = mutableListOf<Request>()
         val login = PhoneLogin(client(log) { request ->
-            when (request.url().encodedPath()) {
+            when (request.url.encodedPath) {
                 "/passport/mobile/sms_login/" ->
                     """{"data":{"encrypt_uid":"u","sms_code_key":"k","passport_scene":"login","mobile_ticket":"mt",
                         "verify_ways":[{"verify_way":"upsms","channel_mobile":"1","sms_content":"YZ"}]},
@@ -300,7 +301,7 @@ class PhoneLoginTest {
     @Test fun consumedCodeIsNotReplayedWithoutTicket() {
         val log = mutableListOf<Request>()
         val login = PhoneLogin(client(log) { request ->
-            if (request.url().encodedPath() == "/passport/mobile/sms_login/") {
+            if (request.url.encodedPath == "/passport/mobile/sms_login/") {
                 """{"data":{"encrypt_uid":"u","sms_code_key":"k",
                     "verify_ways":[{"verify_way":"upsms","channel_mobile":"1","sms_content":"YZ"}]},
                     "message":"success"}""" to emptyMap()
@@ -368,7 +369,7 @@ class PhoneLoginTest {
     @Test fun novelreadDecisionVerifiesDirectlyWithoutTicketExchange() {
         val log = mutableListOf<Request>()
         val login = PhoneLogin(client(log) { request ->
-            when (request.url().encodedPath()) {
+            when (request.url.encodedPath) {
                 "/passport/mobile/sms_login/" -> """{"data":{
                     "biz_params":{"passport_mfa_retry_tag":"1","sms_code_key":"KEY123"},
                     "common_params":{"copywriting":"{}","copywriting_key":"sms_login",
@@ -388,7 +389,7 @@ class PhoneLoginTest {
         val need = login.login("17600351236", "4263")
         assertTrue("应当要求上行短信：$need", need is PhoneLogin.Result.NeedUpsms)
         assertTrue(login.verifyUpsms() is PhoneLogin.UpsmsResult.Pending)
-        val paths = log.map { it.url().encodedPath() }
+        val paths = log.map { it.url.encodedPath }
         assertEquals(listOf("/passport/mobile/sms_login/", "/passport/upsms/verify/"), paths)
         val fields = form(log[1])
         assertEquals("enc-1", fields["encrypt_uid"])
@@ -404,7 +405,7 @@ class PhoneLoginTest {
     @Test fun novelreadComplexSmsUsesSafeMobileEndpoint() {
         val log = mutableListOf<Request>()
         val login = PhoneLogin(client(log) { request ->
-            when (request.url().encodedPath()) {
+            when (request.url.encodedPath) {
                 "/passport/mobile/sms_login/" -> """{"data":{
                     "biz_params":{"passport_mfa_retry_tag":"1","sms_code_key":"K"},
                     "encrypt_uid":"enc-2","is_complex_sms":true,
@@ -419,7 +420,7 @@ class PhoneLoginTest {
         login.device = mapOf("device_id" to "1", "iid" to "2")
         assertTrue(login.login("17600351236", "4263") is PhoneLogin.Result.NeedUpsms)
         assertTrue(login.verifyUpsms() is PhoneLogin.UpsmsResult.Pending)
-        assertEquals("/passport/upsms/safe_mobile/verify/", log.last().url().encodedPath())
+        assertEquals("/passport/upsms/safe_mobile/verify/", log.last().url.encodedPath)
         assertEquals("1", form(log.last())["upstream_verify_type"])
     }
 
@@ -427,7 +428,7 @@ class PhoneLoginTest {
     @Test fun replayAfterUpsmsUsesBizParamsNotTheTicket() {
         val log = mutableListOf<Request>()
         val login = PhoneLogin(client(log) { request ->
-            when (request.url().encodedPath()) {
+            when (request.url.encodedPath) {
                 "/passport/mobile/sms_login/" ->
                     if (log.size == 1) """{"data":{
                         "biz_params":{"passport_mfa_retry_tag":"1","sms_code_key":"KEY123"},

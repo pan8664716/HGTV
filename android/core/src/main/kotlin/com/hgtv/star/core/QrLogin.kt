@@ -8,6 +8,7 @@ import java.util.concurrent.TimeUnit
 import okhttp3.HttpUrl
 import okhttp3.OkHttpClient
 import okhttp3.Request
+import okhttp3.HttpUrl.Companion.toHttpUrlOrNull
 import org.json.JSONObject
 
 /**
@@ -201,7 +202,7 @@ class QrLogin(
 
     /** 一次 GET：收 `Set-Cookie` / `X-Tt-Token`，回 JSON；失败返回 null。 */
     private fun request(path: String,params: List<Pair<String,String>>): JSONObject? = synchronized(lock) {
-        val url = HttpUrl.parse(HOST+path)?.newBuilder()
+        val url = HOST+path.toHttpUrlOrNull()?.newBuilder()
             ?.apply { params.forEach { (key,value) -> addQueryParameter(key,value) } }
             ?.build() ?: run { lastError="接口地址无效"; return null }
         val builder = Request.Builder().url(url)
@@ -215,7 +216,7 @@ class QrLogin(
                 response.headers("Set-Cookie").forEach { header -> collectCookies(header) }
                 response.header("X-Tt-Token")?.takeIf { it.isNotBlank() }?.let { token=it }
                 response.header("bd-ticket-guard-sign-res-static-ts-sign")?.takeIf { it.isNotBlank() }?.let { tsSign=it }
-                response.body()?.string().orEmpty()
+                response.body?.string().orEmpty()
             }
             if(raw.isBlank()) { lastError="账号服务暂无响应，请稍后重试"; return null }
             trace("← $path ${raw.take(160)}")

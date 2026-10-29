@@ -71,6 +71,6 @@ class FasterBrowsingTest {
             assertArrayEquals(data.copyOfRange(1000000,1200000),remote.read(1000000,200000))
             assertEquals("bytes=1048576-1199999",ranges.last())
             remote.close(); assertThrows(java.io.IOException::class.java) { remote.read(0,1) }
-        } finally { server.stop(0); client.connectionPool().evictAll(); client.dispatcher().executorService().shutdownNow() }
+        } finally { server.stop(0); client.connectionPool.evictAll(); client.dispatcher.executorService.shutdownNow() }
     }
 }

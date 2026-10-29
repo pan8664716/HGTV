@@ -45,7 +45,14 @@ android {
         }
         getByName("release") { multiDexKeepProguard = file("multidex-keep.pro"); signingConfig = signingConfigs.getByName("delivery"); isMinifyEnabled = true; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro") } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
-    kotlinOptions { jvmTarget = "1.8" }
+    kotlinOptions {
+        jvmTarget = "1.8"
+        // Media3 把「播放器实现类」全部标了 `@UnstableApi`（`DefaultRenderersFactory` /
+        // `MediaCodecSelector` / `DefaultLoadControl` / `ProgressiveMediaSource` /
+        // `AnalyticsListener` …）。本应用必须直接碰这些类（自定义渲染器、自定义解码器筛选、
+        // 自定义 DataSource），因此按官方推荐在模块级统一 opt-in，而不是给每个类加注解。
+        freeCompilerArgs += "-opt-in=androidx.media3.common.util.UnstableApi"
+    }
     lint {
         // targetSdk 钉在 29 是刻意的（见上面的注释：传统存储模式要它才能写 /sdcard/.hgtv/）。
         // `ExpiredTargetSdkVersion` 只在「上架 Google Play」这一前提下成立，本应用自签分发、
@@ -53,7 +60,18 @@ android {
         disable += "ExpiredTargetSdkVersion"
     }
     packaging {
-        resources.excludes += setOf("META-INF/versions/**", "META-INF/*.kotlin_module")
+        // 协程与 OkHttp 4 都会带进来一批 `META-INF/versions/**` 与 license 文件；
+        // 前者是 Java 9 多版本 jar 的入口，AGP 已经按 minSdk 选好，重复打包只会触发
+        // `checkDuplicateClasses`；后者纯文本，对运行时无用。
+        resources.excludes += setOf(
+            "META-INF/versions/**",
+            "META-INF/*.kotlin_module",
+            "META-INF/LICENSE*",
+            "META-INF/NOTICE*",
+            "META-INF/AL2.0",
+            "META-INF/LGPL2.1",
+            "META-INF/*.version",
+        )
         jniLibs.useLegacyPackaging = true
     }
 }
@@ -64,10 +82,22 @@ dependencies {
     implementation("androidx.vectordrawable:vectordrawable:1.1.0")
     implementation("androidx.media:media:1.6.0")
     implementation("com.google.zxing:core:3.4.1")
-    implementation("com.squareup.okhttp3:okhttp:3.12.13")
+    // OkHttp 4.12：3.12.13 已停止维护，而它在 h2 读线程上的越界崩溃（见
+    // `PlaybackTransport` 的类注释）是 3.x 才有的问题。4.x 是 Kotlin 实现，
+    // API 兼容，`minSdk 19` 可用。
+    implementation("com.squareup.okhttp3:okhttp:4.12.0")
     implementation(project(":core")) { exclude(group = "org.json") }
-    implementation("com.google.android.exoplayer:exoplayer-core:2.19.1")
-    implementation("com.google.android.exoplayer:exoplayer-ui:2.19.1")
+    // 播放内核：ExoPlayer 2.x 已停止维护，迁移到 Media3。
+    //
+    // **版本被 minSdk 19 钉死在 1.4.1**：Media3 从 1.5.0 起要求 `minSdk 21`，
+    // 升上去等于放弃 Android 4.4（本应用的主力机型）。1.4.1 是最后一个支持 19 的版本，
+    // 也是目前能同时满足「不再 EOL」与「4.4 可用」的唯一选择。
+    implementation("androidx.media3:media3-exoplayer:1.4.1")
+    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("androidx.media3:media3-datasource:1.4.1")
+    // 协程：全站的线程模型（见 `architecture/AppDispatchers.kt`）。
+    // 1.8.1 是最后一条仍兼容 Kotlin 1.9/2.0 混合工具链的稳定线，且不引入原生库。
+    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // ART 基线 profile 的落盘者（见 `src/main/baseline-prof.txt`）。
     //
     // 作用链：AGP 把 `baseline-prof.txt` 编成 APK 里的 `assets/dexopt/baseline.prof`，

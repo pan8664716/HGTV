@@ -5,7 +5,6 @@ import android.app.Activity
 import android.graphics.Typeface
 import android.view.*
 import android.widget.*
-import com.google.android.exoplayer2.*
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone

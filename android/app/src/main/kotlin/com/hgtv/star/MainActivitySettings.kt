@@ -10,7 +10,7 @@ import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
-import com.google.android.exoplayer2.*
+import androidx.media3.ui.PlayerView
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone

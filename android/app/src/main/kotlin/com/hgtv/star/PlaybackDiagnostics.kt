@@ -2,13 +2,13 @@
 package com.hgtv.star
 
 import android.os.Build
-import com.google.android.exoplayer2.C
-import com.google.android.exoplayer2.Format
-import com.google.android.exoplayer2.PlaybackException
-import com.google.android.exoplayer2.Player
-import com.google.android.exoplayer2.analytics.AnalyticsListener
-import com.google.android.exoplayer2.decoder.DecoderReuseEvaluation
-import com.google.android.exoplayer2.mediacodec.MediaCodecRenderer
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.DecoderReuseEvaluation
+import androidx.media3.exoplayer.mediacodec.MediaCodecRenderer
 import com.hgtv.star.compat.isMeteredConnection
 import com.hgtv.star.core.DegradationKind
 import com.hgtv.star.core.PlaybackRetryPlan
@@ -327,7 +327,7 @@ internal fun playbackStage(problem: Throwable?): String {
 private fun decoderOf(problem: Throwable?): String {
     var current=problem; var guard=0
     while(current!=null && guard++<8) {
-        if(current is MediaCodecRenderer.DecoderInitializationException) return current.codecInfo?.name ?: current.mimeType
+        if(current is MediaCodecRenderer.DecoderInitializationException) return current.codecInfo?.name ?: current.mimeType.orEmpty()
         current=current.cause
     }
     return ""
@@ -849,7 +849,7 @@ internal fun MainActivity.disarmPlaybackWatchdog() {
  * 那时 `lastFrameAt` 一直是 0，停滞看门狗据此**自己让路**（见 [armFrameStallWatchdog]）。
  * 若在 `onRenderedFirstFrame` 里也记一次，这类设备就会在首帧之后 12 秒被误判成「画面停住」。
  */
-internal fun MainActivity.playbackFrameClock()=com.google.android.exoplayer2.video.VideoFrameMetadataListener { _,_,_,_ ->
+internal fun MainActivity.playbackFrameClock()=androidx.media3.exoplayer.video.VideoFrameMetadataListener { _,_,_,_ ->
     // 注入模式（DebugFaults.STALL_FRAME）下故意不记账，见 [PlaybackDiag.injectedNoFrame]。
     if(PlaybackDiag.injectedNoFrame) return@VideoFrameMetadataListener
     PlaybackDiag.lastFrameAt=android.os.SystemClock.elapsedRealtime()

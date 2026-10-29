@@ -8,7 +8,6 @@ import android.view.inputmethod.InputMethodManager
 import android.content.Context
 import android.widget.*
 import android.text.TextUtils
-import com.google.android.exoplayer2.*
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.SoftStyle

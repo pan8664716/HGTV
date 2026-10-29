@@ -85,7 +85,7 @@ object HgtvTls {
     val SPEC: ConnectionSpec = ConnectionSpec.Builder(ConnectionSpec.MODERN_TLS)
         .tlsVersions(TlsVersion.TLS_1_3, TlsVersion.TLS_1_2)
         .cipherSuites(
-            *((ConnectionSpec.MODERN_TLS.cipherSuites().orEmpty() + LEGACY_CBC_SUITES).toTypedArray())
+            *((ConnectionSpec.MODERN_TLS.cipherSuites.orEmpty() + LEGACY_CBC_SUITES).toTypedArray())
         )
         .build()
 

@@ -81,11 +81,11 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
             val result=RequestScope.execute(call) { response ->
                 // 403 / 404：地址或文件不认了。缓存（索引 + 地址）必须一起作废，
                 // 否则重试永远读到同一份已经失效的东西。
-                if(response.code()==403 || response.code()==404) {
+                if(response.code==403 || response.code==404) {
                     PlaybackCache.invalidateIndex(cacheKey)
-                    throw StreamExpiredException("播放地址已失效（HTTP ${response.code()}）")
+                    throw StreamExpiredException("播放地址已失效（HTTP ${response.code}）")
                 }
-                if(response.code()!=206) throw IOException("视频服务器不支持分段读取（HTTP ${response.code()}）")
+                if(response.code!=206) throw IOException("视频服务器不支持分段读取（HTTP ${response.code}）")
                 val match=Regex("bytes (\\d+)-(\\d+)/(\\d+)").matchEntire(response.header("Content-Range").orEmpty()) ?: throw IOException("视频分段响应异常")
                 val (begin,finish,size)=match.destructured
                 val full=size.toLong(); val last=minOf(end,full-1)
@@ -95,7 +95,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
                     PlaybackCache.invalidateIndex(cacheKey)
                     throw VideoChangedException("视频资源已变化")
                 }
-                val n=(last-start+1).toInt(); val body=response.body() ?: throw IOException("视频分段为空")
+                val n=(last-start+1).toInt(); val body=response.body ?: throw IOException("视频分段为空")
                 val bytes=body.source().readByteArray(n.toLong())
                 Range(bytes,full)
             }

@@ -10,6 +10,8 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 
 /**
@@ -451,10 +453,10 @@ class PhoneLogin(
         builder.header("X-Tt-Store-Region-Src","did")
         if(token.isNotBlank()) builder.header("X-Tt-Token",token)
         if(cookies.isNotEmpty()) builder.header("Cookie",cookies.entries.joinToString("; ") { (k,v) -> "$k=$v" })
-        builder.post(RequestBody.create(MediaType.parse("application/x-www-form-urlencoded; charset=UTF-8"),body))
+        builder.post(body.toRequestBody("application/x-www-form-urlencoded; charset=UTF-8".toMediaType()))
         trace("→ POST $path form=$form")
         val response = RequestScope.execute(http.newCall(builder.build())) { call ->
-            val raw = call.body()?.string().orEmpty()
+            val raw = call.body?.string().orEmpty()
             // 会话凭证随响应头回来：`Set-Cookie` 与 `X-Tt-Token`，两样都要收。
             call.headers("Set-Cookie").forEach { header -> collectCookies(header) }
             call.header("X-Tt-Token")?.takeIf { it.isNotBlank() }?.let { token=it }

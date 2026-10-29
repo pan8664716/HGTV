@@ -7,7 +7,6 @@ import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.view.*
 import android.widget.*
-import com.google.android.exoplayer2.*
 import com.hgtv.star.core.*
 import com.hgtv.star.compat.onScrollYChanged
 import com.hgtv.star.compat.attachedToWindow

@@ -6,6 +6,8 @@ import okhttp3.MediaType
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.junit.Assume.assumeTrue
 import org.junit.Test
 
@@ -50,11 +52,11 @@ class LiveIsolateTest {
         b.header("x-tt-store-region", "cn")
         b.header("x-tt-store-region-src", "did")
         extra.forEach { (k, v) -> b.header(k, v) }
-        b.post(RequestBody.create(MediaType.parse("application/json; charset=UTF-8"), body))
+        b.post(body.toRequestBody("application/json; charset=UTF-8".toMediaType()))
         client.newCall(b.build()).execute().use { r ->
-            val t = r.body()?.string().orEmpty()
+            val t = r.body?.string().orEmpty()
             val logid = r.header("X-Tt-Logid") ?: ""
-            println("[iso] $label HTTP ${r.code()} ${t.length}B logid=$logid :: ${t.take(90)}")
+            println("[iso] $label HTTP ${r.code} ${t.length}B logid=$logid :: ${t.take(90)}")
         }
     }
 

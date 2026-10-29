@@ -132,8 +132,8 @@ class RequestScope {
                     // 非 2xx 也留一行：签名过期 / 设备时间不对时服务端会这么回，
                     // 而界面只显示「取不到」，logcat 里原本一点线索都没有。
                     if (!response.isSuccessful) {
-                        val url = call.request().url()
-                        NetLog.emit("${url.host()}${url.encodedPath()} HTTP ${response.code()}")
+                        val url = call.request().url
+                        NetLog.emit("${url.host}${url.encodedPath} HTTP ${response.code}")
                     }
                     consume(response)
                 }
@@ -143,8 +143,8 @@ class RequestScope {
                 // OkHttp 于是抛 `InterruptedIOException: interrupted`。它是**我们自己**主动停的，
                 // 记进调试面板只会把真正的失败挤出那 40 条近况。
                 if (!call.isCanceled() && !isInterruption(e)) {
-                    val url = call.request().url()
-                    NetLog.emit("${url.host()}${url.encodedPath()} ${e.javaClass.simpleName}: ${e.message}")
+                    val url = call.request().url
+                    NetLog.emit("${url.host}${url.encodedPath} ${e.javaClass.simpleName}: ${e.message}")
                 }
                 throw e
             }

@@ -7,7 +7,6 @@ import android.app.Activity
 import android.graphics.Typeface
 import android.view.*
 import android.widget.*
-import com.google.android.exoplayer2.*
 import com.hgtv.star.core.*
 import com.hgtv.star.MainActivity.DeferredUi
 import com.hgtv.star.data.ArtworkLoader
@@ -63,7 +62,9 @@ internal fun MainActivity.applySessionToken() { repository.sessionToken=library.
 internal fun MainActivity.base(title: String?=null): LinearLayout {
     root.removeAllViews(); root.setBackgroundColor(bg)
     val container=column().apply { clipChildren=false; clipToPadding=false }
-    val horizontal=pageInset()-pageBleed(); val vertical=dp(12)
+    // 纵向要多留一条过扫描余量（见 [overscanInset]）：电视会把画面四周裁掉 3~5%，
+    // 而这里原本只有 12 个设计像素（1.7%），工具条顶部与首行海报上沿会被切掉。
+    val horizontal=pageInset()-pageBleed(); val vertical=dp(12)+overscanInset()
     container.setPadding(horizontal,vertical,horizontal,vertical); root.addView(container,FrameLayout.LayoutParams(-1,-1))
     // 「回到顶部」浮层挂在 root 上：root 刚被清空，这里把它重新挂上（收着，等滚动来定显隐）。
     attachBackToTop()

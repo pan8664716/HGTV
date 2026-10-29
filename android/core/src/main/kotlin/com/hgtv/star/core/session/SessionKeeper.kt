@@ -192,8 +192,8 @@ class SessionKeeper(
 
             override fun onResponse(call: Call,response: okhttp3.Response) {
                 beatInFlight.set(false)
-                val code = response.code()
-                val body = runCatching { response.body()?.string().orEmpty() }.getOrDefault("")
+                val code = response.code
+                val body = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
                 // 只收属于当前会话的 token（判据与拦截器同一条，见 `SessionBridge.decorate`）。
                 val sid=SessionBridge.state?.cookieHeader?.let { CookieRecord.value(it,"sessionid") }.orEmpty()
                 response.header("X-Tt-Token")?.takeIf { it.isNotBlank() }
@@ -290,7 +290,7 @@ class SessionKeeper(
 
             override fun onResponse(call: Call,response: okhttp3.Response) {
                 infoInFlight.set(false)
-                val body = runCatching { response.body()?.string().orEmpty() }.getOrDefault("")
+                val body = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
                 val sid=SessionBridge.state?.cookieHeader?.let { CookieRecord.value(it,"sessionid") }.orEmpty()
                 response.header("X-Tt-Token")?.takeIf { it.isNotBlank() }
                     ?.takeIf { sid.isBlank() || it.length<SessionBridge.TOKEN_CHECK_LENGTH || it.contains(sid) }

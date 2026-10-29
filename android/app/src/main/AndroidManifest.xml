@@ -2,6 +2,13 @@
     <uses-permission android:name="android.permission.INTERNET"/>
     <uses-permission android:name="android.permission.ACCESS_NETWORK_STATE"/>
     <!--
+      播放期间的 CPU 保活：`ExoPlayer.setWakeMode(C.WAKE_MODE_NETWORK)` 需要它。
+      没有这一条时，暂停 / 后台几秒后盒子进入 Doze，回来要重走 DNS + TLS + 取地址，
+      用户读到的是「暂停一下再回来就放不了了」。只持 PARTIAL_WAKE_LOCK（不亮屏），
+      且只在「真的在播」期间持有（见 `PlaybackPower`）。
+    -->
+    <uses-permission android:name="android.permission.WAKE_LOCK"/>
+    <!--
       外部存储读写：给会话镜像用——把 device_id / iid 与 sessionid 那一串写到自建的
       `/sdcard/.hgtv/`（卸载不删），卸载重装后直接恢复登录，不必重新注册、重新收短信验证。
       4.4–5.1 是安装期权限（装上就有）；6 及以上需要运行时授权（见 MainActivity.requestMirrorStorage）。

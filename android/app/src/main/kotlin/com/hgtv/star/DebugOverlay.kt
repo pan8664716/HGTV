@@ -676,10 +676,10 @@ private fun MainActivity.playerDebugRows(): List<DebugRow> {
     val title=data?.series?.title.orEmpty().take(14)
     val p=player
     val state=when(p?.playbackState) {
-        com.google.android.exoplayer2.Player.STATE_IDLE -> "idle"
-        com.google.android.exoplayer2.Player.STATE_BUFFERING -> "buffering"
-        com.google.android.exoplayer2.Player.STATE_READY -> "ready"
-        com.google.android.exoplayer2.Player.STATE_ENDED -> "ended"
+        androidx.media3.common.Player.STATE_IDLE -> "idle"
+        androidx.media3.common.Player.STATE_BUFFERING -> "buffering"
+        androidx.media3.common.Player.STATE_READY -> "ready"
+        androidx.media3.common.Player.STATE_ENDED -> "ended"
         else -> "none"
     }
     val position=p?.currentPosition ?: 0L

@@ -221,19 +221,25 @@ jobs:
           PY
           cat update.json
 
-      - name: 校验元数据能被客户端解析
+      # 这里原先还有一步 `:core:test --tests 'com.hgtv.star.core.AppUpdatesTest'`，
+      # 而 `AppUpdates` 类早已随「应用内更新入口」一起从代码里删除——Gradle 的 `--tests`
+      # 过滤无命中会直接失败（`No tests found for given includes`），于是整条发布流水线
+      # 卡在 `gh release create` 之前，每次都得手工补发 Release。
+      #
+      # 校验本身是有价值的（字段名、正则、校验值格式），因此保留 Python 那一段，
+      # 只去掉那个指向不存在类的测试调用。
+      - name: 校验元数据格式
         run: |
           set -euo pipefail
-          ./android/gradlew -p android :core:test --tests 'com.hgtv.star.core.AppUpdatesTest' --console=plain
           python3 - <<'PY'
           import json, re
           meta = json.load(open("update.json", encoding="utf-8"))
           assert meta["schema"] == 1, "schema 必须是 1"
           assert meta["packageName"] == "com.hgtv.star", "包名不对"
-          assert re.fullmatch(r"[0-9][0-9A-Za-z.+-]{0,63}", meta["versionName"]), "版本名不符合客户端规则"
-          assert re.fullmatch(r"v[0-9][0-9A-Za-z.+-]{0,80}", meta["tag"]), "tag 不符合客户端规则"
-          assert re.fullmatch(r"HGTV_[0-9][0-9A-Za-z.+-]{0,80}\.apk", meta["apk"]["name"]), "安装包名不符合客户端规则"
-          assert re.fullmatch(r"[0-9a-f]{64}", meta["apk"]["sha256"]), "校验值不符合客户端规则"
+          assert re.fullmatch(r"[0-9][0-9A-Za-z.+-]{0,63}", meta["versionName"]), "版本名不符合规则"
+          assert re.fullmatch(r"v[0-9][0-9A-Za-z.+-]{0,80}", meta["tag"]), "tag 不符合规则"
+          assert re.fullmatch(r"HGTV_[0-9][0-9A-Za-z.+-]{0,80}\.apk", meta["apk"]["name"]), "安装包名不符合规则"
+          assert re.fullmatch(r"[0-9a-f]{64}", meta["apk"]["sha256"]), "校验值不符合规则"
           print("update.json 校验通过：", meta["versionName"], meta["versionCode"], meta["apk"]["name"])
           PY
 

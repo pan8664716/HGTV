@@ -9,19 +9,29 @@ import android.os.Handler
 import android.view.*
 import android.widget.*
 import android.text.TextUtils
-import com.google.android.exoplayer2.*
-import com.google.android.exoplayer2.ExoPlayer
-import com.google.android.exoplayer2.DefaultLoadControl
-import com.google.android.exoplayer2.audio.AudioCapabilities
-import com.google.android.exoplayer2.audio.AudioSink
-import com.google.android.exoplayer2.audio.DefaultAudioSink
-import com.google.android.exoplayer2.audio.DefaultAudioTrackBufferSizeProvider
-import com.google.android.exoplayer2.mediacodec.MediaCodecAdapter
-import com.google.android.exoplayer2.mediacodec.MediaCodecSelector
-import com.google.android.exoplayer2.video.MediaCodecVideoRenderer
-import com.google.android.exoplayer2.video.VideoRendererEventListener
-import com.google.android.exoplayer2.source.ProgressiveMediaSource
-import com.google.android.exoplayer2.ui.PlayerView
+import androidx.media3.common.AudioAttributes
+import androidx.media3.common.C
+import androidx.media3.common.Format
+import androidx.media3.common.MediaItem
+import androidx.media3.common.MimeTypes
+import androidx.media3.common.PlaybackException
+import androidx.media3.common.PlaybackParameters
+import androidx.media3.common.Player
+import androidx.media3.exoplayer.DefaultLoadControl
+import androidx.media3.exoplayer.DefaultRenderersFactory
+import androidx.media3.exoplayer.ExoPlayer
+import androidx.media3.exoplayer.Renderer
+import androidx.media3.exoplayer.analytics.AnalyticsListener
+import androidx.media3.exoplayer.audio.AudioCapabilities
+import androidx.media3.exoplayer.audio.AudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioSink
+import androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider
+import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
+import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
+import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
+import androidx.media3.exoplayer.video.VideoRendererEventListener
+import androidx.media3.ui.PlayerView
 import com.hgtv.star.core.*
 import com.hgtv.star.compat.setVectorIcon
 import com.hgtv.star.player.DanmakuView
@@ -29,6 +39,8 @@ import com.hgtv.star.tv.SeekIndicator
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.player.VideoDataSource
 import com.hgtv.star.data.PlaybackCapability
+import com.hgtv.star.architecture.danmaku
+import com.hgtv.star.architecture.player
 
 // 本文件是从 MainActivity.kt 拆出来的「播放内核：起播、切集、弹幕加载」这一块。
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
@@ -46,7 +58,7 @@ internal fun MainActivity.loadDanmaku(episodeId: String,seriesId: String) {
     danmakuCount=-1
     view.clear()
     if(library.danmakuMode==DanmakuMode.HIDDEN) return
-    danmakuWorker.execute {
+    appScope.danmaku {
         val items=runCatching {
             // 边拉边画：一个 30 秒窗口到手就先铺上屏。整集要拉几十个窗口、每个之间还要留频控间隔，
             // 等全量再画等于前十几秒一条弹幕都没有，看上去和「弹幕功能没生效」一样。
@@ -112,7 +124,7 @@ private fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context)
             // 正好用来验证上报里的 `failedDecoder=` 与 `decoders=` 两栏。
             DebugFaults.Mode.DECODER_BOGUS -> {
                 if(!mimeType.startsWith("audio/")) return@MediaCodecSelector listOf(
-                    com.google.android.exoplayer2.mediacodec.MediaCodecInfo.newInstance(
+                    androidx.media3.exoplayer.mediacodec.MediaCodecInfo.newInstance(
                         "hgtv.bogus.decoder","video/hevc","video/hevc",null,false,false,false,true,false
                     )
                 )
@@ -217,10 +229,10 @@ private class SpeedAwareVideoRenderer(
  * 电视上的音频通路（软件混音 / HDMI）抖动比手机大，默认 250ms 的缓冲在 1.5× 以上
  * 容易欠载——欠载一次音频时钟就落后一次，视频跟着音频时钟走，累积下来就是音画不同步。
  *
- * 其余参数与 [com.google.android.exoplayer2.DefaultRenderersFactory] 的默认实现保持一致，
+ * 其余参数与 [androidx.media3.exoplayer.DefaultRenderersFactory] 的默认实现保持一致，
  * 尤其是 `setAudioCapabilities`：透传能力少声明一项，HDMI 直通的片源就会退回 PCM。
  */
-private class TvRenderersFactory(context: Context): com.google.android.exoplayer2.DefaultRenderersFactory(context) {
+private class TvRenderersFactory(context: Context): androidx.media3.exoplayer.DefaultRenderersFactory(context) {
     override fun buildVideoRenderers(
         context: Context,
         extensionRendererMode: Int,
@@ -235,17 +247,25 @@ private class TvRenderersFactory(context: Context): com.google.android.exoplayer
             SpeedAwareVideoRenderer(
                 context,codecAdapterFactory,mediaCodecSelector,allowedVideoJoiningTimeMs,
                 enableDecoderFallback,eventHandler,eventListener,
-                com.google.android.exoplayer2.DefaultRenderersFactory.MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY
+                androidx.media3.exoplayer.DefaultRenderersFactory.MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY
             )
         )
     }
+    /**
+     * Media3 的 `buildAudioSink` 只有三个参数：**没有 `enableOffload`**。
+     *
+     * 2.x 里音频直通要显式 `setOffloadMode(OFFLOAD_MODE_ENABLED_GAPLESS_REQUIRED)`；
+     * Media3 把这件事改成了「按设备能力自动判定」——`DefaultAudioSink` 内部用
+     * `AudioOffloadSupportProvider` 问平台要不要直通，不再由调用方开关。
+     * 因此这里只保留缓冲时长这一项（它对电视的 HDMI 通路仍然是必要的，见类注释），
+     * 直通交给框架决定：能力够就直通，不够就自动回落 PCM，不会出现「强制直通导致没声音」。
+     */
     override fun buildAudioSink(
         context: Context,
         enableFloatOutput: Boolean,
-        enableAudioTrackPlaybackParams: Boolean,
-        enableOffload: Boolean
+        enableAudioTrackPlaybackParams: Boolean
     ): AudioSink {
-        val builder=DefaultAudioSink.Builder(context)
+        return DefaultAudioSink.Builder(context)
             .setAudioCapabilities(AudioCapabilities.getCapabilities(context))
             .setEnableFloatOutput(enableFloatOutput)
             .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
@@ -254,8 +274,7 @@ private class TvRenderersFactory(context: Context): com.google.android.exoplayer
                     .setMinPcmBufferDurationUs(350_000)
                     .build()
             )
-        if(enableOffload) builder.setOffloadMode(DefaultAudioSink.OFFLOAD_MODE_ENABLED_GAPLESS_REQUIRED)
-        return builder.build()
+            .build()
     }
 }
 /**
@@ -327,18 +346,18 @@ internal fun MainActivity.syncDanmakuClock() {
  *
  * 这些都是 `AnalyticsListener` 的既有事件，不改变播放行为；只在 debug 包挂。
  */
-internal fun MainActivity.playbackAnalytics()=object: com.google.android.exoplayer2.analytics.AnalyticsListener {
+internal fun MainActivity.playbackAnalytics()=object: androidx.media3.exoplayer.analytics.AnalyticsListener {
     private fun tag()=player?.currentMediaItem?.mediaId ?: "-"
-    override fun onVideoDecoderInitialized(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,decoderName: String,initializedTimestampMs: Long,initializationDurationMs: Long) {
+    override fun onVideoDecoderInitialized(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,decoderName: String,initializedTimestampMs: Long,initializationDurationMs: Long) {
         android.util.Log.i("HGTV","Decoder init media=${tag()} name=$decoderName durationMs=$initializationDurationMs")
     }
-    override fun onRenderedFirstFrame(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,surface: Any,renderTimeMs: Long) {
+    override fun onRenderedFirstFrame(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,surface: Any,renderTimeMs: Long) {
         android.util.Log.i("HGTV","Rendered first frame media=${tag()} renderTimeMs=$renderTimeMs at=${android.os.SystemClock.elapsedRealtime()}")
     }
-    override fun onDroppedVideoFrames(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,droppedFrames: Int,elapsedMs: Long) {
+    override fun onDroppedVideoFrames(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,droppedFrames: Int,elapsedMs: Long) {
         if(droppedFrames>0) android.util.Log.w("HGTV","Dropped frames=$droppedFrames in ${elapsedMs}ms media=${tag()}")
     }
-    override fun onAudioUnderrun(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,bufferSize: Int,bufferSizeMs: Long,elapsedSinceLastFeedMs: Long) {
+    override fun onAudioUnderrun(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,bufferSize: Int,bufferSizeMs: Long,elapsedSinceLastFeedMs: Long) {
         android.util.Log.w("HGTV","Audio underrun ${bufferSizeMs}ms media=${tag()}")
     }
 }
@@ -380,7 +399,7 @@ private fun MainActivity.buildPlayer(): ExoPlayer {
         // 这两项走 Builder：构造前的设置不校验线程，能顺手在 io 线程做完，
         // 少两次回到主线程的配置（见 [configurePlayer]）。
         .setAudioAttributes(
-            com.google.android.exoplayer2.audio.AudioAttributes.Builder()
+            AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
             true
         )
@@ -406,6 +425,13 @@ private fun MainActivity.configurePlayer(p: ExoPlayer) {
     p.addAnalyticsListener(playbackDiagnostics())
     // 逐帧心跳：「画面还在走」的唯一硬证据，停滞看门狗靠它判活（见 [playbackFrameClock]）。
     p.setVideoFrameMetadataListener(playbackFrameClock())
+    // 播放期间持一个 PARTIAL_WAKE_LOCK：屏幕常亮只管屏幕，CPU 该睡还是会睡。
+    //
+    // 电视盒子在暂停 / 后台几秒后进入 Doze，回来时连接已断，要重走 DNS + TLS + 取地址
+    // ——用户读到的是「暂停一下再回来就放不了了」。`setWakeMode` 必须在应用线程调
+    // （`ExoPlayerImpl` 里第一句就是 `verifyApplicationThread()`），因此放在这里而不是
+    // [buildPlayer]（那边跑在 io 线程）。需要 `WAKE_LOCK` 权限，见 AndroidManifest。
+    runCatching { p.setWakeMode(C.WAKE_MODE_NETWORK) }
     if(com.hgtv.star.BuildConfig.DEBUG) p.addAnalyticsListener(playbackAnalytics())
     configuredPlayer=p
 }
@@ -442,6 +468,10 @@ private fun MainActivity.warmPlayer() {
  * （见 [playerBuildLock]）。
  */
 internal fun MainActivity.buildPlayerAsync(): java.util.concurrent.Future<*> =
+    // 这一处**保留 `Future`**而不是协程：调用方要用 `get(3s)` 带超时地等它
+    //（见 `playEpisode` 里 `playerBuild?.get(3, SECONDS)`）。`Job` 没有「等 3 秒就放弃」
+    // 的等价写法，硬套 `runBlocking { withTimeout }` 反而多一层阻塞。
+    // 线程仍然是 `player` 车道，与改造前那条专用线程同一个预算。
     playerBuildWorker.submit { runCatching { warmPlayer() } }
 
 /**
@@ -468,7 +498,7 @@ private fun MainActivity.primePlaybackClasses() {
         // 结果只用于错误页提示（见 [probeHardwareHevcDecoder]），不自动改解码方式。
         probeHardwareHevcDecoder()
         // 抽提取器构造一次（`Mp4Extractor` 的构造会带动 `SefReader` 的静态初始化）。
-        com.google.android.exoplayer2.extractor.mp4.Mp4Extractor()
+        androidx.media3.extractor.mp4.Mp4Extractor()
     }.onFailure { android.util.Log.w("HGTV","起播预热跳过：${it.javaClass.simpleName} ${it.message}") }
 }
 
@@ -606,7 +636,17 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
     // 会话号必须在 `detachPlayerSurface()` **之后**取：那条路自己也会自增（作废旧回调），
     // 先取再调会让本次监听器的 `active()` 永远不成立——表现就是首次进播放页
     // 一直「正在缓冲」、进度条拖不动，切一集才恢复。
-    val session=++playbackSession
+    //
+    // 这一下同时把**状态机**推进到 `PREPARING`（见 `PlaybackMachine`）：会话号、剧集、
+    // 起播位置、是否无感切集一次性落地，之后播放器回调只带会话号回来即可。
+    val session=playback.open(
+        seriesId = detail?.series?.id.orEmpty(),
+        episodeId = targetId,
+        episodeIndex = episodeIndex,
+        resumeAtMs = position.coerceAtLeast(0),
+        autoplay = autoplay,
+        seamless = seamless,
+    ).toInt()
     artwork.cancelPage(clearMemory=true)
     playbackHttp=claimedHttp; video=prefetched
     var firstReady=true; var firstFrame=true
@@ -688,7 +728,7 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
         // （48dp × density）。540dpi 上 48dp = 162px，屏幕上就是一颗巨大的圈。
         // 这里把它钉成 46 个设计单位，与全站其它图标同一档；它仍然是系统那枚转圈动画，
         // 只是被约束在一个固定的方框里，换分辨率、换 dpi 都不会再变形。
-        view.findViewById<ProgressBar>(com.google.android.exoplayer2.ui.R.id.exo_buffering)?.let { spinner ->
+        view.findViewById<ProgressBar>(androidx.media3.ui.R.id.exo_buffering)?.let { spinner ->
             spinner.layoutParams=FrameLayout.LayoutParams(dp(46),dp(46),Gravity.CENTER)
         }
         // 播放器实例是进程内复用的：从别的页面回到播放页时 [player] 已经存在，
@@ -891,7 +931,7 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
     playerDisposed=false
     // 解码器清单预热**与网络并行**：它要枚举本机全部解码器（550~600ms），
     // 排进下面这次取地址之前就是白等半秒。放在独占线程上，正好用掉「等网络」的那段时间。
-    runCatching { playbackPrime.execute { primePlaybackClasses() } }
+    appScope.player { runCatching { primePlaybackClasses() } }
     // 建播放器也**立刻**派出去，不等 `work` 在 io 池里拿到线程（见 [buildPlayerAsync]）。
     // 它与上面的类预热、下面的取地址三条并行；`work` 里只等它的结果，不重复建。
     val playerBuild=runCatching { buildPlayerAsync() }.getOrNull()
@@ -1013,6 +1053,8 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
             internal fun active()=player===p && generation==ticket && session==playbackSession
             override fun onPlaybackStateChanged(state: Int) {
                 if(!active()) return
+                // 状态机是唯一事实来源：所有阶段迁移都从这里进（`playbackReady` 只是它的投影）。
+                playback.onPlayerState(state, p.playWhenReady)
                 if(state==Player.STATE_READY) {
                     PlaybackDiag.tracksSelected=p.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)
                     if(!PlaybackDiag.tracksSelected) {
@@ -1116,7 +1158,7 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
              * 换集、换清晰度、软解 / 硬解切换都会重新回调；尺寸没变时也同样会回调，
              * 因此这里在尺寸没变时也重算一次（屏幕可能刚转过来），但不重建任何视图。
              */
-            override fun onVideoSizeChanged(videoSize: com.google.android.exoplayer2.video.VideoSize) {
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
                 if(!active()) return
                 // 像素比不是 1 的片源（老盒子上很常见）：按显示尺寸算比例才是用户看到的形状。
                 val ratio=if(videoSize.pixelWidthHeightRatio>0f) videoSize.pixelWidthHeightRatio else 1f
@@ -1202,7 +1244,7 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
             override fun onPlayerError(error: PlaybackException) { if(active()) playerFailure(error) }
         }
         playerListener=listener; p.addListener(listener)
-        val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(com.google.android.exoplayer2.util.MimeTypes.VIDEO_MP4).build())
+        val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4).build())
         // 起点一次设定：`setMediaSource(source, startPositionMs)` 内部先摘空旧项、
         // 再按给定位置掩码时间线，等价于「`setMediaSource` + `seekTo`」，少一次
         // `onPositionDiscontinuity`（那条回调会连带刷新媒体会话与弹幕指针）。

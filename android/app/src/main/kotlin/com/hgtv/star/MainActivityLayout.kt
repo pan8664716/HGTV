@@ -5,7 +5,6 @@ import android.app.Activity
 import android.graphics.Color
 import android.view.*
 import android.widget.*
-import com.google.android.exoplayer2.*
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
@@ -53,6 +52,19 @@ internal fun MainActivity.widthDp(): Float {
  * 剧架按同一数值计算行内可用宽度，避免整行填不满。
  */
 internal fun MainActivity.pageInset()=dp(78)
+
+/**
+ * 电视的过扫描安全边距（纵向）。
+ *
+ * 横向已经有 `pageInset`（78 / 1280 = 6.1%），足够覆盖 5% 的过扫描；纵向原本只有
+ * `dp(12)`（1.7%），而工具条本身就贴在 `y = 0` 上——过扫描 5% 的电视会把工具条顶部
+ * 与首行海报的上沿切掉。这里补 24 个设计像素（3.3%），与原有的 12 合起来约 5%。
+ *
+ * 只对电视生效。手机 / 平板的窗口不会被裁，加这条等于白丢版面。
+ * 播放页不走 [base]（画面是整屏 `match_parent`），因此不会给视频加黑边。
+ */
+internal fun MainActivity.overscanInset(): Int =
+    if(deviceMode()==com.hgtv.star.compat.DeviceForm.TV) dp(TV_OVERSCAN_INSET) else 0
 
 /**
  * 页面容器比内容边距再早开始 [TvStyle.FOCUS_BLEED]。
@@ -156,7 +168,15 @@ internal fun MainActivity.row()=LinearLayout(this).apply { orientation=LinearLay
  * [ButtonSize] / [ButtonTone]，页面代码不再自己拼样式。
  */
 internal fun MainActivity.button(label: String,selected: Boolean=false,tone: ButtonTone=ButtonTone.SECONDARY,size: ButtonSize=ButtonSize.NORMAL,pad: Int?=null,icon: Int?=null,onClick: ()->Unit): TvButton =
-    TvButton(this,label,size,tone,action=onClick,pad=pad,iconRes=icon).apply { if(selected) setSelectedState(true) }
+    TvButton(this,label,size,tone,action=onClick,pad=pad,iconRes=icon).apply {
+        if(selected) setSelectedState(true)
+        // 无障碍：全站按钮只有这一个实现，因此在这里统一补 `contentDescription`。
+        //
+        // 纯图标按钮（返回 / 搜索 / 设置）在屏幕阅读器里本来只是一个「按钮」，
+        // 没有名字；补上之后读屏念的是「返回，按钮」。改造前 35,000 行 UI 代码里
+        // 这类标注不足 50 处，而且分散在 20 个文件里，改一处漏一处。
+        if(contentDescription.isNullOrEmpty() && label.isNotBlank()) contentDescription=label
+    }
 /**
  * 往容器里放一个按钮，并保证间距只有一个来源：横向容器加左边距、纵向容器加上边距，
  * 第一个子控件不留边距。因此不会再有「两个按钮贴在一起」或「行尾多出 8dp 把整行推偏」。

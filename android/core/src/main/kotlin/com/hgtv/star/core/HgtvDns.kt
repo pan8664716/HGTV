@@ -43,14 +43,25 @@ import java.util.concurrent.ConcurrentHashMap
  * 两档寿命：
  * * [DISK_TTL_MS]（30 分钟）内直接当有效用；
  * * 过期但仍能靠系统解析出来 → 照常更新；
- * * **系统解析失败**（路由器 DNS 不响应、弱网）→ 退回 [FALLBACK_TTL_MS]（12 小时）
- *   内的那一份，宁可拿一个可能已经过期的 IP 去试，也好过整条链路直接
- *   `UnknownHostException`（连接失败上层还能重试，解析失败在界面上的表现就是「什么都放不了」）。
+ * * **系统解析失败**（路由器 DNS 不响应、弱网）→ 退回 [FALLBACK_TTL_MS] 内的那一份，
+ *   宁可拿一个可能已经过期的 IP 去试，也好过整条链路直接 `UnknownHostException`
+ *   （连接失败上层还能重试，解析失败在界面上的表现就是「什么都放不了」）。
  */
 object HgtvDns : Dns {
     private const val TTL_MS = 10*60*1000L
     private const val DISK_TTL_MS = 30*60*1000L
-    private const val FALLBACK_TTL_MS = 12*60*60*1000L
+    /**
+     * 兜底寿命：**30 分钟**（改造前是 12 小时）。
+     *
+     * 12 小时那份的代价在改造评审里被点出来了：NAT 表项或负载均衡变更之后，旧 IP 可能
+     * 「能建连但一直超时」，而此时系统 DNS 是好的——用户看到的是「某些剧永远打不开」，
+     * 且杀进程重进也一样（盘上那份还在）。
+     *
+     * 30 分钟的依据：这份缓存的价值是**冷启动那 1.6 秒**（`vas-lf-x` 单次解析实测 1597ms），
+     * 一次观看会话远短于 30 分钟；超过这个窗口的 IP 已经不值得为它冒「连不上」的风险。
+     * 视频 CDN 域名另有更严格的规则（见 [isVideoHost]，完全不用兜底）。
+     */
+    private const val FALLBACK_TTL_MS = 30*60*1000L
     private const val MAX_HOSTS = 32
 
     private class Entry(val addresses: List<InetAddress>,val at: Long)

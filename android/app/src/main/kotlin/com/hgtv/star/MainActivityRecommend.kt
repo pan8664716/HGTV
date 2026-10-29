@@ -6,7 +6,7 @@ import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
-import com.google.android.exoplayer2.Player
+import androidx.media3.common.Player
 import com.hgtv.star.compat.isMeteredConnection
 import com.hgtv.star.core.CategoryFilterOption
 import com.hgtv.star.core.CategorySelection

@@ -56,7 +56,7 @@ internal object PlaybackTransport {
      * 下一条请求才会真的重新握手。见 `MainActivity.dropDeadTransport`。
      */
     fun evictIdleConnections() {
-        runCatching { client.connectionPool().evictAll() }
+        runCatching { client.connectionPool.evictAll() }
     }
 
     val client: OkHttpClient by lazy {
@@ -66,6 +66,11 @@ internal object PlaybackTransport {
             // 会话身份：这条 client 也是 `ContentRepository` 的传输层（取播放地址 / 预热），
             // 不挂拦截器就享受不到 token 轮换与 cookie 续期。分片读视频走的是别的 client
             // （`RemoteVideo` 自建），不受这一行影响。
+            //
+            // **只挂一次**。早先这里挂了两遍（同一行在下面又出现一次），后果不是「多补一次 Cookie」
+            // 那么简单：`SessionInterceptor` 每个响应都会 `peekBody(32KB)` 嗅探 `session_expired`，
+            // 两遍就是两次完整 body 拷贝 + 两次 UTF-8 解码，而这段代码正好在
+            // `/novel/player/video_model` 的响应上——也就是首帧关键路径。
             .addInterceptor(com.hgtv.star.core.session.SessionInterceptor())
             .connectTimeout(8, TimeUnit.SECONDS)
             // 与改动前播放用的超时一致：一次 Range 读最多 1 MB，30 秒读超时、
@@ -73,9 +78,6 @@ internal object PlaybackTransport {
             .readTimeout(30, TimeUnit.SECONDS)
             .callTimeout(45, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
-            // 播放取地址也走账号会话：同一个 client 同时服务「取地址」与「读分片」，
-            // 拦截器自己按路径跳过 token（`/novel/player/` 只补 Cookie），见 `SessionInterceptor`。
-            .addInterceptor(com.hgtv.star.core.session.SessionInterceptor())
             .dispatcher(Dispatcher().apply {
                 // 播放是顺序 Range 读，并发本来就只有 1~2；预热另算一条。
                 maxRequests = 6

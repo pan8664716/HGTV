@@ -6,7 +6,6 @@ import android.graphics.Typeface
 import android.view.*
 import android.widget.*
 import android.text.TextUtils
-import com.google.android.exoplayer2.*
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.player.EpisodeGrid

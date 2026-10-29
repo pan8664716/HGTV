@@ -119,6 +119,14 @@ class Library(context: Context) {
         failed = { Log.w("HGTV", "Home cache commit failed") })
     private var index: LibraryIndex? = null
     /**
+     * 观看进度的落盘（一剧一文件，见 [ProgressStore]）。
+     *
+     * 为什么从 SharedPreferences 里搬出来：`commit()` 会重写整份 XML，
+     * 而播放中每 5 秒就要保存一次进度——改造前那是「200 条 JSON 序列化 + 400KB 文件重写」
+     * 换「这一部播到第几秒」。现在一次保存只写一个 0.5KB 的文件。
+     */
+    private val progressStore = ProgressStore(java.io.File(app.filesDir, "library/progress"))
+    /**
      * 首页四个「热播…」剧架的缓存，按榜单分别存一份（[RankBoard]）。
      * 首页首屏先铺缓存、再后台更新，用户不必等四个榜单都回来才看到东西。
      */
@@ -163,7 +171,28 @@ class Library(context: Context) {
                 retired.forEach { check(it.awaitClosed(30, TimeUnit.SECONDS)) { "上次观看记录仍在保存，请稍后重试" } }
                 synchronized(retiredWrites) { retiredWrites.removeAll(retired.toSet()) }
                 val values = prefs.all
-                val loaded = LibraryDisk.decode(values)
+                // 观看进度改为「一剧一文件」（见 [ProgressStore]），不再从 SP 里读。
+                //
+                // 这里做一次**一次性迁移**：旧版把 200 条进度塞在 `progress` 这一个键里。
+                // 文件目录为空而旧键有内容时，把旧键拆成文件，然后把 `values` 里的
+                // `progress` 换成文件读出来的那一份——`LibraryDisk.decode` 不用改。
+                //
+                // 先看目录里有没有文件：迁移完之后这个键已经被删掉，但 `values["progress"]`
+                // 在某些旧包上可能还残留，每次启动都去解一遍 100KB 的 JSON 是白花的。
+                val legacyProgress = if (progressStore.count() == 0 && values["progress"] != null) {
+                    runCatching { LibraryDisk.decode(mapOf("progress" to values["progress"])).history() }
+                        .getOrDefault(emptyList())
+                } else emptyList()
+                if (progressStore.migrateFrom(legacyProgress)) {
+                    // 迁移成功：旧键由下面的 `persist` 移除（写文件的同时清掉 SP 里那一份）。
+                    prefs.edit().remove("progress").apply()
+                }
+                val fromDisk = progressStore.loadAll()
+                val merged = (if (fromDisk.isNotEmpty()) fromDisk else legacyProgress)
+                val effectiveValues: Map<String, Any?> =
+                    if (merged.isEmpty()) values
+                    else values.toMutableMap().apply { put("progress", LibraryDisk.history(merged)) }
+                val loaded = LibraryDisk.decode(effectiveValues)
                 // 推荐流游标：与其余本机设置一起在这一次读盘里抄进内存（见 [recommendCursor]）。
                 recommendCursorCached = (values["recommendCursor"] as? String).orEmpty()
                 // 推荐页的曝光窗口：同理，一次读盘抄进内存（见 [recommendSeen]）。
@@ -244,7 +273,10 @@ class Library(context: Context) {
             batch[key] = when (key) {
                 "favorites" -> state.favorites().let { rows -> { LibraryDisk.series(rows) } }
                 "later" -> state.later().let { rows -> { LibraryDisk.series(rows) } }
-                "progress" -> state.history().let { rows -> { LibraryDisk.history(rows) } }
+                // 进度不再进 SharedPreferences：整批写进一剧一文件，然后把这个键从 SP 里删掉
+                //（返回 null 就是 `edit.remove(key)`）。这条路径只在「导入备份 / 恢复出厂后重建」
+                // 这种一次性场合走，200 个文件写一次是可以接受的。
+                "progress" -> state.history().let { rows -> { rows.forEach(progressStore::save); null } }
                 "favoriteUpdates" -> state.updates().let { rows -> { LibraryDisk.updates(rows) } }
                 "searches" -> state.searches().let { rows -> { SearchHistory.encode(rows) } }
                 "watched" -> state.watched().let { ids -> { ids } }
@@ -279,13 +311,33 @@ class Library(context: Context) {
     fun toggleLater(series: Series) = state().toggleLater(series).also { persist("later") }
     // 重新看了这部剧：墓碑要跟着一起落盘（[LibraryIndex.save] 会把它摘掉），
     // 否则下次启动又从磁盘把墓碑读回来，账号侧那一条会继续被挡着。
-    fun save(progress: WatchProgress) { if (state().save(progress)) persist("progress", "historyDeleted") }
+    //
+    // **只写这一条**（见 [ProgressStore]）：改造前这里会把 200 条历史全量序列化并让
+    // SharedPreferences 重写整份 XML，而播放中每 5 秒就会调一次。
+    // 墓碑只在「这部剧之前被删过」时才需要重写——绝大多数保存不碰它。
+    fun save(progress: WatchProgress) {
+        // 正在清空本机数据：写入一律丢弃。
+        //
+        // 进度现在走的是 `disk` 车道而不是 `writes` 队列，不受 `discardPendingWrites()`
+        // 管；少了这一句，清空之后到进程被杀之间的一次心跳 / 播放回调就能把
+        // `library/progress/` 重新建出来，用户看到的还是「记录没清干净」。
+        if (discarding) return
+        val hadTombstone = state().historyDeleted(progress.series.id)
+        if (!state().save(progress)) return
+        com.hgtv.star.core.WorkLanes.disk.executor.execute { progressStore.save(progress) }
+        if (hadTombstone) persist("historyDeleted")
+    }
     fun setWatched(id: String, value: Boolean) { if (state().setWatched(id, value)) persist("watched") }
     fun hide(id: String) { state().hide(id); persist("hidden") }
     fun unhideAll() { state().unhideAll(); persist("hidden") }
     fun rememberSearch(query: String) { state().rememberSearch(query); persist("searches") }
     fun clearSearches() { state().clearSearches(); persist("searches") }
-    fun removeHistory(id: String) { state().removeHistory(id); persist("progress", "watched", "historyDeleted") }
+    // 删记录：进度文件要一起删，否则下次启动又把它读回来（内存里删了、盘上还在）。
+    fun removeHistory(id: String) {
+        state().removeHistory(id)
+        com.hgtv.star.core.WorkLanes.disk.executor.execute { progressStore.remove(id) }
+        persist("watched", "historyDeleted")
+    }
     /** 把一批剧集记为「本机已删除的观看记录」（只留墓碑，不动其它数据）。 */
     fun markHistoryDeleted(ids: Collection<String>) {
         if(ids.isEmpty()) return
@@ -293,7 +345,10 @@ class Library(context: Context) {
     }
     /** 清空全部观看记录，返回被清掉的剧集 ID（调用方拿它去同步删云端）。 */
     fun clearHistory(): List<String> = state().clearHistory().also { ids ->
-        if(ids.isNotEmpty()) persist("progress", "watched", "historyDeleted")
+        if(ids.isNotEmpty()) {
+            com.hgtv.star.core.WorkLanes.disk.executor.execute { progressStore.clear() }
+            persist("watched", "historyDeleted")
+        }
     }
     /** 本机删掉过的观看记录（见 [LibraryIndex.historyDeleted]）。 */
     fun historyDeleted(): Set<String> = state().historyDeleted()

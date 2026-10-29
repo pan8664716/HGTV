@@ -5,6 +5,8 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.MediaType
 import okhttp3.RequestBody
+import okhttp3.MediaType.Companion.toMediaType
+import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.IOException
@@ -334,7 +336,7 @@ class ContentRepository(
                 .head()
                 .header("User-Agent",VendorConstants.userAgent(deviceProfile(),video=false))
                 .build()
-            http.newCall(request).execute().use { it.body()?.close() }
+            http.newCall(request).execute().use { it.body?.close() }
         }
     }
     /**
@@ -474,10 +476,14 @@ class ContentRepository(
      * 会让「之后接口补上了」永远读不到；空结果不缓存，下次进详情再问一次即可。
      */
     private val AUTHOR_CACHE_LIMIT = 300
-    /** 账号那七个请求共用的线程池：它们彼此独立，串行发要两三秒。 */
-    private val accountPool=java.util.concurrent.Executors.newFixedThreadPool(6) { task ->
-        Thread(task,"hgtv-account").apply { isDaemon=true }
-    }
+    /**
+     * 账号那七个请求：彼此独立，串行发要两三秒。
+     *
+     * 走共享的 `fanout` 车道（见 [WorkLanes]），不再自己养一个 6 线程池——
+     * 这条池子与「首页四栏」「热搜种子」「官网搜索」是同一类形态（一个调用方提交 N 个
+     * 任务再 join），共用一条道才能把「最大扇出」这件事统一算清楚。
+     */
+    private val accountPool get()=WorkLanes.fanout.executor
     /**
      * 热搜词的种子词（见 [hotSearches]）：都是题材向的泛词，联想接口对它们返回的候选里
      * 混着一批真正的查询词（`30集短剧` / `都市逆袭` / `甜宠` 这类）。
@@ -495,12 +501,11 @@ class ContentRepository(
      */
     private val HOT_WORD_ORDER = listOf("short_play_category","category","common_query","title","album")
     /**
-     * 热搜词的并发池：种子词彼此独立，串行五个要 1.8s，并发之后是单次请求的时间。
-     * 池子很小且只在取热搜词时用一下，因此按需创建、线程是守护线程（不挡进程退出）。
+     * 热搜词的并发：种子词彼此独立，串行五个要 1.8s，并发之后是单次请求的时间。
+     *
+     * 走共享的 `fanout` 车道，理由同 [accountPool]。
      */
-    private val SUGGEST_POOL = java.util.concurrent.Executors.newFixedThreadPool(SUGGEST_SEEDS.size) { runnable ->
-        Thread(runnable,"hgtv-hotword").apply { isDaemon=true }
-    }
+    private val SUGGEST_POOL get()=WorkLanes.fanout.executor
     /** 热搜词的兜底表：提示接口整体不可用时用（搜索页不能空着）。 */
     private val FALLBACK_HOT = listOf(
         "短剧最热榜前十名","AI短剧","都市逆袭","甜宠","战神归来","穿越剧大全",
@@ -721,10 +726,10 @@ class ContentRepository(
         val registered=runCatching {
             val request=Request.Builder().url(DeviceRegister.url(device))
             headers.forEach { (key,value) -> request.header(key,value) }
-            request.post(RequestBody.create(MediaType.parse("application/octet-stream"),body))
+            request.post(body.toRequestBody("application/octet-stream".toMediaType()))
             RequestScope.execute(http.newCall(request.build())) { response ->
-                if(!response.isSuccessful) throw IOException("设备注册失败（HTTP ${response.code()}）")
-                val bytes=response.body()?.bytes() ?: throw IOException("设备注册响应为空")
+                if(!response.isSuccessful) throw IOException("设备注册失败（HTTP ${response.code}）")
+                val bytes=response.body?.bytes() ?: throw IOException("设备注册响应为空")
                 DeviceRegister.parse(String(bytes,Charsets.UTF_8),response.headers("Set-Cookie"))
                     ?: throw IOException("设备注册被服务端拒绝")
             }
@@ -999,18 +1004,18 @@ class ContentRepository(
         // `search/tab` 只认 GET（POST 该路径是 404），`video_detail` 之类必须 POST。
         signed?.let { signedRequest ->
             when(signedRequest.method) {
-                "POST" -> request.post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"),
+                "POST" -> request.post(RequestBody.create("application/json; charset=utf-8".toMediaType(),
                     signedRequest.body ?: ByteArray(0)))
                 "GET" -> request.get()
                 else -> request.method(signedRequest.method, signedRequest.body?.let { payload ->
-                    RequestBody.create(MediaType.parse("application/json; charset=utf-8"),payload)
+                    payload.toRequestBody("application/json; charset=utf-8".toMediaType())
                 })
             }
         }
         return RequestScope.execute(http.newCall(request.build())) { response ->
             observe?.invoke(response)
-            if (!response.isSuccessful) throw IOException("内容请求失败（HTTP ${response.code()}）")
-            val body = response.body() ?: throw IOException("内容响应为空")
+            if (!response.isSuccessful) throw IOException("内容请求失败（HTTP ${response.code}）")
+            val body = response.body ?: throw IOException("内容响应为空")
             if (body.contentLength() > 16*1024*1024) throw IOException("内容响应过大")
             val input=body.byteStream(); val out=java.io.ByteArrayOutputStream(); val buffer=ByteArray(8192)
             while(out.size()<=16*1024*1024) { val n=input.read(buffer); if(n<0) break; out.write(buffer,0,n) }; val bytes=out.toByteArray()
@@ -1215,24 +1220,23 @@ class ContentRepository(
      *
      * 单个榜单失败只让那一栏不出现（首页其余内容照常上屏），四个都失败才抛错。
      * 取消（切页 / 换标签）沿着 [RequestScope] 传进工作线程，在途的四个请求会一起收手。
+     *
+     * **不再每次调用新建一个池**：改造前这里是 `newFixedThreadPool(4)` + `finally shutdownNow()`，
+     * 每次进首页都创建再销毁四条线程；`shutdownNow()` 还会打断在途请求（被下游的
+     * `runCatching` 吞成「这一栏没有内容」）。现在用共享的 `fanout` 车道，
+     * 并发度不变，创建/销毁与误打断都没了。
      */
     fun homeFeed(): Map<RankBoard,CatalogPage> {
         val scope=RequestScope.current()
-        val pool=java.util.concurrent.Executors.newFixedThreadPool(RankBoard.entries.size) { task ->
-            Thread(task,"hgtv-homefeed").apply { isDaemon=true }
+        val pool=WorkLanes.fanout.executor
+        val futures=RankBoard.entries.map { board ->
+            // 首页每栏只显示 10 条，取 [RANK_API_PAGE_SIZE] 条的小页就够——不要走 [rank] 的逻辑页（一次 100 条）。
+            board to pool.submit(java.util.concurrent.Callable { RequestScope.withScope(scope) { runCatching { rankRaw(1,board) }.getOrNull() } })
         }
-        return try {
-            val futures=RankBoard.entries.map { board ->
-                // 首页每栏只显示 10 条，取 [RANK_API_PAGE_SIZE] 条的小页就够——不要走 [rank] 的逻辑页（一次 100 条）。
-                board to pool.submit(java.util.concurrent.Callable { RequestScope.withScope(scope) { runCatching { rankRaw(1,board) }.getOrNull() } })
-            }
-            val result=linkedMapOf<RankBoard,CatalogPage>()
-            futures.forEach { (board,future) -> future.get()?.let { page -> result[board]=page } }
-            if(result.values.none { it.items.isNotEmpty() }) throw IOException("热门榜暂不可用")
-            result
-        } finally {
-            pool.shutdownNow()
-        }
+        val result=linkedMapOf<RankBoard,CatalogPage>()
+        futures.forEach { (board,future) -> future.get()?.let { page -> result[board]=page } }
+        if(result.values.none { it.items.isNotEmpty() }) throw IOException("热门榜暂不可用")
+        return result
     }
     /**
      * 分类目录的一页（`path` 来自 [CategoryCatalog]，例如 `comic-drama/fantasy`）。
@@ -1449,14 +1453,14 @@ class ContentRepository(
                 // UA / Accept 保持与改动前一致：UA 用 App 那条（签名默认按「有 body」选视频 UA）。
                 request.header("User-Agent",VendorConstants.userAgent(deviceProfile(), video = false))
                 request.header("Accept","application/json; charset=utf-8,application/x-protobuf")
-                request.post(RequestBody.create(MediaType.parse("application/json; charset=utf-8"),payload))
+                request.post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
                 val callAt=System.nanoTime()
                 val raw=RequestScope.execute(http.newCall(request.build())) { response ->
                     if(!response.isSuccessful) {
-                        throw CatalogHttpException(response.code(),"分类接口失败（HTTP ${response.code()}）")
+                        throw CatalogHttpException(response.code,"分类接口失败（HTTP ${response.code}）")
                     }
                     val bodyAt=System.nanoTime()
-                    val text=response.body()?.string().orEmpty()
+                    val text=response.body?.string().orEmpty()
                     if(NetLog.timing) {
                         NetLog.log(
                             "category call headers=${(bodyAt-callAt)/1_000_000}ms"+
@@ -1717,20 +1721,16 @@ class ContentRepository(
         webSearchNote.set("")
         val first=(page-1)*WEB_SEARCH_BATCH+1
         val scope=RequestScope.current()
-        val pool=java.util.concurrent.Executors.newFixedThreadPool(WEB_SEARCH_CONCURRENCY) { task ->
-            Thread(task,"hgtv-websearch").apply { isDaemon=true }
+        // 与 [homeFeed] 同理：共享 `fanout` 车道，不再每次搜索新建一个 10 线程池
+        // （那等于「每敲一次键盘就创建再销毁十条线程」）。
+        val pool=WorkLanes.fanout.executor
+        val tasks=(first until first+WEB_SEARCH_BATCH).map { physical ->
+            pool.submit(java.util.concurrent.Callable {
+                // 取消（切页 / 重新搜索）沿着 [RequestScope] 传进这十条请求，一起收手。
+                RequestScope.withScope(scope) { runCatching { webSearchPageRetry(clean,physical) }.getOrNull() }
+            })
         }
-        val parts=try {
-            val tasks=(first until first+WEB_SEARCH_BATCH).map { physical ->
-                pool.submit(java.util.concurrent.Callable {
-                    // 取消（切页 / 重新搜索）沿着 [RequestScope] 传进这十条请求，一起收手。
-                    RequestScope.withScope(scope) { runCatching { webSearchPageRetry(clean,physical) }.getOrNull() }
-                })
-            }
-            tasks.map { task -> runCatching { task.get() }.getOrNull() }
-        } finally {
-            pool.shutdownNow()
-        }
+        val parts=tasks.map { task -> runCatching { task.get() }.getOrNull() }
         // 十个物理页全部失败才算这一页失败：部分失败时把拿到的那些照常给界面。
         // 「查不到」不走这里：接口对没有结果的关键词回的是 200 + 空 `searchList`，
         // 因此走到这一句就是真的连不上（或后端整体不可用），该让界面给「重试」。
@@ -1853,12 +1853,12 @@ class ContentRepository(
                 .get().build()
             try {
                 return RequestScope.execute(http.newCall(request)) { response ->
-                    val body=response.body() ?: throw IOException("内容响应为空")
+                    val body=response.body ?: throw IOException("内容响应为空")
                     if(body.contentLength()>16*1024*1024) throw IOException("内容响应过大")
                     // 502 时响应体里仍然带着 `{"code":"upstream_unavailable"}`：读出来交给
                     // 调用方判读，比只丢一句「HTTP 502」有用得多。
                     val raw=body.string()
-                    if(!response.isSuccessful && raw.isBlank()) throw IOException("内容请求失败（HTTP ${response.code()}）")
+                    if(!response.isSuccessful && raw.isBlank()) throw IOException("内容请求失败（HTTP ${response.code}）")
                     raw
                 }
             } catch(problem: Throwable) {
