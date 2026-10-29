@@ -610,12 +610,34 @@ internal fun MainActivity.playerFailure(problem: Throwable) {
         (player?.currentPosition ?: 0)>=queuedDuration-2_000
     val failingEpisode=queuedEpisodeId ?: expiredEpisode
     if(failingEpisode!=null && (streamExpiredOf(problem) || videoChanged || hostUnresolved || transportDead)) {
-        if(!ledger.streamRetried("$failingEpisode:$expiredQuality")) {
-            ledger.noteStreamRetry("$failingEpisode:$expiredQuality")
+        // **预加载阶段的失败不消耗这一集的额度。**
+        //
+        // 这是现场「播几集后按下一集 → 地址过期（HTTP 403），退出再进就好」的直接成因：
+        //
+        //   ① 片尾前 30 秒预热下一集，挂进播放列表；
+        //   ② Media3 在后台预加载它，读到 403（预热那份地址已经过期）；
+        //   ③ 这里 `failingEpisode = queuedEpisodeId` = **下一集**，于是
+        //      `streamRetried["下一集:档位"]` 被记上——**用户还没开始看这一集，
+        //      它的自愈额度就已经没了**；
+        //   ④ 自愈重切到下一集（`restartAnotherEpisode` → `onEpisodeSwitch`，
+        //      而 `onEpisodeSwitch` **不清** `streamRetries`）；
+        //   ⑤ 下一集再撞一次 403（新地址同样可能被拒 / 或另一个环节又拿到旧地址）
+        //      → 额度已用 → 直接落错误页；
+        //   ⑥ 退出播放页 → 换集走 `onEpisodeStart`（`recovering=false`）→ 额度清空
+        //      → 再进时又能自愈一次 → 好了。
+        //
+        // 判据用 `queuedNearEnd`：队列项在**片尾之外**报错，说明当前这一集还在正常播，
+        // IO 只可能来自后台预加载。这种情况救回来就好，不该记账。
+        // 有界性：这次自愈会 `dropQueuedEpisode()`，重来后 `queuedEpisodeId` 为空，
+        // 下一次失败就走正常额度判断，因此最多「预加载救一次 + 正式播放救一次」。
+        val preloadFailure=queuedEpisodeId!=null && !queuedNearEnd
+        if(preloadFailure || !ledger.streamRetried("$failingEpisode:$expiredQuality")) {
+            if(!preloadFailure) ledger.noteStreamRetry("$failingEpisode:$expiredQuality")
             val why=when {
                 hostUnresolved -> "Video host unresolved; refetching url"
                 transportDead -> "Transport dead; refetching url, dns & pool"
                 videoChanged -> "Video changed; refetching url & index"
+                preloadFailure -> "Queued preload failed; refetching url (budget kept)"
                 else -> "Stream expired; refetching url"
             }
             android.util.Log.w("HGTV","$why episode=${episodeIndex+1}")
