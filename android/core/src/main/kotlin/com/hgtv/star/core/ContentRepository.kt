@@ -3504,6 +3504,25 @@ class ContentRepository(
     }
 
     /**
+     * 这一集**所有档位**的地址都不认了。
+     *
+     * 用在「队列里那一集失败」这条路上：那一刻只知道是哪一集，不知道它当初是按哪个上限
+     * 预取的（预取时的上限可能已经被降档改过，`device_level` 也可能变过），
+     * 精确键算不出来——[forgetStream] 用错键就等于什么都没删，重切时原样命中同一条
+     * 坏地址，第二次必然还是 403。
+     *
+     * 内存缓存按 `集:` 前缀整体清（键是明文，能前缀匹配）；落盘按集 id 清
+     * （见 [PlaybackCache.invalidateUrlById]）。多删几条的代价只是下一次多一次往返。
+     */
+    fun forgetStreamAllQualities(id: String) {
+        synchronized(streamCache) {
+            streamCache.keys.filter { it.startsWith("$id:") }.forEach(streamCache::remove)
+        }
+        PlaybackCache.invalidateUrlById(id)
+        rotateDeviceForRetry()
+    }
+
+    /**
      * 用户侧「再试一次」时换一个设备身份。
      *
      * ## 为什么每试一次就换

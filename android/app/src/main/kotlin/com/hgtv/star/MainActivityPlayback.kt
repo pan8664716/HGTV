@@ -693,6 +693,27 @@ internal fun MainActivity.playerFailure(problem: Throwable) {
         val next=episodeIndex+1
         val data=detail
         failedQueuedInfo=queuedVideo?.info
+        // 队列项失败 = **这一集的地址不认了**，而且必须在 `dropQueuedEpisode()` **之前**处理：
+        // 它会把 `queuedEpisodeId` 清成 null，之后 `failingEpisode` 就落到当前集上，
+        // 「清地址」清的是正在播的这一集，真正坏掉的下一集原样留着。
+        //
+        // 这是「播几集后按下一集 → 地址过期（HTTP 403），退出再进就好」的直接成因：
+        //
+        //   ① 队列项（第 N+1 集）预加载读到 403；
+        //   ② 这里走 `restartAnotherEpisode(N+1)` 重切；
+        //   ③ **没人清过 N+1 的地址**，`stream(N+1)` 原样命中内存里那条坏地址；
+        //   ④ 又 403 —— 但 `autoNextFailures` 已经用满，落到错误页；
+        //   ⑤ 退出播放页 → 内存缓存被清 → 重新取地址 → 好了。
+        //
+        // 精确键算不出来（预取时的上限 / `device_level` 可能已经变过），因此按集整体作废。
+        val failedQueuedId=queuedEpisodeId
+        if(failedQueuedId!=null && (streamExpiredOf(problem) || videoChangedOf(problem))) {
+            repository.forgetStreamAllQualities(failedQueuedId)
+            // 索引与首块也要一起作废：地址换了，内容可能也换了（见 `RemoteVideo.range`）。
+            failedQueuedInfo?.let { PlaybackCache.invalidateIndex(it.mediaKey(failedQueuedId)) }
+            dropDeadTransport()
+            android.util.Log.w("HGTV","Queued episode stream invalidated id=$failedQueuedId")
+        }
         dropQueuedEpisode()
         // 自动重切只给一次：地址失效 / 鉴权失败 / 无法解码时，反复重切只会
         // 让用户看着画面一黑一亮地循环。第二次失败就落到下面的错误界面，交给用户决定。

@@ -155,7 +155,35 @@ object PlaybackCache {
     }
 
     private fun indexFile(key: String): File? = dir()?.let { File(it,"idx-${sha1(key)}.bin") }
-    private fun urlFile(key: String): File? = dir()?.let { File(it,"url-${sha1(key)}.bin") }
+    private fun urlFile(key: String): File? = dir()?.let {
+        // 文件名带**集 id 前缀**：地址失效时要能按集一次删掉所有档位的那条
+        //（见 [invalidateUrlById]）。键的格式是 `集:上限:档位`，集 id 是纯数字，
+        // 不含冒号，因此 `substringBefore(':')` 就是集 id。
+        //
+        // 早先只有 `url-<sha1>.bin`：哈希之后无法按集匹配，于是「队列里那一集坏了」
+        // 只能按 `集:上限:档位` 精确删——而上限 / 档位只要有一个对不上就删不到，
+        // 重切时原样命中同一条坏地址，第二次必然还是 403。
+        val id=key.substringBefore(':')
+        File(it,"url-$id-${sha1(key)}.bin")
+    }
+
+    /**
+     * 这一集的**所有档位**地址都不认了。
+     *
+     * 用在「队列里那一集失败」这一条路上：那时我们只知道是哪一集，不知道它当初是按
+     * 哪个上限预取的（预取用的上限可能已经被降档改过），精确键算不出来。按集整体作废
+     * 才是安全的——多删几条地址的代价只是下一次多一次网络往返。
+     */
+    fun invalidateUrlById(id: String) {
+        if(id.isEmpty()) return
+        val dir=dir() ?: return
+        runCatching {
+            dir.listFiles()?.forEach { file ->
+                // 加尾随 `-` 是为了不误伤前缀相同的另一集（`url-123-` 不会匹配 `url-1234-`）。
+                if(file.name.startsWith("url-$id-")) file.delete()
+            }
+        }
+    }
     private fun headFile(key: String): File? = dir()?.let { File(it,"head-${sha1(key)}.bin") }
 
     // ── 视频索引 ────────────────────────────────────────────────────────────────
