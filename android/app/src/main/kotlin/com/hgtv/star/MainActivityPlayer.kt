@@ -554,7 +554,17 @@ internal fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Bool
     // 队列里正好挂着这一集（用户自己按了「下一集」、或点选集切到下一集）：
     // 把它接过来当预热结果，省掉一次取地址。注意队列里那一项是「播完自动推进」用的，
     // 这里要从头重放，所以仍然要重挂一次源，只是不再走网络。
-    val fromQueue=queuedEpisodeId==targetId && position==0L && !recovering
+    //
+    // **地址有年龄上限**（见 [com.hgtv.star.core.PlaybackCache.PREPARED_FRESH_MS]）：
+    // 队列项里装的是带时效的播放地址，而它可能在播放列表里躺了很久——用户在片尾暂停、
+    // 去倒了杯水回来再按「下一集」，或者干脆停在那一集上没动。超过 10 分钟就当作没有预热，
+    // 丢掉队列走「重新取地址」那条路（多花半秒，好过拿一条已作废的地址撞 403）。
+    //
+    // 不这么判的现场表现就是：播几集后按「下一集」，界面报
+    // 「地址过期：播放地址已失效（HTTP 403）」；退出播放页再进又好了（队列被清掉）。
+    val queueFresh=com.hgtv.star.core.PlaybackCache.isPreparedFresh(
+        queuedAt,android.os.SystemClock.elapsedRealtime())
+    val fromQueue=queuedEpisodeId==targetId && position==0L && !recovering && queueFresh
     // [prepared] 是调用方**已经预热好**的一份（推荐页上下切换：详情与首集数据都在本地），
     // 所有权当场转移过来，走的是与「预取下一集」同一条无感切集路径。
     val prefetched=when {

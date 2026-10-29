@@ -973,9 +973,21 @@ private fun MainActivity.startRecommendEpisode(data: Detail,position: Long,autop
     if(fromStart && key.isNotEmpty() && runCatching { connectivity.isMeteredConnection() }.getOrDefault(false)) {
         cancelRecommendWarm(key)
     }
-    val prepared=if(fromStart) recommendPrepared.remove(key) else null
+    // 预热结果的**年龄校验**：超过 [PlaybackCache.PREPARED_FRESH_MS] 的那一份不能再用。
+    //
+    // 推荐页的预热是「划到附近就提前把首集地址取回来」，用户可能十几分钟后才划到它；
+    // 而地址是服务端签发的带时效地址，过期后 `RemoteVideo.range` 读到 403，界面报
+    // 「地址过期：播放地址已失效（HTTP 403）」。退出重进就好了——因为缓存被清掉、重新取地址。
+    //
+    // 宁可丢掉这一份重新取（多 500~1100ms），也不要拿一条已作废的地址去起播。
+    val preparedAt=recommendPreparedAt[key] ?: 0L
+    val preparedFresh=com.hgtv.star.core.PlaybackCache.isPreparedFresh(
+        preparedAt,android.os.SystemClock.elapsedRealtime())
+    val prepared=if(fromStart && preparedFresh) recommendPrepared.remove(key) else null
+    // 过期的这一份要**当场关掉**：它还握着 1MB 首块与一条传输，留着只是占内存。
+    if(fromStart && !preparedFresh) recommendPrepared.remove(key)?.let { runCatching { it.close() } }
     // 取走之后下标/时刻表也要跟着摘掉，否则淘汰时会对着一个已经不存在的键算分。
-    if(prepared!=null) { recommendPreparedIndex.remove(key); recommendPreparedAt.remove(key) }
+    if(prepared!=null || fromStart) { recommendPreparedIndex.remove(key); recommendPreparedAt.remove(key) }
     // 起播路径的命中情况：一次换剧到底靠的是内存预热、磁盘索引还是全新拉取。
     // 只在调试包打（`Playback first frame` 那一行只给总时长，看不出钱花在哪儿）。
     if(BuildConfig.DEBUG) {

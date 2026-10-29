@@ -142,8 +142,9 @@ internal fun MainActivity.ensureRelated(id: String) {
  * 与 [prefetchRelated] 同一套写法与理由：不阻塞界面、同一作者不重复请求、
  * 单独持有 [authorToken] + [authorJob]（不走 [work]，否则会被本页重排取消掉）。
  *
- * 差别在代价：相关剧集一次请求就够，作者作品要按页搜（见 [ContentRepository.authorWorks]），
- * 因此它比相关剧集慢几百毫秒到两秒，**更不能放在详情页的关键路径上**。
+ * 差别在代价：相关剧集一次请求就够，作者作品要按页搜（见 [ContentRepository.authorWorks]）
+ * 再按家族补季，一共要 5~10 秒，**更不能放在详情页的关键路径上**；
+ * 因此它分两段交付：搜索完先铺一批卡片，补季完再就地换成完整的那一份。
  *
  * [series] 是「正在看的那一部」：排序的相关度是**相对它**算的（同系列优先、题材越近越靠前，
  * 见 `ContentRepository.rankAuthorWorks`），因此这一部必须一起传下去，不能只传作者名。
@@ -156,7 +157,19 @@ internal fun MainActivity.prefetchAuthorWorks(id: String, series: Series) {
     authorJob?.cancel(true)
     authorFor=name; authorLoading=true; authorFailed=false
     authorJob=io.submit {
-        val result=runCatching { repository.authorWorks(name,series) }
+        // 两段交付：`onPartial` 是「按作者名搜」的那一批（通常 1~3 秒、十几部），
+        // 返回的最终表还要再补季（同系列各季，见 `ContentRepository.fillFamilySeasons`，约 3 秒）。
+        // 先让卡片上屏、再就地换成完整的那一份——否则用户在这 3 秒里只能看着「正在查找该作者的作品…」。
+        val result=runCatching {
+            repository.authorWorks(name,series) { partial ->
+                if(partial.isEmpty()) return@authorWorks
+                main.post {
+                    if(isDestroyed || authorToken.get()!=token) return@post
+                    authorWorks=partial; authorLoading=false
+                    if(authorOpen && screen=="detail" && detail?.series?.id==id) detailBottomRefresh?.invoke()
+                }
+            }
+        }
         main.post {
             if(isDestroyed || authorToken.get()!=token) return@post
             authorLoading=false

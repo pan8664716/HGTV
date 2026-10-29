@@ -17,8 +17,8 @@ android {
         // 代价：Google Play 要求 34+，本应用是自签分发、不进 Play，不受影响。
         targetSdk = 29
         multiDexEnabled = true
-        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 65
-        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.2.8"
+        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 66
+        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.2.9"
     }
     buildFeatures { buildConfig = true }
     signingConfigs {

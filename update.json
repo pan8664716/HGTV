@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "packageName": "com.hgtv.star",
-  "versionName": "1.2.8",
-  "versionCode": 65,
+  "versionName": "1.2.9",
+  "versionCode": 66,
   "minSdk": 19,
-  "tag": "v1.2.8",
-  "notes": "· 新增：相同弹幕聚合条数 2–10 条可调。\n· 新增：播放界面无操作自动收起，2–15 秒可调。\n· 新增：返回顶部按钮显示时机可调。\n· 修复：Android 14 弹窗底部被遮住。\n· 修复：手机列表右键进不去返回顶部。",
+  "tag": "v1.2.9",
+  "notes": "· 修复：竖屏短剧全屏闪退。\n· 修复：扫码登录进不去。\n· 修复：卡片默认季号错乱。",
   "apk": {
-    "name": "HGTV_1.2.8.apk",
-    "size": 2449334,
-    "sha256": "f286aeb7970f2bd5b4d9fe93c8074a52962feeaa89e10493742dc0afdecc23e8"
+    "name": "HGTV_1.2.9.apk",
+    "size": 2603645,
+    "sha256": "2ea360dd1e827d9057d012a68448466810d60f74f04db9cffa23873bef7afe8a"
   }
 }

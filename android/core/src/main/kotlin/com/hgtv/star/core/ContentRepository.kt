@@ -828,18 +828,30 @@ class ContentRepository(
      * 50 是命中率与单次响应体（约 340 KB）之间的折中。
      */
     private val AUTHOR_WORKS_PAGE_SIZE=50
-    /** 按作者名搜多少页：2 页 = 最多 200 个候选（两个 tab × 50，见 [AUTHOR_WORKS_PAGE_SIZE]）。 */
-    private val AUTHOR_WORKS_PAGES=2
     /**
-     * 一页就够用：筛到这么多条就不再翻页。
+     * 按作者名搜多少页：翻到服务端说 `has_more=false`，或到这个上限。
      *
-     * 作者作品那一栏一屏最多显示两张卡片的位置被人一眼看完，20 条已经远超一屏；
-     * 而 2 页 × 2 个 tab 是 4 个请求、约 1.1 MB、4 秒上下（实测），
-     * 高产作者（第 1 页就 30 多条）没必要多付这三秒。
+     * **不能再按「凑够 20 条就停」**：高产作者一次能筛出 29~34 部（实测 `星芒时代` 38 部、
+     * `树下的椰子` 49 部），早停会让界面永远只显示前 20 部，用户读到的就是「作品显示不全」。
+     * 实测第 1 页命中 10~34 条、第 2 页还有 6~14 条，第 3 页起基本归零，
+     * 因此 6 页既够用又不会白等（每页约 1.3~3.0s，见 [AUTHOR_WORKS_PAGE_SIZE] 的实测表）。
      */
-    private val AUTHOR_WORKS_ENOUGH=20
+    private val AUTHOR_WORKS_PAGES=6
     /** 页数硬上限：再多只是把同一个作者的作品重排一遍，白等 RTT。 */
-    private val AUTHOR_WORKS_PAGES_MAX=4
+    private val AUTHOR_WORKS_PAGES_MAX=6
+    /** 同系列补季时最多并发几条（与官网搜索同一档：平台对突发并发敏感）。 */
+    private val AUTHOR_WORKS_FAMILY_FANOUT=3
+    /**
+     * 补季最多问几个家族。
+     *
+     * 一个家族一个 `related` 请求（约 1.1s），高产作者可能有十几个多季家族，
+     * 全问一遍要十几秒——用户等的是「作者作品」这一栏，不是一次全量归档。
+     * 8 个家族在 3 路并发下约 3s，已经覆盖「点进来最想看的那几部」；
+     * **当前这一部的家族永远排在最前**（见 [fillFamilySeasons] 的 `picks`），不会被这个上限挤掉。
+     */
+    private val AUTHOR_WORKS_FAMILY_MAX=8
+    /** 单个家族的补季请求最多等多久：卡住的那一条不能拖住整栏。 */
+    private val AUTHOR_WORKS_FAMILY_TIMEOUT_MS=12000L
     private val authorWorksCache=linkedMapOf<String,List<Series>>()
     private val commentHosts=listOf("api5-normal-sinfonlinea.fqnovel.com","api5-normal-sinfonlinec.fqnovel.com","api5-normal-sinfonlineb.fqnovel.com","api5-normal-lf.fqnovel.com","api5-normal-lq.fqnovel.com","api5-normal-hl.fqnovel.com")
     /**
@@ -2636,11 +2648,22 @@ class ContentRepository(
      *
      * 翻页仍然要带上一页的游标（`search_id` / `passback` / `next_offset`，由 [appSearch] 自己记），
      * 因此这里**按页顺序**调用，不能并发；换线的重试也在 [appSearch] 里。
-     * 但只有三种情况才会真的翻到第 2 页：第 1 页没筛够 [AUTHOR_WORKS_ENOUGH] 条、
-     * 第 1 页之后服务端还说 `has_more`、且第 2 页又带来了新条目。
+     * 翻到服务端说 `has_more=false` 为止（上限 [AUTHOR_WORKS_PAGES] 页），
+     * 不再「凑够 20 条就收手」——高产作者会因此永远少掉一截。
+     *
+     * ## 两步取数：按名字搜 + 按家族补季
+     *
+     * 「按作者名搜」拿不全**同一部剧的其它季**：实测 `枯骨成仙` 的第 5 / 8 / 9 季
+     * 根本不在这个查询的结果池里（翻满 6 页也没有），因此再怎么加页数都补不上。
+     * 详情页的「相关作品」接口（[related]，一次请求约 1.1s）反而一次给全 9 季。
+     *
+     * 所以第二步只对**已经出现 2 部以上的家族**调一次 [related]（单季家族补不出东西，
+     * 纯浪费一个 RTT），把返回的同名各季并进来；并发限 [AUTHOR_WORKS_FAMILY_FANOUT]，
+     * 实测 3 路并发下 7 个家族约 4s，串行要 27s。
      *
      * 某一页失败就停在那一页（已经收下的条目照常返回）：作者作品同样只是附加内容，
      * 不能因为第 2 页抽风就整栏报错。整轮一条都没筛到才返回空表，界面上如实说「没有其他作品」。
+     * 补季失败同样不算失败：搜到的那几部照常显示。
      *
      * ## 顺序：按**相关度**
      *
@@ -2650,16 +2673,31 @@ class ContentRepository(
      *
      * [reference] 传 null 时退化成「平台相关度 + 热度」——调用方手里没有当前剧时才这么用。
      */
-    fun authorWorks(author: String, reference: Series? = null, pages: Int = AUTHOR_WORKS_PAGES): List<Series> {
+    fun authorWorks(
+        author: String,
+        reference: Series? = null,
+        pages: Int = AUTHOR_WORKS_PAGES,
+        onPartial: ((List<Series>) -> Unit)? = null
+    ): List<Series> {
         val name=author.trim()
         if(name.isEmpty()) return emptyList()
         // 缓存的是**平台原始顺序**（未排序）：排序依赖 [reference]，同一作者在不同剧的简介页里
         // 顺序可以不同（题材接近度不一样），把排好的表缓存起来会串味。重排是纯内存运算，不值得缓存。
-        val cached=synchronized(authorWorksCache) { authorWorksCache[name] }
-        val works=cached ?: collectAuthorWorks(name,pages).also { list ->
+        //
+        // 键里必须带上「当前这一部的家族名」：补季那一步只对**当前家族**无条件做
+        //（哪怕搜索结果里它只出现 1 部），因此《A》页与《B》页拿到的表本来就不同。
+        // 只按作者名做键的话，先进《A》再进《B》会拿到《A》那一份，B 的其它季就永远补不上。
+        val focus=reference?.let { SeriesSeasons.normalize(it.title) }.orEmpty()
+        val key=if(focus.isEmpty()) name else "$name|$focus"
+        val cached=synchronized(authorWorksCache) { authorWorksCache[key] }
+        val works=cached ?: collectAuthorWorks(name,pages,reference) { partial ->
+            // 搜索阶段一结束就先把这批交给界面（[onPartial]），补季在后台继续。
+            // 补季要再花 3 秒上下（见 [AUTHOR_WORKS_FAMILY_MAX]），干等着看「正在查找」不划算。
+            onPartial?.invoke(rankAuthorWorks(partial,reference))
+        }.also { list ->
             synchronized(authorWorksCache) {
                 if(authorWorksCache.size>=AUTHOR_WORKS_CACHE_LIMIT) authorWorksCache.keys.firstOrNull()?.let(authorWorksCache::remove)
-                authorWorksCache[name]=list
+                authorWorksCache[key]=list
             }
         }
         return rankAuthorWorks(works,reference)
@@ -2670,13 +2708,19 @@ class ContentRepository(
      * 顺序即「平台对『作者名』这个查询自己的相关度排序」，是 [rankAuthorWorks] 的一个比较位，
      * 因此这里刻意不重排。
      */
-    private fun collectAuthorWorks(name: String,pages: Int): List<Series> {
+    private fun collectAuthorWorks(
+        name: String,
+        pages: Int,
+        reference: Series? = null,
+        onPartial: ((List<Series>) -> Unit)? = null
+    ): List<Series> {
         val found=linkedMapOf<String,Series>()
         val total=pages.coerceIn(1,AUTHOR_WORKS_PAGES_MAX)
         var page=1
         // 至少有一页真的得到回答（哪怕一条都没筛到）才落缓存：设备还没注册时搜索会直接抛，
         // 那种「失败」不能被记成「这个作者没有作品」。
         var answered=false
+        var painted=false
         while(page<=total) {
             val result=runCatching {
                 search(name,page,ContentType.entries.toList(),AUTHOR_WORKS_PAGE_SIZE)
@@ -2684,18 +2728,139 @@ class ContentRepository(
             answered=true
             val before=found.size
             result.items.forEach { item -> if(sameAuthor(item.author,name)) found[item.id]=item }
+            // 第 1 页就先铺一批：单页实测 1.3~3.0s，而翻满 6 页要 8~9 秒。
+            // 只在这一页、以及搜索全部结束时各交付一次——每页都刷会把详情页下方那块重建 6 次。
+            if(!painted && found.isNotEmpty()) {
+                painted=true
+                val early=found.values.toList()
+                runCatching { onPartial?.invoke(early) }
+            }
             if(!result.hasMore || result.items.isEmpty()) break
-            // 第 1 页就够一屏：不再往下翻（高产作者常见，省下的正是最贵的那一串 RTT）。
-            if(found.size>=AUTHOR_WORKS_ENOUGH) break
             // 新这一页一条新的都没筛到：说明相关度已经漂到别的作者身上，后面的页只会更偏，
             // 不值得再等一个 RTT（个人昵称类作者常见：第 1 页 5 条，第 2 页 0 条）。
+            // 这里刻意**不按「凑够多少条」早停**：那会让高产作者永远少掉一截（见 [AUTHOR_WORKS_PAGES]）。
             if(page>=2 && found.size==before) break
             page++
         }
         // 一页都没被回答（网关空响应 / 设备未注册 / 全部线路超时）：这是「没取到」，不是「没有作品」。
         // 抛出去让界面显示「加载失败 + 重试」，而不是把一句「这一位只有这一部作品」当成结论。
         if(!answered) throw IOException("作者作品接口暂无响应")
-        return found.values.toList()
+        val searched=found.values.toList()
+        // 搜索阶段收尾再交付一次（第 1 页那次之后可能又补进十几部），然后才开始补季。
+        if(searched.isNotEmpty()) runCatching { onPartial?.invoke(searched) }
+        return fillFamilySeasons(searched,name,reference)
+    }
+
+    /**
+     * 补季：按剧名家族把「同一个查询拿不到的那几季」从 [related] 里捞回来。
+     *
+     * 为什么必须补：实测 `枯骨成仙` 的第 5 / 8 / 9 季**不在**「按作者名搜索」的结果池里，
+     * 翻满 6 页也一条都没有；而详情页的「相关作品」接口一次就给全 9 季。
+     * 这是「作者作品显示不全」在单部剧内部最刺眼的一种（同一部剧只显示 3 季）。
+     *
+     * 触发条件（两个都做，代价可控）：
+     * * **当前这一部的家族**：无条件补。用户点进「作者作品」时最关心的就是「这一部还有哪些季」，
+     *   而搜索结果里它可能只出现 1 部（甚至 0 部）。
+     * * 其余家族：只有已经出现 2 部以上才补（单季家族补不出东西，纯浪费一个 RTT）。
+     *
+     * 补进来的条目**不带作者**（`related` 的卡片没有 `copyright`，实测全为空串），
+     * 因此这里只按「家族名相同」判定归属，并**跳过作者明确是别家**的条目
+     *（`枯骨成仙第一季` 是另一家翻拍，`related` 里它也是空的，只能靠 [sameAuthor] 的
+     *「空作者放行」规则收下——界面上它的作者行留空，不误导）。
+     *
+     * 失败一律吞掉：补季只是附加内容，不能因为某一条 `related` 抽风就让整栏报错。
+     */
+    private fun fillFamilySeasons(works: List<Series>,name: String,reference: Series?): List<Series> {
+        if(works.isEmpty()) return works
+        val merged=LinkedHashMap<String,Series>()
+        works.forEach { merged[it.id]=it }
+        val focus=reference?.let { SeriesSeasons.normalize(it.title) }.orEmpty()
+        // 按家族归组：只有「当前家族」或「已经 ≥2 部」的家族值得再发一次请求。
+        val groups=works.groupBy { SeriesSeasons.normalize(it.title).ifEmpty { it.id } }
+        val targets=groups.filter { (family,rows) ->
+            family.isNotBlank() && (family==focus || rows.size>=2)
+        }.toMutableMap()
+        // **当前这一部自己就是一个种子**：搜索结果池里连它都没有时（实测常见，
+        // `枯骨成仙` 那一条有时整页都不出现），按家族分组就找不到它，它的其它季也就补不上。
+        // 手里已经有这一部，直接拿它去问 `related` 即可，不必依赖搜索结果。
+        if(reference!=null && focus.isNotBlank()) targets.getOrPut(focus) { listOf(reference) }
+        if(targets.isEmpty()) return works
+        // 每个家族挑一条去问 `related`：优先当前这一部（它的那一页最全），否则挑第一条。
+        val picks=targets.entries
+            .sortedByDescending { it.key==focus }
+            .take(AUTHOR_WORKS_FAMILY_MAX)
+            .map { (family,rows) -> family to (rows.firstOrNull { it.id==reference?.id } ?: rows.first()) }
+        val pool=WorkLanes.fanout.executor
+        val tasks=picks.map { (family,seed) ->
+            pool.submit(java.util.concurrent.Callable {
+                val related=runCatching { related(seed.id,seed.title) }.getOrNull() ?: return@Callable family to emptyList<Series>()
+                // `related` 的 `items` 已经把同系列各季排在前面；这里仍按家族名再筛一遍，
+                // 免得把「同 IP 的另一个系列」（万妖图录传那类）混进来。
+                val extra=related.items.filter { SeriesSeasons.normalize(it.title)==family && authorUnknownOrSame(it.author,name) }
+                family to extra
+            })
+        }
+        // 顺序信号：补进来的条目没有平台相关度（`related` 的排序是它自己那一套），
+        // 因此统一追加在末尾——[rankAuthorWorks] 的「平台相关度」比较位对它们不起作用，
+        // 但它们会被家族分组提到同系列那一段里，不会散到别处。
+        tasks.forEach { task ->
+            val extra=runCatching { task.get(AUTHOR_WORKS_FAMILY_TIMEOUT_MS,TimeUnit.MILLISECONDS) }.getOrNull()?.second ?: return@forEach
+            extra.forEach { item -> merged.getOrPut(item.id) { item } }
+        }
+        return dropUnknownDuplicates(fillAuthors(merged.values.toList()),name,reference)
+    }
+
+    /**
+     * 给**作者为空**的条目补上作者（一次 `multi-detail`，最多 50 个 id）。
+     *
+     * 为什么需要：补季用的 [related] 卡片不带 `copyright`（实测全为空串），
+     * 未上线的季在搜索里也是空。作者栏空着时用户读到的是「这些作品不知道是谁的」，
+     * 卡片第二行还会退回状态行；补一次就能让「共 N 部作品」与每张卡的署名都成立。
+     *
+     * 只补空的那几条，已有作者的**不覆盖**（搜索接口给的 `copyright` 与详情同源，更可信）。
+     * 失败原样返回：补作者只是让界面更好读，不能让整栏失败。
+     */
+    private fun fillAuthors(works: List<Series>): List<Series> {
+        val blanks=works.filter { it.author.isBlank() }.map { it.id }
+        if(blanks.isEmpty()) return works
+        val names=runCatching { authorsOf(blanks) }.getOrNull().orEmpty()
+        if(names.isEmpty()) return works
+        return works.map { item ->
+            val name=names[item.id].orEmpty()
+            if(item.author.isBlank() && name.isNotBlank()) item.copy(author=name) else item
+        }
+    }
+
+    /**
+     * 丢掉「同一家族同一季、但作者未知」的重复条目。
+     *
+     * 由来：`枯骨成仙`（星芒，151 集，剧名没有季号＝第 1 季）与 `枯骨成仙第一季`
+     *（西安凌九，143 集）在平台眼里是同一系列的两条——`related` 把它们并排放，
+     * 但后者是别家翻拍，作者字段在 `related` 里又是空的，没法按作者区分。
+     * 两条都摆上去会变成「第 1 季」出现两次，比少一条更让人困惑。
+     *
+     * 判定只做一件事：**同家族同季**时，作者为空的那条让位给作者已知的那条。
+     * 两边作者都已知（真的是两家各拍一部同名剧）就都保留——那是事实，不该被合并。
+     */
+    private fun dropUnknownDuplicates(works: List<Series>,name: String,reference: Series?): List<Series> {
+        if(works.size<2) return works
+        val known=buildSet {
+            works.filter { sameAuthor(it.author,name) }.forEach { add(SeriesSeasons.normalize(it.title) to SeriesSeasons.season(it.title)) }
+            // 当前这一部也要算进「已知季」：界面会把它单独摆在第一张（[MainActivityDetail] 的
+            // `items=listOf(current)+works`），因此它不在这张表里也照样占着「第 N 季」那个位置。
+            // 少了这一行，`枯骨成仙` 页会把别家的 `枯骨成仙第一季` 也摆出来，读成「第 1 季出现两次」。
+            if(reference!=null && sameAuthor(reference.author,name)) {
+                add(SeriesSeasons.normalize(reference.title) to SeriesSeasons.season(reference.title))
+            }
+        }
+        return works.filter { item ->
+            if(sameAuthor(item.author,name)) return@filter true
+            // 作者为空 / 明确是别家的：只有当「同一家族同一季已经有一条作者正确的」才丢。
+            val family=SeriesSeasons.normalize(item.title)
+            val season=SeriesSeasons.season(item.title)
+            if(family.isBlank()) return@filter true
+            (family to season) !in known
+        }
     }
     /**
      * 作者作品按**相关度**排序。
@@ -2782,6 +2947,22 @@ class ContentRepository(
     private fun sameAuthor(left: String,right: String): Boolean {
         fun norm(value: String)=value.filterNot { it.isWhitespace() }.lowercase()
         return norm(left).isNotEmpty() && norm(left)==norm(right)
+    }
+    /**
+     * 同 [sameAuthor]，但**作者为空也算命中**。
+     *
+     * 只给 [fillFamilySeasons] 用：`related` 的卡片不带 `copyright`（实测全为空串），
+     * 未上线的季（`枯骨成仙第九季`）在搜索里也是空。此时「是不是这一家的」只能靠家族名判定
+     *（调用方已经先按 [SeriesSeasons.normalize] 比对过剧名），空作者不能再被当成「别家」丢掉，
+     * 否则那几季永远补不回来——这正是「同一部剧只显示 3 季」的另一半原因。
+     *
+     * 代价：`枯骨成仙第一季`（别家翻拍，`related` 里作者同样为空）会被一起收下。
+     * 它没法与「未上线的自家季」区分，界面上它的作者行留空，不会误标成这一家。
+     */
+    private fun authorUnknownOrSame(left: String,right: String): Boolean {
+        fun norm(value: String)=value.filterNot { it.isWhitespace() }.lowercase()
+        val name=norm(left)
+        return name.isEmpty() || name==norm(right)
     }
 
     /**
@@ -3579,9 +3760,14 @@ class ContentRepository(
          * 为什么需要：推荐页起播时会**同时**有两条路在取同一集——正在起播的这一部
          *（[stream]）和相邻两部的预热（`warmRecommendDetail` → `stream` + 前 1MB）。
          * 两者互相不认识，各自发一次请求，白等一个往返；用户按上下键快速切换时更明显。
-         * 地址本身在两分钟内不会变（签名有效期是小时级），因此按「集 id + 清晰度 + 档位」缓存。
+         * 地址本身在窗口期内不会变，因此按「集 id + 清晰度 + 档位」缓存。
+         *
+         * **有效期直接引用 [PlaybackCache.URL_FRESH_MS]（10 分钟）**，不再自己写一个数字。
+         * 早先这里是 2 分钟、落盘是 20 分钟：2 分钟一到内存失效，可紧接着又会命中落盘那份
+         * 20 分钟的地址——「更短」只是多一次读盘，并没有让起播更安全，反而让人误以为
+         * 内存缓存才是生效的那一层。现在三层（内存 / 落盘 / 预热）共用同一个窗口。
          */
-        private const val STREAM_CACHE_MS=120_000L
+        private const val STREAM_CACHE_MS=PlaybackCache.URL_FRESH_MS
         private const val STREAM_CACHE_LIMIT=8
         /** 两条路同时要同一集时，后来的那条等在锁上（见 [stream]）。 */
         private data class CachedStream(val info: StreamInfo,val at: Long)
