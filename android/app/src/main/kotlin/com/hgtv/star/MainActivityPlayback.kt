@@ -125,11 +125,17 @@ internal fun MainActivity.enqueuePreparedNext() {
     // 「当前 period 已完全缓冲」才会真的去 prepare 下一集，因此早挂不会抢当前这一集的带宽，
     // 只是把「预热结果 → 播放器知道有下一集」这一步提前做完，片尾推进时少一次等待。
     val id=data.episodes[episodeIndex+1]; val quality=playbackMaxQuality
-    val remote=preparedNext.take(preparedKeyFor(id)) ?: return
+    val key=preparedKeyFor(id)
+    // **先读时刻、再取走**：`take` 会清空槽位，之后读不到 readyAt。
+    // `queuedAt` 记的是「地址是什么时候取的」，不是「什么时候挂进队列」——
+    // 两者最多差 2 分钟（预取完成到入队之间可能隔着一次暂停），按入队时刻算会让
+    // 10 分钟的窗口实际变成 12 分钟（见 `PreparedSlot.readyAtOf`）。
+    val fetchedAt=preparedNext.readyAtOf(key)
+    val remote=preparedNext.take(key) ?: return
     val http=prefetchHttp.also { prefetchHttp=null }
     if(http==null) { remote.close(); return }
     queuedEpisodeId=id; queuedVideo=remote; queuedHttp=http; queuedQuality="${quality}P"
-    queuedAt=android.os.SystemClock.elapsedRealtime()
+    queuedAt=if(fetchedAt>0L) fetchedAt else android.os.SystemClock.elapsedRealtime()
     val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }
         .createMediaSource(MediaItem.Builder().setMediaId(id).setUri("hgtv://episode/$id")
             .setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4).build())

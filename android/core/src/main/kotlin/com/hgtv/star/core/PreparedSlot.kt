@@ -30,5 +30,19 @@ class PreparedSlot<T: Closeable>(private val clock: ()->Long,private val ttl: Lo
         return result
     }
     @Synchronized fun isFresh(next: String): Boolean = value!=null && key==next && clock()-readyAt in 0..ttl
+
+    /**
+     * 这一份预热**取到地址**的时刻；没有 / 已过期 / 键不符时返回 0。
+     *
+     * 用来把「地址的年龄」从取地址那一刻算起，而不是从「挂进播放器队列」那一刻算起。
+     * 两者最多差 [ttl]（2 分钟）：预取完成到真正入队之间，可能隔着一次片尾等待、
+     * 一次用户暂停。若按入队时刻算，队列项的地址实际年龄最多会到「窗口 + 2 分钟」，
+     * 10 分钟的窗口就变成了 12 分钟。
+     *
+     * 必须在 [take] **之前**调：`take` 会清空槽位，之后就读不到了。
+     */
+    @Synchronized fun readyAtOf(next: String): Long =
+        if(value!=null && key==next && clock()-readyAt in 0..ttl) readyAt else 0L
+
     @Synchronized fun clear() { revision++; value?.close(); value=null; key="" }
 }
