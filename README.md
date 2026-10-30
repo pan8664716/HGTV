@@ -66,11 +66,11 @@
 从 [Releases](https://github.com/pan8664716/HGTV/releases/latest) 下载最新正式 APK，拷到设备安装，或用 ADB 覆盖安装：
 
 ```sh
-adb install -r HGTV_1.2.9.apk    # 文件名：<标识>_<版本号>.apk
+adb install -r HGTV_1.2.9.1.apk    # 文件名：<标识>_<版本号>.apk
 ```
 
 应用内不提供更新入口，新版一律手动下载覆盖安装（本机收藏、进度与设置保留）。
-当前版本 `1.2.9`（versionCode 66），各版本改动见[变更记录](docs/CHANGELOG.md)。
+当前版本 `1.2.9.1`（versionCode 67），各版本改动见[变更记录](docs/CHANGELOG.md)。
 连不上 GitHub 时可用[镜像地址](https://gh-proxy.org/https://github.com/pan8664716/HGTV/releases/latest)。
 
 应用与内容平台官方无关联，内容接口为非官方实现，平台变化可能导致失效；
