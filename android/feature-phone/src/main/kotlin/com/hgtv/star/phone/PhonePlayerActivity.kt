@@ -54,6 +54,7 @@ import com.hgtv.star.shared.data.PlaybackTransport
 import com.hgtv.star.shared.data.WatchProgress
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
+import com.hgtv.star.shared.nav.Route
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -2609,10 +2610,7 @@ class PhonePlayerActivity : PhoneActivity() {
     private fun openSeries(item: com.hgtv.star.core.Series) {
         sheet.dismiss()
         dismissLandscapeSettings()
-        startActivity(Intent(this, PhoneDetailActivity::class.java).apply {
-            putExtra(PhoneDetailActivity.EXTRA_SERIES_ID, item.id)
-            putExtra(PhoneDetailActivity.EXTRA_TITLE, item.title)
-        })
+        phoneNav().open(Route.Detail(item.id, item.title))
     }
 
     private fun releasePlayer() {

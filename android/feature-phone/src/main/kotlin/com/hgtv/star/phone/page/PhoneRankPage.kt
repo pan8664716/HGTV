@@ -2,13 +2,12 @@
 package com.hgtv.star.phone.page
 
 import android.content.Context
-import android.content.Intent
 import android.widget.LinearLayout
 import com.hgtv.star.core.CatalogFilter
 import com.hgtv.star.core.RankBoard
-import com.hgtv.star.phone.PhonePlayerActivity
-import com.hgtv.star.phone.PhoneSearchActivity
 import com.hgtv.star.phone.PhoneServices
+import com.hgtv.star.phone.phoneNav
+import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneCardMenu
 import com.hgtv.star.phone.ui.PhonePosterFeed
 import com.hgtv.star.phone.ui.PhoneTopBar
@@ -43,10 +42,7 @@ class PhoneRankPage(context: Context) : LinearLayout(context) {
         feed.bottomInset = context.tabBarInset() + context.dp(8)
         // 点海报先进详情页（与 TV 一致）。
         feed.onOpen = { series ->
-            context.startActivity(Intent(context, com.hgtv.star.phone.PhoneDetailActivity::class.java).apply {
-                putExtra(com.hgtv.star.phone.PhoneDetailActivity.EXTRA_SERIES_ID, series.id)
-                putExtra(com.hgtv.star.phone.PhoneDetailActivity.EXTRA_TITLE, series.title)
-            })
+            context.phoneNav().open(Route.Detail(series.id, series.title))
         }
         // 长按：榜单多一项「不在热播榜中显示」（`library.hide`，与 TV 的隐藏同一份落盘值）。
         // 隐藏之后要重新取一遍——被隐藏的那部不该还留在这一页里。
@@ -56,7 +52,7 @@ class PhoneRankPage(context: Context) : LinearLayout(context) {
 
         topBar.setTabs(boards.map { it.label }, 0) { index -> selectBoard(index) }
         topBar.onSearch = {
-            context.startActivity(Intent(context, PhoneSearchActivity::class.java))
+            context.phoneNav().open(Route.Search)
         }
         // 顶栏在上、网格在下：垂直排列，网格不会被顶栏盖住。
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))

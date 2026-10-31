@@ -29,6 +29,7 @@ import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.shared.compat.clipToCircleCompat
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.ui.SoftStyle
+import com.hgtv.star.shared.nav.Route
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -809,11 +810,7 @@ class PhoneDetailActivity : PhoneActivity() {
 
     private fun openPlayer(index: Int) {
         val d = detail ?: return
-        startActivity(Intent(this, PhonePlayerActivity::class.java).apply {
-            putExtra(PhonePlayerActivity.EXTRA_SERIES_ID, d.series.id)
-            putExtra(PhonePlayerActivity.EXTRA_TITLE, d.series.title)
-            putExtra(PhonePlayerActivity.EXTRA_EPISODE, index)
-        })
+        phoneNav().open(Route.Player(d.series.id, d.series.title, episode = index))
     }
 
     /**
@@ -861,10 +858,7 @@ class PhoneDetailActivity : PhoneActivity() {
     }
 
     private fun openDetail(series: Series) {
-        startActivity(Intent(this, PhoneDetailActivity::class.java).apply {
-            putExtra(EXTRA_SERIES_ID, series.id)
-            putExtra(EXTRA_TITLE, series.title)
-        })
+        phoneNav().open(Route.Detail(series.id, series.title))
     }
 
     private fun statusBarHeight(): Int {

@@ -2,19 +2,21 @@
 package com.hgtv.star.phone.page
 
 import android.content.Context
-import android.content.Intent
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.hgtv.star.core.Series
+import com.hgtv.star.phone.PhoneAccountActivity
 import com.hgtv.star.phone.PhoneAccountSync
 import com.hgtv.star.phone.PhoneConsent
 import com.hgtv.star.phone.PhonePlayerActivity
 import com.hgtv.star.phone.PhoneServices
 import com.hgtv.star.phone.PhoneSettingsActivity
 import com.hgtv.star.phone.PhoneSettingsPage
+import com.hgtv.star.phone.phoneNav
+import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneCardMenu
 import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhonePosterFeed
@@ -91,10 +93,7 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
         }
         // 点海报先进详情页（与 TV 一致）。
         feed.onOpen = { series ->
-            context.startActivity(Intent(context, com.hgtv.star.phone.PhoneDetailActivity::class.java).apply {
-                putExtra(com.hgtv.star.phone.PhoneDetailActivity.EXTRA_SERIES_ID, series.id)
-                putExtra(com.hgtv.star.phone.PhoneDetailActivity.EXTRA_TITLE, series.title)
-            })
+            context.phoneNav().open(Route.Detail(series.id, series.title))
         }
 
         // 账号与栏目交给网格当第一项：它们和海报共用同一个滚动容器，
@@ -199,7 +198,7 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(context.dp(14), context.dp(10), context.dp(14), context.dp(8))
             setOnClickListener {
-                context.startActivity(Intent(context, com.hgtv.star.phone.PhoneAccountActivity::class.java))
+                context.phoneNav().open(Route.Account)
             }
         }
         val avatar = TextView(context).apply {

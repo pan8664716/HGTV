@@ -3,7 +3,6 @@ package com.hgtv.star.phone
 
 import android.app.Activity
 import android.content.Context
-import android.content.Intent
 import android.graphics.Color
 import android.view.Gravity
 import android.view.MotionEvent
@@ -40,6 +39,7 @@ import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.data.PlaybackTransport
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
+import com.hgtv.star.shared.nav.Route
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -1783,17 +1783,17 @@ class PhoneFeedView(
             val primed = primeHandoff(d, next)
             android.util.Log.i("HGTV-PHONE", "handoff to formal episode=${next + 1} primed=$primed")
             hideChromeForHandoff(series)
-            context.startActivity(
-                android.content.Intent(context, PhonePlayerActivity::class.java).apply {
-                    putExtra(PhonePlayerActivity.EXTRA_SERIES_ID, series.id)
-                    putExtra(PhonePlayerActivity.EXTRA_TITLE, series.title)
-                    // 下一集从 0 秒开始（不是续播：这一集用户还没看过）。
-                    putExtra(PhonePlayerActivity.EXTRA_EPISODE, next)
-                    putExtra(PhonePlayerActivity.EXTRA_RECOMMEND, true)
-                    // 片尾自动进正片：不要系统转场动画。滑动 / 淡入那 200ms 里
-                    // 新窗口还没画出视频，用户看到的就是一次黑屏。
-                    addFlags(android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION)
-                }
+            // 下一集从 0 秒开始（不是续播：这一集用户还没看过）。
+            // `noTransition` 关掉系统转场：滑动 / 淡入那 200ms 里新窗口还没画出视频，
+            // 用户看到的就是一次黑屏。
+            context.phoneNav().open(
+                Route.Player(
+                    series.id,
+                    series.title,
+                    episode = next,
+                    fromRecommend = true,
+                    noTransition = true,
+                )
             )
             // 4.4–5.x 不认 FLAG_ACTIVITY_NO_ANIMATION 的入场：再显式关一次。
             (context as? android.app.Activity)?.overridePendingTransition(0, 0)
@@ -2005,12 +2005,7 @@ class PhoneFeedView(
             page.onTitle = {
                 val series = items.getOrNull(playingIndex) ?: page.currentSeries()
                 if (series != null) {
-                    context.startActivity(
-                        Intent(context, PhoneDetailActivity::class.java).apply {
-                            putExtra(PhoneDetailActivity.EXTRA_SERIES_ID, series.id)
-                            putExtra(PhoneDetailActivity.EXTRA_TITLE, series.title)
-                        }
-                    )
+                    context.phoneNav().open(Route.Detail(series.id, series.title))
                 }
             }
             // 进度条拖动：与播放页同一套反馈（拖动中显示目标时间，松手才 seek）。
@@ -2103,15 +2098,15 @@ class PhoneFeedView(
         PhoneSession.takeOver(PhoneSession.Owner.PLAYER)
         onHidden(handoff = true)
         hideChromeForHandoff(series)
-        context.startActivity(
-            android.content.Intent(context, PhonePlayerActivity::class.java).apply {
-                putExtra(PhonePlayerActivity.EXTRA_SERIES_ID, series.id)
-                putExtra(PhonePlayerActivity.EXTRA_TITLE, series.title)
-                putExtra(PhonePlayerActivity.EXTRA_FULLSCREEN, fullscreen)
-                putExtra(PhonePlayerActivity.EXTRA_RECOMMEND, true)
-                putExtra(PhonePlayerActivity.EXTRA_EPISODE, episode)
-                addFlags(android.content.Intent.FLAG_ACTIVITY_NO_ANIMATION)
-            }
+        context.phoneNav().open(
+            Route.Player(
+                series.id,
+                series.title,
+                episode = episode,
+                fromRecommend = true,
+                fullscreen = fullscreen,
+                noTransition = true,
+            )
         )
         (context as? android.app.Activity)?.overridePendingTransition(0, 0)
     }

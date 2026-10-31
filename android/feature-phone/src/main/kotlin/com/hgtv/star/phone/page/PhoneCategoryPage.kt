@@ -2,7 +2,6 @@
 package com.hgtv.star.phone.page
 
 import android.content.Context
-import android.content.Intent
 import android.view.Gravity
 import android.view.View
 import android.widget.HorizontalScrollView
@@ -13,8 +12,9 @@ import com.hgtv.star.core.CategoryGenres
 import com.hgtv.star.core.CategoryPanel
 import com.hgtv.star.core.CategorySelection
 import com.hgtv.star.phone.PhonePlayerActivity
-import com.hgtv.star.phone.PhoneSearchActivity
 import com.hgtv.star.phone.PhoneServices
+import com.hgtv.star.phone.phoneNav
+import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhonePosterFeed
 import com.hgtv.star.phone.ui.PhoneCardMenu
 import com.hgtv.star.phone.ui.PhoneStyle
@@ -78,10 +78,7 @@ class PhoneCategoryPage(context: Context) : LinearLayout(context) {
         feed.bottomInset = context.tabBarInset() + context.dp(8)
         // 点海报先进详情页（与 TV 一致）：收藏 / 挑集 / 相关推荐都在那一页。
         feed.onOpen = { series ->
-            context.startActivity(Intent(context, com.hgtv.star.phone.PhoneDetailActivity::class.java).apply {
-                putExtra(com.hgtv.star.phone.PhoneDetailActivity.EXTRA_SERIES_ID, series.id)
-                putExtra(com.hgtv.star.phone.PhoneDetailActivity.EXTRA_TITLE, series.title)
-            })
+            context.phoneNav().open(Route.Detail(series.id, series.title))
         }
         // 长按海报 = 电视端的「菜单键」：继续观看 / 收藏 / 稍后看 / 详情（见 PhoneCardMenu）。
         // 分类页不是历史、也不是热播榜，因此只有那四项。
@@ -89,7 +86,7 @@ class PhoneCategoryPage(context: Context) : LinearLayout(context) {
 
         topBar.setTabs(CategoryGenres.options.map { it.label }, 0) { index -> selectGenre(index) }
         topBar.onSearch = {
-            context.startActivity(Intent(context, PhoneSearchActivity::class.java))
+            context.phoneNav().open(Route.Search)
         }
 
         loadPanel()

@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
-import android.content.Intent
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
@@ -29,6 +28,7 @@ import com.hgtv.star.phone.ui.phoneEdgeToEdge
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.tabBarInset
 import com.hgtv.star.shared.ui.SoftStyle
+import com.hgtv.star.shared.nav.Route
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -170,10 +170,7 @@ class PhoneSearchActivity : PhoneActivity() {
             visibility = View.GONE
             // 点结果先进详情页（与 TV 一致）。
             onOpen = { series ->
-                startActivity(Intent(this@PhoneSearchActivity, PhoneDetailActivity::class.java).apply {
-                    putExtra(PhoneDetailActivity.EXTRA_SERIES_ID, series.id)
-                    putExtra(PhoneDetailActivity.EXTRA_TITLE, series.title)
-                })
+                phoneNav().open(Route.Detail(series.id, series.title))
             }
             // 长按：搜索结果同样是「一部剧」，菜单与分类页一致（继续观看 / 收藏 / 稍后看 / 详情）。
             onLongPress = { series -> PhoneCardMenu.show(this, series) }

@@ -2,14 +2,13 @@
 package com.hgtv.star.phone.ui
 
 import android.app.Activity
-import android.content.Intent
 import android.view.View
 import com.hgtv.star.core.CardAction
 import com.hgtv.star.core.CardMenu
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.PhoneAccountSync
-import com.hgtv.star.phone.PhoneDetailActivity
-import com.hgtv.star.phone.PhonePlayerActivity
+import com.hgtv.star.phone.phoneNav
+import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.PhoneServices
 
 /**
@@ -86,18 +85,12 @@ object PhoneCardMenu {
         val lib = runCatching { PhoneServices.library(activity) }.getOrNull() ?: return
         when (action) {
             CardAction.RESUME -> {
-                activity.startActivity(Intent(activity, PhonePlayerActivity::class.java).apply {
-                    putExtra(PhonePlayerActivity.EXTRA_SERIES_ID, series.id)
-                    putExtra(PhonePlayerActivity.EXTRA_TITLE, series.title)
-                })
+                activity.phoneNav().open(Route.Player(series.id, series.title))
                 return
             }
 
             CardAction.DETAIL -> {
-                activity.startActivity(Intent(activity, PhoneDetailActivity::class.java).apply {
-                    putExtra(PhoneDetailActivity.EXTRA_SERIES_ID, series.id)
-                    putExtra(PhoneDetailActivity.EXTRA_TITLE, series.title)
-                })
+                activity.phoneNav().open(Route.Detail(series.id, series.title))
                 return
             }
 

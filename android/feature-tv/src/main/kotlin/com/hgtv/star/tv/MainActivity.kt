@@ -53,6 +53,8 @@ import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.DebugFaults
 import com.hgtv.star.shared.debug.compactTls
+import com.hgtv.star.shared.nav.Navigator
+import com.hgtv.star.shared.nav.Route
 
 /**
  * 全站焦点原则：**不主动抢焦点**。
@@ -1948,14 +1950,19 @@ class MainActivity: Activity() {
         //
         // `autoplay=false` 是刻意的：用户可能是按 Home 离开的，回来时不该自动出声。
         // 位置由本机历史提供（`openDetail` 的 `resumeTargetFor`），与 Bundle 里那份一致。
-        if(savedScreen=="player" || savedScreen=="detail" || savedScreen=="recommend") {
-            val series=library.history().firstOrNull { it.series.id==seriesId }?.series
-            if(series!=null) {
-                openDetail(series,resume=true,autoplay=false)
-                return true
-            }
+        //
+        // 三页都走同一条路由：`Route.Player` 在电视端就是「按本机进度接着播」，
+        // 与改造前那句 `openDetail(series, resume=true)` 逐字等价（详情页也是 resume，
+        // 这是既有行为，本次重构不改）。
+        //
+        // `open()` 返回 false = 这一部已经不在本机历史里（用户可能清过历史）。
+        // 那种情况按「现场不可用」处理、落回首页——而不是打开一个没有标题的空壳详情页。
+        val restored=when(savedScreen) {
+            "player","detail","recommend" -> navigator.open(Route.Player(seriesId))
+            else -> false
         }
-        // 其它页面：回到原来的标签 / 集合页，再按正常路径铺内容。
+        if(restored) return true
+        // 其它页面（含上面「现场不可用」的情况）：回到原来的标签 / 集合页，再按正常路径铺内容。
         tab=state.getInt(STATE_TAB,TAB_HOME)
         state.getString(STATE_COLLECTION).orEmpty().takeIf { it.isNotEmpty() }?.let { collection=it }
         showCatalog(load=true)
@@ -2006,6 +2013,15 @@ class MainActivity: Activity() {
     }
 
     // ---- 导航与返回 ----
+
+    /**
+     * 页面跳转的唯一入口（与手机端同一套 [Route] 清单）。
+     *
+     * `by lazy` 而不是直接 `TvNavigator(this)`：字段初始化发生在构造期，那时候
+     * `this` 还没构造完；懒加载把「把 Activity 交给别人」推迟到第一次真正跳页时。
+     */
+    val navigator: Navigator by lazy { TvNavigator(this) }
+
     fun returnToDetail(forceDetail: Boolean=false) {
         sleepTimer.cancel(); sleepChoice=0; sleepStopped=false; saveProgress(); library.flush(); invalidatePage(); detachPlayerSurface()
         playbackFromRecommend=false

@@ -2,7 +2,6 @@
 package com.hgtv.star.phone.page
 
 import android.content.Context
-import android.content.Intent
 import android.view.View
 import android.view.ViewGroup
 import android.view.MotionEvent
@@ -12,7 +11,8 @@ import androidx.recyclerview.widget.PagerSnapHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.hgtv.star.core.RankBoard
 import com.hgtv.star.phone.PhoneFeedView
-import com.hgtv.star.phone.PhoneSearchActivity
+import com.hgtv.star.phone.phoneNav
+import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneColor
 import com.hgtv.star.phone.ui.PhoneTopBar
 
@@ -142,7 +142,7 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
         topBar.visibility = View.VISIBLE
         topBar.setTabs(genres.map { it.label }, 0) { index -> goTo(index) }
         topBar.onSearch = {
-            context.startActivity(Intent(context, PhoneSearchActivity::class.java))
+            context.phoneNav().open(Route.Search)
         }
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT).apply {
             gravity = android.view.Gravity.TOP
