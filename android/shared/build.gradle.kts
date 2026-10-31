@@ -41,4 +41,9 @@ dependencies {
     api("com.google.zxing:core:3.4.1")
     // MediaSession（TV 端的媒体键 / 手机的锁屏控制）都走这一层。
     api("androidx.media:media:1.6.0")
+
+    // 公共层自己的单测。这里只放**不碰 Android 框架**的纯逻辑（颜色 / 文本压缩 /
+    // 触摸判定这类），因此跑在普通 JVM 上即可，不需要 Robolectric。
+    // 碰框架的那部分由两端的真机回归覆盖（见 docs/多端重构-差异矩阵与迁移.md 的验证清单）。
+    testImplementation("junit:junit:4.13.2")
 }

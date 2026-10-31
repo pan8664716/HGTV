@@ -786,8 +786,8 @@ class PhoneDetailActivity : PhoneActivity() {
             openDetail(item)
         }
 
-    /** 作者头像底色：与 TV 的 `authorColor` 同一份深色盘（见 [PhoneCards.authorColor]）。 */
-    private fun authorColor(name: String): Int = PhoneCards.authorColor(name)
+    /** 作者头像底色：色盘与算法在 `:shared`（见 [com.hgtv.star.shared.ui.authorColor]），电视端用同一份。 */
+    private fun authorColor(name: String): Int = com.hgtv.star.shared.ui.authorColor(name)
 
     // ---------------------------------------------------------------- 动作
 

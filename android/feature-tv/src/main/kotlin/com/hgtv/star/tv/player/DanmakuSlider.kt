@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv.player
 import com.hgtv.star.shared.compat.drawRoundRectCompat
+import com.hgtv.star.shared.ui.SliderDrag
 
 import android.content.Context
 import android.graphics.Canvas
@@ -92,11 +93,8 @@ class DanmakuSlider(
         else -> super.onKeyDown(keyCode, event)
     }
 
-    /** 手指判定用的阈值与状态（只在触屏上用到，遥控器路径一行不变）。 */
-    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
-    private var downX = 0f
-    private var downY = 0f
-    private var dragging = false
+    /** 手指判定用的状态（只在触屏上用到，遥控器路径一行不变）。判定本身在 `:shared` 的 [SliderDrag]。 */
+    private val drag = SliderDrag(ViewConfiguration.get(context).scaledTouchSlop)
 
     /** 轨道左右端点（与 [onDraw] 里画出来那条完全一致：右端让开百分比读数）。 */
     private fun trackLeft() = paddingLeft.toFloat()
@@ -119,7 +117,7 @@ class DanmakuSlider(
         if (right - left <= 0f) return
         // 轻点落在右侧那串百分比读数上：那不是轨道，不该把值拽到 100%。
         // 拖动时不挡（手指划到读数下方仍然算「拖到最右」）。
-        if (!dragging && x > right + dp(4)) return
+        if (!drag.dragging && x > right + dp(4)) return
         val fraction = ((x - left) / (right - left)).coerceIn(0f, 1f)
         val next = normalize(min + fraction * (max - min))
         if (next == value) return
@@ -142,29 +140,21 @@ class DanmakuSlider(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downX = event.x
-                downY = event.y
-                dragging = false
+                drag.down(event.x, event.y)
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                val dx = Math.abs(event.x - downX)
-                val dy = Math.abs(event.y - downY)
-                if (!dragging && dx > touchSlop && dx > dy) {
-                    dragging = true
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                }
-                if (dragging) applyTouchX(event.x)
+                if (drag.move(event.x, event.y)) parent?.requestDisallowInterceptTouchEvent(true)
+                if (drag.dragging) applyTouchX(event.x)
                 return true
             }
             MotionEvent.ACTION_UP -> {
-                if (!dragging) applyTouchX(event.x)
-                dragging = false
+                if (drag.up()) applyTouchX(event.x)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
-                dragging = false
+                drag.cancel()
                 parent?.requestDisallowInterceptTouchEvent(false)
                 return true
             }

@@ -13,7 +13,7 @@ import android.view.ViewConfiguration
 import com.hgtv.star.core.DanmakuStyle
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.shared.ui.SoftStyle
-import kotlin.math.abs
+import com.hgtv.star.shared.ui.SliderDrag
 
 /**
  * 设置页整行开关：左侧项名，右侧一枚自绘轨道。
@@ -131,10 +131,8 @@ class PhoneSettingSlider(
         describe()
     }
 
-    private val touchSlop = ViewConfiguration.get(context).scaledTouchSlop
-    private var downX = 0f
-    private var downY = 0f
-    private var dragging = false
+    /** 手指判定（按下 / 越过 slop / 轻点 / 取消）在 `:shared` 的 [SliderDrag] 里，与电视端同一份。 */
+    private val drag = SliderDrag(ViewConfiguration.get(context).scaledTouchSlop)
 
     private val readingReserve: Float by lazy {
         maxOf(readingPaint.measureText(format(min)), readingPaint.measureText(format(max)))
@@ -171,33 +169,25 @@ class PhoneSettingSlider(
     override fun onTouchEvent(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
-                downX = event.x
-                downY = event.y
-                dragging = false
+                drag.down(event.x, event.y)
                 alpha = .9f
                 return true
             }
             MotionEvent.ACTION_MOVE -> {
-                val dx = abs(event.x - downX)
-                val dy = abs(event.y - downY)
-                if (!dragging && dx > touchSlop && dx > dy) {
-                    dragging = true
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                }
-                if (dragging) updateAt(event.x)
+                if (drag.move(event.x, event.y)) parent?.requestDisallowInterceptTouchEvent(true)
+                if (drag.dragging) updateAt(event.x)
                 return true
             }
             MotionEvent.ACTION_UP -> {
                 alpha = 1f
-                if (!dragging) updateAt(event.x)
-                dragging = false
+                if (drag.up()) updateAt(event.x)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 performClick()
                 return true
             }
             MotionEvent.ACTION_CANCEL -> {
                 alpha = 1f
-                dragging = false
+                drag.cancel()
                 parent?.requestDisallowInterceptTouchEvent(false)
                 return true
             }

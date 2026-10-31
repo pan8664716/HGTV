@@ -158,20 +158,4 @@ object PhoneCards {
             ))
         }
     }
-
-    /**
-     * 作者头像的底色：按名字在这些深色里挑一个。
-     *
-     * 与电视端 `authorColor` 同一份色盘（全部压在「白字放上去仍然清楚」的明度区间），
-     * 同一作者每次进来都是同一个颜色——用户读起来仍然是「一个人」，不是一块随机占位。
-     */
-    fun authorColor(name: String): Int {
-        val palette = intArrayOf(
-            0xFF35596E.toInt(), 0xFF44576F.toInt(), 0xFF5A4A6B.toInt(),
-            0xFF3F6357.toInt(), 0xFF6B5540.toInt(), 0xFF4C4C63.toInt(),
-        )
-        var hash = 7
-        for (ch in name) hash = hash * 31 + ch.code
-        return palette[(hash and 0x7FFFFFFF) % palette.size]
-    }
 }

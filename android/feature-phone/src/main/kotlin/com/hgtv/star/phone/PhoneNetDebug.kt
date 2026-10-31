@@ -4,6 +4,7 @@ package com.hgtv.star.phone
 import com.hgtv.star.core.NetLog
 import com.hgtv.star.shared.debug.DebugLog
 import com.hgtv.star.shared.debug.Diagnostics
+import com.hgtv.star.shared.debug.compactTls
 
 /** 手机端网络日志出口：与 TV 端同一份过滤规则，只把有结论的行放进调试面板。 */
 internal object PhoneNetDebug {
@@ -39,17 +40,5 @@ internal object PhoneNetDebug {
         line.startsWith("model path=") -> line.contains("bytes=0")
         line.startsWith("model device rotate ") || line.startsWith("model device_level ") -> true
         else -> false
-    }
-
-    private fun compactTls(raw: String): String {
-        fun versions(part: String): List<String> =
-            Regex("TLSv(\\d(?:\\.\\d)?)").findAll(part).map { it.groupValues[1] }.toList()
-        val supported = versions(raw.substringBefore("启用"))
-        val enabled = versions(raw.substringAfter("启用", raw))
-        if (supported.isEmpty()) return raw.take(60)
-        fun nice(value: String) = if (value == "1") "1.0" else value
-        val span = if (supported.size == 1) nice(supported.first())
-        else "${nice(supported.first())}~${nice(supported.last())}"
-        return "支持 $span · 启用 ${enabled.map(::nice).joinToString("/").ifEmpty { "无" }}"
     }
 }

@@ -18,6 +18,7 @@ import com.hgtv.star.tv.roundCorners
 import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.tv.tvScrollHost
 import com.hgtv.star.shared.debug.DebugFaults
+import com.hgtv.star.shared.ui.authorColor
 import com.hgtv.star.tv.R
 
 // 本文件是从 MainActivity.kt 拆出来的「详情页：简介、选集、相关推荐」这一块。
@@ -248,21 +249,6 @@ private fun MainActivity.authorHead(name: String,hint: String): LinearLayout {
     texts.addView(text(hint,14f,TvStyle.muted).apply { setPadding(0,dp(4),0,0) })
     gapInto(head,texts,lp(0,-2).apply { weight=1f },TvStyle.GAP_INLINE+4)
     return head
-}
-/**
- * 作者头像的底色：按名字在这些深色里挑一个。
- *
- * 全部压到「白字放上去仍然清楚」的明度区间，并且都偏冷 / 偏灰，
- * 与页面的新拟态底板放在同一屏里不打架；换主题不需要改它（头像是不随主题变的图片位）。
- */
-private fun authorColor(name: String): Int {
-    val palette=intArrayOf(
-        0xFF35596E.toInt(),0xFF44576F.toInt(),0xFF5A4A6B.toInt(),
-        0xFF3F6357.toInt(),0xFF6B5540.toInt(),0xFF4C4C63.toInt()
-    )
-    var hash=7
-    for(ch in name) hash=hash*31+ch.code
-    return palette[(hash and 0x7FFFFFFF)%palette.size]
 }
 /**
  * 全剧播完：按「相关剧集」那一份数据给出下一部的推荐（见 `MainActivityPlayer` 的播完分支）。
