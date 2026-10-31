@@ -10,12 +10,12 @@ import javax.crypto.spec.IvParameterSpec
 import javax.crypto.spec.SecretKeySpec
 import org.bouncycastle.crypto.digests.SM3Digest
 
-internal fun Byte.u() = toInt() and 255
-internal fun hex(value: String): ByteArray {
+fun Byte.u() = toInt() and 255
+fun hex(value: String): ByteArray {
     require(value.length % 2 == 0)
     return ByteArray(value.length / 2) { value.substring(it * 2, it * 2 + 2).toInt(16).toByte() }
 }
-internal fun ByteArray.hex() = joinToString("") { "%02x".format(it.u()) }
+fun ByteArray.hex() = joinToString("") { "%02x".format(it.u()) }
 
 /**
  * Base64 的本地实现。
@@ -26,7 +26,7 @@ internal fun ByteArray.hex() = joinToString("") { "%02x".format(it.u()) }
  */
 private const val BASE64 = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/"
 
-internal fun decode64(s: String): ByteArray {
+fun decode64(s: String): ByteArray {
     val out = ByteArrayOutputStream(s.length * 3 / 4)
     var buffer = 0
     var bits = 0
@@ -46,7 +46,7 @@ internal fun decode64(s: String): ByteArray {
     return out.toByteArray()
 }
 
-internal fun ByteArray.base64(): String {
+fun ByteArray.base64(): String {
     val out = StringBuilder((size + 2) / 3 * 4)
     var index = 0
     while (index < size) {
@@ -62,17 +62,17 @@ internal fun ByteArray.base64(): String {
     return out.toString()
 }
 
-internal fun le32(n: Int) = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(n).array()
-internal fun be32(n: Int) = ByteBuffer.allocate(4).putInt(n).array()
-internal fun le64(n: Long) = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(n).array()
-internal fun ByteArray.i32(at: Int, little: Boolean = false) = ByteBuffer.wrap(this, at, 4).order(if (little) ByteOrder.LITTLE_ENDIAN else ByteOrder.BIG_ENDIAN).int
-internal fun ByteArray.u32(at: Int) = i32(at).toLong() and 0xffffffffL
-internal fun ByteArray.i64(at: Int, little: Boolean = false) = ByteBuffer.wrap(this, at, 8).order(if (little) ByteOrder.LITTLE_ENDIAN else ByteOrder.BIG_ENDIAN).long
-internal fun digest(algorithm: String, value: ByteArray): ByteArray = MessageDigest.getInstance(algorithm).digest(value)
-internal fun sm3(value: ByteArray): ByteArray = SM3Digest().let { d -> d.update(value, 0, value.size); ByteArray(32).also { d.doFinal(it, 0) } }
-internal fun aes(mode: String, key: ByteArray, iv: ByteArray, data: ByteArray): ByteArray = Cipher.getInstance("AES/$mode/NoPadding").run {
+fun le32(n: Int) = ByteBuffer.allocate(4).order(ByteOrder.LITTLE_ENDIAN).putInt(n).array()
+fun be32(n: Int) = ByteBuffer.allocate(4).putInt(n).array()
+fun le64(n: Long) = ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(n).array()
+fun ByteArray.i32(at: Int, little: Boolean = false) = ByteBuffer.wrap(this, at, 4).order(if (little) ByteOrder.LITTLE_ENDIAN else ByteOrder.BIG_ENDIAN).int
+fun ByteArray.u32(at: Int) = i32(at).toLong() and 0xffffffffL
+fun ByteArray.i64(at: Int, little: Boolean = false) = ByteBuffer.wrap(this, at, 8).order(if (little) ByteOrder.LITTLE_ENDIAN else ByteOrder.BIG_ENDIAN).long
+fun digest(algorithm: String, value: ByteArray): ByteArray = MessageDigest.getInstance(algorithm).digest(value)
+fun sm3(value: ByteArray): ByteArray = SM3Digest().let { d -> d.update(value, 0, value.size); ByteArray(32).also { d.doFinal(it, 0) } }
+fun aes(mode: String, key: ByteArray, iv: ByteArray, data: ByteArray): ByteArray = Cipher.getInstance("AES/$mode/NoPadding").run {
     init(Cipher.DECRYPT_MODE, SecretKeySpec(key, "AES"), IvParameterSpec(iv)); doFinal(data)
 }
-internal fun xor(a: ByteArray, b: ByteArray) = ByteArray(a.size) { (a[it].u() xor b[it % b.size].u()).toByte() }
-internal fun rol(v: Int, n: Int) = Integer.rotateLeft(v, n)
-internal fun ror(v: Int, n: Int) = Integer.rotateRight(v, n)
+fun xor(a: ByteArray, b: ByteArray) = ByteArray(a.size) { (a[it].u() xor b[it % b.size].u()).toByte() }
+fun rol(v: Int, n: Int) = Integer.rotateLeft(v, n)
+fun ror(v: Int, n: Int) = Integer.rotateRight(v, n)

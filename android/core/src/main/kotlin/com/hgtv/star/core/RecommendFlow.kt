@@ -84,6 +84,72 @@ object RecommendFlow {
         }
         return out
     }
+
+    /**
+     * 一页推荐里**还能推给用户**的那些：电视与手机共用这六条规则。
+     *
+     * 六条规则原先在两端各写一遍（`MainActivityRecommend.loadRecommendPage` 与
+     * `PhoneFeedView.loadMore`），任何一端多一条过滤、另一头就悄悄不一致：
+     * 电视上「刚看完的不再推」，手机上却还在推——用户拿一端的表现描述另一端的问题，
+     * 排查起来对不上号。
+     *
+     * 规则本身（含理由）与 `MainActivityRecommend` 里那段注释一致：
+     * 1. 手动隐藏的（`library.hidden()`）；
+     * 2. 已经追完的（文档 §4.2 硬过滤）；
+     * 3. 曝光窗口里推过的 id（`library.recommendSeen()`）；
+     * 4. **本次会话列表里已经有的**（换页 / 换流回来不该重复出现；这一份只在内存）；
+     * 5. 曝光窗口里推过的剧名（同剧另一季 / 同 IP 另一版，id 不同但用户一眼认出）；
+     * 6. 本次会话列表里已有的剧名（同上，内存那一份）。
+     *
+     * @param loadedIds 当前列表里已有的 id（内存）
+     * @param loadedTitles 当前列表里已有的 [titleKey]（内存）
+     * @param seenTitle 曝光窗口里是否推过这个剧名（`library.recommendSeenTitle`）
+     */
+    fun fresh(
+        items: List<Series>,
+        hidden: Set<String>,
+        finished: Set<String>,
+        seen: Set<String>,
+        loadedIds: Set<String>,
+        loadedTitles: Set<String>,
+        seenTitle: (String) -> Boolean = { false },
+    ): List<Series> {
+        if (items.isEmpty()) return emptyList()
+        val out = ArrayList<Series>(items.size)
+        for (item in items) {
+            if (item.id in hidden) continue
+            if (item.id in finished) continue
+            if (item.id in seen) continue
+            if (item.id in loadedIds) continue
+            if (seenTitle(item.title)) continue
+            val key = titleKey(item.title)
+            if (key.isNotEmpty() && key in loadedTitles) continue
+            out += item
+        }
+        return out
+    }
+
+    /**
+     * 游标是不是「在同一页上打转」：服务端把 `next_offset` 钳在同一个数上。
+     *
+     * `offset == 0` 不算停滞：那本来就是流头，前进与否是下一页的事。
+     * 两端各写过一次同样的判断（电视还多一个「换流次数上限」的守卫，由调用方自己加）。
+     */
+    fun stalled(offset: Int, nextOffset: Int): Boolean = offset > 0 && nextOffset <= offset
+
+    /**
+     * `filter_ids` 连续几次「带了却回空页」就永久关掉这一层。
+     *
+     * 它是锦上添花的一层：服务端不吃这个字段时，带了它整页会被滤光，绝不能因此让推荐页空屏。
+     * 两次即关，与两端原来的阈值一致（电视 `recommendFilterMiss>=2`、手机 `filterMiss>=2`）。
+     */
+    const val FILTER_MISS_LIMIT = 2
+
+    /** 记一次「带了 filter_ids 却回空页」：返回下一次的计数与是否该永久关掉。 */
+    fun noteFilterMiss(current: Int): Pair<Int, Boolean> {
+        val next = current + 1
+        return next to (next >= FILTER_MISS_LIMIT)
+    }
 }
 
 /**

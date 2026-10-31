@@ -49,9 +49,31 @@
           onReceive 里抛 IllegalStateException，直接把进程带崩（1.1.4.1 的线上闪退）。
           前台收键走 Activity.onKeyDown（4.4–5.1）与 MediaSession callback（21+）。
         -->
-        <activity android:name=".MainActivity" android:exported="true" android:screenOrientation="landscape" android:windowSoftInputMode="adjustResize" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop">
+        <!--
+          启动路由：唯一带 LAUNCHER / LEANBACK_LAUNCHER 的组件。
+          Theme.NoDisplay = 不建任何视图，只做一次形态判定就转发（见 LaunchActivity 的类注释）。
+          电视桌面看到的是 application 的 icon / banner，与之前一致。
+        -->
+        <activity android:name=".LaunchActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay" android:noHistory="true" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
+        <!-- TV 端：横屏 + 遥控器焦点导航。 -->
+        <activity android:name=".tv.MainActivity" android:exported="true" android:screenOrientation="landscape" android:windowSoftInputMode="adjustResize" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
+        <!-- 手机 / 平板端：竖屏 + 触摸。 -->
+        <activity android:name=".phone.PhoneMainActivity" android:exported="false" android:screenOrientation="portrait" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
+        <!--
+          播放页**不锁竖屏**：横版片源要点全屏按钮切到横屏（见 PhonePlayerActivity.toggleFullscreen）。
+          声明 portrait 会把 setRequestedOrientation 顶回去，按钮点了没反应。
+        -->
+        <activity android:name=".phone.PhoneSearchActivity" android:exported="false" android:screenOrientation="portrait" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:windowSoftInputMode="adjustResize" android:launchMode="singleTop" />
+        <activity android:name=".phone.PhoneDetailActivity" android:exported="false" android:screenOrientation="portrait" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
+        <activity android:name=".phone.PhoneAccountActivity" android:exported="false" android:screenOrientation="portrait" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
+        <activity android:name=".phone.PhoneSettingsActivity" android:exported="false" android:screenOrientation="portrait" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
+        <!--
+          播放页用 @style/PlayerTheme：**半透明窗口**，不销毁下层推荐页的窗口与 Surface。
+          这是「推荐页 ↔ 播放页内容不断」的前提，理由见 styles.xml 里那一段注释。
+        -->
+        <activity android:name=".phone.PhonePlayerActivity" android:exported="false" android:theme="@style/PlayerTheme" android:screenOrientation="unspecified" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode" android:launchMode="singleTop" />
     </application>
 </manifest>

@@ -51,9 +51,32 @@ object RecommendCache {
         position=File(target.parentFile,target.name.substringBeforeLast('.')+".pos")
     }
 
+    /**
+     * 按 [namespace] 取一份快照文件。
+     *
+     * 电视只有一条推荐流，用默认那一份；手机是「漫剧 / 真人 / AI剧」三条并列的流
+     * （见 `PhoneFeedView` 的 `setGenre`），共用一份会互相覆盖——翻到另一类时铺出来的
+     * 是上一类的卡片。因此这里给一个命名空间：`feed-v1-comic.json` 这种。
+     * 空串就是电视那一份，行为与从前逐字节一致。
+     */
+    private fun fileOf(namespace: String): File? {
+        val base=file ?: return null
+        if(namespace.isEmpty()) return base
+        val name=base.name
+        val ext=name.substringAfterLast('.',"")
+        val stem=name.substringBeforeLast('.')
+        return File(base.parentFile,if(ext.isEmpty()) "$stem-$namespace" else "$stem-$namespace.$ext")
+    }
+
+    private fun positionOf(namespace: String): File? {
+        val base=position ?: return null
+        if(namespace.isEmpty()) return base
+        return File(base.parentFile,base.name+"."+namespace)
+    }
+
     /** 最近的快照；没有 / 过期 / 读坏了都返回空列表（调用方按「没有缓存」处理）。 */
-    fun load(): List<Series> {
-        val target=file ?: return emptyList()
+    fun load(namespace: String = ""): List<Series> {
+        val target=fileOf(namespace) ?: return emptyList()
         if(!target.isFile) return emptyList()
         if(System.currentTimeMillis()-target.lastModified()>TTL_MS) return emptyList()
         val began=System.nanoTime()
@@ -69,8 +92,8 @@ object RecommendCache {
     }
 
     /** 存下这一次上屏的列表（截前 [MAX_ITEMS] 条）。 */
-    fun save(items: List<Series>) {
-        val target=file ?: return
+    fun save(items: List<Series>, namespace: String = "") {
+        val target=fileOf(namespace) ?: return
         if(items.isEmpty()) return
         val array=JSONArray()
         items.take(MAX_ITEMS).forEach { array.put(it.toJson()) }
@@ -85,8 +108,8 @@ object RecommendCache {
      * 而这部机器上一秒能划两三部——每划一下就重写 40KB 既浪费 flash 又会跟
      * 正在读卡的播放线程抢 IO。
      */
-    fun rememberPlayed(seriesId: String) {
-        val target=position ?: return
+    fun rememberPlayed(seriesId: String, namespace: String = "") {
+        val target=positionOf(namespace) ?: return
         if(seriesId.isEmpty()) return
         val text=seriesId.take(30).filter { it.isDigit() }
         if(text.isEmpty()) return
@@ -103,17 +126,17 @@ object RecommendCache {
     }
 
     /** 上一次停在的那一部（没有 / 过期就是空串）。 */
-    fun lastPlayed(): String {
-        val target=position ?: return ""
+    fun lastPlayed(namespace: String = ""): String {
+        val target=positionOf(namespace) ?: return ""
         // 位置与快照是同一轮写的，快照过期了它也就不该再算数。
-        val snapshot=file ?: return ""
+        val snapshot=fileOf(namespace) ?: return ""
         if(!target.isFile || !snapshot.isFile) return ""
         if(System.currentTimeMillis()-snapshot.lastModified()>TTL_MS) return ""
         return runCatching { target.readText(Charsets.UTF_8).trim() }.getOrDefault("")
     }
 
-    fun clear() {
-        runCatching { file?.delete() }
-        runCatching { position?.delete() }
+    fun clear(namespace: String = "") {
+        runCatching { fileOf(namespace)?.delete() }
+        runCatching { positionOf(namespace)?.delete() }
     }
 }

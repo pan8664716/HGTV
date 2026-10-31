@@ -3,7 +3,7 @@
 package com.hgtv.star.core
 
 /** F13 每轮的 16 个消息字下标：5 组 × 64 轮。 */
-internal val PASSPORT_ORDERS = intArrayOf(
+val PASSPORT_ORDERS = intArrayOf(
     15, 7, 4, 0, 9, 8, 3, 10, 6, 11, 5, 13, 14, 1, 12, 2,
     15, 5, 8, 12, 0, 9, 2, 1, 3, 7, 14, 6, 11, 10, 13, 4,
     6, 5, 0, 7, 12, 0, 10, 4, 8, 15, 1, 11, 13, 9, 2, 14,
@@ -27,7 +27,7 @@ internal val PASSPORT_ORDERS = intArrayOf(
 )
 
 /** F13 每轮用到的 64 个常量（参考客户端里是独立的表，不是标准 MD5 的 T 表）。 */
-internal val PASSPORT_MD5_CONSTANTS = intArrayOf(
+val PASSPORT_MD5_CONSTANTS = intArrayOf(
     0xa7aefe20.toInt(), 0x7149f1d6.toInt(), 0x47e4ca07.toInt(), 0xe9b58f67.toInt(), 0x93b924de.toInt(), 0xc614d0f5.toInt(), 0x38afe0ef.toInt(), 0xb2bbad73.toInt(),
     0xe24444c3.toInt(), 0x9d3aec9b.toInt(), 0xdf7b37e4.toInt(), 0xd8b16d40.toInt(), 0xf8ac31b8.toInt(), 0x76b9a90b.toInt(), 0x31d833ee.toInt(), 0x953fce64.toInt(),
     0x353595a4.toInt(), 0x4609c13b.toInt(), 0x36925008.toInt(), 0x8c6d0925.toInt(), 0x5df5c177.toInt(), 0x1cfbf52b.toInt(), 0x8a4fa7f0.toInt(), 0x114ca35e.toInt(),

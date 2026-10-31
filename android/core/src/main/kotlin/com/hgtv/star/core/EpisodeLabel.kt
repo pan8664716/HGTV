@@ -32,3 +32,53 @@ object EpisodeLabel {
     /** 卡片 / 简介页的第二行文字：只做「全 N 集 → N 集」的归一。 */
     fun cardStatus(text: String): String = normalize(text)
 }
+
+/**
+ * 选集分页的页码与区间文案。
+ *
+ * 电视与手机的选集面板都要回答同样两个问题：**一共几页、这一页是第几集到第几集**。
+ * 两端原先各写一遍（`feature-tv/player/EpisodeGrid` 的 `pagerChips` 与
+ * `feature-phone/ui/PhoneEpisodeGrid` 的 `render`），页码算法与 `第 A—B 集` 的破折号
+ * 只要有一处改错，两端读起来就不一样。这里把它抽成纯函数，两端共用。
+ *
+ * 每页集数由各端自己归一（电视 10–50、手机 20–100，还都要按每行个数取整），
+ * 因此 [perPage] 是**已归一**的值，这里只做区间与页数换算。
+ */
+object EpisodePaging {
+    /** 一共几页（至少 1 页：没有剧集时也显示「第 1/1 页」，不留一块空白）。 */
+    fun pages(count: Int, perPage: Int): Int {
+        if (perPage <= 0) return 1
+        return ((count + perPage - 1) / perPage).coerceAtLeast(1)
+    }
+
+    /** 第 [page] 页的闭区间集号（0 基页号、1 基集号）；越界时夹到合法范围。 */
+    fun range(count: Int, perPage: Int, page: Int): IntRange {
+        if (count <= 0 || perPage <= 0) return 0..-1
+        val pages = pages(count, perPage)
+        val safe = page.coerceIn(0, pages - 1)
+        val from = safe * perPage
+        val to = minOf(from + perPage, count) - 1
+        return from..to
+    }
+
+    /** 「第 1—20 集 · 共 99 集」：选集面板的区间行（两端逐字相同）。 */
+    fun rangeText(count: Int, perPage: Int, page: Int): String {
+        val r = range(count, perPage, page)
+        if (r.isEmpty()) return ""
+        return "第 ${r.first + 1}—${r.last + 1} 集 · 共 $count 集"
+    }
+
+    /** 「第 3/5 页」：翻页按钮旁边那一行。 */
+    fun pageText(count: Int, perPage: Int, page: Int): String {
+        val pages = pages(count, perPage)
+        val safe = page.coerceIn(0, pages - 1)
+        return "第 ${safe + 1}/$pages 页"
+    }
+
+    /** 分页芯片上的文字：「21-40」（[page] 越界时夹到合法范围）。 */
+    fun chipText(count: Int, perPage: Int, page: Int): String {
+        val r = range(count, perPage, page)
+        if (r.isEmpty()) return ""
+        return "${r.first + 1}-${r.last + 1}"
+    }
+}

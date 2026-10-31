@@ -97,7 +97,7 @@ data class KeyMap(private val bindings: Map<PlayerKey,PlayerKeyAction> = emptyMa
          *（上 / 菜单 = 播放设置、下 = 选集、左 = 快退、右 = 快进、确定 = 播放 / 暂停）。
          * 改这张表等于改所有老用户的手感，除非需求明确要求，否则不要动。
          */
-        internal val DEFAULT_BINDINGS = mapOf(
+        val DEFAULT_BINDINGS = mapOf(
             PlayerKey.UP to PlayerKeyAction.SETTINGS,
             PlayerKey.DOWN to PlayerKeyAction.EPISODES,
             PlayerKey.LEFT to PlayerKeyAction.SEEK_BACK,

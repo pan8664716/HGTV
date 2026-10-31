@@ -145,7 +145,7 @@ object PlaybackCache {
     private fun dir(): File? = root?.takeIf { it.isDirectory || it.mkdirs() }
 
     /** 单元测试用：卸掉目录，回到「没有缓存」的状态。 */
-    internal fun detach() { synchronized(lock) { root=null } }
+    fun detach() { synchronized(lock) { root=null } }
 
     private fun sha1(value: String): String {
         val digest=MessageDigest.getInstance("SHA-1").digest(value.toByteArray(Charsets.UTF_8))

@@ -515,7 +515,7 @@ class PhoneLogin(
      * 也会把「号码格式对不对」这件事从平台手里抢过来。这里只检查位数范围，
      * 真正的校验留给平台（它回的错误文案会原样显示在弹窗里）。
      */
-    internal fun internationalPhone(raw: String): String? = e164Phone(raw)
+    fun internationalPhone(raw: String): String? = e164Phone(raw)
 
     /**
      * 发验证码。

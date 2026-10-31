@@ -196,8 +196,8 @@ object LibraryDisk {
             // 竖屏短剧全屏：旧版本磁盘没有这个键，按关闭处理（与之前的行为一致）。
             values["autoFullscreen"] as? Boolean ?: false,
             // 选集一页集数：旧版本磁盘没有这个键，按 20 处理（与之前的行为一致）；
-            // 只认 10 / 20 / 30 / 40 / 50，坏值一律回到 20。
-            (values["episodePageSize"] as? Number)?.toInt()?.takeIf { it in 10..50 }?.let { it / 10 * 10 } ?: 20,
+            // 认 TV 与手机两边的并集（10/20/30/40/50/80/100），坏值一律回到 20。
+            (values["episodePageSize"] as? Number)?.toInt()?.let { EpisodePageSize.normalize(it) } ?: 20,
             // 分页边缘翻页：旧版本磁盘没有这个键，按开启处理（与之前的行为一致）。
             values["episodeEdgeTurn"] as? Boolean ?: true,
             // 「返回顶部」浮层显隐：旧版本磁盘没有这个键、或值不在四档里，按「始终显示」处理。
@@ -208,7 +208,9 @@ object LibraryDisk {
             (values["playerPanelTimeout"] as? Number)?.toInt()?.coerceIn(PLAYER_PANEL_TIMEOUT_RANGE)
                 ?: PLAYER_PANEL_TIMEOUT_DEFAULT,
             // 快进 / 快退单次跳秒：旧版本磁盘没有这个键，按 10 秒处理；坏值夹进 2..20。
-            (values["seekStep"] as? Number)?.toInt()?.coerceIn(2,20) ?: 10)
+            (values["seekStep"] as? Number)?.toInt()?.coerceIn(2,20) ?: 10,
+            // 手机列表每行几张：旧版本磁盘没有这个键，按 2 列处理；坏值夹进 1..3。
+            (values["gridColumns"] as? Number)?.toInt()?.coerceIn(1,3) ?: 2)
         val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())
         val index = LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
             SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden"),

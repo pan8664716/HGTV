@@ -44,7 +44,7 @@ import java.net.InetAddress
  * 因此 [lookup] 在**全部失败**时把每个服务器的错误类型都记下来（只在失败路径上写，
  * 成功路径仍然只有一行）。
  */
-internal object PublicDns {
+object PublicDns {
     /** 三个公共 DNS，按国内可达性排序；全部超时才放弃。 */
     private val SERVERS = listOf("223.5.5.5","119.29.29.29","180.76.76.76")
     private const val TIMEOUT_MS = 1_500

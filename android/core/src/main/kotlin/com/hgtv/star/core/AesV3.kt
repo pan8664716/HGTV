@@ -1,7 +1,7 @@
 // Derived from drpys 22261ad; GPL-3.0-only. Protocol-specific transform, not standard AES.
 package com.hgtv.star.core
 
-internal class AesV3(key: ByteArray, timestamp: Int) {
+class AesV3(key: ByteArray, timestamp: Int) {
     private val word = timestamp and 3
     private val box = VendorConstants.sbox.copyOfRange(word*256,(word+1)*256).map { it.u() }
     private val con = arrayOf(intArrayOf(1,0,2,3),intArrayOf(2,0,3,1),intArrayOf(0,1,3,2),intArrayOf(1,0,2,3))[word]

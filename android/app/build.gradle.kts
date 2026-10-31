@@ -17,8 +17,8 @@ android {
         // 代价：Google Play 要求 34+，本应用是自签分发、不进 Play，不受影响。
         targetSdk = 29
         multiDexEnabled = true
-        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 66
-        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.2.9"
+        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 68
+        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.3.0"
     }
     buildFeatures { buildConfig = true }
     signingConfigs {
@@ -77,27 +77,13 @@ android {
 }
 
 dependencies {
+    // 两端页面各自是一个 library，本模块只做「装壳 + 按形态路由」。
+    // 两端互不依赖，任何共享能力都在 :shared 里。
+    implementation(project(":feature-tv"))
+    implementation(project(":feature-phone"))
     implementation("androidx.core:core:1.8.0")
     implementation("androidx.multidex:multidex:2.0.1")
     implementation("androidx.vectordrawable:vectordrawable:1.1.0")
-    implementation("androidx.media:media:1.6.0")
-    implementation("com.google.zxing:core:3.4.1")
-    // OkHttp 4.12：3.12.13 已停止维护，而它在 h2 读线程上的越界崩溃（见
-    // `PlaybackTransport` 的类注释）是 3.x 才有的问题。4.x 是 Kotlin 实现，
-    // API 兼容，`minSdk 19` 可用。
-    implementation("com.squareup.okhttp3:okhttp:4.12.0")
-    implementation(project(":core")) { exclude(group = "org.json") }
-    // 播放内核：ExoPlayer 2.x 已停止维护，迁移到 Media3。
-    //
-    // **版本被 minSdk 19 钉死在 1.4.1**：Media3 从 1.5.0 起要求 `minSdk 21`，
-    // 升上去等于放弃 Android 4.4（本应用的主力机型）。1.4.1 是最后一个支持 19 的版本，
-    // 也是目前能同时满足「不再 EOL」与「4.4 可用」的唯一选择。
-    implementation("androidx.media3:media3-exoplayer:1.4.1")
-    implementation("androidx.media3:media3-ui:1.4.1")
-    implementation("androidx.media3:media3-datasource:1.4.1")
-    // 协程：全站的线程模型（见 `architecture/AppDispatchers.kt`）。
-    // 1.8.1 是最后一条仍兼容 Kotlin 1.9/2.0 混合工具链的稳定线，且不引入原生库。
-    implementation("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // ART 基线 profile 的落盘者（见 `src/main/baseline-prof.txt`）。
     //
     // 作用链：AGP 把 `baseline-prof.txt` 编成 APK 里的 `assets/dexopt/baseline.prof`，

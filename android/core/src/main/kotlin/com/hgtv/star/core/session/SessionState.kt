@@ -9,7 +9,7 @@ import okhttp3.Request
  * `android/core` 是 `kotlin("jvm")` 纯 Kotlin 模块，编译期没有 `android.*`。因此：
  *
  * * `CookieRecord` / 请求头装配 / 拦截器 / 心跳（本包其余文件）→ `core`
- * * `SharedPreferences` 实现、广播、`Application` 接线 → `app`（`com.hgtv.star.data.AppSessionStore`）
+ * * `SharedPreferences` 实现、广播、`Application` 接线 → `app`（`com.hgtv.star.shared.data.AppSessionStore`）
  *
  * 这样 `ContentRepository.defaultHttpClient()` 可以直接装上拦截器，
  * 不必改任何一处 `ContentRepository(...)` 的调用点。

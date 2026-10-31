@@ -19,7 +19,7 @@ data class Danmaku(val offsetMs: Long, val text: String, val diggCount: Int)
  * `comment.stat.digg_count`（点赞）。缺字段、空文本或时间点为负的条目直接跳过——
  * 平台上确实存在这类残缺记录，宁可少一条也不要把 0 毫秒的弹幕糊在片头。
  */
-internal fun parseDanmakuRows(rows: org.json.JSONArray?): List<Danmaku> =
+fun parseDanmakuRows(rows: org.json.JSONArray?): List<Danmaku> =
     rawDanmakuRows(rows).mapNotNull { row ->
         val comment=row.optJSONObject("comment") ?: return@mapNotNull null
         val text=comment.optJSONObject("common")?.optJSONObject("content")?.let { if(it.isNull("text")) "" else it.optString("text","") }.orEmpty().trim()
@@ -29,7 +29,7 @@ internal fun parseDanmakuRows(rows: org.json.JSONArray?): List<Danmaku> =
     }
 
 /** 一个窗口里的一行原始记录（含 `comment` 那一层）。调试表情表时用它看接口发了什么。 */
-internal fun rawDanmakuRows(rows: org.json.JSONArray?): List<org.json.JSONObject> =
+fun rawDanmakuRows(rows: org.json.JSONArray?): List<org.json.JSONObject> =
     (0 until (rows?.length() ?: 0)).mapNotNull { index -> rows?.optJSONObject(index) }
 
 /**
@@ -57,13 +57,30 @@ enum class DanmakuMode(val storedValue: String, val label: String, val hint: Str
      */
     val showsStyle get() = this != HIDDEN
 
+    /**
+     * 下一档（快捷开关用）：全屏 → 上方 → 一行 → 隐藏 → 全屏。
+     *
+     * 顺序不是枚举声明顺序，而是**用户最常用的方向**：先按「越来越不挡画面」排，
+     * 关掉之后回到全屏（再点一下就是打开）。手机播放页底部那颗「弹幕」按钮
+     * 一次点击走一格，落盘值仍然是同一份 `storedValue`，与设置页、播放设置面板完全一致。
+     *
+     * 放在 `:core` 而不是各端各写一遍：电视端将来若把弹幕按钮改成单击循环，
+     * 走的就是这里同一套顺序，两端不会出现「电视上是全屏→隐藏、手机上是全屏→上方」。
+     */
+    fun next(): DanmakuMode = when (this) {
+        FULL -> TOP
+        TOP -> SINGLE
+        SINGLE -> HIDDEN
+        HIDDEN -> FULL
+    }
+
     companion object { fun fromStored(value: String?) = entries.firstOrNull { it.storedValue==value } ?: FULL }
 }
 
 /**
  * 弹幕的移动速度档位。
  *
- * [factor] 是「标准档速度」的倍数：弹幕画面上所有弹幕**同速**（见 [com.hgtv.star.player.DanmakuView]），
+ * [factor] 是「标准档速度」的倍数：弹幕画面上所有弹幕**同速**（见 [com.hgtv.star.shared.media.DanmakuView]），
  * 因此换档不会让快的追上慢的——只改变整体横穿画面的时间。
  * 慢速是给长句子留的阅读时间，快速是给弹幕特别密的视频留的通行能力。
  */

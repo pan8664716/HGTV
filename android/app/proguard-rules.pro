@@ -31,8 +31,8 @@
 # 心跳与装配入口都是 R8 看不到外部调用者的入口（`Application` 反射式调用链之外、
 # 广播 action 是字符串），改名不会有功能问题，但线上排查时要能对上日志里的类名；
 # 这两条同时也挡住「按字符串匹配 action / 键名」的那类裁剪。
--keep class com.hgtv.star.data.SessionBootstrap { public *; }
--keep class com.hgtv.star.data.SessionEvents { *; }
+-keep class com.hgtv.star.shared.data.SessionBootstrap { public *; }
+-keep class com.hgtv.star.shared.data.SessionEvents { *; }
 -dontwarn okhttp3.**
 -dontwarn okio.**
 

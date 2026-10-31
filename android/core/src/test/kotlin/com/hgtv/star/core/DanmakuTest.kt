@@ -44,4 +44,20 @@ class DanmakuTest {
         assertEquals(DanmakuMode.FULL,DanmakuMode.fromStored(null))
         assertEquals(DanmakuMode.FULL,DanmakuMode.fromStored("unknown"))
     }
+
+    @Test fun `quick toggle cycles through every mode and returns to full`() {
+        // 手机播放页底部那颗「弹幕」按钮：一次点击走一格。
+        // 四档必须覆盖全部枚举值（新增档位时这条会失败，提醒把循环补上），
+        // 并且从任何一档出发连点四次都要回到原档。
+        var mode=DanmakuMode.FULL
+        val seen=mutableListOf(mode)
+        repeat(3) { mode=mode.next(); seen+=mode }
+        assertEquals(DanmakuMode.entries.toSet(),seen.toSet())
+        assertEquals(DanmakuMode.FULL,mode.next())
+        DanmakuMode.entries.forEach { start ->
+            var m=start
+            repeat(DanmakuMode.entries.size) { m=m.next() }
+            assertEquals(start,m)
+        }
+    }
 }

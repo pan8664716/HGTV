@@ -212,7 +212,7 @@ class QrLogin(
      * 现在 `(HOST + path)` 先拼成一个绝对地址再解析，返回值可能是 null（地址非法），
      * 由调用方给出「接口地址无效」。
      */
-    internal fun endpoint(path: String,params: List<Pair<String,String>>): HttpUrl? {
+    fun endpoint(path: String,params: List<Pair<String,String>>): HttpUrl? {
         // 空路径会拼出「站点根」，那不是任何一个接口：宁可当非法地址处理。
         if(path.isBlank()) return null
         return (HOST + path).toHttpUrlOrNull()?.newBuilder()

@@ -24,7 +24,7 @@ import java.nio.ByteOrder
  * `_rticket` 从当前毫秒起逐个 +1，直到算出的分支号为 2（最多试 256 次），
  * 与官方客户端的 `TuneBranch` 同一思路。
  */
-internal class PassportSigner(
+class PassportSigner(
     private val clock: () -> Long = System::currentTimeMillis,
     private val random: () -> Double = Math::random,
     /** 设备档案：`x-medusa` 里的机型 / 系统版本要跟着它走（见 [Signer] 的同名字段）。 */

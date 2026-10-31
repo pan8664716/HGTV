@@ -41,7 +41,7 @@ object SeriesSeasons {
     )
 
     /** 中文数字 → 整数：支持「十三」「二十三」「十」「二十」。解析不了返回 null。 */
-    internal fun chineseNumber(value: String): Int? {
+    fun chineseNumber(value: String): Int? {
         if (value.isEmpty()) return null
         if (value.all { it.isDigit() }) return value.toIntOrNull()
         val ten = value.indexOf(CN_TEN)
@@ -86,7 +86,7 @@ object SeriesSeasons {
         else listOf("第" + chinese(season) + "季","第" + season + "季")
 
     /** 整数 → 中文数字（1–99）：1 一、10 十、11 十一、20 二十、25 二十五。 */
-    internal fun chinese(value: Int): String {
+    fun chinese(value: Int): String {
         if(value<=0 || value>99) return value.toString()
         val ones=arrayOf("零","一","二","三","四","五","六","七","八","九")
         if(value<10) return ones[value]

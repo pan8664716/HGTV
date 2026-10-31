@@ -7,7 +7,7 @@ import java.net.URLEncoder
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 
-internal class Signer(
+class Signer(
     private val clock: () -> Long = System::currentTimeMillis,
     private val random: () -> Double = Math::random,
     /**

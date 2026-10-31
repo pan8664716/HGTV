@@ -1,7 +1,7 @@
 // Derived from drpys 22261ad; GPL-3.0. See NOTICE.md.
 package com.hgtv.star.core
 
-internal object VendorConstants {
+object VendorConstants {
     /**
      * 两个 UA 的**模板**：机型 / 系统版本 / 固件串三处按设备档案填。
      *

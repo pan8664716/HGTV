@@ -1,0 +1,152 @@
+// SPDX-License-Identifier: GPL-3.0-only
+package com.hgtv.star.shared.media
+
+import androidx.media3.common.PlaybackException
+import androidx.media3.exoplayer.ExoPlaybackException
+import androidx.media3.exoplayer.mediacodec.MediaCodecRenderer
+import com.hgtv.star.core.FailureAttribution
+import com.hgtv.star.core.MediaKind
+import com.hgtv.star.core.StreamInfo
+import com.hgtv.star.core.VideoDecoderMode
+
+/**
+ * 一次播放失败的**归因**：这条错误落在哪条轨上、该按哪一档、哪些档位还能换。
+ *
+ * ## 为什么放在 `:shared`
+ *
+ * 这段判断原先只写在电视端的 `MainActivityPlayback.kt` 里（`playbackMediaKind` /
+ * `playbackAttribution`）。手机端要做同一件事时只有两条路：抄一份，或者抽出来。
+ * 抄一份的后果是可预见的——两端对「音频失败」的判定迟早分叉，一端给出「切换为软解」
+ * 这种对音频完全无效的按钮，另一端不给。
+ *
+ * 因此**判断只留一份**，两端都调这里；决策仍由 `:core` 的
+ * [com.hgtv.star.core.PlaybackDegradation] 做（纯逻辑、有单测）。
+ */
+object PlaybackFailures {
+
+    /**
+     * 这条错误属于视频轨还是音频轨。
+     *
+     * 顺序是「先看渲染器给的 mime，再看渲染器名字，最后看解码器初始化异常里的 mime」：
+     * ExoPlayer 的 `PlaybackException` 在外层不一定带 `rendererFormat`（例如 4001 由
+     * `DecoderInitializationException` 包着抛上来），只看最外层会把音频失败判成视频。
+     *
+     * 判不出来时**按视频处理**：视频占绝大多数，而按视频处理最多多给两颗按钮，
+     * 按音频处理则会让真正的视频故障只剩一句「换一部」。
+     */
+    fun mediaKind(problem: Throwable?): MediaKind {
+        var current = problem
+        var guard = 0
+        while (current != null && guard++ < 8) {
+            if (current is ExoPlaybackException) {
+                val mime = current.rendererFormat?.sampleMimeType.orEmpty()
+                if (mime.startsWith("audio/")) return MediaKind.AUDIO
+                if (mime.startsWith("video/")) return MediaKind.VIDEO
+                val name = current.rendererName.orEmpty()
+                if (name.contains("Audio", true)) return MediaKind.AUDIO
+                if (name.contains("Video", true)) return MediaKind.VIDEO
+            }
+            if (current is MediaCodecRenderer.DecoderInitializationException) {
+                val mime = current.mimeType.orEmpty()
+                if (mime.startsWith("audio/")) return MediaKind.AUDIO
+                if (mime.startsWith("video/")) return MediaKind.VIDEO
+            }
+            current = current.cause
+        }
+        return MediaKind.VIDEO
+    }
+
+    /**
+     * 把这一次失败整理成策略能吃的归因。
+     *
+     * 档位与可用档位来自**这一次真正取到的流**（[StreamInfo]），不是用户设置：
+     * 用户设 1080、CDN 只给 480 时，失败的其实是 480 那条，降档目标也只能从 480 往下找。
+     *
+     * 没有结构化档位（例如预热命中的旧对象）时退化成「只有当前这一档」：
+     * 策略会因此降无可降，直接落到错误页——比瞎猜一个 480 安全。
+     */
+    fun attribution(
+        problem: Throwable?,
+        code: Int,
+        info: StreamInfo?,
+        fallbackQuality: Int,
+        mode: VideoDecoderMode,
+    ): FailureAttribution {
+        val quality = info?.actualQuality?.takeIf { it > 0 } ?: fallbackQuality
+        val available = info?.available?.takeIf { it.isNotEmpty() } ?: listOf(quality)
+        return FailureAttribution(
+            media = mediaKind(problem),
+            errorCode = code,
+            currentQuality = quality,
+            currentMode = mode,
+            available = available,
+        )
+    }
+
+    /**
+     * 这一次失败属于哪个**稳定阶段**（聚合键）。
+     *
+     * 与电视端 `playbackStage` 原本那一份逐条一致：错误码分段 → 具体解码码 → 兜底。
+     * 阶段是调试面板的归并键，也是错误页标题的来源，因此**必须是常量**：
+     * 一旦掺进集号、解码器名、错误码，归并出来就是一堆碎渣。
+     *
+     * 看门狗 / 画面恢复这类**没有 `PlaybackException`** 的失败由调用方自带 stage
+     *（电视端的 `PlaybackDiagnosticException.stage`），这里只处理能从异常本身判出来的。
+     */
+    fun stageOf(problem: Throwable?): String {
+        val code = (problem as? PlaybackException)?.errorCode
+        if (code == null) return when (problem) {
+            is java.io.IOException -> com.hgtv.star.core.PlaybackStage.IO
+            is OutOfMemoryError -> com.hgtv.star.core.PlaybackStage.OOM
+            else -> com.hgtv.star.core.PlaybackStage.OTHER
+        }
+        return when (code) {
+            in 1000..1999 -> com.hgtv.star.core.PlaybackStage.SOURCE
+            in 2000..2999 -> com.hgtv.star.core.PlaybackStage.IO
+            in 3000..3999 -> com.hgtv.star.core.PlaybackStage.PARSE
+            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> com.hgtv.star.core.PlaybackStage.DECODER_INIT
+            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED -> com.hgtv.star.core.PlaybackStage.DECODER_QUERY
+            PlaybackException.ERROR_CODE_DECODING_FAILED -> com.hgtv.star.core.PlaybackStage.DECODING
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ->
+                com.hgtv.star.core.PlaybackStage.DECODER_LIMITS
+            PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ->
+                com.hgtv.star.core.PlaybackStage.DECODER_UNSUPPORTED
+            // 4xxx 里还有厂商自己塞进来的码：统一归到「解码」，别丢进 other。
+            in 4000..4999 -> com.hgtv.star.core.PlaybackStage.DECODING
+            else -> com.hgtv.star.core.PlaybackStage.OTHER
+        }
+    }
+
+    /**
+     * 阶段 → 一句稳定的话（错误页 / 调试面板的标题）。
+     *
+     * 两端共用这一张表：同一个故障在电视与手机上必须是同一句标题，否则用户照着
+     * 电视上的说法描述问题，手机上看到的却是另一句。
+     */
+    fun titleOf(stage: String): String = com.hgtv.star.core.PlaybackStage.titleOf(stage)
+
+    /**
+     * 这条错误值不值得「等一会儿再来一次」。
+     *
+     * 判据两端共用（电视端原本内联在 `reportPlaybackFailure` 里，手机端抄了一份）：
+     *
+     * * 2xxx（网络 / IO）与超时：瞬态，重试通常就回来了；
+     * * 5xxx（音频输出起不来）：多数是音频 HAL 被别的应用占着，等几秒就好；
+     * * 普通 `IOException` 同上；
+     * * 解码类（4xxx）**不在其中**：它走降级决策（同档重建 / 降一档），
+     *   盲目重试只会把同一颗解码器再撞一次。
+     */
+    fun isRetryable(problem: Throwable?): Boolean {
+        val code = (problem as? PlaybackException)?.errorCode
+        if (code == null) return problem is java.io.IOException
+        return code in 2000..2999 ||
+            code == PlaybackException.ERROR_CODE_TIMEOUT ||
+            code in 5000..5999
+    }
+
+    /** 同上，只给错误码的入口（手机端已经拿到 `errorCode`，不必再包一层异常）。 */
+    fun isRetryableCode(code: Int): Boolean =
+        code in 2000..2999 ||
+            code == PlaybackException.ERROR_CODE_TIMEOUT ||
+            code in 5000..5999
+}

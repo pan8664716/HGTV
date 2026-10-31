@@ -41,7 +41,7 @@ import java.net.Proxy
  *（`conn=reused`，只有 `ttfb` / `body` 两栏有意义）——复用的那次如果还是慢，
  * 说明瓶颈在服务端或请求体，而不在握手。只在调试包挂载，实现上全是普通字段，不加锁。
  */
-internal class NetTiming : EventListener() {
+class NetTiming : EventListener() {
     /** 每个请求一份实例（`EventListener` 有状态，不能共享）。 */
     object Factory : EventListener.Factory {
         override fun create(call: Call): EventListener = NetTiming()

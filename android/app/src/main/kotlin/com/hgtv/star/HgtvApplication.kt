@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star
-
 import android.app.Application
 import android.content.Context
 import androidx.multidex.MultiDex
+import com.hgtv.star.shared.debug.Diagnostics
 
 /**
  * 进程入口。
@@ -115,8 +115,8 @@ class HgtvApplication: Application() {
      */
     private fun initSession() {
         runCatching {
-            val store = com.hgtv.star.data.AppSessionStore(this)
-            com.hgtv.star.data.SessionBootstrap.init(
+            val store = com.hgtv.star.shared.data.AppSessionStore(this)
+            com.hgtv.star.shared.data.SessionBootstrap.init(
                 context = this,
                 store = store,
                 log = { line ->
@@ -127,7 +127,7 @@ class HgtvApplication: Application() {
                 onExpired = { reason ->
                     // 凭证已由心跳清掉；广播到界面收尾（进程刚起、界面还没起时发出去也没关系，
                     // 因为凭证已经没有了，界面重建时读到的就是未登录态）。
-                    com.hgtv.star.data.SessionEvents.sendExpired(this,reason)
+                    com.hgtv.star.shared.data.SessionEvents.sendExpired(this,reason)
                 }
             )
         }.onFailure { problem ->

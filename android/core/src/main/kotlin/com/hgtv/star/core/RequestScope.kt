@@ -71,7 +71,7 @@ object NetLog {
     }
 
     /** 真正的上报口：[RequestScope] 走这一条，静默段里直接丢掉。 */
-    internal fun emit(line: String) {
+    fun emit(line: String) {
         if(silent.get()==true) return
         log(line)
     }

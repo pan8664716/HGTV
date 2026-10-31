@@ -70,3 +70,27 @@ data class FavoriteUpdate(val total: Int,val seen: Int,val checkedAt: Long) {
         }.getOrNull()
     }
 }
+
+/**
+ * 选集一页放多少集。
+ *
+ * **两端共用同一份落盘值**，但可选档位不同：TV 的选集网格固定 10 列，一页 50 集就是五行、
+ * 正好铺满面板，再往上加会把格子压到看不清，因此它只提供 10/20/30/40/50；
+ * 手机 / 平板的选集在抽屉里、可以内部滚动，一页 100 集也放得下，因此额外提供 80/100。
+ *
+ * 校验取两边的**并集**：一台设备存了 100，另一台（TV）读到时如果直接判成非法就会悄悄
+ * 变回 20——那等于「在手机上设的值被电视改掉了」。TV 那边拿到 80/100 时按自己的上限
+ * 收一档（见 `EpisodeGrid` 的 `coerceIn(10,50)`），不改写落盘值。
+ */
+object EpisodePageSize {
+    /** 手机 / 平板设置页里的档位。 */
+    val phoneOptions = listOf(20, 30, 50, 80, 100)
+
+    /** TV 设置页里的档位（固定 10 列 × 最多 5 行）。 */
+    val tvOptions = listOf(10, 20, 30, 40, 50)
+
+    /** 落盘时认可的并集。 */
+    val options = (tvOptions + phoneOptions).distinct().sorted()
+
+    fun normalize(value: Int): Int = value.takeIf { it in options } ?: 20
+}

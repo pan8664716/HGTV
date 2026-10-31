@@ -42,6 +42,60 @@ val PLAYER_PANEL_TIMEOUT_RANGE=2..15
 const val PLAYER_PANEL_TIMEOUT_DEFAULT=6
 data class BackupProgress(val series: Series,val episodeId: String,val episodeIndex: Int,val position: Long,val duration: Long,val completed: Boolean,val updatedAt: Long) {
     fun json()=JSONObject().put("series",LibraryBackup.seriesJson(series)).put("episodeId",episodeId).put("episodeIndex",episodeIndex).put("position",position).put("duration",duration).put("completed",completed).put("updatedAt",updatedAt)
+
+    companion object {
+        /**
+         * 「这一集算看完了」的判据：离片尾不到 [COMPLETE_TAIL_MS]。
+         *
+         * 与电视端、手机端播放页 / 信息流共用的同一个数：早先三处各写一个魔数，
+         * 有一处写成 2 秒之后，同一次观看在两端就会被记成「看完」与「没看完」。
+         */
+        const val COMPLETE_TAIL_MS = 3_000L
+
+        /**
+         * 由播放现场生成一条观看进度。
+         *
+         * 位置夹到 `[0, duration]`：`currentPosition` 偶尔会略微超过时长（片尾多算一帧），
+         * 落盘之后历史里就会出现「02:31 / 02:30」这种读数。
+         */
+        fun of(
+            series: Series,
+            episodeId: String,
+            episodeIndex: Int,
+            position: Long,
+            duration: Long,
+            updatedAt: Long = System.currentTimeMillis(),
+        ): BackupProgress {
+            val safeDuration = duration.coerceAtLeast(0)
+            val safePosition = position.coerceIn(0, if (safeDuration > 0) safeDuration else position.coerceAtLeast(0))
+            return BackupProgress(
+                series = series,
+                episodeId = episodeId,
+                episodeIndex = episodeIndex,
+                position = safePosition,
+                duration = safeDuration,
+                completed = safeDuration > 0 && safePosition >= safeDuration - COMPLETE_TAIL_MS,
+                updatedAt = updatedAt,
+            )
+        }
+
+        /** 一集已经播完：位置与时长都按整集记（片尾那一刻 `duration` 可能已经换成下一集了）。 */
+        fun completed(
+            series: Series,
+            episodeId: String,
+            episodeIndex: Int,
+            duration: Long,
+            updatedAt: Long = System.currentTimeMillis(),
+        ) = BackupProgress(
+            series = series,
+            episodeId = episodeId,
+            episodeIndex = episodeIndex,
+            position = duration.coerceAtLeast(0),
+            duration = duration.coerceAtLeast(0),
+            completed = true,
+            updatedAt = updatedAt,
+        )
+    }
 }
 data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext: Boolean=true,val type: ContentType=ContentType.COMIC,val frame: VideoFrameMode=VideoFrameMode.FIT,val danmaku: DanmakuMode=DanmakuMode.FULL,val danmakuScale: Float=1f,val danmakuAlpha: Float=1f,val danmakuSpeed: DanmakuSpeed=DanmakuSpeed.NORMAL,
     /**
@@ -194,7 +248,17 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      *
      * 后加字段：旧备份 / 旧磁盘没有它，读回来按 10 秒处理——正是加这一项之前的行为。
      */
-    val seekStep: Int=10) {
+    val seekStep: Int=10,
+    /**
+     * 手机 / 平板的海报列表一行放几张（1 / 2 / 3，默认 2）。
+     *
+     * 与电视的 [homeColumns]（4..8）分开存：那一个是「一屏 6 张海报」的电视排版，
+     * 手机上默认 2 列，想看得更大可以选 1 列、想一屏多扫几张可以选 3 列。
+     * 两端数值区间不同，共用一个键会让「电视设 8 列、手机读成 8」直接崩掉布局。
+     *
+     * 后加字段：旧备份 / 旧磁盘没有它，读回来按 2 列处理。
+     */
+    val gridColumns: Int=2) {
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("danmaku",danmaku.storedValue)
         .put("danmakuScale",danmakuScale.toDouble()).put("danmakuAlpha",danmakuAlpha.toDouble()).put("danmakuSpeed",danmakuSpeed.storedValue)
         .put("keys",keys)
@@ -216,6 +280,7 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
         .put("backToTop",backToTop)
         .put("hiddenNav",hiddenNav)
         .put("launchRecommend",launchRecommend)
+        .put("gridColumns",gridColumns)
         .put("hiddenHome",hiddenHome)
         .put("reduceAnim",reduceAnim)
 }
@@ -337,14 +402,16 @@ object LibraryBackup {
         }.coerceIn(1f,100f) else 100f
         // 竖屏短剧全屏：后加字段，旧备份没有它时按关闭处理。
         val autoFullscreen=settings.optBoolean("autoFullscreen",false)
-        // 选集一页集数：后加字段，旧备份没有它时按 20 处理；只接受 10/20/30/40/50。
+        // 选集一页集数：后加字段，旧备份没有它时按 20 处理；认两端档位的并集。
         val episodePageSize=(settings.optInt("episodePageSize",20).takeIf { settings.has("episodePageSize") } ?: 20)
-            .let { if(it in 10..50) it / 10 * 10 else 20 }
+            .let { EpisodePageSize.normalize(it) }
         // 分页边缘翻页：后加字段，旧备份没有它时按开启处理（与之前的行为一致）。
         val episodeEdgeTurn=settings.optBoolean("episodeEdgeTurn",true)
         // 「返回顶部」浮层的显隐方式：后加字段，旧备份没有它、或值不在四档里，
         // 都按「始终显示」处理（正是加这一项之前的行为）。
         val backToTop=settings.optString("backToTop",BACK_TO_TOP_DEFAULT).takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT
+        // 手机列表每行几张：后加字段，旧备份没有它时按 2 处理；坏值夹进 1..3。
+        val gridColumns=if(settings.has("gridColumns")) settings.number("gridColumns",2).toInt().coerceIn(1,3) else 2
         // 导航栏圆形入口：逐个开关，值是被隐藏的那些 key；旧备份没有这个字段 = 全部显示。
         val hiddenNav=settings.optString("hiddenNav","").takeIf { it.length<=80 && it.none(Char::isISOControl) }.orEmpty()
         // 启动进入推荐：后加字段，旧备份没有它时按开启处理（与需求 1 的默认行为一致）。
@@ -355,7 +422,7 @@ object LibraryBackup {
         val hiddenHome=settings.optString("hiddenHome","").takeIf { it.length<=120 && it.none(Char::isISOControl) }.orEmpty()
         // 「减少动画」：后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。
         val reduceAnim=settings.optBoolean("reduceAnim",false)
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep),later,hiddenIds)
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns),later,hiddenIds)
     }
     /** Existing favorites stay first; only newer imported progress replaces a local record. */
     fun merge(local: BackupData,incoming: BackupData,restoreSettings: Boolean): BackupData {

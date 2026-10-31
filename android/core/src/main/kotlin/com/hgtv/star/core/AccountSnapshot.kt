@@ -163,7 +163,15 @@ object AccountSnapshot {
         listOf(it.nickname, it.avatar, it.displayId, it.signature, it.follows, it.fans, it.likes, it.anonymous)
     }
 
-    private fun seriesKey(series: Series) = listOf(series.id, series.title, series.cover, series.badge, series.tags)
+    /**
+     * 一部剧里**界面上看得见**的那几项。
+     *
+     * 必须带 `episodeCount`：卡片右下角的「共 N 集」读的是它（不是 `badge`）。
+     * 少了这一项，平台把总集数改正之后（见 `ContentRepository.totalOf`）这一栏会被判成
+     * 「没变」，于是旧卡片一直停在错误的那一个集数上，直到用户手动刷新整页。
+     */
+    private fun seriesKey(series: Series) =
+        listOf(series.id, series.title, series.cover, series.badge, series.tags, series.episodeCount.toString())
 
     private fun favoriteKey(row: AccountFavorite) = seriesKey(row.series) + row.episodes.toString()
     private fun historyKey(row: AccountHistory) =
