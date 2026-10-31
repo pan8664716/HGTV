@@ -53,6 +53,15 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     private var loader: (suspend (Int) -> CatalogPage?)? = null
     private var job: Job? = null
 
+    /**
+     * 服务端给的热度原串，按剧 id 存（`id → "9014万"`）。
+     *
+     * 榜单接口把热度放在 `CatalogPage.ranking.positions` 里，而列表只留 `items`；
+     * 不在这儿接住，卡片就拿不到那串——它比 `Series.heat` 的解析值更准
+     * （服务端自己排的，带单位、已经取整）。翻页时按页并入，不整体覆盖。
+     */
+    private var heatBy: Map<String, String> = emptyMap()
+
     /** 点卡片。 */
     var onOpen: ((Series) -> Unit)? = null
 
@@ -238,6 +247,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     fun reset() {
         job?.cancel()
         items.clear()
+        heatBy = emptyMap()
         emptyVisible = false
         adapter.notifyDataSetChanged()
         page = 1
@@ -259,6 +269,12 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 return@launch
             }
             val fresh = result.items.filter { s -> items.none { it.id == s.id } }
+            // 榜单这一页的名次与热度按 id 并入：翻页只带自己那一页，整体覆盖会把前几页的丢掉。
+            result.ranking?.positions?.let { positions ->
+                if (positions.isNotEmpty()) {
+                    heatBy = heatBy + positions.mapValues { it.value.heat }
+                }
+            }
             val start = items.size
             items += fresh
             page += 1
@@ -289,6 +305,9 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     fun submit(rows: List<Series>, more: Boolean = false) {
         job?.cancel()
         items.clear()
+        // 外部塞进来的没有榜单上下文：热度只能靠 `Series.heat`（搜索结果带），
+        // 其余来源为 0，卡片上那一枚自然收起。
+        heatBy = emptyMap()
         items += rows
         ended = !more
         page = 1
@@ -433,6 +452,14 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         /** 左上角：榜单名次（`第 3 名`），只在榜单页出现。 */
         private val rank = TextView(context)
 
+        /**
+         * 左下角：**热度**（`🔥 9014万`）。
+         *
+         * 只在接口真的给了热度时出现（榜单页与搜索结果有，分类页 / 本机记录没有），
+         * 没有就整枚收起。文案见 [com.hgtv.star.core.HeatLabel]。
+         */
+        private val heat = TextView(context)
+
         private val title = TextView(context).apply {
             phoneSize(18f * scale)
             setTextColor(PhoneStyle.textDim)
@@ -491,11 +518,12 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             ))
 
-            // 三枚角标共用一套：12 号字、粗体、无字体内边距、朝贴边那一侧压暗、6/3/8/3 内边距。
+            // 四枚角标共用一套：12 号字、粗体、无字体内边距、朝贴边那一侧压暗、6/3/8/3 内边距。
             listOf(
                 badge to (Gravity.BOTTOM or Gravity.END),
                 season to (Gravity.TOP or Gravity.END),
                 rank to (Gravity.TOP or Gravity.START),
+                heat to (Gravity.BOTTOM or Gravity.START),
             ).forEach { (view, place) ->
                 view.phoneSize(12f * scale)
                 view.setTextColor(Color.WHITE)
@@ -519,6 +547,11 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP or Gravity.END
             ).apply { rightMargin = context.dp(5); topMargin = context.dp(5) })
+            // 左下角热度：与右下角的集数角标同一条底边，一左一右。
+            poster.addView(heat, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.START
+            ).apply { leftMargin = context.dp(5); bottomMargin = context.dp(5) })
 
             addView(title, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -545,18 +578,18 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         /**
          * 角标压暗层：朝**贴边那一侧**渐深，圆角跟海报井一致。
          *
-         * 与电视 `TvStyle.scrimTop / scrimTopStart / scrim` 三件套同一个效果：
-         * 上角的暗头在上、左上角的暗头在左、下角的暗头在下。
+         * 与电视 `TvStyle.scrimTop / scrimTopStart / scrimBottomStart / scrim` 四件套同一个效果：
+         * 上角与下角的暗头在上下、左侧两枚的暗头在左。
          */
         private fun badgeScrim(place: Int): android.graphics.drawable.GradientDrawable {
             val dark = 0x99000000.toInt()
             val clear = Color.TRANSPARENT
-            val (colors, orientation) = if (place == (Gravity.TOP or Gravity.END)) {
-                intArrayOf(dark, clear) to android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM
-            } else if (place == (Gravity.TOP or Gravity.START)) {
-                intArrayOf(dark, clear) to android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT
-            } else {
-                intArrayOf(clear, dark) to android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM
+            val fromStart = place == (Gravity.TOP or Gravity.START) ||
+                place == (Gravity.BOTTOM or Gravity.START)
+            val (colors, orientation) = when {
+                fromStart -> intArrayOf(dark, clear) to android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT
+                place == (Gravity.TOP or Gravity.END) -> intArrayOf(dark, clear) to android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM
+                else -> intArrayOf(clear, dark) to android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM
             }
             return android.graphics.drawable.GradientDrawable(orientation, colors).apply {
                 cornerRadius = context.dp(PhoneStyle.RADIUS_CARD).toFloat()
@@ -592,8 +625,15 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 rank.visibility = GONE
             }
 
+            // 左下角热度：服务端原串优先（榜单页），没有就用搜索卡片解析出的数字；
+            // 两者都没有（分类页 / 收藏 / 历史）→ 整枚收起。火苗是 emoji 字符，不自绘。
+            val heatText = com.hgtv.star.core.HeatLabel.badge(heatBy[series.id], series.heat)
+            heat.text = heatText
+            heat.visibility = if (heatText.isBlank()) GONE else VISIBLE
+
             contentDescription = listOf(
-                badgeText, seasonText, series.title, tagLine.text.toString(), status.text.toString()
+                badgeText, seasonText, series.title, tagLine.text.toString(), status.text.toString(),
+                if (heatText.isBlank()) "" else "$heatText 热度",
             ).filter { it.isNotBlank() }.joinToString("，")
 
             PhoneServices.artwork(context).load(

@@ -194,7 +194,13 @@ fun MainActivity.rankShelf(board: RankBoard): HomeScreen.Shelf? {
     val page=homeFeed[board]
     val items=page?.items.orEmpty().filterNot { it.id in library.hidden() }
     if(items.isEmpty()) return null
-    val entries=items.take(SHELF_SIZE).map { HomeScreen.Entry(it,"",time=it.badge) }
+    val entries=items.take(SHELF_SIZE).map { item ->
+        HomeScreen.Entry(
+            item, "", time=item.badge,
+            // 左下角热度：这一栏的数据来自榜单接口，带服务端排好的那串（`9014万`）。
+            heat=HeatLabel.badge(page?.ranking?.positions?.get(item.id)?.heat, item.heat),
+        )
+    }
     // 行末「查看全部」直接进这一栏对应的榜单页——榜单与它是同一份数据，不是另做一套列表；
     // 行末右键也是同一个动作（与 [localShelf] 那三栏一致）。不足一屏时不给这个入口。
     val more: (() -> Unit)?=if(entries.size>=SHELF_SIZE) ({ switchRankBoard(board,fromHome=true) }) else null

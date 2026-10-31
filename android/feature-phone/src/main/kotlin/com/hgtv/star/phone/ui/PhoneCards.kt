@@ -11,6 +11,7 @@ import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.hgtv.star.core.HeatLabel
 import com.hgtv.star.core.Series
 import com.hgtv.star.shared.data.ArtworkLoader
 
@@ -92,6 +93,21 @@ object PhoneCards {
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
                 Gravity.TOP or Gravity.END
             ).apply { setMargins(0, dp(4), dp(4), 0) })
+        }
+        // 左下角热度：只有接口真的给了才出现（这一排多是「相关剧集 / 作者作品」，
+        // 作者作品来自搜索接口，带 `rec_text` 解析出来的数字）。
+        val heatText = HeatLabel.badge(null, series.heat)
+        if (heatText.isNotEmpty()) {
+            imageBox.addView(TextView(context).apply {
+                text = heatText
+                setTextColor(Color.WHITE)
+                phoneSize(10)
+                setPadding(dp(5), dp(1), dp(5), dp(1))
+                background = roundedBackground(0xB3000000.toInt(), dp(4).toFloat())
+            }, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.BOTTOM or Gravity.START
+            ).apply { setMargins(dp(4), 0, 0, dp(4)) })
         }
         val heightPx = (widthDp * 10 / 7f).toInt()
         cell.addView(imageBox, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(heightPx)))

@@ -952,6 +952,14 @@ class PosterCard(
      * 与右下角那枚共用一套字号、字重、压暗层与内边距，只是一左一右。
      */
     private val season = TextView(context)
+    /**
+     * 左下角角标：**热度**（`🔥 9014万`）。
+     *
+     * 只在接口真的给了热度时出现（榜单页与搜索结果有，分类页 / 相关剧集 / 本机记录没有），
+     * 没有就整枚收起——留一个「热度暂无」的占位只是噪音。
+     * 文案怎么来的见 [com.hgtv.star.core.HeatLabel]：服务端原串优先，没有才按数字换算。
+     */
+    private val heat = TextView(context)
     /** 已播进度条：自绘，一张卡只占一个 View（原先的 track/fill/rest 是三个）。 */
     private val progress = PosterProgress(context)
     /**
@@ -1019,7 +1027,7 @@ class PosterCard(
         // 压在封面上，因此**不跟主题**：浅色主题下 TvStyle.text 是深墨，
         // 压在黑压暗层上会完全看不见（同播放界面的规则）。
         listOf(badge to (Gravity.BOTTOM or Gravity.END), season to (Gravity.TOP or Gravity.END),
-            rank to (Gravity.TOP or Gravity.START)).forEach { (view, place) ->
+            rank to (Gravity.TOP or Gravity.START), heat to (Gravity.BOTTOM or Gravity.START)).forEach { (view, place) ->
             view.designTextSize(TvStyle.POSTER_BADGE_TEXT * textScale)
             view.setTextColor(TvStyle.playerText)
             view.includeFontPadding = false
@@ -1031,6 +1039,7 @@ class PosterCard(
             view.background = when {
                 place == (Gravity.TOP or Gravity.END) -> TvStyle.scrimTop(context, 0x99000000.toInt(), Color.TRANSPARENT)
                 place == (Gravity.TOP or Gravity.START) -> TvStyle.scrimTopStart(context, 0x99000000.toInt(), Color.TRANSPARENT)
+                place == (Gravity.BOTTOM or Gravity.START) -> TvStyle.scrimBottomStart(context, 0x99000000.toInt(), Color.TRANSPARENT)
                 else -> TvStyle.scrim(context, Color.TRANSPARENT, 0x99000000.toInt())
             }
             view.setPadding(dp(6), dp(3), dp(8), dp(3))
@@ -1059,6 +1068,14 @@ class PosterCard(
             FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
                 rightMargin = dp(5)
                 topMargin = dp(5)
+            }
+        )
+        // 左下角热度：与右下角的集数角标同一条底边，一左一右。
+        poster.addView(
+            heat,
+            FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
+                leftMargin = dp(5)
+                bottomMargin = dp(5)
             }
         )
 
@@ -1129,6 +1146,13 @@ class PosterCard(
         /** 榜单名次（`第 3 名`）；非榜单页传空串，左上角不显示。 */
         rankText: String = "",
         /**
+         * 左下角热度（`🔥9014万`）。空串 = 这一页没有热度，整枚收起。
+         *
+         * 由调用方用 [com.hgtv.star.core.HeatLabel.badge] 算好再传进来：
+         * 「服务端原串优先、没有才按数字换算、前面加火苗」这条规则只该有一份。
+         */
+        heatText: String = "",
+        /**
          * 第二行优先显示状态而不是类型标签。
          *
          * 只给**历史栏**用：那一栏的第二行是「第 x 集 · xx:xx」，回答「我看到哪了」，
@@ -1151,12 +1175,17 @@ class PosterCard(
         val seasonText = if (seasonBadge) SeriesSeasons.badge(item) else ""
         season.text = seasonText
         season.visibility = if (seasonText.isBlank()) View.GONE else View.VISIBLE
-        contentDescription = listOf(badgeText, seasonText, item.title, tagLine.text.toString(), status.text.toString())
-            .filter { it.isNotBlank() }.joinToString("，")
+        contentDescription = listOf(
+            badgeText, seasonText, item.title, tagLine.text.toString(), status.text.toString(),
+            if (heatText.isBlank()) "" else "$heatText 热度",
+        ).filter { it.isNotBlank() }.joinToString("，")
         // 左上角名次（只在榜单页）。
         rank.text = rankText
         rank.visibility = if (rankText.isBlank()) View.GONE else View.VISIBLE
         rank.setTextColor(if (rankTop) TvStyle.tips else TvStyle.playerText)
+        // 左下角热度：没有就整枚收起（分类页 / 相关剧集 / 本机记录都没有这一项）。
+        heat.text = heatText
+        heat.visibility = if (heatText.isBlank()) View.GONE else View.VISIBLE
         // 右下角：统一「共 N 集」；没有集数时才退回调用方给的角标（名次 / 热度）。
         fallbackBadge = badgeText
         badge.setTextColor(TvStyle.playerText)

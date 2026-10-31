@@ -706,4 +706,18 @@ object TvStyle {
         cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
     }
 
+    /**
+     * 左下角热度角标的压暗层：横向渐变，最深处贴左下。
+     *
+     * 与右下角那枚（竖向）区分方向，与左上角那枚（也是横向）区分深浅端：
+     * 三枚角标同屏时，方向不同才不会看成一条通栏暗带。
+     */
+    fun scrimBottomStart(context: Context, start: Int, end: Int, radius: Int = RADIUS_CARD) = GradientDrawable(
+        GradientDrawable.Orientation.LEFT_RIGHT,
+        intArrayOf(start, end)
+    ).apply {
+        val r = context.designPx(radius).toFloat()
+        cornerRadii = floatArrayOf(0f, 0f, 0f, 0f, r, r, r, r)
+    }
+
 }

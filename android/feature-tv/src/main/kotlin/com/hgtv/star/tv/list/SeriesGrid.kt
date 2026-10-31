@@ -610,8 +610,9 @@ fun MainActivity.bindGridCard(card: PosterCard,item: Series) {
         // 未上架（预告 / 预约中）：第二行显示上线时间，这是这一张卡唯一有用的状态。
         item.upcoming -> item.notice.ifBlank { "即将上线" }
         collection=="favorites" -> library.favoriteLabel(item.id)
-        // 榜单偶尔整页没有热度值（服务端 SSR 抽风）：退回榜单名，不再整屏都是「热度暂无」。
-        tab==TAB_RANK -> position?.heat?.takeIf { it.isNotBlank() } ?: rankBoard.label
+        // 热度不再写在这里：它有了自己的左下角角标（见 `PosterCard.bind` 的 `heatText`）。
+        // 留在第二行会变成同一张卡上出现两次「9014万」。
+        tab==TAB_RANK -> ""
         progress!=null -> if(library.watched(item.id)) "整剧已看完" else "第 ${progress.episodeIndex+1} 集 · ${formatTime(progress.position)}"
         // 历史集合页的**账号侧**条目没有本机进度：集数与集内秒数在 [accountHistoryCard]
         // 写进了 `badge`，这里必须接住，否则第二行会退到类型标签（没标签就整行空白）。
@@ -619,15 +620,18 @@ fun MainActivity.bindGridCard(card: PosterCard,item: Series) {
         (collection=="history" || (tab==TAB_PROFILE && accountTab=="history")) && item.badge.isNotBlank() -> "账号 · ${item.badge}"
         else -> ""
     }
-    // 名次放左上角（榜单页才有）；右下角统一由卡片按 `episodeCount` 画「共 N 集」。
+    // 名次放左上角（榜单页才有）；右下角统一由卡片按 `episodeCount` 画「共 N 集」；
+    // 热度放左下角——服务端原串优先，没有才用搜索卡片解析出来的数字。
     val rankText=if(tab==TAB_RANK) rank?.let { "第 $it 名" }.orEmpty() else ""
+    val heatText=HeatLabel.badge(position?.heat,item.heat)
     card.series=item
     card.tag=item.id
     card.visibility=View.VISIBLE
     // 未上架没有集数：右下角改画「预告」，否则那一角空着，卡片看起来像数据缺了。
     card.bind(item,statusText,if(item.upcoming) "预告" else "",
         progress?.takeIf { it.duration>0 }?.let { (it.position*100/it.duration).toInt().coerceIn(0,100) },
-        rank!=null && rank<=3,rankText=rankText,preferStatus=collection=="history" || item.upcoming)
+        rank!=null && rank<=3,rankText=rankText,heatText=heatText,
+        preferStatus=collection=="history" || item.upcoming)
 }
 
 /**
