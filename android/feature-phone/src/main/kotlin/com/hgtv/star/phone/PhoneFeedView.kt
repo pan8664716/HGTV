@@ -4,6 +4,7 @@ package com.hgtv.star.phone
 import android.app.Activity
 import android.content.Context
 import android.graphics.Color
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
@@ -17,7 +18,6 @@ import androidx.media3.datasource.DataSource
 import androidx.media3.exoplayer.ExoPlayer
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.PagerSnapHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.hgtv.star.core.CategorySelection
 import com.hgtv.star.core.DanmakuMode
@@ -29,6 +29,7 @@ import com.hgtv.star.core.toFit
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.phone.ui.PhoneColor
+import com.hgtv.star.phone.ui.PhonePagerSnapHelper
 import com.hgtv.star.phone.ui.PhoneSheet
 import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.dp
@@ -69,6 +70,14 @@ import kotlinx.coroutines.withContext
  * 1. 旧页 `PlayerView.player = null`（Surface 不能同时挂在两个 View 上）；
  * 2. 取消上一页还在飞的取地址请求（`playToken`），避免「滑走了又跳回来」；
  * 3. 新页按本机进度续播（续播在播放页里也走同一份 `Library.progress`）。
+ *
+ * ## 信息流**不记进度、不进历史**
+ *
+ * 这里刷到的片子是「随便看看」，只在内存里的会话（`PhoneSession`）记位置：
+ * 从这一屏点进正式播放页时能接着播，但**不写 `Library` 的观看记录**，
+ * 「我的 → 历史」里也就不会堆满划过一眼的剧。历史只由正式播放页写。
+ *
+ * 代价是下次冷启动再刷到同一部剧会从头开始——这正是这一条需求要的取舍。
  */
 class PhoneFeedView(
     context: Context,
@@ -86,7 +95,7 @@ class PhoneFeedView(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val items = ArrayList<Series>()
     private val adapter = FeedAdapter()
-    private val list = RecyclerView(context)
+    private val list = VerticalPagerList(context)
 
     private var offset = 0
     private var sessionId = ""
@@ -137,6 +146,8 @@ class PhoneFeedView(
     private var playingDetail: Detail? = null
     /** 已经因为片尾切去正片：防止 STATE_ENDED 重入时再开一个 Activity。 */
     private var advancing = false
+    /** 上一次进入「交接 / 换下一部」的时刻：`advancing` 超时后自动失效（见 `onEpisodeEnded`）。 */
+    private var advancingAt = 0L
     /** 推荐流的体裁筛选（`RankBoard.genre`）；null = 全部混排。 */
     private var genre: String? = initialGenre
     /**
@@ -180,10 +191,7 @@ class PhoneFeedView(
     /** 这一次进页面是否已经从落盘恢复过续流游标（每个体裁各一份）。 */
     private var cursorRestored = false
     private var progressTick: Runnable? = null
-    private var saveTick: Runnable? = null
     private var tempSpeed = false
-    private var seekFrom = 0L
-    private var seekTarget = 0L
     private var userSpeed = 1f
     private var library: Library? = null
     /** 进程单例播放器上的监听器：换屏/换集前先摘掉，否则会越积越多。 */
@@ -254,7 +262,20 @@ class PhoneFeedView(
         list.layoutManager = LinearLayoutManager(context, RecyclerView.VERTICAL, false)
         list.adapter = adapter
         list.overScrollMode = View.OVER_SCROLL_NEVER
-        PagerSnapHelper().attachToRecyclerView(list)
+        /*
+         * 关掉这一层列表的**嵌套滚动**。
+         *
+         * 推荐页外面是横向 pager，本列表只吃纵向位移，横向那一份会被
+         * `dispatchNestedPreScroll` 交给 pager——那条分发不经过 `onInterceptTouchEvent`，
+         * 于是 pager 的「锁住横滑」形同虚设：设置里关掉「推荐页左右滑动」后，
+         * 手指在视频上横着一划照样整页翻走，用户读到的就是「关了没生效」。
+         *
+         * 关掉它不影响任何纵向行为：上下滑、翻页吸附、惯性都是列表自己算的；
+         * 横向手势此后只走标准的触摸分发（父 pager 的 `onInterceptTouchEvent`），
+         * 那条路上才有锁。
+         */
+        list.isNestedScrollingEnabled = false
+        PhonePagerSnapHelper { list.height }.attachToRecyclerView(list)
         list.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
                 if (state != RecyclerView.SCROLL_STATE_IDLE) return
@@ -591,7 +612,6 @@ class PhoneFeedView(
             if (at > 0) exo.seekTo(at)
         }
         startProgressTicker()
-        startSaveTicker(playingIndex)
         // 地址已经过了窗口期：这一路还能继续出帧，但下一个 Range 请求会 403。
         // 原地换一条地址，位置与 Surface 都不动（见 [reopenAtCurrentPosition]）。
         if (PhoneSession.urlExpired()) reopenAtCurrentPosition(playingIndex)
@@ -819,13 +839,11 @@ class PhoneFeedView(
             PhoneSession.feedVideoScale = null
             PhoneSession.underlayActive = false
         }
-        // 两个 ticker 都要停：它们读的是**进程级播放器**的位置，
+        // ticker 要停：它读的是**进程级播放器**的位置，
         // 而这时播放器可能已经交给播放页在放另一集了——继续跑就会把别的集的位置
         // 记到这一屏的集号上。
         progressTick?.let { list.removeCallbacks(it) }
         progressTick = null
-        saveTick?.let { list.removeCallbacks(it) }
-        saveTick = null
         // 预热与停留确认也停掉：隐藏期间发出去的预热会跟播放页抢带宽，
         // 而停留确认本来就是「这一屏还在前台停着」才成立的事。
         preloadScheduler.cancel()
@@ -1440,6 +1458,15 @@ class PhoneFeedView(
 
     /** 推荐流里连续几部放不了就不再自动翻（与电视端 `RECOMMEND_SKIP_LIMIT` 同值）。 */
     private val RECOMMEND_SKIP_LIMIT = 4
+
+    /**
+     * `advancing` 的有效期（毫秒）。
+     *
+     * 它只是「这一集的片尾已经处理过」的防重入标记。交接一旦没走完（播放页没起来、
+     * 用户中途返回、跳转被系统拦掉），标志会一直卡着，之后每一集都不再连播。
+     * 超过这个时间就当作失效，允许重新推进。
+     */
+    private val ADVANCE_GUARD_MS = 5_000L
     /** 正在预热的那一集（防重入）。 */
     private var prefetchingFor = ""
     /** 上一次允许发起预热的时间（避免每 500ms 重试一次）。 */
@@ -1556,6 +1583,13 @@ class PhoneFeedView(
                         syncDanmakuClock(page, playingIndex, position, exo.isPlaying, exo.playbackParameters.speed)
                         if (!paused) maybePrefetchNext(position, duration)
                     }
+                    // 片尾兜底：`STATE_ENDED` 只在状态**变化**时回调一次。如果那一下刚好
+                    // 被暂停 / 切页 / 交接吞掉，播放器会永远停在末帧——用户读到的就是
+                    // 「卡在这一集末尾，不往下走」。每 500ms 补一次，`onEpisodeEnded` 自己
+                    // 有 `paused` / `advancing` / 位置复核三道闸，重复调用是安全的。
+                    if (exo.playbackState == Player.STATE_ENDED && playingIndex >= 0) {
+                        onEpisodeEnded(playingIndex)
+                    }
                 }
                 list.postDelayed(this, 500)
             }
@@ -1565,6 +1599,8 @@ class PhoneFeedView(
     }
 
     private fun attach(index: Int, video: RemoteVideo, startAt: Long = 0L) {
+        // 换了源就是新的一集：上一集「正在交接」的标记不再成立。
+        advancing = false
         val series = items.getOrNull(index)
         val episodeIndex = currentEpisodeIndex[index] ?: 0
         val exo = PhoneServices.player(context, library?.decoderMode)
@@ -1609,7 +1645,6 @@ class PhoneFeedView(
         exo.prepare()
         if (startAt > 0) exo.seekTo(startAt)
         startProgressTicker()
-        startSaveTicker(index)
     }
 
     /**
@@ -1689,47 +1724,6 @@ class PhoneFeedView(
         exo.addListener(hook)
     }
 
-    /**
-     * 每 5 秒把这一屏的进度写进书库。
-     *
-     * 不写的话「推荐页 → 播放页」这条链路上没有中间状态：播放页读的是上一次
-     * 在播放页里存的位置，而不是用户刚刚在信息流里看到的那一秒。
-     */
-    private fun startSaveTicker(index: Int) {
-        saveTick?.let { list.removeCallbacks(it) }
-        val tick = object : Runnable {
-            override fun run() {
-                val exo = player
-                val series = items.getOrNull(index)
-                val lib = library
-                if (exo != null && series != null && lib != null) {
-                    val duration = exo.duration
-                    if (duration > 0) {
-                        // 「离片尾 3 秒算看完」与位置夹取都在 `:core`（`WatchProgress.of`）：
-                        // 早先这里写死 `completed = false`，于是信息流里看到片尾的那一集
-                        // 永远不会被记成看完，历史里的「已看完」筛选也就筛不到它。
-                        val progress = com.hgtv.star.shared.data.WatchProgress.of(
-                            series = series,
-                            episodeId = episodeIdOf(index),
-                            episodeIndex = currentEpisodeIndex[index] ?: 0,
-                            position = exo.currentPosition,
-                            duration = duration,
-                        )
-                        runCatching { lib.save(progress) }
-                        // 账号侧跟着走（与播放页同一个出口）：登录着的时候，信息流里看到哪一集
-                        // 也要出现在别的设备的「历史」里。
-                        runCatching { PhoneAccountSync.progress(context, progress, series.episodeCount) }
-                    }
-                }
-                list.postDelayed(this, 5000)
-            }
-        }
-        saveTick = tick
-        list.postDelayed(tick, 5000)
-    }
-
-    private fun episodeIdOf(index: Int): String = currentEpisodeIds[index].orEmpty()
-
     private fun pageAt(index: Int): PhoneVideoPage? {
         val holder = list.findViewHolderForAdapterPosition(index) as? PageHolder ?: return null
         return holder.itemView as? PhoneVideoPage
@@ -1757,7 +1751,12 @@ class PhoneFeedView(
      * * 同一集只推进一次（`advancing` 防重入）。
      */
     private fun onEpisodeEnded(index: Int) {
-        if (paused || advancing) return
+        if (paused || hidden) return
+        // `advancing` 只用来防重入。交接一旦没走完（播放页没起来、用户中途返回、
+        // 跳转被系统拦掉），这个标志会一直卡着，之后每一集都不再连播——
+        // 用户读到的就是「卡在这一集末尾」。给它 5 秒的寿命。
+        if (advancing && SystemClock.elapsedRealtime() - advancingAt < ADVANCE_GUARD_MS) return
+        advancing = false
         val series = items.getOrNull(index) ?: return
         val d = playingDetail ?: return
         val exo = player ?: return
@@ -1766,11 +1765,11 @@ class PhoneFeedView(
         if (duration <= 0 || exo.currentPosition < duration - 2_000) return
 
         val current = currentEpisodeIndex[index] ?: 0
-        saveCompleted(series, d, current, duration)
 
         val next = current + 1
         if (next <= d.episodes.lastIndex) {
             advancing = true
+            advancingAt = SystemClock.elapsedRealtime()
             // 交接给正片：**不暂停**。两边用的是同一个进程级播放器，暂停只会让
             // 切页那一下断一拍；播放页接手的是同一路解码，声音是连续的。
             PhoneSession.resumeOnAdopt = true
@@ -1799,6 +1798,9 @@ class PhoneFeedView(
             (context as? android.app.Activity)?.overridePendingTransition(0, 0)
         } else {
             // 最后一集：与 TV 的「全剧已播完 → 换一部接着看」等价——往下滑一屏。
+            // 同样上锁：否则每 500ms 的兜底检查会反复触发这一段（反复滚动 / 反复 loadMore）。
+            advancing = true
+            advancingAt = SystemClock.elapsedRealtime()
             val nextSeries = index + 1
             if (nextSeries < items.size) {
                 list.smoothScrollToPosition(nextSeries)
@@ -1840,31 +1842,6 @@ class PhoneFeedView(
         if (!ok) { runCatching { warm.close() }; return false }
         PhoneSession.publish(d, nextIndex, warm, warm.info.quality, PhoneSession.Owner.PLAYER)
         return true
-    }
-
-    /** 播完那一集按 completed 落盘：`STATE_ENDED` 之后不会再有 5 秒一次的常规保存。 */
-    private fun saveCompleted(series: Series, d: Detail, episodeIndex: Int, duration: Long) {
-        val lib = library ?: return
-        val episodeId = d.episodes.getOrNull(episodeIndex) ?: return
-        val progress = com.hgtv.star.shared.data.WatchProgress.completed(
-            series = series,
-            episodeId = episodeId,
-            episodeIndex = episodeIndex,
-            duration = duration,
-        )
-        runCatching { lib.save(progress) }
-        runCatching { PhoneAccountSync.progress(context, progress, d.episodes.size) }
-    }
-
-    /** 横滑拖进度：只更新显示，松手才 seek（每帧 seek 会让解码器反复重开）。 */
-    private fun dragTo(page: PhoneVideoPage, delta: Float) {
-        val duration = player?.duration ?: 0L
-        if (duration <= 0) return
-        seekTarget = (seekFrom + delta * duration * 1.2f).toLong().coerceIn(0, duration)
-        page.setProgress(seekTarget.toFloat() / duration)
-        hint.text = "${clock(seekTarget)} / ${clock(duration)}"
-        hint.visibility = View.VISIBLE
-        hint.bringToFront()
     }
 
     /** 位置读数：与电视端 `formatTime` 同一份（`:core` 的 `PlaybackInfoLine.time`）。 */
@@ -1953,6 +1930,49 @@ class PhoneFeedView(
         revealChrome()
     }
 
+    /**
+     * 竖向信息流：**只有明显纵向的手势才滚**。
+     *
+     * RecyclerView 自己的判据只有 `|dy| > slop`，没有主轴偏向。横滑拖进度取消之后
+     * （见 `PhoneVideoPage` 的 `dragSeek`），横着划的那一下不再有谁去
+     * `requestDisallowInterceptTouchEvent`，于是「横滑带一点纵向分量」会被它认成上滑，
+     * `PagerSnapHelper` 顺势吸附到下一页——用户读到的正是
+     * 「关了左右滑动，横着一划反而上下翻页」。
+     *
+     * 这里加一把方向锁：整个手势在第一次越过 slop 时定性，判成横向就彻底不滚。
+     * 判据取 `|dy| > |dx|`（纵向必须**比横向多**），横滑（含斜着横滑）一律不触发翻页；
+     * 正常的上下滑 `|dy|` 通常是 `|dx|` 的两三倍以上，不受影响。
+     */
+    private class VerticalPagerList(context: Context) : RecyclerView(context) {
+
+        private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+        private var downX = 0f
+        private var downY = 0f
+
+        /** 0 = 未定性，1 = 纵向（这一下归列表），2 = 横向（这一下不归列表）。 */
+        private var axis = 0
+
+        override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
+            when (e.actionMasked) {
+                MotionEvent.ACTION_DOWN -> {
+                    downX = e.x
+                    downY = e.y
+                    axis = 0
+                }
+                MotionEvent.ACTION_MOVE -> {
+                    if (axis == 0) {
+                        val dx = Math.abs(e.x - downX)
+                        val dy = Math.abs(e.y - downY)
+                        if (dx > slop || dy > slop) axis = if (dy > dx) 1 else 2
+                    }
+                    if (axis == 2) return false
+                }
+                MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> axis = 0
+            }
+            return super.onInterceptTouchEvent(e)
+        }
+    }
+
     // ------------------------------------------------------------------ 列表
 
     private inner class FeedAdapter : RecyclerView.Adapter<PageHolder>() {
@@ -1961,6 +1981,9 @@ class PhoneFeedView(
                 context,
                 withTabBar = true,
                 fullscreenEntry = true,
+                // 推荐页**不接管横滑**：这里的左右手势归外层 pager（换体裁），
+                // 而且横滑一旦被这一层接住就会拦住父容器，上滑的横向抖动会被误判成拖进度。
+                dragSeek = false,
             )
             // 高度跟着 RecyclerView 走（= 一个屏幕）：尺寸变化不再需要重建这一页，
             // 正在出画面的那块 Surface 因此能在转屏、进出播放页时一直活着。
@@ -2021,14 +2044,6 @@ class PhoneFeedView(
                 player?.let { p ->
                     p.duration.takeIf { it > 0 }?.let { p.seekTo((it * fraction).toLong()) }
                 }
-                hint.visibility = View.GONE
-            }
-            // 横滑拖进度：与播放页同一套（进度条实时跟手，松手才 seek）。
-            page.onDragStart = { seekFrom = player?.currentPosition ?: 0L }
-            page.onDragDelta = { delta -> dragTo(page, delta) }
-            page.onDragEnd = {
-                val duration = player?.duration ?: 0L
-                if (duration > 0) player?.seekTo(seekTarget)
                 hint.visibility = View.GONE
             }
             return PageHolder(page)

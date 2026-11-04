@@ -36,7 +36,16 @@
 -dontwarn okhttp3.**
 -dontwarn okio.**
 
-# ========== 友盟（统计 + APM）已整体移除 ==========
-# 原来这里有四条 keep：`com.umeng.**`（统计）、`com.uyumao.**` / `org.repackage.**`（统计的
-# 安全服务与 spy 原生库）、`com.uc.**` / `com.efs.**`（APM 采集与插桩）。
-# 依赖、插件、初始化与调用点全部删除之后，这些类在包内已不存在，keep 一并删掉。
+# ========== 友盟（统计 + APM） ==========
+-keep class com.umeng.** { *; }
+-keep class com.uyumao.** { *; }
+-keep class org.repackage.** { *; }
+-keep class com.uc.** { *; }
+-keep class com.efs.** { *; }
+-keepclassmembers class * {
+    public <init>(org.json.JSONObject);
+}
+-keepclassmembers enum * {
+    public static **[] values();
+    public static ** valueOf(java.lang.String);
+}

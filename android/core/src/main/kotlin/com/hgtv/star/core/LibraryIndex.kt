@@ -122,13 +122,16 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
         if(ids.isEmpty()) return
         deletedHistoryIds=(deletedHistoryIds + ids).toList().takeLast(500).toSet()
     }
-    fun removeHistory(id: String) {
-        historyRows = historyRows.filterNot { it.series.id == id }
-        progressById.remove(id)
-        watchedIds = watchedIds - id
+    fun removeHistory(ids: Collection<String>) {
+        val wanted = ids.toSet()
+        if (wanted.isEmpty()) return
+        historyRows = historyRows.filterNot { it.series.id in wanted }
+        wanted.forEach(progressById::remove)
+        watchedIds = watchedIds - wanted
         // 同时留一块墓碑：账号侧那半份下次刷新回来时照样过滤掉（见 [deletedHistoryIds]）。
-        deletedHistoryIds = (deletedHistoryIds + id).toList().takeLast(500).toSet()
+        deletedHistoryIds = (deletedHistoryIds + wanted).toList().takeLast(500).toSet()
     }
+    fun removeHistory(id: String) = removeHistory(listOf(id))
     fun observeFavorite(id: String, count: Int, now: Long, acknowledge: Boolean): Boolean {
         if (!favorite(id) || count <= 0) return false
         val previous = updateRows[id]
@@ -210,7 +213,9 @@ object LibraryDisk {
             // 快进 / 快退单次跳秒：旧版本磁盘没有这个键，按 10 秒处理；坏值夹进 2..20。
             (values["seekStep"] as? Number)?.toInt()?.coerceIn(2,20) ?: 10,
             // 手机列表每行几张：旧版本磁盘没有这个键，按 2 列处理；坏值夹进 1..3。
-            (values["gridColumns"] as? Number)?.toInt()?.coerceIn(1,3) ?: 2)
+            (values["gridColumns"] as? Number)?.toInt()?.coerceIn(1,3) ?: 2,
+            // 推荐页左右滑动切换：旧版本磁盘没有这个键，按开启处理（与之前的行为一致）。
+            values["recommendSwipe"] as? Boolean ?: true)
         val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())
         val index = LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
             SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden"),

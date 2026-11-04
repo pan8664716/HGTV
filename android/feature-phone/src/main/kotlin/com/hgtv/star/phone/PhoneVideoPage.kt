@@ -68,6 +68,17 @@ class PhoneVideoPage(
      */
     private val verticalSwipe: Boolean = false,
     /**
+     * 横滑是否接管为「拖进度」。
+     *
+     * **推荐页关掉**（用户要求）：信息流里左右滑不是调进度，而是换体裁（外层横向 pager）。
+     * 更要紧的是，横滑一旦被这一层接住就会 `requestDisallowInterceptTouchEvent(true)`，
+     * 手指上滑时开头那一点横向抖动足以让它抢走手势——用户读到的是「上滑没翻到下一条，
+     * 进度条反而跳了」。
+     *
+     * 正式播放页仍然开：那里没有外层 pager，横滑调进度是常规操作。
+     */
+    private val dragSeek: Boolean = true,
+    /**
      * 竖屏时是否**不挂自己的视频层**，直接把画面交给下层推荐页的 Surface。
      *
      * 正式播放页从推荐页进来时打开（见 `PhonePlayerActivity.feedUnderlay`）：
@@ -143,7 +154,8 @@ class PhoneVideoPage(
 
     private val watchLabel = TextView(context).apply {
         setTextColor(Color.WHITE)
-        phoneSize(14)
+        // 14 → 12：通栏高度收到 26dp 之后，14 号字在条里几乎没有上下留白，看着像「字顶到了边」。
+        phoneSize(12)
         setTypeface(typeface, android.graphics.Typeface.BOLD)
         maxLines = 1
         ellipsize = android.text.TextUtils.TruncateAt.END
@@ -155,14 +167,19 @@ class PhoneVideoPage(
     }
 
     private companion object {
-        /** 通栏操作条高度（dp）。 */
-        const val ACTION_BAR_DP = 32
+        /**
+         * 通栏操作条高度（dp）。
+         *
+         * 32 → **26**（用户要求「太高了」）：它是「选集 / 观看完整短剧」的出口，
+         * 一条窄栏就够，不需要占掉画面下方一整条。
+         */
+        const val ACTION_BAR_DP = 26
         /** 标题与底部操作图标的同一条左边线：只留一点点，避免信息区贴死屏幕。 */
         const val INFO_EDGE_DP = 6
         /** 播放三角自身在 12dp 画布里左侧留了约 4dp，容器再收 4dp 才能和文字真正对齐。 */
         const val ACTION_GLYPH_EDGE_DP = 2
-        /** 播放页「选集」那条通栏的底板不透明度（用户规范：70%）。 */
-        const val ACTION_BAR_ALPHA = .7f
+        /** 播放页「选集」那条通栏的底板不透明度。 */
+        const val ACTION_BAR_ALPHA = .4f
     }
 
     private val fullscreenGlyph = PhoneGlyph(context, PhoneGlyph.Kind.FULLSCREEN).apply {
@@ -219,7 +236,7 @@ class PhoneVideoPage(
      */
     var onVerticalStart: (() -> Unit)? = null
     var onVerticalDelta: ((Float) -> Unit)? = null
-    var onVerticalEnd: ((Int) -> Unit)? = null
+    var onVerticalEnd: ((direction: Int, velocityY: Float) -> Unit)? = null
 
     /** 进度条开始拖 / 拖动中 / 松手。fraction 是 0..1。 */
     var onSeekStart: (() -> Unit)? = null
@@ -251,6 +268,10 @@ class PhoneVideoPage(
             gravity = Gravity.BOTTOM
         })
         topShade = View(context).apply { background = topScrim(130) }
+        // 默认不画：这一页顶部本来什么都没有（竖屏的「播放显示」那一行是**兄弟层**
+        // `portraitTop`，不在本页里）。渐变留着就是画面上沿一层黑雾，
+        // 只有真的要为那一行垫底时才由宿主调 [setTopScrimVisible] 打开。
+        topShade.visibility = GONE
         addView(topShade, LayoutParams(LayoutParams.MATCH_PARENT, context.dp(110)).apply {
             gravity = Gravity.TOP
         })
@@ -267,13 +288,14 @@ class PhoneVideoPage(
             onDoubleTap = { onDoubleTap?.invoke() },
             onLongPress = { zone -> onLongPress?.invoke(zone) },
             onLongPressEnd = { onLongPressEnd?.invoke() },
+            dragEnabled = dragSeek,
             onDragStart = { onDragStart?.invoke() },
             onDrag = { delta -> onDragDelta?.invoke(delta) },
             onDragEnd = { onDragEnd?.invoke() },
             verticalEnabled = verticalSwipe,
             onVerticalStart = { onVerticalStart?.invoke() },
             onVertical = { delta -> onVerticalDelta?.invoke(delta) },
-            onVerticalEnd = { direction -> onVerticalEnd?.invoke(direction) },
+            onVerticalEnd = { direction, velocity -> onVerticalEnd?.invoke(direction, velocity) },
         )
         if (verticalSwipe) {
             addView(View(context).apply {
@@ -349,7 +371,7 @@ class PhoneVideoPage(
             setOnClickListener { onWatch?.invoke() }
         }
         watchGlyph.tint = PhoneStyle.accent
-        watch.addView(watchGlyph, LinearLayout.LayoutParams(context.dp(12), context.dp(12)))
+        watch.addView(watchGlyph, LinearLayout.LayoutParams(context.dp(11), context.dp(11)))
         watch.addView(watchLabel, LinearLayout.LayoutParams(
             0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
         ).apply { leftMargin = context.dp(6) })
@@ -421,14 +443,16 @@ class PhoneVideoPage(
             fullscreenBox = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER
-                setPadding(context.dp(9), context.dp(3), context.dp(9), context.dp(3))
-                background = roundedBackground(0x33FFFFFF, context.dp(12).toFloat())
-                addView(fullscreenGlyph, LinearLayout.LayoutParams(context.dp(13), context.dp(13)))
+                // 再收一档：图标 11 → 10dp、字 10 → 9 号、内边距 6/2 → 5/1、圆角 10 → 8。
+                // 它是浮在画面下边缘的辅助入口，越小越好，别抢画面。
+                setPadding(context.dp(5), context.dp(1), context.dp(5), context.dp(1))
+                background = roundedBackground(0x33FFFFFF, context.dp(8).toFloat())
+                addView(fullscreenGlyph, LinearLayout.LayoutParams(context.dp(10), context.dp(10)))
                 addView(TextView(context).apply {
                     text = "全屏"
                     setTextColor(Color.WHITE)
-                    phoneSize(12)
-                    setPadding(context.dp(4), 0, 0, 0)
+                    phoneSize(9)
+                    setPadding(context.dp(3), 0, 0, 0)
                 })
                 setOnClickListener { onFullscreen?.invoke() }
                 visibility = GONE
@@ -485,30 +509,49 @@ class PhoneVideoPage(
         val pictureBottom = (this.height + pictureHeight) / 2f
         val lp = fullscreenBox.layoutParams as LayoutParams
         lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
-        lp.topMargin = (pictureBottom + context.dp(10)).toInt()
-        fullscreenBox.layoutParams = lp
+
+        val gap = context.dp(10)
+        // 按钮实际高度还没量出来时按一行小字估：字体档位调大后它也会跟着变高。
+        val buttonHeight = fullscreenBox.measuredHeight.takeIf { it > 0 } ?: context.dp(14)
+        // 下方信息块（标题 / 标签 / 简介 / 进度条）的最上沿。字号调大时它会往上顶，
+        // 顶到按钮所在的这条黑边上就会把按钮盖住。
+        val infoTop = if (::infoColumn.isInitialized && infoColumn.measuredHeight > 0) {
+            (height - bottomInset() - context.dp(ACTION_BAR_DP) - context.dp(6) -
+                infoColumn.measuredHeight).toFloat()
+        } else height.toFloat()
+
+        val below = pictureBottom + gap
+        val want = if (below + buttonHeight > infoTop) {
+            // 会被信息块压住：翻到**画面内**（下边缘之上），别和文字抢那一条黑边。
+            (pictureBottom - buttonHeight - gap).toInt().coerceAtLeast(0)
+        } else {
+            below.toInt()
+        }
+        if (lp.topMargin != want) {
+            lp.topMargin = want
+            fullscreenBox.layoutParams = lp
+        }
+        // 首次布局时信息块可能还没量出高度（`measuredHeight` 为 0），上面会按「不会被遮挡」算。
+        // 等这一帧排完再对一次；量到高度之后就不会再进来（不会无限 post）。
+        if (::infoColumn.isInitialized && infoColumn.measuredHeight <= 0) {
+            fullscreenBox.post { if (isAttachedToWindow) placeFullscreenButton() }
+        }
     }
 
     private fun buildCenter() {
         centerBox = FrameLayout(context).apply {
+            // 只留图标本身（用户要求：不要外面那圈全圆底板）。20 → 18dp。
             addView(centerGlyph, FrameLayout.LayoutParams(
-                context.dp(20), context.dp(20), Gravity.CENTER
+                context.dp(18), context.dp(18), Gravity.CENTER
             ))
             visibility = GONE
         }
-        addView(centerBox, LayoutParams(context.dp(44), context.dp(44)).apply {
+        addView(centerBox, LayoutParams(context.dp(36), context.dp(36)).apply {
             gravity = Gravity.CENTER
-            background = roundedBackground(0x4D000000, context.dp(22).toFloat())
         })
     }
 
-    /**
-     * 通栏操作条的底板：实心 `surface` + 顶部一条 1px 高光。
-     *
-     * 底板统一按 **70% 不透明** 画（用户规范）：条底下是正在走的画面或封面，
-     * 全实心会把画面切掉一条；70% 既压得住字，又能透出一点点影像。
-     * 只给底板降透明度，文字仍是实色。
-     */
+    /** 通栏操作条的底板：主题 `surface` + 顶部一条 1px 高光。 */
     private fun actionBarBackground(): android.graphics.drawable.Drawable {
         val alpha = ACTION_BAR_ALPHA
         return TopLineDrawable(
@@ -527,7 +570,7 @@ class PhoneVideoPage(
             android.graphics.Color.blue(color)
         )
 
-    /** 实心底 + 顶部一条 1px 高光。方角、通栏，没有圆角与描边。 */
+    /** 底色 + 顶部一条 1px 高光。方角、通栏，没有圆角与描边。 */
     private class TopLineDrawable(
         private val fill: Int,
         private val line: Int,
@@ -548,7 +591,7 @@ class PhoneVideoPage(
         override fun setAlpha(alpha: Int) { paint.alpha = alpha }
         override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
         @Deprecated("Deprecated in Java")
-        override fun getOpacity(): Int = android.graphics.PixelFormat.OPAQUE
+        override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
     }
 
     /**
@@ -682,11 +725,25 @@ class PhoneVideoPage(
         // 借给正式播放页时它会留在下面，和上面那一条叠成两层（用户看到的「重影」）。
         if (::actionBar.isInitialized) actionBar.visibility = if (visible) VISIBLE else GONE
         bottomShade.visibility = if (visible) VISIBLE else GONE
-        topShade.visibility = if (visible) VISIBLE else GONE
         if (fullscreenEntry && ::fullscreenBox.isInitialized) {
             fullscreenBox.visibility = if (visible && wantsFullscreen) VISIBLE else GONE
         }
         if (!visible) hideCenterIcon()
+    }
+
+    /**
+     * 顶部那条压暗渐变要不要画（**只给「顶部真的有字」的时候**）。
+     *
+     * 早先它跟 [setChromeVisible] 一起开关：竖屏播放页只要控制层露着就画，
+     * 而这一页顶部其实什么都没有——「播放显示」那一行是兄弟层 `portraitTop`，
+     * 不在本页里。于是画面顶沿平白压了一条 110dp 的「51% 黑 → 透明」渐变，
+     * 缓得只有在亮场画面上仔细对比才看得出（用户反馈的「全屏顶部有一些黑雾」）。
+     *
+     * 现在由宿主按「那一行是不是真的在显示」来决定：有字才垫底，没字就不画。
+     * 推荐页（`underlay`）从不调用它，因此整页不会有这条暗带。
+     */
+    fun setTopScrimVisible(visible: Boolean) {
+        topShade.visibility = if (visible) VISIBLE else GONE
     }
 
     fun isChromeVisible(): Boolean = chromeVisible

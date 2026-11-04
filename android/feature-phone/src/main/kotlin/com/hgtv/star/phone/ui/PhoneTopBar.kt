@@ -41,6 +41,20 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
     }
+    /**
+     * tab 行可横向滑动。
+     *
+     * 字号调到最大档之后，四五个 tab 的总宽会超过屏宽；直接塞进 `weight=1` 的容器里，
+     * `LinearLayout` 会把每个 TextView 压窄，中文就按字换行——用户看到的是「两个字竖排」。
+     * 套一层横向滚动之后，每个 tab 保持自己的宽度，挤不下就滑。
+     */
+    private val tabScroll = HorizontalScrollView(context).apply {
+        isHorizontalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+        addView(mainSlot, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+    }
     private val actionGlyph = PhoneGlyph(context, PhoneGlyph.Kind.SEARCH).apply {
         tint = PhoneStyle.text
         contentDescription = "搜索"
@@ -68,7 +82,7 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
         orientation = VERTICAL
         setPadding(context.dp(16), statusBar(context) + context.dp(4), context.dp(10), context.dp(2))
 
-        mainRow.addView(mainSlot, LinearLayout.LayoutParams(0, context.dp(34), 1f))
+        mainRow.addView(tabScroll, LinearLayout.LayoutParams(0, context.dp(34), 1f))
         mainRow.addView(actionBox, LinearLayout.LayoutParams(context.dp(28), context.dp(28)))
         addView(mainRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, context.dp(34)))
 
@@ -81,6 +95,31 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
     private fun statusBar(context: Context): Int {
         val id = context.resources.getIdentifier("status_bar_height", "dimen", "android")
         return if (id > 0) context.resources.getDimensionPixelSize(id) else context.dp(24)
+    }
+
+    /**
+     * 把底部的 2dp 留白收掉。
+     *
+     * 分类页的筛选行（子分类）紧贴在体裁 tab（主分类）下面，两段留白叠在一起
+     * （顶栏底部 2dp + 网格顶部 4dp + tab 行的居中留白）就是用户读到的「空隙太大」。
+     * 其它页面没有紧贴的内容，保持原样。
+     */
+    fun tightenBottom() {
+        if (paddingBottom == 0) return
+        setPadding(paddingLeft, paddingTop, paddingRight, 0)
+    }
+
+    /**
+     * 沉浸式：状态栏不显示时，顶栏不再为它留白。
+     *
+     * 推荐页整屏都是视频、状态栏是藏起来的（见 `PhoneMainActivity.applyStatusBarFor`），
+     * 不收这段留白的话，体裁标签与右上角搜索会凭空下移一条状态栏的高度，
+     * 视频明明已经铺到顶部，控件却还悬在下面。
+     */
+    fun setImmersive(on: Boolean) {
+        val top = if (on) context.dp(10) else statusBar(context) + context.dp(4)
+        if (paddingTop == top) return
+        setPadding(paddingLeft, top, paddingRight, paddingBottom)
     }
 
     /** 换掉右上角动作：图标、无障碍名称与点击行为一起换。 */
@@ -100,6 +139,9 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
             setTextColor(PhoneStyle.text)
             phoneSize(20)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
+            // 单行 + 省略：标题再长也不许换行（换行会把 34dp 的行撑高）。
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
         })
     }
 
@@ -116,6 +158,10 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
                 text = label
                 phoneSize(19)
                 setPadding(0, context.dp(3), context.dp(18), context.dp(3))
+                // 绝不换行：字号最大档时一行放不下就由外层 `tabScroll` 横向滑动，
+                // 而不是把「分类」压成上下两个字。
+                maxLines = 1
+                ellipsize = android.text.TextUtils.TruncateAt.END
                 setOnClickListener { onSelect(index) }
             }
             mainCells += cell
@@ -134,6 +180,19 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
                 cell.typeface,
                 if (on) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
             )
+        }
+        // 选中项滚进可视区：字号大时整排 tab 超出屏宽，切换后不滚的话
+        // 用户会看到「点了没反应」（其实选中项在屏幕外）。
+        tabScroll.post {
+            val cell = mainCells.getOrNull(selected) ?: return@post
+            if (cell.width <= 0 || tabScroll.width <= 0) return@post
+            val margin = context.dp(12)
+            when {
+                cell.left - margin < tabScroll.scrollX ->
+                    tabScroll.smoothScrollTo((cell.left - margin).coerceAtLeast(0), 0)
+                cell.right + margin > tabScroll.scrollX + tabScroll.width ->
+                    tabScroll.smoothScrollTo(cell.right + margin - tabScroll.width, 0)
+            }
         }
     }
 

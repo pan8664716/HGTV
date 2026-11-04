@@ -75,6 +75,7 @@ class PhoneMainActivity : PhoneActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        android.util.Log.w("HGTV-BOOT", "phone.MainActivity onCreate")
         PhoneStyle.ensure(this)
         builtTheme = PhoneStyle.theme.ordinal
         builtUiScale = PhoneUiScale.value
@@ -140,6 +141,9 @@ class PhoneMainActivity : PhoneActivity() {
         debugRoot = root
         show(start)
         PhoneServices.warm(this)
+        // 首次进入提示「字号 / 每行卡片数可以在设置里调」。等这一帧画出来再弹，
+        // 否则窗口还没 attach，对话框会挂在一个空 Activity 上。
+        root.post { if (!isFinishing && !isDestroyed) PhoneFirstRunTip.ensure(this) }
         // 书库读完那一刻把**身份 / 凭据 / 注册 Cookie** 灌进仓库（电视端 `applyAccount()` 的手机版）。
         // 不灌的话 `repository.signedIn` 永远是 false：登录了也不会上传收藏与进度、搜索按匿名设备请求。
         val lib = PhoneServices.library(this)
@@ -178,6 +182,9 @@ class PhoneMainActivity : PhoneActivity() {
 
     private fun show(index: Int) {
         android.util.Log.i("HGTV-PAGE", "show index=$index current=$current pages=${pages.map { it?.javaClass?.simpleName }}")
+        // 状态栏跟着 tab 走：推荐页是满屏视频，顶部不挂状态栏；其余三页是列表，照常显示。
+        // 放在 `index == current` 早退之前：切回同一个 tab（双击回到顶部）时也要对一次。
+        applyStatusBarFor(index)
         if (index == current) return
         pages.getOrNull(current)?.let { old ->
             if (old is PhoneRecommendPage) old.onHidden()
@@ -200,6 +207,39 @@ class PhoneMainActivity : PhoneActivity() {
         syncKeepScreenOn()
         // 调试面板的「页面」字段跟着 tab 走。
         if (::debugRoot.isInitialized) syncDebugOverlay()
+    }
+
+    /**
+     * 按当前 tab 决定状态栏显不显示。
+     *
+     * 推荐页是一整屏竖屏视频（和抖音那类信息流一样），状态栏压在上面既挡画面、
+     * 又让顶部的体裁标签下移一截；分类 / 榜单 / 我的 是普通列表页，状态栏照常。
+     *
+     * 只动状态栏，导航栏保持可见：底部 tab 栏本来就给导航条留了白，
+     * 一起藏掉会让「我的」这类页面少一截安全距离。
+     */
+    private fun applyStatusBarFor(index: Int) {
+        val immersive = index == 0
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            window.insetsController?.let { controller ->
+                if (immersive) {
+                    controller.hide(android.view.WindowInsets.Type.statusBars())
+                } else {
+                    controller.show(android.view.WindowInsets.Type.statusBars())
+                }
+                controller.systemBarsBehavior =
+                    android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+        @Suppress("DEPRECATION")
+        window.decorView.systemUiVisibility = if (immersive) {
+            // 隐藏状态栏并让内容铺到它的位置（`phoneEdgeToEdge()` 已经打开了 LAYOUT_FULLSCREEN）。
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_FULLSCREEN
+        } else {
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        }
     }
 
     override fun onResume() {
@@ -229,6 +269,9 @@ class PhoneMainActivity : PhoneActivity() {
         // 调试模式：在设置页里开关过，回到主界面立刻生效（与播放页同一份实现）。
         syncDebugOverlay()
         syncKeepScreenOn()
+        // 从播放页 / 设置页回来：系统栏状态可能被别的窗口改过（播放页是全沉浸的），
+        // 这里按当前 tab 再对一次，避免「回到推荐页却挂着状态栏」。
+        if (current >= 0) applyStatusBarFor(current)
     }
 
     override fun onDestroy() {

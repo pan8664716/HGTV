@@ -2,16 +2,11 @@
 package com.hgtv.star.phone.ui
 
 import android.content.Context
-import android.graphics.Color
-import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
-import android.widget.ImageView
 import android.widget.LinearLayout
-import android.widget.TextView
-import com.hgtv.star.core.HeatLabel
+import com.hgtv.star.core.PosterCardContent
 import com.hgtv.star.core.Series
 import com.hgtv.star.shared.data.ArtworkLoader
 
@@ -25,11 +20,14 @@ import com.hgtv.star.shared.data.ArtworkLoader
  *
  * ```
  * ┌────────┐ ┌────────┐ ┌────────┐
- * │ 第2季  │ │        │ │        │   ← 右上角季号（接口给了才画）
+ * │ 新剧    │ │        │ │        │   ← 左上角系统标签
  * │  海报   │ │  海报   │ │  海报   │
+ * │ 第2季  │ │ 第1季  │ │ 第1季  │   ← 右上角季号（缺省第 1 季）
+ * │ 🔥9014万│ │        │ │        │   ← 左下角热度
+ * │        │ │        │ │ 共99集 │   ← 右下角集数
  * └────────┘ └────────┘ └────────┘
  *   剧名       剧名       剧名        ← 一行，超出省略
- *   正在看     预计11月6日上线         ← 状态行（没有就不占位）
+ *   类型标签                    状态   ← 状态可为「正在看」/上线时间
  * ```
  *
  * 三条与电视端一致的规则：
@@ -39,11 +37,19 @@ import com.hgtv.star.shared.data.ArtworkLoader
  */
 object PhoneCards {
 
-    /** 卡片默认宽（dp）；海报按 7:10 竖版铺满它，与详情页头部封面同一档比例。 */
-    const val WIDTH_DP = 104
+    /**
+     * 卡片默认宽（dp）；直接复用网格卡的竖版海报与文字层级。
+     *
+     * 从 104 加到 116：横排卡片原先只有 312px（1080P），缩略图认不出是哪部剧；
+     * 加宽后与网格卡的观感接近，一屏仍能露出两张半。
+     */
+    const val WIDTH_DP = 116
+
+    /** 手机横屏播放页底部浮层用的小卡宽：避免卡片过高被底部面板裁切。 */
+    const val COMPACT_WIDTH_DP = 84
 
     /**
-     * 一张卡片。高度由宽度推出来（7:10），行高因此始终整齐。
+     * 一张卡片。与分类 / 榜单 / 搜索页的网格卡共用 [PhonePosterCard]。
      *
      * [onOpen] 是点击回调：详情页进详情，播放页直接换一部接着看（见各自的调用处）。
      */
@@ -55,90 +61,23 @@ object PhoneCards {
         widthDp: Int = WIDTH_DP,
         onOpen: (Series) -> Unit,
     ): View {
-        // 卡片内部的尺寸走全站设计画布（`PhoneTheme.phoneScale`），不单独乘 density。
-        fun dp(value: Number) = context.dp(value)
-        val cell = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            isClickable = true
-            isFocusable = true
-            // 按下的反馈：没有它，用户分不清「点到了」还是「点空了」——
-            // 这一排卡片在播放页里是浮层上的唯一交互对象，反馈尤其要紧。
-            background = PhoneSheet.pillBackground(
-                Color.TRANSPARENT,
-                0x1AFFFFFF,
-                dp(PhoneStyle.RADIUS_CARD).toFloat(),
-            )
-            setOnClickListener { onOpen(series) }
-        }
-
-        val imageBox = FrameLayout(context).apply {
-            background = roundedBackground(
-                PhoneStyle.well,
-                dp(PhoneStyle.RADIUS_CARD).toFloat(),
-            )
-            clipToOutline = true
-        }
-        val image = ImageView(context).apply { scaleType = ImageView.ScaleType.CENTER_CROP }
-        imageBox.addView(image, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
-        if (series.seasonIndex > 0) {
-            imageBox.addView(TextView(context).apply {
-                text = "第${series.seasonIndex}季"
-                setTextColor(Color.WHITE)
-                phoneSize(10)
-                setPadding(dp(5), dp(1), dp(5), dp(1))
-                background = roundedBackground(0xB3000000.toInt(), dp(4).toFloat())
-            }, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP or Gravity.END
-            ).apply { setMargins(0, dp(4), dp(4), 0) })
-        }
-        // 左下角热度：只有接口真的给了才出现（这一排多是「相关剧集 / 作者作品」，
-        // 作者作品来自搜索接口，带 `rec_text` 解析出来的数字）。
-        val heatText = HeatLabel.badge(null, series.heat)
-        if (heatText.isNotEmpty()) {
-            imageBox.addView(TextView(context).apply {
-                text = heatText
-                setTextColor(Color.WHITE)
-                phoneSize(10)
-                setPadding(dp(5), dp(1), dp(5), dp(1))
-                background = roundedBackground(0xB3000000.toInt(), dp(4).toFloat())
-            }, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM or Gravity.START
-            ).apply { setMargins(dp(4), 0, 0, dp(4)) })
-        }
-        val heightPx = (widthDp * 10 / 7f).toInt()
-        cell.addView(imageBox, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, dp(heightPx)))
-        runCatching {
-            artwork.load(image, series.cover, widthPx = dp(widthDp), heightPx = dp(heightPx))
-        }
-
-        cell.addView(TextView(context).apply {
-            text = series.title
-            setTextColor(PhoneStyle.text)
-            phoneSize(12)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(2), dp(6), dp(2), 0)
-        })
-        val note = when {
-            current -> "正在看"
-            series.upcoming && series.notice.isNotBlank() -> series.notice
-            else -> ""
-        }
-        if (note.isNotEmpty()) {
-            cell.addView(TextView(context).apply {
-                text = note
-                setTextColor(if (current) PhoneStyle.accent else PhoneStyle.textFaint)
-                phoneSize(10)
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-                setPadding(dp(2), dp(2), dp(2), 0)
-            })
-        }
-        return cell
+        val content = PosterCardContent.of(
+            series = series,
+            statusText = when {
+                current -> "正在看"
+                series.upcoming -> series.notice
+                else -> ""
+            },
+            badgeFallback = if (series.upcoming) "预告" else "",
+        )
+        val card = PhonePosterCard(
+            context = context,
+            cardWidth = context.dp(widthDp),
+            artwork = artwork,
+            onOpen = onOpen,
+        )
+        card.bind(series, content)
+        return card
     }
 
     /**
@@ -160,7 +99,8 @@ object PhoneCards {
             strip.addView(
                 card(context, artwork, item, current = item.id == currentId, widthDp = widthDp, onOpen = onOpen),
                 LinearLayout.LayoutParams(dp(widthDp), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    rightMargin = dp(8)
+                    // 卡片加宽之后间距同步收一档，否则一屏露出的张数掉得太快。
+                    rightMargin = dp(4)
                 }
             )
         }

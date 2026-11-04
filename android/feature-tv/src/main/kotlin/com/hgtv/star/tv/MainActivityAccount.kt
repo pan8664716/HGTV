@@ -326,28 +326,17 @@ fun MainActivity.applyPlaybackCapability() {
  * 失败不弹窗——搜索会报「接口暂无响应」、播放会报「暂不可用」，下次启动再试。
  */
 fun MainActivity.ensureDeviceRegistered() {
-    // 设备档案要从「老版本的随机档案」换成派生值时，注册结果也必须跟着换一套：
-    // 平台按 `cdid` / `openudid` 认设备，档案换了而 `device_id` 没换，两边对不上号，
-    // 搜索回空响应、播放回 101000/110001。
+    // 什么时候需要注册：本机还没有身份，或者上一次「换新」没成功（`registration-pending`）。
     //
-    // 但换法是「**先注册新身份、成功才替换**」（见 [registerDeviceOnce]）：失败时旧档案、
+    // 换新的方式是「**先注册新身份、成功才替换**」（见 [registerDeviceOnce]）：失败时旧档案、
     // 旧身份原样留着，用户仍然能看片；下一次启动 / 下一次取播放地址前再试。
-    //
-    // 顺序要紧：注册已经在途时**先返回**，不要把这个一次性标记吃掉，
-    // 否则这一次重建会被静默丢弃，身份一直卡在「档案换了、device_id 没换」的状态。
     if(deviceRegistering) return
-    val profileRebuilt=library.consumeProfileRebuilt()
-    // 「上一次换新失败」也算没注册好：那时旧身份还留着，先补一次换新再谈别的。
     val pending=library.registrationPending()
-    if(!profileRebuilt && !pending && library.deviceRegistered()) return
+    if(!pending && library.deviceRegistered()) return
     deviceRegistering=true
     // 用 io 池直接跑，**不走 [work]**：那个入口会 cancelWork()，把在途的页面请求一起掐掉。
     io.submit {
-        if(profileRebuilt) {
-            DebugLog.record("设备","设备档案已重建 · 强制重新注册")
-            Diagnostics.warn("device_identity","设备档案由旧版随机值重建为派生值，强制重新注册")
-        }
-        val registered=registerDeviceOnce(force=profileRebuilt || pending)
+        val registered=registerDeviceOnce(force=pending)
         main.post {
             deviceRegistering=false
             if(!registered || isDestroyed) return@post
@@ -373,7 +362,7 @@ fun MainActivity.ensureDeviceRegistered() {
  * 启动时异步调一次（[ensureDeviceRegistered]），播放取地址之前再同步兜一次
  * （见 [playEpisode] 的取地址那一段与 [maybePrefetch]）。
  */
-fun MainActivity.registerDeviceOnce(force: Boolean = false): Boolean {
+fun MainActivity.registerDeviceOnce(force: Boolean = false, regenerate: Boolean = false): Boolean {
     synchronized(deviceRegisterLock) {
         // 注册的全部细节（先注册成功才替换、候选档案转正、Cookie 落盘、失败记待重试）
         // 在 `:shared` 的 [com.hgtv.star.shared.data.DeviceRegistration] 里，手机端用的是同一份。
@@ -381,6 +370,7 @@ fun MainActivity.registerDeviceOnce(force: Boolean = false): Boolean {
             library=library,
             repository=repository,
             force=force,
+            regenerate=regenerate,
             // 现场前缀（机型 / 页面）由这一端拼：注册失败时它是唯一的定位线索。
             detail=devicePrefix(this),
         )
@@ -466,8 +456,9 @@ fun MainActivity.refreshRegistrationIdentity() {
  * ## 判据与节流
  *
  * 判据是 [ContentRepository.deviceRejected]（服务端明确不认这份身份的次数），不是异常文案。
- * 每次进程最多重建 2 次、两次之间至少隔 20 秒：重建本身要发一次注册请求，
- * 服务端真挂了的时候不能变成死循环。
+ * 预算（一次进程最多 2 次、两次之间至少隔 20 秒）、线程切换与注册本身全部在
+ * [com.hgtv.star.shared.data.DeviceHealer] 里——**手机端走的是同一份**，
+ * 这一层只负责电视侧的收尾。
  *
  * [retry] 在重建成功之后跑在主线程上——调用方（搜索页 / 播放页）把「重取这一页」交给它，
  * 用户看到的是一次自动恢复，而不是一个错误页。
@@ -475,41 +466,28 @@ fun MainActivity.refreshRegistrationIdentity() {
  * @return true 表示已经接手（调用方应当**直接返回**，不要再显示错误界面）。
  */
 fun MainActivity.healDeviceIdentity(reason: String,retry: ()->Unit): Boolean {
-    val rejected=repository.deviceRejected
-    if(rejected<=deviceHealHandled) return false
-    val now=android.os.SystemClock.elapsedRealtime()
-    if(deviceHealTried>=DEVICE_HEAL_LIMIT || (deviceHealAt>0 && now-deviceHealAt<DEVICE_HEAL_GAP_MS)) return false
-    deviceHealHandled=rejected
-    deviceHealTried++; deviceHealAt=now
-    DebugLog.record("设备","$reason · 服务端不认这份身份，重建一次")
-    noteDebugProblem("设备身份被拒 · 正在自动重新注册")
-    Diagnostics.warn("device_identity","服务端不认这份设备身份，自动重建 reason=$reason rejected=$rejected")
-    io.submit {
-        // 档案也要按**现在**这台机器重新给一次：注册身份与档案必须自洽，用旧档案注册出来
-        // 还是一对不上号的组合（见 [Library.deviceProfile]）。
-        repository.registerProfile=library.deviceProfile()
-        val healed=registerDeviceOnce(force=true)
-        main.post {
-            if(isDestroyed) return@post
-            if(!healed) {
-                // 重建失败（网络 / 服务端拒绝）：把原因留在面板上，错误页照常显示。
-                noteDebugProblem("设备身份重建失败 · ${Diagnostics.chainOf(repository.lastRegisterError)}")
-                return@post
-            }
-            // 新身份交给仓库（搜索 / 播放共用这一份），注册 Cookie 也换成新的。
-            repository.deviceIdentity=library.deviceIdentity()
-            repository.restoreDeviceCookies(library.registrationCookies())
-            DebugLog.record("设备","身份已重建 · 重试原请求")
-            retry()
+    val taken=com.hgtv.star.shared.data.DeviceHealer.healAsync(library,repository,reason) { healed ->
+        if(isDestroyed) return@healAsync
+        if(!healed) {
+            // 重建失败（网络 / 服务端拒绝 / 预算用尽）：把原因留在面板上，错误页照常显示。
+            noteDebugProblem("设备身份重建失败 · ${Diagnostics.chainOf(repository.lastRegisterError)}")
+            return@healAsync
         }
+        DebugEnv.invalidate()
+        retry()
     }
-    return true
+    // 面板上先留一句「正在重建」：注册是一次真实请求，慢的时候用户要能看到有动作。
+    if(taken) noteDebugProblem("设备身份被拒 · 正在自动重新注册")
+    return taken
 }
 
 /**
  * 这个失败是不是「服务端不认这台设备」。
  *
- * 只看**接口明确的语义**，不看中文文案的措辞：
+ * 判断本体在 `:shared` 的 [com.hgtv.star.shared.media.PlaybackFailures.deviceRejected]
+ * ——手机端播放失败用的就是它。这里只是电视侧的别名，避免调用点都去写全限定名。
+ *
+ * 判据只有两条（接口明确的语义，不看中文文案的措辞）：
  *
  * * 搜索那条是 [DeviceNotRegisteredException]（`200 + 0 字节`）——平台对注册过的设备
  *   **从不**回空响应，因此它是强信号；
@@ -517,11 +495,8 @@ fun MainActivity.healDeviceIdentity(reason: String,retry: ()->Unit): Boolean {
  *   播放的空响应**不算**：那条路径上它本来就有约一半概率偶发（平台限流，见 `ContentRepository.probeModelPath`），
  *   拿它当判据会把好设备的身份反复换掉。
  */
-fun deviceRejectionOf(problem: Throwable?): Boolean {
-    if(problem==null) return false
-    if(problem is DeviceNotRegisteredException) return true
-    return problem.message.orEmpty().contains("101000")
-}
+fun deviceRejectionOf(problem: Throwable?): Boolean =
+    com.hgtv.star.shared.media.PlaybackFailures.deviceRejected(problem)
 
 /**
  * 手机号登录的「注册设备」这一步：拿一份设备档案，匿名注册一台设备并把结果交给调用方。

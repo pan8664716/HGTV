@@ -70,29 +70,46 @@ data class Series(
     /**
      * 热度（`0` = 接口没给）。
      *
-     * 搜索接口的卡片自带 `rec_text`（实测形如 `1204万热度`），这里是把它换算成的数字，
-     * **只用于排序**（作者作品保持服务端顺序，这个值目前只作展示/调试参考），
-     * 界面上仍然显示接口原串（走 [badge]），不做二次格式化。
+     * 分类 / 榜单接口取 `sub_title_list` 里 `data_type == 27` 的文案（`9014万`），
+     * 搜索接口取卡片自带的 `rec_text`（实测形如 `1204万热度`），这里统一换算成数字。
+     * 榜单页另有服务端原串可优先使用；分类 / 搜索卡片由 [HeatLabel] 把它格式化成角标。
      */
     val heat: Long = 0,
     /**
      * 播放次数（`0` = 接口没给）。
      *
      * 搜索卡片的 `play_cnt`。与 [heat] 一样只当排序信号：热度缺失时用它兜底，
-     * 两者都没有（分类 / 榜单 / 详情来的卡片）就退回接口返回的顺序。
+     * 两者都没有就退回接口返回的顺序。
      */
-    val playCount: Int = 0
+    val playCount: Int = 0,
+    /**
+     * 系统给的角标文案（`新剧` / `红果首发` / `爆剧`…）；没有就是空串。
+     *
+     * 来自卡片数据里的 `tag_info.text`，由服务端决定这一部该打什么标。
+     * 空串时卡片左上角退回显示名次（见 `PosterCard.bind`）。
+     */
+    val label: String = "",
+    /**
+     * [label] 那个角标的背景色：`#00AE83`，**多个用逗号分隔表示渐变**（`#E8402A,#9C1B10`）。
+     *
+     * 服务端在 `tag_info.bg_color` 里给的是一个字符串数组（单色时只有一个元素，
+     * 渐变色时给两个）。这里原样拼成一个串存着，由 `LabelStyle` 负责解析与兜底——
+     * 不解析成 Int 是因为它要跟着 [toJson] 落盘，字符串最省事。
+     */
+    val labelBg: String = ""
 ) {
     fun toJson() = JSONObject().put("id",id).put("title",title).put("cover",cover)
         .put("description",description).put("badge",badge).put("tags",tags).put("author",author)
         .put("episodeCount",episodeCount).put("seasonIndex",seasonIndex)
         .put("upcoming",upcoming).put("notice",notice).put("vertical",vertical)
         .put("heat",heat).put("playCount",playCount)
+        .put("label",label).put("labelBg",labelBg)
     companion object {
         fun fromJson(o: JSONObject) = Series(o.str("id"),o.str("title"),o.str("cover"),
             o.str("description"),o.str("badge"),o.str("tags"),o.str("author"),o.optInt("episodeCount"),
             o.optInt("seasonIndex"),o.optBoolean("upcoming",false),o.str("notice"),
-            o.optBoolean("vertical",false),o.optLong("heat",0L),o.optInt("playCount",0))
+            o.optBoolean("vertical",false),o.optLong("heat",0L),o.optInt("playCount",0),
+            o.str("label"),o.str("labelBg"))
     }
 }
 /**
@@ -718,6 +735,12 @@ class ContentRepository(
      * 「换新身份」时界面层会把**候选档案**（还没被平台接受的那一份）传进来，并把这一项设为
      * `false`：平台按 `device_id` 认设备，请求里带着旧身份就只会**原样返回同一对**数字，
      * 新档案配旧身份，还是对不上号，换新等于没换。不带身份才会真的新建一台设备。
+     *
+     * **但只去掉 `device_id` 是不够的**（2026-11 实测）：注册主机 `log.snssdk.com` 在
+     * `SessionInterceptor` 的会话 host 名单里，它会给这条请求补上
+     * `Cookie: install_id=…; sessionid=…` 与 `X-Tt-Token`。服务端按这串 Cookie 认设备，
+     * 于是 cdid / openudid / clientudid 全换成新的也照样回 `new_user:0` 与原 `device_id`。
+     * 因此 `withIdentity = false` 时额外打一个匿名标记头，让拦截器整条跳过身份补齐。
      */
     fun registerDevice(profile: Map<String,String>? = null,withIdentity: Boolean = true): DeviceRegister.Registered? {
         val device=LinkedHashMap(profile ?: registerProfile).apply { if(withIdentity) putAll(deviceIdentity) }
@@ -726,6 +749,8 @@ class ContentRepository(
         val registered=runCatching {
             val request=Request.Builder().url(DeviceRegister.url(device))
             headers.forEach { (key,value) -> request.header(key,value) }
+            // 换新身份必须匿名：带上 Cookie / token 的话服务端会按旧设备回同一对数字。
+            if(!withIdentity) request.header("X-HGTV-Anonymous","1")
             request.post(body.toRequestBody("application/octet-stream".toMediaType()))
             RequestScope.execute(http.newCall(request.build())) { response ->
                 if(!response.isSuccessful) throw IOException("设备注册失败（HTTP ${response.code}）")
@@ -1564,10 +1589,68 @@ class ContentRepository(
     private fun apiCard(item: JSONObject): Series {
         val count=item.optInt("episode_cnt",0)
         val tags=tagsOf(item)
+        val tag=tagInfo(item)
         return Series(item.str("series_id"),item.str("title"),cleanUrl(item.str("cover")),
             item.str("video_desc"),EpisodeLabel.of(count),tags,
             author=publisher(item.str("copyright")),episodeCount=count,seasonIndex=seasonOf(item),
-            vertical=item.optBoolean("vertical",false))
+            vertical=item.optBoolean("vertical",false),
+            heat=heatOf(item),
+            label=tag?.str("text").orEmpty().trim(),
+            labelBg=tagColors(tag))
+    }
+
+    /**
+     * 卡片左上角那个系统角标。
+     *
+     * 分类接口多数时候直接给 `tag_info`，另一些条目只把它塞在
+     * `recommend_reason_list` 这份**字符串副本**里；两处都读，才不会因为服务端换了
+     * 数据位置就整片卡片都不打标。两处都没有时返回 null，界面按「平台没给标签」留空。
+     */
+    private fun tagInfo(item: JSONObject): JSONObject? {
+        val direct = item.optJSONObject("tag_info") ?: jsonObject(item.str("tag_info"))
+        if (direct != null) return direct
+        val reason = reasonPayload(item) ?: return null
+        return reason.optJSONObject("tag_info") ?: jsonObject(reason.str("tag_info"))
+    }
+
+    private fun jsonObject(raw: String): JSONObject? =
+        raw.trim().takeIf { it.startsWith("{") }
+            ?.let { runCatching { JSONObject(it) }.getOrNull() }
+
+    /**
+     * 卡片左下角的热度。
+     *
+     * 分类 / 榜单接口把热度写在 `sub_title_list` 里 `data_type == 27` 的那一段
+     *（`9014万`）。榜单页另有 [CatalogPage.ranking] 的原始串可优先使用；分类页没有 ranking，
+     * 只能在这里解析进 [Series.heat]，否则左下角永远为空。
+     */
+    private fun heatOf(item: JSONObject): Long {
+        fun fromRows(rows: JSONArray?): Long =
+            rows?.objects()?.firstOrNull { it.optInt("data_type",-1)==27 }
+                ?.str("content")?.let(::heatValue) ?: 0L
+        fromRows(item.optJSONArray("sub_title_list")).takeIf { it>0 }?.let { return it }
+        fromRows(reasonPayload(item)?.optJSONArray("sub_title_list")).takeIf { it>0 }?.let { return it }
+        return heatValue(item.str("rec_text"))
+    }
+
+    /** `recommend_reason_list` 可能是对象，也可能是一段 JSON 字符串。 */
+    private fun reasonPayload(item: JSONObject): JSONObject? =
+        item.optJSONObject("recommend_reason_list")
+            ?: runCatching { JSONObject(item.str("recommend_reason_list")) }.getOrNull()
+
+    /**
+     * 系统角标的背景色：`tag_info.bg_color` 是**字符串数组**。
+     *
+     * 单色时只有一个元素（`["#00AE83"]` 绿色「新剧」），渐变色时给两个
+     * （「爆剧」那类红到深红）；也见过空数组——那时没有自定义色，卡片用默认的深色压暗层。
+     * 这里拼成逗号分隔的串交给 `LabelStyle` 解析，保留原始顺序（渐变方向由它决定）。
+     */
+    private fun tagColors(tag: JSONObject?): String {
+        val rows=tag?.optJSONArray("bg_color") ?: return ""
+        val colors=(0 until rows.length()).mapNotNull { index ->
+            rows.optString(index,"").trim().takeIf { it.startsWith("#") }
+        }
+        return colors.joinToString(",")
     }
 
     /**
@@ -1749,20 +1832,76 @@ class ContentRepository(
         // 每次搜索都在这里留一份现场（见 [SearchDiag]）：失败时面板给的是**判读结论**，
         // 不是页面上那句「没有找到相关剧集」。成功也要记——「0 条」只有配上
         // 「接口真的回答了」才等于「确实没有匹配」。
-        val registered=!deviceIdentity["device_id"].isNullOrBlank()
-        return try {
-            val result=if(source==SearchSource.WEB) webSearch(keyword,page)
-                else search(keyword,page,ContentType.entries.toList())
-            // 官网这条「部分物理页失败」不算整页失败（其余页照常出内容），但要写进判读结论：
-            // 否则面板上是「有结果 37 条」加一行 502，用户不知道少掉的那几页去哪了。
-            val note=if(source==SearchSource.WEB) webSearchNote.get().orEmpty() else ""
-            SearchDiag.record(keyword,page,source,result.items.size,note=note,registered=registered,alive=appSearchAlive)
-            result
-        } catch(e: Exception) {
-            val (reason,detail)=SearchDiag.classify(e)
-            SearchDiag.record(keyword,page,source,0,reason,detail,registered,appSearchAlive)
-            throw e
+        //
+        // ## 失败时先自愈、再降级
+        //
+        // 顺序不能反。App 搜索空响应最常见的原因就是「这台设备在服务端没注册过」，
+        // 那时正确的动作是**换一套身份重注册再搜一次**；直接退到官网搜索只是绕开了故障，
+        // 设备仍然是坏的（播放照样回 `101000`），而且用户再也看不到「搜索能用」以外的修复。
+        // 早先这里是先降级官网、成功后直接 return，`DeviceNotRegisteredException` 根本
+        // 传不到界面层，电视端的自愈逻辑成了死代码。
+        //
+        // 自愈只做一次（[healed]），失败之后才走官网兜底；两条都不成，异常照旧抛给界面。
+        var healed = false
+        while (true) {
+            val registered = !deviceIdentity["device_id"].isNullOrBlank()
+            try {
+                val result = if(source==SearchSource.WEB) webSearch(keyword,page)
+                    else search(keyword,page,ContentType.entries.toList())
+                // 官网这条「部分物理页失败」不算整页失败（其余页照常出内容），但要写进判读结论：
+                // 否则面板上是「有结果 37 条」加一行 502，用户不知道少掉的那几页去哪了。
+                val note = if(source==SearchSource.WEB) webSearchNote.get().orEmpty() else ""
+                SearchDiag.record(keyword,page,source,result.items.size,note=note,registered=registered,alive=appSearchAlive)
+                return result
+            } catch(e: Exception) {
+                // ① 设备被拒：换一套身份重注册，然后原地重搜一次。
+                if(!healed && source==SearchSource.APP && e is DeviceNotRegisteredException) {
+                    healed = true
+                    val ok = runCatching { deviceHeal?.invoke(this,"搜索被拒") }.getOrNull()==true
+                    if(ok) {
+                        NetLog.emit("device healed after search rejection; retrying app search")
+                        continue
+                    }
+                }
+                // ② **App 接口「答了但没数据」时自动改走官网**（issue #44）。
+                //
+                // 现场：`/reading/bookapi/search/tab/v` 回 HTTP 200 + 0 字节，或者回一份没有
+                // `search_tabs` 的 JSON。这两种都不是「网络不通」，而是这条接口这一刻不给数据；
+                // 官网那条（`/api/search/result`）同一时刻是 200 + 完整 JSON。
+                // 早先这里如实抛错，界面就只能整页挡住「接口没有返回任何 tab 数据」，
+                // 用户的第一反应是「电视坏了 / 网络坏了」。
+                //
+                // 只在「接口答了、只是没内容」时降级：真正断网时官网也一样不通，白等一个超时。
+                if(source==SearchSource.APP && worthWebFallback(e)) {
+                    val fallback=runCatching { webSearch(keyword,page) }.getOrNull()
+                    if(fallback!=null) {
+                        SearchDiag.record(
+                            keyword,page,SearchSource.WEB,fallback.items.size,
+                            note="App 搜索接口没有数据，已自动改用官网搜索",
+                            registered=registered,alive=appSearchAlive,degraded=true
+                        )
+                        return fallback
+                    }
+                }
+                val (reason,detail)=SearchDiag.classify(e)
+                SearchDiag.record(keyword,page,source,0,reason,detail,registered,appSearchAlive)
+                throw e
+            }
         }
+    }
+
+    /**
+     * 这次失败值不值得换官网再试一次。
+     *
+     * 判据是「接口**答了**，只是没给内容」：设备没注册（空响应体）、响应里没有
+     * `search_tabs`。游标过期不算——那是回到第 1 页重搜的事，换源只会把页码搞乱；
+     * 网络类失败也不算——官网走的是同一根网线，换过去只会再等一次超时。
+     */
+    private fun worthWebFallback(e: Exception): Boolean = when(e) {
+        is DeviceNotRegisteredException -> true
+        is SearchApiException ->
+            e.reason==SearchDiag.FAILURE_DEVICE || e.reason==SearchDiag.FAILURE_FORMAT
+        else -> false
     }
     /** 只搜一种内容类型（App 搜索接口的一个 tab）：合并搜索与联调都走这一份实现。 */
     fun search(keyword: String, page: Int, type: ContentType): CatalogPage = search(keyword,page,listOf(type))
@@ -4181,6 +4320,21 @@ class ContentRepository(
         throw failure ?: IOException("弹幕接口暂不可用")
     }
     companion object {
+        /**
+         * 设备身份自愈的**唯一入口**：服务端明确不认这份身份时，换一台设备重注册。
+         *
+         * `core` 是纯 Kotlin 模块，拿不到 `Library` 与注册流程（那些在 `:shared`），
+         * 因此这里只留一个钩子，由 `AppRuntime` 在进程启动时接到
+         * `com.hgtv.star.shared.data.DeviceHealer.heal`。
+         *
+         * 参数是「调用方的仓库」而不是固定实例：预取 / 收藏用的是另一个
+         * [ContentRepository]，但它与主实例认的是同一台设备，换完之后要让它自己那一份
+         * 内存身份也跟上（见 `DeviceHealer.heal` 的收尾）。
+         *
+         * 返回 true 表示**已经拿到一份可用的新身份**，调用方可以原地重试。
+         * 钩子为空（单测 / 没接线）时一律按「修不了」处理，不改变原有行为。
+         */
+        @Volatile var deviceHeal: ((ContentRepository, String) -> Boolean)? = null
         /**
          * 「服务端不认这份设备身份」的累计次数（进程级）。
          *

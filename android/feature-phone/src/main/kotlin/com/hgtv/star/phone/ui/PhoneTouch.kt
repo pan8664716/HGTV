@@ -62,7 +62,7 @@ class PhoneTouch(
      * 纵滑抬手：[DIRECTION_NEXT] 向上（下一集）、[DIRECTION_PREV] 向下（上一集）、
      * [DIRECTION_NONE] 位移不够（当作没发生）。
      */
-    private val onVerticalEnd: (direction: Int) -> Unit = {},
+    private val onVerticalEnd: (direction: Int, velocityY: Float) -> Unit = { _, _ -> },
 ) : View.OnTouchListener {
 
     /** 长按落在画面的哪一段：左 / 中 / 右各 1/3。 */
@@ -79,6 +79,26 @@ class PhoneTouch(
 
         /** 横滑起点与屏幕左右边缘的最小距离（dp）：留出系统返回手势的那一条。 */
         const val EDGE_GUARD_DP = 24f
+
+        /**
+         * 屏幕顶部这一条（dp）不接手势：那是系统的「下拉通知栏 / 控制中心」手势区。
+         *
+         * 播放页的触摸层是**整屏铺满**的，一旦在顶部按下并向下拖，事件全被这一层吃掉：
+         * 用户想拉状态栏，看到的却是「上一集」被切了出来（向下滑 = 上一集）。
+         * 因此从这一条之内起手的手势直接不接管，交给系统去判。
+         *
+         * 取值要小：竖屏的返回按钮从 `dp(12)` 开始，16dp 只盖住它上方那条空白。
+         */
+        const val TOP_GUARD_DP = 16f
+
+        /**
+         * 从顶部这一带（dp）**向下**拉，不当作「上一集」。
+         *
+         * 系统的下拉手势区在部分 ROM 上比 [TOP_GUARD_DP] 更深（整条标题栏都算）。
+         * 那里起手向下拖，用户的意图是拉通知栏，不是换集；因此即使事件已经被这一层接住，
+         * 也一律不进入纵滑换集。点击、长按、横滑不受影响。
+         */
+        const val TOP_PULL_GUARD_DP = 64f
 
         /**
          * 竖滑换集的提交距离：屏高的 8%（1080×2400 上约 192px）。
@@ -166,7 +186,18 @@ class PhoneTouch(
         }
     }
 
+    /** 起点是否在屏幕顶部那条系统手势区里（见 [TOP_GUARD_DP]）。 */
+    private fun topGuardSafe(rawY: Float): Boolean =
+        rawY >= host.context.dp(TOP_GUARD_DP).toFloat()
+
     override fun onTouch(v: View, event: MotionEvent): Boolean {
+        // 顶部那一条不接：从那里按下就是用户在拉通知栏，交回系统。
+        // 一旦接了，后续 MOVE 全归我们，系统再也拉不下来，反而会切出一集。
+        if (event.actionMasked == MotionEvent.ACTION_DOWN && !topGuardSafe(event.rawY)) {
+            mode = Mode.IDLE
+            handler.removeCallbacks(longPress)
+            return false
+        }
         when (event.actionMasked) {
             MotionEvent.ACTION_DOWN -> {
                 downX = event.x
@@ -197,8 +228,11 @@ class PhoneTouch(
                     val horizontalDominant = ax > ay * HORIZONTAL_AXIS_BIAS
                     val dragAllowed = dragEnabled && horizontalDominant &&
                         (isLandscape() || edgeSafe(downX))
+                    // 从顶部一带向下拉 = 用户想拉通知栏，不是「上一集」。
+                    val pullDownFromTop = dy > 0f &&
+                        downRawY < host.context.dp(TOP_PULL_GUARD_DP).toFloat()
                     when {
-                        verticalEnabled && verticalDominant -> {
+                        verticalEnabled && verticalDominant && !pullDownFromTop -> {
                             mode = Mode.VERTICAL
                             lastDy = 0f
                             v.parent?.requestDisallowInterceptTouchEvent(true)
@@ -235,13 +269,12 @@ class PhoneTouch(
                             (lastDy < 0f && vy < -fling)
                         val previous = lastDy > VERTICAL_COMMIT_RATIO ||
                             (lastDy > 0f && vy > fling)
-                        onVerticalEnd(
-                            when {
-                                next -> DIRECTION_NEXT
-                                previous -> DIRECTION_PREV
-                                else -> DIRECTION_NONE
-                            }
-                        )
+                        val direction = when {
+                            next -> DIRECTION_NEXT
+                            previous -> DIRECTION_PREV
+                            else -> DIRECTION_NONE
+                        }
+                        onVerticalEnd(direction, vy)
                     }
                     Mode.PRESSING -> if (!moved) tap()
                     Mode.IDLE -> Unit
@@ -258,7 +291,7 @@ class PhoneTouch(
                 when (mode) {
                     Mode.DRAG -> onDragEnd()
                     Mode.LONG -> onLongPressEnd()
-                    Mode.VERTICAL -> onVerticalEnd(DIRECTION_NONE)
+                    Mode.VERTICAL -> onVerticalEnd(DIRECTION_NONE, 0f)
                     else -> Unit
                 }
                 mode = Mode.IDLE

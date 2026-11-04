@@ -43,7 +43,9 @@ object DeviceRegistration {
      * 三个条件任一成立就要：档案被重建过、上一次换新失败过、或者本机根本没有身份。
      */
     fun needsRegister(library: Library): Boolean {
-        if (library.consumeProfileRebuilt()) return true
+        // 「档案被重建过」这一条已经删掉：设备档案与种子现在都只从盘上读，
+        // 不会在读取时就地重建（见 `Library.deviceProfile`）。要换身份只有一条路——
+        // 用户主动重新注册，它会把候选档案挂上 `registration-pending`，由下面这一条接住。
         if (library.registrationPending()) return true
         return !library.deviceRegistered()
     }
@@ -57,14 +59,28 @@ object DeviceRegistration {
     fun registerOnce(
         library: Library,
         repository: ContentRepository,
+        /** true = 无条件注册一次（已经有身份也照做，用于「换新失败后重试」）。 */
         force: Boolean = false,
+        /**
+         * true = **换一台设备**：生成新随机种子 → 重新派生 `cdid` / `openudid` → 新身份。
+         *
+         * 只有「服务端明确不认这份身份」的自愈路径才用它。普通注册（首次 / 重试）绝不能开，
+         * 否则每次启动都会换一台设备，平台侧的「这台设备」就彻底没有连续性了。
+         */
+        regenerate: Boolean = false,
         stage: String = "device_register",
         detail: String = "",
     ): Outcome {
-        if (!force && library.deviceRegistered()) return Outcome.ALREADY
+        if (!force && !regenerate && library.deviceRegistered()) return Outcome.ALREADY
+        // 换设备：先挂一套新的候选身份，再按它去注册。已经有候选（上一次没换成的）
+        // 就不覆盖，免得把待转正的那套丢掉。
+        if (regenerate && !library.hasPendingProfile()) library.queueNewDeviceIdentity()
         // 有待换的候选档案时按候选注册：平台才会把新身份绑在新档案上，
         // 而当前请求仍用旧档案 + 旧身份继续可用。
         val pendingProfile = library.hasPendingProfile()
+        // 签名与 query 用的是仓库里这一份档案，必须与注册请求**同一套**，
+        // 否则同一次会话里会出现两台设备（风控按异常客户端处理）。
+        repository.registerProfile = library.registrationProfile()
         // 换新时不带旧身份：带着它，平台会原样回同一对 `device_id` / `iid`。
         val registered = repository.registerDevice(
             library.registrationProfile(),

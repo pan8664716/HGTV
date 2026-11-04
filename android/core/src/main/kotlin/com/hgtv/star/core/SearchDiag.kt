@@ -39,7 +39,15 @@ object SearchDiag {
          * 典型场景：10 个物理页里有 3 页重试后仍回 502——整页不算失败（其余 7 页照常出内容），
          * 但「少掉的那 3 页」必须让用户看见，否则面板上只有「有结果 70 条」和一行 502。
          */
-        val note: String = ""
+        val note: String = "",
+
+        /**
+         * 这一页是**自动降级**来的：用户选的是 App 接口，但接口没给数据，
+         * 于是自动改走官网（见 `ContentRepository.search`）。
+         *
+         * 界面据此给一句轻提示，别让用户以为「搜索本来就长这样」。
+         */
+        val degraded: Boolean = false
     )
 
     @Volatile var last: Outcome? = null
@@ -54,13 +62,14 @@ object SearchDiag {
         detail: String = "",
         registered: Boolean = false,
         alive: Boolean? = null,
-        note: String = ""
+        note: String = "",
+        degraded: Boolean = false
     ) {
         last=Outcome(
             at=System.currentTimeMillis(),
             keyword=keyword.take(40),page=page,source=source,
             resultCount=resultCount,failure=failure,detail=detail.take(200),
-            registered=registered,alive=alive,note=note.take(120)
+            registered=registered,alive=alive,note=note.take(120),degraded=degraded
         )
     }
 

@@ -142,8 +142,35 @@ class PhoneEpisodeGrid(
 
     private var downX = 0f
     private var downY = 0f
+    private var downAt = 0L
     private var interceptingSwipe = false
     private var swipeAllowed = false
+    /** 翻页动画进行中：这一小段时间不再接新手势，避免两段动画叠在一起把位移算歪。 */
+    private var animating = false
+
+    /** 一页的宽度：跟手位移与滑出距离都以它为基准。 */
+    private fun pageWidth(): Float =
+        width.toFloat().takeIf { it > 0f } ?: resources.displayMetrics.widthPixels.toFloat()
+
+    /**
+     * 拖动 / 翻页动画期间把网格转成**硬件层**。
+     *
+     * 一页最多 100 个格子（20 行 × 5 列），`translationX` 每变一次都要把整块内容重新光栅化；
+     * 播放页里同时还跑着视频解码与弹幕绘制，低端机上就是明显的掉帧。
+     * 挂上硬件层之后，平移只改一次纹理的变换矩阵，拖动期间不再逐帧重绘。
+     * 动画一结束立刻摘掉（见 [endDragLayer]）：长期挂着会占一块和网格等大的显存。
+     */
+    private fun beginDragLayer() {
+        if (gridScroll.layerType != View.LAYER_TYPE_HARDWARE) {
+            gridScroll.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        }
+    }
+
+    private fun endDragLayer() {
+        if (gridScroll.layerType != View.LAYER_TYPE_NONE) {
+            gridScroll.setLayerType(View.LAYER_TYPE_NONE, null)
+        }
+    }
 
     /**
      * 左右滑翻页：在整块网格上识别「横向为主」的手势。
@@ -155,8 +182,17 @@ class PhoneEpisodeGrid(
         if (!edgeTurn && !swipePages) return super.onInterceptTouchEvent(ev)
         when (ev.actionMasked) {
             android.view.MotionEvent.ACTION_DOWN -> {
+                // 上一段翻页动画还没走完就再按下来：立刻收掉它，让新手势接管。
+                // 否则用户连着滑两下，第二下会被动画挡掉，读起来就是「卡了一下」。
+                if (animating) {
+                    gridScroll.animate().cancel()
+                    gridScroll.translationX = 0f
+                    animating = false
+                    endDragLayer()
+                }
                 downX = ev.x
                 downY = ev.y
+                downAt = ev.eventTime
                 interceptingSwipe = false
                 // 分页芯片那一行本身要能横向滚动，左右翻页只从网格区域起手。
                 swipeAllowed = ev.y >= gridScroll.top
@@ -164,11 +200,15 @@ class PhoneEpisodeGrid(
             android.view.MotionEvent.ACTION_MOVE -> {
                 val dx = ev.x - downX
                 val dy = ev.y - downY
-                if (swipeAllowed && !interceptingSwipe && kotlin.math.abs(dx) > dp(48) &&
-                    kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.5f
+                // 起手阈值从 48dp 收到 12dp：手指一动就接住，翻页才跟手；
+                // 方向仍要求「横向为主」，竖向滚动不会被误判成翻页。
+                if (swipeAllowed && !interceptingSwipe && kotlin.math.abs(dx) > dp(12) &&
+                    kotlin.math.abs(dx) > kotlin.math.abs(dy) * 1.4f
                 ) {
                     interceptingSwipe = true
                     parent?.requestDisallowInterceptTouchEvent(true)
+                    // 从这里开始整段手势都在平移网格：先挂硬件层，后面每一帧就只剩变换。
+                    beginDragLayer()
                 }
             }
         }
@@ -178,24 +218,104 @@ class PhoneEpisodeGrid(
     override fun onTouchEvent(ev: android.view.MotionEvent): Boolean {
         if (!interceptingSwipe) return super.onTouchEvent(ev)
         when (ev.actionMasked) {
+            android.view.MotionEvent.ACTION_MOVE -> {
+                applyDrag(ev.x - downX)
+                return true
+            }
             android.view.MotionEvent.ACTION_UP -> {
                 val dx = ev.x - downX
+                val dt = (ev.eventTime - downAt).coerceAtLeast(1L)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 interceptingSwipe = false
                 swipeAllowed = false
-                if (kotlin.math.abs(dx) > dp(48)) {
-                    jump(page + if (dx < 0) 1 else -1)
-                }
+                settleDrag(dx, dx / dt)
                 return true
             }
             android.view.MotionEvent.ACTION_CANCEL -> {
                 parent?.requestDisallowInterceptTouchEvent(false)
                 interceptingSwipe = false
                 swipeAllowed = false
+                animateBack()
                 return true
             }
         }
         return true
+    }
+
+    /**
+     * 手指拖动时**只有网格那一块**跟着走（带阻尼）。
+     *
+     * 上面两行（「第 A—B 集」与分页芯片）不动：它们是这一页的导航，
+     * 跟着一起平移会让人分不清「我是在翻页还是在拖整块面板」。
+     *
+     * 到头的那一侧（第一页再往右、最后一页再往左）几乎不动：用户拖两下就能感觉到
+     * 「这边没有下一页了」，不必等松手弹回才知道。
+     */
+    private fun applyDrag(dx: Float) {
+        val w = pageWidth()
+        val hasNext = page + 1 < pageCount()
+        val hasPrev = page > 0
+        val blocked = (dx < 0 && !hasNext) || (dx > 0 && !hasPrev)
+        // 阻尼 0.62：拖一屏距离只走 62%，松手后由动画补完，手感比 1:1 更「软」。
+        // 上限 0.85 屏：再怎么拖也不会把整块内容拖出屏幕。
+        gridScroll.translationX = (if (blocked) dx * 0.12f else dx * 0.62f)
+            .coerceIn(-w * 0.85f, w * 0.85f)
+    }
+
+    /**
+     * 松手结算：过阈值就翻页，否则弹回。
+     *
+     * 翻页分两段——当前页沿手势方向滑出，换页后新页从反方向滑入。看起来是「翻过去了」，
+     * 而不是原来那种「松手瞬间换一块内容」。快速轻扫（速度够）不必滑过半屏也能翻。
+     */
+    private fun settleDrag(dx: Float, velocity: Float) {
+        val w = pageWidth()
+        val dir = when {
+            dx <= -w * 0.22f || velocity <= -0.55f -> 1
+            dx >= w * 0.22f || velocity >= 0.55f -> -1
+            else -> 0
+        }
+        if (dir != 0 && page + dir in 0 until pageCount()) {
+            animating = true
+            val target = -dir * w
+            val duration = PhonePagerMotion.duration(
+                distancePx = kotlin.math.abs(target - gridScroll.translationX),
+                viewportPx = w.toInt(),
+                velocityPxPerSecond = kotlin.math.abs(velocity) * 1_000f,
+            )
+            gridScroll.animate().translationX(target).setDuration(duration)
+                .setInterpolator(PhonePagerMotion.interpolator).withEndAction {
+                page += dir
+                render()
+                gridScroll.scrollTo(0, 0)
+                gridScroll.translationX = dir * w
+                val enterDuration = PhonePagerMotion.duration(w, w.toInt())
+                gridScroll.animate().translationX(0f).setDuration(enterDuration)
+                    .setInterpolator(PhonePagerMotion.interpolator)
+                    .withEndAction {
+                        animating = false
+                        endDragLayer()
+                    }.start()
+            }.start()
+        } else {
+            animateBack()
+        }
+    }
+
+    /** 没到阈值 / 手势取消：滑回原位。 */
+    private fun animateBack() {
+        if (gridScroll.translationX == 0f) { animating = false; endDragLayer(); return }
+        animating = true
+        val duration = PhonePagerMotion.duration(
+            distancePx = kotlin.math.abs(gridScroll.translationX),
+            viewportPx = pageWidth().toInt(),
+        )
+        gridScroll.animate().translationX(0f).setDuration(duration)
+            .setInterpolator(PhonePagerMotion.interpolator)
+            .withEndAction {
+                animating = false
+                endDragLayer()
+            }.start()
     }
 
     /** 页数与区间文案走 `:core`（`EpisodePaging`，电视端同一份）：两端读起来必须逐字相同。 */
@@ -312,12 +432,32 @@ class PhoneEpisodeGrid(
         }
     }
 
+    /**
+     * 翻到第 [target] 页（点分页芯片）。
+     *
+     * 点芯片不再瞬间换内容：新页从翻页方向滑进来（下一页从右侧进、上一页从左侧进），
+     * 与手势翻页同一套观感，只是省掉「当前页滑出」那一段——点芯片本来就知道要去哪。
+     */
     private fun jump(target: Int) {
-        if (target !in 0 until pageCount()) return
+        if (target !in 0 until pageCount() || target == page || animating) return
+        val dir = if (target > page) 1 else -1
         page = target
         render()
         // 换页之后从这一页的第一行看起：停在上一次的滚动位置会让人以为翻页没生效。
         gridScroll.scrollTo(0, 0)
+        gridScroll.translationX = dir * pageWidth() * 0.55f
+        animating = true
+        beginDragLayer()
+        val duration = PhonePagerMotion.duration(
+            distancePx = kotlin.math.abs(gridScroll.translationX),
+            viewportPx = pageWidth().toInt(),
+        )
+        gridScroll.animate().translationX(0f).setDuration(duration)
+            .setInterpolator(PhonePagerMotion.interpolator)
+            .withEndAction {
+                animating = false
+                endDragLayer()
+            }.start()
     }
 }
 

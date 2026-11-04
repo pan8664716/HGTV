@@ -621,16 +621,15 @@ fun MainActivity.bindGridCard(card: PosterCard,item: Series) {
         else -> ""
     }
     // 名次放左上角（榜单页才有）；右下角统一由卡片按 `episodeCount` 画「共 N 集」；
-    // 热度放左下角——服务端原串优先，没有才用搜索卡片解析出来的数字。
+    // 热度放左下角——这里传服务端原串，兜底与格式化由公共卡片规则负责。
     val rankText=if(tab==TAB_RANK) rank?.let { "第 $it 名" }.orEmpty() else ""
-    val heatText=HeatLabel.badge(position?.heat,item.heat)
     card.series=item
     card.tag=item.id
     card.visibility=View.VISIBLE
     // 未上架没有集数：右下角改画「预告」，否则那一角空着，卡片看起来像数据缺了。
     card.bind(item,statusText,if(item.upcoming) "预告" else "",
         progress?.takeIf { it.duration>0 }?.let { (it.position*100/it.duration).toInt().coerceIn(0,100) },
-        rank!=null && rank<=3,rankText=rankText,heatText=heatText,
+        rank!=null && rank<=3,rankText=rankText,heatServerText=position?.heat.orEmpty(),
         preferStatus=collection=="history" || item.upcoming)
 }
 

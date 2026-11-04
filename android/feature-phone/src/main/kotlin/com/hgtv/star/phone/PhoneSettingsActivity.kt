@@ -130,7 +130,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
         container = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(8), dp(16), dp(40))
+            setPadding(dp(16), dp(2), dp(16), dp(40))
         }
         scroller = ScrollView(this).apply {
             isFillViewport = true
@@ -138,9 +138,16 @@ class PhoneSettingsActivity : PhoneActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ))
         }
+        // 标题栏下沿到第一个设置项之间的留白。
+        //
+        // 原来滚动区从 `status + dp(52)` 起步、内容顶部再留 `dp(8)`，而标题栏的实际高度
+        // 只有 `status + dp(6) + 一行标题 + dp(8)`（1080P 上约 status + 76px）——两者之间
+        // 空出 80 多像素，读到的就是「四个大选项上面一大块空白」。这里让滚动区贴住标题栏
+        // 下沿（只留 dp(30) 的呼吸位），内容顶部内边距一并收到 dp(2)：
+        // 空白从 100 多像素收到 40 多像素，同时滚动时内容也不会在标题下方很远处才开始被裁切。
         root.addView(scroller, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ).apply { topMargin = status + dp(52) })
+        ).apply { topMargin = status + dp(30) })
 
         setContentView(root)
 
@@ -244,7 +251,8 @@ class PhoneSettingsActivity : PhoneActivity() {
             }
         }
         row("默认倍速", PlaybackSpeed.label(library.playbackSpeed)) {
-            val options = PlaybackSpeed.options
+            // 手机 / 平板比电视多一档 3×（见 `PlaybackSpeed.phoneOptions`）。
+            val options = PlaybackSpeed.phoneOptions
             pick("默认倍速", options.map { PlaybackSpeed.label(it) },
                 options.indexOf(library.playbackSpeed).coerceAtLeast(0)) { index ->
                 library.playbackSpeed = options[index]
@@ -336,9 +344,9 @@ class PhoneSettingsActivity : PhoneActivity() {
     // —— 二、外观导航 ——
 
     private fun renderAppearance() {
-        section("主题外观")
-        hint("当前：${PhoneStyle.theme.label} · ${PhoneStyle.theme.scene}　（${TvTheme.entries.size} 套，选中即生效）")
-        themeGrid()
+        // 「外观与布局」这一组把最常调的三项放在最上面（用户要求：列表布局与字体大小放在一起），
+        // 二十套主题网格排在它们之后。
+        section("外观与布局")
         row("字体大小", PhoneUiScale.label(PhoneUiScale.value)) {
             val options = PhoneUiScale.sizes
             pick(
@@ -350,9 +358,6 @@ class PhoneSettingsActivity : PhoneActivity() {
                 recreate()
             }
         }
-
-        section("列表布局")
-        hint("与电视端同一份落盘值，只保留手机竖屏能完整显示的列数。")
         row("列表每行", "${library.gridColumns} 张") {
             // 手机竖屏只保留 1 / 2 / 3 三档：默认 2 张，字大或想看清封面可以选 1 张。
             val options = listOf(1, 2, 3)
@@ -362,6 +367,18 @@ class PhoneSettingsActivity : PhoneActivity() {
                 render()
             }
         }
+        hint("与电视端同一份落盘值，只保留手机竖屏能完整显示的列数。")
+        // 推荐页三个体裁（漫剧 / 真人 / AI 剧）之间能不能用手指左右划。
+        // 关掉之后只剩顶部那三个体裁标签换流——竖屏短剧一屏一集，横滑误触太常见。
+        switch("推荐页左右滑动", library.recommendSwipe) {
+            library.recommendSwipe = it
+            render()
+        }
+        hint("关闭后推荐页只能用顶部体裁标签换流，手指左右划不会整页翻走。")
+
+        // 主题放在最后：二十套色卡占的地方最大，日常不需要频繁改。
+        hint("当前：${PhoneStyle.theme.label} · ${PhoneStyle.theme.scene}　（${TvTheme.entries.size} 套，选中即生效）")
+        themeGrid()
     }
 
     /** 二十套主题：两列一行，手机上名称与色点都能完整显示。 */
@@ -489,10 +506,9 @@ class PhoneSettingsActivity : PhoneActivity() {
                 render()
             }
         }
-        switch("分页边缘翻页", library.episodeEdgeTurn) {
-            library.episodeEdgeTurn = it
-            render()
-        }
+        // 「分页边缘翻页」不再放在这里：手机上它读起来像是「推荐页能不能左右翻」，
+        // 实际管的是选集网格的边缘翻页。这一项已挪到「外观导航」，并正名为
+        // 「推荐页左右滑动」（见 renderAppearance）；选集边缘翻页在手机上保持开启。
         row("搜索源", library.searchSource.label) {
             val options = SearchSource.entries
             pick("搜索源", options.map { "${it.label}　${it.hint}" },
@@ -593,6 +609,7 @@ class PhoneSettingsActivity : PhoneActivity() {
             PhoneDanmakuSize.set(this, PhoneDanmakuSize.DEFAULT_PERCENT)
             library.recommendGender = ""
             library.launchRecommend = true
+            library.recommendSwipe = true
             library.episodePageSize = 20
             library.episodeEdgeTurn = true
             library.searchSource = SearchSource.APP

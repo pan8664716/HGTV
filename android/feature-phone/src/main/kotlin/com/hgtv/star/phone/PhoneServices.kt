@@ -3,24 +3,18 @@ package com.hgtv.star.phone
 
 import android.content.Context
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.shared.data.Library
 import androidx.media3.exoplayer.ExoPlayer
-import com.hgtv.star.shared.debug.Diagnostics
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
 /**
- * 手机端的进程级单例。
+ * 手机端的进程级服务入口。
  *
- * 为什么不让每个页面自己 new：
- *
- * * `ContentRepository` 的传输层是**懒建**的，但一旦建成就带着连接池与设备身份；
- *   每个页面各建一个，等于把 TLS 握手与设备注册重复做一遍（TV 端为此专门写过注释）。
- * * `ArtworkLoader` 有内存 LRU 与并发闸门，多实例等于多份缓存、互相挤占。
- * * `Library` 里挂着落盘写队列，多实例会互相覆盖。
- *
- * 生命周期跟进程走：Activity 反复进出都复用同一份，退出应用时由系统回收。
+ * 仓库 / 书库 / 封面加载器统一委托给 [AppRuntime]，与 TV 共用同一套实例与生命周期；
+ * 本对象只保留手机端独有的播放器、解码器与网络日志接线。
  */
 object PhoneServices {
 
@@ -28,24 +22,11 @@ object PhoneServices {
         PhoneNetDebug.install()
     }
 
-    @Volatile private var repo: ContentRepository? = null
-    @Volatile private var lib: Library? = null
-    @Volatile private var art: ArtworkLoader? = null
+    fun repository(context: Context): ContentRepository = AppRuntime.repository(context)
 
-    fun repository(context: Context): ContentRepository = repo ?: synchronized(this) {
-        repo ?: ContentRepository().apply {
-            // 写接口（收藏 / 进度 / 历史）的诊断出口，与 TV 端同一个通道。
-            writeLog = { line -> Diagnostics.trace("HGTV-WRITE", line) }
-        }.also { repo = it }
-    }
+    fun library(context: Context): Library = AppRuntime.library(context)
 
-    fun library(context: Context): Library = lib ?: synchronized(this) {
-        lib ?: Library(context.applicationContext).also { lib = it }
-    }
-
-    fun artwork(context: Context): ArtworkLoader = art ?: synchronized(this) {
-        art ?: ArtworkLoader(context.applicationContext).also { art = it }
-    }
+    fun artwork(context: Context): ArtworkLoader = AppRuntime.artwork(context)
 
     /**
      * 等书库读盘完成再返回。
@@ -154,7 +135,7 @@ object PhoneServices {
 
     /** 预热：把冷启动最贵的一次握手挪到用户还在看首屏骨架的时候。 */
     fun warm(context: Context) {
-        runCatching { repository(context).preconnect() }
+        runCatching { AppRuntime.warm(context) }
     }
 }
 

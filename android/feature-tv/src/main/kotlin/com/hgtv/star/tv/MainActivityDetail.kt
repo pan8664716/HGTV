@@ -127,6 +127,8 @@ fun MainActivity.prefetchRelated(id: String) {
             // 用户此刻正好停在「相关剧集」这一栏里，就地铺上（只换下方那一块，不整页重建）；
             // 否则什么也不用做。
             if(relatedOpen && screen=="detail" && detail?.series?.id==id) detailBottomRefresh?.invoke()
+            // 播放页那一块浮层同理（见 `MainActivityPlayerActions.kt`）：数据晚到就地重铺。
+            if(onPlaybackPage()) playerStripRefresh?.invoke()
         }
     }
 }
@@ -170,6 +172,8 @@ fun MainActivity.prefetchAuthorWorks(id: String, series: Series) {
                     if(isDestroyed || authorToken.get()!=token) return@post
                     authorWorks=partial; authorLoading=false
                     if(authorOpen && screen=="detail" && detail?.series?.id==id) detailBottomRefresh?.invoke()
+                    // 播放页那一块浮层也要跟着换上先到的那一批（见 `MainActivityPlayerActions.kt`）。
+                    if(onPlaybackPage()) playerStripRefresh?.invoke()
                 }
             }
         }
@@ -179,6 +183,7 @@ fun MainActivity.prefetchAuthorWorks(id: String, series: Series) {
             result.onSuccess { works -> authorWorks=works }.onFailure { authorFailed=true }
             // 用户此刻正好停在「作者作品」这一栏里，就地铺上（只换下方那一块，不整页重建）。
             if(authorOpen && screen=="detail" && detail?.series?.id==id) detailBottomRefresh?.invoke()
+            if(onPlaybackPage()) playerStripRefresh?.invoke()
         }
     }
 }
@@ -249,111 +254,6 @@ private fun MainActivity.authorHead(name: String,hint: String): LinearLayout {
     texts.addView(text(hint,14f,TvStyle.muted).apply { setPadding(0,dp(4),0,0) })
     gapInto(head,texts,lp(0,-2).apply { weight=1f },TvStyle.GAP_INLINE+4)
     return head
-}
-/**
- * 全剧播完：按「相关剧集」那一份数据给出下一部的推荐（见 `MainActivityPlayer` 的播完分支）。
- *
- * 摆法与简介页的「相关剧集」完全一致：底部弹出、贴底整宽的一栏卡片（[RelatedPanel]），
- * 背板是往上渐隐的透明阴影，上方的画面不压暗。用户的诉求就是「和简介页那个一样」，
- * 因此卡片行直接用 [buildRelatedRow] 那一份实现。
- *
- * 数据与详情页共用：[relatedWorks] 已经取好（从详情页点进来播放时就是这种情况）就直接铺；
- * 没有（从历史里直接开播、或那一次取失败）就先摆一句「正在找」，取到再换成卡片。
- */
-fun MainActivity.showSeriesFinished(series: Series) {
-    if(screen!="player" || finishedPanel!=null) return
-    val cached=relatedWorks?.takeIf { relatedFor==series.id }
-    if(cached!=null) {
-        // 已经取过（从详情页点进来播放就是这种）：取到什么就摆什么，不再发第二次请求。
-        if(cached.items.isNotEmpty()) showFinishedStrip(series,cached)
-        else finishedStripMessage(series,"暂时没有找到相关剧集。")
-        return
-    }
-    val waiting=TvDialog(this,"全剧已播完").message("《${series.title}》已经看完，正在找相关剧集…")
-    waiting.button("关闭", icon=R.drawable.ic_menu_close)
-    finishedNotice=waiting
-    waiting.show(currentFocus) { if(finishedNotice===waiting) finishedNotice=null }
-    val token=relatedToken.incrementAndGet()
-    relatedJob?.cancel(true); relatedFor=series.id; relatedLoading=true; relatedFailed=false
-    relatedJob=io.submit {
-        val result=runCatching { repository.related(series.id,series.title) }
-        main.post {
-            if(isDestroyed || relatedToken.get()!=token) return@post
-            relatedLoading=false
-            result.onSuccess { works -> relatedWorks=works }.onFailure { relatedFailed=true }
-            // 用户可能已经关掉这一层或退出了播放界面：那样就什么都不做。
-            if(screen!="player" || finishedNotice!==waiting) return@post
-            waiting.dismiss()
-            val works=relatedWorks
-            if(works!=null && works.items.isNotEmpty()) showFinishedStrip(series,works)
-            else finishedStripMessage(series,if(relatedFailed) "相关剧集没能取到，可以稍后再看。" else "暂时没有找到相关剧集。")
-        }
-    }
-}
-/**
- * 底部弹出「换一部接着看」那一栏卡片。
- *
- * 焦点落在第一张卡上，方向键在卡片间横移；按返回收起（对话框默认行为），
- * 收起后把焦点还给播放界面（与选集面板同一套收尾）。
- */
-private fun MainActivity.showFinishedStrip(series: Series,works: RelatedWorks) {
-    if(screen!="player" || finishedPanel!=null) return
-    val body=column().apply {
-        // 主题浮层背板：与播放设置 / 选集面板同一块材质（见 [TvStyle.sheet]）。
-        background=TvStyle.sheet(this@showFinishedStrip)
-        clipChildren=false
-        clipToPadding=false
-        setPadding(pageInset(),dp(18),pageInset(),dp(18))
-    }
-    body.addView(
-        text("《${series.title}》已经看完 · 换一部接着看",18f,TvStyle.text).apply {
-            setPadding(0,0,0,dp(TvStyle.GAP_TIGHT))
-        },
-        lp(-1,-2)
-    )
-    val row=buildRelatedRow(body,works,series,{ target ->
-        // 从播放器离开要走 [detachPlayerSurface]（画面、传输、弹幕层一起收，实例保留），
-        // 否则新页面盖上来时旧解码器还占着（与返回键那条路同一套做法）。
-        finishedPanel?.dismiss()
-        detachPlayerSurface()
-        openDetail(target)
-    })
-    body.addView(row,lp(-1,-2))
-    val next=RelatedPanel(this,body) {
-        finishedPanel=null
-        // 浮层收起：顶部四项回到「播放显示」里用户选的值。
-        syncPlaybackInfo()
-        // 收起之后焦点还给播放界面：还在播放页（不是点了卡片去了别处）时把控制条亮出来。
-        if(screen=="player" && foreground) showHud()
-    }
-    finishedPanel=next
-    next.show()
-    // 「换一部接着看」也是一块唤出来的浮层：顶部四项临时全显（见 [syncPlaybackInfo]）。
-    syncPlaybackInfo()
-    row.post { row.firstCard()?.requestFocus() }
-}
-/** 相关剧集取不到、或这一部确实没有：底部同样弹一层，只放一句说明与「关闭」。 */
-private fun MainActivity.finishedStripMessage(series: Series,message: String) {
-    if(screen!="player" || finishedPanel!=null) return
-    val body=column().apply {
-        background=TvStyle.sheet(this@finishedStripMessage)
-        clipChildren=false
-        clipToPadding=false
-        setPadding(pageInset(),dp(18),pageInset(),dp(20))
-    }
-    body.addView(text("《${series.title}》已经看完",18f,TvStyle.text),lp(-1,-2))
-    body.addView(
-        text(message,16f,TvStyle.textDim).apply { setPadding(0,dp(TvStyle.GAP_TIGHT),0,dp(TvStyle.GAP_INLINE)) },
-        lp(-1,-2)
-    )
-    val row=row()
-    val close=addButton(row,"关闭",size=ButtonSize.NORMAL) { finishedPanel?.dismiss() }
-    body.addView(row,lp(-1,-2))
-    val next=RelatedPanel(this,body) { finishedPanel=null; syncPlaybackInfo() }
-    finishedPanel=next
-    next.show()
-    syncPlaybackInfo()
-    row.post { close.requestFocus() }
 }
 fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
     invalidatePage(); releaseCatalogViews(); screen="detail"; val data=detail ?: return showCatalog()

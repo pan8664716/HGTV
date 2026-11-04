@@ -23,7 +23,7 @@ import com.hgtv.star.shared.debug.DebugFaults
  * 哪颗解码器、什么 codec string、多少分辨率帧率、硬解还是软解、
  * 是不是「READY 了但一帧都没出」。这些只能在本机现场里带回来。
  *
- * U-APM 已整体移除（见 `build.gradle.kts`），这条链路改成**只落本地**：
+ * U-APM 负责崩溃与性能采集；这条播放诊断链路仍**只落本地**：
  * 一行完整现场——阶段、解码器名、codec string、分辨率帧率、设备上注册了哪些解码器、
  * 播放到哪儿——写进 logcat，同时进调试面板。用户报「解码失败」时打开调试模式就能读出来。
  *

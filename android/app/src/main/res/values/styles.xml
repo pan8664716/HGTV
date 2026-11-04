@@ -33,4 +33,23 @@
         <item name="android:windowBackground">#000000</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+
+    <!--
+      启动路由那一层（`LaunchActivity`）：**半透明、无标题、无动画**。
+
+      它只活一帧：`onCreate` 里判定形态 → `startActivity(目标页)` → `finish()`。
+      用半透明而不是 `Theme.NoDisplay`：NoDisplay 的活动不建窗口，部分国产 TV 固件
+      会先把任务清掉、再丢掉刚起来的目标页，用户读到的是「点图标没反应」
+      （2026-11，小明 Q1 Pro 投影仪）。半透明主题让它**有一个窗口**，任务里始终有东西，
+      转发不会落空；透明底色保证不会闪一块黑。
+
+      `windowIsTranslucent` 与 `windowBackground=透明` 一起给，是因为部分 ROM 只认前者。
+    -->
+    <style name="LaunchRouter" parent="@android:style/Theme.Translucent.NoTitleBar">
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>

@@ -24,6 +24,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import com.hgtv.star.shared.data.ArtworkLoader
+import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.media.DanmakuView
 import com.hgtv.star.tv.player.EpisodePanel
 import com.hgtv.star.shared.data.FavoriteMonitor
@@ -144,7 +145,7 @@ class MainActivity: Activity() {
     //
     // 注意：正式包里 `Log.i` 被 R8 整段删掉（见 proguard-rules.pro），只写 logcat 等于线上
     // 什么都不剩。因此这三处出口都另外走一遍 [Diagnostics]——诊断层会把现场同时写进
-    // 调试面板与 logcat（U-APM 已移除，不再有任何远端上报），平时不产生任何网络开销。
+    // 调试面板与 logcat；U-APM 只采集崩溃与性能，不接收这些业务诊断文本。
     init {
         com.hgtv.star.core.NetLog.log={ line ->
             // 只走 [Diagnostics.trace]，它本身就是 `Log.i(tag, line)`。
@@ -173,12 +174,8 @@ class MainActivity: Activity() {
             }
         }
     }
-    val repository=ContentRepository().apply {
-        // 写接口（收藏 / 进度 / 历史）的诊断日志：`core` 是纯 Kotlin 模块，日志出口由这里接上。
-        writeLog={ line ->
-            Diagnostics.trace("HGTV-WRITE",line)
-        }
-    }
+    /** 与手机端共用的业务仓库；Activity 重建不换实例、不关连接池。 */
+    val repository get()=AppRuntime.repository(this)
 
     /** 收掉一条已废弃的传输层（见 [closeTransport]）；走 `network` 车道，不额外开线程。 */
     val networkCleanup get()=com.hgtv.star.shared.architecture.AppExecutors.network.executor
@@ -354,6 +351,8 @@ class MainActivity: Activity() {
     /** 上一集最后一次读到的时长：自动推进时 `STATE_ENDED` 不再触发，用它补一条 completed 记录。 */
     var lastEpisodeDuration=0L
     lateinit var artwork: ArtworkLoader
+    /** 共享封面加载器上的界面回调；销毁时按引用摘掉，避免指向已结束的 Activity。 */
+    private val artworkReleaseCallback={ releaseOffscreenCovers() }
     data class DeferredUi(val apply: ()->Unit,val discard: ()->Unit={})
     /**
      * 栅格里的一行：行容器 + 它这一行里固定 [gridColumns] 张卡片。
@@ -623,12 +622,6 @@ class MainActivity: Activity() {
     var prefetchCenterRow=-1
     /** 注册的互斥锁：启动时那次异步注册与播放前那一次同步注册可能同时进来，只发一次请求。 */
     val deviceRegisterLock=Any()
-    /** 设备身份自愈（见 [healDeviceIdentity]）：已经处理过的「被拒」计数，避免同一件事重建多次。 */
-    var deviceHealHandled=0
-    /** 本次进程里已经重建过几次（上限 [DEVICE_HEAL_LIMIT]）。 */
-    var deviceHealTried=0
-    /** 上一次重建的时刻（[android.os.SystemClock.elapsedRealtime]）；0 = 还没重建过。 */
-    var deviceHealAt=0L
     var catalogHint: String?=null
     var catalogHintView: TextView?=null
     val hideHint=Runnable { catalogHint=null; catalogHintView?.visibility=View.GONE }
@@ -964,9 +957,8 @@ class MainActivity: Activity() {
             if(!networkAvailable()) scheduleRecovery()
             else if(ledger.consumeAttempt()) {
                 android.util.Log.i("HGTV","Automatic playback recovery ${ledger.attempts}/3 at ${retryPosition}ms")
-                // 每次自动重试都换一个 `device_id`：平台按设备计额度，同一个号连试三次
-                // 大概率三次同一个结果（见 `ContentRepository.rotateDeviceForRetry`）。
-                runCatching { repository.rotateDeviceForRetry() }
+                // 地址缓存必须先作废；只换号仍会命中同一条失败 URL。
+                prepareFreshPlaybackRetry()
                 playEpisode(episodeIndex,retryPosition,retryAutoplay,recovering=true)
             }
         }
@@ -1627,6 +1619,14 @@ class MainActivity: Activity() {
     var playbackMenuCacheShape: String?=null
     /** 预热播放设置面板的排队任务（见 [warmPlaybackMenu]）：同一时刻只留一个。 */
     var warmPlaybackMenuTask: Runnable?=null
+    /**
+     * 播放页「相关剧集 / 作者作品」浮层的重铺入口（见 `MainActivityPlayerActions.kt`）。
+     *
+     * 数据是详情页那一份缓存（`prefetchRelated` / `prefetchAuthorWorks`），落地时机比浮层晚：
+     * 结果到了就调这里就地重铺那一块，而不是让用户关掉浮层再打开一次。
+     * 浮层收起时立刻置空——旧引用会指到已经拆掉的视图树。
+     */
+    var playerStripRefresh: (() -> Unit)?=null
     /** 本次观看选中的定时项目下标（0=关闭），只用来决定菜单里的选中态。 */
     var sleepChoice=0
     var speedDialog: TvDialog?=null
@@ -1662,14 +1662,20 @@ class MainActivity: Activity() {
     /** 设置页的滚动容器：切大项时回到顶部（见 [switchSettingsTab]）。 */
     var settingsScroll: android.widget.ScrollView?=null
 
-    /**
-     * 「全剧已播完 → 换一部接着看」那一层：底部弹出的相关剧集卡片（见 `showSeriesFinished`）。
-     *
-     * 它只在播放界面出现，出现时播放器已经暂停在最后一帧上；[finishedNotice] 是同一件事的
-     * 「正在查找相关剧集」提示（还没取到数据时的过渡层），两者不会同时存在。
-     */
+    /** 播放页底部的作品浮层（相关剧集 / 作者作品）。 */
     var finishedPanel: com.hgtv.star.tv.player.RelatedPanel?=null
-    var finishedNotice: TvDialog?=null
+    /** 最后一集期间查到的下一季；只在当前剧仍是同一部、仍停在最后一集时展示。 */
+    var nextSeason: Series?=null
+    var nextSeasonFor=""
+    var nextSeasonLoading=false
+    val nextSeasonToken=java.util.concurrent.atomic.AtomicLong(0)
+    var nextSeasonJob: java.util.concurrent.Future<*>?=null
+    /** 片尾等待查询结果时置位；结果落地后直接起播或结束。 */
+    var autoNextSeasonPending=false
+    var nextSeasonOpening=false
+    var nextSeasonFinishedFor=""
+    /** 播放页底部的「将自动播放 …」提示。 */
+    var nextSeasonNotice: TextView?=null
     var pendingSeek: Long?=null
     /**
      * 是否停在错误页上。
@@ -1766,6 +1772,10 @@ class MainActivity: Activity() {
     // ---- 生命周期与系统回调：扩展成员不能 override，只能留在 Activity 本体里 ----
     override fun onCreate(state: Bundle?) {
         super.onCreate(state)
+        // 启动链路的第二个锚点（第一个是 `LaunchActivity` 的 `route ->`）。
+        // 现场「点图标没反应」时要能一眼分开三种情况：路由没跑 / 路由跑了但目标没起来 /
+        // 目标起来了但画面没上屏——这一条就是中间那个分界。
+        android.util.Log.w("HGTV-BOOT", "tv.MainActivity onCreate")
         // 版本号只有 application 模块的 BuildConfig 才有，这里从包信息读一次（见 AppVersion）。
         AppVersion.init(this)
         // 进程死亡后的现场：真正的恢复要等 `library.isLoaded`（onResume 里那次），
@@ -1786,10 +1796,10 @@ class MainActivity: Activity() {
         // 2GB 的电视盒子几乎一律是 false，只看它整个应用就按高端机跑
         // （这正是「按一下方向键就顿一下」的根源，见 compat/Platform.kt 的说明）。
         applyPerformanceProfile()
-        library=Library(this); artwork=ArtworkLoader(this); tvTools=TvTools(this)
+        library=AppRuntime.library(this); artwork=AppRuntime.artwork(this); tvTools=TvTools(this)
         // 内存吃紧时由界面把**视口之外**的封面从 ImageView 上摘掉：LRU 的 evictAll 只解除
         // 自己的引用，位图挂在 View 上就仍然活着——首页常驻 77 张（约 44MB）正是这一份。
-        artwork.releaseHiddenCovers=::releaseOffscreenCovers
+        artwork.releaseHiddenCovers=artworkReleaseCallback
         // 调试模式上次开着的话，从这一刻起就把网络 / 接口的日志记进那块面板：
         // 启动阶段的那几十条（TLS、设备注册、首页接口）正是排查「打开就空白」要看的东西，
         // 等到第一页建好再打开就全错过了。
@@ -2481,18 +2491,15 @@ class MainActivity: Activity() {
         runCatching { unregisterReceiver(sessionExpiredReceiver) }
         runCatching { networkWatch?.cancel() }; networkWatch=null
         recommendToken.incrementAndGet(); recommendPageToken.incrementAndGet(); closeRecommendCache()
-        favoriteMonitor.destroy(); tvTools.destroy(); closeAccountPanelSession(); saveProgress(); releasePlayer(); library.close()
-        artwork.close(); releaseCatalogViews(); mediaSession?.release(); mediaSession=null; main.removeCallbacksAndMessages(null)
+        favoriteMonitor.destroy(); tvTools.destroy(); closeAccountPanelSession(); saveProgress(); releasePlayer(); library.flush()
+        if(artwork.releaseHiddenCovers===artworkReleaseCallback) artwork.releaseHiddenCovers=null
+        releaseCatalogViews(); mediaSession?.release(); mediaSession=null; main.removeCallbacksAndMessages(null)
         // 页面级协程作用域：只取消「属于这个 Activity」的协程，**不碰**线程池。
         //
         // 线程池是进程级的（见 `AppExecutors`），这里绝不能关：重建后的新 Activity 会
         // 继续往同一批线程上提交任务，关掉就是「提交到已关闭的池」——那正是改造前
         // 七个 `shutdownNow()` 埋下的崩溃面。
         appScope.cancel()
-        // 「这一次根本没发过请求」时不去碰它：取值会把 client 现建出来（见 `hasHttpClient`）。
-        if(repository.hasHttpClient()) {
-            Thread({ repository.http.dispatcher.cancelAll(); repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown() },"hgtv-network-cleanup").start()
-        }
         super.onDestroy()
     }
 }

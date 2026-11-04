@@ -1,8 +1,11 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import android.view.Gravity
 import android.view.View
+import android.view.ViewGroup
 import android.widget.LinearLayout
+import android.widget.TextView
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.DanmakuSpeed
 import com.hgtv.star.core.DanmakuStyle
@@ -11,6 +14,10 @@ import com.hgtv.star.core.PlaybackSpeed
 import com.hgtv.star.core.VideoDecoderMode
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.phone.ui.PhoneSheet
+import com.hgtv.star.phone.ui.PhoneStyle
+import com.hgtv.star.phone.ui.dp
+import com.hgtv.star.phone.ui.phoneSize
+import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.shared.data.Library
 
 /**
@@ -58,6 +65,10 @@ fun buildPlaybackSettingsRows(
      * 与「定时关闭」挨着——两件事都是「看着看着想做点别的」。
      */
     onRelated: (() -> Unit)? = null,
+    onAuthor: (() -> Unit)? = null,
+    /** 返回点击后的收藏状态；非空时在动作区显示「加入收藏 / 取消收藏」。 */
+    onFavorite: (() -> Boolean)? = null,
+    favorite: Boolean = false,
     /**
      * 弹幕四项（显示 / 速度 / 字号 / 透明度）改动后立刻回调。
      *
@@ -68,6 +79,47 @@ fun buildPlaybackSettingsRows(
      */
     onDanmaku: (() -> Unit)? = null,
 ) {
+    if (onRelated != null || onAuthor != null || onFavorite != null) {
+        val actions = LinearLayout(host.context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(0, host.context.dp(2), 0, host.context.dp(8))
+        }
+        fun action(label: String, onTap: () -> Unit): TextView = TextView(host.context).apply {
+            text = label
+            gravity = Gravity.CENTER
+            phoneSize(13)
+            setTextColor(PhoneStyle.text)
+            setPadding(host.context.dp(6), host.context.dp(10), host.context.dp(6), host.context.dp(10))
+            background = roundedBackground(0x18FFFFFF, host.context.dp(8).toFloat())
+            isClickable = true
+            setOnClickListener { onTap() }
+        }
+        fun addAction(view: TextView, first: Boolean) {
+            actions.addView(view, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                if (!first) leftMargin = host.context.dp(6)
+            })
+        }
+        var index = 0
+        onRelated?.let { callback ->
+            addAction(action("相关剧集", callback), index++ == 0)
+        }
+        onAuthor?.let { callback ->
+            addAction(action("作者作品", callback), index++ == 0)
+        }
+        onFavorite?.let { callback ->
+            lateinit var button: TextView
+            button = action(if (favorite) "取消收藏" else "加入收藏") {
+                val now = callback()
+                button.text = if (now) "取消收藏" else "加入收藏"
+            }
+            addAction(button, index++ == 0)
+        }
+        panel.addView(actions, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+    }
+
     val qualities = PlaybackQuality.options
     panel.addView(
         PhoneSheet.row(host, "清晰度", qualities.map { "${it}P" },
@@ -79,10 +131,15 @@ fun buildPlaybackSettingsRows(
         }
     )
 
-    val speeds = PlaybackSpeed.options
+    // 手机 / 平板比电视多一档 3×（见 `PlaybackSpeed.phoneOptions`），一共七档。
+    val speeds = PlaybackSpeed.phoneOptions
+    // 倍速七档、定时八档：一行排不下（每颗还要写出「1.25×」「90 分钟」这种读数），
+    // 因此这两行**固定折行**——倍速 4+3、定时 4+4。
+    // 不再跟 [perLine] 走：横屏抽屉按 3 列排会把定时拆成 3+3+2 三行，与竖屏不一致；
+    // 倍速按 3 列排则会把第 7 档单独甩到最后一行（那一行只有一颗、被权重拉成整行宽）。
     panel.addView(
         PhoneSheet.row(host, "倍速", speeds.map { PlaybackSpeed.label(it) },
-            speeds.indexOf(speed).coerceAtLeast(0), perLine = perLine) { i ->
+            speeds.indexOf(speed).coerceAtLeast(0), perLine = 4) { i ->
             lib.playbackSpeed = speeds[i]
             onSpeed(speeds[i])
         }
@@ -110,21 +167,15 @@ fun buildPlaybackSettingsRows(
     )
 
     if (onSleep != null) {
+        // 定时八档，同样固定折成两行（4+4）：一行塞八个，每颗只剩两个字宽，读不出来。
         panel.addView(
             PhoneSheet.row(host, "定时关闭", com.hgtv.star.core.SleepTimer.LABELS,
-                sleepChoice.coerceIn(0, com.hgtv.star.core.SleepTimer.LABELS.lastIndex), perLine = perLine) { i ->
+                sleepChoice.coerceIn(0, com.hgtv.star.core.SleepTimer.LABELS.lastIndex),
+                perLine = 4) { i ->
                 onSleep.invoke(i)
             }
         )
     }
-
-    panel.addView(
-        PhoneSheet.sliderRow(host, "画面缩放", 1f, 100f, 1f, lib.videoScale,
-            { "${Math.round(it)}%" }) { value ->
-            lib.videoScale = value
-            onScale(value)
-        }
-    )
 
     val modes = DanmakuMode.entries
     panel.addView(
@@ -161,10 +212,16 @@ fun buildPlaybackSettingsRows(
         }
     )
 
-    if (onRelated != null) {
-        panel.addView(PhoneSheet.actionRow(host, "相关剧集", "换一部接着看") {
-            onRelated.invoke()
-        })
-    }
+    // 「画面缩放」排在弹幕四项之后：它和上面几项一样是「看着看着想调一下」的画面参数，
+    // 放在弹幕那一组之前会把画面类与弹幕类的项交叉打断。播放页与信息流共用这一份，
+    // 两边顺序因此永远一致。
+    panel.addView(
+        PhoneSheet.sliderRow(host, "画面缩放", 1f, 100f, 1f, lib.videoScale,
+            { "${Math.round(it)}%" }) { value ->
+            lib.videoScale = value
+            onScale(value)
+        }
+    )
+
 }
 

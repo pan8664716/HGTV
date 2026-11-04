@@ -17,6 +17,7 @@ import androidx.media3.ui.PlayerView
 import com.hgtv.star.core.*
 import com.hgtv.star.shared.data.WatchProgress
 import com.hgtv.star.shared.data.PlaybackCapability
+import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.compat.setVectorIcon
 import com.hgtv.star.tv.player.PlaybackMenu
@@ -305,6 +306,7 @@ fun MainActivity.onEpisodeAdvanced(next: Int) {
         loadDanmaku(data.episodes[next],data.series.id)
         updatePlaybackText(); syncMediaSession()
     }
+    syncNextSeasonForCurrentEpisode()
     // 播完的那一项摘掉，列表回到「只有当前一集」；延后一拍，别和这一帧的换源抢。
     // 带上播完那一集的 mediaId 与会话号：这 800ms 里发生的切集 / 选集会让任务自己作废。
     val playedId=data.episodes[previous]
@@ -342,17 +344,9 @@ fun MainActivity.maybePrefetch() {
     if(prefetchAttempts>=5 || (prefetchAttempts>0 && now-prefetchAttemptAt<10_000) || connectivity.isMeteredConnection() || !networkAvailable()) return
     cancelPrefetch(); prefetchedFor=key; prefetchAttemptAt=now; prefetchAttempts++
     val ticket=preparedNext.begin(key)
-    // 共用进程级传输层（HTTP/1.1）：切集不再关连接池，见 [com.hgtv.star.shared.data.PlaybackTransport]。
+    // 共用进程级传输层（HTTP/1.1）与播放工作仓库：切集、预取都不再新建或关闭连接池。
     val http=com.hgtv.star.shared.data.PlaybackTransport.client
-    val source=ContentRepository(http); prefetchHttp=http
-    // 预取走的是另一个仓库实例：登录态与**设备身份 / 注册 Cookie**都要带过去，
-    // 少了后者它签名时只剩内置那份档案（`device_id` 被平台拉黑），
-    // 取播放地址一律空响应（见 ContentRepository.videoModel），这一集永远预取不到。
-    source.credentials=repository.credentials
-    source.inheritDevice(repository)
-    // 预取也要用同一档 `device_level`：换了档位就等于换了一套清晰度表，
-    // 预取到的地址与真正起播时选中的那一档对不上，预热就白做了。
-    source.deviceLevel=repository.deviceLevel
+    val source=AppRuntime.playbackRepository(this); prefetchHttp=http
     val scope=RequestScope(); prefetchScope=scope
     prefetchJob=prefetchWorker.submit {
         var remote: RemoteVideo?=null
@@ -375,6 +369,151 @@ fun MainActivity.maybePrefetch() {
         } catch(_: Exception) { remote?.close() }
     }
 }
+
+/**
+ * 进入最后一集时提前查下一季，查到就在画面底部提示。
+ *
+ * 查询只在正式播放页、开启自动连播且仍停在最后一集时有效；换回其它集或离开播放页会立即作废。
+ */
+fun MainActivity.syncNextSeasonForCurrentEpisode() {
+    val data=detail ?: return
+    val active=screen=="player" && library.autoNext && !sleepStopped &&
+        episodeIndex==data.episodes.lastIndex
+    if(!active) { clearNextSeasonLookup(); return }
+    ensureNextSeason(data.series)
+}
+
+/** 作废下一季查询与提示；[nextSeasonNotice] 的视图引用由播放层重建 / 退出时单独清空。 */
+fun MainActivity.clearNextSeasonLookup() {
+    nextSeasonToken.incrementAndGet()
+    nextSeasonJob?.cancel(true); nextSeasonJob=null
+    nextSeasonFor=""; nextSeason=null; nextSeasonLoading=false
+    autoNextSeasonPending=false; nextSeasonOpening=false; nextSeasonFinishedFor=""
+    hideNextSeasonNotice()
+}
+
+private fun MainActivity.ensureNextSeason(series: Series) {
+    if(nextSeasonFor==series.id) {
+        if(!nextSeasonLoading) showNextSeasonNotice()
+        return
+    }
+    val cached=relatedWorks?.takeIf { relatedFor==series.id && !relatedFailed }
+    val token=nextSeasonToken.incrementAndGet()
+    nextSeasonJob?.cancel(true)
+    nextSeasonFor=series.id; nextSeason=null; nextSeasonLoading=true; nextSeasonOpening=false
+    hideNextSeasonNotice()
+    if(cached!=null) {
+        completeNextSeasonLookup(series,cached,token)
+        return
+    }
+    nextSeasonJob=io.submit {
+        val result=runCatching { repository.related(series.id,series.title) }
+        main.post {
+            if(isDestroyed || nextSeasonToken.get()!=token) return@post
+            result.onSuccess { works ->
+                relatedWorks=works; relatedFor=series.id; relatedFailed=false
+                completeNextSeasonLookup(series,works,token)
+            }.onFailure {
+                relatedFailed=true
+                completeNextSeasonLookup(series,null,token)
+            }
+        }
+    }
+}
+
+private fun MainActivity.completeNextSeasonLookup(
+    series: Series,
+    works: RelatedWorks?,
+    token: Long,
+) {
+    if(token!=nextSeasonToken.get()) return
+    nextSeasonJob=null
+    nextSeasonLoading=false
+    nextSeason=works?.let { SeriesSeasons.nextSeason(series,it) }
+    if(nextSeason!=null) showNextSeasonNotice() else hideNextSeasonNotice()
+    if(autoNextSeasonPending) {
+        autoNextSeasonPending=false
+        val target=nextSeason
+        if(target!=null) openNextSeason(target) else finishSeriesPlayback(series)
+    }
+}
+
+private fun MainActivity.showNextSeasonNotice() {
+    val data=detail ?: return
+    val target=nextSeason ?: return
+    val active=screen=="player" && library.autoNext && !sleepStopped &&
+        episodeIndex==data.episodes.lastIndex && nextSeasonFor==data.series.id
+    if(!active) { hideNextSeasonNotice(); return }
+    nextSeasonNotice?.apply {
+        text="将自动播放 ${SeriesSeasons.titleWithSeason(target)}"
+        visibility=View.VISIBLE
+    }
+}
+
+private fun MainActivity.hideNextSeasonNotice() {
+    nextSeasonNotice?.visibility=View.GONE
+}
+
+/**
+ * 最后一集播完：有下一季就播它第 1 集，否则停在「全剧已播完」。
+ *
+ * 查询可能还在路上；此时先挂起，结果落地后由 [completeNextSeasonLookup] 接着推进。
+ */
+fun MainActivity.advanceToNextSeasonOrFinish(series: Series) {
+    if(nextSeasonFinishedFor==series.id) return
+    if(!library.autoNext) { finishSeriesPlayback(series); return }
+    if(nextSeasonFor==series.id) {
+        if(nextSeasonLoading) {
+            autoNextSeasonPending=true
+            return
+        }
+        val target=nextSeason
+        if(target!=null) openNextSeason(target) else finishSeriesPlayback(series)
+        return
+    }
+    autoNextSeasonPending=true
+    ensureNextSeason(series)
+}
+
+private fun MainActivity.openNextSeason(target: Series) {
+    if(nextSeasonOpening) return
+    nextSeasonOpening=true
+    autoNextSeasonPending=false
+    hideNextSeasonNotice()
+    val token=nextSeasonToken.incrementAndGet()
+    nextSeasonJob?.cancel(true)
+    nextSeasonJob=io.submit {
+        val result=runCatching { repository.detail(target.id) }
+        main.post {
+            if(isDestroyed || nextSeasonToken.get()!=token) return@post
+            val next=result.getOrNull()
+            if(next==null || next.episodes.isEmpty()) {
+                nextSeasonOpening=false
+                finishSeriesPlayback(detail?.series ?: target)
+                return@post
+            }
+            nextSeasonOpening=false
+            nextSeasonJob=null
+            nextSeasonFor=""; nextSeason=null; nextSeasonLoading=false
+            nextSeasonFinishedFor=""
+            detail=next
+            requestedAutoplay=true
+            playEpisode(0,0,autoplay=true)
+        }
+    }
+}
+
+private fun MainActivity.finishSeriesPlayback(series: Series) {
+    nextSeasonFinishedFor=series.id
+    nextSeasonOpening=false
+    autoNextSeasonPending=false
+    hideNextSeasonNotice()
+    requestedAutoplay=false
+    player?.pause()
+    runCatching { playbackText.text="全剧已播完" }
+    showHud()
+}
+
 fun MainActivity.networkAvailable(): Boolean = connectivity.hasInternet()
 /**
  * 网络刚恢复，而起播正卡在「正在获取播放地址…」：把在途那一发作废，按原位置立刻重取。
@@ -478,6 +617,24 @@ private fun MainActivity.resetBudgetsForManualRetry() {
     if(!sessionPlayback.onManualRetry()) return
     ledger.onManualRetry()
 }
+
+/**
+ * 重试前把这一集所有清晰度的地址与当前索引一起作废。
+ *
+ * 只换 `device_id` 不会绕过 `stream()` 的内存 / 落盘 URL 缓存，重试仍会拿到同一条
+ * 失败地址；预取槽也要清掉，避免又接回失败前准备好的旧流。
+ */
+internal fun MainActivity.prepareFreshPlaybackRetry() {
+    val episodeId=detail?.episodes?.getOrNull(episodeIndex)
+    val staleInfo=video?.info
+    cancelPrefetch()
+    if(episodeId!=null) {
+        runCatching { repository.forgetStreamAllQualities(episodeId) }
+        staleInfo?.let { PlaybackCache.invalidateIndex(it.mediaKey(episodeId)) }
+    } else {
+        runCatching { repository.rotateDeviceForRetry() }
+    }
+}
 /**
  * 从这一集切到**另一集**去重来（片尾没接上 / 队首那一集坏了）。
  *
@@ -579,231 +736,164 @@ fun MainActivity.playerFailure(problem: Throwable) {
     pendingCodecReport?.let { main.removeCallbacks(it) }; pendingCodecReport=null
     // 上报放在互斥窗之后、任何重试分支之前：同一次故障只报一条，且「自动重试成功」
     // 也不会让这条记录消失——用户看到过的那次失败是真的发生过。
-    // 落盘地址过期（403 / 404）：**换一条新地址原地重来一次**，不给用户看错误页。
+    // —— 判定：**与手机端同一个函数**（`PlaybackFailurePolicy.decide`）——
     //
-    // 缓存 20 分钟的地址有可能被服务端提前作废（签名时效、CDN 换线），而这是
-    // 「回落到盘上以后才可能出现」的新失败点，必须自己救回来：丢掉内存与盘上那条地址，
-    // 让 `stream()` 重新取一次，再按当前位置重新起播。每集只救一次，第二次才报错。
+    // 这一段以前是电视端自己的一套 if/else（地址自愈 → 推荐页 → 队列项 → 解码降级 → 错误页），
+    // 手机端另写了一套、少了前三段，于是同一个故障在电视上能自己救回来、在手机上直接死在
+    // 黑屏上。现在「怎么办」只留在 `:core` 那一份规则里，两端都调它；
+    // 各端只负责**读事实**（[FailureFacts]）与**执行**，界面各自画。
     //
-    // 这一段排在 [reportPlaybackFailure] **之前**：它是自愈路径，救回来就不该记一条故障
-    //（否则诊断面板里会出现「刚报错、其实画面正常」的记录）。
-    val expiredEpisode=detail?.episodes?.getOrNull(episodeIndex)
-    val expiredQuality=playbackMaxQuality
-    // 第二种可自愈的失败：**这一集的文件换过了**（见 [VideoChangedException]）。
-    // 落盘的索引与首块是上一版的，`Content-Range` 的总长对不上，`range` 当场作废索引并抛它。
-    // 它跟地址过期是同一种处理——丢掉地址与索引重来一次，用户只多等半秒，
-    // 而不是看到「本地准备失败」然后被告知「请换一部」。共用同一份「每集只救一次」的额度：
-    // 两种失败都是「缓存里的东西过期了」，同一次起播里连救两次没意义。
-    val videoChanged=videoChangedOf(problem)
-    // 第三种可自愈的失败：**视频 CDN 的域名解析不出来**（见 [networkFailureOf]）。
-    // 这条不靠「等 DNS 好起来」——`HgtvDns` 已经兜了一层公共 DNS（见 `PublicDns`），
-    // 万一兜不住（域名真的从 CDN 下线了），换一条新地址重取往往就落到另一个 CDN 域名上，
-    // 也就是换一次地址就能好。它同样共用「每集只救一次」的额度。
-    val hostUnresolved=hasCauseOf<java.net.UnknownHostException>(problem)
-    // 第四种：**连接层就没通**（超时 / 被拒 / 路由不可达 / TLS 握手失败）。
-    //
-    // 这是现场「某一集永远放不了、切上一集下一集都正常」最常见的那一条：坏的东西不在
-    // 地址里，而在下面两层缓存里——
-    //   * DNS 记住了那个 CDN 域名的一个已经下线的 IP（10 分钟内存 / 30 分钟落盘）；
-    //   * 进程级连接池记住了那条半死连接（路由器 NAT 表项被回收，写得出、读不回）。
-    // 只丢播放地址是不够的：重取回来的地址多半还是同一个 host，于是又命中同一份坏 IP、
-    // 又复用同一条死连接，下一发照样卡满 `connectTimeout`。必须三处一起清（见 [dropDeadTransport]）。
-    val transportDead=transportDeadOf(problem)
-    // 失败的是**队列里那一集**（片尾自动推进没接上）时，要救的是它，不是当前这一集：
-    // 按当前集重放会在片尾立刻再次 ENDED，白走一趟而且照样进不去下一集。
-    //
-    // 判据不能只看「离片尾多远」：预热在片尾 30 秒就发起，队列项的连接故障完全可能在
-    // 片尾窗口之外就报出来。那时当前 period 已经缓冲满（`shouldLoadNextMediaPeriod`
-    // 的前提就是「当前 period 完全缓冲」），IO 只可能来自队列项——按当前集处理会
-    // 清掉当前集**好好的**地址与索引、把正在播的这一集重放一遍（用户看到的是「正播着
-    // 突然黑一下重来」），而真正坏掉的下一集地址还留在缓存里，下一次预热照旧命中。
-    //
-    // `queuedNearEnd` 只用来决定**从哪儿重来**：还在中段就重开当前集，已经在片尾就
-    // 从下一集开头重切一次。
+    // 下面每一条分支的**执行**仍是电视端原来的写法，一个像素都没改——换的只是
+    // 「什么时候走哪一条」这个判断。
+    val decodeCode=(problem as? PlaybackException)?.errorCode ?: 0
+    // 队列那一集出错时要拿**它的**档位表去归因（`video` 是当前这一集）。
+    // 必须在 `dropQueuedEpisode()` 之前抄走，错误页的按钮也要用它。
+    val failedQueuedInfo=queuedVideo?.info
+    val attr=playbackAttribution(problem,decodeCode,failedQueuedInfo)
+    val failureMedia=playbackMediaKind(problem)
     val queuedDuration=player?.duration?.coerceAtLeast(0) ?: 0
+    // 队列项是在**片尾窗口内**报的错（= 下一集真的没接上），还是窗口外
+    //（= 当前这一集还在正常播，坏的只是后台预加载的那一条）。
     val queuedNearEnd=queuedEpisodeId!=null && queuedDuration>0 &&
         (player?.currentPosition ?: 0)>=queuedDuration-2_000
-    val failingEpisode=queuedEpisodeId ?: expiredEpisode
-    if(failingEpisode!=null && (streamExpiredOf(problem) || videoChanged || hostUnresolved || transportDead)) {
-        // **预加载阶段的失败不消耗这一集的额度。**
-        //
-        // 这是现场「播几集后按下一集 → 地址过期（HTTP 403），退出再进就好」的直接成因：
-        //
-        //   ① 片尾前 30 秒预热下一集，挂进播放列表；
-        //   ② Media3 在后台预加载它，读到 403（预热那份地址已经过期）；
-        //   ③ 这里 `failingEpisode = queuedEpisodeId` = **下一集**，于是
-        //      `streamRetried["下一集:档位"]` 被记上——**用户还没开始看这一集，
-        //      它的自愈额度就已经没了**；
-        //   ④ 自愈重切到下一集（`restartAnotherEpisode` → `onEpisodeSwitch`，
-        //      而 `onEpisodeSwitch` **不清** `streamRetries`）；
-        //   ⑤ 下一集再撞一次 403（新地址同样可能被拒 / 或另一个环节又拿到旧地址）
-        //      → 额度已用 → 直接落错误页；
-        //   ⑥ 退出播放页 → 换集走 `onEpisodeStart`（`recovering=false`）→ 额度清空
-        //      → 再进时又能自愈一次 → 好了。
-        //
-        // 判据用 `queuedNearEnd`：队列项在**片尾之外**报错，说明当前这一集还在正常播，
-        // IO 只可能来自后台预加载。这种情况救回来就好，不该记账。
-        // 有界性：这次自愈会 `dropQueuedEpisode()`，重来后 `queuedEpisodeId` 为空，
-        // 下一次失败就走正常额度判断，因此最多「预加载救一次 + 正式播放救一次」。
-        val preloadFailure=queuedEpisodeId!=null && !queuedNearEnd
-        if(preloadFailure || !ledger.streamRetried("$failingEpisode:$expiredQuality")) {
-            if(!preloadFailure) ledger.noteStreamRetry("$failingEpisode:$expiredQuality")
-            val why=when {
-                hostUnresolved -> "Video host unresolved; refetching url"
-                transportDead -> "Transport dead; refetching url, dns & pool"
-                videoChanged -> "Video changed; refetching url & index"
-                preloadFailure -> "Queued preload failed; refetching url (budget kept)"
-                else -> "Stream expired; refetching url"
-            }
-            android.util.Log.w("HGTV","$why episode=${episodeIndex+1}")
-            // 这一集的地址不认了。**按集整体作废，而不是按精确键**：
+    val facts=FailureFacts(
+        errorCode=decodeCode,
+        stage=playbackStage(problem),
+        media=failureMedia,
+        retryable=com.hgtv.star.shared.media.PlaybackFailures.isRetryable(problem),
+        streamExpired=streamExpiredOf(problem),
+        videoChanged=videoChangedOf(problem),
+        hostUnresolved=hasCauseOf<java.net.UnknownHostException>(problem),
+        transportDead=transportDeadOf(problem),
+        queued=queuedEpisodeId!=null,
+        queuedNearEnd=queuedNearEnd,
+        noHardwareDecoder=failureMedia==MediaKind.VIDEO &&
+            playerDecoderMode()==VideoDecoderMode.HARDWARE && !hardwareHevcAvailable,
+        autoRetryAllowed=!sleepStopped,
+        onRecommend=screen=="recommend",
+    )
+    // 队列项接不回来时要按「当前这一集自己坏了」再判一次：决策函数是纯的，重入安全。
+    fun decideFailure(queued: Boolean)=PlaybackFailurePolicy.decide(
+        facts.copy(queued=queued),attr,ledger,sessionPlayback,recommendPlaybackFailures
+    )
+    var failureAction=decideFailure(facts.queued)
+    if(failureAction==FailureAction.RecoverQueuedCurrent) {
+        // 队列里那一集坏了、当前这一集还在正常播：原地把当前集接回来。
+        // ExoPlayer 对队列项的加载失败同样报致命错误，并且一报错就把**整台**播放器推到
+        // `STATE_IDLE`——不接回来，用户看到的是「这一集播到一半黑掉」。
+        dropQueuedEpisode(); restoreBufferingUi(); retirePreviousEpisode()
+        if(recoverQueuedCurrent()) return
+        android.util.Log.w("HGTV","Queued episode failed; giving up automatic advance")
+        failureAction=decideFailure(false)
+    }
+    // 自愈路径（`RefetchStream`）救回来就不该记一条故障，否则诊断面板里会出现
+    // 「刚报错、其实画面正常」的记录——因此上报放在它之后。
+    if(failureAction !is FailureAction.RefetchStream) {
+        disarmPlaybackWatchdog(); disarmFrameStallWatchdog()
+        reportPlaybackFailure(problem,playbackStage(problem))
+    }
+    // 放弃自动处置时**为什么**放弃：错误页据此决定给哪几颗按钮。
+    var giveUp: GiveUpReason?=null
+    when(failureAction) {
+        is FailureAction.RefetchStream -> {
+            // 落盘地址过期（403 / 404）/ 文件换过 / 域名解析不出来 / 连接层假死：
+            // **换一条新地址原地重来一次**，不给用户看错误页。
             //
-            // 精确键是 `集:上限:device_level`，而这条地址当初是按**预取那一刻**的上限与
-            // 档位取回来的。从取地址到失败之间，降档、重建、换解码都可能把上限改过，
-            // `device_level` 也可能变过——键对不上时 [forgetStream] 等于什么都没删，
-            // 重来时会原样命中同一条死地址，第二次必然还是 403。
-            //
-            // 多删几条的代价只是下一次多一次网络往返（500~1100ms），
-            // 而删错对象的代价是用户看到错误页。
-            repository.forgetStreamAllQualities(failingEpisode)
-            // 索引与首块也是按「这一集 + 这一档」落盘的，文件换过之后它们一起作废。
-            //
-            // 键必须用**实际**那一份（`StreamInfo.mediaKey`：集 + 实际档位）。
-            // 早先这里拼的是 `"$集:$上限"`，而索引键早就改成带实际档位了——
-            // 拼错等于什么也没删，下一次起播仍然读那份对不上新文件的旧索引。
-            val staleInfo=if(queuedEpisodeId!=null) queuedVideo?.info ?: video?.info else video?.info
-            if(staleInfo!=null) PlaybackCache.invalidateIndex(staleInfo.mediaKey(failingEpisode))
-            // 地址之外的那两层：视频域名的解析结果、连接池里的空闲连接。
-            dropDeadTransport()
-            val at=currentPosition().coerceAtLeast(0)
-            disarmPlaybackWatchdog(); disarmFrameStallWatchdog()
-            cancelRecovery(); cancelPrefetch(); dropQueuedEpisode()
-            restoreBufferingUi(); retirePreviousEpisode()
-            // 队首那一集失败：从它的开头重来，而不是重放当前这一集（见上面的 `queuedNearEnd`）。
-            val retryIndex=if(queuedNearEnd) episodeIndex+1 else episodeIndex
-            val retryAt=if(queuedNearEnd) 0L else at
-            if(retryIndex in (detail?.episodes?.indices ?: IntRange.EMPTY)) {
-                // 换了集就走 [restartAnotherEpisode]：按集计的额度必须跟着换，否则新一集
-                // 会继承上一集的自动重试 / 画面重建次数，一个都不会再有。
-                main.post { if(!isDestroyed) restartAnotherEpisode(retryIndex,retryAt,requestedAutoplay) }
+            // 缓存 20 分钟的地址有可能被服务端提前作废（签名时效、CDN 换线），而这是
+            // 「回落到盘上以后才可能出现」的新失败点，必须自己救回来。
+            val failingEpisode=queuedEpisodeId ?: detail?.episodes?.getOrNull(episodeIndex)
+            if(failingEpisode!=null) {
+                val why=when {
+                    facts.hostUnresolved -> "Video host unresolved; refetching url"
+                    facts.transportDead -> "Transport dead; refetching url, dns & pool"
+                    facts.videoChanged -> "Video changed; refetching url & index"
+                    facts.preloadFailure -> "Queued preload failed; refetching url (budget kept)"
+                    else -> "Stream expired; refetching url"
+                }
+                android.util.Log.w("HGTV","$why episode=${episodeIndex+1}")
+                // 这一集的地址不认了。**按集整体作废，而不是按精确键**：
+                //
+                // 精确键是 `集:上限:device_level`，而这条地址当初是按**预取那一刻**的上限与
+                // 档位取回来的。从取地址到失败之间，降档、重建、换解码都可能把上限改过，
+                // `device_level` 也可能变过——键对不上时 [forgetStream] 等于什么都没删，
+                // 重来时会原样命中同一条死地址，第二次必然还是 403。
+                //
+                // 多删几条的代价只是下一次多一次网络往返（500~1100ms），
+                // 而删错对象的代价是用户看到错误页。
+                repository.forgetStreamAllQualities(failingEpisode)
+                // 索引与首块也是按「这一集 + 这一档」落盘的，文件换过之后它们一起作废。
+                //
+                // 键必须用**实际**那一份（`StreamInfo.mediaKey`：集 + 实际档位）。
+                // 早先这里拼的是 `"$集:$上限"`，而索引键早就改成带实际档位了——
+                // 拼错等于什么也没删，下一次起播仍然读那份对不上新文件的旧索引。
+                val staleInfo=if(queuedEpisodeId!=null) queuedVideo?.info ?: video?.info else video?.info
+                if(staleInfo!=null) PlaybackCache.invalidateIndex(staleInfo.mediaKey(failingEpisode))
+                // 地址之外的那两层：视频域名的解析结果、连接池里的空闲连接。
+                if(failureAction.dropTransport) dropDeadTransport()
+                val at=currentPosition().coerceAtLeast(0)
+                disarmPlaybackWatchdog(); disarmFrameStallWatchdog()
+                cancelRecovery(); cancelPrefetch(); dropQueuedEpisode()
+                restoreBufferingUi(); retirePreviousEpisode()
+                // 队首那一集失败：从它的开头重来，而不是重放当前这一集（见 `queuedNearEnd`）。
+                val retryIndex=if(failureAction.fromStart) episodeIndex+failureAction.episodeOffset else episodeIndex
+                val retryAt=if(failureAction.fromStart) 0L else at
+                if(retryIndex in (detail?.episodes?.indices ?: IntRange.EMPTY)) {
+                    // 换了集就走 [restartAnotherEpisode]：按集计的额度必须跟着换，否则新一集
+                    // 会继承上一集的自动重试 / 画面重建次数，一个都不会再有。
+                    main.post { if(!isDestroyed) restartAnotherEpisode(retryIndex,retryAt,requestedAutoplay) }
+                    return
+                }
+                main.post { if(!isDestroyed) playEpisode(episodeIndex,at,requestedAutoplay,recovering=true) }
                 return
             }
-            main.post { if(!isDestroyed) playEpisode(episodeIndex,at,requestedAutoplay,recovering=true) }
-            return
         }
-    }
-    disarmPlaybackWatchdog(); disarmFrameStallWatchdog()
-    reportPlaybackFailure(problem,playbackStage(problem))
-    // 推荐页出错：不摆播放页那套「重试 / 返回选集」的错误界面（那里没有选集、也没有详情页可回），
-    // 直接换下一部。连换几部都放不了才停在一句提示上，由用户按确定重试、按返回回主页面。
-    if(screen=="recommend") {
-        val failed=detail?.series?.title ?: recommendItems.getOrNull(recommendIndex)?.title
-        recommendPlaybackFailures++
-        if(recommendPlaybackFailures>RECOMMEND_SKIP_LIMIT) {
-            // 连续几部都放不了：把这一层收干净（画面 / 传输 / 弹幕），只留一句提示。
-            // 不写历史（推荐页本来就不写），也不改 `screen`——返回键仍然是回主页面。
-            // 收画面由 [showRecommendMessage] 统一做（它只在「整屏一行字」时才动手）。
-            player?.pause()
-            showRecommendMessage("${if(failed!=null) "《$failed》" else "这一部"}暂时无法播放\n按确定键重试，按返回键回主页面")
-            return
-        }
-        val next=recommendIndex+1
-        when {
-            next in recommendItems.indices -> main.post { if(!isDestroyed && screen=="recommend") playRecommendAt(next,0L,1) }
-            // 走到末尾：先补一页再从第一部试（这条流到底了，补页那一侧会换一条新流）。
-            // 补页请求已经在路上时不能干等（那样这一屏就停在失败的那一集上），直接环绕回第一部。
-            else -> main.post {
-                if(isDestroyed || screen!="recommend") return@post
-                if(recommendLoading) {
-                    if(recommendItems.isNotEmpty()) playRecommendAt(0,0L,1)
-                    else showRecommendMessage("暂时没有可播放的推荐\n按确定键重试，按返回键回主页面")
-                } else {
-                    val guard=recommendToken.get()
-                    loadRecommendPage(true) {
-                        if(recommendToken.get()!=guard) return@loadRecommendPage
+        FailureAction.SkipRecommend, FailureAction.GiveUpRecommend -> {
+            // 推荐页出错：不摆播放页那套「重试 / 返回选集」的错误界面（那里没有选集、
+            // 也没有详情页可回），直接换下一部。连换几部都放不了才停在一句提示上。
+            val failed=detail?.series?.title ?: recommendItems.getOrNull(recommendIndex)?.title
+            recommendPlaybackFailures++
+            if(failureAction==FailureAction.GiveUpRecommend) {
+                // 连续几部都放不了：把这一层收干净（画面 / 传输 / 弹幕），只留一句提示。
+                // 不写历史（推荐页本来就不写），也不改 `screen`——返回键仍然是回主页面。
+                player?.pause()
+                showRecommendMessage("${if(failed!=null) "《$failed》" else "这一部"}暂时无法播放\n按确定键重试，按返回键回主页面")
+                return
+            }
+            val next=recommendIndex+1
+            when {
+                next in recommendItems.indices -> main.post { if(!isDestroyed && screen=="recommend") playRecommendAt(next,0L,1) }
+                // 走到末尾：先补一页再从第一部试（这条流到底了，补页那一侧会换一条新流）。
+                // 补页请求已经在路上时不能干等（那样这一屏就停在失败的那一集上），直接环绕回第一部。
+                else -> main.post {
+                    if(isDestroyed || screen!="recommend") return@post
+                    if(recommendLoading) {
                         if(recommendItems.isNotEmpty()) playRecommendAt(0,0L,1)
                         else showRecommendMessage("暂时没有可播放的推荐\n按确定键重试，按返回键回主页面")
+                    } else {
+                        val guard=recommendToken.get()
+                        loadRecommendPage(true) {
+                            if(recommendToken.get()!=guard) return@loadRecommendPage
+                            if(recommendItems.isNotEmpty()) playRecommendAt(0,0L,1)
+                            else showRecommendMessage("暂时没有可播放的推荐\n按确定键重试，按返回键回主页面")
+                        }
                     }
                 }
             }
-        }
-        return
-    }
-    // 队列在的时候出错，多半是**下一集**加载失败（当前这一集还在播，只是加载线程先撞上了）。
-    // 判断依据用播放位置：已经走到片尾就是「下一集没接上」，从头重切一次；
-    // 还在中段就是当前这一集自己坏了，按原逻辑原地重试。
-    //
-    // [failedQueuedInfo]：这一次失败的**归属**。队列那一集出错时要拿它的档位表去归因，
-    // 见 [playbackAttribution] 的 `failedQueued`。必须在 `dropQueuedEpisode()` 之前抄走。
-    var failedQueuedInfo: StreamInfo?=null
-    if(queuedEpisodeId!=null) {
-        val p=player
-        val duration=p?.duration?.coerceAtLeast(0) ?: 0
-        val atEnd=duration>0 && (p?.currentPosition ?: 0)>=duration-2_000
-        val next=episodeIndex+1
-        val data=detail
-        failedQueuedInfo=queuedVideo?.info
-        // **地址类失败（403 / 404 / 资源变化）到不了这里**：它们在 612 行的自愈分支就
-        // `return` 了，而且那里用的是 `queuedEpisodeId`（此时还没被清），清的是对的那一集。
-        //
-        // 因此这里不要再「顺手清地址」：能走到这一行的错误（解码 / 容器 / 未知）与地址无关，
-        // 清掉地址只是让下一次起播白付一次取地址的钱。
-        dropQueuedEpisode()
-        // 自动重切只给一次：地址失效 / 鉴权失败 / 无法解码时，反复重切只会
-        // 让用户看着画面一黑一亮地循环。第二次失败就落到下面的错误界面，交给用户决定。
-        if(atEnd && data!=null && next in data.episodes.indices && ledger.autoNextFailures<1) {
-            ledger.noteAutoNextFailure()
-            android.util.Log.w("HGTV","Queued episode failed near end; retrying next=${next+1} attempt=${ledger.autoNextFailures}")
-            retryPosition=0; retryAutoplay=requestedAutoplay && !sleepStopped
-            // 目标换成了下一集：`recovering=true` 只表示「同一集重来」，这里必须先按**新一集**
-            // 归零那几份不按集做键的额度（见 [restartAnotherEpisode]）。不归零的话，
-            // 上一集烧掉的自动重试 / 画面重建次数会原样压到这一集头上；错误页还会顶着
-            // 上一集的「请切换为软件解码」。
-            restartAnotherEpisode(next,0,retryAutoplay)
             return
         }
-        // 中段：这条致命错误属于队列里那一集，可 ExoPlayer 一报错就把**整台**播放器推到
-        // `STATE_IDLE`（2.19 的 `ExoPlayerImpl` → `PlaybackInfo.copyWithPlaybackState(1)`），
-        // 当前这一集的画面也跟着停了。因此不能「什么都不做」：必须原地把它接回来。
-        if(!atEnd && recoverQueuedCurrent()) return
-        android.util.Log.w("HGTV","Queued episode failed; giving up automatic advance")
-    }
-    // —— 降级决策：一次失败只变一个参数，有预算、可归因（见 `core/PlaybackDegradation.kt`）——
-    //
-    // 只有 4xxx（解码类）进这条路；1xxx/2xxx/3xxx（源 / 网络 / 封装）仍走下面的重试与错误页。
-    // 推荐页在上面的分支已经 return，因此不会消费正片的预算——那一页的规则是「放不了就换下一部」。
-    val decodeCode=(problem as? PlaybackException)?.errorCode ?: 0
-    // 放弃自动处置时**为什么**放弃。错误页据此决定给哪几颗按钮（见下面的 `actions`）。
-    //
-    // 早先这个信息藏在 `sessionPlayback.manualHint` 里，页面只能靠「有建议 && 解码类」反推，
-    // 于是音频失败也摆出了「切换为软解 / 换到 720P」这两颗**对音频完全无效**的按钮：
-    // 音频走全表选择器，换解码方式与换档位都不作用在它身上。
-    var giveUp: GiveUpReason?=null
-    if(decodeCode in 4000..4999) {
-        val attr=playbackAttribution(problem,decodeCode,failedQueuedInfo)
-        // ① 本机**一颗 HEVC 硬解都没有**（硬件档的选择器筛出来就是空表，见 `decoderSelector`）：
-        //    4002 与「这一档太高」无关——任何档位都是同一张空表。降档只会白烧两次起播
-        //    （各一次取地址 + 本地准备），最后还是同一句话。直接把「切软解 + 具体档位」给出来。
-        //
-        //    判据用起播前就探过的 `hardwareHevcAvailable`（与选择器同源，见
-        //    `PlaybackCapability.hasHardwareHevcDecoder`），不额外花一次 Binder 扫描。
-        //
-        //    这颗硬解**根本不存在**是起播前就定下的确定事实，与错误码无关：同一台机器上
-        //    更常见的 4001（厂商解码器 init 失败）/ 4004 / 4005 走的也是同一张空表。
-        //    早先只有 4002 命中这条短路，于是这类设备仍要先烧「重建一次 + 降档两次」
-        //    = 三次黑屏 + 三次重取地址，最后才告诉用户「请换软解」。
-        val queryFailed=decodeCode==PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED &&
-            attr.media==MediaKind.VIDEO
-        val noHardwareDecoder=attr.media==MediaKind.VIDEO &&
-            attr.currentMode==VideoDecoderMode.HARDWARE && !hardwareHevcAvailable
-        if(queryFailed || noHardwareDecoder) {
-            sessionPlayback.noteManualHint(PlaybackDegradation.manualHint(attr))
-            giveUp=GiveUpReason.NO_LOWER_TIER
-        } else {
-            when(val decision=PlaybackDegradation.decide(attr,sessionPlayback)) {
-                is RetryDecision.Retry -> { replayWithPlan(decision.plan); return }
-                is RetryDecision.GiveUp -> giveUp=decision.reason
-            }
+        FailureAction.RecoverQueuedCurrent -> {
+            // 上面已经处理过（接回当前集）；走到这里说明状态已经变了，直接落错误页。
+            android.util.Log.w("HGTV","Queued recovery requested but no longer applicable")
+        }
+        is FailureAction.Replay -> {
+            // 解码类：同档重建 / 降一档。决策在 `:core` 的 `PlaybackDegradation` 里。
+            replayWithPlan(failureAction.plan)
+            return
+        }
+        is FailureAction.ShowError -> {
+            giveUp=failureAction.reason
+            // 错误页上要不要排自动重试：决策层已经按 `retryable` / 额度 / 前台状态算过，
+            // 这里只负责执行（下面 `if(retryable && !sleepStopped)` 那段仍由本页决定按钮文案）。
         }
     }
     retryPosition=currentPosition().coerceAtLeast(0); retryAutoplay=requestedAutoplay && !sleepStopped
@@ -821,10 +911,6 @@ fun MainActivity.playerFailure(problem: Throwable) {
     // 因此「切换为软解 / 换到 xP」这两颗按钮对音频必须**不出现**——点了只会再撞一次。
     val media=playbackMediaKind(problem)
     val videoProblem=media==MediaKind.VIDEO
-    // 音频输出（AudioTrack 初始化 / 写入）失败：与解码器、清晰度都无关，
-    // 但绝大多数是音频 HAL 被别的应用占着——等几秒再来一次通常就回来了（见下面的 `retryable`）。
-    val audioOutput=problem is PlaybackException && problem.errorCode in 5000..5999
-    val decoding=problem is PlaybackException && problem.errorCode in 3000..4999
     // 值不值得等一会儿再来一次：判据只有一份（`:shared` 的 `PlaybackFailures.isRetryable`），
     // 手机端用的是同一个函数。
     val retryable=com.hgtv.star.shared.media.PlaybackFailures.isRetryable(problem)
@@ -860,29 +946,19 @@ fun MainActivity.playerFailure(problem: Throwable) {
     }
     // 降级决策已经走完也放不了：把「换软解 + 换到哪一档」摆到文案与按钮上，
     // **由用户点**（需求：优先硬解，不支持硬解时提示用户换成软解和支持的清晰度）。
+    //
+    // 文案**与手机端同一份**（`FailurePresentation.message`）：同一个故障在两端必须是
+    // 同一句话，否则用户照着电视上的说法描述问题，手机上看到的却是另一句。
+    // 只有排版归本页（控制条里的一行字 + 一排按钮）。
     val manualHint=sessionPlayback.manualHint
-    playbackText.text=when {
-        // 音频输出起不来：这句话必须与「解码失败」分开——前者是设备被占，后者是片源。
-        audioOutput -> "音频输出初始化失败，可重试或稍后再试。"
-        // 音频：走到这里说明本机的音频解码器全军覆没（或音轨本身坏了），换哪一档都一样，如实说。
-        decoding && !videoProblem -> "音频解码失败，这台设备无法播放该音轨。"
-        // 解码类失败且降无可降：直接给出手动处置建议（换软解 / 换到具体哪一档）。
-        // 必须带 `decoding` 门槛：这条建议是**上一次解码失败**留下的，若这一集随后因为
-        // 网络超时 / 取流失败进来，把「请切换为软件解码」顶上去就是一句与故障无关的误导。
-        manualHint!=null && decoding -> manualHint
-        // 解不了 HEVC 的设备：这条路再怎么换清晰度都走不通。
-        decoding && !playbackHevcSupported -> "这台电视没有 HEVC 硬解，请在播放设置里切换为软件解码。"
-        decoding -> "电视无法解码当前视频，可在播放设置里换更低清晰度或软件解码。"
-        else -> "播放失败，可重试或切换清晰度。"
-    }
+    playbackText.text=FailurePresentation.message(facts,manualHint,playbackHevcSupported)
     // 说明：`giveUp` 只进日志（见本函数末尾那一行），不直接参与这里的文案——
     // 放弃时 `decide` 一定已经写过 `manualHint`，那句带着具体档位，比任何通用文案都准。
     // 按钮的可见性由三件事决定：媒体类型（音频不给视频按钮）、当前解码方式、还有没有更低档。
     val actions=row(); controls.addView(actions)
-    // 手动重试同样换一个 `device_id`（见 `ContentRepository.rotateDeviceForRetry`）：
-    // 用户按「立即重试」时最可能就是刚才那个身份被挡 / 被限速，不换号只是重放同一次失败。
+    // 手动重试会换身份并作废这一集的地址 / 索引缓存，确保真正重新取流。
     addButton(actions,"立即重试") {
-        runCatching { repository.rotateDeviceForRetry() }
+        prepareFreshPlaybackRetry()
         // 用户手动重试：归还本集预算（否则决策立刻再返回 null，点一下闪回错误页），
         // 但**不**撤销已经降下来的档位——那是既成事实，倒退只会再撞一次。
         // 归还次数有上限（见 `MANUAL_RETRY_LIMIT`），因此下面必须带 `recovering=true`：
@@ -898,33 +974,27 @@ fun MainActivity.playerFailure(problem: Throwable) {
     // 下面两个按钮的判据取**这一次真正失败的那条流**（`failedQueuedInfo` 优先）：
     // 队列那一集失败时 `video` 是当前这一集，用它会让按钮作用错一集——文案说「480P 放不了」，
     // 点下去换的却是当前集的档。与 [playbackAttribution] 同源。
-    val failedInfo=failedQueuedInfo ?: video?.info
-    val available=failedInfo?.available.orEmpty()
-    val actualQuality=failedInfo?.actualQuality?.takeIf { it>0 } ?: playbackMaxQuality
+    // 按钮的**能力判据**与手机端同一份（`FailurePresentation.capabilities`）：
+    // 只对视频给「换软解 / 换档位」，音频走全表选择器，那两颗对音频完全无效。
+    // 换档目标也必须**严格低于刚刚失败的那一档**（判据在 `FailurePresentation.swapTarget`），
+    // 否则降到 480 失败后按钮仍写「换到 720P」，点下去把清晰度抬回去、必然复现同一类失败。
+    val caps=FailurePresentation.capabilities(facts,attr,playbackHevcSupported)
     // 硬解失败：给一个「切换为软解」的按钮，并**同时**把档位降到软解跑得动的那一档
     //（只换解码器不降档，1080 软解在盒子上照样是掉帧 / 卡死，等于白换一次）。
     //
     // 上限取**当前这一档**：换解码器允许停在原档（480 软解照放），但绝不能把已经降下来的
     // 档位抬回去——那是「这台机器这一刻放不了」的既成结论，与 `SessionPlaybackPolicy`
     // 里「不倒退」的口径一致。
-    val softTarget=PlaybackDegradation.softwareQuality(available,actualQuality)
-    // 只对**视频**给这两颗按钮：音频走全表选择器，换解码方式与换档位都不作用在它身上。
-    if(videoProblem && playbackDecoderMode==VideoDecoderMode.HARDWARE && playbackHevcSupported) addButton(actions,"切换为软解") {
+    val softTarget=FailurePresentation.softwareTarget(attr)
+    if(FailureCapability.SWITCH_SOFTWARE in caps) addButton(actions,"切换为软解") {
         library.decoderMode=VideoDecoderMode.SOFTWARE
         sessionPlayback.onManualDecoderChange()
         if(softTarget>0) sessionPlayback.setMaxQuality(softTarget)
         applyDecoderMode(retryPosition,retryAutoplay)
     }
-    // 「换到 xP」：目标必须**严格低于刚刚失败的那一档**。
-    //
-    // 早先直接取 `softwareQuality(available)`：`available` 是 CDN 这一次发的全表，降档不会
-    // 让它缩短，于是降到 480 失败后按钮仍写「换到 720P」——点下去把清晰度抬回去、解码方式
-    // 仍是硬解、换号重取一条地址，必然复现同一类失败，只多一轮 500~1100ms 与一次黑屏。
-    // 已经是最低档时这里得到 0，按钮直接不出现：没有更低的档可换，就不该给一个假的出口。
-    val lower=PlaybackDegradation.lowerThan(available,actualQuality)
-    val swapTarget=if(lower!=null) PlaybackDegradation.softwareQuality(available,lower) else 0
-    if(videoProblem && swapTarget>0) addButton(actions,"换到 ${swapTarget}P") {
-        runCatching { repository.rotateDeviceForRetry() }
+    val swapTarget=FailurePresentation.swapTarget(attr)
+    if(FailureCapability.CHANGE_QUALITY in caps) addButton(actions,"换到 ${swapTarget}P") {
+        prepareFreshPlaybackRetry()
         // 同「立即重试」：这是用户主动发起的新一轮尝试，自动重试 / 画面重建的额度一起还。
         // 档位在还款之后才落进会话层——`onManualRetry` 不动 `effectiveMaxQuality`，
         // 顺序反过来也能工作，但先还账再定档读起来才是「先清预算、再设目标」。
@@ -1126,91 +1196,46 @@ fun networkFailureOf(problem: Throwable?): String? {
 /**
  * 这一串异常里有没有「这一集的文件换过了」。
  *
- * ExoPlayer 会把数据源抛出的异常层层包进 `PlaybackException`，因此只能顺着 cause 往下找，
- * 深度上限 8 与 [streamExpiredOf] 同因。
+ * 判断本体已收进 `:shared` 的 `PlaybackFailures.videoChanged`（手机端同一份）：
+ * 地址过期 / 文件换过 / 域名解析失败 / 连接层假死这四条判据两端必须完全一致，
+ * 否则同一个故障在电视上自己救回来了、在手机上直接死掉。
  */
-fun videoChangedOf(problem: Throwable?): Boolean {
-    var current=problem
-    var depth=0
-    while(current!=null && depth<8) {
-        if(current is com.hgtv.star.core.VideoChangedException) return true
-        current=current.cause
-        depth++
-    }
-    return false
-}
+fun videoChangedOf(problem: Throwable?): Boolean =
+    com.hgtv.star.shared.media.PlaybackFailures.videoChanged(problem)
 /**
  * 这一串异常里有没有「名字解析出来了，但连接层就没通」。
  *
- * 与 `hasCauseOf<UnknownHostException>` 分开：解析失败说明坏在 DNS 的**回答**上，
- * 这里收的是**回答没问题、路走不通**——超时（SYN 或 TLS 无应答）、被拒（RST）、
- * 路由不可达、握手失败。两者在自愈路径上处理完全一样（清地址 + 清 DNS + 清连接池），
- * 分开只为日志能说清是哪一半。
- *
- * 深度上限 8 与 [streamExpiredOf] 同因：ExoPlayer 会套两三层包装，而写死上限能防环形 cause。
+ * 判断本体见 `:shared` 的 `PlaybackFailures.transportDead`（与手机端同一份）。
  */
-fun transportDeadOf(problem: Throwable?): Boolean {
-    var current=problem
-    var depth=0
-    while(current!=null && depth<8) {
-        when(current) {
-            // 顺序有意义：`SocketTimeoutException` / `ConnectException` 都是 `IOException`，
-            // 具体类型必须排在笼统判断前面（这里本来就没有笼统分支，保持与 [networkFailureOf] 一致）。
-            is java.net.SocketTimeoutException,
-            is java.net.ConnectException,
-            is java.net.NoRouteToHostException,
-            is javax.net.ssl.SSLException -> return true
-            // 整调用超时（`callTimeout` 45 秒）同样是**连接层假死**：写得出、读不回，
-            // 与上面几种一起走「清地址 + 清 DNS + 清连接池」那一套（见 [dropDeadTransport]）。
-            // 判据与 [networkFailureOf] 一致：只看消息带 `timeout` 的，别把取消算进来。
-            is java.io.InterruptedIOException ->
-                if(current.message.orEmpty().contains("timeout",ignoreCase=true)) return true
-        }
-        current=current.cause; depth++
-    }
-    return false
-}
+fun transportDeadOf(problem: Throwable?): Boolean =
+    com.hgtv.star.shared.media.PlaybackFailures.transportDead(problem)
 /**
  * 自愈前把「连接层缓存」一起清掉：视频域名的解析结果 + 进程级连接池。
  *
- * 为什么不能只丢播放地址：地址是按集签发的，但**host 常常没变**（同一部剧的相邻几集
- * 大多落在同一个 CDN shard 上）。于是重取回来的地址还是那个域名，
- * 于是又命中 DNS 里那份 10 分钟 / 30 分钟前的坏 IP，又复用连接池里那条半死连接，
- * 下一发照样卡满超时——用户看到的就是「重试多少次都一样，换一集立刻好」。
- *
- * 域名来源按优先级取 [MainActivity.lastStreamHost]：`prepare()` 失败时 [MainActivity.video]
- * 还是上一集的（见该字段的注释），拿它清等于清错对象。
- *
- * **只清 idle 连接**（`evictAll` 就是这个语义）：在途的那条由 `retirePreviousEpisode()`
- * → `RemoteVideo.close()` 取消，两件事合起来才等于「下一条连接一定重新建」。
+ * 清法收在 `:shared` 的 `PlaybackFailures.dropTransportCaches`（手机端同一份）；
+ * 这里只负责按优先级收集「这一次可能涉及的 host」——`prepare()` 失败时 [MainActivity.video]
+ * 还是上一集的（见该字段的注释），拿它清等于清错对象，因此要带上 [MainActivity.lastStreamHost]。
  */
 fun MainActivity.dropDeadTransport() {
     val hosts=LinkedHashSet<String>(4)
     lastStreamHost.takeIf { it.isNotEmpty() }?.let(hosts::add)
     video?.host?.takeIf { it.isNotEmpty() }?.let(hosts::add)
     queuedVideo?.host?.takeIf { it.isNotEmpty() }?.let(hosts::add)
-    for(host in hosts) HgtvDns.invalidate(host)
-    runCatching { com.hgtv.star.shared.data.PlaybackTransport.evictIdleConnections() }
+    com.hgtv.star.shared.media.PlaybackFailures.dropTransportCaches(hosts)
     if(hosts.isNotEmpty()) android.util.Log.w("HGTV","Transport cache cleared hosts=$hosts pool=evicted")
 }
 /**
  * 这一串异常里有没有「播放地址已失效」。
  *
- * ExoPlayer 会把数据源抛出的 `IOException` 层层包进 `PlaybackException`（有时还套一层
- * `HttpDataSourceException` 形态的包装），因此只能顺着 cause 往下找。深度上限 8：
- * 真出问题时不会无限包，而写死上限能防住环形 cause 链。
+ * 判断本体见 `:shared` 的 `PlaybackFailures.expired`（与手机端同一份）。
  */
-fun streamExpiredOf(problem: Throwable?): Boolean {
-    var current=problem
-    var depth=0
-    while(current!=null && depth<8) {
-        if(current is com.hgtv.star.core.StreamExpiredException) return true
-        current=current.cause; depth++
-    }
-    return false
-}
+fun streamExpiredOf(problem: Throwable?): Boolean =
+    com.hgtv.star.shared.media.PlaybackFailures.expired(problem)
 fun MainActivity.hidePlaybackOverlay() {
-    panel=false; dismissPlaybackMenu(); controls.visibility=View.GONE; controls.clearFocus(); hud.visibility=View.GONE
+    dismissPlaybackMenu(); controls.visibility=View.GONE; controls.clearFocus(); hud.visibility=View.GONE
+    // 方向键开关放在 [dismissPlaybackMenu] **之后**归零：那个函数会把 `panel` 还原成
+    // [playError]（出错页的按钮要能被焦点选中），这里既然连控制条都收了，就一定是 false。
+    panel=false
     // 顶部那条信息跟着控制条一起收：浮层收起之后，四项回到「播放显示」里用户选的值
     // （默认全关，见 [syncPlaybackInfo]）。两页都要同步——播放页收起控制条时
     // 那四项也不该继续常驻，否则「默认全不选」就落不实。
@@ -1377,6 +1402,9 @@ fun MainActivity.requestPlayback(play: Boolean) {
     // 按钮还三份、这里只还 session 那一份，自动重试用尽之后按播放就只会闪回同一句提示。
     else if(playError) {
         resetBudgetsForManualRetry()
+        // 与错误页「立即重试」走同一条：按播放键也必须先作废当前集的地址 /
+        // 索引 / 首块并换请求 device_id，否则会原样命中刚才失败的缓存。
+        prepareFreshPlaybackRetry()
         playEpisode(episodeIndex,retryPosition,true,recovering=true)
         return
     }
@@ -1680,11 +1708,22 @@ fun MainActivity.syncPlaybackInfo() {
         // 浮层露着 = 四项全显（见函数注释第 2 条）。
         val allOn=playbackOverlayShown()
         val shown=screen=="player" || (screen=="recommend" && touchArmed && allOn)
-        bar.visibility=if(shown) View.VISIBLE else View.GONE
         playbackTitle.visibility=if(allOn || library.playerTitle) View.VISIBLE else View.GONE
         playbackEpisode?.visibility=if(allOn || library.playerEpisode) View.VISIBLE else View.GONE
         playerClock?.visibility=if(allOn || library.playerClock) View.VISIBLE else View.GONE
         playbackSpeedText?.visibility=if(allOn || library.playerSpeed) View.VISIBLE else View.GONE
+        // **这一行只在真的有一项要显示时才出现。**
+        //
+        // 它的背景是「50% 黑 → 透明」的竖向渐变（见 [buildPlaybackLayer]），那是给白字垫底用的。
+        // 四项默认全关，早先这里只判 `screen=="player"`：播放页上这一行于是**常驻但空着**，
+        // 底色却照画——画面顶部 96dp 平白多出一条越来越淡的暗带。
+        // 用户反馈的「全屏顶部有一些黑雾，需要仔细对比才能发现」就是它：
+        // 渐变很缓，暗场里完全看不出，亮场里才显形，所以只能靠对比发现。
+        val anyItem=playbackTitle.visibility==View.VISIBLE ||
+            playbackEpisode?.visibility==View.VISIBLE ||
+            playerClock?.visibility==View.VISIBLE ||
+            playbackSpeedText?.visibility==View.VISIBLE
+        bar.visibility=if(shown && anyItem) View.VISIBLE else View.GONE
         // 调试面板是**悬浮**在最上层的一块，不参与任何布局：
         // 这里不按它让位、不改内边距，否则顶部这条会被压窄（用户要求「不要挤压任何元素」）。
         // 面板盖住哪一格就盖住哪一格，关掉即恢复。
@@ -1871,6 +1910,12 @@ fun MainActivity.dismissPlaybackMenu() {
     playbackMenuShell?.let { shell -> (shell.parent as? ViewGroup)?.removeView(shell) }
     playbackMenuShell=null
     playbackMenu=null
+    // **焦点交还播放界面**：`panel` 是「方向键交给浮层焦点链」的开关（见 `dispatchKeyEvent`），
+    // 打开菜单时置真，收起时必须一起放开——否则方向键 / 确定键都被 `if(!panel)` 挡掉，
+    // 表现就是「浮层关了、控制条还亮着、左右键全都不好使，按返回才恢复」。
+    //
+    // 出错页是例外：那一版的按钮本身要能按，焦点得留在它上面，因此按 [playError] 判定。
+    panel=playError
     // 菜单已经不在屏幕上：那一位「是被哪一下菜单键按开的」也随之作废，
     // 否则下一次菜单键的抬起会被这条旧标记吞掉（用户会觉得「按了菜单没反应」）。
     playbackMenuOpenPress=false

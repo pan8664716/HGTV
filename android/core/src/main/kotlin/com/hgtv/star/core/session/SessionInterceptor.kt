@@ -26,6 +26,15 @@ class SessionInterceptor(
 ) : Interceptor {
     override fun intercept(chain: Interceptor.Chain): Response {
         val original = chain.request()
+        // 「换一台设备」的注册必须**匿名**发出（见 [ContentRepository.registerDevice]）。
+        //
+        // 注册主机是 `log.snssdk.com`，落在 [SESSION_HOSTS] 里，因此这里默认会给它补上
+        // `Cookie: install_id=…; sessionid=…` 与 `X-Tt-Token`。实测（2026-11）服务端就是按这串
+        // Cookie 认设备的：**cdid / openudid 全换成新的，照样回 `new_user:0` 与原 device_id**，
+        // 换设备等于没换。请求方用这个头显式要求「这次不要补身份」，头本身随后被摘掉。
+        if(original.header(ANONYMOUS_HEADER)!=null) {
+            return chain.proceed(original.newBuilder().removeHeader(ANONYMOUS_HEADER).build())
+        }
         val sessionHost = isSessionHost(original.url.host)
         // 播放取地址接口（`/novel/player/...`）**只补 Cookie、不补 token**：
         // 这条接口对 `X-Tt-Token` 的长度极其敏感（整段 cookie 串塞进去直接回 `200 + 0 字节`）。
@@ -94,6 +103,13 @@ class SessionInterceptor(
     }
 
     private companion object {
+        /**
+         * 「这一次请求不要补任何身份」的标记头。
+         *
+         * 由 [com.hgtv.star.core.ContentRepository.registerDevice] 在 `withIdentity = false`
+         * 时打上，[intercept] 看到它就原样放行（并把头摘掉，不发给服务端）。
+         */
+        const val ANONYMOUS_HEADER = "X-HGTV-Anonymous"
         /** 对齐原版 `share_cookie_host_list`（`dc5/a.java`）。 */
         val SESSION_HOSTS = listOf(
             "snssdk.com","zijieapi.com","ulpay.com","fqnovel.com",

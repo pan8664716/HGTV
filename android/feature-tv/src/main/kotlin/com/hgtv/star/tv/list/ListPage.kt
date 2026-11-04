@@ -38,8 +38,6 @@ import com.hgtv.star.tv.autoAppendCatalog
 import com.hgtv.star.tv.ACCOUNT_LOGIN_MODES
 import com.hgtv.star.tv.base
 import com.hgtv.star.tv.noteDebugProblem
-import com.hgtv.star.tv.deviceRejectionOf
-import com.hgtv.star.tv.healDeviceIdentity
 import com.hgtv.star.tv.clearDebugProblem
 import com.hgtv.star.tv.chipControl
 import com.hgtv.star.tv.column
@@ -826,6 +824,11 @@ fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=false,focusTy
                 // 用户第一次按下键时下一页的内容已经在手上。
                 if(holdChip) prefetchNextPage()
             }
+            // App 搜索接口「答了但没数据」时已经自动改走官网（见 `ContentRepository.search`）。
+            // 只提示一次（第 1 页），否则翻页时每页都会弹一遍。
+            if(requestTab==TAB_SEARCH && requestPage==1 && SearchDiag.last?.degraded==true) {
+                showHint("App 搜索暂不可用，已改用官网搜索")
+            }
         }, { problem ->
             if(requestTab==TAB_HOME) {
                 if(homeFeed.isNotEmpty()) { showHint("热门暂时取不到，仍在显示上次内容"); return@work }
@@ -843,11 +846,10 @@ fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=false,focusTy
             }
             catalog=emptyList(); hasMore=false; ranking=null
             setRankSubtitle(if(tab==TAB_SEARCH) "搜索失败" else "榜单加载失败")
-            // 服务端不认本机这份设备身份（搜索空响应 / 播放 101000）时**先自愈一次**：
-            // 丢掉旧身份重注册，成功之后由 [healDeviceIdentity] 把这一页重取一遍。
-            // 这是「升级到 1.2.3 后搜不出东西、清缓存才好」那条反馈的正面修复——
-            // 以前这里只会显示「设备正在初始化」或一句「暂时无法加载」，用户只能自己去清缓存。
-            if(deviceRejectionOf(problem) && healDeviceIdentity("搜索被拒") { showCatalog(true) }) return@work
+            // 「服务端不认本机这份设备身份」的自愈**已经不在这一层做了**：
+            // `ContentRepository.search` 在抛错之前会先换一套身份重搜一次，成功就直接返回，
+            // 走到这里说明那一次已经失败（或预算用尽）。再换一次设备只会连烧两份身份，
+            // 而第二份同样撞在同一道风控上——交给下面的错误页，用户按「重试」即可。
             if(problem is SearchSessionExpiredException) {
                 page=1; catalogFocus=""
                 showHint("搜索结果已过期，已回到第 1 页刷新")

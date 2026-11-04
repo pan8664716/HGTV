@@ -66,6 +66,10 @@ class PhoneAccountActivity : PhoneActivity() {
     private var login: com.hgtv.star.core.PhoneLogin? = null
     private var pendingPhone = ""
     private var pendingCode = ""
+    /** 手机号登录选中的区号（`PhoneRegion.labels` 的下标）：留在页面上，重进表单要沿用。 */
+    private var regionIndex = com.hgtv.star.core.PhoneRegion.DEFAULT
+    /** 区号选择弹窗：非空且 showing 时挡掉重复打开。 */
+    private var regionDialog: PhoneDialog? = null
     private var cooldownUntil = 0L
     private var cooldownTick: Runnable? = null
 
@@ -266,8 +270,13 @@ class PhoneAccountActivity : PhoneActivity() {
             val inset = dp(10)
             setPadding(inset, inset, inset, inset)
         }
+        // 二维码边长：常规档是 220dp，但字号调大后 `dp()` 会跟着放大（最大档约 990px），
+        // 直接铺上去会超出屏幕、被右侧裁掉——用户看到的就是「二维码变形 / 只显示一部分」。
+        // 这里按可用宽度封顶，任何字号下都完整落在屏幕内。
+        val available = resources.displayMetrics.widthPixels - dp(16) * 2
+        val qrSide = minOf(dp(220), (available * .92f).toInt()).coerceAtLeast(dp(120))
         body.addView(FrameLayout(this).apply {
-            addView(code, FrameLayout.LayoutParams(dp(220), dp(220), Gravity.CENTER))
+            addView(code, FrameLayout.LayoutParams(qrSide, qrSide, Gravity.CENTER))
         }, blockTop())
 
         val state = TextView(this).apply {
@@ -389,10 +398,46 @@ class PhoneAccountActivity : PhoneActivity() {
 
         body.addView(note("未注册的手机号会自动创建账号。验证码由平台短信发出，本机不会保存它。"))
 
-        val phone = field("手机号", "请输入手机号", InputType.TYPE_CLASS_PHONE, 20)
+        // 区号 + 手机号同一行，与电视端登录卡完全一致（左边区号按钮、右边输入框）。
+        //
+        // 手机端原先**没有这一栏**：号码直接交给 `e164Phone` 猜——只有「11 位且以 1 开头」
+        // 才当中国大陆补 `+86`，其余一律 `+数字`。香港 8 位号码于是被拼成 `+91234567`
+        //（少了 `852`），发码必然失败。现在与电视端走同一份 `PhoneRegion.normalize`。
+        // 区号与号码**在同一个凹槽里**：左边区号按钮、中间一条细分隔线、右边输入框。
+        val region = regionButton(com.hgtv.star.core.PhoneRegion.dialOf(regionIndex))
+        region.setOnClickListener {
+            // 连点两下不要叠出两个弹窗（电视端那枚 `PopupWindow` 也有同样的判断）。
+            if (regionDialog?.isShowing == true) return@setOnClickListener
+            val dialog = PhoneDialog(this, "选择国家 / 地区")
+                .choices(com.hgtv.star.core.PhoneRegion.labels, regionIndex) { index ->
+                    regionIndex = index
+                    region.text = "${com.hgtv.star.core.PhoneRegion.dialOf(index)} ▾"
+                }
+            regionDialog = dialog
+            dialog.show { regionDialog = null }
+        }
+        val phone = field(
+            "手机号", "请输入手机号", InputType.TYPE_CLASS_PHONE, 20, leading = region,
+        )
+        // 从「二次验证 → 重新发码」回到这一页时预填上一次的号码：
+        // 整串 E.164 塞进输入框会让框里出现 `+852`，提交时再拼一次就变成 `+852+852…`。
+        if (pendingPhone.isNotBlank()) {
+            val (index, local) = com.hgtv.star.core.PhoneRegion.split(pendingPhone)
+            regionIndex = index
+            region.text = "${com.hgtv.star.core.PhoneRegion.dialOf(index)} ▾"
+            phone.input.setText(local)
+            phone.input.setSelection(local.length)
+        }
         body.addView(phone, blockTop())
         val code = field("验证码", "收到短信后填入", InputType.TYPE_CLASS_NUMBER, 8)
         body.addView(code, blockTop())
+
+        /** 手机号归一：与电视端同一个函数（带 `+` 的原样送出，否则按所选区号拼 E.164）。 */
+        fun normalizedNumber(): String? =
+            com.hgtv.star.core.PhoneRegion.normalize(
+                phone.input.text?.toString().orEmpty(),
+                regionIndex,
+            )
 
         val state = TextView(this).apply {
             setTextColor(PhoneStyle.textDim)
@@ -473,8 +518,8 @@ class PhoneAccountActivity : PhoneActivity() {
         }
 
         send = secondaryButton("获取验证码") {
-            val number = phone.input.text?.toString()?.trim().orEmpty()
-            if (number.isEmpty()) {
+            val number = normalizedNumber()
+            if (number == null) {
                 setState("请先填手机号")
                 return@secondaryButton
             }
@@ -486,9 +531,9 @@ class PhoneAccountActivity : PhoneActivity() {
         body.addView(send, blockTop())
 
         body.addView(primaryButton("登录") {
-            val number = phone.input.text?.toString()?.trim().orEmpty()
+            val number = normalizedNumber()
             val value = code.input.text?.toString()?.trim().orEmpty()
-            if (number.isEmpty()) { setState("请先填手机号"); return@primaryButton }
+            if (number == null) { setState("请先填手机号"); return@primaryButton }
             if (value.isEmpty()) { setState("请先填验证码"); return@primaryButton }
             pendingPhone = number
             pendingCode = value
@@ -651,7 +696,19 @@ class PhoneAccountActivity : PhoneActivity() {
 
     // ---------------------------------------------------------------- 控件
 
-    private fun field(label: String, hintText: String, type: Int, maxLength: Int): LinearLayout {
+    /**
+     * 一行「标签 + 凹槽输入框」。
+     *
+     * [leading] 非空时把它**并进同一个凹槽**（手机号那一行的区号按钮）：左边是它，
+     * 中间一条细分隔线，右边才是输入框——读起来是一个控件，而不是两个并排的框。
+     */
+    private fun field(
+        label: String,
+        hintText: String,
+        type: Int,
+        maxLength: Int,
+        leading: View? = null,
+    ): LinearLayout {
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(TextView(this).apply {
             text = label
@@ -672,9 +729,30 @@ class PhoneAccountActivity : PhoneActivity() {
         }
         val box = FrameLayout(this).apply {
             applyWell(PhoneStyle.well, 18f, 4f)
-            addView(input, FrameLayout.LayoutParams(
+        }
+        if (leading == null) {
+            box.addView(input, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
             ).apply { leftMargin = dp(6); rightMargin = dp(6) })
+        } else {
+            // 区号占固定宽度（最长的 `+886 ▾` 也放得下），输入框吃剩下的全部。
+            val regionWidth = 62
+            box.addView(leading, FrameLayout.LayoutParams(
+                dp(regionWidth), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START
+            ).apply { leftMargin = dp(6) })
+            // 一条细竖线：区号与号码是两件事，但共用一块凹槽。
+            // 用主题的 `separator` 而不是写死的白色——浅色主题下白线是看不见的。
+            box.addView(View(this).apply { setBackgroundColor(PhoneStyle.separator) },
+                FrameLayout.LayoutParams(dp(1), dp(18), Gravity.CENTER_VERTICAL).apply {
+                    leftMargin = dp(6 + regionWidth + 2)
+                })
+            input.setPadding(dp(6), 0, dp(14), 0)
+            box.addView(input, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            ).apply {
+                leftMargin = dp(6 + regionWidth + 2 + 1 + 8)
+                rightMargin = dp(6)
+            })
         }
         column.addView(box, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
@@ -706,6 +784,27 @@ class PhoneAccountActivity : PhoneActivity() {
             setPadding(dp(16), dp(13), dp(16), dp(13))
             applySoft(SoftStyle.RAISED, PhoneStyle.surface, PhoneStyle.RADIUS_PILL, 4f)
             setOnClickListener { onClick() }
+        }
+
+    /**
+     * 区号按钮：**并进手机号那个凹槽里**（见 [field] 的 `leading`），因此自己不画底板。
+     *
+     * 与电视端 `LoginForm.RegionButton` 同一个位置与含义（手机号输入框左边）。
+     */
+    private fun regionButton(dial: String): TextView =
+        TextView(this).apply {
+            text = "$dial ▾"
+            setTextColor(PhoneStyle.text)
+            phoneSize(13)
+            gravity = Gravity.CENTER
+            // 常态透明（底板由外层凹槽提供），按下时压深一档：
+            // 没有按下态的话，点上去既没反馈、也不知道有没有点中。
+            background = com.hgtv.star.phone.ui.PhoneSheet.pillBackground(
+                android.graphics.Color.TRANSPARENT,
+                PhoneStyle.wellDeep,
+                dp(12).toFloat(),
+            )
+            isClickable = true
         }
 
     private fun note(text: String): TextView =

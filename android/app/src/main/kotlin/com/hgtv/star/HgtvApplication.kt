@@ -2,31 +2,39 @@
 package com.hgtv.star
 import android.app.Application
 import android.content.Context
+import android.os.Bundle
 import androidx.multidex.MultiDex
 import com.hgtv.star.shared.debug.Diagnostics
+import com.umeng.commonsdk.UMConfigure
+import com.umeng.umcrash.UMCrash
 
 /**
  * 进程入口。
  *
- * 只有两件事：
+ * 四件事，顺序不能换：
  *
  * 1. **先把第二个 dex 装进来**。21+ 是 ART 原生多 dex，这层什么也不做；19/20 上 Dalvik
  *    只认一个 classes.dex，`MultiDex.install` 必须在任何应用类被用到之前跑，因此只能挂在
  *    Application 上。
- * 2. **再起会话保活**（见 [initSession]）。它要读本机的设备身份与会话镜像，
+ * 2. **再固定 OkHttp 的 Android 平台实现**（见 [com.hgtv.star.core.OkHttpPlatformCompat]）。
+ *    云 OS 会裁掉 OkHttp 探测的 Conscrypt 组件，必须赶在友盟和业务网络线程之前完成。
+ * 3. **初始化友盟统计与 APM**（见 [initUmeng]）。启动阶段的崩溃和性能数据要尽早开始采集。
+ * 4. **最后起会话保活**（见 [initSession]）。它要读本机的设备身份与会话镜像，
  *    因此必须排在 MultiDex 之后——那些类可能被分到第二个 dex。
- *
- * **友盟（统计与 APM）已整体移除**：这里不再有任何第三方 SDK 初始化，
- * 崩溃 / ANR / 性能 / 事件都不采集，也不往体外发任何东西。
  */
 class HgtvApplication: Application() {
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
         if(android.os.Build.VERSION.SDK_INT<21) MultiDex.install(this)
+        runCatching { com.hgtv.star.core.OkHttpPlatformCompat.installAndroidFallback() }
+            .onFailure { problem ->
+                Diagnostics.warn("HGTV-OKHTTP","OkHttp 平台兼容初始化失败",problem)
+            }
     }
 
     override fun onCreate() {
         super.onCreate()
+        initUmeng()
         // 调试包才记录每个请求的 DNS / TCP / TLS 分解（见 `NetTiming`）；
         // 正式包里这个开关恒为 false，连监听器都不会装到 client 上。
         com.hgtv.star.core.NetLog.timing=BuildConfig.DEBUG
@@ -35,6 +43,37 @@ class HgtvApplication: Application() {
         startDnsWarmup()
         startSignWarmup()
         initSession()
+    }
+
+    /**
+     * 初始化 U-App 统计与 U-APM。
+     *
+     * `preInit` 不采集设备信息；APM 配置必须在正式初始化之前写入。
+     * 第三方 SDK 初始化失败不能影响应用启动，因此这里统一兜底并只记本地诊断。
+     */
+    private fun initUmeng() {
+        runCatching {
+            UMConfigure.setLogEnabled(BuildConfig.DEBUG)
+            UMConfigure.preInit(this,UMENG_APP_KEY,UMENG_CHANNEL)
+            UMCrash.initConfig(Bundle().apply {
+                putBoolean(UMCrash.KEY_ENABLE_CRASH_JAVA,true)
+                putBoolean(UMCrash.KEY_ENABLE_CRASH_NATIVE,true)
+                putBoolean(UMCrash.KEY_ENABLE_ANR,true)
+                putBoolean(UMCrash.KEY_ENABLE_PA,true)
+                putBoolean(UMCrash.KEY_ENABLE_LAUNCH,true)
+                putBoolean(UMCrash.KEY_ENABLE_MEM,true)
+                putBoolean(UMCrash.KEY_ENABLE_NET,true)
+            })
+            UMConfigure.init(
+                this,
+                UMENG_APP_KEY,
+                UMENG_CHANNEL,
+                UMConfigure.DEVICE_TYPE_PHONE,
+                ""
+            )
+        }.onFailure { problem ->
+            Diagnostics.warn("HGTV-UMENG","友盟初始化失败",problem)
+        }
     }
 
     /**
@@ -67,12 +106,12 @@ class HgtvApplication: Application() {
      * 与网络无关。这里在 Application 阶段就用一份假 body 签一遍，等推荐页真要发请求时
      * 这 500ms 已经花完了（而且是在后台、与建界面并行）。
      *
-     * 用的是**一次性**的仓库实例：它只做本地运算，不建 client、不发请求。
-     * 真正的 `preconnect` 仍然走界面上那个仓库（连接必须落在它自己的池子里才复用得上）。
+     * 用的是两端共享的进程级仓库：这一步只做本地运算，不建 client、不发请求。
+     * 真正的 `preconnect` 也走同一个实例（连接必须落在它自己的池子里才复用得上）。
      */
     private fun startSignWarmup() {
         Thread({
-            runCatching { com.hgtv.star.core.ContentRepository().warmSignature() }
+            runCatching { com.hgtv.star.shared.data.AppRuntime.warmSignature(this) }
         }, "hgtv-sign-warm").start()
     }
 
@@ -135,4 +174,8 @@ class HgtvApplication: Application() {
         }
     }
 
+    private companion object {
+        const val UMENG_APP_KEY="6aeaba5b863270068cb58786"
+        const val UMENG_CHANNEL="HGTV"
+    }
 }

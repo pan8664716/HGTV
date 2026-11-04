@@ -6,7 +6,6 @@ import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.RequestScope
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
-import java.util.concurrent.TimeUnit
 
 /** Serial foreground checks; cancellation owns only calls made by this monitor. */
 class FavoriteMonitor(private val library: Library, source: ContentRepository, private val changed: () -> Unit) {
@@ -17,16 +16,15 @@ class FavoriteMonitor(private val library: Library, source: ContentRepository, p
     private var scope: RequestScope? = null
     private var destroyed = false
     /**
-     * 派生 client 与仓库都**用到时才建**。
+     * 进程级短超时仓库，**第一次真正检查时**才在 worker 上取用。
      *
-     * 本类在 `MainActivity.onCreate` 里构造（主线程），而 `source.http` 第一次取值会建
-     * 业务 client——那要解析系统根证书表（首次 2~3 秒，见 `HgtvTls.ACCEPTED_ISSUERS`）。
-     * 在构造期取它，等于把冷启动最贵的那一刀又搬回主线程。
+     * 本类在 `MainActivity.onCreate` 里构造（主线程），而取仓库会初始化业务 client
+     * 并解析系统根证书表（首次 2~3 秒，见 `HgtvTls.ACCEPTED_ISSUERS`）。
+     * lazy 保证这段成本不会落回主线程。
      */
-    private val http by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
-        source.http.newBuilder().callTimeout(12, TimeUnit.SECONDS).build()
+    private val repository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        AppRuntime.favoriteRepository(source)
     }
-    private val repository by lazy(LazyThreadSafetyMode.SYNCHRONIZED) { ContentRepository(http) }
     var running = false; private set
     var status = "进入收藏可手动检查更新"; private set
     var lastChangedId: String? = null; private set

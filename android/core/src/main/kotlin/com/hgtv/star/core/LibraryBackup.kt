@@ -258,7 +258,16 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      *
      * 后加字段：旧备份 / 旧磁盘没有它，读回来按 2 列处理。
      */
-    val gridColumns: Int=2) {
+    val gridColumns: Int=2,
+    /**
+     * 推荐页是否允许**左右滑动**切换体裁（漫剧 / 真人 / AI 剧，默认开启）。
+     *
+     * 关闭后只能点顶部那三个体裁 tab 换流：整条流里的横向手势全部交还给视频层，
+     * 手指划一下不会再整页翻走。竖屏短剧一屏一集，误触横向滑动很常见，这一项就是给它关的。
+     *
+     * 后加字段：旧备份 / 旧磁盘没有它，读回来按开启处理（与之前的行为一致）。
+     */
+    val recommendSwipe: Boolean=true) {
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("danmaku",danmaku.storedValue)
         .put("danmakuScale",danmakuScale.toDouble()).put("danmakuAlpha",danmakuAlpha.toDouble()).put("danmakuSpeed",danmakuSpeed.storedValue)
         .put("keys",keys)
@@ -281,6 +290,7 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
         .put("hiddenNav",hiddenNav)
         .put("launchRecommend",launchRecommend)
         .put("gridColumns",gridColumns)
+        .put("recommendSwipe",recommendSwipe)
         .put("hiddenHome",hiddenHome)
         .put("reduceAnim",reduceAnim)
 }
@@ -360,7 +370,9 @@ object LibraryBackup {
         val searches=o.rows("searches",20).map { row -> RecentSearch(row.string("query",80).also { require(it.isNotBlank()) }) }
         val settings=o.getJSONObject("settings")
         val quality=settings.number("quality",1080).toInt(); require(quality in PlaybackQuality.options)
-        val speed=settings.get("speed"); require(speed is Number && speed.toFloat() in PlaybackSpeed.options)
+        // 校验认**全部合法值**（含手机端的 3×）：手机上备份出来的一份记录，
+        // 拿到电视上恢复也必须能读回去，不能因为「电视的列表里没有 3×」就整份拒收。
+        val speed=settings.get("speed"); require(speed is Number && PlaybackSpeed.isValid(speed.toFloat()))
         val autoNext=settings.get("autoNext"); require(autoNext is Boolean)
         val type=ContentType.entries.firstOrNull { it.storedValue==settings.getString("type") } ?: error("内容类型无效")
         val frame=VideoFrameMode.entries.firstOrNull { it.name==settings.getString("frame") } ?: error("画面模式无效")
@@ -412,6 +424,8 @@ object LibraryBackup {
         val backToTop=settings.optString("backToTop",BACK_TO_TOP_DEFAULT).takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT
         // 手机列表每行几张：后加字段，旧备份没有它时按 2 处理；坏值夹进 1..3。
         val gridColumns=if(settings.has("gridColumns")) settings.number("gridColumns",2).toInt().coerceIn(1,3) else 2
+        // 推荐页左右滑动切换：后加字段，旧备份没有它时按开启处理（与之前的行为一致）。
+        val recommendSwipe=settings.optBoolean("recommendSwipe",true)
         // 导航栏圆形入口：逐个开关，值是被隐藏的那些 key；旧备份没有这个字段 = 全部显示。
         val hiddenNav=settings.optString("hiddenNav","").takeIf { it.length<=80 && it.none(Char::isISOControl) }.orEmpty()
         // 启动进入推荐：后加字段，旧备份没有它时按开启处理（与需求 1 的默认行为一致）。
@@ -422,7 +436,7 @@ object LibraryBackup {
         val hiddenHome=settings.optString("hiddenHome","").takeIf { it.length<=120 && it.none(Char::isISOControl) }.orEmpty()
         // 「减少动画」：后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。
         val reduceAnim=settings.optBoolean("reduceAnim",false)
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns),later,hiddenIds)
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe),later,hiddenIds)
     }
     /** Existing favorites stay first; only newer imported progress replaces a local record. */
     fun merge(local: BackupData,incoming: BackupData,restoreSettings: Boolean): BackupData {

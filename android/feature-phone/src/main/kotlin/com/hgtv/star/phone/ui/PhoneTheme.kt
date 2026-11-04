@@ -2,7 +2,14 @@
 package com.hgtv.star.phone.ui
 
 import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.ColorFilter
+import android.graphics.LinearGradient
+import android.graphics.Paint
+import android.graphics.PixelFormat
+import android.graphics.Shader
+import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.widget.TextView
@@ -51,20 +58,32 @@ object PhoneColor {
      * 字阶定到 50% 之后，一行 13 号字只有约 8dp 高：**16dp 图标 + 2dp 间隙 + 8dp 字
      * = 26dp 内容**，42dp 上下各留 8dp，图标压在格子的中线上、字贴底，
      * 是 iOS / Material 底栏的常规比例（图标 : 条高 ≈ 2 : 5）。
+     *
+     * **42 → 34**（用户要求「太高、整体小一点」）：图标 16 → 14dp、字 13 → 11 号、
+     * 间隙 2 → 1dp，内容约 21dp，上下各留 6.5dp。整条比原来矮 19%。
      */
-    const val TAB_BAR_DP = 42f
+    const val TAB_BAR_DP = 34f
 }
 
 /** 与官方实测一致的尺寸令牌（dp）。 */
 object PhoneDimen {
-    /** 海报网格的左右边距：给封面多让出宽度。 */
-    const val PAGE_INSET = 8f
+    /**
+     * 海报网格的左右边距：**0**，卡片直接顶到屏幕边缘。
+     *
+     * 两列布局里这一圈白边完全是从卡宽里扣的；用户在连续几轮里都在要「卡片更大」，
+     * 这里是最后一个可让的量。
+     */
+    const val PAGE_INSET = 0f
     /** 底部导航栏左右留白（官方 14px）。 */
     const val TAB_INSET = 8f
     /** 卡片间距（官方 14px）。 */
     const val CARD_GAP = 8f
-    /** 海报卡之间的间距：比设置页按钮更紧，避免一屏被空隙切碎。 */
-    const val POSTER_GAP = 3f
+    /**
+     * 海报卡之间的间距（横纵同值）：**0**，两列直接贴合。
+     *
+     * 卡与卡之间靠卡片自带的柔光带（各 2dp）分开，看起来是一整块画面被一条细影切开。
+     */
+    const val POSTER_GAP = 0f
     /** 频道 chip 行高（官方 79px）。 */
     const val CHIP_ROW = 45f
     /** 剧场卡片宽（官方 512px）。 */
@@ -322,24 +341,53 @@ fun strokedBackground(color: Int, strokeColor: Int, radiusDp: Float, strokeDp: F
  * 现在用不等距色标（底部不透明 → 55% 处只剩三成 → 顶端全透明），
  * 配合调用方把这一层限高到屏高的一半，画面中间与上半部是干净的。
  */
-fun bottomScrim(alpha: Int = 235): GradientDrawable = GradientDrawable(
-    GradientDrawable.Orientation.BOTTOM_TOP,
+fun bottomScrim(alpha: Int = 235): Drawable = VerticalGradientScrim(
     intArrayOf(
         Color.argb(alpha, 0, 0, 0),
-        Color.argb((alpha * .30f).toInt(), 0, 0, 0),
+        Color.argb((alpha * .55f).toInt(), 0, 0, 0),
+        Color.argb((alpha * .18f).toInt(), 0, 0, 0),
         Color.TRANSPARENT
-    )
-).apply {
-    // 0 = 底边，1 = 顶边：黑色集中在最下面 35%，再往上迅速淡掉。
-    setColors(
-        intArrayOf(
-            Color.argb(alpha, 0, 0, 0),
-            Color.argb((alpha * .55f).toInt(), 0, 0, 0),
-            Color.argb((alpha * .18f).toInt(), 0, 0, 0),
-            Color.TRANSPARENT
-        ),
-        floatArrayOf(0f, .45f, .78f, 1f)
-    )
+    ),
+    floatArrayOf(0f, .45f, .78f, 1f)
+)
+
+/**
+ * `GradientDrawable.setColors(int[], float[])` 是 API 29 才加的重载；
+ * minSdk 19 上直接调用会在布局阶段抛 `NoSuchMethodError`。
+ */
+private class VerticalGradientScrim(
+    private val colors: IntArray,
+    private val positions: FloatArray,
+) : Drawable() {
+    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
+
+    override fun draw(canvas: Canvas) {
+        val bounds = bounds
+        if (bounds.width() <= 0 || bounds.height() <= 0) return
+        paint.shader = LinearGradient(
+            0f,
+            bounds.bottom.toFloat(),
+            0f,
+            bounds.top.toFloat(),
+            colors,
+            positions,
+            Shader.TileMode.CLAMP
+        )
+        canvas.drawRect(bounds, paint)
+    }
+
+    override fun setAlpha(alpha: Int) {
+        paint.alpha = alpha
+        invalidateSelf()
+    }
+
+    override fun setColorFilter(colorFilter: ColorFilter?) {
+        paint.colorFilter = colorFilter
+        invalidateSelf()
+    }
+
+    @Deprecated("Deprecated in Java")
+    override fun getOpacity(): Int = PixelFormat.TRANSLUCENT
 }
 
 /** 顶部遮罩（沉浸式下返回按钮与集数压在画面上）。 */

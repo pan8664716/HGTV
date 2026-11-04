@@ -7,13 +7,13 @@ import android.view.ViewGroup
 import android.view.MotionEvent
 import android.widget.FrameLayout
 import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.PagerSnapHelper
 import androidx.recyclerview.widget.RecyclerView
 import com.hgtv.star.core.RankBoard
 import com.hgtv.star.phone.PhoneFeedView
 import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneColor
+import com.hgtv.star.phone.ui.PhonePagerSnapHelper
 import com.hgtv.star.phone.ui.PhoneTopBar
 
 /**
@@ -51,15 +51,29 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
     private val adapter = PagerAdapter()
     private val pager = LockablePager(context)
     /** 与分类 / 榜单共用同一个顶栏：tab 起点、字号和搜索按钮位置因此完全一致。 */
-    private val topBar = PhoneTopBar(context).apply { makeOverlay() }
+    private val topBar = PhoneTopBar(context).apply {
+        makeOverlay()
+        // 推荐页是满屏视频，状态栏由宿主藏起来（`PhoneMainActivity.applyStatusBarFor`），
+        // 顶栏因此不再为状态栏留白。
+        setImmersive(true)
+    }
     private var current = 0
+    /**
+     * 设置页「推荐页左右滑动切换」是否开启（`Library.recommendSwipe`）。
+     *
+     * 关掉时整条流的横向手势都交还给视频层，只能点顶部 tab 换流。与
+     * [sheetOpen] 是两个独立来源：面板开着只是**临时**锁住，设置关掉是**一直**锁住。
+     */
+    private var swipeEnabled = true
+    /** 播放设置面板是否开着（开着时临时锁住横向翻页，见 `PhoneFeedView.onSheetVisibilityChanged`）。 */
+    private var sheetOpen = false
     /** 当前体裁流的播放意图变化：宿主据此同步窗口常亮。 */
     var onPlayStateChanged: (() -> Unit)? = null
     /** 程序性切页期间，滚动的中间态不参与 tab 归属判定。 */
     private var programmatic = false
     private var pendingTarget = -1
     /** 吸附与翻页监听：重铺时要先摘掉旧的，否则每重铺一次就多一份回调。 */
-    private val snap = PagerSnapHelper()
+    private val snap = PhonePagerSnapHelper { pager.width }
     private val scrollListener = object : RecyclerView.OnScrollListener() {
         override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
             if (state != RecyclerView.SCROLL_STATE_IDLE) return
@@ -86,7 +100,36 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
     init {
         setBackgroundColor(PhoneColor.BG)
         genres = enabledGenres()
+        swipeEnabled = swipeEnabledFromSettings()
         buildUi()
+        // 冷启动时书库还没读完，上面那一次读到的是兜底值（true）。
+        // 读完必须再对一次，否则「关掉推荐页左右滑动」重启后不生效——
+        // 用户反馈过这一条：设置里关了，重开 app 照样能滑。
+        runCatching {
+            com.hgtv.star.phone.PhoneServices.library(context)
+                .loadAsync(onReady = { refreshSwipeSetting() })
+        }
+    }
+
+    /**
+     * 书库读完之后按设置重算一次横向翻页的锁（`loadAsync` 的 onReady 里调用）。
+     *
+     * 只改锁，不动页面内容：冷启动这一刻用户可能已经在滑了，整屏重铺会把位置与解码器一起打断。
+     */
+    private fun refreshSwipeSetting() {
+        swipeEnabled = swipeEnabledFromSettings()
+        applySwipeState()
+    }
+
+    /** 读设置页那一项；读不到（书库还没加载完）按开启处理，与出厂默认一致。 */
+    private fun swipeEnabledFromSettings(): Boolean = runCatching {
+        com.hgtv.star.phone.PhoneServices.library(context)
+            .takeIf { it.isLoaded }?.recommendSwipe ?: true
+    }.getOrDefault(true)
+
+    /** 两个来源合成一个锁：面板开着（临时）或设置关掉（一直）都不许横向翻页。 */
+    private fun applySwipeState() {
+        pager.swipeLocked = sheetOpen || !swipeEnabled
     }
 
     /** 按设置筛出要铺的体裁；一条都不剩时退回全开（正常情况不会发生）。 */
@@ -116,7 +159,10 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
         pager.adapter = null
         pager.layoutManager = LinearLayoutManager(context, RecyclerView.HORIZONTAL, false)
         // 重铺之后面板状态从「关」开始（旧的浮层已在上面统一收掉）。
-        pager.swipeLocked = false
+        // 设置项那一份要重新读：用户可能刚在设置页关掉左右滑动。
+        sheetOpen = false
+        swipeEnabled = swipeEnabledFromSettings()
+        applySwipeState()
         // 整屏重铺时旧的切页目标已经失效：不清掉的话，下一次左右滑会被
         // `programmatic` 当成“动画中间态”吞掉（直到 900ms 兜底才恢复）。
         programmatic = false
@@ -182,7 +228,11 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
         pendingTarget = index
         pager.userScroll = false
         switchTo(index)
-        if (reduce) pager.scrollToPosition(index) else pager.smoothScrollToPosition(index)
+        if (reduce) {
+            pager.scrollToPosition(index)
+        } else if (!snap.smoothTo(index)) {
+            pager.smoothScrollToPosition(index)
+        }
         // 兜底：极端情况下（目标页还没布局、动画被系统打断）收不到那一次 IDLE，
         // 程序性标记不能一直挂着——否则下一次左右滑会被当成“动画中的中间态”吞掉。
         pager.postDelayed({
@@ -235,6 +285,13 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
         if (next != appliedGenres) {
             genres = next
             buildUi()
+        } else {
+            // 「左右滑动切换」可能刚在设置页改过：不重铺整屏，只把锁重算一次。
+            val swipe = swipeEnabledFromSettings()
+            if (swipe != swipeEnabled) {
+                swipeEnabled = swipe
+                applySwipeState()
+            }
         }
         feeds.getOrNull(current)?.onShown()
     }
@@ -250,7 +307,7 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
                 )
                 onPlayStateChanged = { this@PhoneRecommendPage.onPlayStateChanged?.invoke() }
                 // 播放设置面板开着时锁住横向翻页（见 `PhoneFeedView.onSheetVisibilityChanged`）。
-                onSheetVisibilityChanged = { open -> pager.swipeLocked = open }
+                onSheetVisibilityChanged = { open -> sheetOpen = open; applySwipeState() }
             }
             feeds[viewType] = feed
             // 建出来就**只让当前这一条上屏起播**（`PhoneFeedView` 默认是「收起来」的）。
@@ -286,19 +343,48 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
         /** 手指按下：宿主借此放弃还在跑的程序性切页。 */
         var onTouchDown: (() -> Unit)? = null
 
+        private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+        private var downX = 0f
+        private var downY = 0f
+
+        /** 0 = 方向未定，1 = 已判定为纵向（这一下不翻页），2 = 已判定为横向。 */
+        private var axis = 0
+
         override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    downX = e.x
+                    downY = e.y
+                    axis = 0
                     if (!swipeLocked) {
                         touchDown = true
                         userScroll = false
                         onTouchDown?.invoke()
                     }
                 }
+                MotionEvent.ACTION_MOVE -> {
+                    // **方向锁定**：横向要明显比纵向占优才认成「翻体裁」。
+                    //
+                    // 不加这一步，手指上滑翻下一条视频时，开头那几像素的横向抖动就会让
+                    // 这个横向列表先过 `slop`（RecyclerView 只比 `|dx| > slop`，没有任何
+                    // 主轴偏向），于是整页横着翻走——用户读到的正是「上滑误触左右翻页」。
+                    // 竖向列表那一侧无法替 pager 挡：它只能在**自己**被判定为纵滑之后
+                    // 才 `requestDisallowInterceptTouchEvent`，而那时 pager 已经抢走了。
+                    if (!swipeLocked && axis == 0) {
+                        val dx = Math.abs(e.x - downX)
+                        val dy = Math.abs(e.y - downY)
+                        if (dx > slop || dy > slop) {
+                            axis = if (dx > dy * AXIS_BIAS) 2 else 1
+                        }
+                    }
+                    // 判定为纵向：这一整个手势都不归 pager，交给里面的竖屏列表。
+                    if (axis == 1) return false
+                }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                     // `touchDown` 只表示“这一下是从 pager 上按下去的”，抬手就可以清；
                     // `userScroll` 不能清：UP 之后还有一段 SETTLING，IDLE 才结算。
                     touchDown = false
+                    axis = 0
                 }
             }
             return !swipeLocked && super.onInterceptTouchEvent(e)
@@ -312,11 +398,32 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
             return !swipeLocked && super.onTouchEvent(e)
         }
 
+        /*
+         * 只拦触摸还不够：竖向列表会把横向位移通过**嵌套滚动**交给外层 pager，
+         * 那条分发不经过 `onInterceptTouchEvent`，于是「设置里关掉了、手指一划照样换页」。
+         * 这条通道在子列表那一端关掉（见 `PhoneFeedView` 里 `list.isNestedScrollingEnabled`），
+         * 这里不再重复处理——pager 的拦截才是唯一入口。
+         */
+
         override fun onScrollStateChanged(state: Int) {
             if (state == RecyclerView.SCROLL_STATE_DRAGGING && touchDown) userScroll = true
             if (state == RecyclerView.SCROLL_STATE_IDLE) touchDown = false
             super.onScrollStateChanged(state)
         }
 
+        private companion object {
+            /**
+             * 主轴判据：横向必须**不少于**纵向，才认成「翻体裁」。
+             *
+             * RecyclerView 自己的判据只有 `|dx| > slop`，没有任何主轴偏向——手指上滑时
+             * 开头几像素的横向抖动就够它抢走手势。加上这一条之后，只有「横着划」才翻页，
+             * 上滑（`|dy| > |dx|`）一律交给里面的竖屏列表。
+             *
+             * 取 1.0 是为了和竖屏列表那条判据**刚好互补**（见 `PhoneFeedView.VerticalPagerList`：
+             * 它只在 `|dy| > |dx|` 时才滚）。两边用同一个门槛、一正一反，中间不会留出
+             * 「斜着划谁都不动」的死区。
+             */
+            const val AXIS_BIAS = 1f
+        }
     }
 }

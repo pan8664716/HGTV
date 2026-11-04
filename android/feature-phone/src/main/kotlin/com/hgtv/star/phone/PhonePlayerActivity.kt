@@ -28,8 +28,10 @@ import androidx.media3.ui.PlayerView
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.DanmakuSpeed
 import com.hgtv.star.core.Detail
+import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackSpeed
+import com.hgtv.star.core.Series
 import com.hgtv.star.core.toFit
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.StreamInfo
@@ -38,6 +40,7 @@ import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.phone.ui.PhoneCards
 import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhoneEpisodeGrid
+import com.hgtv.star.phone.ui.PhonePagerMotion
 import com.hgtv.star.phone.ui.PhoneSheet
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTouch
@@ -116,8 +119,20 @@ class PhonePlayerActivity : PhoneActivity() {
          */
         const val EXTRA_RECOMMEND = "recommend"
 
-        /** 片尾预热窗口：与 TV 的 `PrefetchPolicy.nearEnd` 同一档（30 秒）。 */
-        private const val PREFETCH_WINDOW_MS = 30_000L
+        /** 起播后先让当前这一集稳定一会儿，再在后台准备下一集。 */
+        private const val PREFETCH_START_MS = 2_000L
+
+        /** 给签名地址留出的安全余量，避免下一集真正播放时已经过期。 */
+        private const val PREFETCH_URL_RESERVE_MS = 30_000L
+
+        /**
+         * 竖屏 ↔ 全屏的过渡时长。
+         *
+         * 播放页声明了 `configChanges=orientation`，转屏**不重建 Activity**，
+         * 系统也就不给任何窗口动画——内容直接换一套布局，读起来就是「啪」一下。
+         * 这一层淡入 / 放大就是补上那一段过渡。
+         */
+        private const val MODE_TRANSITION_MS = 220L
     }
 
     internal lateinit var root: FrameLayout
@@ -126,8 +141,15 @@ class PhonePlayerActivity : PhoneActivity() {
 
     private lateinit var landscape: FrameLayout
     private lateinit var landscapeVideo: PlayerView
+    /**
+     * 横屏（全屏）那一层的弹幕。
+     *
+     * 竖屏的弹幕在 `page.danmakuView` 里，而全屏时整个 `portrait` 被 GONE 掉——
+     * 没有这一层的话，用户竖屏看着有弹幕、一点全屏就「没了」。
+     * 两层各持一个 `DanmakuView`，数据由 [danmakuLoader] 的 `replay` 在切形态时接上。
+     */
+    private lateinit var landDanmaku: com.hgtv.star.shared.media.DanmakuView
     private lateinit var landTop: LinearLayout
-    private lateinit var landTitle: TextView
     private lateinit var landBottom: LinearLayout
     private lateinit var landPlay: PhoneGlyph
     private lateinit var landCurrent: TextView
@@ -169,7 +191,15 @@ class PhonePlayerActivity : PhoneActivity() {
      * 只在**竖屏**显示：横屏的顶部标题栏与底部控制条已经把这四样摆开了，
      * 再压一条上去就是同一件事写两遍。
      */
-    private lateinit var infoLine: TextView
+    private lateinit var infoRow: LinearLayout
+    /** 「播放显示」左半：剧集标题 + 当前集数（靠左、超长省略）。 */
+    private lateinit var infoLeft: TextView
+    /** 「播放显示」右半：网速 + 当前时间（贴右）。 */
+    private lateinit var infoRight: TextView
+    /** 横屏那一份「播放显示」：与竖屏同内容，常驻在屏幕顶部。 */
+    private lateinit var landInfoRow: LinearLayout
+    private lateinit var landInfoLeft: TextView
+    private lateinit var landInfoRight: TextView
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal var player: ExoPlayer? = null
@@ -180,6 +210,23 @@ class PhonePlayerActivity : PhoneActivity() {
     private var ticker: Job? = null
 
     private var landscapeMode = false
+
+    /** 退出全屏后「钉住竖屏」用的方向尺子；非空 = 还没等到设备立起来（见 [pinPortraitUntilUpright]）。 */
+    private var portraitPin: android.view.OrientationEventListener? = null
+
+    /**
+     * 竖屏顶部标题栏在 `page` 坐标系里的下沿（像素）；0 = 还没量到。
+     *
+     * 弹幕层要贴着它往下铺（见 [syncDanmakuTopInset]），而不是用 `DanmakuView`
+     * 那套照电视横屏定的 104dp。
+     */
+    private var portraitTopBottom = 0
+    /**
+     * 横屏顶部那条「播放显示」在 `landscape` 坐标系里的下沿（像素）；0 = 还没量到。
+     *
+     * 横屏弹幕要从它下面开始铺，否则第一行弹幕会压在剧名 / 时间上。
+     */
+    private var landInfoRowBottom = 0
     /** 本页是否在前台：屏幕常亮只看前台、真实播放意图与错误 / 定时停止状态。 */
     private var foreground = false
     /**
@@ -205,13 +252,6 @@ class PhonePlayerActivity : PhoneActivity() {
     private var underlayNeedsForce = false
     /** 本页是否收着下层推荐页的控制层（见 `PhoneSession.hideFeedChrome` 的计数）。 */
     private var feedChromeHeld = false
-    /**
-     * 本次进入播放页是否已经处理过「竖屏短剧全屏」。
-     *
-     * 这个开关只决定**进入播放页时**要不要自动转横屏。切集时再触发一次，
-     * 用户只是在竖屏里上滑看下一集，画面却突然转成横屏并被放大裁切。
-     */
-    private var entryAutoFullscreenDone = false
     private var chromeVisible = true
     private var userSpeed = 1f
     private var tempSpeed = false
@@ -225,10 +265,22 @@ class PhonePlayerActivity : PhoneActivity() {
      * 推荐页接手后再 `play()` 又要重新缓冲一次——用户读到的就是「退回去内容断了一下」。
      */
     private var returningToFeed = false
-    /** 「全剧播完」浮层这一轮是为哪部剧弹的（防重入）。 */
-    private var finishedFor = ""
+    /** 最后一集查到的下一季与底部提示。 */
+    private var nextSeason: Series? = null
+    private var nextSeasonFor = ""
+    private var nextSeasonLoading = false
+    private var nextSeasonToken = 0
+    private var nextSeasonJob: Job? = null
+    private var autoNextSeasonPending = false
+    private var nextSeasonOpening = false
+    private var nextSeasonFinishedFor = ""
+    private lateinit var nextSeasonNotice: TextView
     /** 「相关剧集」请求的代次：浮层被换掉 / 关掉之后，在途结果不再往旧视图上写。 */
     private var relatedToken = 0
+    /** 「作者作品」当前请求与缓存，同一部剧打开多次不重复搜索。 */
+    private var authorToken = 0
+    private var authorWorksFor = ""
+    private var authorWorks: List<Series>? = null
     /**
      * 现在这一次离开是不是「正在把这一路交回推荐页」。
      *
@@ -263,7 +315,7 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 「定时关闭」当前选中的档位（[com.hgtv.star.core.SleepTimer.LABELS] 下标）。 */
     private var sleepChoice = 0
     /** 定时已经停过一次：hint 与状态按它走，避免 tick 每秒钟重复报同一句。 */
-    private var sleepStopped = false
+    internal var sleepStopped = false
     /** 调试面板（设置 → 调试模式）。只在打开时挂，关掉立刻摘掉。 */
     private var debugOverlay: com.hgtv.star.phone.ui.PhoneDebugOverlay? = null
     /** 最近一次视频尺寸 / 播放错误：调试面板要读，但只有监听器里才有。 */
@@ -277,8 +329,8 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 正在预热的那一集（防重入）。 */
     private var prefetchingFor = ""
     /** 已经挂进播放列表、等着无感推进的那一集（它的 [RemoteVideo] 要留给会话）。 */
-    private var queuedVideo: RemoteVideo? = null
-    private var queuedEpisodeId = ""
+    internal var queuedVideo: RemoteVideo? = null
+    internal var queuedEpisodeId = ""
     private var hintSticky = false
     /** 提示的代次：换集后那句「第N集」延迟收起时，只收自己那一句。 */
     private var hintToken = 0
@@ -298,6 +350,12 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 这次拖动的目标方向：+1 = 下一集，-1 = 上一集，0 = 还没定 / 到头了。 */
     private var swipeDir = 0
     private var swipePrepared = false
+    /** 当前这一轮 pager 吸附动画：一个动画同时驱动两页与底层视频。 */
+    private var swipeAnimator: android.animation.ValueAnimator? = null
+    /** 手动上滑已经推进到播放列表下一项，等 transition 回调或 post 兜底刷新界面。 */
+    private var manualNextTarget = -1
+    /** 手动切换前记下的当前进度：中途换集只能保存续播点，不能写成 completed。 */
+    private var manualNextPosition = 0L
     /** 借来的那块视频现在被平移了多少像素（翻页动画的起点）。 */
     private var feedVideoDy = 0f
 
@@ -361,6 +419,32 @@ class PhonePlayerActivity : PhoneActivity() {
     internal var attemptSeq = 0
     internal var handledAttempt = -1
 
+    // —— 换集取地址失败的兜底（见 [onEpisodeSourceMissing]）——
+
+    /** 换集取地址 / 准备最多自动重试几次。 */
+    private val sourceRetryLimit = 2
+
+    /** 每次重试的间隔基数：第 1 次等 3 秒，第 2 次等 6 秒。 */
+    private val sourceRetryStepMs = 3_000L
+
+    /**
+     * 取地址失败的合成错误码。
+     *
+     * 落在「网络 / 源」那一段（2000–2999），错误页据此说「网络或音频输出暂时不可用」，
+     * 而不是把 0 当成错误码念给用户听。
+     */
+    private val sourceMissingCode = 2000
+
+    /** 上一次重试是针对哪一集：换了另一集就归零，不会把别的集的重试次数带过来。 */
+    private var sourceRetryEpisode = ""
+    private var sourceRetryCount = 0
+
+    /** 用户 / 自动重试发起的新一轮尝试：地址重试次数也要重新给满。 */
+    internal fun resetSourceRetryForFreshAttempt() {
+        sourceRetryEpisode = ""
+        sourceRetryCount = 0
+    }
+
     /**
      * 解码现场（`:shared` 的 [com.hgtv.star.shared.media.PlaybackMetrics]）：
      * 解码器名、初始化耗时、编码格式、丢帧、音频欠载。
@@ -388,6 +472,14 @@ class PhonePlayerActivity : PhoneActivity() {
     internal var errorAttr: com.hgtv.star.core.FailureAttribution? = null
 
     /**
+     * 错误页上那行「N 秒后自动重试」的读数。
+     *
+     * 与电视端 `scheduleRecovery` 写进状态行的倒计时是同一件事：错误页照常显示，
+     * 同时排一次自动重试，用户能看见还要等多久、也能点「停止自动重试」。
+     */
+    internal var autoRetryLabel: android.widget.TextView? = null
+
+    /**
      * 这一次失败的稳定阶段（`playback_decoder_init` 之类）。
      *
      * 错误页标题按它取（`PlaybackFailures.titleOf`），与电视端同一张表：
@@ -407,7 +499,7 @@ class PhonePlayerActivity : PhoneActivity() {
             scope = scope,
             repository = { PhoneServices.repository(this) },
             mode = { library?.danmakuMode ?: DanmakuMode.FULL },
-            target = { page.danmakuView },
+            target = { danmakuTarget() },
             post = { block -> runOnUiThread(block) },
             alive = { !isFinishing && !isDestroyed },
         )
@@ -426,6 +518,16 @@ class PhonePlayerActivity : PhoneActivity() {
 
         pendingFullscreen = intent.getBooleanExtra(EXTRA_FULLSCREEN, false)
         landscapeMode = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        // **播放页不跟随手机姿态**：进来就锁竖屏，只有用户点「全屏」按钮才转横屏
+        // （那个入口带 `EXTRA_FULLSCREEN`，下面自己会锁横屏）。
+        //
+        // 方向交给系统策略（`USER`）：**跟着系统的「自动旋转屏幕」开关走**。
+        // 开着 → 竖着拿就是竖屏、横着拿就是全屏；关着 → 停在进入时的方向，
+        // 只有用户点「全屏」才转（见 `enterFullscreen`）。
+        // `pendingFullscreen` 是用户从推荐页点全屏进来的，交给下面去锁横屏。
+        if (!pendingFullscreen) {
+            requestOrientation(ActivityInfo.SCREEN_ORIENTATION_USER)
+        }
         // 借下层推荐页的 Surface：判定必须在 `buildUi` 之前，页面底板建出来就要是透明的。
         feedUnderlay = Build.VERSION.SDK_INT >= 28 &&
             intent.getBooleanExtra(EXTRA_RECOMMEND, false) &&
@@ -470,11 +572,12 @@ class PhonePlayerActivity : PhoneActivity() {
         // 切换形态时不用各建一套，也不会出现「转屏后图标留在旧的层里」。
         centerGlyph = PhoneGlyph(this, PhoneGlyph.Kind.PAUSE).apply { tint = Color.WHITE }
         centerBox = FrameLayout(this).apply {
-            addView(centerGlyph, FrameLayout.LayoutParams(dp(34), dp(34), Gravity.CENTER))
-            background = roundedBackground(0x66000000, dp(38).toFloat())
+            // 只留图标本身（用户要求：调小、不要外面那圈全圆底板）。
+            // 34 → 24dp；容器 76 → 48dp 仅用于命中/定位，本身透明。
+            addView(centerGlyph, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
             visibility = View.GONE
         }
-        root.addView(centerBox, FrameLayout.LayoutParams(dp(76), dp(76), Gravity.CENTER))
+        root.addView(centerBox, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER))
 
         bufferingBox = FrameLayout(this).apply {
             addView(android.widget.ProgressBar(this@PhonePlayerActivity).apply {
@@ -495,17 +598,59 @@ class PhonePlayerActivity : PhoneActivity() {
         root.addView(hint, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.TOP or Gravity.CENTER_HORIZONTAL
-        ).apply { topMargin = statusBar() + dp(48) })
+        ).apply { topMargin = dp(24) })
 
-        infoLine = TextView(this).apply {
+        nextSeasonNotice = TextView(this).apply {
+            setTextColor(PhoneStyle.playerText)
+            phoneSize(13)
+            gravity = Gravity.CENTER_VERTICAL or Gravity.START
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(16), dp(10), dp(16), dp(10))
+            background = roundedBackground(0xCC000000.toInt(), dp(10).toFloat())
+            visibility = View.GONE
+        }
+        root.addView(nextSeasonNotice, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM or Gravity.START
+        ).apply {
+            leftMargin = dp(16)
+            rightMargin = dp(24)
+            bottomMargin = dp(24)
+        })
+
+        // 「播放显示」那一行拆成左右两半：左边是剧名 + 集数（靠左、过长省略），
+        // 右边是网速 + 当前时间（贴右）。早先四项拼成一条左对齐的读数，
+        // 开了时间和网速之后整条往右挤，剧名反而被省略号吃掉。
+        infoLeft = TextView(this).apply {
             setTextColor(Color.WHITE)
             phoneSize(14)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             setPadding(dp(4), 0, 0, 0)
-            visibility = View.GONE
+            // 这一行直接压在画面上（没有底板），亮画面里白字会糊：补一层细阴影。
+            setShadowLayer(2f, 0f, 1f, 0x99000000.toInt())
         }
-        portraitTop.addView(infoLine, LinearLayout.LayoutParams(
+        infoRight = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            phoneSize(13)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(10), 0, 0, 0)
+            setShadowLayer(2f, 0f, 1f, 0x99000000.toInt())
+        }
+        infoRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            addView(infoLeft, LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+            ))
+            addView(infoRight, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        portraitTop.addView(infoRow, LinearLayout.LayoutParams(
             0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
         ))
 
@@ -581,7 +726,7 @@ class PhonePlayerActivity : PhoneActivity() {
         // 上下滑换集：向上 = 下一集，向下 = 上一集（与推荐页上滑看下一条同一手感）。
         p.onVerticalStart = { beginSwipe() }
         p.onVerticalDelta = { delta -> dragSwipe(delta) }
-        p.onVerticalEnd = { direction -> endSwipe(direction) }
+        p.onVerticalEnd = { direction, velocity -> endSwipe(direction, velocity) }
     }
 
     private fun buildPortrait() {
@@ -608,8 +753,17 @@ class PhonePlayerActivity : PhoneActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply {
             gravity = Gravity.TOP or Gravity.START
-            topMargin = statusBar() + dp(6)
+            // 沉浸式：状态栏不占位，只留一小段呼吸位（早先是 `statusBar() + dp(6)`）。
+            topMargin = dp(12)
         })
+        // 标题栏一量出高度就把弹幕的顶部起点对齐到它下沿。收起来（GONE）时高度是 0，
+        // 不能拿那一帧当新下沿——否则控制层一隐藏，弹幕就窜回屏幕顶部。
+        portraitTop.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            if (bottom - top > 0) {
+                portraitTopBottom = bottom
+                syncDanmakuTopInset()
+            }
+        }
 
         root.addView(portrait, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
@@ -651,6 +805,18 @@ class PhonePlayerActivity : PhoneActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
+        // 弹幕压在画面之上、手势层之下（与竖屏 `PhoneVideoPage` 里的叠放顺序一致）。
+        landDanmaku = com.hgtv.star.shared.media.DanmakuView(this).apply {
+            mode = DanmakuMode.FULL
+            minTextSizeDp = 4f
+            // 与竖屏那一层同一个基准字号（见 `applyDanmakuSettings`）。
+            sizeFollowsLongEdge = true
+            setClock(0, false)
+        }
+        landscape.addView(landDanmaku, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ))
+
         // 手势挂在一块**透明覆盖层**上：横屏没有「信息栏里的按钮」需要让路，
         // 覆盖层可以整屏接管，点击一律先到状态机。
         val touchLayer = View(this)
@@ -685,42 +851,91 @@ class PhonePlayerActivity : PhoneActivity() {
                 verticalEnabled = true,
                 onVerticalStart = { beginSwipe() },
                 onVertical = { delta -> dragSwipe(delta) },
-                onVerticalEnd = { direction -> endSwipe(direction) },
+                onVerticalEnd = { direction, velocity -> endSwipe(direction, velocity) },
             )
         )
         landscape.addView(touchLayer, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
-        // 顶部：标题 第x集 ……………… ⋮
-        landTop = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), dp(8), dp(12), dp(12))
-            background = topScrim(190)
-        }
-
-        landTitle = TextView(this).apply {
+        /*
+         * 横屏的「播放显示」：与竖屏同一套左右两段（剧名·集数 / 网速·时间）。
+         *
+         * 它**独立于控制层**：勾了任意一项就常驻（用户要求「全屏也要显示」），
+         * 因此不能挂在 `landTop` 里——那一层会跟着控制层一起收起来。
+         * 位置贴屏幕顶（`dp(10)`），比竖屏那条更靠上；`landTop` 让出它的高度。
+         */
+        landInfoLeft = TextView(this).apply {
             setTextColor(Color.WHITE)
-            phoneSize(15)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            phoneSize(13)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(6), 0, dp(6), 0)
+            setShadowLayer(2f, 0f, 1f, 0x99000000.toInt())
         }
-        landTop.addView(landTitle, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        landInfoRight = TextView(this).apply {
+            setTextColor(Color.WHITE)
+            phoneSize(12)
+            maxLines = 1
+            ellipsize = android.text.TextUtils.TruncateAt.END
+            setPadding(dp(10), 0, 0, 0)
+            setShadowLayer(2f, 0f, 1f, 0x99000000.toInt())
+        }
+        landInfoRow = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            visibility = View.GONE
+            addView(landInfoLeft, LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+            ))
+            addView(landInfoRight, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
+        landscape.addView(landInfoRow, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.START
+        ).apply {
+            topMargin = dp(10)
+            leftMargin = dp(16)
+            rightMargin = dp(16)
+        })
+        // 量出它的下沿交给弹幕层：横屏弹幕从这一行之下才开始铺（见 `syncDanmakuTopInset`）。
+        // 收起（GONE）时高度为 0，那一帧不采信，否则弹幕会窜回屏幕顶部。
+        landInfoRow.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+            if (bottom - top > 0) {
+                landInfoRowBottom = bottom
+                syncDanmakuTopInset()
+            }
+        }
+
+        /*
+         * 顶部第二行：**只剩播放设置按钮**（⋮），靠右。
+         *
+         * 剧名与集数已经在上面那条信息里了（`landInfoRow` 左半），这里再放一遍是重复。
+         * 这一行仍属控制层：清屏时跟 `landBottom` 一起收起；信息行则常驻。
+         */
+        landTop = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            setPadding(0, 0, dp(12), 0)
+        }
 
         val more = FrameLayout(this).apply {
+            // 尺寸收一档（用户要求）：36 → 28dp、图标 22 → 18dp。
+            // 它贴在信息行下方的右侧，是辅助入口，不该比画面元素更显眼。
             addView(PhoneGlyph(this@PhonePlayerActivity, PhoneGlyph.Kind.MORE).apply {
                 tint = Color.WHITE
-            }, FrameLayout.LayoutParams(dp(22), dp(22), Gravity.CENTER))
+            }, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
             setOnClickListener { openSettings() }
         }
-        landTop.addView(more, LinearLayout.LayoutParams(dp(36), dp(36)))
+        landTop.addView(more, LinearLayout.LayoutParams(dp(28), dp(28)))
 
         landscape.addView(landTop, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP
-        ))
+        ).apply {
+            // 紧接在常驻的 `landInfoRow`（贴顶 dp(10) + 一行字）下面。
+            topMargin = dp(32)
+        })
 
         // 底部两行
         landBottom = LinearLayout(this).apply {
@@ -838,21 +1053,28 @@ class PhonePlayerActivity : PhoneActivity() {
         ))
     }
 
+    /**
+     * 横屏底栏那四颗入口（倍速 / 清晰度 / 弹幕 / 选集）。
+     *
+     * 尺寸比早先收了一档（78×高 → 64 宽、字号 12 → 11、内边距 10/5 → 8/4）：
+     * 四颗并排时原来要吃掉横屏一半的宽度，把左边的常驻摘要挤得只剩几个字。
+     * 它们都在这一行的最右侧（左边摘要 `weight=1` 顶着），因此「靠右」是布局本身就保证的。
+     */
     private fun chip(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
         this.text = text
         setTextColor(Color.WHITE)
-        phoneSize(12)
+        phoneSize(11)
         gravity = Gravity.CENTER
-        setPadding(dp(10), dp(5), dp(10), dp(5))
+        setPadding(dp(8), dp(4), dp(8), dp(4))
         // 常态半透明白、按下更亮：点下去要有反馈，否则用户会以为没点中而连点。
         background = PhoneSheet.pillBackground(
-            0x33FFFFFF, 0x73FFFFFF, dp(13).toFloat()
+            0x33FFFFFF, 0x73FFFFFF, dp(11).toFloat()
         )
         setOnClickListener { onClick() }
     }
 
     private fun chipLp(left: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(
-        dp(78), ViewGroup.LayoutParams.WRAP_CONTENT
+        dp(64), ViewGroup.LayoutParams.WRAP_CONTENT
     ).apply { leftMargin = dp(left) }
 
     /** 进度条染色是 API 21 才有的，19/20 上保持系统默认（不影响功能）。 */
@@ -930,10 +1152,23 @@ class PhonePlayerActivity : PhoneActivity() {
             landscape.visibility = View.VISIBLE
             // 横屏是一整块不透明黑：下层推荐页被完全盖住，控制层收不收都一样。
             root.setBackgroundColor(Color.BLACK)
+            // 上一次退出全屏时把这块 Surface 从树上摘掉了（见下面竖屏分支），先挂回去。
+            // 插到 index 0：弹幕层、手势层、控制层都必须在它上面。
+            if (landscapeVideo.parent == null) {
+                landscape.addView(landscapeVideo, 0, FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+                ))
+            }
             // 顺序：**先把输出挂到横屏这一层，再放开竖屏那一块**。
             // 反过来的话，两句之间播放器没有输出端，那一帧就是黑的（转全屏时闪一下）。
             player?.let { landscapeVideo.player = it }
+            // 横屏这一层此后要长期出画面：换集时保留上一帧，避免闪黑。
+            landscapeVideo.setKeepContentOnPlayerReset(true)
             PhoneServices.detach(page.playerView)
+            // 竖屏这一层在横屏期间不出画面，而且尺寸马上会从竖屏变横屏。
+            // 保留最后一帧的话，回竖屏时那帧旧 buffer 会残留一块在新尺寸的 Surface 上——
+            // 用户截图里「一块画面卡在屏幕上」就是这个。先关掉再解绑，它才会清屏。
+            page.playerView.setKeepContentOnPlayerReset(false)
             page.playerView.player = null
             // 输出被横屏这一层拿走了：推荐页那边不能再认为「Surface 一直在」。
             PhoneSession.underlayActive = false
@@ -947,7 +1182,14 @@ class PhonePlayerActivity : PhoneActivity() {
             // 同上：先挂上竖屏要用的那一块，再放开横屏那一块。借下层时挂的是
             // 推荐页那块 Surface（`attachUnderlay`），这里一样不能先清。
             val attached = feedUnderlay && attachUnderlay()
+            // 横屏那一层即将隐藏：先关掉「保留最后一帧」，再解绑。
+            // 否则它的 Surface 会带着横屏尺寸的旧帧一起留在窗口里（退出全屏后那块残留）。
+            landscapeVideo.setKeepContentOnPlayerReset(false)
             landscapeVideo.player = null
+            // 光解绑不够：`SurfaceView` 在 `GONE` 之后仍可能把最后一帧合成到窗口上，
+            // 表现就是「退出全屏后有一块画面卡着，怎么点都去不掉」。从视图树里摘掉，
+            // Surface 才会真正销毁；下次进全屏再挂回 index 0（见上面横屏分支）。
+            landscape.removeView(landscapeVideo)
             if (attached) {
                 // 借下层出画面：本页底板与视频层都透明 / 隐藏。
                 root.setBackgroundColor(Color.TRANSPARENT)
@@ -955,17 +1197,104 @@ class PhonePlayerActivity : PhoneActivity() {
                 // 下层接不上（推荐页被收走、地址过期）：退回到本页自己出画面。
                 dropUnderlay()
                 player?.let { page.playerView.player = it }
+                // Surface 的尺寸刚从横屏变回竖屏：重挂一次，让系统重建 buffer 并立刻出新帧。
+                // 不重建的话，旧 buffer 会有一块残留在屏幕上（见上面横屏分支的注释）。
+                rebuildPortraitSurface()
             }
-            exitImmersive()
+            // 竖屏同样进沉浸式：**状态栏不占位、不显示**。
+            // 早先这里走 `exitImmersive()`，顶部留着一条状态栏，竖屏短剧的画面被压下去一截，
+            // 读到的就是「竖屏播放还挂着状态栏」。导航栏一起藏掉，底部控制层才能贴满屏底。
+            enterImmersive()
         }
         chromeVisible = true
         applyVideoScale()
         // 刚切形态时两个容器可能还没量出尺寸（宽高为 0），按 0 算会让画面变成 1px。
         // 等这一帧布局完再按真实尺寸算一次。
         root.post { applyVideoScale() }
+        // 退出全屏时竖屏容器可能到这一帧才量出新尺寸：再补一次，避免缩放按横屏尺寸算。
+        root.postDelayed({ if (!landscapeMode) applyVideoScale() }, 150L)
         applyChrome()
         scheduleChromeHide()
         syncChips()
+        // 竖屏弹幕从标题栏下沿开始铺；刚切形态时标题栏可能还没量出高度，
+        // 这一帧布局完再对一次（见 `syncDanmakuTopInset`）。
+        syncDanmakuTopInset()
+        // 竖屏 / 全屏是两个弹幕层：把这一集已经拉到的数据接到新那一层上，
+        // 否则一点全屏就「弹幕没了」（见 `replayDanmaku`）。
+        replayDanmaku()
+        // 形态切换的过渡：系统在同一个窗口里换布局是没有动画的（`configChanges` 让
+        // Activity 不重建），不加这一层就是「啪」一下换掉。放在所有布局设置之后。
+        animateModeEnter(if (landscapeMode) landscape else portrait)
+        root.post {
+            syncDanmakuTopInset()
+            replayDanmaku()
+        }
+    }
+
+    /**
+     * 退出全屏后重建一次竖屏的视频 Surface。
+     *
+     * 从横屏退回竖屏时，`PlayerView` 里的 `SurfaceView` 尺寸刚由横屏变回竖屏，
+     * 系统分配的旧 buffer 可能只被新帧盖住一部分——屏幕上就留下一条「卡住的画面」。
+     * 解绑再挂上会强制重建 Surface 并立刻出一帧；`keepContentOnPlayerReset` 先关掉，
+     * 否则它会把旧帧又贴回来。
+     *
+     * 只在「本页自己出画面」时执行：借下层 Surface 的那条路画面在推荐页那一层，本层不参与。
+     */
+    private fun rebuildPortraitSurface() {
+        val p = player ?: return
+        if (feedUnderlay && underlayBound) return
+        page.playerView.setKeepContentOnPlayerReset(false)
+        page.playerView.player = null
+        page.playerView.player = p
+        // 换清晰度 / 片尾连播仍然要「换源保留上一帧」，重建完再打开。
+        page.playerView.postDelayed({
+            runCatching { page.playerView.setKeepContentOnPlayerReset(true) }
+        }, 600L)
+    }
+
+    /**
+     * 新形态那一层的入场过渡：淡入 + 从 97% 放到原尺寸。
+     *
+     * 为什么需要它：播放页声明了 `configChanges=orientation`，转屏**不重建 Activity**，
+     * 系统因此也不给任何窗口转场——`applyMode()` 一执行，竖屏那一整套就换成横屏那一整套，
+     * 中间一帧过渡都没有，读起来就是「啪」一下。
+     *
+     * 为什么缩放只给 3%：横屏那一层里是 `PlayerView`（SurfaceView），放大倍数一大，
+     * 边缘会露出黑边、部分机型上还会闪一下。这里靠淡入撑过渡，缩放只做一点点「推进感」。
+     */
+    private fun animateModeEnter(view: View) {
+        view.animate().cancel()
+        view.alpha = 0f
+        view.scaleX = 0.97f
+        view.scaleY = 0.97f
+        view.animate().alpha(1f).scaleX(1f).scaleY(1f)
+            .setDuration(MODE_TRANSITION_MS)
+            .setInterpolator(android.view.animation.DecelerateInterpolator())
+            .start()
+    }
+
+    /**
+     * 把竖屏弹幕的顶部起点对到**顶部标题栏下沿**。
+     *
+     * `DanmakuView` 默认让开 104dp，那是照电视横屏的标题条（96dp）定的；竖屏播放页的
+     * 标题栏按 `phoneScale` 算，和这个数对不上，滚动弹幕就会贴着屏幕顶边、压在剧名上。
+     * 这里用实测的标题栏下沿，再留 8dp 呼吸位；横屏照旧交回默认值（那边标题条本来
+     * 就是 96dp 那一档）。
+     */
+    private fun syncDanmakuTopInset() {
+        if (!::page.isInitialized) return
+        if (landscapeMode) {
+            // 横屏：让开顶部那条「播放显示」（`landInfoRow`）。它的下沿要实测——
+            // 字号跟着 `PhoneUiScale` 走，写死一个 dp 值在放大档上会被弹幕压住。
+            if (!::landInfoRow.isInitialized || !::landDanmaku.isInitialized) return
+            // 只留一点点缝（用户要求）：8dp 在 1080P 上是 24px，加上弹幕轨道自身的
+            // 行内留白，第一行弹幕离信息行看着像隔了一整行。2dp 就够。
+            if (landInfoRowBottom > 0) landDanmaku.topInsetPx = landInfoRowBottom + dp(2)
+            return
+        }
+        if (portraitTopBottom <= 0) return
+        page.danmakuView.topInsetPx = portraitTopBottom + dp(8)
     }
 
     /** 横屏也按用户的「画面模式」落画面，不按片源方向强制放大。 */
@@ -1010,25 +1339,31 @@ class PhonePlayerActivity : PhoneActivity() {
         root.setPadding(0, 0, 0, 0)
     }
 
-    private fun exitImmersive() {
-        if (android.os.Build.VERSION.SDK_INT >= 30) {
-            window.setDecorFitsSystemWindows(true)
-            window.insetsController?.show(
-                android.view.WindowInsets.Type.statusBars() or
-                    android.view.WindowInsets.Type.navigationBars()
-            )
-        }
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-            )
-    }
-
+    /**
+     * 进全屏（用户点「全屏」/ 从推荐页带 `EXTRA_FULLSCREEN` 进来）。
+     *
+     * 先锁横屏把画面转过去（这是用户的明确意图），随后按系统的自动旋转开关决定要不要
+     * 把方向交还：
+     * * **自动旋转开着** → 1.2 秒后设 `USER`，此后跟着传感器走：手机竖回来就自动退出全屏，
+     *   横着拿就保持全屏；
+     * * **自动旋转关着** → 一直锁在横屏，只有用户再点一次退出。
+     *
+     * 1.2 秒的延迟是留给用户把手机转成横向：设得太早，竖着拿点全屏会被传感器立刻掰回竖屏，
+     * 读起来就是「全屏点了没反应」。
+     */
     private fun enterFullscreen() {
         if (landscapeMode) return
+        // 主动进全屏：退出全屏时那把「钉住竖屏」的尺子要先收掉，
+        // 否则它会在设备立起来时把方向交回传感器，把人从全屏里踢出去。
+        releasePortraitPin()
         if (!requestOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)) return
         landscapeMode = true
         applyMode()
+        if (autoRotateEnabled()) {
+            root.postDelayed({
+                if (landscapeMode) requestOrientation(ActivityInfo.SCREEN_ORIENTATION_USER)
+            }, 1200L)
+        }
     }
 
     /**
@@ -1052,19 +1387,76 @@ class PhonePlayerActivity : PhoneActivity() {
     }.isSuccess
 
     /**
-     * 退出横屏：先锁竖屏（否则用户横着拿手机时窗口仍是横的），
-     * 1.2 秒后再交回传感器，物理旋转依旧能进全屏。
+     * 系统「自动旋转屏幕」是否打开。
+     *
+     * 播放页的方向策略完全按它分岔（见 [enterFullscreen] / [exitFullscreen]）：
+     * 开着就跟随传感器，关着就只认用户的「全屏」点击。
+     */
+    private fun autoRotateEnabled(): Boolean = runCatching {
+        android.provider.Settings.System.getInt(
+            contentResolver, android.provider.Settings.System.ACCELEROMETER_ROTATION, 0
+        ) == 1
+    }.getOrDefault(false)
+
+    /**
+     * 退出横屏：先锁竖屏让窗口立刻转过来，再把方向交还系统策略。
+     *
+     * 交还（`USER`）是这一项需求的关键：
+     * * 系统**开着自动旋转** → 用户横着拿手机会自动再进全屏，竖着拿就停在竖屏；
+     * * 系统**关着自动旋转** → `USER` 等价于「保持当前方向」，停在竖屏不会自己转。
+     *
+     * 1.2 秒的延迟是为了等这一次转屏走完：立刻设 `USER` 时窗口还在竖屏动画里，
+     * 系统可能按旧方向结算，表现成「退出后闪一下又横过去」。
      */
     private fun exitFullscreen() {
         if (!landscapeMode) { finish(); return }
         requestOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)
         landscapeMode = false
         applyMode()
-        root.postDelayed({
-            if (!landscapeMode) {
-                requestOrientation(ActivityInfo.SCREEN_ORIENTATION_FULL_SENSOR)
+        // 退出后**先钉住竖屏**，等设备真的立起来再放开自动旋转（见 [pinPortraitUntilUpright]）。
+        //
+        // 早先这里是无条件 `postDelayed(1200) { requestOrientation(USER) }`：
+        // 看全屏时手机是横着拿的，1.2 秒后方向交回传感器，页面立刻又转回横屏——
+        // 用户按返回看到的是「没反应」，连按几次都出不去（用户反馈的
+        // 「第三集播完进不了第四集，退出全屏后连续返回都回不到推荐页」）。
+        pinPortraitUntilUpright()
+    }
+
+    /**
+     * 退出全屏后**钉住竖屏**，直到设备真的立起来。
+     *
+     * 为什么需要这一步：看全屏时人是横着拿手机的，这时把方向交回传感器
+     *（`SCREEN_ORIENTATION_USER`）等于让页面自己转回全屏。等设备立起来再放开，
+     * 既不会把人拽回全屏，也不影响之后「横过来自动进全屏」这条规则。
+     *
+     * 系统自动旋转关着时不必钉：那时 `USER` 本来就是竖屏。
+     * 没有方向传感器（部分模拟器 / 平板）时 [android.view.OrientationEventListener.enable]
+     * 会失败，这时保持竖屏不动——比反复横竖切换强。
+     */
+    private fun pinPortraitUntilUpright() {
+        releasePortraitPin()
+        if (!autoRotateEnabled()) return
+        val listener = object : android.view.OrientationEventListener(this) {
+            override fun onOrientationChanged(orientation: Int) {
+                // -1 = 放不平（平放在桌上）：这时不知道朝向，继续等。
+                if (orientation == ORIENTATION_UNKNOWN) return
+                // 0 / 360 是正立、180 是倒立，±45 度以内都算「立着」。
+                val upright = orientation <= 45 || orientation >= 315 || orientation in 135..225
+                if (!upright) return
+                releasePortraitPin()
+                requestOrientation(ActivityInfo.SCREEN_ORIENTATION_USER)
             }
-        }, 1200)
+        }
+        // 没有方向传感器（部分模拟器 / 平板）：`canDetectOrientation` 为 false，
+        // 这时保持竖屏不动，比反复横竖切换强。
+        if (!runCatching { listener.canDetectOrientation() }.getOrDefault(false)) return
+        runCatching { listener.enable() }
+        portraitPin = listener
+    }
+
+    private fun releasePortraitPin() {
+        portraitPin?.let { runCatching { it.disable() } }
+        portraitPin = null
     }
 
     /**
@@ -1092,7 +1484,8 @@ class PhonePlayerActivity : PhoneActivity() {
             landBottom.visibility = if (chromeVisible) View.VISIBLE else View.GONE
         } else {
             page.setChromeVisible(chromeVisible)
-            portraitTop.visibility = if (chromeVisible) View.VISIBLE else View.GONE
+            // `portraitTop` 只装「播放显示」那一行，它的显隐由 `syncPlayInfo()` 按设置决定：
+            // 勾了任意一项就常驻，四项全没勾才跟着控制层收起来。
         }
         if (!chromeVisible) hideCenter()
         syncPlayInfo()
@@ -1240,6 +1633,18 @@ class PhonePlayerActivity : PhoneActivity() {
     // ---------------------------------------------------------------- 弹幕
 
     /**
+     * 当前形态该往哪一层画弹幕。
+     *
+     * 竖屏在 `page` 里，全屏在 `landscape` 里——两层是各自独立的 `DanmakuView`。
+     * [danmakuLoader] 每次都现取，切形态后新请求自然落到新那一层（旧数据靠 `replay` 接）。
+     */
+    private fun danmakuTarget(): com.hgtv.star.shared.media.DanmakuView? = when {
+        landscapeMode && ::landDanmaku.isInitialized -> landDanmaku
+        ::page.isInitialized -> page.danmakuView
+        else -> null
+    }
+
+    /**
      * 把本机偏好落到弹幕层上（显示方式 / 字号 / 透明度 / 速度 / 聚合）。
      *
      * 与 TV 的 `MainActivityPlayer` 建弹幕层那一段**逐项一致**：同一份落盘值、
@@ -1247,8 +1652,16 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private fun applyDanmakuSettings() {
         val lib = library ?: return
-        for (page in listOf(page, ghostPage)) {
-            val view = page.danmakuView
+        val views = buildList {
+            add(page.danmakuView)
+            add(ghostPage.danmakuView)
+            // 横屏那一层也要跟着设置走：它平时不可见，但一切全屏就要立刻是对的。
+            if (::landDanmaku.isInitialized) add(landDanmaku)
+        }
+        for (view in views) {
+            // 横竖屏两层按**同一个基准**取字号（屏幕长边）：按各自视图高度算的话，
+            // 竖屏 1920 与横屏 1080 会差 1.6 倍，切全屏字号明显跳一档。
+            view.sizeFollowsLongEdge = true
             view.mode = lib.danmakuMode
             view.textScale = PhoneDanmakuSize.renderScale(this)
             view.textAlpha = lib.danmakuAlpha
@@ -1275,6 +1688,26 @@ class PhonePlayerActivity : PhoneActivity() {
         danmakuLoader.syncClock(positionMs, running, speed)
     }
 
+    /**
+     * 切形态后把这一集的弹幕接到新那一层上。
+     *
+     * 竖屏与全屏是两个独立的 `DanmakuView`，数据在视图内部；不重放的话，
+     * 竖屏看着有弹幕、一点全屏就空了。位置 / 状态 / 倍速一并带过去，
+     * 新那一层从当前进度接着滚，不是从头再放一遍。
+     */
+    private fun replayDanmaku() {
+        if (!danmakuLoader.loaded) return
+        val target = danmakuTarget() ?: return
+        // 同一层不重复重放：`applyMode` 同步一次、布局完再补一次，两层都重排一遍没有意义。
+        if (target === danmakuReplayTarget) return
+        val p = player ?: return
+        danmakuLoader.replay(p.currentPosition, p.isPlaying, p.playbackParameters.speed)
+        danmakuReplayTarget = target
+    }
+
+    /** 上一次把弹幕重放到哪一层（见 [replayDanmaku]）。 */
+    private var danmakuReplayTarget: com.hgtv.star.shared.media.DanmakuView? = null
+
     // ---------------------------------------------------------------- 上下滑翻页
 
     /** 一屏的高度：竖屏 / 横屏各自的那一层。 */
@@ -1291,6 +1724,8 @@ class PhonePlayerActivity : PhoneActivity() {
         ghostPage.animate().cancel()
         landscape.animate().cancel()
         landscapeGhost.animate().cancel()
+        swipeAnimator?.cancel()
+        swipeAnimator = null
         showEpisodeHint(0f)
     }
 
@@ -1346,7 +1781,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 刚滑出去的那一页清空、放回另一侧备用。整个过程中用户看到的始终是两页连续运动，
      * 与推荐页 `PagerSnapHelper` 的吸附是同一个动作。
      */
-    private fun endSwipe(direction: Int) {
+    private fun endSwipe(direction: Int, velocityY: Float = 0f) {
         clearEpisodeHint()
         val target = when (direction) {
             PhoneTouch.DIRECTION_NEXT -> 1
@@ -1363,17 +1798,29 @@ class PhonePlayerActivity : PhoneActivity() {
         }
         val h = slideHeight().toFloat()
         val out = -target * h
-        val duration = 200L
+        val start = if (landscapeMode) landscape.translationY else page.translationY
+        val duration = PhonePagerMotion.duration(out - start, slideHeight(), velocityY)
         if (landscapeMode) {
-            landscape.animate().translationY(out).setDuration(duration).start()
-            landscapeGhost.animate().translationY(0f).setDuration(duration).withEndAction {
-                play(index + target)
+            animateSwipe(
+                pageTarget = page.translationY,
+                ghostTarget = ghostPage.translationY,
+                landscapeTarget = out,
+                landscapeGhostTarget = 0f,
+                feedTarget = null,
+                duration = duration,
+            ) {
+                playSwipeTarget(index + target)
                 resetSwipeState()
-            }.start()
+            }
         } else {
-            page.animate().translationY(out).setDuration(duration).start()
-            if (feedUnderlay) animateFeedVideo(out, duration, resetAtEnd = false)
-            ghostPage.animate().translationY(0f).setDuration(duration).withEndAction {
+            animateSwipe(
+                pageTarget = out,
+                ghostTarget = 0f,
+                landscapeTarget = landscape.translationY,
+                landscapeGhostTarget = landscapeGhost.translationY,
+                feedTarget = if (feedUnderlay) out else null,
+                duration = duration,
+            ) {
                 val outgoing = page
                 // 先交换：`play()` 里所有绑定（媒体源、进度、信息栏）都落在新的 [page] 上。
                 page = ghostPage
@@ -1384,47 +1831,85 @@ class PhonePlayerActivity : PhoneActivity() {
                 ghostPage.translationY = 0f
                 ghostPage.visibility = View.GONE
                 resetSwipeState(keepCurrent = true)
-                play(index + target)
+                playSwipeTarget(index + target)
                 applyVideoScale()
                 applyChrome()
                 syncChips()
-            }.start()
+            }
         }
     }
 
     /** 弹回原位（位移不够 / 到头）。 */
     private fun settleBack() {
-        val duration = 160L
-        page.animate().translationY(0f).setDuration(duration).start()
-        if (feedUnderlay && !landscapeMode) animateFeedVideo(0f, duration, resetAtEnd = true)
-        ghostPage.animate().translationY(0f).setDuration(duration).withEndAction {
+        val h = slideHeight().toFloat()
+        val pageStart = if (landscapeMode) landscape.translationY else page.translationY
+        val ghostTarget = when {
+            swipeDir > 0 -> h
+            swipeDir < 0 -> -h
+            else -> 0f
+        }
+        val duration = PhonePagerMotion.duration(pageStart, slideHeight())
+        animateSwipe(
+            pageTarget = 0f,
+            ghostTarget = ghostTarget,
+            landscapeTarget = 0f,
+            landscapeGhostTarget = ghostTarget,
+            feedTarget = if (feedUnderlay && !landscapeMode) 0f else null,
+            duration = duration,
+        ) {
             resetSwipeState()
-        }.start()
-        landscape.animate().translationY(0f).setDuration(duration).start()
-        landscapeGhost.animate().translationY(0f).setDuration(duration).withEndAction {
-            if (landscapeMode) resetSwipeState()
-        }.start()
+        }
     }
 
     /**
-     * 把借出去的那块视频平移到 [target]（像素），与页面位移同步。
+     * 一次动画同时驱动当前页、相邻页和借用的底层视频。
      *
-     * @param resetAtEnd 到位后立刻归零：换集之后那块 Surface 已经画新的一集，
-     *   还留着上一集的位移就会错位。
+     * 推荐页只有一个 RecyclerView 滚动值，所以所有子内容天然在同一帧更新。
+     * 正式播放页原来用 2~3 个独立 Animator，启动与结束会差一帧，最后一跳看起来
+     * 就比推荐页更急；这里统一成一个进度值。
      */
-    private fun animateFeedVideo(target: Float, duration: Long, resetAtEnd: Boolean) {
-        val anim = android.animation.ValueAnimator.ofFloat(feedVideoDy, target)
+    private fun animateSwipe(
+        pageTarget: Float,
+        ghostTarget: Float,
+        landscapeTarget: Float,
+        landscapeGhostTarget: Float,
+        feedTarget: Float?,
+        duration: Long,
+        onEnd: () -> Unit,
+    ) {
+        swipeAnimator?.cancel()
+        val pageStart = page.translationY
+        val ghostStart = ghostPage.translationY
+        val landscapeStart = landscape.translationY
+        val landscapeGhostStart = landscapeGhost.translationY
+        val feedStart = feedVideoDy
+        val anim = android.animation.ValueAnimator.ofFloat(0f, 1f)
         anim.duration = duration
-        anim.addUpdateListener {
-            feedVideoDy = it.animatedValue as Float
-            PhoneSession.setFeedVideoOffset(feedVideoDy)
+        anim.interpolator = PhonePagerMotion.interpolator
+        anim.addUpdateListener { value ->
+            val fraction = value.animatedFraction
+            page.translationY = pageStart + (pageTarget - pageStart) * fraction
+            ghostPage.translationY = ghostStart + (ghostTarget - ghostStart) * fraction
+            landscape.translationY = landscapeStart + (landscapeTarget - landscapeStart) * fraction
+            landscapeGhost.translationY =
+                landscapeGhostStart + (landscapeGhostTarget - landscapeGhostStart) * fraction
+            if (feedTarget != null) {
+                feedVideoDy = feedStart + (feedTarget - feedStart) * fraction
+                PhoneSession.setFeedVideoOffset(feedVideoDy)
+            }
         }
-        if (resetAtEnd) anim.addListener(object : android.animation.AnimatorListenerAdapter() {
+        var canceled = false
+        anim.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationCancel(animation: android.animation.Animator) {
+                canceled = true
+            }
+
             override fun onAnimationEnd(animation: android.animation.Animator) {
-                feedVideoDy = 0f
-                PhoneSession.setFeedVideoOffset(0f)
+                if (swipeAnimator === animation) swipeAnimator = null
+                if (!canceled) onEnd()
             }
         })
+        swipeAnimator = anim
         anim.start()
     }
 
@@ -1447,7 +1932,7 @@ class PhonePlayerActivity : PhoneActivity() {
             landscapeGhost.translationY = if (direction > 0) h else -h
             landscapeGhost.visibility = View.VISIBLE
         } else {
-            ghostPage.bind(d.series, label, watchText = "选集 全${d.episodes.size}集｜$label")
+            ghostPage.bind(d.series, label, watchText = "选集 ${target + 1}/${d.episodes.size}")
             ghostPage.setProgress(0f)
             ghostPage.setChromeVisible(chromeVisible)
             ghostPage.translationY = if (direction > 0) h else -h
@@ -1499,8 +1984,8 @@ class PhonePlayerActivity : PhoneActivity() {
     /**
      * 换到相邻的一集（±1）。到头时给一句提示，不做越界播放。
      *
-     * 走 [play]：它已经处理了「预热命中就只挂媒体源」「否则重新取地址」两条路，
-     * 因此上下滑换集与点选集换集的手感完全一致（片尾连播也是同一条路）。
+     * 优先走 [playSwipeTarget]：下一集已经排进播放列表时直接推进，避免重建播放器；
+     * 尚未准备好时才回落到 [play] 的常规取源路径。
      */
     private fun stepEpisode(direction: Int) {
         val d = detail ?: return
@@ -1514,7 +1999,7 @@ class PhonePlayerActivity : PhoneActivity() {
             root.postDelayed({ if (hintToken == token) clearEpisodeHint() }, 1200)
             return
         }
-        play(target)
+        playSwipeTarget(target)
         hint.text = "第${target + 1}集"
         hintToken++
         hintSticky = true
@@ -1558,11 +2043,11 @@ class PhonePlayerActivity : PhoneActivity() {
             val d = cached ?: fromDisk ?: withContext(Dispatchers.IO) {
                 runCatching { PhoneServices.repository(this@PhonePlayerActivity).detail(seriesId) }.getOrNull()
             }
-            if (d == null) { landTitle.text = "详情加载失败"; return@launch }
+            if (d == null) { landInfoLeft.text = "详情加载失败"; return@launch }
             if (cached == null && fromDisk == null) runCatching { com.hgtv.star.core.DetailCache.save(d) }
             detail = d
             if (d.episodes.isEmpty()) {
-                landTitle.text = if (d.upcoming) "尚未上线" else "暂无剧集"
+                landInfoLeft.text = if (d.upcoming) "尚未上线" else "暂无剧集"
                 return@launch
             }
 
@@ -1645,7 +2130,6 @@ class PhonePlayerActivity : PhoneActivity() {
         bindEpisodeUi(d, sessionIndex)
 
         player = exo
-        maybeAutoFullscreenOnEntry()
         // `bindEpisodeUi` 在 `player` 赋值之前跑：这里补一次画面尺寸，
         // 否则接手时「全屏」按钮会一直不出现（`bind` 把已知尺寸清掉了）。
         syncVideoFrame()
@@ -1741,6 +2225,10 @@ class PhonePlayerActivity : PhoneActivity() {
             if (isFinishing || isDestroyed) { prepared.close(); return@launch }
             val factory = DataSource.Factory { VideoDataSource(prepared) }
             exo.swapMediaSource(episodeId, prepared.info.url, factory)
+            queuedVideo?.let { runCatching { it.close() } }
+            queuedVideo = null
+            queuedEpisodeId = ""
+            PhoneSession.clearNext()
             remote = prepared
             PhoneSession.publish(d, index, prepared, prepared.info.quality, PhoneSession.Owner.PLAYER)
             exo.setPlaybackSpeed(userSpeed)
@@ -1757,8 +2245,8 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 把「第几集」这件事刷到所有界面上（竖屏信息栏 / 横屏标题 / 选集按钮）。 */
     private fun bindEpisodeUi(d: Detail, episodeIndex: Int) {
         val label = "第${episodeIndex + 1}集"
-        page.bind(d.series, label, watchText = "选集 全${d.episodes.size}集｜$label")
-        landTitle.text = "${d.series.title} $label"
+        page.bind(d.series, label, watchText = "选集 ${episodeIndex + 1}/${d.episodes.size}")
+        // 横屏不再单独写一行「剧名 第x集」：这一份由 `syncPlayInfo()` 铺在顶部的信息行里。
         applyLandscapeResize()
         // `bind` 会把画面模式重置成默认值：换集 / 从横屏退回来都要按用户设置补一次，
         // 否则「选了等比铺满，一换集就变回原样」。
@@ -1770,8 +2258,8 @@ class PhonePlayerActivity : PhoneActivity() {
         // 这里用播放器现有的尺寸补一次：否则「全屏」按钮会一直不出现。
         syncVideoFrame()
         loadDanmaku(d.episodes[episodeIndex], d.series.id)
-        // 「竖屏短剧全屏」只在进入播放页时判断一次（见 [maybeAutoFullscreenOnEntry]）。
-        // 切集不重复转屏：否则用户在竖屏上滑看下一集，画面会突然变成横屏并裁掉内容。
+        // 换集不转屏：手机端播放页的方向只由用户的「全屏」点击决定，
+        // 上滑看下一集时画面不会自己变成横屏（早先那条「竖屏短剧自动全屏」已经删掉）。
     }
 
     /** 把播放器当前的画面尺寸补到页面上（`bind` 之后调用）。 */
@@ -1819,39 +2307,72 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /**
-     * 把「播放显示」那四项拼成一条读数。
+     * 把「播放显示」那四项铺到这一行上：**剧名 / 集数靠左，网速 / 时间靠右**。
      *
-     * 四项全关时整条不出现（默认就是全关）；清屏时跟着一起藏。
+     * 显隐规则（与电视端同一套口径，用户指定）：
+     *
+     * | 四项开关 | 显示 | 是否跟随控制层 |
+     * | --- | --- | --- |
+     * | 全都没勾 | **四项全显示**（默认形态） | 是：清屏时一起收起 |
+     * | 勾了任意一项 | 只显示勾选的那几项 | 否：**一直显示**，清屏也不收 |
+     *
+     * 横屏与竖屏各有一份（`landInfoRow` / `infoRow`），规则完全相同。
      */
     private fun syncPlayInfo() {
         val lib = library
         val d = detail
-        if (lib == null || d == null || !::infoLine.isInitialized) return
-        val parts = ArrayList<String>(4)
-        if (lib.playerTitle) parts += d.series.title
+        if (lib == null || d == null || !::infoRow.isInitialized) return
+        val anyChecked = lib.playerTitle || lib.playerEpisode || lib.playerClock || lib.playerSpeed
+        // 全都没勾时按「四项全开」渲染——这是用户要的默认形态，但它跟着控制层收放。
+        val showAll = !anyChecked
+        val followChrome = showAll
+        // 左半：剧集标题 + 当前集数。
+        val left = ArrayList<String>(2)
+        if (showAll || lib.playerTitle) left += d.series.title
         // 集数带总数（「第 3 / 171 集」）：与电视端信息条同一段格式（`PlaybackInfoLine`）。
-        if (lib.playerEpisode) parts += com.hgtv.star.core.PlaybackInfoLine.episode(index, d.episodes.size)
-        // 后两项与电视端**同一份落盘值、同一套含义**（见 TV 的 `updatePlaybackInfoReadings`）：
-        // `playerClock` 是「当前时间」，`playerSpeed` 是「网速」。
-        // 早先手机上把它们画成了「播放位置 / 倍速」——同一个开关在两端显示不同的东西，
-        // 用户在电视上打开的「网速」到了手机上变成「2×」，备份恢复后更是对不上。
+        if (showAll || lib.playerEpisode) {
+            left += com.hgtv.star.core.PlaybackInfoLine.episode(index, d.episodes.size)
+        }
+        // 右半：网速 + 当前时间。两项与电视端**同一份落盘值、同一套含义**
+        //（见 TV 的 `updatePlaybackInfoReadings`）：`playerSpeed` 是网速、`playerClock` 是当前时间。
+        // 早先手机上把它们画成了「播放位置 / 倍速」——同一个开关在两端显示不同的东西。
         // 播放位置在底部进度条上本来就有（`landCurrent` / `landTotal`），不占这一行。
-        if (lib.playerClock) {
+        val right = ArrayList<String>(2)
+        if (showAll || lib.playerSpeed) right += com.hgtv.star.shared.debug.NetSpeed.line()
+        if (showAll || lib.playerClock) {
             val calendar = java.util.Calendar.getInstance()
-            parts += com.hgtv.star.core.PlaybackInfoLine.clock(
+            right += com.hgtv.star.core.PlaybackInfoLine.clock(
                 calendar.get(java.util.Calendar.HOUR_OF_DAY),
                 calendar.get(java.util.Calendar.MINUTE),
             )
         }
-        if (lib.playerSpeed) parts += com.hgtv.star.shared.debug.NetSpeed.line()
-        infoLine.text = parts.joinToString("  ·  ")
-        infoLine.visibility =
-            if (parts.isEmpty() || landscapeMode || !chromeVisible) View.GONE else View.VISIBLE
+        val leftText = left.joinToString("  ·  ")
+        val rightText = right.joinToString("  ·  ")
+        infoLeft.text = leftText
+        infoRight.text = rightText
+        if (::landInfoRow.isInitialized) {
+            landInfoLeft.text = leftText
+            landInfoRight.text = rightText
+        }
+        val empty = left.isEmpty() && right.isEmpty()
+        val visible = !empty && (!followChrome || chromeVisible)
+        // 竖屏：`portraitTop` 只装这一行，显隐完全由这里决定（见 `applyChrome`）。
+        infoRow.visibility = if (visible) View.VISIBLE else View.GONE
+        portraitTop.visibility = if (visible) View.VISIBLE else View.GONE
+        // 顶部那条压暗只给这一行垫底：这一行不显示时它就是一条平白无故的暗带
+        //（用户反馈「全屏顶部有一些黑雾，需要仔细对比才能发现」——渐变很缓，
+        // 亮场里才看得出）。早先它跟控制层一起开关，跟「有没有字」无关。
+        if (::page.isInitialized) page.setTopScrimVisible(visible)
+        // 横屏：贴顶那一行与 `landTop` 各管各的，清屏时它照旧常驻。
+        if (::landInfoRow.isInitialized) {
+            landInfoRow.visibility = if (visible) View.VISIBLE else View.GONE
+        }
     }
 
     internal fun play(episodeIndex: Int, startAt: Long = 0L) {
         val d = detail ?: return
         if (episodeIndex !in d.episodes.indices) return
+        nextSeasonFinishedFor = ""
         val sameEpisode = episodeIndex == index
         index = episodeIndex
         val episodeId = d.episodes[episodeIndex]
@@ -1867,6 +2388,7 @@ class PhonePlayerActivity : PhoneActivity() {
         cancelAutoRetry()
         clearPlaybackError()
         bindEpisodeUi(d, episodeIndex)
+        prepareNextSeasonIfNeeded(d)
 
         // 预热命中：这一集的首块与地址都已经在手上了，只差挂媒体源（几十毫秒）。
         // 上限也要对得上：预热那一份比现在生效的档位高时不能接（见 `PhoneSession.takeNext`）。
@@ -1886,22 +2408,179 @@ class PhonePlayerActivity : PhoneActivity() {
         scope.launch {
             // 上限读**实际生效**的那一档（自动降档结果优先），否则降档只在当前这一集生效。
             val maxQuality = playbackMaxQuality
-            val info = withContext(Dispatchers.IO) {
+            val source = withContext(Dispatchers.IO) {
                 runCatching {
                     PhoneServices.repository(this@PhonePlayerActivity).stream(episodeId, maxQuality)
-                }.getOrNull()
-            } ?: run { landTitle.text = "${d.series.title} 第${episodeIndex + 1}集 · 取地址失败"; return@launch }
+                }
+            }
+            val info = source.getOrNull()
+            if (info == null) {
+                val problem = source.exceptionOrNull()
+                invalidateEpisodeCacheForRetry(episodeId, null)
+                onEpisodeSourceMissing(d, episodeIndex, startAt, problem)
+                return@launch
+            }
 
-            val prepared = withContext(Dispatchers.IO) { prepare(episodeId, info) }
-                ?: run { landTitle.text = "${d.series.title} 第${episodeIndex + 1}集 · 准备失败"; return@launch }
+            val preparedSource = withContext(Dispatchers.IO) {
+                runCatching { prepareSource(episodeId, info) }
+            }
+            val prepared = preparedSource.getOrNull()
+            if (prepared == null) {
+                val problem = preparedSource.exceptionOrNull()
+                // 本地准备会读落盘索引 / 首块；缓存对应的文件或地址不认了，
+                // 继续重试同一份缓存只会重复失败。先整体作废并换请求 device_id。
+                if (problem == null || problem is java.io.IOException) {
+                    invalidateEpisodeCacheForRetry(episodeId, info)
+                }
+                onEpisodeSourceMissing(d, episodeIndex, startAt, problem)
+                return@launch
+            }
 
             attach(prepared, startAt)
         }
     }
 
-    private fun prepare(episodeId: String, info: StreamInfo): RemoteVideo? = runCatching {
-        RemoteVideo(PlaybackTransport.client, info, info.mediaKey(episodeId)).also { it.prepare() }
-    }.getOrNull()
+    /**
+     * 上下滑换集优先推进 ExoPlayer 已经挂好的下一项。
+     *
+     * 自动连播之所以无感，是因为它没有重新设置媒体源；手动上滑如果仍走 [play]，
+     * 即使地址已经预热，也会 stop / setMediaSource / prepare 一遍，用户看到的
+     * 就是「先加载再播放」。这里直接 seek 到队列里的下一项，复用同一条播放链路。
+     *
+     * 只有下一项确实已在播放列表里才走这条快路；否则仍由 [play] 走常规兜底。
+     */
+    private fun playSwipeTarget(target: Int) {
+        if (target == index + 1 && seekToQueuedNext(target)) return
+        play(target)
+    }
+
+    private fun seekToQueuedNext(target: Int): Boolean {
+        if (!PhoneSession.nextQueued) return false
+        if (queuedVideo == null || queuedEpisodeId.isEmpty()) return false
+        val exo = player ?: return false
+        val current = exo.currentMediaItemIndex
+        if (current < 0 || exo.mediaItemCount <= current + 1) return false
+        manualNextTarget = target
+        manualNextPosition = exo.currentPosition.coerceAtLeast(0L)
+        exo.playWhenReady = true
+        if (runCatching { exo.seekToNextMediaItem() }.isFailure) {
+            manualNextTarget = -1
+            manualNextPosition = 0L
+            return false
+        }
+        // `onMediaItemTransition` 正常会先到；这里只做一次兜底，避免个别设备不回调时
+        // 画面已经切过去、标题与集数却还停在上一集。
+        root.post {
+            if (manualNextTarget == target) {
+                manualNextTarget = -1
+                onAdvanced(target, completedPrevious = false, previousPosition = manualNextPosition)
+                manualNextPosition = 0L
+            }
+        }
+        return true
+    }
+
+    /**
+     * 换集时**取不到播放地址 / 准备失败**。
+     *
+     * 这条路径原先只往 `landInfoLeft` 写一句「第 N 集 · 准备失败」就返回，而 `play()`
+     * 在此之前已经 [releasePlayer] 了——页面于是停在一块黑屏上：既放不了，也看不出在等什么；
+     * 竖屏连那行字都看不到（`landInfoLeft` 只在横屏存在）。
+     * 用户报的「第三集播完进不了第四集，提示没准备好，然后就退不回去了」就是这条路径。
+     *
+     * 现在按「网络瞬态」处理：先自动重试两次（3 秒 / 6 秒，播放器留着、上一集的最后一帧
+     * 留在屏幕上，不黑屏）；仍不行才摆错误页——那里的「立即重试」与「下一集」
+     * 才是用户真正需要的出口，而不是一句没人看得见的字。
+     */
+    private fun onEpisodeSourceMissing(
+        d: Detail,
+        episodeIndex: Int,
+        at: Long,
+        problem: Throwable? = null,
+    ) {
+        val episodeId = d.episodes.getOrNull(episodeIndex) ?: return
+        if (problem != null && com.hgtv.star.core.isInterruption(problem)) return
+        if (problem != null) {
+            android.util.Log.w(
+                "HGTV-RECOVER",
+                "source missing episode=${episodeIndex + 1} cache invalidated=${problem is java.io.IOException}",
+                problem,
+            )
+        }
+        if (sourceRetryEpisode != episodeId) {
+            sourceRetryEpisode = episodeId
+            sourceRetryCount = 0
+        }
+        if (sourceRetryCount < sourceRetryLimit) {
+            sourceRetryCount++
+            val wait = sourceRetryStepMs * sourceRetryCount
+            // 与「第 N 集」那类提示走同一套 token：后到的提示会把这一条顶掉。
+            hint.text = "第 ${episodeIndex + 1} 集还没取到播放地址，${wait / 1000} 秒后重试…"
+            hintToken++
+            hintSticky = true
+            hint.visibility = View.VISIBLE
+            hint.bringToFront()
+            val token = hintToken
+            root.postDelayed({
+                if (!isFinishing && !isDestroyed) {
+                    // 重试前先把提示收掉：重试成功时不该还挂着「重试中」。
+                    if (hintToken == token) {
+                        hintSticky = false
+                        hint.visibility = View.GONE
+                    }
+                    play(episodeIndex, at)
+                }
+            }, wait)
+            return
+        }
+        // 额度用完：交给错误页（带「立即重试 / 下一集」），绝不留一块黑屏给用户。
+        hintSticky = false
+        hint.visibility = View.GONE
+        failureStage = com.hgtv.star.core.PlaybackStage.PREPARE
+        showPlaybackError(
+            playbackAttribution(sourceMissingCode),
+            com.hgtv.star.core.GiveUpReason.BUDGET_EXHAUSTED,
+        )
+    }
+
+    /**
+     * 清掉这一集当前所有缓存，并让下一次取流使用新的请求 device_id。
+     *
+     * 与电视端的 `prepareFreshPlaybackRetry` 保持同一条语义：
+     * 地址、索引、首块、预取槽和连接层一起作废，不能只重放同一条失败流。
+     */
+    private fun invalidateEpisodeCacheForRetry(episodeId: String, info: StreamInfo?) {
+        queuedVideo?.let { runCatching { it.close() } }
+        queuedVideo = null
+        queuedEpisodeId = ""
+        PhoneSession.clearNext()
+        runCatching {
+            PhoneServices.repository(this).forgetStreamAllQualities(episodeId)
+        }
+        info?.let {
+            runCatching { PlaybackCache.invalidateIndex(it.mediaKey(episodeId)) }
+            val host = runCatching { java.net.URI(it.url).host }.getOrNull().orEmpty()
+            if (host.isNotEmpty()) {
+                com.hgtv.star.shared.media.PlaybackFailures.dropTransportCaches(listOf(host))
+            }
+        }
+    }
+
+    /** 本地准备失败必须保留异常：调用方据此决定是否作废缓存后重取。 */
+    private fun prepareSource(episodeId: String, info: StreamInfo): RemoteVideo {
+        val remote = RemoteVideo(PlaybackTransport.client, info, info.mediaKey(episodeId))
+        return try {
+            remote.prepare()
+            remote
+        } catch (problem: Throwable) {
+            runCatching { remote.close() }
+            throw problem
+        }
+    }
+
+    /** 预热路径只需要结果，失败就丢掉；播放起播路径走 [prepareSource] 保留异常。 */
+    private fun prepare(episodeId: String, info: StreamInfo): RemoteVideo? =
+        runCatching { prepareSource(episodeId, info) }.getOrNull()
 
     private fun attach(video: RemoteVideo, startAt: Long) {
         remote = video
@@ -1912,6 +2591,12 @@ class PhonePlayerActivity : PhoneActivity() {
         // 先停再挂（见 `swapMediaSource`）：预热命中时播放器可能正在出帧，
         // 直接换源会在 flush 编解码器时抛 0x80000000，随即报 4003。
         exo.swapMediaSource(episodeId, video.info.url, factory)
+        // 新源已经替换整条播放列表：旧的“下一集已排队”标志不能跨到这一集，
+        // 否则最后一集片尾会被误判成还有队列项而卡住。
+        queuedVideo?.let { runCatching { it.close() } }
+        queuedVideo = null
+        queuedEpisodeId = ""
+        PhoneSession.clearNext()
         exo.setPlaybackSpeed(userSpeed)
         exo.playWhenReady = true
         attachListener(exo)
@@ -1920,7 +2605,6 @@ class PhonePlayerActivity : PhoneActivity() {
         }
 
         player = exo
-        maybeAutoFullscreenOnEntry()
         if (landscapeMode) {
             page.playerView.player = null
             landscapeVideo.player = exo
@@ -1941,6 +2625,10 @@ class PhonePlayerActivity : PhoneActivity() {
         syncChips()
         startTicker()
         armPictureWatchdog()
+        // 这一集真的挂上了：取地址失败的重试计数归零（见 `onEpisodeSourceMissing`）。
+        // 不清的话，网络恢复回调会拿一个过期的计数把正常播放的这一集重来一遍。
+        sourceRetryEpisode = ""
+        sourceRetryCount = 0
 
         if (pendingFullscreen) {
             pendingFullscreen = false
@@ -1968,16 +2656,34 @@ class PhonePlayerActivity : PhoneActivity() {
                     watchdog.onReady()
                     notePlaybackHealthy()
                 }
-                if (state == Player.STATE_ENDED && PhoneSession.nextQueued) return
-                if (state == Player.STATE_ENDED) next()
+                if (state == Player.STATE_ENDED) {
+                    // 进程级 `nextQueued` 可能比播放器列表晚一拍清掉。片尾只信
+                    // 播放器当前真实是否还有下一项；没有就立刻走下一季 / 全剧结束。
+                    val hasNextItem = runCatching {
+                        val exo = player ?: return@runCatching false
+                        val current = exo.currentMediaItemIndex.coerceAtLeast(0)
+                        exo.mediaItemCount > current + 1
+                    }.getOrDefault(false)
+                    if (hasNextItem) return
+                    PhoneSession.nextQueued = false
+                    next()
+                }
             }
 
-            /** 无感换集：ExoPlayer 从队列里推进到下一集时回调。 */
+            /** 无感换集：自动推进或手动 seek 到队列下一项时回调。 */
             override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
                 val nextIndex = detail?.episodes?.indexOf(mediaItem?.mediaId).takeIf { it != null && it >= 0 }
                     ?: (index + 1)
-                onAdvanced(nextIndex)
+                val manual = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK &&
+                    manualNextTarget == nextIndex
+                if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && !manual) return
+                if (manual) manualNextTarget = -1
+                if (manual) {
+                    onAdvanced(nextIndex, completedPrevious = false, previousPosition = manualNextPosition)
+                    manualNextPosition = 0L
+                } else {
+                    onAdvanced(nextIndex)
+                }
             }
 
             // 只同步底部那颗按钮的图标。中心图标**不跟着 isPlaying 走**：
@@ -2000,7 +2706,6 @@ class PhonePlayerActivity : PhoneActivity() {
                 if (landscapeMode) landscapeVideo.resizeMode = target
                 if (feedUnderlay) PhoneSession.setFeedVideoResize(target)
                 page.updateVideoFrame(videoSize.width, videoSize.height)
-                maybeAutoFullscreenOnEntry()
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -2037,7 +2742,11 @@ class PhonePlayerActivity : PhoneActivity() {
      * * 集号、标题、选集按钮、会话全部换到新一集；
      * * **不重设媒体源**——重设就会黑屏重来，那正是要避免的。
      */
-    private fun onAdvanced(nextIndex: Int) {
+    private fun onAdvanced(
+        nextIndex: Int,
+        completedPrevious: Boolean = true,
+        previousPosition: Long = 0L,
+    ) {
         val d = detail ?: return
         if (nextIndex !in d.episodes.indices) return
         val previous = index
@@ -2046,14 +2755,23 @@ class PhonePlayerActivity : PhoneActivity() {
         // 播完那一集：写 completed（用切走之前记下的时长）。
         val lib = library
         if (lib != null && previous in d.episodes.indices && previousDuration > 0) {
-            // 「整集看完」的写法与电视端共用 `:core` 的 `WatchProgress.completed`：
-            // 位置、时长、completed 三个字段不会再有一端只改一半。
-            val done = WatchProgress.completed(
-                series = d.series,
-                episodeId = d.episodes[previous],
-                episodeIndex = previous,
-                duration = previousDuration,
-            )
+            // 自动推进才是「整集看完」；手动上滑是中途换集，只保存当前续播点。
+            val done = if (completedPrevious) {
+                WatchProgress.completed(
+                    series = d.series,
+                    episodeId = d.episodes[previous],
+                    episodeIndex = previous,
+                    duration = previousDuration,
+                )
+            } else {
+                WatchProgress.of(
+                    series = d.series,
+                    episodeId = d.episodes[previous],
+                    episodeIndex = previous,
+                    position = previousPosition,
+                    duration = previousDuration,
+                )
+            }
             runCatching { lib.save(done) }
             // 账号侧也要跟着走（与 TV 的 `syncProgress` 同一条路）：不推的话，
             // 在手机上看完的这几集换到电视上还是「没看过」。
@@ -2077,6 +2795,7 @@ class PhonePlayerActivity : PhoneActivity() {
             remote = video
             PhoneSession.publish(d, nextIndex, video, video.info.quality, PhoneSession.Owner.PLAYER)
         }
+        prepareNextSeasonIfNeeded(d)
         muteBufferingUi()
         android.util.Log.i("HGTV-PHONE", "advanced seamlessly to ${nextIndex + 1}")
     }
@@ -2094,7 +2813,9 @@ class PhonePlayerActivity : PhoneActivity() {
         }
         // **选集按钮永远显示**：之前按 `recommend` 把它藏了，而从推荐流进全屏正是最常见
         // 的路径（`PhoneFeedView` 一律带 `EXTRA_RECOMMEND=true`），结果就是「全屏里没有选集按钮」。
-        episodeChip.text = "选集 ${index + 1}"
+        // 文案带总数（用户要求）：`选集 3/171`，一眼知道现在在第几集、全剧多少集。
+        val total = detail?.episodes?.size ?: 0
+        episodeChip.text = if (total > 0) "选集 ${index + 1}/$total" else "选集 ${index + 1}"
         episodeChip.visibility = View.VISIBLE
     }
 
@@ -2138,12 +2859,15 @@ class PhonePlayerActivity : PhoneActivity() {
     /**
      * 倍速快捷开关：点一次切到下一档，与弹幕按钮同一种操作。
      *
-     * 0.75 → 1 → 1.25 → 1.5 → 1.75 → 2 → 0.75。写入书库，
+     * 0.75 → 1 → 1.25 → 1.5 → 1.75 → 2 → 3 → 0.75。写入书库，
      * 推荐页接手时读到的也是刚切好的这一档。
+     *
+     * 用 [PlaybackSpeed.phoneOptions] 而不是 [PlaybackSpeed.options]：3× 只在手机 / 平板上提供
+     * （电视端遥控器来回调这么快的档位没有意义），但**校验**两边都认，见那边的说明。
      */
     private fun cycleSpeed() {
         val lib = library ?: return
-        val options = PlaybackSpeed.options
+        val options = PlaybackSpeed.phoneOptions
         val current = options.indexOfFirst { kotlin.math.abs(it - userSpeed) < .001f }
             .takeIf { it >= 0 } ?: options.indexOf(1f).coerceAtLeast(0)
         val next = options[(current + 1) % options.size]
@@ -2206,7 +2930,7 @@ class PhonePlayerActivity : PhoneActivity() {
         }
         val overlay = debugOverlay ?: com.hgtv.star.phone.ui.PhoneDebugOverlay(this).also {
             debugOverlay = it
-            com.hgtv.star.phone.ui.PhoneDebugOverlay.place(it, root, statusBar() + dp(4))
+            com.hgtv.star.phone.ui.PhoneDebugOverlay.place(it, root, dp(8))
         }
         overlay.update(debugLines())
         PhoneDebugReport.sampleAsync(this) {
@@ -2325,7 +3049,7 @@ class PhonePlayerActivity : PhoneActivity() {
                     if (!sleepStopped && sleepTimer.poll()) stopForSleep()
                     // 调试面板：与进度同一节拍刷新（关着时这一步只是一次布尔判断）。
                     syncDebugOverlay()
-                    // 片尾 30 秒窗口内预热下一集（与 TV 的 `PrefetchPolicy.nearEnd` 同值）。
+                    // 起播稳定后尽早准备下一集，手动上滑与片尾自动连播共用这一份。
                     maybePrefetchNext(position, duration)
                     enqueueNextIfReady()
                     val now = System.currentTimeMillis()
@@ -2368,13 +3092,14 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /**
-     * 片尾预热下一集：**只在这 30 秒窗口里取地址**。
+     * 播放稳定后尽早预热下一集。
      *
-     * 取地址实测 500~1100ms、prepare 再 700~900ms；提前取好，片尾那一刻就只剩
-     * 「挂进播放列表」这一下。窗口不能更早：这条接口对并发极敏感，而且地址只有 10 分钟
-     * 有效期（见 `PlaybackCache.URL_FRESH_MS`），提前太久等于白取。
+     * 手动上下滑可能发生在任意时刻，不能像以前一样等到片尾 30 秒才准备。这里在当前集
+     * 稳定播放 2 秒后开始取地址与首块，并把它挂进播放列表；片尾自动推进与手动上滑
+     * 都复用这一项，因此不会重新 release 播放器。
      *
-     * 与 TV 的 `maybePrefetch` 同一套条件：自动连播开着、不在最后一集、没有出错、没在暂停。
+     * 地址只有 10 分钟有效期（见 [PlaybackCache.URL_FRESH_MS]），所以长视频只会在
+     * 剩余时长小于安全窗口时开始预热，避免下一集真正播放时地址已经过期。
      */
     private fun maybePrefetchNext(position: Long, duration: Long) {
         val d = detail ?: return
@@ -2385,8 +3110,9 @@ class PhonePlayerActivity : PhoneActivity() {
         if (PhoneSession.nextQueued) return
         if (PhoneSession.nextRemote != null) return
         if (player?.isPlaying != true) return
+        if (position < PREFETCH_START_MS) return
         val remaining = duration - position
-        if (remaining > PREFETCH_WINDOW_MS || remaining <= 0) return
+        if (remaining <= 0 || remaining > PlaybackCache.URL_FRESH_MS - PREFETCH_URL_RESERVE_MS) return
         val now = System.currentTimeMillis()
         if (now < prefetchAt) return
         val nextId = d.episodes[nextIndex]
@@ -2466,31 +3192,170 @@ class PhonePlayerActivity : PhoneActivity() {
             stopForSleep()
             return
         }
-        if (index + 1 < d.episodes.size) play(index + 1) else showSeriesFinished(d)
+        if (index + 1 < d.episodes.size) play(index + 1) else advanceToNextSeasonOrFinish(d)
     }
 
     /**
-     * 全剧播完：**换一部接着看**（与 TV 的 `showSeriesFinished` 同一个语义）。
-     *
-     * 电视上弹的是一条「相关剧集」横条；手机上是底部浮层，一屏能点到的位置，
-     * 点哪一部就直接从它续播的位置接着放——不必先回详情页。
-     *
-     * 相关剧集走 `ContentRepository.related`（与 TV 同一个接口、同一份缓存）：
-     * 取不到时如实说一句，不把面板做成空的。
+     * 进入最后一集时提前查下一季，查到就在画面底部提示。
      */
-    private fun showSeriesFinished(d: Detail) {
+    private fun prepareNextSeasonIfNeeded(d: Detail) {
+        val active = d.series.id == detail?.series?.id &&
+            index == d.episodes.lastIndex &&
+            library?.autoNext == true &&
+            !sleepStopped
+        if (!active) {
+            clearNextSeasonLookup()
+            return
+        }
+        ensureNextSeason(d.series)
+    }
+
+    private fun clearNextSeasonLookup() {
+        nextSeasonToken++
+        nextSeasonJob?.cancel()
+        nextSeasonJob = null
+        nextSeasonFor = ""
+        nextSeason = null
+        nextSeasonLoading = false
+        autoNextSeasonPending = false
+        nextSeasonOpening = false
+        nextSeasonFinishedFor = ""
+        hideNextSeasonNotice()
+    }
+
+    private fun ensureNextSeason(series: Series) {
+        if (nextSeasonFor == series.id) {
+            if (!nextSeasonLoading) showNextSeasonNotice()
+            return
+        }
+        val token = ++nextSeasonToken
+        nextSeasonJob?.cancel()
+        nextSeasonFor = series.id
+        nextSeason = null
+        nextSeasonLoading = true
+        nextSeasonOpening = false
+        hideNextSeasonNotice()
+        val cached = PhoneSession.relatedWorks(series.id)
+        if (cached != null) {
+            completeNextSeasonLookup(series, cached, token)
+            return
+        }
+        nextSeasonJob = scope.launch {
+            val works = withContext(Dispatchers.IO) {
+                runCatching {
+                    PhoneServices.repository(this@PhonePlayerActivity).related(series.id, series.title)
+                }.getOrNull()
+            }
+            if (token != nextSeasonToken || isFinishing || isDestroyed) return@launch
+            if (works != null) PhoneSession.rememberRelated(series.id, works)
+            completeNextSeasonLookup(series, works, token)
+        }
+    }
+
+    private fun completeNextSeasonLookup(
+        series: Series,
+        works: com.hgtv.star.core.RelatedWorks?,
+        token: Int,
+    ) {
+        if (token != nextSeasonToken || isFinishing || isDestroyed) return
+        nextSeasonJob = null
+        nextSeasonLoading = false
+        nextSeason = works?.let { com.hgtv.star.core.SeriesSeasons.nextSeason(series, it) }
+        if (nextSeason != null) showNextSeasonNotice() else hideNextSeasonNotice()
+        if (autoNextSeasonPending) {
+            autoNextSeasonPending = false
+            val target = nextSeason
+            if (target != null) openNextSeason(target) else finishSeriesPlayback(series)
+        }
+    }
+
+    private fun showNextSeasonNotice() {
+        val d = detail ?: return
+        val target = nextSeason ?: return
+        val active = d.series.id == nextSeasonFor &&
+            index == d.episodes.lastIndex &&
+            library?.autoNext == true &&
+            !sleepStopped
+        if (!active) {
+            hideNextSeasonNotice()
+            return
+        }
+        nextSeasonNotice.text =
+            "将自动播放 ${com.hgtv.star.core.SeriesSeasons.titleWithSeason(target)}"
+        nextSeasonNotice.visibility = View.VISIBLE
+    }
+
+    private fun hideNextSeasonNotice() {
+        if (::nextSeasonNotice.isInitialized) nextSeasonNotice.visibility = View.GONE
+    }
+
+    /** 最后一集播完：有下一季就播第 1 集，否则停在「全剧已播完」。 */
+    private fun advanceToNextSeasonOrFinish(d: Detail) {
         val series = d.series
-        // 同一部剧只弹一次：片尾 `STATE_ENDED` 可能连着来两次（排队故障 / 重试）。
-        if (finishedFor == series.id && sheet.isOpen) return
-        finishedFor = series.id
-        showRelated(d, "《${series.title}》已经看完 · 换一部接着看", "换一部接着看")
+        if (nextSeasonFinishedFor == series.id) return
+        if (library?.autoNext != true) {
+            finishSeriesPlayback(series)
+            return
+        }
+        if (nextSeasonFor == series.id) {
+            if (nextSeasonLoading) {
+                autoNextSeasonPending = true
+                return
+            }
+            val target = nextSeason
+            if (target != null) openNextSeason(target) else finishSeriesPlayback(series)
+            return
+        }
+        autoNextSeasonPending = true
+        ensureNextSeason(series)
+    }
+
+    private fun openNextSeason(target: Series) {
+        if (nextSeasonOpening) return
+        nextSeasonOpening = true
+        autoNextSeasonPending = false
+        hideNextSeasonNotice()
+        val token = ++nextSeasonToken
+        nextSeasonJob?.cancel()
+        nextSeasonJob = scope.launch {
+            val loaded = withContext(Dispatchers.IO) {
+                runCatching {
+                    PhoneServices.repository(this@PhonePlayerActivity).detail(target.id)
+                }.getOrNull()
+            }
+            if (token != nextSeasonToken || isFinishing || isDestroyed) return@launch
+            if (loaded == null || loaded.episodes.isEmpty()) {
+                nextSeasonOpening = false
+                finishSeriesPlayback(detail?.series ?: target)
+                return@launch
+            }
+            nextSeasonOpening = false
+            nextSeasonJob = null
+            nextSeasonFor = ""
+            nextSeason = null
+            nextSeasonLoading = false
+            nextSeasonFinishedFor = ""
+            detail = loaded
+            play(0)
+        }
+    }
+
+    private fun finishSeriesPlayback(series: Series) {
+        nextSeasonFinishedFor = series.id
+        nextSeasonOpening = false
+        autoNextSeasonPending = false
+        hideNextSeasonNotice()
+        player?.pause()
+        hint.text = "全剧已播完"
+        hintSticky = true
+        hint.visibility = View.VISIBLE
+        hint.bringToFront()
     }
 
     /**
-     * 相关剧集浮层：**片尾「已播完」与播放设置里的「相关剧集」共用这一份**。
+     * 相关剧集浮层：播放设置里的「相关剧集」使用这一份。
      *
-     * 摆法与电视端的「换一部接着看」（`MainActivity.showFinishedStrip` + `buildRelatedRow`）
-     * 一一对应：
+     * 摆法与电视端播放设置里的相关剧集（`buildRelatedRow`）一一对应：
      *
      * ```
      * 《剧名》已经看完 · 换一部接着看
@@ -2508,7 +3373,7 @@ class PhonePlayerActivity : PhoneActivity() {
      *   用户看得见「刚刚放完的是什么」。
      *
      * 数据与详情页共用 [PhoneSession.relatedWorks]（电视端同样共用 `relatedWorks`）：
-     * 从详情页点进来的这一路已经取好了，片尾弹出来是零等待。
+     * 从详情页点进来的这一路已经取好了，打开浮层时是零等待。
      */
     private fun showRelated(d: Detail, title: String, heading: String) {
         val series = d.series
@@ -2520,7 +3385,13 @@ class PhonePlayerActivity : PhoneActivity() {
         val cached = PhoneSession.relatedWorks(series.id)
         // 横竖屏都用**贴底整宽**的条：电视端的 RelatedPanel 就是这样，且横屏时
         // 右侧 1/3 抽屉只放得下两张卡，浏览「换一部」反而更费劲。
-        sheet.show(title, landscape = false, dim = false) { panel ->
+        sheet.bottomInset = if (landscapeMode) navigationBarPx() else 0
+        sheet.show(
+            title,
+            landscape = false,
+            dim = false,
+            heightFraction = if (landscapeMode) .95f else .78f,
+        ) { panel ->
             // 状态行：加载中 / 共 N 部（同系列多季时点明季数，与 TV 的标题说法一致）。
             val state = TextView(this).apply {
                 text = if (cached != null) relatedHeadline(cached, heading) else "正在找相关剧集…"
@@ -2587,7 +3458,13 @@ class PhonePlayerActivity : PhoneActivity() {
         }
         host.removeAllViews()
         host.addView(
-            PhoneCards.row(this, PhoneServices.artwork(this), works.items, current.id) { item ->
+            PhoneCards.row(
+                this,
+                PhoneServices.artwork(this),
+                works.items,
+                current.id,
+                widthDp = if (landscapeMode) PhoneCards.COMPACT_WIDTH_DP else PhoneCards.WIDTH_DP,
+            ) { item ->
                 // 点卡片进详情页（与电视端的「换一部接着看」同一落点）。
                 openSeries(item)
             },
@@ -2595,6 +3472,106 @@ class PhonePlayerActivity : PhoneActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             )
         )
+    }
+
+    /**
+     * 播放页作者作品：与详情页使用同一个 [ContentRepository.authorWorks] 数据源，
+     * 以底部横排卡片展示；同一部剧重复打开时复用本次播放页的缓存。
+     */
+    private fun showAuthorWorks(d: Detail) {
+        val series = d.series
+        val name = series.author.trim()
+        if (name.isEmpty()) {
+            toast("这一部没有作者信息")
+            return
+        }
+        chromeEpoch++
+        if (::root.isInitialized) root.removeCallbacks(chromeHideRunnable)
+        val cached = authorWorks.takeIf { authorWorksFor == series.id }
+        sheet.bottomInset = if (landscapeMode) navigationBarPx() else 0
+        sheet.show(
+            "作者作品",
+            landscape = false,
+            dim = false,
+            heightFraction = if (landscapeMode) .95f else .78f,
+        ) { panel ->
+            val state = TextView(this).apply {
+                text = if (cached != null) "正在读取作者作品…" else "正在查找 $name 的作品…"
+                setTextColor(PhoneStyle.textDim)
+                phoneSize(12)
+                setPadding(dp(2), 0, dp(2), dp(10))
+            }
+            panel.addView(state, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+            val host = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
+            panel.addView(host, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+            fun fill(works: List<Series>) {
+                val items = (listOf(series) + works.filterNot { it.id == series.id })
+                    .distinctBy { it.id }
+                state.text = "$name · 共 ${items.size} 部作品"
+                host.removeAllViews()
+                if (items.size <= 1) {
+                    state.text = "$name · 暂时只有这一部作品"
+                    return
+                }
+                host.addView(
+                    PhoneCards.row(
+                        this,
+                        PhoneServices.artwork(this),
+                        items,
+                        series.id,
+                        widthDp = if (landscapeMode) PhoneCards.COMPACT_WIDTH_DP else PhoneCards.WIDTH_DP,
+                    ) { item ->
+                        openSeries(item)
+                    },
+                    LinearLayout.LayoutParams(
+                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                    ),
+                )
+            }
+            if (cached != null) {
+                fill(cached)
+                return@show
+            }
+            val token = ++authorToken
+            scope.launch {
+                val works = withContext(Dispatchers.IO) {
+                    runCatching {
+                        PhoneServices.repository(this@PhonePlayerActivity)
+                            .authorWorks(name, series)
+                    }.getOrNull()
+                }
+                if (token != authorToken || isFinishing || isDestroyed) return@launch
+                authorWorksFor = series.id
+                authorWorks = works
+                if (works == null) {
+                    state.text = "作者作品没能取到，稍后再试。"
+                    return@launch
+                }
+                fill(works)
+            }
+        }
+        relatedSheetOpen = true
+    }
+
+    /** 播放设置动作区里的收藏切换，状态同时写入本机与账号缓存。 */
+    private fun toggleFavorite(series: Series): Boolean {
+        val lib = library ?: return false
+        val accountFavorite = PhoneAccountSync.data?.favorites?.any { it.series.id == series.id } == true
+        val current = runCatching { lib.favorite(series.id) }.getOrDefault(false) || accountFavorite
+        if (current) {
+            if (runCatching { lib.favorite(series.id) }.getOrDefault(false)) lib.toggle(series)
+            PhoneAccountSync.favorite(this, series, false) { toast("登录后可同步收藏") }
+            toast("已取消收藏")
+            return false
+        }
+        if (!runCatching { lib.favorite(series.id) }.getOrDefault(false)) lib.toggle(series)
+        PhoneAccountSync.favorite(this, series, true) { toast("登录后可同步收藏") }
+        toast("已加入收藏")
+        return true
     }
 
     /**
@@ -2625,6 +3602,50 @@ class PhonePlayerActivity : PhoneActivity() {
         player = null
         runCatching { remote?.close() }
         remote = null
+    }
+
+    // ---------------------------------------------------------------- 网络恢复
+
+    /** 网络回调；非空 = 正在监听（见 [watchNetwork]）。 */
+    private var networkWatch: android.net.ConnectivityManager.NetworkCallback? = null
+
+    /**
+     * 网络恢复时**立刻重取地址**，不等退避计时（与电视端 `refetchAddressOnNetwork` 同一条）。
+     *
+     * 手机切 Wi-Fi / 5G 比电视频繁：断网那一下正好在取地址，退避还要等 3~12 秒，
+     * 而网络其实已经好了。电视端早就有这条，手机端原先连网络状态都不看。
+     *
+     * 只在**正在等地址**（[sourceRetryCount] > 0）或**停在错误页**时动手，
+     * 正常播放期间网络抖动不该把这一集重来一遍。
+     */
+    private fun watchNetwork() {
+        if (networkWatch != null) return
+        // `registerDefaultNetworkCallback` 是 API 24 起才有的；更低版本交给退避重试兜底。
+        if (android.os.Build.VERSION.SDK_INT < 24) return
+        val manager = getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager ?: return
+        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: android.net.Network) {
+                runOnUiThread {
+                    if (isFinishing || isDestroyed) return@runOnUiThread
+                    if (errorCard == null && sourceRetryCount == 0) return@runOnUiThread
+                    cancelAutoRetry()
+                    val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
+                    play(index, at)
+                }
+            }
+        }
+        if (runCatching { manager.registerDefaultNetworkCallback(callback) }.isSuccess) {
+            networkWatch = callback
+        }
+    }
+
+    private fun unwatchNetwork() {
+        val callback = networkWatch ?: return
+        networkWatch = null
+        val manager = getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
+            as? android.net.ConnectivityManager
+        runCatching { manager?.unregisterNetworkCallback(callback) }
     }
 
     // ---------------------------------------------------------------- 面板自动收起
@@ -2744,6 +3765,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 再「弹幕怎么滚」（显示方式 / 速度 / 字号 / 透明度）。
      */
     private fun buildSettingsRows(panel: LinearLayout, lib: Library, perLine: Int) {
+        val series = detail?.series
         buildPlaybackSettingsRows(
             host = root,
             panel = panel,
@@ -2781,6 +3803,29 @@ class PhonePlayerActivity : PhoneActivity() {
                     sheet.dismiss()
                     dismissLandscapeSettings()
                     showRelated(d, "相关剧集", "换一部接着看")
+                }
+            },
+            onAuthor = {
+                val d = detail
+                if (d == null) {
+                    toast("还在加载剧集")
+                } else {
+                    sheet.dismiss()
+                    dismissLandscapeSettings()
+                    showAuthorWorks(d)
+                }
+            },
+            favorite = series?.let { item ->
+                runCatching { lib.favorite(item.id) }.getOrDefault(false) ||
+                    PhoneAccountSync.data?.favorites?.any { it.series.id == item.id } == true
+            } ?: false,
+            onFavorite = {
+                val d = detail
+                if (d == null) {
+                    toast("还在加载剧集")
+                    false
+                } else {
+                    toggleFavorite(d.series)
                 }
             },
             // 弹幕四项：立刻落到正在画的这一层（字号 / 透明度 / 速度 / 显示方式都是内存字段，
@@ -2960,27 +4005,6 @@ class PhonePlayerActivity : PhoneActivity() {
         applyFrameMode(library?.frameMode ?: VideoFrameMode.FIT)
     }
 
-    /**
-     * 进入播放页时判断一次「竖屏短剧全屏」。
-     *
-     * 只对本次 Activity 的第一次起播生效：切集、自动连播都不再触发。
-     * 实际尺寸还没出来时先看卡片字段，尺寸回调到了再补一次判断。
-     */
-    private fun maybeAutoFullscreenOnEntry() {
-        if (entryAutoFullscreenDone || landscapeMode) return
-        val d = detail ?: return
-        val size = player?.videoSize
-        val hasSize = size != null && size.width > 0 && size.height > 0
-        val vertical = if (hasSize) size!!.height > size!!.width else d.series.vertical
-        if (vertical && library?.autoFullscreen == true) {
-            entryAutoFullscreenDone = true
-            root.post { if (!landscapeMode) enterFullscreen() }
-        } else if (hasSize) {
-            // 已经能确定是横屏片源：本次进入不再考虑自动全屏。
-            entryAutoFullscreenDone = true
-        }
-    }
-
     private fun applyFrameMode(mode: VideoFrameMode) {
         val target = mode.toFit().resizeMode()
         page.setResizeMode(target)
@@ -3108,6 +4132,9 @@ class PhonePlayerActivity : PhoneActivity() {
     override fun onResume() {
         super.onResume()
         foreground = true
+        // 网络恢复时立刻重取地址（与电视端 `refetchAddressOnNetwork` 同一条）：
+        // 手机切 Wi-Fi / 5G 比电视频繁，断网那一下正在取地址的话不该干等退避计时。
+        watchNetwork()
         // 上面又压了一层播放页（相关剧集）时，那一层会把自己的视频层挂到同一台播放器上，
         // 借来的这块 Surface 就不是输出端了。回到本页必须把输出抢回来，否则是一片黑。
         restoreUnderlayIfNeeded()
@@ -3160,6 +4187,7 @@ class PhonePlayerActivity : PhoneActivity() {
     override fun onPause() {
         super.onPause()
         foreground = false
+        unwatchNetwork()
         syncKeepScreenOn()
         chromeEpoch++
         root.removeCallbacks(chromeHideRunnable)
@@ -3196,6 +4224,8 @@ class PhonePlayerActivity : PhoneActivity() {
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         PhoneDebugReport.resetSamples()
         if (::root.isInitialized) root.removeCallbacks(chromeHideRunnable)
+        // 方向尺子跟着页面一起收：留着会在页面已经没了之后还去改方向。
+        releasePortraitPin()
         disarmPictureWatchdog()
         cancelAutoRetry()
         clearPlaybackError()
@@ -3268,9 +4298,4 @@ class PhonePlayerActivity : PhoneActivity() {
 
     /** 位置读数：与电视端 `formatTime` 同一份（`:core` 的 `PlaybackInfoLine.time`）。 */
     private fun clock(ms: Long): String = com.hgtv.star.core.PlaybackInfoLine.time(ms)
-
-    private fun statusBar(): Int {
-        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
-        return if (id > 0) resources.getDimensionPixelSize(id) else dp(24)
-    }
 }

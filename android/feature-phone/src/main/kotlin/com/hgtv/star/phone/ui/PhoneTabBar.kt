@@ -101,7 +101,8 @@ class PhoneTabBar(context: Context) : LinearLayout(context) {
             // 底栏是**框架**不是内容：字号跟正文（13）走，不再跟 14 的副标题走。
             // 16dp 图标 + 13 号字（×0.5 后约 20px） = 图标占格 40%，视觉重心在图标上，
             // 字只做注脚——之前 22dp 图标 + 14 号字两者一样重，整条看起来又高又挤。
-            phoneSize(13)
+            // 整条高度收到 34dp 之后，字再降一档到 11，否则字会顶到格子下沿。
+            phoneSize(11)
             gravity = Gravity.CENTER
             includeFontPadding = false
         }
@@ -109,10 +110,10 @@ class PhoneTabBar(context: Context) : LinearLayout(context) {
         init {
             orientation = VERTICAL
             gravity = Gravity.CENTER
-            addView(iconView, LinearLayout.LayoutParams(context.dp(16), context.dp(16)))
+            addView(iconView, LinearLayout.LayoutParams(context.dp(14), context.dp(14)))
             addView(label, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = context.dp(2) })
+            ).apply { topMargin = context.dp(1) })
         }
 
         fun applySelected(selected: Boolean) {

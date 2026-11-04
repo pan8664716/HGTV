@@ -13,14 +13,8 @@ import com.hgtv.star.tv.TvStyle
 
 /** 远端长列表（排行榜页的四个榜单、搜索结果）底部「展示更多」按钮的 tag，同时用作「焦点留在该按钮上」的标记。 */
 const val LOAD_MORE="load:more"
-/**
- * 设备身份自愈的预算：一次进程最多重建 2 次，两次之间至少隔 20 秒（见 `healDeviceIdentity`）。
- *
- * 重建要发一次真实的注册请求。服务端整体故障时，没有上限就会变成「每次搜索都先注册一次」；
- * 而正常情况下第一次重建就足够——重建后的档案与 `device_id` 是自洽的。
- */
-const val DEVICE_HEAL_LIMIT=2
-const val DEVICE_HEAL_GAP_MS=20_000L
+// 设备身份自愈的预算（一次进程最多 2 次、两次之间至少 20 秒）已搬到 `:shared` 的
+// `DeviceHealer`：手机端现在走同一条自愈，预算必须只有一份，否则两端各记各的、互相不知道。
 /**
  * 顶部四个页面入口的标签下标。
  *
@@ -384,16 +378,23 @@ val PLAY_INFO_ENTRIES=listOf(
  * 注意「弹幕速度 / 弹幕大小 / 弹幕透明度」三行在**隐藏弹幕**时不存在（整行不添加），
  * 所以「定时」的行号不是固定的：用 [sleepRow] 现算，不要再写死 7。
  */
-const val MENU_ROW_QUALITY=0
-const val MENU_ROW_SPEED=1
-const val MENU_ROW_FRAME=2
-const val MENU_ROW_DECODER=3
-const val MENU_ROW_DANMAKU=4
-const val MENU_ROW_DANMAKU_SPEED=5
-const val MENU_ROW_SCALE=6
-const val MENU_ROW_ALPHA=7
+/**
+ * 面板**第一行**：并排的四件动作（相关剧集 / 作者作品 / 加入收藏 / 查看简介）。
+ *
+ * 它恒定在第一行：面板高度固定、超出的行靠滚动，挂在末尾时用户要一路按下键滚到底
+ * 才看得见这一排，等于没做。它不随弹幕外观那三行增减，因此是唯一可以写死的行号。
+ */
+const val MENU_ROW_ACTIONS=0
+const val MENU_ROW_QUALITY=1
+const val MENU_ROW_SPEED=2
+const val MENU_ROW_FRAME=3
+const val MENU_ROW_DECODER=4
+const val MENU_ROW_DANMAKU=5
+const val MENU_ROW_DANMAKU_SPEED=6
+const val MENU_ROW_SCALE=7
+const val MENU_ROW_ALPHA=8
 /** 「画面缩放」那一行：紧跟「弹幕透明度」，只缩画面，弹幕层保持整屏坐标。 */
-const val MENU_ROW_VIDEO_SCALE=8
+const val MENU_ROW_VIDEO_SCALE=9
 
 /**
  * 「画面缩放」那一行的下标。
@@ -409,6 +410,14 @@ fun videoScaleRow(showsStyle: Boolean)=if(showsStyle) MENU_ROW_VIDEO_SCALE else 
  * 它是 Activity 的字段。
  */
 fun sleepRow(showsStyle: Boolean)=videoScaleRow(showsStyle)+1
+
+/**
+ * 那一行动作里「收藏」按钮的位置（从 0 起）。
+ *
+ * 它是四枚里**唯一会改自己文案**的一枚（加入收藏 ⟷ 已收藏），
+ * 因此同步选中态时要按这个下标单独刷一次，见 `syncPlaybackMenu`。
+ */
+const val MENU_ACTION_FAVORITE=2
 
 /**
  * 列表滚动位置最多记住多少页。

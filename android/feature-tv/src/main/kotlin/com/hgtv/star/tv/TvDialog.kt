@@ -82,6 +82,19 @@ class TvDialog(private val activity: Activity, title: String) {
          * 绝不让布局回调与重排互相触发成死循环。
          */
         const val MAX_FIT_PASSES = 3
+
+        /**
+         * 关闭淡出的时长（毫秒）。
+         *
+         * 为什么要有这一档：弹窗靠 `FLAG_DIM_BEHIND` 把整屏压到 34% 亮度，
+         * 而 `Dialog.dismiss()` 是**瞬间移除窗口**——压暗层和面板在同一帧里消失，
+         * 整屏亮度一步从 34% 跳到 100%。电视上这一下就是「点任何按钮屏幕都闪一下」，
+         * 焦点其实没动（关闭后还回原处），所以用户只觉得莫名其妙地闪。
+         *
+         * 100–150ms 是人眼读作「淡出」而不是「闪」的下限区间：
+         * 再短（<80ms）仍会被读成瞬变，再长会让「确认」按下去半天不关。
+         */
+        const val EXIT_FADE_MS = 120L
     }
 
     private val dp = { value: Number -> activity.tvDp(value) }
@@ -227,6 +240,8 @@ class TvDialog(private val activity: Activity, title: String) {
     private var contentFirst = false
     private var dialog: AlertDialog? = null
     private var dismissed: (() -> Unit)? = null
+    /** 正在淡出、还没真正移除窗口（见 [dismiss]）：这期间再按一次不要再起一轮。 */
+    private var closing = false
     /** 调用方另外挂的关闭收尾（见 [setOnDismissExtra]）。 */
     private var extraDismiss: (() -> Unit)? = null
     private var anchor: View? = null
@@ -438,6 +453,7 @@ class TvDialog(private val activity: Activity, title: String) {
         if (isShowing) return
         this.anchor = anchor
         dismissed = onDismiss
+        closing = false
         // 每次弹出都按当前窗口重新算：横竖屏、分屏、系统字号都可能已经变了。
         capOverride = 0
         // 套一层触摸外壳：弹窗是独立窗口，Activity 的 `dispatchTouchEvent` 管不到它。
@@ -446,7 +462,20 @@ class TvDialog(private val activity: Activity, title: String) {
         // 遥控器「搜索」键：弹窗有独立的 PhoneWindow，按键不经过 Activity.dispatchKeyEvent。
         // 部分电视 ROM 会在这里直接拉起不存在的 com.imtv.speechdemo 并闪退；
         // Dialog.dispatchKeyEvent 会先问这个监听器，因此在弹窗这一层也吞掉。
-        next.setOnKeyListener { _, keyCode, _ -> keyCode == KeyEvent.KEYCODE_SEARCH }
+        //
+        // 返回键也接过来：`Dialog` 自己处理 BACK 时走的是 `cancel()` → `Dialog.dismiss()`，
+        // 绕开 [TvDialog.dismiss] 的淡出，按返回关弹窗仍会闪一下。这里先吞掉，
+        // 改走同一条淡出路径（`Dialog.dispatchKeyEvent` 会先问这个监听器，早于 onBackPressed）。
+        next.setOnKeyListener { _, keyCode, event ->
+            when (keyCode) {
+                KeyEvent.KEYCODE_SEARCH -> true
+                KeyEvent.KEYCODE_BACK -> {
+                    if (event.action == KeyEvent.ACTION_DOWN) dismiss()
+                    true
+                }
+                else -> false
+            }
+        }
         next.setOnDismissListener {
             if (dialog === next) {
                 dialog = null
@@ -706,8 +735,49 @@ class TvDialog(private val activity: Activity, title: String) {
         return dp(TvStyle.DIALOG_WIDTH).coerceAtMost(max)
     }
 
+    /**
+     * 关闭弹窗：**先淡出，再移除窗口**。
+     *
+     * 直接 `Dialog.dismiss()` 会把「面板 + 压暗层」在同一帧里一起抽掉。
+     * 弹窗靠 `FLAG_DIM_BEHIND` 把整屏压到 34% 亮度，这一帧里屏幕从 34% 一步跳到 100%——
+     * 电视上读起来就是「点任何按钮屏幕都要闪一下」。焦点其实一点没动
+     *（关闭后还会还给 anchor），所以用户只会觉得「莫名其妙地闪」。
+     *
+     * 因此这里用 [EXIT_FADE_MS] 把窗口自身的 `alpha` 与压暗量一起降到 0，再真正 dismiss。
+     * 这两项都在 `WindowManager.LayoutParams` 上，动的是整个窗口（含它的背景板），
+     * 不是 `View.alpha`——后者只淡内容，面板底板还留在那儿。
+     *
+     * 淡出期间 `isShowing` 仍为 true（窗口还在），调用方在此期间再点一次由 [closing] 挡掉。
+     */
     fun dismiss() {
-        dialog?.dismiss()
+        val current = dialog ?: return
+        if (closing) return
+        closing = true
+        val window = current.window
+        if (!current.isShowing || window == null) {
+            current.dismiss()
+            return
+        }
+        val startDim = window.attributes?.dimAmount ?: 0f
+        val anim = android.animation.ValueAnimator.ofFloat(0f, 1f)
+        anim.duration = EXIT_FADE_MS
+        anim.interpolator = android.view.animation.DecelerateInterpolator()
+        anim.addUpdateListener { value ->
+            val t = value.animatedFraction
+            // 每次现取一份 LayoutParams 再写回：`setAttributes` 只认「整份参数」，
+            // 直接改 `window.attributes` 的字段在部分 ROM 上不会下发到 WindowManager。
+            val attrs = window.attributes ?: return@addUpdateListener
+            attrs.alpha = 1f - t
+            attrs.dimAmount = startDim * (1f - t)
+            runCatching { window.attributes = attrs }
+        }
+        anim.addListener(object : android.animation.AnimatorListenerAdapter() {
+            override fun onAnimationEnd(animation: android.animation.Animator) {
+                // 窗口可能已经被别处关掉了（Activity 结束 / `TvTools.close()`）：只关还活着的那一个。
+                if (current.isShowing) runCatching { current.dismiss() }
+            }
+        })
+        anim.start()
     }
 }
 

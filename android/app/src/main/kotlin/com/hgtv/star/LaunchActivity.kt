@@ -13,10 +13,21 @@ import com.hgtv.star.tv.MainActivity
 /**
  * 启动路由：唯一带 `LAUNCHER` / `LEANBACK_LAUNCHER` 的组件。
  *
- * 它**不建视图**（主题是 `Theme.NoDisplay`），只做一次形态判定然后转发：
+ * 它**不画任何东西**（主题 `LaunchRouter` 是半透明、无标题、无动画），
+ * 只做一次形态判定然后转发：
  *
  * * 电视 / 盒子 → [MainActivity]（横屏、遥控器焦点导航、1280×720 设计画布）
  * * 手机 / 平板 → [PhoneMainActivity]（竖屏、触摸、手势播放）
+ *
+ * ## 为什么是「半透明」而不是 `Theme.NoDisplay`
+ *
+ * NoDisplay 的活动**不建窗口**。`startActivity` 之后立刻 `finish()`，部分国产 TV 固件
+ * 会先把任务清掉、再丢掉刚起来的目标页——用户读到的是「点图标没反应」，而且没有任何
+ * 提示可循。2026-11 小明 Q1 Pro 投影仪上就是这样：1.2.9.1（没有这一层，桌面直接起
+ * MainActivity）正常，1.3.0 点开毫无反应。
+ *
+ * 半透明主题让这一层**有一个窗口**，任务里始终有东西，转发不会落空；透明底色保证
+ * 不会闪一块黑。代价只是多一个空窗口，它活不到一帧。
  *
  * ## 为什么必须在这一层分叉
  *
@@ -36,8 +47,36 @@ class LaunchActivity : Activity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        startActivity(Intent(this, targetFor(this)))
+        // **转发必须万无一失**：这一层只要有一次什么都不做，用户读到的就是「点图标没反应」，
+        // 而且没有任何提示可循（2026-11 现场：小明 Q1 Pro 投影仪上 1.3.0 点开毫无反应，
+        // 1.2.9.1 正常——那一版没有这一层，桌面直接起 MainActivity）。
+        // 因此这里的每一步都兜住异常，并且**永远**有一个目标页被拉起来。
+        val target = runCatching { targetFor(this) }
+            .onFailure { android.util.Log.w("HGTV-FORM", "形态判定失败，退回电视界面", it) }
+            .getOrElse { MainActivity::class.java }
+        // 用 `Log.w` 而不是 `Log.i`：R8 的 `-assumenosideeffects` 会把 `Log.i` 整条删掉，
+        // 正式包里就再也看不到这一行——而「点图标没反应」恰恰只在正式包上出现过一次
+        // （小明 Q1 Pro，2026-11）。这两条是现场唯一能把
+        // 「路由没跑 / 路由跑了但目标没起来 / 目标起来了但画面没上屏」分开的证据，必须留住。
+        android.util.Log.w("HGTV-FORM", "route -> ${target.simpleName}")
+        var started = runCatching { startActivity(Intent(this, target)) }.isSuccess
+        if (!started) {
+            // 目标页起不来（理论上不会发生，但不能赌）：换成另一套界面再试一次。
+            // 进错界面用户至少能看见东西、能从设置里切回来；什么都不显示就彻底没救。
+            val fallback = if (target == MainActivity::class.java) {
+                PhoneMainActivity::class.java
+            } else {
+                MainActivity::class.java
+            }
+            android.util.Log.w("HGTV-FORM", "route failed, falling back to ${fallback.simpleName}")
+            started = runCatching { startActivity(Intent(this, fallback)) }
+                .onFailure { android.util.Log.e("HGTV-FORM", "两套界面都起不来", it) }
+                .isSuccess
+        }
         finish()
+        // 这一层不画任何东西，转场动画只会让目标页晚出来一帧。
+        @Suppress("DEPRECATION")
+        if (started) overridePendingTransition(0, 0)
     }
 
     private fun targetFor(context: Context): Class<*> {
@@ -49,7 +88,7 @@ class LaunchActivity : Activity() {
         val form = DeviceForm.ofStored(stored) ?: profile.form
         // 形态判定只有这一次机会，判错就进错界面，而且用户很难自己走出来。
         // 把判据原样打进 logcat：出问题时一行就能看出是「没识别到触屏」还是「品牌词误伤」。
-        android.util.Log.i(
+        android.util.Log.w(
             "HGTV-FORM",
             "stored=$stored form=${profile.form} touch=${profile.touch} sw=${profile.swDp}dp " +
                 "diag=${(profile.diagonalIn * 10).toInt() / 10f}in score=${profile.score} hits=${profile.hits}"

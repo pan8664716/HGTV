@@ -46,11 +46,14 @@ val ACCOUNT_LOGIN_MODES=listOf(ACCOUNT_PANEL_QR to "二维码登录",ACCOUNT_PAN
 /** 二维码的显示边长（设计单位，与登录卡同一条 1280dp 画布）。 */
 private const val QR_LOGIN_SIZE=250
 
-/** 登录表单左侧的区号候选（默认 +86）。 */
-private val dialCodes=arrayOf(
-    "+86 中国大陆","+852 中国香港","+853 中国澳门","+886 中国台湾",
-    "+1 美国 / 加拿大","+81 日本","+82 韩国","+65 新加坡","+60 马来西亚"
-)
+/**
+ * 登录表单左侧的区号候选（默认 +86）。
+ *
+ * 列表与归一规则都在 `:core` 的 [com.hgtv.star.core.PhoneRegion] 里——手机端的手机号登录
+ * 用的是**同一份**。两端各写一份的话，同一串本地号码会被拼成两个不同的国际号码，
+ * 平台只认其中一个，用户读到的就是「电视能登录、手机不行」。
+ */
+private val dialCodes=com.hgtv.star.core.PhoneRegion.labels
 
 /**
  * 在身份行下方展开面板。**重复调用同一个模式会重建**（用于「重新获取验证码」回到表单）。
@@ -490,22 +493,12 @@ private fun MainActivity.buildPhoneLoginPanel(
      * 而且提交时还会再拼一次区号，变成 `+86+8613…`。
      */
     if(prefillPhone.isNotBlank()) {
-        val raw=prefillPhone.trim()
-        // 找最长匹配的区号（`+852` 要先于 `+85` 这种不存在的短前缀，因此按长度倒序）。
-        val matched=dialCodes.withIndex()
-            .map { it.index to it.value.substringBefore(" ") }
-            .filter { (_,dial) -> raw.startsWith(dial) }
-            .maxByOrNull { (_,dial) -> dial.length }
-        if(matched!=null) {
-            countryIndex=matched.first
-            val local=raw.removePrefix(matched.second).filter { it.isDigit() }
-            phoneField.setText(local)
-            phoneField.setSelection(local.length)
-        } else {
-            val local=raw.filter { it.isDigit() }
-            phoneField.setText(local)
-            phoneField.setSelection(local.length)
-        }
+        // 拆分逻辑与手机端同一份（`PhoneRegion.split`）：按最长匹配认出区号，
+        // 剩下的本地号码才放进输入框。
+        val (index,local)=com.hgtv.star.core.PhoneRegion.split(prefillPhone)
+        countryIndex=index
+        phoneField.setText(local)
+        phoneField.setSelection(local.length)
     }
 
     /**
@@ -517,22 +510,9 @@ private fun MainActivity.buildPhoneLoginPanel(
      * 就是「号码明明是对的，却提示格式不对」。长度与合法性交给平台判，
      * 它回的错误文案原样显示在说明行里。
      */
-    fun normalizedPhone(): String? {
-        val raw=phoneField.text.toString().trim()
-        // 用户自己把完整国际号码敲进来了（带 `+`）：原样送出去，不再套一次左边的区号。
-        // 否则「+86」按钮 + 「+8613…」输入框会拼成 `+86+8613…`。
-        if(raw.startsWith("+")) {
-            val digits=raw.filter { it.isDigit() }
-            return if(digits.isEmpty()) null else "+"+digits
-        }
-        val local=raw.filter { it.isDigit() }
-        if(local.isEmpty()) return null
-        val dial=dialCodes[countryIndex].substringBefore(" ").drop(1)
-        // 输入框里只放本地号码（区号由左边那枚按钮表达），这里才拼上 `+区号`。
-        // core 那边据此**不再**按中国大陆的形状猜一遍
-        //（否则「+1 美国 10 位」会被当成 11 位大陆号码补成 +86）。
-        return "+"+dial+local
-    }
+    fun normalizedPhone(): String? =
+        // 与手机端同一个函数：带 `+` 的原样送出，否则按所选区号拼成 E.164。
+        com.hgtv.star.core.PhoneRegion.normalize(phoneField.text.toString(),countryIndex)
 
     var cooldownUntil=0L
     var countdown: Runnable?=null

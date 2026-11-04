@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.media
 
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.core.Danmaku
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.shared.architecture.danmaku
 import kotlinx.coroutines.CoroutineScope
@@ -59,6 +60,15 @@ class DanmakuLoader(
     private var token = 0L
 
     /**
+     * 最近一次铺到屏幕上的那一份弹幕（含边拉边画的中间态）。
+     *
+     * 为什么要留一份：手机端竖屏 / 横屏是两个**不同的** `DanmakuView`（各在自己的容器里），
+     * 数据是塞在视图内部的。用户竖屏看着有弹幕、一点全屏就"没了"，就是新那一层还是空的。
+     * 切形态时用 [replay] 把这份数据重放一次，两边就接得上。
+     */
+    private var lastItems: List<Danmaku> = emptyList()
+
+    /**
      * 拉这一集。
      *
      * @param force true = 无视「同一集不重拉」直接重来（用户刚把弹幕从隐藏打开时用）。
@@ -74,6 +84,7 @@ class DanmakuLoader(
         val ticket = ++token
         episode = episodeId
         count = -1
+        lastItems = emptyList()
         view.clear()
         if (current == DanmakuMode.HIDDEN) return
         scope.danmaku {
@@ -83,6 +94,7 @@ class DanmakuLoader(
                 repository().danmaku(episodeId, seriesId, 0, { token != ticket }) { partial ->
                     post {
                         if (!alive() || token != ticket) return@post
+                        lastItems = partial
                         target()?.setDanmaku(partial)
                     }
                 }
@@ -91,10 +103,25 @@ class DanmakuLoader(
             post {
                 if (!alive() || token != ticket) return@post
                 count = items.size
+                lastItems = items
                 target()?.setDanmaku(items)
                 onLoaded(episodeId, items.size)
             }
         }
+    }
+
+    /**
+     * 把手上这一集重放到当前的 [target] 上（切换竖屏 / 横屏时用）。
+     *
+     * 只重放，不重新请求：位置指针回到开头、显示方式按当前设置、时钟用调用方给的现值，
+     * 新那一层立刻就是用户刚才看到的那一份。
+     */
+    fun replay(positionMs: Long, running: Boolean, speed: Float) {
+        val view = target() ?: return
+        view.mode = mode()
+        view.resetCursor()
+        view.setDanmaku(lastItems)
+        view.setClock(positionMs, running, speed)
     }
 
     /** 换剧 / 离开页面：作废在途请求、清掉「已拿到」的记忆（下次进来重新拉）。 */

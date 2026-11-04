@@ -1,6 +1,7 @@
 import java.util.Properties
 
 plugins { id("com.android.application"); kotlin("android") }
+apply(plugin = "com.efs.sdk.plugin")
 val signingProperties = Properties().apply { val config = rootProject.file("keystore.properties"); if (config.exists()) config.inputStream().use { load(it) } }
 fun signingValue(env: String, key: String): String? = System.getenv(env) ?: signingProperties.getProperty(key)
 
@@ -17,8 +18,11 @@ android {
         // 代价：Google Play 要求 34+，本应用是自签分发、不进 Play，不受影响。
         targetSdk = 29
         multiDexEnabled = true
-        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 68
-        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.3.0"
+        ndk {
+            abiFilters += listOf("armeabi-v7a", "arm64-v8a")
+        }
+        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 69
+        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.3.1"
     }
     buildFeatures { buildConfig = true }
     signingConfigs {
@@ -76,6 +80,19 @@ android {
     }
 }
 
+// efs 扩展由 APM 插件注册，字段没有 setter；Kotlin DSL 下按声明类反射写入。
+// 白名单限定应用自身代码，避免给三方库插桩并控制包体积。
+run {
+    val ext = extensions.getByName("efs")
+    val extClass = Class.forName("com.efs.sdk.plugin.EfsExtension")
+    fun put(name: String, value: Any?) {
+        extClass.getDeclaredField(name).apply { isAccessible = true }.set(ext, value)
+    }
+    put("enable", true)
+    put("whiteList", listOf("com.hgtv.star"))
+    put("blackList", emptyList<String>())
+}
+
 dependencies {
     // 两端页面各自是一个 library，本模块只做「装壳 + 按形态路由」。
     // 两端互不依赖，任何共享能力都在 :shared 里。
@@ -92,6 +109,8 @@ dependencies {
     // 之后每次冷启动都是编译过的代码——否则 `speed-profile` 遇到空 profile 什么都不编，
     // 应用永远跑在解释执行 + JIT 上（实测 `Displayed +3s380` vs 编译过 `+837ms`）。
     implementation("androidx.profileinstaller:profileinstaller:1.3.1")
-    // 友盟（U-App 统计 + U-APM）**已整体移除**：依赖、efs 插桩插件、初始化与全部调用点都已删除。
-    // 包内不再有任何第三方采集 SDK，也没有随之带进来的原生库。
+    // 友盟 U-App 统计 + U-APM（崩溃 / ANR / 性能）。
+    implementation("com.umeng.umsdk:common:9.4.4")
+    implementation("com.umeng.umsdk:asms:1.4.1")
+    implementation("com.umeng.umsdk:apm:1.5.2")
 }

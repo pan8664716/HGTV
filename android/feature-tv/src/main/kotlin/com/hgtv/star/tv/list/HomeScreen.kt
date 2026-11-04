@@ -64,7 +64,7 @@ class HomeScreen(
         /** 海报右下角的备用角标（名次 / 热度）；有总集数时右下角显示集数，不看这一项。 */
         val badge: String = "",
         /**
-         * 左下角热度（`9014万`）。空串 = 这一栏没有热度，整枚收起。
+         * 服务端给的热度原串（`9014万`）。空串 = 这一栏没有热度，整枚收起。
          *
          * 只有「热播…」那四栏有：它们的数据来自榜单接口，带 `RankPosition.heat`；
          * 本机记录 / 收藏 / 稍后看 / 相关剧集都没有这一项。
@@ -846,7 +846,7 @@ class HomeScreen(
         // 用户要求「统一」，两种模式不一致会让人以为某一页少了信息。
         // 首页没有名次（榜单页才有），左上角留空；历史栏的第二行优先显示进度。
         poster.bind(entry.series, entry.label, badgeFor(entry), entry.progress, false,
-            seasonBadge = true, heatText = entry.heat, preferStatus = preferStatus)
+            seasonBadge = true, heatServerText = entry.heat, preferStatus = preferStatus)
         return Card(key, poster, entry).apply {
             this.poster = poster
             image = poster.image

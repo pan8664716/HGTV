@@ -821,6 +821,47 @@ class ContentRepositoryTest {
         assertThrows(SearchSessionExpiredException::class.java) { repo.search("修仙",3,ContentType.COMIC) }
     }
 
+    /**
+     * App 搜索接口「回 200 + 空 body」时**自动改走官网**（issue #44）。
+     *
+     * 现场：`/reading/bookapi/search/tab/v` 那一刻只回空响应（HTTP 200、0 字节），
+     * 而官网 `/api/search/result` 同一时刻是 200 + 完整 JSON。早先这里如实抛错，
+     * 界面整页挡住「接口没有返回任何 tab 数据」，用户的第一反应是电视 / 网络坏了。
+     */
+    @Test fun blankAppSearchFallsBackToWebSearch() {
+        SearchDiag.last=null
+        val repo=repository { request ->
+            val url=request.url.toString()
+            when {
+                url.contains("fqnovel") -> ""
+                url.contains("hongguoduanju.com/api/search/result") -> """
+                    {"searchList":[{"video_data":{"series_id":"42","series_title":"神鹿降罚",
+                    "series_cover":"https://example.com/c.jpg","episode_cnt":62}}],"totalPages":1}
+                """.trimIndent()
+                else -> "{}"
+            }
+        }
+        val page=repo.search("神鹿降罚",1,SearchSource.APP)
+        assertEquals(1,page.items.size)
+        assertEquals("神鹿降罚",page.items.first().title)
+        // 记的是「降级」而不是「失败」：面板要能说清这一页是官网来的。
+        assertEquals(true,SearchDiag.last?.degraded)
+        assertEquals(SearchSource.WEB,SearchDiag.last?.source)
+    }
+
+    /**
+     * **网络不通不降级**：官网走同一根网线，换过去只会再等一次超时。
+     * 只有「接口答了、只是没给内容」才值得换源。
+     */
+    @Test fun networkFailureDoesNotFallBackToWeb() {
+        SearchDiag.last=null
+        val repo=repository { throw java.io.IOException("network down") }
+        assertThrows(java.io.IOException::class.java) { repo.search("神鹿降罚",1,SearchSource.APP) }
+        // 失败照样记一条现场（面板要说清「为什么没结果」），但**不是**降级。
+        assertEquals(false,SearchDiag.last?.degraded)
+        assertEquals(SearchSource.APP,SearchDiag.last?.source)
+    }
+
     /** 可选登录态：配置后按 `x-tt-token` 发出（整段 Cookie 再补一个 `Cookie` 头），留空就保持匿名请求。 */
     @Test fun sessionTokenIsSentAsLoginHeaderOnlyWhenConfigured() {
         val requests=mutableListOf<Request>()

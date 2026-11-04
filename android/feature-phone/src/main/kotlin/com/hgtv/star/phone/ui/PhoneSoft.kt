@@ -36,6 +36,8 @@ object PhoneSoft {
         ring: Int = Color.TRANSPARENT,
         ringWidthDp: Float = 0f,
         glow: Int = Color.TRANSPARENT,
+        depth: Float = 1f,
+        heavy: Boolean = false,
     ): SoftDrawable {
         val existing = background as? SoftDrawable
         if (existing != null) {
@@ -44,6 +46,7 @@ object PhoneSoft {
                 ring = ring,
                 ringWidth = context.dp(ringWidthDp).toFloat(),
                 glow = glow,
+                depth = depth,
             )
             return existing
         }
@@ -56,6 +59,8 @@ object PhoneSoft {
             ringColor = ring,
             ringWidthPx = context.dp(ringWidthDp).toFloat(),
             glowColor = glow,
+            depth = depth,
+            heavy = heavy,
         )
         background = drawable
         setPadding(paddingLeft + band, paddingTop + band, paddingRight + band, paddingBottom + band)

@@ -149,4 +149,90 @@ object PlaybackFailures {
         code in 2000..2999 ||
             code == PlaybackException.ERROR_CODE_TIMEOUT ||
             code in 5000..5999
+
+    // ---------------------------------------------------------------- 自愈判据
+    //
+    // 下面四条原先只写在电视端（`streamExpiredOf` / `videoChangedOf` / `transportDeadOf`），
+    // 手机端根本没有这一层，于是同一个「地址过期」在电视上自己救回来了、在手机上直接死掉。
+    // 判断本体收在这里，两端只负责执行。
+
+    /** 这一串异常里有没有「播放地址已失效」（HTTP 403 / 404、签名时效）。 */
+    fun expired(problem: Throwable?): Boolean =
+        hasCause(problem) { it is com.hgtv.star.core.StreamExpiredException }
+
+    /** 这一集的文件换过了：落盘的索引与首块是上一版的，`Content-Range` 总长对不上。 */
+    fun videoChanged(problem: Throwable?): Boolean =
+        hasCause(problem) { it is com.hgtv.star.core.VideoChangedException }
+
+    /** 视频 CDN 的域名解析不出来。 */
+    fun hostUnresolved(problem: Throwable?): Boolean =
+        hasCause(problem) { it is java.net.UnknownHostException }
+
+    /**
+     * 名字解析出来了，但**连接层就没通**：超时 / 被拒 / 路由不可达 / TLS 握手失败。
+     *
+     * 与 [hostUnresolved] 分开只为日志能说清坏在 DNS 的「回答」上还是「路」上；
+     * 自愈动作完全一样（清地址 + 清 DNS + 清连接池）。
+     */
+    fun transportDead(problem: Throwable?): Boolean = hasCause(problem) { it.isDeadTransport() }
+
+    /**
+     * 服务端说「**这台设备没注册过**」（不是地址、不是网络、不是解码）。
+     *
+     * 两个来源，语义相同：
+     *
+     * * 搜索接口 `200 + 0 字节` → [com.hgtv.star.core.DeviceNotRegisteredException]；
+     * * 播放模型接口回 `code=101000`（`ContentRepository` 把它包成一条带这个数字的异常）。
+     *
+     * 命中之后唯一的正确动作是**换一套身份重注册**（见 `DeviceHealer`），
+     * 重取地址 / 换清晰度 / 换软解都只是在同一个坏身份上打转。
+     */
+    fun deviceRejected(problem: Throwable?): Boolean = hasCause(problem) {
+        it is com.hgtv.star.core.DeviceNotRegisteredException ||
+            it.message.orEmpty().contains("101000")
+    }
+
+    /**
+     * 自愈前把「连接层缓存」一起清掉：视频域名的解析结果 + 进程级连接池。
+     *
+     * 为什么不能只丢播放地址：地址是按集签发的，但 **host 常常没变**（同一部剧的相邻几集
+     * 大多落在同一个 CDN shard 上）。重取回来的还是那个域名 → 又命中 DNS 里那份十分钟前的
+     * 坏 IP → 又复用连接池里那条半死连接 → 下一发照样卡满超时。
+     * 用户读到的就是「重试多少次都一样，换一集立刻好」。
+     *
+     * **只清 idle 连接**（`evictAll` 就是这个语义）：在途那条由调用方关掉旧的
+     * `RemoteVideo` 时一起取消，两件事合起来才等于「下一条连接一定重新建」。
+     */
+    fun dropTransportCaches(hosts: Collection<String>) {
+        for (host in hosts) {
+            if (host.isEmpty()) continue
+            runCatching { com.hgtv.star.core.HgtvDns.invalidate(host) }
+        }
+        runCatching { com.hgtv.star.shared.data.PlaybackTransport.evictIdleConnections() }
+    }
+
+    /** 顺着 cause 链找，深度上限 8：ExoPlayer 会套两三层包装，写死上限能防环形 cause。 */
+    private fun hasCause(problem: Throwable?, predicate: (Throwable) -> Boolean): Boolean {
+        var current = problem
+        var depth = 0
+        while (current != null && depth < 8) {
+            if (predicate(current)) return true
+            current = current.cause
+            depth++
+        }
+        return false
+    }
+
+    private fun Throwable.isDeadTransport(): Boolean = when (this) {
+        // 顺序有意义：`SocketTimeoutException` / `ConnectException` 都是 `IOException`，
+        // 具体类型必须排在笼统判断之前。
+        is java.net.SocketTimeoutException,
+        is java.net.ConnectException,
+        is java.net.NoRouteToHostException,
+        is javax.net.ssl.SSLException -> true
+        // 整调用超时（`callTimeout`）同样是**连接层假死**：写得出、读不回。
+        // 只看消息带 `timeout` 的，别把主动取消算进来。
+        is java.io.InterruptedIOException -> message.orEmpty().contains("timeout", ignoreCase = true)
+        else -> false
+    }
 }

@@ -26,11 +26,21 @@ import com.hgtv.star.tv.tvText
  * 上下在功能之间移动（列号按上一行就近对齐），左右在选项之间移动，
  * 确认立即生效，返回收起。四向都锁在面板内部：停在最后一行再按下键焦点留在原地，
  * 不会跳出去（选集只能从菜单关闭后的下键或底部下拉箭头进入）。
+ *
+ * 最上面一行是**并列的动作**（相关剧集 / 作者作品 / 加入收藏 / 查看简介，见 [addActions]）：
+ * 它没有项名列、按钮等分整行，与下面每一行同高同档，下方一条分隔线与设置项断开。
+ * 放在第一行：这一排是「按下去就去做一件事」，不该等用户一路下键滚到底才看得见。
  */
 class PlaybackMenu(private val activity: Activity) : LinearLayout(activity) {
 
     /** 一个选项：`label` 是显示文字，`selected` 决定常态底色，`action` 在确认时执行。 */
     class Choice(val label: String, var selected: Boolean, val action: () -> Unit)
+
+    /**
+     * 一枚**动作**按钮（不是「一个功能的某个档位」）：按下去就去做一件事，
+     * 没有选中态、文案可以被改（「加入收藏」⟷「已收藏」）。
+     */
+    class Action(var label: String, val action: () -> Unit)
 
     private val dp = { value: Number -> activity.tvDp(value) }
     /**
@@ -84,6 +94,58 @@ class PlaybackMenu(private val activity: Activity) : LinearLayout(activity) {
         rows.add(ArrayList<View>(chips))
         addView(line)
         return this
+    }
+
+    /**
+     * 追加一行**并列的动作按钮**（相关剧集 / 作者作品 / 加入收藏 / 查看简介）。
+     *
+     * 与 [addRow] 的区别只有两处：左边不留项名列（这一行不是「一个功能的几个档位」，
+     * 而是四件平级的事），按钮等分整行宽度。高度、间距、档位与上面每一行完全一致，
+     * 因此它读起来仍然是同一条菜单里的一行，而不是突然冒出来的一块工具栏。
+     *
+     * 这一行是**面板的第一行**（见 `buildPlaybackMenu`）：面板高度固定、超出的行靠滚动，
+     * 挂在末尾时它永远是「要一路下键滚到底」才看得见的那一行。
+     */
+    fun addActions(actions: List<Action>): PlaybackMenu {
+        val line = activity.tvRow().apply {
+            clipChildren = false
+            clipToPadding = false
+            setPadding(0, dp(4), 0, dp(4))
+        }
+        val buttons = mutableListOf<TvButton>()
+        actions.forEachIndexed { index, action ->
+            val button = ActionButton(action)
+            buttons += button
+            line.addView(
+                button,
+                LinearLayout.LayoutParams(0, dp(TvStyle.BUTTON_COMPACT + 2 * TvStyle.SOFT_BAND)).apply {
+                    weight = 1f
+                    if (index < actions.lastIndex) rightMargin = dp(TvStyle.GAP_TIGHT)
+                }
+            )
+        }
+        rows.add(ArrayList<View>(buttons))
+        addView(line)
+        // 与下面那些「设置项」之间画一条分隔线：这一行不是另一个档位，而是四件平级的事。
+        // 用主题的分隔色（见 [TvStyle.separator]），只负责断开，不抢注意力。
+        addView(
+            View(activity).apply { setBackgroundColor(TvStyle.separator) },
+            LinearLayout.LayoutParams(-1, dp(1)).apply { topMargin = dp(10) }
+        )
+        return this
+    }
+
+    /**
+     * 改某一行动作按钮的文案（「加入收藏」⟷「已收藏」），**不重建任何控件**。
+     *
+     * 面板是缓存复用的，收藏状态可能在别处被改过（简介页收藏、卡片长按菜单），
+     * 因此每次挂上去之前都按本机当前状态刷一遍，见 `syncPlaybackMenu`。
+     */
+    fun actionLabel(row: Int, index: Int, label: String) {
+        val button = rows.getOrNull(row)?.getOrNull(index) as? ActionButton ?: return
+        if (button.action.label == label) return
+        button.action.label = label
+        button.paint()
     }
 
     /**
@@ -216,6 +278,30 @@ class PlaybackMenu(private val activity: Activity) : LinearLayout(activity) {
 
         private fun describe() {
             contentDescription = choice.label + if (choice.selected) "，已选中" else ""
+        }
+    }
+
+    /**
+     * 一枚动作按钮：与选项同一档（紧凑档、次级色），但没有选中态。
+     *
+     * 底色 / 焦点放大 / 点击都由 [TvButton] 自己负责，这里只把文案与动作接上；
+     * 文案随时可能被 [actionLabel] 改掉（收藏状态翻转），因此画的时候现读 [Action.label]。
+     */
+    private inner class ActionButton(val action: Action) :
+        TvButton(activity, action.label, ButtonSize.COMPACT, ButtonTone.SECONDARY) {
+        init {
+            describe()
+            setOnClickListener { action.action() }
+            onFocus = { describe() }
+        }
+
+        fun paint() {
+            text = action.label
+            describe()
+        }
+
+        private fun describe() {
+            contentDescription = action.label
         }
     }
 }

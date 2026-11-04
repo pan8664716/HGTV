@@ -48,6 +48,8 @@ object PhoneAccountSync {
     /** 去重：同一部剧、同一个时间戳的进度只推一次（账号数据每次进「我的」都会刷新一遍）。 */
     private val pushed = HashMap<String, Long>()
     private const val PUSHED_LIMIT = 64
+    /** 平台没有公开取消点赞写接口；本进程内记住刚删掉的条目，下一次账号刷新不再把它们铺回来。 */
+    private val deletedLikes = java.util.concurrent.ConcurrentHashMap.newKeySet<String>()
 
     /** 账号数据的进程内那一份（与电视的 `accountData` 同角色）。 */
     @Volatile
@@ -66,6 +68,20 @@ object PhoneAccountSync {
                 }.getOrDefault(false)
             }
             if (!ok) android.util.Log.i("HGTV-PHONE", "favorite sync skipped id=${series.id} added=$added")
+        }
+    }
+
+    /** 批量取消收藏：本机收藏由页面先移除，这里同步账号缓存与云端。 */
+    fun favoritesDeleted(context: Context, series: List<Series>) {
+        val rows = series.distinctBy { it.id }
+        if (rows.isEmpty()) return
+        applyFavoritesDeleted(context, rows.map { it.id }.toSet())
+        val repo = PhoneServices.repository(context)
+        if (!repo.signedIn) return
+        io(context).launch {
+            withContext(Dispatchers.IO) {
+                rows.forEach { runCatching { repo.accountRemoveFavorite(it.id) } }
+            }
         }
     }
 
@@ -92,14 +108,43 @@ object PhoneAccountSync {
 
     /** 删除云端观看历史（平台的软删）。 */
     fun historyDeleted(context: Context, series: Series) {
+        historyDeleted(context, listOf(series.id))
+    }
+
+    /** 批量删除观看历史：本机先删，账号缓存与云端随后一起清。 */
+    fun historyDeleted(context: Context, seriesIds: Collection<String>) {
+        val ids = seriesIds.distinct()
+        if (ids.isEmpty()) return
         val repo = PhoneServices.repository(context)
-        applyHistoryDeleted(context, series)
+        applyHistoryDeleted(context, ids.toSet())
         if (!repo.signedIn) return
         io(context).launch {
             withContext(Dispatchers.IO) {
-                runCatching { repo.accountDeleteHistory(series.id) }
+                runCatching { repo.accountDeleteHistories(ids) }
             }
         }
+    }
+
+    /** 批量取消预约：账号缓存立即移除，云端逐条取消。 */
+    fun reservationsDeleted(context: Context, seriesIds: Collection<String>) {
+        val ids = seriesIds.distinct()
+        if (ids.isEmpty()) return
+        applyReservationsDeleted(context, ids.toSet())
+        val repo = PhoneServices.repository(context)
+        if (!repo.signedIn) return
+        io(context).launch {
+            withContext(Dispatchers.IO) {
+                ids.forEach { runCatching { repo.accountReserve(it, false) } }
+            }
+        }
+    }
+
+    /** 批量移除点赞记录。 */
+    fun likesDeleted(context: Context, seriesIds: Collection<String>) {
+        val ids = seriesIds.distinct()
+        if (ids.isEmpty()) return
+        deletedLikes += ids
+        applyLikesDeleted(context, ids.toSet())
     }
 
     /**
@@ -114,9 +159,12 @@ object PhoneAccountSync {
         if (!repo.signedIn) return null
         val fresh = withContext(Dispatchers.IO) { runCatching { repo.accountData() }.getOrNull() } ?: return null
         val merged = com.hgtv.star.core.AccountSnapshot.merge(data, fresh).let { snapshot ->
+            val withoutDeletedLikes = if (deletedLikes.isEmpty()) snapshot
+            else snapshot.copy(likes = snapshot.likes.filterNot { it.series.id in deletedLikes })
             // 本机删过的那几条不再进缓存：平台对短剧进度列表的软删不一定生效。
-            val kept = snapshot.history.filterNot { lib.historyDeleted(it.series.id) }
-            if (kept.size == snapshot.history.size) snapshot else snapshot.copy(history = kept)
+            val kept = withoutDeletedLikes.history.filterNot { lib.historyDeleted(it.series.id) }
+            if (kept.size == withoutDeletedLikes.history.size) withoutDeletedLikes
+            else withoutDeletedLikes.copy(history = kept)
         }
         val outcome = HistoryReconcile.run(merged, lib.history(), System.currentTimeMillis())
         outcome.writes.forEach { runCatching { lib.save(it) } }
@@ -136,6 +184,7 @@ object PhoneAccountSync {
     fun clear() {
         data = null
         pushed.clear()
+        deletedLikes.clear()
     }
 
     // ---------------------------------------------------------------- 内部
@@ -184,6 +233,13 @@ object PhoneAccountSync {
         store(context, current.copy(favorites = next))
     }
 
+    private fun applyFavoritesDeleted(context: Context, ids: Set<String>) {
+        val current = data ?: return
+        val next = current.favorites.filterNot { it.series.id in ids }
+        if (next.size == current.favorites.size) return
+        store(context, current.copy(favorites = next))
+    }
+
     /** 进度改到账号缓存上（本机刚看的那一集，云端那一行也要跟着走）。 */
     private fun applyHistory(context: Context, progress: BackupProgress, episodeCount: Int) {
         val current = data ?: return
@@ -194,11 +250,25 @@ object PhoneAccountSync {
         store(context, current.copy(history = rows))
     }
 
-    private fun applyHistoryDeleted(context: Context, series: Series) {
+    private fun applyHistoryDeleted(context: Context, ids: Set<String>) {
         val current = data ?: return
-        val rows = current.history.filterNot { it.series.id == series.id }
+        val rows = current.history.filterNot { it.series.id in ids }
         if (rows.size == current.history.size) return
         store(context, current.copy(history = rows))
+    }
+
+    private fun applyReservationsDeleted(context: Context, ids: Set<String>) {
+        val current = data ?: return
+        val rows = current.reserves.filterNot { it.series.id in ids }
+        if (rows.size == current.reserves.size) return
+        store(context, current.copy(reserves = rows))
+    }
+
+    private fun applyLikesDeleted(context: Context, ids: Set<String>) {
+        val current = data ?: return
+        val rows = current.likes.filterNot { it.series.id in ids }
+        if (rows.size == current.likes.size) return
+        store(context, current.copy(likes = rows))
     }
 
     /**

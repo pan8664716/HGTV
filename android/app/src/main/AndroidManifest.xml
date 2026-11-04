@@ -51,10 +51,16 @@
         -->
         <!--
           启动路由：唯一带 LAUNCHER / LEANBACK_LAUNCHER 的组件。
-          Theme.NoDisplay = 不建任何视图，只做一次形态判定就转发（见 LaunchActivity 的类注释）。
+
+          **不用 `Theme.NoDisplay`**（2026-11 现场：小明 Q1 Pro 投影仪上 1.3.0 点开毫无反应，
+          1.2.9.1 正常——那一版没有这一层，直接起 MainActivity）。NoDisplay 的活动不建窗口，
+          `startActivity` 之后立刻 `finish()`，部分国产 TV 固件会先把任务清掉、再丢掉刚起来的
+          目标页，表现就是「点了没反应」。换成半透明主题后这一层**有窗口**，任务里始终有东西，
+          转发不会落空；`noHistory` 也一并去掉——它本来就是为「不建窗口」服务的。
+
           电视桌面看到的是 application 的 icon / banner，与之前一致。
         -->
-        <activity android:name=".LaunchActivity" android:exported="true" android:theme="@android:style/Theme.NoDisplay" android:noHistory="true" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode">
+        <activity android:name=".LaunchActivity" android:exported="true" android:theme="@style/LaunchRouter" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode">
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>

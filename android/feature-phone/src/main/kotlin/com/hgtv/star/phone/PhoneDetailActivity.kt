@@ -26,7 +26,6 @@ import com.hgtv.star.phone.ui.navigationBarPx
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
-import com.hgtv.star.shared.compat.clipToCircleCompat
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.nav.Route
@@ -107,7 +106,6 @@ class PhoneDetailActivity : PhoneActivity() {
     private var authorFor = ""
     private var authorToken = 0
     private var authorItems: List<Series> = emptyList()
-    private var authorAvatar = ""
     private var authorLoading = false
     private var authorFailed = false
 
@@ -145,9 +143,13 @@ class PhoneDetailActivity : PhoneActivity() {
 
         column = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
+            // 左右边距按**屏宽比例**（约等于常规档的 14dp），不随字号档位放大：
+            // `dp(14)` 在最大档上是 63px，两侧吃掉 126px，右侧内容被白白挤窄。
+            // 封面与图片本身不动，只收这一圈留白。
+            val edge = (resources.displayMetrics.widthPixels * .039f).toInt()
             // 底部留白要盖过系统导航条：`phoneEdgeToEdge()` 之后内容会铺到手势区，
             // 最后一行卡片正好落在那里，点击会被系统手势拦走——表现就是「卡片点不动」。
-            setPadding(dp(14), dp(6), dp(14), dp(32) + navigationBarPx())
+            setPadding(edge, dp(6), edge, dp(32) + navigationBarPx())
         }
         scroller = ScrollView(this).apply {
             isFillViewport = false
@@ -188,18 +190,20 @@ class PhoneDetailActivity : PhoneActivity() {
         coverBox.addView(cover, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ).apply { setMargins(dp(4), dp(4), dp(4), dp(4)) })
-        // 7:10 竖版封面（接口封面的常见比例），与 TV 详情页同一档。
-        // 字缩到 50% 之后 118×168 的封面会把右侧文字列挤成一条，收成 104×148。
-        // 把封面与右侧信息区钉成同一高度：标题与按钮的分区始终和图片上下边对齐。
+        // 封面宽度**保持原来的 104dp**（跟着字号档位一起放大），不为了给右边让位去压它。
+        // 大字档下要省的是**留白**：图片到文字列那一段从 `dp(14)` 改成按屏宽的 2.2%
+        // （常规档约 24px），不再随字号一起膨胀。
+        val coverWidth = dp(104)
+        val infoGap = (resources.displayMetrics.widthPixels * .022f).toInt()
         head.addView(coverBox, LinearLayout.LayoutParams(
-            dp(104), ViewGroup.LayoutParams.MATCH_PARENT
+            coverWidth, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
         val info = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             // 封面内部还有 4dp 留白；信息列用同样的上下留白，标题/按钮才会和图片
             // 的实际上下边落在同一条线上，而不是按封面外框对齐。
-            setPadding(dp(14), dp(4), 0, dp(4))
+            setPadding(infoGap, dp(4), 0, dp(4))
         }
         titleView = TextView(this).apply {
             text = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "加载中…" }
@@ -208,6 +212,9 @@ class PhoneDetailActivity : PhoneActivity() {
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             maxLines = 2
             ellipsize = android.text.TextUtils.TruncateAt.END
+            // 默认**预留两行**：标题一行还是两行，下面的元信息与简介都不会跟着上下跳。
+            // `minLines` 要 API 23，这里用最小高度等价实现：18 号字两行约 21dp。
+            minHeight = dp(21)
         }
         info.addView(titleView, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -216,14 +223,13 @@ class PhoneDetailActivity : PhoneActivity() {
         tagView = TextView(this).apply {
             setTextColor(PhoneStyle.textFaint)
             phoneSize(12)
-            setPadding(0, dp(3), 0, 0)
+            // 标签整行放在封面那一块**下面**（`column` 里紧跟 head），不再挤在标题与元信息之间：
+            // 那一列只有 104dp 封面右侧的宽度，标签稍长就被省略号吃掉。
+            setPadding(0, dp(8), 0, 0)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             visibility = View.GONE
         }
-        info.addView(tagView, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
 
         metaView = TextView(this).apply {
             setTextColor(PhoneStyle.textDim)
@@ -278,6 +284,10 @@ class PhoneDetailActivity : PhoneActivity() {
         ))
         column.addView(head, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(148)
+        ))
+        // 标签：整行贴在封面 / 标题那一块的下方（用户要求「放在图片下面」）。
+        column.addView(tagView, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
         descRow = LinearLayout(this).apply {
@@ -494,9 +504,14 @@ class PhoneDetailActivity : PhoneActivity() {
             this, d.episodes.size, resume ?: 0,
             pageSize = library?.episodePageSize ?: 20,
             compact = false,
-            // 详情页在滚动容器里，网格自身也要能滚（一页 100 集 = 20 行）。
-            maxGridHeight = (resources.displayMetrics.heightPixels * .46f).toInt(),
-            edgeTurn = library?.episodeEdgeTurn ?: true,
+            // **不限高**：整页本来就在 `ScrollView` 里，网格再套一层内层滚动会互相抢事件
+            //（普通 `ScrollView` 不支持嵌套滚动），用户读到的就是「选集显示不全、还滑不动」。
+            // 一页 100 集 = 20 行，展开后跟整页一起滚，滚动只有一条。
+            maxGridHeight = Int.MAX_VALUE,
+            // 与播放页的选集**完全对齐**：手机上「分页边缘翻页」这一项已经没有设置入口
+            // （那一项改成了「推荐页左右滑动」），所以这里不再读 `episodeEdgeTurn`——
+            // 老设备上它可能是历史遗留的 false，会让详情页「怎么滑都不翻页」。
+            swipePages = true,
         ) { index -> openPlayer(index) }
         episodeBox.addView(grid, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -631,7 +646,6 @@ class PhoneDetailActivity : PhoneActivity() {
         if (authorFor == name && (authorItems.isNotEmpty() || authorLoading)) return
         val token = ++authorToken
         authorFor = name
-        authorAvatar = ""
         authorLoading = true
         authorFailed = false
         authorItems = emptyList()
@@ -649,14 +663,6 @@ class PhoneDetailActivity : PhoneActivity() {
                                 if (partial.isEmpty()) return@runOnUiThread
                                 authorLoading = false
                                 authorItems = partial
-                                renderAuthorWorks()
-                            }
-                        },
-                        onAvatar = { avatar ->
-                            runOnUiThread {
-                                if (token != authorToken || isFinishing || isDestroyed) return@runOnUiThread
-                                if (avatar.isBlank() || avatar == authorAvatar) return@runOnUiThread
-                                authorAvatar = avatar
                                 renderAuthorWorks()
                             }
                         }
@@ -692,20 +698,17 @@ class PhoneDetailActivity : PhoneActivity() {
             gravity = Gravity.CENTER_VERTICAL
             setPadding(dp(2), dp(16), dp(2), dp(8))
         }
-        // 作者头像是用户搜索 / 资料接口的 `user_avatar`，不是作品封面。
-        // 没有头像时保留同色圆底，不拿本剧封面或作者作品封面顶替。
-        val avatar = ImageView(this).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
+        // 作者头像是**首字头像**：作者名的第一个字 + 按名字取色的圆底，与电视端
+        // `authorHead` 是同一套观感。不取接口的 `user_avatar`——那一栏常常没有图，
+        // 或者图来得慢、裁切比例也不对，空白圆底读起来就像「头像丢了」。
+        val avatar = TextView(this).apply {
+            text = name.take(1)
+            setTextColor(android.graphics.Color.WHITE)
+            phoneSize(24)
+            setTypeface(typeface, android.graphics.Typeface.BOLD)
+            gravity = Gravity.CENTER
             background = roundedBackground(authorColor(name), dp(15).toFloat())
             contentDescription = name
-            clipToCircleCompat(this)
-        }
-        if (authorAvatar.isNotBlank()) {
-            runCatching {
-                PhoneServices.artwork(this).load(
-                    avatar, authorAvatar, widthPx = dp(30), heightPx = dp(30)
-                )
-            }
         }
         head.addView(avatar, LinearLayout.LayoutParams(dp(30), dp(30)))
         val texts = LinearLayout(this).apply {
@@ -890,7 +893,6 @@ class PhoneDetailActivity : PhoneActivity() {
         authorFor = ""
         authorToken++
         authorItems = emptyList()
-        authorAvatar = ""
         authorLoading = false
         authorFailed = false
         authorBox.removeAllViews()

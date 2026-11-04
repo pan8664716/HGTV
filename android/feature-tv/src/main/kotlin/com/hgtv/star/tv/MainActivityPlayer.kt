@@ -488,6 +488,7 @@ private fun MainActivity.probeHardwareHevcDecoder() {
 
 fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,recovering: Boolean=false,prepared: RemoteVideo?=null,keepMedia: Boolean=false) {
     val data=detail ?: return
+    nextSeasonFinishedFor=""
     val playbackStarted=android.os.SystemClock.elapsedRealtime()
     // 换了一部剧：上一次的降级结论（有效上限 / 预算 / 手动建议）与提示去重全部作废——
     // 那是「上一部片在这台机器上放不了」的结论，与这一部无关。
@@ -743,6 +744,26 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
         }
         danmakuView=overlay
         layer.addView(overlay,FrameLayout.LayoutParams(-1,-1))
+        // 最后一集底部的下一季提示：只在查到下一季时出现，不抢焦点、不打断播放。
+        val notice=text("",18f,TvStyle.playerText).apply {
+            gravity=Gravity.CENTER_VERTICAL or Gravity.START
+            maxLines=1
+            maxWidth=dp(520)
+            ellipsize=TextUtils.TruncateAt.END
+            setPadding(dp(18),dp(10),dp(18),dp(10))
+            background=TvStyle.gradient(0x99000000.toInt(),0xCC000000.toInt()).apply {
+                cornerRadius=dp(8).toFloat()
+            }
+            visibility=View.GONE
+        }
+        nextSeasonNotice=notice
+        layer.addView(
+            notice,
+            FrameLayout.LayoutParams(-2,-2,Gravity.BOTTOM or Gravity.START).apply {
+                leftMargin=dp(24)
+                bottomMargin=dp(24)
+            }
+        )
         // 播放画面顶部的一条常显信息：**左 = 剧名 → 当前集数；右 = 网速 → 时间**。
         //
         // 四项各自独立开关（设置页「界面设置 → 播放显示」）。左两组贴左、右两组贴右，
@@ -900,6 +921,7 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
     progressBar.progress=0f; progressBar.visibility=View.VISIBLE; hidePlaybackOverlay()
     controls.removeAllViews(); controls.visibility=View.GONE
     syncMediaSession()
+    syncNextSeasonForCurrentEpisode()
     val requestedId=data.episodes[episodeIndex]; val maxQuality=playbackMaxQuality; val ticket=generation
     // 起播分阶段计时：`Playback ready ... elapsedMs` 只给出总时长，看不出钱花在哪儿
     //（取地址 / 拉视频头 / 建播放器 / 等首帧）。调试包里逐个阶段记一行，正式包被 R8 删掉。
@@ -1111,21 +1133,24 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
                     // 队列里还挂着下一集却没自动推进 = 下一集没接上。这里**不自己再切一次**：
                     // 同一次故障的 `onPlayerError` 可能已经（或即将）走到 [playerFailure]，
                     // 两处都切就是重复切换。统一交给 [playerFailure]，它带互斥窗与次数上限。
-                    if(queuedEpisodeId!=null) {
+                    val hasQueuedItem=runCatching {
+                        val current=p.currentMediaItemIndex.coerceAtLeast(0)
+                        p.mediaItemCount>current+1
+                    }.getOrDefault(false)
+                    if(queuedEpisodeId!=null && hasQueuedItem) {
                         playerFailure(PlaybackException("队列中的下一集没有接上",null,PlaybackException.ERROR_CODE_IO_UNSPECIFIED))
                         return
                     }
+                    // 标志残留但播放器实际已经没有下一项：清掉元数据后继续走
+                    // 下一季 / 全剧结束，不能把最后一集卡在 STATE_ENDED。
+                    if(queuedEpisodeId!=null && !hasQueuedItem) dropQueuedEpisode()
                     saveProgress(true)
                     // 「连着看」：还在前台、没有因为息屏 / 切后台被暂停、用户也没按过暂停。
                     val continuous=foreground && requestedAutoplay && !pausedForLifecycle
                     if(sleepTimer.episodeEnded()) stopForSleep()
                     else if(continuous && library.autoNext && episodeIndex<data.episodes.lastIndex) playEpisode(episodeIndex+1)
                     else if(continuous && episodeIndex>=data.episodes.lastIndex) {
-                        // 最后一集播完：不再停在最后一帧上等用户按返回。
-                        // 按「相关剧集」那一份数据给一份下一部的推荐，让用户自己挑一部接着看
-                        // （见 [showSeriesFinished]）。
-                        requestedAutoplay=false; p.pause(); showHud()
-                        showSeriesFinished(data.series)
+                        advanceToNextSeasonOrFinish(data.series)
                     }
                     else { requestedAutoplay=false; p.pause(); playbackText.text="本集已结束"; showHud() }
                 }

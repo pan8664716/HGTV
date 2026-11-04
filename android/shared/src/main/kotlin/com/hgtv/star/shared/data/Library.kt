@@ -62,10 +62,10 @@ class Library(context: Context) {
          */
         val MIRROR_KEYS = listOf(
             "registered-device-id","registered-install-id","registered-profile-stamp",
-            "device-profile","device-profile-seed",
+            "device-profile","device-seed","device-profile-seed",
             // 待换新的候选档案（见 [commitPendingProfile]）：重装后仍要记得「这套身份是旧的」，
             // 否则会一直拿着老版本的随机档案继续跑。
-            "device-profile-pending","device-profile-pending-stamp",
+            "device-profile-pending","device-profile-pending-seed","device-profile-pending-stamp",
             "device-profile-nonce","account-cookie","account-device","account-expires","x-tt-token",
             // 账号会话的 token / TicketGuard 签名 / 首刷标记 / 注册下发的 cookie：
             // 少了这几项，重装后恢复出来的就是「半份会话」——cookie 在、token 不在，
@@ -332,11 +332,15 @@ class Library(context: Context) {
     fun rememberSearch(query: String) { state().rememberSearch(query); persist("searches") }
     fun clearSearches() { state().clearSearches(); persist("searches") }
     // 删记录：进度文件要一起删，否则下次启动又把它读回来（内存里删了、盘上还在）。
-    fun removeHistory(id: String) {
-        state().removeHistory(id)
-        com.hgtv.star.core.WorkLanes.disk.executor.execute { progressStore.remove(id) }
+    fun removeHistory(ids: Collection<String>) {
+        if (ids.isEmpty()) return
+        state().removeHistory(ids)
+        com.hgtv.star.core.WorkLanes.disk.executor.execute {
+            ids.forEach(progressStore::remove)
+        }
         persist("watched", "historyDeleted")
     }
+    fun removeHistory(id: String) = removeHistory(listOf(id))
     /** 把一批剧集记为「本机已删除的观看记录」（只留墓碑，不动其它数据）。 */
     fun markHistoryDeleted(ids: Collection<String>) {
         if(ids.isEmpty()) return
@@ -765,90 +769,91 @@ class Library(context: Context) {
      * 因此注册时上报的机型、签名里 `x-medusa` 上报的机型、以及 query 里的 `device_type`
      * 是同一个值——平台的风控会拿这几处做一致性判定，同一次会话里出现两台设备是不正常的。
      *
-     * 与 [accountDevice] 的区别：那份是「导入凭据时带进来的真机档案」（来自 `device_profile.json`），
-     * 优先级更高，用于写接口；这份是本机自己采集、注册时发出去的档案。两者都不含登录态。
+     * ## 种子是随机的，而且只生成一次
      *
-     * ## `cdid` / `openudid` 从哪来（这一版变了）
+     * `cdid` / `openudid` / `clientudid` 由一段**随机 UUID** 派生（见 [deviceSeed]），
+     * **不再**拿 `ANDROID_ID` / `Build.SERIAL` / `Build.FINGERPRINT` 当种子。
      *
-     * 它们**不再随机生成**，而是由系统标识符派生（见 [StableDeviceIds]，
-     * 种子顺序 `ANDROID_ID` → `Build.SERIAL` → `Build.FINGERPRINT`）。
-     * 原因：随机值只存在于 App 私有目录，**卸载重装就等于换了一台设备**，
-     * 平台侧看到「陌生设备 + 老账号」就再要一次上行短信；而 `ANDROID_ID` 在 8.0 起
-     * 是同签名同用户下**重装不变**的，派生的值跟着它一起不变，平台才认得出这台设备。
+     * 那三个值会随系统升级、恢复出厂、换用户而变，一变就等于换了台设备：平台侧
+     * 「这台设备」的连续性断了，搜索回 `200 + 0 字节`、播放回 `101000`。
+     * 随机种子落盘之后就不会再变，除非用户主动重新注册（见 [queueNewDeviceIdentity]）。
      *
-     * 档案一旦确定就不再改（变了等于换了设备），因此有三种情形分得很清楚：
+     * ## 读路径只有一条
      *
-     * * 种指纹对得上 —— 原样返回（重启 / 升级 / 覆盖安装都不动它）；
-     * * 种指纹为空 —— 老版本留下的**随机**档案：就地换成派生值（每台设备只发生一次）；
-     * * 种指纹对不上 —— 派生过、但这台设备的标识符变了（恢复出厂 / 换用户 / 换签名）：
-     *   **保留原来的值**，只更新种指纹，免得每次进来都判一次——平台侧「这台设备」的连续性
-     *   比跟着一个会变的标识符更重要。
+     * 档案与种子都在盘上，**每次只读盘**：盘上有就原样返回，没有才生成一次并落盘。
+     * 机型 / 系统 / 分辨率这些字段因此只采集一次——系统升级之后档案不跟着变，
+     * 这正是「同一台设备」该有的样子。
      */
     fun deviceProfile(): Map<String,String> {
         restoreFromMirror()
         // 清除数据期间不再采集 / 落盘：此时写进去的任何一项都会在沙盒里留下痕迹。
         if(discarding) return emptyMap()
-        // 种子：这台设备的稳定标识符。取不到任何一个时才回落到随机（等于退回旧行为）。
-        val baseSeed=StableDeviceIds.seed(
-            runCatching {
-                android.provider.Settings.Secure.getString(
-                    app.contentResolver,android.provider.Settings.Secure.ANDROID_ID)
-            }.getOrNull(),
-            // `Build.SERIAL` 从 8.0 起要权限才给真值，低版本（我们支持的 4.4–7.1）可以直接读。
-            runCatching { if(android.os.Build.VERSION.SDK_INT<26) android.os.Build.SERIAL else null }.getOrNull(),
-            runCatching { android.os.Build.FINGERPRINT }.getOrNull()
-        )
-        // 再加一个**每次安装各自一份**的随机数：`ANDROID_ID` 在同签名同用户下重装不变，
-        // 只拿它派生的话「清除数据 / 恢复出厂」之后算出来的还是原来那套 `cdid` / `openudid`，
-        // 平台仍认这台设备，与「干干净净的第一次安装」不符。
-        // 随机数本身写进 [sessionPrefs] 并镜像，因此**卸载重装**（镜像还在）仍拿得回同一套标识，
-        // 只有本机数据被清空（系统清除数据 / 本应用的恢复出厂）才会重新生成。
-        val seed=baseSeed+"#"+installNonce()
-        val stamp=StableDeviceIds.stamp(seed)
-        val knownStamp=sessionPrefs.getString("device-profile-seed","").orEmpty()
         val stored=sessionPrefs.getString("device-profile","").orEmpty()
-        if(stored.isNotBlank()) runCatching {
-            val json=org.json.JSONObject(stored)
-            val map=buildMap { for(key in json.keys()) json.optString(key).takeIf { it.isNotBlank() }?.let { put(key,it) } }
-            if(map["cdid"].orEmpty().isNotBlank() && map["openudid"].orEmpty().isNotBlank()) {
-                if(knownStamp==stamp) {
-                    // 同上：档案是「这台设备的指纹」，老版本的档案只在本机私有目录里，
-                    // 读一次就补进镜像，卸载重装后 `cdid` / `openudid` 才不会变成新随机值。
-                    mirrorSync("device-profile",stored)
-                    return map
-                }
-                if(knownStamp.isNotBlank()) {
-                    rememberSeed(stamp)
-                    mirrorSync("device-profile",stored)
-                    return map
-                }
-                // 种指纹为空 = 老版本留下的**随机**档案：这一版要换成派生值。
-                //
-                // 但**不能就地改写**：平台按 `cdid` / `openudid` 认设备，档案一改，盘上那份
-                // `device_id` 立刻与它对不上号（搜索回空响应、播放回 101000/110001）；
-                // 而注册本身可能失败（无网络 / 被风控 / 服务端抖动），失败之后旧档案又已经没了，
-                // 用户就卡在「设备未注册」上——1.2.4 升级后「放不了、清缓存才好」正是这一条。
-                //
-                // 因此派生出来的那份先存成**候选**（[pendingProfile]），请求仍用旧档案；
-                // 注册成功之后由 [commitPendingProfile] 一次性换掉（档案 + 身份同时换）。
-                // 失败则旧档案、旧身份都还在，下次启动再试。
-                if(pendingProfile()==null) {
-                    storePendingProfile(buildDerivedProfile(seed),stamp)
-                }
-                if(!sessionPrefs.getBoolean("registration-pending",false)) markRegistrationPending()
-                profileRebuilt=true
-                Log.i("HGTV","Legacy random device profile queued for upgrade; old one kept")
+        if(stored.isNotBlank()) {
+            val map=runCatching {
+                val json=org.json.JSONObject(stored)
+                buildMap { for(key in json.keys()) json.optString(key).takeIf { it.isNotBlank() }?.let { put(key,it) } }
+            }.getOrNull()
+            if(map!=null && map["cdid"].orEmpty().isNotBlank() && map["openudid"].orEmpty().isNotBlank()) {
+                // 老版本只把档案写在本机私有目录里：读一次就补进镜像，卸载重装才认得回这台设备。
+                mirrorSync("device-profile",stored)
+                // **升级不动身份**：老版本那份档案（种子由系统标识符派生）原样继续用。
+                // 早先这里会「升级时强制换一台设备」，实测结论是**不要**这么做：
+                // 换设备只能换来一次重新绑定，账号在平台上被当成陌生机器，而收益为零
+                //（平台认设备靠的是 `install_id` / `sessionid` 这串 Cookie，见
+                // `ContentRepository.registerDevice`）。要换只有一条路——服务端明确不认这份身份
+                //（见 `MainActivity.healDeviceIdentity`）。
                 return map
             }
         }
-        val fresh=buildDerivedProfile(seed)
+        // 盘上没有（首次使用 / 刚重新注册）：按种子派生一份并落盘。
+        val fresh=buildDerivedProfile(deviceSeed())
         val json=org.json.JSONObject(); fresh.forEach { (key,value) -> json.put(key,value) }
-        sessionPrefs.edit().putString("device-profile",json.toString()).apply()
-        // 档案里的 `cdid` / `openudid` 一变就等于换了一台设备（平台靠它们做设备去重），
-        // 因此第一次采集出档案时镜像必须跟上，重装后才拿得回同一份指纹。
-        rememberSeed(stamp)
+        // **同步 commit**：档案丢了就等于换了台设备，不能让它在强杀时还没写下去。
+        sessionPrefs.edit().putString("device-profile",json.toString()).commit()
         mirror.put("device-profile",json.toString())
+        mirror.flush()
+        cachedProfileStamp=null
         return fresh
+    }
+    /**
+     * 本机的设备种子：**随机生成一次，之后只从盘上读**。
+     *
+     * 与 [queueNewDeviceIdentity] 的分工：那个是「换一台设备」，会生成新种子并走候选档案；
+     * 这里只是「第一次用到时补一份」。
+     */
+    private fun deviceSeed(): String {
+        val stored=sessionPrefs.getString("device-seed","").orEmpty()
+        if(stored.isNotBlank()) return stored
+        val fresh=newSeed()
+        sessionPrefs.edit().putString("device-seed",fresh).commit()
+        mirror.put("device-seed",fresh); mirror.flush()
+        return fresh
+    }
+    /** 一段新的随机种子。只有「第一次」与「换一台设备」两种情况会调用它。 */
+    private fun newSeed(): String=java.util.UUID.randomUUID().toString()
+    /**
+     * 生成一套**新的**设备身份候选（新种子 → 新档案），等注册成功再转正。
+     *
+     * 为什么是「候选」而不是直接换：注册可能失败（网络 / 风控 / 服务端抖动），
+     * 直接换掉档案就等于把用户变成「未注册设备」——搜索空响应、播放 110001，
+     * 而旧的档案 + 旧身份本来还能用。候选档案只在注册成功那一刻才转正
+     *（见 [commitPendingProfile]），失败则一切照旧，下次再试。
+     *
+     * ## 唯一的触发者是「服务端明确不认这份身份」
+     *
+     * 早先还有一条「升级到随机种子方案时强制换一台设备」的迁移，**已删除**（2026-11）：
+     * 实测平台认设备靠的是注册下发的 `install_id` / `sessionid` Cookie，不是 `cdid`；
+     * 换设备只能换来一次重新绑定，账号在平台上被当成陌生机器，收益为零。
+     *
+     * 现在只有 `MainActivity.healDeviceIdentity` 会走到这里（搜索 / 播放被服务端判成
+     * 「这台设备没注册过」之后的自愈），且一次进程最多两次、间隔至少 20 秒。
+     */
+    fun queueNewDeviceIdentity() {
+        if(discarding) return
+        val seed=newSeed()
+        storePendingProfile(buildDerivedProfile(seed),seed)
+        markRegistrationPending()
     }
     /** 由种子派生的一整套设备档案（机型 / 系统 / 分辨率 / 密度 / `cdid` …）。 */
     private fun buildDerivedProfile(seed: String): Map<String,String> {
@@ -893,12 +898,12 @@ class Library(context: Context) {
                 .takeIf { it["cdid"].orEmpty().isNotBlank() && it["openudid"].orEmpty().isNotBlank() }
         }.getOrNull()
     }
-    /** 把候选档案连同它的种指纹一起落盘（只在注册成功之后才会变成正式档案）。 */
-    private fun storePendingProfile(profile: Map<String,String>,stamp: String = "") {
+    /** 把候选档案连同**它的种子**一起落盘（只在注册成功之后才会变成正式档案）。 */
+    private fun storePendingProfile(profile: Map<String,String>,seed: String = "") {
         if(discarding) return
         val json=org.json.JSONObject(); profile.forEach { (key,value) -> json.put(key,value) }
         sessionPrefs.edit().putString("device-profile-pending",json.toString())
-            .putString("device-profile-pending-stamp",stamp).apply()
+            .putString("device-profile-pending-seed",seed).apply()
     }
     /**
      * 注册成功之后把候选档案转正（档案与种指纹一起换）。
@@ -909,13 +914,19 @@ class Library(context: Context) {
     fun commitPendingProfile() {
         if(discarding) return
         val pending=pendingProfile() ?: return
-        val stamp=sessionPrefs.getString("device-profile-pending-stamp","").orEmpty()
+        val seed=sessionPrefs.getString("device-profile-pending-seed","").orEmpty()
         val json=org.json.JSONObject(); pending.forEach { (key,value) -> json.put(key,value) }
-        sessionPrefs.edit().putString("device-profile",json.toString())
-            .remove("device-profile-pending").remove("device-profile-pending-stamp").apply()
-        if(stamp.isNotBlank()) rememberSeed(stamp) else cachedProfileStamp=null
+        // `-pending-stamp` 是老版本的键（那时用指纹而不是种子），一并清掉，别留孤儿。
+        val edit=sessionPrefs.edit().putString("device-profile",json.toString())
+            .remove("device-profile-pending").remove("device-profile-pending-seed")
+            .remove("device-profile-pending-stamp")
+        // 种子与档案必须**一起**换：只换档案不换种子，下一次要派生时用的还是旧那一套。
+        if(seed.isNotBlank()) edit.putString("device-seed",seed)
+        edit.commit()
         mirror.put("device-profile",json.toString())
+        if(seed.isNotBlank()) mirror.put("device-seed",seed)
         mirror.flush()
+        cachedProfileStamp=null
         Log.i("HGTV","Pending device profile promoted after successful registration")
     }
     /**
@@ -927,42 +938,6 @@ class Library(context: Context) {
     fun registrationProfile(): Map<String,String> = pendingProfile() ?: deviceProfile()
     /** 有没有待转正的候选档案（见 [registrationProfile]）。 */
     fun hasPendingProfile(): Boolean = pendingProfile()!=null
-    /**
-     * 本次安装的随机数：第一次用到设备档案时生成，之后一直复用。
-     *
-     * 它与 [StableDeviceIds] 的派生种子拼在一起，作用只有一个——让「数据被清空之后的第一次启动」
-     * 得到一套**新的** `cdid` / `openudid`，而不是把清空前那套原样算回来。
-     * 它跟着镜像一起走，所以卸载重装仍然恢复同一台设备的身份。
-     */
-    private fun installNonce(): String {
-        val existing=sessionPrefs.getString("device-profile-nonce","").orEmpty()
-        if(existing.isNotBlank()) return existing
-        val fresh=java.util.UUID.randomUUID().toString()
-        sessionPrefs.edit().putString("device-profile-nonce",fresh).apply()
-        mirrorSync("device-profile-nonce",fresh)
-        return fresh
-    }
-    /** 设备档案刚从「老版本的随机档案」重建成派生值（见 [deviceProfile]）。 */
-    @Volatile private var profileRebuilt=false
-    /**
-     * 取走「档案刚重建过」这个标记（只报一次）。
-     *
-     * 界面层据此强制重注册：档案换了，注册结果必须跟着换，否则平台按陌生设备处理
-     *（搜索回空响应、播放回 101000）。只报一次是因为重建只发生一次。
-     */
-    fun consumeProfileRebuilt(): Boolean {
-        if(!profileRebuilt) return false
-        profileRebuilt=false
-        return true
-    }
-    /** 记住「这份档案是按哪台设备的标识符派生的」，见 [deviceProfile] 的三种情形。 */
-    private fun rememberSeed(stamp: String) {
-        sessionPrefs.edit().putString("device-profile-seed",stamp).apply()
-        mirrorSync("device-profile-seed",stamp)
-        // 档案可能刚被重写（cdid / openudid 换了），指纹缓存必须跟着作废，
-        // 否则 [deviceRegistered] 会拿旧指纹去比对，判不出「注册结果与档案已经对不上」。
-        cachedProfileStamp=null
-    }
     /**
      * 账号参数（个人信息页导入的整套登录态）。
      *
@@ -1310,6 +1285,16 @@ class Library(context: Context) {
             put("launchRecommend", value)
         }
     /**
+     * 推荐页是否允许左右滑动切换体裁（漫剧 / 真人 / AI 剧，默认开启）。
+     *
+     * 关掉之后只能点顶部那三个体裁 tab 换流：pager 的横向手势整体关掉，
+     * 手指在视频上横向划一下不再整页翻走（竖屏短剧一屏一集，误触很常见）。
+     * 播放设置面板开着时本来就会临时锁住横向翻页，两件事互不影响（见 `PhoneRecommendPage`）。
+     */
+    var recommendSwipe: Boolean
+        get() = state().settings.recommendSwipe
+        set(value) { if (value != recommendSwipe) { state().settings = state().settings.copy(recommendSwipe = value); put("recommendSwipe", value) } }
+    /**
      * 首页七栏里**被隐藏**的那些：本机记录三栏（`history` / `favorites` / `later`）+
      * 热播四栏（`rank-comic` / `rank-real` / `rank-ai` / `rank-new`）。
      *
@@ -1639,6 +1624,7 @@ class Library(context: Context) {
             "hiddenNav" to { merged.settings.hiddenNav.split(',').filter { it.isNotBlank() }.toSet() },
             "debugMode" to { merged.settings.debugMode },
             "launchRecommend" to { merged.settings.launchRecommend },
+            "recommendSwipe" to { merged.settings.recommendSwipe },
             "hiddenHome" to { merged.settings.hiddenHome.split(',').filter { it in HOME_KEYS }.toSet() },
             "reduceAnim" to { merged.settings.reduceAnim },
             "keymap" to { merged.settings.keys }))

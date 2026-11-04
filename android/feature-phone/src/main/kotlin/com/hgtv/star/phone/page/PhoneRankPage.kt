@@ -45,9 +45,17 @@ class PhoneRankPage(context: Context) : LinearLayout(context) {
             context.phoneNav().open(Route.Detail(series.id, series.title))
         }
         // 长按：榜单多一项「不在热播榜中显示」（`library.hide`，与 TV 的隐藏同一份落盘值）。
-        // 隐藏之后要重新取一遍——被隐藏的那部不该还留在这一页里。
+        // 隐藏之后只把那一格从列表里摘掉（`removeItem`）：重取整页会闪一下、位置顶回顶部。
+        // 「收藏 / 稍后看」只是状态变化，重绑可见项即可。
         feed.onLongPress = { series ->
-            PhoneCardMenu.show(feed, series, hotList = true) { selectBoard(selected) }
+            PhoneCardMenu.show(
+                anchor = feed,
+                series = series,
+                hotList = true,
+                onChanged = { selectBoard(selected) },
+                onItemChanged = { feed.refreshItems() },
+                onItemRemoved = { id -> feed.removeItem(id) },
+            )
         }
 
         topBar.setTabs(boards.map { it.label }, 0) { index -> selectBoard(index) }

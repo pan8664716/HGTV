@@ -173,7 +173,10 @@ class PhoneSearchActivity : PhoneActivity() {
                 phoneNav().open(Route.Detail(series.id, series.title))
             }
             // 长按：搜索结果同样是「一部剧」，菜单与分类页一致（继续观看 / 收藏 / 稍后看 / 详情）。
-            onLongPress = { series -> PhoneCardMenu.show(this, series) }
+            // 收藏 / 稍后看只重绑可见项，不重跑搜索。
+            onLongPress = { series ->
+                PhoneCardMenu.show(this, series, onItemChanged = { refreshItems() })
+            }
         }
         root.addView(feed, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
@@ -441,7 +444,19 @@ class PhoneSearchActivity : PhoneActivity() {
         // 搜索源（设置 → 内容管理与来源）：App 接口 / 官网接口。
         // 与 TV 的 `library.searchSource` 同一份落盘值，只影响搜索（分类 / 榜单 / 播放不走它）。
         feed.load { p ->
-            PhoneServices.repository(this).search(keyword, p, source)
+            val result = PhoneServices.repository(this).search(keyword, p, source)
+            // 这一次是不是「App 接口没数据、自动改走官网」（见 `ContentRepository.search`）。
+            // 只提示第 1 页，翻页时不重复打扰。
+            if (p == 1 && com.hgtv.star.core.SearchDiag.last?.degraded == true) {
+                withContext(Dispatchers.Main) {
+                    android.widget.Toast.makeText(
+                        this@PhoneSearchActivity,
+                        "App 搜索暂不可用，已改用官网搜索",
+                        android.widget.Toast.LENGTH_SHORT,
+                    ).show()
+                }
+            }
+            result
         }
     }
 

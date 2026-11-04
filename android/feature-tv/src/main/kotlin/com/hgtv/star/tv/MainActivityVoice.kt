@@ -126,9 +126,8 @@ fun normalizeVoiceQuery(raw: String): String = com.hgtv.star.core.VoiceQuery.nor
 /**
  * 语音功能的阶段打点：只记「走到了哪一步」，**不上传识别文本**，也不发任何网络。
  *
- * 友盟统计已整体移除，这条链路改成**只写 logcat**（`adb logcat -s HGTV-VOICE`）：
- * 想知道「有多少人点了语音、多少台没有服务」时，在真机上抓一段日志就能看出来，
- * 不再需要外部统计后台。参数只有阶段名，不含任何识别内容。
+ * 这条链路**只写 logcat**（`adb logcat -s HGTV-VOICE`），不把识别文本交给友盟：
+ * 参数只有阶段名，不含任何识别内容。
  */
 fun MainActivity.noteVoice(stage: String) {
     Diagnostics.trace("HGTV-VOICE",stage)

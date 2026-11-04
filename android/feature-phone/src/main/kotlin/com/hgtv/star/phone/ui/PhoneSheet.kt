@@ -107,7 +107,7 @@ class PhoneSheet(private val host: FrameLayout) {
             // 底下多一截纯色 padding 读起来就是「面板没铺到底」。
             setPadding(
                 dp(if (landscape) 10 else 16), dp(10),
-                dp(if (landscape) 10 else 16), dp(12)
+                dp(if (landscape) 10 else 16), dp(12) + bottomInset
             )
             background = sheetBackground()
         }
@@ -142,7 +142,7 @@ class PhoneSheet(private val host: FrameLayout) {
         // 顶部那几行（标题、倍速）直接看不见，而且 ScrollView 自己也没有可滚的余量——
         // 这正是「显示不全、也滑不动」。限高之后，多出来的部分由滚动承担。
         // 减掉标题行与上下内边距：比例说的是**整块面板**，不是滚动区。
-        val chrome = dp(10) + dp(12) + dp(34)
+        val chrome = dp(10) + dp(12) + bottomInset + dp(34)
         val cap = if (landscape) 0 else
             (screenHeight() * heightFraction).toInt().minus(chrome).coerceAtLeast(dp(120))
         val scroller = CappedScrollView(host.context, cap).apply {

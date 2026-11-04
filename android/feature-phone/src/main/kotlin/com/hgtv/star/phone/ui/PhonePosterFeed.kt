@@ -2,21 +2,17 @@
 package com.hgtv.star.phone.ui
 
 import android.content.Context
-import android.graphics.Color
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ImageView
-import android.widget.LinearLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.hgtv.star.core.CatalogPage
+import com.hgtv.star.core.PosterCardContent
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.PhoneServices
-import com.hgtv.star.phone.ui.PhoneSoft.applySoft
-import com.hgtv.star.shared.ui.SoftStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -34,7 +30,7 @@ import kotlinx.coroutines.withContext
  * feed.load { page -> repository.categoryFeed(selection, page) }
  * ```
  *
- * 名次（[ranked]）只影响卡片左下角那枚角标：榜单页要画，分类页与搜索结果不画——
+ * 名次（[ranked]）只影响卡片左上角那枚角标：榜单页要画，分类页与搜索结果不画——
  * 与 TV 端 `RankBoard.ranked` 的判断一致（「上新」那一栏同样不画名次）。
  */
 class PhonePosterFeed(context: Context) : FrameLayout(context) {
@@ -65,13 +61,37 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     /** 点卡片。 */
     var onOpen: ((Series) -> Unit)? = null
 
+    /** 批量选择模式：点击卡片改为勾选，不再打开详情。 */
+    private var batchSelection = false
+    private val selectedIds = LinkedHashSet<String>()
+    var onSelectionChanged: ((Int) -> Unit)? = null
+
     /**
      * 长按卡片。
      *
      * 手机上「删除一条收藏 / 一条历史 / 一条稍后看」没有电视那样的菜单键，
      * 长按是这一平台唯一通用的入口（与系统相册、下载列表一致）。
+     *
+     * **赋值时要把已经绑好的卡片一起更新**：页面可能在 `load()` 之后才挂这个回调
+     * （缓存先铺、回调后设），那批卡片的 `onLongPress` 会一直是 null——长按没反应，
+     * 抬手还被当成点击跳去详情页。
      */
     var onLongPress: ((Series) -> Unit)? = null
+        set(value) {
+            field = value
+            var applied = 0
+            for (i in 0 until grid.childCount) {
+                val cell = grid.getChildAt(i) as? PhonePosterCard
+                if (cell != null) {
+                    cell.onLongPress = value
+                    applied++
+                }
+            }
+            android.util.Log.i(
+                "HGTV-CARD",
+                "set onLongPress handler=${value != null} applied=$applied children=${grid.childCount}",
+            )
+        }
 
     /**
      * 每行列数。
@@ -103,6 +123,10 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
      * 返回 null 时回落到默认那一行（集数 · 热度 · 题材）。
      */
     var subtitleOf: ((Series) -> String?)? = null
+        set(value) { field = value; adapter.notifyDataSetChanged() }
+
+    /** 卡片海报底部的已播进度（0..100）；没有进度时返回 null。 */
+    var progressOf: ((Series) -> Int?)? = null
         set(value) { field = value; adapter.notifyDataSetChanged() }
 
     /** 是否画名次角标。 */
@@ -151,6 +175,19 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         set(value) {
             field = value
             grid.setPadding(grid.paddingLeft, grid.paddingTop, grid.paddingRight, value)
+        }
+
+    /**
+     * 网格顶部的呼吸位（像素）；`-1` = 用默认的 `dp(4)`。
+     *
+     * 分类页把筛选行紧贴在主分类下面，需要把这一段收掉（见 `PhoneCategoryPage`）；
+     * 其它页面没有紧贴的内容，保持默认。
+     */
+    var gridTopInset = -1
+        set(value) {
+            if (field == value) return
+            field = value
+            if (value >= 0) grid.setPadding(0, value, 0, grid.paddingBottom)
         }
 
     init {
@@ -202,16 +239,87 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         }
     }
 
+    /**
+     * 本机状态变了（收藏 / 稍后看），只重绑可见项。
+     *
+     * 比调用方自己 `render()` 整页重建轻得多：不动头部、不清空列表、**滚动位置不变**。
+     * 长按菜单里点「收藏 / 稍后看」原来会把整页重铺一次，用户看到的是屏幕闪一下、
+     * 位置还可能被顶走。
+     */
+    fun refreshItems() {
+        adapter.notifyDataSetChanged()
+    }
+
+    fun setBatchSelection(enabled: Boolean) {
+        if (batchSelection == enabled) return
+        batchSelection = enabled
+        if (!enabled) selectedIds.clear()
+        adapter.notifyDataSetChanged()
+        onSelectionChanged?.invoke(selectedIds.size)
+    }
+
+    fun selectedCount(): Int = selectedIds.size
+
+    fun selectedItems(): List<Series> = items.filter { it.id in selectedIds }
+
+    fun allSelected(): Boolean = items.isNotEmpty() && items.all { it.id in selectedIds }
+
+    fun selectAll() {
+        if (!batchSelection || items.isEmpty()) return
+        selectedIds.clear()
+        selectedIds += items.map { it.id }
+        adapter.notifyDataSetChanged()
+        onSelectionChanged?.invoke(selectedIds.size)
+    }
+
+    fun clearSelection() {
+        if (selectedIds.isEmpty()) return
+        selectedIds.clear()
+        adapter.notifyDataSetChanged()
+        onSelectionChanged?.invoke(0)
+    }
+
+    private fun toggleSelection(id: String) {
+        if (!batchSelection) return
+        if (!selectedIds.add(id)) selectedIds.remove(id)
+        adapter.notifyDataSetChanged()
+        onSelectionChanged?.invoke(selectedIds.size)
+    }
+
+    /**
+     * 从当前列表里就地抽掉一项（「不在热播榜中显示」）。
+     *
+     * 原来这一步走的是整页重取：隐藏完把列表清空、回到第 1 页重新请求一遍，
+     * 屏幕会闪一下、滚动位置被顶回顶部。而被隐藏的那部**已经不在结果里**了
+     * （`CatalogFilter.visible` 会过滤 `library.hidden()`），
+     * 唯一要做的只是把这一格从内存列表里摘掉。
+     *
+     * 摘掉之后要重绑后面的项：名次角标是按位置算的（`第 N 名`），
+     * 不重绑就会留着旧名次，看起来像「抽掉一张后名次错了」。
+     */
+    fun removeItem(seriesId: String) {
+        val index = items.indexOfFirst { it.id == seriesId }
+        if (index < 0) return
+        items.removeAt(index)
+        selectedIds.remove(seriesId)
+        adapter.notifyItemRemoved(adapter.posterStart + index)
+        val rest = items.size - index
+        if (rest > 0) adapter.notifyItemRangeChanged(adapter.posterStart + index, rest)
+        if (items.isEmpty()) showEmpty("暂无内容")
+    }
+
     /** 把一整行头部放进网格第一项：它会和海报一起滚动，不再由页面单独收起 / 展开。 */
-    fun setHeader(view: View) {
-        (view.parent as? ViewGroup)?.removeView(view)
+    fun setHeader(view: View) {        (view.parent as? ViewGroup)?.removeView(view)
         header = view
         adapter.notifyDataSetChanged()
     }
 
     /** 头部内部内容变了（换栏目、筛选行重建）：让 RecyclerView 重新量这一行。 */
     fun refreshHeader() {
-        if (header != null) adapter.notifyItemChanged(0)
+        // 头部 ViewHolder 始终复用同一个 View。对它发 item change 通知时，
+        // RecyclerView 的变更动画可能尝试把仍挂着的 View 再 attach 一次；
+        // 分类页切换体裁恰好还会紧跟一次整页刷新，因此这里只请求重新布局。
+        header?.requestLayout()
     }
 
     /** 每次挂回窗口都按当前设置重排列数，并纠正一次页头状态。 */
@@ -247,6 +355,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     fun reset() {
         job?.cancel()
         items.clear()
+        selectedIds.clear()
         heatBy = emptyMap()
         emptyVisible = false
         adapter.notifyDataSetChanged()
@@ -309,6 +418,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         // 其余来源为 0，卡片上那一枚自然收起。
         heatBy = emptyMap()
         items += rows
+        selectedIds.retainAll(rows.map { it.id }.toSet())
         ended = !more
         page = 1
         emptyVisible = rows.isEmpty()
@@ -386,265 +496,37 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     }
 
     /**
-     * 一张海报卡：**逐项复刻电视端的 `PosterCard`**（`feature-tv` 的 `TvComponents.kt`）。
-     *
-     * ```
-     * ┌─ 底板（surface，RAISED 柔光，小圆角，四周 6dp 柔光带）─────────┐
-     * │ ┌─ 海报井（内缩 4dp，小圆角裁剪）──────────────────────────────┐ │
-     * │ │                                              [第 3 季]      │ │
-     * │ │                 封面 CENTER_CROP                            │ │
-     * │ │ [第 3 名]                                    [共 99 集]    │ │
-     * │ └──────────────────────────────────────────────────────────┘ │
-     * │  剧名（18×scale，粗体，单行省略）                              │
-     * │  类型标签（14×scale，靠左）              状态（14×scale，靠右）│
-     * └──────────────────────────────────────────────────────────────┘
-     * ```
-     *
-     * 与电视端的对应关系是**一对一**的，不是「照着抄个大概」：
-     *
-     * | 元素 | 电视 `PosterCard` | 这里 |
-     * | --- | --- | --- |
-     * | 底板 / 海报井 | 小圆角 / 内缩 | 手机端卡片与图片同为小圆角 |
-     * | 海报比例 | `POSTER_ASPECT` 3:4 | 同值（原先手机是 3:5，偏高） |
-     * | 角标字号 / 内边距 / 外边距 | 12sp / 6,3,8,3 / 5dp | 同值（走 `phoneSize`，按 50% 字阶） |
-     * | 角标压暗层 | 朝贴边那一侧的渐变 | 同值（直角边缘） |
-     * | 剧名 | 18sp 粗体、单行 END、内边距 9/8/9/0 | 同值 |
-     * | 第二行 | 14sp、标签靠左占满、状态靠右、内边距 9/4/9/3 | 同值 |
-     * | 无标签时 | 整行收起，不留空档 | 同值 |
-     *
-     * 唯一的差别是**字号单位**：电视用绝对 sp，手机整套版面按 50% 字阶，
-     * 因此同样写 18、14、12，落到像素上是电视的一半。这是全站统一的比例，
-     * 不是这张卡特例——否则卡片文字会比标题栏、播放页同一层级重一倍。
-     *
-     * `textScale` 与电视同一条算法：卡片越宽（1 列 / 2 列），字号按比例抬一点，
-     * 否则宽卡片下面会吊着两行小字。基准取电视 6 列的卡片宽（94 设计单位）。
+     * 网格卡只补页面上下文：统一外观在 [PhonePosterCard]，横排相关剧集用的是同一个类。
      */
-    private inner class PosterCell(context: Context, private val cardWidth: Int) : LinearLayout(context) {
-
-        /** 与电视 `MainActivity.cardTextScale` 同一套：卡宽 / 基准宽，夹在 0.85–1.45。 */
-        private val scale = (cardWidth.toFloat() / context.dp(94f))
-            .coerceIn(.85f, 1.45f)
-
-        /** 卡片自己的柔光带：比按钮窄一档，封面才能铺得更满。 */
-        private val cardBand = 4f
-        private val posterInset = 2f
-
-        private val poster = FrameLayout(context).apply {
-            background = roundedBackground(
-                PhoneStyle.surface,
-                context.dp(PhoneStyle.RADIUS_CARD).toFloat(),
+    private inner class PosterCell(
+        context: Context,
+        cardWidth: Int,
+    ) : PhonePosterCard(
+        context,
+        cardWidth,
+        PhoneServices.artwork(context),
+        onOpen = { item ->
+            if (batchSelection) toggleSelection(item.id)
+            else this@PhonePosterFeed.onOpen?.invoke(item)
+        },
+    ) {
+        fun bind(item: Series, position: Int) {
+            onLongPress = if (batchSelection) null else this@PhonePosterFeed.onLongPress
+            // 现取入口：长按那一刻再问宿主，避免「页面晚设回调」导致这批卡片永远没有 handler。
+            longPressResolver = { if (batchSelection) null else this@PhonePosterFeed.onLongPress }
+            android.util.Log.i(
+                "HGTV-CARD",
+                "bind ${item.id} handler=${onLongPress != null}",
             )
-            clipToOutline = true
-            clipChildren = true
-        }
-
-        private val cover = ImageView(context).apply {
-            scaleType = ImageView.ScaleType.CENTER_CROP
-            importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        }
-
-        /** 右下角：**总集数**（`共 99 集`），没有集数时整枚收起。 */
-        private val badge = TextView(context)
-
-        /** 右上角：第几季（`第 3 季`），所有页面都标——与电视同一口径。 */
-        private val season = TextView(context)
-
-        /** 左上角：榜单名次（`第 3 名`），只在榜单页出现。 */
-        private val rank = TextView(context)
-
-        /**
-         * 左下角：**热度**（`🔥 9014万`）。
-         *
-         * 只在接口真的给了热度时出现（榜单页与搜索结果有，分类页 / 本机记录没有），
-         * 没有就整枚收起。文案见 [com.hgtv.star.core.HeatLabel]。
-         */
-        private val heat = TextView(context)
-
-        private val title = TextView(context).apply {
-            phoneSize(18f * scale)
-            setTextColor(PhoneStyle.textDim)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            includeFontPadding = false
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setSingleLine(true)
-            setPadding(
-                context.dp(9f * scale), context.dp(8f * scale), context.dp(9f * scale), 0
-            )
-        }
-
-        private val tagLine = TextView(context).apply {
-            phoneSize(14f * scale)
-            setTextColor(PhoneStyle.textDim)
-            includeFontPadding = false
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setSingleLine(true)
-            gravity = Gravity.START or Gravity.CENTER_VERTICAL
-        }
-
-        private val status = TextView(context).apply {
-            phoneSize(14f * scale)
-            setTextColor(PhoneStyle.textDim)
-            includeFontPadding = false
-            maxLines = 1
-            setSingleLine(true)
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-
-        private lateinit var meta: LinearLayout
-
-        init {
-            orientation = VERTICAL
-            clipChildren = false
-            clipToPadding = false
-            // 先放 0 padding，再交给 `applySoft` 补一圈柔光带（它只加一次，重复调用不会叠加）。
-            setPadding(0, 0, 0, 0)
-            applySoft(SoftStyle.RAISED, PhoneStyle.surface, PhoneStyle.RADIUS_CARD, cardBand)
-
-            // 海报井只留柔光带和一圈很窄的内缩，剩下的宽度全部给封面。
-            val bandPx = context.dp(cardBand)
-            val insetPx = context.dp(posterInset)
-            val posterWidth = (cardWidth - bandPx * 2 - insetPx * 2).coerceAtLeast(1)
-            val posterHeight = (posterWidth / (3f / 4f)).toInt()
-            addView(poster, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, posterHeight
-            ).apply {
-                leftMargin = insetPx
-                rightMargin = insetPx
-                topMargin = context.dp(1)
-            })
-            poster.addView(cover, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+            super.bind(item, PosterCardContent.of(
+                series = item,
+                statusText = subtitleOf?.invoke(item).orEmpty(),
+                rankText = if (ranked) "第 ${position + 1} 名" else "",
+                rankTop = position < 3,
+                heatServerText = heatBy[item.id],
             ))
-
-            // 四枚角标共用一套：12 号字、粗体、无字体内边距、朝贴边那一侧压暗、6/3/8/3 内边距。
-            listOf(
-                badge to (Gravity.BOTTOM or Gravity.END),
-                season to (Gravity.TOP or Gravity.END),
-                rank to (Gravity.TOP or Gravity.START),
-                heat to (Gravity.BOTTOM or Gravity.START),
-            ).forEach { (view, place) ->
-                view.phoneSize(12f * scale)
-                view.setTextColor(Color.WHITE)
-                view.includeFontPadding = false
-                view.setTypeface(view.typeface, android.graphics.Typeface.BOLD)
-                view.gravity = place
-                view.background = badgeScrim(place)
-                view.setPadding(context.dp(6), context.dp(3), context.dp(8), context.dp(3))
-                view.visibility = View.GONE
-            }
-            // 三枚都只按内容宽度量：角标是一枚小标签，不该在封面上铺出一条暗带。
-            poster.addView(badge, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM or Gravity.END
-            ).apply { rightMargin = context.dp(5); bottomMargin = context.dp(5) })
-            poster.addView(rank, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP or Gravity.START
-            ).apply { leftMargin = context.dp(5); topMargin = context.dp(5) })
-            poster.addView(season, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.TOP or Gravity.END
-            ).apply { rightMargin = context.dp(5); topMargin = context.dp(5) })
-            // 左下角热度：与右下角的集数角标同一条底边，一左一右。
-            poster.addView(heat, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM or Gravity.START
-            ).apply { leftMargin = context.dp(5); bottomMargin = context.dp(5) })
-
-            addView(title, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-
-            meta = LinearLayout(context).apply {
-                orientation = HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                setPadding(
-                    context.dp(9f * scale), context.dp(4f * scale),
-                    context.dp(9f * scale), context.dp(3f * scale)
-                )
-                visibility = GONE
-                addView(tagLine, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-                addView(status, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                ))
-            }
-            addView(meta, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-        }
-
-        /**
-         * 角标压暗层：朝**贴边那一侧**渐深，圆角跟海报井一致。
-         *
-         * 与电视 `TvStyle.scrimTop / scrimTopStart / scrimBottomStart / scrim` 四件套同一个效果：
-         * 上角与下角的暗头在上下、左侧两枚的暗头在左。
-         */
-        private fun badgeScrim(place: Int): android.graphics.drawable.GradientDrawable {
-            val dark = 0x99000000.toInt()
-            val clear = Color.TRANSPARENT
-            val fromStart = place == (Gravity.TOP or Gravity.START) ||
-                place == (Gravity.BOTTOM or Gravity.START)
-            val (colors, orientation) = when {
-                fromStart -> intArrayOf(dark, clear) to android.graphics.drawable.GradientDrawable.Orientation.LEFT_RIGHT
-                place == (Gravity.TOP or Gravity.END) -> intArrayOf(dark, clear) to android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM
-                else -> intArrayOf(clear, dark) to android.graphics.drawable.GradientDrawable.Orientation.TOP_BOTTOM
-            }
-            return android.graphics.drawable.GradientDrawable(orientation, colors).apply {
-                cornerRadius = context.dp(PhoneStyle.RADIUS_CARD).toFloat()
-            }
-        }
-
-        fun bind(series: Series, position: Int) {
-            title.text = series.title
-
-            // 第二行：类型标签靠左（接口自带，最多取三个，与电视「标签优先」同一语义）。
-            tagLine.text = series.tags.split(',', '·', '、', '|')
-                .map { it.trim() }
-                .filter { it.isNotEmpty() && !it.contains("集") }
-                .take(3)
-                .joinToString(" · ")
-            // 状态靠右：收藏栏是「更新至 N 集」，其余页面留空（历史那一条由 `subtitleOf` 给）。
-            status.text = subtitleOf?.invoke(series).orEmpty()
-            meta.visibility = if (tagLine.text.isBlank() && status.text.isBlank()) GONE else VISIBLE
-
-            val seasonText = com.hgtv.star.core.SeriesSeasons.badge(series)
-            season.text = seasonText
-            season.visibility = if (seasonText.isBlank()) GONE else VISIBLE
-
-            val badgeText = com.hgtv.star.core.EpisodeLabel.total(series.episodeCount)
-            badge.text = badgeText
-            badge.visibility = if (badgeText.isBlank()) GONE else VISIBLE
-
-            if (ranked) {
-                rank.visibility = VISIBLE
-                rank.text = "第 ${position + 1} 名"
-                rank.setTextColor(if (position < 3) PhoneStyle.tips else Color.WHITE)
-            } else {
-                rank.visibility = GONE
-            }
-
-            // 左下角热度：服务端原串优先（榜单页），没有就用搜索卡片解析出的数字；
-            // 两者都没有（分类页 / 收藏 / 历史）→ 整枚收起。火苗是 emoji 字符，不自绘。
-            val heatText = com.hgtv.star.core.HeatLabel.badge(heatBy[series.id], series.heat)
-            heat.text = heatText
-            heat.visibility = if (heatText.isBlank()) GONE else VISIBLE
-
-            contentDescription = listOf(
-                badgeText, seasonText, series.title, tagLine.text.toString(), status.text.toString(),
-                if (heatText.isBlank()) "" else "$heatText 热度",
-            ).filter { it.isNotBlank() }.joinToString("，")
-
-            PhoneServices.artwork(context).load(
-                cover, series.cover, widthPx = cardWidth
-            )
-            setOnClickListener { onOpen?.invoke(series) }
-            setOnLongClickListener {
-                val handler = onLongPress ?: return@setOnLongClickListener false
-                handler(series)
-                true
-            }
+            setProgress(progressOf?.invoke(item))
+            setBatchSelection(batchSelection, item.id in selectedIds)
         }
     }
 }

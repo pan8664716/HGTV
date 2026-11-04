@@ -252,6 +252,26 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         }
 
     /**
+     * 基准字号是否按**屏幕长边**算（默认 `false` = 按视图高度）。
+     *
+     * 手机播放页横竖屏各有一层弹幕：竖屏视图高 1920、横屏 1080，按各自高度算出来的
+     * 基准字号差着 1.6 倍——竖屏看着正好，一点全屏字就变了。打开这一项后两层都按长边
+     * （同一块屏的 1920）取基准，物理尺寸一致，切换时字号不跳。电视只有一个方向，
+     * 保持默认即可。
+     */
+    var sizeFollowsLongEdge: Boolean=false
+        set(value) {
+            if(field==value) return
+            field=value
+            // 还没量出尺寸时不用急：`onSizeChanged` 会按新规则算一次。
+            if(width>0 && height>0) {
+                baseTextSize=baseSizeFor(width,height)
+                applyTextMetrics()
+                relayout()
+            }
+        }
+
+    /**
      * 相同弹幕是否聚合。
      *
      * 默认开启：同一句文字在 [com.hgtv.star.core.DANMAKU_REPEAT_WINDOW_MS] 内合并成一组，
@@ -277,6 +297,25 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             val next=value.coerceIn(DANMAKU_MERGE_MIN_RANGE)
             if(field==next) return
             field=next
+            relayout()
+        }
+
+    /**
+     * 宿主指定的顶部留白（像素）；`< 0` = 用默认的 [TOP_INSET_DP]。
+     *
+     * 默认那 104dp 是照电视横屏标题条（96dp）定的。竖屏播放页的标题栏高度按
+     * `phoneScale` 算，和这个数并不相等：手机上照搬会让滚动弹幕贴着顶部、压住剧名，
+     * 读到的就是「弹幕太靠上」。宿主量出标题栏下沿后写进这里，弹幕就从标题之下开始铺。
+     *
+     * 只影响全屏滚动的轨道起点（[DanmakuMode.TOP] / [DanmakuMode.SINGLE] 有各自的边距），
+     * 因此只重排轨道，不重排数据。
+     */
+    var topInsetPx: Int=-1
+        set(value) {
+            if(field==value) return
+            field=value
+            // 起点变了可用高度就变、轨道数也跟着变，已排好的 lane 编号会落到新范围之外，
+            // 因此和 [mode] 一样整批重排（值没变时上面已经提前返回，不会反复重排）。
             relayout()
         }
 
@@ -419,7 +458,12 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         lastPosition=-1L
         groups=if(mergeRepeats) repeatGroups(raw,minCount=mergeMinCount) else raw.map { DanmakuRepeat(it.text,listOf(it.offsetMs)) }
         // 中央突出显示的次序：传上一份，正在展示的那几条不会被新数据挤掉（见 planHighlights）。
-        highlights=planHighlights(groups,highlights,highlightSlots,mergeMinCount)
+        //
+        // **「只显一行」这一档不排中央块**：那一档只有唯一一条轨道，中央块的位置与它完全重合，
+        // 两者同时出现就是两层字叠在一起（用户读到的就是「聚合弹幕显示了不止一个」）。
+        // 这一档让聚合弹幕回到那唯一一条轨道上滚（带 ×N），屏幕上任何时候都只有一条。
+        highlights=if(mode==DanmakuMode.SINGLE) emptyList()
+        else planHighlights(groups,highlights,highlightSlots,mergeMinCount)
         highlightCursor=0
         layoutLanes()
         val lanes=if(mode==DanmakuMode.HIDDEN) 0 else laneCount
@@ -502,9 +546,21 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         super.onSizeChanged(w,h,oldw,oldh)
         // 轨道数量按屏高现算：电视上换分辨率、放大字号都会重建视图。
         // 字号按屏高给（1080p 电视约 18sp），再夹住上下限：720p 与 4K 都不会过大或过小。
-        baseTextSize=(h*0.034f).coerceIn(density*18f,density*34f)
+        baseTextSize=baseSizeFor(w,h)
         applyTextMetrics()
         relayout()
+    }
+
+    /**
+     * 基准字号：默认按**视图高度**（电视只有一个方向，这就是屏高）。
+     *
+     * 手机播放页横竖屏各有一个弹幕层，视图高度分别是 1920 / 1080，按各自高度算出来的
+     * 字号差着一大截——竖屏看着合适，一点全屏字就变了。因此宿主可以打开
+     * [sizeFollowsLongEdge]，改用屏幕长边，两层就落在同一档。
+     */
+    private fun baseSizeFor(w: Int,h: Int): Float {
+        val basis = if(sizeFollowsLongEdge) maxOf(w,h) else h
+        return (basis*0.034f).coerceIn(density*18f,density*34f)
     }
 
     /**
@@ -566,16 +622,19 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             DanmakuMode.SINGLE -> {
                 // 唯一那一行：顶边留出的边距要装得下中央那一块——它比普通弹幕大一档，
                 // 底板上下还各有一圈留白，按普通档的 20dp 摆上去上面那半截会被屏幕顶边切掉。
-                laneTop=maxOf(TOP_MODE_INSET_DP*density,
+                laneTop=maxOf(
+                    if(topInsetPx>=0) topInsetPx.toFloat() else TOP_MODE_INSET_DP*density,
                     highlightSize*0.6f+HIGHLIGHT_PAD_DP*density*0.5f)
                 laneHeight
             }
             DanmakuMode.TOP -> {
-                laneTop=TOP_MODE_INSET_DP*density
+                // 「上方弹幕」整层本来就贴顶，同样要躲开宿主量到的标题栏（竖屏播放页）。
+                laneTop=if(topInsetPx>=0) topInsetPx.toFloat() else TOP_MODE_INSET_DP*density
                 (height*TOP_MODE_SHARE-laneTop).coerceAtLeast(0f)
             }
             else -> {
-                laneTop=TOP_INSET_DP*density
+                // 宿主量到了标题栏下沿就用它（竖屏播放页），否则沿用电视那一档默认值。
+                laneTop=if(topInsetPx>=0) topInsetPx.toFloat() else TOP_INSET_DP*density
                 (height-BOTTOM_INSET_DP*density).coerceAtLeast(laneTop+1f)-laneTop
             }
         }

@@ -206,6 +206,10 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
         if (isShowing) return
         dismissed = onDismiss
         actions.visibility = if (actions.childCount > 0) View.VISIBLE else View.GONE
+        // 滚动区的高度预算必须在 `show()` 里算好（见 [scrollBudget]）：
+        // 弹窗窗口是 `WRAP_CONTENT`，内容一旦超过窗口能给的最高度，系统就会把窗口夹住，
+        // 而面板比窗口高的那一截会被裁掉——读起来就是「上滑下滑都超过弹框」。
+        middleScroll.maxHeightPx = scrollBudget()
         val padded = android.widget.FrameLayout(activity).apply {
             setPadding(activity.dp(4), activity.dp(4), activity.dp(4), activity.dp(4))
             addView(body, ViewGroup.LayoutParams(
@@ -237,6 +241,25 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
         }
     }
 
+    /**
+     * 滚动区最多能占多高：窗口上限减去「除滚动区以外」的那些固定开销。
+     *
+     * 早先 `CappedScrollView` 只按「屏高 62%」封顶，完全没算标题、按钮行与面板内边距——
+     * 三者加起来可以到 120dp 以上。列表一长，总高就超过窗口能给的高度，窗口被系统夹住，
+     * 面板底边连同最后一两行一起被裁在外面。现在改成先扣开销、再定上限。
+     */
+    private fun scrollBudget(): Int {
+        val metrics = activity.resources.displayMetrics
+        // 窗口最高占屏幕 88%：留出状态栏 / 导航栏与上下各一点余量。
+        val windowCap = (metrics.heightPixels * .88f).toInt()
+        // 面板上下内边距 14+14、标题（17sp + 下内边距 10dp）、外层 FrameLayout 的 4+4。
+        var reserve = activity.dp(14 + 14 + 44 + 8)
+        // 按钮行：每颗 40dp、除第一颗外各带 6dp 上间距、整行上间距 8dp。
+        val buttons = actions.childCount
+        if (buttons > 0) reserve += activity.dp(40 * buttons + 6 * (buttons - 1) + 8)
+        return (windowCap - reserve).coerceAtLeast(activity.dp(140))
+    }
+
     fun dismiss() {
         dialog?.dismiss()
     }
@@ -246,13 +269,37 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
         middleScroll.visibility = View.VISIBLE
     }
 
-    /** 正文与选项共用一块可滚区，长列表不会把按钮行顶出屏幕。 */
+    /**
+     * 正文与选项共用一块可滚区，长列表不会把按钮行顶出屏幕。
+     *
+     * 上限由 [PhoneDialog.scrollBudget] 在 `show()` 里算好并写进 [maxHeightPx]；
+     * 没写（= 0）时才退回「屏高 62%」这个粗上限。
+     */
     private class CappedScrollView(context: Context) : ScrollView(context) {
+
+        /** 由宿主按「窗口上限 − 固定开销」算出的像素高度；0 = 用兜底比例。 */
+        var maxHeightPx: Int = 0
+
         override fun onMeasure(widthMeasureSpec: Int, heightMeasureSpec: Int) {
-            val cap = (resources.displayMetrics.heightPixels * .62f).toInt()
+            val cap = if (maxHeightPx > 0) {
+                maxHeightPx
+            } else {
+                (resources.displayMetrics.heightPixels * .62f).toInt()
+            }
+            // **必须尊重父容器给的高度**。
+            //
+            // 早先这里直接把高度量成 `AT_MOST(屏高 62%)`，把父容器的约束整个丢掉：
+            // 窗口一旦比「标题 + 62% + 按钮行」矮（矮屏、大字号、界面缩放都够），
+            // 这个可滚区仍然按 62% 撑开，整块面板就比窗口高——超出窗口的那一截被裁掉，
+            // 读起来正是「上滑下滑都超过弹框」。
+            val parentLimit = MeasureSpec.getSize(heightMeasureSpec)
+            val limit = when (MeasureSpec.getMode(heightMeasureSpec)) {
+                MeasureSpec.UNSPECIFIED -> cap
+                else -> minOf(cap, parentLimit)
+            }
             super.onMeasure(
                 widthMeasureSpec,
-                MeasureSpec.makeMeasureSpec(cap, MeasureSpec.AT_MOST),
+                MeasureSpec.makeMeasureSpec(limit, MeasureSpec.AT_MOST),
             )
         }
     }

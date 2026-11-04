@@ -21,7 +21,13 @@ import com.hgtv.star.tv.R
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-fun MainActivity.showPlaybackMenu(focusRow: Int=0,focusChoice: Int=-1) {
+/**
+ * 打开播放设置面板。
+ *
+ * 默认焦点落在**第一项设置**（清晰度），不是第一行那排动作：按「设置」进来的绝大多数是
+ * 想调档位，落在清晰度上按确认仍然是改清晰度；那排动作就在它正上方一行，按一下上键就到。
+ */
+fun MainActivity.showPlaybackMenu(focusRow: Int=MENU_ROW_QUALITY,focusChoice: Int=-1) {
     if((screen!="player" && screen!="recommend") || playError) return
     // 还没有播放层（推荐页停在「取不到推荐」那行字上）：没有可调的东西，这一下菜单键吞掉即可。
     // `hud` 与 `playerView` 是同一个分支里建的，用后者判断在扩展函数里也读得到。
@@ -99,6 +105,19 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
     // **这里不能 `return menu.addRow(...)`**：那样第一条链之后就返回了，弹幕速度 / 字号 /
     // 透明度、定时、时间全成了死代码——表现就是「播放设置里只有弹幕显示，没有别的弹幕项」。
     val menu=PlaybackMenu(this)
+    // **第一行**：四件平级的事（相关剧集 / 作者作品 / 加入收藏 / 查看简介）。
+    // 面板高度固定、超出的行靠下键滚动，这一排挂在末尾时用户要一路滚到底才看得见，
+    // 等于没做；放在最上面则一开面板就在手边，下面再接各项设置。
+    // 前两项弹出贴底浮层（不压暗画面），收藏就地翻文案，简介弹一个不打断播放的弹窗。
+    menu.addActions(listOf(
+        PlaybackMenu.Action("相关剧集") { showPlayerRelated() },
+        PlaybackMenu.Action("作者作品") { showPlayerAuthorWorks() },
+        PlaybackMenu.Action(playerFavoriteLabel()) {
+            // 只改这一枚按钮的文案，不重建面板：收藏状态变了，其余行一个像素都不动。
+            menu.actionLabel(MENU_ROW_ACTIONS,MENU_ACTION_FAVORITE,togglePlayerFavorite())
+        },
+        PlaybackMenu.Action("查看简介") { showPlayerIntro() }
+    ))
     menu
         .addRow("清晰度",PlaybackQuality.options.mapIndexed { index,value ->
             PlaybackMenu.Choice("${value}P",value==playbackMaxQuality) {
@@ -222,6 +241,9 @@ private fun MainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boolean
     }
     menu.sliderValue(videoScaleRow(showsStyle),library.videoScale)
     menu.sync(sleepRow(showsStyle),if(sleepTimer.active) sleepChoice else 0)
+    // 第一行那排动作里只有「收藏」会自己改文案：可能在简介页 / 卡片长按菜单里被改过，
+    // 因此每次挂上去之前按本机当前状态刷一遍（其余三枚是固定文案，不用动）。
+    menu.actionLabel(MENU_ROW_ACTIONS,MENU_ACTION_FAVORITE,playerFavoriteLabel())
 }
 
 /**
@@ -398,6 +420,10 @@ fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     hideDebugOverlay()
     cancelRecovery(); cancelPrefetch(); mediaSession?.deactivate(); tvTools.close()
     dismissPlaybackMenu()
+    // 离开播放页：这一页的方向键开关一并归零。`playError` 在出错页上为真时
+    // [dismissPlaybackMenu] 会把它留在真（错误页的按钮要能被焦点选中），
+    // 而页面已经要换掉了，再留着没有意义。
+    panel=false
     // 长按倍速：手指可能是在这一页按下的、UP 落在了别的页面（返回键 / 手势条）。
     // 这里把速度还给设置里那一档、把「2 倍速播放中」那块标签摘掉，下一集不会带着 2 倍速起播。
     setPlaybackBoost(false)
@@ -407,10 +433,12 @@ fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     val wasForeground=foreground; foreground=false
     val oldPanel=episodePanel; episodePanel=null; oldPanel?.dismiss(); foreground=wasForeground
     speedDialog?.dismiss(); speedDialog=null
-    // 「全剧已播完 → 换一部接着看」那一层：离开播放界面（返回 / 息屏 / 进别的剧）时要一起收掉，
-    // 否则它会浮在新页面上。
+    // 播放页的作品浮层与下一季提示：离开播放界面时一起收掉。
     finishedPanel?.dismiss(); finishedPanel=null
-    finishedNotice?.dismiss(); finishedNotice=null
+    clearNextSeasonLookup()
+    nextSeasonNotice=null
+    // 播放页那两块作品浮层（相关剧集 / 作者作品）的重铺入口随播放页一起作废。
+    playerStripRefresh=null
     // 推荐页的信息浮层与切换过渡黑场也属于播放页这一层：离开时一起摘掉，否则会浮在新页面上。
     dismissRecommendOverlay()
     dismissRecommendCover()

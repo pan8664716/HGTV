@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
+import android.widget.Space
 import android.widget.TextView
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.PhoneAccountActivity
@@ -18,6 +19,7 @@ import com.hgtv.star.phone.PhoneSettingsPage
 import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneCardMenu
+import com.hgtv.star.phone.ui.PhoneDialog
 import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhonePosterFeed
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
@@ -50,6 +52,9 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
     private var historyFilter: Boolean? = null
     /** 预约栏的上线状态筛选：null = 全部。 */
     private var reserveFilter: Boolean? = null
+    /** 当前栏目是否处于批量选择模式；切换栏目 / 筛选或删除后退出。 */
+    private var batchMode = false
+    private var batchBar: LinearLayout? = null
     /**
      * 收藏更新检查（`:shared` 的 [FavoriteMonitor]，与 TV 端同一份实现）。
      *
@@ -80,26 +85,48 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
         feed.subtitleOf = { series ->
             if (tabs.getOrNull(tab) == "收藏") library.favoriteLabel(series.id) else null
         }
+        // 历史与 TV 首页一样画已播进度；收藏 / 稍后看没有播放进度时不占位。
+        feed.progressOf = { series ->
+            if (tabs.getOrNull(tab) != "历史") null
+            else runCatching {
+                library.progress(series.id)?.let { p ->
+                    when {
+                        p.completed -> 100
+                        p.duration > 0 -> (p.position * 100 / p.duration).toInt().coerceIn(0, 100)
+                        else -> null
+                    }
+                }
+            }.getOrNull()
+        }
         // 长按海报 = 电视端的菜单键。菜单项由 `:core` 的 `CardMenu` 算（与 TV 同一份规则）：
         // 历史栏多「删除记录」，收藏栏的收藏项自动写成「取消收藏」，稍后看写「移出稍后观看」。
         // 早先这里只有一个「删除这一条」的确认框，收藏 / 稍后看 / 继续观看都得绕回详情页。
         feed.applyColumnsFromSettings()
         feed.onLongPress = { series ->
-            PhoneCardMenu.show(
-                anchor = feed,
-                series = series,
-                inHistory = tabs.getOrNull(tab) == "历史",
-            ) { render() }
+            if (!batchMode) {
+                PhoneCardMenu.show(
+                    anchor = feed,
+                    series = series,
+                    inHistory = tabs.getOrNull(tab) == "历史",
+                    // 删除记录会改变列表成员：整页重铺一次。
+                    onChanged = { render() },
+                    // 收藏 / 稍后看只是状态变化：只重绑可见项，页面不闪、滚动位置不动。
+                    onItemChanged = { feed.refreshItems() },
+                )
+            }
         }
         // 点海报先进详情页（与 TV 一致）。
         feed.onOpen = { series ->
             context.phoneNav().open(Route.Detail(series.id, series.title))
         }
+        feed.onSelectionChanged = { updateBatchBar() }
 
         // 账号与栏目交给网格当第一项：它们和海报共用同一个滚动容器，
         // 上滑时自然滚出屏幕，不再有独立页头的自动收起 / 展开。
         feed.setHeader(body)
         topBar.setTitle("我的")
+        // 底部 2dp 留白收掉：「我的」与头像栏之间不再叠一层。
+        topBar.tightenBottom()
         topBar.setAction(PhoneGlyph.Kind.SETTINGS, "设置") {
             PhoneSettingsActivity.open(context, PhoneSettingsPage.PLAYBACK)
         }
@@ -129,6 +156,7 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
         // 设置页可能刚改过「列表每行」：这一页一直留在 Activity 里，
         // 不重新挂窗口时不会走 `PhonePosterFeed.onAttachedToWindow`，必须在这里主动对齐列数。
         feed.applyColumnsFromSettings()
+        exitBatchMode()
         refresh()
         // 登录着的时候顺手刷一次账号数据（与 TV 的 `loadAccount` 同一条路）：
         // 不进这一步，账号侧的收藏 / 历史永远不会出现在这一页上。
@@ -172,8 +200,8 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
         body.removeAllViews()
         body.addView(buildAccount())
         body.addView(buildTabs())
-        buildFilterRow()?.let { body.addView(it) }
-        buildFavoriteRefresh()?.let { body.addView(it) }
+        batchBar = buildBatchBar()
+        batchBar?.let { body.addView(it) }
         feed.refreshHeader()
         renderContent()
     }
@@ -196,7 +224,9 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(context.dp(14), context.dp(10), context.dp(14), context.dp(8))
+            // 上下留白收小且对称（用户要求「上下边距一样」）：
+            // 上 10 → 6、下 8 → 4，配合下面栏目行的 4dp，头像到「历史」不再是一大段空白。
+            setPadding(context.dp(14), context.dp(6), context.dp(14), context.dp(4))
             setOnClickListener {
                 context.phoneNav().open(Route.Account)
             }
@@ -267,85 +297,22 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
      * 点已选中的那一枚 = 取消筛选回到「全部」，与 TV 的 `ToggleChip` 同一条语义：
      * 一个筛选只该有两种状态（选中 / 不选），不需要第三枚「全部」占地方。
      */
-    private fun buildFilterRow(): View? {
-        val options: List<Pair<Boolean, String>> = when (tabs.getOrNull(tab)) {
+    private fun filterOptions(): List<Pair<Boolean, String>> = when (tabs.getOrNull(tab)) {
             "历史" -> listOf(true to "已看完", false to "未看完")
             "预约" -> listOf(true to "已上线", false to "待上线")
-            else -> return null
+            else -> emptyList()
         }
-        val current = if (tabs.getOrNull(tab) == "历史") historyFilter else reserveFilter
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(context.dp(16), 0, context.dp(16), context.dp(4))
-        }
-        options.forEach { (value, label) ->
-            val on = current == value
-            row.addView(TextView(context).apply {
-                text = label
-                setTextColor(if (on) PhoneStyle.onLit else PhoneStyle.text)
-                // 次级筛选：**必须比上面那排 tab（16 号字 / 33dp）小一档**。
-                // 之前这里是 12 号字 + 7dp 内边距 + 6dp 柔光带 = 39dp，
-                // 比它要筛的那排 tab 还高，层级是反的：用户第一眼看到的是筛选器。
-                phoneSize(12)
-                setPadding(context.dp(10), context.dp(3), context.dp(10), context.dp(3))
-                applySoft(
-                    SoftStyle.RAISED,
-                    if (on) PhoneStyle.lit else PhoneStyle.surface,
-                    PhoneStyle.RADIUS_PILL, 3f,
-                )
-                setOnClickListener {
-                    val next = if (on) null else value
-                    if (tabs.getOrNull(tab) == "历史") historyFilter = next else reserveFilter = next
-                    render()
-                }
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { rightMargin = context.dp(8) })
-        }
-        return row
-    }
 
-    /**
-     * 收藏栏的「检查更新」入口。
-     *
-     * TV 上是收藏栏行末的一张底板 + 页头提示；手机上放在栏目行的右侧，
-     * 检查中显示进度（`monitor.status` 就是那句话），完成后就地刷新副标题。
-     */
-    private fun buildFavoriteRefresh(): View? {
-        if (tabs.getOrNull(tab) != "收藏") return null
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(context.dp(16), 0, context.dp(16), context.dp(2))
-        }
-        val label = TextView(context).apply {
-            text = monitor.status
-            setTextColor(PhoneStyle.textFaint)
-            phoneSize(11)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        }
-        row.addView(label, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(TextView(context).apply {
-            text = "检查更新"
-            setTextColor(PhoneStyle.accent)
-            phoneSize(12)
-            setPadding(context.dp(10), context.dp(6), context.dp(2), context.dp(6))
-            setOnClickListener {
-                runCatching { monitor.check(force = true) }
-                // 状态由 [FavoriteMonitor] 自己推（它的回调会重建这一栏）。
-                postDelayed({ label.text = monitor.status }, 120)
-            }
-        })
-        return row
-    }
+    private fun currentFilter(): Boolean? =
+        if (tabs.getOrNull(tab) == "历史") historyFilter else reserveFilter
 
     private fun buildTabs(): View {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(context.dp(16), context.dp(6), context.dp(16), context.dp(6))
+            // 上 6 → 4：与账号行的下留白（4dp）一起把「头像 → 历史」压到 14dp，
+            // 接近上面「我的 → 头像」那一档（见 `buildAccount` 的注释）。
+            setPadding(context.dp(16), context.dp(4), context.dp(16), context.dp(2))
         }
         tabs.forEachIndexed { index, label ->
             row.addView(TextView(context).apply {
@@ -356,15 +323,149 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
                     typeface,
                     if (index == tab) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
                 )
-                setPadding(0, context.dp(6), context.dp(24), context.dp(6))
+                setPadding(0, context.dp(6), context.dp(24), context.dp(4))
                 setOnClickListener {
                     if (tab == index) return@setOnClickListener
+                    exitBatchMode()
                     tab = index
                     render()
                 }
             })
         }
         return row
+    }
+
+    /**
+     * 栏目标题下一行的筛选 / 批量操作栏。
+     *
+     * 普通态筛选按钮靠左、「批量操作」靠右；进入选择态后筛选按钮隐藏，
+     * 同一行只保留全选 / 删除 / 取消。选择范围只属于当前栏目。
+     */
+    private fun buildBatchBar(): LinearLayout {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL or Gravity.END
+            setPadding(context.dp(16), 0, context.dp(16), context.dp(2))
+        }
+        batchBar = row
+        updateBatchBar()
+        return row
+    }
+
+    private fun updateBatchBar() {
+        val row = batchBar ?: return
+        row.removeAllViews()
+        row.gravity = Gravity.CENTER_VERTICAL
+        fun action(label: String, color: Int, run: () -> Unit) = TextView(context).apply {
+            text = label
+            setTextColor(color)
+            phoneSize(13)
+            setPadding(context.dp(10), context.dp(6), context.dp(2), context.dp(6))
+            setOnClickListener { run() }
+        }
+        if (batchMode) {
+            val count = feed.selectedCount()
+            val allSelected = feed.allSelected()
+            row.addView(Space(context), LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+            ))
+            row.addView(action(if (allSelected) "取消全选" else "全选", PhoneStyle.accent) {
+                if (allSelected) feed.clearSelection() else feed.selectAll()
+            })
+            row.addView(action(
+                "删除",
+                if (count > 0) PhoneStyle.tips else PhoneStyle.textFaint,
+            ) {
+                if (count > 0) deleteSelected()
+            })
+            row.addView(action("取消", PhoneStyle.textDim) { exitBatchMode() })
+        } else {
+            val current = currentFilter()
+            filterOptions().forEach { (value, label) ->
+                val on = current == value
+                row.addView(TextView(context).apply {
+                    text = label
+                    setTextColor(if (on) PhoneStyle.accent else PhoneStyle.textDim)
+                    phoneSize(12)
+                    setTypeface(
+                        typeface,
+                        if (on) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL,
+                    )
+                    setPadding(0, context.dp(4), context.dp(18), context.dp(4))
+                    setOnClickListener {
+                        val next = if (on) null else value
+                        if (tabs.getOrNull(tab) == "历史") historyFilter = next else reserveFilter = next
+                        render()
+                    }
+                })
+            }
+            row.addView(Space(context), LinearLayout.LayoutParams(
+                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+            ))
+            row.addView(action("批量操作", PhoneStyle.accent) { enterBatchMode() })
+        }
+        row.requestLayout()
+        feed.refreshHeader()
+    }
+
+    private fun enterBatchMode() {
+        if (batchMode) return
+        batchMode = true
+        feed.setBatchSelection(true)
+        updateBatchBar()
+    }
+
+    private fun exitBatchMode() {
+        if (!batchMode) return
+        batchMode = false
+        feed.setBatchSelection(false)
+        updateBatchBar()
+    }
+
+    private fun deleteSelected() {
+        val selected = feed.selectedItems()
+        if (selected.isEmpty()) return
+        val activity = context as? android.app.Activity ?: return
+        PhoneDialog(activity, "批量删除")
+            .message("确定删除选中的 ${selected.size} 项吗？")
+            .button("取消")
+            .button("删除", danger = true) { performBatchDelete(selected) }
+            .show()
+    }
+
+    private fun performBatchDelete(selected: List<Series>) {
+        val ids = selected.map { it.id }
+        when (tabs.getOrNull(tab)) {
+            "历史" -> {
+                library.removeHistory(ids)
+                PhoneAccountSync.historyDeleted(context, ids)
+            }
+            "收藏" -> {
+                selected.forEach { series ->
+                    if (runCatching { library.favorite(series.id) }.getOrDefault(false)) {
+                        library.toggle(series)
+                    }
+                }
+                PhoneAccountSync.favoritesDeleted(context, selected)
+            }
+            "稍后看" -> selected.forEach { series ->
+                if (runCatching { library.queued(series.id) }.getOrDefault(false)) {
+                    library.toggleLater(series)
+                }
+            }
+            "点赞" -> PhoneAccountSync.likesDeleted(context, ids)
+            "预约" -> {
+                selected.forEach { library.setReserved(it.id, false) }
+                PhoneAccountSync.reservationsDeleted(context, ids)
+            }
+        }
+        android.widget.Toast.makeText(
+            context,
+            "已删除 ${selected.size} 项",
+            android.widget.Toast.LENGTH_SHORT,
+        ).show()
+        exitBatchMode()
+        render()
     }
 
     /**
@@ -407,6 +508,7 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
                 ?.map { it.series }.orEmpty()
         }
         feed.submit(rows)
+        updateBatchBar()
     }
 
     /** 本机有一条同剧进度且标着 `completed`，或平台说看到的就是最后一集。 */

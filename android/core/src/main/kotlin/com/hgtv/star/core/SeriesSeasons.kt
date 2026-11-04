@@ -174,4 +174,28 @@ object SeriesSeasons {
             .filter { normalize(it.title) == key }
             .sortedWith(compareBy({ season(it) }, { it.title }))
     }
+
+    /**
+     * 从相关作品里选出当前季之后的下一季。
+     *
+     * 只收同一部剧、季号更大且已经有分集的条目；未上架季可以展示，但不能作为自动起播目标。
+     * 同一季出现多条时按接口顺序取第一条，最终仍以详情接口的 `video_list` 为准。
+     */
+    fun nextSeason(current: Series, works: RelatedWorks): Series? {
+        val currentSeason = season(current)
+        val key = normalize(current.title)
+        if (key.isEmpty()) return null
+        return works.seasons
+            .asSequence()
+            .filter { it.id != current.id }
+            .filter { normalize(it.title) == key }
+            .filter { !it.upcoming && it.episodeCount > 0 }
+            .filter { season(it) > currentSeason }
+            .minByOrNull { season(it) }
+    }
+
+    /** 提示文案里的完整季名：剧名已经带季号就原样使用，否则补上接口 / 剧名解析出的季号。 */
+    fun titleWithSeason(series: Series): String =
+        if (parse(series.title).matched) series.title
+        else series.title + "第" + season(series) + "季"
 }

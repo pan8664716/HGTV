@@ -19,11 +19,12 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.hgtv.star.shared.compat.drawRoundRectCompat
-import com.hgtv.star.core.EpisodeLabel
+import com.hgtv.star.core.PosterCardContent
 import com.hgtv.star.core.Series
-import com.hgtv.star.core.SeriesSeasons
 import com.hgtv.star.shared.compat.setVectorIcon
 import com.hgtv.star.shared.compat.vectorDrawable
+import com.hgtv.star.shared.ui.PosterCardMaterial
+import com.hgtv.star.shared.ui.PosterCardView
 import com.hgtv.star.shared.ui.Soft
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.ui.SoftDrawable
@@ -814,327 +815,63 @@ class IconButton(
 }
 
 /**
- * 海报底边那条已播进度条。
- *
- * 原先用 `LinearLayout + 两个 weight 子 View` 表达「已播 / 未播」：一张卡多两个 View，
- * 而且每次改进度都要写 layoutParams、两次 requestLayout。这里改成自绘——
- * 一张卡只占一个 View，改进度只是重画（[percent] 变了才 invalidate）。
+ * 电视端海报卡：结构来自 [PosterCardView]，这里只补电视的材质、字号、进度条与焦点。
  */
-class PosterProgress(context: Context) : View(context) {
-    private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val radius = context.tvDp(TvStyle.RADIUS_POSTER).toFloat()
-    private val track = RectF()
-
-    /** 已播百分比（0..100）；只有真的变了才重画。 */
-    var percent: Int = 0
-        set(value) {
-            val next = value.coerceIn(0, 100)
-            if (next == field) return
-            field = next
-            invalidate()
-        }
-
-    override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
-        super.onSizeChanged(w, h, oldw, oldh)
-        track.set(0f, 0f, w.toFloat(), h.toFloat())
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        if (width <= 0 || height <= 0) return
-        // 底槽：只圆下面两角（与海报圆角对齐）。
-        paint.color = TvStyle.wellDeep
-        canvas.drawRoundRect(track, radius, radius, paint)
-        // 已播段：只圆左下角。
-        val filled = width * (percent / 100f)
-        if (filled > 0f) {
-            paint.color = TvStyle.accent
-            canvas.drawRoundRect(RectF(0f, 0f, filled, height.toFloat()), radius, radius, paint)
-        }
-    }
-}
-
-/**
- * 竖版海报卡：一块凸起底板，里面嵌着海报井（内暗角）、角标、进度条与两行文字。
- *
- * 卡片的焦点态和按钮不同：卡里是图片，底板换不成亮面，因此焦点由「抬一档 + 更深的柔光
- * + 主题焦点色细环 + 外发光 + 剧名转全白」共同表达。
- *
- * 新拟态的处理：
- * - 整卡是一块 [TvStyle.surface] 凸起面板（圆角 [TvStyle.RADIUS_CARD]），焦点时换成抬升面 + 焦点色细环 + 外发光；
- * - 海报四周留 4dp 内衬，井口用 [SoftStyle.SHADE] 压一圈暗角，读起来像「嵌进底板」而不是「贴上去」；
- * - 进度条底槽换成更深的凹槽色，已播部分仍是强调色。
- *
- * 卡片自己带 [TvStyle.SOFT_BAND] 的柔光带（就是它的内边距），投影因此不会跑出控件边界。
- */
-/**
- * 海报井：封面 + 一圈暗角 + 压在上面的进度条 / 角标。
- *
- * 暗角原先是一个铺满整块的子 View（每个都带一个 `SoftStyle.SHADE` 的 SoftDrawable）。
- * 首页 77 张卡 + 栅格窗口 30 张 = 100 多个纯装饰 View，每个都要走一次 measure/layout/draw，
- * 而它画的只是一层径向渐变；现在收进自绘，**View 数直接少掉一成**。
- *
- * 绘制顺序必须与原来一致：先画封面（child 0）、再压暗角、然后才是进度条与三枚角标
- *（角标不能被暗角压暗，否则右下角那枚「共 N 集」会变灰）。
- */
-class PosterWell(context: Context) : FrameLayout(context) {
-    private val shade = TvStyle.soft(context, Color.TRANSPARENT, 0, 0, SoftStyle.SHADE)
-
-    init {
-        clipChildren = true
-        clipToPadding = true
-    }
-
-    override fun dispatchDraw(canvas: Canvas) {
-        val count = childCount
-        if (count == 0 || width <= 0 || height <= 0) return
-        // child 0 是封面，其余（进度条 / 三枚角标）画在暗角之上。
-        drawChild(canvas, getChildAt(0), drawingTime)
-        shade.setBounds(0, 0, width, height)
-        shade.draw(canvas)
-        for (index in 1 until count) drawChild(canvas, getChildAt(index), drawingTime)
-    }
-}
-
 class PosterCard(
     context: Context,
     posterHeight: Int,
-    private val loadCover: (ImageView, String) -> Unit,
+    private val coverLoader: (ImageView, String) -> Unit,
     /**
      * 卡片文字的整体缩放：每行 4 / 5 张时卡片更宽，剧名与状态行按同一比例放大，
      * 否则大卡片下面会吊着两行小字。1f = 旧版 6 列时的字号。
      */
     val textScale: Float = 1f
-) : LinearLayout(context) {
+) : PosterCardView(context, PosterCardMaterial.config(
+    px = { value -> context.tvDp(value) },
+    posterHeight = posterHeight,
+    textScale = textScale,
+    rankTopColor = TvStyle.tips,
+    progressTrackColor = TvStyle.wellDeep,
+    progressFillColor = TvStyle.accent,
+)) {
     private val dp = { value: Number -> context.tvDp(value) }
-    private val band = context.softBand()
-    /**
-     * 这一张卡**现在**是谁。
-     *
-     * 分类页的栅格是固定窗口 + 行复用（见 `MainActivity.syncGridWindow`）：卡片会被滚出窗口、
-     * 回收、再拿去显示别的剧集，因此监听器里不能再捕获某一次的 item，
-     * 一律通过这个字段取「当前绑定的是哪一部」。
-     */
-    var series: Series? = null
-    val image = ImageView(context)
-    // 卡片下方的剧名与状态：字号比正文小一档，一屏六列时不会盖过海报本身。
-    // 剧名 16 → 18、状态行 13 → 14：电视上远看时 16sp 仍然偏小，两行一起抬一档、
-    // 保持「剧名比状态大一档」的层次（类型标签行跟着状态行走）。
-    val title = context.tvText("", 18f * textScale, TvStyle.textDim, bold = true)
-    val status = context.tvText("", 14f * textScale, TvStyle.textDim)
-    /**
-     * 短剧类型标签：卡片第二行，**靠左**、占满整行。
-     *
-     * 来自 [Series.tags]（`category_schema` 里的题材名，最多 5 个、` · ` 连接）：
-     * 列表接口自带这一项，不需要再为卡片第二行额外发请求。
-     * 拿不到标签时才退回状态行（见 [syncMeta]），两者都没有就整行收起。
-     */
-    private val tagLine = context.tvText("", 14f * textScale, TvStyle.textDim)
-    /** 第二行（类型标签）的容器：没有标签时整行隐藏，卡片高度不留空档。 */
-    private lateinit var meta: LinearLayout
-    /** 第二行优先显示状态（历史栏专用，见 [bind] 的 `preferStatus`）。 */
-    private var preferStatus = false
-    private val poster = PosterWell(context)
-    /** 右下角角标：**总集数**优先（`99 集`）；没有集数时才退回名次 / 热度这类文案。 */
-    private val badge = TextView(context)
-    /**
-     * 左上角角标：榜单名次（`第 3 名`），只在榜单页出现。
-     *
-     * 与另外两枚共用同一套字号 / 压暗层，但压暗方向朝左上（贴边的那一侧）。
-     */
-    private val rank = TextView(context)
-    /**
-     * 右上角角标：这一部是**第几季**（所有页面统一显示）。
-     *
-     * 季号优先用接口给的字段（见 [SeriesSeasons.badge]）
-     *（只有详情页的「相关作品」那一栏才有），剧名是列表侧唯一的来源，
-     * 因此没有写季号的剧名按第 1 季标，让每张卡都能一眼读出季数。
-     * 与右下角那枚共用一套字号、字重、压暗层与内边距，只是一左一右。
-     */
-    private val season = TextView(context)
-    /**
-     * 左下角角标：**热度**（`🔥 9014万`）。
-     *
-     * 只在接口真的给了热度时出现（榜单页与搜索结果有，分类页 / 相关剧集 / 本机记录没有），
-     * 没有就整枚收起——留一个「热度暂无」的占位只是噪音。
-     * 文案怎么来的见 [com.hgtv.star.core.HeatLabel]：服务端原串优先，没有才按数字换算。
-     */
-    private val heat = TextView(context)
-    /** 已播进度条：自绘，一张卡只占一个 View（原先的 track/fill/rest 是三个）。 */
-    private val progress = PosterProgress(context)
-    /**
-     * 卡片的底板：**一张卡只有这一个 Drawable**，焦点态只就地改配色。
-     *
-     * 以前每次焦点变化都 `background = TvStyle.soft(...)` 新建一个：18 张卡来回走一遍就是
-     * 几十个 Drawable，而且每个新 Drawable 第一次 `draw` 时都要查/建柔光位图，全部落在 UI 线程。
-     * 现在 fill / 描边是每次绘制现画的纯色，只有外发光进了位图；同尺寸的卡共用同一张位图，
-     * 因此焦点移动不再产生任何分配。
-     */
-    private val plate = TvStyle.soft(
-        context, TvStyle.surface, TvStyle.RADIUS_CARD, TvStyle.SOFT_BAND,
-        // heavy = true：海报卡一屏十几张、每张整卡面积，低配上关掉预渲染柔光位图
-        // （见 Soft.shadowBitmaps）。按钮 / 弹窗不走这个开关。
-        SoftStyle.RAISED, depth = 1.2f, heavy = true
-    )
-    /**
-     * 焦点卡是否跑马灯。
-     *
-     * 低配**整条关掉**，关掉的不只是那一条文字动画：`setEllipsize()` 内部是
-     * `nullLayouts() + requestLayout() + invalidate()`，而 `requestLayout()` 会让
-     * **整条祖先链**跳过 measure 缓存重新 `onMeasure`（`ViewGroup.measure` 在
-     * `forceLayout` 时 `cacheIndex = -1`）。
-     *
-     * 首页是未窗口化的一整棵树（7 栏 × 11 卡 ≈ 700 个 View），而一次焦点移动要切两次
-     * ellipsize（旧卡 END、新卡 MARQUEE）= **两次全页测量**，10~30ms。
-     * 电视上的观感就是「按一下、顿一下」，而且左右切换也会顿——这是本案最直接的元凶。
-     *
-     * [TvStyle.animate] 与低配判据同源（见 `MainActivity.onCreate`）。
-     */
+    private val band = context.tvDp(PosterCardMaterial.SOFT_BAND)
     private val marqueeOn = TvStyle.animate
-    private var percent = -1
-    private var cover = ""
-    /** 总集数（0 = 未知）；右下角角标优先显示它。 */
-    private var episodeCount = 0
-    /** 没有集数时右下角要显示的那段文案（名次 / 热度 / 「正在看」）。 */
-    private var fallbackBadge = ""
+    private val plate = TvStyle.soft(
+        context, TvStyle.surface, PosterCardMaterial.RADIUS_CARD, PosterCardMaterial.SOFT_BAND,
+        SoftStyle.RAISED, depth = PosterCardMaterial.CARD_DEPTH, heavy = true
+    )
 
     init {
-        orientation = VERTICAL
-        clipChildren = false
-        clipToPadding = false
         isFocusable = true
         isFocusableInTouchMode = true
         id = View.generateViewId()
         setPadding(band, band, band, band)
 
-        roundCorners(poster, TvStyle.RADIUS_POSTER)
-        image.scaleType = ImageView.ScaleType.CENTER_CROP
-        image.importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-        // 海报自己的圆角裁剪**不再单独挂一个 outline**：`poster` 已经 clipToOutline，
-        // 子控件画在它的画布里，同样被裁成圆角。一张卡少一个 OutlineProvider 与一层硬件裁剪。
-        poster.addView(image, FrameLayout.LayoutParams(-1, -1))
-
-        // 井口暗角不再是一个子 View：由 [PosterWell.dispatchDraw] 画在封面之上、角标之下。
-
-        // 进度条：一个自绘 View 画「底槽 + 已播段」，替代原来的 track/fill/rest 三个 View。
-        progress.visibility = View.GONE
-        poster.addView(progress, FrameLayout.LayoutParams(-1, dp(4), Gravity.BOTTOM))
-
-        // 两枚角标共用一套样式：同样的字号、字重、压暗层与内边距，只是一左一右。
-        // 压在封面上，因此**不跟主题**：浅色主题下 TvStyle.text 是深墨，
-        // 压在黑压暗层上会完全看不见（同播放界面的规则）。
-        // 三枚角标共用一套样式：同样的字号、字重、压暗层与内边距，分别贴三个角。
-        // 压在封面上，因此**不跟主题**：浅色主题下 TvStyle.text 是深墨，
-        // 压在黑压暗层上会完全看不见（同播放界面的规则）。
-        listOf(badge to (Gravity.BOTTOM or Gravity.END), season to (Gravity.TOP or Gravity.END),
-            rank to (Gravity.TOP or Gravity.START), heat to (Gravity.BOTTOM or Gravity.START)).forEach { (view, place) ->
-            view.designTextSize(TvStyle.POSTER_BADGE_TEXT * textScale)
-            view.setTextColor(TvStyle.playerText)
-            view.includeFontPadding = false
-            view.setTypeface(view.typeface, Typeface.BOLD)
-            view.gravity = place
-            // 压暗层就是角标自己的背景（原先是一个单独的 View 压在下面）：
-            // 少一个 View，而且不用 `setShadowLayer`——它在 API 26/27 上会把文字整块拉进软件层再上传位图。
-            // 压暗方向都朝**贴边的那一侧**：下角标最深的一头在下、上角标最深的一头在上。
-            view.background = when {
-                place == (Gravity.TOP or Gravity.END) -> TvStyle.scrimTop(context, 0x99000000.toInt(), Color.TRANSPARENT)
-                place == (Gravity.TOP or Gravity.START) -> TvStyle.scrimTopStart(context, 0x99000000.toInt(), Color.TRANSPARENT)
-                place == (Gravity.BOTTOM or Gravity.START) -> TvStyle.scrimBottomStart(context, 0x99000000.toInt(), Color.TRANSPARENT)
-                else -> TvStyle.scrim(context, Color.TRANSPARENT, 0x99000000.toInt())
-            }
-            view.setPadding(dp(6), dp(3), dp(8), dp(3))
-            view.visibility = View.GONE
-        }
-        // 右下角集数角标：只占内容宽度、贴右下角（原先拉满整行，是为了放名次那种长文案；
-        // 现在右下角统一是「99 集」，一条通栏暗带没有必要）。
-        poster.addView(
-            badge,
-            FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.END).apply {
-                rightMargin = dp(5)
-                bottomMargin = dp(5)
-            }
-        )
-        // 左上角名次（只在榜单页显示）。
-        poster.addView(
-            rank,
-            FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.START).apply {
-                leftMargin = dp(5)
-                topMargin = dp(5)
-            }
-        )
-        // 右上角那一枚只占内容宽度（不拉满整行）：它是一枚小标签，不该在封面上铺出一条暗带。
-        poster.addView(
-            season,
-            FrameLayout.LayoutParams(-2, -2, Gravity.TOP or Gravity.END).apply {
-                rightMargin = dp(5)
-                topMargin = dp(5)
-            }
-        )
-        // 左下角热度：与右下角的集数角标同一条底边，一左一右。
-        poster.addView(
-            heat,
-            FrameLayout.LayoutParams(-2, -2, Gravity.BOTTOM or Gravity.START).apply {
-                leftMargin = dp(5)
-                bottomMargin = dp(5)
-            }
-        )
-
-        // 海报井比底板再内缩 4dp：井口才有「嵌进去」的厚度。
-        addView(
-            poster,
-            LinearLayout.LayoutParams(-1, posterHeight).apply {
-                leftMargin = dp(4)
-                rightMargin = dp(4)
-                topMargin = dp(2)
-            }
-        )
-
-        // 标题：**焦点卡跑马灯**，其余卡省略号收尾。
-        //
-        // 跑马灯在 TextView 里由「单行 + MARQUEE + selected」三件事共同触发，
-        // 缺一个都不会动；因此常态是 END 省略，拿到焦点时再切成 MARQUEE 并置 selected
-        //（见 [applyFocus]）。这样一屏里只有一张卡在动，不会互相打架。
-        title.maxLines = 1
-        title.ellipsize = TextUtils.TruncateAt.END
-        title.setSingleLine(true)
+        title.designTextSize(PosterCardMaterial.TITLE_TEXT * textScale)
+        title.setTextColor(TvStyle.textDim)
+        title.setTypeface(title.typeface, Typeface.BOLD)
         title.marqueeRepeatLimit = -1
-        // 内边距跟着字号走：4 / 5 列的大卡片上，9dp 的边距配放大的文字会显得字挤在边上。
-        title.setPadding(dp(9 * textScale), dp(8 * textScale), dp(9 * textScale), 0)
-        // 第二行（类型标签）：只省略，不滚动——滚动的只有标题那一行。
-        status.maxLines = 1
-        status.setSingleLine(true)
-        status.ellipsize = TextUtils.TruncateAt.END
-        tagLine.maxLines = 1
-        tagLine.setSingleLine(true)
-        tagLine.ellipsize = TextUtils.TruncateAt.END
-        tagLine.gravity = Gravity.START or Gravity.CENTER_VERTICAL
-        meta = LinearLayout(context).apply {
-            orientation = HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            clipChildren = false
-            clipToPadding = false
-            setPadding(dp(9 * textScale), dp(4 * textScale), dp(9 * textScale), dp(3 * textScale))
-            // 没有类型标签时整行收起：留一条只有内边距的空行会白占高度。
-            visibility = View.GONE
+
+        status.designTextSize(PosterCardMaterial.META_TEXT * textScale)
+        status.setTextColor(TvStyle.textDim)
+        tagLine.designTextSize(PosterCardMaterial.META_TEXT * textScale)
+        tagLine.setTextColor(TvStyle.textDim)
+
+        listOf(badge, season, corner, heat).forEach { view ->
+            view.designTextSize(PosterCardMaterial.BADGE_TEXT * textScale)
+            view.setTextColor(TvStyle.playerText)
         }
-        // 第二行：**类型标签靠左**（集数已经挪到封面右下角，季号在右上角）。
-        // 标签拿不到时退回状态行（「第 3 集 · 12:34」/ 热度）——那一行不是集数，
-        // 而是「看到哪了」，隐藏它会让历史栏的卡片失去唯一的时间信息。
-        // 标签占满剩余宽度（超长自己省略）：-2 会让它按内容宽量，长标签直接被卡片边缘切掉。
-        meta.addView(tagLine, LinearLayout.LayoutParams(0, -2).apply { weight = 1f })
-        meta.addView(status, LinearLayout.LayoutParams(-2, -2))
-        addView(title, LinearLayout.LayoutParams(-1, -2))
-        addView(meta, LinearLayout.LayoutParams(-1, -2))
 
         background = plate
         applyFocus(false)
     }
 
+    override fun loadCover(image: ImageView, url: String) = coverLoader(image, url)
+
     /**
-     * 绑定一张卡。
-     *
-     * 右上角季号（优先接口字段，见 [SeriesSeasons.badge]）在**所有页面**都显示；
-     * [seasonBadge] 只留给确实不需要季号的调用方，默认开。
+     * 绑定一张卡。内容规则全部走 [PosterCardContent]：
+     * 季号默认第 1 季、系统标签优先于名次、集数优先于兜底角标、热度原串优先。
      */
     fun bind(
         item: Series,
@@ -1143,217 +880,42 @@ class PosterCard(
         progressPercent: Int?,
         rankTop: Boolean,
         seasonBadge: Boolean = true,
-        /** 榜单名次（`第 3 名`）；非榜单页传空串，左上角不显示。 */
         rankText: String = "",
-        /**
-         * 左下角热度（`🔥9014万`）。空串 = 这一页没有热度，整枚收起。
-         *
-         * 由调用方用 [com.hgtv.star.core.HeatLabel.badge] 算好再传进来：
-         * 「服务端原串优先、没有才按数字换算、前面加火苗」这条规则只该有一份。
-         */
-        heatText: String = "",
-        /**
-         * 第二行优先显示状态而不是类型标签。
-         *
-         * 只给**历史栏**用：那一栏的第二行是「第 x 集 · xx:xx」，回答「我看到哪了」，
-         * 比类型标签重要。其余页面一律标签优先。
-         */
-        preferStatus: Boolean = false
+        /** 服务端原串（`9014万`）；空串时退回 [Series.heat] 解析值。 */
+        heatServerText: String = "",
+        preferStatus: Boolean = false,
     ) {
-        this.preferStatus = preferStatus
-        series = item
-        title.text = item.title
-        // 第二行：类型标签（靠左）。历史栏例外——那一栏的第二行是「第 x 集 · xx:xx」，
-        // 回答「我看到哪了」，见 [preferStatus]。集数不写在这里，统一在封面右下角。
-        status.text = EpisodeLabel.cardStatus(statusText)
-        // 类型标签：列表接口自带（`category_schema`），不需要额外请求。
-        tagLine.text = item.tags.trim()
-        syncMeta()
-        // 季号**每张卡都标**（见 [SeriesSeasons.badge]）：剧名里没写季号的按第 1 季算。
-        // 早先单季的剧留空，结果是同一部剧的第一季与第二季并排时，空角标那张读不出季数。
-        // 季号优先用接口给的字段（[Series.seasonIndex]），接口没给才从剧名里读。
-        val seasonText = if (seasonBadge) SeriesSeasons.badge(item) else ""
-        season.text = seasonText
-        season.visibility = if (seasonText.isBlank()) View.GONE else View.VISIBLE
-        contentDescription = listOf(
-            badgeText, seasonText, item.title, tagLine.text.toString(), status.text.toString(),
-            if (heatText.isBlank()) "" else "$heatText 热度",
-        ).filter { it.isNotBlank() }.joinToString("，")
-        // 左上角名次（只在榜单页）。
-        rank.text = rankText
-        rank.visibility = if (rankText.isBlank()) View.GONE else View.VISIBLE
-        rank.setTextColor(if (rankTop) TvStyle.tips else TvStyle.playerText)
-        // 左下角热度：没有就整枚收起（分类页 / 相关剧集 / 本机记录都没有这一项）。
-        heat.text = heatText
-        heat.visibility = if (heatText.isBlank()) View.GONE else View.VISIBLE
-        // 右下角：统一「共 N 集」；没有集数时才退回调用方给的角标（名次 / 热度）。
-        fallbackBadge = badgeText
-        badge.setTextColor(TvStyle.playerText)
-        setEpisodeBadge(item.episodeCount)
+        super.bind(item, PosterCardContent.of(
+            series = item,
+            statusText = statusText,
+            badgeFallback = badgeText,
+            rankText = rankText,
+            rankTop = rankTop,
+            seasonBadge = seasonBadge,
+            heatServerText = heatServerText,
+            preferStatus = preferStatus,
+        ))
         setProgress(progressPercent)
-        setCover(item.cover)
-    }
-
-    fun setCover(url: String) {
-        // `coverSuspended` 时不早退：那一张的位图被低内存策略摘掉了，
-        // 地址没变也必须重新挂一次（见 [suspendCover]）。
-        if (url == cover && !coverSuspended) return
-        coverSuspended = false
-        cover = url
-        image.setImageDrawable(null)
-        // 空 URL 也要通知加载器：它会把这这张图原来的请求解绑、取消排队。
-        // 少了这一步，滚出窗口（或最后一行不满）的卡片会继续为一张看不见的图占着队列与网络。
-        loadCover(image, url)
-    }
-
-    /**
-     * 把封面从 View 上摘下来：**位图本身可能还在内存缓存里**，这里只解除这张卡的引用。
-     *
-     * 为什么必须做：LRU 淘汰一张图只解除 LRU 自己的引用；只要它还挂在某个 `ImageView`
-     * 上就仍然活着。栅格的行会进回收池复用，池里那几行如果带着图，
-     * 等于在缓存之外又多出一份「看不见但释放不掉」的位图——线上 OOM 的一半就是它。
-     *
-     * `cover` 一并清空：否则这一行被复用、又恰好绑到同一部剧时，[setCover] 会因为
-     * 「地址没变」直接返回，卡片就停在空白上。
-     */
-    fun releaseCover() {
-        cover = ""
-        coverSuspended = false
-        image.setImageDrawable(null)
-        loadCover(image, "")
-    }
-
-    /** 封面被低内存策略摘下来了（URL 还留着，见 [suspendCover] / [resumeCover]）。 */
-    var coverSuspended = false
-        private set
-
-    /**
-     * 低内存时把封面从 `ImageView` 上摘下来，但**保留地址**。
-     *
-     * 与 [releaseCover] 的区别：那个是「这一行要拿去显示别的剧」时的清理，地址必须清掉；
-     * 这个只是「暂时看不见」，URL 留着，回来时 [resumeCover] 直接按原地址重挂。
-     *
-     * 必须摘，因为位图挂在 `ImageView` 上时不受 `ArtworkLoader` 的缓存预算约束：
-     * 首页 77 张常驻 ≈ 44MB，`evictAll()` 一点也收不回来。
-     */
-    fun suspendCover(): Boolean {
-        if (cover.isBlank() || coverSuspended) return false
-        coverSuspended = true
-        image.setImageDrawable(null)
-        // 解绑请求：绑定还在的话，加载器仍然认为这张图「已经贴上了」。
-        loadCover(image, "")
-        return true
-    }
-
-    /** 视口回来时重新挂上：内存缓存命中是 0ms，最坏从磁盘读 3~10ms。 */
-    fun resumeCover(): Boolean {
-        if (!coverSuspended) return false
-        coverSuspended = false
-        loadCover(image, cover)
-        return true
-    }
-
-    fun setStatus(value: String) {
-        if (status.text.toString() != value) status.text = value
-        syncMeta()
-    }
-
-    /**
-     * 第二行显示谁（**唯一一处**决定卡片第二行内容的逻辑）。
-     *
-     * | 场景 | 显示 |
-     * | --- | --- |
-     * | 历史栏（`preferStatus`） | 「第 x 集 · xx:xx」，没有进度时才退到类型标签 |
-     * | 其余页面 | 类型标签；没有标签才退到状态（榜单热度 / 收藏更新） |
-     * | 两者都没有 | 整行隐藏，卡片高度不留空档 |
-     *
-     * 集数**不在**这里——它统一在封面右下角「共 N 集」。
-     */
-    private fun syncMeta() {
-        val hasTag = tagLine.text.isNotBlank()
-        val hasStatus = status.text.isNotBlank()
-        // 历史栏：状态优先（「第 x 集 · xx:xx」），没有状态才退到类型标签；
-        // 其余页面：类型标签优先，没有标签才退到状态（榜单热度 / 收藏更新）。
-        val showStatus = hasStatus && (preferStatus || !hasTag)
-        tagLine.visibility = if (!showStatus && hasTag) View.VISIBLE else View.GONE
-        status.visibility = if (showStatus) View.VISIBLE else View.GONE
-        meta.visibility = if (showStatus || hasTag) View.VISIBLE else View.GONE
-    }
-
-    /**
-     * 类型标签（第二行，**靠左**）。
-     *
-     * 列表接口自带这一项；卡片被就地更新（收藏 / 历史变化、复用换绑）时用它改这一格，
-     * 不重建卡片、不动焦点。
-     */
-    fun setTags(value: String) {
-        val next = value.trim()
-        if (tagLine.text.toString() == next) return
-        tagLine.text = next
-        syncMeta()
-    }
-
-    /**
-     * 右下角角标：统一「共 N 集」；没有集数时才退回调用方给的角标（热度 / 「正在看」这类）。
-     */
-    fun setEpisodeBadge(count: Int) {
-        episodeCount = count
-        val text = EpisodeLabel.total(count).ifEmpty { fallbackBadge }
-        badge.text = text
-        badge.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
-    }
-
-    fun setProgress(value: Int?) {
-        val next = value?.coerceIn(0, 100) ?: -1
-        if (next == percent) return
-        percent = next
-        progress.visibility = if (next < 0) View.GONE else View.VISIBLE
-        if (next >= 0) progress.percent = next
-    }
-
-    fun resizePoster(height: Int) {
-        val params = poster.layoutParams
-        if (params.height == height) return
-        params.height = height
-        poster.layoutParams = params
     }
 
     fun setFocused(focused: Boolean) = applyFocus(focused)
 
     private fun applyFocus(focused: Boolean) {
-        // 焦点态 = 打亮一档的底板 + **主题焦点色的细描边** + 光晕。
-        //
-        // 只靠明度差在「封面是彩图」的海报卡上不够醒目（见 TvStyle.focusRing 的说明），
-        // 因此补这一圈：颜色取自当前主题的 focus，压到 90% 不透明、宽度 2dp，
-        // 与卡片圆角同一半径，画在柔光带里，不改变任何布局尺寸。
-        // 就地改配色：不新建 Drawable，也不改布局。深度固定，焦点靠「亮面 + 细环 + 光晕」表达。
         plate.restyle(
             fill = if (focused) TvStyle.surfaceHigh else TvStyle.surface,
             ring = if (focused) TvStyle.focusRing else Color.TRANSPARENT,
             ringWidth = if (focused) context.designPx(TvStyle.RING).toFloat() else 0f,
             glow = if (focused) TvStyle.litGlow else Color.TRANSPARENT,
-            depth = if (focused) 1.35f else 1f
+            depth = if (focused) PosterCardMaterial.FOCUS_DEPTH else 1f
         )
         title.setTextColor(if (focused) TvStyle.text else TvStyle.textDim)
         status.setTextColor(if (focused) TvStyle.textStrong else TvStyle.textDim)
         tagLine.setTextColor(TvStyle.textDim)
-        // 标题跑马灯：只有拿到焦点的那一张卡滚动（第二行是集数 / 进度，不滚）。
-        //
-        // 跑马灯由「单行 + MARQUEE + selected」共同触发；先取消选中再重新选中，
-        // 是为了让**复用卡片**换绑到另一部剧时从头开始滚，而不是接着上一次的偏移。
-        //
-        // **低配一律静态省略号**（[marqueeOn] == false）：`setEllipsize()` 会走
-        // `nullLayouts() + requestLayout()`，而 `requestLayout()` 让整条祖先链跳过
-        // measure 缓存——首页 700 多个 View 会被全量重测一次，一次焦点移动发生两次
-        // （旧卡 END、新卡 MARQUEE）。把 ellipsize 固定写成 END 之后，
-        // `setEllipsize` 内部 `mEllipsize == ellipsize` 直接 return，**零 requestLayout**。
         if (marqueeOn) {
             title.isSelected = false
             title.ellipsize = if (focused) TextUtils.TruncateAt.MARQUEE else TextUtils.TruncateAt.END
             if (focused) {
                 title.isSelected = true
-                // 同一张卡连续获得焦点（弹窗关闭后焦点回来）时 `isSelected` 没有变化，
-                // TextView 不会重新开始滚动；把滚动位置拉回行首，让它重新走一遍。
                 title.scrollTo(0, 0)
             }
         } else {

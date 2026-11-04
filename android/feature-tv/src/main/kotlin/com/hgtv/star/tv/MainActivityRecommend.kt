@@ -8,9 +8,9 @@ import android.view.View
 import android.widget.FrameLayout
 import androidx.media3.common.Player
 import com.hgtv.star.shared.compat.isMeteredConnection
+import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.core.CategoryFilterOption
 import com.hgtv.star.core.CategorySelection
-import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.SeekStep
@@ -1159,14 +1159,11 @@ fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Cach
     warm.future=recommendWarmWorker.submit {
         var remote: RemoteVideo?=null
         try {
-            // client 与仓库都在工作线程上拿：`PlaybackTransport.client` 是懒建的，
+            // client 与仓库都在工作线程上拿：两者都是懒建 / 进程级共享的，
             // 第一次触碰要建一个 OkHttpClient（解析系统根证书表）。放在主线程上取，
             // 等于把冷启动那段成本搬到「划一下」的那一帧里。
             val http=com.hgtv.star.shared.data.PlaybackTransport.client
-            val source=ContentRepository(http)
-            source.credentials=repository.credentials
-            source.inheritDevice(repository)
-            source.deviceLevel=repository.deviceLevel
+            val source=AppRuntime.playbackRepository(this)
             if(!library.deviceRegistered()) { registerDeviceOnce(); source.inheritDevice(repository) }
             // 整段都在这一次预热自己的取消域里：划过去之后 `cancelRecommendWarm` 能立刻
             // 把在途的 HTTP 掐掉（否则那个线程还在读 512KB，结果没人要）。
@@ -1659,8 +1656,7 @@ fun MainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
             //（此刻播放器停在片尾、时长已知），因此这里只管起播下一集。
             playEpisode(episodeIndex+1,0L,autoplay=true)
         } else {
-            // 最后一集播完：不再自动连播，交给原有的「全剧已播完 → 换一部接着看」。
-            requestedAutoplay=false; player?.pause(); showHud(); showSeriesFinished(data.series)
+            advanceToNextSeasonOrFinish(data.series)
         }
     } else {
         // 停在当前这一集继续看：画面本来就没断，这里只把控制层交还给正式播放的按键。
@@ -1669,7 +1665,7 @@ fun MainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
         val ended=runCatching { player?.playbackState==Player.STATE_ENDED }.getOrDefault(false)
         when {
             ended && episodeIndex<data.episodes.lastIndex -> playEpisode(episodeIndex+1,0L,autoplay=true)
-            ended -> { requestedAutoplay=false; player?.pause(); showHud(); showSeriesFinished(data.series) }
+            ended -> advanceToNextSeasonOrFinish(data.series)
             else -> {
                 if(player?.isPlaying!=true && !playError) requestPlayback(true)
                 showHud()

@@ -127,6 +127,8 @@ fun MainActivity.invalidatePage() {
     generation++; cancelWork(); artwork.cancelPage()
     // 详情页下方那一块的重铺入口随页面一起作废：旧引用留着会指到已经拆掉的视图树。
     detailBottomRefresh=null
+    // 播放页那两块作品浮层的重铺入口同理（见 `MainActivityPlayerActions.kt`）。
+    playerStripRefresh=null
 }
 fun MainActivity.releaseCatalogViews() {
     homeScreen?.let { homePosition=it.capturePosition() }

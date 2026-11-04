@@ -85,6 +85,10 @@ class PhoneCategoryPage(context: Context) : LinearLayout(context) {
         feed.onLongPress = { series -> PhoneCardMenu.show(feed, series) }
 
         topBar.setTabs(CategoryGenres.options.map { it.label }, 0) { index -> selectGenre(index) }
+        // 子分类紧贴主分类：顶栏底部的 2dp 与网格顶部的 4dp 一起收掉，
+        // 否则两段留白叠起来就是用户读到的「空隙太大」。
+        topBar.tightenBottom()
+        feed.gridTopInset = 0
         topBar.onSearch = {
             context.phoneNav().open(Route.Search)
         }
@@ -164,7 +168,8 @@ class PhoneCategoryPage(context: Context) : LinearLayout(context) {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             setPadding(context.dp(12), 0, context.dp(4), 0)
-            minimumHeight = context.dp(30)
+            // 30 → 24（用户要求「子分类太高」）：行高只留 chip 本身 + 一圈薄留白。
+            minimumHeight = context.dp(24)
         }
         val label = row.title.removePrefix("全部").ifBlank { row.title }
         line.addView(TextView(context).apply {
@@ -186,13 +191,14 @@ class PhoneCategoryPage(context: Context) : LinearLayout(context) {
             val on = id == selectedId
             chips.addView(TextView(context).apply {
                 this.text = text
-                phoneSize(12)
+                phoneSize(11)
                 gravity = Gravity.CENTER
                 setTextColor(if (on) PhoneStyle.text else PhoneStyle.textDim)
                 background = if (on) {
                     roundedBackground(PhoneStyle.surfaceHigh, PhoneStyle.RADIUS_PILL)
                 } else null
-                setPadding(context.dp(9), context.dp(4), context.dp(9), context.dp(4))
+                // 上下内边距 4 → 3：行高收到 24dp 之后，4 会让 chip 顶满整行。
+                setPadding(context.dp(9), context.dp(3), context.dp(9), context.dp(3))
                 setOnClickListener {
                     selection = selection.with(row.type, id)
                     renderFilters()
@@ -205,7 +211,7 @@ class PhoneCategoryPage(context: Context) : LinearLayout(context) {
         line.addView(HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
             addView(chips)
-        }, LayoutParams(0, context.dp(30), 1f))
+        }, LayoutParams(0, context.dp(24), 1f))
         return line
     }
 
