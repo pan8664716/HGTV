@@ -54,6 +54,9 @@ object PosterCardMaterial {
         rankTopColor: Int,
         progressTrackColor: Int,
         progressFillColor: Int,
+        badgePaddingScale: Float = 1f,
+        badgeMarginDp: Number = BADGE_MARGIN,
+        posterRadiusDp: Number = RADIUS_POSTER,
         /**
          * 海报井内衬（dp），默认 [POSTER_INSET]。
          *
@@ -66,12 +69,12 @@ object PosterCardMaterial {
         posterInset = px(posterInsetDp),
         posterTopMargin = px(POSTER_TOP_MARGIN),
         badgePadding = PosterCardView.Padding(
-            px(BADGE_PAD_LEFT),
-            px(BADGE_PAD_TOP),
-            px(BADGE_PAD_RIGHT),
-            px(BADGE_PAD_BOTTOM),
+            px(BADGE_PAD_LEFT * badgePaddingScale),
+            px(BADGE_PAD_TOP * badgePaddingScale),
+            px(BADGE_PAD_RIGHT * badgePaddingScale),
+            px(BADGE_PAD_BOTTOM * badgePaddingScale),
         ),
-        badgeMargin = px(BADGE_MARGIN),
+        badgeMargin = px(badgeMarginDp),
         titlePadding = PosterCardView.Padding(
             px(TITLE_PAD_LEFT * textScale),
             px(TITLE_PAD_TOP * textScale),
@@ -85,8 +88,8 @@ object PosterCardMaterial {
             px(META_PAD_BOTTOM * textScale),
         ),
         cardRadius = px(RADIUS_CARD),
-        posterRadius = px(RADIUS_POSTER),
-        scrim = { place -> scrim(px, place) },
+        posterRadius = px(posterRadiusDp),
+        scrim = { place -> scrim(px, place, posterRadiusDp) },
         posterOverlay = overlay(),
         rankTopColor = rankTopColor,
         metaMode = PosterCardView.MetaMode.BOTH,
@@ -107,12 +110,8 @@ object PosterCardMaterial {
     /**
      * 四角角标的压暗层。方向与电视端一致，圆角也按同一处贴边圆。
      */
-    private fun scrim(px: (Number) -> Int, place: Int): Drawable {
-        val radius = when (place) {
-            Gravity.TOP or Gravity.END,
-            Gravity.TOP or Gravity.START -> px(RADIUS_POSTER).toFloat()
-            else -> px(RADIUS_CARD).toFloat()
-        }
+    private fun scrim(px: (Number) -> Int, place: Int, radiusDp: Number): Drawable {
+        val radius = px(radiusDp).toFloat()
         val dark = SCRIM
         val clear = Color.TRANSPARENT
         val (orientation, colors) = when (place) {
@@ -126,14 +125,7 @@ object PosterCardMaterial {
                 GradientDrawable.Orientation.TOP_BOTTOM to intArrayOf(clear, dark)
         }
         return GradientDrawable(orientation, colors).apply {
-            cornerRadii = when (place) {
-                Gravity.TOP or Gravity.END ->
-                    floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f)
-                Gravity.TOP or Gravity.START ->
-                    floatArrayOf(radius, radius, 0f, 0f, 0f, 0f, radius, radius)
-                else ->
-                    floatArrayOf(0f, 0f, 0f, 0f, radius, radius, radius, radius)
-            }
+            cornerRadii = cornerRadii(place, radius)
         }
     }
 }

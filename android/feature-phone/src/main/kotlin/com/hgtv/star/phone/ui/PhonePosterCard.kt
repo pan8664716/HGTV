@@ -4,6 +4,7 @@ package com.hgtv.star.phone.ui
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
+import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
@@ -61,22 +62,30 @@ open class PhonePosterCard(
             style = SoftStyle.RAISED,
             fill = PhoneStyle.surface,
             radiusDp = PosterCardMaterial.RADIUS_CARD.toFloat(),
+            bottomRadiusDp = PHONE_CARD_BOTTOM_RADIUS,
             bandDp = PHONE_SOFT_BAND.toFloat(),
             depth = PosterCardMaterial.CARD_DEPTH,
             heavy = true,
         )
-        title.phoneSize(PosterCardMaterial.TITLE_TEXT * scale)
+        title.phoneSize(PosterCardMaterial.TITLE_TEXT * scale * PHONE_TITLE_TEXT_SCALE)
         title.setTextColor(PhoneStyle.textDim)
         title.setTypeface(title.typeface, Typeface.BOLD)
+        title.gravity = Gravity.START or Gravity.CENTER_VERTICAL
+        setBottomContentHorizontalPadding(0)
 
         status.phoneSize(PosterCardMaterial.META_TEXT * scale)
         status.setTextColor(PhoneStyle.textDim)
         tagLine.phoneSize(PosterCardMaterial.META_TEXT * scale)
         tagLine.setTextColor(PhoneStyle.textDim)
 
+        val posterWidth = (cardWidth - context.dp(PHONE_SOFT_BAND) * 2).coerceAtLeast(1)
+        val badgeMaxWidth = ((posterWidth - context.dp(1)) / 2).coerceAtLeast(1)
         listOf(badge, season, corner, heat).forEach { view ->
-            view.phoneSize(PosterCardMaterial.BADGE_TEXT * scale)
+            view.phoneSize(PosterCardMaterial.BADGE_TEXT * scale * PHONE_BADGE_TEXT_SCALE)
             view.setTextColor(PhoneStyle.playerText)
+            view.maxWidth = badgeMaxWidth
+            view.setSingleLine(true)
+            view.ellipsize = TextUtils.TruncateAt.END
         }
 
         setOnClickListener {
@@ -145,6 +154,10 @@ private fun phonePosterScale(context: Context, cardWidth: Int): Float =
  */
 private const val PHONE_POSTER_INSET = 0
 private const val PHONE_SOFT_BAND = 2
+private const val PHONE_BADGE_TEXT_SCALE = .78f
+private const val PHONE_TITLE_TEXT_SCALE = .85f
+private const val PHONE_POSTER_RADIUS = 10
+private const val PHONE_CARD_BOTTOM_RADIUS = 6f
 
 private fun phonePosterPosterHeight(context: Context, cardWidth: Int): Int {
     // 与电视端同一条：卡宽先扣掉两侧柔光带与海报井内衬，再按 3:4 求高。
@@ -163,6 +176,9 @@ private fun phonePosterConfig(context: Context, cardWidth: Int): PosterCardView.
         rankTopColor = PhoneStyle.tips,
         progressTrackColor = PhoneStyle.wellDeep,
         progressFillColor = PhoneStyle.accent,
+        badgePaddingScale = PHONE_BADGE_TEXT_SCALE,
+        badgeMarginDp = 0,
+        posterRadiusDp = PHONE_POSTER_RADIUS,
         // 手机卡片小，四周的内衬再按电视那档走就会显得「卡片外面套了一圈空边」。
         posterInsetDp = PHONE_POSTER_INSET,
     )

@@ -222,7 +222,11 @@ open class PosterCardView(
             corner.visibility = View.VISIBLE
             corner.text = content.corner
             corner.setTextColor(if (content.cornerTop) config.rankTopColor else Color.WHITE)
-            corner.background = labelBackground(content.cornerColors, config.posterRadius)
+            corner.background = labelBackground(
+                content.cornerColors,
+                config.posterRadius,
+                Gravity.TOP or Gravity.START,
+            )
                 ?: config.scrim(Gravity.TOP or Gravity.START)
         }
 
@@ -298,6 +302,12 @@ open class PosterCardView(
         if (params.height == height) return
         params.height = height
         poster.layoutParams = params
+    }
+
+    /** 平台层可单独收掉标题与标签行的左右边距，不影响上下间距。 */
+    protected fun setBottomContentHorizontalPadding(padding: Int) {
+        title.setPadding(padding, title.paddingTop, padding, title.paddingBottom)
+        meta.setPadding(padding, meta.paddingTop, padding, meta.paddingBottom)
     }
 
     private fun syncMeta() {

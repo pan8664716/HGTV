@@ -6,6 +6,7 @@ import android.graphics.Color
 import android.graphics.ColorFilter
 import android.graphics.LinearGradient
 import android.graphics.Paint
+import android.graphics.Path
 import android.graphics.PixelFormat
 import android.graphics.RadialGradient
 import android.graphics.Rect
@@ -184,12 +185,14 @@ class SoftDrawable(
      * 按钮 / 弹窗面板一屏只有三五个，画的代价可以忽略，而它们没有彩色封面兜底，
      * 去掉柔光之后按钮会在深色底上「消失」——因此不受这个开关影响。
      */
-    private val heavy: Boolean = false
+    private val heavy: Boolean = false,
+    private val bottomRadiusPx: Float = radiusPx,
 ) : Drawable() {
 
     private val paint = Paint(Paint.ANTI_ALIAS_FLAG)
     private val bitmapPaint = Paint(Paint.FILTER_BITMAP_FLAG)
     private val plate = RectF()
+    private val platePath = Path()
     private val dst = RectF()
     private var key: String? = null
     private var cached: Soft.Layers? = null
@@ -241,6 +244,17 @@ class SoftDrawable(
             bounds.right - bandPx,
             bounds.bottom - bandPx
         )
+        platePath.reset()
+        if (radiusPx != bottomRadiusPx) {
+            val maxRadius = minOf(plate.width(), plate.height()) * .5f
+            val top = radiusPx.coerceAtMost(maxRadius)
+            val bottom = bottomRadiusPx.coerceAtMost(maxRadius)
+            platePath.addRoundRect(
+                plate,
+                floatArrayOf(top, top, top, top, bottom, bottom, bottom, bottom),
+                Path.Direction.CW,
+            )
+        }
         dst.set(bounds)
         key = null
         cached = null
@@ -271,8 +285,16 @@ class SoftDrawable(
             paint.style = Paint.Style.STROKE
             paint.strokeWidth = ringWidthPx
             paint.color = ringColor
-            canvas.drawRoundRect(plate, radius, radius, paint)
+            drawPlate(canvas, radius)
             paint.style = Paint.Style.FILL
+        }
+    }
+
+    private fun drawPlate(canvas: Canvas, radius: Float) {
+        if (radiusPx == bottomRadiusPx) {
+            canvas.drawRoundRect(plate, radius, radius, paint)
+        } else {
+            canvas.drawPath(platePath, paint)
         }
     }
 
@@ -281,7 +303,7 @@ class SoftDrawable(
         paint.shader = null
         paint.style = Paint.Style.FILL
         paint.color = fill
-        canvas.drawRoundRect(plate, radius, radius, paint)
+        drawPlate(canvas, radius)
     }
 
     /** 凹陷：裁剪到面板内，左上一条深色内阴影、右下一条浅色内阴影。 */
@@ -295,10 +317,10 @@ class SoftDrawable(
         paint.style = Paint.Style.FILL
         paint.color = Color.WHITE
         paint.shader = dark
-        canvas.drawRoundRect(plate, radius, radius, paint)
+        drawPlate(canvas, radius)
         layer.light?.let {
             paint.shader = it
-            canvas.drawRoundRect(plate, radius, radius, paint)
+            drawPlate(canvas, radius)
         }
         paint.shader = null
     }
@@ -312,7 +334,7 @@ class SoftDrawable(
         paint.style = Paint.Style.FILL
         paint.color = Color.WHITE
         paint.shader = vignette
-        canvas.drawRoundRect(plate, radius, radius, paint)
+        drawPlate(canvas, radius)
         paint.shader = null
     }
 
@@ -332,6 +354,7 @@ class SoftDrawable(
                 append(bounds.left).append('+').append(bounds.top).append(':')
             append(bounds.width()).append('x').append(bounds.height())
             append("r").append(radiusPx.toInt())
+            append("R").append(bottomRadiusPx.toInt())
             append("b").append(bandPx.toInt())
             append("s").append(style.ordinal)
             append("g").append(glowColor)
@@ -406,11 +429,30 @@ class SoftDrawable(
         val band = bandPx * scale
         val rect = RectF(band, band, width - band, height - band)
         val radius = radiusPx * scale
+        val bottomRadius = bottomRadiusPx * scale
         if (rect.width() <= 0f || rect.height() <= 0f) return null
+        val path = if (radiusPx != bottomRadiusPx) {
+            Path().apply {
+                addRoundRect(
+                    rect,
+                    floatArrayOf(
+                        radius, radius, radius, radius,
+                        bottomRadius, bottomRadius, bottomRadius, bottomRadius,
+                    ),
+                    Path.Direction.CW,
+                )
+            }
+        } else {
+            null
+        }
+        fun drawShape() {
+            if (path == null) canvas.drawRoundRect(rect, radius, radius, brush)
+            else canvas.drawPath(path, brush)
+        }
         if (Color.alpha(glowColor) > 0) {
             brush.color = glowColor
             brush.setShadowLayer(band * 1.35f * quality, 0f, 0f, glowColor)
-            canvas.drawRoundRect(rect, radius, radius, brush)
+            drawShape()
         }
         brush.setShadowLayer(
             band * 1.05f * quality,
@@ -419,7 +461,7 @@ class SoftDrawable(
             SoftPalette.shadowDark
         )
         brush.color = SoftPalette.shadowDark
-        canvas.drawRoundRect(rect, radius, radius, brush)
+        drawShape()
         brush.setShadowLayer(
             band * .95f * quality,
             -band * .32f * depth * quality,
@@ -427,7 +469,7 @@ class SoftDrawable(
             SoftPalette.shadowLight
         )
         brush.color = SoftPalette.shadowLight
-        canvas.drawRoundRect(rect, radius, radius, brush)
+        drawShape()
         return out
     }
 }

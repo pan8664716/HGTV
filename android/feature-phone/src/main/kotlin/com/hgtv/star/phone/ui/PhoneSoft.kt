@@ -38,6 +38,7 @@ object PhoneSoft {
         glow: Int = Color.TRANSPARENT,
         depth: Float = 1f,
         heavy: Boolean = false,
+        bottomRadiusDp: Float = radiusDp,
     ): SoftDrawable {
         val existing = background as? SoftDrawable
         if (existing != null) {
@@ -54,6 +55,7 @@ object PhoneSoft {
         val drawable = SoftDrawable(
             fill = fill,
             radiusPx = context.dp(radiusDp).toFloat(),
+            bottomRadiusPx = context.dp(bottomRadiusDp).toFloat(),
             bandPx = band.toFloat(),
             style = style,
             ringColor = ring,

@@ -3,6 +3,7 @@ package com.hgtv.star.phone
 
 import android.content.Context
 import android.graphics.Color
+import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -394,9 +395,11 @@ class PhoneVideoPage(
                 }
                 false
             }
-            progressTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
-            thumbTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
-            progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x4DFFFFFF)
+            if (Build.VERSION.SDK_INT >= 21) runCatching {
+                progressTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
+                thumbTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
+                progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x4DFFFFFF)
+            }
             setPadding(0, 0, 0, 0)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar, value: Int, fromUser: Boolean) {

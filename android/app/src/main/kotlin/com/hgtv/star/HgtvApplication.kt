@@ -26,10 +26,15 @@ class HgtvApplication: Application() {
     override fun attachBaseContext(base: Context) {
         super.attachBaseContext(base)
         if(android.os.Build.VERSION.SDK_INT<21) MultiDex.install(this)
-        runCatching { com.hgtv.star.core.OkHttpPlatformCompat.installAndroidFallback() }
-            .onFailure { problem ->
-                Diagnostics.warn("HGTV-OKHTTP","OkHttp 平台兼容初始化失败",problem)
-            }
+        // Dalvik 会在类校验阶段解析 Platform 引用的 JVM 平台实现，而 BouncyCastle JSSE /
+        // OpenJSSE 已被 R8 裁掉，强行切到 JVM 分支会把 Platform 初始化成永久失败状态。
+        // Android 4.4 使用 OkHttp 原生的 Android 平台分支即可，兼容层只在 ART 上启用。
+        if (android.os.Build.VERSION.SDK_INT >= 21) {
+            runCatching { com.hgtv.star.core.OkHttpPlatformCompat.installAndroidFallback() }
+                .onFailure { problem ->
+                    Diagnostics.warn("HGTV-OKHTTP","OkHttp 平台兼容初始化失败",problem)
+                }
+        }
     }
 
     override fun onCreate() {
