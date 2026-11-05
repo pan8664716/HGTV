@@ -19,6 +19,7 @@ import java.security.Security
  */
 object OkHttpPlatformCompat {
     private const val VM_NAME = "java.vm.name"
+    private const val JAVA_SPEC_VERSION = "java.specification.version"
     private const val PROVIDER_NAME = "HGTV-OkHttp-Platform"
     private const val PLATFORM_CLASS = "okhttp3.internal.platform.Platform"
 
@@ -36,8 +37,12 @@ object OkHttpPlatformCompat {
         }
 
         val probe = object : Provider(PROVIDER_NAME, 1.0, "Temporary OkHttp platform probe") {}
+        val originalJavaSpecVersion = System.getProperty(JAVA_SPEC_VERSION)
         try {
             System.setProperty(VM_NAME, "HGTV-Android")
+            // Android 10+ 的 SSLSocket 也带 getApplicationProtocol，只改 VM 名会让 OkHttp
+            // 误选 Jdk9Platform；定制系统缺少对应实现时，Platform 会初始化失败且无法重试。
+            System.setProperty(JAVA_SPEC_VERSION, "8")
             check(Security.insertProviderAt(probe, 1) == 1) {
                 "无法安装 OkHttp 平台探测 Provider"
             }
@@ -49,6 +54,11 @@ object OkHttpPlatformCompat {
                 runCatching { System.clearProperty(VM_NAME) }
             } else {
                 runCatching { System.setProperty(VM_NAME, originalVmName) }
+            }
+            if (originalJavaSpecVersion == null) {
+                runCatching { System.clearProperty(JAVA_SPEC_VERSION) }
+            } else {
+                runCatching { System.setProperty(JAVA_SPEC_VERSION, originalJavaSpecVersion) }
             }
         }
     }

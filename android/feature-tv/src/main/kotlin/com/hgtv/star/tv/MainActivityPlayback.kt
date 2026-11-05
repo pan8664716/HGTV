@@ -80,21 +80,119 @@ fun MainActivity.scheduleRetire() {
 /**
  * 强制收掉旧资源：调用方**刚刚整条替换 / 清空**了播放列表，那一项已经不可能再被读。
  *
- * 与 [retirePreviousEpisode] 的区别只有一条：不等 800ms 的摘除任务。
+ * 与 [retirePreviousEpisode] 的区别只有一条：不再等自动切集的稳定清理令牌。
  */
 fun MainActivity.forceRetirePrevious() {
-    playedItemPending=false; playedItemId=""
+    cancelAutoTransitionCleanup()
     retirePreviousEpisode()
 }
 fun MainActivity.retirePreviousEpisode() {
     main.removeCallbacks(retireForced)
-    // 播完的那一项可能还挂在播放列表里（要等 800ms 才摘）。这时关掉它持有的
-    // `RemoteVideo`，一旦 ExoPlayer 因为列表变化重新 prepare 旧 period，就会读到
-    // 一个已关闭的对象而抛 IOException。等摘掉之后再关，顺序才对。
+    // 播完的那一项还挂在播放列表里时不能关：播放线程可能仍在释放旧 period。
+    // 必须等新集 READY + 首帧、旧项确实从列表移除后再关。
     if(playedItemPending) return
     retiringVideo?.let { runCatching { it.close() } }
     retiringVideo=null
     closeTransport(retiringHttp); retiringHttp=null
+}
+/** 作废当前自动切集的清理任务；下一次自动切集会生成新令牌。 */
+fun MainActivity.cancelAutoTransitionCleanup() {
+    transitionCleanupToken++
+    transitionMediaId=""
+    transitionReady=false
+    transitionFirstFrame=false
+    transitionDropRequested=false
+    transitionConfirmAttempts=0
+    playedItemPending=false
+    playedItemId=""
+}
+/**
+ * 开始一次自动切集清理：只记录旧项，不在这里删除。
+ *
+ * 新集必须同时满足「播放器 READY」和「首帧已上屏」，才允许修改播放列表。
+ */
+fun MainActivity.startAutoTransitionCleanup(mediaId: String,playedId: String) {
+    transitionCleanupToken++
+    transitionMediaId=mediaId
+    transitionReady=player?.playbackState==Player.STATE_READY
+    transitionFirstFrame=lastRenderedMediaId==mediaId
+    transitionDropRequested=false
+    transitionConfirmAttempts=0
+    playedItemPending=playedId.isNotEmpty()
+    playedItemId=playedId
+    val token=transitionCleanupToken
+    main.post { if(!isDestroyed && token==transitionCleanupToken) maybeDropPlayedItem() }
+}
+/** 新集 READY 后补一次稳定条件。 */
+fun MainActivity.markAutoTransitionReady(mediaId: String) {
+    if(mediaId.isEmpty() || mediaId!=transitionMediaId) return
+    transitionReady=true
+    maybeDropPlayedItem()
+}
+/** 新集首帧后补一次稳定条件。 */
+fun MainActivity.markAutoTransitionFirstFrame(mediaId: String) {
+    if(mediaId.isEmpty()) return
+    lastRenderedMediaId=mediaId
+    if(mediaId!=transitionMediaId) return
+    transitionFirstFrame=true
+    maybeDropPlayedItem()
+}
+/**
+ * 只有新集 READY 且首帧已上屏，才移除上一集。
+ *
+ * `removeMediaItem` 只是把任务交给播放线程；这里发起后仍保持 `playedItemPending=true`，
+ * 等 `onTimelineChanged` 或下一拍确认旧项真的不在列表里，再关闭它的数据源。
+ */
+private fun MainActivity.maybeDropPlayedItem() {
+    val token=transitionCleanupToken
+    if(!playedItemPending || transitionDropRequested || !transitionReady || !transitionFirstFrame) return
+    val p=player ?: return
+    if(p.currentMediaItem?.mediaId!=transitionMediaId) return
+    val index=p.currentMediaItemIndex
+    val target=if(index>0) {
+        (0 until index).firstOrNull { p.getMediaItemAt(it).mediaId==playedItemId }
+    } else null
+    if(target==null) {
+        // 旧项已经不在列表里：只等播放线程确认一次。
+        transitionDropRequested=true
+        transitionConfirmAttempts=0
+        main.postDelayed({ if(!isDestroyed && token==transitionCleanupToken) confirmPlayedItemRemoved() },200)
+        return
+    }
+    transitionDropRequested=true
+    transitionConfirmAttempts=0
+    if(runCatching { p.removeMediaItem(target) }.isFailure) {
+        transitionDropRequested=false
+        return
+    }
+    // onTimelineChanged 正常会先到；这里再兜一拍，防止个别播放器不回调。
+    main.postDelayed({ if(!isDestroyed && token==transitionCleanupToken) confirmPlayedItemRemoved() },200)
+}
+/**
+ * 播放线程确认旧项已经不在列表里后，再释放它持有的视频与传输。
+ *
+ * 这里不直接信任 `removeMediaItem()` 的返回：该 API 返回时删除消息可能还在播放线程队列中。
+ */
+fun MainActivity.confirmPlayedItemRemoved() {
+    if(!playedItemPending || !transitionDropRequested) return
+    val p=player ?: return
+    if(p.currentMediaItem?.mediaId!=transitionMediaId) return
+    val stillListed=playedItemId.isNotEmpty() && (0 until p.mediaItemCount).any {
+        p.getMediaItemAt(it).mediaId==playedItemId
+    }
+    if(stillListed) {
+        if(transitionConfirmAttempts++<8) {
+            val token=transitionCleanupToken
+            main.postDelayed({
+                if(!isDestroyed && token==transitionCleanupToken) confirmPlayedItemRemoved()
+            },250)
+        }
+        return
+    }
+    playedItemPending=false
+    playedItemId=""
+    transitionDropRequested=false
+    retirePreviousEpisode()
 }
 /**
  * 把**已经预热好**的下一集挂成播放器的第二个 MediaItem。
@@ -175,31 +273,6 @@ fun MainActivity.maybeQueueNext() {
     enqueuePreparedNext()
 }
 /**
- * 摘掉**刚播完的那一项**。
- *
- * 为什么必须摘：每一项 `MediaSource` 都捕获着自己那一集的 [RemoteVideo]（预热缓存、
- * 样本索引），列表不清就会随集数一直涨。摘掉之后旧的 `MediaSource` 失去引用，
- * 下一轮 GC 就把那一集的内存收回去。
- *
- * 为什么按 mediaId 而不是按下标：这个调用是延迟 800ms 执行的，这期间用户可能已经
- * 手动选集、换清晰度或退出播放器，下标早就不是当初那一个了；按下标删会误删当前项。
- * [session] 是排这个任务时的播放会话号，会话变了说明期间发生过切集，直接放弃。
- *
- * 为什么安全：删的是当前项**之前**的窗口，当前 period 的 uid 不变，
- * `resolvePositionForPlaylistChange` 判定「位置没变」，不会 seek、不会重建渲染器。
- */
-fun MainActivity.dropPlayedItems(playedId: String,session: Int) {
-    val p=player ?: return
-    if(playedId.isEmpty() || session!=playbackSession) return
-    val index=p.currentMediaItemIndex
-    if(index<=0) return
-    val target=(0 until index).firstOrNull { p.getMediaItemAt(it).mediaId==playedId } ?: return
-    if(runCatching { p.removeMediaItem(target) }.isFailure) return
-    // 那一项真的摘掉了：现在才可以关它持有的视频与传输。
-    playedItemPending=false; playedItemId=""
-    retirePreviousEpisode()
-}
-/**
  * 摘掉队列里的下一集。
  *
  * 只摘**当前项之后**的那一段：当前 period 被保留，ExoPlayer 不会为此 seek 或重建渲染器。
@@ -231,7 +304,7 @@ fun MainActivity.dropQueuedEpisode() {
  * 所以这里只做「界面与记录跟上」：集号、标题、弹幕、清晰度、媒体会话，
  * 以及把播完那一集的进度按 completed 落盘（`STATE_ENDED` 不会再触发，必须在这里记）。
  */
-fun MainActivity.onEpisodeAdvanced(next: Int) {
+fun MainActivity.onEpisodeAdvanced(next: Int,mediaId: String) {
     val data=detail ?: return
     val p=player ?: return
     if(next !in data.episodes.indices) return
@@ -254,15 +327,19 @@ fun MainActivity.onEpisodeAdvanced(next: Int) {
     lastEpisodeDuration=0
     // 旧一集的视频与传输交给兜底回收（旧 period 刚 release，晚一点关更稳）。
     retirePreviousEpisode()
+    // 极端情况下上一次切集的旧项还没确认移除：先把它的资源托管到播放器释放时，
+    // 避免下面覆盖 `retiringVideo` 后永久丢失。
+    if(playedItemPending) {
+        orphanResources+=retiringVideo to retiringHttp
+        retiringVideo=null; retiringHttp=null
+    }
     retiringVideo=video; retiringHttp=playbackHttp
     video=queuedVideo; playbackHttp=queuedHttp
     queuedVideo=null; queuedHttp=null; queuedEpisodeId=null
     quality=video?.info?.quality ?: queuedQuality
     queuedQuality=""; queuedAt=0
-    playedItemPending=true
-    playedItemId=data.episodes[previous]
-    scheduleRetire()
     episodeIndex=next
+    startAutoTransitionCleanup(mediaId,data.episodes[previous])
     // 无感切集换的是 period，不走 [playEpisode]，诊断现场得在这里跟着换：
     // 换集之后报出来的必须是**这一集**的 id / 集号 / 清晰度，否则上报里张冠李戴。
     // 解码器与渲染器是复用的，`decoderName` 因此保留——那正是这一条最有用的信息。
@@ -307,11 +384,6 @@ fun MainActivity.onEpisodeAdvanced(next: Int) {
         updatePlaybackText(); syncMediaSession()
     }
     syncNextSeasonForCurrentEpisode()
-    // 播完的那一项摘掉，列表回到「只有当前一集」；延后一拍，别和这一帧的换源抢。
-    // 带上播完那一集的 mediaId 与会话号：这 800ms 里发生的切集 / 选集会让任务自己作废。
-    val playedId=data.episodes[previous]
-    val session=playbackSession
-    main.postDelayed({ if(!isDestroyed) dropPlayedItems(playedId,session) },800)
     val waited=if(queuedFor>0) android.os.SystemClock.elapsedRealtime()-queuedFor else -1
     android.util.Log.i("HGTV","Episode advanced seamlessly to ${next+1} quality=$quality queuedForMs=$waited")
 }

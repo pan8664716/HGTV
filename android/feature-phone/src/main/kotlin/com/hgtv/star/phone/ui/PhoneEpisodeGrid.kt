@@ -30,9 +30,9 @@ import android.widget.TextView
  * 为什么不是一条长滚动列表：一屏 20 集是「扫一眼就能定位」的上限；再多就得靠滑，
  * 而滑到第 60 集之后想回第 3 集要滑回去——分页把这件事变成一次点击。
  *
- * **每行固定 5 个**，一页几行由设置页的「选集每页」决定（20 / 30 / 50 / 80 / 100 集 →
- * 4 / 6 / 10 / 16 / 20 行）。全屏（右侧 1/3 抽屉）与非全屏（底部浮层）用的是同一个
- * 页大小与同一个列数，因此两处翻页的节奏完全一致。
+ * 列数按方向统一：竖屏 5 个、横屏 10 个。一页几行由设置页的「选集每页」决定
+ * （20 / 30 / 50 / 80 / 100 集 → 2 / 3 / 5 / 8 / 10 行）。简介页与播放页浮层
+ * 共用这一份实现，因此两处的翻页节奏与按钮尺寸完全一致。
  */
 class PhoneEpisodeGrid(
     context: Context,
@@ -41,12 +41,14 @@ class PhoneEpisodeGrid(
     /**
      * 一页多少集（设置页「选集每页」：20 / 30 / 50 / 80 / 100）。
      *
-     * **每行固定 5 个**，行数 = 一页集数 ÷ 5；全屏与非全屏用的是同一个值与同一个列数，
-     * 因此两处翻页的节奏完全一致。
+     * 列数由 [columns] 决定：竖屏 5 个、横屏 10 个；行数 = 一页集数 ÷ 列数。
+     * 简介页与播放页浮层共用这一份实现，因此两处翻页的节奏完全一致。
      */
     pageSize: Int,
-    /** 横屏：格子略矮、字号略小（右侧只有 1/3 屏宽）。 */
+    /** 横屏：格子略矮、字号略小，避免底部浮层占用过高。 */
     private val compact: Boolean,
+    /** 0 = 按方向自动选择：竖屏 5 列，横屏 10 列。 */
+    columns: Int = 0,
     /** 网格区域的最大高度（像素）：超过就内部滚动，不把浮层顶出屏幕。 */
     private val maxGridHeight: Int,
     /**
@@ -61,10 +63,13 @@ class PhoneEpisodeGrid(
     private val onPick: (Int) -> Unit,
 ) : LinearLayout(context) {
 
-    /** 每行固定 5 个（用户要求，全屏与非全屏一致）。 */
-    private val columns = COLUMNS
-    /** 一页集数：按 5 的整数倍归一，最小一行、最大 100。 */
-    private val perPage = (pageSize / COLUMNS * COLUMNS).coerceIn(COLUMNS, 100)
+    /** 列数：竖屏 5 个、横屏 10 个；调用方也可以显式指定。 */
+    private val columns = columns.takeIf { it > 0 }?.coerceIn(1, 10)
+        ?: if (context.resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        ) 10 else 5
+    /** 一页集数：按列数的整数倍归一，最小一行、最大 100。 */
+    private val perPage = (pageSize / columns * columns).coerceIn(columns, 100)
     private var page = (current / perPage).coerceAtLeast(0)
 
     /**
@@ -147,6 +152,8 @@ class PhoneEpisodeGrid(
     private var swipeAllowed = false
     /** 翻页动画进行中：这一小段时间不再接新手势，避免两段动画叠在一起把位移算歪。 */
     private var animating = false
+    /** 滑出动画期间已经确定、但还没渲染的目标页。连续操作时先提交它，再计算下一页。 */
+    private var pendingPage = -1
 
     /** 一页的宽度：跟手位移与滑出距离都以它为基准。 */
     private fun pageWidth(): Float =
@@ -186,6 +193,12 @@ class PhoneEpisodeGrid(
                 // 否则用户连着滑两下，第二下会被动画挡掉，读起来就是「卡了一下」。
                 if (animating) {
                     gridScroll.animate().cancel()
+                    if (pendingPage >= 0) {
+                        page = pendingPage
+                        pendingPage = -1
+                        render()
+                        gridScroll.scrollTo(0, 0)
+                    }
                     gridScroll.translationX = 0f
                     animating = false
                     endDragLayer()
@@ -276,6 +289,8 @@ class PhoneEpisodeGrid(
             else -> 0
         }
         if (dir != 0 && page + dir in 0 until pageCount()) {
+            val nextPage = page + dir
+            pendingPage = nextPage
             animating = true
             val target = -dir * w
             val duration = PhonePagerMotion.duration(
@@ -285,7 +300,8 @@ class PhoneEpisodeGrid(
             )
             gridScroll.animate().translationX(target).setDuration(duration)
                 .setInterpolator(PhonePagerMotion.interpolator).withEndAction {
-                page += dir
+                page = nextPage
+                pendingPage = -1
                 render()
                 gridScroll.scrollTo(0, 0)
                 gridScroll.translationX = dir * w
@@ -363,9 +379,9 @@ class PhoneEpisodeGrid(
         grid.removeAllViews()
         // 格子高度按 50% 字阶定：12 号字落成 18px，28dp 的格子上下各留 6dp，
         // 仍是一根能点准的按钮（38dp 的旧值在缩字之后会变成四个字悬在一大块空白里）。
-        val cellH = dp(if (compact) 26 else 28)
-        // 横屏抽屉窄：格距收到 3dp，把宽度留给格子本身（5 列时每格能多出 1dp）。
-        val gap = dp(if (compact) 3 else 4)
+        val cellH = dp(if (columns >= 10) 24 else if (compact) 26 else 28)
+        // 10 列时把格距再收一档，横屏简介页和播放浮层都能完整铺开。
+        val gap = dp(if (columns >= 10) 2 else if (compact) 3 else 4)
         val lines = ((end - start + columns - 1) / columns).coerceAtLeast(1)
         for (r in 0 until lines) {
             val line = LinearLayout(context).apply { orientation = HORIZONTAL }
@@ -416,7 +432,7 @@ class PhoneEpisodeGrid(
         return TextView(context).apply {
             text = "${i + 1}"
             gravity = Gravity.CENTER
-            phoneSize(if (compact) 12 else 14)
+            phoneSize(if (columns >= 10) 10 else if (compact) 12 else 14)
             // 集数最多三位（100 集/页）：不许换行、不许省略，否则窄抽屉里会变成「1…」。
             maxLines = 1
             ellipsize = null
@@ -439,7 +455,20 @@ class PhoneEpisodeGrid(
      * 与手势翻页同一套观感，只是省掉「当前页滑出」那一段——点芯片本来就知道要去哪。
      */
     private fun jump(target: Int) {
-        if (target !in 0 until pageCount() || target == page || animating) return
+        if (target !in 0 until pageCount() || target == page) return
+        if (animating) {
+            gridScroll.animate().cancel()
+            if (pendingPage >= 0) {
+                page = pendingPage
+                pendingPage = -1
+                render()
+                gridScroll.scrollTo(0, 0)
+            }
+            gridScroll.translationX = 0f
+            animating = false
+            endDragLayer()
+            if (target == page) return
+        }
         val dir = if (target > page) 1 else -1
         page = target
         render()
@@ -460,6 +489,3 @@ class PhoneEpisodeGrid(
             }.start()
     }
 }
-
-/** 每行固定 5 个：全屏与非全屏一致（用户要求）。 */
-private const val COLUMNS = 5

@@ -580,7 +580,7 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
     if(seamless || keep) suppressBufferingUi() else restoreBufferingUi()
     // 上一次切集留下的尾巴（正常情况为空：新源出画面时就收掉了，见 [retirePreviousEpisode]）。
     // 这里用强制版：下面马上要整条替换播放列表（setMediaSource / clearMediaItems），
-    // 旧项不可能再被读；不强制的话，800ms 内连着切集会把它顶掉、漏掉一次关闭。
+    // 旧项不可能再被读；不强制的话，连续切集会把它顶掉、漏掉一次关闭。
     forceRetirePrevious()
     saveProgress(); library.flush(); invalidatePage(); favoriteMonitor.stop(); releaseCatalogViews()
     dismissPlaybackMenu()
@@ -770,13 +770,12 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
         // 中间由左组自己的权重吃掉空出来的宽度：某一项关掉（`GONE`）时，
         // 剩下那一项自然补到它该在的位置（左侧仍靠左、右侧仍靠右），不会留下空档。
         //
-        // 这一条**常驻**（不跟底部控制条一起收起），因此在顶部压一条 50% 黑 → 透明的渐变，
-        // 亮画面上白字也读得清；文字固定用暖白（TvStyle.playerText），不跟主题，
+        // 这一条**常驻**（不跟底部控制条一起收起），但不铺整条背景，避免画面上出现黑雾；
+        // 文字固定用暖白（TvStyle.playerText）并保留自身阴影，不跟主题，
         // 否则浅色主题下会变成深色字、整条看不见。
         val info=row().apply {
             gravity=Gravity.CENTER_VERTICAL
             setPadding(dp(78),0,dp(78),0)
-            background=TvStyle.gradient(0x80000000.toInt(),Color.TRANSPARENT)
         }
         // 左组：剧名 + 当前集数，两项**都贴左**（剧名在前、集数紧跟其后）。
         // 整组在 info 里带权重，把右组顶到最右边；组内两项都是 wrap_content，
@@ -1118,6 +1117,8 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
                     if(playbackWatchdog==null && !pictureUpNow()) armPlaybackWatchdog(session)
                     lastEpisodeDuration=p.duration.coerceAtLeast(0)
                     // 新源已经出画面：这时候再收上一集的视频与传输最稳，顺手把缓冲指示恢复。
+                    markAutoTransitionReady(p.currentMediaItem?.mediaId.orEmpty())
+                    confirmPlayedItemRemoved()
                     retirePreviousEpisode(); restoreBufferingUi()
                     if(firstReady) { firstReady=false; readySince=android.os.SystemClock.elapsedRealtime(); android.util.Log.i("HGTV","Playback ready episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${readySince-playbackStarted}") }
                     if(hud.visibility==View.VISIBLE) updatePlaybackText()
@@ -1164,9 +1165,29 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
             override fun onMediaItemTransition(mediaItem: MediaItem?,reason: Int) {
                 if(!active()) return
                 if(reason!=Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
-                val next=data.episodes.indexOf(mediaItem?.mediaId)
+                val mediaId=mediaItem?.mediaId.orEmpty()
+                val next=data.episodes.indexOf(mediaId)
                 if(next<0 || next==episodeIndex) return
-                onEpisodeAdvanced(next)
+                // 预取队列与播放器实际切换项不一致：不能再相信 `queuedVideo`，
+                // 先停掉当前错误项，再走一次完整的 `setMediaSource` 重建。
+                if(queuedEpisodeId!=mediaId || queuedVideo==null) {
+                    android.util.Log.w(
+                        "HGTV",
+                        "Auto transition mismatch: media=$mediaId queued=$queuedEpisodeId " +
+                            "video=${queuedVideo!=null}; rebuilding"
+                    )
+                    cancelAutoTransitionCleanup()
+                    main.post {
+                        if(!active()) return@post
+                        runCatching { p.stop(); p.clearMediaItems() }
+                        cancelPrefetch()
+                        dropQueuedEpisode()
+                        forceRetirePrevious()
+                        playEpisode(next,0,requestedAutoplay)
+                    }
+                    return
+                }
+                onEpisodeAdvanced(next,mediaId)
                 // 队列空了：为新的这一集再准备下一集。等这一集 READY 再挂，
                 // 免得两个 period 同时抢加载带宽。
                 main.postDelayed({ if(!isDestroyed) maybeQueueNext() },3000)
@@ -1192,6 +1213,7 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
             }
             override fun onRenderedFirstFrame() {
                 if(!active()) return
+                markAutoTransitionFirstFrame(p.currentMediaItem?.mediaId.orEmpty())
                 // 首帧的尺寸已经确定：竖屏短剧全屏在这之后再落一次
                 //（`onVideoSizeChanged` 在个别软解 / 隧道模式下不一定先于首帧回调，这里兜一次底）。
                 applyResizeMode()
@@ -1261,6 +1283,12 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
                 danmakuView?.resetCursor(); syncDanmakuClock()
             }
             override fun onPlayerError(error: PlaybackException) { if(active()) playerFailure(error) }
+            override fun onTimelineChanged(
+                timeline: androidx.media3.common.Timeline,
+                reason: Int
+            ) {
+                if(active()) confirmPlayedItemRemoved()
+            }
         }
         playerListener=listener; p.addListener(listener)
         val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4).build())

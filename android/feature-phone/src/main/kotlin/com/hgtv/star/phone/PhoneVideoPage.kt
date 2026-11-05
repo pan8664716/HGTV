@@ -16,13 +16,13 @@ import androidx.media3.ui.PlayerView
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.shared.media.DanmakuView
 import com.hgtv.star.core.Series
-import com.hgtv.star.phone.ui.PhoneColor
 import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.bottomScrim
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
+import com.hgtv.star.phone.ui.phoneTabBarHeightPx
 import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.phone.ui.topScrim
 
@@ -59,7 +59,7 @@ class PhoneVideoPage(
     context: Context,
     /** 首页是信息流，底部有 60dp 的导航栏；播放页没有。 */
     private val withTabBar: Boolean = true,
-    /** 信息流才有「全屏」入口（它所在的 Activity 锁竖屏，只能靠按钮进横屏）。 */
+    /** 是否显示「全屏」入口（信息流和正式播放页的竖屏版面共用）。 */
     private val fullscreenEntry: Boolean = false,
     /**
      * 上下滑是否接管为「上一集 / 下一集」。
@@ -325,9 +325,12 @@ class PhoneVideoPage(
             // 没接标题点击时，落到「点屏幕」上：否则这一块会把点击吃掉，什么都不发生。
             setOnClickListener { if (onTitle != null) onTitle?.invoke() else onTap?.invoke() }
         }
-        titleRow.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        // 标题只按文字实际长度占宽；短标题不再被撑满整行。
+        titleRow.addView(title, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
         column.addView(titleRow, LinearLayout.LayoutParams(
-            LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
         // 标签
@@ -503,12 +506,17 @@ class PhoneVideoPage(
         // 用**实际画面比例**判断，而不是卡片上的 `vertical` 标记：
         // 接口的卡片与详情偶尔对同一部剧给出不同的 `vertical`（实测有），
         // 按标记判断会出现「推荐页有全屏按钮、进了播放页却没有」。
-        // 横的画面才需要「黑边全屏」，竖的画面在竖屏里已经铺满。
+        // 横版视频在竖屏里有黑边，需要全屏；竖版视频在**横屏版面**里也有左右黑边，
+        // 同样需要入口（推荐页横屏时点它进正式播放页）。
         val wideVideo = videoWidth > videoHeight
-        wantsFullscreen = wideVideo
-        fullscreenBox.visibility = if (wideVideo && chromeVisible) VISIBLE else GONE
+        val landscapePage = isLandscapePage()
+        // 横屏只给竖版片源补入口，竖屏只给横版片源补入口。
+        wantsFullscreen = if (landscapePage) !wideVideo else wideVideo
+        fullscreenBox.visibility = if (wantsFullscreen && chromeVisible) VISIBLE else GONE
         val ratio = videoWidth.toFloat() / videoHeight
-        val pictureHeight = this.width / ratio
+        // FIT 后实际画面高度：横版视频受屏宽限制，竖版视频在横屏版面里受屏高限制。
+        val viewRatio = width.toFloat() / height
+        val pictureHeight = if (ratio >= viewRatio) width / ratio else height.toFloat()
         val pictureBottom = (this.height + pictureHeight) / 2f
         val lp = fullscreenBox.layoutParams as LayoutParams
         lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
@@ -524,12 +532,10 @@ class PhoneVideoPage(
         } else height.toFloat()
 
         val below = pictureBottom + gap
-        val want = if (below + buttonHeight > infoTop) {
-            // 会被信息块压住：翻到**画面内**（下边缘之上），别和文字抢那一条黑边。
-            (pictureBottom - buttonHeight - gap).toInt().coerceAtLeast(0)
-        } else {
-            below.toInt()
-        }
+        // 竖版画面在横屏里会占满整屏高度，`pictureBottom` 已经落到信息层后面。
+        // 此时只翻到画面内还不够，必须继续限制在信息块上沿，否则按钮仍会被底栏盖住。
+        val maxTop = infoTop - buttonHeight - gap
+        val want = below.coerceAtMost(maxTop).toInt().coerceAtLeast(0)
         if (lp.topMargin != want) {
             lp.topMargin = want
             fullscreenBox.layoutParams = lp
@@ -605,7 +611,15 @@ class PhoneVideoPage(
      * 用户读到的就是「信息悬在半空、底下空一格」。让开量归零之后条子贴住屏幕底边。
      */
     private fun bottomInset(): Int =
-        if (withTabBar) context.dp(PhoneColor.TAB_BAR_DP.toInt()) else 0
+        if (withTabBar) context.phoneTabBarHeightPx() else 0
+
+    private fun isLandscapePage(): Boolean =
+        if (width > 0 && height > 0) {
+            width > height
+        } else {
+            resources.configuration.orientation ==
+                android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        }
 
     // ------------------------------------------------------------------ 绑定
 
@@ -618,8 +632,8 @@ class PhoneVideoPage(
         // bind 只给一个安全的初值：完整画面。真正的档位由宿主按**实际视频尺寸**随后覆盖；
         // 卡片上的 `vertical` 偶有标错，不能在这里先按它把横屏片放大。
         playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-        // 横屏片源才有「黑边」，竖屏片源铺满整屏，不需要全屏按钮。
-        wantsFullscreen = !series.vertical
+        // 尺寸回调前先用卡片方向给一个与当前版面一致的初值；尺寸到手后仍以实际画面为准。
+        wantsFullscreen = if (isLandscapePage()) series.vertical else !series.vertical
         if (!sameSeries) {
             videoWidth = 0
             videoHeight = 0

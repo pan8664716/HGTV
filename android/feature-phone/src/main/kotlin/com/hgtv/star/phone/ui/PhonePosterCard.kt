@@ -35,7 +35,7 @@ open class PhonePosterCard(
     private val coverHeight = phonePosterPosterHeight(context, cardWidth)
     private val selectionMark = TextView(context).apply {
         gravity = Gravity.CENTER
-        phoneSize(11)
+        phoneSize(PosterCardMaterial.BADGE_TEXT * scale * PHONE_BADGE_TEXT_SCALE)
         setTypeface(typeface, Typeface.BOLD)
         setTextColor(Color.WHITE)
         includeFontPadding = false
@@ -125,18 +125,17 @@ open class PhonePosterCard(
             return
         }
         if (selectionMark.parent == null) {
+            val size = context.dp((10f * scale).coerceIn(9f, 14f))
             poster.addView(selectionMark, FrameLayout.LayoutParams(
-                context.dp(20), context.dp(20), Gravity.TOP or Gravity.END
-            ).apply {
-                rightMargin = context.dp(8)
-                topMargin = context.dp(8)
-            })
+                size, size, Gravity.TOP or Gravity.END
+            ))
         }
         selectionMark.visibility = View.VISIBLE
         selectionMark.text = if (selected) "✓" else ""
+        val size = selectionMark.layoutParams?.width ?: context.dp(12)
         selectionMark.background = roundedBackground(
             if (selected) PhoneStyle.accent else 0x99000000.toInt(),
-            context.dp(10).toFloat(),
+            size / 2f,
         )
         selectionMark.contentDescription = if (selected) "已选中" else "未选中"
     }

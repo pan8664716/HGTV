@@ -18,6 +18,7 @@ import com.hgtv.star.phone.ui.PhoneUiScale
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.navigationBarPx
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
+import com.hgtv.star.phone.ui.phoneTabBarHeightPx
 import com.hgtv.star.phone.page.PhoneCategoryPage
 import com.hgtv.star.phone.page.PhoneMinePage
 import com.hgtv.star.phone.page.PhoneRankPage
@@ -47,6 +48,11 @@ class PhoneMainActivity : PhoneActivity() {
          * 这里在同一进程里补一份，`onCreate` 取到后立刻清掉，冷启动不受影响。
          */
         var pendingTab = -1
+        /** 推荐页重建前选中的体裁，避免转屏后总是回到漫剧。 */
+        var pendingRecommendGenre: String? = null
+        var pendingCategoryState: PhoneCategoryPage.State? = null
+        var pendingRankState: PhoneRankPage.State? = null
+        var pendingMineState: PhoneMinePage.State? = null
     }
 
     private lateinit var content: FrameLayout
@@ -65,8 +71,11 @@ class PhoneMainActivity : PhoneActivity() {
     private var builtTheme = -1
     /** 建这一屏时用的字体 / 控件倍率；从设置页回来变了就整屏重建。 */
     private var builtUiScale = PhoneUiScale.default
+    /** 主页在后台时遇到尺寸变化：等回到前台再重建，避免拆掉播放页正在借用的 Surface。 */
+    private var rebuildOnResume = false
     /** 主界面是否在前台：只有推荐流真的在播时才保持屏幕常亮。 */
     private var resumed = false
+    private var landscape = false
 
     /** 调试面板（设置 → 调试模式）：与 TV 一样挂在 root 上，跨 tab 存活。 */
     private var debugOverlay: com.hgtv.star.phone.ui.PhoneDebugOverlay? = null
@@ -77,6 +86,8 @@ class PhoneMainActivity : PhoneActivity() {
         super.onCreate(savedInstanceState)
         android.util.Log.w("HGTV-BOOT", "phone.MainActivity onCreate")
         PhoneStyle.ensure(this)
+        landscape = resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
         builtTheme = PhoneStyle.theme.ordinal
         builtUiScale = PhoneUiScale.value
         phoneEdgeToEdge()
@@ -90,7 +101,7 @@ class PhoneMainActivity : PhoneActivity() {
         }
         root.addView(content)
 
-        tabBar = PhoneTabBar(this).apply {
+        tabBar = PhoneTabBar(this, landscape).apply {
             onSelect = { index ->
                 val now = SystemClock.uptimeMillis()
                 val repeated = index == lastTabTapIndex &&
@@ -110,7 +121,7 @@ class PhoneMainActivity : PhoneActivity() {
         // 不做悬浮胶囊、不留左右边距——新拟态的层次靠材质，不靠「浮起来」。
         root.addView(tabBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
-            dp(PhoneColor.TAB_BAR_DP.toInt()),
+            phoneTabBarHeightPx(),
             Gravity.BOTTOM
         ))
 
@@ -159,9 +170,24 @@ class PhoneMainActivity : PhoneActivity() {
     }
 
     override fun rebuildOnSizeChange(newConfig: android.content.res.Configuration): Boolean {
-        if (newConfig.orientation != builtOrientation) return false
+        rememberPageStates()
+        if (!resumed) {
+            rebuildOnResume = true
+            return false
+        }
         pendingTab = current
         return true
+    }
+
+    private fun rememberPageStates() {
+        pendingRecommendGenre =
+            (pages.getOrNull(0) as? PhoneRecommendPage)?.currentGenreKey()
+        pendingCategoryState =
+            (pages.getOrNull(1) as? PhoneCategoryPage)?.snapshotState()
+        pendingRankState =
+            (pages.getOrNull(2) as? PhoneRankPage)?.snapshotState()
+        pendingMineState =
+            (pages.getOrNull(3) as? PhoneMinePage)?.snapshotState()
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
@@ -219,6 +245,10 @@ class PhoneMainActivity : PhoneActivity() {
      * 一起藏掉会让「我的」这类页面少一截安全距离。
      */
     private fun applyStatusBarFor(index: Int) {
+        if (landscape) {
+            applyLandscapeImmersive()
+            return
+        }
         val immersive = index == 0
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             window.insetsController?.let { controller ->
@@ -242,17 +272,56 @@ class PhoneMainActivity : PhoneActivity() {
         }
     }
 
+    /** 横屏主页隐藏系统状态栏与导航栏，内容直接铺满窗口。 */
+    @Suppress("DEPRECATION")
+    private fun applyLandscapeImmersive() {
+        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            )
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let { controller ->
+                controller.hide(
+                    android.view.WindowInsets.Type.statusBars() or
+                        android.view.WindowInsets.Type.navigationBars()
+                )
+                controller.systemBarsBehavior =
+                    android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && landscape) applyLandscapeImmersive()
+    }
+
     override fun onResume() {
         super.onResume()
         resumed = true
+        if (rebuildOnResume) {
+            rebuildOnResume = false
+            rememberPageStates()
+            pendingTab = current
+            recreate()
+            return
+        }
         // 设置页可能换了主题（二十套配色）：已经建好的控件上挂着上一套材质的 Drawable，
         // 只改静态色值不会作用到它们，因此这里重建一次（TV 的 `switchTheme` 同样要重建）。
         if (PhoneStyle.theme.ordinal != builtTheme) {
+            rememberPageStates()
             pendingTab = current
             recreate()
             return
         }
         if (PhoneUiScale.value != builtUiScale) {
+            rememberPageStates()
             pendingTab = current
             recreate()
             return
@@ -361,12 +430,28 @@ class PhoneMainActivity : PhoneActivity() {
     private val debugTicker = Runnable { syncDebugOverlay() }
 
     private fun createPage(index: Int): View = when (index) {
-        0 -> PhoneRecommendPage(this).apply {
-            onPlayStateChanged = { syncKeepScreenOn() }
+        0 -> {
+            val genre = pendingRecommendGenre
+            pendingRecommendGenre = null
+            PhoneRecommendPage(this, genre).apply {
+                onPlayStateChanged = { syncKeepScreenOn() }
+            }
         }
-        1 -> PhoneCategoryPage(this)
-        2 -> PhoneRankPage(this)
-        else -> PhoneMinePage(this)
+        1 -> {
+            val state = pendingCategoryState
+            pendingCategoryState = null
+            PhoneCategoryPage(this, state)
+        }
+        2 -> {
+            val state = pendingRankState
+            pendingRankState = null
+            PhoneRankPage(this, state)
+        }
+        else -> {
+            val state = pendingMineState
+            pendingMineState = null
+            PhoneMinePage(this, state)
+        }
     }
 
     /**
@@ -414,6 +499,7 @@ class PhoneMainActivity : PhoneActivity() {
 
     /** 状态栏高度；取不到时按 24dp 兜底。 */
     fun statusBarHeight(): Int {
+        if (landscape) return 0
         val id = resources.getIdentifier("status_bar_height", "dimen", "android")
         return if (id > 0) resources.getDimensionPixelSize(id) else dp(24)
     }

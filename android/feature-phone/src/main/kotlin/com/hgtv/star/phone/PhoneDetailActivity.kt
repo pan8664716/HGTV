@@ -8,7 +8,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.HorizontalScrollView
 import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -63,7 +62,7 @@ import kotlinx.coroutines.withContext
  *
  * 与 TV 一致的三条规则：
  * * 有观看记录时主按钮是「继续第 N 集」，没有时是「播放」；
- * * 选集网格与播放页的选集面板**同一份实现**（每行 5 个、分页集数取设置、边缘滑翻页）；
+ * * 选集网格与播放页的选集面板**同一份实现**（竖屏 5 列 / 横屏 10 列、分页集数取设置、边缘滑翻页）；
  * * 未上架（`upcoming`）的剧没有分集，主按钮变成「预约」。
  */
 class PhoneDetailActivity : PhoneActivity() {
@@ -77,6 +76,8 @@ class PhoneDetailActivity : PhoneActivity() {
     private lateinit var root: FrameLayout
     private lateinit var scroller: ScrollView
     private lateinit var column: LinearLayout
+    private var contentEdge = 0
+    private var landscape = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private val seriesId: String get() = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
@@ -131,6 +132,8 @@ class PhoneDetailActivity : PhoneActivity() {
         super.onCreate(savedInstanceState)
         PhoneStyle.ensure(this)
         phoneEdgeToEdge()
+        landscape = resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
         if (seriesId.isBlank()) { finish(); return }
         buildUi()
         load()
@@ -147,6 +150,7 @@ class PhoneDetailActivity : PhoneActivity() {
             // `dp(14)` 在最大档上是 63px，两侧吃掉 126px，右侧内容被白白挤窄。
             // 封面与图片本身不动，只收这一圈留白。
             val edge = (resources.displayMetrics.widthPixels * .039f).toInt()
+            contentEdge = edge
             // 底部留白要盖过系统导航条：`phoneEdgeToEdge()` 之后内容会铺到手势区，
             // 最后一行卡片正好落在那里，点击会被系统手势拦走——表现就是「卡片点不动」。
             setPadding(edge, dp(6), edge, dp(32) + navigationBarPx())
@@ -196,7 +200,7 @@ class PhoneDetailActivity : PhoneActivity() {
         val coverWidth = dp(104)
         val infoGap = (resources.displayMetrics.widthPixels * .022f).toInt()
         head.addView(coverBox, LinearLayout.LayoutParams(
-            coverWidth, ViewGroup.LayoutParams.MATCH_PARENT
+            coverWidth, if (landscape) dp(148) else ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
         val info = LinearLayout(this).apply {
@@ -225,10 +229,15 @@ class PhoneDetailActivity : PhoneActivity() {
             phoneSize(12)
             // 标签整行放在封面那一块**下面**（`column` 里紧跟 head），不再挤在标题与元信息之间：
             // 那一列只有 104dp 封面右侧的宽度，标签稍长就被省略号吃掉。
-            setPadding(0, dp(8), 0, 0)
+            setPadding(0, dp(if (landscape) 4 else 8), 0, 0)
             maxLines = 1
             ellipsize = android.text.TextUtils.TruncateAt.END
             visibility = View.GONE
+        }
+        if (landscape) {
+            info.addView(tagView, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
         }
 
         metaView = TextView(this).apply {
@@ -246,9 +255,7 @@ class PhoneDetailActivity : PhoneActivity() {
         ))
 
         val actions = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            // 紧接集数 / 作者行，不再用一整段弹性空白把按钮推到底部；
-            // 剩余高度均分给三枚按钮之间的两个间隙。
+            orientation = if (landscape) LinearLayout.HORIZONTAL else LinearLayout.VERTICAL
             setPadding(0, dp(7), 0, 0)
         }
         primary = DetailActionButton(PhoneGlyph.Kind.PLAY, "播放", primary = true) {
@@ -260,40 +267,48 @@ class PhoneDetailActivity : PhoneActivity() {
         laterButton = DetailActionButton(PhoneGlyph.Kind.BOOKMARK, "稍后看", primary = false) {
             toggleLater()
         }
-        actions.addView(primary, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(22)
-        ))
-        actions.addView(android.widget.Space(this), LinearLayout.LayoutParams(
-            1, 0, 1f
-        ))
-        actions.addView(favoriteButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(22)
-        ))
-        actions.addView(android.widget.Space(this), LinearLayout.LayoutParams(
-            1, 0, 1f
-        ))
-        actions.addView(laterButton, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(22)
-        ))
+        if (landscape) {
+            listOf(primary, favoriteButton, laterButton).forEachIndexed { index, button ->
+                actions.addView(button, LinearLayout.LayoutParams(0, dp(30), 1f).apply {
+                    if (index > 0) leftMargin = dp(6)
+                })
+            }
+        } else {
+            actions.addView(primary, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(22)
+            ))
+            actions.addView(android.widget.Space(this), LinearLayout.LayoutParams(1, 0, 1f))
+            actions.addView(favoriteButton, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(22)
+            ))
+            actions.addView(android.widget.Space(this), LinearLayout.LayoutParams(1, 0, 1f))
+            actions.addView(laterButton, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, dp(22)
+            ))
+        }
         info.addView(actions, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            if (landscape) ViewGroup.LayoutParams.WRAP_CONTENT else 0,
+            if (landscape) 0f else 1f,
         ))
 
         head.addView(info, LinearLayout.LayoutParams(
-            0, ViewGroup.LayoutParams.MATCH_PARENT, 1f
+            0, if (landscape) ViewGroup.LayoutParams.WRAP_CONTENT else ViewGroup.LayoutParams.MATCH_PARENT, 1f
         ))
         column.addView(head, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(148)
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            if (landscape) ViewGroup.LayoutParams.WRAP_CONTENT else dp(148),
         ))
-        // 标签：整行贴在封面 / 标题那一块的下方（用户要求「放在图片下面」）。
-        column.addView(tagView, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        if (!landscape) {
+            column.addView(tagView, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
 
         descRow = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.TOP
-            setPadding(0, dp(10), 0, dp(2))
+            setPadding(0, dp(if (landscape) 6 else 10), 0, dp(2))
             visibility = View.GONE
         }
         descView = TextView(this).apply {
@@ -319,9 +334,15 @@ class PhoneDetailActivity : PhoneActivity() {
         descRow.addView(descToggle, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
-        column.addView(descRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        if (landscape) {
+            info.addView(descRow, 2, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        } else {
+            column.addView(descRow, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
     }
 
     private fun buildEpisodeArea() {
@@ -373,7 +394,7 @@ class PhoneDetailActivity : PhoneActivity() {
         private val labelView = TextView(context).apply {
             text = label
             setTextColor(if (primary) Color.WHITE else PhoneStyle.text)
-            phoneSize(12)
+            phoneSize(if (landscape) 11 else 12)
             gravity = Gravity.CENTER_VERTICAL
             includeFontPadding = false
             maxLines = 1
@@ -385,18 +406,24 @@ class PhoneDetailActivity : PhoneActivity() {
             gravity = Gravity.CENTER_VERTICAL
             isClickable = true
             isFocusable = true
-            setPadding(dp(8), dp(2), dp(8), dp(2))
+            setPadding(
+                dp(if (landscape) 4 else 8),
+                dp(if (landscape) 1 else 2),
+                dp(if (landscape) 4 else 8),
+                dp(if (landscape) 1 else 2),
+            )
             background = PhoneSheet.pillBackground(
                 if (primary) PhoneStyle.accent else PhoneStyle.surface,
                 if (primary) 0xFF7CBEFF.toInt() else PhoneStyle.surfaceHigh,
                 dp(PhoneStyle.RADIUS_CARD).toFloat(),
             )
-            addView(glyph, LinearLayout.LayoutParams(dp(16), dp(16)))
+            val iconSize = dp(if (landscape) 14 else 16)
+            addView(glyph, LinearLayout.LayoutParams(iconSize, iconSize))
             addView(labelView, LinearLayout.LayoutParams(
                 0,
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 1f,
-            ).apply { leftMargin = dp(7) })
+            ).apply { leftMargin = dp(if (landscape) 4 else 7) })
             contentDescription = label
             setOnClickListener { onClick() }
         }
@@ -504,6 +531,7 @@ class PhoneDetailActivity : PhoneActivity() {
             this, d.episodes.size, resume ?: 0,
             pageSize = library?.episodePageSize ?: 20,
             compact = false,
+            columns = if (landscape) 10 else 5,
             // **不限高**：整页本来就在 `ScrollView` 里，网格再套一层内层滚动会互相抢事件
             //（普通 `ScrollView` 不支持嵌套滚动），用户读到的就是「选集显示不全、还滑不动」。
             // 一页 100 集 = 20 行，展开后跟整页一起滚，滚动只有一条。
@@ -782,13 +810,23 @@ class PhoneDetailActivity : PhoneActivity() {
     /**
      * 横向卡片行（相关剧集与作者作品共用）。
      *
-     * 真正的铺法在 [PhoneCards.row]：**播放页的「换一部接着看」用的是同一份**，
-     * 两处卡片因此不可能长得不一样（电视端也是 `buildRelatedRow` 一处实现）。
+     * 保持单排横向滚动，只按全局列表列数调整一屏能看到的卡片数量。
      */
-    private fun cardRow(items: List<Series>, currentId: String): HorizontalScrollView =
-        PhoneCards.row(this, PhoneServices.artwork(this), items, currentId) { item ->
+    private fun cardRow(items: List<Series>, currentId: String): View {
+        val base = library?.gridColumns ?: 2
+        val columns = base.coerceIn(1, 3) + if (landscape) 3 else 0
+        val available = (resources.displayMetrics.widthPixels - contentEdge * 2).coerceAtLeast(dp(200))
+        return PhoneCards.row(
+            this,
+            PhoneServices.artwork(this),
+            items,
+            currentId,
+            columns = columns,
+            availableWidthPx = available,
+        ) { item ->
             openDetail(item)
         }
+    }
 
     /** 作者头像底色：色盘与算法在 `:shared`（见 [com.hgtv.star.shared.ui.authorColor]），电视端用同一份。 */
     private fun authorColor(name: String): Int = com.hgtv.star.shared.ui.authorColor(name)

@@ -1097,10 +1097,10 @@ class Library(context: Context) {
             if (next != homeColumns) { state().settings = state().settings.copy(homeColumns = next); put("homeColumns", next) }
         }
     /**
-     * 手机 / 平板的海报列表一行放几张（1 / 2 / 3，默认 2）。
+     * 手机 / 平板的海报列表基准列数（1–3，默认 2）。
      *
      * 与电视的 [homeColumns]（4..8）是两个键：手机上 2 列是「封面够大、标题还能读全」
-     * 的默认档；想看得更大可以选 1 列，想一屏多扫几张可以选 3 列。
+     * 的默认档；横屏实际显示时映射为 4–6 列。
      * 坏值夹进 1..3，设置页不会出现一个选不中的状态。
      */
     var gridColumns: Int

@@ -35,7 +35,10 @@ import com.hgtv.star.phone.ui.PhoneTopBar
  * 三页各持一个 `PhoneFeedView`，但只有当前页在播：翻页时旧页 `onHidden()`（暂停解码），
  * 新页 `onShown()`。三个解码器同时跑在 2GB 的机器上会被系统直接杀掉。
  */
-class PhoneRecommendPage(context: Context) : FrameLayout(context) {
+class PhoneRecommendPage(
+    context: Context,
+    initialGenre: String? = null,
+) : FrameLayout(context) {
 
     /**
      * 这一屏要铺哪几条体裁流。
@@ -45,6 +48,8 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
      * 至少留一条：`Library` 那边保证不会三类全关，这里再兜一次底（空表就全开）。
      */
     private var genres: List<RankBoard> = listOf(RankBoard.COMIC, RankBoard.REAL, RankBoard.AI)
+    /** 宿主重建页面时带回来的体裁；首次铺完后清空。 */
+    private var restoreGenre: String? = initialGenre
     /** 已经铺出来的那一次筛选结果：设置变了就整屏重建一次。 */
     private var appliedGenres: List<RankBoard> = emptyList()
     private var feeds = arrayOfNulls<PhoneFeedView>(3)
@@ -154,7 +159,8 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
         removeAllViews()
         appliedGenres = genres
         feeds = arrayOfNulls(genres.size)
-        current = 0
+        current = genres.indexOfFirst { it.genre == restoreGenre }.takeIf { it >= 0 } ?: 0
+        restoreGenre = null
 
         pager.adapter = null
         pager.layoutManager = LinearLayoutManager(context, RecyclerView.HORIZONTAL, false)
@@ -186,7 +192,7 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
         // 顶部渐变、体裁 tab 与右上角搜索都由同一个顶栏负责；推荐页是沉浸式视频，
         // 因此用 overlay 背板，位置和分类 / 榜单仍然落在同一条基线上。
         topBar.visibility = View.VISIBLE
-        topBar.setTabs(genres.map { it.label }, 0) { index -> goTo(index) }
+        topBar.setTabs(genres.map { it.label }, current) { index -> goTo(index) }
         topBar.onSearch = {
             context.phoneNav().open(Route.Search)
         }
@@ -194,7 +200,11 @@ class PhoneRecommendPage(context: Context) : FrameLayout(context) {
             gravity = android.view.Gravity.TOP
         })
         topBar.bringToFront()
+        pager.post { runCatching { pager.scrollToPosition(current) } }
     }
+
+    /** 当前体裁的稳定标识，供宿主在转屏重建前保存。 */
+    fun currentGenreKey(): String? = genres.getOrNull(current)?.genre
 
     fun scrollToTop() {
         feeds.getOrNull(current)?.scrollToTop()

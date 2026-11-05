@@ -60,6 +60,15 @@ object PhoneCards {
         current: Boolean = false,
         widthDp: Int = WIDTH_DP,
         onOpen: (Series) -> Unit,
+    ): View = cardPx(context, artwork, series, current, context.dp(widthDp), onOpen)
+
+    private fun cardPx(
+        context: Context,
+        artwork: ArtworkLoader,
+        series: Series,
+        current: Boolean,
+        cardWidthPx: Int,
+        onOpen: (Series) -> Unit,
     ): View {
         val content = PosterCardContent.of(
             series = series,
@@ -72,7 +81,7 @@ object PhoneCards {
         )
         val card = PhonePosterCard(
             context = context,
-            cardWidth = context.dp(widthDp),
+            cardWidth = cardWidthPx,
             artwork = artwork,
             onOpen = onOpen,
         )
@@ -84,6 +93,8 @@ object PhoneCards {
      * 一整排卡片（横向滚动，不显示滚动条）。
      *
      * [currentId] 是正在看的那一部：它不会从列表里被去掉，只是状态行写「正在看」。
+     * 传入 [columns] 与 [availableWidthPx] 时，卡片宽度会按全局列数均分，
+     * 但列表仍然保持单排横向滚动。
      */
     fun row(
         context: Context,
@@ -91,16 +102,26 @@ object PhoneCards {
         items: List<Series>,
         currentId: String,
         widthDp: Int = WIDTH_DP,
+        columns: Int = 0,
+        availableWidthPx: Int = 0,
         onOpen: (Series) -> Unit,
     ): HorizontalScrollView {
         fun dp(value: Number) = context.dp(value)
+        val gap = dp(4)
+        val safeColumns = columns.takeIf { it > 0 }?.coerceIn(1, 6)
+        val cardWidth = if (safeColumns != null && availableWidthPx > 0) {
+            val usable = (availableWidthPx - gap * (safeColumns - 1)).coerceAtLeast(1)
+            (usable / safeColumns).coerceAtLeast(dp(48))
+        } else {
+            dp(widthDp)
+        }
         val strip = LinearLayout(context).apply { orientation = LinearLayout.HORIZONTAL }
-        items.forEach { item ->
+        items.forEachIndexed { index, item ->
             strip.addView(
-                card(context, artwork, item, current = item.id == currentId, widthDp = widthDp, onOpen = onOpen),
-                LinearLayout.LayoutParams(dp(widthDp), ViewGroup.LayoutParams.WRAP_CONTENT).apply {
-                    // 卡片加宽之后间距同步收一档，否则一屏露出的张数掉得太快。
-                    rightMargin = dp(4)
+                cardPx(context, artwork, item, item.id == currentId, cardWidth, onOpen),
+                LinearLayout.LayoutParams(cardWidth, ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                    // 卡片之间的间隔只占中间，最后一排末尾不再多留一段空白。
+                    if (index < items.lastIndex) rightMargin = gap
                 }
             )
         }

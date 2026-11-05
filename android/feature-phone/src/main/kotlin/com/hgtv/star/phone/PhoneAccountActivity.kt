@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 import android.content.Intent
+import android.content.res.Configuration
 import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.text.InputType
@@ -50,10 +51,21 @@ import kotlinx.coroutines.withContext
  */
 class PhoneAccountActivity : PhoneActivity() {
 
+    private companion object {
+        const val LOGIN_QR = 0
+        const val LOGIN_PHONE = 1
+        const val LOGIN_IMPORT = 2
+        const val STATE_LOGIN_MODE = "phone_account_login_mode"
+        val LOGIN_LABELS = listOf("扫码登录", "手机号登录", "导入账号参数")
+    }
+
     private lateinit var root: FrameLayout
     private lateinit var body: LinearLayout
     private lateinit var title: TextView
+    private lateinit var modeBar: LinearLayout
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var landscape = false
+    private var loginMode = LOGIN_QR
 
     /** 扫码登录的轮询对象：页面收起时必须停掉，否则它在后台一直问同一个 token。 */
     private var qr: QrLogin? = null
@@ -77,6 +89,9 @@ class PhoneAccountActivity : PhoneActivity() {
         super.onCreate(savedInstanceState)
         PhoneStyle.ensure(this)
         phoneEdgeToEdge()
+        landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        loginMode = savedInstanceState?.getInt(STATE_LOGIN_MODE, LOGIN_QR)
+            ?.takeIf { it in LOGIN_LABELS.indices } ?: LOGIN_QR
         buildUi()
         // 书库没读完时 `account()` / `accountCache()` 会抛（`Library` 的所有读取都要求先 load）：
         // 等它读完再铺内容，避免一进页面就是「未登录」再跳成「已登录」。
@@ -91,38 +106,90 @@ class PhoneAccountActivity : PhoneActivity() {
     private fun buildUi() {
         root = FrameLayout(this).apply { setBackgroundColor(PhoneStyle.background) }
 
-        val status = statusBarHeight()
+        val status = if (landscape) 0 else statusBarHeight()
         val bar = LinearLayout(this).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(16), status + dp(8), dp(16), dp(8))
+            if (landscape) {
+                setPadding(dp(12), 0, dp(12), 0)
+            } else {
+                setPadding(dp(16), status + dp(8), dp(16), dp(8))
+            }
         }
         title = TextView(this).apply {
             text = "账号"
             setTextColor(PhoneStyle.text)
-            phoneSize(18)
+            phoneSize(if (landscape) 13 else 18)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }
-        bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        if (landscape) {
+            bar.addView(title, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+            modeBar = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+            }
+            bar.addView(modeBar, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { leftMargin = dp(12) })
+            bar.addView(View(this), LinearLayout.LayoutParams(0, 1, 1f))
+            buildModeBar()
+        } else {
+            bar.addView(title, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+        }
         root.addView(bar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP
         ))
 
+        val outer = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            if (landscape) {
+                gravity = Gravity.CENTER
+                setPadding(dp(20), dp(4), dp(20), dp(8))
+            } else {
+                setPadding(dp(16), dp(6), dp(16), tabBarInset() + dp(20))
+            }
+        }
         body = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(6), dp(16), tabBarInset() + dp(20))
+            if (landscape) {
+                setPadding(dp(12), dp(10), dp(12), dp(10))
+                applySoft(SoftStyle.RAISED, PhoneStyle.surfaceHigh, PhoneStyle.RADIUS_CARD, 5f)
+            }
         }
-        root.addView(ScrollView(this).apply {
-            isFillViewport = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            addView(body, ViewGroup.LayoutParams(
+        if (landscape) {
+            outer.addView(body, LinearLayout.LayoutParams(
+                landscapeCardWidth(), ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        } else {
+            outer.addView(body, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ))
-        }, FrameLayout.LayoutParams(
+        }
+        val contentHost = if (landscape) {
+            // 横屏登录必须是一屏内的固定舞台：不再用 ScrollView，避免内容把底部按钮推出去。
+            FrameLayout(this).apply {
+                addView(outer, FrameLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                ))
+            }
+        } else {
+            ScrollView(this).apply {
+                isFillViewport = false
+                overScrollMode = View.OVER_SCROLL_NEVER
+                addView(outer, ViewGroup.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                ))
+            }
+        }
+        root.addView(contentHost, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ).apply { topMargin = status + dp(56) })
+        ).apply { topMargin = if (landscape) dp(24) else status + dp(56) })
 
         setContentView(root)
+        if (landscape) applyLandscapeImmersive()
     }
 
     private fun render() {
@@ -131,7 +198,15 @@ class PhoneAccountActivity : PhoneActivity() {
         val lib = PhoneServices.library(this)
         val account = runCatching { lib.account() }.getOrNull()
         val signedIn = account?.configured == true || PhoneServices.repository(this).signedIn
-        if (signedIn) renderSignedIn() else renderSignedOut()
+        if (landscape) {
+            modeBar.visibility = if (signedIn) View.GONE else View.VISIBLE
+            updateModeBar()
+        }
+        when {
+            signedIn -> renderSignedIn()
+            landscape -> renderLandscapeSignedOut()
+            else -> renderSignedOut()
+        }
     }
 
     // ---------------------------------------------------------------- 未登录
@@ -145,6 +220,58 @@ class PhoneAccountActivity : PhoneActivity() {
             "导入支持官方 App 的 cookieStore.xml，或一个 sessionid。" +
                 "参数只保存在本机，不会上传到任何服务器。"
         ), blockTop())
+    }
+
+    private fun buildModeBar() {
+        modeBar.removeAllViews()
+        LOGIN_LABELS.forEachIndexed { index, label ->
+            val chip = TextView(this).apply {
+                text = label
+                phoneSize(11)
+                gravity = Gravity.CENTER
+                includeFontPadding = false
+                minWidth = dp(78)
+                minHeight = dp(24)
+                setPadding(dp(8), 0, dp(8), 0)
+                contentDescription = label
+                setOnClickListener { selectLoginMode(index) }
+            }
+            modeBar.addView(chip, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, dp(24)
+            ).apply {
+                if (index > 0) leftMargin = dp(8)
+            })
+        }
+    }
+
+    private fun updateModeBar() {
+        if (!landscape || !::modeBar.isInitialized) return
+        repeat(modeBar.childCount) { index ->
+            val chip = modeBar.getChildAt(index) as? TextView ?: return@repeat
+            val active = index == loginMode
+            chip.setTextColor(if (active) PhoneStyle.accent else PhoneStyle.textDim)
+            chip.applySoft(
+                if (active) SoftStyle.INSET else SoftStyle.RAISED,
+                PhoneStyle.surface,
+                PhoneStyle.RADIUS_PILL,
+                3f,
+            )
+            chip.contentDescription = LOGIN_LABELS[index] + if (active) "，当前方式" else ""
+        }
+    }
+
+    private fun selectLoginMode(mode: Int) {
+        if (!landscape || mode == loginMode) return
+        loginMode = mode
+        render()
+    }
+
+    private fun renderLandscapeSignedOut() {
+        when (loginMode) {
+            LOGIN_PHONE -> renderPhoneLogin()
+            LOGIN_IMPORT -> renderImport()
+            else -> renderQr()
+        }
     }
 
     // ---------------------------------------------------------------- 已登录
@@ -260,7 +387,13 @@ class PhoneAccountActivity : PhoneActivity() {
         }
         qr = session
 
-        body.addView(note("用手机上的官方 App 扫一扫，手机确认后本机即登录。二维码 60 秒有效，过期会自动刷新。"))
+        if (landscape) {
+            body.addView(loginTitle("扫码登录", "用手机上的官方 App 扫一扫，手机确认后本机即登录"))
+        }
+        body.addView(note(
+            if (landscape) "二维码 60 秒有效，过期会自动刷新。"
+            else "用手机上的官方 App 扫一扫，手机确认后本机即登录。二维码 60 秒有效，过期会自动刷新。"
+        ))
 
         val code = ImageView(this).apply {
             scaleType = ImageView.ScaleType.FIT_CENTER
@@ -273,8 +406,17 @@ class PhoneAccountActivity : PhoneActivity() {
         // 二维码边长：常规档是 220dp，但字号调大后 `dp()` 会跟着放大（最大档约 990px），
         // 直接铺上去会超出屏幕、被右侧裁掉——用户看到的就是「二维码变形 / 只显示一部分」。
         // 这里按可用宽度封顶，任何字号下都完整落在屏幕内。
-        val available = resources.displayMetrics.widthPixels - dp(16) * 2
-        val qrSide = minOf(dp(220), (available * .92f).toInt()).coerceAtLeast(dp(120))
+        val qrSide = if (landscape) {
+            val available = (landscapeCardWidth() - dp(36)).coerceAtLeast(dp(120))
+            minOf(
+                dp(120),
+                (available * .72f).toInt(),
+                (resources.displayMetrics.heightPixels * .30f).toInt(),
+            ).coerceAtLeast(dp(72))
+        } else {
+            val available = resources.displayMetrics.widthPixels - dp(16) * 2
+            minOf(dp(220), (available * .92f).toInt()).coerceAtLeast(dp(120))
+        }
         body.addView(FrameLayout(this).apply {
             addView(code, FrameLayout.LayoutParams(qrSide, qrSide, Gravity.CENTER))
         }, blockTop())
@@ -286,8 +428,21 @@ class PhoneAccountActivity : PhoneActivity() {
             gravity = Gravity.CENTER
         }
         body.addView(state, blockTop())
-        body.addView(secondaryButton("换一张二维码") { qrRefresh?.invoke() }, blockTop())
-        body.addView(secondaryButton("返回") { render() }, blockTop())
+        if (landscape) {
+            val actions = LinearLayout(this).apply {
+                orientation = LinearLayout.HORIZONTAL
+            }
+            actions.addView(secondaryButton("换一张二维码") { qrRefresh?.invoke() },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+            actions.addView(secondaryButton("手机号登录") { selectLoginMode(LOGIN_PHONE) },
+                LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f).apply {
+                    leftMargin = dp(8)
+                })
+            body.addView(actions, blockTop())
+        } else {
+            body.addView(secondaryButton("换一张二维码") { qrRefresh?.invoke() }, blockTop())
+            body.addView(secondaryButton("返回") { render() }, blockTop())
+        }
 
         startQr(session, code, state)
     }
@@ -396,7 +551,13 @@ class PhoneAccountActivity : PhoneActivity() {
         }
         login = session
 
-        body.addView(note("未注册的手机号会自动创建账号。验证码由平台短信发出，本机不会保存它。"))
+        if (landscape) {
+            body.addView(loginTitle("手机号登录", "验证码由平台短信发出，未注册手机号会自动创建账号"))
+        }
+        body.addView(note(
+            if (landscape) "本机不会保存验证码。"
+            else "未注册的手机号会自动创建账号。验证码由平台短信发出，本机不会保存它。"
+        ))
 
         // 区号 + 手机号同一行，与电视端登录卡完全一致（左边区号按钮、右边输入框）。
         //
@@ -429,8 +590,6 @@ class PhoneAccountActivity : PhoneActivity() {
             phone.input.setSelection(local.length)
         }
         body.addView(phone, blockTop())
-        val code = field("验证码", "收到短信后填入", InputType.TYPE_CLASS_NUMBER, 8)
-        body.addView(code, blockTop())
 
         /** 手机号归一：与电视端同一个函数（带 `+` 的原样送出，否则按所选区号拼 E.164）。 */
         fun normalizedNumber(): String? =
@@ -444,7 +603,6 @@ class PhoneAccountActivity : PhoneActivity() {
             phoneSize(12)
             visibility = View.GONE
         }
-        body.addView(state, blockTop())
 
         lateinit var send: TextView
         fun setState(text: String, show: Boolean = text.isNotEmpty()) {
@@ -462,7 +620,7 @@ class PhoneAccountActivity : PhoneActivity() {
             }
             send.isEnabled = false
             send.alpha = .45f
-            send.text = "$left 秒后可重发"
+            send.text = if (landscape) "$left 秒\n后可重发" else "$left 秒后可重发"
             val tick = object : Runnable { override fun run() = refreshCooldown() }
             cooldownTick = tick
             root.postDelayed(tick, 1000L)
@@ -528,9 +686,26 @@ class PhoneAccountActivity : PhoneActivity() {
             // 点「不同意」时一个请求都不会发出。
             PhoneConsent.confirmSms(this) { sendCodeNow(number) }
         }
-        body.addView(send, blockTop())
+        if (landscape) {
+            send.background = null
+            send.setTextColor(PhoneStyle.accent)
+            send.phoneSize(10)
+            send.setPadding(0, 0, 0, 0)
+            send.includeFontPadding = false
+            send.maxLines = 2
+            send.gravity = Gravity.CENTER
+        }
+        val code = field(
+            "验证码",
+            "收到短信后填入",
+            InputType.TYPE_CLASS_NUMBER,
+            8,
+            trailing = send.takeIf { landscape },
+        )
+        body.addView(code, blockTop())
+        body.addView(state, blockTop())
 
-        body.addView(primaryButton("登录") {
+        val loginButton = primaryButton("登录") {
             val number = normalizedNumber()
             val value = code.input.text?.toString()?.trim().orEmpty()
             if (number == null) { setState("请先填手机号"); return@primaryButton }
@@ -539,8 +714,10 @@ class PhoneAccountActivity : PhoneActivity() {
             pendingCode = value
             setState("正在登录…")
             doLogin(session, number, value)
-        }, blockTop())
-        body.addView(secondaryButton("返回") { render() }, blockTop())
+        }
+        if (!landscape) body.addView(send, blockTop())
+        body.addView(loginButton, blockTop())
+        if (!landscape) body.addView(secondaryButton("返回") { render() }, blockTop())
     }
 
     private fun doLogin(session: com.hgtv.star.core.PhoneLogin, number: String, value: String, ticket: String = "") {
@@ -600,7 +777,7 @@ class PhoneAccountActivity : PhoneActivity() {
                 }
             }
         }, blockTop())
-        body.addView(secondaryButton("返回") { render() }, blockTop())
+        if (!landscape) body.addView(secondaryButton("返回") { render() }, blockTop())
     }
 
     /**
@@ -620,6 +797,30 @@ class PhoneAccountActivity : PhoneActivity() {
 
     // ---------------------------------------------------------------- 导入
 
+    /** 横屏的第三个登录页：不再用弹窗，直接作为顶部“导入账号参数”模式的内容。 */
+    private fun renderImport() {
+        body.removeAllViews()
+        body.addView(loginTitle("导入账号参数", "粘贴官方 App 的 cookieStore.xml，或一个 sessionid"))
+        body.addView(note(
+            "参数只保存在本机，不会上传到任何服务器。导入后会先验证登录态，验证失败不会覆盖当前账号。"
+        ), blockTop())
+        val input = EditText(this).apply {
+            hint = "粘贴 cookieStore.xml 全文，或一个 sessionid"
+            setHintTextColor(PhoneStyle.textFaint)
+            setTextColor(PhoneStyle.text)
+            phoneSize(if (landscape) 13 else 15)
+            inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
+            minLines = 4
+            maxLines = 8
+            setPadding(dp(14), dp(12), dp(14), dp(12))
+            applyWell(PhoneStyle.well, 14f, 4f)
+        }
+        body.addView(input, blockTop())
+        body.addView(primaryButton("导入账号参数") {
+            importText(input.text?.toString().orEmpty())
+        }, blockTop())
+    }
+
     private fun showImportDialog() {
         val input = EditText(this).apply {
             hint = "粘贴 cookieStore.xml 全文，或一个 sessionid"
@@ -627,8 +828,8 @@ class PhoneAccountActivity : PhoneActivity() {
             setTextColor(PhoneStyle.text)
             phoneSize(13)
             inputType = InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_MULTI_LINE
-            minLines = 4
-            maxLines = 8
+            minLines = if (landscape) 2 else 4
+            maxLines = if (landscape) 4 else 8
             setPadding(dp(14), dp(12), dp(14), dp(12))
             applyWell(PhoneStyle.well, 14f, 4f)
         }
@@ -701,6 +902,7 @@ class PhoneAccountActivity : PhoneActivity() {
      *
      * [leading] 非空时把它**并进同一个凹槽**（手机号那一行的区号按钮）：左边是它，
      * 中间一条细分隔线，右边才是输入框——读起来是一个控件，而不是两个并排的框。
+     * [trailing] 同理放在右侧（验证码输入框里的「获取验证码」）。
      */
     private fun field(
         label: String,
@@ -708,19 +910,20 @@ class PhoneAccountActivity : PhoneActivity() {
         type: Int,
         maxLength: Int,
         leading: View? = null,
+        trailing: View? = null,
     ): LinearLayout {
         val column = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
         column.addView(TextView(this).apply {
             text = label
             setTextColor(PhoneStyle.textDim)
-            phoneSize(12)
-            setPadding(dp(4), 0, 0, dp(6))
+            phoneSize(if (landscape) 10 else 12)
+            setPadding(dp(4), 0, 0, dp(if (landscape) 2 else 6))
         })
         val input = EditText(this).apply {
             hint = hintText
             setHintTextColor(PhoneStyle.textFaint)
             setTextColor(PhoneStyle.text)
-            phoneSize(15)
+            phoneSize(if (landscape) 12 else 15)
             setSingleLine()
             background = null
             inputType = type
@@ -730,32 +933,40 @@ class PhoneAccountActivity : PhoneActivity() {
         val box = FrameLayout(this).apply {
             applyWell(PhoneStyle.well, 18f, 4f)
         }
-        if (leading == null) {
-            box.addView(input, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            ).apply { leftMargin = dp(6); rightMargin = dp(6) })
-        } else {
+        val leadingWidth = if (leading == null) 0 else 62
+        val trailingWidth = if (trailing == null) 0 else 62
+        val leftInset = if (leading == null) 6 else 6 + leadingWidth + 2 + 1 + 8
+        val rightInset = if (trailing == null) 6 else 6 + trailingWidth + 2 + 1 + 8
+        if (leading != null) {
             // 区号占固定宽度（最长的 `+886 ▾` 也放得下），输入框吃剩下的全部。
-            val regionWidth = 62
             box.addView(leading, FrameLayout.LayoutParams(
-                dp(regionWidth), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START
+                dp(leadingWidth), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START
             ).apply { leftMargin = dp(6) })
             // 一条细竖线：区号与号码是两件事，但共用一块凹槽。
             // 用主题的 `separator` 而不是写死的白色——浅色主题下白线是看不见的。
             box.addView(View(this).apply { setBackgroundColor(PhoneStyle.separator) },
                 FrameLayout.LayoutParams(dp(1), dp(18), Gravity.CENTER_VERTICAL).apply {
-                    leftMargin = dp(6 + regionWidth + 2)
+                    leftMargin = dp(6 + leadingWidth + 2)
                 })
-            input.setPadding(dp(6), 0, dp(14), 0)
-            box.addView(input, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            ).apply {
-                leftMargin = dp(6 + regionWidth + 2 + 1 + 8)
-                rightMargin = dp(6)
-            })
         }
+        if (trailing != null) {
+            box.addView(View(this).apply { setBackgroundColor(PhoneStyle.separator) },
+                FrameLayout.LayoutParams(dp(1), dp(18), Gravity.CENTER_VERTICAL or Gravity.END).apply {
+                    rightMargin = dp(6 + trailingWidth + 2)
+                })
+            box.addView(trailing, FrameLayout.LayoutParams(
+                dp(trailingWidth), ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END
+            ).apply { rightMargin = dp(6) })
+        }
+        input.setPadding(dp(6), 0, dp(14), 0)
+        box.addView(input, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+        ).apply {
+            leftMargin = dp(leftInset)
+            rightMargin = dp(rightInset)
+        })
         column.addView(box, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, dp(48)
+            ViewGroup.LayoutParams.MATCH_PARENT, dp(if (landscape) 26 else 48)
         ))
         column.tag = input
         return column
@@ -767,10 +978,10 @@ class PhoneAccountActivity : PhoneActivity() {
         TextView(this).apply {
             this.text = text
             setTextColor(PhoneStyle.onLit)
-            phoneSize(15)
+            phoneSize(if (landscape) 12 else 15)
             gravity = Gravity.CENTER
             setTypeface(typeface, android.graphics.Typeface.BOLD)
-            setPadding(dp(16), dp(13), dp(16), dp(13))
+            setPadding(dp(16), dp(if (landscape) 6 else 13), dp(16), dp(if (landscape) 6 else 13))
             applySoft(SoftStyle.RAISED, PhoneStyle.lit, PhoneStyle.RADIUS_PILL, 4f)
             setOnClickListener { onClick() }
         }
@@ -779,9 +990,9 @@ class PhoneAccountActivity : PhoneActivity() {
         TextView(this).apply {
             this.text = text
             setTextColor(PhoneStyle.text)
-            phoneSize(15)
+            phoneSize(if (landscape) 12 else 15)
             gravity = Gravity.CENTER
-            setPadding(dp(16), dp(13), dp(16), dp(13))
+            setPadding(dp(16), dp(if (landscape) 6 else 13), dp(16), dp(if (landscape) 6 else 13))
             applySoft(SoftStyle.RAISED, PhoneStyle.surface, PhoneStyle.RADIUS_PILL, 4f)
             setOnClickListener { onClick() }
         }
@@ -811,13 +1022,36 @@ class PhoneAccountActivity : PhoneActivity() {
         TextView(this).apply {
             this.text = text
             setTextColor(PhoneStyle.textFaint)
-            phoneSize(12)
-            setLineSpacing(dp(3).toFloat(), 1f)
+            phoneSize(if (landscape) 11 else 12)
+            setLineSpacing(dp(if (landscape) 2 else 3).toFloat(), 1f)
         }
 
     private fun blockTop() = LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-    ).apply { topMargin = dp(12) }
+    ).apply { topMargin = dp(if (landscape) 4 else 12) }
+
+    private fun loginTitle(heading: String, subtitle: String): LinearLayout =
+        LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            addView(TextView(this@PhoneAccountActivity).apply {
+                text = heading
+                setTextColor(PhoneStyle.text)
+                phoneSize(if (landscape) 16 else 18)
+                setTypeface(typeface, android.graphics.Typeface.BOLD)
+            })
+            addView(TextView(this@PhoneAccountActivity).apply {
+                text = subtitle
+                setTextColor(PhoneStyle.textDim)
+                phoneSize(if (landscape) 10 else 11)
+                setPadding(0, dp(if (landscape) 2 else 3), 0, 0)
+            })
+        }
+
+    private fun landscapeCardWidth(): Int {
+        val available = (resources.displayMetrics.widthPixels - dp(40)).coerceAtLeast(dp(220))
+        return minOf(dp(360), (available * .64f).toInt())
+            .coerceAtLeast(minOf(dp(200), available))
+    }
 
     private fun toast(text: String) {
         android.widget.Toast.makeText(this, text, android.widget.Toast.LENGTH_SHORT).show()
@@ -826,6 +1060,66 @@ class PhoneAccountActivity : PhoneActivity() {
     private fun statusBarHeight(): Int {
         val id = resources.getIdentifier("status_bar_height", "dimen", "android")
         return if (id > 0) resources.getDimensionPixelSize(id) else dp(24)
+    }
+
+    /** 横屏账号页按 TV 登录页处理：隐藏系统状态栏与导航栏，只保留页面自己的紧凑模式栏。 */
+    @Suppress("DEPRECATION")
+    private fun applyLandscapeImmersive() {
+        if (!landscape) return
+        if (android.os.Build.VERSION.SDK_INT >= 21) {
+            window.statusBarColor = android.graphics.Color.TRANSPARENT
+            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+        }
+        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        window.decorView.systemUiVisibility = (
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+            )
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+            window.insetsController?.let { controller ->
+                controller.hide(
+                    android.view.WindowInsets.Type.statusBars() or
+                        android.view.WindowInsets.Type.navigationBars()
+                )
+                controller.systemBarsBehavior =
+                    android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        window.decorView.post {
+            if (!landscape || isFinishing || isDestroyed) return@post
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                window.insetsController?.hide(
+                    android.view.WindowInsets.Type.statusBars() or
+                        android.view.WindowInsets.Type.navigationBars()
+                )
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        if (landscape) applyLandscapeImmersive()
+    }
+
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && landscape) applyLandscapeImmersive()
+    }
+
+    override fun onSaveInstanceState(outState: Bundle) {
+        outState.putInt(STATE_LOGIN_MODE, loginMode)
+        super.onSaveInstanceState(outState)
     }
 
     override fun onPause() {

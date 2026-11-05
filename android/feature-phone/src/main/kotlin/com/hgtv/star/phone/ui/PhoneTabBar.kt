@@ -28,7 +28,7 @@ import android.widget.TextView
  * └── paddingBottom = 系统导航条（三键导航时不被遮住）
  * ```
  */
-class PhoneTabBar(context: Context) : LinearLayout(context) {
+class PhoneTabBar(context: Context, private val compact: Boolean = false) : LinearLayout(context) {
 
     enum class Icon { HOME, GRID, RANK, MINE }
 
@@ -57,10 +57,10 @@ class PhoneTabBar(context: Context) : LinearLayout(context) {
         // 否则 50dp 高的条和页面底色差 3%，暗处几乎看不出边界。
         // **不留系统导航条的空白**：官方 App 的底栏也是贴到屏幕最底（`[14,1833]–[1066,1920]`）。
         // 之前按 navigation_bar_height 预留 48dp，看起来就是「文字离底边一大截」。
-        setPadding(0, context.dp(1), 0, context.dp(1))
+        setPadding(0, if (compact) 0 else context.dp(1), 0, if (compact) 0 else context.dp(1))
 
         items.forEachIndexed { index, item ->
-            val cell = Cell(context, item)
+            val cell = Cell(context, item, compact)
             cell.setOnClickListener {
                 // 不判断「是不是已经选中」：选中态由宿主（PhoneMainActivity.show）统一驱动，
                 // 这里再判一次会和真实显示的页面对不上——用户点了没反应，就是这个原因。
@@ -94,7 +94,7 @@ class PhoneTabBar(context: Context) : LinearLayout(context) {
 
     private val highlight = Paint(Paint.ANTI_ALIAS_FLAG)
 
-    private inner class Cell(context: Context, item: Item) : LinearLayout(context) {
+    private inner class Cell(context: Context, item: Item, compact: Boolean) : LinearLayout(context) {
         private val iconView = Glyph(context, item.icon)
         private val label = TextView(context).apply {
             text = item.label
@@ -102,7 +102,7 @@ class PhoneTabBar(context: Context) : LinearLayout(context) {
             // 16dp 图标 + 13 号字（×0.5 后约 20px） = 图标占格 40%，视觉重心在图标上，
             // 字只做注脚——之前 22dp 图标 + 14 号字两者一样重，整条看起来又高又挤。
             // 整条高度收到 34dp 之后，字再降一档到 11，否则字会顶到格子下沿。
-            phoneSize(11)
+            phoneSize(if (compact) 9 else 11)
             gravity = Gravity.CENTER
             includeFontPadding = false
         }
@@ -110,10 +110,11 @@ class PhoneTabBar(context: Context) : LinearLayout(context) {
         init {
             orientation = VERTICAL
             gravity = Gravity.CENTER
-            addView(iconView, LinearLayout.LayoutParams(context.dp(14), context.dp(14)))
+            val iconSize = context.dp(if (compact) 11 else 14)
+            addView(iconView, LinearLayout.LayoutParams(iconSize, iconSize))
             addView(label, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { topMargin = context.dp(1) })
+            ).apply { topMargin = if (compact) 0 else context.dp(1) })
         }
 
         fun applySelected(selected: Boolean) {
@@ -184,7 +185,8 @@ class PhoneTabBar(context: Context) : LinearLayout(context) {
                 Icon.MINE -> {
                     canvas.drawCircle(w * .5f, h * .33f, w * .15f, fill)
                     path.reset()
-                    path.addArc(w * .22f, h * .52f, w * .78f, h * 1.0f, 180f, 180f)
+                    rect.set(w * .22f, h * .52f, w * .78f, h * 1.0f)
+                    path.addArc(rect, 180f, 180f)
                     canvas.drawPath(path, stroke)
                 }
             }

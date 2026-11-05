@@ -21,10 +21,10 @@ import android.widget.TextView
  * | 形态 | 位置与尺寸 |
  * | --- | --- |
  * | 竖屏 | 底部整宽、直角 |
- * | 横屏 | **右侧 1/3 屏宽**、整高、直角 |
+ * | 横屏 | 底部整宽、限高、直角 |
  *
- * 横屏用右侧 1/3 而不是整宽：全屏时画面是横向的，整宽面板会把正在看的内容整个盖住；
- * 右侧三分之一既够放三行设置，又留出左边三分之二的画面。
+ * 横屏也不再铺成整高右抽屉：选集/设置内容多时右侧整高会显得过大，
+ * 底部限高浮层更接近 TV 端，网格放不下时只在面板内部滚动。
  */
 class PhoneSheet(private val host: FrameLayout) {
 
@@ -72,7 +72,7 @@ class PhoneSheet(private val host: FrameLayout) {
         landscape: Boolean,
         dim: Boolean = true,
         /**
-         * 竖屏面板**整体**最多占屏高的比例（含标题行与内边距）。
+         * 面板**整体**最多占屏高的比例（含标题行与内边距，横竖屏共用）。
          *
          * 播放设置通常传 1/3 到 1/2：那一屏底下还在放视频，面板铺到 90% 就等于把画面关掉了；
          * 限高 + 内部滚动，既能看到当前几项，也不挡画面。
@@ -101,8 +101,7 @@ class PhoneSheet(private val host: FrameLayout) {
             orientation = LinearLayout.VERTICAL
             // 面板本身吃掉空白处的点击：否则点在两行之间会穿到背后的遮罩上、误收面板。
             isClickable = true
-            // 横屏抽屉只有 1/3 屏宽，左右各留 10dp 就够：选集要在这里排 5 列，
-            // 每多留 4dp 内边距，每格就少 1.6dp。
+            // 横屏改成底部整宽后，左右留白仍收得比竖屏小，给选集 10 列留出空间。
             // 底部**不留导航条高度的空带**：面板是一张贴底的材料，
             // 底下多一截纯色 padding 读起来就是「面板没铺到底」。
             setPadding(
@@ -143,8 +142,7 @@ class PhoneSheet(private val host: FrameLayout) {
         // 这正是「显示不全、也滑不动」。限高之后，多出来的部分由滚动承担。
         // 减掉标题行与上下内边距：比例说的是**整块面板**，不是滚动区。
         val chrome = dp(10) + dp(12) + bottomInset + dp(34)
-        val cap = if (landscape) 0 else
-            (screenHeight() * heightFraction).toInt().minus(chrome).coerceAtLeast(dp(120))
+        val cap = (screenHeight() * heightFraction).toInt().minus(chrome).coerceAtLeast(dp(96))
         val scroller = CappedScrollView(host.context, cap).apply {
             addView(inner, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -152,15 +150,9 @@ class PhoneSheet(private val host: FrameLayout) {
             isVerticalScrollBarEnabled = false
             overScrollMode = View.OVER_SCROLL_NEVER
         }
-        if (landscape) {
-            panel.addView(scroller, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-            ))
-        } else {
-            panel.addView(scroller, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-        }
+        panel.addView(scroller, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
 
         // 空白背板：既是「点空白处收起」的落点，也是面板外面那一片的触摸拦截。
         //
@@ -196,20 +188,11 @@ class PhoneSheet(private val host: FrameLayout) {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
 
-        val lp = if (landscape) {
-            // 右侧 1/3：整高、贴右、不留边距——它是一条抽屉，不是一张卡片。
-            FrameLayout.LayoutParams(
-                (screenWidth() / 3).coerceAtLeast(dp(180)),
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                Gravity.END
-            )
-        } else {
-            FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-                Gravity.BOTTOM
-            )
-        }
+        val lp = FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.BOTTOM
+        )
         host.addView(panel, lp)
         scrim = shade
         sheet = panel
@@ -233,9 +216,6 @@ class PhoneSheet(private val host: FrameLayout) {
         dismiss()
         if (notifyHost) onUserDismiss?.invoke()
     }
-
-    private fun screenWidth(): Int =
-        host.width.takeIf { it > 0 } ?: host.resources.displayMetrics.widthPixels
 
     private fun screenHeight(): Int =
         host.height.takeIf { it > 0 } ?: host.resources.displayMetrics.heightPixels
@@ -339,7 +319,7 @@ class PhoneSheet(private val host: FrameLayout) {
          * 选项**点下去立刻换高亮**（[paint] 在点击时先跑一遍），再回调业务。
          * 之前只回调业务、不重画：用户看到的是「点了没反应，但画面确实变了」。
          *
-         * [perLine] > 0 时按每行固定个数折行（横屏 1/3 宽的抽屉里，六档倍速一行放不下）；
+         * [perLine] > 0 时按每行固定个数折行（横屏底部浮层里，六档倍速一行放不下）；
          * 0 表示全部排在一行、等分铺满。
          */
         fun row(

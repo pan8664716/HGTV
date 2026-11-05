@@ -63,6 +63,8 @@ object PhoneColor {
      * 间隙 2 → 1dp，内容约 21dp，上下各留 6.5dp。整条比原来矮 19%。
      */
     const val TAB_BAR_DP = 34f
+    /** 横屏沉浸时底栏进一步压扁。 */
+    const val TAB_BAR_LANDSCAPE_DP = 24f
 }
 
 /** 与官方实测一致的尺寸令牌（dp）。 */
@@ -313,7 +315,17 @@ fun Context.navigationBarPx(): Int {
  *
  * 全屏内容要按这个数往上留白，否则最后一行会被 tab 栏压住。
  */
-fun Context.tabBarInset(): Int = dp(PhoneColor.TAB_BAR_DP) + navigationBarPx()
+fun Context.phoneTabBarHeightPx(): Int {
+    val landscape = resources.configuration.orientation ==
+        android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    return dp(if (landscape) PhoneColor.TAB_BAR_LANDSCAPE_DP else PhoneColor.TAB_BAR_DP)
+}
+
+fun Context.tabBarInset(): Int {
+    val landscape = resources.configuration.orientation ==
+        android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    return phoneTabBarHeightPx() + if (landscape) 0 else navigationBarPx()
+}
 
 /** 圆角实心背景。 */
 fun roundedBackground(color: Int, radiusDp: Float): GradientDrawable = GradientDrawable().apply {

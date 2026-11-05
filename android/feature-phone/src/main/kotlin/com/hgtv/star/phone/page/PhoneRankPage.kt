@@ -23,11 +23,19 @@ import com.hgtv.star.phone.ui.tabBarInset
  *
  * 顶栏与分类页一样固定常驻，不随海报列表滚动自动收起。
  */
-class PhoneRankPage(context: Context) : LinearLayout(context) {
+class PhoneRankPage(
+    context: Context,
+    initialState: State? = null,
+) : LinearLayout(context) {
+
+    data class State(
+        val selected: Int,
+        val feed: PhonePosterFeed.Snapshot,
+    )
 
     private val topBar = PhoneTopBar(context)
     private val feed = PhonePosterFeed(context)
-    private var selected = 0
+    private var selected = initialState?.selected ?: 0
 
     private val boards = RankBoard.entries
 
@@ -37,7 +45,7 @@ class PhoneRankPage(context: Context) : LinearLayout(context) {
 
         feed.ranked = true
         // 分类 / 榜单默认 2 列：封面够大，一屏也能扫到几张。
-        // 列数跟着设置（1 / 2 / 3），与分类页同一份。
+        // 列数跟着设置：竖屏 1–3，横屏映射为 4–6，与分类页同一份。
         feed.applyColumnsFromSettings()
         feed.bottomInset = context.tabBarInset() + context.dp(8)
         // 点海报先进详情页（与 TV 一致）。
@@ -58,7 +66,7 @@ class PhoneRankPage(context: Context) : LinearLayout(context) {
             )
         }
 
-        topBar.setTabs(boards.map { it.label }, 0) { index -> selectBoard(index) }
+        topBar.setTabs(boards.map { it.label }, selected) { index -> selectBoard(index) }
         topBar.onSearch = {
             context.phoneNav().open(Route.Search)
         }
@@ -66,7 +74,31 @@ class PhoneRankPage(context: Context) : LinearLayout(context) {
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(feed, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
-        selectBoard(0)
+        val restored = initialState?.feed
+        if (restored?.loaded == true) {
+            restoreBoard(selected, restored)
+        } else {
+            selectBoard(selected)
+        }
+    }
+
+    fun snapshotState(): State = State(
+        selected = selected,
+        feed = feed.snapshot(),
+    )
+
+    private fun restoreBoard(index: Int, snapshot: PhonePosterFeed.Snapshot) {
+        selected = index
+        topBar.applyTabSelection(index)
+        val board = boards[index]
+        feed.ranked = board.ranked
+        val repo = PhoneServices.repository(context)
+        val lib = PhoneServices.library(context)
+        feed.restore(snapshot) { page ->
+            repo.rank(page, board)?.let {
+                CatalogFilter.visible(it, runCatching { lib.hidden() }.getOrDefault(emptySet()))
+            }
+        }
     }
 
     private fun selectBoard(index: Int) {

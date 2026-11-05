@@ -133,13 +133,17 @@ fun buildPlaybackSettingsRows(
 
     // 手机 / 平板比电视多一档 3×（见 `PlaybackSpeed.phoneOptions`），一共七档。
     val speeds = PlaybackSpeed.phoneOptions
+    // 推荐页横屏的底部设置面板宽度足够，七档倍速排成一行；竖屏/其它面板仍按 4+3 折行。
+    val speedPerLine = if (perLine == 0 && host.context.resources.configuration.orientation ==
+        android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    ) 0 else 4
     // 倍速七档、定时八档：一行排不下（每颗还要写出「1.25×」「90 分钟」这种读数），
     // 因此这两行**固定折行**——倍速 4+3、定时 4+4。
     // 不再跟 [perLine] 走：横屏抽屉按 3 列排会把定时拆成 3+3+2 三行，与竖屏不一致；
     // 倍速按 3 列排则会把第 7 档单独甩到最后一行（那一行只有一颗、被权重拉成整行宽）。
     panel.addView(
         PhoneSheet.row(host, "倍速", speeds.map { PlaybackSpeed.label(it) },
-            speeds.indexOf(speed).coerceAtLeast(0), perLine = 4) { i ->
+            speeds.indexOf(speed).coerceAtLeast(0), perLine = speedPerLine) { i ->
             lib.playbackSpeed = speeds[i]
             onSpeed(speeds[i])
         }

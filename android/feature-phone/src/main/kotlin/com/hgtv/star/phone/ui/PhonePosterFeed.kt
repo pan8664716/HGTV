@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
 /**
- * 海报网格（默认两列，可在设置里选 1 / 2 / 3 列），分类 / 榜单 / 搜索三个页面共用。
+ * 海报网格（竖屏基准 1–3 列，横屏映射为 4–6 列），分类 / 榜单 / 搜索三个页面共用。
  *
  * 分页、去重、加载更多都在这里，页面只提供「第 N 页取什么」：
  *
@@ -34,6 +34,17 @@ import kotlinx.coroutines.withContext
  * 与 TV 端 `RankBoard.ranked` 的判断一致（「上新」那一栏同样不画名次）。
  */
 class PhonePosterFeed(context: Context) : FrameLayout(context) {
+
+    /** 跨 Activity 重建复用的纯数据快照，不持有 View / Context。 */
+    data class Snapshot(
+        val items: List<Series>,
+        val page: Int,
+        val ended: Boolean,
+        val heatBy: Map<String, String>,
+        val emptyVisible: Boolean,
+        val emptyText: String,
+        val loaded: Boolean,
+    )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val items = ArrayList<Series>()
@@ -48,6 +59,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     private var emptyVisible = false
     private var loader: (suspend (Int) -> CatalogPage?)? = null
     private var job: Job? = null
+    private var hasLoadedOnce = false
 
     /**
      * 服务端给的热度原串，按剧 id 存（`id → "9014万"`）。
@@ -96,12 +108,12 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     /**
      * 每行列数。
      *
-     * 默认取设置里的「列表每行」（1 / 2 / 3，出厂 2）。分类 / 榜单 / 收藏这些栅格页
+     * 默认取设置里的「列表每行」（竖屏 1–3、横屏 4–6，出厂 2 / 5）。分类 / 榜单 / 收藏这些栅格页
      * 全部跟着它走——同一个应用里两种列数会让人以为「这两页不是一套」。
      */
     var columns = 2
         set(value) {
-            val next = value.coerceIn(1, 3)
+            val next = value.coerceIn(1, 6)
             if (field == next) return
             field = next
             grid.layoutManager = gridManager(next)
@@ -149,8 +161,11 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         grid.post { onScrollSettled?.invoke(0) }
     }
 
-    /** 空态提示。 */
-    private val empty = TextView(context).apply {
+    /** 空态文案。每个 ViewHolder 单独建 View，避免刷新时复用仍挂在列表上的同一个实例。 */
+    private var emptyText = "暂无内容"
+
+    private fun newEmptyView() = TextView(context).apply {
+        text = emptyText
         setTextColor(PhoneStyle.textFaint)
         phoneSize(13)
         gravity = Gravity.CENTER
@@ -343,13 +358,49 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             com.hgtv.star.phone.PhoneServices.library(context)
                 .takeIf { it.isLoaded }?.gridColumns
         }.getOrNull() ?: return
-        columns = value
+        val landscape = resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        columns = value.coerceIn(1, 3) + if (landscape) 3 else 0
     }
 
     /** 换数据源：清空后从第 1 页重新取。 */
     fun load(loader: suspend (Int) -> CatalogPage?) {
         this.loader = loader
         reset()
+    }
+
+    fun snapshot(): Snapshot = Snapshot(
+        items = items.toList(),
+        page = page,
+        ended = ended,
+        heatBy = heatBy,
+        emptyVisible = emptyVisible,
+        emptyText = emptyText,
+        loaded = hasLoadedOnce,
+    )
+
+    /**
+     * 用重建前的数据直接铺回网格。
+     *
+     * [loader] 只用于之后继续翻页；恢复本身不会发请求。
+     */
+    fun restore(
+        snapshot: Snapshot,
+        loader: (suspend (Int) -> CatalogPage?)? = null,
+    ) {
+        job?.cancel()
+        this.loader = loader
+        items.clear()
+        items += snapshot.items
+        selectedIds.clear()
+        page = snapshot.page
+        loading = false
+        ended = snapshot.ended
+        heatBy = snapshot.heatBy
+        emptyVisible = snapshot.emptyVisible
+        emptyText = snapshot.emptyText
+        hasLoadedOnce = snapshot.loaded
+        adapter.notifyDataSetChanged()
     }
 
     fun reset() {
@@ -362,6 +413,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         page = 1
         loading = false
         ended = false
+        hasLoadedOnce = false
         loadMore()
     }
 
@@ -377,6 +429,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 if (items.isEmpty()) showEmpty("加载失败，下拉重试")
                 return@launch
             }
+            hasLoadedOnce = true
             val fresh = result.items.filter { s -> items.none { it.id == s.id } }
             // 榜单这一页的名次与热度按 id 并入：翻页只带自己那一页，整体覆盖会把前几页的丢掉。
             result.ranking?.positions?.let { positions ->
@@ -401,7 +454,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     }
 
     private fun showEmpty(text: String) {
-        empty.text = text
+        emptyText = text
         if (emptyVisible) {
             adapter.notifyItemChanged(adapter.headerCount)
         } else {
@@ -421,8 +474,9 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         selectedIds.retainAll(rows.map { it.id }.toSet())
         ended = !more
         page = 1
+        hasLoadedOnce = true
         emptyVisible = rows.isEmpty()
-        if (emptyVisible) empty.text = "暂无内容"
+        if (emptyVisible) emptyText = "暂无内容"
         adapter.notifyDataSetChanged()
     }
 
@@ -456,10 +510,11 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 return FixedHolder(view)
             }
             if (viewType == TYPE_EMPTY) {
-                empty.layoutParams = RecyclerView.LayoutParams(
+                val view = newEmptyView()
+                view.layoutParams = RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
                 )
-                return FixedHolder(empty)
+                return FixedHolder(view)
             }
             val gap = dp(PhoneDimen.POSTER_GAP)
             val width = (resources.displayMetrics.widthPixels
@@ -480,6 +535,12 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         override fun getItemCount(): Int = posterStart + items.size
 
         override fun onBindViewHolder(holder: RecyclerView.ViewHolder, position: Int) {
+            if (position < posterStart) {
+                // 空态和头部共用前置项；只有空态项才需要写文案。
+                // 这里不能用 `position == headerCount`：没有空态时它会误伤第一张海报。
+                if (position == headerCount) (holder.itemView as? TextView)?.text = emptyText
+                return
+            }
             val itemPosition = position - posterStart
             if (itemPosition < 0 || itemPosition >= items.size) return
             (holder.itemView as PosterCell).bind(items[itemPosition], itemPosition)

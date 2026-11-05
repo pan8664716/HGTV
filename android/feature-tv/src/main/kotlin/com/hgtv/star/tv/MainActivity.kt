@@ -333,15 +333,29 @@ class MainActivity: Activity() {
      */
     var failureHandledSession=-1
     var failureHandledAt=0L
-    /**
-     * 播完的那一项是否还挂在播放列表里（等 800ms 后摘）。
-     *
-     * 置位期间不关旧视频：那一项的数据源还在列表里，关早了 ExoPlayer 重新 prepare 时
-     * 会读到已关闭对象（见 [retirePreviousEpisode]）。
-     */
+    /** 播完的那一项是否还挂在播放列表里（等新集 READY + 首帧后再摘）。 */
     var playedItemPending=false
-    /** 待摘那一项的 mediaId：3 秒兜底时用它确认「确实已经不在列表里」再关资源。 */
+    /** 待摘那一项的 mediaId：确认它确实不在播放列表里后才关资源。 */
     var playedItemId=""
+    /**
+     * 每次自动切集独立的清理令牌。
+     *
+     * 播放会话号在无感切集时刻意不变，因此不能用它隔离延迟清理；连续切集时旧任务
+     * 必须凭这个令牌自行作废，不能作用到后一集。
+     */
+    var transitionCleanupToken=0
+    /** 本次自动切集后的新集 mediaId。 */
+    var transitionMediaId=""
+    /** 新集是否已经 READY。 */
+    var transitionReady=false
+    /** 新集是否已经真正出过首帧。 */
+    var transitionFirstFrame=false
+    /** 旧项移除是否已经发起，避免 READY / 首帧两个回调重复删除。 */
+    var transitionDropRequested=false
+    /** 移除发起后的确认重试次数；只重试一小段时间，最终仍由 timeline 回调兜底。 */
+    var transitionConfirmAttempts=0
+    /** 最近一次真正上屏的 mediaId，用于切集回调晚到时补判首帧。 */
+    var lastRenderedMediaId=""
     /**
      * 摘不掉、又不能当场关的资源（列表正在重建等极端情况）。
      *

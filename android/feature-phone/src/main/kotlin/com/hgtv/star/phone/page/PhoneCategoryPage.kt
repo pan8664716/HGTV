@@ -49,7 +49,17 @@ import kotlinx.coroutines.withContext
  *
  * 顶栏固定；子分类筛选行是网格的第一项，和海报一起滚动。
  */
-class PhoneCategoryPage(context: Context) : LinearLayout(context) {
+class PhoneCategoryPage(
+    context: Context,
+    initialState: State? = null,
+) : LinearLayout(context) {
+
+    data class State(
+        val selection: CategorySelection,
+        val genreIndex: Int,
+        val panel: CategoryPanel?,
+        val feed: PhonePosterFeed.Snapshot,
+    )
 
     private val topBar = PhoneTopBar(context)
     /** 子分类筛选：作为列表头部随海报一起滚动，不自动收起。 */
@@ -60,9 +70,9 @@ class PhoneCategoryPage(context: Context) : LinearLayout(context) {
     private val feed = PhonePosterFeed(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
-    private var selection = CategorySelection()
-    private var genreIndex = 0
-    private var panel: CategoryPanel? = null
+    private var selection = initialState?.selection ?: CategorySelection()
+    private var genreIndex = initialState?.genreIndex ?: 0
+    private var panel: CategoryPanel? = initialState?.panel
 
     init {
         orientation = VERTICAL
@@ -73,7 +83,7 @@ class PhoneCategoryPage(context: Context) : LinearLayout(context) {
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(feed, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
-        // 列数跟着设置（1 / 2 / 3）；书库还没读完时先用出厂的 2 列，挂上窗口时再对一次。
+        // 列数跟着设置：竖屏 1–3，横屏映射为 4–6；书库未就绪时先用出厂值。
         feed.applyColumnsFromSettings()
         feed.bottomInset = context.tabBarInset() + context.dp(8)
         // 点海报先进详情页（与 TV 一致）：收藏 / 挑集 / 相关推荐都在那一页。
@@ -84,7 +94,10 @@ class PhoneCategoryPage(context: Context) : LinearLayout(context) {
         // 分类页不是历史、也不是热播榜，因此只有那四项。
         feed.onLongPress = { series -> PhoneCardMenu.show(feed, series) }
 
-        topBar.setTabs(CategoryGenres.options.map { it.label }, 0) { index -> selectGenre(index) }
+        topBar.setTabs(
+            CategoryGenres.options.map { it.label },
+            genreIndex,
+        ) { index -> selectGenre(index) }
         // 子分类紧贴主分类：顶栏底部的 2dp 与网格顶部的 4dp 一起收掉，
         // 否则两段留白叠起来就是用户读到的「空隙太大」。
         topBar.tightenBottom()
@@ -93,8 +106,24 @@ class PhoneCategoryPage(context: Context) : LinearLayout(context) {
             context.phoneNav().open(Route.Search)
         }
 
-        loadPanel()
+        val restored = initialState?.feed
+        if (restored?.loaded == true) {
+            renderFilters()
+            val repo = PhoneServices.repository(context)
+            feed.restore(restored) { page ->
+                visible(repo.categoryFeed(selection, page).page)
+            }
+        } else {
+            loadPanel()
+        }
     }
+
+    fun snapshotState(): State = State(
+        selection = selection,
+        genreIndex = genreIndex,
+        panel = panel,
+        feed = feed.snapshot(),
+    )
 
     // ---------------------------------------------------------------- 体裁
 

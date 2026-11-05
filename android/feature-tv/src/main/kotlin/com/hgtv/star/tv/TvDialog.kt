@@ -11,6 +11,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.tv.touchFocusHost
+import com.hgtv.star.shared.ui.DialogLayout
 import com.hgtv.star.shared.ui.SoftStyle
 
 /**
@@ -626,7 +627,10 @@ class TvDialog(private val activity: Activity, title: String) {
      * 面板当前窗口里允许的最大高度（像素）：可用高度再扣掉上下余量。
      */
     private fun panelMaxHeight(): Int =
-        (body.visibleWindowHeight() - dp(2 * PANEL_SCREEN_MARGIN)).coerceAtLeast(dp(160))
+        DialogLayout.panelMaxHeightPx(
+            body.visibleWindowHeight(),
+            dp(PANEL_SCREEN_MARGIN),
+        ).coerceAtLeast(dp(160))
 
     /**
      * 布局完成后按**真实窗口高度**把面板收进屏幕内——最后一道兜底。
@@ -731,8 +735,11 @@ class TvDialog(private val activity: Activity, title: String) {
     private fun dialogWidth(): Int {
         val metrics = activity.resources.displayMetrics
         // 设计稿是 472 设计单位的固定宽度面板；窄屏（手机横屏 / 分屏）上按「屏宽 − 两侧留白」收一次。
-        val max = (metrics.widthPixels - dp(48)).coerceAtLeast(dp(240))
-        return dp(TvStyle.DIALOG_WIDTH).coerceAtMost(max)
+        return DialogLayout.cappedWidthPx(
+            metrics.widthPixels,
+            dp(TvStyle.DIALOG_WIDTH),
+            dp(24),
+        )
     }
 
     /**

@@ -151,6 +151,7 @@ class PhonePlayerActivity : PhoneActivity() {
     private lateinit var landDanmaku: com.hgtv.star.shared.media.DanmakuView
     private lateinit var landTop: LinearLayout
     private lateinit var landBottom: LinearLayout
+    private lateinit var landFullscreen: LinearLayout
     private lateinit var landPlay: PhoneGlyph
     private lateinit var landCurrent: TextView
     private lateinit var landSeek: SeekBar
@@ -213,6 +214,10 @@ class PhonePlayerActivity : PhoneActivity() {
 
     /** 退出全屏后「钉住竖屏」用的方向尺子；非空 = 还没等到设备立起来（见 [pinPortraitUntilUpright]）。 */
     private var portraitPin: android.view.OrientationEventListener? = null
+    /** 当前竖屏是否由横屏播放页的竖版短剧主动进入全屏。 */
+    private var portraitFullscreenFromLandscape = false
+    /** 返回时正在先恢复横屏，恢复完成后再结束播放页。 */
+    private var finishAfterLandscapeRestore = false
 
     /**
      * 竖屏顶部标题栏在 `page` 坐标系里的下沿（像素）；0 = 还没量到。
@@ -227,6 +232,8 @@ class PhonePlayerActivity : PhoneActivity() {
      * 横屏弹幕要从它下面开始铺，否则第一行弹幕会压在剧名 / 时间上。
      */
     private var landInfoRowBottom = 0
+    private var landVideoWidth = 0
+    private var landVideoHeight = 0
     /** 本页是否在前台：屏幕常亮只看前台、真实播放意图与错误 / 定时停止状态。 */
     private var foreground = false
     /**
@@ -524,7 +531,7 @@ class PhonePlayerActivity : PhoneActivity() {
         // 方向交给系统策略（`USER`）：**跟着系统的「自动旋转屏幕」开关走**。
         // 开着 → 竖着拿就是竖屏、横着拿就是全屏；关着 → 停在进入时的方向，
         // 只有用户点「全屏」才转（见 `enterFullscreen`）。
-        // `pendingFullscreen` 是用户从推荐页点全屏进来的，交给下面去锁横屏。
+        // `pendingFullscreen` 是用户从推荐页点全屏进来的，拿到实际片源尺寸后再决定全屏方向。
         if (!pendingFullscreen) {
             requestOrientation(ActivityInfo.SCREEN_ORIENTATION_USER)
         }
@@ -937,6 +944,37 @@ class PhonePlayerActivity : PhoneActivity() {
             topMargin = dp(32)
         })
 
+        /*
+         * 横屏里的竖版短剧仍然有左右黑边。这里补一颗「全屏」入口，
+         * 点击后切回竖屏播放，让竖版画面真正铺满屏幕。
+         *
+         * 它压在画面与手势层之上，但在底部控制层之下；位置按视频实际显示范围
+         * 和底栏上沿计算，避免像推荐页那样被底栏遮住。
+         */
+        landFullscreen = LinearLayout(this).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER
+            setPadding(dp(5), dp(1), dp(5), dp(1))
+            background = roundedBackground(0x33FFFFFF, dp(8).toFloat())
+            addView(PhoneGlyph(this@PhonePlayerActivity, PhoneGlyph.Kind.FULLSCREEN).apply {
+                tint = Color.WHITE
+            }, LinearLayout.LayoutParams(dp(10), dp(10)))
+            addView(TextView(this@PhonePlayerActivity).apply {
+                text = "全屏"
+                setTextColor(Color.WHITE)
+                phoneSize(9)
+                setPadding(dp(3), 0, 0, 0)
+            })
+            setOnClickListener { enterPortraitFullscreen() }
+            visibility = View.GONE
+        }
+        landscape.addView(landFullscreen, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.TOP or Gravity.CENTER_HORIZONTAL
+        ).apply {
+            topMargin = dp(200)
+        })
+
         // 底部两行
         landBottom = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -1214,6 +1252,7 @@ class PhonePlayerActivity : PhoneActivity() {
         // 退出全屏时竖屏容器可能到这一帧才量出新尺寸：再补一次，避免缩放按横屏尺寸算。
         root.postDelayed({ if (!landscapeMode) applyVideoScale() }, 150L)
         applyChrome()
+        placeLandscapeFullscreen()
         scheduleChromeHide()
         syncChips()
         // 竖屏弹幕从标题栏下沿开始铺；刚切形态时标题栏可能还没量出高度，
@@ -1228,6 +1267,7 @@ class PhonePlayerActivity : PhoneActivity() {
         root.post {
             syncDanmakuTopInset()
             replayDanmaku()
+            placeLandscapeFullscreen()
         }
     }
 
@@ -1342,14 +1382,8 @@ class PhonePlayerActivity : PhoneActivity() {
     /**
      * 进全屏（用户点「全屏」/ 从推荐页带 `EXTRA_FULLSCREEN` 进来）。
      *
-     * 先锁横屏把画面转过去（这是用户的明确意图），随后按系统的自动旋转开关决定要不要
-     * 把方向交还：
-     * * **自动旋转开着** → 1.2 秒后设 `USER`，此后跟着传感器走：手机竖回来就自动退出全屏，
-     *   横着拿就保持全屏；
-     * * **自动旋转关着** → 一直锁在横屏，只有用户再点一次退出。
-     *
-     * 1.2 秒的延迟是留给用户把手机转成横向：设得太早，竖着拿点全屏会被传感器立刻掰回竖屏，
-     * 读起来就是「全屏点了没反应」。
+     * 用户主动点全屏后固定横屏，不再把方向交还传感器；否则自动旋转会在全屏里
+     * 根据手机姿态反复切回竖屏。退出全屏或离开播放页时再恢复系统方向策略。
      */
     private fun enterFullscreen() {
         if (landscapeMode) return
@@ -1359,11 +1393,6 @@ class PhonePlayerActivity : PhoneActivity() {
         if (!requestOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)) return
         landscapeMode = true
         applyMode()
-        if (autoRotateEnabled()) {
-            root.postDelayed({
-                if (landscapeMode) requestOrientation(ActivityInfo.SCREEN_ORIENTATION_USER)
-            }, 1200L)
-        }
     }
 
     /**
@@ -1423,6 +1452,22 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /**
+     * 横屏里的竖版短剧点「全屏」后进入竖屏全屏。
+     *
+     * 这里**不能复用 [exitFullscreen]**：那个入口会在方向传感器满足条件时把方向
+     * 立刻交还系统，横屏设备 / 强制横屏环境会马上又转回横屏。用户主动选择全屏时
+     * 应稳定停在竖屏，直到返回或离开播放页。
+     */
+    private fun enterPortraitFullscreen() {
+        if (!landscapeMode) return
+        releasePortraitPin()
+        if (!requestOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)) return
+        landscapeMode = false
+        portraitFullscreenFromLandscape = true
+        applyMode()
+    }
+
+    /**
      * 退出全屏后**钉住竖屏**，直到设备真的立起来。
      *
      * 为什么需要这一步：看全屏时人是横着拿手机的，这时把方向交回传感器
@@ -1460,12 +1505,14 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /**
-     * 播放页**转屏时不重建**：播放器、Surface、会话都在这一个实例里，
-     * 重建会重新取流并闪一下。改分辨率 / dpi 时才重建（基类判定），
-     * 保证底部控制层与字号按新屏幕重新算像素。
+     * 播放页永远不因尺寸回调自我重建。
+     *
+     * 播放器、Surface 与播放会话都绑定在当前实例上；转屏时系统可能连续派发多个
+     * `orientation` / `screenSize` 回调，后续回调会把“新方向”当成已建立方向并触发
+     * `recreate()`，结果正在看的这一路被交接回推荐页。横竖屏由 [applyMode] 原地切换，
+     * 尺寸变化只重新布局即可。
      */
-    override fun rebuildOnSizeChange(newConfig: Configuration): Boolean =
-        newConfig.orientation == builtOrientation
+    override fun rebuildOnSizeChange(newConfig: Configuration): Boolean = false
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
@@ -1475,6 +1522,14 @@ class PhonePlayerActivity : PhoneActivity() {
             landscapeMode = nowLandscape
             applyMode()
         }
+        if (nowLandscape) {
+            portraitFullscreenFromLandscape = false
+            if (finishAfterLandscapeRestore) {
+                finishAfterLandscapeRestore = false
+                root.post { if (!isFinishing && !isDestroyed) finish() }
+                return
+            }
+        }
         root.requestLayout()
     }
 
@@ -1482,6 +1537,7 @@ class PhonePlayerActivity : PhoneActivity() {
         if (landscapeMode) {
             landTop.visibility = if (chromeVisible) View.VISIBLE else View.GONE
             landBottom.visibility = if (chromeVisible) View.VISIBLE else View.GONE
+            placeLandscapeFullscreen()
         } else {
             page.setChromeVisible(chromeVisible)
             // `portraitTop` 只装「播放显示」那一行，它的显隐由 `syncPlayInfo()` 按设置决定：
@@ -2181,8 +2237,7 @@ class PhonePlayerActivity : PhoneActivity() {
         startTicker()
         armPictureWatchdog()
         if (pendingFullscreen) {
-            pendingFullscreen = false
-            root.post { enterFullscreen() }
+            root.post { enterPendingFullscreen() }
         }
         // 地址已过窗口期：这一路还在出帧，但下一个 Range 请求会 403。
         // 原地换一条地址，位置 / Surface / 播放状态都不动（见 [reopenCurrentEpisodeInPlace]）。
@@ -2270,6 +2325,62 @@ class PhonePlayerActivity : PhoneActivity() {
         // 只靠监听会让这一格一直停在「?」（用户报问题时最需要它）。
         debugVideo = "${size.width}x${size.height}"
         page.updateVideoFrame(size.width, size.height)
+        updateLandscapeVideoFrame(size.width, size.height)
+    }
+
+    private fun updateLandscapeVideoFrame(width: Int, height: Int) {
+        if (width <= 0 || height <= 0) return
+        landVideoWidth = width
+        landVideoHeight = height
+        placeLandscapeFullscreen()
+    }
+
+    /**
+     * 横屏全屏入口只给竖版片源。
+     *
+     * 位置取视频 FIT 后的真实下边缘，再受底部控制层上沿限制。竖版视频在横屏里
+     * 通常占满高度，若只看画面下边缘，按钮会直接落到控制层后面。
+     */
+    private fun placeLandscapeFullscreen() {
+        if (!::landFullscreen.isInitialized || !::landscapeVideo.isInitialized) return
+        val portraitVideo = landVideoHeight > landVideoWidth
+        if (!landscapeMode || !chromeVisible || !portraitVideo) {
+            landFullscreen.visibility = View.GONE
+            return
+        }
+        if (landscape.width <= 0 || landscape.height <= 0) return
+
+        landFullscreen.visibility = View.VISIBLE
+        val videoWidth = landscapeVideo.width.takeIf { it > 0 } ?: landscape.width
+        val videoHeight = landscapeVideo.height.takeIf { it > 0 } ?: landscape.height
+        val ratio = landVideoWidth.toFloat() / landVideoHeight
+        val videoRatio = videoWidth.toFloat() / videoHeight
+        val pictureHeight = if (ratio >= videoRatio) videoWidth / ratio else videoHeight.toFloat()
+        val videoTop = landscapeVideo.top.toFloat()
+        val pictureBottom = videoTop + (videoHeight + pictureHeight) / 2f
+
+        val buttonHeight = landFullscreen.measuredHeight.takeIf { it > 0 } ?: dp(18)
+        val gap = dp(10)
+        val bottomLimit = if (::landBottom.isInitialized && landBottom.height > 0) {
+            landBottom.top
+        } else {
+            landscape.height
+        }
+        val maxTop = bottomLimit - buttonHeight - gap
+        val top = (pictureBottom - buttonHeight - gap)
+            .coerceAtMost(maxTop.toFloat())
+            .coerceAtLeast(0f)
+            .toInt()
+        val lp = landFullscreen.layoutParams as FrameLayout.LayoutParams
+        if (lp.topMargin != top) {
+            lp.topMargin = top
+            landFullscreen.layoutParams = lp
+        }
+        if (landFullscreen.measuredHeight <= 0) {
+            landFullscreen.post {
+                if (landscapeMode && landFullscreen.isAttachedToWindow) placeLandscapeFullscreen()
+            }
+        }
     }
 
     /**
@@ -2631,9 +2742,25 @@ class PhonePlayerActivity : PhoneActivity() {
         sourceRetryCount = 0
 
         if (pendingFullscreen) {
-            pendingFullscreen = false
-            // 画面已经挂上解码器，这时转横屏不会黑屏。
-            root.post { enterFullscreen() }
+            // 画面已经挂上解码器，这时切换全屏不会黑屏。
+            root.post { enterPendingFullscreen() }
+        }
+    }
+
+    /**
+     * 完成从推荐页带进来的「全屏」意图。
+     *
+     * 不能一律转横屏：横屏推荐页里的竖版短剧点全屏时，应直接进入竖屏全屏；
+     * 否则会先停在横屏播放页，用户还得再点一次全屏。
+     */
+    private fun enterPendingFullscreen() {
+        if (!pendingFullscreen) return
+        if (landVideoWidth <= 0 || landVideoHeight <= 0) return
+        pendingFullscreen = false
+        if (landscapeMode && landVideoHeight > landVideoWidth) {
+            enterPortraitFullscreen()
+        } else {
+            enterFullscreen()
         }
     }
 
@@ -2706,6 +2833,8 @@ class PhonePlayerActivity : PhoneActivity() {
                 if (landscapeMode) landscapeVideo.resizeMode = target
                 if (feedUnderlay) PhoneSession.setFeedVideoResize(target)
                 page.updateVideoFrame(videoSize.width, videoSize.height)
+                updateLandscapeVideoFrame(videoSize.width, videoSize.height)
+                if (pendingFullscreen) root.post { enterPendingFullscreen() }
             }
 
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
@@ -3597,8 +3726,8 @@ class PhonePlayerActivity : PhoneActivity() {
         listener?.let { player?.removeListener(it) }
         listener = null
         player?.pause()
-        PhoneServices.detach(page.playerView)
-        PhoneServices.detach(landscapeVideo)
+        if (::page.isInitialized) PhoneServices.detach(page.playerView)
+        if (::landscapeVideo.isInitialized) PhoneServices.detach(landscapeVideo)
         player = null
         runCatching { remote?.close() }
         remote = null
@@ -4015,8 +4144,8 @@ class PhonePlayerActivity : PhoneActivity() {
     // ---------------------------------------------------------------- 选集
 
     /**
-     * 选集。**与播放设置分开**：横屏时它是右侧 1/3 的一条独立抽屉，
-     * 竖屏时是底部浮层；两者都不与「播放设置」共用一个面板。
+     * 选集。**与播放设置分开**：横竖屏都用底部限高浮层，
+     * 都不与「播放设置」共用一个面板。
      *
      * 为什么分开：选集是高频、连续的动作（看两集就想换），播放设置是低频、改一次就走的；
      * 混在一个面板里，用户想换集得先找到那一段，面板还更长。
@@ -4043,7 +4172,10 @@ class PhonePlayerActivity : PhoneActivity() {
                     this, d.episodes.size, index,
                     pageSize = library?.episodePageSize ?: 20,
                     compact = false,
-                    maxGridHeight = (resources.displayMetrics.heightPixels * .42f).toInt(),
+                    columns = 5,
+                    // 外层 PhoneSheet 已经是唯一的纵向滚动容器；网格若再限高会形成嵌套滚动，
+                    // 横屏时最后一页按钮因此够不到。这里铺完整高度，交给浮层统一滚动。
+                    maxGridHeight = Int.MAX_VALUE,
                     edgeTurn = library?.episodeEdgeTurn ?: true,
                     swipePages = true,
                 ) { i ->
@@ -4059,15 +4191,16 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /**
-     * 横屏选集：右侧 1/3 抽屉。
+     * 横屏选集：TV 式底部限高浮层。
      *
-     * **每行 5 个**（与竖屏一致，用户要求）；一页几行由设置页的「选集每页」决定
-     * （20 / 30 / 50 / 80 / 100 → 4 / 6 / 10 / 16 / 20 行），放不下时网格内部滚动。
+     * **每行 10 个**；一页几行由设置页的「选集每页」决定
+     * （20 / 30 / 50 / 80 / 100 → 2 / 3 / 5 / 8 / 10 行），放不下时网格内部滚动。
      */
     private fun openLandscapeEpisodes(d: Detail) {
         sheet.show(
             "选集 · 正在看第 ${index + 1} 集",
             landscape = true,
+            heightFraction = .58f,
             notifyHostOnUserDismiss = false,
         ) { panel ->
             panel.addView(
@@ -4075,7 +4208,8 @@ class PhonePlayerActivity : PhoneActivity() {
                     this, d.episodes.size, index,
                     pageSize = library?.episodePageSize ?: 20,
                     compact = true,
-                    maxGridHeight = (resources.displayMetrics.heightPixels * .5f).toInt(),
+                    columns = 10,
+                    maxGridHeight = Int.MAX_VALUE,
                     edgeTurn = library?.episodeEdgeTurn ?: true,
                     swipePages = true,
                 ) { i ->
@@ -4276,8 +4410,8 @@ class PhonePlayerActivity : PhoneActivity() {
                 exo.pause()
             }
         }
-        PhoneServices.detach(page.playerView)
-        PhoneServices.detach(landscapeVideo)
+        if (::page.isInitialized) PhoneServices.detach(page.playerView)
+        if (::landscapeVideo.isInitialized) PhoneServices.detach(landscapeVideo)
         // player 字段留在 Activity 里没有意义（Activity 要销毁了），但**进程级实例**必须保住：
         // `PhoneServices.player` 是单例，这里只是不再引用它。
         player = null
@@ -4286,9 +4420,30 @@ class PhonePlayerActivity : PhoneActivity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        // 顺序：先收面板 → 再回竖屏 → 最后才离开播放页。
+        // 顺序：先收面板；横屏播放页直接返回上一页，不再先转竖屏。
         if (landPanel != null) { dismissLandscapeSettings(); return }
-        if (landscapeMode) exitFullscreen() else super.onBackPressed()
+        if (landscapeMode) {
+            finish()
+            return
+        }
+        if (portraitFullscreenFromLandscape) {
+            finishAfterLandscapeRestore = true
+            portraitFullscreenFromLandscape = false
+            if (!requestOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)) {
+                finishAfterLandscapeRestore = false
+                finish()
+                return
+            }
+            // 个别 ROM 不回调方向变化：留一个兜底，避免返回键看起来没反应。
+            root.postDelayed({
+                if (finishAfterLandscapeRestore && !isFinishing && !isDestroyed) {
+                    finishAfterLandscapeRestore = false
+                    finish()
+                }
+            }, 800L)
+            return
+        }
+        super.onBackPressed()
     }
 
     /** 轻提示：按钮暂时不可用时告诉用户「在等什么」，而不是毫无反应。 */

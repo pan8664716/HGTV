@@ -429,6 +429,8 @@ class ArtworkLoader(context: Context) {
     @Volatile private var closed = false
     /** 这次运行里是否已经记过一条 OOM：同一次内存枯竭会连着失败几十张，只留第一条。 */
     @Volatile private var oomLogged = false
+    /** 网络客户端初始化失败后不再重试，避免每个封面任务都重复触发同一个类加载错误。 */
+    @Volatile private var networkUnavailable: Throwable? = null
 
     /** 把计时汇总落盘到 [file]（debug 包专用，见 `MainActivity.onCreate`）。 */
     fun attachTiming(file: java.io.File) {
@@ -890,6 +892,9 @@ class ArtworkLoader(context: Context) {
             if (job.listeners.isNotEmpty()) timing.visibleQueue(startedAt - job.queuedAt)
             val bitmap = try {
                 if (job.cancelled) null else cache.get(job.key) ?: fetch(job, startedAt)
+            } catch (problem: LinkageError) {
+                recordNetworkFailure(problem)
+                null
             } catch (_: Exception) { null } catch (oom: OutOfMemoryError) {
                 // **必须留痕**：早先这里完全静默，线上只能看到「OkHttp 读线程分配 24 字节失败」，
                 // 真正的现场（哪一步、缓存多大、还剩多少堆）一条都没有。
@@ -965,6 +970,15 @@ class ArtworkLoader(context: Context) {
                     }
                 }
             }
+        }
+    }
+
+    private fun recordNetworkFailure(problem: Throwable) {
+        if (networkUnavailable != null) return
+        networkUnavailable = problem
+        android.util.Log.e("HGTV", "artwork network unavailable", problem)
+        runCatching {
+            Diagnostics.warn("HGTV-IMG", "artwork 网络初始化失败，本次运行停止加载封面", problem)
         }
     }
 
@@ -1076,6 +1090,7 @@ class ArtworkLoader(context: Context) {
         var ttfbMs = 0L
         var bodyMs = 0L
         val bytes = cached ?: run {
+            if (networkUnavailable != null) return null
             if (job.cancelled) return null
             val call = http.newCall(Request.Builder().url(job.key.url).build())
             job.call = call

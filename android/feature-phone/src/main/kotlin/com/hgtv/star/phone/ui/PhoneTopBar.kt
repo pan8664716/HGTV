@@ -28,6 +28,9 @@ import android.widget.TextView
  */
 class PhoneTopBar(context: Context) : LinearLayout(context) {
 
+    private val compact = context.resources.configuration.orientation ==
+        android.content.res.Configuration.ORIENTATION_LANDSCAPE
+
     /** 默认搜索动作；调用 [setAction] 后由自定义动作接管。 */
     var onSearch: (() -> Unit)? = null
 
@@ -61,8 +64,8 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
     }
     private val actionBox = LinearLayout(context).apply {
         gravity = Gravity.CENTER
+        setPadding(0, 0, 0, 0)
         addView(actionGlyph, LinearLayout.LayoutParams(context.dp(16), context.dp(16)))
-        setPadding(context.dp(6), context.dp(4), context.dp(6), context.dp(4))
         contentDescription = "搜索"
         setOnClickListener { (customAction ?: onSearch)?.invoke() }
     }
@@ -80,11 +83,22 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
 
     init {
         orientation = VERTICAL
-        setPadding(context.dp(16), statusBar(context) + context.dp(4), context.dp(10), context.dp(2))
+        val actionSize = context.dp(if (compact) 24 else 28)
+        // 搜索 / 设置只保留图标本身，不加圆形底色；图标容器仍固定为正方形，
+        // 避免父行高度变化时把设置齿轮拉成椭圆。
+        actionBox.background = null
+        setPadding(
+            context.dp(if (compact) 12 else 16),
+            if (compact) 0 else statusBar(context) + context.dp(4),
+            context.dp(if (compact) 8 else 10),
+            if (compact) 0 else context.dp(2),
+        )
 
-        mainRow.addView(tabScroll, LinearLayout.LayoutParams(0, context.dp(34), 1f))
-        mainRow.addView(actionBox, LinearLayout.LayoutParams(context.dp(28), context.dp(28)))
-        addView(mainRow, LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, context.dp(34)))
+        mainRow.addView(tabScroll, LinearLayout.LayoutParams(0, context.dp(if (compact) 24 else 34), 1f))
+        mainRow.addView(actionBox, LinearLayout.LayoutParams(actionSize, actionSize))
+        addView(mainRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, context.dp(if (compact) 24 else 34)
+        ))
 
         addView(chipScroll, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -117,7 +131,7 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
      * 视频明明已经铺到顶部，控件却还悬在下面。
      */
     fun setImmersive(on: Boolean) {
-        val top = if (on) context.dp(10) else statusBar(context) + context.dp(4)
+        val top = if (compact) 0 else if (on) context.dp(10) else statusBar(context) + context.dp(4)
         if (paddingTop == top) return
         setPadding(paddingLeft, top, paddingRight, paddingBottom)
     }
@@ -137,7 +151,7 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
         mainSlot.addView(TextView(context).apply {
             this.text = text
             setTextColor(PhoneStyle.text)
-            phoneSize(20)
+            phoneSize(if (compact) 16 else 20)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
             // 单行 + 省略：标题再长也不许换行（换行会把 34dp 的行撑高）。
             maxLines = 1
@@ -156,8 +170,9 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
         labels.forEachIndexed { index, label ->
             val cell = TextView(context).apply {
                 text = label
-                phoneSize(19)
-                setPadding(0, context.dp(3), context.dp(18), context.dp(3))
+                phoneSize(if (compact) 16 else 19)
+                setPadding(0, context.dp(if (compact) 0 else 3),
+                    context.dp(if (compact) 12 else 18), context.dp(if (compact) 0 else 3))
                 // 绝不换行：字号最大档时一行放不下就由外层 `tabScroll` 横向滑动，
                 // 而不是把「分类」压成上下两个字。
                 maxLines = 1
@@ -203,9 +218,10 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
         labels.forEachIndexed { index, label ->
             val chip = TextView(context).apply {
                 text = label
-                phoneSize(15)
+                phoneSize(if (compact) 12 else 15)
                 gravity = Gravity.CENTER
-                setPadding(context.dp(12), context.dp(4), context.dp(12), context.dp(4))
+                setPadding(context.dp(if (compact) 8 else 12), context.dp(if (compact) 2 else 4),
+                    context.dp(if (compact) 8 else 12), context.dp(if (compact) 2 else 4))
                 setOnClickListener { onSelect(index) }
             }
             chips += chip

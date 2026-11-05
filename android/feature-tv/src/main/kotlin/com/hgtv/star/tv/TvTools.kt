@@ -214,6 +214,7 @@ class TvTools(private val activity: Activity) {
             addView(code,FrameLayout.LayoutParams(-1,-1))
         }
     }
+
     /**
      * 电视在局域网里的 IPv4 地址：手机表单（手机输入 / 登录态 / 备份恢复）都要用它拼二维码。
      * 没有可用的 Wi-Fi 或有线网络时返回 null，由调用方给出各自的提示。

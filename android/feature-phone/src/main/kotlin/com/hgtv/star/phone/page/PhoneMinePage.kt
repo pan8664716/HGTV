@@ -38,7 +38,17 @@ import kotlinx.coroutines.launch
  * 与 TV 端的分工一致：账号在顶部，「收藏 / 历史」等内容栏在下面；
  * 设置入口放在顶栏右侧，点进去后再按 TV 的四个大项分页。
  */
-class PhoneMinePage(context: Context) : LinearLayout(context) {
+class PhoneMinePage(
+    context: Context,
+    initialState: State? = null,
+) : LinearLayout(context) {
+
+    data class State(
+        val tab: Int,
+        val historyFilter: Boolean?,
+        val reserveFilter: Boolean?,
+        val feed: PhonePosterFeed.Snapshot,
+    )
 
     private val topBar = PhoneTopBar(context)
     private val library = PhoneServices.library(context)
@@ -47,11 +57,14 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
     private val feed = PhonePosterFeed(context)
 
     /** 默认落在「历史」：用户进「我的」最常见的是接着看，不是先看收藏。 */
-    private var tab = 0
+    private var tab = initialState?.tab ?: 0
     /** 历史栏的完成度筛选：null = 全部，true = 已看完，false = 未看完（与 TV 的 `accountHistoryFilter` 同一语义）。 */
-    private var historyFilter: Boolean? = null
+    private var historyFilter: Boolean? = initialState?.historyFilter
     /** 预约栏的上线状态筛选：null = 全部。 */
-    private var reserveFilter: Boolean? = null
+    private var reserveFilter: Boolean? = initialState?.reserveFilter
+    /** 转屏重建带来的内容快照：首次挂载直接复用，不再拉账号数据。 */
+    private var restoredFeed: PhonePosterFeed.Snapshot? = initialState?.feed
+    private var skipNextOnShownRefresh = initialState != null
     /** 当前栏目是否处于批量选择模式；切换栏目 / 筛选或删除后退出。 */
     private var batchMode = false
     private var batchBar: LinearLayout? = null
@@ -137,7 +150,14 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
-        refresh()
+        val restored = restoredFeed
+        if (restored?.loaded == true) {
+            restoredFeed = null
+            render(restored)
+        } else {
+            restoredFeed = null
+            refresh()
+        }
     }
 
     override fun onDetachedFromWindow() {
@@ -157,6 +177,10 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
         // 不重新挂窗口时不会走 `PhonePosterFeed.onAttachedToWindow`，必须在这里主动对齐列数。
         feed.applyColumnsFromSettings()
         exitBatchMode()
+        if (skipNextOnShownRefresh) {
+            skipNextOnShownRefresh = false
+            return
+        }
         refresh()
         // 登录着的时候顺手刷一次账号数据（与 TV 的 `loadAccount` 同一条路）：
         // 不进这一步，账号侧的收藏 / 历史永远不会出现在这一页上。
@@ -193,7 +217,7 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
         runCatching { monitor.check() }
     }
 
-    private fun render() {
+    private fun render(contentSnapshot: PhonePosterFeed.Snapshot? = null) {
         // 账号两栏在退出登录后消失：栏号越界时退回「历史」，否则整页会是空的。
         // 默认页也是历史（见字段 `tab`），这里保持同一个回退目标。
         if (tab >= tabs.size) tab = 0
@@ -203,8 +227,15 @@ class PhoneMinePage(context: Context) : LinearLayout(context) {
         batchBar = buildBatchBar()
         batchBar?.let { body.addView(it) }
         feed.refreshHeader()
-        renderContent()
+        if (contentSnapshot != null) feed.restore(contentSnapshot) else renderContent()
     }
+
+    fun snapshotState(): State = State(
+        tab = tab,
+        historyFilter = historyFilter,
+        reserveFilter = reserveFilter,
+        feed = feed.snapshot(),
+    )
 
     // ---------------------------------------------------------------- 账号
 

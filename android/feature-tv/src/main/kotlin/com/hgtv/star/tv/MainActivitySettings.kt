@@ -30,6 +30,7 @@ import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.lowEndTv
 import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.architecture.AppRelaunch
+import com.hgtv.star.shared.ProjectInfo
 import com.hgtv.star.tv.R
 
 // 本文件是从 MainActivity.kt 拆出来的「设置页：外观主题、播放偏好、账号与关于」这一块。
@@ -818,14 +819,20 @@ fun MainActivity.settings(parent: LinearLayout) {
     // 低配上「减少动画」不可聚焦，[track] 会把它过滤掉，
     // 这一行于是只有「调试模式」一格。
     track(3,reduceRow,debugRow)
+    // 「关于」固定在设备类型左边；正式包没有设备类型时仍保留左半格。
+    val deviceLine=lineRow(perf)
+    lateinit var aboutButton: TvButton
+    aboutButton=cellSetting(deviceLine,"关于") { showAboutDialog(aboutButton) }
     if (BuildConfig.DEBUG) {
         // 仅 debug：强制按手机 / 平板 / 电视其中一档启动，方便在同一台机器上对照两套界面。
-        val deviceLine=lineRow(perf)
         lateinit var deviceType: TvButton
         deviceType=cellSetting(deviceLine,"设备类型  ·  ${deviceFormSettingLabel()}") {
             showDeviceFormPicker(deviceType)
         }
-        track(3,deviceType)
+        track(3,aboutButton,deviceType)
+    } else {
+        padLine(deviceLine,1)
+        track(3,aboutButton)
     }
 
     // —— 焦点串联 ——
@@ -867,6 +874,15 @@ fun MainActivity.settings(parent: LinearLayout) {
             (settingsTabChips.getOrNull(settingsTab) ?: landing)?.takeIf { it.attachedToWindow }?.requestFocus()
         }
     }
+}
+
+private fun MainActivity.showAboutDialog(anchor: View) {
+    val dialog=TvDialog(this,"关于")
+    dialog.message("版本号：${AppVersion.name}")
+    dialog.message("GitHub：${ProjectInfo.GITHUB}")
+    dialog.message("更新请前往项目页面查看项目更新。")
+    dialog.button("关闭") {}
+    dialog.show(anchor)
 }
 
 /** 设置格读数：未指定时为「自动 · 当前判定形态」。 */

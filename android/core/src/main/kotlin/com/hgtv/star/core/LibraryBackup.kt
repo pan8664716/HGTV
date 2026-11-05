@@ -250,10 +250,10 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      */
     val seekStep: Int=10,
     /**
-     * 手机 / 平板的海报列表一行放几张（1 / 2 / 3，默认 2）。
+     * 手机 / 平板的海报列表基准列数（1–3，默认 2）。
      *
      * 与电视的 [homeColumns]（4..8）分开存：那一个是「一屏 6 张海报」的电视排版，
-     * 手机上默认 2 列，想看得更大可以选 1 列、想一屏多扫几张可以选 3 列。
+     * 手机上默认 2 列；横屏实际显示时映射为 4–6 列。
      * 两端数值区间不同，共用一个键会让「电视设 8 列、手机读成 8」直接崩掉布局。
      *
      * 后加字段：旧备份 / 旧磁盘没有它，读回来按 2 列处理。
@@ -422,7 +422,7 @@ object LibraryBackup {
         // 「返回顶部」浮层的显隐方式：后加字段，旧备份没有它、或值不在四档里，
         // 都按「始终显示」处理（正是加这一项之前的行为）。
         val backToTop=settings.optString("backToTop",BACK_TO_TOP_DEFAULT).takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT
-        // 手机列表每行几张：后加字段，旧备份没有它时按 2 处理；坏值夹进 1..3。
+        // 手机列表每行基准列数：后加字段，旧备份没有它时按 2 处理；坏值夹进 1..3。
         val gridColumns=if(settings.has("gridColumns")) settings.number("gridColumns",2).toInt().coerceIn(1,3) else 2
         // 推荐页左右滑动切换：后加字段，旧备份没有它时按开启处理（与之前的行为一致）。
         val recommendSwipe=settings.optBoolean("recommendSwipe",true)

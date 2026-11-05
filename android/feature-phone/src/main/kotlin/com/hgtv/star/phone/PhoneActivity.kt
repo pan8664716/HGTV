@@ -7,7 +7,7 @@ import android.os.Bundle
 import com.hgtv.star.phone.ui.PhoneUiScale
 
 /**
- * 手机端 Activity 基类：**屏幕像素尺寸变了就重建整页**。
+ * 手机端 Activity 基类：**屏幕尺寸或方向变了就重建整页**。
  *
  * 手机端的尺寸令牌（边距 / 卡片 / 字号）都在建视图那一刻由 `phoneScale()` 算成像素
  * （见 `PhoneTheme`）。各 Activity 在 manifest 里声明了 `configChanges=screenSize`，
@@ -15,7 +15,7 @@ import com.hgtv.star.phone.ui.PhoneUiScale
  * 仍是旧像素，表现就是「一半大一半小」。
  *
  * dpi 变化不在 `configChanges` 里，系统本来就会重建，这里只兜像素尺寸。
- * 方向变化默认也重建（竖屏页不会发生）；播放页自己拒绝，交给它原地切形态。
+ * 方向变化默认也重建；播放页自己拒绝，交给它原地切形态。
  */
 open class PhoneActivity : Activity() {
 
@@ -57,13 +57,6 @@ open class PhoneActivity : Activity() {
         captureScreen()
     }
 
-    /**
-     * 只有**方向没变**、单纯像素尺寸变了才重建。
-     *
-     * 转屏时宽高必然对调：那不是「换了分辨率」，而是同一块屏转了个方向。
-     * 播放页自己原地切形态；它下面的推荐页更不能重建——那一页的 Surface 正借给
-     * 播放页出画面，重建等于把正在播的这一路连根拔掉（用户会看到黑一下再重来）。
-     */
-    protected open fun rebuildOnSizeChange(newConfig: Configuration): Boolean =
-        newConfig.orientation == builtOrientation
+    /** 普通手机页面跟随方向重建；播放页覆盖此方法，原地切换横竖屏。 */
+    protected open fun rebuildOnSizeChange(newConfig: Configuration): Boolean = true
 }
