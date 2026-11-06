@@ -213,9 +213,9 @@ fun MainActivity.settings(parent: LinearLayout) {
     /**
      * 并排两栏的竖向出口（在两栏建完之后赋值，见「按键设置 ｜ 弹幕设置」那一段）。
      *
-     * [wireRows] 按「行号 + 列号」算上下左右，前提是各行格数对齐；并排两栏的行业数不同
-     * （左栏七行、右栏五行），按行号算会把左栏第五行之后的「下 / 上」串到右栏去。因此那一段
-     * 自己把两条竖链重新指一遍，并在这里交给「焦点串联」在 [wireRows] 之后调用。
+     * [wireRows] 按「行号 + 列号」算上下左右，前提是各行格数对齐；并排两栏的行业务不同，
+     * 直接按行号算会把两条竖链串在一起。因此那一段自己把两条竖链重新指一遍，
+     * 并在这里交给「焦点串联」在 [wireRows] 之后调用。
      */
     var rewireSidePanels: ()->Unit={}
 
@@ -276,6 +276,36 @@ fun MainActivity.settings(parent: LinearLayout) {
     track(0,frame,decoderButton)
     track(0,scaleSlider)
     track(0,autoNextRow,seekSlider)
+    // 兼容开关：只在部分电视自动连播后出现音画不同步时使用。默认关闭，避免正常设备
+    // 为下一集常驻第二个播放器；开启时再弹确认框，防止误触。
+    playback.addView(text(
+        "仅在自动连播后出现音画不同步时开启；开启后会用第二个播放器预热下一集，低配设备可能增加内存与解码压力。",
+        14f,TvStyle.muted
+    ).apply { setPadding(0,dp(TvStyle.GAP_INLINE),0,0) },lp(-1,-2))
+    lateinit var forceAvSyncRow: TvSwitchRow
+    forceAvSyncRow=TvSwitchRow(this,"强制音画同步（兼容模式）",checked=library.forceAvSync,onToggle={ on ->
+        if(!on) {
+            library.forceAvSync=false
+            releaseCompatibilityPlayer()
+        } else {
+            val confirm=TvDialog(this,"开启强制音画同步？")
+            confirm.message(
+                "此开关只用于部分电视自动切集后音画不同步。开启后会同时准备两个播放器，" +
+                    "由第二个播放器预热下一集；低配设备可能增加内存、解码器占用和起播负载。" +
+                    "没有该问题时请不要开启。"
+            )
+            // 默认焦点落在取消，避免遥控器确认键误开。
+            confirm.button("取消") { forceAvSyncRow.setChecked(false) }
+            confirm.button("仍然开启",tone=ButtonTone.PRIMARY) {
+                library.forceAvSync=true
+                // 已经挂进播放列表的下一集必须先摘掉，否则下一集仍会走自动 transition。
+                dropQueuedEpisode()
+            }
+            confirm.show(forceAvSyncRow) { forceAvSyncRow.setChecked(library.forceAvSync) }
+        }
+    })
+    switchSetting(playback,forceAvSyncRow)
+    track(0,forceAvSyncRow)
 
     // —— 播放显示：画面左上角那一条里的四项 ——
     // 剧集标题 / 当前集数 / 时间 / 网速四项各自开关，排成一行四格，**默认四格全关**。
@@ -383,7 +413,7 @@ fun MainActivity.settings(parent: LinearLayout) {
         showHint("已恢复默认按键")
     }
     refreshKeyLabels()
-    // 弹幕（右）：显示方式 / 速度 / 聚合 / 字号 / 透明度。五行**始终显示**（不看是否隐藏弹幕）：
+    // 弹幕（右）：显示方式 / 速度 / 聚合 / 特效 / 字号 / 透明度。各行**始终显示**（不看是否隐藏弹幕）：
     // 设置页是**配置**而不是预览，用户先把字号调好、再决定要不要显示弹幕是常见顺序，
     // 一选隐藏就整栏塌下去，反而像「这些设置丢了」。
     val danmaku=sidePanel(mid)
@@ -391,7 +421,7 @@ fun MainActivity.settings(parent: LinearLayout) {
     lateinit var danmakuSpeedSetting: TvButton
     lateinit var danmakuScaleRow: SettingSlider
     lateinit var danmakuAlphaRow: SettingSlider
-    panelHead(danmaku,"弹幕设置","显示方式 / 速度 / 聚合 / 字号 / 透明度")
+    panelHead(danmaku,"弹幕设置","显示方式 / 速度 / 聚合 / 特效 / 字号 / 透明度")
     danmakuSetting=setting(danmaku,danmakuLabel("弹幕显示  ·  ")) {}
     danmakuSetting.setOnClickListener { showDanmakuPicker(danmakuSetting,false) }
     danmakuSpeedSetting=setting(danmaku,"弹幕速度  ·  ${library.danmakuSpeed.label}") {
@@ -401,6 +431,11 @@ fun MainActivity.settings(parent: LinearLayout) {
     val danmakuMergeRow=switchSetting(danmaku,TvSwitchRow(this,"相同弹幕聚合",checked=library.danmakuMerge,onToggle={ on ->
         library.danmakuMerge=on
         danmakuView?.mergeRepeats=on
+    }))
+    // 聚合特效总开关：控制计数放大、渐热颜色和 ×20 后的 +1 冲击效果。
+    val danmakuEffectsRow=switchSetting(danmaku,TvSwitchRow(this,"开启弹幕特效",checked=library.danmakuEffects,onToggle={ on ->
+        library.danmakuEffects=on
+        danmakuView?.effectsEnabled=on
     }))
     // 聚合条数：同一句在聚合窗口内达到几条才合并（2..10，默认 2 = 出现两次就合并）。
     // 不到这个条数的照常逐条滚过去、不带 ×N、也不进中央；达到才合成一条。
@@ -423,16 +458,15 @@ fun MainActivity.settings(parent: LinearLayout) {
     }
     // 两栏底板同高：左栏多一行，右边补齐，底边落在同一条横线上。
     equalHeights(mid,listOf(keys,danmaku))
-    // 行登记：两栏按「行号」并成一行，左栏是「恢复默认」+ 六行按键、右栏是弹幕六行。
-    val danmakuColumn=listOf<View>(danmakuSetting,danmakuSpeedSetting,danmakuMergeRow,danmakuMergeMinRow,danmakuScaleRow,danmakuAlphaRow)
+    // 行登记：两栏按「行号」并成一行，左栏是「恢复默认」+ 六行按键、右栏是弹幕七行。
+    val danmakuColumn=listOf<View>(danmakuSetting,danmakuSpeedSetting,danmakuMergeRow,danmakuEffectsRow,danmakuMergeMinRow,danmakuScaleRow,danmakuAlphaRow)
     val keyColumn=listOf<View>(restore)+keyCells
     keyColumn.forEachIndexed { i,v -> track(0,*listOfNotNull(v,danmakuColumn.getOrNull(i)).toTypedArray()) }
     danmakuColumn.drop(keyColumn.size).forEach { track(0,it) }
     /**
      * 并排两栏的竖向出口要**各自成链**，不能按「行号 + 列号」算。
      *
-     * 左栏七行、右栏六行：按行号算的话，左栏第六行之后的「上 / 下」会串到右栏去。
-     * 这里把两条链重新指一遍，并把行号对齐的六行横向接通。
+     * 两栏现在都是七行，但行业务不同：这里仍把两条链分别重新指一遍，并把行号对齐的行横向接通。
      */
     rewireSidePanels={
         keyColumn.forEachIndexed { i,v ->

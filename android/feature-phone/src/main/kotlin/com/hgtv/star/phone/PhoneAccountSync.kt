@@ -5,6 +5,7 @@ import android.content.Context
 import com.hgtv.star.core.AccountData
 import com.hgtv.star.core.AccountFavorite
 import com.hgtv.star.core.AccountHistory
+import com.hgtv.star.core.AccountReserve
 import com.hgtv.star.core.HistoryReconcile
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.WatchSync
@@ -122,6 +123,41 @@ object PhoneAccountSync {
             withContext(Dispatchers.IO) {
                 runCatching { repo.accountDeleteHistories(ids) }
             }
+        }
+    }
+
+    /**
+     * 预约 / 取消预约一部**未上架**的剧。
+     *
+     * 与 [favorite] 同一条路：本机先改，账号侧随后推。手机端此前**只改本机**、
+     * `accountReserve` 一次都没被调用过，平台侧因此从来没有这条预约——
+     * 换到电视上（或重进简介页拿到接口状态）就只剩「预约」两个字。
+     *
+     * 未登录时不发请求也不改状态：预约是纯账号侧数据（开播提醒在云端），
+     * 本机记一条没有任何地方能兑现。
+     *
+     * [onDone] 在请求落地后回到主线程，参数是平台是否受理：受理失败时调用方要把
+     * 本机状态翻回去，否则界面上会留下一条「已预约」而云端没有。
+     */
+    fun reserve(
+        context: Context,
+        series: Series,
+        reserved: Boolean,
+        onNeedSignIn: () -> Unit = {},
+        onDone: (Boolean) -> Unit = {},
+    ) {
+        val repo = PhoneServices.repository(context)
+        if (!repo.signedIn) { onNeedSignIn(); return }
+        applyReserve(context, series, reserved)
+        io(context).launch {
+            val ok = withContext(Dispatchers.IO) {
+                runCatching { repo.accountReserve(series.id, reserved) }.getOrDefault(false)
+            }
+            if (!ok) {
+                applyReserve(context, series, !reserved)
+                android.util.Log.i("HGTV-PHONE", "reserve sync skipped id=${series.id} reserved=$reserved")
+            }
+            onDone(ok)
         }
     }
 
@@ -255,6 +291,20 @@ object PhoneAccountSync {
         val rows = current.history.filterNot { it.series.id in ids }
         if (rows.size == current.history.size) return
         store(context, current.copy(history = rows))
+    }
+
+    /** 预约改到账号缓存上（「我的 → 预约」读的就是这一份）。 */
+    private fun applyReserve(context: Context, series: Series, reserved: Boolean) {
+        val current = data ?: return
+        val rows = current.reserves
+        val next = if (reserved) {
+            if (rows.any { it.series.id == series.id }) rows
+            else listOf(AccountReserve(series.copy(upcoming = true), System.currentTimeMillis(), false)) + rows
+        } else {
+            rows.filterNot { it.series.id == series.id }
+        }
+        if (next === rows) return
+        store(context, current.copy(reserves = next))
     }
 
     private fun applyReservationsDeleted(context: Context, ids: Set<String>) {

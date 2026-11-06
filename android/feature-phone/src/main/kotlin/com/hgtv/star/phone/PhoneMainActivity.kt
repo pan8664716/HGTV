@@ -23,6 +23,7 @@ import com.hgtv.star.phone.page.PhoneCategoryPage
 import com.hgtv.star.phone.page.PhoneMinePage
 import com.hgtv.star.phone.page.PhoneRankPage
 import com.hgtv.star.phone.page.PhoneRecommendPage
+import com.hgtv.star.shared.architecture.AppExit
 
 /**
  * 手机 / 平板端主界面。
@@ -199,7 +200,14 @@ class PhoneMainActivity : PhoneActivity() {
         val now = SystemClock.uptimeMillis()
         if (now - lastBackAt <= EXIT_DOUBLE_BACK_MS) {
             lastBackAt = 0L
-            super.onBackPressed()
+            AppExit.exit(this) {
+                (pages.getOrNull(current) as? PhoneRecommendPage)?.onHidden()
+                PhoneServices.releaseForExit()
+                PhoneSession.reset()
+                PhoneServices.library(this).flush()
+                runCatching { com.hgtv.star.shared.data.SessionBootstrap.shutdown() }
+                PhoneDebugReport.resetSamples()
+            }
             return
         }
         lastBackAt = now

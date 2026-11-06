@@ -1440,7 +1440,7 @@ fun MainActivity.attachRecommendOverlay(series: Series) {
     val progress=com.hgtv.star.tv.SeekIndicator(this).apply {
         importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
         isFocusable=false
-        progress=0f
+        progress=0f; bufferedProgress=0f
     }
     transport.addView(progress,lp(0,dp(43)).apply { weight=1f; rightMargin=dp(26) })
     // 与正式播放一样可拖：拖动期间只改显示，抬手才真跳（见 [onRecommendScrub]）。
@@ -1521,6 +1521,9 @@ fun MainActivity.updateRecommendOverlay() {
     val duration=p?.duration?.coerceAtLeast(0) ?: 0L
     val position=pendingSeek ?: p?.currentPosition ?: 0L
     recommendProgress?.progress=if(duration>0) position.toFloat()/duration else 0f
+    recommendProgress?.bufferedProgress=if(duration>0) {
+        (p?.bufferedPosition ?: 0L).coerceIn(0,duration).toFloat()/duration
+    } else 0f
     recommendSpan?.let { line ->
         val text=if(duration>0) "${formatTime(position)} / ${formatTime(duration)}" else "--:-- / --:--"
         if(line.text.toString()!=text) line.text=text

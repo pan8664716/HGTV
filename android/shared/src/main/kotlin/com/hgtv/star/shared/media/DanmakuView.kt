@@ -87,6 +87,16 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         /** 中央突出显示的字号倍率与底板留白（dp）。 */
         const val HIGHLIGHT_SCALE=1.25f
         const val HIGHLIGHT_PAD_DP=13
+        /** 聚合数量达到这个值时，字号与颜色都到上限。 */
+        const val HIGHLIGHT_COUNTER_FULL_COUNT=40
+        /** 数量标记最大放大到正文的 140%。 */
+        const val HIGHLIGHT_COUNTER_MAX_SCALE=1.4f
+        /** 计数热度：白 → 暖黄 → 橙红，只使用同一暖色区间。 */
+        const val HIGHLIGHT_COUNTER_WARM_COLOR=0xFFFFC857.toInt()
+        const val HIGHLIGHT_COUNTER_HOT_COLOR=0xFFFF5722.toInt()
+        /** `×20` 之后每次 +1 的短促冲击效果。 */
+        const val HIGHLIGHT_SHOCK_MIN_COUNT=20
+        const val HIGHLIGHT_SHOCK_DURATION_MS=620L
         /** 表情图相对字号的大小：比汉字略大一点，跟系统 emoji 的观感一致。 */
         const val EMOJI_SCALE=1.2f
         /**
@@ -135,6 +145,14 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         style=Paint.Style.STROKE
         typeface=Typeface.DEFAULT_BOLD
         strokeJoin=Paint.Join.ROUND
+    }
+    /** `×N` 单独用一套画笔：数量增长时只放大计数，不改变聚合正文。 */
+    private val counterFill=Paint(Paint.ANTI_ALIAS_FLAG)
+    private val counterEdge=Paint(Paint.ANTI_ALIAS_FLAG)
+    /** 计数 +1 的冲击波：复用一支描边笔，只在增量后的短暂窗口内绘制。 */
+    private val counterShockPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply {
+        style=Paint.Style.STROKE
+        strokeCap=Paint.Cap.ROUND
     }
     /** 中央那一块的底板：弹幕密集时后面的字幕会从它下面穿过，给一层半透明底才读得清。 */
     private val plate=Paint(Paint.ANTI_ALIAS_FLAG).apply {
@@ -301,6 +319,18 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         }
 
     /**
+     * 聚合弹幕特效总开关（默认开启）。
+     *
+     * 关闭后只停用计数放大、渐热颜色与 `+1` 冲击波；聚合分组、7 秒停留和槽位替换照常运行。
+     */
+    var effectsEnabled: Boolean=true
+        set(value) {
+            if(field==value) return
+            field=value
+            invalidate()
+        }
+
+    /**
      * 宿主指定的顶部留白（像素）；`< 0` = 用默认的 [TOP_INSET_DP]。
      *
      * 默认那 104dp 是照电视横屏标题条（96dp）定的。竖屏播放页的标题栏高度按
@@ -457,13 +487,16 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         cursor=0
         lastPosition=-1L
         groups=if(mergeRepeats) repeatGroups(raw,minCount=mergeMinCount) else raw.map { DanmakuRepeat(it.text,listOf(it.offsetMs)) }
-        // 中央突出显示的次序：传上一份，正在展示的那几条不会被新数据挤掉（见 planHighlights）。
-        //
-        // **「只显一行」这一档不排中央块**：那一档只有唯一一条轨道，中央块的位置与它完全重合，
-        // 两者同时出现就是两层字叠在一起（用户读到的就是「聚合弹幕显示了不止一个」）。
-        // 这一档让聚合弹幕回到那唯一一条轨道上滚（带 ×N），屏幕上任何时候都只有一条。
-        highlights=if(mode==DanmakuMode.SINGLE) emptyList()
-        else planHighlights(groups,highlights,highlightSlots,mergeMinCount)
+        // 以当前播放位置承接仍在显示的聚合，再按新数据重排后续槽位。
+        // 只显一行 / 上方 / 全屏分别固定 1 / 2 / 3 个槽位；隐藏档不排。
+        highlights=if(mode==DanmakuMode.HIDDEN) emptyList()
+        else planHighlights(
+            groups,
+            highlights,
+            highlightSlots,
+            mergeMinCount,
+            clockPositionMillis(),
+        )
         highlightCursor=0
         layoutLanes()
         val lanes=if(mode==DanmakuMode.HIDDEN) 0 else laneCount
@@ -493,9 +526,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         val pixelsPerSecond=speedPx(viewWidth/BASE_SCROLL_SECONDS)
         val laneFree=FloatArray(lanes)
         // 已经排上中央的那几组不再进普通轨道：它们由中央那一块展示，避免同一句同时出现两次。
-        // 其余弹幕**照常排**，包括「只显一行」那唯一一条轨道：中央的底板只是盖在上面，
-        // 其它弹幕从右边滚进来、从底板后面穿过去（原来整条轨道被中央占着，
-        // 聚合期间屏幕上一条普通弹幕都没有，看着像弹幕停了）。
+        // 只显一行只有一条轨道，聚合展示期间跳过会与它重叠的普通弹幕，保证这一行最多一条聚合。
         val planned=highlights.map { it.group.key }.toSet()
         val emojiSize=fill.textSize*EMOJI_SCALE
         groups.filterNot { it.key in planned }.forEach { group ->
@@ -513,6 +544,10 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             }
             // 排不下：不强行叠加，直接跳过这一条（需求二「不应强行叠加显示」）。
             if((start-want)*1000f>MAX_DELAY_MS) return@forEach
+            val startMs=(start*1000f).toLong()
+            val endMs=((start+duration)*1000f).toLong()
+            if(mode==DanmakuMode.SINGLE &&
+                highlights.any { it.startMs<endMs && it.endMs>startMs }) return@forEach
             laneFree[lane]=start+(width+laneGap)/pixelsPerSecond
             lines+=Line(start,duration,width,lane,parts,widths)
         }
@@ -702,27 +737,128 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private fun drawHighlightRound(canvas: Canvas,round: DanmakuHighlightRound,nowMs: Long) {
         val slot=round.slot.coerceIn(0,DanmakuHighlight.MAX_SLOTS-1)
         val parts=partsOf(round.group.text)
-        val counter=" ×${round.group.countUpTo(nowMs).coerceAtLeast(DanmakuHighlight.MIN_COUNT)}"
+        val count=round.group.countUpTo(nowMs).coerceAtLeast(DanmakuHighlight.MIN_COUNT)
+        val counter=" ×$count"
+        val heat=if(effectsEnabled) {
+            ((count-DanmakuHighlight.MIN_COUNT).toFloat() /
+                (HIGHLIGHT_COUNTER_FULL_COUNT-DanmakuHighlight.MIN_COUNT)).coerceIn(0f,1f)
+        } else 0f
+        val counterScale=if(effectsEnabled) {
+            1f+heat*(HIGHLIGHT_COUNTER_MAX_SCALE-1f)
+        } else 1f
+        counterFill.set(hlFill)
+        val counterAlpha=counterFill.alpha
+        counterFill.color=when {
+            !effectsEnabled -> Color.WHITE
+            heat<=0.5f -> blendColor(Color.WHITE,HIGHLIGHT_COUNTER_WARM_COLOR,heat*2f)
+            else -> blendColor(HIGHLIGHT_COUNTER_WARM_COLOR,HIGHLIGHT_COUNTER_HOT_COLOR,(heat-0.5f)*2f)
+        }
+        counterFill.alpha=counterAlpha
+        counterFill.textSize=highlightSize*counterScale
+        counterEdge.set(hlEdge)
+        counterEdge.textSize=counterFill.textSize
+        counterEdge.strokeWidth=counterFill.textSize*0.16f
         val emojiSize=highlightSize*EMOJI_SCALE
         // 中央这一块每帧都在画，但正文宽度在一轮之内不会变：量一次就够（每格各缓存一份）。
-        // 只有数量标记会变，它每次重画一次 `measureText` 是可接受的（几条）。
+        // 只有数量标记会变；字号也会随数量轻微增长，因此每次重画重新量一次。
         val widths=highlightWidths(round,parts,emojiSize,slot)
         val bodyWidth=hlBodyWidths[slot]
-        val counterWidth=hlFill.measureText(counter)
+        val counterWidth=counterFill.measureText(counter)
         val total=bodyWidth+counterWidth
         val centerY=highlightCenterY(slot)
         val left=((width-total)/2f).coerceAtLeast(density*8f)
         val padX=HIGHLIGHT_PAD_DP*density
         val padY=HIGHLIGHT_PAD_DP*density*0.5f
-        val box=highlightSize*0.95f
+        val counterHeight=counterFill.fontMetrics.let { it.descent-it.ascent }
+        val box=maxOf(highlightSize*0.95f,counterHeight)
         plateRect.set(left-padX,centerY-box/2f-padY,left+total+padX,centerY+box/2f+padY)
         canvas.drawRoundRect(plateRect,density*10f,density*10f,plate)
+        val lastOffset=round.group.offsets[count-1]
+        val shockElapsed=nowMs-lastOffset
+        val shocking=effectsEnabled && count>HIGHLIGHT_SHOCK_MIN_COUNT &&
+            shockElapsed in 0 until HIGHLIGHT_SHOCK_DURATION_MS
+        val shockProgress=if(shocking) {
+            shockElapsed.toFloat()/HIGHLIGHT_SHOCK_DURATION_MS
+        } else 1f
+        if(shocking) {
+            drawCounterShock(
+                canvas,
+                left+bodyWidth+counterWidth/2f,
+                centerY,
+                counterWidth,
+                counterHeight,
+                shockProgress,
+                counterAlpha,
+            )
+        }
         val metrics=hlFill.fontMetrics
         val baseline=centerY-(metrics.ascent+metrics.descent)/2f
         drawParts(canvas,parts,widths,left,baseline,hlFill,hlEdge,emojiSize)
-        // 数量标记接在正文后面：重画一次基线，宽高与正文同一档。
-        canvas.drawText(counter,left+bodyWidth,baseline,hlEdge)
-        canvas.drawText(counter,left+bodyWidth,baseline,hlFill)
+        // 数量标记接在正文后面，按自己的字号重新居中，避免放大后上下偏。
+        val counterMetrics=counterFill.fontMetrics
+        val counterBaseline=centerY-(counterMetrics.ascent+counterMetrics.descent)/2f
+        val shake=if(shocking) {
+            Math.sin((shockProgress*Math.PI*6).toDouble()).toFloat()*
+                density*1.6f*(1f-shockProgress)
+        } else 0f
+        val counterLeft=left+bodyWidth+shake
+        canvas.drawText(counter,counterLeft,counterBaseline,counterEdge)
+        canvas.drawText(counter,counterLeft,counterBaseline,counterFill)
+    }
+
+    /** 一次 `+1` 的冲击波：两层扩散圆环 + 八条短射线，持续时间很短。 */
+    private fun drawCounterShock(
+        canvas: Canvas,
+        centerX: Float,
+        centerY: Float,
+        width: Float,
+        height: Float,
+        progress: Float,
+        textAlpha: Int,
+    ) {
+        val value=progress.coerceIn(0f,1f)
+        val eased=1f-(1f-value)*(1f-value)
+        val baseRadius=maxOf(width*0.52f,height*0.72f)
+        for(index in 0..1) {
+            counterShockPaint.color=if(index==0) HIGHLIGHT_COUNTER_HOT_COLOR
+            else HIGHLIGHT_COUNTER_WARM_COLOR
+            counterShockPaint.strokeWidth=density*(2.1f-index*0.6f)*(1f-value*0.55f)
+            counterShockPaint.alpha=(textAlpha*(0.62f-value*0.5f)).toInt().coerceIn(0,255)
+            canvas.drawCircle(
+                centerX,
+                centerY,
+                baseRadius*(0.65f+eased*(0.8f+index*0.26f)),
+                counterShockPaint,
+            )
+        }
+        counterShockPaint.color=HIGHLIGHT_COUNTER_WARM_COLOR
+        counterShockPaint.strokeWidth=density*1.3f*(1f-value*0.65f)
+        counterShockPaint.alpha=(textAlpha*(0.55f-value*0.48f)).toInt().coerceIn(0,255)
+        val inner=baseRadius*(0.8f+eased*0.45f)
+        val rayLength=density*(3.5f+5.5f*(1f-value))
+        repeat(8) { index ->
+            val angle=index*Math.PI/4.0+value*0.35
+            val cos=Math.cos(angle).toFloat()
+            val sin=Math.sin(angle).toFloat()
+            canvas.drawLine(
+                centerX+cos*inner,
+                centerY+sin*inner,
+                centerX+cos*(inner+rayLength),
+                centerY+sin*(inner+rayLength),
+                counterShockPaint,
+            )
+        }
+    }
+
+    /** 两段暖色线性过渡；透明度由调用方单独保留。 */
+    private fun blendColor(from: Int,to: Int,progress: Float): Int {
+        val value=progress.coerceIn(0f,1f)
+        fun channel(shift: Int): Int {
+            val start=(from ushr shift) and 0xFF
+            val end=(to ushr shift) and 0xFF
+            return Math.round(start+(end-start)*value)
+        }
+        return Color.rgb(channel(16),channel(8),channel(0))
     }
 
     /**

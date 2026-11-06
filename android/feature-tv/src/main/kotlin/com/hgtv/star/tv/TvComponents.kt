@@ -1398,7 +1398,7 @@ class EpisodeCell(
 /**
  * 播放进度条（对应播放器控制层，**不套新拟态**）。
  *
- * 4dp 圆角轨道 + 18% 白已播进度 + 10dp 圆形滑块：这是播放界面的原始样式，
+ * 4dp 圆角轨道 + 18% 白底槽 + 缓存段 + 已播段 + 10dp 圆形滑块：这是播放界面的原始样式，
  * 播放时它压在画面上，任何柔光底板都会和画面抢注意力，因此这里保持原样。
  * 电视端左右键已经负责 seek，这里只做显示，因此直接自绘一个 View，
  * 比套一层 SeekBar 省掉三份 drawable，也不会抢焦点。
@@ -1451,6 +1451,13 @@ class SeekIndicator(context: Context) : View(context) {
             invalidate()
         }
 
+    /** 0f–1f 的缓存进度；用较淡的暖白画在已播段下面。 */
+    var bufferedProgress: Float = 0f
+        set(value) {
+            field = value.coerceIn(0f, 1f)
+            invalidate()
+        }
+
     override fun onDraw(canvas: Canvas) {
         val middle = height / 2f
         val trackHeight = dp(4).toFloat().coerceAtLeast(1f)
@@ -1462,6 +1469,9 @@ class SeekIndicator(context: Context) : View(context) {
         val knobRadius = dp(5).toFloat()
         val edge = width.toFloat() - knobRadius
         val played = (width * progress).coerceIn(0f, width.toFloat())
+        val buffered = (width * maxOf(progress,bufferedProgress)).coerceIn(played, width.toFloat())
+        paint.color = 0x66F4F3F1
+        if (buffered > radius) drawRoundRectCompat(canvas, 0f, top, buffered, bottom, radius, paint)
         paint.color = TvStyle.playerText
         if (played > radius) drawRoundRectCompat(canvas, 0f, top, played, bottom, radius, paint)
         // 进度条比圆钮还窄时（极窄屏 / 布局未完成），上界会小于下界，coerceIn 会抛异常。

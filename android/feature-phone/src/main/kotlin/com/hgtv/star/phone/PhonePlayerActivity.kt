@@ -1120,6 +1120,9 @@ class PhonePlayerActivity : PhoneActivity() {
         if (Build.VERSION.SDK_INT < 21) return
         runCatching {
             bar.progressTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
+            bar.secondaryProgressTintList = android.content.res.ColorStateList.valueOf(
+                (PhoneStyle.accent and 0x00FFFFFF) or 0x66000000
+            )
             bar.thumbTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
             bar.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x4DFFFFFF)
         }
@@ -1724,6 +1727,7 @@ class PhonePlayerActivity : PhoneActivity() {
             view.speed = lib.danmakuSpeed
             view.mergeRepeats = lib.danmakuMerge
             view.mergeMinCount = lib.danmakuMergeMin
+            view.effectsEnabled = lib.danmakuEffects
             // 隐藏弹幕时整层不参与绘制，也就不必让它的请求跑下去。
             view.visibility = if (lib.danmakuMode == DanmakuMode.HIDDEN) View.GONE else View.VISIBLE
         }
@@ -3194,7 +3198,13 @@ class PhonePlayerActivity : PhoneActivity() {
     private fun updateProgress(position: Long, duration: Long) {
         val permille = (position * 1000 / duration).toInt().coerceIn(0, 1000)
         page.setProgress(permille / 1000f)
-        if (!dragging) landSeek.progress = permille
+        val bufferedPermille=((player?.bufferedPosition ?: position).coerceIn(0,duration)*1000/duration)
+            .toInt().coerceIn(0,1000)
+        page.setBufferedProgress(bufferedPermille/1000f)
+        if (!dragging) {
+            landSeek.progress = permille
+            landSeek.secondaryProgress = bufferedPermille
+        }
         landCurrent.text = clock(position)
         landTotal.text = clock(duration)
         // 时间每分钟才变一次，但网速每秒都在变：两项任意一项开着就按秒刷。

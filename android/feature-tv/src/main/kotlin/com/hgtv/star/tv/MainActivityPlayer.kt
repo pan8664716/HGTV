@@ -385,8 +385,9 @@ private fun MainActivity.buildPlayer(): ExoPlayer {
  *（`addAnalyticsListener` 重复调用会把监听挂两遍，诊断数据会翻倍）。
  */
 private fun MainActivity.configurePlayer(p: ExoPlayer) {
-    // `p!==player`：这个实例已经被 release / 换解码方式拆掉了，不要再往它上面挂监听。
-    if(p!==player || p===configuredPlayer) return
+    // 只配置当前播放器或双播放器兼容模式里的后台实例；已经拆掉的实例不再挂监听。
+    if(p!==player && p!==compatibilityStandbyPlayer) return
+    if(p===configuredPlayer || p===configuredCompatibilityPlayer) return
     // 诊断监听**正式包也挂**：只记账、不写日志，开销是几个 volatile 赋值。
     p.addAnalyticsListener(playbackDiagnostics())
     // 逐帧心跳：「画面还在走」的唯一硬证据，停滞看门狗靠它判活（见 [playbackFrameClock]）。
@@ -399,11 +400,267 @@ private fun MainActivity.configurePlayer(p: ExoPlayer) {
     // [buildPlayer]（那边跑在 io 线程）。需要 `WAKE_LOCK` 权限，见 AndroidManifest。
     runCatching { p.setWakeMode(C.WAKE_MODE_NETWORK) }
     if(com.hgtv.star.tv.BuildConfig.DEBUG) p.addAnalyticsListener(playbackAnalytics())
-    configuredPlayer=p
+    if(p===player) configuredPlayer=p else configuredCompatibilityPlayer=p
 }
 
 /** 把播放器挂到 `PlayerView` 上（主线程）。 */
 private fun MainActivity.attachPlayerView(p: ExoPlayer) { playerView?.player=p }
+
+/**
+ * 建一块与主画面配置一致的视频层。
+ *
+ * 兼容模式会同时保留两块；后台那块始终垫在下面，因此可以提前渲染下一集首帧，
+ * 片尾交换时不需要等 Surface 重建，也不会先露出黑底。
+ */
+private fun MainActivity.createVideoSurfaceView(rotatedSurface: Boolean): PlayerView =
+    (if(rotatedSurface) layoutInflater.inflate(R.layout.player_surface_texture,root,false) as PlayerView
+    else PlayerView(this)).apply {
+        useController=false
+        resizeMode=frameResizeMode()
+        isFocusable=false
+        setKeepContentOnPlayerReset(true)
+        setShutterBackgroundColor(Color.BLACK)
+        setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+    }
+
+/** 双播放器兼容模式需要两块 Surface；正常路径不会调用。 */
+private fun MainActivity.ensureCompatibilityStandbyView() {
+    if(!library.forceAvSync || compatibilityStandbyView!=null) return
+    val active=playerView ?: return
+    val rotated=library.autoFullscreen && autoFullscreenAvailable()
+    val standby=createVideoSurfaceView(rotated)
+    standby.findViewById<ProgressBar>(androidx.media3.ui.R.id.exo_buffering)?.let { spinner ->
+        spinner.layoutParams=FrameLayout.LayoutParams(dp(46),dp(46),Gravity.CENTER)
+    }
+    // 插在当前画面下面，当前画面继续完全遮住它。
+    root.addView(
+        standby,
+        root.indexOfChild(active).coerceAtLeast(0),
+        FrameLayout.LayoutParams(-1,-1)
+    )
+    compatibilityStandbyView=standby
+    applyVideoGeometry(standby)
+}
+
+/**
+ * 卸掉后台实例的媒体源，但保留播放器与 Surface 以便下一次乒乓复用。
+ *
+ * 不关闭 [queuedVideo]：资源所有权仍归队列，调用方随后按原逻辑移交或关闭。
+ */
+fun MainActivity.clearCompatibilityStandbySource() {
+    compatibilityStandbyToken++
+    compatibilityStandbyPreparing=false
+    compatibilityStandbyReady=false
+    compatibilityStandbyFirstFrame=false
+    compatibilityStandbyVideoWidth=0
+    compatibilityStandbyVideoHeight=0
+    val p=compatibilityStandbyPlayer ?: return
+    if(p===player) return
+    compatibilityStandbyListener?.let { runCatching { p.removeListener(it) } }
+    compatibilityStandbyListener=null
+    runCatching { p.pause(); p.stop(); p.clearMediaItems() }
+    compatibilityStandbyView?.player=null
+}
+
+/**
+ * 在第二个播放器里准备下一集，但保持暂停。
+ *
+ * 暂停状态也会完成解封装、解码器初始化和首帧渲染；片尾交换后再开始走音频时钟，
+ * 因此当前集结束的同一刻，后台 Surface 上已经有一张下一集画面可以接上。
+ */
+fun MainActivity.prepareCompatibilityNext(episodeId: String) {
+    if(!library.forceAvSync || screen!="player" || queuedEpisodeId!=episodeId) return
+    ensureCompatibilityStandbyView()
+    val view=compatibilityStandbyView ?: return
+    val token=++compatibilityStandbyToken
+    compatibilityStandbyPreparing=true
+    compatibilityStandbyReady=false
+    compatibilityStandbyFirstFrame=false
+    compatibilityStandbyVideoWidth=0
+    compatibilityStandbyVideoHeight=0
+
+    fun install(p: ExoPlayer) {
+        if(isDestroyed || !library.forceAvSync || screen!="player" ||
+            token!=compatibilityStandbyToken || queuedEpisodeId!=episodeId || playerDisposed) return
+        compatibilityStandbyPlayer=p
+        compatibilityStandbyView=view
+        configurePlayer(p)
+        view.player=p
+        view.setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+        p.volume=1f
+        p.setPlaybackSpeed(library.playbackSpeed)
+        p.playWhenReady=false
+        compatibilityStandbyListener?.let { runCatching { p.removeListener(it) } }
+        val listener=object: Player.Listener {
+            fun current()=token==compatibilityStandbyToken &&
+                compatibilityStandbyPlayer===p && queuedEpisodeId==episodeId
+
+            override fun onPlaybackStateChanged(state: Int) {
+                if(!current()) return
+                if(state==Player.STATE_READY) {
+                    compatibilityStandbyReady=true
+                    // 个别老系统暂停准备时不上报首帧；READY 后再留一小段时间，
+                    // 仍没有回调就按「首帧已就绪」继续交换，避免片尾卡在最后一帧。
+                    main.postDelayed({
+                        if(current() && compatibilityStandbyReady) {
+                            compatibilityStandbyFirstFrame=true
+                            promoteCompatibilityNext()
+                        }
+                    },600)
+                }
+            }
+
+            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+                if(!current()) return
+                val ratio=if(videoSize.pixelWidthHeightRatio>0f) videoSize.pixelWidthHeightRatio else 1f
+                val swapped=videoSize.unappliedRotationDegrees==90 || videoSize.unappliedRotationDegrees==270
+                val rawW=if(swapped) videoSize.height else videoSize.width
+                val rawH=if(swapped) videoSize.width else videoSize.height
+                compatibilityStandbyVideoWidth=Math.round(rawW*ratio)
+                compatibilityStandbyVideoHeight=rawH
+            }
+
+            override fun onRenderedFirstFrame() {
+                if(!current()) return
+                compatibilityStandbyFirstFrame=true
+                promoteCompatibilityNext()
+            }
+
+            override fun onPlayerError(error: PlaybackException) {
+                if(!current()) return
+                android.util.Log.w(
+                    "HGTV",
+                    "Compatibility standby failed episode=$episodeId code=${error.errorCode}",
+                    error
+                )
+                val endedWaiting=compatibilityEndedWaiting
+                compatibilityStandbyReady=false
+                compatibilityStandbyFirstFrame=false
+                compatibilityStandbyPreparing=false
+                if(endedWaiting) {
+                    compatibilityEndedWaiting=false
+                    val next=detail?.episodes?.indexOf(episodeId) ?: -1
+                    if(next>=0) main.post { if(!isDestroyed) playEpisode(next,0,requestedAutoplay) }
+                }
+            }
+        }
+        compatibilityStandbyListener=listener
+        p.addListener(listener)
+        val remote=queuedVideo ?: return
+        val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }
+            .createMediaSource(
+                MediaItem.Builder()
+                    .setMediaId(episodeId)
+                    .setUri("hgtv://episode/$episodeId")
+                    .setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4)
+                    .build()
+            )
+        p.setMediaSource(source,0)
+        p.prepare()
+        p.playWhenReady=false
+        compatibilityStandbyPreparing=false
+        android.util.Log.i("HGTV","Compatibility next prepared episode=$episodeId")
+    }
+
+    val existing=compatibilityStandbyPlayer
+    if(existing!=null) {
+        install(existing)
+        return
+    }
+    // 第二个实例只在兼容开关打开后创建；构造较慢，放到专用 player 车道，
+    // 不占当前集的播放 / 主线程。
+    playerBuildWorker.submit {
+        val built=runCatching { buildPlayer() }.getOrNull() ?: return@submit
+        main.post {
+            if(isDestroyed || token!=compatibilityStandbyToken || queuedEpisodeId!=episodeId ||
+                !library.forceAvSync || screen!="player" || playerDisposed) {
+                runCatching { built.release() }
+                return@post
+            }
+            if(compatibilityStandbyPlayer==null) compatibilityStandbyPlayer=built
+            install(compatibilityStandbyPlayer ?: built)
+        }
+    }
+}
+
+/**
+ * 当前集结束后，把已经预热好的后台实例推成前台实例。
+ *
+ * 两块 Surface 同时存在：新画面先在旧画面下面渲染完成，这里只把它移到旧画面上方，
+ * 再隐藏旧画面。整个过程不 reset、不 seek、不重建媒体源，也不出现中间黑底。
+ */
+fun MainActivity.promoteCompatibilityNext(): Boolean {
+    if(!compatibilityEndedWaiting || !library.forceAvSync) return false
+    if(!compatibilityStandbyReady || !compatibilityStandbyFirstFrame) return false
+    val oldPlayer=player ?: return false
+    val oldView=playerView ?: return false
+    val nextPlayer=compatibilityStandbyPlayer ?: return false
+    val nextView=compatibilityStandbyView ?: return false
+    if(nextPlayer===oldPlayer || nextView===oldView) return false
+    val nextId=queuedEpisodeId ?: return false
+    val next=detail?.episodes?.indexOf(nextId) ?: -1
+    if(next<0) return false
+
+    compatibilityEndedWaiting=false
+    compatibilityStandbyToken++
+    compatibilityStandbyListener?.let { runCatching { nextPlayer.removeListener(it) } }
+    compatibilityStandbyListener=null
+
+    // 把新画面移到旧画面之上、所有弹幕 / 控件之下。顺序调整和显隐同在主线程完成，
+    // SurfaceView 不会在两步之间单独合成一帧。
+    root.removeView(nextView)
+    val overlayIndex=root.indexOfChild(overlayLayer).let { if(it>=0) it else root.childCount }
+    root.addView(nextView,overlayIndex,FrameLayout.LayoutParams(-1,-1))
+    nextView.visibility=View.VISIBLE
+    nextView.player=nextPlayer
+    nextView.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+
+    player=nextPlayer
+    playerView=nextView
+    compatibilityStandbyPlayer=oldPlayer
+    compatibilityStandbyView=oldView
+    configuredPlayer=nextPlayer
+    configuredCompatibilityPlayer=oldPlayer
+    compatibilityStandbyReady=false
+    compatibilityStandbyFirstFrame=false
+    compatibilityStandbyPreparing=false
+
+    playerListenerRebind?.invoke(nextPlayer)
+    oldView.visibility=View.INVISIBLE
+    runCatching { oldPlayer.pause(); oldPlayer.stop(); oldPlayer.clearMediaItems() }
+    oldView.player=null
+
+    videoWidth=compatibilityStandbyVideoWidth
+    videoHeight=compatibilityStandbyVideoHeight
+    compatibilityStandbyVideoWidth=0
+    compatibilityStandbyVideoHeight=0
+    nextPlayer.setPlaybackSpeed(library.playbackSpeed)
+    nextPlayer.volume=1f
+    applyResizeMode(nextView)
+
+    onEpisodeAdvanced(next,nextId)
+    markAutoTransitionReady(nextId)
+    markAutoTransitionFirstFrame(nextId)
+    nextPlayer.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle
+    playback.onPlayerState(Player.STATE_READY,nextPlayer.playWhenReady)
+    playbackReady=true
+    restoreBufferingUi()
+    syncKeepScreenOn()
+    main.postDelayed({ if(!isDestroyed) maybeQueueNext() },3000)
+    android.util.Log.i("HGTV","Compatibility players swapped episode=${next+1}")
+    return true
+}
+
+/** 真正销毁第二实例；Activity 退出或切换解码方式时调用。 */
+fun MainActivity.releaseCompatibilityPlayer() {
+    clearCompatibilityStandbySource()
+    val p=compatibilityStandbyPlayer
+    compatibilityStandbyPlayer=null
+    compatibilityStandbyView?.player=null
+    compatibilityStandbyView=null
+    configuredCompatibilityPlayer=null
+    if(p!=null && p!==player) runCatching { p.release() }
+}
 
 /**
  * 起播前的并行预热：`player` 还没有就先建出来，让「建播放器」与「取地址 + 本地准备」同时在跑。
@@ -486,7 +743,14 @@ private fun MainActivity.probeHardwareHevcDecoder() {
     if(!available) android.util.Log.w("HGTV","No HEVC hardware decoder detected; user must switch to software decoding")
 }
 
-fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,recovering: Boolean=false,prepared: RemoteVideo?=null,keepMedia: Boolean=false) {
+fun MainActivity.playEpisode(
+    index: Int,
+    position: Long=0,
+    autoplay: Boolean=true,
+    recovering: Boolean=false,
+    prepared: RemoteVideo?=null,
+    keepMedia: Boolean=false,
+) {
     val data=detail ?: return
     nextSeasonFinishedFor=""
     val playbackStarted=android.os.SystemClock.elapsedRealtime()
@@ -556,6 +820,8 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
     // 否则那 1MB 与它的连接会一直挂着，没人再来取。
     if(prepared!=null && prefetched!==prepared) runCatching { prepared.close() }
     if(fromQueue) { queuedVideo=null; queuedEpisodeId=null; queuedQuality=""; queuedAt=0 }
+    // 手动点下一集会消费同一份预热结果：先卸掉后台实例上的源，避免两个播放器同时持有它。
+    if(library.forceAvSync && compatibilityStandbyPlayer!=null) clearCompatibilityStandbySource()
     // 无感切集：同一个播放器复用、目标是下一集的开头、而且下一集**已经预热好**
     //（播放地址 / moov / 首批数据都在本地，见 [maybePrefetch]）。
     // 这时切集不再走「停播放器 → 清空 → 重新取地址 → 重建画面」那条路：
@@ -571,13 +837,17 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
     // 数据仍然来自预热缓存，因此不重新取地址、也不会变慢。过渡黑场本来就盖着这一下。
     // 同档重建**必须**走硬切（`!keep`）：这一趟的全部意义就是 `stop()` 把 MediaCodec 放掉。
     // 走无感那条路等于什么都不做，4001 / 4003 的现场原样留着。
-    val seamless=reuse && prefetched!=null && !recommendEntry && !keep
+    // 兼容模式的自动连播走双播放器交换（见 [prepareCompatibilityNext]）。
+    // 手动切集仍沿用单实例重建，但绝不能再走跨 period 的无感路径。
+    val seamless=reuse && prefetched!=null && !recommendEntry && !keep && !library.forceAvSync
     // 队列里还挂着别的下一集（换清晰度、跳集）：先摘掉，别让它跟着新源一起进播放器。
     if(!fromQueue) dropQueuedEpisode()
-    // 同档重建也短暂关掉转圈：画面只是停一下（解码器重建），数据全在本地，
-    // 那颗圈多半还没转起来就被撤掉了。`suppressBufferingUi` 自带 1.2 秒兜底恢复，
+    // 同档重建和兼容模式的手动重建也短暂关掉转圈：画面保留上一帧，
+    // 只让解码器重建；`suppressBufferingUi` 自带 1.2 秒兜底恢复，
     // 万一这一发真的卡住，圈该回来就会回来。
-    if(seamless || keep) suppressBufferingUi() else restoreBufferingUi()
+    if(seamless || keep || library.forceAvSync) suppressBufferingUi() else restoreBufferingUi()
+    // 兼容模式靠双 Surface 交换，不依赖 reset 后的黑底；所有路径都保留本层上一帧。
+    playerView?.setKeepContentOnPlayerReset(true)
     // 上一次切集留下的尾巴（正常情况为空：新源出画面时就收掉了，见 [retirePreviousEpisode]）。
     // 这里用强制版：下面马上要整条替换播放列表（setMediaSource / clearMediaItems），
     // 旧项不可能再被读；不强制的话，连续切集会把它顶掉、漏掉一次关闭。
@@ -588,6 +858,7 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
         cancelRecovery(); cancelPrefetch(); tvTools.close()
         episodePanel?.dismiss(); episodePanel=null; speedDialog?.dismiss(); speedDialog=null
         playerListener?.let { player?.removeListener(it) }; playerListener=null
+        playerListenerRebind=null
         // `stop()` 是这一步唯一必须的：它卸载媒体、释放 MediaCodec，正是 4001 / 4003 要的。
         //
         // 列表**不清**（同档重建时）：下面 `setMediaSource` 内部第一件事就是
@@ -696,9 +967,8 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
         // 判据是 [autoFullscreenAvailable]：电视上这个开关存着也不生效（见那里的说明），
         // 就不必为了它把整块画面换成更贵的 TextureView。
         val rotatedSurface=library.autoFullscreen && autoFullscreenAvailable()
-        val view=(if(rotatedSurface) layoutInflater.inflate(R.layout.player_surface_texture,root,false) as PlayerView else PlayerView(this)).apply {
-            useController=false; resizeMode=frameResizeMode(); isFocusable=false
-            setKeepContentOnPlayerReset(true); setShutterBackgroundColor(Color.BLACK); setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+        val view=createVideoSurfaceView(rotatedSurface).apply {
+            setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
         }
         // 缓冲圈按**设计单位**定尺寸。
         //
@@ -707,8 +977,19 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
         // （48dp × density）。540dpi 上 48dp = 162px，屏幕上就是一颗巨大的圈。
         // 这里把它钉成 46 个设计单位，与全站其它图标同一档；它仍然是系统那枚转圈动画，
         // 只是被约束在一个固定的方框里，换分辨率、换 dpi 都不会再变形。
-        view.findViewById<ProgressBar>(androidx.media3.ui.R.id.exo_buffering)?.let { spinner ->
-            spinner.layoutParams=FrameLayout.LayoutParams(dp(46),dp(46),Gravity.CENTER)
+        fun sizeBuffering(view: PlayerView) {
+            view.findViewById<ProgressBar>(androidx.media3.ui.R.id.exo_buffering)?.let { spinner ->
+                spinner.layoutParams=FrameLayout.LayoutParams(dp(46),dp(46),Gravity.CENTER)
+            }
+        }
+        sizeBuffering(view)
+        // 兼容模式先垫一块后台画面，再把当前画面叠在上面。两块 Surface 都已创建，
+        // 下一集可以在下面安静地解出首帧；片尾只交换可见层级，不再临时建 Surface。
+        if(library.forceAvSync) {
+            val standby=createVideoSurfaceView(rotatedSurface)
+            sizeBuffering(standby)
+            compatibilityStandbyView=standby
+            root.addView(standby,FrameLayout.LayoutParams(-1,-1))
         }
         // 播放器实例是进程内复用的：从别的页面回到播放页时 [player] 已经存在，
         // 这里必须把新一层的 PlayerView 接上去，否则画面没有输出（黑屏、只有声音）。
@@ -739,6 +1020,7 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
             speed=library.danmakuSpeed
             mergeRepeats=library.danmakuMerge
             mergeMinCount=library.danmakuMergeMin
+            effectsEnabled=library.danmakuEffects
             // 时钟由宿主推进（见 [syncDanmakuClock]），绘制线程不再直接读播放器。
             setClock(0,false)
         }
@@ -917,7 +1199,7 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
     loadDanmaku(data.episodes[episodeIndex],data.series.id)
     // 同档重建不取地址：写「正在获取播放地址」是假的，用户看到的就是一句错话。
     if(!keep) playbackText.text="正在获取播放地址…"
-    progressBar.progress=0f; progressBar.visibility=View.VISIBLE; hidePlaybackOverlay()
+    progressBar.progress=0f; progressBar.bufferedProgress=0f; progressBar.visibility=View.VISIBLE; hidePlaybackOverlay()
     controls.removeAllViews(); controls.visibility=View.GONE
     syncMediaSession()
     syncNextSeasonForCurrentEpisode()
@@ -1062,16 +1344,17 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
         if(playerView?.player!==p) attachPlayerView(p)
         p.setPlaybackSpeed(library.playbackSpeed)
         stage("player")
+        var boundPlayer=p
         val listener=object: Player.Listener {
             // 片尾自动推进之后 mediaId 会变成下一集，因此这里不再拿它做判据；
             // 但也不能什么判据都不留：用播放会话号，挡掉上一次 `playEpisode` 遗留的回调。
-            fun active()=player===p && generation==ticket && session==playbackSession
+            fun active()=player===boundPlayer && generation==ticket && session==playbackSession
             override fun onPlaybackStateChanged(state: Int) {
                 if(!active()) return
                 // 状态机是唯一事实来源：所有阶段迁移都从这里进（`playbackReady` 只是它的投影）。
-                playback.onPlayerState(state, p.playWhenReady)
+                playback.onPlayerState(state, boundPlayer.playWhenReady)
                 if(state==Player.STATE_READY) {
-                    PlaybackDiag.tracksSelected=p.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)
+                    PlaybackDiag.tracksSelected=boundPlayer.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)
                     if(!PlaybackDiag.tracksSelected) {
                         playerFailure(PlaybackException("资源没有可解码的视频轨道",null,PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED))
                         return
@@ -1115,9 +1398,9 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
                     // 判据是「有没有画面」而不是只认 `onRenderedFirstFrame`：
                     // 隧道模式与个别老系统不回调那个方法，只认它会把正常播放误判成黑屏。
                     if(playbackWatchdog==null && !pictureUpNow()) armPlaybackWatchdog(session)
-                    lastEpisodeDuration=p.duration.coerceAtLeast(0)
+                    lastEpisodeDuration=boundPlayer.duration.coerceAtLeast(0)
                     // 新源已经出画面：这时候再收上一集的视频与传输最稳，顺手把缓冲指示恢复。
-                    markAutoTransitionReady(p.currentMediaItem?.mediaId.orEmpty())
+                    markAutoTransitionReady(boundPlayer.currentMediaItem?.mediaId.orEmpty())
                     confirmPlayedItemRemoved()
                     retirePreviousEpisode(); restoreBufferingUi()
                     if(firstReady) { firstReady=false; readySince=android.os.SystemClock.elapsedRealtime(); android.util.Log.i("HGTV","Playback ready episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${readySince-playbackStarted}") }
@@ -1131,12 +1414,36 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
                         main.post { if(!isDestroyed && screen=="recommend") enterFormalPlayback(advanceNext=true) }
                         return
                     }
+                    // 强制音画同步：当前实例只负责停住，下一集由后台实例出好首帧后交换。
+                    // 还没准备好时保留当前画面等待，不在这里停掉 / 重建，因此不会先露黑底。
+                    if(library.forceAvSync) {
+                        compatibilityEndedWaiting=true
+                        if(promoteCompatibilityNext()) return
+                        val waitingId=queuedEpisodeId
+                        if(waitingId!=null || compatibilityStandbyPreparing) {
+                            // 后台实例异常卡住时不能让片尾一直停在最后一帧。
+                            // 正常预热会在几秒内完成；超时后退回单实例重建，至少能继续播放。
+                            val waitingToken=compatibilityStandbyToken
+                            main.postDelayed({
+                                if(!isDestroyed && compatibilityEndedWaiting &&
+                                    queuedEpisodeId==waitingId && compatibilityStandbyToken==waitingToken &&
+                                    player===boundPlayer) {
+                                    compatibilityEndedWaiting=false
+                                    clearCompatibilityStandbySource()
+                                    val next=detail?.episodes?.indexOf(waitingId) ?: -1
+                                    if(next>=0) playEpisode(next,0,requestedAutoplay)
+                                }
+                            },3000)
+                            return
+                        }
+                        compatibilityEndedWaiting=false
+                    }
                     // 队列里还挂着下一集却没自动推进 = 下一集没接上。这里**不自己再切一次**：
                     // 同一次故障的 `onPlayerError` 可能已经（或即将）走到 [playerFailure]，
                     // 两处都切就是重复切换。统一交给 [playerFailure]，它带互斥窗与次数上限。
                     val hasQueuedItem=runCatching {
-                        val current=p.currentMediaItemIndex.coerceAtLeast(0)
-                        p.mediaItemCount>current+1
+                        val current=boundPlayer.currentMediaItemIndex.coerceAtLeast(0)
+                        boundPlayer.mediaItemCount>current+1
                     }.getOrDefault(false)
                     if(queuedEpisodeId!=null && hasQueuedItem) {
                         playerFailure(PlaybackException("队列中的下一集没有接上",null,PlaybackException.ERROR_CODE_IO_UNSPECIFIED))
@@ -1149,11 +1456,16 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
                     // 「连着看」：还在前台、没有因为息屏 / 切后台被暂停、用户也没按过暂停。
                     val continuous=foreground && requestedAutoplay && !pausedForLifecycle
                     if(sleepTimer.episodeEnded()) stopForSleep()
-                    else if(continuous && library.autoNext && episodeIndex<data.episodes.lastIndex) playEpisode(episodeIndex+1)
+                    else if(continuous && library.autoNext && episodeIndex<data.episodes.lastIndex) {
+                        playEpisode(
+                            episodeIndex+1,
+                            autoplay=requestedAutoplay,
+                        )
+                    }
                     else if(continuous && episodeIndex>=data.episodes.lastIndex) {
                         advanceToNextSeasonOrFinish(data.series)
                     }
-                    else { requestedAutoplay=false; p.pause(); playbackText.text="本集已结束"; showHud() }
+                    else { requestedAutoplay=false; boundPlayer.pause(); playbackText.text="本集已结束"; showHud() }
                 }
             }
             /**
@@ -1179,7 +1491,7 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
                     cancelAutoTransitionCleanup()
                     main.post {
                         if(!active()) return@post
-                        runCatching { p.stop(); p.clearMediaItems() }
+                        runCatching { boundPlayer.stop(); boundPlayer.clearMediaItems() }
                         cancelPrefetch()
                         dropQueuedEpisode()
                         forceRetirePrevious()
@@ -1213,7 +1525,7 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
             }
             override fun onRenderedFirstFrame() {
                 if(!active()) return
-                markAutoTransitionFirstFrame(p.currentMediaItem?.mediaId.orEmpty())
+                markAutoTransitionFirstFrame(boundPlayer.currentMediaItem?.mediaId.orEmpty())
                 // 首帧的尺寸已经确定：竖屏短剧全屏在这之后再落一次
                 //（`onVideoSizeChanged` 在个别软解 / 隧道模式下不一定先于首帧回调，这里兜一次底）。
                 applyResizeMode()
@@ -1270,7 +1582,7 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
                 if(!active()) return
                 if(com.hgtv.star.tv.BuildConfig.DEBUG) android.util.Log.i(
                     "HGTV",
-                    "Speed changed to ${parameters.speed} media=${p.currentMediaItem?.mediaId} at=${android.os.SystemClock.elapsedRealtime()}"
+                    "Speed changed to ${parameters.speed} media=${boundPlayer.currentMediaItem?.mediaId} at=${android.os.SystemClock.elapsedRealtime()}"
                 )
                 syncMediaSession()
                 // 倍速变了：外推的斜率要换，立刻按新倍速重新校准。
@@ -1291,6 +1603,14 @@ fun MainActivity.playEpisode(index: Int,position: Long=0,autoplay: Boolean=true,
             }
         }
         playerListener=listener; p.addListener(listener)
+        playerListenerRebind={ next ->
+            if(boundPlayer!==next) {
+                runCatching { boundPlayer.removeListener(listener) }
+                boundPlayer=next
+                next.addListener(listener)
+            }
+            playerListener=listener
+        }
         val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4).build())
         // 起点一次设定：`setMediaSource(source, startPositionMs)` 内部先摘空旧项、
         // 再按给定位置掩码时间线，等价于「`setMediaSource` + `seekTo`」，少一次

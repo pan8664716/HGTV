@@ -598,7 +598,10 @@ class PhoneFeedView(
         paused = !exo.playWhenReady
         // 进度条立刻对齐到接手的那一秒，不要等 500ms 后的第一个 tick。
         val dur = exo.duration
-        if (page != null && dur > 0) page.setProgress(exo.currentPosition.toFloat() / dur)
+        if (page != null && dur > 0) {
+            page.setProgress(exo.currentPosition.toFloat() / dur)
+            page.setBufferedProgress(exo.bufferedPosition.toFloat() / dur)
+        }
         if (page != null) {
             syncDanmakuClock(page, playingIndex, exo.currentPosition, exo.isPlaying, exo.playbackParameters.speed)
         }
@@ -1541,11 +1544,15 @@ class PhoneFeedView(
         val lib = library ?: return
         val view = page.danmakuView
         view.mode = lib.danmakuMode
+        // 横屏推荐页的视图高度只有 1080，按高度算会比正式播放页（按长边 1920）
+        // 小一档；两端统一按屏幕长边取基准，切进正式播放页时字号不会突然变大。
+        view.sizeFollowsLongEdge = true
         view.textScale = PhoneDanmakuSize.renderScale(context)
         view.textAlpha = lib.danmakuAlpha
         view.speed = lib.danmakuSpeed
         view.mergeRepeats = lib.danmakuMerge
         view.mergeMinCount = lib.danmakuMergeMin
+        view.effectsEnabled = lib.danmakuEffects
         view.visibility = if (lib.danmakuMode == DanmakuMode.HIDDEN) View.GONE else View.VISIBLE
     }
 
@@ -1578,6 +1585,7 @@ class PhoneFeedView(
                     if (duration > 0) {
                         val position = exo.currentPosition
                         page.setProgress(position.toFloat() / duration)
+                        page.setBufferedProgress(exo.bufferedPosition.toFloat() / duration)
                         // 还在播就刷新会话时间戳：连看十几分钟后切页，地址仍然算「新鲜」。
                         if (exo.isPlaying) PhoneSession.touch()
                         syncDanmakuClock(page, playingIndex, position, exo.isPlaying, exo.playbackParameters.speed)

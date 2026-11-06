@@ -5,8 +5,6 @@ import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.MediaType
 import okhttp3.RequestBody
-import okhttp3.MediaType.Companion.toMediaType
-import okhttp3.RequestBody.Companion.toRequestBody
 import org.json.JSONObject
 import org.json.JSONArray
 import java.io.IOException
@@ -14,6 +12,19 @@ import java.util.concurrent.TimeUnit
 
 fun JSONArray.objects() = (0 until length()).mapNotNull { optJSONObject(it) }
 fun JSONObject.str(key: String) = if (isNull(key)) "" else optString(key, "").trim()
+/**
+ * 宽松布尔：平台这类开关字段有时是 `true/false`、有时是 `1/0`、有时是 `"1"/"0"` 字符串。
+ *
+ * `optBoolean` 只认布尔与数字，字符串 `"1"` 会被当成「没有这个字段」而落回默认值——
+ * 一个字符串 `online_subscribed` 就足以让简介页永远显示「预约」（用户读到的正是
+ * 「明明预约过了，点进去还是预约」）。这里三种形态都接住，缺字段仍然按 `false`。
+ */
+fun JSONObject.flag(key: String) = when(val value=opt(key)) {
+    is Boolean -> value
+    is Number -> value.toDouble()!=0.0
+    is String -> value.trim().let { it=="1" || it.equals("true",ignoreCase=true) || it.equals("yes",ignoreCase=true) }
+    else -> false
+}
 fun cleanUrl(s: String) = s.replace("\\/","/").replace("\\u002F","/",ignoreCase=true).replace("\\u0026","&").replace("&amp;","&")
 /** 分类 / 榜单接口的 HTTP 状态异常：4xx（429 除外）说明参数或路由有问题，重试没有意义。 */
 private class CatalogHttpException(val status: Int, message: String) : IOException(message)
@@ -2798,7 +2809,7 @@ class ContentRepository(
             EpisodeLabel.normalize(o.str("episode_right_text")).ifEmpty { EpisodeLabel.of(count) },
             tags,author=authorOf(id),episodeCount=count,seasonIndex=o.optInt("season_index",0),
             upcoming=upcoming,notice=notice)
-        val detail=Detail(series,episodes,upcoming,reserved=o.optBoolean("online_subscribed",false))
+        val detail=Detail(series,episodes,upcoming,reserved=o.flag("online_subscribed"))
         DetailCache.save(detail)
         return detail
     }

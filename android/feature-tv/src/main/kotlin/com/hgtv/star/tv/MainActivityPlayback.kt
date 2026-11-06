@@ -67,7 +67,6 @@ fun MainActivity.restoreBufferingUi() {
     main.removeCallbacks(restoreBuffering)
     playerView?.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
 }
-
 /**
  * 上一集的视频与传输：等新源出画面（READY）、这一集出错、或退出播放时再关。
  *
@@ -237,6 +236,12 @@ fun MainActivity.enqueuePreparedNext() {
     if(http==null) { remote.close(); return }
     queuedEpisodeId=id; queuedVideo=remote; queuedHttp=http; queuedQuality="${quality}P"
     queuedAt=if(fetchedAt>0L) fetchedAt else android.os.SystemClock.elapsedRealtime()
+    // 兼容模式不把下一集挂进当前播放器：后台第二个播放器独立准备，
+    // 片尾交换实例，避免同一个音频 / 视频 renderer 跨集后时钟没有重新对齐。
+    if(library.forceAvSync) {
+        prepareCompatibilityNext(id)
+        return
+    }
     val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }
         .createMediaSource(MediaItem.Builder().setMediaId(id).setUri("hgtv://episode/$id")
             .setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4).build())
@@ -281,7 +286,9 @@ fun MainActivity.maybeQueueNext() {
 fun MainActivity.dropQueuedEpisode() {
     val p=player
     var removed=true
-    if(p!=null && p.mediaItemCount>1) {
+    if(compatibilityStandbyPlayer!=null) {
+        clearCompatibilityStandbySource()
+    } else if(p!=null && p.mediaItemCount>1) {
         val index=p.currentMediaItemIndex
         removed=runCatching { p.removeMediaItems(minOf(index+1,p.mediaItemCount),p.mediaItemCount) }.isSuccess
     }
@@ -1444,6 +1451,9 @@ fun MainActivity.updatePlaybackText() {
     val span="${formatSpan(position)} / ${formatSpan(duration)}"
     playbackText.text=if(p.playbackState==Player.STATE_BUFFERING) "缓冲中 · $span" else if(p.playbackState==Player.STATE_ENDED) "本集已结束 · $span" else span
     progressBar.progress=if(duration>0) position.toFloat()/duration else 0f
+    progressBar.bufferedProgress=if(duration>0) {
+        p.bufferedPosition.coerceIn(0,duration).toFloat()/duration
+    } else 0f
 }
 /**
  * 顶部信息条里的集数读数：`第 3 / 24 集`。
@@ -1669,8 +1679,8 @@ fun MainActivity.fullscreenSpinDirection(): Float {
  * 转的方向交给 [fullscreenSpinDirection]（手机 `−90`、电视 / 横屏平板 `+90`）：
  * 框的尺寸对两个方向是对称的，因此换方向不需要动这里的任何算式。
  */
-fun MainActivity.applyVideoGeometry() {
-    val view=playerView ?: return
+fun MainActivity.applyVideoGeometry(target: PlayerView?=playerView) {
+    val view=target ?: return
     val params=view.layoutParams as? FrameLayout.LayoutParams ?: return
     val rootW=root.width; val rootH=root.height
     if(rootW<=0 || rootH<=0) return
@@ -1730,11 +1740,11 @@ fun MainActivity.applyOverlayGeometry() {
  * **竖屏短剧全屏只靠旋转实现，不改画面模式**：旋转之后那个框已经是 16:9，
  * 「完整画面」就能铺满，用户自己选的档位（完整 / 等比铺满 / 拉伸）语义保持原样。
  */
-fun MainActivity.applyResizeMode() {
-    playerView?.resizeMode=frameResizeMode()
+fun MainActivity.applyResizeMode(target: PlayerView?=playerView) {
+    target?.resizeMode=frameResizeMode()
     // 旋转 / 缩放与画面模式是同一次「这一集怎么摆」的决策：片源尺寸一变，
     // 旋转与否可能跟着变（竖屏剧 ⟷ 横屏剧），这里一并落下去。
-    applyVideoGeometry()
+    applyVideoGeometry(target)
 }
 /**
  * 画面缩放 / 竖屏短剧全屏：两者的落点都是 [playerView] 这一层的几何，

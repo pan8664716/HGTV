@@ -50,6 +50,7 @@ import com.hgtv.star.tv.list.updateBackToTop
 import com.hgtv.star.shared.compat.Cancellable
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.shared.compat.lowEndTv
+import com.hgtv.star.shared.architecture.AppExit
 import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.DebugFaults
@@ -390,6 +391,12 @@ class MainActivity: Activity() {
     var workScope: RequestScope?=null
     var workJob: java.util.concurrent.Future<*>?=null
     var playerListener: Player.Listener?=null
+    /**
+     * 双播放器兼容模式下，把当前会话的监听器从旧实例接到新实例。
+     *
+     * 监听器闭包里的播放器引用必须一起更新；只在片尾交换时由主线程调用。
+     */
+    var playerListenerRebind: ((ExoPlayer)->Unit)?=null
     /**
      * 待决的解码器错误上报（见 [playbackDiagnostics] 的 `onVideoCodecError`）。
      *
@@ -885,6 +892,23 @@ class MainActivity: Activity() {
     val sleepTimer=SleepTimer { android.os.SystemClock.elapsedRealtime() }
     var sleepStopped=false
     var playerView: PlayerView?=null
+    /**
+     * 强制音画同步专用：第二个播放器与第二个 Surface。
+     *
+     * 两个实例轮流做「正在显示」和「后台预热下一集」。只创建一次，之后乒乓复用；
+     * 默认关闭时这些字段始终为空，不增加解码器、内存或 Surface 开销。
+     */
+    @Volatile internal var compatibilityStandbyPlayer: ExoPlayer?=null
+    var compatibilityStandbyView: PlayerView?=null
+    var compatibilityStandbyListener: Player.Listener?=null
+    var compatibilityStandbyReady=false
+    var compatibilityStandbyFirstFrame=false
+    var compatibilityStandbyPreparing=false
+    var compatibilityStandbyToken=0
+    var compatibilityStandbyVideoWidth=0
+    var compatibilityStandbyVideoHeight=0
+    /** 当前集已经结束，等后台播放器吐出新集首帧后立刻交换。 */
+    var compatibilityEndedWaiting=false
     /**
      * 播放页「画面之外的一切」那一层：弹幕 / 手势层 / 顶部信息条 / 底部控制条 / 触屏按键。
      *
@@ -1541,6 +1565,8 @@ class MainActivity: Activity() {
      * 播放器被拆除时一并清空。
      */
     @Volatile internal var configuredPlayer: ExoPlayer?=null
+    /** 第二个实例只配置一次；与 [configuredPlayer] 分开记录，避免重复挂诊断监听。 */
+    @Volatile internal var configuredCompatibilityPlayer: ExoPlayer?=null
     var video: RemoteVideo?=null
     /**
      * 最近一次**真的取到**的播放地址域名（由 [playEpisode] 在 `repository.stream()` 之后写入）。
@@ -2083,7 +2109,7 @@ class MainActivity: Activity() {
     }
     /**
      * 主界面按返回的退出：**按两次**——第一次只弹一条提示，[EXIT_CONFIRM_WINDOW_MS] 之内
-     * 再按一次才 [finish]。
+     * 再按一次才完全结束应用进程。
      *
      * 不再弹确认框：电视上没有指针，确认框每次都要用户把焦点从「取消」挪到「退出」，
      * 比再按一下返回慢；而「再按一次退出」是 Android 上最熟的手势，第一次的提示已经把
@@ -2094,11 +2120,26 @@ class MainActivity: Activity() {
         val now=android.os.SystemClock.elapsedRealtime()
         if(exitArmedAt!=0L && now-exitArmedAt<=EXIT_CONFIRM_WINDOW_MS) {
             exitArmedAt=0L
-            finish()
+            exitApplication()
             return
         }
         exitArmedAt=now
         tvTools.toast(EXIT_TOAST)
+    }
+    /** 保存最后一次状态后移除任务并结束进程，真正释放进程级缓存、线程与播放器。 */
+    private fun exitApplication() {
+        AppExit.exit(this) {
+            generation++
+            cancelWork()
+            saveProgress()
+            favoriteMonitor.stop()
+            mediaSession?.release(); mediaSession=null
+            runCatching { com.hgtv.star.shared.data.SessionBootstrap.shutdown() }
+            releasePlayer()
+            library.flush()
+            tvTools.close()
+            appScope.cancel()
+        }
     }
     @Deprecated("TV remote back is handled through the activity")
     override fun onBackPressed()=goBack()

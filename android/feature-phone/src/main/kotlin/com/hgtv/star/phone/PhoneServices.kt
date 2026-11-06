@@ -114,6 +114,15 @@ object PhoneServices {
         if (view != null && view.player === exo) view.player = null
     }
 
+    /** 用户主动退出：释放进程级播放器，随后由 [com.hgtv.star.shared.architecture.AppExit] 结束进程。 */
+    fun releaseForExit() {
+        synchronized(this) {
+            runCatching { exo?.release() }
+            exo=null
+            metrics.reset()
+        }
+    }
+
     /**
      * 看一眼现在的播放器，**不新建**。
      *

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.core.session
 
+import com.hgtv.star.core.body
+import com.hgtv.star.core.code
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient

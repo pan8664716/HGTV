@@ -93,7 +93,8 @@ enum class DanmakuSpeed(val storedValue: String, val label: String, val factor: 
 }
 
 /**
- * 一轮「重复弹幕」聚合：同样的文字在 [DANMAKU_REPEAT_WINDOW_MS] 之内出现了 [count] 次。
+ * 一轮「重复弹幕」聚合：同样的文字相邻两次间隔不超过
+ * [DANMAKU_REPEAT_WINDOW_MS] 时，累计出现了 [count] 次。
  *
  * 同一条内容只显示一次，文案带上数量标记（`这个片段太精彩了 ×25`）；单条（没被重复过）
  * 就是原文，不加标记——每一条都挂个「×1」只会让画面更吵。
@@ -131,10 +132,10 @@ data class DanmakuRepeat(val text: String,val offsets: List<Long>) {
 }
 
 /**
- * 一轮聚合的时间窗口：从这一轮的第一条开始算，窗口内出现的同内容都算进这一轮。
+ * 一轮聚合的空闲窗口：同一句弹幕与**上一条同内容弹幕**的间隔不超过这个值，就继续累计。
  *
- * 超出窗口之后再次出现，就是新的一轮（需求「超出聚合时间窗口后，再次出现的内容可作为新的一轮聚合」）。
- * 窗口从第一条起算而不是「相邻两条间隔」：不然一句被刷屏的话会一路串到底，整集都只算一轮。
+ * 只有停发超过这个时间之后再次出现，才开启新的一轮。这样持续刷屏的同一句话不会在
+ * 第 20 秒突然从 `×1` 重新计数；连续出现多久，计数就累计多久。
  */
 const val DANMAKU_REPEAT_WINDOW_MS=20_000L
 
@@ -147,30 +148,30 @@ const val DANMAKU_REPEAT_WINDOW_MS=20_000L
 val DANMAKU_MERGE_MIN_RANGE=2..10
 
 /**
- * 把整集弹幕按内容聚合：同一句文字在窗口内出现多次合成一组，按时间排序。
+ * 把整集弹幕按内容聚合：同一句文字连续出现、相邻间隔不超过 [windowMs] 时合成一组，按时间排序。
  *
  * 纯函数，与画面无关：弹幕层拿它决定「哪些内容只画一次、数量是多少」，
  * 顺带把首尾空格这类不影响语义的格式差异抹掉（[Danmaku.text] 解析时已经 trim 过一次，
  * 这里再 trim 一次是给别的来源兜底）。
  *
  * [minCount] 是「达到几条才聚合」的阈值（设置页那条滑动条，见 [DANMAKU_MERGE_MIN_RANGE]）：
- * 窗口里同一句只出现 1..[minCount]-1 次时**不聚合**，逐条原样返回（各自成一组、不带数量标记）；
+ * 一轮里同一句只出现 1..[minCount]-1 次时**不聚合**，逐条原样返回（各自成一组、不带数量标记）；
  * 达到 [minCount] 次才合成一组、带 `×N`。默认 2 = 同一句出现两次就合并。
  */
 fun repeatGroups(items: List<Danmaku>,windowMs: Long=DANMAKU_REPEAT_WINDOW_MS,minCount: Int=2): List<DanmakuRepeat> {
     val threshold=minCount.coerceIn(DANMAKU_MERGE_MIN_RANGE)
+    val idleWindow=windowMs.coerceAtLeast(0)
     val groups=mutableListOf<DanmakuRepeat>()
     items.sortedBy { it.offsetMs }.groupBy { it.text.trim() }.forEach { (text,list) ->
         if(text.isEmpty()) return@forEach
         var bucket=mutableListOf<Long>()
-        var windowStart=Long.MIN_VALUE
         list.forEach { item ->
-            // 第一条开一个窗口；窗口内继续累计；超出窗口就是新的一轮。
-            if(bucket.isNotEmpty() && item.offsetMs>windowStart+windowMs) {
+            // 以「与上一条同内容弹幕的间隔」判轮次，而不是从第一条起算固定窗口。
+            // 只要持续有人在刷同一句，计数就继续累加；停发超过窗口才重新开始。
+            if(bucket.isNotEmpty() && item.offsetMs-bucket.last()>idleWindow) {
                 groups+=bucketToGroups(text,bucket,threshold)
                 bucket=mutableListOf()
             }
-            if(bucket.isEmpty()) windowStart=item.offsetMs
             bucket+=item.offsetMs
         }
         if(bucket.isNotEmpty()) groups+=bucketToGroups(text,bucket,threshold)
@@ -191,8 +192,8 @@ private fun bucketToGroups(text: String,bucket: List<Long>,threshold: Int): List
 /**
  * 中央突出显示的规则参数与排序规则。
  *
- * 需求 §4.3：同一时间只有一条弹幕获得中央突出显示；未获得资格的仍然正常滚动（只是不进中央）；
- * 中央这一条要稳（数量涨了只更新标记、不切走），并且停留时间有上限，不会长期霸占屏幕中央。
+ * 聚合弹幕按显示档位占用 1 / 2 / 3 个槽位；槽位满时，只有计数更大的新聚合可以替换
+ * 当前计数最小的那一条。停发后按 7 秒停留时间退出，持续刷屏时计数继续累加。
  * 参数集中放在这里：弹幕层按它跑，改档位 / 改时长只动这一处。
  */
 object DanmakuHighlight {
@@ -209,19 +210,9 @@ object DanmakuHighlight {
      * 一条中央弹幕停留多久：**从最后一次 +1 起算**。
      *
      * 也就是说，聚合到 `×5` 的那一条正在展示时又来了一条变成 `×6`，消失时间就从这一条出现
-     * 的那一刻重新开始算 5 秒——只有「数量又 +1」才会重新计时，没人再发就一直停到这一轮结束。
-     * 原来是「从第一次出现起算 + 每条延长 1.2 秒、封顶 12 秒」，弹幕还在涨的时候它就已经消失了。
+     * 的那一刻重新开始算 7 秒；只有「数量又 +1」才会重新计时。
      */
-    const val MIN_DWELL_MS=5_000L
-    /**
-     * 一轮从开始到消失的总时长兜底（安全阀，不是常规上限）。
-     *
-     * 一轮聚合的窗口只有 [DANMAKU_REPEAT_WINDOW_MS]（20 秒），按「最后一条 + 停留」最多也就
-     * 25 秒，正常数据碰不到这个值；它只是防止异常数据（时间点错乱的一批重复）把中央长期占住。
-     */
-    const val MAX_ROUND_MS=30_000L
-    /** 一轮聚合结束后还能被选上中央的尾巴：超过这个时间就不再补展示（跳转之后那些旧聚合）。 */
-    const val TAIL_MS=6_000L
+    const val MIN_DWELL_MS=7_000L
 }
 
 /**
@@ -231,24 +222,35 @@ object DanmakuHighlight {
  */
 data class DanmakuHighlightRound(val group: DanmakuRepeat,val startMs: Long,val endMs: Long,val slot: Int=0)
 
+/** 排程中的当前占用槽；[endMs] 会随同一聚合后续 `+1` 往后推。 */
+private data class ActiveDanmakuHighlight(
+    val group: DanmakuRepeat,
+    val startMs: Long,
+    var endMs: Long,
+    val slot: Int,
+) {
+    fun round()=DanmakuHighlightRound(group,startMs,endMs,slot)
+}
+
 /**
  * 排一遍中央突出显示的次序（纯函数，无副作用，可以单测）。
  *
  * 规则（需求 §4.3）：
- * * 一格一条、各格互不重叠；[slots] 格都空着时**同时**各选一条，被聚合的弹幕能一起看到；
- * * 一轮结束后那一格才换下一条，一轮之内不换（「不应立即频繁切换」）；
+ * * 一格一条、各格互不重叠；只显一行 / 上方 / 全屏分别使用 1 / 2 / 3 格；
+ * * 槽位有空时按计数从高到低填入；槽位已满时，新聚合只要大于任意一条，
+ *   就替换当前计数最小的一条；
  * * 选「到那一刻为止累计数量最多」的那一组，数量相同选更早出现的（[DanmakuRepeat.firstMs]）；
- * * 每轮停留从**最后一次 +1** 起算（见 [roundEnd]）：数量还在涨就一直不消失，
- *   只有新的一条进来才把消失时间重新推后 [DanmakuHighlight.MIN_DWELL_MS]；
+ * * 每轮停留从**最后一次 +1** 起算 7 秒（见 [roundEnd]）；
  * * 同一句文字的两轮不会同时占两格（否则屏幕上会并排出现两条一样的弹幕）；
- * * [previous] 是上一份数据排出来的次序：数据是一窗一窗补上来的，某一条正在中央展示时
- *   重新排一次，只要它还在候选里就**接着排它**，这样补数据不会把中央那几条换掉。
+ * * [previous] 只用于承接当前正在显示的轮次和已经播过的历史轮次；尚未开始的部分按
+ *   新数据重新排，才能让后来补到的高计数聚合即时替换。
  */
 fun planHighlights(
     groups: List<DanmakuRepeat>,
     previous: List<DanmakuHighlightRound> = emptyList(),
     slots: Int = 1,
-    minCount: Int = DanmakuHighlight.MIN_COUNT
+    minCount: Int = DanmakuHighlight.MIN_COUNT,
+    nowMs: Long = 0L,
 ): List<DanmakuHighlightRound> {
     val lanes=slots.coerceIn(1,DanmakuHighlight.MAX_SLOTS)
     // 阈值与聚合那一侧同一个：不到阈值的那几句根本没合并，也就不该上中央。
@@ -256,60 +258,122 @@ fun planHighlights(
     val pending=groups.filter { it.count>=threshold }
     if(pending.isEmpty()) return emptyList()
     val byKey=pending.associateBy { it.key }
+    val now=nowMs.coerceAtLeast(0L)
     val used=mutableSetOf<String>()
     val rounds=mutableListOf<DanmakuHighlightRound>()
-    /** 每一格什么时候空出来：多格并发就是「同一时刻可以有好几条、各占一格」。 */
-    val slotEnd=LongArray(lanes)
-    /** 每一句文字最晚被哪一轮占到什么时候：同一句的两轮不并排，见上面的规则。 */
-    val textEnd=mutableMapOf<String,Long>()
-    // 上一份里已经排好的轮次原样接着排（数量换成新数据里的那一份）：
-    // 数据是一窗一窗补上来的，补数据不能把已经在中央的那几条换掉（需求「不应立即频繁切换」）。
-    // 换档位导致格数变少时，落在新格数之外的轮次直接丢掉。
+    val active=arrayOfNulls<ActiveDanmakuHighlight>(lanes)
+
+    // 已经结束的轮次保留下来供用户快退；当前仍在展示的轮次作为新排程的初始槽位。
     previous.forEach { old ->
-        val group=byKey[old.group.key] ?: return@forEach
-        if(old.slot !in 0 until lanes || group.key in used) return@forEach
-        // 结束时刻按**新数据**重算：新窗口里又来了同一句（数量 +1），消失时间要跟着往后推。
-        // 只增不减：已经在画的那一轮不能因为重排而提前消失，否则屏幕上会闪一下再回来。
+        val group=byKey[old.group.key] ?: old.group
         val end=maxOf(old.endMs,roundEnd(group,old.startMs))
-        rounds+=old.copy(group=group,endMs=end)
+        if(end<=now) {
+            if(group.key !in used) {
+                rounds+=old.copy(group=group,endMs=end)
+                used+=group.key
+            }
+            return@forEach
+        }
+        if(old.startMs>now || old.slot !in 0 until lanes || group.key in used) return@forEach
+        val seeded=ActiveDanmakuHighlight(group,old.startMs,end,old.slot)
+        val existing=active[old.slot]
+        if(existing==null || seeded.endMs>existing.endMs ||
+            (seeded.endMs==existing.endMs && seeded.group.countUpTo(now)>existing.group.countUpTo(now))) {
+            active[old.slot]=seeded
+        }
         used+=group.key
-        slotEnd[old.slot]=maxOf(slotEnd[old.slot],end)
-        textEnd[group.text]=maxOf(textEnd[group.text] ?: 0L,end)
     }
-    var cursor=0L
-    while(true) {
-        // 已经过去太久的那些（快进之后才拿到的旧聚合）不再补展示，直接作废。
-        pending.filter { it.key !in used && cursor>it.lastMs+DanmakuHighlight.TAIL_MS }.forEach { used+=it.key }
-        val free=(0 until lanes).firstOrNull { slotEnd[it]<=cursor }
-        if(free==null) {
-            // 每一格都还占着：跳到最早空出来的那一刻再选。
-            val next=slotEnd.min()
-            if(next<=cursor) break
-            cursor=next
-            continue
+    active.filterNotNull().forEach { used+=it.group.key }
+
+    val pendingNow=linkedMapOf<String,DanmakuRepeat>()
+    val eligibleAt=mutableMapOf<Long,MutableList<DanmakuRepeat>>()
+    val eventTimes=sortedSetOf<Long>()
+    eventTimes+=now
+    pending.forEach { group ->
+        if(group.key in used) return@forEach
+        val eligible=group.eligibleMsAt(threshold)
+        if(eligible<=now) pendingNow[group.key]=group
+        else {
+            eventTimes+=eligible
+            eligibleAt.getOrPut(eligible){mutableListOf()}+=group
         }
-        // 数量优先、相同数量先到先得：`compareBy(数量, -起始时间)` 的 max 就是「最多且最早」。
-        val best=pending.filter { it.key !in used && it.eligibleMsAt(threshold)<=cursor }
-            .filter { it.countUpTo(cursor)>=threshold }
-            // 同一句文字上一轮还没走完时不再排新一轮：两条一样的弹幕并排挂在中央没有意义。
-            .filter { (textEnd[it.text] ?: 0L)<=cursor }
-            .maxWithOrNull(compareBy({ it.countUpTo(cursor) },{ -it.firstMs }))
-        if(best==null) {
-            // 这一格此刻没人够格：把时间推到「下一组够格的时刻」，再选一次。
-            val next=pending.filter { it.key !in used }
-                .map { maxOf(it.eligibleMsAt(threshold),it.firstMs,textEnd[it.text] ?: 0L) }
-                .filter { it>cursor }.minOrNull() ?: break
-            cursor=next
-            continue
+        group.offsets.forEach { offset ->
+            if(offset>=now) eventTimes+=offset
         }
-        val end=roundEnd(best,cursor)
-        rounds+=DanmakuHighlightRound(best,cursor,end,free)
-        used+=best.key
-        slotEnd[free]=end
-        textEnd[best.text]=maxOf(textEnd[best.text] ?: 0L,end)
-        // 这里**不推进 cursor**：同一时刻其它空格也要立刻各挑一条，
-        // 几条被聚合的弹幕才会一起出现在画面上（原来是排完一条才轮到下一条）。
     }
+    active.filterNotNull().forEach { eventTimes+=it.endMs }
+
+    fun activeTexts()=active.filterNotNull().mapTo(mutableSetOf()) { it.group.text }
+
+    fun bestPending(atMs: Long): DanmakuRepeat? {
+        val texts=activeTexts()
+        return pendingNow.values
+            .asSequence()
+            .filter { it.lastMs+DanmakuHighlight.MIN_DWELL_MS>atMs }
+            .filter { it.text !in texts }
+            .filter { it.countUpTo(atMs)>=threshold }
+            .maxWithOrNull(compareBy({ it.countUpTo(atMs) },{ -it.firstMs }))
+    }
+
+    eventTimes.forEach { atMs ->
+        // 同一聚合在这条时间点又 +1：先延长结束时刻，再做替换判断。
+        active.forEach { slot ->
+            val round=slot ?: return@forEach
+            if(round.group.offsets.binarySearch(atMs)>=0) {
+                round.endMs=maxOf(round.endMs,atMs+DanmakuHighlight.MIN_DWELL_MS)
+            }
+        }
+        // 已到结束时刻的槽位先释放。
+        active.indices.forEach { index ->
+            val round=active[index] ?: return@forEach
+            if(round.endMs<=atMs) {
+                rounds+=round.round()
+                active[index]=null
+            }
+        }
+        eligibleAt[atMs]?.forEach { group ->
+            if(group.key !in used) pendingNow[group.key]=group
+        }
+        pendingNow.entries.removeAll { (_,group) ->
+            group.lastMs+DanmakuHighlight.MIN_DWELL_MS<=atMs
+        }
+
+        // 先填满空槽；同一句已有聚合在显示时，不重复占第二个槽。
+        while(true) {
+            val free=active.indexOfFirst { it==null }
+            if(free<0) break
+            val best=bestPending(atMs) ?: break
+            active[free]=ActiveDanmakuHighlight(
+                best,
+                atMs,
+                roundEnd(best,atMs),
+                free,
+            )
+            pendingNow.remove(best.key)
+            used+=best.key
+        }
+
+        // 槽位已满时，新聚合只替换当前计数最小的一条；继续循环直到没有更大的候选。
+        while(true) {
+            val candidate=bestPending(atMs) ?: break
+            val weakest=active.indices
+                .filter { active[it]!=null }
+                .minByOrNull { active[it]!!.group.countUpTo(atMs) }
+                ?: break
+            val current=active[weakest] ?: break
+            if(candidate.countUpTo(atMs)<=current.group.countUpTo(atMs)) break
+            rounds+=current.round().copy(endMs=atMs)
+            active[weakest]=ActiveDanmakuHighlight(
+                candidate,
+                atMs,
+                roundEnd(candidate,atMs),
+                weakest,
+            )
+            pendingNow.remove(candidate.key)
+            used+=candidate.key
+        }
+    }
+    active.filterNotNull().forEach { rounds+=it.round() }
     return rounds.sortedWith(compareBy({ it.startMs },{ it.slot }))
 }
 
@@ -318,7 +382,8 @@ fun planHighlights(
  *
  * 每来一条新的重复，消失时间就从这一条重新算起，因此这个公式等价于「逐条重新计时」的结果：
  * 展示期间数量从 ×5 涨到 ×6，结束时刻就变成第 6 条的时刻 + 停留；没人再发就停在原地等它走完。
- * 兜底 [DanmakuHighlight.MAX_ROUND_MS] 只防异常数据，正常一轮（窗口 20 秒 + 停留 5 秒）碰不到。
+ * 持续刷屏时，新的一条会不断把结束时刻往后推；只有停发超过聚合空闲窗口后，
+ * 这一轮才会在最后一条的 [DanmakuHighlight.MIN_DWELL_MS] 之后结束。
  *
  * [startMs] 是这一轮开始展示的时刻：数据里最后一条可能比它还早（补数据时重算），
  * 这时按「开始 + 停留」算，保证一轮至少露满 [DanmakuHighlight.MIN_DWELL_MS]。
@@ -326,7 +391,7 @@ fun planHighlights(
 private fun roundEnd(group: DanmakuRepeat,startMs: Long): Long {
     val floor=startMs+DanmakuHighlight.MIN_DWELL_MS
     val restarted=group.lastMs+DanmakuHighlight.MIN_DWELL_MS
-    return maxOf(floor,minOf(restarted,startMs+DanmakuHighlight.MAX_ROUND_MS))
+    return maxOf(floor,restarted)
 }
 
 /**

@@ -506,7 +506,7 @@ class PhoneSettingsActivity : PhoneActivity() {
             })
         }
 
-        val danmaku=landscapePanel("弹幕设置","显示方式 / 速度 / 聚合 / 字号 / 透明度")
+        val danmaku=landscapePanel("弹幕设置","显示方式 / 速度 / 聚合 / 特效 / 字号 / 透明度")
         landscapeLine(danmaku).also { line ->
             landscapeCell(line,landscapeSetting("显示方式",library.danmakuMode.label) {
                 val options=DanmakuMode.entries
@@ -525,6 +525,11 @@ class PhoneSettingsActivity : PhoneActivity() {
             landscapeCell(line,landscapeSwitch("相同弹幕聚合",library.danmakuMerge) {
                 library.danmakuMerge=it; render()
             })
+            landscapeCell(line,landscapeSwitch("开启弹幕特效",library.danmakuEffects) {
+                library.danmakuEffects=it; render()
+            })
+        }
+        landscapeLine(danmaku).also { line ->
             landscapeCell(line,landscapeSlider("聚合条数",
                 DANMAKU_MERGE_MIN_RANGE.first.toFloat(),DANMAKU_MERGE_MIN_RANGE.last.toFloat(),1f,
                 library.danmakuMergeMin.toFloat(),{ "${it.roundToInt()} 条" }) {
@@ -749,7 +754,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     private fun renderDanmaku() {
         section("弹幕")
-        hint("显示方式与速度共用电视端设置；字号按手机阅读单独调整，改完回到播放页即生效。")
+        hint("显示方式、聚合与特效共用电视端设置；字号按手机阅读单独调整，改完回到播放页即生效。")
         row("显示方式", library.danmakuMode.label) {
             val options = DanmakuMode.entries
             pick("显示方式", options.map { it.label }, options.indexOf(library.danmakuMode)) { index ->
@@ -766,6 +771,10 @@ class PhoneSettingsActivity : PhoneActivity() {
         }
         switch("相同弹幕聚合", library.danmakuMerge) {
             library.danmakuMerge = it
+            render()
+        }
+        switch("开启弹幕特效", library.danmakuEffects) {
+            library.danmakuEffects = it
             render()
         }
         slider("聚合条数", DANMAKU_MERGE_MIN_RANGE.first.toFloat(),

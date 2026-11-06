@@ -1060,6 +1060,15 @@ class Library(context: Context) {
     var autoNext: Boolean
         get() = state().settings.autoNext
         set(value) { if (value != autoNext) { state().settings = state().settings.copy(autoNext = value); put("autoNext", value) } }
+    /**
+     * 自动连播跨集后强制重新校准音画时钟。
+     *
+     * 这是给部分电视的兼容开关，默认关闭。只有用户明确打开后才在自动切集时硬切媒体源、
+     * 重建解码与音频链路；正常设备不要开启，避免每次跨集都黑屏或缓冲。
+     */
+    var forceAvSync: Boolean
+        get() = state().settings.forceAvSync
+        set(value) { if (value != forceAvSync) { state().settings = state().settings.copy(forceAvSync = value); put("forceAvSync", value) } }
     var playbackSpeed: Float
         get() = state().settings.speed
         set(value) { val next = PlaybackSpeed.normalize(value); if (next != playbackSpeed) { state().settings = state().settings.copy(speed = next); put("playbackSpeed", next) } }
@@ -1581,6 +1590,14 @@ class Library(context: Context) {
             if (next != danmakuMergeMin) { state().settings = state().settings.copy(danmakuMergeMin = next); put("danmakuMergeMin", next) }
         }
     /**
+     * 聚合弹幕特效总开关（默认开启）。
+     *
+     * 控制计数放大、渐热颜色和 `×20` 后的冲击波；聚合规则、展示时长与槽位替换不受影响。
+     */
+    var danmakuEffects: Boolean
+        get() = state().settings.danmakuEffects
+        set(value) { if (value != danmakuEffects) { state().settings = state().settings.copy(danmakuEffects = value); put("danmakuEffects", value) } }
+    /**
      * 播放界面的按键绑定（上 / 下 / 左 / 右 / 菜单 / 确定）。
      *
      * 只存改过的键（见 [KeyMap.encode]），因此默认状态下磁盘上就是一个空串；
@@ -1601,12 +1618,14 @@ class Library(context: Context) {
         persist("favorites", "later", "progress", "watched", "hidden", "searches", "favoriteUpdates", "historyDeleted")
         writes.submit(mapOf("quality" to { merged.settings.quality }, "playbackSpeed" to { merged.settings.speed },
             "autoNext" to { merged.settings.autoNext },
+            "forceAvSync" to { merged.settings.forceAvSync },
             "frameMode" to { merged.settings.frame.name }, "decoderMode" to { merged.settings.decoder.name },
             "danmakuMode" to { merged.settings.danmaku.storedValue },
             "danmakuScale" to { merged.settings.danmakuScale }, "danmakuAlpha" to { merged.settings.danmakuAlpha },
             "danmakuSpeed" to { merged.settings.danmakuSpeed.storedValue },
             "danmakuMerge" to { merged.settings.danmakuMerge },
             "danmakuMergeMin" to { merged.settings.danmakuMergeMin.coerceIn(DANMAKU_MERGE_MIN_RANGE) },
+            "danmakuEffects" to { merged.settings.danmakuEffects },
             "searchSource" to { merged.settings.searchSource.storedValue },
             "homeColumns" to { merged.settings.homeColumns.coerceIn(4, 8) },
             "gridColumns" to { merged.settings.gridColumns.coerceIn(1, 3) },

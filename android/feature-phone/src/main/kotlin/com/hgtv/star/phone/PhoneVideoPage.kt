@@ -400,6 +400,9 @@ class PhoneVideoPage(
             }
             if (Build.VERSION.SDK_INT >= 21) runCatching {
                 progressTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
+                secondaryProgressTintList = android.content.res.ColorStateList.valueOf(
+                    (PhoneStyle.accent and 0x00FFFFFF) or 0x66000000
+                )
                 thumbTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
                 progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x4DFFFFFF)
             }
@@ -730,6 +733,12 @@ class PhoneVideoPage(
         if (userDragging) return
         val value = (fraction.coerceIn(0f, 1f) * 1000).toInt()
         if (seekBar.progress != value) seekBar.progress = value
+    }
+
+    /** 缓存进度（0..1）：与播放进度分开更新，拖动时仍显示后台已经缓存到哪。 */
+    fun setBufferedProgress(fraction: Float) {
+        val value=(fraction.coerceIn(0f,1f)*1000).toInt()
+        if(seekBar.secondaryProgress!=value) seekBar.secondaryProgress=value
     }
 
     // ------------------------------------------------------------------ 界面状态

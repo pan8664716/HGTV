@@ -54,8 +54,10 @@ fun MainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boole
         clearDebugProblem()
         // 预告态没有分集：`observeFavorite` 的集数必须 > 0，传 0 会抛异常（见 `FavoriteUpdate.observe`）。
         if(result.episodes.isNotEmpty()) library.observeFavorite(series.id,result.episodes.size,System.currentTimeMillis(),acknowledge=true)
-        // 未上架：把接口给的预约状态落进本机（下次进页面不必等这次请求就能画对按钮）。
-        if(result.upcoming) library.setReserved(series.id,result.reserved)
+        // 未上架：接口给的预约状态**只在本地还没有记录时**落一份（首次进页面不必等这次请求就能画对按钮）。
+        // 本地已经有记录时一律不动它：`online_subscribed` 在刚写入之后的一小段时间里仍会回 0，
+        // 用它覆盖本地，就会把用户刚点的「已预约」在下次进页面时翻回「预约」。
+        if(result.upcoming && !library.reservedKnown(series.id)) library.setReserved(series.id,result.reserved)
         // 内容已经在屏幕上（下面这一句就渲染），相关剧集丢后台去查：用户点开时多半已经就绪。
         prefetchRelated(series.id)
         // 作者作品同理：它要按页搜（见 `ContentRepository.authorWorks`），比相关剧集更慢，
@@ -373,8 +375,10 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
     // 每枚按钮都等分剩余宽度：去掉「完整简介」之后这一行是三枚（未上架时两枚），
     // 每一枚因此更宽，原来为了塞下四个而收窄的内边距也不必再压。
     // 未上架的剧：主按钮换成「预约 / 已预约」。
-    // 状态先按详情接口的 `online_subscribed` 画，点击先改本地、再发请求；
-    // 请求失败就把按钮翻回去并提示，用户不会看到「点了却没预约上」。
+    // 状态**本地「最后已知」优先**：用户自己点过的那一次就是最可信的（见 `Library.reservedKnown`），
+    // 接口的 `online_subscribed` 只在本地没有记录时兜底——它刚写入后还会回 0，
+    // 按它画就会把「已预约」显示成「预约」（用户报的就是这一条）。
+    // 点击先改本地、再发请求；请求失败就把按钮翻回去并提示，用户不会看到「点了却没预约上」。
     val reserved=library.reserved(data.series.id).takeIf { library.reservedKnown(data.series.id) } ?: data.reserved
     // 下方那一块（选集 / 相关剧集）的重铺函数：按钮行要能调到它，而它要用到下面才建好的容器，
     // 因此先用一个可空占位，等容器建好之后再填进去（见下面 [bottom] 那一段）。
@@ -383,7 +387,7 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
     play=addButton(actions,if(upcoming) (if(reserved) "已预约" else "预约") else "播放",
         size=ButtonSize.HERO,weight=1f,pad=actionPad,
         icon=if(upcoming) R.drawable.ic_action_reserve else R.drawable.ic_action_play) {
-        if(upcoming) reserveSeries(data.series,play) else if(watched) playEpisode(0,0) else playEpisode(target.index,target.position)
+        if(upcoming) reserveSeries(data.series,play,reserved) else if(watched) playEpisode(0,0) else playEpisode(target.index,target.position)
     }
     // 未上架的剧**不摆收藏**：它没有分集，收藏更新检查（`FavoriteUpdate.observe` 要求集数 > 0）
     // 一按就会抛 `IllegalArgumentException`——线上表现为点「收藏」直接闪退。
@@ -694,13 +698,17 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
  * 按钮等几秒，比「先亮起来、失败再翻回去」难受得多。翻回去时给一句提示，状态不会骗人。
  *
  * 未登录时不改状态：预约是账号侧数据，没有 `sessionid` 平台只会回失败。
+ *
+ * [current] 是**按钮上正显示着的那个状态**，由调用方传进来：切换要基于「用户看到的」，
+ * 而不是再读一次本机表——本机还没有记录（首次进页面）时 `library.reserved` 是 false，
+ * 拿它去取反会把「已预约」又发一次预约请求。
  */
-fun MainActivity.reserveSeries(series: Series, button: TvButton) {
+fun MainActivity.reserveSeries(series: Series, button: TvButton, current: Boolean = library.reserved(series.id)) {
     // 预约是账号侧数据（要 `sessionid`）：没登录时不改按钮状态，只提示一句。
     // 用专门的文案而不是通用的 [SIGN_IN_TOAST]：这里用户点的是「预约」，
     // 提示要直接回答「为什么点了没反应」。
     if(!repository.signedIn) { tvTools.toast("登录后才可以添加预约"); return }
-    val target=!library.reserved(series.id)
+    val target=!current
     fun paint(reserved: Boolean) {
         button.text=if(reserved) "已预约" else "预约"
         button.contentDescription=button.text.toString()

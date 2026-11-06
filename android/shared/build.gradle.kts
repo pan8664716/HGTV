@@ -32,7 +32,7 @@ dependencies {
     api("androidx.core:core:1.8.0")
     // 兼容层的 VectorDrawableCompat（API 21 以下要它才能解矢量图）。
     api("androidx.vectordrawable:vectordrawable:1.1.0")
-    api("com.squareup.okhttp3:okhttp:4.12.0")
+    api("com.squareup.okhttp3:okhttp:3.12.13")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
     // 播放数据源（VideoDataSource）需要 media3-datasource；播放器本体由各端自己建。
     api("androidx.media3:media3-datasource:1.4.1")

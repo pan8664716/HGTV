@@ -468,6 +468,12 @@ class PhoneDetailActivity : PhoneActivity() {
                 metaView.text = "详情加载失败"
                 return@launch
             }
+            // 未上架：接口给的预约状态**只在本地还没有记录时**落一份（下次进页面不必等这次请求）。
+            // 本地有记录时不动它：`online_subscribed` 在刚写入之后的一小段时间里仍回 0，
+            // 用它覆盖本地就会把用户刚点的「已预约」翻回「预约」。
+            if (d.upcoming) runCatching {
+                if (!lib.reservedKnown(d.series.id)) lib.setReserved(d.series.id, d.reserved)
+            }
             detail = d
             bindDetail(d)
             // 与 TV 完全同一条时序：详情先上屏，**附加内容丢后台**（`prefetchRelated` /
@@ -508,8 +514,10 @@ class PhoneDetailActivity : PhoneActivity() {
         val resume = saved?.let { p -> d.episodes.indexOf(p.episodeId).takeIf { it >= 0 } }
         when {
             d.upcoming -> {
-                val label = if (d.reserved) "已预约" else "预约"
-                primary.update(PhoneGlyph.Kind.STAR, label, d.reserved, label)
+                // 状态取本机「最后已知」，接口值只在本地没有记录时兜底：用户自己点过的那一次
+                // 才是最可信的，而接口在刚写入后会滞后（按它画就成了「预约过了还显示预约」）。
+                val reserved = reservedState(d)
+                paintReserve(reserved)
             }
             resume != null -> primary.update(
                 PhoneGlyph.Kind.PLAY, "继续", description = "继续第 ${resume + 1} 集"
@@ -837,16 +845,57 @@ class PhoneDetailActivity : PhoneActivity() {
         val d = detail ?: return
         if (d.upcoming) {
             val lib = library ?: return
-            runCatching { lib.setReserved(d.series.id, !d.reserved) }
-            d.let { detail = it.copy(reserved = !it.reserved) }
-            val reserved = detail?.reserved == true
-            val label = if (reserved) "已预约" else "预约"
-            primary.update(PhoneGlyph.Kind.STAR, label, reserved, label)
+            // 预约是账号侧数据（要 `sessionid`）：没登录时不改按钮状态，只提示一句
+            // ——与 TV 的 `reserveSeries` 同一套语义。
+            if (!PhoneServices.repository(this).signedIn) {
+                toast("登录后才可以添加预约")
+                return
+            }
+            // 切换基于**按钮上正显示的状态**，不重读接口值：接口滞后会让「取消」变成再预约一次。
+            val next = !reservedState(d)
+            runCatching { lib.setReserved(d.series.id, next) }
+            detail = d.copy(reserved = next)
+            paintReserve(next)
+            PhoneAccountSync.reserve(this, d.series, next, onDone = { ok ->
+                // 失败：本机状态翻回去。用户在这期间又点过的话（本地已经不是 next）就不动，
+                // 免得把第二次点击的结果也一起抹掉。
+                if (!ok && runCatching { library?.reserved(d.series.id) }.getOrNull() == next) {
+                    runCatching { library?.setReserved(d.series.id, !next) }
+                }
+                // 请求回来时页面可能已经退出：已经销毁的视图不再碰。
+                if (!isFinishing && !isDestroyed && !ok) {
+                    detail = detail?.copy(reserved = !next)
+                    paintReserve(!next)
+                    toast(if (next) "预约失败，稍后再试" else "取消预约失败，稍后再试")
+                }
+            })
             return
         }
         val saved = runCatching { library?.progress(d.series.id) }.getOrNull()
         val index = saved?.let { p -> d.episodes.indexOf(p.episodeId).takeIf { it >= 0 } } ?: 0
         openPlayer(index)
+    }
+
+    /**
+     * 详情页画「预约 / 已预约」用的状态：本机「最后已知」优先，接口值只在本地没有记录时兜底。
+     *
+     * 与 TV 详情页同一条规则（见 `MainActivityDetail` 里 `reserved` 那一行）：
+     * 平台在刚写入后的一段时间里 `online_subscribed` 仍回 0，按接口画就会把用户
+     * 刚点的「已预约」显示成「预约」。
+     */
+    private fun reservedState(d: Detail): Boolean {
+        val lib = library ?: return d.reserved
+        return runCatching { if (lib.reservedKnown(d.series.id)) lib.reserved(d.series.id) else d.reserved }
+            .getOrDefault(d.reserved)
+    }
+
+    private fun paintReserve(reserved: Boolean) {
+        val label = if (reserved) "已预约" else "预约"
+        primary.update(PhoneGlyph.Kind.STAR, label, reserved, label)
+    }
+
+    private fun toast(message: String) {
+        android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
     }
 
     private fun openPlayer(index: Int) {

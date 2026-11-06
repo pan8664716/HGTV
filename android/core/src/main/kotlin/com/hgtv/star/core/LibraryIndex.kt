@@ -35,8 +35,10 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
      * 本机记下的预约状态（剧集 ID → 是否已预约）。
      *
      * 平台只在详情接口给 `online_subscribed`，而那个请求要联网；用户点了「预约」之后
-     * 按钮必须立刻翻成「已预约」、下次进来也还是这个状态。这里存的就是那一份「最后已知」，
-     * 详情页拿到接口值时以接口为准并写回（见 `reserveSeries`）。
+     * 按钮必须立刻翻成「已预约」、下次进来也还是这个状态。这里存的就是那一份「最后已知」。
+     *
+     * **一旦有记录就以本地为准**：接口值只在本地还没有记录时落一份。反过来用接口覆盖本地，
+     * 会把刚预约过的剧显示回「预约」——平台在写入后的一小段时间里 `online_subscribed` 仍回 0。
      */
     private var reserveRows: MutableMap<String,Boolean> = mutableMapOf()
     var settings = data.settings
@@ -215,7 +217,11 @@ object LibraryDisk {
             // 手机列表每行基准列数：旧版本磁盘没有这个键，按 2 列处理；坏值夹进 1..3。
             (values["gridColumns"] as? Number)?.toInt()?.coerceIn(1,3) ?: 2,
             // 推荐页左右滑动切换：旧版本磁盘没有这个键，按开启处理（与之前的行为一致）。
-            values["recommendSwipe"] as? Boolean ?: true)
+            values["recommendSwipe"] as? Boolean ?: true,
+            // 强制音画同步：旧版本磁盘没有这个键，按关闭处理。
+            values["forceAvSync"] as? Boolean ?: false,
+            // 弹幕特效：旧版本磁盘没有这个键，按开启处理，保持现有观感。
+            values["danmakuEffects"] as? Boolean ?: true)
         val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())
         val index = LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
             SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden"),
