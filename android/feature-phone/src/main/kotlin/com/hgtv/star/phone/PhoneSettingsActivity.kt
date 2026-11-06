@@ -7,15 +7,19 @@ import android.content.res.Configuration
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.text.InputFilter
+import android.text.InputType
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
+import android.text.method.DigitsKeyListener
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
+import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
@@ -640,6 +644,27 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     private fun renderLandscapeSystem() {
+        val identity=landscapePanel("设备身份","官方 App 的 device_id 可覆盖播放设备")
+        landscapeLine(identity).also { line ->
+            landscapeCell(line,landscapeSetting(
+                "手动设置 device_id",
+                library.manualDeviceId().ifBlank { "自动" },
+            ) { showManualDeviceIdDialog() })
+            landscapeCell(line,landscapeSetting("恢复自动设备","清除手动覆盖") {
+                if(library.manualDeviceId().isBlank()) {
+                    toast("当前已经是自动设备")
+                } else {
+                    confirm("恢复自动设备","清除手动 device_id，播放恢复使用自动注册设备和一次性设备池。") {
+                        com.hgtv.star.shared.data.DeviceIdOverride.clear(
+                            library,
+                            PhoneServices.repository(this@PhoneSettingsActivity),
+                        )
+                        toast("已恢复自动设备")
+                        render()
+                    }
+                }
+            })
+        }
         val data=landscapePanel("数据维护","收藏与进度存在本机，可导出与恢复")
         landscapeLine(data).also { line ->
             landscapeCell(line,landscapeSetting("导出备份","存成 JSON 文件") { exportBackup() })
@@ -987,6 +1012,25 @@ class PhoneSettingsActivity : PhoneActivity() {
     // —— 四、系统高级 ——
 
     private fun renderSystem() {
+        section("设备身份")
+        action(
+            "手动设置 device_id",
+            library.manualDeviceId().ifBlank { "自动" },
+        ) { showManualDeviceIdDialog() }
+        if(library.manualDeviceId().isNotBlank()) {
+            action("恢复自动设备","清除手动覆盖") {
+                confirm("恢复自动设备","清除手动 device_id，播放恢复使用自动注册设备和一次性设备池。") {
+                    com.hgtv.star.shared.data.DeviceIdOverride.clear(
+                        library,
+                        PhoneServices.repository(this@PhoneSettingsActivity),
+                    )
+                    toast("已恢复自动设备")
+                    render()
+                }
+            }
+        }
+        hint("官方 App 进入「关于」，连续点击版本号即可看到 device_id。这里只覆盖播放设备号，不会清除账号。")
+
         section("设备与性能")
         action("关于", "版本与项目信息") { showAboutDialog() }
         if (BuildConfig.DEBUG) {
@@ -1053,6 +1097,47 @@ class PhoneSettingsActivity : PhoneActivity() {
             .message("更新请前往项目页面查看项目更新。")
             .button("关闭") {}
             .show()
+    }
+
+    private fun showManualDeviceIdDialog() {
+        val current=library.manualDeviceId()
+        val input=EditText(this).apply {
+            hint="输入官方 App 显示的纯数字 device_id"
+            setHintTextColor(PhoneStyle.textFaint)
+            setTextColor(PhoneStyle.text)
+            phoneSize(if(landscape) 13 else 15)
+            inputType=InputType.TYPE_CLASS_NUMBER
+            keyListener=DigitsKeyListener.getInstance("0123456789")
+            filters=arrayOf(InputFilter.LengthFilter(32))
+            setSingleLine(true)
+            setText(current)
+            setSelection(text.length)
+            setPadding(dp(14),dp(10),dp(14),dp(10))
+            applySoft(SoftStyle.INSET,PhoneStyle.well,14f,4f)
+        }
+        val dialog=PhoneDialog(this,"手动设置 device_id")
+            .message("打开官方 App → 关于 → 连续点击版本号，复制显示的 device_id。")
+            .content(input)
+            .button("取消")
+        if(current.isNotBlank()) {
+            dialog.button("清空手动 device_id") {
+                com.hgtv.star.shared.data.DeviceIdOverride.clear(
+                    library,
+                    PhoneServices.repository(this),
+                )
+                toast("已清空手动 device_id，恢复自动设备")
+                render()
+            }
+        }
+        dialog.button("保存",primary=true) {
+            val saved=com.hgtv.star.shared.data.DeviceIdOverride.save(
+                library,
+                PhoneServices.repository(this),
+                input.text?.toString().orEmpty(),
+            )
+            toast(if(saved) "device_id 已保存，新的播放请求立即生效" else "请输入正确的纯数字 device_id")
+            if(saved) render()
+        }.show()
     }
 
     /** 出厂值：与 `BackupSettings` 的默认参数逐项对齐。 */

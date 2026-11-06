@@ -29,10 +29,7 @@ class Signer(
      *
      * 为什么必须能逐次传：签名里有两处会把 `device_id` 编进密文
      *（`x-medusa` 的 message 第 5 号字段与 deviceProto 第 4 号字段）。
-     * 播放接口要按 `device_id` 换身份时才可能绕过限流（见 `ContentRepository.modelDeviceId`），
-     * 而如果 query 里是新 id、密文里还是旧 id，服务端拿到的就是一份自相矛盾的请求，
-     * 直接回 `110001 未知异常`（2026-10-27 实测：App 换 id 后 117 字节 `code 110001`，
-     * 同一份内容在本机探针里 `code 0`，差别就在这里）。
+     * query 与密文必须使用同一份注册身份，否则服务端会回 `110001`。
      */
     private fun deviceValue(d: Map<String,String>, key: String, fallback: String): String =
         d[key]?.takeIf { it.isNotBlank() } ?: fallback
@@ -209,9 +206,8 @@ class Signer(
      *
      * [deviceOverride] 非空时，**这一次**签名用它的档案（query 参数仍以 [values] 为准）。
      *
-     * 为什么需要：[values] 里换掉 `device_id` 而 [device] 里还是旧的，`x-medusa` 会编进旧 id，
-     * 服务端看到 query 与密文不一致就回 `110001`。播放接口按 `device_id` 换身份绕限流
-     *（见 `ContentRepository.modelDeviceId`），因此那一条必须把同一份档案同时交给两者。
+     * 为什么需要：[values] 里的 `device_id` 与 [device] 必须一致，否则 `x-medusa`
+     * 会把旧 id 编进密文，服务端看到 query 与密文不一致就回 `110001`。
      */
     fun sign(
         base: String,
@@ -238,7 +234,12 @@ class Signer(
                     headers["lc"]="101"
                     headers["x-ss-dp"]="8662"
                 }
-                if (body != null) { headers["Content-Type"]="application/json; charset=UTF-8"; headers["x-vc-bdturing-sdk-version"]="3.7.2.cn"; headers["x-ss-stub"]=digest("MD5",body).hex().uppercase() }
+                if (body != null) {
+                    headers["Content-Type"]="application/json; charset=UTF-8"
+                    headers["x-vc-bdturing-sdk-version"]="4.0.3.cn"
+                    headers["x-reading-request"]="$ticket-${(random()*2_000_000_000).toInt().toUInt()}"
+                    headers["x-ss-stub"]=digest("MD5",body).hex().uppercase()
+                }
                 return Request(url,headers,body,method ?: if(body==null) "GET" else "POST")
             }
         }

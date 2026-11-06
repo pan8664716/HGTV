@@ -369,6 +369,36 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         reset()
     }
 
+    /**
+     * 保留当前缓存内容，后台刷新第 1 页；刷新成功后整体替换，失败则继续显示缓存。
+     *
+     * 与 [load] 的区别是首帧不闪空页：用户进榜单时先看到上次内容，
+     * 新数据落地后再无动画地换掉。
+     */
+    fun refresh(loader: suspend (Int) -> CatalogPage?) {
+        this.loader = loader
+        job?.cancel()
+        loading = true
+        job = scope.launch {
+            val result = withContext(Dispatchers.IO) { runCatching { loader(1) }.getOrNull() }
+            loading = false
+            if (result == null) {
+                if (items.isEmpty()) showEmpty("加载失败，下拉重试")
+                return@launch
+            }
+            hasLoadedOnce = true
+            items.clear()
+            items += result.items
+            selectedIds.clear()
+            heatBy = result.ranking?.positions?.mapValues { it.value.heat }.orEmpty()
+            page = 2
+            ended = !result.hasMore || result.items.isEmpty()
+            emptyVisible = result.items.isEmpty()
+            emptyText = "暂无内容"
+            adapter.notifyDataSetChanged()
+        }
+    }
+
     fun snapshot(): Snapshot = Snapshot(
         items = items.toList(),
         page = page,

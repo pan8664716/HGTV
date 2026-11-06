@@ -708,7 +708,7 @@ private fun MainActivity.playerDebugRows(): List<DebugRow> {
                 null -> "待手动处理"
             }
             add(DebugRow("降级","$reason · ${degrade.budgetSummary()}"+
-                " · 档位 ${runCatching { repository.deviceLevel }.getOrDefault(4)}"))
+                " · 档位 ${runCatching { repository.deviceLevel }.getOrDefault(3)}"))
         }
         // 「问题」只写**现在仍然成立**的事（见 [livePlaybackProblem]）：画面已经回来了就不再挂着
         // 「有声音无画面」这类旧结论——那正是用户反馈的「面板显示得不对」。

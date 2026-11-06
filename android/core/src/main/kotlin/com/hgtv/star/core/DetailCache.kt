@@ -6,7 +6,7 @@ import org.json.JSONObject
 import java.io.File
 
 /**
- * 剧集详情的落盘缓存（只给**推荐页起播**用）。
+ * 剧集详情的落盘缓存。
  *
  * ## 为什么需要
  *
@@ -18,16 +18,14 @@ import java.io.File
  * 「缓存好像没用上」。
  *
  * 这里把详情（剧卡片 + 分集 vid 列表）落一份到盘上，[TTL_MS] 内直接当有效：
- * 进程被杀之后进推荐，列表来自 `RecommendCache`、详情来自这里、地址与索引来自
- * `PlaybackCache`——首屏一次网络请求都不用发。
+ * 推荐页起播可直接复用；简介页则先用它上屏，再在后台取最新一份替换。
  *
  * ## 边界
  *
  * * 只存 [MAX_ENTRIES] 条（推荐页一屏够用），一条几 KB；
  * * [TTL_MS] 之后不用：分集表会变（更新了新集），拿半小时前的去起播第 1 集没问题，
  *   再久就不该替用户决定「这部还有没有新集」；
- * * **详情页不走这里**（`ContentRepository.detail` 默认仍然现取）：那一页用户是来读
- *   集数与更新的，宁可慢一点也要新。
+ * * 详情页**仍会现取**：缓存只负责首帧，不替代后台刷新。
  */
 object DetailCache {
     private const val VERSION=1
@@ -58,7 +56,13 @@ object DetailCache {
             val rows=entry.optJSONArray("episodes") ?: JSONArray()
             val episodes=(0 until rows.length()).mapNotNull { rows.optString(it).takeIf { vid -> vid.isNotEmpty() } }
             if(series.id.isEmpty()) return@runCatching null
-            Detail(series,episodes,entry.optBoolean("upcoming",false),entry.optBoolean("reserved",false))
+            Detail(
+                series,
+                episodes,
+                entry.optBoolean("upcoming",false),
+                entry.optBoolean("reserved",false),
+                PlaybackProfile.fromJson(entry.optJSONObject("playback")),
+            )
         }.getOrNull() ?: return null
         if(NetLog.timing) NetLog.log("detail cache hit id=${id.takeLast(6)} episodes=${detail.episodes.size} took=${(System.nanoTime()-began)/1_000_000}ms")
         return detail
@@ -74,6 +78,7 @@ object DetailCache {
                 .put("episodes",JSONArray().apply { detail.episodes.forEach { put(it) } })
                 .put("upcoming",detail.upcoming)
                 .put("reserved",detail.reserved)
+                .put("playback",detail.playback.toJson())
         }.getOrNull() ?: return
         val target=file ?: return
         synchronized(lock) {

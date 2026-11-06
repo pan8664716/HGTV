@@ -18,20 +18,23 @@ import java.util.concurrent.atomic.AtomicBoolean
  * nothing stored server-side; it only receives what the operator types on the phone and hands the
  * value to [onQuery].
  *
- * 同一份实现服务两个表单：[Form.search]（手机输入剧名）与 [Form.sessionToken]（粘贴搜索登录态）。
+ * 同一份实现服务三个表单：[Form.search]（手机输入剧名）、[Form.sessionToken]
+ * （粘贴搜索登录态）与 [Form.deviceId]（手动覆盖播放设备号）。
  */
 class PhoneSearchServer(
     address: String,
     private val onQuery: (String)->Unit,
     private val onExpired: ()->Unit = {},
     ttlMillis: Long = 300_000,
-    private val form: Form = Form.search
+    private val form: Form = Form.search,
+    private val validate: (String)->String? = { null },
 ): Closeable {
     /** 表单文案与校验：[field] 是表单字段名，[maxLength] 是字符上限，[maxBytes] 是请求体上限。 */
     class Form(val title: String,val prompt: String,val field: String,val placeholder: String,val submit: String,val done: String,val maxLength: Int,val maxBytes: Int) {
         companion object {
             val search=Form("在电视上搜索","输入剧名，电视会按当前选择的漫剧或短剧分类搜索。","query","输入剧名或关键词","发送到电视","已发送到电视",80,4096)
             val sessionToken=Form("填写搜索登录态","粘贴 App 抓到的 x-tt-token（整段 Cookie 也可以）。电视只把它用在搜索请求上，不联网核对、不上传。","token","粘贴 x-tt-token","保存到电视","已保存到电视",4096,8192)
+            val deviceId=Form("设置 device_id","打开官方 App，进入「关于」连续点击版本号，复制显示的 device_id。","device_id","输入纯数字 device_id","保存到电视","device_id 已保存到电视",32,4096)
         }
     }
     private val stopped=AtomicBoolean(false)
@@ -111,6 +114,7 @@ class PhoneSearchServer(
         if(fields.size!=1 || fields[0].size!=2 || fields[0][0]!=form.field) return respond(socket,400,"请填写内容后再提交")
         val query=runCatching { URLDecoder.decode(fields[0][1],"UTF-8").trim() }.getOrNull()
         if(query.isNullOrBlank() || query.length>form.maxLength || query.any { it.isISOControl() }) return respond(socket,400,"请输入 1—${form.maxLength} 个字符")
+        validate(query)?.let { return respond(socket,400,it) }
         if(stopped.get() || System.nanoTime()>=deadline || !consumed.compareAndSet(false,true)) return respond(socket,410,"二维码已失效")
         try { respond(socket,200,PhonePage.done(form.done)) }
         finally { close(); onQuery(query) }
@@ -125,6 +129,7 @@ class PhoneSearchServer(
     private fun page(): String {
         val hint = when (form.field) {
             "token" -> "整段 Cookie 也可以直接粘进来。"
+            "device_id" -> "只填官方 App「关于」页显示的纯数字。"
             else -> "发送后电视立刻开始搜索。"
         }
         return PhonePage.shell(form.title,

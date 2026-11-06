@@ -803,6 +803,50 @@ fun MainActivity.settings(parent: LinearLayout) {
     reset=cellSetting(dataRow,resetLabel()) { clearLocalData(reset) }
     track(3,backup,reset)
 
+    // —— 设备身份：手动使用官方 App 的 device_id ——
+    val identity=panel(systemPage)
+    heading(identity,"设备身份","可从官方 App「关于」连续点击版本号获取")
+    fun manualIdLabel(value: String)=
+        if(value.isBlank()) "手动设置 device_id  ·  自动" else "手动设置 device_id  ·  $value"
+    val identityRow=lineRow(identity)
+    lateinit var manualDeviceId: TvButton
+    manualDeviceId=cellSetting(identityRow,manualIdLabel(library.manualDeviceId())) {
+        tvTools.manualDeviceId(
+            anchor=manualDeviceId,
+            current=library.manualDeviceId(),
+            save={ value ->
+                val saved=com.hgtv.star.shared.data.DeviceIdOverride.save(library,repository,value)
+                if(saved) runOnUiThread {
+                    manualDeviceId.text=manualIdLabel(library.manualDeviceId())
+                }
+                saved
+            },
+            clear={
+                com.hgtv.star.shared.data.DeviceIdOverride.clear(library,repository)
+                manualDeviceId.text=manualIdLabel("")
+                showHint("已清空手动 device_id，恢复自动设备")
+                true
+            }
+        )
+    }
+    lateinit var automaticDevice: TvButton
+    automaticDevice=cellSetting(identityRow,"恢复自动设备") {
+        if(library.manualDeviceId().isBlank()) {
+            showHint("当前已经是自动设备")
+        } else {
+            tvTools.confirm(
+                "恢复自动设备",
+                "清除手动 device_id，播放恢复使用自动注册设备和一次性设备池。",
+                automaticDevice,
+            ) {
+                com.hgtv.star.shared.data.DeviceIdOverride.clear(library,repository)
+                manualDeviceId.text=manualIdLabel("")
+                showHint("已恢复自动设备")
+            }
+        }
+    }
+    track(3,manualDeviceId,automaticDevice)
+
     // —— 设备与性能：两列 ——
     //
     // 「减少动画」的动画开销与「调试模式」的现场面板回答的是同一件事：

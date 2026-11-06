@@ -117,7 +117,13 @@ private fun equalChipWidths(chips: List<View>) {
     }
 }
 
-fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=false,focusType: Boolean=false,keepChip: Boolean=false) {
+fun MainActivity.showCatalog(
+    load: Boolean=false,
+    focusNav: Boolean=false,
+    focusType: Boolean=false,
+    keepChip: Boolean=false,
+    keepCatalog: Boolean=false,
+) {
     // 推荐页是独立的一层（整屏播放、没有列表）：后台的账号同步 / 会话失效之类
     // 顺手调过来的重建不能把用户从推荐页踢回列表。要离开推荐页只有两条路：
     // 返回键（[exitRecommendToHome]）与确定键（[enterFormalPlayback]），两者都先把 screen 改掉。
@@ -143,7 +149,7 @@ fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=false,focusTy
             homeFeed=LinkedHashMap(cached)
             homeFromCache=cached.isNotEmpty()
             catalog=emptyList(); hasMore=false; ranking=null
-        } else if(!appending && chipFocusKey==null) { catalog=emptyList(); hasMore=false; ranking=null }
+        } else if(!appending && chipFocusKey==null && !keepCatalog) { catalog=emptyList(); hasMore=false; ranking=null }
     }
     // 换页（换榜单 / 换分类 / 换标签）时把「连取」预算归零：新列表从头开始算。
     if(!keepTopAreaState) prefetchChain=0
@@ -695,7 +701,7 @@ fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=false,focusTy
         // 清空的话这一整段时间页面上只剩一行「正在加载…」，观感就是「每次选分类都闪一下」。
         // 位置也照旧：[releaseCatalogViews] 刚把旧列表的滚动位置记在它自己的 key 上
         // （此刻 [catalogPageKey] 还没换），照搬过来才不会先跳回顶部再被新内容替换。
-        val stale=chipFocusKey!=null && appendCatalog() && catalog.isNotEmpty()
+        val stale=(chipFocusKey!=null || keepCatalog) && appendCatalog() && catalog.isNotEmpty()
         // 芯片握着焦点时（[chipFocusKey] 非空）一律不许把焦点交给页头 / 顶部入口：
         // 用户刚点的那一枚芯片就是落点，这一页剩下的重建都不该动它。
         val holdChip=chipFocusKey!=null
@@ -842,6 +848,11 @@ fun MainActivity.showCatalog(load: Boolean=false,focusNav: Boolean=false,focusTy
                 setRankSubtitle("加载更多失败 · 当前显示 ${catalog.size} 部")
                 noteDebugProblem("加载更多失败 · 第 ${requestPage} 页 · 已显示 ${catalog.size} 部")
                 body.removeAllViews(); seriesList(body,false)
+                return@work
+            }
+            if(keepCatalog && catalog.isNotEmpty()) {
+                setRankSubtitle("刷新失败 · 仍显示上次榜单")
+                showHint("榜单刷新失败，仍显示上次内容")
                 return@work
             }
             catalog=emptyList(); hasMore=false; ranking=null

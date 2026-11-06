@@ -300,7 +300,7 @@ fun main(args: Array<String>) {
     feed.forEach { (board,page) -> println("homeFeed ${board.label}: items=${page.items.size}; hasMore=${page.hasMore}; 首部=${page.items.firstOrNull()?.title.orEmpty()}") }
     val detail=repository.detail(args.firstOrNull { it.matches(Regex("[0-9]{1,30}")) } ?: feed.values.firstOrNull()?.items?.firstOrNull()?.id ?: return)
     println("detail=${detail.series.title}; episodes=${detail.episodes.size}")
-    val stream=repository.stream(detail.episodes.first())
+    val stream=repository.stream(detail.episodes.first(),playback=detail.playback)
     RemoteVideo(repository.http,stream).use { remote ->
         remote.prepare(); val first=remote.read(0,1024*1024)
         val tail=remote.read((remote.total-65536).coerceAtLeast(0),65536)

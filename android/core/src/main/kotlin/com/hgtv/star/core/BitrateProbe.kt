@@ -108,7 +108,7 @@ fun main(args: Array<String>) {
         if(rows.size>=wanted) break
         val detail=runCatching { repository.detail(item.id) }.getOrNull() ?: continue
         val vid=detail.episodes.firstOrNull() ?: continue
-        val stream=runCatching { repository.stream(vid,maxQuality) }.getOrNull() ?: continue
+        val stream=runCatching { repository.stream(vid,maxQuality,detail.playback) }.getOrNull() ?: continue
         runCatching {
             RemoteVideo(repository.http,stream).use { remote ->
                 remote.prepare()

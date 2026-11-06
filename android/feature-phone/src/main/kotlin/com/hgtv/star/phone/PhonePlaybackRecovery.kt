@@ -126,8 +126,7 @@ internal fun PhonePlayerActivity.handlePlayerFailure(error: PlaybackException) {
     // 退出重进（重进也没用——身份还是那一份）。判定、预算、线程与注册全在 `:shared` 的
     // `DeviceHealer`，与电视端 `healDeviceIdentity` 同一份；这里只写「成功之后做什么」。
     //
-    // 成功之后必须重新 `play()`：模型缓存里那份地址是旧身份签发的，`resetModelRotation`
-    // 已随注册作废，重取回来的才是新身份的那一条。
+    // 成功之后必须重新 `play()`：模型缓存已随身份变化作废，重取回来的才是新身份的那一条。
     if (PlaybackFailures.deviceRejected(error)) {
         val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
         val taken = DeviceHealer.healAsync(library, PhoneServices.repository(this), "播放被拒") { healed ->
@@ -363,7 +362,7 @@ internal fun PhonePlayerActivity.scheduleAutoRetry(waitMs: Long) {
             return@launch
         }
         autoRetryLabel?.text = "正在重试…"
-        // 地址缓存必须先作废，否则换号也会命中旧 URL，三次重试只是重放同一条失败流。
+        // 地址缓存必须先作废，否则重试会命中旧 URL，三次重试只是重放同一条失败流。
         prepareFreshRetrySource()
         val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
         play(index, at)

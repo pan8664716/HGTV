@@ -151,12 +151,13 @@ object SessionBridge {
             log("drop stale token len=${effective.length} (sessionid mismatch)")
         }
         if(merged.isNotEmpty()) builder.header("Cookie",CookieRecord.mapToHeader(merged))
-        builder.header("X-SS-DP","8662")
-        builder.header("X-Tt-Store-Region",current?.storeRegion ?: "cn")
-        builder.header("X-Tt-Store-Region-Src","did")
-        builder.header("Sdk-Version","2")
-        builder.header("passport-sdk-version","5051452")
-        builder.header("X-Xs-From-Web","0")
+        val finalRequest=builder.build()
+        if(finalRequest.header("X-SS-DP").isNullOrBlank()) builder.header("X-SS-DP","8662")
+        if(finalRequest.header("X-Tt-Store-Region").isNullOrBlank()) builder.header("X-Tt-Store-Region",current?.storeRegion ?: "cn")
+        if(finalRequest.header("X-Tt-Store-Region-Src").isNullOrBlank()) builder.header("X-Tt-Store-Region-Src","did")
+        if(finalRequest.header("Sdk-Version").isNullOrBlank()) builder.header("Sdk-Version","2")
+        if(finalRequest.header("passport-sdk-version").isNullOrBlank()) builder.header("passport-sdk-version","5051452")
+        if(finalRequest.header("X-Xs-From-Web").isNullOrBlank()) builder.header("X-Xs-From-Web","0")
         return builder
     }
 

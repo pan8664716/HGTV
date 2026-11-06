@@ -55,6 +55,8 @@ import com.hgtv.star.phone.ui.topScrim
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.data.PlaybackTransport
 import com.hgtv.star.shared.data.WatchProgress
+import com.hgtv.star.shared.data.DeviceHealer
+import com.hgtv.star.shared.media.PlaybackFailures
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
 import com.hgtv.star.shared.nav.Route
@@ -2272,7 +2274,7 @@ class PhonePlayerActivity : PhoneActivity() {
             val prepared = withContext(Dispatchers.IO) {
                 runCatching {
                     val info = PhoneServices.repository(this@PhonePlayerActivity)
-                        .stream(episodeId, maxQuality)
+                        .stream(episodeId, maxQuality, d.playback)
                     RemoteVideo(PlaybackTransport.client, info, info.mediaKey(episodeId)).also { it.prepare() }
                 }.getOrNull()
             }
@@ -2525,7 +2527,7 @@ class PhonePlayerActivity : PhoneActivity() {
             val maxQuality = playbackMaxQuality
             val source = withContext(Dispatchers.IO) {
                 runCatching {
-                    PhoneServices.repository(this@PhonePlayerActivity).stream(episodeId, maxQuality)
+                    PhoneServices.repository(this@PhonePlayerActivity).stream(episodeId, maxQuality, d.playback)
                 }
             }
             val info = source.getOrNull()
@@ -2615,6 +2617,17 @@ class PhonePlayerActivity : PhoneActivity() {
     ) {
         val episodeId = d.episodes.getOrNull(episodeIndex) ?: return
         if (problem != null && com.hgtv.star.core.isInterruption(problem)) return
+        if (problem != null && PlaybackFailures.deviceRejected(problem)) {
+            val taken = DeviceHealer.healAsync(
+                library,
+                PhoneServices.repository(this),
+                "取播放地址被拒",
+            ) { healed ->
+                if (healed) play(episodeIndex, at)
+                else onEpisodeSourceMissing(d, episodeIndex, at, problem)
+            }
+            if (taken) return
+        }
         if (problem != null) {
             android.util.Log.w(
                 "HGTV-RECOVER",
@@ -3263,7 +3276,7 @@ class PhonePlayerActivity : PhoneActivity() {
         val maxQuality = playbackMaxQuality
         scope.launch {
             val info = withContext(Dispatchers.IO) {
-                runCatching { PhoneServices.repository(this@PhonePlayerActivity).stream(nextId, maxQuality) }
+                runCatching { PhoneServices.repository(this@PhonePlayerActivity).stream(nextId, maxQuality, d.playback) }
                     .getOrNull()
             }
             val prepared = if (info == null) null else withContext(Dispatchers.IO) {

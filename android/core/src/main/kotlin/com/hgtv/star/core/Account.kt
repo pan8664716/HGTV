@@ -140,7 +140,8 @@ data class AccountCredentials(
 object AccountCredentialsParser {
     /** 组装 `Cookie:` 头时要带的字段（顺序固定，便于比对）。 */
     val COOKIE_KEYS = listOf("sessionid", "sessionid_ss", "sid_tt", "uid_tt", "uid_tt_ss", "d_ticket",
-        "sid_guard", "session_tlb_tag", "store-region", "store-region-src", "install_id", "n_mh", "odin_tt", "ttreq")
+        "sid_guard", "session_tlb_tag", "store-region", "store-region-src", "install_id", "n_mh", "odin_tt", "ttreq",
+        "passport_csrf_token", "passport_csrf_token_default")
 
     /** 默认取哪个 host 下的 cookie（文件里每个 host 都有一份同样的值）。 */
     const val DEFAULT_HOST = "snssdk.com"

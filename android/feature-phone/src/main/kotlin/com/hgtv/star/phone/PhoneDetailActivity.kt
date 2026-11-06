@@ -13,6 +13,7 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import com.hgtv.star.core.Detail
+import com.hgtv.star.core.DetailCache
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.ui.PhoneCards
 import com.hgtv.star.phone.ui.PhoneEpisodeGrid
@@ -31,6 +32,7 @@ import com.hgtv.star.shared.nav.Route
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
@@ -84,6 +86,7 @@ class PhoneDetailActivity : PhoneActivity() {
 
     private var library: Library? = null
     private var detail: Detail? = null
+    private var detailAuthorLoading = false
 
     /** 详情请求的令牌：换剧（`onNewIntent`）时旧请求落地必须丢掉。 */
     private var detailToken = 0
@@ -452,35 +455,86 @@ class PhoneDetailActivity : PhoneActivity() {
 
     private fun load() {
         val token = ++detailToken
+        detailAuthorLoading=false
         val id = seriesId
         titleView.text = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "加载中…" }
         scope.launch {
+            val repository=PhoneServices.repository(this@PhoneDetailActivity)
+            // 网络和书库读盘并行：详情不依赖书库，冷启动时不再把两段等待串起来。
+            val detailDeferred=async(Dispatchers.IO) {
+                runCatching { repository.detail(id,includeAuthor=false) }.getOrNull()
+            }
+            val cached=withContext(Dispatchers.IO) {
+                runCatching { DetailCache.load(id) }.getOrNull()
+            }
             val lib = PhoneServices.awaitLibrary(this@PhoneDetailActivity)
             if (token != detailToken || isFinishing || isDestroyed) return@launch
             library = lib
-            val d = withContext(Dispatchers.IO) {
-                runCatching { PhoneServices.repository(this@PhoneDetailActivity).detail(id) }
-                    .getOrNull()
+            if(cached!=null) {
+                detail=cached
+                bindDetail(cached)
+                prefetchRelated(cached.series)
+                if(cached.series.author.isNotBlank()) prefetchAuthorWorks(cached.series)
+                else loadDetailAuthor(cached)
             }
+            val d=detailDeferred.await()
             // 换剧之后旧请求才回来：直接丢掉，不能拿上一部的详情覆盖这一部。
             if (token != detailToken || isFinishing || isDestroyed) return@launch
             if (d == null) {
-                metaView.text = "详情加载失败"
+                if(detail==null) metaView.text = "详情加载失败"
                 return@launch
             }
+            val knownAuthor=detail?.series?.author?.trim().orEmpty()
+            val merged=if(knownAuthor.isBlank()) d
+                else d.copy(series=d.series.copy(author=knownAuthor))
             // 未上架：接口给的预约状态**只在本地还没有记录时**落一份（下次进页面不必等这次请求）。
             // 本地有记录时不动它：`online_subscribed` 在刚写入之后的一小段时间里仍回 0，
             // 用它覆盖本地就会把用户刚点的「已预约」翻回「预约」。
-            if (d.upcoming) runCatching {
-                if (!lib.reservedKnown(d.series.id)) lib.setReserved(d.series.id, d.reserved)
+            if (merged.upcoming) runCatching {
+                if (!lib.reservedKnown(merged.series.id)) lib.setReserved(merged.series.id, merged.reserved)
             }
-            detail = d
-            bindDetail(d)
+            val changed=detail==null || !sameDetailContent(detail!!,merged)
+            detail = merged
+            if(knownAuthor.isNotBlank()) runCatching { DetailCache.save(merged) }
+            if(changed) bindDetail(merged)
             // 与 TV 完全同一条时序：详情先上屏，**附加内容丢后台**（`prefetchRelated` /
             // `prefetchAuthorWorks`）。不 await、不占详情的关键路径——用户看到标题与选集时，
             // 这两栏还在路上，落地之后各自就地补上。
-            prefetchRelated(d.series)
-            prefetchAuthorWorks(d.series)
+            prefetchRelated(merged.series)
+            if(merged.series.author.isNotBlank()) prefetchAuthorWorks(merged.series)
+            else loadDetailAuthor(merged)
+        }
+    }
+
+    private fun sameDetailContent(a: Detail,b: Detail): Boolean =
+        a.episodes==b.episodes && a.upcoming==b.upcoming && a.reserved==b.reserved &&
+            a.series.copy(author="")==b.series.copy(author="")
+
+    /** 作者补查不挡详情首屏；结果回来只更新元信息与作者作品入口。 */
+    private fun loadDetailAuthor(current: Detail) {
+        val id=current.series.id
+        if(current.series.author.isNotBlank()) {
+            prefetchAuthorWorks(current.series)
+            return
+        }
+        if(detailAuthorLoading) return
+        detailAuthorLoading=true
+        val token=detailToken
+        scope.launch {
+            val author=withContext(Dispatchers.IO) {
+                runCatching {
+                    PhoneServices.repository(this@PhoneDetailActivity).authorsOf(listOf(id))[id].orEmpty()
+                }.getOrDefault("")
+            }
+            if(token!=detailToken) return@launch
+            detailAuthorLoading=false
+            if(author.isBlank() || isFinishing || isDestroyed) return@launch
+            val d=detail?.takeIf { it.series.id==id } ?: return@launch
+            val updated=d.copy(series=d.series.copy(author=author))
+            detail=updated
+            paintMeta(updated)
+            runCatching { DetailCache.save(updated) }
+            prefetchAuthorWorks(updated.series)
         }
     }
 
@@ -493,17 +547,7 @@ class PhoneDetailActivity : PhoneActivity() {
             )
         }
 
-        // 元信息：第N季 · 全N集 · 作者（与 TV 详情页同一套，缺哪项就不占位）。
-        val meta = ArrayList<String>(4)
-        if (s.seasonIndex > 0) meta += "第${s.seasonIndex}季"
-        if (d.upcoming) {
-            meta += "尚未上线"
-        } else if (d.episodes.isNotEmpty()) {
-            meta += "全${d.episodes.size}集"
-        }
-        if (s.author.isNotBlank()) meta += s.author
-        metaView.text = meta.joinToString("  ·  ")
-        metaView.visibility = if (meta.isEmpty()) View.GONE else View.VISIBLE
+        paintMeta(d)
         tagView.text = s.tags.trim()
         tagView.visibility = if (tagView.text.isBlank()) View.GONE else View.VISIBLE
 
@@ -552,6 +596,18 @@ class PhoneDetailActivity : PhoneActivity() {
         episodeBox.addView(grid, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
+    }
+
+    /** 元信息：第N季 · 全N集 · 作者；作者晚到时只重画这一行。 */
+    private fun paintMeta(d: Detail) {
+        val s=d.series
+        val meta=ArrayList<String>(4)
+        if(s.seasonIndex>0) meta+="第${s.seasonIndex}季"
+        if(d.upcoming) meta+="尚未上线"
+        else if(d.episodes.isNotEmpty()) meta+="全${d.episodes.size}集"
+        if(s.author.isNotBlank()) meta+=s.author
+        metaView.text=meta.joinToString("  ·  ")
+        metaView.visibility=if(meta.isEmpty()) View.GONE else View.VISIBLE
     }
 
     /** 简介默认两行；只有真的被截断时才显示右侧「展开」。 */

@@ -61,7 +61,9 @@ class Library(context: Context) {
          * 请求看成另一台设备 / 另一次会话（见 [SessionMirror] 与 [restoreFromMirror]）。
          */
         val MIRROR_KEYS = listOf(
-            "registered-device-id","registered-install-id","registered-profile-stamp",
+            "registered-device-id","registered-install-id","registered-device-token",
+            "registered-klink-egdi","registered-profile-stamp",
+            "manual-device-id",
             "device-profile","device-seed","device-profile-seed",
             // 待换新的候选档案（见 [commitPendingProfile]）：重装后仍要记得「这套身份是旧的」，
             // 否则会一直拿着老版本的随机档案继续跑。
@@ -596,9 +598,46 @@ class Library(context: Context) {
         if(isDeviceNumber(registered) && isDeviceNumber(registeredInstall)) {
             // 老版本装过、镜像里还没有这一对的：读的时候补进去，卸载重装才认得回这台设备。
             mirrorSync("registered-device-id",registered); mirrorSync("registered-install-id",registeredInstall)
-            return mapOf("device_id" to registered,"iid" to registeredInstall)
+            val identity=linkedMapOf("device_id" to registered,"iid" to registeredInstall)
+            sessionPrefs.getString("registered-device-token","").orEmpty()
+                .takeIf { it.isNotBlank() }?.let {
+                    mirrorSync("registered-device-token",it)
+                    identity["device_token"]=it
+                }
+            sessionPrefs.getString("registered-klink-egdi","").orEmpty()
+                .takeIf { it.isNotBlank() }?.let {
+                    mirrorSync("registered-klink-egdi",it)
+                    identity["klink_egdi"]=it
+                }
+            return identity
         }
         return emptyMap()
+    }
+    /**
+     * 用户在系统高级里手动覆盖的官方 App `device_id`。
+     *
+     * 空字符串表示使用自动注册 / 一次性设备池。这里只保存覆盖值，不改写注册下发的
+     * `registered-device-id`，因此随时可以恢复自动身份。
+     */
+    fun manualDeviceId(): String {
+        restoreFromMirror()
+        return DeviceRegister.normalizeManualDeviceId(
+            sessionPrefs.getString("manual-device-id","").orEmpty()
+        ).orEmpty()
+    }
+    fun saveManualDeviceId(value: String): Boolean {
+        if(discarding) return false
+        val clean=DeviceRegister.normalizeManualDeviceId(value) ?: return false
+        sessionPrefs.edit().putString("manual-device-id",clean).commit()
+        mirror.put("manual-device-id",clean)
+        mirror.flush()
+        return true
+    }
+    fun clearManualDeviceId() {
+        if(discarding) return
+        sessionPrefs.edit().remove("manual-device-id").commit()
+        mirror.remove("manual-device-id")
+        mirror.flush()
     }
     /**
      * 是否**真**在平台注册过（只有注册过搜索才可能出数据）。
@@ -678,9 +717,12 @@ class Library(context: Context) {
     fun invalidateRegistration() {
         if(discarding) return
         sessionPrefs.edit().remove("registered-device-id").remove("registered-install-id")
+            .remove("registered-device-token")
+            .remove("registered-klink-egdi")
             .remove("registered-profile-stamp").remove("registered-cookies")
             .remove("registration-pending").apply()
-        listOf("registered-device-id","registered-install-id","registered-profile-stamp","registered-cookies")
+        listOf("registered-device-id","registered-install-id","registered-device-token",
+            "registered-klink-egdi","registered-profile-stamp","registered-cookies")
             .forEach(mirror::remove)
         cachedProfileStamp=null
     }
@@ -702,7 +744,12 @@ class Library(context: Context) {
     fun registrationPending(): Boolean =
         sessionPrefs.getBoolean("registration-pending",false) || pendingProfile()!=null
     /** 落盘注册结果；传空表示清除（下次启动重新注册）。 */
-    fun saveDeviceIdentity(deviceId: String, installId: String) {
+    fun saveDeviceIdentity(
+        deviceId: String,
+        installId: String,
+        klinkEgdi: String = "",
+        deviceToken: String = "",
+    ) {
         if(discarding) return
         if(deviceId.isBlank() || installId.isBlank()) { invalidateRegistration(); return }
         // 连同「这份身份是按哪套档案注册出来的」一起落盘：档案一变就能立刻判出来
@@ -713,9 +760,14 @@ class Library(context: Context) {
         // 身份丢了就等于「这台设备从没注册过」——搜索空响应、播放 110001。
         // 这几项只在注册成功时写一次，同步写一次磁盘的代价可以忽略。
         sessionPrefs.edit().putString("registered-device-id",deviceId).putString("registered-install-id",installId)
+            .putString("registered-device-token",deviceToken)
+            .putString("registered-klink-egdi",klinkEgdi)
             .putString("registered-profile-stamp",stamp).commit()
         // 身份一变（首次注册 / 重新注册）镜像立刻跟上：卸载重装后要先认回这台设备，再谈别的。
         mirror.put("registered-device-id",deviceId); mirror.put("registered-install-id",installId)
+        if(deviceToken.isNotBlank()) mirror.put("registered-device-token",deviceToken)
+        else mirror.remove("registered-device-token")
+        if(klinkEgdi.isNotBlank()) mirror.put("registered-klink-egdi",klinkEgdi) else mirror.remove("registered-klink-egdi")
         mirror.put("registered-profile-stamp",stamp)
         // 不等 250 ms 的合并窗口：注册成功后用户可能马上就退出 / 强杀，
         // 那一次写没落盘，下一次进来就又成了「未注册设备」——正是用户报的那个现象。
@@ -769,14 +821,10 @@ class Library(context: Context) {
      * 因此注册时上报的机型、签名里 `x-medusa` 上报的机型、以及 query 里的 `device_type`
      * 是同一个值——平台的风控会拿这几处做一致性判定，同一次会话里出现两台设备是不正常的。
      *
-     * ## 种子是随机的，而且只生成一次
+     * ## 标识按官方 App 规则生成一次
      *
-     * `cdid` / `openudid` / `clientudid` 由一段**随机 UUID** 派生（见 [deviceSeed]），
-     * **不再**拿 `ANDROID_ID` / `Build.SERIAL` / `Build.FINGERPRINT` 当种子。
-     *
-     * 那三个值会随系统升级、恢复出厂、换用户而变，一变就等于换了台设备：平台侧
-     * 「这台设备」的连续性断了，搜索回 `200 + 0 字节`、播放回 `101000`。
-     * 随机种子落盘之后就不会再变，除非用户主动重新注册（见 [queueNewDeviceIdentity]）。
+     * `cdid` / `clientudid` 各自是独立 UUID；`openudid` 优先使用有效的 Android ID，
+     * 没有 Android ID 时才使用 SecureRandom 兜底。三项都随档案一起落盘，后续只读不重算。
      *
      * ## 读路径只有一条
      *
@@ -790,13 +838,41 @@ class Library(context: Context) {
         if(discarding) return emptyMap()
         val stored=sessionPrefs.getString("device-profile","").orEmpty()
         if(stored.isNotBlank()) {
-            val map=runCatching {
+            var map=runCatching {
                 val json=org.json.JSONObject(stored)
                 buildMap { for(key in json.keys()) json.optString(key).takeIf { it.isNotBlank() }?.let { put(key,it) } }
             }.getOrNull()
-            if(map!=null && map["cdid"].orEmpty().isNotBlank() && map["openudid"].orEmpty().isNotBlank()) {
+            if(map!=null &&
+                map["profile-format"]=="official-v1" &&
+                map["cdid"].orEmpty().isNotBlank() &&
+                map["openudid"].orEmpty().isNotBlank() &&
+                map["clientudid"].orEmpty().isNotBlank()
+            ) {
+                // 早期版本可能在 Android ID 尚不可读时先落了一个随机兜底值。
+                // 不要把它永久当成设备身份：后续每次读档案都再试一次 Android ID，
+                // 一旦可读就把 openudid 升级为官方语义，并让注册指纹自然失效、重新注册。
+                val source=map["openudid-source"].orEmpty()
+                if(source!="android_id" && source!="forced_random") {
+                    val androidId=readAndroidId()
+                    if(androidId!=null && androidId!=map["openudid"]) {
+                        map=LinkedHashMap(map).apply {
+                            put("openudid",androidId)
+                            put("openudid-source","android_id")
+                        }
+                        val upgraded=org.json.JSONObject()
+                        map.forEach { (key,value) -> upgraded.put(key,value) }
+                        val json=upgraded.toString()
+                        sessionPrefs.edit().putString("device-profile",json).commit()
+                        mirror.put("device-profile",json)
+                        mirror.flush()
+                        cachedProfileStamp=null
+                        Log.i("HGTV","Device openudid upgraded to Android ID")
+                    }
+                }
                 // 老版本只把档案写在本机私有目录里：读一次就补进镜像，卸载重装才认得回这台设备。
-                mirrorSync("device-profile",stored)
+                val current=org.json.JSONObject()
+                map.forEach { (key,value) -> current.put(key,value) }
+                mirrorSync("device-profile",current.toString())
                 // **升级不动身份**：老版本那份档案（种子由系统标识符派生）原样继续用。
                 // 早先这里会「升级时强制换一台设备」，实测结论是**不要**这么做：
                 // 换设备只能换来一次重新绑定，账号在平台上被当成陌生机器，而收益为零
@@ -806,8 +882,9 @@ class Library(context: Context) {
                 return map
             }
         }
-        // 盘上没有（首次使用 / 刚重新注册）：按种子派生一份并落盘。
-        val fresh=buildDerivedProfile(deviceSeed())
+        // 旧版档案没有官方格式标记：重建一次，让注册身份与官方字段重新对齐。
+        // 盘上没有（首次使用 / 刚重新注册）也走这里。
+        val fresh=buildOfficialProfile()
         val json=org.json.JSONObject(); fresh.forEach { (key,value) -> json.put(key,value) }
         // **同步 commit**：档案丢了就等于换了台设备，不能让它在强杀时还没写下去。
         sessionPrefs.edit().putString("device-profile",json.toString()).commit()
@@ -817,21 +894,21 @@ class Library(context: Context) {
         return fresh
     }
     /**
-     * 本机的设备种子：**随机生成一次，之后只从盘上读**。
+     * 生成一条只用于一次性播放注册的设备档案。
      *
-     * 与 [queueNewDeviceIdentity] 的分工：那个是「换一台设备」，会生成新种子并走候选档案；
-     * 这里只是「第一次用到时补一份」。
+     * 机型、系统、分辨率等物理档案沿用本机当前值，三个设备标识全部换成新的随机值。
+     * 这里不写 `device-profile`，也不改动当前注册身份；返回值只交给后台设备池使用。
      */
-    private fun deviceSeed(): String {
-        val stored=sessionPrefs.getString("device-seed","").orEmpty()
-        if(stored.isNotBlank()) return stored
-        val fresh=newSeed()
-        sessionPrefs.edit().putString("device-seed",fresh).commit()
-        mirror.put("device-seed",fresh); mirror.flush()
-        return fresh
+    fun freshPlaybackDeviceProfile(): Map<String,String> {
+        val base=deviceProfile()
+        if(base.isEmpty()) return emptyMap()
+        return LinkedHashMap(base).apply {
+            put("cdid",OfficialDeviceIds.cdid())
+            put("openudid",OfficialDeviceIds.openudid(null))
+            put("openudid-source","playback_pool")
+            put("clientudid",OfficialDeviceIds.clientudid())
+        }
     }
-    /** 一段新的随机种子。只有「第一次」与「换一台设备」两种情况会调用它。 */
-    private fun newSeed(): String=java.util.UUID.randomUUID().toString()
     /**
      * 生成一套**新的**设备身份候选（新种子 → 新档案），等注册成功再转正。
      *
@@ -851,38 +928,71 @@ class Library(context: Context) {
      */
     fun queueNewDeviceIdentity() {
         if(discarding) return
-        val seed=newSeed()
-        storePendingProfile(buildDerivedProfile(seed),seed)
+        storePendingProfile(buildOfficialProfile(forceRandomOpenudid=true))
         markRegistrationPending()
     }
-    /** 由种子派生的一整套设备档案（机型 / 系统 / 分辨率 / 密度 / `cdid` …）。 */
-    private fun buildDerivedProfile(seed: String): Map<String,String> {
+    /** 按官方默认链路生成一整套设备档案（机型 / 系统 / 分辨率 / 密度 / 三个标识）。 */
+    private fun buildOfficialProfile(forceRandomOpenudid: Boolean = false): Map<String,String> {
         val model=android.os.Build.MODEL.orEmpty().trim()
         val brand=android.os.Build.BRAND.orEmpty().trim()
         // 机型 / 品牌认不出来时**整体**回落到内置档案那一台（Redmi + 25053RT47C），
         // 而不是各自填一个默认值——那样会拼出「Intel 平台的三星机」这种自相矛盾的档案。
         val known=model.isNotBlank() && brand.isNotBlank()
         val metrics=app.resources.displayMetrics
+        val configuration=app.resources.configuration
+        val width=metrics.widthPixels
+        val height=metrics.heightPixels
+        val largeScreen=(configuration.screenLayout and android.content.res.Configuration.SCREENLAYOUT_SIZE_MASK) >=
+            android.content.res.Configuration.SCREENLAYOUT_SIZE_LARGE
+        val installTime=runCatching {
+            app.packageManager.getPackageInfo(app.packageName,0).firstInstallTime
+        }.getOrDefault(System.currentTimeMillis())
+        val telephony=runCatching {
+            app.getSystemService(android.content.Context.TELEPHONY_SERVICE) as? android.telephony.TelephonyManager
+        }.getOrNull()
+        val androidId=readAndroidId()
+        val carrier=runCatching { telephony?.networkOperatorName.orEmpty() }.getOrDefault("")
+        val mccMnc=runCatching { telephony?.networkOperator.orEmpty() }.getOrDefault("")
         return linkedMapOf(
-            // 三个标识都由同一个种子派生：同一个种子永远是同一个值，重装 / 升级 / 重启都不变。
-            "cdid" to StableDeviceIds.cdid(seed),
-            "openudid" to StableDeviceIds.openudid(seed),
-            // `clientudid` 注册请求也会带（见 `DeviceRegister` 的 query）：档案里有就用档案这份，
-            // 不放进档案的话每次请求都会现编一个随机的，等于每次都多报一台设备。
-            "clientudid" to StableDeviceIds.clientudid(seed),
+            // 官方默认链路：cdid/clientudid 各自随机，openudid 优先 Android ID。
+            // 生成一次后随档案落盘，后续不能重算。
+            "profile-format" to "official-v1",
+            "cdid" to OfficialDeviceIds.cdid(),
+            "openudid" to OfficialDeviceIds.openudid(if(forceRandomOpenudid) null else androidId),
+            "openudid-source" to when {
+                forceRandomOpenudid -> "forced_random"
+                androidId!=null -> "android_id"
+                else -> "fallback"
+            },
+            "clientudid" to OfficialDeviceIds.clientudid(),
             "device_type" to (if(known) model else "25053RT47C"),
             "device_brand" to (if(known) brand else "Redmi"),
+            "channel" to "69310258a",
+            "dragon_device_type" to "phone",
             "os_version" to android.os.Build.VERSION.RELEASE.orEmpty().ifBlank { "16" },
             "os_api" to android.os.Build.VERSION.SDK_INT.toString(),
             // `Build.DISPLAY` 是这台设备实际的固件版本串（官方 App 也读它当 `rom_version`）。
-            "rom_version" to (android.os.Build.DISPLAY.orEmpty().ifBlank { "unknown" }),
-            // 分辨率与密度：与机型同源（都来自本机），格式与官方 query 一致（`宽*高`）。
+            "rom_version" to android.os.Build.DISPLAY.orEmpty().ifBlank { "W528JS release-keys" },
+            "rom" to android.os.Build.VERSION.INCREMENTAL.orEmpty().ifBlank { "1135" },
+            "carrier" to carrier.ifBlank { "CHINA MOBILE" },
+            "mcc_mnc" to mccMnc.ifBlank { "46000" },
+            // 分辨率与密度：与机型同源（都来自本机）。官方 query 用「长边*短边」，
+            // 注册 body 再由 DeviceRegister 换成「短边x长边」。
             // 采集不到时回落到内置值（手机竖屏形态）。
-            "resolution" to (if(metrics.widthPixels>0 && metrics.heightPixels>0)
-                "${metrics.widthPixels}*${metrics.heightPixels}" else "1280*2772"),
-            "dpi" to (if(metrics.densityDpi>0) metrics.densityDpi.toString() else "520")
+            "resolution" to (if(width>0 && height>0) "${maxOf(width,height)}*${minOf(width,height)}" else "2772*1280"),
+            "dpi" to (if(metrics.densityDpi>0) metrics.densityDpi.toString() else "520"),
+            "is_android_pad_screen" to (if(largeScreen) "1" else "0"),
+            // 重复注册时仍上报这台设备的真实首次安装时间，不能每次都写成“刚刚安装”。
+            "apk_first_install_time" to installTime.toString()
         )
     }
+    /** App 进程实际可见的 Android ID；官方 App 也是用这一个，而不是 shell 的全局值。 */
+    private fun readAndroidId(): String? = runCatching {
+        android.provider.Settings.Secure.getString(
+            app.contentResolver,
+            android.provider.Settings.Secure.ANDROID_ID,
+        )?.trim()?.takeIf(OfficialDeviceIds::validAndroidId)
+    }.getOrNull()
     /**
      * 「换新身份」用的**候选档案**：派生出来但还没被平台接受的那一份。
      *
@@ -935,7 +1045,14 @@ class Library(context: Context) {
      * 老版本随机档案升级时，请求必须**按候选档案**发出去，平台才会把新的 `device_id` 绑在
      * 新档案上；而其它请求（搜索 / 播放）此刻仍用旧档案，旧身份因此继续可用。
      */
-    fun registrationProfile(): Map<String,String> = pendingProfile() ?: deviceProfile()
+    fun registrationProfile(): Map<String,String> {
+        pendingProfile()?.let { return it }
+        val official=accountDevice()
+        if(official["cdid"].orEmpty().isNotBlank() && official["openudid"].orEmpty().isNotBlank()) {
+            return LinkedHashMap(deviceProfile()).apply { putAll(official) }
+        }
+        return deviceProfile()
+    }
     /** 有没有待转正的候选档案（见 [registrationProfile]）。 */
     fun hasPendingProfile(): Boolean = pendingProfile()!=null
     /**

@@ -48,6 +48,7 @@ class HgtvApplication: Application() {
         startDnsWarmup()
         startSignWarmup()
         initSession()
+        startPlaybackDevicePool()
     }
 
     /**
@@ -176,6 +177,18 @@ class HgtvApplication: Application() {
             )
         }.onFailure { problem ->
             Diagnostics.warn("HGTV-SESSION","会话保活初始化失败",problem)
+        }
+    }
+
+    /**
+     * 单线程持续注册一次性播放设备。注册结果落到应用私有目录，
+     * 播放取地址时消费一条并从磁盘删除。
+     */
+    private fun startPlaybackDevicePool() {
+        runCatching {
+            com.hgtv.star.shared.data.PlaybackDevicePool.start(this)
+        }.onFailure { problem ->
+            Diagnostics.warn("HGTV-DEVICE-POOL","一次性播放设备池启动失败",problem)
         }
     }
 

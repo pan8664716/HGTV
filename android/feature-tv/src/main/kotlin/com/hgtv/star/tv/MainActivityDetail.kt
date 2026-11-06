@@ -36,20 +36,36 @@ fun MainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boole
     authorOpen=false
     authorWorks=null; authorLoading=false; authorFailed=false; authorFor=""
     authorToken.incrementAndGet(); authorJob?.cancel(true); authorJob=null
+    detailAuthorLoading=false
+    detailAuthorToken++
     val body=base(series.title); message(body,"正在加载剧集…")
+    val cached=runCatching { DetailCache.load(series.id) }.getOrNull()
+    if(cached!=null) {
+        detail=cached
+        showDetail(false)
+        prefetchRelated(cached.series.id)
+        if(cached.series.author.isNotBlank()) prefetchAuthorWorks(cached.series.id,cached.series)
+        else loadDetailAuthor(cached)
+    }
     work({
         // 调试注入（见 [DebugFaults]）：把错误页那条上报链路（`content_detail`）变成可复现的一条命令。
         // 正式包里 BuildConfig.DEBUG 是常量 false，整段被 R8 删掉。
         if(BuildConfig.DEBUG && DebugFaults.mode(this)==DebugFaults.Mode.CONTENT_FAIL)
             throw java.io.IOException("调试注入：详情接口不可用")
-        repository.detail(series.id)
+        repository.detail(series.id,includeAuthor=false)
     }, { loaded ->
+        if(screen!="detail" || (detail!=null && detail?.series?.id!=series.id)) return@work
         // 预告文案：详情接口只给「预告 / 全0集」这一档，**「预计11月6日上线」只有列表 / 搜索卡有**。
         // 从卡片点进来时把那一句带进来（它比「预告」有用得多），详情接口自己有更具体的就用自己的。
         val notice=series.notice.takeIf { it.contains("上线") } ?: loaded.series.notice
-        val result=if(loaded.upcoming && notice!=loaded.series.notice)
+        val knownAuthor=detail?.series?.author?.trim().orEmpty()
+        val withNotice=if(loaded.upcoming && notice!=loaded.series.notice)
             loaded.copy(series=loaded.series.copy(notice=notice)) else loaded
+        val result=if(knownAuthor.isBlank()) withNotice
+            else withNotice.copy(series=withNotice.series.copy(author=knownAuthor))
+        val changed=detail==null || !sameDetailContent(detail!!,result)
         detail=result
+        if(knownAuthor.isNotBlank()) runCatching { DetailCache.save(result) }
         // 详情拿到手 = 上一次的错误页已经过去，面板上的「详情加载失败」擦掉。
         clearDebugProblem()
         // 预告态没有分集：`observeFavorite` 的集数必须 > 0，传 0 会抛异常（见 `FavoriteUpdate.observe`）。
@@ -62,13 +78,51 @@ fun MainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boole
         prefetchRelated(series.id)
         // 作者作品同理：它要按页搜（见 `ContentRepository.authorWorks`），比相关剧集更慢，
         // 因此更要提前发出去，不能让用户按下按钮才开始等。
-        prefetchAuthorWorks(series.id,result.series)
         val target=resumeTargetFor(series.id,result.episodes)
         episodeIndex=target.index
         // 未上架的剧没有分集，**不能**走「直接播放」那条路（那会去取一个空的 vid）：
         // 从历史 / 首页的「继续观看」点进来时也一律落到预告详情页。
-        if(resume && !result.upcoming) playEpisode(target.index,target.position,autoplay=detailAutoplay) else showDetail(false)
-    }, { problem -> error(body,problem,stage="content_detail") { openDetail(series,resume,detailAutoplay) } })
+        if(resume && !result.upcoming) playEpisode(target.index,target.position,autoplay=detailAutoplay)
+        else if(changed) showDetail(false)
+        if(result.series.author.isNotBlank()) prefetchAuthorWorks(series.id,result.series)
+        else loadDetailAuthor(result)
+    }, { problem ->
+        if(detail?.series?.id==series.id) showHint("刷新失败，仍显示上次内容")
+        else error(body,problem,stage="content_detail") { openDetail(series,resume,detailAutoplay) }
+    })
+}
+/** 详情主体一致时不重建整页；作者由 [detailAuthorRefresh] 单独补。 */
+private fun sameDetailContent(a: Detail,b: Detail): Boolean =
+    a.episodes==b.episodes && a.upcoming==b.upcoming && a.reserved==b.reserved &&
+        a.series.copy(author="")==b.series.copy(author="")
+
+/**
+ * 作者只是附加信息：主体详情先上屏，再在后台补一次 `multi-detail`。
+ * 结果落地后就地更新信息行，并让「作者作品」入口跟着出现。
+ */
+fun MainActivity.loadDetailAuthor(current: Detail) {
+    val id=current.series.id
+    if(current.series.author.isNotBlank()) {
+        prefetchAuthorWorks(id,current.series)
+        return
+    }
+    if(detailAuthorLoading) return
+    detailAuthorLoading=true
+    val token=++detailAuthorToken
+    io.submit {
+        val author=runCatching { repository.authorsOf(listOf(id))[id].orEmpty() }.getOrDefault("")
+        main.post {
+            if(token!=detailAuthorToken) return@post
+            detailAuthorLoading=false
+            if(author.isBlank()) return@post
+            if(detail?.series?.id!=id) return@post
+            val updated=detail!!.copy(series=detail!!.series.copy(author=author))
+            detail=updated
+            runCatching { DetailCache.save(updated) }
+            if(screen=="detail") detailAuthorRefresh?.invoke(author)
+            prefetchAuthorWorks(id,updated.series)
+        }
+    }
 }
 /**
  * 续播目标：**本机进度优先，账号侧的历史兜底**。
@@ -328,12 +382,20 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
     // 作者 / 版权方：来自 App 的 `multi-detail` 接口（列表接口不带这一项）。
     // 放在信息行最右侧（与卡片上的位置一致——集数在左、作者在右），取不到时整格不占位。
     val byline=data.series.author.trim()
-    if(byline.isNotEmpty()) {
-        meta.addView(Space(this),lp(0,1).apply { weight=1f })
-        meta.addView(text(byline,14f,TvStyle.muted).apply {
-            maxLines=1; ellipsize=TextUtils.TruncateAt.END
-        })
+    val authorSpace=Space(this)
+    val authorView=text(byline,14f,TvStyle.muted).apply {
+        maxLines=1; ellipsize=TextUtils.TruncateAt.END
     }
+    meta.addView(authorSpace,lp(0,1).apply { weight=1f })
+    meta.addView(authorView)
+    fun applyAuthor(name: String) {
+        val shown=name.trim()
+        authorSpace.visibility=if(shown.isEmpty()) View.GONE else View.VISIBLE
+        authorView.visibility=authorSpace.visibility
+        authorView.text=shown
+    }
+    applyAuthor(byline)
+    detailAuthorRefresh={ name -> applyAuthor(name) }
     info.addView(meta)
     val description=data.series.description.ifBlank { if(upcoming) "尚未上线，预约后开播时提醒你" else "选择剧集开始观看" }
     // 简介固定三行：这一页不再有「完整简介」按钮（用户要求去掉），也就没有可展开的地方。

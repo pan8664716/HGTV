@@ -239,7 +239,8 @@ def _hash_f13(query: bytes, body: bytes, ts: int) -> bytes:
     di = [i32at(data, i) for i in range(0, len(data), 4)]
     for i in range(112):
         x, y = di[i + 1], di[i + 14]
-        di.append(i32(di[i] + di[i + 9] + (rol(x, 14) ^ rol(x, 25) ^ (x >> 3)) + (rol(y, 13) ^ rol(y, 15) ^ (y >> 10))))
+        di.append(i32(di[i] + di[i + 9] + (rol(x, 14) ^ rol(x, 25) ^ (u32(x) >> 3))
+                      + (rol(y, 13) ^ rol(y, 15) ^ (u32(y) >> 10))))
     initial = [ror(v, count) for v in (0x7aba4fc8, 0x67166507, 0x6403fa00, 0x340f512f, 984304912, 3005047866, 2874125293, 2152413264)]
     chosen = [
         [101, 5, 7, 6, 3, 2, 1, 0, 5, 4, 3],
@@ -274,7 +275,8 @@ def gorgon(query: str, body: bytes | None, ts: int, rnd16: int) -> str:
     j = 0
     for i in range(256):
         j = (j + s[i] + key[i % 8]) & 255
-        s[i], s[j] = s[j], s[i]
+        # Kotlin 实现只把 s[j] 写回 s[i]，没有把旧 s[i] 写回 s[j]。
+        s[i] = s[j]
     out = bytearray(len(payload))
     j = 0
     for n in range(len(payload)):
@@ -502,7 +504,7 @@ class Signer:
         sign_key = bytes.fromhex("8ebdfa3806ecc5cee79423e6029ed82540bc2218bb7eaef71cb691f7aa8aa2f5")
         h = sm3(sign_key + le32(r) + sign_key)
         d1 = (r >> 16) & 255
-        seed = le32(_inv32(u32(((d1 << 11) | (r >> 24)) ^ (d1 >> 5) ^ d1)))
+        seed = le32(_inv32(u32(((d1 << 11) | (u32(r) >> 24)) ^ (d1 >> 5) ^ d1)))
         transformed = bytearray((bytes.fromhex("4001000000000000") + _xmxor(message, h))[::-1])
         for i in range(len(transformed)):
             transformed[i] ^= seed[3 - (i & 3)]

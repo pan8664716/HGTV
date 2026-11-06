@@ -436,7 +436,7 @@ fun MainActivity.maybePrefetch() {
                 // 索引键用**实际档位**（见 `StreamInfo.mediaKey`）：与起播那条路的键
                 // 必须逐字一致，预热结果才会被真正复用；用请求上限做键时，
                 // 「CDN 只给兼容档」的那一集预热与起播会各用一份索引。
-                val info=source.stream(id,quality)
+                val info=source.stream(id,quality,data.playback)
                 RemoteVideo(http,info,info.mediaKey(id)).also { remote=it; it.warm() }
             }
             if(preparedNext.complete(ticket,key,prepared)) {
@@ -562,7 +562,7 @@ private fun MainActivity.openNextSeason(target: Series) {
     val token=nextSeasonToken.incrementAndGet()
     nextSeasonJob?.cancel(true)
     nextSeasonJob=io.submit {
-        val result=runCatching { repository.detail(target.id) }
+        val result=runCatching { repository.detail(target.id,includeAuthor=false) }
         main.post {
             if(isDestroyed || nextSeasonToken.get()!=token) return@post
             val next=result.getOrNull()
@@ -784,7 +784,7 @@ fun MainActivity.replayWithPlan(plan: PlaybackRetryPlan) {
     // 降档**不**去 `forgetStream`：地址按「集 + 上限 + device_level」做键，上限一变就是
     // 另一个键、必然重取一条新地址，旧那条留着下次切回高档还能用。
     // 早先这里无条件清一次，清的是**新**上限那个（原本就空的）键，什么也没删掉，
-    // 代价却是 `forgetStream` 尾部的换号把 `video_model` 缓存一起打掉——
+    // 代价却是 `forgetStream` 尾部把 `video_model` 缓存一起打掉——
     // 白付一次 500~1100ms 的 POST，而坏的东西明明是本机解码器，与身份无关。
     // 同档重建走窄路（`keepMedia`）：视图与这一集的 `RemoteVideo` 原地留着，
     // 只 `stop()` 放掉解码器。降档必须回到整条重建——上限变了就是另一条地址、
@@ -1017,7 +1017,7 @@ fun MainActivity.playerFailure(problem: Throwable) {
             val hardware=PlaybackCapability.cachedHardwareHevc() ?: true
             main.post {
                 if(isDestroyed) return@post
-                // 档位只有 4 / 5，与解码能力无关，这里不动它（见 `ContentRepository.deviceLevel`）。
+                // 档位是官方的 High=3，与解码能力无关，这里不动它（见 `ContentRepository.deviceLevel`）。
                 playbackHevcSupported=hevc
                 hardwareHevcAvailable=hardware
             }

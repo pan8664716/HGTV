@@ -36,6 +36,7 @@ object IdentityBinder {
         // 设备身份：只有平台注册下发的那一对（没注册过时是空表，不自编随机值）。
         repository.registerProfile = library.deviceProfile()
         repository.deviceIdentity = library.deviceIdentity()
+        repository.manualDeviceId = library.manualDeviceId()
         // 账号凭据：`signedIn` 与所有账号接口都看它。
         repository.credentials = runCatching { library.account() }.getOrNull()?.takeIf { it.configured }
         // 注册下发的 Cookie（`install_id` / `ttreq` / `store-region`）：少了它，

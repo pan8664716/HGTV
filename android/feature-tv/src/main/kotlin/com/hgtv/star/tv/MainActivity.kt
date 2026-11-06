@@ -514,12 +514,12 @@ class MainActivity: Activity() {
     val reserveFilterButtons=mutableMapOf<Boolean,View>()
     /**
      * 列表「一页」的条数——**只是给界面显示用的估算**，真正的分页由 `core` 的
-     * `LOGICAL_PAGE_SIZE` 决定（现在各条路统一成 100 条一个逻辑页）。
+     * 榜单的 `RANK_PAGE_SIZE` 决定（首屏 20 条，后续页同大小追加）。
      *
      * 这个值只在一处用到：榜单底部那行「已显示 N / M 部」按「总页数 × 每页条数」估算总数。
      * 改了 `core` 那边的一页大小，这里要跟着改，否则那个总数会差好几倍。
      */
-    val pageSize=100
+    val pageSize=20
     /**
      * 「回到顶部」浮层：右下角那一枚按钮（见 `list/BackToTop.kt`）。
      *
@@ -1500,6 +1500,10 @@ class MainActivity: Activity() {
      * 离开详情页时由 [invalidatePage] 清空，旧引用不会指到已经拆掉的树上。
      */
     var detailBottomRefresh: (() -> Unit)?=null
+    /** 作者补查完成后就地更新信息行，不重建整张详情页。 */
+    var detailAuthorRefresh: ((String) -> Unit)?=null
+    var detailAuthorLoading=false
+    var detailAuthorToken=0
     /**
      * 相关剧集的取数状态（后台预取，用户无感）。
      *

@@ -1172,17 +1172,17 @@ fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Cach
                 when(level) {
                     // L3：只取地址（写盘），一个视频字节都不拉。
                     com.hgtv.star.core.CacheLevel.ADDRESS -> {
-                        source.stream(episode,quality)
+                        source.stream(episode,quality,data.playback)
                         null
                     }
                     // L2：地址 + 索引（写盘），不取首块——切过去时磁盘命中，免 880ms 解析。
                     com.hgtv.star.core.CacheLevel.META -> {
-                        val info=source.stream(episode,quality)
+                        val info=source.stream(episode,quality,data.playback)
                         RemoteVideo(http,info,info.mediaKey(episode)).also { remote=it; it.warmMeta() }
                     }
                     // L1：地址 + 索引 + 首块 512KB，留在内存里等切换。
                     else -> {
-                        val info=source.stream(episode,quality)
+                        val info=source.stream(episode,quality,data.playback)
                         RemoteVideo(http,info,info.mediaKey(episode)).also { remote=it; it.warm(512L*1024) }
                     }
                 }

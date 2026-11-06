@@ -82,9 +82,11 @@ object DeviceRegistration {
         // 否则同一次会话里会出现两台设备（风控按异常客户端处理）。
         repository.registerProfile = library.registrationProfile()
         // 换新时不带旧身份：带着它，平台会原样回同一对 `device_id` / `iid`。
+        // 首次注册也必须匿名：此时本机没有身份，带上登录 Cookie / token 会被平台
+        // 当成“已有设备重注册”，容易直接回 device_id=0。
         val registered = repository.registerDevice(
             library.registrationProfile(),
-            withIdentity = !pendingProfile,
+            withIdentity = !pendingProfile && library.deviceIdentity().isNotEmpty(),
         ) ?: run {
             // 失败原因从仓库的 `lastRegisterError` 拿：`registerDevice` 的契约是
             // 「失败返回 null」，异常在它内部就被吃掉了。
@@ -123,7 +125,12 @@ object DeviceRegistration {
         repository: ContentRepository,
         registered: com.hgtv.star.core.DeviceRegister.Registered,
     ) {
-        library.saveDeviceIdentity(registered.deviceId, registered.installId)
+        library.saveDeviceIdentity(
+            registered.deviceId,
+            registered.installId,
+            registered.klinkEgdi,
+            registered.deviceToken,
+        )
         repository.deviceIdentity = library.deviceIdentity()
         // 注册下发的 Cookie（`install_id` / `ttreq` / `store-region`）落盘：
         // 它们原本只活在这个进程的内存里，重启后第一条请求就会变回「裸设备」。

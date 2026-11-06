@@ -49,8 +49,7 @@ class SessionInterceptor(
         val request = if(sessionHost) {
             SessionBridge.decorate(original.newBuilder(),injectToken && !skipToken).build()
         } else original
-        // 取播放地址的请求留一行原始 URL：故障时最需要看的就是它带的 `device_id`
-        //（这条接口按设备计额度，见 `ContentRepository.modelDeviceId`）。
+        // 取播放地址的请求留一行原始 URL：故障时最需要看的就是它带的注册 `device_id`。
         // 不再逐条 dump 请求头：`x-medusa` / `x-hellos` 这类字段几百字符，
         // 一条请求就能把十几行刷掉，真正的结论（路径 / 字节数 / 业务码）反而被挤出屏幕。
         if(request.url.encodedPath.contains("video_model")) {

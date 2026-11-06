@@ -47,11 +47,21 @@ fun MainActivity.switchTab(next: Int) {
     // 切回来自然会重新取一次（见 [chipFocusKey]）。
     tabState[tab]=CatalogState(page,if(chipFocusKey!=null) emptyList() else catalog,hasMore,ranking); tabFocus[tab]=catalogFocus
     tab=next; val saved=tabState[next]; page=saved?.page ?: 1; catalog=saved?.items ?: emptyList(); hasMore=saved?.hasMore ?: false; ranking=saved?.ranking; catalogFocus=tabFocus[next].orEmpty()
+    var seededRank=false
+    if(next==TAB_RANK && catalog.isEmpty()) {
+        cachedRankPage(rankBoard)?.let { cached ->
+            catalog=cached.items
+            hasMore=cached.hasMore
+            ranking=cached.ranking
+            seededRank=true
+        }
+    }
     // 首页的四个剧架就在内存里（[homeFeed]），切回来不需要重新打四次网络；
     // 想要最新的一份按顶部圆形「刷新」。搜索页与榜单页仍然是「没内容才去取」。
     val needsLoad=when(next) {
         TAB_HOME -> homeFeed.isEmpty()
-        TAB_RANK, TAB_CATEGORY -> catalog.isEmpty()
+        TAB_RANK -> catalog.isEmpty() || seededRank
+        TAB_CATEGORY -> catalog.isEmpty()
         TAB_SEARCH -> query.isNotBlank() && catalog.isEmpty()
         else -> false
     }
@@ -68,7 +78,7 @@ fun MainActivity.switchTab(next: Int) {
         }
         focusFirstCardOnLanding=false
     } else if(needsLoad) focusFirstCardOnLanding=true
-    showCatalog(load=needsLoad)
+    showCatalog(load=needsLoad,keepCatalog=seededRank)
     // 进「我的」页先交代一次「这是第三方客户端」：这一页是唯一会用到账号（登录 / 收藏 / 历史）
     // 的入口，声明放在这里最贴题。确认过就不再弹（见 [ensureThirdPartyAccepted]）。
     //
@@ -104,6 +114,12 @@ fun MainActivity.switchRankBoard(board: RankBoard,fromHome: Boolean=false) {
     // 只重置页码与「记住的焦点卡」：列表本身留给 [showCatalog] 决定清不清——
     // 点了芯片时它要留着旧的一屏顶住这一段时间（否则页面上只剩一行「正在加载…」，看起来就是闪屏）。
     page=1; catalogFocus=""
+    val cached=cachedRankPage(board)
+    if(cached!=null) {
+        catalog=cached.items
+        hasMore=cached.hasMore
+        ranking=cached.ranking
+    }
     // 从首页剧架进来：顺手把顶部标签切到排行榜，用户看到的就是榜单页本身
     // （页面名、来源行、底部加载都是同一套）。少了这一步，[showCatalog] 会按当前标签
     // 重新渲染首页，表现出来就是「在剧架最右边按右键 / 点『查看全部』进不去榜单」。
@@ -112,8 +128,11 @@ fun MainActivity.switchRankBoard(board: RankBoard,fromHome: Boolean=false) {
     // 从首页剧架进来（用户是来看榜单的）→ 内容落地后落到第一张卡。
     chipFocusKey=if(fromChip) "board:"+board.storedValue else null
     focusFirstCardOnLanding=!fromChip
-    showCatalog(load=true)
+    showCatalog(load=true,keepCatalog=cached!=null)
 }
+/** 榜单页首屏优先复用首页已经拿到的同榜数据，随后再由网络刷新。 */
+private fun MainActivity.cachedRankPage(board: RankBoard): CatalogPage? =
+    homeFeed[board] ?: runCatching { library.cachedHome(board) }.getOrNull()
 /** 分类页某一行里一枚芯片的焦点 key。 */
 fun categoryChipKey(type: String,id: String?): String = "filter:$type:${id.orEmpty()}"
 

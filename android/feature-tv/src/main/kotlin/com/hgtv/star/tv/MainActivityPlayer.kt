@@ -1248,10 +1248,8 @@ fun MainActivity.playEpisode(
             // 注册还没落地时先补一次，免得取地址落到内置那份被拉黑的档案上。
             if(!library.deviceRegistered()) registerDeviceOnce()
             stage("register")
-            // 档位（`device_level`）只有 4 / 5 两档，**默认 4**（见 `ContentRepository.deviceLevel`）。
-            // 新一集从头数：上一集被限流升到 5，不该让这一集也多要两档。
-            // 这一集是因为故障重来（`recovering`）时**不重置**：那说明刚才那一发就是被限的，
-            // 退回 4 只会再被挡一次（见 `PlaybackDegradation` 与 `ContentRepository.tryModelPath`）。
+            // 官方 App 只使用 Low=1 / Middle=2 / High=3，播放统一按 High=3 请求。
+            // 故障重来也保持同一档，避免缓存键和请求参数无意义地变化。
             if(!recovering) repository.beginEpisode()
             stage("deviceLevel ${repository.deviceLevel}")
             // 预热命中这条路不取地址，域名只能从预热结果里读（见 [lastStreamHost]）。
@@ -1263,7 +1261,11 @@ fun MainActivity.playEpisode(
             // 后者钉死 HTTP/1.1、进程级共享，切集不再关连接池（见 PlaybackTransport）。
             prefetched ?: run {
                 // 只有 HEVC 一种编码，取流只剩「上限之内取最高」这一条规则。
-                val streamInfo=repository.stream(requestedId,maxQuality)
+                val streamInfo=repository.stream(
+                    requestedId,
+                    maxQuality,
+                    detail?.playback ?: com.hgtv.star.core.PlaybackProfile(),
+                )
                 // 记下这一集的视频域名：`prepare()` 里建连失败时 [video] 还是上一集的，
                 // 自愈清 DNS 只能按这一条来（见 [MainActivity.lastStreamHost]）。
                 lastStreamHost=runCatching { java.net.URI(streamInfo.url).host }.getOrNull().orEmpty()

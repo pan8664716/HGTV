@@ -1,6 +1,8 @@
 // Derived from drpys 22261ad; GPL-3.0. See NOTICE.md.
 package com.hgtv.star.core
 
+import java.util.UUID
+
 object VendorConstants {
     /**
      * 两个 UA 的**模板**：机型 / 系统版本 / 固件串三处按设备档案填。
@@ -16,7 +18,7 @@ object VendorConstants {
      * * `%MODEL%` —— `device_type`（机型）；
      * * `%BUILD%` —— 固件串（`rom_version`），认不出来时回落到模板里的默认值。
      */
-    private const val VIDEO_UA_TEMPLATE = "com.phoenix.read/%VC% (Linux; U; Android %OS%; zh_CN; %MODEL%; Build/%BUILD%; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
+    private const val VIDEO_UA_TEMPLATE = "com.phoenix.read/%VC% (Linux; U; Android %OS%; zh_CN; %MODEL%; Build/%BUILD%; Cronet/TTNetVersion:8d40f833 2026-03-03 QuicVersion:21ac1950 2025-11-18)"
     private const val APP_UA_TEMPLATE = "com.phoenix.read/%VC% (Linux; U; Android %OS%; zh_CN; %MODEL%; Build/%BUILD%)"
     /** 视频路径的版本号（`version_code`）。 */
     const val VIDEO_VERSION_CODE = "71332"
@@ -47,7 +49,8 @@ object VendorConstants {
      * 一旦原样进头就是上面那条 `Unexpected char`（见 [headerSafe] 的注释）。
      */
     fun userAgent(device: Map<String,String>, video: Boolean): String {
-        val version = if(video) VIDEO_VERSION_CODE else APP_VERSION_CODE
+        val fallbackVersion = if(video) VIDEO_VERSION_CODE else APP_VERSION_CODE
+        val version = device["version_code"]?.takeIf { it.isNotBlank() } ?: fallbackVersion
         val os = headerSafe(device["os_version"], "16")
         val model = headerSafe(device["device_type"], "25053RT47C")
         // `rom_version` 是 `Build.DISPLAY`（形如 `BP2A.250605.031.A3`）；
@@ -58,6 +61,11 @@ object VendorConstants {
         return (if(video) VIDEO_UA_TEMPLATE else APP_UA_TEMPLATE)
             .replace("%VC%", version).replace("%OS%", os)
             .replace("%MODEL%", model).replace("%BUILD%", build)
+    }
+    /** TTNet 的 trace-id 形态：`00-32hex-前16hex-01`。 */
+    fun traceId(): String {
+        val id = UUID.randomUUID().toString().replace("-", "")
+        return "00-$id-${id.substring(0, 16)}-01"
     }
     /** 没有档案时的兜底 UA（内置那一台设备）。 */
     val VIDEO_UA: String get() = userAgent(emptyMap(), video = true)

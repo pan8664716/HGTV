@@ -7,7 +7,7 @@ object PlaybackQuality {
     /**
      * 可选的清晰度档位：**五档，360 到 1080**。
      *
-     * 这五档与 `device_level=4/5` + `need_all_video_definition=true` 时下发的那套表一致
+     * 这五档与 `need_all_video_definition=true` 时下发的那套表一致
      * （平台按短边给 360/480/576/720/1080，全是 HEVC）。
      * 档位少一档就少一次选择：`normalize` 会把不在这张表里的值一律按 1080 处理，
      * 因此这里少写 576 就等于「用户选不到 576，老数据里存着 576 的会被顶到 1080」。

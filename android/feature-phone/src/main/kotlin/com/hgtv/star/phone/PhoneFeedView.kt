@@ -665,7 +665,7 @@ class PhoneFeedView(
             val maxQuality = lib.maxQuality
             val prepared = withContext(Dispatchers.IO) {
                 runCatching {
-                    val info = repo.stream(episodeId, maxQuality)
+                    val info = repo.stream(episodeId, maxQuality, d.playback)
                     RemoteVideo(PlaybackTransport.client, info, info.mediaKey(episodeId)).also { it.prepare() }
                 }.getOrNull()
             }
@@ -1321,7 +1321,7 @@ class PhoneFeedView(
             }
 
             val info = withContext(Dispatchers.IO) {
-                runCatching { repo.stream(episodeId, lib.maxQuality) }.getOrNull()
+                runCatching { repo.stream(episodeId, lib.maxQuality, detail.playback) }.getOrNull()
             } ?: return@launch
             if (token != playToken) return@launch
 
@@ -1435,7 +1435,7 @@ class PhoneFeedView(
                 val epIndex = saved?.let { s -> detail.episodes.indexOf(s.episodeId).takeIf { it >= 0 } } ?: 0
                 val episodeId = detail.episodes.getOrNull(epIndex) ?: return@launch
                 val info = withContext(Dispatchers.IO) {
-                    runCatching { repo.stream(episodeId, lib.maxQuality) }.getOrNull()
+                    runCatching { repo.stream(episodeId, lib.maxQuality, detail.playback) }.getOrNull()
                 } ?: return@launch
                 if (target.level != com.hgtv.star.core.CacheLevel.FULL) return@launch
                 val prepared = withContext(Dispatchers.IO) {
@@ -1525,7 +1525,7 @@ class PhoneFeedView(
         scope.launch {
             val remote = withContext(Dispatchers.IO) {
                 runCatching {
-                    val info = PhoneServices.repository(context).stream(nextId, maxQuality)
+                    val info = PhoneServices.repository(context).stream(nextId, maxQuality, d.playback)
                     RemoteVideo(PlaybackTransport.client, info, info.mediaKey(nextId)).also { it.prepare() }
                 }.getOrNull()
             }

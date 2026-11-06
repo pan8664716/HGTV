@@ -3,6 +3,7 @@ package com.hgtv.star.phone.page
 
 import android.content.Context
 import android.widget.LinearLayout
+import com.hgtv.star.core.CatalogPage
 import com.hgtv.star.core.CatalogFilter
 import com.hgtv.star.core.RankBoard
 import com.hgtv.star.phone.PhoneServices
@@ -111,9 +112,30 @@ class PhoneRankPage(
         val lib = PhoneServices.library(context)
         // 长按菜单里的「不在热播榜中显示」写进的是 `library.hide(id)`：这里必须过滤，
         // 否则隐藏完再回到这一页，那部剧还在——与 TV 的 `SeriesGrid` / `ListPage` 同一条规则。
-        feed.load { page ->
+        val loadPage: suspend (Int) -> CatalogPage? = { page ->
             repo.rank(page, board)?.let { CatalogFilter.visible(it, runCatching { lib.hidden() }.getOrDefault(emptySet())) }
         }
+        val cached=runCatching { lib.cachedHome(board) }.getOrNull()
+        if(cached!=null) {
+            val visible=CatalogFilter.visible(cached,runCatching { lib.hidden() }.getOrDefault(emptySet()))
+            if(visible.items.isNotEmpty()) {
+                feed.restore(
+                    PhonePosterFeed.Snapshot(
+                        items=visible.items,
+                        page=1,
+                        ended=!visible.hasMore,
+                        heatBy=visible.ranking?.positions?.mapValues { it.value.heat }.orEmpty(),
+                        emptyVisible=false,
+                        emptyText="",
+                        loaded=true,
+                    ),
+                    loader=loadPage,
+                )
+                feed.refresh(loadPage)
+                return
+            }
+        }
+        feed.load(loadPage)
     }
 
     fun scrollToTop() = feed.scrollToTop()

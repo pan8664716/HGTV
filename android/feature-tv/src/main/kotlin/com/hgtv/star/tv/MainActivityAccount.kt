@@ -285,7 +285,7 @@ fun MainActivity.applyAccount() {
  *
  * ## 为什么 `device_level` 不在这里给了
  *
- * `device_level` 现在只有 **4 / 5** 两档（见 `ContentRepository.deviceLevel`）：
+ * `device_level` 使用官方 **High=3**（见 `ContentRepository.deviceLevel`）：
  * 4 是默认，5 只在被限流时由取地址层升上去。它与本机解码能力**无关**——
  * 两档下发的都是 HEVC，能不能播由硬解决定，而不是由档位决定。
  * 早先按能力报 3 / 4 的做法已经删除（3 档的低清晰度是 `bytevc2`，Android 没有解码器）。
@@ -415,7 +415,12 @@ fun MainActivity.refreshRegistrationIdentity() {
             if(isDestroyed || fresh==null) return@post
             if(pendingProfile) library.commitPendingProfile()
             library.clearRegistrationPending()
-            library.saveDeviceIdentity(fresh.deviceId,fresh.installId)
+            library.saveDeviceIdentity(
+                fresh.deviceId,
+                fresh.installId,
+                fresh.klinkEgdi,
+                fresh.deviceToken,
+            )
             DebugEnv.invalidate()
             val cookies=repository.deviceCookiesSnapshot()
             if(cookies.isNotEmpty()) {
