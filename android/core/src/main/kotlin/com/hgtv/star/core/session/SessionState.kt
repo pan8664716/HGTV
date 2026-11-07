@@ -21,7 +21,7 @@ interface SessionState {
     /** 会话 cookie 的扁平串（`name=value; name=value`）。 */
     val cookieHeader: String
 
-    /** 设备注册下发的 cookie（`install_id` / `ttreq` / `store-region` …）。 */
+    /** 登录用户设备额外下发的 cookie；主设备 cookie 由 [SessionBridge.mainDeviceCookies] 提供。 */
     val deviceCookies: Map<String,String>
 
     /** `store-region`，以 cookie 里那份为准；没有时 `cn`。 */
@@ -86,6 +86,13 @@ interface SessionState {
 object SessionBridge {
     @Volatile var state: SessionState? = null
 
+    /**
+     * 主设备 Cookie（`install_id` / `ttreq` / `store-region`）。
+     *
+     * 业务请求默认只用这一份；登录用户的 `sessionid` 只在账号页与会话心跳里出现。
+     */
+    @Volatile var mainDeviceCookies: () -> Map<String,String> = { emptyMap() }
+
     /** 确认失效时的回调（`app` 层接广播 + 清 UI）。 */
     @Volatile var onExpired: ((reason: String) -> Unit)? = null
 
@@ -103,7 +110,34 @@ object SessionBridge {
      * Cookie: <device cookies>; <session cookie>  ← 只有 cookie
      * ```
      */
-    fun decorate(builder: Request.Builder,injectToken: Boolean = true): Request.Builder {
+    fun decorate(builder: Request.Builder,injectToken: Boolean = true): Request.Builder =
+        decorateAccount(builder,injectToken)
+
+    /** 主设备请求：只合并主设备 Cookie，不补账号 token / session Cookie。 */
+    fun decorateMain(builder: Request.Builder): Request.Builder {
+        val merged=LinkedHashMap<String,String>()
+        runCatching { mainDeviceCookies() }.getOrDefault(emptyMap()).forEach { (name,value) ->
+            if(name.isNotBlank() && value.isNotBlank()) merged[name]=value
+        }
+        builder.build().header("Cookie")?.takeIf { it.isNotBlank() }
+            ?.let { merged.putAll(CookieRecord.headerToMap(it)) }
+        if(merged.isNotEmpty()) builder.header("Cookie",CookieRecord.mapToHeader(merged))
+        val finalRequest=builder.build()
+        if(finalRequest.header("X-SS-DP").isNullOrBlank()) builder.header("X-SS-DP","8662")
+        if(finalRequest.header("X-Tt-Store-Region").isNullOrBlank()) {
+            builder.header("X-Tt-Store-Region",merged["store-region"].orEmpty().ifBlank { "cn" })
+        }
+        if(finalRequest.header("X-Tt-Store-Region-Src").isNullOrBlank()) {
+            builder.header("X-Tt-Store-Region-Src",merged["store-region-src"].orEmpty().ifBlank { "did" })
+        }
+        if(finalRequest.header("Sdk-Version").isNullOrBlank()) builder.header("Sdk-Version","2")
+        if(finalRequest.header("passport-sdk-version").isNullOrBlank()) builder.header("passport-sdk-version","5051452")
+        if(finalRequest.header("X-Xs-From-Web").isNullOrBlank()) builder.header("X-Xs-From-Web","0")
+        return builder
+    }
+
+    /** 登录用户请求：合并账号 Cookie 与 token。 */
+    fun decorateAccount(builder: Request.Builder,injectToken: Boolean = true): Request.Builder {
         val current = state
         val merged = LinkedHashMap<String,String>()
         // ① 设备 cookie 铺底（`install_id` / `ttreq` / `store-region`）。

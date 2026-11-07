@@ -34,7 +34,7 @@ import kotlinx.coroutines.withContext
  * 分类页：**完全按 TV 端的两层筛选结构**。
  *
  * ```
- * ① 体裁（常驻）：全部 / 漫剧 / AI剧 / 真人      ← CategoryGenres.options，顺序固定
+ * ① 体裁（常驻）：推荐 / 漫剧 / AI剧 / 真人      ← CategoryGenres.options，顺序固定
  * ② 细分筛选行：主题 / 设定 / 背景 / 推荐 / 受众 / 时间 / 状态
  *                                               ← 接口 selector_rows（need_selector_panel=true）
  * ③ 三列海报

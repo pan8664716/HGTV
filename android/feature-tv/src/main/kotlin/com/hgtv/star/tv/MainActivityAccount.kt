@@ -285,10 +285,10 @@ fun MainActivity.applyAccount() {
  *
  * ## 为什么 `device_level` 不在这里给了
  *
- * `device_level` 使用官方 **High=3**（见 `ContentRepository.deviceLevel`）：
- * 4 是默认，5 只在被限流时由取地址层升上去。它与本机解码能力**无关**——
+ * `device_level` 默认 4，5 只在空响应时由取地址层升上去（见 `ContentRepository.deviceLevel`）。
+ * 它与本机解码能力**无关**——
  * 两档下发的都是 HEVC，能不能播由硬解决定，而不是由档位决定。
- * 早先按能力报 3 / 4 的做法已经删除（3 档的低清晰度是 `bytevc2`，Android 没有解码器）。
+ * 1/2/3 档的低清晰度是 `bytevc2`，Android 没有解码器，因此不参与播放请求。
  *
  * ## 为什么默认清晰度仍要按能力给
  *
@@ -334,28 +334,18 @@ fun MainActivity.ensureDeviceRegistered() {
     val pending=library.registrationPending()
     val registered=library.deviceRegistered()
     val needsRegistration=pending || !registered
-    val needsActivation=registered && !library.deviceActivated()
-    if(!needsRegistration && !needsActivation) return
+    if(!needsRegistration) return
     deviceRegistering=true
     // 用 io 池直接跑，**不走 [work]**：那个入口会 cancelWork()，把在途的页面请求一起掐掉。
     io.submit {
-        val ready=if(needsRegistration) {
-            registerDeviceOnce(force=pending)
-        } else {
-            com.hgtv.star.shared.data.DeviceRegistration.ensureActivated(
-                library=library,
-                repository=repository,
-                stage="device_activate_start",
-                detail=devicePrefix(this),
-            )
-        }
+        val ready=registerDeviceOnce(force=pending)
         main.post {
             deviceRegistering=false
             if(!ready || isDestroyed) return@post
+            if(startupInitializing) return@post
             // 注册成功后把身份重新交给仓库，并把当前这一页按新身份重取一次——
             // 首屏很可能已经用「没注册」的身份请求过了（App 搜索会空响应）。
             repository.deviceIdentity=library.deviceIdentity()
-            if(!needsRegistration) return@post
             if(!foreground || screen!="catalog") return@post
             when {
                 // 首页：四个剧架按新身份重取。
@@ -428,10 +418,11 @@ fun MainActivity.refreshRegistrationIdentity() {
             if(isDestroyed || fresh==null) return@post
             if(pendingProfile) library.commitPendingProfile()
             library.clearRegistrationPending()
-            // 与普通注册同一条收尾：落身份 / Cookie，并补一次激活握手。
+            // 与普通注册同一条收尾：落身份 / Cookie。
             com.hgtv.star.shared.data.DeviceRegistration.commit(library,repository,fresh)
             DebugEnv.invalidate()
             DebugLog.record("设备","旧版本注册身份已换新")
+            if(startupInitializing) return@post
             // 当前这一页很可能是按旧身份取的：换新之后重取一次。
             if(!foreground || screen!="catalog") return@post
             when {
@@ -497,11 +488,9 @@ fun MainActivity.healDeviceIdentity(reason: String,retry: ()->Unit): Boolean {
  *
  * 判据只有两条（接口明确的语义，不看中文文案的措辞）：
  *
- * * 搜索那条是 [DeviceNotRegisteredException]（`200 + 0 字节`）——平台对注册过的设备
- *   **从不**回空响应，因此它是强信号；
- * * 播放那条没有专门类型，只认 `101000`（「服务异常」＝没注册过）。
- *   播放的空响应**不算**：那条路径上它本来就有约一半概率偶发（平台限流，见 `ContentRepository.probeModelPath`），
- *   拿它当判据会把好设备的身份反复换掉。
+ * * 搜索和播放最终都会抛 [DeviceNotRegisteredException]；
+ * * 播放空响应先由取地址层升到 5 档重试，5 档仍为空才进入设备身份自愈。
+ * * 明确的 `101000` 也按同一路径处理。
  */
 fun deviceRejectionOf(problem: Throwable?): Boolean =
     com.hgtv.star.shared.media.PlaybackFailures.deviceRejected(problem)
@@ -516,14 +505,11 @@ fun deviceRejectionOf(problem: Throwable?): Boolean =
  * 成功后同时落盘（后续搜索 / 播放复用这台设备），失败返回 null。
  */
 fun MainActivity.registerForPhoneLogin(profile: Map<String,String>): com.hgtv.star.core.DeviceRegister.Registered? {
-    repository.registerProfile=profile
-    val registered=repository.registerDevice() ?: run {
+    val registered=com.hgtv.star.shared.data.DeviceRegistration.registerLoginDevice(repository,profile) ?: run {
         val problem=repository.lastRegisterError
         Diagnostics.fail("device_register_login","登录时设备注册失败","${devicePrefix(this)} cause=${Diagnostics.chainOf(problem)}",problem)
         return null
     }
-    // 身份 + 注册 Cookie + 仓库里那一份身份：与 [DeviceRegistration.registerOnce] 同一段收尾。
-    com.hgtv.star.shared.data.DeviceRegistration.commit(library,repository,registered)
     DebugEnv.invalidate()
     return registered
 }
@@ -539,11 +525,14 @@ fun MainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?) {
     showHint("正在验证登录状态…")
     io.submit {
         val result=runCatching {
-            repository.credentials=credentials
+            val prepared=com.hgtv.star.shared.data.DeviceRegistration.prepareLogin(
+                library,repository,credentials,
+            )
+            repository.credentials=prepared
             val profile=repository.accountProfile()
             require(profile!=null) { "平台没有返回账号资料，请稍后重试" }
             require(!profile.anonymous) { "这份登录态无效：平台把它当成了匿名设备" }
-            credentials
+            prepared
         }
         main.post {
             if(isDestroyed) return@post
@@ -574,7 +563,7 @@ fun MainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?) {
 fun MainActivity.phoneLoginChoice(anchor: View?) {
     // 直接进表单：手机号与验证码用系统键盘输入，版面与手机上的登录页一致。
     // 手机扫码那条路留给「上行短信」那一步（那一步本来就必须用手机）。
-    tvTools.phoneLoginForm(anchor,library.deviceProfile(),
+    tvTools.phoneLoginForm(anchor,library.freshLoginDeviceProfile(),
         { profile -> registerForPhoneLogin(profile) },
         { credentials -> savePhoneLogin(credentials,anchor) })
 }

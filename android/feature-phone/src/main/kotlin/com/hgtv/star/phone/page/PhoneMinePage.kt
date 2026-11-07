@@ -9,7 +9,6 @@ import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
 import com.hgtv.star.core.Series
-import com.hgtv.star.phone.PhoneAccountActivity
 import com.hgtv.star.phone.PhoneAccountSync
 import com.hgtv.star.phone.PhoneConsent
 import com.hgtv.star.phone.PhonePlayerActivity
@@ -33,7 +32,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
 /**
- * 我的页：账号状态 + 历史 / 收藏栏目 + 内容网格，右上角提供设置入口。
+ * 我的页：顶部账号入口 + 历史 / 收藏栏目 + 内容网格，右上角提供设置入口。
  *
  * 与 TV 端的分工一致：账号在顶部，「收藏 / 历史」等内容栏在下面；
  * 设置入口放在顶栏右侧，点进去后再按 TV 的四个大项分页。
@@ -50,7 +49,58 @@ class PhoneMinePage(
         val feed: PhonePosterFeed.Snapshot,
     )
 
+    private val compactTopBar = context.resources.configuration.orientation ==
+        android.content.res.Configuration.ORIENTATION_LANDSCAPE
     private val topBar = PhoneTopBar(context)
+    private val topAvatar = TextView(context).apply {
+        val size = context.dp(if (compactTopBar) 32 else 44)
+        text = "红"
+        setTextColor(PhoneStyle.text)
+        phoneSize(if (compactTopBar) 14 else 17)
+        gravity = Gravity.CENTER
+        minWidth = size
+        minimumHeight = size
+        applySoft(SoftStyle.RAISED, PhoneStyle.surfaceHigh, size / 2f, 3f)
+        contentDescription = "账号"
+    }
+    private val topName = TextView(context).apply {
+        text = "未登录"
+        setTextColor(PhoneStyle.text)
+        phoneSize(if (compactTopBar) 15 else 17)
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        maxWidth = context.dp(if (compactTopBar) 150 else 190)
+    }
+    private val topSub = TextView(context).apply {
+        text = "点这里登录 · 记录仅保存在本机"
+        setTextColor(PhoneStyle.textFaint)
+        phoneSize(if (compactTopBar) 10 else 12)
+        setPadding(0, context.dp(2), 0, 0)
+        maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        maxWidth = context.dp(if (compactTopBar) 170 else 220)
+    }
+    private val topAccount = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, 0, context.dp(8), 0)
+        addView(topAvatar, LinearLayout.LayoutParams(
+            context.dp(if (compactTopBar) 32 else 44),
+            context.dp(if (compactTopBar) 32 else 44),
+        ))
+        addView(LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setPadding(context.dp(10), 0, 0, 0)
+            addView(topName)
+            addView(topSub)
+        }, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        contentDescription = "账号，未登录"
+        setOnClickListener { context.phoneNav().open(Route.Account) }
+    }
     private val library = PhoneServices.library(context)
     /** 账号、历史/收藏等栏目作为列表第一项，和海报一起滚动，不自动隐藏。 */
     private val body = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
@@ -134,16 +184,16 @@ class PhoneMinePage(
         }
         feed.onSelectionChanged = { updateBatchBar() }
 
-        // 账号与栏目交给网格当第一项：它们和海报共用同一个滚动容器，
+        // 栏目交给网格当第一项：它和海报共用同一个滚动容器，
         // 上滑时自然滚出屏幕，不再有独立页头的自动收起 / 展开。
         feed.setHeader(body)
-        topBar.setTitle("我的")
-        // 底部 2dp 留白收掉：「我的」与头像栏之间不再叠一层。
+        topBar.setLeadingView(topAccount, context.dp(if (compactTopBar) 36 else 52))
+        // 底部 2dp 留白收掉：账号区与栏目之间不再叠一层。
         topBar.tightenBottom()
         topBar.setAction(PhoneGlyph.Kind.SETTINGS, "设置") {
             PhoneSettingsActivity.open(context, PhoneSettingsPage.PLAYBACK)
         }
-        // 顶栏固定，下面整块是列表（第一项就是账号与栏目）。
+        // 顶栏固定，下面整块是列表（第一项就是栏目）。
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(feed, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
     }
@@ -221,8 +271,8 @@ class PhoneMinePage(
         // 账号两栏在退出登录后消失：栏号越界时退回「历史」，否则整页会是空的。
         // 默认页也是历史（见字段 `tab`），这里保持同一个回退目标。
         if (tab >= tabs.size) tab = 0
+        updateTopAccount()
         body.removeAllViews()
-        body.addView(buildAccount())
         body.addView(buildTabs())
         batchBar = buildBatchBar()
         batchBar?.let { body.addView(it) }
@@ -239,72 +289,42 @@ class PhoneMinePage(
 
     // ---------------------------------------------------------------- 账号
 
-    /**
-     * 账号行：登录了显示昵称 / 平台号，没登录显示「未登录 · 点这里登录」。
-     *
-     * 整行都是入口（进 [PhoneAccountActivity]）：手机上「我的」页的账号区是登录与退出的唯一入口，
-     * 与 TV 端顶部那枚账号芯片同一个角色，位置按手机习惯放在最上面一行。
-     */
-    private fun buildAccount(): View {
-        // 内存那一份最新（刚刷新过），没有才读缓存。
+    private data class AccountState(
+        val signedIn: Boolean,
+        val nickname: String?,
+        val displayId: String?,
+    )
+
+    private fun accountState(): AccountState {
         val cached = PhoneAccountSync.data ?: runCatching { library.accountCache() }.getOrNull()?.data
         val profile = cached?.profile
         val signedIn = runCatching { library.account().configured }.getOrDefault(false) ||
             PhoneServices.repository(context).signedIn
+        return AccountState(signedIn, profile?.nickname, profile?.displayId)
+    }
 
-        val row = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            // 上下留白收小且对称（用户要求「上下边距一样」）：
-            // 上 10 → 6、下 8 → 4，配合下面栏目行的 4dp，头像到「历史」不再是一大段空白。
-            setPadding(context.dp(14), context.dp(6), context.dp(14), context.dp(4))
-            setOnClickListener {
-                context.phoneNav().open(Route.Account)
-            }
+    private fun updateTopAccount() {
+        val account = accountState()
+        topAvatar.text = if (account.signedIn) {
+            account.nickname?.take(1)?.takeIf { it.isNotBlank() } ?: "红"
+        } else {
+            "红"
         }
-        val avatar = TextView(context).apply {
-            text = if (signedIn) (profile?.nickname?.take(1) ?: "红") else "红"
-            setTextColor(PhoneStyle.text)
-            phoneSize(16)
-            gravity = Gravity.CENTER
-            applySoft(SoftStyle.RAISED, PhoneStyle.surfaceHigh, 20f, 3f)
+        topName.text = when {
+            !account.signedIn -> "未登录"
+            !account.nickname.isNullOrBlank() -> account.nickname.orEmpty()
+            else -> "已登录"
         }
-        row.addView(avatar, LinearLayout.LayoutParams(context.dp(42), context.dp(42)))
-
-        val names = LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(context.dp(14), 0, 0, 0)
-        }
-        names.addView(TextView(context).apply {
-            text = when {
-                !signedIn -> "未登录"
-                !profile?.nickname.isNullOrBlank() -> profile?.nickname.orEmpty()
-                else -> "已登录"
-            }
-            setTextColor(PhoneStyle.text)
-            phoneSize(17)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        val sub = when {
-            !signedIn -> "点这里登录 · 记录仅保存在本机"
-            !profile?.displayId.isNullOrBlank() -> "平台号 ${profile?.displayId}"
+        topSub.text = when {
+            !account.signedIn -> "点这里登录 · 记录仅保存在本机"
+            !account.displayId.isNullOrBlank() -> "平台号 ${account.displayId}"
             else -> "点这里查看账号"
         }
-        names.addView(TextView(context).apply {
-            text = sub
-            setTextColor(PhoneStyle.textFaint)
-            phoneSize(12)
-            setPadding(0, context.dp(3), 0, 0)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        row.addView(names, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(PhoneGlyph(context, PhoneGlyph.Kind.CHEVRON).apply {
-            tint = PhoneStyle.textFaint
-        }, LinearLayout.LayoutParams(context.dp(14), context.dp(14)))
-        return row
+        topAccount.contentDescription = if (account.signedIn) {
+            "账号${account.nickname.orEmpty()}"
+        } else {
+            "未登录，点击登录"
+        }
     }
 
     /**
@@ -341,8 +361,8 @@ class PhoneMinePage(
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            // 上 6 → 4：与账号行的下留白（4dp）一起把「头像 → 历史」压到 14dp，
-            // 接近上面「我的 → 头像」那一档（见 `buildAccount` 的注释）。
+            // 上 6 → 4：与账号行的下留白（4dp）一起把「账号栏 → 历史」压到 14dp，
+            // 与顶栏头像到账号栏的间距保持接近。
             setPadding(context.dp(16), context.dp(4), context.dp(16), context.dp(2))
         }
         tabs.forEachIndexed { index, label ->

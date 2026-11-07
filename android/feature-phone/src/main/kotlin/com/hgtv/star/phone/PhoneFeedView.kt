@@ -1995,6 +1995,9 @@ class PhoneFeedView(
                         }
                     }
                 },
+                onDebug = {
+                    (context as? PhoneMainActivity)?.syncDebugOverlay()
+                },
             )
         }
         onSheetVisibilityChanged?.invoke(true)

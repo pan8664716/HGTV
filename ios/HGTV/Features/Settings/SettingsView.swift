@@ -227,7 +227,7 @@ struct SettingsView: View {
                 get: { Double(library.prefs.danmakuMergeMin) },
                 set: { library.prefs.danmakuMergeMin = Int($0) }
             ), range: 2...10, step: 1, text: { "\(Int($0)) 条" })
-            SliderRow(label: "弹幕字体大小", value: Binding(
+            SliderRow(label: "弹幕大小", value: Binding(
                 get: { Double(library.prefs.danmakuSizePercent) },
                 set: { library.prefs.danmakuSizePercent = Int($0) }
             ), range: 50...150, step: 5, text: { "\(Int($0))%" })

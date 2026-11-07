@@ -411,10 +411,13 @@ fun videoScaleRow(showsStyle: Boolean)=if(showsStyle) MENU_ROW_VIDEO_SCALE else 
  */
 fun sleepRow(showsStyle: Boolean)=videoScaleRow(showsStyle)+1
 
+/** 「调试模式」开关那一行：紧跟在「定时」之后。 */
+fun debugRow(showsStyle: Boolean)=sleepRow(showsStyle)+1
+
 /**
  * 那一行动作里「收藏」按钮的位置（从 0 起）。
  *
- * 它是四枚里**唯一会改自己文案**的一枚（加入收藏 ⟷ 已收藏），
+ * 它是动作行里**唯一会改自己文案**的一枚（加入收藏 ⟷ 已收藏），
  * 因此同步选中态时要按这个下标单独刷一次，见 `syncPlaybackMenu`。
  */
 const val MENU_ACTION_FAVORITE=2

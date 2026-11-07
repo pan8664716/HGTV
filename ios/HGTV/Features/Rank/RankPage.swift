@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// 榜单页：四个榜单（漫剧 / 真人 / AI剧 / 上新）+ 带名次的海报网格。
+// 榜单页：四个榜单（推荐 / 漫剧 / AI剧 / 真人）+ 带名次的海报网格。
 //
 // 四个榜单就是 `RankBoard` 的四个枚举值，**与 TV 端完全同一套**：
 // 接口的 genre 与 sort 都写在枚举里，页面不再拼参数。
-// 「上新」是时间序，不画名次（`RankBoard.ranked == false`）。
+// 「推荐」沿用原「上新」的时间序，不画名次（`RankBoard.ranked == false`）。
 
 import SwiftUI
 
@@ -25,7 +25,7 @@ struct RankPage: View {
     @State private var loaded = false
     @State private var errorText: String?
 
-    private let boards = RankBoard.allCases
+    private let boards = RankBoard.navOrder
 
     var body: some View {
         VStack(spacing: 0) {

@@ -48,9 +48,8 @@ class HgtvApplication: Application() {
         startDnsWarmup()
         startSignWarmup()
         initSession()
-        // 暂时关闭后台一次性播放设备池：它会每 3 秒注册一台匿名设备。
-        // 播放统一使用本机注册并完成激活的持久身份。
-        // startPlaybackDevicePool()
+        // 首次运行当前版本时注册 3 台备用设备并落盘；后续启动只读缓存。
+        com.hgtv.star.shared.data.PlaybackDeviceBackups.start(this)
     }
 
     /**
@@ -179,18 +178,6 @@ class HgtvApplication: Application() {
             )
         }.onFailure { problem ->
             Diagnostics.warn("HGTV-SESSION","会话保活初始化失败",problem)
-        }
-    }
-
-    /**
-     * 单线程持续注册一次性播放设备。注册结果落到应用私有目录，
-     * 播放取地址时消费一条并从磁盘删除。
-     */
-    private fun startPlaybackDevicePool() {
-        runCatching {
-            com.hgtv.star.shared.data.PlaybackDevicePool.start(this)
-        }.onFailure { problem ->
-            Diagnostics.warn("HGTV-DEVICE-POOL","一次性播放设备池启动失败",problem)
         }
     }
 

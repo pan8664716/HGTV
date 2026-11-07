@@ -211,9 +211,8 @@ private fun MainActivity.buildQrLoginPanel(
         accountPanelHost?.visibility==View.VISIBLE
 
     val login=QrLogin().apply {
-        // 档案 + 本机身份一起给：确认登录拿到的 Cookie 要按同一台设备（`device_id` / `iid` /
-        // `cdid` / `openudid`）落盘，否则后续账号接口的 `x-medusa` 签名与 Cookie 里的设备对不上。
-        device=library.deviceProfile()+library.deviceIdentity()
+        // 扫码登录使用独立的登录用户设备档案，不读取主设备身份。
+        device=library.freshLoginDeviceProfile()
         log={ line -> android.util.Log.i("HGTV-QRLOGIN",line) }
     }
 

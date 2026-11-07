@@ -14,6 +14,7 @@ import com.hgtv.star.core.PlaybackSpeed
 import com.hgtv.star.core.VideoDecoderMode
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.phone.ui.PhoneSheet
+import com.hgtv.star.phone.ui.PhoneSwitchRow
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
@@ -24,7 +25,7 @@ import com.hgtv.star.shared.data.Library
  * 播放设置面板的各行：**推荐信息流与正式播放页共用这一份**。
  *
  * 与电视端的播放设置面板保持一致（清晰度 / 倍速 / 画面模式 / 视频解码 / 画面缩放 /
- * 弹幕显示 / 弹幕速度 / 弹幕字体大小 / 弹幕透明度）；弹幕字号在手机上使用独立刻度，
+ * 弹幕显示 / 弹幕速度 / 弹幕大小 / 弹幕透明度）；弹幕字号在手机上使用独立刻度，
  * 其余项目写同一批落盘值。
  *
  * 为什么抽成一个函数：这两处面板以前各写一遍，结果推荐页只做了三项、播放页做了全套——
@@ -78,6 +79,8 @@ fun buildPlaybackSettingsRows(
      * 把当前页的弹幕层重刷一遍（见 `PhoneFeedView` / `PhonePlayerActivity`）。
      */
     onDanmaku: (() -> Unit)? = null,
+    /** 调试模式切换后立刻刷新当前页面的调试面板。 */
+    onDebug: (() -> Unit)? = null,
 ) {
     if (onRelated != null || onAuthor != null || onFavorite != null) {
         val actions = LinearLayout(host.context).apply {
@@ -200,7 +203,7 @@ fun buildPlaybackSettingsRows(
     )
 
     panel.addView(
-        PhoneSheet.sliderRow(host, "弹幕字体大小",
+        PhoneSheet.sliderRow(host, "弹幕大小",
             PhoneDanmakuSize.MIN_PERCENT.toFloat(), PhoneDanmakuSize.MAX_PERCENT.toFloat(),
             PhoneDanmakuSize.STEP_PERCENT.toFloat(),
             PhoneDanmakuSize.percent(host.context).toFloat(), { PhoneDanmakuSize.label(it) }) { value ->
@@ -227,5 +230,15 @@ fun buildPlaybackSettingsRows(
         }
     )
 
+    panel.addView(
+        PhoneSwitchRow(host.context, "调试模式", lib.debugMode) { on ->
+            lib.debugMode = on
+            onDebug?.invoke()
+        },
+        LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            host.context.dp(42),
+        ).apply { topMargin = host.context.dp(10) },
+    )
 }
 

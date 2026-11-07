@@ -10,6 +10,9 @@ import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.ProgressBar
+import android.widget.TextView
 import android.widget.Toast
 import com.hgtv.star.phone.ui.PhoneColor
 import com.hgtv.star.phone.ui.PhoneStyle
@@ -18,6 +21,7 @@ import com.hgtv.star.phone.ui.PhoneUiScale
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.navigationBarPx
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
+import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.phoneTabBarHeightPx
 import com.hgtv.star.phone.page.PhoneCategoryPage
 import com.hgtv.star.phone.page.PhoneMinePage
@@ -82,6 +86,8 @@ class PhoneMainActivity : PhoneActivity() {
     private var debugOverlay: com.hgtv.star.phone.ui.PhoneDebugOverlay? = null
     /** 面板挂在哪：整窗的 root（不随 tab 重建）。 */
     private lateinit var debugRoot: FrameLayout
+    /** 冷启动初始化遮罩：书库 + 主设备注册完成前不创建推荐页。 */
+    private var startupOverlay: View? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -146,26 +152,30 @@ class PhoneMainActivity : PhoneActivity() {
         val restored = pendingTab.takeIf { it in pages.indices }
             ?: savedInstanceState?.getInt(STATE_TAB, -1)?.takeIf { it in pages.indices }
         pendingTab = -1
-        val start = restored ?: runCatching {
-            val lib = PhoneServices.library(this)
-            if (lib.isLoaded && !lib.launchRecommend) 1 else 0
-        }.getOrDefault(0)
         debugRoot = root
-        show(start)
+        showStartupLoading(root)
         PhoneServices.warm(this)
-        // 首次进入提示「字号 / 每行卡片数可以在设置里调」。等这一帧画出来再弹，
-        // 否则窗口还没 attach，对话框会挂在一个空 Activity 上。
-        root.post { if (!isFinishing && !isDestroyed) PhoneFirstRunTip.ensure(this) }
         // 书库读完那一刻把**身份 / 凭据 / 注册 Cookie** 灌进仓库（电视端 `applyAccount()` 的手机版）。
         // 不灌的话 `repository.signedIn` 永远是 false：登录了也不会上传收藏与进度、搜索按匿名设备请求。
         val lib = PhoneServices.library(this)
         lib.loadAsync(
-            onFailure = { PhoneIdentity.apply(this, lib) },
+            onFailure = {
+                PhoneIdentity.apply(this, lib)
+                revealPhoneStartup(restored)
+            },
             onReady = {
                 PhoneIdentity.apply(this, lib)
                 // 冷启动那一次 boot 心跳：凭据此刻才从书库灌进仓库，早打等于带半成品身份去问
                 //（与电视端 `MainActivityLibrary` 里那一句同一条时序）。
                 runCatching { com.hgtv.star.shared.data.SessionBootstrap.onAppStart() }
+                // 旧版升级后主设备可能正在重新注册。推荐流必须等这一次注册尝试结束；
+                // 失败也放行，页面自己的错误提示与重试仍可继续工作。
+                Thread({
+                    PhoneIdentity.awaitRegistration()
+                    runOnUiThread {
+                        if (!isFinishing && !isDestroyed) revealPhoneStartup(restored)
+                    }
+                }, "hgtv-phone-startup").start()
             },
         )
     }
@@ -212,6 +222,53 @@ class PhoneMainActivity : PhoneActivity() {
         }
         lastBackAt = now
         Toast.makeText(this, "再按一次返回退出", Toast.LENGTH_SHORT).show()
+    }
+
+    /** 初始化完成前只显示转圈，不创建推荐页，也不启动视频流。 */
+    private fun showStartupLoading(root: FrameLayout) {
+        tabBar.visibility = View.GONE
+        content.visibility = View.INVISIBLE
+        val center = LinearLayout(this).apply {
+            orientation = LinearLayout.VERTICAL
+            gravity = Gravity.CENTER
+            addView(ProgressBar(this@PhoneMainActivity).apply { isIndeterminate = true })
+            addView(TextView(this@PhoneMainActivity).apply {
+                text = "正在初始化设备…"
+                setTextColor(PhoneStyle.textDim)
+                phoneSize(15)
+                gravity = Gravity.CENTER
+                setPadding(0, dp(14), 0, 0)
+            })
+        }
+        val overlay = FrameLayout(this).apply {
+            setBackgroundColor(PhoneColor.BG)
+            isClickable = true
+            addView(center, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER,
+            ))
+        }
+        root.addView(overlay, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        startupOverlay = overlay
+    }
+
+    /** 放行首屏。只执行一次；注册失败也放行，避免网络异常时永久转圈。 */
+    private fun revealPhoneStartup(restored: Int?) {
+        val overlay = startupOverlay ?: return
+        startupOverlay = null
+        (overlay.parent as? ViewGroup)?.removeView(overlay)
+        content.visibility = View.VISIBLE
+        tabBar.visibility = View.VISIBLE
+        val lib = PhoneServices.library(this)
+        val start = restored ?: if (lib.isLoaded && !lib.launchRecommend) 1 else 0
+        if (current < 0) show(start)
+        // 首次进入提示「字号 / 每行卡片数可以在设置里调」。等首屏画出来再弹，
+        // 否则窗口还没 attach，对话框会挂在一个空 Activity 上。
+        debugRoot.post { if (!isFinishing && !isDestroyed) PhoneFirstRunTip.ensure(this) }
     }
 
     private fun show(index: Int) {
@@ -394,7 +451,7 @@ class PhoneMainActivity : PhoneActivity() {
      * 与播放页那块是同一个类、同一套 TV 对齐字段；这里没有播放现场，固定显示页面、
      * 设备、形态、解码、性能、TLS 与近况。电视上的同类面板也是这个分工。
      */
-    private fun syncDebugOverlay() {
+    internal fun syncDebugOverlay() {
         val lib = runCatching { PhoneServices.library(this) }.getOrNull() ?: return
         if (!lib.isLoaded) {
             // 书库还在读盘：半秒后再试一次。早先这里直接 return，而刷新只由 `onResume`

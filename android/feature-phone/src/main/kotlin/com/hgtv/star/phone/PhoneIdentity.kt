@@ -5,6 +5,8 @@ import android.content.Context
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.data.PlaybackCapability
 import com.hgtv.star.shared.data.SessionBootstrap
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
 
 /**
  * 把**本机身份与会话**灌进进程级仓库——电视端 `MainActivity.applyAccount()` 的手机版。
@@ -30,6 +32,7 @@ internal object PhoneIdentity {
 
     /** 正在后台注册设备的标记：注册是网络请求，同一时刻只该有一次。 */
     @Volatile private var registering = false
+    @Volatile private var registrationLatch: CountDownLatch? = null
     /** 播放能力只探一次（`MediaCodecList` 是 Binder 调用，电视上实测能卡 1–3 秒）。 */
     @Volatile private var capabilityApplied = false
 
@@ -59,6 +62,15 @@ internal object PhoneIdentity {
     }
 
     /**
+     * 等 [apply] 触发的后台注册尝试结束。
+     *
+     * 只等“尝试结束”，不要求成功：注册失败也必须放行首屏，否则断网时会永久转圈。
+     */
+    fun awaitRegistration(timeoutMs: Long = 20_000L): Boolean {
+        return registrationLatch?.await(timeoutMs, TimeUnit.MILLISECONDS) ?: true
+    }
+
+    /**
      * 确保本机有一台**平台注册过的**设备；没有就在后台注册一台并落盘。
      *
      * 注册是匿名的（不需要账号 / 密码 / 短信），一次请求即可。失败不打扰用户：
@@ -70,42 +82,32 @@ internal object PhoneIdentity {
         repo: com.hgtv.star.core.ContentRepository,
     ) {
         if (registering) return
-        // 注册与激活分开判断：已经有身份但没跑完 app_log / log_settings 的设备，
-        // 只补激活，不能再注册一台新设备。
         val needsRegistration=com.hgtv.star.shared.data.DeviceRegistration.needsRegister(lib)
-        val needsActivation=com.hgtv.star.shared.data.DeviceRegistration.needsActivation(lib)
-        if (!needsRegistration && !needsActivation) return
+        if (!needsRegistration) return
         registering = true
+        val latch=CountDownLatch(1)
+        registrationLatch=latch
         Thread({
-            val outcome = if(needsRegistration) {
-                runCatching {
-                    com.hgtv.star.shared.data.DeviceRegistration.registerOnce(
-                        library = lib,
-                        repository = repo,
-                        force = true,
-                    )
-                }.getOrElse { com.hgtv.star.shared.data.DeviceRegistration.Outcome.FAILED }
-            } else if(com.hgtv.star.shared.data.DeviceRegistration.ensureActivated(lib,repo,"device_activate_phone")) {
-                com.hgtv.star.shared.data.DeviceRegistration.Outcome.REGISTERED
-            } else {
-                com.hgtv.star.shared.data.DeviceRegistration.Outcome.FAILED
-            }
+            val outcome = runCatching {
+                com.hgtv.star.shared.data.DeviceRegistration.registerOnce(
+                    library = lib,
+                    repository = repo,
+                    force = lib.registrationPending(),
+                )
+            }.getOrElse { com.hgtv.star.shared.data.DeviceRegistration.Outcome.FAILED }
             registering = false
+            latch.countDown()
             when (outcome) {
                 com.hgtv.star.shared.data.DeviceRegistration.Outcome.REGISTERED -> {
                     android.util.Log.i(
                         "HGTV-PHONE",
-                        if(needsRegistration) {
-                            "device registered id=${lib.deviceIdentity()["device_id"]}"
-                        } else {
-                            "device activated id=${lib.deviceIdentity()["device_id"]}"
-                        },
+                        "device registered id=${lib.deviceIdentity()["device_id"]}",
                     )
                     // 首屏很可能已经用「没注册」的身份请求过了（App 搜索会空响应）：
                     // 注册一落地就通知界面按新身份重取一次。
                     com.hgtv.star.shared.debug.DebugLog.record(
                         "设备",
-                        if(needsRegistration) "注册完成 · 已换用新身份" else "设备已激活",
+                        "注册完成 · 已换用新身份",
                         force = true,
                     )
                 }

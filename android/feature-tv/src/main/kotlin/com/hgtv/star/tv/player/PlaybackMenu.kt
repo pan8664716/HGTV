@@ -11,6 +11,7 @@ import com.hgtv.star.tv.ButtonTone
 import com.hgtv.star.tv.SettingSlider
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
+import com.hgtv.star.tv.TvSwitchRow
 import com.hgtv.star.tv.tvDp
 import com.hgtv.star.tv.tvRow
 import com.hgtv.star.tv.tvText
@@ -192,6 +193,17 @@ class PlaybackMenu(private val activity: Activity) : LinearLayout(activity) {
         return this
     }
 
+    /** 追加一行整行开关：左侧项名，右侧自绘轨道。 */
+    fun addSwitch(title: String, checked: Boolean, onToggle: (Boolean) -> Unit): PlaybackMenu {
+        val control = TvSwitchRow(activity, title, checked, onToggle)
+        rows.add(arrayListOf(control))
+        addView(control, LinearLayout.LayoutParams(-1, -2).apply {
+            topMargin = dp(4)
+            bottomMargin = dp(4)
+        })
+        return this
+    }
+
     /** 某一行的离散选项（滑动条行没有 Chip，返回空列表）。 */
     private fun chips(row: Int) = rows.getOrNull(row)?.filterIsInstance<Chip>().orEmpty()
 
@@ -225,6 +237,11 @@ class PlaybackMenu(private val activity: Activity) : LinearLayout(activity) {
      */
     fun sliderValue(row: Int, value: Float) {
         (rows.getOrNull(row)?.firstOrNull() as? SettingSlider)?.value = value
+    }
+
+    /** 把某一行的开关同步到 [checked]，不触发点击回调。 */
+    fun switchValue(row: Int, checked: Boolean) {
+        (rows.getOrNull(row)?.firstOrNull() as? TvSwitchRow)?.setChecked(checked)
     }
 
     /** 把焦点放到某个功能的第 [index] 个选项。 */

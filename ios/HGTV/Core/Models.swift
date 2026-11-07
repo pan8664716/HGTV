@@ -63,6 +63,9 @@ struct CatalogRanking {
 enum RankBoard: String, CaseIterable, Identifiable {
     case comic, real, ai, new
 
+    /// 顶部榜单顺序：推荐（原上新）/ 漫剧 / AI剧 / 真人。
+    static let navOrder: [RankBoard] = [.new, .comic, .ai, .real]
+
     var id: String { rawValue }
 
     var label: String {
@@ -70,7 +73,7 @@ enum RankBoard: String, CaseIterable, Identifiable {
         case .comic: return "漫剧"
         case .real: return "真人"
         case .ai: return "AI剧"
-        case .new: return "上新"
+        case .new: return "推荐"
         }
     }
 
@@ -97,7 +100,7 @@ enum RankBoard: String, CaseIterable, Identifiable {
         self == .new ? "online_time" : "hot_score"
     }
 
-    /// 时间序的「上新」不画名次。
+    /// 时间序的「推荐」（原上新）不画名次。
     var ranked: Bool { self != .new }
 }
 
@@ -109,9 +112,9 @@ enum CategoryGenres {
         let label: String
     }
 
-    /// 顶部体裁的固定顺序（需求钉死，不跟接口返回顺序走）：全部 / 漫剧 / AI剧 / 真人。
+    /// 顶部体裁的固定顺序（需求钉死，不跟接口返回顺序走）：推荐 / 漫剧 / AI剧 / 真人。
     static let options: [Option] = [
-        Option(id: nil, label: "全部"),
+        Option(id: nil, label: "推荐"),
         Option(id: "comic_series", label: "漫剧"),
         Option(id: "ai_series", label: "AI剧"),
         Option(id: "short_play", label: "真人")

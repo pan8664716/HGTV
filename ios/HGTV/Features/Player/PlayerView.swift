@@ -417,6 +417,8 @@ struct PlayerView: View {
                         .buttonStyle(.plain)
                     }
                 }
+
+                SwitchRow(label: "调试模式", isOn: $library.prefs.debugMode)
             }
             .padding(m.dp(18))
         }

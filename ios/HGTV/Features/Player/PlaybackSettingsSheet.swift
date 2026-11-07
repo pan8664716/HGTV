@@ -76,6 +76,9 @@ struct PlaybackSettingsSheet: View {
                 }
             }
 
+            SwitchRow(label: "调试模式", isOn: $library.prefs.debugMode)
+                .padding(.top, m.dp(4))
+
             Spacer(minLength: 0)
         }
         .padding(m.dp(18))

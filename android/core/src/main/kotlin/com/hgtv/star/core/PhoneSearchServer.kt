@@ -18,8 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * nothing stored server-side; it only receives what the operator types on the phone and hands the
  * value to [onQuery].
  *
- * 同一份实现服务三个表单：[Form.search]（手机输入剧名）、[Form.sessionToken]
- * （粘贴搜索登录态）与 [Form.deviceId]（手动覆盖播放设备号）。
+ * 同一份实现服务两个表单：[Form.search]（手机输入剧名）与 [Form.sessionToken]
+ *（粘贴搜索登录态）。
  */
 class PhoneSearchServer(
     address: String,
@@ -34,7 +34,6 @@ class PhoneSearchServer(
         companion object {
             val search=Form("在电视上搜索","输入剧名，电视会按当前选择的漫剧或短剧分类搜索。","query","输入剧名或关键词","发送到电视","已发送到电视",80,4096)
             val sessionToken=Form("填写搜索登录态","粘贴 App 抓到的 x-tt-token（整段 Cookie 也可以）。电视只把它用在搜索请求上，不联网核对、不上传。","token","粘贴 x-tt-token","保存到电视","已保存到电视",4096,8192)
-            val deviceId=Form("设置 device_id","打开官方 App，进入「关于」连续点击版本号，复制显示的 device_id。","device_id","输入纯数字 device_id","保存到电视","device_id 已保存到电视",32,4096)
         }
     }
     private val stopped=AtomicBoolean(false)

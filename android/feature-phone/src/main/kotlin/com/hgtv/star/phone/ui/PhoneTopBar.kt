@@ -160,6 +160,28 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
     }
 
     /**
+     * 用自定义入口替代左侧标题，例如「我的」页顶部的账号头像。
+     *
+     * [rowHeight] 非空时同时调整主行高度；「我的」页的账号区比普通标题高，
+     * 不调整会把头像和副标题裁在 34dp 的主行里。其它页面仍使用默认高度。
+     */
+    fun setLeadingView(view: View, rowHeight: Int? = null) {
+        mainSlot.removeAllViews()
+        mainCells.clear()
+        mainSlot.addView(view, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        if (rowHeight != null) {
+            val height = rowHeight.coerceAtLeast(0)
+            (mainRow.layoutParams as? LinearLayout.LayoutParams)?.height = height
+            (tabScroll.layoutParams as? LinearLayout.LayoutParams)?.height = height
+            mainRow.requestLayout()
+            tabScroll.requestLayout()
+        }
+    }
+
+    /**
      * 主行的大分类 tab（推荐页的 漫剧/真人/AI，榜单页的四个榜单，分类页的三个大类）。
      *
      * 选中项用主文字色 + 加粗，其余用次级色——与 TV 端顶部芯片的选中规则一致。

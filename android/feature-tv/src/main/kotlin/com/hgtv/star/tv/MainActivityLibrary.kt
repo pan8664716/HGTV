@@ -14,13 +14,29 @@ import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.debug.Diagnostics
+import com.hgtv.star.shared.architecture.network
 
 // 本文件是从 MainActivity.kt 拆出来的「本机库加载、封面取图、异步任务封装与空页 / 错误提示」这一块。
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 fun MainActivity.showLibraryError(problem: Throwable) {
-    val body=base(); error(body,problem,stage="library_load") { message(base(),"正在读取本机记录…"); loadLibrary() }
+    val body=base(); error(body,problem,stage="library_load") { showStartupLoading(); loadLibrary() }
+}
+/** 冷启动初始化遮罩：主设备注册完成前不建推荐首屏。 */
+fun MainActivity.showStartupLoading() {
+    startupInitializing=true
+    val body=base()
+    val center=LinearLayout(this).apply {
+        orientation=LinearLayout.VERTICAL
+        gravity=Gravity.CENTER
+        addView(ProgressBar(this@showStartupLoading).apply { isIndeterminate=true })
+        addView(text("正在初始化设备…",16f,TvStyle.textDim).apply {
+            gravity=Gravity.CENTER
+            setPadding(0,dp(14),0,0)
+        })
+    }
+    body.addView(center,LinearLayout.LayoutParams(-1,0,1f))
 }
 fun MainActivity.loadLibrary() {
     libraryLoadError=null
@@ -44,14 +60,25 @@ fun MainActivity.loadLibrary() {
             //
             // 设置里关掉「打开应用进入推荐」（或关掉导航栏那枚推荐入口）之后落点改回首页：
             // 这是同一份偏好的两种说法，冷启动必须跟着它走。
-            if(launchRecommendPending) {
-                launchRecommendPending=false
-                if(library.launchRecommend) openRecommend() else showCatalog(load=true)
-            } else showCatalog(load=true)
-            favoriteMonitor.check()
-            // 账号数据：**先把缓存铺上去**（[applyAccount] 已经把它交给界面），再后台刷一次。
-            // 缓存新鲜（[ACCOUNT_FRESH_MS]）时 [loadAccount] 自己会跳过请求。
-            if(repository.signedIn) loadAccount()
+            val startRecommend=launchRecommendPending && library.launchRecommend
+            launchRecommendPending=false
+            // 旧版升级后这里可能刚换成新主设备；推荐流必须先等注册请求走完。
+            // 注册失败也放行首屏，页面自己的重试/错误提示仍然可用，不能无限转圈。
+            val pending=library.registrationPending()
+            val forceRegister=pending && !deviceRegistering
+            appScope.network {
+                val ready=runCatching { registerDeviceOnce(force=forceRegister) }.getOrDefault(false)
+                main.post {
+                    if(isDestroyed) return@post
+                    if(!ready) noteDebugProblem("设备初始化失败，先进入首屏")
+                    startupInitializing=false
+                    if(startRecommend) openRecommend() else showCatalog(load=true)
+                    favoriteMonitor.check()
+                    // 账号数据：**先把缓存铺上去**（[applyAccount] 已经把它交给界面），再后台刷一次。
+                    // 缓存新鲜（[ACCOUNT_FRESH_MS]）时 [loadAccount] 自己会跳过请求。
+                    if(repository.signedIn) loadAccount()
+                }
+            }
         }
     }
 }

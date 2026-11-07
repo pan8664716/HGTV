@@ -17,7 +17,7 @@ import com.hgtv.star.shared.compat.attachedToWindow
 fun MainActivity.switchTab(next: Int) {
     // 本次运行第一次进这一页（见 [tabVisited]）。
     val firstVisit=tabVisited.add(next)
-    // 首次进入分类页：回到默认的「全部体裁」。
+    // 首次进入分类页：回到默认的「推荐」。
     // 面板也一起丢掉，首次进入会重新取一份（主题等随体裁变化）。
     if(firstVisit && next==TAB_CATEGORY) { categorySelection=CategorySelection(); categoryPanel=null }
     if(next!=TAB_RANK && tab==TAB_RANK) boardButtons.values.firstOrNull { it.hasFocus() }?.clearFocus()
@@ -343,7 +343,8 @@ fun MainActivity.restoreChipFocus(prefix: String) {
 fun MainActivity.categoryDescription(): String {
     val panel=categoryPanel
     val parts=mutableListOf<String>()
-    parts += panel?.labelOf(CategorySelection.TYPE_GENRE,categorySelection.genre) ?: "全部"
+    parts += if(categorySelection.genre==null) "推荐"
+    else panel?.labelOf(CategorySelection.TYPE_GENRE,categorySelection.genre) ?: "推荐"
     listOf(
         CategorySelection.TYPE_THEME,CategorySelection.TYPE_ROLE,CategorySelection.TYPE_EPOCH,
         CategorySelection.TYPE_GENDER,CategorySelection.TYPE_ONLINE_TIME,CategorySelection.TYPE_CREATION_STATUS

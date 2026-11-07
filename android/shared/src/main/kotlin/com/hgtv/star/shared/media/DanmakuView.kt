@@ -22,13 +22,14 @@ import com.hgtv.star.core.DanmakuSpeed
 import com.hgtv.star.core.planHighlights
 import com.hgtv.star.core.repeatGroups
 import com.hgtv.star.shared.compat.attachedToWindow
+import com.hgtv.star.shared.compat.lowEndTv
 
 /**
  * 压在播放画面上的弹幕层。
  *
  * 数据来自 [com.hgtv.star.core.ContentRepository.danmaku]，就是「原 App」播放时看到的那一份。
  * 这里只负责画：布局（哪一条落在哪一轨、什么时候进画）在 [relayout] 里一次性算好，
- * 每帧只按当前播放位置求 x，不再排序、不再测量，低端电视上也能跟上。
+ * 普通文字由后台预先生成到共享图集，每帧只按当前播放位置求 x 并贴图，不再排序、不再测量。
  *
  * 四种显示方式由 [DanmakuMode] 决定：
  * - [DanmakuMode.SINGLE] 只显一行：整屏只有一条轨道，多密也不会上下叠字；
@@ -108,6 +109,12 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         const val CACHE_LINES=4096
         /** 中央那一块宽度缓存的空值（作废时填回去，不用每次 new 一个空数组）。 */
         val EMPTY_WIDTHS=FloatArray(0)
+        /** 预渲染当前之后这么久的弹幕；和加载器的 30 秒窗口错开，留足后台生成时间。 */
+        const val SPRITE_AHEAD_MS=60_000L
+        /** 已经滚到屏幕边缘的弹幕仍保留在图集里，避免最后几帧突然退回文字路径。 */
+        const val SPRITE_BEHIND_MS=8_000L
+        /** 每 30 秒重新取一个前向窗口；新图集就绪前旧图集继续工作。 */
+        const val SPRITE_REFRESH_MS=30_000L
     }
 
     /**
@@ -122,29 +129,34 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         val width: Float,
         val lane: Int,
         val parts: List<DanmakuPart>,
-        val partWidths: FloatArray
+        val partWidths: FloatArray,
+        val spriteText: String?
     )
 
     private val fill=Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color=Color.WHITE
         typeface=Typeface.DEFAULT_BOLD
+        isSubpixelText=true
     }
     private val edge=Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color=0xB3000000.toInt()
         style=Paint.Style.STROKE
         typeface=Typeface.DEFAULT_BOLD
         strokeJoin=Paint.Join.ROUND
+        isSubpixelText=true
     }
     /** 中央突出显示的两支笔：字号比普通弹幕大一档，其余与普通弹幕同一套。 */
     private val hlFill=Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color=Color.WHITE
         typeface=Typeface.DEFAULT_BOLD
+        isSubpixelText=true
     }
     private val hlEdge=Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color=0xCC000000.toInt()
         style=Paint.Style.STROKE
         typeface=Typeface.DEFAULT_BOLD
         strokeJoin=Paint.Join.ROUND
+        isSubpixelText=true
     }
     /** `×N` 单独用一套画笔：数量增长时只放大计数，不改变聚合正文。 */
     private val counterFill=Paint(Paint.ANTI_ALIAS_FLAG)
@@ -161,10 +173,22 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     }
     /** 画表情图用：只要 alpha（跟着弹幕透明度走），颜色和描边都不掺和。 */
     private val emojiPaint=Paint(Paint.FILTER_BITMAP_FLAG)
+    private val spritePaint=Paint(Paint.FILTER_BITMAP_FLAG)
+    private val spriteDst=RectF()
     /** 表情图 / 底板的目标矩形，每帧复用，绘制循环里不新建对象。 */
     private val emojiRect=RectF()
     private val plateRect=RectF()
     private val emoji=DanmakuEmojiStore.get(context)
+    private val fillMetrics=Paint.FontMetrics()
+    private val hlMetrics=Paint.FontMetrics()
+    private val counterMetrics=Paint.FontMetrics()
+    private val lowEnd=context.applicationContext.lowEndTv()
+    private val spriteAtlasWidth=if(lowEnd) 1024 else 2048
+    private val spriteAtlasHeight=if(lowEnd) 1024 else 1024
+    private var spriteAtlas: DanmakuSpriteAtlas?=null
+    private var nextSpriteRefreshAt=0L
+    private var fillEmojiCenter=0f
+    private var hlEmojiCenter=0f
     /**
      * 一个「设计单位」等于多少像素。
      *
@@ -456,6 +480,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         partsCache.clear()
         widthCache.clear()
         prefetched.clear()
+        spriteAtlas?.invalidate()
+        nextSpriteRefreshAt=0L
         clearHighlightMetrics()
         relayout()
     }
@@ -463,10 +489,15 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         emoji.addListener(this)
+        ensureSpriteAtlas()
+        nextSpriteRefreshAt=0L
+        refreshSpriteAtlas(clockPositionMillis())
     }
 
     override fun onDetachedFromWindow() {
         emoji.removeListener(this)
+        spriteAtlas?.close()
+        spriteAtlas=null
         super.onDetachedFromWindow()
     }
 
@@ -503,6 +534,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         layoutLanes()
         val lanes=if(mode==DanmakuMode.HIDDEN) 0 else laneCount
         if(lanes>0 && width>0 && height>0) schedule(lanes)
+        nextSpriteRefreshAt=0L
+        refreshSpriteAtlas(clockPositionMillis())
         // 表情图只把**新出现**的文本排进解码队列：每窗全量传一遍等于每 30 秒做几千次带锁查表，
         // 而那些图早就解好了。等画到它们的时候图在缓存里，屏幕上不会先闪一下字形再换成图片。
         val fresh=mutableListOf<String>()
@@ -551,7 +584,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             if(mode==DanmakuMode.SINGLE &&
                 highlights.any { it.startMs<endMs && it.endMs>startMs }) return@forEach
             laneFree[lane]=start+(width+laneGap)/pixelsPerSecond
-            lines+=Line(start,duration,width,lane,parts,widths)
+            val spriteText=parts.singleOrNull()?.takeIf { it.asset==null }?.text
+            lines+=Line(start,duration,width,lane,parts,widths,spriteText)
         }
         lines.sortBy { it.start }
     }
@@ -614,11 +648,15 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         fill.textSize=size
         edge.textSize=size
         edge.strokeWidth=size*0.14f
+        fill.getFontMetrics(fillMetrics)
+        fillEmojiCenter=(fillMetrics.ascent+fillMetrics.descent)/2f-size*EMOJI_SCALE/2f
         // 中央那一块大一号，同样收在 72dp 之内：它本来就要「突出」，不必再被屏宽限制。
         highlightSize=(size*HIGHLIGHT_SCALE).coerceAtMost(density*72f)
         hlFill.textSize=highlightSize
         hlEdge.textSize=highlightSize
         hlEdge.strokeWidth=highlightSize*0.16f
+        hlFill.getFontMetrics(hlMetrics)
+        hlEmojiCenter=(hlMetrics.ascent+hlMetrics.descent)/2f-highlightSize*EMOJI_SCALE/2f
         fill.alpha=(255*alpha).toInt().coerceIn(0,255)
         edge.alpha=(edgeAlpha*alpha).toInt().coerceIn(0,255)
         hlFill.alpha=(255*alpha).toInt().coerceIn(0,255)
@@ -626,6 +664,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         emojiPaint.alpha=(255*alpha).toInt().coerceIn(0,255)
         // 底板跟着透明度淡一点：全黑底在暗画面上会把弹幕压成一块黑砖。
         plate.alpha=(0x99*alpha).toInt().coerceIn(0,255)
+        spritePaint.alpha=fill.alpha
+        spriteAtlas?.setStyle(size,edge.strokeWidth)
         // 字号变了，所有排版阶段的宽度结果作废（透明度不用：它不影响宽度）。
         widthCache.clear()
         clearHighlightMetrics()
@@ -649,8 +689,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
      * 原来按「字号 × 1.25」估，大字号下字形加上描边就超过这个高度，相邻两行会压在一起。
      */
     private fun layoutLanes() {
-        val metrics=fill.fontMetrics
-        val textBox=(metrics.descent-metrics.ascent)+fill.strokeWidth
+        val textBox=(fillMetrics.descent-fillMetrics.ascent)+fill.strokeWidth
         val emojiBox=fill.textSize*EMOJI_SCALE
         laneGap=fill.textSize*LANE_GAP_TEXT
         laneHeight=maxOf(textBox,emojiBox)+fill.textSize*LANE_GAP_VERTICAL
@@ -686,8 +725,13 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         val now=clockPositionMillis()
         val seconds=now/1000f
         // 跳转（前进或后退）之后指针作废，从头找一次；正常播放只往前挪。
-        if(now<lastPosition) { cursor=0; highlightCursor=0 }
+        if(now<lastPosition) {
+            cursor=0
+            highlightCursor=0
+            nextSpriteRefreshAt=0L
+        }
         lastPosition=now
+        if(now>=nextSpriteRefreshAt) refreshSpriteAtlas(now)
         while(cursor<lines.size && seconds-lines[cursor].start>lines[cursor].duration) cursor++
         var drawn=0
         var index=cursor
@@ -698,7 +742,23 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             if(elapsed<=line.duration) {
                 val x=viewWidth-elapsed/line.duration*(viewWidth+line.width)
                 val baseline=laneTop+(line.lane+1)*laneHeight-fill.textSize*0.28f
-                drawParts(canvas,line.parts,line.partWidths,x,baseline,fill,edge,fill.textSize*EMOJI_SCALE)
+                val atlas=spriteAtlas
+                val sprite=line.spriteText?.let { atlas?.get(it) }
+                if(sprite==null) {
+                    drawParts(
+                        canvas,
+                        line.parts,
+                        line.partWidths,
+                        x,
+                        baseline,
+                        fill,
+                        edge,
+                        fill.textSize*EMOJI_SCALE,
+                        fillEmojiCenter,
+                    )
+                } else {
+                    atlas?.draw(canvas,sprite,x,baseline,spritePaint,spriteDst)
+                }
                 drawn++
             }
             index++
@@ -771,7 +831,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         val left=((width-total)/2f).coerceAtLeast(density*8f)
         val padX=HIGHLIGHT_PAD_DP*density
         val padY=HIGHLIGHT_PAD_DP*density*0.5f
-        val counterHeight=counterFill.fontMetrics.let { it.descent-it.ascent }
+        counterFill.getFontMetrics(counterMetrics)
+        val counterHeight=counterMetrics.descent-counterMetrics.ascent
         val box=maxOf(highlightSize*0.95f,counterHeight)
         plateRect.set(left-padX,centerY-box/2f-padY,left+total+padX,centerY+box/2f+padY)
         canvas.drawRoundRect(plateRect,density*10f,density*10f,plate)
@@ -793,11 +854,9 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
                 counterAlpha,
             )
         }
-        val metrics=hlFill.fontMetrics
-        val baseline=centerY-(metrics.ascent+metrics.descent)/2f
-        drawParts(canvas,parts,widths,left,baseline,hlFill,hlEdge,emojiSize)
+        val baseline=centerY-(hlMetrics.ascent+hlMetrics.descent)/2f
+        drawParts(canvas,parts,widths,left,baseline,hlFill,hlEdge,emojiSize,hlEmojiCenter)
         // 数量标记接在正文后面，按自己的字号重新居中，避免放大后上下偏。
-        val counterMetrics=counterFill.fontMetrics
         val counterBaseline=centerY-(counterMetrics.ascent+counterMetrics.descent)/2f
         val shake=if(shocking) {
             Math.sin((shockProgress*Math.PI*6).toDouble()).toFloat()*
@@ -924,10 +983,10 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         baseline: Float,
         textPaint: Paint,
         strokePaint: Paint,
-        emojiSize: Float
+        emojiSize: Float,
+        emojiCenter: Float,
     ) {
-        val metrics=textPaint.fontMetrics
-        val emojiTop=baseline+(metrics.ascent+metrics.descent)/2f-emojiSize/2f
+        val emojiTop=baseline+emojiCenter
         var cursorX=x
         parts.forEachIndexed { index,part ->
             val asset=part.asset
@@ -948,6 +1007,47 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         }
     }
 
+    private fun ensureSpriteAtlas(): DanmakuSpriteAtlas? {
+        spriteAtlas?.let { return it }
+        if(!attachedToWindow) return null
+        return DanmakuSpriteAtlas(
+            spriteAtlasWidth,
+            spriteAtlasHeight,
+            onReady = { if(visibility==VISIBLE) postInvalidateOnAnimation() },
+        ).also {
+            spriteAtlas=it
+            it.setStyle(fill.textSize,edge.strokeWidth)
+        }
+    }
+
+    /**
+     * 只把当前和后续一分钟内会出现的文字交给后台图集。
+     *
+     * 图集按窗口重建，不随每一帧扩张；旧图集在新图集就绪前继续使用，因此这里不需要阻塞绘制。
+     */
+    private fun refreshSpriteAtlas(nowMs: Long) {
+        if(lines.isEmpty() || width<=0 || height<=0) return
+        val wanted=LinkedHashSet<String>()
+        val until=nowMs+SPRITE_AHEAD_MS
+        val since=nowMs-SPRITE_BEHIND_MS
+        var index=cursor
+        while(index<lines.size) {
+            val line=lines[index]
+            val start=(line.start*1000f).toLong()
+            if(start>until) break
+            val end=((line.start+line.duration)*1000f).toLong()
+            if(end>=since) line.spriteText?.let { wanted+=it }
+            index++
+        }
+        nextSpriteRefreshAt=nowMs+SPRITE_REFRESH_MS
+        if(wanted.isNotEmpty()) ensureSpriteAtlas()?.request(wanted)
+    }
+
     /** 播放位置可能被快进，指针要跟着重算；宿主在 seek 之后调一次。 */
-    fun resetCursor() { cursor=0; highlightCursor=0; lastPosition=-1L }
+    fun resetCursor() {
+        cursor=0
+        highlightCursor=0
+        lastPosition=-1L
+        nextSpriteRefreshAt=0L
+    }
 }

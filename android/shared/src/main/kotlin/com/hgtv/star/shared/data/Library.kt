@@ -62,8 +62,7 @@ class Library(context: Context) {
          */
         val MIRROR_KEYS = listOf(
             "registered-device-id","registered-install-id","registered-device-token",
-            "registered-klink-egdi","registered-profile-stamp","registered-activation-stamp",
-            "manual-device-id",
+            "registered-klink-egdi","registered-profile-stamp",
             "device-profile","device-seed","device-profile-seed",
             // 待换新的候选档案（见 [commitPendingProfile]）：重装后仍要记得「这套身份是旧的」，
             // 否则会一直拿着老版本的随机档案继续跑。
@@ -72,7 +71,25 @@ class Library(context: Context) {
             // 账号会话的 token / TicketGuard 签名 / 首刷标记 / 注册下发的 cookie：
             // 少了这几项，重装后恢复出来的就是「半份会话」——cookie 在、token 不在，
             // 心跳与账号接口都活不下来。
-            "session-token","ts-sign","first-beat","registered-cookies","last-beat-at"
+            "session-token","ts-sign","first-beat","registered-cookies","last-beat-at",
+            "identity-layout-v2",
+            "legacy-registered-device-id","legacy-registered-install-id",
+            "legacy-registered-device-token","legacy-registered-klink-egdi",
+            "legacy-registered-profile-stamp","legacy-registered-cookies","legacy-device-profile",
+        )
+        /**
+         * 新版身份布局的分界。
+         *
+         * 第一次运行新版时先把旧 `registered-*` / `device-profile` 归档到 `legacy-*`，
+         * 再让主设备从空身份注册。旧设备保留下来，但不再参与任何请求。
+         */
+        const val IDENTITY_LAYOUT_KEY = "identity-layout-v2"
+        val LEGACY_IDENTITY_KEYS = listOf(
+            "registered-device-id","registered-install-id","registered-device-token",
+            "registered-klink-egdi","registered-profile-stamp","registered-cookies",
+            "device-profile","device-seed","device-profile-seed",
+            "device-profile-pending","device-profile-pending-seed","device-profile-pending-stamp",
+            "registration-pending",
         )
         /** 账号那三项：退出登录时要**一并从镜像里抹掉**，否则下次启动又把登出的会话救回来。 */
         val MIRROR_ACCOUNT_KEYS = listOf(
@@ -144,6 +161,7 @@ class Library(context: Context) {
      * 重新留下 `registered-device-id` / 会话这些文件，等于没清干净。
      */
     @Volatile private var discarding = false
+    @Volatile private var identityLayoutChecked = false
     private val readyCallbacks = mutableListOf<() -> Unit>()
     private val errorCallbacks = mutableListOf<(Throwable) -> Unit>()
     val isLoaded get() = index != null
@@ -165,6 +183,8 @@ class Library(context: Context) {
             // 会话镜像先读：它是后面 [restoreFromMirror] 的唯一数据源，而且只在这里读一次盘。
             // 放在 retired-writes 检查之前：那一步失败（上一批提交超时）也不该让镜像永远不读。
             runCatching { mirror.preload() }
+            // 新版身份布局必须先于任何设备档案 / 身份读取。
+            runCatching { ensureIdentityLayout() }
             val result = runCatching {
                 val retired = synchronized(retiredWrites) { retiredWrites.toList() }
                 retired.forEach { check(it.awaitClosed(30, TimeUnit.SECONDS)) { "上次观看记录仍在保存，请稍后重试" } }
@@ -260,6 +280,73 @@ class Library(context: Context) {
         }
     }
     private fun state(): LibraryIndex = checkNotNull(index) { "Load the local library before accessing it" }
+    /**
+     * 一次性把旧版设备身份归档，并清空当前主设备身份。
+     *
+     * 归档而不是覆盖：旧设备以后仍可从 `legacy-*` 找回；新版主设备则按全新档案注册。
+     * 登录用户设备不在这里处理，它由 `account-device` / `account-cookie` 单独保存。
+     */
+    private fun ensureIdentityLayout() {
+        if(identityLayoutChecked || discarding) return
+        synchronized(this) {
+            if(identityLayoutChecked || discarding) return
+            val alreadySplit=sessionPrefs.contains(IDENTITY_LAYOUT_KEY) ||
+                mirror.string(IDENTITY_LAYOUT_KEY)=="1"
+            if(!alreadySplit) {
+                val edit=sessionPrefs.edit()
+                // 旧版本把登录设备与主设备共用。升级时先把旧设备 Cookie 并进已登录账号，
+                // 否则切到独立主设备后，账号心跳会少掉 `install_id` / `ttreq`。
+                val accountCookie=sessionPrefs.getString("account-cookie",null)
+                    ?: mirror.string("account-cookie").orEmpty()
+                val legacyCookies=sessionPrefs.getString("registered-cookies",null)
+                    ?: mirror.string("registered-cookies").orEmpty()
+                if(accountCookie.contains("sessionid=") && legacyCookies.isNotBlank()) {
+                    runCatching {
+                        val merged=com.hgtv.star.core.session.CookieRecord.headerToMap(accountCookie)
+                        val json=org.json.JSONObject(legacyCookies)
+                        for(key in json.keys()) {
+                            json.optString(key).takeIf { it.isNotBlank() }?.let { merged[key]=it }
+                        }
+                        val header=com.hgtv.star.core.session.CookieRecord.mapToHeader(merged)
+                        edit.putString("account-cookie",header)
+                        mirror.put("account-cookie",header)
+                    }
+                }
+                LEGACY_IDENTITY_KEYS.forEach { key ->
+                    val value=sessionPrefs.all[key]?.toString() ?: mirror.string(key)
+                    if(value!=null) {
+                        edit.putString("legacy-$key",value)
+                        mirror.put("legacy-$key",value)
+                    }
+                    edit.remove(key)
+                    mirror.remove(key)
+                }
+                // 新主设备使用独立档案：物理机型 / 系统不变，cdid / openudid / clientudid
+                // 重新生成，避免平台把新主设备直接认回旧设备。
+                val fresh=LinkedHashMap(buildOfficialProfile(forceRandomOpenudid=true)).apply {
+                    put("openudid-source","primary_random")
+                }
+                val freshJson=org.json.JSONObject().apply {
+                    fresh.forEach { (key,value) -> put(key,value) }
+                }.toString()
+                edit.putString("device-profile",freshJson)
+                mirror.put("device-profile",freshJson)
+                edit.putString(IDENTITY_LAYOUT_KEY,"1").commit()
+                mirror.put(IDENTITY_LAYOUT_KEY,"1")
+                mirror.flush()
+                cachedProfileStamp=null
+                Log.i("HGTV","Legacy device identity archived; new main identity will be registered")
+            } else if(!sessionPrefs.contains(IDENTITY_LAYOUT_KEY)) {
+                sessionPrefs.edit().putString(IDENTITY_LAYOUT_KEY,"1").commit()
+            }
+            // 手动 device_id 已下线：升级时把旧值和旧镜像一起清掉。
+            if(sessionPrefs.contains("manual-device-id")) {
+                sessionPrefs.edit().remove("manual-device-id").apply()
+                mirror.remove("manual-device-id")
+            }
+            identityLayoutChecked=true
+        }
+    }
     private fun put(key: String, value: Any?) {
         // 清除数据期间队列已经关掉：这时再提交会抛异常，而数据马上就要被删掉，直接丢弃。
         if(discarding) return
@@ -592,6 +679,7 @@ class Library(context: Context) {
      * 播放前另有一次同步补注册），注册成功后 [saveDeviceIdentity] 落盘，这里就能给出来。
      */
     fun deviceIdentity(): Map<String,String> {
+        ensureIdentityLayout()
         restoreFromMirror()
         val registered=sessionPrefs.getString("registered-device-id","").orEmpty()
         val registeredInstall=sessionPrefs.getString("registered-install-id","").orEmpty()
@@ -614,32 +702,6 @@ class Library(context: Context) {
         return emptyMap()
     }
     /**
-     * 用户在系统高级里手动覆盖的官方 App `device_id`。
-     *
-     * 空字符串表示使用自动注册 / 一次性设备池。这里只保存覆盖值，不改写注册下发的
-     * `registered-device-id`，因此随时可以恢复自动身份。
-     */
-    fun manualDeviceId(): String {
-        restoreFromMirror()
-        return DeviceRegister.normalizeManualDeviceId(
-            sessionPrefs.getString("manual-device-id","").orEmpty()
-        ).orEmpty()
-    }
-    fun saveManualDeviceId(value: String): Boolean {
-        if(discarding) return false
-        val clean=DeviceRegister.normalizeManualDeviceId(value) ?: return false
-        sessionPrefs.edit().putString("manual-device-id",clean).commit()
-        mirror.put("manual-device-id",clean)
-        mirror.flush()
-        return true
-    }
-    fun clearManualDeviceId() {
-        if(discarding) return
-        sessionPrefs.edit().remove("manual-device-id").commit()
-        mirror.remove("manual-device-id")
-        mirror.flush()
-    }
-    /**
      * 是否**真**在平台注册过（只有注册过搜索才可能出数据）。
      *
      * 除了「有没有那一对数字」，还要看**这份注册结果是不是按当前档案注册出来的**：
@@ -649,6 +711,7 @@ class Library(context: Context) {
      * 没有它，`deviceRegistered()` 只看到数字形状对就答 true，永远不会重注册。
      */
     fun deviceRegistered(): Boolean {
+        ensureIdentityLayout()
         restoreFromMirror()
         // **不判 `registrationPending`**：那份「待换新」只是「档案想升级」，旧身份在平台上
         // 仍然是好的（搜索 / 播放都还能用）。判成「没注册」会让每次搜索都同步发一次注册请求，
@@ -690,6 +753,7 @@ class Library(context: Context) {
      * 换新成功才替换身份，失败就继续用旧的那一对，用户不会因此连首页都看不了。
      */
     fun registrationNeedsRefresh(): Boolean {
+        ensureIdentityLayout()
         restoreFromMirror()
         val registered=sessionPrefs.getString("registered-device-id","").orEmpty()
         val install=sessionPrefs.getString("registered-install-id","").orEmpty()
@@ -719,11 +783,11 @@ class Library(context: Context) {
         sessionPrefs.edit().remove("registered-device-id").remove("registered-install-id")
             .remove("registered-device-token")
             .remove("registered-klink-egdi")
-            .remove("registered-profile-stamp").remove("registered-activation-stamp")
+            .remove("registered-profile-stamp")
             .remove("registered-cookies")
             .remove("registration-pending").apply()
         listOf("registered-device-id","registered-install-id","registered-device-token",
-            "registered-klink-egdi","registered-profile-stamp","registered-activation-stamp",
+            "registered-klink-egdi","registered-profile-stamp",
             "registered-cookies")
             .forEach(mirror::remove)
         cachedProfileStamp=null
@@ -743,32 +807,35 @@ class Library(context: Context) {
         if(discarding) return
         sessionPrefs.edit().remove("registration-pending").apply()
     }
-    fun registrationPending(): Boolean =
-        sessionPrefs.getBoolean("registration-pending",false) || pendingProfile()!=null
-    /**
-     * 这台已注册设备是否完成过 App 日志 SDK 激活。
-     *
-     * 标记与 `device_id|iid` 绑定；重新注册换号后会自动失效。
-     */
-    fun deviceActivated(): Boolean {
-        restoreFromMirror()
-        val id=deviceIdentity()
-        val deviceId=id["device_id"].orEmpty()
-        val installId=id["iid"].orEmpty()
-        if(deviceId.isBlank() || installId.isBlank()) return false
-        return sessionPrefs.getString("registered-activation-stamp","").orEmpty()==
-            "$deviceId|$installId"
+    fun registrationPending(): Boolean {
+        ensureIdentityLayout()
+        return sessionPrefs.getBoolean("registration-pending",false) || pendingProfile()!=null
     }
-    fun markDeviceActivated() {
-        if(discarding) return
-        val id=deviceIdentity()
-        val deviceId=id["device_id"].orEmpty()
-        val installId=id["iid"].orEmpty()
-        if(deviceId.isBlank() || installId.isBlank()) return
-        val stamp="$deviceId|$installId"
-        sessionPrefs.edit().putString("registered-activation-stamp",stamp).commit()
-        mirror.put("registered-activation-stamp",stamp)
-        mirror.flush()
+    /**
+     * 生成一条只用于备用播放设备注册的随机档案。
+     *
+     * 不改写主设备档案和主身份；返回值只交给持久备用池。
+     */
+    fun freshPlaybackBackupProfile(): Map<String,String> {
+        return freshDeviceProfile("playback_backup")
+    }
+    /**
+     * 登录用户设备使用的一套新档案。
+     *
+     * 它只服务账号页的增删改查与会话心跳，不参与首页、搜索、播放、弹幕等主设备请求。
+     */
+    fun freshLoginDeviceProfile(): Map<String,String> {
+        return freshDeviceProfile("login_user")
+    }
+    private fun freshDeviceProfile(source: String): Map<String,String> {
+        val base=deviceProfile()
+        if(base.isEmpty()) return emptyMap()
+        return LinkedHashMap(base).apply {
+            put("cdid",OfficialDeviceIds.cdid())
+            put("openudid",OfficialDeviceIds.openudid(null))
+            put("openudid-source",source)
+            put("clientudid",OfficialDeviceIds.clientudid())
+        }
     }
     /** 落盘注册结果；传空表示清除（下次启动重新注册）。 */
     fun saveDeviceIdentity(
@@ -789,15 +856,13 @@ class Library(context: Context) {
         sessionPrefs.edit().putString("registered-device-id",deviceId).putString("registered-install-id",installId)
             .putString("registered-device-token",deviceToken)
             .putString("registered-klink-egdi",klinkEgdi)
-            .putString("registered-profile-stamp",stamp)
-            .remove("registered-activation-stamp").commit()
+            .putString("registered-profile-stamp",stamp).commit()
         // 身份一变（首次注册 / 重新注册）镜像立刻跟上：卸载重装后要先认回这台设备，再谈别的。
         mirror.put("registered-device-id",deviceId); mirror.put("registered-install-id",installId)
         if(deviceToken.isNotBlank()) mirror.put("registered-device-token",deviceToken)
         else mirror.remove("registered-device-token")
         if(klinkEgdi.isNotBlank()) mirror.put("registered-klink-egdi",klinkEgdi) else mirror.remove("registered-klink-egdi")
         mirror.put("registered-profile-stamp",stamp)
-        mirror.remove("registered-activation-stamp")
         // 不等 250 ms 的合并窗口：注册成功后用户可能马上就退出 / 强杀，
         // 那一次写没落盘，下一次进来就又成了「未注册设备」——正是用户报的那个现象。
         mirror.flush()
@@ -810,6 +875,7 @@ class Library(context: Context) {
      * 下次启动由 `ContentRepository.restoreDeviceCookies` 灌回去。
      */
     fun registrationCookies(): Map<String,String> {
+        ensureIdentityLayout()
         restoreFromMirror()
         val raw = sessionPrefs.getString("registered-cookies","").orEmpty()
         if(raw.isBlank()) return emptyMap()
@@ -862,6 +928,7 @@ class Library(context: Context) {
      * 这正是「同一台设备」该有的样子。
      */
     fun deviceProfile(): Map<String,String> {
+        ensureIdentityLayout()
         restoreFromMirror()
         // 清除数据期间不再采集 / 落盘：此时写进去的任何一项都会在沙盒里留下痕迹。
         if(discarding) return emptyMap()
@@ -884,7 +951,7 @@ class Library(context: Context) {
                 // 官方 App 用真实 Android ID 作为 openudid。即使旧版本曾因换设备
                 // 写过 forced_random，只要现在能读到 Android ID，也要升级回来；
                 // 否则设备会永久以 new_user=1 的陌生身份请求，第一批模型后就被限流。
-                if(source!="android_id") {
+                if(source!="android_id" && source!="primary_random") {
                     val androidId=readAndroidId()
                     if(androidId!=null && androidId!=map["openudid"]) {
                         map=LinkedHashMap(map).apply {
@@ -924,22 +991,6 @@ class Library(context: Context) {
         mirror.flush()
         cachedProfileStamp=null
         return fresh
-    }
-    /**
-     * 生成一条只用于一次性播放注册的设备档案。
-     *
-     * 机型、系统、分辨率等物理档案沿用本机当前值，三个设备标识全部换成新的随机值。
-     * 这里不写 `device-profile`，也不改动当前注册身份；返回值只交给后台设备池使用。
-     */
-    fun freshPlaybackDeviceProfile(): Map<String,String> {
-        val base=deviceProfile()
-        if(base.isEmpty()) return emptyMap()
-        return LinkedHashMap(base).apply {
-            put("cdid",OfficialDeviceIds.cdid())
-            put("openudid",OfficialDeviceIds.openudid(null))
-            put("openudid-source","playback_pool")
-            put("clientudid",OfficialDeviceIds.clientudid())
-        }
     }
     /**
      * 生成一套**新的**设备身份候选（新种子 → 新档案），等注册成功再转正。
@@ -1095,10 +1146,6 @@ class Library(context: Context) {
      */
     fun registrationProfile(): Map<String,String> {
         pendingProfile()?.let { return it }
-        val official=accountDevice()
-        if(official["cdid"].orEmpty().isNotBlank() && official["openudid"].orEmpty().isNotBlank()) {
-            return LinkedHashMap(deviceProfile()).apply { putAll(official) }
-        }
         return deviceProfile()
     }
     /** 有没有待转正的候选档案（见 [registrationProfile]）。 */

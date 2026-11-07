@@ -4082,6 +4082,7 @@ class PhonePlayerActivity : PhoneActivity() {
                 }
                 syncChips()
             },
+            onDebug = { syncDebugOverlay() },
         )
     }
 

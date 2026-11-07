@@ -48,17 +48,9 @@ class AppSessionStore(
         get() = sp.getString(K_COOKIE,"").orEmpty()
 
     override val deviceCookies: Map<String,String>
-        get() {
-            val raw = sp.getString(K_REGISTERED_COOKIES,"").orEmpty()
-            if(raw.isBlank()) return emptyMap()
-            val json = runCatching { JSONObject(raw) }.getOrNull() ?: return emptyMap()
-            return buildMap {
-                for(key in json.keys()) {
-                    val value = json.optString(key).trim()
-                    if(value.isNotEmpty()) put(key,value)
-                }
-            }
-        }
+        // 主设备 Cookie 由 `SessionBridge.mainDeviceCookies` 单独提供；账号请求只认
+        // `account-cookie` 这一份完整登录 Cookie，避免把主设备身份混进用户会话。
+        get() = emptyMap()
 
     /** 真机设备档案：`account-device` 里的 JSON（由 `Library.saveAccountDevice` 写入）。 */
     override val deviceProfile: Map<String,String>
@@ -75,9 +67,7 @@ class AppSessionStore(
         }
 
     override val storeRegion: String
-        get() = CookieRecord.value(cookieHeader,"store-region").ifBlank {
-            deviceCookies["store-region"].orEmpty().ifBlank { "cn" }
-        }
+        get() = CookieRecord.value(cookieHeader,"store-region").ifBlank { "cn" }
 
     /**
      * 会话到期时刻。读的就是 `Library` 一直在维护的 `account-expires`（**秒**），
@@ -162,7 +152,7 @@ class AppSessionStore(
         return true
     }
 
-    /** 设备注册成功后把 `install_id` / `ttreq` / `store-region` 存下来（匿名时也要带）。 */
+    /** 主设备注册成功后把 `install_id` / `ttreq` / `store-region` 存下来。 */
     override fun saveDeviceCookies(cookies: Map<String,String>) {
         if(discarding()) return
         val clean = cookies.filterValues { it.isNotBlank() }
@@ -236,8 +226,8 @@ class AppSessionStore(
         /**
          * 会话凭据那一族（对齐原版 `WebCookieSecurityConfig` 的清单）。
          *
-         * 设备侧的 cookie（`install_id` / `ttreq` / `store-region`）**不在这里**：
-         * 它们走 `saveDeviceCookies`，落的是 `registered-cookies` 那个键。
+         * 登录用户 Cookie 可以同时包含设备侧字段；主设备 Cookie 走
+         * `SessionBridge.mainDeviceCookies`，不写进这里。
          */
         val SESSION_COOKIE_KEYS = setOf(
             "sessionid","sessionid_ss","sid_tt","sid_guard","uid_tt","uid_tt_ss",

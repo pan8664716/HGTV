@@ -1022,6 +1022,8 @@ class MainActivity: Activity() {
      * 否则用户从推荐页返回首页、按一下方向键，页面又会自己跳回推荐。
      */
     var launchRecommendPending=true
+    /** 冷启动闸门：书库 + 主设备注册完成前不建首屏。 */
+    var startupInitializing=true
     /** 推荐列表（来自分类接口的「全部推荐」流，已滤掉本机隐藏的剧）。 */
     var recommendItems: List<Series> = emptyList()
     var recommendIndex=0
@@ -1281,7 +1283,7 @@ class MainActivity: Activity() {
      * 排行榜页当前看的是哪一个榜单。首页四个剧架的「查看全部」也会改它，
      * 因此「从首页进榜单」与「在榜单页里切换」是同一条路径、同一份数据。
      */
-    var rankBoard=RankBoard.COMIC
+    var rankBoard=RankBoard.NEW
     /** 首页四个剧架的内容（榜单第 1 页），按榜单分别存。 */
     var homeFeed=mutableMapOf<RankBoard,CatalogPage>()
     /**
@@ -1391,7 +1393,7 @@ class MainActivity: Activity() {
     val nav=mutableListOf<View>()
     /** 圆形入口按 key（search / category / …）索引的那一份，与 [nav] 指向同一批控件。 */
     val navKeyed=linkedMapOf<String,View>()
-    /** 排行榜页的四个榜单切换芯片（漫剧 / 真人 / AI剧 / 上新）。 */
+    /** 排行榜页的四个榜单切换芯片（推荐 / 漫剧 / AI剧 / 真人）。 */
     val boardButtons=mutableMapOf<RankBoard,View>()
     /** 「我的」页的四个栏目切换芯片（收藏 / 历史 / 点赞 / 预约）。 */
     val accountButtons=mutableMapOf<String,View>()
@@ -1943,7 +1945,7 @@ class MainActivity: Activity() {
                 else -> Unit
             }
         },4000)
-        message(base(),"正在读取本机记录…")
+        showStartupLoading()
         // 预建到内容接口的连接（DNS + TCP + TLS + 验链），见 [ContentRepository.preconnect]。
         // 放在 loadLibrary 之前、`network` 车道上：推荐页那次请求大约在 1 秒后发出，
         // 那时连接已经在池子里，只剩一个 RTT。失败静默，不影响任何功能。

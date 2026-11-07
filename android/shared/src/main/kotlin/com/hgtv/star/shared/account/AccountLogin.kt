@@ -53,8 +53,9 @@ object AccountLogin {
             library.saveAccountDevice(device)
             val current = library.account()
             require(current.configured) { "设备档案已保存。但还没有账号参数，请再传一份 cookieStore.xml。" }
-            repository.credentials = current
-            return current
+            return com.hgtv.star.shared.data.DeviceRegistration.prepareLogin(
+                library,repository,current,
+            )
         }
 
         val xml = trimmed.contains("<map")
@@ -72,11 +73,14 @@ object AccountLogin {
         require(credentials.configured) {
             "没有解析到 sessionid，请确认上传的是官方 App 的 cookieStore.xml"
         }
-        repository.credentials = credentials
+        val prepared = com.hgtv.star.shared.data.DeviceRegistration.prepareLogin(
+            library,repository,credentials,
+        )
+        repository.credentials = prepared
         require(profileUsable(repository)) {
             "平台没有返回账号资料，参数可能已过期（cookieStore.xml 要取最新的那一份）"
         }
-        return credentials
+        return prepared
     }
 
     /**

@@ -273,16 +273,4 @@ object DeviceRegister {
         )
     }
 
-    /**
-     * 官方 App「关于」页显示的 device_id 是纯十进制数字。
-     *
-     * 这里只做输入归一与形状校验；它是否属于当前账号 / 设备，只能由服务端判断。
-     */
-    fun normalizeManualDeviceId(value: String): String? {
-        val clean=value.trim()
-        if(clean.length !in 6..32) return null
-        if(clean.any { it !in '0'..'9' }) return null
-        if(clean.all { it=='0' }) return null
-        return clean
-    }
 }

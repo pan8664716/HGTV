@@ -116,7 +116,7 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
             // 只改这一枚按钮的文案，不重建面板：收藏状态变了，其余行一个像素都不动。
             menu.actionLabel(MENU_ROW_ACTIONS,MENU_ACTION_FAVORITE,togglePlayerFavorite())
         },
-        PlaybackMenu.Action("查看简介") { showPlayerIntro() }
+        PlaybackMenu.Action("查看简介") { showPlayerIntro() },
     ))
     menu
         .addRow("清晰度",PlaybackQuality.options.mapIndexed { index,value ->
@@ -195,6 +195,10 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
         applyVideoScale()
     }
     menu.addRow("定时",sleepChoices(menu))
+    menu.addSwitch("调试模式",library.debugMode) { on ->
+        library.debugMode=on
+        syncDebugOverlay()
+    }
     menu.wire()
     return menu
 }
@@ -241,7 +245,8 @@ private fun MainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boolean
     }
     menu.sliderValue(videoScaleRow(showsStyle),library.videoScale)
     menu.sync(sleepRow(showsStyle),if(sleepTimer.active) sleepChoice else 0)
-    // 第一行那排动作里只有「收藏」会自己改文案：可能在简介页 / 卡片长按菜单里被改过，
+    menu.switchValue(debugRow(showsStyle),library.debugMode)
+    // 动作行里收藏会改文案：可能在简介页 / 设置页里被改过，
     // 因此每次挂上去之前按本机当前状态刷一遍（其余三枚是固定文案，不用动）。
     menu.actionLabel(MENU_ROW_ACTIONS,MENU_ACTION_FAVORITE,playerFavoriteLabel())
 }

@@ -14,9 +14,9 @@ package com.hgtv.star.core
  * | [COMIC] | 漫剧 | `comic_series` | `hot_score` | `comic` | 热播漫剧 |
  * | [REAL] | 真人 | `short_play` | `hot_score` | `real` | 热播真人 |
  * | [AI] | AI剧 | `ai_series` | `hot_score` | `ai` | 热播AI |
- * | [NEW] | 上新 | 全站综合（不筛分类） | `online_time` | `new` | 热播上新 |
+ * | [NEW] | 推荐 | 全站综合（不筛分类） | `online_time` | `new` | 热播上新 |
  *
- * [label] 是榜单页四个切换按钮的文案（很短：漫剧 / 真人 / AI剧 / 上新），页面主标题固定写「榜单」；
+ * [label] 是榜单页四个切换按钮的文案（很短：推荐 / 漫剧 / AI剧 / 真人），页面主标题固定写「榜单」；
  * [homeTitle] 是首页那一栏的栏目名；[source] 是来源行（榜单页头那一行文案）。
  * 三处都从这一个枚举取，改名字只改这里。
  *
@@ -28,7 +28,7 @@ package com.hgtv.star.core
  */
 enum class RankBoard(
     val storedValue: String,
-    /** 榜单按钮的文案（短）：漫剧 / 真人 / AI剧 / 上新。榜单页主标题固定是「榜单」。 */
+    /** 榜单按钮的文案（短）：推荐 / 漫剧 / AI剧 / 真人。榜单页主标题固定是「榜单」。 */
     val label: String,
     /** 首页栏目名。 */
     val homeTitle: String,
@@ -48,10 +48,13 @@ enum class RankBoard(
     REAL("real", "真人", "热播真人", "short_play", "hot_score"),
     // 「AI剧」与分类页那个大类的写法一致（分类页是 漫剧 / 真人 / AI剧）。
     AI("ai", "AI剧", "热播AI", "ai_series", "hot_score"),
-    // 最新上架：不筛分类，全站按 `online_time` 倒序；不是热度榜，因此不画名次。
-    NEW("new", "上新", "热播上新", null, "online_time", ranked = false);
+    // 原「上新」榜：不筛分类，全站按 `online_time` 倒序；不是热度榜，因此不画名次。
+    NEW("new", "推荐", "热播上新", null, "online_time", ranked = false);
 
     companion object {
+        /** 顶部榜单导航顺序：推荐（原上新）/ 漫剧 / AI剧 / 真人。 */
+        val navEntries: List<RankBoard> = listOf(NEW, COMIC, AI, REAL)
+
         fun fromStored(value: String?) = entries.firstOrNull { it.storedValue == value } ?: COMIC
     }
 }

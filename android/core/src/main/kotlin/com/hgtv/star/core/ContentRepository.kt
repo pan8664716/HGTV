@@ -691,13 +691,6 @@ class ContentRepository(
             signer.updateDevice(deviceProfile())
         }
     /**
-     * 用户在「系统高级」里手动填写的官方 App `device_id`。
-     *
-     * 只覆盖播放模型请求里的 `device_id`；注册下发的 `iid`、账号 Cookie 与其它接口身份不变。
-     * 非空时播放设备池暂停消费，避免手动设置与一次性身份互相覆盖。
-     */
-    @Volatile var manualDeviceId: String = ""
-    /**
      * 共用另一份仓库实例的**设备身份、注册 Cookie 与设备档案**
      *（[deviceIdentity] / `registrationCookies` / [registerProfile]）。
      *
@@ -716,7 +709,6 @@ class ContentRepository(
         sessionToken=from.sessionToken
         registerProfile=from.registerProfile
         deviceIdentity=from.deviceIdentity
-        manualDeviceId=from.manualDeviceId
         registrationCookies=from.registrationCookies
         // 档位也要跟着走：换了档位就等于换了一套清晰度表，预热到的地址与起播选中的那一档
         // 对不上，预热就白做了（见 [deviceLevel]）。
@@ -816,51 +808,9 @@ class ContentRepository(
     }
 
     /**
-     * 注册后的激活握手：`app_log(launch)` + `log_settings`。
+     * 匿名注册一台备用设备，不改动当前主设备身份与 Cookie。
      *
-     * 只注册不激活时 `app_alert_check.data.is_activated` 不会出现；设备会先短暂可用，
-     * 随后被平台回收。两条请求任意一条成功都能激活，这里按官方启动顺序都发一次。
-     */
-    fun activateDevice(profile: Map<String,String>? = null): Boolean {
-        val device=LinkedHashMap(VendorConstants.device).apply {
-            putAll(profile ?: registerProfile)
-            putAll(deviceIdentity)
-            for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
-                this[key]="73932"
-            }
-            this["version_name"]="7.3.9.32"
-        }
-        if(device["device_id"].isNullOrBlank() ||
-            (device["iid"].isNullOrBlank() && device["install_id"].isNullOrBlank())) return false
-
-        var activated=false
-        listOf(
-            DeviceActivation.APP_LOG_PATH to DeviceActivation.appLogPayload(device),
-            DeviceActivation.LOG_SETTINGS_PATH to DeviceActivation.logSettingsPayload(device),
-        ).forEach { (path,body) ->
-            val ok=runCatching {
-                val headers=DeviceActivation.headers(body,device)
-                val request=Request.Builder().url(DeviceActivation.url(path,device))
-                headers.forEach { (key,value) -> request.header(key,value) }
-                request.post(body.toRequestBody("application/octet-stream".toMediaType()))
-                RequestScope.execute(http.newCall(request.build())) { response ->
-                    if(!response.isSuccessful) throw IOException("设备激活失败（HTTP ${response.code}）")
-                    val text=response.body?.string().orEmpty()
-                    if(!DeviceActivation.accepted(text)) throw IOException("设备激活响应异常")
-                    true
-                }
-            }.onFailure { lastActivationError=it }.getOrDefault(false)
-            if(ok) activated=true
-        }
-        if(activated) lastActivationError=null
-        return activated
-    }
-
-    /**
-     * 匿名注册一条**一次性播放设备**，不改动本仓库的全局设备身份与 Cookie。
-     *
-     * 后台设备池使用这个入口。每次注册都按调用方给的全新档案匿名发出，
-     * 因此不会把账号 Cookie、当前 `install_id` 或旧 `device_id` 带给注册服务端。
+     * 仅供 [playbackBackupDevices] 对应的持久备用池初始化使用。
      */
     fun registerAnonymousDevice(profile: Map<String,String>): DeviceRegister.Registered? {
         val device=LinkedHashMap(profile).apply {
@@ -893,9 +843,6 @@ class ContentRepository(
         }.onFailure { lastRegisterError=it }.getOrNull()
         return registered
     }
-    /** 最近一次激活握手失败的原因；成功时为 null。 */
-    @Volatile var lastActivationError: Throwable? = null
-        private set
     /** 注册下发的 Cookie（`install_id` / `ttreq` / `store-region`），随注册请求一起带上。 */
     @Volatile private var registrationCookies: Map<String,String> = emptyMap()
         set(value) { field=LinkedHashMap(value) }
@@ -919,8 +866,7 @@ class ContentRepository(
      *
      * 1. [VendorConstants.device]：内置档案，兜底用；
      * 2. [deviceIdentity]：本机身份（`device_id` / `iid`），来自 [registerDevice] 的注册结果；
-     * 3. [credentials] 带来的**真机档案**：`device_type` / `cdid` / `klink_egdi` / `rom_version` …，
-     *    写接口（追剧 / 进度）要与凭据一致，因此它优先级最高。
+     * 登录用户档案只由 [accountDeviceProfile] 使用；主设备请求不能混入它。
      */
     private fun deviceProfile(): Map<String,String> =
         LinkedHashMap(VendorConstants.device).apply {
@@ -930,6 +876,11 @@ class ContentRepository(
             // 是同一个值——同一次会话里出现两台设备会被风控按异常客户端处理。
             putAll(registerProfile)
             putAll(deviceIdentity)
+        }
+
+    /** 账号页请求的档案：登录用户设备 + 官方导入档案。 */
+    private fun accountDeviceProfile(): Map<String,String> =
+        LinkedHashMap(VendorConstants.device).apply {
             credentials?.device?.forEach { (key,value) -> if(value.isNotBlank()) this[key]=value }
         }
     /**
@@ -1053,18 +1004,30 @@ class ContentRepository(
     /**
      * 播放模型请求里上报的 `device_level`。
      *
-     * 官方 App 的枚举只有 Low=1 / Middle=2 / High=3，抓包里实际使用 High=3。
-     * 旧的 4 / 5 不是官方枚举值，会让请求语义偏离客户端。
+     * **只使用 4 / 5 两档**：
+     *
+     * * 4 是默认档，通常下发约 4 个 HEVC 清晰度；
+     * * 5 在 4 档空响应时升上去，通常能拿满 5 个 HEVC 清晰度。
+     *
+     * 1/2/3 档会下发 `bytevc2` 低清晰度，Android 没有对应解码器；过滤后容易只剩 1080P。
+     * `need_all_video_definition=true` 仍是拿全档位的前提，每个播放模型请求都会带。
      */
-    @Volatile var deviceLevel: Int = 3
-        set(value) { field = value.coerceIn(1,3) }
+    @Volatile var deviceLevel: Int = 4
+        set(value) { field = if(value>=5) 5 else 4 }
 
     /**
-     * 新一集起播前把档位重置回官方的 High=3。
+     * 新一集起播前把档位重置回默认的 4。
      *
-     * 重置只影响请求参数。
+     * 限流是临时的，上一集升到 5 不代表下一集也要多要档位。
      */
-    fun beginEpisode() { deviceLevel=3 }
+    fun beginEpisode() { deviceLevel=4 }
+
+    /** 4 档空响应：升到 5 再请求一次；升到 5 后本集不再回退。 */
+    private fun escalateDeviceLevel() {
+        if(deviceLevel>=5) return
+        deviceLevel=5
+        NetLog.emit("model device_level 4 -> 5")
+    }
     /**
      * 分类接口一页的条数。
      *
@@ -1166,13 +1129,14 @@ class ContentRepository(
          * 顺序一交换，所有 `text(url, signed) { … }` 的写法都会把 lambda 绑到 client 上。
          */
         client: OkHttpClient = http,
+        allowBackup: Boolean = true,
         /**
          * 拿到响应、还没读 body 时回调一次。
          *
          * 播放接口被挡时回的是 `200 + 0 字节`，状态码与 body 都看不出区别，
          * 只有响应头里的 `tt_stable: 1` 能区分（见 [probeModelPath]），因此需要这个口子。
          */
-        observe: ((okhttp3.Response) -> Unit)? = null
+        observe: ((okhttp3.Response) -> Unit)? = null,
     ): String {
         val request = Request.Builder().url(url).header("User-Agent",VendorConstants.userAgent(deviceProfile(), video = true)).header("Accept-Language","zh-CN,zh;q=0.9")
         // 账号 / App 接口的公共协议头。参考实现（`passport_client.go` 的 `request`）每一条都带，
@@ -1198,7 +1162,9 @@ class ContentRepository(
                 })
             }
         }
-        return RequestScope.execute(client.newCall(request.build())) { response ->
+        var httpCode=0
+        val raw=RequestScope.execute(client.newCall(request.build())) { response ->
+            httpCode=response.code
             observe?.invoke(response)
             if (!response.isSuccessful) throw IOException("内容请求失败（HTTP ${response.code}）")
             val body = response.body ?: throw IOException("内容响应为空")
@@ -1208,6 +1174,49 @@ class ContentRepository(
             if(bytes.size > 16*1024*1024) throw IOException("内容响应过大")
             String(bytes,Charsets.UTF_8)
         }
+        if(raw.isBlank() && httpCode==200 && allowBackup && signed!=null) {
+            val account=signed.headers["X-HGTV-Identity"]=="account"
+            val anonymous=signed.headers["X-HGTV-Anonymous"]!=null
+            val model=signed.url.contains("video_model") || signed.url.contains("multi_video_model")
+            if(!account && !anonymous && !model) {
+                val backup=runCatching { playbackBackupDevices?.invoke()?.firstOrNull() }.getOrNull()
+                if(backup!=null) {
+                    val retry=backupRequest(signed,backup)
+                    if(retry!=null) {
+                        NetLog.emit("device backup retry host=${retry.url.substringAfter("//").substringBefore("/")} id=${backup.id.takeLast(6)}")
+                        return text(retry.url,retry,client=client,allowBackup=false)
+                    }
+                }
+            }
+        }
+        return raw
+    }
+    /** 主设备 200 空响应时，把同一条签名请求临时改签成一台备用设备。 */
+    private fun backupRequest(signed: Signer.Request, backup: PlaybackBackupDevice): Signer.Request? {
+        val parsed=okhttp3.HttpUrl.parse(signed.url) ?: return null
+        val values=linkedMapOf<String,String>()
+        parsed.queryParameterNames().forEach { name ->
+            if(name!="ts" && name!="_rticket") parsed.queryParameter(name)?.let { values[name]=it }
+        }
+        val base=parsed.newBuilder().query(null).build().toString()
+        val next=signer.sign(
+            base,
+            values,
+            signed.body,
+            signed.method,
+            deviceOverride=backup.profile,
+        )
+        val cookies=com.hgtv.star.core.session.CookieRecord.headerToMap(backup.cookieHeader)
+        val extra=linkedMapOf(
+            "Cookie" to backup.cookieHeader,
+            "X-HGTV-Anonymous" to "1",
+            "X-Tt-Store-Region" to cookies["store-region"].orEmpty().ifBlank { "cn" },
+            "X-Tt-Store-Region-Src" to cookies["store-region-src"].orEmpty().ifBlank { "did" },
+        )
+        signed.headers["comment-source"]?.let { extra["comment-source"]=it }
+        signed.headers["server-channel"]?.let { extra["server-channel"]=it }
+        signed.headers["x-ss-stub"]?.let { extra["x-ss-stub"]=it }
+        return next.copy(headers=next.headers+extra)
     }
     /**
      * 协议常量：官方 App 里也是硬编码，不随设备变。
@@ -1230,9 +1239,11 @@ class ContentRepository(
      * * 叠加导入凭据时带来的**真机档案**（`cdid` / `klink_egdi` / `rom_version` 这些
      *   内置档案里根本没有，而官方请求每条都带）。
      */
-    private fun writeValues(): LinkedHashMap<String,String> = deviceValues("73932","7.3.9.32")
+    private fun writeValues(): LinkedHashMap<String,String> = accountValues("73932","7.3.9.32")
     /** 搜索 / 弹幕这类 App 接口共用的设备参数：与播放器版本对齐，避免平台按旧版本拒绝。 */
     private fun appValues(): LinkedHashMap<String,String> = deviceValues("72232","7.2.2.32")
+    /** 账号页读写接口使用的登录用户设备参数。 */
+    private fun accountAppValues(): LinkedHashMap<String,String> = accountValues("72232","7.2.2.32")
     /**
      * 设备参数的分层组装（后一层压前一层，合并规则见 [deviceProfile]）：
      *
@@ -1250,60 +1261,39 @@ class ContentRepository(
         values["version_name"]=versionName
         return values
     }
-    /**
-     * 给 App 接口补上身份。两件事，分开做：
-     *
-     * 1. **设备 Cookie**：`registerDevice` 下发的 `install_id` / `ttreq` / `store-region`
-     *    每个请求都要带——平台靠它们把请求认到那台已注册设备上（少了这一步，
-     *    即使 `device_id` 已在 query 里，服务端也可能不认）。
-     * 2. **登录态**（可选）：账号凭据的整段 Cookie，或历史遗留的 `sessionToken`。
-     *    两者都没有就只带设备 Cookie——搜索与播放对匿名设备一样放行。
-     */
+    private fun accountValues(versionCode: String, versionName: String): LinkedHashMap<String,String> {
+        val values=LinkedHashMap(accountDeviceProfile())
+        values.putAll(PROTOCOL_VALUES)
+        for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) values[key]=versionCode
+        values["version_name"]=versionName
+        return values
+    }
+    /** 普通业务请求只使用主设备身份，登录 Cookie 不再自动混入。 */
     private fun Signer.Request.withSession(): Signer.Request {
-        // 账号凭据优先：它带的是整套 Cookie（App 接口既要 Cookie 又要与之一致的设备参数）。
-        //
-        // **token 与 cookie 必须分头送**：`x-tt-token` 只放 token（几十到三百多字符的 hex），
-        // `Cookie` 只放 cookie。早先这里把整段 cookie 串（800+ 字符）也塞进了 `x-tt-token`，
-        // 后果是播放取地址接口回 `200 + 0 字节`（那条接口对 token 长度极敏感，≥99 字符判死），
-        // 账号写接口的签名头也与 Cookie 里的设备对不上。
-        // 导入 `cookieStore.xml` 时 token 为空，此时**不发** `x-tt-token`——会话靠心跳
-        // 的响应头把 token 换回来（见 `SessionKeeper`），换到之后这里自然就带上了。
-        val account=credentials?.takeIf { it.configured }
-        if(account!=null) {
-            val extra=linkedMapOf<String,String>()
-            // **现读会话层**：服务端可以在任意响应头里轮换 token、在任意响应里续期
-            // `sid_guard`。凭据对象是登录那一刻的快照，照它发就会在轮换之后用旧 token
-            // 一直请求下去——这正是「用一两天突然掉」的成因之一。
-            val live=com.hgtv.star.core.session.SessionBridge.state
-            val liveCookie=live?.cookieHeader.orEmpty()
-            // **会话层只在与这份凭据同一次会话时才优先**。
-            //
-            // 早先无条件 `live ?: account`，于是「刚扫码拿到新会话」会被 SP 里上一份
-            // （已过期）的 `sessionid` 顶掉，平台按匿名设备返回临时账号——界面报的正是
-            // 「这份登录态无效：平台把它当成了匿名设备」。判据用 `sessionid`：
-            // 它才是会话主键，`sid_guard` / `uid_tt` 都会随续期变化，不能拿来比对。
-            val liveSid=com.hgtv.star.core.session.CookieRecord.value(liveCookie,"sessionid")
-            val accountSid=com.hgtv.star.core.session.CookieRecord.value(account.cookie,"sessionid")
-            val sameSession=liveSid.isNotBlank() && liveSid==accountSid
-            val token=if(sameSession) live?.token.orEmpty() else ""
-            (token.takeIf { it.isNotBlank() } ?: account.token.takeIf { it.isNotBlank() })
-                ?.let { extra["x-tt-token"]=it }
-            val cookie=if(sameSession) liveCookie else account.cookie
-            if(cookie.isNotBlank()) extra["Cookie"]=cookie
-            return copy(headers=headers+extra)
-        }
-        val deviceCookie=registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }
-        val token=sessionToken?.trim().orEmpty()
-        if(token.isEmpty()) {
-            return if(deviceCookie.isEmpty()) this else copy(headers=headers+linkedMapOf("Cookie" to deviceCookie))
-        }
-        val extra=linkedMapOf("x-tt-token" to token)
-        // 只有整段 Cookie（含 `=`）才同时按 `Cookie` 头发一次：纯 token 不是 Cookie 串，
-        // 混进 `Cookie` 会让服务端按 Cookie 解析。设备 Cookie 是另一回事，照常附上。
-        when {
-            token.contains('=') -> extra["Cookie"]=if(deviceCookie.isEmpty()) token else "$token; $deviceCookie"
-            deviceCookie.isNotEmpty() -> extra["Cookie"]=deviceCookie
-        }
+        val cookie=registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }
+        return if(cookie.isEmpty()) this else copy(headers=headers+linkedMapOf("Cookie" to cookie))
+    }
+
+    /**
+     * 账号页请求显式切到登录用户设备。
+     *
+     * Cookie 是登录设备 Cookie + 用户 `sessionid` 那一族的合并串；签名参数来自
+     * `credentials.device`。只有账号资料的增删改查会走这里。
+     */
+    private fun Signer.Request.withAccountSession(): Signer.Request {
+        val account=credentials?.takeIf { it.configured } ?: throw SignInRequiredException()
+        val extra=linkedMapOf<String,String>()
+        val live=com.hgtv.star.core.session.SessionBridge.state
+        val liveCookie=live?.cookieHeader.orEmpty()
+        val liveSid=com.hgtv.star.core.session.CookieRecord.value(liveCookie,"sessionid")
+        val accountSid=com.hgtv.star.core.session.CookieRecord.value(account.cookie,"sessionid")
+        val sameSession=liveSid.isNotBlank() && liveSid==accountSid
+        val token=if(sameSession) live?.token.orEmpty() else ""
+        (token.takeIf { it.isNotBlank() } ?: account.token.takeIf { it.isNotBlank() })
+            ?.let { extra["x-tt-token"]=it }
+        val cookie=if(sameSession) liveCookie else account.cookie
+        if(cookie.isNotBlank()) extra["Cookie"]=cookie
+        extra["X-HGTV-Identity"]="account"
         return copy(headers=headers+extra)
     }
     /** 有没有可用的登录态：搜索要不要优先走 App 接口、个人信息页要不要联网，都看它。 */
@@ -1635,26 +1625,39 @@ class ContentRepository(
                 if(NetLog.timing) {
                     NetLog.log("sign ${signed.url.substringAfter("//").substringBefore("/")} body=${payload.size}B took=${(System.nanoTime()-signAt)/1_000_000}ms")
                 }
-                val request=Request.Builder().url(signed.url)
-                signed.headers.forEach { (key,value) -> if(key!="User-Agent" && key!="Accept") request.header(key,value) }
-                // UA / Accept 保持与改动前一致：UA 用 App 那条（签名默认按「有 body」选视频 UA）。
-                request.header("User-Agent",VendorConstants.userAgent(deviceProfile(), video = false))
-                request.header("Accept","application/json; charset=utf-8,application/x-protobuf")
-                request.post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
-                val callAt=System.nanoTime()
-                val raw=RequestScope.execute(http.newCall(request.build())) { response ->
-                    if(!response.isSuccessful) {
-                        throw CatalogHttpException(response.code,"分类接口失败（HTTP ${response.code}）")
+                fun send(one: Signer.Request): String {
+                    val request=Request.Builder().url(one.url)
+                    one.headers.forEach { (key,value) -> if(key!="User-Agent" && key!="Accept") request.header(key,value) }
+                    // UA / Accept 保持与改动前一致：UA 用 App 那条（签名默认按「有 body」选视频 UA）。
+                    request.header("User-Agent",VendorConstants.userAgent(deviceProfile(), video = false))
+                    request.header("Accept","application/json; charset=utf-8,application/x-protobuf")
+                    request.post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                    val callAt=System.nanoTime()
+                    return RequestScope.execute(http.newCall(request.build())) { response ->
+                        if(!response.isSuccessful) {
+                            throw CatalogHttpException(response.code,"分类接口失败（HTTP ${response.code}）")
+                        }
+                        val bodyAt=System.nanoTime()
+                        val text=response.body?.string().orEmpty()
+                        if(NetLog.timing) {
+                            NetLog.log(
+                                "category call headers=${(bodyAt-callAt)/1_000_000}ms"+
+                                " read=${(System.nanoTime()-bodyAt)/1_000_000}ms chars=${text.length}"
+                            )
+                        }
+                        text
                     }
-                    val bodyAt=System.nanoTime()
-                    val text=response.body?.string().orEmpty()
-                    if(NetLog.timing) {
-                        NetLog.log(
-                            "category call headers=${(bodyAt-callAt)/1_000_000}ms"+
-                            " read=${(System.nanoTime()-bodyAt)/1_000_000}ms chars=${text.length}"
-                        )
+                }
+                var raw=send(signed)
+                if(raw.isBlank()) {
+                    val backup=runCatching { playbackBackupDevices?.invoke()?.firstOrNull() }.getOrNull()
+                    if(backup!=null) {
+                        val retry=backupRequest(signed,backup)
+                        if(retry!=null) {
+                            NetLog.emit("device backup retry category id=${backup.id.takeLast(6)}")
+                            raw=send(retry)
+                        }
                     }
-                    text
                 }
                 if(raw.isNotBlank()) return raw
                 problem=IOException("分类接口暂无响应")
@@ -2225,7 +2228,7 @@ class ContentRepository(
 
     private fun appSearch(keyword: String, page: Int, type: ContentType, count: Int = SEARCH_PAGE_SIZE): CatalogPage {
         val values=appValues()
-        values.putAll(linkedMapOf("query" to keyword,"count" to count.toString(),"offset" to ((page-1)*count).toString(),"tab_type" to type.searchTab.toString(),"bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to if(signedIn) "1" else "0"))
+        values.putAll(linkedMapOf("query" to keyword,"count" to count.toString(),"offset" to ((page-1)*count).toString(),"tab_type" to type.searchTab.toString(),"bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to "0"))
         val cursor=synchronized(searchCursors) {
             val now=clock()
             searchCursors.entries.removeAll { now-it.value.updatedAt>300000 || (page==1 && it.key.type==type && it.key.keyword==keyword) }
@@ -2334,10 +2337,15 @@ class ContentRepository(
     private fun accountJson(path: String, params: Map<String,String> = emptyMap(), body: ByteArray? = null): JSONObject {
         // 账号侧接口全部要求登录态：没有凭据时**不发请求**，直接给出可辨识的失败原因。
         if(!signedIn) throw SignInRequiredException()
-        val values=if(body!=null) writeValues() else appValues()
+        val values=if(body!=null) writeValues() else accountAppValues()
         params.forEach { (key,value) -> values[key]=value }
-        val signed=signer.sign("https://$ACCOUNT_HOST$path",values,body)
-        val raw=text(signed.url,signed.withSession())
+        val signed=signer.sign(
+            "https://$ACCOUNT_HOST$path",
+            values,
+            body,
+            deviceOverride=accountDeviceProfile(),
+        )
+        val raw=text(signed.url,signed.withAccountSession())
         if(raw.isBlank()) throw IOException("账号接口暂无响应（空响应体）")
         return JSONObject(raw)
     }
@@ -3137,7 +3145,7 @@ class ContentRepository(
         synchronized(publisherIdentities) { publisherIdentities[key] }?.let { return it }
         val values=appValues()
         values.putAll(linkedMapOf("query" to key,"count" to "20","offset" to "0","tab_type" to "27",
-            "bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to if(signedIn) "1" else "0"))
+            "bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to "0"))
         val signed=runCatching {
             signer.sign("https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/tab/v",values,method="GET")
         }.getOrNull() ?: return null
@@ -3258,20 +3266,35 @@ class ContentRepository(
     }
     /** 社区域（`reading.snssdk.com`）的普通 POST：**不加签名头**，理由见 [publisherWorks]。 */
     private fun publisherPost(url: String,body: ByteArray): String {
-        val request=Request.Builder().url(url)
-            .header("User-Agent",VendorConstants.userAgent(deviceProfile(),video = false))
-            .header("Content-Type","application/json; charset=utf-8")
-            .header("Accept","application/json; charset=utf-8")
-            .header("X-SS-DP","8662")
-            .header("X-Tt-Store-Region",registrationCookies["store-region"]?.takeIf { it.isNotBlank() } ?: "cn")
-            .header("X-Tt-Store-Region-Src",registrationCookies["store-region-src"]?.takeIf { it.isNotBlank() } ?: "did")
-        val cookies=registrationCookies.filterKeys { it=="install_id" || it=="ttreq" }
-        if(cookies.isNotEmpty()) request.header("Cookie",cookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
-        request.post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
-        return RequestScope.execute(http.newCall(request.build())) { response ->
-            if(!response.isSuccessful) throw IOException("出品方作品接口失败（HTTP ${response.code}）")
-            String(response.body?.bytes() ?: ByteArray(0),Charsets.UTF_8)
+        fun send(target: String,cookies: Map<String,String>,anonymous: Boolean): String {
+            val request=Request.Builder().url(target)
+                .header("User-Agent",VendorConstants.userAgent(deviceProfile(),video = false))
+                .header("Content-Type","application/json; charset=utf-8")
+                .header("Accept","application/json; charset=utf-8")
+                .header("X-SS-DP","8662")
+                .header("X-Tt-Store-Region",cookies["store-region"].orEmpty().ifBlank { "cn" })
+                .header("X-Tt-Store-Region-Src",cookies["store-region-src"].orEmpty().ifBlank { "did" })
+            if(anonymous) request.header("X-HGTV-Anonymous","1")
+            if(cookies.isNotEmpty()) request.header("Cookie",cookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
+            request.post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
+            return RequestScope.execute(http.newCall(request.build())) { response ->
+                if(!response.isSuccessful) throw IOException("出品方作品接口失败（HTTP ${response.code}）")
+                String(response.body?.bytes() ?: ByteArray(0),Charsets.UTF_8)
+            }
         }
+        val mainCookies=registrationCookies.filterKeys {
+            it=="install_id" || it=="ttreq" || it=="store-region" || it=="store-region-src"
+        }
+        val raw=send(url,mainCookies,anonymous=false)
+        if(raw.isNotBlank()) return raw
+        val backup=runCatching { playbackBackupDevices?.invoke()?.firstOrNull() }.getOrNull() ?: return raw
+        val backupUrl=okhttp3.HttpUrl.parse(url)?.newBuilder()
+            ?.setQueryParameter("device_id",backup.id)
+            ?.setQueryParameter("iid",backup.profile["iid"].orEmpty())
+            ?.build()?.toString()
+            ?: return raw
+        NetLog.emit("device backup retry publisher id=${backup.id.takeLast(6)}")
+        return send(backupUrl,backup.cookies,anonymous=true)
     }
     /**
      * 一次「作者作品」取数的结果。
@@ -3649,7 +3672,7 @@ class ContentRepository(
             values.putAll(linkedMapOf(
                 "scene" to "10","from" to "detail_page_more_related","book_id" to id,
                 "new_search_middle_page" to "false","bookstore_tab_type" to "0",
-                "query_history_removed" to "false","user_is_login" to if(signedIn) "1" else "0",
+                "query_history_removed" to "false","user_is_login" to "0",
                 "bookstore_tab" to "0","search_middle_page_version" to "0","pad_column_detail" to "0",
                 "hot_word_exchange" to "false","device_level" to "3","limit" to "0","offset" to "0",
                 "is_horizontal_screen" to "false","reader_single_col_from_ip_strategy" to "false"
@@ -3725,12 +3748,8 @@ class ContentRepository(
         // 播放接口对**匿名设备**也放行（官方 App 冷启动未登录即可播放，见 HAR），
         // 前提是这台设备已在服务端注册过（见 [registerDevice]）：未注册回 `101000 服务异常`
         // 或 `200 + 0 字节`，注册后回 `code 0` + 完整播放模型。
-        // 因此这里用合并档案（含本机身份，见 [deviceProfile]），并带上注册下发的设备 Cookie；
-        // 有账号凭据时以凭据的整段 Cookie 为准。
-        // 会话层优先：`sid_guard` 会被心跳续期，凭据对象是登录那一刻的快照。
-        val cookie=com.hgtv.star.core.session.SessionBridge.state?.cookieHeader?.takeIf { it.isNotBlank() }
-            ?: credentials?.cookie?.takeIf { it.isNotBlank() }
-            ?: registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }.takeIf { it.isNotEmpty() }
+        // 播放属于普通业务请求，只使用主设备身份与主设备 Cookie。
+        val cookie=registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }.takeIf { it.isNotEmpty() }
         // 记住的那条路径排到最前（见 [preferredModelPath]）。
         val ordered=if(preferredModelPath.isEmpty()) candidates
             else candidates.sortedByDescending { it==preferredModelPath }
@@ -3894,8 +3913,8 @@ class ContentRepository(
     /**
      * [videoModel] 里真正打请求的那一段（持锁执行，见那里的 `modelGate`）。
      *
-     * 平台只接受**注册下发的 `device_id`**。空响应不是可以靠伪造新号绕过的限流，
-     * 而是设备身份失效的信号：立即交给界面层重注册，再按原位置重试。
+     * 平台只接受**注册下发的 `device_id`**。空响应先按额度/档位问题处理：
+     * 4 档升 5 重发一次；5 档仍为空才视为设备身份失效，交给界面层重注册。
      */
     private fun fetchModel(
         id: String,
@@ -3940,7 +3959,7 @@ class ContentRepository(
     /**
      * 在一条路径上请求一次播放模型。
      *
-     * 空响应现在表示设备身份失效，不能通过伪造 `device_id` 绕过；直接抛出
+     * 空响应先由 [probeModelPath] 升到 5 档重试；仍为空才抛出
      * [DeviceNotRegisteredException]，让两端现有的设备自愈流程重新注册。
      */
     private fun tryModelPath(
@@ -3955,39 +3974,11 @@ class ContentRepository(
         return probeModelPath(host,path,id,cookie,deadline,playback)
     }
 
-    /**
-     * 播放请求用的档案。
-     *
-     * 导入账号时，`credentials.device` 是官方 App 的整份设备档案。此时必须连同
-     * `device_id` / `iid` / `cdid` / `klink_egdi` 一起使用；旧实现只把 `device_id`
-     * 换成新注册值，却保留官方的 `iid` 与指纹，服务端会把它当成自相矛盾的设备。
-     *
-     * 没有完整官方档案时才使用本机注册身份，并且同时覆盖 `device_id` 与 `iid`。
-     */
+    /** 播放请求只使用主设备档案；登录用户设备不参与播放。 */
     private fun modelProfile(): Map<String,String> {
-        fun withManual(values: Map<String,String>): Map<String,String> {
-            val manual=manualDeviceId.trim()
-            if(manual.isEmpty()) return values
-            return LinkedHashMap(values).apply {
-                put("device_id",manual)
-                // device_id 来自另一台官方设备时，本机注册下发的 iid / klink_egdi
-                // 与它不是同源。实测保留这些字段会让接口回 200 + 0 字节；
-                // 官方播放接口接受只带 device_id（cdid 可继续用于客户端签名档案）。
-                remove("iid")
-                remove("install_id")
-                remove("klink_egdi")
-            }
-        }
-        val credentialDevice=credentials?.device.orEmpty()
-        val credentialId=credentialDevice["device_id"].orEmpty()
-        val credentialIid=credentialDevice["iid"].orEmpty()
-            .ifBlank { credentialDevice["install_id"].orEmpty() }
-        if(credentialId.isNotBlank() && credentialIid.isNotBlank()) {
-            return modelQueryProfile(withManual(deviceValues("73932","7.3.9.32")))
-        }
         val id=deviceIdentity["device_id"].orEmpty()
         val iid=deviceIdentity["iid"].orEmpty()
-        if(id.isBlank() || (iid.isBlank() && manualDeviceId.isBlank())) {
+        if(id.isBlank() || iid.isBlank()) {
             throw DeviceNotRegisteredException()
         }
         val base=LinkedHashMap(VendorConstants.device).apply {
@@ -3997,7 +3988,7 @@ class ContentRepository(
             for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
             this["version_name"]="7.3.9.32"
         }
-        return modelQueryProfile(withManual(base))
+        return modelQueryProfile(base)
     }
 
     /** 官方 `video_model` query 的字段集合与顺序；设备档案里的其它字段不带进播放请求。 */
@@ -4005,6 +3996,33 @@ class ContentRepository(
         linkedMapOf<String,String>().apply {
             for(key in MODEL_QUERY_KEYS) values[key]?.takeIf { it.isNotBlank() }?.let { put(key,it) }
         }
+
+    /**
+     * 主设备拿到 `HTTP 200 + 空 body` 后，只取一台备用设备试一次。
+     *
+     * 只返回成功的播放模型，不改主设备身份、不落盘备用设备的使用结果。
+     */
+    private fun tryBackupModel(
+        host: String,
+        path: String,
+        id: String,
+        cookie: String?,
+        deadline: Long,
+        playback: PlaybackProfile,
+    ): JSONObject? {
+        val backups=runCatching { playbackBackupDevices?.invoke() }.getOrNull().orEmpty()
+        for(backup in backups) {
+            if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
+            try {
+                val model=probeModelPath(host,path,id,cookie,deadline,playback,backup)
+                NetLog.emit("model backup accepted id=${backup.id.takeLast(6)}")
+                return model
+            } catch(e: IOException) {
+                if(isInterruption(e) || e.message=="请求已取消") throw e
+            }
+        }
+        return null
+    }
 
     /**
      * 作废当前设备签发的播放模型缓存。
@@ -4021,8 +4039,8 @@ class ContentRepository(
      * 在 [path] 上打**一次**播放模型请求。
      *
      * 2026-11-06 实测：同一个请求用注册下发的 `device_id` 返回 `code 0` 和完整模型，
-     * 改成任意随机 15 位数字则稳定返回 `200 + 0 字节`。因此空响应与 `101000` 一样，
-     * 都按设备身份失效处理，交给界面层重新注册。
+     * 改成任意随机 15 位数字则稳定返回 `200 + 0 字节`。因此空响应先升 5 档重发；
+     * 5 档仍为空时再按设备身份失效处理，交给界面层重新注册。
      */
     private fun probeModelPath(
         host: String,
@@ -4031,6 +4049,7 @@ class ContentRepository(
         cookie: String?,
         deadline: Long,
         playback: PlaybackProfile,
+        backup: PlaybackBackupDevice? = null,
     ): JSONObject {
         // 这一发最多能用多少时间 = 整段剩余预算（见 [ADDRESS_DEADLINE_MS]）。
         // 全部用同一份「剩余预算」派生 client，因此 3 秒是**整段**的上限，不是每一发各 3 秒。
@@ -4042,32 +4061,22 @@ class ContentRepository(
         }.toByteArray()
         waitModelSlot()
         if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        // 一次性播放设备：provider 在返回前已经从磁盘队列删除，调用方无论请求成功、
-        // 失败还是取消都不能再次使用它。队列为空时才回退到原来的持久设备身份。
-        val manual=manualDeviceId.trim()
-        val lease=if(manual.isEmpty()) {
-            runCatching { playbackDeviceLeaseProvider?.invoke() }.getOrNull()
-        } else null
         // 注册档案包含大量仅供 device_register 使用的字段。播放接口只接受
         // MODEL_QUERY_KEYS 这一组；整份档案直接交给 signer 会把 openudid、
         // profile-format、device_token 等全部拼进 query，服务端随即回 200 + 0 字节。
-        val profile=lease?.profile?.let { leaseProfile ->
-            // 注册档案不带播放协议公共参数；与持久身份一样补齐后再做字段白名单。
+        val profile=backup?.profile?.let { backupProfile ->
             modelQueryProfile(LinkedHashMap(VendorConstants.device).apply {
-                putAll(leaseProfile)
+                putAll(backupProfile)
                 putAll(PROTOCOL_VALUES)
                 for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
                 this["version_name"]="7.3.9.32"
             })
         } ?: modelProfile()
-        // 手动 device_id 与当前设备 Cookie 不同源；官方接口只带 device_id 时可以正常取流，
-        // 混入本机 install_id/ttreq 反而会被判成设备矛盾。
-        val effectiveCookie=if(manual.isNotEmpty()) null else lease?.cookieHeader ?: cookie
+        val effectiveCookie=backup?.cookieHeader ?: cookie
         // 档案要同时交给 query 与密文（`x-medusa` 里编了 device_id），否则服务端回 110001。
         val signed=signer.sign(host+path,profile,payload,deviceOverride=profile)
         val extra=linkedMapOf<String,String>()
         if(effectiveCookie!=null) extra["Cookie"]=effectiveCookie
-        if(manual.isNotEmpty()) extra["X-HGTV-Anonymous"]="1"
         val cookieValues=com.hgtv.star.core.session.CookieRecord.headerToMap(effectiveCookie.orEmpty())
         extra["X-Tt-Store-Region"]=cookieValues["store-region"].orEmpty().ifBlank { "cn" }
         extra["X-Tt-Store-Region-Src"]=cookieValues["store-region-src"].orEmpty().ifBlank { "did" }
@@ -4091,21 +4100,28 @@ class ContentRepository(
         val response=text(signed.url,request,client=addressClient(budget)) { r -> stable=r.header("tt_stable")=="1" }
         // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
         if(response.isBlank()) {
-            NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} lease=${lease!=null} bytes=0 stable=$stable")
-            if(lease!=null) throw IOException("临时播放设备未返回地址")
+            NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=0 stable=$stable")
+            if(backup!=null) throw IOException("备用设备未返回播放模型")
+            // 主设备空响应先用备用设备顶替；备用池不可用时再走 4→5 档与身份自愈。
+            tryBackupModel(host,path,id,cookie,deadline,playback)?.let { return it }
+            // 4 档空响应先升 5 重发一次。若 5 仍为空，再按设备身份失效交给自愈流程。
+            if(deviceLevel<5) {
+                escalateDeviceLevel()
+                return probeModelPath(host,path,id,cookie,deadline,playback)
+            }
             noteDeviceRejected()
             invalidateModelCache()
             throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
         }
         val data=JSONObject(response)
         val code=data.optInt("Code",data.optInt("code",0))
-        NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} lease=${lease!=null} bytes=${response.length} code=$code")
+        NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=${response.length} code=$code")
         // 业务码非 0 就是这一条路不通（110001 是旧路径的「未知异常」，100001 是参数错误）。
         // `101000 服务异常` 正是「这台设备没在服务端注册过」那一条，单独记一笔：
         // 界面层据此换一份身份重注册，而不是让用户看到「所有影片都放不了」。
-        if(code==101000 && lease==null) { noteDeviceRejected(); invalidateModelCache() }
+        if(code==101000 && backup==null) { noteDeviceRejected(); invalidateModelCache() }
         if(code!=0) {
-            if(code==101000 && lease!=null) throw IOException("临时播放设备不可用")
+            if(code==101000 && backup!=null) throw IOException("备用设备不可用")
             throw IOException("播放接口暂不可用（${code}）")
         }
         val model=videoModelOf(data) ?: throw IOException("播放接口暂不可用（没有播放模型）")
@@ -4115,8 +4131,8 @@ class ContentRepository(
     /**
      * 打一次官方批量播放模型请求，并解析 `data.<video_id>.video_model`。
      *
-     * 批量接口的空响应表示这台设备的这一批额度已经用完，不能据此反复换身份重试；
-     * 当前批次失败后由调用方走单集兼容兜底。
+     * 批量接口的空响应先升到 5 档重发一次；5 档仍为空才按设备身份失效处理。
+     * 非空但业务失败时由调用方走单集兼容兜底。
      */
     private fun tryBatchModel(
         host: String,
@@ -4126,6 +4142,7 @@ class ContentRepository(
         cookie: String?,
         deadline: Long,
         playback: PlaybackProfile,
+        backup: PlaybackBackupDevice? = null,
     ): Map<String,JSONObject> {
         if(ids.isEmpty()) return emptyMap()
         val budget=remainingOf(deadline)
@@ -4136,23 +4153,18 @@ class ContentRepository(
         }.toByteArray()
         waitModelSlot()
         if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        val manual=manualDeviceId.trim()
-        val lease=if(manual.isEmpty()) {
-            runCatching { playbackDeviceLeaseProvider?.invoke() }.getOrNull()
-        } else null
-        val profile=lease?.profile?.let { leaseProfile ->
+        val profile=backup?.profile?.let { backupProfile ->
             modelQueryProfile(LinkedHashMap(VendorConstants.device).apply {
-                putAll(leaseProfile)
+                putAll(backupProfile)
                 putAll(PROTOCOL_VALUES)
                 for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
                 this["version_name"]="7.3.9.32"
             })
         } ?: modelProfile()
-        val effectiveCookie=if(manual.isNotEmpty()) null else lease?.cookieHeader ?: cookie
+        val effectiveCookie=backup?.cookieHeader ?: cookie
         val signed=signer.sign(host+path,profile,payload,deviceOverride=profile)
         val extra=linkedMapOf<String,String>()
         if(effectiveCookie!=null) extra["Cookie"]=effectiveCookie
-        if(manual.isNotEmpty()) extra["X-HGTV-Anonymous"]="1"
         val cookieValues=com.hgtv.star.core.session.CookieRecord.headerToMap(effectiveCookie.orEmpty())
         extra["X-Tt-Store-Region"]=cookieValues["store-region"].orEmpty().ifBlank { "cn" }
         extra["X-Tt-Store-Region-Src"]=cookieValues["store-region-src"].orEmpty().ifBlank { "did" }
@@ -4171,8 +4183,13 @@ class ContentRepository(
         var stable=false
         val response=text(signed.url,request,client=addressClient(budget)) { r -> stable=r.header("tt_stable")=="1" }
         if(response.isBlank()) {
-            NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} lease=${lease!=null} bytes=0 stable=$stable")
-            if(lease!=null) throw IOException("临时播放设备未返回地址")
+            NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=0 stable=$stable")
+            if(backup!=null) throw IOException("备用设备未返回批量播放模型")
+            tryBackupBatch(host,path,scene,ids,cookie,deadline,playback)?.let { return it }
+            if(deviceLevel<5) {
+                escalateDeviceLevel()
+                return tryBatchModel(host,path,scene,ids,cookie,deadline,playback)
+            }
             noteDeviceRejected()
             invalidateModelCache()
             throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
@@ -4180,17 +4197,42 @@ class ContentRepository(
         val data=JSONObject(response)
         val code=data.optInt("Code",data.optInt("code",0))
         val models=parseBatchModels(data,ids)
-        NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} lease=${lease!=null} bytes=${response.length} code=$code models=${models.size}/${ids.size}")
-        if(code==101000 && lease==null) {
+        NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=${response.length} code=$code models=${models.size}/${ids.size}")
+        if(code==101000 && backup==null) {
             noteDeviceRejected()
             invalidateModelCache()
             throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
         }
         if(code!=0) {
-            if(code==101000 && lease!=null) throw IOException("临时播放设备不可用")
+            if(code==101000 && backup!=null) throw IOException("备用设备不可用")
             throw IOException("播放接口暂不可用（${code}）")
         }
         return models
+    }
+
+    private fun tryBackupBatch(
+        host: String,
+        path: String,
+        scene: String,
+        ids: List<String>,
+        cookie: String?,
+        deadline: Long,
+        playback: PlaybackProfile,
+    ): Map<String,JSONObject>? {
+        val backups=runCatching { playbackBackupDevices?.invoke() }.getOrNull().orEmpty()
+        for(backup in backups) {
+            if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
+            try {
+                val models=tryBatchModel(host,path,scene,ids,cookie,deadline,playback,backup)
+                if(models.isNotEmpty()) {
+                    NetLog.emit("model batch backup accepted id=${backup.id.takeLast(6)} models=${models.size}/${ids.size}")
+                    return models
+                }
+            } catch(e: IOException) {
+                if(isInterruption(e) || e.message=="请求已取消") throw e
+            }
+        }
+        return null
     }
 
     private fun parseBatchModels(data: JSONObject,ids: List<String>): Map<String,JSONObject> {
@@ -4269,9 +4311,7 @@ class ContentRepository(
             // 前台已经在等模型时，后台这次直接跳过；下次首帧稳定后的调度会再补。
             backgroundModelScope=scope
             if(foregroundModelWaiters.get()>0) return 0
-            val cookie=com.hgtv.star.core.session.SessionBridge.state?.cookieHeader?.takeIf { it.isNotBlank() }
-                ?: credentials?.cookie?.takeIf { it.isNotBlank() }
-                ?: registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }.takeIf { it.isNotEmpty() }
+            val cookie=registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }.takeIf { it.isNotEmpty() }
             val models=RequestScope.withScope(scope) {
                 tryBatchModel(
                     "https://$BATCH_MODEL_HOST",
@@ -4450,14 +4490,6 @@ class ContentRepository(
      */
     fun rotateDeviceForRetry(): String = invalidateModelCache()
 
-    /** 切换手动播放设备号，并丢掉旧身份签发的内存 / 落盘播放缓存。 */
-    fun updateManualDeviceId(value: String) {
-        manualDeviceId=value.trim()
-        modelCache.clear()
-        synchronized(streamCache) { streamCache.clear() }
-        invalidateModelCache()
-        PlaybackCache.clear()
-    }
     /** 真正去取播放地址（[stream] 的缓存之外那一半）。[deadline] 见 [ADDRESS_DEADLINE_MS]。 */
     private fun fetchStream(
         id: String,
@@ -4621,10 +4653,12 @@ class ContentRepository(
          */
         @Volatile var deviceHeal: ((ContentRepository, String) -> Boolean)? = null
         /**
-         * 一次性播放设备来源。由 `:shared` 的设备池接线；返回 null 表示队列为空，
-         * 播放继续使用本机持久设备身份。provider 返回前必须保证该身份已从磁盘删除。
+         * 播放模型遇到 `HTTP 200 + 空 body` 时使用的备用设备。
+         *
+         * provider 返回当前可用的一组快照；每次调用都从下一台开始轮转。备用设备只参与
+         * 本次播放模型请求，不会覆盖主设备身份。
          */
-        @Volatile var playbackDeviceLeaseProvider: (() -> PlaybackDeviceLease?)? = null
+        @Volatile var playbackBackupDevices: (() -> List<PlaybackBackupDevice>)? = null
         /**
          * 「服务端不认这份设备身份」的累计次数（进程级）。
          *

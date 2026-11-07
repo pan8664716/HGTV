@@ -191,8 +191,7 @@ class PhoneLogin(
     /**
      * 设备档案（机型 / 系统 / `cdid` / `openudid` …）。
      *
-     * 注册与签名共用同一份，且**与内容接口那份保持同一个来源**
-     * （见 `ContentRepository.deviceProfile`），否则同一次会话里会出现两台设备。
+     * 注册与登录签名共用同一份；它属于登录用户设备，与内容接口使用的主设备档案分开。
      */
     var device: Map<String,String> = emptyMap()
         set(value) { field=value.filterValues { it.isNotBlank() }; signer.updateDevice(field) }

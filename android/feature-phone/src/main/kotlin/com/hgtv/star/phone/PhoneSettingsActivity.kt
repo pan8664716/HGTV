@@ -7,24 +7,19 @@ import android.content.res.Configuration
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
-import android.text.InputFilter
-import android.text.InputType
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
-import android.text.method.DigitsKeyListener
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.ViewTreeObserver
 import android.widget.FrameLayout
-import android.widget.EditText
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
-import com.hgtv.star.core.CategoryGenres
 import com.hgtv.star.core.DANMAKU_MERGE_MIN_RANGE
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.DanmakuSpeed
@@ -541,7 +536,7 @@ class PhoneSettingsActivity : PhoneActivity() {
             })
         }
         landscapeLine(danmaku).also { line ->
-            landscapeCell(line,landscapeSlider("弹幕字体大小",
+            landscapeCell(line,landscapeSlider("弹幕大小",
                 PhoneDanmakuSize.MIN_PERCENT.toFloat(),PhoneDanmakuSize.MAX_PERCENT.toFloat(),
                 PhoneDanmakuSize.STEP_PERCENT.toFloat(),PhoneDanmakuSize.percent(this).toFloat(),
                 { PhoneDanmakuSize.label(it) }) { PhoneDanmakuSize.set(this,it) })
@@ -566,7 +561,9 @@ class PhoneSettingsActivity : PhoneActivity() {
             val base=library.gridColumns.coerceIn(1,3)
             landscapeCell(line,landscapeSetting("列表每行","${base+3} 张") {
                 val options=listOf(1,2,3)
-                pick("海报列表每行几张",options.map { "$it 张" },options.indexOf(base).coerceAtLeast(0)) { i ->
+                pick("海报列表每行几张",
+                    options.map { "竖屏 $it 张 · 横屏 ${it+3} 张" },
+                    options.indexOf(base).coerceAtLeast(0)) { i ->
                     library.gridColumns=options[i]; render()
                 }
             })
@@ -590,29 +587,12 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     private fun renderLandscapeRecommend() {
-        val scope=landscapePanel("推荐范围","推荐页从这里取内容：大类至少留一个，受众可不限")
-        landscapeLine(scope).also { line ->
-            CategoryGenres.recommendable.forEach { genre ->
-                val id=genre.id.orEmpty()
-                landscapeCell(line,landscapeSwitch(genre.label,library.recommendGenreEnabled(id)) { on ->
-                    if(!on && library.recommendGenreOff.size+1>=CategoryGenres.recommendableIds.size) {
-                        toast("至少保留一个推荐大类")
-                        render()
-                        return@landscapeSwitch
-                    }
-                    library.setRecommendGenre(id,on)
-                    render()
-                })
-            }
-        }
+        val scope=landscapePanel("推荐设置","推荐受众")
         landscapeLine(scope).also { line ->
             landscapeCell(line,landscapeSetting("受众",genderLabel(library.recommendGender)) {
                 pick("推荐受众",listOf("不限","男频","女频"),genderIndex(library.recommendGender)) { i ->
                     library.recommendGender=listOf("","male","female")[i]; render()
                 }
-            })
-            landscapeCell(line,landscapeSwitch("打开应用进入推荐",library.launchRecommend) {
-                library.launchRecommend=it; render()
             })
         }
 
@@ -644,27 +624,6 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     private fun renderLandscapeSystem() {
-        val identity=landscapePanel("设备身份","官方 App 的 device_id 可覆盖播放设备")
-        landscapeLine(identity).also { line ->
-            landscapeCell(line,landscapeSetting(
-                "手动设置 device_id",
-                library.manualDeviceId().ifBlank { "自动" },
-            ) { showManualDeviceIdDialog() })
-            landscapeCell(line,landscapeSetting("恢复自动设备","清除手动覆盖") {
-                if(library.manualDeviceId().isBlank()) {
-                    toast("当前已经是自动设备")
-                } else {
-                    confirm("恢复自动设备","清除手动 device_id，播放恢复使用自动注册设备和一次性设备池。") {
-                        com.hgtv.star.shared.data.DeviceIdOverride.clear(
-                            library,
-                            PhoneServices.repository(this@PhoneSettingsActivity),
-                        )
-                        toast("已恢复自动设备")
-                        render()
-                    }
-                }
-            })
-        }
         val data=landscapePanel("数据维护","收藏与进度存在本机，可导出与恢复")
         landscapeLine(data).also { line ->
             landscapeCell(line,landscapeSetting("导出备份","存成 JSON 文件") { exportBackup() })
@@ -695,18 +654,16 @@ class PhoneSettingsActivity : PhoneActivity() {
         }
         landscapeLine(perf).also { line ->
             landscapeCell(line,landscapeSetting("关于","版本 ${appVersionName()}") { showAboutDialog() })
-            if(BuildConfig.DEBUG) {
-                val detected=runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
-                landscapeCell(line,landscapeSetting("设备类型",deviceFormLabel(detected)) {
-                    pick("设备类型（切换后自动重新进入）",DeviceForm.pickerLabels(detected),
-                        DeviceForm.optionIndex(library.deviceForm)) { i ->
-                        val selected=DeviceForm.OPTIONS[i]
-                        if(selected==library.deviceForm) { render(); return@pick }
-                        if(!library.setDeviceFormNow(selected)) { toast("设备类型保存失败，请重试"); render(); return@pick }
-                        AppRelaunch.relaunchAndExit(this)
-                    }
-                })
-            }
+            val detected=runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
+            landscapeCell(line,landscapeSetting("设备类型",deviceFormLabel(detected)) {
+                pick("设备类型（切换后自动重新进入）",DeviceForm.pickerLabels(detected),
+                    DeviceForm.optionIndex(library.deviceForm)) { i ->
+                    val selected=DeviceForm.OPTIONS[i]
+                    if(selected==library.deviceForm) { render(); return@pick }
+                    if(!library.setDeviceFormNow(selected)) { toast("设备类型保存失败，请重试"); render(); return@pick }
+                    AppRelaunch.relaunchAndExit(this)
+                }
+            })
         }
     }
 
@@ -807,7 +764,7 @@ class PhoneSettingsActivity : PhoneActivity() {
             library.danmakuMergeMin.toFloat(), { "${it.roundToInt()} 条" }) {
             library.danmakuMergeMin = it.roundToInt()
         }
-        slider("弹幕字体大小", PhoneDanmakuSize.MIN_PERCENT.toFloat(),
+        slider("弹幕大小", PhoneDanmakuSize.MIN_PERCENT.toFloat(),
             PhoneDanmakuSize.MAX_PERCENT.toFloat(), PhoneDanmakuSize.STEP_PERCENT.toFloat(),
             PhoneDanmakuSize.percent(this).toFloat(), { PhoneDanmakuSize.label(it) }) {
             PhoneDanmakuSize.set(this, it)
@@ -839,7 +796,8 @@ class PhoneSettingsActivity : PhoneActivity() {
         val shownColumns = baseColumns + if (landscape) 3 else 0
         row("列表每行", "$shownColumns 张") {
             val options = listOf(1, 2, 3)
-            pick("海报列表每行几张", options.map { "$it 张" },
+            pick("海报列表每行几张",
+                options.map { "竖屏 $it 张 · 横屏 ${it + 3} 张" },
                 options.indexOf(baseColumns).coerceAtLeast(0)) { index ->
                 library.gridColumns = options[index]
                 render()
@@ -929,53 +887,12 @@ class PhoneSettingsActivity : PhoneActivity() {
     // —— 三、内容推荐 ——
 
     private fun renderRecommend() {
-        section("推荐范围")
-        hint("大类至少留一个；受众可不限。改完下次进推荐生效，已刷到的位置保留。")
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            setPadding(0, dp(2), 0, 0)
-            tag = "grid:recommendGenres"
-        }
-        CategoryGenres.recommendable.forEachIndexed { index, genre ->
-            val id = genre.id.orEmpty()
-            val on = library.recommendGenreEnabled(id)
-            val chip = TextView(this).apply {
-                text = genre.label
-                phoneSize(13)
-                gravity = Gravity.CENTER
-                setTextColor(if (on) PhoneStyle.accent else PhoneStyle.textDim)
-                applySoft(
-                    if (on) SoftStyle.INSET else SoftStyle.RAISED,
-                    PhoneStyle.surface, PhoneStyle.RADIUS_PILL, 4f
-                )
-                setOnClickListener {
-                    val next = !library.recommendGenreEnabled(id)
-                    // 关掉最后一类：直接拦下并说明，否则「没有推荐范围」与「全部体裁」读起来正好相反。
-                    if (!next && library.recommendGenreOff.size + 1 >= CategoryGenres.recommendableIds.size) {
-                        toast("至少保留一个推荐大类")
-                        return@setOnClickListener
-                    }
-                    library.setRecommendGenre(id, next)
-                    render()
-                }
-            }
-            row.addView(chip, LinearLayout.LayoutParams(0, dp(40), 1f).apply {
-                if (index > 0) leftMargin = dp(6)
-            })
-        }
-        targetHost().addView(row, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(6) })
-
+        section("推荐设置")
         row("受众", genderLabel(library.recommendGender)) {
             pick("推荐受众", listOf("不限", "男频", "女频"), genderIndex(library.recommendGender)) { index ->
                 library.recommendGender = listOf("", "male", "female")[index]
                 render()
             }
-        }
-        switch("打开应用进入推荐", library.launchRecommend) {
-            library.launchRecommend = it
-            render()
         }
 
         section("内容管理与来源")
@@ -1012,51 +929,30 @@ class PhoneSettingsActivity : PhoneActivity() {
     // —— 四、系统高级 ——
 
     private fun renderSystem() {
-        section("设备身份")
-        action(
-            "手动设置 device_id",
-            library.manualDeviceId().ifBlank { "自动" },
-        ) { showManualDeviceIdDialog() }
-        if(library.manualDeviceId().isNotBlank()) {
-            action("恢复自动设备","清除手动覆盖") {
-                confirm("恢复自动设备","清除手动 device_id，播放恢复使用自动注册设备和一次性设备池。") {
-                    com.hgtv.star.shared.data.DeviceIdOverride.clear(
-                        library,
-                        PhoneServices.repository(this@PhoneSettingsActivity),
-                    )
-                    toast("已恢复自动设备")
-                    render()
-                }
-            }
-        }
-        hint("官方 App 进入「关于」，连续点击版本号即可看到 device_id。这里只覆盖播放设备号，不会清除账号。")
-
         section("设备与性能")
         action("关于", "版本与项目信息") { showAboutDialog() }
-        if (BuildConfig.DEBUG) {
-            val detected = runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
-            row("设备类型", deviceFormLabel(detected)) {
-                pick(
-                    "设备类型（切换后自动重新进入）",
-                    DeviceForm.pickerLabels(detected),
-                    DeviceForm.optionIndex(library.deviceForm),
-                ) { index ->
-                    val selected = DeviceForm.OPTIONS[index]
-                    if (selected == library.deviceForm) {
-                        render()
-                        return@pick
-                    }
-                    if (!library.setDeviceFormNow(selected)) {
-                        toast("设备类型保存失败，请重试")
-                        render()
-                        return@pick
-                    }
-                    toast("正在切换到 ${DeviceForm.shortLabel(selected)} 界面")
-                    AppRelaunch.relaunchAndExit(this)
+        val detected = runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
+        row("设备类型", deviceFormLabel(detected)) {
+            pick(
+                "设备类型（切换后自动重新进入）",
+                DeviceForm.pickerLabels(detected),
+                DeviceForm.optionIndex(library.deviceForm),
+            ) { index ->
+                val selected = DeviceForm.OPTIONS[index]
+                if (selected == library.deviceForm) {
+                    render()
+                    return@pick
                 }
+                if (!library.setDeviceFormNow(selected)) {
+                    toast("设备类型保存失败，请重试")
+                    render()
+                    return@pick
+                }
+                toast("正在切换到 ${DeviceForm.shortLabel(selected)} 界面")
+                AppRelaunch.relaunchAndExit(this)
             }
-            hint("仅 debug 版本显示：用于强制进入手机、平板或电视界面，切换后自动重新进入。")
         }
+        hint("用于强制进入手机、平板或电视界面，切换后自动重新进入。")
         switch("减少动画优化性能", library.reduceAnim) {
             library.reduceAnim = it
             render()
@@ -1097,47 +993,6 @@ class PhoneSettingsActivity : PhoneActivity() {
             .message("更新请前往项目页面查看项目更新。")
             .button("关闭") {}
             .show()
-    }
-
-    private fun showManualDeviceIdDialog() {
-        val current=library.manualDeviceId()
-        val input=EditText(this).apply {
-            hint="输入官方 App 显示的纯数字 device_id"
-            setHintTextColor(PhoneStyle.textFaint)
-            setTextColor(PhoneStyle.text)
-            phoneSize(if(landscape) 13 else 15)
-            inputType=InputType.TYPE_CLASS_NUMBER
-            keyListener=DigitsKeyListener.getInstance("0123456789")
-            filters=arrayOf(InputFilter.LengthFilter(32))
-            setSingleLine(true)
-            setText(current)
-            setSelection(text.length)
-            setPadding(dp(14),dp(10),dp(14),dp(10))
-            applySoft(SoftStyle.INSET,PhoneStyle.well,14f,4f)
-        }
-        val dialog=PhoneDialog(this,"手动设置 device_id")
-            .message("打开官方 App → 关于 → 连续点击版本号，复制显示的 device_id。")
-            .content(input)
-            .button("取消")
-        if(current.isNotBlank()) {
-            dialog.button("清空手动 device_id") {
-                com.hgtv.star.shared.data.DeviceIdOverride.clear(
-                    library,
-                    PhoneServices.repository(this),
-                )
-                toast("已清空手动 device_id，恢复自动设备")
-                render()
-            }
-        }
-        dialog.button("保存",primary=true) {
-            val saved=com.hgtv.star.shared.data.DeviceIdOverride.save(
-                library,
-                PhoneServices.repository(this),
-                input.text?.toString().orEmpty(),
-            )
-            toast(if(saved) "device_id 已保存，新的播放请求立即生效" else "请输入正确的纯数字 device_id")
-            if(saved) render()
-        }.show()
     }
 
     /** 出厂值：与 `BackupSettings` 的默认参数逐项对齐。 */

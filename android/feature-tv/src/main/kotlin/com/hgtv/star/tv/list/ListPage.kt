@@ -494,8 +494,8 @@ fun MainActivity.showCatalog(
     if(tab==TAB_RANK) {
         val boards=row().apply { setPadding(pageBleed(),0,pageBleed(),dp(4)) }
         val boardChips=mutableListOf<View>()
-        RankBoard.entries.forEach { board ->
-            // 四个按钮分别是 漫剧 / 真人 / AI剧 / 上新；页面主标题固定写「榜单」（见 [pageTitle]）。
+        RankBoard.navEntries.forEach { board ->
+            // 四个按钮分别是 推荐 / 漫剧 / AI剧 / 真人；页面主标题固定写「榜单」（见 [pageTitle]）。
             val chip=ToggleChip(this,board.label,rankBoard==board) { switchRankBoard(board) }
             boardButtons[board]=chip
             boardChips+=chip
@@ -561,7 +561,7 @@ fun MainActivity.showCatalog(
         // * 其余每一行左边一个固定宽度的小标签（题材 / 设定 / 背景…），右边是可横向滚动的
         //   小号芯片。行高、字号、横向与纵向间距都比正文按钮小一档，尽量把高度让给内容。
         // 体裁四枚按钮**常驻**：不论面板有没有到手、切换体裁时面板是否在刷新，
-        // 它们都按固定顺序 全部 / 漫剧 / AI剧 / 真人 画在导航栏里，不跟着面板消失。
+        // 它们都按固定顺序 推荐 / 漫剧 / AI剧 / 真人 画在导航栏里，不跟着面板消失。
         val genreChips=mutableListOf<View>()
         run {
             // 与榜单页同一套排法：芯片放在一个 row 里整体进导航栏，间距走默认档。

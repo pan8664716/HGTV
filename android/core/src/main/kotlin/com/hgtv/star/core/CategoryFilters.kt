@@ -21,25 +21,25 @@ data class CategoryFilterRow(
     fun labelOf(id: String?): String? = options.firstOrNull { it.id==id }?.label
 }
 
-/** 分类页顶部体裁的一个按钮。[id] 为空 = 「全部体裁」（不筛 genre）。 */
+/** 分类页顶部体裁的一个按钮。[id] 为空 = 「推荐」（不筛 genre，三类混排）。 */
 data class CategoryGenreOption(val id: String?, val label: String)
 
 /**
  * 顶部体裁的固定顺序（需求钉死，不跟接口的 `selector_rows` 顺序走）：
- * 全部 / 漫剧 / AI剧 / 真人。
+ * 推荐 / 漫剧 / AI剧 / 真人。
  *
  * 这四枚按钮**常驻**导航栏：换体裁时只有下方的筛选行与内容重新加载，
  * 按钮本身不会因为面板刷新而消失。
  */
 object CategoryGenres {
     val options: List<CategoryGenreOption> = listOf(
-        CategoryGenreOption(null,"全部"),
+        CategoryGenreOption(null,"推荐"),
         CategoryGenreOption("comic_series","漫剧"),
         CategoryGenreOption("ai_series","AI剧"),
         CategoryGenreOption("short_play","真人")
     )
     /**
-     * 设置页「推荐范围」里能开关的那几枚：就是上面带标识的三类（「全部」不是一个类，不能开关）。
+     * 设置页「推荐范围」里能开关的那几枚：就是上面带标识的三类（「推荐」不是一个类，不能开关）。
      *
      * 推荐流本来就是按 `genre` 数组取的（不传 = 全部体裁），因此这三枚开关直接对应
      * 请求里的体裁列表，不需要另建一套名字到标识的映射。
@@ -68,11 +68,11 @@ data class CategoryPanel(val rows: List<CategoryFilterRow>) {
 /**
  * 分类页当前选中的筛选条件。
  *
- * [genre] 与其余维度一样：为空 = 「全部体裁」（不筛 genre）。
+ * [genre] 与其余维度一样：为空 = 「推荐」（不筛 genre）。
  *
  * 默认值从「真人剧」改成「全部」：分类页第一次打开时用户还没表达任何偏好，
  * 一进来就替他筛掉漫剧与 AI 剧，看到的就不是「全部内容」而是「真人剧」——
- * 用户读到的正是「为什么只有这些」。顶部四枚芯片里「全部」排在第一位，默认停在那里。
+ * 用户读到的正是「为什么只有这些」。顶部四枚芯片里「推荐」排在第一位，默认停在那里。
  */
 data class CategorySelection(
     val genre: String? = null,

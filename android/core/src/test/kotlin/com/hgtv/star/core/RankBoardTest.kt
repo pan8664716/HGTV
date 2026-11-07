@@ -35,17 +35,17 @@ class RankBoardTest {
     }
 
     /**
-     * 榜单页的四个按钮文案是需求钉死的短名：漫剧 / 真人 / AI剧 / 上新；
+     * 榜单页的四个按钮文案是需求钉死的短名：推荐 / 漫剧 / AI剧 / 真人；
      * 页面主标题固定「热播榜」，不跟着按钮变（见界面代码）。
      */
     @Test fun `rank switcher uses the four short labels`() {
-        assertEquals(listOf("漫剧","真人","AI剧","上新"),RankBoard.entries.map { it.label })
+        assertEquals(listOf("推荐","漫剧","AI剧","真人"),RankBoard.navEntries.map { it.label })
     }
 
     /**
      * 四个榜单各自的 App 分类与 `rankKey` 都不同：`rankKey` 同时是本机缓存的键，写错就会串数据；
-     * `genre` 为空的那个是「上新」（全站综合，不筛分类），它只能是唯一一个。
-     * 三个热播榜按热度排，上新按上架时间排。
+     * `genre` 为空的那个是「推荐」（原上新，全站综合，不筛分类），它只能是唯一一个。
+     * 三个类型榜按热度排，推荐按上架时间排。
      */
     @Test fun `genres and rank keys are distinct and stable`() {
         assertEquals(listOf("comic_series","short_play","ai_series",null),RankBoard.entries.map { it.genre })

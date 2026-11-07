@@ -182,7 +182,7 @@ object PlaybackFailures {
      * 两个来源，语义相同：
      *
      * * 搜索接口 `200 + 0 字节` → [com.hgtv.star.core.DeviceNotRegisteredException]；
-     * * 播放模型接口回 `code=101000`（`ContentRepository` 把它包成一条带这个数字的异常）。
+     * * 播放模型接口在 5 档仍空响应或回 `code=101000` 时，也包装成同一异常。
      *
      * 命中之后唯一的正确动作是**换一套身份重注册**（见 `DeviceHealer`），
      * 重取地址 / 换清晰度 / 换软解都只是在同一个坏身份上打转。

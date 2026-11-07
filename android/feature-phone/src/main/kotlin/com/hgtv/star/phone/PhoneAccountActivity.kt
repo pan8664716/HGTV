@@ -377,11 +377,9 @@ class PhoneAccountActivity : PhoneActivity() {
         body.removeAllViews()
         qrClosed = false
         val session = QrLogin().apply {
-            // 档案 + 本机身份一起给：确认登录拿到的 Cookie 要按同一台设备落盘，
-            // 否则后续账号接口的签名与 Cookie 里的设备对不上。
+            // 扫码登录使用独立的登录用户设备档案，不读取主设备身份。
             device = runCatching {
-                PhoneServices.library(this@PhoneAccountActivity).deviceProfile() +
-                    PhoneServices.library(this@PhoneAccountActivity).deviceIdentity()
+                PhoneServices.library(this@PhoneAccountActivity).freshLoginDeviceProfile()
             }.getOrDefault(emptyMap())
             log = { line -> android.util.Log.i("HGTV-QRLOGIN", line) }
         }
@@ -787,12 +785,9 @@ class PhoneAccountActivity : PhoneActivity() {
      */
     private fun registerForLogin(profile: Map<String, String>): com.hgtv.star.core.DeviceRegister.Registered? {
         val repo = PhoneServices.repository(this)
-        val lib = PhoneServices.library(this)
-        repo.registerProfile = profile
-        val registered = runCatching { repo.registerDevice() }.getOrNull() ?: return null
-        // 身份 + 注册 Cookie + 仓库里那一份身份：与设备注册走同一段收尾（`:shared`）。
-        runCatching { com.hgtv.star.shared.data.DeviceRegistration.commit(lib, repo, registered) }
-        return registered
+        return runCatching {
+            com.hgtv.star.shared.data.DeviceRegistration.registerLoginDevice(repo, profile)
+        }.getOrNull()
     }
 
     // ---------------------------------------------------------------- 导入
@@ -875,13 +870,24 @@ class PhoneAccountActivity : PhoneActivity() {
         scope.launch {
             val repo = PhoneServices.repository(this@PhoneAccountActivity)
             val lib = PhoneServices.library(this@PhoneAccountActivity)
-            val problem = withContext(Dispatchers.IO) { AccountLogin.verify(credentials, repo) }
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    val prepared=com.hgtv.star.shared.data.DeviceRegistration.prepareLogin(
+                        lib,repo,credentials,
+                    )
+                    val problem=AccountLogin.verify(prepared,repo)
+                    if(problem!=null) throw IllegalStateException(problem)
+                    prepared
+                }
+            }
+            val problem = result.exceptionOrNull()?.message
             if (problem != null) {
                 toast(problem)
                 render()
                 return@launch
             }
-            lib.saveAccount(credentials)
+            val prepared=result.getOrThrow()
+            lib.saveAccount(prepared)
             // **立刻把新凭据灌进仓库**：不灌的话 `repository.signedIn` 还是 false，
             // 紧接着那次 `PhoneAccountSync.refresh` 会走「没登录」分支直接返回，
             // 用户看到的就是「登录成功但一条记录都没有」。

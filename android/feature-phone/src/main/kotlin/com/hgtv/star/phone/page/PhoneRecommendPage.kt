@@ -17,16 +17,16 @@ import com.hgtv.star.phone.ui.PhonePagerSnapHelper
 import com.hgtv.star.phone.ui.PhoneTopBar
 
 /**
- * 推荐页：三条件裁横向滑动，每页一条独立的竖屏视频流。
+ * 推荐页：四条件裁横向滑动，每页一条独立的竖屏视频流。
  *
  * ```
- * 漫剧  ←→  真人  ←→  AI剧          （顶部左对齐，与分类 / 榜单一致）
+ * 推荐  ←→  漫剧  ←→  AI剧  ←→  真人  （顶部左对齐，与分类 / 榜单一致）
  *        [全屏视频流，一屏一集]        （右上角：搜索）
  * ```
  *
  * ## 为什么用横向 pager 而不是点 tab 换流
  *
- * 三个体裁是并列的三条流，用户对它们的预期是「左右翻」而不是「点一下重载」。
+ * 推荐与三个体裁是并列的四条流，用户对它们的预期是「左右翻」而不是「点一下重载」。
  * 换 tab 时旧流的状态（滚到第几集）会被丢掉；pager 保留每一页，
  * 翻回来还在原来那一屏。
  *
@@ -47,12 +47,12 @@ class PhoneRecommendPage(
      * 顶部那枚入口也不出现——与 TV 的 `recommendFeed(genres=…)` 同一份落盘值。
      * 至少留一条：`Library` 那边保证不会三类全关，这里再兜一次底（空表就全开）。
      */
-    private var genres: List<RankBoard> = listOf(RankBoard.COMIC, RankBoard.REAL, RankBoard.AI)
+    private var genres: List<RankBoard> = RankBoard.navEntries
     /** 宿主重建页面时带回来的体裁；首次铺完后清空。 */
     private var restoreGenre: String? = initialGenre
     /** 已经铺出来的那一次筛选结果：设置变了就整屏重建一次。 */
     private var appliedGenres: List<RankBoard> = emptyList()
-    private var feeds = arrayOfNulls<PhoneFeedView>(3)
+    private var feeds = arrayOfNulls<PhoneFeedView>(RankBoard.navEntries.size)
     private val adapter = PagerAdapter()
     private val pager = LockablePager(context)
     /** 与分类 / 榜单共用同一个顶栏：tab 起点、字号和搜索按钮位置因此完全一致。 */
@@ -137,13 +137,17 @@ class PhoneRecommendPage(
         pager.swipeLocked = sheetOpen || !swipeEnabled
     }
 
-    /** 按设置筛出要铺的体裁；一条都不剩时退回全开（正常情况不会发生）。 */
+    /**
+     * 顶部固定先放「推荐」（三类混排），后面再按设置铺 漫剧 / AI剧 / 真人。
+     *
+     * 推荐页本身不能关掉；三类全关时仍保留推荐这一条混排流。
+     */
     private fun enabledGenres(): List<RankBoard> {
-        val all = listOf(RankBoard.COMIC, RankBoard.REAL, RankBoard.AI)
+        val typed = listOf(RankBoard.COMIC, RankBoard.AI, RankBoard.REAL)
         val lib = runCatching { com.hgtv.star.phone.PhoneServices.library(context) }.getOrNull()
-        if (lib == null || !lib.isLoaded) return all
-        val on = all.filter { lib.recommendGenreEnabled(it.genre.orEmpty()) }
-        return on.ifEmpty { all }
+        if (lib == null || !lib.isLoaded) return RankBoard.navEntries
+        val on = typed.filter { lib.recommendGenreEnabled(it.genre.orEmpty()) }
+        return listOf(RankBoard.NEW) + on.ifEmpty { typed }
     }
 
     /**

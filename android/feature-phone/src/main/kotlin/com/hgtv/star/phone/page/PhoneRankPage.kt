@@ -16,11 +16,11 @@ import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.tabBarInset
 
 /**
- * 榜单页：四个榜单（漫剧 / 真人 / AI剧 / 上新）+ 带名次的两列海报。
+ * 榜单页：四个榜单（推荐 / 漫剧 / AI剧 / 真人）+ 带名次的两列海报。
  *
  * 四个榜单就是 `RankBoard` 的四个枚举值，**与 TV 端完全同一套**：
  * 接口的 `genre` 与 `sort` 都写在枚举里，这里不再拼参数。
- * 「上新」是时间序，不画名次（`RankBoard.ranked == false`），与 TV 一致。
+ * 「推荐」沿用原「上新」的时间序，不画名次（`RankBoard.ranked == false`），与 TV 一致。
  *
  * 顶栏与分类页一样固定常驻，不随海报列表滚动自动收起。
  */
@@ -38,7 +38,7 @@ class PhoneRankPage(
     private val feed = PhonePosterFeed(context)
     private var selected = initialState?.selected ?: 0
 
-    private val boards = RankBoard.entries
+    private val boards = RankBoard.navEntries
 
     init {
         orientation = VERTICAL
@@ -106,7 +106,7 @@ class PhoneRankPage(
         selected = index
         topBar.applyTabSelection(index)
         val board = boards[index]
-        // 「上新」不画名次，与 TV 的 RankBoard.ranked 判断一致。
+        // 「推荐」沿用原「上新」的时间序，不画名次，与 TV 的 RankBoard.ranked 判断一致。
         feed.ranked = board.ranked
         val repo = PhoneServices.repository(context)
         val lib = PhoneServices.library(context)

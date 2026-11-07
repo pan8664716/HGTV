@@ -2,8 +2,10 @@
 package com.hgtv.star.shared.data
 
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.core.AccountCredentials
+import com.hgtv.star.core.session.CookieRecord
+import com.hgtv.star.core.session.SessionBridge
 import com.hgtv.star.shared.debug.Diagnostics
-import com.hgtv.star.shared.debug.DebugLog
 
 /**
  * 设备注册（匿名）的**唯一实现**：电视与手机共用。
@@ -51,55 +53,13 @@ object DeviceRegistration {
         return !library.deviceRegistered()
     }
 
-    /** 已注册但还没完成 App 日志 SDK 激活时，需要在后台补一次握手。 */
-    fun needsActivation(library: Library): Boolean =
-        library.deviceRegistered() && !library.deviceActivated()
-
-    private val activationLock = Any()
-    @Volatile private var lastActivationAttempt = 0L
-
-    /**
-     * 完成 `app_log` / `log_settings` 激活握手。
-     *
-     * 失败不会影响已经拿到的设备身份；下次启动会再次尝试。同一进程内至少隔一分钟，
-     * 避免手机端每次切页都重复请求。
-     */
-    fun ensureActivated(
-        library: Library,
-        repository: ContentRepository,
-        stage: String = "device_activate",
-        detail: String = "",
-    ): Boolean {
-        if(library.deviceActivated()) return true
-        synchronized(activationLock) {
-            if(library.deviceActivated()) return true
-            val now=System.currentTimeMillis()
-            if(now-lastActivationAttempt<60_000L) return false
-            lastActivationAttempt=now
-            val activated=runCatching {
-                repository.activateDevice(library.registrationProfile())
-            }.getOrDefault(false)
-            if(activated) {
-                library.markDeviceActivated()
-                DebugLog.record("设备","已激活 · app_log / log_settings")
-                return true
-            }
-            val problem=repository.lastActivationError
-            Diagnostics.warn(
-                stage,
-                if(detail.isBlank()) "设备激活失败" else "$detail 设备激活失败",
-                problem,
-            )
-            return false
-        }
-    }
-
     /**
      * 注册一次（**阻塞**，调用方负责放到 IO 线程）。
      *
      * @param force true = 无条件换一套新身份（档案重建之后必须这么做）。
      * @param detail 现场前缀（各端自己拼：机型、页面、账号态）。只进诊断，不影响判定。
      */
+    @Synchronized
     fun registerOnce(
         library: Library,
         repository: ContentRepository,
@@ -116,7 +76,10 @@ object DeviceRegistration {
         detail: String = "",
     ): Outcome {
         if (!force && !regenerate && library.deviceRegistered()) {
-            ensureActivated(library,repository,stage="device_activate_existing",detail=detail)
+            // 注册可能刚由另一条线程完成（手机冷启动时备用设备线程会先等主设备）。
+            // 这时当前仓库仍是注册前的空身份，必须重新绑定磁盘上的结果，否则首屏会拿着
+            // 未注册设备去取播放地址，直到下一次启动重新读盘才恢复。
+            bindRegisteredIdentity(library, repository)
             return Outcome.ALREADY
         }
         // 换设备：先挂一套新的候选身份，再按它去注册。已经有候选（上一次没换成的）
@@ -157,6 +120,15 @@ object DeviceRegistration {
         return Outcome.REGISTERED
     }
 
+    /** 把已经落盘的主设备身份与 Cookie 同步到调用方仓库。 */
+    private fun bindRegisteredIdentity(library: Library, repository: ContentRepository) {
+        repository.clearDeviceIdentity()
+        repository.registerProfile = library.registrationProfile()
+        repository.deviceIdentity = library.deviceIdentity()
+        repository.restoreDeviceCookies(library.registrationCookies())
+        SessionBridge.mainDeviceCookies = { library.registrationCookies() }
+    }
+
     /**
      * 把一次注册结果**落盘并交给仓库**：身份、注册 Cookie、仓库里那一份身份。
      *
@@ -185,7 +157,70 @@ object DeviceRegistration {
         if (cookies.isNotEmpty()) {
             library.saveRegistrationCookies(cookies)
             SessionBootstrap.sessionStore?.saveDeviceCookies(cookies)
+            SessionBridge.mainDeviceCookies = { library.registrationCookies() }
         }
-        ensureActivated(library,repository,stage="device_activate_commit")
+    }
+
+    /**
+     * 登录流程专用的匿名设备注册。
+     *
+     * 与主设备注册完全分开：结果只交给登录协议合并进用户 Cookie，不写入 `registered-*`，
+     * 因此不会替换主设备。
+     */
+    fun registerLoginDevice(
+        repository: ContentRepository,
+        profile: Map<String,String>,
+    ): com.hgtv.star.core.DeviceRegister.Registered? {
+        val clean=LinkedHashMap(profile).apply {
+            remove("device_id")
+            remove("iid")
+            remove("install_id")
+            remove("klink_egdi")
+            remove("device_token")
+        }
+        return repository.registerAnonymousDevice(clean)
+    }
+
+    /**
+     * 给一份登录凭据补齐“登录用户设备”。
+     *
+     * 手机号登录在发码前已经注册过；扫码登录与只导入 sessionid 的情况在这里补一次。
+     * 设备注册 Cookie 会与用户 Cookie 合并后交给账号请求，但不会触碰主设备。
+     */
+    fun prepareLogin(
+        library: Library,
+        repository: ContentRepository,
+        credentials: AccountCredentials,
+    ): AccountCredentials {
+        val id=credentials.device["device_id"].orEmpty()
+        val iid=credentials.device["iid"].orEmpty()
+            .ifBlank { credentials.device["install_id"].orEmpty() }
+        val prepared = if(id.isNotBlank() && iid.isNotBlank()) {
+            credentials
+        } else {
+            val profile=credentials.device.takeIf {
+                it["cdid"].orEmpty().isNotBlank() && it["openudid"].orEmpty().isNotBlank()
+            } ?: library.freshLoginDeviceProfile()
+            val registered=registerLoginDevice(repository,profile)
+                ?: throw IllegalStateException("登录设备注册失败")
+            val device=LinkedHashMap(profile).apply {
+                put("device_id",registered.deviceId)
+                put("iid",registered.installId)
+                put("install_id",registered.installId)
+                registered.klinkEgdi.takeIf { it.isNotBlank() }?.let { put("klink_egdi",it) }
+                registered.deviceToken.takeIf { it.isNotBlank() }?.let { put("device_token",it) }
+            }
+            val cookies=CookieRecord.headerToMap(credentials.cookie)
+            registered.cookies.forEach { (key,value) -> if(value.isNotBlank()) cookies[key]=value }
+            cookies["install_id"]=registered.installId
+            credentials.copy(
+                cookie=CookieRecord.mapToHeader(cookies),
+                deviceId=registered.deviceId,
+                installId=registered.installId,
+                device=device,
+            )
+        }
+        repository.credentials=prepared
+        return prepared
     }
 }

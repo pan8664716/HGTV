@@ -334,6 +334,7 @@ class SessionKeeper(
         val builder = Request.Builder()
             .url(url)
             .get()
+            .header("X-HGTV-Identity","account")
             .header("X-SS-DP","8662")
             .header("X-Tt-Store-Region",SessionBridge.state?.storeRegion ?: "cn")
             .header("X-Tt-Store-Region-Src","did")

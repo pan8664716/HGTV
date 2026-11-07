@@ -43,12 +43,15 @@ class SessionInterceptor(
             return chain.proceed(original.newBuilder().removeHeader(ANONYMOUS_HEADER).build())
         }
         val sessionHost = isSessionHost(original.url.host)
+        val accountIdentity = original.header(IDENTITY_HEADER)==IDENTITY_ACCOUNT
         // 播放取地址接口（`/novel/player/...`）**只补 Cookie、不补 token**：
         // 这条接口对 `X-Tt-Token` 的长度极其敏感（整段 cookie 串塞进去直接回 `200 + 0 字节`）。
         val skipToken = original.url.encodedPath.startsWith("/novel/player/")
+        val builder=original.newBuilder().removeHeader(IDENTITY_HEADER)
         val request = if(sessionHost) {
-            SessionBridge.decorate(original.newBuilder(),injectToken && !skipToken).build()
-        } else original
+            if(accountIdentity) SessionBridge.decorateAccount(builder,injectToken && !skipToken).build()
+            else SessionBridge.decorateMain(builder).build()
+        } else builder.build()
         // 取播放地址的请求留一行原始 URL：故障时最需要看的就是它带的注册 `device_id`。
         // 不再逐条 dump 请求头：`x-medusa` / `x-hellos` 这类字段几百字符，
         // 一条请求就能把十几行刷掉，真正的结论（路径 / 字节数 / 业务码）反而被挤出屏幕。
@@ -56,7 +59,7 @@ class SessionInterceptor(
             SessionBridge.log("model req ${request.method} ${request.url}")
         }
         val response = chain.proceed(request)
-        if(sessionHost) {
+        if(sessionHost && accountIdentity) {
             val rotated = response.header("X-Tt-Token")
             if(!rotated.isNullOrBlank() && rotated!=SessionBridge.state?.token) {
                 // 只落「属于当前这份会话」的 token。
@@ -116,6 +119,9 @@ class SessionInterceptor(
          * 时打上，[intercept] 看到它就原样放行（并把头摘掉，不发给服务端）。
          */
         const val ANONYMOUS_HEADER = "X-HGTV-Anonymous"
+        /** 只在本地标记账号请求，发出去前会摘掉。 */
+        const val IDENTITY_HEADER = "X-HGTV-Identity"
+        const val IDENTITY_ACCOUNT = "account"
         /** 对齐原版 `share_cookie_host_list`（`dc5/a.java`）。 */
         val SESSION_HOSTS = listOf(
             "snssdk.com","zijieapi.com","ulpay.com","fqnovel.com",

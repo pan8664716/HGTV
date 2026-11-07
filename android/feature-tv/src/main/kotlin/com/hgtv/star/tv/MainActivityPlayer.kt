@@ -11,7 +11,6 @@ import android.widget.*
 import android.text.TextUtils
 import androidx.media3.common.AudioAttributes
 import androidx.media3.common.C
-import androidx.media3.common.Format
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.PlaybackException
@@ -26,7 +25,6 @@ import androidx.media3.exoplayer.audio.AudioCapabilities
 import androidx.media3.exoplayer.audio.AudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioSink
 import androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider
-import androidx.media3.exoplayer.mediacodec.MediaCodecAdapter
 import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
 import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
@@ -150,45 +148,11 @@ fun MainActivity.preparedKeyFor(id: String): String =
 fun MainActivity.playerDecoderMode(): VideoDecoderMode = playbackDecoderMode
 
 /**
- * 解码器按「最高播放倍速」预留算力。
- *
- * ExoPlayer 2.19 的 `KEY_OPERATING_RATE` 只在**解码器初始化那一刻**算一次：
- * `MediaCodecVideoRenderer.setPlaybackSpeed()` 只更新帧释放器，不会重建解码器。
- * 用户先 1× 起播、再点 1.5×/2× 时，解码器仍然按 1× 的时钟跑——片源 1080P 30fps，
- * 30fps 的 operating-rate 在 1.5× 下要吃 45fps，部分电视 SoC 会直接开始丢帧，
- * 而音频照常输出，用户看到的就是「卡 + 音画不同步」。
- *
- * 这里把 operating-rate 固定按片源帧率 ×[MAX_SPEED] 上报（30fps → 60），
- * 与「起播时就是 2×」时 ExoPlayer 自己算出来的值一致，不改变任何播放语义，
- * 只是让解码器从第一帧起就按 2× 的负载准备时钟。
- */
-private class SpeedAwareVideoRenderer(
-    context: Context,
-    codecAdapterFactory: MediaCodecAdapter.Factory,
-    mediaCodecSelector: MediaCodecSelector,
-    allowedVideoJoiningTimeMs: Long,
-    enableDecoderFallback: Boolean,
-    eventHandler: Handler?,
-    eventListener: VideoRendererEventListener?,
-    maxDroppedFramesToNotify: Int
-): MediaCodecVideoRenderer(
-    context,codecAdapterFactory,mediaCodecSelector,allowedVideoJoiningTimeMs,
-    enableDecoderFallback,eventHandler,eventListener,maxDroppedFramesToNotify
-) {
-    override fun getCodecOperatingRateV23(playbackSpeed: Float,format: Format,streamFormats: Array<Format>): Float {
-        val base=super.getCodecOperatingRateV23(playbackSpeed,format,streamFormats)
-        if(base<=0f) return base
-        // base 已经乘过初始化时的倍速，这里换算成「固定按 2× 上报」。
-        return base*(MAX_SPEED/playbackSpeed.coerceAtLeast(0.1f))
-    }
-    private companion object { const val MAX_SPEED=2f }
-}
-
-/**
  * 电视端渲染器工厂：两处针对播放链路的加固。
  *
- * 1. 视频：用 [SpeedAwareVideoRenderer]，让解码器的 operating-rate 始终按 2× 预留
- *    （见类注释；倍速是在播放中切换的，ExoPlayer 不会为此重配解码器）。
+ * 1. 视频：使用 Media3 标准的 [MediaCodecVideoRenderer]。起播前先写入用户设置的倍速，
+ *    解码器按当前倍速初始化；运行中切换倍速时，Media3 的 `setPlaybackSpeed()` 会通过
+ *    `MediaCodec.setParameters("operating-rate")` 同步更新，不需要重建解码器。
  * 2. 音频：把 AudioTrack 的 PCM 缓冲从默认 250ms 抬到 350ms。
  *
  * 为什么需要：倍速播放时音频由 Sonic 重采样，每秒要喂 1.5~2 倍的 PCM 样本。
@@ -210,7 +174,7 @@ private class TvRenderersFactory(context: Context): androidx.media3.exoplayer.De
         out: ArrayList<Renderer>
     ) {
         out.add(
-            SpeedAwareVideoRenderer(
+            MediaCodecVideoRenderer(
                 context,codecAdapterFactory,mediaCodecSelector,allowedVideoJoiningTimeMs,
                 enableDecoderFallback,eventHandler,eventListener,
                 androidx.media3.exoplayer.DefaultRenderersFactory.MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY
@@ -978,7 +942,7 @@ fun MainActivity.playEpisode(
             // 注册还没落地时先补一次，免得取地址落到内置那份被拉黑的档案上。
             if(!library.deviceRegistered()) registerDeviceOnce()
             stage("register")
-            // 官方 App 只使用 Low=1 / Middle=2 / High=3，播放统一按 High=3 请求。
+            // 播放默认按 4 档请求；取地址层遇到空响应会升到 5 再试一次。
             // 故障重来也保持同一档，避免缓存键和请求参数无意义地变化。
             if(!recovering) repository.beginEpisode()
             stage("deviceLevel ${repository.deviceLevel}")
