@@ -236,12 +236,6 @@ fun MainActivity.enqueuePreparedNext() {
     if(http==null) { remote.close(); return }
     queuedEpisodeId=id; queuedVideo=remote; queuedHttp=http; queuedQuality="${quality}P"
     queuedAt=if(fetchedAt>0L) fetchedAt else android.os.SystemClock.elapsedRealtime()
-    // 兼容模式不把下一集挂进当前播放器：后台第二个播放器独立准备，
-    // 片尾交换实例，避免同一个音频 / 视频 renderer 跨集后时钟没有重新对齐。
-    if(library.forceAvSync) {
-        prepareCompatibilityNext(id)
-        return
-    }
     val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }
         .createMediaSource(MediaItem.Builder().setMediaId(id).setUri("hgtv://episode/$id")
             .setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4).build())
@@ -286,9 +280,7 @@ fun MainActivity.maybeQueueNext() {
 fun MainActivity.dropQueuedEpisode() {
     val p=player
     var removed=true
-    if(compatibilityStandbyPlayer!=null) {
-        clearCompatibilityStandbySource()
-    } else if(p!=null && p.mediaItemCount>1) {
+    if(p!=null && p.mediaItemCount>1) {
         val index=p.currentMediaItemIndex
         removed=runCatching { p.removeMediaItems(minOf(index+1,p.mediaItemCount),p.mediaItemCount) }.isSuccess
     }
@@ -436,7 +428,8 @@ fun MainActivity.maybePrefetch() {
                 // 索引键用**实际档位**（见 `StreamInfo.mediaKey`）：与起播那条路的键
                 // 必须逐字一致，预热结果才会被真正复用；用请求上限做键时，
                 // 「CDN 只给兼容档」的那一集预热与起播会各用一份索引。
-                val info=source.stream(id,quality,data.playback)
+                val queue=data.episodes.drop(data.episodes.indexOf(id)+1).take(5)
+                val info=source.stream(id,quality,data.playback,queue)
                 RemoteVideo(http,info,info.mediaKey(id)).also { remote=it; it.warm() }
             }
             if(preparedNext.complete(ticket,key,prepared)) {
@@ -629,13 +622,19 @@ fun MainActivity.refetchAddressOnNetwork() {
     playEpisode(episodeIndex,startPosition.coerceAtLeast(0),requestedAutoplay)
 }
 fun MainActivity.currentPosition(): Long = pendingSeek ?: player?.currentPosition?.takeIf { playbackReady } ?: startPosition
-fun MainActivity.cancelRecovery() { main.removeCallbacks(retryRunnable); retryPending=false; autoRecovery=false }
+fun MainActivity.cancelRecovery() {
+    main.removeCallbacks(retryRunnable)
+    retryPending=false
+    autoRecovery=false
+    retryEpisodeId=""
+}
 fun MainActivity.scheduleRecovery() {
     if(!foreground || !playError || !autoRecovery || retryPending) return
     if(!ledger.canAttempt) { autoRecovery=false; playbackText.text="已自动重试 3 次，仍无法播放。可手动重试或切换清晰度。"; return }
     if(!networkAvailable()) { playbackText.text="网络已断开，联网后自动续播 · 第 ${episodeIndex+1} 集 ${formatTime(retryPosition)}"; return }
     val delay=ledger.delayMillis ?: return
     playbackText.text="${if(retryAutoplay) "准备恢复播放" else "准备恢复暂停位置"} · ${delay/1000f} 秒后重试 ${ledger.attempts+1}/3 · ${formatTime(retryPosition)}"
+    retryEpisodeId=detail?.episodes?.getOrNull(episodeIndex).orEmpty()
     retryPending=true; main.postDelayed(retryRunnable,delay)
 }
 /**

@@ -374,6 +374,20 @@ internal fun PhonePlayerActivity.cancelAutoRetry() {
     retryJob = null
 }
 
+/** 换集时取消正在取地址 / 准备媒体源的起播请求，并取消其网络调用。 */
+internal fun PhonePlayerActivity.cancelPlaybackRequest() {
+    playRequestJob?.cancel()
+    playRequestJob = null
+    playRequestScope?.cancel()
+    playRequestScope = null
+}
+
+/** 取地址失败后那段 3 / 6 秒延迟重试，换集后不再执行。 */
+internal fun PhonePlayerActivity.cancelSourceRetry() {
+    sourceRetryRunnable?.let { root.removeCallbacks(it) }
+    sourceRetryRunnable = null
+}
+
 /** 真正出画面了：重试窗口结束、错误页收起（与电视端的 `onRenderedFirstFrame` 同一职责）。 */
 internal fun PhonePlayerActivity.notePlaybackHealthy() {
     if (recovering) recovering = false

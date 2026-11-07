@@ -19,6 +19,7 @@ from __future__ import annotations
 import base64
 import hashlib
 import random
+import secrets
 import struct
 import time
 import urllib.parse
@@ -291,6 +292,159 @@ def gorgon(query: str, body: bytes | None, ts: int, rnd16: int) -> str:
         reversed_bits = int(format((nxt ^ value) & 255, "08b")[::-1], 2)
         out[i] = _inv32(reversed_bits ^ 20) & 255
     return (bytes.fromhex("8404") + bytes([rnd16 & 255, (rnd16 >> 8) & 255, 0x40, 1]) + bytes(out)).hex()
+
+
+# --------------------------------------------------------------------------- Argus / Ladon
+
+
+_ARGUS_KEY = bytes.fromhex(
+    "ac1adaae95a7af94a5114ab3b3a97dd8"
+    "0050aa0a39314c40528caec95256c28c"
+)
+_ARGUS_ROUND_CONST = 0x3DC94C3A046D678B
+
+
+def _pb_varint_field(field: int, value: int) -> bytes:
+    return _varint(field << 3) + _varint(value)
+
+
+def _pb_bytes_field(field: int, value: bytes) -> bytes:
+    return _varint((field << 3) | 2) + _varint(len(value)) + value
+
+
+def _pad16(data: bytes) -> bytes:
+    padding = 16 - len(data) % 16
+    return data + bytes([padding]) * padding
+
+
+def _rol64(value: int, count: int) -> int:
+    count &= 63
+    value &= 0xFFFFFFFFFFFFFFFF
+    return ((value << count) | (value >> (64 - count))) & 0xFFFFFFFFFFFFFFFF if count else value
+
+
+def _argus_rounds() -> list[int]:
+    seed = _ARGUS_KEY + bytes.fromhex("3ccc567b") + _ARGUS_KEY
+    derived = sm3(seed)
+    rounds = [struct.unpack_from("<Q", derived, i * 8)[0] for i in range(4)]
+    for i in range(4, 72):
+        mixed = ror64(rounds[i - 1], 3) ^ rounds[i - 3]
+        mixed2 = mixed ^ ror64(mixed, 1)
+        bit = (_ARGUS_ROUND_CONST >> ((i - 4) % 62)) & 1
+        rounds.append(
+            (~rounds[i - 4] ^ mixed2 ^ bit ^ 3) & 0xFFFFFFFFFFFFFFFF
+        )
+    return rounds
+
+
+def _argus_key_stream(data: bytes) -> bytes:
+    out = bytearray(data)
+    rounds = _argus_rounds()
+    for offset in range(0, len(out), 16):
+        left = struct.unpack_from("<Q", out, offset)[0]
+        right = struct.unpack_from("<Q", out, offset + 8)[0]
+        for round_key in rounds:
+            left, right = (
+                right,
+                left
+                ^ (_rol64(right, 1) & _rol64(right, 8))
+                ^ _rol64(right, 2)
+                ^ round_key,
+            )
+            left &= 0xFFFFFFFFFFFFFFFF
+            right &= 0xFFFFFFFFFFFFFFFF
+        struct.pack_into("<QQ", out, offset, left, right)
+    return bytes(out)
+
+
+def argus(
+    query: str,
+    body: bytes | None,
+    ts: int,
+    device: dict,
+    nonce: bytes,
+) -> str:
+    body_hash = sm3(digest("md5", body)) if body else sm3(bytes(16))
+    query_hash = sm3(query.encode())
+    counters = (
+        _pb_varint_field(1, 1)
+        + _pb_varint_field(2, 1)
+        + _pb_varint_field(3, 1)
+        + _pb_varint_field(7, 3348294860)
+    )
+    env = (
+        _pb_bytes_field(1, str(device.get("device_type", "25053RT47C")).encode())
+        + _pb_bytes_field(2, str(device.get("os_version", "16")).encode())
+        + _pb_bytes_field(3, str(device.get("channel", "update_64")).encode())
+        + _pb_varint_field(4, 2147483648)
+    )
+    message = (
+        _pb_varint_field(1, 0x20200929 * 2)
+        + _pb_varint_field(2, 2)
+        + _pb_varint_field(
+            3, struct.unpack_from("<I", nonce, 6)[0] & 0x7FFFFFFF
+        )
+        + _pb_bytes_field(4, b"8662")
+        + _pb_bytes_field(5, str(device.get("device_id", "")).encode())
+        + _pb_bytes_field(6, b"1611921764")
+        + _pb_bytes_field(7, str(device.get("version_name", "7.3.5.32")).encode())
+        + _pb_bytes_field(8, b"v04.07.01-ml-android")
+        + _pb_varint_field(9, 135135744)
+        + _pb_bytes_field(10, bytes(8))
+        + _pb_varint_field(11, 0)
+        + _pb_varint_field(12, ts * 2)
+        + _pb_bytes_field(13, body_hash[:6])
+        + _pb_bytes_field(14, query_hash[:6])
+        + _pb_bytes_field(15, counters)
+        + _pb_bytes_field(16, b"")
+        + _pb_bytes_field(20, b"none")
+        + _pb_varint_field(21, 738)
+        + _pb_bytes_field(23, env)
+        + _pb_varint_field(25, 2)
+    )
+    stream = bytearray(_argus_key_stream(_pad16(message)))
+    mask = bytes.fromhex("d04ffdffd04ffdff")
+    for i in range(len(stream)):
+        stream[i] ^= mask[i % 8]
+    payload = (mask + bytes(stream))[::-1]
+    container = (
+        bytes.fromhex("a6e783ee7001100918")
+        + payload
+        + bytes.fromhex("567b")
+    )
+    encrypted = _aes_cbc_encrypt(
+        digest("md5", _ARGUS_KEY[:16]),
+        digest("md5", _ARGUS_KEY[16:]),
+        _pad16(container),
+    )
+    return base64.b64encode(b"\x3c\xcc" + encrypted).decode()
+
+
+def ladon(aid: str, ts: int, prefix: bytes) -> str:
+    digest_hex = digest("md5", prefix + aid.encode()).hex().encode()
+    left = struct.unpack_from("<Q", digest_hex, 0)[0]
+    right = struct.unpack_from("<Q", digest_hex, 8)[0]
+    queue = [
+        struct.unpack_from("<Q", digest_hex, 16)[0],
+        struct.unpack_from("<Q", digest_hex, 24)[0],
+    ]
+    keys = []
+    for i in range(34):
+        keys.append(left)
+        mixed = ((ror64(right, 8) + left) & 0xFFFFFFFFFFFFFFFF) ^ i
+        queue.append(mixed)
+        left = mixed ^ _rol64(left, 3)
+        right = queue.pop(0)
+    out = bytearray(
+        _pad16(("%d-1611921764-%s" % (ts, aid)).encode())
+    )
+    for offset in range(0, len(out), 16):
+        lv, rv = struct.unpack_from("<QQ", out, offset)
+        for key in keys:
+            rv = key ^ ((lv + ror64(rv, 8)) & 0xFFFFFFFFFFFFFFFF)
+            lv = rv ^ _rol64(lv, 3)
+        struct.pack_into("<QQ", out, offset, lv, rv)
+    return base64.b64encode(prefix + bytes(out)).decode()
 
 
 # --------------------------------------------------------------------------- 其它头
@@ -588,6 +742,7 @@ class Signer:
         else:
             raise RuntimeError("128 次试探都没有命中签名分支")
         rnd16 = int(self.rng() * 65536)
+        sign_nonce = secrets.token_bytes(11)
         headers.update({
             "User-Agent": hgvendor.VIDEO_UA if body is not None else hgvendor.APP_UA,
             "Accept": "application/json; charset=utf-8,application/x-protobuf",
@@ -597,11 +752,10 @@ class Signer:
             "passport-sdk-version": "50561",
             "x-xs-from-web": "0",
             "x-khronos": str(ts),
-            "x-ladon": base64.b64encode(be32(ts)).decode(),
-            "x-argus": base64.b64encode(le32(ts)).decode(),
+            "x-ladon": ladon("8662", ts, sign_nonce[2:6]),
+            "x-argus": argus(query, body, ts, self.device, sign_nonce),
             "x-gorgon": gorgon(query, body, ts, rnd16),
             "x-helios": self.helios(ts),
-            "x-medusa": self.medusa(base + "?" + query, body, ts),
             "x-tt-dt": "",
         })
         if body is not None:
@@ -633,4 +787,6 @@ if __name__ == "__main__":  # 自检：与 Kotlin 侧的固定输入对照
     req = s.sign("https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/tab/v1/",
                  s.common_values({"query": "斗罗大陆", "count": "20", "offset": "0", "user_is_login": "0"}))
     print("url:", req["url"][:180])
-    print("medusa len:", len(req["headers"]["x-medusa"]))
+    print("argus len:", len(req["headers"]["x-argus"]))
+    print("ladon len:", len(req["headers"]["x-ladon"]))
+    print("medusa:", "x-medusa" in req["headers"])

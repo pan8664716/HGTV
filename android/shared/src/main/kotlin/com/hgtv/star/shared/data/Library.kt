@@ -62,7 +62,7 @@ class Library(context: Context) {
          */
         val MIRROR_KEYS = listOf(
             "registered-device-id","registered-install-id","registered-device-token",
-            "registered-klink-egdi","registered-profile-stamp",
+            "registered-klink-egdi","registered-profile-stamp","registered-activation-stamp",
             "manual-device-id",
             "device-profile","device-seed","device-profile-seed",
             // 待换新的候选档案（见 [commitPendingProfile]）：重装后仍要记得「这套身份是旧的」，
@@ -719,10 +719,12 @@ class Library(context: Context) {
         sessionPrefs.edit().remove("registered-device-id").remove("registered-install-id")
             .remove("registered-device-token")
             .remove("registered-klink-egdi")
-            .remove("registered-profile-stamp").remove("registered-cookies")
+            .remove("registered-profile-stamp").remove("registered-activation-stamp")
+            .remove("registered-cookies")
             .remove("registration-pending").apply()
         listOf("registered-device-id","registered-install-id","registered-device-token",
-            "registered-klink-egdi","registered-profile-stamp","registered-cookies")
+            "registered-klink-egdi","registered-profile-stamp","registered-activation-stamp",
+            "registered-cookies")
             .forEach(mirror::remove)
         cachedProfileStamp=null
     }
@@ -743,6 +745,31 @@ class Library(context: Context) {
     }
     fun registrationPending(): Boolean =
         sessionPrefs.getBoolean("registration-pending",false) || pendingProfile()!=null
+    /**
+     * 这台已注册设备是否完成过 App 日志 SDK 激活。
+     *
+     * 标记与 `device_id|iid` 绑定；重新注册换号后会自动失效。
+     */
+    fun deviceActivated(): Boolean {
+        restoreFromMirror()
+        val id=deviceIdentity()
+        val deviceId=id["device_id"].orEmpty()
+        val installId=id["iid"].orEmpty()
+        if(deviceId.isBlank() || installId.isBlank()) return false
+        return sessionPrefs.getString("registered-activation-stamp","").orEmpty()==
+            "$deviceId|$installId"
+    }
+    fun markDeviceActivated() {
+        if(discarding) return
+        val id=deviceIdentity()
+        val deviceId=id["device_id"].orEmpty()
+        val installId=id["iid"].orEmpty()
+        if(deviceId.isBlank() || installId.isBlank()) return
+        val stamp="$deviceId|$installId"
+        sessionPrefs.edit().putString("registered-activation-stamp",stamp).commit()
+        mirror.put("registered-activation-stamp",stamp)
+        mirror.flush()
+    }
     /** 落盘注册结果；传空表示清除（下次启动重新注册）。 */
     fun saveDeviceIdentity(
         deviceId: String,
@@ -762,13 +789,15 @@ class Library(context: Context) {
         sessionPrefs.edit().putString("registered-device-id",deviceId).putString("registered-install-id",installId)
             .putString("registered-device-token",deviceToken)
             .putString("registered-klink-egdi",klinkEgdi)
-            .putString("registered-profile-stamp",stamp).commit()
+            .putString("registered-profile-stamp",stamp)
+            .remove("registered-activation-stamp").commit()
         // 身份一变（首次注册 / 重新注册）镜像立刻跟上：卸载重装后要先认回这台设备，再谈别的。
         mirror.put("registered-device-id",deviceId); mirror.put("registered-install-id",installId)
         if(deviceToken.isNotBlank()) mirror.put("registered-device-token",deviceToken)
         else mirror.remove("registered-device-token")
         if(klinkEgdi.isNotBlank()) mirror.put("registered-klink-egdi",klinkEgdi) else mirror.remove("registered-klink-egdi")
         mirror.put("registered-profile-stamp",stamp)
+        mirror.remove("registered-activation-stamp")
         // 不等 250 ms 的合并窗口：注册成功后用户可能马上就退出 / 强杀，
         // 那一次写没落盘，下一次进来就又成了「未注册设备」——正是用户报的那个现象。
         mirror.flush()
@@ -852,7 +881,10 @@ class Library(context: Context) {
                 // 不要把它永久当成设备身份：后续每次读档案都再试一次 Android ID，
                 // 一旦可读就把 openudid 升级为官方语义，并让注册指纹自然失效、重新注册。
                 val source=map["openudid-source"].orEmpty()
-                if(source!="android_id" && source!="forced_random") {
+                // 官方 App 用真实 Android ID 作为 openudid。即使旧版本曾因换设备
+                // 写过 forced_random，只要现在能读到 Android ID，也要升级回来；
+                // 否则设备会永久以 new_user=1 的陌生身份请求，第一批模型后就被限流。
+                if(source!="android_id") {
                     val androidId=readAndroidId()
                     if(androidId!=null && androidId!=map["openudid"]) {
                         map=LinkedHashMap(map).apply {
@@ -928,7 +960,9 @@ class Library(context: Context) {
      */
     fun queueNewDeviceIdentity() {
         if(discarding) return
-        storePendingProfile(buildOfficialProfile(forceRandomOpenudid=true))
+        // 换设备只换 cdid/clientudid；openudid 继续使用真实 Android ID。
+        // 把它换成随机值会让服务端把用户当成全新设备，播放模型额度只剩第一批。
+        storePendingProfile(buildOfficialProfile())
         markRegistrationPending()
     }
     /** 按官方默认链路生成一整套设备档案（机型 / 系统 / 分辨率 / 密度 / 三个标识）。 */
@@ -1004,8 +1038,22 @@ class Library(context: Context) {
         if(raw.isBlank()) return null
         return runCatching {
             val json=org.json.JSONObject(raw)
-            buildMap { for(key in json.keys()) json.optString(key).takeIf { it.isNotBlank() }?.let { put(key,it) } }
+            var map=buildMap { for(key in json.keys()) json.optString(key).takeIf { it.isNotBlank() }?.let { put(key,it) } }
                 .takeIf { it["cdid"].orEmpty().isNotBlank() && it["openudid"].orEmpty().isNotBlank() }
+            if(map!=null && map["openudid-source"]=="forced_random") {
+                val androidId=readAndroidId()
+                if(androidId!=null && androidId!=map["openudid"]) {
+                    map=LinkedHashMap(map).apply {
+                        put("openudid",androidId)
+                        put("openudid-source","android_id")
+                    }
+                    storePendingProfile(
+                        map,
+                        sessionPrefs.getString("device-profile-pending-seed","").orEmpty(),
+                    )
+                }
+            }
+            map
         }.getOrNull()
     }
     /** 把候选档案连同**它的种子**一起落盘（只在注册成功之后才会变成正式档案）。 */
@@ -1177,15 +1225,6 @@ class Library(context: Context) {
     var autoNext: Boolean
         get() = state().settings.autoNext
         set(value) { if (value != autoNext) { state().settings = state().settings.copy(autoNext = value); put("autoNext", value) } }
-    /**
-     * 自动连播跨集后强制重新校准音画时钟。
-     *
-     * 这是给部分电视的兼容开关，默认关闭。只有用户明确打开后才在自动切集时硬切媒体源、
-     * 重建解码与音频链路；正常设备不要开启，避免每次跨集都黑屏或缓冲。
-     */
-    var forceAvSync: Boolean
-        get() = state().settings.forceAvSync
-        set(value) { if (value != forceAvSync) { state().settings = state().settings.copy(forceAvSync = value); put("forceAvSync", value) } }
     var playbackSpeed: Float
         get() = state().settings.speed
         set(value) { val next = PlaybackSpeed.normalize(value); if (next != playbackSpeed) { state().settings = state().settings.copy(speed = next); put("playbackSpeed", next) } }
@@ -1735,7 +1774,6 @@ class Library(context: Context) {
         persist("favorites", "later", "progress", "watched", "hidden", "searches", "favoriteUpdates", "historyDeleted")
         writes.submit(mapOf("quality" to { merged.settings.quality }, "playbackSpeed" to { merged.settings.speed },
             "autoNext" to { merged.settings.autoNext },
-            "forceAvSync" to { merged.settings.forceAvSync },
             "frameMode" to { merged.settings.frame.name }, "decoderMode" to { merged.settings.decoder.name },
             "danmakuMode" to { merged.settings.danmaku.storedValue },
             "danmakuScale" to { merged.settings.danmakuScale }, "danmakuAlpha" to { merged.settings.danmakuAlpha },

@@ -392,12 +392,6 @@ class MainActivity: Activity() {
     var workJob: java.util.concurrent.Future<*>?=null
     var playerListener: Player.Listener?=null
     /**
-     * 双播放器兼容模式下，把当前会话的监听器从旧实例接到新实例。
-     *
-     * 监听器闭包里的播放器引用必须一起更新；只在片尾交换时由主线程调用。
-     */
-    var playerListenerRebind: ((ExoPlayer)->Unit)?=null
-    /**
      * 待决的解码器错误上报（见 [playbackDiagnostics] 的 `onVideoCodecError`）。
      *
      * 延迟 1.5 秒等 `onPlayerError`：后者到了就说明这条是同一件事的重复，
@@ -514,12 +508,12 @@ class MainActivity: Activity() {
     val reserveFilterButtons=mutableMapOf<Boolean,View>()
     /**
      * 列表「一页」的条数——**只是给界面显示用的估算**，真正的分页由 `core` 的
-     * 榜单的 `RANK_PAGE_SIZE` 决定（首屏 20 条，后续页同大小追加）。
+     * `LOGICAL_PAGE_SIZE` 决定（现在各条路统一成 100 条一个逻辑页）。
      *
      * 这个值只在一处用到：榜单底部那行「已显示 N / M 部」按「总页数 × 每页条数」估算总数。
      * 改了 `core` 那边的一页大小，这里要跟着改，否则那个总数会差好几倍。
      */
-    val pageSize=20
+    val pageSize=100
     /**
      * 「回到顶部」浮层：右下角那一枚按钮（见 `list/BackToTop.kt`）。
      *
@@ -893,23 +887,6 @@ class MainActivity: Activity() {
     var sleepStopped=false
     var playerView: PlayerView?=null
     /**
-     * 强制音画同步专用：第二个播放器与第二个 Surface。
-     *
-     * 两个实例轮流做「正在显示」和「后台预热下一集」。只创建一次，之后乒乓复用；
-     * 默认关闭时这些字段始终为空，不增加解码器、内存或 Surface 开销。
-     */
-    @Volatile internal var compatibilityStandbyPlayer: ExoPlayer?=null
-    var compatibilityStandbyView: PlayerView?=null
-    var compatibilityStandbyListener: Player.Listener?=null
-    var compatibilityStandbyReady=false
-    var compatibilityStandbyFirstFrame=false
-    var compatibilityStandbyPreparing=false
-    var compatibilityStandbyToken=0
-    var compatibilityStandbyVideoWidth=0
-    var compatibilityStandbyVideoHeight=0
-    /** 当前集已经结束，等后台播放器吐出新集首帧后立刻交换。 */
-    var compatibilityEndedWaiting=false
-    /**
      * 播放页「画面之外的一切」那一层：弹幕 / 手势层 / 顶部信息条 / 底部控制条 / 触屏按键。
      *
      * 单独装一层不是为了排版，是为了**整体旋转**：竖屏短剧全屏是把画面转 90°
@@ -983,6 +960,8 @@ class MainActivity: Activity() {
     var autoRecovery=false
     var startPosition=0L
     var retryPosition=0L
+    /** 当前排着的自动重试属于哪一集；切集后旧回调即使漏网也不能再起播。 */
+    var retryEpisodeId=""
     var requestedAutoplay=true
     var retryAutoplay=true
     var foreground=false
@@ -991,7 +970,10 @@ class MainActivity: Activity() {
     private var networkWatch: Cancellable?=null
     val retryRunnable=Runnable {
         retryPending=false
-        if(foreground && screen=="player" && playError && autoRecovery) {
+        val retryId=detail?.episodes?.getOrNull(episodeIndex).orEmpty()
+        if(retryEpisodeId.isNotEmpty() && retryId!=retryEpisodeId) {
+            cancelRecovery()
+        } else if(foreground && screen=="player" && playError && autoRecovery) {
             if(!networkAvailable()) scheduleRecovery()
             else if(ledger.consumeAttempt()) {
                 android.util.Log.i("HGTV","Automatic playback recovery ${ledger.attempts}/3 at ${retryPosition}ms")
@@ -1175,6 +1157,12 @@ class MainActivity: Activity() {
     val recommendWarming=mutableSetOf<String>()
     /** 每一个在途预热对应的任务（按 key 找，互不牵连；取消时连它自己的 HTTP 一起掐掉）。 */
     val recommendWarmJobs=HashMap<String,RecommendWarm>()
+    /** 推荐页起播后那一批 6 个播放模型的去重键与任务。 */
+    var recommendBatchKey=""
+    var recommendBatchJob: java.util.concurrent.Future<*>?=null
+    /** 从推荐页进入正片后，当前剧后 5 集模型的去重键与任务。 */
+    var formalBatchKey=""
+    var formalBatchJob: java.util.concurrent.Future<*>?=null
     /**
      * 推荐页预热走 `network` 车道。
      *
@@ -1569,8 +1557,6 @@ class MainActivity: Activity() {
      * 播放器被拆除时一并清空。
      */
     @Volatile internal var configuredPlayer: ExoPlayer?=null
-    /** 第二个实例只配置一次；与 [configuredPlayer] 分开记录，避免重复挂诊断监听。 */
-    @Volatile internal var configuredCompatibilityPlayer: ExoPlayer?=null
     var video: RemoteVideo?=null
     /**
      * 最近一次**真的取到**的播放地址域名（由 [playEpisode] 在 `repository.stream()` 之后写入）。

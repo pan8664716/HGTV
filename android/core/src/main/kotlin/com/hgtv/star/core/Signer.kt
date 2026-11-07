@@ -228,7 +228,8 @@ class Signer(
                 // Passport 路径用 5051452，其余内容 / 账号接口用 6031190。
                 // 早先一律写 50561，两个都不对。
                 val passportPath = base.contains("/passport/")
-                val headers = linkedMapOf("User-Agent" to VendorConstants.userAgent(d, video = body != null),"Accept" to "application/json; charset=utf-8,application/x-protobuf", "x-ss-req-ticket" to ticket.toString(),"x-tt-request-tag" to "t=0;n=0","sdk-version" to "2","passport-sdk-version" to (if(passportPath) "5051452" else "6031190"),"x-xs-from-web" to "0","x-khronos" to ts.toString(),"x-ladon" to be32(ts).base64(),"x-argus" to le32(ts).base64(),"x-gorgon" to gorgon(query,body,ts,random),"x-helios" to helios(ts),"x-medusa" to medusa(url,body,ts,d),"x-tt-dt" to "")
+                val sign = ArgusLadon.sign(query, body, ts, d)
+                val headers = linkedMapOf("User-Agent" to VendorConstants.userAgent(d, video = body != null),"Accept" to "application/json; charset=utf-8,application/x-protobuf", "x-ss-req-ticket" to ticket.toString(),"x-tt-request-tag" to "t=0;n=0","sdk-version" to "2","passport-sdk-version" to (if(passportPath) "5051452" else "6031190"),"x-xs-from-web" to "0","x-khronos" to ts.toString(),"x-ladon" to sign.ladon,"x-argus" to sign.argus,"x-gorgon" to gorgon(query,body,ts,random),"x-helios" to helios(ts),"x-tt-dt" to "")
                 if(passportPath) {
                     headers["x-vc-bdturing-sdk-version"]="4.0.3.cn"
                     headers["lc"]="101"

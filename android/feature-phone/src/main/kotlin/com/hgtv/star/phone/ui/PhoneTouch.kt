@@ -100,24 +100,17 @@ class PhoneTouch(
          */
         const val TOP_PULL_GUARD_DP = 64f
 
-        /**
-         * 竖滑换集的提交距离：屏高的 8%（1080×2400 上约 192px）。
-         *
-         * 再短容易误触，再长则要划过大半屏才认；快速轻扫另由速度阈值兜底。
-         */
-        const val VERTICAL_COMMIT_RATIO = 0.08f
-
-        /** 快速轻扫的速度阈值（屏高/秒）：位移不够时，甩一下也能换集。 */
-        const val VERTICAL_FLING_RATIO_PER_SECOND = 0.55f
+        /** 与推荐页一致：慢拖越过半页才换集，快速轻扫由系统最小 fling 速度决定。 */
+        const val VERTICAL_COMMIT_RATIO = PhonePagerMotion.SNAP_DISTANCE_RATIO
 
         /**
          * 方向锁定的主轴优势。
          *
-         * 正式播放页以纵滑换集为主，因此纵向稍微占优就锁纵滑；横滑要明显更横才锁拖进度。
-         * 这样斜着往上滑时不会被开头那一点横向抖动抢成拖进度。
+         * 推荐页的纵向列表与横向 pager 都以 1:1 分界：
+         * `|dy| > |dx|` 归纵向，`|dx| > |dy|` 归横向。
          */
-        const val VERTICAL_AXIS_BIAS = 0.85f
-        const val HORIZONTAL_AXIS_BIAS = 1.25f
+        const val VERTICAL_AXIS_BIAS = 1f
+        const val HORIZONTAL_AXIS_BIAS = 1f
 
         /** 纵滑方向（见 `onVerticalEnd`）。 */
         const val DIRECTION_NONE = 0
@@ -127,6 +120,8 @@ class PhoneTouch(
 
     private val handler = Handler(Looper.getMainLooper())
     private val slop = ViewConfiguration.get(host.context).scaledTouchSlop
+    private val minimumFlingVelocity =
+        PhonePagerMotion.minimumFlingVelocityPxPerSecond(host.context).toFloat()
 
     private var mode = Mode.IDLE
     private var downX = 0f
@@ -264,11 +259,10 @@ class PhoneTouch(
                     Mode.DRAG -> onDragEnd()
                     Mode.LONG -> onLongPressEnd()
                     Mode.VERTICAL -> {
-                        val fling = height() * VERTICAL_FLING_RATIO_PER_SECOND
                         val next = lastDy < -VERTICAL_COMMIT_RATIO ||
-                            (lastDy < 0f && vy < -fling)
+                            (lastDy < 0f && vy < -minimumFlingVelocity)
                         val previous = lastDy > VERTICAL_COMMIT_RATIO ||
-                            (lastDy > 0f && vy > fling)
+                            (lastDy > 0f && vy > minimumFlingVelocity)
                         val direction = when {
                             next -> DIRECTION_NEXT
                             previous -> DIRECTION_PREV

@@ -244,7 +244,7 @@ def request_headers(body: bytes, cookies: dict) -> dict:
         "x-ss-req-ticket": str(now_ms()),
         "x-vc-bdturing-sdk-version": "4.0.3.cn",
         "x-tt-trace-id": trace_id(),
-        "x-neptune": "-8|50:51:59:30:40:47:49:39",
+        "x-neptune": "-11|50:51:59",
         "x-ss-stub": hashlib.md5(body).hexdigest().upper(),
         "Accept-Encoding": "gzip, deflate, br",
     }

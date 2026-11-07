@@ -43,8 +43,10 @@ import com.hgtv.star.shared.media.swapMediaSource
 import com.hgtv.star.shared.nav.Route
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -209,6 +211,9 @@ class PhoneFeedView(
     /** 每一屏当前在播的集（续播时可能不是第 1 集）。 */
     private val currentEpisodeIds = HashMap<Int, String>()
     private val currentEpisodeIndex = HashMap<Int, Int>()
+    /** 推荐页起播后的 6 个模型批量预取（当前剧下一集 + 后 5 部不同剧）。 */
+    private var recommendBatchKey = ""
+    private var recommendBatchJob: Job? = null
 
     private val hint = TextView(context).apply {
         setTextColor(Color.WHITE)
@@ -1237,6 +1242,9 @@ class PhoneFeedView(
     /** [startAt] >= 0 时从该毫秒继续播（换清晰度重取地址时用），否则按本机进度续播。 */
     private fun playIndex(index: Int, startAt: Long = -1L) {
         val series = items.getOrNull(index) ?: return
+        recommendBatchJob?.cancel()
+        recommendBatchJob = null
+        recommendBatchKey = ""
         // 滑到新的一屏 = 明确的「我要看这一部」：上一屏被用户按停过，不该带到这一屏。
         // 两条状态都要清：
         // * `paused` —— `attach` 里 `playWhenReady = !paused` 直接读它，留着就是「滑过来先是暂停的」；
@@ -1338,6 +1346,58 @@ class PhoneFeedView(
         }
         // 首帧之后再排预热（与电视端「首帧 + 2 秒」同一条：此刻解码器还在出帧、buffer 还在填）。
         schedulePreload(slideCache.firstFrameDelay())
+    }
+
+    /**
+     * 推荐页出画面后，用一次批量接口预取 6 个模型：
+     * 当前剧下一集 + 后面 5 部不同推荐剧的首集。
+     */
+    private fun scheduleRecommendBatchModels(anchor: Int) {
+        if (hidden || anchor != playingIndex) return
+        val data = playingDetail ?: return
+        val current = currentEpisodeIndex[anchor] ?: return
+        val nextId = data.episodes.getOrNull(current + 1).orEmpty()
+        val candidates = (anchor + 1 until items.size)
+            .mapNotNull(items::getOrNull)
+            .filter { it.id != data.series.id }
+            .distinctBy { it.id }
+            .take(8)
+        val key = "${data.series.id}:$nextId:${candidates.joinToString(",") { it.id }}"
+        if (recommendBatchKey == key && recommendBatchJob?.isActive == true) return
+        recommendBatchJob?.cancel()
+        recommendBatchKey = key
+        val token = playToken
+        recommendBatchJob = scope.launch {
+            delay(slideCache.firstFrameDelay())
+            if (hidden || anchor != playingIndex || token != playToken) return@launch
+            val repo = PhoneServices.repository(context)
+            val ids = linkedSetOf<String>()
+            if (nextId.isNotBlank()) ids += nextId
+            val target = if (nextId.isBlank()) 5 else 6
+            withContext(Dispatchers.IO) {
+                for (series in candidates) {
+                    if (ids.size >= target) break
+                    val item = runCatching { com.hgtv.star.core.DetailCache.load(series.id) }.getOrNull()
+                        ?: runCatching { repo.detail(series.id) }.getOrNull()
+                        ?: continue
+                    val first = item.episodes.firstOrNull() ?: continue
+                    ids += first
+                }
+                if (ids.isNotEmpty()) {
+                    runCatching { repo.prefetchModels(ids.toList(), data.playback) }
+                }
+            }
+            if (com.hgtv.star.shared.BuildConfig.DEBUG) {
+                android.util.Log.i(
+                    "HGTV-PHONE",
+                    "recommend batch models=${ids.size} anchor=$anchor",
+                )
+            }
+            if (recommendBatchKey == key) {
+                recommendBatchKey = ""
+                recommendBatchJob = null
+            }
+        }
     }
 
     // ------------------------------------------------------------------ 相邻预热
@@ -1685,7 +1745,10 @@ class PhoneFeedView(
             override fun onPlaybackStateChanged(state: Int) {
                 notifyPlayStateChanged()
                 // 真的出画面了：连续失败计数归零（取地址成功不算，能放才算）。
-                if (state == Player.STATE_READY) recommendFailures = 0
+                if (state == Player.STATE_READY) {
+                    recommendFailures = 0
+                    scheduleRecommendBatchModels(index)
+                }
                 if (state == Player.STATE_ENDED) onEpisodeEnded(index)
             }
 

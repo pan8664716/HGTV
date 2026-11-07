@@ -450,6 +450,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     /** 清空这一集的弹幕（换集、切到隐藏档）。 */
     fun clear() {
         raw=emptyList()
+        highlights=emptyList()
+        highlightCursor=0
         // 换集才整份丢掉三个缓存：纹理与宽度都只跟这一集的文案有关。
         partsCache.clear()
         widthCache.clear()

@@ -269,13 +269,6 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      */
     val recommendSwipe: Boolean=true,
     /**
-     * 自动连播切集后强制重新校准音画时钟。
-     *
-     * 只用于部分电视在 Media3 自动跨集后出现音画不同步的兼容修复。默认关闭，
-     * 旧备份 / 旧磁盘没有这个字段时也按关闭处理。
-     */
-    val forceAvSync: Boolean=false,
-    /**
      * 聚合弹幕的计数放大、渐热颜色和 `+1` 冲击效果。
      *
      * 默认开启；关闭后聚合本身、7 秒停留和槽位替换都不变，只把 `×N` 恢复为固定白色字号。
@@ -305,7 +298,6 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
         .put("launchRecommend",launchRecommend)
         .put("gridColumns",gridColumns)
         .put("recommendSwipe",recommendSwipe)
-        .put("forceAvSync",forceAvSync)
         .put("hiddenHome",hiddenHome)
         .put("reduceAnim",reduceAnim)
 }
@@ -443,8 +435,6 @@ object LibraryBackup {
         val gridColumns=if(settings.has("gridColumns")) settings.number("gridColumns",2).toInt().coerceIn(1,3) else 2
         // 推荐页左右滑动切换：后加字段，旧备份没有它时按开启处理（与之前的行为一致）。
         val recommendSwipe=settings.optBoolean("recommendSwipe",true)
-        // 强制音画同步：后加字段，旧备份没有它时按关闭处理，避免正常设备被硬切媒体源。
-        val forceAvSync=settings.optBoolean("forceAvSync",false)
         // 导航栏圆形入口：逐个开关，值是被隐藏的那些 key；旧备份没有这个字段 = 全部显示。
         val hiddenNav=settings.optString("hiddenNav","").takeIf { it.length<=80 && it.none(Char::isISOControl) }.orEmpty()
         // 启动进入推荐：后加字段，旧备份没有它时按开启处理（与需求 1 的默认行为一致）。
@@ -455,7 +445,7 @@ object LibraryBackup {
         val hiddenHome=settings.optString("hiddenHome","").takeIf { it.length<=120 && it.none(Char::isISOControl) }.orEmpty()
         // 「减少动画」：后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。
         val reduceAnim=settings.optBoolean("reduceAnim",false)
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,forceAvSync=forceAvSync,danmakuEffects=danmakuEffects),later,hiddenIds)
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,danmakuEffects=danmakuEffects),later,hiddenIds)
     }
     /** Existing favorites stay first; only newer imported progress replaces a local record. */
     fun merge(local: BackupData,incoming: BackupData,restoreSettings: Boolean): BackupData {

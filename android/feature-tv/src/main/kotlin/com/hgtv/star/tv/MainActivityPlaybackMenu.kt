@@ -446,7 +446,6 @@ fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     restoreBufferingUi()
     playedItemPending=false; playedItemId=""
     playerListener?.let { player?.removeListener(it) }; playerListener=null
-    playerListenerRebind=null
     // 先给弹幕层停表并清空这一集：绘制循环不再回调播放器，下面 stop / clearMediaItems
     // 期间即使还有一帧在排队，也只会画到空数据，不会读到播放器的中间状态。
     danmakuView?.let { it.stopClock(); it.clear() }
@@ -464,7 +463,6 @@ fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     orphanResources.clear()
     video?.close(); video=null
     playerView?.player=null; playerView=null
-    compatibilityStandbyView?.player=null; compatibilityStandbyView=null
     // 状态机回到 IDLE。`playbackReady` 是它的只读投影，这一句同时把 prepared 清掉。
     playback.release()
     // 离开播放页：本次会话的降级状态（有效上限 / 预算）全部作废。
@@ -503,7 +501,6 @@ fun MainActivity.releasePlayer() {
     synchronized(playerBuildLock) {
         runCatching { player?.release() }
         player=null
-        releaseCompatibilityPlayer()
         // 下一个实例要重新配置一次（见 [MainActivity.configuredPlayer]）。
         configuredPlayer=null
         // 置位之后再进 [warmPlayer] 的线程会直接放弃：见 [playerDisposed]。

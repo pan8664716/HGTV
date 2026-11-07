@@ -973,6 +973,7 @@ fun MainActivity.settleRecommendWatch() {
  * 因此这里不需要再改回来。
  */
 private fun MainActivity.startRecommendEpisode(data: Detail,position: Long,autoplay: Boolean=true) {
+    cancelRecommendBatchModels()
     detail=data
     recommendHistoryPending=false
     // 从这里开始计时：换下一部时由 [settleRecommendWatch] 结掉（看了 → 30 天，划走 → 14 天）。
@@ -1098,6 +1099,93 @@ fun MainActivity.prefetchRecommendNeighbors(index: Int,direction: Int=recommendP
     // 这里只按它给的清单发起。原先写死的「前两步 + 反方向一步」在双向滑动下有两个洞：
     // 回看方向没有货、连划时四条 1MB 互相抢带宽。
     applyRecommendPlan(slideCache.plan(index),"window")
+}
+
+/** 换剧 / 进正片时作废上一部还没发完的推荐批量预取。 */
+fun MainActivity.cancelRecommendBatchModels() {
+    recommendBatchJob?.cancel(true)
+    recommendBatchJob=null
+    recommendBatchKey=""
+}
+
+/**
+ * 推荐页起播后预取 6 个播放模型：
+ * 当前剧的下一集 + 后面 5 部不同推荐剧的首集。
+ */
+fun MainActivity.prefetchRecommendBatchModels() {
+    if(screen!="recommend") return
+    val data=detail ?: return
+    val currentNext=data.episodes.getOrNull(episodeIndex+1).orEmpty()
+    val candidates=(recommendIndex+1 until recommendItems.size)
+        .mapNotNull { recommendItems.getOrNull(it) }
+        .filter { it.id!=data.series.id }
+        .distinctBy { it.id }
+    val key="${data.series.id}:$currentNext:${candidates.take(8).joinToString(",") { it.id }}"
+    if(recommendBatchKey==key && recommendBatchJob?.isDone==false) return
+    recommendBatchJob?.cancel(true)
+    recommendBatchKey=key
+    // 主线程先取一份详情快照，后台线程不再直接读写这个 LRU。
+    val known=buildMap {
+        for(series in candidates) recommendDetails[series.id]?.let { put(series.id,it) }
+    }
+    recommendBatchJob=recommendWarmWorker.submit {
+        val ids=linkedSetOf<String>()
+        currentNext.takeIf { it.isNotBlank() }?.let(ids::add)
+        try {
+            if(!library.deviceRegistered()) registerDeviceOnce()
+            val target=if(currentNext.isBlank()) 5 else 6
+            for(series in candidates) {
+                if(ids.size>=target) break
+                val item=known[series.id]
+                    ?: runCatching { repository.detail(series.id) }.getOrNull()
+                    ?: continue
+                val first=item.episodes.firstOrNull() ?: continue
+                if(ids.add(first) && known[series.id]==null) {
+                    main.post { if(!isDestroyed) recommendDetails.lruPut(RECOMMEND_DETAIL_LIMIT,series.id,item) }
+                }
+            }
+            if(ids.isNotEmpty()) repository.prefetchModels(ids.toList(),data.playback)
+            if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","recommend batch models=${ids.size} currentNext=${currentNext.isNotEmpty()}")
+        } catch(_: Exception) {
+            // 批量模型是后台加速，不影响当前推荐起播。
+        } finally {
+            main.post {
+                if(recommendBatchKey==key) {
+                    recommendBatchJob=null
+                    recommendBatchKey=""
+                }
+            }
+        }
+    }
+}
+
+/** 正式播放首帧稳定后，用 preload 在后台补当前剧后 6 集。 */
+fun MainActivity.prefetchFormalBatchModels() {
+    if(screen!="player") return
+    val data=detail ?: return
+    // 给 preload 一个更宽窗口；仓库会跳过 player 已缓存的当前 6 集，只补后面的 6 集。
+    val ids=data.episodes.drop(episodeIndex+1).take(12)
+    if(ids.isEmpty()) return
+    val key="${data.series.id}:$episodeIndex:${ids.joinToString(",")}"
+    if(formalBatchKey==key && formalBatchJob?.isDone==false) return
+    formalBatchJob?.cancel(true)
+    formalBatchKey=key
+    formalBatchJob=recommendWarmWorker.submit {
+        try {
+            if(!library.deviceRegistered()) registerDeviceOnce()
+            repository.prefetchModels(ids,data.playback)
+            if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","formal batch models=${ids.size}")
+        } catch(_: Exception) {
+            // 批量预取失败时，起播仍可走单集兼容兜底。
+        } finally {
+            main.post {
+                if(formalBatchKey==key) {
+                    formalBatchJob=null
+                    formalBatchKey=""
+                }
+            }
+        }
+    }
 }
 
 /** 同时在途的预热条数上限（WiFi）。再多只会互相抢带宽，当前这一部反而起播更慢。 */
@@ -1625,6 +1713,7 @@ fun MainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
     // 留着只会和正片开头的「下一集预取」抢带宽（两条线程都在拉 1MB）。
     // 已经预热好的那几份留着（回推荐页还能用）。
     cancelRecommendWarm()
+    cancelRecommendBatchModels()
     recommendToken.incrementAndGet()
     dismissRecommendOverlay()
     hud.visibility=View.GONE

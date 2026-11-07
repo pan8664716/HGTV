@@ -48,7 +48,9 @@ class HgtvApplication: Application() {
         startDnsWarmup()
         startSignWarmup()
         initSession()
-        startPlaybackDevicePool()
+        // 暂时关闭后台一次性播放设备池：它会每 3 秒注册一台匿名设备。
+        // 播放统一使用本机注册并完成激活的持久身份。
+        // startPlaybackDevicePool()
     }
 
     /**

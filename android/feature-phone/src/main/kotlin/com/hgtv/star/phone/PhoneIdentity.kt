@@ -70,27 +70,44 @@ internal object PhoneIdentity {
         repo: com.hgtv.star.core.ContentRepository,
     ) {
         if (registering) return
-        // 三个条件任一成立就要注册（与电视端 `ensureDeviceRegistered` 同一判据，见 `:shared`）：
-        // 档案被重建过、上一次换新失败过、或者本机根本没有身份。
-        // 早先这里只判「有没有身份」，于是「档案换了而 device_id 没换」那种设备
-        // 在手机端永远修不好——搜索回空、播放报 101000，用户只能清缓存重来。
-        if (!com.hgtv.star.shared.data.DeviceRegistration.needsRegister(lib)) return
+        // 注册与激活分开判断：已经有身份但没跑完 app_log / log_settings 的设备，
+        // 只补激活，不能再注册一台新设备。
+        val needsRegistration=com.hgtv.star.shared.data.DeviceRegistration.needsRegister(lib)
+        val needsActivation=com.hgtv.star.shared.data.DeviceRegistration.needsActivation(lib)
+        if (!needsRegistration && !needsActivation) return
         registering = true
         Thread({
-            val outcome = runCatching {
-                com.hgtv.star.shared.data.DeviceRegistration.registerOnce(
-                    library = lib,
-                    repository = repo,
-                    force = true,
-                )
-            }.getOrElse { com.hgtv.star.shared.data.DeviceRegistration.Outcome.FAILED }
+            val outcome = if(needsRegistration) {
+                runCatching {
+                    com.hgtv.star.shared.data.DeviceRegistration.registerOnce(
+                        library = lib,
+                        repository = repo,
+                        force = true,
+                    )
+                }.getOrElse { com.hgtv.star.shared.data.DeviceRegistration.Outcome.FAILED }
+            } else if(com.hgtv.star.shared.data.DeviceRegistration.ensureActivated(lib,repo,"device_activate_phone")) {
+                com.hgtv.star.shared.data.DeviceRegistration.Outcome.REGISTERED
+            } else {
+                com.hgtv.star.shared.data.DeviceRegistration.Outcome.FAILED
+            }
             registering = false
             when (outcome) {
                 com.hgtv.star.shared.data.DeviceRegistration.Outcome.REGISTERED -> {
-                    android.util.Log.i("HGTV-PHONE", "device registered id=${lib.deviceIdentity()["device_id"]}")
+                    android.util.Log.i(
+                        "HGTV-PHONE",
+                        if(needsRegistration) {
+                            "device registered id=${lib.deviceIdentity()["device_id"]}"
+                        } else {
+                            "device activated id=${lib.deviceIdentity()["device_id"]}"
+                        },
+                    )
                     // 首屏很可能已经用「没注册」的身份请求过了（App 搜索会空响应）：
                     // 注册一落地就通知界面按新身份重取一次。
-                    com.hgtv.star.shared.debug.DebugLog.record("设备", "注册完成 · 已换用新身份", force = true)
+                    com.hgtv.star.shared.debug.DebugLog.record(
+                        "设备",
+                        if(needsRegistration) "注册完成 · 已换用新身份" else "设备已激活",
+                        force = true,
+                    )
                 }
                 com.hgtv.star.shared.data.DeviceRegistration.Outcome.FAILED ->
                     com.hgtv.star.shared.debug.DebugLog.record("设备", "注册失败 · 下次启动重试", force = true)

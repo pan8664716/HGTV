@@ -3,6 +3,7 @@ package com.hgtv.star.shared.data
 
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.shared.debug.Diagnostics
+import com.hgtv.star.shared.debug.DebugLog
 
 /**
  * 设备注册（匿名）的**唯一实现**：电视与手机共用。
@@ -50,6 +51,49 @@ object DeviceRegistration {
         return !library.deviceRegistered()
     }
 
+    /** 已注册但还没完成 App 日志 SDK 激活时，需要在后台补一次握手。 */
+    fun needsActivation(library: Library): Boolean =
+        library.deviceRegistered() && !library.deviceActivated()
+
+    private val activationLock = Any()
+    @Volatile private var lastActivationAttempt = 0L
+
+    /**
+     * 完成 `app_log` / `log_settings` 激活握手。
+     *
+     * 失败不会影响已经拿到的设备身份；下次启动会再次尝试。同一进程内至少隔一分钟，
+     * 避免手机端每次切页都重复请求。
+     */
+    fun ensureActivated(
+        library: Library,
+        repository: ContentRepository,
+        stage: String = "device_activate",
+        detail: String = "",
+    ): Boolean {
+        if(library.deviceActivated()) return true
+        synchronized(activationLock) {
+            if(library.deviceActivated()) return true
+            val now=System.currentTimeMillis()
+            if(now-lastActivationAttempt<60_000L) return false
+            lastActivationAttempt=now
+            val activated=runCatching {
+                repository.activateDevice(library.registrationProfile())
+            }.getOrDefault(false)
+            if(activated) {
+                library.markDeviceActivated()
+                DebugLog.record("设备","已激活 · app_log / log_settings")
+                return true
+            }
+            val problem=repository.lastActivationError
+            Diagnostics.warn(
+                stage,
+                if(detail.isBlank()) "设备激活失败" else "$detail 设备激活失败",
+                problem,
+            )
+            return false
+        }
+    }
+
     /**
      * 注册一次（**阻塞**，调用方负责放到 IO 线程）。
      *
@@ -71,7 +115,10 @@ object DeviceRegistration {
         stage: String = "device_register",
         detail: String = "",
     ): Outcome {
-        if (!force && !regenerate && library.deviceRegistered()) return Outcome.ALREADY
+        if (!force && !regenerate && library.deviceRegistered()) {
+            ensureActivated(library,repository,stage="device_activate_existing",detail=detail)
+            return Outcome.ALREADY
+        }
         // 换设备：先挂一套新的候选身份，再按它去注册。已经有候选（上一次没换成的）
         // 就不覆盖，免得把待转正的那套丢掉。
         if (regenerate && !library.hasPendingProfile()) library.queueNewDeviceIdentity()
@@ -139,5 +186,6 @@ object DeviceRegistration {
             library.saveRegistrationCookies(cookies)
             SessionBootstrap.sessionStore?.saveDeviceCookies(cookies)
         }
+        ensureActivated(library,repository,stage="device_activate_commit")
     }
 }

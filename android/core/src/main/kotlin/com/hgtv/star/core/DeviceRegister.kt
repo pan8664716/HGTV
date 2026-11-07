@@ -31,7 +31,8 @@ import java.util.zip.GZIPOutputStream
  * Content-Type: application/octet-stream;tt-data=a
  * log-encode-type: gzip
  * x-ss-dp: 8662
- * x-neptune: -8|50:51:59:30:40:47:49:39
+ * x-neptune: -11|50:51:59
+ * accept-encoding: gzip, deflate, br
  * x-ss-stub: <body 的 MD5，大写>
  * body: ttEncrypt(gzip(JSON))
  * ```
@@ -214,21 +215,28 @@ object DeviceRegister {
         return ttEncrypt(gzip(json.toString().toByteArray(Charsets.UTF_8)))
     }
 
-    /** 注册请求头，逐项对齐官方冷启动抓包。**刻意不加签名头**。 */
+    /**
+     * 注册请求头，逐项对齐官方冷启动抓包。**刻意不加签名头**。
+     *
+     * 官方 7.3.9.32 的 HTTP/2 抓包里 `x-neptune` 是
+     * `-11|50:51:59`（不是早期的 `-8|...`）。`Accept-Encoding` 不能手动设置：
+     * OkHttp 只有在自己添加这个头时才会透明解压响应，否则压缩 JSON 会被直接
+     * 当 UTF-8 解析，表现为 `device_id=0` / 注册被拒绝。
+     */
     fun headers(body: ByteArray, device: Map<String,String>, now: Long = System.currentTimeMillis()): Map<String,String> = linkedMapOf(
+        "log-encode-type" to "gzip",
+        "x-ss-req-ticket" to now.toString(),
+        "x-vc-bdturing-sdk-version" to "4.0.3.cn",
+        "Content-Type" to "application/octet-stream;tt-data=a",
+        "x-ss-stub" to digest("MD5", body).hex().uppercase(),
+        "x-ss-dp" to "8662",
+        "x-tt-trace-id" to VendorConstants.traceId(),
         "User-Agent" to VendorConstants.headerSafe(
             device["user_agent"], VendorConstants.userAgent(
                 LinkedHashMap(device).apply { put("version_code","73932") },
                 video = true,
             )),
-        "Content-Type" to "application/octet-stream;tt-data=a",
-        "log-encode-type" to "gzip",
-        "x-ss-dp" to "8662",
-        "x-ss-req-ticket" to now.toString(),
-        "x-vc-bdturing-sdk-version" to "4.0.3.cn",
-        "x-tt-trace-id" to VendorConstants.traceId(),
-        "x-neptune" to "-8|50:51:59:30:40:47:49:39",
-        "x-ss-stub" to digest("MD5", body).hex().uppercase()
+        "x-neptune" to "-11|50:51:59",
     )
 
     fun url(device: Map<String,String> = emptyMap(), now: Long = System.currentTimeMillis()): String =

@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.ui
 
+import android.content.Context
+import android.view.ViewConfiguration
 import android.view.animation.Interpolator
 import androidx.recyclerview.widget.LinearSmoothScroller
 import androidx.recyclerview.widget.PagerSnapHelper
@@ -11,17 +13,22 @@ import kotlin.math.max
 /**
  * 手机端所有整页翻动的统一运动参数。
  *
- * 正式播放页的上下翻页验证过这套手感：距离决定基础时长，松手速度再补一段惯性，
- * 最后留一点稳定收尾；插值使用五次缓出。推荐流、体裁横向 pager 与选集面板
- * 都从这里取参数，避免一个地方 600ms、另一个地方 150ms。
+ * 推荐流、体裁横向 pager、正式播放页与选集面板都从这里取参数。
+ * 时长公式与 RecyclerView 默认 `smoothScrollBy` 一致，插值也使用同一枚五次缓出曲线。
  */
 object PhonePagerMotion {
+    /**
+     * 推荐页的 `PagerSnapHelper` 在慢拖时按“离哪一页更近”吸附，
+     * 等价于越过半页才翻页。正式播放页与选集面板复用同一个阈值。
+     */
+    const val SNAP_DISTANCE_RATIO = 0.5f
+
     private const val BASE_MS = 300f
-    private const val SETTLE_TAIL_MS = 80f
-    private const val INERTIA_MAX_MS = 180f
-    private const val INERTIA_PER_SCREEN_PER_SECOND = 120f
-    private const val MIN_DURATION_MS = 380L
-    private const val MAX_DURATION_MS = 1_200L
+    private const val MAX_DURATION_MS = 2_000L
+
+    /** 与 RecyclerView / PagerSnapHelper 使用的系统快甩阈值完全一致。 */
+    fun minimumFlingVelocityPxPerSecond(context: Context): Int =
+        ViewConfiguration.get(context).scaledMinimumFlingVelocity
 
     /** 与 RecyclerView 默认 pager 吸附相同的五次缓出曲线。 */
     val interpolator: Interpolator = Interpolator { t ->
@@ -32,20 +39,15 @@ object PhonePagerMotion {
     /**
      * @param distancePx 还需要移动的像素距离。
      * @param viewportPx 一页的宽或高。
-     * @param velocityPxPerSecond 松手速度；程序性切页传 0。
      */
     fun duration(
         distancePx: Float,
         viewportPx: Int,
-        velocityPxPerSecond: Float = 0f,
     ): Long {
         val viewport = viewportPx.toFloat().coerceAtLeast(1f)
-        val base = (abs(distancePx) / viewport + 1f) * BASE_MS
-        val inertia = (abs(velocityPxPerSecond) / viewport * INERTIA_PER_SCREEN_PER_SECOND)
-            .coerceIn(0f, INERTIA_MAX_MS)
-        return (base + inertia + SETTLE_TAIL_MS)
+        return ((abs(distancePx) / viewport + 1f) * BASE_MS)
             .toLong()
-            .coerceIn(MIN_DURATION_MS, MAX_DURATION_MS)
+            .coerceAtMost(MAX_DURATION_MS)
     }
 }
 

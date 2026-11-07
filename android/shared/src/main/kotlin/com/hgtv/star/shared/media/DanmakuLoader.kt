@@ -81,11 +81,15 @@ class DanmakuLoader(
         val current = mode()
         view.mode = current
         if (!force && episode == episodeId && loaded) return
+        val switchingEpisode = episode != episodeId
         val ticket = ++token
         episode = episodeId
         count = -1
         lastItems = emptyList()
         view.clear()
+        // 新一集必须先归零时钟再铺第一批弹幕；否则第一批数据会按上一集末尾的
+        // 播放位置重排，所有聚合被当成“已经发生”，先闪出来再被下一次时钟同步抹掉。
+        if (switchingEpisode) view.setClock(0, false)
         if (current == DanmakuMode.HIDDEN) return
         scope.danmaku {
             val items = runCatching {

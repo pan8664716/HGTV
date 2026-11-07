@@ -332,17 +332,30 @@ fun MainActivity.ensureDeviceRegistered() {
     // 旧身份原样留着，用户仍然能看片；下一次启动 / 下一次取播放地址前再试。
     if(deviceRegistering) return
     val pending=library.registrationPending()
-    if(!pending && library.deviceRegistered()) return
+    val registered=library.deviceRegistered()
+    val needsRegistration=pending || !registered
+    val needsActivation=registered && !library.deviceActivated()
+    if(!needsRegistration && !needsActivation) return
     deviceRegistering=true
     // 用 io 池直接跑，**不走 [work]**：那个入口会 cancelWork()，把在途的页面请求一起掐掉。
     io.submit {
-        val registered=registerDeviceOnce(force=pending)
+        val ready=if(needsRegistration) {
+            registerDeviceOnce(force=pending)
+        } else {
+            com.hgtv.star.shared.data.DeviceRegistration.ensureActivated(
+                library=library,
+                repository=repository,
+                stage="device_activate_start",
+                detail=devicePrefix(this),
+            )
+        }
         main.post {
             deviceRegistering=false
-            if(!registered || isDestroyed) return@post
+            if(!ready || isDestroyed) return@post
             // 注册成功后把身份重新交给仓库，并把当前这一页按新身份重取一次——
             // 首屏很可能已经用「没注册」的身份请求过了（App 搜索会空响应）。
             repository.deviceIdentity=library.deviceIdentity()
+            if(!needsRegistration) return@post
             if(!foreground || screen!="catalog") return@post
             when {
                 // 首页：四个剧架按新身份重取。
@@ -415,19 +428,9 @@ fun MainActivity.refreshRegistrationIdentity() {
             if(isDestroyed || fresh==null) return@post
             if(pendingProfile) library.commitPendingProfile()
             library.clearRegistrationPending()
-            library.saveDeviceIdentity(
-                fresh.deviceId,
-                fresh.installId,
-                fresh.klinkEgdi,
-                fresh.deviceToken,
-            )
+            // 与普通注册同一条收尾：落身份 / Cookie，并补一次激活握手。
+            com.hgtv.star.shared.data.DeviceRegistration.commit(library,repository,fresh)
             DebugEnv.invalidate()
-            val cookies=repository.deviceCookiesSnapshot()
-            if(cookies.isNotEmpty()) {
-                library.saveRegistrationCookies(cookies)
-                com.hgtv.star.shared.data.SessionBootstrap.sessionStore?.saveDeviceCookies(cookies)
-            }
-            repository.deviceIdentity=library.deviceIdentity()
             DebugLog.record("设备","旧版本注册身份已换新")
             // 当前这一页很可能是按旧身份取的：换新之后重取一次。
             if(!foreground || screen!="catalog") return@post

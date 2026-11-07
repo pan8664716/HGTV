@@ -66,6 +66,7 @@ import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -126,6 +127,9 @@ class PhonePlayerActivity : PhoneActivity() {
 
         /** 给签名地址留出的安全余量，避免下一集真正播放时已经过期。 */
         private const val PREFETCH_URL_RESERVE_MS = 30_000L
+
+        /** `player` 批量接口一次取当前集 + 后 14 集，覆盖短剧常见的直接跳集。 */
+        private const val PLAYER_MODEL_QUEUE_SIZE = 14
 
         /**
          * 竖屏 ↔ 全屏的过渡时长。
@@ -359,8 +363,8 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 这次拖动的目标方向：+1 = 下一集，-1 = 上一集，0 = 还没定 / 到头了。 */
     private var swipeDir = 0
     private var swipePrepared = false
-    /** 当前这一轮 pager 吸附动画：一个动画同时驱动两页与底层视频。 */
-    private var swipeAnimator: android.animation.ValueAnimator? = null
+    /** 当前这一轮 pager 吸附动画：一个帧时钟同时驱动两页与底层视频。 */
+    private var swipeAnimation: Runnable? = null
     /** 手动上滑已经推进到播放列表下一项，等 transition 回调或 post 兜底刷新界面。 */
     private var manualNextTarget = -1
     /** 手动切换前记下的当前进度：中途换集只能保存续播点，不能写成 completed。 */
@@ -418,6 +422,11 @@ class PhonePlayerActivity : PhoneActivity() {
 
     /** 排着的自动重试（3/6/12 秒）；换集 / 手动重试 / 销毁时取消。 */
     internal var retryJob: Job? = null
+    /** 当前正在取地址 / 准备媒体源的起播请求；换集时连网络一起取消。 */
+    internal var playRequestJob: Job? = null
+    internal var playRequestScope: com.hgtv.star.core.RequestScope? = null
+    /** 取地址失败后的延迟重试；换集时一并撤掉。 */
+    internal var sourceRetryRunnable: Runnable? = null
 
     /**
      * 起播代次与「这一代已经处置过错误」。
@@ -538,9 +547,7 @@ class PhonePlayerActivity : PhoneActivity() {
             requestOrientation(ActivityInfo.SCREEN_ORIENTATION_USER)
         }
         // 借下层推荐页的 Surface：判定必须在 `buildUi` 之前，页面底板建出来就要是透明的。
-        feedUnderlay = Build.VERSION.SDK_INT >= 28 &&
-            intent.getBooleanExtra(EXTRA_RECOMMEND, false) &&
-            PhoneSession.feedUnderlayUsable(seriesId)
+        feedUnderlay = canBorrowFeedSurface(seriesId)
 
         buildUi()
         val tUi = android.os.SystemClock.elapsedRealtime()
@@ -560,6 +567,21 @@ class PhonePlayerActivity : PhoneActivity() {
                     "underlay=$feedUnderlay at=$tEnter shown=${android.os.SystemClock.elapsedRealtime()}"
             )
         }
+    }
+
+    /**
+     * 只有播放页要放的集与会话里的集一致时，才借推荐页的 Surface。
+     *
+     * 集号不一致时下层画面已经不代表本页内容。部分手机 / 平板上，透明播放页
+     * 无法稳定合成下层 `SurfaceView`，表现就是声音正常、画面全黑；这种情况下
+     * 必须从建页开始就使用本页自己的 `PlayerView`。
+     */
+    private fun canBorrowFeedSurface(seriesId: String): Boolean {
+        if (Build.VERSION.SDK_INT < 28) return false
+        if (!intent.getBooleanExtra(EXTRA_RECOMMEND, false)) return false
+        if (!PhoneSession.feedUnderlayUsable(seriesId)) return false
+        val wanted = intent.getIntExtra(EXTRA_EPISODE, -1)
+        return wanted < 0 || wanted == PhoneSession.index
     }
 
     // ---------------------------------------------------------------- 界面
@@ -735,7 +757,7 @@ class PhonePlayerActivity : PhoneActivity() {
         // 上下滑换集：向上 = 下一集，向下 = 上一集（与推荐页上滑看下一条同一手感）。
         p.onVerticalStart = { beginSwipe() }
         p.onVerticalDelta = { delta -> dragSwipe(delta) }
-        p.onVerticalEnd = { direction, velocity -> endSwipe(direction, velocity) }
+        p.onVerticalEnd = { direction, _ -> endSwipe(direction) }
     }
 
     private fun buildPortrait() {
@@ -860,7 +882,7 @@ class PhonePlayerActivity : PhoneActivity() {
                 verticalEnabled = true,
                 onVerticalStart = { beginSwipe() },
                 onVertical = { delta -> dragSwipe(delta) },
-                onVerticalEnd = { direction, velocity -> endSwipe(direction, velocity) },
+                onVerticalEnd = { direction, _ -> endSwipe(direction) },
             )
         )
         landscape.addView(touchLayer, FrameLayout.LayoutParams(
@@ -1786,8 +1808,7 @@ class PhonePlayerActivity : PhoneActivity() {
         ghostPage.animate().cancel()
         landscape.animate().cancel()
         landscapeGhost.animate().cancel()
-        swipeAnimator?.cancel()
-        swipeAnimator = null
+        cancelSwipeAnimation()
         showEpisodeHint(0f)
     }
 
@@ -1814,7 +1835,7 @@ class PhonePlayerActivity : PhoneActivity() {
             prepareGhost(direction)
             if (swipeDir == 0) swipePrepared = false
         }
-        val factor = if (swipeDir != 0) 1f else .3f
+        val factor = if (swipeDir != 0) 1f else 0f
         val dy = delta * h * factor
         if (landscapeMode) {
             landscape.translationY = dy
@@ -1843,7 +1864,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 刚滑出去的那一页清空、放回另一侧备用。整个过程中用户看到的始终是两页连续运动，
      * 与推荐页 `PagerSnapHelper` 的吸附是同一个动作。
      */
-    private fun endSwipe(direction: Int, velocityY: Float = 0f) {
+    private fun endSwipe(direction: Int) {
         clearEpisodeHint()
         val target = when (direction) {
             PhoneTouch.DIRECTION_NEXT -> 1
@@ -1861,7 +1882,8 @@ class PhonePlayerActivity : PhoneActivity() {
         val h = slideHeight().toFloat()
         val out = -target * h
         val start = if (landscapeMode) landscape.translationY else page.translationY
-        val duration = PhonePagerMotion.duration(out - start, slideHeight(), velocityY)
+        // 与推荐页 `PhonePagerSnapHelper` 一样只按剩余距离决定吸附时长，不再额外叠速度。
+        val duration = PhonePagerMotion.duration(out - start, slideHeight())
         if (landscapeMode) {
             animateSwipe(
                 pageTarget = page.translationY,
@@ -1939,40 +1961,51 @@ class PhonePlayerActivity : PhoneActivity() {
         duration: Long,
         onEnd: () -> Unit,
     ) {
-        swipeAnimator?.cancel()
+        cancelSwipeAnimation()
         val pageStart = page.translationY
         val ghostStart = ghostPage.translationY
         val landscapeStart = landscape.translationY
         val landscapeGhostStart = landscapeGhost.translationY
         val feedStart = feedVideoDy
-        val anim = android.animation.ValueAnimator.ofFloat(0f, 1f)
-        anim.duration = duration
-        anim.interpolator = PhonePagerMotion.interpolator
-        anim.addUpdateListener { value ->
-            val fraction = value.animatedFraction
-            page.translationY = pageStart + (pageTarget - pageStart) * fraction
-            ghostPage.translationY = ghostStart + (ghostTarget - ghostStart) * fraction
-            landscape.translationY = landscapeStart + (landscapeTarget - landscapeStart) * fraction
-            landscapeGhost.translationY =
-                landscapeGhostStart + (landscapeGhostTarget - landscapeGhostStart) * fraction
-            if (feedTarget != null) {
-                feedVideoDy = feedStart + (feedTarget - feedStart) * fraction
-                PhoneSession.setFeedVideoOffset(feedVideoDy)
+        val startedAt = android.os.SystemClock.uptimeMillis()
+        lateinit var tick: Runnable
+        tick = object : Runnable {
+            override fun run() {
+                if (swipeAnimation !== tick) return
+                val elapsed = (android.os.SystemClock.uptimeMillis() - startedAt)
+                    .coerceAtMost(duration)
+                val linear = if (duration > 0L) {
+                    (elapsed.toFloat() / duration).coerceIn(0f, 1f)
+                } else {
+                    1f
+                }
+                val fraction = PhonePagerMotion.interpolator.getInterpolation(linear)
+                page.translationY = pageStart + (pageTarget - pageStart) * fraction
+                ghostPage.translationY = ghostStart + (ghostTarget - ghostStart) * fraction
+                landscape.translationY =
+                    landscapeStart + (landscapeTarget - landscapeStart) * fraction
+                landscapeGhost.translationY =
+                    landscapeGhostStart + (landscapeGhostTarget - landscapeGhostStart) * fraction
+                if (feedTarget != null) {
+                    feedVideoDy = feedStart + (feedTarget - feedStart) * fraction
+                    PhoneSession.setFeedVideoOffset(feedVideoDy)
+                }
+                if (elapsed < duration) {
+                    root.postOnAnimation(this)
+                } else {
+                    swipeAnimation = null
+                    onEnd()
+                }
             }
         }
-        var canceled = false
-        anim.addListener(object : android.animation.AnimatorListenerAdapter() {
-            override fun onAnimationCancel(animation: android.animation.Animator) {
-                canceled = true
-            }
+        swipeAnimation = tick
+        root.postOnAnimation(tick)
+    }
 
-            override fun onAnimationEnd(animation: android.animation.Animator) {
-                if (swipeAnimator === animation) swipeAnimator = null
-                if (!canceled) onEnd()
-            }
-        })
-        swipeAnimator = anim
-        anim.start()
+    /** 取消帧时钟动画；与 RecyclerView scroller 一样，不依赖系统 animator duration scale。 */
+    private fun cancelSwipeAnimation() {
+        swipeAnimation?.let { root.removeCallbacks(it) }
+        swipeAnimation = null
     }
 
     /**
@@ -2175,6 +2208,10 @@ class PhonePlayerActivity : PhoneActivity() {
         val why = adoptReject(seriesId)
         if (why != null) {
             android.util.Log.i("HGTV-PHONE", "adopt skip $why episode=${intent.getIntExtra(EXTRA_EPISODE, -1)}")
+            // 会话不能接（最常见是集号不一致）时，下层推荐页那块 Surface 已经不代表
+            // 本页要播的这一集。继续借它会出现“声音在本页、画面留在下层/黑屏”。
+            // 立即退回本页自己的 PlayerView，后面的取流 / prepare 才有正确输出端。
+            if (feedUnderlay) dropUnderlay()
             return false
         }
         val d = PhoneSession.detail ?: return false
@@ -2491,6 +2528,12 @@ class PhonePlayerActivity : PhoneActivity() {
         if (episodeIndex !in d.episodes.indices) return
         nextSeasonFinishedFor = ""
         val sameEpisode = episodeIndex == index
+        if (!sameEpisode) {
+            cancelPlaybackRequest()
+            cancelSourceRetry()
+            // 上一集的帧时间不能算到这一集头上；看门狗要靠它判断新画面是否真的上屏。
+            lastFrameAt = 0L
+        }
         index = episodeIndex
         val episodeId = d.episodes[episodeIndex]
         // 换了一集：按集计的重试 / 降级额度全部归零（与电视端 `onEpisodeStart` 同一入口）。
@@ -2522,14 +2565,23 @@ class PhonePlayerActivity : PhoneActivity() {
         }
 
         releasePlayer()
-        scope.launch {
+        val requestScope = com.hgtv.star.core.RequestScope()
+        playRequestScope = requestScope
+        playRequestJob = scope.launch {
+            try {
             // 上限读**实际生效**的那一档（自动降档结果优先），否则降档只在当前这一集生效。
             val maxQuality = playbackMaxQuality
+            // 播放器打开先用 player 场景取当前集 + 后 14 集，避免快速跳集时二次请求。
+            val modelQueue = d.episodes.drop(episodeIndex + 1).take(PLAYER_MODEL_QUEUE_SIZE)
             val source = withContext(Dispatchers.IO) {
-                runCatching {
-                    PhoneServices.repository(this@PhonePlayerActivity).stream(episodeId, maxQuality, d.playback)
+                requestScope.run {
+                    runCatching {
+                        PhoneServices.repository(this@PhonePlayerActivity)
+                            .stream(episodeId, maxQuality, d.playback, queue = modelQueue)
+                    }
                 }
             }
+            if (!isActive || playRequestScope !== requestScope) return@launch
             val info = source.getOrNull()
             if (info == null) {
                 val problem = source.exceptionOrNull()
@@ -2539,8 +2591,9 @@ class PhonePlayerActivity : PhoneActivity() {
             }
 
             val preparedSource = withContext(Dispatchers.IO) {
-                runCatching { prepareSource(episodeId, info) }
+                requestScope.run { runCatching { prepareSource(episodeId, info) } }
             }
+            if (!isActive || playRequestScope !== requestScope) return@launch
             val prepared = preparedSource.getOrNull()
             if (prepared == null) {
                 val problem = preparedSource.exceptionOrNull()
@@ -2553,7 +2606,17 @@ class PhonePlayerActivity : PhoneActivity() {
                 return@launch
             }
 
+            if (!isActive || playRequestScope !== requestScope) {
+                prepared.close()
+                return@launch
+            }
             attach(prepared, startAt)
+            } finally {
+                if (playRequestScope === requestScope) {
+                    playRequestScope = null
+                    playRequestJob = null
+                }
+            }
         }
     }
 
@@ -2567,6 +2630,9 @@ class PhonePlayerActivity : PhoneActivity() {
      * 只有下一项确实已在播放列表里才走这条快路；否则仍由 [play] 走常规兜底。
      */
     private fun playSwipeTarget(target: Int) {
+        cancelAutoRetry()
+        cancelPlaybackRequest()
+        cancelSourceRetry()
         if (target == index + 1 && seekToQueuedNext(target)) return
         play(target)
     }
@@ -2649,16 +2715,22 @@ class PhonePlayerActivity : PhoneActivity() {
             hint.visibility = View.VISIBLE
             hint.bringToFront()
             val token = hintToken
-            root.postDelayed({
-                if (!isFinishing && !isDestroyed) {
-                    // 重试前先把提示收掉：重试成功时不该还挂着「重试中」。
-                    if (hintToken == token) {
-                        hintSticky = false
-                        hint.visibility = View.GONE
+            cancelSourceRetry()
+            val retry = object : Runnable {
+                override fun run() {
+                    if (sourceRetryRunnable === this) sourceRetryRunnable = null
+                    if (!isFinishing && !isDestroyed) {
+                        // 重试前先把提示收掉：重试成功时不该还挂着「重试中」。
+                        if (hintToken == token) {
+                            hintSticky = false
+                            hint.visibility = View.GONE
+                        }
+                        play(episodeIndex, at)
                     }
-                    play(episodeIndex, at)
                 }
-            }, wait)
+            }
+            sourceRetryRunnable = retry
+            root.postDelayed(retry, wait)
             return
         }
         // 额度用完：交给错误页（带「立即重试 / 下一集」），绝不留一块黑屏给用户。
@@ -2854,6 +2926,11 @@ class PhonePlayerActivity : PhoneActivity() {
                 if (pendingFullscreen) root.post { enterPendingFullscreen() }
             }
 
+            override fun onRenderedFirstFrame() {
+                // 部分设备只回调首帧、不走逐帧心跳；首帧同样是画面已经上屏的硬证据。
+                watchdog.onFrame()
+            }
+
             override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
                 // 调试面板要把错误码留下：用户报「花屏 / 有声无画」时，这一行就是结论。
                 debugError = "${error.errorCodeName}(${error.errorCode})"
@@ -2931,6 +3008,10 @@ class PhonePlayerActivity : PhoneActivity() {
         syncChips()
         lastDuration = 0
         prefetchAt = 0
+        // 无感切集没有走 `attach()`：上一集出帧后看门狗已经撤掉，这里必须按新一集重挂。
+        // 否则音频继续走、视频停在上一帧时，没有任何恢复路径会被触发。
+        lastFrameAt = 0L
+        armPictureWatchdog()
         // 会话换成**这一集**的 RemoteVideo：它在挂队列时就被 `queuedVideo` 记下了。
         // 用 `PhoneSession.remote` 会把上一集的引用写回去——那一份马上要关，
         // 信息流接手时会拿到一个已关闭的传输。
@@ -3275,8 +3356,12 @@ class PhonePlayerActivity : PhoneActivity() {
 
         val maxQuality = playbackMaxQuality
         scope.launch {
+            val modelQueue = d.episodes.drop(nextIndex + 1).take(PLAYER_MODEL_QUEUE_SIZE)
             val info = withContext(Dispatchers.IO) {
-                runCatching { PhoneServices.repository(this@PhonePlayerActivity).stream(nextId, maxQuality, d.playback) }
+                runCatching {
+                    PhoneServices.repository(this@PhonePlayerActivity)
+                        .stream(nextId, maxQuality, d.playback, queue = modelQueue)
+                }
                     .getOrNull()
             }
             val prepared = if (info == null) null else withContext(Dispatchers.IO) {
@@ -3291,6 +3376,13 @@ class PhonePlayerActivity : PhoneActivity() {
             }
             PhoneSession.putNext(nextId, prepared)
             enqueueNextIfReady()
+            // 下一集已经可播后，再在后台补 preload 模型；已有缓存会被仓库跳过。
+            scope.launch(Dispatchers.IO) {
+                runCatching {
+                    PhoneServices.repository(this@PhonePlayerActivity)
+                        .prefetchModels(d.episodes.drop(nextIndex).take(12), d.playback)
+                }
+            }
         }
     }
 

@@ -218,8 +218,6 @@ object LibraryDisk {
             (values["gridColumns"] as? Number)?.toInt()?.coerceIn(1,3) ?: 2,
             // 推荐页左右滑动切换：旧版本磁盘没有这个键，按开启处理（与之前的行为一致）。
             values["recommendSwipe"] as? Boolean ?: true,
-            // 强制音画同步：旧版本磁盘没有这个键，按关闭处理。
-            values["forceAvSync"] as? Boolean ?: false,
             // 弹幕特效：旧版本磁盘没有这个键，按开启处理，保持现有观感。
             values["danmakuEffects"] as? Boolean ?: true)
         val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())

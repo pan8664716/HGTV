@@ -360,13 +360,16 @@ class PassportSigner(
             if ((pair.first and 15) % 3 == 2) { iv = pair.first; q = pair.second; m = bodyDigest(body); break }
         }
         require(query.isNotEmpty() && (iv and 15) % 3 == 2) { "无法生成 Passport 签名（branch 2）" }
-        val n = IntArray(4) { rand() }
+        val gorgonNonce = rand()
+        val heliosNonce = rand()
+        val sign = ArgusLadon.sign(query, body, ts, device)
         val headers = linkedMapOf(
             "X-Khronos" to ts.toString(),
             "X-SS-Req-Ticket" to ticket.toString(),
-            "X-Helios" to helios(ts, n[3]),
-            "X-Medusa" to medusa(query, ts, n[0], n[1], n[2], q, m),
-            "X-Gorgon" to gorgon(query, body, ts, n[0])
+            "X-Helios" to helios(ts, heliosNonce),
+            "X-Ladon" to sign.ladon,
+            "X-Argus" to sign.argus,
+            "X-Gorgon" to gorgon(query, body, ts, gorgonNonce)
         )
         if (body != null && body.isNotEmpty()) headers["X-SS-STUB"] = m.hex().uppercase()
         return Request("$base?$query", headers, body)

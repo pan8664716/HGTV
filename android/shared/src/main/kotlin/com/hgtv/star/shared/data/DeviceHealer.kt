@@ -65,13 +65,17 @@ object DeviceHealer {
      * 只给 [healAsync] 用：两端都要**同步**拿到「接不接手」才能决定要不要显示错误界面，
      * 而注册本身是阻塞的。做成私有是为了不让调用方绕过 [healAsync] 在主线程上直接调 [heal]。
      */
-    private fun wouldHeal(library: Library?, repository: ContentRepository): Boolean {
+    private fun wouldHeal(
+        library: Library?,
+        repository: ContentRepository,
+        forceRotate: Boolean,
+    ): Boolean {
         if (library == null || !library.isLoaded) return false
         // 本机根本没有身份：那是「还没注册」，不是「被拒」，同样值得补一次（见 [heal]）。
         val registered = library.deviceRegistered()
-        if (registered && repository.deviceRejected <= 0) return false
+        if (registered && !forceRotate && repository.deviceRejected <= 0) return false
         synchronized(lock) {
-            if (registered && repository.deviceRejected <= handled) return false
+            if (registered && !forceRotate && repository.deviceRejected <= handled) return false
             val now = SystemClock.elapsedRealtime()
             return tried < LIMIT && (at == 0L || now - at >= GAP_MS)
         }
@@ -86,13 +90,18 @@ object DeviceHealer {
      *
      * @return true = 已经拿到一份可用的身份，调用方可以直接重试原请求。
      */
-    internal fun heal(library: Library?, repository: ContentRepository, reason: String): Boolean {
+    internal fun heal(
+        library: Library?,
+        repository: ContentRepository,
+        reason: String,
+        forceRotate: Boolean = false,
+    ): Boolean {
         if (library == null || !library.isLoaded) return false
         val registered = library.deviceRegistered()
-        if (registered && repository.deviceRejected <= 0) return false
+        if (registered && !forceRotate && repository.deviceRejected <= 0) return false
         // 先占预算再动网络：两个线程同时进来时只有一个能过，另一个直接退出。
         synchronized(lock) {
-            if (registered && repository.deviceRejected <= handled) return false
+            if (registered && !forceRotate && repository.deviceRejected <= handled) return false
             val now = SystemClock.elapsedRealtime()
             if (tried >= LIMIT || (at > 0 && now - at < GAP_MS)) return false
             if (registered) handled = repository.deviceRejected
@@ -150,22 +159,25 @@ object DeviceHealer {
         library: Library?,
         repository: ContentRepository,
         reason: String,
+        forceRotate: Boolean = false,
         onResult: (Boolean) -> Unit,
     ): Boolean {
-        if (!wouldHeal(library, repository)) return false
+        if (!wouldHeal(library, repository, forceRotate)) return false
         val firstTime = library?.deviceRegistered() != true
         DebugLog.record(
             "设备",
             if (firstTime) "$reason · 本机还没有身份，补一次注册"
+            else if (forceRotate) "$reason · 换一台设备重试"
             else "$reason · 服务端不认这份身份，重建一次",
             force = true,
         )
         Diagnostics.warn(
             "device_identity",
-            "设备身份自愈 reason=$reason firstTime=$firstTime rejected=${repository.deviceRejected}",
+            "设备身份自愈 reason=$reason firstTime=$firstTime force=$forceRotate " +
+                "rejected=${repository.deviceRejected}",
         )
         worker.execute {
-            val healed = heal(library, repository, reason)
+            val healed = heal(library, repository, reason, forceRotate)
             main.post {
                 DebugLog.record(
                     "设备",

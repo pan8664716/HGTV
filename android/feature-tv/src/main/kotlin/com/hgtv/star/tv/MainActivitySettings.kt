@@ -276,36 +276,6 @@ fun MainActivity.settings(parent: LinearLayout) {
     track(0,frame,decoderButton)
     track(0,scaleSlider)
     track(0,autoNextRow,seekSlider)
-    // 兼容开关：只在部分电视自动连播后出现音画不同步时使用。默认关闭，避免正常设备
-    // 为下一集常驻第二个播放器；开启时再弹确认框，防止误触。
-    playback.addView(text(
-        "仅在自动连播后出现音画不同步时开启；开启后会用第二个播放器预热下一集，低配设备可能增加内存与解码压力。",
-        14f,TvStyle.muted
-    ).apply { setPadding(0,dp(TvStyle.GAP_INLINE),0,0) },lp(-1,-2))
-    lateinit var forceAvSyncRow: TvSwitchRow
-    forceAvSyncRow=TvSwitchRow(this,"强制音画同步（兼容模式）",checked=library.forceAvSync,onToggle={ on ->
-        if(!on) {
-            library.forceAvSync=false
-            releaseCompatibilityPlayer()
-        } else {
-            val confirm=TvDialog(this,"开启强制音画同步？")
-            confirm.message(
-                "此开关只用于部分电视自动切集后音画不同步。开启后会同时准备两个播放器，" +
-                    "由第二个播放器预热下一集；低配设备可能增加内存、解码器占用和起播负载。" +
-                    "没有该问题时请不要开启。"
-            )
-            // 默认焦点落在取消，避免遥控器确认键误开。
-            confirm.button("取消") { forceAvSyncRow.setChecked(false) }
-            confirm.button("仍然开启",tone=ButtonTone.PRIMARY) {
-                library.forceAvSync=true
-                // 已经挂进播放列表的下一集必须先摘掉，否则下一集仍会走自动 transition。
-                dropQueuedEpisode()
-            }
-            confirm.show(forceAvSyncRow) { forceAvSyncRow.setChecked(library.forceAvSync) }
-        }
-    })
-    switchSetting(playback,forceAvSyncRow)
-    track(0,forceAvSyncRow)
 
     // —— 播放显示：画面左上角那一条里的四项 ——
     // 剧集标题 / 当前集数 / 时间 / 网速四项各自开关，排成一行四格，**默认四格全关**。
