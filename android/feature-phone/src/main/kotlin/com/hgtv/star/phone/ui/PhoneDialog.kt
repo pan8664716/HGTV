@@ -76,6 +76,7 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
     private var dialog: AlertDialog? = null
     private var windowHost: android.widget.FrameLayout? = null
     private var dismissed: (() -> Unit)? = null
+    private var horizontalButtons = false
 
     val isShowing: Boolean get() = dialog?.isShowing == true
 
@@ -132,6 +133,14 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { if (content.childCount > 1) topMargin = activity.dp(6) })
         revealMiddle()
+        return this
+    }
+
+    /** 把底部动作按钮改为同一行等宽排列。 */
+    fun buttonsInRow(): PhoneDialog {
+        horizontalButtons = true
+        actions.orientation = LinearLayout.HORIZONTAL
+        actions.gravity = Gravity.CENTER_VERTICAL
         return this
     }
 
@@ -211,11 +220,18 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
                 run()
             }
         }
-        actions.addView(view, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, activity.dp(if (landscape) 30 else 40)
-        ).apply {
-            if (actions.childCount > 0) topMargin = activity.dp(if (landscape) 4 else 6)
-        })
+        val height = activity.dp(if (landscape) 30 else 40)
+        val gap = activity.dp(if (landscape) 4 else 6)
+        val params = if (horizontalButtons) {
+            LinearLayout.LayoutParams(0, height, 1f).apply {
+                if (actions.childCount > 0) leftMargin = gap
+            }
+        } else {
+            LinearLayout.LayoutParams(ViewGroup.LayoutParams.MATCH_PARENT, height).apply {
+                if (actions.childCount > 0) topMargin = gap
+            }
+        }
+        actions.addView(view, params)
         return this
     }
 
@@ -286,7 +302,10 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
             val height = if (landscape) 30 else 40
             val gap = if (landscape) 4 else 6
             val actionsTop = if (landscape) 5 else 8
-            reserve += activity.dp(height * buttons + gap * (buttons - 1) + actionsTop)
+            reserve += activity.dp(
+                if (horizontalButtons) height + actionsTop
+                else height * buttons + gap * (buttons - 1) + actionsTop
+            )
         }
         return DialogLayout.scrollHeightPx(
             viewport.maxHeightPx,

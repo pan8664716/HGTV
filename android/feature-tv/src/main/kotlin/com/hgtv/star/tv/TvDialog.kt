@@ -413,17 +413,30 @@ class TvDialog(private val activity: Activity, title: String) {
                 run()
             }
         )
-        actions.addView(
-            view,
-            LinearLayout.LayoutParams(-1, -2).apply { if (actions.childCount > 0) topMargin = dp(TvStyle.DIALOG_ITEM_GAP) }
-        )
+        val params = if (actions.orientation == LinearLayout.HORIZONTAL) {
+            LinearLayout.LayoutParams(0, -2, 1f).apply {
+                if (actions.childCount > 0) leftMargin = dp(TvStyle.DIALOG_ITEM_GAP)
+            }
+        } else {
+            LinearLayout.LayoutParams(-1, -2).apply {
+                if (actions.childCount > 0) topMargin = dp(TvStyle.DIALOG_ITEM_GAP)
+            }
+        }
+        actions.addView(view, params)
         if (actions.childCount == 1) (actions.layoutParams as LinearLayout.LayoutParams).topMargin = dp(TvStyle.GAP_BLOCK)
         buttons += view
-        // 动作按钮竖排：上下键在这一列里走，第一枚按上、最后一枚按下都不出去
-        // （出去的出口由 [wireListExit] / [wireContentFocus] 负责接到选项或内容区）。
+        // 竖排用上下键，横排用左右键；出去的方向仍由 [wireListExit] /
+        // [wireContentFocus] 接到选项或内容区。
         buttons.forEachIndexed { index, item ->
-            item.nextFocusDownId = buttons.getOrNull(index + 1)?.id ?: item.id
-            item.nextFocusUpId = buttons.getOrNull(index - 1)?.id ?: item.id
+            if (actions.orientation == LinearLayout.HORIZONTAL) {
+                item.nextFocusRightId = buttons.getOrNull(index + 1)?.id ?: item.id
+                item.nextFocusLeftId = buttons.getOrNull(index - 1)?.id ?: item.id
+                item.nextFocusUpId = item.id
+                item.nextFocusDownId = item.id
+            } else {
+                item.nextFocusDownId = buttons.getOrNull(index + 1)?.id ?: item.id
+                item.nextFocusUpId = buttons.getOrNull(index - 1)?.id ?: item.id
+            }
         }
         return view
     }
@@ -440,6 +453,13 @@ class TvDialog(private val activity: Activity, title: String) {
         return this
     }
 
+    /** 把底部动作按钮改为同一行等宽排列。 */
+    fun buttonsInRow(): TvDialog {
+        actions.orientation = LinearLayout.HORIZONTAL
+        actions.gravity = Gravity.CENTER_VERTICAL
+        return this
+    }
+
     /**
      * 追加一条关闭回调（与 [show] 传入的那条并存）。
      *
@@ -450,7 +470,11 @@ class TvDialog(private val activity: Activity, title: String) {
         extraDismiss = action
     }
 
-    fun show(anchor: View? = null, onDismiss: () -> Unit = {}) {
+    /**
+     * @param touchOnly 只接受触摸操作的确认框：吞掉全部按键、不抢焦点、点弹窗外部不关闭。
+     *                  用于「电视误选手机 / 平板」这类必须用触摸屏明确确认的场景。
+     */
+    fun show(anchor: View? = null, touchOnly: Boolean = false, onDismiss: () -> Unit = {}) {
         if (isShowing) return
         this.anchor = anchor
         dismissed = onDismiss
@@ -460,6 +484,10 @@ class TvDialog(private val activity: Activity, title: String) {
         // 套一层触摸外壳：弹窗是独立窗口，Activity 的 `dispatchTouchEvent` 管不到它。
         // 不套的话，弹窗里点一枚「当前没有焦点」的按钮仍然是两下（见 MainActivityTouch 的说明）。
         val next = AlertDialog.Builder(activity).setView(touchFocusHost(body, fillHeight = false)).create()
+        if (touchOnly) {
+            next.setCancelable(false)
+            next.setCanceledOnTouchOutside(false)
+        }
         // 遥控器「搜索」键：弹窗有独立的 PhoneWindow，按键不经过 Activity.dispatchKeyEvent。
         // 部分电视 ROM 会在这里直接拉起不存在的 com.imtv.speechdemo 并闪退；
         // Dialog.dispatchKeyEvent 会先问这个监听器，因此在弹窗这一层也吞掉。
@@ -468,6 +496,8 @@ class TvDialog(private val activity: Activity, title: String) {
         // 绕开 [TvDialog.dismiss] 的淡出，按返回关弹窗仍会闪一下。这里先吞掉，
         // 改走同一条淡出路径（`Dialog.dispatchKeyEvent` 会先问这个监听器，早于 onBackPressed）。
         next.setOnKeyListener { _, keyCode, event ->
+            // 触屏专用确认框不接受遥控器 / 键盘：连返回键也不生效，只能触摸确认或等待倒计时。
+            if (touchOnly) return@setOnKeyListener true
             when (keyCode) {
                 KeyEvent.KEYCODE_SEARCH -> true
                 KeyEvent.KEYCODE_BACK -> {
@@ -527,6 +557,7 @@ class TvDialog(private val activity: Activity, title: String) {
             // 按真实窗口高度收进屏幕：比例算不准的那些情况（系统字号放大、系统栏特别高、
             // 分屏）全靠这一道兜底，按钮行不会再被裁在窗口下面。
             fitToWindow()
+            if (touchOnly) return@post
             val landing = if (contentFirst) content.firstFocusable() ?: items.firstChildOrNull() else null
             (landing ?: if (items.childCount > 0) items.getChildAt(0) else buttons.firstOrNull())?.requestFocus()
             // 封顶由 [ContentHost] 的测量负责，这里只补一次焦点接线兜底

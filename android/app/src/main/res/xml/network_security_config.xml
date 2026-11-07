@@ -1,4 +1,5 @@
 <network-security-config>
-    <base-config cleartextTrafficPermitted="false"/>
+    <!-- 局域网 NSD 同步会连接动态私网 IPv4，无法提前列入固定域名白名单。 -->
+    <base-config cleartextTrafficPermitted="true"/>
     <domain-config cleartextTrafficPermitted="true"><domain includeSubdomains="true">douyinvod.com</domain><domain includeSubdomains="true">byteicdn.com</domain><domain includeSubdomains="true">byteimg.com</domain></domain-config>
 </network-security-config>

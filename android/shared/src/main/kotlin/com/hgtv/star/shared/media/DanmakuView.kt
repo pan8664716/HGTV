@@ -428,6 +428,22 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private var clockBaseAt=0L
     private var clockSpeed=1f
     private var clockRunning=false
+    /**
+     * 换集过渡：旧一集的弹幕继续按自己的时钟滚动，直到新一集首批数据到达。
+     *
+     * 播放器换集时位置会从上一集片尾跳回 0；如果直接把这一个位置写给旧数据，
+     * 整屏弹幕会瞬间倒回开头重排。这里用一套独立时钟承接旧画面，[setClock] 照常
+     * 记录新一集的真实位置，等 [setDanmaku] 替换数据时再无缝接管。
+     */
+    private var transitionHold=false
+    private var transitionBaseMs=0L
+    private var transitionBaseAt=0L
+    private var transitionSpeed=1f
+    private var transitionRunning=false
+    /** 换集后首批弹幕若早于新时钟到达，先停在这里，等 [setClock] 拿到新一集的真实位置。 */
+    private var pendingDanmaku: List<Danmaku>?=null
+    /** 本次换集是否已经收到过新一集的时钟。 */
+    private var transitionClockReady=false
 
     /**
      * 校准播放时钟。
@@ -440,14 +456,47 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         clockBaseAt=SystemClock.elapsedRealtime()
         clockSpeed=speed.coerceIn(0.25f,4f)
         clockRunning=running
+        if(transitionHold) {
+            transitionClockReady=true
+            pendingDanmaku?.let { items ->
+                pendingDanmaku=null
+                transitionHold=false
+                transitionClockReady=false
+                raw=items.sortedBy { it.offsetMs }
+                relayout()
+            }
+        }
         if(running && visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
     }
 
     /** 当前媒体位置：暂停时停在基准点，播放时按系统时钟与倍速外推。 */
     fun clockPositionMillis(): Long {
+        if(transitionHold) {
+            if(!transitionRunning) return transitionBaseMs
+            val elapsed=(SystemClock.elapsedRealtime()-transitionBaseAt).coerceAtLeast(0L)
+            return transitionBaseMs+(elapsed*transitionSpeed).toLong()
+        }
         if(!clockRunning) return clockBaseMs
         val elapsed=(SystemClock.elapsedRealtime()-clockBaseAt).coerceAtLeast(0L)
         return clockBaseMs+(elapsed*clockSpeed).toLong()
+    }
+
+    /**
+     * 开始一次换集过渡：保留当前弹幕画面，旧弹幕继续滚动，不因新一集从 0 开始而倒放。
+     *
+     * 新一集的播放时钟仍由 [setClock] 正常记录；首批弹幕到达后 [setDanmaku]
+     * 会结束过渡并直接按新一集的当前位置排版。
+     */
+    fun beginTransition() {
+        if(transitionHold) return
+        transitionBaseMs=clockPositionMillis()
+        transitionBaseAt=SystemClock.elapsedRealtime()
+        transitionSpeed=clockSpeed
+        transitionRunning=clockRunning
+        transitionHold=true
+        transitionClockReady=false
+        pendingDanmaku=null
+        if(transitionRunning && visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
     }
 
     /** 离场：停掉外推并回到 0，之后即使还有一帧没画完也不会继续读播放器。 */
@@ -467,12 +516,22 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
 
     /** 换集 / 拉到新的一批弹幕：重排轨道并回到第一条。 */
     fun setDanmaku(items: List<Danmaku>) {
+        if(transitionHold && !transitionClockReady) {
+            pendingDanmaku=items
+            return
+        }
+        transitionHold=false
+        transitionClockReady=false
+        pendingDanmaku=null
         raw=items.sortedBy { it.offsetMs }
         relayout()
     }
 
     /** 清空这一集的弹幕（换集、切到隐藏档）。 */
     fun clear() {
+        transitionHold=false
+        transitionClockReady=false
+        pendingDanmaku=null
         raw=emptyList()
         highlights=emptyList()
         highlightCursor=0

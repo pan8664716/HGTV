@@ -268,6 +268,8 @@ class SessionMirror(private val app: Context) {
     }
 
     fun flush() { runCatching { writes.flush() } }
+    fun flushBlocking(timeoutMillis: Long = 5_000): Boolean =
+        runCatching { writes.flushBlocking(timeoutMillis) }.getOrDefault(false)
     fun close() { runCatching { writes.close() } }
     /** 清除本机数据前调用：丢掉待写快照并停掉写线程，之后不再把镜像写回去。 */
     fun discard() {

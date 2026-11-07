@@ -16,20 +16,27 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** Short-lived LAN transfer. Uploaded records are validated here, but only the TV may apply them. */
 class LibraryTransferServer(address: String,private val backup: String,private val onImport: (BackupData)->Unit,
-    private val onExpired: ()->Unit={},ttlMillis: Long=300_000): Closeable {
+    private val onExpired: ()->Unit={},ttlMillis: Long=300_000,private val allowImport: Boolean=true,
+    private val maxBytes: Int=LibraryBackup.MAX_BYTES,private val singleDownload: Boolean=true,
+    private val onDownloaded: ()->Unit={}): Closeable {
+    private companion object {
+        const val MAX_TTL_MILLIS=24*60*60*1000L
+    }
+    private val byteLimit=maxBytes.coerceIn(1,8*1024*1024)
+    private val ttl=if(ttlMillis==Long.MAX_VALUE) Long.MAX_VALUE else ttlMillis.coerceIn(1,MAX_TTL_MILLIS)
     private val stopped=AtomicBoolean(false)
     private val expiry=Timer("hgtv-transfer-expiry",true)
     private val local=InetAddress.getByName(address).also { require(it.isLoopbackAddress || it.isSiteLocalAddress) }
     private val listener=ServerSocket(0,4,local).apply { soTimeout=250 }
     @Volatile private var active: Socket?=null
-    private val deadline=System.nanoTime()+ttlMillis.coerceIn(1,300_000)*1_000_000
+    private val deadline=if(ttl==Long.MAX_VALUE) Long.MAX_VALUE else System.nanoTime()+ttl*1_000_000
     private val token=ByteArray(16).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it.toInt() and 255) }
     private val host="${local.hostAddress}:${listener.localPort}"
     val url="http://$host/$token"
     private var downloaded=false
     init {
-        require(backup.toByteArray(Charsets.UTF_8).size<=LibraryBackup.MAX_BYTES)
-        expiry.schedule(object: TimerTask() { override fun run()=expire() },ttlMillis.coerceIn(1,300_000))
+        require(backup.toByteArray(Charsets.UTF_8).size<=byteLimit)
+        if(ttl!=Long.MAX_VALUE) expiry.schedule(object: TimerTask() { override fun run()=expire() },ttl)
         Thread({ serve() },"hgtv-library-transfer").apply { isDaemon=true; start() }
     }
     private fun expire() { if(stopped.compareAndSet(false,true)) { close(); onExpired() } }
@@ -68,7 +75,10 @@ class LibraryTransferServer(address: String,private val backup: String,private v
             if(headers.put(next.substring(0,at).lowercase(Locale.ROOT),next.substring(at+1).trim())!=null) return respond(socket,400,"重复请求头")
         }
         if(stopped.get() || System.nanoTime()>=deadline) return respond(socket,410,"二维码已过期")
-        if(headers["host"]!=host || request[1] !in listOf("/$token","/$token/download","/$token/import")) return respond(socket,404,"页面不存在")
+        // 扫码页严格校验 Host，防 DNS rebinding；NSD 的只读同步由解析出的局域网地址直连，
+        // Host 可能是 IPv6 方括号或设备名，因此只依赖随机 token + 局域网来源校验。
+        if((allowImport && headers["host"]!=host) ||
+            request[1] !in listOf("/$token","/$token/download","/$token/import")) return respond(socket,404,"页面不存在")
         // 来源校验与另外三个手机页同一套（见 AccountImportServer 里那段说明）：
         // 页面自己带 `Referrer-Policy: no-referrer`，浏览器提交表单时因此把 `Origin` 写成 `null`；
         // 扫码 App 的内置浏览器（微信 / QQ 的 X5 内核）也会这么写，并把 `Sec-Fetch-Site`
@@ -79,13 +89,17 @@ class LibraryTransferServer(address: String,private val backup: String,private v
             (origin.startsWith("http://") || origin.startsWith("https://"))) return respond(socket,403,"来源不匹配")
         if(request[0]=="GET" && request[1]=="/$token") return respond(socket,200,page())
         if(request[0]=="GET" && request[1]=="/$token/download") {
-            if(downloaded) return respond(socket,410,"本次备份已下载，请在电视上重新打开二维码")
+            if(singleDownload && downloaded) return respond(socket,410,"本次备份已下载，请在电视上重新打开二维码")
             respond(socket,200,backup,"application/json; charset=utf-8","Content-Disposition: attachment; filename=hgtv-library.json\r\n")
-            downloaded=true; return
+            if(singleDownload) downloaded=true
+            onDownloaded()
+            return
         }
+        // NSD 同步使用只读模式：对端只能拉取备份，不能把一份 JSON 直接推到本机。
+        if(!allowImport && request[1].endsWith("/import")) return respond(socket,405,"当前同步会话只允许读取")
         if(request[0]!="POST" || request[1]!="/$token/import") return respond(socket,405,"不支持的操作")
         if(headers.containsKey("transfer-encoding") || headers["content-type"]?.substringBefore(';')!="application/json") return respond(socket,400,"请选择 JSON 备份文件")
-        val length=headers["content-length"]?.toIntOrNull()?.takeIf { it in 1..LibraryBackup.MAX_BYTES } ?: return respond(socket,413,"备份不能超过 2 MB")
+        val length=headers["content-length"]?.toIntOrNull()?.takeIf { it in 1..byteLimit } ?: return respond(socket,413,"备份不能超过 ${byteLimit/(1024*1024)} MB")
         val bytes=ByteArray(length); var offset=0
         // A total deadline also bounds slow clients that keep individual reads below the socket timeout.
         val uploadDeadline=minOf(deadline,System.nanoTime()+10_000_000_000)

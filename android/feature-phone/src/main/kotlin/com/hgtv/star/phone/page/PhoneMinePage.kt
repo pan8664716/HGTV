@@ -5,6 +5,7 @@ import android.content.Context
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
@@ -383,7 +384,24 @@ class PhoneMinePage(
                 }
             })
         }
-        return row
+        return HorizontalScrollView(context).apply {
+            isHorizontalScrollBarEnabled = false
+            overScrollMode = View.OVER_SCROLL_NEVER
+            clipToPadding = false
+            addView(row, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+            post {
+                val selected = row.getChildAt(tab) ?: return@post
+                val edge = context.dp(16)
+                when {
+                    selected.left < scrollX -> smoothScrollTo(selected.left - edge, 0)
+                    selected.right > scrollX + width ->
+                        smoothScrollTo(selected.right - width + edge, 0)
+                }
+            }
+        }
     }
 
     /**

@@ -52,14 +52,14 @@ fun MainActivity.closeTransport(http: okhttp3.OkHttpClient?) {
 /**
  * 无感切集时的缓冲指示：过渡那一两百毫秒不转圈，画面停在上一集最后一帧就够了。
  *
- * 只关到新源 READY 为止，而且**最多 1.2 秒**——万一预热的数据被换出、新源还得走网络，
- * 转圈该回来就得回来，不能让用户对着一帧静止画面干等。
+ * 默认只关到新源 READY 为止，而且**最多 1.2 秒**——万一预热的数据被换出、新源还得走网络，
+ * 转圈该回来就得回来，不能让用户对着一帧静止画面干等。跨季时解码器可能原地重配，
+ * 调用方可以传更长的首帧窗口。
  */
-fun MainActivity.suppressBufferingUi() {
-    if(bufferingSuppressed) return
+fun MainActivity.suppressBufferingUi(timeoutMs: Long=1200L) {
     bufferingSuppressed=true
     playerView?.setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-    main.removeCallbacks(restoreBuffering); main.postDelayed(restoreBuffering,1200)
+    main.removeCallbacks(restoreBuffering); main.postDelayed(restoreBuffering,timeoutMs)
 }
 fun MainActivity.restoreBufferingUi() {
     if(!bufferingSuppressed) return
@@ -216,7 +216,7 @@ fun MainActivity.enqueuePreparedNext() {
     val data=detail ?: return
     // 用户按过暂停 / 息屏 / 切后台：不要挂下一集，否则回来一按播放就自己跳到下一集了。
     if(!foreground || screen!="player" || playError || sleepStopped || !requestedAutoplay || pausedForLifecycle) return
-    if(!library.autoNext || episodeIndex>=data.episodes.lastIndex) return
+    if(!library.autoNext) return
     // 按集数计的定时必须在片尾那一下拦住，因此这种定时下不挂队列（走 STATE_ENDED 老路）。
     // 按分钟计的定时由 tick 自己停，和片尾无关，仍然可以无感连播。
     if(sleepTimer.episodesLeft>0) return
@@ -224,7 +224,17 @@ fun MainActivity.enqueuePreparedNext() {
     // 不在片尾窗口里也没关系：`MediaPeriodQueue.shouldLoadNextMediaPeriod()` 要求
     // 「当前 period 已完全缓冲」才会真的去 prepare 下一集，因此早挂不会抢当前这一集的带宽，
     // 只是把「预热结果 → 播放器知道有下一集」这一步提前做完，片尾推进时少一次等待。
-    val id=data.episodes[episodeIndex+1]; val quality=playbackMaxQuality
+    val seasonBoundary=episodeIndex==data.episodes.lastIndex
+    val targetDetail=if(seasonBoundary) {
+        nextSeasonDetail?.takeIf {
+            it.episodes.isNotEmpty() && nextSeason?.id==it.series.id
+        }
+    } else data
+    val target=targetDetail ?: return
+    val id=if(seasonBoundary) target.episodes.firstOrNull()
+        else target.episodes.getOrNull(episodeIndex+1)
+    if(id==null) return
+    val quality=playbackMaxQuality
     val key=preparedKeyFor(id)
     // **先读时刻、再取走**：`take` 会清空槽位，之后读不到 readyAt。
     // `queuedAt` 记的是「地址是什么时候取的」，不是「什么时候挂进队列」——
@@ -235,6 +245,7 @@ fun MainActivity.enqueuePreparedNext() {
     val http=prefetchHttp.also { prefetchHttp=null }
     if(http==null) { remote.close(); return }
     queuedEpisodeId=id; queuedVideo=remote; queuedHttp=http; queuedQuality="${quality}P"
+    queuedDetail=if(seasonBoundary) targetDetail else null
     queuedAt=if(fetchedAt>0L) fetchedAt else android.os.SystemClock.elapsedRealtime()
     val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }
         .createMediaSource(MediaItem.Builder().setMediaId(id).setUri("hgtv://episode/$id")
@@ -242,11 +253,14 @@ fun MainActivity.enqueuePreparedNext() {
     // 挂失败（列表被别处清空、播放器正好在重建）就当没预热过：把资源收回来，
     // 片尾仍然走 `STATE_ENDED → playEpisode` 那条兜底，不会留下半截状态。
     if(runCatching { p.addMediaSource(source) }.isFailure) {
-        queuedEpisodeId=null; queuedVideo=null; queuedHttp=null; queuedQuality=""; queuedAt=0
+        queuedEpisodeId=null; queuedVideo=null; queuedHttp=null; queuedQuality=""; queuedDetail=null; queuedAt=0
         runCatching { remote.close() }; closeTransport(http)
         return
     }
-    android.util.Log.i("HGTV","Next episode queued id=$id quality=$quality")
+    android.util.Log.i(
+        "HGTV",
+        "${if(seasonBoundary) "Next season" else "Next episode"} queued id=$id quality=$quality"
+    )
 }
 /**
  * tick 里的兜底：预热结果落地时那一次 post 可能被别的重建吞掉，这里再补一次。
@@ -267,7 +281,12 @@ fun MainActivity.maybeQueueNext() {
         android.util.Log.i("HGTV","Queued episode url too old; dropping id=$queuedEpisodeId age=${(now-queuedAt)/1000}s")
         dropQueuedEpisode()
     }
-    val nextId=detail?.episodes?.getOrNull(episodeIndex+1) ?: return
+    val data=detail ?: return
+    val seasonBoundary=episodeIndex==data.episodes.lastIndex
+    val nextId=if(seasonBoundary) {
+        nextSeasonDetail?.takeIf { nextSeason?.id==it.series.id }?.episodes?.firstOrNull()
+    } else data.episodes.getOrNull(episodeIndex+1)
+    if(nextId==null) return
     if(!preparedNext.isFresh(preparedKeyFor(nextId))) return
     enqueuePreparedNext()
 }
@@ -284,7 +303,7 @@ fun MainActivity.dropQueuedEpisode() {
         val index=p.currentMediaItemIndex
         removed=runCatching { p.removeMediaItems(minOf(index+1,p.mediaItemCount),p.mediaItemCount) }.isSuccess
     }
-    queuedEpisodeId=null; queuedQuality=""; queuedAt=0
+    queuedEpisodeId=null; queuedQuality=""; queuedDetail=null; queuedAt=0
     // 没摘掉就别关：那一项还在播放列表里，ExoPlayer 随时可能去读它的数据源。
     // 这种情况只会出现在播放器正在重建的瞬间，退出播放器时整条列表一起释放。
     if(removed) {
@@ -305,8 +324,31 @@ fun MainActivity.dropQueuedEpisode() {
  */
 fun MainActivity.onEpisodeAdvanced(next: Int,mediaId: String) {
     val data=detail ?: return
-    val p=player ?: return
     if(next !in data.episodes.indices) return
+    finishSeamlessAdvance(data,next,mediaId,data)
+}
+
+/**
+ * 片尾从上一季最后一集直接推进到下一季第 1 集。
+ *
+ * 播放器换 period 的动作和同季连播完全一样；不同的只是分集表、剧名与播放模型
+ * 要在这里一起换成下一季的详情。
+ */
+fun MainActivity.onSeasonAdvanced(target: Detail,mediaId: String) {
+    if(target.episodes.isEmpty()) return
+    val previous=detail ?: return
+    episodePanel?.dismiss(); episodePanel=null
+    finishSeamlessAdvance(target,0,mediaId,previous)
+}
+
+private fun MainActivity.finishSeamlessAdvance(
+    nextData: Detail,
+    next: Int,
+    mediaId: String,
+    previousData: Detail,
+) {
+    val p=player ?: return
+    if(next !in nextData.episodes.indices) return
     val previous=episodeIndex
     val queuedFor=queuedAt
     advancedAt=android.os.SystemClock.elapsedRealtime()
@@ -314,12 +356,12 @@ fun MainActivity.onEpisodeAdvanced(next: Int,mediaId: String) {
     // 这里**不能**读 `p.duration`：回调到达时播放器已经在报下一集的时长了。
     // 时长未知（这一集没走到 READY）就不写：写一条 0/0 的「已看完」比不写更糟，
     // 它会把这个剧的续播位置直接推到下一集开头。
-    if(previous in data.episodes.indices && lastEpisodeDuration>0) {
+    if(previous in previousData.episodes.indices && lastEpisodeDuration>0) {
         val duration=lastEpisodeDuration
         // 整集看完的写法与手机端共用 `:core`（`WatchProgress.completed`）：
         // 四个字段（位置 / 时长 / completed / 时间）不会再有一端只改一半。
-        val progress=WatchProgress.completed(data.series,data.episodes[previous],previous,duration)
-        library.save(progress); syncProgress(progress,data.episodes.size)
+        val progress=WatchProgress.completed(previousData.series,previousData.episodes[previous],previous,duration)
+        library.save(progress); syncProgress(progress,previousData.episodes.size)
     }
     // 新一集的时长还没读到：先清零，等 READY / tick 按新 mediaId 重新采样。
     // 不清的话，新一集若在 READY 之前就出错，写出去的是上一集的长度。
@@ -336,13 +378,15 @@ fun MainActivity.onEpisodeAdvanced(next: Int,mediaId: String) {
     video=queuedVideo; playbackHttp=queuedHttp
     queuedVideo=null; queuedHttp=null; queuedEpisodeId=null
     quality=video?.info?.quality ?: queuedQuality
-    queuedQuality=""; queuedAt=0
+    queuedQuality=""; queuedDetail=null; queuedAt=0
     episodeIndex=next
-    startAutoTransitionCleanup(mediaId,data.episodes[previous])
+    detail=nextData
+    sessionSeriesId=nextData.series.id
+    startAutoTransitionCleanup(mediaId,previousData.episodes.getOrNull(previous).orEmpty())
     // 无感切集换的是 period，不走 [playEpisode]，诊断现场得在这里跟着换：
     // 换集之后报出来的必须是**这一集**的 id / 集号 / 清晰度，否则上报里张冠李戴。
     // 解码器与渲染器是复用的，`decoderName` 因此保留——那正是这一条最有用的信息。
-    PlaybackDiag.nextEpisode(data.episodes[next],next,quality)
+    PlaybackDiag.nextEpisode(nextData.episodes[next],next,quality)
     // 上一集出帧时看门狗已经撤了，这一集要重新挂：无感切集同样可能卡在黑屏上。
     armPlaybackWatchdog(playbackSession)
     armFrameStallWatchdog(playbackSession)
@@ -369,22 +413,29 @@ fun MainActivity.onEpisodeAdvanced(next: Int,mediaId: String) {
     // 新一集的降级预算同样从零开始（档位上限照旧沿用）。这条「无感切集」不走 [playEpisode]，
     // 早先因此**不清**预算与手动建议：上一集留下的「请切换为软件解码」会被下一集的错误页
     // 原样顶出来，而那可能是一次毫不相关的网络失败（见 `SessionPlaybackPolicy.onEpisodeStart`）。
-    sessionPlayback.onEpisodeStart(data.episodes[next])
+    sessionPlayback.onEpisodeStart(nextData.episodes[next])
     // 标题只放剧名：集数由顶部那一项单独显示（见 [syncPlaybackInfo]）。
-    playbackTitle.text=data.series.title
+    playbackTitle.text=nextData.series.title
     // 集号这一格必须在这一帧就换掉：新 period 的第一帧已经上屏，读数还写着上一集，
     // 用户看到的就是「明明播到第 5 集，顶部还写第 4 集」。只改一处文字，不触发整条重排。
-    syncPlaybackEpisodeLabel(data)
+    syncPlaybackEpisodeLabel(nextData)
     // 弹幕与界面状态的刷新放到下一帧之后：这一帧正在把新 period 的第一帧推上屏，
     // 主线程上任何一次重排都会把它顶后一帧，用户看到的就是「换集时闪一下」。
     main.post {
         if(isDestroyed || screen!="player" || episodeIndex!=next) return@post
-        loadDanmaku(data.episodes[next],data.series.id)
+        loadDanmaku(nextData.episodes[next],nextData.series.id)
+        // 开始过渡后再把新一集的真实位置交给弹幕层：首批数据若先到会暂存，
+        // 等这一次时钟落地后再切换，不会沿用上一集片尾的位置。
+        syncDanmakuClock()
         updatePlaybackText(); syncMediaSession()
     }
     syncNextSeasonForCurrentEpisode()
     val waited=if(queuedFor>0) android.os.SystemClock.elapsedRealtime()-queuedFor else -1
-    android.util.Log.i("HGTV","Episode advanced seamlessly to ${next+1} quality=$quality queuedForMs=$waited")
+    android.util.Log.i(
+        "HGTV",
+        "Episode advanced seamlessly to series=${nextData.series.id} episode=${next+1} " +
+            "quality=$quality queuedForMs=$waited"
+    )
 }
 fun MainActivity.cancelPrefetch() {
     prefetchScope?.cancel(); prefetchScope=null
@@ -399,10 +450,23 @@ fun MainActivity.maybePrefetch() {
     // 起播正在取地址：这会儿再发一次就是两个并发，而这条接口对并发极敏感
     //（20 并发 0 命中、单发 50~80% 命中）。让起播先拿到地址，下一帧再预热。
     if(playbackFetching) return
-    if(!foreground || !p.isPlaying || !library.autoNext || playError || sleepStopped || episodeIndex>=data.episodes.lastIndex) return
-    if(!PrefetchPolicy.nearEnd(p.currentPosition,p.duration,p.playbackParameters.speed)) return
+    if(!foreground || !p.isPlaying || !library.autoNext || playError || sleepStopped) return
+    val seasonBoundary=episodeIndex==data.episodes.lastIndex
+    // 同季只要片尾前 30 秒的数据；跨季还要先查详情、再取第 1 集，
+    // 等到片尾窗口才发请求就已经晚了。进入最后一集后详情一就绪就提前预热。
+    if(!seasonBoundary &&
+        !PrefetchPolicy.nearEnd(p.currentPosition,p.duration,p.playbackParameters.speed)) return
+    val targetDetail=if(seasonBoundary) {
+        nextSeasonDetail?.takeIf {
+            it.episodes.isNotEmpty() && nextSeason?.id==it.series.id
+        }
+    } else data
+    val target=targetDetail ?: return
+    val id=if(seasonBoundary) target.episodes.firstOrNull()
+        else target.episodes.getOrNull(episodeIndex+1)
+    if(id==null) return
     // 键 = 集 + 上限（见 [preparedKeyFor]）：全站只有 HEVC 一种编码，不需要再区分编码族。
-    val id=data.episodes[episodeIndex+1]; val quality=playbackMaxQuality
+    val quality=playbackMaxQuality
     val key=preparedKeyFor(id)
     // 已经挂进播放器队列的那一集不用再取一次地址。
     if(queuedEpisodeId==id) return
@@ -428,12 +492,15 @@ fun MainActivity.maybePrefetch() {
                 // 索引键用**实际档位**（见 `StreamInfo.mediaKey`）：与起播那条路的键
                 // 必须逐字一致，预热结果才会被真正复用；用请求上限做键时，
                 // 「CDN 只给兼容档」的那一集预热与起播会各用一份索引。
-                val queue=data.episodes.drop(data.episodes.indexOf(id)+1).take(5)
-                val info=source.stream(id,quality,data.playback,queue)
+                val queue=target.episodes.drop(target.episodes.indexOf(id)+1).take(5)
+                val info=source.stream(id,quality,target.playback,queue)
                 RemoteVideo(http,info,info.mediaKey(id)).also { remote=it; it.warm() }
             }
             if(preparedNext.complete(ticket,key,prepared)) {
-                android.util.Log.i("HGTV","Next episode prepared near end")
+                android.util.Log.i(
+                    "HGTV",
+                    "${if(seasonBoundary) "Next season" else "Next episode"} prepared near end"
+                )
                 // 预热一落地就挂进队列，而不是等片尾那一下再挂：挂得越早，
                 // ExoPlayer 越有时间在后台把下一集的 period prepare 好（片尾推进时就不用等）。
                 main.post { if(!isDestroyed) enqueuePreparedNext() }
@@ -443,15 +510,17 @@ fun MainActivity.maybePrefetch() {
 }
 
 /**
- * 进入最后一集时提前查下一季，查到就在画面底部提示。
+ * 提前查下一季：倒数第二集开始取数，最后一集才显示提示。
  *
- * 查询只在正式播放页、开启自动连播且仍停在最后一集时有效；换回其它集或离开播放页会立即作废。
+ * 同季下一集只需要 vid，跨季还要先查相关作品、再查下一季详情。若等到最后一集
+ * 才开始查，短剧可能刚查到就已经片尾；提前一集准备，片尾才能像同季一样直接换 period。
+ * 换回更早的集或离开播放页时立即作废。
  */
 fun MainActivity.syncNextSeasonForCurrentEpisode() {
     val data=detail ?: return
-    val active=screen=="player" && library.autoNext && !sleepStopped &&
-        episodeIndex==data.episodes.lastIndex
-    if(!active) { clearNextSeasonLookup(); return }
+    val prepare=screen=="player" && library.autoNext && !sleepStopped &&
+        episodeIndex>=data.episodes.lastIndex-1
+    if(!prepare) { clearNextSeasonLookup(); return }
     ensureNextSeason(data.series)
 }
 
@@ -460,6 +529,9 @@ fun MainActivity.clearNextSeasonLookup() {
     nextSeasonToken.incrementAndGet()
     nextSeasonJob?.cancel(true); nextSeasonJob=null
     nextSeasonFor=""; nextSeason=null; nextSeasonLoading=false
+    nextSeasonDetailToken.incrementAndGet()
+    nextSeasonDetailJob?.cancel(true); nextSeasonDetailJob=null
+    nextSeasonDetailFor=""; nextSeasonDetail=null; nextSeasonDetailLoading=false
     autoNextSeasonPending=false; nextSeasonOpening=false; nextSeasonFinishedFor=""
     hideNextSeasonNotice()
 }
@@ -502,11 +574,64 @@ private fun MainActivity.completeNextSeasonLookup(
     nextSeasonJob=null
     nextSeasonLoading=false
     nextSeason=works?.let { SeriesSeasons.nextSeason(series,it) }
-    if(nextSeason!=null) showNextSeasonNotice() else hideNextSeasonNotice()
+    val target=nextSeason
+    if(target!=null) {
+        showNextSeasonNotice()
+        ensureNextSeasonDetail(target)
+    } else hideNextSeasonNotice()
     if(autoNextSeasonPending) {
-        autoNextSeasonPending=false
-        val target=nextSeason
-        if(target!=null) openNextSeason(target) else finishSeriesPlayback(series)
+        when {
+            target==null -> {
+                autoNextSeasonPending=false
+                finishSeriesPlayback(series)
+            }
+            nextSeasonDetail!=null -> {
+                autoNextSeasonPending=false
+                openNextSeason(target)
+            }
+            !nextSeasonDetailLoading -> {
+                autoNextSeasonPending=false
+                openNextSeason(target)
+            }
+            // 详情还在路上：继续等，落地后再直接进入下一季。
+        }
+    }
+}
+
+/**
+ * 查到下一季后把它的分集表也提前取回来。
+ *
+ * 只查剧名列表不够：片源预热需要第 1 集的 vid 与这一季自己的播放模型。
+ * 请求失败不弹错，片尾仍会走 [openNextSeason] 的兜底路径。
+ */
+private fun MainActivity.ensureNextSeasonDetail(target: Series) {
+    if(nextSeasonDetailFor==target.id) return
+    nextSeasonDetailJob?.cancel(true)
+    val token=nextSeasonDetailToken.incrementAndGet()
+    nextSeasonDetailFor=target.id
+    nextSeasonDetail=null
+    nextSeasonDetailLoading=true
+    nextSeasonDetailJob=io.submit {
+        val result=runCatching { repository.detail(target.id,includeAuthor=false) }
+        main.post {
+            if(isDestroyed || nextSeasonDetailToken.get()!=token) return@post
+            nextSeasonDetailLoading=false
+            nextSeasonDetailJob=null
+            val detail=result.getOrNull()?.takeIf { it.episodes.isNotEmpty() }
+            if(detail!=null) {
+                nextSeasonDetail=detail
+                if(autoNextSeasonPending) {
+                    autoNextSeasonPending=false
+                    openNextSeason(detail.series)
+                } else if(screen=="player" && episodeIndex==this.detail?.episodes?.lastIndex) {
+                    maybeQueueNext()
+                }
+            } else if(autoNextSeasonPending) {
+                // 提前取详情失败：片尾兜底再完整试一次，不能停在等待态。
+                autoNextSeasonPending=false
+                openNextSeason(target)
+            }
+        }
     }
 }
 
@@ -549,6 +674,16 @@ fun MainActivity.advanceToNextSeasonOrFinish(series: Series) {
 
 private fun MainActivity.openNextSeason(target: Series) {
     if(nextSeasonOpening) return
+    nextSeasonDetail?.takeIf {
+        nextSeasonDetailFor==target.id && it.episodes.isNotEmpty()
+    }?.let {
+        enterNextSeason(it)
+        return
+    }
+    if(nextSeasonDetailLoading && nextSeasonDetailFor==target.id) {
+        autoNextSeasonPending=true
+        return
+    }
     nextSeasonOpening=true
     autoNextSeasonPending=false
     hideNextSeasonNotice()
@@ -566,13 +701,23 @@ private fun MainActivity.openNextSeason(target: Series) {
             }
             nextSeasonOpening=false
             nextSeasonJob=null
-            nextSeasonFor=""; nextSeason=null; nextSeasonLoading=false
-            nextSeasonFinishedFor=""
-            detail=next
-            requestedAutoplay=true
-            playEpisode(0,0,autoplay=true)
+            enterNextSeason(next)
         }
     }
+}
+
+fun MainActivity.enterNextSeason(next: Detail) {
+    nextSeasonDetailToken.incrementAndGet()
+    nextSeasonDetailJob?.cancel(true); nextSeasonDetailJob=null
+    nextSeasonOpening=false
+    autoNextSeasonPending=false
+    hideNextSeasonNotice()
+    nextSeasonFor=""; nextSeason=null; nextSeasonLoading=false
+    nextSeasonDetailFor=""; nextSeasonDetail=null; nextSeasonDetailLoading=false
+    nextSeasonFinishedFor=""
+    detail=next
+    requestedAutoplay=true
+    playEpisode(0,0,autoplay=true)
 }
 
 private fun MainActivity.finishSeriesPlayback(series: Series) {
@@ -827,6 +972,7 @@ fun MainActivity.playerFailure(problem: Throwable) {
     // 队列那一集出错时要拿**它的**档位表去归因（`video` 是当前这一集）。
     // 必须在 `dropQueuedEpisode()` 之前抄走，错误页的按钮也要用它。
     val failedQueuedInfo=queuedVideo?.info
+    val queuedTargetDetail=queuedDetail
     val attr=playbackAttribution(problem,decodeCode,failedQueuedInfo)
     val failureMedia=playbackMediaKind(problem)
     val queuedDuration=player?.duration?.coerceAtLeast(0) ?: 0
@@ -912,6 +1058,10 @@ fun MainActivity.playerFailure(problem: Throwable) {
                 disarmPlaybackWatchdog(); disarmFrameStallWatchdog()
                 cancelRecovery(); cancelPrefetch(); dropQueuedEpisode()
                 restoreBufferingUi(); retirePreviousEpisode()
+                if(queuedTargetDetail!=null && failureAction.fromStart) {
+                    main.post { if(!isDestroyed) enterNextSeason(queuedTargetDetail) }
+                    return
+                }
                 // 队首那一集失败：从它的开头重来，而不是重放当前这一集（见 `queuedNearEnd`）。
                 val retryIndex=if(failureAction.fromStart) episodeIndex+failureAction.episodeOffset else episodeIndex
                 val retryAt=if(failureAction.fromStart) 0L else at

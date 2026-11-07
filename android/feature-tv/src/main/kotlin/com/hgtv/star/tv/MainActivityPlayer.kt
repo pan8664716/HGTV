@@ -533,7 +533,7 @@ fun MainActivity.playEpisode(
     // 传进来的预热结果这一下没用上（例如从后台回来按原位置续播）：当场收掉，
     // 否则那 1MB 与它的连接会一直挂着，没人再来取。
     if(prepared!=null && prefetched!==prepared) runCatching { prepared.close() }
-    if(fromQueue) { queuedVideo=null; queuedEpisodeId=null; queuedQuality=""; queuedAt=0 }
+    if(fromQueue) { queuedVideo=null; queuedEpisodeId=null; queuedQuality=""; queuedDetail=null; queuedAt=0 }
     // 无感切集：同一个播放器复用、目标是下一集的开头、而且下一集**已经预热好**
     //（播放地址 / moov / 首批数据都在本地，见 [maybePrefetch]）。
     // 这时切集不再走「停播放器 → 清空 → 重新取地址 → 重建画面」那条路：
@@ -1131,6 +1131,13 @@ fun MainActivity.playEpisode(
                         val current=p.currentMediaItemIndex.coerceAtLeast(0)
                         p.mediaItemCount>current+1
                     }.getOrDefault(false)
+                    val queuedSeason=queuedDetail
+                    if(queuedSeason!=null && queuedEpisodeId!=null && hasQueuedItem) {
+                        android.util.Log.w("HGTV","Queued next season did not advance; reopening it")
+                        dropQueuedEpisode()
+                        main.post { if(!isDestroyed && screen=="player") enterNextSeason(queuedSeason) }
+                        return
+                    }
                     if(queuedEpisodeId!=null && hasQueuedItem) {
                         playerFailure(PlaybackException("队列中的下一集没有接上",null,PlaybackException.ERROR_CODE_IO_UNSPECIFIED))
                         return
@@ -1142,14 +1149,15 @@ fun MainActivity.playEpisode(
                     // 「连着看」：还在前台、没有因为息屏 / 切后台被暂停、用户也没按过暂停。
                     val continuous=foreground && requestedAutoplay && !pausedForLifecycle
                     if(sleepTimer.episodeEnded()) stopForSleep()
-                    else if(continuous && library.autoNext && episodeIndex<data.episodes.lastIndex) {
+                    else if(continuous && library.autoNext &&
+                        detail?.let { episodeIndex<it.episodes.lastIndex }==true) {
                         playEpisode(
                             episodeIndex+1,
                             autoplay=requestedAutoplay,
                         )
                     }
-                    else if(continuous && episodeIndex>=data.episodes.lastIndex) {
-                        advanceToNextSeasonOrFinish(data.series)
+                    else if(continuous && detail?.let { episodeIndex>=it.episodes.lastIndex }==true) {
+                        detail?.series?.let { advanceToNextSeasonOrFinish(it) }
                     }
                     else { requestedAutoplay=false; p.pause(); playbackText.text="本集已结束"; showHud() }
                 }
@@ -1164,7 +1172,37 @@ fun MainActivity.playEpisode(
                 if(!active()) return
                 if(reason!=Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
                 val mediaId=mediaItem?.mediaId.orEmpty()
-                val next=data.episodes.indexOf(mediaId)
+                val currentDetail=detail ?: return
+                val seasonTarget=queuedDetail?.takeIf {
+                    episodeIndex==currentDetail.episodes.lastIndex &&
+                        it.episodes.firstOrNull()==mediaId
+                }
+                if(seasonTarget!=null) {
+                    if(queuedEpisodeId!=mediaId || queuedVideo==null) {
+                        android.util.Log.w(
+                            "HGTV",
+                            "Next season transition mismatch: media=$mediaId queued=$queuedEpisodeId " +
+                                "video=${queuedVideo!=null}; rebuilding"
+                        )
+                        cancelAutoTransitionCleanup()
+                        main.post {
+                            if(!active()) return@post
+                            runCatching { p.stop(); p.clearMediaItems() }
+                            cancelPrefetch()
+                            dropQueuedEpisode()
+                            forceRetirePrevious()
+                            enterNextSeason(seasonTarget)
+                        }
+                        return
+                    }
+                    // 跨季会更换播放模型，部分设备仍会原地重配解码器并短暂进入 BUFFERING。
+                    // 用比同季更长的首帧窗口压住缓冲圈；READY / 出错都会提前恢复。
+                    suppressBufferingUi(4000L)
+                    onSeasonAdvanced(seasonTarget,mediaId)
+                    main.postDelayed({ if(!isDestroyed) maybeQueueNext() },3000)
+                    return
+                }
+                val next=currentDetail.episodes.indexOf(mediaId)
                 if(next<0 || next==episodeIndex) return
                 // 预取队列与播放器实际切换项不一致：不能再相信 `queuedVideo`，
                 // 先停掉当前错误项，再走一次完整的 `setMediaSource` 重建。

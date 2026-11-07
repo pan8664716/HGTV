@@ -8,12 +8,16 @@ object PlaybackQuality {
      * 可选的清晰度档位：**五档，360 到 1080**。
      *
      * 这五档与 `need_all_video_definition=true` 时下发的那套表一致
-     * （平台按短边给 360/480/576/720/1080，全是 HEVC）。
+     * （平台按短边给 360/480/540/720/1080，全是 HEVC）。
      * 档位少一档就少一次选择：`normalize` 会把不在这张表里的值一律按 1080 处理，
-     * 因此这里少写 576 就等于「用户选不到 576，老数据里存着 576 的会被顶到 1080」。
+     * 因此这里少写 540 就等于「用户选不到 540，老数据里存着 540 的会被顶到 1080」。
      */
-    val options=listOf(360,480,576,720,1080)
-    fun normalize(value: Int)=value.takeIf { it in options } ?: 1080
+    val options=listOf(360,480,540,720,1080)
+    fun normalize(value: Int)=when(value) {
+        in options -> value
+        576 -> 540
+        else -> 1080
+    }
 }
 
 /** One automatic recovery budget per episode; only an explicit user retry resets it. */

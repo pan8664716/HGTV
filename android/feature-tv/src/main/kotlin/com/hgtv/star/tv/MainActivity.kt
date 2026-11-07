@@ -26,6 +26,7 @@ import kotlinx.coroutines.launch
 import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.media.DanmakuView
+import com.hgtv.star.shared.lan.LanLibrarySyncSession
 import com.hgtv.star.tv.player.EpisodePanel
 import com.hgtv.star.shared.data.FavoriteMonitor
 import com.hgtv.star.tv.list.HomeScreen
@@ -291,6 +292,13 @@ class MainActivity: Activity() {
     var queuedVideo: RemoteVideo?=null
     var queuedHttp: okhttp3.OkHttpClient?=null
     var queuedQuality: String=""
+    /**
+     * 队列项来自下一季时，记下它的详情。
+     *
+     * 同一季内换集时详情不变；跨季时当前 `detail` 还停留在上一季，播放器回调
+     * 需要靠这一份把分集表、标题、播放模型一起切过去。普通下一集保持 null。
+     */
+    var queuedDetail: Detail?=null
     /** 下一集挂进队列的时刻：只用于日志里量「挂了多久才真的用上」。 */
     var queuedAt=0L
     /** 片尾自动推进发生的时刻：用来量「切过去到出画面」的间隔。 */
@@ -1702,6 +1710,15 @@ class MainActivity: Activity() {
     var nextSeasonLoading=false
     val nextSeasonToken=java.util.concurrent.atomic.AtomicLong(0)
     var nextSeasonJob: java.util.concurrent.Future<*>?=null
+    /** 下一季第 1 集所在详情：查到后提前取好，供片尾无感起播。 */
+    var nextSeasonDetail: Detail?=null
+    var nextSeasonDetailFor=""
+    var nextSeasonDetailLoading=false
+    val nextSeasonDetailToken=java.util.concurrent.atomic.AtomicLong(0)
+    var nextSeasonDetailJob: java.util.concurrent.Future<*>?=null
+    /** 设置页「同步其他设备数据」当前打开的 NSD 会话；离开设置 / 页面销毁时关闭。 */
+    var lanSyncSession: LanLibrarySyncSession?=null
+    val lanSyncToken=java.util.concurrent.atomic.AtomicLong(0)
     /** 片尾等待查询结果时置位；结果落地后直接起播或结束。 */
     var autoNextSeasonPending=false
     var nextSeasonOpening=false
@@ -2535,6 +2552,7 @@ class MainActivity: Activity() {
     }
     override fun onDestroy() {
         generation++; cancelWork()
+        closeLanSyncSession()
         runCatching { unregisterReceiver(sessionExpiredReceiver) }
         runCatching { networkWatch?.cancel() }; networkWatch=null
         recommendToken.incrementAndGet(); recommendPageToken.incrementAndGet(); closeRecommendCache()

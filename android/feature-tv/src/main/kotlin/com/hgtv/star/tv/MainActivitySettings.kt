@@ -747,31 +747,29 @@ fun MainActivity.settings(parent: LinearLayout) {
     val systemPage=pageColumn(3)
     parent.addView(systemPage,lp(-1,-2))
     // —— 数据维护：两列 ——
-    // 「手机备份与恢复」与「清空应用缓存」相邻：清之前先导出备份是最自然的顺序，
-    // 两列并排之后这一块只占一行。
+    // 「手机备份与恢复」与「同步其他设备数据」并排；清空缓存单独一行，
+    // 避免把不可撤销操作放在需要频繁点击的数据同步旁边。
     val data=panel(systemPage,gap=TvStyle.GAP_INLINE)
-    heading(data,"数据维护","收藏与进度存在本机，可导出到手机")
+    heading(data,"数据维护","收藏与进度存在本机，可备份到手机或通过局域网同步其他设备")
     val dataRow=lineRow(data)
     lateinit var backup: TvButton
     backup=cellSetting(dataRow,"手机备份与恢复") {
         runCatching { LibraryBackup.encode(library.snapshot()) }.onSuccess { encoded ->
             tvTools.libraryTransfer(encoded,backup) { payload,restoreSettings ->
-                favoriteMonitor.stop(); library.restore(payload,restoreSettings)
-                // 备份里可能带着「减少动画」（见 BackupSettings.reduceAnim）：
-                // 恢复完立刻按新设置重算档位，否则要等到下次启动才生效。
-                applyPerformanceProfile()
-                tabState.clear(); tabFocus.clear(); catalogFocus=""; page=1
-                showCatalog(); favoriteMonitor.check()
-                showHint("记录已合并恢复")
+                applyLibraryBackup(payload,restoreSettings)
             }
         }.onFailure { tvTools.info("无法生成备份","本机记录暂时无法导出，请重试。",backup) }
     }
+    lateinit var lanSync: TvButton
+    lanSync=cellSetting(dataRow,"同步其他设备数据") { showLanLibrarySync(lanSync) }
+    track(3,backup,lanSync)
     // 「清空应用缓存」：把本机恢复成第一次安装的样子（收藏 / 记录 / 设置 / 设备身份 / 会话，
     // 以及外部存储里那两份镜像一起删）。这是唯一一个不可撤销的操作。
     // 名字用「缓存」是用户能理解的叫法，确认框里会写清收藏与记录也会一起清掉。
+    val resetRow=lineRow(data)
     lateinit var reset: TvButton
-    reset=cellSetting(dataRow,resetLabel()) { clearLocalData(reset) }
-    track(3,backup,reset)
+    reset=cellSetting(resetRow,resetLabel()) { clearLocalData(reset) }
+    track(3,reset)
 
     // —— 设备与性能：两列 ——
     //
@@ -910,17 +908,84 @@ private fun MainActivity.showDeviceFormPicker(anchor: TextView) {
             anchor.text="设备类型  ·  ${deviceFormSettingLabel()}"
             return@choices
         }
-        if(!library.setDeviceFormNow(selected)) {
-            showHint("设备类型保存失败，请重试")
-            return@choices
+        if(detected==DeviceForm.TV &&
+            (selected==DeviceForm.storedValue(DeviceForm.PHONE) ||
+                selected==DeviceForm.storedValue(DeviceForm.TABLET))) {
+            showTouchOnlyDeviceFormConfirm(selected,anchor)
+        } else {
+            applyDeviceFormSelection(selected,anchor)
         }
-        anchor.text="设备类型  ·  ${deviceFormSettingLabel()}"
-        anchor.contentDescription="设备类型，当前${DeviceForm.shortLabel(selected)}，正在自动重新进入"
-        showHint("正在切换到${DeviceForm.shortLabel(selected)}界面")
-        AppRelaunch.relaunchAndExit(this)
     }
     picker.button("取消",icon=R.drawable.ic_menu_close)
     picker.show(anchor)
+}
+
+private fun MainActivity.applyDeviceFormSelection(selected: String,anchor: TextView) {
+    if(!library.setDeviceFormNow(selected)) {
+        showHint("设备类型保存失败，请重试")
+        return
+    }
+    anchor.text="设备类型  ·  ${deviceFormSettingLabel()}"
+    anchor.contentDescription="设备类型，当前${DeviceForm.shortLabel(selected)}，正在自动重新进入"
+    showHint("正在切换到${DeviceForm.shortLabel(selected)}界面")
+    AppRelaunch.relaunchAndExit(this)
+}
+
+/**
+ * TV 被自动判定为电视、用户却选择手机 / 平板时的防误选确认。
+ *
+ * 该弹窗不建立焦点链、吞掉所有按键，确认按钮只接受 SOURCE_TOUCHSCREEN 的触摸事件；
+ * 遥控器、鼠标与键盘都无法完成选择。6 秒内没有触摸确认就自动关闭，且不写入任何设置。
+ */
+private fun MainActivity.showTouchOnlyDeviceFormConfirm(selected: String,anchor: TextView) {
+    val target=DeviceForm.shortLabel(selected)
+    val dialog=TvDialog(this,"确认切换到${target}")
+    dialog.message(
+        "当前设备被自动判定为电视。切换到${target}后，界面会改为触屏操作，" +
+            "遥控器将无法完成这次确认。"
+    )
+    dialog.message(
+        "请使用手机 / 平板的触摸屏点击下方按钮。若本机没有触摸屏，" +
+            "请不要继续；弹窗将在 6 秒后自动取消，不保存本次选择。"
+    )
+    val countdown=tvText("6 秒后自动取消",15f,TvStyle.textStrong)
+    dialog.content.addView(
+        countdown,
+        LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(TvStyle.GAP_INLINE) }
+    )
+    val confirm=dialog.button(
+        "触屏点击确认",
+        tone=ButtonTone.SECONDARY,
+        icon=R.drawable.ic_menu_check,
+    ) {
+        applyDeviceFormSelection(selected,anchor)
+    }
+    // 不让遥控器把焦点落到确认按钮上；触摸仍可点击，因为按钮本身保持 clickable。
+    confirm.isFocusable=false
+    confirm.isFocusableInTouchMode=false
+    confirm.setOnKeyListener { _,_,_ -> true }
+    confirm.setOnTouchListener { _,event ->
+        // 非触摸来源直接吞掉；真实触摸继续交给 View 的点击处理。
+        !event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)
+    }
+
+    val handler=android.os.Handler(android.os.Looper.getMainLooper())
+    var remaining=6
+    val tick=object: Runnable {
+        override fun run() {
+            if(!dialog.isShowing) return
+            remaining--
+            if(remaining<=0) {
+                dialog.dismiss()
+                return
+            }
+            countdown.text="${remaining} 秒后自动取消"
+            handler.postDelayed(this,1000L)
+        }
+    }
+    dialog.setOnDismissExtra { handler.removeCallbacks(tick) }
+    dialog.show(anchor=anchor,touchOnly=true)
+    handler.postDelayed(tick,1000L)
 }
 
 /**

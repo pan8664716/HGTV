@@ -17,7 +17,7 @@ import kotlinx.coroutines.CoroutineScope
  * 而它们要表达的是同一件事：
  *
  * ```
- * 换集 → 作废旧请求（代次 +1）→ 清屏 → 拉窗口 → 每到一个窗口就画 → 全量到齐再画一次
+ * 换集 → 作废旧请求（代次 +1）→ 旧画面继续滚 → 拉窗口 → 首批到达后无感切换
  * ```
  *
  * ## 三条容易写错的规则（都在这里）
@@ -76,20 +76,22 @@ class DanmakuLoader(
     fun load(episodeId: String, seriesId: String, force: Boolean = false) {
         if (episodeId.isBlank() || seriesId.isBlank()) return
         val view = target() ?: return
-        // 位置指针重置回开头：同一集重复进来时（换清晰度 / 重试）弹幕要从头对一遍。
-        view.resetCursor()
         val current = mode()
         view.mode = current
-        if (!force && episode == episodeId && loaded) return
+        if (!force && episode == episodeId && loaded) {
+            // 同一集重复进来（换清晰度 / 重试）：位置指针回到开头重新对齐。
+            view.resetCursor()
+            return
+        }
         val switchingEpisode = episode != episodeId
+        // 换集时保留上一集正在滚动的画面，新一集首批弹幕到达后 setDanmaku 会直接接管。
+        // 首次进入、同集强制重拉仍按原逻辑清屏；播放器视图本身换了时保留也没有意义。
+        if (switchingEpisode && episode.isNotEmpty()) view.beginTransition() else view.resetCursor()
         val ticket = ++token
         episode = episodeId
         count = -1
         lastItems = emptyList()
-        view.clear()
-        // 新一集必须先归零时钟再铺第一批弹幕；否则第一批数据会按上一集末尾的
-        // 播放位置重排，所有聚合被当成“已经发生”，先闪出来再被下一次时钟同步抹掉。
-        if (switchingEpisode) view.setClock(0, false)
+        if (!switchingEpisode) view.clear()
         if (current == DanmakuMode.HIDDEN) return
         scope.danmaku {
             val items = runCatching {

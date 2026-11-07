@@ -376,7 +376,9 @@ object LibraryBackup {
         // 搜索历史只有关键词；旧备份里多出来的 `type` 字段直接忽略（不再按类型分开记）。
         val searches=o.rows("searches",20).map { row -> RecentSearch(row.string("query",80).also { require(it.isNotBlank()) }) }
         val settings=o.getJSONObject("settings")
-        val quality=settings.number("quality",1080).toInt(); require(quality in PlaybackQuality.options)
+        val rawQuality=settings.number("quality",1080).toInt()
+        require(rawQuality in PlaybackQuality.options || rawQuality==576)
+        val quality=PlaybackQuality.normalize(rawQuality)
         // 校验认**全部合法值**（含手机端的 3×）：手机上备份出来的一份记录，
         // 拿到电视上恢复也必须能读回去，不能因为「电视的列表里没有 3×」就整份拒收。
         val speed=settings.get("speed"); require(speed is Number && PlaybackSpeed.isValid(speed.toFloat()))
@@ -447,16 +449,28 @@ object LibraryBackup {
         val reduceAnim=settings.optBoolean("reduceAnim",false)
         return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,danmakuEffects=danmakuEffects),later,hiddenIds)
     }
-    /** Existing favorites stay first; only newer imported progress replaces a local record. */
+    /**
+     * 同一部剧保留进度更高的一条：先看集数，再看是否看完，再看同集位置，
+     * 最后用更新时间处理完全相同的进度。收藏与其余记录按并集合并。
+     */
+    private fun betterProgress(local: BackupProgress,incoming: BackupProgress): BackupProgress {
+        if(incoming.episodeIndex!=local.episodeIndex) {
+            return if(incoming.episodeIndex>local.episodeIndex) incoming else local
+        }
+        if(incoming.completed!=local.completed) return if(incoming.completed) incoming else local
+        if(incoming.position!=local.position) return if(incoming.position>local.position) incoming else local
+        return if(incoming.updatedAt>local.updatedAt) incoming else local
+    }
+    /** Existing favorites stay first; imported progress wins when it is further along. */
     fun merge(local: BackupData,incoming: BackupData,restoreSettings: Boolean): BackupData {
         val favorites=(local.favorites+incoming.favorites).distinctBy { it.id }.take(500)
         val records=local.history.associateBy { it.series.id }.toMutableMap()
         val watched=local.watched.toMutableSet()
         incoming.history.forEach { candidate ->
             val id=candidate.series.id; val prior=records[id]
-            if(prior==null || candidate.updatedAt>prior.updatedAt) {
+            if(prior==null || betterProgress(prior,candidate)===candidate) {
                 records[id]=candidate
-                if(id in incoming.watched) watched.add(id) else watched.remove(id)
+                if(candidate.completed || id in incoming.watched) watched.add(id) else watched.remove(id)
             }
         }
         incoming.watched.filter { id -> id !in records && local.favorites.none { it.id==id } }.forEach { watched.add(it) }

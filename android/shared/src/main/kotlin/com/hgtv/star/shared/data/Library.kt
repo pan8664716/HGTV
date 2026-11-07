@@ -582,6 +582,54 @@ class Library(context: Context) {
             // 后者在读盘之前只会被当成「本机还没有」，盘上那份不会被抹掉。
             if(value.isBlank()) mirror.remove("x-tt-token") else mirror.put("x-tt-token",value.trim())
         }
+    /** 导出局域网全量同步允许迁移的设备身份与登录会话。 */
+    fun exportSyncSession(): Map<String,String> {
+        ensureIdentityLayout()
+        restoreFromMirror()
+        return buildMap {
+            LibrarySyncSessionKeys.ALL.forEach { key ->
+                if (key in LibrarySyncSessionKeys.LONG) {
+                    val value = sessionPrefs.getLong(key, 0L)
+                    if (value > 0L) put(key, value.toString())
+                } else {
+                    sessionPrefs.getString(key, "").orEmpty()
+                        .takeIf { it.isNotBlank() }
+                        ?.let { put(key, it) }
+                }
+            }
+        }
+    }
+    /**
+     * 用另一台设备的完整会话覆盖本机白名单字段。
+     *
+     * 同步语义是「让两台设备尽量一致」，因此来源没有的登录项也要在本机清掉；
+     * 这是确认框明确提示的覆盖操作，不沿用镜像恢复那种「只补缺失项」的策略。
+     */
+    fun importSyncSession(values: Map<String,String>, selectedKeys: Set<String> = LibrarySyncSessionKeys.ALL) {
+        if(discarding) return
+        require(selectedKeys.all { it in LibrarySyncSessionKeys.ALL }) { "同步包含不支持的会话类别" }
+        LibrarySyncSessionKeys.validate(values)
+        require(values.keys.all { it in selectedKeys }) { "同步会话与所选类别不一致" }
+        val edit=sessionPrefs.edit()
+        selectedKeys.forEach { key ->
+            val value=values[key]
+            when {
+                value==null -> edit.remove(key)
+                key in LibrarySyncSessionKeys.LONG -> edit.putLong(key,value.toLong())
+                else -> edit.putString(key,value)
+            }
+        }
+        require(edit.commit()) { "设备身份与会话保存失败" }
+        selectedKeys.forEach { key ->
+            val value=values[key]
+            if(value==null) mirror.remove(key) else mirror.put(key,value)
+        }
+        mirror.flush()
+        identityLayoutChecked=true
+        mirrorChecked=true
+        cachedProfileStamp=null
+        SessionBootstrap.onSessionRestored()
+    }
     /**
      * 把外部镜像里**本机缺的那几项**补回 [sessionPrefs]。
      *
@@ -1853,6 +1901,16 @@ class Library(context: Context) {
     }
     /** Requests prompt background commit, without lifecycle-thread disk waits. */
     fun flush() { writes.flush(); homeWrites.flush(); accountWrites.flush(); mirror.flush() }
+    /** 全量同步后等待所有队列落盘，避免紧接着重启进程时丢掉设置。 */
+    fun flushBlocking(timeoutMillis: Long = 5_000): Boolean {
+        val deadline=System.nanoTime()+timeoutMillis.coerceAtLeast(1)*1_000_000
+        fun remaining(): Long=((deadline-System.nanoTime())/1_000_000).coerceAtLeast(1)
+        val library=writes.flushBlocking(remaining())
+        val home=homeWrites.flushBlocking(remaining())
+        val account=accountWrites.flushBlocking(remaining())
+        val session=mirror.flushBlocking(remaining())
+        return library && home && account && session
+    }
     /**
      * 清除本机数据专用：丢掉所有待写快照、停掉写线程，**不再落盘**。
      *

@@ -7,6 +7,8 @@ import android.content.res.Configuration
 import android.graphics.Typeface
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.text.SpannableString
 import android.text.Spanned
 import android.text.style.ForegroundColorSpan
@@ -21,6 +23,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import android.widget.Toast
 import com.hgtv.star.core.DANMAKU_MERGE_MIN_RANGE
+import com.hgtv.star.core.BackupData
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.DanmakuSpeed
 import com.hgtv.star.core.DanmakuStyle
@@ -46,6 +49,12 @@ import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.data.LocalReset
 import com.hgtv.star.shared.architecture.AppRelaunch
+import com.hgtv.star.shared.lan.DeviceSyncPackage
+import com.hgtv.star.shared.lan.DeviceSyncPayload
+import com.hgtv.star.shared.lan.DeviceSyncSelection
+import com.hgtv.star.shared.lan.LanLibrarySyncSession
+import com.hgtv.star.shared.lan.LanSyncPeer
+import com.hgtv.star.shared.lan.lanIpv4Address
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.ui.TvTheme
 import com.hgtv.star.shared.ui.TvThemeStore
@@ -58,6 +67,8 @@ enum class PhoneSettingsPage(val label: String, val hint: String) {
     RECOMMEND("内容推荐", "推荐与来源"),
     SYSTEM("系统高级", "数据与性能"),
 }
+
+private const val LAN_SYNC_SOURCE_TTL_MS = Long.MAX_VALUE
 
 /**
  * 设置页：**与 TV 端一一对应**。
@@ -89,6 +100,9 @@ class PhoneSettingsActivity : PhoneActivity() {
     private var sectionHost: LinearLayout? = null
     private val library by lazy { PhoneServices.library(this) }
     private var page = PhoneSettingsPage.PLAYBACK
+    private val syncHandler = Handler(Looper.getMainLooper())
+    private var lanSyncSession: LanLibrarySyncSession? = null
+    private var lanSyncRequest = 0
 
     /**
      * 设置页重建时恢复到的位置。
@@ -492,10 +506,10 @@ class PhoneSettingsActivity : PhoneActivity() {
 
         val display=landscapePanel("播放显示","默认全关 · 唤出菜单或轻点时四项全部显示")
         landscapeLine(display).also { line ->
-            landscapeCell(line,landscapeSwitch("剧集标题",library.playerTitle) { library.playerTitle=it; render() })
-            landscapeCell(line,landscapeSwitch("当前集数",library.playerEpisode) { library.playerEpisode=it; render() })
-            landscapeCell(line,landscapeSwitch("当前时间",library.playerClock) { library.playerClock=it; render() })
+            landscapeCell(line,landscapeSwitch("剧名",library.playerTitle) { library.playerTitle=it; render() })
+            landscapeCell(line,landscapeSwitch("剧集",library.playerEpisode) { library.playerEpisode=it; render() })
             landscapeCell(line,landscapeSwitch("网速",library.playerSpeed) { library.playerSpeed=it; render() })
+            landscapeCell(line,landscapeSwitch("时间",library.playerClock) { library.playerClock=it; render() })
         }
         landscapeLine(display).also { line ->
             landscapeCell(line,landscapeSlider("播放界面自动消失",
@@ -624,7 +638,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     private fun renderLandscapeSystem() {
-        val data=landscapePanel("数据维护","收藏与进度存在本机，可导出与恢复")
+        val data=landscapePanel("数据维护","收藏与进度存在本机，可导出、同步与恢复")
         landscapeLine(data).also { line ->
             landscapeCell(line,landscapeSetting("导出备份","存成 JSON 文件") { exportBackup() })
             landscapeCell(line,landscapeSetting("从备份恢复","合并收藏、记录与设置") { importBackup() })
@@ -641,6 +655,9 @@ class PhoneSettingsActivity : PhoneActivity() {
                     restoreDefaults()
                 }
             })
+        }
+        landscapeLine(data).also { line ->
+            landscapeCell(line,landscapeSetting("同步其他设备数据","局域网 NSD 查找设备") { showLanLibrarySync() })
         }
 
         val perf=landscapePanel("设备与性能","动画开销、现场面板与设备形态")
@@ -717,11 +734,11 @@ class PhoneSettingsActivity : PhoneActivity() {
             library.seekStep = it.roundToInt()
         }
         section("播放显示")
-        hint("画面左上角常驻的几项信息，默认全关。与电视端同一批开关：后两项是「当前时间」与「网速」。")
-        switch("剧集标题", library.playerTitle) { library.playerTitle = it; render() }
-        switch("当前集数", library.playerEpisode) { library.playerEpisode = it; render() }
-        switch("当前时间", library.playerClock) { library.playerClock = it; render() }
+        hint("画面顶部常驻信息，默认全关。依次为剧名、剧集、网速、时间。")
+        switch("剧名", library.playerTitle) { library.playerTitle = it; render() }
+        switch("剧集", library.playerEpisode) { library.playerEpisode = it; render() }
         switch("网速", library.playerSpeed) { library.playerSpeed = it; render() }
+        switch("时间", library.playerClock) { library.playerClock = it; render() }
 
         section("播放界面")
         slider("自动消失", PLAYER_PANEL_TIMEOUT_RANGE.first.toFloat(),
@@ -964,6 +981,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
         section("数据维护")
         action("导出备份", "存成一份 JSON 文件") { exportBackup() }
+        action("同步其他设备数据", "通过局域网 NSD 查找设备") { showLanLibrarySync() }
         action("从备份恢复", "合并收藏、记录与设置") { importBackup() }
 
         section("危险操作")
@@ -1069,6 +1087,257 @@ class PhoneSettingsActivity : PhoneActivity() {
                 REQUEST_IMPORT
             )
         }.onFailure { toast("这台设备没有文件选择器") }
+    }
+
+    // ---------------------------------------------------------------- 局域网同步
+
+    private fun closeLanSyncSession() {
+        lanSyncRequest++
+        lanSyncSession?.close()
+        lanSyncSession = null
+    }
+
+    private fun showLanLibrarySync() {
+        closeLanSyncSession()
+        PhoneDialog(this, "同步其他设备数据")
+            .message("请选择这台设备在本次同步中的角色。")
+            .choices(
+                listOf(
+                    "我要同步其他设备的数据",
+                    "其他设备要同步我的数据",
+                ),
+            ) { index -> startLanSyncRole(sourceOnly = index == 1) }
+            .button("取消")
+            .show()
+    }
+
+    private fun startLanSyncRole(sourceOnly: Boolean) {
+        closeLanSyncSession()
+        val address = lanIpv4Address()
+        if (address == null) {
+            toast("请让两台设备连接同一个局域网后重试")
+            return
+        }
+        val encoded = runCatching {
+            DeviceSyncPackage.encode(DeviceSyncPackage.capture(this, library))
+        }.getOrNull()
+        if (encoded == null) {
+            toast("本机记录暂时无法生成同步数据")
+            return
+        }
+        if (sourceOnly) {
+            showLanSyncSource(address, encoded)
+        } else {
+            showLanSyncReceiver(address, encoded)
+        }
+    }
+
+    private fun showLanSyncSource(address: String, encoded: String) {
+        val status = PhoneDialog(this, "本机作为同步源")
+            .message("本机将一直出现在同一局域网的设备列表中。请保持此页面打开，让另一台设备选择「我要同步其他设备的数据」。")
+        val state = TextView(this).apply {
+            text = "正在开启同步源…"
+            setTextColor(PhoneStyle.text)
+            phoneSize(if (landscape) 11 else 13)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
+        status.content(state)
+        var downloadedCount = 0
+        lateinit var session: LanLibrarySyncSession
+        session = LanLibrarySyncSession(
+            context = this,
+            address = address,
+            payload = encoded,
+            onPeers = {},
+            onError = { message ->
+                runOnUiThread {
+                    if (lanSyncSession === session) state.text = message
+                }
+            },
+            discoverPeers = false,
+            onServing = {
+                runOnUiThread {
+                    if (lanSyncSession === session) state.text = "同步源已开启 · 等待其他设备连接"
+                }
+            },
+            onDownloaded = {
+                runOnUiThread {
+                    if (lanSyncSession === session) {
+                        downloadedCount++
+                        state.text = "已被 $downloadedCount 台设备读取 · 继续等待其他设备"
+                    }
+                }
+            },
+            ttlMillis = LAN_SYNC_SOURCE_TTL_MS,
+        )
+        lanSyncSession = session
+        status.button("停止同步源")
+        status.show {
+            if (lanSyncSession === session) closeLanSyncSession()
+        }
+        runCatching { session.start() }.onFailure {
+            closeLanSyncSession()
+            state.text = "无法开启同步源"
+        }
+    }
+
+    private fun showLanSyncReceiver(address: String, encoded: String) {
+        val found = linkedMapOf<String, LanSyncPeer>()
+        val status = PhoneDialog(this, "同步其他设备数据")
+        status.message("正在通过局域网查找其他设备。请在另一台设备上也打开这个功能。")
+        val count = TextView(this).apply {
+            text = "已发现 0 台设备"
+            setTextColor(PhoneStyle.textDim)
+            phoneSize(if (landscape) 11 else 13)
+            setPadding(dp(4), dp(4), dp(4), dp(4))
+        }
+        status.content(count)
+        var keepSession = false
+        lateinit var session: LanLibrarySyncSession
+        session = LanLibrarySyncSession(
+            context = this,
+            address = address,
+            payload = encoded,
+            onPeers = { peers ->
+                runOnUiThread {
+                    if (lanSyncSession !== session) return@runOnUiThread
+                    found.clear()
+                    peers.forEach { found[it.serviceName] = it }
+                    count.text = "已发现 ${found.size} 台设备"
+                }
+            },
+            onError = { message ->
+                runOnUiThread {
+                    if (lanSyncSession === session) count.text = message
+                }
+            },
+        )
+        lanSyncSession = session
+        status.button("取消")
+        status.show {
+            if (!keepSession && lanSyncSession === session) closeLanSyncSession()
+        }
+        runCatching { session.start() }.onFailure {
+            closeLanSyncSession()
+            count.text = "无法开启局域网同步"
+        }
+        syncHandler.postDelayed({
+            if (lanSyncSession !== session) return@postDelayed
+            session.stopDiscovery()
+            val peers = found.values.toList()
+            if (peers.isEmpty()) {
+                status.dismiss()
+                showLanSyncNoPeers()
+            } else {
+                keepSession = true
+                status.dismiss()
+                showLanSyncPeerPicker(peers, session)
+            }
+        }, 6_000L)
+    }
+
+    private fun showLanSyncNoPeers() {
+        PhoneDialog(this, "未发现同步设备")
+            .message("请确认两台设备连接同一局域网，并同时打开「同步其他设备数据」。")
+            .button("重新查找") { startLanSyncRole(sourceOnly = false) }
+            .button("取消")
+            .show()
+    }
+
+    private fun showLanSyncPeerPicker(peers: List<LanSyncPeer>, session: LanLibrarySyncSession) {
+        var peerSelected = false
+        val dialog = PhoneDialog(this, "选择同步设备")
+            .message("读取登录信息、设备参数、内容数据和全部设置。读取后仍需在本机确认，确认后会覆盖本机登录与设备身份。")
+            .choices(peers.map { "${it.displayName}  ·  ${it.host}" }) { index ->
+                peers.getOrNull(index)?.let { peer ->
+                    peerSelected = true
+                    session.close()
+                    if (lanSyncSession === session) lanSyncSession = null
+                    loadLanSyncBackup(peer)
+                }
+            }
+            .button("重新查找") { startLanSyncRole(sourceOnly = false) }
+            .button("取消")
+        dialog.show {
+            if (!peerSelected && lanSyncSession === session) closeLanSyncSession()
+        }
+    }
+
+    private fun loadLanSyncBackup(peer: LanSyncPeer) {
+        val request = ++lanSyncRequest
+        val loading = PhoneDialog(this, "正在同步")
+            .message("正在从 ${peer.displayName} 读取数据…")
+            .button("取消")
+        loading.show { lanSyncRequest++ }
+        Thread({
+            val result = runCatching { LanLibrarySyncSession.fetchPayload(peer) }
+            runOnUiThread {
+                if (isDestroyed || request != lanSyncRequest) return@runOnUiThread
+                loading.dismiss()
+                result.onSuccess { showLanSyncRestoreConfirm(it) }
+                    .onFailure { toast(it.message.orEmpty().ifBlank { "无法读取其他设备的数据" }) }
+            }
+        }, "hgtv-phone-lan-sync").start()
+    }
+
+    private fun showLanSyncRestoreConfirm(payload: DeviceSyncPayload) {
+        var login = true
+        var device = true
+        var content = true
+        var settings = true
+        fun syncSwitch(label: String, checked: Boolean, onToggle: (Boolean) -> Unit): PhoneSwitchRow =
+            PhoneSwitchRow(this, label, checked, onToggle).apply {
+                minimumHeight = dp(if (landscape) 36 else 42)
+            }
+        val dialog = PhoneDialog(this, "选择要同步的数据")
+            .message("登录、设备与设置会覆盖本机；播放和收藏等记录会合并，并保留进度更高的一项。")
+            .content(syncSwitch("登录信息", true) { login = it })
+            .content(syncSwitch("设备参数", true) { device = it })
+            .content(syncSwitch("播放、收藏等记录", true) { content = it })
+            .content(syncSwitch("设置信息", true) { settings = it })
+        dialog.buttonsInRow()
+        dialog.button("取消")
+        dialog.button("同步所选", primary = true) {
+            val selection = DeviceSyncSelection(
+                login = login,
+                device = device,
+                content = content,
+                settings = settings,
+            )
+            if (!selection.hasAny) {
+                toast("请至少选择一类同步内容")
+            } else {
+                applyLanDeviceSync(payload, selection)
+            }
+        }
+        dialog.show()
+    }
+
+    private fun applyLanDeviceSync(payload: DeviceSyncPayload, selection: DeviceSyncSelection) {
+        val request = ++lanSyncRequest
+        val loading = PhoneDialog(this, "正在应用同步数据")
+            .message("正在恢复所选类别…")
+            .button("取消")
+        loading.show { lanSyncRequest++ }
+        Thread({
+            val result = runCatching { DeviceSyncPackage.restore(this, library, payload, selection) }
+            runOnUiThread {
+                if (isDestroyed || request != lanSyncRequest) return@runOnUiThread
+                loading.dismiss()
+                result.onSuccess { saved ->
+                    if (!saved) {
+                        toast("部分数据未能写入本机，请重试")
+                        return@onSuccess
+                    }
+                    toast("同步完成，正在重启应用")
+                    syncHandler.postDelayed({
+                        if (!isDestroyed) AppRelaunch.relaunchAndExit(this)
+                    }, 800L)
+                }.onFailure {
+                    toast(it.message.orEmpty().ifBlank { "无法应用其他设备的数据" })
+                }
+            }
+        }, "hgtv-phone-lan-apply").start()
     }
 
     @Deprecated("Activity 的旧回调；不引 androidx.activity 也能用，见 feature-phone 的依赖说明")
@@ -1360,6 +1629,12 @@ class PhoneSettingsActivity : PhoneActivity() {
             outState.putInt(KEY_SCROLL_OFFSET, anchor.offset)
         }
         super.onSaveInstanceState(outState)
+    }
+
+    override fun onDestroy() {
+        closeLanSyncSession()
+        syncHandler.removeCallbacksAndMessages(null)
+        super.onDestroy()
     }
 
     companion object {

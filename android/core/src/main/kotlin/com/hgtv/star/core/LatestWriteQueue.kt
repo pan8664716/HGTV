@@ -28,6 +28,29 @@ class LatestWriteQueue<K, V>(
         scheduled?.cancel(false)
         schedule(0)
     }
+    /**
+     * 等到当前快照真正写完再返回。
+     *
+     * 只给「同步完成后立刻重启进程」这类边界使用；普通生命周期仍走非阻塞的 [flush]。
+     */
+    fun flushBlocking(timeoutMillis: Long = 5_000): Boolean {
+        if (timeoutMillis <= 0) return synchronized(this) { pending.isEmpty() }
+        synchronized(this) {
+            if (closed) return pending.isEmpty()
+            scheduled?.cancel(false)
+            scheduled = null
+        }
+        val barrier = runCatching {
+            worker.submit {
+                drain()
+                if (synchronized(this) { pending.isNotEmpty() }) drain()
+            }
+        }.getOrElse { return false }
+        return runCatching {
+            barrier.get(timeoutMillis, TimeUnit.MILLISECONDS)
+            synchronized(this) { pending.isEmpty() }
+        }.getOrDefault(false)
+    }
     private fun schedule(delay: Long) { scheduled = worker.schedule({ drain() }, delay, TimeUnit.MILLISECONDS) }
     private fun drain() {
         val batch = synchronized(this) {

@@ -350,4 +350,10 @@ object TvThemeStore {
             .putString(KEY, theme.storedValue)
             .apply()
     }
+
+    fun saveNow(context: Context, theme: TvTheme): Boolean =
+        context.getSharedPreferences(FILE, Context.MODE_PRIVATE)
+            .edit()
+            .putString(KEY, theme.storedValue)
+            .commit()
 }
