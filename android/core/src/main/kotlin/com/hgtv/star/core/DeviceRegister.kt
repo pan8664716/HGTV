@@ -26,7 +26,7 @@ import java.util.zip.GZIPOutputStream
  * ## 协议（照抓包逐字段复现）
  *
  * ```
- * POST https://log5-applog.fqnovel.com/service/2/device_register/
+ * POST https://log5-applog-lf.fqnovel.com/service/2/device_register/
  *      ?tt_data=a&cronet_version=…&ttnet_version=…&use_store_region_cookie=1
  * Content-Type: application/octet-stream;tt-data=a
  * log-encode-type: gzip
@@ -51,8 +51,8 @@ import java.util.zip.GZIPOutputStream
  *    `x-helios` / `x-medusa`，query 里也没有 `ts` / `_rticket`。带上签名头反而会被判异常客户端。
  */
 object DeviceRegister {
-    /** 官方 7.3.9.32 冷启动注册使用的线路。 */
-    private const val HOST = "https://log5-applog.fqnovel.com"
+    /** 首次无 TNC 配置时，官方 7.3.9.32 冷启动注册使用的线路。 */
+    private const val HOST = "log5-applog-lf.fqnovel.com"
     private const val PATH = "/service/2/device_register/"
     /** ttEncrypt 的固定前缀（`libEncryptor.so` 的魔数）。 */
     private val MAGIC = byteArrayOf(0x74,0x63,0x05,0x10,0x00,0x00)
@@ -239,8 +239,12 @@ object DeviceRegister {
         "x-neptune" to "-11|50:51:59",
     )
 
-    fun url(device: Map<String,String> = emptyMap(), now: Long = System.currentTimeMillis()): String =
-        HOST + PATH + "?tt_data=a&cronet_version=8d40f833_2026-03-03"+
+    fun url(
+        device: Map<String,String> = emptyMap(),
+        now: Long = System.currentTimeMillis(),
+        host: String = HOST,
+    ): String =
+        "https://$host" + PATH + "?tt_data=a&cronet_version=8d40f833_2026-03-03"+
             "&ttnet_version=4.2.243.31-douyin&use_store_region_cookie=1"
 
     /**

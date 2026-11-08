@@ -744,7 +744,7 @@ fun MainActivity.networkAvailable(): Boolean = connectivity.hasInternet()
  * 而网络其实在第 2 秒就回来了。用户的感受是「网络已经好了，它还在转圈」。
  *
  * 现在有两道闸：
- * 1. 取地址整段 3 秒硬上限（见 `ContentRepository.ADDRESS_DEADLINE_MS`）——**兜底**；
+ * 1. 取地址整段 6 秒硬上限（见 `ContentRepository.ADDRESS_DEADLINE_MS`）——**兜底**；
  * 2. 这一条：网络恢复的那一刻就把在途那一发作废重来——**不再等兜底**。
  *
  * ## 作废为什么用 `generation++` + [cancelWork]
@@ -1395,6 +1395,7 @@ fun networkFailureOf(problem: Throwable?): String? {
         when(current) {
             // 顺序有意义：`SocketTimeoutException` / `ConnectException` 都是 `IOException`，
             // `UnknownHostException` 也是——所以这几个具体类型必须排在笼统判断前面。
+            is com.hgtv.star.core.AddressTimeoutException -> return "取播放地址超时"
             is java.net.UnknownHostException -> return "视频服务器域名无法解析"
             is java.net.SocketTimeoutException -> return "连接视频服务器超时"
             is java.net.ConnectException -> return "连不上视频服务器"

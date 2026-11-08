@@ -10,6 +10,7 @@ import android.widget.TextView
 import com.hgtv.star.core.CategoryFilterRow
 import com.hgtv.star.core.CategoryGenres
 import com.hgtv.star.core.CategoryPanel
+import com.hgtv.star.core.CategoryPanelCache
 import com.hgtv.star.core.CategorySelection
 import com.hgtv.star.phone.PhonePlayerActivity
 import com.hgtv.star.phone.PhoneServices
@@ -44,7 +45,7 @@ import kotlinx.coroutines.withContext
  *
  * * 体裁的**四枚固定顺序**是写死的（`CategoryGenres.options`），不跟接口返回顺序走；
  * * 细分行**随体裁变化**：换体裁时清掉 theme / role / epoch / creationStatus，
- *   并重新取一次面板（接口在 genre 行上给了 `refresh_other_selector_row=true`）；
+ *   并读取对应面板（首次请求接口，之后直接使用分类缓存）；
  * * 每行开头都有「全部」，语义是「不传这个维度」。
  *
  * 顶栏固定；子分类筛选行是网格的第一项，和海报一起滚动。
@@ -59,20 +60,25 @@ class PhoneCategoryPage(
         val genreIndex: Int,
         val panel: CategoryPanel?,
         val feed: PhonePosterFeed.Snapshot,
+        val feeds: Map<String, PhonePosterFeed.Snapshot> = emptyMap(),
     )
 
     private val topBar = PhoneTopBar(context)
     /** 子分类筛选：作为列表头部随海报一起滚动，不自动收起。 */
     private val filterBox = LinearLayout(context).apply {
         orientation = VERTICAL
-        setPadding(0, 0, 0, context.dp(2))
+        setPadding(0, 0, 0, 0)
     }
     private val feed = PhonePosterFeed(context)
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
     private var selection = initialState?.selection ?: CategorySelection()
     private var genreIndex = initialState?.genreIndex ?: 0
-    private var panel: CategoryPanel? = initialState?.panel
+    private var panel: CategoryPanel? =
+        initialState?.panel ?: CategoryPanelCache.load(selection.genre)
+    private val feedCache = linkedMapOf<String, PhonePosterFeed.Snapshot>().apply {
+        putAll(initialState?.feeds.orEmpty())
+    }
 
     init {
         orientation = VERTICAL
@@ -108,6 +114,7 @@ class PhoneCategoryPage(
 
         val restored = initialState?.feed
         if (restored?.loaded == true) {
+            feedCache[selection.key()] = restored
             renderFilters()
             val repo = PhoneServices.repository(context)
             feed.restore(restored) { page ->
@@ -123,18 +130,20 @@ class PhoneCategoryPage(
         genreIndex = genreIndex,
         panel = panel,
         feed = feed.snapshot(),
+        feeds = feedCache.toMap(),
     )
 
     // ---------------------------------------------------------------- 体裁
 
     private fun selectGenre(index: Int) {
         if (index == genreIndex) return
+        rememberCurrentFeed()
         genreIndex = index
         topBar.applyTabSelection(index)
         selection = selection.newGenre(CategoryGenres.options[index].id)
-        panel = null
+        panel = CategoryPanelCache.load(selection.genre)
         renderFilters()
-        loadPanel()
+        showSelectedFeed()
     }
 
     /**
@@ -146,24 +155,43 @@ class PhoneCategoryPage(
     private fun loadPanel() {
         val repo = PhoneServices.repository(context)
         val snapshot = selection
+        val needPanel = panel == null
+        feed.showLoading()
         scope.launch {
             val result = withContext(Dispatchers.IO) {
-                runCatching { repo.categoryFeed(snapshot, 1, needPanel = true) }.getOrNull()
+                runCatching { repo.categoryFeed(snapshot, 1, needPanel) }.getOrNull()
             } ?: return@launch
             if (snapshot != selection) return@launch
-            panel = result.panel
+            result.panel?.let { panel = it }
             renderFilters()
             feed.submit(result.page.items, result.page.hasMore)
+            rememberCurrentFeed()
             if (result.page.hasMore) {
                 feed.load { page -> visible(repo.categoryFeed(selection, page).page) }
             }
         }
     }
 
-    private fun reload() {
-        val repo = PhoneServices.repository(context)
-        val snapshot = selection
-        feed.load { page -> visible(repo.categoryFeed(snapshot, page).page) }
+    private fun showSelectedFeed() {
+        val cached = feedCache[selection.key()]
+        if (cached != null) {
+            val repo = PhoneServices.repository(context)
+            feed.restore(cached) { page ->
+                visible(repo.categoryFeed(selection, page).page)
+            }
+            return
+        }
+        loadPanel()
+    }
+
+    private fun rememberCurrentFeed() {
+        val snapshot = feed.snapshot()
+        if (!snapshot.loaded) return
+        feedCache.remove(selection.key())
+        feedCache[selection.key()] = snapshot
+        while (feedCache.size > 16) {
+            feedCache.remove(feedCache.keys.firstOrNull() ?: break)
+        }
     }
 
     /** 长按菜单隐藏过的剧不出现在分类里（与 TV 的 `SeriesGrid` 同一条规则）。 */
@@ -196,17 +224,16 @@ class PhoneCategoryPage(
         val line = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(context.dp(12), 0, context.dp(4), 0)
-            // 30 → 24（用户要求「子分类太高」）：行高只留 chip 本身 + 一圈薄留白。
-            minimumHeight = context.dp(24)
+            setPadding(context.dp(10), 0, context.dp(2), 0)
+            minimumHeight = context.dp(18)
         }
         val label = row.title.removePrefix("全部").ifBlank { row.title }
         line.addView(TextView(context).apply {
             text = label
             setTextColor(PhoneStyle.textDim)
-            phoneSize(11)
+            phoneSize(9)
             maxLines = 1
-        }, LayoutParams(context.dp(38), LayoutParams.WRAP_CONTENT))
+        }, LayoutParams(context.dp(30), LayoutParams.WRAP_CONTENT))
 
         val chips = LinearLayout(context).apply {
             orientation = HORIZONTAL
@@ -215,32 +242,32 @@ class PhoneCategoryPage(
         val selectedId = selection.valueOf(row.type)
         // 「全部」排第一：语义是「不传这个维度」，接口返回的 options 里通常没有它。
         val options = listOf<Pair<String?, String>>(null to "全部") +
-            row.options.filter { it.id != null }.map { it.id to it.label }
+            row.options.map { it.id to it.label }
         options.forEach { (id, text) ->
             val on = id == selectedId
             chips.addView(TextView(context).apply {
                 this.text = text
-                phoneSize(11)
+                phoneSize(9)
                 gravity = Gravity.CENTER
                 setTextColor(if (on) PhoneStyle.text else PhoneStyle.textDim)
                 background = if (on) {
                     roundedBackground(PhoneStyle.surfaceHigh, PhoneStyle.RADIUS_PILL)
                 } else null
-                // 上下内边距 4 → 3：行高收到 24dp 之后，4 会让 chip 顶满整行。
-                setPadding(context.dp(9), context.dp(3), context.dp(9), context.dp(3))
+                setPadding(context.dp(6), 0, context.dp(6), 0)
                 setOnClickListener {
+                    rememberCurrentFeed()
                     selection = selection.with(row.type, id)
                     renderFilters()
-                    reload()
+                    showSelectedFeed()
                 }
             }, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
-                rightMargin = context.dp(3)
+                rightMargin = context.dp(1)
             })
         }
         line.addView(HorizontalScrollView(context).apply {
             isHorizontalScrollBarEnabled = false
             addView(chips)
-        }, LayoutParams(0, context.dp(24), 1f))
+        }, LayoutParams(0, context.dp(18), 1f))
         return line
     }
 

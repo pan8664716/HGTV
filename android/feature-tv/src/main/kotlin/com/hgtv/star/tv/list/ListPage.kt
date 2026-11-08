@@ -32,6 +32,7 @@ import com.hgtv.star.tv.TAB_SETTINGS
 import com.hgtv.star.tv.accountItems
 import com.hgtv.star.tv.accountNotice
 import com.hgtv.star.tv.registerDeviceOnce
+import com.hgtv.star.tv.rememberCategoryState
 import com.hgtv.star.tv.addButton
 import com.hgtv.star.tv.appendCatalog
 import com.hgtv.star.tv.autoAppendCatalog
@@ -59,6 +60,8 @@ import com.hgtv.star.tv.loadAccount
 import com.hgtv.star.tv.loadHotSearches
 import com.hgtv.star.tv.localCatalog
 import com.hgtv.star.tv.localItems
+import com.hgtv.star.tv.loading
+import com.hgtv.star.tv.loadingView
 import com.hgtv.star.tv.lp
 import com.hgtv.star.tv.message
 import com.hgtv.star.tv.historyClearButton
@@ -583,9 +586,12 @@ fun MainActivity.showCatalog(
         val panel=categoryPanel
         val rowChips=mutableListOf<MutableList<View>>()
         if(panel==null) {
-            val tip=text("正在读取筛选条件…",13f,muted)
-                .apply { setPadding(pageBleed(),0,pageBleed(),dp(8)) }
-            container.addView(tip); registerTopAreaRow(tip)
+            val tip=loadingView(32,22)
+            container.addView(
+                tip,
+                lp(-1,dp(32)).apply { leftMargin=pageBleed(); rightMargin=pageBleed() }
+            )
+            registerTopAreaRow(tip)
         } else {
             val filterRows=panel.rows.filter { it.type!=CategorySelection.TYPE_GENRE }
             filterRows.forEach { filterRow ->
@@ -610,7 +616,6 @@ fun MainActivity.showCatalog(
                 val buttons=categoryFilterButtons.getOrPut(filterRow.type) { mutableMapOf() }
                 buttons.clear()
                 // 每行开头一枚「全部」：语义就是不传这个维度。
-                // 「推荐」的「全部」就是接口的默认推荐序（`sort` 不传），默认也停在这一枚。
                 run {
                     val active=categorySelection.valueOf(filterRow.type)==null
                     val chip=ToggleChip(this,"全部",active,ButtonSize.DENSE) {
@@ -679,7 +684,7 @@ fun MainActivity.showCatalog(
     } else if(tab==TAB_RANK) {
         // 榜单名已经进了导航栏，这一行只剩更新时间（接口没给就整行不占位）；
         // 「刷新榜单」按钮去掉：进页面、切榜单、滚到顶都会重新取，不需要单独一个入口。
-        val subtitle=text(if(load) "正在读取最新榜单…" else ranking?.updatedText.orEmpty(),13f,muted)
+        val subtitle=text(ranking?.updatedText.orEmpty(),13f,muted)
             .apply {
                 setPadding(pageBleed(),0,pageBleed(),dp(8))
                 visibility=if(text.isBlank()) View.GONE else View.VISIBLE
@@ -711,7 +716,7 @@ fun MainActivity.showCatalog(
         else {
             // 搜索页第一次进来、设备还在注册：这句要说清「在初始化」，
             // 否则用户看到的是加载后又失败，只会反复按重试。
-            message(body,if(tab==TAB_SEARCH && !library.deviceRegistered()) "正在初始化设备…" else "正在加载…")
+            loading(body)
             // 加载期间焦点必须有一个**确定的落点**：整页重建之后，刚按下的那枚芯片已经离树，
             // 不管的话系统会把焦点交给新布局里第一个可聚焦控件（页头那排入口 / 芯片）。
             // 点了芯片就把焦点交回那枚芯片（从头到尾不动）；否则落在页头控件上，
@@ -788,6 +793,7 @@ fun MainActivity.showCatalog(
                     categoryPanel=fetched
                     if(firstPanel) {
                         catalog=page.items; ranking=page.ranking; hasMore=page.hasMore
+                        rememberCategoryState(requestCategory)
                         showCatalog(load=false,keepChip=true)
                         // 面板到手后的这次重建只为把筛选行画出来；焦点已经在上面的
                         // [restoreChipFocus] 里交回芯片了，这里必须清掉「芯片握着焦点」的标记——
@@ -829,6 +835,9 @@ fun MainActivity.showCatalog(
                 // 上面那次重建刻意跳过了预取（那时屏上还是旧列表），这里补一次：
                 // 用户第一次按下键时下一页的内容已经在手上。
                 if(holdChip) prefetchNextPage()
+            }
+            if(requestTab==TAB_CATEGORY && tab==TAB_CATEGORY && categorySelection==requestCategory) {
+                rememberCategoryState(requestCategory)
             }
             // App 搜索接口「答了但没数据」时已经自动改走官网（见 `ContentRepository.search`）。
             // 只提示一次（第 1 页），否则翻页时每页都会弹一遍。
@@ -996,7 +1005,7 @@ fun MainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Bool
             ensureFocusView { chipControl(chipFocusKey) ?: firstHeadControl() ?: navEntry() }
             return
         }
-        message(list,if(loading) "正在加载推荐…" else when {
+        if(loading) loading(list) else message(list,when {
             // 搜索页的「怎么打字」在这里也说一次：这是没有结果时用户唯一能看到的说明。
             tab==TAB_SEARCH -> if(query.isBlank()) "输入关键词后按「搜索」；遥控器用方向键选字，也可外接键盘" else "没有找到相关剧集，换个关键词试试"
             tab==TAB_CATEGORY -> "${categoryDescription()}暂时没有内容"
@@ -1153,7 +1162,7 @@ private class ClipFrameLayout(context: android.content.Context) : FrameLayout(co
 /**
  * 底部按钮文案。
  *
- * 静默预取不打扰用户（还是「展示更多 ↓」），只有用户自己按出来的加载才显示「正在加载更多…」。
+ * 静默预取不打扰用户（还是「展示更多 ↓」），只有用户自己按出来的加载才显示转圈。
  * 分类页与榜单页都有这个按钮（它们不是自动追加）；搜索结果没有按钮，滚到底就自动接。
  */
 

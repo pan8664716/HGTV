@@ -53,7 +53,7 @@ object PlaybackCache {
      * 2 起多了「请求档位 / 实际档位 / 实际编码 / 全部可播档位」四项（见 [StreamInfo]）。
      * 版本不符就整条当未命中：旧文件留在盘上会被下一次 [saveUrl] 覆盖，不会错位读取。
      */
-    private const val URL_VERSION=3
+    private const val URL_VERSION=4
     private const val HEAD_VERSION=1
     /** 首块上限：与 `RemoteVideo.HEAD_CHUNK` 一致（512KB），留一点余量。 */
     private const val MAX_HEAD_BYTES=1024*1024
@@ -358,6 +358,9 @@ object PlaybackCache {
                 val options=info.available
                 output.writeInt(options.size)
                 for(option in options) output.writeInt(option)
+                val backups=info.backupUrls
+                output.writeInt(backups.size)
+                backups.forEach { writeText(output,it) }
             }
             file.delete()
             tmp.renameTo(file)
@@ -437,8 +440,15 @@ object PlaybackCache {
                 val value=input.readInt()
                 if(value>0) available+=value
             }
+            val backupCount=input.readInt()
+            if(backupCount !in 0..8) return null
+            val backups=ArrayList<String>(backupCount)
+            repeat(backupCount) {
+                val value=readText(input)
+                if(value.isNotEmpty()) backups+=value
+            }
             return Url(
-                StreamInfo(url,key,quality,requestedQuality,actualQuality,available),
+                StreamInfo(url,key,quality,requestedQuality,actualQuality,available,backups),
                 at
             )
         }

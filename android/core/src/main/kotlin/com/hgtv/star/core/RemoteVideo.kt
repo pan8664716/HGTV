@@ -29,6 +29,7 @@ class VideoChangedException(message: String): IOException(message)
 /** One playback stream. No listening socket or local HTTP service. */
 class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private val cacheKey: String?=null): Closeable {
     @Volatile private var closed=false
+    @Volatile private var activeUrl=info.url
     private val calls=mutableSetOf<Call>()
     data class Range(val bytes: ByteArray,val total: Long)
     /**
@@ -39,7 +40,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
      * 域名」只能从这一集自己的地址里读出来，不能拿上一集或接口域名顶替。
      * 解析失败返回空串（调用方按「没有域名可清」处理，不会因此中断自愈）。
      */
-    val host: String get() = runCatching { java.net.URI(info.url).host }.getOrNull().orEmpty()
+    val host: String get() = runCatching { java.net.URI(activeUrl).host }.getOrNull().orEmpty()
     var total: Long=0; private set
     private lateinit var prepared: MediaCrypto.Prepared
     /**
@@ -71,10 +72,31 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
      */
     @Volatile private var headTarget=HEAD_CHUNK
     private fun range(start: Long,end: Long): Range {
+        val candidates=(listOf(activeUrl)+info.backupUrls).distinct()
+        var last: IOException?=null
+        for(url in candidates) {
+            try {
+                val result=rangeOnce(url,start,end)
+                if(url!=activeUrl) {
+                    activeUrl=url
+                    if(NetLog.timing) NetLog.log("video switched backup host=${runCatching { java.net.URI(url).host }.getOrNull().orEmpty()}")
+                }
+                return result
+            } catch(e: VideoChangedException) {
+                throw e
+            } catch(e: IOException) {
+                if(isInterruption(e) || e.message.orEmpty().contains("取消")) throw e
+                last=e
+            }
+        }
+        throw last ?: IOException("视频分段读取失败")
+    }
+
+    private fun rangeOnce(url: String,start: Long,end: Long): Range {
         if(closed) throw IOException("播放请求已取消")
         require(start>=0 && end>=start && end-start<8*1024*1024)
         val began=System.nanoTime()
-        val request=Request.Builder().url(info.url).header("User-Agent",VendorConstants.VIDEO_UA).header("Referer","https://novel.snssdk.com/").header("Range","bytes=$start-$end").header("Accept-Encoding","identity").build()
+        val request=Request.Builder().url(url).header("User-Agent",VendorConstants.VIDEO_UA).header("Referer","https://novel.snssdk.com/").header("Range","bytes=$start-$end").header("Accept-Encoding","identity").build()
         val call=http.newCall(request)
         synchronized(calls) { if(closed) throw IOException("播放请求已取消"); calls+=call }
         try {

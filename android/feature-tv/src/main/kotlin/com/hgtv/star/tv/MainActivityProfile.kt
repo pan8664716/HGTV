@@ -41,7 +41,7 @@ fun MainActivity.profileHead(row: LinearLayout) {
     row.addView(avatar,lp(dp(PROFILE_AVATAR),dp(PROFILE_AVATAR)))
     // 昵称小字（比标题小两档）：它是身份标注，不是这一页的主角。
     val name=profile?.nickname?.takeIf { it.isNotBlank() }
-        ?: if(credentials==null) "未登录" else "正在读取…"
+        ?: if(credentials==null) "未登录" else "已登录"
     val nameView=text(name,14f,if(credentials==null) muted else TvStyle.textDim).apply { maxLines=1 }
     gapInto(row,nameView,lp(-2,-2),TvStyle.GAP_INLINE)
     // 未登录：身份行不再放任何入口，手机号登录表单直接铺在下面（见 ListPage）。
@@ -113,7 +113,6 @@ fun MainActivity.profileHead(row: LinearLayout) {
         // 现在旧内容留在原地，新数据落地后只重画真正变了的那一栏（见 [refreshAccountViews]）。
         accountError=null
         loadAccount(force=true)
-        showHint("正在刷新账号信息…")
     }
     // 「清空全部记录」：只在**历史**这一栏、而且确实有记录时出现，排在「退出 / 刷新」之后。
     // 它是这一栏的批量动作（收藏 / 点赞 / 预约没有这种「一次清空」的语义），
@@ -271,8 +270,7 @@ fun MainActivity.accountNotice(parent: LinearLayout) {
     }
     val data=accountData
     if(data==null) {
-        val card=profilePanel(parent,"正在读取账号信息")
-        card.addView(text("正在拉取资料与四个栏目，请稍候。",15f,TvStyle.textDim))
+        loading(parent,180)
         loadAccount()
         return
     }

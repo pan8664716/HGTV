@@ -117,6 +117,14 @@ object HgtvDns : Dns {
     }
 
     override fun lookup(hostname: String): List<InetAddress> {
+        // TNC 的 HTTP DNS 表优先于系统 DNS。它给的是接口域名对应的当前 IP，
+        // 但仍然按原域名建连，TLS SNI / 证书 / 虚拟主机都不变。
+        TncConfigStore.httpDnsAddresses(hostname,allowStale=false)?.let {
+            val entry=Entry(it,System.currentTimeMillis())
+            if(cache.size>=MAX_HOSTS) cache.clear()
+            cache[hostname]=entry
+            return it
+        }
         awaitDisk()
         val now=System.currentTimeMillis()
         cache[hostname]?.let { if(now-it.at<TTL_MS) return it.addresses }
@@ -124,6 +132,14 @@ object HgtvDns : Dns {
         val addresses=try {
             Dns.SYSTEM.lookup(hostname)
         } catch(e: java.net.UnknownHostException) {
+            // 配置过期后系统 DNS 也失败：允许拿 TNC 最后一份 IP 表再试一次。
+            // 这比使用本地磁盘里可能更旧的系统解析结果更接近平台当前调度。
+            TncConfigStore.httpDnsAddresses(hostname,allowStale=true)?.let {
+                val entry=Entry(it,now)
+                if(cache.size>=MAX_HOSTS) cache.clear()
+                cache[hostname]=entry
+                return it
+            }
             // 系统解析不出来：退回盘上那份（见类注释）。
             //
             // **视频 CDN 域名不走这条**（见 [isVideoHost]）：12 小时的旧 IP 对内容接口
@@ -241,7 +257,8 @@ object HgtvDns : Dns {
     }
 
     /** 冷启动会碰到的域名（内容接口 / 图片 / 视频 Referer / 日志与安全接口）。 */
-    val BOOT_HOSTS: List<String> = listOf(
+    val BOOT_HOSTS: List<String>
+        get() = listOf(
         // **播放地址里下发的那个 CDN 域名放第一位**。它在接口返回之前没人知道，但实测跨剧集
         // 基本就是这一个（`vas-lf-x` = 视频分发），而且它不预热要 **1.6 秒**：
         // `net GET vas-lf-x.snssdk.com dns=1597ms`，直接顶在 `Stage stream` 上。
@@ -249,12 +266,7 @@ object HgtvDns : Dns {
         // 排在最后时（早先的写法）预热线程按顺序逐个解析，前面的十个域名各花
         // 60~450ms，等轮到它时用户已经点到播放了——等于没预热。放第一位就一定能先解析完。
         "vas-lf-x.snssdk.com",
-        "api5-normal-sinfonlinea.fqnovel.com",
-        "api5-normal-sinfonlineb.fqnovel.com",
-        "api5-normal-sinfonlinec.fqnovel.com",
-        "api5-normal-lf.fqnovel.com",
-        "api5-normal-lq.fqnovel.com",
-        "api5-normal-hl.fqnovel.com",
+    ) + TncConfigStore.bootstrapHosts + TncConfigStore.apiHosts() + TncConfigStore.preconnectHosts() + listOf(
         "p3-reading-sign.fqnovelpic.com",
         "p6-novel.byteimg.com",
         "novel.snssdk.com",

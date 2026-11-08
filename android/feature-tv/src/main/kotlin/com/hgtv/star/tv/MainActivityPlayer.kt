@@ -150,9 +150,9 @@ fun MainActivity.playerDecoderMode(): VideoDecoderMode = playbackDecoderMode
 /**
  * 电视端渲染器工厂：两处针对播放链路的加固。
  *
- * 1. 视频：使用 Media3 标准的 [MediaCodecVideoRenderer]。起播前先写入用户设置的倍速，
- *    解码器按当前倍速初始化；运行中切换倍速时，Media3 的 `setPlaybackSpeed()` 会通过
- *    `MediaCodec.setParameters("operating-rate")` 同步更新，不需要重建解码器。
+ * 1. 视频：在 Media3 的 [MediaCodecVideoRenderer] 上补一层换流兼容。起播前先写入用户
+ *    设置的倍速；新解码器启动后若设备漏掉配置值，会通过
+ *    `MediaCodec.setParameters("operating-rate")` 强制重新下发，不需要重建播放器。
  * 2. 音频：把 AudioTrack 的 PCM 缓冲从默认 250ms 抬到 350ms。
  *
  * 为什么需要：倍速播放时音频由 Sonic 重采样，每秒要喂 1.5~2 倍的 PCM 样本。
@@ -174,7 +174,7 @@ private class TvRenderersFactory(context: Context): androidx.media3.exoplayer.De
         out: ArrayList<Renderer>
     ) {
         out.add(
-            MediaCodecVideoRenderer(
+            SpeedSafeVideoRenderer(
                 context,codecAdapterFactory,mediaCodecSelector,allowedVideoJoiningTimeMs,
                 enableDecoderFallback,eventHandler,eventListener,
                 androidx.media3.exoplayer.DefaultRenderersFactory.MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY
@@ -205,6 +205,50 @@ private class TvRenderersFactory(context: Context): androidx.media3.exoplayer.De
                     .build()
             )
             .build()
+    }
+}
+
+/**
+ * 兼容部分电视 SoC 的倍速实现。
+ *
+ * 新一集可能复用同一个渲染器，但重建 MediaCodec。创维酷开等设备会忽略
+ * `MediaFormat.operating-rate`；此时播放器仍是 1.5× / 2×，音频按新倍速走，
+ * 视频解码器却停留在 1×。Media3 又会把“相同倍速”的再次设置当成空操作，
+ * 因此必须由渲染器在真正启动 / 换流完成后，对底层解码器强制重下发一次。
+ *
+ * 这里只调整视频渲染器的速度，不经过播放器，也不会改变音频的 Sonic 参数。
+ */
+private class SpeedSafeVideoRenderer(
+    context: Context,
+    codecAdapterFactory: androidx.media3.exoplayer.mediacodec.MediaCodecAdapter.Factory,
+    mediaCodecSelector: MediaCodecSelector,
+    allowedJoiningTimeMs: Long,
+    enableDecoderFallback: Boolean,
+    eventHandler: Handler,
+    eventListener: VideoRendererEventListener,
+    maxDroppedFramesToNotify: Int,
+): MediaCodecVideoRenderer(
+    context,codecAdapterFactory,mediaCodecSelector,allowedJoiningTimeMs,
+    enableDecoderFallback,eventHandler,eventListener,maxDroppedFramesToNotify
+) {
+    override fun onStarted() {
+        super.onStarted()
+        reassertCodecOperatingRate()
+    }
+
+    override fun onProcessedStreamChange() {
+        super.onProcessedStreamChange()
+        reassertCodecOperatingRate()
+    }
+
+    private fun reassertCodecOperatingRate() {
+        val speed=playbackSpeed
+        if(!speed.isFinite() || kotlin.math.abs(speed-1f)<0.001f) return
+        // 先把速度轻微错开再恢复：MediaCodecRenderer 只在计算值变化时调用
+        // `MediaCodec.setParameters("operating-rate")`。差值 0.001× 用户不可感知。
+        val nudge=if(speed>1f) speed-0.001f else speed+0.001f
+        setPlaybackSpeed(nudge,1f)
+        setPlaybackSpeed(speed,1f)
     }
 }
 /**

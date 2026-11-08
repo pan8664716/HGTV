@@ -24,7 +24,7 @@ interface SessionState {
     /** 登录用户设备额外下发的 cookie；主设备 cookie 由 [SessionBridge.mainDeviceCookies] 提供。 */
     val deviceCookies: Map<String,String>
 
-    /** `store-region`，以 cookie 里那份为准；没有时 `cn`。 */
+    /** 注册下发的 `store-region`；没有时为空，不再伪造默认地区。 */
     val storeRegion: String
 
     /** 真机设备档案（`account-device` 那份 JSON 解出来的）。心跳的 `User-Agent` 用它。 */
@@ -125,10 +125,10 @@ object SessionBridge {
         val finalRequest=builder.build()
         if(finalRequest.header("X-SS-DP").isNullOrBlank()) builder.header("X-SS-DP","8662")
         if(finalRequest.header("X-Tt-Store-Region").isNullOrBlank()) {
-            builder.header("X-Tt-Store-Region",merged["store-region"].orEmpty().ifBlank { "cn" })
+            merged["store-region"]?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Store-Region",it) }
         }
         if(finalRequest.header("X-Tt-Store-Region-Src").isNullOrBlank()) {
-            builder.header("X-Tt-Store-Region-Src",merged["store-region-src"].orEmpty().ifBlank { "did" })
+            merged["store-region-src"]?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Store-Region-Src",it) }
         }
         if(finalRequest.header("Sdk-Version").isNullOrBlank()) builder.header("Sdk-Version","2")
         if(finalRequest.header("passport-sdk-version").isNullOrBlank()) builder.header("passport-sdk-version","5051452")
@@ -187,8 +187,12 @@ object SessionBridge {
         if(merged.isNotEmpty()) builder.header("Cookie",CookieRecord.mapToHeader(merged))
         val finalRequest=builder.build()
         if(finalRequest.header("X-SS-DP").isNullOrBlank()) builder.header("X-SS-DP","8662")
-        if(finalRequest.header("X-Tt-Store-Region").isNullOrBlank()) builder.header("X-Tt-Store-Region",current?.storeRegion ?: "cn")
-        if(finalRequest.header("X-Tt-Store-Region-Src").isNullOrBlank()) builder.header("X-Tt-Store-Region-Src","did")
+        if(finalRequest.header("X-Tt-Store-Region").isNullOrBlank()) {
+            merged["store-region"]?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Store-Region",it) }
+        }
+        if(finalRequest.header("X-Tt-Store-Region-Src").isNullOrBlank()) {
+            merged["store-region-src"]?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Store-Region-Src",it) }
+        }
         if(finalRequest.header("Sdk-Version").isNullOrBlank()) builder.header("Sdk-Version","2")
         if(finalRequest.header("passport-sdk-version").isNullOrBlank()) builder.header("passport-sdk-version","5051452")
         if(finalRequest.header("X-Xs-From-Web").isNullOrBlank()) builder.header("X-Xs-From-Web","0")

@@ -30,8 +30,10 @@ fun isInterruption(problem: Throwable): Boolean {
     var current: Throwable? = problem
     var depth = 0
     while (current != null && depth < 6) {
-        if (current is java.io.InterruptedIOException) return true
         val message = current.message.orEmpty()
+        // 超时同样是 InterruptedIOException，但它不是「用户取消」：必须进入失败处置。
+        if (current is java.io.InterruptedIOException &&
+            !message.contains("timeout",ignoreCase=true)) return true
         if (message.contains("interrupt", ignoreCase = true) || message.equals("Canceled", ignoreCase = true)) return true
         current = current.cause
         depth++

@@ -176,6 +176,14 @@ object PlaybackFailures {
      */
     fun transportDead(problem: Throwable?): Boolean = hasCause(problem) { it.isDeadTransport() }
 
+    /** 取地址 / 连接层超时：界面应立即作废旧缓存并重试，不能当成用户取消。 */
+    fun timedOut(problem: Throwable?): Boolean = hasCause(problem) {
+        it is com.hgtv.star.core.AddressTimeoutException ||
+            it is java.net.SocketTimeoutException ||
+            (it is java.io.InterruptedIOException &&
+                it.message.orEmpty().contains("timeout",ignoreCase=true))
+    }
+
     /**
      * 服务端说「**这台设备没注册过**」（不是地址、不是网络、不是解码）。
      *
@@ -226,6 +234,7 @@ object PlaybackFailures {
     private fun Throwable.isDeadTransport(): Boolean = when (this) {
         // 顺序有意义：`SocketTimeoutException` / `ConnectException` 都是 `IOException`，
         // 具体类型必须排在笼统判断之前。
+        is com.hgtv.star.core.AddressTimeoutException,
         is java.net.SocketTimeoutException,
         is java.net.ConnectException,
         is java.net.NoRouteToHostException,

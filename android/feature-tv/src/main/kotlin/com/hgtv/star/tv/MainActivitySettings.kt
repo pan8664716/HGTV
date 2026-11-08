@@ -248,7 +248,7 @@ fun MainActivity.settings(parent: LinearLayout) {
     // 正在播放时从播放设置面板改，会当场重建播放器并从当前位置续播。
     lateinit var decoderButton: TvButton
     decoderButton=cellSetting(prefRow2,"视频解码  ·  ${library.decoderMode.label}") { showDecoderPicker(decoderButton,false) }
-    // —— 画面缩放单独占一行，自动连播与快进快退并排 ——
+    // —— 画面缩放占左半格，自动连播与快进快退并排 ——
     val prefRow3=lineRow(playback)
     // 画面缩放：**只缩播放画面本身**，弹幕层仍然是整屏坐标（见 `applyVideoScale`）。
     // 1..100 就是百分比读数，与「弹幕大小」共用同一种滑动条。
@@ -259,6 +259,7 @@ fun MainActivity.settings(parent: LinearLayout) {
         library.videoScale=value
         if(onPlaybackPage()) applyVideoScale()
     }
+    padLine(prefRow3,1)
     val prefRow4=lineRow(playback)
     // 自动连播（左）：关掉时把已经挂进队列的下一集摘掉，否则它还会在片尾自己播下去。
     val autoNextRow=cellSwitch(prefRow4,TvSwitchRow(this,"自动连播",checked=library.autoNext,onToggle={ on ->
@@ -319,12 +320,14 @@ fun MainActivity.settings(parent: LinearLayout) {
         "播放设置、选集面板、底部控制条无操作后自动收起，与按返回键相同。",
         14f,TvStyle.muted
     ).apply { setPadding(0,dp(TvStyle.GAP_INLINE),0,0) },lp(-1,-2))
-    val panelTimeout=fullSlider(
-        playInfoPanel,"播放界面自动消失",
+    val panelTimeoutLine=lineRow(playInfoPanel)
+    val panelTimeout=cellSlider(
+        panelTimeoutLine,"播放界面自动消失",
         PLAYER_PANEL_TIMEOUT_RANGE.first.toFloat(),PLAYER_PANEL_TIMEOUT_RANGE.last.toFloat(),1f,
         library.playerPanelTimeout.toFloat(),
         format={ "${it.toInt()} 秒" }
     ) { value -> library.playerPanelTimeout=value.toInt() }
+    padLine(panelTimeoutLine,1)
     track(0,panelTimeout)
 
     // —— 按键设置 ｜ 弹幕设置：左右并排 ——
@@ -769,6 +772,7 @@ fun MainActivity.settings(parent: LinearLayout) {
     val resetRow=lineRow(data)
     lateinit var reset: TvButton
     reset=cellSetting(resetRow,resetLabel()) { clearLocalData(reset) }
+    padLine(resetRow,1)
     track(3,reset)
 
     // —— 设备与性能：两列 ——

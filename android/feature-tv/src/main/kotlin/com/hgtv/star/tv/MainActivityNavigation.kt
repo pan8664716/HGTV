@@ -17,9 +17,11 @@ import com.hgtv.star.shared.compat.attachedToWindow
 fun MainActivity.switchTab(next: Int) {
     // 本次运行第一次进这一页（见 [tabVisited]）。
     val firstVisit=tabVisited.add(next)
-    // 首次进入分类页：回到默认的「推荐」。
-    // 面板也一起丢掉，首次进入会重新取一份（主题等随体裁变化）。
-    if(firstVisit && next==TAB_CATEGORY) { categorySelection=CategorySelection(); categoryPanel=null }
+    // 首次进入分类页：回到默认的「推荐」；有缓存时直接铺出小分类。
+    if(firstVisit && next==TAB_CATEGORY) {
+        categorySelection=CategorySelection()
+        categoryPanel=CategoryPanelCache.load(categorySelection.genre)
+    }
     if(next!=TAB_RANK && tab==TAB_RANK) boardButtons.values.firstOrNull { it.hasFocus() }?.clearFocus()
     if(next!=TAB_CATEGORY && tab==TAB_CATEGORY) {
         categoryFilterButtons.values.flatMap { it.values }.firstOrNull { it.hasFocus() }?.clearFocus()
@@ -136,11 +138,26 @@ private fun MainActivity.cachedRankPage(board: RankBoard): CatalogPage? =
 /** 分类页某一行里一枚芯片的焦点 key。 */
 fun categoryChipKey(type: String,id: String?): String = "filter:$type:${id.orEmpty()}"
 
+/** 把已经落地的分类列表按完整筛选条件记下来，切回时不再请求。 */
+fun MainActivity.rememberCategoryState(selection: CategorySelection) {
+    if(catalog.isEmpty()) return
+    val key=selection.key()
+    categoryStates.remove(key)
+    categoryStates[key]=CatalogState(page,catalog,hasMore,ranking)
+    while(categoryStates.size>16) {
+        categoryStates.remove(categoryStates.keys.firstOrNull() ?: break)
+    }
+}
+
+private fun MainActivity.rememberCurrentCategoryState() {
+    if(tab==TAB_CATEGORY && chipFocusKey==null) rememberCategoryState(categorySelection)
+}
+
 /**
  * 选中 / 取消一个筛选条件，并重新取第 1 页。
  *
  * * 「体裁」必须有一个值，点同一枚不取消；换体裁判定面板里与它相关的行会变，
- *   因此把面板置空、下一次请求重新带回整份 `selector_rows`；
+ *   因此把面板置空，下一次优先读该大类的分类缓存；
  * * 其余行点已选中的芯片 = 回到「全部」（[id] 传 null）；
  * * 选中的芯片在重建后由 [categorySelection] 重新算，焦点留在刚点的那一枚上。
  */
@@ -152,19 +169,32 @@ fun MainActivity.selectCategoryFilter(type: String,id: String?) {
     // 其余行（含「推荐」）再点一次就是「全部」。
     val target=if(current==id) null else id
     tabVisited.add(TAB_CATEGORY)
+    rememberCurrentCategoryState()
     val oldGenre=categorySelection.genre
     categorySelection=if(type==CategorySelection.TYPE_GENRE) {
         categorySelection.newGenre(target)
     } else {
         categorySelection.with(type,target)
     }
-    // 换体裁：主题 / 设定 / 背景 / 状态的行都会变，旧面板不能再用。
-    if(type==CategorySelection.TYPE_GENRE && oldGenre!=categorySelection.genre) categoryPanel=null
+    // 换体裁：同步读取该大类的小分类缓存，命中时页面不会先闪成空。
+    if(type==CategorySelection.TYPE_GENRE && oldGenre!=categorySelection.genre) {
+        categoryPanel=CategoryPanelCache.load(categorySelection.genre)
+    }
     tabState.remove(TAB_CATEGORY); tabFocus.remove(TAB_CATEGORY)
     releaseCatalogViews()
-    page=1; catalogFocus=""
+    catalogFocus=""
     chipFocusKey=categoryChipKey(type,target)
     focusFirstCardOnLanding=false
+    val cached=if(categoryPanel!=null) categoryStates[categorySelection.key()] else null
+    if(cached!=null) {
+        page=cached.page
+        catalog=cached.items
+        hasMore=cached.hasMore
+        ranking=cached.ranking
+        showCatalog(load=false,keepCatalog=true,keepChip=true)
+        return
+    }
+    page=1
     showCatalog(load=true)
 }
 /** 本机记录集合页（收藏 / 历史 / 稍后观看）；远端列表只有榜单页一种，不再有「热门集合页」。 */

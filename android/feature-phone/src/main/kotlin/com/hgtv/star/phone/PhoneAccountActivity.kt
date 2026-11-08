@@ -111,7 +111,8 @@ class PhoneAccountActivity : PhoneActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             if (landscape) {
-                setPadding(dp(12), 0, dp(12), 0)
+                // 横屏沉浸式会隐藏状态栏，顶部登录方式需要留出触屏边缘的呼吸空间。
+                setPadding(dp(12), dp(10), dp(12), dp(6))
             } else {
                 setPadding(dp(16), status + dp(8), dp(16), dp(8))
             }
@@ -167,26 +168,18 @@ class PhoneAccountActivity : PhoneActivity() {
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ))
         }
-        val contentHost = if (landscape) {
-            // 横屏登录必须是一屏内的固定舞台：不再用 ScrollView，避免内容把底部按钮推出去。
-            FrameLayout(this).apply {
-                addView(outer, FrameLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                ))
-            }
-        } else {
-            ScrollView(this).apply {
-                isFillViewport = false
-                overScrollMode = View.OVER_SCROLL_NEVER
-                addView(outer, ViewGroup.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                ))
-            }
+        // 字体放大后二维码和说明会变高；横屏也允许滚动，避免底部两个按钮被推出屏幕。
+        // 横屏仍用 fillViewport 让内容不足一屏时保持原来的居中舞台。
+        val contentHost = ScrollView(this).apply {
+            isFillViewport = landscape
+            overScrollMode = View.OVER_SCROLL_NEVER
+            addView(outer, ViewGroup.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
         }
         root.addView(contentHost, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ).apply { topMargin = if (landscape) dp(24) else status + dp(56) })
+        ).apply { topMargin = if (landscape) dp(40) else status + dp(56) })
 
         setContentView(root)
         if (landscape) applyLandscapeImmersive()

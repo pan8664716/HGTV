@@ -54,7 +54,8 @@ object CategoryGenres {
  * 体裁 / 主题 / 设定 / 背景 / 推荐 / 受众 / 时间 / 状态（状态只有部分体裁有）。
  *
  * **主题 / 设定 / 背景 / 状态随体裁变化**：接口在 `genre` 行上给了
- * `refresh_other_selector_row=true`，换体裁后要重新取一次面板。
+ * `refresh_other_selector_row=true`；换体裁时优先读对应大类的
+ * [CategoryPanelCache]，未命中才请求接口。
  */
 data class CategoryPanel(val rows: List<CategoryFilterRow>) {
     fun row(type: String): CategoryFilterRow? = rows.firstOrNull { it.type==type }

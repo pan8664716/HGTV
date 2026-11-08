@@ -70,7 +70,6 @@ fun MainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bool
     // 首页没有切换芯片：焦点不在顶部入口上时直接落到第一栏第一张卡。
     val shelves=homeShelves()
     home.render(shelves,catalogFocus,!focusNav,homePosition)
-    if(loading && !homeFromCache) showHint("正在更新热门…")
     // **首页自己把账号数据拉起来**：上面那两栏（历史记录 / 我的收藏）的内容一半来自账号侧，
     // 没有它就只剩本机那几条——重装后第一次启动尤其明显（那时本机几乎是空的）。
     //

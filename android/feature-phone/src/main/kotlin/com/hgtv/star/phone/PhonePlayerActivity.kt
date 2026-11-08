@@ -442,7 +442,7 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 换集取地址 / 准备最多自动重试几次。 */
     private val sourceRetryLimit = 2
 
-    /** 每次重试的间隔基数：第 1 次等 3 秒，第 2 次等 6 秒。 */
+    /** 普通失败按 3 秒 / 6 秒退避；取地址超时已经等满预算，第一次立即重试。 */
     private val sourceRetryStepMs = 3_000L
 
     /**
@@ -2671,7 +2671,8 @@ class PhonePlayerActivity : PhoneActivity() {
      * 竖屏连那行字都看不到（`landInfoLeft` 只在横屏存在）。
      * 用户报的「第三集播完进不了第四集，提示没准备好，然后就退不回去了」就是这条路径。
      *
-     * 现在按「网络瞬态」处理：先自动重试两次（3 秒 / 6 秒，播放器留着、上一集的最后一帧
+     * 现在按「网络瞬态」处理：先自动重试两次（超时立即重试一次，之后退避 6 秒；
+     * 播放器留着、上一集的最后一帧
      * 留在屏幕上，不黑屏）；仍不行才摆错误页——那里的「立即重试」与「下一集」
      * 才是用户真正需要的出口，而不是一句没人看得见的字。
      */
@@ -2682,7 +2683,8 @@ class PhonePlayerActivity : PhoneActivity() {
         problem: Throwable? = null,
     ) {
         val episodeId = d.episodes.getOrNull(episodeIndex) ?: return
-        if (problem != null && com.hgtv.star.core.isInterruption(problem)) return
+        val timedOut = problem != null && PlaybackFailures.timedOut(problem)
+        if (problem != null && com.hgtv.star.core.isInterruption(problem) && !timedOut) return
         if (problem != null && PlaybackFailures.deviceRejected(problem)) {
             val taken = DeviceHealer.healAsync(
                 library,
@@ -2707,9 +2709,14 @@ class PhonePlayerActivity : PhoneActivity() {
         }
         if (sourceRetryCount < sourceRetryLimit) {
             sourceRetryCount++
-            val wait = sourceRetryStepMs * sourceRetryCount
+            // 超时已经耗掉了完整的取地址预算，第一次重试立即执行；后续仍按退避。
+            val wait = if(timedOut && sourceRetryCount==1) 0L else sourceRetryStepMs * sourceRetryCount
             // 与「第 N 集」那类提示走同一套 token：后到的提示会把这一条顶掉。
-            hint.text = "第 ${episodeIndex + 1} 集还没取到播放地址，${wait / 1000} 秒后重试…"
+            hint.text = if(wait==0L) {
+                "第 ${episodeIndex + 1} 集取地址超时，正在重试…"
+            } else {
+                "第 ${episodeIndex + 1} 集还没取到播放地址，${wait / 1000} 秒后重试…"
+            }
             hintToken++
             hintSticky = true
             hint.visibility = View.VISIBLE

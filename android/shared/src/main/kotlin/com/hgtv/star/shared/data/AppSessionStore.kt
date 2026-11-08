@@ -67,7 +67,7 @@ class AppSessionStore(
         }
 
     override val storeRegion: String
-        get() = CookieRecord.value(cookieHeader,"store-region").ifBlank { "cn" }
+        get() = CookieRecord.value(cookieHeader,"store-region")
 
     /**
      * 会话到期时刻。读的就是 `Library` 一直在维护的 `account-expires`（**秒**），

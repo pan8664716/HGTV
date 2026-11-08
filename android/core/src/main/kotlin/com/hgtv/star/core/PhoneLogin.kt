@@ -57,8 +57,8 @@ class PhoneLogin(
     private val clock: () -> Long = System::currentTimeMillis
 ) {
     private companion object {
-        /** Passport 接口的域名（与参考实现一致；`api5-normal-*` 那几条也能通）。 */
-        const val HOST = "https://api5-normal-lq.fqnovel.com"
+        /** Passport 接口域名；优先 TNC 下发的 lq 入口，未拿到配置时使用内置兜底。 */
+        fun host(): String = "https://${TncConfigStore.preferredHost("lq")}"
         /**
          * 二次验证（`/passport/upsms/gen_verify_ticket` 与 `/passport/upsms/verify`）的主机。
          *
@@ -66,7 +66,10 @@ class PhoneLogin(
          * （`ge()`：`var t = e.verify_host ... return "https:" + i`）。两条域名都能通，
          * 但既然挑战点名了 `i.snssdk.com`，就按它的来，别让 `verify_host` 与真实主机对不上。
          */
-        const val VERIFY_HOST = "https://i.snssdk.com"
+        fun verifyHost(): String =
+            "https://${TncConfigStore.preferredLocalHost("i.snssdk.com")}"
+        /** 兼容旧调用；运行时按 TNC 的 i.* 候选取值。 */
+        val VERIFY_HOST: String get() = verifyHost()
         /** 登录验证码的 `type`（`"24"` 编码后送出去）。 */
         const val SMS_TYPE = "24"
         /**
@@ -411,7 +414,7 @@ class PhoneLogin(
 
     /** 一次带 branch-2 签名的 POST（表单体）。 */
     private fun post(path: String, form: Map<String,String>, extraQuery: Map<String,String> = emptyMap()): JSONObject {
-        return postTo(HOST,path,form,extraQuery)
+        return postTo(host(),path,form,extraQuery)
     }
 
     /**
@@ -446,8 +449,8 @@ class PhoneLogin(
         if(secondaryVerify) builder.header("X-Use-Secondary-Verify-Sdk","1")
         // 区域头跟着 `store-region` Cookie 走（与参考实现一致）：注册下发的那个值才是这台设备
         // 真正被认到的区域，写死 `cn` 会与 Cookie 里那一份对不上。
-        builder.header("X-Tt-Store-Region",cookies["store-region"]?.takeIf { it.isNotBlank() } ?: "cn")
-        builder.header("X-Tt-Store-Region-Src","did")
+        cookies["store-region"]?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Store-Region",it) }
+        cookies["store-region-src"]?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Store-Region-Src",it) }
         if(token.isNotBlank()) builder.header("X-Tt-Token",token)
         if(cookies.isNotEmpty()) builder.header("Cookie",cookies.entries.joinToString("; ") { (k,v) -> "$k=$v" })
         builder.post(body.toRequestBody("application/x-www-form-urlencoded; charset=UTF-8".toMediaType()))
@@ -964,7 +967,7 @@ class PhoneLogin(
         return try {
             // 这条走 App 自己的 Passport 主机（原生 `second_verify.fetch` 就是这个栈），
             // 不是 BdTuring 的 `verify_host`。
-            val json=postTo(HOST,path,form,secondaryVerify=true)
+            val json=postTo(host(),path,form,secondaryVerify=true)
             lastDiagnostic=redact(json.toString())
             if(errorCode(json)==CODE_PENDING) return UpsmsOutcome.Waiting
             failed(json)?.let { text ->

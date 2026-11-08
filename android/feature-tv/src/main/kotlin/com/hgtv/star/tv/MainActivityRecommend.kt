@@ -802,6 +802,40 @@ fun MainActivity.showRecommendMessage(message: String) {
     reattachDebugOverlay()
 }
 
+/**
+ * 推荐页还没有播放器时的准备态。
+ *
+ * 标题从第一帧起就是剧名，加载状态只放在副标题里；这样详情回来、播放器挂上之后
+ * 标题不会从“正在加载《剧名》…”突然变成“剧名”，只会有内容替换，没有文字闪动。
+ */
+fun MainActivity.showRecommendLoading(series: Series) {
+    dismissRecommendOverlay()
+    dismissRecommendCover()
+    if(playerView!=null) detachPlayerSurface()
+    root.removeAllViews(); root.setBackgroundColor(Color.BLACK)
+    overlayLayer=null
+    if(touchArmed) {
+        val box=column().apply {
+            gravity=Gravity.CENTER
+            setPadding(dp(24),0,dp(24),0)
+        }
+        box.addView(text(series.title,28f,TvStyle.playerText).apply {
+            gravity=Gravity.CENTER
+            maxLines=2
+        }, lp(-1,-2))
+        box.addView(text("正在加载…",17f,TvStyle.playerDim).apply {
+            gravity=Gravity.CENTER
+            setPadding(0,dp(10),0,0)
+        }, lp(-1,-2))
+        root.addView(box,FrameLayout.LayoutParams(-1,-1))
+    } else {
+        // 电视端直接复用正式推荐浮层：标题位置从一开始就是最终位置。
+        attachRecommendOverlay(series)
+        recommendMeta?.text="正在加载…"
+    }
+    reattachDebugOverlay()
+}
+
 /** 播放画面上的一行提示（已经有画面时用，不打断正在播的这一部）。 */
 fun MainActivity.showRecommendToast(message: String) {
     recommendNotice=message
@@ -849,13 +883,13 @@ fun MainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,s
     val token=recommendToken.incrementAndGet()
     val cached=recommendDetails[series.id]
     if(cached!=null) { startRecommendEpisode(cached,position,autoplay); return }
-    if(playerView==null) showRecommendMessage("正在加载《${series.title}》…")
+    if(playerView==null) showRecommendLoading(series)
     else {
         // 换剧那一下先把上一部停住：详情要几百毫秒才回来，这段时间里画面与声音
         // 若还是上一部，用户读到的就是「按了下键没换台」。
         player?.pause()
-        recommendTitle?.text="正在加载《${series.title}》…"
-        recommendMeta?.text=""
+        recommendTitle?.text=series.title
+        recommendMeta?.text="正在加载…"
     }
     io.submit {
         // `cached=true`：推荐页起播只要「第 1 集是哪个 vid」。详情页仍然现取（见 `ContentRepository.detail`），

@@ -28,6 +28,8 @@ fun JSONObject.flag(key: String) = when(val value=opt(key)) {
 fun cleanUrl(s: String) = s.replace("\\/","/").replace("\\u002F","/",ignoreCase=true).replace("\\u0026","&").replace("&amp;","&")
 /** 分类 / 榜单接口的 HTTP 状态异常：4xx（429 除外）说明参数或路由有问题，重试没有意义。 */
 private class CatalogHttpException(val status: Int, message: String) : IOException(message)
+/** 取播放地址超时：与用户主动取消分开，界面据此进入自动重试而不是静默退出。 */
+class AddressTimeoutException(message: String, cause: Throwable? = null) : IOException(message, cause)
 data class Series(
     val id: String,
     val title: String,
@@ -245,7 +247,9 @@ data class StreamInfo(
     val quality: String,
     val requestedQuality: Int = 0,
     val actualQuality: Int = 0,
-    val available: List<Int> = emptyList()
+    val available: List<Int> = emptyList(),
+    /** 同一档位的备用 CDN 地址；主地址网络失败或 403 时按顺序切换。 */
+    val backupUrls: List<String> = emptyList(),
 ) {
     /**
      * 索引 / 首块的缓存键：集 id + **实际档位**。
@@ -340,20 +344,20 @@ class ContentRepository(
      * **必须在后台线程调**（最长会等一个连接超时）。
      */
     fun preconnect() {
-        // 两条域名各建一条连接：**账号/搜索**走 [ACCOUNT_HOST]，**推荐/分类/详情/播放地址**走
-        // [VIDEO_HOST]。推荐首屏那次请求打的是后者，只热前者等于没热（实测那一发仍要自己
+        // 两条域名各建一条连接：**账号/搜索**走 [accountHost]，**推荐/分类/详情/播放地址**走
+        // [videoHost]。推荐首屏那次请求打的是后者，只热前者等于没热（实测那一发仍要自己
         // 握手 1.3 秒）。
         //
         // **两条不再同时发**（2026-10-27 改）：一次 TLS 1.2 握手在这台盒子上的实测是
         // `tcp=447ms tls=406ms`——两跳 RTT 加密钥交换，两个域名同时来就是两条各 ~700ms 的
         // 链接同时挤在一个 CDN 边上，而且这两条都在建界面、初始化解码器的那两秒里。
-        // 现在：先热 [VIDEO_HOST]（下一发就是它），[ACCOUNT_HOST] 推后
+        // 现在：先热 [videoHost]（下一发就是它），[accountHost] 推后
         // [ACCOUNT_PRECONNECT_DELAY_MS]，而且**只有登录过才发**。
-        warmAsync(VIDEO_HOST)
-        // [ACCOUNT_HOST] 只在**登录过**才有用武之地：未登录时账号 / 收藏接口一次都不发，
+        warmAsync(videoHost())
+        // [accountHost] 只在**登录过**才有用武之地：未登录时账号 / 收藏接口一次都不发，
         // 这一次握手就是纯浪费（这台盒子上 ~700ms 的背景流量 + 一个 RTT 的 CDN 配额）。
         // 判据在 2 秒后才读：那时 `Library` 已经加载完，`signedIn` 才是可信的。
-        warmAsync(ACCOUNT_HOST,ACCOUNT_PRECONNECT_DELAY_MS) { signedIn }
+        warmAsync(accountHost(),ACCOUNT_PRECONNECT_DELAY_MS) { signedIn }
     }
     private fun warmAsync(host: String,delayMs: Long=0L,needed: ()->Boolean={ true }) {
         val thread=Thread({
@@ -431,12 +435,12 @@ class ContentRepository(
         }
     }
     private val signer = Signer()
-    /** 账号 / 搜索 / 提示词接口的域名。与弹幕同一套（[appValues] 的设备参数对这几个域名都认）。 */
-    private val ACCOUNT_HOST = "api5-normal-sinfonlinea.fqnovel.com"
-    /** 播放侧（详情 / 分集 / 播放地址）的域名。设备参数与 [ACCOUNT_HOST] 同一套。 */
-    private val VIDEO_HOST = "api5-normal-sinfonlinec.fqnovel.com"
+    /** 账号 / 搜索 / 提示词接口的域名；由 TNC 动态下发，失败时回退内置表。 */
+    private fun accountHost(): String = TncConfigStore.preferredHost("sinfonlinea")
+    /** 播放侧（详情 / 分集 / 播放地址）的域名；由 TNC 动态下发。 */
+    private fun videoHost(): String = TncConfigStore.preferredHost("sinfonlineb")
     /**
-     * [ACCOUNT_HOST] 的预热推迟多久（毫秒）。
+     * [accountHost] 的预热推迟多久（毫秒）。
      *
      * 账号 / 收藏 / 搜索在冷启动里**一个都不在首帧路径上**：未登录时一次都不发，
      * 登录了也只是后台刷一次。而一次 TLS 握手要 450ms 的 CPU，正好撞在建界面 + 建解码器那一段。
@@ -828,20 +832,32 @@ class ContentRepository(
     ): DeviceRegister.Registered? {
         val body=DeviceRegister.payload(device)
         val headers=DeviceRegister.headers(body,device)
-        val registered=runCatching {
-            val request=Request.Builder().url(DeviceRegister.url(device))
-            headers.forEach { (key,value) -> request.header(key,value) }
-            // 换新身份必须匿名：带上 Cookie / token 的话服务端会按旧设备回同一对数字。
-            if(anonymous) request.header("X-HGTV-Anonymous","1")
-            request.post(body.toRequestBody("application/octet-stream".toMediaType()))
-            RequestScope.execute(http.newCall(request.build())) { response ->
-                if(!response.isSuccessful) throw IOException("设备注册失败（HTTP ${response.code}）")
-                val bytes=response.body?.bytes() ?: throw IOException("设备注册响应为空")
-                DeviceRegister.parse(String(bytes,Charsets.UTF_8),response.headers("Set-Cookie"))
-                    ?: throw IOException("设备注册被服务端拒绝")
+        var lastFailure: Throwable?=null
+        for(host in TncConfigStore.logHosts()) {
+            val registered=runCatching {
+                val request=Request.Builder().url(DeviceRegister.url(device,host=host))
+                headers.forEach { (key,value) -> request.header(key,value) }
+                // 换新身份必须匿名：带上 Cookie / token 的话服务端会按旧设备回同一对数字。
+                if(anonymous) request.header("X-HGTV-Anonymous","1")
+                request.post(body.toRequestBody("application/octet-stream".toMediaType()))
+                RequestScope.execute(http.newCall(request.build())) { response ->
+                    if(!response.isSuccessful) throw IOException("设备注册失败（HTTP ${response.code}）")
+                    val bytes=response.body?.bytes() ?: throw IOException("设备注册响应为空")
+                    DeviceRegister.parse(String(bytes,Charsets.UTF_8),response.headers("Set-Cookie"))
+                        ?: throw IOException("设备注册被服务端拒绝")
+                }
+            }.onFailure {
+                lastFailure=it
+                NetLog.emit("device register host=$host failed ${it.javaClass.simpleName}")
+            }.getOrNull()
+            if(registered!=null) {
+                lastRegisterError=null
+                NetLog.log("device register host=$host accepted")
+                return registered
             }
-        }.onFailure { lastRegisterError=it }.getOrNull()
-        return registered
+        }
+        lastRegisterError=lastFailure
+        return null
     }
     /** 注册下发的 Cookie（`install_id` / `ttreq` / `store-region`），随注册请求一起带上。 */
     @Volatile private var registrationCookies: Map<String,String> = emptyMap()
@@ -860,6 +876,145 @@ class ContentRepository(
         val clean=cookies.filterValues { it.isNotBlank() }
         if(clean.isEmpty()) return
         registrationCookies=LinkedHashMap(registrationCookies).apply { putAll(clean) }
+    }
+
+    /**
+     * 后台拉取 TNC。
+     *
+     * TNC 支持匿名 bootstrap：没有 `device_id` / `iid` 时仍可先拿到域名和 HTTP DNS 配置；
+     * 设备注册完成后再次刷新，带注册 Cookie 的响应会补充地区信息。
+     */
+    fun refreshTncAsync(force: Boolean=false): Boolean =
+        TncConfigStore.refreshAsync(force) { summary -> fetchTnc(summary) }
+
+    /** TNC 的 `/get_domains/v5/` 请求；优先带身份，失败后回退匿名 bootstrap。 */
+    private fun fetchTnc(summary: String?): TncResponse? {
+        if(!deviceIdentity["device_id"].isNullOrBlank() && registrationCookies.isNotEmpty()) {
+            fetchSignedTnc(summary)?.let { return it }
+        }
+        return fetchAnonymousTnc(summary)
+    }
+
+    /** 注册后带设备身份的 TNC 请求，用于获取当前地区的最终配置。 */
+    private fun fetchSignedTnc(summary: String?): TncResponse? {
+        val profile=modelProfile()
+        val cookie=registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }
+        val values=tncValues(profile)
+        for(host in TncConfigStore.tncHosts()) {
+            try {
+                val signed=signer.sign(
+                    "https://$host/get_domains/v5/",
+                    values,
+                    method="GET",
+                    deviceOverride=profile,
+                )
+                val headers=LinkedHashMap(signed.headers).apply {
+                    remove("x-tt-dt")
+                    remove("x-tt-request-tag")
+                    put("passport-sdk-version","5051451")
+                    put("lc","101")
+                    put("sdk-version","2")
+                    put("x-ss-dp","8662")
+                    put("x-vc-bdturing-sdk-version","4.0.3.cn")
+                    put("Cookie",cookie)
+                    summary?.takeIf { it.isNotBlank() }?.let { put("x-tt-tnc-summary",it) }
+                }
+                val response=readTncResponse(
+                    signed.url,
+                    Signer.Request(signed.url,headers,signed.body,"GET"),
+                )
+                if(response!=null) {
+                    NetLog.log("tnc signed host=$host accepted bytes=${response.raw.length}")
+                    return response
+                }
+            } catch(e: IOException) {
+                if(isInterruption(e) || e.message=="请求已取消") throw e
+                NetLog.emit("tnc signed host=$host failed ${e.javaClass.simpleName}")
+            } catch(_: Exception) {
+                NetLog.emit("tnc signed host=$host failed")
+            }
+        }
+        return null
+    }
+
+    /**
+     * 无设备身份 TNC bootstrap。
+     *
+     * 官方实测：最小设备参数即可返回完整配置，不需要 `device_id`、`iid`、Cookie 或签名。
+     * `X-HGTV-Anonymous` 只用于阻止本工程的 SessionInterceptor 补身份，发网前会被删除。
+     */
+    private fun fetchAnonymousTnc(summary: String?): TncResponse? {
+        val base=LinkedHashMap(VendorConstants.device).apply {
+            putAll(registerProfile)
+            remove("device_id")
+            remove("iid")
+            remove("install_id")
+            remove("klink_egdi")
+            remove("cdid")
+        }
+        val values=tncValues(modelQueryProfile(base))
+        val query=Signer.encode(values)
+        for(host in TncConfigStore.tncHosts()) {
+            try {
+                val url="https://$host/get_domains/v5/?$query"
+                val headers=linkedMapOf(
+                    "User-Agent" to VendorConstants.userAgent(values,video=true),
+                    "Accept" to "application/json",
+                    "X-SS-DP" to "8662",
+                    "lc" to "101",
+                    "sdk-version" to "2",
+                    "passport-sdk-version" to "5051451",
+                    "x-vc-bdturing-sdk-version" to "4.0.3.cn",
+                    "X-HGTV-Anonymous" to "1",
+                )
+                summary?.takeIf { it.isNotBlank() }?.let { headers["x-tt-tnc-summary"]=it }
+                val response=readTncResponse(url,Signer.Request(url,headers,null,"GET"))
+                if(response!=null) {
+                    NetLog.log("tnc anonymous host=$host accepted bytes=${response.raw.length}")
+                    return response
+                }
+            } catch(e: IOException) {
+                if(isInterruption(e) || e.message=="请求已取消") throw e
+                NetLog.emit("tnc anonymous host=$host failed ${e.javaClass.simpleName}")
+            } catch(_: Exception) {
+                NetLog.emit("tnc anonymous host=$host failed")
+            }
+        }
+        return null
+    }
+
+    private fun tncValues(profile: Map<String,String>): LinkedHashMap<String,String> =
+        LinkedHashMap(profile).apply {
+            this["abi"]=this["host_abi"].orEmpty().ifBlank { "arm64-v8a" }
+            this["tnc_src"]="1"
+            this["okhttp_version"]="4.2.243.17-hongguo"
+            this["use_store_region_cookie"]="1"
+            // TNC 抓包来自播放器 7.1.3.32；播放取地址的 7.3.9.32 不混进这条配置请求。
+            for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
+                this[key]=VendorConstants.VIDEO_VERSION_CODE
+            }
+            this["version_name"]="7.1.3.32"
+        }
+
+    private fun readTncResponse(url: String,signed: Signer.Request): TncResponse? {
+        var etag=""
+        val raw=text(
+            url,
+            signed,
+            client=http,
+            allowBackup=false,
+            storeRegionHeaders=false,
+        ) { response ->
+            etag=response.header("x-ss-etag").orEmpty()
+        }
+        if(raw.isBlank()) return null
+        val root=runCatching { JSONObject(raw) }.getOrNull() ?: return null
+        if(root.optString("message")!="success") return null
+        return TncResponse(
+            raw=raw,
+            summary=root.optString("summary"),
+            etag=etag,
+        )
     }
     /**
      * 签名与设备参数共用的**三层合并档案**（后一层压前一层）：
@@ -891,10 +1046,7 @@ class ContentRepository(
      * 「相关作品」接口的线路，按实测命中率排序（同一条线路约一半概率回空响应体，
      * 换线重发即可；六条线路轮一圈的成功率接近 1）。
      */
-    private val relatedHosts=listOf(
-        "api5-normal-hl.fqnovel.com","api5-normal-lf.fqnovel.com","api5-normal-sinfonlinec.fqnovel.com",
-        "api5-normal-sinfonlinea.fqnovel.com","api5-normal-lq.fqnovel.com","api5-normal-sinfonlineb.fqnovel.com"
-    )
+    private fun relatedHosts(): List<String> = TncConfigStore.orderedApiHosts()
     /** 「相关作品」接口最多试几次（每次换一条线路）：空响应体是常态，不是错误。 */
     private val RELATED_ATTEMPTS=8
     /** 「相关作品」那一栏的 cell 标识：`show_type=547` / `cell_name="相关作品"`。 */
@@ -1000,7 +1152,7 @@ class ContentRepository(
      */
     private val publisherMisses=linkedMapOf<String,Long>()
     private val PUBLISHER_MISS_TTL_MS=600000L
-    private val commentHosts=listOf("api5-normal-sinfonlinea.fqnovel.com","api5-normal-sinfonlinec.fqnovel.com","api5-normal-sinfonlineb.fqnovel.com","api5-normal-lf.fqnovel.com","api5-normal-lq.fqnovel.com","api5-normal-hl.fqnovel.com")
+    private fun commentHosts(): List<String> = TncConfigStore.orderedApiHosts()
     /**
      * 播放模型请求里上报的 `device_level`。
      *
@@ -1122,7 +1274,7 @@ class ContentRepository(
          * 这一次请求用哪个 client 发。
          *
          * 默认 [http]（45 秒整调用超时）；**取地址那一段必须传 [addressClient]**，
-         * 它按剩余预算收紧到 3 秒以内（见 [ADDRESS_DEADLINE_MS]）。
+         * 它按剩余预算收紧到 [ADDRESS_DEADLINE_MS] 以内。
          * 两者共用同一个连接池与 dispatcher（`newBuilder()` 派生），换 client 不等于换连接。
          *
          * 放在 [observe] **之前**是刻意的：`observe` 是尾随 lambda 的那个参数，
@@ -1130,6 +1282,8 @@ class ContentRepository(
          */
         client: OkHttpClient = http,
         allowBackup: Boolean = true,
+        /** 播放接口只靠注册 Cookie 表达区域，避免显式地区头把请求固定到单一调度区域。 */
+        storeRegionHeaders: Boolean = true,
         /**
          * 拿到响应、还没读 body 时回调一次。
          *
@@ -1142,11 +1296,13 @@ class ContentRepository(
         // 账号 / App 接口的公共协议头。参考实现（`passport_client.go` 的 `request`）每一条都带，
         // 早先这里一条都没有：
         // * `X-SS-DP` = `8662`（HGTV的 aid，网关按它路由）；
-        // * `X-Tt-Store-Region` / `-Src` —— 平台按区域分流，注册下发的 `store-region`（如 `cn-gd`）
-        //   会覆盖默认的 `cn`。
+        // * `X-Tt-Store-Region` / `-Src` —— 平台按区域分流；只使用注册下发的值，
+        //   没有注册结果时直接省略，不伪造默认地区。
         request.header("X-SS-DP","8662")
-        request.header("X-Tt-Store-Region",registrationCookies["store-region"]?.takeIf { it.isNotBlank() } ?: "cn")
-        request.header("X-Tt-Store-Region-Src",registrationCookies["store-region-src"]?.takeIf { it.isNotBlank() } ?: "did")
+        if(storeRegionHeaders) {
+            registrationCookies["store-region"]?.takeIf { it.isNotBlank() }?.let { request.header("X-Tt-Store-Region",it) }
+            registrationCookies["store-region-src"]?.takeIf { it.isNotBlank() }?.let { request.header("X-Tt-Store-Region-Src",it) }
+        }
         request.header("X-XS-From-Web","0")
         request.header("Sdk-Version","2")
         signed?.headers?.forEach { (k,v) -> request.header(k,v) }
@@ -1184,7 +1340,7 @@ class ContentRepository(
                     val retry=backupRequest(signed,backup)
                     if(retry!=null) {
                         NetLog.emit("device backup retry host=${retry.url.substringAfter("//").substringBefore("/")} id=${backup.id.takeLast(6)}")
-                        return text(retry.url,retry,client=client,allowBackup=false)
+                        return text(retry.url,retry,client=client,allowBackup=false,storeRegionHeaders=storeRegionHeaders)
                     }
                 }
             }
@@ -1210,9 +1366,9 @@ class ContentRepository(
         val extra=linkedMapOf(
             "Cookie" to backup.cookieHeader,
             "X-HGTV-Anonymous" to "1",
-            "X-Tt-Store-Region" to cookies["store-region"].orEmpty().ifBlank { "cn" },
-            "X-Tt-Store-Region-Src" to cookies["store-region-src"].orEmpty().ifBlank { "did" },
         )
+        cookies["store-region"]?.takeIf { it.isNotBlank() }?.let { extra["X-Tt-Store-Region"]=it }
+        cookies["store-region-src"]?.takeIf { it.isNotBlank() }?.let { extra["X-Tt-Store-Region-Src"]=it }
         signed.headers["comment-source"]?.let { extra["comment-source"]=it }
         signed.headers["server-channel"]?.let { extra["server-channel"]=it }
         signed.headers["x-ss-stub"]?.let { extra["x-ss-stub"]=it }
@@ -1435,11 +1591,19 @@ class ContentRepository(
      * 面板包含体裁 / 主题 / 设定 / 背景 / 推荐 / 受众 / 时间 / 状态全部行。
      *
      * 注意：主题 / 设定 / 背景 / 状态会随体裁变化（`genre` 行带
-     * `refresh_other_selector_row=true`），因此换体裁后要再取一次面板。
+     * `refresh_other_selector_row=true`）。换体裁时优先读取
+     * [CategoryPanelCache]，命中后只请求内容列表。
      */
     fun categoryFeed(selection: CategorySelection, page: Int = 1, needPanel: Boolean = false): CategoryFeed {
         require(page in 1..MAX_CATALOG_PAGE)
-        return categoryApi(selection,page,needPanel)
+        if(needPanel) {
+            CategoryPanelCache.load(selection.genre)?.let { panel ->
+                return CategoryFeed(categoryApi(selection,page,needPanel=false).page,panel)
+            }
+        }
+        val result=categoryApi(selection,page,needPanel)
+        if(needPanel) CategoryPanelCache.save(selection.genre,result.panel)
+        return result
     }
 
     /**
@@ -1675,7 +1839,7 @@ class ContentRepository(
     }
 
     private fun categoryApiUrl(): String =
-        "https://api5-normal-sinfonlineb.fqnovel.com/reading/distribution/category/landpage/v/"
+        "https://${videoHost()}/reading/distribution/category/landpage/v/"
     /**
      * 分类接口的卡片：字段名与 SSR 那套不同（`title` / `cover` / `video_desc`）。
      *
@@ -1863,7 +2027,7 @@ class ContentRepository(
         val wanted=count.coerceIn(1,20)
         val values=appValues()
         values["query"]=clean
-        val signed=signer.sign("https://$ACCOUNT_HOST/reading/bookapi/search/suggest/v",values)
+        val signed=signer.sign("https://${accountHost()}/reading/bookapi/search/suggest/v",values)
         val raw=text(signed.url,signed.withSession())
         if(raw.isBlank()) throw IOException("提示词暂不可用")
         val data=JSONObject(raw).optJSONObject("data") ?: return emptyList()
@@ -2244,7 +2408,7 @@ class ContentRepository(
         }
         // **必须 GET**：同一路径 POST 是 404（2026-10-21 实测），参数全在 query 里。
         // 签名只覆盖 query + body、不覆盖方法，因此这里显式把方法钉成 GET。
-        val signed=signer.sign("https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/tab/v",values,method="GET")
+        val signed=signer.sign("https://${accountHost()}/reading/bookapi/search/tab/v",values,method="GET")
         // **空响应体 = 这台设备没在服务端注册过，重发多少次都一样。**
         //
         // 平台按「服务端注册过的 `device_id` + `install_id`」放行：注册过的设备只回
@@ -2340,7 +2504,7 @@ class ContentRepository(
         val values=if(body!=null) writeValues() else accountAppValues()
         params.forEach { (key,value) -> values[key]=value }
         val signed=signer.sign(
-            "https://$ACCOUNT_HOST$path",
+            "https://${accountHost()}$path",
             values,
             body,
             deviceOverride=accountDeviceProfile(),
@@ -2810,7 +2974,7 @@ class ContentRepository(
             runCatching {
                 val values=appValues()
                 values.putAll(mapOf("book_id" to chunk.joinToString(","),"book_type" to "2"))
-                val signed=signer.sign("https://$ACCOUNT_HOST/reading/bookapi/multi-detail/v",values)
+                val signed=signer.sign("https://${accountHost()}/reading/bookapi/multi-detail/v",values)
                 val raw=text(signed.url,signed.withSession())
                 if(raw.isBlank()) return@runCatching
                 val rows=JSONObject(raw).optJSONArray("data") ?: return@runCatching
@@ -2860,7 +3024,7 @@ class ContentRepository(
         if(cached) DetailCache.load(id)?.let { return it }
         val values=appValues()
         values["series_id"]=id
-        val signed=signer.sign("https://$VIDEO_HOST/novel/player/video_detail/v1/",values,JSONObject().toString().toByteArray())
+        val signed=signer.sign("https://${videoHost()}/novel/player/video_detail/v1/",values,JSONObject().toString().toByteArray())
         val raw=text(signed.url,signed.withSession())
         // 网关在业务处理前挡掉请求时是 200 + 0 字节（设备没注册也会这样）：先判空再解析。
         //
@@ -2869,7 +3033,7 @@ class ContentRepository(
         // query + body、不覆盖方法，因此同一个签名器直接换方法就行（搜索接口同一条经验）。
         // 这一步把「详情偶发取不到 → 用户看到错误页」变成一次内部重试，界面上完全无感。
         val body=if(raw.isBlank()) {
-            val retry=signer.sign("https://$VIDEO_HOST/novel/player/video_detail/v1/",values,method="GET")
+            val retry=signer.sign("https://${videoHost()}/novel/player/video_detail/v1/",values,method="GET")
             text(retry.url,retry.withSession())
         } else raw
         if(body.isBlank()) throw IOException("剧集详情暂不可用（稍后再试）")
@@ -3147,7 +3311,7 @@ class ContentRepository(
         values.putAll(linkedMapOf("query" to key,"count" to "20","offset" to "0","tab_type" to "27",
             "bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to "0"))
         val signed=runCatching {
-            signer.sign("https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/tab/v",values,method="GET")
+            signer.sign("https://${accountHost()}/reading/bookapi/search/tab/v",values,method="GET")
         }.getOrNull() ?: return null
         val raw=runCatching { retryBlankSearch(text(signed.url,signed.withSession()),signed) }.getOrNull().orEmpty()
         if(raw.isBlank()) return null
@@ -3272,8 +3436,8 @@ class ContentRepository(
                 .header("Content-Type","application/json; charset=utf-8")
                 .header("Accept","application/json; charset=utf-8")
                 .header("X-SS-DP","8662")
-                .header("X-Tt-Store-Region",cookies["store-region"].orEmpty().ifBlank { "cn" })
-                .header("X-Tt-Store-Region-Src",cookies["store-region-src"].orEmpty().ifBlank { "did" })
+            cookies["store-region"]?.takeIf { it.isNotBlank() }?.let { request.header("X-Tt-Store-Region",it) }
+            cookies["store-region-src"]?.takeIf { it.isNotBlank() }?.let { request.header("X-Tt-Store-Region-Src",it) }
             if(anonymous) request.header("X-HGTV-Anonymous","1")
             if(cookies.isNotEmpty()) request.header("Cookie",cookies.entries.joinToString("; ") { "${it.key}=${it.value}" })
             request.post(body.toRequestBody("application/json; charset=utf-8".toMediaType()))
@@ -3666,8 +3830,9 @@ class ContentRepository(
      */
     private fun relatedRows(id: String): List<RelatedEntry> {
         var failure: IOException?=null
+        val hosts=relatedHosts()
         for(attempt in 0 until RELATED_ATTEMPTS) {
-            val host=relatedHosts[attempt%relatedHosts.size]
+            val host=hosts[attempt%hosts.size]
             val values=appValues()
             values.putAll(linkedMapOf(
                 "scene" to "10","from" to "detail_page_more_related","book_id" to id,
@@ -3737,7 +3902,10 @@ class ContentRepository(
         playback: PlaybackProfile,
         queue: List<String> = emptyList(),
     ): JSONObject {
-        val host="https://$VIDEO_HOST"
+        // 长时间驻留进程里配置也会过期；这里只排队后台刷新，不等待。
+        refreshTncAsync()
+        // TNC 下发候选域名；最近成功的排第一。播放接口最多在 6 秒预算内试前三条。
+        val hosts=TncConfigStore.orderedApiHosts().take(3)
         // 播放器打开用 `multi_video_model/player` 取当前集 + 后 14 集；
         // 单集接口只作为兼容兜底，preload 留给首帧稳定后的后台补货。
         // 新匿名设备连续发单集请求时，第二发起会被网关静默丢弃（HTTP 200 + 0 字节）。
@@ -3768,12 +3936,12 @@ class ContentRepository(
         backgroundModelScope?.cancel()
         try {
             val gate=modelGate
-            // 等闸门也用余额兜住：三份实例同时起播时后来者要排队，但绝不允许排到 3 秒之外
+            // 等闸门也用余额兜住：三份实例同时起播时后来者要排队，但绝不允许排到整段预算之外
             //（[MODEL_GATE_TIMEOUT_MS] 那 25 秒是给「上一发正在慢速完成」留的余量，
             // 取地址整段已经被 [ADDRESS_DEADLINE_MS] 限死，这里只是个不会先到期的兜底）。
             val waitMs=remainingOf(deadline).coerceIn(1L,MODEL_GATE_TIMEOUT_MS)
             if(!gate.tryAcquire(waitMs,TimeUnit.MILLISECONDS)) {
-                throw IOException("播放接口暂不可用（取地址排队超时）")
+                throw addressTimeout()
             }
             try {
                 cachedModel(id,playback)?.let { return it }
@@ -3784,25 +3952,37 @@ class ContentRepository(
                     .filter { it.matches(Regex("[0-9]{1,30}")) }
                     .distinct()
                     .take(PLAYER_MODEL_BATCH_LIMIT)
-                val batchModel=try {
-                    val models=tryBatchModel(
-                        "https://$PLAYER_MODEL_HOST",
-                        PLAYER_MODEL_PATH,
-                        "player",
-                        batchIds,
-                        cookie,
-                        deadline,
-                        playback,
-                    )
-                    rememberModels(models,playback)
-                    models[id]
-                } catch(e: DeviceNotRegisteredException) {
-                    throw e
-                } catch(_: IOException) {
-                    null
+                var batchModel: JSONObject?=null
+                for(host in hosts) {
+                    if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
+                    val hostDeadline=minOf(deadline,clock()+MODEL_HOST_ATTEMPT_MS)
+                    try {
+                        val models=tryBatchModel(
+                            "https://$host",
+                            PLAYER_MODEL_PATH,
+                            "player",
+                            batchIds,
+                            cookie,
+                            hostDeadline,
+                            playback,
+                        )
+                        rememberModels(models,playback)
+                        batchModel=models[id]
+                        if(batchModel!=null) {
+                            TncConfigStore.markHostSuccess(host)
+                            NetLog.emit("model batch host=$host accepted")
+                            break
+                        }
+                    } catch(e: DeviceNotRegisteredException) {
+                        throw e
+                    } catch(e: AddressTimeoutException) {
+                        NetLog.emit("model batch host=$host timeout")
+                    } catch(e: IOException) {
+                        NetLog.emit("model batch host=$host failed ${e.javaClass.simpleName}")
+                    }
                 }
                 if(batchModel!=null) return batchModel
-                val model=fetchModel(id,scope,ordered,host,cookie,deadline,playback)
+                val model=fetchModel(id,scope,ordered,hosts,cookie,deadline,playback)
                 rememberModel(id,playback,model)
                 return model
             } finally {
@@ -3920,34 +4100,38 @@ class ContentRepository(
         id: String,
         scope: RequestScope?,
         ordered: List<String>,
-        host: String,
+        hosts: List<String>,
         cookie: String?,
         deadline: Long,
         playback: PlaybackProfile,
     ): JSONObject {
         var failure: IOException?=null
-        ordered.forEach { path ->
-            // 余额用完就停：**不要再往下试下一条路径**。
-            // 「换路径」在这个平台上本来收益就小（见 [tryModelPath]），而多试一条会多等
-            // 一份超时——断网时就是把这个动作的时间再翻一倍。
-            if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) {
-                throw failure ?: addressTimeout()
-            }
-            val model=try {
-                RequestScope.withScope(scope) {
-                    tryModelPath(host,path,id,cookie,deadline,playback)
+        hostLoop@ for(host in hosts) {
+            val hostDeadline=minOf(deadline,clock()+MODEL_HOST_ATTEMPT_MS)
+            for(path in ordered) {
+                // 余额用完就停：不要再往下试下一条路径 / 域名。
+                if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) {
+                    throw failure ?: addressTimeout()
                 }
-            } catch(e: IOException) {
-                // 用户切走了（取消域）：这不是「这条路不通」，不该再往下试另一条。
-                if(isInterruption(e) || e.message=="请求已取消") throw e
-                // 设备身份失效与路径无关：换第二条路径只会再被拒一次。
-                if(e is DeviceNotRegisteredException) throw e
-                failure=e
-                null
-            }
-            if(model!=null) {
-                preferredModelPath=path
-                return model
+                val model=try {
+                    RequestScope.withScope(scope) {
+                        tryModelPath("https://$host",path,id,cookie,hostDeadline,playback)
+                    }
+                } catch(e: IOException) {
+                    // 用户切走了（取消域）：这不是「这条路不通」，不该再往下试。
+                    if(isInterruption(e) || e.message=="请求已取消") throw e
+                    // 设备身份失效与路径 / 域名无关：换一条只会再被拒一次。
+                    if(e is DeviceNotRegisteredException) throw e
+                    failure=e
+                    if(e is AddressTimeoutException) continue@hostLoop
+                    null
+                }
+                if(model!=null) {
+                    preferredModelPath=path
+                    TncConfigStore.markHostSuccess(host)
+                    NetLog.emit("model host=$host path=$path accepted")
+                    return model
+                }
             }
         }
         // 全失败：把记住的那条也作废，下一次从候选表第一条重新开始——
@@ -4052,7 +4236,7 @@ class ContentRepository(
         backup: PlaybackBackupDevice? = null,
     ): JSONObject {
         // 这一发最多能用多少时间 = 整段剩余预算（见 [ADDRESS_DEADLINE_MS]）。
-        // 全部用同一份「剩余预算」派生 client，因此 3 秒是**整段**的上限，不是每一发各 3 秒。
+        // 全部用同一份「剩余预算」派生 client，因此预算是**整段**上限，不是每一发各算一次。
         val budget=remainingOf(deadline)
         if(budget<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
         val body=modelBody(id,path,playback)
@@ -4077,9 +4261,6 @@ class ContentRepository(
         val signed=signer.sign(host+path,profile,payload,deviceOverride=profile)
         val extra=linkedMapOf<String,String>()
         if(effectiveCookie!=null) extra["Cookie"]=effectiveCookie
-        val cookieValues=com.hgtv.star.core.session.CookieRecord.headerToMap(effectiveCookie.orEmpty())
-        extra["X-Tt-Store-Region"]=cookieValues["store-region"].orEmpty().ifBlank { "cn" }
-        extra["X-Tt-Store-Region-Src"]=cookieValues["store-region-src"].orEmpty().ifBlank { "did" }
         extra["Content-Encoding"]="gzip"
         // 视频接口按官方 7.3.9.32 抓包单独覆盖：
         // * passport-sdk-version=5051452（不是内容接口的 6031190）
@@ -4097,7 +4278,12 @@ class ContentRepository(
         }
         val request=signed.copy(headers=videoHeaders)
         var stable=false
-        val response=text(signed.url,request,client=addressClient(budget)) { r -> stable=r.header("tt_stable")=="1" }
+        val response=text(
+            signed.url,
+            request,
+            client=addressClient(budget),
+            storeRegionHeaders=false,
+        ) { r -> stable=r.header("tt_stable")=="1" }
         // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
         if(response.isBlank()) {
             NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=0 stable=$stable")
@@ -4165,9 +4351,6 @@ class ContentRepository(
         val signed=signer.sign(host+path,profile,payload,deviceOverride=profile)
         val extra=linkedMapOf<String,String>()
         if(effectiveCookie!=null) extra["Cookie"]=effectiveCookie
-        val cookieValues=com.hgtv.star.core.session.CookieRecord.headerToMap(effectiveCookie.orEmpty())
-        extra["X-Tt-Store-Region"]=cookieValues["store-region"].orEmpty().ifBlank { "cn" }
-        extra["X-Tt-Store-Region-Src"]=cookieValues["store-region-src"].orEmpty().ifBlank { "did" }
         extra["Content-Encoding"]="gzip"
         val videoHeaders=LinkedHashMap(signed.headers).apply {
             remove("x-tt-dt")
@@ -4181,7 +4364,12 @@ class ContentRepository(
         }
         val request=signed.copy(headers=videoHeaders)
         var stable=false
-        val response=text(signed.url,request,client=addressClient(budget)) { r -> stable=r.header("tt_stable")=="1" }
+        val response=text(
+            signed.url,
+            request,
+            client=addressClient(budget),
+            storeRegionHeaders=false,
+        ) { r -> stable=r.header("tt_stable")=="1" }
         if(response.isBlank()) {
             NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=0 stable=$stable")
             if(backup!=null) throw IOException("备用设备未返回批量播放模型")
@@ -4304,7 +4492,7 @@ class ContentRepository(
         val gate=modelGate
         val waitMs=remainingOf(deadline).coerceIn(1L,MODEL_GATE_TIMEOUT_MS)
         if(!gate.tryAcquire(waitMs,TimeUnit.MILLISECONDS)) {
-            throw IOException("播放接口暂不可用（取地址排队超时）")
+            throw addressTimeout()
         }
         val scope=RequestScope()
         try {
@@ -4312,9 +4500,10 @@ class ContentRepository(
             backgroundModelScope=scope
             if(foregroundModelWaiters.get()>0) return 0
             val cookie=registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }.takeIf { it.isNotEmpty() }
+            val host=TncConfigStore.preferredHost()
             val models=RequestScope.withScope(scope) {
                 tryBatchModel(
-                    "https://$BATCH_MODEL_HOST",
+                    "https://$host",
                     BATCH_MODEL_PATH,
                     "preload",
                     batchIds,
@@ -4323,6 +4512,7 @@ class ContentRepository(
                     playback,
                 )
             }
+            if(models.isNotEmpty()) TncConfigStore.markHostSuccess(host)
             rememberModels(models,playback)
             return models.size
         } finally {
@@ -4366,7 +4556,14 @@ class ContentRepository(
             // 之后每一次请求都只用「剩余预算」当自己的超时，余额用完立刻抛。
             // 缓存命中不走这里，因此点「下一个」十几毫秒就能起播的那条路一分钱都不多花。
             val deadline=clock()+ADDRESS_DEADLINE_MS
-            val info=fetchStream(id,maxQuality,deadline,playback,queue)
+            val info=try {
+                fetchStream(id,maxQuality,deadline,playback,queue)
+            } catch(e: AddressTimeoutException) {
+                throw e
+            } catch(e: IOException) {
+                if(e.isAddressTimeout()) throw addressTimeout(e)
+                throw e
+            }
             rememberStream(cacheKey,info,clock())
             PlaybackCache.saveUrl(cacheKey,info)
             // 锁表跟着缓存一起收：这里大多是「取完就没人在等」的一次性键，
@@ -4378,7 +4575,7 @@ class ContentRepository(
     /**
      * 取地址（播放模型 + `fallback_api`）**整段**的时间上限。
      *
-     * ## 为什么必须有它，而且是 3 秒
+     * ## 为什么必须有它，而且是 6 秒
      *
      * 取地址是**交互动作**，不是慢速下载：正常一次 500~1100ms（实测
      * `Stage stream 1080P +624ms`）。可它原来吃的是传输层的
@@ -4386,15 +4583,16 @@ class ContentRepository(
      * 要一动不动地挂 **45 秒**，然后才开始自愈（再 45 秒）、再看 3 次自动重试。
      * 现场（2026-10-30，小米 TV）实测：断网切集 → 联网，界面冻了 **49.6 秒**。
      *
-     * 3 秒的口径：**余额用完立刻放弃这一轮**，交给上层
+     * 6 秒的口径：**余额用完立刻放弃这一轮**，交给上层
      * （地址自愈 → 错误页 + 自动重试 → 用户「立即重试」），每一步都是秒级，
      * 全链路最坏也在十几秒内走完，而不是一次就烧掉 45 秒。
      *
-     * 为什么不是更短：电视盒子在弱网 + 冷 DNS 下实测会到 1.3~3.1 秒
+     * 为什么是 6 秒：电视盒子在弱网 + 冷 DNS 下实测会到 1.3~3.1 秒
      *（`net POST … tcp=3135ms` 是断网恢复那一刻建连的真实耗时），
-     * 再短会把「慢但能成」的一发误杀成失败，反而多一轮。
+     * 3 秒会把「慢但能成」的一发误杀成失败；6 秒仍远低于原来的 45 秒，
+     * 同时给冷 DNS、TLS 与服务端排队留出一次完整机会。
      */
-    private val ADDRESS_DEADLINE_MS=3_000L
+    private val ADDRESS_DEADLINE_MS=6_000L
     /** 余额低于这个值就不再发请求：几百毫秒不可能完成建连 + TLS + 服务端处理。 */
     private val ADDRESS_MIN_BUDGET_MS=300L
     /**
@@ -4403,7 +4601,7 @@ class ContentRepository(
      * 用 `http.newBuilder()` 派生，因此**共用同一个连接池与 dispatcher**——
      * 取地址与分片读视频仍然是同一批连接，不会因为换 client 而多握手一次。
      * 按 100ms 分桶缓存：每一发都 `newBuilder().build()` 会不停复制拦截器链，
-     * 而余额在 3 秒内的取值本来就只有三十个。
+     * 而余额在 6 秒内的取值本来就只有六十个。
      */
     private fun addressClient(budgetMs: Long): OkHttpClient {
         val bucket=(((budgetMs.coerceIn(ADDRESS_MIN_BUDGET_MS,ADDRESS_DEADLINE_MS))+99)/100)*100
@@ -4426,13 +4624,26 @@ class ContentRepository(
     /**
      * 预算用完时抛的那个异常。
      *
-     * 用 [java.io.InterruptedIOException] + 消息 `timeout`：它与 okhttp 自己的整调用超时
-     * **同形**，因此界面侧 [MainActivity.networkFailureOf] / [MainActivity.transportDeadOf]
-     * 那两条判据不用为新类型再改一遍——3 秒没取到地址与 45 秒没取到，处置完全一样
-     * （清地址 + 清 DNS + 清连接池后重来）。
+     * 用独立的 [AddressTimeoutException]：它不能伪装成 [java.io.InterruptedIOException]，
+     * 否则会被界面侧当成「用户切页造成的取消」静默丢掉。超时与取消必须分开：
+     * 前者要清地址 / DNS / 连接池后自动重来，后者什么都不该做。
      */
-    private fun addressTimeout(): java.io.InterruptedIOException =
-        java.io.InterruptedIOException("timeout").apply { initCause(java.net.SocketTimeoutException("取播放地址超过 ${ADDRESS_DEADLINE_MS}ms")) }
+    private fun addressTimeout(cause: Throwable? = null): AddressTimeoutException =
+        AddressTimeoutException("取播放地址超过 ${ADDRESS_DEADLINE_MS}ms",cause)
+
+    /** OkHttp 的 callTimeout / readTimeout 或本仓库的预算耗尽都算地址超时。 */
+    private fun Throwable.isAddressTimeout(): Boolean {
+        var current: Throwable?=this
+        var depth=0
+        while(current!=null && depth<8) {
+            if(current is AddressTimeoutException || current is java.net.SocketTimeoutException) return true
+            if(current is java.io.InterruptedIOException &&
+                current.message.orEmpty().contains("timeout",ignoreCase=true)) return true
+            current=current.cause
+            depth++
+        }
+        return false
+    }
     /**
      * 内存 / 落盘缓存与锁表的键：集 id + 请求上限 + 播放档案 + `device_level`。
      */
@@ -4506,7 +4717,7 @@ class ContentRepository(
         // 的是它返回的那份 JSON。余额用完就直接抛，别让它在 45 秒的默认超时上再挂一次。
         val budget=remainingOf(deadline)
         if(budget<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        val info=JSONObject(text(fallback,client=addressClient(budget)))
+        val info=JSONObject(text(fallback,client=addressClient(budget),storeRegionHeaders=false))
             .optJSONObject("video_info")?.optJSONObject("data") ?: throw IOException("没有播放资源")
         val videoList=info.optJSONObject("video_list") ?: throw IOException("没有可用清晰度")
         // 只留 **HEVC** 的档位（全站只有这一种编码）：
@@ -4535,9 +4746,28 @@ class ContentRepository(
         val affordable=candidates.filter { it.first<=maxQuality }
         val selected=affordable.firstOrNull() ?: candidates.last()
         val quality=selected.first; val item=selected.second
-        var url=cleanUrl(item.str("main_url")); val seed=info.str("key_seed")
-        if(seed.isNotEmpty()) url=MediaCrypto.decryptUrl(url,decode64(seed))
-        if(!url.startsWith("https://") && !url.startsWith("http://")) throw IOException("播放地址无效")
+        val seed=info.str("key_seed").ifEmpty { model.str("key_seed") }
+        val seedBytes=seed.takeIf { it.isNotEmpty() }?.let(::decode64)
+        val urls=linkedSetOf<String>()
+        listOf(
+            item.opt("main_url"),
+            item.opt("backup_url"),
+            item.opt("backup_url_1"),
+            item.opt("backup_url_2"),
+            item.opt("backup_urls"),
+            item.opt("url_list"),
+        ).forEach { raw ->
+            stringValues(raw).forEach { value ->
+                val cleaned=cleanUrl(value)
+                val normalized=if(seedBytes!=null) {
+                    runCatching { MediaCrypto.decryptUrl(cleaned,seedBytes) }.getOrDefault(cleaned)
+                } else cleaned
+                if(normalized.startsWith("https://") || normalized.startsWith("http://")) {
+                    urls+=normalized
+                }
+            }
+        }
+        val url=urls.firstOrNull() ?: throw IOException("播放地址无效")
         val key=item.str("spade_a").takeIf { it.isNotEmpty() }?.let(MediaCrypto::deriveKey)
         val label="${quality}P"+(if(quality>maxQuality) "（兼容资源）" else "")
         return StreamInfo(
@@ -4546,8 +4776,17 @@ class ContentRepository(
             quality=label,
             requestedQuality=maxQuality,
             actualQuality=quality,
-            available=candidates.map { it.first }
+            available=candidates.map { it.first },
+            backupUrls=urls.drop(1),
         )
+    }
+
+    private fun stringValues(value: Any?): List<String> = when(value) {
+        is String -> listOf(value).filter { it.isNotBlank() }
+        is JSONArray -> (0 until value.length()).mapNotNull {
+            value.optString(it).takeIf(String::isNotBlank)
+        }
+        else -> emptyList()
     }
 
     /**
@@ -4611,7 +4850,7 @@ class ContentRepository(
             .put("count",COMMENT_COUNT).put("cursor",cursor).put("aid",8662).put("compliance_status",0)
             .toString().toByteArray(Charsets.UTF_8)
         var failure: IOException?=null
-        for(host in commentHosts) {
+        for(host in commentHosts()) {
             try {
                 val signed=signer.sign("https://$host/novel/commentapi/comment/list/$vid/v1/",appValues(),body)
                 val headers=signed.headers.toMutableMap()
@@ -4706,10 +4945,10 @@ class ContentRepository(
          */
         private const val MODEL_CACHE_MS=PlaybackCache.URL_FRESH_MS
         /** 播放器打开时批量取当前集 + 后 14 集；preload 只在首帧稳定后补后 6 集。 */
-        private const val PLAYER_MODEL_HOST="api5-normal-sinfonlinea.fqnovel.com"
+        /** 单个播放模型域名的预算；整段 6 秒内至少还能换到下一域名。 */
+        private const val MODEL_HOST_ATTEMPT_MS=3_000L
         private const val PLAYER_MODEL_PATH="/novel/player/multi_video_model/player/v1"
         private const val PLAYER_MODEL_BATCH_LIMIT=15
-        private const val BATCH_MODEL_HOST="api5-sinfnormal.fqnovel.com"
         private const val BATCH_MODEL_PATH="/novel/player/multi_video_model/preload/v1"
         private const val PRELOAD_MODEL_LIMIT=6
         private const val MODEL_CACHE_LIMIT=32

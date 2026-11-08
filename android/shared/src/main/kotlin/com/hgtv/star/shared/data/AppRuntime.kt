@@ -3,6 +3,8 @@ package com.hgtv.star.shared.data
 
 import android.content.Context
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.shared.compat.Cancellable
+import com.hgtv.star.shared.compat.NetworkWatcher
 import com.hgtv.star.shared.debug.Diagnostics
 import java.util.concurrent.TimeUnit
 
@@ -26,6 +28,8 @@ object AppRuntime {
     @Volatile private var artworkInstance: ArtworkLoader? = null
     @Volatile private var playbackRepositoryInstance: ContentRepository? = null
     @Volatile private var favoriteRepositoryInstance: ContentRepository? = null
+    @Volatile private var tncNetworkWatch: Cancellable? = null
+    @Volatile private var lastTncNetworkRefreshAt: Long = 0L
 
     /**
      * 业务请求共用的仓库。
@@ -37,7 +41,10 @@ object AppRuntime {
             repositoryInstance ?: ContentRepository().apply {
                 writeLog = { line -> Diagnostics.trace("HGTV-WRITE", line) }
                 installDeviceHeal(context)
-            }.also { repositoryInstance = it }
+            }.also {
+                repositoryInstance = it
+                installTncNetworkWatch(context.applicationContext)
+            }
         }
 
     /**
@@ -58,6 +65,27 @@ object AppRuntime {
         // 一行启动读数：两端任何一端「搜索被拒却没人管」时，先看这行在不在——
         // 不在就是钩子没接上（`core` 侧会当成「修不了」直接降级官网）。
         android.util.Log.i("HGTV", "Device heal hook installed")
+    }
+
+    /**
+     * 网络切换后后台刷新一次 TNC。
+     *
+     * 网络回调会连续收到 onAvailable / onCapabilitiesChanged，因此这里做 15 秒去抖；
+     * TNC 配置本身未过期时，[ContentRepository.refreshTncAsync] 也不会重复请求。
+     */
+    private fun installTncNetworkWatch(context: Context) {
+        if(tncNetworkWatch!=null) return
+        synchronized(lock) {
+            if(tncNetworkWatch!=null) return
+            tncNetworkWatch=runCatching {
+                NetworkWatcher.watch(context) {
+                    val now=android.os.SystemClock.elapsedRealtime()
+                    if(now-lastTncNetworkRefreshAt<15_000L) return@watch
+                    lastTncNetworkRefreshAt=now
+                    repositoryInstance?.refreshTncAsync(force=true)
+                }
+            }.getOrNull()
+        }
     }
 
     fun library(context: Context): Library =

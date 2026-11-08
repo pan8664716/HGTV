@@ -38,7 +38,7 @@ fun MainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boole
     authorToken.incrementAndGet(); authorJob?.cancel(true); authorJob=null
     detailAuthorLoading=false
     detailAuthorToken++
-    val body=base(series.title); message(body,"正在加载剧集…")
+    val body=base(series.title); loading(body)
     val cached=runCatching { DetailCache.load(series.id) }.getOrNull()
     if(cached!=null) {
         detail=cached

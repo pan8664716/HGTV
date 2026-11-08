@@ -46,12 +46,14 @@ class QrLogin(
     private val clock: () -> Long = System::currentTimeMillis
 ) {
     companion object {
-        /** 出码 / 轮询的主机：与账号侧同一族域名，实测可用。 */
-        const val HOST = "https://api5-normal-lq.fqnovel.com"
+        /** 出码 / 轮询主机：优先 TNC 下发的 lq 入口。 */
+        fun host(): String = "https://${TncConfigStore.preferredHost("lq")}"
+        /** 兼容旧测试 / 调用方；运行时仍按 TNC 动态取值。 */
+        val HOST: String get() = host()
         /** Web 站点的 `aid`（App 侧的 8662 会被拒）。 */
         const val AID = "513755"
         /** `next` 只要非空即可（平台不校验域名），这里回填主机自身。 */
-        private const val NEXT = "$HOST/"
+        private fun next(): String = "${host()}/"
         /** `Set-Cookie` 里的属性名：它们不是 Cookie，收进来会污染会话串。 */
         private val SET_COOKIE_ATTRIBUTES = setOf(
             "path","domain","expires","max-age","secure","httponly","samesite","priority","partitioned"
@@ -117,7 +119,7 @@ class QrLogin(
 
     /** 出码（一次请求），失败返回 null 并把原因写进 [lastError]。 */
     fun fetchCode(): Code? {
-        val json = request("/passport/web/get_qrcode/",listOf("next" to NEXT,"aid" to AID,"language" to "zh"))
+        val json = request("/passport/web/get_qrcode/",listOf("next" to next(),"aid" to AID,"language" to "zh"))
         if(json==null) return null
         val data = json.optJSONObject("data")
         if(data==null) { lastError="账号服务返回的内容不完整"; return null }
@@ -141,7 +143,7 @@ class QrLogin(
      */
     fun check(token: String): Outcome {
         if(token.isBlank()) return Outcome.Failed("二维码已失效，请刷新")
-        val json = request("/passport/web/check_qrconnect/",listOf("next" to NEXT,"token" to token,"aid" to AID))
+        val json = request("/passport/web/check_qrconnect/",listOf("next" to next(),"token" to token,"aid" to AID))
             ?: return Outcome.Failed(lastError.ifBlank { "网络不可用，请稍后重试" })
         val data = json.optJSONObject("data") ?: return Outcome.Failed("账号服务返回的内容不完整")
         val code = data.optString("error_code")
@@ -214,7 +216,7 @@ class QrLogin(
     fun endpoint(path: String,params: List<Pair<String,String>>): HttpUrl? {
         // 空路径会拼出「站点根」，那不是任何一个接口：宁可当非法地址处理。
         if(path.isBlank()) return null
-        return (HOST + path).toHttpUrlOrNull()?.newBuilder()
+        return (host() + path).toHttpUrlOrNull()?.newBuilder()
             ?.apply { params.forEach { (key,value) -> addQueryParameter(key,value) } }
             ?.build()
     }
@@ -225,7 +227,7 @@ class QrLogin(
         val builder = Request.Builder().url(url)
             .header("User-Agent",VendorConstants.userAgent(device,video = false))
             .header("Accept","application/json, text/plain, */*")
-            .header("Referer","$HOST/")
+            .header("Referer",next())
         if(cookies.isNotEmpty()) builder.header("Cookie",cookies.entries.joinToString("; ") { (k,v) -> "$k=$v" })
         if(token.isNotBlank()) builder.header("X-Tt-Token",token)
         return try {

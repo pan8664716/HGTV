@@ -127,6 +127,7 @@ object DeviceRegistration {
         repository.deviceIdentity = library.deviceIdentity()
         repository.restoreDeviceCookies(library.registrationCookies())
         SessionBridge.mainDeviceCookies = { library.registrationCookies() }
+        runCatching { repository.refreshTncAsync() }
     }
 
     /**
@@ -158,6 +159,7 @@ object DeviceRegistration {
             library.saveRegistrationCookies(cookies)
             SessionBootstrap.sessionStore?.saveDeviceCookies(cookies)
             SessionBridge.mainDeviceCookies = { library.registrationCookies() }
+            runCatching { repository.refreshTncAsync(force=true) }
         }
     }
 

@@ -20,6 +20,7 @@ import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
+import android.widget.Space
 import android.widget.TextView
 import android.widget.Toast
 import com.hgtv.star.core.DANMAKU_MERGE_MIN_RANGE
@@ -69,6 +70,8 @@ enum class PhoneSettingsPage(val label: String, val hint: String) {
 }
 
 private const val LAN_SYNC_SOURCE_TTL_MS = Long.MAX_VALUE
+private const val TAG_LANDSCAPE_SETTING_ROW = "landscape-setting-row"
+private const val TAG_LANDSCAPE_SETTING_SPACER = "landscape-setting-spacer"
 
 /**
  * 设置页：**与 TV 端一一对应**。
@@ -138,7 +141,8 @@ class PhoneSettingsActivity : PhoneActivity() {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
             if (landscape) {
-                setPadding(dp(12), 0, dp(12), 0)
+                // 横屏沉浸式会隐藏状态栏，顶部页签需要留出触屏边缘的呼吸空间。
+                setPadding(dp(12), dp(10), dp(12), dp(6))
             } else {
                 setPadding(dp(16), status + dp(6), dp(16), dp(8))
             }
@@ -197,7 +201,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         // 空白从 100 多像素收到 40 多像素，同时滚动时内容也不会在标题下方很远处才开始被裁切。
         root.addView(scroller, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ).apply { topMargin = if (landscape) dp(24) else status + dp(30) })
+        ).apply { topMargin = if (landscape) dp(40) else status + dp(30) })
 
         setContentView(root)
         if (landscape) applyLandscapeImmersive()
@@ -320,10 +324,10 @@ class PhoneSettingsActivity : PhoneActivity() {
                     text = option.label
                     phoneSize(11)
                     gravity = Gravity.CENTER
-                    minWidth = dp(58)
-                    minHeight = dp(22)
+                    minWidth = dp(78)
+                    minHeight = dp(24)
                     includeFontPadding = false
-                    setPadding(dp(6), 0, dp(6), 0)
+                    setPadding(dp(8), 0, dp(8), 0)
                     setTextColor(if (active) PhoneStyle.accent else PhoneStyle.textDim)
                     applySoft(
                         if (active) SoftStyle.INSET else SoftStyle.RAISED,
@@ -337,9 +341,9 @@ class PhoneSettingsActivity : PhoneActivity() {
                         render(resetScroll = true)
                     }
                 }, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(22)
+                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(24)
                 ).apply {
-                    if (index > 0) leftMargin = dp(6)
+                    if (index > 0) leftMargin = dp(8)
                 })
             }
             return
@@ -414,21 +418,62 @@ class PhoneSettingsActivity : PhoneActivity() {
         return panel
     }
 
+    /** 横屏设置格的两列流式容器：每行最多两个按钮，单按钮也固定占半行。 */
     private fun landscapeLine(panel: LinearLayout): LinearLayout {
-        val line=LinearLayout(this).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.CENTER_VERTICAL
-        }
-        panel.addView(line,LinearLayout.LayoutParams(
+        val flow=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+        panel.addView(flow,LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin=dp(6) })
-        return line
+        return flow
     }
 
-    private fun landscapeCell(line: LinearLayout,view: View) {
-        line.addView(view,LinearLayout.LayoutParams(
-            0,settingRowHeight(),1f
-        ).apply { if(line.childCount>0) leftMargin=dp(6) })
+    private fun landscapeCell(flow: LinearLayout,view: View) {
+        val lastRow=flow.getChildAt(flow.childCount-1) as? LinearLayout
+        val spacer=lastRow?.findViewWithTag<View>(TAG_LANDSCAPE_SETTING_SPACER)
+        if(lastRow!=null && spacer!=null) {
+            lastRow.removeView(spacer)
+            lastRow.addView(view,LinearLayout.LayoutParams(
+                0,settingRowHeight(),1f
+            ).apply { leftMargin=dp(6) })
+            return
+        }
+        val row=LinearLayout(this).apply {
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER_VERTICAL
+            tag=TAG_LANDSCAPE_SETTING_ROW
+        }
+        flow.addView(row,LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
+        ).apply { if(flow.childCount>1) topMargin=dp(6) })
+        row.addView(view,LinearLayout.LayoutParams(0,settingRowHeight(),1f))
+        row.addView(
+            Space(this).apply { tag=TAG_LANDSCAPE_SETTING_SPACER },
+            LinearLayout.LayoutParams(0,1,1f),
+        )
+    }
+
+    /** 横屏双栏：左、右两列各自纵向排列。 */
+    private fun landscapeColumns(panel: LinearLayout): Pair<LinearLayout,LinearLayout> {
+        val row=LinearLayout(this).apply {
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.TOP
+        }
+        val left=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+        val right=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
+        row.addView(left,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
+        row.addView(right,LinearLayout.LayoutParams(
+            0,ViewGroup.LayoutParams.WRAP_CONTENT,1f
+        ).apply { leftMargin=dp(6) })
+        panel.addView(row,LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        return left to right
+    }
+
+    private fun landscapeColumnCell(column: LinearLayout,view: View) {
+        column.addView(view,LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,settingRowHeight()
+        ).apply { if(column.childCount>0) topMargin=dp(6) })
     }
 
     private fun landscapeSetting(title: String,value: String,onClick: ()->Unit): View =
@@ -495,16 +540,16 @@ class PhoneSettingsActivity : PhoneActivity() {
         landscapeLine(pref).also { line ->
             landscapeCell(line,landscapeSlider("画面缩放",1f,100f,1f,library.videoScale,
                 { "${it.roundToInt()}%" }) { library.videoScale=it })
-        }
-        landscapeLine(pref).also { line ->
             landscapeCell(line,landscapeSwitch("自动连播",library.autoNext) {
                 library.autoNext=it; render()
             })
+        }
+        landscapeLine(pref).also { line ->
             landscapeCell(line,landscapeSlider("快进快退",2f,20f,1f,library.seekStep.toFloat(),
                 { "${it.roundToInt()} 秒" }) { library.seekStep=it.roundToInt() })
         }
 
-        val display=landscapePanel("播放显示","默认全关 · 唤出菜单或轻点时四项全部显示")
+        val display=landscapePanel("界面信息","播放信息显示与自动收起")
         landscapeLine(display).also { line ->
             landscapeCell(line,landscapeSwitch("剧名",library.playerTitle) { library.playerTitle=it; render() })
             landscapeCell(line,landscapeSwitch("剧集",library.playerEpisode) { library.playerEpisode=it; render() })
@@ -512,7 +557,7 @@ class PhoneSettingsActivity : PhoneActivity() {
             landscapeCell(line,landscapeSwitch("时间",library.playerClock) { library.playerClock=it; render() })
         }
         landscapeLine(display).also { line ->
-            landscapeCell(line,landscapeSlider("播放界面自动消失",
+            landscapeCell(line,landscapeSlider("自动收起时间",
                 PLAYER_PANEL_TIMEOUT_RANGE.first.toFloat(),PLAYER_PANEL_TIMEOUT_RANGE.last.toFloat(),1f,
                 library.playerPanelTimeout.toFloat(),{ "${it.roundToInt()} 秒" }) {
                 library.playerPanelTimeout=it.roundToInt()
@@ -520,46 +565,37 @@ class PhoneSettingsActivity : PhoneActivity() {
         }
 
         val danmaku=landscapePanel("弹幕设置","显示方式 / 速度 / 聚合 / 特效 / 字号 / 透明度")
-        landscapeLine(danmaku).also { line ->
-            landscapeCell(line,landscapeSetting("显示方式",library.danmakuMode.label) {
+        val (left,right)=landscapeColumns(danmaku)
+        landscapeColumnCell(left,landscapeSetting("显示方式",library.danmakuMode.label) {
                 val options=DanmakuMode.entries
                 pick("显示方式",options.map { it.label },options.indexOf(library.danmakuMode)) { i ->
                     library.danmakuMode=options[i]; render()
                 }
             })
-            landscapeCell(line,landscapeSetting("弹幕速度",library.danmakuSpeed.label) {
+        landscapeColumnCell(left,landscapeSetting("弹幕速度",library.danmakuSpeed.label) {
                 val options=DanmakuSpeed.entries
                 pick("弹幕速度",options.map { it.label },options.indexOf(library.danmakuSpeed)) { i ->
                     library.danmakuSpeed=options[i]; render()
                 }
             })
-        }
-        landscapeLine(danmaku).also { line ->
-            landscapeCell(line,landscapeSwitch("相同弹幕聚合",library.danmakuMerge) {
+        landscapeColumnCell(left,landscapeSwitch("相同弹幕聚合",library.danmakuMerge) {
                 library.danmakuMerge=it; render()
             })
-            landscapeCell(line,landscapeSwitch("开启弹幕特效",library.danmakuEffects) {
+        landscapeColumnCell(left,landscapeSwitch("开启弹幕特效",library.danmakuEffects) {
                 library.danmakuEffects=it; render()
             })
-        }
-        landscapeLine(danmaku).also { line ->
-            landscapeCell(line,landscapeSlider("聚合条数",
+        landscapeColumnCell(right,landscapeSlider("聚合条数",
                 DANMAKU_MERGE_MIN_RANGE.first.toFloat(),DANMAKU_MERGE_MIN_RANGE.last.toFloat(),1f,
                 library.danmakuMergeMin.toFloat(),{ "${it.roundToInt()} 条" }) {
                 library.danmakuMergeMin=it.roundToInt()
             })
-        }
-        landscapeLine(danmaku).also { line ->
-            landscapeCell(line,landscapeSlider("弹幕大小",
+        landscapeColumnCell(right,landscapeSlider("弹幕大小",
                 PhoneDanmakuSize.MIN_PERCENT.toFloat(),PhoneDanmakuSize.MAX_PERCENT.toFloat(),
                 PhoneDanmakuSize.STEP_PERCENT.toFloat(),PhoneDanmakuSize.percent(this).toFloat(),
                 { PhoneDanmakuSize.label(it) }) { PhoneDanmakuSize.set(this,it) })
-        }
-        landscapeLine(danmaku).also { line ->
-            landscapeCell(line,landscapeSlider("弹幕透明度",
+        landscapeColumnCell(right,landscapeSlider("弹幕透明度",
                 DanmakuStyle.ALPHA_MIN,DanmakuStyle.ALPHA_MAX,DanmakuStyle.ALPHA_STEP,
                 library.danmakuAlpha,{ DanmakuStyle.percent(it) }) { library.danmakuAlpha=DanmakuStyle.alpha(it) })
-        }
     }
 
     private fun renderLandscapeAppearance() {
@@ -733,14 +769,13 @@ class PhoneSettingsActivity : PhoneActivity() {
         slider("快进快退", 2f, 20f, 1f, library.seekStep.toFloat(), { "${it.roundToInt()} 秒" }) {
             library.seekStep = it.roundToInt()
         }
-        section("播放显示")
+        section("界面信息")
         hint("画面顶部常驻信息，默认全关。依次为剧名、剧集、网速、时间。")
         switch("剧名", library.playerTitle) { library.playerTitle = it; render() }
         switch("剧集", library.playerEpisode) { library.playerEpisode = it; render() }
         switch("网速", library.playerSpeed) { library.playerSpeed = it; render() }
         switch("时间", library.playerClock) { library.playerClock = it; render() }
 
-        section("播放界面")
         slider("自动消失", PLAYER_PANEL_TIMEOUT_RANGE.first.toFloat(),
             PLAYER_PANEL_TIMEOUT_RANGE.last.toFloat(), 1f,
             library.playerPanelTimeout.toFloat(), { "${it.roundToInt()} 秒" }) {

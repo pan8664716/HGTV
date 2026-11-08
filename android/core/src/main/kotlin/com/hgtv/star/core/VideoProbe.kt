@@ -12,7 +12,7 @@ import java.util.concurrent.TimeUnit
  * 用来定位「哪一种签名变体被服务端接受」。不参与应用构建。
  */
 fun main() {
-    val host = "https://api5-normal-sinfonlineb.fqnovel.com"
+    val host = "https://${TncConfigStore.preferredHost("sinfonlineb")}"
     val paths = listOf(
         "/novel/player/multi_video_model/preload/v1/",
         "/novel/player/multi_video_model/default/v1/",

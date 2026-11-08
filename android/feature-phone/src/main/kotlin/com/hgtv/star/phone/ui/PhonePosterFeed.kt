@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -57,6 +58,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     /** 列表自带的一整行头部（筛选 / 账号与栏目）；与海报共用同一个 RecyclerView，随列表自然滚走。 */
     private var header: View? = null
     private var emptyVisible = false
+    private var loadingVisible = false
     private var loader: (suspend (Int) -> CatalogPage?)? = null
     private var job: Job? = null
     private var hasLoadedOnce = false
@@ -170,6 +172,11 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         phoneSize(13)
         gravity = Gravity.CENTER
         setPadding(0, context.dp(60), 0, context.dp(60))
+    }
+
+    private fun newLoadingView() = ProgressBar(context).apply {
+        isIndeterminate = true
+        contentDescription = "加载中"
     }
 
     /**
@@ -369,6 +376,21 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         reset()
     }
 
+    /** 请求尚未拿到第一页时显示统一的加载动画。 */
+    fun showLoading() {
+        job?.cancel()
+        items.clear()
+        selectedIds.clear()
+        heatBy = emptyMap()
+        page = 1
+        loading = false
+        ended = false
+        loadingVisible = true
+        emptyVisible = false
+        hasLoadedOnce = false
+        adapter.notifyDataSetChanged()
+    }
+
     /**
      * 保留当前缓存内容，后台刷新第 1 页；刷新成功后整体替换，失败则继续显示缓存。
      *
@@ -379,9 +401,15 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         this.loader = loader
         job?.cancel()
         loading = true
+        if (items.isEmpty()) {
+            loadingVisible = true
+            emptyVisible = false
+            adapter.notifyDataSetChanged()
+        }
         job = scope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { loader(1) }.getOrNull() }
             loading = false
+            loadingVisible = false
             if (result == null) {
                 if (items.isEmpty()) showEmpty("加载失败，下拉重试")
                 return@launch
@@ -425,6 +453,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         selectedIds.clear()
         page = snapshot.page
         loading = false
+        loadingVisible = false
         ended = snapshot.ended
         heatBy = snapshot.heatBy
         emptyVisible = snapshot.emptyVisible
@@ -451,9 +480,15 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         val loader = loader ?: return
         if (loading || ended) return
         loading = true
+        if (items.isEmpty()) {
+            loadingVisible = true
+            emptyVisible = false
+            adapter.notifyDataSetChanged()
+        }
         job = scope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { loader(page) }.getOrNull() }
             loading = false
+            loadingVisible = false
             if (result == null) {
                 ended = items.isNotEmpty()
                 if (items.isEmpty()) showEmpty("加载失败，下拉重试")
@@ -484,6 +519,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     }
 
     private fun showEmpty(text: String) {
+        loadingVisible = false
         emptyText = text
         if (emptyVisible) {
             adapter.notifyItemChanged(adapter.headerCount)
@@ -494,7 +530,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     }
 
     /** 外部直接塞一批数据（搜索结果、收藏 / 历史）。 */
-    fun submit(rows: List<Series>, more: Boolean = false) {
+    fun submit(rows: List<Series>, more: Boolean = false, loading: Boolean = false) {
         job?.cancel()
         items.clear()
         // 外部塞进来的没有榜单上下文：热度只能靠 `Series.heat`（搜索结果带），
@@ -504,8 +540,9 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         selectedIds.retainAll(rows.map { it.id }.toSet())
         ended = !more
         page = 1
-        hasLoadedOnce = true
-        emptyVisible = rows.isEmpty()
+        loadingVisible = loading && rows.isEmpty()
+        hasLoadedOnce = !loadingVisible
+        emptyVisible = rows.isEmpty() && !loadingVisible
         if (emptyVisible) emptyText = "暂无内容"
         adapter.notifyDataSetChanged()
     }
@@ -518,16 +555,16 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
 
         val headerCount: Int
             get() = if (header == null) 0 else 1
-        private val emptyCount: Int
-            get() = if (emptyVisible) 1 else 0
+        private val statusCount: Int
+            get() = if (loadingVisible || emptyVisible) 1 else 0
         val posterStart: Int
-            get() = headerCount + emptyCount
+            get() = headerCount + statusCount
 
         fun isFullSpan(position: Int): Boolean = position < posterStart
 
         override fun getItemViewType(position: Int): Int {
             if (position < headerCount) return TYPE_HEADER
-            if (position < posterStart) return TYPE_EMPTY
+            if (position < posterStart) return if (loadingVisible) TYPE_LOADING else TYPE_EMPTY
             return TYPE_POSTER
         }
 
@@ -543,6 +580,17 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 val view = newEmptyView()
                 view.layoutParams = RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+                )
+                return FixedHolder(view)
+            }
+            if (viewType == TYPE_LOADING) {
+                val view = FrameLayout(context).apply {
+                    addView(newLoadingView(), FrameLayout.LayoutParams(
+                        context.dp(36), context.dp(36), Gravity.CENTER
+                    ))
+                }
+                view.layoutParams = RecyclerView.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT, context.dp(120)
                 )
                 return FixedHolder(view)
             }
@@ -568,7 +616,9 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             if (position < posterStart) {
                 // 空态和头部共用前置项；只有空态项才需要写文案。
                 // 这里不能用 `position == headerCount`：没有空态时它会误伤第一张海报。
-                if (position == headerCount) (holder.itemView as? TextView)?.text = emptyText
+                if (position == headerCount && !loadingVisible) {
+                    (holder.itemView as? TextView)?.text = emptyText
+                }
                 return
             }
             val itemPosition = position - posterStart
@@ -584,6 +634,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         const val TYPE_HEADER = 1
         const val TYPE_EMPTY = 2
         const val TYPE_POSTER = 3
+        const val TYPE_LOADING = 4
     }
 
     /**

@@ -254,6 +254,20 @@ private fun contentErrorDetail(problem: Throwable): String =
     else problem.message.orEmpty().replace(Regex("https?://\\S+"),"[地址]").take(160)
 
 fun MainActivity.message(parent: LinearLayout,label: String) { parent.addView(text(label,17f,muted).apply { setPadding(pageBleed(),dp(28),pageBleed(),dp(18)) }) }
+
+/** 列表请求中的统一动画：只显示转圈，不再铺任何“正在读取 / 正在加载”文案。 */
+fun MainActivity.loadingView(heightDp: Int = 140, spinnerDp: Int = 42): FrameLayout =
+    FrameLayout(this).apply {
+        addView(ProgressBar(this@loadingView).apply {
+            isIndeterminate=true
+            contentDescription="加载中"
+        }, FrameLayout.LayoutParams(dp(spinnerDp),dp(spinnerDp),Gravity.CENTER))
+        minimumHeight=dp(heightDp)
+    }
+
+fun MainActivity.loading(parent: LinearLayout,heightDp: Int = 140) {
+    parent.addView(loadingView(heightDp),LinearLayout.LayoutParams(-1,dp(heightDp)))
+}
 /**
  * 加载失败时的说明 + 「重试」按钮；返回那枚按钮，调用方可以把它接进自己的焦点链。
  *

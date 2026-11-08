@@ -576,7 +576,10 @@ class PhoneMinePage(
                 ?.filter { row -> reserveFilter?.let { want -> row.online == want } ?: true }
                 ?.map { it.series }.orEmpty()
         }
-        feed.submit(rows)
+        val waitingForAccount = runCatching {
+            PhoneServices.repository(context).signedIn && cached == null
+        }.getOrDefault(false)
+        feed.submit(rows, loading = waitingForAccount)
         updateBatchBar()
     }
 

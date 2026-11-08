@@ -46,6 +46,7 @@ class HgtvApplication: Application() {
         startCaches()
         startTlsWarmup()
         startDnsWarmup()
+        startTncBootstrap()
         startSignWarmup()
         initSession()
         // 首次运行当前版本时注册 3 台备用设备并落盘；后续启动只读缓存。
@@ -84,11 +85,12 @@ class HgtvApplication: Application() {
     }
 
     /**
-     * 两处落盘缓存（都只在后台用，主线程零成本）：
+     * 几处落盘缓存（都只在后台用，主线程零成本）：
      *
-     * * **DNS**：第二次启动直接命中，省掉 `vas-lf-x` 那 1.6 秒（见 `HgtvDns`）；
+     * * **TNC / DNS**：TNC 配置与 HTTP DNS 表在后台读盘，第二次启动直接命中；
      * * **播放索引 + 播放地址**：第二次播同一集省掉取地址（0.5~1.1s）与 moov 解析
-     *   （0.7~0.9s）（见 `PlaybackCache`）。
+     *   （0.7~0.9s）（见 `PlaybackCache`）；
+     * * **分类筛选**：每个大类的小分类只请求一次，之后直接复用（见 `CategoryPanelCache`）。
      *
      * 放在 `onCreate` 而不是第一次用到时：两者的读取都在后台线程里，这里只是把
      * 「读盘」这条任务排进去，顺便让它在界面还在建视图时就跑完。
@@ -96,10 +98,12 @@ class HgtvApplication: Application() {
      */
     private fun startCaches() {
         runCatching {
+            com.hgtv.star.core.TncConfigStore.init(java.io.File(cacheDir,"tnc-v1.json"))
             com.hgtv.star.core.HgtvDns.init(java.io.File(cacheDir,"dns-v1.txt"))
             com.hgtv.star.core.PlaybackCache.init(java.io.File(cacheDir,"playback-v1"))
             com.hgtv.star.core.RecommendCache.init(java.io.File(cacheDir,"feed-v1.json"))
             com.hgtv.star.core.DetailCache.init(java.io.File(cacheDir,"detail-v1.json"))
+            com.hgtv.star.core.CategoryPanelCache.init(java.io.File(cacheDir,"category-panels-v1.json"))
         }.onFailure { problem ->
             Diagnostics.warn("HGTV-CACHE","缓存目录初始化失败",problem)
         }
@@ -132,6 +136,20 @@ class HgtvApplication: Application() {
         Thread({
             runCatching { com.hgtv.star.core.HgtvDns.warm(com.hgtv.star.core.HgtvDns.BOOT_HOSTS) }
         }, "hgtv-dns-warm").start()
+    }
+
+    /**
+     * TNC 的最早网络初始化。
+     *
+     * 这条请求不需要 device_id / iid，也不会补 Cookie；拿到配置后，设备注册和后续接口
+     * 就能使用 TNC 下发的候选域名与 HTTP DNS。已有新鲜缓存时 [refreshTncAsync] 会直接跳过。
+     */
+    private fun startTncBootstrap() {
+        Thread({
+            runCatching {
+                com.hgtv.star.shared.data.AppRuntime.repository(this).refreshTncAsync()
+            }
+        }, "hgtv-tnc-bootstrap").start()
     }
 
     /**

@@ -331,22 +331,24 @@ class SessionKeeper(
     // ---------------- 内部 ----------------
 
     private fun beatRequest(url: String, injectToken: Boolean = true): Request {
+        val cookieHeader=SessionBridge.cookieHeaderForBeat()
+        val cookies=CookieRecord.headerToMap(cookieHeader)
         val builder = Request.Builder()
             .url(url)
             .get()
             .header("X-HGTV-Identity","account")
             .header("X-SS-DP","8662")
-            .header("X-Tt-Store-Region",SessionBridge.state?.storeRegion ?: "cn")
-            .header("X-Tt-Store-Region-Src","did")
             .header("sdk-version","2")
             .header("passport-sdk-version","5051452")
             .header("Accept","application/json")
+        cookies["store-region"]?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Store-Region",it) }
+        cookies["store-region-src"]?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Store-Region-Src",it) }
         // token 与 cookie 分头送：token 为空（导入的 cookieStore.xml）时**不发**这个头。
         if(injectToken) {
             SessionBridge.state?.token?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Token",it) }
         }
         // 心跳必须同时带设备 cookie（`install_id` / `ttreq`），否则平台认不出这台设备
-        SessionBridge.cookieHeaderForBeat().takeIf { it.isNotEmpty() }?.let { builder.header("Cookie",it) }
+        cookieHeader.takeIf { it.isNotEmpty() }?.let { builder.header("Cookie",it) }
         deviceHeaders().forEach { (name,value) -> if(value.isNotBlank()) builder.header(name,value) }
         return builder.build()
     }

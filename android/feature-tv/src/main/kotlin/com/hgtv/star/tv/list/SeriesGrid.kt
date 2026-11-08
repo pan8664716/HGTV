@@ -59,7 +59,6 @@ import com.hgtv.star.shared.compat.attachedToWindow
 
 fun MainActivity.moreLabel(): String = when {
     moreFailed -> "加载失败 · 重试"
-    moreVisible && moreInFlight -> "正在加载更多…"
     else -> "展示更多 ↓"
 }
 /**
@@ -170,7 +169,7 @@ fun MainActivity.gridConsumedIndex(): Int {
 /**
  * 去取第 `page+1` 页。
  *
- * [userInitiated] 为 true 时底部显示「正在加载更多…」，结果落地后焦点落到新行的第一张卡；
+ * [userInitiated] 为 true 时底部显示转圈，结果落地后焦点落到新行的第一张卡；
  * 静默预取只记在 [moreInFlight] 上，界面上什么都不变。
  * 两者共用同一把锁，所以同一页不会被请求两次；静默预取在途中被用户按下时，
  * 只是把 [moreFocusWanted] 打开，落地时照样把焦点交过去。
@@ -300,6 +299,21 @@ fun MainActivity.updateFooter() {
     val more=moreButton ?: return
     (more as? TvButton)?.setLabel(moreLabel())
     more.alpha=if(moreVisible && moreInFlight) TvStyle.DISABLED_ALPHA else 1f
+    val paging=gridPaging ?: return
+    val tag="paging-loading"
+    val existing=paging.findViewWithTag<ProgressBar>(tag)
+    val show=moreVisible && moreInFlight
+    when {
+        show && existing==null -> paging.addView(
+            ProgressBar(this).apply {
+                isIndeterminate=true
+                contentDescription="加载中"
+                this.tag=tag
+            },
+            LinearLayout.LayoutParams(dp(24),dp(24)).apply { leftMargin=dp(TvStyle.GAP_INLINE) }
+        )
+        !show && existing!=null -> paging.removeView(existing)
+    }
 }
 /** 栅格里的全部卡片：只包含**当前物化的窗口**那几行（窗口外没有 View）。 */
 fun MainActivity.gridCards(): List<View> = gridRows.flatMap { holder -> holder.cards }
