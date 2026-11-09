@@ -433,27 +433,33 @@ object AccountParser {
     /**
      * 观看历史。
      *
-     * 平台把它叫「阅读进度」：`GET /reading/bookapi/read_progress/list/v?book_types=2&limit=50`
-     * 回的是 **`video_data`** 数组（不是 `data`），每项
-     * `{series_id, vid, vid_index, episode_count, last_watch_time, current_play_time}`。
+     * 短剧历史走官方 `GET /reading/bookapi/read_history/list/v?book_type=2`，回
+     * `data.data_list[]`；兼容旧的 `read_progress/list` 的 `video_data[]`。
      * `vid_index` 从 1 起，因此这里减 1 存成 0 起的集号。
      *
      * `current_play_time`（集内毫秒位置）**要一起收下**：少了它，从「我的 → 历史」点进去
      * 只能从那一集的开头起，用户读到的是「明明看到了第 12 集，怎么又从第一集开始」。
      *
-     * `read_history/list` 那条接口对短剧**恒返回空列表**（它是给小说的），不要用。
+     * `read_history/list` 才是可删除的历史源；`read_progress/list` 是当前播放进度，
+     * 两者不能混用。
      */
     fun history(raw: JSONObject): List<AccountHistory> {
         val rows = raw.optJSONArray("video_data")
             ?: raw.optJSONObject("data")?.optJSONArray("video_data")
+            ?: raw.optJSONObject("data")?.optJSONArray("data_list")
             ?: return emptyList()
         return rows.objects().mapNotNull { row ->
-            val id = row.str("series_id").ifEmpty { row.str("book_id") }
+            val id = row.str("series_id")
+                .ifEmpty { row.str("book_id") }
+                .ifEmpty { row.str("book_id_str") }
             if (!id.matches(Regex("[0-9]{1,30}"))) return@mapNotNull null
             val index = (row.optInt("vid_index") - 1).coerceAtLeast(0)
+            val position=if(row.has("current_play_position")) row.optLong("current_play_position")
+                else row.optLong("current_play_time")
             AccountHistory(Series(id, "", "", "", "", ""), index, row.str("vid"),
-                row.optLong("last_watch_time"), row.optInt("episode_count"),
-                row.optLong("current_play_time").coerceAtLeast(0))
+                row.optLong("read_timestamp_ms").takeIf { it>0 } ?: row.optLong("last_watch_time"),
+                row.optInt("episode_cnt").takeIf { it>0 } ?: row.optInt("episode_count"),
+                position.coerceAtLeast(0))
         }.distinctBy { it.series.id }.sortedByDescending { it.updatedAt }
     }
 

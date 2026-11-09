@@ -12,15 +12,52 @@ import org.json.JSONObject
  */
 object CatalogSnapshot {
     private const val MAX_AGE=7*24*60*60*1000L
-    fun encode(items: List<Series>,hasMore: Boolean,now: Long): String = JSONObject()
+    fun encode(
+        items: List<Series>,
+        hasMore: Boolean,
+        now: Long,
+        ranking: ComicRanking? = null,
+    ): String = JSONObject()
         .put("savedAt",now).put("hasMore",hasMore)
-        .put("items",JSONArray(items.take(30).map { it.copy(description=it.description.take(1500)).toJson() })).toString()
+        .put("items",JSONArray(items.take(30).map { it.copy(description=it.description.take(1500)).toJson() }))
+        .apply {
+            ranking?.let { value ->
+                put("ranking",JSONObject()
+                    .put("totalPages",value.totalPages)
+                    .put("updatedText",value.updatedText)
+                    .put("positions",JSONObject().apply {
+                        value.positions.forEach { (id,position) ->
+                            put(id,JSONObject().put("heat",position.heat).apply {
+                                position.rank?.let { put("rank",it) }
+                            })
+                        }
+                    }))
+            }
+        }
+        .toString()
     fun decode(value: String,now: Long): CatalogPage? = runCatching {
         require(value.length<=200_000)
         val o=JSONObject(value); require(now-o.getLong("savedAt") in 0..MAX_AGE)
         val rows=o.getJSONArray("items"); require(rows.length() in 1..30)
         val items=(0 until rows.length()).map { Series.fromJson(rows.getJSONObject(it)) }
         require(items.all { it.id.matches(Regex("[0-9]{1,30}")) && it.title.isNotBlank() })
-        CatalogPage(items.distinctBy { it.id },o.getBoolean("hasMore"))
+        val ranking=o.optJSONObject("ranking")?.let { value ->
+            val positions=value.optJSONObject("positions")?.let { rowsById ->
+                rowsById.keys().asSequence().mapNotNull { id ->
+                    rowsById.optJSONObject(id)?.let { row ->
+                        id to RankPosition(
+                            row.optInt("rank",0).takeIf { it>0 },
+                            row.optString("heat"),
+                        )
+                    }
+                }.toMap()
+            }.orEmpty()
+            ComicRanking(
+                positions=positions,
+                totalPages=value.optInt("totalPages",0),
+                updatedText=value.optString("updatedText"),
+            )
+        }
+        CatalogPage(items.distinctBy { it.id },o.getBoolean("hasMore"),ranking)
     }.getOrNull()
 }

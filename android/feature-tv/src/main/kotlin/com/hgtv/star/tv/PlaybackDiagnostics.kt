@@ -2,13 +2,13 @@
 package com.hgtv.star.tv
 import com.hgtv.star.shared.debug.DebugLog
 import android.os.Build
-import androidx.media3.common.C
-import androidx.media3.common.Format
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.analytics.AnalyticsListener
-import androidx.media3.exoplayer.DecoderReuseEvaluation
-import androidx.media3.exoplayer.mediacodec.MediaCodecRenderer
+import com.google.android.exoplayer2.C
+import com.google.android.exoplayer2.Format
+import com.google.android.exoplayer2.PlaybackException
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.analytics.AnalyticsListener
+import com.google.android.exoplayer2.decoder.DecoderReuseEvaluation
+import com.google.android.exoplayer2.mediacodec.MediaCodecRenderer
 import com.hgtv.star.shared.compat.isMeteredConnection
 import com.hgtv.star.core.DegradationKind
 import com.hgtv.star.core.PlaybackRetryPlan
@@ -148,7 +148,7 @@ object PlaybackDiag {
     }
 
     /**
-     * 画面确实上屏了（[androidx.media3] / ExoPlayer 的 `onRenderedFirstFrame`）。
+     * 画面确实上屏了（ExoPlayer 的 `onRenderedFirstFrame`）。
      *
      * 「没有画面」这类结论当场作废：之前报的「已就绪但迟迟没有画面」在出帧那一刻就不再成立，
      * 面板上继续挂着它，用户看到的就是「明明有画面，却说我黑屏」。
@@ -486,14 +486,14 @@ fun MainActivity.noteDegrade(plan: PlaybackRetryPlan) {
         DegradationKind.SAME_QUALITY_REBUILD -> "原档重建 ${playbackMaxQuality}P"
         DegradationKind.QUALITY_DOWN -> "降档 → ${tier}P"
     }
-    DebugLog.record("播放",text+" · 预算["+sessionPlayback.budgetSummary()+"]",force=true)
+    DebugLog.record("播放",text+" · 预算["+playbackCoordinator.budgetSummary()+"]",force=true)
     PlaybackDiag.degrade()
     // 这一行是「降级救回率」的唯一来源：`takeRecovered()` 之后会在出帧时再补一条
     // `HGTV-PLAY recovered … cap=`，两行成对。
     android.util.Log.w("HGTV-PLAY","degrade reason=${plan.reason.name}"+
         " target=${if(tier>0) "${tier}P" else "same"}"+
         " cap=${playbackMaxQuality}P mode=${playbackDecoderMode.name}"+
-        " budget=[${sessionPlayback.budgetSummary()}]")
+        " budget=[${playbackCoordinator.budgetSummary()}]")
 }
 
 /**
@@ -823,7 +823,7 @@ fun MainActivity.disarmPlaybackWatchdog() {
  * 那时 `lastFrameAt` 一直是 0，停滞看门狗据此**自己让路**（见 [armFrameStallWatchdog]）。
  * 若在 `onRenderedFirstFrame` 里也记一次，这类设备就会在首帧之后 12 秒被误判成「画面停住」。
  */
-fun MainActivity.playbackFrameClock()=androidx.media3.exoplayer.video.VideoFrameMetadataListener { _,_,_,_ ->
+fun MainActivity.playbackFrameClock()=com.google.android.exoplayer2.video.VideoFrameMetadataListener { _,_,_,_ ->
     // 注入模式（DebugFaults.STALL_FRAME）下故意不记账，见 [PlaybackDiag.injectedNoFrame]。
     if(PlaybackDiag.injectedNoFrame) return@VideoFrameMetadataListener
     PlaybackDiag.lastFrameAt=android.os.SystemClock.elapsedRealtime()
@@ -964,17 +964,17 @@ fun MainActivity.recoverFormalPicture(reason: String) {
     if(episodeIndex !in data.episodes.indices) return
     val p=player ?: return
     val now=android.os.SystemClock.elapsedRealtime()
-    if(ledger.formalPictureRecoveries>=FORMAL_PICTURE_RECOVERY_LIMIT) {
+    if(playbackCoordinator.pictureRecoveryCount>=FORMAL_PICTURE_RECOVERY_LIMIT) {
         // 已经重建过一次还是没画面：交给错误页，别再自己闪。
         playerFailure(PlaybackDiagnosticException("playback_stall_frame","画面停止刷新，重建后仍未恢复"))
         return
     }
-    if(ledger.pictureCoolingDown(now,FORMAL_PICTURE_RECOVERY_COOLDOWN_MS)) return
-    ledger.notePictureRecovery(now)
+    if(playbackCoordinator.pictureRecoveryCoolingDown(now,FORMAL_PICTURE_RECOVERY_COOLDOWN_MS)) return
+    playbackCoordinator.notePictureRecovery(now)
     // 位置直接问播放器：这一路没有 `playbackReady` 参与（它是 true 才会判停帧），
     // 但 `currentPosition()` 还要看 `pendingSeek`，用播放器自身的读数更准。
     val at=runCatching { p.currentPosition }.getOrDefault(0L).coerceAtLeast(0)
-    android.util.Log.w("HGTV","Formal picture lost ($reason) episode=${episodeIndex+1} at=${at}ms try=${ledger.formalPictureRecoveries}")
+    android.util.Log.w("HGTV","Formal picture lost ($reason) episode=${episodeIndex+1} at=${at}ms try=${playbackCoordinator.pictureRecoveryCount}")
     // 重建期间画面层会被整块换掉：这一句告诉用户「不是卡死，是在重来」，比一块黑屏强。
     playbackText.text="画面停止刷新，正在重建播放…"
     playEpisode(episodeIndex,at,p.playWhenReady,recovering=true)

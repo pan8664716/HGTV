@@ -64,33 +64,6 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
                 ringWidth=if(focused) TvStyle.RING else 1,
                 depth=if(focused) 1.6f else 1.1f)
         }
-        // EditText 自己会把上下键吃掉做光标移动，焦点因此困在输入框里出不去。
-        // 这两下在这里显式交回页面：上=顶部圆形入口，下=提示词 / 热搜词那一行（没有时退到内容第一张卡）。
-        setOnKeyListener { view,keyCode,event ->
-            if(event.action!=KeyEvent.ACTION_DOWN || (keyCode!=KeyEvent.KEYCODE_DPAD_UP && keyCode!=KeyEvent.KEYCODE_DPAD_DOWN)) false
-            else {
-                // 判据必须与「能不能真的拿到焦点」一致：只看 `isShown` 会把页头收起后
-                // 高度为 0 的那一行也算进来，`requestFocus` 失败后焦点原地不动。
-                //
-                // 按下键**先看提示词那一行**，而不是只看 `nextFocusDownId`：
-                // 提示词是异步铺出来的，`renderHintRow` 里接线的那一刻芯片刚 addView、
-                // 还没量过尺寸，`canTakeFocusNow` 的尺寸判据会把它筛掉，于是那条出口
-                // 落到了内容第一张卡上（用户按向下就跳过联想词，直接进结果）。
-                // 按键这一刻布局早已完成，按当前状态现找即可。
-                val target=when {
-                    keyCode==KeyEvent.KEYCODE_DPAD_DOWN -> suggestButtons.firstOrNull(::canTakeFocusSoon)
-                        ?: root.findViewById<View>(view.nextFocusDownId)?.takeIf(::canTakeFocusNow)
-                        ?: gridCards().firstOrNull(::canTakeFocusNow) ?: navEntry()?.takeIf(::canTakeFocusNow)
-                    else -> root.findViewById<View>(view.nextFocusUpId)?.takeIf(::canTakeFocusNow)
-                        ?: navEntry()?.takeIf(::canTakeFocusNow)
-                }
-                if(target==null) false
-                else {
-                    (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(view.windowToken,0)
-                    view.clearFocus(); target.requestFocus(); true
-                }
-            }
-        }
     }
     top.addView(input,lp(dp(SEARCH_INPUT_WIDTH),dp(SEARCH_INPUT_HEIGHT+2*TvStyle.SOFT_BAND)).apply {
         // 初始宽度只是「还没量过之前」的占位：这一行建好之后由 [fitSearchRow] 按实测
@@ -116,6 +89,40 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
             return
         }
         runSearch(next)
+    }
+    // EditText 自己会把上下键吃掉做光标移动，焦点因此困在输入框里出不去。
+    // 这两下在这里显式交回页面：上=顶部圆形入口，下=提示词 / 热搜词那一行（没有时退到内容第一张卡）。
+    // 确认键也必须自己吃掉：Android 5 的 TextView.onKeyUp 会调用 showSoftInput，
+    // 部分电视固件此时 InputMethodInfo 为空，直接在 Parcel 里抛 NPE。
+    input.setOnKeyListener { view,keyCode,event ->
+        if(keyCode==KeyEvent.KEYCODE_ENTER || keyCode==KeyEvent.KEYCODE_DPAD_CENTER ||
+            keyCode==KeyEvent.KEYCODE_NUMPAD_ENTER) {
+            if(event.action==KeyEvent.ACTION_UP) search()
+            true
+        } else if(event.action!=KeyEvent.ACTION_DOWN ||
+            (keyCode!=KeyEvent.KEYCODE_DPAD_UP && keyCode!=KeyEvent.KEYCODE_DPAD_DOWN)) false
+        else {
+            // 判据必须与「能不能真的拿到焦点」一致：只看 `isShown` 会把页头收起后
+            // 高度为 0 的那一行也算进来，`requestFocus` 失败后焦点原地不动。
+            //
+            // 按下键**先看提示词那一行**，而不是只看 `nextFocusDownId`：
+            // 提示词是异步铺出来的，`renderHintRow` 里接线的那一刻芯片刚 addView、
+            // 还没量过尺寸，`canTakeFocusNow` 的尺寸判据会把它筛掉，于是那条出口
+            // 落到了内容第一张卡上（用户按向下就跳过联想词，直接进结果）。
+            // 按键这一刻布局早已完成，按当前状态现找即可。
+            val target=when {
+                keyCode==KeyEvent.KEYCODE_DPAD_DOWN -> suggestButtons.firstOrNull(::canTakeFocusSoon)
+                    ?: root.findViewById<View>(view.nextFocusDownId)?.takeIf(::canTakeFocusNow)
+                    ?: gridCards().firstOrNull(::canTakeFocusNow) ?: navEntry()?.takeIf(::canTakeFocusNow)
+                else -> root.findViewById<View>(view.nextFocusUpId)?.takeIf(::canTakeFocusNow)
+                    ?: navEntry()?.takeIf(::canTakeFocusNow)
+            }
+            if(target==null) false
+            else {
+                (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(view.windowToken,0)
+                view.clearFocus(); target.requestFocus(); true
+            }
+        }
     }
     searchInput=input
     // 按钮用**收紧档**（[ButtonSize.TIGHT]：40dp 底板 / 15sp 字号 / 12dp 内边距）：
@@ -246,9 +253,7 @@ fun MainActivity.scheduleSuggestions(text: String) {
     val clean=text.trim()
     // 清空输入：换回热搜词（而不是留一行空白）。
     if(clean.isEmpty()) { suggestToken.incrementAndGet(); loadHotSearches(); return }
-    val run=Runnable { fetchSuggestions(clean) }
-    suggestRun.set(run)
-    main.postDelayed(run,SUGGEST_DEBOUNCE)
+    searchController.scheduleSuggestions(clean,SUGGEST_COUNT,SUGGEST_DEBOUNCE)
 }
 /**
  * 焦点进入搜索结果**第二行**时，把输入框里的词清空。
@@ -298,7 +303,10 @@ fun MainActivity.loadHotSearches() {
     // 作废在途的联想请求：清空输入那一刻回来的旧结果不能盖住搜索记录。
     suggestToken.incrementAndGet()
     if(isDestroyed || screen!="catalog" || tab!=TAB_SEARCH) return
-    renderHintRow(library.searches().map { it.query })
+    searchController.refreshHistory()
+    searchController.loadHot()
+    val state=searchController.state.value
+    renderHintRow(state.history.ifEmpty { state.hot })
 }
 /**
  * 取一次提示词。
@@ -308,21 +316,7 @@ fun MainActivity.loadHotSearches() {
  * 结果回来时先比对令牌与当前输入框内容——晚回来的旧结果直接丢掉。
  */
 fun MainActivity.fetchSuggestions(keyword: String) {
-    suggestJob?.cancel(true)
-    val ticket=suggestToken.incrementAndGet()
-    suggestJob=io.submit {
-        val result=runCatching { repository.suggestions(keyword,SUGGEST_COUNT,library.searchSource) }
-            .onFailure { DebugLog.record("搜索","提示词失败 · ${it.message.orEmpty().take(120)}") }
-            .getOrDefault(emptyList())
-        main.post {
-            if(isDestroyed || screen!="catalog" || tab!=TAB_SEARCH) return@post
-            if(ticket!=suggestToken.get()) return@post
-            // 输入框里的词已经变了（用户又敲了字）：这一批已经过时。
-            val current=(searchInput as? EditText)?.text?.toString()?.trim().orEmpty()
-            if(current!=keyword) return@post
-            renderHintRow(result.map { it.name })
-        }
-    }
+    searchController.scheduleSuggestions(keyword,SUGGEST_COUNT,0L)
 }
 /**
  * 重建输入框下面那一行（热搜词 / 提示词共用）。
@@ -491,7 +485,7 @@ fun MainActivity.renderHintRow(items: List<String>) {
 fun MainActivity.runSearch(value: String) {
     val clean=value.trim(); if(clean.isEmpty() || clean.length>80) return
     (searchInput as? EditText)?.let { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(it.windowToken,0) }
-    library.rememberSearch(clean); query=clean; tab=1; page=1; catalogFocus=""; showCatalog(true)
+    searchController.remember(clean); query=clean; tab=1; page=1; catalogFocus=""; showCatalog(true)
 }
 /**
  * 搜索源：App / 官网。
@@ -504,12 +498,12 @@ fun MainActivity.runSearch(value: String) {
  */
 fun MainActivity.showSearchSourcePicker(anchor: TextView) {
     val labels=SearchSource.entries.map { source ->
-        if(source==library.searchSource) "${source.label} · ${source.hint}（当前）" else "${source.label} · ${source.hint}"
+        if(source==searchController.state.value.source) "${source.label} · ${source.hint}（当前）" else "${source.label} · ${source.hint}"
     }
     tvTools.choose("搜索源",labels,anchor,{ index ->
         val selected=SearchSource.entries[index]
-        val changed=library.searchSource!=selected
-        library.searchSource=selected
+        val changed=searchController.state.value.source!=selected
+        searchController.setSource(selected)
         anchor.text="搜索源  ·  ${selected.label}"
         anchor.contentDescription="搜索源，当前${selected.label}"
         if(changed) {
@@ -523,10 +517,11 @@ fun MainActivity.showSearchSourcePicker(anchor: TextView) {
     },subtitle="只影响搜索，分类 / 榜单 / 播放不受影响")
 }
 fun MainActivity.showSearchHistory(anchor: View) {
-    val history=library.searches()
+    searchController.refreshHistory()
+    val history=searchController.state.value.history
     if(history.isEmpty()) { tvTools.info("搜索历史","搜索过的剧名会保存在这里，最多保留 20 条。",anchor); return }
-    tvTools.choose("搜索历史",history.map { it.query },anchor,{ index -> runSearch(history[index].query) },"清空历史") {
-        tvTools.confirm("清空搜索历史","清除本机保存的搜索词？",anchor,danger=true) { library.clearSearches() }
+    tvTools.choose("搜索历史",history,anchor,{ index -> runSearch(history[index]) },"清空历史") {
+        tvTools.confirm("清空搜索历史","清除本机保存的搜索词？",anchor,danger=true) { searchController.clearHistory() }
     }
 }
 /**

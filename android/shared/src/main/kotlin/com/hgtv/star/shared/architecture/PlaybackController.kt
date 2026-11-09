@@ -100,7 +100,7 @@ class PlaybackController {
         return id
     }
 
-    /** 播放器状态变化。`playbackState` 用 Media3 的常量。 */
+    /** 播放器状态变化。`playbackState` 用 ExoPlayer 的常量。 */
     fun onPlayerState(playbackState: Int, playWhenReady: Boolean, bufferingReason: String = "") =
         dispatch(PlaybackEvent.PlayerState(sessionId, playbackState, playWhenReady, bufferingReason))
 

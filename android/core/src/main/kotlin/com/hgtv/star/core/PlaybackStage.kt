@@ -17,7 +17,7 @@ package com.hgtv.star.core
  * 早先两端各写一份字面量，手机上还只有一句笼统的「播放失败」。
  *
  * 判定「这次失败属于哪个阶段」要用 `PlaybackException.errorCode`，那一步在
- * `:shared` 的 `PlaybackFailures.stageOf` 里（`:core` 不依赖 media3）。
+ * `:shared` 的 `PlaybackFailures.stageOf` 里（`:core` 不依赖 ExoPlayer）。
  */
 object PlaybackStage {
     const val SOURCE = "playback_source"

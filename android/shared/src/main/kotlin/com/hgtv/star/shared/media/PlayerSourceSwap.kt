@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.media
 
-import androidx.media3.common.MediaItem
-import androidx.media3.datasource.DataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.upstream.DataSource
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.source.ProgressiveMediaSource
 
 /**
  * 换媒体源：**先停、再挂**。

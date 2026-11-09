@@ -85,13 +85,19 @@ class QrLogin(
     }
 
     /**
-     * 登录用户设备档案（与手机号登录同一类，但不使用主设备身份）。
+     * 登录使用的当前主设备档案。
      *
-     * 出码与轮询本身**不需要**它（平台不校验签名），但确认之后落地的
-     * [AccountCredentials] 要带上一致的 `device_id` / `iid` / `cdid`，
-     * 否则后续账号接口的 `x-medusa` 签名与 Cookie 里的设备对不上。
+     * 登录先复用主设备的 `device_id` / `iid` / `cdid` 与 Cookie；账号响应带回另一台设备时，
+     * 后续请求才以账号设备为主。
      */
     var device: Map<String,String> = emptyMap()
+
+    /** 登录沿用当前主设备 Cookie；账号会话只在这份设备 Cookie 上追加。 */
+    fun useDeviceCookies(values: Map<String,String>) {
+        values.forEach { (key,value) ->
+            if(key.isNotBlank() && value.isNotBlank()) cookies[key]=value
+        }
+    }
 
     /** 诊断日志出口（`core` 没有 Android SDK），由界面层注入 `android.util.Log`。 */
     var log: (String) -> Unit = {}
@@ -228,10 +234,18 @@ class QrLogin(
             .header("User-Agent",VendorConstants.userAgent(device,video = false))
             .header("Accept","application/json, text/plain, */*")
             .header("Referer",next())
+            .header("X-SS-DP","8662")
+        cookies["store-region"]?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Store-Region",it) }
+        cookies["store-region-src"]?.takeIf { it.isNotBlank() }?.let { builder.header("X-Tt-Store-Region-Src",it) }
         if(cookies.isNotEmpty()) builder.header("Cookie",cookies.entries.joinToString("; ") { (k,v) -> "$k=$v" })
         if(token.isNotBlank()) builder.header("X-Tt-Token",token)
         return try {
+            NetLog.debug("[API] start method=GET host=${url.host} path=${url.encodedPath} identity=qrcode")
             val raw = http.newCall(builder.get().build()).execute().use { response ->
+                NetLog.debug("[API] response scope=qrcode status=${response.code} body=${response.body?.contentLength() ?: -1L}B")
+                if(!response.isSuccessful) {
+                    NetLog.error("[API] error scope=qrcode path=$path status=${response.code}")
+                }
                 response.headers("Set-Cookie").forEach { header -> collectCookies(header) }
                 response.header("X-Tt-Token")?.takeIf { it.isNotBlank() }?.let { token=it }
                 response.header("bd-ticket-guard-sign-res-static-ts-sign")?.takeIf { it.isNotBlank() }?.let { tsSign=it }
@@ -241,10 +255,12 @@ class QrLogin(
             trace("← $path ${raw.take(160)}")
             JSONObject(raw)
         } catch(e: IOException) {
+            NetLog.error("[API] error scope=qrcode path=$path ${e.javaClass.simpleName}: ${e.message.orEmpty().take(220)}")
             lastError=e.message.orEmpty().ifBlank { "网络不可用，请稍后重试" }
             trace("✗ $path ${e.javaClass.simpleName}: ${e.message}")
             null
         } catch(e: Exception) {
+            NetLog.error("[API] error scope=qrcode path=$path ${e.javaClass.simpleName}: ${e.message.orEmpty().take(220)}")
             lastError=e.message.orEmpty().ifBlank { "扫码登录失败，请稍后重试" }
             trace("✗ $path ${e.javaClass.simpleName}: ${e.message}")
             null

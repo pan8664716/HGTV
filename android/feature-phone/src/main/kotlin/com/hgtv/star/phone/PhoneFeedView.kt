@@ -11,12 +11,12 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.common.VideoSize
-import androidx.media3.datasource.DataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.video.VideoSize
+import com.google.android.exoplayer2.upstream.DataSource
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.hgtv.star.core.CategorySelection
@@ -25,8 +25,10 @@ import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackSpeed
 import com.hgtv.star.core.RemoteVideo
+import com.hgtv.star.core.StreamInfo
 import com.hgtv.star.core.toFit
 import com.hgtv.star.core.Series
+import com.hgtv.star.core.RecommendTab
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.phone.ui.PhoneColor
 import com.hgtv.star.phone.ui.PhonePagerSnapHelper
@@ -34,10 +36,12 @@ import com.hgtv.star.phone.ui.PhoneSheet
 import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
+import com.hgtv.star.phone.ui.primeAspectRatio
 import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.phone.ui.roundedBackground
+import com.hgtv.star.phone.ui.runAfterAspectRatioLayout
+import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
 import com.hgtv.star.shared.data.Library
-import com.hgtv.star.shared.data.PlaybackTransport
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
 import com.hgtv.star.shared.nav.Route
@@ -95,14 +99,23 @@ class PhoneFeedView(
 ) : FrameLayout(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val items = ArrayList<Series>()
+    private val playbackSource by lazy { PlaybackSourceCoordinator(PhoneServices.repository(context)) }
+    private val items get()=recommendStore.items
     private val adapter = FeedAdapter()
     private val list = VerticalPagerList(context)
 
-    private var offset = 0
-    private var sessionId = ""
-    private var loading = false
-    private var ended = false
+    private var offset: Int
+        get()=recommendStore.nextOffset
+        set(value) { recommendStore.nextOffset=value }
+    private var sessionId: String
+        get()=recommendStore.sessionId
+        set(value) { recommendStore.sessionId=value }
+    private var loading: Boolean
+        get()=recommendStore.loading
+        set(value) { recommendStore.loading=value }
+    private var ended: Boolean
+        get()=!recommendStore.hasMore
+        set(value) { recommendStore.hasMore=!value }
     /**
      * 这一条流现在是不是「被宿主收起来了」。
      *
@@ -139,6 +152,9 @@ class PhoneFeedView(
     private var player: ExoPlayer? = null
     private var remote: RemoteVideo? = null
     private var playingIndex = -1
+    /** 当前这一屏的推荐观看计时；与电视端共用 [RecommendBehavior] 的阈值。 */
+    private var recommendWatchingId = ""
+    private var recommendWatchStart = 0L
     private var playToken = 0
     private var boundPage: PhoneVideoPage? = null
     private var paused = false
@@ -155,11 +171,33 @@ class PhoneFeedView(
     /**
      * 落盘快照 / 续流游标的命名空间：三条体裁流各存各的（见 `RecommendCache.fileOf`）。
      *
-     * `v2-` 是**缓存格式版本**：上一版的 `setGenre` 晚于构造，三个命名空间里都混进了
-     * 别类的条目（甚至同一部剧三份都有）。旧文件不能再用，否则升级后首屏仍是错的；
-     * 换个前缀让它们自然过期即可。
+     * `heat-v1-` 是当前缓存格式版本：切回分类接口热度推荐后，
+     * 官方书包流留下的快照与游标不能继续铺到首屏，换前缀后自然失效。
      */
-    private fun cacheKey(): String = "v2-" + genre.orEmpty().ifEmpty { "all" }
+    private fun cacheKey(): String = "heat-v1-" + genre.orEmpty().ifEmpty { "all" }
+
+    private var recommendStore=newRecommendStore()
+    private var recommendPlayback=newRecommendPlayback()
+
+    private fun newRecommendPlayback()=com.hgtv.star.shared.feature.recommend.RecommendPlaybackController(
+        repository=PhoneServices.repository(context),
+        library=PhoneServices.library(context),
+        source=playbackSource,
+        store=recommendStore,
+    )
+
+    private fun newRecommendStore()=com.hgtv.star.shared.feed.RecommendStore(
+        repository=PhoneServices.repository(context),
+        library=PhoneServices.library(context),
+        policy=com.hgtv.star.shared.feed.RecommendFeedPolicy.standard(
+            cacheNamespace=cacheKey(),
+        ),
+        debug={ line ->
+            if(com.hgtv.star.shared.BuildConfig.DEBUG) {
+                android.util.Log.i("HGTV-PHONE","feed $line")
+            }
+        },
+    )
 
     /**
      * 进程级会话里那一路，是不是**本体裁流**起的。
@@ -178,20 +216,28 @@ class PhoneFeedView(
      * 与电视端 `Library.recommendFilterIdsOff` 是**同一个落盘值**：在电视上确认过不行的设备，
      * 换到手机端也不必再撞两次。
      */
-    private var filterIdsOff = false
+    private var filterIdsOff: Boolean
+        get()=recommendStore.filterIdsOff
+        set(value) { recommendStore.filterIdsOff=value }
     /** 连续「带了 `filter_ids` 却回空页」的次数：到 2 就永久关掉这一层。 */
-    private var filterMiss = 0
+    private var filterMiss: Int
+        get()=recommendStore.filterMiss
+        set(value) { recommendStore.filterMiss=value }
     /**
      * 「推荐受众」（男频 / 女频）这一层的降级状态（`:core` 的 `OptionalFilter`）。
      *
      * 实测服务端对某些受众会整页回空（连流头都空）。带它拿到空页就这一次不带重取，
      * 连续两次仍空则本进程内不再带——与电视端同一套语义，用户至少还能刷到内容。
      */
-    private val genderFilter = com.hgtv.star.core.OptionalFilter("recommendGender")
+    private val genderFilter get()=recommendStore.gender
     /** 「下一次请求先别带受众」：只是这一次退让，不等于永久关闭。 */
-    private var genderProbe = false
+    private var genderProbe: Boolean
+        get()=recommendStore.genderProbe
+        set(value) { recommendStore.genderProbe=value }
     /** 这一次进页面是否已经从落盘恢复过续流游标（每个体裁各一份）。 */
     private var cursorRestored = false
+    /** 首屏不等注册时，注册完成前发出的空请求要在结束后补拉一次。 */
+    private var identityRefreshPending = false
     private var progressTick: Runnable? = null
     private var tempSpeed = false
     private var userSpeed = 1f
@@ -285,7 +331,9 @@ class PhoneFeedView(
             override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
                 if (state != RecyclerView.SCROLL_STATE_IDLE) return
                 val index = (rv.layoutManager as LinearLayoutManager).findFirstVisibleItemPosition()
-                if (index >= 0 && index != playingIndex) playIndex(index)
+                if (index >= 0 && index != playingIndex) {
+                    playIndex(index, clearDanmakuOnSwitch = true)
+                }
                 if (index >= items.size - 3) loadMore()
             }
         })
@@ -311,12 +359,15 @@ class PhoneFeedView(
     /**
      * 换体裁（漫剧 / 真人 / AI剧）。
      *
-     * 与 TV 端 `recommendFeed(genres=…)` 是同一条路：`genres` 为空 = 三类混排，
-     * 只留一类时服务端就只回这一类，换类等于换一条流，必须从头取（`session_id` 也要重置）。
+     * 换类等于换一条分类推荐流：`null` 是全部体裁混排，漫剧 / 真人剧 / AI剧
+     * 分别对应分类接口的 `comic_series` / `short_play` / `ai_series`。
+     * 换类必须从头取，游标与快照也按类分开。
      */
     fun setGenre(value: String?) {
         if (value == genre) return
         genre = value
+        recommendStore=newRecommendStore()
+        recommendPlayback=newRecommendPlayback()
         // 换体裁 = 换一条流：把上一类还在飞的 `playIndex` 作废（详情 / 取地址
         // 晚回来时不能再把媒体源挂上去，否则新一类的首屏会被旧内容顶掉）。
         playToken++
@@ -356,6 +407,12 @@ class PhoneFeedView(
         // 进度条还是离开前的那一份，过一拍才跳到正确的位置。
         PhoneSession.ensureFeedChrome()
         revealChrome()
+    }
+
+    /** 主设备注册完成：有缓存就不动，只有空列表才用新身份重取。 */
+    fun onIdentityReady() {
+        identityRefreshPending = true
+        if(!loading) refreshAfterIdentity()
     }
 
     /** 当前这一条流是否真的在播：宿主用它决定窗口要不要保持常亮。 */
@@ -431,6 +488,10 @@ class PhoneFeedView(
         val resuming = hidden
         hidden = false
         paused = false
+        if (playingIndex in items.indices && recommendWatchingId.isEmpty()) {
+            recommendWatchingId = items[playingIndex].id
+            recommendWatchStart = SystemClock.elapsedRealtime()
+        }
         notifyPlayStateChanged()
         // 回到本页：不再需要把 Surface 借给播放页，注销那个入口。
         // **不要在这里恢复本页的控制层**：此刻播放页只是 onPause，窗口还在上层，
@@ -521,7 +582,10 @@ class PhoneFeedView(
      * * 回到首页但播放器还在放这一屏（`owner == FEED`）；
      * * 播放页里换过集（集号以 [PhoneSession.index] 为准）。
      */
-    private fun adoptPlaying(forceRebind: Boolean = false): Boolean {
+    private fun adoptPlaying(
+        forceRebind: Boolean = false,
+        clearDanmakuOnSwitch: Boolean = false,
+    ): Boolean {
         // 会话属于另一条体裁流：这一路不是本页的，不能接。
         if (!sessionBelongsToThisFeed()) return false
         val series = items.getOrNull(playingIndex) ?: return false
@@ -587,7 +651,16 @@ class PhoneFeedView(
         // 早先这里直接返回 false，于是又走一遍取详情、取地址、prepare，用户看到的就是「重新加载」。
         val page = pageAt(playingIndex)
             ?: boundPage?.takeIf { list.getChildAdapterPosition(it) == playingIndex }
-        if (page != null) attachPage(exo, page, series, episodeIndex, forceRebind)
+        if (page != null) {
+            attachPage(
+                exo,
+                page,
+                series,
+                episodeIndex,
+                forceRebind,
+                clearDanmakuOnSwitch,
+            )
+        }
 
         // 重新挂监听：`onHidden` 里摘掉了，摘掉是为了不让隐藏期间的回调改界面。
         attachListener(exo, playingIndex)
@@ -608,7 +681,13 @@ class PhoneFeedView(
             page.setBufferedProgress(exo.bufferedPosition.toFloat() / dur)
         }
         if (page != null) {
-            syncDanmakuClock(page, playingIndex, exo.currentPosition, exo.isPlaying, exo.playbackParameters.speed)
+            syncDanmakuClock(
+                page,
+                playingIndex,
+                exo.currentPosition,
+                exo.isPlaying && exo.playbackState == Player.STATE_READY,
+                exo.playbackParameters.speed,
+            )
         }
         // 画面已经回到本页（无论刚才是不是借出去的）：之后的重挂都按常规走。
         PhoneSession.underlayActive = false
@@ -664,14 +743,13 @@ class PhoneFeedView(
         currentEpisodeIndex[index] = episodeIndex
         currentEpisodeIds[index] = episodeId
         val token = ++playToken
-        val repo = PhoneServices.repository(context)
         scope.launch {
             val lib = library ?: PhoneServices.awaitLibrary(context).also { library = it }
             val maxQuality = lib.maxQuality
             val prepared = withContext(Dispatchers.IO) {
                 runCatching {
-                    val info = repo.stream(episodeId, maxQuality, d.playback)
-                    RemoteVideo(PlaybackTransport.client, info, info.mediaKey(episodeId)).also { it.prepare() }
+                    val info = playbackSource.stream(episodeId, maxQuality, d.playback)
+                    playbackSource.prepare(episodeId, info)
                 }.getOrNull()
             }
             if (prepared == null) {
@@ -734,6 +812,8 @@ class PhoneFeedView(
         series: Series,
         episodeIndex: Int,
         forceRebind: Boolean,
+        clearDanmakuOnSwitch: Boolean = false,
+        videoInfo: StreamInfo? = null,
     ) {
         page.bind(series, "第${episodeIndex + 1}集")
         // `bind` 会把画面模式重置成「按卡片 vertical 猜」：从播放页退回来时，
@@ -763,9 +843,21 @@ class PhoneFeedView(
         } else if (page.playerView.player !== exo) {
             page.playerView.player = exo
         }
+        // setPlayer() 会先按播放器旧 videoSize 写比例；挂好后再写本集真实尺寸，
+        // 保证随后 prepare 出的首帧直接按正确比例布局。
+        val width = videoInfo?.videoWidth?.takeIf { it > 0 } ?: exo.videoSize.width
+        val height = videoInfo?.videoHeight?.takeIf { it > 0 } ?: exo.videoSize.height
+        val verticalSource = if (width > 0 && height > 0) height > width else series.vertical
+        page.playerView.primeAspectRatio(width, height, verticalSource)
         boundPage = page
         applyDanmakuSettings(page)
-        loadDanmaku(page, playingIndex, currentEpisodeIds[playingIndex].orEmpty(), series.id)
+        loadDanmaku(
+            page,
+            playingIndex,
+            currentEpisodeIds[playingIndex].orEmpty(),
+            series.id,
+            clearOnSwitch=clearDanmakuOnSwitch,
+        )
         page.setChromeVisible(true)
         scheduleChromeHide(page)
     }
@@ -800,6 +892,7 @@ class PhoneFeedView(
      * 新窗口只是把 Surface 接过去，第一帧立刻有。
      */
     fun onHidden(handoff: Boolean = false) {
+        settleRecommendWatch()
         // 浮层挂在 Activity 的 decor 上，不随本页 `removeAllViews` 消失：切 tab / 进播放页
         // 之前必须显式收掉，否则它会一直压在别的页面上。
         closeSheet()
@@ -1014,13 +1107,9 @@ class PhoneFeedView(
      */
     private fun restoreSnapshot() {
         if (items.isNotEmpty()) return
-        val snapshot = runCatching { com.hgtv.star.core.RecommendCache.load(cacheKey()) }
-            .getOrDefault(emptyList())
-        if (snapshot.isEmpty()) return
         val hiddenIds = runCatching { PhoneServices.library(context).hidden() }.getOrDefault(emptySet())
-        val usable = snapshot.filterNot { it.id in hiddenIds }
+        val usable = recommendStore.restoreSnapshot(hiddenIds)
         if (usable.isEmpty()) return
-        items += usable
         adapter.notifyDataSetChanged()
         // 起点 = 上一次停的那一部的下一条（到末尾就回到第一条）。
         val last = runCatching { com.hgtv.star.core.RecommendCache.lastPlayed(cacheKey()) }
@@ -1053,155 +1142,49 @@ class PhoneFeedView(
         if (loading || ended) return
         loading = true
         scope.launch {
-            val lib = library ?: PhoneServices.awaitLibrary(context).also { library = it }
-            // 续流：从落盘恢复这一类自己的游标（电视端 `recommendCursor` 的同一条思路）。
+            library ?: PhoneServices.awaitLibrary(context).also { library = it }
             if (!cursorRestored) {
                 cursorRestored = true
-                filterIdsOff = runCatching { lib.recommendFilterIdsOff }.getOrDefault(false)
-                val saved = runCatching {
-                    com.hgtv.star.core.FeedCursor.of(lib.phoneFeedCursor, cacheKey())
-                }.getOrNull()
-                if (saved != null && items.isEmpty()) {
-                    sessionId = saved.session
-                    offset = saved.offset
-                }
+                recommendStore.restoreCursor()
             }
-            val repo = PhoneServices.repository(context)
-            val genres = genre?.let { listOf(it) } ?: emptyList()
-            var added = 0
-            var pages = 0
-            var restarts = 0
-            // 一页全被滤光时不能停：接着取下一页，否则首屏会停在「暂无内容」。
-            while (pages < 3) {
-                pages++
-                val prevOffset = offset
-                val filterIds = if (filterIdsOff) "" else lib.recommendFilterIds()
-                // 受众（男频 / 女频）：与电视端同一个落盘值（设置页「推荐受众」）。
-                // 早先这里一律 `CategorySelection()`，用户在手机上选过受众也不生效——
-                // 与电视端「设置项真的会改变取到的内容」不一致。
-                val gender = lib.recommendGender.ifEmpty { null }
-                    .takeIf { !genderFilter.off && !genderProbe }
-                genderProbe = false
-                var feed = withContext(Dispatchers.IO) {
-                    runCatching {
-                        repo.recommendFeed(
-                            CategorySelection(gender = gender),
-                            sessionId, offset, genres = genres, filterIds = filterIds,
-                        )
-                    }.getOrNull()
-                }
-                // 带了 `filter_ids` 却一条都没回来：本机服务端不吃这个字段（或把整页滤光了）。
-                if (feed != null && filterIds.isNotEmpty() && feed.page.items.isEmpty()) {
-                    // 两次即关：阈值在 `:core`（`RecommendFlow.noteFilterMiss`），与电视端同一份。
-                    val miss = com.hgtv.star.core.RecommendFlow.noteFilterMiss(filterMiss)
-                    filterMiss = miss.first
-                    if (miss.second) {
-                        filterIdsOff = true
-                        runCatching { lib.recommendFilterIdsOff = true }
-                    }
-                    feed = withContext(Dispatchers.IO) {
-                        runCatching {
-                            repo.recommendFeed(
-                                CategorySelection(gender = gender),
-                                sessionId, offset, genres = genres,
-                            )
-                        }.getOrNull()
-                    }
-                } else if (feed != null && filterIds.isNotEmpty()) {
-                    filterMiss = 0
-                }
-                // 带了受众却回空页：这一次不带受众重取一次；连续两次仍空就永久关掉这一层
-                // （与电视端同一套语义，`genderFilter` 是 `:core` 的 `OptionalFilter`）。
-                if (feed != null && feed.page.items.isEmpty() && gender != null && !genderFilter.off) {
-                    genderFilter.onEmpty()
-                    genderProbe = true
-                    if (genderFilter.off) genderProbe = false
-                    if (com.hgtv.star.shared.BuildConfig.DEBUG) {
-                        android.util.Log.i(
-                            "HGTV-PHONE",
-                            "feed empty with gender=$gender miss=${genderFilter.misses} off=${genderFilter.off}"
-                        )
-                    }
-                    feed = withContext(Dispatchers.IO) {
-                        runCatching {
-                            repo.recommendFeed(
-                                CategorySelection(),
-                                sessionId, offset, genres = genres,
-                                filterIds = if (filterIdsOff) "" else lib.recommendFilterIds(),
-                            )
-                        }.getOrNull()
-                    }
-                } else if (feed != null && gender != null && feed.page.items.isNotEmpty()) {
-                    genderFilter.onFilled()
-                }
-                if (feed == null) break
-
-                // 换了推荐范围之后落盘的位置可能已经越过池子尾：首屏空页就退回流头重取一次。
-                if (pages == 1 && feed.page.items.isEmpty() && prevOffset > 0 && restarts < 2) {
-                    restarts++
-                    sessionId = ""
-                    offset = 0
-                    persistCursor(lib)
-                    continue
-                }
-                // 游标没往前走（同一页上打转）：只有换一条新流才有新东西。
-                // 判据在 `:core`（`RecommendFlow.stalled`），与电视端同一份。
-                val stalled = com.hgtv.star.core.RecommendFlow.stalled(prevOffset, feed.nextOffset)
-                if (stalled && restarts < 2) {
-                    restarts++
-                    sessionId = ""
-                    offset = 0
-                    persistCursor(lib)
-                    continue
-                }
-                sessionId = feed.sessionId
-                offset = feed.nextOffset
-                persistCursor(lib)
-
-                // 手动隐藏 / 已经追完 / 本机已经推过 / 同名（另一季、同 IP 另一版）全部滤掉。
-                // 六条规则在 `:core`（`RecommendFlow.fresh`），电视端读的是同一份。
-                val loadedIds = items.mapTo(HashSet(items.size)) { it.id }
-                val loadedTitles = items.mapNotNull {
-                    com.hgtv.star.core.RecommendFlow.titleKey(it.title).takeIf(String::isNotEmpty)
-                }.toHashSet()
-                val fresh = com.hgtv.star.core.RecommendFlow.fresh(
-                    items = feed.page.items,
-                    hidden = runCatching { lib.hidden() }.getOrDefault(emptySet()),
-                    finished = runCatching { lib.recommendFinished() }.getOrDefault(emptySet()),
-                    seen = runCatching { lib.recommendSeen() }.getOrDefault(emptySet()),
-                    loadedIds = loadedIds,
-                    loadedTitles = loadedTitles,
-                    seenTitle = { lib.recommendSeenTitle(it) },
-                )
-                if (fresh.isNotEmpty()) {
-                    val start = items.size
-                    items += fresh
-                    added += fresh.size
-                    if (start == 0) adapter.notifyDataSetChanged()
-                    else adapter.notifyItemRangeInserted(start, fresh.size)
-                    // 落盘快照（后台线程写，40KB 左右）：冷启动的首屏靠它。
-                    runCatching { com.hgtv.star.core.RecommendCache.save(items, cacheKey()) }
-                }
-                if (!feed.page.hasMore) {
-                    ended = true
-                    break
-                }
-                // 够一屏了：剩下的留给用户滑到底再取（电视端也是这个节奏）。
-                if (added >= 6) break
+            val oldSize = items.size
+            // “推荐（全部）”入口与 TV 使用同一份推荐范围；明确的体裁 tab 仍只取自己的体裁。
+            val selectedGenres = genre?.let { listOf(it) }
+                ?: library?.recommendGenres().orEmpty()
+            val input=recommendStore.input(
+                // 首屏从快照恢复时按“恢复列表”处理，和 TV 一样使用首屏预算；
+                // 只有用户已经滑到列表末尾后的补页才走 append。
+                append=items.isNotEmpty() && !recommendStore.restored,
+                genres=selectedGenres,
+                tab=RecommendTab.fromGenre(genre),
+                minItemsPerLoad=com.hgtv.star.shared.feed.RecommendFeedPolicy.MIN_ITEMS_PER_LOAD,
+            )
+            val result = withContext(Dispatchers.IO) {
+                runCatching { recommendStore.load(input) }.getOrNull()
             }
             loading = false
-            if (added == 0 && items.isEmpty()) adapter.notifyDataSetChanged()
+            if (result == null) {
+                if (items.isEmpty()) adapter.notifyDataSetChanged()
+                refreshAfterIdentity()
+                return@launch
+            }
+            recommendStore.apply(result)
+            // 引擎在后续页失败时会带回已经成功取到并过滤好的部分结果。
+            // 先上屏这部分，再保留 `ended=false` 让下一次滑动继续补页。
+            when {
+                oldSize == 0 && items.isNotEmpty() -> adapter.notifyDataSetChanged()
+                items.size > oldSize -> adapter.notifyItemRangeInserted(oldSize, items.size - oldSize)
+                items.size != oldSize -> adapter.notifyDataSetChanged()
+            }
+            if (items.isEmpty()) adapter.notifyDataSetChanged()
             if (com.hgtv.star.shared.BuildConfig.DEBUG) {
                 android.util.Log.i(
                     "HGTV-PHONE",
-                    "feed page genre=${genre ?: "all"} offset=$offset added=$added ended=$ended"
+                    "feed page genre=${genre ?: "all"} offset=$offset added=${(items.size - oldSize).coerceAtLeast(0)} " +
+                        "ended=$ended pages=${result.pages} restarts=${result.restarts}",
                 )
             }
-            // 数据回来了，但这一条流还没上屏（pager 里的另外两条体裁）：只把列表铺好，
-            // **不起播**。起播由 `onShown()` 统一负责——否则三条流会抢同一台播放器。
             if (playingIndex < 0 && items.isNotEmpty() && !hidden) {
-                // 进程里可能还挂着这一部（推荐页被系统重建过、或刚从别的页面回来）：
-                // 直接定位到它接着放，别从第一条重新起播。
                 val resumed = adoptableIndexOf()
                 if (resumed >= 0) {
                     list.scrollToPosition(resumed)
@@ -1210,17 +1193,20 @@ class PhoneFeedView(
                     playIndex(0)
                 }
             }
+            refreshAfterIdentity()
         }
     }
 
-    /** 把这一条流的游标按体裁写进落盘（电视端只存一份，手机三条流各存各的）。 */
-    private fun persistCursor(lib: com.hgtv.star.shared.data.Library) {
-        runCatching {
-            lib.phoneFeedCursor = com.hgtv.star.core.FeedCursor.upsert(
-                lib.phoneFeedCursor,
-                com.hgtv.star.core.FeedCursor.Entry(cacheKey(), sessionId, offset),
-            )
-        }
+    private fun refreshAfterIdentity() {
+        if(!identityRefreshPending || items.isNotEmpty()) return
+        identityRefreshPending = false
+        // 匿名身份可能已经把这一轮判成“没有更多”。换到注册身份后这是一条新流，
+        // 从空游标重来；已有内容绝不重排或打断。
+        ended = false
+        offset = 0
+        sessionId = ""
+        cursorRestored = true
+        loadMore()
     }
 
     /**
@@ -1240,8 +1226,15 @@ class PhoneFeedView(
     // ------------------------------------------------------------------ 播放
 
     /** [startAt] >= 0 时从该毫秒继续播（换清晰度重取地址时用），否则按本机进度续播。 */
-    private fun playIndex(index: Int, startAt: Long = -1L) {
+    private fun playIndex(
+        index: Int,
+        startAt: Long = -1L,
+        clearDanmakuOnSwitch: Boolean = false,
+    ) {
         val series = items.getOrNull(index) ?: return
+        val previousIndex = playingIndex
+        PhoneSession.rememberRecommendSeries(series,cacheKey())
+        if (playingIndex >= 0 && playingIndex != index) settleRecommendWatch()
         recommendBatchJob?.cancel()
         recommendBatchJob = null
         recommendBatchKey = ""
@@ -1260,11 +1253,18 @@ class PhoneFeedView(
             0
         }
         playingIndex = index
+        if (clearDanmakuOnSwitch && previousIndex >= 0 && previousIndex != index) {
+            danmakuLoaderOf(previousIndex).clear()
+        }
         // 记下落盘的「停在哪一部」：下次冷启动从它的**下一部**接着播（同电视端 `rememberPlayed`）。
         runCatching { com.hgtv.star.core.RecommendCache.rememberPlayed(series.id, cacheKey()) }
+        if (recommendWatchingId != series.id) {
+            recommendWatchingId = series.id
+            recommendWatchStart = SystemClock.elapsedRealtime()
+        }
         // 「真的上屏了」才记进曝光窗口（与电视端 `playRecommendAt → markRecommended` 同一条规则）：
         // 一页 20 条里用户可能只看第一条，把整页都记成已推等于白白烧掉 19 部内容。
-        runCatching { library?.markRecommended(listOf(series.id), listOf(series.title)) }
+        recommendPlayback.rememberShown(series)
         if (com.hgtv.star.shared.BuildConfig.DEBUG) {
             android.util.Log.i(
                 "HGTV-PHONE",
@@ -1280,72 +1280,75 @@ class PhoneFeedView(
         scheduleDwell()
         // 进程里如果还挂着**这部剧**的这一路（从正片退回来、视图刚被重建），先试着接。
         // 接上就什么都不做：不取详情、不取地址、不 prepare、不 seek——画面就是原来那一秒。
-        if (startAt < 0 && adoptPlaying()) {
+        if (startAt < 0 && adoptPlaying(clearDanmakuOnSwitch = clearDanmakuOnSwitch)) {
             PhoneSession.endHandoff()
             schedulePreload(slideCache.firstFrameDelay())
             return
         }
         val token = ++playToken
-        val repo = PhoneServices.repository(context)
-
         scope.launch {
-            // 详情先看落盘缓存（电视端同一条路）：快照铺出来的那一部，
-            // 它的详情正是上一轮预热时写下的，命中就不必再等一次接口往返。
-            val cachedDetail = withContext(Dispatchers.IO) {
-                runCatching { com.hgtv.star.core.DetailCache.load(series.id) }.getOrNull()
-            }
-            val detail = cachedDetail ?: withContext(Dispatchers.IO) {
-                runCatching { repo.detail(series.id) }.getOrNull()
-            } ?: return@launch
-            if (token != playToken) return@launch
-            playingDetail = detail
-            // 写回缓存（`DetailCache` 自己限 8 条）：下一次冷启动就能直接用。
-            if (cachedDetail == null) runCatching { com.hgtv.star.core.DetailCache.save(detail) }
-
-            // **续播**：本机存过这部剧的进度就接着看，不是每次回到这一屏都从第 1 集第 0 秒开始。
             val lib = library ?: PhoneServices.awaitLibrary(context).also { library = it }
-            val saved = withContext(Dispatchers.IO) {
-                runCatching { lib.progress(series.id) }.getOrNull()
-            }
-            val episodeIndex = saved
-                ?.let { s -> detail.episodes.indexOf(s.episodeId).takeIf { it >= 0 } }
-                ?: 0
-            val episodeId = detail.episodes.getOrNull(episodeIndex) ?: return@launch
-            val resumeAt = if (saved != null && saved.episodeId == episodeId) saved.position else 0L
-            val from = if (startAt >= 0) startAt else resumeAt
-
-            // 相邻预热的命中：地址、索引、首块都已经在手，只差挂媒体源（几十毫秒）。
-            // 与 `PhoneSession.takeNext` 同一条档位校验：降档之后不接更高的那一份。
-            val warm = PhonePreload.take(series.id, episodeId, lib.maxQuality)
-            if (warm != null) {
-                if (com.hgtv.star.shared.BuildConfig.DEBUG) {
-                    android.util.Log.i("HGTV-PHONE", "feed warm hit series=${series.id} episode=${episodeIndex + 1}")
-                }
-                if (token != playToken) { runCatching { warm.close() }; return@launch }
-                currentEpisodeIds[index] = episodeId
-                currentEpisodeIndex[index] = episodeIndex
-                attach(index, warm, from)
-                return@launch
-            }
-
-            val info = withContext(Dispatchers.IO) {
-                runCatching { repo.stream(episodeId, lib.maxQuality, detail.playback) }.getOrNull()
-            } ?: return@launch
-            if (token != playToken) return@launch
-
             val prepared = withContext(Dispatchers.IO) {
                 runCatching {
-                    RemoteVideo(PlaybackTransport.client, info, info.mediaKey(episodeId)).also { it.prepare() }
+                    recommendPlayback.prepare(
+                        series = series,
+                        maxQuality = lib.maxQuality,
+                        startAt = startAt,
+                        resumeSaved = true,
+                        takeWarm = { episodeId, quality ->
+                            PhonePreload.take(series.id, episodeId, quality)
+                        },
+                    )
                 }.getOrNull()
-            } ?: return@launch
-            if (token != playToken) { prepared.close(); return@launch }
-
-            currentEpisodeIds[index] = episodeId
-            currentEpisodeIndex[index] = episodeIndex
-            attach(index, prepared, from)
+            }
+            if (token != playToken) {
+                prepared?.remote?.close()
+                return@launch
+            }
+            if (prepared == null) {
+                recommendPlayback.noteFailure()
+                recommendPlayback.reportEvent(
+                    series,
+                    com.hgtv.star.core.RecommendBehavior.Event.ERROR,
+                    episodeId=currentEpisodeIds[index].orEmpty(),
+                    episodeIndex=currentEpisodeIndex[index] ?: -1,
+                    reason="prepare_failed",
+                )
+                return@launch
+            }
+            playingDetail = prepared.detail
+            currentEpisodeIds[index] = prepared.episodeId
+            currentEpisodeIndex[index] = prepared.episodeIndex
+            attach(index, prepared.remote, prepared.position, clearDanmakuOnSwitch)
         }
         // 首帧之后再排预热（与电视端「首帧 + 2 秒」同一条：此刻解码器还在出帧、buffer 还在填）。
         schedulePreload(slideCache.firstFrameDelay())
+    }
+
+    /** 与电视端同一套「快速划过 / 划走 / 看过」判定。 */
+    private fun settleRecommendWatch() {
+        val played = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L)
+        runCatching { recommendPlayback.settleWatch(played) }
+    }
+
+    private fun reportRecommendImpression(index: Int) {
+        if (index != playingIndex) return
+        val series = items.getOrNull(index) ?: return
+        runCatching {
+            val exposureSeries=series.copy(
+                contentType=series.contentType.takeIf { it>0 }
+                    ?: playingDetail?.playback?.contentType
+                    ?: 0,
+            )
+            recommendPlayback.reportImpression(exposureSeries)
+            recommendPlayback.reportPlayStart(
+                series,
+                episodeId=currentEpisodeIds[index].orEmpty(),
+                episodeIndex=currentEpisodeIndex[index] ?: -1,
+                positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
+                durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
+            )
+        }
     }
 
     /**
@@ -1475,6 +1478,7 @@ class PhoneFeedView(
     private fun applyPreload(plan: com.hgtv.star.core.SlideCacheManager.Plan) {
         val lib = library ?: return
         val repo = PhoneServices.repository(context)
+        val warmCoordinator=com.hgtv.star.shared.feed.RecommendWarmCoordinator(repo,lib,playbackSource)
         var dispatched = 0
         for (target in plan.targets) {
             if (dispatched >= 3) break
@@ -1486,7 +1490,7 @@ class PhoneFeedView(
             dispatched++
             scope.launch {
                 val detail = withContext(Dispatchers.IO) {
-                    runCatching { repo.detail(series.id) }.getOrNull()
+                    runCatching { warmCoordinator.detail(series.id) }.getOrNull()
                 } ?: return@launch
                 if (detail.episodes.isEmpty()) return@launch
                 val saved = withContext(Dispatchers.IO) {
@@ -1494,13 +1498,18 @@ class PhoneFeedView(
                 }
                 val epIndex = saved?.let { s -> detail.episodes.indexOf(s.episodeId).takeIf { it >= 0 } } ?: 0
                 val episodeId = detail.episodes.getOrNull(epIndex) ?: return@launch
-                val info = withContext(Dispatchers.IO) {
-                    runCatching { repo.stream(episodeId, lib.maxQuality, detail.playback) }.getOrNull()
-                } ?: return@launch
-                if (target.level != com.hgtv.star.core.CacheLevel.FULL) return@launch
                 val prepared = withContext(Dispatchers.IO) {
                     runCatching {
-                        RemoteVideo(PlaybackTransport.client, info, info.mediaKey(episodeId)).also { it.prepare() }
+                        warmCoordinator.warm(
+                            detail=detail,
+                            episodeId=episodeId,
+                            quality=lib.maxQuality,
+                            level=if(target.level==com.hgtv.star.core.CacheLevel.FULL) {
+                                com.hgtv.star.core.CacheLevel.FULL
+                            } else {
+                                com.hgtv.star.core.CacheLevel.ADDRESS
+                            },
+                        )
                     }.getOrNull()
                 } ?: return@launch
                 if (!isAttachedToWindow) { runCatching { prepared.close() }; return@launch }
@@ -1585,8 +1594,8 @@ class PhoneFeedView(
         scope.launch {
             val remote = withContext(Dispatchers.IO) {
                 runCatching {
-                    val info = PhoneServices.repository(context).stream(nextId, maxQuality, d.playback)
-                    RemoteVideo(PlaybackTransport.client, info, info.mediaKey(nextId)).also { it.prepare() }
+                    val info = playbackSource.stream(nextId, maxQuality, d.playback)
+                    playbackSource.prepare(nextId, info)
                 }.getOrNull()
             }
             prefetchingFor = ""
@@ -1621,17 +1630,45 @@ class PhoneFeedView(
      *
      * 规则全在 `:shared` 的 `DanmakuLoader` 里（同一集不重拉、旧回包丢弃、隐藏时不发请求、边拉边画）。
      */
-    private fun loadDanmaku(page: PhoneVideoPage, index: Int, episodeId: String, seriesId: String) {
+    private fun loadDanmaku(
+        page: PhoneVideoPage,
+        index: Int,
+        episodeId: String,
+        seriesId: String,
+        clearOnSwitch: Boolean = false,
+    ) {
         val lib = library ?: return
         val view = page.danmakuView
         view.mode = lib.danmakuMode
         if (index < 0) return
-        danmakuLoaderOf(index).load(episodeId, seriesId)
+        danmakuLoaderOf(index).load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
     }
 
     private fun syncDanmakuClock(page: PhoneVideoPage, index: Int, positionMs: Long, running: Boolean, speed: Float) {
         if (index < 0) return
         danmakuLoaderOf(index).syncClock(positionMs, running, speed)
+    }
+
+    private fun syncDanmakuClockNow(exo: ExoPlayer, index: Int) {
+        val page = boundPage ?: return
+        syncDanmakuClock(
+            page,
+            index,
+            exo.currentPosition,
+            exo.isPlaying && exo.playbackState == Player.STATE_READY,
+            exo.playbackParameters.speed,
+        )
+    }
+
+    private fun syncProgressBarsNow(exo: ExoPlayer, index: Int) {
+        val page = pageAt(index) ?: boundPage ?: return
+        val duration = exo.duration
+        if (duration <= 0) return
+        val position = exo.currentPosition.coerceIn(0, duration)
+        page.setProgress(position.toFloat() / duration)
+        page.setBufferedProgress(
+            exo.bufferedPosition.coerceIn(position, duration).toFloat() / duration
+        )
     }
 
     private fun startProgressTicker() {
@@ -1646,9 +1683,19 @@ class PhoneFeedView(
                         val position = exo.currentPosition
                         page.setProgress(position.toFloat() / duration)
                         page.setBufferedProgress(exo.bufferedPosition.toFloat() / duration)
+                        if (exo.isPlaying) {
+                            items.getOrNull(playingIndex)?.let { series ->
+                                recommendPlayback.reportProgress(
+                                    series,
+                                    currentEpisodeIds[playingIndex].orEmpty(),
+                                    currentEpisodeIndex[playingIndex] ?: -1,
+                                    position.coerceAtLeast(0),
+                                    duration,
+                                )
+                            }
+                        }
                         // 还在播就刷新会话时间戳：连看十几分钟后切页，地址仍然算「新鲜」。
                         if (exo.isPlaying) PhoneSession.touch()
-                        syncDanmakuClock(page, playingIndex, position, exo.isPlaying, exo.playbackParameters.speed)
                         if (!paused) maybePrefetchNext(position, duration)
                     }
                     // 片尾兜底：`STATE_ENDED` 只在状态**变化**时回调一次。如果那一下刚好
@@ -1666,9 +1713,15 @@ class PhoneFeedView(
         list.postDelayed(tick, 500)
     }
 
-    private fun attach(index: Int, video: RemoteVideo, startAt: Long = 0L) {
+    private fun attach(
+        index: Int,
+        video: RemoteVideo,
+        startAt: Long = 0L,
+        clearDanmakuOnSwitch: Boolean = false,
+    ) {
         // 换了源就是新的一集：上一集「正在交接」的标记不再成立。
         advancing = false
+        val token = playToken
         val series = items.getOrNull(index)
         val episodeIndex = currentEpisodeIndex[index] ?: 0
         val exo = PhoneServices.player(context, library?.decoderMode)
@@ -1688,7 +1741,15 @@ class PhoneFeedView(
         // Surface 交给 `onBindViewHolder → rebindCurrentPage` 补上。
         val page = pageAt(index)
         if (page != null && series != null) {
-            attachPage(exo, page, series, episodeIndex, forceRebind = false)
+            attachPage(
+                exo,
+                page,
+                series,
+                episodeIndex,
+                forceRebind = false,
+                clearDanmakuOnSwitch = clearDanmakuOnSwitch,
+                videoInfo = video.info,
+            )
         }
 
         // 媒体源：**带 mediaId**，播放页接手时据此判断「放的是不是同一集」。
@@ -1710,8 +1771,13 @@ class PhoneFeedView(
         exo.setPlaybackSpeed(userSpeed)
         attachListener(exo, index)
         exo.playWhenReady = !paused
-        exo.prepare()
-        if (startAt > 0) exo.seekTo(startAt)
+        val prepare = {
+            if (player === exo && playingIndex == index && token == playToken) {
+                exo.prepare()
+                if (startAt > 0) exo.seekTo(startAt)
+            }
+        }
+        if (page != null) page.playerView.runAfterAspectRatioLayout(prepare) else prepare()
         startProgressTicker()
     }
 
@@ -1744,16 +1810,45 @@ class PhoneFeedView(
              */
             override fun onPlaybackStateChanged(state: Int) {
                 notifyPlayStateChanged()
+                syncDanmakuClockNow(exo, index)
+                syncProgressBarsNow(exo, index)
                 // 真的出画面了：连续失败计数归零（取地址成功不算，能放才算）。
                 if (state == Player.STATE_READY) {
                     recommendFailures = 0
+                    // READY 是首帧回调缺失时的兜底；同一曝光由共用上报器短时去重。
+                    reportRecommendImpression(index)
                     scheduleRecommendBatchModels(index)
                 }
                 if (state == Player.STATE_ENDED) onEpisodeEnded(index)
             }
 
+            override fun onRenderedFirstFrame() {
+                reportRecommendImpression(index)
+            }
+
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 notifyPlayStateChanged()
+                syncDanmakuClockNow(exo, index)
+            }
+
+            override fun onIsPlayingChanged(isPlaying: Boolean) {
+                notifyPlayStateChanged()
+                syncDanmakuClockNow(exo, index)
+                syncProgressBarsNow(exo, index)
+            }
+
+            override fun onPlaybackParametersChanged(parameters: com.google.android.exoplayer2.PlaybackParameters) {
+                syncDanmakuClockNow(exo, index)
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                pageAt(index)?.danmakuView?.resetCursor()
+                syncDanmakuClockNow(exo, index)
+                syncProgressBarsNow(exo, index)
             }
 
             /**
@@ -1762,12 +1857,23 @@ class PhoneFeedView(
              * 早先这里什么都没有：解码失败之后画面就停住、声音也没有，用户只看到一屏静止的
              * 封面与一条进度条，不知道发生了什么，只能退出重进。
              */
-            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
                 android.util.Log.i(
                     "HGTV-PHONE",
                     "feed error ${error.errorCodeName}(${error.errorCode}) index=$index failures=$recommendFailures"
                 )
                 if (paused || hidden) return
+                items.getOrNull(index)?.let { series ->
+                    recommendPlayback.reportEvent(
+                        series,
+                        com.hgtv.star.core.RecommendBehavior.Event.ERROR,
+                        episodeId=currentEpisodeIds[index].orEmpty(),
+                        episodeIndex=currentEpisodeIndex[index] ?: -1,
+                        positionMs=runCatching { player?.currentPosition ?: -1L }.getOrDefault(-1L),
+                        durationMs=runCatching { player?.duration ?: -1L }.getOrDefault(-1L),
+                        reason=error.errorCodeName,
+                    )
+                }
                 runCatching { player?.pause() }
                 recommendFailures++
                 if (recommendFailures > RECOMMEND_SKIP_LIMIT) {
@@ -1836,6 +1942,16 @@ class PhoneFeedView(
         if (duration <= 0 || exo.currentPosition < duration - 2_000) return
 
         val current = currentEpisodeIndex[index] ?: 0
+        runCatching {
+            recommendPlayback.reportEvent(
+                series,
+                com.hgtv.star.core.RecommendBehavior.Event.PLAY_COMPLETE,
+                episodeId=currentEpisodeIds[index].orEmpty(),
+                episodeIndex=current,
+                positionMs=duration,
+                durationMs=duration,
+            )
+        }
 
         val next = current + 1
         if (next <= d.episodes.lastIndex) {
@@ -1846,6 +1962,8 @@ class PhoneFeedView(
             PhoneSession.resumeOnAdopt = true
             PhoneSession.beginHandoff()
             PhoneSession.takeOver(PhoneSession.Owner.PLAYER)
+            settleRecommendWatch()
+            runCatching { recommendStore.markWatched(series) }
             onHidden(handoff = true)
             // **在切页之前**把下一集挂上播放器：这样正片一进来接的就是已经在解码的这一路，
             // 声音不断、画面第一帧立刻有。不预热直接切页时，新窗口要等「取详情 → 取地址 →
@@ -2102,6 +2220,14 @@ class PhoneFeedView(
             page.onTitle = {
                 val series = items.getOrNull(playingIndex) ?: page.currentSeries()
                 if (series != null) {
+                    recommendPlayback.reportEvent(
+                        series,
+                        com.hgtv.star.core.RecommendBehavior.Event.CLICK,
+                        episodeId=currentEpisodeIds[playingIndex].orEmpty(),
+                        episodeIndex=currentEpisodeIndex[playingIndex] ?: -1,
+                        positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
+                        durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
+                    )
                     context.phoneNav().open(Route.Detail(series.id, series.title))
                 }
             }
@@ -2179,6 +2305,22 @@ class PhoneFeedView(
      * 3. 不要系统转场动画：那 200ms 里新窗口还没画出视频，读起来就是一次黑屏。
      */
     private fun launchPlayer(series: Series, episode: Int, fullscreen: Boolean, play: Boolean) {
+        // 明确点进正片与电视端 `enterFormalPlayback` 同义：按「看了」记 30 天，
+        // 并停掉停留计时，避免随后 `onHidden` 再把这次点击算成划走。
+        settleRecommendWatch()
+        runCatching { recommendStore.markWatched(series) }
+        runCatching {
+            recommendPlayback.reportEvent(
+                series,
+                com.hgtv.star.core.RecommendBehavior.Event.CLICK,
+                episodeId=currentEpisodeIds[playingIndex].orEmpty(),
+                episodeIndex=currentEpisodeIndex[playingIndex] ?: -1,
+                positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
+                durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
+            )
+        }
+        recommendWatchingId = ""
+        recommendWatchStart = 0L
         PhoneSession.resumeOnAdopt = play
         PhoneSession.beginHandoff()
         // 交接一开始就把这一路记在播放页名下：`PhoneMainActivity.onStop` 与

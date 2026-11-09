@@ -3,6 +3,9 @@ package com.hgtv.star.core.session
 
 import com.hgtv.star.core.body
 import com.hgtv.star.core.code
+import com.hgtv.star.core.NetLog
+import com.hgtv.star.core.encodedPath
+import com.hgtv.star.core.host
 import okhttp3.Call
 import okhttp3.Callback
 import okhttp3.OkHttpClient
@@ -184,10 +187,12 @@ class SessionKeeper(
         lastBeatAt = System.nanoTime()/1_000_000
         val first = SessionBridge.state?.firstBeat ?: true
         val url = "$BEAT_BASE?scene=$scene&first_beat=$first"
+        NetLog.debug("[API] start method=GET host=${runCatching { okhttp3.HttpUrl.parse(url)?.host }.getOrNull().orEmpty()} path=${runCatching { okhttp3.HttpUrl.parse(url)?.encodedPath }.getOrNull().orEmpty()} identity=session")
         client.newCall(beatRequest(url, injectToken = !withoutToken)).enqueue(object: Callback {
             override fun onFailure(call: Call,e: IOException) {
                 beatInFlight.set(false)
                 // ★ 网络失败不清凭证：原版 c.b() 走的就是这条路，末尾照样续期
+                NetLog.error("[API] error scope=session_beat scene=$scene ${e.javaClass.simpleName}: ${e.message.orEmpty().take(220)}")
                 log("beat($scene) net=${e.javaClass.simpleName}")
                 finishBeat()
             }
@@ -196,6 +201,10 @@ class SessionKeeper(
                 beatInFlight.set(false)
                 val code = response.code
                 val body = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
+                NetLog.debug("[API] response scope=session_beat scene=$scene status=$code body=${body.length}B")
+                if(code !in 200..299) {
+                    NetLog.error("[API] error scope=session_beat scene=$scene status=$code body=${body.length}B")
+                }
                 // 只收属于当前会话的 token（判据与拦截器同一条，见 `SessionBridge.decorate`）。
                 val sid=SessionBridge.state?.cookieHeader?.let { CookieRecord.value(it,"sessionid") }.orEmpty()
                 response.header("X-Tt-Token")?.takeIf { it.isNotBlank() }
@@ -209,6 +218,7 @@ class SessionKeeper(
                     // 同 cookie 不带 token → success + 新 token）。这一发重试既判真伪，
                     // 也顺手把新 token 换回来。
                     if(!withoutToken && SessionBridge.state?.token?.isNotBlank()==true) {
+                        NetLog.retry("session_beat",2,2,"session_expired; retry cookie-only")
                         log("beat($scene) session_expired with token -> retry cookie-only")
                         beatInFlight.set(false)
                         beat(scene, withoutToken = true)
@@ -284,15 +294,22 @@ class SessionKeeper(
     private fun accountInfo(scene: String, withoutToken: Boolean) {
         if(!SessionBridge.signedIn()) return
         if(!infoInFlight.compareAndSet(false,true)) return
-        client.newCall(beatRequest("$ACCOUNT_INFO_BASE?scene=$scene", injectToken = !withoutToken)).enqueue(object: Callback {
+        val url="$ACCOUNT_INFO_BASE?scene=$scene"
+        NetLog.debug("[API] start method=GET host=${runCatching { okhttp3.HttpUrl.parse(url)?.host }.getOrNull().orEmpty()} path=${runCatching { okhttp3.HttpUrl.parse(url)?.encodedPath }.getOrNull().orEmpty()} identity=session")
+        client.newCall(beatRequest(url, injectToken = !withoutToken)).enqueue(object: Callback {
             override fun onFailure(call: Call,e: IOException) {
                 infoInFlight.set(false)
+                NetLog.error("[API] error scope=session_account_info scene=$scene ${e.javaClass.simpleName}: ${e.message.orEmpty().take(220)}")
                 log("accountInfo($scene) net=${e.javaClass.simpleName}")
             }
 
             override fun onResponse(call: Call,response: okhttp3.Response) {
                 infoInFlight.set(false)
                 val body = runCatching { response.body?.string().orEmpty() }.getOrDefault("")
+                NetLog.debug("[API] response scope=session_account_info scene=$scene status=${response.code} body=${body.length}B")
+                if(response.code !in 200..299) {
+                    NetLog.error("[API] error scope=session_account_info scene=$scene status=${response.code} body=${body.length}B")
+                }
                 val sid=SessionBridge.state?.cookieHeader?.let { CookieRecord.value(it,"sessionid") }.orEmpty()
                 response.header("X-Tt-Token")?.takeIf { it.isNotBlank() }
                     ?.takeIf { sid.isBlank() || it.length<SessionBridge.TOKEN_CHECK_LENGTH || it.contains(sid) }
@@ -301,6 +318,7 @@ class SessionKeeper(
                 if(isSessionExpired(body)) {
                     // 与 [beat] 同一条理由：旧 token 会让有效 cookie 被判过期，先去掉 token 复核。
                     if(!withoutToken && SessionBridge.state?.token?.isNotBlank()==true) {
+                        NetLog.retry("session_account_info",2,2,"session_expired; retry cookie-only")
                         log("accountInfo($scene) session_expired with token -> retry cookie-only")
                         infoInFlight.set(false)
                         accountInfo(scene, withoutToken = true)

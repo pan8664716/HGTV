@@ -338,7 +338,6 @@ class PhoneAccountActivity : PhoneActivity() {
      * 这台机器上更新的进度永远回不到云端。
      */
     private fun refreshAccount() {
-        if (!PhoneServices.repository(this).signedIn) return
         scope.launch {
             PhoneAccountSync.refresh(this@PhoneAccountActivity)
             render()
@@ -369,11 +368,13 @@ class PhoneAccountActivity : PhoneActivity() {
         stopQr()
         body.removeAllViews()
         qrClosed = false
+        val library=PhoneServices.library(this@PhoneAccountActivity)
         val session = QrLogin().apply {
-            // 扫码登录使用独立的登录用户设备档案，不读取主设备身份。
+            // 登录先走当前主设备；账号设备只有在登录响应带回不同设备时才成为新的主身份。
             device = runCatching {
-                PhoneServices.library(this@PhoneAccountActivity).freshLoginDeviceProfile()
+                LinkedHashMap(library.deviceProfile()).apply { putAll(library.deviceIdentity()) }
             }.getOrDefault(emptyMap())
+            useDeviceCookies(runCatching { library.registrationCookies() }.getOrDefault(emptyMap()))
             log = { line -> android.util.Log.i("HGTV-QRLOGIN", line) }
         }
         qr = session
@@ -533,11 +534,12 @@ class PhoneAccountActivity : PhoneActivity() {
     private fun renderPhoneLogin() {
         stopQr()
         body.removeAllViews()
+        val library=PhoneServices.library(this@PhoneAccountActivity)
         val session = com.hgtv.star.core.PhoneLogin().apply {
             device = runCatching {
-                PhoneServices.library(this@PhoneAccountActivity).deviceProfile() +
-                    PhoneServices.library(this@PhoneAccountActivity).deviceIdentity()
+                LinkedHashMap(library.deviceProfile()).apply { putAll(library.deviceIdentity()) }
             }.getOrDefault(emptyMap())
+            useDeviceCookies(runCatching { library.registrationCookies() }.getOrDefault(emptyMap()))
             log = { line -> android.util.Log.i("HGTV-LOGIN", line) }
         }
         login = session
@@ -779,7 +781,11 @@ class PhoneAccountActivity : PhoneActivity() {
     private fun registerForLogin(profile: Map<String, String>): com.hgtv.star.core.DeviceRegister.Registered? {
         val repo = PhoneServices.repository(this)
         return runCatching {
-            com.hgtv.star.shared.data.DeviceRegistration.registerLoginDevice(repo, profile)
+            com.hgtv.star.shared.data.DeviceRegistration.registerLoginDevice(
+                PhoneServices.library(this),
+                repo,
+                profile,
+            )
         }.getOrNull()
     }
 

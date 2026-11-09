@@ -95,9 +95,10 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         /** 计数热度：白 → 暖黄 → 橙红，只使用同一暖色区间。 */
         const val HIGHLIGHT_COUNTER_WARM_COLOR=0xFFFFC857.toInt()
         const val HIGHLIGHT_COUNTER_HOT_COLOR=0xFFFF5722.toInt()
-        /** `×20` 之后每次 +1 的短促冲击效果。 */
-        const val HIGHLIGHT_SHOCK_MIN_COUNT=20
-        const val HIGHLIGHT_SHOCK_DURATION_MS=620L
+        /** 从 `×20` 起，每次 +1 让计数数字放大后回弹。 */
+        const val HIGHLIGHT_COUNTER_PULSE_MIN_COUNT=20
+        const val HIGHLIGHT_COUNTER_PULSE_DURATION_MS=420L
+        const val HIGHLIGHT_COUNTER_PULSE_MAX_SCALE=1.6f
         /** 表情图相对字号的大小：比汉字略大一点，跟系统 emoji 的观感一致。 */
         const val EMOJI_SCALE=1.2f
         /**
@@ -161,11 +162,6 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     /** `×N` 单独用一套画笔：数量增长时只放大计数，不改变聚合正文。 */
     private val counterFill=Paint(Paint.ANTI_ALIAS_FLAG)
     private val counterEdge=Paint(Paint.ANTI_ALIAS_FLAG)
-    /** 计数 +1 的冲击波：复用一支描边笔，只在增量后的短暂窗口内绘制。 */
-    private val counterShockPaint=Paint(Paint.ANTI_ALIAS_FLAG).apply {
-        style=Paint.Style.STROKE
-        strokeCap=Paint.Cap.ROUND
-    }
     /** 中央那一块的底板：弹幕密集时后面的字幕会从它下面穿过，给一层半透明底才读得清。 */
     private val plate=Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color=0x99000000.toInt()
@@ -345,7 +341,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     /**
      * 聚合弹幕特效总开关（默认开启）。
      *
-     * 关闭后只停用计数放大、渐热颜色与 `+1` 冲击波；聚合分组、7 秒停留和槽位替换照常运行。
+     * 关闭后只停用计数放大、渐热颜色与 `+1` 数字回弹；聚合分组、7 秒停留和槽位替换照常运行。
      */
     var effectsEnabled: Boolean=true
         set(value) {
@@ -466,7 +462,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
                 relayout()
             }
         }
-        if(running && visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
+        if(visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
     }
 
     /** 当前媒体位置：暂停时停在基准点，播放时按系统时钟与倍速外推。 */
@@ -479,6 +475,15 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         if(!clockRunning) return clockBaseMs
         val elapsed=(SystemClock.elapsedRealtime()-clockBaseAt).coerceAtLeast(0L)
         return clockBaseMs+(elapsed*clockSpeed).toLong()
+    }
+
+    /** 暂停时冻结当前画面位置，不回拉到上一次播放器采样点。 */
+    fun pauseClock() {
+        if(!clockRunning) return
+        clockBaseMs=clockPositionMillis()
+        clockBaseAt=SystemClock.elapsedRealtime()
+        clockRunning=false
+        if(visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
     }
 
     /**
@@ -529,6 +534,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
 
     /** 清空这一集的弹幕（换集、切到隐藏档）。 */
     fun clear() {
+        stopClock()
         transitionHold=false
         transitionClockReady=false
         pendingDanmaku=null
@@ -896,78 +902,33 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         plateRect.set(left-padX,centerY-box/2f-padY,left+total+padX,centerY+box/2f+padY)
         canvas.drawRoundRect(plateRect,density*10f,density*10f,plate)
         val lastOffset=round.group.offsets[count-1]
-        val shockElapsed=nowMs-lastOffset
-        val shocking=effectsEnabled && count>HIGHLIGHT_SHOCK_MIN_COUNT &&
-            shockElapsed in 0 until HIGHLIGHT_SHOCK_DURATION_MS
-        val shockProgress=if(shocking) {
-            shockElapsed.toFloat()/HIGHLIGHT_SHOCK_DURATION_MS
+        val pulseElapsed=nowMs-lastOffset
+        val pulsing=effectsEnabled && count>=HIGHLIGHT_COUNTER_PULSE_MIN_COUNT &&
+            pulseElapsed in 0 until HIGHLIGHT_COUNTER_PULSE_DURATION_MS
+        val pulseProgress=if(pulsing) {
+            pulseElapsed.toFloat()/HIGHLIGHT_COUNTER_PULSE_DURATION_MS
         } else 1f
-        if(shocking) {
-            drawCounterShock(
-                canvas,
-                left+bodyWidth+counterWidth/2f,
-                centerY,
-                counterWidth,
-                counterHeight,
-                shockProgress,
-                counterAlpha,
-            )
-        }
+        val pulseScale=if(pulsing) {
+            val attack=0.18f
+            val shape=if(pulseProgress<attack) {
+                pulseProgress/attack
+            } else {
+                (1f-pulseProgress)/(1f-attack)
+            }.coerceIn(0f,1f)
+            val eased=shape*shape*(3f-2f*shape)
+            1f+(HIGHLIGHT_COUNTER_PULSE_MAX_SCALE-1f)*eased
+        } else 1f
         val baseline=centerY-(hlMetrics.ascent+hlMetrics.descent)/2f
         drawParts(canvas,parts,widths,left,baseline,hlFill,hlEdge,emojiSize,hlEmojiCenter)
         // 数量标记接在正文后面，按自己的字号重新居中，避免放大后上下偏。
         val counterBaseline=centerY-(counterMetrics.ascent+counterMetrics.descent)/2f
-        val shake=if(shocking) {
-            Math.sin((shockProgress*Math.PI*6).toDouble()).toFloat()*
-                density*1.6f*(1f-shockProgress)
-        } else 0f
-        val counterLeft=left+bodyWidth+shake
+        val counterLeft=left+bodyWidth
+        val counterCenterX=counterLeft+counterWidth/2f
+        canvas.save()
+        canvas.scale(pulseScale,pulseScale,counterCenterX,centerY)
         canvas.drawText(counter,counterLeft,counterBaseline,counterEdge)
         canvas.drawText(counter,counterLeft,counterBaseline,counterFill)
-    }
-
-    /** 一次 `+1` 的冲击波：两层扩散圆环 + 八条短射线，持续时间很短。 */
-    private fun drawCounterShock(
-        canvas: Canvas,
-        centerX: Float,
-        centerY: Float,
-        width: Float,
-        height: Float,
-        progress: Float,
-        textAlpha: Int,
-    ) {
-        val value=progress.coerceIn(0f,1f)
-        val eased=1f-(1f-value)*(1f-value)
-        val baseRadius=maxOf(width*0.52f,height*0.72f)
-        for(index in 0..1) {
-            counterShockPaint.color=if(index==0) HIGHLIGHT_COUNTER_HOT_COLOR
-            else HIGHLIGHT_COUNTER_WARM_COLOR
-            counterShockPaint.strokeWidth=density*(2.1f-index*0.6f)*(1f-value*0.55f)
-            counterShockPaint.alpha=(textAlpha*(0.62f-value*0.5f)).toInt().coerceIn(0,255)
-            canvas.drawCircle(
-                centerX,
-                centerY,
-                baseRadius*(0.65f+eased*(0.8f+index*0.26f)),
-                counterShockPaint,
-            )
-        }
-        counterShockPaint.color=HIGHLIGHT_COUNTER_WARM_COLOR
-        counterShockPaint.strokeWidth=density*1.3f*(1f-value*0.65f)
-        counterShockPaint.alpha=(textAlpha*(0.55f-value*0.48f)).toInt().coerceIn(0,255)
-        val inner=baseRadius*(0.8f+eased*0.45f)
-        val rayLength=density*(3.5f+5.5f*(1f-value))
-        repeat(8) { index ->
-            val angle=index*Math.PI/4.0+value*0.35
-            val cos=Math.cos(angle).toFloat()
-            val sin=Math.sin(angle).toFloat()
-            canvas.drawLine(
-                centerX+cos*inner,
-                centerY+sin*inner,
-                centerX+cos*(inner+rayLength),
-                centerY+sin*(inner+rayLength),
-                counterShockPaint,
-            )
-        }
+        canvas.restore()
     }
 
     /** 两段暖色线性过渡；透明度由调用方单独保留。 */

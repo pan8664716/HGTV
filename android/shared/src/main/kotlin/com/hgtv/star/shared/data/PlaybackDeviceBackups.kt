@@ -14,14 +14,14 @@ import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicBoolean
 
 /**
- * 持久备用播放设备池。
+ * 持久备用设备。
  *
  * 首次运行当前版本时在后台注册 [TARGET] 台备用设备并落盘；后续启动只读文件，
  * 数量齐全时不会再注册。每次主设备 `HTTP 200 + 空 body` 只取一台备用设备试一次，
- * 不覆盖主设备身份，也不参与搜索、账号或普通业务请求。
+ * 不覆盖主设备身份；profile / Cookie 整套替换，绝不与主身份混参。
  */
 object PlaybackDeviceBackups {
-    private const val TARGET=3
+    private const val TARGET=1
     private const val FILE_VERSION=1
     private const val FILE_NAME="playback-backup-devices-v1.json"
 
@@ -42,11 +42,13 @@ object PlaybackDeviceBackups {
 
     private fun ensureReady(context: Context) {
         val file=File(context.filesDir,FILE_NAME)
-        val loaded=load(file)
+        val stored=load(file)
+        val loaded=stored.take(TARGET)
         synchronized(lock) {
             devices=loaded
             cursor=0
         }
+        if(stored.size>TARGET) save(file,loaded)
         val library=AppRuntime.library(context)
         if(!library.isLoaded) {
             val ready=CountDownLatch(1)
@@ -64,7 +66,7 @@ object PlaybackDeviceBackups {
                 .callTimeout(20,TimeUnit.SECONDS)
                 .build()
         )
-        // 顺序固定：先保证主设备注册成功，再注册 3 台备用设备。
+        // 顺序固定：先保证主设备注册成功，再准备唯一一台备用设备。
         if(!library.deviceRegistered()) {
             val main=DeviceRegistration.registerOnce(
                 library=library,
@@ -120,7 +122,7 @@ object PlaybackDeviceBackups {
         DebugLog.record("设备","备用设备 ${current.size}/$TARGET 已保存",force=true)
     }
 
-    /** 每次主设备空响应只取下一台备用设备，试完一次就回到主设备。 */
+    /** 每次主身份空响应只取唯一一台备用设备，试完一次就回到主身份。 */
     private fun snapshot(): List<PlaybackBackupDevice> {
         synchronized(lock) {
             if(devices.isEmpty()) return emptyList()
@@ -145,7 +147,7 @@ object PlaybackDeviceBackups {
                     if(id.isBlank() || profile["iid"].orEmpty().isBlank()) continue
                     add(PlaybackBackupDevice(id,profile,cookies))
                 }
-            }.take(TARGET)
+            }
         }.getOrDefault(emptyList())
     }
 

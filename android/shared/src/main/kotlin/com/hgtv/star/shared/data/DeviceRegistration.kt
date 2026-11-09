@@ -126,7 +126,7 @@ object DeviceRegistration {
         repository.registerProfile = library.registrationProfile()
         repository.deviceIdentity = library.deviceIdentity()
         repository.restoreDeviceCookies(library.registrationCookies())
-        SessionBridge.mainDeviceCookies = { library.registrationCookies() }
+        SessionBridge.mainDeviceCookies = { repository.primaryCookiesSnapshot() }
         runCatching { repository.refreshTncAsync() }
     }
 
@@ -158,18 +158,18 @@ object DeviceRegistration {
         if (cookies.isNotEmpty()) {
             library.saveRegistrationCookies(cookies)
             SessionBootstrap.sessionStore?.saveDeviceCookies(cookies)
-            SessionBridge.mainDeviceCookies = { library.registrationCookies() }
+            SessionBridge.mainDeviceCookies = { repository.primaryCookiesSnapshot() }
             runCatching { repository.refreshTncAsync(force=true) }
         }
     }
 
     /**
-     * 登录流程专用的匿名设备注册。
+     * 登录前缺少主设备身份时，补注册当前主设备。
      *
-     * 与主设备注册完全分开：结果只交给登录协议合并进用户 Cookie，不写入 `registered-*`，
-     * 因此不会替换主设备。
+     * 登录不再创建第三套「登录用户设备」：注册结果直接落成主设备，并立即交给仓库。
      */
     fun registerLoginDevice(
+        library: Library,
         repository: ContentRepository,
         profile: Map<String,String>,
     ): com.hgtv.star.core.DeviceRegister.Registered? {
@@ -180,48 +180,64 @@ object DeviceRegistration {
             remove("klink_egdi")
             remove("device_token")
         }
-        return repository.registerAnonymousDevice(clean)
+        repository.registerProfile=clean
+        val registered=repository.registerDevice(clean,withIdentity=false) ?: return null
+        commit(library,repository,registered)
+        return registered
     }
 
     /**
-     * 给一份登录凭据补齐“登录用户设备”。
+     * 给一份登录凭据补齐当前主设备。
      *
-     * 手机号登录在发码前已经注册过；扫码登录与只导入 sessionid 的情况在这里补一次。
-     * 设备注册 Cookie 会与用户 Cookie 合并后交给账号请求，但不会触碰主设备。
+     * 登录请求优先使用主设备。只有账号凭据自带另一台完整设备时，登录后才以账号设备为准；
+     * 缺少 did / iid 的导入凭据直接补当前主设备，不再生成第三套登录设备。
      */
     fun prepareLogin(
         library: Library,
         repository: ContentRepository,
         credentials: AccountCredentials,
     ): AccountCredentials {
-        val id=credentials.device["device_id"].orEmpty()
-        val iid=credentials.device["iid"].orEmpty()
+        var id=credentials.device["device_id"].orEmpty()
+        var iid=credentials.device["iid"].orEmpty()
             .ifBlank { credentials.device["install_id"].orEmpty() }
-        val prepared = if(id.isNotBlank() && iid.isNotBlank()) {
-            credentials
-        } else {
-            val profile=credentials.device.takeIf {
-                it["cdid"].orEmpty().isNotBlank() && it["openudid"].orEmpty().isNotBlank()
-            } ?: library.freshLoginDeviceProfile()
-            val registered=registerLoginDevice(repository,profile)
-                ?: throw IllegalStateException("登录设备注册失败")
-            val device=LinkedHashMap(profile).apply {
-                put("device_id",registered.deviceId)
-                put("iid",registered.installId)
-                put("install_id",registered.installId)
-                registered.klinkEgdi.takeIf { it.isNotBlank() }?.let { put("klink_egdi",it) }
-                registered.deviceToken.takeIf { it.isNotBlank() }?.let { put("device_token",it) }
+        var usingPrimary=false
+        if(id.isBlank() || iid.isBlank()) {
+            usingPrimary=true
+            if(repository.deviceIdentity["device_id"].isNullOrBlank() ||
+                repository.deviceIdentity["iid"].isNullOrBlank()) {
+                val profile=library.deviceProfile()
+                registerLoginDevice(library,repository,profile)
+                    ?: throw IllegalStateException("登录设备注册失败")
             }
-            val cookies=CookieRecord.headerToMap(credentials.cookie)
-            registered.cookies.forEach { (key,value) -> if(value.isNotBlank()) cookies[key]=value }
-            cookies["install_id"]=registered.installId
-            credentials.copy(
-                cookie=CookieRecord.mapToHeader(cookies),
-                deviceId=registered.deviceId,
-                installId=registered.installId,
-                device=device,
-            )
+            id=repository.deviceIdentity["device_id"].orEmpty()
+            iid=repository.deviceIdentity["iid"].orEmpty()
         }
+        val device=if(usingPrimary) {
+            LinkedHashMap(credentials.device).apply {
+                putAll(repository.registerProfile)
+                putAll(repository.deviceIdentity)
+            }
+        } else {
+            LinkedHashMap(credentials.device)
+        }
+        if(id.isNotBlank()) device["device_id"]=id
+        if(iid.isNotBlank()) {
+            device["iid"]=iid
+            device["install_id"]=iid
+        }
+        val cookies=CookieRecord.headerToMap(credentials.cookie).toMutableMap()
+        if(usingPrimary) {
+            repository.deviceCookiesSnapshot().forEach { (key,value) ->
+                if(key.isNotBlank() && value.isNotBlank()) cookies[key]=value
+            }
+        }
+        if(iid.isNotBlank() && cookies["install_id"].isNullOrBlank()) cookies["install_id"]=iid
+        val prepared=credentials.copy(
+            cookie=CookieRecord.mapToHeader(cookies),
+            deviceId=id,
+            installId=iid,
+            device=device,
+        )
         repository.credentials=prepared
         return prepared
     }

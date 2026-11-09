@@ -3,6 +3,7 @@ package com.hgtv.star.phone
 
 import android.content.Context
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.os.Build
 import android.view.Gravity
 import android.view.View
@@ -11,9 +12,11 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
+import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
+import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.DanmakuMode
+import com.hgtv.star.core.HeatLabel
+import com.hgtv.star.core.LabelStyle
 import com.hgtv.star.shared.media.DanmakuView
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.ui.PhoneGlyph
@@ -132,6 +135,13 @@ class PhoneVideoPage(
         setPadding(context.dp(INFO_EDGE_DP), 0, context.dp(INFO_EDGE_DP), 0)
         // 标题是进简介页的入口：只给它一条细下划线，不套按钮底板。
         paintFlags = paintFlags or android.graphics.Paint.UNDERLINE_TEXT_FLAG
+    }
+
+    private val titleRow = LinearLayout(context).apply {
+        orientation = LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        // 没接标题点击时，落到「点屏幕」上：否则这一块会把点击吃掉，什么都不发生。
+        setOnClickListener { if (onTitle != null) onTitle?.invoke() else onTap?.invoke() }
     }
 
     private val tagRow = LinearLayout(context).apply {
@@ -318,19 +328,9 @@ class PhoneVideoPage(
             setPadding(0, 0, 0, 0)
         }
 
-        // 标题
-        val titleRow = LinearLayout(context).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            // 没接标题点击时，落到「点屏幕」上：否则这一块会把点击吃掉，什么都不发生。
-            setOnClickListener { if (onTitle != null) onTitle?.invoke() else onTap?.invoke() }
-        }
-        // 标题只按文字实际长度占宽；短标题不再被撑满整行。
-        titleRow.addView(title, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        // 标题行由 bind() 按当前卡片重铺：系统标签在前，标题在后。
         column.addView(titleRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
 
         // 标签
@@ -401,7 +401,7 @@ class PhoneVideoPage(
             if (Build.VERSION.SDK_INT >= 21) runCatching {
                 progressTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
                 secondaryProgressTintList = android.content.res.ColorStateList.valueOf(
-                    (PhoneStyle.accent and 0x00FFFFFF) or 0x66000000
+                    0x66FFFFFF
                 )
                 thumbTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
                 progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x4DFFFFFF)
@@ -654,6 +654,20 @@ class PhoneVideoPage(
         }
 
         title.text = series.title
+        titleRow.removeAllViews()
+        val label=series.label.trim()
+        // 系统标签放在标题前，和 TV 推荐浮层保持同一条信息顺序。
+        if(label.isNotEmpty()) {
+            titleRow.addView(infoChip(label,series.labelBg), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply {
+                leftMargin = context.dp(INFO_EDGE_DP)
+                rightMargin = context.dp(6)
+            })
+        }
+        titleRow.addView(title, LinearLayout.LayoutParams(
+            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+        ))
 
         tagRow.removeAllViews()
         val tags = ArrayList<String>(5)
@@ -662,17 +676,23 @@ class PhoneVideoPage(
             .filter { it.isNotEmpty() && !it.contains("集") }
             .take(4).forEach { tags += it }
         tags.forEach { tag ->
-            tagRow.addView(TextView(context).apply {
-                text = tag
-                setTextColor(Color.WHITE)
-                phoneSize(12)
-                setPadding(context.dp(6), context.dp(2), context.dp(6), context.dp(2))
-                background = roundedBackground(0x33FFFFFF, context.dp(4).toFloat())
-            }, LinearLayout.LayoutParams(
+            tagRow.addView(infoChip(tag,""), LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
             ).apply { rightMargin = context.dp(5) })
         }
-        tagRow.visibility = if (tags.isEmpty()) GONE else VISIBLE
+        val heat=HeatLabel.badge(null,series.heat)
+        if(heat.isNotEmpty()) {
+            tagRow.addView(infoChip(heat,""), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { rightMargin = context.dp(5) })
+        }
+        val ranking=series.recommendRanking.trim()
+        if(ranking.isNotEmpty()) {
+            tagRow.addView(infoChip(ranking,series.recommendRankingBg), LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { rightMargin = context.dp(5) })
+        }
+        tagRow.visibility = if (tags.isEmpty() && heat.isEmpty() && ranking.isEmpty()) GONE else VISIBLE
 
         episodeIndex.text = episodeLabel.ifBlank { "第1集" }
         episodeDesc.text = series.description.replace('\n', ' ').trim()
@@ -683,6 +703,35 @@ class PhoneVideoPage(
         } else {
             "观看完整短剧"
         }
+    }
+
+    /** 推荐信息里的系统标签 / 排行榜标签。 */
+    private fun infoChip(value: String, bg: String): TextView {
+        val chip=TextView(context).apply {
+            text=value
+            setTextColor(Color.WHITE)
+            phoneSize(12)
+            maxLines=1
+            ellipsize=android.text.TextUtils.TruncateAt.END
+            gravity=Gravity.CENTER
+            setPadding(context.dp(6),context.dp(2),context.dp(6),context.dp(2))
+            includeFontPadding=false
+        }
+        val colors=LabelStyle.colors(value,bg).take(2)
+        chip.background=when(colors.size) {
+            0 -> roundedBackground(0x33FFFFFF,context.dp(4).toFloat())
+            1 -> GradientDrawable().apply {
+                setColor(colors[0])
+                cornerRadius=context.dp(4).toFloat()
+            }
+            else -> GradientDrawable(
+                GradientDrawable.Orientation.LEFT_RIGHT,
+                colors.toIntArray(),
+            ).apply {
+                cornerRadius=context.dp(4).toFloat()
+            }
+        }
+        return chip
     }
 
     fun currentSeries(): Series? = series

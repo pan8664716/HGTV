@@ -10,7 +10,7 @@ import android.text.Spanned
 import android.text.TextUtils
 import android.text.style.ForegroundColorSpan
 import android.text.style.RelativeSizeSpan
-import androidx.media3.ui.PlayerView
+import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
@@ -932,7 +932,7 @@ private fun MainActivity.applyDeviceFormSelection(selected: String,anchor: TextV
     anchor.text="设备类型  ·  ${deviceFormSettingLabel()}"
     anchor.contentDescription="设备类型，当前${DeviceForm.shortLabel(selected)}，正在自动重新进入"
     showHint("正在切换到${DeviceForm.shortLabel(selected)}界面")
-    AppRelaunch.relaunchAndExit(this)
+    AppRelaunch.switchDeviceForm(this)
 }
 
 /**

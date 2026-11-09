@@ -25,7 +25,7 @@ sealed interface PlaybackEvent {
     /**
      * 播放器自身状态变化（来自 `Player.Listener`）。
      *
-     * [playbackState] 用 Media3 的常量（1=IDLE / 2=BUFFERING / 3=READY / 4=ENDED），
+     * [playbackState] 用 ExoPlayer 的常量（1=IDLE / 2=BUFFERING / 3=READY / 4=ENDED），
      * 但这里用 Int 而不是直接引用 `Player`：`core` 是纯 JVM 模块，不能依赖 Android。
      */
     data class PlayerState(
@@ -85,13 +85,13 @@ sealed interface PlaybackEvent {
  */
 object PlaybackMachine {
 
-    /** Media3 的 `Player.STATE_IDLE`。 */
+    /** ExoPlayer 的 `Player.STATE_IDLE`。 */
     const val STATE_IDLE = 1
-    /** Media3 的 `Player.STATE_BUFFERING`。 */
+    /** ExoPlayer 的 `Player.STATE_BUFFERING`。 */
     const val STATE_BUFFERING = 2
-    /** Media3 的 `Player.STATE_READY`。 */
+    /** ExoPlayer 的 `Player.STATE_READY`。 */
     const val STATE_READY = 3
-    /** Media3 的 `Player.STATE_ENDED`。 */
+    /** ExoPlayer 的 `Player.STATE_ENDED`。 */
     const val STATE_ENDED = 4
 
     fun reduce(state: PlaybackState, event: PlaybackEvent): PlaybackState {

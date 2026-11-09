@@ -40,7 +40,12 @@ class SessionInterceptor(
         // Cookie 认设备的：**cdid / openudid 全换成新的，照样回 `new_user:0` 与原 device_id**，
         // 换设备等于没换。请求方用这个头显式要求「这次不要补身份」，头本身随后被摘掉。
         if(original.header(ANONYMOUS_HEADER)!=null) {
-            return chain.proceed(original.newBuilder().removeHeader(ANONYMOUS_HEADER).build())
+            return chain.proceed(
+                original.newBuilder()
+                    .removeHeader(ANONYMOUS_HEADER)
+                    .removeHeader(IDENTITY_HEADER)
+                    .build()
+            )
         }
         val sessionHost = isSessionHost(original.url.host)
         val accountIdentity = original.header(IDENTITY_HEADER)==IDENTITY_ACCOUNT

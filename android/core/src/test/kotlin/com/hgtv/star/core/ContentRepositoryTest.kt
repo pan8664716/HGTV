@@ -414,7 +414,7 @@ class ContentRepositoryTest {
     private fun requestBody(request: Request): JSONObject =
         JSONObject(request.body?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty())
 
-    /** 每个榜都带上自己的分类与排序：漫剧 / 真人 / AI剧 按热度，「上新」不筛分类、按上架时间。 */
+    /** 每个榜都带上自己的分类与排序：四个榜都按热度，推荐榜不筛分类。 */
     @Test fun `every board asks the api for its own genre and sort`() {
         val bodies=mutableListOf<JSONObject>()
         val repo=repository { request ->
@@ -427,15 +427,15 @@ class ContentRepositoryTest {
         val genres=selects.map { it.getJSONArray("genre").let { g -> if(g.length()==0) "" else g.getString(0) } }
         val sorts=selects.map { it.getJSONArray("sort").getString(0) }
         assertEquals(listOf("comic_series","short_play","ai_series",""),genres)
-        assertEquals(listOf("hot_score","hot_score","hot_score","online_time"),sorts)
+        assertEquals(listOf("hot_score","hot_score","hot_score","hot_score"),sorts)
         bodies.forEach { body -> assertEquals("only_content",body.getString("req_type")) }
     }
 
-    /** 名次是累计的：第 2 个逻辑页要从 101 起，不能把接口给的页内序号直接显示出来。 */
+    /** 名次是累计的：首屏 30 条，第 2 页要从第 31 名起，不能把页内序号直接显示出来。 */
     @Test fun `rank numbers continue across pages instead of restarting at one`() {
         val repo=repository { request -> rankBody(request).toString() }
         assertEquals(RankPosition(1,"5746万"),repo.rank(1,RankBoard.COMIC).ranking!!.positions["123"])
-        assertEquals(RankPosition(101,"5746万"),repo.rank(2,RankBoard.COMIC).ranking!!.positions["123"])
+        assertEquals(RankPosition(31,"5746万"),repo.rank(2,RankBoard.COMIC).ranking!!.positions["123"])
         assertEquals(RankPosition(21,"5746万"),repo.rankRaw(2,RankBoard.COMIC).ranking!!.positions["123"])
     }
 
@@ -453,15 +453,15 @@ class ContentRepositoryTest {
         assertTrue(page.hasMore)
     }
 
-    /** 一页要几条由调用方定：首页剧架 20 条，榜单页一整页 100 条。 */
-    @Test fun `rankRaw asks for a small page while rank asks for a full one`() {
+    /** 首页剧架取 20 条；榜单页首屏 30 条，后续页再取 100 条。 */
+    @Test fun `rankRaw keeps the home page small while rank starts at thirty`() {
         val limits=mutableListOf<Int>()
         val repo=repository { request ->
             limits+=requestBody(request).getInt("limit")
             rankBody(request).toString()
         }
         repo.rankRaw(1,RankBoard.COMIC); repo.rank(1,RankBoard.COMIC)
-        assertEquals(listOf(20,100),limits)
+        assertEquals(listOf(20,30),limits)
     }
 
     /** 页号越界直接拒绝，不发请求；接口结构变了要如实报错。 */
@@ -702,6 +702,35 @@ class ContentRepositoryTest {
         val repo=repository { requests++; """{"code":0,"search_tabs":[{"tab_type":19,"data":[],"has_more":false}]}""" }
         assertTrue(repo.search("无结果",1,ContentType.COMIC).items.isEmpty())
         assertEquals(1,requests)
+    }
+
+    /**
+     * 搜索的季号实测只在完整剧名里；`search_high_light` 可能只保留命中片段。
+     *
+     * 电视端曾出现同一关键词整页都标「第 1 季」：高亮标题没有季号，旧解析又优先用了它。
+     * 完整标题必须优先；接口以后补 `season_index` / `sub_title` 时也要直接采用。
+     */
+    @Test fun `search prefers the canonical title and explicit season fields`() {
+        val repo=repository {
+            JSONObject().put("code",0).put("search_tabs",JSONArray().put(JSONObject()
+                .put("tab_type",19).put("has_more",false)
+                .put("data",JSONArray()
+                    .put(JSONObject()
+                        .put("search_high_light",JSONObject().put("title",JSONObject()
+                            .put("text","大明，<em>李景隆</em>的别样人生")))
+                        .put("video_data",JSONArray().put(JSONObject()
+                            .put("series_id","801").put("title","大明，李景隆的别样人生第二季")
+                            .put("episode_cnt",81))))
+                    .put(JSONObject().put("video_data",JSONArray().put(JSONObject()
+                        .put("series_id","802").put("title","另一部剧")
+                        .put("sub_title","第5季 · 全100集").put("episode_cnt",100))))))
+                .toString())
+        }
+        val items=repo.search("大明，李景隆的别样人生",1,ContentType.COMIC).items.associateBy { it.id }
+        assertEquals("大明，李景隆的别样人生第二季",items.getValue("801").title)
+        assertEquals("第 2 季",SeriesSeasons.badge(items.getValue("801")))
+        assertEquals(5,items.getValue("802").seasonIndex)
+        assertEquals("第 5 季",SeriesSeasons.badge(items.getValue("802")))
     }
 
     /**

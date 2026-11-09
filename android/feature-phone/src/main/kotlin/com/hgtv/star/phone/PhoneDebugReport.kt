@@ -17,6 +17,7 @@ import com.hgtv.star.shared.data.PlaybackCapability
 import com.hgtv.star.shared.debug.DebugLog
 import com.hgtv.star.shared.debug.NetSpeed
 import com.hgtv.star.shared.debug.PerfStats
+import com.hgtv.star.core.TlsStatus
 
 /**
  * 手机调试面板的公共现场。
@@ -123,7 +124,7 @@ internal object PhoneDebugReport {
     }
 
     private fun tlsRow(): String =
-        PhoneNetDebug.tlsSummary.ifBlank { "尚未建立连接" } +
+        TlsStatus.summaryOrEmpty().ifBlank { PhoneNetDebug.tlsSummary }.ifBlank { "等待网络请求" } +
             " · " + NetSpeed.summary.ifBlank { "采样中…" }
 
     private fun recentRows(count: Int): List<Pair<String, String>> = DebugLog.lines(count).map { line ->

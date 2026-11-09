@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.media
 
-import androidx.media3.common.PlaybackException
-import androidx.media3.exoplayer.ExoPlaybackException
-import androidx.media3.exoplayer.mediacodec.MediaCodecRenderer
+import com.google.android.exoplayer2.PlaybackException
+import com.google.android.exoplayer2.ExoPlaybackException
+import com.google.android.exoplayer2.mediacodec.MediaCodecRenderer
 import com.hgtv.star.core.FailureAttribution
 import com.hgtv.star.core.MediaKind
 import com.hgtv.star.core.StreamInfo

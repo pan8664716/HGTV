@@ -39,57 +39,36 @@ fun MainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boole
     detailAuthorLoading=false
     detailAuthorToken++
     val body=base(series.title); loading(body)
-    val cached=runCatching { DetailCache.load(series.id) }.getOrNull()
-    if(cached!=null) {
-        detail=cached
-        showDetail(false)
-        prefetchRelated(cached.series.id)
-        if(cached.series.author.isNotBlank()) prefetchAuthorWorks(cached.series.id,cached.series)
-        else loadDetailAuthor(cached)
-    }
-    work({
-        // 调试注入（见 [DebugFaults]）：把错误页那条上报链路（`content_detail`）变成可复现的一条命令。
-        // 正式包里 BuildConfig.DEBUG 是常量 false，整段被 R8 删掉。
-        if(BuildConfig.DEBUG && DebugFaults.mode(this)==DebugFaults.Mode.CONTENT_FAIL)
-            throw java.io.IOException("调试注入：详情接口不可用")
-        repository.detail(series.id,includeAuthor=false)
-    }, { loaded ->
-        if(screen!="detail" || (detail!=null && detail?.series?.id!=series.id)) return@work
-        // 预告文案：详情接口只给「预告 / 全0集」这一档，**「预计11月6日上线」只有列表 / 搜索卡有**。
-        // 从卡片点进来时把那一句带进来（它比「预告」有用得多），详情接口自己有更具体的就用自己的。
-        val notice=series.notice.takeIf { it.contains("上线") } ?: loaded.series.notice
-        val knownAuthor=detail?.series?.author?.trim().orEmpty()
-        val withNotice=if(loaded.upcoming && notice!=loaded.series.notice)
-            loaded.copy(series=loaded.series.copy(notice=notice)) else loaded
-        val result=if(knownAuthor.isBlank()) withNotice
-            else withNotice.copy(series=withNotice.series.copy(author=knownAuthor))
-        val changed=detail==null || !sameDetailContent(detail!!,result)
-        detail=result
-        if(knownAuthor.isNotBlank()) runCatching { DetailCache.save(result) }
-        // 详情拿到手 = 上一次的错误页已经过去，面板上的「详情加载失败」擦掉。
-        clearDebugProblem()
-        // 预告态没有分集：`observeFavorite` 的集数必须 > 0，传 0 会抛异常（见 `FavoriteUpdate.observe`）。
-        if(result.episodes.isNotEmpty()) library.observeFavorite(series.id,result.episodes.size,System.currentTimeMillis(),acknowledge=true)
-        // 未上架：接口给的预约状态**只在本地还没有记录时**落一份（首次进页面不必等这次请求就能画对按钮）。
-        // 本地已经有记录时一律不动它：`online_subscribed` 在刚写入之后的一小段时间里仍会回 0，
-        // 用它覆盖本地，就会把用户刚点的「已预约」在下次进页面时翻回「预约」。
-        if(result.upcoming && !library.reservedKnown(series.id)) library.setReserved(series.id,result.reserved)
-        // 内容已经在屏幕上（下面这一句就渲染），相关剧集丢后台去查：用户点开时多半已经就绪。
-        prefetchRelated(series.id)
-        // 作者作品同理：它要按页搜（见 `ContentRepository.authorWorks`），比相关剧集更慢，
-        // 因此更要提前发出去，不能让用户按下按钮才开始等。
-        val target=resumeTargetFor(series.id,result.episodes)
-        episodeIndex=target.index
-        // 未上架的剧没有分集，**不能**走「直接播放」那条路（那会去取一个空的 vid）：
-        // 从历史 / 首页的「继续观看」点进来时也一律落到预告详情页。
-        if(resume && !result.upcoming) playEpisode(target.index,target.position,autoplay=detailAutoplay)
-        else if(changed) showDetail(false)
-        if(result.series.author.isNotBlank()) prefetchAuthorWorks(series.id,result.series)
-        else loadDetailAuthor(result)
-    }, { problem ->
-        if(detail?.series?.id==series.id) showHint("刷新失败，仍显示上次内容")
-        else error(body,problem,stage="content_detail") { openDetail(series,resume,detailAutoplay) }
-    })
+    detailController.clear()
+    detailController.load(
+        series=series,
+        onCached={cached ->
+            if(screen!="detail" || detail?.series?.id==series.id) {
+                detail=cached
+                showDetail(false)
+            }
+        },
+        onLoaded={result,target,changed ->
+            if(screen!="detail" || result.series.id!=series.id) return@load
+            detail=result
+            clearDebugProblem()
+            episodeIndex=target.index
+            if(resume && !result.upcoming) {
+                playEpisode(target.index,target.position,autoplay=detailAutoplay,clearDanmakuOnSwitch=true)
+            } else if(changed) {
+                showDetail(false)
+            }
+        },
+        onError={problem ->
+            if(detail?.series?.id==series.id) showHint("刷新失败，仍显示上次内容")
+            else error(body,problem,stage="content_detail") { openDetail(series,resume,detailAutoplay) }
+        },
+        loadDetail={
+            if(BuildConfig.DEBUG && DebugFaults.mode(this)==DebugFaults.Mode.CONTENT_FAIL)
+                throw java.io.IOException("调试注入：详情接口不可用")
+            repository.detail(series.id,includeAuthor=false)
+        },
+    )
 }
 /** 详情主体一致时不重建整页；作者由 [detailAuthorRefresh] 单独补。 */
 private fun sameDetailContent(a: Detail,b: Detail): Boolean =
@@ -101,28 +80,7 @@ private fun sameDetailContent(a: Detail,b: Detail): Boolean =
  * 结果落地后就地更新信息行，并让「作者作品」入口跟着出现。
  */
 fun MainActivity.loadDetailAuthor(current: Detail) {
-    val id=current.series.id
-    if(current.series.author.isNotBlank()) {
-        prefetchAuthorWorks(id,current.series)
-        return
-    }
-    if(detailAuthorLoading) return
-    detailAuthorLoading=true
-    val token=++detailAuthorToken
-    io.submit {
-        val author=runCatching { repository.authorsOf(listOf(id))[id].orEmpty() }.getOrDefault("")
-        main.post {
-            if(token!=detailAuthorToken) return@post
-            detailAuthorLoading=false
-            if(author.isBlank()) return@post
-            if(detail?.series?.id!=id) return@post
-            val updated=detail!!.copy(series=detail!!.series.copy(author=author))
-            detail=updated
-            runCatching { DetailCache.save(updated) }
-            if(screen=="detail") detailAuthorRefresh?.invoke(author)
-            prefetchAuthorWorks(id,updated.series)
-        }
-    }
+    detailController.loadAuthor(current)
 }
 /**
  * 续播目标：**本机进度优先，账号侧的历史兜底**。
@@ -135,17 +93,7 @@ fun MainActivity.loadDetailAuthor(current: Detail) {
  * 账号那条只在标识对不上本机这一版选集时提供「第几集」这个兜底下标。
  */
 fun MainActivity.resumeTargetFor(seriesId: String,episodes: List<String>): ResumeTarget {
-    if(episodes.isEmpty()) return ResumeTarget(0,0)
-    val local=library.progress(seriesId)
-    // 本机删过的记录不再当「续播依据」：否则删完记录再进详情页，仍然从那一集接着放。
-    val account=accountData?.history?.firstOrNull { it.series.id==seriesId && !library.historyDeleted(seriesId) }
-    return ResumePlayback.target(
-        episodes,
-        local?.episodeId ?: account?.episodeId,
-        local?.position ?: account?.position ?: 0L,
-        local?.completed==true,
-        account?.episodeIndex ?: -1
-    )
+    return detailController.resumeTarget(seriesId,episodes)
 }
 /**
  * 详情页。
@@ -170,32 +118,14 @@ fun MainActivity.resumeTargetFor(seriesId: String,episodes: List<String>): Resum
  *    结果落地前再确认「还是同一部剧、还停在详情页」——中途换了剧或退出去，结果直接丢掉。
  */
 fun MainActivity.prefetchRelated(id: String) {
-    if(relatedFor==id && (relatedWorks!=null || relatedLoading)) return
-    val token=relatedToken.incrementAndGet()
-    relatedJob?.cancel(true)
-    relatedFor=id; relatedLoading=true; relatedFailed=false
-    relatedJob=io.submit {
-        val result=runCatching { repository.related(id,detail?.series?.title.orEmpty()) }
-        main.post {
-            if(isDestroyed || relatedToken.get()!=token) return@post
-            relatedLoading=false
-            result.onSuccess { works -> relatedWorks=works }.onFailure { relatedFailed=true }
-            // 用户此刻正好停在「相关剧集」这一栏里，就地铺上（只换下方那一块，不整页重建）；
-            // 否则什么也不用做。
-            if(relatedOpen && screen=="detail" && detail?.series?.id==id) detailBottomRefresh?.invoke()
-            // 播放页那一块浮层同理（见 `MainActivityPlayerActions.kt`）：数据晚到就地重铺。
-            if(onPlaybackPage()) playerStripRefresh?.invoke()
-        }
-    }
+    detailController.prefetchRelated(id,detail?.series?.title.orEmpty())
 }
 /**
  * 点「相关剧集」时调用：预取还没开始（或上一次失败了）才补一次请求。
  * 正常路径下这里什么都不做——请求早在详情上屏时就已经发出去了。
  */
 fun MainActivity.ensureRelated(id: String) {
-    if(relatedWorks!=null) return
-    if(relatedLoading && relatedFor==id) return
-    prefetchRelated(id)
+    detailController.ensureRelated(id,detail?.series?.title.orEmpty())
 }
 /**
  * 后台预取「作者作品」（详情内容已经上屏之后才调用）。
@@ -211,43 +141,11 @@ fun MainActivity.ensureRelated(id: String) {
  *（顺序不再由客户端算，见 `ContentRepository.authorWorks`），仍要一起传下去。
  */
 fun MainActivity.prefetchAuthorWorks(id: String, series: Series) {
-    val name=series.author.trim()
-    if(name.isEmpty()) return
-    if(authorFor==name && (authorWorks!=null || authorLoading)) return
-    val token=authorToken.incrementAndGet()
-    authorJob?.cancel(true)
-    authorFor=name; authorLoading=true; authorFailed=false
-    authorJob=io.submit {
-        // 两段交付：`onPartial` 是「按作者名搜」的那一批（通常 1~3 秒、十几部），
-        // 返回的最终表还要再补季（同系列各季，见 `ContentRepository.fillFamilySeasons`，约 3 秒）。
-        // 先让卡片上屏、再就地换成完整的那一份——否则用户在这 3 秒里只能看着「正在查找该作者的作品…」。
-        val result=runCatching {
-            repository.authorWorks(name,series) { partial ->
-                if(partial.isEmpty()) return@authorWorks
-                main.post {
-                    if(isDestroyed || authorToken.get()!=token) return@post
-                    authorWorks=partial; authorLoading=false
-                    if(authorOpen && screen=="detail" && detail?.series?.id==id) detailBottomRefresh?.invoke()
-                    // 播放页那一块浮层也要跟着换上先到的那一批（见 `MainActivityPlayerActions.kt`）。
-                    if(onPlaybackPage()) playerStripRefresh?.invoke()
-                }
-            }
-        }
-        main.post {
-            if(isDestroyed || authorToken.get()!=token) return@post
-            authorLoading=false
-            result.onSuccess { works -> authorWorks=works }.onFailure { authorFailed=true }
-            // 用户此刻正好停在「作者作品」这一栏里，就地铺上（只换下方那一块，不整页重建）。
-            if(authorOpen && screen=="detail" && detail?.series?.id==id) detailBottomRefresh?.invoke()
-            if(onPlaybackPage()) playerStripRefresh?.invoke()
-        }
-    }
+    detailController.prefetchAuthorWorks(series)
 }
 /** 点「作者作品」时调用：预取还没开始（或上一次失败了）才补一次请求。 */
 fun MainActivity.ensureAuthorWorks(id: String, series: Series) {
-    if(authorWorks!=null) return
-    if(authorLoading && authorFor==series.author.trim()) return
-    prefetchAuthorWorks(id,series)
+    detailController.ensureAuthorWorks(series)
 }
 /**
  * 「相关剧集」那一栏的卡片行：详情页与播放器的「换一部接着看」浮层**共用同一份铺法**。
@@ -395,7 +293,6 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
         authorView.text=shown
     }
     applyAuthor(byline)
-    detailAuthorRefresh={ name -> applyAuthor(name) }
     info.addView(meta)
     val description=data.series.description.ifBlank { if(upcoming) "尚未上线，预约后开播时提醒你" else "选择剧集开始观看" }
     // 简介固定三行：这一页不再有「完整简介」按钮（用户要求去掉），也就没有可展开的地方。
@@ -449,12 +346,15 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
     play=addButton(actions,if(upcoming) (if(reserved) "已预约" else "预约") else "播放",
         size=ButtonSize.HERO,weight=1f,pad=actionPad,
         icon=if(upcoming) R.drawable.ic_action_reserve else R.drawable.ic_action_play) {
-        if(upcoming) reserveSeries(data.series,play,reserved) else if(watched) playEpisode(0,0) else playEpisode(target.index,target.position)
+        if(upcoming) reserveSeries(data.series,play,reserved)
+        else if(watched) playEpisode(0,0,clearDanmakuOnSwitch=true)
+        else playEpisode(target.index,target.position,clearDanmakuOnSwitch=true)
     }
     // 未上架的剧**不摆收藏**：它没有分集，收藏更新检查（`FavoriteUpdate.observe` 要求集数 > 0）
     // 一按就会抛 `IllegalArgumentException`——线上表现为点「收藏」直接闪退。
     // 这类剧只有「预约」这一个动作，少一个按钮也不影响这一行的排布（等宽按剩余三枚均分）。
     // 按钮行的最后一枚：往下要进下方那一块（选集 / 相关剧集），因此先记下来。
+    var authorButton: TvButton?=null
     lateinit var lastAction: TvButton
     lastAction=play
     if(!upcoming) {
@@ -468,9 +368,8 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
         }
         lastAction=favorite
     }
-    // 「作者作品」这一枚先留一个可空引用：[relatedButton] 的点击里要把它翻回「作者作品」
-    // （两栏互斥），而它在源码顺序上排在后面。
-    var authorButton: TvButton?=null
+    // [relatedButton] 的点击里要把作者按钮翻回「作者作品」（两栏互斥），
+    // 而作者按钮可能因为作者晚到，稍后才动态插入。
     lateinit var relatedButton: TvButton
     relatedButton=addButton(actions,if(relatedOpen) "收起相关" else "相关剧集",size=ButtonSize.HERO,weight=1f,pad=actionPad,icon=R.drawable.ic_action_related) {
         relatedOpen=!relatedOpen
@@ -487,10 +386,21 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
         rebuildBottom(true)
         if(relatedOpen) ensureRelated(data.series.id)
     }
-    // 「作者作品」：作者名来自详情（`multi-detail` 的 `author`，见 `Series.author`）。
-    // 取不到作者就不摆这一枚按钮——按空名字去搜只会搜出一批无关作品。
-    val authorName=data.series.author.trim()
-    if(authorName.isNotEmpty()) {
+    /**
+     * 「作者作品」：作者名来自详情（`multi-detail` 的 `author`，见 [Series.author]）。
+     *
+     * 首次详情可能先上屏、作者随后由 `multi-detail` 补回。旧实现只在建页那一刻判断作者，
+     * 晚到的作者只更新文字，不会补按钮；用户必须退出再进一次才能看到入口。
+     * 这里允许按钮在作者到达时动态插入，并沿用同一套点击与焦点逻辑。
+     */
+    fun installAuthorButton(rawName: String) {
+        val authorName=rawName.trim()
+        if(authorName.isEmpty()) return
+        authorButton?.let { existing ->
+            existing.text=if(authorOpen) "收起作者" else "作者作品"
+            existing.contentDescription=existing.text.toString()
+            return
+        }
         // 图标沿用工具栏那枚人像（`ic_toolbar_profile`）：作者作品也是「一个人」的入口，
         // 不另造一份一模一样的图形资源。
         // 先声明再赋值：按钮自己的点击里要改自己的文案，不能写在初始化的 lambda 里。
@@ -503,11 +413,18 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
             relatedButton.text=if(relatedOpen) "收起相关" else "相关剧集"
             relatedButton.contentDescription=relatedButton.text.toString()
             rebuildBottom(true)
-            if(authorOpen) ensureAuthorWorks(data.series.id,data.series)
+            if(authorOpen) ensureAuthorWorks(data.series.id,detail?.series ?: data.series)
         }
         authorButton=authorView
         // 这之后按钮行的最后一枚是「作者作品」：按下键由它往下走（见 [buildBottom]）。
         lastAction=authorView
+        // 晚插入时 buildBottom 已经跑过，沿用「相关剧集」当前的下键目标即可。
+        authorView.nextFocusDownId=relatedButton.nextFocusDownId
+    }
+    installAuthorButton(data.series.author)
+    detailAuthorRefresh={ name ->
+        applyAuthor(name)
+        installAuthorButton(name)
     }
     body.addView(hero,lp(-1,-2))
     if(narrowActions) body.addView(actions,lp(-1,-2).apply { leftMargin=-dp(TvStyle.FOCUS_BLEED); rightMargin=-dp(TvStyle.FOCUS_BLEED) })
@@ -604,7 +521,8 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
             // 摆法与「相关剧集」那一栏一致（同一个 [HomeScreen] 卡片行），只是数据来源不同：
             // 相关剧集来自详情页的「相关作品」接口，这里来自按作者名的全站搜索
             //（见 `ContentRepository.authorWorks`）。
-            val name=data.series.author.trim()
+            val currentSeries=detail?.series ?: data.series
+            val name=currentSeries.author.trim()
             val works=authorWorks
             val loading=authorLoading || (works==null && !authorFailed)
             // 头像下面那一行小字就是这一栏的状态行：加载中 / 失败 / 只有一部 / 共 N 部，
@@ -635,8 +553,7 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
                 // core 返回的表已按相关度排好：同系列整组在最前、组内按季号升序，
                 // 之后是题材逐渐变远的作品。这里只把「正在看的这一部」从它那一组里提到第一张
                 //（它的其它季仍然紧跟其后），其余顺序一律不动——界面不再自己排一遍。
-                val current=data.series
-                val items=listOf(current)+works.orEmpty().filter { it.id!=current.id }
+                val items=listOf(currentSeries)+works.orEmpty().filter { it.id!=currentSeries.id }
                 val shelf=HomeScreen.Shelf("author","全部作品",
                     items.map { item -> HomeScreen.Entry(item,if(item.upcoming) item.notice else "") })
                 val authorRow=HomeScreen(this,posterBox,pageInset(),::loadCover,
@@ -674,7 +591,11 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
             // 第一页第一行按上时网格没有上一页可翻，EpisodeGrid.turn() 返回 false 把按键交回焦点系统，
             // 焦点因此仍然能回到上面的「播放 / 收藏 / 相关剧集」这一行（详情页不留页头，上面只有这一行）。
             val grid=EpisodeGrid(this,data.episodes.size,episodeIndex,player=false,
-                { index -> playEpisode(index,if(progress?.episodeId==data.episodes[index] && !progress.completed) progress.position else 0) },
+                { index -> playEpisode(
+                    index,
+                    if(progress?.episodeId==data.episodes[index] && !progress.completed) progress.position else 0,
+                    clearDanmakuOnSwitch=true,
+                ) },
                 pageSize=library.episodePageSize,edgeTurn=library.episodeEdgeTurn)
             episodes=grid
             // 简介页的选集不套背板：它就是页面里的一块内容，底板会读成「一个可以按进去的大盒子」。

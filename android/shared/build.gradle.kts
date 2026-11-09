@@ -12,11 +12,7 @@ android {
     defaultConfig { minSdk = 19 }
     buildFeatures { buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
-    kotlinOptions {
-        jvmTarget = "1.8"
-        // Media3 的播放实现类全是 `@UnstableApi`，这里直接碰 `DataSource`，与 app 模块同样的处理。
-        freeCompilerArgs += "-opt-in=androidx.media3.common.util.UnstableApi"
-    }
+    kotlinOptions { jvmTarget = "1.8" }
     packaging {
         resources.excludes += setOf(
             "META-INF/versions/**", "META-INF/*.kotlin_module",
@@ -34,9 +30,9 @@ dependencies {
     api("androidx.vectordrawable:vectordrawable:1.1.0")
     api("com.squareup.okhttp3:okhttp:3.12.13")
     api("org.jetbrains.kotlinx:kotlinx-coroutines-android:1.8.1")
-    // 播放数据源（VideoDataSource）需要 media3-datasource；播放器本体由各端自己建。
-    api("androidx.media3:media3-datasource:1.4.1")
-    api("androidx.media3:media3-exoplayer:1.4.1")
+    // ExoPlayer 2.19.1 是 2.x 最后一条稳定版，AAR 仍支持 Android 4.4（minSdk 16）。
+    // core 已传递包含 datasource / extractor，播放器本体与共享数据源都由这一条依赖提供。
+    api("com.google.android.exoplayer:exoplayer-core:2.19.1")
     // 扫码登录的二维码生成。
     api("com.google.zxing:core:3.4.1")
     // MediaSession（TV 端的媒体键 / 手机的锁屏控制）都走这一层。

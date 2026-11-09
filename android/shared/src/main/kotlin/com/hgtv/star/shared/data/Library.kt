@@ -233,7 +233,7 @@ class Library(context: Context) {
                 val migration = homePrefs.edit()
                 val oldKeys = mutableListOf<String>()
                 RankBoard.entries.forEach { board ->
-                    val key = "home-${board.storedValue}"
+                    val key = homeCacheKey(board)
                     val legacy = values[key] as? String
                     val raw = homePrefs.getString(key, null) ?: legacy.orEmpty()
                     CatalogSnapshot.decode(raw, now)?.let { page ->
@@ -245,7 +245,7 @@ class Library(context: Context) {
                 }
                 // 首页缓存按榜单分开之后，旧版留下的键（`home-short` 这种）永远不会再被读到：
                 // 一起清掉，别让一份不再更新的快照一直躺在磁盘上。
-                val liveKeys = RankBoard.entries.map { "home-${it.storedValue}" }.toSet()
+                val liveKeys = RankBoard.entries.map(::homeCacheKey).toSet()
                 homePrefs.all.keys.filter { it.startsWith("home-") && it !in liveKeys }.forEach(migration::remove)
                 // Only remove the legacy copies after the separate cache has been committed.
                 val committed = migration.commit()
@@ -284,7 +284,8 @@ class Library(context: Context) {
      * 一次性把旧版设备身份归档，并清空当前主设备身份。
      *
      * 归档而不是覆盖：旧设备以后仍可从 `legacy-*` 找回；新版主设备则按全新档案注册。
-     * 登录用户设备不在这里处理，它由 `account-device` / `account-cookie` 单独保存。
+     * 登录后的账号设备由 `account-device` / `account-cookie` 保存；它是当前主身份，
+     * 但不会覆盖未登录时使用的主设备档案。
      */
     private fun ensureIdentityLayout() {
         if(identityLayoutChecked || discarding) return
@@ -456,15 +457,30 @@ class Library(context: Context) {
         val age = System.currentTimeMillis() - (homeSavedAt[board] ?: return null)
         return homes[board].takeIf { age in 0..7 * 24 * 60 * 60 * 1000L }
     }
-    fun cacheHome(board: RankBoard, items: List<Series>, hasMore: Boolean) {
+    /**
+     * 首页榜单缓存键。
+     *
+     * 推荐榜从旧的「上新」流换成了全站推荐热度榜，必须换一个键，避免升级后首屏先铺出
+     * 旧的 `online_time` 缓存；其余三个榜的内容与键都保持原样。
+     */
+    private fun homeCacheKey(board: RankBoard): String =
+        "home-${board.storedValue}${if(board==RankBoard.NEW) "-recommend-v2" else ""}"
+    fun cacheHome(
+        board: RankBoard,
+        items: List<Series>,
+        hasMore: Boolean,
+        ranking: ComicRanking? = null,
+    ) {
         if(discarding) return
         state()
         if (items.isEmpty()) return
         val now = System.currentTimeMillis()
         val retained = items.take(30).map { it.copy(description = it.description.take(1500)) }
-        homes[board] = CatalogPage(retained, hasMore)
+        homes[board] = CatalogPage(retained, hasMore, ranking)
         homeSavedAt[board] = now
-        homeWrites.submit(mapOf("home-${board.storedValue}" to { CatalogSnapshot.encode(retained, hasMore, now) }))
+        homeWrites.submit(mapOf(homeCacheKey(board) to {
+            CatalogSnapshot.encode(retained, hasMore, now, ranking)
+        }))
     }
     /**
      * 账号侧数据的缓存（内存那一份，启动时从磁盘读回）。
@@ -483,16 +499,27 @@ class Library(context: Context) {
     private fun signedIn(): Boolean =
         sessionPrefs.getString("account-cookie", "").orEmpty().contains("sessionid=")
 
+    /** 缓存身份：登录账号优先；未登录但设备已注册时，用主设备身份隔离匿名缓存。 */
+    private fun cacheIdentityKey(): String {
+        val cookie=sessionPrefs.getString("account-cookie","").orEmpty()
+        if(cookie.isNotBlank()) return cookie
+        val device=sessionPrefs.getString("registered-device-id","").orEmpty()
+        val install=sessionPrefs.getString("registered-install-id","").orEmpty()
+        return if(isDeviceNumber(device) && isDeviceNumber(install)) "device|$device|$install" else ""
+    }
+
+    private fun cacheIdentityAvailable(): Boolean = cacheIdentityKey().isNotBlank()
+
     fun accountCache(): AccountCacheEntry? {
         state()
         // 指纹对不上就是换了账号（或退出了）：那份缓存不属于当前登录态，直接丢掉。
         if (accountStamp != accountFingerprint()) { accountCached = null; accountStamp = accountFingerprint() }
-        // 没有登录态时**一律返回 null**。
+        // 没有任何可隔离的缓存身份时**一律返回 null**。
         //
         // 只比指纹是不够的：退出登录后 `account-cookie` 被清空，指纹是空串，而 `accountStamp`
         // 在 [load] 里也是按空串算的——两边相等，于是「上一个账号的快照」被当成当前账号的缓存
         // 返回，界面又铺出昵称与列表。用户点过退出、重开却还是登录状态，就是这么来的。
-        if (accountCached != null && !signedIn()) { accountCached = null; return null }
+        if (accountCached != null && !cacheIdentityAvailable()) { accountCached = null; return null }
         return accountCached
     }
     /**
@@ -504,9 +531,9 @@ class Library(context: Context) {
      */
     fun cacheAccount(data: AccountData, now: Long = System.currentTimeMillis()) {
         if(discarding) return
-        // 没有登录态就不该落快照：否则退出登录之后，磁盘上还留着一份「当前账号」，
+        // 没有可隔离的缓存身份就不该落快照：否则退出登录之后，磁盘上还留着一份「当前账号」，
         // 下次启动会被当成已登录的内容铺出来（见 [accountCache]）。
-        if(!signedIn()) return
+        if(!cacheIdentityAvailable()) return
         state()
         val entry = AccountCacheEntry(AccountSnapshot.cacheable(data), now)
         accountCached = entry
@@ -531,10 +558,10 @@ class Library(context: Context) {
      * 也不参与任何请求签名。
      */
     private fun accountFingerprint(): String {
-        val cookie = sessionPrefs.getString("account-cookie", "").orEmpty()
-        if (cookie.isBlank()) return ""
+        val identity = cacheIdentityKey()
+        if (identity.isBlank()) return ""
         var hash = 1125899906842597L
-        cookie.forEach { char -> hash = 31 * hash + char.code }
+        identity.forEach { char -> hash = 31 * hash + char.code }
         return "%016x".format(hash)
     }
     var maxQuality: Int
@@ -866,14 +893,6 @@ class Library(context: Context) {
      */
     fun freshPlaybackBackupProfile(): Map<String,String> {
         return freshDeviceProfile("playback_backup")
-    }
-    /**
-     * 登录用户设备使用的一套新档案。
-     *
-     * 它只服务账号页的增删改查与会话心跳，不参与首页、搜索、播放、弹幕等主设备请求。
-     */
-    fun freshLoginDeviceProfile(): Map<String,String> {
-        return freshDeviceProfile("login_user")
     }
     private fun freshDeviceProfile(source: String): Map<String,String> {
         val base=deviceProfile()
@@ -1597,10 +1616,10 @@ class Library(context: Context) {
         }
     @Volatile private var recommendCursorCached: String=""
     /**
-     * 手机端**按体裁分开**的推荐续流游标（`体裁|session|offset`，多条用 `;` 连接）。
+     * TV / 手机共用的**按推荐流命名空间分开**的续流游标（`命名空间|session|offset`，多条用 `;` 连接）。
      *
-     * 电视只有一条推荐流，`recommendCursor` 一份就够；手机是「漫剧 / 真人 / AI剧」三条并列，
-     * 共用一份会互相覆盖（翻到另一类会带着上一类的 offset 去取）。
+     * 电视只有一条推荐流；手机是「漫剧 / 真人 / AI剧」多条并列。共用一份会互相覆盖
+     * （翻到另一类会带着上一类的 offset 去取），所以按推荐流命名空间分开。
      * 解析 / 合并的规则在 `:core` 的 [com.hgtv.star.core.FeedCursor]（纯逻辑、有单测）。
      *
      * 与 [recommendCursor] 同一类本机现场：不进备份、不做迁移，换一台设备从头开始刷。

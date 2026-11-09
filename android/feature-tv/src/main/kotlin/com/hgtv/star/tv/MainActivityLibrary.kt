@@ -15,6 +15,7 @@ import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.architecture.network
+import com.hgtv.star.shared.ui.LoadingDotsView
 
 // 本文件是从 MainActivity.kt 拆出来的「本机库加载、封面取图、异步任务封装与空页 / 错误提示」这一块。
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
@@ -30,7 +31,7 @@ fun MainActivity.showStartupLoading() {
     val center=LinearLayout(this).apply {
         orientation=LinearLayout.VERTICAL
         gravity=Gravity.CENTER
-        addView(ProgressBar(this@showStartupLoading).apply { isIndeterminate=true })
+        addView(LoadingDotsView(this@showStartupLoading))
         addView(text("正在初始化设备…",16f,TvStyle.textDim).apply {
             gravity=Gravity.CENTER
             setPadding(0,dp(14),0,0)
@@ -195,7 +196,8 @@ fun MainActivity.releaseCatalogViews() {
     gridRows.forEach { row -> row.cards.forEach { it.releaseCover() } }
     gridRowPool.forEach { row -> row.cards.forEach { it.releaseCover() } }
     gridRows.clear(); gridRowPool.clear(); gridCardWidth=0; gridGap=0; gridPosterHeight=0
-    moreInFlight=false; moreInFlightPage=0; moreVisible=false; moreFocusWanted=false; moreFailed=false
+    moreInFlight=false; moreInFlightPage=0; moreVisible=false; moreFocusWanted=false
+    moreFailed=false; moreFailedAt=0L
     // 页头收展状态：同一页原地追加（加载更多）保留，其余换页都从展开态开始。
     val keepTopArea=keepTopAreaState
     keepTopAreaState=false
@@ -255,13 +257,13 @@ private fun contentErrorDetail(problem: Throwable): String =
 
 fun MainActivity.message(parent: LinearLayout,label: String) { parent.addView(text(label,17f,muted).apply { setPadding(pageBleed(),dp(28),pageBleed(),dp(18)) }) }
 
-/** 列表请求中的统一动画：只显示转圈，不再铺任何“正在读取 / 正在加载”文案。 */
-fun MainActivity.loadingView(heightDp: Int = 140, spinnerDp: Int = 42): FrameLayout =
+/** 列表请求中的统一动画：全站使用同一枚三点加载。 */
+fun MainActivity.loadingView(heightDp: Int = 140): FrameLayout =
     FrameLayout(this).apply {
-        addView(ProgressBar(this@loadingView).apply {
-            isIndeterminate=true
-            contentDescription="加载中"
-        }, FrameLayout.LayoutParams(dp(spinnerDp),dp(spinnerDp),Gravity.CENTER))
+        addView(
+            LoadingDotsView(this@loadingView),
+            FrameLayout.LayoutParams(dp(64),dp(18),Gravity.CENTER),
+        )
         minimumHeight=dp(heightDp)
     }
 

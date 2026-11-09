@@ -7,12 +7,12 @@ import org.junit.Test
 class RankBoardTest {
     /**
      * 首页七个栏目与顺序是需求钉死的：
-     * 历史记录 / 我的收藏 / 稍后观看 / 热播漫剧 / 热播真人 / 热播AI / 热播上新。
+     * 历史记录 / 我的收藏 / 稍后观看 / 热播漫剧 / 热播真人 / 热播AI / 推荐榜。
      */
     @Test fun `home columns follow the requested order and wording`() {
-        assertEquals(listOf("历史记录","我的收藏","稍后观看","热播漫剧","热播真人","热播AI","热播上新"),
+        assertEquals(listOf("历史记录","我的收藏","稍后观看","热播漫剧","热播真人","热播AI","推荐榜"),
             HomeLayout.columns.map { it.title })
-        assertEquals(listOf("热播漫剧","热播真人","热播AI","热播上新"),RankBoard.entries.map { it.homeTitle })
+        assertEquals(listOf("热播漫剧","热播真人","热播AI","推荐榜"),RankBoard.entries.map { it.homeTitle })
     }
 
     /** 前三个栏目是本机记录（没有榜单），后四个各对应一个榜单，顺序与 [RankBoard] 一致。 */
@@ -35,22 +35,23 @@ class RankBoardTest {
     }
 
     /**
-     * 榜单页的四个按钮文案是需求钉死的短名：推荐 / 漫剧 / AI剧 / 真人；
+     * 推荐流与榜单页的四个按钮都是：推荐 / 漫剧 / AI剧 / 真人；
      * 页面主标题固定「热播榜」，不跟着按钮变（见界面代码）。
      */
-    @Test fun `rank switcher uses the four short labels`() {
+    @Test fun `recommend feed and rank switcher use the same short labels`() {
+        assertEquals("推荐",RankBoard.NEW.label)
         assertEquals(listOf("推荐","漫剧","AI剧","真人"),RankBoard.navEntries.map { it.label })
     }
 
     /**
      * 四个榜单各自的 App 分类与 `rankKey` 都不同：`rankKey` 同时是本机缓存的键，写错就会串数据；
-     * `genre` 为空的那个是「推荐」（原上新，全站综合，不筛分类），它只能是唯一一个。
-     * 三个类型榜按热度排，推荐按上架时间排。
+     * `genre` 为空的那个是「推荐榜」（全站综合，不筛分类），它只能是唯一一个。
+     * 四个榜都按热度排。
      */
     @Test fun `genres and rank keys are distinct and stable`() {
         assertEquals(listOf("comic_series","short_play","ai_series",null),RankBoard.entries.map { it.genre })
         assertEquals(listOf("comic","real","ai","new"),RankBoard.entries.map { it.storedValue })
-        assertEquals(listOf("hot_score","hot_score","hot_score","online_time"),RankBoard.entries.map { it.sort })
+        assertEquals(listOf("hot_score","hot_score","hot_score","hot_score"),RankBoard.entries.map { it.sort })
         assertEquals(RankBoard.entries.size,RankBoard.entries.map { it.storedValue }.distinct().size)
         assertEquals(1,RankBoard.entries.count { it.genre==null })
     }

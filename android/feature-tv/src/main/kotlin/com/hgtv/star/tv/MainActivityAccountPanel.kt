@@ -211,8 +211,9 @@ private fun MainActivity.buildQrLoginPanel(
         accountPanelHost?.visibility==View.VISIBLE
 
     val login=QrLogin().apply {
-        // 扫码登录使用独立的登录用户设备档案，不读取主设备身份。
-        device=library.freshLoginDeviceProfile()
+        // 登录先使用当前主设备，账号设备只在登录响应带回不同设备时接管。
+        device=LinkedHashMap(library.deviceProfile()).apply { putAll(library.deviceIdentity()) }
+        useDeviceCookies(library.registrationCookies())
         log={ line -> android.util.Log.i("HGTV-QRLOGIN",line) }
     }
 
@@ -456,7 +457,8 @@ private fun MainActivity.buildPhoneLoginPanel(
         accountPanelHost?.visibility==View.VISIBLE
 
     val login=PhoneLogin().apply {
-        device=library.deviceProfile()
+        device=LinkedHashMap(library.deviceProfile()).apply { putAll(library.deviceIdentity()) }
+        useDeviceCookies(library.registrationCookies())
         log={ line -> android.util.Log.i("HGTV-LOGIN",line) }
     }
     var countryIndex=0

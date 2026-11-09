@@ -76,7 +76,9 @@ class PhoneGlyph(context: Context, kind: Kind) : View(context) {
         val w = width.toFloat()
         val h = height.toFloat()
         thin.color = tint
-        thin.strokeWidth = (w * .075f).coerceIn(1.5f, stroke.strokeWidth)
+        val maxThin = stroke.strokeWidth.coerceAtLeast(0f)
+        val minThin = minOf(1.5f, maxThin)
+        thin.strokeWidth = (w * .075f).coerceIn(minThin, maxThin)
         val paint = if (filled) fill else stroke
         when (kind) {
             Kind.HEART -> {

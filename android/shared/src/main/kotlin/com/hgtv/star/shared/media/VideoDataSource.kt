@@ -1,9 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.media
 import android.net.Uri
-import androidx.media3.common.C
-import androidx.media3.datasource.BaseDataSource
-import androidx.media3.datasource.DataSpec
+import com.google.android.exoplayer2.C
+import com.google.android.exoplayer2.upstream.BaseDataSource
+import com.google.android.exoplayer2.upstream.DataSpec
 import com.hgtv.star.core.RemoteVideo
 
 class VideoDataSource(private val video: RemoteVideo): BaseDataSource(true) {

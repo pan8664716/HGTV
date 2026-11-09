@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.core
 
+import com.hgtv.star.core.session.CookieRecord
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.MediaType
@@ -56,10 +57,9 @@ data class Series(
     /**
      * 第几季（0 = 接口没给）。
      *
-     * 列表接口每条都带：`sub_title_list` 里 `data_type == 0` 的那一条就是「第N季」
-     * （**没有季号的剧也写「第1季」**，例如「帐中香」→「第1季」）；
-     * 详情 / 相关作品那两条接口给的是数字字段 `season_index`。
-     * 因此界面优先用它，剧名解析（[SeriesSeasons]）只当兜底。
+     * 分类 / 榜单给 `sub_title_list`，详情 / 相关作品给 `season_index`。
+     * 搜索接口实测不返回显式季号字段，季号写在 `video_data.title` 里；
+     * 因此界面优先用接口字段，搜索等缺失场景再由剧名解析兜底（见 [SeriesSeasons]）。
      */
     val seasonIndex: Int = 0,
     /**
@@ -109,7 +109,26 @@ data class Series(
      * 渐变色时给两个）。这里原样拼成一个串存着，由 `LabelStyle` 负责解析与兜底——
      * 不解析成 Int 是因为它要跟着 [toJson] 落盘，字符串最省事。
      */
-    val labelBg: String = ""
+    val labelBg: String = "",
+    /**
+     * 推荐流卡片上的原始 `recommend_info`。
+     *
+     * 上报推荐曝光时服务端需要原样拿回这一段，不能只拿页面展示字段。
+     * 普通详情 / 搜索卡片没有这个字段，保持空串。
+     */
+    val recommendInfo: String = "",
+    /** 推荐系统为本次候选生成的推荐分组 ID；分类卡片通常可从 `recommend_info.gid` 取到。 */
+    val recommendGroupId: String = "",
+    /** 内容类型，来自服务端内容模型；未知时为 0，不能伪造默认值。 */
+    val contentType: Int = 0,
+    /**
+     * 推荐卡片自带的排行榜提示，例如 `真人剧·必看月榜 No.10` / `AI剧热播榜 No.10`。
+     *
+     * 它来自 `recommend_reason_list.rec_tags[]`，与普通分类标签分开展示。
+     */
+    val recommendRanking: String = "",
+    /** 排行榜提示的官方背景色，多个颜色用逗号分隔；空串表示没有自定义样式。 */
+    val recommendRankingBg: String = "",
 ) {
     fun toJson() = JSONObject().put("id",id).put("title",title).put("cover",cover)
         .put("description",description).put("badge",badge).put("tags",tags).put("author",author)
@@ -117,12 +136,17 @@ data class Series(
         .put("upcoming",upcoming).put("notice",notice).put("vertical",vertical)
         .put("heat",heat).put("playCount",playCount)
         .put("label",label).put("labelBg",labelBg)
+        .put("recommendInfo",recommendInfo).put("recommendGroupId",recommendGroupId)
+        .put("contentType",contentType)
+        .put("recommendRanking",recommendRanking)
+        .put("recommendRankingBg",recommendRankingBg)
     companion object {
         fun fromJson(o: JSONObject) = Series(o.str("id"),o.str("title"),o.str("cover"),
             o.str("description"),o.str("badge"),o.str("tags"),o.str("author"),o.optInt("episodeCount"),
             o.optInt("seasonIndex"),o.optBoolean("upcoming",false),o.str("notice"),
             o.optBoolean("vertical",false),o.optLong("heat",0L),o.optInt("playCount",0),
-            o.str("label"),o.str("labelBg"))
+            o.str("label"),o.str("labelBg"),o.str("recommendInfo"),o.str("recommendGroupId"),
+            o.optInt("contentType",0),o.str("recommendRanking"),o.str("recommendRankingBg"))
     }
 }
 /**
@@ -218,6 +242,8 @@ data class SearchSuggestion(
 data class RankPosition(val rank: Int?, val heat: String)
 data class ComicRanking(val positions: Map<String,RankPosition>, val totalPages: Int, val updatedText: String)
 data class CatalogPage(val items: List<Series>, val hasMore: Boolean, val ranking: ComicRanking? = null)
+/** 分类 / 榜单页首屏统一取 30 条；后续页再使用大页续接。 */
+const val CATALOG_FIRST_PAGE_SIZE=30
 /**
  * 推荐流的一页 + 续流游标。
  *
@@ -250,6 +276,9 @@ data class StreamInfo(
     val available: List<Int> = emptyList(),
     /** 同一档位的备用 CDN 地址；主地址网络失败或 403 时按顺序切换。 */
     val backupUrls: List<String> = emptyList(),
+    /** 接口声明的实际画面宽高；0 表示旧缓存或接口未提供。 */
+    val videoWidth: Int = 0,
+    val videoHeight: Int = 0,
 ) {
     /**
      * 索引 / 首块的缓存键：集 id + **实际档位**。
@@ -310,9 +339,38 @@ class ContentRepository(
      * 在上一个用例里被缓存过，下一个用例就拿到别人的模型，断言全部错位。
      */
     private val modelCacheTtl: Long = MODEL_CACHE_MS
-) {
+) : RecommendDataSource {
     private val httpRef=lazy(LazyThreadSafetyMode.SYNCHRONIZED) { httpClient ?: defaultHttpClient() }
     val http: OkHttpClient get() = httpRef.value
+    private val recommendStatConfigLock=Any()
+    private var recommendStatConfigLoading=false
+    private var recommendStatConfigNextAt=0L
+    /**
+     * 官方 `bookmall/tab` 的会话标识。
+     *
+     * `session_uuid` 是客户端游标，`normal_session_id` / `cold_start_session_id`
+     * 会原样进入推荐卡片的 `recommend_info`，再被曝光上报带回服务端。
+     * 同一进程内保持稳定，避免每次翻页都被服务端当成新会话。
+     */
+    private val officialNormalSessionId="${java.util.UUID.randomUUID()}#1"
+    private val officialColdStartSessionId=java.util.UUID.randomUUID().toString()
+    private val OFFICIAL_RECOMMEND_STREAM_COUNT=
+        "[{\"scene\":\"1\",\"StreamCount\":1,\"StreamType\":\"1\"}]"
+    private val OFFICIAL_RECOMMEND_EXTRA=
+        "eyJyZWNlbnRfZGlzbGlrZV9naWQiOltdLCJzZXNzaW9uX2FwcF9zdGF5X3RpbWUiOjB9"
+    /**
+     * TNC 初始化专用 client。
+     *
+     * 五个入口必须依次获得一次机会；如果沿用普通请求的 45 秒超时，一个坏域名就会把
+     * 后续入口全部堵住。这里共用 [http] 的连接池和 dispatcher，只收紧单次请求预算。
+     */
+    private val tncHttp by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
+        http.newBuilder()
+            .connectTimeout(4,TimeUnit.SECONDS)
+            .readTimeout(6,TimeUnit.SECONDS)
+            .callTimeout(8,TimeUnit.SECONDS)
+            .build()
+    }
     /**
      * 传输层到底建过没有。
      *
@@ -391,7 +449,7 @@ class ContentRepository(
             val request=Request.Builder()
                 .url("https://$host/")
                 .head()
-                .header("User-Agent",VendorConstants.userAgent(deviceProfile(),video=false))
+                .header("User-Agent",VendorConstants.userAgent(primaryProfile(),video=false))
                 .build()
             http.newCall(request).execute().use { it.body?.close() }
         }
@@ -492,7 +550,8 @@ class ContentRepository(
      * 早先这里复用了 [MULTI_DETAIL_LIMIT]（50），于是**手机上有多少条、电视上最多只有 50 条**：
      * 用户看到的正是「同步来的不完全」。
      */
-    private val HISTORY_LIMIT = 200
+    /** 短剧历史实际会分布在 book_type 2/3/4；抓包里删除也同时出现 2 和 4。 */
+    private val HISTORY_BOOK_TYPES = listOf(2,3,4)
 
     /** 一次删除请求里带多少条（清空历史时按这个分批）。 */
     private val HISTORY_DELETE_BATCH = 50
@@ -668,7 +727,7 @@ class ContentRepository(
             // 签名里的 x-medusa 要上报设备档案（机型 / 系统版本 / cdid …），
             // 与凭据一起换掉，免得拿着 A 设备的档案去发 B 设备的写请求。
             // 档案是三层合并的结果（见 [deviceProfile]）：内置 → 本机身份 → 凭据的真机档案。
-            signer.updateDevice(deviceProfile())
+            signer.updateDevice(primaryProfile())
         }
     /**
      * 本机设备身份（`device_id` / `iid`），由界面层注入（见 `Library.deviceIdentity`）。
@@ -692,7 +751,7 @@ class ContentRepository(
                 modelCacheGen++
             }
             field=clean
-            signer.updateDevice(deviceProfile())
+            signer.updateDevice(primaryProfile())
         }
     /**
      * 共用另一份仓库实例的**设备身份、注册 Cookie 与设备档案**
@@ -724,7 +783,7 @@ class ContentRepository(
      * 由界面层从本机设置注入（见 `Library.deviceProfile`）。
      */
     @Volatile var registerProfile: Map<String,String> = emptyMap()
-        set(value) { field=value.filterValues { it.isNotBlank() }; signer.updateDevice(deviceProfile()) }
+        set(value) { field=value.filterValues { it.isNotBlank() }; signer.updateDevice(primaryProfile()) }
     /**
      * 匿名注册一台设备，拿到平台认可的 `device_id` / `install_id`。
      *
@@ -833,7 +892,9 @@ class ContentRepository(
         val body=DeviceRegister.payload(device)
         val headers=DeviceRegister.headers(body,device)
         var lastFailure: Throwable?=null
-        for(host in TncConfigStore.logHosts()) {
+        val hosts=TncConfigStore.logHosts()
+        for((index,host) in hosts.withIndex()) {
+            if(index>0) NetLog.retry("device_register",index+1,hosts.size,lastFailure?.message.orEmpty())
             val registered=runCatching {
                 val request=Request.Builder().url(DeviceRegister.url(device,host=host))
                 headers.forEach { (key,value) -> request.header(key,value) }
@@ -871,6 +932,8 @@ class ContentRepository(
      * [restoreDeviceCookies] 灌回来。
      */
     fun deviceCookiesSnapshot(): Map<String,String> = LinkedHashMap(registrationCookies)
+    /** 当前主身份 Cookie 快照；登录后是账号设备 Cookie，未登录时是主设备 Cookie。 */
+    fun primaryCookiesSnapshot(): Map<String,String> = CookieRecord.headerToMap(primaryCookieHeader())
     /** 把上次落盘的注册 Cookie 灌回来（启动时调一次即可）。 */
     fun restoreDeviceCookies(cookies: Map<String,String>) {
         val clean=cookies.filterValues { it.isNotBlank() }
@@ -889,18 +952,19 @@ class ContentRepository(
 
     /** TNC 的 `/get_domains/v5/` 请求；优先带身份，失败后回退匿名 bootstrap。 */
     private fun fetchTnc(summary: String?): TncResponse? {
-        if(!deviceIdentity["device_id"].isNullOrBlank() && registrationCookies.isNotEmpty()) {
-            fetchSignedTnc(summary)?.let { return it }
+        val hosts=TncConfigStore.tncHosts()
+        if(!primaryProfile()["device_id"].isNullOrBlank() && primaryCookieHeader().isNotBlank()) {
+            fetchSignedTnc(summary,hosts)?.let { return it }
         }
-        return fetchAnonymousTnc(summary)
+        return fetchAnonymousTnc(summary,hosts)
     }
 
     /** 注册后带设备身份的 TNC 请求，用于获取当前地区的最终配置。 */
-    private fun fetchSignedTnc(summary: String?): TncResponse? {
+    private fun fetchSignedTnc(summary: String?,hosts: List<String>): TncResponse? {
         val profile=modelProfile()
-        val cookie=registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }
+        val cookie=primaryCookieHeader()
         val values=tncValues(profile)
-        for(host in TncConfigStore.tncHosts()) {
+        for(host in hosts) {
             try {
                 val signed=signer.sign(
                     "https://$host/get_domains/v5/",
@@ -922,9 +986,13 @@ class ContentRepository(
                 val response=readTncResponse(
                     signed.url,
                     Signer.Request(signed.url,headers,signed.body,"GET"),
+                    summary,
                 )
                 if(response!=null) {
-                    NetLog.log("tnc signed host=$host accepted bytes=${response.raw.length}")
+                    NetLog.log(
+                        if(response.notModified) "tnc signed host=$host unchanged"
+                        else "tnc signed host=$host accepted bytes=${response.raw.length}"
+                    )
                     return response
                 }
             } catch(e: IOException) {
@@ -943,7 +1011,7 @@ class ContentRepository(
      * 官方实测：最小设备参数即可返回完整配置，不需要 `device_id`、`iid`、Cookie 或签名。
      * `X-HGTV-Anonymous` 只用于阻止本工程的 SessionInterceptor 补身份，发网前会被删除。
      */
-    private fun fetchAnonymousTnc(summary: String?): TncResponse? {
+    private fun fetchAnonymousTnc(summary: String?,hosts: List<String>): TncResponse? {
         val base=LinkedHashMap(VendorConstants.device).apply {
             putAll(registerProfile)
             remove("device_id")
@@ -954,7 +1022,7 @@ class ContentRepository(
         }
         val values=tncValues(modelQueryProfile(base))
         val query=Signer.encode(values)
-        for(host in TncConfigStore.tncHosts()) {
+        for(host in hosts) {
             try {
                 val url="https://$host/get_domains/v5/?$query"
                 val headers=linkedMapOf(
@@ -968,9 +1036,12 @@ class ContentRepository(
                     "X-HGTV-Anonymous" to "1",
                 )
                 summary?.takeIf { it.isNotBlank() }?.let { headers["x-tt-tnc-summary"]=it }
-                val response=readTncResponse(url,Signer.Request(url,headers,null,"GET"))
+                val response=readTncResponse(url,Signer.Request(url,headers,null,"GET"),summary)
                 if(response!=null) {
-                    NetLog.log("tnc anonymous host=$host accepted bytes=${response.raw.length}")
+                    NetLog.log(
+                        if(response.notModified) "tnc anonymous host=$host unchanged"
+                        else "tnc anonymous host=$host accepted bytes=${response.raw.length}"
+                    )
                     return response
                 }
             } catch(e: IOException) {
@@ -996,18 +1067,35 @@ class ContentRepository(
             this["version_name"]="7.1.3.32"
         }
 
-    private fun readTncResponse(url: String,signed: Signer.Request): TncResponse? {
+    private fun readTncResponse(url: String,signed: Signer.Request,summary: String?): TncResponse? {
+        var httpCode=0
         var etag=""
+        var tncControl=""
         val raw=text(
             url,
             signed,
-            client=http,
+            client=tncHttp,
             allowBackup=false,
+            // TNC 的空 body 不能走业务域名 fallback；业务域名没有 /get_domains/v5/。
+            allowDomainFailover=false,
+            allowNotModified=true,
             storeRegionHeaders=false,
         ) { response ->
+            httpCode=response.code
             etag=response.header("x-ss-etag").orEmpty()
+            tncControl=response.header("x-tt-tnc-control").orEmpty()
         }
-        if(raw.isBlank()) return null
+        if(raw.isBlank()) {
+            if(httpCode==304 || tncControl=="1") {
+                return TncResponse(
+                    raw="",
+                    summary=summary.orEmpty(),
+                    etag=etag,
+                    notModified=true,
+                )
+            }
+            return null
+        }
         val root=runCatching { JSONObject(raw) }.getOrNull() ?: return null
         if(root.optString("message")!="success") return null
         return TncResponse(
@@ -1021,7 +1109,7 @@ class ContentRepository(
      *
      * 1. [VendorConstants.device]：内置档案，兜底用；
      * 2. [deviceIdentity]：本机身份（`device_id` / `iid`），来自 [registerDevice] 的注册结果；
-     * 登录用户档案只由 [accountDeviceProfile] 使用；主设备请求不能混入它。
+     * 这里只描述未登录时的主设备；登录后请求统一改读 [primaryIdentity] 的账号设备快照。
      */
     private fun deviceProfile(): Map<String,String> =
         LinkedHashMap(VendorConstants.device).apply {
@@ -1033,10 +1121,10 @@ class ContentRepository(
             putAll(deviceIdentity)
         }
 
-    /** 账号页请求的档案：登录用户设备 + 官方导入档案。 */
-    private fun accountDeviceProfile(): Map<String,String> =
+    /** 账号设备档案：登录后作为当前主身份。 */
+    private fun accountDeviceProfile(account: AccountCredentials): Map<String,String> =
         LinkedHashMap(VendorConstants.device).apply {
-            credentials?.device?.forEach { (key,value) -> if(value.isNotBlank()) this[key]=value }
+            account.device.forEach { (key,value) -> if(value.isNotBlank()) this[key]=value }
         }
     /**
      * 弹幕接口是播放器接口，走 App 域名（与搜索 / 详情同一套设备参数）。
@@ -1196,16 +1284,16 @@ class ContentRepository(
     private val CATEGORY_PAGE_SIZE=100
 
     /**
-     * 分类页**换条件后的第一页**只取 20 条。
+     * 分类页**换条件后的第一页**取 30 条。
      *
-     * 分类页的筛选条件会频繁切换，每次切都拉 100 条既慢又浪费；20 条正好铺三行多，
+     * 分类页的筛选条件会频繁切换，每次切都拉 100 条既慢又浪费；30 条足够铺几行，
      * 足够确认「这次选中的是不是我要的」。用户继续往下翻时恢复 [CATEGORY_PAGE_SIZE]，
-     * 第 2 页从 offset=20 开始，不会漏条。
+     * 第 2 页从 offset=30 开始，不会漏条。
      */
-    private val CATEGORY_FIRST_PAGE_SIZE=20
+    private val CATEGORY_FIRST_PAGE_SIZE=CATALOG_FIRST_PAGE_SIZE
 
     /**
-     * 推荐流一页多少条（与 [CATEGORY_FIRST_PAGE_SIZE] 同档）。
+     * 推荐流一页多少条。
      *
      * 推荐页是「上下换一部」的连续流，一页 20 条已经够刷一阵；取大了只会让进入推荐页
      * 那一下多等几百毫秒。
@@ -1219,6 +1307,8 @@ class ContentRepository(
      * 20 条还是 100 条。
      */
     private val LOGICAL_PAGE_SIZE=100
+    /** 分类 / 榜单页首次进入只取 30 条，后续页再恢复大页。 */
+    private val RANK_FIRST_PAGE_SIZE=CATALOG_FIRST_PAGE_SIZE
 
     /** 首页剧架那一行的榜单条数：一栏只显示 10 条，取 20 条足够。 */
     private val RANK_API_PAGE_SIZE=20
@@ -1282,8 +1372,14 @@ class ContentRepository(
          */
         client: OkHttpClient = http,
         allowBackup: Boolean = true,
+        /** 200 空 body 时先按同一套参数遍历其它接口域名。 */
+        allowDomainFailover: Boolean = true,
+        /** TNC 条件请求允许 304 Not Modified。 */
+        allowNotModified: Boolean = false,
         /** 播放接口只靠注册 Cookie 表达区域，避免显式地区头把请求固定到单一调度区域。 */
         storeRegionHeaders: Boolean = true,
+        /** 非空时用它生成 UA；推荐账号请求必须与签名设备档案保持同一份。 */
+        userAgentProfile: Map<String,String>? = null,
         /**
          * 拿到响应、还没读 body 时回调一次。
          *
@@ -1292,7 +1388,14 @@ class ContentRepository(
          */
         observe: ((okhttp3.Response) -> Unit)? = null,
     ): String {
-        val request = Request.Builder().url(url).header("User-Agent",VendorConstants.userAgent(deviceProfile(), video = true)).header("Accept-Language","zh-CN,zh;q=0.9")
+        val requestCookie=signed?.headers?.entries
+            ?.firstOrNull { it.key.equals("Cookie",ignoreCase=true) }
+            ?.value
+            ?: primaryCookieHeader()
+        val requestCookies=com.hgtv.star.core.session.CookieRecord.headerToMap(requestCookie)
+        val request = Request.Builder().url(url)
+            .header("User-Agent",VendorConstants.userAgent(userAgentProfile ?: primaryProfile(), video = true))
+            .header("Accept-Language","zh-CN,zh;q=0.9")
         // 账号 / App 接口的公共协议头。参考实现（`passport_client.go` 的 `request`）每一条都带，
         // 早先这里一条都没有：
         // * `X-SS-DP` = `8662`（HGTV的 aid，网关按它路由）；
@@ -1300,8 +1403,8 @@ class ContentRepository(
         //   没有注册结果时直接省略，不伪造默认地区。
         request.header("X-SS-DP","8662")
         if(storeRegionHeaders) {
-            registrationCookies["store-region"]?.takeIf { it.isNotBlank() }?.let { request.header("X-Tt-Store-Region",it) }
-            registrationCookies["store-region-src"]?.takeIf { it.isNotBlank() }?.let { request.header("X-Tt-Store-Region-Src",it) }
+            requestCookies["store-region"]?.takeIf { it.isNotBlank() }?.let { request.header("X-Tt-Store-Region",it) }
+            requestCookies["store-region-src"]?.takeIf { it.isNotBlank() }?.let { request.header("X-Tt-Store-Region-Src",it) }
         }
         request.header("X-XS-From-Web","0")
         request.header("Sdk-Version","2")
@@ -1322,7 +1425,9 @@ class ContentRepository(
         val raw=RequestScope.execute(client.newCall(request.build())) { response ->
             httpCode=response.code
             observe?.invoke(response)
-            if (!response.isSuccessful) throw IOException("内容请求失败（HTTP ${response.code}）")
+            if (!response.isSuccessful && !(allowNotModified && response.code==304)) {
+                throw IOException("内容请求失败（HTTP ${response.code}）")
+            }
             val body = response.body ?: throw IOException("内容响应为空")
             if (body.contentLength() > 16*1024*1024) throw IOException("内容响应过大")
             val input=body.byteStream(); val out=java.io.ByteArrayOutputStream(); val buffer=ByteArray(8192)
@@ -1330,29 +1435,103 @@ class ContentRepository(
             if(bytes.size > 16*1024*1024) throw IOException("内容响应过大")
             String(bytes,Charsets.UTF_8)
         }
+        if(raw.isBlank() && httpCode==200 && !allowNotModified) {
+            NetLog.warn("[API] empty-body host=${signed?.let { runCatching { okhttp3.HttpUrl.parse(it.url)?.host }.getOrNull() }.orEmpty()} path=${signed?.let { runCatching { okhttp3.HttpUrl.parse(it.url)?.encodedPath }.getOrNull() }.orEmpty()}")
+        }
+        if(raw.isBlank() && httpCode==200 && allowDomainFailover && signed!=null) {
+            val currentHost=runCatching { okhttp3.HttpUrl.parse(signed.url)?.host }.getOrNull().orEmpty()
+            val profile=userAgentProfile ?: primaryProfile()
+            val hosts=alternateApiHosts(currentHost)
+            for((index,host) in hosts.withIndex()) {
+                NetLog.retry("domain_failover",index+1,hosts.size,"HTTP 200 empty body from $currentHost")
+                val retry=resignForHost(signed,host,profile) ?: continue
+                val value=text(
+                    retry.url,
+                    retry,
+                    client=client,
+                    allowBackup=false,
+                    allowDomainFailover=false,
+                    storeRegionHeaders=storeRegionHeaders,
+                    userAgentProfile=profile,
+                )
+                if(value.isNotBlank()) {
+                    TncConfigStore.markHostSuccess(host)
+                    NetLog.emit("domain failover accepted host=$host")
+                    return value
+                }
+            }
+        }
         if(raw.isBlank() && httpCode==200 && allowBackup && signed!=null) {
-            val account=signed.headers["X-HGTV-Identity"]=="account"
             val anonymous=signed.headers["X-HGTV-Anonymous"]!=null
             val model=signed.url.contains("video_model") || signed.url.contains("multi_video_model")
-            if(!account && !anonymous && !model) {
+            if(!anonymous && !model) {
                 val backup=runCatching { playbackBackupDevices?.invoke()?.firstOrNull() }.getOrNull()
                 if(backup!=null) {
                     val retry=backupRequest(signed,backup)
                     if(retry!=null) {
+                        NetLog.retry("device_backup",1,1,"primary identity returned HTTP 200 empty body")
                         NetLog.emit("device backup retry host=${retry.url.substringAfter("//").substringBefore("/")} id=${backup.id.takeLast(6)}")
-                        return text(retry.url,retry,client=client,allowBackup=false,storeRegionHeaders=storeRegionHeaders)
+                        return text(
+                            retry.url,
+                            retry,
+                            client=client,
+                            allowBackup=false,
+                            allowDomainFailover=false,
+                            storeRegionHeaders=storeRegionHeaders,
+                            userAgentProfile=backup.profile,
+                        )
                     }
                 }
             }
         }
         return raw
     }
-    /** 主设备 200 空响应时，把同一条签名请求临时改签成一台备用设备。 */
-    private fun backupRequest(signed: Signer.Request, backup: PlaybackBackupDevice): Signer.Request? {
+
+    /** 同一套业务参数与设备参数，只换接口域名后重签。 */
+    private fun resignForHost(
+        signed: Signer.Request,
+        host: String,
+        profile: Map<String,String>,
+    ): Signer.Request? {
         val parsed=okhttp3.HttpUrl.parse(signed.url) ?: return null
         val values=linkedMapOf<String,String>()
         parsed.queryParameterNames().forEach { name ->
             if(name!="ts" && name!="_rticket") parsed.queryParameter(name)?.let { values[name]=it }
+        }
+        val base=parsed.newBuilder().scheme("https").host(host).query(null).build().toString()
+        val next=signer.sign(base,values,signed.body,signed.method,deviceOverride=profile)
+        val preserved=signed.headers.filterKeys {
+            it.equals("Cookie",ignoreCase=true) ||
+                it.equals("x-tt-token",ignoreCase=true) ||
+                it.equals("X-HGTV-Identity",ignoreCase=true) ||
+                it.equals("X-HGTV-Anonymous",ignoreCase=true) ||
+                it.equals("comment-source",ignoreCase=true) ||
+                it.equals("server-channel",ignoreCase=true) ||
+                it.equals("x-ss-stub",ignoreCase=true)
+        }
+        return next.copy(headers=next.headers+preserved)
+    }
+
+    private fun alternateApiHosts(currentHost: String): List<String> =
+        TncConfigStore.orderedApiHosts().filterNot { it.equals(currentHost,ignoreCase=true) }
+    /** 主设备 200 空响应时，把同一条签名请求临时改签成一台备用设备。 */
+    private fun backupRequest(signed: Signer.Request, backup: PlaybackBackupDevice): Signer.Request? {
+        val parsed=okhttp3.HttpUrl.parse(signed.url) ?: return null
+        val original=linkedMapOf<String,String>()
+        parsed.queryParameterNames().forEach { name ->
+            if(name!="ts" && name!="_rticket") parsed.queryParameter(name)?.let { original[name]=it }
+        }
+        val values=LinkedHashMap(original)
+        DEVICE_QUERY_KEYS.forEach(values::remove)
+        val fullProfile=LinkedHashMap(VendorConstants.device).apply {
+            putAll(backup.profile)
+            PROTOCOL_VALUES.forEach { (key,value) -> if(!containsKey(key)) put(key,value) }
+            // 客户端版本是接口协议的一部分，沿用原请求，不因换设备而换版本。
+            listOf("version_code","version_name","manifest_version_code","update_version_code","pv_player")
+                .forEach { key -> original[key]?.let { put(key,it) } }
+        }
+        DEVICE_QUERY_KEYS.forEach { key ->
+            fullProfile[key]?.takeIf { it.isNotBlank() }?.let { values[key]=it }
         }
         val base=parsed.newBuilder().query(null).build().toString()
         val next=signer.sign(
@@ -1373,6 +1552,38 @@ class ContentRepository(
         signed.headers["server-channel"]?.let { extra["server-channel"]=it }
         signed.headers["x-ss-stub"]?.let { extra["x-ss-stub"]=it }
         return next.copy(headers=next.headers+extra)
+    }
+
+    /** 无签名请求的备用地址：只替换设备参数，业务参数原样保留。 */
+    private fun backupQueryUrl(url: String,backup: PlaybackBackupDevice): String? {
+        val parsed=okhttp3.HttpUrl.parse(url) ?: return null
+        val original=linkedMapOf<String,String>()
+        parsed.queryParameterNames().forEach { name ->
+            if(name!="ts" && name!="_rticket") parsed.queryParameter(name)?.let { original[name]=it }
+        }
+        val values=LinkedHashMap(original)
+        DEVICE_QUERY_KEYS.forEach(values::remove)
+        val fullProfile=LinkedHashMap(VendorConstants.device).apply {
+            putAll(backup.profile)
+            PROTOCOL_VALUES.forEach { (key,value) -> if(!containsKey(key)) put(key,value) }
+            listOf("version_code","version_name","manifest_version_code","update_version_code","pv_player")
+                .forEach { key -> original[key]?.let { put(key,it) } }
+        }
+        DEVICE_QUERY_KEYS.forEach { key ->
+            fullProfile[key]?.takeIf { it.isNotBlank() }?.let { values[key]=it }
+        }
+        return parsed.newBuilder().query(null).build().toString()+"?"+
+            Signer.encode(values)
+    }
+
+    private fun urlWithHost(url: String,host: String): String {
+        if(host.isBlank()) return url
+        return okhttp3.HttpUrl.parse(url)?.newBuilder()
+            ?.scheme("https")
+            ?.host(host)
+            ?.build()
+            ?.toString()
+            ?: url
     }
     /**
      * 协议常量：官方 App 里也是硬编码，不随设备变。
@@ -1398,57 +1609,125 @@ class ContentRepository(
     private fun writeValues(): LinkedHashMap<String,String> = accountValues("73932","7.3.9.32")
     /** 搜索 / 弹幕这类 App 接口共用的设备参数：与播放器版本对齐，避免平台按旧版本拒绝。 */
     private fun appValues(): LinkedHashMap<String,String> = deviceValues("72232","7.2.2.32")
-    /** 账号页读写接口使用的登录用户设备参数。 */
+    /** 账号页读写接口使用的当前主身份参数。 */
     private fun accountAppValues(): LinkedHashMap<String,String> = accountValues("72232","7.2.2.32")
     /**
-     * 设备参数的分层组装（后一层压前一层，合并规则见 [deviceProfile]）：
-     *
-     * 1. [VendorConstants.device]：内置档案，兜底用；
-     * 2. [deviceIdentity]：本机身份（`device_id` / `iid`），来自 [registerDevice] 的注册结果；
-     * 3. 导入凭据带来的**真机档案**：`device_type` / `device_brand` / `os_version` /
-     *    `cdid` / `klink_egdi` / `rom_version` … 这些内置档案里没有或对不上的字段；
-     * 3. [PROTOCOL_VALUES] 与客户端版本：协议常量，官方 App 也硬编码，
-     *    放在最后一层保证 `aid` / `app_name` 不会被档案里的同名值冲掉。
+     * 设备参数使用 [primaryIdentity] 的单一快照：未登录是主设备，登录后是账号设备。
+     * [PROTOCOL_VALUES] 与客户端版本只覆盖协议常量，不改变身份来源。
      */
     private fun deviceValues(versionCode: String, versionName: String): LinkedHashMap<String,String> {
-        val values=LinkedHashMap(deviceProfile())
+        val values=LinkedHashMap(primaryProfile())
         values.putAll(PROTOCOL_VALUES)
         for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) values[key]=versionCode
         values["version_name"]=versionName
         return values
     }
     private fun accountValues(versionCode: String, versionName: String): LinkedHashMap<String,String> {
-        val values=LinkedHashMap(accountDeviceProfile())
+        val values=LinkedHashMap(primaryProfile())
         values.putAll(PROTOCOL_VALUES)
         for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) values[key]=versionCode
         values["version_name"]=versionName
         return values
     }
-    /** 普通业务请求只使用主设备身份，登录 Cookie 不再自动混入。 */
+    /** 普通业务请求也使用当前唯一的主身份；登录后即账号设备。 */
     private fun Signer.Request.withSession(): Signer.Request {
-        val cookie=registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }
-        return if(cookie.isEmpty()) this else copy(headers=headers+linkedMapOf("Cookie" to cookie))
+        val identity=primaryIdentity()
+        val extra=linkedMapOf<String,String>()
+        if(identity.cookie.isNotBlank()) extra["Cookie"]=identity.cookie
+        if(identity.token.isNotBlank()) extra["x-tt-token"]=identity.token
+        if(identity.account) extra["X-HGTV-Identity"]="account"
+        return if(extra.isEmpty()) this else copy(headers=headers+extra)
     }
 
     /**
-     * 账号页请求显式切到登录用户设备。
+     * 当前唯一的主身份快照。
      *
-     * Cookie 是登录设备 Cookie + 用户 `sessionid` 那一族的合并串；签名参数来自
-     * `credentials.device`。只有账号资料的增删改查会走这里。
+     * 未登录时是主设备；登录后如果账号设备与主设备不同，以账号设备为准。
+     * profile / Cookie / token 必须从同一份快照读取，不能逐项回落到另一套身份。
      */
-    private fun Signer.Request.withAccountSession(): Signer.Request {
-        val account=credentials?.takeIf { it.configured } ?: throw SignInRequiredException()
-        val extra=linkedMapOf<String,String>()
+    private data class PrimaryIdentity(
+        val account: Boolean,
+        val profile: Map<String,String>,
+        val cookie: String,
+        val token: String,
+    )
+
+    private fun primaryIdentity(): PrimaryIdentity {
+        val account=credentials?.takeIf {
+            it.configured &&
+                it.device["device_id"].orEmpty().isNotBlank() &&
+                (it.device["iid"].orEmpty().isNotBlank() || it.device["install_id"].orEmpty().isNotBlank())
+        }
+            ?: return PrimaryIdentity(
+                account=false,
+                profile=deviceProfile(),
+                cookie=com.hgtv.star.core.session.CookieRecord.mapToHeader(registrationCookies),
+                token="",
+            )
         val live=com.hgtv.star.core.session.SessionBridge.state
         val liveCookie=live?.cookieHeader.orEmpty()
         val liveSid=com.hgtv.star.core.session.CookieRecord.value(liveCookie,"sessionid")
         val accountSid=com.hgtv.star.core.session.CookieRecord.value(account.cookie,"sessionid")
         val sameSession=liveSid.isNotBlank() && liveSid==accountSid
-        val token=if(sameSession) live?.token.orEmpty() else ""
-        (token.takeIf { it.isNotBlank() } ?: account.token.takeIf { it.isNotBlank() })
-            ?.let { extra["x-tt-token"]=it }
-        val cookie=if(sameSession) liveCookie else account.cookie
-        if(cookie.isNotBlank()) extra["Cookie"]=cookie
+        val cookie=CookieRecord.headerToMap(account.cookie).toMutableMap().apply {
+            if(sameSession) putAll(CookieRecord.headerToMap(liveCookie))
+        }
+        val accountIid=account.device["iid"].orEmpty()
+            .ifBlank { account.device["install_id"].orEmpty() }
+        if(accountIid.isNotBlank() && cookie["install_id"].isNullOrBlank()) cookie["install_id"]=accountIid
+        return PrimaryIdentity(
+            account=true,
+            profile=accountDeviceProfile(account),
+            cookie=CookieRecord.mapToHeader(cookie),
+            token=if(sameSession) live?.token.orEmpty().ifBlank { account.token } else account.token,
+        )
+    }
+
+    /** 所有请求共用的当前主设备档案：登录后以账号设备为准。 */
+    private fun primaryProfile(): Map<String,String> = primaryIdentity().profile
+
+    /** 所有请求共用的当前主 Cookie：登录后只使用账号 Cookie，不再叠加匿名主设备 Cookie。 */
+    private fun primaryCookieHeader(): String = primaryIdentity().cookie
+
+    private fun recommendationValues(identity: PrimaryIdentity): LinkedHashMap<String,String> =
+        LinkedHashMap(identity.profile).apply {
+            putAll(PROTOCOL_VALUES)
+            for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
+                this[key]=CATEGORY_VERSION_CODE
+            }
+            this["version_name"]=CATEGORY_VERSION_NAME
+        }
+
+    /**
+     * 官方曝光上报使用的查询参数。
+     *
+     * 上报接口和官方书包推荐流共用 `74332 / 7.4.3.32`；分类接口仍保留原来的
+     * `73532 / 7.3.5.32`，避免把已稳定的分类链路一起改掉。
+     */
+    private fun recommendReportValues(identity: PrimaryIdentity): LinkedHashMap<String,String> =
+        recommendationValues(identity).apply {
+            for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
+                this[key]="74332"
+            }
+            this["version_name"]="7.4.3.32"
+            this["channel"]="update_64"
+        }
+
+    private fun Signer.Request.withRecommendationSession(identity: PrimaryIdentity): Signer.Request {
+        val extra=linkedMapOf<String,String>()
+        if(identity.token.isNotBlank()) extra["x-tt-token"]=identity.token
+        if(identity.cookie.isNotBlank()) extra["Cookie"]=identity.cookie
+        if(identity.account) extra["X-HGTV-Identity"]="account"
+        return if(extra.isEmpty()) this else copy(headers=headers+extra)
+    }
+
+    /** 账号页请求显式要求当前主身份必须是登录态。 */
+    private fun Signer.Request.withAccountSession(): Signer.Request {
+        val identity=primaryIdentity()
+        if(!identity.account) throw SignInRequiredException()
+        val extra=linkedMapOf<String,String>()
+        if(identity.token.isNotBlank()) extra["x-tt-token"]=identity.token
+        if(identity.cookie.isNotBlank()) extra["Cookie"]=identity.cookie
         extra["X-HGTV-Identity"]="account"
         return copy(headers=headers+extra)
     }
@@ -1462,16 +1741,21 @@ class ContentRepository(
      * 因此剧架行末的「查看全部」直接进对应的榜单页，不再另做一套「热门集合页」。
      *
      * 数据取自 **App 分类接口按 [RankBoard.sort] 排**（参数与 [categoryApi] 同一套）：
-     * 三个热播榜按最高热度（`hot_score`）取该分类里热度最高的一串，
-     * 「上新」按最新上架（`online_time`）取全站综合，名次与热度都由服务端给——
+     * 四个榜都按最高热度（`hot_score`）取数；推荐榜不筛分类，取全站综合热度。
+     * 名次与热度都由服务端给——
      * 名次取 `recommend_info.rank`，热度取 `recommend_reason_list.sub_title_list` 里 `data_type==27`
      * 的那一段（形如「9014万」）。分类见 [RankBoard.genre]，`null` 表示不筛分类（全站综合）。
      */
-    private fun rankApiPage(page: Int, board: RankBoard, size: Int): CatalogPage {
+    private fun rankApiPage(
+        page: Int,
+        board: RankBoard,
+        size: Int,
+        offset: Int = (page-1)*size,
+    ): CatalogPage {
         val body=JSONObject()
             .put("filter_ids","")
             .put("req_scene","default")
-            .put("offset",(page-1)*size)
+            .put("offset",offset)
             .put("need_selector_panel",false)
             .put("limit",size)
             .put("select_items",JSONObject()
@@ -1489,11 +1773,10 @@ class ContentRepository(
         // 因此这里直接复用，只有名次与热度要多读两处。
         val rows=payload.optJSONArray("video_data")?.objects().orEmpty()
         // 名次要换算：这一页的「页内序号」加上前面已经排过的条数，才是榜单上的名次。
-        val base=(page-1)*size
+        val base=offset
         val items=valid(rows.mapIndexed { index, row ->
             apiCard(row).also { series ->
-                // 「上新」是时间序，不画名次（页内序号当名次会误导）。
-                if(board.ranked) apiRank(row,base,index)?.let { positions[series.id]=it }
+                apiRank(row,base,index)?.let { positions[series.id]=it }
             }
         })
         if(items.isEmpty()) throw IOException("${board.label}榜暂无数据")
@@ -1540,16 +1823,19 @@ class ContentRepository(
     }
 
     /**
-     * 榜单的**一个逻辑页**（[LOGICAL_PAGE_SIZE] 条）。
+     * 榜单页的一页：首次 30 条，后续页按 [LOGICAL_PAGE_SIZE] 条续接。
      *
-     * 榜单页（`TAB_RANK`）走这一条：接口一次给满 100 条，后续页继续按同一大小追加。
+     * 首屏先给用户 30 条，减少进入页面时的等待；第 2 页从 offset=30 开始，
+     * 后续每页 100 条，不会漏条。
      */
     fun rank(page: Int = 1, board: RankBoard = RankBoard.COMIC): CatalogPage {
         require(page in 1..100)
-        return rankApiPage(page,board,LOGICAL_PAGE_SIZE)
+        val size=if(page==1) RANK_FIRST_PAGE_SIZE else LOGICAL_PAGE_SIZE
+        val offset=if(page==1) 0 else RANK_FIRST_PAGE_SIZE+(page-2)*LOGICAL_PAGE_SIZE
+        return rankApiPage(page,board,size,offset)
     }
     /**
-     * 首页四个「热播…」剧架的第 1 页：四个榜单彼此独立，串行要等四份 RTT，因此并发取。
+     * 首页四个榜单剧架的第 1 页：四个榜单彼此独立，串行要等四份 RTT，因此并发取。
      *
      * 单个榜单失败只让那一栏不出现（首页其余内容照常上屏），四个都失败才抛错。
      * 取消（切页 / 换标签）沿着 [RequestScope] 传进工作线程，在途的四个请求会一起收手。
@@ -1607,15 +1893,13 @@ class ContentRepository(
     }
 
     /**
-     * 推荐流的一页：**带续流游标**地取分类接口的「全部推荐」。
+     * 推荐流的一页。
      *
-     * 与 [categoryFeed] 的区别只有两点：
-     * * `session_id` 用调用方给的值（首次为空，之后用上一页返回的那个）；
-     * * `offset` 用调用方给的值（首次 0，之后用上一页返回的 `next_offset`）。
+     * 推荐页统一走分类接口，并固定按 `hot_score` 取内容；`session_id` / `offset`
+     * 仍由调用方续流，避免每次打开都回到同一批。官方 `bookmall/tab` 流不再参与
+     * 推荐页取数。
      *
-     * 这两点决定了「每次进推荐是不是同一套列表」：传空 + 0 永远回同一批。
-     * `sort` 不传 = 服务端的推荐序（不是热播榜）；`genre` 由 [selection] 决定，
-     * 推荐页传的是空选择（`genre` 为空数组 = 全部体裁，真人短剧 / 漫剧 / AI 剧混排）。
+     * [selection] 的 `gender` 仍会传进请求；[genres] 用于推荐范围筛选。
      *
      * **返回的 `nextOffset` 一定往前推**：早先这里有一句 `.coerceAtMost(2000)`，把游标钳在
      * 2000 上——实测 `offset=1980/1990/1999/2000` 回的都是 `next=2000`，于是每页都从 2000
@@ -1626,15 +1910,37 @@ class ContentRepository(
      * 传了就请服务端在这一页就把它们滤掉，客户端那层窗口只当兜底。空串 = 不带，
      * 与旧版请求逐字节一致。长度上限见 [RecommendFlow.FILTER_IDS_LIMIT]。
      */
-    fun recommendFeed(
+    override fun recommendFeed(
         selection: CategorySelection,
         sessionId: String,
         offset: Int,
-        limit: Int = RECOMMEND_PAGE_SIZE,
-        genres: List<String> = emptyList(),
-        filterIds: String = ""
+        limit: Int,
+        genres: List<String>,
+        filterIds: String,
+        tab: RecommendTab,
     ): RecommendFeed {
+        refreshRecommendStatConfigAsync()
         require(offset >= 0) { "offset 不能为负" }
+        // 统一回到旧分类接口；`hot_score` 由 categoryRecommendFeed 明确传入。
+        return categoryRecommendFeed(
+            selection=selection,
+            sessionId=sessionId,
+            offset=offset,
+            limit=limit,
+            genres=genres.ifEmpty { listOfNotNull(tab.genre) },
+            filterIds=filterIds,
+        )
+    }
+
+    /** 按热度取推荐流：分类接口 + `hot_score`，支持续流和推荐范围筛选。 */
+    private fun categoryRecommendFeed(
+        selection: CategorySelection,
+        sessionId: String,
+        offset: Int,
+        limit: Int,
+        genres: List<String>,
+        filterIds: String,
+    ): RecommendFeed {
         val body=JSONObject()
             // 服务端字段是**字符串**（给数组会回 `expected string`，见 `categoryApi` 的说明）。
             .put("filter_ids",filterIds)
@@ -1642,12 +1948,17 @@ class ContentRepository(
             .put("offset",offset)
             .put("need_selector_panel",false)
             .put("limit",limit)
-            .put("select_items",categorySelectItems(selection,null,genres))
+            // 推荐页也固定按最高热度取候选：保留续流游标、去重和曝光过滤，
+            // 但不再使用服务端那套容易混入冷门内容的默认推荐序。
+            .put("select_items",categorySelectItems(selection,CategorySelection.DEFAULT_SORT,genres))
             .put("session_id",sessionId)
             .put("req_type","only_content")
             .put("client_req_type",3)
         // 只重试 3 次（≈1.4s 最坏）：推荐页的等待全压在这条请求上，见 [categoryApiRaw]。
-        val data=JSONObject(categoryApiRaw(body,RECOMMEND_ATTEMPTS))
+        val data=JSONObject(categoryApiRaw(
+            body,
+            RECOMMEND_ATTEMPTS,
+        ))
         if(data.optInt("code",-1)!=0) throw IOException("推荐接口暂不可用")
         val payload=data.optJSONObject("data") ?: throw IOException("推荐接口结构已变化")
         val items=valid((payload.optJSONArray("video_data") ?: JSONArray()).objects().map(::apiCard))
@@ -1661,6 +1972,386 @@ class ContentRepository(
         }
         val more=payload.optBoolean("has_more",items.isNotEmpty())
         return RecommendFeed(CatalogPage(items,more),payload.optString("session_id").ifBlank { sessionId },next)
+    }
+
+    /**
+     * 官方书包 Tab 推荐流：`GET /reading/bookapi/bookmall/tab/v`。
+     *
+     * 响应不是分类接口那种平铺 `video_data`，而是：
+     *
+     * ```
+     * data.tab_item[tab_type=请求值]
+     *   .cell_data[]                 // 「猜你喜欢」外层
+     *     .cell_data[]               // 真正的推荐卡片
+     *       .video_data[0]           // 系列卡片
+     *       .video_detail             // UGC / 合集卡片
+     * ```
+     *
+     * 官方成功响应用 `bottom_unlimited=true` 表示无限流；首包常回
+     * `next_offset=0`，因此客户端必须用本页实际卡片数推进游标。
+     */
+    private fun officialRecommendFeed(
+        tab: RecommendTab,
+        selection: CategorySelection,
+        sessionId: String,
+        offset: Int,
+        filterIds: String,
+    ): RecommendFeed {
+        val tabType=requireNotNull(tab.tabType)
+        // 旧分类接口的 session_id 不是官方 bookmall 的 UUID。换接口后若继续带着旧
+        // offset 请求，官方会按新 session 解释这个位置，首屏就可能反复拿同一批 3 条。
+        val validSession=sessionId.takeIf {
+            runCatching { java.util.UUID.fromString(it) }.isSuccess
+        }
+        val sessionUuid=validSession ?: java.util.UUID.randomUUID().toString()
+        val requestOffset=if(validSession==null) 0 else offset
+        val raw=officialRecommendRaw(tabType,sessionUuid,requestOffset,filterIds,selection)
+        val root=JSONObject(raw)
+        if(root.optInt("code",-1)!=0) throw IOException("推荐接口暂不可用")
+        val payload=root.optJSONObject("data") ?: throw IOException("推荐接口结构已变化")
+        val tabs=payload.optJSONArray("tab_item")?.objects().orEmpty()
+        fun hasCards(row: JSONObject): Boolean =
+            (row.optJSONArray("cell_data")?.length() ?: 0)>0
+        val selected=tabs.firstOrNull {
+            it.optInt("tab_type",-1)==tabType && hasCards(it)
+        } ?: tabs.firstOrNull { hasCards(it) }
+            ?: throw IOException("推荐接口没有返回 tab_type=$tabType")
+        val items=officialFeedCards(selected)
+        // 官方首包常回 next_offset=0，且偶尔夹带无法解析的空卡片。游标必须按
+        // 原始卡片槽位推进，不能按解析成功的条数推进，否则会跳过或重复一页。
+        val rawSlots=officialFeedRawCardCount(selected)
+        val reported=selected.optInt("next_offset",-1)
+        val next=when {
+            reported>requestOffset -> reported
+            rawSlots>0 -> requestOffset+rawSlots
+            else -> requestOffset+3
+        }
+        val more=selected.optBoolean("bottom_unlimited",false) ||
+            selected.optBoolean("has_more",items.isNotEmpty())
+        return RecommendFeed(
+            page=CatalogPage(valid(items),more),
+            sessionId=sessionUuid,
+            nextOffset=next,
+        )
+    }
+
+    private fun officialFeedCards(tab: JSONObject): List<Series> {
+        val outer=tab.optJSONArray("cell_data")?.objects().orEmpty()
+        return outer.flatMap { cell ->
+            val inner=cell.optJSONArray("cell_data")?.objects().orEmpty()
+            if(inner.isEmpty()) listOfNotNull(officialFeedCard(cell))
+            else inner.mapNotNull(::officialFeedCard)
+        }
+    }
+
+    /**
+     * 官方推荐页的原始卡片槽位数。
+     *
+     * 外层 `cell_data` 可能是一个「猜你喜欢」容器，真正的卡片在它的内层
+     * `cell_data` 里；也有接口直接在外层给卡片。空槽位也要计入游标，避免
+     * 一个坏卡片让下一页从错误的位置开始。
+     */
+    private fun officialFeedRawCardCount(tab: JSONObject): Int {
+        val outer=tab.optJSONArray("cell_data")?.objects().orEmpty()
+        return outer.fold(0) { count, cell ->
+            val inner=cell.optJSONArray("cell_data")
+            count + if(inner!=null && inner.length()>0) inner.length() else 1
+        }
+    }
+
+    /**
+     * 把官方书包卡片归一成页面使用的 [Series]。
+     *
+     * 系列卡片的正文在 `video_data[0].video_detail`，UGC / 合集卡片的正文
+     * 直接在外层 `video_detail`；两条路径都保留原始 `recommend_info`，
+     * 曝光上报才能原样回传服务端。
+     */
+    private fun officialFeedCard(cell: JSONObject): Series? {
+        val videoData=cell.optJSONArray("video_data")?.objects()?.firstOrNull()
+        val direct=cell.optJSONObject("video_detail")
+        val detail=videoData?.optJSONObject("video_detail") ?: direct ?: videoData
+        val firstVideo=detail?.optJSONArray("video_list")?.objects()?.firstOrNull()
+            ?: detail?.optJSONArray("video_detail_list")?.objects()?.firstOrNull()
+        val id=detail?.str("series_id").orEmpty()
+            .ifBlank { detail?.str("series_id_str").orEmpty() }
+            .ifBlank { videoData?.str("series_id").orEmpty() }
+            .ifBlank { firstVideo?.str("series_id").orEmpty() }
+            .ifBlank { detail?.str("related_album_id").orEmpty() }
+        val title=detail?.str("series_title").orEmpty()
+            .ifBlank { videoData?.str("title").orEmpty() }
+            .ifBlank { firstVideo?.str("title").orEmpty() }
+            .ifBlank { detail?.str("title").orEmpty() }
+        if(id.isBlank() || title.isBlank()) return null
+        val count=detail?.optInt("episode_cnt",0)?.takeIf { it>0 }
+            ?: firstVideo?.optInt("episode_cnt",0)
+            ?: 0
+        val info=videoData?.let { rawJsonValue(it,"recommend_info") }.orEmpty()
+            .ifBlank { detail?.let { rawJsonValue(it,"recommend_info") }.orEmpty() }
+        val groupId=videoData?.let { rawJsonValue(it,"recommend_group_id") }.orEmpty()
+            .ifBlank { detail?.let { rawJsonValue(it,"recommend_group_id") }.orEmpty() }
+            .ifBlank { runCatching { JSONObject(info).str("gid") }.getOrDefault("") }
+        val tag=officialTagInfo(detail,videoData)
+        val reasonSource=videoData ?: detail
+        val heat=reasonSource?.let(::heatOf) ?: 0L
+        val ranking=officialRankingInfo(videoData)
+            .takeIf { it.first.isNotBlank() }
+            ?: officialRankingInfo(detail)
+        val playCount=(detail?.optLong("series_play_cnt",0)
+            ?: videoData?.optLong("series_play_cnt",0)
+            ?: 0L).coerceIn(0L,Int.MAX_VALUE.toLong()).toInt()
+        val vertical=detail?.optBoolean("vertical",false)==true ||
+            firstVideo?.optBoolean("vertical",false)==true ||
+            videoData?.optBoolean("vertical",false)==true
+        val contentType=detail?.optInt("content_type",0)
+            ?: videoData?.optInt("content_type",0)
+            ?: 0
+        return Series(
+            id=id,
+            title=title,
+            cover=cleanUrl(
+                detail?.str("series_cover").orEmpty()
+                    .ifBlank { videoData?.str("cover").orEmpty() }
+                    .ifBlank { firstVideo?.str("cover").orEmpty() },
+            ),
+            description=detail?.str("series_intro").orEmpty()
+                .ifBlank { firstVideo?.str("video_desc").orEmpty() },
+            badge=EpisodeLabel.normalize(detail?.str("episode_right_text").orEmpty())
+                .ifEmpty { EpisodeLabel.of(count) },
+            tags=detail?.let { tagsOf(it) }.orEmpty(),
+            author=publisher(detail?.str("copyright").orEmpty()),
+            episodeCount=count,
+            seasonIndex=detail?.let(::seasonOf) ?: videoData?.let(::seasonOf) ?: 0,
+            vertical=vertical,
+            heat=heat,
+            playCount=playCount,
+            label=tag?.str("text").orEmpty().trim(),
+            labelBg=tagColors(tag),
+            recommendInfo=info,
+            recommendGroupId=groupId,
+            contentType=contentType,
+            recommendRanking=ranking.first,
+            recommendRankingBg=ranking.second,
+        )
+    }
+
+    private fun officialTagInfo(
+        detail: JSONObject?,
+        videoData: JSONObject?,
+    ): JSONObject? {
+        detail?.let(::tagInfo)?.let { return it }
+        videoData?.let(::tagInfo)?.let { return it }
+        return detail?.optJSONArray("video_tag_info")?.objects()?.firstOrNull()
+            ?: videoData?.optJSONArray("video_tag_info")?.objects()?.firstOrNull()
+    }
+
+    /**
+     * 官方推荐原因里的排行榜提示。
+     *
+     * `rec_tags` 在系列卡片里既可能给 `recommend_reason`（如「AI剧热播榜 No.10」），
+     * 也可能只给 `content`（如「真人剧·必看月榜 No.10」）。可见文案优先取前者，
+     * 没有时再取后者；背景色原样从 `rec_reason_style` 读取。
+     */
+    private fun officialRankingInfo(source: JSONObject?): Pair<String,String> {
+        val reason=source?.let(::reasonPayload) ?: return "" to ""
+        val tags=reason.optJSONArray("rec_tags")?.objects().orEmpty()
+        val text=tags.mapNotNull { row ->
+            row.str("recommend_reason").ifBlank { row.str("content") }
+                .trim().takeIf { it.isNotEmpty() }
+        }.distinct().joinToString("｜")
+        val bg=tags.asSequence().mapNotNull { recTagColors(it).takeIf(String::isNotEmpty) }
+            .firstOrNull().orEmpty()
+        return text to bg
+    }
+
+    private fun recTagColors(row: JSONObject): String {
+        val style=row.optJSONObject("rec_reason_style")
+            ?: jsonObject(row.str("rec_reason_style"))
+            ?: return ""
+        val colors=style.optJSONArray("rec_style_background_colors")
+        if(colors!=null) {
+            val values=(0 until colors.length()).mapNotNull { index ->
+                colors.optString(index,"").trim().takeIf { it.startsWith("#") }
+            }
+            if(values.isNotEmpty()) return values.joinToString(",")
+        }
+        return style.str("rec_style_background_color")
+            .trim()
+            .takeIf { it.startsWith("#") }
+            .orEmpty()
+    }
+
+    /**
+     * 官方书包 Tab 的 GET 请求。每次重试重新签名；成功后返回原始 JSON。
+     */
+    private fun officialRecommendRaw(
+        tabType: Int,
+        sessionUuid: String,
+        offset: Int,
+        filterIds: String,
+        selection: CategorySelection,
+    ): String {
+        var problem: IOException=IOException("推荐接口暂无响应")
+        repeat(RECOMMEND_ATTEMPTS) { attempt ->
+            if(attempt>0) {
+                val delay=CATEGORY_RETRY_DELAYS[(attempt-1).coerceAtMost(CATEGORY_RETRY_DELAYS.lastIndex)]
+                NetLog.retry("recommend",attempt+1,RECOMMEND_ATTEMPTS,problem.message.orEmpty(),delay)
+                try {
+                    Thread.sleep(delay)
+                } catch(cancelled: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IOException("请求已取消",cancelled)
+                }
+            }
+            try {
+                val identity=primaryIdentity()
+                val values=officialRecommendationValues(
+                    identity=identity,
+                    tabType=tabType,
+                    sessionUuid=sessionUuid,
+                    offset=offset,
+                    filterIds=filterIds,
+                    selection=selection,
+                )
+                val signed=signer.sign(
+                    "https://${videoHost()}/reading/bookapi/bookmall/tab/v",
+                    values,
+                    method="GET",
+                ).withRecommendationSession(identity)
+                val raw=text(
+                    signed.url,
+                    signed,
+                    allowBackup=false,
+                    allowDomainFailover=true,
+                    storeRegionHeaders=true,
+                    userAgentProfile=identity.profile,
+                )
+                if(raw.isNotBlank()) return raw
+                problem=IOException("推荐接口暂无响应")
+            } catch(failure: IOException) {
+                if(Thread.currentThread().isInterrupted) throw failure
+                problem=failure
+            }
+        }
+        throw problem
+    }
+
+    private fun officialRecommendationValues(
+        identity: PrimaryIdentity,
+        tabType: Int,
+        sessionUuid: String,
+        offset: Int,
+        filterIds: String,
+        selection: CategorySelection,
+    ): LinkedHashMap<String,String> {
+        val values=recommendationValues(identity)
+        for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
+            values[key]="74332"
+        }
+        values["version_name"]="7.4.3.32"
+        values["session_uuid"]=sessionUuid
+        values["normal_session_id"]=officialNormalSessionId
+        values["cold_start_session_id"]=officialColdStartSessionId
+        values["normal_session_cnt_in_day"]="1"
+        values["cold_start_session_cnt_in_day"]="1"
+        values["normal_session_cnt_in_life"]="1"
+        values["cold_start_session_cnt_in_life"]="1"
+        values["tab_type"]=tabType.toString()
+        values["tab_index"]="0"
+        values["offset"]=offset.toString()
+        values["last_tab_index"]="0"
+        values["last_tab_type"]="0"
+        values["last_session_video_tab_type"]=tabType.toString()
+        values["landing_bottom_tab_type"]="0"
+        values["bottom_tab_type"]="7"
+        values["bottom_tab_type_list"]=
+            if(tabType==16) "7,0,1,2,3,4" else "7,0,1,5,2,4"
+        values["client_req_type"]=if(tabType==16) "1028" else "4"
+        values["is_horizontal_screen"]="false"
+        values["screen_width_px"]=identity.profile["resolution"]
+            ?.substringBefore('*')
+            ?.toIntOrNull()
+            ?.toString()
+            ?: "1080"
+        values["device_level"]="3"
+        values["stream_count"]=OFFICIAL_RECOMMEND_STREAM_COUNT
+        values["recommend_extra"]=OFFICIAL_RECOMMEND_EXTRA
+        values["is_video_feed_tab_first_request_cold_start"]=
+            if(offset==0) "true" else "false"
+        values["cold_start_session"]=if(offset==0) "1" else "0"
+        values["video_tab_cold_start"]="0"
+        values["first_use_category_select"]="false"
+        values["page_entry_time"]="0"
+        values["has_video_cache"]="false"
+        values["disable_digg_stat"]="false"
+        values["last_search_query_from_rec"]="false"
+        values["ranklist_in_1col_show_times"]="0"
+        values["ranklist_in_1col_no_consume_show_times"]="0"
+        values["req_rank_category_id"]="0"
+        values["req_rank_algo"]="0"
+        values["unlimited_short_series_change_type"]="0"
+        values["unlimited_short_series_next_offset"]="0"
+        values["book_id"]="0"
+        values["item_id"]="0"
+        values["auth_aweme"]="false"
+        values["auth_backward"]="true"
+        values["after_genre_preference_popup"]="0"
+        if(tabType==16) {
+            values["filter_ids"]=filterIds
+            values["rec_filter_info_list"]=""
+            val gender=when(val selected=selection.gender) {
+                null -> "2"
+                "male" -> "1"
+                "female" -> "0"
+                else -> selected.takeIf { it.matches(Regex("[0-9]+")) }
+            }
+            gender?.let { values["gender"]=it }
+        }
+        return values
+    }
+
+    /**
+     * 上报推荐曝光（官方 `FilterImpression`）。
+     *
+     * 拉推荐流和上报必须使用同一套身份：登录时用账号 Cookie / token 与账号设备档案，
+     * 未登录时才回落到主设备。批量、节流和失败重试由 [RecommendBehavior] 统一处理。
+     */
+    override fun reportRecommendStats(events: List<RecommendStatData>) {
+        if(events.isEmpty()) return
+        val identity=primaryIdentity()
+        val rows=JSONArray()
+        events.forEach { event ->
+            val row=JSONObject()
+                .put("recommend_info",event.recommendInfo)
+                .put("group_id",event.groupId)
+                .put("content_type",event.contentType)
+                .put("stat_item_type",event.statItemType)
+                .put("client_time",event.clientTime)
+            rows.put(row)
+        }
+        val payload=JSONObject()
+            .put("scene",1)
+            .put("stat_data",rows)
+            .toString()
+            .toByteArray(Charsets.UTF_8)
+        val signed=signer.sign(
+            recommendStatUrl(),
+            recommendReportValues(identity),
+            payload,
+            method="POST",
+        ).withRecommendationSession(identity)
+        // 官方上报请求带设备区域头；身份、签名和 UA 档案必须与推荐取流保持一致。
+        val raw=text(
+            signed.url,
+            signed,
+            allowBackup=false,
+            storeRegionHeaders=true,
+            userAgentProfile=identity.profile,
+        )
+        if(raw.isBlank()) throw IOException("推荐上报暂无响应")
+        val reply=JSONObject(raw)
+        if(reply.optInt("code",-1)!=0) {
+            throw IOException("推荐上报失败（code=${reply.optInt("code",-1)}）")
+        }
     }
 
     /**
@@ -1689,12 +2380,13 @@ class ContentRepository(
         val recommendation=selection.sort==null && selection.hasNoDetailFilters()
         val fallback=selection.sort==null && (!recommendation || page>=3)
         val select=categorySelectItems(selection,if(fallback) "hot_score" else selection.sort)
+        val limit=categoryLimit(page)
         val body=JSONObject()
             .put("filter_ids","")
             .put("req_scene","default")
             .put("offset",categoryOffset(selection,page))
             .put("need_selector_panel",needPanel)
-            .put("limit",categoryLimit(page))
+            .put("limit",limit)
             .put("select_items",select)
             .put("session_id","")
             .put("req_type",if(needPanel) "default" else "only_content")
@@ -1702,10 +2394,14 @@ class ContentRepository(
         val data=JSONObject(categoryApiRaw(body,if(page<=1) FIRST_PAGE_ATTEMPTS else CATEGORY_ATTEMPTS))
         if(data.optInt("code",-1)!=0) throw IOException("分类接口暂不可用")
         val payload=data.optJSONObject("data") ?: throw IOException("分类接口结构已变化")
-        val items=valid((payload.optJSONArray("video_data") ?: JSONArray()).objects().map(::apiCard))
+        val rows=(payload.optJSONArray("video_data") ?: JSONArray()).objects()
+        val items=valid(rows.map(::apiCard))
         val serverMore=payload.optBoolean("has_more",false)
         // 推荐流第 2 页会回 `has_more=false`，但后面还要接 hot_score，所以这里补一页。
-        val more=(serverMore || (recommendation && page<=2)) && page<MAX_CATALOG_PAGE
+        // 服务端偶尔在“刚好装满一页”时把 has_more 错报成 false；这种满页不能提前终止，
+        // 否则分类页会在同一位置停住。多请求一页，真到底时下一页为空自然结束。
+        val fullPage=rows.size>=limit
+        val more=(serverMore || fullPage || (recommendation && page<=2)) && page<MAX_CATALOG_PAGE
         val panel=if(needPanel) parseCategoryPanel(payload.optJSONArray("selector_rows")) else null
         return CategoryFeed(CatalogPage(items,more),panel)
     }
@@ -1741,10 +2437,8 @@ class ContentRepository(
         selection.role?.let { select.put(CategorySelection.TYPE_ROLE,JSONArray().put(it)) }
         selection.epoch?.let { select.put(CategorySelection.TYPE_EPOCH,JSONArray().put(it)) }
         selection.gender?.let { select.put(CategorySelection.TYPE_GENDER,JSONArray().put(it)) }
-        selection.onlineTime?.let { select.put(CategorySelection.TYPE_ONLINE_TIME,JSONArray().put(it)) }
-        selection.creationStatus?.let { select.put(CategorySelection.TYPE_CREATION_STATUS,JSONArray().put(it)) }
-        // 排序为空 = 「全部推荐」：前两页不传 `sort`（服务端回它自己的推荐序），
-        // 第 3 页起由调用方传入 `hot_score` 续翻。
+        // 分类页已统一移除「时间」「状态」两栏；旧缓存里即使残留值也不再发送。
+        // 排序为空 = 用户主动选择服务端推荐序；分类页默认与推荐流都传 hot_score。
         sort?.let { select.put(CategorySelection.TYPE_SORT,JSONArray().put(it)) }
         return select
     }
@@ -1769,13 +2463,19 @@ class ContentRepository(
      * 上一页之后，可以多等一会儿。分类 / 榜单首屏与推荐页只给 3 次，避免整页长时间停在
      * 「正在加载」上。
      */
-    private fun categoryApiRaw(body: JSONObject,attempts: Int = CATEGORY_ATTEMPTS): String {
+    private fun categoryApiRaw(
+        body: JSONObject,
+        attempts: Int = CATEGORY_ATTEMPTS,
+    ): String {
         val payload=body.toString().toByteArray()
+        val identity=primaryIdentity()
         var problem: IOException=IOException("分类接口暂无响应")
         for(attempt in 0 until attempts) {
             if(attempt>0) {
+                val delay=CATEGORY_RETRY_DELAYS[(attempt-1).coerceAtMost(CATEGORY_RETRY_DELAYS.lastIndex)]
+                NetLog.retry("category",attempt+1,attempts,problem.message.orEmpty(),delay)
                 try {
-                    Thread.sleep(CATEGORY_RETRY_DELAYS[(attempt-1).coerceAtMost(CATEGORY_RETRY_DELAYS.lastIndex)])
+                    Thread.sleep(delay)
                 } catch(cancelled: InterruptedException) {
                     Thread.currentThread().interrupt()
                     throw IOException("请求已取消",cancelled)
@@ -1785,15 +2485,20 @@ class ContentRepository(
                 // 每次重试都重签：`ts` / `_rticket` 是签名的一部分，复用旧签名会被判过期。
                 // 分类 / 榜单这条只认 POST + JSON body（GET 该路径回 404）。
                 val signAt=System.nanoTime()
-                val signed=signer.sign(categoryApiUrl(),deviceValues(CATEGORY_VERSION_CODE,CATEGORY_VERSION_NAME),payload,method="POST").withSession()
+                val values=recommendationValues(identity)
+                val signed=signer.sign(categoryApiUrl(),values,payload,method="POST")
+                    .withRecommendationSession(identity)
                 if(NetLog.timing) {
                     NetLog.log("sign ${signed.url.substringAfter("//").substringBefore("/")} body=${payload.size}B took=${(System.nanoTime()-signAt)/1_000_000}ms")
                 }
-                fun send(one: Signer.Request): String {
+                fun send(one: Signer.Request,profile: Map<String,String>): String {
                     val request=Request.Builder().url(one.url)
                     one.headers.forEach { (key,value) -> if(key!="User-Agent" && key!="Accept") request.header(key,value) }
                     // UA / Accept 保持与改动前一致：UA 用 App 那条（签名默认按「有 body」选视频 UA）。
-                    request.header("User-Agent",VendorConstants.userAgent(deviceProfile(), video = false))
+                    request.header("User-Agent",VendorConstants.userAgent(
+                        profile,
+                        video = false,
+                    ))
                     request.header("Accept","application/json; charset=utf-8,application/x-protobuf")
                     request.post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
                     val callAt=System.nanoTime()
@@ -1812,14 +2517,29 @@ class ContentRepository(
                         text
                     }
                 }
-                var raw=send(signed)
+                var raw=send(signed,identity.profile)
+                if(raw.isBlank()) {
+                    val currentHost=runCatching { okhttp3.HttpUrl.parse(signed.url)?.host }.getOrNull().orEmpty()
+                    val hosts=alternateApiHosts(currentHost)
+                    for((index,host) in hosts.withIndex()) {
+                        NetLog.retry("category_domain",index+1,hosts.size,"HTTP 200 empty body from $currentHost")
+                        val retry=resignForHost(signed,host,identity.profile) ?: continue
+                        raw=send(retry,identity.profile)
+                        if(raw.isNotBlank()) {
+                            TncConfigStore.markHostSuccess(host)
+                            NetLog.emit("category domain failover accepted host=$host")
+                            break
+                        }
+                    }
+                }
                 if(raw.isBlank()) {
                     val backup=runCatching { playbackBackupDevices?.invoke()?.firstOrNull() }.getOrNull()
                     if(backup!=null) {
                         val retry=backupRequest(signed,backup)
                         if(retry!=null) {
+                            NetLog.retry("category_backup",1,1,"primary identity returned HTTP 200 empty body")
                             NetLog.emit("device backup retry category id=${backup.id.takeLast(6)}")
-                            raw=send(retry)
+                            raw=send(retry,backup.profile)
                         }
                     }
                 }
@@ -1835,11 +2555,70 @@ class ContentRepository(
                 problem=failure
             }
         }
+        NetLog.error("[API] error scope=category attempts=$attempts reason=${problem.message.orEmpty().take(220)}")
         throw problem
     }
 
     private fun categoryApiUrl(): String =
         "https://${videoHost()}/reading/distribution/category/landpage/v/"
+
+    private fun recommendStatUrl(): String =
+        "https://${videoHost()}/reading/distribution/recommend_stat/report/v1/"
+
+    /**
+     * 读取官方推荐曝光上报频率。
+     *
+     * 配置项：`short_video_recommend_stat_report_duration`。网络失败时保留 10 秒默认值，
+     * 不影响推荐流；成功时缓存一小时，失败五分钟后重试。
+     */
+    private fun refreshRecommendStatConfigAsync() {
+        val now=System.currentTimeMillis()
+        synchronized(recommendStatConfigLock) {
+            if(recommendStatConfigLoading || now<recommendStatConfigNextAt) return
+            recommendStatConfigLoading=true
+        }
+        WorkLanes.network.executor.execute {
+            var ok=false
+            try {
+                val identity=primaryIdentity()
+                val values=recommendationValues(identity).toMutableMap()
+                values["app"]="1"
+                values["settings_time"]="0"
+                values["_rticket"]=System.currentTimeMillis().toString()
+                val url="https://is.snssdk.com/service/settings/v3/?"+Signer.encode(values)
+                val headers=linkedMapOf<String,String>()
+                if(identity.cookie.isNotBlank()) headers["Cookie"]=identity.cookie
+                if(identity.token.isNotBlank()) headers["x-tt-token"]=identity.token
+                val request=Signer.Request(url,headers,null,"GET")
+                val raw=text(
+                    url,
+                    request,
+                    allowBackup=false,
+                    allowDomainFailover=false,
+                    storeRegionHeaders=true,
+                    userAgentProfile=identity.profile,
+                )
+                if(raw.isNotBlank()) {
+                    if(RecommendStatConfigStore.applySettings(raw)) {
+                        RecommendBehavior.onConfigChanged()
+                        NetLog.log(
+                            "recommend stat config enable=${RecommendStatConfigStore.isEnabled()} "+
+                                "duration=${RecommendStatConfigStore.durationMs()}ms",
+                        )
+                    }
+                    ok=true
+                }
+            } catch(_: Exception) {
+                ok=false
+            } finally {
+                synchronized(recommendStatConfigLock) {
+                    recommendStatConfigLoading=false
+                    recommendStatConfigNextAt=System.currentTimeMillis()+
+                        if(ok) 60*60*1000L else 5*60*1000L
+                }
+            }
+        }
+    }
     /**
      * 分类接口的卡片：字段名与 SSR 那套不同（`title` / `cover` / `video_desc`）。
      *
@@ -1850,14 +2629,34 @@ class ContentRepository(
         val count=item.optInt("episode_cnt",0)
         val tags=tagsOf(item)
         val tag=tagInfo(item)
+        val ranking=officialRankingInfo(item)
+        val recommendInfo=rawJsonValue(item,"recommend_info")
+        val recommendGroupId=item.str("recommend_group_id").ifBlank {
+            runCatching { JSONObject(recommendInfo).optString("gid") }.getOrDefault("")
+        }
         return Series(item.str("series_id"),item.str("title"),cleanUrl(item.str("cover")),
             item.str("video_desc"),EpisodeLabel.of(count),tags,
             author=publisher(item.str("copyright")),episodeCount=count,seasonIndex=seasonOf(item),
             vertical=item.optBoolean("vertical",false),
             heat=heatOf(item),
             label=tag?.str("text").orEmpty().trim(),
-            labelBg=tagColors(tag))
+            labelBg=tagColors(tag),
+            recommendInfo=recommendInfo,
+            recommendGroupId=recommendGroupId,
+            contentType=item.optInt("content_type",0),
+            recommendRanking=ranking.first,
+            recommendRankingBg=ranking.second,
+        )
     }
+
+    /** 保留接口里的 JSON 原文；对象和字符串两种形态都统一成字符串。 */
+    private fun rawJsonValue(item: JSONObject,key: String): String =
+        when(val value=item.opt(key)) {
+            is JSONObject -> value.toString()
+            is JSONArray -> value.toString()
+            null -> ""
+            else -> value.toString()
+        }
 
     /**
      * 卡片左上角那个系统角标。
@@ -1916,24 +2715,34 @@ class ContentRepository(
     /**
      * 接口给的季号（0 = 没给）。
      *
-     * 列表接口（分类 / 榜单 / 搜索 / 提示词）每条都带 `sub_title_list`：其中 `data_type == 0`
-     * 的那一条就是「第N季」——**没有季号的剧也写「第1季」**，所以它比从剧名里猜更准
-     * （剧名可能整个不提季号，例如「帐中香」）。`recommend_reason_list` 是同一份数据的字符串副本。
-     *
-     * 详情 / 相关作品那两条接口不给 `sub_title_list`，给的是数字字段 `season_index`。
+     * 分类 / 榜单优先取 `sub_title_list` 里 `data_type == 0` 的「第N季」；
+     * 详情 / 相关作品取数字字段 `season_index`。搜索实测没有这些字段，只把完整剧名留给
+     * [SeriesSeasons] 解析；如果服务端以后补 `sub_title` / `tag_info.text`，这里也会直接采用。
      */
     private fun seasonOf(item: JSONObject): Int {
         fun fromRows(rows: JSONArray?): Int {
             rows?.objects()?.forEach { row ->
-                val hit=SEASON_TEXT.find(row.str("content"))
-                if(hit!=null) return hit.groupValues[1].toIntOrNull() ?: 0
+                val season=seasonFromText(row.str("content"))
+                if(season>0) return season
             }
             return 0
         }
         fromRows(item.optJSONArray("sub_title_list")).takeIf { it>0 }?.let { return it }
         runCatching { JSONObject(item.str("recommend_reason_list")).optJSONArray("sub_title_list") }
             .getOrNull()?.let { rows -> fromRows(rows).takeIf { it>0 }?.let { return it } }
-        return item.optInt("season_index",0)
+        item.optInt("season_index",0).takeIf { it>0 }?.let { return it }
+        seasonFromText(item.str("sub_title")).takeIf { it>0 }?.let { return it }
+        return seasonFromText(item.optJSONObject("tag_info")?.str("text").orEmpty())
+    }
+
+    /** 从 `第3季` / `第三季` / `第3季 · 全80集` 这类接口文案中取季号。 */
+    private fun seasonFromText(value: String): Int {
+        if(value.isBlank()) return 0
+        return value.split('·',',','，','|','/','\n')
+            .asSequence()
+            .map { it.trim() }
+            .mapNotNull { token -> SeriesSeasons.parse(token).takeIf { it.matched }?.season }
+            .firstOrNull() ?: 0
     }
 
     /**
@@ -2119,6 +2928,7 @@ class ContentRepository(
                     healed = true
                     val ok = runCatching { deviceHeal?.invoke(this,"搜索被拒") }.getOrNull()==true
                     if(ok) {
+                        NetLog.retry("search_device_heal",2,2,"device rejected; identity rebuilt")
                         NetLog.emit("device healed after search rejection; retrying app search")
                         continue
                     }
@@ -2246,8 +3056,10 @@ class ContentRepository(
         var last: Throwable?=null
         repeat(WEB_SEARCH_RETRY+1) { attempt ->
             if(attempt>0) {
+                val delay=WEB_SEARCH_RETRY_DELAY*attempt
+                NetLog.retry("web_search",attempt+1,WEB_SEARCH_RETRY+1,last?.message.orEmpty(),delay)
                 try {
-                    Thread.sleep(WEB_SEARCH_RETRY_DELAY*attempt)
+                    Thread.sleep(delay)
                 } catch(cancelled: InterruptedException) {
                     Thread.currentThread().interrupt()
                     throw IOException("请求已取消",cancelled)
@@ -2261,7 +3073,9 @@ class ContentRepository(
                 last=problem
             }
         }
-        throw (last ?: IOException("官网搜索暂不可用"))
+        val failure=last ?: IOException("官网搜索暂不可用")
+        NetLog.error("[API] error scope=web_search attempts=${WEB_SEARCH_RETRY+1} reason=${failure.message.orEmpty().take(220)}")
+        throw failure
     }
     /**
      * 官网搜索的一个**物理页**（服务端一页 10 条）：只解析、不去重、不拼页。
@@ -2303,7 +3117,21 @@ class ContentRepository(
             cover=cleanUrl(o.str("series_cover")),
             description=o.str("series_intro"),
             badge=EpisodeLabel.normalize(o.str("episode_right_text")).ifEmpty { EpisodeLabel.of(count) },
-            tags=tags,episodeCount=count)
+            tags=tags,episodeCount=count,seasonIndex=seasonOf(o))
+    }
+    /**
+     * 搜索卡片标题。
+     *
+     * `search_high_light` 只用于展示命中词，个别设备返回的文本会丢掉剧名尾部的季号。
+     * 原始 `video_data.title` 才是完整剧名，因此必须优先用它；高亮文本仅作兜底。
+     */
+    private fun searchTitle(row: JSONObject,video: JSONObject): String {
+        val canonical=video.str("title")
+        if(canonical.isNotBlank()) return canonical
+        val highlighted=row.optJSONObject("search_high_light")
+            ?.optJSONObject("title")?.str("text").orEmpty()
+            .replace(SEARCH_HIGHLIGHT,"").trim()
+        return highlighted.ifEmpty { row.str("cell_name") }
     }
     /**
      * 官网页面的一次 GET：不走 App 的签名与设备参数（那套头对官网没有意义），
@@ -2311,7 +3139,8 @@ class ContentRepository(
      */
     private fun siteText(url: String,retries: Int = 0): String {
         var last: Throwable? = null
-        repeat(retries+1) {
+        repeat(retries+1) { attempt ->
+            if(attempt>0) NetLog.retry("site_search",attempt+1,retries+1,last?.message.orEmpty())
             val request=Request.Builder().url(url)
                 .header("User-Agent","Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0 Safari/537.36")
                 .header("Accept-Language","zh-CN,zh;q=0.9")
@@ -2332,7 +3161,9 @@ class ContentRepository(
                 last=problem
             }
         }
-        throw (last ?: IOException("内容请求失败"))
+        val failure=last ?: IOException("内容请求失败")
+        NetLog.error("[API] error scope=site_search attempts=${retries+1} reason=${failure.message.orEmpty().take(220)}")
+        throw failure
     }
     /**
      * 搜索：只走 App 搜索接口（`GET /reading/bookapi/search/tab/v`，参数全在 query 里）。
@@ -2367,7 +3198,9 @@ class ContentRepository(
         // 有一个 tab 给了答案就用它：另一个 tab 空响应 / 少 tab 都不算失败。
         if(answered) return CatalogPage(valid(items),hasMore && page<100)
         if(expired) throw SearchSessionExpiredException()
-        throw failure ?: SearchApiException(SearchDiag.FAILURE_FORMAT,"接口没有返回任何 tab 数据")
+        val problem=failure ?: SearchApiException(SearchDiag.FAILURE_FORMAT,"接口没有返回任何 tab 数据")
+        NetLog.error("[API] error scope=search page=$page types=${types.joinToString(",")} reason=${problem.message.orEmpty().take(220)}")
+        throw problem
     }
     /**
      * 搜索接口空响应时的原地补发（见 [appSearch]）。
@@ -2377,8 +3210,15 @@ class ContentRepository(
      */
     private fun retryBlankSearch(raw: String, signed: Signer.Request): String {
         var current=raw
-        repeat(SEARCH_BLANK_RETRIES) {
+        repeat(SEARCH_BLANK_RETRIES) { attempt ->
             if(current.isNotBlank()) return current
+            NetLog.retry(
+                "search_blank",
+                attempt+1,
+                SEARCH_BLANK_RETRIES,
+                "HTTP 200 empty body",
+                SEARCH_BLANK_RETRY_DELAY_MS,
+            )
             try {
                 Thread.sleep(SEARCH_BLANK_RETRY_DELAY_MS)
             } catch(e: InterruptedException) {
@@ -2434,6 +3274,7 @@ class ContentRepository(
         var attempt=0
         while(attempt<3 && raw.startsWith("""{"code":100103""")) {
             attempt++
+            NetLog.retry("search_100103",attempt,3,"platform returned code=100103",120L)
             Thread.sleep(120L)
             raw=retryBlankSearch(text(signed.url,signed.withSession()),signed)
             if(raw.isBlank()) { appSearchAlive=false; noteDeviceRejected(); throw DeviceNotRegisteredException() }
@@ -2454,15 +3295,16 @@ class ContentRepository(
                 val video=row.optJSONArray("video_data")?.objects()?.firstOrNull()
                 if(video!=null) {
                     val id=video.str("series_id").ifEmpty { row.str("book_id").ifEmpty { row.str("search_result_id") } }
-                    val title=row.optJSONObject("search_high_light")?.optJSONObject("title")?.str("text").orEmpty().ifEmpty { video.str("title").ifEmpty { row.str("cell_name") } }
+                    val title=searchTitle(row,video)
                     val count=video.optInt("episode_cnt")
+                    val seasonIndex=seasonOf(video).takeIf { it>0 } ?: seasonOf(row)
                     // 出品方：搜索接口的 `video_data` 也带 `copyright`（与分类 / 详情同源），
                     // 直接取，卡片第二行就不用再为这一屏发一次 `multi-detail`。
                     // 类型标签：搜索的 `video_data` 与列表接口同源（`category_schema`）。
                     // 拿不到就留空，卡片第二行退回状态行（热度 / 进度），不拿季号顶替。
                     val tags=tagsOf(video)
                     list+=Series(id,title,cleanUrl(video.str("cover").ifEmpty { video.str("cover_url") }),video.str("video_desc"),EpisodeLabel.of(count).ifEmpty { video.str("rec_text") },tags,
-                        author=publisher(video.str("copyright")),episodeCount=count,
+                        author=publisher(video.str("copyright")),episodeCount=count,seasonIndex=seasonIndex,
                         // 热度 / 播放量：卡片可展示，也是链路里唯一能拿到的量级信号（不再用于本地排序）。
                         heat=heatValue(video.str("rec_text")),playCount=video.optInt("play_cnt"))
                     continue
@@ -2489,7 +3331,8 @@ class ContentRepository(
     }
     // ------------------------------------------------------------------ 账号（个人信息页）
     /**
-     * 账号接口共用的一次请求：带登录态、带设备参数、带签名。
+     * 账号接口共用的一次请求：带当前主身份、设备参数和签名。
+     * 登录后是账号身份；未登录时是已注册的主设备身份。
      *
      * 这些接口都在 App 域名下（与搜索 / 弹幕同一套），因此设备参数用 [appValues]；
      * 写接口（POST + body）改用 [writeValues]——它们走的是官方 7.3.9.32 那一版，
@@ -2499,17 +3342,15 @@ class ContentRepository(
      * 免得把 JSONException 抛到界面上。
      */
     private fun accountJson(path: String, params: Map<String,String> = emptyMap(), body: ByteArray? = null): JSONObject {
-        // 账号侧接口全部要求登录态：没有凭据时**不发请求**，直接给出可辨识的失败原因。
-        if(!signedIn) throw SignInRequiredException()
         val values=if(body!=null) writeValues() else accountAppValues()
         params.forEach { (key,value) -> values[key]=value }
         val signed=signer.sign(
             "https://${accountHost()}$path",
             values,
             body,
-            deviceOverride=accountDeviceProfile(),
+            deviceOverride=primaryProfile(),
         )
-        val raw=text(signed.url,signed.withAccountSession())
+        val raw=text(signed.url,signed.withSession())
         if(raw.isBlank()) throw IOException("账号接口暂无响应（空响应体）")
         return JSONObject(raw)
     }
@@ -2524,7 +3365,13 @@ class ContentRepository(
             try { return action() } catch(e: Exception) {
                 last=e
                 if(!e.message.orEmpty().contains("空响应体")) throw e
-                Thread.sleep(300L+attempt*250L)
+                val delay=300L+attempt*250L
+                if(attempt<attempts-1) {
+                    NetLog.retry("account_blank",attempt+2,attempts,e.message.orEmpty(),delay)
+                } else {
+                    NetLog.error("[API] error scope=account_blank attempts=$attempts reason=${e.message.orEmpty().take(220)}")
+                }
+                Thread.sleep(delay)
             }
         }
         throw last ?: IOException("账号接口暂无响应")
@@ -2549,18 +3396,16 @@ class ContentRepository(
 
     /** 我的收藏：短剧书架（`bookshelf/video/info` 带封面与简介，比 `video/list` 那份完整）。 */
     fun accountFavorites(): List<AccountFavorite> {
-        if(!signedIn) throw SignInRequiredException()
         return AccountParser.favorites(accountJson("/reading/bookapi/bookshelf/video/info/v"))
     }
 
     /**
      * 观看历史。
      *
-     * 走 `read_progress/list`（不是 `read_history/list`——后者对短剧**恒返回空列表**，
-     * 它是给小说用的）：`?book_types=2&limit=200`，短剧记录在 `video_data[]` 里。
+     * 走官方 `read_history/list`：`?book_type=2&query_soft_deleted=false`，
+     * 短剧记录在 `data.data_list[]` 里；`read_progress/list` 只负责当前播放进度。
      *
-     * **一次取全，不翻页**：这条接口的 `offset` 不生效（给 50/100/150 回来的都是同一批），
-     * 只有 `limit` 有用，而且超过真实条数时服务端照实际数量返回（见 [HISTORY_LIMIT]）。
+     * **一次取全，不翻页**：官方请求用 `offset=0&limit=0`。
      * 早先写死 `limit=50`，于是账号里有 139 条、电视上只出现 50 条——「同步来的不完全」。
      *
      * 它**只给 series_id**，所以再用 `multi-detail` 批量补片名与封面；补的时候按
@@ -2569,11 +3414,7 @@ class ContentRepository(
      * 但会在 [writeLog] 里留一行，便于排查是哪一片没回来。
      */
     fun accountHistory(): List<AccountHistory> {
-        if(!signedIn) throw SignInRequiredException()
-        val rows=retryBlank {
-            accountJson("/reading/bookapi/read_progress/list/v",
-                mapOf("book_types" to "2","limit" to HISTORY_LIMIT.toString()))
-        }.let(AccountParser::history)
+        val rows=historyRows().let(AccountParser::history)
         if(rows.isEmpty()) return rows
         val details=linkedMapOf<String,Series>()
         rows.map { it.series.id }.distinct().chunked(MULTI_DETAIL_LIMIT).forEach { chunk ->
@@ -2617,7 +3458,6 @@ class ContentRepository(
      * 这个接口会间歇性回空响应体，重发即可。
      */
     fun accountLikes(): List<AccountLike> {
-        if(!signedIn) throw SignInRequiredException()
         val params=mapOf("count" to "50","object_type_list" to "6,15,10","offset" to "0","action_type" to "3")
         return AccountParser.likes(retryBlank { accountJson("/reading/ugc/action/mget/v",params) })
     }
@@ -2629,7 +3469,6 @@ class ContentRepository(
      * `is_online=true` 取「已上线」，false 取「待上线」。两批合起来就是 App 里那一栏的全部。
      */
     fun accountReserves(): List<AccountReserve> {
-        if(!signedIn) throw SignInRequiredException()
         // `v1` 才是当前版本（真机抓包 2026-10-19）：待上线那一栏的条目字段在**顶层**
         //（`item_id` / `name` / `cover` / `sub_info`），不是 `v0` 的 `subscribe_data`。
         // 用 `v0` 读待上线会稳定返回空列表，界面上就成了「预约过的剧不见了」。
@@ -2694,8 +3533,13 @@ class ContentRepository(
             if(ok) return true
             writeLog("预约写接口失败 attempt=${attempt+1} subscribe=$subscribe id=$seriesId $detail")
             // 101144 是风控的短时限流：退避要够长（实测几秒后才放行），别原地连发。
-            if(attempt<ACCOUNT_WRITE_ATTEMPTS-1) Thread.sleep(ACCOUNT_WRITE_BACKOFF[attempt].coerceAtLeast(600L)*(attempt+1))
+            if(attempt<ACCOUNT_WRITE_ATTEMPTS-1) {
+                val delay=ACCOUNT_WRITE_BACKOFF[attempt].coerceAtLeast(600L)*(attempt+1)
+                NetLog.retry("reserve_write",attempt+2,ACCOUNT_WRITE_ATTEMPTS,detail,delay)
+                Thread.sleep(delay)
+            }
         }
+        NetLog.error("[API] error scope=reserve_write attempts=$ACCOUNT_WRITE_ATTEMPTS subscribe=$subscribe")
         return false
     }
 
@@ -2765,8 +3609,13 @@ class ContentRepository(
             }.onFailure { detail="异常 ${it.message}" }.getOrDefault(false)
             if(ok) return true
             writeLog("收藏写接口失败 attempt=${attempt+1} operate=$operate id=$seriesId $detail")
-            if(attempt<ACCOUNT_WRITE_ATTEMPTS-1) Thread.sleep(ACCOUNT_WRITE_BACKOFF[attempt])
+            if(attempt<ACCOUNT_WRITE_ATTEMPTS-1) {
+                val delay=ACCOUNT_WRITE_BACKOFF[attempt]
+                NetLog.retry("favorite_write",attempt+2,ACCOUNT_WRITE_ATTEMPTS,detail,delay)
+                Thread.sleep(delay)
+            }
         }
+        NetLog.error("[API] error scope=favorite_write attempts=$ACCOUNT_WRITE_ATTEMPTS operate=$operate")
         return false
     }
 
@@ -2777,7 +3626,7 @@ class ContentRepository(
      * `progress_rate` 是 0~1 的小数串，平台用它画进度条。
      */
     fun accountUploadProgress(seriesId: String,episodeId: String,episodeIndex: Int,position: Long,duration: Long,episodeCount: Int=0): Boolean {
-        if(!signedIn || !seriesId.matches(Regex("[0-9]{1,30}"))) return false
+        if(!seriesId.matches(Regex("[0-9]{1,30}"))) return false
         if(!episodeId.matches(Regex("[0-9]{1,30}"))) return false
         val rate=if(duration>0) (position.toDouble()/duration).coerceIn(0.0,1.0) else 0.0
         val entry=JSONObject()
@@ -2802,8 +3651,13 @@ class ContentRepository(
             }.onFailure { detail="异常 ${it.message}" }.getOrDefault(false)
             if(ok) return true
             writeLog("进度写接口失败 attempt=${attempt+1} id=$seriesId $detail")
-            if(attempt<ACCOUNT_WRITE_ATTEMPTS-1) Thread.sleep(ACCOUNT_WRITE_BACKOFF[attempt])
+            if(attempt<ACCOUNT_WRITE_ATTEMPTS-1) {
+                val delay=ACCOUNT_WRITE_BACKOFF[attempt]
+                NetLog.retry("progress_write",attempt+2,ACCOUNT_WRITE_ATTEMPTS,detail,delay)
+                Thread.sleep(delay)
+            }
         }
+        NetLog.error("[API] error scope=progress_write attempts=$ACCOUNT_WRITE_ATTEMPTS")
         return false
     }
 
@@ -2825,26 +3679,55 @@ class ContentRepository(
      */
     fun accountDeleteHistories(seriesIds: List<String>): Boolean {
         val ids=seriesIds.filter { it.matches(Regex("[0-9]{1,30}")) }.distinct()
-        if(!signedIn || ids.isEmpty()) return false
+        if(ids.isEmpty()) return false
+        val known=runCatching {
+            historyRows().optJSONObject("data")?.optJSONArray("data_list")?.objects().orEmpty()
+                .associateBy { it.str("book_id").ifEmpty { it.str("book_id_str") } }
+        }.getOrDefault(emptyMap())
         var ok=true
         ids.chunked(HISTORY_DELETE_BATCH).forEach { chunk ->
             val rows=JSONArray()
             chunk.forEach { id ->
-                rows.put(JSONObject()
+                val bookType=known[id]?.optInt("book_type",BOOK_TYPE_WATCH) ?: BOOK_TYPE_WATCH
+                val row=JSONObject()
                     .put("book_id",id.toLong())
-                    .put("book_type",BOOK_TYPE_WATCH)
+                    .put("book_type",bookType)
+                    .put("chapter_index",0)
+                    .put("current_play_position",0)
+                    .put("digged_count",0)
+                    .put("duration",0)
+                    .put("episode_cnt",0)
                     .put("is_delete",true)
-                    .put("use_soft_delete",true)
-                    .put("update_timestamp_ms",clock()))
+                    .put("is_interactive_game",false)
+                    .put("is_listen_mode",false)
+                    .put("is_multi_season",0)
+                    .put("player_accumulate_total_time",0)
+                    .put("read_timestamp_ms",0)
+                    .put("recent_reads",0)
+                    .put("retain_video_play_time",0)
+                    .put("season_index",0)
+                    .put("series_play_cnt",0)
+                    .put("tone_id",0)
+                    .put("update_timestamp_ms",clock())
+                    .put("user_digg",false)
+                    .put("vid",0)
+                    .put("vid_index",1)
+                rows.put(row)
             }
             val body=JSONObject().put("update_datas",rows).toString().toByteArray()
             val part=runCatching {
                 val reply=accountJson("/reading/bookapi/read_history/update/v",emptyMap(),body)
                 val code=reply.optInt("code",-1)
                 val failed=(reply.optJSONObject("data")?.optJSONArray("update_fail_datas")?.length() ?: 0)
-                if(code!=0 || failed>0) writeLog("历史删除写接口失败 size=${chunk.size} code=$code failed=$failed message=${reply.optString("message")}")
+                if(code!=0 || failed>0) {
+                    NetLog.error("[API] error scope=history_delete size=${chunk.size} code=$code failed=$failed message=${reply.optString("message").take(160)}")
+                    writeLog("历史删除写接口失败 size=${chunk.size} code=$code failed=$failed message=${reply.optString("message")}")
+                }
                 code==0 && failed==0
-            }.onFailure { writeLog("历史删除写接口异常 size=${chunk.size} ${it.message}") }.getOrDefault(false)
+            }.onFailure {
+                NetLog.error("[API] error scope=history_delete size=${chunk.size} ${it.javaClass.simpleName}: ${it.message.orEmpty().take(180)}")
+                writeLog("历史删除写接口异常 size=${chunk.size} ${it.message}")
+            }.getOrDefault(false)
             if(!part) ok=false
         }
         return ok
@@ -2853,17 +3736,35 @@ class ContentRepository(
     /**
      * 云端观看记录的**全部 id**（不补片名与封面）。
      *
-     * 与 [accountHistory] 读同一个接口（`read_progress/list`，`limit` 一次给满），
+     * 与 [accountHistory] 读同一个接口（`read_history/list`，`limit=0` 一次给满），
      * 但不做 `multi-detail` 那一轮元数据补齐：清空历史只关心「云端还有哪些 id」，
-     * 补片名是纯浪费。`offset` 在这条接口上不生效（见 [HISTORY_LIMIT]），因此一次取全。
+     * 补片名是纯浪费。`offset=0&limit=0` 一次取全。
      */
     fun accountHistoryIds(): List<String> {
-        if(!signedIn) throw SignInRequiredException()
-        val rows=retryBlank {
-            accountJson("/reading/bookapi/read_progress/list/v",
-                mapOf("book_types" to "2","limit" to HISTORY_LIMIT.toString()))
-        }.let(AccountParser::history)
-        return rows.map { it.series.id }.distinct()
+        return historyRows().optJSONObject("data")?.optJSONArray("data_list")?.objects().orEmpty().mapNotNull { row ->
+            row.str("book_id").ifEmpty { row.str("book_id_str") }
+                .takeIf { it.matches(Regex("[0-9]{1,30}")) }
+        }.distinct()
+    }
+
+    /** 官方短剧历史列表；`read_progress/list` 只负责当前进度，不能拿来判断历史删除。 */
+    private fun historyRows(): JSONObject {
+        val merged=JSONArray()
+        HISTORY_BOOK_TYPES.forEach { type ->
+            val raw=retryBlank {
+                accountJson("/reading/bookapi/read_history/list/v", mapOf(
+                    "book_type" to type.toString(),
+                    "offset" to "0",
+                    "limit" to "0",
+                    "query_soft_deleted" to "false",
+                    "is_first_load" to "true",
+                    "last_min_read_timestamp_ms" to "0",
+                    "full_field" to "false",
+                ))
+            }
+            raw.optJSONObject("data")?.optJSONArray("data_list")?.objects().orEmpty().forEach(merged::put)
+        }
+        return JSONObject().put("data",JSONObject().put("data_list",merged))
     }
 
     /**
@@ -2877,14 +3778,13 @@ class ContentRepository(
      * 流程（最多 [HISTORY_CLEAR_ATTEMPTS] 轮）：
      * 1. 拉一次云端全量 id（[accountHistoryIds]），与本机已知的 [extra] 合并；
      * 2. 分批 `read_history/update` 软删（[accountDeleteHistories]）；
-     * 3. **回读校验**：再拉一次云端 id，空了才算成功；还有就再来一轮
+     * 3. **回读校验**：再拉一次 `read_history/list`，空了才算成功；还有就再来一轮
      *   （软删偶发只生效一部分，平台对短剧进度列表的处理不是严格即时）。
      *
      * 返回 true = 回读确认云端已经没有记录；false = 仍有余量或网络失败，
      * 由调用方提示用户稍后重试（本机那份无论如何已经清干净了）。
      */
     fun accountClearHistory(extra: List<String> = emptyList()): Boolean {
-        if(!signedIn) return false
         val known=extra.filter { it.matches(Regex("[0-9]{1,30}")) }
         repeat(HISTORY_CLEAR_ATTEMPTS) { attempt ->
             val cloud=runCatching { accountHistoryIds() }
@@ -2900,7 +3800,11 @@ class ContentRepository(
             }
             if(left.isEmpty()) return true
             writeLog("清空历史：回读仍有 ${left.size} 条 attempt=${attempt+1}")
-            if(attempt<HISTORY_CLEAR_ATTEMPTS-1) Thread.sleep(ACCOUNT_WRITE_BACKOFF[attempt.coerceAtMost(ACCOUNT_WRITE_BACKOFF.lastIndex)])
+            if(attempt<HISTORY_CLEAR_ATTEMPTS-1) {
+                val delay=ACCOUNT_WRITE_BACKOFF[attempt.coerceAtMost(ACCOUNT_WRITE_BACKOFF.lastIndex)]
+                NetLog.retry("history_clear",attempt+2,HISTORY_CLEAR_ATTEMPTS,"cloud still has ${left.size} records",delay)
+                Thread.sleep(delay)
+            }
         }
         return false
     }
@@ -2909,13 +3813,9 @@ class ContentRepository(
      * 个人信息页要的全部内容：资料 + 四条列表，一次拉齐。
      *
      * 四条列表彼此独立：某一条失败只让它空着、把原因记进 [AccountData.errors]，
-     * 其余三条照常显示。资料拉不到（或没配登录态）时 [AccountData.profile] 为 null，
-     * 界面据此提示「需要先导入参数」。
+     * 其余三条照常显示。未登录时资料拉不到，但设备级历史 / 收藏 / 预约列表仍会请求。
      */
     fun accountData(): AccountData {
-        // 未导入凭据时抛 [SignInRequiredException]（而不是回一份空数据）：
-        // 空数据在界面上与「这个账号真的一条记录都没有」无法区分。
-        if(!signedIn) throw SignInRequiredException()
         val errors=java.util.concurrent.ConcurrentHashMap<String,String>()
         fun <T> part(name: String, action: ()->T, fallback: T): T = try { action() } catch(e: Exception) {
             errors[name]=e.message.orEmpty().take(120); fallback
@@ -3389,9 +4289,10 @@ class ContentRepository(
             .put("comment_source",1506)
             .put("server_channel",3007)
             .toString().toByteArray(Charsets.UTF_8)
+        val profile=primaryProfile()
         val values=linkedMapOf("aid" to "8662","app_name" to "novelread","version_code" to "72232")
-        deviceIdentity["device_id"]?.takeIf { it.isNotBlank() }?.let { values["device_id"]=it }
-        deviceIdentity["iid"]?.takeIf { it.isNotBlank() }?.let { values["iid"]=it }
+        profile["device_id"]?.takeIf { it.isNotBlank() }?.let { values["device_id"]=it }
+        profile["iid"]?.takeIf { it.isNotBlank() }?.let { values["iid"]=it }
         val url="https://reading.snssdk.com/novel/commentapi/user/profile/$uid/v1/?"+
             values.entries.joinToString("&") { (k,v) -> "$k=$v" }
         var raw=""
@@ -3400,7 +4301,10 @@ class ContentRepository(
             raw=runCatching { publisherPost(url,body) }.getOrNull().orEmpty()
             if(raw.isNotBlank()) break
             attempt++
-            if(attempt<3) runCatching { Thread.sleep(SEARCH_BLANK_RETRY_DELAY_MS) }
+            if(attempt<3) {
+                NetLog.retry("publisher",attempt+1,3,"HTTP 200 empty body",SEARCH_BLANK_RETRY_DELAY_MS)
+                runCatching { Thread.sleep(SEARCH_BLANK_RETRY_DELAY_MS) }
+            }
         }
         if(raw.isBlank()) return null
         val root=runCatching { JSONObject(raw) }.getOrNull() ?: return null
@@ -3430,9 +4334,14 @@ class ContentRepository(
     }
     /** 社区域（`reading.snssdk.com`）的普通 POST：**不加签名头**，理由见 [publisherWorks]。 */
     private fun publisherPost(url: String,body: ByteArray): String {
-        fun send(target: String,cookies: Map<String,String>,anonymous: Boolean): String {
+        fun send(
+            target: String,
+            cookies: Map<String,String>,
+            profile: Map<String,String>,
+            anonymous: Boolean,
+        ): String {
             val request=Request.Builder().url(target)
-                .header("User-Agent",VendorConstants.userAgent(deviceProfile(),video = false))
+                .header("User-Agent",VendorConstants.userAgent(profile,video = false))
                 .header("Content-Type","application/json; charset=utf-8")
                 .header("Accept","application/json; charset=utf-8")
                 .header("X-SS-DP","8662")
@@ -3446,19 +4355,21 @@ class ContentRepository(
                 String(response.body?.bytes() ?: ByteArray(0),Charsets.UTF_8)
             }
         }
-        val mainCookies=registrationCookies.filterKeys {
-            it=="install_id" || it=="ttreq" || it=="store-region" || it=="store-region-src"
+        val mainCookies=CookieRecord.headerToMap(primaryCookieHeader())
+        val currentHost=runCatching { okhttp3.HttpUrl.parse(url)?.host }.getOrNull().orEmpty()
+        var raw=""
+        for(host in listOf(currentHost)+alternateApiHosts(currentHost)) {
+            raw=send(urlWithHost(url,host),mainCookies,primaryProfile(),anonymous=false)
+            if(raw.isNotBlank()) {
+                TncConfigStore.markHostSuccess(host)
+                return raw
+            }
         }
-        val raw=send(url,mainCookies,anonymous=false)
-        if(raw.isNotBlank()) return raw
         val backup=runCatching { playbackBackupDevices?.invoke()?.firstOrNull() }.getOrNull() ?: return raw
-        val backupUrl=okhttp3.HttpUrl.parse(url)?.newBuilder()
-            ?.setQueryParameter("device_id",backup.id)
-            ?.setQueryParameter("iid",backup.profile["iid"].orEmpty())
-            ?.build()?.toString()
-            ?: return raw
+        val retryUrl=backupQueryUrl(url,backup) ?: return raw
+        NetLog.retry("publisher_backup",1,1,"primary identity returned HTTP 200 empty body")
         NetLog.emit("device backup retry publisher id=${backup.id.takeLast(6)}")
-        return send(backupUrl,backup.cookies,anonymous=true)
+        return send(retryUrl,backup.cookies,backup.profile,anonymous=true)
     }
     /**
      * 一次「作者作品」取数的结果。
@@ -3546,7 +4457,16 @@ class ContentRepository(
                 }.getOrNull()
                 if(result==null) {
                     attempt++
-                    if(attempt<AUTHOR_WORKS_PAGE_ATTEMPTS) runCatching { Thread.sleep(AUTHOR_WORKS_PAGE_RETRY_MS) }
+                    if(attempt<AUTHOR_WORKS_PAGE_ATTEMPTS) {
+                        NetLog.retry(
+                            "author_works",
+                            attempt+1,
+                            AUTHOR_WORKS_PAGE_ATTEMPTS,
+                            "page=$page returned no usable data",
+                            AUTHOR_WORKS_PAGE_RETRY_MS,
+                        )
+                        runCatching { Thread.sleep(AUTHOR_WORKS_PAGE_RETRY_MS) }
+                    }
                 }
             }
             val pageResult=result
@@ -3833,6 +4753,9 @@ class ContentRepository(
         val hosts=relatedHosts()
         for(attempt in 0 until RELATED_ATTEMPTS) {
             val host=hosts[attempt%hosts.size]
+            if(attempt>0) {
+                NetLog.retry("related",attempt+1,RELATED_ATTEMPTS,failure?.message.orEmpty())
+            }
             val values=appValues()
             values.putAll(linkedMapOf(
                 "scene" to "10","from" to "detail_page_more_related","book_id" to id,
@@ -3916,8 +4839,8 @@ class ContentRepository(
         // 播放接口对**匿名设备**也放行（官方 App 冷启动未登录即可播放，见 HAR），
         // 前提是这台设备已在服务端注册过（见 [registerDevice]）：未注册回 `101000 服务异常`
         // 或 `200 + 0 字节`，注册后回 `code 0` + 完整播放模型。
-        // 播放属于普通业务请求，只使用主设备身份与主设备 Cookie。
-        val cookie=registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }.takeIf { it.isNotEmpty() }
+        // 播放与其它业务请求共用当前主身份；登录后 Cookie 也切到账号设备。
+        val cookie=primaryCookieHeader().takeIf { it.isNotEmpty() }
         // 记住的那条路径排到最前（见 [preferredModelPath]）。
         val ordered=if(preferredModelPath.isEmpty()) candidates
             else candidates.sortedByDescending { it==preferredModelPath }
@@ -3953,7 +4876,10 @@ class ContentRepository(
                     .distinct()
                     .take(PLAYER_MODEL_BATCH_LIMIT)
                 var batchModel: JSONObject?=null
-                for(host in hosts) {
+                for((hostIndex,host) in hosts.withIndex()) {
+                    if(hostIndex>0) {
+                        NetLog.retry("model_batch",hostIndex+1,hosts.size,"previous host returned no model")
+                    }
                     if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
                     val hostDeadline=minOf(deadline,clock()+MODEL_HOST_ATTEMPT_MS)
                     try {
@@ -4106,9 +5032,15 @@ class ContentRepository(
         playback: PlaybackProfile,
     ): JSONObject {
         var failure: IOException?=null
-        hostLoop@ for(host in hosts) {
+        hostLoop@ for((hostIndex,host) in hosts.withIndex()) {
+            if(hostIndex>0) {
+                NetLog.retry("model_host",hostIndex+1,hosts.size,failure?.message.orEmpty())
+            }
             val hostDeadline=minOf(deadline,clock()+MODEL_HOST_ATTEMPT_MS)
-            for(path in ordered) {
+            for((pathIndex,path) in ordered.withIndex()) {
+                if(pathIndex>0) {
+                    NetLog.retry("model_path",pathIndex+1,ordered.size,"previous path returned no model")
+                }
                 // 余额用完就停：不要再往下试下一条路径 / 域名。
                 if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) {
                     throw failure ?: addressTimeout()
@@ -4158,19 +5090,18 @@ class ContentRepository(
         return probeModelPath(host,path,id,cookie,deadline,playback)
     }
 
-    /** 播放请求只使用主设备档案；登录用户设备不参与播放。 */
+    /** 播放请求使用当前唯一的主身份；登录后以账号设备为准。 */
     private fun modelProfile(): Map<String,String> {
-        val id=deviceIdentity["device_id"].orEmpty()
-        val iid=deviceIdentity["iid"].orEmpty()
-        if(id.isBlank() || iid.isBlank()) {
-            throw DeviceNotRegisteredException()
-        }
         val base=LinkedHashMap(VendorConstants.device).apply {
-            putAll(registerProfile)
-            putAll(deviceIdentity)
+            putAll(primaryProfile())
             putAll(PROTOCOL_VALUES)
             for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
             this["version_name"]="7.3.9.32"
+        }
+        val id=base["device_id"].orEmpty()
+        val iid=base["iid"].orEmpty()
+        if(id.isBlank() || iid.isBlank()) {
+            throw DeviceNotRegisteredException()
         }
         return modelQueryProfile(base)
     }
@@ -4195,8 +5126,11 @@ class ContentRepository(
         playback: PlaybackProfile,
     ): JSONObject? {
         val backups=runCatching { playbackBackupDevices?.invoke() }.getOrNull().orEmpty()
-        for(backup in backups) {
+        for((index,backup) in backups.withIndex()) {
             if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
+            if(index>0) {
+                NetLog.retry("model_backup",index+1,backups.size,"previous backup device returned no model")
+            }
             try {
                 val model=probeModelPath(host,path,id,cookie,deadline,playback,backup)
                 NetLog.emit("model backup accepted id=${backup.id.takeLast(6)}")
@@ -4292,6 +5226,7 @@ class ContentRepository(
             tryBackupModel(host,path,id,cookie,deadline,playback)?.let { return it }
             // 4 档空响应先升 5 重发一次。若 5 仍为空，再按设备身份失效交给自愈流程。
             if(deviceLevel<5) {
+                NetLog.retry("model_device_level",2,2,"empty model response at device_level=$deviceLevel")
                 escalateDeviceLevel()
                 return probeModelPath(host,path,id,cookie,deadline,playback)
             }
@@ -4499,7 +5434,7 @@ class ContentRepository(
             // 前台已经在等模型时，后台这次直接跳过；下次首帧稳定后的调度会再补。
             backgroundModelScope=scope
             if(foregroundModelWaiters.get()>0) return 0
-            val cookie=registrationCookies.entries.joinToString("; ") { (name,value) -> "$name=$value" }.takeIf { it.isNotEmpty() }
+            val cookie=primaryCookieHeader().takeIf { it.isNotEmpty() }
             val host=TncConfigStore.preferredHost()
             val models=RequestScope.withScope(scope) {
                 tryBatchModel(
@@ -4770,6 +5705,8 @@ class ContentRepository(
         val url=urls.firstOrNull() ?: throw IOException("播放地址无效")
         val key=item.str("spade_a").takeIf { it.isNotEmpty() }?.let(MediaCrypto::deriveKey)
         val label="${quality}P"+(if(quality>maxQuality) "（兼容资源）" else "")
+        val videoWidth=item.str("vwidth").toIntOrNull()?.takeIf { it>0 } ?: 0
+        val videoHeight=item.str("vheight").toIntOrNull()?.takeIf { it>0 } ?: 0
         return StreamInfo(
             url=url,
             key=key,
@@ -4778,6 +5715,8 @@ class ContentRepository(
             actualQuality=quality,
             available=candidates.map { it.first },
             backupUrls=urls.drop(1),
+            videoWidth=videoWidth,
+            videoHeight=videoHeight,
         )
     }
 
@@ -4892,10 +5831,9 @@ class ContentRepository(
          */
         @Volatile var deviceHeal: ((ContentRepository, String) -> Boolean)? = null
         /**
-         * 播放模型遇到 `HTTP 200 + 空 body` 时使用的备用设备。
+         * 主身份遇到 `HTTP 200 + 空 body` 时使用的唯一备用设备。
          *
-         * provider 返回当前可用的一组快照；每次调用都从下一台开始轮转。备用设备只参与
-         * 本次播放模型请求，不会覆盖主设备身份。
+         * provider 返回当前可用快照；备用设备只参与本次请求，不会覆盖主身份。
          */
         @Volatile var playbackBackupDevices: (() -> List<PlaybackBackupDevice>)? = null
         /**
@@ -4962,6 +5900,16 @@ class ContentRepository(
             "need_personal_recommend","player_so_load","is_android_pad_screen",
             "rom_version","cdid",
         )
+        /**
+         * 查询参数里的设备字段。
+         *
+         * 备用设备托底时这些键必须整套移除后用备用档案重填；业务参数（剧 id、分页、
+         * 搜索词等）保留，避免出现「备用 did + 主设备 cdid / Cookie」的混参。
+         */
+        private val DEVICE_QUERY_KEYS=(MODEL_QUERY_KEYS + listOf(
+            "install_id","device_token","openudid","clientudid","rom","carrier","mcc_mnc",
+            "profile-format","openudid-source","apk_first_install_time",
+        )).toSet()
 
         /**
          * 播放地址（`fallback_api` 那一份 `video_info`）的缓存条数与有效期。
@@ -4994,8 +5942,8 @@ class ContentRepository(
         private const val MAX_CATALOG_PAGE=100
         /** 窗口之间的最小间隔，避开平台的弹幕频控。 */
         private const val COMMENT_THROTTLE_MS=180L
-        /** 接口给的季号文案：`第14季`。只认这一种形状，别把别的角标文案当季号。 */
-        private val SEASON_TEXT = Regex("^第\\s*([0-9]{1,3})\\s*季$")
+        /** 搜索高亮文本可能带 `<em>` 标记；只用于兜底标题，不能让它污染季号解析。 */
+        private val SEARCH_HIGHLIGHT = Regex("</?em>",RegexOption.IGNORE_CASE)
 
         /**
          * 这一档是不是 HEVC（本工程唯一支持的视频编码）。

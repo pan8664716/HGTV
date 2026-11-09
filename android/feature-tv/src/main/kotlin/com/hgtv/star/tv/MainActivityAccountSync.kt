@@ -45,40 +45,25 @@ fun MainActivity.refreshLocalHistoryViews() {
 }
 
 fun MainActivity.syncFavorite(series: Series,added: Boolean) {
-    applyAccountFavorite(series,added)
-    // 收藏是**需要登录态**的动作（云端那一半走 App 接口）：没导入凭据就直说，
-    // 不再像以前那样静默放弃——用户看到的会是「点了收藏、界面变了、云端却没变」。
-    if(!repository.signedIn) { tvTools.toast(SIGN_IN_TOAST); return }
-    io.submit {
-        val ok=if(added) repository.accountAddFavorite(series.id) else repository.accountRemoveFavorite(series.id)
-        main.post {
-            if(isDestroyed) return@post
-            if(!ok) tvTools.toast(if(added) "收藏同步失败，稍后再试" else "取消收藏同步失败，稍后再试")
-        }
-        if(!ok) android.util.Log.i("HGTV","Favorite sync skipped id=${series.id} added=$added")
-    }
+    accountController.favorite(
+        series = series,
+        added = added,
+        onNeedSignIn = { tvTools.toast(SIGN_IN_TOAST) },
+        onSyncError = {
+            tvTools.toast(if(added) "收藏同步失败，稍后再试" else "取消收藏同步失败，稍后再试")
+        },
+    )
+    refreshAccountListIfVisible()
 }
 /** 上传一条观看进度；[episodeCount] 只用于云端「全 N 集」的展示。 */
 fun MainActivity.syncProgress(progress: WatchProgress,episodeCount: Int=0) {
-    applyAccountHistory(progress,episodeCount)
-    // 观看进度是**需要登录态**的（`read_progress/upload`）。没导入凭据时不弹提示：
-    // 它在播放过程中会反复触发，每次都弹一条会把画面刷满；「我的」页与收藏那两处
-    // 已经能把「需要导入」这件事说清楚。
-    if(!repository.signedIn) return
-    io.submit {
-        val ok=repository.accountUploadProgress(progress.series.id,progress.episodeId,progress.episodeIndex,
-            progress.position,progress.duration,episodeCount)
-        if(!ok) android.util.Log.i("HGTV","Progress sync skipped id=${progress.series.id}")
-    }
+    accountController.progress(progress,episodeCount)
+    refreshAccountListIfVisible()
 }
 /** 删除云端观看历史（`read_history/update` 软删）。 */
 fun MainActivity.syncHistoryDelete(series: Series) {
-    applyAccountHistoryDelete(series)
-    if(!repository.signedIn) return
-    io.submit {
-        val ok=repository.accountDeleteHistory(series.id)
-        if(!ok) android.util.Log.i("HGTV","History delete sync skipped id=${series.id}")
-    }
+    accountController.historyDeleted(series)
+    refreshAccountListIfVisible()
 }
 /**
  * 账号数据的内存那一份换掉，**同时落盘**。
@@ -90,16 +75,7 @@ fun MainActivity.syncHistoryDelete(series: Series) {
  * 传 null 表示「没有账号数据可改」（未登录或还没拉到），此时什么都不做。
  */
 fun MainActivity.storeAccount(data: AccountData?) {
-    data ?: return
-    // 落盘 / 进内存之前先把「本机删过的观看记录」滤掉：平台的软删对短剧进度列表不一定生效，
-    // 不在这里滤一次，缓存里会一直躺着那几条，重启后又被铺回界面上。
-    val kept=data.history.filterNot { library.historyDeleted(it.series.id) }
-    val clean=if(kept.size==data.history.size) data else data.copy(history=kept)
-    // 再对一次账：同一部剧本机与账号只保留更超前的那一份（见 [reconcileHistory]）。
-    // 本机改动（播放进度上传、删除历史）也走这里，因此两边永远读同一份结论。
-    val merged=reconcileHistory(clean)
-    accountData=merged.data
-    library.cacheAccount(merged.data)
+    accountController.store(data)
 }
 
 /** 一次历史对账的结果：账号侧那份（[data]）与本机更超前、需要推回云端的那些（[uploads]）。 */
@@ -152,7 +128,7 @@ fun MainActivity.reconcileHistory(data: AccountData): HistoryMerge {
  * 同一份进度（平台那边每次都是一次写请求，还会改写 `last_watch_time`）。
  */
 fun MainActivity.pushHistoryAhead(rows: List<WatchProgress>) {
-    if(rows.isEmpty() || !repository.signedIn) return
+    if(rows.isEmpty()) return
     rows.forEach { progress ->
         val key=progress.series.id
         if(historyPushedAt[key]==progress.updatedAt) return@forEach
@@ -249,10 +225,7 @@ fun MainActivity.refreshAccountListIfVisible() {
  * 此时历史页上明明有卡片，按钮却不出现（或反过来）都是错的。
  */
 fun MainActivity.historyHasRecords(): Boolean {
-    if(library.history().isNotEmpty()) return true
-    val memory=accountData?.history.orEmpty()
-    val cached=library.accountCache()?.data?.history.orEmpty()
-    return (memory+cached).any { !library.historyDeleted(it.series.id) }
+    return accountController.hasHistoryRecords()
 }
 
 /**
@@ -299,21 +272,12 @@ fun MainActivity.historyClearButton(parent: LinearLayout,size: ButtonSize=Button
  * 只是手机上还能看到，因此失败时给一句提示，由用户决定要不要再试。
  */
 fun MainActivity.clearAllHistory(anchor: View?) {
-    val accountIds=accountData?.history?.map { it.series.id }.orEmpty()
-    val cachedIds=library.accountCache()?.data?.history?.map { it.series.id }.orEmpty()
-    val knownIds=(accountIds+cachedIds).distinct()
-    // 一条都没有：直接说清楚，不重建页面（重建会让焦点跳一下）。
-    if(library.history().isEmpty() && knownIds.isEmpty()) {
+    if(!accountController.hasHistoryRecords()) {
         tvTools.info("清空观看记录","本机与账号里都没有可清空的观看记录。",anchor)
         return
     }
-    val localIds=library.clearHistory()
-    if(knownIds.isNotEmpty()) library.markHistoryDeleted(knownIds)
-    // 账号缓存：内存里那份（页面正在读）与磁盘快照都要清，否则重启后旧记录又被铺回来。
-    accountData?.let { data ->
-        if(data.history.isNotEmpty()) storeAccount(data.copy(history=emptyList()))
-    } ?: library.accountCache()?.data?.let { data ->
-        if(data.history.isNotEmpty()) library.cacheAccount(data.copy(history=emptyList()))
+    val result=accountController.clearAllHistory { ok ->
+        if(!ok && !isDestroyed) tvTools.toast("本机已清空；云端还有记录没删掉，请稍后重试")
     }
     // 详情页的「继续观看」也要跟着失效：缓存里那几条已经清了，重进详情不该再从旧位置接。
     catalogFocus=""
@@ -323,18 +287,8 @@ fun MainActivity.clearAllHistory(anchor: View?) {
         tab==TAB_HOME -> refreshLibraryCards("",true)
         else -> if(screen=="catalog") showCatalog()
     }
-    val ids=(localIds+knownIds).distinct()
+    val ids=(result.localIds+result.knownIds).distinct()
     showHint("已清空 ${ids.size} 条观看记录")
-    if(!repository.signedIn) return
-    io.submit {
-        // 云端以它自己那份列表为准（见 [ContentRepository.accountClearHistory]）：
-        // 本机记得的 ids 只是补充，云端还有更多也能一起清掉。
-        val ok=repository.accountClearHistory(ids)
-        main.post {
-            if(isDestroyed) return@post
-            if(!ok) tvTools.toast("本机已清空；云端还有记录没删掉，请稍后重试")
-        }
-    }
 }
 
 /**

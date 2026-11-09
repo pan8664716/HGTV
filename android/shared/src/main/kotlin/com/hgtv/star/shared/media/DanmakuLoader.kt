@@ -17,7 +17,7 @@ import kotlinx.coroutines.CoroutineScope
  * 而它们要表达的是同一件事：
  *
  * ```
- * 换集 → 作废旧请求（代次 +1）→ 旧画面继续滚 → 拉窗口 → 首批到达后无感切换
+ * 换集 → 作废旧请求（代次 +1）→ 手动换集立即清屏 / 片尾连播保留旧画面 → 拉窗口
  * ```
  *
  * ## 三条容易写错的规则（都在这里）
@@ -25,6 +25,7 @@ import kotlinx.coroutines.CoroutineScope
  * * **同一集不重拉**：换清晰度、播放重试会重复进同一条路，重拉一次等于把已经画在屏上的
  *   弹幕清空再重来，用户看到的是「画面一卡、弹幕闪没了」。空结果也算「拿到」——
  *   这一集确实没有弹幕，不该每换一次清晰度就问一遍。
+ * * **手动换集立即清空**：上下滑动、点击选集不能残留上一集弹幕；片尾自动连播仍保留过渡。
  * * **旧回包一律丢弃**：用代次（不是「清空列表」）判断，晚回来的那一份不能盖住新一集。
  * * **隐藏弹幕时不发请求**：那是纯浪费流量；打开弹幕时由调用方按 [loaded] 决定要不要补拉。
  */
@@ -72,8 +73,15 @@ class DanmakuLoader(
      * 拉这一集。
      *
      * @param force true = 无视「同一集不重拉」直接重来（用户刚把弹幕从隐藏打开时用）。
+     * @param clearOnSwitch true = 用户主动滑动换集 / 手动选集，立即清掉上一集弹幕；
+     *   false = 片尾自动连播，等新一集首批弹幕到达后再接管。
      */
-    fun load(episodeId: String, seriesId: String, force: Boolean = false) {
+    fun load(
+        episodeId: String,
+        seriesId: String,
+        force: Boolean = false,
+        clearOnSwitch: Boolean = false,
+    ) {
         if (episodeId.isBlank() || seriesId.isBlank()) return
         val view = target() ?: return
         val current = mode()
@@ -84,14 +92,20 @@ class DanmakuLoader(
             return
         }
         val switchingEpisode = episode != episodeId
-        // 换集时保留上一集正在滚动的画面，新一集首批弹幕到达后 setDanmaku 会直接接管。
-        // 首次进入、同集强制重拉仍按原逻辑清屏；播放器视图本身换了时保留也没有意义。
-        if (switchingEpisode && episode.isNotEmpty()) view.beginTransition() else view.resetCursor()
+        // 手动换集必须立刻清屏；片尾自动连播保留旧画面滚动到首批新弹幕到达。
+        if (switchingEpisode && episode.isNotEmpty() && !clearOnSwitch) {
+            view.beginTransition()
+        } else {
+            view.resetCursor()
+        }
         val ticket = ++token
         episode = episodeId
         count = -1
         lastItems = emptyList()
-        if (!switchingEpisode) view.clear()
+        if (!switchingEpisode || clearOnSwitch) {
+            view.clear()
+            if (clearOnSwitch) forgetClock()
+        }
         if (current == DanmakuMode.HIDDEN) return
         scope.danmaku {
             val items = runCatching {
@@ -117,6 +131,20 @@ class DanmakuLoader(
     }
 
     /**
+     * 立即清空当前这一层并忘记已加载状态。
+     *
+     * 用户主动换剧 / 换集时调用；下一集的首批弹幕到达前不会继续显示上一集内容。
+     */
+    fun clear() {
+        token++
+        episode = ""
+        count = -1
+        lastItems = emptyList()
+        target()?.clear()
+        forgetClock()
+    }
+
+    /**
      * 把手上这一集重放到当前的 [target] 上（切换竖屏 / 横屏时用）。
      *
      * 只重放，不重新请求：位置指针回到开头、显示方式按当前设置、时钟用调用方给的现值，
@@ -128,6 +156,9 @@ class DanmakuLoader(
         view.resetCursor()
         view.setDanmaku(lastItems)
         view.setClock(positionMs, running, speed)
+        clockAt = positionMs
+        runningState = running
+        clockSpeedState = speed
     }
 
     /** 换剧 / 离开页面：作废在途请求、清掉「已拿到」的记忆（下次进来重新拉）。 */
@@ -135,17 +166,61 @@ class DanmakuLoader(
         token++
         episode = ""
         count = -1
+        forgetClock()
     }
 
     /** 把播放位置 / 播放状态 / 倍速推给弹幕层（每帧只读，不回调播放器）。 */
     fun syncClock(positionMs: Long, running: Boolean, speed: Float) {
-        if (positionMs == clockAt && running == runningState) return
+        if (positionMs == clockAt && running == runningState && speed == clockSpeedState) return
+        val view = target()
+        if (view != null) {
+            if (runningState && !running) {
+                // 暂停：冻结当前屏幕位置，不把已经外推出的那几十毫秒倒回去。
+                view.pauseClock()
+                clockAt = positionMs
+                runningState = false
+                clockSpeedState = speed
+                return
+            }
+            if (!runningState && running && clockAt >= 0L) {
+                val displayed = view.clockPositionMillis()
+                val drift = displayed - positionMs
+                if (drift in 0L..200L) {
+                    // 恢复播放：从暂停时看到的位置继续，避免恢复瞬间倒跳。
+                    view.setClock(displayed, true, speed)
+                    clockAt = displayed
+                    runningState = true
+                    clockSpeedState = speed
+                    return
+                }
+            }
+            if (running && runningState && speed != clockSpeedState) {
+                // 倍速变化只换斜率，不改变当前屏幕位置。
+                val displayed = view.clockPositionMillis()
+                view.setClock(displayed, true, speed)
+                clockAt = displayed
+                clockSpeedState = speed
+                return
+            }
+            if (running && runningState && positionMs < clockAt && clockAt - positionMs <= 150L) {
+                // 高频采样偶尔比外推时钟落后一点：不回拉，等播放器位置追上来。
+                return
+            }
+        }
         clockAt = positionMs
         runningState = running
-        target()?.setClock(positionMs, running, speed)
+        clockSpeedState = speed
+        view?.setClock(positionMs, running, speed)
     }
 
-    /** 暂停时位置不变，但状态要变（不然暂停后弹幕还在滚），因此两个都要比。 */
+    /** 位置、播放状态、倍速任一变化都要立刻重校，否则暂停或切倍速会短暂脱节。 */
     private var clockAt = -1L
     private var runningState = false
+    private var clockSpeedState = 1f
+
+    private fun forgetClock() {
+        clockAt = -1L
+        runningState = false
+        clockSpeedState = 1f
+    }
 }

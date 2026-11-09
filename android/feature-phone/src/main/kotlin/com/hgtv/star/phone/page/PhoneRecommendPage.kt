@@ -310,6 +310,11 @@ class PhoneRecommendPage(
         feeds.getOrNull(current)?.onShown()
     }
 
+    /** 主设备注册完成：只让当前已创建、仍为空的信息流补拉一次。 */
+    fun onIdentityReady() {
+        feeds.forEach { it?.onIdentityReady() }
+    }
+
     private inner class PagerAdapter : RecyclerView.Adapter<PagerHolder>() {
         override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PagerHolder {
             // 体裁在构造时就定下来：`PhoneFeedView.init` 会立刻按它铺快照、取第一页。

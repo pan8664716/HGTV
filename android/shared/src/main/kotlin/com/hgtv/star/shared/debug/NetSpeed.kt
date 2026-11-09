@@ -65,11 +65,15 @@ object NetSpeed {
      * 先按 uid 取（只算自己）；`TrafficStats` 在某些盒子上对 uid 查询返回
      * `UNSUPPORTED`，那时退回整机总量——读数会包含别的进程，但方向与量级仍然有用。
      */
-    private fun rxBytes(): Long = TrafficStats.getUidRxBytes(Process.myUid())
-        .takeIf { it!=TrafficStats.UNSUPPORTED.toLong() } ?: TrafficStats.getTotalRxBytes()
+    private fun rxBytes(): Long = runCatching {
+        TrafficStats.getUidRxBytes(Process.myUid())
+            .takeIf { it!=TrafficStats.UNSUPPORTED.toLong() } ?: TrafficStats.getTotalRxBytes()
+    }.getOrDefault(-1L)
 
-    private fun txBytes(): Long = TrafficStats.getUidTxBytes(Process.myUid())
-        .takeIf { it!=TrafficStats.UNSUPPORTED.toLong() } ?: TrafficStats.getTotalTxBytes()
+    private fun txBytes(): Long = runCatching {
+        TrafficStats.getUidTxBytes(Process.myUid())
+            .takeIf { it!=TrafficStats.UNSUPPORTED.toLong() } ?: TrafficStats.getTotalTxBytes()
+    }.getOrDefault(-1L)
 
     /**
      * 每秒多少字节的写法：`820B/s` / `240K/s` / `1.2M/s`。
@@ -98,5 +102,5 @@ object NetSpeed {
      * 第一轮没有基线、或设备不支持统计时给 `↓ --`，不显示「采样中…」——
      * 画面上那一格很小，写四个字会把整行撑宽。
      */
-    fun line(): String = sample().ifBlank { "↓ --" }
+    fun line(): String = runCatching { sample() }.getOrDefault("").ifBlank { "↓ --" }
 }

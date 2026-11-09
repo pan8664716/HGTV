@@ -1,10 +1,9 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.media
 
-import androidx.media3.common.Format
-import androidx.media3.common.util.UnstableApi
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.analytics.AnalyticsListener
+import com.google.android.exoplayer2.Format
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.analytics.AnalyticsListener
 
 /**
  * 播放现场的「解码事实」：解码器名、初始化耗时、编码格式、丢帧、音频欠载。
@@ -18,7 +17,7 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
  *
  * ## 为什么放在 `:shared`
  *
- * 它只依赖 media3 的 [AnalyticsListener] 与 [Format]，与版面无关；两端将来都能挂同一份。
+ * 它只依赖 ExoPlayer 的 [AnalyticsListener] 与 [Format]，与版面无关；两端将来都能挂同一份。
  * 电视端的 `PlaybackDiag` 还混着「失败阶段 / 上报去重 / 首帧看门狗」，那些留在各端；
  * 这里只留**可观测的播放事实**，是抽离的第一层。
  *
@@ -27,7 +26,6 @@ import androidx.media3.exoplayer.analytics.AnalyticsListener
  * 所有回调都在播放线程上，只写 volatile 字段或做几次整数累加；[line] 只在调试面板
  * 每秒刷新时调用一次。没有 IO、没有分配（[line] 拼一个短字符串）。
  */
-@UnstableApi
 class PlaybackMetrics {
 
     @Volatile var decoderName: String = ""
@@ -164,7 +162,7 @@ class PlaybackMetrics {
             override fun onVideoInputFormatChanged(
                 eventTime: AnalyticsListener.EventTime,
                 format: Format,
-                decoderReuseEvaluation: androidx.media3.exoplayer.DecoderReuseEvaluation?,
+                decoderReuseEvaluation: com.google.android.exoplayer2.decoder.DecoderReuseEvaluation?,
             ) {
                 format(format)
             }

@@ -8,8 +8,8 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
+import com.google.android.exoplayer2.PlaybackException
+import com.google.android.exoplayer2.Player
 import com.hgtv.star.core.DegradationKind
 import com.hgtv.star.core.FailureAction
 import com.hgtv.star.core.FailureAttribution
@@ -18,9 +18,9 @@ import com.hgtv.star.core.FailureFacts
 import com.hgtv.star.core.FailurePresentation
 import com.hgtv.star.core.GiveUpReason
 import com.hgtv.star.core.MediaKind
-import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.PlaybackErrorCode
 import com.hgtv.star.core.PlaybackFailurePolicy
+import com.hgtv.star.core.RecommendBehavior
 import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackRetryPlan
 import com.hgtv.star.core.VideoDecoderMode
@@ -60,7 +60,7 @@ import kotlinx.coroutines.launch
 
 /** 本次播放**实际生效**的清晰度上限：会话层降档结果 > 用户设置。 */
 internal val PhonePlayerActivity.playbackMaxQuality: Int
-    get() = sessionPlayback.effectiveMaxQuality ?: (library?.maxQuality ?: 1080)
+    get() = playbackSessionState.effectiveMaxQuality ?: (library?.maxQuality ?: 1080)
 
 /** 把这一次失败整理成策略能吃的归因（判断本体在 `:shared`，与电视端同一份）。 */
 internal fun PhonePlayerActivity.playbackAttribution(code: Int): FailureAttribution =
@@ -90,18 +90,18 @@ internal fun PhonePlayerActivity.handlePlayerFailure(error: PlaybackException) {
     // **每次起播只处置一次**：一次失败会在几毫秒里连报两三条（渲染器报完、播放器再收尾），
     // 逐条处置会把预算在几十毫秒里烧光。用代次判断而不是布尔：布尔在「重建又失败」时
     // 永远留在 true，第二次失败就再也不会被处置（实测就卡在这里）。
-    if (handledAttempt == attemptSeq) {
+    val attempt = playbackCoordinator.claimFailure()
+    if (attempt == null) {
         android.util.Log.i("HGTV-RECOVER", "same attempt, ignore code=${error.errorCode}")
         return
     }
-    handledAttempt = attemptSeq
     // 这一次失败的阶段：错误页标题按它取（与电视端同一张表），调试面板也读同一格。
     failureStage = PlaybackFailures.stageOf(error)
     val code = error.errorCode
     val attr = playbackAttribution(code)
     android.util.Log.i(
         "HGTV-RECOVER",
-        "failure code=${error.errorCode} stage=$failureStage attempt=$attemptSeq player=${player != null}",
+        "failure code=${error.errorCode} stage=$failureStage attempt=$attempt player=${player != null}",
     )
     // 出错这一路先停住：不停的话它会在后台继续重连同一条坏流，把重试预算烧在错误的地方。
     runCatching { player?.pause() }
@@ -177,7 +177,7 @@ private fun PhonePlayerActivity.decideAndRun(error: PlaybackException, attr: Fai
         // 手机这一条路径永远是「播放页」：推荐页有自己的一套（`PhoneFeedView` 换下一部）。
         onRecommend = false,
     )
-    when (val action = PlaybackFailurePolicy.decide(facts, attr, ledger, sessionPlayback)) {
+    when (val action = playbackCoordinator.decideFailure(facts, attr)) {
         is FailureAction.RefetchStream -> refetchAndReplay(action, attr)
         FailureAction.RecoverQueuedCurrent -> {
             if (!recoverQueuedCurrent(position)) {
@@ -212,11 +212,10 @@ private fun PhonePlayerActivity.refetchAndReplay(
         "HGTV-RECOVER",
         "refetch episode=${targetIndex + 1} offset=${action.episodeOffset} transport=${action.dropTransport}",
     )
-    runCatching { PhoneServices.repository(this).forgetStreamAllQualities(episodeId) }
     // 索引与首块也是按「集 + 档位」落盘的：文件换过之后它们一起作废。
     // 键要用**这一次失败的那条流**：换到下一集时 `remote` 还是当前这一集，拿它算等于清错对象。
     val staleInfo = if (action.episodeOffset != 0) queuedVideo?.info else remote?.info
-    runCatching { PlaybackCache.invalidateIndex(staleInfo?.mediaKey(episodeId)) }
+    playbackSource.invalidate(episodeId, staleInfo)
     if (action.dropTransport) {
         val hosts = LinkedHashSet<String>(3)
         remote?.host?.takeIf { it.isNotEmpty() }?.let(hosts::add)
@@ -232,7 +231,7 @@ private fun PhonePlayerActivity.refetchAndReplay(
         .getOrDefault(0L).coerceAtLeast(0)
     if (action.episodeOffset != 0) {
         // 换到另一集：按集计的额度跟着换（与电视端 `restartAnotherEpisode` 同一条规则）。
-        ledger.onEpisodeSwitch()
+        playbackCoordinator.onEpisodeSwitch(episodeId)
     }
     play(targetIndex, at)
 }
@@ -252,9 +251,9 @@ private fun PhonePlayerActivity.recoverQueuedCurrent(position: Long): Boolean {
     queuedEpisodeId = ""
     PhoneSession.clearNext()
     val key = "$index:${playbackMaxQuality}"
-    val used = ledger.queuedRecoveries(key)
+    val used = playbackCoordinator.queuedRecoveryCount(key)
     if (used >= QUEUED_RECOVER_LIMIT) return false
-    ledger.noteQueuedRecovery(key, used + 1)
+    playbackCoordinator.noteQueuedRecovery(key)
     android.util.Log.i("HGTV-RECOVER", "queued episode failed; reopening current at ${position}ms")
     // 当前这一集的地址 / 索引 / 首块全部命中缓存，重开一次一个 Range 都不发。
     rebuildSameQuality(position)
@@ -263,6 +262,33 @@ private fun PhonePlayerActivity.recoverQueuedCurrent(position: Long): Boolean {
 
 /** 片尾窗口：与电视端 `queuedNearEnd` 同一个 2 秒。 */
 private const val QUEUED_NEAR_END_MS = 2_000L
+
+/**
+ * 推荐来源的行为上报。只接受从推荐流带进来的同一部剧，避免把普通详情页播放算进推荐。
+ */
+internal fun PhonePlayerActivity.reportRecommendEvent(
+    event: RecommendBehavior.Event,
+    positionMs: Long = -1L,
+    durationMs: Long = -1L,
+    reason: String = "",
+    episodeIndexOverride: Int? = null,
+) {
+    val series=PhoneSession.recommendSeries ?: return
+    val data=PhoneSession.detail ?: return
+    if(PhoneSession.feedKey.isEmpty() || series.id!=data.series.id) return
+    val episodeIndex=episodeIndexOverride ?: PhoneSession.index
+    val episodeId=data.episodes.getOrNull(episodeIndex).orEmpty()
+    reportRecommendBehavior(
+        context=this,
+        event=event,
+        seriesId=series.id,
+        episodeId=episodeId,
+        episodeIndex=episodeIndex,
+        positionMs=positionMs,
+        durationMs=durationMs,
+        reason=reason,
+    )
+}
 
 /** 队列项接回当前集的最多次数（按「集 + 上限」计）。 */
 private const val QUEUED_RECOVER_LIMIT = 1
@@ -276,8 +302,7 @@ private const val QUEUED_RECOVER_LIMIT = 1
 internal fun PhonePlayerActivity.replayWithPlan(plan: PlaybackRetryPlan) {
     val live = runCatching { player?.currentPosition ?: -1L }.getOrDefault(-1L)
     val at = (if (live > 0) live else 0L).coerceAtLeast(0)
-    plan.maxQuality?.let { sessionPlayback.setMaxQuality(it) }
-    plan.fromQuality?.let { sessionPlayback.noteQualityDown(it) }
+    playbackCoordinator.applyRetryPlan(plan)
     plan.toast?.let { text ->
         val key = "${detail?.episodes?.getOrNull(index) ?: index}:${plan.reason}:${plan.maxQuality ?: 0}"
         if (playbackToasts.shown(key)) toast(text)
@@ -304,7 +329,7 @@ internal fun PhonePlayerActivity.rebuildSameQuality(at: Long) {
     val exo = player
     if (exo == null) return
     // 新的一次尝试：错误代次跟着前进，这一次的失败才会被处置。
-    attemptSeq++
+    playbackCoordinator.retry()
     recovering = true
     // 先把「解码方式」这一档写进选择器（用户可能刚点了「切换为软解」）。
     PhoneServices.player(this, library?.decoderMode)
@@ -328,8 +353,7 @@ private fun PhonePlayerActivity.prepareFreshRetrySource() {
     val staleInfo = remote?.info
     PhoneSession.clearNext()
     if (episodeId != null) {
-        runCatching { PhoneServices.repository(this).forgetStreamAllQualities(episodeId) }
-        staleInfo?.let { PlaybackCache.invalidateIndex(it.mediaKey(episodeId)) }
+        playbackSource.invalidate(episodeId, staleInfo)
     } else {
         runCatching { PhoneServices.repository(this).rotateDeviceForRetry() }
     }
@@ -351,13 +375,13 @@ internal fun PhonePlayerActivity.scheduleAutoRetry(waitMs: Long) {
     retryJob = scope.launch {
         var left = (waitMs / 1000).coerceAtLeast(1)
         while (left > 0) {
-            autoRetryLabel?.text = "自动重试：${left} 秒后 · ${ledger.attempts + 1}/3"
+            autoRetryLabel?.text = "自动重试：${left} 秒后 · ${playbackCoordinator.autoRetryAttempts + 1}/3"
             delay(1000)
             left--
         }
         if (isFinishing || isDestroyed) return@launch
         retryJob = null
-        if (!ledger.consumeAttempt()) {
+        if (!playbackCoordinator.consumeAutoRetry()) {
             autoRetryLabel?.text = "已自动重试 3 次，仍无法播放。可手动重试或切换清晰度。"
             return@launch
         }
@@ -414,7 +438,13 @@ internal fun PhonePlayerActivity.showPlaybackError(
      */
     autoRetryDelayMs: Long? = null,
 ) {
-    android.util.Log.i("HGTV-RECOVER", "error card reason=$reason hint=${sessionPlayback.manualHint}")
+    reportRecommendEvent(
+        RecommendBehavior.Event.ERROR,
+        positionMs=runCatching { player?.currentPosition ?: -1L }.getOrDefault(-1L),
+        durationMs=runCatching { player?.duration ?: -1L }.getOrDefault(-1L),
+        reason=reason?.name ?: failureStage,
+    )
+    android.util.Log.i("HGTV-RECOVER", "error card reason=$reason hint=${playbackCoordinator.manualHint}")
     cancelAutoRetry()
     recovering = false
     errorAttr = attr
@@ -460,13 +490,13 @@ internal fun PhonePlayerActivity.showPlaybackError(
         append(
             FailurePresentation.message(
                 facts = facts,
-                manualHint = sessionPlayback.manualHint,
+                manualHint = playbackCoordinator.manualHint,
                 hevcSupported = hevcSupported,
             )
         )
         // 附一行「已经试过什么」：电视端写在日志里，手机上直接给出来——
         // 用户报「老是降清晰度」时，这一行能说明预算到底有没有生效。
-        if (reason != null) append("\n\n已自动尝试：${sessionPlayback.budgetSummary()}")
+        if (reason != null) append("\n\n已自动尝试：${playbackCoordinator.budgetSummary()}")
     }
     column.addView(TextView(this).apply {
         text = message
@@ -490,7 +520,7 @@ internal fun PhonePlayerActivity.showPlaybackError(
     column.addView(errorButton("立即重试", primary = true) {
         clearPlaybackError()
         // 归还本集的额度（策略那边有次数上限，连点第三次不再归还）。
-        if (sessionPlayback.onManualRetry()) ledger.onManualRetry()
+        playbackCoordinator.onManualRetry()
         // 同时作废旧地址、旧索引与预取槽，确保这一下真的重新取流。
         prepareFreshRetrySource()
         val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
@@ -503,7 +533,7 @@ internal fun PhonePlayerActivity.showPlaybackError(
     if (FailureCapability.SWITCH_SOFTWARE in caps) {
         second.addView(errorButton("切换为软解") {
             library?.decoderMode = VideoDecoderMode.SOFTWARE
-            sessionPlayback.onManualDecoderChange()
+            playbackCoordinator.onManualDecoderChange()
             clearPlaybackError()
             val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
             rebuildSameQuality(at)
@@ -512,7 +542,7 @@ internal fun PhonePlayerActivity.showPlaybackError(
     if (FailureCapability.CHANGE_QUALITY in caps) {
         second.addView(errorButton("换到 ${swapTarget}P") {
             library?.maxQuality = PlaybackQuality.normalize(swapTarget)
-            sessionPlayback.onManualQualityChange()
+            playbackCoordinator.onManualQualityChange()
             clearPlaybackError()
             // 新档位也必须重新取流，不能命中旧档位留下的地址或索引。
             prepareFreshRetrySource()
@@ -585,6 +615,7 @@ internal fun PhonePlayerActivity.clearPlaybackError() {
     errorCard = null
     errorAttr = null
     autoRetryLabel = null
+    setBufferingLabel(null)
 }
 
 /** 这组错误码是不是「解码器根本没起来」（错误页要重探一次设备能力）。 */
@@ -654,13 +685,13 @@ internal fun PhonePlayerActivity.disarmPictureWatchdog() {
  */
 internal fun PhonePlayerActivity.recoverLostPicture(reason: String) {
     val now = android.os.SystemClock.elapsedRealtime()
-    if (ledger.pictureCoolingDown(now, 20_000L)) return
-    if (ledger.formalPictureRecoveries >= 1) {
+    if (playbackCoordinator.pictureRecoveryCoolingDown(now, 20_000L)) return
+    if (playbackCoordinator.pictureRecoveryCount >= 1) {
         // 已经重建过一次还是没画面：如实告诉用户，别让它无限重建。
         toast(if (reason == "stall_buffer") "这一集加载不动，可以换一集" else "这一集画面出不来，可以换一集")
         return
     }
-    ledger.notePictureRecovery(now)
+    playbackCoordinator.notePictureRecovery(now)
     android.util.Log.i("HGTV-PHONE", "picture lost ($reason), rebuilding once")
     val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
     rebuildSameQuality(at)

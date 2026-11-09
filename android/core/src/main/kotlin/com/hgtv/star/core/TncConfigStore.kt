@@ -15,6 +15,8 @@ data class TncResponse(
     val raw: String,
     val summary: String = "",
     val etag: String = "",
+    /** 服务端表示配置未变化（空 body / 304），不需要重新解析。 */
+    val notModified: Boolean = false,
 )
 
 /** TNC 配置的运行时快照。所有集合都是不可变副本，刷新时整份替换。 */
@@ -48,10 +50,18 @@ object TncConfigStore {
     private const val LOAD_WAIT_MS=300L
     private const val MAX_BACKOFF_MS=30*60*1000L
 
-    /** 首次启动 / 配置丢失时仅用于找到 TNC；正常刷新会由响应里的 send_tnc_host_arrays 覆盖。 */
+    /**
+     * TNC 静态入口。
+     *
+     * 只在首次启动 / 配置丢失时依次尝试，命中第一个可用入口就停止。
+     * 成功拿到配置后，后续刷新只使用响应里的 `send_tnc_host_arrays`。
+     */
     val bootstrapHosts=listOf(
-        "tnc0-alisc1.zijieapi.com",
-        "tnc0-aliec2.zijieapi.com",
+        "tnc3-aliec2.zijieapi.com",
+        "tnc3-alisc1.zijieapi.com",
+        "tnc3-bjlgy.zijieapi.com",
+        "tnc11-aliec2.zijieapi.com",
+        "tnc3-aliec2.bytedance.com",
     )
 
     /**
@@ -164,15 +174,18 @@ object TncConfigStore {
         return hosts.firstOrNull() ?: roleHint.orEmpty()
     }
 
-    /** 当前 TNC 入口；响应里下发过新入口就优先用新入口。 */
+    /** 当前 TNC 入口；有服务端配置时只使用下发入口，否则使用首次启动的静态候选。 */
     fun tncHosts(): List<String> =
         current()?.tncHosts?.takeIf { it.isNotEmpty() } ?: bootstrapHosts
 
     /** TNC 下发的日志/注册候选；首次注册仍使用静态 bootstrap。 */
     fun logHosts(): List<String> {
-        val configured=current()?.localHosts.orEmpty()
-            .filter { it.startsWith("log5-applog-",ignoreCase=true) }
-        return (configured+fallbackLogHosts).distinct()
+        val hosts=LinkedHashSet<String>()
+        current()?.localHosts.orEmpty().forEach { host ->
+            if(host.startsWith("log5-applog-",ignoreCase=true)) hosts.add(host)
+        }
+        fallbackLogHosts.forEach { hosts.add(it) }
+        return ArrayList(hosts)
     }
 
     /** TNC 预连接 URL 里的主机；只用于 DNS 预热，不代表业务接口入口。 */
@@ -233,6 +246,7 @@ object TncConfigStore {
                         failureCount=(failureCount+1).coerceAtMost(8)
                         val delay=(60_000L shl (failureCount-1).coerceAtMost(5)).coerceAtMost(MAX_BACKOFF_MS)
                         backoffUntil=System.currentTimeMillis()+delay
+                        NetLog.warn("[API] retry scope=tnc attempt=$failureCount delay=${delay}ms reason=config refresh failed")
                     }
                     val retry=pendingForce && success
                     pendingForce=false
@@ -260,6 +274,22 @@ object TncConfigStore {
     }
 
     private fun applyResponse(response: TncResponse): Boolean {
+        if(response.notModified) {
+            val previous=snapshot
+            if(previous==null) {
+                NetLog.warn("tnc unchanged without cached snapshot")
+                return false
+            }
+            // 服务端明确表示配置仍然有效。刷新 fetchedAt，避免下一次启动/网络切换
+            // 因为旧时间戳立刻重复请求；其它字段继续使用当前快照。
+            snapshot=previous.copy(
+                fetchedAt=System.currentTimeMillis(),
+                etag=response.etag.ifBlank { previous.etag },
+            )
+            persistAsync()
+            NetLog.log("tnc unchanged summary=${previous.summary.take(12)} etag=${snapshot?.etag.orEmpty().take(12)}")
+            return true
+        }
         val parsed=runCatching { parse(response) }.getOrNull() ?: return false
         val previous=snapshot
         snapshot=parsed.copy(lastGoodHost=previous?.lastGoodHost.orEmpty())

@@ -2,12 +2,14 @@
 package com.hgtv.star.tv
 
 import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
-import androidx.media3.common.Player
+import com.google.android.exoplayer2.Player
 import com.hgtv.star.shared.compat.isMeteredConnection
+import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.core.CategoryFilterOption
 import com.hgtv.star.core.CategorySelection
@@ -40,14 +42,21 @@ const val RECOMMEND_SKIP_LIMIT=4
  * 用户看到的就是「正在加载推荐…」一直转。页数深了本来就全是旧货（服务端在 2000 钳位），
  * 往下挖的性价比极低，因此这里收到 3 页：宁可早一点换一条新流。
  */
-private const val RECOMMEND_MAX_CHAIN=3
+private const val RECOMMEND_MAX_CHAIN=com.hgtv.star.shared.feed.RecommendFeedPolicy.MAX_PAGES_PER_LOAD
 /**
  * 首屏一次要多少条。
  *
  * 与 20 条同一个价（940ms vs 780ms），但候选是 3 倍：一次就凑出「够新鲜的一页」的概率高得多，
  * 少翻的页数远大于那 160ms。之后补页仍按 20 条。
  */
-private const val RECOMMEND_FIRST_LIMIT=60
+private const val RECOMMEND_FIRST_LIMIT=com.hgtv.star.shared.feed.RecommendFeedPolicy.FIRST_LIMIT
+/**
+ * 分类接口一页可能因续流、筛选和去重少于首屏目标条数。
+ *
+ * TV 首屏必须至少凑够这一批，否则缓存与当前列表都会长期停在 3 条：
+ * 下一次启动只能在这 3 条里选，表现就是「每次都是同一部」。
+ */
+private const val RECOMMEND_FIRST_ITEMS=com.hgtv.star.shared.feed.RecommendFeedPolicy.MIN_ITEMS_PER_LOAD
 /**
  * 补页一次要多少条。
  *
@@ -56,7 +65,7 @@ private const val RECOMMEND_FIRST_LIMIT=60
  * （补页那 20 条里总有一部分已经刷过 / 同名的被滤掉），于是每刷十几部就撞一次补页——
  * 用户看到的就是「隔十几部黑一下、跳过去一部」。
  */
-private const val RECOMMEND_PAGE_LIMIT=60
+private const val RECOMMEND_PAGE_LIMIT=com.hgtv.star.shared.feed.RecommendFeedPolicy.PAGE_LIMIT
 /**
  * 快刷到这一批末尾还剩这么多部时，提前把下一页取回来（[ensureRecommendLookahead]）。
  *
@@ -71,21 +80,21 @@ private const val RECOMMEND_LOOKAHEAD=10
  * 依据同一组实测：正常一页 0.8s、换流一次 0.8s，3 秒足够走完「取一页 + 换一条流」；
  * 再等下去用户面对的就是一块「正在加载推荐…」的静止画面——那比看到两部看过的更糟。
  */
-private const val RECOMMEND_FIRST_BUDGET_MS=3_000L
+private const val RECOMMEND_FIRST_BUDGET_MS=com.hgtv.star.shared.feed.RecommendFeedPolicy.FIRST_BUDGET_MS
 /**
  * 落盘游标深到这个位置就不再往下取，直接回流头。
  *
  * 服务端在 `next_offset=2000` 上钳位，越靠近它越只剩旧货；而从流头重新采样
  * （新 `session_id`）拿到的分布是一样的、排序是新的（见文档 §3.1）。
  */
-private const val RECOMMEND_DEEP_CURSOR=800
+private const val RECOMMEND_DEEP_CURSOR=com.hgtv.star.shared.feed.RecommendFeedPolicy.DEEP_CURSOR
 /**
  * 「带着 `filter_ids` 失败」的判定门槛（毫秒）。
  *
  * 只有这么快就回来的失败才值得再发一次不带过滤的请求：网关不认这个字段是立刻回错的，
  * 而超时 / 断网那种慢失败重发一遍只是把等待时间翻倍。
  */
-private const val RECOMMEND_FILTER_RETRY_MS=1_500L
+private const val RECOMMEND_FILTER_RETRY_MS=com.hgtv.star.shared.feed.RecommendFeedPolicy.QUICK_FILTER_FAILURE_MS
 /**
  * 同一次加载里最多换几次「新流」。
  *
@@ -95,7 +104,25 @@ private const val RECOMMEND_FILTER_RETRY_MS=1_500L
  *
  * 换两次仍然全是旧货，就不再纠缠，交给用户（上下键照样能看）。
  */
-private const val RECOMMEND_MAX_RESTARTS=2
+private const val RECOMMEND_MAX_RESTARTS=com.hgtv.star.shared.feed.RecommendFeedPolicy.MAX_RESTARTS
+
+/**
+ * TV 的推荐 Store。策略来自共享的 standard 配置，之后页面只读 Store 状态。
+ */
+fun MainActivity.recommendStore(): com.hgtv.star.shared.feed.RecommendStore =
+    recommendStoreRef ?: com.hgtv.star.shared.feed.RecommendStore(
+        repository = repository,
+        library = library,
+        // 热度推荐流的独立快照命名空间：官方书包流的快照与游标不再复用。
+        policy = com.hgtv.star.shared.feed.RecommendFeedPolicy.standard(
+            cacheNamespace = "heat-v1",
+        ),
+        debug = { line ->
+            if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+                android.util.Log.i("HGTV", "Recommend $line")
+            }
+        },
+    ).also { recommendStoreRef=it }
 /**
  * 切换过渡：黑场淡入（把上一部收住）/ 黑场淡出（把这一部放出来）/ 最长遮挡。
  *
@@ -168,10 +195,7 @@ fun MainActivity.openRecommend() {
     // 上一轮排队的按键意图与回调一起作废：新的一次进页面不该继承上一次的连按计数。
     recommendWaiters.clear(); recommendAdvancePending=0
     // 起点来自落盘的游标（`session_id|next_offset`）：上次刷到哪儿，这次就从哪儿往下取。
-    val cursor=library.recommendCursor
-    recommendSession=cursor.substringBefore('|')
-    recommendNext=cursor.substringAfter('|',"0").toIntOrNull()?.coerceAtLeast(0) ?: 0
-    recommendFirstLoadAt=0L
+    recommendStore().restoreCursor()
     // 这一次进页面「放哪一部」，两条路：
     //
     // 1. **本进程里还留着列表**（主页 / 设置页转一圈回来）→ 用这一列里**上一次那一部的下一条**。
@@ -194,17 +218,23 @@ fun MainActivity.openRecommend() {
     // 快照是上一轮写的，用户在这之间可能刚把某一部隐藏掉。
     recommendStarted=false
     val hidden=library.hidden()
-    val snapshot=if(retained) emptyList() else com.hgtv.star.core.RecommendCache.load().filterNot { it.id in hidden }
+    val snapshot=if(retained) emptyList() else recommendStore().restoreSnapshot(hidden)
     recommendRestored=retained
     if(retained) {
         // 列表 / 详情 / 预热都还在：往后挪一条，放缓存里的下一部（见 [nextRecommendIndex]）。
         // 只换下标，**不重取流**：这一列还是同一条流，重取会把用户刚看过的那几部又排回来。
         val resume=nextRecommendIndex(recommendItems)
         recommendIndex=resume
+        // 这一列是上一轮留下的快照/列表；补页时按「恢复列表」合并，不能把正在看的旧列整页替换。
+        recommendStore().restored=true
         android.util.Log.i("HGTV","Recommend retained items=${recommendItems.size} index=$resume "+
             "prepared=${recommendPrepared.size}")
         recommendStarted=true
         playRecommendAt(resume)
+        if(recommendItems.size<RECOMMEND_FIRST_ITEMS) {
+            requestRecommendFeedAfterFirstFrame()
+            fireRecommendFeed()
+        }
     } else if(snapshot.isNotEmpty()) {
         val resume=resumeIndex(snapshot)
         recommendItems=snapshot
@@ -220,6 +250,9 @@ fun MainActivity.openRecommend() {
         // 这时候再插一个取流的 POST 只会和出帧抢那一点带宽与 CPU。等 READY 再取
         // （见 `playEpisode` 的 READY 分支），3 秒还没出画面就按超时取。
         requestRecommendFeedAfterFirstFrame()
+        // 只有 3 条缓存时不能再等首帧后的 3 秒：这段时间用户只能反复看到同一小批，
+        // 立即补一页，让推荐列表尽快扩到可用规模。
+        if(snapshot.size<RECOMMEND_FIRST_ITEMS) fireRecommendFeed()
     } else showRecommendMessage("正在加载推荐…")
     if(snapshot.isEmpty()) {
         // 没有任何快照（第一次装 / 清过缓存）：整屏只有一行字，这一部只能由流决定。
@@ -360,7 +393,7 @@ fun MainActivity.closeRecommendCache() {
     cancelRecommendFeed()
     recommendPrepared.values.forEach { runCatching { it.close() } }
     recommendPrepared.clear()
-    recommendPreparedIndex.clear(); recommendPreparedAt.clear(); recommendWarmed.clear()
+    recommendPreparedIndex.clear(); recommendPreparedAt.clear(); recommendStore().clearWarm()
     recommendDetailLoading.clear()
 }
 
@@ -371,7 +404,7 @@ fun MainActivity.closeRecommendCache() {
  * 只做前两件时，那个线程还在 OkHttp 里读 1MB——结果没人要，带宽照样占着。
  */
 fun MainActivity.cancelRecommendWarm(key: String) {
-    recommendWarming.remove(key)
+    recommendStore().cancelWarm(key)
     val warm=recommendWarmJobs.remove(key) ?: return
     warm.future?.cancel(true)
     warm.scope.cancel()
@@ -381,7 +414,7 @@ fun MainActivity.cancelRecommendWarm(key: String) {
 fun MainActivity.cancelRecommendWarm() {
     val jobs=recommendWarmJobs.values.toList()
     recommendWarmJobs.clear()
-    recommendWarming.clear()
+    recommendStore().clearWarm()
     jobs.forEach { warm -> warm.future?.cancel(true); warm.scope.cancel() }
 }
 
@@ -395,273 +428,82 @@ fun MainActivity.cancelRecommendWarm() {
  * 后者数「这一次加载已经换了几条新流」，两个上限见 [RECOMMEND_MAX_CHAIN] /
  * [RECOMMEND_MAX_RESTARTS]。
  */
-fun MainActivity.loadRecommendPage(append: Boolean,depth: Int=0,restarts: Int=0,noFilter: Boolean=false,onReady: () -> Unit) {
-    // 请求在途：**排队，不立刻回调**。
-    //
-    // 早先这里是 `{ onReady(); return }`：调用方以为「页取完了、列表就是现在这么长」，
-    // 而实际上页还在路上——于是走到末尾的每一次按键都判成「没有下一页」，
-    // 环绕回第 0 部，把刚刷过的那批从头重放一遍（用户实测：连按十几下，全是刚才看过的）。
-    // 现在把它排进 [recommendWaiters]，由这一次取页结束时统一放出来（见 [settleRecommendLoad]）。
-    if(recommendLoading) { recommendWaiters += onReady; return }
-    // 这一次加载连着取了十几页都没凑够「没推过的」：这条流大概只剩推过的了，
-    // 换一条新流再走一遍；换流次数用完就交给用户（列表里还有旧的，上下键照样能看）。
-    //
-    // 之所以在这里换流、而不是「这一页八成推过就换」：游标本身就是往下走的，
-    // 一页里推过的多并不代表后面没有新的；过早退回流头正是「列表又被推一遍」的来源。
-    if(depth>=RECOMMEND_MAX_CHAIN) {
-        if(restarts<RECOMMEND_MAX_RESTARTS) {
-            restartRecommendStream()
-            loadRecommendPage(append,0,restarts+1,noFilter,onReady)
-        } else { onReady(); settleRecommendLoad() }
+fun MainActivity.loadRecommendPage(
+    append: Boolean,
+    @Suppress("UNUSED_PARAMETER") depth: Int = 0,
+    @Suppress("UNUSED_PARAMETER") restarts: Int = 0,
+    noFilter: Boolean = false,
+    onReady: () -> Unit,
+) {
+    if(recommendLoading) {
+        recommendWaiters += onReady
         return
     }
-    // 这条流已经到底（`has_more=false`）：不再原地干等，换一条新流接着补货。
-    // 早先这里是直接 `onReady()`——用户上下键走到流尾，之后每次补页都是空回调，
-    // 看上去就是「刷不动了」。
-    if(append && !recommendHasMore) {
-        if(restarts>=RECOMMEND_MAX_RESTARTS) { onReady(); settleRecommendLoad(); return }
-        restartRecommendStream()
-        loadRecommendPage(append,depth+1,restarts+1,noFilter,onReady)
-        return
-    }
-    val page=recommendPage+1
-    recommendLoading=true
-    val token=recommendPageToken.incrementAndGet()
-    // 首屏计时从这里开始（递归进来的 `depth>0` 不再重置）：超过 [RECOMMEND_FIRST_BUDGET_MS]
-    // 就不再凑「一条重复都没有」，见下面 `exhausted` 的判定。
-    if(!append && depth==0) recommendFirstLoadAt=android.os.SystemClock.elapsedRealtime()
-    // 落盘游标已经刷得太深（服务端在 2000 上钳位、越深越只剩旧货）：先回流头再取。
-    // 放在读 session/offset 之前，这一取的起点就直接是流头。
-    if(!append && depth==0 && recommendNext>=RECOMMEND_DEEP_CURSOR) restartRecommendStream()
-    // 请求从游标位置开始（首次进入 = 落盘游标，补页 = 上一页的 `next_offset`）。
-    val session=recommendSession
-    val offset=recommendNext
-    // 首屏一次要得多一些（同一份延迟换 3 倍候选），补页仍按 20 条。
-    val limit=if(append) RECOMMEND_PAGE_LIMIT else RECOMMEND_FIRST_LIMIT
-    val startedAt=android.os.SystemClock.elapsedRealtime()
-    // 首屏那 3~4 秒到底花在哪儿：注册 / 签名 / 网络 / 解析各占多少。
-    // 只在调试包里打（正式包被 R8 删掉），与 `Stage ...` 系列同一风格。
-    fun mark(name: String) {
-        if(com.hgtv.star.tv.BuildConfig.DEBUG) {
-            android.util.Log.i("HGTV","Recommend stage $name +${android.os.SystemClock.elapsedRealtime()-startedAt}ms")
+    recommendLoading = true
+    val token = recommendPageToken.incrementAndGet()
+    val input=recommendStore().input(
+        append = append,
+        noFilter = noFilter,
+        genres = library.recommendGenres(),
+        minItemsPerLoad = RECOMMEND_FIRST_ITEMS,
+        ensureRegistered = {
+            if(!library.deviceRegistered()) registerDeviceOnce()
+        },
+    )
+    appScope.network {
+        val loaded = runCatching {
+            recommendStore().load(input)
         }
-    }
-    // 兴趣画像只在这里快照一次：它读本机历史 / 收藏，刷推荐的过程中不会变。
-    val taste=tasteForRecommend()
-    io.submit {
-        // 分类 / 推荐接口要签名，签名里的设备身份必须是**平台注册过**的那一份
-        // （与播放取地址、搜索同一道门槛）。注册在途时 registerDeviceOnce 会在锁上等，
-        // 不会重复发请求；冷启动第一次进推荐因此不会因为「还没注册」而空手回来。
-        if(!library.deviceRegistered()) registerDeviceOnce()
-        mark("register")
-        // 已推过的剧回传给服务端（文档 §2.1 / §4.4 的 `filter_ids`）：这是「不重复」的第一层，
-        // 本机窗口只是第二层兜底。服务端不认它时会有下面的空页兜底，不会把推荐页卡死。
-        val filters=if(noFilter || recommendFilterUnsupported) "" else library.recommendFilterIds()
-        // 受众（男频 / 女频）：本机这一层被判定不可用、或这一次是「不带受众重取」时都不带
-        // （见 `MainActivity.recommendGenderFilter` / `recommendGenderProbe`）。
-        val gender=library.recommendGender.ifEmpty { null }
-            .takeIf { !recommendGenderOff && !recommendGenderProbe }
-        // 一次性标记当场消费：下一次请求（无论成败）重新按「带不带」判定。
-        recommendGenderProbe=false
-        mark("filters")
-        val result=runCatching {
-            // 全部体裁：真人短剧 / 漫剧 / AI 剧一起进推荐流（不传 `genre`）。
-            // 早先这里钉在 `comic_series` 上，实测那条流的内容池只有 193 部，
-            // 刷完就只剩重复；放开体裁之后池子深得多（实测 500 条仍未到底）。
-            //
-            // 设置页「推荐范围」关掉的类不带（见 `Library.recommendGenres`）：三类全开时它给的
-            // 是空列表，请求与旧版逐字节一致；只留一两类时才带上 `genre`，换剧就只在这些类里切。
-            //
-            // 受众（男频 / 女频）是另一个维度：选过就带上 `gender`，没选时为空（不筛）。
-            // 标识来自接口自己的 `selector_rows`（见 `Library.recommendGender`），不猜。
-            repository.recommendFeed(
-                CategorySelection(gender=gender),
-                session,offset,limit=limit,genres=library.recommendGenres(),filterIds=filters
-            )
-        }
-        mark("feed")
         main.post {
-            mark("post")
-            // 这一次的结果作废（退出 / 重进 / 又换了一条流）：排队的按键意图一起丢掉，
-            // 否则下次按一下会带着上一次的计数一次跨过头；排队等着的调用方也放掉，
-            // 免得它们永远等下去（它们各自的令牌守卫会让动作变成空操作）。
-            if(isDestroyed || token!=recommendPageToken.get() || screen!="recommend") {
-                recommendAdvancePending=0; settleRecommendLoad(); return@post
+            if(isDestroyed || token != recommendPageToken.get() || screen != "recommend") {
+                recommendAdvancePending = 0
+                settleRecommendLoad()
+                return@post
             }
-            recommendLoading=false
-            result.onSuccess { feed ->
-                // 带了 `filter_ids` 却一条都没回来：这台设备上服务端不吃这个字段（或把整页都滤光了）。
-                // 立刻不带重取一次；连续两次就把这一层永久关掉（见 `Library.recommendFilterIdsOff`）。
-                // 它是「锦上添花」的一层，绝不能因为它让推荐页整屏「推荐暂时取不到」。
-                if(filters.isNotEmpty() && feed.page.items.isEmpty()) {
-                    // 两次即关：阈值在 `:core`（`RecommendFlow.noteFilterMiss`），手机端同一份。
-                    val miss=com.hgtv.star.core.RecommendFlow.noteFilterMiss(recommendFilterMiss)
-                    recommendFilterMiss=miss.first
-                    if(miss.second) { library.recommendFilterIdsOff=true; recommendFilterUnsupported=true }
-                    android.util.Log.w("HGTV","Recommend empty page with filter_ids=${filters.length}B, retrying without")
-                    // 不带过滤重取的那一次**不加深** `depth`：它不是「又翻了一页」，
-                    // 万一撞到链路上限就会白白丢掉落盘的游标（换流会把游标清空）。
-                    // 不会死循环：下一次 `filters` 是空串，这条分支进不来。
-                    loadRecommendPage(append,depth,restarts,noFilter=true,onReady)
+            recommendLoading = false
+            loaded.onSuccess { result ->
+                recommendStore().apply(result)
+                recommendFilterMiss = result.filterMiss
+                recommendFilterUnsupported = result.filterIdsOff
+                recommendGenderOff = result.genderOff
+                recommendGenderProbe = result.genderProbe
+                recommendSession = result.sessionId
+                recommendNext = result.nextOffset
+                recommendItems = result.items
+                recommendPage = result.page
+                recommendHasMore = result.hasMore
+                if(result.error == null) recommendRestored = false
+
+                if(result.error != null) {
+                    android.util.Log.w("HGTV", "Recommend feed failed", result.error)
+                    if(recommendItems.isEmpty()) {
+                        showRecommendMessage("推荐暂时取不到\n按确定键重试，按返回键回主页面")
+                    } else {
+                        showRecommendToast("后面的推荐暂时取不到")
+                        onReady()
+                    }
+                    settleRecommendLoad()
                     return@onSuccess
                 }
-                // 带了受众却回空页：先不带受众重取一次（与上面 `filter_ids` 同一套兜底）。
-                // 实测本机 `gender=male` 连流头都回空——不兜底就是整屏「推荐暂时取不到」。
-                if(feed.page.items.isEmpty() && gender != null && !recommendGenderOff) {
-                    recommendGenderFilter.onEmpty()
-                    // 这一次先不带受众重取；连续两次仍空才永久关闭这一层（`off`）。
-                    recommendGenderProbe=true
-                    if(recommendGenderFilter.off) { recommendGenderOff=true; recommendGenderProbe=false }
-                    android.util.Log.w(
-                        "HGTV",
-                        "Recommend empty page with gender=${library.recommendGender} "+
-                            "miss=${recommendGenderFilter.misses} off=${recommendGenderFilter.off}, retrying without"
-                    )
-                    loadRecommendPage(append,depth,restarts,noFilter,onReady)
-                    return@onSuccess
-                }
-                // 带了而且正常回来：这个字段在本机可用，之前那两次失败作废。
-                if(filters.isNotEmpty()) { recommendFilterMiss=0; recommendFilterFail=0 }
-                // 带着受众正常拿回内容：降级计数清零（偶发空页不累积成永久关闭）。
-                if(gender != null && feed.page.items.isNotEmpty()) recommendGenderFilter.onFilled()
-                // 换了推荐范围之后，落盘的位置可能已经越过新范围的池子尾：服务端回空页。
-                // 这时不能停在「推荐暂时取不到」，退回流头重取一次（换流次数上限见
-                // [RECOMMEND_MAX_RESTARTS]）。只对首次进入这样做——补页时遇到空页就是流尾。
-                if(!append && feed.page.items.isEmpty() && offset>0 && restarts<RECOMMEND_MAX_RESTARTS) {
-                    restartRecommendStream()
-                    loadRecommendPage(append,depth+1,restarts+1,noFilter,onReady)
-                    return@onSuccess
-                }
-                // 本机隐藏的剧 / 已经推过的剧 / 同名（另一季、同 IP 的另一版）全部滤掉。
-                // **不再按 `vertical` 筛**：全部体裁里真人短剧占了大头（实测 500 条里 405 条竖屏），
-                // 筛掉竖屏等于又只剩漫剧——正是要放开的那个限制。
-                //
-                // 粒度是文档 §4.1 说的**剧级**：`filter_ids` 与窗口都用 `series_id`，
-                // 剧名归一化那一条挡的是「同一部剧换了切片回来」（`series_id` 不同，用户一眼认出）。
-                val finished=library.recommendFinished()
-                // 本次会话列表里已经有的那些也算「推过了」：换页 / 换流回来时不该再出现一遍。
-                // 这一份只活在内存里（`recommendItems`），**不**写进曝光窗口——那一份记的是
-                // 「真的上过屏」的，见 `playRecommendAt` 里的 `markRecommended`。
-                val loaded=recommendItems.map { it.id }.toHashSet()
-                val loadedTitles=recommendItems.mapNotNull { com.hgtv.star.core.RecommendFlow.titleKey(it.title).takeIf(String::isNotEmpty) }.toHashSet()
-                // 六条过滤规则在 `:core`（`RecommendFlow.fresh`），手机端读的是同一份：
-                // 隐藏 / 追完 / 推过的 id / 本会话已有的 id / 推过的剧名 / 本会话已有的剧名。
-                val candidates=com.hgtv.star.core.RecommendFlow.fresh(
-                    items=feed.page.items,
-                    hidden=library.hidden(),
-                    finished=finished,
-                    seen=library.recommendSeen(),
-                    loadedIds=loaded,
-                    loadedTitles=loadedTitles,
-                    seenTitle={ library.recommendSeenTitle(it) },
-                )
-                // 这条流已经刷不动了：游标不前进（服务端把 `next_offset` 钳在同一个数上）。
-                // 这是「在同一页上打转」，只有换一条新流才有新东西。
-                //
-                // 「这一页大半都推过」**不再触发换流**：游标在往下走，后面还有没推过的；
-                // 一看到推过的就退回流头，正好把用户又送回列表开头（见 `Library.recommendSeen`）。
-                // 真的整页都推过时，下面「筛完一条不剩就接着取下一页」会继续往后走。
-                // `offset==0` 时不算「撞天花板」：那本来就是流头，`next_offset` 前进与否是下一页的事。
-                val stalled=com.hgtv.star.core.RecommendFlow.stalled(offset,feed.nextOffset)
-                if(stalled && restarts<RECOMMEND_MAX_RESTARTS) {
-                    restartRecommendStream()
-                    loadRecommendPage(append,depth+1,restarts+1,noFilter,onReady)
-                    return@onSuccess
-                }
-                // 游标前进并立刻落盘：下次进推荐（哪怕换了进程）都接着这里往下取，
-                // 而不是回到 `offset=0` 那套永远相同的默认列表。
-                recommendSession=feed.sessionId
-                recommendNext=feed.nextOffset
-                library.recommendCursor=feed.sessionId+"|"+feed.nextOffset
-                // 这一页进列表**不等于**「已经推给用户看过」：一页 20 条里用户可能只看第一条，
-                // 把另外 19 条也记成已推，等于白白烧掉 19 部内容（下次进推荐就再也刷不到）。
-                // 曝光记录因此放在真正上屏那一刻（见 `playRecommendAt` → `markRecommended`）。
-                // 已经无处可退（后面没有了 / 换流次数用完）而这一页一条没推过的都没有——
-                // 等于用户把能刷的都刷穿了：宁可把这一页照原样放出来重复几部，
-                // 也不要让整屏只剩下「取不到」。
-                // 首屏还有一条硬约束：**总等待时间**。超过 [RECOMMEND_FIRST_BUDGET_MS]
-                // 就不再往下凑「一条重复都没有」，照原样放出来先播——空转的黑屏比几部看过的更糟。
-                val expired=!append && recommendFirstLoadAt!=0L &&
-                    android.os.SystemClock.elapsedRealtime()-recommendFirstLoadAt>=RECOMMEND_FIRST_BUDGET_MS
-                val exhausted=!feed.page.hasMore || restarts>=RECOMMEND_MAX_RESTARTS || expired
-                val shown=if(candidates.isEmpty() && exhausted) {
-                    // 刷穿了：照原样放出来重复几部，但「本机隐藏」与「已经追完」永远不进列表。
-                    feed.page.items.filterNot { it.id in library.hidden() || it.id in finished }
-                } else candidates
-                // 本机重排：兴趣小幅上浮 + 同题材配额 / 同剧间距（见 [RecommendArranger]）。
-                // 补页时把列表尾部当上下文，页与页的接缝上才不会连着两部同类。
-                val arranged=recommendArranger.arrange(shown,taste,if(append) recommendItems.takeLast(20) else emptyList())
-                // 一行诊断：这一页取回多少条、滤掉多少、真正进了列表多少。
-                // 「每刷十几部就卡一下」如果还出现，看这行就知道是补页太频繁还是这一页几乎全是旧的。
-                if(append) {
-                    android.util.Log.i("HGTV","Recommend append page=$page raw=${feed.page.items.size} kept=${shown.size} " +
-                        "arranged=${arranged.size} total=${recommendItems.size+arranged.size} hasMore=${feed.page.hasMore}")
-                }
-                recommendItems=when {
-                    append -> mergeRecommendPages(recommendItems,arranged)
-                    // 「先画后刷」：首屏那一列来自落盘快照（见 [com.hgtv.star.core.RecommendCache]），
-                    // 现在新一页回来了——**只往后接**没有出现过的条目，不整页替换。
-                    //
-                    // 不替换的原因有两个：正在播的那一部就是这一列里的第 0 条，整页换掉
-                    // 会让 `recommendIndex` 指到另一部（上下键、曝光记录、相邻预热全部错位）；
-                    // 而且整页换会在播着的时候闪一下列表。
-                    recommendRestored && recommendItems.isNotEmpty() -> mergeRecommendPages(recommendItems,arranged)
-                    else -> arranged
-                }
-                // 这一页是接在快照后面还是独自成列：下面的日志要如实标出来（`recommendRestored`
-                // 马上就要清掉）。
-                val fromSnapshot=recommendRestored
-                if(!append) com.hgtv.star.core.RecommendCache.save(recommendItems)
-                recommendRestored=false
-                recommendPage=page; recommendHasMore=feed.page.hasMore
-                // 这一页筛完一条不剩（整页都推过）而且后面还有：接着取下一页，
-                // 不能让用户看到「推荐暂时取不到」——那只是这一页没货，不是流断了。
-                // 首屏预算用完就不再往下走（`expired`）：那时连「照原样放出来」都是空的，
-                // 继续翻页只会让黑屏更久，直接落到下面的整屏提示 / 由调用方重试。
-                // 首屏有快照兜着（列表已经画出来、也在播）时不再往下追页：
-                // 那一列是完整的，用户不缺内容，继续翻页只会白占带宽与 `modelGate`。
-                if(shown.isEmpty() && feed.page.hasMore && !expired && recommendItems.isEmpty()) {
-                    loadRecommendPage(append,depth+1,restarts,noFilter,onReady)
-                    return@onSuccess
-                }
-                if(recommendItems.isEmpty()) {
+                if(result.empty) {
                     showRecommendMessage("推荐暂时取不到\n按确定键重试，按返回键回主页面")
                     settleRecommendLoad()
                     return@onSuccess
                 }
-                // 已经退到后台（[onStop] 里 restoreStoppedPage 已置位）：列表留着，
-                // 但不在后台起播——回到前台由 onResume 接着播，免得用户切走之后声音还在响。
-                if(!foreground) { settleRecommendLoad(); return@onSuccess }
-                // 首屏耗时留一行日志：这条链路串了三段网络（推荐流 → 详情 → 播放地址），
-                // 以后再说「进推荐慢」时，先看这一行是多少、翻了几页。
-                if(!append) {
-                    val spent=if(recommendFirstLoadAt==0L) 0L
-                        else android.os.SystemClock.elapsedRealtime()-recommendFirstLoadAt
-                    // 这一行量的是**取流**这一段，不是「首屏可看」：
-                    // 有落盘快照时画面早在它之前就已经起来了（见 `Recommend resume` 那行），
-                    // 把两件事混在一个 `first screen` 里读，就会得出「缓存白读了」这种错误结论。
-                    android.util.Log.i("HGTV","Recommend feed page ${spent}ms pages=${depth+1} restarts=$restarts "+
-                        "items=${recommendItems.size} source=${if(fromSnapshot) "snapshot" else "network"}")
+                if(!foreground) {
+                    settleRecommendLoad()
+                    return@onSuccess
                 }
                 onReady()
                 settleRecommendLoad()
             }.onFailure { problem ->
-                android.util.Log.w("HGTV","Recommend feed failed page=$page filter=${filters.length}B",problem)
-                // 带着 `filter_ids` 失败（网关可能不接受这个字段）：不带重试一次。
-                // **只认「秒回」的那种失败**：真被网关拒是 1 秒内就回错的；
-                // 超时 / 断网那种慢失败再重试一遍，只会让「正在加载推荐」多转一倍时间。
-                // 也不把它算进「服务端不认」（那一条只由空页判定）——网络抖一下不该让这层永久关掉。
-                val elapsed=android.os.SystemClock.elapsedRealtime()-startedAt
-                if(filters.isNotEmpty() && elapsed<RECOMMEND_FILTER_RETRY_MS) {
-                    recommendFilterFail++
-                    // 连着两次都失败：这一轮不再带（只到这次进程为止，见 `recommendFilterUnsupported`）。
-                    if(recommendFilterFail>=2) recommendFilterUnsupported=true
-                    loadRecommendPage(append,depth,restarts,noFilter=true,onReady)
-                    return@onFailure
+                android.util.Log.w("HGTV", "Recommend feed failed", problem)
+                if(recommendItems.isEmpty()) {
+                    showRecommendMessage("推荐暂时取不到\n按确定键重试，按返回键回主页面")
+                } else {
+                    showRecommendToast("后面的推荐暂时取不到")
+                    onReady()
                 }
-                if(filters.isNotEmpty()) recommendFilterUnsupported=true
-                if(recommendItems.isEmpty()) showRecommendMessage("推荐暂时取不到\n按确定键重试，按返回键回主页面")
-                else { showRecommendToast("后面的推荐暂时取不到"); onReady() }
                 settleRecommendLoad()
             }
         }
@@ -706,36 +548,11 @@ private fun MainActivity.settleRecommendLoad() {
 }
 
 /**
- * 一页推荐的合并：**覆盖式**按剧 id 去重（文档 §6.7 的 `merge`）。
- *
- * 为什么不是简单 `addAll`：首屏请求与预加载 / 补页可能并发回来，两页在接缝上会重叠一条；
- * 直接拼起来就是用户看到的「刚划过的那部又出现了」。已在列表里的那一条**保留旧的**
- * （位置与详情缓存都还对得上），新的一条只在不存在时追加。
- */
-private fun mergeRecommendPages(old: List<Series>,new: List<Series>): List<Series> {
-    if(new.isEmpty()) return old
-    if(old.isEmpty()) return new
-    val map=LinkedHashMap<String,Series>(old.size+new.size)
-    old.forEach { map[it.id]=it }
-    new.forEach { item -> if(!map.containsKey(item.id)) map[item.id]=item }
-    return map.values.toList()
-}
-
-/**
  * 本机兴趣画像（进推荐页时建一次，之后每页复用）。
  *
  * 读的是本机观看历史与收藏——推荐页自己不写历史，但用户从详情页 / 正式播放看过的那些
  * 都记在里面，正好是「这台机器喜欢什么」最可靠的来源。
  */
-private fun MainActivity.tasteForRecommend(): com.hgtv.star.core.RecommendTaste {
-    recommendTasteCache?.let { return it }
-    val taste=runCatching {
-        com.hgtv.star.core.RecommendTaste.of(library.history(),library.favorites())
-    }.getOrDefault(com.hgtv.star.core.RecommendTaste())
-    recommendTasteCache=taste
-    return taste
-}
-
 /**
  * 取一次分类接口的筛选面板，只留下「受众」那一行，交给调用方建芯片。
  *
@@ -768,18 +585,6 @@ fun MainActivity.loadGenderOptions(onReady: (List<CategoryFilterOption>) -> Unit
             onReady(options)
         }
     }
-}
-
-/**
- * 丢开当前这条推荐流，回到流头重新取（`session_id` 清空 + `offset=0`）。
- *
- * 落盘的游标一起清掉：否则下次进程重开又会从那条已经刷不动的位置取，白换一次流。
- */
-private fun MainActivity.restartRecommendStream() {
-    recommendSession=""
-    recommendNext=0
-    library.recommendCursor=""
-    recommendHasMore=true
 }
 
 /** 整屏一行说明（首次进入 / 取不到推荐时用；此时还没有播放画面）。 */
@@ -874,7 +679,7 @@ fun MainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,s
     val series=recommendItems[safe]
     // 这一部真的上屏了：记进剧级曝光窗口（`series_id` + 归一化剧名，7 天）。
     // 这是文档 §6.7 那个 `onExpose` 的等价物——只记**上过屏**的，不记「列表里有」的。
-    library.markRecommended(listOf(series.id),listOf(series.title))
+    recommendPlaybackController.rememberShown(series)
     // 换到另一部之前，先把上一部「待了多久 / 播了多久」结掉：那一条信号决定它进 14 天
     // 冷却还是 30 天冷却（见 [settleRecommendWatch]）。同一部重试时不动它。
     if(recommendWatchingId.isNotEmpty() && recommendWatchingId!=series.id) settleRecommendWatch()
@@ -909,6 +714,11 @@ fun MainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,s
                     // 留一行日志：推荐页「一直转圈、一直不播」最常见的成因就是这种条目连着来，
                     // 光看界面只有「正在加载《…》」在换名字，看不出是被跳过的。
                     android.util.Log.w("HGTV","Recommend skip no episodes id=${series.id} title=${data.series.title} count=${data.series.episodeCount} upcoming=${data.upcoming}")
+                    recommendPlaybackController.reportEvent(
+                        series,
+                        com.hgtv.star.core.RecommendBehavior.Event.ERROR,
+                        reason="no_episodes",
+                    )
                     skipRecommend(series,safe,direction,skipped)
                     return@post
                 }
@@ -918,6 +728,11 @@ fun MainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,s
             }.onFailure { problem ->
                 if(token!=recommendToken.get()) return@post
                 android.util.Log.w("HGTV","Recommend detail failed id=${series.id}",problem)
+                recommendPlaybackController.reportEvent(
+                    series,
+                    com.hgtv.star.core.RecommendBehavior.Event.ERROR,
+                    reason="detail_failed",
+                )
                 skipRecommend(series,safe,direction,skipped)
             }
         }
@@ -959,8 +774,8 @@ private fun MainActivity.skipRecommend(series: Series,index: Int,direction: Int,
  * 只按播放会漏掉「静音看了个开头就换台」那些——播放器还没报出位置。
  * 这两个数值只决定**冷却时长**（14 天 / 30 天），不决定推不推，因此不需要更精细。
  */
-private const val WATCH_DWELL_MS=6_000L
-private const val WATCH_PLAY_MS=5_000L
+private const val WATCH_DWELL_MS=com.hgtv.star.core.RecommendBehavior.WATCH_DWELL_MS
+private const val WATCH_PLAY_MS=com.hgtv.star.core.RecommendBehavior.WATCH_PLAY_MS
 /**
  * 「连划」的下限：停留不到这么久就不当成一次「不喜欢」。
  *
@@ -969,7 +784,7 @@ private const val WATCH_PLAY_MS=5_000L
  * 下一次推荐自然就不准了。上过屏这件事已经由 [markRecommended] 记了 7 天曝光，
  * 这里只负责别把「没看清」当成「不喜欢」。
  */
-private const val QUICK_SWIPE_MS=1_200L
+private const val QUICK_SWIPE_MS=com.hgtv.star.core.RecommendBehavior.QUICK_SWIPE_MS
 
 /**
  * 结掉「当前这一部在推荐页待了多久」，写进曝光窗口。
@@ -979,24 +794,42 @@ private const val QUICK_SWIPE_MS=1_200L
  * 只延长不缩短（见 [com.hgtv.star.core.RecommendMarks.mark]），因此重复调用无害。
  */
 fun MainActivity.settleRecommendWatch() {
-    val id=recommendWatchingId
-    recommendWatchingId=""
-    val start=recommendWatchStart
-    recommendWatchStart=0L
-    if(id.isEmpty() || start==0L) return
-    val dwell=android.os.SystemClock.elapsedRealtime()-start
-    // 连划：这一部连一秒都没停住，用户没来得及判断。曝光已经记过（7 天），这里不再加码。
-    if(dwell<QUICK_SWIPE_MS) return
     val played=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L)
-    if(dwell>=WATCH_DWELL_MS || played>=WATCH_PLAY_MS) {
-        library.markRecommendWatched(id)
-    } else {
-        library.markRecommendSkipped(id)
-        // 这一类的实时负反馈只在本会话里生效（见 `RecommendTaste.skipped`）：
-        // 同一类连划几部，本次刷推荐就会把它往后放，不用等下一次进页面。
-        val series=recommendItems.firstOrNull { it.id==id }
-        if(series!=null) recommendTasteCache?.skipped(series)
-    }
+    recommendPlaybackController.settleWatch(played)
+}
+
+/** 推荐页当前这一部真正开始出画面时，交给两端共用的曝光上报器。 */
+fun MainActivity.reportRecommendImpression() {
+    if(screen!="recommend") return
+    val series=recommendItems.getOrNull(recommendIndex) ?: return
+    val data=detail
+    val exposureSeries=series.copy(
+        contentType=series.contentType.takeIf { it>0 } ?: data?.playback?.contentType ?: 0,
+    )
+    recommendPlaybackController.reportImpression(exposureSeries)
+    val episodeId=data?.episodes?.getOrNull(episodeIndex).orEmpty()
+    recommendPlaybackController.reportPlayStart(
+        series,
+        episodeId=episodeId,
+        episodeIndex=episodeIndex,
+        positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
+        durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
+    )
+}
+
+/** 推荐来源的播放进度，15 秒一次；正式播放页和推荐内嵌播放都走这里。 */
+fun MainActivity.reportRecommendProgress() {
+    if(screen!="recommend" && !playbackFromRecommend) return
+    val data=detail ?: return
+    val p=player ?: return
+    val episodeId=data.episodes.getOrNull(episodeIndex) ?: return
+    recommendPlaybackController.reportProgressById(
+        data.series.id,
+        episodeId,
+        episodeIndex,
+        p.currentPosition.coerceAtLeast(0),
+        p.duration.coerceAtLeast(0),
+    )
 }
 
 /**
@@ -1061,7 +894,7 @@ private fun MainActivity.startRecommendEpisode(data: Detail,position: Long,autop
         // 索引键优先用**这一份预热实际取到的**那个（`mediaKey` 用实际档位，可能低于上限）。
         val mediaKey=prepared?.info?.mediaKey(episode) ?: key
         android.util.Log.i("HGTV-PERF","switch prepared=${if(prepared!=null) 1 else 0} "+
-            com.hgtv.star.core.PlaybackCache.probe(urlKey,mediaKey)+" level=${recommendWarmed[key] ?: "-"}")
+            com.hgtv.star.core.PlaybackCache.probe(urlKey,mediaKey)+" level=${recommendStore().warmedLevel(key) ?: "-"}")
     }
     // 连续失败计数**不在这里**归零：起播（取地址成功）不等于能放，
     // 真正出画面之后才清零（见播放监听器的 READY 分支），否则整条推荐都坏掉时
@@ -1070,7 +903,13 @@ private fun MainActivity.startRecommendEpisode(data: Detail,position: Long,autop
     // 淡入还没走完就 reset 媒体，旧画面会带着半透明露出来（正是那一下拉伸）。
     recommendCover?.let { cover -> cover.animate().cancel(); cover.alpha=1f }
     // 从后台回来那一次不自动播：画面停在那一帧，浮层上写「已暂停」，按播放键继续。
-    playEpisode(0,position.coerceAtLeast(0),autoplay=autoplay,prepared=prepared)
+    playEpisode(
+        0,
+        position.coerceAtLeast(0),
+        autoplay=autoplay,
+        prepared=prepared,
+        clearDanmakuOnSwitch=true,
+    )
     screen="recommend"
     hud.visibility=View.GONE
     syncPlaybackInfo()
@@ -1263,18 +1102,18 @@ fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Cach
     val key=preparedKey(data)
     if(key.isEmpty()) return
     // 已经到这个级别（或更高）就跳过：ADDRESS 铺过之后 2 秒再升 FULL 时，不必重取一次地址。
-    val achieved=recommendWarmed[key]
+    val achieved=recommendStore().warmedLevel(key)
     if(achieved!=null && achieved>=level) return
-    if(key in recommendWarming) return
+    if(recommendStore().isWarming(key)) return
     if(!networkAvailable()) return
     val metered=runCatching { connectivity.isMeteredConnection() }.getOrDefault(false)
     // 分级并发上限（文档第 7 节）：同一时刻最多 1 个完整预热 + 2 个元数据 + 3 个地址。
     // 低端机网络只有一条通道，多开只会让**当前这一部**的首帧更慢。
     if(!hasWarmSlot(level,metered)) {
-        if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","preloadSkip reason=slot level=$level inFlight=${recommendWarming.size}")
+        if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","preloadSkip reason=slot level=$level inFlight=${recommendStore().warmingCount()}")
         return
     }
-    recommendWarming+=key
+    recommendStore().beginWarm(key)
     val warm=RecommendWarm()
     recommendWarmJobs[key]=warm
     val quality=playbackMaxQuality
@@ -1286,28 +1125,13 @@ fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Cach
             // 等于把冷启动那段成本搬到「划一下」的那一帧里。
             val http=com.hgtv.star.shared.data.PlaybackTransport.client
             val source=AppRuntime.playbackRepository(this)
+            val sourceCoordinator=com.hgtv.star.shared.architecture.PlaybackSourceCoordinator(source,http)
+            val warmCoordinator=com.hgtv.star.shared.feed.RecommendWarmCoordinator(source,library,sourceCoordinator)
             if(!library.deviceRegistered()) { registerDeviceOnce(); source.inheritDevice(repository) }
             // 整段都在这一次预热自己的取消域里：划过去之后 `cancelRecommendWarm` 能立刻
             // 把在途的 HTTP 掐掉（否则那个线程还在读 512KB，结果没人要）。
-            val episode=data.episodes.first()
             val prepared=warm.scope.run {
-                when(level) {
-                    // L3：只取地址（写盘），一个视频字节都不拉。
-                    com.hgtv.star.core.CacheLevel.ADDRESS -> {
-                        source.stream(episode,quality,data.playback)
-                        null
-                    }
-                    // L2：地址 + 索引（写盘），不取首块——切过去时磁盘命中，免 880ms 解析。
-                    com.hgtv.star.core.CacheLevel.META -> {
-                        val info=source.stream(episode,quality,data.playback)
-                        RemoteVideo(http,info,info.mediaKey(episode)).also { remote=it; it.warmMeta() }
-                    }
-                    // L1：地址 + 索引 + 首块 512KB，留在内存里等切换。
-                    else -> {
-                        val info=source.stream(episode,quality,data.playback)
-                        RemoteVideo(http,info,info.mediaKey(episode)).also { remote=it; it.warm(512L*1024) }
-                    }
-                }
+                warmCoordinator.warm(data,data.episodes.first(),quality,level).also { remote=it }
             }
             main.post {
                 // 只摘掉**自己**那一份：取消之后同一个键可能已经被新的一次预热占了
@@ -1316,7 +1140,7 @@ fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Cach
                 val current=recommendWarmJobs[key]
                 if(current===warm) {
                     recommendWarmJobs.remove(key)
-                    recommendWarming-=key
+                    recommendStore().finishWarm(key)
                 } else {
                     // 这一次预热已经被取消（它正好被起播了 / 划过去了 / 离开了推荐页）：
                     // 结果没人要，当场关掉那 1MB 与它的连接。
@@ -1325,8 +1149,7 @@ fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Cach
                 }
                 if(isDestroyed || screen!="recommend") { runCatching { prepared?.close() }; return@post }
                 // 级别只升不降：这一次做到了哪一级，下一次就不会再重复做更低的那一级。
-                val previous=recommendWarmed[key]
-                if(previous==null || previous<level) recommendWarmed[key]=level
+                recommendStore().finishWarm(key,level)
                 if(prepared!=null) {
                     recommendPrepared[key]=prepared
                     recommendPreparedIndex[key]=if(index>=0) index else recommendItems.indexOfFirst { it.id==data.series.id }
@@ -1334,12 +1157,12 @@ fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Cach
                     evictRecommendPrepared()
                 }
                 // 空出来的槽位马上补上：连划时总有两条在转（见 [prefetchRecommendNeighbors]）。
-                if(recommendWarming.size<RECOMMEND_WARM_SLOTS) prefetchRecommendNeighbors(recommendIndex)
+                if(recommendStore().warmingCount()<RECOMMEND_WARM_SLOTS) prefetchRecommendNeighbors(recommendIndex)
             }
         } catch(_: Exception) {
             remote?.close()
             main.post {
-                if(recommendWarmJobs.remove(key)===warm) recommendWarming-=key
+                if(recommendWarmJobs.remove(key)===warm) recommendStore().finishWarm(key)
             }
         }
     }
@@ -1352,7 +1175,7 @@ fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Cach
  * 三条线程各拿三分之一带宽，谁都不够快。地址预取只有 20KB，可以多开几条。
  */
 private fun MainActivity.hasWarmSlot(level: com.hgtv.star.core.CacheLevel,metered: Boolean): Boolean {
-    val inFlight=recommendWarming.size
+    val inFlight=recommendStore().warmingCount()
     return when(level) {
         com.hgtv.star.core.CacheLevel.FULL -> inFlight<(if(metered) 1 else RECOMMEND_WARM_SLOTS)
         com.hgtv.star.core.CacheLevel.META -> inFlight<(if(metered) 1 else 3)
@@ -1468,7 +1291,7 @@ fun MainActivity.revealRecommendCover() {
 /**
  * 把过渡黑场挂到当前这棵树里：插在底部信息浮层**下面**。
  *
- * 因此过渡期间剧名 / 集数仍然看得见，只是画面在黑场里换；浮层自身不受影响。
+ * 因此过渡期间剧名仍然看得见，只是画面在黑场里换；浮层自身不受影响。
  */
 private fun MainActivity.attachRecommendCoverView(cover: View) {
     (cover.parent as? android.view.ViewGroup)?.removeView(cover)
@@ -1540,7 +1363,7 @@ fun MainActivity.onRecommendScrub(fraction: Float,finished: Boolean) {
     updateRecommendOverlay()
 }
 
-/** 推荐页底部那块信息浮层：进度 + 剧名 + 集数 + 操作说明。 */
+/** 推荐页底部那块信息浮层：进度 + 剧名 + 操作说明。 */
 fun MainActivity.attachRecommendOverlay(series: Series) {
     dismissRecommendOverlay()
     // **触屏设备不再建这块浮层**（需求 1）：推荐页改用播放界面那一条控制条
@@ -1557,7 +1380,7 @@ fun MainActivity.attachRecommendOverlay(series: Series) {
     // 进度那一行：与正式播放的底部控制条同一套——`SeekIndicator` + 右侧 `00:04 / 01:08`，
     // 连左右内边距（右侧 26、时间不占权重）都一样，两页看上去是同一条。
     // 电视上这一行也在：这不是触屏专属的东西，遥控器快进同样要知道播到哪儿。
-    // 与集数那一行之间留一格：集数在上、进度在下，两行读起来是一组读数。
+    // 与状态提示之间留一格：提示在上、进度在下，两行读起来是一组读数。
     val transport=row().apply { setPadding(0,dp(12),0,0) }
     val progress=com.hgtv.star.tv.SeekIndicator(this).apply {
         importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -1571,10 +1394,38 @@ fun MainActivity.attachRecommendOverlay(series: Series) {
     transport.addView(span,lp(-2,-2))
     recommendProgress=progress; recommendSpan=span
 
+    val titleLine=row()
+    val label=series.label.trim()
+    if(label.isNotEmpty()) {
+        titleLine.addView(
+            recommendChip(label,series.labelBg,16f),
+            lp(-2,-2).apply { rightMargin=dp(12) },
+        )
+    }
     val title=text(series.title,32f,TvStyle.playerText).apply {
         setTypeface(typeface,Typeface.BOLD)
         maxLines=1; ellipsize=android.text.TextUtils.TruncateAt.END
         setShadowLayer(6f,0f,2f,0x99000000.toInt())
+    }
+    titleLine.addView(title,lp(0,-2).apply { weight=1f })
+    val details=row()
+    val categoryTags=series.tags.trim()
+    if(categoryTags.isNotEmpty()) {
+        val category=text(categoryTags,17f,TvStyle.playerDim).apply {
+            maxLines=1
+            ellipsize=android.text.TextUtils.TruncateAt.END
+            setShadowLayer(5f,0f,2f,0x99000000.toInt())
+        }
+        details.addView(category,lp(0,-2).apply { weight=1f })
+    }
+    val ranking=series.recommendRanking.trim()
+    if(ranking.isNotEmpty()) {
+        details.addView(
+            recommendChip(ranking,series.recommendRankingBg,16f),
+            lp(-2,-2).apply {
+                leftMargin=if(categoryTags.isEmpty()) 0 else dp(12)
+            },
+        )
     }
     val meta=text("",18f,TvStyle.playerDim).apply {
         setPadding(0,dp(8),0,0)
@@ -1584,10 +1435,12 @@ fun MainActivity.attachRecommendOverlay(series: Series) {
         setPadding(0,dp(14),0,0)
         setShadowLayer(5f,0f,2f,0x99000000.toInt())
     }
-    // 自上而下的阅读顺序：剧名 → 看到第几集 → 播到哪儿 → 怎么操作。
-    // 进度条夹在「第 x 集」与「提示」之间：它属于上一行的读数，不该跑到剧名上面去，
-    // 也不该压在操作提示下面（那里是「怎么按」，不是「播到哪儿」）。
-    bar.addView(title,lp(-1,-2))
+    // 自上而下的阅读顺序：剧名 → 状态提示 → 播到哪儿 → 怎么操作。
+    // 推荐页不再显示「第 x / y 集」，这里只保留暂停与临时错误提示。
+    bar.addView(titleLine,lp(-1,-2))
+    if(categoryTags.isNotEmpty() || ranking.isNotEmpty()) {
+        bar.addView(details,lp(-1,-2).apply { topMargin=dp(6) })
+    }
     bar.addView(meta,lp(-1,-2))
     bar.addView(transport,lp(-1,-2))
     bar.addView(hint,lp(-1,-2))
@@ -1597,7 +1450,7 @@ fun MainActivity.attachRecommendOverlay(series: Series) {
     // 挂进「画面之外那一层」：竖屏短剧全屏把画面转 90° 时，这块浮层要跟着一起转，
     // 否则剧名 / 进度 / 操作提示会横在转了过来的画面上。电视上不旋转时两者完全等价。
     (overlayLayer ?: root).addView(bar,FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
-    // 首帧就把内容填满：集数、时间、进度都在这一刻算出来，不等下一次每秒 tick。
+    // 首帧就把内容填满：时间、进度都在这一刻算出来，不等下一次每秒 tick。
     // 上一版这里是空的——刚进推荐页时浮层比轻点唤出来的那一次「少一行字」，
     // 两条路看上去像两块不同的东西（用户反馈的就是这一条）。
     updateRecommendOverlay()
@@ -1613,6 +1466,43 @@ fun MainActivity.attachRecommendOverlay(series: Series) {
     }
 }
 
+/**
+ * 推荐信息里的官方小标签。
+ *
+ * `bg` 是服务端原始颜色串（例如爆剧的
+ * `#FF6868,#FF4C6DF7,#EFB662`），按从左到右渐变绘制；没有配色时用半透明深色兜底。
+ */
+private fun MainActivity.recommendChip(value: String,bg: String,size: Float): android.widget.TextView {
+    val chip=text(value,size,Color.WHITE).apply {
+        maxLines=1
+        ellipsize=android.text.TextUtils.TruncateAt.END
+        gravity=Gravity.CENTER
+        setPadding(dp(10),dp(4),dp(10),dp(4))
+        includeFontPadding=false
+    }
+    val colors=bg.split(',')
+        .mapNotNull { runCatching { Color.parseColor(it.trim()) }.getOrNull() }
+    chip.background=if(colors.isEmpty()) {
+        GradientDrawable().apply {
+            setColor(0xCC303030.toInt())
+            cornerRadius=dp(6).toFloat()
+        }
+    } else if(colors.size==1) {
+        GradientDrawable().apply {
+            setColor(colors[0])
+            cornerRadius=dp(6).toFloat()
+        }
+    } else {
+        GradientDrawable(
+            GradientDrawable.Orientation.LEFT_RIGHT,
+            colors.toIntArray(),
+        ).apply {
+            cornerRadius=dp(6).toFloat()
+        }
+    }
+    return chip
+}
+
 fun MainActivity.dismissRecommendOverlay() {
     recommendOverlay?.let { overlay -> (overlay.parent as? android.view.ViewGroup)?.removeView(overlay) }
     recommendOverlay=null; recommendTitle=null; recommendMeta=null
@@ -1620,12 +1510,11 @@ fun MainActivity.dismissRecommendOverlay() {
     recommendProgress=null; recommendSpan=null
 }
 
-/** 刷新浮层上的集数 / 进度那一行。 */
+/** 刷新浮层上的状态 / 进度那一行。 */
 fun MainActivity.updateRecommendOverlay() {
-    val data=detail ?: return
-    if(screen!="recommend") return
+    if(screen!="recommend" || detail==null) return
     val p=player
-    // 触屏的推荐页没有浮层：它的读数（进度、时间、集数、清晰度 / 倍速 / 画面 / 弹幕 / 定时）
+    // 触屏的推荐页没有浮层：它的读数（进度、时间、清晰度 / 倍速 / 画面 / 弹幕 / 定时）
     // 全在控制条上，走的是与播放界面同一段 `updatePlaybackText`。
     // 放在下面那些空安全的浮层写入之前：这一段是这一页**唯一**会刷新控制条的地方。
     //
@@ -1654,12 +1543,10 @@ fun MainActivity.updateRecommendOverlay() {
     val now=android.os.SystemClock.elapsedRealtime()
     val notice=if(recommendNotice.isNotEmpty() && now-recommendNoticeAt<3000) recommendNotice else ""
     val text=if(notice.isNotEmpty()) notice else {
-        // 左右键跳转有 250ms 的合并窗（见 [seekRecommend]）：这一段时间里显示目标位置，
-        // 而不是还没跳过去的旧位置。
-        // 时间已经挪到进度条右边那一段（与正式播放一致），这一行只说集数与状态。
-        val paused=if(playbackReady && p?.playWhenReady!=true) "已暂停 · " else ""
-        "${paused}第 ${episodeIndex+1} / ${data.episodes.size} 集"
+        // 推荐页不显示「第 x / y 集」，只保留暂停这一条可感知状态。
+        if(playbackReady && p?.playWhenReady!=true) "已暂停" else ""
     }
+    meta.visibility=if(text.isBlank()) View.GONE else View.VISIBLE
     if(meta.text.toString()!=text) meta.text=text
 }
 
@@ -1767,7 +1654,7 @@ fun MainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
     // 免得随后那次 `goHomeFromRecommend` 又把它记成一次「划走」（取两者更长的那个，本来也不会缩短，
     // 但少写一次盘）。
     recommendWatchingId=""; recommendWatchStart=0L
-    library.markRecommendWatched(data.series.id)
+    recommendStore().markWatched(data.series)
     // 推荐页的「自动连播」只在播放器停在片尾时才有意义：如果这一集其实是**播到一半
     // 被别的路径（看门狗 / 队列故障）判成结束，`episodeIndex+1` 会直接跳掉剩下的内容。
     // 判据用播放器自己的位置，且只放行「确实走到结尾」这一种。
@@ -1776,6 +1663,26 @@ fun MainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
         val duration=p.duration.coerceAtLeast(0)
         duration>0 && p.currentPosition>=duration-2_000
     }.getOrDefault(true)
+    if(!advanceNext) {
+        recommendPlaybackController.reportEventById(
+            data.series.id,
+            com.hgtv.star.core.RecommendBehavior.Event.CLICK,
+            episodeId=data.episodes.getOrNull(episodeIndex).orEmpty(),
+            episodeIndex=episodeIndex,
+            positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
+            durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
+        )
+    }
+    if(atEnd) {
+        recommendPlaybackController.reportEventById(
+            data.series.id,
+            com.hgtv.star.core.RecommendBehavior.Event.PLAY_COMPLETE,
+            episodeId=data.episodes.getOrNull(episodeIndex).orEmpty(),
+            episodeIndex=episodeIndex,
+            positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
+            durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
+        )
+    }
     if(advanceNext && atEnd) {
         if(episodeIndex<data.episodes.lastIndex) {
             // 上面那次 `saveProgress` 已经在「本集已播完」的状态下写了一条 completed 记录

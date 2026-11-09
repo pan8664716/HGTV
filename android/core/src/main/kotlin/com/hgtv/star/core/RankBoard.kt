@@ -2,33 +2,28 @@
 package com.hgtv.star.core
 
 /**
- * 四个榜单。首页的四个「热播…」剧架与排行榜页的四个榜单**是同一份数据**：
+ * 四个榜单。首页的四个剧架与排行榜页的四个榜单**是同一份数据**：
  * 剧架的行末「查看全部」直接进对应的榜单页，不再另做一套「热门集合页」。
  *
- * 数据来自 **App 分类接口按 [sort] 排序**：前三个榜按最高热度（`hot_score`），
- * 「上新」按最新上架（`online_time`）取全站综合，名次与热度都是服务端给的
- *（见 `ContentRepository.rankApiPage`）。每个榜对应的分类：
+ * 数据全部来自 **App 分类接口按 [sort] 排序**，四个榜都按最高热度（`hot_score`）取数，
+ * 名次与热度都是服务端给的（见 `ContentRepository.rankApiPage`）。每个榜对应的分类：
  *
- * | 榜单 | 按钮 / 来源行 | App 分类 [genre] | [sort] | `rankKey` | 首页栏目 |
+ * | 榜单 | 推荐流 / 榜单 Tab [label] | App 分类 [genre] | [sort] | `rankKey` | 首页栏目 [homeTitle] |
  * | --- | --- | --- | --- | --- | --- |
  * | [COMIC] | 漫剧 | `comic_series` | `hot_score` | `comic` | 热播漫剧 |
  * | [REAL] | 真人 | `short_play` | `hot_score` | `real` | 热播真人 |
  * | [AI] | AI剧 | `ai_series` | `hot_score` | `ai` | 热播AI |
- * | [NEW] | 推荐 | 全站综合（不筛分类） | `online_time` | `new` | 热播上新 |
+ * | [NEW] | 推荐 | 全站综合（不筛分类） | `hot_score` | `new` | 推荐榜 |
  *
- * [label] 是榜单页四个切换按钮的文案（很短：推荐 / 漫剧 / AI剧 / 真人），页面主标题固定写「榜单」；
- * [homeTitle] 是首页那一栏的栏目名；[source] 是来源行（榜单页头那一行文案）。
- * 三处都从这一个枚举取，改名字只改这里。
- *
- * [ranked] 为假时这一页是「上新」这种时间序列表，不画「第 N 名」：
- * 服务端给的 `rank` 只是页内序号，对时间序没有意义。
+ * [label] 同时供手机推荐流和榜单页使用，所以 [NEW] 两处都叫「推荐」；
+ * [homeTitle] 只用于首页栏目，[NEW] 在首页叫「推荐榜」。
  *
  * [storedValue] 同时是 `rankKey`、本机首页缓存的键后缀，以及 [HomeLayout] 里剧架 key 的后缀；
  * 枚举顺序就是界面顺序（首页四栏、榜单页四个切换芯片）。
  */
 enum class RankBoard(
     val storedValue: String,
-    /** 榜单按钮的文案（短）：推荐 / 漫剧 / AI剧 / 真人。榜单页主标题固定是「榜单」。 */
+    /** 推荐流与榜单页 Tab 的短名；[NEW] 在这里仍是「推荐」。 */
     val label: String,
     /** 首页栏目名。 */
     val homeTitle: String,
@@ -39,20 +34,18 @@ enum class RankBoard(
      * 三个非空值取自接口自己的 `selector_rows`（`真人剧` / `漫剧` / `AI剧`）。
      */
     val genre: String?,
-    /** App 分类接口的 `select_items.sort`：热度榜用 `hot_score`，上新用 `online_time`。 */
+    /** App 分类接口的 `select_items.sort`；四个榜都按热度取推荐榜。 */
     val sort: String,
-    /** 这一页要不要画名次。时间序的「上新」不画。 */
-    val ranked: Boolean = true
 ) {
     COMIC("comic", "漫剧", "热播漫剧", "comic_series", "hot_score"),
     REAL("real", "真人", "热播真人", "short_play", "hot_score"),
     // 「AI剧」与分类页那个大类的写法一致（分类页是 漫剧 / 真人 / AI剧）。
     AI("ai", "AI剧", "热播AI", "ai_series", "hot_score"),
-    // 原「上新」榜：不筛分类，全站按 `online_time` 倒序；不是热度榜，因此不画名次。
-    NEW("new", "推荐", "热播上新", null, "online_time", ranked = false);
+    // 推荐榜：不筛分类，取全站综合热度；推荐流与榜单页 Tab 都显示「推荐」。
+    NEW("new", "推荐", "推荐榜", null, "hot_score");
 
     companion object {
-        /** 顶部榜单导航顺序：推荐（原上新）/ 漫剧 / AI剧 / 真人。 */
+        /** 顶部榜单导航顺序：推荐 / 漫剧 / AI剧 / 真人。 */
         val navEntries: List<RankBoard> = listOf(NEW, COMIC, AI, REAL)
 
         fun fromStored(value: String?) = entries.firstOrNull { it.storedValue == value } ?: COMIC

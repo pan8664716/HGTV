@@ -10,6 +10,9 @@ import android.widget.HorizontalScrollView
 import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.hgtv.star.phone.ui.PhoneSoft.applySoft
+import com.hgtv.star.shared.ui.SoftStyle
+import com.hgtv.star.shared.feature.catalog.EpisodeGridState
 
 /**
  * 选集网格（**带分页**，做法照 TV 端的 `EpisodeGrid`）。
@@ -60,6 +63,10 @@ class PhoneEpisodeGrid(
     private val edgeTurn: Boolean = true,
     /** 播放页选集浮层：无论设置如何，都允许在网格上左右滑翻页。 */
     private val swipePages: Boolean = false,
+    /** 横屏使用 TV 端同一套标题、10 列、动态格高与分页样式。 */
+    private val tvStyle: Boolean = false,
+    /** TV 样式下由本组件补出的左右内容线（dp）；外层已有边距时传剩余部分。 */
+    private val tvSideInsetDp: Number = 14,
     private val onPick: (Int) -> Unit,
 ) : LinearLayout(context) {
 
@@ -69,8 +76,17 @@ class PhoneEpisodeGrid(
             android.content.res.Configuration.ORIENTATION_LANDSCAPE
         ) 10 else 5
     /** 一页集数：按列数的整数倍归一，最小一行、最大 100。 */
-    private val perPage = (pageSize / columns * columns).coerceIn(columns, 100)
-    private var page = (current / perPage).coerceAtLeast(0)
+    private val paging = EpisodeGridState(
+        count,
+        current,
+        if(tvStyle) pageSize.coerceIn(10,50) else pageSize,
+        columns,
+    )
+    private val perPage: Int get() = paging.perPage
+    private val rowsPerPage: Int get() = (perPage / columns).coerceAtLeast(1)
+    private var page: Int
+        get() = paging.page
+        set(value) { paging.page = value }
 
     /**
      * 网格容器：**竖向 LinearLayout**，每一行再是横向 LinearLayout。
@@ -91,7 +107,7 @@ class PhoneEpisodeGrid(
     }
     private val range = TextView(context).apply {
         setTextColor(PhoneStyle.textDim)
-        phoneSize(if (compact) 11 else 12)
+        phoneSize(if (tvStyle) 14 else if (compact) 11 else 12)
     }
     private val pagerLine = LinearLayout(context).apply {
         orientation = HORIZONTAL
@@ -111,34 +127,72 @@ class PhoneEpisodeGrid(
         phoneSize(if (compact) 10 else 11)
         setPadding(context.dp(8), 0, 0, 0)
     }
+    private lateinit var pagerRow: LinearLayout
+    private val rowLines = mutableListOf<LinearLayout>()
+    private var fittedTvWidth = -1
 
     init {
         orientation = VERTICAL
+        if(tvStyle) {
+            val side=dp(tvSideInsetDp)
+            setPadding(side,dp(9),side,dp(6))
+            val head=LinearLayout(context).apply {
+                orientation=HORIZONTAL
+                gravity=Gravity.CENTER_VERTICAL
+            }
+            head.addView(TextView(context).apply {
+                text="选集"
+                setTextColor(PhoneStyle.text)
+                phoneSize(20)
+                setTypeface(typeface,android.graphics.Typeface.BOLD)
+            })
+            head.addView(TextView(context).apply {
+                text="正在看第 ${current + 1} 集 · 共 $count 集"
+                setTextColor(PhoneStyle.textDim)
+                phoneSize(14)
+            },LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,ViewGroup.LayoutParams.WRAP_CONTENT).apply {
+                leftMargin=dp(7)
+            })
+            head.addView(View(context),LayoutParams(0,1,1f))
+            range.setPadding(dp(7),0,0,0)
+            head.addView(range,LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+            addView(head,LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
+        }
 
         // 第一行：分段读数（TV 端同一处位置）
-        addView(range, LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = context.dp(if (compact) 6 else 8) })
+        if(!tvStyle) {
+            addView(range, LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = context.dp(if (compact) 6 else 8) })
+        }
 
         // 第二行：分页芯片。**永远显示**——只有一页时也留一枚（`1-N`），
         // 否则用户会以为「分页功能又没了」（一页 100 集、全剧 85 集时就是这种情形）。
-        val pagerRow = LinearLayout(context).apply {
+        pagerRow = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
         pagerRow.addView(pagerScroll, LayoutParams(
             0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
         ))
-        pagerRow.addView(pageLabel, LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
+        if(!tvStyle) {
+            pagerRow.addView(pageLabel, LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
         addView(pagerRow, LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = context.dp(6) })
+        ).apply { topMargin = context.dp(if(tvStyle) 3 else 6) })
 
         addView(gridScroll, LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = context.dp(8) })
+        ).apply { topMargin = context.dp(if(tvStyle) 4 else 8) })
 
         render()
     }
@@ -260,8 +314,8 @@ class PhoneEpisodeGrid(
     /** 手指拖动时只有网格那一块跟手；到页边界后不再位移，与推荐页关闭 overScroll 的行为一致。 */
     private fun applyDrag(dx: Float) {
         val w = pageWidth()
-        val hasNext = page + 1 < pageCount()
-        val hasPrev = page > 0
+        val hasNext = paging.canMove(1)
+        val hasPrev = paging.canMove(-1)
         val blocked = (dx < 0 && !hasNext) || (dx > 0 && !hasPrev)
         gridScroll.translationX = if (blocked) 0f else dx.coerceIn(-w, w)
     }
@@ -281,7 +335,7 @@ class PhoneEpisodeGrid(
             dx >= threshold || velocityPxPerSecond >= minimumFlingVelocity -> -1
             else -> 0
         }
-        if (dir != 0 && page + dir in 0 until pageCount()) {
+        if (paging.canMove(dir)) {
             val nextPage = page + dir
             pendingPage = nextPage
             animating = true
@@ -327,24 +381,30 @@ class PhoneEpisodeGrid(
     }
 
     /** 页数与区间文案走 `:core`（`EpisodePaging`，电视端同一份）：两端读起来必须逐字相同。 */
-    private fun pageCount(): Int = com.hgtv.star.core.EpisodePaging.pages(count, perPage)
+    private fun pageCount(): Int = paging.pageCount
 
     private fun render() {
         // 「第 A—B 集 · 共 N 集」「第 3/5 页」由 `:core` 算，不在这一层各写一遍。
-        range.text = com.hgtv.star.core.EpisodePaging.rangeText(count, perPage, page)
+        range.text = paging.rangeText
 
         // 分页芯片：页数变了才重建，翻页只改高亮。
         val pages = pageCount()
-        pageLabel.text = com.hgtv.star.core.EpisodePaging.pageText(count, perPage, page)
+        pageLabel.text = paging.pageText
+        pagerRow.visibility=if(tvStyle && pages<=1) View.GONE else View.VISIBLE
         if (chips.size != pages) {
             pagerLine.removeAllViews()
             chips.clear()
             for (p in 0 until pages) {
                 val chip = TextView(context).apply {
-                    text = com.hgtv.star.core.EpisodePaging.chipText(count, perPage, p)
+                    text = paging.chipText(p)
                     gravity = Gravity.CENTER
-                    phoneSize(if (compact) 11 else 12)
-                    setPadding(dp(10), dp(5), dp(10), dp(5))
+                    phoneSize(if(tvStyle) 13 else if (compact) 11 else 12)
+                    if(tvStyle) {
+                        minHeight=dp(18)
+                        setPadding(dp(5),0,dp(5),0)
+                    } else {
+                        setPadding(dp(10),dp(5),dp(10),dp(5))
+                    }
                     setOnClickListener { jump(p) }
                 }
                 chips += chip
@@ -355,26 +415,43 @@ class PhoneEpisodeGrid(
         }
         chips.forEachIndexed { p, chip ->
             val on = p == page
-            chip.setTextColor(if (on) Color.WHITE else PhoneStyle.textDim)
+            chip.setTextColor(
+                if(on) {
+                    if(tvStyle) PhoneStyle.onLit else Color.WHITE
+                } else {
+                    if(tvStyle) PhoneStyle.text else PhoneStyle.textDim
+                }
+            )
             chip.background = PhoneSheet.pillBackground(
-                if (on) PhoneStyle.accent else PhoneStyle.surface,
-                if (on) 0xFF7CBEFF.toInt() else 0xFF3D4652.toInt(),
-                dp(12).toFloat()
+                if (on) {
+                    if(tvStyle) PhoneStyle.lit else PhoneStyle.accent
+                } else {
+                    PhoneStyle.surface
+                },
+                if (on) {
+                    if(tvStyle) PhoneStyle.lit else 0xFF7CBEFF.toInt()
+                } else {
+                    0xFF3D4652.toInt()
+                },
+                dp(if(tvStyle) 9 else 12).toFloat()
             )
         }
 
         // 网格：按本页**实际**集数铺行，缺的位置用空格子补满，半行里的格子不会被拉宽。
         // 区间同样来自 `:core`：页码 → 集号只有一个算法。
-        val cellRange = com.hgtv.star.core.EpisodePaging.range(count, perPage, page)
+        val cellRange = paging.range
         val start = cellRange.first
         val end = if (cellRange.isEmpty()) 0 else cellRange.last + 1
         grid.removeAllViews()
+        rowLines.clear()
         // 格子高度按 50% 字阶定：12 号字落成 18px，28dp 的格子上下各留 6dp，
         // 仍是一根能点准的按钮（38dp 的旧值在缩字之后会变成四个字悬在一大块空白里）。
-        val cellH = dp(if (columns >= 10) 24 else if (compact) 26 else 28)
+        val lines = ((end - start + columns - 1) / columns).coerceAtLeast(1)
+        val cellH = if(tvStyle) tvCellHeight(lines) else
+            dp(if (columns >= 10) 24 else if (compact) 26 else 28)
         // 10 列时把格距再收一档，横屏简介页和播放浮层都能完整铺开。
         val gap = dp(if (columns >= 10) 2 else if (compact) 3 else 4)
-        val lines = ((end - start + columns - 1) / columns).coerceAtLeast(1)
+        val rowGap = if(tvStyle) dp(4) else gap
         for (r in 0 until lines) {
             val line = LinearLayout(context).apply { orientation = HORIZONTAL }
             for (c in 0 until columns) {
@@ -391,18 +468,20 @@ class PhoneEpisodeGrid(
             }
             grid.addView(line, LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { if (r > 0) topMargin = gap })
+            ).apply { if (r > 0) topMargin = rowGap })
+            rowLines += line
         }
 
         // 网格高度：内容多高就多高，但不超过上限——超出的部分交给内部滚动，
         // 而不是把整个浮层顶出屏幕（一页 100 集 = 20 行，必然超出）。
-        val natural = lines * cellH + (lines - 1) * gap
+        val natural = lines * cellH + (lines - 1) * rowGap
         val lp = gridScroll.layoutParams as? LayoutParams
         val want = natural.coerceAtMost(maxGridHeight.coerceAtLeast(cellH))
         if (lp != null && lp.height != want) {
             lp.height = want
             gridScroll.layoutParams = lp
         }
+        if(tvStyle) gridScroll.post { fitTvCellHeights() }
 
         // 当前页那一枚芯片滚进可视区（翻页时焦点不一定在芯片上）。
         pagerScroll.post {
@@ -424,19 +503,65 @@ class PhoneEpisodeGrid(
         return TextView(context).apply {
             text = "${i + 1}"
             gravity = Gravity.CENTER
-            phoneSize(if (columns >= 10) 10 else if (compact) 12 else 14)
+            phoneSize(if(tvStyle) 16 else if (columns >= 10) 10 else if (compact) 12 else 14)
             // 集数最多三位（100 集/页）：不许换行、不许省略，否则窄抽屉里会变成「1…」。
             maxLines = 1
             ellipsize = null
             includeFontPadding = false
-            setTextColor(if (on) Color.WHITE else PhoneStyle.textDim)
-            background = PhoneSheet.pillBackground(
-                if (on) PhoneStyle.accent else PhoneStyle.surface,
-                if (on) 0xFF7CBEFF.toInt() else 0xFF3D4652.toInt(),
-                dp(8).toFloat()
-            )
+            if(tvStyle) {
+                setTextColor(if(on) PhoneStyle.onLit else PhoneStyle.text)
+                applySoft(
+                    style=SoftStyle.RAISED,
+                    fill=if(on) PhoneStyle.lit else PhoneStyle.surface,
+                    radiusDp=10f,
+                    bandDp=3f,
+                    depth=if(on) 1.15f else 1f,
+                )
+            } else {
+                setTextColor(if (on) Color.WHITE else PhoneStyle.textDim)
+                background = PhoneSheet.pillBackground(
+                    if (on) PhoneStyle.accent else PhoneStyle.surface,
+                    if (on) 0xFF7CBEFF.toInt() else 0xFF3D4652.toInt(),
+                    dp(8).toFloat()
+                )
+            }
             contentDescription = "第 ${i + 1} 集" + if (on) "，当前播放" else ""
             setOnClickListener { onPick(i) }
+        }
+    }
+
+    /** TV 端同一套高宽比：一行最高 30dp（TV 60dp 的一半），五行约 26dp。 */
+    private fun tvCellHeight(lines: Int): Int {
+        val measured=gridScroll.width.takeIf { it>0 }
+            ?: (resources.displayMetrics.widthPixels-2*dp(tvSideInsetDp))
+        val cellWidth=((measured-dp(2)*columns).toFloat()/columns).coerceAtLeast(1f)
+        val span=(rowsPerPage-1).coerceIn(0,4)
+        val ratio=1f-0.133f*span
+        return (cellWidth*ratio).toInt().coerceIn(dp(16),dp(30))
+    }
+
+    /** 布局完成后按真实可用宽度再对一次 TV 格高，避免首帧与稳定态不一致。 */
+    private fun fitTvCellHeights() {
+        if(!tvStyle || rowLines.isEmpty()) return
+        val width=gridScroll.width
+        if(width<=0 || width==fittedTvWidth) return
+        fittedTvWidth=width
+        val height=tvCellHeight(rowLines.size)
+        rowLines.forEach { line ->
+            for(index in 0 until line.childCount) {
+                val params=line.getChildAt(index).layoutParams as? LayoutParams ?: continue
+                if(params.height!=height) {
+                    params.height=height
+                    line.getChildAt(index).layoutParams=params
+                }
+            }
+        }
+        val natural=rowLines.size*height+(rowLines.size-1)*dp(4)
+        val params=gridScroll.layoutParams as? LayoutParams ?: return
+        val want=natural.coerceAtMost(maxGridHeight.coerceAtLeast(height))
+        if(params.height!=want) {
+            params.height=want
+            gridScroll.layoutParams=params
         }
     }
 

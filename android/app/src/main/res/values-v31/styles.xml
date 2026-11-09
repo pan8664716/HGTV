@@ -6,8 +6,8 @@
 
       这里显式接管三件事：
       1. windowSplashScreenBackground：与 AppTheme 同一块底色，启动第一帧不闪白；
-      2. windowSplashScreenAnimatedIcon：换成缩到 27% 的 @drawable/splash_icon，
-         图标多大由我们自己定，不再跟设备的 density 走；
+      2. windowSplashScreenAnimatedIcon：系统启动画面显示唯一一枚 Logo；
+         LaunchActivity 内不再重复绘制图标，避免窗口交接时出现第二次显示；
       3. windowSplashScreenAnimationDuration = 0：不做缩放动画，避免「从小炸到大」。
 
       其余条目与 values-v21 / v23 逐项一致，不能少——values-v31 是整份覆盖，不是叠加。

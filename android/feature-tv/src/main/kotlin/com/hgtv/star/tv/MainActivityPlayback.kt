@@ -7,13 +7,13 @@ import com.hgtv.star.shared.compat.isMeteredConnection
 import android.app.Activity
 import android.view.*
 import android.widget.*
-import androidx.media3.common.MediaItem
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.mediacodec.MediaCodecRenderer
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.ui.PlayerView
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.PlaybackException
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.mediacodec.MediaCodecRenderer
+import com.google.android.exoplayer2.source.ProgressiveMediaSource
+import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.*
 import com.hgtv.star.shared.data.WatchProgress
 import com.hgtv.star.shared.data.PlaybackCapability
@@ -58,14 +58,30 @@ fun MainActivity.closeTransport(http: okhttp3.OkHttpClient?) {
  */
 fun MainActivity.suppressBufferingUi(timeoutMs: Long=1200L) {
     bufferingSuppressed=true
-    playerView?.setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+    syncBufferingDots()
     main.removeCallbacks(restoreBuffering); main.postDelayed(restoreBuffering,timeoutMs)
 }
 fun MainActivity.restoreBufferingUi() {
     if(!bufferingSuppressed) return
     bufferingSuppressed=false
     main.removeCallbacks(restoreBuffering)
-    playerView?.setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
+    syncBufferingDots()
+}
+
+/** 把 ExoPlayer 的缓冲状态映射到统一三点动画；过渡窗口内临时隐藏。 */
+fun MainActivity.syncBufferingDots() {
+    val label=when {
+        playError || sleepStopped -> null
+        !playbackReady -> if(video==null) "正在获取播放地址…" else "正在缓冲…"
+        player?.playbackState==Player.STATE_BUFFERING -> "正在缓冲…"
+        else -> null
+    }
+    val show=!bufferingSuppressed && label!=null
+    bufferingDots?.apply {
+        this.label=label.orEmpty()
+        visibility=if(show) View.VISIBLE else View.GONE
+        if(show) bringToFront()
+    }
 }
 /**
  * 上一集的视频与传输：等新源出画面（READY）、这一集出错、或退出播放时再关。
@@ -249,7 +265,7 @@ fun MainActivity.enqueuePreparedNext() {
     queuedAt=if(fetchedAt>0L) fetchedAt else android.os.SystemClock.elapsedRealtime()
     val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }
         .createMediaSource(MediaItem.Builder().setMediaId(id).setUri("hgtv://episode/$id")
-            .setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4).build())
+            .setMimeType(com.google.android.exoplayer2.util.MimeTypes.VIDEO_MP4).build())
     // 挂失败（列表被别处清空、播放器正好在重建）就当没预热过：把资源收回来，
     // 片尾仍然走 `STATE_ENDED → playEpisode` 那条兜底，不会留下半截状态。
     if(runCatching { p.addMediaSource(source) }.isFailure) {
@@ -362,6 +378,16 @@ private fun MainActivity.finishSeamlessAdvance(
         // 四个字段（位置 / 时长 / completed / 时间）不会再有一端只改一半。
         val progress=WatchProgress.completed(previousData.series,previousData.episodes[previous],previous,duration)
         library.save(progress); syncProgress(progress,previousData.episodes.size)
+        if(playbackFromRecommend) {
+            recommendPlaybackController.reportEventById(
+                previousData.series.id,
+                com.hgtv.star.core.RecommendBehavior.Event.PLAY_COMPLETE,
+                episodeId=previousData.episodes[previous],
+                episodeIndex=previous,
+                positionMs=duration,
+                durationMs=duration,
+            )
+        }
     }
     // 新一集的时长还没读到：先清零，等 READY / tick 按新 mediaId 重新采样。
     // 不清的话，新一集若在 READY 之前就出错，写出去的是上一集的长度。
@@ -382,6 +408,16 @@ private fun MainActivity.finishSeamlessAdvance(
     episodeIndex=next
     detail=nextData
     sessionSeriesId=nextData.series.id
+    if(playbackFromRecommend) {
+        recommendPlaybackController.reportEventById(
+            nextData.series.id,
+            com.hgtv.star.core.RecommendBehavior.Event.PLAY_START,
+            episodeId=nextData.episodes[next],
+            episodeIndex=next,
+            positionMs=0,
+            durationMs=0,
+        )
+    }
     startAutoTransitionCleanup(mediaId,previousData.episodes.getOrNull(previous).orEmpty())
     // 无感切集换的是 period，不走 [playEpisode]，诊断现场得在这里跟着换：
     // 换集之后报出来的必须是**这一集**的 id / 集号 / 清晰度，否则上报里张冠李戴。
@@ -400,7 +436,7 @@ private fun MainActivity.finishSeamlessAdvance(
     // 早先这里散着四句、`recovery.reset()` 还单写一行，漏一处就会出现
     // 「新一集没有自动重试」或「错误页顶着上一集的建议」（见 `PlaybackAttemptLedger`）。
     // 连播链的计数也在这里清：走到这里说明「下一集」真的接上了，链条重新开始。
-    ledger.onEpisodeStart()
+    playbackCoordinator.onEpisodeStart(nextData.episodes[next])
     // **不**在这里设故障互斥窗——那会把新一集紧接着发生的真实错误也一起吞掉。
     // 故障互斥窗是「**这一次故障**」的，不是「这一段播放」的：换了集必须作废。
     //
@@ -410,10 +446,6 @@ private fun MainActivity.finishSeamlessAdvance(
     // 控制条还写着「播放中」，只能等 15 秒起播看门狗来救。上一集在片尾失败、300ms 后
     // 新一集立刻报 4001 或 IO，正是这条最常见的命中方式。
     failureHandledSession=-1; failureHandledAt=0L
-    // 新一集的降级预算同样从零开始（档位上限照旧沿用）。这条「无感切集」不走 [playEpisode]，
-    // 早先因此**不清**预算与手动建议：上一集留下的「请切换为软件解码」会被下一集的错误页
-    // 原样顶出来，而那可能是一次毫不相关的网络失败（见 `SessionPlaybackPolicy.onEpisodeStart`）。
-    sessionPlayback.onEpisodeStart(nextData.episodes[next])
     // 标题只放剧名：集数由顶部那一项单独显示（见 [syncPlaybackInfo]）。
     playbackTitle.text=nextData.series.title
     // 集号这一格必须在这一帧就换掉：新 period 的第一帧已经上屏，读数还写着上一集，
@@ -482,6 +514,7 @@ fun MainActivity.maybePrefetch() {
     // 共用进程级传输层（HTTP/1.1）与播放工作仓库：切集、预取都不再新建或关闭连接池。
     val http=com.hgtv.star.shared.data.PlaybackTransport.client
     val source=AppRuntime.playbackRepository(this); prefetchHttp=http
+    val sourceCoordinator=com.hgtv.star.shared.architecture.PlaybackSourceCoordinator(source,http)
     val scope=RequestScope(); prefetchScope=scope
     prefetchJob=prefetchWorker.submit {
         var remote: RemoteVideo?=null
@@ -493,8 +526,8 @@ fun MainActivity.maybePrefetch() {
                 // 必须逐字一致，预热结果才会被真正复用；用请求上限做键时，
                 // 「CDN 只给兼容档」的那一集预热与起播会各用一份索引。
                 val queue=target.episodes.drop(target.episodes.indexOf(id)+1).take(5)
-                val info=source.stream(id,quality,target.playback,queue)
-                RemoteVideo(http,info,info.mediaKey(id)).also { remote=it; it.warm() }
+                val info=sourceCoordinator.stream(id,quality,target.playback,queue)
+                sourceCoordinator.warm(id,info).also { remote=it }
             }
             if(preparedNext.complete(ticket,key,prepared)) {
                 android.util.Log.i(
@@ -775,10 +808,10 @@ fun MainActivity.cancelRecovery() {
 }
 fun MainActivity.scheduleRecovery() {
     if(!foreground || !playError || !autoRecovery || retryPending) return
-    if(!ledger.canAttempt) { autoRecovery=false; playbackText.text="已自动重试 3 次，仍无法播放。可手动重试或切换清晰度。"; return }
+    if(!playbackCoordinator.autoRetryAvailable) { autoRecovery=false; playbackText.text="已自动重试 3 次，仍无法播放。可手动重试或切换清晰度。"; return }
     if(!networkAvailable()) { playbackText.text="网络已断开，联网后自动续播 · 第 ${episodeIndex+1} 集 ${formatTime(retryPosition)}"; return }
-    val delay=ledger.delayMillis ?: return
-    playbackText.text="${if(retryAutoplay) "准备恢复播放" else "准备恢复暂停位置"} · ${delay/1000f} 秒后重试 ${ledger.attempts+1}/3 · ${formatTime(retryPosition)}"
+    val delay=playbackCoordinator.autoRetryDelayMs ?: return
+    playbackText.text="${if(retryAutoplay) "准备恢复播放" else "准备恢复暂停位置"} · ${delay/1000f} 秒后重试 ${playbackCoordinator.autoRetryAttempts+1}/3 · ${formatTime(retryPosition)}"
     retryEpisodeId=detail?.episodes?.getOrNull(episodeIndex).orEmpty()
     retryPending=true; main.postDelayed(retryRunnable,delay)
 }
@@ -837,8 +870,7 @@ fun MainActivity.playbackAttribution(
  * 早先只挡了策略那一半，下面三份照样重置，于是连点按钮可以无限批次地重来。
  */
 private fun MainActivity.resetBudgetsForManualRetry() {
-    if(!sessionPlayback.onManualRetry()) return
-    ledger.onManualRetry()
+    playbackCoordinator.onManualRetry()
 }
 
 /**
@@ -852,8 +884,7 @@ internal fun MainActivity.prepareFreshPlaybackRetry() {
     val staleInfo=video?.info
     cancelPrefetch()
     if(episodeId!=null) {
-        runCatching { repository.forgetStreamAllQualities(episodeId) }
-        staleInfo?.let { PlaybackCache.invalidateIndex(it.mediaKey(episodeId)) }
+        playbackSource.invalidate(episodeId, staleInfo)
     } else {
         runCatching { repository.rotateDeviceForRetry() }
     }
@@ -871,11 +902,8 @@ internal fun MainActivity.prepareFreshPlaybackRetry() {
  * 「这台机器放不了这一档」的结论，与具体哪一集无关。
  */
 private fun MainActivity.restartAnotherEpisode(index: Int,at: Long,autoplay: Boolean) {
-    // 按**新一集**重来一遍预算：`onEpisodeStart` 只清这台机器上「这一集」的额度，不动档位上限。
-    detail?.episodes?.getOrNull(index)?.let { sessionPlayback.onEpisodeStart(it) }
-    // 连播链的失败计数**不**清：这条路本身就是「片尾推进失败，从下一集重来」，
-    // 清掉计数就变成了无限自动推进（见 `PlaybackAttemptLedger.onEpisodeSwitch`）。
-    ledger.onEpisodeSwitch()
+    // 按**新一集**重来一遍预算；连播链的失败计数不清，避免无限自动推进。
+    detail?.episodes?.getOrNull(index)?.let { playbackCoordinator.onEpisodeSwitch(it) }
     playEpisode(index,at,autoplay,recovering=true)
 }
 /**
@@ -904,10 +932,7 @@ fun MainActivity.replayWithPlan(plan: PlaybackRetryPlan) {
     val at=(if(live>0) live else currentPosition()).coerceAtLeast(0)
     val play=requestedAutoplay && !sleepStopped
     // 上限先落进会话层，再记留痕：`noteDegrade` 会打出 `cap=`，那一刻读到的必须已经是**新的**上限。
-    plan.maxQuality?.let { sessionPlayback.setMaxQuality(it) }
-    // 记下降档起点：下一次同档失败时策略据此判断「降了等于没降」
-    //（CDN 只回兼容资源），不再白烧一轮取地址与一次黑屏。
-    plan.fromQuality?.let { sessionPlayback.noteQualityDown(it) }
+    playbackCoordinator.applyRetryPlan(plan)
     // 提示一次就够：同一个 (集, 理由, 目标档位) 在一次播放里只弹一条（见 `ToastDeduper`）。
     //
     // 键里**必须**带目标档位：1080 → 720 与 720 → 480 是同一次播放里连着发生的两次降档，
@@ -996,9 +1021,25 @@ fun MainActivity.playerFailure(problem: Throwable) {
         autoRetryAllowed=!sleepStopped,
         onRecommend=screen=="recommend",
     )
+    if(screen=="recommend" || playbackFromRecommend) {
+        val data=detail
+        if(data!=null) {
+            val failedEpisode=if(facts.queued) queuedEpisodeId.orEmpty()
+            else data.episodes.getOrNull(episodeIndex).orEmpty()
+            recommendPlaybackController.reportEventById(
+                data.series.id,
+                com.hgtv.star.core.RecommendBehavior.Event.ERROR,
+                episodeId=failedEpisode,
+                episodeIndex=if(facts.queued) -1 else episodeIndex,
+                positionMs=runCatching { player?.currentPosition ?: -1L }.getOrDefault(-1L),
+                durationMs=runCatching { player?.duration ?: -1L }.getOrDefault(-1L),
+                reason=facts.stage,
+            )
+        }
+    }
     // 队列项接不回来时要按「当前这一集自己坏了」再判一次：决策函数是纯的，重入安全。
-    fun decideFailure(queued: Boolean)=PlaybackFailurePolicy.decide(
-        facts.copy(queued=queued),attr,ledger,sessionPlayback,recommendPlaybackFailures
+    fun decideFailure(queued: Boolean)=playbackCoordinator.decideFailure(
+        facts.copy(queued=queued),attr,recommendPlaybackFailures
     )
     var failureAction=decideFailure(facts.queued)
     if(failureAction==FailureAction.RecoverQueuedCurrent) {
@@ -1044,14 +1085,13 @@ fun MainActivity.playerFailure(problem: Throwable) {
                 //
                 // 多删几条的代价只是下一次多一次网络往返（500~1100ms），
                 // 而删错对象的代价是用户看到错误页。
-                repository.forgetStreamAllQualities(failingEpisode)
                 // 索引与首块也是按「这一集 + 这一档」落盘的，文件换过之后它们一起作废。
                 //
                 // 键必须用**实际**那一份（`StreamInfo.mediaKey`：集 + 实际档位）。
                 // 早先这里拼的是 `"$集:$上限"`，而索引键早就改成带实际档位了——
                 // 拼错等于什么也没删，下一次起播仍然读那份对不上新文件的旧索引。
                 val staleInfo=if(queuedEpisodeId!=null) queuedVideo?.info ?: video?.info else video?.info
-                if(staleInfo!=null) PlaybackCache.invalidateIndex(staleInfo.mediaKey(failingEpisode))
+                playbackSource.invalidate(failingEpisode, staleInfo)
                 // 地址之外的那两层：视频域名的解析结果、连接池里的空闲连接。
                 if(failureAction.dropTransport) dropDeadTransport()
                 val at=currentPosition().coerceAtLeast(0)
@@ -1128,10 +1168,10 @@ fun MainActivity.playerFailure(problem: Throwable) {
     saveProgress(); cancelRecovery(); cancelPrefetch()
     // 无感切集留下的两个尾巴：缓冲指示要恢复，上一集的视频与传输要收掉（这一集已经出错，不会再出画面了）。
     restoreBufferingUi(); retirePreviousEpisode(); dropQueuedEpisode()
-    playError=true; player?.pause(); progressBar.visibility=View.GONE; hud.visibility=View.VISIBLE; controls.removeAllViews(); controls.visibility=View.VISIBLE; panel=true
+    playError=true; player?.pause(); syncBufferingDots(); progressBar.visibility=View.GONE; hud.visibility=View.VISIBLE; controls.removeAllViews(); controls.visibility=View.VISIBLE; panel=true
     // 停在错误页上不再需要守着屏幕：用户看完提示可能就走开了（见 [syncKeepScreenOn]）。
     syncKeepScreenOn()
-    // 顶部那条信息是常驻的，出错时按当前页再刷一遍（集数不会因为出错而消失）。
+    // 顶部那条信息是常驻的，出错时按当前页再刷一遍。
     syncPlaybackInfo()
     dismissPlaybackMenu()
     // 这一次失败落在哪条轨上：下面**所有**文案与按钮都要按它分流。
@@ -1178,7 +1218,7 @@ fun MainActivity.playerFailure(problem: Throwable) {
     // 文案**与手机端同一份**（`FailurePresentation.message`）：同一个故障在两端必须是
     // 同一句话，否则用户照着电视上的说法描述问题，手机上看到的却是另一句。
     // 只有排版归本页（控制条里的一行字 + 一排按钮）。
-    val manualHint=sessionPlayback.manualHint
+    val manualHint=playbackCoordinator.manualHint
     playbackText.text=FailurePresentation.message(facts,manualHint,playbackHevcSupported)
     // 说明：`giveUp` 只进日志（见本函数末尾那一行），不直接参与这里的文案——
     // 放弃时 `decide` 一定已经写过 `manualHint`，那句带着具体档位，比任何通用文案都准。
@@ -1216,8 +1256,7 @@ fun MainActivity.playerFailure(problem: Throwable) {
     val softTarget=FailurePresentation.softwareTarget(attr)
     if(FailureCapability.SWITCH_SOFTWARE in caps) addButton(actions,"切换为软解") {
         library.decoderMode=VideoDecoderMode.SOFTWARE
-        sessionPlayback.onManualDecoderChange()
-        if(softTarget>0) sessionPlayback.setMaxQuality(softTarget)
+        playbackCoordinator.onManualDecoderChange(softTarget)
         applyDecoderMode(retryPosition,retryAutoplay)
     }
     val swapTarget=FailurePresentation.swapTarget(attr)
@@ -1227,7 +1266,7 @@ fun MainActivity.playerFailure(problem: Throwable) {
         // 档位在还款之后才落进会话层——`onManualRetry` 不动 `effectiveMaxQuality`，
         // 顺序反过来也能工作，但先还账再定档读起来才是「先清预算、再设目标」。
         resetBudgetsForManualRetry()
-        sessionPlayback.setMaxQuality(swapTarget)
+        playbackCoordinator.setMaxQuality(swapTarget)
         playEpisode(episodeIndex,retryPosition,retryAutoplay,recovering=true)
     }
     addButton(actions,"返回选集") { returnToDetail(true) }
@@ -1297,16 +1336,16 @@ private const val QUEUED_RECOVERY_LIMIT=2
 
 private fun MainActivity.recoverQueuedCurrent(): Boolean {
     val key="${detail?.episodes?.getOrNull(episodeIndex).orEmpty()}:${playbackMaxQuality}"
-    val used=ledger.queuedRecoveries(key)
+    val used=playbackCoordinator.queuedRecoveryCount(key)
     if(used>=QUEUED_RECOVERY_LIMIT) return false
     // 位置直接问播放器：`STATE_IDLE` 下它仍然保留失败那一刻的读数（错误不会把位置清零），
     // 而 [currentPosition] 会看 `pendingSeek` / `playbackReady`，在出错态下不可靠。
     val live=runCatching { player?.currentPosition ?: -1L }.getOrDefault(-1L)
     val at=(if(live>0) live else startPosition).coerceAtLeast(0)
-    ledger.noteQueuedRecovery(key,used+1)
+    playbackCoordinator.noteQueuedRecovery(key)
     // 队列那一集已经确认坏过一次：片尾不再对它做「同档重切一次」的那次尝试
     //（见 `playerFailure` 里 `atEnd` 分支的 `ledger.autoNextFailures<1`）——重来只会再黑一次。
-    ledger.noteAutoNextFailure()
+    playbackCoordinator.noteAutoNextFailure()
     // 片尾预热窗口的计数一并归零：这一集要重新挂下一集，得从头数它自己的重发次数。
     prefetchAttempts=0; prefetchAttemptAt=0
     android.util.Log.w(
@@ -1593,13 +1632,14 @@ fun MainActivity.updatePlaybackText() {
     // 播放界面的这一排已经够长，再加数字会被屏宽裁掉。
     danmakuOption?.text="弹幕 "+library.danmakuMode.label
     sleepOption?.text="定时 "+sleepTimer.label()
+    syncBufferingDots()
     if(playError) return
     if(sleepStopped) { playbackText.text="定时停止 · 按播放继续"; return }
-    if(!playbackReady) { playbackText.text=if(video==null) "正在获取播放地址…" else "正在缓冲…"; return }
+    if(!playbackReady) { playbackText.text=""; return }
     val p=player ?: return
     val duration=p.duration.coerceAtLeast(0); val position=pendingSeek ?: p.currentPosition
     val span="${formatSpan(position)} / ${formatSpan(duration)}"
-    playbackText.text=if(p.playbackState==Player.STATE_BUFFERING) "缓冲中 · $span" else if(p.playbackState==Player.STATE_ENDED) "本集已结束 · $span" else span
+    playbackText.text=if(p.playbackState==Player.STATE_ENDED) "本集已结束 · $span" else span
     progressBar.progress=if(duration>0) position.toFloat()/duration else 0f
     progressBar.bufferedProgress=if(duration>0) {
         p.bufferedPosition.coerceIn(0,duration).toFloat()/duration
@@ -1617,6 +1657,11 @@ fun MainActivity.updatePlaybackText() {
  */
 fun MainActivity.syncPlaybackEpisodeLabel(data: Detail? = detail) {
     val view=playbackEpisode ?: return
+    // 推荐页不显示「第 x / y 集」；正式播放页仍按「播放显示」开关正常显示。
+    if(screen=="recommend") {
+        view.visibility=View.GONE
+        return
+    }
     val total=data?.episodes?.size ?: 0
     if(total<=0) return
     val key="${episodeIndex}/${total}"
@@ -1656,7 +1701,7 @@ fun MainActivity.skipEpisode(direction: Int) {
     if(!foreground || (screen!="player" && screen!="recommend")) return
     val count=detail?.episodes?.size ?: return
     val target=episodeIndex+direction
-    if(target in 0 until count) playEpisode(target)
+    if(target in 0 until count) playEpisode(target,clearDanmakuOnSwitch=true)
 }
 /**
  * 媒体会话懒创建：启动阶段不碰系统 `media_session`。
@@ -1718,16 +1763,16 @@ fun MainActivity.sleepChoices(menu: PlaybackMenu): List<PlaybackMenu.Choice> {
     }
 }
 /**
- * 画面模式 → media3 的 `RESIZE_MODE_*`，**电视端唯一的一处绑定**。
+ * 画面模式 → ExoPlayer 的 `RESIZE_MODE_*`，**电视端唯一的一处绑定**。
  *
  * 「用户选了什么」到「最终怎么摆」的判定在 `:core`（[com.hgtv.star.core.VideoFrameMode.toFit]），
  * 与手机端同源；这里只负责把那个结果换成平台常量。电视是横屏设备，不存在竖屏片源，
  * 因此不传方向（默认 `false`）。
  */
 fun com.hgtv.star.core.VideoFit.resizeMode()=when(this) {
-    com.hgtv.star.core.VideoFit.FIT -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
-    com.hgtv.star.core.VideoFit.ZOOM -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
-    com.hgtv.star.core.VideoFit.FILL -> androidx.media3.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
+    com.hgtv.star.core.VideoFit.FIT -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
+    com.hgtv.star.core.VideoFit.ZOOM -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
+    com.hgtv.star.core.VideoFit.FILL -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
 }
 fun MainActivity.frameResizeMode()=library.frameMode.toFit().resizeMode()
 /**
@@ -1941,7 +1986,12 @@ fun MainActivity.syncPlaybackInfo() {
         val allOn=playbackOverlayShown()
         val shown=screen=="player" || (screen=="recommend" && touchArmed && allOn)
         playbackTitle.visibility=if(allOn || library.playerTitle) View.VISIBLE else View.GONE
-        playbackEpisode?.visibility=if(allOn || library.playerEpisode) View.VISIBLE else View.GONE
+        // 推荐页只显示剧名 / 时间 / 网速，不显示「第 x / y 集」。
+        playbackEpisode?.visibility=if(screen!="recommend" && (allOn || library.playerEpisode)) {
+            View.VISIBLE
+        } else {
+            View.GONE
+        }
         playerClock?.visibility=if(allOn || library.playerClock) View.VISIBLE else View.GONE
         playbackSpeedText?.visibility=if(allOn || library.playerSpeed) View.VISIBLE else View.GONE
         // **这一行只在真的有一项要显示时才出现。**
@@ -1997,7 +2047,7 @@ fun MainActivity.showDecoderPicker(anchor: TextView,inPlayer: Boolean) {
         val changed=playbackDecoderMode!=selected
         library.decoderMode=selected
         // 用户手动改解码方式：撤销自动切换、归还「切软解」的预算（不动清晰度上限）。
-        sessionPlayback.onManualDecoderChange()
+        playbackCoordinator.onManualDecoderChange()
         if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "解码 " else "视频解码  ·  ")+selected.label
         if(inPlayer && changed) applyDecoderMode() else if(inPlayer) updatePlaybackText()
     })

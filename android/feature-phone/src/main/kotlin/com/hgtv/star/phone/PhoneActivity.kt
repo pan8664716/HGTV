@@ -7,15 +7,14 @@ import android.os.Bundle
 import com.hgtv.star.phone.ui.PhoneUiScale
 
 /**
- * 手机端 Activity 基类：**屏幕尺寸或方向变了就重建整页**。
+ * 手机端 Activity 基类：普通页面由系统在屏幕尺寸或方向变化时重建整页。
  *
  * 手机端的尺寸令牌（边距 / 卡片 / 字号）都在建视图那一刻由 `phoneScale()` 算成像素
- * （见 `PhoneTheme`）。各 Activity 在 manifest 里声明了 `configChanges=screenSize`，
- * 系统不会替我们重建；如果不自己重建，`wm size` 改完只有容器变大，里面的字号与卡片
- * 仍是旧像素，表现就是「一半大一半小」。
+ * （见 `PhoneTheme`）。普通页面不在 manifest 里声明方向 / 屏幕尺寸的 `configChanges`，
+ * 交给系统走标准重建，避免 HyperOS 在本地 `recreate()` 时留下未挂载的 DecorView。
  *
- * dpi 变化不在 `configChanges` 里，系统本来就会重建，这里只兜像素尺寸。
- * 方向变化默认也重建；播放页自己拒绝，交给它原地切形态。
+ * 播放页单独声明方向变化并覆盖 [rebuildOnSizeChange]，由它原地切换横竖屏。
+ * 这里的重建兜底只处理个别 ROM 仍直接回调尺寸变化、但系统没有重建的情况。
  */
 open class PhoneActivity : Activity() {
 
@@ -29,6 +28,15 @@ open class PhoneActivity : Activity() {
     /** 已经排了一次重建：重建完成前不再重复排。 */
     protected var screenRebuildPending = false
         private set
+
+    private val rebuildAfterConfig = Runnable {
+        if (!screenRebuildPending) return@Runnable
+        if (isFinishing || isDestroyed) {
+            screenRebuildPending = false
+            return@Runnable
+        }
+        recreate()
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -51,7 +59,10 @@ open class PhoneActivity : Activity() {
         val sizeChanged = metrics.widthPixels != builtWidth || metrics.heightPixels != builtHeight
         if (sizeChanged && rebuildOnSizeChange(newConfig)) {
             screenRebuildPending = true
-            recreate()
+            // 不要在 onConfigurationChanged 的事务内直接 recreate：MIUI/HyperOS 会把
+            // 本地重建误当成配置事务，随后留下未挂载的 DecorView。等当前主线程消息
+            // 处理完再重建，连续的方向回调也会被 screenRebuildPending 合并。
+            window.decorView.post(rebuildAfterConfig)
             return
         }
         captureScreen()

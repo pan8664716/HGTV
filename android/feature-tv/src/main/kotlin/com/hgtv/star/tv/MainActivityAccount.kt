@@ -10,6 +10,7 @@ import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.data.PlaybackCapability
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.devicePrefix
+import kotlinx.coroutines.launch
 
 // 本文件是从 MainActivity.kt 拆出来的「账号参数导入（本机文件 / 手机扫码）与设备注册」这一块。
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
@@ -144,80 +145,46 @@ fun MainActivity.parseCredentials(text: String): AccountCredentials =
  * 只有最后一次请求的回调会落地，且无论成功失败都会把 [accountLoading] 放回去。
  */
 fun MainActivity.loadAccount(force: Boolean=false) {
-    if(!repository.signedIn) return
     if(accountLoading && !force) return
     val cache=library.accountCache()
     val now=System.currentTimeMillis()
-    // 缓存**还新鲜**就不发请求：账号侧这五条数据不是每秒在变，进一次「我的」页就打五个请求
-    // 换来的只是「页面转一圈」。想立刻要最新的就用页头那枚「刷新」（它走 force）。
+    // 先铺本地缓存，再继续发网络请求做增量刷新。缓存只负责首屏速度，不能替代网络。
     if(!force && cache!=null && now-cache.savedAt in 0..ACCOUNT_FRESH_MS) {
         val first=accountData==null
         accountData=cache.data; accountError=null
         // 缓存是**这一页刚打开时**拿到的（原先这一页要等一次请求才敢铺内容）：现在要补一次重建。
         // 必须 post 到下一轮：调用方此刻多半正在 [showCatalog] 里铺这一页，
         // 在渲染过程中再调一次 showCatalog 会边建边拆。
-        if(first && cache.data.usable) main.post { if(!isDestroyed && foreground) refreshAccountViews(AccountSnapshot.KEYS) }
-        return
+        if(first && (cache.data.usable || cache.data.history.isNotEmpty() ||
+                cache.data.favorites.isNotEmpty() || cache.data.reserves.isNotEmpty())) {
+            main.post { if(!isDestroyed && foreground) refreshAccountViews(AccountSnapshot.KEYS) }
+        }
     }
     // 真正要发请求了才留一行日志：账号数据这一路在电视上没法调试，
     // 「启动时到底有没有去拉」只有这一行说得清。
     android.util.Log.i("HGTV","Account fetch force=$force cache=${cache!=null} tab=$tab screen=$screen")
     accountLoading=true
     val token=++accountToken
-    io.submit {
-        val result=runCatching { repository.accountData() }
-        main.post {
-            if(isDestroyed || token!=accountToken) return@post
-            accountLoading=false
-            result.onSuccess { fresh ->
-                // 某一栏这次没回来（[AccountData.errors] 记着原因）就保留上一份，
-                // 不要用空列表把它盖掉——那在界面上读作「我的收藏被清空了」。
-                // 本机删过的观看记录不再进缓存：平台对短剧进度列表的软删不一定生效，
-                // 不在这里滤一次，下次启动读缓存时那几条又回来了（见 [Library.historyDeleted]）。
-                val data=AccountSnapshot.merge(accountData, fresh).let { merged ->
-                    val kept=merged.history.filterNot { library.historyDeleted(it.series.id) }
-                    if(kept.size==merged.history.size) merged else merged.copy(history=kept)
-                }
-                // **对账**：账号这份与本机进度逐条比「谁更超前」，同一部剧两边只留一份
-                // （见 [reconcileHistory]）。不这么做的话，机器 2 看到的第 400 集只会停在
-                // 「我的 → 历史」里，首页历史栏与详情页续播读的本机进度还是第 200 集——
-                // 用户看到的就是「两个历史各说各的」。
-                val merge=reconcileHistory(data)
-                // 变了哪几栏就重画哪几处；**一栏都没变时一个视图都不动**。
-                // 这里是最容易写出「每次刷新都闪一下」的地方：账号数据落地后无条件整页重建，
-                // 会把栅格、封面、滚动位置全部重来一遍，而内容其实一模一样。
-                val changed=AccountSnapshot.changedKeys(accountData, merge.data)
-                accountData=merge.data; accountError=null
-                accountRetry=0
-                library.cacheAccount(merge.data)
-                if(changed.isNotEmpty()) refreshAccountViews(changed)
-                // 本机进度被账号那一份改写过：首页历史栏 / 历史集合页读的是本机那份，也要重画。
-                if(merge.localWrites>0) refreshLocalHistoryViews()
-                // 反过来，本机更超前的几条要推回云端：否则第三台设备重登之后又拿回旧的，
-                // 下一次同步再把这台机器改回去，永远在那两个集数之间来回。
-                // 这一栏这次没拉回来时不上传：那时手上这份账号数据是旧的，比不出谁更超前。
-                if("历史" !in fresh.errors) pushHistoryAhead(merge.uploads)
-            }.onFailure { failure ->
-                android.util.Log.w("HGTV","accountData failed: ${failure.message}",failure)
-                DebugLog.record("账号","资料读取失败 · ${failure.message.orEmpty().take(140)}")
-                accountError=failure
-                // 需要登录态的接口失败时给一条短提示（见 [accountFailureText]）：
-                // 这一页本身会把原因写在内容区，但用户可能正在别的页面等着结果，
-                // 那种「按了没反应」的体感只能靠这条即时反馈补上。
-                accountFailureText(failure)?.let { tvTools.toast(it) }
-                // 失败时只在**手上什么都没有**的情况下重画（内容区要换成失败说明与「重试」）；
-                // 已经有缓存铺在屏幕上时不动它——把用户正在看的收藏 / 历史换成一页错误说明，
-                // 比一次后台刷新失败严重得多。
-                if(accountData==null && (tab==TAB_PROFILE || collection!=null)) showCatalog()
-                // **首页开局那一次失败要自己再试**：刚恢复的登录态 + 首屏那一批请求挤在一起时
-                // 第一次账号拉取失败并不罕见，而用户手上什么都没有，界面上就是「历史 / 收藏两栏是空的」。
-                // 原先这种情况必须先去点一次「我的」才能把数据逼出来——这里自动补两次，
-                // 用户不必知道有这回事（[accountRetry] 在成功与换凭据时归零）。
-                if(accountData==null && accountRetry<ACCOUNT_RETRIES) {
-                    accountRetry++
-                    main.postDelayed({ if(!isDestroyed && foreground) loadAccount() },ACCOUNT_RETRY_MS)
-                }
-            }
+    appScope.launch {
+        val result=accountController.refresh()
+        if(isDestroyed || token!=accountToken) return@launch
+        accountLoading=false
+        val failure=result.error
+        if(failure==null) {
+            accountError=null
+            accountRetry=0
+            if(result.changed.isNotEmpty()) refreshAccountViews(result.changed)
+            if(result.localWrites>0) refreshLocalHistoryViews()
+            return@launch
+        }
+        android.util.Log.w("HGTV","accountData failed: ${failure.message}",failure)
+        DebugLog.record("账号","资料读取失败 · ${failure.message.orEmpty().take(140)}")
+        accountError=failure
+        accountFailureText(failure)?.let { tvTools.toast(it) }
+        if(accountData==null && (tab==TAB_PROFILE || collection!=null)) showCatalog()
+        if(accountData==null && accountRetry<ACCOUNT_RETRIES) {
+            accountRetry++
+            main.postDelayed({ if(!isDestroyed && foreground) loadAccount() },ACCOUNT_RETRY_MS)
         }
     }
 }
@@ -264,15 +231,10 @@ fun MainActivity.applyAccount() {
     applyPlaybackCapability()
     // 换凭据之后先用**缓存**顶上（同账号时它还在，指纹对不上时 [Library.accountCache] 会丢掉它），
     // 界面因此立刻有内容可铺，不必先空一屏再等请求回来。
-    // 没有凭据时**必须把内存里那份资料清掉**：退出登录 / 会话失效之后 `accountData`
-    // 还留着上一个账号的昵称与四个栏目，页头照着它铺昵称，界面上就是「已经退出了却还是
-    // 登录状态」。清掉之后页头读到的就是「未登录」，内容区也回到登录卡。
+    // 没有凭据时缓存按主设备身份隔离；页头是否显示登录态仍由 credentials 判断。
     // 缓存里那一份也先对账一次：重启之后首页读的是本机进度、
     // 「我的 → 历史」读的是缓存，两边不一致的话用户一开电视就看到两个集数。
-    accountData=if(repository.credentials==null) null else library.accountCache()?.data?.let { cached ->
-        if(library.isLoaded) reconcileHistory(cached).data else cached
-    }
-    if(repository.credentials==null) library.clearAccountCache()
+    accountData=accountController.bindCredentials()
     accountError=null
     // 换凭据就把在途的那一次作废，并把「正在读」放回去：否则新凭据要等旧请求的超时才发。
     accountToken++
@@ -505,7 +467,11 @@ fun deviceRejectionOf(problem: Throwable?): Boolean =
  * 成功后同时落盘（后续搜索 / 播放复用这台设备），失败返回 null。
  */
 fun MainActivity.registerForPhoneLogin(profile: Map<String,String>): com.hgtv.star.core.DeviceRegister.Registered? {
-    val registered=com.hgtv.star.shared.data.DeviceRegistration.registerLoginDevice(repository,profile) ?: run {
+    val registered=com.hgtv.star.shared.data.DeviceRegistration.registerLoginDevice(
+        library,
+        repository,
+        profile,
+    ) ?: run {
         val problem=repository.lastRegisterError
         Diagnostics.fail("device_register_login","登录时设备注册失败","${devicePrefix(this)} cause=${Diagnostics.chainOf(problem)}",problem)
         return null
@@ -563,7 +529,11 @@ fun MainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?) {
 fun MainActivity.phoneLoginChoice(anchor: View?) {
     // 直接进表单：手机号与验证码用系统键盘输入，版面与手机上的登录页一致。
     // 手机扫码那条路留给「上行短信」那一步（那一步本来就必须用手机）。
-    tvTools.phoneLoginForm(anchor,library.freshLoginDeviceProfile(),
+    tvTools.phoneLoginForm(
+        anchor,
+        LinkedHashMap(library.deviceProfile()).apply { putAll(library.deviceIdentity()) },
+        library.registrationCookies(),
         { profile -> registerForPhoneLogin(profile) },
-        { credentials -> savePhoneLogin(credentials,anchor) })
+        { credentials -> savePhoneLogin(credentials,anchor) },
+    )
 }

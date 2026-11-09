@@ -148,62 +148,91 @@ fun Context.phoneScale(): Float {
     val designWidth = if (portrait) 360f else 640f
     val designHeight = if (portrait) 640f else 360f
     val screenScale = minOf(width / designWidth, height / designHeight).coerceIn(.45f, 8f)
-    return screenScale * PhoneUiScale.value
+    // 640×360 正好是 TV 1280×720 的一半，因此手机令牌数值也是 TV 的一半。
+    // 1.0 档即 TV 的 1.0x 基准；横竖屏分别读取各自保存的 UI 大小倍率。
+    return screenScale * PhoneUiScale.valueFor(this)
 }
 
 /**
  * 手机端字体与控件大小的统一倍率。
  *
  * 只放大文字会让单行文案挤进原来的按钮，因此 [phoneScale] 把这一档同时乘进
- * 字号、按钮高度、图标、内边距与卡片尺寸。手机端以中间档为默认，
- * 两侧各留出调整空间，放大不会再让单个按钮独自变形。
+ * 字号、按钮高度、图标、内边距与卡片尺寸。默认 1.2，可选 1.0–1.5。
  */
 object PhoneUiScale {
 
     enum class Size(val scale: Float, val label: String) {
-        TINY(1.3f, "超小"),
-        SMALL(1.45f, "较小"),
-        STANDARD(1.6f, "标准"),
-        LARGE(1.75f, "较大"),
-        HUGE(1.9f, "超大"),
+        X10(1.0f, "1.0"),
+        X11(1.1f, "1.1"),
+        X12(1.2f, "1.2"),
+        X13(1.3f, "1.3"),
+        X14(1.4f, "1.4"),
+        X15(1.5f, "1.5"),
     }
 
     val sizes = Size.entries
-    val default = Size.STANDARD.scale
+    val default = Size.X12.scale
 
     private const val PREFS = "phone-display-v1"
-    private const val KEY = "uiScale"
-    private const val KEY_DEFAULT_MIGRATED = "hugeDefaultMigrated"
+    /** 旧版单值键：只用于首次拆分迁移。 */
+    private const val KEY_LEGACY = "uiScale"
+    private const val KEY_LEGACY_DEFAULT_MIGRATED = "hugeDefaultMigrated"
     private const val LEGACY_DEFAULT = 1.3f
+    private const val KEY_PORTRAIT = "uiScalePortrait"
+    private const val KEY_LANDSCAPE = "uiScaleLandscape"
+    private const val KEY_ORIENTATION_SPLIT_MIGRATED = "uiScaleOrientationSplitMigrated"
 
     @Volatile private var current = default
-    @Volatile private var loaded = false
-
+    @Volatile private var portraitValue = default
+    @Volatile private var landscapeValue = default
+    private val orientationOverride = ThreadLocal<Float?>()
     /** 当前倍率。Activity 建视图前会通过 [ensure] 从磁盘读一次。 */
     val value: Float get() = current
 
+    /** 按 Context 当前方向取对应倍率；播放页原地转屏时也会读到正确的那一份。 */
+    fun valueFor(context: Context): Float {
+        orientationOverride.get()?.let { return it }
+        val landscape = context.resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        return if(landscape) landscapeValue else portraitValue
+    }
+
+    /** 播放页会同时预建横竖两套视图；构建时临时指定该套视图应使用的倍率。 */
+    fun <T> withOrientation(context: Context, landscape: Boolean, block: () -> T): T {
+        val previous=orientationOverride.get()
+        orientationOverride.set(if(landscape) landscapeValue else portraitValue)
+        return try {
+            block()
+        } finally {
+            if(previous==null) orientationOverride.remove() else orientationOverride.set(previous)
+        }
+    }
+
     fun ensure(context: Context) {
-        if (loaded) return
         synchronized(this) {
-            if (loaded) return
             val prefs = context.applicationContext
                 .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-            val saved = prefs.getFloat(KEY, default)
-            // 旧版的默认档是 1.3。升级后只迁移这一个默认值；
-            // 用户明确选过的其他档位原样保留。
-            val migrate = !prefs.getBoolean(KEY_DEFAULT_MIGRATED, false)
-            current = if (migrate && (!prefs.contains(KEY) || abs(saved - LEGACY_DEFAULT) < .001f)) {
-                default
-            } else {
-                normalize(saved)
-            }
-            if (migrate) {
+            if(!prefs.getBoolean(KEY_ORIENTATION_SPLIT_MIGRATED, false)) {
+                // 旧版只有一份 UI 大小：先沿用原来的默认值迁移，再复制到横竖屏两份。
+                val hasLegacy = prefs.contains(KEY_LEGACY)
+                val legacy = prefs.getFloat(KEY_LEGACY, default)
+                val legacyDefaultMigrated =
+                    prefs.getBoolean(KEY_LEGACY_DEFAULT_MIGRATED, false)
+                val migrated = when {
+                    !hasLegacy -> default
+                    !legacyDefaultMigrated && abs(legacy - LEGACY_DEFAULT) < .001f -> default
+                    else -> normalize(legacy)
+                }
                 prefs.edit()
-                    .putFloat(KEY, current)
-                    .putBoolean(KEY_DEFAULT_MIGRATED, true)
+                    .putFloat(KEY_PORTRAIT, migrated)
+                    .putFloat(KEY_LANDSCAPE, migrated)
+                    .putBoolean(KEY_LEGACY_DEFAULT_MIGRATED, true)
+                    .putBoolean(KEY_ORIENTATION_SPLIT_MIGRATED, true)
                     .apply()
             }
-            loaded = true
+            portraitValue=normalize(prefs.getFloat(KEY_PORTRAIT, default))
+            landscapeValue=normalize(prefs.getFloat(KEY_LANDSCAPE, default))
+            current=if(isLandscape(context)) landscapeValue else portraitValue
         }
     }
 
@@ -211,22 +240,42 @@ object PhoneUiScale {
     fun set(context: Context, value: Float) {
         val next = normalize(value)
         current = next
-        loaded = true
         context.applicationContext
             .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
             .edit()
-            .putFloat(KEY, next)
-            .putBoolean(KEY_DEFAULT_MIGRATED, true)
+            .putFloat(if(isLandscape(context)) KEY_LANDSCAPE else KEY_PORTRAIT, next)
+            .putBoolean(KEY_LEGACY_DEFAULT_MIGRATED, true)
+            .putBoolean(KEY_ORIENTATION_SPLIT_MIGRATED, true)
+            .apply()
+        if(isLandscape(context)) landscapeValue=next else portraitValue=next
+    }
+
+    /** 恢复默认设置时横竖屏两份一起回到 1.2。 */
+    fun reset(context: Context) {
+        current=default
+        portraitValue=default
+        landscapeValue=default
+        context.applicationContext
+            .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+            .edit()
+            .putFloat(KEY_PORTRAIT, default)
+            .putFloat(KEY_LANDSCAPE, default)
+            .putBoolean(KEY_LEGACY_DEFAULT_MIGRATED, true)
+            .putBoolean(KEY_ORIENTATION_SPLIT_MIGRATED, true)
             .apply()
     }
 
     fun sizeOf(value: Float): Size =
-        sizes.minByOrNull { abs(it.scale - value) } ?: Size.STANDARD
+        sizes.minByOrNull { abs(it.scale - value) } ?: Size.X10
 
     fun label(value: Float): String = sizeOf(value).label
 
     private fun normalize(value: Float): Float =
         value.coerceIn(sizes.first().scale, sizes.last().scale)
+
+    private fun isLandscape(context: Context): Boolean =
+        context.resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
 }
 
 /** 设计尺寸 → 像素。全站唯一的换算出口（TV 的 `designPx` 同一条）。 */

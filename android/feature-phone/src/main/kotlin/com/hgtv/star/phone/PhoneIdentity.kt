@@ -2,10 +2,13 @@
 package com.hgtv.star.phone
 
 import android.content.Context
+import android.os.Handler
+import android.os.Looper
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.data.PlaybackCapability
 import com.hgtv.star.shared.data.SessionBootstrap
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
 /**
@@ -33,6 +36,8 @@ internal object PhoneIdentity {
     /** 正在后台注册设备的标记：注册是网络请求，同一时刻只该有一次。 */
     @Volatile private var registering = false
     @Volatile private var registrationLatch: CountDownLatch? = null
+    private val registrationListeners =
+        CopyOnWriteArrayList<(com.hgtv.star.shared.data.DeviceRegistration.Outcome) -> Unit>()
     /** 播放能力只探一次（`MediaCodecList` 是 Binder 调用，电视上实测能卡 1–3 秒）。 */
     @Volatile private var capabilityApplied = false
 
@@ -71,6 +76,19 @@ internal object PhoneIdentity {
     }
 
     /**
+     * 注册尝试结束后在主线程回调；返回注销函数。
+     *
+     * 首屏不再等注册，因此推荐页可能在匿名身份上先发过一页请求。注册完成后
+     * 页面据此只补拉空列表，不打断已经恢复出来的缓存或正在播放的内容。
+     */
+    fun onRegistrationFinished(
+        listener: (com.hgtv.star.shared.data.DeviceRegistration.Outcome) -> Unit,
+    ): () -> Unit {
+        registrationListeners += listener
+        return { registrationListeners -= listener }
+    }
+
+    /**
      * 确保本机有一台**平台注册过的**设备；没有就在后台注册一台并落盘。
      *
      * 注册是匿名的（不需要账号 / 密码 / 短信），一次请求即可。失败不打扰用户：
@@ -97,6 +115,7 @@ internal object PhoneIdentity {
             }.getOrElse { com.hgtv.star.shared.data.DeviceRegistration.Outcome.FAILED }
             registering = false
             latch.countDown()
+            notifyRegistrationFinished(outcome)
             when (outcome) {
                 com.hgtv.star.shared.data.DeviceRegistration.Outcome.REGISTERED -> {
                     android.util.Log.i(
@@ -116,6 +135,17 @@ internal object PhoneIdentity {
                 com.hgtv.star.shared.data.DeviceRegistration.Outcome.ALREADY -> Unit
             }
         }, "hgtv-phone-register").start()
+    }
+
+    private fun notifyRegistrationFinished(
+        outcome: com.hgtv.star.shared.data.DeviceRegistration.Outcome,
+    ) {
+        if(registrationListeners.isEmpty()) return
+        Handler(Looper.getMainLooper()).post {
+            registrationListeners.forEach { listener ->
+                runCatching { listener(outcome) }
+            }
+        }
     }
 
     /**

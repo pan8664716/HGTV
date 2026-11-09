@@ -16,6 +16,7 @@ import com.hgtv.star.tv.noteSearchRowFocused
 import com.hgtv.star.tv.GRID_WINDOW_MAX_ROWS
 import com.hgtv.star.tv.GRID_WINDOW_MIN_ROWS
 import com.hgtv.star.tv.LOAD_MORE
+import com.hgtv.star.tv.LOAD_MORE_RETRY_COOLDOWN_MS
 import com.hgtv.star.tv.MAX_CATALOG_PAGE
 import com.hgtv.star.tv.PREFETCH_TRIGGER_ROWS
 import com.hgtv.star.tv.PREFETCH_ROWS
@@ -26,9 +27,11 @@ import com.hgtv.star.tv.TAB_HOME
 import com.hgtv.star.tv.TAB_PROFILE
 import com.hgtv.star.tv.TAB_RANK
 import com.hgtv.star.tv.TAB_SEARCH
+import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.tv.appendCatalog
 import com.hgtv.star.tv.autoAppendCatalog
 import com.hgtv.star.tv.button
+import com.hgtv.star.tv.catalogSelectionInFlight
 import com.hgtv.star.tv.dp
 import com.hgtv.star.tv.focusHead
 import com.hgtv.star.tv.findTagged
@@ -86,10 +89,16 @@ fun MainActivity.loadMore() {
 fun MainActivity.prefetchNextPage() {
     // 换榜单 / 换分类的请求还在路上：屏上那份列表属于上一条选择，
     // 拿它去取「下一页」会把新列表的页码算乱（旧列表的追加会先落进 catalog）。
-    if(chipFocusKey!=null) return
-    // [moreFailed] 之后不再自动重试：断网时滚动事件会把预取变成对着接口猛敲，
-    // 等用户自己按下「加载失败 · 重试」再打一次就够了。
-    if(screen!="catalog" || !appendCatalog() || !hasMore || moreInFlight || moreFailed || gridList==null) return
+    if(catalogSelectionInFlight()) return
+    // [moreFailed] 后冷却一小段时间再自动重试：既不会断网时对着接口猛敲，
+    // 也不会让用户一直下拉却永远卡在失败状态；底部按钮仍可立即手动重试。
+    if(screen!="catalog" || !appendCatalog() || !hasMore || moreInFlight || gridList==null) return
+    if(moreFailed) {
+        val elapsed=android.os.SystemClock.elapsedRealtime()-moreFailedAt
+        if(elapsed<LOAD_MORE_RETRY_COOLDOWN_MS) return
+        moreFailed=false
+        moreFailedAt=0L
+    }
     if(page+1>MAX_CATALOG_PAGE) return
     requestNextPage(userInitiated=false)
 }
@@ -175,16 +184,19 @@ fun MainActivity.gridConsumedIndex(): Int {
  * 只是把 [moreFocusWanted] 打开，落地时照样把焦点交过去。
  */
 fun MainActivity.requestNextPage(userInitiated: Boolean) {
-    if(chipFocusKey!=null) return
+    if(catalogSelectionInFlight()) return
     if(!hasMore || !appendCatalog() || gridList==null) return
     if(moreInFlight) {
         if(userInitiated) { moreVisible=true; moreFocusWanted=true; updateFooter() }
         return
     }
-    val next=page+1
+    // 旧榜单缓存可能只有 20 条；此时“加载更多”先把第 1 页补到 30，再从第 2 页继续。
+    val refreshFirstPage=tab==TAB_RANK && page==1 &&
+        catalog.size<CATALOG_FIRST_PAGE_SIZE
+    val next=if(refreshFirstPage) 1 else page+1
     if(next>MAX_CATALOG_PAGE) { hasMore=false; updateFooter(); return }
     moreInFlight=true; moreInFlightPage=next; moreVisible=userInitiated
-    moreFocusWanted=userInitiated; moreFailed=false
+    moreFocusWanted=userInitiated; moreFailed=false; moreFailedAt=0L
     // 用户主动要的这一次不算进「连取」的预算里（他自己按的，就该给他）。
     if(userInitiated) prefetchChain=0
     updateFooter()
@@ -218,7 +230,7 @@ fun MainActivity.requestNextPage(userInitiated: Boolean) {
                 // 调试面板要能看出「是第几页失败」：翻页失败时页面上只留一句提示，
                 // 用户描述问题往往就是「看到一半不加载了」。
                 noteDebugProblem("加载更多失败 · 第 ${next} 页 · 已显示 ${gridItems.size} 部")
-                moreFailed=true; updateFooter()
+                moreFailed=true; moreFailedAt=android.os.SystemClock.elapsedRealtime(); updateFooter()
                 return@post
             }
             // 只有「还是原来那一页」才接得上；中途切了标签 / 榜单 / 集合，结果直接丢掉。
@@ -301,16 +313,14 @@ fun MainActivity.updateFooter() {
     more.alpha=if(moreVisible && moreInFlight) TvStyle.DISABLED_ALPHA else 1f
     val paging=gridPaging ?: return
     val tag="paging-loading"
-    val existing=paging.findViewWithTag<ProgressBar>(tag)
+    val existing=paging.findViewWithTag<LoadingDotsView>(tag)
     val show=moreVisible && moreInFlight
     when {
         show && existing==null -> paging.addView(
-            ProgressBar(this).apply {
-                isIndeterminate=true
-                contentDescription="加载中"
+            LoadingDotsView(this).apply {
                 this.tag=tag
             },
-            LinearLayout.LayoutParams(dp(24),dp(24)).apply { leftMargin=dp(TvStyle.GAP_INLINE) }
+            LinearLayout.LayoutParams(dp(64),dp(18)).apply { leftMargin=dp(TvStyle.GAP_INLINE) }
         )
         !show && existing!=null -> paging.removeView(existing)
     }
@@ -894,7 +904,7 @@ fun MainActivity.wireGridFocus(prev: View?,next: View?) {
     // 榜单芯片按下键进搜索框（没有）或内容第一张卡。
     boardButtons.values.forEach { it.nextFocusDownId=searchInput?.id ?: first }
     // 分类页的筛选行：行与行的上下键已经在建行时接好，这里只把**最后一行**接到内容第一张卡。
-    val lastFilterType=categoryPanel?.rows?.lastOrNull()?.type
+    val lastFilterType=categoryPanel?.visibleRows()?.lastOrNull()?.type
     categoryFilterButtons.forEach { (type,buttons) ->
         buttons.values.forEach { chip ->
             if(lastFilterType==null || type==lastFilterType) chip.nextFocusDownId=first

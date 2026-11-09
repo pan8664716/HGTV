@@ -6,7 +6,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ProgressBar
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
@@ -14,6 +13,7 @@ import com.hgtv.star.core.CatalogPage
 import com.hgtv.star.core.PosterCardContent
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.PhoneServices
+import com.hgtv.star.shared.ui.LoadingDotsView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -32,7 +32,7 @@ import kotlinx.coroutines.withContext
  * ```
  *
  * 名次（[ranked]）只影响卡片左上角那枚角标：榜单页要画，分类页与搜索结果不画——
- * 与 TV 端 `RankBoard.ranked` 的判断一致（「上新」那一栏同样不画名次）。
+ * 榜单页四个榜都显示服务端名次；这里保留开关供非榜单列表复用。
  */
 class PhonePosterFeed(context: Context) : FrameLayout(context) {
 
@@ -174,10 +174,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         setPadding(0, context.dp(60), 0, context.dp(60))
     }
 
-    private fun newLoadingView() = ProgressBar(context).apply {
-        isIndeterminate = true
-        contentDescription = "加载中"
-    }
+    private fun newLoadingView() = LoadingDotsView(context)
 
     /**
      * 列表滚动回调（当前 `scrollY` 与本次 `dy`，单位像素）。
@@ -586,7 +583,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             if (viewType == TYPE_LOADING) {
                 val view = FrameLayout(context).apply {
                     addView(newLoadingView(), FrameLayout.LayoutParams(
-                        context.dp(36), context.dp(36), Gravity.CENTER
+                        context.dp(64), context.dp(18), Gravity.CENTER
                     ))
                 }
                 view.layoutParams = RecyclerView.LayoutParams(

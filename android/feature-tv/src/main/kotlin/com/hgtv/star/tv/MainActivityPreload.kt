@@ -181,7 +181,7 @@ fun MainActivity.evictRecommendPrepared(limit: Int = RECOMMEND_PREPARED_LIMIT) {
         runCatching { remote.close() }
         // 内存里那份首块没了，但索引还在盘上（见 `PlaybackCache`）：级别降回 META，
         // 这样它万一又滑回窗口里，还能重新只补那 512KB，而不是整条重来。
-        if(recommendWarmed[key]==CacheLevel.FULL) recommendWarmed[key]=CacheLevel.META
+        recommendStore().downgradeWarm(key,CacheLevel.FULL,CacheLevel.META)
         excess--
         if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","evictReason=score key=$key left=${recommendPrepared.size}")
     }

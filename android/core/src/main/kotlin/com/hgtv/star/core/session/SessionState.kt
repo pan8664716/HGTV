@@ -21,7 +21,7 @@ interface SessionState {
     /** 会话 cookie 的扁平串（`name=value; name=value`）。 */
     val cookieHeader: String
 
-    /** 登录用户设备额外下发的 cookie；主设备 cookie 由 [SessionBridge.mainDeviceCookies] 提供。 */
+    /** 当前会话落盘的 Cookie；登录后这份 Cookie 已包含账号设备自己的设备项。 */
     val deviceCookies: Map<String,String>
 
     /** 注册下发的 `store-region`；没有时为空，不再伪造默认地区。 */
@@ -116,11 +116,14 @@ object SessionBridge {
     /** 主设备请求：只合并主设备 Cookie，不补账号 token / session Cookie。 */
     fun decorateMain(builder: Request.Builder): Request.Builder {
         val merged=LinkedHashMap<String,String>()
-        runCatching { mainDeviceCookies() }.getOrDefault(emptyMap()).forEach { (name,value) ->
-            if(name.isNotBlank() && value.isNotBlank()) merged[name]=value
+        val explicit=builder.build().header("Cookie").orEmpty()
+        if(explicit.isNotBlank()) {
+            merged.putAll(CookieRecord.headerToMap(explicit))
+        } else {
+            runCatching { mainDeviceCookies() }.getOrDefault(emptyMap()).forEach { (name,value) ->
+                if(name.isNotBlank() && value.isNotBlank()) merged[name]=value
+            }
         }
-        builder.build().header("Cookie")?.takeIf { it.isNotBlank() }
-            ?.let { merged.putAll(CookieRecord.headerToMap(it)) }
         if(merged.isNotEmpty()) builder.header("Cookie",CookieRecord.mapToHeader(merged))
         val finalRequest=builder.build()
         if(finalRequest.header("X-SS-DP").isNullOrBlank()) builder.header("X-SS-DP","8662")
@@ -140,25 +143,22 @@ object SessionBridge {
     fun decorateAccount(builder: Request.Builder,injectToken: Boolean = true): Request.Builder {
         val current = state
         val merged = LinkedHashMap<String,String>()
-        // ① 设备 cookie 铺底（`install_id` / `ttreq` / `store-region`）。
-        current?.deviceCookies?.forEach { (name,value) ->
-            if(name.isNotBlank() && value.isNotBlank()) merged[name] = value
-        }
-        // ② 调用方**已经写好的** `Cookie` 不能丢。
+        // 调用方**已经写好的** `Cookie` 是本次请求明确指定的整套身份。
         //
         // 这一条是「扫码登录报『这份状态无效，平台把它当成匿名设备』」的根因：
         // `ContentRepository.withSession()` 会把刚拿到的整套账号凭据（含 `sessionid`）写进
         // 请求头，而这里原先直接 `header("Cookie", 设备cookie)` 整段覆盖——扫码成功那一刻
         // `AppSessionStore` 里还没有这份会话（要等校验通过才落盘），于是 `sessionid` 被
         // 设备 cookie 顶掉，平台按匿名设备返回一个「用户20114780」式的临时账号。
-        // 实测：会话 cookie + 设备 cookie → 正常账号；只剩设备 cookie → 匿名账号。
-        // ③ 现读会话层：服务端可能刚轮换过（心跳 / 任意响应头的 `Set-Cookie`）。
-        current?.cookieHeader?.takeIf { it.isNotBlank() }
-            ?.let { merged.putAll(CookieRecord.headerToMap(it)) }
-        // ④ 调用方最后压一次：它代表「这一次请求明确要用的那份会话」，必须压过上面两层。
-        // 顺序不能反——反了就会出现「刚扫码拿到的 `sessionid` 被上一份过期会话盖回去」。
-        builder.build().header("Cookie")?.takeIf { it.isNotBlank() }
-            ?.let { merged.putAll(CookieRecord.headerToMap(it)) }
+        // 实测：会话 cookie + 同源设备 cookie → 正常账号；两套设备 Cookie 混在一起 → 匿名账号。
+        val explicit=builder.build().header("Cookie").orEmpty()
+        if(explicit.isNotBlank()) {
+            merged.putAll(CookieRecord.headerToMap(explicit))
+        } else {
+            // 没有显式 Cookie 时只读会话层；登录后的会话 Cookie 已包含同源设备 Cookie。
+            current?.cookieHeader?.takeIf { it.isNotBlank() }
+                ?.let { merged.putAll(CookieRecord.headerToMap(it)) }
+        }
         // token 同理：调用方明确给了就用它的（登录那一刻换回来的那份），没有才补会话层的。
         // 反过来的话，SP 里残留的旧 token 会把刚拿到的新会话顶掉——平台按「token 与 cookie
         // 不同源」判过期，这正是「早晨一打开就掉登录」的成因。
@@ -212,15 +212,10 @@ object SessionBridge {
         return token.contains(sessionId)
     }
 
-    /** 当前要发给心跳的 `Cookie` 头（设备 + 会话）。 */
+    /** 当前要发给心跳的 `Cookie` 头：只使用登录设备自己的完整会话 Cookie。 */
     fun cookieHeaderForBeat(): String {
         val current = state ?: return ""
-        val merged = LinkedHashMap<String,String>()
-        current.deviceCookies.forEach { (name,value) ->
-            if(name.isNotBlank() && value.isNotBlank()) merged[name] = value
-        }
-        merged.putAll(CookieRecord.headerToMap(current.cookieHeader))
-        return CookieRecord.mapToHeader(merged)
+        return current.cookieHeader
     }
 
     /**

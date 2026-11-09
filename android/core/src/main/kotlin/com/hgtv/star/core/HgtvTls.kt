@@ -413,8 +413,10 @@ private class PrepareTlsSocketFactory(
             if (enable.isNotEmpty()) {
                 socket.enabledProtocols = enable.toTypedArray()
             }
+            val available=supported.filter { it.startsWith("TLS") }
             if (reported.compareAndSet(false, true)) {
-                NetLog.log("TLS 可用版本=${supported.filter { it.startsWith("TLS") }} 启用=$enable")
+                TlsStatus.recordCapability(available,enable)
+                NetLog.log("TLS 可用版本=$available 启用=$enable")
             }
         }
         return socket

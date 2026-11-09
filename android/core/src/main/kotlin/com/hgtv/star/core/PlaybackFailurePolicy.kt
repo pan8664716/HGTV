@@ -13,7 +13,7 @@ package com.hgtv.star.core
  *
  * 现在判断只留一份（[PlaybackFailurePolicy.decide]），两端只负责**执行**与**画界面**。
  * 事实怎么读（`UnknownHostException`、`Content-Range` 对不上……）仍留在各端，
- * 因为那需要 media3 / 平台 API；但「读到之后怎么处置」只有这一处。
+ * 因为那需要 ExoPlayer / 平台 API；但「读到之后怎么处置」只有这一处。
  */
 data class FailureFacts(
     /** ExoPlayer 的 `errorCode`；不是 `PlaybackException` 时传 0。 */

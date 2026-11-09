@@ -13,10 +13,7 @@ android {
     defaultConfig { minSdk = 19 }
     buildFeatures { buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
-    kotlinOptions {
-        jvmTarget = "1.8"
-        freeCompilerArgs += "-opt-in=androidx.media3.common.util.UnstableApi"
-    }
+    kotlinOptions { jvmTarget = "1.8" }
     packaging {
         resources.excludes += setOf(
             "META-INF/versions/**", "META-INF/*.kotlin_module",
@@ -27,7 +24,7 @@ android {
 
 dependencies {
     api(project(":shared"))
-    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("com.google.android.exoplayer:exoplayer-ui:2.19.1")
     // 推荐流（整屏吸附）与剧场网格都用它：1.2.1 是最后一条支持 minSdk 14 的稳定线，
     // 与 Android 4.4 的底线一致。
     implementation("androidx.recyclerview:recyclerview:1.2.1")

@@ -77,7 +77,15 @@ class NetTiming : EventListener() {
         connectEnd=now()
     }
     override fun secureConnectStart(call: Call) { secureStart=now() }
-    override fun secureConnectEnd(call: Call,handshake: Handshake?) { secureEnd=now() }
+    override fun secureConnectEnd(call: Call,handshake: Handshake?) {
+        secureEnd=now()
+        if(handshake!=null) {
+            TlsStatus.recordHandshake(
+                handshake.tlsVersion().javaName(),
+                runCatching { call.request().url.host }.getOrNull(),
+            )
+        }
+    }
     override fun requestHeadersStart(call: Call) { requestAt=now() }
     override fun requestHeadersEnd(call: Call,request: okhttp3.Request) { requestEndAt=now() }
     override fun responseHeadersStart(call: Call) { headersAt=now() }

@@ -11,7 +11,7 @@ package com.hgtv.star.core
 data class HomeColumn(val key: String, val title: String, val board: RankBoard?)
 
 /**
- * 首页栏目的**固定顺序**：历史记录 → 我的收藏 → 稍后观看 → 热播漫剧 → 热播真人 → 热播AI → 热播上新。
+ * 首页栏目的**固定顺序**：历史记录 → 我的收藏 → 稍后观看 → 热播漫剧 → 热播真人 → 热播AI → 推荐榜。
  *
  * 顺序与名字收敛成一个纯函数（不依赖 Android）的原因和 [CardMenu] 一样：
  * 界面上「有哪些栏、谁在前」是一眼可查的需求，散在 `MainActivity` 里的 if 分支一旦顺序写错

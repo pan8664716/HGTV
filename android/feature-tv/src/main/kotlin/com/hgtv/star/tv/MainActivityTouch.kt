@@ -719,7 +719,7 @@ fun MainActivity.attachTouchBar() {
  * 但「进正片」这个入口必须留着——它不只是换个页面，它才写观看历史、才清「已看完」标记
  *（`saveProgress` 里有 `if(screen=="recommend") return` 的守卫）。
  *
- * 因此这里做成一枚**标题**：大号粗体剧名 + 下面一行「第 x / y 集 · 点击进入正片」，
+ * 因此这里做成一枚**标题**：大号粗体剧名 + 下面一行「点击进入正片」，
  * 右侧一个箭头。没有圆角底板、没有凸起柔光——读起来就是这一部剧的名字，
  * 光标（手指）停上去也不会变成「一颗按钮」。整块都是点击区，随手指点哪都行。
  *
@@ -763,7 +763,7 @@ private fun MainActivity.attachRecommendEntry() {
     syncRecommendEntry()
 }
 
-/** 把底部那枚剧名 / 集数刷成当前这一部（换剧、切集、每秒 tick 都走这里，只比较字符串）。 */
+/** 把底部那枚剧名刷成当前这一部（换剧、切集、每秒 tick 都走这里，只比较字符串）。 */
 fun MainActivity.syncRecommendEntry() {
     val data=detail ?: return
     touchEntryTitle?.let { view ->
@@ -771,7 +771,7 @@ fun MainActivity.syncRecommendEntry() {
         if(view.text.toString()!=next) view.text=next
     }
     touchEntryHint?.let { view ->
-        val next="第 ${episodeIndex+1} / ${data.episodes.size} 集 · 点击进入正片"
+        val next="点击进入正片"
         if(view.text.toString()!=next) view.text=next
     }
 }

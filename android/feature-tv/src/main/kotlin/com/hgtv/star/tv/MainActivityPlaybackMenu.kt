@@ -4,8 +4,8 @@ package com.hgtv.star.tv
 import android.app.Activity
 import android.view.*
 import android.widget.*
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.ExoPlayer
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.player.EpisodeGrid
 import com.hgtv.star.tv.player.EpisodePanel
@@ -13,7 +13,6 @@ import com.hgtv.star.tv.player.PlaybackMenu
 import com.hgtv.star.tv.TvDialog
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.tvScrollHost
-import com.hgtv.star.shared.data.WatchProgress
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.tv.R
 
@@ -121,10 +120,10 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
     menu
         .addRow("清晰度",PlaybackQuality.options.mapIndexed { index,value ->
             PlaybackMenu.Choice("${value}P",value==playbackMaxQuality) {
-                val changed=library.maxQuality!=value || sessionPlayback.effectiveMaxQuality!=null
+                val changed=library.maxQuality!=value || playbackSessionState.effectiveMaxQuality!=null
                 library.maxQuality=value
                 // 用户自己选了档位：撤销自动降档与全部预算（见 `SessionPlaybackPolicy`）。
-                sessionPlayback.onManualQualityChange()
+                playbackCoordinator.onManualQualityChange()
                 // 换清晰度要重新解析播放地址，播放器复用后菜单需要按新状态重建。
                 if(changed) { playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay); showPlaybackMenu(MENU_ROW_QUALITY,index) }
                 else { menu.select(MENU_ROW_QUALITY,index); updatePlaybackText() }
@@ -150,7 +149,7 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
                 if(playbackDecoderMode!=mode) {
                     library.decoderMode=mode
                     // 撤销自动切换，并把本集「切软解」的预算还回去（用户是知情选择，见策略）。
-                    sessionPlayback.onManualDecoderChange()
+                    playbackCoordinator.onManualDecoderChange()
                     applyDecoderMode()
                 }
                 else { menu.select(MENU_ROW_DECODER,index); updatePlaybackText() }
@@ -322,7 +321,7 @@ fun MainActivity.showQualityPicker(anchor: TextView,inPlayer: Boolean) {
         val target=options[index]; val changed=library.maxQuality!=target
         library.maxQuality=target
         // 用户手动改全局默认：会话里的自动降档与预算一起作废（见 `SessionPlaybackPolicy`）。
-        sessionPlayback.onManualQualityChange()
+        playbackCoordinator.onManualQualityChange()
         if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "清晰度 " else "默认清晰度  ·  ")+"${target}P"
         if(inPlayer && changed) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
     }
@@ -348,7 +347,7 @@ fun MainActivity.showEpisodePanel(anchor: View) {
     val grid=EpisodeGrid(this,data.episodes.size,episodeIndex,player=true,
         { selected ->
             if(selected==episodeIndex) episodePanel?.dismiss()
-            else { episodePanel?.dismiss(); playEpisode(selected) }
+            else { episodePanel?.dismiss(); playEpisode(selected,clearDanmakuOnSwitch=true) }
         },pageSize=library.episodePageSize,edgeTurn=library.episodeEdgeTurn)
     grid.fillHeight=true
     // 竖屏短剧全屏把画面转 90° 时，选集面板（独立窗口）要按同一个角度摆；
@@ -394,9 +393,15 @@ fun MainActivity.saveProgress(completed: Boolean=false) {
     // 时长还没出来（刚换集、刚起播）：先不写。写一条 duration=0 的记录会让
     // 「继续观看」把这一集算成 0 秒，下次从这一集开头重来。
     if(duration<=0) return
-    val progress=WatchProgress(data.series,data.episodes[episodeIndex],episodeIndex,p.currentPosition.coerceAtLeast(0),duration,completed || p.playbackState==Player.STATE_ENDED,System.currentTimeMillis())
-    library.save(progress)
-    syncProgress(progress,data.episodes.size)
+    playbackCoordinator.saveProgress(
+        series=data.series,
+        episodeId=data.episodes[episodeIndex],
+        episodeIndex=episodeIndex,
+        positionMs=p.currentPosition.coerceAtLeast(0),
+        durationMs=duration,
+        completed=completed || p.playbackState==Player.STATE_ENDED,
+        episodeCount=data.episodes.size,
+    )
     recommendHistoryPending=false
 }
 /**
@@ -419,7 +424,7 @@ fun MainActivity.saveProgress(completed: Boolean=false) {
  */
 fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     // 作废所有认会话号的在途回调（监听器、延迟清理、取地址）。
-    playback.beginSession()
+    playbackSessionState.beginSession()
     disarmPlaybackWatchdog(); disarmFrameStallWatchdog()
     // 整棵树马上会被页面重建换掉；调试面板在新页面上由 [reattachDebugOverlay] 重新挂。
     hideDebugOverlay()
@@ -469,15 +474,15 @@ fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     video?.close(); video=null
     playerView?.player=null; playerView=null
     // 状态机回到 IDLE。`playbackReady` 是它的只读投影，这一句同时把 prepared 清掉。
-    playback.release()
+    playbackSessionState.release()
     // 离开播放页：本次会话的降级状态（有效上限 / 预算）全部作废。
     // 不清的话，下一部剧会继承上一部降下来的上限——而那是「上一台机器这一刻放不了」的结论，
     // 与这部剧毫无关系。提示去重表同样清掉：新的一部剧该有自己的第一次提示。
     //
     // 退到后台（`keepSession`）是例外：那不是离开这一集，回来的还是同一集同一位置，
     // 结论当然还成立。见 [com.hgtv.star.core.SessionPlaybackPolicy.onLeavePlaybackToBackground]。
-    if(keepSession) sessionPlayback.onLeavePlaybackToBackground() else {
-        sessionPlayback.onUserManualChange()
+    if(keepSession) playbackSessionState.onLeavePlaybackToBackground() else {
+        playbackSessionState.onUserManualChange()
         playbackToasts.clear()
         // 会话已经清空，记着「这是哪一部剧的结论」也没有意义了（下次进播放页重新判定）。
         sessionSeriesId=""

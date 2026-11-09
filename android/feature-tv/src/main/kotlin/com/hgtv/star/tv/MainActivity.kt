@@ -13,10 +13,10 @@ import android.os.Looper
 import android.view.*
 import android.net.ConnectivityManager
 import android.widget.*
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.ui.PlayerView
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -159,7 +159,7 @@ class MainActivity: Activity() {
             // 「搜索接口暂不可用」这类问题在页面上只剩一句中文，真正的原因（哪个主机、什么码）只在这里。
             // TLS 那一条单独归到「TLS」标头：它是平台支持的协议版本与真正启用的那两档，
             // 与「某次请求挂了」不是一回事，混在「网络」里读起来像是又一次失败。
-            if(line.startsWith("TLS ")) {
+            if(line.startsWith("TLS 可用版本=")) {
                 // TLS 能力是**固定一行**（面板第三行），不再抄进「近况」：
                 // 同一条信息出现两次，用户会以为那是两次不同的连接结果。
                 DebugTls.summary=compactTls(line.removePrefix("TLS "))
@@ -175,9 +175,56 @@ class MainActivity: Activity() {
                 DebugLog.record("网络",line)
             }
         }
+        com.hgtv.star.core.NetLog.event={ level,line ->
+            when(level) {
+                com.hgtv.star.core.NetLogLevel.ERROR -> Diagnostics.error("HGTV-NET",line)
+                com.hgtv.star.core.NetLogLevel.WARN -> Diagnostics.warn("HGTV-NET",line)
+                com.hgtv.star.core.NetLogLevel.DEBUG -> Diagnostics.trace("HGTV-NET",line)
+            }
+        }
     }
     /** 与手机端共用的业务仓库；Activity 重建不换实例、不关连接池。 */
     val repository get()=AppRuntime.repository(this)
+    /** 账号数据与同步的唯一状态入口。 */
+    val accountController get()=AppRuntime.accountController(this)
+    /** 详情页行为入口：缓存、详情、作者、相关剧集和作者作品。 */
+    val detailController by lazy {
+        com.hgtv.star.shared.feature.detail.DetailController(
+            repository = repository,
+            library = AppRuntime.library(this),
+            scope = appScope,
+            account = accountController,
+        )
+    }
+    /** 搜索页行为入口：历史、热搜、联想词与结果分页。 */
+    val searchController by lazy {
+        com.hgtv.star.shared.feature.search.SearchController(
+            repository = repository,
+            library = AppRuntime.library(this),
+            scope = appScope,
+        )
+    }
+    /** 局域网同步行为入口。 */
+    val lanSyncController by lazy {
+        com.hgtv.star.shared.feature.lan.LanSyncController(
+            context = this,
+            library = AppRuntime.library(this),
+            scope = appScope,
+        )
+    }
+    /** 推荐流播放行为入口。 */
+    val recommendPlaybackController by lazy {
+        com.hgtv.star.shared.feature.recommend.RecommendPlaybackController(
+            repository = repository,
+            library = AppRuntime.library(this),
+            source = playbackSource,
+            store = recommendStore(),
+        )
+    }
+    /** 播放源获取门面；与手机端共用取地址、本地准备和失败清理。 */
+    val playbackSource by lazy {
+        com.hgtv.star.shared.architecture.PlaybackSourceCoordinator(repository)
+    }
 
     /** 收掉一条已废弃的传输层（见 [closeTransport]）；走 `network` 车道，不额外开线程。 */
     val networkCleanup get()=com.hgtv.star.shared.architecture.AppExecutors.network.executor
@@ -250,7 +297,9 @@ class MainActivity: Activity() {
      * 它只改一件事：推荐流回来时不整页替换列表，而是往后接新条目——
      * 正在播的那一部就在列表头部，整页换会让下标指到别的剧上。
      */
-    var recommendRestored=false
+    var recommendRestored: Boolean
+        get()=recommendStore().restored
+        set(value) { recommendStore().restored=value }
     /**
      * 这一次进推荐页**已经起播过**（快照续播 / 列表还在 / 推荐流回来）。
      *
@@ -276,6 +325,8 @@ class MainActivity: Activity() {
      * 当场关掉会让它读到一个已关闭的视频对象而报错；等新源 READY 再收（见 [retirePreviousEpisode]）。
      */
     var bufferingSuppressed=false
+    /** TV 播放缓冲也使用与启动页相同的三点动画。 */
+    var bufferingDots: com.hgtv.star.shared.ui.LoadingDotsView?=null
     var retiringVideo: RemoteVideo?=null
     var retiringHttp: okhttp3.OkHttpClient?=null
     /**
@@ -551,7 +602,11 @@ class MainActivity: Activity() {
      * null 表示「还没拉过」——个人信息页据此显示「正在读取…」并触发一次 [loadAccount]。
      * 它是内存缓存：账号数据每次进这一页都可以重取，不值得落盘（也可能过期）。
      */
-    var accountData: AccountData?=null
+    var accountData: AccountData?
+        get()=accountController.data
+        set(value) {
+            if(value==null) accountController.clear() else accountController.replace(value)
+        }
     /** 文件选择器回传的 Uri；等 onResume 收尾之后再读（见 [pickAccountFile]）。 */
     var pendingAccountUri: android.net.Uri?=null
     var accountError: Throwable?=null
@@ -587,6 +642,36 @@ class MainActivity: Activity() {
      * 早先把 `library.maxQuality` 直接写成 480，用户改不回来、重装都恢复不了。
      */
     val sessionPlayback=com.hgtv.star.core.SessionPlaybackPolicy()
+    /** 播放状态机 / 预算 / 降级策略的共享门面（见 [PlaybackSession]）。 */
+    val playbackSessionState=com.hgtv.star.shared.architecture.PlaybackSession(
+        controller=playback,
+        ledger=ledger,
+        policy=sessionPlayback,
+    )
+    private val playerHost=object:com.hgtv.star.shared.feature.player.PlayerHost {
+        override fun currentPositionMs(): Long =
+            runCatching { player?.currentPosition ?: startPosition }.getOrDefault(startPosition)
+        override fun durationMs(): Long =
+            runCatching { player?.duration ?: 0L }.getOrDefault(0L).coerceAtLeast(0L)
+        override fun playbackState(): Int = player?.playbackState ?: Player.STATE_IDLE
+        override fun playWhenReady(): Boolean = player?.playWhenReady==true
+        override fun isPlaying(): Boolean = player?.isPlaying==true
+        override fun play() { player?.play() }
+        override fun pause() { player?.pause() }
+        override fun seekTo(positionMs: Long) { player?.seekTo(positionMs) }
+        override fun rebuildSameQuality(positionMs: Long) {
+            playEpisode(episodeIndex,positionMs,requestedAutoplay,recovering=true,keepMedia=true)
+        }
+    }
+    val playbackCoordinator by lazy {
+        com.hgtv.star.shared.feature.player.PlaybackCoordinator(
+            session=playbackSessionState,
+            source=playbackSource,
+            host=playerHost,
+            library=library,
+            account=accountController,
+        )
+    }
     /**
      * [sessionPlayback] 当前记的是**哪一部剧**的降级结论。
      *
@@ -983,8 +1068,8 @@ class MainActivity: Activity() {
             cancelRecovery()
         } else if(foreground && screen=="player" && playError && autoRecovery) {
             if(!networkAvailable()) scheduleRecovery()
-            else if(ledger.consumeAttempt()) {
-                android.util.Log.i("HGTV","Automatic playback recovery ${ledger.attempts}/3 at ${retryPosition}ms")
+            else if(playbackCoordinator.consumeAutoRetry()) {
+                android.util.Log.i("HGTV","Automatic playback recovery ${playbackCoordinator.autoRetryAttempts}/3 at ${retryPosition}ms")
                 // 地址缓存必须先作废；只换号仍会命中同一条失败 URL。
                 prepareFreshPlaybackRetry()
                 playEpisode(episodeIndex,retryPosition,retryAutoplay,recovering=true)
@@ -1032,33 +1117,46 @@ class MainActivity: Activity() {
     var launchRecommendPending=true
     /** 冷启动闸门：书库 + 主设备注册完成前不建首屏。 */
     var startupInitializing=true
+    /** 推荐 Store；列表、游标、过滤、加载与曝光状态都由它持有。 */
+    var recommendStoreRef: com.hgtv.star.shared.feed.RecommendStore?=null
     /** 推荐列表（来自分类接口的「全部推荐」流，已滤掉本机隐藏的剧）。 */
-    var recommendItems: List<Series> = emptyList()
+    var recommendItems: List<Series>
+        get()=recommendStore().items
+        set(value) { recommendStore().replaceItems(value) }
     var recommendIndex=0
-    var recommendPage=0
-    var recommendHasMore=true
-    var recommendLoading=false
+    var recommendPage: Int
+        get()=recommendStore().page
+        set(value) { recommendStore().page=value }
+    var recommendHasMore: Boolean
+        get()=recommendStore().hasMore
+        set(value) { recommendStore().hasMore=value }
+    var recommendLoading: Boolean
+        get()=recommendStore().loading
+        set(value) { recommendStore().loading=value }
     /**
      * 本机兴趣画像（题材 / 出品方 → 权重）。
      *
      * 只在进推荐页时重建一份：它读的是本机观看历史与收藏，刷推荐的过程中这两样不会变，
      * 每页都重算一遍纯属浪费（历史可以有几百条）。
      */
-    var recommendTasteCache: com.hgtv.star.core.RecommendTaste?=null
+    var recommendTasteCache: com.hgtv.star.core.RecommendTaste?
+        get()=recommendStore().tasteCache
+        set(value) { recommendStore().tasteCache=value }
     /**
      * 一页推荐的本地重排：同题材配额、同剧 / 同出品方间距、兴趣小幅上浮。
      *
      * 参数见 [com.hgtv.star.core.RecommendArranger]：约束只作用于**这一页**，
      * 让不出位置的不删、贴到页尾，避免把内容池抽干（抽干的后果是重复更多）。
      */
-    val recommendArranger=com.hgtv.star.core.RecommendArranger()
     /**
      * 带了 `filter_ids` 却回空页的次数。
      *
      * 服务端如果不认这个字段、或把整页都滤掉，表现就是「整屏推荐暂时取不到」。
      * 连续两次就把这一层永久关掉（见 [com.hgtv.star.shared.data.Library.recommendFilterIdsOff]）。
      */
-    var recommendFilterMiss=0
+    var recommendFilterMiss: Int
+        get()=recommendStore().filterMiss
+        set(value) { recommendStore().filterMiss=value }
     /**
      * 这一次运行里「带 `filter_ids` 就失败」的次数 / 结论。
      *
@@ -1066,8 +1164,9 @@ class MainActivity: Activity() {
      * 这一个只覆盖本次运行——请求直接失败（网关不认这个字段 / 体被撑大）时，
      * 这一轮就不再带，但下次启动照旧试一次。网络抖一下不该让这层去重永久消失。
      */
-    var recommendFilterFail=0
-    var recommendFilterUnsupported=false
+    var recommendFilterUnsupported: Boolean
+        get()=recommendStore().filterIdsOff
+        set(value) { recommendStore().filterIdsOff=value }
     /**
      * 「推荐受众」（男频 / 女频）在本机是否可用。
      *
@@ -1076,16 +1175,21 @@ class MainActivity: Activity() {
      * 处置与 `filter_ids` 同一套：带它拿到空页 → 这一次不带它重取；连着两次仍空 → 置 false，
      * 本进程内不再带（列表里照常有内容）。
      */
-    var recommendGenderOff=false
+    var recommendGenderOff: Boolean
+        get()=recommendStore().genderOff
+        set(value) { recommendStore().genderOff=value }
     /**
      * 「下一次请求先别带受众」的一次性标记。
      *
      * 只是**这一次**退让，不是永久关闭：`recommendGenderFilter` 的第二次空页才关。
      * 否则偶发的一次空页会让用户选的受众当场失效。
      */
-    var recommendGenderProbe=false
+    var recommendGenderProbe: Boolean
+        get()=recommendStore().genderProbe
+        set(value) { recommendStore().genderProbe=value }
     /** 受众这一层的降级计数（与 `:core` 的 `OptionalFilter` 同一套语义）。 */
-    val recommendGenderFilter=com.hgtv.star.core.OptionalFilter("recommendGender")
+    val recommendGenderFilter: com.hgtv.star.core.OptionalFilter
+        get()=recommendStore().gender
 
     /**
      * 推荐页正在放的这一部 + 开始的时刻，用来区分「一进来就划走」与「真的看了」。
@@ -1100,7 +1204,6 @@ class MainActivity: Activity() {
      * 用来给首屏设一个总等待上限：超过预算就不再凑「一条重复都没有」，先放出来能播的。
      * 只在最外层那次调用时重置，递归取页不会把它一直往后推。
      */
-    var recommendFirstLoadAt=0L
     /**
      * 补页在途时又按了几下「下一部」（见 `switchRecommend`）。
      *
@@ -1129,8 +1232,12 @@ class MainActivity: Activity() {
      * 首次进入时从 [com.hgtv.star.shared.data.Library.recommendCursor]（落盘）读起点，
      * 取完一页立刻把新的游标写回去，下次打开应用就接着往下刷。
      */
-    var recommendSession=""
-    var recommendNext=0
+    var recommendSession: String
+        get()=recommendStore().sessionId
+        set(value) { recommendStore().sessionId=value }
+    var recommendNext: Int
+        get()=recommendStore().nextOffset
+        set(value) { recommendStore().nextOffset=value }
     /**
      * 「推荐范围 → 受众」的可选值（男频 / 女频 …），来自分类接口的 `gender` 行。
      *
@@ -1164,7 +1271,6 @@ class MainActivity: Activity() {
      * 单槽的结果就是每一次切换都在等一个刚刚被作废的预热——缓存永远是空的，
      * 于是「同一套加载逻辑」在触屏上就是另一副观感。
      */
-    val recommendWarming=mutableSetOf<String>()
     /** 每一个在途预热对应的任务（按 key 找，互不牵连；取消时连它自己的 HTTP 一起掐掉）。 */
     val recommendWarmJobs=HashMap<String,RecommendWarm>()
     /** 推荐页起播后那一批 6 个播放模型的去重键与任务。 */
@@ -1213,7 +1319,6 @@ class MainActivity: Activity() {
      * 只升不降：ADDRESS 做过就记 ADDRESS，之后要 META 才继续做。
      * 它让「L3 先铺一层地址、2 秒后再升 L1」这条路不会把同一个地址取两遍。
      */
-    val recommendWarmed=HashMap<String,com.hgtv.star.core.CacheLevel>()
     /** 取详情的令牌：换剧、退出时作废在途结果。 */
     val recommendToken=java.util.concurrent.atomic.AtomicLong(0)
     /** 取下一页推荐流的令牌（与详情那条分开：翻页不该作废正在取的那一部详情）。 */
@@ -1383,12 +1488,15 @@ class MainActivity: Activity() {
     var moreVisible=false
     /** 在途的请求落地之后要不要把焦点交给新行的第一张卡（静默预取途中被用户按下时也会打开）。 */
     var moreFocusWanted=false
-    /** 预取失败：底部改成重试文案，不再自动重试，免得断网时反复打接口。 */
+    /** 预取失败：底部改成重试文案，冷却后允许继续下拉自动重试。 */
     var moreFailed=false
+    var moreFailedAt=0L
     var gridPrefetchJob: java.util.concurrent.Future<*>?=null
     val tabState=mutableMapOf<Int,CatalogState>()
     /** 分类页按完整筛选条件缓存已加载的列表，切回大类时直接恢复。 */
     val categoryStates=linkedMapOf<String,CatalogState>()
+    /** 榜单页按榜单缓存已加载的列表，四个 Tab 切回时直接恢复。 */
+    val rankStates=linkedMapOf<RankBoard,CatalogState>()
     val tabFocus=mutableMapOf<Int,String>()
     /**
      * 本次运行里已经进过哪些标签页。
@@ -1571,7 +1679,7 @@ class MainActivity: Activity() {
     @Volatile internal var configuredPlayer: ExoPlayer?=null
     var video: RemoteVideo?=null
     /**
-     * 最近一次**真的取到**的播放地址域名（由 [playEpisode] 在 `repository.stream()` 之后写入）。
+     * 最近一次**真的取到**的播放地址域名（由 [playEpisode] 在 `playbackSource.stream()` 之后写入）。
      *
      * 为什么不直接用 [video]`.host`：`video` 只在起播成功之后才有值，而「连接超时 / 被拒」
      * 恰恰大多发生在 `prepare()` 那一步——那时 [video] 还是**上一集**的，按它清 DNS 等于
@@ -1738,7 +1846,6 @@ class MainActivity: Activity() {
     var playError: Boolean
         get()=playback.failed
         set(value) { playback.setErrorFlag(value) }
-    private var lastSaved=0L
     var quality=""
     private val tick=object: Runnable {
         override fun run() {
@@ -1752,7 +1859,6 @@ class MainActivity: Activity() {
                 updatePlaybackInfoReadings()
                 maybePrefetch()
                 maybeQueueNext()
-                syncDanmakuClock()
                 if(screen=="recommend") updateRecommendOverlay()
                 val now=android.os.SystemClock.elapsedRealtime()
                 // 时长按秒记一份：片尾自动推进时 `STATE_ENDED` 不会触发，补 completed 记录要用它。
@@ -1765,12 +1871,14 @@ class MainActivity: Activity() {
                 // 每秒把进度采样进状态机：这是 [PlaybackState.positionMs] 的唯一来源，
                 // 界面上「已看 / 总长」与断点续播都读它。放在时长更新之后，两者同一帧。
                 if(playbackReady) {
-                    playback.onProgress(player?.currentPosition ?: 0L, lastEpisodeDuration)
+                    playbackCoordinator.onProgress(player?.currentPosition ?: 0L, lastEpisodeDuration)
+                    reportRecommendProgress()
                 }
-                // 断点落盘：从 5 秒放宽到 15 秒（见 `Library` 的进度写入说明）。
-                // 用户能感知的续播精度是 15 秒级，5 秒纯属浪费——改造前这里每 5 秒
-                // 会把 200 条历史全量序列化并 fsync 一次。
-                if(player?.isPlaying==true && now-lastSaved>PROGRESS_SAVE_INTERVAL_MS) { saveProgress(); lastSaved=now }
+                // 断点落盘节拍由共享会话统一；页面只把当前播放器状态交给它。
+                if(player?.isPlaying==true && playbackCoordinator.progressDue()) {
+                    saveProgress()
+                    playbackCoordinator.noteProgressSaved()
+                }
             }
             main.postDelayed(this,1000)
         }
@@ -1848,6 +1956,41 @@ class MainActivity: Activity() {
         // （这正是「按一下方向键就顿一下」的根源，见 compat/Platform.kt 的说明）。
         applyPerformanceProfile()
         library=AppRuntime.library(this); artwork=AppRuntime.artwork(this); tvTools=TvTools(this)
+        appScope.launch {
+            detailController.state.collect { state ->
+                if(state.seriesId.isBlank()) return@collect
+                val detailState=state.detail
+                if(detailState!=null && detail?.series?.id==state.seriesId) {
+                    detail=detailState
+                    if(screen=="detail" && !detailState.series.author.isNullOrBlank()) {
+                        detailAuthorRefresh?.invoke(detailState.series.author)
+                    }
+                }
+                relatedFor=state.relatedFor
+                relatedWorks=state.related
+                relatedLoading=state.relatedLoading
+                relatedFailed=state.relatedError!=null
+                authorFor=state.authorFor
+                authorWorks=state.authorWorks
+                authorLoading=state.authorWorksLoading
+                authorFailed=state.authorWorksError!=null
+                detailAuthorLoading=state.authorLoading
+                if(relatedOpen && screen=="detail" && detail?.series?.id==state.seriesId) {
+                    detailBottomRefresh?.invoke()
+                }
+                if(onPlaybackPage()) playerStripRefresh?.invoke()
+            }
+        }
+        appScope.launch {
+            searchController.state.collect { state ->
+                if(screen!="catalog" || tab!=TAB_SEARCH) return@collect
+                val typed=(searchInput as? EditText)?.text?.toString()?.trim().orEmpty()
+                when {
+                    typed.isEmpty() -> renderHintRow(state.history.ifEmpty { state.hot })
+                    state.query==typed -> renderHintRow(state.suggestions.map { it.name })
+                }
+            }
+        }
         // 内存吃紧时由界面把**视口之外**的封面从 ImageView 上摘掉：LRU 的 evictAll 只解除
         // 自己的引用，位图挂在 View 上就仍然活着——首页常驻 77 张（约 44MB）正是这一份。
         artwork.releaseHiddenCovers=artworkReleaseCallback

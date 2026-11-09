@@ -5,6 +5,7 @@ import android.content.Context
 import android.widget.LinearLayout
 import com.hgtv.star.core.CatalogPage
 import com.hgtv.star.core.CatalogFilter
+import com.hgtv.star.core.CATALOG_FIRST_PAGE_SIZE
 import com.hgtv.star.core.RankBoard
 import com.hgtv.star.phone.PhoneServices
 import com.hgtv.star.phone.phoneNav
@@ -20,7 +21,7 @@ import com.hgtv.star.phone.ui.tabBarInset
  *
  * 四个榜单就是 `RankBoard` 的四个枚举值，**与 TV 端完全同一套**：
  * 接口的 `genre` 与 `sort` 都写在枚举里，这里不再拼参数。
- * 「推荐」沿用原「上新」的时间序，不画名次（`RankBoard.ranked == false`），与 TV 一致。
+ * 「推荐榜」与首页同名栏目取同一份推荐热度榜，画名次。
  *
  * 顶栏与分类页一样固定常驻，不随海报列表滚动自动收起。
  */
@@ -32,11 +33,15 @@ class PhoneRankPage(
     data class State(
         val selected: Int,
         val feed: PhonePosterFeed.Snapshot,
+        val feeds: Map<RankBoard, PhonePosterFeed.Snapshot> = emptyMap(),
     )
 
     private val topBar = PhoneTopBar(context)
     private val feed = PhonePosterFeed(context)
     private var selected = initialState?.selected ?: 0
+    private val feedCache = linkedMapOf<RankBoard, PhonePosterFeed.Snapshot>().apply {
+        putAll(initialState?.feeds.orEmpty())
+    }
 
     private val boards = RankBoard.navEntries
 
@@ -67,7 +72,9 @@ class PhoneRankPage(
             )
         }
 
-        topBar.setTabs(boards.map { it.label }, selected) { index -> selectBoard(index) }
+        topBar.setTabs(boards.map { it.label }, selected) { index ->
+            if(index!=selected) selectBoard(index)
+        }
         topBar.onSearch = {
             context.phoneNav().open(Route.Search)
         }
@@ -77,44 +84,48 @@ class PhoneRankPage(
 
         val restored = initialState?.feed
         if (restored?.loaded == true) {
+            feedCache[boards[selected]] = restored
             restoreBoard(selected, restored)
         } else {
             selectBoard(selected)
         }
     }
 
-    fun snapshotState(): State = State(
-        selected = selected,
-        feed = feed.snapshot(),
-    )
+    fun snapshotState(): State {
+        rememberCurrentFeed()
+        return State(
+            selected = selected,
+            feed = feed.snapshot(),
+            feeds = feedCache.toMap(),
+        )
+    }
 
     private fun restoreBoard(index: Int, snapshot: PhonePosterFeed.Snapshot) {
         selected = index
         topBar.applyTabSelection(index)
         val board = boards[index]
-        feed.ranked = board.ranked
-        val repo = PhoneServices.repository(context)
-        val lib = PhoneServices.library(context)
-        feed.restore(snapshot) { page ->
-            repo.rank(page, board)?.let {
-                CatalogFilter.visible(it, runCatching { lib.hidden() }.getOrDefault(emptySet()))
-            }
-        }
+        feed.ranked = true
+        feed.restore(snapshot,loaderFor(board))
     }
 
     private fun selectBoard(index: Int) {
+        rememberCurrentFeed()
         selected = index
         topBar.applyTabSelection(index)
-        val board = boards[index]
-        // 「推荐」沿用原「上新」的时间序，不画名次，与 TV 的 RankBoard.ranked 判断一致。
-        feed.ranked = board.ranked
-        val repo = PhoneServices.repository(context)
-        val lib = PhoneServices.library(context)
-        // 长按菜单里的「不在热播榜中显示」写进的是 `library.hide(id)`：这里必须过滤，
-        // 否则隐藏完再回到这一页，那部剧还在——与 TV 的 `SeriesGrid` / `ListPage` 同一条规则。
-        val loadPage: suspend (Int) -> CatalogPage? = { page ->
-            repo.rank(page, board)?.let { CatalogFilter.visible(it, runCatching { lib.hidden() }.getOrDefault(emptySet())) }
+        showSelectedBoard()
+    }
+
+    private fun showSelectedBoard() {
+        val board = boards[selected]
+        // 四个榜单都来自服务端热度榜，统一显示名次。
+        feed.ranked = true
+        val loader=loaderFor(board)
+        val cachedFeed=feedCache[board]
+        if(cachedFeed?.loaded==true) {
+            feed.restore(cachedFeed,loader)
+            return
         }
+        val lib = PhoneServices.library(context)
         val cached=runCatching { lib.cachedHome(board) }.getOrNull()
         if(cached!=null) {
             val visible=CatalogFilter.visible(cached,runCatching { lib.hidden() }.getOrDefault(emptySet()))
@@ -122,20 +133,54 @@ class PhoneRankPage(
                 feed.restore(
                     PhonePosterFeed.Snapshot(
                         items=visible.items,
-                        page=1,
-                        ended=!visible.hasMore,
+                        // 旧缓存可能只有 20 条：下一次先补第 1 页；完整首屏则从第 2 页续接。
+                        page=if(visible.items.size<CATALOG_FIRST_PAGE_SIZE) 1 else 2,
+                        ended=!visible.hasMore && visible.items.size>=CATALOG_FIRST_PAGE_SIZE,
                         heatBy=visible.ranking?.positions?.mapValues { it.value.heat }.orEmpty(),
                         emptyVisible=false,
                         emptyText="",
                         loaded=true,
                     ),
-                    loader=loadPage,
+                    loader=loader,
                 )
-                feed.refresh(loadPage)
                 return
             }
         }
-        feed.load(loadPage)
+        feed.load(loader)
+    }
+
+    private fun rememberCurrentFeed() {
+        val snapshot=feed.snapshot()
+        if(!snapshot.loaded) return
+        val board=boards.getOrNull(selected) ?: return
+        feedCache.remove(board)
+        feedCache[board]=snapshot
+        while(feedCache.size>8) {
+            feedCache.remove(feedCache.keys.firstOrNull() ?: break)
+        }
+    }
+
+    /**
+     * 榜单取数统一出口：第 1 页同步更新首页 / 榜单共用的持久缓存，
+     * 后续页只负责续接当前 [PhonePosterFeed]。
+     */
+    private fun loaderFor(board: RankBoard): suspend (Int) -> CatalogPage? {
+        val repo = PhoneServices.repository(context)
+        val lib = PhoneServices.library(context)
+        return { page ->
+            repo.rank(page, board)?.let { fetched ->
+                val visible=CatalogFilter.visible(
+                    fetched,
+                    runCatching { lib.hidden() }.getOrDefault(emptySet()),
+                )
+                if(page==1 && visible.items.isNotEmpty()) {
+                    kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main.immediate) {
+                        lib.cacheHome(board,visible.items,visible.hasMore,visible.ranking)
+                    }
+                }
+                visible
+            }
+        }
     }
 
     fun scrollToTop() = feed.scrollToTop()

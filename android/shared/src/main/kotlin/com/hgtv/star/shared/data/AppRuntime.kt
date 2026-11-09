@@ -6,6 +6,7 @@ import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.shared.compat.Cancellable
 import com.hgtv.star.shared.compat.NetworkWatcher
 import com.hgtv.star.shared.debug.Diagnostics
+import com.hgtv.star.shared.feature.account.AccountController
 import java.util.concurrent.TimeUnit
 
 /**
@@ -26,6 +27,7 @@ object AppRuntime {
     @Volatile private var repositoryInstance: ContentRepository? = null
     @Volatile private var libraryInstance: Library? = null
     @Volatile private var artworkInstance: ArtworkLoader? = null
+    @Volatile private var accountControllerInstance: AccountController? = null
     @Volatile private var playbackRepositoryInstance: ContentRepository? = null
     @Volatile private var favoriteRepositoryInstance: ContentRepository? = null
     @Volatile private var tncNetworkWatch: Cancellable? = null
@@ -97,6 +99,18 @@ object AppRuntime {
         artworkInstance ?: synchronized(lock) {
             artworkInstance ?: ArtworkLoader(context.applicationContext).also { artworkInstance = it }
         }
+
+    /** 账号数据与同步的唯一状态入口；进程内只有一份。 */
+    fun accountController(context: Context): AccountController =
+        accountControllerInstance ?: synchronized(lock) {
+            accountControllerInstance ?: AccountController(
+                repository = repository(context),
+                library = library(context),
+            ).also { accountControllerInstance = it }
+        }
+
+    /** 已初始化时读取账号控制器；供不需要 Context 的兼容层使用。 */
+    fun accountControllerOrNull(): AccountController? = accountControllerInstance
 
     /**
      * 播放地址预取 / 推荐预热共用的仓库。

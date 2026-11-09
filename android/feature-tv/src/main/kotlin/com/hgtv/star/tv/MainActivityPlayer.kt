@@ -9,27 +9,27 @@ import android.os.Handler
 import android.view.*
 import android.widget.*
 import android.text.TextUtils
-import androidx.media3.common.AudioAttributes
-import androidx.media3.common.C
-import androidx.media3.common.MediaItem
-import androidx.media3.common.MimeTypes
-import androidx.media3.common.PlaybackException
-import androidx.media3.common.PlaybackParameters
-import androidx.media3.common.Player
-import androidx.media3.exoplayer.DefaultLoadControl
-import androidx.media3.exoplayer.DefaultRenderersFactory
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.Renderer
-import androidx.media3.exoplayer.analytics.AnalyticsListener
-import androidx.media3.exoplayer.audio.AudioCapabilities
-import androidx.media3.exoplayer.audio.AudioSink
-import androidx.media3.exoplayer.audio.DefaultAudioSink
-import androidx.media3.exoplayer.audio.DefaultAudioTrackBufferSizeProvider
-import androidx.media3.exoplayer.mediacodec.MediaCodecSelector
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.exoplayer.video.MediaCodecVideoRenderer
-import androidx.media3.exoplayer.video.VideoRendererEventListener
-import androidx.media3.ui.PlayerView
+import com.google.android.exoplayer2.audio.AudioAttributes
+import com.google.android.exoplayer2.C
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.PlaybackException
+import com.google.android.exoplayer2.PlaybackParameters
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.DefaultLoadControl
+import com.google.android.exoplayer2.DefaultRenderersFactory
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.Renderer
+import com.google.android.exoplayer2.analytics.AnalyticsListener
+import com.google.android.exoplayer2.audio.AudioCapabilities
+import com.google.android.exoplayer2.audio.AudioSink
+import com.google.android.exoplayer2.audio.DefaultAudioSink
+import com.google.android.exoplayer2.audio.DefaultAudioTrackBufferSizeProvider
+import com.google.android.exoplayer2.mediacodec.MediaCodecSelector
+import com.google.android.exoplayer2.source.ProgressiveMediaSource
+import com.google.android.exoplayer2.util.MimeTypes
+import com.google.android.exoplayer2.video.MediaCodecVideoRenderer
+import com.google.android.exoplayer2.video.VideoRendererEventListener
+import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.*
 import com.hgtv.star.shared.compat.setVectorIcon
 import com.hgtv.star.shared.media.DanmakuView
@@ -47,10 +47,10 @@ import com.hgtv.star.tv.R
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-fun MainActivity.loadDanmaku(episodeId: String,seriesId: String) {
+fun MainActivity.loadDanmaku(episodeId: String,seriesId: String,clearOnSwitch: Boolean=false) {
     // 加载内核在 `:shared`（`DanmakuLoader`）：手机播放页与手机信息流用的是同一份，
     // 三处「同一集不重拉 / 旧回包丢弃 / 隐藏时不发请求」的规则只写一次。
-    danmakuLoader.load(episodeId,seriesId)
+    danmakuLoader.load(episodeId,seriesId,clearOnSwitch=clearOnSwitch)
 }
 /**
  * 按「硬件解码 / 软件解码」筛**视频**解码器。
@@ -88,7 +88,7 @@ private fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context)
             // 正好用来验证上报里的 `failedDecoder=` 与 `decoders=` 两栏。
             DebugFaults.Mode.DECODER_BOGUS -> {
                 if(!mimeType.startsWith("audio/")) return@MediaCodecSelector listOf(
-                    androidx.media3.exoplayer.mediacodec.MediaCodecInfo.newInstance(
+                    com.google.android.exoplayer2.mediacodec.MediaCodecInfo.newInstance(
                         "hgtv.bogus.decoder","video/hevc","video/hevc",null,false,false,false,true,false
                     )
                 )
@@ -114,7 +114,7 @@ private fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context)
  * 写 `library.maxQuality` 的地方只允许是用户手动选择（见 `MainActivityPlaybackMenu`）。
  */
 val MainActivity.playbackMaxQuality: Int
-    get()=sessionPlayback.effectiveMaxQuality ?: library.maxQuality
+    get()=playbackSessionState.effectiveMaxQuality ?: library.maxQuality
 
 /**
  * 本次播放实际生效的解码方式：**就是用户设置**。
@@ -150,7 +150,7 @@ fun MainActivity.playerDecoderMode(): VideoDecoderMode = playbackDecoderMode
 /**
  * 电视端渲染器工厂：两处针对播放链路的加固。
  *
- * 1. 视频：在 Media3 的 [MediaCodecVideoRenderer] 上补一层换流兼容。起播前先写入用户
+ * 1. 视频：在 ExoPlayer 的 [MediaCodecVideoRenderer] 上补一层换流兼容。起播前先写入用户
  *    设置的倍速；新解码器启动后若设备漏掉配置值，会通过
  *    `MediaCodec.setParameters("operating-rate")` 强制重新下发，不需要重建播放器。
  * 2. 音频：把 AudioTrack 的 PCM 缓冲从默认 250ms 抬到 350ms。
@@ -159,10 +159,10 @@ fun MainActivity.playerDecoderMode(): VideoDecoderMode = playbackDecoderMode
  * 电视上的音频通路（软件混音 / HDMI）抖动比手机大，默认 250ms 的缓冲在 1.5× 以上
  * 容易欠载——欠载一次音频时钟就落后一次，视频跟着音频时钟走，累积下来就是音画不同步。
  *
- * 其余参数与 [androidx.media3.exoplayer.DefaultRenderersFactory] 的默认实现保持一致，
+ * 其余参数与 [com.google.android.exoplayer2.DefaultRenderersFactory] 的默认实现保持一致，
  * 尤其是 `setAudioCapabilities`：透传能力少声明一项，HDMI 直通的片源就会退回 PCM。
  */
-private class TvRenderersFactory(context: Context): androidx.media3.exoplayer.DefaultRenderersFactory(context) {
+private class TvRenderersFactory(context: Context): com.google.android.exoplayer2.DefaultRenderersFactory(context) {
     override fun buildVideoRenderers(
         context: Context,
         extensionRendererMode: Int,
@@ -177,25 +177,18 @@ private class TvRenderersFactory(context: Context): androidx.media3.exoplayer.De
             SpeedSafeVideoRenderer(
                 context,codecAdapterFactory,mediaCodecSelector,allowedVideoJoiningTimeMs,
                 enableDecoderFallback,eventHandler,eventListener,
-                androidx.media3.exoplayer.DefaultRenderersFactory.MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY
+                com.google.android.exoplayer2.DefaultRenderersFactory.MAX_DROPPED_VIDEO_FRAME_COUNT_TO_NOTIFY
             )
         )
     }
-    /**
-     * Media3 的 `buildAudioSink` 只有三个参数：**没有 `enableOffload`**。
-     *
-     * 2.x 里音频直通要显式 `setOffloadMode(OFFLOAD_MODE_ENABLED_GAPLESS_REQUIRED)`；
-     * Media3 把这件事改成了「按设备能力自动判定」——`DefaultAudioSink` 内部用
-     * `AudioOffloadSupportProvider` 问平台要不要直通，不再由调用方开关。
-     * 因此这里只保留缓冲时长这一项（它对电视的 HDMI 通路仍然是必要的，见类注释），
-     * 直通交给框架决定：能力够就直通，不够就自动回落 PCM，不会出现「强制直通导致没声音」。
-     */
+    /** 与 `DefaultRenderersFactory` 保持一致，只额外抬高 AudioTrack 的 PCM 缓冲。 */
     override fun buildAudioSink(
         context: Context,
         enableFloatOutput: Boolean,
-        enableAudioTrackPlaybackParams: Boolean
+        enableAudioTrackPlaybackParams: Boolean,
+        enableOffload: Boolean
     ): AudioSink {
-        return DefaultAudioSink.Builder(context)
+        val builder = DefaultAudioSink.Builder(context)
             .setAudioCapabilities(AudioCapabilities.getCapabilities(context))
             .setEnableFloatOutput(enableFloatOutput)
             .setEnableAudioTrackPlaybackParams(enableAudioTrackPlaybackParams)
@@ -204,7 +197,10 @@ private class TvRenderersFactory(context: Context): androidx.media3.exoplayer.De
                     .setMinPcmBufferDurationUs(350_000)
                     .build()
             )
-            .build()
+        if (enableOffload) {
+            builder.setOffloadMode(DefaultAudioSink.OFFLOAD_MODE_ENABLED_GAPLESS_REQUIRED)
+        }
+        return builder.build()
     }
 }
 
@@ -213,14 +209,14 @@ private class TvRenderersFactory(context: Context): androidx.media3.exoplayer.De
  *
  * 新一集可能复用同一个渲染器，但重建 MediaCodec。创维酷开等设备会忽略
  * `MediaFormat.operating-rate`；此时播放器仍是 1.5× / 2×，音频按新倍速走，
- * 视频解码器却停留在 1×。Media3 又会把“相同倍速”的再次设置当成空操作，
+ * 视频解码器却停留在 1×。ExoPlayer 又会把“相同倍速”的再次设置当成空操作，
  * 因此必须由渲染器在真正启动 / 换流完成后，对底层解码器强制重下发一次。
  *
  * 这里只调整视频渲染器的速度，不经过播放器，也不会改变音频的 Sonic 参数。
  */
 private class SpeedSafeVideoRenderer(
     context: Context,
-    codecAdapterFactory: androidx.media3.exoplayer.mediacodec.MediaCodecAdapter.Factory,
+    codecAdapterFactory: com.google.android.exoplayer2.mediacodec.MediaCodecAdapter.Factory,
     mediaCodecSelector: MediaCodecSelector,
     allowedJoiningTimeMs: Long,
     enableDecoderFallback: Boolean,
@@ -231,13 +227,50 @@ private class SpeedSafeVideoRenderer(
     context,codecAdapterFactory,mediaCodecSelector,allowedJoiningTimeMs,
     enableDecoderFallback,eventHandler,eventListener,maxDroppedFramesToNotify
 ) {
+    private var lastRateCheckAt=0L
+
     override fun onStarted() {
         super.onStarted()
+        lastRateCheckAt=android.os.SystemClock.elapsedRealtime()
+        reassertCodecOperatingRate()
+    }
+
+    override fun onCodecInitialized(
+        name: String,
+        configuration: com.google.android.exoplayer2.mediacodec.MediaCodecAdapter.Configuration,
+        initializedTimestampMs: Long,
+        initializationDurationMs: Long,
+    ) {
+        super.onCodecInitialized(name,configuration,initializedTimestampMs,initializationDurationMs)
+        // 预取 / 队列 / 缓存切换可能让厂商解码器在播放中重新初始化。
+        // 初始化完成后立即把当前倍速写回，不能只依赖 renderer 的启动回调。
         reassertCodecOperatingRate()
     }
 
     override fun onProcessedStreamChange() {
         super.onProcessedStreamChange()
+        lastRateCheckAt=android.os.SystemClock.elapsedRealtime()
+        reassertCodecOperatingRate()
+    }
+
+    override fun onProcessedOutputBuffer(presentationTimeUs: Long) {
+        super.onProcessedOutputBuffer(presentationTimeUs)
+        maybeReassertDuringPlayback()
+    }
+
+    override fun onProcessedTunneledBuffer(presentationTimeUs: Long) {
+        super.onProcessedTunneledBuffer(presentationTimeUs)
+        maybeReassertDuringPlayback()
+    }
+
+    /**
+     * 部分酷开 / 创维解码器会在播放一段时间后自己丢掉 operating-rate。
+     * 输出帧回调只做一次很轻的时间判断，最多每 2 秒重新下发一次。
+     */
+    private fun maybeReassertDuringPlayback() {
+        val now=android.os.SystemClock.elapsedRealtime()
+        if(now-lastRateCheckAt<2_000L) return
+        lastRateCheckAt=now
         reassertCodecOperatingRate()
     }
 
@@ -302,13 +335,18 @@ fun MainActivity.applyDecoderMode(position: Long = -1L, play: Boolean? = null) {
 fun MainActivity.syncDanmakuClock() {
     val view=danmakuView ?: return
     val p=player
-    if(p==null) { view.stopClock(); return }
+    if(p==null) {
+        view.stopClock()
+        return
+    }
     val sample=runCatching { Triple(p.currentPosition,p.isPlaying,p.playbackParameters.speed) }.getOrNull()
     if(sample==null) {
         view.setClock(view.clockPositionMillis(),false)
         return
     }
-    view.setClock(sample.first,sample.second && foreground && !pausedForLifecycle,sample.third)
+    val readyPlaying=sample.second && runCatching { p.playbackState==Player.STATE_READY }.getOrDefault(false)
+    val running=readyPlaying && foreground && !pausedForLifecycle
+    view.setClock(sample.first,running,sample.third)
 }
 /**
  * 播放链路的可观测点：只回答三个问题。
@@ -320,18 +358,18 @@ fun MainActivity.syncDanmakuClock() {
  *
  * 这些都是 `AnalyticsListener` 的既有事件，不改变播放行为；只在 debug 包挂。
  */
-fun MainActivity.playbackAnalytics()=object: androidx.media3.exoplayer.analytics.AnalyticsListener {
+fun MainActivity.playbackAnalytics()=object: com.google.android.exoplayer2.analytics.AnalyticsListener {
     private fun tag()=player?.currentMediaItem?.mediaId ?: "-"
-    override fun onVideoDecoderInitialized(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,decoderName: String,initializedTimestampMs: Long,initializationDurationMs: Long) {
+    override fun onVideoDecoderInitialized(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,decoderName: String,initializedTimestampMs: Long,initializationDurationMs: Long) {
         android.util.Log.i("HGTV","Decoder init media=${tag()} name=$decoderName durationMs=$initializationDurationMs")
     }
-    override fun onRenderedFirstFrame(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,surface: Any,renderTimeMs: Long) {
+    override fun onRenderedFirstFrame(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,surface: Any,renderTimeMs: Long) {
         android.util.Log.i("HGTV","Rendered first frame media=${tag()} renderTimeMs=$renderTimeMs at=${android.os.SystemClock.elapsedRealtime()}")
     }
-    override fun onDroppedVideoFrames(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,droppedFrames: Int,elapsedMs: Long) {
+    override fun onDroppedVideoFrames(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,droppedFrames: Int,elapsedMs: Long) {
         if(droppedFrames>0) android.util.Log.w("HGTV","Dropped frames=$droppedFrames in ${elapsedMs}ms media=${tag()}")
     }
-    override fun onAudioUnderrun(eventTime: androidx.media3.exoplayer.analytics.AnalyticsListener.EventTime,bufferSize: Int,bufferSizeMs: Long,elapsedSinceLastFeedMs: Long) {
+    override fun onAudioUnderrun(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,bufferSize: Int,bufferSizeMs: Long,elapsedSinceLastFeedMs: Long) {
         android.util.Log.w("HGTV","Audio underrun ${bufferSizeMs}ms media=${tag()}")
     }
 }
@@ -472,7 +510,7 @@ private fun MainActivity.primePlaybackClasses() {
         // 结果只用于错误页提示（见 [probeHardwareHevcDecoder]），不自动改解码方式。
         probeHardwareHevcDecoder()
         // 抽提取器构造一次（`Mp4Extractor` 的构造会带动 `SefReader` 的静态初始化）。
-        androidx.media3.extractor.mp4.Mp4Extractor()
+        com.google.android.exoplayer2.extractor.mp4.Mp4Extractor()
     }.onFailure { android.util.Log.w("HGTV","起播预热跳过：${it.javaClass.simpleName} ${it.message}") }
 }
 
@@ -501,6 +539,7 @@ fun MainActivity.playEpisode(
     recovering: Boolean=false,
     prepared: RemoteVideo?=null,
     keepMedia: Boolean=false,
+    clearDanmakuOnSwitch: Boolean=false,
 ) {
     val data=detail ?: return
     // 用户主动换集 / 手动重来会开启新一轮起播；上一轮排着的自动重试必须先作废。
@@ -515,7 +554,7 @@ fun MainActivity.playEpisode(
     // 都要沿用已经降下来的上限（否则每次重来都先撞一次 1080，白付一次失败）。
     if(sessionSeriesId!=data.series.id) {
         sessionSeriesId=data.series.id
-        sessionPlayback.onUserManualChange()
+        playbackSessionState.onUserManualChange()
         playbackToasts.clear()
     }
     // 推荐页也用这套播放内核：进来时记下「当前是不是推荐」，下面写 `screen` 时原样还回去，
@@ -560,7 +599,7 @@ fun MainActivity.playEpisode(
     // 所有权当场转移过来，走的是与「预取下一集」同一条无感切集路径。
     val prefetched=when {
         // 同档重建：还是这一集的**同一份**（索引 / 文件头 / 首块都在它里面），
-        // 原地接着用。`repository.stream()` 与 `remote.prepare()` 两步因此全部省掉。
+        // 原地接着用。`playbackSource.stream()` 与 `remote.prepare()` 两步因此全部省掉。
         keep -> video
         position!=0L || recovering -> null
         fromQueue -> queuedVideo
@@ -637,13 +676,14 @@ fun MainActivity.playEpisode(
     //
     // 这一下同时把**状态机**推进到 `PREPARING`（见 `PlaybackMachine`）：会话号、剧集、
     // 起播位置、是否无感切集一次性落地，之后播放器回调只带会话号回来即可。
-    val session=playback.open(
+    val session=playbackCoordinator.open(
         seriesId = detail?.series?.id.orEmpty(),
         episodeId = targetId,
         episodeIndex = episodeIndex,
         resumeAtMs = position.coerceAtLeast(0),
         autoplay = autoplay,
         seamless = seamless,
+        resetEpisode = !recovering,
     ).toInt()
     artwork.cancelPage(clearMemory=true)
     playbackHttp=claimedHttp; video=prefetched
@@ -657,19 +697,6 @@ fun MainActivity.playEpisode(
     // 调试注入开关只有一处：出帧的三条证据链（Player 监听 / Analytics 监听 / 逐帧心跳）
     // 全都看它（见 [PlaybackDiag.injectedNoFrame]），注入「有声音无画面」才测得准。
     PlaybackDiag.injectedNoFrame=BuildConfig.DEBUG && DebugFaults.mode(this)==DebugFaults.Mode.STALL_FRAME
-    // 这一集的降级预算从零开始（`effectiveMaxQuality` 跨集沿用）。
-    //
-    // `recovering=true` **不**归零：那是同一次起播的**重来**（自动降档 / 同档重建 /
-    // 网络自愈 / 手动重试 / 画面停住后重建）。预算正是用来限制「重来几次」的，清掉就成了
-    // 无限循环——这正是 `MANUAL_RETRY_LIMIT` / `SAME_REBUILD_LIMIT` 能生效的前提。
-    // 用户主动换清晰度 / 换解码方式 / 换集 / 后台回来续播走的是 `recovering=false`，正常归零。
-    if(!recovering) {
-        sessionPlayback.onEpisodeStart(targetId)
-        // 自动重试 / 画面重建 / 队列重开 / 地址自愈**一起**归零：它们都按集计，
-        // 少清一份就会出现「新一集没有自动重试」或「错误页顶着上一集的建议」。
-        // 过去这四句散在本函数三个不同的位置，正是漏清的高发区（见 `PlaybackAttemptLedger`）。
-        ledger.onEpisodeStart()
-    }
     // 起播前就确定「本机没有 HEVC 硬解」：**只提示，不改设置**。
     // 需求口径是「优先硬解，不支持硬解时提示用户换成软解」——替用户静默改档，
     // 用户会以为硬解在跑，而软解也放不动时界面上没有任何线索。
@@ -717,22 +744,19 @@ fun MainActivity.playEpisode(
         val rotatedSurface=library.autoFullscreen && autoFullscreenAvailable()
         val view=(if(rotatedSurface) layoutInflater.inflate(R.layout.player_surface_texture,root,false) as PlayerView else PlayerView(this)).apply {
             useController=false; resizeMode=frameResizeMode(); isFocusable=false
-            setKeepContentOnPlayerReset(true); setShutterBackgroundColor(Color.BLACK); setShowBuffering(PlayerView.SHOW_BUFFERING_ALWAYS)
-        }
-        // 缓冲圈按**设计单位**定尺寸。
-        //
-        // PlayerView 里的 exo_buffering 是一个 wrap_content 的 ProgressBar：它的大小
-        // 完全由平台的 indeterminateDrawable 决定，而那份 drawable 是按 density 换算的
-        // （48dp × density）。540dpi 上 48dp = 162px，屏幕上就是一颗巨大的圈。
-        // 这里把它钉成 46 个设计单位，与全站其它图标同一档；它仍然是系统那枚转圈动画，
-        // 只是被约束在一个固定的方框里，换分辨率、换 dpi 都不会再变形。
-        view.findViewById<ProgressBar>(androidx.media3.ui.R.id.exo_buffering)?.let { spinner ->
-            spinner.layoutParams=FrameLayout.LayoutParams(dp(46),dp(46),Gravity.CENTER)
+            setKeepContentOnPlayerReset(true); setShutterBackgroundColor(Color.BLACK); setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
         }
         // 播放器实例是进程内复用的：从别的页面回到播放页时 [player] 已经存在，
         // 这里必须把新一层的 PlayerView 接上去，否则画面没有输出（黑屏、只有声音）。
         view.player=player
         playerView=view; root.addView(view,FrameLayout.LayoutParams(-1,-1))
+        bufferingDots=com.hgtv.star.shared.ui.LoadingDotsView(this).apply {
+            visibility=View.GONE
+        }
+        root.addView(
+            bufferingDots,
+            FrameLayout.LayoutParams(-2,-2,Gravity.CENTER),
+        )
         // 画面之上的一切装在同一层里：弹幕 / 手势层 / 顶部信息条 / 底部控制条。
         //
         // 只把视频转 90°（竖屏短剧全屏）时，这一层要跟着一起转，否则标题条、控制条、
@@ -934,10 +958,10 @@ fun MainActivity.playEpisode(
     applyVideoScale()
     // 画面模式同理：从设置页回来之后「竖屏短剧全屏」可能刚被改过。
     applyResizeMode()
-    loadDanmaku(data.episodes[episodeIndex],data.series.id)
-    // 同档重建不取地址：写「正在获取播放地址」是假的，用户看到的就是一句错话。
-    if(!keep) playbackText.text="正在获取播放地址…"
+    loadDanmaku(data.episodes[episodeIndex],data.series.id,clearOnSwitch=clearDanmakuOnSwitch)
+    playbackText.text=""
     progressBar.progress=0f; progressBar.bufferedProgress=0f; progressBar.visibility=View.VISIBLE; hidePlaybackOverlay()
+    syncBufferingDots()
     controls.removeAllViews(); controls.visibility=View.GONE
     syncMediaSession()
     syncNextSeasonForCurrentEpisode()
@@ -999,7 +1023,7 @@ fun MainActivity.playEpisode(
             // 后者钉死 HTTP/1.1、进程级共享，切集不再关连接池（见 PlaybackTransport）。
             prefetched ?: run {
                 // 只有 HEVC 一种编码，取流只剩「上限之内取最高」这一条规则。
-                val streamInfo=repository.stream(
+                val streamInfo=playbackSource.stream(
                     requestedId,
                     maxQuality,
                     detail?.playback ?: com.hgtv.star.core.PlaybackProfile(),
@@ -1007,7 +1031,7 @@ fun MainActivity.playEpisode(
                 )
                 // 记下这一集的视频域名：`prepare()` 里建连失败时 [video] 还是上一集的，
                 // 自愈清 DNS 只能按这一条来（见 [MainActivity.lastStreamHost]）。
-                lastStreamHost=runCatching { java.net.URI(streamInfo.url).host }.getOrNull().orEmpty()
+                lastStreamHost=playbackSource.host(streamInfo)
                 stage("stream ${streamInfo.quality}")
                 // CDN 缺档：实际选中的档位与请求上限不一致时提示一次。
                 // 去重键带集与档位：连播一百集时同一部剧的同一个缺档只弹一次，
@@ -1028,26 +1052,28 @@ fun MainActivity.playEpisode(
                 // 用**实际档位**而不是请求上限：CDN 在「只有兼容 1080」与「有 720」之间变动时，
                 // 请求上限没变、文件却换了。按上限做键的话，旧索引会撞上新文件，
                 // 只能靠 `VideoChangedException` 兜一次（白等一轮）才自愈。
-                val remote=RemoteVideo(com.hgtv.star.shared.data.PlaybackTransport.client,streamInfo,streamInfo.mediaKey(requestedId))
-                // 调试包的故障注入：本地准备阶段直接失败（见 [DebugFaults]）。
-                if(BuildConfig.DEBUG && DebugFaults.mode(this@playEpisode)==DebugFaults.Mode.PREPARE_FAIL) {
-                    remote.close()
-                    throw PlaybackPrepareException("调试注入：视频索引不可用")
-                }
                 // 「取地址」与「本地准备」分开包：前者失败是没有资源 / 没有可用清晰度，
                 // 后者是容器不认、索引不在文件头、加密索引读不出来——后者与设备无关，
                 // 但界面上同样说「解码失败」。换成 [PlaybackPrepareException]，上报里就能分开。
-                try { remote.prepare() } catch(e: StreamExpiredException) {
+                val remote=try {
+                    playbackSource.prepare(requestedId,streamInfo) {
+                        // 调试包的故障注入：本地准备阶段直接失败（见 [DebugFaults]）。
+                        if(BuildConfig.DEBUG && DebugFaults.mode(this@playEpisode)==DebugFaults.Mode.PREPARE_FAIL) {
+                            throw PlaybackPrepareException("调试注入：视频索引不可用")
+                        }
+                    }
+                } catch(e: PlaybackPrepareException) {
+                    throw e
+                } catch(e: StreamExpiredException) {
                     // 落盘地址过期：这条要原样抛出去，让外面换成新地址重来一次
                     // （见 [playerFailure] 里的 `streamExpiredOf`）。
-                    remote.close(); throw e
+                    throw e
                 } catch(e: VideoChangedException) {
                     // 这一集的文件换过了（旧索引 / 旧首块对不上新文件）：同样要原样抛出去，
                     // 由 [playerFailure] 丢掉索引重来一次——包进 [PlaybackPrepareException] 之后
                     // 只会在界面上变成一句「本地准备失败」，救不回来。
-                    remote.close(); throw e
+                    throw e
                 } catch(e: java.io.IOException) {
-                    remote.close()
                     // 网络层没通（DNS 解析不出来 / 连接超时 / 连不上）：这不是「本地准备失败」，
                     // 包成 [PlaybackPrepareException] 会把上报阶段记成 `playback_prepare`，
                     // 下一步的排查方向就全错了（现场那次真因是视频 CDN 域名解析不出来）。
@@ -1091,6 +1117,7 @@ fun MainActivity.playEpisode(
             fun active()=player===p && generation==ticket && session==playbackSession
             override fun onPlaybackStateChanged(state: Int) {
                 if(!active()) return
+                syncBufferingDots()
                 // 状态机是唯一事实来源：所有阶段迁移都从这里进（`playbackReady` 只是它的投影）。
                 playback.onPlayerState(state, p.playWhenReady)
                 if(state==Player.STATE_READY) {
@@ -1100,6 +1127,7 @@ fun MainActivity.playEpisode(
                         return
                     }
                     playbackReady=true
+                    syncBufferingDots()
                     // 从推荐页进正片时这一集还没 READY，历史由这里补写（见 [enterFormalPlayback]）。
                     if(recommendHistoryPending) saveProgress()
                     // 起播已经稳了：趁用户还没按菜单键，把播放设置面板先建好、画一遍
@@ -1117,6 +1145,9 @@ fun MainActivity.playEpisode(
                     // 解码器还在出帧、buffer 还在填，立刻拉相邻几条会把这一部自己拖慢。
                     // 延迟期间用户滑走的话，`playRecommendAt` 会把这一次取消掉。
                     if(screen=="recommend") {
+                        // READY 是首帧回调缺失时的兜底；真正的首次曝光在 onRenderedFirstFrame
+                        // 里再提交一次，由共用上报器按短时间去重。
+                        reportRecommendImpression()
                         scheduleRecommendPreload(slideCache.firstFrameDelay(),"ready")
                         scheduleRecommendDwell()
                         main.postDelayed({
@@ -1278,7 +1309,7 @@ fun MainActivity.playEpisode(
              * 换集、换清晰度、软解 / 硬解切换都会重新回调；尺寸没变时也同样会回调，
              * 因此这里在尺寸没变时也重算一次（屏幕可能刚转过来），但不重建任何视图。
              */
-            override fun onVideoSizeChanged(videoSize: androidx.media3.common.VideoSize) {
+            override fun onVideoSizeChanged(videoSize: com.google.android.exoplayer2.video.VideoSize) {
                 if(!active()) return
                 // 像素比不是 1 的片源（老盒子上很常见）：按显示尺寸算比例才是用户看到的形状。
                 val ratio=if(videoSize.pixelWidthHeightRatio>0f) videoSize.pixelWidthHeightRatio else 1f
@@ -1299,7 +1330,10 @@ fun MainActivity.playEpisode(
                 applyResizeMode()
                 // 推荐页：新一集的第一帧真的上屏了，过渡黑场这时候才淡出（见 [revealRecommendCover]）。
                 // 用「出帧」而不是 READY：READY 只代表解出了轨道，画面可能还要等几百毫秒。
-                if(screen=="recommend") revealRecommendCover()
+                if(screen=="recommend") {
+                    reportRecommendImpression()
+                    revealRecommendCover()
+                }
                 // 出帧即撤看门狗：这是「画面真的上屏了」的硬证据（READY 只代表解出了轨道）。
                 // 同时把面板上「没有画面」那条现场清掉，否则用户会看到「有画面却说我黑屏」
                 //（见 [PlaybackDiag.pictureUp]）。调试注入 STALL_FRAME 时它返回 false，
@@ -1315,7 +1349,7 @@ fun MainActivity.playEpisode(
                 // 那一行成对出现，就能数出每个档位救回了几次、`QUALITY_DOWN_LIMIT` 够不够。
                 if(PlaybackDiag.takeRecovered()) android.util.Log.i("HGTV-PLAY","recovered mode="+
                     (if(playbackDecoderMode==VideoDecoderMode.SOFTWARE) "sw" else "hw")+
-                    " cap=${playbackMaxQuality}P plan=${sessionPlayback.lastReason?.name ?: "-"}"+
+                    " cap=${playbackMaxQuality}P plan=${playbackSessionState.lastReason?.name ?: "-"}"+
                     " codec=${PlaybackDiag.codecFamily} res=${PlaybackDiag.resolution}"+
                     " dev=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
                 syncDanmakuClock()
@@ -1364,14 +1398,14 @@ fun MainActivity.playEpisode(
             }
             override fun onPlayerError(error: PlaybackException) { if(active()) playerFailure(error) }
             override fun onTimelineChanged(
-                timeline: androidx.media3.common.Timeline,
+                timeline: com.google.android.exoplayer2.Timeline,
                 reason: Int
             ) {
                 if(active()) confirmPlayedItemRemoved()
             }
         }
         playerListener=listener; p.addListener(listener)
-        val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(androidx.media3.common.MimeTypes.VIDEO_MP4).build())
+        val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(MimeTypes.VIDEO_MP4).build())
         // 起点一次设定：`setMediaSource(source, startPositionMs)` 内部先摘空旧项、
         // 再按给定位置掩码时间线，等价于「`setMediaSource` + `seekTo`」，少一次
         // `onPositionDiscontinuity`（那条回调会连带刷新媒体会话与弹幕指针）。

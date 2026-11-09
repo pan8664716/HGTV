@@ -79,6 +79,8 @@ class PhoneSheet(private val host: FrameLayout) {
          * 选集面板传默认值（内容多，需要更大）。
          */
         heightFraction: Float = .78f,
+        /** false：内容自己画 TV 式标题行，外壳不再重复显示标题与关闭按钮。 */
+        showHeader: Boolean = true,
         /**
          * 点空白 / 点「关闭」时是否通知宿主一起收起控制层。
          *
@@ -105,7 +107,7 @@ class PhoneSheet(private val host: FrameLayout) {
             // 底部**不留导航条高度的空带**：面板是一张贴底的材料，
             // 底下多一截纯色 padding 读起来就是「面板没铺到底」。
             setPadding(
-                dp(if (landscape) 10 else 16), dp(10),
+                dp(if (landscape) 10 else 16), dp(if(showHeader) 10 else 0),
                 dp(if (landscape) 10 else 16), dp(12) + bottomInset
             )
             background = sheetBackground()
@@ -132,7 +134,7 @@ class PhoneSheet(private val host: FrameLayout) {
             setOnClickListener { dismissByUser() }
             background = pressOnly(dp(6f).toFloat())
         })
-        panel.addView(head)
+        if(showHeader) panel.addView(head)
 
         // 内容放进 ScrollView：横屏可用高度只有三四百 dp，九行设置各两行选项会顶出屏幕。
         val inner = LinearLayout(host.context).apply { orientation = LinearLayout.VERTICAL }
@@ -141,7 +143,8 @@ class PhoneSheet(private val host: FrameLayout) {
         // 顶部那几行（标题、倍速）直接看不见，而且 ScrollView 自己也没有可滚的余量——
         // 这正是「显示不全、也滑不动」。限高之后，多出来的部分由滚动承担。
         // 减掉标题行与上下内边距：比例说的是**整块面板**，不是滚动区。
-        val chrome = dp(10) + dp(12) + bottomInset + dp(34)
+        val chrome = dp(if(showHeader) 10 else 0) + dp(12) + bottomInset +
+            if(showHeader) dp(34) else 0
         val cap = (screenHeight() * heightFraction).toInt().minus(chrome).coerceAtLeast(dp(96))
         val scroller = CappedScrollView(host.context, cap).apply {
             addView(inner, ViewGroup.LayoutParams(

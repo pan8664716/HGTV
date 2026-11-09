@@ -53,7 +53,8 @@ fun MainActivity.switchTab(next: Int) {
     if(next==TAB_RANK && catalog.isEmpty()) {
         cachedRankPage(rankBoard)?.let { cached ->
             catalog=cached.items
-            hasMore=cached.hasMore
+            // 旧首页缓存只有 20 条：先允许补拉第 1 页，避免直接跳第 2 页漏内容。
+            hasMore=cached.hasMore || cached.items.size<CATALOG_FIRST_PAGE_SIZE
             ranking=cached.ranking
             seededRank=true
         }
@@ -102,6 +103,9 @@ fun MainActivity.switchTab(next: Int) {
  */
 fun MainActivity.switchRankBoard(board: RankBoard,fromHome: Boolean=false) {
     if(rankBoard==board && !fromHome && tab==TAB_RANK) return
+    // 先把当前榜单已经加载到的页数收进缓存；四个榜单之间切换时直接恢复，
+    // 与分类页的 categoryStates 使用同一套语义。
+    if(tab==TAB_RANK && chipFocusKey==null && catalog.isNotEmpty()) rememberRankState(rankBoard)
     // 从首页剧架「查看全部」进来也算进过榜单页：之后点「榜单」图标不该再按「首次进入」处理。
     tabVisited.add(TAB_RANK)
     // 这一下是「点了榜单页里的芯片」还是「从首页剧架进来的」，落点完全不同：
@@ -116,10 +120,25 @@ fun MainActivity.switchRankBoard(board: RankBoard,fromHome: Boolean=false) {
     // 只重置页码与「记住的焦点卡」：列表本身留给 [showCatalog] 决定清不清——
     // 点了芯片时它要留着旧的一屏顶住这一段时间（否则页面上只剩一行「正在加载…」，看起来就是闪屏）。
     page=1; catalogFocus=""
+    val cachedState=rankStates[board]
+    if(cachedState!=null) {
+        page=cachedState.page
+        catalog=cachedState.items
+        hasMore=cachedState.hasMore
+        ranking=cachedState.ranking
+        if(fromHome) tab=TAB_RANK
+        chipFocusKey=if(fromChip) "board:"+board.storedValue else null
+        focusFirstCardOnLanding=!fromChip
+        showCatalog(load=false,keepCatalog=true,keepChip=true)
+        // 缓存恢复不会再有请求落地来消费这个标记；留着会让 requestNextPage 永远认为
+        // 「还在换榜单」，表现就是只显示缓存里的 20 部、点加载更多也没反应。
+        chipFocusKey=null
+        return
+    }
     val cached=cachedRankPage(board)
     if(cached!=null) {
         catalog=cached.items
-        hasMore=cached.hasMore
+        hasMore=cached.hasMore || cached.items.size<CATALOG_FIRST_PAGE_SIZE
         ranking=cached.ranking
     }
     // 从首页剧架进来：顺手把顶部标签切到排行榜，用户看到的就是榜单页本身
@@ -138,6 +157,17 @@ private fun MainActivity.cachedRankPage(board: RankBoard): CatalogPage? =
 /** 分类页某一行里一枚芯片的焦点 key。 */
 fun categoryChipKey(type: String,id: String?): String = "filter:$type:${id.orEmpty()}"
 
+/**
+ * 分类 / 榜单的选择请求是否真的还在途。
+ *
+ * [chipFocusKey] 只表示“焦点要留在哪枚芯片”，不能单独当作请求锁：缓存恢复、
+ * 快速连续切换、旧请求被取消时它都可能短暂保留。真正决定能否续页的是页面请求本身。
+ */
+fun MainActivity.catalogSelectionInFlight(): Boolean =
+    chipFocusKey!=null &&
+        (tab==TAB_CATEGORY || tab==TAB_RANK) &&
+        workJob?.isDone==false
+
 /** 把已经落地的分类列表按完整筛选条件记下来，切回时不再请求。 */
 fun MainActivity.rememberCategoryState(selection: CategorySelection) {
     if(catalog.isEmpty()) return
@@ -146,6 +176,16 @@ fun MainActivity.rememberCategoryState(selection: CategorySelection) {
     categoryStates[key]=CatalogState(page,catalog,hasMore,ranking)
     while(categoryStates.size>16) {
         categoryStates.remove(categoryStates.keys.firstOrNull() ?: break)
+    }
+}
+
+/** 把当前榜单已经加载到的页数与内容记下来，切换 Tab 时不再重新请求。 */
+fun MainActivity.rememberRankState(board: RankBoard) {
+    if(catalog.isEmpty()) return
+    rankStates.remove(board)
+    rankStates[board]=CatalogState(page,catalog,hasMore,ranking)
+    while(rankStates.size>8) {
+        rankStates.remove(rankStates.keys.firstOrNull() ?: break)
     }
 }
 
@@ -192,6 +232,8 @@ fun MainActivity.selectCategoryFilter(type: String,id: String?) {
         hasMore=cached.hasMore
         ranking=cached.ranking
         showCatalog(load=false,keepCatalog=true,keepChip=true)
+        // 与榜单缓存命中相同：本次重建只负责恢复内容，不消费掉芯片标记就会阻断续页。
+        chipFocusKey=null
         return
     }
     page=1
@@ -323,11 +365,14 @@ fun MainActivity.headFocusTarget(): View? {
     // 搜索页：内容第一行按上键先进输入框下面那一行（提示词 / 热搜词），
     // 那一行收起来时才直接回输入框——方向上是连续的。
     TAB_SEARCH -> suggestButtons.firstOrNull() ?: searchInput
-    // 分类页：最靠近内容的最后一行筛选（状态 / 时间），优先它的选中项。
-    TAB_CATEGORY -> categoryPanel?.rows?.lastOrNull()?.let { row ->
+    // 分类页：最靠近内容的最后一行**可见**筛选，优先它的选中项。
+    // 不能从完整 rows 取最后一行：时间 / 状态两行虽然由接口返回，但页面不显示，
+    // 取到它们会让首卡的上键指向不存在的芯片，焦点因此回不到页头。
+    TAB_CATEGORY -> categoryPanel?.visibleRows()?.lastOrNull()?.let { row ->
         categoryFilterButtons[row.type]?.get(categorySelection.valueOf(row.type).orEmpty())
             ?: categoryFilterButtons[row.type]?.values?.firstOrNull()
-    }
+    } ?: categoryFilterButtons[CategorySelection.TYPE_GENRE]?.get(categorySelection.genre.orEmpty())
+        ?: categoryFilterButtons[CategorySelection.TYPE_GENRE]?.values?.firstOrNull()
     TAB_RANK -> boardButtons[rankBoard] ?: boardButtons.values.firstOrNull()
     TAB_PROFILE -> accountButtons[accountTab] ?: accountButtons.values.firstOrNull()
     TAB_HOME -> nav.firstOrNull() ?: navIcons().firstOrNull()
@@ -367,7 +412,7 @@ fun MainActivity.restoreChipFocus(prefix: String) {
     }
 }
 /**
- * 分类页当前的筛选摘要（空列表文案用）：体裁 + 已选的主题 / 设定 / 背景 / 受众 / 时间 / 状态。
+ * 分类页当前的筛选摘要（空列表文案用）：体裁 + 已选的主题 / 设定 / 背景 / 受众。
  * 名字全部来自接口返回的面板，客户端不再维护中文名。
  */
 fun MainActivity.categoryDescription(): String {
@@ -377,7 +422,7 @@ fun MainActivity.categoryDescription(): String {
     else panel?.labelOf(CategorySelection.TYPE_GENRE,categorySelection.genre) ?: "推荐"
     listOf(
         CategorySelection.TYPE_THEME,CategorySelection.TYPE_ROLE,CategorySelection.TYPE_EPOCH,
-        CategorySelection.TYPE_GENDER,CategorySelection.TYPE_ONLINE_TIME,CategorySelection.TYPE_CREATION_STATUS
+        CategorySelection.TYPE_GENDER
     ).forEach { type ->
         panel?.labelOf(type,categorySelection.valueOf(type))?.let { parts+=it }
     }

@@ -33,6 +33,7 @@ import com.hgtv.star.tv.accountItems
 import com.hgtv.star.tv.accountNotice
 import com.hgtv.star.tv.registerDeviceOnce
 import com.hgtv.star.tv.rememberCategoryState
+import com.hgtv.star.tv.rememberRankState
 import com.hgtv.star.tv.addButton
 import com.hgtv.star.tv.appendCatalog
 import com.hgtv.star.tv.autoAppendCatalog
@@ -586,14 +587,14 @@ fun MainActivity.showCatalog(
         val panel=categoryPanel
         val rowChips=mutableListOf<MutableList<View>>()
         if(panel==null) {
-            val tip=loadingView(32,22)
+            val tip=loadingView(32)
             container.addView(
                 tip,
                 lp(-1,dp(32)).apply { leftMargin=pageBleed(); rightMargin=pageBleed() }
             )
             registerTopAreaRow(tip)
         } else {
-            val filterRows=panel.rows.filter { it.type!=CategorySelection.TYPE_GENRE }
+            val filterRows=panel.visibleRows()
             filterRows.forEach { filterRow ->
                 // 每行是一个**硬裁剪容器**：行宽固定为「标签左缘 → 我的按钮可见右缘」，
                 // 右侧滚动区的宽度由这个行宽减掉标签宽得到，不再依赖 weight 或布局后的二次调整。
@@ -727,7 +728,7 @@ fun MainActivity.showCatalog(
         }
         val requestTab=tab; val requestPage=page; val requestQuery=query; val requestBoard=rankBoard
         // 搜索源在主线程取一份快照：`library` 是主线程持有的，工作线程只该拿值、不该回读。
-        val requestSource=library.searchSource
+        val requestSource=searchController.state.value.source
         val requestCategory=categorySelection
         // 面板没到手（首次进分类页 / 刚换过体裁）时，这一次请求顺带把整份 `selector_rows` 带回来。
         val needPanel=categoryPanel==null
@@ -750,7 +751,7 @@ fun MainActivity.showCatalog(
                     // 这里先把设备注册上再搜，用户看到的是「正在初始化」而不是一次失败；
                     // 注册已在途时 [registerDeviceOnce] 会在锁上等那一次完成，不会重复发请求。
                     if(!library.deviceRegistered()) registerDeviceOnce()
-                    mapOf(requestBoard to repository.search(requestQuery,requestPage,requestSource))
+                    mapOf(requestBoard to searchController.pageBlocking(requestQuery,requestPage,requestSource))
                 }
             }
         }, { result ->
@@ -762,7 +763,9 @@ fun MainActivity.showCatalog(
                 // 首页这一轮拿到了内容：上一轮的「加载失败」已经不作数，面板上擦掉。
                 clearDebugProblem()
                 homeFeed=LinkedHashMap(result)
-                result.forEach { (board,page) -> library.cacheHome(board,page.items,page.hasMore) }
+                result.forEach { (board,page) ->
+                    library.cacheHome(board,page.items,page.hasMore,page.ranking)
+                }
                 val keepNav=nav.any { it.hasFocus() }
                 val homeView=homeScreen
                 // 首屏（还没有任何剧架）整页铺；已经有剧架就地更新——`updateShelves` 默认
@@ -838,6 +841,9 @@ fun MainActivity.showCatalog(
             }
             if(requestTab==TAB_CATEGORY && tab==TAB_CATEGORY && categorySelection==requestCategory) {
                 rememberCategoryState(requestCategory)
+            }
+            if(requestTab==TAB_RANK && tab==TAB_RANK && rankBoard==requestBoard) {
+                rememberRankState(requestBoard)
             }
             // App 搜索接口「答了但没数据」时已经自动改走官网（见 `ContentRepository.search`）。
             // 只提示一次（第 1 页），否则翻页时每页都会弹一遍。

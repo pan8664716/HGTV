@@ -70,6 +70,19 @@ object Diagnostics {
     }
 
     /**
+     * 网络请求失败。使用 ERROR 级别，且不像 [fail] 那样按 stage 去重：
+     * 同一个接口连续失败时，重试次数和每次的状态码正是排查需要的现场。
+     */
+    fun error(tag: String,line: String,problem: Throwable?=null) {
+        val text=buildString {
+            append('[').append(tag).append("] ").append(line.take(700))
+            if(problem!=null) append(" | ").append(chainOf(problem))
+        }
+        android.util.Log.e(tag,text)
+        if(problem==null || !com.hgtv.star.core.isInterruption(problem)) debugSink?.invoke("错误",line)
+    }
+
+    /**
      * 用户可感知的失败：进调试面板「问题」行 + logcat。
      *
      * [stage] 是聚合键，必须稳定（`content_home` / `device_register` …）。

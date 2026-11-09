@@ -11,10 +11,7 @@ android {
     defaultConfig { minSdk = 19 }
     buildFeatures { buildConfig = true }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
-    kotlinOptions {
-        jvmTarget = "1.8"
-        freeCompilerArgs += "-opt-in=androidx.media3.common.util.UnstableApi"
-    }
+    kotlinOptions { jvmTarget = "1.8" }
     packaging {
         resources.excludes += setOf(
             "META-INF/versions/**", "META-INF/*.kotlin_module",
@@ -26,5 +23,5 @@ android {
 dependencies {
     api(project(":shared"))
     // PlayerView 与字幕 / 控制器样式。
-    implementation("androidx.media3:media3-ui:1.4.1")
+    implementation("com.google.android.exoplayer:exoplayer-ui:2.19.1")
 }

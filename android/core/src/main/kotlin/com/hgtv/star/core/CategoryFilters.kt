@@ -32,11 +32,15 @@ data class CategoryGenreOption(val id: String?, val label: String)
  * 按钮本身不会因为面板刷新而消失。
  */
 object CategoryGenres {
+    const val COMIC = "comic_series"
+    const val AI = "ai_series"
+    const val REAL = "short_play"
+
     val options: List<CategoryGenreOption> = listOf(
         CategoryGenreOption(null,"推荐"),
-        CategoryGenreOption("comic_series","漫剧"),
-        CategoryGenreOption("ai_series","AI剧"),
-        CategoryGenreOption("short_play","真人")
+        CategoryGenreOption(COMIC,"漫剧"),
+        CategoryGenreOption(AI,"AI剧"),
+        CategoryGenreOption(REAL,"真人")
     )
     /**
      * 设置页「推荐范围」里能开关的那几枚：就是上面带标识的三类（「推荐」不是一个类，不能开关）。
@@ -47,19 +51,27 @@ object CategoryGenres {
     val recommendable: List<CategoryGenreOption> = options.filter { it.id != null }
     /** [recommendable] 的标识，顺序一致；用作本机设置的合法值白名单。 */
     val recommendableIds: List<String> = recommendable.mapNotNull { it.id }
+
 }
 
 /**
- * 分类页的筛选面板。一次 `need_selector_panel=true` 的请求就把所有行一起带回来：
- * 体裁 / 主题 / 设定 / 背景 / 推荐 / 受众 / 时间 / 状态（状态只有部分体裁有）。
+ * 分类页的筛选面板。一次 `need_selector_panel=true` 的请求就把所有行一起带回来；
+ * 界面统一只展示体裁 / 主题 / 设定 / 背景 / 推荐 / 受众。
  *
- * **主题 / 设定 / 背景 / 状态随体裁变化**：接口在 `genre` 行上给了
+ * **主题 / 设定 / 背景随体裁变化**：接口在 `genre` 行上给了
  * `refresh_other_selector_row=true`；换体裁时优先读对应大类的
  * [CategoryPanelCache]，未命中才请求接口。
  */
 data class CategoryPanel(val rows: List<CategoryFilterRow>) {
     fun row(type: String): CategoryFilterRow? = rows.firstOrNull { it.type==type }
     fun labelOf(type: String, id: String?): String? = row(type)?.labelOf(id)
+
+    /** 当前实际可见的筛选行：分类页统一不显示「时间」和「状态」。 */
+    fun visibleRows(): List<CategoryFilterRow> = rows.filter { row ->
+        row.type != CategorySelection.TYPE_GENRE &&
+            row.type != CategorySelection.TYPE_ONLINE_TIME &&
+            row.type != CategorySelection.TYPE_CREATION_STATUS
+    }
 
     companion object {
         val EMPTY = CategoryPanel(emptyList())
@@ -80,8 +92,8 @@ data class CategorySelection(
     val theme: String? = null,
     val role: String? = null,
     val epoch: String? = null,
-    /** 排序为空 = 「全部推荐」（接口不传 `sort`），这也是分类页的默认值。 */
-    val sort: String? = null,
+    /** 分类页默认按最高热度加载；只有用户主动清空排序时才回到服务端推荐序。 */
+    val sort: String? = DEFAULT_SORT,
     val gender: String? = null,
     val onlineTime: String? = null,
     val creationStatus: String? = null
@@ -111,15 +123,15 @@ data class CategorySelection(
     }
 
     /**
-     * 换体裁时清掉随体裁变化的维度（主题 / 设定 / 背景 / 状态）；
-     * 推荐 / 受众 / 时间三条每个体裁都有，保留用户的选择。
+     * 换体裁时清掉随体裁变化的维度（主题 / 设定 / 背景）；
+     * 推荐 / 受众两条每个体裁都有，保留用户的选择。
      */
     fun newGenre(id: String?): CategorySelection =
         copy(genre=id, theme=null, role=null, epoch=null, creationStatus=null)
 
     /** 除体裁 / 排序外没有别的筛选：这种组合才走服务端的「全部推荐」流。 */
     fun hasNoDetailFilters(): Boolean =
-        theme==null && role==null && epoch==null && gender==null && onlineTime==null && creationStatus==null
+        theme==null && role==null && epoch==null && gender==null
 
     /**
      * 缓存键 / 焦点键用的稳定串。顺序固定，不依赖 Map 的遍历顺序。
@@ -132,6 +144,7 @@ data class CategorySelection(
     companion object {
         /** 旧默认值（真人剧）：只留给旧缓存键的迁移，不再作为界面的默认选择。 */
         const val DEFAULT_GENRE = "short_play"
+        const val DEFAULT_SORT = "hot_score"
         const val TYPE_GENRE = "genre"
         const val TYPE_THEME = "category_dim_theme"
         const val TYPE_ROLE = "category_dim_role"

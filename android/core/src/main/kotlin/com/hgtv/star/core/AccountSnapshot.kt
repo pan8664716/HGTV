@@ -170,18 +170,48 @@ object AccountSnapshot {
      * 少了这一项，平台把总集数改正之后（见 `ContentRepository.totalOf`）这一栏会被判成
      * 「没变」，于是旧卡片一直停在错误的那一个集数上，直到用户手动刷新整页。
      */
-    private fun seriesKey(series: Series) =
-        listOf(series.id, series.title, series.cover, series.badge, series.tags, series.episodeCount.toString())
+    /**
+     * 变更比较键只用普通 `ArrayList` 组装。
+     *
+     * 老 ROM 的 `Arrays$ArrayList.toArray()` 在集合合并时出现过
+     * `int[] cannot be cast to Object[]`。这里不需要不可变集合，也不值得依赖
+     * `Arrays.asList` / Kotlin 集合 `+` 的实现细节，直接逐个 `add` 最稳。
+     */
+    private fun ArrayList<String>.addSeriesKey(series: Series) {
+        add(series.id)
+        add(series.title)
+        add(series.cover)
+        add(series.badge)
+        add(series.tags)
+        add(series.episodeCount.toString())
+    }
 
-    private fun favoriteKey(row: AccountFavorite) = seriesKey(row.series) + row.episodes.toString()
-    private fun historyKey(row: AccountHistory) =
-        seriesKey(row.series) + listOf(
-            row.episodeIndex.toString(), row.episodes.toString(), row.updatedAt.toString(),
+    private fun seriesKey(series: Series): List<String> =
+        ArrayList<String>(6).apply { addSeriesKey(series) }
+
+    private fun favoriteKey(row: AccountFavorite): List<String> =
+        ArrayList<String>(7).apply {
+            addSeriesKey(row.series)
+            add(row.episodes.toString())
+        }
+
+    private fun historyKey(row: AccountHistory): List<String> =
+        ArrayList<String>(10).apply {
+            addSeriesKey(row.series)
+            add(row.episodeIndex.toString())
+            add(row.episodes.toString())
+            add(row.updatedAt.toString())
             // 集内位置也算「界面上看得见的东西」：历史卡片的状态行要跟着它变。
-            row.position.toString()
-        )
-    private fun likeKey(row: AccountLike) = seriesKey(row.series)
-    private fun reserveKey(row: AccountReserve) = seriesKey(row.series) + row.online.toString()
+            add(row.position.toString())
+        }
+
+    private fun likeKey(row: AccountLike): List<String> = seriesKey(row.series)
+
+    private fun reserveKey(row: AccountReserve): List<String> =
+        ArrayList<String>(7).apply {
+            addSeriesKey(row.series)
+            add(row.online.toString())
+        }
 
     /**
      * 把一次刷新并进已有数据：**这一栏请求失败时保留上一份**，不要用空列表覆盖。

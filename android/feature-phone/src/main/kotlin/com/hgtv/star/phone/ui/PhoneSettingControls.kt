@@ -12,6 +12,7 @@ import android.view.View
 import android.view.ViewConfiguration
 import com.hgtv.star.core.DanmakuStyle
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
+import com.hgtv.star.shared.compat.drawRoundRectCompat
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.ui.SliderDrag
 
@@ -24,6 +25,8 @@ class PhoneSwitchRow(
     context: Context,
     private val label: String,
     checked: Boolean,
+    private val densityScale: Float = 1f,
+    private val textScale: Float = 1f,
     private val onToggle: (Boolean) -> Unit,
 ) : View(context) {
 
@@ -35,9 +38,9 @@ class PhoneSwitchRow(
     init {
         isClickable = true
         isFocusable = true
-        setPadding(context.dp(14), 0, context.dp(12), 0)
+        setPadding(d(14), 0, d(12), 0)
         applySoft(SoftStyle.RAISED, PhoneStyle.surface, PhoneStyle.RADIUS_PILL, 4f)
-        paint.textSize = context.sp(15)
+        paint.textSize = context.sp(15*textScale)
         track.color = PhoneStyle.wellDeep
         knob.color = PhoneStyle.lit
         describe()
@@ -48,6 +51,8 @@ class PhoneSwitchRow(
             onToggle(checkedValue)
         }
     }
+
+    private fun d(value: Number): Int = context.dp(value.toFloat()*densityScale)
 
     fun setChecked(value: Boolean) {
         if (checkedValue == value) return
@@ -67,15 +72,15 @@ class PhoneSwitchRow(
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         val right = (width - paddingRight).toFloat()
-        val trackWidth = context.dp(36).toFloat()
-        val trackHeight = context.dp(19).toFloat()
+        val trackWidth = d(36).toFloat()
+        val trackHeight = d(19).toFloat()
         val left = right - trackWidth
         val top = (height - trackHeight) / 2f
         val bottom = top + trackHeight
 
         track.color = if (checkedValue) PhoneStyle.accent else PhoneStyle.wellDeep
-        canvas.drawRoundRect(left, top, right, bottom, trackHeight / 2f, trackHeight / 2f, track)
-        val inset = context.dp(2.5f).toFloat()
+        drawRoundRectCompat(canvas, left, top, right, bottom, trackHeight / 2f, track)
+        val inset = d(2.5f).toFloat()
         val diameter = trackHeight - inset * 2
         val centerX = if (checkedValue) right - inset - diameter / 2f else left + inset + diameter / 2f
         canvas.drawCircle(centerX, top + trackHeight / 2f, diameter / 2f, knob)
@@ -83,7 +88,7 @@ class PhoneSwitchRow(
         paint.color = PhoneStyle.text
         val fm = paint.fontMetrics
         val baseline = height / 2f - (fm.ascent + fm.descent) / 2f
-        val nameRight = left - context.dp(10)
+        val nameRight = left - d(10)
         val shown = TextUtils.ellipsize(
             label, paint, (nameRight - paddingLeft).coerceAtLeast(0f), TextUtils.TruncateAt.END
         )
@@ -110,11 +115,13 @@ class PhoneSettingSlider(
     initial: Float,
     private val onValue: (Float) -> Unit,
     private val format: (Float) -> String = DanmakuStyle::percent,
+    private val densityScale: Float = 1f,
+    private val textScale: Float = 1f,
 ) : View(context) {
 
     private val paint = TextPaint(Paint.ANTI_ALIAS_FLAG)
     private val readingPaint = TextPaint(Paint.ANTI_ALIAS_FLAG).apply {
-        textSize = context.sp(13)
+        textSize = context.sp(13*textScale)
         typeface = Typeface.DEFAULT_BOLD
         textAlign = Paint.Align.RIGHT
     }
@@ -125,9 +132,9 @@ class PhoneSettingSlider(
 
     init {
         isClickable = true
-        setPadding(context.dp(14), 0, context.dp(12), 0)
+        setPadding(d(14), 0, d(12), 0)
         applySoft(SoftStyle.RAISED, PhoneStyle.surface, PhoneStyle.RADIUS_PILL, 4f)
-        paint.textSize = context.sp(15)
+        paint.textSize = context.sp(15*textScale)
         describe()
     }
 
@@ -138,7 +145,8 @@ class PhoneSettingSlider(
         maxOf(readingPaint.measureText(format(min)), readingPaint.measureText(format(max)))
     }
 
-    private fun dpf(value: Number): Float = context.dp(value).toFloat()
+    private fun d(value: Number): Int = context.dp(value.toFloat()*densityScale)
+    private fun dpf(value: Number): Float = d(value).toFloat()
 
     private fun normalize(candidate: Float): Float {
         val stepped = (Math.round((candidate - min) / step) * step + min)
@@ -151,7 +159,13 @@ class PhoneSettingSlider(
         val trackRight = (right - readingReserve - dpf(12)).coerceAtLeast(left + dpf(80))
         val nameEnd = left + paint.measureText(label) + dpf(12)
         val trackLeft = nameEnd.coerceAtMost(trackRight - dpf(80)).coerceAtLeast(left)
-        return trackLeft to trackRight
+        // 横屏设置面板有时只有半列宽：轨道下限会把标题区域压成 0，
+        // 此时把轨道放到下一行，避免标题被 ellipsize 成空串。
+        return if(trackLeft-left<dpf(36)) {
+            left to (right-readingReserve-dpf(12)).coerceAtLeast(left+dpf(48))
+        } else {
+            trackLeft to trackRight
+        }
     }
 
     private fun updateAt(x: Float) {
@@ -211,29 +225,39 @@ class PhoneSettingSlider(
 
         paint.color = PhoneStyle.text
         val nameRight = (trackLeft - dpf(12)).coerceAtLeast(left)
-        val shown = TextUtils.ellipsize(
-            label, paint, (nameRight - left).coerceAtLeast(0f), TextUtils.TruncateAt.END
-        )
-        canvas.drawText(shown, 0, shown.length, left, baseline, paint)
+        val compact=trackLeft-left<dpf(36)
+        if(compact) {
+            val titleBaseline=height*.30f-(fm.ascent+fm.descent)/2f
+            val shown=TextUtils.ellipsize(
+                label,paint,(right-left).coerceAtLeast(0f),TextUtils.TruncateAt.END
+            )
+            canvas.drawText(shown,0,shown.length,left,titleBaseline,paint)
+        } else {
+            val shown = TextUtils.ellipsize(
+                label, paint, (nameRight - left).coerceAtLeast(0f), TextUtils.TruncateAt.END
+            )
+            canvas.drawText(shown, 0, shown.length, left, baseline, paint)
+        }
 
         val thickness = dpf(3).coerceAtLeast(1f)
         val radius = thickness / 2f
         val fraction = ((value - min) / (max - min)).coerceIn(0f, 1f)
         val knobRadius = dpf(5)
+        val trackMiddle=if(compact) height*.72f else middle
         val filled = (trackLeft + (trackRight - trackLeft) * fraction)
             .coerceIn(trackLeft + knobRadius, (trackRight - knobRadius).coerceAtLeast(trackLeft + knobRadius))
         trackPaint.color = (PhoneStyle.accent and 0x00FFFFFF) or (0x38 shl 24)
-        canvas.drawRoundRect(trackLeft, middle - radius, trackRight, middle + radius, radius, radius, trackPaint)
+        drawRoundRectCompat(canvas, trackLeft, trackMiddle - radius, trackRight, trackMiddle + radius, radius, trackPaint)
         trackPaint.color = PhoneStyle.accent
-        canvas.drawRoundRect(trackLeft, middle - radius, filled, middle + radius, radius, radius, trackPaint)
-        canvas.drawCircle(filled, middle, knobRadius, trackPaint)
+        drawRoundRectCompat(canvas, trackLeft, trackMiddle - radius, filled, trackMiddle + radius, radius, trackPaint)
+        canvas.drawCircle(filled, trackMiddle, knobRadius, trackPaint)
 
         readingPaint.color = PhoneStyle.accent
         val readFm = readingPaint.fontMetrics
         canvas.drawText(
             format(value),
             right,
-            middle - (readFm.ascent + readFm.descent) / 2f,
+            trackMiddle - (readFm.ascent + readFm.descent) / 2f,
             readingPaint,
         )
     }

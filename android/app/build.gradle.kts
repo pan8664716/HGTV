@@ -22,7 +22,7 @@ android {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
         versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 75
-        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.3.5.1"
+        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.3.6"
     }
     buildFeatures { buildConfig = true }
     signingConfigs {
@@ -49,14 +49,7 @@ android {
         }
         getByName("release") { multiDexKeepProguard = file("multidex-keep.pro"); signingConfig = signingConfigs.getByName("delivery"); isMinifyEnabled = true; proguardFiles(getDefaultProguardFile("proguard-android-optimize.txt"), "proguard-rules.pro") } }
     compileOptions { sourceCompatibility = JavaVersion.VERSION_1_8; targetCompatibility = JavaVersion.VERSION_1_8 }
-    kotlinOptions {
-        jvmTarget = "1.8"
-        // Media3 把「播放器实现类」全部标了 `@UnstableApi`（`DefaultRenderersFactory` /
-        // `MediaCodecSelector` / `DefaultLoadControl` / `ProgressiveMediaSource` /
-        // `AnalyticsListener` …）。本应用必须直接碰这些类（自定义渲染器、自定义解码器筛选、
-        // 自定义 DataSource），因此按官方推荐在模块级统一 opt-in，而不是给每个类加注解。
-        freeCompilerArgs += "-opt-in=androidx.media3.common.util.UnstableApi"
-    }
+    kotlinOptions { jvmTarget = "1.8" }
     lint {
         // targetSdk 钉在 29 是刻意的（见上面的注释：传统存储模式要它才能写 /sdcard/.hgtv/）。
         // `ExpiredTargetSdkVersion` 只在「上架 Google Play」这一前提下成立，本应用自签分发、

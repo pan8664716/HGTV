@@ -4,30 +4,36 @@ package com.hgtv.star
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
+import android.view.Gravity
+import android.view.View
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import android.widget.LinearLayout
+import android.widget.TextView
 import com.hgtv.star.phone.PhoneMainActivity
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.detectDeviceForm
+import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.tv.MainActivity
 
 /**
- * 启动路由：唯一带 `LAUNCHER` / `LEANBACK_LAUNCHER` 的组件。
+ * 启动页与形态路由：唯一带 `LAUNCHER` / `LEANBACK_LAUNCHER` 的组件。
  *
- * 它**不画任何东西**（主题 `LaunchRouter` 是半透明、无标题、无动画），
- * 只做一次形态判定然后转发：
+ * Logo 由系统启动画面显示；这一页只显示三点加载动画，完成本地初始化后再转发：
  *
  * * 电视 / 盒子 → [MainActivity]（横屏、遥控器焦点导航、1280×720 设计画布）
  * * 手机 / 平板 → [PhoneMainActivity]（竖屏、触摸、手势播放）
  *
- * ## 为什么是「半透明」而不是 `Theme.NoDisplay`
+ * ## 为什么必须是正常窗口
  *
  * NoDisplay 的活动**不建窗口**。`startActivity` 之后立刻 `finish()`，部分国产 TV 固件
  * 会先把任务清掉、再丢掉刚起来的目标页——用户读到的是「点图标没反应」，而且没有任何
- * 提示可循。2026-11 小明 Q1 Pro 投影仪上就是这样：1.2.9.1（没有这一层，桌面直接起
- * MainActivity）正常，1.3.0 点开毫无反应。
- *
- * 半透明主题让这一层**有一个窗口**，任务里始终有东西，转发不会落空；透明底色保证
- * 不会闪一块黑。代价只是多一个空窗口，它活不到一帧。
+ * 提示可循。透明窗口也不参与系统启动画面，进程初始化稍慢时用户会以为点击没有生效。
+ * 因此这里使用不透明的正常 Activity，让点击后的第一帧就有明确反馈。
  *
  * ## 为什么必须在这一层分叉
  *
@@ -40,17 +46,100 @@ import com.hgtv.star.tv.MainActivity
  * `phone` / `tablet` / `tv`）。这里**先读设置**，只有 `auto` 才走自动探测——
  * 否则在电视上手动切成「手机」会被下次启动重新纠正回来，那个开关等于没用。
  *
- * 直接读 SharedPreferences 而不构造 `Library`：后者要起写队列、读镜像、
- * 解历史记录，在启动链路上是几百毫秒的量级，而这里只需要一个字符串。
+ * 初始化成功后才读取这个设置并转发；初始化失败则留在本页显示重试，不把错误状态
+ * 带进主界面。
  */
 class LaunchActivity : Activity() {
 
+    private lateinit var root: FrameLayout
+    private lateinit var dots: LoadingDotsView
+    private lateinit var errorText: TextView
+    private lateinit var retryButton: TextView
+    private var startupCleanup: (() -> Unit)?=null
+    private var routed=false
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        // **转发必须万无一失**：这一层只要有一次什么都不做，用户读到的就是「点图标没反应」，
-        // 而且没有任何提示可循（2026-11 现场：小明 Q1 Pro 投影仪上 1.3.0 点开毫无反应，
-        // 1.2.9.1 正常——那一版没有这一层，桌面直接起 MainActivity）。
-        // 因此这里的每一步都兜住异常，并且**永远**有一个目标页被拉起来。
+        window.setBackgroundDrawable(ColorDrawable(BACKGROUND))
+        applyFullscreen()
+        buildStartupView()
+        setContentView(root)
+        // 先让启动页完成一帧绘制，再把初始化排到下一帧；三点动画与书库读盘并行。
+        root.postOnAnimation {
+            if(!isFinishing && !isDestroyed) beginInitialization()
+        }
+    }
+
+    private fun buildStartupView() {
+        root=FrameLayout(this).apply { setBackgroundColor(BACKGROUND) }
+        val content=LinearLayout(this).apply {
+            orientation=LinearLayout.VERTICAL
+            gravity=Gravity.CENTER_HORIZONTAL
+        }
+        dots=LoadingDotsView(this)
+        content.addView(dots,LinearLayout.LayoutParams(dp(64),dp(18)).apply {
+            topMargin=dp(26)
+        })
+        errorText=TextView(this).apply {
+            text="初始化失败，请重试"
+            setTextColor(0xFFF2F5F8.toInt())
+            textSize=15f
+            gravity=Gravity.CENTER
+            visibility=View.GONE
+        }
+        content.addView(errorText,LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin=dp(24) })
+        retryButton=TextView(this).apply {
+            text="重试"
+            setTextColor(0xFF4DA3FF.toInt())
+            textSize=15f
+            gravity=Gravity.CENTER
+            isClickable=true
+            isFocusable=true
+            setPadding(dp(24),dp(10),dp(24),dp(10))
+            background=GradientDrawable().apply {
+                shape=GradientDrawable.RECTANGLE
+                cornerRadius=dp(24).toFloat()
+                setColor(0xFF2A3038.toInt())
+            }
+            visibility=View.GONE
+            setOnClickListener {
+                showLoading()
+                beginInitialization(retry=true)
+            }
+        }
+        content.addView(retryButton,LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ).apply { topMargin=dp(14) })
+        root.addView(content,FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+            Gravity.CENTER,
+        ))
+    }
+
+    private fun beginInitialization(retry: Boolean = false) {
+        startupCleanup?.invoke()
+        val ready: () -> Unit = {
+            if(!isFinishing && !isDestroyed) routeToTarget()
+        }
+        val failed: (Throwable) -> Unit = { problem ->
+            android.util.Log.w("HGTV-STARTUP","初始化失败",problem)
+            if(!isFinishing && !isDestroyed) showFailure()
+        }
+        startupCleanup=if(retry) {
+            HgtvStartup.retry(this,ready,failed)
+        } else {
+            HgtvStartup.initialize(this,ready,failed)
+        }
+    }
+
+    private fun routeToTarget() {
+        if(routed) return
+        routed=true
         val target = runCatching { targetFor(this) }
             .onFailure { android.util.Log.w("HGTV-FORM", "形态判定失败，退回电视界面", it) }
             .getOrElse { MainActivity::class.java }
@@ -73,10 +162,14 @@ class LaunchActivity : Activity() {
                 .onFailure { android.util.Log.e("HGTV-FORM", "两套界面都起不来", it) }
                 .isSuccess
         }
-        finish()
-        // 这一层不画任何东西，转场动画只会让目标页晚出来一帧。
-        @Suppress("DEPRECATION")
-        if (started) overridePendingTransition(0, 0)
+        if(started) {
+            finish()
+            @Suppress("DEPRECATION")
+            overridePendingTransition(0, 0)
+        } else {
+            routed=false
+            showFailure()
+        }
     }
 
     private fun targetFor(context: Context): Class<*> {
@@ -96,7 +189,45 @@ class LaunchActivity : Activity() {
         return if (form == DeviceForm.TV) MainActivity::class.java else PhoneMainActivity::class.java
     }
 
+    private fun showLoading() {
+        dots.visibility=View.VISIBLE
+        errorText.visibility=View.GONE
+        retryButton.visibility=View.GONE
+    }
+
+    private fun showFailure() {
+        dots.visibility=View.GONE
+        errorText.visibility=View.VISIBLE
+        retryButton.visibility=View.VISIBLE
+        retryButton.requestFocus()
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applyFullscreen() {
+        window.decorView.systemUiVisibility=(
+            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                or View.SYSTEM_UI_FLAG_FULLSCREEN
+                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+            )
+        if(android.os.Build.VERSION.SDK_INT>=21) {
+            window.statusBarColor=Color.TRANSPARENT
+            window.navigationBarColor=Color.TRANSPARENT
+        }
+    }
+
+    override fun onDestroy() {
+        startupCleanup?.invoke()
+        startupCleanup=null
+        super.onDestroy()
+    }
+
+    private fun dp(value: Int): Int =
+        (value*resources.displayMetrics.density+0.5f).toInt()
+
     private companion object {
+        const val BACKGROUND=0xFF1E2228.toInt()
         /** 与 `Library` 用的是同一个偏好文件（见 `Library.prefs`）。 */
         const val PREFS = "native-library-v1"
         const val KEY_DEVICE_FORM = "deviceForm"

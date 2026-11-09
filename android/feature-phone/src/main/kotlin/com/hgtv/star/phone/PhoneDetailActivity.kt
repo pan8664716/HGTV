@@ -14,6 +14,7 @@ import android.widget.ScrollView
 import android.widget.TextView
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.DetailCache
+import com.hgtv.star.core.RecommendBehavior
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.ui.PhoneCards
 import com.hgtv.star.phone.ui.PhoneEpisodeGrid
@@ -27,6 +28,9 @@ import com.hgtv.star.phone.ui.phoneEdgeToEdge
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.data.AppRuntime
+import com.hgtv.star.shared.feature.detail.DetailController
+import com.hgtv.star.shared.compat.roundCornersCompat
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.nav.Route
 import kotlinx.coroutines.CoroutineScope
@@ -81,6 +85,14 @@ class PhoneDetailActivity : PhoneActivity() {
     private var contentEdge = 0
     private var landscape = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val detailController by lazy {
+        DetailController(
+            repository = PhoneServices.repository(this),
+            library = PhoneServices.library(this),
+            scope = scope,
+            account = AppRuntime.accountController(this),
+        )
+    }
 
     private val seriesId: String get() = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
 
@@ -139,6 +151,30 @@ class PhoneDetailActivity : PhoneActivity() {
             android.content.res.Configuration.ORIENTATION_LANDSCAPE
         if (seriesId.isBlank()) { finish(); return }
         buildUi()
+        scope.launch {
+            detailController.state.collect { state ->
+                if (state.detail != null) detail = state.detail
+                relatedFor = state.relatedFor
+                relatedItems = state.related?.items.orEmpty()
+                relatedSeasons = state.related?.seasons?.size ?: 0
+                relatedLoading = state.relatedLoading
+                relatedFailed = state.relatedError != null
+                val related = state.related
+                if (related != null && state.relatedFor.isNotBlank()) {
+                    PhoneSession.rememberRelated(state.relatedFor, related)
+                }
+                authorFor = state.authorFor
+                authorItems = state.authorWorks.orEmpty()
+                authorLoading = state.authorWorksLoading
+                authorFailed = state.authorWorksError != null
+                detailAuthorLoading = state.authorLoading
+                if (detail != null) {
+                    paintMeta(detail!!)
+                    renderRelated()
+                    renderAuthorWorks()
+                }
+            }
+        }
         load()
     }
 
@@ -192,7 +228,7 @@ class PhoneDetailActivity : PhoneActivity() {
                 PhoneStyle.well,
                 dp(PhoneStyle.RADIUS_CARD).toFloat(),
             )
-            clipToOutline = true
+            roundCornersCompat(this,dp(PhoneStyle.RADIUS_CARD).toFloat())
         }
         coverBox.addView(cover, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
@@ -454,55 +490,34 @@ class PhoneDetailActivity : PhoneActivity() {
     // ---------------------------------------------------------------- 数据
 
     private fun load() {
-        val token = ++detailToken
+        detailToken++
         detailAuthorLoading=false
         val id = seriesId
         titleView.text = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "加载中…" }
         scope.launch {
-            val repository=PhoneServices.repository(this@PhoneDetailActivity)
-            // 网络和书库读盘并行：详情不依赖书库，冷启动时不再把两段等待串起来。
-            val detailDeferred=async(Dispatchers.IO) {
-                runCatching { repository.detail(id,includeAuthor=false) }.getOrNull()
-            }
-            val cached=withContext(Dispatchers.IO) {
-                runCatching { DetailCache.load(id) }.getOrNull()
-            }
-            val lib = PhoneServices.awaitLibrary(this@PhoneDetailActivity)
-            if (token != detailToken || isFinishing || isDestroyed) return@launch
-            library = lib
-            if(cached!=null) {
-                detail=cached
-                bindDetail(cached)
-                prefetchRelated(cached.series)
-                if(cached.series.author.isNotBlank()) prefetchAuthorWorks(cached.series)
-                else loadDetailAuthor(cached)
-            }
-            val d=detailDeferred.await()
-            // 换剧之后旧请求才回来：直接丢掉，不能拿上一部的详情覆盖这一部。
-            if (token != detailToken || isFinishing || isDestroyed) return@launch
-            if (d == null) {
-                if(detail==null) metaView.text = "详情加载失败"
-                return@launch
-            }
-            val knownAuthor=detail?.series?.author?.trim().orEmpty()
-            val merged=if(knownAuthor.isBlank()) d
-                else d.copy(series=d.series.copy(author=knownAuthor))
-            // 未上架：接口给的预约状态**只在本地还没有记录时**落一份（下次进页面不必等这次请求）。
-            // 本地有记录时不动它：`online_subscribed` 在刚写入之后的一小段时间里仍回 0，
-            // 用它覆盖本地就会把用户刚点的「已预约」翻回「预约」。
-            if (merged.upcoming) runCatching {
-                if (!lib.reservedKnown(merged.series.id)) lib.setReserved(merged.series.id, merged.reserved)
-            }
-            val changed=detail==null || !sameDetailContent(detail!!,merged)
-            detail = merged
-            if(knownAuthor.isNotBlank()) runCatching { DetailCache.save(merged) }
-            if(changed) bindDetail(merged)
-            // 与 TV 完全同一条时序：详情先上屏，**附加内容丢后台**（`prefetchRelated` /
-            // `prefetchAuthorWorks`）。不 await、不占详情的关键路径——用户看到标题与选集时，
-            // 这两栏还在路上，落地之后各自就地补上。
-            prefetchRelated(merged.series)
-            if(merged.series.author.isNotBlank()) prefetchAuthorWorks(merged.series)
-            else loadDetailAuthor(merged)
+            library = PhoneServices.awaitLibrary(this@PhoneDetailActivity)
+            if (isFinishing || isDestroyed) return@launch
+            detailController.load(
+                series = Series(
+                    id = id,
+                    title = intent.getStringExtra(EXTRA_TITLE).orEmpty(),
+                ),
+                onCached = { cached ->
+                    if (!isFinishing && !isDestroyed) {
+                        detail = cached
+                        bindDetail(cached)
+                    }
+                },
+                onLoaded = { merged, _, changed ->
+                    if (!isFinishing && !isDestroyed) {
+                        detail = merged
+                        if (changed) bindDetail(merged)
+                    }
+                },
+                onError = {
+                    if (!isFinishing && !isDestroyed && detail == null) metaView.text = "详情加载失败"
+                },
+            )
         }
     }
 
@@ -512,30 +527,7 @@ class PhoneDetailActivity : PhoneActivity() {
 
     /** 作者补查不挡详情首屏；结果回来只更新元信息与作者作品入口。 */
     private fun loadDetailAuthor(current: Detail) {
-        val id=current.series.id
-        if(current.series.author.isNotBlank()) {
-            prefetchAuthorWorks(current.series)
-            return
-        }
-        if(detailAuthorLoading) return
-        detailAuthorLoading=true
-        val token=detailToken
-        scope.launch {
-            val author=withContext(Dispatchers.IO) {
-                runCatching {
-                    PhoneServices.repository(this@PhoneDetailActivity).authorsOf(listOf(id))[id].orEmpty()
-                }.getOrDefault("")
-            }
-            if(token!=detailToken) return@launch
-            detailAuthorLoading=false
-            if(author.isBlank() || isFinishing || isDestroyed) return@launch
-            val d=detail?.takeIf { it.series.id==id } ?: return@launch
-            val updated=d.copy(series=d.series.copy(author=author))
-            detail=updated
-            paintMeta(updated)
-            runCatching { DetailCache.save(updated) }
-            prefetchAuthorWorks(updated.series)
-        }
+        detailController.loadAuthor(current)
     }
 
     private fun bindDetail(d: Detail) {
@@ -575,7 +567,8 @@ class PhoneDetailActivity : PhoneActivity() {
             episodeBox.visibility = View.GONE
             return
         }
-        episodeHead.visibility = View.VISIBLE
+        // 横屏简介页使用 TV 同一套标题行；竖屏仍保留手机页面的小节标题。
+        episodeHead.visibility = if(landscape) View.GONE else View.VISIBLE
         episodeHead.text = "选集 · 全${d.episodes.size}集"
         episodeBox.visibility = View.VISIBLE
         episodeBox.removeAllViews()
@@ -588,6 +581,8 @@ class PhoneDetailActivity : PhoneActivity() {
             //（普通 `ScrollView` 不支持嵌套滚动），用户读到的就是「选集显示不全、还滑不动」。
             // 一页 100 集 = 20 行，展开后跟整页一起滚，滚动只有一条。
             maxGridHeight = Int.MAX_VALUE,
+            tvStyle = landscape,
+            tvSideInsetDp = 14,
             // 与播放页的选集**完全对齐**：手机上「分页边缘翻页」这一项已经没有设置入口
             // （那一项改成了「推荐页左右滑动」），所以这里不再读 `episodeEdgeTurn`——
             // 老设备上它可能是历史遗留的 false，会让详情页「怎么滑都不翻页」。
@@ -659,33 +654,7 @@ class PhoneDetailActivity : PhoneActivity() {
      * * 不走详情页的加载协程，失败只影响这一栏，不影响详情本身。
      */
     private fun prefetchRelated(s: Series) {
-        if (relatedFor == s.id && (relatedItems.isNotEmpty() || relatedLoading)) return
-        val token = ++relatedToken
-        relatedFor = s.id
-        relatedLoading = true
-        relatedFailed = false
-        relatedItems = emptyList()
-        relatedSeasons = 0
-        renderRelated()
-        scope.launch {
-            val works = withContext(Dispatchers.IO) {
-                runCatching {
-                    PhoneServices.repository(this@PhoneDetailActivity).related(s.id, s.title)
-                }.getOrNull()
-            }
-            if (token != relatedToken || isFinishing || isDestroyed) return@launch
-            relatedLoading = false
-            if (works == null) {
-                relatedFailed = true
-            } else {
-                relatedItems = works.items
-                relatedSeasons = works.seasons.size
-                // 记到进程里：播放页片尾的「换一部接着看」直接铺这一份，
-                // 不必再发一次请求（电视端同样是 `relatedWorks` 共用）。
-                PhoneSession.rememberRelated(s.id, works)
-            }
-            renderRelated()
-        }
+        detailController.ensureRelated(s.id, s.title)
     }
 
     /**
@@ -729,43 +698,7 @@ class PhoneDetailActivity : PhoneActivity() {
      * 同一作者只请求一次；换剧作废旧请求。
      */
     private fun prefetchAuthorWorks(s: Series) {
-        val name = s.author.trim()
-        if (name.isEmpty()) {
-            authorBox.removeAllViews()
-            authorBox.visibility = View.GONE
-            return
-        }
-        if (authorFor == name && (authorItems.isNotEmpty() || authorLoading)) return
-        val token = ++authorToken
-        authorFor = name
-        authorLoading = true
-        authorFailed = false
-        authorItems = emptyList()
-        renderAuthorWorks()
-        scope.launch {
-            val repo = PhoneServices.repository(this@PhoneDetailActivity)
-            val works = withContext(Dispatchers.IO) {
-                runCatching {
-                    repo.authorWorks(
-                        name, s,
-                        onPartial = { partial ->
-                            // 第一段：搜索阶段一结束就先铺上屏（补季还在后台跑）。
-                            runOnUiThread {
-                                if (token != authorToken || isFinishing || isDestroyed) return@runOnUiThread
-                                if (partial.isEmpty()) return@runOnUiThread
-                                authorLoading = false
-                                authorItems = partial
-                                renderAuthorWorks()
-                            }
-                        }
-                    )
-                }.getOrNull()
-            }
-            if (token != authorToken || isFinishing || isDestroyed) return@launch
-            authorLoading = false
-            if (works == null) authorFailed = true else authorItems = works
-            renderAuthorWorks()
-        }
+        detailController.ensureAuthorWorks(s)
     }
 
     /**
@@ -912,6 +845,11 @@ class PhoneDetailActivity : PhoneActivity() {
             runCatching { lib.setReserved(d.series.id, next) }
             detail = d.copy(reserved = next)
             paintReserve(next)
+            reportRecommendBehavior(
+                this,
+                if(next) RecommendBehavior.Event.RESERVE else RecommendBehavior.Event.UNRESERVE,
+                d.series.id,
+            )
             PhoneAccountSync.reserve(this, d.series, next, onDone = { ok ->
                 // 失败：本机状态翻回去。用户在这期间又点过的话（本地已经不是 next）就不动，
                 // 免得把第二次点击的结果也一起抹掉。
@@ -971,6 +909,11 @@ class PhoneDetailActivity : PhoneActivity() {
         val lib = library ?: return
         val wasFavorite = runCatching { lib.favorite(d.series.id) }.getOrDefault(false)
         val adding = runCatching { lib.toggle(d.series) }.getOrElse { !wasFavorite }
+        reportRecommendBehavior(
+            this,
+            if(adding) RecommendBehavior.Event.FAVORITE else RecommendBehavior.Event.UNFAVORITE,
+            d.series.id,
+        )
         PhoneAccountSync.favorite(this, d.series, adding) {
             android.widget.Toast.makeText(this, "未登录，收藏只保存在本机", android.widget.Toast.LENGTH_SHORT).show()
         }

@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 import com.hgtv.star.core.NetLog
+import com.hgtv.star.core.NetLogLevel
 import com.hgtv.star.shared.debug.DebugLog
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.compactTls
@@ -20,13 +21,20 @@ internal object PhoneNetDebug {
             installed = true
             NetLog.log = { line ->
                 Diagnostics.trace("HGTV-NET", line)
-                if (line.startsWith("TLS ")) {
+                if (line.startsWith("TLS 可用版本=")) {
                     tlsSummary = compactTls(line.removePrefix("TLS "))
                 } else if (keepLine(line) &&
                     !line.contains("interrupted", ignoreCase = true) &&
                     !line.contains("Canceled", ignoreCase = true)
                 ) {
                     DebugLog.record("网络", line)
+                }
+            }
+            NetLog.event = { level, line ->
+                when (level) {
+                    NetLogLevel.ERROR -> Diagnostics.error("HGTV-NET", line)
+                    NetLogLevel.WARN -> Diagnostics.warn("HGTV-NET", line)
+                    NetLogLevel.DEBUG -> Diagnostics.trace("HGTV-NET", line)
                 }
             }
         }

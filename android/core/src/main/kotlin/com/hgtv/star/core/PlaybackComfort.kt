@@ -28,8 +28,8 @@ enum class VideoFrameMode(val label: String) {
  * 现在判定只在这里：[VideoFrameMode.toFit] 产出 [VideoFit]，各端只保留一句
  * 「[VideoFit] → 平台常量」的绑定（见两端的 `resizeMode()` 扩展）。
  *
- * 为什么只做「策略」不直接返回 media3 的 `RESIZE_MODE_*`：`:core` 是纯 JVM 模块，
- * 不碰 Android / media3；而这套映射本身是有业务含义的（竖屏片源忽略用户选择），
+ * 为什么只做「策略」不直接返回 ExoPlayer 的 `RESIZE_MODE_*`：`:core` 是纯 JVM 模块，
+ * 不碰 Android / ExoPlayer；而这套映射本身是有业务含义的（竖屏片源忽略用户选择），
  * 正是需要单测覆盖的那一部分。
  */
 enum class VideoFit { FIT, ZOOM, FILL }

@@ -8,7 +8,7 @@ import com.hgtv.star.phone.ui.PhoneDialog
 /**
  * 首次进入时的「先调一下显示」提示。
  *
- * 手机端的字号与每行卡片数都收在「设置 → 外观导航 → 外观与布局」里，新用户不会主动去找：
+ * 手机端的 UI 大小与每行卡片数都收在「设置 → 外观导航 → 外观与布局」里，新用户不会主动去找：
  * 字太小、卡片太挤时，他们更可能直接卸掉，而不是翻设置。这里只弹**一次**，
  * 给出「取消 / 去设置」两条路，不做任何强制。
  *
@@ -22,7 +22,7 @@ object PhoneFirstRunTip {
 
     private const val TITLE = "先调一下显示"
     private const val MESSAGE =
-        "字号大小、每行显示几张卡片都能在设置里改。" +
+        "UI大小、每行显示几张卡片都能在设置里改。" +
             "觉得字小、或者卡片挤在一起，现在就可以调。"
     private const val CANCEL = "取消"
     private const val OPEN = "去设置"

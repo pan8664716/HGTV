@@ -16,6 +16,7 @@ import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.NetSpeed
 import com.hgtv.star.shared.debug.PerfStats
+import com.hgtv.star.core.TlsStatus
 
 // 「调试模式」：设置里打开后，右上角常驻一块现场面板。
 //
@@ -594,7 +595,8 @@ private fun tlsRow()=DebugRow(TLS_LABEL,tlsNetValue())
 
 /** 上面那一行的值：`支持 1.0~1.3 · 启用 1.3/1.2 · ↓1.2M/s ↑8K/s`。 */
 private fun tlsNetValue(): String =
-    DebugTls.summary.ifBlank { "尚未建立连接" }+" · "+NetSpeed.summary.ifBlank { "采样中…" }
+    TlsStatus.summaryOrEmpty().ifBlank { DebugTls.summary }.ifBlank { "等待网络请求" }+
+        " · "+NetSpeed.summary.ifBlank { "采样中…" }
 
 private fun MainActivity.startCapabilityProbe() {
     if(debugCapability!=null || debugCapabilityLoading) return
@@ -627,10 +629,10 @@ private fun MainActivity.playerDebugRows(): List<DebugRow> {
     val title=data?.series?.title.orEmpty().take(14)
     val p=player
     val state=when(p?.playbackState) {
-        androidx.media3.common.Player.STATE_IDLE -> "idle"
-        androidx.media3.common.Player.STATE_BUFFERING -> "buffering"
-        androidx.media3.common.Player.STATE_READY -> "ready"
-        androidx.media3.common.Player.STATE_ENDED -> "ended"
+        com.google.android.exoplayer2.Player.STATE_IDLE -> "idle"
+        com.google.android.exoplayer2.Player.STATE_BUFFERING -> "buffering"
+        com.google.android.exoplayer2.Player.STATE_READY -> "ready"
+        com.google.android.exoplayer2.Player.STATE_ENDED -> "ended"
         else -> "none"
     }
     val position=p?.currentPosition ?: 0L

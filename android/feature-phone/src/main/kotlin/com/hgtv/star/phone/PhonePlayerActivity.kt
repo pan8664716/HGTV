@@ -17,14 +17,14 @@ import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
 import android.widget.TextView
-import androidx.media3.common.MediaItem
-import androidx.media3.common.Player
-import androidx.media3.common.VideoSize
-import androidx.media3.datasource.DataSource
-import androidx.media3.exoplayer.ExoPlayer
-import androidx.media3.exoplayer.source.ProgressiveMediaSource
-import androidx.media3.ui.AspectRatioFrameLayout
-import androidx.media3.ui.PlayerView
+import com.google.android.exoplayer2.MediaItem
+import com.google.android.exoplayer2.Player
+import com.google.android.exoplayer2.video.VideoSize
+import com.google.android.exoplayer2.upstream.DataSource
+import com.google.android.exoplayer2.ExoPlayer
+import com.google.android.exoplayer2.source.ProgressiveMediaSource
+import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
+import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.DanmakuSpeed
 import com.hgtv.star.core.Detail
@@ -44,22 +44,28 @@ import com.hgtv.star.phone.ui.PhonePagerMotion
 import com.hgtv.star.phone.ui.PhoneSheet
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTouch
+import com.hgtv.star.phone.ui.PhoneUiScale
 import com.hgtv.star.phone.ui.bottomScrim
 import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.navigationBarPx
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
 import com.hgtv.star.phone.ui.phoneSize
+import com.hgtv.star.phone.ui.primeAspectRatio
 import com.hgtv.star.phone.ui.roundedBackground
+import com.hgtv.star.phone.ui.runAfterAspectRatioLayout
 import com.hgtv.star.phone.ui.topScrim
 import com.hgtv.star.shared.data.Library
-import com.hgtv.star.shared.data.PlaybackTransport
-import com.hgtv.star.shared.data.WatchProgress
 import com.hgtv.star.shared.data.DeviceHealer
+import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
+import com.hgtv.star.shared.data.AppRuntime
+import com.hgtv.star.shared.feature.player.PlaybackCoordinator
+import com.hgtv.star.shared.feature.player.PlayerHost
 import com.hgtv.star.shared.media.PlaybackFailures
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
 import com.hgtv.star.shared.nav.Route
+import com.hgtv.star.shared.ui.LoadingDotsView
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -179,14 +185,9 @@ class PhonePlayerActivity : PhoneActivity() {
     private lateinit var centerGlyph: PhoneGlyph
     internal lateinit var hint: TextView
 
-    /**
-     * 缓冲指示：一个居中的小转圈。
-     *
-     * 手机上没有它就等于「点了之后画面定住」——短剧的每集只有几十秒，
-     * 用户分不清「在缓冲」与「卡死了」。与电视端的 `suppressBufferingUi` 同一条规则：
-     * 无感切集那一两百毫秒不转圈（画面停在上一集最后一帧就够了），最多压 1.2 秒。
-     */
+    /** 缓冲指示：全站统一的三点动画，状态文案直接挂在动画下方。 */
     private lateinit var bufferingBox: FrameLayout
+    private lateinit var bufferingDots: LoadingDotsView
     /** 缓冲指示被压住的截止时刻（无感切集期间）。 */
     private var bufferingMutedUntil = 0L
 
@@ -407,10 +408,35 @@ class PhonePlayerActivity : PhoneActivity() {
      * **不写 `library.maxQuality`**：降档是「这台机器这一刻放不了」，不是用户想要更低的清晰度。
      * 与电视端是同一个类、同一份规则，因此两端在「1080 解不了」这件事上的处置不会分叉。
      */
-    internal val sessionPlayback = com.hgtv.star.core.SessionPlaybackPolicy()
+    /** 播放状态机、按集预算和降级策略的共享门面。 */
+    internal val playbackSessionState = com.hgtv.star.shared.architecture.PlaybackSession()
+    internal val playbackSource by lazy { PlaybackSourceCoordinator(PhoneServices.repository(this)) }
+    private val playerHost = object : PlayerHost {
+        override fun currentPositionMs(): Long =
+            runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L)
 
-    /** 按集计的重试额度（`:core`）：自动重试 3 次（3/6/12 秒）、画面重建、连播链失败次数。 */
-    internal val ledger = com.hgtv.star.core.PlaybackAttemptLedger()
+        override fun durationMs(): Long =
+            runCatching { player?.duration ?: 0L }.getOrDefault(0L).coerceAtLeast(0L)
+
+        override fun playbackState(): Int = player?.playbackState ?: Player.STATE_IDLE
+        override fun playWhenReady(): Boolean = player?.playWhenReady == true
+        override fun isPlaying(): Boolean = player?.isPlaying == true
+        override fun play() { player?.play() }
+        override fun pause() { player?.pause() }
+        override fun seekTo(positionMs: Long) { player?.seekTo(positionMs) }
+        override fun rebuildSameQuality(positionMs: Long) {
+            this@PhonePlayerActivity.rebuildSameQuality(positionMs)
+        }
+    }
+    internal val playbackCoordinator by lazy {
+        PlaybackCoordinator(
+            session = playbackSessionState,
+            source = playbackSource,
+            host = playerHost,
+            library = PhoneServices.library(this),
+            account = AppRuntime.accountController(this),
+        )
+    }
 
     /**
      * 正在「同一集的同一次起播重来」。
@@ -427,15 +453,6 @@ class PhonePlayerActivity : PhoneActivity() {
     internal var playRequestScope: com.hgtv.star.core.RequestScope? = null
     /** 取地址失败后的延迟重试；换集时一并撤掉。 */
     internal var sourceRetryRunnable: Runnable? = null
-
-    /**
-     * 起播代次与「这一代已经处置过错误」。
-     *
-     * 一次失败会在几毫秒里连报两三条；而「重建又失败」必须能被处置第二次。
-     * 布尔量做不到这件事（它会一直停在 true），代次可以：每次新起播 +1。
-     */
-    internal var attemptSeq = 0
-    internal var handledAttempt = -1
 
     // —— 换集取地址失败的兜底（见 [onEpisodeSourceMissing]）——
 
@@ -596,8 +613,8 @@ class PhonePlayerActivity : PhoneActivity() {
             setBackgroundColor(if (feedUnderlay) Color.TRANSPARENT else Color.BLACK)
         }
 
-        buildPortrait()
-        buildLandscape()
+        PhoneUiScale.withOrientation(this, landscape = false) { buildPortrait() }
+        PhoneUiScale.withOrientation(this, landscape = true) { buildLandscape() }
 
         // 中心播放 / 暂停与上方提示挂在 root 上：竖屏、横屏共用同一份，
         // 切换形态时不用各建一套，也不会出现「转屏后图标留在旧的层里」。
@@ -610,13 +627,12 @@ class PhonePlayerActivity : PhoneActivity() {
         }
         root.addView(centerBox, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER))
 
+        bufferingDots = LoadingDotsView(this)
         bufferingBox = FrameLayout(this).apply {
-            addView(android.widget.ProgressBar(this@PhonePlayerActivity).apply {
-                indeterminateDrawable?.setTint(Color.WHITE)
-            }, FrameLayout.LayoutParams(dp(30), dp(30), Gravity.CENTER))
+            addView(bufferingDots, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
             visibility = View.GONE
         }
-        root.addView(bufferingBox, FrameLayout.LayoutParams(dp(46), dp(46), Gravity.CENTER))
+        root.addView(bufferingBox, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
 
         hint = TextView(this).apply {
             setTextColor(Color.WHITE)
@@ -1145,7 +1161,7 @@ class PhonePlayerActivity : PhoneActivity() {
         runCatching {
             bar.progressTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
             bar.secondaryProgressTintList = android.content.res.ColorStateList.valueOf(
-                (PhoneStyle.accent and 0x00FFFFFF) or 0x66000000
+                0x66FFFFFF
             )
             bar.thumbTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
             bar.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x4DFFFFFF)
@@ -1615,11 +1631,20 @@ class PhonePlayerActivity : PhoneActivity() {
      * 最后一条尤其重要：暂停后播放器也会落进 BUFFERING，那时转圈会让人以为「暂停没生效」。
      */
     private fun syncBufferingUi(state: Int) {
+        val label = if (state == Player.STATE_BUFFERING && player?.playWhenReady == true) {
+            "正在缓冲…"
+        } else {
+            null
+        }
+        setBufferingLabel(label)
+    }
+
+    /** 统一的加载显隐入口：文案与三点动画一起显示，不再写到进度条上。 */
+    internal fun setBufferingLabel(label: String?) {
+        if (!::bufferingBox.isInitialized || !::bufferingDots.isInitialized) return
         val now = android.os.SystemClock.elapsedRealtime()
-        val show = state == Player.STATE_BUFFERING &&
-            now >= bufferingMutedUntil &&
-            player?.playWhenReady == true &&
-            errorCard == null
+        val show = label != null && now >= bufferingMutedUntil && errorCard == null
+        bufferingDots.label = label.orEmpty()
         bufferingBox.visibility = if (show) View.VISIBLE else View.GONE
         if (show) bufferingBox.bringToFront()
     }
@@ -1763,13 +1788,30 @@ class PhonePlayerActivity : PhoneActivity() {
      * 实现在 `:shared` 的 [com.hgtv.star.shared.media.DanmakuLoader]：与电视端、手机信息流
      * **同一份代码**（同一集不重拉、旧回包丢弃、隐藏时不发请求、边拉边画）。
      */
-    private fun loadDanmaku(episodeId: String, seriesId: String) {
-        danmakuLoader.load(episodeId, seriesId)
+    private fun loadDanmaku(
+        episodeId: String,
+        seriesId: String,
+        clearOnSwitch: Boolean = false,
+    ) {
+        danmakuLoader.load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
     }
 
     /** 把播放位置 / 播放状态 / 倍速推给弹幕层（每帧只读，不回调播放器）。 */
     private fun syncDanmakuClock(positionMs: Long, running: Boolean, speed: Float) {
         danmakuLoader.syncClock(positionMs, running, speed)
+    }
+
+    /** 播放器事件到达时立刻采样，不等每秒 tick。 */
+    private fun syncDanmakuClockNow() {
+        val p = player ?: return
+        val sample = runCatching {
+            Triple(
+                p.currentPosition,
+                p.isPlaying && p.playbackState == Player.STATE_READY,
+                p.playbackParameters.speed,
+            )
+        }.getOrNull() ?: return
+        syncDanmakuClock(sample.first, sample.second, sample.third)
     }
 
     /**
@@ -2156,7 +2198,7 @@ class PhonePlayerActivity : PhoneActivity() {
             val start = intent.getIntExtra(EXTRA_EPISODE, -1).takeIf { it in d.episodes.indices }
                 ?: resumeIndex
             val startAt = if (start == resumeIndex) resumeAt else 0L
-            play(start, startAt)
+            play(start, startAt, clearDanmakuOnSwitch = true)
         }
     }
 
@@ -2264,6 +2306,7 @@ class PhonePlayerActivity : PhoneActivity() {
         // 媒体源是刚挂上、还没 prepare 的那一种（推荐页片尾交接 / 刚起播一屏）：
         // 这里替它 prepare，并把位置对回会话记下的那一秒。**不重新取地址**。
         if (wasIdle) {
+            setBufferingLabel("正在缓冲…")
             exo.prepare()
             if (resumeAt > 0) exo.seekTo(resumeAt)
         }
@@ -2310,9 +2353,7 @@ class PhonePlayerActivity : PhoneActivity() {
         scope.launch {
             val prepared = withContext(Dispatchers.IO) {
                 runCatching {
-                    val info = PhoneServices.repository(this@PhonePlayerActivity)
-                        .stream(episodeId, maxQuality, d.playback)
-                    RemoteVideo(PlaybackTransport.client, info, info.mediaKey(episodeId)).also { it.prepare() }
+                    playbackSource.load(episodeId, maxQuality, d.playback)
                 }.getOrNull()
             }
             if (prepared == null) {
@@ -2341,7 +2382,11 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /** 把「第几集」这件事刷到所有界面上（竖屏信息栏 / 横屏标题 / 选集按钮）。 */
-    private fun bindEpisodeUi(d: Detail, episodeIndex: Int) {
+    private fun bindEpisodeUi(
+        d: Detail,
+        episodeIndex: Int,
+        clearDanmakuOnSwitch: Boolean = false,
+    ) {
         val label = "第${episodeIndex + 1}集"
         page.bind(d.series, label, watchText = "选集 ${episodeIndex + 1}/${d.episodes.size}")
         // 横屏不再单独写一行「剧名 第x集」：这一份由 `syncPlayInfo()` 铺在顶部的信息行里。
@@ -2355,7 +2400,11 @@ class PhonePlayerActivity : PhoneActivity() {
         // `bind` 会把已知画面尺寸清掉（换集后可能拿不到新的 `onVideoSizeChanged`），
         // 这里用播放器现有的尺寸补一次：否则「全屏」按钮会一直不出现。
         syncVideoFrame()
-        loadDanmaku(d.episodes[episodeIndex], d.series.id)
+        loadDanmaku(
+            d.episodes[episodeIndex],
+            d.series.id,
+            clearOnSwitch = clearDanmakuOnSwitch,
+        )
         // 换集不转屏：手机端播放页的方向只由用户的「全屏」点击决定，
         // 上滑看下一集时画面不会自己变成横屏（早先那条「竖屏短剧自动全屏」已经删掉）。
     }
@@ -2523,7 +2572,11 @@ class PhonePlayerActivity : PhoneActivity() {
         }
     }
 
-    internal fun play(episodeIndex: Int, startAt: Long = 0L) {
+    internal fun play(
+        episodeIndex: Int,
+        startAt: Long = 0L,
+        clearDanmakuOnSwitch: Boolean = false,
+    ) {
         val d = detail ?: return
         if (episodeIndex !in d.episodes.indices) return
         nextSeasonFinishedFor = ""
@@ -2536,18 +2589,23 @@ class PhonePlayerActivity : PhoneActivity() {
         }
         index = episodeIndex
         val episodeId = d.episodes[episodeIndex]
+        playbackCoordinator.open(
+            seriesId = d.series.id,
+            episodeId = episodeId,
+            episodeIndex = episodeIndex,
+            resumeAtMs = startAt,
+            autoplay = true,
+            resetEpisode = !sameEpisode,
+        )
         // 换了一集：按集计的重试 / 降级额度全部归零（与电视端 `onEpisodeStart` 同一入口）。
         // 同一集重来（换档 / 手动重试）不在这里清：那会把「每集只重建一次」变成无限次。
         if (!sameEpisode) {
-            sessionPlayback.onEpisodeStart(episodeId)
-            ledger.onEpisodeStart()
             playbackToasts.clear()
         }
         recovering = false
-        attemptSeq++
         cancelAutoRetry()
         clearPlaybackError()
-        bindEpisodeUi(d, episodeIndex)
+        bindEpisodeUi(d, episodeIndex, clearDanmakuOnSwitch)
         prepareNextSeasonIfNeeded(d)
 
         // 预热命中：这一集的首块与地址都已经在手上了，只差挂媒体源（几十毫秒）。
@@ -2565,6 +2623,7 @@ class PhonePlayerActivity : PhoneActivity() {
         }
 
         releasePlayer()
+        setBufferingLabel("正在获取播放地址…")
         val requestScope = com.hgtv.star.core.RequestScope()
         playRequestScope = requestScope
         playRequestJob = scope.launch {
@@ -2576,8 +2635,7 @@ class PhonePlayerActivity : PhoneActivity() {
             val source = withContext(Dispatchers.IO) {
                 requestScope.run {
                     runCatching {
-                        PhoneServices.repository(this@PhonePlayerActivity)
-                            .stream(episodeId, maxQuality, d.playback, queue = modelQueue)
+                    playbackSource.stream(episodeId, maxQuality, d.playback, queue = modelQueue)
                     }
                 }
             }
@@ -2634,15 +2692,31 @@ class PhonePlayerActivity : PhoneActivity() {
         cancelPlaybackRequest()
         cancelSourceRetry()
         if (target == index + 1 && seekToQueuedNext(target)) return
-        play(target)
+        play(target, clearDanmakuOnSwitch = true)
     }
 
     private fun seekToQueuedNext(target: Int): Boolean {
         if (!PhoneSession.nextQueued) return false
-        if (queuedVideo == null || queuedEpisodeId.isEmpty()) return false
+        val video = queuedVideo ?: return false
+        if (queuedEpisodeId.isEmpty()) return false
         val exo = player ?: return false
         val current = exo.currentMediaItemIndex
         if (current < 0 || exo.mediaItemCount <= current + 1) return false
+        val verticalSource = if (video.info.videoWidth > 0 && video.info.videoHeight > 0) {
+            video.info.videoHeight > video.info.videoWidth
+        } else {
+            detail?.series?.vertical == true
+        }
+        page.playerView.primeAspectRatio(
+            video.info.videoWidth,
+            video.info.videoHeight,
+            verticalSource,
+        )
+        landscapeVideo.primeAspectRatio(
+            video.info.videoWidth,
+            video.info.videoHeight,
+            verticalSource,
+        )
         manualNextTarget = target
         manualNextPosition = exo.currentPosition.coerceAtLeast(0L)
         exo.playWhenReady = true
@@ -2656,7 +2730,12 @@ class PhonePlayerActivity : PhoneActivity() {
         root.post {
             if (manualNextTarget == target) {
                 manualNextTarget = -1
-                onAdvanced(target, completedPrevious = false, previousPosition = manualNextPosition)
+                onAdvanced(
+                    target,
+                    completedPrevious = false,
+                    previousPosition = manualNextPosition,
+                    clearDanmakuOnSwitch = true,
+                )
                 manualNextPosition = 0L
             }
         }
@@ -2761,11 +2840,8 @@ class PhonePlayerActivity : PhoneActivity() {
         queuedVideo = null
         queuedEpisodeId = ""
         PhoneSession.clearNext()
-        runCatching {
-            PhoneServices.repository(this).forgetStreamAllQualities(episodeId)
-        }
+        playbackSource.invalidate(episodeId)
         info?.let {
-            runCatching { PlaybackCache.invalidateIndex(it.mediaKey(episodeId)) }
             val host = runCatching { java.net.URI(it.url).host }.getOrNull().orEmpty()
             if (host.isNotEmpty()) {
                 com.hgtv.star.shared.media.PlaybackFailures.dropTransportCaches(listOf(host))
@@ -2774,16 +2850,8 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /** 本地准备失败必须保留异常：调用方据此决定是否作废缓存后重取。 */
-    private fun prepareSource(episodeId: String, info: StreamInfo): RemoteVideo {
-        val remote = RemoteVideo(PlaybackTransport.client, info, info.mediaKey(episodeId))
-        return try {
-            remote.prepare()
-            remote
-        } catch (problem: Throwable) {
-            runCatching { remote.close() }
-            throw problem
-        }
-    }
+    private fun prepareSource(episodeId: String, info: StreamInfo): RemoteVideo =
+        playbackSource.prepare(episodeId, info)
 
     /** 预热路径只需要结果，失败就丢掉；播放起播路径走 [prepareSource] 保留异常。 */
     private fun prepare(episodeId: String, info: StreamInfo): RemoteVideo? =
@@ -2792,6 +2860,8 @@ class PhonePlayerActivity : PhoneActivity() {
     private fun attach(video: RemoteVideo, startAt: Long) {
         remote = video
         val d = detail
+        val episodeIndex = index
+        val session = playbackSessionState.sessionId
         val exo = PhoneServices.player(this, library?.decoderMode)
         val factory = DataSource.Factory { VideoDataSource(video) }
         val episodeId = d?.episodes?.getOrNull(index).orEmpty()
@@ -2823,9 +2893,41 @@ class PhonePlayerActivity : PhoneActivity() {
                 page.playerView.player = exo
             }
         }
+        // `PlayerView.setPlayer()` 会先按播放器上一集的 videoSize 覆盖宽高比；
+        // 必须在挂好之后、prepare 之前再写入本集的真实尺寸，首帧才不会先按旧比例铺开。
+        val verticalSource = if (video.info.videoWidth > 0 && video.info.videoHeight > 0) {
+            video.info.videoHeight > video.info.videoWidth
+        } else {
+            d?.series?.vertical == true
+        }
+        page.playerView.primeAspectRatio(
+            video.info.videoWidth,
+            video.info.videoHeight,
+            verticalSource,
+        )
+        landscapeVideo.primeAspectRatio(
+            video.info.videoWidth,
+            video.info.videoHeight,
+            verticalSource,
+        )
+        setBufferingLabel("正在缓冲…")
         syncVideoFrame()
-        exo.prepare()
-        if (startAt > 0) exo.seekTo(startAt)
+        val prepare = {
+            if (
+                player === exo &&
+                index == episodeIndex &&
+                playbackSessionState.sessionId == session
+            ) {
+                exo.prepare()
+                if (startAt > 0) exo.seekTo(startAt)
+            }
+        }
+        if (!landscapeMode && feedUnderlay && underlayBound) {
+            prepare()
+        } else {
+            val target = if (landscapeMode) landscapeVideo else page.playerView
+            target.runAfterAspectRatioLayout(prepare)
+        }
         // 媒体源已经挂好，交接结束：之后退到后台就按正常规则暂停。
         PhoneSession.endHandoff()
         syncPlayGlyph()
@@ -2872,7 +2974,10 @@ class PhonePlayerActivity : PhoneActivity() {
              * * 没有下一集 → 最后一集播完，走老路。
              */
             override fun onPlaybackStateChanged(state: Int) {
+                player?.let { playbackSessionState.onPlayerState(state, it.playWhenReady) }
                 syncKeepScreenOn()
+                syncDanmakuClockNow()
+                syncProgressBarsNow()
                 // 真的能放了：重试窗口结束、错误页收起（与电视端「出第一帧」同一职责）。
                 syncBufferingUi(state)
                 if (state == Player.STATE_READY) {
@@ -2902,7 +3007,12 @@ class PhonePlayerActivity : PhoneActivity() {
                 if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && !manual) return
                 if (manual) manualNextTarget = -1
                 if (manual) {
-                    onAdvanced(nextIndex, completedPrevious = false, previousPosition = manualNextPosition)
+                    onAdvanced(
+                        nextIndex,
+                        completedPrevious = false,
+                        previousPosition = manualNextPosition,
+                        clearDanmakuOnSwitch = true,
+                    )
                     manualNextPosition = 0L
                 } else {
                     onAdvanced(nextIndex)
@@ -2914,13 +3024,31 @@ class PhonePlayerActivity : PhoneActivity() {
             // 会让人以为「自己按了暂停」。中心图标只在用户明确操作时出现。
             override fun onIsPlayingChanged(isPlaying: Boolean) {
                 syncPlayGlyph()
+                syncDanmakuClockNow()
+                syncProgressBarsNow()
             }
 
             override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                 syncKeepScreenOn()
+                syncDanmakuClockNow()
+            }
+
+            override fun onPlaybackParametersChanged(parameters: com.google.android.exoplayer2.PlaybackParameters) {
+                syncDanmakuClockNow()
+            }
+
+            override fun onPositionDiscontinuity(
+                oldPosition: Player.PositionInfo,
+                newPosition: Player.PositionInfo,
+                reason: Int,
+            ) {
+                danmakuTarget()?.resetCursor()
+                syncDanmakuClockNow()
+                syncProgressBarsNow()
             }
 
             override fun onVideoSizeChanged(videoSize: VideoSize) {
+                playbackSessionState.onVideoSize(videoSize.width, videoSize.height)
                 debugVideo = "${videoSize.width}x${videoSize.height}"
                 // 画面模式按用户选择走，**不按片源方向强制 ZOOM**：
                 // 竖屏短剧在竖屏里等比铺满会裁掉左右，换集后突然放大就是从这里来的。
@@ -2938,7 +3066,7 @@ class PhonePlayerActivity : PhoneActivity() {
                 watchdog.onFrame()
             }
 
-            override fun onPlayerError(error: androidx.media3.common.PlaybackException) {
+            override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
                 // 调试面板要把错误码留下：用户报「花屏 / 有声无画」时，这一行就是结论。
                 debugError = "${error.errorCodeName}(${error.errorCode})"
                 syncDebugOverlay()
@@ -2976,32 +3104,32 @@ class PhonePlayerActivity : PhoneActivity() {
         nextIndex: Int,
         completedPrevious: Boolean = true,
         previousPosition: Long = 0L,
+        clearDanmakuOnSwitch: Boolean = false,
     ) {
         val d = detail ?: return
         if (nextIndex !in d.episodes.indices) return
         val previous = index
         val previousDuration = lastDuration
 
+        reportRecommendEvent(
+            if(completedPrevious) com.hgtv.star.core.RecommendBehavior.Event.PLAY_COMPLETE
+            else com.hgtv.star.core.RecommendBehavior.Event.SKIPPED,
+            positionMs=previousPosition,
+            durationMs=previousDuration,
+        )
+
         // 播完那一集：写 completed（用切走之前记下的时长）。
         val lib = library
         if (lib != null && previous in d.episodes.indices && previousDuration > 0) {
             // 自动推进才是「整集看完」；手动上滑是中途换集，只保存当前续播点。
-            val done = if (completedPrevious) {
-                WatchProgress.completed(
-                    series = d.series,
-                    episodeId = d.episodes[previous],
-                    episodeIndex = previous,
-                    duration = previousDuration,
-                )
-            } else {
-                WatchProgress.of(
-                    series = d.series,
-                    episodeId = d.episodes[previous],
-                    episodeIndex = previous,
-                    position = previousPosition,
-                    duration = previousDuration,
-                )
-            }
+            val done = playbackSessionState.progress.snapshot(
+                series = d.series,
+                episodeId = d.episodes[previous],
+                episodeIndex = previous,
+                position = previousPosition,
+                duration = previousDuration,
+                completed = completedPrevious,
+            )
             runCatching { lib.save(done) }
             // 账号侧也要跟着走（与 TV 的 `syncProgress` 同一条路）：不推的话，
             // 在手机上看完的这几集换到电视上还是「没看过」。
@@ -3011,7 +3139,7 @@ class PhonePlayerActivity : PhoneActivity() {
         index = nextIndex
         PhoneSession.nextQueued = false
         PhoneSession.clearNext()
-        bindEpisodeUi(d, nextIndex)
+        bindEpisodeUi(d, nextIndex, clearDanmakuOnSwitch)
         syncChips()
         lastDuration = 0
         prefetchAt = 0
@@ -3029,6 +3157,12 @@ class PhonePlayerActivity : PhoneActivity() {
             remote = video
             PhoneSession.publish(d, nextIndex, video, video.info.quality, PhoneSession.Owner.PLAYER)
         }
+        reportRecommendEvent(
+            com.hgtv.star.core.RecommendBehavior.Event.PLAY_START,
+            positionMs=0,
+            durationMs=0,
+            episodeIndexOverride=nextIndex,
+        )
         prepareNextSeasonIfNeeded(d)
         muteBufferingUi()
         android.util.Log.i("HGTV-PHONE", "advanced seamlessly to ${nextIndex + 1}")
@@ -3135,7 +3269,7 @@ class PhonePlayerActivity : PhoneActivity() {
             { direction ->
                 val d = detail ?: return@create
                 val target = index + direction
-                if (target in d.episodes.indices) play(target)
+                if (target in d.episodes.indices) play(target, clearDanmakuOnSwitch = true)
             },
             { if (!isFinishing) finish() },
         )
@@ -3216,13 +3350,13 @@ class PhonePlayerActivity : PhoneActivity() {
         val requested = library?.maxQuality ?: 0
         extras += "默认上限" to "${if (cap > 0) "${cap}P" else "-"}" +
             (if (cap < requested) "（本次降档）" else "") + " · 实际 $quality"
-        if (sessionPlayback.touched()) {
-            val reason = when (sessionPlayback.lastReason) {
+        if (playbackSessionState.touched()) {
+            val reason = when (playbackSessionState.lastReason) {
                 com.hgtv.star.core.DegradationKind.SAME_QUALITY_REBUILD -> "原档重建"
                 com.hgtv.star.core.DegradationKind.QUALITY_DOWN -> "降清晰度"
                 null -> "待手动处理"
             }
-            extras += "降级" to "$reason · ${sessionPlayback.budgetSummary()} · 重试=${ledger.attempts}"
+            extras += "降级" to "$reason · ${playbackSessionState.budgetSummary()} · 重试=${playbackSessionState.autoRetryAttempts}"
         }
         val errors = listOf(debugError, metrics.lastCodecError).filter { it.isNotBlank() }
             .joinToString(" · ")
@@ -3262,8 +3396,8 @@ class PhonePlayerActivity : PhoneActivity() {
 
     internal fun startTicker() {
         ticker?.cancel()
+        playbackCoordinator.resetProgressClock()
         ticker = scope.launch {
-            var lastSave = 0L
             while (true) {
                 delay(1000)
                 val p = player ?: continue
@@ -3271,11 +3405,10 @@ class PhonePlayerActivity : PhoneActivity() {
                 if (duration > 0) {
                     val position = p.currentPosition
                     lastDuration = duration
+                    playbackCoordinator.onProgress(position, duration)
                     PhoneSession.markPosition(position)
                     // 还在播就刷新会话时间戳（见 PhoneSession.touch）：退回推荐页时才敢接手。
                     if (p.isPlaying) PhoneSession.touch()
-                    // 弹幕时钟：位置 + 是否在播 + 倍速。暂停 / 跳转 / 换倍速都不会脱节。
-                    syncDanmakuClock(position, p.isPlaying, p.playbackParameters.speed)
                     if (!dragging) updateProgress(position, duration)
                     // 媒体面板的进度 / 状态跟着走：锁屏上那条进度不能停在进入播放页那一刻。
                     syncMediaSession()
@@ -3286,10 +3419,14 @@ class PhonePlayerActivity : PhoneActivity() {
                     // 起播稳定后尽早准备下一集，手动上滑与片尾自动连播共用这一份。
                     maybePrefetchNext(position, duration)
                     enqueueNextIfReady()
-                    val now = System.currentTimeMillis()
-                    if (now - lastSave >= 5000) {
-                        lastSave = now
+                    if (playbackCoordinator.progressDue()) {
+                        reportRecommendEvent(
+                            com.hgtv.star.core.RecommendBehavior.Event.PLAY_PROGRESS,
+                            position,
+                            duration,
+                        )
                         saveProgress(position, duration)
+                        playbackCoordinator.noteProgressSaved()
                     }
                 }
             }
@@ -3312,23 +3449,26 @@ class PhonePlayerActivity : PhoneActivity() {
         if (library?.playerClock == true || library?.playerSpeed == true) syncPlayInfo()
     }
 
+    /** 播放状态变化时立即补进度与缓存段，不等下一拍 ticker。 */
+    private fun syncProgressBarsNow() {
+        val p = player ?: return
+        val duration = p.duration
+        if (duration <= 0) return
+        updateProgress(p.currentPosition.coerceIn(0, duration), duration)
+    }
+
     private fun saveProgress(position: Long, duration: Long) {
         val d = detail ?: return
-        val lib = library ?: return
-        if (duration <= 0) return
         val episodeId = d.episodes.getOrNull(index) ?: return
-        // 位置夹取与「离片尾 3 秒算看完」的判据都在 `:core`（`WatchProgress.of`），
-        // 电视端写进度走的是同一份，两端的「看完」不会差一秒。
-        val progress = WatchProgress.of(
+        playbackCoordinator.saveProgress(
             series = d.series,
             episodeId = episodeId,
             episodeIndex = index,
-            position = position,
-            duration = duration,
+            positionMs = position,
+            durationMs = duration,
+            completed = false,
+            episodeCount = d.episodes.size,
         )
-        runCatching { lib.save(progress) }
-        // 本机先落盘、账号侧随后推（未登录时那一半是空操作）。
-        runCatching { PhoneAccountSync.progress(this, progress, d.episodes.size) }
     }
 
     /**
@@ -3366,8 +3506,7 @@ class PhonePlayerActivity : PhoneActivity() {
             val modelQueue = d.episodes.drop(nextIndex + 1).take(PLAYER_MODEL_QUEUE_SIZE)
             val info = withContext(Dispatchers.IO) {
                 runCatching {
-                    PhoneServices.repository(this@PhonePlayerActivity)
-                        .stream(nextId, maxQuality, d.playback, queue = modelQueue)
+                    playbackSource.stream(nextId, maxQuality, d.playback, queue = modelQueue)
                 }
                     .getOrNull()
             }
@@ -3816,11 +3955,13 @@ class PhonePlayerActivity : PhoneActivity() {
         if (current) {
             if (runCatching { lib.favorite(series.id) }.getOrDefault(false)) lib.toggle(series)
             PhoneAccountSync.favorite(this, series, false) { toast("登录后可同步收藏") }
+            reportRecommendEvent(com.hgtv.star.core.RecommendBehavior.Event.UNFAVORITE)
             toast("已取消收藏")
             return false
         }
         if (!runCatching { lib.favorite(series.id) }.getOrDefault(false)) lib.toggle(series)
         PhoneAccountSync.favorite(this, series, true) { toast("登录后可同步收藏") }
+        reportRecommendEvent(com.hgtv.star.core.RecommendBehavior.Event.FAVORITE)
         toast("已加入收藏")
         return true
     }
@@ -3842,6 +3983,7 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     private fun releasePlayer() {
+        playbackSessionState.release()
         ticker?.cancel(); ticker = null
         cancelAutoRetry()
         clearPlaybackError()
@@ -4032,7 +4174,7 @@ class PhonePlayerActivity : PhoneActivity() {
             },
             onQuality = {
                 // 用户自己选了档位：自动降档的结论与预算全部让位（与电视端同一条规则）。
-                sessionPlayback.onManualQualityChange()
+                playbackSessionState.onManualQualityChange()
                 syncChips()
                 // 换档 = 换一套地址表，必须重新取流；从当前位置接着播。
                 play(index, player?.currentPosition ?: 0L)
@@ -4303,7 +4445,7 @@ class PhonePlayerActivity : PhoneActivity() {
                     swipePages = true,
                 ) { i ->
                     sheet.dismiss()
-                    if (i != index) play(i)
+                    if (i != index) play(i, clearDanmakuOnSwitch = true)
                 },
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -4321,23 +4463,26 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private fun openLandscapeEpisodes(d: Detail) {
         sheet.show(
-            "选集 · 正在看第 ${index + 1} 集",
+            "选集",
             landscape = true,
-            heightFraction = .58f,
+            heightFraction = .78f,
+            showHeader = false,
             notifyHostOnUserDismiss = false,
         ) { panel ->
             panel.addView(
                 PhoneEpisodeGrid(
                     this, d.episodes.size, index,
                     pageSize = library?.episodePageSize ?: 20,
-                    compact = true,
+                    compact = false,
                     columns = 10,
                     maxGridHeight = Int.MAX_VALUE,
                     edgeTurn = library?.episodeEdgeTurn ?: true,
                     swipePages = true,
+                    tvStyle = true,
+                    tvSideInsetDp = 29,
                 ) { i ->
                     sheet.dismiss()
-                    if (i != index) play(i)
+                    if (i != index) play(i, clearDanmakuOnSwitch = true)
                 },
                 LinearLayout.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT

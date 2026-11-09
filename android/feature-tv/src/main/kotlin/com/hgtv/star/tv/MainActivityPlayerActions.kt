@@ -220,6 +220,13 @@ fun MainActivity.togglePlayerFavorite(): String {
     // 用户正在看这一部：收藏更新检查这时候去拉详情没有意义，先停下（与简介页一致）。
     favoriteMonitor.stop()
     val saved=library.toggle(data.series)
+    recommendPlaybackController.reportEventById(
+        data.series.id,
+        if(saved) com.hgtv.star.core.RecommendBehavior.Event.FAVORITE
+        else com.hgtv.star.core.RecommendBehavior.Event.UNFAVORITE,
+        episodeId=data.episodes.getOrNull(episodeIndex).orEmpty(),
+        episodeIndex=episodeIndex,
+    )
     // 未上架的剧没有分集：`observeFavorite` 的集数必须 > 0，传 0 会抛异常。
     if(saved && data.episodes.isNotEmpty())
         library.observeFavorite(data.series.id,data.episodes.size,System.currentTimeMillis(),acknowledge=true)

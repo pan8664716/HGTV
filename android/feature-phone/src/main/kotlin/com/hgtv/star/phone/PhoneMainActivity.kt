@@ -11,7 +11,6 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import android.widget.ProgressBar
 import android.widget.TextView
 import android.widget.Toast
 import com.hgtv.star.phone.ui.PhoneColor
@@ -28,6 +27,7 @@ import com.hgtv.star.phone.page.PhoneMinePage
 import com.hgtv.star.phone.page.PhoneRankPage
 import com.hgtv.star.phone.page.PhoneRecommendPage
 import com.hgtv.star.shared.architecture.AppExit
+import com.hgtv.star.shared.ui.LoadingDotsView
 
 /**
  * 手机 / 平板端主界面。
@@ -86,8 +86,10 @@ class PhoneMainActivity : PhoneActivity() {
     private var debugOverlay: com.hgtv.star.phone.ui.PhoneDebugOverlay? = null
     /** 面板挂在哪：整窗的 root（不随 tab 重建）。 */
     private lateinit var debugRoot: FrameLayout
-    /** 冷启动初始化遮罩：书库 + 主设备注册完成前不创建推荐页。 */
+    /** 冷启动初始化遮罩：只等本机书库，设备注册在后台继续。 */
     private var startupOverlay: View? = null
+    /** 设备注册完成后的页面刷新入口；Activity 销毁时必须注销，避免持有旧视图。 */
+    private var registrationCleanup: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -153,31 +155,36 @@ class PhoneMainActivity : PhoneActivity() {
             ?: savedInstanceState?.getInt(STATE_TAB, -1)?.takeIf { it in pages.indices }
         pendingTab = -1
         debugRoot = root
-        showStartupLoading(root)
         PhoneServices.warm(this)
+        registrationCleanup = PhoneIdentity.onRegistrationFinished { outcome ->
+            if(outcome==com.hgtv.star.shared.data.DeviceRegistration.Outcome.REGISTERED) {
+                (pages.getOrNull(0) as? PhoneRecommendPage)?.onIdentityReady()
+            }
+        }
         // 书库读完那一刻把**身份 / 凭据 / 注册 Cookie** 灌进仓库（电视端 `applyAccount()` 的手机版）。
         // 不灌的话 `repository.signedIn` 永远是 false：登录了也不会上传收藏与进度、搜索按匿名设备请求。
         val lib = PhoneServices.library(this)
-        lib.loadAsync(
-            onFailure = {
-                PhoneIdentity.apply(this, lib)
-                revealPhoneStartup(restored)
-            },
-            onReady = {
-                PhoneIdentity.apply(this, lib)
-                // 冷启动那一次 boot 心跳：凭据此刻才从书库灌进仓库，早打等于带半成品身份去问
-                //（与电视端 `MainActivityLibrary` 里那一句同一条时序）。
-                runCatching { com.hgtv.star.shared.data.SessionBootstrap.onAppStart() }
-                // 旧版升级后主设备可能正在重新注册。推荐流必须等这一次注册尝试结束；
-                // 失败也放行，页面自己的错误提示与重试仍可继续工作。
-                Thread({
-                    PhoneIdentity.awaitRegistration()
-                    runOnUiThread {
-                        if (!isFinishing && !isDestroyed) revealPhoneStartup(restored)
-                    }
-                }, "hgtv-phone-startup").start()
-            },
-        )
+        if(lib.isLoaded) {
+            // 启动页已经完成本地初始化：这里直接建首屏，不再闪一次“正在初始化设备”。
+            PhoneIdentity.apply(this, lib)
+            runCatching { com.hgtv.star.shared.data.SessionBootstrap.onAppStart() }
+            revealPhoneStartup(restored)
+        } else {
+            showStartupLoading(root)
+            lib.loadAsync(
+                onFailure = {
+                    PhoneIdentity.apply(this, lib)
+                    revealPhoneStartup(restored)
+                },
+                onReady = {
+                    PhoneIdentity.apply(this, lib)
+                    // 冷启动那一次 boot 心跳：凭据此刻才从书库灌进仓库，早打等于带半成品身份去问
+                    //（与电视端 `MainActivityLibrary` 里那一句同一条时序）。
+                    runCatching { com.hgtv.star.shared.data.SessionBootstrap.onAppStart() }
+                    revealPhoneStartup(restored)
+                },
+            )
+        }
     }
 
     override fun rebuildOnSizeChange(newConfig: android.content.res.Configuration): Boolean {
@@ -224,16 +231,16 @@ class PhoneMainActivity : PhoneActivity() {
         Toast.makeText(this, "再按一次返回退出", Toast.LENGTH_SHORT).show()
     }
 
-    /** 初始化完成前只显示转圈，不创建推荐页，也不启动视频流。 */
+    /** 本机书库读完后立刻放行首屏；设备注册不挡页面创建。 */
     private fun showStartupLoading(root: FrameLayout) {
         tabBar.visibility = View.GONE
         content.visibility = View.INVISIBLE
         val center = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             gravity = Gravity.CENTER
-            addView(ProgressBar(this@PhoneMainActivity).apply { isIndeterminate = true })
+            addView(LoadingDotsView(this@PhoneMainActivity))
             addView(TextView(this@PhoneMainActivity).apply {
-                text = "正在初始化设备…"
+                text = "正在启动…"
                 setTextColor(PhoneStyle.textDim)
                 phoneSize(15)
                 gravity = Gravity.CENTER
@@ -258,17 +265,29 @@ class PhoneMainActivity : PhoneActivity() {
 
     /** 放行首屏。只执行一次；注册失败也放行，避免网络异常时永久转圈。 */
     private fun revealPhoneStartup(restored: Int?) {
-        val overlay = startupOverlay ?: return
+        val overlay = startupOverlay
         startupOverlay = null
-        (overlay.parent as? ViewGroup)?.removeView(overlay)
+        if(overlay!=null) (overlay.parent as? ViewGroup)?.removeView(overlay)
         content.visibility = View.VISIBLE
         tabBar.visibility = View.VISIBLE
         val lib = PhoneServices.library(this)
         val start = restored ?: if (lib.isLoaded && !lib.launchRecommend) 1 else 0
         if (current < 0) show(start)
+        // 与 TV 一样在进入分类页之前就把默认分类准备好；用户点分类时直接铺结果，
+        // 不再现场创建页面并重新发第一页请求。
+        debugRoot.post {
+            if(!isFinishing && !isDestroyed) preloadCategoryPage()
+        }
         // 首次进入提示「字号 / 每行卡片数可以在设置里调」。等首屏画出来再弹，
         // 否则窗口还没 attach，对话框会挂在一个空 Activity 上。
         debugRoot.post { if (!isFinishing && !isDestroyed) PhoneFirstRunTip.ensure(this) }
+    }
+
+    private fun preloadCategoryPage() {
+        if(pages[1]!=null) return
+        val state=pendingCategoryState
+        pendingCategoryState=null
+        pages[1]=PhoneCategoryPage(this,state)
     }
 
     private fun show(index: Int) {
@@ -295,6 +314,8 @@ class PhoneMainActivity : PhoneActivity() {
         tabBar.setSelected(index)
         // 推荐页的视频流：切走时停解码器，切回时继续播。
         if (page is PhoneRecommendPage) page.onShown()
+        // 分类页的小分类请求可能在切走时被取消，切回时补拉缺失的面板。
+        if (page is PhoneCategoryPage) page.onShown()
         syncKeepScreenOn()
         // 调试面板的「页面」字段跟着 tab 走。
         if (::debugRoot.isInitialized) syncDebugOverlay()
@@ -409,6 +430,9 @@ class PhoneMainActivity : PhoneActivity() {
     }
 
     override fun onDestroy() {
+        registrationCleanup?.invoke()
+        registrationCleanup = null
+        (pages.getOrNull(1) as? PhoneCategoryPage)?.release()
         debugRoot.removeCallbacks(debugTicker)
         PhoneDebugReport.resetSamples()
         // 入口只属于本实例：留着会在重建后的新界面上被旧闭包改到旧控件。

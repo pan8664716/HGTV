@@ -141,6 +141,8 @@ const val PREFETCH_TRIGGER_ROWS=4
  * 没走穿就自然停手）。
  */
 const val PREFETCH_PAGES=2
+/** 追加页失败后，用户继续下拉时允许自动重试的冷却时间。 */
+const val LOAD_MORE_RETRY_COOLDOWN_MS=3_000L
 /**
  * 预取窗口的半径（行数）：在**物化窗口**的上下各这么多行之内提前取封面。
  *

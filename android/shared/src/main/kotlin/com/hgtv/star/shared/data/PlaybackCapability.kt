@@ -76,7 +76,7 @@ object PlaybackCapability {
      * 调用方必须在后台线程（`MediaCodecList` 是 Binder 调用，盒子上能卡 1~3 秒）。
      */
     fun hasHardwareHevcDecoder(context: Context): Boolean = runCatching {
-        androidx.media3.exoplayer.mediacodec.MediaCodecUtil
+        com.google.android.exoplayer2.mediacodec.MediaCodecUtil
             .getDecoderInfos("video/hevc",false,false)
             .any { !it.softwareOnly }
     }.getOrDefault(true)

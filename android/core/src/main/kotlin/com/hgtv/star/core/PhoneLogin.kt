@@ -194,13 +194,25 @@ class PhoneLogin(
     /**
      * 设备档案（机型 / 系统 / `cdid` / `openudid` …）。
      *
-     * 注册与登录签名共用同一份；它属于登录用户设备，与内容接口使用的主设备档案分开。
+     * 登录先使用当前主设备；账号响应带回另一台完整设备后，后续请求才以账号设备为主。
      */
     var device: Map<String,String> = emptyMap()
         set(value) { field=value.filterValues { it.isNotBlank() }; signer.updateDevice(field) }
 
     /** 注册结果下发的 Cookie（`install_id` / `ttreq` / `store-region` …）。 */
     private var deviceCookies: Map<String,String> = emptyMap()
+
+    /**
+     * 登录请求沿用主设备已经注册下发的 Cookie。
+     *
+     * 登录本身不再是第三套身份：界面把当前主设备的 profile / did / Cookie 一并交给本会话，
+     * 后续 `Set-Cookie` 只在这份设备 Cookie 上累积账号会话。
+     */
+    fun useDeviceCookies(values: Map<String,String>) {
+        deviceCookies=values.filterValues { it.isNotBlank() }
+        cookies.putAll(deviceCookies)
+    }
+
     /** 会话 Cookie（登录成功后由 `Set-Cookie` 累积）。 */
     private val cookies = linkedMapOf<String,String>()
     /** 会话 Token（`X-Tt-Token` 响应头）。 */

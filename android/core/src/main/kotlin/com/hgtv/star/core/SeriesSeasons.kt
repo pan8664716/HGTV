@@ -10,9 +10,9 @@ package com.hgtv.star.core
  * | --- | --- |
  * | 分类 / 榜单（`category/landpage`） | `sub_title_list` 里 `data_type == 0` 的那条「第N季」（单季也写第1季） |
  * | 详情（`video_detail`）、相关作品（`plan/v:version`） | `season_index`（数字） |
- * | 搜索（`search/tab`）、提示词（`search/suggest`） | **没有**，只能从剧名读 |
+ * | 搜索（`search/tab`）、官网搜索、提示词 | 实测没有显式季号字段，季号写在剧名里 |
  *
- * 剧名解析只当兜底（搜索 / 提示词那两条接口就是兜底场景），因此这里做两件纯逻辑的事：
+ * 剧名解析只当兜底（搜索 / 官网搜索 / 提示词就是兜底场景），因此这里做两件纯逻辑的事：
  *
  * 1. [base]：剥掉剧名尾部的季号，得到「基名」——
  *    `聚宝仙盆之杂灵根才是真BOSS第十三季` → `聚宝仙盆之杂灵根才是真BOSS`；

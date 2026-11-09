@@ -2,10 +2,10 @@
 package com.hgtv.star.core
 
 /**
- * 一台只用于播放模型空响应兜底的备用设备。
+ * 唯一一台备用设备。
  *
  * 它不会写入仓库的 [ContentRepository.deviceIdentity]，也不会替换本机主设备；
- * 调用方只在单次播放模型请求里临时使用这套档案和 Cookie。
+ * 调用方只在主身份收到 `HTTP 200 + 空 body` 时，用这套完整的档案和 Cookie 重签一次。
  */
 data class PlaybackBackupDevice(
     val id: String,

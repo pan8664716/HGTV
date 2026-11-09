@@ -42,11 +42,16 @@ object IdentityBinder {
         // 注册下发的 Cookie（`install_id` / `ttreq` / `store-region`）：少了它，
         // 新进程的第一轮请求是「裸设备」，平台按陌生设备处理。
         runCatching { repository.restoreDeviceCookies(library.registrationCookies()) }
-        // 拦截器默认只补主设备 Cookie；账号 Cookie 仅由带 `X-HGTV-Identity: account`
-        // 的账号页请求 / 会话心跳显式使用。
-        SessionBridge.mainDeviceCookies = { library.registrationCookies() }
-        // 心跳的设备头要用这台机器的档案（机型 / 系统 / cdid），与业务请求同源。
-        runCatching { SessionBootstrap.updateDevice(library.accountDevice()) }
+        // 只保留一套主身份：未登录用主设备 Cookie，登录后用账号设备 Cookie。
+        // 请求层会显式带整套 Cookie；这里只给没有显式 Cookie 的内部请求兜底。
+        SessionBridge.mainDeviceCookies = { repository.primaryCookiesSnapshot() }
+        // 心跳的设备头与业务请求同源：登录后使用账号设备，未登录使用主设备。
+        val account=repository.credentials?.takeIf { it.configured }
+        runCatching {
+            SessionBootstrap.updateDevice(
+                account?.device?.takeIf { it.isNotEmpty() } ?: library.deviceProfile(),
+            )
+        }
         // 历史遗留的「只给搜索用的口令」：搜索接口认它。
         repository.sessionToken = runCatching { library.searchToken }.getOrDefault("").ifBlank { null }
         // 身份与注册 Cookie 就绪后再刷新 TNC。缓存未过期时这里是空操作，

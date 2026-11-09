@@ -386,6 +386,7 @@ class TvTools(private val activity: Activity) {
     fun phoneLoginForm(
         anchor: View?,
         deviceProfile: Map<String,String>,
+        deviceCookies: Map<String,String>,
         register: (Map<String,String>)->com.hgtv.star.core.DeviceRegister.Registered?,
         onLoggedIn: (AccountCredentials)->Unit,
         /**
@@ -405,6 +406,7 @@ class TvTools(private val activity: Activity) {
     ) {
         val login=PhoneLogin().apply {
             this.device=deviceProfile
+            useDeviceCookies(deviceCookies)
             log={ line ->
                 android.util.Log.i("HGTV-LOGIN",line)
                 com.hgtv.star.shared.debug.Diagnostics.trace("HGTV-LOGIN",line)
@@ -498,9 +500,9 @@ class TvTools(private val activity: Activity) {
                             send.setLabel("获取验证码")
                             next.dismiss()
                             upsmsOnTv(anchor,login,phone,"",result.number,result.content,onLoggedIn,
-                                restart={ phoneLoginForm(anchor,deviceProfile,register,onLoggedIn,prefillPhone=phone) },
+                                restart={ phoneLoginForm(anchor,deviceProfile,deviceCookies,register,onLoggedIn,prefillPhone=phone) },
                                 onUpsmsVerified={
-                                    phoneLoginForm(anchor,deviceProfile,register,onLoggedIn,
+                                    phoneLoginForm(anchor,deviceProfile,deviceCookies,register,onLoggedIn,
                                         prefillPhone=phone,autoSend=true)
                                 })
                         }
@@ -553,7 +555,7 @@ class TvTools(private val activity: Activity) {
                             // 「重新获取验证码」= 把这一页原样再开一次（新的会话、新的验证码），
                             // 与参考实现「明确过期 → 回到获取新验证码并清掉二维码」同一条规则。
                             upsmsOnTv(anchor,login,phone,code,result.number,result.content,onLoggedIn,
-                                restart={ phoneLoginForm(anchor,deviceProfile,register,onLoggedIn,prefillPhone=phone) })
+                                restart={ phoneLoginForm(anchor,deviceProfile,deviceCookies,register,onLoggedIn,prefillPhone=phone) })
                         }
                         is PhoneLogin.Result.Failed -> note.text=result.message
                         else -> note.text="登录失败，请稍后重试。"
@@ -792,6 +794,7 @@ class TvTools(private val activity: Activity) {
     fun phoneLogin(
         anchor: View?,
         deviceProfile: Map<String,String>,
+        deviceCookies: Map<String,String>,
         register: (Map<String,String>)->com.hgtv.star.core.DeviceRegister.Registered?,
         onLoggedIn: (AccountCredentials)->Unit
     ) {
@@ -807,6 +810,7 @@ class TvTools(private val activity: Activity) {
             try {
                 val login=PhoneLogin().apply {
                     this.device=deviceProfile
+                    useDeviceCookies(deviceCookies)
                     log={ line ->
                 android.util.Log.i("HGTV-LOGIN",line)
                 com.hgtv.star.shared.debug.Diagnostics.trace("HGTV-LOGIN",line)

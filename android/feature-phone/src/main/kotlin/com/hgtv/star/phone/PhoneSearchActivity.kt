@@ -27,14 +27,13 @@ import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.tabBarInset
+import com.hgtv.star.shared.feature.search.SearchController
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.nav.Route
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
@@ -76,17 +75,19 @@ class PhoneSearchActivity : PhoneActivity() {
     private lateinit var suggestList: LinearLayout
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private var suggestJob: Job? = null
-    private var hotJob: Job? = null
-
+    private val searchController by lazy {
+        SearchController(
+            repository = PhoneServices.repository(this),
+            library = PhoneServices.library(this),
+            scope = scope,
+        )
+    }
     private var page = 1
     private var keyword = ""
     /** 已经搜过至少一次：这时提示区收起，结果占满屏幕。 */
     private var showingResults = false
     /** 程序化改输入框内容（点芯片、回填关键词）时不要触发联想请求。 */
     private var suppressWatch = false
-    /** 热门搜索只取一次（进程内）：换关键词、清空输入都复用这一份。 */
-    private var hotWords: List<String>? = null
     private val source: SearchSource
         get() = runCatching {
             PhoneServices.library(this).takeIf { it.isLoaded }?.searchSource
@@ -98,6 +99,13 @@ class PhoneSearchActivity : PhoneActivity() {
         // 状态栏透明：否则它会用自己的底色盖在页面顶部，与石墨底拼成两条颜色。
         phoneEdgeToEdge()
         buildUi()
+        scope.launch {
+            searchController.state.collect { state ->
+                if (showingResults) return@collect
+                val typed = input.text?.toString()?.trim().orEmpty()
+                if (typed.isEmpty()) refreshHints() else renderSuggestions(state.suggestions)
+            }
+        }
         refreshHints()
     }
 
@@ -209,7 +217,7 @@ class PhoneSearchActivity : PhoneActivity() {
             phoneSize(12)
             setPadding(dp(10), dp(6), dp(2), dp(6))
             setOnClickListener {
-                runCatching { PhoneServices.library(this@PhoneSearchActivity).clearSearches() }
+                searchController.clearHistory()
                 refreshHints()
             }
         })
@@ -277,9 +285,8 @@ class PhoneSearchActivity : PhoneActivity() {
         feed.visibility = View.GONE
 
         val typed = input.text?.toString()?.trim().orEmpty()
-        val history = runCatching {
-            PhoneServices.library(this).takeIf { it.isLoaded }?.searches().orEmpty()
-        }.getOrDefault(emptyList()).map { it.query }
+        val state = searchController.state.value
+        val history = state.history
 
         val showHistory = typed.isEmpty() && history.isNotEmpty()
         historyHeader.visibility = if (showHistory) View.VISIBLE else View.GONE
@@ -290,8 +297,9 @@ class PhoneSearchActivity : PhoneActivity() {
 
         // 热门搜索只在「没有输入且本机没有记录」时出现：有记录时用户想找的是自己搜过的词。
         val showHot = typed.isEmpty() && history.isEmpty()
-        hotHeader.visibility = if (showHot && hotWords.isNullOrEmpty()) View.GONE else if (showHot) View.VISIBLE else View.GONE
-        hotChips.visibility = if (showHot && !hotWords.isNullOrEmpty()) View.VISIBLE else View.GONE
+        val hot = state.hot
+        hotHeader.visibility = if (showHot && hot.isEmpty()) View.GONE else if (showHot) View.VISIBLE else View.GONE
+        hotChips.visibility = if (showHot && hot.isNotEmpty()) View.VISIBLE else View.GONE
         if (showHot) loadHotSearches()
 
         val showSuggest = typed.isNotEmpty()
@@ -301,19 +309,7 @@ class PhoneSearchActivity : PhoneActivity() {
 
     /** 取一次热门搜索（走 [com.hgtv.star.core.ContentRepository.hotSearches]，与 TV 的探针同一个接口）。 */
     private fun loadHotSearches() {
-        if (!hotWords.isNullOrEmpty() || hotJob?.isActive == true) return
-        hotJob = scope.launch {
-            val words = withContext(Dispatchers.IO) {
-                runCatching { PhoneServices.repository(this@PhoneSearchActivity).hotSearches(12, source) }
-                    .getOrDefault(emptyList())
-            }
-            hotWords = words
-            if (showingResults || input.text?.toString()?.trim().orEmpty().isNotEmpty()) return@launch
-            val has = words.isNotEmpty()
-            hotHeader.visibility = if (has) View.VISIBLE else View.GONE
-            hotChips.visibility = if (has) View.VISIBLE else View.GONE
-            if (has) hotChips.setChips(words) { word -> runSearch(word) }
-        }
+        searchController.loadHot()
     }
 
     /**
@@ -323,7 +319,6 @@ class PhoneSearchActivity : PhoneActivity() {
      * 晚回来的旧结果直接丢掉——否则用户已经删到一半，列表还在跳上一批词。
      */
     private fun scheduleSuggestions(text: String) {
-        suggestJob?.cancel()
         val clean = text.trim()
         if (clean.isEmpty()) {
             suggestList.removeAllViews()
@@ -340,16 +335,7 @@ class PhoneSearchActivity : PhoneActivity() {
             suggestHeader.visibility = View.VISIBLE
             suggestList.visibility = View.VISIBLE
         }
-        suggestJob = scope.launch {
-            delay(220)
-            val rows = withContext(Dispatchers.IO) {
-                runCatching {
-                    PhoneServices.repository(this@PhoneSearchActivity).suggestions(clean, 10, source)
-                }.getOrDefault(emptyList())
-            }
-            if (input.text?.toString()?.trim() != clean) return@launch
-            renderSuggestions(rows)
-        }
+        searchController.scheduleSuggestions(clean)
     }
 
     private fun renderSuggestions(rows: List<SearchSuggestion>) {
@@ -437,14 +423,14 @@ class PhoneSearchActivity : PhoneActivity() {
             (getSystemService(INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)
                 ?.hideSoftInputFromWindow(input.windowToken, 0)
         }
-        runCatching { PhoneServices.library(this).rememberSearch(clean) }
+        searchController.remember(clean)
 
         hintPanel.visibility = View.GONE
         feed.visibility = View.VISIBLE
         // 搜索源（设置 → 内容管理与来源）：App 接口 / 官网接口。
         // 与 TV 的 `library.searchSource` 同一份落盘值，只影响搜索（分类 / 榜单 / 播放不走它）。
         feed.load { p ->
-            val result = PhoneServices.repository(this).search(keyword, p, source)
+            val result = searchController.page(keyword, p, source)
             // 这一次是不是「App 接口没数据、自动改走官网」（见 `ContentRepository.search`）。
             // 只提示第 1 页，翻页时不重复打扰。
             if (p == 1 && com.hgtv.star.core.SearchDiag.last?.degraded == true) {
@@ -467,20 +453,6 @@ class PhoneSearchActivity : PhoneActivity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        // 正在看结果：返回先回到提示区（用户可以改词），再按一次才离开搜索页。
-        if (showingResults) {
-            showingResults = false
-            suppressWatch = true
-            input.setText("")
-            suppressWatch = false
-            input.requestFocus()
-            runCatching {
-                (getSystemService(INPUT_METHOD_SERVICE) as? android.view.inputmethod.InputMethodManager)
-                    ?.showSoftInput(input, 0)
-            }
-            refreshHints()
-            return
-        }
         super.onBackPressed()
     }
 

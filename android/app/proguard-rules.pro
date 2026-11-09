@@ -27,9 +27,9 @@
 # 体积影响可以忽略。
 -keepnames class * extends java.lang.Throwable
 
-# Media3 1.4.1 的 PlayerView 构造函数同时包含 TextureView / SurfaceView 分支。
+# ExoPlayer 2.19.1 的 PlayerView 构造函数同时包含 TextureView / SurfaceView 分支。
 # R8 内联后会触发 Android 12 的 ART 校验错误（VerifyError），因此禁止优化该类。
--keep class androidx.media3.ui.PlayerView { *; }
+-keep class com.google.android.exoplayer2.ui.PlayerView { *; }
 
 # ========== 会话保活 ==========
 # 心跳与装配入口都是 R8 看不到外部调用者的入口（`Application` 反射式调用链之外、

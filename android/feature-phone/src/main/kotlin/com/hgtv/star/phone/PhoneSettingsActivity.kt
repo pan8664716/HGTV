@@ -50,6 +50,9 @@ import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.data.LocalReset
 import com.hgtv.star.shared.architecture.AppRelaunch
+import com.hgtv.star.shared.feature.lan.LanSyncController
+import com.hgtv.star.shared.feature.settings.SettingRowSpec
+import com.hgtv.star.shared.feature.settings.SettingsController
 import com.hgtv.star.shared.lan.DeviceSyncPackage
 import com.hgtv.star.shared.lan.DeviceSyncPayload
 import com.hgtv.star.shared.lan.DeviceSyncSelection
@@ -59,6 +62,12 @@ import com.hgtv.star.shared.lan.lanIpv4Address
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.ui.TvTheme
 import com.hgtv.star.shared.ui.TvThemeStore
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 /** 手机设置页的四个大项，名称和内容边界与电视端 `SETTINGS_TABS` 一致。 */
@@ -72,6 +81,8 @@ enum class PhoneSettingsPage(val label: String, val hint: String) {
 private const val LAN_SYNC_SOURCE_TTL_MS = Long.MAX_VALUE
 private const val TAG_LANDSCAPE_SETTING_ROW = "landscape-setting-row"
 private const val TAG_LANDSCAPE_SETTING_SPACER = "landscape-setting-spacer"
+private const val SETTINGS_DENSITY_SCALE = .9f
+private const val SETTINGS_TEXT_SCALE = 1f
 
 /**
  * 设置页：**与 TV 端一一对应**。
@@ -102,10 +113,15 @@ class PhoneSettingsActivity : PhoneActivity() {
     /** 当前分区面板；竖屏为 null，继续使用原来的平铺列表。 */
     private var sectionHost: LinearLayout? = null
     private val library by lazy { PhoneServices.library(this) }
+    private val settingsController by lazy { SettingsController(this, library) }
     private var page = PhoneSettingsPage.PLAYBACK
     private val syncHandler = Handler(Looper.getMainLooper())
-    private var lanSyncSession: LanLibrarySyncSession? = null
-    private var lanSyncRequest = 0
+    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private val lanSyncController by lazy { LanSyncController(this, library, scope) }
+    private var lanSyncJob: Job? = null
+    private var lanSyncDialog: PhoneDialog? = null
+    private var lanSyncStep: LanSyncController.Step? = null
+    private var lanSyncStatus: TextView? = null
 
     /**
      * 设置页重建时恢复到的位置。
@@ -142,7 +158,7 @@ class PhoneSettingsActivity : PhoneActivity() {
             gravity = Gravity.CENTER_VERTICAL
             if (landscape) {
                 // 横屏沉浸式会隐藏状态栏，顶部页签需要留出触屏边缘的呼吸空间。
-                setPadding(dp(12), dp(10), dp(12), dp(6))
+                setPadding(settingsDp(12), settingsDp(10), settingsDp(12), settingsDp(6))
             } else {
                 setPadding(dp(16), status + dp(6), dp(16), dp(8))
             }
@@ -322,12 +338,12 @@ class PhoneSettingsActivity : PhoneActivity() {
                 val active = option == page
                 pageTabs.addView(TextView(this).apply {
                     text = option.label
-                    phoneSize(11)
+                    settingsTextSize(11)
                     gravity = Gravity.CENTER
-                    minWidth = dp(78)
-                    minHeight = dp(24)
+                    minWidth = settingsDp(78)
+                    minHeight = settingsDp(24)
                     includeFontPadding = false
-                    setPadding(dp(8), 0, dp(8), 0)
+                    setPadding(settingsDp(8), 0, settingsDp(8), 0)
                     setTextColor(if (active) PhoneStyle.accent else PhoneStyle.textDim)
                     applySoft(
                         if (active) SoftStyle.INSET else SoftStyle.RAISED,
@@ -341,9 +357,9 @@ class PhoneSettingsActivity : PhoneActivity() {
                         render(resetScroll = true)
                     }
                 }, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, dp(24)
+                    ViewGroup.LayoutParams.WRAP_CONTENT, settingsDp(24)
                 ).apply {
-                    if (index > 0) leftMargin = dp(8)
+                    if (index > 0) leftMargin = settingsDp(8)
                 })
             }
             return
@@ -355,13 +371,13 @@ class PhoneSettingsActivity : PhoneActivity() {
         PhoneSettingsPage.entries.chunked(2).forEachIndexed { rowIndex, line ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                if (rowIndex > 0) setPadding(0, dp(6), 0, 0)
+                if (rowIndex > 0) setPadding(0, settingsDp(6), 0, 0)
             }
             line.forEachIndexed { index, option ->
                 val active = option == page
                 val button = TextView(this).apply {
                     text = option.label
-                    phoneSize(14)
+                    settingsTextSize(14)
                     gravity = Gravity.CENTER
                     setTextColor(if (active) PhoneStyle.accent else PhoneStyle.text)
                     applySoft(
@@ -376,8 +392,8 @@ class PhoneSettingsActivity : PhoneActivity() {
                         render(resetScroll = true)
                     }
                 }
-                row.addView(button, LinearLayout.LayoutParams(0, dp(42), 1f).apply {
-                    if (index > 0) leftMargin = dp(6)
+                row.addView(button, LinearLayout.LayoutParams(0, settingsDp(42), 1f).apply {
+                    if (index > 0) leftMargin = settingsDp(6)
                 })
             }
             grid.addView(row, LinearLayout.LayoutParams(
@@ -386,7 +402,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         }
         container.addView(grid, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(4) })
+        ).apply { bottomMargin = settingsDp(4) })
     }
 
     // ---------------------------------------------------------------- 横屏 TV 式布局
@@ -395,25 +411,25 @@ class PhoneSettingsActivity : PhoneActivity() {
     private fun landscapePanel(title: String, subtitle: String): LinearLayout {
         val panel=LinearLayout(this).apply {
             orientation=LinearLayout.VERTICAL
-            setPadding(dp(12),dp(10),dp(12),dp(8))
+            setPadding(settingsDp(12),settingsDp(10),settingsDp(12),settingsDp(8))
             applySoft(SoftStyle.RAISED,PhoneStyle.surface,PhoneStyle.RADIUS_CARD,3f)
         }
         panel.addView(TextView(this).apply {
             text=title
             setTextColor(PhoneStyle.text)
-            phoneSize(13)
+            settingsTextSize(13)
             setTypeface(typeface,Typeface.BOLD)
-            setPadding(dp(2),0,dp(2),0)
+            setPadding(settingsDp(2),0,settingsDp(2),0)
         })
         panel.addView(TextView(this).apply {
             text=subtitle
             setTextColor(PhoneStyle.textDim)
-            phoneSize(11)
-            setPadding(dp(2),dp(3),dp(2),dp(8))
+            settingsTextSize(11)
+            setPadding(settingsDp(2),settingsDp(3),settingsDp(2),settingsDp(8))
         })
         container.addView(panel,LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin=dp(8) })
+        ).apply { bottomMargin=settingsDp(8) })
         sectionHost=panel
         return panel
     }
@@ -423,7 +439,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         val flow=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
         panel.addView(flow,LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin=dp(6) })
+        ).apply { bottomMargin=settingsDp(6) })
         return flow
     }
 
@@ -434,7 +450,7 @@ class PhoneSettingsActivity : PhoneActivity() {
             lastRow.removeView(spacer)
             lastRow.addView(view,LinearLayout.LayoutParams(
                 0,settingRowHeight(),1f
-            ).apply { leftMargin=dp(6) })
+            ).apply { leftMargin=settingsDp(6) })
             return
         }
         val row=LinearLayout(this).apply {
@@ -444,7 +460,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         }
         flow.addView(row,LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { if(flow.childCount>1) topMargin=dp(6) })
+        ).apply { if(flow.childCount>1) topMargin=settingsDp(6) })
         row.addView(view,LinearLayout.LayoutParams(0,settingRowHeight(),1f))
         row.addView(
             Space(this).apply { tag=TAG_LANDSCAPE_SETTING_SPACER },
@@ -463,7 +479,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         row.addView(left,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
         row.addView(right,LinearLayout.LayoutParams(
             0,ViewGroup.LayoutParams.WRAP_CONTENT,1f
-        ).apply { leftMargin=dp(6) })
+        ).apply { leftMargin=settingsDp(6) })
         panel.addView(row,LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
         ))
@@ -473,26 +489,26 @@ class PhoneSettingsActivity : PhoneActivity() {
     private fun landscapeColumnCell(column: LinearLayout,view: View) {
         column.addView(view,LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,settingRowHeight()
-        ).apply { if(column.childCount>0) topMargin=dp(6) })
+        ).apply { if(column.childCount>0) topMargin=settingsDp(6) })
     }
 
     private fun landscapeSetting(title: String,value: String,onClick: ()->Unit): View =
         LinearLayout(this).apply {
             orientation=LinearLayout.HORIZONTAL
             gravity=Gravity.CENTER_VERTICAL
-            setPadding(dp(12),0,dp(10),0)
+            setPadding(settingsDp(12),0,settingsDp(10),0)
             applySoft(SoftStyle.RAISED,PhoneStyle.surfaceHigh,PhoneStyle.RADIUS_PILL,4f)
             addView(TextView(this@PhoneSettingsActivity).apply {
                 text=title
                 setTextColor(PhoneStyle.text)
-                phoneSize(13)
+                settingsTextSize(13)
                 maxLines=1
                 ellipsize=android.text.TextUtils.TruncateAt.END
             },LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
             addView(TextView(this@PhoneSettingsActivity).apply {
                 text=value
                 setTextColor(PhoneStyle.textDim)
-                phoneSize(11)
+                settingsTextSize(11)
                 maxLines=1
                 ellipsize=android.text.TextUtils.TruncateAt.END
             })
@@ -500,12 +516,21 @@ class PhoneSettingsActivity : PhoneActivity() {
         }
 
     private fun landscapeSwitch(title: String,checked: Boolean,onToggle:(Boolean)->Unit): View =
-        PhoneSwitchRow(this,title,checked,onToggle)
+        PhoneSwitchRow(
+            this,title,checked,
+            densityScale=SETTINGS_DENSITY_SCALE,
+            textScale=SETTINGS_TEXT_SCALE,
+            onToggle=onToggle,
+        )
 
     private fun landscapeSlider(
         title: String,min: Float,max: Float,step: Float,value: Float,
         format:(Float)->String,onValue:(Float)->Unit,
-    ): View = PhoneSettingSlider(this,title,min,max,step,value,onValue,format)
+    ): View = PhoneSettingSlider(
+        this,title,min,max,step,value,onValue,format,
+        densityScale=SETTINGS_DENSITY_SCALE,
+        textScale=SETTINGS_TEXT_SCALE,
+    )
 
     private fun renderLandscapePlayback() {
         val pref=landscapePanel("播放偏好","所有剧集共用，播放中也可调整")
@@ -599,13 +624,14 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     private fun renderLandscapeAppearance() {
-        val layout=landscapePanel("布局启动","字体、列表排版与推荐页滑动")
+        val layout=landscapePanel("布局启动","UI大小、列表排版与推荐页滑动")
         landscapeLine(layout).also { line ->
-            landscapeCell(line,landscapeSetting("字体大小",PhoneUiScale.label(PhoneUiScale.value)) {
+            landscapeCell(line,landscapeSetting("UI大小",PhoneUiScale.label(PhoneUiScale.value)) {
                 val options=PhoneUiScale.sizes
-                pick("字体大小",options.map { it.label },
+                pick("UI大小",options.map { it.label },
                     options.indexOf(PhoneUiScale.sizeOf(PhoneUiScale.value))) { i ->
-                    PhoneUiScale.set(this,options[i].scale); recreate()
+                    PhoneUiScale.set(this,options[i].scale)
+                    recreate()
                 }
             })
             val base=library.gridColumns.coerceIn(1,3)
@@ -714,13 +740,337 @@ class PhoneSettingsActivity : PhoneActivity() {
                     val selected=DeviceForm.OPTIONS[i]
                     if(selected==library.deviceForm) { render(); return@pick }
                     if(!library.setDeviceFormNow(selected)) { toast("设备类型保存失败，请重试"); render(); return@pick }
-                    AppRelaunch.relaunchAndExit(this)
+                    AppRelaunch.switchDeviceForm(this)
                 }
             })
         }
     }
 
     // —— 一、播放交互 ——
+
+    /**
+     * 手机端统一的行渲染器：竖屏和横屏都走这一条。
+     */
+    private fun renderSpecs(specs: List<SettingRowSpec>) {
+        specs.forEach { spec ->
+            when (spec) {
+                is SettingRowSpec.Section -> section(spec.title)
+                is SettingRowSpec.ThemeGrid -> themeGrid()
+                is SettingRowSpec.Choice -> row(spec.title, spec.value) {
+                    pick(spec.title, spec.options, spec.options.indexOf(spec.value).coerceAtLeast(0)) { index ->
+                        applyChoice(spec.id, index)
+                        render()
+                    }
+                }
+                is SettingRowSpec.Switch -> switch(spec.title, spec.checked) { checked ->
+                    applySwitch(spec.id, checked)
+                    render()
+                }
+                is SettingRowSpec.Slider -> slider(
+                    spec.title, spec.min, spec.max, spec.step, spec.value,
+                    { valueLabelFor(spec.id, it) },
+                ) { value ->
+                    applySlider(spec.id, value)
+                }
+                is SettingRowSpec.Action -> action(spec.title, spec.subtitle) {
+                    applyAction(spec.id)
+                }
+            }
+        }
+    }
+
+    private fun renderUnifiedPlayback() {
+        renderSpecs(
+            listOf(
+                SettingRowSpec.Section("播放偏好"),
+                SettingRowSpec.Choice(
+                    SettingsController.ID_QUALITY,
+                    "默认清晰度",
+                    "${library.maxQuality}P",
+                    PlaybackQuality.options.map { "${it}P" },
+                ),
+                SettingRowSpec.Choice(
+                    SettingsController.ID_SPEED,
+                    "默认倍速",
+                    PlaybackSpeed.label(library.playbackSpeed),
+                    PlaybackSpeed.phoneOptions.map(PlaybackSpeed::label),
+                ),
+                SettingRowSpec.Choice(
+                    SettingsController.ID_FRAME,
+                    "画面模式",
+                    library.frameMode.label,
+                    VideoFrameMode.entries.map { it.label },
+                ),
+                SettingRowSpec.Choice(
+                    SettingsController.ID_DECODER,
+                    "视频解码",
+                    library.decoderMode.label,
+                    VideoDecoderMode.entries.map { it.label },
+                ),
+                SettingRowSpec.Slider(
+                    SettingsController.ID_VIDEO_SCALE,
+                    "画面缩放",
+                    library.videoScale,
+                    1f,
+                    100f,
+                    1f,
+                    "${library.videoScale.roundToInt()}%",
+                ),
+                SettingRowSpec.Switch("playback.autoNext", "自动连播", library.autoNext),
+                SettingRowSpec.Slider(
+                    "playback.seekStep",
+                    "快进快退",
+                    library.seekStep.toFloat(),
+                    2f,
+                    20f,
+                    1f,
+                    "${library.seekStep} 秒",
+                ),
+                SettingRowSpec.Section("播放显示"),
+                SettingRowSpec.Switch("play.title", "剧名", library.playerTitle),
+                SettingRowSpec.Switch("play.episode", "剧集", library.playerEpisode),
+                SettingRowSpec.Switch("play.speed", "网速", library.playerSpeed),
+                SettingRowSpec.Switch("play.clock", "时间", library.playerClock),
+                SettingRowSpec.Slider(
+                    "play.panelTimeout",
+                    "自动收起时间",
+                    library.playerPanelTimeout.toFloat(),
+                    PLAYER_PANEL_TIMEOUT_RANGE.first.toFloat(),
+                    PLAYER_PANEL_TIMEOUT_RANGE.last.toFloat(),
+                    1f,
+                    "${library.playerPanelTimeout} 秒",
+                ),
+                SettingRowSpec.Section("弹幕设置"),
+                SettingRowSpec.Choice(
+                    SettingsController.ID_DANMAKU_MODE,
+                    "显示方式",
+                    library.danmakuMode.label,
+                    DanmakuMode.entries.map { it.label },
+                ),
+                SettingRowSpec.Choice(
+                    SettingsController.ID_DANMAKU_SPEED,
+                    "弹幕速度",
+                    library.danmakuSpeed.label,
+                    DanmakuSpeed.entries.map { it.label },
+                ),
+                SettingRowSpec.Switch(
+                    SettingsController.ID_DANMAKU_MERGE,
+                    "相同弹幕聚合",
+                    library.danmakuMerge,
+                ),
+                SettingRowSpec.Switch(
+                    SettingsController.ID_DANMAKU_EFFECTS,
+                    "开启弹幕特效",
+                    library.danmakuEffects,
+                ),
+                SettingRowSpec.Slider(
+                    SettingsController.ID_DANMAKU_MERGE_MIN,
+                    "聚合条数",
+                    library.danmakuMergeMin.toFloat(),
+                    DANMAKU_MERGE_MIN_RANGE.first.toFloat(),
+                    DANMAKU_MERGE_MIN_RANGE.last.toFloat(),
+                    1f,
+                    "${library.danmakuMergeMin} 条",
+                ),
+                SettingRowSpec.Slider(
+                    "danmaku.phoneScale",
+                    "弹幕大小",
+                    PhoneDanmakuSize.percent(this).toFloat(),
+                    PhoneDanmakuSize.MIN_PERCENT.toFloat(),
+                    PhoneDanmakuSize.MAX_PERCENT.toFloat(),
+                    PhoneDanmakuSize.STEP_PERCENT.toFloat(),
+                    PhoneDanmakuSize.label(PhoneDanmakuSize.percent(this).toFloat()),
+                ),
+                SettingRowSpec.Slider(
+                    SettingsController.ID_DANMAKU_ALPHA,
+                    "弹幕透明度",
+                    library.danmakuAlpha,
+                    DanmakuStyle.ALPHA_MIN,
+                    DanmakuStyle.ALPHA_MAX,
+                    DanmakuStyle.ALPHA_STEP,
+                    DanmakuStyle.percent(library.danmakuAlpha),
+                ),
+            )
+        )
+    }
+
+    private fun renderUnifiedAppearance() {
+        val scale = PhoneUiScale.sizeOf(PhoneUiScale.value)
+        renderSpecs(
+            listOf(
+                SettingRowSpec.Section("外观与布局"),
+                SettingRowSpec.Choice(
+                    "appearance.uiScale",
+                    "UI大小",
+                    scale.label,
+                    PhoneUiScale.sizes.map { it.label },
+                ),
+                SettingRowSpec.Choice(
+                    "appearance.columns",
+                    "列表每行",
+                    "${library.gridColumns + 3} 张",
+                    listOf("竖屏 1 张 · 横屏 4 张", "竖屏 2 张 · 横屏 5 张", "竖屏 3 张 · 横屏 6 张"),
+                ),
+                SettingRowSpec.Switch(
+                    SettingsController.ID_RECOMMEND_SWIPE,
+                    "推荐页左右滑动",
+                    library.recommendSwipe,
+                ),
+                SettingRowSpec.Section("主题外观"),
+                SettingRowSpec.ThemeGrid(selected = PhoneStyle.theme.storedValue),
+            )
+        )
+    }
+
+    private fun renderUnifiedRecommend() {
+        renderSpecs(
+            listOf(
+                SettingRowSpec.Section("推荐设置"),
+                SettingRowSpec.Choice(
+                    SettingsController.ID_RECOMMEND_GENDER,
+                    "受众",
+                    genderLabel(library.recommendGender),
+                    listOf("不限", "男频", "女频"),
+                ),
+                SettingRowSpec.Section("内容管理与来源"),
+                SettingRowSpec.Action("recommend.unhide", "恢复隐藏的剧集", "${library.hidden().size} 部"),
+                SettingRowSpec.Choice(
+                    SettingsController.ID_SEARCH_SOURCE,
+                    "搜索源",
+                    library.searchSource.label,
+                    SearchSource.entries.map { it.label },
+                ),
+                SettingRowSpec.Choice(
+                    "recommend.episodePage",
+                    "选集每页",
+                    "${library.episodePageSize} 集",
+                    EpisodePageSize.phoneOptions.map { "$it 集" },
+                ),
+            )
+        )
+    }
+
+    private fun renderUnifiedSystem() {
+        renderSpecs(
+            listOf(
+                SettingRowSpec.Section("数据维护"),
+                SettingRowSpec.Action(SettingsController.ID_EXPORT_BACKUP, "导出备份", "存成 JSON 文件"),
+                SettingRowSpec.Action(SettingsController.ID_IMPORT_BACKUP, "从备份恢复", "合并收藏、记录与设置"),
+                SettingRowSpec.Action(SettingsController.ID_RESET_APP, "清空应用缓存", "恢复成刚安装的样子"),
+                SettingRowSpec.Action(SettingsController.ID_RESTORE_DEFAULTS, "恢复默认设置", "只重置偏好"),
+                SettingRowSpec.Action(SettingsController.ID_LAN_SYNC, "同步其他设备数据", "局域网 NSD 查找设备"),
+                SettingRowSpec.Section("设备与性能"),
+                SettingRowSpec.Switch(SettingsController.ID_REDUCE_ANIM, "减少动画优化性能", library.reduceAnim),
+                SettingRowSpec.Switch(SettingsController.ID_DEBUG_MODE, "调试模式", library.debugMode),
+                SettingRowSpec.Action("system.about", "关于", "版本 ${appVersionName()}"),
+                SettingRowSpec.Action(SettingsController.ID_DEVICE_FORM, "设备类型", deviceFormLabel(
+                    runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
+                )),
+            )
+        )
+    }
+
+    private fun applyChoice(id: String, index: Int) {
+        when (id) {
+            SettingsController.ID_QUALITY -> settingsController.setQuality(PlaybackQuality.options[index])
+            SettingsController.ID_SPEED -> settingsController.setSpeed(PlaybackSpeed.phoneOptions[index])
+            SettingsController.ID_FRAME -> settingsController.setFrame(VideoFrameMode.entries[index])
+            SettingsController.ID_DECODER -> settingsController.setDecoder(VideoDecoderMode.entries[index])
+            SettingsController.ID_DANMAKU_MODE -> settingsController.setDanmakuMode(DanmakuMode.entries[index])
+            SettingsController.ID_DANMAKU_SPEED -> settingsController.setDanmakuSpeed(DanmakuSpeed.entries[index])
+            SettingsController.ID_RECOMMEND_GENDER -> settingsController.setRecommendGender(
+                listOf("", "male", "female")[index]
+            )
+            SettingsController.ID_SEARCH_SOURCE -> settingsController.setSearchSource(SearchSource.entries[index])
+            "appearance.uiScale" -> {
+                PhoneUiScale.set(this, PhoneUiScale.sizes[index].scale)
+                recreate()
+            }
+            "appearance.columns" -> library.gridColumns = index + 1
+            "recommend.episodePage" -> library.episodePageSize = EpisodePageSize.phoneOptions[index]
+        }
+    }
+
+    private fun applySwitch(id: String, checked: Boolean) {
+        when (id) {
+            SettingsController.ID_DANMAKU_MERGE -> settingsController.setDanmakuMerge(checked)
+            SettingsController.ID_DANMAKU_EFFECTS -> settingsController.setDanmakuEffects(checked)
+            SettingsController.ID_RECOMMEND_SWIPE -> settingsController.setRecommendSwipe(checked)
+            SettingsController.ID_DEBUG_MODE -> settingsController.setDebugMode(checked)
+            SettingsController.ID_REDUCE_ANIM -> settingsController.setReduceAnim(checked)
+            "playback.autoNext" -> library.autoNext = checked
+            "play.title" -> library.playerTitle = checked
+            "play.episode" -> library.playerEpisode = checked
+            "play.speed" -> library.playerSpeed = checked
+            "play.clock" -> library.playerClock = checked
+        }
+    }
+
+    private fun applySlider(id: String, value: Float) {
+        when (id) {
+            SettingsController.ID_VIDEO_SCALE -> settingsController.setVideoScale(value)
+            SettingsController.ID_DANMAKU_MERGE_MIN -> settingsController.setDanmakuMergeMin(value.roundToInt())
+            SettingsController.ID_DANMAKU_ALPHA -> settingsController.setDanmakuAlpha(DanmakuStyle.alpha(value))
+            "playback.seekStep" -> library.seekStep = value.roundToInt()
+            "play.panelTimeout" -> library.playerPanelTimeout = value.roundToInt()
+            "danmaku.phoneScale" -> PhoneDanmakuSize.set(this, value)
+        }
+    }
+
+    private fun applyAction(id: String) {
+        when (id) {
+            SettingsController.ID_EXPORT_BACKUP -> exportBackup()
+            SettingsController.ID_IMPORT_BACKUP -> importBackup()
+            SettingsController.ID_RESET_APP -> confirm(
+                "清空应用缓存",
+                "本机的收藏、观看记录、搜索历史与设置也会一并清空，且无法找回。清空完成后应用会自动重启。",
+                danger = true,
+            ) { performReset() }
+            SettingsController.ID_RESTORE_DEFAULTS -> confirm(
+                "恢复默认设置",
+                "把播放、弹幕、推荐、外观相关的偏好恢复成出厂值，收藏与历史不受影响。",
+            ) {
+                settingsController.restoreDefaults()
+                render(resetScroll = true)
+            }
+            SettingsController.ID_LAN_SYNC -> showLanLibrarySync()
+            "system.about" -> showAboutDialog()
+            SettingsController.ID_DEVICE_FORM -> {
+                val detected = runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
+                pick(
+                    "设备类型（切换后自动重新进入）",
+                    DeviceForm.pickerLabels(detected),
+                    DeviceForm.optionIndex(library.deviceForm),
+                ) { index ->
+                    val selected = DeviceForm.OPTIONS[index]
+                    if (selected != library.deviceForm && library.setDeviceFormNow(selected)) {
+                        AppRelaunch.switchDeviceForm(this)
+                    } else {
+                        render()
+                    }
+                }
+            }
+            "recommend.unhide" -> {
+                val count = library.hidden().size
+                if (count == 0) toast("没有被隐藏的剧集")
+                else confirm("恢复隐藏的剧集", "把首页隐藏过的 $count 部剧全部放回列表？") {
+                    library.unhideAll()
+                    toast("已恢复 $count 部")
+                    render()
+                }
+            }
+        }
+    }
+
+    private fun valueLabelFor(id: String, value: Float): String = when (id) {
+        SettingsController.ID_VIDEO_SCALE -> "${value.roundToInt()}%"
+        SettingsController.ID_DANMAKU_MERGE_MIN -> "${value.roundToInt()} 条"
+        SettingsController.ID_DANMAKU_ALPHA -> DanmakuStyle.percent(value)
+        "playback.seekStep" -> "${value.roundToInt()} 秒"
+        "play.panelTimeout" -> "${value.roundToInt()} 秒"
+        "danmaku.phoneScale" -> PhoneDanmakuSize.label(value)
+        else -> value.roundToInt().toString()
+    }
 
     private fun renderPlayback() {
         section("播放偏好")
@@ -830,13 +1180,13 @@ class PhoneSettingsActivity : PhoneActivity() {
     // —— 二、外观导航 ——
 
     private fun renderAppearance() {
-        // 「外观与布局」这一组把最常调的三项放在最上面（用户要求：列表布局与字体大小放在一起），
+        // 「外观与布局」这一组把最常调的三项放在最上面（UI 大小与列表布局放在一起），
         // 二十套主题网格排在它们之后。
         section("外观与布局")
-        row("字体大小", PhoneUiScale.label(PhoneUiScale.value)) {
+        row("UI大小", PhoneUiScale.label(PhoneUiScale.value)) {
             val options = PhoneUiScale.sizes
             pick(
-                "字体大小",
+                "UI大小",
                 options.map { it.label },
                 options.indexOf(PhoneUiScale.sizeOf(PhoneUiScale.value)),
             ) { index ->
@@ -873,7 +1223,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     /** 二十套主题：两列一行，手机上名称与色点都能完整显示。 */
     private fun themeGrid() {
         val columns = if(landscape) 5 else 2
-        val chipHeight = dp(if (landscape) 34 else 38)
+        val chipHeight = settingsDp(if (landscape) 34 else 38)
         val grid = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             tag = TAG_THEME_GRID
@@ -881,13 +1231,13 @@ class PhoneSettingsActivity : PhoneActivity() {
         TvTheme.entries.chunked(columns).forEach { line ->
             val row = LinearLayout(this).apply {
                 orientation = LinearLayout.HORIZONTAL
-                setPadding(0, dp(4), 0, 0)
+                setPadding(0, settingsDp(4), 0, 0)
             }
             repeat(columns) { index ->
                 val option = line.getOrNull(index)
                 if (option == null) {
                     row.addView(View(this), LinearLayout.LayoutParams(0, chipHeight, 1f).apply {
-                        if (index > 0) leftMargin = dp(6)
+                        if (index > 0) leftMargin = settingsDp(6)
                     })
                     return@repeat
                 }
@@ -897,9 +1247,9 @@ class PhoneSettingsActivity : PhoneActivity() {
                         setSpan(ForegroundColorSpan(option.accent), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                         setSpan(RelativeSizeSpan(.72f), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                     }
-                    phoneSize(if (landscape) 12 else 13)
+                    settingsTextSize(if (landscape) 12 else 13)
                     gravity = Gravity.CENTER_VERTICAL
-                    setPadding(dp(14), 0, dp(10), 0)
+                    setPadding(settingsDp(14), 0, settingsDp(10), 0)
                     setTextColor(if (active) PhoneStyle.accent else PhoneStyle.text)
                     applySoft(
                         if (active) SoftStyle.INSET else SoftStyle.RAISED,
@@ -910,7 +1260,7 @@ class PhoneSettingsActivity : PhoneActivity() {
                     setOnClickListener { switchTheme(option) }
                 }
                 row.addView(chip, LinearLayout.LayoutParams(0, chipHeight, 1f).apply {
-                    if (index > 0) leftMargin = dp(6)
+                    if (index > 0) leftMargin = settingsDp(6)
                 })
             }
             grid.addView(row, LinearLayout.LayoutParams(
@@ -919,7 +1269,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         }
         targetHost().addView(grid, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = dp(4) })
+        ).apply { bottomMargin = settingsDp(4) })
     }
 
     /**
@@ -1001,7 +1351,7 @@ class PhoneSettingsActivity : PhoneActivity() {
                     return@pick
                 }
                 toast("正在切换到 ${DeviceForm.shortLabel(selected)} 界面")
-                AppRelaunch.relaunchAndExit(this)
+                AppRelaunch.switchDeviceForm(this)
             }
         }
         hint("用于强制进入手机、平板或电视界面，切换后自动重新进入。")
@@ -1051,11 +1401,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     /** 出厂值：与 `BackupSettings` 的默认参数逐项对齐。 */
     private fun restoreDefaults() {
         runCatching {
-            library.maxQuality = 1080
-            library.playbackSpeed = 1f
-            library.frameMode = VideoFrameMode.FIT
-            library.decoderMode = VideoDecoderMode.HARDWARE
-            library.videoScale = 100f
+            settingsController.restoreDefaults()
             library.autoNext = true
             library.seekStep = 10
             library.autoFullscreen = false
@@ -1064,24 +1410,12 @@ class PhoneSettingsActivity : PhoneActivity() {
             library.playerClock = false
             library.playerSpeed = false
             library.playerPanelTimeout = 6
-            library.danmakuMode = DanmakuMode.FULL
-            library.danmakuSpeed = DanmakuSpeed.NORMAL
-            library.danmakuMerge = true
-            library.danmakuMergeMin = 2
-            library.danmakuScale = 1f
-            library.danmakuAlpha = 1f
             PhoneDanmakuSize.set(this, PhoneDanmakuSize.DEFAULT_PERCENT)
-            library.recommendGender = ""
             library.launchRecommend = true
-            library.recommendSwipe = true
             library.episodePageSize = 20
             library.episodeEdgeTurn = true
-            library.searchSource = SearchSource.APP
-            library.reduceAnim = false
-            library.deviceForm = "auto"
         }
-        PhoneUiScale.set(this, PhoneUiScale.default)
-        TvThemeStore.save(this, TvTheme.DEEP_SEA_BLUE)
+        PhoneUiScale.reset(this)
         PhoneStyle.applyTheme(TvTheme.DEEP_SEA_BLUE)
         toast("已恢复默认设置")
         recreate()
@@ -1127,9 +1461,13 @@ class PhoneSettingsActivity : PhoneActivity() {
     // ---------------------------------------------------------------- 局域网同步
 
     private fun closeLanSyncSession() {
-        lanSyncRequest++
-        lanSyncSession?.close()
-        lanSyncSession = null
+        lanSyncJob?.cancel()
+        lanSyncJob = null
+        lanSyncDialog?.dismiss()
+        lanSyncDialog = null
+        lanSyncStatus = null
+        lanSyncStep = null
+        lanSyncController.reset()
     }
 
     private fun showLanLibrarySync() {
@@ -1148,127 +1486,10 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     private fun startLanSyncRole(sourceOnly: Boolean) {
         closeLanSyncSession()
-        val address = lanIpv4Address()
-        if (address == null) {
-            toast("请让两台设备连接同一个局域网后重试")
-            return
+        lanSyncJob = scope.launch {
+            lanSyncController.state.collect { state -> renderLanSync(state) }
         }
-        val encoded = runCatching {
-            DeviceSyncPackage.encode(DeviceSyncPackage.capture(this, library))
-        }.getOrNull()
-        if (encoded == null) {
-            toast("本机记录暂时无法生成同步数据")
-            return
-        }
-        if (sourceOnly) {
-            showLanSyncSource(address, encoded)
-        } else {
-            showLanSyncReceiver(address, encoded)
-        }
-    }
-
-    private fun showLanSyncSource(address: String, encoded: String) {
-        val status = PhoneDialog(this, "本机作为同步源")
-            .message("本机将一直出现在同一局域网的设备列表中。请保持此页面打开，让另一台设备选择「我要同步其他设备的数据」。")
-        val state = TextView(this).apply {
-            text = "正在开启同步源…"
-            setTextColor(PhoneStyle.text)
-            phoneSize(if (landscape) 11 else 13)
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-        }
-        status.content(state)
-        var downloadedCount = 0
-        lateinit var session: LanLibrarySyncSession
-        session = LanLibrarySyncSession(
-            context = this,
-            address = address,
-            payload = encoded,
-            onPeers = {},
-            onError = { message ->
-                runOnUiThread {
-                    if (lanSyncSession === session) state.text = message
-                }
-            },
-            discoverPeers = false,
-            onServing = {
-                runOnUiThread {
-                    if (lanSyncSession === session) state.text = "同步源已开启 · 等待其他设备连接"
-                }
-            },
-            onDownloaded = {
-                runOnUiThread {
-                    if (lanSyncSession === session) {
-                        downloadedCount++
-                        state.text = "已被 $downloadedCount 台设备读取 · 继续等待其他设备"
-                    }
-                }
-            },
-            ttlMillis = LAN_SYNC_SOURCE_TTL_MS,
-        )
-        lanSyncSession = session
-        status.button("停止同步源")
-        status.show {
-            if (lanSyncSession === session) closeLanSyncSession()
-        }
-        runCatching { session.start() }.onFailure {
-            closeLanSyncSession()
-            state.text = "无法开启同步源"
-        }
-    }
-
-    private fun showLanSyncReceiver(address: String, encoded: String) {
-        val found = linkedMapOf<String, LanSyncPeer>()
-        val status = PhoneDialog(this, "同步其他设备数据")
-        status.message("正在通过局域网查找其他设备。请在另一台设备上也打开这个功能。")
-        val count = TextView(this).apply {
-            text = "已发现 0 台设备"
-            setTextColor(PhoneStyle.textDim)
-            phoneSize(if (landscape) 11 else 13)
-            setPadding(dp(4), dp(4), dp(4), dp(4))
-        }
-        status.content(count)
-        var keepSession = false
-        lateinit var session: LanLibrarySyncSession
-        session = LanLibrarySyncSession(
-            context = this,
-            address = address,
-            payload = encoded,
-            onPeers = { peers ->
-                runOnUiThread {
-                    if (lanSyncSession !== session) return@runOnUiThread
-                    found.clear()
-                    peers.forEach { found[it.serviceName] = it }
-                    count.text = "已发现 ${found.size} 台设备"
-                }
-            },
-            onError = { message ->
-                runOnUiThread {
-                    if (lanSyncSession === session) count.text = message
-                }
-            },
-        )
-        lanSyncSession = session
-        status.button("取消")
-        status.show {
-            if (!keepSession && lanSyncSession === session) closeLanSyncSession()
-        }
-        runCatching { session.start() }.onFailure {
-            closeLanSyncSession()
-            count.text = "无法开启局域网同步"
-        }
-        syncHandler.postDelayed({
-            if (lanSyncSession !== session) return@postDelayed
-            session.stopDiscovery()
-            val peers = found.values.toList()
-            if (peers.isEmpty()) {
-                status.dismiss()
-                showLanSyncNoPeers()
-            } else {
-                keepSession = true
-                status.dismiss()
-                showLanSyncPeerPicker(peers, session)
-            }
-        }, 6_000L)
+        if (sourceOnly) lanSyncController.startSource() else lanSyncController.startReceiver()
     }
 
     private fun showLanSyncNoPeers() {
@@ -1279,49 +1500,13 @@ class PhoneSettingsActivity : PhoneActivity() {
             .show()
     }
 
-    private fun showLanSyncPeerPicker(peers: List<LanSyncPeer>, session: LanLibrarySyncSession) {
-        var peerSelected = false
-        val dialog = PhoneDialog(this, "选择同步设备")
-            .message("读取登录信息、设备参数、内容数据和全部设置。读取后仍需在本机确认，确认后会覆盖本机登录与设备身份。")
-            .choices(peers.map { "${it.displayName}  ·  ${it.host}" }) { index ->
-                peers.getOrNull(index)?.let { peer ->
-                    peerSelected = true
-                    session.close()
-                    if (lanSyncSession === session) lanSyncSession = null
-                    loadLanSyncBackup(peer)
-                }
-            }
-            .button("重新查找") { startLanSyncRole(sourceOnly = false) }
-            .button("取消")
-        dialog.show {
-            if (!peerSelected && lanSyncSession === session) closeLanSyncSession()
-        }
-    }
-
-    private fun loadLanSyncBackup(peer: LanSyncPeer) {
-        val request = ++lanSyncRequest
-        val loading = PhoneDialog(this, "正在同步")
-            .message("正在从 ${peer.displayName} 读取数据…")
-            .button("取消")
-        loading.show { lanSyncRequest++ }
-        Thread({
-            val result = runCatching { LanLibrarySyncSession.fetchPayload(peer) }
-            runOnUiThread {
-                if (isDestroyed || request != lanSyncRequest) return@runOnUiThread
-                loading.dismiss()
-                result.onSuccess { showLanSyncRestoreConfirm(it) }
-                    .onFailure { toast(it.message.orEmpty().ifBlank { "无法读取其他设备的数据" }) }
-            }
-        }, "hgtv-phone-lan-sync").start()
-    }
-
-    private fun showLanSyncRestoreConfirm(payload: DeviceSyncPayload) {
+    private fun showLanSyncRestoreConfirm() {
         var login = true
         var device = true
         var content = true
         var settings = true
         fun syncSwitch(label: String, checked: Boolean, onToggle: (Boolean) -> Unit): PhoneSwitchRow =
-            PhoneSwitchRow(this, label, checked, onToggle).apply {
+            PhoneSwitchRow(this, label, checked, onToggle = onToggle).apply {
                 minimumHeight = dp(if (landscape) 36 else 42)
             }
         val dialog = PhoneDialog(this, "选择要同步的数据")
@@ -1342,37 +1527,100 @@ class PhoneSettingsActivity : PhoneActivity() {
             if (!selection.hasAny) {
                 toast("请至少选择一类同步内容")
             } else {
-                applyLanDeviceSync(payload, selection)
+                lanSyncController.apply(selection) { saved ->
+                    if (!saved) toast("部分数据未能写入本机，请重试")
+                }
             }
         }
         dialog.show()
     }
 
-    private fun applyLanDeviceSync(payload: DeviceSyncPayload, selection: DeviceSyncSelection) {
-        val request = ++lanSyncRequest
-        val loading = PhoneDialog(this, "正在应用同步数据")
-            .message("正在恢复所选类别…")
-            .button("取消")
-        loading.show { lanSyncRequest++ }
-        Thread({
-            val result = runCatching { DeviceSyncPackage.restore(this, library, payload, selection) }
-            runOnUiThread {
-                if (isDestroyed || request != lanSyncRequest) return@runOnUiThread
-                loading.dismiss()
-                result.onSuccess { saved ->
-                    if (!saved) {
-                        toast("部分数据未能写入本机，请重试")
-                        return@onSuccess
+    private fun renderLanSync(state: LanSyncController.State) {
+        when (state.step) {
+            LanSyncController.Step.IDLE -> Unit
+            LanSyncController.Step.SERVING, LanSyncController.Step.DISCOVERING -> {
+                if (lanSyncStep != state.step) {
+                    lanSyncDialog?.dismiss()
+                    lanSyncStep = state.step
+                    val text = TextView(this).apply {
+                        setTextColor(PhoneStyle.textDim)
+                        phoneSize(if (landscape) 11 else 13)
+                        setPadding(dp(4), dp(4), dp(4), dp(4))
                     }
-                    toast("同步完成，正在重启应用")
-                    syncHandler.postDelayed({
-                        if (!isDestroyed) AppRelaunch.relaunchAndExit(this)
-                    }, 800L)
-                }.onFailure {
-                    toast(it.message.orEmpty().ifBlank { "无法应用其他设备的数据" })
+                    lanSyncStatus = text
+                    val dialog = PhoneDialog(
+                        this,
+                        if (state.role == LanSyncController.Role.SOURCE) "本机作为同步源" else "同步其他设备数据",
+                    ).message(
+                        if (state.role == LanSyncController.Role.SOURCE) {
+                            "本机将一直出现在同一局域网的设备列表中。请保持此页面打开。"
+                        } else {
+                            "正在通过局域网查找其他设备。请在另一台设备上也打开这个功能。"
+                        }
+                    ).content(text)
+                    dialog.button("取消")
+                    dialog.show { if (lanSyncDialog === dialog) closeLanSyncSession() }
+                    lanSyncDialog = dialog
+                }
+                lanSyncStatus?.text = state.message.ifBlank {
+                    if (state.role == LanSyncController.Role.SOURCE) "正在开启同步源…" else "正在查找设备…"
                 }
             }
-        }, "hgtv-phone-lan-apply").start()
+            LanSyncController.Step.PEERS -> {
+                if (lanSyncStep == state.step) return
+                lanSyncStep = state.step
+                lanSyncDialog?.dismiss()
+                lanSyncDialog = null
+                val peers = state.peers
+                PhoneDialog(this, "选择同步设备")
+                    .message("读取登录信息、设备参数、内容数据和全部设置。读取后仍需在本机确认，确认后会覆盖本机登录与设备身份。")
+                    .choices(peers.map { "${it.displayName}  ·  ${it.host}" }) { index ->
+                        peers.getOrNull(index)?.let(lanSyncController::loadPeer)
+                    }
+                    .button("重新查找") { startLanSyncRole(sourceOnly = false) }
+                    .button("取消") { closeLanSyncSession() }
+                    .show()
+            }
+            LanSyncController.Step.LOADING, LanSyncController.Step.APPLYING -> {
+                if (lanSyncStep == state.step) return
+                lanSyncStep = state.step
+                lanSyncDialog?.dismiss()
+                val dialog = PhoneDialog(
+                    this,
+                    if (state.step == LanSyncController.Step.LOADING) "正在同步" else "正在应用同步数据",
+                ).message(state.message).button("取消") { closeLanSyncSession() }
+                lanSyncDialog = dialog
+                dialog.show()
+            }
+            LanSyncController.Step.READY_TO_APPLY -> {
+                if (lanSyncStep == state.step) return
+                lanSyncStep = state.step
+                lanSyncDialog?.dismiss()
+                lanSyncDialog = null
+                showLanSyncRestoreConfirm()
+            }
+            LanSyncController.Step.ERROR -> {
+                lanSyncDialog?.dismiss()
+                lanSyncDialog = null
+                if (state.message == "没有发现同步设备") {
+                    closeLanSyncSession()
+                    showLanSyncNoPeers()
+                } else {
+                    lanSyncStatus?.text = state.error
+                    if (state.error.isNotBlank() && state.step != LanSyncController.Step.DISCOVERING) {
+                        toast(state.error)
+                    }
+                }
+            }
+            LanSyncController.Step.DONE -> {
+                lanSyncDialog?.dismiss()
+                lanSyncDialog = null
+                toast("同步完成，正在重启应用")
+                syncHandler.postDelayed({
+                    if (!isDestroyed) AppRelaunch.relaunchAndExit(this)
+                }, 800L)
+            }
+        }
     }
 
     @Deprecated("Activity 的旧回调；不引 androidx.activity 也能用，见 feature-phone 的依赖说明")
@@ -1439,27 +1687,30 @@ class PhoneSettingsActivity : PhoneActivity() {
     // ---------------------------------------------------------------- 控件
 
     private fun targetHost(): LinearLayout = sectionHost ?: container
-    private fun settingRowHeight(): Int = dp(if (landscape) 36 else 42)
-    private fun settingRowGap(): Int = dp(if (landscape) 4 else 6)
+    private fun settingsDp(value: Number): Int = dp(value.toFloat()*SETTINGS_DENSITY_SCALE)
+    private fun TextView.settingsTextSize(value: Number): TextView =
+        phoneSize(value.toFloat()*SETTINGS_TEXT_SCALE)
+    private fun settingRowHeight(): Int = settingsDp(if (landscape) 36 else 42)
+    private fun settingRowGap(): Int = settingsDp(if (landscape) 4 else 6)
 
     private fun section(title: String) {
         if (landscape) {
             val panel = LinearLayout(this).apply {
                 orientation = LinearLayout.VERTICAL
                 tag = anchorKey("section", title)
-                setPadding(dp(12), dp(10), dp(12), dp(6))
+                setPadding(settingsDp(12), settingsDp(10), settingsDp(12), settingsDp(6))
                 applySoft(SoftStyle.RAISED, PhoneStyle.surface, PhoneStyle.RADIUS_CARD, 3f)
             }
             panel.addView(TextView(this).apply {
                 text = title
                 setTextColor(PhoneStyle.text)
-                phoneSize(13)
+                settingsTextSize(13)
                 setTypeface(typeface, Typeface.BOLD)
-                setPadding(dp(2), 0, dp(2), dp(6))
+                setPadding(settingsDp(2), 0, settingsDp(2), settingsDp(6))
             })
             container.addView(panel, LinearLayout.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = dp(8) })
+            ).apply { bottomMargin = settingsDp(8) })
             sectionHost = panel
             return
         }
@@ -1468,8 +1719,8 @@ class PhoneSettingsActivity : PhoneActivity() {
             tag = anchorKey("section", title)
             text = title
             setTextColor(PhoneStyle.textDim)
-            phoneSize(12)
-            setPadding(dp(6), dp(20), dp(6), dp(6))
+            settingsTextSize(12)
+            setPadding(settingsDp(6), settingsDp(20), settingsDp(6), settingsDp(6))
         })
     }
 
@@ -1477,8 +1728,13 @@ class PhoneSettingsActivity : PhoneActivity() {
         targetHost().addView(TextView(this).apply {
             this.text = text
             setTextColor(PhoneStyle.textFaint)
-            phoneSize(if (landscape) 11 else 12)
-            setPadding(dp(6), dp(if (landscape) 1 else 2), dp(6), dp(if (landscape) 3 else 4))
+            settingsTextSize(if (landscape) 11 else 12)
+            setPadding(
+                settingsDp(6),
+                settingsDp(if (landscape) 1 else 2),
+                settingsDp(6),
+                settingsDp(if (landscape) 3 else 4),
+            )
         })
     }
 
@@ -1488,27 +1744,27 @@ class PhoneSettingsActivity : PhoneActivity() {
             tag = anchorKey("row", title)
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(14), 0, dp(12), 0)
+            setPadding(settingsDp(14), 0, settingsDp(12), 0)
             applySoft(SoftStyle.RAISED, PhoneStyle.surface, PhoneStyle.RADIUS_PILL, 4f)
             addView(TextView(this@PhoneSettingsActivity).apply {
                 text = title
                 setTextColor(PhoneStyle.text)
-                phoneSize(if (landscape) 14 else 15)
+                settingsTextSize(if (landscape) 14 else 15)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
             }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
             addView(TextView(this@PhoneSettingsActivity).apply {
                 text = value
                 setTextColor(PhoneStyle.textDim)
-                phoneSize(if (landscape) 12 else 13)
+                settingsTextSize(if (landscape) 12 else 13)
                 maxLines = 1
                 ellipsize = android.text.TextUtils.TruncateAt.END
             })
             addView(TextView(this@PhoneSettingsActivity).apply {
                 text = "›"
                 setTextColor(PhoneStyle.textFaint)
-                phoneSize(if (landscape) 13 else 14)
-                setPadding(dp(6), 0, 0, 0)
+                settingsTextSize(if (landscape) 13 else 14)
+                setPadding(settingsDp(6), 0, 0, 0)
             })
             setOnClickListener { onClick() }
         }
@@ -1519,7 +1775,12 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     /** 整行开关：与电视端同一枚自绘轨道，点整行切换。 */
     private fun switch(title: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
-        val line = PhoneSwitchRow(this, title, checked, onToggle).apply {
+        val line = PhoneSwitchRow(
+            this, title, checked,
+            densityScale=SETTINGS_DENSITY_SCALE,
+            textScale=SETTINGS_TEXT_SCALE,
+            onToggle=onToggle,
+        ).apply {
             tag = anchorKey("row", title)
         }
         targetHost().addView(line, LinearLayout.LayoutParams(
@@ -1538,7 +1799,11 @@ class PhoneSettingsActivity : PhoneActivity() {
         format: (Float) -> String,
         onChange: (Float) -> Unit
     ) {
-        val control = PhoneSettingSlider(this, title, min, max, step, value, onChange, format).apply {
+        val control = PhoneSettingSlider(
+            this, title, min, max, step, value, onChange, format,
+            densityScale=SETTINGS_DENSITY_SCALE,
+            textScale=SETTINGS_TEXT_SCALE,
+        ).apply {
             tag = anchorKey("row", title)
         }
         targetHost().addView(control, LinearLayout.LayoutParams(
@@ -1668,6 +1933,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     override fun onDestroy() {
         closeLanSyncSession()
+        scope.cancel()
         syncHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
     }

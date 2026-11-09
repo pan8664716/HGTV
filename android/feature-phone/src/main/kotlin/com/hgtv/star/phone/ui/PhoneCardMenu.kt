@@ -5,9 +5,11 @@ import android.app.Activity
 import android.view.View
 import com.hgtv.star.core.CardAction
 import com.hgtv.star.core.CardMenu
+import com.hgtv.star.core.RecommendBehavior
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.PhoneAccountSync
 import com.hgtv.star.phone.phoneNav
+import com.hgtv.star.phone.reportRecommendBehavior
 import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.PhoneServices
 
@@ -164,6 +166,11 @@ object PhoneCardMenu {
                 val adding = runCatching { lib.toggle(series) }.getOrElse { !favorite }
                 // 本机先改、账号侧随后推（未登录时那一半是空操作，这里不打扰用户）。
                 runCatching { PhoneAccountSync.favorite(activity, series, adding) }
+                reportRecommendBehavior(
+                    activity,
+                    if(adding) RecommendBehavior.Event.FAVORITE else RecommendBehavior.Event.UNFAVORITE,
+                    series.id,
+                )
                 toast(activity, if (adding) "已收藏" else "已取消收藏")
                 itemOnly = true
             }
@@ -185,6 +192,7 @@ object PhoneCardMenu {
 
             CardAction.HIDE_FROM_HOT -> {
                 runCatching { lib.hide(series.id) }
+                reportRecommendBehavior(activity, RecommendBehavior.Event.HIDE, series.id)
                 toast(activity, "已不在热播榜中显示")
                 itemOnly = true
                 removedId = series.id

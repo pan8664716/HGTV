@@ -20,8 +20,8 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
      *
      * 为什么要单独记一份：历史那一栏的内容是**本机进度 + 账号侧历史**合并出来的
      * （见 `localItems` / `accountItems`），而账号侧那半份是从平台拉回来的。
-     * 平台对「删除观看记录」只认 `read_history/update`（阅读历史那条，小说用的），
-     * 短剧列表走的是 `read_progress/list`——软删不一定真的把它从进度列表里摘掉。
+     * 平台对「删除观看记录」走 `read_history/update`，回读校验也必须看
+     * `read_history/list`；`read_progress/list` 是另一份当前进度数据。
      * 于是删完那一刻界面上没了，**下次刷新（5 分钟后 / 按刷新 / 重启）它又回来了**，
      * 用户读到的就是「删了没删掉」。
      *

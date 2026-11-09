@@ -7,13 +7,14 @@ import android.os.SystemClock
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
+import com.hgtv.star.core.Series
 
 /**
  * 手机端「这一台机器现在在放什么」的进程级事实。
  *
  * ## 为什么需要它
  *
- * 推荐信息流与正式播放页是两个 Activity，但它们共用**同一个** [androidx.media3.exoplayer.ExoPlayer]
+ * 推荐信息流与正式播放页是两个 Activity，但它们共用**同一个** [com.google.android.exoplayer2.ExoPlayer]
  * （见 [PhoneServices.player]）。早先两边各管各的：
  *
  * * 从推荐进播放页 → 播放页重新取详情、重新取地址、重新 prepare，从头开始；
@@ -41,6 +42,9 @@ object PhoneSession {
         private set
 
     @Volatile var seriesId: String = ""
+        private set
+    /** 从推荐流带进来的原始卡片，保留 recommend_info 供行为上报。 */
+    @Volatile var recommendSeries: Series? = null
         private set
     @Volatile var detail: Detail? = null
         private set
@@ -106,6 +110,11 @@ object PhoneSession {
     fun rememberRelated(seriesId: String, works: com.hgtv.star.core.RelatedWorks) {
         relatedKey = seriesId
         relatedValue = works
+    }
+
+    fun rememberRecommendSeries(series: Series,feed: String = "") {
+        recommendSeries=series
+        if(feed.isNotEmpty()) feedKey=feed
     }
 
     /** 这一部剧的相关剧集（没取过 / 取的是别的剧就返回 null）。 */
@@ -446,6 +455,7 @@ object PhoneSession {
         owner = Owner.NONE
         seriesId = ""
         feedKey = ""
+        recommendSeries = null
         detail = null
         index = -1
         remote = null

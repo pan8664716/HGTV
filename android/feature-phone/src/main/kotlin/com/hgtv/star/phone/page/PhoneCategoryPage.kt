@@ -26,6 +26,7 @@ import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.phone.ui.tabBarInset
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -70,7 +71,10 @@ class PhoneCategoryPage(
         setPadding(0, 0, 0, 0)
     }
     private val feed = PhonePosterFeed(context)
-    private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    private var scope = newScope()
+    private var panelJob: Job? = null
+    private var panelLoadingKey = ""
+    private var panelGeneration = 0
 
     private var selection = initialState?.selection ?: CategorySelection()
     private var genreIndex = initialState?.genreIndex ?: 0
@@ -78,6 +82,12 @@ class PhoneCategoryPage(
         initialState?.panel ?: CategoryPanelCache.load(selection.genre)
     private val feedCache = linkedMapOf<String, PhonePosterFeed.Snapshot>().apply {
         putAll(initialState?.feeds.orEmpty())
+    }
+
+    private fun newScope() = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private fun ensureScope() {
+        if (scope.coroutineContext[Job]?.isActive != true) scope = newScope()
     }
 
     init {
@@ -153,21 +163,34 @@ class PhoneCategoryPage(
      * 顺手把第一页内容交给网格——不多发一次请求。
      */
     private fun loadPanel() {
+        ensureScope()
         val repo = PhoneServices.repository(context)
         val snapshot = selection
+        val key = snapshot.key()
+        if (panelJob?.isActive == true && panelLoadingKey == key) return
+        panelJob?.cancel()
+        val generation = ++panelGeneration
+        panelLoadingKey = key
         val needPanel = panel == null
         feed.showLoading()
-        scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { repo.categoryFeed(snapshot, 1, needPanel) }.getOrNull()
-            } ?: return@launch
-            if (snapshot != selection) return@launch
-            result.panel?.let { panel = it }
-            renderFilters()
-            feed.submit(result.page.items, result.page.hasMore)
-            rememberCurrentFeed()
-            if (result.page.hasMore) {
-                feed.load { page -> visible(repo.categoryFeed(selection, page).page) }
+        panelJob = scope.launch {
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching { repo.categoryFeed(snapshot, 1, needPanel) }.getOrNull()
+                } ?: return@launch
+                if (snapshot != selection) return@launch
+                result.panel?.let { panel = it }
+                renderFilters()
+                feed.submit(result.page.items, result.page.hasMore)
+                rememberCurrentFeed()
+                if (result.page.hasMore) {
+                    feed.load { page -> visible(repo.categoryFeed(selection, page).page) }
+                }
+            } finally {
+                if (generation == panelGeneration) {
+                    panelJob = null
+                    panelLoadingKey = ""
+                }
             }
         }
     }
@@ -204,7 +227,7 @@ class PhoneCategoryPage(
 
     private fun renderFilters() {
         filterBox.removeAllViews()
-        val rows = panel?.rows?.filter { it.type != CategorySelection.TYPE_GENRE }.orEmpty()
+        val rows = panel?.visibleRows().orEmpty()
         if (rows.isEmpty()) {
             filterBox.visibility = View.GONE
             feed.refreshHeader()
@@ -276,10 +299,26 @@ class PhoneCategoryPage(
     /** 从设置页返回时重新对齐「列表每行」。 */
     fun onShown() {
         feed.applyColumnsFromSettings()
+        // 切到别的 tab 时页面会 detach，正在拉的小分类请求会被取消。
+        // 回到分类页时如果面板还没落地，必须补一次，否则小分类会永久消失。
+        if (panel == null) loadPanel()
+    }
+
+    override fun onAttachedToWindow() {
+        super.onAttachedToWindow()
+        ensureScope()
     }
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
+        release()
+    }
+
+    /** 释放页面任务；预加载但从未 attach 的分类页也由宿主在销毁时调用。 */
+    fun release() {
+        panelGeneration++
+        panelJob = null
+        panelLoadingKey = ""
         scope.cancel()
     }
 }

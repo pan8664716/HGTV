@@ -50,10 +50,10 @@ object PlaybackCache {
     /**
      * 地址缓存格式版本。
      *
-     * 2 起多了「请求档位 / 实际档位 / 实际编码 / 全部可播档位」四项（见 [StreamInfo]）。
+     * 5 起多了实际画面宽高；2 起多了请求档位 / 实际档位 / 全部可播档位（见 [StreamInfo]）。
      * 版本不符就整条当未命中：旧文件留在盘上会被下一次 [saveUrl] 覆盖，不会错位读取。
      */
-    private const val URL_VERSION=4
+    private const val URL_VERSION=5
     private const val HEAD_VERSION=1
     /** 首块上限：与 `RemoteVideo.HEAD_CHUNK` 一致（512KB），留一点余量。 */
     private const val MAX_HEAD_BYTES=1024*1024
@@ -355,6 +355,8 @@ object PlaybackCache {
                 if(key0!=null) output.write(key0)
                 output.writeInt(info.requestedQuality)
                 output.writeInt(info.actualQuality)
+                output.writeInt(info.videoWidth)
+                output.writeInt(info.videoHeight)
                 val options=info.available
                 output.writeInt(options.size)
                 for(option in options) output.writeInt(option)
@@ -433,6 +435,8 @@ object PlaybackCache {
             if(url.isEmpty()) return null
             val requestedQuality=input.readInt()
             val actualQuality=input.readInt()
+            val videoWidth=input.readInt()
+            val videoHeight=input.readInt()
             val count=input.readInt()
             if(count !in 0..16) return null
             val available=ArrayList<Int>(count)
@@ -448,7 +452,10 @@ object PlaybackCache {
                 if(value.isNotEmpty()) backups+=value
             }
             return Url(
-                StreamInfo(url,key,quality,requestedQuality,actualQuality,available,backups),
+                StreamInfo(
+                    url,key,quality,requestedQuality,actualQuality,available,backups,
+                    videoWidth,videoHeight,
+                ),
                 at
             )
         }

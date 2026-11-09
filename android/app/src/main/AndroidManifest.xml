@@ -67,15 +67,15 @@
         <!-- TV 端：横屏 + 遥控器焦点导航。 -->
         <activity android:name=".tv.MainActivity" android:exported="true" android:screenOrientation="landscape" android:windowSoftInputMode="adjustResize" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
         <!-- 手机 / 平板端：触摸 + 跟随屏幕方向。 -->
-        <activity android:name=".phone.PhoneMainActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
+        <activity android:name=".phone.PhoneMainActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|uiMode" android:launchMode="singleTop" />
         <!--
           播放页**不锁竖屏**：横版片源要点全屏按钮切到横屏（见 PhonePlayerActivity.toggleFullscreen）。
           声明 portrait 会把 setRequestedOrientation 顶回去，按钮点了没反应。
         -->
-        <activity android:name=".phone.PhoneSearchActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:windowSoftInputMode="adjustResize" android:launchMode="singleTop" />
-        <activity android:name=".phone.PhoneDetailActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
-        <activity android:name=".phone.PhoneAccountActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
-        <activity android:name=".phone.PhoneSettingsActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
+        <activity android:name=".phone.PhoneSearchActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|uiMode" android:windowSoftInputMode="adjustResize" android:launchMode="singleTop" />
+        <activity android:name=".phone.PhoneDetailActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|uiMode" android:launchMode="singleTop" />
+        <activity android:name=".phone.PhoneAccountActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|uiMode" android:launchMode="singleTop" />
+        <activity android:name=".phone.PhoneSettingsActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|uiMode" android:launchMode="singleTop" />
         <!--
           播放页用 @style/PlayerTheme：**半透明窗口**，不销毁下层推荐页的窗口与 Surface。
           这是「推荐页 ↔ 播放页内容不断」的前提，理由见 styles.xml 里那一段注释。

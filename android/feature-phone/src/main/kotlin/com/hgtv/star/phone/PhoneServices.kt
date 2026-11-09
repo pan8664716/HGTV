@@ -6,7 +6,7 @@ import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.shared.data.Library
-import androidx.media3.exoplayer.ExoPlayer
+import com.google.android.exoplayer2.ExoPlayer
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
 
@@ -75,7 +75,7 @@ object PhoneServices {
         return exo ?: synchronized(this) {
             exo ?: ExoPlayer.Builder(context.applicationContext)
                 .setRenderersFactory(
-                    androidx.media3.exoplayer.DefaultRenderersFactory(context.applicationContext)
+                    com.google.android.exoplayer2.DefaultRenderersFactory(context.applicationContext)
                         .setMediaCodecSelector(PhoneDecoder.selector)
                         // 解码器兜底：首选解码器初始化失败时自动换一颗（与电视端
                         // `TvRenderersFactory.setEnableDecoderFallback(true)` 同一条）。
@@ -88,16 +88,16 @@ object PhoneServices {
                 // * `setHandleAudioBecomingNoisy`：拔耳机 / 断蓝牙那一刻自动暂停，
                 //   不暂停就会从外放突然放出来——公共场合非常难堪。
                 .setAudioAttributes(
-                    androidx.media3.common.AudioAttributes.Builder()
-                        .setUsage(androidx.media3.common.C.USAGE_MEDIA)
-                        .setContentType(androidx.media3.common.C.AUDIO_CONTENT_TYPE_MOVIE)
+                    com.google.android.exoplayer2.audio.AudioAttributes.Builder()
+                        .setUsage(com.google.android.exoplayer2.C.USAGE_MEDIA)
+                        .setContentType(com.google.android.exoplayer2.C.AUDIO_CONTENT_TYPE_MOVIE)
                         .build(),
                     true
                 )
                 .setHandleAudioBecomingNoisy(true)
                 // 后台 / 锁屏继续放时保住 CPU（与电视端 `setWakeMode` 同一条）：
                 // 不保的话，锁屏几十秒后连接就断，回来要重走 DNS + TLS + 取地址。
-                .apply { runCatching { setWakeMode(androidx.media3.common.C.WAKE_MODE_NETWORK) } }
+                .apply { runCatching { setWakeMode(com.google.android.exoplayer2.C.WAKE_MODE_NETWORK) } }
                 .build()
                 .also { player ->
                     // 解码现场**在这里挂**：播放器是进程单例，解码器初始化事件只会发生一次；
@@ -110,7 +110,7 @@ object PhoneServices {
     }
 
     /** 把播放器从某个 `PlayerView` 上解下来（切页时调，别 release）。 */
-    fun detach(view: androidx.media3.ui.PlayerView?) {
+    fun detach(view: com.google.android.exoplayer2.ui.PlayerView?) {
         if (view != null && view.player === exo) view.player = null
     }
 
@@ -168,8 +168,8 @@ object PhoneDecoder {
 
     internal fun bind(context: android.content.Context) { app = context.applicationContext }
 
-    val selector = androidx.media3.exoplayer.mediacodec.MediaCodecSelector { mimeType, secure, tunnel ->
-        val all = androidx.media3.exoplayer.mediacodec.MediaCodecSelector.DEFAULT
+    val selector = com.google.android.exoplayer2.mediacodec.MediaCodecSelector { mimeType, secure, tunnel ->
+        val all = com.google.android.exoplayer2.mediacodec.MediaCodecSelector.DEFAULT
             .getDecoderInfos(mimeType, secure, tunnel)
         // 调试包的故障注入（与电视端同一个开关文件，见 `:shared` 的 `DebugFaults`）：
         // 「这台机器的解码器恰好不行」在开发机上几乎碰不到，没有它，自愈链路就只能靠线上用户验证。
@@ -180,7 +180,7 @@ object PhoneDecoder {
                 com.hgtv.star.shared.debug.DebugFaults.Mode.DECODER_BOGUS -> {
                     if (mimeType.startsWith("video/")) {
                         return@MediaCodecSelector listOf(
-                            androidx.media3.exoplayer.mediacodec.MediaCodecInfo.newInstance(
+                            com.google.android.exoplayer2.mediacodec.MediaCodecInfo.newInstance(
                                 "hgtv.bogus.decoder", "video/hevc", "video/hevc",
                                 null, false, false, false, true, false
                             )

@@ -67,6 +67,8 @@ object PerfStats {
     private var lastTotal=0.0
     private var lastIdle=0.0
     private var lastProc=0.0
+    private var lastProcCpuMs=0L
+    private var lastProcCpuAt=0L
     /** 采样轮次：用来决定这一轮要不要读温度这类「重但变化慢」的项。 */
     private var rounds=0
     /**
@@ -115,7 +117,7 @@ object PerfStats {
      * 第一次采样没有上一次可比，只能给平均值——那一轮前面加个 `≈`，不冒充瞬时值。
      */
     private fun cpuText(): String {
-        val (total,idle)=procStat() ?: return "-"
+        val (total,idle)=procStat() ?: return processCpuFallback()
         val proc=procTicks() ?: 0.0
         val first=lastTotal<=0.0
         val totalDelta=total-lastTotal
@@ -128,7 +130,33 @@ object PerfStats {
         // 第一次没有上一次可比：那一轮是「开机以来的平均」，用 `≈` 标一下，
         // 不冒充瞬时值（也省掉「均值」两个字，这一行还要塞下 GPU 与温度）。
         val prefix=if(first) "≈" else ""
-        return "%s%.0f%%(本机%.0f%%)".format(prefix,system,app)
+        return "%s%.0f%%(当前APP %.0f%%)".format(prefix,system,app)
+    }
+
+    /**
+     * 整机 `/proc/stat` 被系统 SELinux 拒绝时的兜底。
+     *
+     * Android TV 的新固件普遍不允许普通应用读取整机累计节拍，但
+     * [android.os.Process.getElapsedCpuTime] 只统计本进程，仍然可用。
+     * 按「本进程 CPU 时间 / 墙钟时间 / 核数」换算成整机占比，口径与上面的
+     * `本机%` 一致；第一次没有基线时用 `≈` 标明是启动以来的近似值。
+     */
+    private fun processCpuFallback(): String {
+        val now=SystemClock.elapsedRealtime()
+        val cpuMs=runCatching { android.os.Process.getElapsedCpuTime() }.getOrDefault(-1L)
+        if(cpuMs<0L) return "本机不可读"
+        val first=lastProcCpuAt<=0L
+        val wall=now-lastProcCpuAt
+        val used=cpuMs-lastProcCpuMs
+        lastProcCpuMs=cpuMs; lastProcCpuAt=now
+        if(first || wall<=0L || used<0L) {
+            val cores=Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+            val elapsed=cpuMs.toDouble()/now.coerceAtLeast(1L)/cores*100
+            return "当前APP ≈%.0f%%(系统不可读)".format(elapsed.coerceIn(0.0,100.0))
+        }
+        val cores=Runtime.getRuntime().availableProcessors().coerceAtLeast(1)
+        val app=used.toDouble()/wall/cores*100
+        return "当前APP %.0f%%(系统不可读)".format(app.coerceIn(0.0,100.0))
     }
 
     /** `/proc/stat` 第一行：总节拍与空闲节拍（idle + iowait）。 */
@@ -306,6 +334,7 @@ object PerfStats {
     /** 仅供测试：把累计值清掉，下一次采样重新按「开机以来的平均」算。 */
     fun resetForTest() {
         lastTotal=0.0; lastIdle=0.0; lastProc=0.0; summary=""; gpu=null; gpuAttempts=0
+        lastProcCpuMs=0L; lastProcCpuAt=0L
         rounds=0; screenRate=0.0; temperature=null
     }
 
@@ -321,6 +350,7 @@ object PerfStats {
      */
     fun reset() {
         lastTotal=0.0; lastIdle=0.0; lastProc=0.0
+        lastProcCpuMs=0L; lastProcCpuAt=0L
         sampledAt=0L
         summary=""
     }

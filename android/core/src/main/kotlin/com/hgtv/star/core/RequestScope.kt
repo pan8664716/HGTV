@@ -2,8 +2,11 @@
 package com.hgtv.star.core
 
 import okhttp3.Call
+import okhttp3.Request
 import okhttp3.Response
+import org.json.JSONObject
 import java.io.IOException
+import java.util.concurrent.atomic.AtomicLong
 
 /**
  * 网络失败的唯一出口。
@@ -44,12 +47,20 @@ fun isInterruption(problem: Throwable): Boolean {
 object NetLog {
     var log: (String) -> Unit = {}
     /**
+     * 分级日志出口。DEBUG 只用于请求/响应现场，WARN 用于重试，ERROR 用于请求失败。
+     *
+     * 电视端和手机端各自把它接到 logcat；未接线时退回原来的 [log]，保持旧调用点行为不变。
+     */
+    var event: (NetLogLevel, String) -> Unit = { _, line -> log(line) }
+    /**
      * 是否记录每个请求的连接耗时分解（DNS / TCP / TLS / 首字节）。
      *
      * 由 `HgtvApplication` 按 `BuildConfig.DEBUG` 置位：只有调试包才装这个监听器
      * （见 `defaultHttpClient`），正式包一个字节的开销都不加。
      */
     @Volatile var timing: Boolean = false
+    /** 是否记录每个 API 请求的请求/响应与重试现场。只由调试包打开。 */
+    @Volatile var apiLogging: Boolean = false
 
     /** 当前线程是否处于「不逐条上报」的静默段（见 [quiet]）。 */
     private val silent=ThreadLocal<Boolean>()
@@ -77,6 +88,148 @@ object NetLog {
         if(silent.get()==true) return
         log(line)
     }
+
+    fun debug(line: String) {
+        if(!apiLogging) return
+        event(NetLogLevel.DEBUG, line)
+    }
+
+    fun warn(line: String) {
+        if(!apiLogging) return
+        event(NetLogLevel.WARN, line)
+    }
+
+    fun error(line: String) {
+        if(!apiLogging) return
+        event(NetLogLevel.ERROR, line)
+    }
+
+    /**
+     * 重试现场。不要在这里带请求体、Cookie、token 或签名。
+     *
+     * [nextAttempt] 是从 1 开始的“即将执行”的尝试号，[maxAttempts] 是总次数。
+     */
+    fun retry(
+        scope: String,
+        nextAttempt: Int,
+        maxAttempts: Int,
+        reason: String = "",
+        delayMs: Long = -1L,
+    ) {
+        if(!apiLogging) return
+        val detail=buildString {
+            append("[API] retry scope=").append(scope)
+            append(" attempt=").append(nextAttempt).append('/').append(maxAttempts)
+            if(delayMs>=0L) append(" delay=").append(delayMs).append("ms")
+            if(reason.isNotBlank()) append(" reason=").append(reason.replace('\n',' ').take(220))
+        }
+        warn(detail)
+    }
+}
+
+enum class NetLogLevel { DEBUG, WARN, ERROR }
+
+/**
+ * 一次 API 请求的诊断上下文。
+ *
+ * 只记录方法、主机、路径、query key、body 大小、状态码、耗时和少量响应摘要。
+ * **不记录 query value、Cookie、token、签名头或完整响应体**。
+ */
+private class ApiRequestTrace(
+    private val id: Long,
+    private val request: Request,
+    private val startedAt: Long,
+) {
+    private var errorResponse=false
+
+    fun start() {
+        NetLog.debug("[API] start ${requestLine()}")
+    }
+
+    fun response(response: Response) {
+        errorResponse=!response.isSuccessful
+        val elapsed=(System.nanoTime()-startedAt)/1_000_000L
+        val summary=responseSummary(response)
+        val line="[API] response id=$id status=${response.code} ${elapsed}ms "+
+            "body=${bodyLength(response)} $summary ${requestLine(includeId=false)}"
+        if(response.isSuccessful) NetLog.debug(line) else NetLog.error(line)
+    }
+
+    fun failure(problem: IOException) {
+        if(errorResponse) return
+        val elapsed=(System.nanoTime()-startedAt)/1_000_000L
+        NetLog.error(
+            "[API] error id=$id ${elapsed}ms ${problem.javaClass.simpleName}: "+
+                "${problem.message.orEmpty().take(220)} ${requestLine(includeId=false)}"
+        )
+    }
+
+    private fun requestLine(includeId: Boolean = true): String {
+        val url=request.url
+        val queryKeys=url.queryParameterNames().joinToString(",").take(180)
+        val bodySize=runCatching { request.body?.contentLength() }.getOrNull()
+        val identity=when {
+            request.header("X-HGTV-Anonymous")!=null -> "anonymous"
+            request.header("X-HGTV-Identity")=="account" -> "account"
+            else -> "main"
+        }
+        return buildString {
+            if(includeId) append("id=").append(id).append(' ')
+            append("method=").append(request.method)
+            append(" host=").append(url.host)
+            append(" path=").append(url.encodedPath)
+            if(queryKeys.isNotBlank()) append(" queryKeys=").append(queryKeys)
+            append(" body=").append(bodySize?.toString() ?: "?")
+            append(" identity=").append(identity)
+        }
+    }
+
+    private fun bodyLength(response: Response): String {
+        val length=runCatching { response.body?.contentLength() }.getOrNull() ?: -1L
+        return if(length>=0L) "${length}B" else "?"
+    }
+
+    private fun responseSummary(response: Response): String {
+        val headers=buildString {
+            response.header("x-tt-logid")?.takeIf { it.isNotBlank() }?.let {
+                append(" logid=").append(it.take(48))
+            }
+            response.header("x-tt-tnc-control")?.takeIf { it.isNotBlank() }?.let {
+                append(" tnc=").append(it.take(24))
+            }
+            response.header("x-ss-etag")?.takeIf { it.isNotBlank() }?.let {
+                append(" etag=").append(it.take(48))
+            }
+            response.header("tt_stable")?.takeIf { it.isNotBlank() }?.let {
+                append(" stable=").append(it.take(16))
+            }
+        }
+        val body=runCatching { response.peekBody(4096).string() }.getOrNull().orEmpty()
+        if(body.isBlank()) return "empty=true$headers"
+        val json=runCatching { JSONObject(body) }.getOrNull() ?: return "empty=false$headers"
+        val code=json.opt("code")?.toString()?.take(32).orEmpty()
+        val message=(json.optString("message").ifBlank { json.optString("msg") }).replace('\n',' ').take(120)
+        return buildString {
+            append("empty=false")
+            if(code.isNotBlank()) append(" code=").append(code)
+            if(message.isNotBlank()) append(" message=").append(message)
+            append(headers)
+        }
+    }
+}
+
+private val apiRequestSequence=AtomicLong(0L)
+
+private fun requestTrace(call: Call): ApiRequestTrace? {
+    if(!NetLog.apiLogging) return null
+    val request=call.request()
+    // 视频 Range 分片不是业务 API；播放取地址、详情、搜索等没有 Range，照常记录。
+    if(!request.header("Range").isNullOrBlank()) return null
+    return ApiRequestTrace(
+        id=apiRequestSequence.incrementAndGet(),
+        request=request,
+        startedAt=System.nanoTime(),
+    )
 }
 
 /** Cancels only the work owned by one navigation/playback intent, including body reads. */
@@ -129,11 +282,14 @@ class RequestScope {
         fun <T> execute(call: Call, consume: (Response) -> T): T {
             val owner = current.get()
             owner?.attach(call)
+            val trace=requestTrace(call)
+            trace?.start()
             try {
                 return call.execute().use { response ->
+                    trace?.response(response)
                     // 非 2xx 也留一行：签名过期 / 设备时间不对时服务端会这么回，
                     // 而界面只显示「取不到」，logcat 里原本一点线索都没有。
-                    if (!response.isSuccessful) {
+                    if (!response.isSuccessful && !NetLog.apiLogging) {
                         val url = call.request().url
                         NetLog.emit("${url.host}${url.encodedPath} HTTP ${response.code}")
                     }
@@ -145,6 +301,9 @@ class RequestScope {
                 // OkHttp 于是抛 `InterruptedIOException: interrupted`。它是**我们自己**主动停的，
                 // 记进调试面板只会把真正的失败挤出那 40 条近况。
                 if (!call.isCanceled() && !isInterruption(e)) {
+                    trace?.failure(e)
+                }
+                if (!call.isCanceled() && !isInterruption(e) && !NetLog.apiLogging) {
                     val url = call.request().url
                     NetLog.emit("${url.host}${url.encodedPath} ${e.javaClass.simpleName}: ${e.message}")
                 }
