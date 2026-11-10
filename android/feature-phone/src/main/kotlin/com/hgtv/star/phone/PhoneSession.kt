@@ -41,6 +41,15 @@ object PhoneSession {
     @Volatile var owner: Owner = Owner.NONE
         private set
 
+    /**
+     * 正式播放页当前是否在前台。
+     *
+     * 播放页是半透明窗口，转屏或部分 ROM 的窗口重排会让下层推荐页收到一次
+     * `onResume`。推荐页此时不能接手播放器，也不能注销借 Surface 的入口；
+     * 否则两个界面会抢同一个视频输出，解码器随后停在旧帧。
+     */
+    @Volatile var playerForeground: Boolean = false
+
     @Volatile var seriesId: String = ""
         private set
     /** 从推荐流带进来的原始卡片，保留 recommend_info 供行为上报。 */
@@ -452,6 +461,7 @@ object PhoneSession {
     fun reset() {
         clearNext()
         handoffUntil = 0
+        playerForeground = false
         owner = Owner.NONE
         seriesId = ""
         feedKey = ""

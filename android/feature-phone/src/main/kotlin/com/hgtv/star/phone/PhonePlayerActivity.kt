@@ -550,6 +550,7 @@ class PhonePlayerActivity : PhoneActivity() {
         phoneEdgeToEdge()
         val seriesId = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
         if (seriesId.isBlank()) { finish(); return }
+        PhoneSession.playerForeground = true
 
         pendingFullscreen = intent.getBooleanExtra(EXTRA_FULLSCREEN, false)
         landscapeMode = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
@@ -563,8 +564,10 @@ class PhonePlayerActivity : PhoneActivity() {
         if (!pendingFullscreen) {
             requestOrientation(ActivityInfo.SCREEN_ORIENTATION_USER)
         }
-        // 借下层推荐页的 Surface：判定必须在 `buildUi` 之前，页面底板建出来就要是透明的。
-        feedUnderlay = canBorrowFeedSurface(seriesId)
+        // 全屏是明确的「把画面独立出来」：不借下层推荐页的 Surface。
+        // 下层可能已经停在下一页，或因为转屏换了布局；继续借会透出另一条剧，
+        // 甚至让两个界面抢同一个视频输出。全屏路径始终使用本页自己的 PlayerView。
+        feedUnderlay = !pendingFullscreen && canBorrowFeedSurface(seriesId)
 
         buildUi()
         val tUi = android.os.SystemClock.elapsedRealtime()
@@ -1240,17 +1243,17 @@ class PhonePlayerActivity : PhoneActivity() {
                     ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
                 ))
             }
-            // 顺序：**先把输出挂到横屏这一层，再放开竖屏那一块**。
-            // 反过来的话，两句之间播放器没有输出端，那一帧就是黑的（转全屏时闪一下）。
-            player?.let { landscapeVideo.player = it }
-            // 横屏这一层此后要长期出画面：换集时保留上一帧，避免闪黑。
-            landscapeVideo.setKeepContentOnPlayerReset(true)
-            PhoneServices.detach(page.playerView)
+            // `PlayerView.setPlayer(null)` 会清掉它自己绑过的视频 Surface。
+            // 必须先解绑旧画面，再挂新画面；反序时旧 View 会把刚挂上的新 Surface
+            // 又清掉，解码器随后报 -32，画面就停在切换前的一帧。
             // 竖屏这一层在横屏期间不出画面，而且尺寸马上会从竖屏变横屏。
             // 保留最后一帧的话，回竖屏时那帧旧 buffer 会残留一块在新尺寸的 Surface 上——
             // 用户截图里「一块画面卡在屏幕上」就是这个。先关掉再解绑，它才会清屏。
             page.playerView.setKeepContentOnPlayerReset(false)
-            page.playerView.player = null
+            PhoneServices.detach(page.playerView)
+            // 横屏这一层此后要长期出画面：换集时保留上一帧，避免闪黑。
+            landscapeVideo.setKeepContentOnPlayerReset(true)
+            player?.let { landscapeVideo.player = it }
             // 输出被横屏这一层拿走了：推荐页那边不能再认为「Surface 一直在」。
             PhoneSession.underlayActive = false
             underlayBound = false
@@ -1260,9 +1263,6 @@ class PhonePlayerActivity : PhoneActivity() {
         } else {
             landscape.visibility = View.GONE
             portrait.visibility = View.VISIBLE
-            // 同上：先挂上竖屏要用的那一块，再放开横屏那一块。借下层时挂的是
-            // 推荐页那块 Surface（`attachUnderlay`），这里一样不能先清。
-            val attached = feedUnderlay && attachUnderlay()
             // 横屏那一层即将隐藏：先关掉「保留最后一帧」，再解绑。
             // 否则它的 Surface 会带着横屏尺寸的旧帧一起留在窗口里（退出全屏后那块残留）。
             landscapeVideo.setKeepContentOnPlayerReset(false)
@@ -1271,6 +1271,9 @@ class PhonePlayerActivity : PhoneActivity() {
             // 表现就是「退出全屏后有一块画面卡着，怎么点都去不掉」。从视图树里摘掉，
             // Surface 才会真正销毁；下次进全屏再挂回 index 0（见上面横屏分支）。
             landscape.removeView(landscapeVideo)
+            // 旧输出清完后再挂竖屏要用的那一块。借下层时挂的是推荐页那块
+            // Surface（`attachUnderlay`）；否则直接挂本页 PlayerView。
+            val attached = feedUnderlay && attachUnderlay()
             if (attached) {
                 // 借下层出画面：本页底板与视频层都透明 / 隐藏。
                 root.setBackgroundColor(Color.TRANSPARENT)
@@ -1278,9 +1281,6 @@ class PhonePlayerActivity : PhoneActivity() {
                 // 下层接不上（推荐页被收走、地址过期）：退回到本页自己出画面。
                 dropUnderlay()
                 player?.let { page.playerView.player = it }
-                // Surface 的尺寸刚从横屏变回竖屏：重挂一次，让系统重建 buffer 并立刻出新帧。
-                // 不重建的话，旧 buffer 会有一块残留在屏幕上（见上面横屏分支的注释）。
-                rebuildPortraitSurface()
             }
             // 竖屏同样进沉浸式：**状态栏不占位、不显示**。
             // 早先这里走 `exitImmersive()`，顶部留着一条状态栏，竖屏短剧的画面被压下去一截，
@@ -1312,28 +1312,6 @@ class PhonePlayerActivity : PhoneActivity() {
             replayDanmaku()
             placeLandscapeFullscreen()
         }
-    }
-
-    /**
-     * 退出全屏后重建一次竖屏的视频 Surface。
-     *
-     * 从横屏退回竖屏时，`PlayerView` 里的 `SurfaceView` 尺寸刚由横屏变回竖屏，
-     * 系统分配的旧 buffer 可能只被新帧盖住一部分——屏幕上就留下一条「卡住的画面」。
-     * 解绑再挂上会强制重建 Surface 并立刻出一帧；`keepContentOnPlayerReset` 先关掉，
-     * 否则它会把旧帧又贴回来。
-     *
-     * 只在「本页自己出画面」时执行：借下层 Surface 的那条路画面在推荐页那一层，本层不参与。
-     */
-    private fun rebuildPortraitSurface() {
-        val p = player ?: return
-        if (feedUnderlay && underlayBound) return
-        page.playerView.setKeepContentOnPlayerReset(false)
-        page.playerView.player = null
-        page.playerView.player = p
-        // 换清晰度 / 片尾连播仍然要「换源保留上一帧」，重建完再打开。
-        page.playerView.postDelayed({
-            runCatching { page.playerView.setKeepContentOnPlayerReset(true) }
-        }, 600L)
     }
 
     /**
@@ -1430,6 +1408,8 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private fun enterFullscreen() {
         if (landscapeMode) return
+        // 全屏期间不再借用推荐页 Surface，避免转屏过程中透出下层的相邻页。
+        dropUnderlay()
         // 主动进全屏：退出全屏时那把「钉住竖屏」的尺子要先收掉，
         // 否则它会在设备立起来时把方向交回传感器，把人从全屏里踢出去。
         releasePortraitPin()
@@ -1503,6 +1483,9 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private fun enterPortraitFullscreen() {
         if (!landscapeMode) return
+        // 横屏里看竖版短剧时，下层推荐页可能已经滑到下一页。
+        // 切回竖屏全屏必须使用本页自己的画面，不能继续借那一块 Surface。
+        dropUnderlay()
         releasePortraitPin()
         if (!requestOrientation(ActivityInfo.SCREEN_ORIENTATION_PORTRAIT)) return
         landscapeMode = false
@@ -4502,6 +4485,7 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     override fun finish() {
         // 交给推荐页：交接窗口内两边都不暂停，播放器一直在跑，Surface 只是换了宿主。
+        PhoneSession.playerForeground = false
         if (intent.getBooleanExtra(EXTRA_RECOMMEND, false)) {
             returningToFeed = true
             PhoneSession.beginHandoff()
@@ -4533,6 +4517,7 @@ class PhonePlayerActivity : PhoneActivity() {
 
     override fun onResume() {
         super.onResume()
+        PhoneSession.playerForeground = true
         foreground = true
         // 网络恢复时立刻重取地址（与电视端 `refetchAddressOnNetwork` 同一条）：
         // 手机切 Wi-Fi / 5G 比电视频繁，断网那一下正在取地址的话不该干等退避计时。
@@ -4588,6 +4573,7 @@ class PhonePlayerActivity : PhoneActivity() {
 
     override fun onPause() {
         super.onPause()
+        PhoneSession.playerForeground = false
         foreground = false
         unwatchNetwork()
         syncKeepScreenOn()
@@ -4623,6 +4609,7 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     override fun onDestroy() {
+        PhoneSession.playerForeground = false
         window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         PhoneDebugReport.resetSamples()
         if (::root.isInitialized) root.removeCallbacks(chromeHideRunnable)

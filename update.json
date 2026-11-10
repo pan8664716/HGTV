@@ -1,14 +1,14 @@
 {
   "schema": 1,
   "packageName": "com.hgtv.star",
-  "versionName": "1.3.6",
+  "versionName": "1.3.6.1",
   "versionCode": 75,
   "minSdk": 19,
-  "tag": "1.3.6",
-  "notes": "手机 / 平板：\n· 新增：启动加载与失败重试。\n· 修复：推荐空屏、横竖屏切换、登录设备、播放重试、弹幕与进度。\n电视：\n· 新增：启动加载与失败重试。\n· 修复：推荐卡住、分类闪屏、搜索键闪退、换集重试、弹幕与进度。",
+  "tag": "1.3.6.1",
+  "notes": "手机 / 平板：\n· 修复：横竖屏全屏切换黑屏、串页。\n电视：\n· 无更新。",
   "apk": {
-    "name": "HGTV_1.3.6.apk",
-    "size": 3870054,
-    "sha256": "7465f741b92aa51fd648e2213fbd9172fc191c7c6c05d5578a98187dfdd54c5f"
+    "name": "HGTV_1.3.6.1.apk",
+    "size": 3869904,
+    "sha256": "7a41f1a432b2dd161c562a7b80be4eb8d7ea27d800d6469fc126684265b68bdb"
   }
 }

@@ -398,7 +398,7 @@ class PhoneFeedView(
      * 早先这里一律 `playIndex()`，用户看到的就是「每退一次都重新加载、从头开始」。
      */
     fun onShown() {
-        resumeOnShown()
+        if (!resumeOnShown()) return
         // 设置页可能刚改过弹幕（显示方式 / 速度 / 字号 / 透明度）：回到这一页时重刷一次，
         // 否则要等下一次换集才看得到，用户读到的就是「弹幕设置不生效」。
         pageAt(playingIndex)?.let { applyDanmakuSettings(it) }
@@ -482,7 +482,11 @@ class PhoneFeedView(
         list.post { if (playingIndex != 0) playIndex(0) }
     }
 
-    private fun resumeOnShown() {
+    private fun resumeOnShown(): Boolean {
+        // 播放页是半透明窗口：转屏时下层本页可能也会收到 onResume。
+        // 这时本页仍被播放页盖着，不能接手播放器、不能注销借 Surface 的入口，
+        // 也不能把控制层透出来。真正退回本页时播放页会先清掉这个标志。
+        if (PhoneSession.playerForeground) return false
         // 之前确实被收起来过（离开去播放页 / 退到后台）。重复通知时不要动 Surface：
         // 重挂一次 `player` 会让 `PlayerView` 先清掉再交出去，白闪一下。
         val resuming = hidden
@@ -530,7 +534,7 @@ class PhoneFeedView(
                 stopOrphanPlayback()
                 if (items.isNotEmpty()) playIndex(0)
             }
-            return
+            return true
         }
         // 列表可能被重铺过（换体裁、快照恢复、Activity 重建）：本页记的下标这时指向的
         // 已经不是会话里那一部了。先按会话对齐下标，否则下面的「接手」会拿错卡片去比，
@@ -545,17 +549,18 @@ class PhoneFeedView(
         if (adoptPlaying(forceRebind = resuming)) {
             // 接上了：交接窗口到此为止，之后真的退到后台仍然要暂停。
             PhoneSession.endHandoff()
-            return
+            return true
         }
         // 接不上（播放器已经 IDLE / 视图被重建过）但**会话里还是这部剧的这一集**：
         // 原地换一条地址接着放，不要退回 `playIndex`——那一条会重新取详情、重新读本机进度，
         // 用户看到的是「退回来从头开始」。
         if (reopenAtCurrentPosition(playingIndex)) {
             PhoneSession.endHandoff()
-            return
+            return true
         }
         stopOrphanPlayback()
         playIndex(playingIndex)
+        return true
     }
 
     /**
@@ -1000,6 +1005,9 @@ class PhoneFeedView(
             val index = playingIndex
             val page = boundPage ?: pageAt(index) ?: return@bindFeedSurface false
             val series = items.getOrNull(index) ?: return@bindFeedSurface false
+            // 只允许借「会话里正在播的同一部剧」的 Surface。播放页横屏时，
+            // 下层分页可能因为布局或惯性滑到相邻一条；把那一块借出去就是串台。
+            if (PhoneSession.seriesId != series.id) return@bindFeedSurface false
             val exo = player ?: PhoneServices.peekPlayer() ?: return@bindFeedSurface false
             player = exo
             // `force` 时才先置空：`PlayerView` 里那个 `player` 字段还指着同一台播放器，
