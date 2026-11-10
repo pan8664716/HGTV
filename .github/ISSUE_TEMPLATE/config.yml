@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: 应用内更新与下载说明（置顶）
+    url: https://github.com/pan8664716/HGTV/issues/94
+    about: 应用内更新与下载已下线，请先阅读这份说明
+  - name: Telegram 频道 / 群组
+    url: https://t.me/hgtvhub
+    about: 装不上、播不出、问更新进度，来这里最快

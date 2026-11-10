@@ -1,0 +1,120 @@
+name: 功能建议
+description: 提出新功能、体验改进或交互调整建议
+title: "[建议] "
+labels:
+  - enhancement
+body:
+  - type: markdown
+    attributes:
+      value: |
+        请先搜索已有 Issue，避免重复建议。
+
+        请描述要解决的问题和使用场景，不要只写实现方式。
+        不要提交账号密码、验证码、手机号、二维码、Cookie、Token 等敏感信息。
+
+  - type: dropdown
+    id: feature_area
+    attributes:
+      label: 功能范围
+      options:
+        - 推荐与内容发现
+        - 分类、榜单与搜索
+        - 详情与选集
+        - 播放与弹幕
+        - 账号与登录
+        - 局域网同步
+        - 界面、主题与交互
+        - 设置与性能
+        - 安装与发布
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: target_platform
+    attributes:
+      label: 适用平台
+      multiple: true
+      options:
+        - 手机
+        - 平板
+        - 电视或电视盒子
+        - 全部平台
+    validations:
+      required: true
+
+  - type: textarea
+    id: use_case
+    attributes:
+      label: 使用场景和痛点
+      description: 说明你在什么场景下需要它，目前哪里不方便
+      placeholder: |
+        我通常会在……时使用。
+        现在的问题是……
+    validations:
+      required: true
+
+  - type: textarea
+    id: current_workaround
+    attributes:
+      label: 当前替代办法
+      description: 现在如何绕过这个问题；没有可以填写“无”
+    validations:
+      required: false
+
+  - type: textarea
+    id: desired_behavior
+    attributes:
+      label: 期望的功能或体验
+      description: 描述用户能看到、能操作到的最终效果
+    validations:
+      required: true
+
+  - type: textarea
+    id: acceptance_criteria
+    attributes:
+      label: 验收标准
+      description: 满足哪些条件时可以认为这个建议已经完成
+      placeholder: |
+        1. 用户可以……
+        2. 在……情况下仍然……
+        3. 不影响……
+    validations:
+      required: true
+
+  - type: dropdown
+    id: importance
+    attributes:
+      label: 重要程度
+      options:
+        - 很需要，明显影响日常使用
+        - 有会更好，不影响当前使用
+        - 只是体验优化
+    validations:
+      required: true
+
+  - type: textarea
+    id: examples
+    attributes:
+      label: 参考示例或草图
+      description: 可以填写其他应用的类似功能、链接或文字示意；不要上传含敏感信息的图片
+    validations:
+      required: false
+
+  - type: textarea
+    id: constraints
+    attributes:
+      label: 兼容性或限制
+      description: 例如需要兼容 Android 4.4、遥控器、低配电视等
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: 提交确认
+      options:
+        - label: 我已搜索现有 Issue，确认不是重复建议
+          required: true
+        - label: 我理解建议需要结合现有架构、兼容性和维护成本评估
+          required: true
