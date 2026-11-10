@@ -533,7 +533,7 @@ class PhonePlayerActivity : PhoneActivity() {
         com.hgtv.star.shared.media.DanmakuLoader(
             scope = scope,
             repository = { PhoneServices.repository(this) },
-            mode = { library?.danmakuMode ?: DanmakuMode.FULL },
+            mode = { library?.danmakuMode ?: DanmakuMode.DEFAULT },
             target = { danmakuTarget() },
             post = { block -> runOnUiThread(block) },
             alive = { !isFinishing && !isDestroyed },
@@ -857,7 +857,7 @@ class PhonePlayerActivity : PhoneActivity() {
 
         // 弹幕压在画面之上、手势层之下（与竖屏 `PhoneVideoPage` 里的叠放顺序一致）。
         landDanmaku = com.hgtv.star.shared.media.DanmakuView(this).apply {
-            mode = DanmakuMode.FULL
+            mode = DanmakuMode.DEFAULT
             minTextSizeDp = 4f
             // 与竖屏那一层同一个基准字号（见 `applyDanmakuSettings`）。
             sizeFollowsLongEdge = true
@@ -3156,7 +3156,7 @@ class PhonePlayerActivity : PhoneActivity() {
         speedChip.text = PlaybackSpeed.label(userSpeed)
         qualityChip.text = "${library?.maxQuality ?: 1080}P"
         // 弹幕那颗：显示当前档位（「弹幕 全屏」），隐藏档显示「弹幕 关」。
-        danmakuChip.text = when (library?.danmakuMode ?: com.hgtv.star.core.DanmakuMode.FULL) {
+        danmakuChip.text = when (library?.danmakuMode ?: com.hgtv.star.core.DanmakuMode.DEFAULT) {
             com.hgtv.star.core.DanmakuMode.HIDDEN -> "弹幕 关"
             com.hgtv.star.core.DanmakuMode.FULL -> "弹幕 全屏"
             com.hgtv.star.core.DanmakuMode.TOP -> "弹幕 上方"

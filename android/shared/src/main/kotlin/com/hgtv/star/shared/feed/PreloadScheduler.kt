@@ -17,7 +17,7 @@ import com.hgtv.star.core.SlideCacheManager
  * | 规则 | 两端原本的实现 |
  * | --- | --- |
  * | 首帧之后延迟（`SlideCacheManager.firstFrameDelay()`）再发 | 各写一次 `postDelayed` |
- * | 当前这一部 buffer < 3 秒就整轮让路，1.5 秒后再试 | 各写一次 |
+ * | 当前这一部 buffer < 1.5 秒就整轮让路，0.75 秒后再试 | 各写一次 |
  * | 连划之后停 1 秒，把主方向升回完整预热 | 各写一次 |
  * | 离开推荐页 / 换剧就取消排定的那一次 | 各写一次 |
  *
@@ -97,7 +97,7 @@ class PreloadScheduler(
             if (!active()) return@Runnable
             if (anchor() < 0) return@Runnable
             // 带宽让路：用户正盯着的那一帧比「下一步可能看什么」重要得多。
-            // 让路不是放弃，1.5 秒后再看一次（那时 buffer 通常已经够了）。
+            // 让路不是放弃，0.75 秒后再看一次（那时 buffer 通常已经够了）。
             if (!gateOpen()) {
                 post(RETRY_DELAY_MS, "retry")
                 return@Runnable
@@ -120,10 +120,10 @@ class PreloadScheduler(
     }
 
     private companion object {
-        /** 让路之后重试的间隔（与两端原来的 1.5 秒一致）。 */
-        const val RETRY_DELAY_MS = 1_500L
+        /** 让路之后重试的间隔：缓冲一旦够，就尽快把相邻一部接上。 */
+        const val RETRY_DELAY_MS = 750L
 
         /** 停留多久算「确认」（与 `SlideCacheManager.dwellPromoteMs` 同值）。 */
-        const val DWELL_DELAY_MS = 1_000L
+        const val DWELL_DELAY_MS = 600L
     }
 }

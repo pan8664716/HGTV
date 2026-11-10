@@ -9,7 +9,7 @@ import org.junit.Test
  * Passport（branch 2）签名的固定向量测试。
  *
  * 向量由参考实现（`github.com/aston314/hongguo-tv` 的 `passport_sign.go`）在同一份输入上跑出，
- * 因此这几个断言同时锁住三件事：分支选择、F13、以及 Helios / Gorgon / Medusa 三条头的组合。
+ * 因此这几个断言同时锁住三件事：分支选择、F13、以及 Helios / Gorgon 两条头的组合。
  */
 class PassportSignerTest {
     /** 固定时钟，让 `_rticket` 试探的结果可复现。 */
@@ -37,9 +37,10 @@ class PassportSignerTest {
 
     @Test fun headersAreComplete() {
         val signed = signer.sign("https://example.com/p/", mapOf("aid" to "8662"), """{"a":1}""".toByteArray())
-        for (key in listOf("X-Khronos", "X-SS-Req-Ticket", "X-Helios", "X-Medusa", "X-Gorgon", "X-SS-STUB")) {
+        for (key in listOf("X-Khronos", "X-SS-Req-Ticket", "X-Helios", "X-Gorgon", "X-SS-STUB")) {
             assertTrue("缺头 $key", signed.headers[key].orEmpty().isNotBlank())
         }
+        assertTrue("不应发送 X-Medusa", signed.headers.keys.none { it.equals("X-Medusa", ignoreCase = true) })
         // Gorgon 的固定前缀（与内容接口那一套同一族）。
         assertTrue(signed.headers.getValue("X-Gorgon").startsWith("8404"))
         // STUB 是大写的 body MD5。

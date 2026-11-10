@@ -21,8 +21,8 @@ android {
         ndk {
             abiFilters += listOf("armeabi-v7a", "arm64-v8a")
         }
-        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 75
-        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.3.6.1"
+        versionCode = System.getenv("HGTV_VERSION_CODE")?.toInt() ?: 76
+        versionName = System.getenv("HGTV_VERSION_NAME") ?: "1.3.6.2"
     }
     buildFeatures { buildConfig = true }
     signingConfigs {

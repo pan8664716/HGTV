@@ -19,6 +19,9 @@ class Signer(
      */
     private var device: Map<String, String> = emptyMap()
 ) {
+    private fun Map<String,String>.withoutMedusaHeader(): Map<String,String> =
+        filterKeys { !it.equals("x-medusa",ignoreCase=true) }
+
     /** 账号凭据变化时更新档案；空档案回落到内置那份。 */
     fun updateDevice(values: Map<String, String>) { device = values.filterValues { it.isNotBlank() } }
 
@@ -241,7 +244,12 @@ class Signer(
                     headers["x-reading-request"]="$ticket-${(random()*2_000_000_000).toInt().toUInt()}"
                     headers["x-ss-stub"]=digest("MD5",body).hex().uppercase()
                 }
-                return Request(url,headers,body,method ?: if(body==null) "GET" else "POST")
+                return Request(
+                    url,
+                    headers.withoutMedusaHeader(),
+                    body,
+                    method ?: if(body==null) "GET" else "POST",
+                )
             }
         }
         error("无法生成请求签名")

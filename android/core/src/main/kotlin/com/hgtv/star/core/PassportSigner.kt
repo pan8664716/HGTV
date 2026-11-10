@@ -30,6 +30,9 @@ class PassportSigner(
     /** 设备档案：`x-medusa` 里的机型 / 系统版本要跟着它走（见 [Signer] 的同名字段）。 */
     private var device: Map<String, String> = emptyMap()
 ) {
+    private fun Map<String,String>.withoutMedusaHeader(): Map<String,String> =
+        filterKeys { !it.equals("x-medusa",ignoreCase=true) }
+
     fun updateDevice(values: Map<String, String>) { device = values.filterValues { it.isNotBlank() } }
 
     private fun deviceValue(key: String, fallback: String): String =
@@ -372,7 +375,7 @@ class PassportSigner(
             "X-Gorgon" to gorgon(query, body, ts, gorgonNonce)
         )
         if (body != null && body.isNotEmpty()) headers["X-SS-STUB"] = m.hex().uppercase()
-        return Request("$base?$query", headers, body)
+        return Request("$base?$query", headers.withoutMedusaHeader(), body)
     }
 
     companion object {

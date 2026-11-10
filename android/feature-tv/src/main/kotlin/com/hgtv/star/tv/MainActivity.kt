@@ -51,10 +51,10 @@ import com.hgtv.star.tv.list.updateBackToTop
 import com.hgtv.star.shared.compat.Cancellable
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.shared.compat.lowEndTv
-import com.hgtv.star.shared.architecture.AppExit
 import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.DebugFaults
+import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.debug.compactTls
 import com.hgtv.star.shared.nav.Navigator
 import com.hgtv.star.shared.nav.Route
@@ -88,6 +88,7 @@ import com.hgtv.star.shared.nav.Route
 class RecommendWarm {
     @Volatile internal var future: java.util.concurrent.Future<*>?=null
     val scope=com.hgtv.star.core.RequestScope()
+    val startedAt=android.os.SystemClock.elapsedRealtime()
 }
 
 class MainActivity: Activity() {
@@ -1117,8 +1118,13 @@ class MainActivity: Activity() {
     var launchRecommendPending=true
     /** 冷启动闸门：书库 + 主设备注册完成前不建首屏。 */
     var startupInitializing=true
+    var startupCreateTraceAt=0L
+    /** 第二阶段初始化是否完成；在此之前 onResume 不读取任何晚初始化对象。 */
+    var mainInitialized=false
     /** 推荐 Store；列表、游标、过滤、加载与曝光状态都由它持有。 */
     var recommendStoreRef: com.hgtv.star.shared.feed.RecommendStore?=null
+    /** 搜索控制器会读本机设置，必须等 `Library.loadAsync` 完成后再启动。 */
+    var searchCollectorStarted=false
     /** 推荐列表（来自分类接口的「全部推荐」流，已滤掉本机隐藏的剧）。 */
     var recommendItems: List<Series>
         get()=recommendStore().items
@@ -1259,7 +1265,7 @@ class MainActivity: Activity() {
      *
      * 上下键换剧时详情与首集数据都在本地，`playEpisode` 拿到它就直接起播，不用再等
      * 取地址 + 读索引 + 首批数据那几百毫秒——这是「上下切换不卡」的关键。
-     * 只留最近 6 部（每份约 1MB，见 `RECOMMEND_PREPARED_LIMIT`），所有权在交给播放器时转移。
+     * 只留最近 8 部（每份约 512KB，见 `RECOMMEND_PREPARED_LIMIT`），所有权在交给播放器时转移。
      * 电视上一秒一下、3 部就够；手机上一秒两三部，3 部会在连划时被刷空。
      */
     val recommendPrepared=LinkedHashMap<String,RemoteVideo>()
@@ -1565,6 +1571,8 @@ class MainActivity: Activity() {
     var searchButton: View?=null
     var voiceButton: View?=null
     val searchActions=mutableListOf<View>()
+    /** 搜索输入法的请求代次：焦点离开输入框后，旧的重试必须立刻失效。 */
+    var searchImeToken=0
     /** 语音界面正在前台：防止连按重复拉起。 */
     var voiceLaunching=false
     /** 语音界面已经返回，等待页面重建后消费结果（见 [applyVoiceReturn]）。 */
@@ -1930,21 +1938,49 @@ class MainActivity: Activity() {
 
     // ---- 生命周期与系统回调：扩展成员不能 override，只能留在 Activity 本体里 ----
     override fun onCreate(state: Bundle?) {
+        startupCreateTraceAt=StartupTrace.now()
+        StartupTrace.mark("main.onCreate.start")
         super.onCreate(state)
         // 启动链路的第二个锚点（第一个是 `LaunchActivity` 的 `route ->`）。
         // 现场「点图标没反应」时要能一眼分开三种情况：路由没跑 / 路由跑了但目标没起来 /
         // 目标起来了但画面没上屏——这一条就是中间那个分界。
         android.util.Log.w("HGTV-BOOT", "tv.MainActivity onCreate")
-        // 版本号只有 application 模块的 BuildConfig 才有，这里从包信息读一次（见 AppVersion）。
-        AppVersion.init(this)
         // 进程死亡后的现场：真正的恢复要等 `library.isLoaded`（onResume 里那次），
         // 这里先存下来。`state` 只在重建时非空，正常冷启动是 null。
         restoreBundle=state
         window.decorView.systemUiVisibility=View.SYSTEM_UI_FLAG_FULLSCREEN or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+        // 第一阶段只建一个不依赖书库 / 主题文件的动态加载壳，先让窗口尽快出第一帧。
+        // 版本、主题、运行时、网络与书库读取全部延后到下一帧。
+        root=FrameLayout(this).apply {
+            setBackgroundColor(0xFF1E2228.toInt())
+            clipChildren=false
+            clipToPadding=false
+        }
+        setContentView(root)
+        showStartupShell()
+        StartupTrace.done("main.onCreateShell",startupCreateTraceAt)
+        root.postDelayed({
+            if(!isDestroyed) initializeMainAfterFirstFrame(state)
+        },32L)
+    }
+
+    /**
+     * 第二阶段的完整主界面初始化。
+     *
+     * 放在首帧之后执行，避免 `MainActivity` 窗口已经出现、但主线程还在做主题读取、
+     * 运行时创建和网络监听，用户只能看到窗口背景里的静态三点。
+     */
+    private fun initializeMainAfterFirstFrame(state: Bundle?) {
+        val initializeStarted=StartupTrace.now()
+        StartupTrace.mark("main.initialize.start")
+        // 版本号只有 application 模块的 BuildConfig 才有，这里从包信息读一次（见 AppVersion）。
+        StartupTrace.section("main.version") { AppVersion.init(this) }
         // 主题要在建视图之前定下来：先落盘偏好 → 换色 → 丢掉柔光位图缓存（里面烤着上一套材质的投影）。
         // 窗口底色也跟着换，启动那一帧、页面切换的空档都不会闪出另一套材质。
+        val themeStarted=StartupTrace.now()
         TvStyle.applyTheme(TvThemeStore.load(this))
         applyWindowBackground()
+        StartupTrace.done("main.theme",themeStarted)
         // 性能档位：低配设备保留全部视觉层级，只做四件「纯减负」的事
         // （关焦点缩放 / 只给焦点卡画柔光位图 / 不画海报井暗角 / 柔光收紧一档）。
         //
@@ -1955,8 +1991,17 @@ class MainActivity: Activity() {
         // 2GB 的电视盒子几乎一律是 false，只看它整个应用就按高端机跑
         // （这正是「按一下方向键就顿一下」的根源，见 compat/Platform.kt 的说明）。
         applyPerformanceProfile()
-        library=AppRuntime.library(this); artwork=AppRuntime.artwork(this); tvTools=TvTools(this)
+        val runtimeStarted=StartupTrace.now()
+        val libraryStarted=StartupTrace.now()
+        library=AppRuntime.library(this)
+        StartupTrace.done("main.runtime.library",libraryStarted)
+        val artworkStarted=StartupTrace.now()
+        artwork=AppRuntime.artwork(this)
+        StartupTrace.done("main.runtime.artwork",artworkStarted)
+        tvTools=TvTools(this)
+        StartupTrace.done("main.runtime",runtimeStarted)
         appScope.launch {
+            StartupTrace.mark("main.collector.detail.start")
             detailController.state.collect { state ->
                 if(state.seriesId.isBlank()) return@collect
                 val detailState=state.detail
@@ -1981,16 +2026,7 @@ class MainActivity: Activity() {
                 if(onPlaybackPage()) playerStripRefresh?.invoke()
             }
         }
-        appScope.launch {
-            searchController.state.collect { state ->
-                if(screen!="catalog" || tab!=TAB_SEARCH) return@collect
-                val typed=(searchInput as? EditText)?.text?.toString()?.trim().orEmpty()
-                when {
-                    typed.isEmpty() -> renderHintRow(state.history.ifEmpty { state.hot })
-                    state.query==typed -> renderHintRow(state.suggestions.map { it.name })
-                }
-            }
-        }
+        StartupTrace.mark("main.collectors.launched")
         // 内存吃紧时由界面把**视口之外**的封面从 ImageView 上摘掉：LRU 的 evictAll 只解除
         // 自己的引用，位图挂在 View 上就仍然活着——首页常驻 77 张（约 44MB）正是这一份。
         artwork.releaseHiddenCovers=artworkReleaseCallback
@@ -2009,6 +2045,7 @@ class MainActivity: Activity() {
         // 封面加载的计时汇总写到 filesDir：真机上抓 logcat 要连电脑、环形缓冲还会把
         // 前面的行冲掉，而「按住下键走几百张」之后那份汇总正是要看的东西。
         // 每次启动**清空重写**，因此文件里永远是最近这一次运行的数据。
+        val cleanupStarted=StartupTrace.now()
         if(com.hgtv.star.tv.BuildConfig.DEBUG) {
             val timingFile=java.io.File(filesDir,"artwork-timing.txt")
             runCatching { timingFile.writeText("") }
@@ -2020,8 +2057,15 @@ class MainActivity: Activity() {
             runCatching { java.io.File(filesDir,"artwork-timing.txt").delete() }
             runCatching { java.io.File(filesDir,"verbose").deleteRecursively() }
         }
-        root=FrameLayout(this).apply { setBackgroundColor(bg); clipChildren=false; clipToPadding=false }
-        setContentView(root)
+        StartupTrace.done("main.debugCleanup",cleanupStarted)
+        root.setBackgroundColor(bg)
+        root.post { StartupTrace.mark("main.shell.firstFrame") }
+        // 轻量壳已经出过一帧；现在换成带书库状态的正式加载页。
+        if(library.isLoaded) {
+            StartupTrace.mark("main.startupLoading.skip")
+        } else {
+            StartupTrace.section("main.showStartupLoading") { showStartupLoading() }
+        }
         // 画面缩放按整屏尺寸算：屏幕一变（换分辨率 / 投屏）就重算一次，
         // 否则缩小后的画面会停在旧尺寸上、四周露出一圈黑边。
         root.addOnLayoutChangeListener { _,_,_,_,_,_,_,_,_ ->
@@ -2045,6 +2089,7 @@ class MainActivity: Activity() {
             // 静默期 / `restoring` 里不被上报。等一帧再按真实位置把页头状态摆正（见 [syncHeaderState]）。
             root.post { syncHeaderState() }
         }
+        val networkStarted=StartupTrace.now()
         connectivity=connectivityManager() ?: throw IllegalStateException("系统缺少网络服务")
         // 基准值：注册之前先读一次。回调是异步投递的，`registerDefaultNetworkCallback` 会
         // 立刻把**当前**状态回调一遍；基准留成 false 的话，那次就会被读成「刚恢复」，
@@ -2085,12 +2130,15 @@ class MainActivity: Activity() {
                 }
             }
         }
+        StartupTrace.done("main.networkSetup",networkStarted)
+        val favoriteStarted=StartupTrace.now()
         favoriteMonitor=FavoriteMonitor(library,repository) { refreshFavoriteLabels() }
+        StartupTrace.done("main.favoriteMonitor",favoriteStarted)
         // 媒体会话不在这里创建：启动即建会把容器/ROM 的 media_session 故障放大成闪退，
         // 第一次同步播放状态时再按需创建（见 ensureMediaSession）。
         // Android 6–9 还要一次外部存储授权，会话镜像（设备身份 + sessionid）才写得出去——
         // 有了它，卸载重装才不必重新走一轮「注册 → 登录 → 发短信」。其他版本这里是空操作。
-        requestMirrorStorage()
+        StartupTrace.section("main.requestMirrorStorage") { requestMirrorStorage() }
         // 调试包的启动期故障注入（见 [DebugFaults]）：正式包里 BuildConfig.DEBUG 是常量 false，
         // 整段被 R8 删掉。
         if(com.hgtv.star.tv.BuildConfig.DEBUG) main.postDelayed({
@@ -2107,7 +2155,6 @@ class MainActivity: Activity() {
                 else -> Unit
             }
         },4000)
-        showStartupLoading()
         // 预建到内容接口的连接（DNS + TCP + TLS + 验链），见 [ContentRepository.preconnect]。
         // 放在 loadLibrary 之前、`network` 车道上：推荐页那次请求大约在 1 秒后发出，
         // 那时连接已经在池子里，只剩一个 RTT。失败静默，不影响任何功能。
@@ -2115,7 +2162,14 @@ class MainActivity: Activity() {
         // 走协程而不是 `io.execute {}`：它挂在 [appScope] 下，页面销毁时一起取消，
         // 不会出现「Activity 已经没了、这条线程还在建连」。
         appScope.network { runCatching { repository.preconnect() } }
+        StartupTrace.mark("main.preconnect.queued")
+        mainInitialized=true
+        if(foreground) {
+            main.removeCallbacks(tick)
+            main.post(tick)
+        }
         loadLibrary()
+        StartupTrace.done("main.initialize",initializeStarted)
     }
 
     /**
@@ -2130,7 +2184,7 @@ class MainActivity: Activity() {
      */
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        if(!library.isLoaded) return
+        if(!mainInitialized || !library.isLoaded) return
         outState.putString(STATE_SCREEN,screen)
         outState.putInt(STATE_TAB,tab)
         outState.putString(STATE_COLLECTION,collection.orEmpty())
@@ -2232,7 +2286,7 @@ class MainActivity: Activity() {
         if(directPlayback && !forceDetail) showCatalog() else { directPlayback=false; showDetail(true) }
     }
     private fun goBack() {
-        if(!library.isLoaded) { confirmExit(); return }
+        if(!mainInitialized || !library.isLoaded) { confirmExit(); return }
         when(screen) {
             // 播放设置开着时先收菜单（浮层，返回键收浮层是通用手势）；
             // 从推荐页进的正片返回时**直接回主页**（需求 4），不经过简介页。
@@ -2263,7 +2317,7 @@ class MainActivity: Activity() {
     }
     /**
      * 主界面按返回的退出：**按两次**——第一次只弹一条提示，[EXIT_CONFIRM_WINDOW_MS] 之内
-     * 再按一次才完全结束应用进程。
+     * 再按一次才 [finish]。
      *
      * 不再弹确认框：电视上没有指针，确认框每次都要用户把焦点从「取消」挪到「退出」，
      * 比再按一下返回慢；而「再按一次退出」是 Android 上最熟的手势，第一次的提示已经把
@@ -2274,26 +2328,11 @@ class MainActivity: Activity() {
         val now=android.os.SystemClock.elapsedRealtime()
         if(exitArmedAt!=0L && now-exitArmedAt<=EXIT_CONFIRM_WINDOW_MS) {
             exitArmedAt=0L
-            exitApplication()
+            finish()
             return
         }
         exitArmedAt=now
         tvTools.toast(EXIT_TOAST)
-    }
-    /** 保存最后一次状态后移除任务并结束进程，真正释放进程级缓存、线程与播放器。 */
-    private fun exitApplication() {
-        AppExit.exit(this) {
-            generation++
-            cancelWork()
-            saveProgress()
-            favoriteMonitor.stop()
-            mediaSession?.release(); mediaSession=null
-            runCatching { com.hgtv.star.shared.data.SessionBootstrap.shutdown() }
-            releasePlayer()
-            library.flush()
-            tvTools.close()
-            appScope.cancel()
-        }
     }
     @Deprecated("TV remote back is handled through the activity")
     override fun onBackPressed()=goBack()
@@ -2347,12 +2386,12 @@ class MainActivity: Activity() {
                 // 搜索页：搜索键只把焦点交给输入框（语音入口已经去掉）。
                 screen=="catalog" && tab==TAB_SEARCH &&
                     !(::tvTools.isInitialized && tvTools.showing) ->
-                    main.post { searchInput?.takeIf { it.attachedToWindow }?.requestFocus() }
+                    main.post { focusSearchInput() }
                 else -> {
                     switchTab(TAB_SEARCH)
                     // 搜索页带着上一次的关键词进来时，输入框不会自动取焦点（见 searchBar 的
                     // requestFocus 条件）；用户按搜索键的意图是「来打字 / 说话」，这里补一次。
-                    main.post { searchInput?.takeIf { it.attachedToWindow }?.requestFocus() }
+                    main.post { focusSearchInput() }
                 }
             }
             return true
@@ -2499,7 +2538,7 @@ class MainActivity: Activity() {
     }
     override fun onConfigurationChanged(newConfig: android.content.res.Configuration) {
         super.onConfigurationChanged(newConfig)
-        if(!library.isLoaded) return
+        if(!mainInitialized || !library.isLoaded) return
         // 屏幕参数变了（分辨率 / dpi / 语言）：面板与列表里的尺寸都是建那一刻的像素，
         // 缓存的那一份必须丢掉，否则会按旧的像素间距摆在新屏幕上（见 [dropPlaybackMenuCache]）。
         dropPlaybackMenuCache()
@@ -2511,10 +2550,20 @@ class MainActivity: Activity() {
         }
     }
     override fun onResume() {
+        val resumeStarted=StartupTrace.now()
+        StartupTrace.mark("main.onResume.start")
         super.onResume()
         // 清除本地数据期间：写盘队列已经关掉，这一轮页面重建里的任何一次缓存写入都会抛异常。
         // 进程马上就会被结束，这里直接跳过即可（授权弹窗关闭后会走到这里）。
         if(resetting) return
+        foreground=true
+        if(!mainInitialized) {
+            // onCreate 的第二阶段还在等待首帧；书库 / 网络 / 页面对象尚未创建。
+            // 初始化完成后的 loadLibrary 回调会按 foreground 状态继续打开首屏。
+            StartupTrace.mark("main.onResume.deferred")
+            StartupTrace.done("main.onResume",resumeStarted, "deferred=true")
+            return
+        }
         // 从语音界面回来：这一次重建不要把焦点交给输入框（否则软键盘会弹出来）。
         // 结果本身可能在 `onActivityResult` 里晚一步到，这里只先压住焦点。
         if(voiceLaunching) suppressSearchFocusOnce=true
@@ -2527,7 +2576,7 @@ class MainActivity: Activity() {
                 noteVoice("cancel")
             }
         },800L)
-        foreground=true; main.removeCallbacks(tick); main.post(tick)
+        main.removeCallbacks(tick); main.post(tick)
         // 回前台补一次心跳：设备休眠 / 厂商省电会让后台定时整体推迟，
         // 后台待两小时醒来时上一次心跳可能已隔了几小时。
         com.hgtv.star.shared.data.SessionBootstrap.onForeground()
@@ -2537,11 +2586,17 @@ class MainActivity: Activity() {
         // 拉回来之后由 [refreshAccountViews] / [reconcileHistory] 只重画真的变了的那几处。
         if(library.isLoaded && repository.signedIn) loadAccount()
         if(library.isLoaded) {
+            val contentStarted=StartupTrace.now()
+            StartupTrace.mark("main.onResume.content.start")
             // 冷启动落在推荐页（需求：打开应用自动进入推荐）；设置里关掉之后落点回首页。
             //
             // 但**进程被回收后重建**是例外：这时用户按 Home 之前停在哪一页，就回哪一页
             //（见 [restoreLastScreen]）。改造前这里没有这一支，回来永远是首页。
             if(initialCatalogPending) {
+                // 启动页可能已提前读完书库，此时 loadLibrary 的回调早于 onResume。
+                // 首屏前必须再装配一次身份与账号，否则播放会拿仓库里的空身份回落到内置旧 ID。
+                applySessionToken(); applyAccount()
+                startupInitializing=false
                 val saved=restoreBundle
                 restoreBundle=null
                 initialCatalogPending=false
@@ -2579,6 +2634,12 @@ class MainActivity: Activity() {
             } else {
                 val waiting=deferredWork; deferredWork=null; waiting?.apply?.invoke()
             }
+            StartupTrace.done(
+                "main.onResume.content",
+                contentStarted,
+                "screen=$screen tab=$tab recommend=$launchRecommendPending",
+            )
+            root.post { StartupTrace.mark("main.onResume.firstFrame") }
             if(screen=="catalog") favoriteMonitor.check()
             if(screen=="player") syncMediaSession()
         } else libraryLoadError?.let(::showLibraryError)
@@ -2586,9 +2647,15 @@ class MainActivity: Activity() {
         if(pendingAccountUri!=null) main.post { consumePendingAccountFile() }
         // 语音结果同样等这一轮恢复（可能含一次页面重建）走完再落地。
         if(voiceReturned) main.post { applyVoiceReturn() }
+        StartupTrace.done("main.onResume",resumeStarted, "libraryLoaded=${library.isLoaded}")
     }
     override fun onPause() {
         if(resetting) { super.onPause(); return }
+        if(!mainInitialized) {
+            foreground=false
+            super.onPause()
+            return
+        }
         foreground=false; main.removeCallbacks(tick); cancelRecovery(); cancelPrefetch(); mediaSession?.deactivate()
         // 退到后台：屏幕常亮跟着松开（见 `syncKeepScreenOn`）。
         syncKeepScreenOn()
@@ -2597,6 +2664,7 @@ class MainActivity: Activity() {
     }
     override fun onStop() {
         if(resetting) { super.onStop(); return }
+        if(!mainInitialized) { super.onStop(); return }
         restoreStoppedPage=true; generation++; cancelWork(); tvTools.close()
         // 退到后台**不销毁播放器**（进程内复用，见 [detachPlayerSurface] 的说明）：
         // 画面层、传输、弹幕一起收，但 ExoPlayer 实例留着。回到前台由 onResume 的
@@ -2665,6 +2733,7 @@ class MainActivity: Activity() {
      */
     override fun onLowMemory() {
         super.onLowMemory()
+        com.hgtv.star.core.PlaybackCache.trimMemory(severe=true)
         releaseOffscreenCovers()
         if(::artwork.isInitialized) artwork.trimMemory(android.content.ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
         runCatching { Soft.trimMemory(0.2f) }
@@ -2672,6 +2741,7 @@ class MainActivity: Activity() {
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
+        if(!mainInitialized) return
         // 柔光位图是可重建的纯缓存，内存吃紧时先收缩它。
         // **不能整份清空**：清空之后下一帧会把屏幕上每一张可见卡重新生成一遍，
         // 那是一次几百毫秒的主线程尖峰（线上那几条渲染 ANR 正是它）。按比例淘汰旧条目，
@@ -2682,6 +2752,9 @@ class MainActivity: Activity() {
         if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW && Soft.shadowBitmaps) Soft.trimMemory()
         if(::artwork.isInitialized) artwork.trimMemory(level)
         if(level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_LOW) {
+            com.hgtv.star.core.PlaybackCache.trimMemory(
+                severe=level>=android.content.ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL,
+            )
             cancelPrefetch()
             // 推荐页的相邻预热（每部约 1MB）是可重建的纯缓存：内存吃紧时先放掉，
             // 下一次切换会重新预热，不会影响正在放的这一部。
@@ -2696,6 +2769,11 @@ class MainActivity: Activity() {
         }
     }
     override fun onDestroy() {
+        if(!mainInitialized) {
+            appScope.cancel()
+            super.onDestroy()
+            return
+        }
         generation++; cancelWork()
         closeLanSyncSession()
         runCatching { unregisterReceiver(sessionExpiredReceiver) }

@@ -181,6 +181,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private val lowEnd=context.applicationContext.lowEndTv()
     private val spriteAtlasWidth=if(lowEnd) 1024 else 2048
     private val spriteAtlasHeight=if(lowEnd) 1024 else 1024
+    /** 低端电视保持 60fps，但单帧最多画 96 条，减少每帧的 Canvas 调用量。 */
+    private val maxLinesPerFrame=if(lowEnd) 96 else MAX_LINES_PER_FRAME
     private var spriteAtlas: DanmakuSpriteAtlas?=null
     private var nextSpriteRefreshAt=0L
     private var fillEmojiCenter=0f
@@ -251,7 +253,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     /** 描边笔的原始不透明度（0xB3 = 70% 黑）。 */
     private val edgeAlpha=0xB3
 
-    var mode: DanmakuMode=DanmakuMode.FULL
+    var mode: DanmakuMode=DanmakuMode.DEFAULT
         set(value) {
             if(field==value) return
             field=value
@@ -800,7 +802,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         while(cursor<lines.size && seconds-lines[cursor].start>lines[cursor].duration) cursor++
         var drawn=0
         var index=cursor
-        while(index<lines.size && drawn<MAX_LINES_PER_FRAME) {
+        while(index<lines.size && drawn<maxLinesPerFrame) {
             val line=lines[index]
             val elapsed=seconds-line.start
             if(elapsed<0f) break

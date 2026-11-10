@@ -110,6 +110,8 @@ object PlaybackCache {
     private const val MAX_BYTES=48L*1024*1024
     /** 一条索引的上限（`MediaCrypto.headerEnd` 允许 8MB 的头部，这里留足余量）。 */
     private const val MAX_FILE_BYTES=16L*1024*1024
+    /** 最近解析过的索引留在内存里，避免连续上下翻页时反复反序列化同一份。 */
+    private const val INDEX_MEMORY_LIMIT=3
 
     data class Index(val total: Long,val prepared: MediaCrypto.Prepared)
     data class Url(val info: StreamInfo,val at: Long)
@@ -117,6 +119,9 @@ object PlaybackCache {
     @Volatile private var root: File?=null
     /** 读写都在这把锁里串行：起播、预热、下一集预取会同时碰它。 */
     private val lock=Any()
+    /** 索引对象本身只读；LRU 淘汰只影响下一次是否还要读盘。 */
+    private val indexMemoryLock=Any()
+    private val indexMemory=LinkedHashMap<String,Index>(4,0.75f,true)
     @Volatile private var lastTrim=0L
     /**
      * 索引的**异步写盘**线程（见 [saveIndexLater]）。
@@ -145,7 +150,10 @@ object PlaybackCache {
     private fun dir(): File? = root?.takeIf { it.isDirectory || it.mkdirs() }
 
     /** 单元测试用：卸掉目录，回到「没有缓存」的状态。 */
-    fun detach() { synchronized(lock) { root=null } }
+    fun detach() {
+        synchronized(lock) { root=null }
+        synchronized(indexMemoryLock) { indexMemory.clear() }
+    }
 
     private fun sha1(value: String): String {
         val digest=MessageDigest.getInstance("SHA-1").digest(value.toByteArray(Charsets.UTF_8))
@@ -191,6 +199,12 @@ object PlaybackCache {
     /** 读一集的索引；没有 / 坏了 / 过期都返回 null（坏了会顺手删掉）。 */
     fun loadIndex(key: String?): Index? {
         if(key.isNullOrEmpty()) return null
+        synchronized(indexMemoryLock) {
+            indexMemory[key]?.let {
+                if(NetLog.timing) NetLog.log("video index memory hit samples=${it.prepared.samples.size}")
+                return it
+            }
+        }
         val file=indexFile(key) ?: return null
         if(!file.isFile) return null
         if(System.currentTimeMillis()-file.lastModified()>INDEX_TTL_MS) { file.delete(); return null }
@@ -198,6 +212,7 @@ object PlaybackCache {
         val loaded=try { readIndex(file) } catch(_: Exception) { null }
         if(loaded==null) { file.delete(); return null }
         if(NetLog.timing) NetLog.log("video index cache hit bytes=${file.length()} samples=${loaded.prepared.samples.size} took=${(System.nanoTime()-began)/1_000_000}ms")
+        rememberIndex(key,loaded)
         return loaded
     }
 
@@ -228,8 +243,21 @@ object PlaybackCache {
             file.delete()
             tmp.renameTo(file)
         }.isSuccess
+        if(ok) rememberIndex(key,Index(total,prepared))
         if(ok && NetLog.timing) NetLog.log("video index cache save bytes=${file.length()} samples=${prepared.samples.size} took=${(System.nanoTime()-began)/1_000_000}ms")
         scheduleTrim()
+    }
+
+    private fun rememberIndex(key: String,index: Index) {
+        synchronized(indexMemoryLock) {
+            indexMemory[key]=index
+            while(indexMemory.size>INDEX_MEMORY_LIMIT) {
+                val eldest=indexMemory.entries.iterator()
+                if(!eldest.hasNext()) break
+                eldest.next()
+                eldest.remove()
+            }
+        }
     }
 
     private fun readIndex(file: File): Index? {
@@ -276,6 +304,7 @@ object PlaybackCache {
     /** 这一集的索引不认了（HTTP 403/404、`total` 变了、样本越界）。 */
     fun invalidateIndex(key: String?) {
         if(key.isNullOrEmpty()) return
+        synchronized(indexMemoryLock) { indexMemory.remove(key) }
         runCatching { indexFile(key)?.delete() }
         // 索引不认了 = 这一集的内容变了：首块字节也不再是同一个文件的前 512KB。
         runCatching { headFile(key)?.delete() }
@@ -487,7 +516,21 @@ object PlaybackCache {
 
     /** 本机「清空数据」：把所有派生缓存一起丢掉。 */
     fun clear() {
+        synchronized(indexMemoryLock) { indexMemory.clear() }
         val dir=dir() ?: return
         synchronized(lock) { dir.listFiles()?.forEach { runCatching { it.delete() } } }
+    }
+
+    /** 系统内存吃紧时丢掉可重建的索引对象；磁盘缓存仍保留，下次可重新读回。 */
+    fun trimMemory(severe: Boolean) {
+        synchronized(indexMemoryLock) {
+            if(severe) indexMemory.clear()
+            else while(indexMemory.size>1) {
+                val eldest=indexMemory.entries.iterator()
+                if(!eldest.hasNext()) break
+                eldest.next()
+                eldest.remove()
+            }
+        }
     }
 }

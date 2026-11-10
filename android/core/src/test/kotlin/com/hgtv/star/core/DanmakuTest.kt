@@ -41,8 +41,8 @@ class DanmakuTest {
 
     @Test fun `danmaku mode round-trips through storage`() {
         DanmakuMode.entries.forEach { mode -> assertEquals(mode,DanmakuMode.fromStored(mode.storedValue)) }
-        assertEquals(DanmakuMode.FULL,DanmakuMode.fromStored(null))
-        assertEquals(DanmakuMode.FULL,DanmakuMode.fromStored("unknown"))
+        assertEquals(DanmakuMode.TOP,DanmakuMode.fromStored(null))
+        assertEquals(DanmakuMode.TOP,DanmakuMode.fromStored("unknown"))
     }
 
     @Test fun `quick toggle cycles through every mode and returns to full`() {

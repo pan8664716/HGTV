@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.data
 import com.hgtv.star.shared.debug.Diagnostics
+import com.hgtv.star.shared.debug.StartupTrace
 
 import com.hgtv.star.core.HOME_KEYS
 import com.hgtv.star.core.CategoryGenres
@@ -173,23 +174,41 @@ class Library(context: Context) {
         // 默认回调也要留痕——调用方不传 onFailure 时，这里就是唯一出口。
         Diagnostics.warn("HGTV-LIB", "library load failed", problem)
     }, onReady: () -> Unit) {
+        val traceStarted=StartupTrace.now()
+        StartupTrace.mark("library.load.request")
         check(!closed)
-        if (isLoaded) { onReady(); return }
+        if (isLoaded) {
+            StartupTrace.done("library.load.already",traceStarted)
+            onReady()
+            return
+        }
         readyCallbacks += onReady
         errorCallbacks += onFailure
-        if (loading) return
+        if (loading) {
+            StartupTrace.mark("library.load.join")
+            return
+        }
         loading = true
         loader.execute {
+            StartupTrace.mark("library.worker.start")
             // 会话镜像先读：它是后面 [restoreFromMirror] 的唯一数据源，而且只在这里读一次盘。
             // 放在 retired-writes 检查之前：那一步失败（上一批提交超时）也不该让镜像永远不读。
+            val mirrorStarted=StartupTrace.now()
             runCatching { mirror.preload() }
+            StartupTrace.done("library.mirror.preload",mirrorStarted)
             // 新版身份布局必须先于任何设备档案 / 身份读取。
+            val identityStarted=StartupTrace.now()
             runCatching { ensureIdentityLayout() }
+            StartupTrace.done("library.identityLayout",identityStarted)
             val result = runCatching {
+                val retiredStarted=StartupTrace.now()
                 val retired = synchronized(retiredWrites) { retiredWrites.toList() }
                 retired.forEach { check(it.awaitClosed(30, TimeUnit.SECONDS)) { "上次观看记录仍在保存，请稍后重试" } }
                 synchronized(retiredWrites) { retiredWrites.removeAll(retired.toSet()) }
+                StartupTrace.done("library.retiredWrites",retiredStarted, "count=${retired.size}")
+                val prefsStarted=StartupTrace.now()
                 val values = prefs.all
+                StartupTrace.done("library.preferences",prefsStarted, "keys=${values.size}")
                 // 观看进度改为「一剧一文件」（见 [ProgressStore]），不再从 SP 里读。
                 //
                 // 这里做一次**一次性迁移**：旧版把 200 条进度塞在 `progress` 这一个键里。
@@ -198,6 +217,7 @@ class Library(context: Context) {
                 //
                 // 先看目录里有没有文件：迁移完之后这个键已经被删掉，但 `values["progress"]`
                 // 在某些旧包上可能还残留，每次启动都去解一遍 100KB 的 JSON 是白花的。
+                val progressStarted=StartupTrace.now()
                 val legacyProgress = if (progressStore.count() == 0 && values["progress"] != null) {
                     runCatching { LibraryDisk.decode(mapOf("progress" to values["progress"])).history() }
                         .getOrDefault(emptyList())
@@ -211,7 +231,14 @@ class Library(context: Context) {
                 val effectiveValues: Map<String, Any?> =
                     if (merged.isEmpty()) values
                     else values.toMutableMap().apply { put("progress", LibraryDisk.history(merged)) }
+                StartupTrace.done(
+                    "library.progress",
+                    progressStarted,
+                    "files=${fromDisk.size} legacy=${legacyProgress.size}",
+                )
+                val decodeStarted=StartupTrace.now()
                 val loaded = LibraryDisk.decode(effectiveValues)
+                StartupTrace.done("library.decode",decodeStarted)
                 // 推荐流游标：与其余本机设置一起在这一次读盘里抄进内存（见 [recommendCursor]）。
                 recommendCursorCached = (values["recommendCursor"] as? String).orEmpty()
                 // 手机端按体裁分开的推荐游标：同理（见 [phoneFeedCursor]）。
@@ -232,6 +259,7 @@ class Library(context: Context) {
                 val stamps = mutableMapOf<RankBoard, Long>()
                 val migration = homePrefs.edit()
                 val oldKeys = mutableListOf<String>()
+                val homeStarted=StartupTrace.now()
                 RankBoard.entries.forEach { board ->
                     val key = homeCacheKey(board)
                     val legacy = values[key] as? String
@@ -243,6 +271,7 @@ class Library(context: Context) {
                     }
                     if (legacy != null) oldKeys += key
                 }
+                StartupTrace.done("library.homeCache.decode",homeStarted, "boards=${cached.size}")
                 // 首页缓存按榜单分开之后，旧版留下的键（`home-short` 这种）永远不会再被读到：
                 // 一起清掉，别让一份不再更新的快照一直躺在磁盘上。
                 val liveKeys = RankBoard.entries.map(::homeCacheKey).toSet()
@@ -259,14 +288,21 @@ class Library(context: Context) {
                 // 界面会「一打开就是登录状态」——正是用户看到的那个现象（缓存里的资料，
                 // 不是真会话）。这里与 `accountFingerprint()` 同一条判据：没有 cookie 就没有账号。
                 val signed = sessionPrefs.getString("account-cookie", "").orEmpty().contains("sessionid=")
+                val accountStarted=StartupTrace.now()
                 val account = if(!signed) null else accountPrefs.getString("account", null)?.let { raw ->
                     AccountSnapshot.decode(raw, now)?.takeIf { it.data.usable }
                 }
+                StartupTrace.done("library.accountSnapshot",accountStarted, "signed=$signed")
                 Triple(loaded, cached, stamps) to account
             }
+            val dispatchStarted=StartupTrace.now()
             main.post {
+                StartupTrace.done("library.mainDispatch",dispatchStarted)
                 loading = false
-                if (closed) { readyCallbacks.clear(); errorCallbacks.clear(); return@post }
+                if (closed) {
+                    StartupTrace.done("library.load.closed",traceStarted)
+                    readyCallbacks.clear(); errorCallbacks.clear(); return@post
+                }
                 val ready = readyCallbacks.toList(); readyCallbacks.clear()
                 val errors = errorCallbacks.toList(); errorCallbacks.clear()
                 result.onSuccess { (local, account) ->
@@ -275,7 +311,15 @@ class Library(context: Context) {
                     accountCached = account
                     accountStamp = accountFingerprint()
                     ready.forEach { it() }
-                }.onFailure { failure -> errors.forEach { it(failure) } }
+                    StartupTrace.done("library.load.total",traceStarted, "result=success")
+                }.onFailure { failure ->
+                    errors.forEach { it(failure) }
+                    StartupTrace.done(
+                        "library.load.total",
+                        traceStarted,
+                        "result=failure error=${failure.javaClass.simpleName}:${failure.message.orEmpty().take(120)}",
+                    )
+                }
             }
         }
     }

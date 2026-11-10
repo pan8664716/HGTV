@@ -37,16 +37,12 @@ class VideoDataSource(private val video: RemoteVideo): BaseDataSource(true) {
     override fun read(target: ByteArray,targetOffset: Int,length: Int): Int {
         if(length==0) return 0
         if(remaining==0L) return C.RESULT_END_OF_INPUT
-        // 一次取 2MB：加载线程每取一次都要发一个同步 Range 请求并解密。
+        // 播放中的后续分片按 512KB 取：加载线程每取一次都要发一个同步 Range 请求并解密。
         //
-        // 粒度直接决定起播要几个往返：`DefaultLoadControl` 的最小缓冲是 20 秒媒体，
-        // 1080P（≈1.6 Mbps）就是 4 MB，原来按 1 MB 一块要**四次** Range 请求才够
-        // 首帧，每次都是「发出去→等回来→解密」的串行等待；2 MB 只要两次。
-        // 实测这台盒子单次往返 150~400ms（同一连接 keep-alive，不含 TLS），
-        // 首帧因此能省掉两三百毫秒。
-        //
-        // 上限 2 MB 是 [RemoteVideo.read] 允许的单次最大值；再大就要把
-        // `RemoteVideo.read` 的断言与内存占用一起放大，收益却已经不明显。
+        // 2MB 分片在这台盒子上单次解密要 180~727ms，并产生数 MB 临时数组；
+        // 缓存增长时正好与弹幕的 60fps 绘制抢 CPU，日志会连续出现
+        // `Skipped 54~127 frames`。降到 512KB 后单次解密/分配缩短到约四分之一，
+        // Range 次数会增加，但每次网络等待都会让出 CPU，弹幕明显更稳。
         if(offset>=buffer.size) {
             val want=if(firstChunk) FIRST_CHUNK else BUFFER_CHUNK
             firstChunk=false
@@ -61,7 +57,7 @@ class VideoDataSource(private val video: RemoteVideo): BaseDataSource(true) {
     private companion object {
         /** 首块：只够一个 1080P 的 I 帧 + 若干 P 帧。 */
         const val FIRST_CHUNK=512L*1024
-        /** 之后的大块：2MB，与 `RemoteVideo.read` 的上限一致（见那边的注释）。 */
-        const val BUFFER_CHUNK=2L*1024*1024
+        /** 后续分片：512KB，优先保证弹幕与主线程帧率，不追求单次传输字节数。 */
+        const val BUFFER_CHUNK=512L*1024
     }
 }

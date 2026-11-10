@@ -297,9 +297,15 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
         val available=(minOf(end,cached.size.toLong())-start).coerceAtLeast(0).toInt()
         val first=if(available>0) cached.copyOfRange(start.toInt(),start.toInt()+available) else byteArrayOf()
         val fetchedAt=System.nanoTime()
-        val raw=if(start+available<end) first+range(start+available,end-1).bytes else first
+        // 普通播放读取通常已经越过首块（available=0）。这时直接把 Range 结果交给解密，
+        // 不再走 `emptyArray + bytes` 再复制一整块；2MB 分片下这一份复制本身就会制造 GC。
+        val raw=when {
+            start+available>=end -> first
+            available<=0 -> range(start,end-1).bytes
+            else -> first+range(start+available,end-1).bytes
+        }
         val decryptedAt=System.nanoTime()
-        val plain=MediaCrypto.decrypt(raw,start,info.key,prepared)
+        val plain=MediaCrypto.decryptInPlace(raw,start,info.key,prepared)
         if(NetLog.timing) {
             val done=System.nanoTime()
             NetLog.log(

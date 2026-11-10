@@ -1141,7 +1141,7 @@ fun MainActivity.playEpisode(
                     // 因此这里必须**补一次**——`startRecommendEpisode` 调 `prefetchRecommendNeighbors`
                     // 时 `playbackReady` 刚被置成 false，那一次会被挡回去。
                     //
-                    // 现在改成「排定 + 延迟 2000ms」（文档 4.1）：READY 只代表解出了轨道，
+                    // 现在改成「排定 + 短延迟 300ms」：READY 只代表解出了轨道，
                     // 解码器还在出帧、buffer 还在填，立刻拉相邻几条会把这一部自己拖慢。
                     // 延迟期间用户滑走的话，`playRecommendAt` 会把这一次取消掉。
                     if(screen=="recommend") {
@@ -1150,9 +1150,11 @@ fun MainActivity.playEpisode(
                         reportRecommendImpression()
                         scheduleRecommendPreload(slideCache.firstFrameDelay(),"ready")
                         scheduleRecommendDwell()
+                        // 批量播放模型是第二优先级：先让相邻一部的详情 / 地址 / 首块跑起来，
+                        // 避免 6 个模型请求与用户下一次换剧抢同一条下行。
                         main.postDelayed({
                             if(!isDestroyed && screen=="recommend") prefetchRecommendBatchModels()
-                        },slideCache.firstFrameDelay())
+                        },RECOMMEND_BATCH_MODEL_DELAY_MS)
                         // 冷启动续播时暂缓的那一次取流：画面已经出来了，现在取不会抢首帧。
                         fireRecommendFeed()
                     }

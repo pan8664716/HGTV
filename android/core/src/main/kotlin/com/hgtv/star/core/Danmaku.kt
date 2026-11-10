@@ -74,7 +74,11 @@ enum class DanmakuMode(val storedValue: String, val label: String, val hint: Str
         HIDDEN -> FULL
     }
 
-    companion object { fun fromStored(value: String?) = entries.firstOrNull { it.storedValue==value } ?: FULL }
+    companion object {
+        /** 首次启动、旧数据缺字段或值损坏时使用上方显示。 */
+        val DEFAULT=TOP
+        fun fromStored(value: String?) = entries.firstOrNull { it.storedValue==value } ?: DEFAULT
+    }
 }
 
 /**

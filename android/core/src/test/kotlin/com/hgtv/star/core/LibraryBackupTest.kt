@@ -16,12 +16,12 @@ class LibraryBackupTest {
         val result=LibraryBackup.decode(LibraryBackup.encode(sanitized))
         assertEquals("你 好",result.favorites.single().title); assertEquals("",result.favorites.single().cover)
     }
-    @Test fun `danmaku display mode defaults to full and survives a backup round trip`() {
-        assertEquals(DanmakuMode.FULL,DanmakuMode.fromStored(null))
+    @Test fun `danmaku display mode defaults to top and survives a backup round trip`() {
+        assertEquals(DanmakuMode.TOP,DanmakuMode.fromStored(null))
         assertEquals(DanmakuMode.HIDDEN,DanmakuMode.fromStored("hidden"))
-        // 旧备份里没有 danmaku 字段：按「全屏弹幕」读回来，旧文件仍然可以恢复。
+        // 旧备份里没有 danmaku 字段：按当前默认的「上方显示」读回来。
         val legacy=LibraryBackup.encode(data()).let { JSONObject(it).apply { getJSONObject("settings").remove("danmaku") }.toString() }
-        assertEquals(DanmakuMode.FULL,LibraryBackup.decode(legacy).settings.danmaku)
+        assertEquals(DanmakuMode.TOP,LibraryBackup.decode(legacy).settings.danmaku)
         assertEquals(DanmakuMode.TOP,LibraryBackup.decode(LibraryBackup.encode(data().copy(settings=BackupSettings(danmaku=DanmakuMode.TOP)))).settings.danmaku)
     }
     @Test fun `merge retains newer progress and watched state unless imported progress is newer`() {

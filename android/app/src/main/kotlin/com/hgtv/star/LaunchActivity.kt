@@ -17,6 +17,7 @@ import android.widget.TextView
 import com.hgtv.star.phone.PhoneMainActivity
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.detectDeviceForm
+import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.tv.MainActivity
 
@@ -57,16 +58,24 @@ class LaunchActivity : Activity() {
     private lateinit var retryButton: TextView
     private var startupCleanup: (() -> Unit)?=null
     private var routed=false
+    private var traceStartedAt=0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        traceStartedAt=StartupTrace.now()
+        StartupTrace.mark("launch.onCreate.start")
         super.onCreate(savedInstanceState)
         window.setBackgroundDrawable(ColorDrawable(BACKGROUND))
         applyFullscreen()
         buildStartupView()
         setContentView(root)
-        // 先让启动页完成一帧绘制，再把初始化排到下一帧；三点动画与书库读盘并行。
+        StartupTrace.done("launch.onCreate",traceStartedAt)
+        // 首帧可见后再启动书库 / 运行时 / 友盟等后台初始化，然后立即路由。
         root.postOnAnimation {
-            if(!isFinishing && !isDestroyed) beginInitialization()
+            StartupTrace.done("launch.firstFrame",traceStartedAt)
+            if(!isFinishing && !isDestroyed) {
+                HgtvStartup.afterFirstFrame(this)
+                routeToTarget()
+            }
         }
     }
 
@@ -76,8 +85,8 @@ class LaunchActivity : Activity() {
             orientation=LinearLayout.VERTICAL
             gravity=Gravity.CENTER_HORIZONTAL
         }
-        dots=LoadingDotsView(this)
-        content.addView(dots,LinearLayout.LayoutParams(dp(64),dp(18)).apply {
+        dots=LoadingDotsView(this).apply { label="正在准备应用…" }
+        content.addView(dots,LinearLayout.LayoutParams(dp(360),ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin=dp(26)
         })
         errorText=TextView(this).apply {
@@ -122,11 +131,19 @@ class LaunchActivity : Activity() {
     }
 
     private fun beginInitialization(retry: Boolean = false) {
+        val startedAt=StartupTrace.now()
+        StartupTrace.mark("launch.initialization.start", "retry=$retry")
         startupCleanup?.invoke()
         val ready: () -> Unit = {
+            StartupTrace.done("launch.initialization.ready",startedAt)
             if(!isFinishing && !isDestroyed) routeToTarget()
         }
         val failed: (Throwable) -> Unit = { problem ->
+            StartupTrace.done(
+                "launch.initialization.failed",
+                startedAt,
+                "error=${problem.javaClass.simpleName}:${problem.message.orEmpty().take(120)}",
+            )
             android.util.Log.w("HGTV-STARTUP","初始化失败",problem)
             if(!isFinishing && !isDestroyed) showFailure()
         }
@@ -140,6 +157,8 @@ class LaunchActivity : Activity() {
     private fun routeToTarget() {
         if(routed) return
         routed=true
+        val routeStarted=StartupTrace.now()
+        StartupTrace.mark("launch.route.start")
         val target = runCatching { targetFor(this) }
             .onFailure { android.util.Log.w("HGTV-FORM", "形态判定失败，退回电视界面", it) }
             .getOrElse { MainActivity::class.java }
@@ -163,10 +182,12 @@ class LaunchActivity : Activity() {
                 .isSuccess
         }
         if(started) {
+            StartupTrace.done("launch.route",routeStarted, "target=${target.simpleName}")
             finish()
             @Suppress("DEPRECATION")
             overridePendingTransition(0, 0)
         } else {
+            StartupTrace.done("launch.route.failed",routeStarted)
             routed=false
             showFailure()
         }
@@ -218,6 +239,7 @@ class LaunchActivity : Activity() {
     }
 
     override fun onDestroy() {
+        StartupTrace.mark("launch.onDestroy", "routed=$routed")
         startupCleanup?.invoke()
         startupCleanup=null
         super.onDestroy()

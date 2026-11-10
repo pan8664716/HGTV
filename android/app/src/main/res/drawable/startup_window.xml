@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  启动窗口的兜底画面。
+
+  LaunchActivity 与主界面都有一层会动的加载壳，但两个窗口交接时系统只会画
+  target Activity 的 windowBackground。这里直接放一份居中的品牌 Logo，
+  避免交接空档露出纯灰底；BitmapDrawable 保持原始比例并负责居中。
+-->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item>
+        <shape android:shape="rectangle">
+            <solid android:color="#1E2228" />
+        </shape>
+    </item>
+    <item>
+        <bitmap
+            android:gravity="center"
+            android:src="@drawable/startup_logo" />
+    </item>
+</layer-list>

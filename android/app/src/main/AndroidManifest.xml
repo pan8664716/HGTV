@@ -65,9 +65,9 @@
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
         <!-- TV 端：横屏 + 遥控器焦点导航。 -->
-        <activity android:name=".tv.MainActivity" android:exported="true" android:screenOrientation="landscape" android:windowSoftInputMode="adjustResize" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
+        <activity android:name=".tv.MainActivity" android:exported="true" android:theme="@style/StartupContentTheme" android:screenOrientation="landscape" android:windowSoftInputMode="adjustResize" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
         <!-- 手机 / 平板端：触摸 + 跟随屏幕方向。 -->
-        <activity android:name=".phone.PhoneMainActivity" android:exported="false" android:configChanges="keyboard|keyboardHidden|navigation|uiMode" android:launchMode="singleTop" />
+        <activity android:name=".phone.PhoneMainActivity" android:exported="false" android:theme="@style/StartupContentTheme" android:configChanges="keyboard|keyboardHidden|navigation|uiMode" android:launchMode="singleTop" />
         <!--
           播放页**不锁竖屏**：横版片源要点全屏按钮切到横屏（见 PhonePlayerActivity.toggleFullscreen）。
           声明 portrait 会把 setRequestedOrientation 顶回去，按钮点了没反应。

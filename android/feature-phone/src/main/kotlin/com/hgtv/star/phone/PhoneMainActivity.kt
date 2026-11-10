@@ -27,6 +27,7 @@ import com.hgtv.star.phone.page.PhoneMinePage
 import com.hgtv.star.phone.page.PhoneRankPage
 import com.hgtv.star.phone.page.PhoneRecommendPage
 import com.hgtv.star.shared.architecture.AppExit
+import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.ui.LoadingDotsView
 
 /**
@@ -92,9 +93,11 @@ class PhoneMainActivity : PhoneActivity() {
     private var registrationCleanup: (() -> Unit)? = null
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val traceStarted=StartupTrace.now()
+        StartupTrace.mark("phoneMain.onCreate.start")
         super.onCreate(savedInstanceState)
         android.util.Log.w("HGTV-BOOT", "phone.MainActivity onCreate")
-        PhoneStyle.ensure(this)
+        StartupTrace.section("phoneMain.style") { PhoneStyle.ensure(this) }
         landscape = resources.configuration.orientation ==
             android.content.res.Configuration.ORIENTATION_LANDSCAPE
         builtTheme = PhoneStyle.theme.ordinal
@@ -135,6 +138,7 @@ class PhoneMainActivity : PhoneActivity() {
         ))
 
         setContentView(root)
+        root.post { StartupTrace.mark("phoneMain.shell.firstFrame") }
         // 播放页竖屏要借推荐页的 Surface 出画面（见 `PhoneVideoPage.underlay`）：
         // 把「收起 / 恢复下层控制层」的入口登记给它，否则会看到两套标题、两条进度条。
         PhoneSession.feedChrome = { visible ->
@@ -155,7 +159,7 @@ class PhoneMainActivity : PhoneActivity() {
             ?: savedInstanceState?.getInt(STATE_TAB, -1)?.takeIf { it in pages.indices }
         pendingTab = -1
         debugRoot = root
-        PhoneServices.warm(this)
+        StartupTrace.section("phoneMain.servicesWarm") { PhoneServices.warm(this) }
         registrationCleanup = PhoneIdentity.onRegistrationFinished { outcome ->
             if(outcome==com.hgtv.star.shared.data.DeviceRegistration.Outcome.REGISTERED) {
                 (pages.getOrNull(0) as? PhoneRecommendPage)?.onIdentityReady()
@@ -165,18 +169,23 @@ class PhoneMainActivity : PhoneActivity() {
         // 不灌的话 `repository.signedIn` 永远是 false：登录了也不会上传收藏与进度、搜索按匿名设备请求。
         val lib = PhoneServices.library(this)
         if(lib.isLoaded) {
+            StartupTrace.mark("phoneMain.library.already")
             // 启动页已经完成本地初始化：这里直接建首屏，不再闪一次“正在初始化设备”。
             PhoneIdentity.apply(this, lib)
             runCatching { com.hgtv.star.shared.data.SessionBootstrap.onAppStart() }
             revealPhoneStartup(restored)
         } else {
             showStartupLoading(root)
+            val libraryStarted=StartupTrace.now()
+            StartupTrace.mark("phoneMain.library.start")
             lib.loadAsync(
                 onFailure = {
+                    StartupTrace.done("phoneMain.library.failed",libraryStarted)
                     PhoneIdentity.apply(this, lib)
                     revealPhoneStartup(restored)
                 },
                 onReady = {
+                    StartupTrace.done("phoneMain.library.ready",libraryStarted)
                     PhoneIdentity.apply(this, lib)
                     // 冷启动那一次 boot 心跳：凭据此刻才从书库灌进仓库，早打等于带半成品身份去问
                     //（与电视端 `MainActivityLibrary` 里那一句同一条时序）。
@@ -185,6 +194,7 @@ class PhoneMainActivity : PhoneActivity() {
                 },
             )
         }
+        StartupTrace.done("phoneMain.onCreate",traceStarted)
     }
 
     override fun rebuildOnSizeChange(newConfig: android.content.res.Configuration): Boolean {
@@ -240,7 +250,7 @@ class PhoneMainActivity : PhoneActivity() {
             gravity = Gravity.CENTER
             addView(LoadingDotsView(this@PhoneMainActivity))
             addView(TextView(this@PhoneMainActivity).apply {
-                text = "正在启动…"
+                text = "正在读取本机数据…"
                 setTextColor(PhoneStyle.textDim)
                 phoneSize(15)
                 gravity = Gravity.CENTER
@@ -265,6 +275,8 @@ class PhoneMainActivity : PhoneActivity() {
 
     /** 放行首屏。只执行一次；注册失败也放行，避免网络异常时永久转圈。 */
     private fun revealPhoneStartup(restored: Int?) {
+        val startedAt=StartupTrace.now()
+        StartupTrace.mark("phoneMain.firstContent.start")
         val overlay = startupOverlay
         startupOverlay = null
         if(overlay!=null) (overlay.parent as? ViewGroup)?.removeView(overlay)
@@ -276,6 +288,8 @@ class PhoneMainActivity : PhoneActivity() {
         // 与 TV 一样在进入分类页之前就把默认分类准备好；用户点分类时直接铺结果，
         // 不再现场创建页面并重新发第一页请求。
         debugRoot.post {
+            StartupTrace.done("phoneMain.firstContent.render",startedAt)
+            StartupTrace.mark("phoneMain.firstContent.firstFrame")
             if(!isFinishing && !isDestroyed) preloadCategoryPage()
         }
         // 首次进入提示「字号 / 每行卡片数可以在设置里调」。等首屏画出来再弹，

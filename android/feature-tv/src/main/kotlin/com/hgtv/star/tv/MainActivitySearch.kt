@@ -50,6 +50,8 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
         filters=arrayOf(android.text.InputFilter.LengthFilter(80))
         imeOptions=android.view.inputmethod.EditorInfo.IME_ACTION_SEARCH
         includeFontPadding=false
+        isFocusableInTouchMode=true
+        if(android.os.Build.VERSION.SDK_INT>=21) showSoftInputOnFocus=true
         // 输入框是一条「压进底板」的凹槽：内边距里含柔光带，内阴影才有地方画。
         // 左右内边距跟紧凑档按钮走（[TvStyle.BUTTON_PAD_COMPACT]），与同一行的按钮对齐。
         setPadding(dp(TvStyle.BUTTON_PAD_COMPACT)+searchBand,searchBand,dp(TvStyle.BUTTON_PAD_COMPACT)+searchBand,searchBand)
@@ -63,7 +65,9 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
                 ring=if(focused) TvStyle.focusLine else TvStyle.outline,
                 ringWidth=if(focused) TvStyle.RING else 1,
                 depth=if(focused) 1.6f else 1.1f)
+            if(!focused) cancelSearchInputMethod()
         }
+        setOnClickListener { focusSearchInput() }
     }
     top.addView(input,lp(dp(SEARCH_INPUT_WIDTH),dp(SEARCH_INPUT_HEIGHT+2*TvStyle.SOFT_BAND)).apply {
         // 初始宽度只是「还没量过之前」的占位：这一行建好之后由 [fitSearchRow] 按实测
@@ -83,6 +87,7 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     fun search() {
         val next=input.text.toString().trim()
         if(next.isBlank()) {
+            cancelSearchInputMethod()
             (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager)
                 .hideSoftInputFromWindow(input.windowToken,0)
             showSearchHistory(input)
@@ -97,7 +102,9 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     input.setOnKeyListener { view,keyCode,event ->
         if(keyCode==KeyEvent.KEYCODE_ENTER || keyCode==KeyEvent.KEYCODE_DPAD_CENTER ||
             keyCode==KeyEvent.KEYCODE_NUMPAD_ENTER) {
-            if(event.action==KeyEvent.ACTION_UP) search()
+            if(event.action==KeyEvent.ACTION_UP) {
+                if(input.text.toString().trim().isEmpty()) focusSearchInput(120L) else search()
+            }
             true
         } else if(event.action!=KeyEvent.ACTION_DOWN ||
             (keyCode!=KeyEvent.KEYCODE_DPAD_UP && keyCode!=KeyEvent.KEYCODE_DPAD_DOWN)) false
@@ -119,6 +126,7 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
             }
             if(target==null) false
             else {
+                cancelSearchInputMethod()
                 (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(view.windowToken,0)
                 view.clearFocus(); target.requestFocus(); true
             }
@@ -135,6 +143,7 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     // 手机扫码 → 竖屏页面里打完 → 按发送，电视立刻按这个词搜索（见 [TvTools.phoneInput]）。
     // 与「搜索」同一档（TIGHT）并紧挨着：这两枚是同一组动作，右边那排圆形入口另属一组。
     val phone=addButton(top,"手机输入",size=ButtonSize.TIGHT,gap=SEARCH_BUTTON_GAP,icon=R.drawable.ic_action_phone) {
+        cancelSearchInputMethod()
         (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken,0)
         // 收到就先把这句话写进页面提示行，再走搜索：手机那边点了「发送到电视」，
         // 电视上必须**看得见**它收到了什么——否则「手机说已发送、电视没反应」时
@@ -155,7 +164,10 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     // 不做这个区分的话一次回车会跑两遍 `search()`（两次请求、页面重建两回）。
     input.setOnEditorActionListener { _,_,event ->
         if(event?.action==KeyEvent.ACTION_DOWN) true
-        else { search(); true }
+        else {
+            if(input.text.toString().trim().isEmpty()) focusSearchInput(120L) else search()
+            true
+        }
     }
     // 打字就取提示词（去抖）；页面重建后监听器跟着输入框一起换新的。
     input.addTextChangedListener(object: android.text.TextWatcher {
@@ -174,7 +186,51 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     // 语音入口去掉之后，这个「抑制一次焦点」的标志只剩一种来源（识别界面返回），
     // 而那条路已经不存在了；这里仍保留消费动作，免得它留到下一次无关的重建上。
     suppressSearchFocusOnce=false
+    // 与 1.3.5.1 一致：进页面只把焦点放到输入框，不主动弹键盘。
+    // 用户真正要输入时，再点击输入框 / 按确认 / 按搜索键。
     if(requestFocus) input.post { if(input.attachedToWindow) input.requestFocus() }
+}
+
+/**
+ * 把焦点交给搜索框，并显式请求系统输入法。
+ *
+ * 只调 `requestFocus()` 在部分电视固件上不会触发 `showSoftInput`：输入框有光标，
+ * 但屏幕上没有任何键盘。这里在焦点落地后再请求一次，并延迟重试，覆盖页面刚重建、
+ * 窗口 token 尚未稳定的那一帧。
+ */
+fun MainActivity.focusSearchInput(delayMs: Long=0L) {
+    val input=searchInput as? EditText ?: return
+    val token=++searchImeToken
+    val request=Runnable { requestSearchInputMethod(input,3,token) }
+    if(delayMs>0L) input.postDelayed(request,delayMs) else input.post(request)
+}
+
+/** 作废所有尚未执行的输入法请求 / 重试。 */
+fun MainActivity.cancelSearchInputMethod() {
+    searchImeToken++
+}
+
+/**
+ * 等输入框真正拿到窗口焦点后再请求 IME。
+ *
+ * 设备日志里的 `Ignoring startInput with null EditorInfo` 表示请求发得太早：
+ * 页面已经有输入框，但 Android 还没把它登记为当前 Editor。最多重试三次，
+ * 每次 120ms，最后仍不成功时再用强制标志兜底。
+ */
+private fun MainActivity.requestSearchInputMethod(input: EditText,remaining: Int,token: Int) {
+    if(token!=searchImeToken || isDestroyed || !input.attachedToWindow) return
+    input.requestFocus()
+    if(!input.hasWindowFocus() || !input.isFocused) {
+        if(remaining>0) input.postDelayed({ requestSearchInputMethod(input,remaining-1,token) },120L)
+        return
+    }
+    input.setSelection(input.text.length)
+    val imm=getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager
+    val flags=if(remaining==0) InputMethodManager.SHOW_FORCED else InputMethodManager.SHOW_IMPLICIT
+    val shown=imm.showSoftInput(input,flags)
+    if(!shown && remaining>0) {
+        input.postDelayed({ requestSearchInputMethod(input,remaining-1,token) },120L)
+    }
 }
 /**
  * 按**实测宽度**给搜索页导航栏那一行重新分配宽度：输入框吃「兄弟们剩下多少」。
@@ -484,6 +540,7 @@ fun MainActivity.renderHintRow(items: List<String>) {
 }
 fun MainActivity.runSearch(value: String) {
     val clean=value.trim(); if(clean.isEmpty() || clean.length>80) return
+    cancelSearchInputMethod()
     (searchInput as? EditText)?.let { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(it.windowToken,0) }
     searchController.remember(clean); query=clean; tab=1; page=1; catalogFocus=""; showCatalog(true)
 }

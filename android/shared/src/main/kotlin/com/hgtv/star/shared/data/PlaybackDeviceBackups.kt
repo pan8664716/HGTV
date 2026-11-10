@@ -6,6 +6,7 @@ import android.util.Log
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.PlaybackBackupDevice
 import com.hgtv.star.shared.debug.DebugLog
+import com.hgtv.star.shared.debug.StartupTrace
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.File
@@ -38,9 +39,13 @@ object PlaybackDeviceBackups {
             isDaemon=true
             start()
         }
+        StartupTrace.mark("backupDevices.worker.started")
     }
 
     private fun ensureReady(context: Context) {
+        val startedAt=StartupTrace.now()
+        StartupTrace.mark("backupDevices.ensure.start")
+        try {
         val file=File(context.filesDir,FILE_NAME)
         val stored=load(file)
         val loaded=stored.take(TARGET)
@@ -120,6 +125,9 @@ object PlaybackDeviceBackups {
             )
         }
         DebugLog.record("设备","备用设备 ${current.size}/$TARGET 已保存",force=true)
+        } finally {
+            StartupTrace.done("backupDevices.ensure",startedAt)
+        }
     }
 
     /** 每次主身份空响应只取唯一一台备用设备，试完一次就回到主身份。 */

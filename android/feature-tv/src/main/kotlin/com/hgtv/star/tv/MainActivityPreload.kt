@@ -12,7 +12,7 @@ import com.hgtv.star.core.lruPut
 /**
  * 现在能不能做后台预加载。
  *
- * 文档第 7 节的 P0：**当前这一部的 buffer 低于 3 秒时，所有预加载让路**。
+ * 文档第 7 节的 P0：**当前这一部的 buffer 低于 1.5 秒时，所有预加载让路**。
  * 理由很直接：预加载抢的是同一条下行带宽，而用户此刻正盯着的那一帧比「下一步可能看什么」重要得多。
  *
  * 播放器还没起来 / 已经暂停时不挡（那时没有 buffer 可抢）。
@@ -21,7 +21,7 @@ private fun MainActivity.preloadGateOpen(): Boolean {
     val p=player ?: return true
     if(!p.isPlaying) return true
     val buffered=p.bufferedPosition-p.currentPosition
-    if(buffered>=3_000L) return true
+    if(buffered>=1_500L) return true
     if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","preloadSkip reason=buffer buffered=${buffered}ms")
     return false
 }
@@ -47,7 +47,7 @@ fun MainActivity.cancelScheduledPreload() {
 /**
  * 排定一次窗口预热。
  *
- * 文档 4.1 的「首帧后延迟 2000ms」：首帧上屏之后解码器还在出帧、buffer 还在填，
+ * 首帧后只等 300ms：解码器还在出帧、buffer 还在填，
  * 立刻去拉相邻几条会抢 CPU 与带宽（这台盒子上一次解密就要 200~400ms）。
  * 延迟期间用户如果已经滑走，[cancelScheduledPreload] 会把它取消。
  *
@@ -107,13 +107,13 @@ fun MainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: String)
     for(target in plan.targets) {
         if(dispatched>=PRELOAD_MAX_TARGETS) break
         val series=recommendItems.getOrNull(target.index) ?: continue
-        dispatched++
-        when(target.level) {
+        val accepted=when(target.level) {
             CacheLevel.ADDRESS -> warmRecommend(series,target.index,CacheLevel.ADDRESS)
             CacheLevel.META -> warmRecommend(series,target.index,CacheLevel.META)
             CacheLevel.FULL -> warmRecommend(series,target.index,CacheLevel.FULL)
-            CacheLevel.NONE -> Unit
+            CacheLevel.NONE -> false
         }
+        if(accepted) dispatched++
     }
 }
 
@@ -128,14 +128,13 @@ fun MainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: String)
  * | [CacheLevel.META] | 取地址 + 解析索引（写盘），不取首块 | ~400KB |
  * | [CacheLevel.FULL] | 取地址 + 索引 + 首块 512KB，留在内存里等切换 | ~900KB |
  */
-fun MainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,level: CacheLevel) {
+fun MainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,level: CacheLevel): Boolean {
     val cached=recommendDetails[series.id]
     if(cached!=null) {
-        warmRecommendDetail(cached,level,index)
-        return
+        return warmRecommendDetail(cached,level,index)
     }
-    if(series.id in recommendDetailLoading) return
-    if(recommendDetailLoading.size>=DETAIL_PREFETCH_LIMIT) return
+    if(series.id in recommendDetailLoading) return false
+    if(recommendDetailLoading.size>=DETAIL_PREFETCH_LIMIT) return false
     recommendDetailLoading+=series.id
     io.submit {
         // 预热拿的也只是「第 1 集是哪个 vid」：走落盘缓存，连划时这几条不必各等一次 0.4~0.6s。
@@ -152,6 +151,7 @@ fun MainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,leve
             }
         }
     }
+    return true
 }
 
 /**

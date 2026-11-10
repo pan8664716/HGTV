@@ -48,7 +48,7 @@ class LiveSigningProbeTest {
         println("[live] vid=$vid branch=$branch ts=$ts ticket=${signed.headers.getValue("x-ss-req-ticket")}")
         println("[live] gorgon=${signed.headers.getValue("x-gorgon")}")
         println("[live] helios=${signed.headers.getValue("x-helios")}")
-        println("[live] medusa=${signed.headers.getValue("x-medusa")}")
+        assertTrue("不应发送 x-medusa", signed.headers.keys.none { it.equals("x-medusa", ignoreCase = true) })
 
         assertEquals("只发 branch 0", 0, branch)
         val (status, text) = post(signed)

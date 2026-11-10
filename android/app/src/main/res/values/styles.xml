@@ -43,8 +43,14 @@
       稳定底色，Android 12+ 也会复用 AppTheme 的 splash 图标配置。
     -->
     <style name="LaunchRouter" parent="@style/AppTheme">
-        <item name="android:windowBackground">#1E2228</item>
+        <item name="android:windowBackground">@drawable/startup_window</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowAnimationStyle">@null</item>
+    </style>
+
+    <!-- 主界面在首帧前先铺稳定底色；动态三点由轻量启动壳绘制，避免窗口预览图停住。 -->
+    <style name="StartupContentTheme" parent="@style/AppTheme">
+        <item name="android:windowBackground">@drawable/startup_window</item>
+        <item name="android:windowNoTitle">true</item>
     </style>
 </resources>

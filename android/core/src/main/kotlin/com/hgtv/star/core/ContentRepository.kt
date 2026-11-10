@@ -5092,16 +5092,30 @@ class ContentRepository(
 
     /** 播放请求使用当前唯一的主身份；登录后以账号设备为准。 */
     private fun modelProfile(): Map<String,String> {
+        val identity=primaryIdentity()
+        val registeredId=if(identity.account) {
+            identity.profile["device_id"].orEmpty()
+        } else {
+            deviceIdentity["device_id"].orEmpty()
+        }
+        val registeredIid=if(identity.account) {
+            identity.profile["iid"].orEmpty()
+                .ifBlank { identity.profile["install_id"].orEmpty() }
+        } else {
+            deviceIdentity["iid"].orEmpty()
+        }
+        // 未登录时必须由本机注册结果提供身份，不能拿 VendorConstants.device 的内置旧 ID
+        // 冒充已注册设备。登录态则必须有账号设备自己的 device_id + iid/install_id。
+        if(registeredId.isBlank() || registeredIid.isBlank()) {
+            throw DeviceNotRegisteredException()
+        }
         val base=LinkedHashMap(VendorConstants.device).apply {
-            putAll(primaryProfile())
+            putAll(identity.profile)
+            put("device_id",registeredId)
+            put("iid",registeredIid)
             putAll(PROTOCOL_VALUES)
             for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
             this["version_name"]="7.3.9.32"
-        }
-        val id=base["device_id"].orEmpty()
-        val iid=base["iid"].orEmpty()
-        if(id.isBlank() || iid.isBlank()) {
-            throw DeviceNotRegisteredException()
         }
         return modelQueryProfile(base)
     }

@@ -9,6 +9,7 @@ import com.hgtv.star.core.*
 import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.data.PlaybackCapability
 import com.hgtv.star.shared.debug.Diagnostics
+import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.debug.devicePrefix
 import kotlinx.coroutines.launch
 
@@ -328,6 +329,8 @@ fun MainActivity.ensureDeviceRegistered() {
  * （见 [playEpisode] 的取地址那一段与 [maybePrefetch]）。
  */
 fun MainActivity.registerDeviceOnce(force: Boolean = false, regenerate: Boolean = false): Boolean {
+    val traceStarted=StartupTrace.now()
+    StartupTrace.mark("device.register.start", "force=$force regenerate=$regenerate")
     synchronized(deviceRegisterLock) {
         // 注册的全部细节（先注册成功才替换、候选档案转正、Cookie 落盘、失败记待重试）
         // 在 `:shared` 的 [com.hgtv.star.shared.data.DeviceRegistration] 里，手机端用的是同一份。
@@ -339,6 +342,7 @@ fun MainActivity.registerDeviceOnce(force: Boolean = false, regenerate: Boolean 
             // 现场前缀（机型 / 页面）由这一端拼：注册失败时它是唯一的定位线索。
             detail=devicePrefix(this),
         )
+        StartupTrace.done("device.register",traceStarted, "outcome=$outcome")
         if(outcome==com.hgtv.star.shared.data.DeviceRegistration.Outcome.FAILED) {
             // 失败也要留在面板上：用户拍的那张图上原本只有「设备正在初始化」，
             // 真实原因（HTTP 码 / 解析失败 / 被拒）完全看不到。

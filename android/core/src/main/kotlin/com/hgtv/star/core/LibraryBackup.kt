@@ -97,7 +97,7 @@ data class BackupProgress(val series: Series,val episodeId: String,val episodeIn
         )
     }
 }
-data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext: Boolean=true,val type: ContentType=ContentType.COMIC,val frame: VideoFrameMode=VideoFrameMode.FIT,val danmaku: DanmakuMode=DanmakuMode.FULL,val danmakuScale: Float=1f,val danmakuAlpha: Float=1f,val danmakuSpeed: DanmakuSpeed=DanmakuSpeed.NORMAL,
+data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext: Boolean=true,val type: ContentType=ContentType.COMIC,val frame: VideoFrameMode=VideoFrameMode.FIT,val danmaku: DanmakuMode=DanmakuMode.DEFAULT,val danmakuScale: Float=1f,val danmakuAlpha: Float=1f,val danmakuSpeed: DanmakuSpeed=DanmakuSpeed.NORMAL,
     /**
      * 播放界面的按键绑定（[KeyMap.encode] 的产物，只含改过的键；空串 = 全默认）。
      *
@@ -385,8 +385,8 @@ object LibraryBackup {
         val autoNext=settings.get("autoNext"); require(autoNext is Boolean)
         val type=ContentType.entries.firstOrNull { it.storedValue==settings.getString("type") } ?: error("内容类型无效")
         val frame=VideoFrameMode.entries.firstOrNull { it.name==settings.getString("frame") } ?: error("画面模式无效")
-        // 弹幕显示方式是后加的字段：旧备份没有它，按「全屏弹幕」处理，旧文件仍然能恢复。
-        val danmaku=if(settings.has("danmaku")) DanmakuMode.fromStored(settings.optString("danmaku")) else DanmakuMode.FULL
+        // 弹幕显示方式是后加的字段：旧备份没有它，按当前默认的「上方显示」处理。
+        val danmaku=if(settings.has("danmaku")) DanmakuMode.fromStored(settings.optString("danmaku")) else DanmakuMode.DEFAULT
         // 弹幕字号 / 透明度同样是后加字段：旧备份没有它们，按 100% 处理。
         // 新备份里出现越界值时也不报错，直接夹进合法区间（归一由 DanmakuStyle 负责）。
         val danmakuScale=if(settings.has("danmakuScale")) DanmakuStyle.scale(settings.get("danmakuScale").let { require(it is Number) { "弹幕大小无效" }; it.toFloat() }) else 1f

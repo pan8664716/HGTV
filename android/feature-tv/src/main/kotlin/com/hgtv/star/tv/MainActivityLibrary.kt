@@ -14,38 +14,72 @@ import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.debug.Diagnostics
+import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.ui.LoadingDotsView
+import kotlinx.coroutines.launch
 
 // 本文件是从 MainActivity.kt 拆出来的「本机库加载、封面取图、异步任务封装与空页 / 错误提示」这一块。
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 fun MainActivity.showLibraryError(problem: Throwable) {
+    StartupTrace.mark(
+        "main.library.error",
+        "error=${problem.javaClass.simpleName}:${problem.message.orEmpty().take(120)}",
+    )
     val body=base(); error(body,problem,stage="library_load") { showStartupLoading(); loadLibrary() }
 }
+/** 首帧只依赖这层轻量动态壳，不读取主题文件、书库、图片加载器或网络对象。 */
+fun MainActivity.showStartupShell() {
+    root.removeAllViews()
+    root.setBackgroundColor(0xFF1E2228.toInt())
+    val center=LinearLayout(this).apply {
+        orientation=LinearLayout.VERTICAL
+        gravity=Gravity.CENTER
+        addView(LoadingDotsView(this@showStartupShell).apply {
+            label="正在准备应用…"
+        })
+    }
+    root.addView(center,FrameLayout.LayoutParams(-1,-1,Gravity.CENTER))
+}
+
 /** 冷启动初始化遮罩：主设备注册完成前不建推荐首屏。 */
 fun MainActivity.showStartupLoading() {
+    val startedAt=StartupTrace.now()
+    StartupTrace.mark("main.startupLoading.start")
     startupInitializing=true
     val body=base()
     val center=LinearLayout(this).apply {
         orientation=LinearLayout.VERTICAL
         gravity=Gravity.CENTER
-        addView(LoadingDotsView(this@showStartupLoading))
-        addView(text("正在初始化设备…",16f,TvStyle.textDim).apply {
-            gravity=Gravity.CENTER
-            setPadding(0,dp(14),0,0)
+        addView(LoadingDotsView(this@showStartupLoading).apply {
+            label="正在读取本机数据…"
         })
     }
     body.addView(center,LinearLayout.LayoutParams(-1,0,1f))
+    StartupTrace.done("main.startupLoading.render",startedAt)
 }
 fun MainActivity.loadLibrary() {
+    val traceStarted=StartupTrace.now()
+    StartupTrace.mark("main.library.start")
     libraryLoadError=null
     library.loadAsync(onFailure={ problem ->
+        StartupTrace.done(
+            "main.library.failed",
+            traceStarted,
+            "error=${problem.javaClass.simpleName}:${problem.message.orEmpty().take(120)}",
+        )
         if(!isDestroyed) { libraryLoadError=problem; if(foreground) showLibraryError(problem) }
     }) {
+        StartupTrace.done("main.library.ready",traceStarted)
+        if(!isDestroyed) {
+            applySessionToken()
+            com.hgtv.star.shared.data.IdentityBinder.bind(library,repository)
+            ensureSearchCollector()
+        }
         if(!isDestroyed && foreground) {
-            applySessionToken(); applyAccount()
+            applyAccount()
             // 本机设置读回来了：把「减少动画」偏好合进性能档位（见 [applyPerformanceProfile]）。
             // 必须在建第一页之前跑——首页那一屏的卡片是按当时的档位建的
             //（跑马灯 / 柔光位图都在构造时定下来）。
@@ -63,22 +97,41 @@ fun MainActivity.loadLibrary() {
             // 这是同一份偏好的两种说法，冷启动必须跟着它走。
             val startRecommend=launchRecommendPending && library.launchRecommend
             launchRecommendPending=false
-            // 旧版升级后这里可能刚换成新主设备；推荐流必须先等注册请求走完。
-            // 注册失败也放行首屏，页面自己的重试/错误提示仍然可用，不能无限转圈。
-            val pending=library.registrationPending()
-            val forceRegister=pending && !deviceRegistering
-            appScope.network {
-                val ready=runCatching { registerDeviceOnce(force=forceRegister) }.getOrDefault(false)
-                main.post {
-                    if(isDestroyed) return@post
-                    if(!ready) noteDebugProblem("设备初始化失败，先进入首屏")
-                    startupInitializing=false
-                    if(startRecommend) openRecommend() else showCatalog(load=true)
-                    favoriteMonitor.check()
-                    // 账号数据：**先把缓存铺上去**（[applyAccount] 已经把它交给界面），再后台刷一次。
-                    // 缓存新鲜（[ACCOUNT_FRESH_MS]）时 [loadAccount] 自己会跳过请求。
-                    if(repository.signedIn) loadAccount()
-                }
+            // applyAccount() 已经把注册放到后台；首屏不再等待网络。推荐流自己的
+            // ensureRegistered 会在真正需要接口数据时兜底，不把网络波动变成启动门禁。
+            startupInitializing=false
+            val contentStarted=StartupTrace.now()
+            if(startRecommend) openRecommend() else showCatalog(load=true)
+            StartupTrace.done(
+                "main.firstContent.render",
+                contentStarted,
+                "target=${if(startRecommend) "recommend" else "catalog"}",
+            )
+            root.post { StartupTrace.mark("main.firstContent.firstFrame") }
+            favoriteMonitor.check()
+            if(repository.signedIn) loadAccount()
+        }
+    }
+}
+
+/**
+ * 搜索状态收集器必须晚于书库加载。
+ *
+ * `SearchController` 的构造会读取 `library.searchSource`，而 `Library.state()` 在
+ * `loadAsync` 完成前会直接抛 `IllegalStateException`。启动优化把首屏提前后，
+ * onCreate 里原来的无条件收集器正好撞上这个时间窗。
+ */
+fun MainActivity.ensureSearchCollector() {
+    if(searchCollectorStarted || isDestroyed || !library.isLoaded) return
+    searchCollectorStarted=true
+    appScope.launch {
+        StartupTrace.mark("main.collector.search.start")
+        searchController.state.collect { state ->
+            if(screen!="catalog" || tab!=TAB_SEARCH) return@collect
+            val typed=(searchInput as? EditText)?.text?.toString()?.trim().orEmpty()
+            when {
+                typed.isEmpty() -> renderHintRow(state.history.ifEmpty { state.hot })
+                state.query==typed -> renderHintRow(state.suggestions.map { it.name })
             }
         }
     }
@@ -178,6 +231,7 @@ fun MainActivity.releaseCatalogViews() {
     // 顶部那两枚「二维码登录 / 手机登录」随页面一起丢掉：旧引用留着会让焦点链指向不在树上的控件。
     loginModeChips.clear()
     categoryFilterButtons.clear()
+    cancelSearchInputMethod()
     searchInput=null; searchButton=null; voiceButton=null; searchActions.clear()
     suggestRow=null; suggestViewport=null; suggestLine=null; suggestButtons.clear()
     // 提示词那一行连同在途的请求一起作废：它属于上一页的输入框，换页后不该再往新页面里塞。

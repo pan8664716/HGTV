@@ -1567,7 +1567,7 @@ class PhoneFeedView(
             com.hgtv.star.shared.media.DanmakuLoader(
                 scope = scope,
                 repository = { PhoneServices.repository(context) },
-                mode = { library?.danmakuMode ?: DanmakuMode.FULL },
+                mode = { library?.danmakuMode ?: DanmakuMode.DEFAULT },
                 target = { pageAt(index)?.danmakuView },
                 post = { block -> list.post(block) },
                 alive = { isAttachedToWindow },

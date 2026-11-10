@@ -11,6 +11,7 @@ import com.google.android.exoplayer2.Player
 import com.hgtv.star.shared.compat.isMeteredConnection
 import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.data.AppRuntime
+import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.core.CategoryFilterOption
 import com.hgtv.star.core.CategorySelection
 import com.hgtv.star.core.Detail
@@ -149,6 +150,8 @@ private const val COVER_MAX_MS=2500L
  * 所以退出再进、甚至杀进程重开，看到的都是新的推荐，而不是同一套列表。
  */
 fun MainActivity.openRecommend() {
+    val traceStarted=StartupTrace.now()
+    StartupTrace.mark("recommend.open.start")
     // 上一次停在推荐页那一部（没退出推荐页就又进了一次，例如回到前台）：先把停留时长结掉，
     // 否则「看了一分钟」与「一进来就划走」会混成同一条记录。
     settleRecommendWatch()
@@ -158,7 +161,10 @@ fun MainActivity.openRecommend() {
     // 已经在推荐页：列表非空（或请求在途）就什么都不做——重复按入口不该把正在看的这一部换掉。
     // 例外是「列表空、也没有请求在途」（上一次取推荐失败了，整屏只有一行提示）：
     // 这时按入口 / 按确定都应该是「重试」，不能被这一条早退挡住。
-    if(screen=="recommend" && (recommendItems.isNotEmpty() || recommendLoading)) return
+    if(screen=="recommend" && (recommendItems.isNotEmpty() || recommendLoading)) {
+        StartupTrace.done("recommend.open.already",traceStarted)
+        return
+    }
     // 每次进推荐页都从**本机记下的游标**接着往下取一页新的（见 [recommendSession] / [recommendNext]）：
     // 推荐流是有状态的，`session_id` 传空 + `offset=0` 会让服务端永远回同一套默认列表。
     // 同一次运行里的上下切换仍然是一条连续的流（不会边刷边重拉）。
@@ -264,6 +270,11 @@ fun MainActivity.openRecommend() {
             playRecommendAt(0)
         }
     }
+    StartupTrace.done(
+        "recommend.open",
+        traceStarted,
+        "snapshot=${snapshot.size} retained=$retained items=${recommendItems.size}",
+    )
 }
 
 /**
@@ -277,6 +288,8 @@ fun MainActivity.openRecommend() {
  * 而它本身就是补在列表末尾的（`recommendRestored` 分支只往后接），用户在看第一部时它早就回来了。
  */
 private const val RECOMMEND_FEED_DELAY_MS=3_000L
+/** 相邻一部的详情 / 地址 / 首块优先；播放模型批量预取晚一点再跑。 */
+internal const val RECOMMEND_BATCH_MODEL_DELAY_MS=3_000L
 
 fun MainActivity.requestRecommendFeedAfterFirstFrame() {
     if(recommendFeedPending) return
@@ -435,7 +448,10 @@ fun MainActivity.loadRecommendPage(
     noFilter: Boolean = false,
     onReady: () -> Unit,
 ) {
+    val traceStarted=StartupTrace.now()
+    StartupTrace.mark("recommend.feed.request", "append=$append")
     if(recommendLoading) {
+        StartupTrace.mark("recommend.feed.join", "append=$append")
         recommendWaiters += onReady
         return
     }
@@ -451,10 +467,12 @@ fun MainActivity.loadRecommendPage(
         },
     )
     appScope.network {
+        StartupTrace.mark("recommend.feed.worker.start", "append=$append")
         val loaded = runCatching {
             recommendStore().load(input)
         }
         main.post {
+            StartupTrace.done("recommend.feed.request",traceStarted, "append=$append")
             if(isDestroyed || token != recommendPageToken.get() || screen != "recommend") {
                 recommendAdvancePending = 0
                 settleRecommendLoad()
@@ -474,8 +492,13 @@ fun MainActivity.loadRecommendPage(
                 recommendHasMore = result.hasMore
                 if(result.error == null) recommendRestored = false
 
-                if(result.error != null) {
-                    android.util.Log.w("HGTV", "Recommend feed failed", result.error)
+                val feedError=result.error
+                if(feedError != null) {
+                    StartupTrace.mark(
+                        "recommend.feed.result",
+                        "append=$append error=${feedError.javaClass.simpleName} items=${result.items.size}",
+                    )
+                    android.util.Log.w("HGTV", "Recommend feed failed", feedError)
                     if(recommendItems.isEmpty()) {
                         showRecommendMessage("推荐暂时取不到\n按确定键重试，按返回键回主页面")
                     } else {
@@ -486,17 +509,27 @@ fun MainActivity.loadRecommendPage(
                     return@onSuccess
                 }
                 if(result.empty) {
+                    StartupTrace.mark("recommend.feed.result", "append=$append empty=true")
                     showRecommendMessage("推荐暂时取不到\n按确定键重试，按返回键回主页面")
                     settleRecommendLoad()
                     return@onSuccess
                 }
                 if(!foreground) {
+                    StartupTrace.mark("recommend.feed.result", "append=$append foreground=false")
                     settleRecommendLoad()
                     return@onSuccess
                 }
                 onReady()
+                StartupTrace.mark(
+                    "recommend.feed.result",
+                    "append=$append items=${result.items.size} page=${result.page}",
+                )
                 settleRecommendLoad()
             }.onFailure { problem ->
+                StartupTrace.mark(
+                    "recommend.feed.result",
+                    "append=$append failure=${problem.javaClass.simpleName}:${problem.message.orEmpty().take(120)}",
+                )
                 android.util.Log.w("HGTV", "Recommend feed failed", problem)
                 if(recommendItems.isEmpty()) {
                     showRecommendMessage("推荐暂时取不到\n按确定键重试，按返回键回主页面")
@@ -668,7 +701,7 @@ fun MainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,s
         recommendLastSwitchAt=android.os.SystemClock.elapsedRealtime()
     }
     // 双向滑动的窗口决策：速度 / 方向 / 回看三个判定都在这一步更新（见 `core/SlideCache.kt`）。
-    // 换剧时先取消上一次排定的窗口预热——它是按旧锚点算的，2 秒后照跑等于拉四条没用的。
+    // 换剧时先取消上一次排定的窗口预热——它是按旧锚点算的，晚一点照跑等于拉四条没用的。
     cancelScheduledPreload()
     slideCache.onItemChanged(safe,direction,android.os.SystemClock.elapsedRealtime())
     // 内存吃紧时收窄的窗口在这里放开：那一次 `onTrimMemory` 已经过去了。
@@ -687,7 +720,13 @@ fun MainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,s
     // （缓存命中这条早退路径也必须换，否则上一次在途的结果会把刚切过来的这一部顶掉。）
     val token=recommendToken.incrementAndGet()
     val cached=recommendDetails[series.id]
-    if(cached!=null) { startRecommendEpisode(cached,position,autoplay); return }
+    val playStarted=StartupTrace.now()
+    StartupTrace.mark("recommend.play.start", "index=$safe cached=${cached!=null}")
+    if(cached!=null) {
+        StartupTrace.done("recommend.play.cached",playStarted)
+        startRecommendEpisode(cached,position,autoplay)
+        return
+    }
     if(playerView==null) showRecommendLoading(series)
     else {
         // 换剧那一下先把上一部停住：详情要几百毫秒才回来，这段时间里画面与声音
@@ -696,11 +735,18 @@ fun MainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,s
         recommendTitle?.text=series.title
         recommendMeta?.text="正在加载…"
     }
+    val detailStarted=StartupTrace.now()
+    StartupTrace.mark("recommend.detail.request", "index=$safe id=${series.id}")
     io.submit {
         // `cached=true`：推荐页起播只要「第 1 集是哪个 vid」。详情页仍然现取（见 `ContentRepository.detail`），
         // 但这里命中落盘缓存就省掉 0.4~0.6s——进程被回收过之后那一次尤其明显。
         val result=runCatching { repository.detail(series.id,cached=true) }
         main.post {
+            StartupTrace.done(
+                "recommend.detail.request",
+                detailStarted,
+                "index=$safe success=${result.isSuccess}",
+            )
             if(isDestroyed || screen!="recommend") return@post
             result.onSuccess { data ->
                 // 详情回来了但用户已经划到别的部：**照样收进缓存**。
@@ -840,6 +886,11 @@ fun MainActivity.reportRecommendProgress() {
  * 因此这里不需要再改回来。
  */
 private fun MainActivity.startRecommendEpisode(data: Detail,position: Long,autoplay: Boolean=true) {
+    val startedAt=StartupTrace.now()
+    StartupTrace.mark(
+        "recommend.episode.start",
+        "id=${data.series.id} title=${data.series.title.take(40)} autoplay=$autoplay",
+    )
     cancelRecommendBatchModels()
     detail=data
     recommendHistoryPending=false
@@ -856,16 +907,16 @@ private fun MainActivity.startRecommendEpisode(data: Detail,position: Long,autop
     // 拉首批数据，切换就是「换一帧」而不是「等一次网络」。取走之后所有权归播放器。
     val key=preparedKey(data)
     val fromStart=position<=0L
-    // 这一部正好在预热、而且这次要从头起播：**不取消**它。
+    // 这一部正好在预热、而且这次要从头起播：取消**这一份**。
     //
-    // 早先这里会取消（理由是「同一集会被拉两遍」）。在遥控器上一秒一下的节奏里那是对的：
-    // 取消掉的那一份本来也来不及用。但手机上一秒划两三部时，取消就是「每一次都掐掉
-    // 一个已经下了一半的预热」——在途的永远完不成，[recommendPrepared] 一直是空的，
-    // 于是每一次切换都是冷启动。多花的那 1MB 换的是「划回来时已经在本地」，值得。
-    // 真正要取消的是**离开推荐页 / 进正片**那两次（见 [cancelRecommendWarm]）。
-    // 唯一的例外是移动网络：那里只开一个预热槽，留着它等于同一集拉两遍（白烧流量），
-    // 这时才取消——省流量优先于「划回来更快」。
-    if(fromStart && key.isNotEmpty() && runCatching { connectivity.isMeteredConnection() }.getOrDefault(false)) {
+    // 不取消的话，预热线程还在拉同一集的地址 / 首块，播放器又发一条完全相同的请求，
+    // 两条会互相抢带宽，用户看到的反而是「越预热越慢」。其他相邻条目的预热不动，
+    // 因此不会退回到「每次滑动都把整个窗口掐掉」。
+    //
+    // 移动网络本来就只开一个预热槽，同样必须在这里让路。
+    val warmingCurrent=key.isNotEmpty() && recommendStore().isWarming(key)
+    val metered=runCatching { connectivity.isMeteredConnection() }.getOrDefault(false)
+    if(fromStart && key.isNotEmpty() && (warmingCurrent || metered)) {
         cancelRecommendWarm(key)
     }
     // 预热结果的**年龄校验**：超过 [PlaybackCache.PREPARED_FRESH_MS] 的那一份不能再用。
@@ -894,7 +945,8 @@ private fun MainActivity.startRecommendEpisode(data: Detail,position: Long,autop
         // 索引键优先用**这一份预热实际取到的**那个（`mediaKey` 用实际档位，可能低于上限）。
         val mediaKey=prepared?.info?.mediaKey(episode) ?: key
         android.util.Log.i("HGTV-PERF","switch prepared=${if(prepared!=null) 1 else 0} "+
-            com.hgtv.star.core.PlaybackCache.probe(urlKey,mediaKey)+" level=${recommendStore().warmedLevel(key) ?: "-"}")
+            com.hgtv.star.core.PlaybackCache.probe(urlKey,mediaKey)+
+            " level=${recommendStore().warmedLevel(key) ?: "-"} cancelledWarm=${if(warmingCurrent) 1 else 0}")
     }
     // 连续失败计数**不在这里**归零：起播（取地址成功）不等于能放，
     // 真正出画面之后才清零（见播放监听器的 READY 分支），否则整条推荐都坏掉时
@@ -929,7 +981,7 @@ private fun MainActivity.startRecommendEpisode(data: Detail,position: Long,autop
     scheduleRecommendDwell()
     // 例外：这一次是**内存预热命中**（首块都在手里，这一部一个网络请求都不用发），
     // 带宽此刻是空的，顺手把下一部的地址取回来（20KB，不取首块）。
-    // 遥控器「一秒一下」的节奏里 2 秒的窗口预热根本来不及跑，这一条是那段时间的兜底。
+    // 遥控器「一秒一下」的节奏里，晚启动的窗口预热根本来不及跑，这一条是那段时间的兜底。
     if(prepared!=null) {
         val nextIndex=recommendIndex+slideCache.direction
         val next=recommendItems.getOrNull(nextIndex)
@@ -937,6 +989,11 @@ private fun MainActivity.startRecommendEpisode(data: Detail,position: Long,autop
     }
     // 快刷到这一批末尾了：把下一页提前取回来，别让用户在末尾那一下等网络（见 [ensureRecommendLookahead]）。
     ensureRecommendLookahead()
+    StartupTrace.done(
+        "recommend.episode.start",
+        startedAt,
+        "id=${data.series.id} prepared=${prepared!=null}",
+    )
 }
 
 /**
@@ -1065,12 +1122,12 @@ fun MainActivity.prefetchFormalBatchModels() {
 const val RECOMMEND_WARM_SLOTS=2
 /** 同时在途的预热条数上限（移动网络）：够「下一部」就好，别拿用户流量去猜方向。 */
 const val RECOMMEND_WARM_SLOTS_METERED=1
-/** 预热好的首集最多留几份（每份约 1MB）。6 份 = 连划五六部都还是「一帧就换」。 */
-const val RECOMMEND_PREPARED_LIMIT=6
+/** 预热好的首集最多留几份（每份约 512KB）。8 份 = 连划八部仍然可以直接换源。 */
+const val RECOMMEND_PREPARED_LIMIT=8
 /** 同时在途的「相邻详情」请求上限：给当前这一部的详情留出线程（见 `prefetchRecommendNeighbors`）。 */
-const val DETAIL_PREFETCH_LIMIT=2
+const val DETAIL_PREFETCH_LIMIT=3
 /** 推荐页详情缓存留几部：左右相邻来回切够用，再多只是占内存。 */
-const val RECOMMEND_DETAIL_LIMIT=6
+const val RECOMMEND_DETAIL_LIMIT=8
 
 /**
  * 取首集地址并预热（索引 + 前 1MB）。已经有同一份、或正在预热同一份时直接跳过。
@@ -1086,32 +1143,32 @@ const val RECOMMEND_DETAIL_LIMIT=6
  *   连划几下就再也没有预热落地，[recommendPrepared] 一直是空的。
  * * **取消要连网络一起掐掉**（[cancelRecommendWarm]）：被作废的预热不占带宽。
  */
-fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.CacheLevel=com.hgtv.star.core.CacheLevel.FULL,index: Int=-1) {
-    if(screen!="recommend") return
+fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.CacheLevel=com.hgtv.star.core.CacheLevel.FULL,index: Int=-1): Boolean {
+    if(screen!="recommend") return false
     // 推荐首屏还在转圈 / 当前这一部还没出画面：这时候预热只是往 `modelGate` 里排队，
     // 把**正在等的这一次取地址**推到后面去。
     //
     // 实测（2026-10-27，S905L3B / 2G）：冷启动进推荐，`Stage stream` 花了 2049ms，
     // 而这段时间里 `modelGate` 上排着三个请求——正片起播、相邻预热、下一集预取。
     // 三个都是 0.6~1.0 秒的往返，串行加起来正好两秒。
-    if(!playbackReady) return
+    if(!playbackReady) return false
     // 正在放的这一部不预热：它的首集已经在播放器手里（`recommendPrepared` 里那份已被取走），
     // 再 warm 一次等于把同一个 22MB 文件的 moov **再解析一遍**（两万多个样本 + 一次排序），
     // 两条线程各占一个核，起播那一下反而更慢。
-    if(data.series.id.isNotEmpty() && data.series.id==recommendItems.getOrNull(recommendIndex)?.id) return
+    if(data.series.id.isNotEmpty() && data.series.id==recommendItems.getOrNull(recommendIndex)?.id) return false
     val key=preparedKey(data)
-    if(key.isEmpty()) return
-    // 已经到这个级别（或更高）就跳过：ADDRESS 铺过之后 2 秒再升 FULL 时，不必重取一次地址。
+    if(key.isEmpty()) return false
+    // 已经到这个级别（或更高）就跳过：ADDRESS 铺过之后再升 FULL 时，不必重取一次地址。
     val achieved=recommendStore().warmedLevel(key)
-    if(achieved!=null && achieved>=level) return
-    if(recommendStore().isWarming(key)) return
-    if(!networkAvailable()) return
+    if(achieved!=null && achieved>=level) return false
+    if(recommendStore().isWarming(key)) return false
+    if(!networkAvailable()) return false
     val metered=runCatching { connectivity.isMeteredConnection() }.getOrDefault(false)
     // 分级并发上限（文档第 7 节）：同一时刻最多 1 个完整预热 + 2 个元数据 + 3 个地址。
     // 低端机网络只有一条通道，多开只会让**当前这一部**的首帧更慢。
     if(!hasWarmSlot(level,metered)) {
         if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","preloadSkip reason=slot level=$level inFlight=${recommendStore().warmingCount()}")
-        return
+        return false
     }
     recommendStore().beginWarm(key)
     val warm=RecommendWarm()
@@ -1156,6 +1213,14 @@ fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Cach
                     recommendPreparedAt[key]=android.os.SystemClock.elapsedRealtime()
                     evictRecommendPrepared()
                 }
+                if(BuildConfig.DEBUG) {
+                    android.util.Log.i(
+                        "HGTV-PERF",
+                        "warmDone level=$level index=$index key=$key prepared=${if(prepared!=null) 1 else 0} "+
+                            "took=${android.os.SystemClock.elapsedRealtime()-warm.startedAt}ms "+
+                            "preparedCount=${recommendPrepared.size}",
+                    )
+                }
                 // 空出来的槽位马上补上：连划时总有两条在转（见 [prefetchRecommendNeighbors]）。
                 if(recommendStore().warmingCount()<RECOMMEND_WARM_SLOTS) prefetchRecommendNeighbors(recommendIndex)
             }
@@ -1166,6 +1231,7 @@ fun MainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Cach
             }
         }
     }
+    return true
 }
 
 /**

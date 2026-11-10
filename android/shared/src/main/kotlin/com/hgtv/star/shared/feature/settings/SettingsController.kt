@@ -226,7 +226,7 @@ class SettingsController(
         library.frameMode = VideoFrameMode.FIT
         library.decoderMode = VideoDecoderMode.HARDWARE
         library.videoScale = 100f
-        library.danmakuMode = DanmakuMode.FULL
+        library.danmakuMode = DanmakuMode.DEFAULT
         library.danmakuSpeed = DanmakuSpeed.NORMAL
         library.danmakuMerge = true
         library.danmakuMergeMin = 2

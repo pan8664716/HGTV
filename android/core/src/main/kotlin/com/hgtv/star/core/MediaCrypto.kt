@@ -162,9 +162,19 @@ object MediaCrypto {
         java.util.Arrays.sort(array,Comparator { a,b -> a.start.compareTo(b.start) })
         return array.asList()
     }
-    fun decrypt(data: ByteArray,start: Long,key: ByteArray?,prepared: Prepared): ByteArray {
+    fun decrypt(data: ByteArray,start: Long,key: ByteArray?,prepared: Prepared): ByteArray =
+        decryptInPlace(data.copyOf(),start,key,prepared)
+
+    /**
+     * 原地解密一份**由调用方独占**的字节数组。
+     *
+     * 播放分片在 [RemoteVideo.read] 里刚由 Range / 首块缓存生成，之后不会再被别处读取，
+     * 因此可以直接在它上面覆盖明文。这样每读一块就少一次 `ByteArray.copyOf()`；
+     * 在 2G 盒子上，这一份复制会与解密一起制造 GC 尖峰，正好拖慢同屏弹幕。
+     */
+    fun decryptInPlace(data: ByteArray,start: Long,key: ByteArray?,prepared: Prepared): ByteArray {
         require(start>=0)
-        val result=data.copyOf(); val end=start+data.size
+        val result=data; val end=start+data.size
         if(start<prepared.header.size) prepared.header.copyInto(result,0,start.toInt(),minOf(end,prepared.header.size.toLong()).toInt())
         if(key==null) return result
         val samples=prepared.samples

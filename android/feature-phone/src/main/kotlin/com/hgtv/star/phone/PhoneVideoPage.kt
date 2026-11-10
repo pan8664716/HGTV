@@ -106,7 +106,7 @@ class PhoneVideoPage(
      * 具体映射见 [PhoneDanmakuSize]。
      */
     val danmakuView: DanmakuView = DanmakuView(context).apply {
-        mode = DanmakuMode.FULL
+        mode = DanmakuMode.DEFAULT
         // 手机端弹幕字号以原先的最小档为 100%，还要允许再调到 50%。
         minTextSizeDp = 4f
         setClock(0, false)

@@ -24,7 +24,7 @@ enum class CacheLevel { NONE, ADDRESS, META, FULL }
  * | 输入 | 输出 |
  * |---|---|
  * | 换了一部（下标 / 方向 / 时间） | 该预取哪些下标、各自到哪一级 |
- * | 停留满 1 秒 | 把主方向那一步升到 [CacheLevel.FULL] |
+ * | 停留满 0.6 秒 | 把主方向那一步升到 [CacheLevel.FULL] |
  * | 3 秒内滑回来 | 视为关注：主方向两步都升 [CacheLevel.FULL] |
  * | 连续 3 次 <500ms 换一部 | 进入 [Mode.FLING]：只留地址预取 |
  *
@@ -56,9 +56,9 @@ class SlideCacheManager(
     /** 滑回来多快算「回看」（升 L1）。 */
     private val revisitMs: Long = 3_000L,
     /** 停留多久算「确认」（升 L1）。 */
-    private val dwellPromoteMs: Long = 1_000L,
+    private val dwellPromoteMs: Long = 600L,
     /** 首帧之后延迟多久开始预热。 */
-    private val firstFrameDelayMs: Long = 2_000L,
+    private val firstFrameDelayMs: Long = 300L,
 ) {
     data class Target(val index: Int, val level: CacheLevel)
     enum class Mode { NORMAL, FLING }

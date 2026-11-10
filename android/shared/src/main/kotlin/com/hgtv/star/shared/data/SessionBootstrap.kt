@@ -5,6 +5,7 @@ import com.hgtv.star.core.session.SessionBridge
 import com.hgtv.star.core.session.SessionClients
 import com.hgtv.star.core.session.SessionHeaders
 import com.hgtv.star.core.session.SessionKeeper
+import com.hgtv.star.shared.debug.StartupTrace
 
 /**
  * 会话装配。`HgtvApplication.onCreate` 里调一次。
@@ -61,6 +62,8 @@ object SessionBootstrap {
         log: (String) -> Unit = {},
         onExpired: (String) -> Unit = {}
     ) {
+        val startedAt=StartupTrace.now()
+        StartupTrace.mark("session.init.start")
         this.store = store
         device = store.deviceProfile
         SessionBridge.state = store
@@ -73,7 +76,13 @@ object SessionBootstrap {
         // 而建 client 要解析系统根证书表（150 张 PEM，实测 2.5~3.0 秒）。
         // 这一段原先在 `Application.onCreate` 里同步跑，正是冷启动里最贵的那 3 秒
         // （2026-10-27 线程栈：main 停在 `DerValue.toByteArray`）。
-        Thread({ buildKeeper() }, "hgtv-session-init").start()
+        Thread({
+            val workerStarted=StartupTrace.now()
+            StartupTrace.mark("session.keeper.start")
+            buildKeeper()
+            StartupTrace.done("session.keeper",workerStarted)
+        }, "hgtv-session-init").start()
+        StartupTrace.done("session.init",startedAt)
     }
 
     /** 在后台线程上建心跳（见 [init]）；建好之前 [onAppStart] 只记账。 */
