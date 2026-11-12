@@ -1269,6 +1269,30 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 53：Library 账号凭据持久化迁移
+
+状态：已完成。
+
+- 将账号读取、保存和清理移到 `LibraryAccountCredentials.kt`；
+  `account` / `saveAccount` / `clearAccount` 保留原公开签名并委托。
+- 保留 sessionid 变化时 token / 签名清理、空 token 不覆盖、设备档案同步、镜像更新和
+  账号缓存清理。
+- 新增镜像同步与账号镜像键的 `internal` 门面，没有扩大公开 API。
+- `Library.kt` 从 1821 行降到 1770 行；`LibraryAccountCredentials.kt` 为 96 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译缺少 `AccountCredentials` import，补齐后重跑通过；凭据键和顺序未变。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `Library.kt` 的设备身份读写与注册状态职责。
+继续拆 `Library.kt` 的设备注册状态与身份读写职责。
