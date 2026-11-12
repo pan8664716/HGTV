@@ -28,6 +28,7 @@ import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
+import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.phone.ui.tabBarInset
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.shared.ui.SoftStyle
@@ -83,23 +84,24 @@ class PhoneMinePage(
         maxLines = 2
         ellipsize = null
     }
-    private val topRefresh = TextView(context).apply {
-        text = "刷新"
-        setTextColor(PhoneStyle.accent)
-        phoneSize(if (compactTopBar) 11 else 13)
-        setTypeface(typeface, android.graphics.Typeface.BOLD)
+    private val topRefresh = LinearLayout(context).apply {
+        val size = context.dp(if (compactTopBar) 24 else 28)
+        gravity = Gravity.CENTER
         contentDescription = "刷新账号数据"
-        setPadding(context.dp(10), context.dp(4), context.dp(6), context.dp(4))
+        background = roundedBackground(PhoneStyle.surfaceHigh, size / 2f)
+        addView(PhoneGlyph(context, PhoneGlyph.Kind.REFRESH).apply {
+            tint = PhoneStyle.text
+            contentDescription = "刷新账号数据"
+        }, LinearLayout.LayoutParams(context.dp(16), context.dp(16)))
         setOnClickListener { refreshData() }
     }
     private val topAccount = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         layoutParams = LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         )
-        setPadding(0, 0, context.dp(8), 0)
         addView(topAvatar, LinearLayout.LayoutParams(
             context.dp(if (compactTopBar) 32 else 44),
             context.dp(if (compactTopBar) 32 else 44),
@@ -107,28 +109,19 @@ class PhoneMinePage(
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(context.dp(10), 0, 0, 0)
-            addView(LinearLayout(context).apply {
-                orientation = LinearLayout.HORIZONTAL
-                gravity = Gravity.CENTER_VERTICAL
-                addView(topName, LinearLayout.LayoutParams(
-                    0,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    1f,
-                ))
-                addView(topRefresh, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ))
-            }, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
+            addView(topName, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ))
             addView(topSub)
         }, LinearLayout.LayoutParams(
-            0,
             ViewGroup.LayoutParams.WRAP_CONTENT,
-            1f,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
+        addView(topRefresh, LinearLayout.LayoutParams(
+            context.dp(if (compactTopBar) 24 else 28),
+            context.dp(if (compactTopBar) 24 else 28),
+        ).apply { leftMargin = context.dp(8) })
         contentDescription = "账号，未登录"
         setOnClickListener { context.phoneNav().open(Route.Account) }
     }
