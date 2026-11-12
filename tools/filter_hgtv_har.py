@@ -1,10 +1,12 @@
 #!/usr/bin/env python3
-"""Losslessly filter a Reqable HAR down to HGTV-relevant API samples.
+"""Filter and deduplicate a Reqable HAR down to HGTV-relevant samples.
 
-Only whole entries are removed. Every retained entry is copied verbatim,
+Only whole entries are removed. Every retained HAR entry is copied verbatim,
 including URLs, query parameters, headers, cookies, request bodies, response
-bodies and Reqable-specific metadata. Companion files provide a per-entry
-index and a parameter catalog without modifying the retained HAR entries.
+bodies and Reqable-specific metadata. Near-identical samples of the same
+endpoint are reduced to one information-rich representative; the companion
+CSV files still cover every HGTV-relevant source entry so parameter names and
+values from dropped duplicates remain discoverable.
 """
 
 from __future__ import annotations
@@ -100,6 +102,7 @@ CATEGORY_LABEL = {
 }
 
 DROP_LABEL = {
+    "duplicate": "近似重复样本",
     "tunnel": "CONNECT/SOCKS 隧道",
     "websocket": "WebSocket/非 HTTP 数据",
     "image": "图片/CDN/静态二进制",
@@ -224,6 +227,10 @@ def row_for(entry: dict, index: int, kept: bool, bucket: str, reason: str) -> di
         "status": entry["response"].get("status", ""),
         "mime": content.get("mimeType", "") or "",
         "bytes": content.get("size", 0) or 0,
+        "dedupGroup": "",
+        "dedupRole": "",
+        "representativeSourceIndex": "",
+        "dedupSimilarity": "",
     }
 
 
@@ -319,6 +326,211 @@ def normalized_path(path: str) -> str:
     return re.sub(r"/\d{8,}(?=/|$)", "/{id}", path)
 
 
+VOLATILE_QUERY_KEYS = {
+    "_rticket", "ts", "cdid", "openudid", "clientudid", "device_id", "iid",
+    "install_id", "device_token", "klink_egdi", "ttreq", "odin_tt", "req_id",
+    "session_id", "session_uuid", "normal_session_id", "cold_start_session_id",
+    "x-ss-req-ticket", "x-ss-stub", "x-khronos", "x-gorgon", "x-medusa",
+    "x-helios", "x-ladon", "x-argus", "x-tt-trace-id", "x-ss-dp",
+    "passport_csrf_token", "signature", "x-signature", "lk3s", "x-expires",
+    "tt_info", "log_id", "request_id", "recommend_info", "search_id",
+    "passback", "next_offset", "offset", "page", "cursor", "last_mtime",
+    "normal_session_cnt_in_day", "normal_session_cnt_in_life",
+    "cold_start_session_cnt_in_day", "cold_start_session_cnt_in_life",
+    "screen_brightness", "battery_pct", "current_volume", "down_speed",
+    "apk_first_install_time", "rom_version",
+}
+
+VOLATILE_HEADER_NAMES = {
+    ":path", "content-length", "cookie", "set-cookie", "x-ss-stub",
+    "x-ss-req-ticket", "x-khronos", "x-gorgon", "x-medusa", "x-helios",
+    "x-ladon", "x-argus", "x-tt-trace-id", "x-tt-store-region",
+    "x-tt-store-region-src", "x-vc-bdturing-sdk-version", "x-tt-token",
+    "date", "server-timing", "x-tt-logid", "x-tt-tag", "tt-idc-switch",
+    "x-tt-trace-host", "x-tt-trace-tag",
+}
+
+VOLATILE_PATH_PARTS = (
+    "log_id", "request_id", "req_id", "session_id", "session_uuid",
+    "server_time", "server_timestamp", "timestamp", "ts", "cursor",
+    "next_offset", "offset", "expire_time", "url_expire", "x-expires",
+    "create_time", "update_time", "read_timestamp", "total_time",
+    "playlet_consume_duration_ms", "consumption_duration",
+)
+
+IDENTIFIER_PATTERN = re.compile(r"^\d{8,}$")
+
+
+def is_volatile_path(path: str) -> bool:
+    lower = path.lower()
+    return any(part in lower for part in VOLATILE_PATH_PARTS)
+
+
+def json_shape(value, prefix: str = "", depth: int = 0, max_depth: int = 3):
+    """Return field paths without values, including a few array element shapes."""
+    if depth > max_depth:
+        return set()
+    if isinstance(value, dict):
+        result = set()
+        for key, item in value.items():
+            path = f"{prefix}.{key}" if prefix else str(key)
+            if is_volatile_path(path):
+                continue
+            result.add(path)
+            result.update(json_shape(item, path, depth + 1, max_depth))
+        return result
+    if isinstance(value, list):
+        result = set()
+        for item in value[:3]:
+            result.update(json_shape(item, f"{prefix}[]", depth + 1, max_depth))
+        return result
+    return set()
+
+
+def query_signature(entry: dict) -> frozenset[str]:
+    request = entry.get("request") or {}
+    url = str(request.get("url", ""))
+    parts = urlsplit(url)
+    source = request.get("queryString") or [
+        {"name": name, "value": value}
+        for name, value in parse_qsl(parts.query, keep_blank_values=True)
+    ]
+    return frozenset(
+        str(item.get("name", "")).lower()
+        for item in source
+        if str(item.get("name", "")).lower() not in VOLATILE_QUERY_KEYS
+    )
+
+
+def header_signature(entry: dict, part: str) -> frozenset[str]:
+    return frozenset(
+        str(item.get("name", "")).lower()
+        for item in (entry.get(part) or {}).get("headers") or []
+        if str(item.get("name", "")).lower() not in VOLATILE_HEADER_NAMES
+    )
+
+
+def body_shape(entry: dict, part: str) -> frozenset[str]:
+    if part == "request":
+        text = str(((entry.get("request") or {}).get("postData") or {}).get("text", "") or "")
+    else:
+        text = decode_content_text((entry.get("response") or {}).get("content") or {})
+    parsed = parse_json(text)
+    if parsed is None:
+        return frozenset()
+    return frozenset(json_shape(parsed))
+
+
+def body_values(entry: dict, part: str) -> frozenset[str]:
+    """Stable scalar values from shallow JSON fields, for near-duplicate scoring."""
+    if part == "request":
+        text = str(((entry.get("request") or {}).get("postData") or {}).get("text", "") or "")
+    else:
+        text = decode_content_text((entry.get("response") or {}).get("content") or {})
+    parsed = parse_json(text)
+    if parsed is None:
+        return frozenset()
+    values = set()
+    for path, value in json_paths(parsed, max_depth=2):
+        if is_volatile_path(path) or isinstance(value, (dict, list)) or value is None:
+            continue
+        text_value = str(value)
+        if IDENTIFIER_PATTERN.fullmatch(text_value) or len(text_value) > 80:
+            continue
+        values.add(f"{path}={text_value}")
+    return frozenset(values)
+
+
+def response_code(entry: dict) -> str:
+    parsed = parse_json(decode_content_text((entry.get("response") or {}).get("content") or {}))
+    if not isinstance(parsed, dict):
+        return ""
+    for key in ("code", "Code", "err_no", "errcode", "StatusCode"):
+        if key in parsed:
+            return str(parsed[key])
+    base = parsed.get("BaseResp")
+    if isinstance(base, dict):
+        return str(base.get("StatusCode", ""))
+    return ""
+
+
+def dedup_key(entry: dict, category: str) -> tuple:
+    request = entry.get("request") or {}
+    parts = urlsplit(str(request.get("url", "")))
+    content = (entry.get("response") or {}).get("content") or {}
+    return (
+        category,
+        request.get("method", ""),
+        parts.netloc,
+        normalized_path(parts.path or "/"),
+        str((entry.get("response") or {}).get("status", "")),
+        str(content.get("mimeType", "") or ""),
+        response_code(entry),
+        query_signature(entry),
+        header_signature(entry, "request"),
+        body_shape(entry, "request"),
+        header_signature(entry, "response"),
+        body_shape(entry, "response"),
+    )
+
+
+def information_score(entry: dict) -> tuple:
+    content = (entry.get("response") or {}).get("content") or {}
+    body = decode_content_text(content)
+    return (
+        len(query_signature(entry)),
+        len(header_signature(entry, "request")),
+        len(body_shape(entry, "request")),
+        len(body_shape(entry, "response")),
+        len(body_values(entry, "response")),
+        int(content.get("size", 0) or 0),
+        len(body),
+    )
+
+
+def jaccard(left: frozenset[str], right: frozenset[str]) -> float:
+    if not left and not right:
+        return 1.0
+    union = left | right
+    return len(left & right) / len(union) if union else 1.0
+
+
+def deduplicate(candidates: list[dict]) -> tuple[list[dict], dict[int, dict]]:
+    """Collapse near-identical endpoint samples into one representative each."""
+    groups = defaultdict(list)
+    for candidate in candidates:
+        groups[candidate["key"]].append(candidate)
+
+    representatives = []
+    metadata = {}
+    for group_index, (key, group) in enumerate(
+        sorted(groups.items(), key=lambda item: repr(item[0]))
+    ):
+        group.sort(key=lambda item: (-information_score(item["entry"])[5], -len(item["key"]), item["index"]))
+        representative = group[0]
+        representative_values = body_values(representative["entry"], "response")
+        representatives.append(representative)
+        group_id = f"g{group_index:03d}"
+        metadata[representative["index"]] = {
+            "group": group_id,
+            "role": "representative",
+            "representative": representative["index"],
+            "similarity": "1.000",
+            "note": "同组信息量最大的完整样本",
+        }
+        for candidate in group[1:]:
+            similarity = jaccard(representative_values, body_values(candidate["entry"], "response"))
+            metadata[candidate["index"]] = {
+                "group": group_id,
+                "role": "duplicate",
+                "representative": representative["index"],
+                "similarity": f"{similarity:.3f}",
+                "note": "同端点、同字段形状、响应参数近似一致",
+            }
+    representatives.sort(key=lambda item: item["index"])
+    return representatives, metadata
+
+
 def write_catalog(path: Path, kept_entries: list[dict], categories: list[str]) -> None:
     groups = defaultdict(lambda: {
         "count": 0,
@@ -393,8 +605,11 @@ def write_report(
     params: Path,
     catalog: Path,
     manifest: Path,
+    samples: Path,
     output_size: int,
     verification: bool,
+    relevant_total: int,
+    duplicate_count: int,
 ) -> None:
     kept = [row for row in rows if row["kept"] == "yes"]
     dropped = [row for row in rows if row["kept"] == "no"]
@@ -423,11 +638,12 @@ def write_report(
         "## 结论",
         "",
         f"原始 HAR `{source.name}` 共 {total} 条，SHA-256 `{source_sha}`。",
-        f"筛出 HGTV 当前及未来可能使用的 API 样本 {len(kept)} 条，剔除 {len(dropped)} 条。",
-        f"筛出文件 `{output.name}`（{output_size / 1048576:.1f} MiB），逐条索引 `{index.name}`，逐参数表 `{params.name}`，端点参数清单 `{catalog.name}`，校验清单 `{manifest.name}`。",
+        f"HGTV 相关样本 {relevant_total} 条；按同端点、同请求/响应字段形状与近似响应参数去重后，保留 {len(kept)} 条，额外剔除近似重复样本 {duplicate_count} 条。原始 HAR 共 {total} 条，最终从原始条目中剔除 {len(dropped)} 条。",
+        f"筛出文件 `{output.name}`（{output_size / 1048576:.1f} MiB），逐条索引 `{index.name}`，全量相关样本参数表 `{params.name}`，去重清单 `{samples.name}`，端点参数清单 `{catalog.name}`，校验清单 `{manifest.name}`。",
         "",
-        "**这是无损筛选**：只删除无关条目。保留条目的 URL、完整 query 参数、headers、Cookie、postData、响应体、请求耗时及 Reqable 私有字段均逐字段保持原值；不做脱敏、截断、去重或压缩。原始 HAR 未改动。",
-        "参数表只展开参数名与字段值；完整原始请求体/响应体仍在无损 HAR 中。用 Python 读取大字段 CSV 时，先设置 `csv.field_size_limit(sys.maxsize)`。",
+        "**保留条目无损**：HAR 里只做整条删除，保留条目的 URL、完整 query 参数、headers、Cookie、postData、响应体、请求耗时及 Reqable 私有字段均逐字段保持原值；不做脱敏、截断或压缩。原始 HAR 未改动。",
+        "近似重复项按端点、请求参数名、请求头名、请求体字段形状、响应头名、响应字段形状、状态码与业务码分组；每组保留响应信息量最大的完整样本。`dedupGroup`、`dedupRole`、`representativeSourceIndex`、`dedupSimilarity` 写在逐条索引里，可以追查每个重复样本被谁代表。",
+        f"参数表覆盖全部 {relevant_total} 条 HGTV 相关样本（含被去重的样本），因此重复请求里的参数名和值仍能查到；完整原始请求体/响应体仍在原始 HAR 中。用 Python 读取大字段 CSV 时，先设置 `csv.field_size_limit(sys.maxsize)`。",
         f"生成后逐条与原始条目做结构相等校验：{'通过' if verification else '失败'}。",
         "",
         "## 保留范围",
@@ -503,9 +719,10 @@ def write_report(
         "",
         "## 以后怎么查参数",
         "",
-        f"1. 打开 `{catalog.name}`，按分类和端点查看 Query 参数名、Body 字段、请求头与响应顶层字段。",
-        f"2. 打开 `{params.name}`，按 `sourceIndex` / `scope` / `name` 筛选，取完整参数值；表内不做截断。",
-        f"3. 打开 `{output.name}`，按 `sourceIndex` 对照 `{index.name}` 找到原始条目，复放时直接用该条目的完整请求。",
+        f"1. 打开 `{catalog.name}`，按端点查看 Query 参数名、Body 字段、请求头与响应字段。",
+        f"2. 打开 `{params.name}`，按 `sourceIndex` / `scope` / `name` 筛选；它覆盖全部相关样本，取参数值不受去重影响。",
+        f"3. 打开 `{samples.name}`，按 `dedupGroup` / `dedupRole` 查看每组保留和剔除的样本及近似度。",
+        f"4. 打开 `{output.name}`，按 `sourceIndex` 对照 `{index.name}` 找到保留样本，复放时直接用该条目的完整请求。",
         "",
         "## 复现",
         "",
@@ -529,6 +746,7 @@ def main() -> None:
     parser.add_argument("--params", type=Path, default=source_dir / "7.4.3.32抓包数据_HGTV_params.csv")
     parser.add_argument("--catalog", type=Path, default=source_dir / "7.4.3.32抓包数据_HGTV_参数清单.md")
     parser.add_argument("--manifest", type=Path, default=source_dir / "7.4.3.32抓包数据_HGTV_manifest.json")
+    parser.add_argument("--samples", type=Path, default=source_dir / "7.4.3.32抓包数据_HGTV_samples.csv")
     parser.add_argument("--report", type=Path, default=root / "docs/7.4.3.32抓包筛选说明.md")
     args = parser.parse_args()
 
@@ -537,11 +755,11 @@ def main() -> None:
     har = json.loads(source_bytes)
     entries = har["log"]["entries"]
 
-    kept_entries = []
-    kept_categories = []
-    kept_indices = []
+    candidates = []
     rows = []
     all_params = []
+    relevant_rows = {}
+    relevant_total = 0
     for index, entry in enumerate(entries):
         url = str(entry["request"].get("url", ""))
         parts = urlsplit(url)
@@ -552,16 +770,70 @@ def main() -> None:
         found = classify(method, host, path)
         if found:
             category, reason = found
-            kept = copy.deepcopy(entry)
-            kept["_hgtvSourceIndex"] = index
-            kept_entries.append(kept)
-            kept_categories.append(category)
-            kept_indices.append(index)
-            rows.append(row_for(entry, index, True, category, reason))
+            relevant_total += 1
+            candidates.append({
+                "index": index,
+                "entry": entry,
+                "category": category,
+                "reason": reason,
+                "key": dedup_key(entry, category),
+            })
+            row = row_for(entry, index, True, category, reason)
+            relevant_rows[index] = row
+            rows.append(row)
             all_params.extend(param_rows(entry, index, category))
         else:
             reason_key = drop_reason(entry, host, path, mime)
             rows.append(row_for(entry, index, False, reason_key, DROP_LABEL[reason_key]))
+
+    representative_candidates, dedup_metadata = deduplicate(candidates)
+    representative_indices = {candidate["index"] for candidate in representative_candidates}
+    duplicate_count = relevant_total - len(representative_indices)
+
+    kept_entries = []
+    kept_categories = []
+    kept_indices = []
+    sample_rows = []
+    for candidate in candidates:
+        index = candidate["index"]
+        entry = candidate["entry"]
+        meta = dedup_metadata[index]
+        row = relevant_rows[index]
+        row["dedupGroup"] = meta["group"]
+        row["dedupRole"] = meta["role"]
+        row["representativeSourceIndex"] = meta["representative"]
+        row["dedupSimilarity"] = meta["similarity"]
+        if index not in representative_indices:
+            row["kept"] = "no"
+            row["bucket"] = "duplicate"
+            row["reason"] = (
+                f"{meta['note']}；代表条目 {meta['representative']}；"
+                f"字段近似度 {meta['similarity']}"
+            )
+        else:
+            row["reason"] = f"{candidate['reason']}；{meta['note']}"
+        sample_rows.append({
+            "sourceIndex": index,
+            "kept": row["kept"],
+            "category": candidate["category"],
+            "dedupGroup": meta["group"],
+            "dedupRole": meta["role"],
+            "representativeSourceIndex": meta["representative"],
+            "dedupSimilarity": meta["similarity"],
+            "method": row["method"],
+            "host": row["host"],
+            "path": row["path"],
+            "url": row["url"],
+            "status": row["status"],
+            "bytes": row["bytes"],
+            "reason": row["reason"],
+        })
+        if index in representative_indices:
+            kept = copy.deepcopy(entry)
+            kept["_hgtvSourceIndex"] = index
+            kept_entries.append(kept)
+            kept_categories.append(candidate["category"])
+            kept_indices.append(index)
 
     verification = all(
         {key: value for key, value in kept.items() if key != "_hgtvSourceIndex"} == entries[source_index]
@@ -584,11 +856,17 @@ def main() -> None:
         "sourceEntries": len(entries),
         "keptEntries": len(kept_entries),
         "keptSourceIndices": kept_indices,
+        "deduplicated": True,
+        "relevantEntries": relevant_total,
+        "duplicateEntriesRemoved": duplicate_count,
         "lossless": True,
     }
     output_har = {"log": output_log}
 
-    for output in (args.output, args.index, args.params, args.catalog, args.manifest, args.report):
+    for output in (
+        args.output, args.index, args.params, args.catalog,
+        args.manifest, args.samples, args.report,
+    ):
         output.parent.mkdir(parents=True, exist_ok=True)
     args.output.write_text(
         json.dumps(output_har, ensure_ascii=False, separators=(",", ":")),
@@ -602,6 +880,10 @@ def main() -> None:
         writer = csv.DictWriter(handle, fieldnames=["sourceIndex", "category", "scope", "name", "value"])
         writer.writeheader()
         writer.writerows(all_params)
+    with args.samples.open("w", encoding="utf-8", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=list(sample_rows[0].keys()))
+        writer.writeheader()
+        writer.writerows(sample_rows)
     write_catalog(args.catalog, kept_entries, kept_categories)
     output_sha = hashlib.sha256(args.output.read_bytes()).hexdigest()
     manifest = {
@@ -612,10 +894,13 @@ def main() -> None:
         "outputSha256": output_sha,
         "outputEntries": len(kept_entries),
         "removedEntries": len(entries) - len(kept_entries),
+        "relevantEntries": relevant_total,
+        "duplicateEntriesRemoved": duplicate_count,
         "losslessEntryVerification": verification,
         "index": str(args.index),
         "params": str(args.params),
         "catalog": str(args.catalog),
+        "samples": str(args.samples),
         "report": str(args.report),
         "paramRows": len(all_params),
     }
@@ -634,12 +919,17 @@ def main() -> None:
         args.params,
         args.catalog,
         args.manifest,
+        args.samples,
         args.output.stat().st_size,
         verification,
+        relevant_total,
+        duplicate_count,
     )
 
     print(f"source_entries={len(entries)}")
+    print(f"relevant_entries={relevant_total}")
     print(f"kept_entries={len(kept_entries)}")
+    print(f"duplicate_entries_removed={duplicate_count}")
     print(f"removed_entries={len(entries) - len(kept_entries)}")
     print(f"param_rows={len(all_params)}")
     print(f"lossless_entry_verification={verification}")
@@ -647,6 +937,7 @@ def main() -> None:
     print(f"index={args.index}")
     print(f"params={args.params}")
     print(f"catalog={args.catalog}")
+    print(f"samples={args.samples}")
     print(f"manifest={args.manifest}")
     print(f"report={args.report}")
 
