@@ -101,6 +101,7 @@ class PhoneFeedView(
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal val feedScope get()=scope
     private val playbackSource by lazy { PlaybackSourceCoordinator(PhoneServices.repository(context)) }
+    internal val feedPlaybackSource get()=playbackSource
     private val items get()=recommendStore.items
     internal val feedItems get()=items
     private val adapter = FeedAdapter()
@@ -257,6 +258,7 @@ class PhoneFeedView(
     private var tempSpeed = false
     private var userSpeed = 1f
     private var library: Library? = null
+    internal val feedLibrary get()=library
     /** 进程单例播放器上的监听器：换屏/换集前先摘掉，否则会越积越多。 */
     private var listener: Player.Listener? = null
 
@@ -975,8 +977,8 @@ class PhoneFeedView(
         progressTick = null
         // 预热与停留确认也停掉：隐藏期间发出去的预热会跟播放页抢带宽，
         // 而停留确认本来就是「这一屏还在前台停着」才成立的事。
-        preloadScheduler.cancel()
-        pendingPlan = null
+        feedPreloadScheduler.cancel()
+        feedPendingPlan = null
         // 交接时**不解绑 Surface**：SurfaceView 的 surface 在窗口切走时会被系统销毁、
         // 切回来时重建，播放器自己会跟上；这里解绑反而要在回来时重新 `setPlayer`，
         // 那一下会先清屏再挂新的，用户看到的是一次闪黑。
@@ -1307,13 +1309,17 @@ class PhoneFeedView(
         // 回看那一部时主方向第二步会被升到完整预热（见 `SlideCacheManager.plan`）。
         // 早先这里把返回值丢掉、预热时重新 `plan(index)`，原因永远是 `WINDOW`，
         // 于是「滑走又滑回来」那一条享受不到提升，回来的第一下仍是冷启动。
-        pendingPlan = slideCache.onItemChanged(index, direction, android.os.SystemClock.elapsedRealtime())
+        feedPendingPlan = feedPreloadState.slideCache.onItemChanged(
+            index,
+            direction,
+            android.os.SystemClock.elapsedRealtime(),
+        )
         scheduleDwell()
         // 进程里如果还挂着**这部剧**的这一路（从正片退回来、视图刚被重建），先试着接。
         // 接上就什么都不做：不取详情、不取地址、不 prepare、不 seek——画面就是原来那一秒。
         if (startAt < 0 && adoptPlaying(clearDanmakuOnSwitch = clearDanmakuOnSwitch)) {
             PhoneSession.endHandoff()
-            schedulePreload(slideCache.firstFrameDelay())
+            schedulePreload(feedFirstFrameDelay())
             return
         }
         val token = ++playToken
@@ -1353,7 +1359,7 @@ class PhoneFeedView(
             attach(index, prepared.remote, prepared.position, clearDanmakuOnSwitch)
         }
         // 首帧之后再排预热（与电视端「首帧 + 2 秒」同一条：此刻解码器还在出帧、buffer 还在填）。
-        schedulePreload(slideCache.firstFrameDelay())
+        schedulePreload(feedFirstFrameDelay())
     }
 
     internal fun settleRecommendWatchForNavigation() = settleRecommendWatch()
@@ -1362,125 +1368,13 @@ class PhoneFeedView(
 
     // ------------------------------------------------------------------ 相邻预热
 
-    /** 与电视端 `SlideCacheManager` 同一份窗口 / 快滑 / 回看规则（纯逻辑，`:core` 里带单测）。 */
-    private val slideCache = com.hgtv.star.core.SlideCacheManager()
-    internal fun feedFirstFrameDelay(): Long = slideCache.firstFrameDelay()
-
-    /** 上一次排定窗口预热的时间（节流用：连着滑几屏不必每一屏都排一次）。 */
-    private var preloadAt = 0L
-    /** [playIndex] 里 `onItemChanged` 给出的那一份计划（带判定原因），预热时优先用它。 */
-    private var pendingPlan: com.hgtv.star.core.SlideCacheManager.Plan? = null
-
-    /**
-     * 预热排程（延迟 / 让路重试 / 停留确认 / 取消）。
-     *
-     * 与电视端**同一个类**（`:shared` 的 [com.hgtv.star.shared.feed.PreloadScheduler]）：
-     * 这四条时序规则以前两端各写一遍，同一个问题常常只修在一端。
-     * 这里只注入手机才有的东西：锚点是这一屏的下标、是否在前台、带宽是否让路、怎么派发。
-     */
-    private val preloadScheduler by lazy {
-        com.hgtv.star.shared.feed.PreloadScheduler(
-            slideCache = slideCache,
-            anchor = { playingIndex },
-            active = { !hidden && playingIndex >= 0 },
-            gateOpen = { preloadGateOpen() },
-            // 优先用换剧那一刻算出来的计划：它带着 `REVISIT`（滑回来）/ `FLING`（快滑）
-            // 这些判定，重算一遍就只剩 `WINDOW`，回看与快滑的提升全丢了。
-            plan = {
-                val planned = pendingPlan ?: slideCache.plan(playingIndex)
-                pendingPlan = null
-                planned
-            },
-            apply = { planned, _ -> applyPreload(planned) },
-        )
-    }
-
-    /** 带宽能不能让出来：正在放的那一部 buffer 不足 3 秒时，预加载不该抢同一条下行。 */
-    private fun preloadGateOpen(): Boolean {
-        val exo = player ?: return true
-        if (!exo.isPlaying) return true
-        return exo.bufferedPosition - exo.currentPosition >= 3_000L
-    }
-
-    /**
-     * 停留确认：连划之后停下来，把主方向那一步重新升回完整预热。
-     *
-     * 只在**刚才是在连划**时有意义：快滑期间窗口被降级成「仅地址」，用户停下来之后
-     * 不补这一步，下一步滑过去仍然是冷启动。规则在 [com.hgtv.star.shared.feed.PreloadScheduler]。
-     */
-    private fun scheduleDwell() {
-        preloadScheduler.scheduleDwell()
-    }
-
-    /**
-     * 排定一次相邻预热（延迟到首帧之后、带宽让路、用户已经滑走就取消）。
-     *
-     * 节流判断必须**在排定之前**：早先先取消再判，被节流的那一次会把已经排好的预热
-     * 一起取消掉——连着滑几屏之后一段时间内一条预热都不发，用户停在某一屏上时
-     * 下一步永远是冷启动（正是「滑到下一部要等」的来源）。
-     * 已经排着的那一次会在执行时读 `pendingPlan`，因此它拿到的仍是最新的一屏。
-     */
-    private fun schedulePreload(delayMs: Long) {
-        val now = android.os.SystemClock.elapsedRealtime()
-        if (now < preloadAt) return
-        preloadAt = now + delayMs
-        preloadScheduler.scheduleWindow(delayMs, "switch")
-    }
-
-    /**
-     * 按计划真正发起预热。
-     *
-     * 只派前 3 条（电视端 `PRELOAD_MAX_TARGETS` 同一条理由：同时发太多只会互相抢带宽）。
-     * 地址级只调一次 `stream()` 把地址落进缓存；完整级再 `prepare()` 出索引与首块。
-     */
-    private fun applyPreload(plan: com.hgtv.star.core.SlideCacheManager.Plan) {
-        val lib = library ?: return
-        val repo = PhoneServices.repository(context)
-        val warmCoordinator=com.hgtv.star.shared.feed.RecommendWarmCoordinator(repo,lib,playbackSource)
-        var dispatched = 0
-        for (target in plan.targets) {
-            if (dispatched >= 3) break
-            val series = items.getOrNull(target.index) ?: continue
-            // 正在放的那一部不预热（它的地址与首块本来就是热的）。
-            if (target.index == playingIndex) continue
-            if (target.level == com.hgtv.star.core.CacheLevel.NONE) continue
-            // 已经有了完整预热就别再发一遍。
-            dispatched++
-            scope.launch {
-                val detail = withContext(Dispatchers.IO) {
-                    runCatching { warmCoordinator.detail(series.id) }.getOrNull()
-                } ?: return@launch
-                if (detail.episodes.isEmpty()) return@launch
-                val saved = withContext(Dispatchers.IO) {
-                    runCatching { lib.progress(series.id) }.getOrNull()
-                }
-                val epIndex = saved?.let { s -> detail.episodes.indexOf(s.episodeId).takeIf { it >= 0 } } ?: 0
-                val episodeId = detail.episodes.getOrNull(epIndex) ?: return@launch
-                val prepared = withContext(Dispatchers.IO) {
-                    runCatching {
-                        warmCoordinator.warm(
-                            detail=detail,
-                            episodeId=episodeId,
-                            quality=lib.maxQuality,
-                            level=if(target.level==com.hgtv.star.core.CacheLevel.FULL) {
-                                com.hgtv.star.core.CacheLevel.FULL
-                            } else {
-                                com.hgtv.star.core.CacheLevel.ADDRESS
-                            },
-                        )
-                    }.getOrNull()
-                } ?: return@launch
-                if (!isAttachedToWindow) { runCatching { prepared.close() }; return@launch }
-                PhonePreload.put(series.id, episodeId, prepared)
-                if (com.hgtv.star.shared.BuildConfig.DEBUG) {
-                    android.util.Log.i(
-                        "HGTV-PHONE",
-                        "preload done index=${target.index} level=${target.level} anchor=$playingIndex"
-                    )
-                }
-            }
-        }
-    }
+    /** 与电视端 `SlideCacheManager` 同一份窗口 / 快滑 / 回看规则。 */
+    internal val feedPreloadState=PhoneFeedPreloadState(this)
+    internal val feedPreloadScheduler get()=feedPreloadState.scheduler
+    internal var feedPendingPlan: com.hgtv.star.core.SlideCacheManager.Plan?
+        get()=feedPreloadState.pendingPlan
+        set(value) { feedPreloadState.pendingPlan=value }
+    internal fun feedFirstFrameDelay(): Long = feedPreloadState.slideCache.firstFrameDelay()
 
     /** 每 500ms 把播放进度回传给页面，画在底部进度条上。 */
     /** 片尾预热窗口：与 TV 的 `PrefetchPolicy.nearEnd` 同一档（30 秒）。 */
@@ -2187,7 +2081,7 @@ class PhoneFeedView(
         list.removeCallbacks(chromeHideRunnable)
         listener?.let { player?.removeListener(it) }
         listener = null
-        preloadScheduler.cancel()
+        feedPreloadScheduler.cancel()
         PhonePreload.clear()
         scope.cancel()
         runCatching { player?.release() }

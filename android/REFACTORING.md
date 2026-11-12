@@ -1018,6 +1018,30 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 43：手机信息流相邻预热迁移
+
+状态：已完成。
+
+- 将 `SlideCacheManager` 状态、预热节流、停留确认、带宽让路判断和预热派发移到
+  `player/PhoneFeedPreload.kt`。
+- 新增 `PhoneFeedPreloadState`，由内部 `PreloadScheduler` 继续使用同一份计划、
+  锚点、前后台与播放代次。
+- 保留只派前 3 条、当前剧跳过、地址 / 完整预热区分、断点续集和页面脱离关闭资源。
+- `PhoneFeedView.kt` 从 2198 行降到 2092 行；`PhoneFeedPreload.kt` 为 115 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 迁移后的门控、停留、排程与预热派发实现体按字段投影归一化后与迁移前一致。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `PhoneFeedView.kt` 的相邻预热与停留调度职责。
+继续拆 `PhoneFeedView.kt` 的播放器监听、进度与片尾推进职责。
