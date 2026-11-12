@@ -4262,74 +4262,12 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private fun openLandscapeSettings(lib: Library) {
         if (landPanel != null) return
-
-        val container = FrameLayout(this)
-        val screenW = resources.displayMetrics.widthPixels
-        // 抽屉宽度从 1/3 放到 40%：3 列选项里「完整画面 / 硬件解码 / 播完本集」
-        // 都是 4 个汉字，1/3 宽（1920 屏上每格 177px）装不下 13.5 号字，
-        // 会被 `TruncateAt.END` 截成「完整画…」。40% 下每格 220px，四个字 + 内边距
-        // 共 198px，留 22px 余量；左侧仍有 60% 画面可看、可点收起。
-        val rightW = (screenW * .4f).toInt().coerceAtLeast(dp(220))
-        val leftW = screenW - rightW
-
-        // ---- 左侧：只留「点一下收起」的透明区域，不再画已设置摘要 ----
-        val leftDismiss = View(this).apply {
-            setOnClickListener { dismissLandscapeSettings(); setChromeVisible(false) }
-        }
-
-        // ---- 右侧：各行可改，整列可滚 ----
-        val panel = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(12), dp(12), dp(12), dp(10))
-            background = android.graphics.drawable.GradientDrawable().apply {
-                shape = android.graphics.drawable.GradientDrawable.RECTANGLE
-                setColor((PhoneStyle.surface and 0x00FFFFFF) or (0xF2 shl 24))
-                cornerRadius = 0f
-                setStroke(1, 0x1AFFFFFF)
-            }
-            // 面板本身吃掉点击：否则点在两行之间会穿到左侧的「收起」上。
-            isClickable = true
-        }
-        val head = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        head.addView(TextView(this).apply {
-            text = "播放设置"
-            setTextColor(PhoneStyle.text)
-            phoneSize(14)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        head.addView(TextView(this).apply {
-            text = "关闭"
-            setTextColor(PhoneStyle.textDim)
-            phoneSize(12)
-            setPadding(dp(6), dp(4), 0, dp(4))
-            setOnClickListener { dismissLandscapeSettings(); setChromeVisible(false) }
-        })
-        panel.addView(head)
-
-        val inner = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-        buildSettingsRows(inner, lib, perLine = 3)
-        panel.addView(ScrollView(this).apply {
-            isVerticalScrollBarEnabled = false
-            overScrollMode = View.OVER_SCROLL_NEVER
-            addView(inner, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-        }, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, 0, 1f
-        ))
-
-        container.addView(leftDismiss, FrameLayout.LayoutParams(
-            leftW, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.START
-        ))
-        container.addView(panel, FrameLayout.LayoutParams(
-            rightW, ViewGroup.LayoutParams.MATCH_PARENT, Gravity.END
-        ))
-        root.addView(container, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
+        val container = PhonePlayerSettingsPanel.showLandscape(
+            this,
+            root,
+            { inner -> buildSettingsRows(inner, lib, perLine = 3) },
+            { dismissLandscapeSettings(); setChromeVisible(false) },
+        )
         landPanel = container
         syncLandscapeSettingsInfo()
         scheduleChromeHide()

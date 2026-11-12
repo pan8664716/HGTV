@@ -267,7 +267,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 12：PhonePlayer 横屏设置抽屉
+
+状态：已完成。
+
+- 新增 `PhonePlayerSettingsPanel`，承接横屏右侧 40% 抽屉、左侧收起区、标题、滚动容器和背景。
+- 宽度下限、圆角、描边、点击穿透防护、内容构建回调和收起顺序保持不变。
+- 具体设置行、倍速、清晰度、弹幕、收藏、定时和即时应用仍留在原 Activity。
+- `PhonePlayerActivity.kt` 从 4667 行降到 4605 行；`PhonePlayerSettingsPanel.kt` 为 88 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 12 处理 `PhonePlayerActivity` 的播放设置面板构建，保持设置写入、即时应用和
-关闭后重建播放的调用顺序不变。继续按既定计划执行。
+批次 13 处理 TV `MainActivityPlayback` 的纯失败分类与原因映射，保留
+`MainActivityPlaybackKt` facade、调用顺序、日志和恢复流程。继续按既定计划执行。
