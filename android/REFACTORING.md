@@ -151,7 +151,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 6：播放模型与取流解析
+
+状态：已完成。
+
+- 新增 `ContentPlaybackParser`，集中播放模型请求体、模型响应、批量模型和 `video_list` 选流解析。
+- 单飞闸门、模型缓存、身份代次、设备档位、备用设备、预算、重试和失败恢复仍留在原类。
+- `videoModel` 反射入口、`text` 反射入口和缓存键均未改变。
+- 弹幕继续使用原有独立行解析，请求窗口与频控循环未移动。
+- `ContentRepository.kt` 从 5184 行降到 5023 行；`ContentPlaybackParser.kt` 为 169 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 6 只处理播放模型、取流缓存和弹幕窗口的纯解析与内部服务边界，保留反射方法、
-单飞、预算、缓存键和失败路径。继续按既定计划执行。
+批次 7 处理 `Library` 的账号缓存、首页缓存和持久化委托，保留全部 SharedPreferences
+键、写入队列、迁移和回调线程。继续按既定计划执行。
