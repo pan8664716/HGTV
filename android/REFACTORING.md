@@ -755,7 +755,39 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 33：TV 前后台收尾生命周期迁移
+
+状态：已完成。
+
+- 将 `onPause`、`onStop`、`onDestroy` 的收尾实现移到
+  `system/MainBackgroundLifecycle.kt`。
+- Activity 仍以系统回调外壳调用实现，并通过原位置的 `super` 回调保持生命周期顺序；
+  `onDestroy` 的广播、网络监听、封面回调和协程取消均按原顺序执行。
+- 迁移后的三个实现体按缩进及内部委托名归一化后与迁移前逐行一致。
+- `TvMainActivity.kt` 从 2090 行降到 2047 行；`MainBackgroundLifecycle.kt` 为 57 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译缺少 `CoroutineScope.cancel()` 扩展 import，补齐后重跑通过；未改行为。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
+### 夜间阶段摘要（批次 29–33）
+
+- 批次 29–33 全部完成并独立提交，TV 调试状态、启动初始化、恢复、按键与前后台生命周期已拆分。
+- `TvMainActivity.kt` 从 2611 行降到 2047 行；新增职责文件均低于 300 行。
+- 每批聚合编译、Lint、共享单测与 Debug APK 均通过，无新增 Lint Error / Fatal。
+- `:core:test` 最近为 435 例、24 失败、28 跳过，未高于基线。
+- 下一阶段转入 `PhonePlayerActivity.kt`，优先拆状态字段与播放生命周期辅助。
+
 ## 下一批
 
-继续拆分 `TvMainActivity.kt` 的前后台收尾回调，随后转入
-`PhonePlayerActivity.kt` 的职责拆分。
+开始拆分 `PhonePlayerActivity.kt` 的状态字段与播放生命周期辅助，保持手机播放行为和
+现有公开 facade 不变。

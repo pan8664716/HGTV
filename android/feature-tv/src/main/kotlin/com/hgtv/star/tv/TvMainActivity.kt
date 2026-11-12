@@ -1999,34 +1999,10 @@ class TvMainActivity: Activity() {
         resumeAfterSuper(resumeStarted)
     }
     override fun onPause() {
-        if(resetting) { super.onPause(); return }
-        if(!mainInitialized) {
-            foreground=false
-            super.onPause()
-            return
-        }
-        foreground=false; main.removeCallbacks(tick); cancelRecovery(); cancelPrefetch(); mediaSession?.deactivate()
-        // 退到后台：屏幕常亮跟着松开（见 `syncKeepScreenOn`）。
-        syncKeepScreenOn()
-        sleepTimer.cancel(); sleepChoice=0; favoriteMonitor.stop(); detailAutoplay=false; requestedAutoplay=false; pausedForLifecycle=true
-        player?.pause(); saveProgress(); library.flush(); super.onPause()
+        onPauseImpl { super.onPause() }
     }
     override fun onStop() {
-        if(resetting) { super.onStop(); return }
-        if(!mainInitialized) { super.onStop(); return }
-        restoreStoppedPage=true; generation++; cancelWork(); tvTools.close()
-        // 退到后台**不销毁播放器**（进程内复用，见 [detachPlayerSurface] 的说明）：
-        // 画面层、传输、弹幕一起收，但 ExoPlayer 实例留着。回到前台由 onResume 的
-        // restoreStoppedPage 接着播，不再走一次 `ExoPlayer.Builder.build()`。
-        // `keepSession=true`：退到后台不是离开这一集，回来还要按同一位置接着播。
-        // 保留本次会话的降级结论，否则又会拿刚被证明放不了的上限重撞一次
-        // （见 [com.hgtv.star.core.SessionPlaybackPolicy.onLeavePlaybackToBackground]）。
-        if(screen=="player") { startPosition=currentPosition(); saveProgress(); detachPlayerSurface(keepSession=true) }
-        // 推荐页不写进度，只记下位置并卸掉画面；回到前台由 onResume 接着播。
-        // 顺手结掉「这一部看了多久」：退到后台的那段时间不算进停留时长，
-        // 否则放着不管一小时再回来，一部本来划走的剧会被记成「看了」。
-        else if(screen=="recommend") { startPosition=currentPosition(); detachPlayerSurface(keepSession=true); settleRecommendWatch() }
-        artwork.cancelPage(clearMemory=true); library.flush(); super.onStop()
+        onStopImpl { super.onStop() }
     }
     /** 栅格里被低内存策略摘掉封面的卡数：>0 时滚动 / 焦点回调才需要检查「是不是回来了」。 */
     var suspendedCovers=0
@@ -2066,25 +2042,6 @@ class TvMainActivity: Activity() {
         onTrimMemoryImpl(level)
     }
     override fun onDestroy() {
-        if(!mainInitialized) {
-            appScope.cancel()
-            super.onDestroy()
-            return
-        }
-        generation++; cancelWork()
-        closeLanSyncSession()
-        runCatching { unregisterReceiver(sessionExpiredReceiver) }
-        runCatching { networkWatch?.cancel() }; networkWatch=null
-        recommendToken.incrementAndGet(); recommendPageToken.incrementAndGet(); closeRecommendCache()
-        favoriteMonitor.destroy(); tvTools.destroy(); closeAccountPanelSession(); saveProgress(); releasePlayer(); library.flush()
-        if(artwork.releaseHiddenCovers===artworkReleaseCallback) artwork.releaseHiddenCovers=null
-        releaseCatalogViews(); mediaSession?.release(); mediaSession=null; main.removeCallbacksAndMessages(null)
-        // 页面级协程作用域：只取消「属于这个 Activity」的协程，**不碰**线程池。
-        //
-        // 线程池是进程级的（见 `AppExecutors`），这里绝不能关：重建后的新 Activity 会
-        // 继续往同一批线程上提交任务，关掉就是「提交到已关闭的池」——那正是改造前
-        // 七个 `shutdownNow()` 埋下的崩溃面。
-        appScope.cancel()
-        super.onDestroy()
+        onDestroyImpl { super.onDestroy() }
     }
 }
