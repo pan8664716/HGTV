@@ -1375,22 +1375,7 @@ private fun MainActivity.recoverQueuedCurrent(): Boolean {
  * | 资源已变化 | 这一集的文件换过了，旧索引对不上（重取一次仍失败） | `playback_io` |
  * | 内存不足 | `OutOfMemoryError` 被兜住 | `playback_oom` |
  */
-fun playbackFailureTag(problem: Throwable?): String = when(problem) {
-    null -> "未知错误"
-    // 网络类排最前：它才是现场绝大多数「本地准备失败」的真身。
-    // `remote.prepare()` 里那次 `range()` 也会抛 `IOException`（DNS / 超时 / 连不上），
-    // 早先一律被包成 [PlaybackPrepareException]，于是**连不上服务器**也显示「本地准备失败」，
-    // 把排查方向整个带偏（现场：真因是视频 CDN 域名解析不出来）。
-    else -> when {
-        networkFailureOf(problem)!=null -> "取流失败"
-        hasCauseOf<PlaybackPrepareException>(problem) -> "本地准备失败"
-        hasCauseOf<com.hgtv.star.core.StreamExpiredException>(problem) -> "地址过期"
-        hasCauseOf<com.hgtv.star.core.VideoChangedException>(problem) -> "资源已变化"
-        hasCauseOf<java.io.IOException>(problem) -> "取流失败"
-        problem is OutOfMemoryError -> "内存不足"
-        else -> "未知错误"
-    }
-}
+fun playbackFailureTag(problem: Throwable?): String = PlaybackFailureLabels.tag(problem)
 /**
  * 这一串异常里那句**能落到具体判断**的原因，没有就返回 null。
  *
@@ -1399,18 +1384,7 @@ fun playbackFailureTag(problem: Throwable?): String = when(problem) {
  *（真要长消息，日志里有完整一条）。深度上限 8，与 [streamExpiredOf] 一致。
  */
 fun playbackFailureReason(problem: Throwable?): String? {
-    // 网络类优先：那一句「视频服务器域名无法解析」比任何英文系统错误都好用，
-    // 而且它自带下一步（查 DNS / 换线路），不会被 20 字的长度上限截掉。
-    networkFailureOf(problem)?.let { return it }
-    var current=problem
-    var depth=0
-    while(current!=null && depth<8) {
-        val message=current.message
-        if(!message.isNullOrBlank() && message.length<=24 && '\n' !in message) return message
-        current=current.cause
-        depth++
-    }
-    return null
+    return PlaybackFailureLabels.reason(problem)
 }
 /** 顺着 cause 链找某个类型，深度上限 8（与 [streamExpiredOf] 同因：防环形 cause）。 */
 inline fun <reified T: Throwable> hasCauseOf(problem: Throwable?): Boolean {
@@ -1431,38 +1405,7 @@ inline fun <reified T: Throwable> hasCauseOf(problem: Throwable?): Boolean {
  * 或 [PlaybackException] 包上一层两层，只看最外层的类型永远归错类。
  */
 fun networkFailureOf(problem: Throwable?): String? {
-    var current=problem
-    var depth=0
-    while(current!=null && depth<8) {
-        when(current) {
-            // 顺序有意义：`SocketTimeoutException` / `ConnectException` 都是 `IOException`，
-            // `UnknownHostException` 也是——所以这几个具体类型必须排在笼统判断前面。
-            is com.hgtv.star.core.AddressTimeoutException -> return "取播放地址超时"
-            is java.net.UnknownHostException -> return "视频服务器域名无法解析"
-            is java.net.SocketTimeoutException -> return "连接视频服务器超时"
-            is java.net.ConnectException -> return "连不上视频服务器"
-            is java.net.NoRouteToHostException -> return "网络不通，无法访问视频服务器"
-            is javax.net.ssl.SSLException -> return "视频连接加密握手失败"
-            // **整调用超时**（OkHttp 的 `callTimeout`，45 秒）：抛的是 `InterruptedIOException("timeout")`，
-            // 不是 `SocketTimeoutException`（那个是单次读超时，30 秒）。
-            //
-            // 现场（2026-10-30，小米 TV，1.2.9.1(67)）：
-            // `PlaybackPrepareException: timeout <- InterruptedIOException: timeout <- SocketException: Socket closed`
-            // ——一次 Range 读整整 45 秒没读完，被 okhttp 掐掉并关了 socket。
-            // 它**必须算网络失败**：否则会被外面包成「播放地址准备失败」（本地准备），
-            // 既不换地址、也不清 DNS 与连接池，用户重试多少次都是同一条半死连接
-            // （见 [transportDeadOf] 与 [dropDeadTransport] 的说明）。
-            //
-            // 只认消息里带 `timeout` 的那种：`InterruptedIOException` 也被 OkHttp 用来表达
-            // 「线程被打断 / 取消」（消息是 `interrupted` / `interrupted by`），
-            // 那是我们自己切页造成的，算成网络故障会触发无意义的自愈。
-            is java.io.InterruptedIOException ->
-                if(current.message.orEmpty().contains("timeout",ignoreCase=true)) return "视频服务器响应超时"
-        }
-        current=current.cause
-        depth++
-    }
-    return null
+    return PlaybackFailureLabels.networkOf(problem)
 }
 /**
  * 这一串异常里有没有「这一集的文件换过了」。

@@ -286,7 +286,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 13：TV 播放失败标签
+
+状态：已完成。
+
+- 新增 `PlaybackFailureLabels`，集中网络原因、错误短码和短原因提取。
+- 异常类型优先级、cause 深度上限 8、消息长度上限和稳定短码保持不变。
+- `playbackFailureTag`、`playbackFailureReason`、`networkFailureOf` 保留原顶层包装，
+  因此 `MainActivityPlaybackKt` facade 不变。
+- `MainActivityPlayback.kt` 从 2232 行降到 2175 行；`PlaybackFailureLabels.kt` 为 50 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 13 处理 TV `MainActivityPlayback` 的纯失败分类与原因映射，保留
-`MainActivityPlaybackKt` facade、调用顺序、日志和恢复流程。继续按既定计划执行。
+批次 14 先抽 `MainActivity` 中独立的 `RecommendWarm` 状态对象，再评估顶部区域控制器。
+涉及焦点、生命周期和页面恢复的部分继续保持原位。继续按既定计划执行。
