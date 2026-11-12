@@ -306,7 +306,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 14：TV RecommendWarm
+
+状态：已完成。
+
+- 将顶层 `RecommendWarm` 移到独立文件，类全限定名和公开构造保持不变。
+- 取消域、启动时刻和 future 字段语义保持不变。
+- `MainActivity.GridRow` 被其他文件以嵌套类型引用，本批没有改变其结构。
+- `MainActivity.kt` 从 2821 行降到 2808 行；`RecommendWarm.kt` 为 15 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 14 先抽 `MainActivity` 中独立的 `RecommendWarm` 状态对象，再评估顶部区域控制器。
-涉及焦点、生命周期和页面恢复的部分继续保持原位。继续按既定计划执行。
+TV `MainActivity` 的顶部区域、焦点和生命周期控制器与 Activity 私有状态高度耦合，
+需要单独设计状态所有权后再拆。当前没有继续搬移，避免改变焦点和页面恢复行为。
