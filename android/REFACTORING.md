@@ -112,7 +112,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 4：账号传输与请求体
+
+状态：已完成。
+
+- 新增 `ContentAccountTransport`，封装账号请求的签名、会话头、空响应判断和空体重试。
+- 新增 `ContentAccountRequests`，集中预约、收藏、进度上传和历史删除请求体。
+- 公开账号方法、重试次数、退避顺序、日志、会话校验和调用时序仍留在原类。
+- 历史删除的 `clock()` 仍按每条记录调用，没有改成整批共用时间。
+- `ContentRepository.kt` 从 5335 行降到 5268 行；`ContentAccountApi.kt` 为 174 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 4 只处理 `ContentRepository` 的账号读写请求封装，保留重试、退避、日志顺序、
-会话要求和公开方法。继续按既定计划执行。
+批次 5 只处理详情、作者作品和发行方探测的纯解析与内部编排，保留请求顺序、缓存、
+并发限制和公开方法。继续按既定计划执行。

@@ -2715,18 +2715,22 @@ class ContentRepository(
      * 空响应体在这个平台上很常见（网关挡掉），统一翻成可读的 [IOException]，
      * 免得把 JSONException 抛到界面上。
      */
-    private fun accountJson(path: String, params: Map<String,String> = emptyMap(), body: ByteArray? = null): JSONObject {
-        val values=if(body!=null) writeValues() else accountAppValues()
-        params.forEach { (key,value) -> values[key]=value }
-        val signed=signer.sign(
-            "https://${accountHost()}$path",
-            values,
-            body,
-            deviceOverride=primaryProfile(),
+    private val accountTransport by lazy {
+        ContentAccountTransport(
+            accountValues = ::accountAppValues,
+            writeValues = ::writeValues,
+            primaryProfile = ::primaryProfile,
+            accountHost = ::accountHost,
+            sign = { url, values, body, profile ->
+                signer.sign(url, values, body, deviceOverride=profile)
+            },
+            withSession = { it.withSession() },
+            text = { url, request -> text(url, request) },
+            retries = ACCOUNT_RETRIES,
         )
-        val raw=text(signed.url,signed.withSession())
-        if(raw.isBlank()) throw IOException("账号接口暂无响应（空响应体）")
-        return JSONObject(raw)
+    }
+    private fun accountJson(path: String, params: Map<String,String> = emptyMap(), body: ByteArray? = null): JSONObject {
+        return accountTransport.json(path,params,body)
     }
 
     /**
@@ -2734,21 +2738,7 @@ class ContentRepository(
      * 同一请求重发即可。只重试空 body，真的报错（100103 等）直接抛出去。
      */
     private fun retryBlank(attempts: Int = ACCOUNT_RETRIES, action: () -> JSONObject): JSONObject {
-        var last: Exception?=null
-        repeat(attempts) { attempt ->
-            try { return action() } catch(e: Exception) {
-                last=e
-                if(!e.message.orEmpty().contains("空响应体")) throw e
-                val delay=300L+attempt*250L
-                if(attempt<attempts-1) {
-                    NetLog.retry("account_blank",attempt+2,attempts,e.message.orEmpty(),delay)
-                } else {
-                    NetLog.error("[API] error scope=account_blank attempts=$attempts reason=${e.message.orEmpty().take(220)}")
-                }
-                Thread.sleep(delay)
-            }
-        }
-        throw last ?: IOException("账号接口暂无响应")
+        return accountTransport.retryBlank(attempts,action)
     }
 
     /**
@@ -2877,25 +2867,7 @@ class ContentRepository(
      */
     fun accountReserve(seriesId: String, subscribe: Boolean): Boolean {
         if(!signedIn || !seriesId.matches(Regex("[0-9]{1,30}"))) return false
-        val payload = if(subscribe) JSONObject()
-            .put("item_id",seriesId.toLong())
-            .put("item_type",14)
-            .put("op_type",1)
-            .put("item_id_str",seriesId)
-            .put("wish_list_all_del",0)
-            .put("shark_param",JSONObject()
-                .put("enter_from","ShortSeriesActivity")
-                .put("previous_page","BulletActivity")
-                .put("page_list","MainFragmentActivity,BulletActivity,ShortSeriesActivity"))
-            .toString().toByteArray()
-        else JSONObject()
-            .put("item_id",JSONArray().put(seriesId))
-            .put("all_select",false)
-            .put("not_del_item_id",JSONArray())
-            .put("is_online",false)
-            .put("tab_type",13)
-            .toString().toByteArray()
-        val path = if(subscribe) "/reading/bookapi/search/uncover_subscribe/v1/" else "/reading/user/subscribe/delete/v1/"
+        val (path,payload)=ContentAccountRequests.reserve(seriesId,subscribe)
         repeat(ACCOUNT_WRITE_ATTEMPTS) { attempt ->
             var detail=""
             val ok=runCatching {
@@ -2948,29 +2920,14 @@ class ContentRepository(
      */
     private fun videoShelf(seriesId: String,operate: Int): Boolean {
         if(!signedIn || !seriesId.matches(Regex("[0-9]{1,30}"))) return false
-        val entry=JSONObject()
-            .put("book_id",seriesId).put("book_type",BOOK_TYPE_WATCH)
-            .put("modify_time",clock())
-            .put("video_shelf_operate_type",operate)
-        // 「取消」在条目里带一个空的 `group_name`；「加入」不带。
-        if(operate==VIDEO_SHELF_DEL_SHELF) entry.put("group_name","")
-        // `shark_extra`（进入来源）是**body 的顶层字段**，不在条目里——这是 2026-10-15
-        // 从官方包抓包核对出来的（`POST /reading/bookapi/bookshelf/video/update/v`）：
-        // 官方那条请求的 body 形如
-        // `{"is_cancelled":false,"shark_extra":{…},"update_bookshelf_video_list":[{…}]}`。
-        // 早先把它塞进条目里，服务端照旧回 `101144 追剧失败`。
-        val body=JSONObject()
-            .put("is_cancelled",false)
-        if(operate==VIDEO_SHELF_ADD_SHELF) {
-            body.put("shark_extra",JSONObject()
-                .put("enter_from","MainFragmentActivity")
-                .put("previous_page","")
-                .put("page_list","MainFragmentActivity")
-                .put("is_active_behavior","true")
-                .put("inactive_type","0"))
-        }
-        body.put("update_bookshelf_video_list",JSONArray().put(entry))
-        val payload=body.toString().toByteArray()
+        val payload=ContentAccountRequests.favorite(
+            seriesId,
+            operate,
+            clock(),
+            BOOK_TYPE_WATCH,
+            VIDEO_SHELF_ADD_SHELF,
+            VIDEO_SHELF_DEL_SHELF,
+        )
         // 风控是**偶发**的（同一条请求重发两三次里总有一次过），因此这里自己重试：
         // [retryBlank] 只管空响应体，101144 要单独再发。
         repeat(ACCOUNT_WRITE_ATTEMPTS) { attempt ->
@@ -3002,19 +2959,16 @@ class ContentRepository(
     fun accountUploadProgress(seriesId: String,episodeId: String,episodeIndex: Int,position: Long,duration: Long,episodeCount: Int=0): Boolean {
         if(!seriesId.matches(Regex("[0-9]{1,30}"))) return false
         if(!episodeId.matches(Regex("[0-9]{1,30}"))) return false
-        val rate=if(duration>0) (position.toDouble()/duration).coerceIn(0.0,1.0) else 0.0
-        val entry=JSONObject()
-            .put("book_id",seriesId)
-            .put("item_id",episodeId)
-            .put("vid_index",episodeIndex+1)
-            .put("current_play_time",position.coerceAtLeast(0))
-            .put("current_total_time",duration.coerceAtLeast(0))
-            .put("episode_count",episodeCount.coerceAtLeast(0))
-            .put("read_timestamp_ms",clock())
-            .put("book_type",BOOK_TYPE_WATCH)
-            .put("progress_rate","%.4f".format(java.util.Locale.US,rate))
-            .put("player_cumulative_total_duration",position.coerceAtLeast(0))
-        val body=JSONObject().put("books",JSONArray().put(entry)).put("write_mode",1).toString().toByteArray()
+        val body=ContentAccountRequests.uploadProgress(
+            seriesId,
+            episodeId,
+            episodeIndex,
+            position,
+            duration,
+            episodeCount,
+            clock(),
+            BOOK_TYPE_WATCH,
+        )
         repeat(ACCOUNT_WRITE_ATTEMPTS) { attempt ->
             var detail=""
             val ok=runCatching {
@@ -3060,35 +3014,12 @@ class ContentRepository(
         }.getOrDefault(emptyMap())
         var ok=true
         ids.chunked(HISTORY_DELETE_BATCH).forEach { chunk ->
-            val rows=JSONArray()
-            chunk.forEach { id ->
-                val bookType=known[id]?.optInt("book_type",BOOK_TYPE_WATCH) ?: BOOK_TYPE_WATCH
-                val row=JSONObject()
-                    .put("book_id",id.toLong())
-                    .put("book_type",bookType)
-                    .put("chapter_index",0)
-                    .put("current_play_position",0)
-                    .put("digged_count",0)
-                    .put("duration",0)
-                    .put("episode_cnt",0)
-                    .put("is_delete",true)
-                    .put("is_interactive_game",false)
-                    .put("is_listen_mode",false)
-                    .put("is_multi_season",0)
-                    .put("player_accumulate_total_time",0)
-                    .put("read_timestamp_ms",0)
-                    .put("recent_reads",0)
-                    .put("retain_video_play_time",0)
-                    .put("season_index",0)
-                    .put("series_play_cnt",0)
-                    .put("tone_id",0)
-                    .put("update_timestamp_ms",clock())
-                    .put("user_digg",false)
-                    .put("vid",0)
-                    .put("vid_index",1)
-                rows.put(row)
-            }
-            val body=JSONObject().put("update_datas",rows).toString().toByteArray()
+            val body=ContentAccountRequests.deleteHistory(
+                chunk,
+                known,
+                BOOK_TYPE_WATCH,
+                { clock() },
+            )
             val part=runCatching {
                 val reply=accountJson("/reading/bookapi/read_history/update/v",emptyMap(),body)
                 val code=reply.optInt("code",-1)
