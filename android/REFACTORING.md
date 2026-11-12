@@ -248,7 +248,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 11：PhonePlayer 选集面板
+
+状态：已完成。
+
+- 新增 `PhonePlayerEpisodePanels`，承接竖屏 5 列与横屏 10 列选集浮层。
+- 每页集数、网格高度、边缘翻页、滑动分页、横屏侧边距和 TV 样式保持不变。
+- 点击顺序仍是先关闭浮层，再在目标集不同时调用原换集路径。
+- `PhonePlayerActivity.kt` 从 4703 行降到 4667 行；`PhonePlayerEpisodePanels.kt` 为 88 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 11 处理 `PhonePlayerActivity` 的横竖屏选集面板构建，保持页大小、列数、边缘翻页、
-点击换集和浮层关闭顺序不变。继续按既定计划执行。
+批次 12 处理 `PhonePlayerActivity` 的播放设置面板构建，保持设置写入、即时应用和
+关闭后重建播放的调用顺序不变。继续按既定计划执行。

@@ -4398,32 +4398,15 @@ class PhonePlayerActivity : PhoneActivity() {
 
     /** 竖屏选集：底部整宽浮层。每行 5 个，一页行数跟着设置走。 */
     private fun openPortraitEpisodes(d: Detail) {
-        sheet.show(
-            "选集 · 正在看第 ${index + 1} 集",
-            landscape = false,
-            notifyHostOnUserDismiss = false,
-        ) { panel ->
-            panel.addView(
-                PhoneEpisodeGrid(
-                    this, d.episodes.size, index,
-                    pageSize = library?.episodePageSize ?: 20,
-                    compact = false,
-                    columns = 5,
-                    // 外层 PhoneSheet 已经是唯一的纵向滚动容器；网格若再限高会形成嵌套滚动，
-                    // 横屏时最后一页按钮因此够不到。这里铺完整高度，交给浮层统一滚动。
-                    maxGridHeight = Int.MAX_VALUE,
-                    edgeTurn = library?.episodeEdgeTurn ?: true,
-                    swipePages = true,
-                ) { i ->
-                    sheet.dismiss()
-                    if (i != index) play(i, clearDanmakuOnSwitch = true)
-                },
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            )
-        }
-        scheduleChromeHide()
+        PhonePlayerEpisodePanels.showPortrait(
+            this,
+            sheet,
+            d,
+            index,
+            library,
+            { i -> play(i, clearDanmakuOnSwitch = true) },
+            ::scheduleChromeHide,
+        )
     }
 
     /**
@@ -4433,34 +4416,15 @@ class PhonePlayerActivity : PhoneActivity() {
      * （20 / 30 / 50 / 80 / 100 → 2 / 3 / 5 / 8 / 10 行），放不下时网格内部滚动。
      */
     private fun openLandscapeEpisodes(d: Detail) {
-        sheet.show(
-            "选集",
-            landscape = true,
-            heightFraction = .78f,
-            showHeader = false,
-            notifyHostOnUserDismiss = false,
-        ) { panel ->
-            panel.addView(
-                PhoneEpisodeGrid(
-                    this, d.episodes.size, index,
-                    pageSize = library?.episodePageSize ?: 20,
-                    compact = false,
-                    columns = 10,
-                    maxGridHeight = Int.MAX_VALUE,
-                    edgeTurn = library?.episodeEdgeTurn ?: true,
-                    swipePages = true,
-                    tvStyle = true,
-                    tvSideInsetDp = 29,
-                ) { i ->
-                    sheet.dismiss()
-                    if (i != index) play(i, clearDanmakuOnSwitch = true)
-                },
-                LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                )
-            )
-        }
-        scheduleChromeHide()
+        PhonePlayerEpisodePanels.showLandscape(
+            this,
+            sheet,
+            d,
+            index,
+            library,
+            { i -> play(i, clearDanmakuOnSwitch = true) },
+            ::scheduleChromeHide,
+        )
     }
 
     // ---------------------------------------------------------------- 生命周期
