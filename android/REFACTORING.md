@@ -1246,6 +1246,29 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 52：Library 待提交设备档案迁移
+
+状态：已完成。
+
+- 将候选档案读取、落盘、注册档案选择和成功注册后的转正移到
+  `LibraryPendingProfile.kt`。
+- `commitPendingProfile`、`registrationProfile`、`hasPendingProfile` 保留原公开签名，
+  只委托到内部实现。
+- 保留随机 openudid 升级、种子与档案同步提交、旧 pending stamp 清理、镜像 flush 与日志。
+- `Library.kt` 从 1859 行降到 1821 行；`LibraryPendingProfile.kt` 为 74 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `Library.kt` 的待提交设备档案与转正流程。
+继续拆 `Library.kt` 的设备身份读写与注册状态职责。
