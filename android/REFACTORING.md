@@ -608,7 +608,29 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 27：TV 页头收展控制器迁移
+
+状态：已完成。
+
+- 将滚动位置记忆、页头登记、页头高度测量、收起/展开动画、焦点判据和列表到底判断
+  移到 `navigation/HeaderVisibilityController.kt`。
+- `TvMainActivity` 保留 `rememberScroll`、`registerTopAreaRow`、`onListScroll`、
+  `syncHeaderState`、`headerShouldHide`、`gridAtBottom`、`setTopAreaHidden` 同名门面方法。
+- 动画时长、低配分支、静默期、焦点例外、封面恢复和预取触发顺序保持不变。
+- `TvMainActivity.kt` 从 2808 行降到 2662 行；`HeaderVisibilityController.kt` 为 199 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:feature-tv:compileDebugKotlin` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续按页面职责拆 `TvMainActivity.kt` 的状态容器和生命周期代码，优先处理
-`home/RecommendPage.kt` 与 `player/PlayerController.kt` 的剩余大块。
+继续拆 `TvMainActivity.kt` 的调试面板状态与内存压力处理，再评估生命周期初始化链的
+Controller 边界。

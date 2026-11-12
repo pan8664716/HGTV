@@ -730,11 +730,7 @@ class TvMainActivity: Activity() {
     val scrollPositions=mutableMapOf<String,Int>()
 
     /** 记住一页列表的滚动位置；超出 [SCROLL_MEMORY] 条就丢掉最早的一条。 */
-    fun rememberScroll(key: String,value: Int) {
-        if(key.isBlank()) return
-        if(key !in scrollPositions && scrollPositions.size>=SCROLL_MEMORY) scrollPositions.keys.firstOrNull()?.let(scrollPositions::remove)
-        scrollPositions[key]=value
-    }
+    fun rememberScroll(key: String,value: Int) = rememberScrollImpl(key,value)
 
     // —— 页头区域随列表滚动收起 ——
     /** 页头区域里的每一行：工具条、搜索行、榜单标题行、集合页标题行。 */
@@ -754,20 +750,7 @@ class TvMainActivity: Activity() {
     var topAreaSettleUntil=0L
 
     /** 把一行页头登记进「随滚动收起」的区域。 */
-    fun registerTopAreaRow(row: View) {
-        topArea+=row
-        val restore=row.layoutParams?.height ?: LinearLayout.LayoutParams.WRAP_CONTENT
-        topAreaRestore[row]=restore
-        if(topAreaHidden) {
-            // 页头正收着，这一行也必须立刻收起来：先量出展开高度当基准，再按收起状态摆好，
-            // 中间不留一帧展开态，否则重建时页头会闪一下。
-            expandedHeightOf(row)
-            applyTopAreaState(row,true)
-        } else {
-            // 布局完成后再量一次真实高度：收起动画的起点、展开动画的终点都按它算。
-            row.post { if(topArea.contains(row) && row.height>0) topAreaHeights[row]=row.height }
-        }
-    }
+    fun registerTopAreaRow(row: View) = registerTopAreaRowImpl(row)
 
     /**
      * 列表滚动 → 页头收展。
@@ -777,19 +760,7 @@ class TvMainActivity: Activity() {
      * 列表中间向上滚只保持当前状态，不会半路把页头弹回来。收起 / 展开之后有一小段静默期，
      * 避开视口变化引起的 scrollY 回夹，否则会在底部来回抖。
      */
-    fun onListScroll(y: Int,force: Boolean=false) {
-        // 静默期里只更新位置、不改收展状态：这期间的滚动是位置恢复 / 内容夹取，不是用户滚的。
-        if(!force && android.os.SystemClock.elapsedRealtime()<topAreaSettleUntil) { listScrollY=y; updateBackToTop(); return }
-        listScrollY=y
-        // 低内存时被摘掉的封面：滚回视口就挂回来（`suspendedCovers == 0` 时是一次整数比较）。
-        resumeVisibleCovers()
-        setTopAreaHidden(headerShouldHide(y),animate=!force)
-        updateBackToTop()
-        // 手指 / 遥控滚到离底部还有小半屏时就先把下一页取回来：
-        // 真滚到底的时候内容已经在手上，接上是瞬间的，用户看不到「正在加载」。
-        // 触发点统一交给 [nearGridEnd]（按「还剩几行」算）：这里只管页头收展。
-        if(nearGridEnd()) prefetchNextPage()
-    }
+    fun onListScroll(y: Int,force: Boolean=false) = onListScrollImpl(y,force)
 
     /**
      * 把页头的收 / 展状态按**当前位置与焦点**重算一次。
@@ -800,13 +771,7 @@ class TvMainActivity: Activity() {
      * `restoring` 里被吞掉，于是「位置已经回到顶部、页头却还收着」或者反过来。
      * 用户读到的就是「按上键页头反而隐藏」这种**状态反过来**的现象。
      */
-    fun syncHeaderState() {
-        if(screen!="catalog" || topArea.isEmpty()) return
-        val y=homeScreen?.scrollY() ?: catalogScroll?.scrollY ?: return
-        listScrollY=y
-        setTopAreaHidden(headerShouldHide(y),animate=false)
-        updateBackToTop()
-    }
+    fun syncHeaderState() = syncHeaderStateImpl()
 
     /**
      * 页头该不该收起——**位置与焦点的纯函数**。
@@ -827,123 +792,12 @@ class TvMainActivity: Activity() {
      * 「焦点在第二行、页头却展开；按上键回到第一行、页头反而收起」这种**状态反过来**的现象。
      * 纯函数判据不依赖任何基线，任何时刻算出来的都与事实一致。
      */
-    fun headerShouldHide(y: Int): Boolean {
-        if(topAreaHasFocus()) return false
-        if(y>dp(HEADER_SHOW_THRESHOLD)) return true
-        // 「焦点走到第二栏就收」这条判据在低配上关掉。
-        //
-        // 它只按**焦点**算、不看滚动位置：焦点一进第二栏，页头高度 88dp→0，
-        // 而页头挂在带 weight 的 body 之上——body 高度一变，首页 ScrollView 的视口高度跟着变，
-        // 它子控件的 heightSpec 就从 AT_MOST(H) 变成 AT_MOST(H+88dp)，
-        // measure 缓存全失效，700 多个 View 全量重测一次（10~30ms）。
-        // 而这一刻 `reveal()` 正在 smoothScroll 250ms 里，这一顿正好插在滚动动画中间。
-        // 低配改为只看位置：真正滚下去之后页头照样收，且只收一次。
-        if(!TvStyle.animate) return false
-        return focusedContentRow()>=1
-    }
-
-    /**
-     * 焦点当前落在内容区的第几行（从 0 起）；焦点不在内容上时返回 -1。
-     *
-     * 两种内容分别算：首页是剧架（[HomeScreen.focusedRowIndex]），
-     * 其余页面是卡片栅格（[gridFocusIndex] 除以列数）。两者都按「第 1 行是页头正下方那一行」算。
-     */
-    private fun focusedContentRow(): Int {
-        homeScreen?.let { home -> return home.focusedRowIndex() }
-        val index=gridFocusIndex() ?: return -1
-        return index/gridColumns
-    }
+    fun headerShouldHide(y: Int): Boolean = headerShouldHideImpl(y)
 
     /** 列表是不是已经滚到距底部 [slack] 像素以内。没有栅格（首页剧架、设置页）时永远为 false。 */
-    fun gridAtBottom(slack: Int): Boolean {
-        val scroll=gridScroll ?: return false
-        val list=gridList ?: return false
-        if(scroll.height<=0 || list.height<=0) return false
-        return scroll.scrollY+scroll.height+slack>=list.height
-    }
+    fun gridAtBottom(slack: Int): Boolean = gridAtBottomImpl(slack)
 
-    private fun topAreaHasFocus()=topArea.any { it.findFocus()!=null }
-
-    /**
-     * 一行页头展开时的高度。工具条这类固定高度的行直接用 LayoutParams，
-     * 其余（搜索行、榜单标题行、集合页标题行）按页面栅格宽度量一次自然高度，不用等布局。
-     */
-    private fun expandedHeightOf(row: View): Int {
-        val restore=topAreaRestore[row] ?: LinearLayout.LayoutParams.WRAP_CONTENT
-        topAreaHeights[row]?.takeIf { it>0 }?.let { return it }
-        if(restore>0) { topAreaHeights[row]=restore; return restore }
-        // 收起状态不影响这次测量：量的是内容在页面栅格宽度下的自然高度。
-        val width=if(row.width>0) row.width
-            else (resources.displayMetrics.widthPixels-2*(pageInset()-pageBleed())).coerceAtLeast(1)
-        row.measure(
-            View.MeasureSpec.makeMeasureSpec(width,View.MeasureSpec.EXACTLY),
-            View.MeasureSpec.makeMeasureSpec(0,View.MeasureSpec.UNSPECIFIED)
-        )
-        val measured=row.measuredHeight
-        if(measured>0) topAreaHeights[row]=measured
-        // 量不出来（内容还没建好）就退回当前高度：这一行不做动画、直接到位，不会朝 0 缩。
-        return measured.takeIf { it>0 } ?: row.height
-    }
-
-    /** 把一行页头直接摆到目标状态（不排队动画）：收起 = 高度归零 + 淡出 + 打开裁剪；展开反之。 */
-    private fun applyTopAreaState(row: View,hide: Boolean) {
-        (row as? android.view.ViewGroup)?.let { group -> group.clipChildren=hide; group.clipToPadding=hide }
-        row.animate().cancel()
-        row.alpha=if(hide) 0f else 1f
-        val restore=topAreaRestore[row] ?: LinearLayout.LayoutParams.WRAP_CONTENT
-        row.layoutParams=row.layoutParams.apply { height=if(hide) 0 else restore }
-    }
-
-    fun setTopAreaHidden(hide: Boolean,animate: Boolean=true) {
-        if(topAreaHidden==hide || topArea.isEmpty()) return
-        topAreaHidden=hide
-        // 搜索页：页头收起会把提示词那一行压成 0 高，而输入框的 `nextFocusDownId` 还指着
-        // 那些芯片——按回车时 `focusSearch` 会把它交回来、`requestFocus` 却必然失败，
-        // 于是 `TextView` 抛「focus search returned a view that wasn't able to take focus!」。
-        // 收展状态一变就按当前实际可聚焦情况重接一次。
-        if(tab==TAB_SEARCH) wireSearchHeadDown(suggestButtons.firstOrNull())
-        // [animate] 为 false 时直接到位：用于「按当前滚动位置把状态摆正」那一次
-        // （进页面 / 恢复位置之后），那时做动画反而会让页头闪一下。
-        // 首页是**未窗口化**的一整棵树（7 栏 ≈ 77 张卡 ≈ 800 个 View）：高度动画每帧都要
-        // 整页 relayout，200ms = 12 次全页布局，正好叠在「按住下键滚动 → 页头收起」这个
-        // 最高频动作上。这里直接到位，只丢一点动画感；栅格路径已经窗口化（约 30 个 View），
-        // 照旧做动画。
-        val span=if(animate && TvStyle.animate && homeScreen==null) TvStyle.DURATION else 0L
-        topAreaSettleUntil=android.os.SystemClock.elapsedRealtime()+span+120
-        topArea.forEach { row ->
-            val from=row.height
-            val to=if(hide) 0 else expandedHeightOf(row)
-            // 先摘掉再取消：被取消的那条动画结束回调不会再回头改这一行的高度。
-            topAreaAnimators.remove(row)?.cancel()
-            row.animate().cancel()
-            row.animate().alpha(if(hide) 0f else 1f).setDuration(span).start()
-            // 收起过程中不再让子控件画到行外，展开时立刻恢复（焦点描边要继续画得出来）。
-            (row as? android.view.ViewGroup)?.let { group -> group.clipChildren=hide; group.clipToPadding=hide }
-            // 低内存设备（TvStyle.animate=false）直接到位，不排队动画；没有高度差时也一样。
-            if(span==0L || from==to) { settleTopAreaRow(row,hide); return@forEach }
-            topAreaAnimators[row]=android.animation.ValueAnimator.ofInt(from,to).apply {
-                duration=span
-                interpolator=android.view.animation.DecelerateInterpolator()
-                addUpdateListener { animation ->
-                    row.layoutParams=row.layoutParams.apply { height=animation.animatedValue as Int }
-                }
-                addListener(object: android.animation.AnimatorListenerAdapter() {
-                    override fun onAnimationEnd(animation: android.animation.Animator) {
-                        // 摘掉自己这一步必须是原子的：这条回调也可能由 cancel() 同步触发。
-                        if(topAreaAnimators.remove(row)===this@apply) settleTopAreaRow(row,hide)
-                    }
-                })
-                start()
-            }
-        }
-    }
-
-    /** 动画结束：收起的行高度归零，展开的行还原成登记时的 LayoutParams 高度。 */
-    private fun settleTopAreaRow(row: View,hide: Boolean) {
-        applyTopAreaState(row,hide)
-        // 展开到位后重新量一次真实高度，作为下一次收起 / 展开的基准。
-        if(!hide) row.post { if(topArea.contains(row) && row.height>0) topAreaHeights[row]=row.height }
-    }
+    fun setTopAreaHidden(hide: Boolean,animate: Boolean=true) = setTopAreaHiddenImpl(hide,animate)
     var prefetchAttemptAt=0L
     var prefetchAttempts=0
     var homeScreen: HomeScreen?=null
