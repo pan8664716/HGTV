@@ -348,7 +348,28 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 16：ContentRepository 账号模块大块迁移
+
+状态：已完成。
+
+- 将账号资料、收藏、历史、点赞、预约、写接口、清空历史和账号聚合整体移到
+  `ContentRepositoryAccount.kt`。
+- 公开账号方法保留在 `ContentRepository` 上，只委托到内部扩展实现，调用方签名不变。
+- 账号传输、重试、退避、日志、写队列、历史分片和并发装配保持原实现。
+- 为跨文件扩展开放了账号相关内部成员，均使用 `internal`，没有扩大公开 API。
+- `ContentRepository.kt` 从 5023 行降到 4629 行；`ContentRepositoryAccount.kt` 为 417 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续对 `ContentRepository` 做职责级大块拆分，优先账号 API 与详情/作者大段，
-保留公开方法包装和反射入口。顶部区域与焦点逻辑仍保持原位。
+继续迁移 `ContentRepository` 的详情、相关作品和作者作品大段，保留公开方法包装、
+详情缓存、作者缓存和发行方并发探测。顶部区域与焦点逻辑仍保持原位。
