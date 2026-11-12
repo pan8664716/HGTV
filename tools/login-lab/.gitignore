@@ -1,4 +1,0 @@
-# 本机运行产物：登录态、日志、截图
-.runtime/
-__pycache__/
-.playwright-cli/

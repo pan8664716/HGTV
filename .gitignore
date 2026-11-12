@@ -35,17 +35,23 @@ signing.properties
 secrets.properties
 
 # Local captures, proofing sheets and delivery artifacts
-docs/preview/.local/
-# playwright-cli 的本机会话日志（浏览器调试用，不入库）
-.playwright-cli/
 /captures/
 /downloads/
 /tmp/
-/outputs/
 .cxx/
 .externalNativeBuild/
 
+# 以下目录只保留本机资料、脚本产物与调试记录，整个目录不参与提交。
+# 已入库的同名文件会通过 git rm --cached 从索引移除，本机文件保留。
+/tools/
+/outputs/
+/docs/
+/artifacts/
+/.workbuddy-ai/
+/.playwright-cli/
+/.codex/
+/.ccg/
+
 # 本机调试与备份产物（不入库）
-.codex/
 android_backup_*/
 android_original_backup_*.zip
