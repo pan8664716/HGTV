@@ -280,13 +280,28 @@ class PhoneAccountActivity : PhoneActivity() {
             setPadding(dp(16), dp(16), dp(16), dp(16))
             applySoft(SoftStyle.RAISED, PhoneStyle.surface, PhoneStyle.RADIUS_CARD, 5f)
         }
-        card.addView(TextView(this).apply {
-            text = (profile?.nickname?.take(1) ?: "红")
-            setTextColor(PhoneStyle.text)
-            phoneSize(20)
-            gravity = Gravity.CENTER
+        val avatarSize = dp(56)
+        val avatar = FrameLayout(this).apply {
             applySoft(SoftStyle.RAISED, PhoneStyle.surfaceHigh, 26f, 4f)
-        }, LinearLayout.LayoutParams(dp(56), dp(56)))
+        }
+        val avatarImage = ImageView(this).apply {
+            scaleType = ImageView.ScaleType.CENTER_CROP
+            com.hgtv.star.shared.compat.clipToCircleCompat(this)
+        }
+        avatar.addView(avatarImage, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        val avatarUrl = profile?.avatar.orEmpty()
+        if (avatarUrl.isNotBlank()) {
+            PhoneServices.artwork(this).load(
+                avatarImage,
+                avatarUrl,
+                widthPx = avatarSize,
+                heightPx = avatarSize,
+            )
+        }
+        card.addView(avatar, LinearLayout.LayoutParams(avatarSize, avatarSize))
 
         val names = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
@@ -301,7 +316,7 @@ class PhoneAccountActivity : PhoneActivity() {
             ellipsize = android.text.TextUtils.TruncateAt.END
         })
         val sub = buildList {
-            if (!profile?.displayId.isNullOrBlank()) add("平台号 ${profile?.displayId}")
+            if (!profile?.displayId.isNullOrBlank()) add(profile?.displayId.orEmpty())
             profile?.fans?.let { add("粉丝 $it") }
             profile?.follows?.let { add("关注 $it") }
         }.joinToString(" · ")

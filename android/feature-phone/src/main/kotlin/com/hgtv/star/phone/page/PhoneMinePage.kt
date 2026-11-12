@@ -441,7 +441,7 @@ class PhoneMinePage(
         }
         topSub.text = when {
             !account.signedIn -> "点这里登录 · 记录仅保存在本机"
-            !account.displayId.isNullOrBlank() -> "平台号 ${account.displayId}"
+            !account.displayId.isNullOrBlank() -> account.displayId.orEmpty()
             else -> "点这里查看账号"
         }
         topAccount.contentDescription = if (account.signedIn) {
