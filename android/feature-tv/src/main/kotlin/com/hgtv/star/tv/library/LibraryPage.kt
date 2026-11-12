@@ -219,7 +219,7 @@ fun TvMainActivity.invalidatePage() {
     detailAuthorRefresh=null
     detailAuthorLoading=false
     detailAuthorToken++
-    // 播放页那两块作品浮层的重铺入口同理（见 `MainActivityPlayerActions.kt`）。
+    // 播放页那两块作品浮层的重铺入口同理（见 `player/PlayerActions.kt`）。
     playerStripRefresh=null
 }
 fun TvMainActivity.releaseCatalogViews() {

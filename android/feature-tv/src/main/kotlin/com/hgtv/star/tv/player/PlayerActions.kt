@@ -9,7 +9,7 @@ import com.hgtv.star.tv.player.RelatedPanel
 import com.hgtv.star.tv.R
 
 // 播放设置面板**第一行那排动作**（相关剧集 / 作者作品 / 加入收藏 / 查看简介）的实现。
-// 按钮本身在 `MainActivityPlaybackMenu.kt` 的 `buildPlaybackMenu` 里挂上去，这里只做「按下去之后」。
+// 按钮本身在 `player/PlaybackMenuController.kt` 的 `buildPlaybackMenu` 里挂上去，这里只做「按下去之后」。
 //
 // 前两项与简介页的「相关剧集 / 作者作品」**共用同一份数据与同一份铺法**：
 // 数据是 `prefetchRelated` / `prefetchAuthorWorks` 已经取好的那一份（同一部剧不会拉两次），

@@ -80,12 +80,12 @@ import com.hgtv.star.shared.nav.Route
 
 class TvMainActivity: Activity() {
     /*
-     * 本类的代码按功能拆在 TvMainActivity* 这一组文件里（本文件保留：状态字段、生命周期、
+     * 本类的代码按功能拆在 `tv/` 下的业务子目录里（本文件保留：状态字段、生命周期、
      * 返回键与系统回调）。拆出去的那部分写成了 TvMainActivity 的扩展成员，因此它们在同一个
      * 包、同一个模块内互相可见——被别的文件用到的字段 / 方法在这里一律是 internal，
      * 只有确实只在本文件内部使用的才是 private（例如 goBack / confirmExit / tick）。
      *
-     * 也就是说：**出现在别的 TvMainActivity* 文件里的东西不能改回 private**，否则编译不过。
+     * 也就是说：**出现在其它扩展文件里的东西不能改回 private**，否则编译不过。
      * 反过来说，看一眼可见性就知道这个字段有没有跨文件共享，排错时省一步全局搜索。
      */
     // 主题可以在设置里随时切换，因此这几个高频令牌写成 getter 而不是构造期快照：
@@ -1774,7 +1774,7 @@ class TvMainActivity: Activity() {
     /** 播放设置面板的外壳（固定屏幕下三分之一、负责裁剪与背板渐变）；摘浮层要摘这一层。 */
     var playbackMenuShell: View?=null
     /**
-     * 播放设置面板的**实例缓存**（见 `MainActivityPlaybackMenu.kt` 的 [obtainPlaybackMenu]）。
+     * 播放设置面板的**实例缓存**（见 `player/PlaybackMenuController.kt` 的 [obtainPlaybackMenu]）。
      *
      * 面板一次要建八九行、三十来枚按钮，每枚都是一块新拟态底板——全在 UI 线程。
      * 短按菜单键那一下就是弹幕停一下、遥控器迟一拍。缓存之后重复打开只剩「挂上去 +
@@ -1790,7 +1790,7 @@ class TvMainActivity: Activity() {
     /** 预热播放设置面板的排队任务（见 [warmPlaybackMenu]）：同一时刻只留一个。 */
     var warmPlaybackMenuTask: Runnable?=null
     /**
-     * 播放页「相关剧集 / 作者作品」浮层的重铺入口（见 `MainActivityPlayerActions.kt`）。
+     * 播放页「相关剧集 / 作者作品」浮层的重铺入口（见 `player/PlayerActions.kt`）。
      *
      * 数据是详情页那一份缓存（`prefetchRelated` / `prefetchAuthorWorks`），落地时机比浮层晚：
      * 结果到了就调这里就地重铺那一块，而不是让用户关掉浮层再打开一次。

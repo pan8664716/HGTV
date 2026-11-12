@@ -219,7 +219,7 @@ class PlaybackMenu(private val activity: Activity) : LinearLayout(activity) {
     /**
      * 把某一行的选中态同步到 [index]，**不重建任何控件**。
      *
-     * 面板被缓存复用时会走到这里（见 `MainActivityPlaybackMenu.kt` 的 [obtainPlaybackMenu]）：
+     * 面板被缓存复用时会走到这里（见 `player/PlaybackMenuController.kt` 的 [obtainPlaybackMenu]）：
      * 上次打开之后用户可能换过清晰度 / 倍速 / 显示方式，重新挂上去之前要按当前偏好刷一遍。
      * 滑动条行没有 Chip，`chips()` 为空，这一步自然跳过（它的值由 [sliderValue] 同步）。
      */

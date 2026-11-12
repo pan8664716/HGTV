@@ -248,7 +248,7 @@ fun TvMainActivity.showCatalog(
         historyClearButton(top,ButtonSize.COMPACT,gap=TvStyle.GAP_BLOCK)
     }
     // 「推荐」入口（需求 1 / 5）：圆形，紧挨在搜索按钮**左边**。
-    // 它不属于五个标签（点它进的是一条独立的播放流，见 MainActivityRecommend.kt），
+    // 它不属于五个标签（点它进的是一条独立的播放流，见 home/RecommendPage.kt），
     // 因此不进 [nav]（那一份是「标签入口」：小圆点、按 key 索引、可隐藏都按它算），
     // 而是单独存进 [recommendIcon]；`navIcons()` 会把它一起返回，全站的
     // 「圆形入口 ↔ 内容」焦点链因此自动带上它，不必每个页面各补一处。

@@ -48,7 +48,7 @@ private const val CAPTION_OFFSET=16
  * 常态没有底板，只有字或图标；拿到焦点时按全站按钮的焦点样式点亮，圆角收成小圆角矩形。
  *
  * 只负责「把字符排好、把按键交给调用方」：字符怎么写进输入框、联想词怎么铺，
- * 全在 `MainActivityHongguoSearch.kt` 里。
+ * 全在 `detail/HongguoSearchPage.kt` 里。
  */
 class HongguoKeyboard(
     private val activity: TvMainActivity,

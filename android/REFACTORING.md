@@ -47,7 +47,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 | `feature-phone/.../PhonePlayerActivity.kt` | 4735 |
 | `feature-tv/.../MainActivity.kt` | 2821 |
 | `feature-phone/.../PhoneFeedView.kt` | 2387 |
-| `feature-tv/.../MainActivityPlayback.kt` | 2232 |
+| `feature-tv/.../player/PlaybackController.kt` | 2232 |
 | `shared/.../Library.kt` | 2027 |
 
 ## 批次记录
@@ -294,7 +294,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 异常类型优先级、cause 深度上限 8、消息长度上限和稳定短码保持不变。
 - `playbackFailureTag`、`playbackFailureReason`、`networkFailureOf` 保留原顶层包装，
   因此 `MainActivityPlaybackKt` facade 不变。
-- `MainActivityPlayback.kt` 从 2232 行降到 2175 行；`PlaybackFailureLabels.kt` 为 50 行。
+- `player/PlaybackController.kt` 从 2232 行降到 2175 行；`PlaybackFailureLabels.kt` 为 50 行。
 
 验证：
 
@@ -329,12 +329,12 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 状态：已完成。
 
-- `MainActivityPlayback.kt` 从 2175 行拆为四个职责文件。
+- `player/PlaybackController.kt` 从 2175 行拆为四个职责文件。
 - 使用 `@JvmMultifileClass` 保留 `MainActivityPlaybackKt` 静态 facade。
-- 队列、预取、选集推进：`MainActivityPlayback.kt`，770 行。
-- 网络恢复、失败归因、自动重试与错误页：`MainActivityPlaybackRecovery.kt`，709 行。
-- HUD、媒体会话、播放控制与睡眠停止：`MainActivityPlaybackHud.kt`，301 行。
-- 画面几何、清晰度/解码/弹幕选择器与 seek：`MainActivityPlaybackGeometry.kt`，489 行。
+- 队列、预取、选集推进：`player/PlaybackController.kt`，770 行。
+- 网络恢复、失败归因、自动重试与错误页：`player/PlaybackRecovery.kt`，709 行。
+- HUD、媒体会话、播放控制与睡眠停止：`player/PlaybackHud.kt`，301 行。
+- 画面几何、清晰度/解码/弹幕选择器与 seek：`player/PlaybackGeometry.kt`，489 行。
 - 只将跨文件使用的 `resetBudgetsForManualRetry` 从 private 调整为 internal，行为未变。
 - 编译产物已确认仍包含 `MainActivityPlaybackKt` 和 `MainActivityPlaybackKt$WhenMappings`。
 
@@ -583,8 +583,32 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 26：TV 页面扩展文件按业务分目录
+
+状态：已完成。
+
+- 将 27 个 `MainActivityXxx.kt` 扩展文件移入 `account / home / detail / search /
+  player / settings / input / navigation / system / library`。
+- 文件名改为职责名，例如 `AccountPanel.kt`、`HomePage.kt`、`DetailPage.kt`、
+  `SearchPage.kt`、`PlayerController.kt`、`SettingsPage.kt`、`TouchController.kt`。
+- 播放多文件 facade 继续使用原有 `@file:JvmName("MainActivityPlaybackKt")` 和
+  `@file:JvmMultifileClass`，baseline profile 中的 `MainActivityPlaybackKt` 保持不变。
+- 其他扩展文件的 baseline facade 名已同步到新的职责文件名。
+- Kotlin 包名仍为 `com.hgtv.star.tv`，没有改变扩展函数的 JVM 调用关系。
+- 仅移动/重命名文件并更新注释引用，没有修改 UI、生命周期、焦点、播放或网络行为。
+
+验证：
+
+- `git diff --check` 通过。
+- `:feature-tv:compileDebugKotlin` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续把 `TvMainActivity*` 扩展文件按 Home、Detail、Player、Recommend、Search、
-Account、Settings、Navigation 分目录并改成职责文件名；保留 `@file:JvmName` 的
-已有播放多文件 facade，避免 baseline profile 和反射引用变化。
+继续按页面职责拆 `TvMainActivity.kt` 的状态容器和生命周期代码，优先处理
+`home/RecommendPage.kt` 与 `player/PlayerController.kt` 的剩余大块。

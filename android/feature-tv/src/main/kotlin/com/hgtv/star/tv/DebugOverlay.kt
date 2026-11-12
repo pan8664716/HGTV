@@ -369,7 +369,7 @@ private fun clockText(millis: Long): String {
  */
 fun TvMainActivity.refreshDebugOverlay(): Boolean {
     val body=debugBody ?: return false
-    // 推荐页是一条独立的播放链路（`screen == "recommend"`，见 MainActivityRecommend.kt），
+    // 推荐页是一条独立的播放链路（`screen == "recommend"`，见 home/RecommendPage.kt），
     // 但用户看到的就是一个播放画面：面板必须给同一套播放现场（剧集 / 状态 / 解码 / 画面 / 帧数），
     // 不能退回「页面」那一套。早先只判 `player`，进推荐后整块面板就变成了首页那种页面信息。
     val rows=if(screen=="player" || screen=="recommend") playerDebugRows() else pageDebugRows()

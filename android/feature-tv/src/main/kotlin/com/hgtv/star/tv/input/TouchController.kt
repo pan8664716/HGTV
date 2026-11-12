@@ -674,7 +674,7 @@ fun TvMainActivity.seekStep(direction: Int) {
  * 这里补一块，**只在触屏设备上挂**，`hud` 本身的布局一个像素都不动。
  *
  * * 播放页：六枚按钮（选集 / 快退 / 播放 / 快进 / 设置 / 返回），与遥控器的六键一一对应
- *   （见 `MainActivityKeyMap.kt` 的出厂绑定），因此两端的操作心智一致，用户不会学到两套；
+ *   （见 `navigation/TvKeyMap.kt` 的出厂绑定），因此两端的操作心智一致，用户不会学到两套；
  * * 推荐页：**不摆这六枚**，只放一枚「剧名」标题，点它进正片（见 [attachRecommendEntry]）。
  */
 fun TvMainActivity.attachTouchBar() {

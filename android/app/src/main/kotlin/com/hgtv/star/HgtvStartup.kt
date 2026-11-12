@@ -59,7 +59,7 @@ internal object HgtvStartup {
      * 进程启动时在后台预热书库和运行时。
      *
      * 不等待结果，也不把任何回调绑到启动页：Activity 可以立即创建，书库读盘、
-     * 缓存初始化、会话存储和网络预热在后台并行完成。MainActivity 自己再调
+     * 缓存初始化、会话存储和网络预热在后台并行完成。TvMainActivity 自己再调
      * [com.hgtv.star.shared.data.Library.loadAsync] 时，已加载就直接命中，
      * 加载中则自然加入同一条后台任务。
      */
