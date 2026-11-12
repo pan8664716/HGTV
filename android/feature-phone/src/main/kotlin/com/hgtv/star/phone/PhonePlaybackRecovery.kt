@@ -408,8 +408,8 @@ internal fun PhonePlayerActivity.cancelPlaybackRequest() {
 
 /** 取地址失败后那段 3 / 6 秒延迟重试，换集后不再执行。 */
 internal fun PhonePlayerActivity.cancelSourceRetry() {
-    sourceRetryRunnable?.let { root.removeCallbacks(it) }
-    sourceRetryRunnable = null
+    sourceRetryState.runnable?.let { root.removeCallbacks(it) }
+    sourceRetryState.runnable = null
 }
 
 /** 真正出画面了：重试窗口结束、错误页收起（与电视端的 `onRenderedFirstFrame` 同一职责）。 */

@@ -342,8 +342,14 @@ class PhonePlayerActivity : PhoneActivity() {
     internal var nextSeasonHintSticky: Boolean
         get()=hintSticky
         set(value) { hintSticky=value }
+    internal var sourceRetryHintSticky: Boolean
+        get()=hintSticky
+        set(value) { hintSticky=value }
     /** 提示的代次：换集后那句「第N集」延迟收起时，只收自己那一句。 */
     private var hintToken = 0
+    internal var sourceRetryHintToken: Int
+        get()=hintToken
+        set(value) { hintToken=value }
 
     // —— 上下滑换集：与推荐页同一套「整页跟手」的翻页 ——
     //
@@ -447,34 +453,8 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 当前正在取地址 / 准备媒体源的起播请求；换集时连网络一起取消。 */
     internal var playRequestJob: Job? = null
     internal var playRequestScope: com.hgtv.star.core.RequestScope? = null
-    /** 取地址失败后的延迟重试；换集时一并撤掉。 */
-    internal var sourceRetryRunnable: Runnable? = null
-
-    // —— 换集取地址失败的兜底（见 [onEpisodeSourceMissing]）——
-
-    /** 换集取地址 / 准备最多自动重试几次。 */
-    private val sourceRetryLimit = 2
-
-    /** 普通失败按 3 秒 / 6 秒退避；取地址超时已经等满预算，第一次立即重试。 */
-    private val sourceRetryStepMs = 3_000L
-
-    /**
-     * 取地址失败的合成错误码。
-     *
-     * 落在「网络 / 源」那一段（2000–2999），错误页据此说「网络或音频输出暂时不可用」，
-     * 而不是把 0 当成错误码念给用户听。
-     */
-    private val sourceMissingCode = 2000
-
-    /** 上一次重试是针对哪一集：换了另一集就归零，不会把别的集的重试次数带过来。 */
-    private var sourceRetryEpisode = ""
-    private var sourceRetryCount = 0
-
-    /** 用户 / 自动重试发起的新一轮尝试：地址重试次数也要重新给满。 */
-    internal fun resetSourceRetryForFreshAttempt() {
-        sourceRetryEpisode = ""
-        sourceRetryCount = 0
-    }
+    /** 取地址失败后的重试次数、目标集与延迟任务。 */
+    internal val sourceRetryState = PhoneSourceRetryState()
 
     /**
      * 解码现场（`:shared` 的 [com.hgtv.star.shared.media.PlaybackMetrics]）：
@@ -2725,100 +2705,6 @@ class PhonePlayerActivity : PhoneActivity() {
      * 留在屏幕上，不黑屏）；仍不行才摆错误页——那里的「立即重试」与「下一集」
      * 才是用户真正需要的出口，而不是一句没人看得见的字。
      */
-    private fun onEpisodeSourceMissing(
-        d: Detail,
-        episodeIndex: Int,
-        at: Long,
-        problem: Throwable? = null,
-    ) {
-        val episodeId = d.episodes.getOrNull(episodeIndex) ?: return
-        val timedOut = problem != null && PlaybackFailures.timedOut(problem)
-        if (problem != null && com.hgtv.star.core.isInterruption(problem) && !timedOut) return
-        if (problem != null && PlaybackFailures.deviceRejected(problem)) {
-            val taken = DeviceHealer.healAsync(
-                library,
-                PhoneServices.repository(this),
-                "取播放地址被拒",
-            ) { healed ->
-                if (healed) play(episodeIndex, at)
-                else onEpisodeSourceMissing(d, episodeIndex, at, problem)
-            }
-            if (taken) return
-        }
-        if (problem != null) {
-            android.util.Log.w(
-                "HGTV-RECOVER",
-                "source missing episode=${episodeIndex + 1} cache invalidated=${problem is java.io.IOException}",
-                problem,
-            )
-        }
-        if (sourceRetryEpisode != episodeId) {
-            sourceRetryEpisode = episodeId
-            sourceRetryCount = 0
-        }
-        if (sourceRetryCount < sourceRetryLimit) {
-            sourceRetryCount++
-            // 超时已经耗掉了完整的取地址预算，第一次重试立即执行；后续仍按退避。
-            val wait = if(timedOut && sourceRetryCount==1) 0L else sourceRetryStepMs * sourceRetryCount
-            // 与「第 N 集」那类提示走同一套 token：后到的提示会把这一条顶掉。
-            hint.text = if(wait==0L) {
-                "第 ${episodeIndex + 1} 集取地址超时，正在重试…"
-            } else {
-                "第 ${episodeIndex + 1} 集还没取到播放地址，${wait / 1000} 秒后重试…"
-            }
-            hintToken++
-            hintSticky = true
-            hint.visibility = View.VISIBLE
-            hint.bringToFront()
-            val token = hintToken
-            cancelSourceRetry()
-            val retry = object : Runnable {
-                override fun run() {
-                    if (sourceRetryRunnable === this) sourceRetryRunnable = null
-                    if (!isFinishing && !isDestroyed) {
-                        // 重试前先把提示收掉：重试成功时不该还挂着「重试中」。
-                        if (hintToken == token) {
-                            hintSticky = false
-                            hint.visibility = View.GONE
-                        }
-                        play(episodeIndex, at)
-                    }
-                }
-            }
-            sourceRetryRunnable = retry
-            root.postDelayed(retry, wait)
-            return
-        }
-        // 额度用完：交给错误页（带「立即重试 / 下一集」），绝不留一块黑屏给用户。
-        hintSticky = false
-        hint.visibility = View.GONE
-        failureStage = com.hgtv.star.core.PlaybackStage.PREPARE
-        showPlaybackError(
-            playbackAttribution(sourceMissingCode),
-            com.hgtv.star.core.GiveUpReason.BUDGET_EXHAUSTED,
-        )
-    }
-
-    /**
-     * 清掉这一集当前所有缓存，并让下一次取流使用新的请求 device_id。
-     *
-     * 与电视端的 `prepareFreshPlaybackRetry` 保持同一条语义：
-     * 地址、索引、首块、预取槽和连接层一起作废，不能只重放同一条失败流。
-     */
-    private fun invalidateEpisodeCacheForRetry(episodeId: String, info: StreamInfo?) {
-        queuedVideo?.let { runCatching { it.close() } }
-        queuedVideo = null
-        queuedEpisodeId = ""
-        PhoneSession.clearNext()
-        playbackSource.invalidate(episodeId)
-        info?.let {
-            val host = runCatching { java.net.URI(it.url).host }.getOrNull().orEmpty()
-            if (host.isNotEmpty()) {
-                com.hgtv.star.shared.media.PlaybackFailures.dropTransportCaches(listOf(host))
-            }
-        }
-    }
-
     /** 本地准备失败必须保留异常：调用方据此决定是否作废缓存后重取。 */
     private fun prepareSource(episodeId: String, info: StreamInfo): RemoteVideo =
         playbackSource.prepare(episodeId, info)
@@ -2906,8 +2792,8 @@ class PhonePlayerActivity : PhoneActivity() {
         armPictureWatchdog()
         // 这一集真的挂上了：取地址失败的重试计数归零（见 `onEpisodeSourceMissing`）。
         // 不清的话，网络恢复回调会拿一个过期的计数把正常播放的这一集重来一遍。
-        sourceRetryEpisode = ""
-        sourceRetryCount = 0
+        sourceRetryState.episode = ""
+        sourceRetryState.count = 0
 
         if (pendingFullscreen) {
             // 画面已经挂上解码器，这时切换全屏不会黑屏。
@@ -3804,7 +3690,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 手机切 Wi-Fi / 5G 比电视频繁：断网那一下正好在取地址，退避还要等 3~12 秒，
      * 而网络其实已经好了。电视端早就有这条，手机端原先连网络状态都不看。
      *
-     * 只在**正在等地址**（[sourceRetryCount] > 0）或**停在错误页**时动手，
+     * 只在**正在等地址**（[sourceRetryState] 的计数 > 0）或**停在错误页**时动手，
      * 正常播放期间网络抖动不该把这一集重来一遍。
      */
     private fun watchNetwork() {
@@ -3817,7 +3703,7 @@ class PhonePlayerActivity : PhoneActivity() {
             override fun onAvailable(network: android.net.Network) {
                 runOnUiThread {
                     if (isFinishing || isDestroyed) return@runOnUiThread
-                    if (errorCard == null && sourceRetryCount == 0) return@runOnUiThread
+                    if (errorCard == null && sourceRetryState.count == 0) return@runOnUiThread
                     cancelAutoRetry()
                     val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
                     play(index, at)

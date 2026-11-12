@@ -814,7 +814,30 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 35：手机播放页取地址重试迁移
+
+状态：已完成。
+
+- 将换集 / 首集取地址失败的设备身份自愈、提示文案、立即与退避重试、次数归零和缓存作废
+  移到 `player/PhoneSourceRetry.kt`。
+- 新增 `PhoneSourceRetryState` 内部状态容器；`cancelSourceRetry`、网络恢复判断和播放
+  成功后的计数归零均改为读取同一状态实例。
+- 新增提示代次与粘滞状态的 `internal` 委托，保留原提示覆盖和延迟收起语义。
+- 迁移后的取地址重试实现体按缩进与状态名归一化后与迁移前逐行一致。
+- `PhonePlayerActivity.kt` 从 4423 行降到 4314 行；`PhoneSourceRetry.kt` 为 119 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `PhonePlayerActivity.kt` 的播放错误、重试与看门狗状态辅助，随后处理相关剧集和
-作者作品浮层职责。
+继续拆 `PhonePlayerActivity.kt` 的相关剧集与作者作品浮层，再处理播放器监听与看门狗辅助。
