@@ -106,14 +106,14 @@ class ContentRepository(
     httpClient: OkHttpClient? = null,
     internal val clock: () -> Long = System::currentTimeMillis,
     /** 播放接口两次请求之间的最小间隔（见 [waitModelSlot]）；测试里传 0，免得真等 3 秒。 */
-    private val modelSpacing: Long = MODEL_SPACING_MS,
+    internal val modelSpacing: Long = MODEL_SPACING_MS,
     /**
      * 播放模型的合并窗口（见 [videoModel]）；测试里传 0 关掉。
      *
      * 缓存在 companion 里（三份实例共用），测试之间会互相污染：同一个 `id@deviceLevel`
      * 在上一个用例里被缓存过，下一个用例就拿到别人的模型，断言全部错位。
      */
-    private val modelCacheTtl: Long = MODEL_CACHE_MS
+    internal val modelCacheTtl: Long = MODEL_CACHE_MS
 ) : RecommendDataSource {
     private val httpRef=lazy(LazyThreadSafetyMode.SYNCHRONIZED) { httpClient ?: defaultHttpClient() }
     val http: OkHttpClient get() = httpRef.value
@@ -352,10 +352,10 @@ class ContentRepository(
      * 以及主实例与预取实例之间的结果互相串味（前者表现为断言错位，后者表现为
      * 预取实例拿到主实例的旧地址却以为是自己的）。
      */
-    private val streamCache=java.util.concurrent.ConcurrentHashMap<String,CachedStream>()
-    private val streamLocks=java.util.concurrent.ConcurrentHashMap<String,Any>()
-    private val modelCache=java.util.concurrent.ConcurrentHashMap<String,Pair<Long,JSONObject>>()
-    @Volatile private var preferredModelPath: String=""
+    internal val streamCache=java.util.concurrent.ConcurrentHashMap<String,CachedStream>()
+    internal val streamLocks=java.util.concurrent.ConcurrentHashMap<String,Any>()
+    internal val modelCache=java.util.concurrent.ConcurrentHashMap<String,Pair<Long,JSONObject>>()
+    @Volatile internal var preferredModelPath: String=""
     /** 清空历史最多试几轮（删完回读校验，还有余量就再来一轮）。 */
     internal val HISTORY_CLEAR_ATTEMPTS = 3
     /** 作者缓存：详情页反复进出时不重复请求（一条几十毫秒，但没必要）。 */
@@ -1042,7 +1042,7 @@ class ContentRepository(
     fun beginEpisode() { deviceLevel=4 }
 
     /** 4 档空响应：升到 5 再请求一次；升到 5 后本集不再回退。 */
-    private fun escalateDeviceLevel() {
+    internal fun escalateDeviceLevel() {
         if(deviceLevel>=5) return
         deviceLevel=5
         NetLog.emit("model device_level 4 -> 5")
@@ -1387,7 +1387,7 @@ class ContentRepository(
      * 动态化**只针对设备属性**（机型 / 系统 / device_id / cdid …），
      * `aid` / `app_name` 这类跟着官方包走就行。
      */
-    private val PROTOCOL_VALUES = linkedMapOf(
+    internal val PROTOCOL_VALUES = linkedMapOf(
         "ac" to "wifi","aid" to "8662","app_name" to "novelread",
         "channel" to "69310258a","ssmix" to "a",
         "device_platform" to "android","os" to "android","language" to "zh",
@@ -1961,512 +1961,8 @@ class ContentRepository(
         deadline: Long,
         playback: PlaybackProfile,
         queue: List<String> = emptyList(),
-    ): JSONObject {
-        // 长时间驻留进程里配置也会过期；这里只排队后台刷新，不等待。
-        refreshTncAsync()
-        // TNC 下发候选域名；最近成功的排第一。播放接口最多在 6 秒预算内试前三条。
-        val hosts=TncConfigStore.orderedApiHosts().take(3)
-        // 播放器打开用 `multi_video_model/player` 取当前集 + 后 14 集；
-        // 单集接口只作为兼容兜底，preload 留给首帧稳定后的后台补货。
-        // 新匿名设备连续发单集请求时，第二发起会被网关静默丢弃（HTTP 200 + 0 字节）。
-        val candidates=listOf(
-            "/novel/player/video_model/v1/",
-            "/novel/player/multi_video_model/v1/"
-        )
-        // 播放接口对**匿名设备**也放行（官方 App 冷启动未登录即可播放，见 HAR），
-        // 前提是这台设备已在服务端注册过（见 [registerDevice]）：未注册回 `101000 服务异常`
-        // 或 `200 + 0 字节`，注册后回 `code 0` + 完整播放模型。
-        // 播放与其它业务请求共用当前主身份；登录后 Cookie 也切到账号设备。
-        val cookie=primaryCookieHeader().takeIf { it.isNotEmpty() }
-        // 记住的那条路径排到最前（见 [preferredModelPath]）。
-        val ordered=if(preferredModelPath.isEmpty()) candidates
-            else candidates.sortedByDescending { it==preferredModelPath }
-        val scope=RequestScope.current()
-        // 同一集刚取过就复用：推荐页预热、正片起播、下一集预取会**同时**要同一集的地址，
-        // 各发一轮就是三份并发（见下面的单飞闸门）。缓存很短（[MODEL_CACHE_MS]），
-        // 地址本身小时级有效，这里只是用来把「同一刻的重复请求」合并掉。
-        // 键里带播放档案、[deviceLevel] 与 [modelCacheGen]：不同类型 / 平台不能复用模型。
-        cachedModel(id,playback)?.let { return it }
-        // **进程级单飞**：这条接口对并发极敏感（20 并发 0 命中、单发 50~80% 命中），
-        // 而点一次播放就可能同时存在主实例 / 预取实例 / 推荐页预热实例三份请求。
-        // 因此整个取地址段串行化：后来的等前一个结束，然后再查一次上面那份缓存。
-        foregroundModelWaiters.incrementAndGet()
-        // 前台开始取当前集时，后台 preload 立即让路：取消它在途请求并释放闸门，
-        // 不让用户点下一集时排在后台补货后面。
-        backgroundModelScope?.cancel()
-        try {
-            val gate=modelGate
-            // 等闸门也用余额兜住：三份实例同时起播时后来者要排队，但绝不允许排到整段预算之外
-            //（[MODEL_GATE_TIMEOUT_MS] 那 25 秒是给「上一发正在慢速完成」留的余量，
-            // 取地址整段已经被 [ADDRESS_DEADLINE_MS] 限死，这里只是个不会先到期的兜底）。
-            val waitMs=remainingOf(deadline).coerceIn(1L,MODEL_GATE_TIMEOUT_MS)
-            if(!gate.tryAcquire(waitMs,TimeUnit.MILLISECONDS)) {
-                throw addressTimeout()
-            }
-            try {
-                cachedModel(id,playback)?.let { return it }
-                // 播放器打开取当前集 + 后 14 集：官方同一批可返回 15 个模型，
-                // 覆盖短剧常见的快速跳到第 8 / 15 集，避免第二次请求撞设备额度。
-                // 更远的集交给首帧稳定后的 preload。
-                val batchIds=(listOf(id)+queue)
-                    .filter { it.matches(Regex("[0-9]{1,30}")) }
-                    .distinct()
-                    .take(PLAYER_MODEL_BATCH_LIMIT)
-                var batchModel: JSONObject?=null
-                for((hostIndex,host) in hosts.withIndex()) {
-                    if(hostIndex>0) {
-                        NetLog.retry("model_batch",hostIndex+1,hosts.size,"previous host returned no model")
-                    }
-                    if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
-                    val hostDeadline=minOf(deadline,clock()+MODEL_HOST_ATTEMPT_MS)
-                    try {
-                        val models=tryBatchModel(
-                            "https://$host",
-                            PLAYER_MODEL_PATH,
-                            "player",
-                            batchIds,
-                            cookie,
-                            hostDeadline,
-                            playback,
-                        )
-                        rememberModels(models,playback)
-                        batchModel=models[id]
-                        if(batchModel!=null) {
-                            TncConfigStore.markHostSuccess(host)
-                            NetLog.emit("model batch host=$host accepted")
-                            break
-                        }
-                    } catch(e: DeviceNotRegisteredException) {
-                        throw e
-                    } catch(e: AddressTimeoutException) {
-                        NetLog.emit("model batch host=$host timeout")
-                    } catch(e: IOException) {
-                        NetLog.emit("model batch host=$host failed ${e.javaClass.simpleName}")
-                    }
-                }
-                if(batchModel!=null) return batchModel
-                val model=fetchModel(id,scope,ordered,hosts,cookie,deadline,playback)
-                rememberModel(id,playback,model)
-                return model
-            } finally {
-                gate.release()
-            }
-        } finally {
-            foregroundModelWaiters.decrementAndGet()
-        }
-    }
+    ): JSONObject = videoModelImpl(id,deadline,playback,queue)
 
-    /** 播放模型的合并缓存键：集 + 播放档案 + 当前档位 + 身份代次（见 [videoModel]）。 */
-    private fun modelCacheKey(id: String,playback: PlaybackProfile)=
-        "$id@${playback.contentType}:${playback.videoPlatform}@$deviceLevel@g$modelCacheGen"
-
-    private fun cachedModel(id: String,playback: PlaybackProfile): JSONObject? {
-        if(modelCacheTtl<=0L) return null
-        val key=modelCacheKey(id,playback)
-        val cached=modelCache[key] ?: return null
-        if(System.currentTimeMillis()-cached.first<=modelCacheTtl) return cached.second
-        modelCache.remove(key)
-        return null
-    }
-
-    private fun rememberModel(
-        id: String,
-        playback: PlaybackProfile,
-        model: JSONObject,
-        at: Long = System.currentTimeMillis(),
-    ) {
-        if(modelCacheTtl<=0L) return
-        val key=modelCacheKey(id,playback)
-        if(modelCache.size>=MODEL_CACHE_LIMIT && !modelCache.containsKey(key)) {
-            modelCache.minByOrNull { it.value.first }?.key?.let(modelCache::remove)
-        }
-        modelCache[key]=at to model
-    }
-
-    private fun rememberModels(models: Map<String,JSONObject>,playback: PlaybackProfile) {
-        if(models.isEmpty() || modelCacheTtl<=0L) return
-        val at=System.currentTimeMillis()
-        models.forEach { (videoId,model) -> rememberModel(videoId,playback,model,at) }
-    }
-
-    /**
-     * [videoModel] 里真正打请求的那一段（持锁执行，见那里的 `modelGate`）。
-     *
-     * 平台只接受**注册下发的 `device_id`**。空响应先按额度/档位问题处理：
-     * 4 档升 5 重发一次；5 档仍为空才视为设备身份失效，交给界面层重注册。
-     */
-    private fun fetchModel(
-        id: String,
-        scope: RequestScope?,
-        ordered: List<String>,
-        hosts: List<String>,
-        cookie: String?,
-        deadline: Long,
-        playback: PlaybackProfile,
-    ): JSONObject {
-        var failure: IOException?=null
-        hostLoop@ for((hostIndex,host) in hosts.withIndex()) {
-            if(hostIndex>0) {
-                NetLog.retry("model_host",hostIndex+1,hosts.size,failure?.message.orEmpty())
-            }
-            val hostDeadline=minOf(deadline,clock()+MODEL_HOST_ATTEMPT_MS)
-            for((pathIndex,path) in ordered.withIndex()) {
-                if(pathIndex>0) {
-                    NetLog.retry("model_path",pathIndex+1,ordered.size,"previous path returned no model")
-                }
-                // 余额用完就停：不要再往下试下一条路径 / 域名。
-                if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) {
-                    throw failure ?: addressTimeout()
-                }
-                val model=try {
-                    RequestScope.withScope(scope) {
-                        tryModelPath("https://$host",path,id,cookie,hostDeadline,playback)
-                    }
-                } catch(e: IOException) {
-                    // 用户切走了（取消域）：这不是「这条路不通」，不该再往下试。
-                    if(isInterruption(e) || e.message=="请求已取消") throw e
-                    // 设备身份失效与路径 / 域名无关：换一条只会再被拒一次。
-                    if(e is DeviceNotRegisteredException) throw e
-                    failure=e
-                    if(e is AddressTimeoutException) continue@hostLoop
-                    null
-                }
-                if(model!=null) {
-                    preferredModelPath=path
-                    TncConfigStore.markHostSuccess(host)
-                    NetLog.emit("model host=$host path=$path accepted")
-                    return model
-                }
-            }
-        }
-        // 全失败：把记住的那条也作废，下一次从候选表第一条重新开始——
-        // 否则记着的那条死路会一直排在队首，每次起播先白花一次往返。
-        preferredModelPath=""
-        throw failure ?: IOException("播放接口暂不可用")
-    }
-
-    /**
-     * 在一条路径上请求一次播放模型。
-     *
-     * 空响应先由 [probeModelPath] 升到 5 档重试；仍为空才抛出
-     * [DeviceNotRegisteredException]，让两端现有的设备自愈流程重新注册。
-     */
-    private fun tryModelPath(
-        host: String,
-        path: String,
-        id: String,
-        cookie: String?,
-        deadline: Long,
-        playback: PlaybackProfile,
-    ): JSONObject {
-        if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        return probeModelPath(host,path,id,cookie,deadline,playback)
-    }
-
-    /** 播放请求使用当前唯一的主身份；登录后以账号设备为准。 */
-    private fun modelProfile(): Map<String,String> {
-        val identity=primaryIdentity()
-        val registeredId=if(identity.account) {
-            identity.profile["device_id"].orEmpty()
-        } else {
-            deviceIdentity["device_id"].orEmpty()
-        }
-        val registeredIid=if(identity.account) {
-            identity.profile["iid"].orEmpty()
-                .ifBlank { identity.profile["install_id"].orEmpty() }
-        } else {
-            deviceIdentity["iid"].orEmpty()
-        }
-        // 未登录时必须由本机注册结果提供身份，不能拿 VendorConstants.device 的内置旧 ID
-        // 冒充已注册设备。登录态则必须有账号设备自己的 device_id + iid/install_id。
-        if(registeredId.isBlank() || registeredIid.isBlank()) {
-            throw DeviceNotRegisteredException()
-        }
-        val base=LinkedHashMap(VendorConstants.device).apply {
-            putAll(identity.profile)
-            put("device_id",registeredId)
-            put("iid",registeredIid)
-            putAll(PROTOCOL_VALUES)
-            for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
-            this["version_name"]="7.3.9.32"
-        }
-        return modelQueryProfile(base)
-    }
-
-    /** 官方 `video_model` query 的字段集合与顺序；设备档案里的其它字段不带进播放请求。 */
-    private fun modelQueryProfile(values: Map<String,String>): LinkedHashMap<String,String> =
-        linkedMapOf<String,String>().apply {
-            for(key in MODEL_QUERY_KEYS) values[key]?.takeIf { it.isNotBlank() }?.let { put(key,it) }
-        }
-
-    /**
-     * 主设备拿到 `HTTP 200 + 空 body` 后，只取一台备用设备试一次。
-     *
-     * 只返回成功的播放模型，不改主设备身份、不落盘备用设备的使用结果。
-     */
-    private fun tryBackupModel(
-        host: String,
-        path: String,
-        id: String,
-        cookie: String?,
-        deadline: Long,
-        playback: PlaybackProfile,
-    ): JSONObject? {
-        val backups=runCatching { playbackBackupDevices?.invoke() }.getOrNull().orEmpty()
-        for((index,backup) in backups.withIndex()) {
-            if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
-            if(index>0) {
-                NetLog.retry("model_backup",index+1,backups.size,"previous backup device returned no model")
-            }
-            try {
-                val model=probeModelPath(host,path,id,cookie,deadline,playback,backup)
-                NetLog.emit("model backup accepted id=${backup.id.takeLast(6)}")
-                return model
-            } catch(e: IOException) {
-                if(isInterruption(e) || e.message=="请求已取消") throw e
-            }
-        }
-        return null
-    }
-
-    /**
-     * 作废当前设备签发的播放模型缓存。
-     *
-     * 重试时设备号本身不能伪造，只能等界面层重新注册；这里只保证下一次取流
-     * 不会命中旧身份留下的模型。
-     */
-    private fun invalidateModelCache(): String {
-        synchronized(deviceRotateLock) { modelCacheGen++ }
-        return deviceIdentity["device_id"].orEmpty()
-    }
-
-    /**
-     * 在 [path] 上打**一次**播放模型请求。
-     *
-     * 2026-11-06 实测：同一个请求用注册下发的 `device_id` 返回 `code 0` 和完整模型，
-     * 改成任意随机 15 位数字则稳定返回 `200 + 0 字节`。因此空响应先升 5 档重发；
-     * 5 档仍为空时再按设备身份失效处理，交给界面层重新注册。
-     */
-    private fun probeModelPath(
-        host: String,
-        path: String,
-        id: String,
-        cookie: String?,
-        deadline: Long,
-        playback: PlaybackProfile,
-        backup: PlaybackBackupDevice? = null,
-    ): JSONObject {
-        // 这一发最多能用多少时间 = 整段剩余预算（见 [ADDRESS_DEADLINE_MS]）。
-        // 全部用同一份「剩余预算」派生 client，因此预算是**整段**上限，不是每一发各算一次。
-        val budget=remainingOf(deadline)
-        if(budget<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        val body=ContentPlaybackParser.modelBody(id,path,playback,deviceLevel)
-        val payload=java.io.ByteArrayOutputStream().also { out ->
-            java.util.zip.GZIPOutputStream(out).use { it.write(body.toByteArray()) }
-        }.toByteArray()
-        waitModelSlot()
-        if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        // 注册档案包含大量仅供 device_register 使用的字段。播放接口只接受
-        // MODEL_QUERY_KEYS 这一组；整份档案直接交给 signer 会把 openudid、
-        // profile-format、device_token 等全部拼进 query，服务端随即回 200 + 0 字节。
-        val profile=backup?.profile?.let { backupProfile ->
-            modelQueryProfile(LinkedHashMap(VendorConstants.device).apply {
-                putAll(backupProfile)
-                putAll(PROTOCOL_VALUES)
-                for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
-                this["version_name"]="7.3.9.32"
-            })
-        } ?: modelProfile()
-        val effectiveCookie=backup?.cookieHeader ?: cookie
-        // 档案要同时交给 query 与密文（`x-medusa` 里编了 device_id），否则服务端回 110001。
-        val signed=signer.sign(host+path,profile,payload,deviceOverride=profile)
-        val extra=linkedMapOf<String,String>()
-        if(effectiveCookie!=null) extra["Cookie"]=effectiveCookie
-        extra["Content-Encoding"]="gzip"
-        // 视频接口按官方 7.3.9.32 抓包单独覆盖：
-        // * passport-sdk-version=5051452（不是内容接口的 6031190）
-        // * lc=101 / x-ss-dp=8662
-        // * 官方没有空 x-tt-dt，也没有 x-tt-request-tag
-        val videoHeaders=LinkedHashMap(signed.headers).apply {
-            remove("x-tt-dt")
-            remove("x-tt-request-tag")
-            put("passport-sdk-version","5051452")
-            put("lc","101")
-            put("x-ss-dp","8662")
-            put("x-vc-bdturing-sdk-version","4.0.3.cn")
-            put("x-tt-trace-id",VendorConstants.traceId())
-            putAll(extra)
-        }
-        val request=signed.copy(headers=videoHeaders)
-        var stable=false
-        val response=text(
-            signed.url,
-            request,
-            client=addressClient(budget),
-            storeRegionHeaders=false,
-        ) { r -> stable=r.header("tt_stable")=="1" }
-        // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
-        if(response.isBlank()) {
-            NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=0 stable=$stable")
-            if(backup!=null) throw IOException("备用设备未返回播放模型")
-            // 主设备空响应先用备用设备顶替；备用池不可用时再走 4→5 档与身份自愈。
-            tryBackupModel(host,path,id,cookie,deadline,playback)?.let { return it }
-            // 4 档空响应先升 5 重发一次。若 5 仍为空，再按设备身份失效交给自愈流程。
-            if(deviceLevel<5) {
-                NetLog.retry("model_device_level",2,2,"empty model response at device_level=$deviceLevel")
-                escalateDeviceLevel()
-                return probeModelPath(host,path,id,cookie,deadline,playback)
-            }
-            noteDeviceRejected()
-            invalidateModelCache()
-            throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
-        }
-        val data=JSONObject(response)
-        val code=data.optInt("Code",data.optInt("code",0))
-        NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=${response.length} code=$code")
-        // 业务码非 0 就是这一条路不通（110001 是旧路径的「未知异常」，100001 是参数错误）。
-        // `101000 服务异常` 正是「这台设备没在服务端注册过」那一条，单独记一笔：
-        // 界面层据此换一份身份重注册，而不是让用户看到「所有影片都放不了」。
-        if(code==101000 && backup==null) { noteDeviceRejected(); invalidateModelCache() }
-        if(code!=0) {
-            if(code==101000 && backup!=null) throw IOException("备用设备不可用")
-            throw IOException("播放接口暂不可用（${code}）")
-        }
-        val model=ContentPlaybackParser.videoModelOf(data)
-            ?: throw IOException("播放接口暂不可用（没有播放模型）")
-        return model
-    }
-
-    /**
-     * 打一次官方批量播放模型请求，并解析 `data.<video_id>.video_model`。
-     *
-     * 批量接口的空响应先升到 5 档重发一次；5 档仍为空才按设备身份失效处理。
-     * 非空但业务失败时由调用方走单集兼容兜底。
-     */
-    private fun tryBatchModel(
-        host: String,
-        path: String,
-        scene: String,
-        ids: List<String>,
-        cookie: String?,
-        deadline: Long,
-        playback: PlaybackProfile,
-        backup: PlaybackBackupDevice? = null,
-    ): Map<String,JSONObject> {
-        if(ids.isEmpty()) return emptyMap()
-        val budget=remainingOf(deadline)
-        if(budget<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        val body=ContentPlaybackParser.batchModelBody(ids,playback,scene,deviceLevel)
-        val payload=java.io.ByteArrayOutputStream().also { out ->
-            java.util.zip.GZIPOutputStream(out).use { it.write(body.toByteArray()) }
-        }.toByteArray()
-        waitModelSlot()
-        if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        val profile=backup?.profile?.let { backupProfile ->
-            modelQueryProfile(LinkedHashMap(VendorConstants.device).apply {
-                putAll(backupProfile)
-                putAll(PROTOCOL_VALUES)
-                for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
-                this["version_name"]="7.3.9.32"
-            })
-        } ?: modelProfile()
-        val effectiveCookie=backup?.cookieHeader ?: cookie
-        val signed=signer.sign(host+path,profile,payload,deviceOverride=profile)
-        val extra=linkedMapOf<String,String>()
-        if(effectiveCookie!=null) extra["Cookie"]=effectiveCookie
-        extra["Content-Encoding"]="gzip"
-        val videoHeaders=LinkedHashMap(signed.headers).apply {
-            remove("x-tt-dt")
-            remove("x-tt-request-tag")
-            put("passport-sdk-version","5051452")
-            put("lc","101")
-            put("x-ss-dp","8662")
-            put("x-vc-bdturing-sdk-version","4.0.3.cn")
-            put("x-tt-trace-id",VendorConstants.traceId())
-            putAll(extra)
-        }
-        val request=signed.copy(headers=videoHeaders)
-        var stable=false
-        val response=text(
-            signed.url,
-            request,
-            client=addressClient(budget),
-            storeRegionHeaders=false,
-        ) { r -> stable=r.header("tt_stable")=="1" }
-        if(response.isBlank()) {
-            NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=0 stable=$stable")
-            if(backup!=null) throw IOException("备用设备未返回批量播放模型")
-            tryBackupBatch(host,path,scene,ids,cookie,deadline,playback)?.let { return it }
-            if(deviceLevel<5) {
-                escalateDeviceLevel()
-                return tryBatchModel(host,path,scene,ids,cookie,deadline,playback)
-            }
-            noteDeviceRejected()
-            invalidateModelCache()
-            throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
-        }
-        val data=JSONObject(response)
-        val code=data.optInt("Code",data.optInt("code",0))
-        val models=ContentPlaybackParser.parseBatchModels(data,ids)
-        NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=${response.length} code=$code models=${models.size}/${ids.size}")
-        if(code==101000 && backup==null) {
-            noteDeviceRejected()
-            invalidateModelCache()
-            throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
-        }
-        if(code!=0) {
-            if(code==101000 && backup!=null) throw IOException("备用设备不可用")
-            throw IOException("播放接口暂不可用（${code}）")
-        }
-        return models
-    }
-
-    private fun tryBackupBatch(
-        host: String,
-        path: String,
-        scene: String,
-        ids: List<String>,
-        cookie: String?,
-        deadline: Long,
-        playback: PlaybackProfile,
-    ): Map<String,JSONObject>? {
-        val backups=runCatching { playbackBackupDevices?.invoke() }.getOrNull().orEmpty()
-        for(backup in backups) {
-            if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
-            try {
-                val models=tryBatchModel(host,path,scene,ids,cookie,deadline,playback,backup)
-                if(models.isNotEmpty()) {
-                    NetLog.emit("model batch backup accepted id=${backup.id.takeLast(6)} models=${models.size}/${ids.size}")
-                    return models
-                }
-            } catch(e: IOException) {
-                if(isInterruption(e) || e.message=="请求已取消") throw e
-            }
-        }
-        return null
-    }
-
-    /**
-     * 两次播放模型请求之间至少隔 [MODEL_SPACING_MS]，**进程级**节流。
-     *
-     * 必须先持有 `modelGate`（见 [videoModel]）：只有全局串行时这个时间戳才说得清
-     * 「上一次是什么时候打的」。第一次不等待（时间戳初值 0）。
-     *
-     * 这里只挡异常连打，不承担设备额度控制；身份失效由重注册处理。
-     */
-    private fun waitModelSlot() {
-        if(modelSpacing<=0L) return
-        val wait=modelLastAttemptAt.get()+modelSpacing-System.currentTimeMillis()
-        if(wait>0L) {
-            try {
-                Thread.sleep(wait)
-            } catch(e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                throw IOException("请求已取消")
-            }
-        }
-        modelLastAttemptAt.set(System.currentTimeMillis())
-    }
     /**
      * 用一次官方批量接口预取一组播放模型。
      *
@@ -2476,46 +1972,7 @@ class ContentRepository(
     fun prefetchModels(
         ids: List<String>,
         playback: PlaybackProfile = PlaybackProfile(),
-    ): Int {
-        val batchIds=ids
-            .filter { it.matches(Regex("[0-9]{1,30}")) }
-            .distinct()
-            // preload 只补当前缓存缺口，避免把 player 已经拿到的当前集 / 后 2 集再请求一遍。
-            .filter { cachedModel(it,playback)==null }
-            .take(PRELOAD_MODEL_LIMIT)
-        if(batchIds.isEmpty()) return 0
-        val deadline=clock()+ADDRESS_DEADLINE_MS
-        val gate=modelGate
-        val waitMs=remainingOf(deadline).coerceIn(1L,MODEL_GATE_TIMEOUT_MS)
-        if(!gate.tryAcquire(waitMs,TimeUnit.MILLISECONDS)) {
-            throw addressTimeout()
-        }
-        val scope=RequestScope()
-        try {
-            // 前台已经在等模型时，后台这次直接跳过；下次首帧稳定后的调度会再补。
-            backgroundModelScope=scope
-            if(foregroundModelWaiters.get()>0) return 0
-            val cookie=primaryCookieHeader().takeIf { it.isNotEmpty() }
-            val host=TncConfigStore.preferredHost()
-            val models=RequestScope.withScope(scope) {
-                tryBatchModel(
-                    "https://$host",
-                    BATCH_MODEL_PATH,
-                    "preload",
-                    batchIds,
-                    cookie,
-                    deadline,
-                    playback,
-                )
-            }
-            if(models.isNotEmpty()) TncConfigStore.markHostSuccess(host)
-            rememberModels(models,playback)
-            return models.size
-        } finally {
-            if(backgroundModelScope===scope) backgroundModelScope=null
-            gate.release()
-        }
-    }
+    ): Int = prefetchModelsImpl(ids,playback)
 
     /**
      * 取一集的播放地址。
@@ -2588,9 +2045,9 @@ class ContentRepository(
      * 3 秒会把「慢但能成」的一发误杀成失败；6 秒仍远低于原来的 45 秒，
      * 同时给冷 DNS、TLS 与服务端排队留出一次完整机会。
      */
-    private val ADDRESS_DEADLINE_MS=6_000L
+    internal val ADDRESS_DEADLINE_MS=6_000L
     /** 余额低于这个值就不再发请求：几百毫秒不可能完成建连 + TLS + 服务端处理。 */
-    private val ADDRESS_MIN_BUDGET_MS=300L
+    internal val ADDRESS_MIN_BUDGET_MS=300L
     /**
      * 按「剩余预算」派生的取地址 client：连接 / 读 / 写 / 整调用四个超时全部压到余额。
      *
@@ -2599,47 +2056,7 @@ class ContentRepository(
      * 按 100ms 分桶缓存：每一发都 `newBuilder().build()` 会不停复制拦截器链，
      * 而余额在 6 秒内的取值本来就只有六十个。
      */
-    private fun addressClient(budgetMs: Long): OkHttpClient {
-        val bucket=(((budgetMs.coerceIn(ADDRESS_MIN_BUDGET_MS,ADDRESS_DEADLINE_MS))+99)/100)*100
-        synchronized(addressClients) {
-            addressClients[bucket]?.let { return it }
-            val client=http.newBuilder()
-                .connectTimeout(bucket,TimeUnit.MILLISECONDS)
-                .readTimeout(bucket,TimeUnit.MILLISECONDS)
-                .writeTimeout(bucket,TimeUnit.MILLISECONDS)
-                .callTimeout(bucket,TimeUnit.MILLISECONDS)
-                .build()
-            if(addressClients.size>=8) addressClients.keys.firstOrNull()?.let(addressClients::remove)
-            addressClients[bucket]=client
-            return client
-        }
-    }
-    private val addressClients=linkedMapOf<Long,OkHttpClient>()
-    /** 这一轮取地址还剩多少毫秒预算。 */
-    private fun remainingOf(deadline: Long)=deadline-clock()
-    /**
-     * 预算用完时抛的那个异常。
-     *
-     * 用独立的 [AddressTimeoutException]：它不能伪装成 [java.io.InterruptedIOException]，
-     * 否则会被界面侧当成「用户切页造成的取消」静默丢掉。超时与取消必须分开：
-     * 前者要清地址 / DNS / 连接池后自动重来，后者什么都不该做。
-     */
-    private fun addressTimeout(cause: Throwable? = null): AddressTimeoutException =
-        AddressTimeoutException("取播放地址超过 ${ADDRESS_DEADLINE_MS}ms",cause)
-
-    /** OkHttp 的 callTimeout / readTimeout 或本仓库的预算耗尽都算地址超时。 */
-    private fun Throwable.isAddressTimeout(): Boolean {
-        var current: Throwable?=this
-        var depth=0
-        while(current!=null && depth<8) {
-            if(current is AddressTimeoutException || current is java.net.SocketTimeoutException) return true
-            if(current is java.io.InterruptedIOException &&
-                current.message.orEmpty().contains("timeout",ignoreCase=true)) return true
-            current=current.cause
-            depth++
-        }
-        return false
-    }
+    internal val addressClients=linkedMapOf<Long,OkHttpClient>()
     /**
      * 内存 / 落盘缓存与锁表的键：集 id + 请求上限 + 播放档案 + `device_level`。
      */
@@ -2841,47 +2258,47 @@ class ContentRepository(
          * 而一次点播可能同时有主实例 / 下一集预取 / 推荐页预热三份请求，各发一轮就是三份并发。
          * 拿它串行化之后，同时到达的请求变成「一个人打、其余等结果」，成功率回到单发那一档。
          */
-        private val modelGate=java.util.concurrent.Semaphore(1,true)
+        internal val modelGate=java.util.concurrent.Semaphore(1,true)
         /** 正在等待 / 执行前台播放模型的调用数；preload 见到正数就让路。 */
-        private val foregroundModelWaiters=java.util.concurrent.atomic.AtomicInteger(0)
+        internal val foregroundModelWaiters=java.util.concurrent.atomic.AtomicInteger(0)
         /** 当前在途的后台 preload；前台起播时直接 cancel。 */
-        @Volatile private var backgroundModelScope: RequestScope?=null
+        @Volatile internal var backgroundModelScope: RequestScope?=null
         /** 等闸门的上限：给正在完成的那一发留足余量。 */
-        private const val MODEL_GATE_TIMEOUT_MS=25_000L
+        internal const val MODEL_GATE_TIMEOUT_MS=25_000L
         /**
          * 两次播放模型请求之间的最小间隔（进程级，见 [waitModelSlot]）。
          *
          * 只留一个很小的值挡「异常循环里的连打」；身份失效由重注册处理。
          */
-        private const val MODEL_SPACING_MS=200L
+        internal const val MODEL_SPACING_MS=200L
         /** 上一次打播放接口的时刻（0 = 本次进程还没打过，第一次不等待）。 */
-        private val modelLastAttemptAt=java.util.concurrent.atomic.AtomicLong(0L)
+        internal val modelLastAttemptAt=java.util.concurrent.atomic.AtomicLong(0L)
         /** 保护播放模型缓存代次，避免并发重试时重复或漏掉作废。 */
-        private val deviceRotateLock=Any()
+        internal val deviceRotateLock=Any()
         /**
          * 「身份代次」：身份重注册或地址重试时 +1，并进 [videoModel] 的缓存键。
          *
          * 没有它，重试会命中 60 秒的 [MODEL_CACHE_MS] 模型缓存——那份模型里带着
          * **旧身份签发的 `fallback_api` 地址**，于是重注册后还会拿到同一条死地址。
          */
-        @Volatile private var modelCacheGen: Int=0
+        @Volatile internal var modelCacheGen: Int=0
         /**
          * 播放模型的合并窗口。
          *
          * 必须覆盖当前批 6 集的消费时间；缓存太短会在同一台新匿名设备上再次请求批量接口，
          * 而该设备的第一批额度已经用完。地址本身与 [PlaybackCache.URL_FRESH_MS] 同窗。
          */
-        private const val MODEL_CACHE_MS=PlaybackCache.URL_FRESH_MS
+        internal const val MODEL_CACHE_MS=PlaybackCache.URL_FRESH_MS
         /** 播放器打开时批量取当前集 + 后 14 集；preload 只在首帧稳定后补后 6 集。 */
         /** 单个播放模型域名的预算；整段 6 秒内至少还能换到下一域名。 */
-        private const val MODEL_HOST_ATTEMPT_MS=3_000L
-        private const val PLAYER_MODEL_PATH="/novel/player/multi_video_model/player/v1"
-        private const val PLAYER_MODEL_BATCH_LIMIT=15
-        private const val BATCH_MODEL_PATH="/novel/player/multi_video_model/preload/v1"
-        private const val PRELOAD_MODEL_LIMIT=6
-        private const val MODEL_CACHE_LIMIT=32
+        internal const val MODEL_HOST_ATTEMPT_MS=3_000L
+        internal const val PLAYER_MODEL_PATH="/novel/player/multi_video_model/player/v1"
+        internal const val PLAYER_MODEL_BATCH_LIMIT=15
+        internal const val BATCH_MODEL_PATH="/novel/player/multi_video_model/preload/v1"
+        internal const val PRELOAD_MODEL_LIMIT=6
+        internal const val MODEL_CACHE_LIMIT=32
         /** 官方 `video_model` query 的字段顺序；设备档案里的其它字段不进入播放请求。 */
-        private val MODEL_QUERY_KEYS=listOf(
+        internal val MODEL_QUERY_KEYS=listOf(
             "klink_egdi","iid","device_id","ac","channel","aid","app_name",
             "version_code","version_name","device_platform","os","ssmix",
             "device_type","device_brand","language","os_api","os_version",
@@ -2896,7 +2313,7 @@ class ContentRepository(
          * 备用设备托底时这些键必须整套移除后用备用档案重填；业务参数（剧 id、分页、
          * 搜索词等）保留，避免出现「备用 did + 主设备 cdid / Cookie」的混参。
          */
-        private val DEVICE_QUERY_KEYS=(MODEL_QUERY_KEYS + listOf(
+        internal val DEVICE_QUERY_KEYS=(MODEL_QUERY_KEYS + listOf(
             "install_id","device_token","openudid","clientudid","rom","carrier","mcc_mnc",
             "profile-format","openudid-source","apk_first_install_time",
         )).toSet()
@@ -2917,7 +2334,7 @@ class ContentRepository(
         private const val STREAM_CACHE_MS=PlaybackCache.URL_FRESH_MS
         private const val STREAM_CACHE_LIMIT=8
         /** 两条路同时要同一集时，后来的那条等在锁上（见 [stream]）。 */
-        private data class CachedStream(val info: StreamInfo,val at: Long)
+        internal data class CachedStream(val info: StreamInfo,val at: Long)
         /** 弹幕窗口固定 30 秒一个，与平台的 `next_query_danmaku_list_time` 一致。 */
         private const val COMMENT_WINDOW_MS=30_000L
         private const val COMMENT_SOURCE=601

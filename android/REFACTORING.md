@@ -464,7 +464,31 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 21：ContentRepository 播放模型与预取迁移
+
+状态：已完成。
+
+- 将播放模型探测、批量模型、模型缓存、设备档位重试、备用设备、进程级单飞闸门、
+  请求节流、预取和地址预算 client 移到 `ContentRepositoryPlaybackModel.kt`。
+- `videoModel` 仍保留为 `ContentRepository` 上的同名方法，参数数量不变，
+  `CodecProbe` 的反射入口不被破坏。
+- `prefetchModels` 保留公开签名；模型缓存键、预算、失败顺序、空响应升级和备用设备
+  时序均按原实现迁移。
+- `ContentRepository.kt` 从 2980 行降到 2397 行；`ContentRepositoryPlaybackModel.kt`
+  为 621 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:core:compileKotlin` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续迁移 `ContentRepository` 的播放模型、单飞闸门、取流和地址缓存，保留反射入口、
-缓存键、设备档位、预算、重试和备用设备时序。详情/作者、分类、推荐与搜索保持在独立文件。
+继续迁移 `ContentRepository` 的取流、内存/落盘地址缓存、失效和重试入口，保留
+`stream` 的公开签名、缓存键、锁、预算和异常转换时序。
