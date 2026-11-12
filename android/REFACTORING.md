@@ -1192,6 +1192,38 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 50：Library 官方设备档案生成迁移
+
+状态：已完成。
+
+- 将官方设备档案生成与 Android ID 读取移到 `LibraryDeviceProfile.kt`，
+  `Library` 保留原私有门面。
+- 保留机型 / 品牌回退、分辨率 / 密度、运营商、固件、首次安装时间、随机
+  `openudid` 与三个设备标识的生成规则。
+- 新增 `identityApp` 只读投影；公开 API、落盘格式和 JSON 字段未改。
+- `Library.kt` 从 1941 行降到 1886 行；`LibraryDeviceProfile.kt` 为 69 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译缺少 `OfficialDeviceIds` import，补齐后重跑通过；字段与回退值未变。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
+### 夜间阶段摘要（批次 46–50）
+
+- 批次 46–50 全部完成并独立提交，信息流时钟 / 监听 / 片尾与 Library 身份职责已拆分。
+- `PhoneFeedView.kt` 降到 1707 行，`Library.kt` 降到 1886 行；新增文件均低于 150 行。
+- 每批聚合编译、Lint、共享单测与 Debug APK 均通过，无新增 Lint Error / Fatal。
+- `:core:test` 最近为 435 例、24 失败、28 跳过，未高于基线。
+- 下一阶段继续拆 Library 注册 Cookie / 待提交档案，再处理 ContentRepository 剩余职责。
+
 ## 下一批
 
 继续拆 `Library.kt` 的设备注册 Cookie 与待提交档案持久化职责。
