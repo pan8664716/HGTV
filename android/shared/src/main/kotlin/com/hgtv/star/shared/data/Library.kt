@@ -648,6 +648,7 @@ class Library(context: Context) {
         }
         return changed
     }
+    internal fun restoreFromMirrorForRegistrationCookies(): Boolean = restoreFromMirror()
     /**
      * 权限刚拿到之后**再试一次**恢复（见 `TvMainActivity.onRequestPermissionsResult`）。
      *
@@ -899,16 +900,7 @@ class Library(context: Context) {
      * 下次启动由 `ContentRepository.restoreDeviceCookies` 灌回去。
      */
     fun registrationCookies(): Map<String,String> {
-        ensureIdentityLayout()
-        restoreFromMirror()
-        val raw = sessionPrefs.getString("registered-cookies","").orEmpty()
-        if(raw.isBlank()) return emptyMap()
-        return runCatching {
-            val json = org.json.JSONObject(raw)
-            buildMap {
-                for(key in json.keys()) json.optString(key).takeIf { it.isNotBlank() }?.let { put(key,it) }
-            }
-        }.getOrDefault(emptyMap())
+        return registrationCookiesImpl()
     }
     /**
      * 抹掉注册下发的 Cookie。
@@ -917,20 +909,10 @@ class Library(context: Context) {
      * 指向的是**上一台**设备，留着会让新身份的请求带着两份互相矛盾的设备号。
      */
     fun clearRegistrationCookies() {
-        if(discarding) return
-        sessionPrefs.edit().remove("registered-cookies").commit()
-        mirror.remove("registered-cookies")
+        clearRegistrationCookiesImpl()
     }
     fun saveRegistrationCookies(cookies: Map<String,String>) {
-        if(discarding) return
-        val clean = cookies.filterValues { it.isNotBlank() }
-        if(clean.isEmpty()) return
-        val json = org.json.JSONObject().apply { clean.forEach { (key,value) -> put(key,value) } }.toString()
-        sessionPrefs.edit().putString("registered-cookies",json).commit()
-        mirror.put("registered-cookies",json)
-        // 与身份同一次注册的产物：分开落盘就可能出现「device_id 在、install_id 不在」，
-        // 那半份身份在服务端等于陌生设备（搜索空响应 / 播放 101000）。
-        mirror.flush()
+        saveRegistrationCookiesImpl(cookies)
     }
     /**
      * 本机的**真机设备档案**：机型 / 品牌 / 系统 / 分辨率 / 密度 / `cdid` / `openudid` …

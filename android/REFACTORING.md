@@ -1224,6 +1224,28 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `:core:test` 最近为 435 例、24 失败、28 跳过，未高于基线。
 - 下一阶段继续拆 Library 注册 Cookie / 待提交档案，再处理 ContentRepository 剩余职责。
 
+### 批次 51：Library 注册 Cookie 持久化迁移
+
+状态：已完成。
+
+- 将注册 Cookie 读取、清理和保存移到 `LibraryRegistrationCookies.kt`；
+  `Library` 三个公开方法保留原签名并委托。
+- 保留身份布局检查、镜像恢复、空值过滤、同步 commit、镜像写入和 flush 顺序。
+- 新增 `restoreFromMirrorForRegistrationCookies` 内部门面，没有扩大公开 API。
+- `Library.kt` 从 1886 行降到 1859 行；`LibraryRegistrationCookies.kt` 为 47 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `Library.kt` 的设备注册 Cookie 与待提交档案持久化职责。
+继续拆 `Library.kt` 的待提交设备档案与转正流程。
