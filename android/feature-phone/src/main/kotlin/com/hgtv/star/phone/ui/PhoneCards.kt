@@ -13,7 +13,7 @@ import com.hgtv.star.shared.data.ArtworkLoader
 /**
  * 「相关剧集 / 作者作品」那一排卡片：**详情页与播放页共用这一份**。
  *
- * 电视端这件事只有一个实现（`MainActivity.buildRelatedRow` → `HomeScreen`），
+ * 电视端这件事只有一个实现（`TvMainActivity.buildRelatedRow` → `HomeScreen`），
  * 因此详情页的「相关剧集」与播放器的「换一部接着看」看起来完全一样。
  * 手机上早先是各写各的：详情页有卡片，播放页只有一列剧名文字（还截断到 12 条），
  * 用户读到的就是「播放页里那几行字孤零零的」。现在同样收成一处：

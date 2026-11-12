@@ -43,11 +43,11 @@ import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.DebugFaults
 import com.hgtv.star.tv.R
 
-// 本文件是从 MainActivity.kt 拆出来的「播放内核：起播、切集、弹幕加载」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「播放内核：起播、切集、弹幕加载」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-fun MainActivity.loadDanmaku(episodeId: String,seriesId: String,clearOnSwitch: Boolean=false) {
+fun TvMainActivity.loadDanmaku(episodeId: String,seriesId: String,clearOnSwitch: Boolean=false) {
     // 加载内核在 `:shared`（`DanmakuLoader`）：手机播放页与手机信息流用的是同一份，
     // 三处「同一集不重拉 / 旧回包丢弃 / 隐藏时不发请求」的规则只写一次。
     danmakuLoader.load(episodeId,seriesId,clearOnSwitch=clearOnSwitch)
@@ -70,11 +70,11 @@ fun MainActivity.loadDanmaku(episodeId: String,seriesId: String,clearOnSwitch: B
  *
  * 那一行是「静默降软解」：硬件档筛空就偷偷用软解跑，用户以为自己开着硬解。
  * 现在筛空就返回空列表 → ExoPlayer 抛 `DecoderQueryException`（4002）→
- * [MainActivity.playerFailure] 把用户带到错误页，并提示**自己**切换软件解码 / 换清晰度。
- * 起播前还有一道预检（[MainActivity.probeHardwareHevcDecoder]），结论只用于提示，
+ * [TvMainActivity.playerFailure] 把用户带到错误页，并提示**自己**切换软件解码 / 换清晰度。
+ * 起播前还有一道预检（[TvMainActivity.probeHardwareHevcDecoder]），结论只用于提示，
  * **不再自动改用户的解码方式**（需求：优先硬解，不支持时由用户手动换软解）。
  *
- * 只在创建播放器时生效；切换档位由 [MainActivity.applyDecoderMode] 重建播放器。
+ * 只在创建播放器时生效；切换档位由 [TvMainActivity.applyDecoderMode] 重建播放器。
  */
 private fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context)=MediaCodecSelector { mimeType,requiresSecureDecoder,requiresTunnelingDecoder ->
     val all=MediaCodecSelector.DEFAULT.getDecoderInfos(mimeType,requiresSecureDecoder,requiresTunnelingDecoder)
@@ -113,7 +113,7 @@ private fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context)
  *
  * 写 `library.maxQuality` 的地方只允许是用户手动选择（见 `MainActivityPlaybackMenu`）。
  */
-val MainActivity.playbackMaxQuality: Int
+val TvMainActivity.playbackMaxQuality: Int
     get()=playbackSessionState.effectiveMaxQuality ?: library.maxQuality
 
 /**
@@ -123,7 +123,7 @@ val MainActivity.playbackMaxQuality: Int
  * 切软解的唯一入口是错误页上的「切换为软解」按钮与播放设置里的「解码」一行，
  * 两者都写 `library.decoderMode`（见 [applyDecoderMode]）。
  */
-val MainActivity.playbackDecoderMode: VideoDecoderMode
+val TvMainActivity.playbackDecoderMode: VideoDecoderMode
     get()=library.decoderMode
 
 /**
@@ -132,7 +132,7 @@ val MainActivity.playbackDecoderMode: VideoDecoderMode
  * 三处（预取写入 / 挂队列取出 / tick 兜底）必须用**同一个**字符串。
  * 全站只有 HEVC 一种编码，所以键里不再需要编码族那一段。
  */
-fun MainActivity.preparedKeyFor(id: String): String =
+fun TvMainActivity.preparedKeyFor(id: String): String =
     "$id:${playbackMaxQuality}"
 
 /**
@@ -145,7 +145,7 @@ fun MainActivity.preparedKeyFor(id: String): String =
  * 而且一旦软解也放不动，界面上没有任何线索说明「是硬解根本没有」。
  * 现在硬解筛空 → 4002 → 错误页给出「切换软解 + 建议档位」的按钮，动作由用户发起。
  */
-fun MainActivity.playerDecoderMode(): VideoDecoderMode = playbackDecoderMode
+fun TvMainActivity.playerDecoderMode(): VideoDecoderMode = playbackDecoderMode
 
 /**
  * 电视端渲染器工厂：两处针对播放链路的加固。
@@ -295,7 +295,7 @@ private class SpeedSafeVideoRenderer(
  * `playbackReady` 可能已经被清掉，这里再读一次 `currentPosition()` 会退回本集开头，
  * 于是「切软解」永远从第 0 秒开始——用户看到的是画面倒退，而不是接着刚才那一下继续。
  */
-fun MainActivity.applyDecoderMode(position: Long = -1L, play: Boolean? = null) {
+fun TvMainActivity.applyDecoderMode(position: Long = -1L, play: Boolean? = null) {
     if(screen!="player" && screen!="recommend") return
     val old=player ?: return
     val resumeAt=if(position>=0) position else currentPosition()
@@ -332,7 +332,7 @@ fun MainActivity.applyDecoderMode(position: Long = -1L, play: Boolean? = null) {
  * 采样本身也包在 [runCatching] 里：线上那条 `PlaybackInfo.timeline` 为 null 的崩溃
  * 就是从 `currentPosition` 抛出来的；这里失败时按「暂停在当前位置」处理。
  */
-fun MainActivity.syncDanmakuClock() {
+fun TvMainActivity.syncDanmakuClock() {
     val view=danmakuView ?: return
     val p=player
     if(p==null) {
@@ -358,7 +358,7 @@ fun MainActivity.syncDanmakuClock() {
  *
  * 这些都是 `AnalyticsListener` 的既有事件，不改变播放行为；只在 debug 包挂。
  */
-fun MainActivity.playbackAnalytics()=object: com.google.android.exoplayer2.analytics.AnalyticsListener {
+fun TvMainActivity.playbackAnalytics()=object: com.google.android.exoplayer2.analytics.AnalyticsListener {
     private fun tag()=player?.currentMediaItem?.mediaId ?: "-"
     override fun onVideoDecoderInitialized(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,decoderName: String,initializedTimestampMs: Long,initializationDurationMs: Long) {
         android.util.Log.i("HGTV","Decoder init media=${tag()} name=$decoderName durationMs=$initializationDurationMs")
@@ -383,7 +383,7 @@ fun MainActivity.playbackAnalytics()=object: com.google.android.exoplayer2.analy
  * 这个方法只碰播放器自己的状态与 `library` 里的偏好，**不碰任何 View**；
  * 挂 Surface 与构造后的配置都在主线程做，见 [attachPlayerView] / [configurePlayer]。
  */
-private fun MainActivity.buildPlayer(): ExoPlayer {
+private fun TvMainActivity.buildPlayer(): ExoPlayer {
     // 缓冲按时间算、字节上限只做保护。
     //
     // 实测片库（40 部 1080P 短剧）整文件码率 273~1727 kbps、视频 198~1650 kbps，
@@ -427,10 +427,10 @@ private fun MainActivity.buildPlayer(): ExoPlayer {
  *（`setAudioAttributes` / `setHandleAudioBecomingNoisy` 同样如此，只是它们已经挪到
  * [buildPlayer] 的 Builder 上——构造前的设置不校验线程。）
  * 因此构造留在 io（那半秒是 `MediaCodecList` 扫描），配置回主线程——两边都很短，
- * 谁先到都不影响：这里用 [MainActivity.configuredPlayer] 保证同一个实例只配一次
+ * 谁先到都不影响：这里用 [TvMainActivity.configuredPlayer] 保证同一个实例只配一次
  *（`addAnalyticsListener` 重复调用会把监听挂两遍，诊断数据会翻倍）。
  */
-private fun MainActivity.configurePlayer(p: ExoPlayer) {
+private fun TvMainActivity.configurePlayer(p: ExoPlayer) {
     // `p!==player`：这个实例已经被 release / 换解码方式拆掉了，不要再往它上面挂监听。
     if(p!==player || p===configuredPlayer) return
     // 诊断监听**正式包也挂**：只记账、不写日志，开销是几个 volatile 赋值。
@@ -449,7 +449,7 @@ private fun MainActivity.configurePlayer(p: ExoPlayer) {
 }
 
 /** 把播放器挂到 `PlayerView` 上（主线程）。 */
-private fun MainActivity.attachPlayerView(p: ExoPlayer) { playerView?.player=p }
+private fun TvMainActivity.attachPlayerView(p: ExoPlayer) { playerView?.player=p }
 
 /**
  * 起播前的并行预热：`player` 还没有就先建出来，让「建播放器」与「取地址 + 本地准备」同时在跑。
@@ -457,7 +457,7 @@ private fun MainActivity.attachPlayerView(p: ExoPlayer) { playerView?.player=p }
  * 只在 io 线程调（见 `playEpisode` 的 `work { ... }`）。已经有播放器时是空操作——
  * 复用那条路本来就不重建播放器。
  */
-private fun MainActivity.warmPlayer() {
+private fun TvMainActivity.warmPlayer() {
     if(player!=null || playerDisposed) return
     // 见 [playerBuildLock]：并发的第二条路只等一次，不会建出第二个播放器。
     val built=synchronized(playerBuildLock) {
@@ -479,7 +479,7 @@ private fun MainActivity.warmPlayer() {
  * 仍然走 [warmPlayer] 那条加锁路径：与「起播回调里补建」并发时只会建出一个实例
  * （见 [playerBuildLock]）。
  */
-fun MainActivity.buildPlayerAsync(): java.util.concurrent.Future<*> =
+fun TvMainActivity.buildPlayerAsync(): java.util.concurrent.Future<*> =
     // 这一处**保留 `Future`**而不是协程：调用方要用 `get(3s)` 带超时地等它
     //（见 `playEpisode` 里 `playerBuild?.get(3, SECONDS)`）。`Job` 没有「等 3 秒就放弃」
     // 的等价写法，硬套 `runBlocking { withTimeout }` 反而多一层阻塞。
@@ -500,7 +500,7 @@ fun MainActivity.buildPlayerAsync(): java.util.concurrent.Future<*> =
  * 三者都是一次性的，在 io 线程上做与「取地址 + 拉首批数据」完全并行。任何一步失败都不影响
  * 后续流程：这些只是让第一次少等，不是功能依赖。
  */
-private fun MainActivity.primePlaybackClasses() {
+private fun TvMainActivity.primePlaybackClasses() {
     runCatching {
         // 片源全是 HEVC 8bit + AAC：先把这两条的解码器清单灌进 `MediaCodecUtil` 的缓存。
         val selector=decoderSelector(playbackDecoderMode,this)
@@ -523,7 +523,7 @@ private fun MainActivity.primePlaybackClasses() {
  *
  * 结论**只用于界面提示**（错误页上的「切换软解」按钮、面板读数），不会自动改解码方式。
  */
-private fun MainActivity.probeHardwareHevcDecoder() {
+private fun TvMainActivity.probeHardwareHevcDecoder() {
     // 判据只有一份，见 `PlaybackCapability.hasHardwareHevcDecoder`（同一套 ExoPlayer 解码器表）。
     // 顺手灌进 `:shared` 的内存缓存：手机端在错误页那一刻读的是它（不能在主线程扫 Binder）。
     com.hgtv.star.shared.data.PlaybackCapability.warmHardwareHevc(this)
@@ -532,7 +532,7 @@ private fun MainActivity.probeHardwareHevcDecoder() {
     if(!available) android.util.Log.w("HGTV","No HEVC hardware decoder detected; user must switch to software decoding")
 }
 
-fun MainActivity.playEpisode(
+fun TvMainActivity.playEpisode(
     index: Int,
     position: Long=0,
     autoplay: Boolean=true,
@@ -1030,7 +1030,7 @@ fun MainActivity.playEpisode(
                     queue=modelQueue,
                 )
                 // 记下这一集的视频域名：`prepare()` 里建连失败时 [video] 还是上一集的，
-                // 自愈清 DNS 只能按这一条来（见 [MainActivity.lastStreamHost]）。
+                // 自愈清 DNS 只能按这一条来（见 [TvMainActivity.lastStreamHost]）。
                 lastStreamHost=playbackSource.host(streamInfo)
                 stage("stream ${streamInfo.quality}")
                 // CDN 缺档：实际选中的档位与请求上限不一致时提示一次。
@@ -1374,7 +1374,7 @@ fun MainActivity.playEpisode(
                 if(!active()) return
                 // 播放 / 暂停本身就是一次「操作」：暂停之后控制条同样要按设置里的秒数收起
                 //（这里走 `showHud()`，它与唤出进度条走的是同一个计时器，见
-                // `MainActivity.scheduleOverlayAutoHide`）。控制条收着时这一支是空操作。
+                // `TvMainActivity.scheduleOverlayAutoHide`）。控制条收着时这一支是空操作。
                 if(hud.visibility==View.VISIBLE) showHud()
                 // 播放 / 暂停是「屏幕该不该常亮」的直接判据（见 [syncKeepScreenOn]）。
                 syncKeepScreenOn()

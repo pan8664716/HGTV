@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv.list
 import android.view.View
-import com.hgtv.star.tv.MainActivity
+import com.hgtv.star.tv.TvMainActivity
 import com.hgtv.star.core.Series
 import com.hgtv.star.tv.openDetail
 import com.hgtv.star.tv.quickActions
@@ -14,12 +14,12 @@ import com.hgtv.star.tv.quickActions
  * 点一张卡 = 记住它是谁 → 进详情页（本机历史记录那一栏带续播）；
  * 长按 / 菜单键 = 记住它是谁 → 弹出这张卡的快捷菜单（收藏 / 稍后观看 / 详情）。
  *
- * 「记住它是谁」指的是 [MainActivity.catalogFocus]：它是这一页的焦点落点 key，
+ * 「记住它是谁」指的是 [TvMainActivity.catalogFocus]：它是这一页的焦点落点 key，
  * 返回列表时要按它把焦点放回原来那张卡，因此两个动作都要先记再走。
  */
 
 /** 点一张剧卡：记住它的 id，然后按 [resume] 决定进详情页还是直接接着上次看到的位置播。 */
-fun MainActivity.openSeries(item: Series, resume: Boolean = false) {
+fun TvMainActivity.openSeries(item: Series, resume: Boolean = false) {
     catalogFocus = item.id
     openDetail(item, resume)
 }
@@ -30,7 +30,7 @@ fun MainActivity.openSeries(item: Series, resume: Boolean = false) {
  * [shelf] 是卡片所在剧架的 key（[HomeScreen.Shelf.key]）；列表页的卡片不属于任何剧架，
  * 传空即可。菜单据此决定有没有「删除记录」这类只在某个剧架里成立的项。
  */
-fun MainActivity.seriesMenu(item: Series, anchor: View, shelf: String? = null) {
+fun TvMainActivity.seriesMenu(item: Series, anchor: View, shelf: String? = null) {
     catalogFocus = item.id
     quickActions(item, anchor, shelf)
 }

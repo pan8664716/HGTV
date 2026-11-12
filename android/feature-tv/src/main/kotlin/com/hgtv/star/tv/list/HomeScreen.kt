@@ -193,7 +193,7 @@ class HomeScreen(
      *
      * 为什么不由 HomeScreen 自己 `requestFocus`：页头收着的时候那一行高度是 0、
      * alpha 也是 0，直接落焦点会停在一个看不见的控件上——用户读到的就是「按上没反应」。
-     * 展开页头这件事只有宿主（[MainActivity]）能做，因此这里只上报意图。
+     * 展开页头这件事只有宿主（[TvMainActivity]）能做，因此这里只上报意图。
      */
     var onHeadUp: (() -> Boolean)? = null
 
@@ -334,7 +334,7 @@ class HomeScreen(
         }
     }
 
-    /** 当前纵向滚动位置。宿主用它把页头的收 / 展状态与真实位置摆一致（见 MainActivity 的页头判据）。 */
+    /** 当前纵向滚动位置。宿主用它把页头的收 / 展状态与真实位置摆一致（见 TvMainActivity 的页头判据）。 */
     fun scrollY(): Int = scroll.scrollY
 
     /**
@@ -411,7 +411,7 @@ class HomeScreen(
     /**
      * 把重新回到视口里的封面挂回去（低内存摘掉之后，滚动 / 焦点移动时调）。
      *
-     * 返回这一次真的挂回去了几张。只在「有被摘掉的卡」时才被调用（见 MainActivity 的计数），
+     * 返回这一次真的挂回去了几张。只在「有被摘掉的卡」时才被调用（见 TvMainActivity 的计数），
      * 平时滚动这条路径的代价是 0。
      */
     fun resumeCoversInside(rect: android.graphics.Rect): Int {
@@ -463,7 +463,7 @@ class HomeScreen(
 
         val visible = shelves.filter { it.entries.isNotEmpty() || it.more != null }
         // 优先用 [Position.focus]：它是**卡片 key**（`<栏>:<剧集 id>`），精确到栏。
-        // 从详情页返回时 [MainActivity.catalogFocus] 只记了纯剧集 id（见 `openSeries`），
+        // 从详情页返回时 [TvMainActivity.catalogFocus] 只记了纯剧集 id（见 `openSeries`），
         // 同一部剧同时出现在「历史记录 / 我的收藏」与「热播…」两栏时，按 id 会认到前面那一栏：
         // 焦点跑到别的行，原来那一栏又被排到后续批次里（横向位置因此丢失），
         // 用户看到的就是「返回首页后这一栏停在 1–6 张，焦点却还在第 7–10 张」。
@@ -473,7 +473,7 @@ class HomeScreen(
         // 焦点所在的那一栏必须和首屏一起建出来，否则 `requestFocus` 会落空、
         // 用户看到的是「焦点在页头」而不是上次停留的那张卡。
         // `preferred` 有两种形状：卡片 key（`history:123`）与纯剧集 id（`123`）——
-        // 从详情页返回时 [MainActivity.catalogFocus] 记的是后者，两种都要认，
+        // 从详情页返回时 [TvMainActivity.catalogFocus] 记的是后者，两种都要认，
         // 否则焦点会退回位置恢复的落点（常常是行末那张「查看全部」）。
         val focusRow = visible.indexOfFirst { shelf ->
             shelf.entries.any { it.series.id == preferred || "${shelf.key}:${it.series.id}" == preferred }
@@ -576,7 +576,7 @@ class HomeScreen(
      * 每张卡的柔光位图首次查表），1GB 盒子上单帧 60~150ms。
      *
      * 换成时间预算之后：机器快就一次多建几栏（首屏更快补齐），机器慢就一栏拆成几帧，
-     * 首帧永远可控。低内存机型（`TvStyle.animate == false`，见 MainActivity.onCreate）
+     * 首帧永远可控。低内存机型（`TvStyle.animate == false`，见 TvMainActivity.onCreate）
      * 用更小的预算。
      */
     private fun buildNextBatch(ticket: Int) {

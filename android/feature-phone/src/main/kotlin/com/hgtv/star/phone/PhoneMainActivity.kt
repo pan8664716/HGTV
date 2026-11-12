@@ -96,7 +96,7 @@ class PhoneMainActivity : PhoneActivity() {
         val traceStarted=StartupTrace.now()
         StartupTrace.mark("phoneMain.onCreate.start")
         super.onCreate(savedInstanceState)
-        android.util.Log.w("HGTV-BOOT", "phone.MainActivity onCreate")
+        android.util.Log.w("HGTV-BOOT", "phone.TvMainActivity onCreate")
         StartupTrace.section("phoneMain.style") { PhoneStyle.ensure(this) }
         landscape = resources.configuration.orientation ==
             android.content.res.Configuration.ORIENTATION_LANDSCAPE

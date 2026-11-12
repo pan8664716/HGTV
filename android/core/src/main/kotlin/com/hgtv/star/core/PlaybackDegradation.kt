@@ -238,7 +238,7 @@ class SessionPlaybackPolicy {
      * 又拿 1080 去撞一次必然失败的起播——黑一下、转一圈、再降一次、再弹一遍同样的提示。
      * 息屏是电视盒子上最常见的动作，一天能走十几次。
      *
-     * 真正离开播放页（[MainActivity.returnToDetail] / 换剧 / 销毁实例）仍然走
+     * 真正离开播放页（[TvMainActivity.returnToDetail] / 换剧 / 销毁实例）仍然走
      * [onUserManualChange]：那时「这一台机器这一刻放不了」的结论本就该丢掉。
      */
     fun onLeavePlaybackToBackground() { /* 有意留空：见上面的说明 */ }

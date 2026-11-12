@@ -10,11 +10,11 @@ import com.hgtv.star.tv.list.gridCards
 import com.hgtv.star.tv.list.showCatalog
 
 /** 当前搜索页是否用自绘键盘；书库未加载完成时沿用系统键盘页面。 */
-fun MainActivity.hongguoKeyboardMode(): Boolean =
+fun TvMainActivity.hongguoKeyboardMode(): Boolean =
     libraryReady && library.isLoaded && library.searchKeyboard==SearchKeyboard.HONGGUO
 
 /** 设置页与键盘上的切换：写盘之后立刻重建搜索页。 */
-fun MainActivity.setSearchKeyboard(useHongguo: Boolean) {
+fun TvMainActivity.setSearchKeyboard(useHongguo: Boolean) {
     val next=if(useHongguo) SearchKeyboard.HONGGUO else SearchKeyboard.SYSTEM
     if(library.searchKeyboard==next) return
     library.searchKeyboard=next
@@ -31,7 +31,7 @@ fun MainActivity.setSearchKeyboard(useHongguo: Boolean) {
  * （负外边距由调用方给，见 `showCatalog`），因此整行看起来是从屏幕左缘起排的，
  * 搜索框也跟着往左平移了一段。
  */
-fun MainActivity.keyboardSwitchButton(): View {
+fun TvMainActivity.keyboardSwitchButton(): View {
     val hongguo=hongguoKeyboardMode()
     val label=if(hongguo) "系统键盘" else "HG键盘"
     return IconButton(this,com.hgtv.star.tv.R.drawable.ic_toolbar_keyboard,"切换到$label") {
@@ -42,7 +42,7 @@ fun MainActivity.keyboardSwitchButton(): View {
 }
 
 /** 自绘键盘只输入英文字符；字符写入搜索框后触发联想提示词。 */
-fun MainActivity.appendHongguoDraft(value: String) {
+fun TvMainActivity.appendHongguoDraft(value: String) {
     val next=(hongguoDraft+value).take(80)
     hongguoDraft=next
     hongguoKeyboard?.draft=next
@@ -50,7 +50,7 @@ fun MainActivity.appendHongguoDraft(value: String) {
     updateHongguoSuggestions(next)
 }
 
-fun MainActivity.setHongguoDraft(value: String) {
+fun TvMainActivity.setHongguoDraft(value: String) {
     val next=value.take(80)
     hongguoDraft=next
     hongguoKeyboard?.draft=next
@@ -64,7 +64,7 @@ fun MainActivity.setHongguoDraft(value: String) {
  * HG键盘模式下那个框**只负责显示**（不可聚焦、不弹系统输入法，见 [searchBar]），
  * 字符由左侧键盘写进来；因此这里必须跟着草稿走，否则用户看到的是一行不会变的字。
  */
-private fun MainActivity.syncHongguoInput(value: String) {
+private fun TvMainActivity.syncHongguoInput(value: String) {
     val input=searchInput as? EditText ?: return
     if(input.text.toString()==value) return
     input.setText(value)
@@ -72,7 +72,7 @@ private fun MainActivity.syncHongguoInput(value: String) {
 }
 
 /** 输入框只跟着字符变化；联想词由 [renderHongguoSideList] 铺在中间那一列。 */
-private fun MainActivity.updateHongguoSuggestions(text: String) {
+private fun TvMainActivity.updateHongguoSuggestions(text: String) {
     if(text.trim().isEmpty()) {
         searchController.scheduleSuggestions("",SUGGEST_COUNT,0L)
         renderHongguoSideList()
@@ -80,7 +80,7 @@ private fun MainActivity.updateHongguoSuggestions(text: String) {
     } else searchController.scheduleSuggestions(text,SUGGEST_COUNT,SUGGEST_DEBOUNCE)
 }
 
-fun MainActivity.searchHongguoDraft() {
+fun TvMainActivity.searchHongguoDraft() {
     val clean=hongguoDraft.trim()
     if(clean.isEmpty()) { showSearchHistory(hongguoKeyboard?.view ?: root); return }
     hongguoDraft=clean
@@ -93,7 +93,7 @@ fun MainActivity.searchHongguoDraft() {
  * 记录为空时退到热搜词——那一列始终有东西可点，不会是一片空白。
  * 这一列不画标题：它只有 1/7 宽，标题占掉的是能放词的行。
  */
-fun MainActivity.renderHongguoSideList() {
+fun TvMainActivity.renderHongguoSideList() {
     val state=searchController.state.value
     val typed=hongguoDraft.trim()
     if(typed.isEmpty()) {
@@ -126,7 +126,7 @@ fun MainActivity.renderHongguoSideList() {
  * [loading] = 正在取（推荐词 / 联想词）：占位改用**三点动画**（与全站其它等待同一个控件），
  * 否则这一列会长时间只有一行静止的小字，看起来像「卡住了」。
  */
-private fun MainActivity.renderHongguoList(items: List<String>,emptyHint: String,loading: Boolean=false) {
+private fun TvMainActivity.renderHongguoList(items: List<String>,emptyHint: String,loading: Boolean=false) {
     val column=hongguoHistoryColumn ?: return
     column.removeAllViews()
     if(items.isEmpty()) {
@@ -170,7 +170,7 @@ private fun MainActivity.renderHongguoList(items: List<String>,emptyHint: String
 }
 
 /** 点中间那一列的一条：草稿换成这个词并立刻搜索。 */
-private fun MainActivity.pickHongguoSideWord(word: String) {
+private fun TvMainActivity.pickHongguoSideWord(word: String) {
     hongguoDraft=word
     hongguoKeyboard?.draft=word
     syncHongguoInput(word)
@@ -178,7 +178,7 @@ private fun MainActivity.pickHongguoSideWord(word: String) {
 }
 
 /** 结果栅格异步铺好之后，把键盘、中间那一列与结果卡片的左右焦点接起来。 */
-fun MainActivity.wireHongguoKeyboardFocus() {
+fun TvMainActivity.wireHongguoKeyboardFocus() {
     if(!hongguoKeyboardMode() || screen!="catalog" || tab!=TAB_SEARCH) return
     val keyboard=hongguoKeyboard ?: return
     val column=hongguoHistoryColumn ?: return
@@ -211,7 +211,7 @@ fun MainActivity.wireHongguoKeyboardFocus() {
  * `showSoftInputOnFocus=false` 之外，这里在页面建好之后再显式收一次——
  * 从「系统输入法」切过来的那一次，系统键盘往往还开着。
  */
-fun MainActivity.hideSystemKeyboard() {
+fun TvMainActivity.hideSystemKeyboard() {
     cancelSearchInputMethod()
     val imm=getSystemService(android.content.Context.INPUT_METHOD_SERVICE) as android.view.inputmethod.InputMethodManager
     imm.hideSoftInputFromWindow(root.windowToken,0)

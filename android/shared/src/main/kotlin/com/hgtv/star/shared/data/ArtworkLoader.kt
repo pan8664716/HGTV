@@ -325,7 +325,7 @@ class ArtworkLoader(context: Context) {
     /**
      * 封面 client：**用到时才建**。
      *
-     * `ArtworkLoader` 是在 `MainActivity.onCreate` 里建的，构造期就建 client 的话，
+     * `ArtworkLoader` 是在 `TvMainActivity.onCreate` 里建的，构造期就建 client 的话，
      * 主线程要先付一次「解析系统根证书表」（首次 2~3 秒，见 `HgtvTls.ACCEPTED_ISSUERS`）。
      * 改成懒建之后，第一个碰它的是第一条封面任务——那是 `hgtv-artwork` 线程。
      *
@@ -437,7 +437,7 @@ class ArtworkLoader(context: Context) {
     /** 网络客户端初始化失败后不再重试，避免每个封面任务都重复触发同一个类加载错误。 */
     @Volatile private var networkUnavailable: Throwable? = null
 
-    /** 把计时汇总落盘到 [file]（debug 包专用，见 `MainActivity.onCreate`）。 */
+    /** 把计时汇总落盘到 [file]（debug 包专用，见 `TvMainActivity.onCreate`）。 */
     fun attachTiming(file: java.io.File) {
         timing.attach(file)
         // 每张一行 logcat 的开关：`filesDir/verbose` 里写 1 才打（见 [ArtworkTiming.verbose]）。
@@ -525,7 +525,7 @@ class ArtworkLoader(context: Context) {
      * 设定**预取窗口**：只有这一批封面会被预取，窗口外的预取任务会被丢掉。
      *
      * 界面层按「焦点 / 消费位置」为中心算出前后各一屏的封面（见
-     * `MainActivity.prefetchAroundWindow`），每次窗口移动时调一次。
+     * `TvMainActivity.prefetchAroundWindow`），每次窗口移动时调一次。
      *
      * 为什么要「窗口」而不是「排上就不管」：
      *
@@ -543,7 +543,7 @@ class ArtworkLoader(context: Context) {
         // 解码尺寸只影响「预取回来的位图多大」；下载什么由地址决定（固定 640 档）。
         val (targetWidth, targetHeight) = normalize(widthPx, heightPx)
         timing.shape(prefetch=true,targetWidth,targetHeight)
-        // 调用方按「由近及远」给顺序（见 `MainActivity.prefetchAroundWindow`），
+        // 调用方按「由近及远」给顺序（见 `TvMainActivity.prefetchAroundWindow`），
         // 因此下标本身就是距离的近似值；这里再按它排一次队。
         // 预取的 Key 必须与可见卡算出来的**完全一致**（含解码档），否则预取下的图可见卡命中不了，
         // 又会重下一遍——这正是早先 `warmHit` 恒为 0 的形状。
@@ -758,7 +758,7 @@ class ArtworkLoader(context: Context) {
      * 栅格窗口里还有约 34 张（≈19MB）。低内存时不清它，trim 基本是空转，
      * 系统下一次还是会杀进程——线上「长时间运行后闪退」的另一半就在这里。
      *
-     * 由 `MainActivity` 在 `onCreate` 里接到 `releaseOffscreenCovers`。
+     * 由 `TvMainActivity` 在 `onCreate` 里接到 `releaseOffscreenCovers`。
      */
     var releaseHiddenCovers: (() -> Unit)? = null
 

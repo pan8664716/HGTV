@@ -19,14 +19,14 @@ import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.ui.LoadingDotsView
-import com.hgtv.star.tv.MainActivity
+import com.hgtv.star.tv.TvMainActivity
 
 /**
  * 启动页与形态路由：唯一带 `LAUNCHER` / `LEANBACK_LAUNCHER` 的组件。
  *
  * Logo 由系统启动画面显示；这一页只显示三点加载动画，完成本地初始化后再转发：
  *
- * * 电视 / 盒子 → [MainActivity]（横屏、遥控器焦点导航、1280×720 设计画布）
+ * * 电视 / 盒子 → [TvMainActivity]（横屏、遥控器焦点导航、1280×720 设计画布）
  * * 手机 / 平板 → [PhoneMainActivity]（竖屏、触摸、手势播放）
  *
  * ## 为什么必须是正常窗口
@@ -161,7 +161,7 @@ class LaunchActivity : Activity() {
         StartupTrace.mark("launch.route.start")
         val target = runCatching { targetFor(this) }
             .onFailure { android.util.Log.w("HGTV-FORM", "形态判定失败，退回电视界面", it) }
-            .getOrElse { MainActivity::class.java }
+            .getOrElse { TvMainActivity::class.java }
         // 用 `Log.w` 而不是 `Log.i`：R8 的 `-assumenosideeffects` 会把 `Log.i` 整条删掉，
         // 正式包里就再也看不到这一行——而「点图标没反应」恰恰只在正式包上出现过一次
         // （小明 Q1 Pro，2026-11）。这两条是现场唯一能把
@@ -171,10 +171,10 @@ class LaunchActivity : Activity() {
         if (!started) {
             // 目标页起不来（理论上不会发生，但不能赌）：换成另一套界面再试一次。
             // 进错界面用户至少能看见东西、能从设置里切回来；什么都不显示就彻底没救。
-            val fallback = if (target == MainActivity::class.java) {
+            val fallback = if (target == TvMainActivity::class.java) {
                 PhoneMainActivity::class.java
             } else {
-                MainActivity::class.java
+                TvMainActivity::class.java
             }
             android.util.Log.w("HGTV-FORM", "route failed, falling back to ${fallback.simpleName}")
             started = runCatching { startActivity(Intent(this, fallback)) }
@@ -207,7 +207,7 @@ class LaunchActivity : Activity() {
             "stored=$stored form=${profile.form} touch=${profile.touch} sw=${profile.swDp}dp " +
                 "diag=${(profile.diagonalIn * 10).toInt() / 10f}in score=${profile.score} hits=${profile.hits}"
         )
-        return if (form == DeviceForm.TV) MainActivity::class.java else PhoneMainActivity::class.java
+        return if (form == DeviceForm.TV) TvMainActivity::class.java else PhoneMainActivity::class.java
     }
 
     private fun showLoading() {

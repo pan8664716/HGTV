@@ -30,7 +30,7 @@ object PhoneStyle {
      * 与 TV 端**同一份定义、同一个落盘文件**（`TvThemeStore`，见 `shared/ui/TvTheme.kt`）：
      * 二十套配色只写一次，两端的「主题外观」设置项指向同一张表。默认深海蓝。
      *
-     * 与 TV 的区别只有一处：TV 在建视图之前由 `MainActivity.onCreate` 读一次，
+     * 与 TV 的区别只有一处：TV 在建视图之前由 `TvMainActivity.onCreate` 读一次，
      * 手机端是**每个 Activity 进来时**调 [ensure]——手机上页面之间可以各自被系统单独拉起
      *（从最近任务、通知、深链），不保证一定经过主页面。
      */

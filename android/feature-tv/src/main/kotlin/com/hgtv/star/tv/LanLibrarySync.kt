@@ -16,7 +16,7 @@ private var lanSyncUiDialog: TvDialog? = null
 private var lanSyncUiStep: LanSyncController.Step? = null
 private var lanSyncUiStatus: android.widget.TextView? = null
 
-fun MainActivity.closeLanSyncSession() {
+fun TvMainActivity.closeLanSyncSession() {
     lanSyncUiJob?.cancel()
     lanSyncUiJob = null
     lanSyncUiDialog?.dismiss()
@@ -26,7 +26,7 @@ fun MainActivity.closeLanSyncSession() {
     lanSyncController.reset()
 }
 
-fun MainActivity.showLanLibrarySync(anchor: View) {
+fun TvMainActivity.showLanLibrarySync(anchor: View) {
     closeLanSyncSession()
     val dialog = TvDialog(this, "同步其他设备数据")
     dialog.message("请选择这台设备在本次同步中的角色。")
@@ -41,7 +41,7 @@ fun MainActivity.showLanLibrarySync(anchor: View) {
     dialog.show(anchor)
 }
 
-private fun MainActivity.startLanSyncRole(anchor: View, sourceOnly: Boolean) {
+private fun TvMainActivity.startLanSyncRole(anchor: View, sourceOnly: Boolean) {
     closeLanSyncSession()
     lanSyncUiJob = appScope.launch {
         lanSyncController.state.collect { state -> renderLanSync(anchor, state) }
@@ -49,7 +49,7 @@ private fun MainActivity.startLanSyncRole(anchor: View, sourceOnly: Boolean) {
     if (sourceOnly) lanSyncController.startSource() else lanSyncController.startReceiver()
 }
 
-private fun MainActivity.renderLanSync(anchor: View, state: LanSyncController.State) {
+private fun TvMainActivity.renderLanSync(anchor: View, state: LanSyncController.State) {
     when (state.step) {
         LanSyncController.Step.IDLE -> Unit
         LanSyncController.Step.SERVING, LanSyncController.Step.DISCOVERING -> {
@@ -138,7 +138,7 @@ private fun MainActivity.renderLanSync(anchor: View, state: LanSyncController.St
     }
 }
 
-private fun MainActivity.showLanSyncNoPeers(anchor: View) {
+private fun TvMainActivity.showLanSyncNoPeers(anchor: View) {
     val dialog = TvDialog(this, "未发现同步设备")
     dialog.message("请确认两台设备连接同一局域网，并同时打开「同步其他设备数据」。")
     dialog.button("重新查找", icon = R.drawable.ic_menu_restore) {
@@ -148,7 +148,7 @@ private fun MainActivity.showLanSyncNoPeers(anchor: View) {
     dialog.show(anchor)
 }
 
-private fun MainActivity.showLanSyncRestoreConfirm(anchor: View) {
+private fun TvMainActivity.showLanSyncRestoreConfirm(anchor: View) {
     var login = true
     var device = true
     var content = true
@@ -182,7 +182,7 @@ private fun MainActivity.showLanSyncRestoreConfirm(anchor: View) {
     dialog.show(anchor)
 }
 
-fun MainActivity.applyLibraryBackup(payload: BackupData, restoreSettings: Boolean) {
+fun TvMainActivity.applyLibraryBackup(payload: BackupData, restoreSettings: Boolean) {
     favoriteMonitor.stop()
     library.restore(payload, restoreSettings)
     applyPerformanceProfile()

@@ -21,11 +21,11 @@ import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.tv.R
 
-// 本文件是从 MainActivity.kt 拆出来的「搜索页：输入框、热词与联想提示、搜索历史」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「搜索页：输入框、热词与联想提示、搜索历史」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
+fun TvMainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     // HG键盘模式下这一行照建（顶栏与系统键盘模式完全一致），但输入框改成**只显示的镜子**：
     // 字符由左侧键盘写进来（见 syncHongguoInput），它自己不可聚焦、也不弹系统输入法。
     // 不这么做的话，同一页会有两个输入入口，焦点在两者之间来回跳、系统输入法还会盖住键盘。
@@ -252,7 +252,7 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
  * 但屏幕上没有任何键盘。这里在焦点落地后再请求一次，并延迟重试，覆盖页面刚重建、
  * 窗口 token 尚未稳定的那一帧。
  */
-fun MainActivity.focusSearchInput(delayMs: Long=0L) {
+fun TvMainActivity.focusSearchInput(delayMs: Long=0L) {
     // HG键盘模式下「聚焦输入框」= 把焦点交给键盘：那个框本身不可聚焦。
     if(hongguoKeyboardMode()) { hongguoKeyboard?.focusFirstKey(); return }
     val input=searchInput as? EditText ?: return
@@ -262,7 +262,7 @@ fun MainActivity.focusSearchInput(delayMs: Long=0L) {
 }
 
 /** 作废所有尚未执行的输入法请求 / 重试。 */
-fun MainActivity.cancelSearchInputMethod() {
+fun TvMainActivity.cancelSearchInputMethod() {
     searchImeToken++
 }
 
@@ -273,7 +273,7 @@ fun MainActivity.cancelSearchInputMethod() {
  * 页面已经有输入框，但 Android 还没把它登记为当前 Editor。最多重试三次，
  * 每次 120ms，最后仍不成功时再用强制标志兜底。
  */
-private fun MainActivity.requestSearchInputMethod(input: EditText,remaining: Int,token: Int) {
+private fun TvMainActivity.requestSearchInputMethod(input: EditText,remaining: Int,token: Int) {
     if(token!=searchImeToken || isDestroyed || !input.attachedToWindow) return
     input.requestFocus()
     if(!input.hasWindowFocus() || !input.isFocused) {
@@ -312,7 +312,7 @@ private fun MainActivity.requestSearchInputMethod(input: EditText,remaining: Int
  *
  * [top] 是导航栏那一行。
  */
-fun MainActivity.fitSearchRow(top: LinearLayout) {
+fun TvMainActivity.fitSearchRow(top: LinearLayout) {
     top.addOnLayoutChangeListener { view,left,_,right,_,_,_,_,_ ->
         val input=searchInput as? EditText ?: return@addOnLayoutChangeListener
         val available=(right-left)-view.paddingLeft-view.paddingRight
@@ -364,7 +364,7 @@ fun MainActivity.fitSearchRow(top: LinearLayout) {
  * 必须在**圆形入口建好之后**调：导航栏是先建标题与搜索控件、最后才加四个圆形入口的，
  * 建搜索控件时 `navEntry()` 还是 null，那时设上键会把焦点指向自己。
  */
-fun MainActivity.wireHeadNavUp() {
+fun TvMainActivity.wireHeadNavUp() {
     val up=navEntry()?.id ?: return
     searchInput?.nextFocusUpId=up
     searchButton?.nextFocusUpId=up
@@ -376,7 +376,7 @@ fun MainActivity.wireHeadNavUp() {
  * 去抖 220ms：每敲一个字都发请求会把接口打满，也会让那一行一直闪。
  * 清空输入时立刻清掉那一行（不发请求）。
  */
-fun MainActivity.scheduleSuggestions(text: String) {
+fun TvMainActivity.scheduleSuggestions(text: String) {
     suggestRun.getAndSet(null)?.let { main.removeCallbacks(it) }
     val clean=text.trim()
     // 清空输入：换回热搜词（而不是留一行空白）。
@@ -390,7 +390,7 @@ fun MainActivity.scheduleSuggestions(text: String) {
  * 「我搜的是这个」。往下走到第二行，说明他已经在看内容、准备换词了，
  * 这时清空才不打断阅读，按上键回到输入框也直接是空的。
  *
- * 按**行号**判断而不是数卡片：行号来自栅格自己（[MainActivity.GridRow.index]），
+ * 按**行号**判断而不是数卡片：行号来自栅格自己（[TvMainActivity.GridRow.index]），
  * 不受列数、来回上下移动影响，也不会因为重复经过同一张卡而数错。
  *
  * 为什么只清控件、不清 [query]：这一份结果、页码、预取与「展示更多」全都按 [query]
@@ -400,7 +400,7 @@ fun MainActivity.scheduleSuggestions(text: String) {
  * 清空之后 TextWatcher 会把输入框下面那一行换回搜索记录（[loadHotSearches]）——
  * 那正是空输入时该显示的内容，也方便用户直接点回上一个词。
  */
-fun MainActivity.noteSearchRowFocused(row: Int) {
+fun TvMainActivity.noteSearchRowFocused(row: Int) {
     if(isDestroyed || screen!="catalog" || tab!=TAB_SEARCH) return
     if(row<1) return
     clearSearchBoxOnResults()
@@ -411,7 +411,7 @@ fun MainActivity.noteSearchRowFocused(row: Int) {
  * 清掉之后用户按上键回到输入框就是空的，直接敲新词，不用一路删干净。
  * 输入框本来为空时什么都不做：焦点在卡片之间移动不会反复触发。
  */
-fun MainActivity.clearSearchBoxOnResults() {
+fun TvMainActivity.clearSearchBoxOnResults() {
     if(isDestroyed || screen!="catalog" || tab!=TAB_SEARCH) return
     // HG键盘：焦点离开键盘进到结果第二行，就把草稿清掉——
     // 中间那一列因此从「联想词」回到「搜索记录」，正是用户「不打了、开始看结果」时该看到的内容。
@@ -424,7 +424,7 @@ fun MainActivity.clearSearchBoxOnResults() {
     input.setText("")
 }
 /** 两套键盘共用的焦点入口：HG键盘聚焦首字母，系统键盘仍走原来的输入框。 */
-fun MainActivity.focusHongguoKeyboard() {
+fun TvMainActivity.focusHongguoKeyboard() {
     if(!hongguoKeyboardMode()) { focusSearchInput(); return }
     // HG键盘模式下系统输入法一律按下去：焦点交给自绘键盘，系统键盘不许冒出来。
     hideSystemKeyboard()
@@ -439,7 +439,7 @@ fun MainActivity.focusHongguoKeyboard() {
  * 记录条数本来就限到 20 条（见 `SearchHistory.remember`），一行放不下时横向滚动，
  * 因此这里直接整份铺出来，不再截断。
  */
-fun MainActivity.loadHotSearches() {
+fun TvMainActivity.loadHotSearches() {
     suggestJob?.cancel(true)
     // 作废在途的联想请求：清空输入那一刻回来的旧结果不能盖住搜索记录。
     suggestToken.incrementAndGet()
@@ -456,7 +456,7 @@ fun MainActivity.loadHotSearches() {
  * 它是**边打字边发**的，绝不能把页面重排、更不能取消用户正在等的搜索。
  * 结果回来时先比对令牌与当前输入框内容——晚回来的旧结果直接丢掉。
  */
-fun MainActivity.fetchSuggestions(keyword: String) {
+fun TvMainActivity.fetchSuggestions(keyword: String) {
     searchController.scheduleSuggestions(keyword,SUGGEST_COUNT,0L)
 }
 /**
@@ -491,7 +491,7 @@ fun MainActivity.fetchSuggestions(keyword: String) {
  * 而「页头收起导致这一行 0 高」这种真正拿不到焦点的情况，由 [topAreaHidden]
  * 兜住（收起时该标志立刻置位），不需要再靠尺寸判断。
  */
-private fun MainActivity.canTakeFocusSoon(view: View?): Boolean {
+private fun TvMainActivity.canTakeFocusSoon(view: View?): Boolean {
     val target=view ?: return false
     if(!target.isFocusable || !target.isEnabled) return false
     var node: View?=target
@@ -515,7 +515,7 @@ private fun MainActivity.canTakeFocusSoon(view: View?): Boolean {
  * 用尺寸去卡会把所有候选一次性筛光（与 [navIcons] 不用 `isShown` 是同一个道理）。
  * 祖先也要一并查：提示词芯片自己的高度跟着父行一起被压成 0，只看它自己就漏了。
  */
-private fun MainActivity.canTakeFocusNow(view: View?): Boolean {
+private fun TvMainActivity.canTakeFocusNow(view: View?): Boolean {
     val target=view ?: return false
     if(!target.isFocusable || !target.isEnabled) return false
     // 页面还没布局过（刚建好、还没挂上窗口）时所有控件都是 0×0，这时不能拿尺寸判死。
@@ -545,7 +545,7 @@ private fun MainActivity.canTakeFocusNow(view: View?): Boolean {
  * 提示词芯片 → 内容第一张卡 → 搜索按钮 → 顶部圆形入口 → 输入框自己。
  * 指向自己不是偷懒：它保证「按下去没反应」而不是「按下去崩掉」。
  */
-fun MainActivity.wireSearchHeadDown(target: View?) {
+fun TvMainActivity.wireSearchHeadDown(target: View?) {
     // 提示词芯片刚 `addView` 时还没量过尺寸，用 [canTakeFocusNow] 会被尺寸判据筛掉；
     // 它们只在「页头收起」时才真的拿不到焦点，而那件事由 [topAreaHidden] 判断。
     // 因此行内目标走 [canTakeFocusSoon]，其余目标仍走严格判据。
@@ -568,7 +568,7 @@ fun MainActivity.wireSearchHeadDown(target: View?) {
     searchButton?.nextFocusDownId=id
     searchActions.forEach { it.nextFocusDownId=id }
 }
-fun MainActivity.renderHintRow(items: List<String>) {
+fun TvMainActivity.renderHintRow(items: List<String>) {
     val line=suggestLine ?: return
     val scroll=suggestRow ?: return
     // 显隐与高度都改**硬裁剪视口**（与分类页筛选行同一个类）：
@@ -623,7 +623,7 @@ fun MainActivity.renderHintRow(items: List<String>) {
     }
     suggestButtons.addAll(chips)
 }
-fun MainActivity.runSearch(value: String) {
+fun TvMainActivity.runSearch(value: String) {
     val clean=value.trim(); if(clean.isEmpty() || clean.length>80) return
     if(hongguoKeyboardMode()) {
         hongguoDraft=clean
@@ -646,7 +646,7 @@ fun MainActivity.runSearch(value: String) {
  * 两档的差别写进每一行的说明里：App 结果全、能一直翻页，但要求这台设备注册过；
  * 官网免登录，一次 10 条按页翻。
  */
-fun MainActivity.showSearchSourcePicker(anchor: TextView) {
+fun TvMainActivity.showSearchSourcePicker(anchor: TextView) {
     val labels=SearchSource.entries.map { source ->
         if(source==searchController.state.value.source) "${source.label} · ${source.hint}（当前）" else "${source.label} · ${source.hint}"
     }
@@ -666,7 +666,7 @@ fun MainActivity.showSearchSourcePicker(anchor: TextView) {
         }
     },subtitle="只影响搜索，分类 / 榜单 / 播放不受影响")
 }
-fun MainActivity.showSearchHistory(anchor: View) {
+fun TvMainActivity.showSearchHistory(anchor: View) {
     searchController.refreshHistory()
     val history=searchController.state.value.history
     if(history.isEmpty()) { tvTools.info("搜索历史","搜索过的剧名会保存在这里，最多保留 20 条。",anchor); return }
@@ -675,7 +675,7 @@ fun MainActivity.showSearchHistory(anchor: View) {
     }
 }
 /** 设置 → 布局启动里的默认输入法：两档写进本机偏好，下次搜索页按它重建。 */
-fun MainActivity.showDefaultKeyboardPicker(anchor: TextView) {
+fun TvMainActivity.showDefaultKeyboardPicker(anchor: TextView) {
     val options=SearchKeyboard.entries
     val labels=options.map { if(it==library.searchKeyboard) "${it.label}（当前）" else it.label }
     tvTools.choose("默认输入法",labels,anchor,{ index ->

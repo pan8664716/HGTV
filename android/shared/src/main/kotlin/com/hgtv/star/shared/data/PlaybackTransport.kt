@@ -53,7 +53,7 @@ object PlaybackTransport {
      * 自愈路径要用它：路由器 NAT 表项被静默回收之后，池里那条连接「看起来还活着」——
      * 写得出、读不回，于是每次取流都卡满 `readTimeout`。`OkHttp` 自己不会因此剔除它
      *（`retryOnConnectionFailure` 只对建连阶段生效），只能由调用方显式清一次，
-     * 下一条请求才会真的重新握手。见 `MainActivity.dropDeadTransport`。
+     * 下一条请求才会真的重新握手。见 `TvMainActivity.dropDeadTransport`。
      */
     fun evictIdleConnections() {
         runCatching { client.connectionPool.evictAll() }

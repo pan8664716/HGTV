@@ -95,8 +95,8 @@ class ContentRepository(
     /**
      * 传输层：显式传进来就用它（预取 / 预热各带自己的 client），不传则**用到时才建**。
      *
-     * 为什么不是「构造时就建」：`MainActivity` 在字段初始化里建了四个 `ContentRepository`
-     * （见 `MainActivity.kt` 的 `repository` / `prefetchHttp` 那几处），而那些初始化发生在
+     * 为什么不是「构造时就建」：`TvMainActivity` 在字段初始化里建了四个 `ContentRepository`
+     * （见 `TvMainActivity.kt` 的 `repository` / `prefetchHttp` 那几处），而那些初始化发生在
      * **主线程**、`onCreate` 之前。建 client 会顺带解析系统根证书表（首次 2~3 秒，
      * 见 `HgtvTls.ACCEPTED_ISSUERS`），于是冷启动还没开始建视图就先卡在那里。
      *
@@ -220,7 +220,7 @@ class ContentRepository(
      * 写接口的诊断日志出口。
      *
      * `core` 是纯 Kotlin 模块（没有 Android SDK），所以不能直接 `Log.i`；
-     * 界面层启动时把它接到 `android.util.Log`（见 `MainActivity`），不接就是空操作。
+     * 界面层启动时把它接到 `android.util.Log`（见 `TvMainActivity`），不接就是空操作。
      */
     var writeLog: (String) -> Unit = {}
     /**
@@ -516,7 +516,7 @@ class ContentRepository(
      * 于是**不会**再注册，用户只能自己去「设置 → 清空缓存」。
      *
      * 界面层盯着这个计数：它一变就说明这份身份该丢了，重新注册一台再重试一次请求
-     * （见 `MainActivity.healDeviceIdentity`）。身份为空时不计——那是真的还没注册。
+     * （见 `TvMainActivity.healDeviceIdentity`）。身份为空时不计——那是真的还没注册。
      */
     /**
      * 全局计数（所有实例共享）：预取用的是另一个 [ContentRepository]，但它与主实例认的是
@@ -821,7 +821,7 @@ class ContentRepository(
      *
      * 推荐页的「正在加载推荐…」全压在这条请求上：8 次（最坏 4s）花下去的每一秒，
      * 用户看到的都是一块静止的黑屏。3 次够覆盖「网关偶发空响应」（实测重发 1~2 次就回），
-     * 再失败就交给界面换流或先放出手里这一页（见 `MainActivity.loadRecommendPage`）。
+     * 再失败就交给界面换流或先放出手里这一页（见 `TvMainActivity.loadRecommendPage`）。
      */
     internal val RECOMMEND_ATTEMPTS=3
     /** 搜索接口空响应的原地补发次数 / 间隔（见 [retryBlankSearch]）。 */
@@ -1316,7 +1316,7 @@ class ContentRepository(
      * **返回的 `nextOffset` 一定往前推**：早先这里有一句 `.coerceAtMost(2000)`，把游标钳在
      * 2000 上——实测 `offset=1980/1990/1999/2000` 回的都是 `next=2000`，于是每页都从 2000
      * 重新开始，用户每次打开推荐看到的永远是同一批（服务端自己也在 2000 钳位）。现在不钳，
-     * 由界面侧按「游标不前进 = 这条流刷不动了」换新流（见 `MainActivity.loadRecommendPage`）。
+     * 由界面侧按「游标不前进 = 这条流刷不动了」换新流（见 `TvMainActivity.loadRecommendPage`）。
      *
      * [filterIds] 是**本机已经推给用户看过的剧 id**（文档 §2.1 / §4.4 的 `filter_ids`）：
      * 传了就请服务端在这一页就把它们滤掉，客户端那层窗口只当兜底。空串 = 不带，
@@ -1496,7 +1496,7 @@ class ContentRepository(
      * 批量取作者：`book_id` 支持逗号分隔，一次最多 [MULTI_DETAIL_LIMIT] 个。
      *
      * 首页 / 榜单 / 分类的列表接口都不带作者，只有详情页才有；为了让卡片也能显示，
-     * 界面在列表落地之后调一次这个方法（见 `MainActivity.loadAuthors`），
+     * 界面在列表落地之后调一次这个方法（见 `TvMainActivity.loadAuthors`），
      * 一次请求补齐一整屏，而不是每张卡各发一次。
      *
      * 结果按 id 缓存（包括空结果）：详情页反复进出时不重复请求；

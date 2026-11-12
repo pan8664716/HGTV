@@ -9,8 +9,8 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.hgtv.star.shared.data.LocalReset
 
-// 本文件是从 MainActivity.kt 拆出来的「清空应用缓存（恢复出厂）」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「清空应用缓存（恢复出厂）」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 /**
@@ -23,7 +23,7 @@ import com.hgtv.star.shared.data.LocalReset
  * 名字叫「缓存」是用户能理解的说法（反复登录失败时最常用的处置）；确认框里则**如实**
  * 说明它连收藏与记录一起清掉，并写清「不可撤销」——这是唯一一个删完找不回来的操作。
  */
-fun MainActivity.clearLocalData(anchor: View?) {
+fun TvMainActivity.clearLocalData(anchor: View?) {
     tvTools.confirm(
         "清空应用缓存",
         "用于遇到反复无法登录、账号状态异常、页面数据错乱等情况：清空后应用会重新注册设备、重新生成标识，\n" +
@@ -59,7 +59,7 @@ private var resetStorageAsked=false
  * 为什么必须杀进程而不是只清文件：`SharedPreferences` 在进程内按文件名缓存，
  * 文件删掉之后内存里那份仍然在，任何一次提交都会把它原样写回去；杀进程是唯一可靠的办法。
  */
-fun MainActivity.performLocalReset() {
+fun TvMainActivity.performLocalReset() {
     if (resetting) return
     // `/sdcard/.hgtv` 在 Android 6–10 上要运行时权限才删得掉（targetSdk 29 + 传统存储模式，
     // 见 manifest）。没授权就先要一次：用户拒绝也照样继续（沙盒与 Android/data 仍然清空），
@@ -120,7 +120,7 @@ fun MainActivity.performLocalReset() {
     }, "hgtv-local-reset").start()
 }
 
-private fun MainActivity.resetStorageGranted(): Boolean =
+private fun TvMainActivity.resetStorageGranted(): Boolean =
     ContextCompat.checkSelfPermission(this,Manifest.permission.WRITE_EXTERNAL_STORAGE)==PackageManager.PERMISSION_GRANTED
 
 /** 设置页里那一枚按钮的文案：整栏宽的一行，与其它设置项同一档。 */

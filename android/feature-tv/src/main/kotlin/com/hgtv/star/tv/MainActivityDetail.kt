@@ -21,14 +21,14 @@ import com.hgtv.star.shared.debug.DebugFaults
 import com.hgtv.star.shared.ui.authorColor
 import com.hgtv.star.tv.R
 
-// 本文件是从 MainActivity.kt 拆出来的「详情页：简介、选集、相关推荐」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「详情页：简介、选集、相关推荐」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-/** 详情页内存缓存最多留几部（见 [MainActivity.detailMemo]）。 */
+/** 详情页内存缓存最多留几部（见 [TvMainActivity.detailMemo]）。 */
 private const val DETAIL_MEMO_LIMIT=12
 
-fun MainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boolean=true) {
+fun TvMainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boolean=true) {
     pendingDetail=series; detailAutoplay=autoplay
     // 从任何页面进详情都算「不是推荐那条路」：之后的正式播放返回键回详情页。
     playbackFromRecommend=false
@@ -103,7 +103,7 @@ private fun sameDetailContent(a: Detail,b: Detail): Boolean =
  * 作者只是附加信息：主体详情先上屏，再在后台补一次 `multi-detail`。
  * 结果落地后就地更新信息行，并让「作者作品」入口跟着出现。
  */
-fun MainActivity.loadDetailAuthor(current: Detail) {
+fun TvMainActivity.loadDetailAuthor(current: Detail) {
     detailController.loadAuthor(current)
 }
 /**
@@ -116,7 +116,7 @@ fun MainActivity.loadDetailAuthor(current: Detail) {
  * 本机有记录时一律以本机为准：它更细（还知道整剧是否已看完），也是这台设备上的真实状态；
  * 账号那条只在标识对不上本机这一版选集时提供「第几集」这个兜底下标。
  */
-fun MainActivity.resumeTargetFor(seriesId: String,episodes: List<String>): ResumeTarget {
+fun TvMainActivity.resumeTargetFor(seriesId: String,episodes: List<String>): ResumeTarget {
     return detailController.resumeTarget(seriesId,episodes)
 }
 /**
@@ -141,14 +141,14 @@ fun MainActivity.resumeTargetFor(seriesId: String,episodes: List<String>): Resum
  *    这里单独持有 [relatedToken] + [relatedJob]：新剧作废旧剧，
  *    结果落地前再确认「还是同一部剧、还停在详情页」——中途换了剧或退出去，结果直接丢掉。
  */
-fun MainActivity.prefetchRelated(id: String) {
+fun TvMainActivity.prefetchRelated(id: String) {
     detailController.prefetchRelated(id,detail?.series?.title.orEmpty())
 }
 /**
  * 点「相关剧集」时调用：预取还没开始（或上一次失败了）才补一次请求。
  * 正常路径下这里什么都不做——请求早在详情上屏时就已经发出去了。
  */
-fun MainActivity.ensureRelated(id: String) {
+fun TvMainActivity.ensureRelated(id: String) {
     detailController.ensureRelated(id,detail?.series?.title.orEmpty())
 }
 /**
@@ -164,11 +164,11 @@ fun MainActivity.ensureRelated(id: String) {
  * [series] 是「正在看的那一部」：它只用来定缓存键与补季的家族基名
  *（顺序不再由客户端算，见 `ContentRepository.authorWorks`），仍要一起传下去。
  */
-fun MainActivity.prefetchAuthorWorks(id: String, series: Series) {
+fun TvMainActivity.prefetchAuthorWorks(id: String, series: Series) {
     detailController.prefetchAuthorWorks(series)
 }
 /** 点「作者作品」时调用：预取还没开始（或上一次失败了）才补一次请求。 */
-fun MainActivity.ensureAuthorWorks(id: String, series: Series) {
+fun TvMainActivity.ensureAuthorWorks(id: String, series: Series) {
     detailController.ensureAuthorWorks(series)
 }
 /**
@@ -180,7 +180,7 @@ fun MainActivity.ensureAuthorWorks(id: String, series: Series) {
  * [top] 是卡片行上方的控件（焦点在第一行按上键时落回它）；[current] 是正在看的那一部，
  * 它的卡片角标写「正在看」（不从列表里去掉——详情页要的就是「你就在这一部里」这一眼）。
  */
-fun MainActivity.buildRelatedRow(
+fun TvMainActivity.buildRelatedRow(
     top: View,
     works: RelatedWorks,
     current: Series,
@@ -209,7 +209,7 @@ fun MainActivity.buildRelatedRow(
  * 圆是 `GradientDrawable(OVAL)` 画的实体圆，不依赖 API 21 的 outline 裁剪，
  * `minSdk 19` 上同样是正圆（与「我的」页那张头像的兼容处理同源，见 `clipToCircleCompat`）。
  */
-private fun MainActivity.authorHead(name: String,hint: String,loading: Boolean=false): LinearLayout {
+private fun TvMainActivity.authorHead(name: String,hint: String,loading: Boolean=false): LinearLayout {
     val head=row().apply { setPadding(pageInset(),dp(24),pageInset(),dp(8)) }
     val size=dp(52)
     val avatar=text(name.take(1),22f,android.graphics.Color.WHITE).apply {
@@ -245,7 +245,7 @@ private fun MainActivity.authorHead(name: String,hint: String,loading: Boolean=f
     gapInto(head,texts,lp(0,-2).apply { weight=1f },TvStyle.GAP_INLINE+4)
     return head
 }
-fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
+fun TvMainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
     invalidatePage(); releaseCatalogViews(); screen="detail"; val data=detail ?: return showCatalog()
     // 详情页不留页头：顶部是完整竖版海报 + 剧集信息（78dp 栅格内），
     // 下方选集网格整幅贴底，与播放器选集面板同一份实现。
@@ -746,7 +746,7 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
  * 而不是再读一次本机表——本机还没有记录（首次进页面）时 `library.reserved` 是 false，
  * 拿它去取反会把「已预约」又发一次预约请求。
  */
-fun MainActivity.reserveSeries(series: Series, button: TvButton, current: Boolean = library.reserved(series.id)) {
+fun TvMainActivity.reserveSeries(series: Series, button: TvButton, current: Boolean = library.reserved(series.id)) {
     val target=!current
     fun paint(reserved: Boolean) {
         button.text=if(reserved) "已预约" else "预约"

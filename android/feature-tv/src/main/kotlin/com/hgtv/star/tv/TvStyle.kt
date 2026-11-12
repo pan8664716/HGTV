@@ -64,7 +64,7 @@ object TvStyle {
 
     /**
      * 当前主题。默认 [TvTheme.DEEP_SEA_BLUE]（设计稿的第一套），
-     * 由 `MainActivity.onCreate` 按本机保存的偏好覆盖，之后只经 [applyTheme] 改动。
+     * 由 `TvMainActivity.onCreate` 按本机保存的偏好覆盖，之后只经 [applyTheme] 改动。
      */
     var theme: TvTheme = TvTheme.fallback
         private set

@@ -35,7 +35,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
     /**
      * 这一集视频的实际域名。
      *
-     * 自愈路径要按它清 DNS（见 `MainActivity.dropDeadTransport`）：地址是接口按集下发的
+     * 自愈路径要按它清 DNS（见 `TvMainActivity.dropDeadTransport`）：地址是接口按集下发的
      * 签名 URL，相邻两集常常落在不同的 CDN shard / 不同的 IP 段上，因此「坏的是哪一个
      * 域名」只能从这一集自己的地址里读出来，不能拿上一集或接口域名顶替。
      * 解析失败返回空串（调用方按「没有域名可清」处理，不会因此中断自愈）。
@@ -131,7 +131,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
     /**
      * 这一份能不能**原地复用**：索引已经解析好（[prepare] 走完过一遍），而且没有被 [close] 过。
      *
-     * 给「同档重建」判用（见 `MainActivity.replayWithPlan`）：把解码器放掉重开时，
+     * 给「同档重建」判用（见 `TvMainActivity.replayWithPlan`）：把解码器放掉重开时，
      * 只要这一份还能用就不必重取地址、也不必重读盘——索引、文件头、首块全在它里面。
      *
      * `close()` 之后必须判 false：那时 `head` 已经清空、在途请求全部取消，
@@ -240,7 +240,7 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
     /**
      * 已经连续拿到的前 N 字节（含索引区）。
      *
-     * 给上层做「提取器类预热」用（见 `MainActivity.primeExtractor`）：那段字节就是
+     * 给上层做「提取器类预热」用（见 `TvMainActivity.primeExtractor`）：那段字节就是
      * ExoPlayer 解析 moov 要读的前 512KB，拿它当场跑一遍能把它那条路径的类加载与 JIT 提前做掉。
      *
      * 直接返回内部数组（不复制）：`head` 只会被整体替换，从不原地改写，读到的永远是

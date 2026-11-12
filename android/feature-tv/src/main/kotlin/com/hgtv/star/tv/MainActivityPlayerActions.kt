@@ -17,10 +17,10 @@ import com.hgtv.star.tv.R
 // （[RelatedPanel]：不压暗画面，上方那一帧照常亮着），点卡片 = 离开播放页进详情。
 
 /** 播放设置里的「相关剧集」：底部弹出一栏相关作品卡片。 */
-fun MainActivity.showPlayerRelated() = showPlayerWorksStrip(author = false)
+fun TvMainActivity.showPlayerRelated() = showPlayerWorksStrip(author = false)
 
 /** 播放设置里的「作者作品」：底部弹出一栏该作者名下的全部作品。 */
-fun MainActivity.showPlayerAuthorWorks() = showPlayerWorksStrip(author = true)
+fun TvMainActivity.showPlayerAuthorWorks() = showPlayerWorksStrip(author = true)
 
 /**
  * 播放页底部的作品浮层（相关剧集 / 作者作品共用）。
@@ -32,7 +32,7 @@ fun MainActivity.showPlayerAuthorWorks() = showPlayerWorksStrip(author = true)
  * [author] 为真时走作者作品（数据来自按作者名的全站搜索，比相关剧集慢，因此**分两段交付**：
  * 先铺搜到的那一批，补季完成后再就地换一次），为假时走相关剧集。
  */
-private fun MainActivity.showPlayerWorksStrip(author: Boolean) {
+private fun TvMainActivity.showPlayerWorksStrip(author: Boolean) {
     // 推荐页（触屏）跑的是同一套播放内核，播放设置也开得出来，因此这里放宽到「在播放页」：
     // 那一页同样有 `detail`，浮层照常铺；只是关掉之后不再亮控制条（那一页没有这条控制条）。
     if(!onPlaybackPage() || finishedPanel!=null) return
@@ -173,7 +173,7 @@ private fun MainActivity.showPlayerWorksStrip(author: Boolean) {
  * 已经有结果、或者正在取的时候什么都不做——`prefetch*` 自己带这条判据，
  * 这里再判一次只是让「重试」按钮不必关心它。
  */
-private fun MainActivity.refreshStripData(series: Series,author: Boolean) {
+private fun TvMainActivity.refreshStripData(series: Series,author: Boolean) {
     if(detail?.series?.id!=series.id) return
     if(author) ensureAuthorWorks(series.id,series) else ensureRelated(series.id)
 }
@@ -185,7 +185,7 @@ private fun MainActivity.refreshStripData(series: Series,author: Boolean) {
  * 弹窗带封面 + 剧名 + 一行副标题（作者 / 集数 / 题材），正文就是简介，
  * 关掉之后控制条回到画面上（与其余弹窗同一套收尾）。
  */
-fun MainActivity.showPlayerIntro() {
+fun TvMainActivity.showPlayerIntro() {
     if(!onPlaybackPage()) return
     val data=detail ?: return
     val series=data.series
@@ -210,7 +210,7 @@ fun MainActivity.showPlayerIntro() {
 }
 
 /** 「加入收藏 / 已收藏」按钮此刻该写的文案：按本机收藏状态现算，不另存一份。 */
-fun MainActivity.playerFavoriteLabel(): String =
+fun TvMainActivity.playerFavoriteLabel(): String =
     if(detail?.series?.id?.let { library.favorite(it) }==true) "已收藏" else "加入收藏"
 
 /**
@@ -220,7 +220,7 @@ fun MainActivity.playerFavoriteLabel(): String =
  * 因此两边读到的状态永远一致；差别只有「改完不重建页面」——面板是缓存复用的，
  * 这里只把那一枚按钮的文案刷掉（见 `PlaybackMenu.actionLabel`）。
  */
-fun MainActivity.togglePlayerFavorite(): String {
+fun TvMainActivity.togglePlayerFavorite(): String {
     val data=detail ?: return playerFavoriteLabel()
     // 用户正在看这一部：收藏更新检查这时候去拉详情没有意义，先停下（与简介页一致）。
     favoriteMonitor.stop()

@@ -4,7 +4,7 @@ import android.app.Activity
 import android.view.*
 import android.widget.*
 import com.hgtv.star.core.*
-import com.hgtv.star.tv.MainActivity.GridRow
+import com.hgtv.star.tv.TvMainActivity.GridRow
 import com.hgtv.star.tv.PosterCard
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
@@ -23,7 +23,7 @@ import com.hgtv.star.tv.MAX_CATALOG_PAGE
 import com.hgtv.star.tv.PREFETCH_TRIGGER_ROWS
 import com.hgtv.star.tv.PREFETCH_ROWS
 import com.hgtv.star.tv.PREFETCH_PAGES
-import com.hgtv.star.tv.MainActivity
+import com.hgtv.star.tv.TvMainActivity
 import com.hgtv.star.tv.TAB_CATEGORY
 import com.hgtv.star.tv.TAB_HOME
 import com.hgtv.star.tv.TAB_PROFILE
@@ -59,10 +59,10 @@ import com.hgtv.star.shared.compat.attachedToWindow
 //   SeriesGrid.kt  竖排六列栅格：窗口化、行复用、追加、焦点（本文件）
 //   HomeScreen.kt  横排剧架：首页四栏、详情页相关推荐
 // 卡片（tv/PosterCard）、点 / 长按动作（[openSeries] / [seriesMenu]）两边共用。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-fun MainActivity.moreLabel(): String = when {
+fun TvMainActivity.moreLabel(): String = when {
     moreFailed -> "加载失败 · 重试"
     else -> "展示更多 ↓"
 }
@@ -71,7 +71,7 @@ fun MainActivity.moreLabel(): String = when {
  *
  * 有活着的栅格就只往列表末尾接（视口上方的像素一个不动），没有栅格（空页）才退回整页重建。
  */
-fun MainActivity.loadMore() {
+fun TvMainActivity.loadMore() {
     if(!hasMore || !appendCatalog()) return
     if(gridList==null || gridItems.isEmpty()) {
         moreFocus=null; page++; catalogFocus=""
@@ -88,7 +88,7 @@ fun MainActivity.loadMore() {
  * 取回来直接接在列表末尾（在视口下方，用户看不见），全程不显示加载态——
  * 这就是「无感」的来源：请求发生在用户看到底部之前。
  */
-fun MainActivity.prefetchNextPage() {
+fun TvMainActivity.prefetchNextPage() {
     // 换榜单 / 换分类的请求还在路上：屏上那份列表属于上一条选择，
     // 拿它去取「下一页」会把新列表的页码算乱（旧列表的追加会先落进 catalog）。
     if(catalogSelectionInFlight()) return
@@ -112,7 +112,7 @@ fun MainActivity.prefetchNextPage() {
  * 也就不会出现「加载更多之后跳回顶部 / 跳到别处」。
  * [userInitiated] 为 false 表示这是后台预取落地，不抢焦点、不滚动。
  */
-fun MainActivity.applyNextPage(next: Int,result: CatalogPage,userInitiated: Boolean) {
+fun TvMainActivity.applyNextPage(next: Int,result: CatalogPage,userInitiated: Boolean) {
     if(!hasMore || !appendCatalog() || gridList==null) return
     val added=result.items.filterNot { item -> catalog.any { it.id==item.id } }
     catalog=catalog+added
@@ -137,7 +137,7 @@ fun MainActivity.applyNextPage(next: Int,result: CatalogPage,userInitiated: Bool
  * 用户是不是已经站在列表底部附近：焦点在倒数两行之内，或者视口已经接近列表末尾。
  * 「继续往后预取」与「一次性把整份目录拉下来」的分界线就在这个判断上。
  */
-fun MainActivity.nearGridEnd(): Boolean {
+fun TvMainActivity.nearGridEnd(): Boolean {
     if(gridItems.isEmpty()) return false
     // 判据是**还剩几行**（见 [PREFETCH_TRIGGER_ROWS]）：离已加载内容的末尾还有多远。
     //
@@ -154,7 +154,7 @@ fun MainActivity.nearGridEnd(): Boolean {
  * 焦点还没进栅格（刚进页面、焦点在页头）时按「一屏都没消费」处理，
  * 返回整份列表的行数——此时不该预取，因为用户还在挑榜单 / 挑分类。
  */
-fun MainActivity.rowsLeftAfterConsumed(): Int {
+fun TvMainActivity.rowsLeftAfterConsumed(): Int {
     val consumed=gridConsumedIndex()
     if(consumed<0) return gridRowCount()
     val left=(gridItems.size-(consumed+1)).coerceAtLeast(0)
@@ -167,7 +167,7 @@ fun MainActivity.rowsLeftAfterConsumed(): Int {
  * 取**焦点位置**与**视口底部**里更靠后的那个：遥控器按住下键时焦点就是进度，
  * 而滚轮 / 触摸滚动时视口底部才是——两种走法都要能触发预取。
  */
-fun MainActivity.gridConsumedIndex(): Int {
+fun TvMainActivity.gridConsumedIndex(): Int {
     val focus=gridFocusIndex() ?: -1
     val scroll=gridScroll
     val stride=rowStride()
@@ -185,7 +185,7 @@ fun MainActivity.gridConsumedIndex(): Int {
  * 两者共用同一把锁，所以同一页不会被请求两次；静默预取在途中被用户按下时，
  * 只是把 [moreFocusWanted] 打开，落地时照样把焦点交过去。
  */
-fun MainActivity.requestNextPage(userInitiated: Boolean) {
+fun TvMainActivity.requestNextPage(userInitiated: Boolean) {
     if(catalogSelectionInFlight()) return
     if(!hasMore || !appendCatalog() || gridList==null) return
     if(moreInFlight) {
@@ -250,7 +250,7 @@ fun MainActivity.requestNextPage(userInitiated: Boolean) {
  * 重算高度。视口上方的像素一个不动，滚动位置也不需要（也不应该）做任何恢复。
  * 因此「加载更多」的代价是 O(1)，与已经加载了多少部剧无关。
  */
-fun MainActivity.appendGridItems(added: List<Series>,focusTarget: String?) {
+fun TvMainActivity.appendGridItems(added: List<Series>,focusTarget: String?) {
     if(gridList==null) return
     // 过滤规则必须与 seriesList 里算 displayed 的那一套完全一致，否则 gridItems 与
     // 实际显示的内容会对不上，按索引算出来的焦点落点就会错位。
@@ -280,7 +280,7 @@ fun MainActivity.appendGridItems(added: List<Series>,focusTarget: String?) {
     }
 }
 /** 底部一行：已显示进度 + 「展示更多」。hasMore 变成 false 时只留进度文字。 */
-fun MainActivity.fillPagingRow(paging: LinearLayout) {
+fun TvMainActivity.fillPagingRow(paging: LinearLayout) {
     moreButton=null; moreCount=null
     pagingHasMore=hasMore
     paging.addView(text(moreCountText(),14f,muted).apply { gravity=Gravity.CENTER },lp(dp(200),dp(TvStyle.BUTTON_NORMAL+2*TvStyle.SOFT_BAND)))
@@ -300,7 +300,7 @@ fun MainActivity.fillPagingRow(paging: LinearLayout) {
     updateFooter()
 }
 /** 重建底部那一行（只有 hasMore 翻转时需要，其它情况走 [updateFooter] 就地改文案）。 */
-fun MainActivity.rebuildPagingRow() {
+fun TvMainActivity.rebuildPagingRow() {
     val paging=gridPaging ?: return
     val keepButtonFocus=moreButton!=null && moreButton!!.hasFocus()
     paging.removeAllViews()
@@ -308,7 +308,7 @@ fun MainActivity.rebuildPagingRow() {
     if(keepButtonFocus && moreButton==null) gridRows.lastOrNull()?.cards?.firstOrNull()?.requestFocus()
 }
 /** 底部文案与按钮状态就地更新：不动子控件，焦点不会掉。 */
-fun MainActivity.updateFooter() {
+fun TvMainActivity.updateFooter() {
     moreCount?.text=moreCountText()
     val more=moreButton ?: return
     (more as? TvButton)?.setLabel(moreLabel())
@@ -328,13 +328,13 @@ fun MainActivity.updateFooter() {
     }
 }
 /** 栅格里的全部卡片：只包含**当前物化的窗口**那几行（窗口外没有 View）。 */
-fun MainActivity.gridCards(): List<View> = gridRows.flatMap { holder -> holder.cards }
+fun TvMainActivity.gridCards(): List<View> = gridRows.flatMap { holder -> holder.cards }
 
 /** 一行是不是整份列表的最后一行（追加之后会变，所以每次现算）。 */
-fun MainActivity.isGridTail(holder: GridRow)=holder.index>=gridRowCount()-1
+fun TvMainActivity.isGridTail(holder: GridRow)=holder.index>=gridRowCount()-1
 
 /** 整份列表的行数。 */
-fun MainActivity.gridRowCount()=if(gridItems.isEmpty()) 0 else (gridItems.size+gridColumns-1)/gridColumns
+fun TvMainActivity.gridRowCount()=if(gridItems.isEmpty()) 0 else (gridItems.size+gridColumns-1)/gridColumns
 
 /**
  * 一行的像素高度（含行间距）。
@@ -343,7 +343,7 @@ fun MainActivity.gridRowCount()=if(gridItems.isEmpty()) 0 else (gridItems.size+g
  * 否则 ScrollView 会把恢复位置夹成 0（与「列表还没测量就 scrollTo」是同一个坑）。
  * 量到真实行高之后立刻修正一次，之后每帧都是纯算术。
  */
-fun MainActivity.rowStride(): Int = if(gridRowStride>0) gridRowStride
+fun TvMainActivity.rowStride(): Int = if(gridRowStride>0) gridRowStride
     else (gridPosterHeight+dp(2*TvStyle.SOFT_BAND+8)+dp((50*gridTextScale()).toInt())).coerceAtLeast(dp(120))
 
 /**
@@ -352,7 +352,7 @@ fun MainActivity.rowStride(): Int = if(gridRowStride>0) gridRowStride
  * 卡片宽度在 [ListPage.seriesList] 里算好放进 [gridCardWidth]，这里只做比例换算；
  * 还没量到宽度时返回 1，避免首帧用 0 除。
  */
-fun MainActivity.gridTextScale(): Float {
+fun TvMainActivity.gridTextScale(): Float {
     if(gridCardWidth<=0) return 1f
     val gap=dp(6)
     val base=((gridContentWidth()-gap*(GRID_COLUMNS_DEFAULT-1))/GRID_COLUMNS_DEFAULT).toFloat()
@@ -368,7 +368,7 @@ fun MainActivity.gridTextScale(): Float {
  * 因此滚动条范围、恢复位置、`gridAtBottom` 的判定都不变；
  * 但撑起这个高度只需要两个 Space，不需要真的建出那几百行。
  */
-fun MainActivity.updateGridSpacers() {
+fun TvMainActivity.updateGridSpacers() {
     val stride=rowStride()
     val total=gridRowCount()
     val start=gridWindowStart.coerceAtLeast(0)
@@ -378,7 +378,7 @@ fun MainActivity.updateGridSpacers() {
 }
 
 /** 只在高度真的变了才写回：滚动回调每次都会走到这里，无谓的 requestLayout 会多花一帧布局。 */
-fun MainActivity.setSpacerHeight(spacer: View?,height: Int) {
+fun TvMainActivity.setSpacerHeight(spacer: View?,height: Int) {
     val params=spacer?.layoutParams as? LinearLayout.LayoutParams ?: return
     if(params.height==height) return
     params.height=height
@@ -394,7 +394,7 @@ fun MainActivity.setSpacerHeight(spacer: View?,height: Int) {
  * [focusIndex] 指定「必须可见」的那张卡：焦点在窗口外时（追加后落到新行、
  * 恢复上次焦点）把它所在的行一并纳入，否则请求焦点会落空。
  */
-fun MainActivity.syncGridWindow(force: Boolean=false,focusIndex: Int?=null) {
+fun TvMainActivity.syncGridWindow(force: Boolean=false,focusIndex: Int?=null) {
     val window=gridWindow ?: return
     val scroll=gridScroll ?: return
     if(gridSyncing) return
@@ -404,7 +404,7 @@ fun MainActivity.syncGridWindow(force: Boolean=false,focusIndex: Int?=null) {
     try { syncGridWindowLocked(force,focusIndex,window,scroll,total) } finally { gridSyncing=false }
 }
 
-fun MainActivity.syncGridWindowLocked(force: Boolean,focusIndex: Int?,window: LinearLayout,scroll: ScrollView,total: Int) {
+fun TvMainActivity.syncGridWindowLocked(force: Boolean,focusIndex: Int?,window: LinearLayout,scroll: ScrollView,total: Int) {
     val stride=rowStride()
     val viewport=scroll.height
     // 视口上下各多留一行：焦点放大与「下一页」预取都需要相邻行已经在树上。
@@ -455,7 +455,7 @@ fun MainActivity.syncGridWindowLocked(force: Boolean,focusIndex: Int?,window: Li
     while(gridWindowStart+gridRows.size-1<last) materializeGridRow(gridWindowStart+gridRows.size,atFront=false)
     updateGridSpacers()
     if(gridRowStride<=0) measureRowStride()
-    // 低内存时被摘掉的封面：窗口挪动之后可能已经回到视口（见 MainActivity.releaseOffscreenCovers）。
+    // 低内存时被摘掉的封面：窗口挪动之后可能已经回到视口（见 TvMainActivity.releaseOffscreenCovers）。
     resumeVisibleCovers()
     // 预取窗口跟着物化窗口走（见 [prefetchAroundWindow]）。
     prefetchAroundWindow()
@@ -477,7 +477,7 @@ fun MainActivity.syncGridWindowLocked(force: Boolean,focusIndex: Int?,window: Li
  * 窗口是**有界**的：一次只保留前后各 [PREFETCH_ROWS] 行，滑出窗口的预取任务会被丢掉，
  * 因此飞快划过几百张也不会把队列堆满、把带宽花在再也不看的图上。
  */
-fun MainActivity.prefetchAroundWindow() {
+fun TvMainActivity.prefetchAroundWindow() {
     if(gridItems.isEmpty() || gridCardWidth<=0) return
     val total=gridRowCount()
     // 中心行只有一个来源：**焦点在哪一行**；焦点不在栅格里（触摸滚动、焦点在页头）时
@@ -508,7 +508,7 @@ fun MainActivity.prefetchAroundWindow() {
     // 而 ±12 行 × 6 列 = 150 张：窗口比缓存大，先下的那几张会在用户走到之前就被挤掉，
     // 于是同一张图被重复下载（`dupEnq` 上涨），既费带宽又抢 CPU。
     // 收成 ±6 行（约 78 张）之后窗口能整份装进缓存，预取才是有效的。
-    // [TvStyle.animate] 与低配判据同源（见 `MainActivity.onCreate`）。
+    // [TvStyle.animate] 与低配判据同源（见 `TvMainActivity.onCreate`）。
     val radius=if(TvStyle.animate) PREFETCH_ROWS else 6
     val from=(centerRow-radius).coerceAtLeast(0)
     val to=(centerRow+radius).coerceAtMost(total-1)
@@ -540,7 +540,7 @@ fun MainActivity.prefetchAroundWindow() {
  * 它已经量过（或者现在就量一次），量与布局走的是同一套规则，比单量一张卡可靠。
  * 量到之后 spacer 的高度与滚动位置一次到位，不必再等异步回调纠偏。
  */
-fun MainActivity.measureRowStride() {
+fun TvMainActivity.measureRowStride() {
     val line=gridRows.firstOrNull()?.line ?: return
     if(line.width<=0 && gridCardWidth>0) line.measure(
         View.MeasureSpec.makeMeasureSpec(resources.displayMetrics.widthPixels-2*pageInset(),View.MeasureSpec.EXACTLY),
@@ -551,7 +551,7 @@ fun MainActivity.measureRowStride() {
 }
 
 /** 取一个行容器：优先用回收池里的（View 与卡片都复用），池空才新建。 */
-fun MainActivity.obtainGridRow(): GridRow {
+fun TvMainActivity.obtainGridRow(): GridRow {
     val columns=gridColumns
     val textScale=gridTextScale()
     // 设置里改了每行张数之后，池里旧行可能还是别的张数：尺寸对不上就丢掉重建，
@@ -573,7 +573,7 @@ fun MainActivity.obtainGridRow(): GridRow {
 }
 
 /** 把一个行容器放进窗口（[atFront] 决定插在最前还是最后）并绑定它那一行的数据。 */
-fun MainActivity.materializeGridRow(index: Int,atFront: Boolean) {
+fun TvMainActivity.materializeGridRow(index: Int,atFront: Boolean) {
     val window=gridWindow ?: return
     val holder=obtainGridRow()
     holder.index=index
@@ -595,7 +595,7 @@ fun MainActivity.materializeGridRow(index: Int,atFront: Boolean) {
  * 代价：这一行再被复用时要从内存缓存重新取一张（命中就是一次 `setImageBitmap`），
  * 只有缓存刚好把它挤掉时才需要读盘（3~10ms）。比「整机 OOM」便宜得多。
  */
-fun MainActivity.recycleGridRow(holder: GridRow) {
+fun TvMainActivity.recycleGridRow(holder: GridRow) {
     gridWindow?.removeView(holder.line)
     gridRows.remove(holder)
     holder.cards.forEach { it.releaseCover() }
@@ -605,7 +605,7 @@ fun MainActivity.recycleGridRow(holder: GridRow) {
 }
 
 /** 按 [GridRow.index] 绑定这一行里每张卡的剧集、状态与封面（同值不重设，见 [PosterCard.bind]）。 */
-fun MainActivity.bindGridRow(holder: GridRow) {
+fun TvMainActivity.bindGridRow(holder: GridRow) {
     holder.cards.forEachIndexed { column,card ->
         val index=holder.index*gridColumns+column
         val item=gridItems.getOrNull(index)
@@ -626,7 +626,7 @@ fun MainActivity.bindGridRow(holder: GridRow) {
  * 一张海报卡的**数据绑定**（不含监听器）：监听器在 [wireGridCard] 里只装一次，
  * 因此滚出再滚回来只是换一遍文字与封面，不再新建 View、不再重复挂监听。
  */
-fun MainActivity.bindGridCard(card: PosterCard,item: Series) {
+fun TvMainActivity.bindGridCard(card: PosterCard,item: Series) {
     val position=if(tab==TAB_RANK) ranking?.positions?.get(item.id) else null
     val rank=position?.rank
     val progress=if(collection=="history") library.progress(item.id) else null
@@ -665,7 +665,7 @@ fun MainActivity.bindGridCard(card: PosterCard,item: Series) {
  * 卡片会被复用，因此回调里一律通过 [PosterCard.series] 取「这一张卡现在是谁」，
  * 不捕获某一次的 item。
  */
-fun MainActivity.wireGridCard(card: PosterCard) {
+fun TvMainActivity.wireGridCard(card: PosterCard) {
     card.setOnClickListener { card.series?.let { item -> openSeries(item,collection=="history") } }
     card.setOnLongClickListener { card.series?.let { item -> seriesMenu(item,card) }; true }
     card.setOnKeyListener { _,key,event ->
@@ -753,7 +753,7 @@ fun MainActivity.wireGridCard(card: PosterCard) {
 }
 
 /** 把某一行带进视口：窗口化之后行号就是坐标，不需要等布局。 */
-fun MainActivity.revealRow(row: Int,smooth: Boolean) {
+fun TvMainActivity.revealRow(row: Int,smooth: Boolean) {
     val scroll=gridScroll ?: return
     val stride=rowStride()
     val top=row*stride
@@ -782,7 +782,7 @@ fun MainActivity.revealRow(row: Int,smooth: Boolean) {
  *
  * 返回这次真正拿到焦点的控件（没补就是 null），调用方可以据此决定要不要滚动。
  */
-fun MainActivity.ensureFocusView(target: () -> View?): View? {
+fun TvMainActivity.ensureFocusView(target: () -> View?): View? {
     if(focusHeld()) return null
     val view=target() ?: return null
     view.requestFocus()
@@ -790,18 +790,18 @@ fun MainActivity.ensureFocusView(target: () -> View?): View? {
 }
 
 /** 同上，给「动作本身不返回控件」的落点用（例如按索引落焦点）。 */
-fun MainActivity.ensureFocus(action: () -> Unit) {
+fun TvMainActivity.ensureFocus(action: () -> Unit) {
     if(focusHeld()) return
     action()
 }
 
 /** 当前有没有控件**真的**握着焦点（被摘掉的控件不算）。 */
-fun MainActivity.focusHeld(): Boolean {
+fun TvMainActivity.focusHeld(): Boolean {
     val current=root.findFocus() ?: return false
     return current.attachedToWindow
 }
 
-fun MainActivity.focusGridIndex(index: Int,smooth: Boolean=true) {
+fun TvMainActivity.focusGridIndex(index: Int,smooth: Boolean=true) {
     if(index !in gridItems.indices) return
     val row=index/gridColumns
     val scroll=gridScroll
@@ -831,12 +831,12 @@ fun MainActivity.focusGridIndex(index: Int,smooth: Boolean=true) {
  * 窗口化之后「就地更新一张卡」不再按 id 找控件，而是重绑可见的那几十张——
  * 代价恒定，且不会把更新漏在还没物化的行上（它们物化时自然会绑到最新状态）。
  */
-fun MainActivity.rebindGridRows() {
+fun TvMainActivity.rebindGridRows() {
     gridRows.forEach { holder -> if(holder.line.attachedToWindow) bindGridRow(holder) }
 }
 
 /** 当前焦点所在的全局索引；焦点不在栅格里时返回 null。 */
-fun MainActivity.gridFocusIndex(): Int? {
+fun TvMainActivity.gridFocusIndex(): Int? {
     gridRows.forEach { holder ->
         val column=holder.cards.indexOfFirst { it.hasFocus() }
         if(column>=0) return holder.index*gridColumns+column
@@ -851,7 +851,7 @@ fun MainActivity.gridFocusIndex(): Int? {
  * 窗口上下边界上的「目标行还没物化」由 [wireGridCard] 的按键处理按索引补物化，
  * 因此链在这些边界上写成「指向自己」也不会把焦点卡死。
  */
-fun MainActivity.wireGridFocus(prev: View?,next: View?) {
+fun TvMainActivity.wireGridFocus(prev: View?,next: View?) {
     val rows=gridRows.sortedBy { it.index }
     if(rows.isEmpty()) {
         // 内容为空（搜索无结果）时也要把导航栏那几件的「按下」出口重指一次：
@@ -951,7 +951,7 @@ fun MainActivity.wireGridFocus(prev: View?,next: View?) {
  * 已显示进度。榜单自带总页数，所以能给「N / M 部」；
  * 搜索结果只知道自己追加到第几页，就只报已显示数量，加载完再明确说「全部」。
  */
-fun MainActivity.moreCountText(): String {
+fun TvMainActivity.moreCountText(): String {
     val total=(ranking?.totalPages ?: 0)*pageSize
     return when {
         !hasMore -> "已显示全部 ${catalog.size} 部"
@@ -960,7 +960,7 @@ fun MainActivity.moreCountText(): String {
     }
 }
 /** 追加一页时把两页的名次与热度合起来，否则先加载的那几页会丢掉名次。 */
-fun MainActivity.mergeRanking(previous: ComicRanking?,next: ComicRanking?): ComicRanking? = when {
+fun TvMainActivity.mergeRanking(previous: ComicRanking?,next: ComicRanking?): ComicRanking? = when {
     previous==null -> next
     next==null -> previous
     else -> next.copy(positions=previous.positions+next.positions)

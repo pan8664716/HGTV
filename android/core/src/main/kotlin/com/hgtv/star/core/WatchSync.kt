@@ -14,7 +14,7 @@ import kotlin.math.abs
  * 于是同一个账号在两处页面显示不同的集数——用户读到的就是「历史同步乱了」。
  *
  * 规则只有一条：**同一部剧只认更超前的那一份，并且两边都写成它**。
- * 这里只放纯函数，界面侧（`MainActivity.reconcileHistory`）负责落盘与上传。
+ * 这里只放纯函数，界面侧（`TvMainActivity.reconcileHistory`）负责落盘与上传。
  *
  * ## 时间单位
  *

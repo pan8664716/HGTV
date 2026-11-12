@@ -9,7 +9,7 @@ package com.hgtv.star.core
  *
  * 浏览页面（首页 / 榜单 / 分类 / 搜索 / 简介）的方向键也不参与：那里上下左右就是焦点移动，
  * 是遥控器的基本手感，改成别的动作整个界面就没法用了。因此按键设置的作用域是**播放界面**，
- * 见 `MainActivity.dispatchKeyEvent` 里那一段。
+ * 见 `TvMainActivity.dispatchKeyEvent` 里那一段。
  */
 enum class PlayerKey(val storedValue: String, val label: String) {
     UP("up","上键"),

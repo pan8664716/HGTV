@@ -22,7 +22,7 @@ import java.io.File
  *
  * 采样要读 `/proc`、还要建一次离屏 EGL 上下文，都是「不能每秒在主线程做一遍」的事。
  * 因此：GPU 名**只在第一次采**（之后纯内存读），CPU 用两次采样之间的差值算占比，
- * 整个 [sample] 只在 [MainActivity] 的 io 线程上跑（见 `DebugOverlay.kt` 的 `startPerfProbe`）。
+ * 整个 [sample] 只在 [TvMainActivity] 的 io 线程上跑（见 `DebugOverlay.kt` 的 `startPerfProbe`）。
  *
  * ## 单位
  *

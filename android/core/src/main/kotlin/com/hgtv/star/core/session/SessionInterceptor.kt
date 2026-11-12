@@ -19,7 +19,7 @@ import okhttp3.Response
  * 2. **每个响应扫 `X-Tt-Token`**：服务端可以在任意接口的响应头里换 token；
  * 3. **每个响应合并 `Set-Cookie`**：登录之外的接口也会下发 / 删除 cookie。
  *
- * 挂在哪：`ContentRepository.defaultHttpClient()`。这样 `MainActivity.repository`、
+ * 挂在哪：`ContentRepository.defaultHttpClient()`。这样 `TvMainActivity.repository`、
  * `FavoriteMonitor`、播放预取、`PlaybackTransport` 的仓库自动都带上。
  */
 class SessionInterceptor(

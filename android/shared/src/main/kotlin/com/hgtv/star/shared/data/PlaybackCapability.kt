@@ -172,7 +172,7 @@ object PlaybackCapability {
         )
     }
 
-    /** 解码失败之后清掉缓存，下次重新探测（见 `MainActivity.playerFailure` 的解码分支）。 */
+    /** 解码失败之后清掉缓存，下次重新探测（见 `TvMainActivity.playerFailure` 的解码分支）。 */
     fun invalidate(context: Context) {
         context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
             .remove(KEY_HEIGHT).remove(KEY_HARDWARE).apply()

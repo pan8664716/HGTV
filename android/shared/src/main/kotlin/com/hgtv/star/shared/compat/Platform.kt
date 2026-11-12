@@ -89,7 +89,7 @@ fun ConnectivityManager.isMeteredConnection(): Boolean = isActiveNetworkMetered
  *
  * **不能用 `AutoCloseable`**：它是 **API 19** 才加进 Android 的类。线上那台把
  * `ro.build.version.sdk` 报成 19、框架其实是 4.2 的盒子（见 [hasIsAttachedToWindow]）
- * 上它根本不存在，只要它出现在 `MainActivity` 的字段类型里，类加载就抛
+ * 上它根本不存在，只要它出现在 `TvMainActivity` 的字段类型里，类加载就抛
  * `NoClassDefFoundError: java.lang.AutoCloseable`。
  * 一个只有 `cancel()` 的本地接口 API 1 起就能用，代价是调用方写 `.cancel()`。
  */

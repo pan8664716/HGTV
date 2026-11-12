@@ -15,7 +15,7 @@ import kotlinx.coroutines.flow.update
  *
  * ## 它替代了什么
  *
- * 改造前，「现在是第几次播放、播到哪一步」这件事由 `MainActivity` 上的七个计数器分担：
+ * 改造前，「现在是第几次播放、播到哪一步」这件事由 `TvMainActivity` 上的七个计数器分担：
  *
  * | 计数器 | 原本要挡的问题 |
  * | --- | --- |

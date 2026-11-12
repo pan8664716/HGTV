@@ -15,7 +15,7 @@ import java.util.concurrent.atomic.AtomicLong
  * 客户设备上「首页一直是空的」时，只能看到 [com.hgtv.star.core.ContentRepository] 的
  * `Home displayed`，看不到到底是 SNI、证书还是协议版本挂的。
  *
- * 由 `MainActivity` 接到 `Log.i("HGTV-NET", ...)`；不接就是空操作。
+ * 由 `TvMainActivity` 接到 `Log.i("HGTV-NET", ...)`；不接就是空操作。
  * 只记录**非取消**的 IO 失败（用户切页时会大量 cancel，那些不是问题）。
  */
 /**

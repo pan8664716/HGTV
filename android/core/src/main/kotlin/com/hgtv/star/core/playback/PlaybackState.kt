@@ -4,7 +4,7 @@ package com.hgtv.star.core.playback
 /**
  * 一次播放所处的阶段。
  *
- * 这是**唯一**一处描述「现在播到哪一步」的地方。改造前这件事由 `MainActivity` 上的
+ * 这是**唯一**一处描述「现在播到哪一步」的地方。改造前这件事由 `TvMainActivity` 上的
  * 五个布尔量分担（`playbackReady` / `playError` / `pausedForLifecycle` /
  * `bufferingSuppressed` / `requestedAutoplay`），它们有 32 种组合，而其中只有 6 种是
  * 真实可达的——剩下 26 种组合一旦出现，界面上就是「有画面却说加载中」这类自相矛盾的状态。

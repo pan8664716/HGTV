@@ -332,7 +332,7 @@ private fun alpha(color: Int, ratio: Float): Int =
  * 那里装的是内容与观看记录，还要参与手机备份的合并与冲突处理，
  * 让一套配色跟着备份一起在设备之间搬家没有意义。
  *
- * 读取是同步的，因为它必须在 `MainActivity.onCreate` 建视图之前完成——
+ * 读取是同步的，因为它必须在 `TvMainActivity.onCreate` 建视图之前完成——
  * 一个只有一项的小文件，代价是一次很短的磁盘读。
  */
 object TvThemeStore {

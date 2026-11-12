@@ -10,8 +10,8 @@ import android.view.inputmethod.InputMethodManager
 import android.widget.EditText
 import com.hgtv.star.shared.debug.Diagnostics
 
-// 本文件是从 MainActivity.kt 拆出来的「搜索页语音输入」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「搜索页语音输入」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 //
 // 走系统 [RecognizerIntent] 而不是自带录音：录音由系统语音服务完成，APK 不需要
@@ -27,7 +27,7 @@ import com.hgtv.star.shared.debug.Diagnostics
  * 草稿在拉起前存一份（[voiceDraft]）：识别界面会让本页走一次 `onStop → onResume`，
  * 而重建只认已提交的 [query]；用户打了半句就点语音、又取消时，那半句必须还回去。
  */
-fun MainActivity.startVoiceSearch() {
+fun TvMainActivity.startVoiceSearch() {
     // 连按：语音界面已经在前面了，不再叠一层。
     if(voiceLaunching || isFinishing) return
     if(screen!="catalog" || tab!=TAB_SEARCH) return
@@ -75,7 +75,7 @@ fun MainActivity.startVoiceSearch() {
 /**
  * 系统里有没有能接 `ACTION_RECOGNIZE_SPEECH` 的 Activity（实现在 `:shared`，与手机端共用）。
  */
-private fun MainActivity.hasSpeechRecognizer(intent: Intent): Boolean =
+private fun TvMainActivity.hasSpeechRecognizer(intent: Intent): Boolean =
     com.hgtv.star.shared.search.VoiceSearch.hasRecognizer(this, intent)
 /**
  * 语音界面返回后的收尾：**只消费一次**。
@@ -86,7 +86,7 @@ private fun MainActivity.hasSpeechRecognizer(intent: Intent): Boolean =
  *
  * 结果、草稿、焦点抑制都在这里一次取空，因此重复调用不会搜两遍、也不会把草稿盖回去。
  */
-fun MainActivity.applyVoiceReturn() {
+fun TvMainActivity.applyVoiceReturn() {
     if(!voiceReturned) return
     // 还没回到前台（`onActivityResult` 的 post 抢在 `onResume` 前面跑了）：
     // 留着标志，等 `onResume` 末尾再消费，避免在页面还没重建时先搜一遍。
@@ -129,6 +129,6 @@ fun normalizeVoiceQuery(raw: String): String = com.hgtv.star.core.VoiceQuery.nor
  * 这条链路**只写 logcat**（`adb logcat -s HGTV-VOICE`），不把识别文本交给友盟：
  * 参数只有阶段名，不含任何识别内容。
  */
-fun MainActivity.noteVoice(stage: String) {
+fun TvMainActivity.noteVoice(stage: String) {
     Diagnostics.trace("HGTV-VOICE",stage)
 }

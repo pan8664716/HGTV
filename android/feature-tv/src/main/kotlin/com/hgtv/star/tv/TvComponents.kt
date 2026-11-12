@@ -1411,7 +1411,7 @@ class SeekIndicator(context: Context) : View(context) {
      * 手指拖动进度：非 null 时这个控件可点可拖（**电视上永远是 null**）。
      *
      * 回调第一个参数是 0–1 的进度比例，第二个是「这一次是不是抬手」。
-     * 拖动期间只改显示、抬手才真跳，原因见 `MainActivity.onScrubProgress`：
+     * 拖动期间只改显示、抬手才真跳，原因见 `TvMainActivity.onScrubProgress`：
      * 连续 `seekTo` 会让 ExoPlayer 反复重置渲染管线。
      *
      * 做成可空回调而不是新增一个控件：电视端的进度条一个字节都不变，

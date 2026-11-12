@@ -11,7 +11,7 @@
     <!--
       外部存储读写：给会话镜像用——把 device_id / iid 与 sessionid 那一串写到自建的
       `/sdcard/.hgtv/`（卸载不删），卸载重装后直接恢复登录，不必重新注册、重新收短信验证。
-      4.4–5.1 是安装期权限（装上就有）；6 及以上需要运行时授权（见 MainActivity.requestMirrorStorage）。
+      4.4–5.1 是安装期权限（装上就有）；6 及以上需要运行时授权（见 TvMainActivity.requestMirrorStorage）。
       传统存储模式下（见下面的 requestLegacyExternalStorage）这一个权限就等于整个公共存储的
       读写权，因此**不设 maxSdkVersion**。
     -->
@@ -53,7 +53,7 @@
           启动路由：唯一带 LAUNCHER / LEANBACK_LAUNCHER 的组件。
 
           **不用 `Theme.NoDisplay`**（2026-11 现场：小明 Q1 Pro 投影仪上 1.3.0 点开毫无反应，
-          1.2.9.1 正常——那一版没有这一层，直接起 MainActivity）。NoDisplay 的活动不建窗口，
+          1.2.9.1 正常——那一版没有这一层，直接起 TvMainActivity）。NoDisplay 的活动不建窗口，
           `startActivity` 之后立刻 `finish()`，部分国产 TV 固件会先把任务清掉、再丢掉刚起来的
           目标页，表现就是「点了没反应」。换成半透明主题后这一层**有窗口**，任务里始终有东西，
           转发不会落空；`noHistory` 也一并去掉——它本来就是为「不建窗口」服务的。
@@ -65,7 +65,9 @@
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
         <!-- TV 端：横屏 + 遥控器焦点导航。 -->
-        <activity android:name=".tv.MainActivity" android:exported="true" android:theme="@style/StartupContentTheme" android:screenOrientation="landscape" android:windowSoftInputMode="adjustResize" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
+        <activity android:name=".tv.TvMainActivity" android:exported="true" android:theme="@style/StartupContentTheme" android:screenOrientation="landscape" android:windowSoftInputMode="adjustResize" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
+        <!-- 旧组件名保留为别名，避免已有显式 Intent / 外部快捷方式因类重命名失效。 -->
+        <activity-alias android:name=".tv.MainActivity" android:targetActivity=".tv.TvMainActivity" android:exported="true" />
         <!-- 手机 / 平板端：触摸 + 跟随屏幕方向。 -->
         <activity android:name=".phone.PhoneMainActivity" android:exported="false" android:theme="@style/StartupContentTheme" android:configChanges="keyboard|keyboardHidden|navigation|uiMode" android:launchMode="singleTop" />
         <!--

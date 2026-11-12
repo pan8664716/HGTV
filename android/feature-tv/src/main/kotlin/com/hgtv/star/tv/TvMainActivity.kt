@@ -78,14 +78,14 @@ import com.hgtv.star.shared.nav.Route
  * 「收藏后焦点跑到上面」「内容落地后焦点从芯片跳到第一张卡」都是它。
  */
 
-class MainActivity: Activity() {
+class TvMainActivity: Activity() {
     /*
-     * 本类的代码按功能拆在 MainActivity* 这一组文件里（本文件保留：状态字段、生命周期、
-     * 返回键与系统回调）。拆出去的那部分写成了 MainActivity 的扩展成员，因此它们在同一个
+     * 本类的代码按功能拆在 TvMainActivity* 这一组文件里（本文件保留：状态字段、生命周期、
+     * 返回键与系统回调）。拆出去的那部分写成了 TvMainActivity 的扩展成员，因此它们在同一个
      * 包、同一个模块内互相可见——被别的文件用到的字段 / 方法在这里一律是 internal，
      * 只有确实只在本文件内部使用的才是 private（例如 goBack / confirmExit / tick）。
      *
-     * 也就是说：**出现在别的 MainActivity* 文件里的东西不能改回 private**，否则编译不过。
+     * 也就是说：**出现在别的 TvMainActivity* 文件里的东西不能改回 private**，否则编译不过。
      * 反过来说，看一眼可见性就知道这个字段有没有跨文件共享，排错时省一步全局搜索。
      */
     // 主题可以在设置里随时切换，因此这几个高频令牌写成 getter 而不是构造期快照：
@@ -713,7 +713,7 @@ class MainActivity: Activity() {
      * 上一次预取窗口的中心行（-1 = 还没有过）。
      *
      * 中心行**只有一个来源**（焦点行；焦点不在栅格里时用视口中心），由
-     * [MainActivity.prefetchAroundWindow] 自己算——不再由调用方传进来。
+     * [TvMainActivity.prefetchAroundWindow] 自己算——不再由调用方传进来。
      * 传进来的那版有两个来源（视口底行 / 焦点行）交替触发，窗口会在两个位置之间来回翻，
      * 绝大多数预取任务被反复撤销重排（实测 77%）。
      */
@@ -958,9 +958,9 @@ class MainActivity: Activity() {
      * [library] 是否已经建好。
      *
      * `lateinit` 的 `isInitialized` 只能在本类体内用：扩展成员函数（本项目大量界面代码
-     * 都是 `MainActivity.xxx()` 这种扩展）拿不到 backing field，编译器会直接报
+     * 都是 `TvMainActivity.xxx()` 这种扩展）拿不到 backing field，编译器会直接报
      * 「Backing field is not accessible at this point」。因此统一开这一个成员出来，
-     * 扩展里一律走它（见 `MainActivity.applyPerformanceProfile`）。
+     * 扩展里一律走它（见 `TvMainActivity.applyPerformanceProfile`）。
      */
     val libraryReady: Boolean get() = ::library.isInitialized
     lateinit var tvTools: TvTools
@@ -1676,13 +1676,13 @@ class MainActivity: Activity() {
     /**
      * 建播放器的互斥锁。
      *
-     * 播放器现在可能被两条路同时建：起播任务在 io 线程预热（[MainActivity.warmPlayer]）、
+     * 播放器现在可能被两条路同时建：起播任务在 io 线程预热（[TvMainActivity.warmPlayer]）、
      * 以及回调落到主线程时发现还没有播放器而当场补建。上一次起播被取消时它的线程
      * 也可能还在里面。没有这把锁就会建出两个，其中一个永远没人释放（解码器 + 播放线程都留着）。
      */
     val playerBuildLock=Any()
     /**
-     * 播放器是否已被彻底拆除（[MainActivity.releasePlayer] 置位，下一次 [playEpisode] 复位）。
+     * 播放器是否已被彻底拆除（[TvMainActivity.releasePlayer] 置位，下一次 [playEpisode] 复位）。
      *
      * 预热线程可能正卡在 `newPlayer()` 里（`MediaCodecList` / `AudioManager` 都是 Binder 调用，
      * 老盒子上要几百毫秒）。没有这条标志，`onDestroy` 里的 release 抢在它前面执行时，
@@ -1690,7 +1690,7 @@ class MainActivity: Activity() {
      */
     @Volatile internal var playerDisposed=false
     /**
-     * 已经做过构造后配置的那个播放器（见 `MainActivity.configurePlayer`）。
+     * 已经做过构造后配置的那个播放器（见 `TvMainActivity.configurePlayer`）。
      *
      * 配置现在可能从两处到达主线程：预热线程 post 过来的那一次，以及起播回调自己那一次。
      * 记下来保证同一个实例只配一次（`addAnalyticsListener` 重复调用会把监听挂两遍）。
@@ -1826,7 +1826,7 @@ class MainActivity: Activity() {
      * 按「上」要从这一行的**每一格**回到顶部导航栏的芯片，不能只修第一格：
      * 推荐范围那一行有三枚开关，「漫剧」能回去、「AI剧 / 真人剧」却停在原地，
      * 就是这个差别造成的（`wireRows` 给第一行设的 up 是「自己」）。
-     * 由 `MainActivity.settings()` 建完页面后赋值，`refreshSettingsTabLanding()` 每次刷新都按它改。
+     * 由 `TvMainActivity.settings()` 建完页面后赋值，`refreshSettingsTabLanding()` 每次刷新都按它改。
      */
     var settingsTopRows: (Int)->List<View> = { emptyList() }
     /** 设置页的滚动容器：切大项时回到顶部（见 [switchSettingsTab]）。 */
@@ -1956,7 +1956,7 @@ class MainActivity: Activity() {
         // 启动链路的第二个锚点（第一个是 `LaunchActivity` 的 `route ->`）。
         // 现场「点图标没反应」时要能一眼分开三种情况：路由没跑 / 路由跑了但目标没起来 /
         // 目标起来了但画面没上屏——这一条就是中间那个分界。
-        android.util.Log.w("HGTV-BOOT", "tv.MainActivity onCreate")
+        android.util.Log.w("HGTV-BOOT", "tv.TvMainActivity onCreate")
         // 进程死亡后的现场：真正的恢复要等 `library.isLoaded`（onResume 里那次），
         // 这里先存下来。`state` 只在重建时非空，正常冷启动是 null。
         restoreBundle=state
@@ -1979,7 +1979,7 @@ class MainActivity: Activity() {
     /**
      * 第二阶段的完整主界面初始化。
      *
-     * 放在首帧之后执行，避免 `MainActivity` 窗口已经出现、但主线程还在做主题读取、
+     * 放在首帧之后执行，避免 `TvMainActivity` 窗口已经出现、但主线程还在做主题读取、
      * 运行时创建和网络监听，用户只能看到窗口背景里的静态三点。
      */
     private fun initializeMainAfterFirstFrame(state: Bundle?) {

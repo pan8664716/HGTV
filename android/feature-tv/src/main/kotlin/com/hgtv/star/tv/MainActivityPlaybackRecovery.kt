@@ -29,7 +29,7 @@ import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.debug.NetSpeed
 import com.hgtv.star.tv.R
-fun MainActivity.networkAvailable(): Boolean = connectivity.hasInternet()
+fun TvMainActivity.networkAvailable(): Boolean = connectivity.hasInternet()
 /**
  * 网络刚恢复，而起播正卡在「正在获取播放地址…」：把在途那一发作废，按原位置立刻重取。
  *
@@ -54,7 +54,7 @@ fun MainActivity.networkAvailable(): Boolean = connectivity.hasInternet()
  * 旧那一发的 `finally` 也不会把 [playbackFetching] 抹掉（那里比的是
  * [playbackFetchSeq]，新一发已经把它推走了），所以这一发重取期间下一集预热仍然让路。
  */
-fun MainActivity.refetchAddressOnNetwork() {
+fun TvMainActivity.refetchAddressOnNetwork() {
     if(isDestroyed || screen!="player" || !playbackFetching || playError) return
     if(detail==null || !networkAvailable()) return
     android.util.Log.i(
@@ -64,14 +64,14 @@ fun MainActivity.refetchAddressOnNetwork() {
     generation++; cancelWork()
     playEpisode(episodeIndex,startPosition.coerceAtLeast(0),requestedAutoplay)
 }
-fun MainActivity.currentPosition(): Long = pendingSeek ?: player?.currentPosition?.takeIf { playbackReady } ?: startPosition
-fun MainActivity.cancelRecovery() {
+fun TvMainActivity.currentPosition(): Long = pendingSeek ?: player?.currentPosition?.takeIf { playbackReady } ?: startPosition
+fun TvMainActivity.cancelRecovery() {
     main.removeCallbacks(retryRunnable)
     retryPending=false
     autoRecovery=false
     retryEpisodeId=""
 }
-fun MainActivity.scheduleRecovery() {
+fun TvMainActivity.scheduleRecovery() {
     if(!foreground || !playError || !autoRecovery || retryPending) return
     if(!playbackCoordinator.autoRetryAvailable) { autoRecovery=false; playbackText.text="已自动重试 3 次，仍无法播放。可手动重试或切换清晰度。"; return }
     if(!networkAvailable()) { playbackText.text="网络已断开，联网后自动续播 · 第 ${episodeIndex+1} 集 ${formatTime(retryPosition)}"; return }
@@ -103,7 +103,7 @@ fun playbackMediaKind(problem: Throwable?): MediaKind =
  * 判据与 [playerFailure] 里那段队列分支同源，调用方在 `dropQueuedEpisode()` **之前**
  * 把那一份 `StreamInfo` 抄出来传进来。
  */
-fun MainActivity.playbackAttribution(
+fun TvMainActivity.playbackAttribution(
     problem: Throwable?,
     code: Int,
     failedQueued: StreamInfo? = null
@@ -134,7 +134,7 @@ fun MainActivity.playbackAttribution(
  * 归还必须是**一次性的**：策略那边拒绝归还（连点第三次）时，这里整体停下。
  * 早先只挡了策略那一半，下面三份照样重置，于是连点按钮可以无限批次地重来。
  */
-internal fun MainActivity.resetBudgetsForManualRetry() {
+internal fun TvMainActivity.resetBudgetsForManualRetry() {
     playbackCoordinator.onManualRetry()
 }
 
@@ -144,7 +144,7 @@ internal fun MainActivity.resetBudgetsForManualRetry() {
  * 只换 `device_id` 不会绕过 `stream()` 的内存 / 落盘 URL 缓存，重试仍会拿到同一条
  * 失败地址；预取槽也要清掉，避免又接回失败前准备好的旧流。
  */
-internal fun MainActivity.prepareFreshPlaybackRetry() {
+internal fun TvMainActivity.prepareFreshPlaybackRetry() {
     val episodeId=detail?.episodes?.getOrNull(episodeIndex)
     val staleInfo=video?.info
     cancelPrefetch()
@@ -166,7 +166,7 @@ internal fun MainActivity.prepareFreshPlaybackRetry() {
  * 档位上限（[SessionPlaybackPolicy.effectiveMaxQuality]）**照旧沿用**：那是
  * 「这台机器放不了这一档」的结论，与具体哪一集无关。
  */
-private fun MainActivity.restartAnotherEpisode(index: Int,at: Long,autoplay: Boolean) {
+private fun TvMainActivity.restartAnotherEpisode(index: Int,at: Long,autoplay: Boolean) {
     // 按**新一集**重来一遍预算；连播链的失败计数不清，避免无限自动推进。
     detail?.episodes?.getOrNull(index)?.let { playbackCoordinator.onEpisodeSwitch(it) }
     playEpisode(index,at,autoplay,recovering=true)
@@ -189,7 +189,7 @@ private fun MainActivity.restartAnotherEpisode(index: Int,at: Long,autoplay: Boo
  * 现场先收干净再重来：看门狗、自动重试、预取、队列项都作废——它们都是按**上一次起播**排的，
  * 留着只会在新一次起播时抢解码器或往旧目标上推进。
  */
-fun MainActivity.replayWithPlan(plan: PlaybackRetryPlan) {
+fun TvMainActivity.replayWithPlan(plan: PlaybackRetryPlan) {
     // 断点位置直接问播放器：出错时 `playbackReady` 可能已被清掉，[currentPosition] 会退回
     // [startPosition]（本集开头），表现为「降级一次就从头播」。播放器在错误态下
     // `currentPosition` 仍然是有效的（它就是失败那一刻的位置），取它更准。
@@ -226,7 +226,7 @@ fun MainActivity.replayWithPlan(plan: PlaybackRetryPlan) {
     playEpisode(episodeIndex,at,play,recovering=true,keepMedia=plan.maxQuality==null)
 }
 
-fun MainActivity.playerFailure(problem: Throwable) {
+fun TvMainActivity.playerFailure(problem: Throwable) {
     // 同一次片尾故障可能先来 onPlayerError、再来 STATE_ENDED（或反过来）。
     // 两条路都去「切下一集」就是重复切换：同一会话 1.5 秒内只处理第一条。
     // 判据带会话号，所以新一集自己的错误不会被这条规则误吞。
@@ -599,7 +599,7 @@ fun MainActivity.playerFailure(problem: Throwable) {
  */
 private const val QUEUED_RECOVERY_LIMIT=2
 
-private fun MainActivity.recoverQueuedCurrent(): Boolean {
+private fun TvMainActivity.recoverQueuedCurrent(): Boolean {
     val key="${detail?.episodes?.getOrNull(episodeIndex).orEmpty()}:${playbackMaxQuality}"
     val used=playbackCoordinator.queuedRecoveryCount(key)
     if(used>=QUEUED_RECOVERY_LIMIT) return false
@@ -689,10 +689,10 @@ fun transportDeadOf(problem: Throwable?): Boolean =
  * 自愈前把「连接层缓存」一起清掉：视频域名的解析结果 + 进程级连接池。
  *
  * 清法收在 `:shared` 的 `PlaybackFailures.dropTransportCaches`（手机端同一份）；
- * 这里只负责按优先级收集「这一次可能涉及的 host」——`prepare()` 失败时 [MainActivity.video]
- * 还是上一集的（见该字段的注释），拿它清等于清错对象，因此要带上 [MainActivity.lastStreamHost]。
+ * 这里只负责按优先级收集「这一次可能涉及的 host」——`prepare()` 失败时 [TvMainActivity.video]
+ * 还是上一集的（见该字段的注释），拿它清等于清错对象，因此要带上 [TvMainActivity.lastStreamHost]。
  */
-fun MainActivity.dropDeadTransport() {
+fun TvMainActivity.dropDeadTransport() {
     val hosts=LinkedHashSet<String>(4)
     lastStreamHost.takeIf { it.isNotEmpty() }?.let(hosts::add)
     video?.host?.takeIf { it.isNotEmpty() }?.let(hosts::add)

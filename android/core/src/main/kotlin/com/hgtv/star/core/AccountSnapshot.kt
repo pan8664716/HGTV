@@ -10,7 +10,7 @@ data class AccountCacheEntry(val data: AccountData, val savedAt: Long)
 /**
  * 账号数据（资料 + 收藏 / 历史 / 点赞 / 预约）的**磁盘快照**。
  *
- * 为什么要有它：这五份数据原先只活在内存里（`MainActivity.accountData`），进程一重启就没了，
+ * 为什么要有它：这五份数据原先只活在内存里（`TvMainActivity.accountData`），进程一重启就没了，
  * 于是每次打开 App 都要重新发 5 个并发请求才敢铺「我的」页与收藏 / 历史集合页——
  * 用户读到的是「进这一页总要等一下，转一圈才出内容」。
  *

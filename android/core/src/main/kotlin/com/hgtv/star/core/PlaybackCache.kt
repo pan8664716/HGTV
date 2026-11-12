@@ -32,7 +32,7 @@ import java.security.MessageDigest
  * * **索引**：一集约 0.6~1.5MB（头部 256~600KB + 每样本 32 字节），值得；
  * * **首块视频数据**：一集 2MB 起，几部就上 10MB，**不落盘**（只留 [RemoteVideo] 里那份 1MB 内存预热）；
  * * **解码器实例 / ExoPlayer**：跨进程不可能，池化又要在原地重配另一部剧的 SPS，
- *   正是「刷几部之后黑屏有声」的来源，不做（见 `MainActivity.playEpisode` 里 `seamless` 那段注释）。
+ *   正是「刷几部之后黑屏有声」的来源，不做（见 `TvMainActivity.playEpisode` 里 `seamless` 那段注释）。
  *
  * ## 失效
  *

@@ -12,7 +12,7 @@ import java.util.concurrent.CopyOnWriteArrayList
 import java.util.concurrent.TimeUnit
 
 /**
- * 把**本机身份与会话**灌进进程级仓库——电视端 `MainActivity.applyAccount()` 的手机版。
+ * 把**本机身份与会话**灌进进程级仓库——电视端 `TvMainActivity.applyAccount()` 的手机版。
  *
  * ## 为什么必须有这一步
  *

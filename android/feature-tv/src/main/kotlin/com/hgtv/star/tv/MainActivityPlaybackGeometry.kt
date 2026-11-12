@@ -34,7 +34,7 @@ fun com.hgtv.star.core.VideoFit.resizeMode()=when(this) {
     com.hgtv.star.core.VideoFit.ZOOM -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
     com.hgtv.star.core.VideoFit.FILL -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FILL
 }
-fun MainActivity.frameResizeMode()=library.frameMode.toFit().resizeMode()
+fun TvMainActivity.frameResizeMode()=library.frameMode.toFit().resizeMode()
 /**
  * 「竖屏短剧全屏」**这台设备上能不能用**：只有手机 / 平板可用，电视不可用。
  *
@@ -52,7 +52,7 @@ fun MainActivity.frameResizeMode()=library.frameMode.toFit().resizeMode()
  * 未判定（`DeviceForm.UNKNOWN`，算法没跑起来）同样按「不可用」处理：这种形态既不能
  * 断言是手机也不能断言是平板。真要用，用户在设置里手动选「手机」或「平板」即可。
  */
-fun MainActivity.autoFullscreenAvailable(): Boolean = when(deviceMode()) {
+fun TvMainActivity.autoFullscreenAvailable(): Boolean = when(deviceMode()) {
     com.hgtv.star.shared.compat.DeviceForm.PHONE,
     com.hgtv.star.shared.compat.DeviceForm.TABLET -> true
     else -> false
@@ -73,7 +73,7 @@ fun MainActivity.autoFullscreenAvailable(): Boolean = when(deviceMode()) {
  * 屏幕本身是竖的时候（平板竖着拿、分屏）不转：那时竖屏片本来就是满的，
  * 转过去反而变成两边黑边。
  */
-fun MainActivity.autoFullscreenRotated(): Boolean {
+fun TvMainActivity.autoFullscreenRotated(): Boolean {
     if(!library.autoFullscreen) return false
     // 只有手机 / 平板能用（见 [autoFullscreenAvailable]）：电视上这个开关存着也不生效。
     if(!autoFullscreenAvailable()) return false
@@ -110,7 +110,7 @@ fun MainActivity.autoFullscreenRotated(): Boolean {
  * API 30 起 `Activity.display` 取代了 `windowManager.defaultDisplay`（后者已废弃）；
  * 两条路都包在 `runCatching` 里：拿不到就按 `ROTATION_0`（电视的默认行为）处理。
  */
-fun MainActivity.fullscreenSpinDirection(): Float {
+fun TvMainActivity.fullscreenSpinDirection(): Float {
     // 「使用设备」钉在电视上（或自动判定就是电视）：电视恒为横屏 `ROTATION_0`，直接用 `+90`。
     // 电视上这一项现在不可用（见 [autoFullscreenAvailable]），走不到这里；
     // 留着这一档是为了手动选「电视」之后再切回手机 / 平板时方向仍然有确定值。
@@ -134,7 +134,7 @@ fun MainActivity.fullscreenSpinDirection(): Float {
  * 转的方向交给 [fullscreenSpinDirection]（手机 `−90`、电视 / 横屏平板 `+90`）：
  * 框的尺寸对两个方向是对称的，因此换方向不需要动这里的任何算式。
  */
-fun MainActivity.applyVideoGeometry(target: PlayerView?=playerView) {
+fun TvMainActivity.applyVideoGeometry(target: PlayerView?=playerView) {
     val view=target ?: return
     val params=view.layoutParams as? FrameLayout.LayoutParams ?: return
     val rootW=root.width; val rootH=root.height
@@ -173,7 +173,7 @@ fun MainActivity.applyVideoGeometry(target: PlayerView?=playerView) {
  * 转动方向必须与画面**完全一致**（都走 [fullscreenSpinDirection]）：
  * 两个方向反了的话，界面会对着画面的反面，读起来是倒的。
  */
-fun MainActivity.applyOverlayGeometry() {
+fun TvMainActivity.applyOverlayGeometry() {
     val view=overlayLayer ?: return
     val params=view.layoutParams as? FrameLayout.LayoutParams ?: return
     val rootW=root.width; val rootH=root.height
@@ -195,7 +195,7 @@ fun MainActivity.applyOverlayGeometry() {
  * **竖屏短剧全屏只靠旋转实现，不改画面模式**：旋转之后那个框已经是 16:9，
  * 「完整画面」就能铺满，用户自己选的档位（完整 / 等比铺满 / 拉伸）语义保持原样。
  */
-fun MainActivity.applyResizeMode(target: PlayerView?=playerView) {
+fun TvMainActivity.applyResizeMode(target: PlayerView?=playerView) {
     target?.resizeMode=frameResizeMode()
     // 旋转 / 缩放与画面模式是同一次「这一集怎么摆」的决策：片源尺寸一变，
     // 旋转与否可能跟着变（竖屏剧 ⟷ 横屏剧），这里一并落下去。
@@ -208,7 +208,7 @@ fun MainActivity.applyResizeMode(target: PlayerView?=playerView) {
  * 弹幕层（[danmakuView]）**不受影响**：它仍然占满整屏、按整屏坐标算轨道，
  * 所以把画面缩到 50%（或转 90°）时，弹幕照旧铺满屏幕横着滚。
  */
-fun MainActivity.applyVideoScale() = applyVideoGeometry()
+fun TvMainActivity.applyVideoScale() = applyVideoGeometry()
 /**
  * 此刻屏幕上有没有一块**唤出来的浮层**（控制条 / 播放设置 / 选集 / 各种选择器）。
  *
@@ -220,7 +220,7 @@ fun MainActivity.applyVideoScale() = applyVideoGeometry()
  * `hud` 是 lateinit：扩展函数里读不到 `isInitialized`（那是背板字段），
  * 冷启动还没建播放层时读它会抛，因此用一次受捕的读取兜住。
  */
-fun MainActivity.playbackOverlayShown(): Boolean {
+fun TvMainActivity.playbackOverlayShown(): Boolean {
     if(playbackMenu!=null || episodePanel!=null || speedDialog!=null || finishedPanel!=null) return true
     return runCatching { hud.visibility==View.VISIBLE }.getOrDefault(false)
 }
@@ -239,7 +239,7 @@ fun MainActivity.playbackOverlayShown(): Boolean {
  * 常驻一条标题会让「一滑一部」的观感变成「在一个播放器里」；电视上的推荐页没有控制条，
  * 剧名在底部浮层里，因此整条不显示。
  */
-fun MainActivity.syncPlaybackInfo() {
+fun TvMainActivity.syncPlaybackInfo() {
     val bar=playbackInfo
     if(bar!=null) {
         // 浮层露着 = 四项全显（见函数注释第 2 条）。
@@ -273,7 +273,7 @@ fun MainActivity.syncPlaybackInfo() {
     updatePlaybackInfoReadings()
 }
 /** 只换字、不动布局：时间每分钟一格，网速每一秒一格（见每秒一次的 tick）。 */
-fun MainActivity.updatePlaybackInfoReadings() {
+fun TvMainActivity.updatePlaybackInfoReadings() {
     playerClock?.takeIf { it.visibility==View.VISIBLE }?.let { clock ->
         val calendar=java.util.Calendar.getInstance()
         // 时钟文案只有一份（`:core` 的 `PlaybackInfoLine`）：与手机端同一段格式。
@@ -287,7 +287,7 @@ fun MainActivity.updatePlaybackInfoReadings() {
         if(speed.text.toString()!=text) speed.text=text
     }
 }
-fun MainActivity.showFramePicker(anchor: TextView,inPlayer: Boolean) {
+fun TvMainActivity.showFramePicker(anchor: TextView,inPlayer: Boolean) {
     tvTools.choose("全局画面模式",listOf("完整画面 · 保留比例与全部内容","等比铺满 · 会裁掉部分画面与字幕","拉伸铺满 · 画面比例会改变"),anchor,{ index ->
         library.frameMode=VideoFrameMode.entries[index]; applyResizeMode()
         if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "画面 " else "画面模式  ·  ")+library.frameMode.label
@@ -300,7 +300,7 @@ fun MainActivity.showFramePicker(anchor: TextView,inPlayer: Boolean) {
  * 只有遇到花屏、绿屏、音画不同步、黑屏有声时才有意义。
  * [inPlayer] 为真时改完立刻重建播放器（[applyDecoderMode]），否则只落盘、下次起播生效。
  */
-fun MainActivity.showDecoderPicker(anchor: TextView,inPlayer: Boolean) {
+fun TvMainActivity.showDecoderPicker(anchor: TextView,inPlayer: Boolean) {
     val labels=listOf("硬件解码 · 省电，4K 更稳（默认）","软件解码 · 兼容性好，花屏 / 绿屏 / 音画不同步时用")
     tvTools.choose("视频解码",labels,anchor,{ index ->
         val selected=VideoDecoderMode.entries[index]
@@ -319,7 +319,7 @@ fun MainActivity.showDecoderPicker(anchor: TextView,inPlayer: Boolean) {
  * `SeriesGrid.gridTextScale`）。首页剧架与所有卡片栅格共用这一份设置。
  * 改完只落盘，回到列表时按新列数重建；正在看的页面不受影响。
  */
-fun MainActivity.showHomeColumnsPicker(anchor: TextView) {
+fun TvMainActivity.showHomeColumnsPicker(anchor: TextView) {
     val options=listOf(4,5,6,7,8)
     val labels=listOf("4 张 · 大卡片","5 张 · 中号卡片","6 张 · 紧凑（默认）","7 张 · 更紧凑","8 张 · 最紧凑")
     val selected=options.indexOf(library.homeColumns).coerceAtLeast(0)
@@ -358,7 +358,7 @@ fun backToTopShort(mode: String): String=com.hgtv.star.core.BackToTopPolicy.shor
  * 因此与设备分辨率、每行几张卡无关，用户读到的是「往下翻了几行」。
  * 改完只落盘，回到列表按新档位重算显隐，不需要退出应用。
  */
-fun MainActivity.showBackToTopPicker(anchor: TextView) {
+fun TvMainActivity.showBackToTopPicker(anchor: TextView) {
     val options=listOf(BACK_TO_TOP_ALWAYS,BACK_TO_TOP_ROWS5,BACK_TO_TOP_ROWS8,BACK_TO_TOP_NEVER)
     val labels=options.map(::backToTopLabel)
     val selected=options.indexOf(library.backToTop).coerceAtLeast(0)
@@ -381,7 +381,7 @@ fun MainActivity.showBackToTopPicker(anchor: TextView) {
  *（见 `EpisodeGrid` 的 `pageSize`），两处分段永远一致。
  * 改完只落盘：下一次进简介页、或下一次打开选集面板时按新页长摆格子。
  */
-fun MainActivity.showEpisodePageSizePicker(anchor: TextView) {
+fun TvMainActivity.showEpisodePageSizePicker(anchor: TextView) {
     val options=listOf(10,20,30,40,50)
     val labels=listOf("每页 10 集 · 一屏一行","每页 20 集 · 一屏两行（默认）",
         "每页 30 集 · 一屏三行","每页 40 集 · 一屏四行","每页 50 集 · 一屏五行")
@@ -402,7 +402,7 @@ fun MainActivity.showEpisodePageSizePicker(anchor: TextView) {
  * [onChanged] 在档位真的变了之后回调一次——设置页用它就地收起 / 放出「弹幕速度」「弹幕大小」
  * 「弹幕透明度」三行（[DanmakuMode.showsStyle]）；播放设置面板走的是整块重建，不需要这个回调。
  */
-fun MainActivity.showDanmakuPicker(anchor: TextView,inPlayer: Boolean,onChanged: ()->Unit={}) {
+fun TvMainActivity.showDanmakuPicker(anchor: TextView,inPlayer: Boolean,onChanged: ()->Unit={}) {
     tvTools.choose("弹幕显示方式",DanmakuMode.entries.map { it.hint },anchor,{ index ->
         val selected=DanmakuMode.entries[index]
         val changed=library.danmakuMode!=selected
@@ -418,7 +418,7 @@ fun MainActivity.showDanmakuPicker(anchor: TextView,inPlayer: Boolean,onChanged:
  * 换档不会让某一条追上前面那一条——快的档位只是让同一屏通过得更多、同一条轨道排得更密。
  * [onChanged] 在档位真的变了之后回调一次（设置页用它刷新那一行文案）。
  */
-fun MainActivity.showDanmakuSpeedPicker(anchor: TextView,inPlayer: Boolean,onChanged: ()->Unit={}) {
+fun TvMainActivity.showDanmakuSpeedPicker(anchor: TextView,inPlayer: Boolean,onChanged: ()->Unit={}) {
     tvTools.choose("弹幕移动速度",DanmakuSpeed.entries.map { it.hint },anchor,{ index ->
         val selected=DanmakuSpeed.entries[index]
         val changed=library.danmakuSpeed!=selected
@@ -433,9 +433,9 @@ fun MainActivity.showDanmakuSpeedPicker(anchor: TextView,inPlayer: Boolean,onCha
  * 平台只对部分剧集放开匿名弹幕，屏幕上「一条都没有」和「功能没生效」从画面上分不出来，
  * 这一行就是给这件事一个明确的读数（播放界面那排状态项太窄，放不下数字）。
  */
-fun MainActivity.danmakuLabel(prefix: String)=prefix+library.danmakuMode.label+
+fun TvMainActivity.danmakuLabel(prefix: String)=prefix+library.danmakuMode.label+
     if(danmakuCount<0) "" else "（上一集 ${if(danmakuCount>0) "$danmakuCount 条" else "无弹幕"}）"
-fun MainActivity.seek(direction: Int,repeat: Int) {
+fun TvMainActivity.seek(direction: Int,repeat: Int) {
     val p=player ?: return; if(!playbackReady) return
     val duration=p.duration; if(duration<=0) return
     // 单次步长、连按加速与片尾保护都在 `:core`（[SeekStep]）：手机端读的是同一份，
@@ -445,7 +445,7 @@ fun MainActivity.seek(direction: Int,repeat: Int) {
     pendingSeek=SeekStep.target(pendingSeek ?: p.currentPosition,direction,step,duration)
     main.removeCallbacks(seekRunnable); main.postDelayed(seekRunnable,250); updatePlaybackText(); showHud()
 }
-fun MainActivity.dismissPlaybackMenu() {
+fun TvMainActivity.dismissPlaybackMenu() {
     playbackMenu?.let { menu -> if(menu.hasFocus()) menu.clearFocus() }
     // 面板现在是「外壳 → 滚动容器 → 面板」三层，直接 removeView(menu) 摘不掉任何东西
     // （menu 的父级是滚动容器），浮层会留在画面上。这里按最外层摘。

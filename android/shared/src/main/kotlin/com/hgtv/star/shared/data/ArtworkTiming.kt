@@ -67,7 +67,7 @@ class ArtworkTiming {
      */
     @Volatile var verbose = false
 
-    /** 由 `Library` 在启动时给一个可写的文件路径（见 `MainActivity.onCreate`）。 */
+    /** 由 `Library` 在启动时给一个可写的文件路径（见 `TvMainActivity.onCreate`）。 */
     fun attach(file: java.io.File?) { sink = file }
 
     /** 由 `ArtworkLoader` 在构造时调：从 `filesDir/verbose` 决定要不要打每张一行。 */

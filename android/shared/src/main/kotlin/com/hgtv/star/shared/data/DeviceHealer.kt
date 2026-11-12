@@ -15,7 +15,7 @@ import java.util.concurrent.Executors
  *
  * ## 为什么必须共用
  *
- * 电视端原先自己写了一套（`MainActivity.healDeviceIdentity`），手机端一套都没有。
+ * 电视端原先自己写了一套（`TvMainActivity.healDeviceIdentity`），手机端一套都没有。
  * 结果是同一个故障：电视上搜索会自己恢复、手机上永远搜不出来，只能「清空缓存」。
  * 判定、预算、线程切换、落盘顺序（先转正候选档案、再落身份）全部收在这里，
  * 两端只负责「成功之后做什么」——电视重取这一页、手机重新起播。

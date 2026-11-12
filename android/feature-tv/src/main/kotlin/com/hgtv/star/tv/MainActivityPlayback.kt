@@ -30,8 +30,8 @@ import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.debug.NetSpeed
 import com.hgtv.star.tv.R
 
-// 本文件是从 MainActivity.kt 拆出来的「播放中控：缓冲抑制、下一集预取、重试恢复、HUD 与传输层回收」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「播放中控：缓冲抑制、下一集预取、重试恢复、HUD 与传输层回收」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 /**
@@ -45,7 +45,7 @@ import com.hgtv.star.tv.R
  * 而 h2 的读线程正阻塞在 `read()` 里，异常无人接住直接打死进程（见 PlaybackTransport 的类注释）。
  * 连接池留着复用之后，「在途连接被关闭」这件事本身就不再发生。
  */
-fun MainActivity.closeTransport(http: okhttp3.OkHttpClient?) {
+fun TvMainActivity.closeTransport(http: okhttp3.OkHttpClient?) {
     if (http == null) return
     if (http === com.hgtv.star.shared.data.PlaybackTransport.client) return
     // 兜底：万一以后有别的 client 走到这里（当前没有），仍按老办法收掉。
@@ -58,12 +58,12 @@ fun MainActivity.closeTransport(http: okhttp3.OkHttpClient?) {
  * 转圈该回来就得回来，不能让用户对着一帧静止画面干等。跨季时解码器可能原地重配，
  * 调用方可以传更长的首帧窗口。
  */
-fun MainActivity.suppressBufferingUi(timeoutMs: Long=1200L) {
+fun TvMainActivity.suppressBufferingUi(timeoutMs: Long=1200L) {
     bufferingSuppressed=true
     syncBufferingDots()
     main.removeCallbacks(restoreBuffering); main.postDelayed(restoreBuffering,timeoutMs)
 }
-fun MainActivity.restoreBufferingUi() {
+fun TvMainActivity.restoreBufferingUi() {
     if(!bufferingSuppressed) return
     bufferingSuppressed=false
     main.removeCallbacks(restoreBuffering)
@@ -71,7 +71,7 @@ fun MainActivity.restoreBufferingUi() {
 }
 
 /** 把 ExoPlayer 的缓冲状态映射到统一三点动画；过渡窗口内临时隐藏。 */
-fun MainActivity.syncBufferingDots() {
+fun TvMainActivity.syncBufferingDots() {
     val label=when {
         playError || sleepStopped -> null
         !playbackReady -> if(video==null) "正在获取播放地址…" else "正在缓冲…"
@@ -94,7 +94,7 @@ fun MainActivity.syncBufferingDots() {
  * [scheduleRetire] 是兜底：万一新源一直没到 READY（切走、出错这些极端路径），
  * 3 秒后也把它收掉——那时候旧源早就被换下、不可能还在读，收掉不会打断任何东西。
  */
-fun MainActivity.scheduleRetire() {
+fun TvMainActivity.scheduleRetire() {
     main.removeCallbacks(retireForced); main.postDelayed(retireForced,3000)
 }
 /**
@@ -102,11 +102,11 @@ fun MainActivity.scheduleRetire() {
  *
  * 与 [retirePreviousEpisode] 的区别只有一条：不再等自动切集的稳定清理令牌。
  */
-fun MainActivity.forceRetirePrevious() {
+fun TvMainActivity.forceRetirePrevious() {
     cancelAutoTransitionCleanup()
     retirePreviousEpisode()
 }
-fun MainActivity.retirePreviousEpisode() {
+fun TvMainActivity.retirePreviousEpisode() {
     main.removeCallbacks(retireForced)
     // 播完的那一项还挂在播放列表里时不能关：播放线程可能仍在释放旧 period。
     // 必须等新集 READY + 首帧、旧项确实从列表移除后再关。
@@ -116,7 +116,7 @@ fun MainActivity.retirePreviousEpisode() {
     closeTransport(retiringHttp); retiringHttp=null
 }
 /** 作废当前自动切集的清理任务；下一次自动切集会生成新令牌。 */
-fun MainActivity.cancelAutoTransitionCleanup() {
+fun TvMainActivity.cancelAutoTransitionCleanup() {
     transitionCleanupToken++
     transitionMediaId=""
     transitionReady=false
@@ -131,7 +131,7 @@ fun MainActivity.cancelAutoTransitionCleanup() {
  *
  * 新集必须同时满足「播放器 READY」和「首帧已上屏」，才允许修改播放列表。
  */
-fun MainActivity.startAutoTransitionCleanup(mediaId: String,playedId: String) {
+fun TvMainActivity.startAutoTransitionCleanup(mediaId: String,playedId: String) {
     transitionCleanupToken++
     transitionMediaId=mediaId
     transitionReady=player?.playbackState==Player.STATE_READY
@@ -144,13 +144,13 @@ fun MainActivity.startAutoTransitionCleanup(mediaId: String,playedId: String) {
     main.post { if(!isDestroyed && token==transitionCleanupToken) maybeDropPlayedItem() }
 }
 /** 新集 READY 后补一次稳定条件。 */
-fun MainActivity.markAutoTransitionReady(mediaId: String) {
+fun TvMainActivity.markAutoTransitionReady(mediaId: String) {
     if(mediaId.isEmpty() || mediaId!=transitionMediaId) return
     transitionReady=true
     maybeDropPlayedItem()
 }
 /** 新集首帧后补一次稳定条件。 */
-fun MainActivity.markAutoTransitionFirstFrame(mediaId: String) {
+fun TvMainActivity.markAutoTransitionFirstFrame(mediaId: String) {
     if(mediaId.isEmpty()) return
     lastRenderedMediaId=mediaId
     if(mediaId!=transitionMediaId) return
@@ -163,7 +163,7 @@ fun MainActivity.markAutoTransitionFirstFrame(mediaId: String) {
  * `removeMediaItem` 只是把任务交给播放线程；这里发起后仍保持 `playedItemPending=true`，
  * 等 `onTimelineChanged` 或下一拍确认旧项真的不在列表里，再关闭它的数据源。
  */
-private fun MainActivity.maybeDropPlayedItem() {
+private fun TvMainActivity.maybeDropPlayedItem() {
     val token=transitionCleanupToken
     if(!playedItemPending || transitionDropRequested || !transitionReady || !transitionFirstFrame) return
     val p=player ?: return
@@ -193,7 +193,7 @@ private fun MainActivity.maybeDropPlayedItem() {
  *
  * 这里不直接信任 `removeMediaItem()` 的返回：该 API 返回时删除消息可能还在播放线程队列中。
  */
-fun MainActivity.confirmPlayedItemRemoved() {
+fun TvMainActivity.confirmPlayedItemRemoved() {
     if(!playedItemPending || !transitionDropRequested) return
     val p=player ?: return
     if(p.currentMediaItem?.mediaId!=transitionMediaId) return
@@ -232,7 +232,7 @@ fun MainActivity.confirmPlayedItemRemoved() {
  * 挂上去之后由 ExoPlayer 自己决定何时 prepare：`shouldLoadNextMediaPeriod()` 要求
  * 「当前 period 已完全缓冲」，所以提前挂不会抢正在播的这一集的带宽。
  */
-fun MainActivity.enqueuePreparedNext() {
+fun TvMainActivity.enqueuePreparedNext() {
     val p=player ?: return
     val data=detail ?: return
     // 用户按过暂停 / 息屏 / 切后台：不要挂下一集，否则回来一按播放就自己跳到下一集了。
@@ -291,7 +291,7 @@ fun MainActivity.enqueuePreparedNext() {
  * `playEpisode` 的年龄校验（见 [com.hgtv.star.core.PlaybackCache.PREPARED_FRESH_MS]）。
  * 这里提前把它摘掉，下一次 tick 会按新地址重新预热 / 重新挂队列。
  */
-fun MainActivity.maybeQueueNext() {
+fun TvMainActivity.maybeQueueNext() {
     val now=android.os.SystemClock.elapsedRealtime()
     if(queuedEpisodeId!=null) {
         if(com.hgtv.star.core.PlaybackCache.isPreparedFresh(queuedAt,now)) return
@@ -317,7 +317,7 @@ fun MainActivity.maybeQueueNext() {
  * 只摘**当前项之后**的那一段：当前 period 被保留，ExoPlayer 不会为此 seek 或重建渲染器。
  * 用户手动切集 / 换清晰度 / 退出播放器时调用——那时候新源要顶上来，队列里的旧目标必须让位。
  */
-fun MainActivity.dropQueuedEpisode() {
+fun TvMainActivity.dropQueuedEpisode() {
     val p=player
     var removed=true
     if(p!=null && p.mediaItemCount>1) {
@@ -343,7 +343,7 @@ fun MainActivity.dropQueuedEpisode() {
  * 所以这里只做「界面与记录跟上」：集号、标题、弹幕、清晰度、媒体会话，
  * 以及把播完那一集的进度按 completed 落盘（`STATE_ENDED` 不会再触发，必须在这里记）。
  */
-fun MainActivity.onEpisodeAdvanced(next: Int,mediaId: String) {
+fun TvMainActivity.onEpisodeAdvanced(next: Int,mediaId: String) {
     val data=detail ?: return
     if(next !in data.episodes.indices) return
     finishSeamlessAdvance(data,next,mediaId,data)
@@ -355,14 +355,14 @@ fun MainActivity.onEpisodeAdvanced(next: Int,mediaId: String) {
  * 播放器换 period 的动作和同季连播完全一样；不同的只是分集表、剧名与播放模型
  * 要在这里一起换成下一季的详情。
  */
-fun MainActivity.onSeasonAdvanced(target: Detail,mediaId: String) {
+fun TvMainActivity.onSeasonAdvanced(target: Detail,mediaId: String) {
     if(target.episodes.isEmpty()) return
     val previous=detail ?: return
     episodePanel?.dismiss(); episodePanel=null
     finishSeamlessAdvance(target,0,mediaId,previous)
 }
 
-private fun MainActivity.finishSeamlessAdvance(
+private fun TvMainActivity.finishSeamlessAdvance(
     nextData: Detail,
     next: Int,
     mediaId: String,
@@ -474,12 +474,12 @@ private fun MainActivity.finishSeamlessAdvance(
             "quality=$quality queuedForMs=$waited"
     )
 }
-fun MainActivity.cancelPrefetch() {
+fun TvMainActivity.cancelPrefetch() {
     prefetchScope?.cancel(); prefetchScope=null
     preparedNext.clear(); prefetchJob?.cancel(true); prefetchJob=null
     closeTransport(prefetchHttp); prefetchHttp=null; prefetchedFor=""
 }
-fun MainActivity.maybePrefetch() {
+fun TvMainActivity.maybePrefetch() {
     val p=player ?: return; val data=detail ?: return
     // 推荐页不挂下一集：一集播完就进正片（见 STATE_ENDED 分支），由正片接着播，
     // 这里再预取一集只会白占带宽，还会让片尾被 ExoPlayer 自己推进到队列里那一集。
@@ -554,7 +554,7 @@ fun MainActivity.maybePrefetch() {
  * 才开始查，短剧可能刚查到就已经片尾；提前一集准备，片尾才能像同季一样直接换 period。
  * 换回更早的集或离开播放页时立即作废。
  */
-fun MainActivity.syncNextSeasonForCurrentEpisode() {
+fun TvMainActivity.syncNextSeasonForCurrentEpisode() {
     val data=detail ?: return
     val prepare=screen=="player" && library.autoNext && !sleepStopped &&
         episodeIndex>=data.episodes.lastIndex-1
@@ -563,7 +563,7 @@ fun MainActivity.syncNextSeasonForCurrentEpisode() {
 }
 
 /** 作废下一季查询与提示；[nextSeasonNotice] 的视图引用由播放层重建 / 退出时单独清空。 */
-fun MainActivity.clearNextSeasonLookup() {
+fun TvMainActivity.clearNextSeasonLookup() {
     nextSeasonToken.incrementAndGet()
     nextSeasonJob?.cancel(true); nextSeasonJob=null
     nextSeasonFor=""; nextSeason=null; nextSeasonLoading=false
@@ -574,7 +574,7 @@ fun MainActivity.clearNextSeasonLookup() {
     hideNextSeasonNotice()
 }
 
-private fun MainActivity.ensureNextSeason(series: Series) {
+private fun TvMainActivity.ensureNextSeason(series: Series) {
     if(nextSeasonFor==series.id) {
         if(!nextSeasonLoading) showNextSeasonNotice()
         return
@@ -603,7 +603,7 @@ private fun MainActivity.ensureNextSeason(series: Series) {
     }
 }
 
-private fun MainActivity.completeNextSeasonLookup(
+private fun TvMainActivity.completeNextSeasonLookup(
     series: Series,
     works: RelatedWorks?,
     token: Long,
@@ -642,7 +642,7 @@ private fun MainActivity.completeNextSeasonLookup(
  * 只查剧名列表不够：片源预热需要第 1 集的 vid 与这一季自己的播放模型。
  * 请求失败不弹错，片尾仍会走 [openNextSeason] 的兜底路径。
  */
-private fun MainActivity.ensureNextSeasonDetail(target: Series) {
+private fun TvMainActivity.ensureNextSeasonDetail(target: Series) {
     if(nextSeasonDetailFor==target.id) return
     nextSeasonDetailJob?.cancel(true)
     val token=nextSeasonDetailToken.incrementAndGet()
@@ -673,7 +673,7 @@ private fun MainActivity.ensureNextSeasonDetail(target: Series) {
     }
 }
 
-private fun MainActivity.showNextSeasonNotice() {
+private fun TvMainActivity.showNextSeasonNotice() {
     val data=detail ?: return
     val target=nextSeason ?: return
     val active=screen=="player" && library.autoNext && !sleepStopped &&
@@ -685,7 +685,7 @@ private fun MainActivity.showNextSeasonNotice() {
     }
 }
 
-private fun MainActivity.hideNextSeasonNotice() {
+private fun TvMainActivity.hideNextSeasonNotice() {
     nextSeasonNotice?.visibility=View.GONE
 }
 
@@ -694,7 +694,7 @@ private fun MainActivity.hideNextSeasonNotice() {
  *
  * 查询可能还在路上；此时先挂起，结果落地后由 [completeNextSeasonLookup] 接着推进。
  */
-fun MainActivity.advanceToNextSeasonOrFinish(series: Series) {
+fun TvMainActivity.advanceToNextSeasonOrFinish(series: Series) {
     if(nextSeasonFinishedFor==series.id) return
     if(!library.autoNext) { finishSeriesPlayback(series); return }
     if(nextSeasonFor==series.id) {
@@ -710,7 +710,7 @@ fun MainActivity.advanceToNextSeasonOrFinish(series: Series) {
     ensureNextSeason(series)
 }
 
-private fun MainActivity.openNextSeason(target: Series) {
+private fun TvMainActivity.openNextSeason(target: Series) {
     if(nextSeasonOpening) return
     nextSeasonDetail?.takeIf {
         nextSeasonDetailFor==target.id && it.episodes.isNotEmpty()
@@ -744,7 +744,7 @@ private fun MainActivity.openNextSeason(target: Series) {
     }
 }
 
-fun MainActivity.enterNextSeason(next: Detail) {
+fun TvMainActivity.enterNextSeason(next: Detail) {
     nextSeasonDetailToken.incrementAndGet()
     nextSeasonDetailJob?.cancel(true); nextSeasonDetailJob=null
     nextSeasonOpening=false
@@ -758,7 +758,7 @@ fun MainActivity.enterNextSeason(next: Detail) {
     playEpisode(0,0,autoplay=true)
 }
 
-private fun MainActivity.finishSeriesPlayback(series: Series) {
+private fun TvMainActivity.finishSeriesPlayback(series: Series) {
     nextSeasonFinishedFor=series.id
     nextSeasonOpening=false
     autoNextSeasonPending=false

@@ -120,7 +120,7 @@ object PlaybackDiag {
     /**
      * 现在记着的这条是不是「停帧 / 缓冲」类（逐帧心跳一到就可以当场作废）。
      *
-     * 单独一个 volatile 标记是给 [MainActivity.playbackFrameClock] 用的：那条回调每帧一次、
+     * 单独一个 volatile 标记是给 [TvMainActivity.playbackFrameClock] 用的：那条回调每帧一次、
      * 在播放线程上，不能在里面加锁，也不该每帧去读一个字符串再比。
      */
     @Volatile var stallNoted = false
@@ -329,7 +329,7 @@ private fun decoderOf(problem: Throwable?): String {
 private fun chainOf(problem: Throwable?): String = Diagnostics.chainOf(problem)
 
 /** 当前播放现场：位置 / 状态 / 轨道 / 网络。日志里的这一行决定了「是没解出来还是没缓冲到」。 */
-fun MainActivity.playbackScene(): String {
+fun TvMainActivity.playbackScene(): String {
     // 这个函数会被**播放线程**调用（`onVideoCodecError` 就在那条线上），
     // 而 ExoPlayer 的 getter 要求应用线程。全部包进 runCatching：
     // 拿不到就退化成「未知」，绝不让诊断代码自己变成新的崩溃源。
@@ -480,7 +480,7 @@ fun stageTitle(stage: String): String =
  *
  * 只在主线程调用（`replayWithPlan` 就在主线程），读的都是本进程的字段。
  */
-fun MainActivity.noteDegrade(plan: PlaybackRetryPlan) {
+fun TvMainActivity.noteDegrade(plan: PlaybackRetryPlan) {
     val tier=plan.maxQuality ?: 0
     val text="自动处置 "+when(plan.reason) {
         DegradationKind.SAME_QUALITY_REBUILD -> "原档重建 ${playbackMaxQuality}P"
@@ -503,7 +503,7 @@ fun MainActivity.noteDegrade(plan: PlaybackRetryPlan) {
  * 这样按 stage 分组时，「某型号 HEVC 硬解全挂」是一组清清楚楚的记录，
  * 而不是几千条各不相同的杂音，而每一条的具体现场又都还在。
  */
-fun MainActivity.reportPlaybackFailure(problem: Throwable?,stage: String) {
+fun TvMainActivity.reportPlaybackFailure(problem: Throwable?,stage: String) {
     // 先补格式：解码器初始化失败 / 轨道没选上这两条路都不会触发 `onVideoInputFormatChanged`，
     // 不补的话 codec、mime、分辨率、可用解码器列表全空——那正是最需要它们的时候。
     // 这一步放在 claim 之前：屏幕上的面板也要用这份格式，而去重挡掉的只是「再传一条」，
@@ -606,7 +606,7 @@ fun MainActivity.reportPlaybackFailure(problem: Throwable?,stage: String) {
  * 只记四件事：视频格式、解码器名与初始化耗时、解码器报错、丢帧 / 欠载。
  * 前两件是「为什么这台解不出来」的答案，后两件是「解出来了但很难看」的旁证。
  */
-fun MainActivity.playbackDiagnostics()=object: AnalyticsListener {
+fun TvMainActivity.playbackDiagnostics()=object: AnalyticsListener {
     // 2.19 里真正被调用的是带 DecoderReuseEvaluation 的这版；两参那版是 deprecated 的兼容壳。
     override fun onVideoInputFormatChanged(
         eventTime: AnalyticsListener.EventTime,
@@ -682,7 +682,7 @@ fun MainActivity.playbackDiagnostics()=object: AnalyticsListener {
  */
 private const val WATCHDOG_TICK_MS = com.hgtv.star.core.PictureWatchdog.TICK_MS
 
-fun MainActivity.armPlaybackWatchdog(playSession: Int) {
+fun TvMainActivity.armPlaybackWatchdog(playSession: Int) {
     disarmPlaybackWatchdog()
     playbackWatchdogSession=playSession
     // 判据本体在 `:core`（`PictureWatchdog`，与手机端同一份阈值）：
@@ -752,7 +752,7 @@ fun MainActivity.armPlaybackWatchdog(playSession: Int) {
  * 而逐帧心跳（[playbackFrameClock]）那时照样在走。两样都看，才不会把「画面明明在放」
  * 判成「一直没出画面」——那正是面板上那句误报的来源。
  */
-fun MainActivity.pictureUpNow(): Boolean =
+fun TvMainActivity.pictureUpNow(): Boolean =
     !PlaybackDiag.injectedNoFrame && (PlaybackDiag.firstFrame || PlaybackDiag.lastFrameAt>0L)
 
 /**
@@ -769,7 +769,7 @@ fun MainActivity.pictureUpNow(): Boolean =
  *
  * 时间戳只用来提示「这条是多久以前记的」，不再承担「是不是还在发生」的判断。
  */
-fun MainActivity.livePlaybackProblem(): String {
+fun TvMainActivity.livePlaybackProblem(): String {
     val stage=PlaybackDiag.lastStage
     if(stage.isBlank()) return ""
     // 记下现场之后已经换了集：那是上一集的事，不该挂在这一集上。
@@ -807,7 +807,7 @@ fun MainActivity.livePlaybackProblem(): String {
     return "$live · $whenText"
 }
 
-fun MainActivity.disarmPlaybackWatchdog() {
+fun TvMainActivity.disarmPlaybackWatchdog() {
     playbackWatchdog?.let { main.removeCallbacks(it) }
     playbackWatchdog=null
     playbackWatchdogState.disarm()
@@ -823,7 +823,7 @@ fun MainActivity.disarmPlaybackWatchdog() {
  * 那时 `lastFrameAt` 一直是 0，停滞看门狗据此**自己让路**（见 [armFrameStallWatchdog]）。
  * 若在 `onRenderedFirstFrame` 里也记一次，这类设备就会在首帧之后 12 秒被误判成「画面停住」。
  */
-fun MainActivity.playbackFrameClock()=com.google.android.exoplayer2.video.VideoFrameMetadataListener { _,_,_,_ ->
+fun TvMainActivity.playbackFrameClock()=com.google.android.exoplayer2.video.VideoFrameMetadataListener { _,_,_,_ ->
     // 注入模式（DebugFaults.STALL_FRAME）下故意不记账，见 [PlaybackDiag.injectedNoFrame]。
     if(PlaybackDiag.injectedNoFrame) return@VideoFrameMetadataListener
     PlaybackDiag.lastFrameAt=android.os.SystemClock.elapsedRealtime()
@@ -860,7 +860,7 @@ private const val FRAME_STALL_MS = 12_000L
  */
 private const val BUFFER_STALL_MS = 30_000L
 
-fun MainActivity.armFrameStallWatchdog(playSession: Int) {
+fun TvMainActivity.armFrameStallWatchdog(playSession: Int) {
     disarmFrameStallWatchdog()
     // 缓冲停滞的计时放在闭包里：看门狗重新挂上（换集 / 重建）时自然归零。
     var bufferSince=0L
@@ -919,7 +919,7 @@ fun MainActivity.armFrameStallWatchdog(playSession: Int) {
     main.postDelayed(tick,FRAME_STALL_TICK_MS)
 }
 
-fun MainActivity.disarmFrameStallWatchdog() {
+fun TvMainActivity.disarmFrameStallWatchdog() {
     playbackStallWatchdog?.let { main.removeCallbacks(it) }
     playbackStallWatchdog=null
 }
@@ -930,7 +930,7 @@ fun MainActivity.disarmFrameStallWatchdog() {
  * 推荐页换下一部 / 就地重建；正片就地重建一次、再不行落错误页。
  * 两页的故障是同一种（解码器不再吐帧，不抛异常），只是处置的出口不同。
  */
-fun MainActivity.recoverLostPicture(reason: String) {
+fun TvMainActivity.recoverLostPicture(reason: String) {
     // 缓冲停住 = 一个字节都没再来，坏的多半是下面那两层缓存（DNS 记了一个已经下线的 IP /
     // 连接池里那条半死连接）。不先清掉，重建之后命中的还是同一份解析结果、同一条连接。
     // 出帧类的失败（no_first_frame / frame_stall）不清：那时数据是通的，问题在解码器。
@@ -957,7 +957,7 @@ fun MainActivity.recoverLostPicture(reason: String) {
 private const val FORMAL_PICTURE_RECOVERY_LIMIT=1
 private const val FORMAL_PICTURE_RECOVERY_COOLDOWN_MS=20_000L
 
-fun MainActivity.recoverFormalPicture(reason: String) {
+fun TvMainActivity.recoverFormalPicture(reason: String) {
     // 只在正式播放页动手：推荐页有自己的换剧策略（[recoverRecommendPicture]）。
     if(screen!="player" || !foreground || playError) return
     val data=detail ?: return

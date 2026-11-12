@@ -29,7 +29,7 @@ import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.debug.NetSpeed
 import com.hgtv.star.tv.R
-fun MainActivity.hidePlaybackOverlay() {
+fun TvMainActivity.hidePlaybackOverlay() {
     dismissPlaybackMenu(); controls.visibility=View.GONE; controls.clearFocus(); hud.visibility=View.GONE
     // 方向键开关放在 [dismissPlaybackMenu] **之后**归零：那个函数会把 `panel` 还原成
     // [playError]（出错页的按钮要能被焦点选中），这里既然连控制条都收了，就一定是 false。
@@ -52,7 +52,7 @@ fun MainActivity.hidePlaybackOverlay() {
  * 三块浮层都不在时什么都不做（顺手把上一次的定时器清掉）。播放设置开着时控制条本来就是收着的
  * （见 `showPlaybackMenu`），因此这里按「菜单 → 选集 → 控制条」的优先级只看一处就够。
  */
-fun MainActivity.scheduleOverlayAutoHide() {
+fun TvMainActivity.scheduleOverlayAutoHide() {
     main.removeCallbacks(overlayAutoHide)
     val visible=playbackMenu!=null || episodePanel!=null || hudShown()
     if(!visible) return
@@ -62,7 +62,7 @@ fun MainActivity.scheduleOverlayAutoHide() {
 }
 
 /** 浮层收起（选择完成、返回键、自动消失）时把定时器一并停掉。 */
-fun MainActivity.cancelOverlayAutoHide() = main.removeCallbacks(overlayAutoHide)
+fun TvMainActivity.cancelOverlayAutoHide() = main.removeCallbacks(overlayAutoHide)
 
 /**
  * 底部控制条此刻是不是露着（推荐页也算：手机 / 平板那一页用的是同一条控制条）。
@@ -75,7 +75,7 @@ fun MainActivity.cancelOverlayAutoHide() = main.removeCallbacks(overlayAutoHide)
  * `hud` 是 lateinit：冷启动还没建播放层时读它会抛，因此用一次受捕的读取兜住
  *（与 [playbackOverlayShown] 同一套写法）。
  */
-fun MainActivity.hudShown(): Boolean = runCatching {
+fun TvMainActivity.hudShown(): Boolean = runCatching {
     (screen=="player" || (screen=="recommend" && touchArmed)) &&
         !panel && hud.visibility==View.VISIBLE
 }.getOrDefault(false)
@@ -87,7 +87,7 @@ fun MainActivity.hudShown(): Boolean = runCatching {
  * 恰恰最显眼（整屏都是视频）。因此「要不要盯」与「算不算离开播放页」统一走这一个判据，
  * 免得以后再出现一处改了、另一处没跟上。
  */
-fun MainActivity.onPlaybackPage(): Boolean = screen=="player" || screen=="recommend"
+fun TvMainActivity.onPlaybackPage(): Boolean = screen=="player" || screen=="recommend"
 
 /**
  * 屏幕常亮的**唯一判据**。
@@ -107,7 +107,7 @@ fun MainActivity.onPlaybackPage(): Boolean = screen=="player" || screen=="recomm
  *
  * **所有 add/clear 都必须走这里**：分散在两处各写一次，迟早又会漏掉一条新路径。
  */
-fun MainActivity.syncKeepScreenOn() {
+fun TvMainActivity.syncKeepScreenOn() {
     val on=foreground && onPlaybackPage() && !playError && !sleepStopped &&
         player?.playWhenReady==true
     if(on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -117,7 +117,7 @@ fun MainActivity.syncKeepScreenOn() {
     if(on) playbackPower.acquire() else playbackPower.release()
 }
 
-fun MainActivity.showHud() {
+fun TvMainActivity.showHud() {
     // 设置菜单打开时底部控制条保持收起，避免和菜单抢同一块画面。
     if(playbackMenu!=null) return
     // 推荐页：只有触屏设备才露这条控制条（它上面的那排按钮本来也只在触屏上存在）。
@@ -139,7 +139,7 @@ fun MainActivity.showHud() {
     // 上下换剧、重新进推荐页都会再唤一次（见 `startRecommendEpisode`），计时随之重排。
     scheduleOverlayAutoHide()
 }
-fun MainActivity.updatePlaybackText() {
+fun TvMainActivity.updatePlaybackText() {
     // 触屏设备上控制条多一排按钮，播放键的文案也要跟着播放状态改（电视上为空操作）。
     updateTouchPlayLabel()
     // 顶部那格「第 x / 共 N 集」跟着当前集号走：无感切集不走 `playEpisode`，
@@ -185,7 +185,7 @@ fun MainActivity.updatePlaybackText() {
  * 内容没变就不 `setText`：这条每秒都会跟着 tick 调一次，重复设置会让整条重排。
  * [onEpisodeAdvanced] 与 [playEpisode] 里可以显式传 `data`，其余路径不传就用当前的 `detail`。
  */
-fun MainActivity.syncPlaybackEpisodeLabel(data: Detail? = detail) {
+fun TvMainActivity.syncPlaybackEpisodeLabel(data: Detail? = detail) {
     val view=playbackEpisode ?: return
     // 推荐页不显示「第 x / y 集」；正式播放页仍按「播放显示」开关正常显示。
     if(screen=="recommend") {
@@ -200,7 +200,7 @@ fun MainActivity.syncPlaybackEpisodeLabel(data: Detail? = detail) {
     // 集数文案只有一份（`:core` 的 `PlaybackInfoLine`）：手机端信息条读的是同一段格式。
     view.text=com.hgtv.star.core.PlaybackInfoLine.episode(episodeIndex,total)
 }
-fun MainActivity.requestPlayback(play: Boolean) {
+fun TvMainActivity.requestPlayback(play: Boolean) {
     requestedAutoplay=play; pausedForLifecycle=!play
     if(play) sleepStopped=false
     if(!play) { player?.pause(); retryAutoplay=false; saveProgress() }
@@ -221,13 +221,13 @@ fun MainActivity.requestPlayback(play: Boolean) {
     syncKeepScreenOn()
     showHud(); updatePlaybackText(); syncMediaSession()
 }
-fun MainActivity.togglePlayback()=requestPlayback(!(if(playbackReady) player?.playWhenReady ?: requestedAutoplay else requestedAutoplay))
-fun MainActivity.seekTo(position: Long) {
+fun TvMainActivity.togglePlayback()=requestPlayback(!(if(playbackReady) player?.playWhenReady ?: requestedAutoplay else requestedAutoplay))
+fun TvMainActivity.seekTo(position: Long) {
     val p=player ?: return; if(!playbackReady || p.duration<=0) return
     main.removeCallbacks(seekRunnable); pendingSeek=null
     p.seekTo(position.coerceIn(0,(p.duration-500).coerceAtLeast(0))); updatePlaybackText(); syncMediaSession(); showHud()
 }
-fun MainActivity.skipEpisode(direction: Int) {
+fun TvMainActivity.skipEpisode(direction: Int) {
     if(!foreground || (screen!="player" && screen!="recommend")) return
     val count=detail?.episodes?.size ?: return
     val target=episodeIndex+direction
@@ -241,7 +241,7 @@ fun MainActivity.skipEpisode(direction: Int) {
  * 顺着 `onCreate` 变成「Unable to start activity」闪退。这里建不出来就记住失败，
  * 之后静默跳过——遥控器媒体键只是附加能力，不影响播放。
  */
-fun MainActivity.ensureMediaSession(): MediaSessionHost? {
+fun TvMainActivity.ensureMediaSession(): MediaSessionHost? {
     mediaSession?.let { return it }
     if(mediaSessionFailed) return null
     val created=MediaSessionHost.create(this,
@@ -253,7 +253,7 @@ fun MainActivity.ensureMediaSession(): MediaSessionHost? {
     if(created==null) mediaSessionFailed=true else mediaSession=created
     return created
 }
-fun MainActivity.syncMediaSession() {
+fun TvMainActivity.syncMediaSession() {
     if(!foreground || (screen!="player" && screen!="recommend")) { mediaSession?.deactivate(); return }
     val data=detail ?: return; val p=player
     val session=ensureMediaSession() ?: return
@@ -267,7 +267,7 @@ fun MainActivity.syncMediaSession() {
     }
     session.update(data.series.title,episodeIndex,p?.duration?.coerceAtLeast(0) ?: 0,currentPosition(),library.playbackSpeed,state,episodeIndex>0,episodeIndex<data.episodes.lastIndex)
 }
-fun MainActivity.stopForSleep() {
+fun TvMainActivity.stopForSleep() {
     dropQueuedEpisode()
     sleepStopped=true; requestedAutoplay=false; retryAutoplay=false; pausedForLifecycle=true
     sleepChoice=0
@@ -278,7 +278,7 @@ fun MainActivity.stopForSleep() {
 
 }
 /** 定时项目的 8 个选项：关闭排在最前，选中态跟随本次观看已生效的定时。 */
-fun MainActivity.sleepChoices(menu: PlaybackMenu): List<PlaybackMenu.Choice> {
+fun TvMainActivity.sleepChoices(menu: PlaybackMenu): List<PlaybackMenu.Choice> {
     val current=if(sleepTimer.active) sleepChoice else 0
     return SleepTimer.LABELS.mapIndexed { index,label ->
         PlaybackMenu.Choice(label,current==index) {

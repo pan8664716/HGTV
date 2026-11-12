@@ -32,7 +32,7 @@ private val SMS_CONSENT_TITLE get()=com.hgtv.star.core.ThirdPartyNotice.SMS_TITL
  * 这里只有「同意」一枚按钮：这一页只是来读声明的，没有「同意才继续」的分岔
  * （用户按返回键关掉即可）。要发验证码时走的是另一条 [confirmSmsConsent]。
  */
-fun MainActivity.ensureThirdPartyAccepted(anchor: View?=null, onAccepted: ()->Unit) {
+fun TvMainActivity.ensureThirdPartyAccepted(anchor: View?=null, onAccepted: ()->Unit) {
     if(library.thirdPartyAccepted) { onAccepted(); return }
     if(consentShowing) return
     // 本次进程弹过就不再弹（见 [consentShownThisRun]）：用户按返回键关掉之后切回来不该再弹。
@@ -62,7 +62,7 @@ fun MainActivity.ensureThirdPartyAccepted(anchor: View?=null, onAccepted: ()->Un
  * 只有点「我已知晓并同意使用」才执行 [onAccepted]（发码）；点「不同意」或按返回键
  * 都什么也不做，一个请求都不会发出。
  */
-fun MainActivity.confirmSmsConsent(anchor: View?, onAccepted: ()->Unit) {
+fun TvMainActivity.confirmSmsConsent(anchor: View?, onAccepted: ()->Unit) {
     // 已经有一个弹窗在显示：不叠加第二个，这一次点击直接作废（用户关掉后可以再点）。
     if(consentShowing) return
     consentShowing=true

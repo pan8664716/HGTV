@@ -18,7 +18,7 @@ class FavoriteMonitor(private val library: Library, source: ContentRepository, p
     /**
      * 进程级短超时仓库，**第一次真正检查时**才在 worker 上取用。
      *
-     * 本类在 `MainActivity.onCreate` 里构造（主线程），而取仓库会初始化业务 client
+     * 本类在 `TvMainActivity.onCreate` 里构造（主线程），而取仓库会初始化业务 client
      * 并解析系统根证书表（首次 2~3 秒，见 `HgtvTls.ACCEPTED_ISSUERS`）。
      * lazy 保证这段成本不会落回主线程。
      */

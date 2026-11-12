@@ -15,11 +15,11 @@ import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.ui.SoftDrawable
 
-// 本文件是从 MainActivity.kt 拆出来的「「我的」页：抬头、四个栏目、账号数据与登录提示」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「「我的」页：抬头、四个栏目、账号数据与登录提示」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-fun MainActivity.profileHead(row: LinearLayout) {
+fun TvMainActivity.profileHead(row: LinearLayout) {
     val credentials=library.account().takeIf { it.configured }
     // 资料只在**真的登录着**时才算数：`accountData` 是内存里的上一份快照，退出 / 被动掉线
     // 之后它可能还没被清掉，照着它铺昵称与头像，用户看到的就是「明明退出了，一打开还是
@@ -156,7 +156,7 @@ fun MainActivity.profileHead(row: LinearLayout) {
  * 四栏各自的数据来自 [accountData]；还没拉到（或那一栏为空）时返回空列表，
  * 界面走「本页没有更多内容」那一支的文案。
  */
-fun MainActivity.accountItems(key: String): List<Series> {
+fun TvMainActivity.accountItems(key: String): List<Series> {
     val data=accountData ?: return emptyList()
     return when(key) {
         "favorites" -> data.favorites.map { it.series }
@@ -193,11 +193,11 @@ fun MainActivity.accountItems(key: String): List<Series> {
  * 总集数未知（平台没给）时只能靠本机那一条，两者都没有就按「未看完」算——
  * 把不确定的算成「已看完」会让用户找不到自己还在追的剧。
  */
-fun MainActivity.historyFinished(row: AccountHistory): Boolean {
+fun TvMainActivity.historyFinished(row: AccountHistory): Boolean {
     if(library.progress(row.series.id)?.completed==true) return true
     return row.episodes>0 && row.episodeIndex+1>=row.episodes
 }
-fun MainActivity.accountHistoryCard(row: AccountHistory): Series =
+fun TvMainActivity.accountHistoryCard(row: AccountHistory): Series =
     row.series.copy(badge="第 ${row.episodeIndex+1} 集"+(if(row.position>0) " · ${formatTime(row.position)}" else ""))
 /**
  * 切换「我的」页的栏目。
@@ -205,7 +205,7 @@ fun MainActivity.accountHistoryCard(row: AccountHistory): Series =
  * 与榜单页的芯片同一条规则：焦点留在刚点的那一枚上（用户还在挑栏目），
  * 内容落地后也不许把焦点带去第一张卡。
  */
-fun MainActivity.switchAccountTab(key: String) {
+fun TvMainActivity.switchAccountTab(key: String) {
     if(key==accountTab) return
     accountTab=key
     accountButtons.forEach { (option,chip) -> (chip as? ToggleChip)?.setActive(option==key) }
@@ -218,14 +218,14 @@ fun MainActivity.switchAccountTab(key: String) {
     showCatalog(keepChip=true)
 }
 /** 「我的」页身份行里所有可聚焦控件（按钮），按左右顺序。 */
-fun MainActivity.profileHeadControls(): List<View> {
+fun TvMainActivity.profileHeadControls(): List<View> {
     val head=profileHeadRow as? LinearLayout ?: return emptyList()
     return (0 until head.childCount).mapNotNull { head.getChildAt(it) }.filter { it.isFocusable }
 }
 /** 身份行里第一个可聚焦控件；没有（理论上不会）时返回 null，调用方退回别的落点。 */
-fun MainActivity.profileHeadControl(): View? = profileHeadControls().firstOrNull()
+fun TvMainActivity.profileHeadControl(): View? = profileHeadControls().firstOrNull()
 /** 「我的」页的一张凸起面板（未导入 / 读取失败 / 参数无效这三种状态用）。 */
-fun MainActivity.profilePanel(parent: LinearLayout,title: String): LinearLayout {
+fun TvMainActivity.profilePanel(parent: LinearLayout,title: String): LinearLayout {
     val band=dp(TvStyle.SOFT_BAND_LARGE)
     val panel=column().apply {
         setPadding(dp(24)+band,dp(20)+band,dp(24)+band,dp(20)+band)
@@ -247,7 +247,7 @@ fun MainActivity.profilePanel(parent: LinearLayout,title: String): LinearLayout 
  *
  * 其余失败（网络抖动、网关挡掉）不弹：它们会自动重试，弹出来只是噪音。
  */
-fun MainActivity.accountFailureText(failure: Throwable): String? = when {
+fun TvMainActivity.accountFailureText(failure: Throwable): String? = when {
     failure is com.hgtv.star.core.SignInRequiredException ->
         "需要先在「我的」页导入账号参数（sessionid）"
     failure.message.orEmpty().contains("空响应体") -> null
@@ -261,7 +261,7 @@ fun MainActivity.accountFailureText(failure: Throwable): String? = when {
  * 三种情况分开写清楚，**不能停在一句「正在读取」上**：那样用户看到的就是
  * 「点了导入什么也没发生」（这正是之前的症状）。读取失败时把原因与重试都摆出来。
  */
-fun MainActivity.accountNotice(parent: LinearLayout) {
+fun TvMainActivity.accountNotice(parent: LinearLayout) {
     val credentials=library.account().takeIf { it.configured }
     // 未导入：**什么都不铺**。入口已经在上面的身份行里（「导入账号参数」按钮），
     // 这里再摆一整块说明只是把页面填满——用户第一眼要看的是按钮，不是说明书。
@@ -284,7 +284,7 @@ fun MainActivity.accountNotice(parent: LinearLayout) {
     val reason=data.errors["资料"]?.takeIf { it.isNotBlank() } ?: "平台没有返回账号资料"
     card.addView(text("$reason\n\n登录状态可能已过期。请用页头的「退出」回到未登录状态，再重新登录。",15f,TvStyle.textDim))
 }
-fun MainActivity.shortDate(value: Long): String = if(value<=0) "时间未知" else java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.getDefault()).format(java.util.Date(value))
+fun TvMainActivity.shortDate(value: Long): String = if(value<=0) "时间未知" else java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.getDefault()).format(java.util.Date(value))
 /**
  * 打开系统文件选择器挑 `cookieStore.xml`。
  *

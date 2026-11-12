@@ -26,7 +26,7 @@ import com.hgtv.star.tv.list.showCatalog
  * 将来要支持「从外部深链直接进详情」，需要先给 `ContentRepository` 加一个
  * 「按 id 取摘要」的接口，再把这里补上，而不是在这里伪造一个只有 id 的 `Series`。
  */
-class TvNavigator(private val host: MainActivity) : Navigator {
+class TvNavigator(private val host: TvMainActivity) : Navigator {
 
     override fun open(route: Route): Boolean {
         when (route) {

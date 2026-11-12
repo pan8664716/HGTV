@@ -68,7 +68,7 @@ object Soft {
      * 只剩 3–5% 的明度差贴在底色上，电视上三米外看就是「按钮没了」。
      * 因此这一类底板必须原样保留。
      *
-     * 由 `MainActivity.onCreate` 按 `lowEndTv()` 设定；**必须与 `TvStyle.animate` 同源**，
+     * 由 `TvMainActivity.onCreate` 按 `lowEndTv()` 设定；**必须与 `TvStyle.animate` 同源**，
      * 否则会出现「动画关了、位图还全画」这种半套降级。
      */
     var shadowBitmaps = true

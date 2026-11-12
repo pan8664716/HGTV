@@ -9,7 +9,7 @@ import java.util.concurrent.TimeUnit
  *
  * * 业务 client 的 `callTimeout` 是 45 秒、`readTimeout` 30 秒，心跳没必要等这么久；
  * * 心跳要能在业务 client 被 `cancelAll()` / 连接池被 `evictAll()` 时**不受影响**
- *   （`MainActivity.onDestroy` 会干这件事）。
+ *   （`TvMainActivity.onDestroy` 会干这件事）。
  */
 object SessionClients {
     private fun tls(builder: OkHttpClient.Builder): OkHttpClient.Builder =

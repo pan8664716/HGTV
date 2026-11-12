@@ -50,7 +50,7 @@ import com.hgtv.star.tv.R
  * 点亮时如果正停在播放页，顺手把这一页该补的东西补上——用户是先点了画面，
  * 才把「这是一台触屏设备」这件事告诉我们的，不能等到下一次进播放页才生效。
  */
-fun MainActivity.onTouchSeen() {
+fun TvMainActivity.onTouchSeen() {
     if(touchArmed) return
     // 形态已经定下来了（用户手选的，或算法判出来的）就按它跑：
     // 电视档不点亮手势层，哪怕这台机器真的能点（触屏一体机 / 盒子接了触摸屏）；
@@ -82,7 +82,7 @@ fun MainActivity.onTouchSeen() {
  * 这里直接问输入子系统「有没有注册过 `SOURCE_TOUCHSCREEN` 的设备」——谎报配置容易，
  * 谎报一台不存在的输入设备没有意义（真报了，系统里也就真有一块能点的屏）。
  */
-fun MainActivity.armTouchIfScreenExists() {
+fun TvMainActivity.armTouchIfScreenExists() {
     if(touchArmed) return
     val hasScreen=runCatching {
         android.view.InputDevice.getDeviceIds().any { id ->
@@ -110,7 +110,7 @@ fun MainActivity.armTouchIfScreenExists() {
  * 耗时：`detectDeviceForm()` 只读几次系统属性 / 能力位 / 输入设备列表，
  * 实测在 2GB 盒子上是一次亚毫秒级的调用，放在建第一屏之前没有代价。
  */
-fun MainActivity.applyDeviceForm() {
+fun TvMainActivity.applyDeviceForm() {
     val profile=runCatching { detectDeviceForm() }.getOrNull()
     deviceProfile=profile
     when(deviceMode()) {
@@ -132,7 +132,7 @@ fun MainActivity.applyDeviceForm() {
  * 只在「需要按形态分叉」的地方用（旋转方向、设置页读数），不要再据此去算触屏与否——
  * 那件事的唯一判据是 [touchArmed]，两者可能不一样（触屏电视：形态是电视、却真有一块屏）。
  */
-fun MainActivity.deviceMode(): com.hgtv.star.shared.compat.DeviceForm =
+fun TvMainActivity.deviceMode(): com.hgtv.star.shared.compat.DeviceForm =
     com.hgtv.star.shared.compat.DeviceForm.ofStored(library.deviceForm)
         ?: deviceProfile?.form
         ?: com.hgtv.star.shared.compat.DeviceForm.UNKNOWN
@@ -150,7 +150,7 @@ fun MainActivity.deviceMode(): com.hgtv.star.shared.compat.DeviceForm =
  * 电视上的全屏是硬需求，改错会让页头被系统栏压住。这里只处理「系统明确报了边距」
  * 的情况——此时那三条标志本来就已经失效（例如平板上划出了导航栏）。
  */
-fun MainActivity.wireSystemInsets() {
+fun TvMainActivity.wireSystemInsets() {
     if(!touchArmed) return
     if(Build.VERSION.SDK_INT<Build.VERSION_CODES.KITKAT_WATCH) return
     root.setOnApplyWindowInsetsListener { view,insets ->
@@ -182,7 +182,7 @@ fun MainActivity.wireSystemInsets() {
  * 层级：`root` 里 `playerView`(0) → 弹幕层(1) → **手势层(2)** → 标题条 / 时钟 / 控制条。
  * 因此控制条上的按钮永远先拿到事件，手势层只吃「空白画面」上的那一下。
  */
-fun MainActivity.attachTouchLayer() {
+fun TvMainActivity.attachTouchLayer() {
     if(touchLayer!=null || (screen!="player" && screen!="recommend")) return
     // 竖向滑动的记账（**只有推荐页用得上**，播放页那两条分支一次都不会走到这里）：
     //   [swipeStartX]/[swipeStartY] 这一次手势的落点；
@@ -427,7 +427,7 @@ fun MainActivity.attachTouchLayer() {
  * * 画面上确实有东西（`playerView` 非空）。停在「取不到推荐」那行字上时不响应滑动，
  *   否则用户以为在翻页，实际是重新取数，观感像「滑不动还闪了一下」。
  */
-fun MainActivity.canSwipeRecommend(): Boolean =
+fun TvMainActivity.canSwipeRecommend(): Boolean =
     screen=="recommend" && playbackMenu==null && playerView!=null
 
 /**
@@ -438,7 +438,7 @@ fun MainActivity.canSwipeRecommend(): Boolean =
  * 最后一条同时兼作「手势门槛」以外的第二道保险：还没出画面的那一两秒里横滑，
  * 面板会闪出来又没有可拖的东西，读起来像「滑了一下什么都没发生」。
  */
-private fun MainActivity.scrubDurationOrZero(): Long {
+private fun TvMainActivity.scrubDurationOrZero(): Long {
     if(!onPlaybackPage() || playbackMenu!=null) return 0L
     val p=player ?: return 0L
     if(!playbackReady || p.duration<=0) return 0L
@@ -493,7 +493,7 @@ private fun scrubTargetOf(
  * 只建一次、之后只改文字：拖动时每秒几十帧，每帧 new 一个带柔光底板的 TextView
  * 是在主线程上做无谓的测量与绘制。
  */
-fun MainActivity.showScrubHint(target: Long,from: Long,duration: Long) {
+fun TvMainActivity.showScrubHint(target: Long,from: Long,duration: Long) {
     val host=touchLayer ?: return
     val delta=target-from
     val content=(if(delta>=0) "快进 " else "快退 ")+formatSpan(Math.abs(delta))+"\n"+
@@ -517,7 +517,7 @@ fun MainActivity.showScrubHint(target: Long,from: Long,duration: Long) {
 }
 
 /** 抬手 / 取消：把那块读数摘掉（它不自己消失）。 */
-fun MainActivity.hideScrubHint() {
+fun TvMainActivity.hideScrubHint() {
     touchScrubHint?.let { view -> (view.parent as? ViewGroup)?.removeView(view) }
     touchScrubHint=null
 }
@@ -529,7 +529,7 @@ fun MainActivity.hideScrubHint() {
  *（见 [onScrubProgress] / `onRecommendScrub` 的分流）。留一个没清，这一页的进度条
  * 就会一直停在手指最后一次的位置，直到下一次真正拖动。
  */
-fun MainActivity.cancelScrubUi() {
+fun TvMainActivity.cancelScrubUi() {
     scrubbing=false
     recommendScrubbing=false
     hideScrubHint()
@@ -543,7 +543,7 @@ fun MainActivity.cancelScrubUi() {
  * 平板横屏（约 1600px 高）≈ 112px 也正好是「明确地划一下」的手感。
  * 写死小值会让手机上轻轻一蹭就换台，写死大值会让平板上怎么划都不动。
  */
-fun MainActivity.recommendSwipeDistance(): Float =
+fun TvMainActivity.recommendSwipeDistance(): Float =
     maxOf(dp(56).toFloat(),resources.displayMetrics.heightPixels*0.07f)
 
 /**
@@ -561,7 +561,7 @@ private const val FLING_SWIPE_SPEED=800f
  * 只认速度够快的那一批，因此不会把误触（手指抖一下）判成换剧——
  * 竖向手势的门槛（touch slop）已经在判定 `swipeGesture` 时过了一遍。
  */
-fun MainActivity.recommendSwipeDistanceFling(): Float =
+fun TvMainActivity.recommendSwipeDistanceFling(): Float =
     maxOf(dp(28).toFloat(),resources.displayMetrics.heightPixels*0.025f)
 
 /**
@@ -571,7 +571,7 @@ fun MainActivity.recommendSwipeDistanceFling(): Float =
  * 不参与焦点、不参与点击，也不该被 `hidePlaybackOverlay` 收走（那时画面已经暗了，
  * 用户正需要看到这条反馈）。
  */
-fun MainActivity.flashSeekHint(message: String,forward: Boolean,centered: Boolean=false) {
+fun TvMainActivity.flashSeekHint(message: String,forward: Boolean,centered: Boolean=false) {
     val host=touchLayer ?: return
     touchSeekHint?.let { old -> (old.parent as? ViewGroup)?.removeView(old) }
     val label=text(message,17f,TvStyle.playerText).apply {
@@ -606,7 +606,7 @@ fun MainActivity.flashSeekHint(message: String,forward: Boolean,centered: Boolea
  * 幂等：没触发过长按时调用 `false` 是空操作，因此手势层可以在每次抬手时无脑调一次，
  * 不必先判断「刚才那一下到底是不是长按」。
  */
-fun MainActivity.setPlaybackBoost(active: Boolean) {
+fun TvMainActivity.setPlaybackBoost(active: Boolean) {
     if(active) {
         if(playbackBoost) return
         if(player?.playWhenReady!=true) return
@@ -631,7 +631,7 @@ fun MainActivity.setPlaybackBoost(active: Boolean) {
  * 与 [flashSeekHint] 的区别是**不会自己消失**：倍速一直生效到手指抬起，
  * 提示留到那时才收，用户才不会误以为「闪一下就没了，速度也回去了」。
  */
-fun MainActivity.showBoostHint(show: Boolean) {
+fun TvMainActivity.showBoostHint(show: Boolean) {
     val host=touchLayer ?: return
     if(!show) {
         touchBoostHint?.let { view -> (view.parent as? ViewGroup)?.removeView(view) }
@@ -660,7 +660,7 @@ fun MainActivity.showBoostHint(show: Boolean) {
  * （双击左右 1/3、控制条的快退 / 快进按钮）因此都走这里，
  * 将来再加一处手势也不必各自记得判断页面。
  */
-fun MainActivity.seekStep(direction: Int) {
+fun TvMainActivity.seekStep(direction: Int) {
     if(screen=="recommend") { seekRecommend(direction,0); return }
     seek(direction,0)
 }
@@ -677,7 +677,7 @@ fun MainActivity.seekStep(direction: Int) {
  *   （见 `MainActivityKeyMap.kt` 的出厂绑定），因此两端的操作心智一致，用户不会学到两套；
  * * 推荐页：**不摆这六枚**，只放一枚「剧名」标题，点它进正片（见 [attachRecommendEntry]）。
  */
-fun MainActivity.attachTouchBar() {
+fun TvMainActivity.attachTouchBar() {
     // 两页共用 `hud`（轻点画面唤出），但**底部这一块内容不同**：
     //   · 播放页：选集 / 快退 / 播放 / 快进 / 设置 / 返回 六枚按钮；
     //   · 推荐页：只有一枚「剧名」标题，点它进正片（见 [attachRecommendEntry]）。
@@ -726,7 +726,7 @@ fun MainActivity.attachTouchBar() {
  * 视觉上参照简介页那一块：大标题压在画面上、靠 `setShadowLayer` 立住字，
  * 底下那层渐变来自 `hud` 自己的 `TvStyle.panel()`，因此不需要再铺一块背板。
  */
-private fun MainActivity.attachRecommendEntry() {
+private fun TvMainActivity.attachRecommendEntry() {
     val card=column().apply {
         setPadding(0,dp(18),0,dp(6))
         // 整块可点：标题、箭头、下面那行小字都算在同一块里。
@@ -764,7 +764,7 @@ private fun MainActivity.attachRecommendEntry() {
 }
 
 /** 把底部那枚剧名刷成当前这一部（换剧、切集、每秒 tick 都走这里，只比较字符串）。 */
-fun MainActivity.syncRecommendEntry() {
+fun TvMainActivity.syncRecommendEntry() {
     val data=detail ?: return
     touchEntryTitle?.let { view ->
         val next=data.series.title
@@ -783,7 +783,7 @@ fun MainActivity.syncRecommendEntry() {
  * `playEpisode` 建出来的（从推荐页进正片走的是复用路径，不会重建视图树）。
  * 不先摘掉，`attachTouchBar()` 会因为 `touchBar!=null` 直接返回，正片里就只剩一枚剧名。
  */
-fun MainActivity.resetTouchBar() {
+fun TvMainActivity.resetTouchBar() {
     touchBar?.let { bar -> (bar.parent as? ViewGroup)?.removeView(bar) }
     touchBar=null; touchPlayLabel=null
     touchEntryTitle=null; touchEntryHint=null
@@ -795,7 +795,7 @@ fun MainActivity.resetTouchBar() {
  * 图标不跟着换的话，暂停之后按钮上还是一枚「播放」三角，与文字「暂停」自相矛盾；
  * 「重试」借用「恢复默认」那枚环形箭头——它表达的就是「再来一次」。
  */
-fun MainActivity.updateTouchPlayLabel() {
+fun TvMainActivity.updateTouchPlayLabel() {
     val label=touchPlayLabel ?: return
     val (next,icon)=when {
         playError -> "重试" to R.drawable.ic_action_restore
@@ -814,10 +814,10 @@ fun MainActivity.updateTouchPlayLabel() {
  * 拖动过程中每一次 `player.seekTo()` 都会触发一次 `onPositionDiscontinuity`
  * 与一次缓冲判断，连续几十次会让 ExoPlayer 反复 reset 渲染管线，画面直接卡死。
  *
- * 抬手那一下走 [MainActivity.seekTo]：它会清掉 pendingSeek 并真跳一次，
+ * 抬手那一下走 [TvMainActivity.seekTo]：它会清掉 pendingSeek 并真跳一次，
  * 因此拖动不会和遥控器的「连续快进」叠在一起。
  */
-fun MainActivity.wireSeekTouch() {
+fun TvMainActivity.wireSeekTouch() {
     // **不按 screen 判断**。这一条曾经写成 `if(screen!="player") return`，
     // 于是「推荐页 → 看正片」这条路（进正片时不复用 `playEpisode`）永远接不上：
     // 控件是推荐页那一次建的，接线时 screen 还是 `recommend`，直接跳过，
@@ -829,7 +829,7 @@ fun MainActivity.wireSeekTouch() {
 }
 
 /** 拖动进度条的一帧：[finished] 为 true 表示手指抬起，这一刻才真跳。 */
-fun MainActivity.onScrubProgress(fraction: Float,finished: Boolean) {
+fun TvMainActivity.onScrubProgress(fraction: Float,finished: Boolean) {
     // 推荐页用的是另一条进度条、另一套刷新（每秒 tick 而不是 `updatePlaybackText`），
     // 因此这里按「此刻在哪一页」分流，而不是按「接线时在哪一页」。
     if(screen=="recommend") { onRecommendScrub(fraction,finished); return }
@@ -882,7 +882,7 @@ fun MainActivity.onScrubProgress(fraction: Float,finished: Boolean) {
  * * 控件仍然 `isFocusableInTouchMode=true`，电视的焦点环、焦点链、`nextFocus*` 全部原样；
  * * 平板上点击照样有焦点高亮（"选中"与"按下"合成为一次动作，观感更接近手机）。
  */
-fun MainActivity.focusUnderTouch(x: Float,y: Float) {
+fun TvMainActivity.focusUnderTouch(x: Float,y: Float) {
     val host=window?.decorView as? View ?: return
     focusUnderTouch(host,x,y)
 }

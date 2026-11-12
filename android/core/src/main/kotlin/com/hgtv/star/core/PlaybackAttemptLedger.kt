@@ -6,7 +6,7 @@ package com.hgtv.star.core
  *
  * ## 为什么收敛到一处
  *
- * 这几份额度早先散落在 `MainActivity` 的字段里，各自有各自的归零条件：
+ * 这几份额度早先散落在 `TvMainActivity` 的字段里，各自有各自的归零条件：
  * 自动重试看 `!recovering`、画面重建看 `onEpisodeAdvanced`、队列重开与地址自愈
  * 在 `playEpisode` 里各写一句、手动重试又抄了第三份。结果是同一类 bug 反复出现：
  *

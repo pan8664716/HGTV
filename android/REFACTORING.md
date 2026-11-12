@@ -560,8 +560,31 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 25：TV 主入口类与文件重命名
+
+状态：已完成。
+
+- 将 `feature-tv` 主入口从 `MainActivity` 重命名为 `TvMainActivity`，文件改为
+  `TvMainActivity.kt`，与 `PhoneMainActivity` 形成对称命名。
+- 同步电视端扩展函数、显式类型引用、启动路由、baseline profile 和 Manifest。
+- Manifest 新增旧组件名 `.tv.MainActivity` 的 `activity-alias`，目标指向
+  `.tv.TvMainActivity`，保留已有外部显式 Intent 的兼容性。
+- 未修改窗口方向、主题、启动模式、配置变更、导航目标和可见行为。
+- 当前 `TvMainActivity.kt` 仍为 2808 行，本轮只完成命名和引用切换，下一步继续按页面职责拆分。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+- 合并后的 Debug Manifest 已确认同时包含 `TvMainActivity` 与旧 `MainActivity` alias。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-把 TV 主入口从通用 `MainActivity` 改为明确表达电视端职责的 `TvMainActivity`，
-同步 Manifest、启动路由、显式 Intent、扩展函数和测试引用；随后按 Home、Detail、
-Player、Recommend、Search、Account、Settings 继续拆 TV 页面。
+继续把 `TvMainActivity*` 扩展文件按 Home、Detail、Player、Recommend、Search、
+Account、Settings、Navigation 分目录并改成职责文件名；保留 `@file:JvmName` 的
+已有播放多文件 facade，避免 baseline profile 和反射引用变化。

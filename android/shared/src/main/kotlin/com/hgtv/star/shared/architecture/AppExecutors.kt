@@ -10,7 +10,7 @@ import kotlinx.coroutines.Dispatchers
  * 车道本身定义在 `core` 的 [WorkLanes]（`ContentRepository` 也要用同一份预算），
  * 这里只补两样只有 Android 才知道的东西：主线程调度器，以及图片解码的并行度。
  *
- * 改造前的状况：`MainActivity` 一家 7 个池、`ContentRepository` 4 个、加上图片 / 弹幕表情 /
+ * 改造前的状况：`TvMainActivity` 一家 7 个池、`ContentRepository` 4 个、加上图片 / 弹幕表情 /
  * 写盘 / 心跳 / DNS 等零散单线程池，**峰值 40 条以上**，而且这些池属于 Activity 实例，
  * 每次重建新建一批、`onDestroy` 再关掉。对 2GB 的电视盒子，这既是 40MB 的线程栈，
  * 也是「一边滚列表一边播就卡」的直接原因：8 个解码线程 + 6 个账号请求 + 4 个榜单请求

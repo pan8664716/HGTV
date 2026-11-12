@@ -244,7 +244,7 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      * 快进 / 快退单次跳过的秒数（2..20，默认 10）。
      *
      * 设置页「播放偏好 · 快进快退」那条滑块写的就是它，播放界面按左右键时的步长也从这里取
-     *（见 `MainActivity.seek`；连按加速按 3 倍比例走）。
+     *（见 `TvMainActivity.seek`；连按加速按 3 倍比例走）。
      *
      * 后加字段：旧备份 / 旧磁盘没有它，读回来按 10 秒处理——正是加这一项之前的行为。
      */

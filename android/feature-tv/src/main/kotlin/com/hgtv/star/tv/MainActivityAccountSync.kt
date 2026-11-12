@@ -14,12 +14,12 @@ import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.data.WatchProgress
 import com.hgtv.star.tv.R
 
-// 本文件是从 MainActivity.kt 拆出来的「收藏 / 进度的账号侧同步（本机改动推到账号，账号数据落到本机）」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「收藏 / 进度的账号侧同步（本机改动推到账号，账号数据落到本机）」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 /**
- * [MainActivity.historyPushedAt] 的条目上限。
+ * [TvMainActivity.historyPushedAt] 的条目上限。
  *
  * 那张表只记「这份进度已经推回云端」，不是业务数据：超过上限整表清掉即可，
  * 最坏的结果是同一份进度多推一次（平台侧本来就是幂等覆盖）。
@@ -34,7 +34,7 @@ private const val HISTORY_PUSHED_LIMIT=300
  * 而那正是「首页还是显示 200 集」这个反馈的另一半。
  * 「我的 → 历史」读的是账号那份，由 [refreshAccountViews] 自己管，这里不管。
  */
-fun MainActivity.refreshLocalHistoryViews() {
+fun TvMainActivity.refreshLocalHistoryViews() {
     if(screen!="catalog") return
     when {
         // 历史集合页：内容就是本机 + 账号合并出来的，整页重铺一次。
@@ -44,7 +44,7 @@ fun MainActivity.refreshLocalHistoryViews() {
     }
 }
 
-fun MainActivity.syncFavorite(series: Series,added: Boolean) {
+fun TvMainActivity.syncFavorite(series: Series,added: Boolean) {
     accountController.favorite(
         series = series,
         added = added,
@@ -56,12 +56,12 @@ fun MainActivity.syncFavorite(series: Series,added: Boolean) {
     refreshAccountListIfVisible()
 }
 /** 上传一条观看进度；[episodeCount] 只用于云端「全 N 集」的展示。 */
-fun MainActivity.syncProgress(progress: WatchProgress,episodeCount: Int=0) {
+fun TvMainActivity.syncProgress(progress: WatchProgress,episodeCount: Int=0) {
     accountController.progress(progress,episodeCount)
     refreshAccountListIfVisible()
 }
 /** 删除云端观看历史（`read_history/update` 软删）。 */
-fun MainActivity.syncHistoryDelete(series: Series) {
+fun TvMainActivity.syncHistoryDelete(series: Series) {
     accountController.historyDeleted(series)
     refreshAccountListIfVisible()
 }
@@ -74,7 +74,7 @@ fun MainActivity.syncHistoryDelete(series: Series) {
  *
  * 传 null 表示「没有账号数据可改」（未登录或还没拉到），此时什么都不做。
  */
-fun MainActivity.storeAccount(data: AccountData?) {
+fun TvMainActivity.storeAccount(data: AccountData?) {
     accountController.store(data)
 }
 
@@ -105,7 +105,7 @@ class HistoryMerge(var data: AccountData,val uploads: List<WatchProgress>) {
  * 本机删过的剧（[Library.historyDeleted]）在调用前已经滤掉，这里不再处理；
  * 本机没有进度的剧原样保留账号那一份（这台设备从没看过，没有可比的）。
  */
-fun MainActivity.reconcileHistory(data: AccountData): HistoryMerge {
+fun TvMainActivity.reconcileHistory(data: AccountData): HistoryMerge {
     // 计算整段在 `:core` 的 `HistoryReconcile`（手机端用的是同一份）：
     // 「谁更超前、哪几条要写回本机、哪几条要推回云端」这条判断只写一次。
     val outcome=com.hgtv.star.core.HistoryReconcile.run(
@@ -127,7 +127,7 @@ fun MainActivity.reconcileHistory(data: AccountData): HistoryMerge {
  * 同一个时间戳只推一次：账号数据每次进「我的」页都会刷新一遍，不记一下就会反复上传
  * 同一份进度（平台那边每次都是一次写请求，还会改写 `last_watch_time`）。
  */
-fun MainActivity.pushHistoryAhead(rows: List<WatchProgress>) {
+fun TvMainActivity.pushHistoryAhead(rows: List<WatchProgress>) {
     if(rows.isEmpty()) return
     rows.forEach { progress ->
         val key=progress.series.id
@@ -150,7 +150,7 @@ fun MainActivity.pushHistoryAhead(rows: List<WatchProgress>) {
  * 加进来的那条用本机的 [Series]（封面、简介都齐），因此「我的」页与首页不必再联网补元数据。
  * 已经在列表里的剧不重复加，只是保持原样——云端本来就是幂等的。
  */
-fun MainActivity.applyAccountFavorite(series: Series,added: Boolean) {
+fun TvMainActivity.applyAccountFavorite(series: Series,added: Boolean) {
     val data=accountData ?: return
     val rows=data.favorites
     val next=if(added) {
@@ -167,7 +167,7 @@ fun MainActivity.applyAccountFavorite(series: Series,added: Boolean) {
  * 「我的 → 预约」读的是 [accountData] 的 `reserves`，只改本机那张表的话，
  * 切回「我的」页会看到刚预约的剧不在里面（或取消掉的还在）。
  */
-fun MainActivity.applyAccountReserve(series: Series, reserved: Boolean) {
+fun TvMainActivity.applyAccountReserve(series: Series, reserved: Boolean) {
     val data=accountData ?: return
     val rows=data.reserves
     val next=if(reserved) {
@@ -179,7 +179,7 @@ fun MainActivity.applyAccountReserve(series: Series, reserved: Boolean) {
     refreshAccountListIfVisible()
 }
 /** 本机改动就地写回账号侧缓存：观看进度新增 / 更新（同一部剧只留最新一条，排在最前）。 */
-fun MainActivity.applyAccountHistory(progress: WatchProgress,episodeCount: Int) {
+fun TvMainActivity.applyAccountHistory(progress: WatchProgress,episodeCount: Int) {
     val data=accountData ?: return
     // 集内位置要一起带上来：少了它，「我的 → 历史」那张卡只有「第 12 集」，
     // 与本机首页那一行（「第 12 集 · 03:21」）对不上；对账时还会被当成「两边不一致」。
@@ -189,7 +189,7 @@ fun MainActivity.applyAccountHistory(progress: WatchProgress,episodeCount: Int) 
     refreshAccountListIfVisible()
 }
 /** 本机改动就地写回账号侧缓存：删除一条观看历史。 */
-fun MainActivity.applyAccountHistoryDelete(series: Series) {
+fun TvMainActivity.applyAccountHistoryDelete(series: Series) {
     val data=accountData ?: return
     val next=data.history.filterNot { it.series.id==series.id }
     if(next.size==data.history.size) return
@@ -203,7 +203,7 @@ fun MainActivity.applyAccountHistoryDelete(series: Series) {
  * （删掉的正是当前那张卡时才退到同一下标的下一条）。首页与集合页不用管——
  * 它们下次重建时会自己读新的 [accountData]。
  */
-fun MainActivity.refreshAccountListIfVisible() {
+fun TvMainActivity.refreshAccountListIfVisible() {
     if(screen!="catalog" || tab!=TAB_PROFILE) return
     val index=gridItems.map { it.id }.indexOf(catalogFocus).coerceAtLeast(0)
     catalog=accountItems(accountTab); page=1; hasMore=false
@@ -224,7 +224,7 @@ fun MainActivity.refreshAccountListIfVisible() {
  * 磁盘快照也算一份：进程刚起来、[accountData] 还没拉回来时，那一栏铺的就是快照，
  * 此时历史页上明明有卡片，按钮却不出现（或反过来）都是错的。
  */
-fun MainActivity.historyHasRecords(): Boolean {
+fun TvMainActivity.historyHasRecords(): Boolean {
     return accountController.hasHistoryRecords()
 }
 
@@ -238,7 +238,7 @@ fun MainActivity.historyHasRecords(): Boolean {
  * 这里传进去的是旧按钮，重建后它已经离树，关弹窗时 `requestFocus` 会落空（不报错，只是焦点没了）。
  * 因此调用方在重建后由 `historyClear` 接住焦点（见 `SeriesGrid.wireGridFocus`）。
  */
-fun MainActivity.historyClearButton(parent: LinearLayout,size: ButtonSize=ButtonSize.NORMAL,gap: Int=TvStyle.GAP_BLOCK): TvButton? {
+fun TvMainActivity.historyClearButton(parent: LinearLayout,size: ButtonSize=ButtonSize.NORMAL,gap: Int=TvStyle.GAP_BLOCK): TvButton? {
     if(!historyHasRecords()) return null
     lateinit var button: TvButton
     button=addButton(parent,"清空全部记录",tone=ButtonTone.DANGER,size=size,gap=gap,
@@ -271,7 +271,7 @@ fun MainActivity.historyClearButton(parent: LinearLayout,size: ButtonSize=Button
  * 云端失败不回滚本机：本机已经清干净、墓碑也已经落盘，下次刷新不会把它们合并回来；
  * 只是手机上还能看到，因此失败时给一句提示，由用户决定要不要再试。
  */
-fun MainActivity.clearAllHistory(anchor: View?) {
+fun TvMainActivity.clearAllHistory(anchor: View?) {
     if(!accountController.hasHistoryRecords()) {
         tvTools.info("清空观看记录","本机与账号里都没有可清空的观看记录。",anchor)
         return
@@ -311,7 +311,7 @@ fun MainActivity.clearAllHistory(anchor: View?) {
  * 删完就地刷新所在页面——首页重建剧架（历史栏少一部，空了整栏消失并保留相邻卡片的焦点），
  * 集合页重新按本机列表取页。只删观看进度：收藏、稍后观看、已隐藏的剧集都不动。
  */
-fun MainActivity.deleteHistoryRecord(series: Series,anchor: View?) {
+fun TvMainActivity.deleteHistoryRecord(series: Series,anchor: View?) {
     library.removeHistory(series.id)
     // [syncHistoryDelete] 里的 [applyAccountHistoryDelete] 会把这一条从 [accountData] 摘掉，
     // 「我的 → 历史」那一栏读的就是它——因此那一页由 [refreshAccountListIfVisible] 自己重建，

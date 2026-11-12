@@ -518,7 +518,7 @@ class TvDialog(private val activity: Activity, title: String) {
                 extra?.invoke()
             }
             // 关闭后**只把焦点还给 anchor**，且仅在「当前没人持有焦点」时还：
-            // 全站的焦点原则是不主动抢焦点（见 MainActivity 里的说明），
+            // 全站的焦点原则是不主动抢焦点（见 TvMainActivity 里的说明），
             // 关掉弹窗时如果焦点已经被别处接走（例如内容重建后落到第一张卡），就不要夺回来。
             val current = activity.window?.decorView?.findFocus()
             if (anchor?.attachedToWindow == true && current == null) anchor.requestFocus()

@@ -3,7 +3,7 @@ package com.hgtv.star.tv.list
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
-import com.hgtv.star.tv.MainActivity
+import com.hgtv.star.tv.TvMainActivity
 import com.hgtv.star.tv.R
 import com.hgtv.star.core.BACK_TO_TOP_ALWAYS
 import com.hgtv.star.core.BackToTopPolicy
@@ -63,8 +63,8 @@ import com.hgtv.star.shared.compat.attachedToWindow
  * 浮层自己不往别处指，因此它不会插进页面原本的方向顺序里。
  */
 
-/** 挂上浮层（页面重建之后调一次）。同一枚控件复用，只是重新挂回 [MainActivity.root]。 */
-fun MainActivity.attachBackToTop() {
+/** 挂上浮层（页面重建之后调一次）。同一枚控件复用，只是重新挂回 [TvMainActivity.root]。 */
+fun TvMainActivity.attachBackToTop() {
     // 圆形图标按钮：48dp 的圆盘 + 一圈柔光带（[IconButton] 自己撑到 60dp），图标用箭头。
     val view=backToTopView ?: IconButton(this,R.drawable.ic_arrow_up,"回到顶部") { backToTop() }.also { backToTopView=it }
     if(view.parent!==root) {
@@ -110,7 +110,7 @@ fun MainActivity.attachBackToTop() {
  * （[backToTop] 自己负责把焦点交给第一张卡）与「下拉 N 行」档位下滚回顶部
  * （那时焦点本来就该跟着列表走，兜底交给第一张卡）。
  */
-fun MainActivity.updateBackToTop() {
+fun TvMainActivity.updateBackToTop() {
     val view=backToTopView ?: return
     // **必须已经有别的控件握着焦点才允许露面。**
     //
@@ -152,7 +152,7 @@ fun MainActivity.updateBackToTop() {
  * 不看具体卡片、也不看屏幕高度——一屏放几行随分辨率变，用户说的是「往下翻了几行」。
  * 「始终显示」直接 true；「始终不显示」直接 false；列表还没建出来时按「不显示」处理。
  */
-fun MainActivity.backToTopVisible(): Boolean {
+fun TvMainActivity.backToTopVisible(): Boolean {
     val mode=if(library.isLoaded) library.backToTop else BACK_TO_TOP_ALWAYS
     // 「滚过几行」这条判据本身就是两端共用的（手机右下角那枚按钮用同一份规则），
     // 收在 `:core` 的 `BackToTopPolicy` 里，这里只负责把行高与滚动量递进去。
@@ -184,7 +184,7 @@ private const val BACK_TO_TOP_EDGE_GAP = 16
  * 现在位置是屏幕尺寸的纯函数：滚动、翻页、恢复位置、换分辨率都不会让它在两帧之间跳，
  * 也不再需要等卡片布局、不需要「先藏起来再摆」那一套。
  */
-fun MainActivity.positionBackToTop() {
+fun TvMainActivity.positionBackToTop() {
     val view=backToTopView ?: return
     if(!backToTopShown) return
     // 窗口尺寸还没量到（第一帧）：不在这里摆，等下一次滚动 / 布局回调再来一次
@@ -205,19 +205,19 @@ fun MainActivity.positionBackToTop() {
  * 「下拉 N 行」档还没滚到位时返回 null，卡片右键落回原来的行为（进详情页）；
  * 「始终不显示」档同理，列表页上不会多出一条右键出口。
  */
-fun MainActivity.backToTopTarget(): View? {
+fun TvMainActivity.backToTopTarget(): View? {
     val view=backToTopView ?: return null
     if(view.visibility!=View.VISIBLE) return null
     if(catalogScroll==null) return null
     // 真正要进去的这一刻才接焦点链：如果每次滚动都重算，「上 / 左」的落点
     // 要在滚动帧里做一次 findViewById（窗口里几百个 View），低端盒子上是白花的开销。
-    // 焦点一变全局监听就会更新 [MainActivity.backToTopReturn]，因此这里取到的总是最新的那张卡。
+    // 焦点一变全局监听就会更新 [TvMainActivity.backToTopReturn]，因此这里取到的总是最新的那张卡。
     wireBackToTop()
     return view
 }
 
 /** 列表第一张卡：栅格第一行第一张（窗口没物化时返回 null）。 */
-fun MainActivity.firstCardView(): View? =
+fun TvMainActivity.firstCardView(): View? =
     gridRows.minByOrNull { it.index }?.cards?.firstOrNull()
 
 /**
@@ -226,7 +226,7 @@ fun MainActivity.firstCardView(): View? =
  * 「上 / 左」的落点优先用**走到浮层之前那一张卡**：用户是顺着列表底部下来的，
  * 按回去就该回到原处，而不是被带到列表最底那一行。
  */
-fun MainActivity.wireBackToTop() {
+fun TvMainActivity.wireBackToTop() {
     val view=backToTopView ?: return
     val tracked=backToTopReturn.takeIf { it!=View.NO_ID }
         ?.let { id -> root.findViewById<View>(id) }
@@ -265,7 +265,7 @@ fun MainActivity.wireBackToTop() {
  * 平滑滚动一路经过几百行等于让窗口把每一行都物化再回收一遍；4.4 与低端盒子上
  * 那几秒的画面会一路抖动。跳过去之后再按新位置同步窗口，代价与「刚开始在顶部」一样。
  */
-fun MainActivity.backToTop() {
+fun TvMainActivity.backToTop() {
     val scroll=catalogScroll ?: return
     scroll.scrollTo(0,0)
     listScrollY=0

@@ -21,7 +21,7 @@ import com.hgtv.star.shared.ui.SoftStyle
  * 等分整行；拿到焦点时图标下方会显示名称。往下是 26 个字母 + 10 个数字连续每 6 个一行——
  * 字母排到第 5 行只剩 `Y Z`，数字就从它们后面直接接着排，36 个字符正好铺满 6 行。
  *
- * 键盘上**没有**联想词条：联想词在中间那一列（见 `MainActivity.renderHongguoSideList`）。
+ * 键盘上**没有**联想词条：联想词在中间那一列（见 `TvMainActivity.renderHongguoSideList`）。
  */
 private const val LETTER_ROWS="ABCDEF|GHIJKL|MNOPQR|STUVWX|YZ"
 private const val NUMBER_ROWS="123456|7890"
@@ -51,7 +51,7 @@ private const val CAPTION_OFFSET=16
  * 全在 `MainActivityHongguoSearch.kt` 里。
  */
 class HongguoKeyboard(
-    private val activity: MainActivity,
+    private val activity: TvMainActivity,
     private val onLetter: (String)->Unit,
     private val onDelete: ()->Unit,
     private val onClear: ()->Unit,
@@ -238,7 +238,7 @@ class HongguoKeyboard(
      * 焦点会「斜着跳一大截」到最左下角去。这里按屏幕坐标比较纵向中心，
      * 取纵向最接近的那一行，横向落在它的最后一格——方向上是连续的一步。
      *
-     * 只在两边都已经布局过之后调用（[MainActivity.wireHongguoKeyboardFocus] 是在 post 里跑的）。
+     * 只在两边都已经布局过之后调用（[TvMainActivity.wireHongguoKeyboardFocus] 是在 post 里跑的）。
      */
     fun wireSideLeft(side: List<View>) {
         if(side.isEmpty() || keyRows.isEmpty()) return
@@ -272,7 +272,7 @@ class HongguoKeyboard(
  * 图标本身不带文字，不标出来用户只能靠猜。
  */
 private class KeyCell(
-    activity: MainActivity,
+    activity: TvMainActivity,
     label: String,
     textSize: Float,
     iconRes: Int?,

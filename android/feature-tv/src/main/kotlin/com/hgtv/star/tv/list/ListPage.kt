@@ -22,7 +22,7 @@ import com.hgtv.star.tv.CHIP_ROW_HEIGHT
 import com.hgtv.star.tv.FILTER_ROW_HEIGHT
 import com.hgtv.star.tv.gridColumns
 import com.hgtv.star.tv.LOAD_MORE
-import com.hgtv.star.tv.MainActivity
+import com.hgtv.star.tv.TvMainActivity
 import com.hgtv.star.tv.TAB_CATEGORY
 import com.hgtv.star.tv.TAB_HOME
 import com.hgtv.star.tv.TAB_PROFILE
@@ -108,8 +108,8 @@ import com.hgtv.star.tv.wireHeadNavUp
 import com.hgtv.star.tv.work
 import com.hgtv.star.tv.error
 
-// 本文件是从 MainActivity.kt 拆出来的「列表页（分类 / 搜索 / 榜单）整页渲染与栅格排布」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「列表页（分类 / 搜索 / 榜单）整页渲染与栅格排布」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 /**
@@ -133,7 +133,7 @@ private fun equalChipWidths(chips: List<View>) {
     }
 }
 
-fun MainActivity.showCatalog(
+fun TvMainActivity.showCatalog(
     load: Boolean=false,
     focusNav: Boolean=false,
     focusType: Boolean=false,
@@ -215,7 +215,7 @@ fun MainActivity.showCatalog(
     else top.addView(Space(this),lp(0,1).apply { weight=1f })
     // 历史集合页：「已看完 / 未看完」紧跟在页面标题后面（**左边**，与标题同一组），
     // 「清空全部记录」仍留在右端、紧挨着那排圆形入口。
-    // 筛选与「我的 → 历史」共用同一份状态（见 [MainActivity.accountHistoryFilter]），
+    // 筛选与「我的 → 历史」共用同一份状态（见 [TvMainActivity.accountHistoryFilter]），
     // 两处切来切去看到的是同一档。
     //
     // 放在左边而不是和「清空」挤在右端：这一行右边已经有清空按钮 + 五枚圆形入口，
@@ -378,7 +378,7 @@ fun MainActivity.showCatalog(
             // 登录方式那两枚入口放进**顶部导航栏**（标题右边、圆形入口左边），与历史集合页
             // 的「已看完 / 未看完」同一格：这一页顶部只有「这是谁 / 怎么登录」这件事要说，
             // 单独占一行会把它推到页面中间，看起来像内容而不是入口。
-            // 默认选中的是 [MainActivity.loginMode]（首次进来就是二维码）。
+            // 默认选中的是 [TvMainActivity.loginMode]（首次进来就是二维码）。
             val modeChips=mutableListOf<View>()
             loginModeChips.clear()
             ACCOUNT_LOGIN_MODES.forEach { (mode,label) ->
@@ -990,7 +990,7 @@ fun MainActivity.showCatalog(
  * 接口不给更新时间时**整行不占位**：早先这一行会退回「来源：…热播榜」，
  * 用户看着像一行没用的字，现在按需求去掉来源文案——只有真有话要说时才显示。
  */
-fun MainActivity.setRankSubtitle(value: String) {
+fun TvMainActivity.setRankSubtitle(value: String) {
     val view=rankSubtitle ?: return
     view.text=value
     view.visibility=if(value.isBlank()) View.GONE else View.VISIBLE
@@ -1002,14 +1002,14 @@ fun MainActivity.setRankSubtitle(value: String) {
  * 分类页、榜单页、搜索页、我的页、本机集合页、首页四栏（走 [renderHome] 那一支）都由这里铺出来，
  * 因此「哪些剧、怎么排、怎么翻页、焦点怎么走」全站只有这一份实现：
  *
- * * 卡片本身：`tv/PosterCard`（全站同一张海报卡，封面取图走 `MainActivity.loadCover`）；
+ * * 卡片本身：`tv/PosterCard`（全站同一张海报卡，封面取图走 `TvMainActivity.loadCover`）；
  * * 排版：[SeriesGrid] 的窗口化六列栅格（列表页），或 [HomeScreen] 的横排剧架（首页 / 相关推荐）；
  * * 动作：点卡片 = [openSeries]（进详情 / 续播），长按或菜单键 = [seriesMenu]（剧卡菜单）；
  * * 行为：向下滚动到底按 [requestNextPage] 取下一页；焦点、滚动位置、页头收展都在这一套里。
  *
  * 新加一个「剧集列表」页面时**不要**另写一套列表：把数据交给这里，用 tab / collection 决定来源即可。
  */
-fun MainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Boolean=false,loading: Boolean=false,loadingMore: Boolean=false,keepScroll: Int?=null,keepFocus: Boolean=false) {
+fun TvMainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Boolean=false,loading: Boolean=false,loadingMore: Boolean=false,keepScroll: Int?=null,keepFocus: Boolean=false) {
     // 「这一次重建是点了榜单 / 分类芯片引起的」要在这里就定下来：下面的焦点落点是
     // `post` 里跑的，等它执行时 [chipFocusKey] 可能已经被落地逻辑消费掉了，
     // 那时再读就守不住「不许抢焦点」这条规则。

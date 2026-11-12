@@ -13,8 +13,8 @@ import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.debug.devicePrefix
 import kotlinx.coroutines.launch
 
-// 本文件是从 MainActivity.kt 拆出来的「账号参数导入（本机文件 / 手机扫码）与设备注册」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「账号参数导入（本机文件 / 手机扫码）与设备注册」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 /**
@@ -33,7 +33,7 @@ import kotlinx.coroutines.launch
  * 其他功能完全不受影响（`SessionMirror` 写不进去只留一行日志）。
  */
 private var mirrorStorageAsked=false
-fun MainActivity.requestMirrorStorage() {
+fun TvMainActivity.requestMirrorStorage() {
     if(android.os.Build.VERSION.SDK_INT<23 || mirrorStorageAsked) return
     mirrorStorageAsked=true
     val granted=android.content.pm.PackageManager.PERMISSION_GRANTED==
@@ -53,7 +53,7 @@ fun MainActivity.requestMirrorStorage() {
  * 补到内容就立刻重新应用凭据并重画页面——**新装的应用因此可以直接回到登录状态**，
  * 不必重新注册设备、重新收短信验证。拒绝授权就什么都不做（镜像退化为 Android/data 那一份）。
  */
-fun MainActivity.onMirrorStorageResult(granted: Boolean) {
+fun TvMainActivity.onMirrorStorageResult(granted: Boolean) {
     if(!granted) return
     // 读盘交给 loader 线程：权限回调在主线程，这里不能碰 `/sdcard`（见 Library.retryMirrorRestore）。
     library.retryMirrorRestore { restored ->
@@ -64,7 +64,7 @@ fun MainActivity.onMirrorStorageResult(granted: Boolean) {
     }
 }
 
-fun MainActivity.pickAccountFile() {
+fun TvMainActivity.pickAccountFile() {
     val intent=android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
         addCategory(android.content.Intent.CATEGORY_OPENABLE)
         type="*/*"
@@ -79,7 +79,7 @@ fun MainActivity.pickAccountFile() {
  * 大小上限与手机上传那条路一致（[AccountImportServer.MAX_BYTES]）：`cookieStore.xml`
  * 实测约 180 KB，超限的肯定不是这个文件。
  */
-fun MainActivity.consumePendingAccountFile() {
+fun TvMainActivity.consumePendingAccountFile() {
     val uri=pendingAccountUri ?: return
     pendingAccountUri=null
     io.submit {
@@ -104,7 +104,7 @@ fun MainActivity.consumePendingAccountFile() {
  * **不走 [work]**：与 [loadAccount] 同一个理由——`work` 的回调会被任何一次
  * [invalidatePage] 丢掉，导入这条路上恰好每次都会经过一次页面重建。
  */
-fun MainActivity.importAccount(text: String,anchor: View?) {
+fun TvMainActivity.importAccount(text: String,anchor: View?) {
     // 需要联网校验：等待期间显示屏幕正中的加载框，校验完（成功 / 失败）再收掉。
     showCenterLoading("正在验证账号参数…")
     io.submit {
@@ -135,7 +135,7 @@ fun MainActivity.importAccount(text: String,anchor: View?) {
  *
  * 解析完立刻做一次账号校验：通过才写入本机，免得留一份坏凭据。
  */
-fun MainActivity.parseCredentials(text: String): AccountCredentials =
+fun TvMainActivity.parseCredentials(text: String): AccountCredentials =
     // 解析 + 校验整段搬到了 `:shared`（`AccountLogin.importText`）：手机端走同一个入口，
     // 两边的「坏凭据要挡住」规则只写一份。
     com.hgtv.star.shared.account.AccountLogin.importText(text, repository, library)
@@ -149,7 +149,7 @@ fun MainActivity.parseCredentials(text: String): AccountCredentials =
  * 界面上就是「一直显示正在读取，很久没有结果」。这里自己管一个序号：
  * 只有最后一次请求的回调会落地，且无论成功失败都会把 [accountLoading] 放回去。
  */
-fun MainActivity.loadAccount(force: Boolean=false) {
+fun TvMainActivity.loadAccount(force: Boolean=false) {
     if(accountLoading && !force) return
     val cache=library.accountCache()
     val now=System.currentTimeMillis()
@@ -218,7 +218,7 @@ fun MainActivity.loadAccount(force: Boolean=false) {
     }
 }
 /** 手动刷新收尾：清掉「刷新中」标志（等待框由调用方在 [loadAccount] 里收）。 */
-private fun MainActivity.finishProfileRefresh() {
+private fun TvMainActivity.finishProfileRefresh() {
     accountRefreshing=false
 }
 
@@ -232,7 +232,7 @@ private fun MainActivity.finishProfileRefresh() {
  * 收藏与历史栏的本机那半份也在列表里（合并规则见 [localItems]），所以只有账号侧变了时
  * 也只需重建正在显示的那一页，别的页面下次进来自己会读到新数据。
  */
-fun MainActivity.refreshAccountViews(changed: Set<String>) {
+fun TvMainActivity.refreshAccountViews(changed: Set<String>) {
     if(tab==TAB_PROFILE) {
         // 资料变了：头像与昵称长在页头那一行里，只有整页重建才换得掉。
         if("资料" in changed) { showCatalog(); return }
@@ -253,7 +253,7 @@ fun MainActivity.refreshAccountViews(changed: Set<String>) {
  * 首页「我的收藏」「历史记录」两栏是**本机 + 账号**合并的结果（见 [historyRows] / [favoriteRows]），
  * 因此这里只把凭据交给仓库，首页重建时自然带上账号里的条目。
  */
-fun MainActivity.applyAccount() {
+fun TvMainActivity.applyAccount() {
     // 设备身份 / 账号凭据 / 注册 Cookie / 心跳档案 / 搜索口令：装配只有一份
     // （`:shared` 的 `IdentityBinder`），手机端用的是同一个函数。
     // 随后异步补一次注册（匿名）：拿到之后搜索与播放都走这同一份身份。
@@ -296,7 +296,7 @@ fun MainActivity.applyAccount() {
  * `MediaCodecList` 在电视盒子上能卡 1–3 秒，因此放在 io 线程，结果由
  * [PlaybackCapability] 落盘——之后每次启动都是纯内存读。
  */
-fun MainActivity.applyPlaybackCapability() {
+fun TvMainActivity.applyPlaybackCapability() {
     val chosen=library.qualityChosenByUser()
     io.submit {
         val quality=if(chosen) 0 else PlaybackCapability.defaultQuality(this)
@@ -321,7 +321,7 @@ fun MainActivity.applyPlaybackCapability() {
  * 不阻塞首屏；成功之后把身份交给仓库，后续搜索与播放都走 App 接口那条快路径。
  * 失败不弹窗——搜索会报「接口暂无响应」、播放会报「暂不可用」，下次启动再试。
  */
-fun MainActivity.ensureDeviceRegistered() {
+fun TvMainActivity.ensureDeviceRegistered() {
     // 什么时候需要注册：本机还没有身份，或者上一次「换新」没成功（`registration-pending`）。
     //
     // 换新的方式是「**先注册新身份、成功才替换**」（见 [registerDeviceOnce]）：失败时旧档案、
@@ -361,7 +361,7 @@ fun MainActivity.ensureDeviceRegistered() {
  * 启动时异步调一次（[ensureDeviceRegistered]），播放取地址之前再同步兜一次
  * （见 [playEpisode] 的取地址那一段与 [maybePrefetch]）。
  */
-fun MainActivity.registerDeviceOnce(force: Boolean = false, regenerate: Boolean = false): Boolean {
+fun TvMainActivity.registerDeviceOnce(force: Boolean = false, regenerate: Boolean = false): Boolean {
     val traceStarted=StartupTrace.now()
     StartupTrace.mark("device.register.start", "force=$force regenerate=$regenerate")
     synchronized(deviceRegisterLock) {
@@ -402,7 +402,7 @@ fun MainActivity.registerDeviceOnce(force: Boolean = false, regenerate: Boolean 
  *   失败（网络 / 服务端拒绝）就继续用旧的那一对——不能因为一次注册失败让用户连首页都看不了。
  * * 那一条是**补救**：真被服务端拒了才丢身份重注册，并自动重试原来的请求。
  */
-fun MainActivity.refreshRegistrationIdentity() {
+fun TvMainActivity.refreshRegistrationIdentity() {
     if(deviceRegistering) return
     if(!library.registrationNeedsRefresh()) return
     deviceRegistering=true
@@ -463,7 +463,7 @@ fun MainActivity.refreshRegistrationIdentity() {
  *
  * @return true 表示已经接手（调用方应当**直接返回**，不要再显示错误界面）。
  */
-fun MainActivity.healDeviceIdentity(reason: String,retry: ()->Unit): Boolean {
+fun TvMainActivity.healDeviceIdentity(reason: String,retry: ()->Unit): Boolean {
     val taken=com.hgtv.star.shared.data.DeviceHealer.healAsync(library,repository,reason) { healed ->
         if(isDestroyed) return@healAsync
         if(!healed) {
@@ -503,7 +503,7 @@ fun deviceRejectionOf(problem: Throwable?): Boolean =
  *
  * 成功后同时落盘（后续搜索 / 播放复用这台设备），失败返回 null。
  */
-fun MainActivity.registerForPhoneLogin(profile: Map<String,String>): com.hgtv.star.core.DeviceRegister.Registered? {
+fun TvMainActivity.registerForPhoneLogin(profile: Map<String,String>): com.hgtv.star.core.DeviceRegister.Registered? {
     val registered=com.hgtv.star.shared.data.DeviceRegistration.registerLoginDevice(
         library,
         repository,
@@ -524,7 +524,7 @@ fun MainActivity.registerForPhoneLogin(profile: Map<String,String>): com.hgtv.st
  * 先拉一次账号资料确认这份会话真能用——平台对无效会话不报错、只把请求降级成匿名设备，
  * 不挡住的话「登录成功」会是假的（界面上只是「一条记录都没有」）。
  */
-fun MainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?) {
+fun TvMainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?) {
     // 同上：这一步要打一次账号资料确认会话有效，等待期间显示加载框。
     showCenterLoading("正在验证登录状态…")
     io.submit {
@@ -567,7 +567,7 @@ fun MainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?) {
  * 两条路走的是**同一份** [com.hgtv.star.core.PhoneLogin] 协议实现与同一套落盘逻辑
  * （见 [savePhoneLogin]），区别只是「在哪儿敲那串手机号」。
  */
-fun MainActivity.phoneLoginChoice(anchor: View?) {
+fun TvMainActivity.phoneLoginChoice(anchor: View?) {
     // 直接进表单：手机号与验证码用系统键盘输入，版面与手机上的登录页一致。
     // 手机扫码那条路留给「上行短信」那一步（那一步本来就必须用手机）。
     tvTools.phoneLoginForm(

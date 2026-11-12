@@ -185,7 +185,7 @@ object HgtvDns : Dns {
     /**
      * 忘掉一个域名的解析结果（内存与盘上一并清空）。
      *
-     * 由播放层的自愈路径调用（见 `MainActivity.playerFailure` → `dropDeadTransport`）：
+     * 由播放层的自愈路径调用（见 `TvMainActivity.playerFailure` → `dropDeadTransport`）：
      * 视频建连超时 / 被拒之后，那个 IP 已经不能再用了，而它正好在
      * [TTL_MS]（10 分钟）与 [DISK_TTL_MS]（30 分钟）里各有一份——不清掉的话，
      * 重取地址、重试、杀进程重进都还是同一个死 IP，用户看到的就是「这一集永远放不了」。

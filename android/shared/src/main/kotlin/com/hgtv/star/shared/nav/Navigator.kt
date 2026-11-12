@@ -13,7 +13,7 @@ package com.hgtv.star.shared.nav
  *
  * ## 为什么只有一个方法
  *
- * 刻意**没有** `back()`：电视的返回由 `MainActivity.onBackPressed` 统一处理（它要按
+ * 刻意**没有** `back()`：电视的返回由 `TvMainActivity.onBackPressed` 统一处理（它要按
  * `screen` / 浮层 / 焦点三层判断），手机的返回由系统栈处理。两边都不需要导航器代劳，
  * 加一个谁都不实现的空方法只会变成噪音。
  *

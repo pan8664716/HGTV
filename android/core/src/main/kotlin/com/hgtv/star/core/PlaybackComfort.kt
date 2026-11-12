@@ -8,7 +8,7 @@ package com.hgtv.star.core
  * （兼容性更好：花屏、绿屏、音画不同步、黑屏有声这类片源问题通常能绕过）。
  *
  * 选择在**创建播放器时**生效：切换会重建播放器并从当前位置续播，见
- * `MainActivity.applyDecoderMode`。
+ * `TvMainActivity.applyDecoderMode`。
  */
 enum class VideoDecoderMode(val label: String) {
     HARDWARE("硬件解码"), SOFTWARE("软件解码");
@@ -52,7 +52,7 @@ fun VideoFrameMode.toFit(verticalSource: Boolean = false): VideoFit =
 /**
  * 快进 / 快退的步长与边界：**电视上已经调好的那一套手感**，手机沿用同一份。
  *
- * 三条规则原先只写在电视的 `MainActivity.seek` / `seekRecommend` 里，手机在推荐流与
+ * 三条规则原先只写在电视的 `TvMainActivity.seek` / `seekRecommend` 里，手机在推荐流与
  * 播放页各写了一份「按秒数直接 seek」的简版，于是同一部剧在两端的快进手感不同：
  *
  * * **合并窗**：相邻两次操作在 [MERGE_WINDOW_MS] 内时只跳一次（取最后的目标）。

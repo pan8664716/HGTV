@@ -19,11 +19,11 @@ import com.hgtv.star.tv.R
 /** 首页一栏一屏放满的条数：本机记录与榜单都按它截断，也是「查看全部」入口的门槛。 */
 private const val SHELF_SIZE=10
 
-// 本文件是从 MainActivity.kt 拆出来的「首页四个剧架与剧卡的快捷菜单（收藏 / 稍后看）」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「首页四个剧架与剧卡的快捷菜单（收藏 / 稍后看）」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-fun MainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Boolean,loading: Boolean) {
+fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Boolean,loading: Boolean) {
     homeUpdateCount=library.updatedFavorites()
     // 首页没有自己的顶部入口（品牌是标识），剧卡按上键回到第一枚圆形入口。
     val top=nav.firstOrNull() ?: navIcons().firstOrNull() ?: root
@@ -117,7 +117,7 @@ fun MainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bool
  * 同一部剧两边都有时以**本机**为准（本机记录更细——还知道这一集是不是已看完，
  * 而且用户是在这台设备上看的）。
  */
-fun MainActivity.historyRows(local: List<WatchProgress>): List<HomeScreen.Entry> {
+fun TvMainActivity.historyRows(local: List<WatchProgress>): List<HomeScreen.Entry> {
     // 历史栏是卡片样式的**唯一例外**：第二行不显示类型标签，而是「第 x 集 · xx:xx」——
     // 这一栏回答的是「我看到哪了」，进度比标签重要得多（见 PosterCard.syncMeta）。
     val rows=local.take(10).map { p -> HomeScreen.Entry(p.series,
@@ -140,7 +140,7 @@ fun MainActivity.historyRows(local: List<WatchProgress>): List<HomeScreen.Entry>
  *
  * 两边都有的剧只出现一次（以本机那条为准，因为它带更新状态）。
  */
-fun MainActivity.favoriteRows(local: List<Series>): List<HomeScreen.Entry> {
+fun TvMainActivity.favoriteRows(local: List<Series>): List<HomeScreen.Entry> {
     val rows=local.take(10).map { HomeScreen.Entry(it,library.favoriteLabel(it.id)) }.toMutableList()
     val seen=rows.map { it.series.id }.toSet()
     accountData?.favorites?.filterNot { it.series.id in seen }?.take(10-rows.size)?.forEach { row ->
@@ -148,7 +148,7 @@ fun MainActivity.favoriteRows(local: List<Series>): List<HomeScreen.Entry> {
     }
     return rows
 }
-fun MainActivity.homeShelves(): List<HomeScreen.Shelf> {
+fun TvMainActivity.homeShelves(): List<HomeScreen.Shelf> {
     val history=library.history(); val favorites=library.favorites()
     val later=library.later()
     // 栏目的顺序与名字只有一个来源（[HomeLayout.columns]，有单元测试钉住）；
@@ -178,7 +178,7 @@ fun MainActivity.homeShelves(): List<HomeScreen.Shelf> {
  *
  * 没有记录时返回 null（界面不渲染空架子，也不会只剩一张底板）。
  */
-fun MainActivity.localShelf(key: String,entries: List<HomeScreen.Entry>): HomeScreen.Shelf? {
+fun TvMainActivity.localShelf(key: String,entries: List<HomeScreen.Entry>): HomeScreen.Shelf? {
     if(entries.isEmpty()) return null
     val more: (() -> Unit)?=if(entries.size>=SHELF_SIZE) ({ showCollection(key) }) else null
     return HomeScreen.Shelf(key,HomeLayout.title(key),entries,more)
@@ -189,7 +189,7 @@ fun MainActivity.localShelf(key: String,entries: List<HomeScreen.Entry>): HomeSc
  * 栏目名与榜单名不一样（见 [RankBoard]）：栏目按用户认得的片库分类写（热播漫剧…），
  * 榜单页里写的是接口那套榜名（HGTV漫剧热播榜…）。
  */
-fun MainActivity.rankShelf(board: RankBoard): HomeScreen.Shelf? {
+fun TvMainActivity.rankShelf(board: RankBoard): HomeScreen.Shelf? {
     val page=homeFeed[board]
     val items=page?.items.orEmpty().filterNot { it.id in library.hidden() }
     if(items.isEmpty()) return null
@@ -205,7 +205,7 @@ fun MainActivity.rankShelf(board: RankBoard): HomeScreen.Shelf? {
     val more: (() -> Unit)?=if(entries.size>=SHELF_SIZE) ({ switchRankBoard(board,fromHome=true) }) else null
     return HomeScreen.Shelf("rank-${board.storedValue}",board.homeTitle,entries,more)
 }
-fun MainActivity.refreshLibraryCards(changedId: String,removed: Boolean=false) {
+fun TvMainActivity.refreshLibraryCards(changedId: String,removed: Boolean=false) {
     if(screen!="catalog") return
     val home=homeScreen
     if(home!=null) {
@@ -260,10 +260,10 @@ fun MainActivity.refreshLibraryCards(changedId: String,removed: Boolean=false) {
  * 而本机收藏是另一份（[Library.favorites]）。导入账号之后两边可能只有一边有，
  * 只看本机就会出现「已经收藏了、菜单却让再收藏一次」。
  */
-fun MainActivity.isFavorite(id: String): Boolean =
+fun TvMainActivity.isFavorite(id: String): Boolean =
     library.favorite(id) || accountData?.favorites?.any { it.series.id==id }==true
 
-fun MainActivity.quickActions(series: Series,anchor: View,shelf: String?=null) {
+fun TvMainActivity.quickActions(series: Series,anchor: View,shelf: String?=null) {
     // 三个地方都是「观看记录」这个上下文，菜单里都该有「删除记录」：
     // 首页的历史剧架（`shelf=="history"`）、历史集合页（`collection=="history"`）、
     // 以及「我的 → 历史」（`tab==TAB_PROFILE && accountTab=="history"`）。
@@ -343,7 +343,7 @@ fun MainActivity.quickActions(series: Series,anchor: View,shelf: String?=null) {
         loadCover = { view, url -> loadCover(view, url) }
     )
 }
-fun MainActivity.refreshFavoriteLabels() {
+fun TvMainActivity.refreshFavoriteLabels() {
     if(screen!="catalog" || !library.isLoaded) return
     rebindGridRows()
     favoriteStatus?.text=favoriteMonitor.status

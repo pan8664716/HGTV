@@ -33,11 +33,11 @@ import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.ProjectInfo
 import com.hgtv.star.tv.R
 
-// 本文件是从 MainActivity.kt 拆出来的「设置页：外观主题、播放偏好、账号与关于」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「设置页：外观主题、播放偏好、账号与关于」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-fun MainActivity.settings(parent: LinearLayout) {
+fun TvMainActivity.settings(parent: LinearLayout) {
     // —— 四个大项 ——
     //
     // 设置页按 [SETTINGS_TABS] 分成四块：播放交互 / 外观导航 / 内容推荐 / 系统高级。
@@ -268,7 +268,7 @@ fun MainActivity.settings(parent: LinearLayout) {
     // 左半格留空，快进快退放**右边**（用户要求）。
     padLine(prefRow4,1)
     // 快进快退时长：播放界面按左右键单次跳过的秒数，2..20 秒。
-    // 连按加速按同一比例走（见 `MainActivity.seek`）：10 秒档是「连按 5 次后每次 30 秒」，
+    // 连按加速按同一比例走（见 `TvMainActivity.seek`）：10 秒档是「连按 5 次后每次 30 秒」，
     // 20 秒档就是 60 秒，2 秒档就是 6 秒——改档不会让连按手感错位。
     val seekSlider=cellSlider(
         prefRow4,"快进快退",2f,20f,1f,library.seekStep.toFloat(),
@@ -879,7 +879,7 @@ fun MainActivity.settings(parent: LinearLayout) {
     }
 }
 
-private fun MainActivity.showAboutDialog(anchor: View) {
+private fun TvMainActivity.showAboutDialog(anchor: View) {
     val dialog=TvDialog(this,"关于")
     dialog.message("版本号：${AppVersion.name}")
     dialog.message("GitHub：${ProjectInfo.GITHUB}")
@@ -889,7 +889,7 @@ private fun MainActivity.showAboutDialog(anchor: View) {
 }
 
 /** 设置格读数：未指定时为「自动 · 当前判定形态」。 */
-private fun MainActivity.deviceFormSettingLabel(): String {
+private fun TvMainActivity.deviceFormSettingLabel(): String {
     DeviceForm.ofStored(library.deviceForm)?.let { return it.label }
     val detected=deviceProfile?.form
         ?: runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
@@ -902,7 +902,7 @@ private fun MainActivity.deviceFormSettingLabel(): String {
  * 落盘与启动路由使用同一份 `Library.deviceForm`（见 `LaunchActivity`）。
  * 电视与手机是两套 Activity，因此切换成功后自动重新进入对应界面。
  */
-private fun MainActivity.showDeviceFormPicker(anchor: TextView) {
+private fun TvMainActivity.showDeviceFormPicker(anchor: TextView) {
     val detected=deviceProfile?.form
         ?: runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
     val picker=TvDialog(this,"设备类型").choices(
@@ -926,7 +926,7 @@ private fun MainActivity.showDeviceFormPicker(anchor: TextView) {
     picker.show(anchor)
 }
 
-private fun MainActivity.applyDeviceFormSelection(selected: String,anchor: TextView) {
+private fun TvMainActivity.applyDeviceFormSelection(selected: String,anchor: TextView) {
     if(!library.setDeviceFormNow(selected)) {
         showHint("设备类型保存失败，请重试")
         return
@@ -943,7 +943,7 @@ private fun MainActivity.applyDeviceFormSelection(selected: String,anchor: TextV
  * 该弹窗不建立焦点链、吞掉所有按键，确认按钮只接受 SOURCE_TOUCHSCREEN 的触摸事件；
  * 遥控器、鼠标与键盘都无法完成选择。6 秒内没有触摸确认就自动关闭，且不写入任何设置。
  */
-private fun MainActivity.showTouchOnlyDeviceFormConfirm(selected: String,anchor: TextView) {
+private fun TvMainActivity.showTouchOnlyDeviceFormConfirm(selected: String,anchor: TextView) {
     val target=DeviceForm.shortLabel(selected)
     val dialog=TvDialog(this,"确认切换到${target}")
     dialog.message(
@@ -1014,11 +1014,11 @@ private fun settingsPageIndexOf(view: View): Int? {
 /**
  * 切换设置页的大项（播放交互 / 外观导航 / 内容推荐 / 系统高级）。
  *
- * **只换可见性**：四块内容在进这一页时就全部建好了（见 `MainActivity.settings`），
+ * **只换可见性**：四块内容在进这一页时就全部建好了（见 `TvMainActivity.settings`），
  * 因此这里不重建页面、不重新联网，滚动位置回到顶部、焦点留在刚点的那枚芯片上，
  * 正在调的那一块原样保留（弹窗也还开着）。
  */
-fun MainActivity.switchSettingsTab(index: Int,focusContent: Boolean=false) {
+fun TvMainActivity.switchSettingsTab(index: Int,focusContent: Boolean=false) {
     if(index !in SETTINGS_TABS.indices) return
     if(index!=settingsTab) {
         settingsTab=index
@@ -1047,7 +1047,7 @@ fun MainActivity.switchSettingsTab(index: Int,focusContent: Boolean=false) {
  * 顶部圆形入口的「按下」落到**当前**大项的第一行（切了大项之后要重算一次）。
  * `GONE` 的块里没有可聚焦控件，因此这里一律按可见性过滤（[firstFocusableIn]）。
  */
-fun MainActivity.refreshSettingsTabLanding() {
+fun TvMainActivity.refreshSettingsTabLanding() {
     val active=settingsTab.coerceIn(0,SETTINGS_TABS.lastIndex)
     SETTINGS_TABS.indices.forEach { index ->
         val chip=settingsTabChips.getOrNull(index) ?: return@forEach
@@ -1055,7 +1055,7 @@ fun MainActivity.refreshSettingsTabLanding() {
         chip.nextFocusDownId=first.id
         // 这一页**最上面那一行**的每一格都回芯片，不只是第一格：
         // 推荐范围那一行有三枚开关，只改第一格就会出现「漫剧能上、AI剧 / 真人剧上不去」。
-        // [settingsTopRows] 由 `MainActivity.settings()` 建完页面后赋值；
+        // [settingsTopRows] 由 `TvMainActivity.settings()` 建完页面后赋值；
         // 页面还没建（或已重建）时退回只修第一格。
         val top=settingsTopRows(index)
         (top.ifEmpty { listOf(first) }).forEach { it.nextFocusUpId=chip.id }
@@ -1081,7 +1081,7 @@ private fun firstFocusableIn(view: View): View? {
  *
  * 只报**结果**；等待中的三点走 [showCenterLoading]，同样不占布局。
  */
-fun MainActivity.showHint(message: String) {
+fun TvMainActivity.showHint(message: String) {
     if(message.isBlank()) return
     // `tvTools` 是 lateinit：极早期（首屏还没建完）调到这里时它可能还没初始化，
     // 那一下没有提示可以接受，绝不能因此崩掉。

@@ -7,8 +7,8 @@ import android.widget.*
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.TvStyle
 
-// 本文件是从 MainActivity.kt 拆出来的「全站常量与静态表（标签下标、栅格列数、面板行号、阈值……）」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「全站常量与静态表（标签下标、栅格列数、面板行号、阈值……）」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 /** 远端长列表（排行榜页的四个榜单、搜索结果）底部「展示更多」按钮的 tag，同时用作「焦点留在该按钮上」的标记。 */
@@ -19,7 +19,7 @@ const val LOAD_MORE="load:more"
  * 顶部四个页面入口的标签下标。
  *
  * 圆形入口的顺序是 **搜索 → 分类 → 榜单 → 设置 → 个人信息**（`nav` 的下标 0..4，
- * 而 [MainActivity.navEntry] 用 `nav[tab-1]` 取，所以这五个标签从 1 开始编号）。
+ * 而 [TvMainActivity.navEntry] 用 `nav[tab-1]` 取，所以这五个标签从 1 开始编号）。
  * 首页是 0：品牌「HGTV」是标识不是按钮，不占入口位。
  */
 const val TAB_HOME=0
@@ -45,7 +45,7 @@ const val TAB_PROFILE=5
 const val REQUEST_ACCOUNT_FILE=0x51
 
 /**
- * 「会话镜像要写外部存储」的授权请求码（见 [MainActivity.requestMirrorStorage]）。
+ * 「会话镜像要写外部存储」的授权请求码（见 [TvMainActivity.requestMirrorStorage]）。
  *
  * 只有 Android 6–9（23–28）会用到：那个区间写 `Android/data/<包名>/` 需要运行时授权，
  * 而 4.4–5.1 是安装期权限、10 起不需要权限。
@@ -53,7 +53,7 @@ const val REQUEST_ACCOUNT_FILE=0x51
 const val REQUEST_MIRROR_STORAGE=0x52
 
 /**
- * 「清空应用缓存」要外部存储权限的请求码（见 [MainActivity.performLocalReset]）。
+ * 「清空应用缓存」要外部存储权限的请求码（见 [TvMainActivity.performLocalReset]）。
  *
  * 与 [REQUEST_MIRROR_STORAGE] 分开：那一条拿到权限后要去恢复会话，这一条只是让
  * `/sdcard/.hgtv` 删得掉；两者同时复用会让「恢复出厂」把刚清掉的会话又救回来。
@@ -72,7 +72,7 @@ const val REQUEST_VOICE=0x54
 const val VOICE_QUERY_MAX=80
 
 /**
- * 账号数据拉取失败后的自动重试（见 `MainActivity.loadAccount` 的失败分支）。
+ * 账号数据拉取失败后的自动重试（见 `TvMainActivity.loadAccount` 的失败分支）。
  *
  * 为什么需要：重装后第一次启动时，登录态刚从本机备份恢复回来，首屏那一批请求又都挤在一起，
  * 这一次账号拉取失败并不罕见。原先失败了就只能靠用户自己去点一次「我的」把数据逼出来；
@@ -106,7 +106,7 @@ const val HEADER_SHOW_THRESHOLD=12
 /**
  * 账号数据缓存的新鲜期。
  *
- * 这段时间内进「我的」页 / 收藏 / 历史**不再联网**，直接用上次那一份（见 [MainActivity.loadAccount]）。
+ * 这段时间内进「我的」页 / 收藏 / 历史**不再联网**，直接用上次那一份（见 [TvMainActivity.loadAccount]）。
  * 账号侧那五条数据（资料 / 收藏 / 历史 / 点赞 / 预约）确实不是每秒在变，但**也不能放到五分钟**：
  * 用户的常见动作是「在手机上看了几集，回来打开电视接着看」，五分钟的新鲜期会让电视上的历史
  * 一直停在进应用那一刻的那一份——他自己再去点「刷新」才动，读作「电视端不同步」。
@@ -148,7 +148,7 @@ const val LOAD_MORE_RETRY_COOLDOWN_MS=3_000L
  *
  * 一屏约 17 行（1080p 六列、卡片 304 宽），取 12 行 ≈ 0.7 屏——加上可见的那一屏，
  * 前后各留出不到一屏的缓冲。这个量与「焦点走多快」无关，因此按住下键时
- * 下面那一屏的图已经在路上（见 [MainActivity.prefetchAroundWindow]）。
+ * 下面那一屏的图已经在路上（见 [TvMainActivity.prefetchAroundWindow]）。
  *
  * 一页现在是 100 条（`ContentRepository.LOGICAL_PAGE_SIZE`，各条路统一），
  * 约 17 行；12 行的半径意味着「一页刚看完约 2/3 的时候，下一页的图已经在路上」——
@@ -173,7 +173,7 @@ const val GRID_COLUMNS_DEFAULT=6
  * **全局生效**：首页剧架、榜单 / 分类 / 搜索 / 收藏 / 历史 / 我的 这些页面共用同一份设置，
  * 因此 `GRID_COLUMNS_DEFAULT` 只作为「6 列的基准宽度」，不能再当常数用。
  */
-val MainActivity.gridColumns: Int
+val TvMainActivity.gridColumns: Int
     get() = when {
         tab==TAB_SEARCH && collection==null && hongguoKeyboardMode() -> 3
         library.isLoaded -> library.homeColumns.coerceIn(4, 8)
@@ -244,7 +244,7 @@ const val SUGGEST_DEBOUNCE=220L
 /**
  * 首帧（还没量到视口高度时）至少物化几行。
  *
- * 只是「先铺几行再说」的起点：第一帧布局完成后 [MainActivity.syncGridWindow] 会按真实
+ * 只是「先铺几行再说」的起点：第一帧布局完成后 [TvMainActivity.syncGridWindow] 会按真实
  * 视口高度重算窗口，多出来的行进回收池。
  */
 const val GRID_WINDOW_MIN_ROWS=4
@@ -254,7 +254,7 @@ const val GRID_WINDOW_MIN_ROWS=4
  *
  * 视口算出来的窗口本来就只有一屏多两行；这个上限是给「必须包含某一行」那条兜底规则用的：
  * 万一要落到的行离视口很远（恢复的焦点、跳转），**不能**把中间那几百行一次性物化出来，
- * 而是先把列表滚过去、再按新的视口算窗口（见 `MainActivity.focusGridIndex`）。
+ * 而是先把列表滚过去、再按新的视口算窗口（见 `TvMainActivity.focusGridIndex`）。
  */
 const val GRID_WINDOW_MAX_ROWS=12
 
@@ -320,7 +320,7 @@ const val NAV_GRID_COLUMNS=4
  * | 内容推荐 | 推荐范围 / 内容来源 |
  * | 系统高级 | 数据维护 / 设备形态 / 高级性能 |
  *
- * 四块内容在进设置页时一次性建好，切换只改可见性（见 `MainActivity.switchSettingsTab`），
+ * 四块内容在进设置页时一次性建好，切换只改可见性（见 `TvMainActivity.switchSettingsTab`），
  * 因此这里只放显示名，不放任何取值。
  */
 val SETTINGS_TABS=listOf("播放交互","外观导航","内容推荐","系统高级")

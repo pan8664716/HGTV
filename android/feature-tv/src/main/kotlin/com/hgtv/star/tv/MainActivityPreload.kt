@@ -17,7 +17,7 @@ import com.hgtv.star.core.lruPut
  *
  * 播放器还没起来 / 已经暂停时不挡（那时没有 buffer 可抢）。
  */
-private fun MainActivity.preloadGateOpen(): Boolean {
+private fun TvMainActivity.preloadGateOpen(): Boolean {
     val p=player ?: return true
     if(!p.isPlaying) return true
     val buffered=p.bufferedPosition-p.currentPosition
@@ -40,7 +40,7 @@ private const val PRELOAD_MAX_TARGETS=4
  *
  * 换剧 / 离开推荐页 / 内存吃紧都要调：留着它等于「用户已经走了，两秒后还要按旧锚点去拉四条」。
  */
-fun MainActivity.cancelScheduledPreload() {
+fun TvMainActivity.cancelScheduledPreload() {
     preloadScheduler().cancel()
 }
 
@@ -55,7 +55,7 @@ fun MainActivity.cancelScheduledPreload() {
  * [com.hgtv.star.shared.feed.PreloadScheduler] 里，手机端用的是**同一个类**：
  * 早先两端各写一遍，同一个问题常常只修在一端。
  */
-fun MainActivity.scheduleRecommendPreload(delayMs: Long,reason: String) {
+fun TvMainActivity.scheduleRecommendPreload(delayMs: Long,reason: String) {
     preloadScheduler().scheduleWindow(delayMs,reason)
 }
 
@@ -65,7 +65,7 @@ fun MainActivity.scheduleRecommendPreload(delayMs: Long,reason: String) {
  * 它只在一件事上起作用：快速连划时窗口被降级成「仅地址」，停下来之后要把
  * 「下一部」重新升回完整预热——否则用户停在某一条上，下一步按下去仍然是冷启动。
  */
-fun MainActivity.scheduleRecommendDwell() {
+fun TvMainActivity.scheduleRecommendDwell() {
     preloadScheduler().scheduleDwell()
 }
 
@@ -75,7 +75,7 @@ fun MainActivity.scheduleRecommendDwell() {
  * 注入的都是「这一端才有的东西」：锚点下标、是否还在推荐页、带宽是否让路、真正派发。
  * 排程规则本身不在各端。
  */
-private fun MainActivity.preloadScheduler(): com.hgtv.star.shared.feed.PreloadScheduler =
+private fun TvMainActivity.preloadScheduler(): com.hgtv.star.shared.feed.PreloadScheduler =
     preloadSchedulerRef ?: com.hgtv.star.shared.feed.PreloadScheduler(
         slideCache=slideCache,
         anchor={ recommendIndex },
@@ -91,7 +91,7 @@ private fun MainActivity.preloadScheduler(): com.hgtv.star.shared.feed.PreloadSc
  *
  * 顺序就是计划里的顺序（主方向由近到远，再是反方向），因此带宽紧张时先到的是最该有的那一条。
  */
-fun MainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: String) {
+fun TvMainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: String) {
     if(screen!="recommend") return
     if(BuildConfig.DEBUG) {
         val summary=plan.targets.joinToString(",") { "${it.index}:${it.level.name.first()}" }
@@ -128,7 +128,7 @@ fun MainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: String)
  * | [CacheLevel.META] | 取地址 + 解析索引（写盘），不取首块 | ~400KB |
  * | [CacheLevel.FULL] | 取地址 + 索引 + 首块 512KB，留在内存里等切换 | ~900KB |
  */
-fun MainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,level: CacheLevel): Boolean {
+fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,level: CacheLevel): Boolean {
     val cached=recommendDetails[series.id]
     if(cached!=null) {
         return warmRecommendDetail(cached,level,index)
@@ -160,7 +160,7 @@ fun MainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,leve
  * 纯 LRU 对双向滑动不友好——用户滑回来时，刚被淘汰的那一份正是他要的。
  * 评分与窗口保护都在 [SlideCacheManager.evictionOrder] 里，这里只负责真的关掉。
  */
-fun MainActivity.evictRecommendPrepared(limit: Int = RECOMMEND_PREPARED_LIMIT) {
+fun TvMainActivity.evictRecommendPrepared(limit: Int = RECOMMEND_PREPARED_LIMIT) {
     if(recommendPrepared.size<=limit) return
     val now=android.os.SystemClock.elapsedRealtime()
     val direction=slideCache.direction

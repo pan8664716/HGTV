@@ -22,7 +22,7 @@ import com.hgtv.star.core.Series
  *
  * 用户看到的就是「每切一次页面都重新加载、重新起播」，与 TV 上那种「画面不断、只是控制层换了」
  * 完全是两回事。TV 端之所以顺，是因为两端在同一个 Activity 里、共用同一份
- * `detail / episodeIndex / video`（见 `MainActivity` 的 `playEpisode` 与 `onEpisodeAdvanced`）。
+ * `detail / episodeIndex / video`（见 `TvMainActivity` 的 `playEpisode` 与 `onEpisodeAdvanced`）。
  *
  * 这里把那份状态搬到进程级：谁设了媒体源，谁就把「在放哪一集、用哪个 [RemoteVideo]」
  * 记在这里；另一个界面接手时**先看这里**，能接就接，接不上才自己取。
@@ -99,7 +99,7 @@ object PhoneSession {
      *
      * 自动降档之后「预热好的 1080」不能再挂给 720 的播放：地址是另一条、索引也是另一份，
      * 挂上去等于把刚降下来的档位又顶回去，再撞一次同样的解码失败（TV 的预热键
-     * `集:上限` 就是为了这件事，见 `MainActivity.preparedKeyFor`）。
+     * `集:上限` 就是为了这件事，见 `TvMainActivity.preparedKeyFor`）。
      */
     @Volatile private var nextQuality: Int = 0
 

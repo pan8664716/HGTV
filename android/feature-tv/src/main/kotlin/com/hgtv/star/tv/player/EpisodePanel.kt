@@ -26,7 +26,7 @@ class EpisodePanel(
      * 面板要跟着画面转多少度（`0f` = 不转，电视上恒为 0）。
      *
      * 「竖屏短剧全屏」把画面转 90° 时，播放页上的标题条 / 控制条 / 弹幕都跟着转了
-     *（见 `MainActivity.applyOverlayGeometry`）。这个面板是**独立窗口**，转不了父级，
+     *（见 `TvMainActivity.applyOverlayGeometry`）。这个面板是**独立窗口**，转不了父级，
      * 因此自己按同一个角度摆一次——不然它就是这张转了 90° 的界面里唯一还横着的一块。
      */
     private val spin: Float = 0f,
@@ -38,7 +38,7 @@ class EpisodePanel(
      * 面板上发生了用户操作（按键 / 触摸）。
      *
      * 面板是**独立窗口**，按键与触摸都不经过 Activity，因此「无操作自动消失」的计时
-     * 只能由这里通知宿主重新开始数（见 `MainActivity.scheduleOverlayAutoHide`）。
+     * 只能由这里通知宿主重新开始数（见 `TvMainActivity.scheduleOverlayAutoHide`）。
      */
     var onActivity: () -> Unit = {}
 

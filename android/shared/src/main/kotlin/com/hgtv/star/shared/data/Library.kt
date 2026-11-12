@@ -688,7 +688,7 @@ class Library(context: Context) {
         if(changed) {
             edit.apply()
             Log.i("HGTV","Restored device identity / session from the external mirror")
-            // 补回来的可能是**会话**，而这一步通常在后台线程、比 `MainActivity` 那次
+            // 补回来的可能是**会话**，而这一步通常在后台线程、比 `TvMainActivity` 那次
             // `onAppStart` 晚：那一次判成「未登录」直接返回，`onResume` 也早已过去，
             // 于是本轮进程再也不会有心跳（重装后第一晚的「掉登录」就是这么来的）。
             SessionBootstrap.onSessionRestored()
@@ -696,7 +696,7 @@ class Library(context: Context) {
         return changed
     }
     /**
-     * 权限刚拿到之后**再试一次**恢复（见 `MainActivity.onRequestPermissionsResult`）。
+     * 权限刚拿到之后**再试一次**恢复（见 `TvMainActivity.onRequestPermissionsResult`）。
      *
      * 为什么必须再试：新装的应用在用户点「允许」之前读不了 `/sdcard/.hgtv`，而启动时那次恢复
      * 已经跑过（[mirrorChecked] 已置位）——不重试，镜像里那份设备身份与会话就一直认不回来，
@@ -751,7 +751,7 @@ class Library(context: Context) {
      *
      * 内容接口（搜索、播放、弹幕）认的是「服务端注册过的 `device_id` + `install_id` 这一对」，
      * 随手编的数字拿不到数据，因此本机不再自己生成随机身份——播放也用注册下发的那一对。
-     * 返回空表示这台设备还没注册过：调用方先注册（`MainActivity.ensureDeviceRegistered`，
+     * 返回空表示这台设备还没注册过：调用方先注册（`TvMainActivity.ensureDeviceRegistered`，
      * 播放前另有一次同步补注册），注册成功后 [saveDeviceIdentity] 落盘，这里就能给出来。
      */
     fun deviceIdentity(): Map<String,String> {
@@ -791,7 +791,7 @@ class Library(context: Context) {
         restoreFromMirror()
         // **不判 `registrationPending`**：那份「待换新」只是「档案想升级」，旧身份在平台上
         // 仍然是好的（搜索 / 播放都还能用）。判成「没注册」会让每次搜索都同步发一次注册请求，
-        // 换新失败时用户每搜一次就多等一个 RTT。换新只由启动那一次（[MainActivity.ensureDeviceRegistered]）
+        // 换新失败时用户每搜一次就多等一个 RTT。换新只由启动那一次（[TvMainActivity.ensureDeviceRegistered]）
         // 与播放前那一次兜底负责。
         // **先取档案指纹**：这一步可能把老版本的随机档案重建成派生值，
         // 那时 [invalidateRegistration] 会当场抹掉注册结果。因此读身份必须放在它之后，
@@ -825,7 +825,7 @@ class Library(context: Context) {
      * 在内容接口上会被当成陌生设备——搜索回 `200 + 0 字节`、播放回 `101000`，
      * 而「设置 → 清空缓存」之所以能修好，正是因为它把这些数字删了重新注册。
      *
-     * 换新是**后台、可失败**的（见 `MainActivity.refreshRegistrationIdentity`）：
+     * 换新是**后台、可失败**的（见 `TvMainActivity.refreshRegistrationIdentity`）：
      * 换新成功才替换身份，失败就继续用旧的那一对，用户不会因此连首页都看不了。
      */
     fun registrationNeedsRefresh(): Boolean {
@@ -1045,7 +1045,7 @@ class Library(context: Context) {
                 // 换设备只能换来一次重新绑定，账号在平台上被当成陌生机器，而收益为零
                 //（平台认设备靠的是 `install_id` / `sessionid` 这串 Cookie，见
                 // `ContentRepository.registerDevice`）。要换只有一条路——服务端明确不认这份身份
-                //（见 `MainActivity.healDeviceIdentity`）。
+                //（见 `TvMainActivity.healDeviceIdentity`）。
                 return map
             }
         }
@@ -1074,7 +1074,7 @@ class Library(context: Context) {
      * 实测平台认设备靠的是注册下发的 `install_id` / `sessionid` Cookie，不是 `cdid`；
      * 换设备只能换来一次重新绑定，账号在平台上被当成陌生机器，收益为零。
      *
-     * 现在只有 `MainActivity.healDeviceIdentity` 会走到这里（搜索 / 播放被服务端判成
+     * 现在只有 `TvMainActivity.healDeviceIdentity` 会走到这里（搜索 / 播放被服务端判成
      * 「这台设备没注册过」之后的自愈），且一次进程最多两次、间隔至少 20 秒。
      */
     fun queueNewDeviceIdentity() {
@@ -1500,7 +1500,7 @@ class Library(context: Context) {
      *
      * 与设备判据是**或**的关系：低配机一律按低配档跑，与这一项无关；
      * 非低配机打开它之后，焦点缩放动画、柔光位图、海报井暗角与跑马灯全部关掉，
-     * 效果与低配机完全一致（见 `MainActivity.applyPerformanceProfile`）。
+     * 效果与低配机完全一致（见 `TvMainActivity.applyPerformanceProfile`）。
      *
      * 改完要整页重建一次才彻底生效：卡片在构造时就把「是否跑马灯」捉了一份
      * （见 `PosterCard.marqueeOn`）。
@@ -1644,7 +1644,7 @@ class Library(context: Context) {
      * 为什么需要它：推荐流本身不记「这台设备刷过什么」——`saveProgress` 里有一句
      * `if(screen=="recommend") return`，推荐页刻意不写观看历史；于是上下刷过十几部之后
      * 再进推荐，服务端回的同一批里有一大半是刚看过的。这里补一份「推荐页看过」的记录，
-     * 由 `MainActivity.loadRecommendPage` 用它过滤 / 判断「这一页是不是又转回老地方」。
+     * 由 `TvMainActivity.loadRecommendPage` 用它过滤 / 判断「这一页是不是又转回老地方」。
      *
      * 它只是**去重的提示**，不是记录：不参与首页任何一栏，不进备份（换一台设备应该从头推荐），
      * 清缓存时随 `shared_prefs` 整个目录一起删（见 `LocalReset.wipe`），不需要单独处理。
@@ -1784,7 +1784,7 @@ class Library(context: Context) {
      * 为什么不写死标识：受众行的可选值来自接口的 `selector_rows`，标识是平台自己那一套
      * （各体裁还可能不同）。写死一个猜出来的串，猜错就是「一条都推不出来」，
      * 比没有这一项更糟。因此这里只存**用户选中的那个 id**，候选值由设置页
-     * 现取一次面板（见 `MainActivity.loadGenderOptions`）再建芯片。
+     * 现取一次面板（见 `TvMainActivity.loadGenderOptions`）再建芯片。
      *
      * 与 [recommendGenreOff] 一样是本机现场，不进备份。
      */

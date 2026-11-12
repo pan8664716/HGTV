@@ -8,7 +8,7 @@ import android.graphics.Typeface
 import android.view.*
 import android.widget.*
 import com.hgtv.star.core.*
-import com.hgtv.star.tv.MainActivity.DeferredUi
+import com.hgtv.star.tv.TvMainActivity.DeferredUi
 import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
@@ -19,11 +19,11 @@ import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.ui.LoadingDotsView
 import kotlinx.coroutines.launch
 
-// 本文件是从 MainActivity.kt 拆出来的「本机库加载、封面取图、异步任务封装与空页 / 错误提示」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「本机库加载、封面取图、异步任务封装与空页 / 错误提示」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-fun MainActivity.showLibraryError(problem: Throwable) {
+fun TvMainActivity.showLibraryError(problem: Throwable) {
     StartupTrace.mark(
         "main.library.error",
         "error=${problem.javaClass.simpleName}:${problem.message.orEmpty().take(120)}",
@@ -31,7 +31,7 @@ fun MainActivity.showLibraryError(problem: Throwable) {
     val body=base(); error(body,problem,stage="library_load") { showStartupLoading(); loadLibrary() }
 }
 /** 首帧只依赖这层轻量动态壳，不读取主题文件、书库、图片加载器或网络对象。 */
-fun MainActivity.showStartupShell() {
+fun TvMainActivity.showStartupShell() {
     root.removeAllViews()
     root.setBackgroundColor(0xFF1E2228.toInt())
     val center=LinearLayout(this).apply {
@@ -45,7 +45,7 @@ fun MainActivity.showStartupShell() {
 }
 
 /** 冷启动初始化遮罩：主设备注册完成前不建推荐首屏。 */
-fun MainActivity.showStartupLoading() {
+fun TvMainActivity.showStartupLoading() {
     val startedAt=StartupTrace.now()
     StartupTrace.mark("main.startupLoading.start")
     startupInitializing=true
@@ -60,7 +60,7 @@ fun MainActivity.showStartupLoading() {
     body.addView(center,LinearLayout.LayoutParams(-1,0,1f))
     StartupTrace.done("main.startupLoading.render",startedAt)
 }
-fun MainActivity.loadLibrary() {
+fun TvMainActivity.loadLibrary() {
     val traceStarted=StartupTrace.now()
     StartupTrace.mark("main.library.start")
     libraryLoadError=null
@@ -121,7 +121,7 @@ fun MainActivity.loadLibrary() {
  * `loadAsync` 完成前会直接抛 `IllegalStateException`。启动优化把首屏提前后，
  * onCreate 里原来的无条件收集器正好撞上这个时间窗。
  */
-fun MainActivity.ensureSearchCollector() {
+fun TvMainActivity.ensureSearchCollector() {
     if(searchCollectorStarted || isDestroyed || !library.isLoaded) return
     searchCollectorStarted=true
     appScope.launch {
@@ -145,8 +145,8 @@ fun MainActivity.ensureSearchCollector() {
  * 搜索登录态（可选）跟着本机设置走：留空时按匿名设备请求，填上后带着它请求。
  * 设置里改完立刻作用于后面的搜索请求。
  */
-fun MainActivity.applySessionToken() { repository.sessionToken=library.searchToken.ifBlank { null } }
-fun MainActivity.base(title: String?=null): LinearLayout {
+fun TvMainActivity.applySessionToken() { repository.sessionToken=library.searchToken.ifBlank { null } }
+fun TvMainActivity.base(title: String?=null): LinearLayout {
     root.removeAllViews(); root.setBackgroundColor(bg)
     val container=column().apply { clipChildren=false; clipToPadding=false }
     // 纵向留白保持改造前的 12 个设计像素。
@@ -177,9 +177,9 @@ fun MainActivity.base(title: String?=null): LinearLayout {
  * 加载一张封面（卡片 / 详情页大图 / 头像都走这里）。
  *
  * 预取不走这个入口——它需要「按整份列表的索引取 URL」，与 View 无关，
- * 因此由 [MainActivity.prefetchAroundWindow] 直接调 `artwork.prefetchWindow`。
+ * 因此由 [TvMainActivity.prefetchAroundWindow] 直接调 `artwork.prefetchWindow`。
  */
-fun MainActivity.loadCover(view: ImageView,url: String) {
+fun TvMainActivity.loadCover(view: ImageView,url: String) {
     artwork.load(view,url,coverPriority(view))
 }
 /**
@@ -194,7 +194,7 @@ fun MainActivity.loadCover(view: ImageView,url: String) {
  * 因此窗口上下多留的那几行会落到 [ArtworkLoader.PRIORITY_NEARBY]（它们也是接下来要看的，
  * 只是不在屏幕上）。焦点那一张仍然最高。
  */
-fun MainActivity.coverPriority(view: View): Int {
+fun TvMainActivity.coverPriority(view: View): Int {
     var ancestor: View?=view
     var focused=false
     while(ancestor!=null && ancestor!==root) {
@@ -206,13 +206,13 @@ fun MainActivity.coverPriority(view: View): Int {
     return if(view.getGlobalVisibleRect(rect)) ArtworkLoader.PRIORITY_VISIBLE
     else ArtworkLoader.PRIORITY_NEARBY
 }
-fun MainActivity.cancelWork() {
+fun TvMainActivity.cancelWork() {
     deferredWork?.discard?.invoke(); deferredWork=null
     workScope?.cancel(); workScope=null
     workJob?.cancel(true); workJob=null
     (io as? java.util.concurrent.ThreadPoolExecutor)?.purge()
 }
-fun MainActivity.invalidatePage() {
+fun TvMainActivity.invalidatePage() {
     generation++; cancelWork(); artwork.cancelPage()
     // 详情页下方那一块的重铺入口随页面一起作废：旧引用留着会指到已经拆掉的视图树。
     detailBottomRefresh=null
@@ -222,7 +222,7 @@ fun MainActivity.invalidatePage() {
     // 播放页那两块作品浮层的重铺入口同理（见 `MainActivityPlayerActions.kt`）。
     playerStripRefresh=null
 }
-fun MainActivity.releaseCatalogViews() {
+fun TvMainActivity.releaseCatalogViews() {
     homeScreen?.let { homePosition=it.capturePosition() }
     // 换榜单 / 换分类时 [catalogPageKey] 还是**上一条列表**的 key（它要到 seriesList 里才重算），
     // 因此这里照记没错：记的是上一条列表自己的浏览位置，用户切回来时还能回到原处。
@@ -276,7 +276,7 @@ fun MainActivity.releaseCatalogViews() {
     running.forEach { it.cancel() }
     topArea.clear(); topAreaHeights.clear(); topAreaRestore.clear()
 }
-fun <T> MainActivity.work(action: ()->T,done: (T)->Unit,failed: (Throwable)->Unit) {
+fun <T> TvMainActivity.work(action: ()->T,done: (T)->Unit,failed: (Throwable)->Unit) {
     cancelWork()
     val ticket=generation; val scope=RequestScope(); workScope=scope
     workJob=io.submit {
@@ -319,10 +319,10 @@ private fun contentErrorDetail(problem: Throwable): String =
     else if(problem is DeviceNotRegisteredException) "设备正在初始化，请稍后重试"
     else problem.message.orEmpty().replace(Regex("https?://\\S+"),"[地址]").take(160)
 
-fun MainActivity.message(parent: LinearLayout,label: String) { parent.addView(text(label,17f,muted).apply { setPadding(pageBleed(),dp(28),pageBleed(),dp(18)) }) }
+fun TvMainActivity.message(parent: LinearLayout,label: String) { parent.addView(text(label,17f,muted).apply { setPadding(pageBleed(),dp(28),pageBleed(),dp(18)) }) }
 
 /** 列表请求中的统一动画：全站使用同一枚三点加载。 */
-fun MainActivity.loadingView(heightDp: Int = 140): FrameLayout =
+fun TvMainActivity.loadingView(heightDp: Int = 140): FrameLayout =
     FrameLayout(this).apply {
         addView(
             LoadingDotsView(this@loadingView),
@@ -331,7 +331,7 @@ fun MainActivity.loadingView(heightDp: Int = 140): FrameLayout =
         minimumHeight=dp(heightDp)
     }
 
-fun MainActivity.loading(parent: LinearLayout,heightDp: Int = 140) {
+fun TvMainActivity.loading(parent: LinearLayout,heightDp: Int = 140) {
     parent.addView(loadingView(heightDp),LinearLayout.LayoutParams(-1,dp(heightDp)))
 }
 
@@ -343,9 +343,9 @@ fun MainActivity.loading(parent: LinearLayout,heightDp: Int = 140) {
  * 结束时再弹回来——用户读到的就是「界面先变形一下再恢复」。
  *
  * 它不抢焦点、不吃按键；整页重建（`base()` 里 `root.removeAllViews()`）会把它摘掉，
- * 因此状态存在 [MainActivity.centerLoadingMessage] 上，重建后由 [reattachCenterLoading] 补挂。
+ * 因此状态存在 [TvMainActivity.centerLoadingMessage] 上，重建后由 [reattachCenterLoading] 补挂。
  */
-fun MainActivity.showCenterLoading(message: String) {
+fun TvMainActivity.showCenterLoading(message: String) {
     centerLoadingMessage=message
     val existing=centerLoading
     if(existing!=null && existing.parent===root) {
@@ -364,7 +364,7 @@ fun MainActivity.showCenterLoading(message: String) {
 }
 
 /** 收起屏幕正中的等待（动作结束、失败、被取消都要调，否则它会一直转）。 */
-fun MainActivity.hideCenterLoading() {
+fun TvMainActivity.hideCenterLoading() {
     centerLoadingMessage=null
     centerLoading?.let { dots -> (dots.parent as? ViewGroup)?.removeView(dots) }
     centerLoading=null
@@ -373,7 +373,7 @@ fun MainActivity.hideCenterLoading() {
 }
 
 /** 整页重建之后补挂（见 [showCenterLoading] 的说明）。 */
-fun MainActivity.reattachCenterLoading() {
+fun TvMainActivity.reattachCenterLoading() {
     val message=centerLoadingMessage ?: return
     centerLoading=null
     showCenterLoading(message)
@@ -387,7 +387,7 @@ fun MainActivity.reattachCenterLoading() {
  * [stage] 只用来区分是哪一页（`content_home` / `content_rank` / `content_search` /
  * `content_detail` / `library_load`）——它决定 issue 的分组，必须稳定。
  */
-fun MainActivity.error(parent: LinearLayout,problem: Throwable,stage: String,retry: ()->Unit): TvButton {
+fun TvMainActivity.error(parent: LinearLayout,problem: Throwable,stage: String,retry: ()->Unit): TvButton {
     // 上报：错误页出现 = 用户真的什么都看不到了，属于「可感知的失败」。
     // 消息是常量（见 Diagnostics 的聚合说明），具体原因走 detail。
     Diagnostics.fail(stage,contentErrorTitle(problem),contentErrorDetail(problem),problem)

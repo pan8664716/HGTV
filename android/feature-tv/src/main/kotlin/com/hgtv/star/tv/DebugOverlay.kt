@@ -78,7 +78,7 @@ object DebugEnv {
 
     private fun fresh(now: Long,at: Long)=at>0L && now-at in 0..DEBUG_ENV_TTL_MS
 
-    fun metered(activity: MainActivity): Boolean {
+    fun metered(activity: TvMainActivity): Boolean {
         val now=SystemClock.elapsedRealtime()
         if(fresh(now,meteredAt)) return metered
         metered=runCatching { activity.connectivity.isMeteredConnection() }.getOrDefault(false)
@@ -86,7 +86,7 @@ object DebugEnv {
         return metered
     }
 
-    fun registered(activity: MainActivity): Boolean {
+    fun registered(activity: TvMainActivity): Boolean {
         val now=SystemClock.elapsedRealtime()
         if(fresh(now,registeredAt)) return registered
         registered=runCatching { activity.library.deviceRegistered() }.getOrDefault(false)
@@ -224,7 +224,7 @@ fun keepNetLine(line: String): Boolean = when {
 /**
  * 本机 TLS 能力（面板「TLS」那一行）。
  *
- * 由 `HgtvTls` 在第一次建 socket 时通过 `NetLog` 报一次，`MainActivity` 的 NetLog 出口
+ * 由 `HgtvTls` 在第一次建 socket 时通过 `NetLog` 报一次，`TvMainActivity` 的 NetLog 出口
  * 把它抄到这里。抄一份而不是每次从「近况」里翻：面板第一屏就要看到，
  * 不能指望那条日志还在 40 条环形缓冲里。
  */
@@ -233,10 +233,10 @@ object DebugTls {
 }
 
 /** 调试模式开着没有。`library` 是 lateinit，读它之前必须先兜住「还没建好」的那一刻。 */
-private fun MainActivity.debugModeOn(): Boolean = runCatching { library.debugMode }.getOrDefault(false).also { DebugLog.enabled=it }
+private fun TvMainActivity.debugModeOn(): Boolean = runCatching { library.debugMode }.getOrDefault(false).also { DebugLog.enabled=it }
 
 /** 打开调试模式时，把面板挂到 root 上并开始刷新；关掉时摘掉它。 */
-fun MainActivity.syncDebugOverlay() {
+fun TvMainActivity.syncDebugOverlay() {
     // 公共层的「最近发生了什么」接到这块面板（见 `Diagnostics.debugSink`）。
     // 幂等：每次同步都设一遍，值相同。
     com.hgtv.star.shared.debug.debugSink = { tag: String, line: String -> DebugLog.record(tag, line) }
@@ -249,7 +249,7 @@ fun MainActivity.syncDebugOverlay() {
     }
 }
 
-private fun MainActivity.showDebugOverlay() {
+private fun TvMainActivity.showDebugOverlay() {
     if(isDestroyed) return
     val panel=debugPanel
     if(panel==null || panel.parent==null) {
@@ -290,13 +290,13 @@ private fun MainActivity.showDebugOverlay() {
 }
 
 /** 当前该用的刷新间隔：有变化就 1 秒，静态一会儿 2 秒，长时间不动 5 秒。 */
-private fun MainActivity.debugTickInterval(): Long = when {
+private fun TvMainActivity.debugTickInterval(): Long = when {
     debugIdleTicks>=DEBUG_IDLE_DEEP -> DEBUG_TICK_SLOW_MS
     debugIdleTicks>=DEBUG_IDLE_BACKOFF -> DEBUG_TICK_IDLE_MS
     else -> DEBUG_TICK_MS
 }
 
-fun MainActivity.hideDebugOverlay() {
+fun TvMainActivity.hideDebugOverlay() {
     debugTick?.let { main.removeCallbacks(it) }
     debugTick=null
     // 面板关掉：CPU 的累计基线一起清掉。留着的话下次打开第一轮会拿「很久以前的累计值」
@@ -311,14 +311,14 @@ fun MainActivity.hideDebugOverlay() {
 
 
 /** 页面重建（`root.removeAllViews()`）之后重新挂上；没打开调试模式时什么都不做。 */
-fun MainActivity.reattachDebugOverlay() {
+fun TvMainActivity.reattachDebugOverlay() {
     // 先按正常路径摘掉：`root.removeAllViews()` 之后它本来就不在树上了，但换集复用播放器
     // 的那条路不会清 root，不摘就会留下上一块面板、再叠一块新的。
     hideDebugOverlay()
     if(debugModeOn()) showDebugOverlay()
 }
 
-private fun MainActivity.buildDebugPanel(): LinearLayout {
+private fun TvMainActivity.buildDebugPanel(): LinearLayout {
     val panel=column().apply {
         setPadding(dp(10),dp(8),dp(12),dp(10))
         // 背景固定**半透明**（见 [DEBUG_PANEL_BG]，约 35% 不透明）：
@@ -367,7 +367,7 @@ private fun clockText(millis: Long): String {
  * 返回 true 表示这一轮**真的改了屏幕上的字**（或重建了行结构）。调用方用它做退避：
  * 静态页面上一连几轮都没变化时，就不必每秒醒一次（见 [DEBUG_TICK_IDLE_MS]）。
  */
-fun MainActivity.refreshDebugOverlay(): Boolean {
+fun TvMainActivity.refreshDebugOverlay(): Boolean {
     val body=debugBody ?: return false
     // 推荐页是一条独立的播放链路（`screen == "recommend"`，见 MainActivityRecommend.kt），
     // 但用户看到的就是一个播放画面：面板必须给同一套播放现场（剧集 / 状态 / 解码 / 画面 / 帧数），
@@ -429,7 +429,7 @@ fun MainActivity.refreshDebugOverlay(): Boolean {
  * 面板上的 [DebugLog] 近况是流水账（每条网络、每条异常都记），这一条只留**最后一件
  * 真的让页面空掉 / 搜不出东西**的事：用户报「这页打不开」时，一眼就能看到原因与发生时刻。
  */
-fun MainActivity.noteDebugProblem(text: String) {
+fun TvMainActivity.noteDebugProblem(text: String) {
     val clean=text.replace('\n',' ').trim().take(400)
     if(clean.isEmpty()) return
     // 同一件事反复触发（重试按钮连按、页面重建）只更新时间戳，不再往近况里堆重复行。
@@ -450,7 +450,7 @@ fun MainActivity.noteDebugProblem(text: String) {
  * 不擦的话，用户按一次「重试」已经好了，面板上还挂着一条「首页加载失败」——
  * 拍给客服的照片就会指错方向。历史仍留在「近况」里。
  */
-fun MainActivity.clearDebugProblem() {
+fun TvMainActivity.clearDebugProblem() {
     if(debugProblem.isEmpty()) return
     debugProblem=""; debugProblemAt=0L; debugProblemPage=""
     refreshDebugOverlay()
@@ -462,7 +462,7 @@ fun MainActivity.clearDebugProblem() {
  * [stage] 与日志用的是同一套键（`content_home` / `content_search` …），这里翻成用户读得懂的
  * 页面名；后面跟日志里那句常量标题与真实异常链，面板上一行就够定位了。
  */
-fun MainActivity.notePageFailure(stage: String,problem: Throwable) {
+fun TvMainActivity.notePageFailure(stage: String,problem: Throwable) {
     val page=when(stage) {
         "content_home" -> "首页"
         "content_rank" -> "榜单"
@@ -480,7 +480,7 @@ fun MainActivity.notePageFailure(stage: String,problem: Throwable) {
 }
 
 /** 当前页面的标识：问题只在自己那一页显示，翻页之后不该继续挂着。 */
-private fun MainActivity.pageKey(): String = listOf(screen,tab,collection.orEmpty(),query).joinToString("|")
+private fun TvMainActivity.pageKey(): String = listOf(screen,tab,collection.orEmpty(),query).joinToString("|")
 
 /**
  * 搜索页的「问题」：**按接口状态判读**，不是抄页面文案。
@@ -489,14 +489,14 @@ private fun MainActivity.pageKey(): String = listOf(screen,tab,collection.orEmpt
  * 「接口回业务码」「官网 500」。用户要报的是后者，因此这里读 [SearchDiag] 的现场，
  * 由它给出结论（关键词一致时才算这一页的）。
  */
-private fun MainActivity.searchProblemText(): String {
+private fun TvMainActivity.searchProblemText(): String {
     val outcome=com.hgtv.star.core.SearchDiag.last ?: return "还没有搜索过"
     if(outcome.keyword!=query.trim()) return "还没有搜索过「${query.trim().take(12)}」"
     return com.hgtv.star.core.SearchDiag.explain(outcome)
 }
 
 /** 「问题」那一条的值：优先显示播放侧的问题，其次才是页面级问题。 */
-private fun MainActivity.problemText(primary: String=""): String {
+private fun TvMainActivity.problemText(primary: String=""): String {
     if(primary.isNotBlank()) return primary
     if(debugProblem.isBlank() || debugProblemPage!=pageKey()) return "无"
     val age=((SystemClock.elapsedRealtime()-debugProblemAt).coerceAtLeast(0))/1000
@@ -514,7 +514,7 @@ private fun MainActivity.problemText(primary: String=""): String {
  *
  * [PlaybackCapability.debugSummary] 每种编码只报最好的一颗，因此一行不会溢出（见 [DEBUG_TEXT_SIZE]）。
  */
-private fun MainActivity.capabilityRow(): DebugRow {
+private fun TvMainActivity.capabilityRow(): DebugRow {
     val cap=debugCapability ?: return DebugRow("解码","硬解 探测中… · 软解 探测中…")
     return DebugRow("解码","硬解 ${cap.hardware} · 软解 ${cap.software}")
 }
@@ -534,14 +534,14 @@ private fun perfRow()=DebugRow(PERF_LABEL,PerfStats.summary.ifBlank { "采样中
  * 等于每 2 秒把二十来行重新拼一遍、逐字比较一遍；而这里只需要两个 TextView 换字。
  * 面板上还没有这些行（刚打开、行结构还没建）时什么都不做，乱了就等下一轮采样。
  */
-private fun MainActivity.updateSampledRows() {
+private fun TvMainActivity.updateSampledRows() {
     setRowText(PERF_LABEL,PerfStats.summary)
     // TLS 与网速同一行：速率变了要连 TLS 那一半一起重给，否则会被旧值覆盖回去。
     setRowText(TLS_LABEL,tlsNetValue())
 }
 
 /** 按标头找到那一行的值视图，文字真的变了才写。找不到（换页了 / 还没建）就跳过。 */
-private fun MainActivity.setRowText(label: String,value: String) {
+private fun TvMainActivity.setRowText(label: String,value: String) {
     if(value.isBlank()) return
     val index=debugRowLabels.indexOf(label)
     if(index<0) return
@@ -556,7 +556,7 @@ private fun MainActivity.setRowText(label: String,value: String) {
  * 因此这里只在「到点了」的时候丢一个任务给 io，落地后让面板自己刷一轮。
  * 面板关掉之后 tick 就停了，采样也跟着停（没有别的调用点）。
  */
-private fun MainActivity.startPerfProbe() {
+private fun TvMainActivity.startPerfProbe() {
     if(!PerfStats.due()) return
     PerfStats.sampledAt=android.os.SystemClock.elapsedRealtime()
     io.submit {
@@ -578,7 +578,7 @@ private fun deviceRow()=DebugRow("机型","${Build.MANUFACTURER} ${Build.MODEL} 
  * 只有一行结论时，除了让用户去设置里手动改一档，没有任何线索可查；
  * 带上分数与命中项，一眼就能看出是哪条证据把电视认成了平板。
  */
-private fun MainActivity.deviceFormRow(): DebugRow {
+private fun TvMainActivity.deviceFormRow(): DebugRow {
     val profile=deviceProfile ?: return DebugRow("形态","检测中…")
     val manual=library.deviceForm
     val source=if(manual=="phone"||manual=="tablet"||manual=="tv") "手动" else "自动"
@@ -598,7 +598,7 @@ private fun tlsNetValue(): String =
     TlsStatus.summaryOrEmpty().ifBlank { DebugTls.summary }.ifBlank { "等待网络请求" }+
         " · "+NetSpeed.summary.ifBlank { "采样中…" }
 
-private fun MainActivity.startCapabilityProbe() {
+private fun TvMainActivity.startCapabilityProbe() {
     if(debugCapability!=null || debugCapabilityLoading) return
     debugCapabilityLoading=true
     io.submit {
@@ -623,7 +623,7 @@ private fun recentRows(count: Int): List<DebugRow> = DebugLog.lines(count).map {
     else DebugRow("近况",line)
 }
 
-private fun MainActivity.playerDebugRows(): List<DebugRow> {
+private fun TvMainActivity.playerDebugRows(): List<DebugRow> {
     val d=PlaybackDiag
     val data=detail
     val title=data?.series?.title.orEmpty().take(14)
@@ -734,7 +734,7 @@ private fun MainActivity.playerDebugRows(): List<DebugRow> {
  * 用户在播放界面报问题时，最先要说的就是「在哪个页面、登没登录、设备注册没、什么网络、
  * 搜索走的是哪一路」，这些不该藏到面板中间去。
  */
-private fun MainActivity.pageStatusRow(): DebugRow {
+private fun TvMainActivity.pageStatusRow(): DebugRow {
     val page=when(screen) {
         "detail" -> "详情"
         "player" -> "播放"
@@ -767,7 +767,7 @@ private fun MainActivity.pageStatusRow(): DebugRow {
     })
 }
 
-private fun MainActivity.pageDebugRows(): List<DebugRow> {
+private fun TvMainActivity.pageDebugRows(): List<DebugRow> {
     val searching=screen=="catalog" && tab==TAB_SEARCH && query.isNotBlank()
     return buildList {
         // 与播放页同一套固定前几行：页面状态 → 机型 → 本机解码（硬 / 软同一行）→ TLS。

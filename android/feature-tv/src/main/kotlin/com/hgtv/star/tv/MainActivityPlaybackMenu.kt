@@ -16,8 +16,8 @@ import com.hgtv.star.tv.tvScrollHost
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.tv.R
 
-// 本文件是从 MainActivity.kt 拆出来的「播放菜单与各类选择器（清晰度 / 倍速 / 画面 / 弹幕 / 定时）、进度保存」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「播放菜单与各类选择器（清晰度 / 倍速 / 画面 / 弹幕 / 定时）、进度保存」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 /**
@@ -26,7 +26,7 @@ import com.hgtv.star.tv.R
  * 默认焦点落在**第一项设置**（清晰度），不是第一行那排动作：按「设置」进来的绝大多数是
  * 想调档位，落在清晰度上按确认仍然是改清晰度；那排动作就在它正上方一行，按一下上键就到。
  */
-fun MainActivity.showPlaybackMenu(focusRow: Int=MENU_ROW_QUALITY,focusChoice: Int=-1) {
+fun TvMainActivity.showPlaybackMenu(focusRow: Int=MENU_ROW_QUALITY,focusChoice: Int=-1) {
     if((screen!="player" && screen!="recommend") || playError) return
     // 还没有播放层（推荐页停在「取不到推荐」那行字上）：没有可调的东西，这一下菜单键吞掉即可。
     // `hud` 与 `playerView` 是同一个分支里建的，用后者判断在扩展函数里也读得到。
@@ -99,7 +99,7 @@ fun MainActivity.showPlaybackMenu(focusRow: Int=MENU_ROW_QUALITY,focusChoice: In
  * 行结构只有两种形态（弹幕可见时有速度 / 字号 / 透明度三行，隐藏时没有），
  * 因此按 [showsStyle] 缓存一份就够，见 [obtainPlaybackMenu]。
  */
-private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
+private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
     // 先建面板再逐行追加：选项的点击回调要引用面板本身，不能在构造链里读还没赋值的变量。
     // **这里不能 `return menu.addRow(...)`**：那样第一条链之后就返回了，弹幕速度 / 字号 /
     // 透明度、定时、时间全成了死代码——表现就是「播放设置里只有弹幕显示，没有别的弹幕项」。
@@ -208,7 +208,7 @@ private fun MainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu {
  * 复用是安全的：每个选项的回调都在**点击那一刻**读 `library` 的当前值，
  * 而选中态由 [syncPlaybackMenu] 在挂上去之前刷一遍，因此复用出来的面板与新建的一模一样。
  */
-private fun MainActivity.obtainPlaybackMenu(): PlaybackMenu {
+private fun TvMainActivity.obtainPlaybackMenu(): PlaybackMenu {
     val showsStyle=library.danmakuMode.showsStyle
     // 行结构只由「弹幕外观那三行在不在」决定，因此缓存键就是这一位。
     val key=menuShape(showsStyle)
@@ -231,7 +231,7 @@ private fun MainActivity.obtainPlaybackMenu(): PlaybackMenu {
 private fun menuShape(showsStyle: Boolean)="s${if(showsStyle) 1 else 0}"
 
 /** 把缓存面板的选中态与两条滑块同步到当前偏好：纯配色 / 数值修改，不建视图、不建位图。 */
-private fun MainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boolean) {
+private fun TvMainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boolean) {
     menu.sync(MENU_ROW_QUALITY,PlaybackQuality.options.indexOf(playbackMaxQuality))
     menu.sync(MENU_ROW_SPEED,PlaybackSpeed.options.indexOf(library.playbackSpeed))
     menu.sync(MENU_ROW_FRAME,VideoFrameMode.entries.indexOf(library.frameMode))
@@ -256,7 +256,7 @@ private fun MainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boolean
  * 面板里的尺寸都是**建那一刻的像素**（内边距、最小宽度、圆角），因此屏幕参数一变
  * 就必须重建；平时只是离开播放页，留着它只会白占几十个 View 的内存。
  */
-fun MainActivity.dropPlaybackMenuCache() {
+fun TvMainActivity.dropPlaybackMenuCache() {
     warmPlaybackMenuTask?.let { main.removeCallbacks(it) }
     warmPlaybackMenuTask=null
     playbackMenuCache=null
@@ -273,7 +273,7 @@ fun MainActivity.dropPlaybackMenuCache() {
  * 画到一个几像素的小画布上就够：这一步只是让每个底板的 `draw` 真的被执行一次，
  * 位图本身按控件尺寸生成并进缓存（与画布大小无关）。
  */
-fun MainActivity.warmPlaybackMenu(delayMs: Long=1500L) {
+fun TvMainActivity.warmPlaybackMenu(delayMs: Long=1500L) {
     if(isDestroyed || !foreground || (screen!="player" && screen!="recommend")) return
     if(playbackMenu!=null || playbackMenuCache!=null || playerView==null) return
     warmPlaybackMenuTask?.let { main.removeCallbacks(it) }
@@ -297,7 +297,7 @@ fun MainActivity.warmPlaybackMenu(delayMs: Long=1500L) {
     warmPlaybackMenuTask=task
     main.postDelayed(task,delayMs)
 }
-fun MainActivity.showSpeedPicker(anchor: TextView,inPlayer: Boolean=true) {
+fun TvMainActivity.showSpeedPicker(anchor: TextView,inPlayer: Boolean=true) {
     if(speedDialog!=null) return
     val speeds=PlaybackSpeed.options
     val selected=speeds.indexOf(library.playbackSpeed)
@@ -315,7 +315,7 @@ fun MainActivity.showSpeedPicker(anchor: TextView,inPlayer: Boolean=true) {
         if(anchor.attachedToWindow) { anchor.requestFocus(); if(inPlayer) showHud() }
     }
 }
-fun MainActivity.showQualityPicker(anchor: TextView,inPlayer: Boolean) {
+fun TvMainActivity.showQualityPicker(anchor: TextView,inPlayer: Boolean) {
     val options=PlaybackQuality.options
     val picker=TvDialog(this,"全局默认清晰度").choices(options.map { "${it}P" },options.indexOf(library.maxQuality)) { index ->
         val target=options[index]; val changed=library.maxQuality!=target
@@ -335,7 +335,7 @@ fun MainActivity.showQualityPicker(anchor: TextView,inPlayer: Boolean) {
  * 因此这里不动播放状态，关闭时也不需要「恢复播放」——只把焦点还给底部控制条 / 下拉箭头，
  * 并按打开前的可见性恢复浮层。播放位置照旧定期落盘（[saveProgress] 由播放进度回调负责）。
  */
-fun MainActivity.showEpisodePanel(anchor: View) {
+fun TvMainActivity.showEpisodePanel(anchor: View) {
     val data=detail ?: return
     if(episodePanel!=null) return
     val ticket=generation
@@ -376,13 +376,13 @@ fun MainActivity.showEpisodePanel(anchor: View) {
  * 播放位置读数：**电视唯一的实现**，语义在 `:core`（`PlaybackInfoLine.time`），
  * 与手机播放页 / 推荐流 / 我的页是同一份。负数（位置未知时播放器返回 -1）按 0 读。
  */
-fun MainActivity.formatTime(millis: Long): String = com.hgtv.star.core.PlaybackInfoLine.time(millis)
+fun TvMainActivity.formatTime(millis: Long): String = com.hgtv.star.core.PlaybackInfoLine.time(millis)
 /** 播放器时间轴：爆米花固定 hh:mm:ss，短剧也只有几分钟也不会跳字宽。 */
-fun MainActivity.formatSpan(millis: Long): String {
+fun TvMainActivity.formatSpan(millis: Long): String {
     val seconds=millis.coerceAtLeast(0)/1000
     return "%02d:%02d:%02d".format(seconds/3600,(seconds%3600)/60,seconds%60)
 }
-fun MainActivity.saveProgress(completed: Boolean=false) {
+fun TvMainActivity.saveProgress(completed: Boolean=false) {
     if(resetting) return
     // 推荐播放界面**不写观看历史**（需求 3）：只有进入正式播放界面才加入历史。
     // 这一条是全局守卫，因为进度落盘有好几条路径（tick 每 5 秒、onPause、切集、退出），
@@ -422,7 +422,7 @@ fun MainActivity.saveProgress(completed: Boolean=false) {
  * （见 [com.hgtv.star.core.SessionPlaybackPolicy.onLeavePlaybackToBackground]）。
  * 真正离开播放页时保持默认 false。
  */
-fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
+fun TvMainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     // 作废所有认会话号的在途回调（监听器、延迟清理、取地址）。
     playbackSessionState.beginSession()
     disarmPlaybackWatchdog(); disarmFrameStallWatchdog()
@@ -502,7 +502,7 @@ fun MainActivity.detachPlayerSurface(keepSession: Boolean = false) {
 }
 
 /** 真正销毁播放器实例：只在 Activity 销毁、清除本地数据与切换解码方式时调用。 */
-fun MainActivity.releasePlayer() {
+fun TvMainActivity.releasePlayer() {
     disarmPlaybackWatchdog()
     detachPlayerSurface()
     // 与 [warmPlayer] 的 io 线程抢同一把锁：预热可能正在 `newPlayer()` 途中，
@@ -511,7 +511,7 @@ fun MainActivity.releasePlayer() {
     synchronized(playerBuildLock) {
         runCatching { player?.release() }
         player=null
-        // 下一个实例要重新配置一次（见 [MainActivity.configuredPlayer]）。
+        // 下一个实例要重新配置一次（见 [TvMainActivity.configuredPlayer]）。
         configuredPlayer=null
         // 置位之后再进 [warmPlayer] 的线程会直接放弃：见 [playerDisposed]。
         playerDisposed=true

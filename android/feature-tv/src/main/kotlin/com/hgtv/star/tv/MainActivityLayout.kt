@@ -23,8 +23,8 @@ import com.hgtv.star.shared.compat.activityManager
 import com.hgtv.star.shared.compat.lowEndTv
 import com.hgtv.star.shared.compat.totalMemoryMb
 
-// 本文件是从 MainActivity.kt 拆出来的「尺寸换算、控件工厂（按钮 / 文本 / 行 / 页骨架）与窗口背景、主题切换」这一块。
-// 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
+// 本文件是从 TvMainActivity.kt 拆出来的「尺寸换算、控件工厂（按钮 / 文本 / 行 / 页骨架）与窗口背景、主题切换」这一块。
+// 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 /**
@@ -33,7 +33,7 @@ import com.hgtv.star.shared.compat.totalMemoryMb
  * 所有页面尺寸都按 1280dp 宽的设计画布写，屏幕更窄时由 [designPx] 统一等比缩小
  * （见 `tv/TvMetrics.kt`）。这里不再直接乘 density，否则边距 / 按钮 / 海报各缩各的。
  */
-fun MainActivity.dp(value: Number)=designPx(value)
+fun TvMainActivity.dp(value: Number)=designPx(value)
 /**
  * 当前画布宽度，单位是**设计单位**（屏宽像素 ÷ 设计缩放）。
  *
@@ -42,7 +42,7 @@ fun MainActivity.dp(value: Number)=designPx(value)
  * 四个按钮」「页头入口要不要挪到单独一行」这类判断都用它：
  * 阈值就是设计稿上的数，换了分辨率、换了 dpi 都不会漂移。
  */
-fun MainActivity.widthDp(): Float {
+fun TvMainActivity.widthDp(): Float {
     val metrics=resources.displayMetrics
     val scale=designScale()
     return if(scale<=0f) metrics.widthPixels.toFloat() else metrics.widthPixels/scale
@@ -51,7 +51,7 @@ fun MainActivity.widthDp(): Float {
  * 页面左右安全边距，对齐爆米花 77.5dp 栅格（1280dp 画布上左右各 78dp）。
  * 剧架按同一数值计算行内可用宽度，避免整行填不满。
  */
-fun MainActivity.pageInset()=dp(78)
+fun TvMainActivity.pageInset()=dp(78)
 
 /**
  * 页面容器比内容边距再早开始 [TvStyle.FOCUS_BLEED]。
@@ -60,7 +60,7 @@ fun MainActivity.pageInset()=dp(78)
  * 于是最左 / 最右那一张卡片（或按钮）放大后的焦点描边仍有地方画，不会被容器裁掉。
  * 内容本身的位置完全不变。
  */
-fun MainActivity.pageBleed()=dp(TvStyle.FOCUS_BLEED)
+fun TvMainActivity.pageBleed()=dp(TvStyle.FOCUS_BLEED)
 
 /**
  * 按「设备是否低配」与「用户是否要求减少动画」重算一次性能档位。
@@ -81,7 +81,7 @@ fun MainActivity.pageBleed()=dp(TvStyle.FOCUS_BLEED)
  * 必须在 `library` 载入完成之后调用一次（`loadLibrary` 的回调里），
  * 否则读到的 `reduceAnim` 永远是默认值；`onCreate` 里那一次只按设备判据先摆好第一帧。
  */
-fun MainActivity.applyPerformanceProfile() {
+fun TvMainActivity.applyPerformanceProfile() {
     val lowEnd=lowEndTv()
     val reduce=lowEnd || (libraryReady && library.isLoaded && library.reduceAnim)
     TvStyle.animate=!reduce
@@ -96,7 +96,7 @@ fun MainActivity.applyPerformanceProfile() {
             "userReduce=${libraryReady && library.isLoaded && library.reduceAnim} reduce=$reduce"
     )
 }
-fun MainActivity.lp(w: Int=LinearLayout.LayoutParams.MATCH_PARENT,h: Int=LinearLayout.LayoutParams.WRAP_CONTENT)=LinearLayout.LayoutParams(w,h)
+fun TvMainActivity.lp(w: Int=LinearLayout.LayoutParams.MATCH_PARENT,h: Int=LinearLayout.LayoutParams.WRAP_CONTENT)=LinearLayout.LayoutParams(w,h)
 
 /**
  * 在整棵视图树里按 `tag` 找第一枚可聚焦控件。
@@ -119,7 +119,7 @@ fun findTagged(view: View,tag: String): View? {
  * 因此一行 6 张卡的左右边界就是「内容线 → 内容线 + 这个宽度」。
  * 分类页二级分类那一行也按它定宽，两块区域因此左右对齐。
  */
-fun MainActivity.gridContentWidth()=(resources.displayMetrics.widthPixels-2*pageInset()-2*dp(2)).coerceAtLeast(dp(320))
+fun TvMainActivity.gridContentWidth()=(resources.displayMetrics.widthPixels-2*pageInset()-2*dp(2)).coerceAtLeast(dp(320))
 /**
  * 分类页筛选行的宽度：**内容线 → 「我的」圆形按钮可见右缘**。
  *
@@ -127,12 +127,12 @@ fun MainActivity.gridContentWidth()=(resources.displayMetrics.widthPixels-2*page
  * 一条 [TvStyle.SOFT_BAND] 的透明带），所以这里直接用屏幕宽减两侧内容边距；
  * 页面渲染完后再用按钮的实际坐标微调一次（见 `showCatalog` 的分类页分支）。
  */
-fun MainActivity.categoryFilterWidth()=(resources.displayMetrics.widthPixels-2*pageInset()).coerceAtLeast(dp(320))
+fun TvMainActivity.categoryFilterWidth()=(resources.displayMetrics.widthPixels-2*pageInset()).coerceAtLeast(dp(320))
 /**
  * 新拟态底板：凸起 / 凹陷 / 只描边 / 压图暗角。
  * 参数顺序固定，调用方一律用具名参数，避免把 band 和 radius 写反。
  */
-fun MainActivity.softPanel(
+fun TvMainActivity.softPanel(
     fill: Int = TvStyle.surface,
     radius: Int = TvStyle.RADIUS_CARD,
     band: Int = TvStyle.SOFT_BAND,
@@ -142,19 +142,19 @@ fun MainActivity.softPanel(
     glow: Int = Color.TRANSPARENT,
     depth: Float = 1f
 ) = TvStyle.soft(this,fill,radius,band,style,ring,ringWidth,glow,depth)
-fun MainActivity.text(value: String,size: Float=16f,color: Int=white)=TextView(this).apply {
+fun TvMainActivity.text(value: String,size: Float=16f,color: Int=white)=TextView(this).apply {
     text=value
     designTextSize(size)
     setTextColor(color)
     includeFontPadding=false
 }
-fun MainActivity.column()=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; focusOverflow() }
-fun MainActivity.row()=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; focusOverflow() }
+fun TvMainActivity.column()=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL; focusOverflow() }
+fun TvMainActivity.row()=LinearLayout(this).apply { orientation=LinearLayout.HORIZONTAL; gravity=Gravity.CENTER_VERTICAL; focusOverflow() }
 /**
  * 全站按钮只有一个实现：[TvButton]。高度、内边距、字号、圆角、焦点反馈都来自
  * [ButtonSize] / [ButtonTone]，页面代码不再自己拼样式。
  */
-fun MainActivity.button(label: String,selected: Boolean=false,tone: ButtonTone=ButtonTone.SECONDARY,size: ButtonSize=ButtonSize.NORMAL,pad: Int?=null,icon: Int?=null,onClick: ()->Unit): TvButton =
+fun TvMainActivity.button(label: String,selected: Boolean=false,tone: ButtonTone=ButtonTone.SECONDARY,size: ButtonSize=ButtonSize.NORMAL,pad: Int?=null,icon: Int?=null,onClick: ()->Unit): TvButton =
     TvButton(this,label,size,tone,action=onClick,pad=pad,iconRes=icon).apply {
         if(selected) setSelectedState(true)
         // 无障碍：全站按钮只有这一个实现，因此在这里统一补 `contentDescription`。
@@ -177,7 +177,7 @@ fun MainActivity.button(label: String,selected: Boolean=false,tone: ButtonTone=B
  *   宽度由父容器实测后分配，因此不用去猜「这一行到底有多少可用宽度」——
  *   简介页的按钮行在海报右侧的信息列里，不是整屏宽，按整屏算就会溢出。
  */
-fun MainActivity.addButton(parent: LinearLayout,label: String,selected: Boolean=false,tone: ButtonTone=ButtonTone.SECONDARY,size: ButtonSize=ButtonSize.NORMAL,gap: Int=TvStyle.GAP_INLINE,width: Int?=null,weight: Float?=null,pad: Int?=null,icon: Int?=null,onClick: ()->Unit): TvButton {
+fun TvMainActivity.addButton(parent: LinearLayout,label: String,selected: Boolean=false,tone: ButtonTone=ButtonTone.SECONDARY,size: ButtonSize=ButtonSize.NORMAL,gap: Int=TvStyle.GAP_INLINE,width: Int?=null,weight: Float?=null,pad: Int?=null,icon: Int?=null,onClick: ()->Unit): TvButton {
     val view=button(label,selected,tone,size,pad=pad,icon=icon,onClick=onClick)
     if(weight!=null) {
         // 等分时清掉最小宽度：`TvButton` 默认有 92dp 的最小宽度，等分到的宽度比它小时
@@ -194,13 +194,13 @@ fun MainActivity.addButton(parent: LinearLayout,label: String,selected: Boolean=
     parent.addView(view,params); return view
 }
 /** 与 [addButton] 同一套间距规则，给需要自定义 LayoutParams 的行内控件用。 */
-fun MainActivity.gapInto(row: LinearLayout,view: View,params: LinearLayout.LayoutParams,gap: Int=TvStyle.GAP_INLINE): View {
+fun TvMainActivity.gapInto(row: LinearLayout,view: View,params: LinearLayout.LayoutParams,gap: Int=TvStyle.GAP_INLINE): View {
     if(row.childCount>0) {
         if(row.orientation==LinearLayout.HORIZONTAL) params.leftMargin=dp(gap) else params.topMargin=dp(gap)
     }
     row.addView(view,params); return view
 }
-fun MainActivity.applyWindowBackground() {
+fun TvMainActivity.applyWindowBackground() {
     window.setBackgroundDrawable(android.graphics.drawable.ColorDrawable(TvStyle.background))
 }
 /**
@@ -210,7 +210,7 @@ fun MainActivity.applyWindowBackground() {
  * 投影位图与色值。设置页的重建很轻（`showCatalog()` 在设置页只重画设置页），
  * 因此这里直接重建，再把焦点按回刚点的那一行主题。
  */
-fun MainActivity.switchTheme(value: TvTheme) {
+fun TvMainActivity.switchTheme(value: TvTheme) {
     if(value==TvStyle.theme) { themeRows[value]?.requestFocus(); return }
     TvThemeStore.save(this,value)
     TvStyle.applyTheme(value)

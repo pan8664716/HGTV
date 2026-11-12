@@ -52,7 +52,7 @@ import com.hgtv.star.shared.compat.lowEndTv
  * 上屏幕中央突出显示。中央是**竖排的几格**（见 [highlightSlots]）：只显一行时一格，
  * 上方显示两格、全屏显示三格，被聚合的弹幕可以同时出现好几条。
  *
- * 位置与播放状态都由宿主（MainActivity）通过 [setClock] 推过来，绘制时只用系统时钟外推；
+ * 位置与播放状态都由宿主（TvMainActivity）通过 [setClock] 推过来，绘制时只用系统时钟外推；
  * 暂停、跳转、倍速都会重新校准，因此弹幕不会和播放器脱节，绘制线程也不会回调播放器。
  *
  * 文本里的表情标签（`[笑哭]`）在 [relayout] 里就被 [DanmakuEmoji.parts] 切成

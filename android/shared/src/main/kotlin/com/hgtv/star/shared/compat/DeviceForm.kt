@@ -15,7 +15,7 @@ import kotlin.math.sqrt
  * 这台机器在用户的眼里的形态：手机 / 平板 / 电视。
  *
  * 判成什么样只影响三件事：
- * 1. 需不需要触屏手势层、底部触屏控制条（[com.hgtv.star.tv.MainActivity.touchArmed]）；
+ * 1. 需不需要触屏手势层、底部触屏控制条（[com.hgtv.star.tv.TvMainActivity.touchArmed]）；
  * 2. 「竖屏短剧全屏」旋转的方向（电视 / 横屏平板 `+90`，手机 `−90`）；
  * 3. 设置页里「设备类型」那一格显示当前判定结果。
  *

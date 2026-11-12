@@ -104,7 +104,7 @@ class TvTools(private val activity: Activity) {
      * 因此连续几次失败不会在屏幕上堆一串提示。
      *
      * 它不参与焦点、不可点击、也不吃按键：电视上没有系统 Toast 那一层浮窗，
-     * 样式与字号仍然由本应用说了算（与 [MainActivity.showHint] 的分工是：
+     * 样式与字号仍然由本应用说了算（与 [TvMainActivity.showHint] 的分工是：
      * 那一行属于页面内的状态说明，这一层属于「刚才那一下失败了」的即时反馈）。
      */
     fun toast(message: String) {
@@ -835,12 +835,12 @@ class TvTools(private val activity: Activity) {
      * 导入账号参数：手机扫码打开一个一次性页面，上传 App 的 `cookieStore.xml` 或粘贴整段 Cookie。
      *
      * 与「手机备份与恢复」同一套局域网约束（随机地址、限时、用完即关），
-     * 区别是这里收的是**凭据文本**，由调用方解析与校验（见 `MainActivity.importAccount`）。
+     * 区别是这里收的是**凭据文本**，由调用方解析与校验（见 `TvMainActivity.importAccount`）。
      */
     fun accountImport(anchor: View?,onImport: (String)->Unit,onLocalFile: ()->Unit) {
         // 先让用户挑方式：本机文件（电视上已存了 cookieStore.xml）、手机扫码上传，
         // 或者直接手填 sessionid。三者最终都归一到「一段文本」，
-        // 由调用方解析（见 `MainActivity.parseCredentials`）。
+        // 由调用方解析（见 `TvMainActivity.parseCredentials`）。
         val pick=TvDialog(activity,"导入账号参数")
         pick.message("需要官方 App 的 cookieStore.xml，或者整段 Cookie；也可以只填 sessionid。\n\n三种方式：\n· 本机文件 —— 电视上已经有这个文件时用（U 盘 / 文件管理应用放进来的）；\n· 手机扫码 —— 手机与电视连同一局域网，用手机把文件或口令传过来；\n· 输入 sessionid —— 只拿到那一串时直接手填（其余字段平台不校验）。")
         pick.button("取消", icon=R.drawable.ic_menu_close) {}

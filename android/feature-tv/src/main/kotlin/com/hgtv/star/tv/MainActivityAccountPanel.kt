@@ -60,7 +60,7 @@ private val dialCodes=com.hgtv.star.core.PhoneRegion.labels
  *
  * @return 面板里第一个要操作的控件（供导航栏接线），没有时返回 null。
  */
-fun MainActivity.showAccountPanel(
+fun TvMainActivity.showAccountPanel(
     mode: String,
     trigger: View?,
     prefillPhone: String = "",
@@ -107,7 +107,7 @@ fun MainActivity.showAccountPanel(
  * 不在这儿统一一遍的话，任何一条路只换面板、忘了改芯片的按下键，遥控器就会从芯片
  * 跳到一块已经不在树上的控件上——表现出来是「按向下焦点消失」。
  */
-fun MainActivity.selectLoginMode(
+fun TvMainActivity.selectLoginMode(
     mode: String,
     trigger: View?,
     prefillPhone: String = "",
@@ -123,7 +123,7 @@ fun MainActivity.selectLoginMode(
 }
 
 /** 收起面板并停掉里面在跑的东西（倒计时由控件自身生命周期带走，扫码服务要显式关）。 */
-fun MainActivity.hideAccountPanel() {
+fun TvMainActivity.hideAccountPanel() {
     val host=accountPanelHost ?: return
     val wasOpen=accountPanelMode!=null
     closeAccountPanelSession()
@@ -145,7 +145,7 @@ fun MainActivity.hideAccountPanel() {
 }
 
 /** 关掉面板里的一次性局域网服务（手机扫码上传）。 */
-fun MainActivity.closeAccountPanelSession() {
+fun TvMainActivity.closeAccountPanelSession() {
     runCatching { accountPanelSession?.close() }
     accountPanelSession=null
 }
@@ -156,7 +156,7 @@ fun MainActivity.closeAccountPanelSession() {
  * 只留一点焦点余量（左右各 [TvStyle.FOCUS_BLEED]），让按钮放大时的描边有地方画；
  * 这一点内边距与页面内容线叠加后仍然对得上（外层已经补过 pageBleed）。
  */
-private fun MainActivity.accountPanelBody(): LinearLayout =
+private fun TvMainActivity.accountPanelBody(): LinearLayout =
     column().apply {
         clipChildren=false
         clipToPadding=false
@@ -193,15 +193,15 @@ private class CappedScroll(context: Context) : ScrollView(context) {
  *          └ expired   → 平台在同一次响应里给了新码：换图接着轮询（过期自动刷新）
  * ```
  *
- * 轮询**不用** [MainActivity.work]：它挂在页面级 `workJob` 上，`invalidatePage()` 会把
+ * 轮询**不用** [TvMainActivity.work]：它挂在页面级 `workJob` 上，`invalidatePage()` 会把
  * 在途请求一并 cancel；而面板是「页面里的一块」，页面重建时面板自己也会被摘掉
  * （`releaseCatalogViews` 里 `accountPanelHost=null`），`alive()` 自然就拦住后续回调。
- * 这里走 [MainActivity.io] + [MainActivity.main]，与手机号表单同一条调度。
+ * 这里走 [TvMainActivity.io] + [TvMainActivity.main]，与手机号表单同一条调度。
  *
  * 排下一次轮询放在**上一次结果落地之后**：网络慢时不会堆出多条并发请求，
  * 也就不会出现「同一个 token 被问两遍、状态来回跳」。
  */
-private fun MainActivity.buildQrLoginPanel(
+private fun TvMainActivity.buildQrLoginPanel(
     card: LinearLayout,
     gen: Int,
     trigger: View?
@@ -445,7 +445,7 @@ private fun MainActivity.buildQrLoginPanel(
  * 上行短信转 [com.hgtv.star.tv.TvTools.upsmsOnTv]。区别只是所有控件挂在页面里，
  * 收起面板 / 成功登录之后由 [hideAccountPanel] 收尾。
  */
-private fun MainActivity.buildPhoneLoginPanel(
+private fun TvMainActivity.buildPhoneLoginPanel(
     card: LinearLayout,
     gen: Int,
     trigger: View?,
