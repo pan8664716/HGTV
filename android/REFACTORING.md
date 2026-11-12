@@ -1120,6 +1120,29 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 47：手机信息流播放器监听迁移
+
+状态：已完成。
+
+- 将视频尺寸、READY、首帧、播放状态、位置跳变和播放错误监听移到
+  `player/PhoneFeedListener.kt`。
+- 保留曝光、批量模型预取、连续失败归零、错误上报、跳过上限、提示与滚动 / 补页顺序。
+- 新增监听器、失败计数、平滑滚动和跳过上限的 `internal` 投影。
+- `PhoneFeedView.kt` 从 1918 行降到 1806 行；`PhoneFeedListener.kt` 为 119 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译发现一处监听重挂仍调用旧私有方法，替换后重跑通过；未改监听行为。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `PhoneFeedView.kt` 的播放器监听与错误换片职责。
+继续拆 `PhoneFeedView.kt` 的片尾推进与预热交接职责，再转入 `Library.kt`。

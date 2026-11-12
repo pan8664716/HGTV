@@ -244,6 +244,8 @@ class PhoneFeedView(
     internal fun feedPostDelayed(runnable: Runnable, delayMs: Long) =
         list.postDelayed(runnable, delayMs)
     internal fun feedRemoveCallbacks(runnable: Runnable) = list.removeCallbacks(runnable)
+    internal fun feedSmoothScrollToPosition(position: Int) =
+        list.smoothScrollToPosition(position)
 
     /**
      * 服务端已经确认不吃 `filter_ids`（回空页）。
@@ -298,6 +300,9 @@ class PhoneFeedView(
         set(value) { library=value }
     /** 进程单例播放器上的监听器：换屏/换集前先摘掉，否则会越积越多。 */
     private var listener: Player.Listener? = null
+    internal var feedListener: Player.Listener?
+        get()=listener
+        set(value) { listener=value }
 
     /**
      * 推荐流里连续几部放不了（与电视端 `recommendPlaybackFailures` 同一语义、同一上限）。
@@ -307,6 +312,9 @@ class PhoneFeedView(
      * 计数只在「真的出画面」时归零（取地址成功不算）——见 [notePlaybackHealthy]。
      */
     private var recommendFailures = 0
+    internal var feedRecommendFailures: Int
+        get()=recommendFailures
+        set(value) { recommendFailures=value }
 
     /** 每一屏当前在播的集（续播时可能不是第 1 集）。 */
     private val currentEpisodeIds = HashMap<Int, String>()
@@ -732,7 +740,7 @@ class PhoneFeedView(
         }
 
         // 重新挂监听：`onHidden` 里摘掉了，摘掉是为了不让隐藏期间的回调改界面。
-        attachListener(exo, playingIndex)
+        attachFeedListener(exo, playingIndex)
         // 倍速以**书库设置**为准：用户可能刚在播放页里把 1.75 调成了 2（那一侧会落盘），
         // 本页字段还是进来时的旧值，直接写回去就是一次「速度突变」。
         userSpeed = library?.playbackSpeed ?: userSpeed
@@ -1298,6 +1306,7 @@ class PhoneFeedView(
 
     /** 推荐流里连续几部放不了就不再自动翻（与电视端 `RECOMMEND_SKIP_LIMIT` 同值）。 */
     private val RECOMMEND_SKIP_LIMIT = 4
+    internal val feedRecommendSkipLimit get()=RECOMMEND_SKIP_LIMIT
 
     /**
      * `advancing` 的有效期（毫秒）。
@@ -1471,7 +1480,7 @@ class PhoneFeedView(
             )
         }
         exo.setPlaybackSpeed(userSpeed)
-        attachListener(exo, index)
+        attachFeedListener(exo, index)
         exo.playWhenReady = !paused
         val prepare = {
             if (player === exo && playingIndex == index && token == playToken) {
@@ -1481,126 +1490,6 @@ class PhoneFeedView(
         }
         if (page != null) page.playerView.runAfterAspectRatioLayout(prepare) else prepare()
         startProgressTicker()
-    }
-
-    /**
-     * 挂监听（隐藏时摘掉、回来时重挂：摘掉是为了不让隐藏期间的回调改界面）。
-     *
-     * 回调里一律用 [boundPage] 现取目标页，不捕获构造时的那个：交接、重建、重新绑定之后
-     * 播放器可能已经挂到另一张页上，捕获旧页会把画面尺寸写到已经回收的 View 上。
-     */
-    private fun attachListener(exo: ExoPlayer, index: Int) {
-        listener?.let { exo.removeListener(it) }
-        val hook = object : Player.Listener {
-            override fun onVideoSizeChanged(videoSize: VideoSize) {
-                val page = boundPage ?: return
-                // 不再按片源方向强制 ZOOM：竖屏短剧在竖屏里铺满会裁掉左右，
-                // 从播放页退回来时也会突然放大。画面模式只认用户选择。
-                val target = (library?.frameMode ?: VideoFrameMode.FIT).toFit().resizeMode()
-                page.setResizeMode(target)
-                // 画面尺寸到手才把「全屏」按钮贴到画面下边缘（之前按钮位置是写死的）。
-                page.updateVideoFrame(videoSize.width, videoSize.height)
-            }
-
-            /**
-             * 片尾：**自动进入正式播放界面**，并从下一集接着播。
-             *
-             * 与 TV 端一致（`MainActivityPlayer` 里 `STATE_ENDED` 的 recommend 分支 →
-             * `enterFormalPlayback(advanceNext = true)`）：推荐流只负责「把人勾住」，
-             * 真要看完整部，交给正式播放页按它自己的连播规则走。
-             * 最后一集播完则「换一部接着看」——TV 是弹一份相关剧集，手机就是往下滑一屏。
-             */
-            override fun onPlaybackStateChanged(state: Int) {
-                notifyPlayStateChanged()
-                syncDanmakuClockNow(exo, index)
-                syncProgressBarsNow(exo, index)
-                // 真的出画面了：连续失败计数归零（取地址成功不算，能放才算）。
-                if (state == Player.STATE_READY) {
-                    recommendFailures = 0
-                    // READY 是首帧回调缺失时的兜底；同一曝光由共用上报器短时去重。
-                    reportRecommendImpression(index)
-                    scheduleRecommendBatchModels(index)
-                }
-                if (state == Player.STATE_ENDED) onEpisodeEnded(index)
-            }
-
-            override fun onRenderedFirstFrame() {
-                reportRecommendImpression(index)
-            }
-
-            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                notifyPlayStateChanged()
-                syncDanmakuClockNow(exo, index)
-            }
-
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                notifyPlayStateChanged()
-                syncDanmakuClockNow(exo, index)
-                syncProgressBarsNow(exo, index)
-            }
-
-            override fun onPlaybackParametersChanged(parameters: com.google.android.exoplayer2.PlaybackParameters) {
-                syncDanmakuClockNow(exo, index)
-            }
-
-            override fun onPositionDiscontinuity(
-                oldPosition: Player.PositionInfo,
-                newPosition: Player.PositionInfo,
-                reason: Int,
-            ) {
-                pageAt(index)?.danmakuView?.resetCursor()
-                syncDanmakuClockNow(exo, index)
-                syncProgressBarsNow(exo, index)
-            }
-
-            /**
-             * 这一部放不了：**换下一部**（与电视端 `screen=="recommend"` 那条分支一致）。
-             *
-             * 早先这里什么都没有：解码失败之后画面就停住、声音也没有，用户只看到一屏静止的
-             * 封面与一条进度条，不知道发生了什么，只能退出重进。
-             */
-            override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
-                android.util.Log.i(
-                    "HGTV-PHONE",
-                    "feed error ${error.errorCodeName}(${error.errorCode}) index=$index failures=$recommendFailures"
-                )
-                if (paused || hidden) return
-                items.getOrNull(index)?.let { series ->
-                    recommendPlayback.reportEvent(
-                        series,
-                        com.hgtv.star.core.RecommendBehavior.Event.ERROR,
-                        episodeId=currentEpisodeIds[index].orEmpty(),
-                        episodeIndex=currentEpisodeIndex[index] ?: -1,
-                        positionMs=runCatching { player?.currentPosition ?: -1L }.getOrDefault(-1L),
-                        durationMs=runCatching { player?.duration ?: -1L }.getOrDefault(-1L),
-                        reason=error.errorCodeName,
-                    )
-                }
-                runCatching { player?.pause() }
-                recommendFailures++
-                if (recommendFailures > RECOMMEND_SKIP_LIMIT) {
-                    // 连续几部都放不了：停在一句提示上，不再自动翻（否则会一路刷到底）。
-                    hint.text = "这一部暂时无法播放，上滑换一部"
-                    hint.visibility = View.VISIBLE
-                    hint.bringToFront()
-                    return
-                }
-                val next = index + 1
-                if (next < items.size) {
-                    hint.text = "这一部放不了，换下一部"
-                    hint.visibility = View.VISIBLE
-                    hint.bringToFront()
-                    list.smoothScrollToPosition(next)
-                } else {
-                    loadMore()
-                    hint.text = "这一部放不了，正在换下一部…"
-                    hint.visibility = View.VISIBLE
-                    hint.bringToFront()
-                }
-            }
-        }
-        listener = hook
-        exo.addListener(hook)
     }
 
     private fun pageAt(index: Int): PhoneVideoPage? {
