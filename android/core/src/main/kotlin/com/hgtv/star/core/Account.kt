@@ -346,11 +346,10 @@ object AccountParser {
         val avatar = info?.str("avatar_url").orEmpty().ifEmpty { info?.str("expand_avatar_url").orEmpty() }
             .ifEmpty { basic?.str("user_avatar").orEmpty() }
         if (name.isEmpty() && avatar.isEmpty()) return null
-        // 平台号：`user/info` 的 `req_id` 是纯数字的那一个；`user_id` 是 `#c1967_…` 形式的加密串。
-        // 平台号是 `biz_user_id`（形如 `066831371270`，12 位、可能带前导零）；
-        // `req_id` / `user_id` 是内部的 user_id（16 位数字，`1739875314044148`），
-        // 两者都不是一回事——显示与判重都要用 `biz_user_id`。
+        // 平台号：新版账号响应优先给 `biz_user_id`；旧版 / 匿名设备响应只给 `req_id`。
+        // 两者都是账号页用来展示的编号，按响应实际字段兼容读取。
         val display = info?.str("biz_user_id").orEmpty()
+            .ifEmpty { info?.str("req_id").orEmpty() }
         return AccountProfile(
             userId = display,
             nickname = name,

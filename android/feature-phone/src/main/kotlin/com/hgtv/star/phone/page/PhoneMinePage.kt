@@ -283,7 +283,12 @@ class PhoneMinePage(
     private fun refresh() {
         // 身份 / 凭据灌进仓库：从别的入口直接进「我的」时也要成立
         //（正常情况下主界面读完书库已经灌过一次，这里是幂等的兜底）。
-        if (library.isLoaded) com.hgtv.star.phone.PhoneIdentity.apply(context, library)
+        if (library.isLoaded) {
+            com.hgtv.star.phone.PhoneIdentity.apply(context, library)
+            runCatching {
+                com.hgtv.star.shared.data.AppRuntime.accountController(context).bindCredentials()
+            }
+        }
         // 使用须知：**进这一页就交代一次账号风险**（与电视端同一条语义，见 `PhoneConsent`）。
         // 放在最前面：用户在这一页能点到「账号」「收藏」，先说清楚比事后补一句更有意义。
         (context as? android.app.Activity)?.let { activity ->
@@ -308,7 +313,12 @@ class PhoneMinePage(
         if (refreshing) return
         refreshing = true
         showRefreshLoading()
-        if (library.isLoaded) com.hgtv.star.phone.PhoneIdentity.apply(context, library)
+        if (library.isLoaded) {
+            com.hgtv.star.phone.PhoneIdentity.apply(context, library)
+            runCatching {
+                com.hgtv.star.shared.data.AppRuntime.accountController(context).bindCredentials()
+            }
+        }
         val signedIn = runCatching { PhoneServices.repository(context).signedIn }.getOrDefault(false)
         if (!signedIn) {
             finishRefresh(null)
