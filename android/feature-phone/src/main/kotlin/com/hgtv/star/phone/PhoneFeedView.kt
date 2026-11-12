@@ -241,6 +241,9 @@ class PhoneFeedView(
         adapter.notifyItemRangeInserted(start, count)
     internal fun feedScrollToPosition(position: Int) = list.scrollToPosition(position)
     internal fun feedPostScrollToPosition(position: Int) = list.post { list.scrollToPosition(position) }
+    internal fun feedPostDelayed(runnable: Runnable, delayMs: Long) =
+        list.postDelayed(runnable, delayMs)
+    internal fun feedRemoveCallbacks(runnable: Runnable) = list.removeCallbacks(runnable)
 
     /**
      * 服务端已经确认不吃 `filter_ids`（回空页）。
@@ -277,6 +280,9 @@ class PhoneFeedView(
         get()=identityRefreshPending
         set(value) { identityRefreshPending=value }
     private var progressTick: Runnable? = null
+    internal var feedProgressTick: Runnable?
+        get()=progressTick
+        set(value) { progressTick=value }
     private var tempSpeed = false
     private var userSpeed = 1f
     internal var feedTempSpeed: Boolean
@@ -1327,6 +1333,7 @@ class PhoneFeedView(
                 alive = { isAttachedToWindow },
             )
         }
+    internal fun feedDanmakuLoaderOf(index: Int) = danmakuLoaderOf(index)
 
     /**
      * 片尾 30 秒内把**下一集**的地址与首块准备好（[PhoneSession.putNext]）。
@@ -1367,6 +1374,8 @@ class PhoneFeedView(
             }
         }
     }
+    internal fun maybePrefetchNextForClock(position: Long, duration: Long) =
+        maybePrefetchNext(position, duration)
 
     /**
      * 把本机偏好落到这一页的弹幕层（与正式播放页同一份实现、同一批落盘值）。
@@ -1404,75 +1413,6 @@ class PhoneFeedView(
         view.mode = lib.danmakuMode
         if (index < 0) return
         danmakuLoaderOf(index).load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
-    }
-
-    private fun syncDanmakuClock(page: PhoneVideoPage, index: Int, positionMs: Long, running: Boolean, speed: Float) {
-        if (index < 0) return
-        danmakuLoaderOf(index).syncClock(positionMs, running, speed)
-    }
-
-    private fun syncDanmakuClockNow(exo: ExoPlayer, index: Int) {
-        val page = boundPage ?: return
-        syncDanmakuClock(
-            page,
-            index,
-            exo.currentPosition,
-            exo.isPlaying && exo.playbackState == Player.STATE_READY,
-            exo.playbackParameters.speed,
-        )
-    }
-
-    private fun syncProgressBarsNow(exo: ExoPlayer, index: Int) {
-        val page = pageAt(index) ?: boundPage ?: return
-        val duration = exo.duration
-        if (duration <= 0) return
-        val position = exo.currentPosition.coerceIn(0, duration)
-        page.setProgress(position.toFloat() / duration)
-        page.setBufferedProgress(
-            exo.bufferedPosition.coerceIn(position, duration).toFloat() / duration
-        )
-    }
-
-    private fun startProgressTicker() {
-        progressTick?.let { list.removeCallbacks(it) }
-        val tick = object : Runnable {
-            override fun run() {
-                val exo = player
-                val page = boundPage
-                if (exo != null && page != null) {
-                    val duration = exo.duration
-                    if (duration > 0) {
-                        val position = exo.currentPosition
-                        page.setProgress(position.toFloat() / duration)
-                        page.setBufferedProgress(exo.bufferedPosition.toFloat() / duration)
-                        if (exo.isPlaying) {
-                            items.getOrNull(playingIndex)?.let { series ->
-                                recommendPlayback.reportProgress(
-                                    series,
-                                    currentEpisodeIds[playingIndex].orEmpty(),
-                                    currentEpisodeIndex[playingIndex] ?: -1,
-                                    position.coerceAtLeast(0),
-                                    duration,
-                                )
-                            }
-                        }
-                        // 还在播就刷新会话时间戳：连看十几分钟后切页，地址仍然算「新鲜」。
-                        if (exo.isPlaying) PhoneSession.touch()
-                        if (!paused) maybePrefetchNext(position, duration)
-                    }
-                    // 片尾兜底：`STATE_ENDED` 只在状态**变化**时回调一次。如果那一下刚好
-                    // 被暂停 / 切页 / 交接吞掉，播放器会永远停在末帧——用户读到的就是
-                    // 「卡在这一集末尾，不往下走」。每 500ms 补一次，`onEpisodeEnded` 自己
-                    // 有 `paused` / `advancing` / 位置复核三道闸，重复调用是安全的。
-                    if (exo.playbackState == Player.STATE_ENDED && playingIndex >= 0) {
-                        onEpisodeEnded(playingIndex)
-                    }
-                }
-                list.postDelayed(this, 500)
-            }
-        }
-        progressTick = tick
-        list.postDelayed(tick, 500)
     }
 
     private fun attach(
@@ -1667,6 +1607,7 @@ class PhoneFeedView(
         val holder = list.findViewHolderForAdapterPosition(index) as? PageHolder ?: return null
         return holder.itemView as? PhoneVideoPage
     }
+    internal fun feedPageAt(index: Int): PhoneVideoPage? = pageAt(index)
 
     /**
      * 一集播完：落 completed 进度 → 进正式播放页播下一集（最后一集则换下一部）。
@@ -1751,6 +1692,7 @@ class PhoneFeedView(
             }
         }
     }
+    internal fun onEpisodeEndedForClock(index: Int) = onEpisodeEnded(index)
 
     /**
      * 切页之前先把下一集挂到进程级播放器上（预热命中时才做）。

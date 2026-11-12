@@ -1097,6 +1097,29 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `:core:test` 最近为 435 例、24 失败、28 跳过，未高于基线。
 - 下一阶段继续处理信息流播放器监听与片尾推进，再转入 `Library.kt`。
 
+### 批次 46：手机信息流进度与弹幕时钟迁移
+
+状态：已完成。
+
+- 将弹幕时钟同步、进度 / 缓存段立即刷新和 500ms 进度 ticker 移到
+  `player/PhoneFeedPlaybackClock.kt`。
+- 保留推荐进度上报、会话 touch、暂停判据、下一集预取和 `STATE_ENDED` 兜底。
+- 新增进度任务、页面查询、弹幕加载器、预取与片尾推进的 `internal` 投影。
+- `PhoneFeedView.kt` 从 1974 行降到 1918 行；`PhoneFeedPlaybackClock.kt` 为 66 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 迁移后的进度、弹幕与片尾兜底逻辑按字段投影归一化后与迁移前一致。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `PhoneFeedView.kt` 的播放器监听、进度刷新与片尾推进职责。
+继续拆 `PhoneFeedView.kt` 的播放器监听与错误换片职责。
