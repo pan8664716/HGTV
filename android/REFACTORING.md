@@ -728,6 +728,33 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 32：TV 返回与遥控按键分发迁移
+
+状态：已完成。
+
+- 将返回键导航、二次退出、触摸预处理、遥控按键分发与卡片焦点判断移到
+  `navigation/MainKeyDispatch.kt`。
+- `TvMainActivity` 只保留 `onBackPressed`、`dispatchTouchEvent`、`dispatchKeyEvent`
+  的系统回调外壳；触摸仍先预处理再调用 `super`，按键仍未处理时调用 `super`。
+- 新增 `tvToolsReady`、`hudReady` 两个 `internal` 只读投影，保留原 `lateinit`
+  初始化判断。
+- 迁移后的导航、退出、触摸和按键实现体按缩进及委托名归一化后与迁移前逐行一致。
+- `TvMainActivity.kt` 从 2331 行降到 2090 行；`MainKeyDispatch.kt` 为 257 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译发现目录与 Kotlin 包名不一致，以及扩展无法访问 `lateinit` backing field；
+  按实际包名修正并增加只读投影后重跑通过，未改行为。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
 继续拆分 `TvMainActivity.kt` 的前后台收尾回调，随后转入
