@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.HorizontalScrollView
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
@@ -28,6 +29,7 @@ import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.tabBarInset
+import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.shared.ui.SoftStyle
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
@@ -41,7 +43,7 @@ import kotlinx.coroutines.launch
 class PhoneMinePage(
     context: Context,
     initialState: State? = null,
-) : LinearLayout(context) {
+) : FrameLayout(context) {
 
     data class State(
         val tab: Int,
@@ -53,6 +55,7 @@ class PhoneMinePage(
     private val compactTopBar = context.resources.configuration.orientation ==
         android.content.res.Configuration.ORIENTATION_LANDSCAPE
     private val topBar = PhoneTopBar(context)
+    private val pageContent = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val topAvatar = TextView(context).apply {
         val size = context.dp(if (compactTopBar) 32 else 44)
         text = "红"
@@ -80,6 +83,15 @@ class PhoneMinePage(
         maxLines = 2
         ellipsize = null
     }
+    private val topRefresh = TextView(context).apply {
+        text = "刷新"
+        setTextColor(PhoneStyle.accent)
+        phoneSize(if (compactTopBar) 11 else 13)
+        setTypeface(typeface, android.graphics.Typeface.BOLD)
+        contentDescription = "刷新账号数据"
+        setPadding(context.dp(10), context.dp(4), context.dp(6), context.dp(4))
+        setOnClickListener { refreshData() }
+    }
     private val topAccount = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -95,7 +107,22 @@ class PhoneMinePage(
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
             setPadding(context.dp(10), 0, 0, 0)
-            addView(topName)
+            addView(LinearLayout(context).apply {
+                orientation = LinearLayout.HORIZONTAL
+                gravity = Gravity.CENTER_VERTICAL
+                addView(topName, LinearLayout.LayoutParams(
+                    0,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    1f,
+                ))
+                addView(topRefresh, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ))
+            }, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+            ))
             addView(topSub)
         }, LinearLayout.LayoutParams(
             0,
@@ -120,6 +147,7 @@ class PhoneMinePage(
     private var restoredFeed: PhonePosterFeed.Snapshot? = initialState?.feed
     private var skipNextOnShownRefresh = initialState != null
     private var refreshing = false
+    private var refreshOverlay: FrameLayout? = null
     /** 当前栏目是否处于批量选择模式；切换栏目 / 筛选或删除后退出。 */
     private var batchMode = false
     private var batchBar: LinearLayout? = null
@@ -144,7 +172,7 @@ class PhoneMinePage(
     }
 
     init {
-        orientation = VERTICAL
+        pageContent.orientation = LinearLayout.VERTICAL
         setBackgroundColor(PhoneStyle.background)
 
         feed.bottomInset = context.tabBarInset() + context.dp(8)
@@ -198,12 +226,20 @@ class PhoneMinePage(
         topBar.setAction(PhoneGlyph.Kind.SETTINGS, "设置") {
             PhoneSettingsActivity.open(context, PhoneSettingsPage.PLAYBACK)
         }
-        topBar.setExtraActions(listOf(
-            Triple(PhoneGlyph.Kind.REFRESH, "刷新数据") { refreshData() },
-        ))
         // 顶栏固定，下面整块是列表（第一项就是栏目）。
-        addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        addView(feed, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        pageContent.addView(topBar, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        pageContent.addView(feed, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            0,
+            1f,
+        ))
+        addView(pageContent, LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
     }
 
     override fun onAttachedToWindow() {
@@ -275,31 +311,55 @@ class PhoneMinePage(
         runCatching { monitor.check() }
     }
 
-    /** 右上角刷新：账号、收藏更新与当前栏目都重新拉一次，避免只重画本机缓存。 */
+    /** 与 TV 一致：保留当前列表，居中显示等待，账号数据落地后按变化重绘。 */
     private fun refreshData() {
         if (refreshing) return
         refreshing = true
-        android.widget.Toast.makeText(context, "正在刷新…", android.widget.Toast.LENGTH_SHORT).show()
+        showRefreshLoading()
         if (library.isLoaded) com.hgtv.star.phone.PhoneIdentity.apply(context, library)
-        if (monitor.running) monitor.stop()
-        runCatching { monitor.check(force = true) }
         val signedIn = runCatching { PhoneServices.repository(context).signedIn }.getOrDefault(false)
         if (!signedIn) {
-            render()
-            refreshing = false
-            android.widget.Toast.makeText(context, "已刷新", android.widget.Toast.LENGTH_SHORT).show()
+            finishRefresh(null)
             return
         }
         loadScope.launch {
             val result = runCatching {
                 com.hgtv.star.shared.data.AppRuntime.accountController(context).refresh()
             }
-            post {
-                render()
-                refreshing = false
-                val message = if (result.getOrNull()?.error == null) "已刷新" else "刷新失败，可稍后重试"
-                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
-            }
+            post { finishRefresh(result.getOrNull()?.error) }
+        }
+    }
+
+    private fun showRefreshLoading() {
+        if (refreshOverlay != null) return
+        val dots = LoadingDotsView(context).apply { label = "正在刷新账号数据…" }
+        val overlay = FrameLayout(context).apply {
+            isClickable = true
+            contentDescription = "正在刷新账号数据"
+            addView(dots, FrameLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                ViewGroup.LayoutParams.WRAP_CONTENT,
+                Gravity.CENTER,
+            ))
+        }
+        refreshOverlay = overlay
+        addView(overlay, LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+    }
+
+    private fun finishRefresh(failure: Throwable?) {
+        refreshOverlay?.let { overlay ->
+            removeView(overlay)
+        }
+        refreshOverlay = null
+        refreshing = false
+        render()
+        if (failure != null) {
+            android.widget.Toast.makeText(
+                context, "账号数据刷新失败，请稍后再试", android.widget.Toast.LENGTH_SHORT,
+            ).show()
         }
     }
 
@@ -334,13 +394,13 @@ class PhoneMinePage(
     private fun accountState(): AccountState {
         val cached = PhoneAccountSync.data ?: runCatching { library.accountCache() }.getOrNull()?.data
         val profile = cached?.profile
-        val signedIn = runCatching { library.account().configured }.getOrDefault(false) ||
-            PhoneServices.repository(context).signedIn
+        val signedIn = runCatching { library.account().configured }.getOrDefault(false)
         return AccountState(signedIn, profile?.nickname, profile?.displayId)
     }
 
     private fun updateTopAccount() {
         val account = accountState()
+        topRefresh.visibility = if (account.signedIn) View.VISIBLE else View.GONE
         topAvatar.text = if (account.signedIn) {
             account.nickname?.take(1)?.takeIf { it.isNotBlank() } ?: "红"
         } else {
