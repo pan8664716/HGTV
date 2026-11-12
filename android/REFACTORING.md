@@ -73,7 +73,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 2：榜单、分类和推荐纯解析
+
+状态：已完成。
+
+- 新增 `ContentCatalogParser`，集中榜单名次、分类卡片、分类筛选面板和官方推荐卡片解析。
+- 标签、季号、热度、作者和 JSON 字段读取保持原实现，仅迁移到同包内部对象。
+- `publisher`、`tagsOf`、`heatValue` 保留原公开方法签名，内部委托新解析器。
+- 网络请求、分页 offset/limit、游标推进、重试、缓存和并发逻辑未移动。
+- `ContentRepository.kt` 从 5816 行降到 5473 行；`ContentCatalogParser.kt` 为 400 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 2 只处理 `ContentRepository` 的榜单、分类和推荐纯 JSON 解析，保留所有网络调用、
-重试顺序、缓存状态和公开方法。未获确认前不进入下一批。
+批次 3 只处理 `ContentRepository` 的 App / 官网搜索纯 JSON 解析，保留搜索游标、重试、
+并发、官网降级和设备自愈行为。未获确认前不进入下一批。
