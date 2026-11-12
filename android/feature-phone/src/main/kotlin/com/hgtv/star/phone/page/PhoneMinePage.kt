@@ -79,7 +79,7 @@ class PhoneMinePage(
     }
     private val topSub = TextView(context).apply {
         text = "点这里登录 · 记录仅保存在本机"
-        setTextColor(PhoneStyle.textFaint)
+        setTextColor(PhoneStyle.textDim)
         phoneSize(if (compactTopBar) 10 else 12)
         setPadding(0, context.dp(2) / 5, 0, 0)
         maxLines = 2
@@ -217,7 +217,11 @@ class PhoneMinePage(
         // 头像之外的上下留白缩到 20%，状态栏安全区由顶栏单独保留。
         topBar.setLeadingView(
             topAccount,
-            avatarSize + (leadingRowHeight - avatarSize) / 5,
+            maxOf(
+                avatarSize,
+                context.dp(if (compactTopBar) 40 else 56),
+                avatarSize + (leadingRowHeight - avatarSize) / 5,
+            ),
         )
         // 底部 2dp 留白收掉：账号区与栏目之间不再叠一层。
         topBar.tightenBottom()
