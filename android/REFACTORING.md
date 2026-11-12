@@ -1348,3 +1348,75 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 ## 下一批
 
 继续拆 `Library.kt` 的设备身份读写与注册结果持久化职责。
+
+## 夜间验收（2026-11-13）
+
+### 本次新增批次
+
+| 批次 | 提交 | 结果 | `:core:test` |
+| --- | --- | --- | --- |
+| 29 | `766756d` | 通过 | 25 失败 / 28 跳过 |
+| 30 | `01df30a` | 通过 | 25 失败 / 28 跳过 |
+| 31 | `2c3d27e` | 通过 | 24 失败 / 28 跳过 |
+| 32 | `a92d38d` | 通过 | 24 失败 / 28 跳过 |
+| 33 | `998e7cc` | 通过 | 24 失败 / 28 跳过 |
+| 34 | `b0d05e8` | 通过 | 24 失败 / 28 跳过 |
+| 35 | `5adac10` | 通过 | 25 失败 / 28 跳过 |
+| 36 | `722a1ec` | 通过 | 24 失败 / 28 跳过 |
+| 37 | `997ae0b` | 通过 | 24 失败 / 28 跳过 |
+| 38 | `6cc3922` | 通过 | 24 失败 / 28 跳过 |
+| 39 | `99095f3` | 通过 | 24 失败 / 28 跳过 |
+| 40 | `325aa6b` | 通过 | 25 失败 / 28 跳过 |
+| 41 | `e03457f` | 通过 | 24 失败 / 28 跳过 |
+| 42 | `0d975bd` | 通过 | 25 失败 / 28 跳过 |
+| 43 | `f2ce0f1` | 通过 | 25 失败 / 28 跳过 |
+| 44 | `d0d5457` | 通过 | 25 失败 / 28 跳过 |
+| 45 | `9135383` | 通过 | 24 失败 / 28 跳过 |
+| 46 | `0b80b6c` | 通过 | 24 失败 / 28 跳过 |
+| 47 | `95bb10e` | 通过 | 24 失败 / 28 跳过 |
+| 48 | `ad5e4b3` | 通过 | 24 失败 / 28 跳过 |
+| 49 | `93f3142` | 通过 | 24 失败 / 28 跳过 |
+| 50 | `5e244e2` | 通过 | 24 失败 / 28 跳过 |
+| 51 | `b12c4a3` | 通过 | 24 失败 / 28 跳过 |
+| 52 | `41ffede` | 通过 | 24 失败 / 28 跳过 |
+| 53 | `8840529` | 通过 | 25 失败 / 28 跳过 |
+| 54 | `b6941fb` | 通过 | 24 失败 / 28 跳过 |
+| 55 | `bd8fdfd` | 通过 | 25 失败 / 28 跳过 |
+
+每批均执行了指定 JDK 17 聚合命令，`:app:assembleDebug` 和 `:app:lintDebug`
+通过，无新增 `Error` / `Fatal`；`:shared:testDebugUnitTest` 24 例全过。
+
+### 当前剩余 >800 行生产文件
+
+- `PhonePlayerActivity.kt` 3620 行：横竖屏、滑页、设置与播放状态仍高度耦合。
+- `TvMainActivity.kt` 2047 行：字段密集，剩余页面状态和系统回调待拆。
+- `PhoneSettingsActivity.kt` 1960 行：本夜未开始。
+- `ContentRepository.kt` 1959 行：账号之外的反射 / 兼容 facade 与剩余装配待拆。
+- `RecommendPage.kt` 1890 行：本夜未开始。
+- `Library.kt` 1733 行：加载编排、身份注册结果和设置属性仍集中。
+- `PhoneFeedView.kt` 1705 行：列表适配、滑页、设置与交接状态仍集中。
+- 其余 >800 行：`TvComponents.kt`、`PlayerController.kt`、`ListPage.kt`、
+  `ArtworkLoader.kt`、`PhoneAccountActivity.kt`、`PhoneLogin.kt`、`SettingsPage.kt`、
+  `HomeScreen.kt`、`DanmakuView.kt`、`TvTools.kt`、`PhoneDetailActivity.kt`、
+  `PlaybackDiagnostics.kt`、`TouchController.kt`、`SeriesGrid.kt`、`PhoneVideoPage.kt`、
+  `TvDialog.kt`。
+
+### 未做 / 跳过项
+
+- `PhonePlayerActivity` 横竖屏切换簇依赖 20 多个私有视图与形态字段，单批迁移会显著扩大
+  代理面，暂缓，留待拆成更小切片。
+- `PhoneSettingsActivity`、`ContentRepository` 剩余职责和上述其他 >800 行文件尚未完成。
+- 未修改 UI、资源、Manifest、权限、序列化格式、数据库 schema、混淆规则、版本号或
+  versionCode；未推送，未创建 tag / Release。
+
+### 与基线测试对比
+
+- 基线：`:core:test` 435 例、25 失败、28 跳过。
+- 当前：`:core:test` 435 例、25 失败、28 跳过。
+- 当前：`:shared:testDebugUnitTest` 24 例全过；`:app:lintDebug` 通过；
+  `:app:assembleDebug` 通过。
+
+### DoD 结论
+
+未达到 DoD。主要卡点是仍有 23 个生产源码文件超过 800 行，且 6 个原始超大文件尚未全部
+拆完；本夜所有已完成批次均可独立回滚，未出现基线、分支或工作区恢复问题。
