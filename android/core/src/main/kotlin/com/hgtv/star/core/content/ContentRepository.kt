@@ -352,7 +352,7 @@ class ContentRepository(
      * 以及主实例与预取实例之间的结果互相串味（前者表现为断言错位，后者表现为
      * 预取实例拿到主实例的旧地址却以为是自己的）。
      */
-    internal val streamCache=java.util.concurrent.ConcurrentHashMap<String,CachedStream>()
+    internal val streamCache=java.util.concurrent.ConcurrentHashMap<String,ContentRepositoryStreamCacheEntry>()
     internal val streamLocks=java.util.concurrent.ConcurrentHashMap<String,Any>()
     internal val modelCache=java.util.concurrent.ConcurrentHashMap<String,Pair<Long,JSONObject>>()
     @Volatile internal var preferredModelPath: String=""
@@ -1985,46 +1985,7 @@ class ContentRepository(
         maxQuality: Int = 1080,
         playback: PlaybackProfile = PlaybackProfile(),
         queue: List<String> = emptyList(),
-    ): StreamInfo {
-        require(id.matches(Regex("[0-9]{1,30}")))
-        // 同一集在两条路上同时被要时（起播 + 预热）只真正取一次：后来的那条等在锁上，
-        // 前一条取回来之后它直接吃缓存。见 [STREAM_CACHE_MS]。
-        val cacheKey=cacheKeyOf(id,maxQuality,playback)
-        val lock=synchronized(streamLocks) { streamLocks.getOrPut(cacheKey) { Any() } }
-        synchronized(lock) {
-            val hit=synchronized(streamCache) { streamCache[cacheKey] }
-            if(hit!=null && clock()-hit.at<STREAM_CACHE_MS) return hit.info
-            // 落盘缓存：冷却启动（进程被杀）、退出再进、同一集重播都走这一条。
-            //
-            // 取一次地址实测 500~1100ms（`net POST … wait=892ms` 是服务端），而这
-            // 500~1100ms 在「已经看过这一集」的所有场景里都是白付的：地址在有效期内
-            // 逐字节相同。这里只缓存 [PlaybackCache.URL_FRESH_MS] 内的那一份，
-            // 过期或 403 就重新取（见 `RemoteVideo.range` 与 [forgetStream]）。
-            PlaybackCache.loadUrl(cacheKey)?.let { cached ->
-                if(NetLog.timing) NetLog.log("stream cache hit id=${id.takeLast(6)} quality=${cached.info.quality} age=${(System.currentTimeMillis()-cached.at)/1000}s")
-                rememberStream(cacheKey,cached.info,clock())
-                return cached.info
-            }
-            // **整个取地址阶段的硬上限**（见 [ADDRESS_DEADLINE_MS]）：上限从这一刻算起，
-            // 之后每一次请求都只用「剩余预算」当自己的超时，余额用完立刻抛。
-            // 缓存命中不走这里，因此点「下一个」十几毫秒就能起播的那条路一分钱都不多花。
-            val deadline=clock()+ADDRESS_DEADLINE_MS
-            val info=try {
-                fetchStream(id,maxQuality,deadline,playback,queue)
-            } catch(e: AddressTimeoutException) {
-                throw e
-            } catch(e: IOException) {
-                if(e.isAddressTimeout()) throw addressTimeout(e)
-                throw e
-            }
-            rememberStream(cacheKey,info,clock())
-            PlaybackCache.saveUrl(cacheKey,info)
-            // 锁表跟着缓存一起收：这里大多是「取完就没人在等」的一次性键，
-            // 不收的话每换一部剧就多留一个对象，长刷推荐会一直涨。
-            synchronized(streamLocks) { if(streamLocks.size>STREAM_CACHE_LIMIT*4) streamLocks.remove(cacheKey) }
-            return info
-        }
-    }
+    ): StreamInfo = streamImpl(id,maxQuality,playback,queue)
     /**
      * 取地址（播放模型 + `fallback_api`）**整段**的时间上限。
      *
@@ -2058,17 +2019,6 @@ class ContentRepository(
      */
     internal val addressClients=linkedMapOf<Long,OkHttpClient>()
     /**
-     * 内存 / 落盘缓存与锁表的键：集 id + 请求上限 + 播放档案 + `device_level`。
-     */
-    private fun cacheKeyOf(id: String,maxQuality: Int,playback: PlaybackProfile): String =
-        "$id:$maxQuality:${playback.contentType}:${playback.videoPlatform}:$deviceLevel"
-    private fun rememberStream(key: String,info: StreamInfo,at: Long) {
-        synchronized(streamCache) {
-            if(streamCache.size>=STREAM_CACHE_LIMIT) streamCache.keys.firstOrNull()?.let(streamCache::remove)
-            streamCache[key]=CachedStream(info,at)
-        }
-    }
-    /**
      * 这一集取回来的地址不认了（403 / 404）：内存与落盘一起丢掉，下次重新取。
      *
      * 界面层在「取地址之后本地准备失败」时调它，然后重来一次——这样用户看到的是
@@ -2079,13 +2029,8 @@ class ContentRepository(
      * 键里带着 `device_level`，降档重试时要按新的上限去删，否则删的是另一条
      *（真正那条还留在盘上，下一次取地址又命中它，白重试一轮）。
      */
-    fun forgetStream(id: String,maxQuality: Int = 1080,playback: PlaybackProfile = PlaybackProfile()) {
-        val key=cacheKeyOf(id,maxQuality,playback)
-        synchronized(streamCache) { streamCache.remove(key) }
-        PlaybackCache.invalidateUrl(key)
-        // 「这条地址不认了」= 下一次取地址当成一次全新尝试，作废旧模型缓存。
-        rotateDeviceForRetry()
-    }
+    fun forgetStream(id: String,maxQuality: Int = 1080,playback: PlaybackProfile = PlaybackProfile()) =
+        forgetStreamImpl(id,maxQuality,playback)
 
     /**
      * 这一集**所有档位**的地址都不认了。
@@ -2098,13 +2043,7 @@ class ContentRepository(
      * 内存缓存按 `集:` 前缀整体清（键是明文，能前缀匹配）；落盘按集 id 清
      * （见 [PlaybackCache.invalidateUrlById]）。多删几条的代价只是下一次多一次往返。
      */
-    fun forgetStreamAllQualities(id: String) {
-        synchronized(streamCache) {
-            streamCache.keys.filter { it.startsWith("$id:") }.forEach(streamCache::remove)
-        }
-        PlaybackCache.invalidateUrlById(id)
-        rotateDeviceForRetry()
-    }
+    fun forgetStreamAllQualities(id: String) = forgetStreamAllQualitiesImpl(id)
 
     /**
      * 用户侧「再试一次」时作废当前设备签发的播放模型缓存。
@@ -2112,28 +2051,7 @@ class ContentRepository(
      * 设备号只能由平台注册下发；身份失效时由 `DeviceHealer` 重新注册。
      * 这里保留原方法名供两端调用，但不再伪造新的 `device_id`。
      */
-    fun rotateDeviceForRetry(): String = invalidateModelCache()
-
-    /** 真正去取播放地址（[stream] 的缓存之外那一半）。[deadline] 见 [ADDRESS_DEADLINE_MS]。 */
-    private fun fetchStream(
-        id: String,
-        maxQuality: Int,
-        deadline: Long,
-        playback: PlaybackProfile,
-        queue: List<String>,
-    ): StreamInfo {
-        val model=videoModel(id,deadline,playback,queue)
-        val raw=model.opt("fallback_api")
-        val fallback=when(raw) { is JSONObject -> raw.str("fallback_api"); is JSONArray -> raw.optString(0); else -> runCatching { JSONObject(raw.toString()).str("fallback_api") }.getOrDefault(raw.toString()) }
-        if(!fallback.startsWith("https://")) throw IOException("播放地址格式异常")
-        // 这一步同样是「取地址」的一部分：模型给了 `fallback_api`，但真正带 `video_list`
-        // 的是它返回的那份 JSON。余额用完就直接抛，别让它在 45 秒的默认超时上再挂一次。
-        val budget=remainingOf(deadline)
-        if(budget<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        val info=JSONObject(text(fallback,client=addressClient(budget),storeRegionHeaders=false))
-            .optJSONObject("video_info")?.optJSONObject("data") ?: throw IOException("没有播放资源")
-        return ContentPlaybackParser.parseStreamInfo(model,info,maxQuality)
-    }
+    fun rotateDeviceForRetry(): String = rotateDeviceForRetryImpl()
 
     /**
      * 取一集的弹幕，也就是「原 App」播放时看到的同一份数据。
@@ -2331,10 +2249,8 @@ class ContentRepository(
          * 20 分钟的地址——「更短」只是多一次读盘，并没有让起播更安全，反而让人误以为
          * 内存缓存才是生效的那一层。现在三层（内存 / 落盘 / 预热）共用同一个窗口。
          */
-        private const val STREAM_CACHE_MS=PlaybackCache.URL_FRESH_MS
-        private const val STREAM_CACHE_LIMIT=8
-        /** 两条路同时要同一集时，后来的那条等在锁上（见 [stream]）。 */
-        internal data class CachedStream(val info: StreamInfo,val at: Long)
+        internal const val STREAM_CACHE_MS=PlaybackCache.URL_FRESH_MS
+        internal const val STREAM_CACHE_LIMIT=8
         /** 弹幕窗口固定 30 秒一个，与平台的 `next_query_danmaku_list_time` 一致。 */
         private const val COMMENT_WINDOW_MS=30_000L
         private const val COMMENT_SOURCE=601
