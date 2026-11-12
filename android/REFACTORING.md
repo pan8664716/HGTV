@@ -210,7 +210,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 9：PhoneFeed 列表机制
+
+状态：已完成。
+
+- 新增 `PhoneFeedPager.kt`，独立承载竖向手势方向锁和 `PageHolder`。
+- 手势判定阈值、主轴偏向规则、RecyclerView 生命周期和 ViewHolder 行为保持不变。
+- `FeedAdapter` 直接操作播放器、推荐计时、页面绑定和私有 View 状态；本批没有为搬移它而扩大可见性或引入宽接口。
+- `PhoneFeedView.kt` 从 2387 行降到 2342 行；`PhoneFeedPager.kt` 为 50 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 9 处理 `PhoneFeedView` 的 Pager、Adapter 和 ViewHolder，不移动播放器、推荐请求、
-预取、手势或页面交接。继续按既定计划执行。
+批次 10 使用显式宿主接口抽 `PhoneFeedAdapter`，只移动 View 创建、绑定和回调装配，
+不移动播放器、推荐请求、预取、计时或页面交接。继续按既定计划执行。
