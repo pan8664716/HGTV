@@ -1042,6 +1042,30 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 44：手机信息流快照与分页迁移
+
+状态：已完成。
+
+- 将快照恢复、下一页加载、身份就绪补拉和可接手索引移到
+  `player/PhoneFeedData.kt`。
+- 保留续流游标、首屏预算、列表增量通知、空页重试、播放定位和日志语义。
+- 新增 Store 状态、genre、游标恢复、身份待刷新、Library 槽位及列表通知等
+  `internal` 投影。
+- `PhoneFeedView.kt` 从 2092 行降到 1990 行；`PhoneFeedData.kt` 为 134 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 迁移后的快照、分页和索引逻辑按字段投影归一化后与迁移前一致。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
 继续拆 `PhoneFeedView.kt` 的播放器监听、进度与片尾推进职责。
