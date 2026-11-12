@@ -28,7 +28,7 @@ fun JSONObject.flag(key: String) = when(val value=opt(key)) {
 }
 fun cleanUrl(s: String) = s.replace("\\/","/").replace("\\u002F","/",ignoreCase=true).replace("\\u0026","&").replace("&amp;","&")
 /** 分类 / 榜单接口的 HTTP 状态异常：4xx（429 除外）说明参数或路由有问题，重试没有意义。 */
-private class CatalogHttpException(val status: Int, message: String) : IOException(message)
+internal class CatalogHttpException(val status: Int, message: String) : IOException(message)
 /** 取播放地址超时：与用户主动取消分开，界面据此进入自动重试而不是静默退出。 */
 class AddressTimeoutException(message: String, cause: Throwable? = null) : IOException(message, cause)
 /**
@@ -117,9 +117,9 @@ class ContentRepository(
 ) : RecommendDataSource {
     private val httpRef=lazy(LazyThreadSafetyMode.SYNCHRONIZED) { httpClient ?: defaultHttpClient() }
     val http: OkHttpClient get() = httpRef.value
-    private val recommendStatConfigLock=Any()
-    private var recommendStatConfigLoading=false
-    private var recommendStatConfigNextAt=0L
+    internal val recommendStatConfigLock=Any()
+    internal var recommendStatConfigLoading=false
+    internal var recommendStatConfigNextAt=0L
     /**
      * 官方 `bookmall/tab` 的会话标识。
      *
@@ -127,11 +127,11 @@ class ContentRepository(
      * 会原样进入推荐卡片的 `recommend_info`，再被曝光上报带回服务端。
      * 同一进程内保持稳定，避免每次翻页都被服务端当成新会话。
      */
-    private val officialNormalSessionId="${java.util.UUID.randomUUID()}#1"
-    private val officialColdStartSessionId=java.util.UUID.randomUUID().toString()
-    private val OFFICIAL_RECOMMEND_STREAM_COUNT=
+    internal val officialNormalSessionId="${java.util.UUID.randomUUID()}#1"
+    internal val officialColdStartSessionId=java.util.UUID.randomUUID().toString()
+    internal val OFFICIAL_RECOMMEND_STREAM_COUNT=
         "[{\"scene\":\"1\",\"StreamCount\":1,\"StreamType\":\"1\"}]"
-    private val OFFICIAL_RECOMMEND_EXTRA=
+    internal val OFFICIAL_RECOMMEND_EXTRA=
         "eyJyZWNlbnRfZGlzbGlrZV9naWQiOltdLCJzZXNzaW9uX2FwcF9zdGF5X3RpbWUiOjB9"
     /**
      * TNC 初始化专用 client。
@@ -1060,7 +1060,7 @@ class ContentRepository(
      * 单条成本差一个数量级，而首包只大一点点。一页铺满近三屏，配合「消耗过半就预取」
      * （见 `PREFETCH_TRIGGER_ROWS`）之后，按住下键基本不会撞到还没回来的下一页。
      */
-    private val CATEGORY_PAGE_SIZE=100
+    internal val CATEGORY_PAGE_SIZE=100
 
     /**
      * 分类页**换条件后的第一页**取 30 条。
@@ -1069,7 +1069,7 @@ class ContentRepository(
      * 足够确认「这次选中的是不是我要的」。用户继续往下翻时恢复 [CATEGORY_PAGE_SIZE]，
      * 第 2 页从 offset=30 开始，不会漏条。
      */
-    private val CATEGORY_FIRST_PAGE_SIZE=CATALOG_FIRST_PAGE_SIZE
+    internal val CATEGORY_FIRST_PAGE_SIZE=CATALOG_FIRST_PAGE_SIZE
 
     /**
      * 推荐流一页多少条。
@@ -1085,12 +1085,12 @@ class ContentRepository(
      * 分类、榜单、搜索统一聚合成同一个逻辑页，界面侧不必知道底层接口一页是
      * 20 条还是 100 条。
      */
-    private val LOGICAL_PAGE_SIZE=100
+    internal val LOGICAL_PAGE_SIZE=100
     /** 分类 / 榜单页首次进入只取 30 条，后续页再恢复大页。 */
-    private val RANK_FIRST_PAGE_SIZE=CATALOG_FIRST_PAGE_SIZE
+    internal val RANK_FIRST_PAGE_SIZE=CATALOG_FIRST_PAGE_SIZE
 
     /** 首页剧架那一行的榜单条数：一栏只显示 10 条，取 20 条足够。 */
-    private val RANK_API_PAGE_SIZE=20
+    internal val RANK_API_PAGE_SIZE=20
 
     /**
      * 分类 / 榜单接口的重试次数与间隔。
@@ -1104,9 +1104,9 @@ class ContentRepository(
      * 两种情况重发都可能拿到完整 JSON（签名每次都换 `ts`），因此保留退避重试：
      * 空响应本身只花约 90ms，最坏总耗时约 4s。
      */
-    private val CATEGORY_ATTEMPTS=8
+    internal val CATEGORY_ATTEMPTS=8
     /** 首屏只给 3 次机会：失败后尽快出错误页，长重试留给后续分页与后台刷新。 */
-    private val FIRST_PAGE_ATTEMPTS=3
+    internal val FIRST_PAGE_ATTEMPTS=3
     /**
      * 推荐流那条的重试次数：3 次（退避 100+180ms）。
      *
@@ -1114,7 +1114,7 @@ class ContentRepository(
      * 用户看到的都是一块静止的黑屏。3 次够覆盖「网关偶发空响应」（实测重发 1~2 次就回），
      * 再失败就交给界面换流或先放出手里这一页（见 `MainActivity.loadRecommendPage`）。
      */
-    private val RECOMMEND_ATTEMPTS=3
+    internal val RECOMMEND_ATTEMPTS=3
     /** 搜索接口空响应的原地补发次数 / 间隔（见 [retryBlankSearch]）。 */
     private val SEARCH_BLANK_RETRIES=1
     internal val SEARCH_BLANK_RETRY_DELAY_MS=160L
@@ -1143,7 +1143,7 @@ class ContentRepository(
     private val SEARCH_VERSION_CODE="74332"
     private val SEARCH_VERSION_NAME="7.4.3.32"
     private val SEARCH_PATH="reading/bookapi/search/tab/v"
-    private val CATEGORY_RETRY_DELAYS=longArrayOf(100L,180L,300L,450L,650L,900L,1200L)
+    internal val CATEGORY_RETRY_DELAYS=longArrayOf(100L,180L,300L,450L,650L,900L,1200L)
     /**
      * 分类 / 榜单接口用的客户端版本，与改动前手拼 URL 里的那组一致（`73532` / `7.3.5.32`）。
      *
@@ -1284,7 +1284,7 @@ class ContentRepository(
     }
 
     /** 同一套业务参数与设备参数，只换接口域名后重签。 */
-    private fun resignForHost(
+    internal fun resignForHost(
         signed: Signer.Request,
         host: String,
         profile: Map<String,String>,
@@ -1311,7 +1311,7 @@ class ContentRepository(
     internal fun alternateApiHosts(currentHost: String): List<String> =
         TncConfigStore.orderedApiHosts().filterNot { it.equals(currentHost,ignoreCase=true) }
     /** 主设备 200 空响应时，把同一条签名请求临时改签成一台备用设备。 */
-    private fun backupRequest(signed: Signer.Request, backup: PlaybackBackupDevice): Signer.Request? {
+    internal fun backupRequest(signed: Signer.Request, backup: PlaybackBackupDevice): Signer.Request? {
         val parsed=okhttp3.HttpUrl.parse(signed.url) ?: return null
         val original=linkedMapOf<String,String>()
         parsed.queryParameterNames().forEach { name ->
@@ -1450,14 +1450,14 @@ class ContentRepository(
      * 未登录时是主设备；登录后如果账号设备与主设备不同，以账号设备为准。
      * profile / Cookie / token 必须从同一份快照读取，不能逐项回落到另一套身份。
      */
-    private data class PrimaryIdentity(
+    internal data class PrimaryIdentity(
         val account: Boolean,
         val profile: Map<String,String>,
         val cookie: String,
         val token: String,
     )
 
-    private fun primaryIdentity(): PrimaryIdentity {
+    internal fun primaryIdentity(): PrimaryIdentity {
         val account=credentials?.takeIf {
             it.configured &&
                 it.device["device_id"].orEmpty().isNotBlank() &&
@@ -1494,7 +1494,7 @@ class ContentRepository(
     /** 所有请求共用的当前主 Cookie：登录后只使用账号 Cookie，不再叠加匿名主设备 Cookie。 */
     internal fun primaryCookieHeader(): String = primaryIdentity().cookie
 
-    private fun recommendationValues(identity: PrimaryIdentity): LinkedHashMap<String,String> =
+    internal fun recommendationValues(identity: PrimaryIdentity): LinkedHashMap<String,String> =
         LinkedHashMap(identity.profile).apply {
             putAll(PROTOCOL_VALUES)
             for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
@@ -1518,7 +1518,7 @@ class ContentRepository(
             this["channel"]="update_64"
         }
 
-    private fun Signer.Request.withRecommendationSession(identity: PrimaryIdentity): Signer.Request {
+    internal fun Signer.Request.withRecommendationSession(identity: PrimaryIdentity): Signer.Request {
         val extra=linkedMapOf<String,String>()
         if(identity.token.isNotBlank()) extra["x-tt-token"]=identity.token
         if(identity.cookie.isNotBlank()) extra["Cookie"]=identity.cookie
@@ -1538,58 +1538,6 @@ class ContentRepository(
     }
     /** 有没有可用的登录态：搜索要不要优先走 App 接口、个人信息页要不要联网，都看它。 */
     val signedIn: Boolean get()=credentials?.configured==true || !sessionToken.isNullOrBlank()
-    /**
-     * 榜单页：四个榜单（[RankBoard]）共用这一套取数，只有分类与排序不同。
-     *
-     * 首页的四个「热播…」剧架与排行榜页的四个榜单读的是**同一份数据**，
-     * 因此剧架行末的「查看全部」直接进对应的榜单页，不再另做一套「热门集合页」。
-     *
-     * 数据取自 **App 分类接口按 [RankBoard.sort] 排**（参数与 [categoryApi] 同一套）：
-     * 四个榜都按最高热度（`hot_score`）取数；推荐榜不筛分类，取全站综合热度。
-     * 名次与热度都由服务端给——
-     * 名次取 `recommend_info.rank`，热度取 `recommend_reason_list.sub_title_list` 里 `data_type==27`
-     * 的那一段（形如「9014万」）。分类见 [RankBoard.genre]，`null` 表示不筛分类（全站综合）。
-     */
-    private fun rankApiPage(
-        page: Int,
-        board: RankBoard,
-        size: Int,
-        offset: Int = (page-1)*size,
-    ): CatalogPage {
-        val body=JSONObject()
-            .put("filter_ids","")
-            .put("req_scene","default")
-            .put("offset",offset)
-            .put("need_selector_panel",false)
-            .put("limit",size)
-            .put("select_items",JSONObject()
-                // 不筛分类时给一个空数组（与不传这一项等价，实测返回全站综合榜）。
-                .put("genre",JSONArray().apply { board.genre?.let { put(it) } })
-                .put("sort",JSONArray().put(board.sort)))
-            .put("session_id","")
-            .put("req_type","only_content")
-            .put("client_req_type",3)
-        val data=JSONObject(categoryApiRaw(body,if(page<=1) FIRST_PAGE_ATTEMPTS else CATEGORY_ATTEMPTS))
-        if(data.optInt("code",-1)!=0) throw IOException("${board.label}榜接口暂不可用")
-        val payload=data.optJSONObject("data") ?: throw IOException("${board.label}榜接口结构已变化")
-        val positions=linkedMapOf<String,RankPosition>()
-        // 卡片字段与分类页是同一套（`apiCard`：title / cover / video_desc / copyright / episode_cnt…），
-        // 因此这里直接复用，只有名次与热度要多读两处。
-        val rows=payload.optJSONArray("video_data")?.objects().orEmpty()
-        // 名次要换算：这一页的「页内序号」加上前面已经排过的条数，才是榜单上的名次。
-        val base=offset
-        val items=ContentCatalogParser.valid(rows.mapIndexed { index, row ->
-            ContentCatalogParser.apiCard(row).also { series ->
-                ContentCatalogParser.apiRank(row,base,index)?.let { positions[series.id]=it }
-            }
-        })
-        if(items.isEmpty()) throw IOException("${board.label}榜暂无数据")
-        // 接口只给 `has_more`，**没有总数**：因此不编造总量，只报「已看到第几页」。
-        // 界面「N / M 部」据此显示（见 `moreCountText`），加载到底自然变成「已显示全部 N 部」。
-        // 更新时间这一条接口没有，留空即由界面把那一行整行收起来（不显示任何来源文案）。
-        return CatalogPage(items,payload.optBoolean("has_more",false),ComicRanking(positions,page,""))
-    }
-
     /**
      * 榜单的**一个小页**（[RANK_API_PAGE_SIZE] 条）。
      *
@@ -1993,182 +1941,6 @@ class ContentRepository(
             throw IOException("推荐上报失败（code=${reply.optInt("code",-1)}）")
         }
     }
-
-    /**
-     * 分类接口：`POST /reading/distribution/category/landpage/v/`。
-     *
-     * **2026-10-21 起要签名**（早先只带 User-Agent / Accept / Content-Type 三个头就能用，
-     * 现在缺签名头一律回空响应，见 [categoryApiRaw]）。不需要登录态。参数要点：
-     *
-     * * `select_items` 的每个值都必须是**数组**：给字符串会回
-     *   `HTTP 400 req.SelectItems[genre]: expected array, actual value: short_play (string)`；
-     * * `filter_ids` 必须是**字符串**（给 `[]` 会回 `expected string, actual value: []`）；
-     * * 翻页靠 `offset`（0 / 60 / 120…）与 `limit`（见 [CATEGORY_PAGE_SIZE]，
-     *   实测 `limit` 可以放大到 200，服务端会照数返回）；
-     * * `req_type` 用 `only_content`（要筛选面板时才用 `default` + `need_selector_panel=true`）。
-     *
-     * [path] 来自 [CategoryCatalog]：大类段映射成接口的 `genre`
-     *（`comic_series` / `short_play` / `ai_series`），小类段就是接口的主题标识（`cate_*`）。
-     */
-    private fun categoryApi(selection: CategorySelection, page: Int, needPanel: Boolean): CategoryFeed {
-        // 「全部推荐」是服务端的一条**推荐流**：实测到第 100 条就 `has_more=false`，
-        // 且第二页开始会混进重复条目；照它一直翻，用户看到的就是「只剩这么几部」。
-        // 因此前两页先按推荐流取完这 100 条，第 3 页起自动接上 `hot_score` 继续翻，
-        // 已显示的条目由界面按 id 去重（见 `applyNextPage`）。
-        // 推荐流只适合「什么细分条件都没选」的默认页；带了主题 / 设定等条件时它经常回 0，
-        // 这时直接从第 1 页就走 hot_score，保证细分类目也有完整列表。
-        val recommendation=selection.sort==null && selection.hasNoDetailFilters()
-        val fallback=selection.sort==null && (!recommendation || page>=3)
-        val select=ContentCatalogParser.categorySelectItems(
-            selection,
-            if(fallback) "hot_score" else selection.sort,
-        )
-        val limit=categoryLimit(page)
-        val body=JSONObject()
-            .put("filter_ids","")
-            .put("req_scene","default")
-            .put("offset",categoryOffset(selection,page))
-            .put("need_selector_panel",needPanel)
-            .put("limit",limit)
-            .put("select_items",select)
-            .put("session_id","")
-            .put("req_type",if(needPanel) "default" else "only_content")
-            .put("client_req_type",3)
-        val data=JSONObject(categoryApiRaw(body,if(page<=1) FIRST_PAGE_ATTEMPTS else CATEGORY_ATTEMPTS))
-        if(data.optInt("code",-1)!=0) throw IOException("分类接口暂不可用")
-        val payload=data.optJSONObject("data") ?: throw IOException("分类接口结构已变化")
-        val rows=(payload.optJSONArray("video_data") ?: JSONArray()).objects()
-        val items=ContentCatalogParser.valid(rows.map(ContentCatalogParser::apiCard))
-        val serverMore=payload.optBoolean("has_more",false)
-        // 推荐流第 2 页会回 `has_more=false`，但后面还要接 hot_score，所以这里补一页。
-        // 服务端偶尔在“刚好装满一页”时把 has_more 错报成 false；这种满页不能提前终止，
-        // 否则分类页会在同一位置停住。多请求一页，真到底时下一页为空自然结束。
-        val fullPage=rows.size>=limit
-        val more=(serverMore || fullPage || (recommendation && page<=2)) && page<MAX_CATALOG_PAGE
-        val panel=if(needPanel) {
-            ContentCatalogParser.parseCategoryPanel(payload.optJSONArray("selector_rows"))
-        } else null
-        return CategoryFeed(CatalogPage(items,more),panel)
-    }
-    /** 分类页的 offset：第一页 20 条，之后每页 100 条（第 2 页从 20 开始）。 */
-    private fun categoryOffset(selection: CategorySelection,page: Int): Int = when {
-        // 「全部推荐」：第 1 页 20 条、第 2 页把推荐流剩下的约 80 条取完，
-        // 第 3 页起改用 `hot_score`，从 0 重新铺（界面负责去重）。
-        selection.sort==null && selection.hasNoDetailFilters() -> when {
-            page<=1 -> 0
-            page==2 -> CATEGORY_FIRST_PAGE_SIZE
-            else -> (page-3)*CATEGORY_PAGE_SIZE
-        }
-        page<=1 -> 0
-        else -> CATEGORY_FIRST_PAGE_SIZE+(page-2)*CATEGORY_PAGE_SIZE
-    }
-    private fun categoryLimit(page: Int): Int =
-        if(page<=1) CATEGORY_FIRST_PAGE_SIZE else CATEGORY_PAGE_SIZE
-    /**
-     * 分类 / 榜单 / 推荐共用的那条 POST。
-     *
-     * 后续分页使用 [CATEGORY_ATTEMPTS]（8 次、退避合计 3.8s），失败发生在用户已经看到
-     * 上一页之后，可以多等一会儿。分类 / 榜单首屏与推荐页只给 3 次，避免整页长时间停在
-     * 「正在加载」上。
-     */
-    private fun categoryApiRaw(
-        body: JSONObject,
-        attempts: Int = CATEGORY_ATTEMPTS,
-    ): String {
-        val payload=body.toString().toByteArray()
-        val identity=primaryIdentity()
-        var problem: IOException=IOException("分类接口暂无响应")
-        for(attempt in 0 until attempts) {
-            if(attempt>0) {
-                val delay=CATEGORY_RETRY_DELAYS[(attempt-1).coerceAtMost(CATEGORY_RETRY_DELAYS.lastIndex)]
-                NetLog.retry("category",attempt+1,attempts,problem.message.orEmpty(),delay)
-                try {
-                    Thread.sleep(delay)
-                } catch(cancelled: InterruptedException) {
-                    Thread.currentThread().interrupt()
-                    throw IOException("请求已取消",cancelled)
-                }
-            }
-            try {
-                // 每次重试都重签：`ts` / `_rticket` 是签名的一部分，复用旧签名会被判过期。
-                // 分类 / 榜单这条只认 POST + JSON body（GET 该路径回 404）。
-                val signAt=System.nanoTime()
-                val values=recommendationValues(identity)
-                val signed=signer.sign(categoryApiUrl(),values,payload,method="POST")
-                    .withRecommendationSession(identity)
-                if(NetLog.timing) {
-                    NetLog.log("sign ${signed.url.substringAfter("//").substringBefore("/")} body=${payload.size}B took=${(System.nanoTime()-signAt)/1_000_000}ms")
-                }
-                fun send(one: Signer.Request,profile: Map<String,String>): String {
-                    val request=Request.Builder().url(one.url)
-                    one.headers.forEach { (key,value) -> if(key!="User-Agent" && key!="Accept") request.header(key,value) }
-                    // UA / Accept 保持与改动前一致：UA 用 App 那条（签名默认按「有 body」选视频 UA）。
-                    request.header("User-Agent",VendorConstants.userAgent(
-                        profile,
-                        video = false,
-                    ))
-                    request.header("Accept","application/json; charset=utf-8,application/x-protobuf")
-                    request.post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
-                    val callAt=System.nanoTime()
-                    return RequestScope.execute(http.newCall(request.build())) { response ->
-                        if(!response.isSuccessful) {
-                            throw CatalogHttpException(response.code,"分类接口失败（HTTP ${response.code}）")
-                        }
-                        val bodyAt=System.nanoTime()
-                        val text=response.body?.string().orEmpty()
-                        if(NetLog.timing) {
-                            NetLog.log(
-                                "category call headers=${(bodyAt-callAt)/1_000_000}ms"+
-                                " read=${(System.nanoTime()-bodyAt)/1_000_000}ms chars=${text.length}"
-                            )
-                        }
-                        text
-                    }
-                }
-                var raw=send(signed,identity.profile)
-                if(raw.isBlank()) {
-                    val currentHost=runCatching { okhttp3.HttpUrl.parse(signed.url)?.host }.getOrNull().orEmpty()
-                    val hosts=alternateApiHosts(currentHost)
-                    for((index,host) in hosts.withIndex()) {
-                        NetLog.retry("category_domain",index+1,hosts.size,"HTTP 200 empty body from $currentHost")
-                        val retry=resignForHost(signed,host,identity.profile) ?: continue
-                        raw=send(retry,identity.profile)
-                        if(raw.isNotBlank()) {
-                            TncConfigStore.markHostSuccess(host)
-                            NetLog.emit("category domain failover accepted host=$host")
-                            break
-                        }
-                    }
-                }
-                if(raw.isBlank()) {
-                    val backup=runCatching { playbackBackupDevices?.invoke()?.firstOrNull() }.getOrNull()
-                    if(backup!=null) {
-                        val retry=backupRequest(signed,backup)
-                        if(retry!=null) {
-                            NetLog.retry("category_backup",1,1,"primary identity returned HTTP 200 empty body")
-                            NetLog.emit("device backup retry category id=${backup.id.takeLast(6)}")
-                            raw=send(retry,backup.profile)
-                        }
-                    }
-                }
-                if(raw.isNotBlank()) return raw
-                problem=IOException("分类接口暂无响应")
-            } catch(failure: IOException) {
-                // 只重发「可能自己好」的那两类：空响应体（上面那个分支）与 5xx / 429。
-                // 取消、明确的 4xx、以及连接层的硬错误（超时 / 断网）立刻抛出——
-                // 重发只是把同一次失败重复 8 遍，界面白等 4 秒还是一样的结果。
-                if(Thread.currentThread().isInterrupted || failure.message=="请求已取消") throw failure
-                if(failure !is CatalogHttpException) throw failure
-                if(failure.status in 400..499 && failure.status!=429) throw failure
-                problem=failure
-            }
-        }
-        NetLog.error("[API] error scope=category attempts=$attempts reason=${problem.message.orEmpty().take(220)}")
-        throw problem
-    }
-
-    private fun categoryApiUrl(): String =
-        "https://${videoHost()}/reading/distribution/category/landpage/v/"
 
     private fun recommendStatUrl(): String =
         "https://${videoHost()}/reading/distribution/recommend_stat/report/v1/"
@@ -3904,7 +3676,7 @@ class ContentRepository(
         private const val MAX_DANMAKU=3000
         /** 搜索第 2 页起每次往后扫几页片库目录（一页 24 部）。 */
         /** 片库目录最多翻到第几页。 */
-        private const val MAX_CATALOG_PAGE=100
+        internal const val MAX_CATALOG_PAGE=100
         /** 窗口之间的最小间隔，避开平台的弹幕频控。 */
         private const val COMMENT_THROTTLE_MS=180L
         /** 搜索高亮文本可能带 `<em>` 标记；只用于兜底标题，不能让它污染季号解析。 */

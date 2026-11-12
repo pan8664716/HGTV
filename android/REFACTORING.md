@@ -395,7 +395,31 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 18：ContentRepository 榜单与分类链路迁移
+
+状态：已完成。
+
+- 将榜单取数、分类分页、分类 offset/limit、分类请求签名、空响应换线路、备用设备
+  重试和分类 URL 移到 `ContentRepositoryCatalog.kt`。
+- `rankRaw`、`rank`、`homeFeed`、`category`、`categoryFeed` 仍保留在
+  `ContentRepository`，公开签名、默认参数和返回结构不变。
+- 分类推荐流的 `has_more` 补偿、首屏/后续页重试次数、429 与 4xx 分支、日志和线程中断
+  处理均按原实现迁移。
+- 只将跨文件扩展所需的成员调整为 `internal`，没有新增公开 API。
+- `ContentRepository.kt` 从 3955 行降到 3727 行；`ContentRepositoryCatalog.kt` 为 235 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:core:compileKotlin` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，与上一批一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续迁移 `ContentRepository` 的榜单、分类和推荐编排大段，保留公开方法包装、分页、
-游标、重试、并发和曝光上报时序。详情/作者缓存与发行方并发探测保持在独立文件。
+继续迁移 `ContentRepository` 的推荐流与曝光上报编排，保留公开方法包装、会话 UUID、
+游标推进、配置刷新、重试和上报时序。详情/作者缓存与分类取数保持在独立文件。
