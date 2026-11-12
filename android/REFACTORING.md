@@ -229,7 +229,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 10：PhonePlayer 窗口与视图辅助
+
+状态：已完成。
+
+- 新增 `PhonePlayerViewSupport`，承接横屏 chip、间距、进度条染色、方向申请、自动旋转、画面模式和常亮标志。
+- 横屏方向异常日志、API 21 染色保护、画面模式和推荐页 Surface 联动保持不变。
+- 播放器、手势、生命周期、设置面板、选集和弹幕时钟仍留在原 Activity。
+- `PhonePlayerActivity.kt` 从 4735 行降到 4703 行；`PhonePlayerViewSupport.kt` 为 87 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 10 使用显式宿主接口抽 `PhoneFeedAdapter`，只移动 View 创建、绑定和回调装配，
-不移动播放器、推荐请求、预取、计时或页面交接。继续按既定计划执行。
+批次 11 处理 `PhonePlayerActivity` 的横竖屏选集面板构建，保持页大小、列数、边缘翻页、
+点击换集和浮层关闭顺序不变。继续按既定计划执行。

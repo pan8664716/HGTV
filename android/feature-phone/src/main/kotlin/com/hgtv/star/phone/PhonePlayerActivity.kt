@@ -1141,35 +1141,14 @@ class PhonePlayerActivity : PhoneActivity() {
      * 四颗并排时原来要吃掉横屏一半的宽度，把左边的常驻摘要挤得只剩几个字。
      * 它们都在这一行的最右侧（左边摘要 `weight=1` 顶着），因此「靠右」是布局本身就保证的。
      */
-    private fun chip(text: String, onClick: () -> Unit): TextView = TextView(this).apply {
-        this.text = text
-        setTextColor(Color.WHITE)
-        phoneSize(11)
-        gravity = Gravity.CENTER
-        setPadding(dp(8), dp(4), dp(8), dp(4))
-        // 常态半透明白、按下更亮：点下去要有反馈，否则用户会以为没点中而连点。
-        background = PhoneSheet.pillBackground(
-            0x33FFFFFF, 0x73FFFFFF, dp(11).toFloat()
-        )
-        setOnClickListener { onClick() }
-    }
+    private fun chip(text: String, onClick: () -> Unit): TextView =
+        PhonePlayerViewSupport.chip(this,text,onClick)
 
-    private fun chipLp(left: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(
-        dp(64), ViewGroup.LayoutParams.WRAP_CONTENT
-    ).apply { leftMargin = dp(left) }
+    private fun chipLp(left: Int): LinearLayout.LayoutParams =
+        PhonePlayerViewSupport.chipLp(this,left)
 
     /** 进度条染色是 API 21 才有的，19/20 上保持系统默认（不影响功能）。 */
-    private fun tintSeekBar(bar: SeekBar) {
-        if (Build.VERSION.SDK_INT < 21) return
-        runCatching {
-            bar.progressTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
-            bar.secondaryProgressTintList = android.content.res.ColorStateList.valueOf(
-                0x66FFFFFF
-            )
-            bar.thumbTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
-            bar.progressBackgroundTintList = android.content.res.ColorStateList.valueOf(0x4DFFFFFF)
-        }
-    }
+    private fun tintSeekBar(bar: SeekBar) = PhonePlayerViewSupport.tintSeekBar(bar)
 
     // ---------------------------------------------------------------- 下层画面
 
@@ -1432,11 +1411,8 @@ class PhonePlayerActivity : PhoneActivity() {
      *
      * 返回 false = 这次没切成。
      */
-    private fun requestOrientation(value: Int): Boolean = runCatching {
-        requestedOrientation = value
-    }.onFailure {
-        android.util.Log.w("HGTV-PHONE", "orientation $value rejected: ${it.message}")
-    }.isSuccess
+    private fun requestOrientation(value: Int): Boolean =
+        PhonePlayerViewSupport.requestOrientation(this,value)
 
     /**
      * 系统「自动旋转屏幕」是否打开。
@@ -1444,11 +1420,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 播放页的方向策略完全按它分岔（见 [enterFullscreen] / [exitFullscreen]）：
      * 开着就跟随传感器，关着就只认用户的「全屏」点击。
      */
-    private fun autoRotateEnabled(): Boolean = runCatching {
-        android.provider.Settings.System.getInt(
-            contentResolver, android.provider.Settings.System.ACCELEROMETER_ROTATION, 0
-        ) == 1
-    }.getOrDefault(false)
+    private fun autoRotateEnabled(): Boolean = PhonePlayerViewSupport.autoRotateEnabled(this)
 
     /**
      * 退出横屏：先锁竖屏让窗口立刻转过来，再把方向交还系统策略。
@@ -4402,10 +4374,7 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     private fun applyFrameMode(mode: VideoFrameMode) {
-        val target = mode.toFit().resizeMode()
-        page.setResizeMode(target)
-        landscapeVideo.resizeMode = target
-        if (feedUnderlay) PhoneSession.setFeedVideoResize(target)
+        PhonePlayerViewSupport.applyFrameMode(page,landscapeVideo,mode,feedUnderlay)
     }
 
     // ---------------------------------------------------------------- 选集
@@ -4571,8 +4540,7 @@ class PhonePlayerActivity : PhoneActivity() {
         val on = foreground && !isFinishing && !isDestroyed && !sleepStopped &&
             errorCard == null && exo?.playWhenReady == true &&
             exo.playbackState != Player.STATE_ENDED
-        if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        PhonePlayerViewSupport.keepScreenOn(window,on)
     }
 
     /**
