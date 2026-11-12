@@ -325,7 +325,30 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 15：TV 播放中控大块拆分
+
+状态：已完成。
+
+- `MainActivityPlayback.kt` 从 2175 行拆为四个职责文件。
+- 使用 `@JvmMultifileClass` 保留 `MainActivityPlaybackKt` 静态 facade。
+- 队列、预取、选集推进：`MainActivityPlayback.kt`，770 行。
+- 网络恢复、失败归因、自动重试与错误页：`MainActivityPlaybackRecovery.kt`，709 行。
+- HUD、媒体会话、播放控制与睡眠停止：`MainActivityPlaybackHud.kt`，301 行。
+- 画面几何、清晰度/解码/弹幕选择器与 seek：`MainActivityPlaybackGeometry.kt`，489 行。
+- 只将跨文件使用的 `resetBudgetsForManualRetry` 从 private 调整为 internal，行为未变。
+- 编译产物已确认仍包含 `MainActivityPlaybackKt` 和 `MainActivityPlaybackKt$WhenMappings`。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-TV `MainActivity` 的顶部区域、焦点和生命周期控制器与 Activity 私有状态高度耦合，
-需要单独设计状态所有权后再拆。当前没有继续搬移，避免改变焦点和页面恢复行为。
+继续对 `ContentRepository` 做职责级大块拆分，优先账号 API 与详情/作者大段，
+保留公开方法包装和反射入口。顶部区域与焦点逻辑仍保持原位。
