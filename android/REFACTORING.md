@@ -369,7 +369,33 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 17：ContentRepository 详情与作者作品迁移
+
+状态：已完成。
+
+- 将详情、相关作品、作者作品编排、发行方作品探测、补季和作者补齐整体移到
+  `ContentRepositoryDetail.kt`。
+- `detail`、`related`、`authorWorks` 仍保留在 `ContentRepository` 上，公开签名和
+  委托顺序不变。
+- 详情空响应改 GET 重试、详情缓存写入、相关作品缓存、作者作品并发探测、分页重试、
+  补季并发、超时和异常吞掉范围均按原实现迁移。
+- 为跨文件扩展开放了详情/作者链路所需的 `internal` 成员；没有增加新的公开 API。
+- `ContentRepository.kt` 从 4629 行降到 3955 行；`ContentRepositoryDetail.kt` 为 695 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- 聚合 `lintDebug` 仍被 `shared`、`feature-phone`、`feature-tv` 既有
+  `MissingPermission` 错误阻断，本批未改动这些文件。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过；`HEAD` 基线为 25 失败、28 跳过，
+  没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续迁移 `ContentRepository` 的详情、相关作品和作者作品大段，保留公开方法包装、
-详情缓存、作者缓存和发行方并发探测。顶部区域与焦点逻辑仍保持原位。
+继续迁移 `ContentRepository` 的榜单、分类和推荐编排大段，保留公开方法包装、分页、
+游标、重试、并发和曝光上报时序。详情/作者缓存与发行方并发探测保持在独立文件。
