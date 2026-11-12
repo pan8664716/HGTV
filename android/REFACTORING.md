@@ -993,6 +993,31 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 42：手机信息流观看与曝光迁移
+
+状态：已完成。
+
+- 将推荐观看结算、曝光 / 起播上报和批量模型预取移到
+  `player/PhoneFeedMetrics.kt`。
+- 保留曝光内容类型补偿、当前集映射、首帧延迟、批量 key、播放代次、候选上限和
+  DetailCache 优先顺序。
+- 新增列表、隐藏状态、播放代次、详情、Store / Playback、Scope 与批量任务等
+  `internal` 投影。
+- `PhoneFeedView.kt` 从 2263 行降到 2198 行；`PhoneFeedMetrics.kt` 为 86 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 迁移后的观看结算、曝光与批量预取逻辑按字段投影归一化后与迁移前一致。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `PhoneFeedView.kt` 的推荐观看计时、曝光与批量模型预取职责。
+继续拆 `PhoneFeedView.kt` 的相邻预热与停留调度职责。

@@ -99,8 +99,10 @@ class PhoneFeedView(
 ) : FrameLayout(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    internal val feedScope get()=scope
     private val playbackSource by lazy { PlaybackSourceCoordinator(PhoneServices.repository(context)) }
     private val items get()=recommendStore.items
+    internal val feedItems get()=items
     private val adapter = FeedAdapter()
     private val list = VerticalPagerList(context)
 
@@ -129,6 +131,7 @@ class PhoneFeedView(
      * 用户看到的是「换个体裁，画面先是别的剧，再跳回来」。
      */
     private var hidden = true
+    internal val feedHidden get()=hidden
 
     /** 当前这一屏播放信息的自动收起截止时刻与代次。 */
     private var chromeHideAt = 0L
@@ -164,12 +167,14 @@ class PhoneFeedView(
         get()=recommendWatchStart
         set(value) { recommendWatchStart=value }
     private var playToken = 0
+    internal val feedPlayToken get()=playToken
     private var boundPage: PhoneVideoPage? = null
     private var paused = false
     /** 播放意图变化（起播 / 暂停 / 收起）：宿主据此同步屏幕常亮。 */
     var onPlayStateChanged: (() -> Unit)? = null
     /** 正在播那一屏的详情：片尾自动进正片要用它取「还有没有下一集」。 */
     private var playingDetail: Detail? = null
+    internal val feedPlayingDetail get()=playingDetail
     /** 已经因为片尾切去正片：防止 STATE_ENDED 重入时再开一个 Activity。 */
     private var advancing = false
     /** 上一次进入「交接 / 换下一部」的时刻：`advancing` 超时后自动失效（见 `onEpisodeEnded`）。 */
@@ -272,6 +277,12 @@ class PhoneFeedView(
     /** 推荐页起播后的 6 个模型批量预取（当前剧下一集 + 后 5 部不同剧）。 */
     private var recommendBatchKey = ""
     private var recommendBatchJob: Job? = null
+    internal var feedRecommendBatchKey: String
+        get()=recommendBatchKey
+        set(value) { recommendBatchKey=value }
+    internal var feedRecommendBatchJob: Job?
+        get()=recommendBatchJob
+        set(value) { recommendBatchJob=value }
 
     private val hint = TextView(context).apply {
         setTextColor(Color.WHITE)
@@ -1345,91 +1356,15 @@ class PhoneFeedView(
         schedulePreload(slideCache.firstFrameDelay())
     }
 
-    /** 与电视端同一套「快速划过 / 划走 / 看过」判定。 */
-    private fun settleRecommendWatch() {
-        val played = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L)
-        runCatching { recommendPlayback.settleWatch(played) }
-    }
     internal fun settleRecommendWatchForNavigation() = settleRecommendWatch()
     internal fun feedChildAdapterPosition(page: PhoneVideoPage): Int =
         list.getChildAdapterPosition(page)
-
-    private fun reportRecommendImpression(index: Int) {
-        if (index != playingIndex) return
-        val series = items.getOrNull(index) ?: return
-        runCatching {
-            val exposureSeries=series.copy(
-                contentType=series.contentType.takeIf { it>0 }
-                    ?: playingDetail?.playback?.contentType
-                    ?: 0,
-            )
-            recommendPlayback.reportImpression(exposureSeries)
-            recommendPlayback.reportPlayStart(
-                series,
-                episodeId=currentEpisodeIds[index].orEmpty(),
-                episodeIndex=currentEpisodeIndex[index] ?: -1,
-                positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
-                durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
-            )
-        }
-    }
-
-    /**
-     * 推荐页出画面后，用一次批量接口预取 6 个模型：
-     * 当前剧下一集 + 后面 5 部不同推荐剧的首集。
-     */
-    private fun scheduleRecommendBatchModels(anchor: Int) {
-        if (hidden || anchor != playingIndex) return
-        val data = playingDetail ?: return
-        val current = currentEpisodeIndex[anchor] ?: return
-        val nextId = data.episodes.getOrNull(current + 1).orEmpty()
-        val candidates = (anchor + 1 until items.size)
-            .mapNotNull(items::getOrNull)
-            .filter { it.id != data.series.id }
-            .distinctBy { it.id }
-            .take(8)
-        val key = "${data.series.id}:$nextId:${candidates.joinToString(",") { it.id }}"
-        if (recommendBatchKey == key && recommendBatchJob?.isActive == true) return
-        recommendBatchJob?.cancel()
-        recommendBatchKey = key
-        val token = playToken
-        recommendBatchJob = scope.launch {
-            delay(slideCache.firstFrameDelay())
-            if (hidden || anchor != playingIndex || token != playToken) return@launch
-            val repo = PhoneServices.repository(context)
-            val ids = linkedSetOf<String>()
-            if (nextId.isNotBlank()) ids += nextId
-            val target = if (nextId.isBlank()) 5 else 6
-            withContext(Dispatchers.IO) {
-                for (series in candidates) {
-                    if (ids.size >= target) break
-                    val item = runCatching { com.hgtv.star.core.DetailCache.load(series.id) }.getOrNull()
-                        ?: runCatching { repo.detail(series.id) }.getOrNull()
-                        ?: continue
-                    val first = item.episodes.firstOrNull() ?: continue
-                    ids += first
-                }
-                if (ids.isNotEmpty()) {
-                    runCatching { repo.prefetchModels(ids.toList(), data.playback) }
-                }
-            }
-            if (com.hgtv.star.shared.BuildConfig.DEBUG) {
-                android.util.Log.i(
-                    "HGTV-PHONE",
-                    "recommend batch models=${ids.size} anchor=$anchor",
-                )
-            }
-            if (recommendBatchKey == key) {
-                recommendBatchKey = ""
-                recommendBatchJob = null
-            }
-        }
-    }
 
     // ------------------------------------------------------------------ 相邻预热
 
     /** 与电视端 `SlideCacheManager` 同一份窗口 / 快滑 / 回看规则（纯逻辑，`:core` 里带单测）。 */
     private val slideCache = com.hgtv.star.core.SlideCacheManager()
+    internal fun feedFirstFrameDelay(): Long = slideCache.firstFrameDelay()
 
     /** 上一次排定窗口预热的时间（节流用：连着滑几屏不必每一屏都排一次）。 */
     private var preloadAt = 0L
