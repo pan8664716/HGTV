@@ -134,6 +134,12 @@ class Library(context: Context) {
         failed = { Log.w("HGTV", "Account cache commit failed") })
     private val homeWrites = LatestWriteQueue<String, () -> Any?>("hgtv-home-write", write = { batch -> commit(homePrefs, batch) },
         failed = { Log.w("HGTV", "Home cache commit failed") })
+    private val homeCache = LibraryHomeCacheStore(homeWrites)
+    private val accountCacheStore = LibraryAccountCacheStore(
+        accountWrites,
+        ::cacheIdentityKey,
+        ::cacheIdentityAvailable,
+    )
     private var index: LibraryIndex? = null
     /**
      * 观看进度的落盘（一剧一文件，见 [ProgressStore]）。
@@ -143,15 +149,6 @@ class Library(context: Context) {
      * 换「这一部播到第几秒」。现在一次保存只写一个 0.5KB 的文件。
      */
     private val progressStore = ProgressStore(java.io.File(app.filesDir, "library/progress"))
-    /**
-     * 首页四个「热播…」剧架的缓存，按榜单分别存一份（[RankBoard]）。
-     * 首页首屏先铺缓存、再后台更新，用户不必等四个榜单都回来才看到东西。
-     */
-    private val homes = mutableMapOf<RankBoard, CatalogPage>()
-    private val homeSavedAt = mutableMapOf<RankBoard, Long>()
-    /** 内存里的账号快照；[accountStamp] 是它对应的账号指纹（换账号即作废）。 */
-    private var accountCached: AccountCacheEntry? = null
-    private var accountStamp = ""
     private var loading = false
     private var closed = false
     /**
@@ -261,7 +258,7 @@ class Library(context: Context) {
                 val oldKeys = mutableListOf<String>()
                 val homeStarted=StartupTrace.now()
                 RankBoard.entries.forEach { board ->
-                    val key = homeCacheKey(board)
+                    val key = homeCache.cacheKey(board)
                     val legacy = values[key] as? String
                     val raw = homePrefs.getString(key, null) ?: legacy.orEmpty()
                     CatalogSnapshot.decode(raw, now)?.let { page ->
@@ -274,7 +271,7 @@ class Library(context: Context) {
                 StartupTrace.done("library.homeCache.decode",homeStarted, "boards=${cached.size}")
                 // 首页缓存按榜单分开之后，旧版留下的键（`home-short` 这种）永远不会再被读到：
                 // 一起清掉，别让一份不再更新的快照一直躺在磁盘上。
-                val liveKeys = RankBoard.entries.map(::homeCacheKey).toSet()
+                val liveKeys = RankBoard.entries.map(homeCache::cacheKey).toSet()
                 homePrefs.all.keys.filter { it.startsWith("home-") && it !in liveKeys }.forEach(migration::remove)
                 // Only remove the legacy copies after the separate cache has been committed.
                 val committed = migration.commit()
@@ -286,7 +283,7 @@ class Library(context: Context) {
                 // **未登录时不认磁盘上那份快照**：退出登录 / 掉线 / 清凭证之后，磁盘上的
                 // `account` 还留着上一个账号的昵称、收藏、历史。不判登录态就把它读回来，
                 // 界面会「一打开就是登录状态」——正是用户看到的那个现象（缓存里的资料，
-                // 不是真会话）。这里与 `accountFingerprint()` 同一条判据：没有 cookie 就没有账号。
+                // 不是真会话）。这里与账号缓存指纹同一条判据：没有 cookie 就没有账号。
                 val signed = sessionPrefs.getString("account-cookie", "").orEmpty().contains("sessionid=")
                 val accountStarted=StartupTrace.now()
                 val account = if(!signed) null else accountPrefs.getString("account", null)?.let { raw ->
@@ -307,9 +304,9 @@ class Library(context: Context) {
                 val errors = errorCallbacks.toList(); errorCallbacks.clear()
                 result.onSuccess { (local, account) ->
                     val (loaded, cached, stamps) = local
-                    index = loaded; homes.putAll(cached); homeSavedAt.putAll(stamps)
-                    accountCached = account
-                    accountStamp = accountFingerprint()
+                    index = loaded
+                    homeCache.replace(cached, stamps)
+                    accountCacheStore.replace(account)
                     ready.forEach { it() }
                     StartupTrace.done("library.load.total",traceStarted, "result=success")
                 }.onFailure { failure ->
@@ -498,8 +495,7 @@ class Library(context: Context) {
     }
     fun cachedHome(board: RankBoard): CatalogPage? {
         state()
-        val age = System.currentTimeMillis() - (homeSavedAt[board] ?: return null)
-        return homes[board].takeIf { age in 0..7 * 24 * 60 * 60 * 1000L }
+        return homeCache.cached(board)
     }
     /**
      * 首页榜单缓存键。
@@ -507,8 +503,6 @@ class Library(context: Context) {
      * 推荐榜从旧的「上新」流换成了全站推荐热度榜，必须换一个键，避免升级后首屏先铺出
      * 旧的 `online_time` 缓存；其余三个榜的内容与键都保持原样。
      */
-    private fun homeCacheKey(board: RankBoard): String =
-        "home-${board.storedValue}${if(board==RankBoard.NEW) "-recommend-v2" else ""}"
     fun cacheHome(
         board: RankBoard,
         items: List<Series>,
@@ -517,14 +511,7 @@ class Library(context: Context) {
     ) {
         if(discarding) return
         state()
-        if (items.isEmpty()) return
-        val now = System.currentTimeMillis()
-        val retained = items.take(30).map { it.copy(description = it.description.take(1500)) }
-        homes[board] = CatalogPage(retained, hasMore, ranking)
-        homeSavedAt[board] = now
-        homeWrites.submit(mapOf(homeCacheKey(board) to {
-            CatalogSnapshot.encode(retained, hasMore, now, ranking)
-        }))
+        homeCache.cache(board,items,hasMore,ranking)
     }
     /**
      * 账号侧数据的缓存（内存那一份，启动时从磁盘读回）。
@@ -556,15 +543,7 @@ class Library(context: Context) {
 
     fun accountCache(): AccountCacheEntry? {
         state()
-        // 指纹对不上就是换了账号（或退出了）：那份缓存不属于当前登录态，直接丢掉。
-        if (accountStamp != accountFingerprint()) { accountCached = null; accountStamp = accountFingerprint() }
-        // 没有任何可隔离的缓存身份时**一律返回 null**。
-        //
-        // 只比指纹是不够的：退出登录后 `account-cookie` 被清空，指纹是空串，而 `accountStamp`
-        // 在 [load] 里也是按空串算的——两边相等，于是「上一个账号的快照」被当成当前账号的缓存
-        // 返回，界面又铺出昵称与列表。用户点过退出、重开却还是登录状态，就是这么来的。
-        if (accountCached != null && !cacheIdentityAvailable()) { accountCached = null; return null }
-        return accountCached
+        return accountCacheStore.current()
     }
     /**
      * 落盘一份账号快照。
@@ -579,34 +558,12 @@ class Library(context: Context) {
         // 下次启动会被当成已登录的内容铺出来（见 [accountCache]）。
         if(!cacheIdentityAvailable()) return
         state()
-        val entry = AccountCacheEntry(AccountSnapshot.cacheable(data), now)
-        accountCached = entry
-        accountStamp = accountFingerprint()
-        // 序列化交给落盘队列的工作线程（它本来就在后台）：主线程只换内存里那一份引用，
-        // 不为了写缓存而在 UI 线程上拼一份上百 KB 的 JSON。
-        // 关掉之后再进来的那次（Activity 已经销毁、网络回调才落地）不该抛异常：
-        // 磁盘上那一份旧缓存还能用，丢掉这一次写入没有代价。
-        runCatching { accountWrites.submit(mapOf("account" to { AccountSnapshot.encode(entry.data, entry.savedAt) })) }
+        accountCacheStore.cache(data,now)
     }
     /** 清掉账号快照（退出登录、换账号、导入新凭据时调用）。 */
     fun clearAccountCache() {
         if(discarding) return
-        accountCached = null
-        accountStamp = accountFingerprint()
-        runCatching { accountWrites.submit(mapOf("account" to { null })) }
-    }
-    /**
-     * 当前账号的指纹：拿 Cookie 串算一个稳定的短哈希。
-     *
-     * 只用它判「缓存是不是这个账号的」——不落盘 Cookie 本身（凭据已经在 [sessionPrefs] 里），
-     * 也不参与任何请求签名。
-     */
-    private fun accountFingerprint(): String {
-        val identity = cacheIdentityKey()
-        if (identity.isBlank()) return ""
-        var hash = 1125899906842597L
-        identity.forEach { char -> hash = 31 * hash + char.code }
-        return "%016x".format(hash)
+        accountCacheStore.clear()
     }
     var maxQuality: Int
         get() = state().settings.quality

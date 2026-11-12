@@ -171,7 +171,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 7：Library 首页与账号缓存
+
+状态：已完成。
+
+- 新增 `LibraryHomeCacheStore`，承接首页榜单内存快照、过期判断、截断和写队列提交。
+- 新增 `LibraryAccountCacheStore`，承接账号快照、指纹隔离、退出后失效和写队列提交。
+- SharedPreferences 文件名、键、JSON 格式、7 天首页有效期、写队列和加载时机保持不变。
+- `Library.loadAsync`、`state()` 前置校验、主线程回调和磁盘迁移仍在原类。
+- `Library.kt` 从 2027 行降到 1984 行；`LibraryCacheStores.kt` 为 102 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 7 处理 `Library` 的账号缓存、首页缓存和持久化委托，保留全部 SharedPreferences
-键、写入队列、迁移和回调线程。继续按既定计划执行。
+批次 8 处理 `Library` 的设备身份、注册状态和推荐偏好存储，保留会话镜像、迁移键、
+写队列和所有持久化语义。继续按既定计划执行。
