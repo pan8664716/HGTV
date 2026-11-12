@@ -1,0 +1,79 @@
+# Android 行为等价重构记录
+
+> 基线提交：`140665f89ea816e4a38da50d3aa9428ecb722ead`
+> 重构分支：`refactor/from-140665f`
+> 最后更新：2026-11-13
+
+本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
+`docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
+
+## 硬约束
+
+- 不改变 UI、布局、资源、导航、交互、权限或可见文案。
+- 不改变网络、缓存、数据库、序列化、路由、埋点、日志语义、线程或生命周期行为。
+- 不升级依赖、Gradle、数据库 schema 或混淆规则。
+- 不修改版本号和 versionCode；不推送、不创建 Release。
+- 保留公开类名、资源 ID、XML ID 和方法签名。
+- 保留 `baseline-prof.txt` 引用的文件级 JVM facade。
+- `CodecProbe` 反射依赖 `ContentRepository.videoModel(1)` 和 `ContentRepository.text(2)`，不得改名或改变参数数量。
+
+## 基线验证
+
+构建必须使用 JDK 17；本机默认 JDK 26 会在 Gradle 启动阶段失败。
+
+```bash
+cd android
+JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
+  --continue :core:test :shared:testDebugUnitTest :app:lintDebug :app:assembleDebug
+```
+
+基线结果：
+
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无 `Error` / `Fatal`，仍有现有 Warning。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 435 例中 25 失败、28 跳过，基线本身为红。
+- 基线失败主要位于 `ContentRepositoryTest`、`PlaybackCacheTest`、
+  `SessionInterceptorTest`、`SignerTest`。
+- 后续批次不得新增失败；当前比较基准是 25 个失败、28 个跳过。
+
+## 当前大文件
+
+生产 Kotlin 中仍有 6 个文件超过 2000 行：
+
+| 文件 | 基线行数 |
+| --- | ---: |
+| `core/.../content/ContentRepository.kt` | 6041 |
+| `feature-phone/.../PhonePlayerActivity.kt` | 4735 |
+| `feature-tv/.../MainActivity.kt` | 2821 |
+| `feature-phone/.../PhoneFeedView.kt` | 2387 |
+| `feature-tv/.../MainActivityPlayback.kt` | 2232 |
+| `shared/.../Library.kt` | 2027 |
+
+## 批次记录
+
+### 批次 1：内容模型与目录整理
+
+状态：已完成。
+
+- 将 `ContentRepository.kt` 移到 `core/.../content/`，Kotlin 包名保持不变。
+- 将内容模型原样移到 `ContentModels.kt`，公开类型全限定名不变。
+- `CATALOG_FIRST_PAGE_SIZE` 和文件级顶层工具函数保留在原文件，以维持
+  `ContentRepositoryKt` facade。
+- `ContentRepository.kt` 从 6041 行降到 5816 行；`ContentModels.kt` 为 235 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 模型声明与基线逐行比较，除有意保留的 `CATALOG_FIRST_PAGE_SIZE` 外一致。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 通过。
+- `:core:test` 仍为 435 例、25 失败、28 跳过，与基线一致。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
+## 下一批
+
+批次 2 只处理 `ContentRepository` 的榜单、分类和推荐纯 JSON 解析，保留所有网络调用、
+重试顺序、缓存状态和公开方法。未获确认前不进入下一批。
