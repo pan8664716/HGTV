@@ -1316,6 +1316,35 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 55：Library 账号设备 JSON 迁移
+
+状态：已完成。
+
+- 将账号设备 JSON 读取与保存移到 `LibraryAccountDevice.kt`；
+  `accountDevice` / `saveAccountDevice` 保留原公开签名并委托。
+- 保留空值过滤、JSON 字段、同步 apply 与镜像更新。
+- `Library.kt` 从 1747 行降到 1730 行；`LibraryAccountDevice.kt` 为 31 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
+### 夜间阶段摘要（批次 51–55）
+
+- 批次 51–55 全部完成并独立提交，Library 的 Cookie、pending profile、账号凭据与设备档案已拆分。
+- `Library.kt` 从 1886 行降到 1730 行；新增文件均低于 100 行。
+- 每批聚合编译、Lint、共享单测与 Debug APK 均通过，无新增 Lint Error / Fatal。
+- `:core:test` 最近为 435 例、25 失败、28 跳过，与基线一致。
+- 下一阶段继续 Library 身份读写，并补齐 PhonePlayer 横竖屏、PhoneFeed 与 ContentRepository 剩余拆分。
+
 ## 下一批
 
-继续拆 `Library.kt` 的账号设备 JSON 读写职责。
+继续拆 `Library.kt` 的设备身份读写与注册结果持久化职责。

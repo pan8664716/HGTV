@@ -1081,23 +1081,10 @@ class Library(context: Context) {
      * `device_profile.json` 一致，导入那个文件即可整份灌进来。
      */
     fun accountDevice(): Map<String,String> {
-        val raw = sessionPrefs.getString("account-device", "").orEmpty()
-        if (raw.isBlank()) return emptyMap()
-        return runCatching {
-            val json = org.json.JSONObject(raw)
-            buildMap { for (key in json.keys()) json.optString(key).takeIf { it.isNotBlank() }?.let { put(key, it) } }
-        }.getOrDefault(emptyMap())
+        return accountDeviceImpl()
     }
     fun saveAccountDevice(device: Map<String,String>) {
-        if(discarding) return
-        val clean = device.filterValues { it.isNotBlank() }
-        if (clean.isEmpty()) return
-        val json = org.json.JSONObject()
-        clean.forEach { (key, value) -> json.put(key, value) }
-        sessionPrefs.edit().putString("account-device", json.toString()).apply()
-        // 这份档案是**写接口一致性判定**用的（平台拿它比对请求头里的机型 / cdid 那一套），
-        // 重装后会话能不能真的用起来就看它有没有跟着回来，所以一并镜像。
-        mirror.put("account-device",json.toString())
+        saveAccountDeviceImpl(device)
     }
     var autoNext: Boolean
         get() = state().settings.autoNext
