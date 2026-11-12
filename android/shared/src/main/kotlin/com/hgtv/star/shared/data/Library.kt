@@ -838,16 +838,13 @@ class Library(context: Context) {
      * 「升级之后什么都放不了」。因此失败只记一个标记，旧身份继续用，下一次再换。
      */
     fun markRegistrationPending() {
-        if(discarding) return
-        sessionPrefs.edit().putBoolean("registration-pending",true).apply()
+        markRegistrationPendingImpl()
     }
     fun clearRegistrationPending() {
-        if(discarding) return
-        sessionPrefs.edit().remove("registration-pending").apply()
+        clearRegistrationPendingImpl()
     }
     fun registrationPending(): Boolean {
-        ensureIdentityLayout()
-        return sessionPrefs.getBoolean("registration-pending",false) || pendingProfile()!=null
+        return registrationPendingImpl()
     }
     /**
      * 生成一条只用于备用播放设备注册的随机档案。
@@ -855,17 +852,10 @@ class Library(context: Context) {
      * 不改写主设备档案和主身份；返回值只交给持久备用池。
      */
     fun freshPlaybackBackupProfile(): Map<String,String> {
-        return freshDeviceProfile("playback_backup")
+        return freshPlaybackBackupProfileImpl()
     }
     private fun freshDeviceProfile(source: String): Map<String,String> {
-        val base=deviceProfile()
-        if(base.isEmpty()) return emptyMap()
-        return LinkedHashMap(base).apply {
-            put("cdid",OfficialDeviceIds.cdid())
-            put("openudid",OfficialDeviceIds.openudid(null))
-            put("openudid-source",source)
-            put("clientudid",OfficialDeviceIds.clientudid())
-        }
+        return freshDeviceProfileImpl(source)
     }
     /** 落盘注册结果；传空表示清除（下次启动重新注册）。 */
     fun saveDeviceIdentity(

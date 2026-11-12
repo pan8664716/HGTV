@@ -1293,6 +1293,29 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 54：Library 注册状态与备用档案迁移
+
+状态：已完成。
+
+- 将注册待刷新标记的写入 / 清理 / 查询和备用播放档案生成移到
+  `LibraryRegistrationState.kt`。
+- `markRegistrationPending`、`clearRegistrationPending`、`registrationPending`、
+  `freshPlaybackBackupProfile` 保留原公开签名。
+- 保留身份布局检查、pending profile 判据、随机 cdid / clientudid / openudid 规则。
+- `Library.kt` 从 1770 行降到 1747 行；`LibraryRegistrationState.kt` 为 45 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `Library.kt` 的设备注册状态与身份读写职责。
+继续拆 `Library.kt` 的账号设备 JSON 读写职责。
