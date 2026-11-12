@@ -69,7 +69,7 @@ internal fun PhoneFeedView.startProgressTicker() {
                 // 「卡在这一集末尾，不往下走」。每 500ms 补一次，`onEpisodeEnded` 自己
                 // 有 `paused` / `advancing` / 位置复核三道闸，重复调用是安全的。
                 if (exo.playbackState == Player.STATE_ENDED && feedPlayingIndex >= 0) {
-                    onEpisodeEndedForClock(feedPlayingIndex)
+                    onEpisodeEnded(feedPlayingIndex)
                 }
             }
             feedPostDelayed(this, 500)

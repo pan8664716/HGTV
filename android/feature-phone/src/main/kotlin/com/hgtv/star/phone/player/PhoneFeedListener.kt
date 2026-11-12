@@ -47,7 +47,7 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
                 reportRecommendImpression(index)
                 scheduleRecommendBatchModels(index)
             }
-            if (state == Player.STATE_ENDED) onEpisodeEndedForClock(index)
+            if (state == Player.STATE_ENDED) onEpisodeEnded(index)
         }
 
         override fun onRenderedFirstFrame() {

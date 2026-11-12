@@ -1143,6 +1143,30 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 48：手机信息流片尾推进与交接迁移
+
+状态：已完成。
+
+- 将片尾复核、防重入、下一集正式播放交接、预热挂源和最后一集换片移到
+  `player/PhoneFeedAdvance.kt`。
+- 保留 5 秒推进保护、2 秒片尾余量、`beginHandoff` / `takeOver` / `onHidden` 顺序、
+  原进度上报和 `noTransition` 导航。
+- 新增 advancing 状态、保护时限与用户倍速的 `internal` 投影。
+- `PhoneFeedView.kt` 从 1806 行降到 1707 行；`PhoneFeedAdvance.kt` 为 126 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译缺少 `swapMediaSource` import，补齐并修正监听调用后重跑通过；未改交接语义。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `PhoneFeedView.kt` 的片尾推进与预热交接职责，再转入 `Library.kt`。
+开始拆 `Library.kt` 的独立持久化职责；先盘点 JSON / 数据库 / 缓存边界，无法证明安全则跳过。
