@@ -69,6 +69,14 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
         contentDescription = "搜索"
         setOnClickListener { (customAction ?: onSearch)?.invoke() }
     }
+    private val extraActions = LinearLayout(context).apply {
+        orientation = HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+    }
+    private val actionRow = LinearLayout(context).apply {
+        orientation = HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+    }
     private val chipRow = LinearLayout(context).apply {
         orientation = HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -94,8 +102,14 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
             if (compact) 0 else context.dp(2),
         )
 
+        actionRow.addView(extraActions, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, actionSize
+        ))
+        actionRow.addView(actionBox, LinearLayout.LayoutParams(actionSize, actionSize))
         mainRow.addView(tabScroll, LinearLayout.LayoutParams(0, context.dp(if (compact) 24 else 34), 1f))
-        mainRow.addView(actionBox, LinearLayout.LayoutParams(actionSize, actionSize))
+        mainRow.addView(actionRow, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.WRAP_CONTENT, actionSize
+        ))
         addView(mainRow, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, context.dp(if (compact) 24 else 34)
         ))
@@ -144,6 +158,24 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
         customAction = onClick
     }
 
+    /** 主动作左侧追加一枚图标：右侧动作较多时仍保持固定尺寸，不挤压标题区。 */
+    fun setExtraActions(actions: List<Triple<PhoneGlyph.Kind, String, () -> Unit>>) {
+        extraActions.removeAllViews()
+        val size = context.dp(if (compact) 24 else 28)
+        val glyphSize = context.dp(16)
+        actions.forEach { (kind, description, onClick) ->
+            extraActions.addView(LinearLayout(context).apply {
+                gravity = Gravity.CENTER
+                contentDescription = description
+                setOnClickListener { onClick() }
+                addView(PhoneGlyph(context, kind).apply {
+                    tint = PhoneStyle.text
+                    contentDescription = description
+                }, LinearLayout.LayoutParams(glyphSize, glyphSize))
+            }, LinearLayout.LayoutParams(size, size))
+        }
+    }
+
     /** 单行标题。 */
     fun setTitle(text: String) {
         mainSlot.removeAllViews()
@@ -179,8 +211,10 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
             val height = rowHeight.coerceAtLeast(0)
             (mainRow.layoutParams as? LinearLayout.LayoutParams)?.height = height
             (tabScroll.layoutParams as? LinearLayout.LayoutParams)?.height = height
+            (actionRow.layoutParams as? LinearLayout.LayoutParams)?.height = height
             mainRow.requestLayout()
             tabScroll.requestLayout()
+            actionRow.requestLayout()
         }
     }
 

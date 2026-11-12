@@ -69,22 +69,24 @@ class PhoneMinePage(
         setTextColor(PhoneStyle.text)
         phoneSize(if (compactTopBar) 15 else 17)
         setTypeface(typeface, android.graphics.Typeface.BOLD)
-        maxLines = 1
-        ellipsize = android.text.TextUtils.TruncateAt.END
-        maxWidth = context.dp(if (compactTopBar) 150 else 190)
+        maxLines = 2
+        ellipsize = null
     }
     private val topSub = TextView(context).apply {
         text = "点这里登录 · 记录仅保存在本机"
         setTextColor(PhoneStyle.textFaint)
         phoneSize(if (compactTopBar) 10 else 12)
         setPadding(0, context.dp(2), 0, 0)
-        maxLines = 1
-        ellipsize = android.text.TextUtils.TruncateAt.END
-        maxWidth = context.dp(if (compactTopBar) 170 else 220)
+        maxLines = 2
+        ellipsize = null
     }
     private val topAccount = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
+        layoutParams = LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        )
         setPadding(0, 0, context.dp(8), 0)
         addView(topAvatar, LinearLayout.LayoutParams(
             context.dp(if (compactTopBar) 32 else 44),
@@ -96,8 +98,9 @@ class PhoneMinePage(
             addView(topName)
             addView(topSub)
         }, LinearLayout.LayoutParams(
+            0,
             ViewGroup.LayoutParams.WRAP_CONTENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
+            1f,
         ))
         contentDescription = "账号，未登录"
         setOnClickListener { context.phoneNav().open(Route.Account) }
@@ -116,6 +119,7 @@ class PhoneMinePage(
     /** 转屏重建带来的内容快照：首次挂载直接复用，不再拉账号数据。 */
     private var restoredFeed: PhonePosterFeed.Snapshot? = initialState?.feed
     private var skipNextOnShownRefresh = initialState != null
+    private var refreshing = false
     /** 当前栏目是否处于批量选择模式；切换栏目 / 筛选或删除后退出。 */
     private var batchMode = false
     private var batchBar: LinearLayout? = null
@@ -188,12 +192,15 @@ class PhoneMinePage(
         // 栏目交给网格当第一项：它和海报共用同一个滚动容器，
         // 上滑时自然滚出屏幕，不再有独立页头的自动收起 / 展开。
         feed.setHeader(body)
-        topBar.setLeadingView(topAccount, context.dp(if (compactTopBar) 36 else 52))
+        topBar.setLeadingView(topAccount, context.dp(if (compactTopBar) 56 else 76))
         // 底部 2dp 留白收掉：账号区与栏目之间不再叠一层。
         topBar.tightenBottom()
         topBar.setAction(PhoneGlyph.Kind.SETTINGS, "设置") {
             PhoneSettingsActivity.open(context, PhoneSettingsPage.PLAYBACK)
         }
+        topBar.setExtraActions(listOf(
+            Triple(PhoneGlyph.Kind.REFRESH, "刷新数据") { refreshData() },
+        ))
         // 顶栏固定，下面整块是列表（第一项就是栏目）。
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(feed, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
@@ -266,6 +273,34 @@ class PhoneMinePage(
         render()
         // 进这一页顺手检查一次收藏更新（有 1 小时门槛，不会反复请求）。
         runCatching { monitor.check() }
+    }
+
+    /** 右上角刷新：账号、收藏更新与当前栏目都重新拉一次，避免只重画本机缓存。 */
+    private fun refreshData() {
+        if (refreshing) return
+        refreshing = true
+        android.widget.Toast.makeText(context, "正在刷新…", android.widget.Toast.LENGTH_SHORT).show()
+        if (library.isLoaded) com.hgtv.star.phone.PhoneIdentity.apply(context, library)
+        if (monitor.running) monitor.stop()
+        runCatching { monitor.check(force = true) }
+        val signedIn = runCatching { PhoneServices.repository(context).signedIn }.getOrDefault(false)
+        if (!signedIn) {
+            render()
+            refreshing = false
+            android.widget.Toast.makeText(context, "已刷新", android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        loadScope.launch {
+            val result = runCatching {
+                com.hgtv.star.shared.data.AppRuntime.accountController(context).refresh()
+            }
+            post {
+                render()
+                refreshing = false
+                val message = if (result.getOrNull()?.error == null) "已刷新" else "刷新失败，可稍后重试"
+                android.widget.Toast.makeText(context, message, android.widget.Toast.LENGTH_SHORT).show()
+            }
+        }
     }
 
     private fun render(contentSnapshot: PhonePosterFeed.Snapshot? = null) {
