@@ -946,6 +946,28 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 40：手机播放设置快捷芯片迁移
+
+状态：已完成。
+
+- 将清晰度 / 倍速 / 弹幕 / 选集芯片刷新、弹幕循环和倍速循环移到
+  `player/PhonePlayerChips.kt`。
+- 保留弹幕四档循环顺序、倍速手机端档位、落盘、提示 900ms 收起和隐藏档补拉逻辑。
+- 新增芯片、用户倍速与提示代次的 `internal` 投影，未扩大公开 API。
+- `PhonePlayerActivity.kt` 从 3688 行降到 3590 行；`PhonePlayerChips.kt` 为 98 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `PhonePlayerActivity.kt` 的横竖屏形态切换与全屏恢复辅助。
+横竖屏切换簇依赖面过大，先保留；下一批转向 `PhoneFeedView.kt` 的独立播放状态职责。

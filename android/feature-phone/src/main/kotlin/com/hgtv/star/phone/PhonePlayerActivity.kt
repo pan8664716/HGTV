@@ -188,6 +188,10 @@ class PhonePlayerActivity : PhoneActivity() {
     private lateinit var qualityChip: TextView
     private lateinit var danmakuChip: TextView
     private lateinit var episodeChip: TextView
+    internal val chipSpeed get()=speedChip
+    internal val chipQuality get()=qualityChip
+    internal val chipDanmaku get()=danmakuChip
+    internal val chipEpisode get()=episodeChip
 
     private lateinit var portraitTop: LinearLayout
     private lateinit var centerBox: FrameLayout
@@ -284,6 +288,9 @@ class PhonePlayerActivity : PhoneActivity() {
     private var chromeVisible = true
     private var userSpeed = 1f
     internal val sessionUserSpeed get()=userSpeed
+    internal var chipUserSpeed: Float
+        get()=userSpeed
+        set(value) { userSpeed=value }
     private var tempSpeed = false
     private var pendingFullscreen = false
     internal var listenerPendingFullscreen: Boolean
@@ -383,6 +390,9 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 提示的代次：换集后那句「第N集」延迟收起时，只收自己那一句。 */
     private var hintToken = 0
     internal var sourceRetryHintToken: Int
+        get()=hintToken
+        set(value) { hintToken=value }
+    internal var chipHintToken: Int
         get()=hintToken
         set(value) { hintToken=value }
 
@@ -2876,93 +2886,15 @@ class PhonePlayerActivity : PhoneActivity() {
     internal fun syncPlayInfoForProgress() = syncPlayInfo()
     internal fun prepareForProgress(episodeId: String, info: StreamInfo): RemoteVideo? =
         prepare(episodeId, info)
+    internal fun syncLandscapeSettingsInfoForChips() = syncLandscapeSettingsInfo()
+    internal fun applyDanmakuSettingsForChips() = applyDanmakuSettings()
+    internal fun loadDanmakuForChips(episodeId: String, seriesId: String) =
+        loadDanmaku(episodeId, seriesId)
+    internal fun endTempSpeedForChips() = endTempSpeed()
     internal fun bindEpisodeUiForListener(d: Detail, episodeIndex: Int, clearDanmakuOnSwitch: Boolean) =
         bindEpisodeUi(d, episodeIndex, clearDanmakuOnSwitch)
     internal fun muteBufferingUiForListener() = muteBufferingUi()
     internal fun syncChipsForListener() = syncChips()
-
-    private fun syncChips() {
-        syncLandscapeSettingsInfo()
-        speedChip.text = PlaybackSpeed.label(userSpeed)
-        qualityChip.text = "${library?.maxQuality ?: 1080}P"
-        // 弹幕那颗：显示当前档位（「弹幕 全屏」），隐藏档显示「弹幕 关」。
-        danmakuChip.text = when (library?.danmakuMode ?: com.hgtv.star.core.DanmakuMode.DEFAULT) {
-            com.hgtv.star.core.DanmakuMode.HIDDEN -> "弹幕 关"
-            com.hgtv.star.core.DanmakuMode.FULL -> "弹幕 全屏"
-            com.hgtv.star.core.DanmakuMode.TOP -> "弹幕 上方"
-            com.hgtv.star.core.DanmakuMode.SINGLE -> "弹幕 一行"
-        }
-        // **选集按钮永远显示**：之前按 `recommend` 把它藏了，而从推荐流进全屏正是最常见
-        // 的路径（`PhoneFeedView` 一律带 `EXTRA_RECOMMEND=true`），结果就是「全屏里没有选集按钮」。
-        // 文案带总数（用户要求）：`选集 3/171`，一眼知道现在在第几集、全剧多少集。
-        val total = detail?.episodes?.size ?: 0
-        episodeChip.text = if (total > 0) "选集 ${index + 1}/$total" else "选集 ${index + 1}"
-        episodeChip.visibility = View.VISIBLE
-    }
-
-    /**
-     * 弹幕快捷开关：点一次切下一档（全屏 → 上方 → 一行 → 关 → 全屏）。
-     *
-     * 与电视播放页那颗「弹幕」按钮同一职责，只是把「弹菜单再选」压成一次点击：
-     * 手机上最常见的动作就是「挡画面了，先关掉」，不该为此打开一整个设置面板。
-     * 四档循环的次序按 [com.hgtv.star.core.DanmakuMode] 的枚举顺序，落盘值与设置页共用同一份。
-     */
-    private fun cycleDanmaku() {
-        val lib = library ?: return
-        // 循环顺序在 `:core`（`DanmakuMode.next`，带单测）：两端共用同一套「越来越不挡画面」的次序。
-        val next = lib.danmakuMode.next()
-        val previous = lib.danmakuMode
-        if (com.hgtv.star.shared.BuildConfig.DEBUG) {
-            android.util.Log.i(
-                "HGTV-PHONE",
-                "danmaku chip ${previous.storedValue} -> ${next.storedValue}"
-            )
-        }
-        lib.danmakuMode = next
-        // 立刻作用在画面上：弹幕层的显示方式、以及「隐藏档不再发请求」那条规则
-        // 都由 `DanmakuView.mode` 与 `DanmakuLoader` 负责（与电视端同一份实现）。
-        page.danmakuView.mode = next
-        applyDanmakuSettings()
-        syncChips()
-        hint.text = "弹幕 ${next.label}"
-        hint.visibility = View.VISIBLE
-        hint.bringToFront()
-        val token = hintToken
-        root.postDelayed({ if (hintToken == token) hint.visibility = View.GONE }, 900)
-        // 从隐藏切回可见、而这一集还没取过弹幕：补一次请求（电视端同一判据）。
-        if (previous == com.hgtv.star.core.DanmakuMode.HIDDEN && next.showsStyle) {
-            detail?.let { d ->
-                d.episodes.getOrNull(index)?.let { loadDanmaku(it, d.series.id) }
-            }
-        }
-    }
-
-    /**
-     * 倍速快捷开关：点一次切到下一档，与弹幕按钮同一种操作。
-     *
-     * 0.75 → 1 → 1.25 → 1.5 → 1.75 → 2 → 3 → 0.75。写入书库，
-     * 推荐页接手时读到的也是刚切好的这一档。
-     *
-     * 用 [PlaybackSpeed.phoneOptions] 而不是 [PlaybackSpeed.options]：3× 只在手机 / 平板上提供
-     * （电视端遥控器来回调这么快的档位没有意义），但**校验**两边都认，见那边的说明。
-     */
-    private fun cycleSpeed() {
-        val lib = library ?: return
-        val options = PlaybackSpeed.phoneOptions
-        val current = options.indexOfFirst { kotlin.math.abs(it - userSpeed) < .001f }
-            .takeIf { it >= 0 } ?: options.indexOf(1f).coerceAtLeast(0)
-        val next = options[(current + 1) % options.size]
-        endTempSpeed()
-        userSpeed = next
-        lib.playbackSpeed = next
-        player?.setPlaybackSpeed(next)
-        syncChips()
-        hint.text = "倍速 ${PlaybackSpeed.label(next)}"
-        hint.visibility = View.VISIBLE
-        hint.bringToFront()
-        val token = hintToken
-        root.postDelayed({ if (hintToken == token) hint.visibility = View.GONE }, 900)
-    }
 
     /**
      * 调试模式那一块面板：打开就挂、关掉就摘。
