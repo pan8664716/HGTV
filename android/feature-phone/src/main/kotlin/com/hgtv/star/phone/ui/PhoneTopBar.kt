@@ -138,6 +138,15 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
     }
 
     /**
+     * 自定义账号头部专用：状态栏安全区保留，把它下面那一段页面留白缩到 20%。
+     */
+    fun tightenLeadingTop() {
+        val top = if (compact) 0 else statusBar(context) + context.dp(4) / 5
+        if (paddingTop == top) return
+        setPadding(paddingLeft, top, paddingRight, paddingBottom)
+    }
+
+    /**
      * 沉浸式：状态栏不显示时，顶栏不再为它留白。
      *
      * 推荐页整屏都是视频、状态栏是藏起来的（见 `PhoneMainActivity.applyStatusBarFor`），

@@ -54,10 +54,12 @@ class PhoneMinePage(
 
     private val compactTopBar = context.resources.configuration.orientation ==
         android.content.res.Configuration.ORIENTATION_LANDSCAPE
+    private val avatarSize = context.dp(if (compactTopBar) 32 else 44)
+    private val leadingRowHeight = context.dp(if (compactTopBar) 56 else 76)
     private val topBar = PhoneTopBar(context)
     private val pageContent = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val topAvatar = TextView(context).apply {
-        val size = context.dp(if (compactTopBar) 32 else 44)
+        val size = avatarSize
         text = "红"
         setTextColor(PhoneStyle.text)
         phoneSize(if (compactTopBar) 14 else 17)
@@ -79,7 +81,7 @@ class PhoneMinePage(
         text = "点这里登录 · 记录仅保存在本机"
         setTextColor(PhoneStyle.textFaint)
         phoneSize(if (compactTopBar) 10 else 12)
-        setPadding(0, context.dp(2), 0, 0)
+        setPadding(0, context.dp(2) / 5, 0, 0)
         maxLines = 2
         ellipsize = null
     }
@@ -102,8 +104,8 @@ class PhoneMinePage(
             ViewGroup.LayoutParams.WRAP_CONTENT,
         )
         addView(topAvatar, LinearLayout.LayoutParams(
-            context.dp(if (compactTopBar) 32 else 44),
-            context.dp(if (compactTopBar) 32 else 44),
+            avatarSize,
+            avatarSize,
         ))
         addView(LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -212,9 +214,14 @@ class PhoneMinePage(
         // 栏目交给网格当第一项：它和海报共用同一个滚动容器，
         // 上滑时自然滚出屏幕，不再有独立页头的自动收起 / 展开。
         feed.setHeader(body)
-        topBar.setLeadingView(topAccount, context.dp(if (compactTopBar) 56 else 76))
+        // 头像之外的上下留白缩到 20%，状态栏安全区由顶栏单独保留。
+        topBar.setLeadingView(
+            topAccount,
+            avatarSize + (leadingRowHeight - avatarSize) / 5,
+        )
         // 底部 2dp 留白收掉：账号区与栏目之间不再叠一层。
         topBar.tightenBottom()
+        topBar.tightenLeadingTop()
         topBar.setAction(PhoneGlyph.Kind.SETTINGS, "设置") {
             PhoneSettingsActivity.open(context, PhoneSettingsPage.PLAYBACK)
         }
@@ -460,9 +467,8 @@ class PhoneMinePage(
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            // 上 6 → 4：与账号行的下留白（4dp）一起把「账号栏 → 历史」压到 14dp，
-            // 与顶栏头像到账号栏的间距保持接近。
-            setPadding(context.dp(16), context.dp(4), context.dp(16), context.dp(2))
+            // 账号行与栏目之间的上下留白同样缩到 20%。
+            setPadding(context.dp(16), context.dp(4) / 5, context.dp(16), context.dp(2) / 5)
         }
         tabs.forEachIndexed { index, label ->
             row.addView(TextView(context).apply {
