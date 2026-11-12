@@ -838,6 +838,33 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 36：手机播放页相关剧集与作者作品迁移
+
+状态：已完成。
+
+- 将相关剧集浮层、作者作品浮层、收藏切换和卡片跳详情移到
+  `player/PhoneRelatedPanels.kt`。
+- 新增 `PhonePlayerRelatedState` 内部状态容器，集中保存请求代次、作者缓存和浮层打开状态；
+  自动收起判断、设置面板关闭和网络缓存读取继续使用同一状态。
+- 保留进程级相关剧集缓存、作者作品缓存、协程代次、横竖屏宽度与浮层高度判据。
+- 新增 `rootReady`、`playerSheet`、`playerLandscapeMode`、自动收起代次与任务等
+  `internal` 投影，未扩大公开 API。
+- `PhonePlayerActivity.kt` 从 4314 行降到 4100 行；`PhoneRelatedPanels.kt` 为 268 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译发现扩展不能读取 `root` 的 `lateinit` backing field，增加只读投影后重跑通过；
+  未改浮层或导航行为。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `PhonePlayerActivity.kt` 的相关剧集与作者作品浮层，再处理播放器监听与看门狗辅助。
+继续拆 `PhonePlayerActivity.kt` 的播放器监听、画面看门狗与进度落盘辅助。

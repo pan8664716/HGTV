@@ -148,6 +148,7 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     internal lateinit var root: FrameLayout
+    internal val rootReady: Boolean get()=::root.isInitialized
     private lateinit var portrait: FrameLayout
     private lateinit var page: PhoneVideoPage
 
@@ -192,6 +193,7 @@ class PhonePlayerActivity : PhoneActivity() {
     private var bufferingMutedUntil = 0L
 
     private lateinit var sheet: PhoneSheet
+    internal val playerSheet get()=sheet
 
     /**
      * 播放信息条（设置 → 播放显示）：标题 / 集数 / 时间 / 倍速，四项各自开关。
@@ -218,6 +220,7 @@ class PhonePlayerActivity : PhoneActivity() {
     private var ticker: Job? = null
 
     private var landscapeMode = false
+    internal val playerLandscapeMode get()=landscapeMode
 
     /** 退出全屏后「钉住竖屏」用的方向尺子；非空 = 还没等到设备立起来（见 [pinPortraitUntilUpright]）。 */
     private var portraitPin: android.view.OrientationEventListener? = null
@@ -281,12 +284,8 @@ class PhonePlayerActivity : PhoneActivity() {
     private var returningToFeed = false
     /** 最后一集查到的下一季、查询代次与底部提示。 */
     internal val nextSeasonState = PhoneNextSeasonState()
-    /** 「相关剧集」请求的代次：浮层被换掉 / 关掉之后，在途结果不再往旧视图上写。 */
-    private var relatedToken = 0
-    /** 「作者作品」当前请求与缓存，同一部剧打开多次不重复搜索。 */
-    private var authorToken = 0
-    private var authorWorksFor = ""
-    private var authorWorks: List<Series>? = null
+    /** 相关剧集与作者作品浮层的请求代次、缓存和打开状态。 */
+    internal val relatedState = PhonePlayerRelatedState()
     /**
      * 现在这一次离开是不是「正在把这一路交回推荐页」。
      *
@@ -385,12 +384,14 @@ class PhonePlayerActivity : PhoneActivity() {
      * 用户读到的是「点了一下相关剧集，面板闪一下就没了」。
      */
     private var chromeEpoch = 0
+    internal var relatedChromeEpoch: Int
+        get()=chromeEpoch
+        set(value) { chromeEpoch=value }
     /** 相关剧集是浏览层：它开着时不排、也不执行自动收起。 */
-    private var relatedSheetOpen = false
 
     private val chromeHideRunnable = object : Runnable {
         override fun run() {
-            if (!::root.isInitialized || !chromeVisible || relatedSheetOpen) return
+            if (!::root.isInitialized || !chromeVisible || relatedState.relatedSheetOpen) return
             val now = System.currentTimeMillis()
             if (now < chromeHideAt) {
                 root.postDelayed(this, chromeHideAt - now)
@@ -401,6 +402,7 @@ class PhonePlayerActivity : PhoneActivity() {
             setChromeVisible(false)
         }
     }
+    internal val relatedChromeHideRunnable get()=chromeHideRunnable
 
     // —— 播放失败的自愈（与电视端同一套内核）——
 
@@ -687,7 +689,7 @@ class PhonePlayerActivity : PhoneActivity() {
             // 换集、换清晰度那种程序性收起不走这里，标题与进度条仍然留着。
             onUserDismiss = { setChromeVisible(false) }
             onDismiss = {
-                relatedSheetOpen = false
+                relatedState.relatedSheetOpen = false
                 // 关掉相关剧集 / 设置后，从这一刻重新计时；相关剧集作为浏览层
                 // 本身不会被自动收起，但“看完这一层”之后仍应回到自动收起。
                 if (chromeVisible && ::root.isInitialized) scheduleChromeHide()
@@ -3447,223 +3449,6 @@ class PhonePlayerActivity : PhoneActivity() {
      * 数据与详情页共用 [PhoneSession.relatedWorks]（电视端同样共用 `relatedWorks`）：
      * 从详情页点进来的这一路已经取好了，打开浮层时是零等待。
      */
-    private fun showRelated(d: Detail, title: String, heading: String) {
-        val series = d.series
-        val token = ++relatedToken
-        // 作废上一轮（设置面板）排下的自动收起：这一层不自动收，但那个定时器还在路上，
-        // 不换 epoch 它到点就会把刚打开的卡片条收走。
-        chromeEpoch++
-        if (::root.isInitialized) root.removeCallbacks(chromeHideRunnable)
-        val cached = PhoneSession.relatedWorks(series.id)
-        // 横竖屏都用**贴底整宽**的条：电视端的 RelatedPanel 就是这样，且横屏时
-        // 右侧 1/3 抽屉只放得下两张卡，浏览「换一部」反而更费劲。
-        sheet.bottomInset = if (landscapeMode) navigationBarPx() else 0
-        sheet.show(
-            title,
-            landscape = false,
-            dim = false,
-            heightFraction = if (landscapeMode) .95f else .78f,
-        ) { panel ->
-            // 状态行：加载中 / 共 N 部（同系列多季时点明季数，与 TV 的标题说法一致）。
-            val state = TextView(this).apply {
-                text = if (cached != null) relatedHeadline(cached, heading) else "正在找相关剧集…"
-                setTextColor(PhoneStyle.textDim)
-                phoneSize(12)
-                setPadding(dp(2), 0, dp(2), dp(10))
-                tag = "related-state"
-            }
-            panel.addView(state, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-            val host = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            panel.addView(host, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-            if (cached != null) {
-                fillRelated(host, cached, series, state)
-                return@show
-            }
-            // 没取过（从历史 / 搜索直接开播）：这一栏自己取一次，取到就地铺。
-            // 走的是与详情页同一个接口、同一份进程缓存，因此第二次进来必然是零等待。
-            scope.launch {
-                val works = withContext(Dispatchers.IO) {
-                    runCatching { PhoneServices.repository(this@PhonePlayerActivity).related(series.id, series.title) }
-                        .getOrNull()
-                }
-                if (token != relatedToken || isFinishing || isDestroyed) return@launch
-                if (works == null) {
-                    state.text = "相关剧集没能取到，稍后再试。"
-                    return@launch
-                }
-                PhoneSession.rememberRelated(series.id, works)
-                state.text = relatedHeadline(works, heading)
-                fillRelated(host, works, series, state)
-            }
-        }
-        relatedSheetOpen = true
-        // 这里**不**排自动收起：它是一层「挑下一部」的浏览浮层，用户正在横向翻卡片，
-        // 到点收走等于把正在看的那一排抽掉（电视端的 `RelatedPanel` 也只在用户操作时收起）。
-        // 上一轮排下的截止时刻已经作废——`chromeEpoch` 每次重排都会换。
-    }
-
-    /** 状态行文案：与电视端 `buildRelatedRow` 的标题同一套说法。 */
-    private fun relatedHeadline(works: com.hgtv.star.core.RelatedWorks, heading: String): String {
-        val seasons = works.seasons.size
-        return if (seasons > 1) "$heading · 同系列 $seasons 季 · 共 ${works.items.size} 部" else "$heading · 共 ${works.items.size} 部"
-    }
-
-    /**
-     * 把相关剧集铺成一排卡片。
-     *
-     * 卡片是 [PhoneCards.row]，**详情页「相关剧集」那一栏用的是同一份**——
-     * 两处因此不可能再分叉（电视端也是 `buildRelatedRow` 一处实现）。
-     */
-    private fun fillRelated(
-        host: LinearLayout,
-        works: com.hgtv.star.core.RelatedWorks,
-        current: com.hgtv.star.core.Series,
-        state: TextView,
-    ) {
-        if (works.items.isEmpty()) {
-            state.text = "暂时没有找到相关剧集，可以先返回看看别的。"
-            return
-        }
-        host.removeAllViews()
-        host.addView(
-            PhoneCards.row(
-                this,
-                PhoneServices.artwork(this),
-                works.items,
-                current.id,
-                widthDp = if (landscapeMode) PhoneCards.COMPACT_WIDTH_DP else PhoneCards.WIDTH_DP,
-            ) { item ->
-                // 点卡片进详情页（与电视端的「换一部接着看」同一落点）。
-                openSeries(item)
-            },
-            LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            )
-        )
-    }
-
-    /**
-     * 播放页作者作品：与详情页使用同一个 [ContentRepository.authorWorks] 数据源，
-     * 以底部横排卡片展示；同一部剧重复打开时复用本次播放页的缓存。
-     */
-    private fun showAuthorWorks(d: Detail) {
-        val series = d.series
-        val name = series.author.trim()
-        if (name.isEmpty()) {
-            toast("这一部没有作者信息")
-            return
-        }
-        chromeEpoch++
-        if (::root.isInitialized) root.removeCallbacks(chromeHideRunnable)
-        val cached = authorWorks.takeIf { authorWorksFor == series.id }
-        sheet.bottomInset = if (landscapeMode) navigationBarPx() else 0
-        sheet.show(
-            "作者作品",
-            landscape = false,
-            dim = false,
-            heightFraction = if (landscapeMode) .95f else .78f,
-        ) { panel ->
-            val state = TextView(this).apply {
-                text = if (cached != null) "正在读取作者作品…" else "正在查找 $name 的作品…"
-                setTextColor(PhoneStyle.textDim)
-                phoneSize(12)
-                setPadding(dp(2), 0, dp(2), dp(10))
-            }
-            panel.addView(state, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-            val host = LinearLayout(this).apply { orientation = LinearLayout.VERTICAL }
-            panel.addView(host, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-            fun fill(works: List<Series>) {
-                val items = (listOf(series) + works.filterNot { it.id == series.id })
-                    .distinctBy { it.id }
-                state.text = "$name · 共 ${items.size} 部作品"
-                host.removeAllViews()
-                if (items.size <= 1) {
-                    state.text = "$name · 暂时只有这一部作品"
-                    return
-                }
-                host.addView(
-                    PhoneCards.row(
-                        this,
-                        PhoneServices.artwork(this),
-                        items,
-                        series.id,
-                        widthDp = if (landscapeMode) PhoneCards.COMPACT_WIDTH_DP else PhoneCards.WIDTH_DP,
-                    ) { item ->
-                        openSeries(item)
-                    },
-                    LinearLayout.LayoutParams(
-                        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-                    ),
-                )
-            }
-            if (cached != null) {
-                fill(cached)
-                return@show
-            }
-            val token = ++authorToken
-            scope.launch {
-                val works = withContext(Dispatchers.IO) {
-                    runCatching {
-                        PhoneServices.repository(this@PhonePlayerActivity)
-                            .authorWorks(name, series)
-                    }.getOrNull()
-                }
-                if (token != authorToken || isFinishing || isDestroyed) return@launch
-                authorWorksFor = series.id
-                authorWorks = works
-                if (works == null) {
-                    state.text = "作者作品没能取到，稍后再试。"
-                    return@launch
-                }
-                fill(works)
-            }
-        }
-        relatedSheetOpen = true
-    }
-
-    /** 播放设置动作区里的收藏切换，状态同时写入本机与账号缓存。 */
-    private fun toggleFavorite(series: Series): Boolean {
-        val lib = library ?: return false
-        val accountFavorite = PhoneAccountSync.data?.favorites?.any { it.series.id == series.id } == true
-        val current = runCatching { lib.favorite(series.id) }.getOrDefault(false) || accountFavorite
-        if (current) {
-            if (runCatching { lib.favorite(series.id) }.getOrDefault(false)) lib.toggle(series)
-            PhoneAccountSync.favorite(this, series, false) { toast("登录后可同步收藏") }
-            reportRecommendEvent(com.hgtv.star.core.RecommendBehavior.Event.UNFAVORITE)
-            toast("已取消收藏")
-            return false
-        }
-        if (!runCatching { lib.favorite(series.id) }.getOrDefault(false)) lib.toggle(series)
-        PhoneAccountSync.favorite(this, series, true) { toast("登录后可同步收藏") }
-        reportRecommendEvent(com.hgtv.star.core.RecommendBehavior.Event.FAVORITE)
-        toast("已加入收藏")
-        return true
-    }
-
-    /**
-     * 点一张相关卡片：**进详情页**，与电视端 `showFinishedStrip` 里 `openDetail(target)` 同一语义。
-     *
-     * 为什么不直接起播：电视端那一栏点的就是详情页——用户要的是「这部是什么、有几集、
-     * 从第几集接着看」，直接起播等于替他做了这个决定。
-     *
-     * 为什么**不** `finish()` 本页：电视端只有一个 Activity，从播放页进详情、按返回会回到
-     * 播放界面同一位置。手机上如果先收掉播放页，返回就落到推荐流上，用户丢掉「刚才看到哪」。
-     * 因此本页留在栈里（`onPause` 会存进度并暂停），详情页盖在上面，返回即可接着看。
-     */
-    private fun openSeries(item: com.hgtv.star.core.Series) {
-        sheet.dismiss()
-        dismissLandscapeSettings()
-        phoneNav().open(Route.Detail(item.id, item.title))
-    }
-
     private fun releasePlayer() {
         playbackSessionState.release()
         ticker?.cancel(); ticker = null
@@ -3733,7 +3518,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * （见 [dispatchTouchEvent]）。相关剧集浮层是浏览层，不排自动隐藏。
      */
     private fun scheduleChromeHide() {
-        if (!chromeVisible || relatedSheetOpen) {
+        if (!chromeVisible || relatedState.relatedSheetOpen) {
             chromeEpoch++
             if (::root.isInitialized) root.removeCallbacks(chromeHideRunnable)
             return
@@ -3755,7 +3540,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 面板会在手指还按着的时候被收走。MOVE 不重新排队，避免一帧一个 post。
      */
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
-        if (chromeVisible && !relatedSheetOpen) {
+        if (chromeVisible && !relatedState.relatedSheetOpen) {
             when (ev.actionMasked) {
                 android.view.MotionEvent.ACTION_DOWN -> scheduleChromeHide()
                 android.view.MotionEvent.ACTION_MOVE,
@@ -4009,6 +3794,7 @@ class PhonePlayerActivity : PhoneActivity() {
         root.removeView(panel)
         landPanel = null
     }
+    internal fun dismissLandscapeSettingsForRelated() = dismissLandscapeSettings()
 
     /**
      * 按用户的「画面模式」把画面落到位。
