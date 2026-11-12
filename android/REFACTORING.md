@@ -441,7 +441,30 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 20：ContentRepository 搜索链路迁移
+
+状态：已完成。
+
+- 将联想词、热搜词、App 综合搜索、官网搜索、搜索游标、空响应重试、设备自愈和官网降级
+  移到 `ContentRepositorySearch.kt`。
+- `suggestions`、`webSuggestions`、`hotSearches`、两个 `search` 入口和 `webSearch`
+  仍保留在 `ContentRepository`，公开签名与默认参数不变。
+- 搜索页并发、官网物理页重试、ThreadLocal 失败摘要、游标过期、诊断记录和取消传播
+  均按原实现迁移。
+- `ContentRepository.kt` 从 3360 行降到 2980 行；`ContentRepositorySearch.kt` 为 444 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:core:compileKotlin` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续迁移 `ContentRepository` 的搜索、联想词、官网降级和搜索游标，保留公开方法包装、
-空响应重试、设备自愈、并发页和诊断时序。详情/作者、分类与推荐保持在独立文件。
+继续迁移 `ContentRepository` 的播放模型、单飞闸门、取流和地址缓存，保留反射入口、
+缓存键、设备档位、预算、重试和备用设备时序。详情/作者、分类、推荐与搜索保持在独立文件。
