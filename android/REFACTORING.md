@@ -702,7 +702,33 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 31：TV `onResume` 恢复编排迁移
+
+状态：已完成。
+
+- 将 `onResume` 在 `super.onResume()` 之后的恢复、账号刷新、页面重建、延迟任务和
+  前台同步移到 `system/MainResume.kt`。
+- `TvMainActivity.onResume` 保留原始 `StartupTrace` 锚点与 `super` 调用顺序，之后只
+  委托到恢复实现。
+- 新增 `resumeRestoreBundle` 与 `restoreLastScreenForResume` 两个 `internal` 委托，
+  没有扩大公开 API。
+- 迁移后的恢复实现体按缩进和委托名归一化后与迁移前逐行一致。
+- `TvMainActivity.kt` 从 2421 行降到 2331 行；`MainResume.kt` 为 108 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译缺少 `showCatalog` 跨包 import，补齐后重跑通过；未改行为。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆分 `TvMainActivity.kt` 的生命周期回调与页面状态，随后转入
+继续拆分 `TvMainActivity.kt` 的前后台收尾回调，随后转入
 `PhonePlayerActivity.kt` 的职责拆分。
