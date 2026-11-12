@@ -968,6 +968,31 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 41：手机信息流进入正式播放页迁移
+
+状态：已完成。
+
+- 将信息流打开播放页、观看记录、点击事件、播放器交接、控制层隐藏和当前集号判定移到
+  `player/PhoneFeedNavigation.kt`。
+- 保留 `settleRecommendWatch`、`markWatched`、`reportEvent`、`beginHandoff`、
+  `takeOver`、`onHidden` 与导航调用的原顺序。
+- 新增播放器、播放下标、推荐 Store / Playback、当前集映射等 `internal` 投影，
+  未扩大公开 API。
+- `PhoneFeedView.kt` 从 2342 行降到 2263 行；`PhoneFeedNavigation.kt` 为 99 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 迁移后的打开播放页、交接、控制层隐藏和集号判定逻辑按字段投影归一化后与迁移前一致。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-横竖屏切换簇依赖面过大，先保留；下一批转向 `PhoneFeedView.kt` 的独立播放状态职责。
+继续拆 `PhoneFeedView.kt` 的推荐观看计时、曝光与批量模型预取职责。

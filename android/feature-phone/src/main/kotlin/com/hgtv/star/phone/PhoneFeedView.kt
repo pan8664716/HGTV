@@ -150,11 +150,19 @@ class PhoneFeedView(
     }
 
     private var player: ExoPlayer? = null
+    internal val feedPlayer get()=player
     private var remote: RemoteVideo? = null
     private var playingIndex = -1
+    internal val feedPlayingIndex get()=playingIndex
     /** 当前这一屏的推荐观看计时；与电视端共用 [RecommendBehavior] 的阈值。 */
     private var recommendWatchingId = ""
     private var recommendWatchStart = 0L
+    internal var feedRecommendWatchingId: String
+        get()=recommendWatchingId
+        set(value) { recommendWatchingId=value }
+    internal var feedRecommendWatchStart: Long
+        get()=recommendWatchStart
+        set(value) { recommendWatchStart=value }
     private var playToken = 0
     private var boundPage: PhoneVideoPage? = null
     private var paused = false
@@ -178,6 +186,8 @@ class PhoneFeedView(
 
     private var recommendStore=newRecommendStore()
     private var recommendPlayback=newRecommendPlayback()
+    internal val feedRecommendStore get()=recommendStore
+    internal val feedRecommendPlayback get()=recommendPlayback
 
     private fun newRecommendPlayback()=com.hgtv.star.shared.feature.recommend.RecommendPlaybackController(
         repository=PhoneServices.repository(context),
@@ -257,6 +267,8 @@ class PhoneFeedView(
     /** 每一屏当前在播的集（续播时可能不是第 1 集）。 */
     private val currentEpisodeIds = HashMap<Int, String>()
     private val currentEpisodeIndex = HashMap<Int, Int>()
+    internal val feedCurrentEpisodeIds get()=currentEpisodeIds
+    internal val feedCurrentEpisodeIndex get()=currentEpisodeIndex
     /** 推荐页起播后的 6 个模型批量预取（当前剧下一集 + 后 5 部不同剧）。 */
     private var recommendBatchKey = ""
     private var recommendBatchJob: Job? = null
@@ -1338,6 +1350,9 @@ class PhoneFeedView(
         val played = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L)
         runCatching { recommendPlayback.settleWatch(played) }
     }
+    internal fun settleRecommendWatchForNavigation() = settleRecommendWatch()
+    internal fun feedChildAdapterPosition(page: PhoneVideoPage): Int =
+        list.getChildAdapterPosition(page)
 
     private fun reportRecommendImpression(index: Int) {
         if (index != playingIndex) return
@@ -2229,100 +2244,6 @@ class PhoneFeedView(
             // 不接的话：列表因尺寸变化重绑 → 新的 ViewHolder 上没有 Surface → 画面黑掉。
             if (position == playingIndex) list.post { rebindCurrentPage() }
         }
-    }
-
-    /** 进播放页。先停掉这一条流，否则两边声音叠在一起。 */
-    private fun openPlayer(page: PhoneVideoPage, fullscreen: Boolean) {
-        val series = page.currentSeries() ?: return
-        val index = list.getChildAdapterPosition(page).takeIf { it >= 0 } ?: playingIndex
-        launchPlayer(
-            series = series,
-            episode = liveEpisodeOf(series, index),
-            fullscreen = fullscreen,
-            // 「观看完整短剧」是明确的「我要接着看」：即使用户刚在信息流里暂停过也起播。
-            play = true,
-        )
-    }
-
-    /**
-     * 起播放页之前先把本页控制层收起。
-     *
-     * 播放页的窗口是透明的（见 `PlayerTheme`）：晚收的那几十毫秒里，本页这套
-     * 「选集 全N集｜第x集」会从它的透明底板下透出来，紧接着又被播放页自己那份
-     * 「观看完整短剧」盖掉——用户读到的是按钮文字闪了一下。
-     *
-     * 只在播放页**真的会借这块 Surface** 时才收（9.0+ 且这一路还在）：更早的系统上
-     * 播放页窗口不透明，下层根本看不见，收了只是多一次无谓的视图切换。
-     */
-    private fun hideChromeForHandoff(series: Series) {
-        if (android.os.Build.VERSION.SDK_INT < 28) return
-        if (!PhoneSession.feedUnderlayUsable(series.id)) return
-        PhoneSession.hideFeedChrome()
-    }
-
-    /**
-     * 打开正式播放页，并把这一路**原样交出去**。
-     *
-     * 三件事缺一不可（缺一件用户就会看到「内容断了一下」）：
-     * 1. `beginHandoff()` + `onHidden(handoff = true)`：交接窗口内不暂停播放器，
-     *    媒体源与解码器都在跑，播放页只把 Surface 接过去；
-     * 2. 把「进来要不要播」写进会话（`resumeOnAdopt`），播放页接手时照它决定；
-     * 3. 不要系统转场动画：那 200ms 里新窗口还没画出视频，读起来就是一次黑屏。
-     */
-    private fun launchPlayer(series: Series, episode: Int, fullscreen: Boolean, play: Boolean) {
-        // 明确点进正片与电视端 `enterFormalPlayback` 同义：按「看了」记 30 天，
-        // 并停掉停留计时，避免随后 `onHidden` 再把这次点击算成划走。
-        settleRecommendWatch()
-        runCatching { recommendStore.markWatched(series) }
-        runCatching {
-            recommendPlayback.reportEvent(
-                series,
-                com.hgtv.star.core.RecommendBehavior.Event.CLICK,
-                episodeId=currentEpisodeIds[playingIndex].orEmpty(),
-                episodeIndex=currentEpisodeIndex[playingIndex] ?: -1,
-                positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
-                durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
-            )
-        }
-        recommendWatchingId = ""
-        recommendWatchStart = 0L
-        PhoneSession.resumeOnAdopt = play
-        PhoneSession.beginHandoff()
-        // 交接一开始就把这一路记在播放页名下：`PhoneMainActivity.onStop` 与
-        // `onHidden` 都按 `owner` 判断「这一路是不是正被别人接手」，仍记成信息流
-        // 的话它们会在播放页刚起来的几十毫秒里把它按停——用户读到一次断音。
-        PhoneSession.takeOver(PhoneSession.Owner.PLAYER)
-        onHidden(handoff = true)
-        hideChromeForHandoff(series)
-        context.phoneNav().open(
-            Route.Player(
-                series.id,
-                series.title,
-                episode = episode,
-                fromRecommend = true,
-                fullscreen = fullscreen,
-                noTransition = true,
-            )
-        )
-        (context as? android.app.Activity)?.overridePendingTransition(0, 0)
-    }
-
-    /**
-     * 「这一屏现在放到第几集」。
-     *
-     * 优先用**进程级会话**里的集号：它才是播放器上真正挂着的那一集。
-     * 本地 map 只是「这一屏显示过第几集」，在片尾交接、播放页里换过集、
-     * 或这一屏还没起播时都可能落后。
-     *
-     * 传错的后果很具体：播放页会判「要的集号与会话里的不一致」→ 拒绝接手 →
-     * 重新取详情、重新取地址、从头起播，用户看到的就是「切过去内容断了」。
-     */
-    private fun liveEpisodeOf(series: Series, index: Int): Int {
-        // 判据用 `live`（不看地址新鲜度）：地址过期只影响后续 Range 请求，播放页接手时
-        // 会原地换一条地址、位置不动。用 `adoptable` 的话，停久了再点进去传的集号会退回
-        // 本页记的旧值 → 播放页判「集号对不上」→ 重新取详情、从 0 起播。
-        if (PhoneSession.live(series.id) && PhoneSession.index >= 0) return PhoneSession.index
-        return currentEpisodeIndex[index] ?: 0
     }
 
     /** 离开页面时释放协程；播放器留给进程（下次进来重建，省一次解码器初始化）。 */
