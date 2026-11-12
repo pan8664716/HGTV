@@ -26,6 +26,12 @@ import com.hgtv.star.tv.R
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
+    // HG键盘模式下这一行照建（顶栏与系统键盘模式完全一致），但输入框改成**只显示的镜子**：
+    // 字符由左侧键盘写进来（见 syncHongguoInput），它自己不可聚焦、也不弹系统输入法。
+    // 不这么做的话，同一页会有两个输入入口，焦点在两者之间来回跳、系统输入法还会盖住键盘。
+    // 判据与 [showCatalog] 里那个 `hongguo` 完全一致：本机集合页（收藏 / 历史）虽然也在
+    // 搜索这个标签下，但它不是搜索页，输入框要照常可用。
+    val hongguo=hongguoKeyboardMode() && collection==null
     // 搜索框与同一行的按钮共用一套尺寸令牌：48dp 底板、胶囊圆角、左右 28dp 内边距，
     // 因此输入框和「搜索 / 历史」在一条基线上；差别只在「凹槽 vs 凸起」这一层语义。
     val searchBand=dp(TvStyle.SOFT_BAND)
@@ -43,7 +49,7 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
                 android.text.style.AbsoluteSizeSpan(designPx(SEARCH_HINT_TEXT),false),
                 0,length,android.text.Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
         }
-        setText(query)
+        setText(if(hongguo) hongguoDraft else query)
         designTextSize(SEARCH_INPUT_TEXT); setTypeface(typeface,Typeface.BOLD)
         setTextColor(TvStyle.text); setHintTextColor(TvStyle.muted); isSingleLine=true; maxLines=1
         ellipsize=TextUtils.TruncateAt.END
@@ -52,6 +58,17 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
         includeFontPadding=false
         isFocusableInTouchMode=true
         if(android.os.Build.VERSION.SDK_INT>=21) showSoftInputOnFocus=true
+        if(hongguo) {
+            // HG键盘：这一格是「当前输入」的显示框，**可聚焦但不接受系统输入**。
+            // 键盘第一排按上要能回到它（方向上最近的一格就是它），所以它必须可聚焦；
+            // 但它自己不许弹系统输入法：`showSoftInputOnFocus=false` 关掉输入法，光标也不画。
+            // （这里**不能**清 `keyListener`：那会让 TextView 把自己变成不可聚焦，
+            //   上键就再也回不到这一格了。）
+            isFocusable=true
+            isFocusableInTouchMode=true
+            if(android.os.Build.VERSION.SDK_INT>=21) showSoftInputOnFocus=false
+            isCursorVisible=false
+        }
         // 输入框是一条「压进底板」的凹槽：内边距里含柔光带，内阴影才有地方画。
         // 左右内边距跟紧凑档按钮走（[TvStyle.BUTTON_PAD_COMPACT]），与同一行的按钮对齐。
         setPadding(dp(TvStyle.BUTTON_PAD_COMPACT)+searchBand,searchBand,dp(TvStyle.BUTTON_PAD_COMPACT)+searchBand,searchBand)
@@ -67,7 +84,16 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
                 depth=if(focused) 1.6f else 1.1f)
             if(!focused) cancelSearchInputMethod()
         }
-        setOnClickListener { focusSearchInput() }
+        setOnClickListener {
+            // HG键盘下这一格就是「搜索」按钮：功能行里已经没有搜索键了，
+            // 按确定 / 点它就按当前输入去搜（空输入仍然打开搜索历史）。
+            if(hongguo) {
+                // 外接硬件键盘有可能直接改过这一行（与草稿不一致），先同步再搜。
+                val typed=text.toString()
+                if(typed!=hongguoDraft) setHongguoDraft(typed)
+                searchHongguoDraft()
+            } else focusSearchInput()
+        }
     }
     top.addView(input,lp(dp(SEARCH_INPUT_WIDTH),dp(SEARCH_INPUT_HEIGHT+2*TvStyle.SOFT_BAND)).apply {
         // 初始宽度只是「还没量过之前」的占位：这一行建好之后由 [fitSearchRow] 按实测
@@ -77,8 +103,14 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
         // 在 1080p / 280dpi 这类屏上整行只有约 1083dp，固定 300dp 的输入框必然把右边那排
         // 圆形入口顶出屏幕——用户看到的就是「搜索一展开，圆形按钮被挤没了」。
         // 间距也从 GAP_GROUP 收到 GAP_BLOCK：这一组控件是**一整块**，内部不必留那么大的空。
-        leftMargin=dp(TvStyle.GAP_BLOCK); rightMargin=dp(TvStyle.GAP_TIGHT)
+        //
+        // HG键盘下输入框要贴到屏幕左缘（与键盘第一列对齐）：负外边距正好抵消页面缩进。
+        leftMargin=if(hongguo) -pageInset() else dp(TvStyle.GAP_BLOCK)
+        rightMargin=dp(TvStyle.GAP_TIGHT)
     })
+    // 切换键盘的圆形入口**只在系统输入法模式下建**，位置在「手机输入」后面（见下面那一段）：
+    // HG键盘自己功能行里就有一枚「切换键盘」图标，顶上再放一枚是重复的；
+    // 而系统输入法模式下没有键盘栏，需要这一枚才能切回HG键盘。
     // 输入框为空时按「搜索」= 打开搜索历史（原来这里只是把焦点丢回输入框）。
     // 历史按钮因此可以从导航栏里去掉，把宽度让给右边那排圆形入口。
     // 两条路都要先收键盘：空内容会弹「搜索历史」，而那是**模态框**——输入法浮在上面时
@@ -97,11 +129,12 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     }
     // EditText 自己会把上下键吃掉做光标移动，焦点因此困在输入框里出不去。
     // 这两下在这里显式交回页面：上=顶部圆形入口，下=提示词 / 热搜词那一行（没有时退到内容第一张卡）。
-    // 确认键也必须自己吃掉：Android 5 的 TextView.onKeyUp 会调用 showSoftInput，
-    // 部分电视固件此时 InputMethodInfo 为空，直接在 Parcel 里抛 NPE。
+    // 确认键的 DOWN 交回 TextView：1.3.5.1 之前部分电视输入法靠它启动 IME。
+    // 只在 UP 接管搜索：Android 5 的 TextView.onKeyUp 会在部分固件上抛 NPE。
     input.setOnKeyListener { view,keyCode,event ->
         if(keyCode==KeyEvent.KEYCODE_ENTER || keyCode==KeyEvent.KEYCODE_DPAD_CENTER ||
             keyCode==KeyEvent.KEYCODE_NUMPAD_ENTER) {
+            if(event.action==KeyEvent.ACTION_DOWN) return@setOnKeyListener false
             if(event.action==KeyEvent.ACTION_UP) {
                 if(input.text.toString().trim().isEmpty()) focusSearchInput(120L) else search()
             }
@@ -133,24 +166,36 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
         }
     }
     searchInput=input
-    // 按钮用**收紧档**（[ButtonSize.TIGHT]：40dp 底板 / 15sp 字号 / 12dp 内边距）：
-    // 高度与同一行的输入框对齐，横向比紧凑档再省 12dp（「搜索」90dp、「手机输入」120dp）。
-    // 宽度按内容收紧（见 `paintButton` 里 TIGHT 的分支），不会再被常规档的 92dp 撑开。
-    // 间距用 [SEARCH_BUTTON_GAP]（6dp）：这几枚与输入框是**一组**，彼此靠近。
-    // 与回车是同一个动作：空内容按它就是搜索历史（见 [search]）。
-    searchButton=addButton(top,"搜索",size=ButtonSize.TIGHT,gap=SEARCH_BUTTON_GAP,icon=R.drawable.ic_toolbar_search) { search() }
-    // 「手机输入」：遥控器上敲中文要按几十下方向键，这里把打字整个搬到手机上。
-    // 手机扫码 → 竖屏页面里打完 → 按发送，电视立刻按这个词搜索（见 [TvTools.phoneInput]）。
-    // 与「搜索」同一档（TIGHT）并紧挨着：这两枚是同一组动作，右边那排圆形入口另属一组。
-    val phone=addButton(top,"手机输入",size=ButtonSize.TIGHT,gap=SEARCH_BUTTON_GAP,icon=R.drawable.ic_action_phone) {
-        cancelSearchInputMethod()
-        (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken,0)
-        // 收到就先把这句话写进页面提示行，再走搜索：手机那边点了「发送到电视」，
-        // 电视上必须**看得见**它收到了什么——否则「手机说已发送、电视没反应」时
-        // 分不清是哪一端的问题。
-        tvTools.phoneInput(input) { word -> showHint("已从手机收到「$word」"); runSearch(word) }
+    // HG键盘模式下这两枚**不建**：键盘最上面那一排已经有「搜索」，手机输入也没有存在意义
+    // （字符在屏幕上的键盘里敲）。顶栏因此只剩「切换键盘 + 输入框 + 圆形入口」，
+    // 输入框能往左挪的位置更多。
+    if(!hongguo) {
+        // 按钮用**收紧档**（[ButtonSize.TIGHT]：40dp 底板 / 15sp 字号 / 12dp 内边距）：
+        // 高度与同一行的输入框对齐，横向比紧凑档再省 12dp（「搜索」90dp、「手机输入」120dp）。
+        // 宽度按内容收紧（见 `paintButton` 里 TIGHT 的分支），不会再被常规档的 92dp 撑开。
+        // 间距用 [SEARCH_BUTTON_GAP]（6dp）：这几枚与输入框是**一组**，彼此靠近。
+        // 与回车是同一个动作：空内容按它就是搜索历史（见 [search]）。
+        searchButton=addButton(top,"搜索",size=ButtonSize.TIGHT,gap=SEARCH_BUTTON_GAP,icon=R.drawable.ic_toolbar_search) { search() }
+        // 「手机输入」：遥控器上敲中文要按几十下方向键，这里把打字整个搬到手机上。
+        // 手机扫码 → 竖屏页面里打完 → 按发送，电视立刻按这个词搜索（见 [TvTools.phoneInput]）。
+        // 与「搜索」同一档（TIGHT）并紧挨着：这两枚是同一组动作，右边那排圆形入口另属一组。
+        val phone=addButton(top,"手机输入",size=ButtonSize.TIGHT,gap=SEARCH_BUTTON_GAP,icon=R.drawable.ic_action_phone) {
+            cancelSearchInputMethod()
+            (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(input.windowToken,0)
+            // 收到就先把这句话写进页面提示行，再走搜索：手机那边点了「发送到电视」，
+            // 电视上必须**看得见**它收到了什么——否则「手机说已发送、电视没反应」时
+            // 分不清是哪一端的问题。
+            tvTools.phoneInput(input) { word -> showHint("已从手机收到「$word」"); runSearch(word) }
+        }
+        searchActions+=phone
+        // 切换键盘的圆形入口排在「手机输入」后面：这三枚是同一组动作（都是「怎么把字弄进来」），
+        // 紧挨着读起来才是一组；放在输入框和「搜索」之间会把输入与它的动作拆开。
+        if(collection==null) {
+            val switch=keyboardSwitchButton()
+            hongguoSwitch=switch
+            gapInto(top,switch,lp(-2,-2),TvStyle.GAP_BLOCK)
+        }
     }
-    searchActions+=phone
     // 语音入口已去掉：搜索页只留「输入框 + 搜索」两件。
     // 电视上用遥控器说话的场景本来就少，识别界面还会把整页切走再切回来；
     // 这一行留给输入框与搜索按钮之后，宽度宽裕得多，焦点链也少一跳。
@@ -170,7 +215,9 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
         }
     }
     // 打字就取提示词（去抖）；页面重建后监听器跟着输入框一起换新的。
-    input.addTextChangedListener(object: android.text.TextWatcher {
+    // HG键盘模式下不挂：那个框的字符是键盘写进来的，联想词由 `updateHongguoSuggestions`
+    // 直接驱动中间那一列，再挂一条监听会变成同一次输入发两遍请求。
+    if(!hongguo) input.addTextChangedListener(object: android.text.TextWatcher {
         override fun beforeTextChanged(s: CharSequence?,start: Int,count: Int,after: Int) {}
         override fun onTextChanged(s: CharSequence?,start: Int,before: Int,count: Int) {}
         override fun afterTextChanged(s: android.text.Editable?) { scheduleSuggestions(s?.toString().orEmpty()) }
@@ -186,9 +233,16 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     // 语音入口去掉之后，这个「抑制一次焦点」的标志只剩一种来源（识别界面返回），
     // 而那条路已经不存在了；这里仍保留消费动作，免得它留到下一次无关的重建上。
     suppressSearchFocusOnce=false
-    // 与 1.3.5.1 一致：进页面只把焦点放到输入框，不主动弹键盘。
-    // 用户真正要输入时，再点击输入框 / 按确认 / 按搜索键。
-    if(requestFocus) input.post { if(input.attachedToWindow) input.requestFocus() }
+    // 系统输入法模式下进页面就补一次 IME 请求：部分电视固件不会因焦点落地自动弹出。
+    // 点击输入框 / 按确认 / 按搜索键仍走 [focusSearchInput] 的重试链路。
+    // HG键盘模式下输入框不可聚焦，焦点直接交给左侧键盘的第一格。
+    if(requestFocus) input.post {
+        if(hongguo) hongguoKeyboard?.focusFirstKey()
+        else if(input.attachedToWindow) {
+            input.requestFocus()
+            focusSearchInput(120L)
+        }
+    }
 }
 
 /**
@@ -199,6 +253,8 @@ fun MainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
  * 窗口 token 尚未稳定的那一帧。
  */
 fun MainActivity.focusSearchInput(delayMs: Long=0L) {
+    // HG键盘模式下「聚焦输入框」= 把焦点交给键盘：那个框本身不可聚焦。
+    if(hongguoKeyboardMode()) { hongguoKeyboard?.focusFirstKey(); return }
     val input=searchInput as? EditText ?: return
     val token=++searchImeToken
     val request=Runnable { requestSearchInputMethod(input,3,token) }
@@ -261,6 +317,22 @@ fun MainActivity.fitSearchRow(top: LinearLayout) {
         val input=searchInput as? EditText ?: return@addOnLayoutChangeListener
         val available=(right-left)-view.paddingLeft-view.paddingRight
         if(available<=0) return@addOnLayoutChangeListener
+        val params=input.layoutParams as? LinearLayout.LayoutParams ?: return@addOnLayoutChangeListener
+        // HG键盘：搜索框**与键盘区域同宽、左右对齐**（都从屏幕左缘起，宽 2/7）。
+        //
+        // 三栏那一行比本行多出一个内容缩进（负外边距，见 `showCatalog`），因此键盘栏宽要按
+        // 「本行宽度 + 缩进」算；目标右缘换算回本行坐标要再减掉这个缩进。
+        if(hongguoKeyboardMode() && collection==null) {
+            val inset=pageInset()-pageBleed()
+            val rowWidth=view.width+inset
+            val targetRight=(rowWidth*2f/7f).toInt()-inset
+            val width=(targetRight-input.left).coerceAtLeast(dp(SEARCH_INPUT_MIN_WIDTH))
+            if(params.width!=width) {
+                params.width=width
+                input.layoutParams=params
+            }
+            return@addOnLayoutChangeListener
+        }
         var used=0
         for(index in 0 until top.childCount) {
             val child=top.getChildAt(index)
@@ -270,8 +342,8 @@ fun MainActivity.fitSearchRow(top: LinearLayout) {
             if(params.weight>0f) continue
             used+=child.measuredWidth+params.leftMargin+params.rightMargin
         }
-        val params=input.layoutParams as? LinearLayout.LayoutParams ?: return@addOnLayoutChangeListener
-        val room=available-used-params.leftMargin-params.rightMargin
+        val inputParams=input.layoutParams as? LinearLayout.LayoutParams ?: return@addOnLayoutChangeListener
+        val room=available-used-inputParams.leftMargin-inputParams.rightMargin
         val width=when {
             room>=dp(SEARCH_INPUT_WIDTH) -> dp(SEARCH_INPUT_WIDTH)
             room>=dp(SEARCH_INPUT_MIN_WIDTH) -> room
@@ -279,9 +351,9 @@ fun MainActivity.fitSearchRow(top: LinearLayout) {
             // 也不许把右边那排圆形入口顶出屏幕——它们才是这一行的固定成员。
             else -> room.coerceAtLeast(0)
         }
-        if(params.width!=width) {
-            params.width=width
-            input.layoutParams=params
+        if(inputParams.width!=width) {
+            inputParams.width=width
+            input.layoutParams=inputParams
         }
     }
 }
@@ -341,9 +413,22 @@ fun MainActivity.noteSearchRowFocused(row: Int) {
  */
 fun MainActivity.clearSearchBoxOnResults() {
     if(isDestroyed || screen!="catalog" || tab!=TAB_SEARCH) return
+    // HG键盘：焦点离开键盘进到结果第二行，就把草稿清掉——
+    // 中间那一列因此从「联想词」回到「搜索记录」，正是用户「不打了、开始看结果」时该看到的内容。
+    if(hongguoKeyboardMode()) {
+        if(hongguoDraft.isNotEmpty()) setHongguoDraft("")
+        return
+    }
     val input=searchInput as? EditText ?: return
     if(input.text.isNullOrEmpty()) return
     input.setText("")
+}
+/** 两套键盘共用的焦点入口：HG键盘聚焦首字母，系统键盘仍走原来的输入框。 */
+fun MainActivity.focusHongguoKeyboard() {
+    if(!hongguoKeyboardMode()) { focusSearchInput(); return }
+    // HG键盘模式下系统输入法一律按下去：焦点交给自绘键盘，系统键盘不许冒出来。
+    hideSystemKeyboard()
+    hongguoKeyboard?.focusFirstKey()
 }
 /**
  * 搜索页空输入时，输入框下面那一行铺**本机搜索记录**。
@@ -540,6 +625,14 @@ fun MainActivity.renderHintRow(items: List<String>) {
 }
 fun MainActivity.runSearch(value: String) {
     val clean=value.trim(); if(clean.isEmpty() || clean.length>80) return
+    if(hongguoKeyboardMode()) {
+        hongguoDraft=clean
+        // 这一次是**用户主动搜的**：结果落地后焦点交给第一张卡（见 seriesList 的落点分支）。
+        // 其余重建（追加一页、联想词刷新）不动焦点，免得把正在打字的人踢走。
+        hongguoLandFirstCard=true
+        searchController.remember(clean); query=clean; tab=1; page=1; catalogFocus=""; showCatalog(true)
+        return
+    }
     cancelSearchInputMethod()
     (searchInput as? EditText)?.let { (getSystemService(Context.INPUT_METHOD_SERVICE) as InputMethodManager).hideSoftInputFromWindow(it.windowToken,0) }
     searchController.remember(clean); query=clean; tab=1; page=1; catalogFocus=""; showCatalog(true)
@@ -580,6 +673,17 @@ fun MainActivity.showSearchHistory(anchor: View) {
     tvTools.choose("搜索历史",history,anchor,{ index -> runSearch(history[index]) },"清空历史") {
         tvTools.confirm("清空搜索历史","清除本机保存的搜索词？",anchor,danger=true) { searchController.clearHistory() }
     }
+}
+/** 设置 → 布局启动里的默认输入法：两档写进本机偏好，下次搜索页按它重建。 */
+fun MainActivity.showDefaultKeyboardPicker(anchor: TextView) {
+    val options=SearchKeyboard.entries
+    val labels=options.map { if(it==library.searchKeyboard) "${it.label}（当前）" else it.label }
+    tvTools.choose("默认输入法",labels,anchor,{ index ->
+        val selected=options[index]
+        setSearchKeyboard(selected==SearchKeyboard.HONGGUO)
+        anchor.text="默认输入法  ·  ${selected.label}"
+        anchor.contentDescription="默认输入法，当前${selected.label}"
+    },subtitle="HG键盘常驻搜索页左侧；系统输入法保留原来的搜索框")
 }
 /**
  * 本机记录 → 云端同步（尽力而为）。
