@@ -119,7 +119,7 @@ android/                Gradle 工程根（Android Studio 直接打开这一层�
 ├─ gradle/ gradlew      Gradle 8.14.3 包装器
 └─ build.gradle.kts     构建脚本与发布签名配置
 docs/                   项目文档；preview/ 放应用图标与界面截图
-tools/                  图标 / 主题 / 界面校对脚本、静态校验脚本、构建与版本脚本
+tools/                  工程脚本；目录清单与本机资料约定见 tools/README.md
 README.md
 ```
 

@@ -105,7 +105,8 @@ fun MainActivity.consumePendingAccountFile() {
  * [invalidatePage] 丢掉，导入这条路上恰好每次都会经过一次页面重建。
  */
 fun MainActivity.importAccount(text: String,anchor: View?) {
-    showHint("正在验证账号参数…")
+    // 需要联网校验：等待期间显示屏幕正中的加载框，校验完（成功 / 失败）再收掉。
+    showCenterLoading("正在验证账号参数…")
     io.submit {
         val result=runCatching { parseCredentials(text) }
         main.post {
@@ -116,11 +117,14 @@ fun MainActivity.importAccount(text: String,anchor: View?) {
                 // 导入的会话只有 cookie、没有 `X-Tt-Token`：立刻打一次 boot 心跳，
                 // 让服务端在响应头里把 token 发回来（拦截器收到即落盘）。
                 com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force=true)
+                hideCenterLoading()
                 showHint("账号参数已导入")
                 showCatalog()
                 loadAccount(force=true)
             }.onFailure { failure ->
                 DebugLog.record("账号","导入失败 · ${failure.message.orEmpty().take(140)}")
+                hideCenterLoading()
+                showHint("账号参数导入失败")
                 tvTools.info("导入失败",failure.message.orEmpty().take(200),anchor)
             }
         }
@@ -165,10 +169,20 @@ fun MainActivity.loadAccount(force: Boolean=false) {
     // 「启动时到底有没有去拉」只有这一行说得清。
     android.util.Log.i("HGTV","Account fetch force=$force cache=${cache!=null} tab=$tab screen=$screen")
     accountLoading=true
+    // 「用户按了刷新按钮」与「别处顺手强制拉一次（导入 / 登录 / 换集）」要分开：
+    // 只有前者才改按钮文案、才额外报一句结果，否则会把「账号参数已导入」这类提示顶掉。
+    val manualRefresh=force && accountRefreshing
     val token=++accountToken
     appScope.launch {
         val result=accountController.refresh()
-        if(isDestroyed || token!=accountToken) return@launch
+        if(isDestroyed || token!=accountToken) {
+            // 这一发被后来的一次作废了：标志与加载框都不能留着（否则它会一直转）。
+            if(!isDestroyed && manualRefresh) {
+                finishProfileRefresh()
+                hideCenterLoading()
+            }
+            return@launch
+        }
         accountLoading=false
         val failure=result.error
         if(failure==null) {
@@ -176,12 +190,26 @@ fun MainActivity.loadAccount(force: Boolean=false) {
             accountRetry=0
             if(result.changed.isNotEmpty()) refreshAccountViews(result.changed)
             if(result.localWrites>0) refreshLocalHistoryViews()
+            // 手动刷新给一句结果。`changed` 为空时界面上不会有任何变化（那本来就是对的），
+            // 没有这句话用户只会读到「按了刷新没反应」。
+            if(manualRefresh) {
+                // 成功不再报一句「已更新 / 已是最新」：那是纯状态确认，页面自己会变，
+                // 多一句提示只是噪音（早先那一行还会把内容挤下去）。
+                finishProfileRefresh()
+                hideCenterLoading()
+            }
             return@launch
         }
         android.util.Log.w("HGTV","accountData failed: ${failure.message}",failure)
         DebugLog.record("账号","资料读取失败 · ${failure.message.orEmpty().take(140)}")
         accountError=failure
         accountFailureText(failure)?.let { tvTools.toast(it) }
+        // 手动刷新失败也要说一句：否则同样是「按了没反应」。
+        if(manualRefresh) {
+            finishProfileRefresh()
+            hideCenterLoading()
+            showHint(accountFailureText(failure) ?: "账号数据刷新失败，请稍后再试")
+        }
         if(accountData==null && (tab==TAB_PROFILE || collection!=null)) showCatalog()
         if(accountData==null && accountRetry<ACCOUNT_RETRIES) {
             accountRetry++
@@ -189,6 +217,11 @@ fun MainActivity.loadAccount(force: Boolean=false) {
         }
     }
 }
+/** 手动刷新收尾：清掉「刷新中」标志（等待框由调用方在 [loadAccount] 里收）。 */
+private fun MainActivity.finishProfileRefresh() {
+    accountRefreshing=false
+}
+
 /**
  * 账号数据落地后，按「变了哪几栏」决定重画哪几处。
  *
@@ -492,7 +525,8 @@ fun MainActivity.registerForPhoneLogin(profile: Map<String,String>): com.hgtv.st
  * 不挡住的话「登录成功」会是假的（界面上只是「一条记录都没有」）。
  */
 fun MainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?) {
-    showHint("正在验证登录状态…")
+    // 同上：这一步要打一次账号资料确认会话有效，等待期间显示加载框。
+    showCenterLoading("正在验证登录状态…")
     io.submit {
         val result=runCatching {
             val prepared=com.hgtv.star.shared.data.DeviceRegistration.prepareLogin(
@@ -512,12 +546,15 @@ fun MainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?) {
                 // 登录成功立刻打一次 boot 心跳 + account/info：新会话要被服务端确认一次，
                 // 导入来的 cookie 更是只有 cookie、要靠这次响应把 `X-Tt-Token` 换回来。
                 com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force=true)
+                hideCenterLoading()
                 showHint("已登录")
                 showCatalog()
                 loadAccount(force=true)
             }.onFailure { failure ->
                 repository.credentials=library.account().takeIf { it.configured }
                 DebugLog.record("账号","登录失败 · ${failure.message.orEmpty().take(140)}")
+                hideCenterLoading()
+                showHint("登录失败")
                 tvTools.info("登录失败",failure.message.orEmpty().take(200).ifBlank { "请稍后重试" },anchor)
             }
         }

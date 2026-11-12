@@ -87,8 +87,13 @@ private fun MainActivity.showPlayerWorksStrip(author: Boolean) {
         retry.visibility=View.GONE
         if(author) {
             val works=authorWorks.takeIf { authorFor==name }
-            val loading=authorLoading || (works==null && !authorFailed)
+            // 没为这个名字发过请求就不算「加载中」：否则这一栏永远停在「正在查找…」。
+            val loading=authorLoading || (works==null && !authorFailed && name.isNotEmpty() && authorFor==name)
             when {
+                name.isEmpty() -> {
+                    status.text="没能取到作者信息"
+                    close.requestFocus()
+                }
                 loading -> {
                     status.text="正在查找 $name 的作品…"
                     close.requestFocus()

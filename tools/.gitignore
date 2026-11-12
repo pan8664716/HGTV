@@ -1,0 +1,20 @@
+# tools 下只保留工程脚本和 login-lab 的入库文件。
+# 以下为本机研究资料、运行产物和缓存，不参与构建，也不入库。
+
+/.DS_Store
+
+/login-lab/.runtime/
+/login-lab/__pycache__/
+/login-lab/frida/
+/login-lab/hgmedusa/
+/login-lab/re/
+/login-lab/fyworld_*.py
+/login-lab/hgmedusa_client.py
+/login-lab/hongguo74332.py
+/login-lab/native_medusa_probe.py
+/login-lab/python_sixheader_probe.py
+/login-lab/video_api_probe_74332.py
+
+/signature-go/
+/NewFolder/
+/官方应用参考/

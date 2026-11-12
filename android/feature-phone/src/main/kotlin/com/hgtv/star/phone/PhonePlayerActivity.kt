@@ -1763,6 +1763,9 @@ class PhonePlayerActivity : PhoneActivity() {
             // 隐藏弹幕时整层不参与绘制，也就不必让它的请求跑下去。
             view.visibility = if (lib.danmakuMode == DanmakuMode.HIDDEN) View.GONE else View.VISIBLE
         }
+        // 目标层换过（竖屏 ↔ 横屏、页面重建）就把已经拉到手的弹幕铺回去：
+        // 只改设置不铺数据的话，新那一层会一直空着——用户读到的就是「转个屏弹幕就没了」。
+        danmakuLoader.reattach()
     }
 
     /**
@@ -1782,6 +1785,22 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 把播放位置 / 播放状态 / 倍速推给弹幕层（每帧只读，不回调播放器）。 */
     private fun syncDanmakuClock(positionMs: Long, running: Boolean, speed: Float) {
         danmakuLoader.syncClock(positionMs, running, speed)
+    }
+
+    /**
+     * 每秒把弹幕时钟对齐一次（与电视端同一个节奏）。
+     *
+     * 弹幕层自己会按最后一次 `setClock` 外推，因此事件驱动通常够用；但换集过渡里
+     * 首批弹幕要等**新一集的时钟**到达才铺上屏（见 `DanmakuView.beginTransition`），
+     * 而 [DanmakuLoader.syncClock] 对「位置 / 状态 / 倍速都没变」的调用是去重的。
+     * 这一下兜底保证每秒至少落地一次，过渡不会永远收不了尾。
+     */
+    private val danmakuTick=object: Runnable {
+        override fun run() {
+            if(isFinishing || isDestroyed) return
+            syncDanmakuClockNow()
+            root.postDelayed(this,1000L)
+        }
     }
 
     /** 播放器事件到达时立刻采样，不等每秒 tick。 */
@@ -4527,6 +4546,9 @@ class PhonePlayerActivity : PhoneActivity() {
         restoreUnderlayIfNeeded()
         // 设置页可能刚改过弹幕：回到本页重刷一次，不等下一次换集。
         applyDanmakuSettings()
+        // 每秒对齐一次弹幕时钟（见 [danmakuTick]）。
+        root.removeCallbacks(danmakuTick)
+        root.post(danmakuTick)
         // 播放显示四项也可能刚在设置页改过：回到本页立刻按新开关重排顶部信息。
         syncPlayInfo()
         // 回到前台：重新装看门狗（暂停过的那一段不该计入「等画面」的时间）。
@@ -4579,6 +4601,8 @@ class PhonePlayerActivity : PhoneActivity() {
         syncKeepScreenOn()
         chromeEpoch++
         root.removeCallbacks(chromeHideRunnable)
+        // 退到后台就不再每秒对弹幕时钟（回来时由 onResume 重新排）。
+        root.removeCallbacks(danmakuTick)
         // 退到前台之外：暂停与后台都不是卡死，看门狗一律撤掉（回来时由 onResume 重装）。
         disarmPictureWatchdog()
         // 退了前台就不再占着系统媒体面板：那时面板上的按键应该交给真正在前台的应用。

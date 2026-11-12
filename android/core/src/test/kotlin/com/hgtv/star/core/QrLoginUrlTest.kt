@@ -51,7 +51,7 @@ class QrLoginUrlTest {
         val url = login.endpoint("/passport/web/get_qrcode/", emptyList())
         assertNotNull(url)
         assertEquals("/passport/web/get_qrcode/", url!!.encodedPath)
-        assertEquals(0, url.querySize)
+        assertEquals(0, url.querySize())
     }
 
     @Test fun `空路径不会拼出一个合法地址`() {

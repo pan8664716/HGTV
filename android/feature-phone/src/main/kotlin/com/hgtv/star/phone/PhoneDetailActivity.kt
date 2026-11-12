@@ -835,11 +835,7 @@ class PhoneDetailActivity : PhoneActivity() {
         if (d.upcoming) {
             val lib = library ?: return
             // 预约是账号侧数据（要 `sessionid`）：没登录时不改按钮状态，只提示一句
-            // ——与 TV 的 `reserveSeries` 同一套语义。
-            if (!PhoneServices.repository(this).signedIn) {
-                toast("登录后才可以添加预约")
-                return
-            }
+            // ——与 TV 的 `reserveSeries` 同一套语义：**未登录也记本机**（只提示一句）。
             // 切换基于**按钮上正显示的状态**，不重读接口值：接口滞后会让「取消」变成再预约一次。
             val next = !reservedState(d)
             runCatching { lib.setReserved(d.series.id, next) }
@@ -850,7 +846,12 @@ class PhoneDetailActivity : PhoneActivity() {
                 if(next) RecommendBehavior.Event.RESERVE else RecommendBehavior.Event.UNRESERVE,
                 d.series.id,
             )
-            PhoneAccountSync.reserve(this, d.series, next, onDone = { ok ->
+            PhoneAccountSync.reserve(
+                this,
+                d.series,
+                next,
+                onNeedSignIn = { toast(if (next) "已预约 · 仅保存在本机" else "已取消预约") },
+                onDone = { ok ->
                 // 失败：本机状态翻回去。用户在这期间又点过的话（本地已经不是 next）就不动，
                 // 免得把第二次点击的结果也一起抹掉。
                 if (!ok && runCatching { library?.reserved(d.series.id) }.getOrNull() == next) {
@@ -862,7 +863,8 @@ class PhoneDetailActivity : PhoneActivity() {
                     paintReserve(!next)
                     toast(if (next) "预约失败，稍后再试" else "取消预约失败，稍后再试")
                 }
-            })
+                },
+            )
             return
         }
         val saved = runCatching { library?.progress(d.series.id) }.getOrNull()

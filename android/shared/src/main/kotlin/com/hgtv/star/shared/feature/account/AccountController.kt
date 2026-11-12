@@ -183,11 +183,15 @@ class AccountController(
         onNeedSignIn: () -> Unit = {},
         onDone: (Boolean) -> Unit = {},
     ) {
+        // **先落本机**：预约是一份「开播提醒我」的清单，没登录也该记得住。
+        // 未登录时只写本机、不发那条注定失败的写请求（`onNeedSignIn` 只用来提示一句）；
+        // 登录之后刷新账号数据时以账号侧为准（见 [refresh] 的合并）。
+        applyReserve(series, reserved)
         if (!repository.signedIn) {
             onNeedSignIn()
+            onDone(true)
             return
         }
-        applyReserve(series, reserved)
         worker.launch {
             val ok = withContext(Dispatchers.IO) {
                 runCatching { repository.accountReserve(series.id, reserved) }.getOrDefault(false)

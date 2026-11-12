@@ -7,7 +7,7 @@
 import Foundation
 
 enum Vendor {
-    static let videoVersionCode = "71332"
+    static let videoVersionCode = "74332"
     static let appVersionCode = "72232"
     private static let defaultBuild = "BP2A.250605.031.A3"
 
@@ -19,8 +19,8 @@ enum Vendor {
         "channel": "update_64",
         "aid": "8662",
         "app_name": "novelread",
-        "version_code": "71332",
-        "version_name": "7.1.3.32",
+        "version_code": "74332",
+        "version_name": "7.4.3.32",
         "device_platform": "android",
         "os": "android",
         "ssmix": "a",
@@ -29,13 +29,13 @@ enum Vendor {
         "language": "zh",
         "os_api": "36",
         "os_version": "16",
-        "manifest_version_code": "71332",
+        "manifest_version_code": "74332",
         "resolution": "1280*2772",
         "dpi": "520",
-        "update_version_code": "71332",
+        "update_version_code": "74332",
         "host_abi": "arm64-v8a",
         "dragon_device_type": "phone",
-        "pv_player": "71332",
+        "pv_player": "74332",
         "compliance_status": "0",
         "need_personal_recommend": "1",
         "player_so_load": "1",

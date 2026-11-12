@@ -13,7 +13,7 @@ object VendorConstants {
      * 与本机真实设备（以及 query 里的 `device_type`）对不上——同一次会话里出现两台设备。
      *
      * 模板里的三个占位符由 [userAgent] 填：
-     * * `%VC%` —— 版本号（视频路径 71332 / App 路径 72232）；
+     * * `%VC%` —— 版本号（视频路径 74332 / App 路径 72232）；
      * * `%OS%` —— `os_version`；
      * * `%MODEL%` —— `device_type`（机型）；
      * * `%BUILD%` —— 固件串（`rom_version`），认不出来时回落到模板里的默认值。
@@ -21,7 +21,7 @@ object VendorConstants {
     private const val VIDEO_UA_TEMPLATE = "com.phoenix.read/%VC% (Linux; U; Android %OS%; zh_CN; %MODEL%; Build/%BUILD%; Cronet/TTNetVersion:8d40f833 2026-03-03 QuicVersion:21ac1950 2025-11-18)"
     private const val APP_UA_TEMPLATE = "com.phoenix.read/%VC% (Linux; U; Android %OS%; zh_CN; %MODEL%; Build/%BUILD%)"
     /** 视频路径的版本号（`version_code`）。 */
-    const val VIDEO_VERSION_CODE = "71332"
+    const val VIDEO_VERSION_CODE = "74332"
     /** App 路径（搜索 / 账号 / 分类）的版本号。 */
     const val APP_VERSION_CODE = "72232"
     /** 档案里没有固件串时 UA 里用的那个（与内置档案同源）。 */
@@ -77,8 +77,8 @@ object VendorConstants {
         "channel" to "update_64",
         "aid" to "8662",
         "app_name" to "novelread",
-        "version_code" to "71332",
-        "version_name" to "7.1.3.32",
+        "version_code" to "74332",
+        "version_name" to "7.4.3.32",
         "device_platform" to "android",
         "os" to "android",
         "ssmix" to "a",
@@ -87,13 +87,13 @@ object VendorConstants {
         "language" to "zh",
         "os_api" to "36",
         "os_version" to "16",
-        "manifest_version_code" to "71332",
+        "manifest_version_code" to "74332",
         "resolution" to "1280*2772",
         "dpi" to "520",
-        "update_version_code" to "71332",
+        "update_version_code" to "74332",
         "host_abi" to "arm64-v8a",
         "dragon_device_type" to "phone",
-        "pv_player" to "71332",
+        "pv_player" to "74332",
         "compliance_status" to "0",
         "need_personal_recommend" to "1",
         "player_so_load" to "1",

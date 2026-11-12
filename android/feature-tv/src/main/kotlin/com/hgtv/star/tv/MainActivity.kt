@@ -612,6 +612,8 @@ class MainActivity: Activity() {
     var pendingAccountUri: android.net.Uri?=null
     var accountError: Throwable?=null
     var accountLoading=false
+    /** 手动刷新是否在途：防连按，也用来区分「用户按的刷新」与别处顺手强拉一次。 */
+    var accountRefreshing=false
     /** 账号拉取的序号：只有最后一次请求的回调会落地（见 [loadAccount]）。 */
     var accountToken=0
     /** 启动那一次账号拉取失败后的自动重试次数（见 [loadAccount] 的失败分支）。 */
@@ -731,9 +733,13 @@ class MainActivity: Activity() {
     var prefetchCenterRow=-1
     /** 注册的互斥锁：启动时那次异步注册与播放前那一次同步注册可能同时进来，只发一次请求。 */
     val deviceRegisterLock=Any()
-    var catalogHint: String?=null
-    var catalogHintView: TextView?=null
-    val hideHint=Runnable { catalogHint=null; catalogHintView?.visibility=View.GONE }
+
+    /**
+     * 屏幕正中的等待（见 [showCenterLoading]）：三点 + 文案，浮在整页之上、不占布局位置。
+     * 联网动作（刷新 / 清空 / 校验登录）与「取这一部推荐」都走它。
+     */
+    var centerLoading: com.hgtv.star.shared.ui.LoadingDotsView?=null
+    var centerLoadingMessage: String?=null
     val scrollPositions=mutableMapOf<String,Int>()
 
     /** 记住一页列表的滚动位置；超出 [SCROLL_MEMORY] 条就丢掉最早的一条。 */
@@ -1364,6 +1370,7 @@ class MainActivity: Activity() {
     var recommendOverlay: View?=null
     var recommendTitle: TextView?=null
     var recommendMeta: TextView?=null
+
     /**
      * 推荐页浮层里那条播放进度。
      *
@@ -1569,6 +1576,16 @@ class MainActivity: Activity() {
     val categoryFilterButtons=mutableMapOf<String,MutableMap<String,View>>()
     var searchInput: View?=null
     var searchButton: View?=null
+    /** HG键盘分栏：左侧键盘、中间历史 / 联想词、右侧结果的当前实例。 */
+    var hongguoKeyboard: HongguoKeyboard?=null
+    var hongguoHistoryColumn: LinearLayout?=null
+    var hongguoResultsColumn: LinearLayout?=null
+    /** 顶栏「切换键盘」按钮（只在系统输入法模式下建）。 */
+    var hongguoSwitch: View?=null
+    /** 刚触发过一次搜索：结果落地时焦点要交给第一张卡（而不是留在键盘上）。 */
+    var hongguoLandFirstCard=false
+    /** HG键盘输入框里的英文字符。 */
+    var hongguoDraft: String=""
     var voiceButton: View?=null
     val searchActions=mutableListOf<View>()
     /** 搜索输入法的请求代次：焦点离开输入框后，旧的重试必须立刻失效。 */
@@ -1605,6 +1622,14 @@ class MainActivity: Activity() {
     var suggestJob: java.util.concurrent.Future<*>?=null
     val suggestRun=java.util.concurrent.atomic.AtomicReference<Runnable?>(null)
     var detail: Detail?=null
+    /**
+     * 详情页的内存缓存（本进程内，LRU 12 部）。
+     *
+     * 同一部剧短时间内再点进来**直接铺**，不再先闪一屏「加载中」：那份内容刚刚才拿到过，
+     * 再去网络上问一遍只是把已知的东西重画一次。网络那一趟仍然在后台跑（见 [openDetail]），
+     * 只有内容真的变了才重画——因此缓存旧了也不会卡在旧数据上。
+     */
+    val detailMemo=LinkedHashMap<String,Detail>()
     var episodeIndex=0
     /** 详情页是否正在看「相关剧集」：展开时下方的选集换成相关剧集（海报高度不变）。 */
     var relatedOpen=false
@@ -2020,7 +2045,10 @@ class MainActivity: Activity() {
                 authorLoading=state.authorWorksLoading
                 authorFailed=state.authorWorksError!=null
                 detailAuthorLoading=state.authorLoading
-                if(relatedOpen && screen=="detail" && detail?.series?.id==state.seriesId) {
+                // **作者作品也要跟着重铺**：原来这里只认 `relatedOpen`，于是点开「作者作品」之后
+                // 数据明明回来了、那一栏却还停在「正在查找该作者的作品…」上——用户读到的就是
+                // 「一直没有结果返回」（其实请求早就完成了，只是没人重画）。
+                if((relatedOpen || authorOpen) && screen=="detail" && detail?.series?.id==state.seriesId) {
                     detailBottomRefresh?.invoke()
                 }
                 if(onPlaybackPage()) playerStripRefresh?.invoke()
@@ -2386,12 +2414,12 @@ class MainActivity: Activity() {
                 // 搜索页：搜索键只把焦点交给输入框（语音入口已经去掉）。
                 screen=="catalog" && tab==TAB_SEARCH &&
                     !(::tvTools.isInitialized && tvTools.showing) ->
-                    main.post { focusSearchInput() }
+                    main.post { focusHongguoKeyboard() }
                 else -> {
                     switchTab(TAB_SEARCH)
                     // 搜索页带着上一次的关键词进来时，输入框不会自动取焦点（见 searchBar 的
                     // requestFocus 条件）；用户按搜索键的意图是「来打字 / 说话」，这里补一次。
-                    main.post { focusSearchInput() }
+                    main.post { focusHongguoKeyboard() }
                 }
             }
             return true

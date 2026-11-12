@@ -107,11 +107,17 @@ fun MainActivity.profileHead(row: LinearLayout) {
     }
     // 「刷新」：凭据没变、只是想重取一次账号数据时用（平台偶发空响应体，
     // 或者另一台设备上刚改过收藏 / 历史）。
-    val refresh=addButton(row,"刷新",size=ButtonSize.COMPACT,gap=TvStyle.GAP_BLOCK) {
+    lateinit var refresh: TvButton
+    refresh=addButton(row,"刷新",size=ButtonSize.COMPACT,gap=TvStyle.GAP_BLOCK) {
         // **不把已有内容清掉**：清空之后整页会退回「正在读取账号信息」，
         // 用户按一下刷新就看不到刚才那些收藏 / 记录了，等请求回来才恢复——观感是「刷没了」。
         // 现在旧内容留在原地，新数据落地后只重画真正变了的那一栏（见 [refreshAccountViews]）。
+        if(accountRefreshing) return@addButton
+        accountRefreshing=true
         accountError=null
+        // 等待态走**屏幕正中的加载框**（浮在整页之上，不占布局位置）：
+        // 数据没变时界面不会有任何变化，没有这一层用户只会读到「按了没反应」。
+        showCenterLoading("正在刷新账号数据…")
         loadAccount(force=true)
     }
     // 「清空全部记录」：只在**历史**这一栏、而且确实有记录时出现，排在「退出 / 刷新」之后。

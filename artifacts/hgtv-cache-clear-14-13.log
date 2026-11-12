@@ -1,0 +1,110 @@
+11-10 14:13:18.882 W/HGTV-STARTUP-PROF(12414): t=+0ms thread=main | application.attachBaseContext.start | sdk=28
+11-10 14:13:18.913 W/HGTV-STARTUP-PROF(12414): t=+65ms dt=55ms thread=main | application.attachBaseContext
+11-10 14:13:18.936 W/HGTV-STARTUP-PROF(12414): t=+88ms thread=main | application.onCreate.start
+11-10 14:13:19.559 W/HGTV-STARTUP-PROF(12414): t=+711ms dt=622ms thread=main | application.initUmeng
+11-10 14:13:19.562 W/HGTV-STARTUP-PROF(12414): t=+714ms dt=626ms thread=main | application.onCreate
+11-10 14:13:19.637 W/HGTV-STARTUP-PROF(12414): t=+789ms thread=main | launch.onCreate.start
+11-10 14:13:19.707 W/HGTV-STARTUP-PROF(12414): t=+859ms dt=70ms thread=main | launch.onCreate
+11-10 14:13:19.878 W/HGTV-STARTUP-PROF(12414): t=+1030ms dt=241ms thread=main | launch.firstFrame
+11-10 14:13:19.878 W/HGTV-STARTUP-PROF(12414): t=+1030ms thread=main | launch.initialization.start | retry=false
+11-10 14:13:19.901 W/HGTV-STARTUP-PROF(12414): t=+1053ms thread=main | startup.prepare.start
+11-10 14:13:19.989 W/HGTV-STARTUP-PROF(12414): t=+1141ms dt=88ms thread=main | startup.cacheInit
+11-10 14:13:19.991 W/HGTV-STARTUP-PROF(12414): t=+1143ms thread=hgtv-tls-warm | warmup.tls.start
+11-10 14:13:19.993 W/HGTV-STARTUP-PROF(12414): t=+1145ms thread=hgtv-dns-warm | warmup.dns.start
+11-10 14:13:19.999 W/HGTV-STARTUP-PROF(12414): t=+1150ms thread=hgtv-tnc-bootstrap | warmup.tnc.start
+11-10 14:13:20.003 W/HGTV-STARTUP-PROF(12414): t=+1155ms thread=hgtv-sign-warm | warmup.sign.start
+11-10 14:13:20.243 W/HGTV-STARTUP-PROF(12414): t=+1395ms thread=main | session.init.start
+11-10 14:13:20.250 W/HGTV-STARTUP-PROF(12414): t=+1402ms dt=7ms thread=main | session.init
+11-10 14:13:20.250 W/HGTV-STARTUP-PROF(12414): t=+1402ms dt=256ms thread=main | startup.sessionInit
+11-10 14:13:20.250 W/HGTV-STARTUP-PROF(12414): t=+1402ms dt=349ms thread=main | startup.runtime
+11-10 14:13:20.250 W/HGTV-STARTUP-PROF(12414): t=+1402ms thread=main | startup.library.load.start
+11-10 14:13:20.253 W/HGTV-STARTUP-PROF(12414): t=+1405ms thread=hgtv-session-init | session.keeper.start
+11-10 14:13:20.336 W/HGTV-STARTUP-PROF(12414): t=+1488ms dt=83ms thread=hgtv-session-init | session.keeper
+11-10 14:13:20.383 W/HGTV-STARTUP-PROF(12414): t=+1535ms dt=386ms thread=hgtv-tnc-bootstrap | warmup.tnc
+11-10 14:13:20.520 W/HGTV-STARTUP-PROF(12414): t=+1672ms thread=main | library.load.request
+11-10 14:13:20.538 W/HGTV-STARTUP-PROF(12414): t=+1690ms thread=hgtv-library-load | library.worker.start
+11-10 14:13:20.618 W/HGTV-STARTUP-PROF(12414): t=+1770ms dt=79ms thread=hgtv-library-load | library.mirror.preload
+11-10 14:13:20.686 I/ActivityManager( 3345): Displayed com.hgtv.star/.LaunchActivity: +4s136ms
+11-10 14:13:20.806 W/HGTV-STARTUP-PROF(12414): t=+1958ms dt=186ms thread=hgtv-library-load | library.identityLayout
+11-10 14:13:20.807 W/HGTV-STARTUP-PROF(12414): t=+1959ms dt=1ms thread=hgtv-library-load | library.retiredWrites | count=0
+11-10 14:13:20.841 W/HGTV-STARTUP-PROF(12414): t=+1989ms dt=30ms thread=hgtv-library-load | library.preferences | keys=0
+11-10 14:13:20.845 W/HGTV-STARTUP-PROF(12414): t=+1997ms dt=4ms thread=hgtv-library-load | library.progress | files=0 legacy=0
+11-10 14:13:20.898 W/HGTV-STARTUP-PROF(12414): t=+2050ms dt=895ms thread=hgtv-sign-warm | warmup.sign
+11-10 14:13:21.195 W/HGTV-STARTUP-PROF(12414): t=+2340ms dt=343ms thread=hgtv-library-load | library.decode
+11-10 14:13:21.232 W/HGTV-STARTUP-PROF(12414): t=+2384ms dt=28ms thread=hgtv-library-load | library.homeCache.decode | boards=0
+11-10 14:13:21.293 W/HGTV-STARTUP-PROF(12414): t=+2445ms dt=0ms thread=hgtv-library-load | library.accountSnapshot | signed=false
+11-10 14:13:21.298 W/HGTV-STARTUP-PROF(12414): t=+2450ms dt=1ms thread=main | library.mainDispatch
+11-10 14:13:21.299 W/HGTV-STARTUP-PROF(12414): t=+2451ms dt=1049ms thread=main | startup.library.load
+11-10 14:13:21.390 W/HGTV-STARTUP-PROF(12414): t=+2542ms dt=91ms thread=main | startup.identityBind
+11-10 14:13:21.409 W/HGTV-STARTUP-PROF(12414): t=+2561ms thread=main | backupDevices.worker.started
+11-10 14:13:21.409 W/HGTV-STARTUP-PROF(12414): t=+2561ms dt=13ms thread=main | startup.backupDevices.start
+11-10 14:13:21.409 W/HGTV-STARTUP-PROF(12414): t=+2561ms dt=1508ms thread=main | startup.prepare
+11-10 14:13:21.410 W/HGTV-STARTUP-PROF(12414): t=+2562ms dt=1532ms thread=main | launch.initialization.ready
+11-10 14:13:21.410 W/HGTV-STARTUP-PROF(12414): t=+2562ms thread=main | launch.route.start
+11-10 14:13:21.422 W/HGTV-STARTUP-PROF(12414): t=+2574ms thread=hgtv-playback-backups | backupDevices.ensure.start
+11-10 14:13:21.511 W/HGTV-STARTUP-PROF(12414): t=+2663ms dt=101ms thread=main | launch.route | target=MainActivity
+11-10 14:13:21.518 W/HGTV-STARTUP-PROF(12414): t=+2670ms dt=998ms thread=main | library.load.total | result=success
+11-10 14:13:21.618 I/HGTV-NET(12414): [API] start id=2 method=POST host=log5-applog-lf.fqnovel.com path=/service/2/device_register/ queryKeys=tt_data,cronet_version,ttnet_version,use_store_region_cookie body=1030 identity=anonymous
+11-10 14:13:22.009 W/HGTV-STARTUP-PROF(12414): t=+3161ms thread=main | main.onCreate.start
+11-10 14:13:22.015 W/HGTV-STARTUP-PROF(12414): t=+3167ms dt=3ms thread=main | main.version
+11-10 14:13:22.119 W/HGTV-STARTUP-PROF(12414): t=+3272ms dt=54ms thread=main | main.theme
+11-10 14:13:22.126 W/HGTV-STARTUP-PROF(12414): t=+3278ms dt=0ms thread=main | main.runtime.library
+11-10 14:13:22.206 W/HGTV-STARTUP-PROF(12414): t=+3358ms dt=80ms thread=main | main.runtime.artwork
+11-10 14:13:22.304 W/HGTV-STARTUP-PROF(12414): t=+3456ms dt=178ms thread=main | main.runtime
+11-10 14:13:22.363 W/HGTV-STARTUP-PROF(12414): t=+3516ms thread=main | main.collectors.launched
+11-10 14:13:22.372 W/HGTV-STARTUP-PROF(12414): t=+3524ms dt=3ms thread=main | main.debugCleanup
+11-10 14:13:22.549 I/HGTV-NET(12414): [API] response id=2 status=200 930ms body=? empty=false logid=20261110141322B8816C580A6781BA41DB method=POST host=log5-applog-lf.fqnovel.com path=/service/2/device_register/ queryKeys=tt_data,cronet_version,ttnet_version,use_store_region_cookie body=1030 identity=anonymous
+11-10 14:13:22.568 I/HGTV-NET(12414): device register host=log5-applog-lf.fqnovel.com accepted
+11-10 14:13:22.650 W/HGTV-STARTUP-PROF(12414): t=+3802ms dt=176ms thread=main | main.networkSetup
+11-10 14:13:22.665 W/HGTV-STARTUP-PROF(12414): t=+3817ms dt=14ms thread=main | main.favoriteMonitor
+11-10 14:13:22.692 W/HGTV-STARTUP-PROF(12414): t=+3844ms dt=26ms thread=main | main.requestMirrorStorage
+11-10 14:13:22.721 W/HGTV-STARTUP-PROF(12414): t=+3873ms thread=main | main.startupLoading.start
+11-10 14:13:22.818 W/HGTV-STARTUP-PROF(12414): t=+3970ms dt=97ms thread=main | main.startupLoading.render
+11-10 14:13:22.818 W/HGTV-STARTUP-PROF(12414): t=+3970ms dt=125ms thread=main | main.showStartupLoading
+11-10 14:13:22.830 W/HGTV-STARTUP-PROF(12414): t=+3982ms thread=main | main.preconnect.queued
+11-10 14:13:22.830 W/HGTV-STARTUP-PROF(12414): t=+3982ms thread=main | main.library.start
+11-10 14:13:22.831 W/HGTV-STARTUP-PROF(12414): t=+3983ms thread=main | library.load.request
+11-10 14:13:22.831 W/HGTV-STARTUP-PROF(12414): t=+3983ms dt=0ms thread=main | library.load.already
+11-10 14:13:22.831 W/HGTV-STARTUP-PROF(12414): t=+3984ms dt=2ms thread=main | main.library.ready
+11-10 14:13:22.851 I/HGTV-NET(12414): [API] start id=4 method=POST host=log5-applog-lf.fqnovel.com path=/service/2/device_register/ queryKeys=tt_data,cronet_version,ttnet_version,use_store_region_cookie body=1030 identity=anonymous
+11-10 14:13:22.879 W/HGTV-STARTUP-PROF(12414): t=+4031ms dt=870ms thread=main | main.onCreate
+11-10 14:13:22.906 W/HGTV-STARTUP-PROF(12414): t=+4058ms thread=main | main.onResume.start
+11-10 14:13:22.910 W/HGTV-STARTUP-PROF(12414): t=+4062ms thread=main | main.onResume.content.start
+11-10 14:13:23.052 I/HGTV-NET(12414): [API] response id=4 status=200 195ms body=? empty=false logid=2026111014132232471708D180F7CE348A method=POST host=log5-applog-lf.fqnovel.com path=/service/2/device_register/ queryKeys=tt_data,cronet_version,ttnet_version,use_store_region_cookie body=1030 identity=anonymous
+11-10 14:13:23.053 W/HGTV-STARTUP-PROF(12414): t=+4205ms thread=main | recommend.open.start
+11-10 14:13:23.066 I/HGTV-NET(12414): device register host=log5-applog-lf.fqnovel.com accepted
+11-10 14:13:23.097 W/HGTV-STARTUP-PROF(12414): t=+4249ms dt=1677ms thread=hgtv-playback-backups | backupDevices.ensure
+11-10 14:13:23.349 W/HGTV-STARTUP-PROF(12414): t=+4501ms thread=main | recommend.feed.request | append=false
+11-10 14:13:23.368 W/HGTV-STARTUP-PROF(12414): t=+4520ms dt=315ms thread=main | recommend.open | snapshot=0 retained=false items=0
+11-10 14:13:23.368 W/HGTV-STARTUP-PROF(12414): t=+4520ms dt=458ms thread=main | main.onResume.content | screen=recommend tab=0 recommend=true
+11-10 14:13:23.369 W/HGTV-STARTUP-PROF(12414): t=+4521ms dt=463ms thread=main | main.onResume | libraryLoaded=true
+11-10 14:13:23.373 W/HGTV-STARTUP-PROF(12414): t=+4525ms thread=hgtv-net-3 | recommend.feed.worker.start | append=false
+11-10 14:13:23.501 W/HGTV-STARTUP-PROF(12414): t=+4653ms thread=main | main.collector.detail.start
+11-10 14:13:23.550 W/HGTV-STARTUP-PROF(12414): t=+4702ms thread=main | main.collector.search.start
+11-10 14:13:23.580 W/HGTV-STARTUP-PROF(12414): t=+4732ms thread=main | main.shell.firstFrame
+11-10 14:13:23.580 W/HGTV-STARTUP-PROF(12414): t=+4732ms thread=main | main.onResume.firstFrame
+11-10 14:13:23.970 I/ActivityManager( 3345): Displayed com.hgtv.star/.tv.MainActivity: +2s385ms
+11-10 14:13:23.988 W/HGTV-STARTUP-PROF(12414): t=+5140ms thread=main | launch.onDestroy | routed=true
+11-10 14:13:24.024 W/HGTV-STARTUP-PROF(12414): t=+5176ms dt=4031ms thread=hgtv-dns-warm | warmup.dns
+11-10 14:13:25.870 W/HGTV-STARTUP-PROF(12414): t=+7023ms dt=5880ms thread=hgtv-tls-warm | warmup.tls
+11-10 14:13:25.975 W/HGTV-STARTUP-PROF(12414): t=+7127ms dt=2626ms thread=main | recommend.feed.request | append=false
+11-10 14:13:25.986 W/HGTV-STARTUP-PROF(12414): t=+7138ms thread=main | recommend.play.start | index=0 cached=false
+11-10 14:13:26.035 W/HGTV-STARTUP-PROF(12414): t=+7188ms thread=main | recommend.detail.request | index=0 id=7702763145030290457
+11-10 14:13:26.037 W/HGTV-STARTUP-PROF(12414): t=+7189ms thread=main | recommend.feed.result | append=false items=60 page=1
+11-10 14:13:27.041 W/HGTV-STARTUP-PROF(12414): t=+8193ms dt=1006ms thread=main | recommend.detail.request | index=0 success=true
+11-10 14:13:27.042 W/HGTV-STARTUP-PROF(12414): t=+8194ms thread=main | recommend.episode.start | id=7702763145030290457 title=万妖图录传第十四季 autoplay=true
+11-10 14:13:27.792 W/HGTV-STARTUP-PROF(12414): t=+8944ms dt=750ms thread=main | recommend.episode.start | id=7702763145030290457 prepared=false
+11-10 14:13:28.420 I/HGTV    (12414): Stage playerBuild +638ms
+11-10 14:13:28.420 I/HGTV    (12414): Stage warmPlayer +638ms
+11-10 14:13:28.423 I/HGTV    (12414): Stage register +641ms
+11-10 14:13:28.423 I/HGTV    (12414): Stage deviceLevel 4 +642ms
+11-10 14:13:28.895 I/HGTV-NET(12414): model batch host=api5-normal-sinfonlinea.fqnovel.com accepted
+11-10 14:13:29.235 I/HGTV    (12414): Stage stream 1080P +1453ms
+11-10 14:13:30.809 I/HGTV    (12414): Stage prepare 8728KB +3027ms
+11-10 14:13:30.815 I/HGTV    (12414): Stage workDone +3034ms
+11-10 14:13:30.833 I/HGTV    (12414): Stage player +3051ms
+11-10 14:13:30.938 I/HGTV    (12414): Stage sourceSet +3156ms
+11-10 14:13:32.593 I/HGTV    (12414): Playback first frame episode=1 preloaded=false reused=false elapsedMs=5454
+11-10 14:13:36.526 I/HGTV-NET(12414): model batch host=api5-normal-sinfonlinea.fqnovel.com accepted
+11-10 14:13:37.592 I/HGTV-NET(12414): model batch host=api5-normal-sinfonlinea.fqnovel.com accepted
+11-10 14:13:39.191 I/HGTV-NET(12414): model batch host=api5-normal-sinfonlinea.fqnovel.com accepted

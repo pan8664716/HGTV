@@ -70,6 +70,14 @@ class DanmakuLoader(
     private var lastItems: List<Danmaku> = emptyList()
 
     /**
+     * 上一次把弹幕铺到**哪一层**。
+     *
+     * 目标层是会换的（竖屏 ↔ 横屏、页面重建、播放页从信息流接手）。换了之后若只
+     * `resetCursor()` 而不重铺，新那一层永远是空的——「转个屏弹幕就没了」正是这一条。
+     */
+    private var lastTarget: DanmakuView? = null
+
+    /**
      * 拉这一集。
      *
      * @param force true = 无视「同一集不重拉」直接重来（用户刚把弹幕从隐藏打开时用）。
@@ -89,12 +97,25 @@ class DanmakuLoader(
         if (!force && episode == episodeId && loaded) {
             // 同一集重复进来（换清晰度 / 重试）：位置指针回到开头重新对齐。
             view.resetCursor()
+            // 目标层换过（竖屏 ↔ 横屏、页面重建、播放页接手）：把手上这一份铺到新那一层。
+            // 只对齐游标不铺数据的话，新那一层永远是空的——用户读到的就是
+            // 「转个屏 / 进播放页，弹幕就没了」。
+            if (view !== lastTarget) {
+                view.setDanmaku(lastItems)
+                lastTarget=view
+            }
             return
         }
         val switchingEpisode = episode != episodeId
         // 手动换集必须立刻清屏；片尾自动连播保留旧画面滚动到首批新弹幕到达。
         if (switchingEpisode && episode.isNotEmpty() && !clearOnSwitch) {
             view.beginTransition()
+            // 过渡期间首批弹幕先挂起，要等**新一集的时钟**落到视图上才铺开（见 `DanmakuView.setClock`）。
+            // 而 [syncClock] 对「位置 / 状态 / 倍速都没变」的调用是去重的：新一集正好从 0 开始、
+            // 状态也是「正在播」时，它与上一次采样完全一样，于是 `setClock` 一次都不会落地——
+            // 挂起的那份永远等不到，用户读到的就是「换一集 / 转个屏，弹幕没了」。
+            // 这里把去重基准清掉，保证下一次 [syncClock] 一定打到视图上。
+            forgetClock()
         } else {
             view.resetCursor()
         }
@@ -115,7 +136,10 @@ class DanmakuLoader(
                     post {
                         if (!alive() || token != ticket) return@post
                         lastItems = partial
-                        target()?.setDanmaku(partial)
+                        target()?.let { view ->
+                            view.setDanmaku(partial)
+                            lastTarget = view
+                        }
                     }
                 }
             }.onFailure { problem -> onFailed(episodeId, problem) }
@@ -124,7 +148,10 @@ class DanmakuLoader(
                 if (!alive() || token != ticket) return@post
                 count = items.size
                 lastItems = items
-                target()?.setDanmaku(items)
+                target()?.let { view ->
+                    view.setDanmaku(items)
+                    lastTarget = view
+                }
                 onLoaded(episodeId, items.size)
             }
         }
@@ -140,8 +167,24 @@ class DanmakuLoader(
         episode = ""
         count = -1
         lastItems = emptyList()
+        lastTarget = null
         target()?.clear()
         forgetClock()
+    }
+
+    /**
+     * 目标层换了就把手上这一份重新铺上去（不重新请求、不动时钟）。
+     *
+     * 给「页面重建 / 切竖横屏之后宿主只调了设置、没有重放」的那条路兜底：
+     * 已经拉到手的弹幕不该因为换了一层 View 就凭空消失。
+     */
+    fun reattach() {
+        val view = target() ?: return
+        if (view === lastTarget || !loaded) return
+        view.mode = mode()
+        view.resetCursor()
+        view.setDanmaku(lastItems)
+        lastTarget = view
     }
 
     /**
@@ -156,6 +199,7 @@ class DanmakuLoader(
         view.resetCursor()
         view.setDanmaku(lastItems)
         view.setClock(positionMs, running, speed)
+        lastTarget = view
         clockAt = positionMs
         runningState = running
         clockSpeedState = speed

@@ -7,6 +7,7 @@ import android.graphics.Typeface
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.Space
 import com.google.android.exoplayer2.Player
 import com.hgtv.star.shared.compat.isMeteredConnection
 import com.hgtv.star.shared.architecture.network
@@ -15,12 +16,14 @@ import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.core.CategoryFilterOption
 import com.hgtv.star.core.CategorySelection
 import com.hgtv.star.core.Detail
+import com.hgtv.star.core.HeatLabel
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.SeekStep
 import com.hgtv.star.core.Series
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.core.lruPut
+import com.hgtv.star.shared.ui.LoadingDotsView
 
 // 本文件是「推荐」这一条独立的播放链路：抖音式的上下换剧、确定进正片、菜单开播放设置、
 // 返回回主页面。它复用播放内核（playEpisode / 播放器 / 弹幕 / 播放设置菜单），
@@ -259,7 +262,7 @@ fun MainActivity.openRecommend() {
         // 只有 3 条缓存时不能再等首帧后的 3 秒：这段时间用户只能反复看到同一小批，
         // 立即补一页，让推荐列表尽快扩到可用规模。
         if(snapshot.size<RECOMMEND_FIRST_ITEMS) fireRecommendFeed()
-    } else showRecommendMessage("正在加载推荐…")
+    } else showRecommendMessage("正在加载推荐…",loading=true)
     if(snapshot.isEmpty()) {
         // 没有任何快照（第一次装 / 清过缓存）：整屏只有一行字，这一部只能由流决定。
         loadRecommendPage(append=false) {
@@ -620,8 +623,8 @@ fun MainActivity.loadGenderOptions(onReady: (List<CategoryFilterOption>) -> Unit
     }
 }
 
-/** 整屏一行说明（首次进入 / 取不到推荐时用；此时还没有播放画面）。 */
-fun MainActivity.showRecommendMessage(message: String) {
+/** 整屏说明（首次进入 / 取不到推荐时用；此时还没有播放画面）。 */
+fun MainActivity.showRecommendMessage(message: String,loading: Boolean=false) {
     // 走到「整屏只有一行字」就说明这一屏没有画面：把播放器那一层收掉再清 root，
     // 否则换剧 / 补页失败时会留下「画面没了、声音还在放」。`screen` 不动（仍是 recommend），
     // 因此返回键照样回主页面、也不会写历史。
@@ -631,11 +634,18 @@ fun MainActivity.showRecommendMessage(message: String) {
     root.removeAllViews(); root.setBackgroundColor(Color.BLACK)
     // 画面之外那一层也随这棵树一起没了（见 `overlayLayer`）。
     overlayLayer=null
-    val label=text(message,20f,TvStyle.playerText).apply {
-        gravity=Gravity.CENTER
-        setLineSpacing(dp(6).toFloat(),1f)
+    if(loading) {
+        root.addView(
+            LoadingDotsView(this).apply { label=message },
+            FrameLayout.LayoutParams(-2,-2,Gravity.CENTER),
+        )
+    } else {
+        val label=text(message,20f,TvStyle.playerText).apply {
+            gravity=Gravity.CENTER
+            setLineSpacing(dp(6).toFloat(),1f)
+        }
+        root.addView(label,FrameLayout.LayoutParams(-1,-1))
     }
-    root.addView(label,FrameLayout.LayoutParams(-1,-1))
     // 整棵树被换掉了：调试模式下面板照旧重挂一次（见 `DebugOverlay.kt`）。
     reattachDebugOverlay()
 }
@@ -661,15 +671,17 @@ fun MainActivity.showRecommendLoading(series: Series) {
             gravity=Gravity.CENTER
             maxLines=2
         }, lp(-1,-2))
-        box.addView(text("正在加载…",17f,TvStyle.playerDim).apply {
-            gravity=Gravity.CENTER
-            setPadding(0,dp(10),0,0)
-        }, lp(-1,-2))
+        // 等待统一用三点动画（与启动页 / 列表加载同一个控件），不再单独写一行「正在加载…」。
+        box.addView(
+            LoadingDotsView(this).apply { label="正在加载…" },
+            lp(-2,-2).apply { topMargin=dp(10) },
+        )
         root.addView(box,FrameLayout.LayoutParams(-1,-1))
     } else {
         // 电视端直接复用正式推荐浮层：标题位置从一开始就是最终位置。
         attachRecommendOverlay(series)
-        recommendMeta?.text="正在加载…"
+        // 等待放在**屏幕正中**的加载框里：浮层里加一行会把整块往上顶（它贴底）。
+        showCenterLoading("正在加载《${series.title}》…")
     }
     reattachDebugOverlay()
 }
@@ -733,7 +745,8 @@ fun MainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,s
         // 若还是上一部，用户读到的就是「按了下键没换台」。
         player?.pause()
         recommendTitle?.text=series.title
-        recommendMeta?.text="正在加载…"
+        // 换剧：详情还没回来，加载框显示在屏幕正中（浮层里那一行已经去掉了）。
+        showCenterLoading("正在加载《${series.title}》…")
     }
     val detailStarted=StartupTrace.now()
     StartupTrace.mark("recommend.detail.request", "index=$safe id=${series.id}")
@@ -1438,6 +1451,20 @@ fun MainActivity.attachRecommendOverlay(series: Series) {
     // 与六键控制条功能重叠（前者已被用户点名去掉）。
     // 电视上 `touchArmed` 恒为 false，这条提前返回不会执行，浮层与今天逐行一致。
     if(touchArmed) return
+    // 详情接口回来的 `series` **不带推荐流的运营角标**（爆剧 / 新剧 / 热度排名）：
+    // 起播之后这块浮层是按 `detail.series` 重挂的（见 `playEpisode`），于是标签整排消失——
+    // 用户读到的就是「第一次加载能看到、一开始播就没了」。这里用推荐流里同一部剧那一份
+    // 把空字段补齐（详情自己有值就以详情为准）。
+    val feed=recommendItems.getOrNull(recommendIndex)
+    val info=if(feed!=null && feed.id==series.id) series.copy(
+        label=series.label.ifEmpty { feed.label },
+        labelBg=series.labelBg.ifEmpty { feed.labelBg },
+        recommendRanking=series.recommendRanking.ifEmpty { feed.recommendRanking },
+        recommendRankingBg=series.recommendRankingBg.ifEmpty { feed.recommendRankingBg },
+        tags=series.tags.ifEmpty { feed.tags },
+        // 热度同理：详情接口不给，只有推荐流那一份带着。
+        heat=if(series.heat>0L) series.heat else feed.heat,
+    ) else series
     val bar=column().apply {
         setPadding(dp(78),dp(28),dp(78),dp(56))
         background=TvStyle.gradient(Color.TRANSPARENT,0xCC000000.toInt())
@@ -1461,10 +1488,10 @@ fun MainActivity.attachRecommendOverlay(series: Series) {
     recommendProgress=progress; recommendSpan=span
 
     val titleLine=row()
-    val label=series.label.trim()
+    val label=info.label.trim()
     if(label.isNotEmpty()) {
         titleLine.addView(
-            recommendChip(label,series.labelBg,16f),
+            recommendChip(label,info.labelBg,16f),
             lp(-2,-2).apply { rightMargin=dp(12) },
         )
     }
@@ -1475,42 +1502,57 @@ fun MainActivity.attachRecommendOverlay(series: Series) {
     }
     titleLine.addView(title,lp(0,-2).apply { weight=1f })
     val details=row()
-    val categoryTags=series.tags.trim()
+    val categoryTags=info.tags.trim()
     if(categoryTags.isNotEmpty()) {
         val category=text(categoryTags,17f,TvStyle.playerDim).apply {
             maxLines=1
             ellipsize=android.text.TextUtils.TruncateAt.END
+            // **不给 weight**：给了它会撑满整行，把后面的热度 / 排名角标顶到最右边。
+            // 类型标签按内容宽排，长到一定宽度就省略，角标紧跟在它后面。
+            maxWidth=(resources.displayMetrics.widthPixels*0.55f).toInt()
             setShadowLayer(5f,0f,2f,0x99000000.toInt())
         }
-        details.addView(category,lp(0,-2).apply { weight=1f })
+        details.addView(category,lp(-2,-2))
     }
-    val ranking=series.recommendRanking.trim()
+    // 热度：紧跟在剧集类型标签后面（`🔥9014万`）。**不套角标底板**——它和类型标签是同一行文字，
+    // 加上背景反而把它读成一枚「可点的按钮」。接口没给数值时整枚收起。
+    val heat=HeatLabel.badge(null,info.heat)
+    var hasBefore=categoryTags.isNotEmpty()
+    if(heat.isNotEmpty()) {
+        val heatLabel=text(heat,17f,TvStyle.playerDim).apply {
+            maxLines=1
+            setShadowLayer(5f,0f,2f,0x99000000.toInt())
+        }
+        details.addView(heatLabel,lp(-2,-2).apply { if(hasBefore) leftMargin=dp(12) })
+        hasBefore=true
+    }
+    val ranking=info.recommendRanking.trim()
     if(ranking.isNotEmpty()) {
         details.addView(
-            recommendChip(ranking,series.recommendRankingBg,16f),
-            lp(-2,-2).apply {
-                leftMargin=if(categoryTags.isEmpty()) 0 else dp(12)
-            },
+            recommendChip(ranking,info.recommendRankingBg,16f),
+            lp(-2,-2).apply { if(hasBefore) leftMargin=dp(12) },
         )
     }
-    val meta=text("",18f,TvStyle.playerDim).apply {
-        setPadding(0,dp(8),0,0)
-        setShadowLayer(5f,0f,2f,0x99000000.toInt())
-    }
+    // 尾巴留一段弹性空白：这一组（类型 / 热度 / 排名）因此从左边起排，
+    // 而不是被撑到行尾贴右边。
+    details.addView(Space(this),lp(0,1).apply { weight=1f })
     val hint=text("确定 追剧 · 上下 换剧 · 左右 快进退 · 菜单 播放设置 · 返回 主页面",16f,TvStyle.playerDim).apply {
         setPadding(0,dp(14),0,0)
         setShadowLayer(5f,0f,2f,0x99000000.toInt())
     }
-    // 自上而下的阅读顺序：剧名 → 状态提示 → 播到哪儿 → 怎么操作。
-    // 推荐页不再显示「第 x / y 集」，这里只保留暂停与临时错误提示。
+    // 自上而下的阅读顺序：剧名 → 类型 / 热度 / 排名 → 播到哪儿 → 怎么操作。
+    //
+    // **这里不再有「状态行」**（原来那行会写「正在加载…」/「已暂停」/ 临时提示）：
+    // 这块浮层贴底（`Gravity.BOTTOM`），多一行它整体就往上长一截，标题和标签跟着被顶上去；
+    // 那一行时有时无，用户读到的就是「界面在跳」。等待一律放到**屏幕正中**的三点
+    // （`showCenterLoading`，与进入第一屏那个加载同一个样式），不占浮层的布局位置。
     bar.addView(titleLine,lp(-1,-2))
-    if(categoryTags.isNotEmpty() || ranking.isNotEmpty()) {
+    if(categoryTags.isNotEmpty() || heat.isNotEmpty() || ranking.isNotEmpty()) {
         bar.addView(details,lp(-1,-2).apply { topMargin=dp(6) })
     }
-    bar.addView(meta,lp(-1,-2))
     bar.addView(transport,lp(-1,-2))
     bar.addView(hint,lp(-1,-2))
-    recommendTitle=title; recommendMeta=meta; recommendOverlay=bar
+    recommendTitle=title; recommendOverlay=bar
     // 播放设置开着时浮层让位（菜单贴底占了下三分之一），收起菜单时再露出来。
     bar.visibility=if(playbackMenu!=null) View.GONE else View.VISIBLE
     // 挂进「画面之外那一层」：竖屏短剧全屏把画面转 90° 时，这块浮层要跟着一起转，
@@ -1571,7 +1613,7 @@ private fun MainActivity.recommendChip(value: String,bg: String,size: Float): an
 
 fun MainActivity.dismissRecommendOverlay() {
     recommendOverlay?.let { overlay -> (overlay.parent as? android.view.ViewGroup)?.removeView(overlay) }
-    recommendOverlay=null; recommendTitle=null; recommendMeta=null
+    recommendOverlay=null; recommendTitle=null
     // 进度条是浮层的子控件，随浮层一起消失；引用一并清掉，免得下一帧刷到已摘下的控件。
     recommendProgress=null; recommendSpan=null
 }
@@ -1605,15 +1647,8 @@ fun MainActivity.updateRecommendOverlay() {
         val text=if(duration>0) "${formatTime(position)} / ${formatTime(duration)}" else "--:-- / --:--"
         if(line.text.toString()!=text) line.text=text
     }
-    val meta=recommendMeta ?: return
-    val now=android.os.SystemClock.elapsedRealtime()
-    val notice=if(recommendNotice.isNotEmpty() && now-recommendNoticeAt<3000) recommendNotice else ""
-    val text=if(notice.isNotEmpty()) notice else {
-        // 推荐页不显示「第 x / y 集」，只保留暂停这一条可感知状态。
-        if(playbackReady && p?.playWhenReady!=true) "已暂停" else ""
-    }
-    meta.visibility=if(text.isBlank()) View.GONE else View.VISIBLE
-    if(meta.text.toString()!=text) meta.text=text
+    // 出画面了就把「正在加载」的框收掉：它浮在屏幕正中，不占浮层的位置。
+    if(playbackReady) hideCenterLoading()
 }
 
 /**

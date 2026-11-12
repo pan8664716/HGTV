@@ -273,7 +273,9 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      *
      * 默认开启；关闭后聚合本身、7 秒停留和槽位替换都不变，只把 `×N` 恢复为固定白色字号。
      */
-    val danmakuEffects: Boolean=true) {
+    val danmakuEffects: Boolean=true,
+    /** 电视搜索键盘：后加字段，旧备份默认系统输入法。 */
+    val searchKeyboard: SearchKeyboard=SearchKeyboard.SYSTEM) {
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("danmaku",danmaku.storedValue)
         .put("danmakuScale",danmakuScale.toDouble()).put("danmakuAlpha",danmakuAlpha.toDouble()).put("danmakuSpeed",danmakuSpeed.storedValue)
         .put("keys",keys)
@@ -300,6 +302,7 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
         .put("recommendSwipe",recommendSwipe)
         .put("hiddenHome",hiddenHome)
         .put("reduceAnim",reduceAnim)
+        .put("searchKeyboard",searchKeyboard.storedValue)
 }
 data class BackupData(
     val favorites: List<Series>,
@@ -447,7 +450,8 @@ object LibraryBackup {
         val hiddenHome=settings.optString("hiddenHome","").takeIf { it.length<=120 && it.none(Char::isISOControl) }.orEmpty()
         // 「减少动画」：后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。
         val reduceAnim=settings.optBoolean("reduceAnim",false)
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,danmakuEffects=danmakuEffects),later,hiddenIds)
+        val searchKeyboard=SearchKeyboard.fromStored(settings.optString("searchKeyboard").takeIf { settings.has("searchKeyboard") })
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,danmakuEffects=danmakuEffects,searchKeyboard=searchKeyboard),later,hiddenIds)
     }
     /**
      * 同一部剧保留进度更高的一条：先看集数，再看是否看完，再看同集位置，

@@ -229,10 +229,10 @@ fun MainActivity.settings(parent: LinearLayout) {
     // —— 播放偏好：四行，前两行与末行两格并排 ——
     //
     // 七个设置项，两两一行排成四行：
-    //   清晰度 / 倍速、画面模式 / 解码、画面缩放、自动连播 / 快进快退。
+    //   清晰度 / 倍速、画面模式 / 解码、自动连播 / 画面缩放、快进快退。
     //
-    // 画面缩放单独占一行；快进快退与自动连播并排，半行宽下仍有
-    // `SettingSlider.minTrack` 保底 96dp，秒数拨得准。
+    // 自动连播与画面缩放并排（用户要求画面缩放在右）；快进快退单独占左半格，
+    // 右半格留空——半行宽下仍有 `SettingSlider.minTrack` 保底 96dp，秒数拨得准。
     val playback=panel(playbackPage,gap=TvStyle.GAP_INLINE)
     heading(playback,"播放偏好","所有剧集共用，播放中也可调整")
     val prefRow1=lineRow(playback)
@@ -248,9 +248,14 @@ fun MainActivity.settings(parent: LinearLayout) {
     // 正在播放时从播放设置面板改，会当场重建播放器并从当前位置续播。
     lateinit var decoderButton: TvButton
     decoderButton=cellSetting(prefRow2,"视频解码  ·  ${library.decoderMode.label}") { showDecoderPicker(decoderButton,false) }
-    // —— 画面缩放占左半格，自动连播与快进快退并排 ——
+    // —— 自动连播占左半格，画面缩放占右半格 ——
     val prefRow3=lineRow(playback)
-    // 画面缩放：**只缩播放画面本身**，弹幕层仍然是整屏坐标（见 `applyVideoScale`）。
+    // 自动连播（左）：关掉时把已经挂进队列的下一集摘掉，否则它还会在片尾自己播下去。
+    val autoNextRow=cellSwitch(prefRow3,TvSwitchRow(this,"自动连播",checked=library.autoNext,onToggle={ on ->
+        library.autoNext=on
+        if(!on) dropQueuedEpisode()
+    }))
+    // 画面缩放（右）：**只缩播放画面本身**，弹幕层仍然是整屏坐标（见 `applyVideoScale`）。
     // 1..100 就是百分比读数，与「弹幕大小」共用同一种滑动条。
     val scaleSlider=cellSlider(
         prefRow3,"画面缩放",1f,100f,1f,library.videoScale,
@@ -259,14 +264,10 @@ fun MainActivity.settings(parent: LinearLayout) {
         library.videoScale=value
         if(onPlaybackPage()) applyVideoScale()
     }
-    padLine(prefRow3,1)
     val prefRow4=lineRow(playback)
-    // 自动连播（左）：关掉时把已经挂进队列的下一集摘掉，否则它还会在片尾自己播下去。
-    val autoNextRow=cellSwitch(prefRow4,TvSwitchRow(this,"自动连播",checked=library.autoNext,onToggle={ on ->
-        library.autoNext=on
-        if(!on) dropQueuedEpisode()
-    }))
-    // 快进快退时长（右）：播放界面按左右键单次跳过的秒数，2..20 秒。
+    // 左半格留空，快进快退放**右边**（用户要求）。
+    padLine(prefRow4,1)
+    // 快进快退时长：播放界面按左右键单次跳过的秒数，2..20 秒。
     // 连按加速按同一比例走（见 `MainActivity.seek`）：10 秒档是「连按 5 次后每次 30 秒」，
     // 20 秒档就是 60 秒，2 秒档就是 6 秒——改档不会让连按手感错位。
     val seekSlider=cellSlider(
@@ -275,8 +276,8 @@ fun MainActivity.settings(parent: LinearLayout) {
     ) { value -> library.seekStep=value.toInt() }
     track(0,qualityButton,defaultSpeed)
     track(0,frame,decoderButton)
-    track(0,scaleSlider)
-    track(0,autoNextRow,seekSlider)
+    track(0,autoNextRow,scaleSlider)
+    track(0,seekSlider)
 
     // —— 播放显示：画面左上角那一条里的四项 ——
     // 剧集标题 / 当前集数 / 时间 / 网速四项各自开关，排成一行四格，**默认四格全关**。
@@ -468,7 +469,7 @@ fun MainActivity.settings(parent: LinearLayout) {
     // 「每行卡片」是列表排版，「打开应用进入推荐」是启动落点、「返回顶部」是列表页那枚浮层
     // 何时出现，三件都是「一进应用 / 一进列表就看到」的设置。
     val layoutPanel=panel(appearancePage,gap=TvStyle.GAP_INLINE)
-    heading(layoutPanel,"布局启动","列表怎么排、进应用先看哪一页、回到顶部何时出现")
+    heading(layoutPanel,"布局启动","列表怎么排、默认输入法、启动落点与回到顶部")
     val layoutRow=lineRow(layoutPanel)
     // 每行卡片数（全局）：4 / 5 / 6 / 7 / 8。首页剧架、榜单 / 分类 / 搜索 / 收藏 / 历史 / 我的 共用。
     // 列数变少时卡片变宽，封面与卡片文字一起放大（见 HomeScreen.slotWidth / textScale
@@ -485,17 +486,18 @@ fun MainActivity.settings(parent: LinearLayout) {
         showCatalog()
     }).apply { tag=SETTINGS_TAG_LAUNCH_RECOMMEND })
     track(1,homeColumnsButton,launchRecommendRow)
-    // 返回顶部按钮：与上面两格**同宽同高**——同一套 [cellSetting]，右半边留空（[padLine]）。
-    // 整宽一行虽然不折行，但宽度是上面那两格的两倍，一栏里会读成「这一项更大」，
-    // 焦点框跳过去时也像换了一个档位；因此宁可让读数取短说法（见 `backToTopShort`）。
+    // 返回顶部与默认输入法同排：两格同宽同高，读数都取短说法。
     val backToTopRow=lineRow(layoutPanel)
     lateinit var backToTopButton: TvButton
     backToTopButton=cellSetting(backToTopRow,"返回顶部  ·  "+backToTopShort(library.backToTop)) {
         showBackToTopPicker(backToTopButton)
     }
-    padLine(backToTopRow,1)
     backToTopButton.tag=SETTINGS_TAG_BACK_TO_TOP
-    track(1,backToTopButton)
+    lateinit var defaultKeyboardButton: TvButton
+    defaultKeyboardButton=cellSetting(backToTopRow,"默认输入法  ·  ${library.searchKeyboard.label}") {
+        showDefaultKeyboardPicker(defaultKeyboardButton)
+    }
+    track(1,backToTopButton,defaultKeyboardButton)
 
     // —— 导航显隐：十二枚开关排成一张四列网格（三整行）——
     // 前五枚是导航栏的圆形入口（推荐 / 搜索 / 分类 / 榜单 / 我的），关掉那一页就不建它；
@@ -1070,16 +1072,20 @@ private fun firstFocusableIn(view: View): View? {
     return null
 }
 /**
- * 页面内提示（替代 Toast）。
+ * 一句「刚刚发生了什么」——**浮在画面上**，不占任何布局位置。
  *
- * 系统 Toast 是独立于界面的一层浮窗，样式与字号不受本应用控制，电视上还会盖在画面正中；
- * 需要给一句「刚刚发生了什么」时改用它——页头下面一行淡字，不参与焦点、几秒后自己消失。
+ * 早先它是页面里的一行字（页头下面、`GONE` ↔ `VISIBLE` 切换）：那一行一露面就把下面的
+ * 内容整体推下去、四秒后再弹回来，用户读到的就是「按一下，界面先变形一下」。
+ * 现在改走 [TvTools.toast]（应用自己那枚贴底居中的胶囊，主题色、不吃焦点），
+ * 出现与消失都不动页面。
+ *
+ * 只报**结果**；等待中的三点走 [showCenterLoading]，同样不占布局。
  */
 fun MainActivity.showHint(message: String) {
-    catalogHint=message
-    catalogHintView?.let { view -> view.text=message; view.visibility=View.VISIBLE }
-    main.removeCallbacks(hideHint)
-    main.postDelayed(hideHint,4000)
+    if(message.isBlank()) return
+    // `tvTools` 是 lateinit：极早期（首屏还没建完）调到这里时它可能还没初始化，
+    // 那一下没有提示可以接受，绝不能因此崩掉。
+    runCatching { tvTools.toast(message) }
 }
 /**
  * 搜索：**不分内容类型**（顶部那两个「漫剧 / 短剧」开关已经去掉）。

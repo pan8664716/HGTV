@@ -40,6 +40,13 @@
 -dontwarn okhttp3.**
 -dontwarn okio.**
 
+# ========== Medusa 签名 ==========
+# `defaultAutonomousState()` 用 `java.lang.management.ManagementFactory` 取进程号，
+# 这个包在 Android 运行时**不存在**（只有桌面 JVM 有）。调用点已经包在 `runCatching`
+# 里，取不到就回落成 1，所以这里只需放行 R8 的「缺失类」检查；不加这一条，
+# `:app:minifyReleaseWithR8` 会直接以 `Missing classes detected` 中断打包。
+-dontwarn java.lang.management.**
+
 # ========== 友盟（统计 + APM） ==========
 -keep class com.umeng.** { *; }
 -keep class com.uyumao.** { *; }

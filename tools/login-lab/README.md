@@ -4,6 +4,10 @@
 接口清单与签名材料来自 [`pan8664716/hgApi`](https://github.com/pan8664716/hgApi)；
 签名实现与当前 APK 的 `android/core/.../Signer.kt` 逐行对齐。
 
+目录约定见 [`tools/README.md`](../README.md)：本目录的基础网页工具与早期探针入库；
+`frida/`、`hgmedusa/`、`re/` 以及一次性探针属于本机实验；登录态和采集产物统一放
+`.runtime/`，三者都不入库。
+
 ## 结论先行（2026-10-15 实测）
 
 **手机号验证码 / 扫码都走不通，能走通的是「在模拟器里用官方 App 登录，再把凭据取出来」**。

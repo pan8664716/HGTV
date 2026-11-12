@@ -1,0 +1,300 @@
+name: 问题反馈
+description: 反馈崩溃、界面、播放、账号、同步、安装等问题
+title: "[问题] "
+labels:
+  - bug
+body:
+  - type: markdown
+    attributes:
+      value: |
+        提交前请先搜索已有 Issue。
+
+        应用内更新与下载已下线，相关说明见置顶 Issue #94。
+
+        请勿提交账号密码、验证码、手机号、二维码、Cookie、Token、设备唯一标识等敏感信息。
+        截图、录屏和日志请先打码；附件可以在 Issue 创建后拖入。
+
+  - type: dropdown
+    id: issue_category
+    attributes:
+      label: 问题类型
+      description: 选择最接近的一项
+      options:
+        - 启动或崩溃
+        - 推荐、分类、榜单或搜索
+        - 详情或选集
+        - 播放或弹幕
+        - 账号或登录
+        - 局域网同步
+        - 安装或覆盖升级
+        - 界面、设置或性能
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: app_version
+    attributes:
+      label: HGTV 版本号
+      description: 设置 → 关于中显示的版本号
+      placeholder: 例如 1.3.6.1
+    validations:
+      required: true
+
+  - type: dropdown
+    id: device_type
+    attributes:
+      label: 设备类型
+      options:
+        - 手机
+        - 平板
+        - 电视
+        - 电视盒子
+        - 投影仪
+        - 其他
+    validations:
+      required: true
+
+  - type: input
+    id: device_model
+    attributes:
+      label: 设备品牌和型号
+      placeholder: 例如 小米 14、SONY X90J、某品牌电视盒子
+    validations:
+      required: true
+
+  - type: input
+    id: android_version
+    attributes:
+      label: Android 版本
+      placeholder: 例如 Android 13
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_source
+    attributes:
+      label: APK 来源
+      options:
+        - 官方 GitHub Releases
+        - 第三方网站或网盘
+        - 他人转发
+        - 自行编译
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: install_method
+    attributes:
+      label: 安装方式
+      options:
+        - 首次安装
+        - 覆盖安装
+        - ADB 安装
+        - 系统或电视助手安装
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: network_type
+    attributes:
+      label: 网络环境
+      options:
+        - Wi-Fi
+        - 有线网络
+        - 移动数据
+        - 手机热点
+        - VPN 或代理
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: affected_page
+    attributes:
+      label: 发生问题的页面
+      options:
+        - 启动页
+        - 推荐页
+        - 分类页
+        - 榜单页
+        - 详情页
+        - 搜索页
+        - 播放页
+        - 我的页
+        - 设置页
+        - 局域网同步
+        - 安装过程
+        - 其他
+    validations:
+      required: true
+
+  - type: dropdown
+    id: frequency
+    attributes:
+      label: 问题频率
+      options:
+        - 每次都会出现
+        - 经常出现
+        - 偶尔出现
+        - 只出现过一次
+    validations:
+      required: true
+
+  - type: dropdown
+    id: severity
+    attributes:
+      label: 影响程度
+      options:
+        - 完全不可用
+        - 主要功能受影响
+        - 有临时绕过办法
+        - 轻微问题
+    validations:
+      required: true
+
+  - type: textarea
+    id: problem_description
+    attributes:
+      label: 问题描述
+      description: 说明实际发生了什么
+      placeholder: 请尽量写清楚现象、出现时机和影响范围
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected_behavior
+    attributes:
+      label: 期望结果
+      placeholder: 正常情况下你期望看到什么
+    validations:
+      required: true
+
+  - type: textarea
+    id: reproduction_steps
+    attributes:
+      label: 复现步骤
+      description: 按顺序编号填写
+      placeholder: |
+        1. 打开……
+        2. 点击……
+        3. 选择……
+        4. 出现……
+    validations:
+      required: true
+
+  - type: textarea
+    id: error_text
+    attributes:
+      label: 错误文字或错误码
+      description: 有错误码时请原样填写，例如 4005
+      placeholder: 没有可以填写“无”
+    validations:
+      required: false
+
+  - type: input
+    id: first_seen_version
+    attributes:
+      label: 第一次出现的版本
+      placeholder: 例如 1.3.6.1
+    validations:
+      required: false
+
+  - type: textarea
+    id: older_version_behavior
+    attributes:
+      label: 旧版本表现
+      description: 如果旧版本正常，请写明版本号和正常表现
+    validations:
+      required: false
+
+  - type: dropdown
+    id: tried_workarounds
+    attributes:
+      label: 已尝试的排查
+      description: 可以多选
+      multiple: true
+      options:
+        - 重启应用
+        - 重启设备
+        - 清空应用缓存
+        - 切换 Wi-Fi 或移动数据
+        - 更换清晰度
+        - 切换硬件或软件解码
+        - 重新安装
+        - 尚未尝试
+    validations:
+      required: true
+
+  - type: markdown
+    attributes:
+      value: |
+        ## 播放问题专项信息
+
+        如果问题涉及播放或弹幕，请尽量填写下一项；其他问题可以填写“不涉及”。
+
+  - type: textarea
+    id: playback_details
+    attributes:
+      label: 播放问题详情
+      description: 涉及播放时填写；不要填写账号或凭据
+      placeholder: |
+        剧名和集数：
+        清晰度：
+        解码方式：硬件 / 软件
+        画面模式：完整画面 / 等比铺满 / 拉伸
+        倍速：
+        症状：黑屏 / 卡住 / 只有声音 / 只有画面 / 花屏 / 绿屏 / 音画不同步 / 错误页
+        声音是否继续：
+        进度条是否继续：
+        换清晰度是否恢复：
+        换其他剧是否正常：
+        调试面板关键读数：
+    validations:
+      required: false
+
+  - type: textarea
+    id: account_sync_install_details
+    attributes:
+      label: 账号、同步或安装专项信息
+      description: 只在对应问题时填写
+      placeholder: |
+        账号/登录：登录方式、错误提示、是否掉登录；禁止填写验证码、手机号、Cookie、Token
+        局域网同步：两台设备型号、Android 版本、同步源/接收端、勾选的数据、失败步骤
+        安装问题：APK 文件名、安装方式、系统错误提示、是否签名冲突或版本降级
+    validations:
+      required: false
+
+  - type: textarea
+    id: debug_and_logs
+    attributes:
+      label: 调试信息、日志或附件
+      description: 可在设置中打开调试模式，复现后记录关键读数；附件请在创建 Issue 后拖入
+      placeholder: |
+        调试面板关键读数：
+        adb logcat 过滤后的日志：
+        截图或录屏说明：
+    validations:
+      required: false
+
+  - type: textarea
+    id: extra_context
+    attributes:
+      label: 其他补充
+      placeholder: 发生时间、频率变化、特殊设置或其他线索
+    validations:
+      required: false
+
+  - type: checkboxes
+    id: confirmations
+    attributes:
+      label: 提交确认
+      options:
+        - label: 我已搜索现有 Issue，确认不是重复反馈
+          required: true
+        - label: 我使用的是官方 Release 中的 APK，或已说明其他来源
+          required: true
+        - label: 我已删除账号、验证码、手机号、二维码、Cookie、Token、设备唯一标识等敏感信息
+          required: true

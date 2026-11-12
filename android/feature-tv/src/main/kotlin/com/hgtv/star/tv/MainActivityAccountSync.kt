@@ -276,9 +276,19 @@ fun MainActivity.clearAllHistory(anchor: View?) {
         tvTools.info("清空观看记录","本机与账号里都没有可清空的观看记录。",anchor)
         return
     }
-    val result=accountController.clearAllHistory { ok ->
-        if(!ok && !isDestroyed) tvTools.toast("本机已清空；云端还有记录没删掉，请稍后重试")
-    }
+    // 本机那一半是瞬时的，云端要「拉全量 id → 删 → 回读校验」，往返好几秒。
+    // 这段等待必须有反馈：屏幕正中的加载框（浮在整页之上，不占布局位置），云端回来再换成结果。
+    // 中途会重建整页，那一层由 `base()` 里的 `reattachCenterLoading()` 补挂回去。
+    showCenterLoading("正在清空观看记录…")
+    var cleared=0
+    val result=accountController.clearAllHistory(onRemoteResult=remote@{ ok ->
+        if(isDestroyed) return@remote
+        // 成功不报「已清空 N 条」：列表自己会空掉，那就是最清楚的反馈。
+        // 失败仍然要说——云端没删干净，用户需要知道要不要再试。
+        if(!ok) tvTools.toast("本机已清空；云端还有记录没删掉，请稍后重试")
+        hideCenterLoading()
+    })
+    cleared=(result.localIds+result.knownIds).distinct().size
     // 详情页的「继续观看」也要跟着失效：缓存里那几条已经清了，重进详情不该再从旧位置接。
     catalogFocus=""
     when {
@@ -287,8 +297,8 @@ fun MainActivity.clearAllHistory(anchor: View?) {
         tab==TAB_HOME -> refreshLibraryCards("",true)
         else -> if(screen=="catalog") showCatalog()
     }
-    val ids=(result.localIds+result.knownIds).distinct()
-    showHint("已清空 ${ids.size} 条观看记录")
+    // 没有云端那一步（未登录 / 设备未注册）：不会有人回调，当场收掉等待态。
+    if(!result.remoteRequested) hideCenterLoading()
 }
 
 /**

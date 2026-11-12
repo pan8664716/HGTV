@@ -128,6 +128,11 @@ fun MainActivity.ensureSearchCollector() {
         StartupTrace.mark("main.collector.search.start")
         searchController.state.collect { state ->
             if(screen!="catalog" || tab!=TAB_SEARCH) return@collect
+            if(hongguoKeyboardMode()) {
+                // 中间那一列：有输入是联想词，没有输入是搜索记录（见 renderHongguoSideList）。
+                renderHongguoSideList()
+                return@collect
+            }
             val typed=(searchInput as? EditText)?.text?.toString()?.trim().orEmpty()
             when {
                 typed.isEmpty() -> renderHintRow(state.history.ifEmpty { state.hot })
@@ -156,6 +161,9 @@ fun MainActivity.base(title: String?=null): LinearLayout {
     attachBackToTop()
     // 调试面板同理：整页重建会把它一起清掉，打开调试模式时在这里重挂。
     reattachDebugOverlay()
+    // 屏幕正中的等待也是挂在 root 上的：正在等待时整页重建一次，它得补挂回去，
+    // 否则「刷新 / 清空」中途重建一下，那三个点就凭空消失了。
+    reattachCenterLoading()
     if(title!=null) {
         // 二级界面（详情页加载中）不再放返回按钮：返回键与顶部导航就是返回入口，页头只留标题。
         // 页头行补回焦点余量，标题仍从内容线开始。
@@ -233,6 +241,8 @@ fun MainActivity.releaseCatalogViews() {
     categoryFilterButtons.clear()
     cancelSearchInputMethod()
     searchInput=null; searchButton=null; voiceButton=null; searchActions.clear()
+    hongguoKeyboard=null; hongguoHistoryColumn=null
+    hongguoResultsColumn=null; hongguoSwitch=null
     suggestRow=null; suggestViewport=null; suggestLine=null; suggestButtons.clear()
     // 提示词那一行连同在途的请求一起作废：它属于上一页的输入框，换页后不该再往新页面里塞。
     suggestRun.getAndSet(null)?.let { main.removeCallbacks(it) }
@@ -323,6 +333,50 @@ fun MainActivity.loadingView(heightDp: Int = 140): FrameLayout =
 
 fun MainActivity.loading(parent: LinearLayout,heightDp: Int = 140) {
     parent.addView(loadingView(heightDp),LinearLayout.LayoutParams(-1,dp(heightDp)))
+}
+
+/**
+ * 屏幕正中的等待：三点 + 一句文案，**样式与「进入第一屏」那个加载完全一致**
+ * （`LoadingDotsView` 直接贴在 `root` 正中，没有底板、没有遮罩、没有新控件）。
+ *
+ * 为什么必须浮在 `root` 上而不是插进页面：页面里那一行一出现就会把下面的内容整体推走，
+ * 结束时再弹回来——用户读到的就是「界面先变形一下再恢复」。
+ *
+ * 它不抢焦点、不吃按键；整页重建（`base()` 里 `root.removeAllViews()`）会把它摘掉，
+ * 因此状态存在 [MainActivity.centerLoadingMessage] 上，重建后由 [reattachCenterLoading] 补挂。
+ */
+fun MainActivity.showCenterLoading(message: String) {
+    centerLoadingMessage=message
+    val existing=centerLoading
+    if(existing!=null && existing.parent===root) {
+        existing.label=message
+        return
+    }
+    val dots=com.hgtv.star.shared.ui.LoadingDotsView(this).apply {
+        label=message
+        isFocusable=false
+        isClickable=false
+    }
+    centerLoading=dots
+    root.addView(dots,FrameLayout.LayoutParams(-2,-2,Gravity.CENTER))
+    // 播放器那枚「正在缓冲…」立刻让位（见 `syncBufferingDots`）：同一时刻只留一处等待。
+    runCatching { syncBufferingDots() }
+}
+
+/** 收起屏幕正中的等待（动作结束、失败、被取消都要调，否则它会一直转）。 */
+fun MainActivity.hideCenterLoading() {
+    centerLoadingMessage=null
+    centerLoading?.let { dots -> (dots.parent as? ViewGroup)?.removeView(dots) }
+    centerLoading=null
+    // 让位的那一枚按当前状态重新判一次（此时多半已经不需要显示）。
+    runCatching { syncBufferingDots() }
+}
+
+/** 整页重建之后补挂（见 [showCenterLoading] 的说明）。 */
+fun MainActivity.reattachCenterLoading() {
+    val message=centerLoadingMessage ?: return
+    centerLoading=null
+    showCenterLoading(message)
 }
 /**
  * 加载失败时的说明 + 「重试」按钮；返回那枚按钮，调用方可以把它接进自己的焦点链。

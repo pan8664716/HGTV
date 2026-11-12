@@ -41,8 +41,8 @@ DEVICE = {
     "channel":                 'update_64',
     "aid":                     '8662',
     "app_name":                'novelread',
-    "version_code":            '71332',
-    "version_name":            '7.1.3.32',
+    "version_code":            '74332',
+    "version_name":            '7.4.3.32',
     "device_platform":         'android',
     "os":                      'android',
     "ssmix":                   'a',
@@ -51,20 +51,20 @@ DEVICE = {
     "language":                'zh',
     "os_api":                  '36',
     "os_version":              '16',
-    "manifest_version_code":   '71332',
+    "manifest_version_code":   '74332',
     "resolution":              '1280*2772',
     "dpi":                     '520',
-    "update_version_code":     '71332',
+    "update_version_code":     '74332',
     "host_abi":                'arm64-v8a',
     "dragon_device_type":      'phone',
-    "pv_player":               '71332',
+    "pv_player":               '74332',
     "compliance_status":       '0',
     "need_personal_recommend": '1',
     "player_so_load":          '1',
     "is_android_pad_screen":   '0',
 }
 
-VIDEO_UA = 'com.phoenix.read/71332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)'
+VIDEO_UA = 'com.phoenix.read/74332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)'
 APP_UA = 'com.phoenix.read/72232 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3)'
 
 import base64 as _b64

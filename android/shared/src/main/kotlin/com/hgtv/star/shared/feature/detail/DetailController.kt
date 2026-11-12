@@ -169,17 +169,25 @@ class DetailController(
         _state.update { it.copy(authorLoading = true) }
         authorJob?.cancel()
         authorJob = scope.launch {
-            val author = withContext(Dispatchers.IO) {
-                runCatching { repository.authorsOf(listOf(id))[id].orEmpty() }.getOrDefault("")
+            try {
+                val author = withContext(Dispatchers.IO) {
+                    runCatching { repository.authorsOf(listOf(id))[id].orEmpty() }.getOrDefault("")
+                }
+                if (token != authorToken) return@launch
+                _state.update { it.copy(authorLoading = false) }
+                if (author.isBlank()) return@launch
+                val detail = _state.value.detail?.takeIf { it.series.id == id } ?: return@launch
+                val updated = detail.copy(series = detail.series.copy(author = author))
+                _state.update { it.copy(detail = updated) }
+                runCatching { DetailCache.save(updated) }
+                prefetchAuthorWorks(updated.series)
+            } finally {
+                // 协程被取消（换剧 / 换页）时上面的收尾一行都跑不到：把「加载中」放回去，
+                // 否则那一栏永远停在「正在查找…」——用户读到的就是「一直没有结果」。
+                if (token == authorToken && _state.value.authorLoading) {
+                    _state.update { it.copy(authorLoading = false) }
+                }
             }
-            if (token != authorToken) return@launch
-            _state.update { it.copy(authorLoading = false) }
-            if (author.isBlank()) return@launch
-            val detail = _state.value.detail?.takeIf { it.series.id == id } ?: return@launch
-            val updated = detail.copy(series = detail.series.copy(author = author))
-            _state.update { it.copy(detail = updated) }
-            runCatching { DetailCache.save(updated) }
-            prefetchAuthorWorks(updated.series)
         }
     }
 
@@ -199,17 +207,24 @@ class DetailController(
             it.copy(relatedFor = id, relatedLoading = true, relatedError = null)
         }
         relatedJob = scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching { repository.related(id, title) }
-            }
-            if (token != relatedToken) return@launch
-            result.onSuccess { works ->
-                _state.update {
-                    it.copy(related = works, relatedLoading = false, relatedError = null)
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching { repository.related(id, title) }
                 }
-            }.onFailure { problem ->
-                _state.update {
-                    it.copy(relatedLoading = false, relatedError = problem)
+                if (token != relatedToken) return@launch
+                result.onSuccess { works ->
+                    _state.update {
+                        it.copy(related = works, relatedLoading = false, relatedError = null)
+                    }
+                }.onFailure { problem ->
+                    _state.update {
+                        it.copy(relatedLoading = false, relatedError = problem)
+                    }
+                }
+            } finally {
+                // 被取消时别把「加载中」留在界面上（同 [loadAuthor] 的说明）。
+                if (token == relatedToken && _state.value.relatedLoading) {
+                    _state.update { it.copy(relatedLoading = false) }
                 }
             }
         }
@@ -217,7 +232,12 @@ class DetailController(
 
     fun ensureAuthorWorks(series: Series) {
         val name = series.author.trim()
-        if (name.isEmpty()) return
+        if (name.isEmpty()) {
+            // 作者还没解析出来（详情是 `includeAuthor=false` 取的）：先补查作者。
+            // 拿到之后 [loadAuthor] 会自己再走一遍 [prefetchAuthorWorks]，不会停在这里。
+            _state.value.detail?.let { loadAuthor(it) }
+            return
+        }
         val current = _state.value
         if (current.authorWorks != null) return
         if (current.authorWorksLoading && current.authorFor == name) return
@@ -227,7 +247,13 @@ class DetailController(
     /** 作者作品两段交付：搜索阶段先给一批，补季完成后再换完整结果。 */
     fun prefetchAuthorWorks(series: Series) {
         val name = series.author.trim()
-        if (name.isEmpty()) return
+        if (name.isEmpty()) {
+            // **这里不能直接 return**：请求根本没发出去，而界面那边「works 为空」就等于「还在加载」，
+            // 于是那一栏永远停在「正在查找该作者的作品…」上（用户报的「一直没有结果」）。
+            // 先补查作者，拿到之后 [loadAuthor] 会带着非空名字再调一次这里。
+            _state.value.detail?.let { loadAuthor(it) }
+            return
+        }
         val current = _state.value
         if (current.authorFor == name && (current.authorWorks != null || current.authorWorksLoading)) return
         val token = ++authorWorksToken
@@ -241,35 +267,42 @@ class DetailController(
             )
         }
         authorWorksJob = scope.launch {
-            val result = withContext(Dispatchers.IO) {
-                runCatching {
-                    repository.authorWorks(name, series) { partial ->
-                        if (partial.isEmpty()) return@authorWorks
-                        scope.launch {
-                            if (token != authorWorksToken) return@launch
-                            _state.update {
-                                it.copy(
-                                    authorWorks = partial,
-                                    authorWorksLoading = false,
-                                    authorWorksError = null,
-                                )
+            try {
+                val result = withContext(Dispatchers.IO) {
+                    runCatching {
+                        repository.authorWorks(name, series) { partial ->
+                            if (partial.isEmpty()) return@authorWorks
+                            scope.launch {
+                                if (token != authorWorksToken) return@launch
+                                _state.update {
+                                    it.copy(
+                                        authorWorks = partial,
+                                        authorWorksLoading = false,
+                                        authorWorksError = null,
+                                    )
+                                }
                             }
                         }
                     }
                 }
-            }
-            if (token != authorWorksToken) return@launch
-            result.onSuccess { works ->
-                _state.update {
-                    it.copy(
-                        authorWorks = works,
-                        authorWorksLoading = false,
-                        authorWorksError = null,
-                    )
+                if (token != authorWorksToken) return@launch
+                result.onSuccess { works ->
+                    _state.update {
+                        it.copy(
+                            authorWorks = works,
+                            authorWorksLoading = false,
+                            authorWorksError = null,
+                        )
+                    }
+                }.onFailure { problem ->
+                    _state.update {
+                        it.copy(authorWorksLoading = false, authorWorksError = problem)
+                    }
                 }
-            }.onFailure { problem ->
-                _state.update {
-                    it.copy(authorWorksLoading = false, authorWorksError = problem)
+            } finally {
+                // 同上：被取消也要收掉「加载中」，否则界面永远停在「正在查找该作者的作品…」。
+                if (token == authorWorksToken && _state.value.authorWorksLoading) {
+                    _state.update { it.copy(authorWorksLoading = false) }
                 }
             }
         }

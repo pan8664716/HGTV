@@ -25,6 +25,9 @@ import com.hgtv.star.tv.R
 // 这些成员仍然属于 MainActivity，只是以扩展成员（MainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
+/** 详情页内存缓存最多留几部（见 [MainActivity.detailMemo]）。 */
+private const val DETAIL_MEMO_LIMIT=12
+
 fun MainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boolean=true) {
     pendingDetail=series; detailAutoplay=autoplay
     // 从任何页面进详情都算「不是推荐那条路」：之后的正式播放返回键回详情页。
@@ -38,19 +41,36 @@ fun MainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boole
     authorToken.incrementAndGet(); authorJob?.cancel(true); authorJob=null
     detailAuthorLoading=false
     detailAuthorToken++
-    val body=base(series.title); loading(body)
+    val body=base(series.title)
+    // **内存缓存优先**：这一部刚看过（本进程内）就直接铺，连「加载中」那一屏都不出现。
+    // 进详情每次都先闪一屏三点、再换成内容，用户读到的就是「每次都要加载」。
+    val memo=detailMemo[series.id]
+    if(memo!=null) {
+        detail=memo
+        showDetail(false)
+        hideCenterLoading()
+    } else {
+        // 没有缓存才等待，且等待放在**屏幕正中**（与进入第一屏同一套三点）：
+        // 在内容区插一行占位会让页面结构先长出来再被换掉，看着像闪一下。
+        showCenterLoading("正在加载…")
+    }
     detailController.clear()
     detailController.load(
         series=series,
         onCached={cached ->
-            if(screen!="detail" || detail?.series?.id==series.id) {
+            // 已经从内存缓存铺过了就不再拿磁盘那一份覆盖（磁盘可能更旧）。
+            if(detail==null && screen=="detail") {
                 detail=cached
+                hideCenterLoading()
                 showDetail(false)
             }
         },
         onLoaded={result,target,changed ->
             if(screen!="detail" || result.series.id!=series.id) return@load
             detail=result
+            // 拿到新的一份就记进内存缓存：同一部剧短时间内再点进来不再走网络等待。
+            detailMemo.lruPut(DETAIL_MEMO_LIMIT,result.series.id,result)
+            hideCenterLoading()
             clearDebugProblem()
             episodeIndex=target.index
             if(resume && !result.upcoming) {
@@ -60,8 +80,12 @@ fun MainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boole
             }
         },
         onError={problem ->
-            if(detail?.series?.id==series.id) showHint("刷新失败，仍显示上次内容")
-            else error(body,problem,stage="content_detail") { openDetail(series,resume,detailAutoplay) }
+            hideCenterLoading()
+            // 屏上已经有内容（内存 / 磁盘缓存）时，后台那次刷新失败**不打扰**：
+            // 用户看到的是一整页，多一句「刷新失败」只是噪音；真没内容才走错误页。
+            if(detail?.series?.id!=series.id) {
+                error(body,problem,stage="content_detail") { openDetail(series,resume,detailAutoplay) }
+            }
         },
         loadDetail={
             if(BuildConfig.DEBUG && DebugFaults.mode(this)==DebugFaults.Mode.CONTENT_FAIL)
@@ -185,7 +209,7 @@ fun MainActivity.buildRelatedRow(
  * 圆是 `GradientDrawable(OVAL)` 画的实体圆，不依赖 API 21 的 outline 裁剪，
  * `minSdk 19` 上同样是正圆（与「我的」页那张头像的兼容处理同源，见 `clipToCircleCompat`）。
  */
-private fun MainActivity.authorHead(name: String,hint: String): LinearLayout {
+private fun MainActivity.authorHead(name: String,hint: String,loading: Boolean=false): LinearLayout {
     val head=row().apply { setPadding(pageInset(),dp(24),pageInset(),dp(8)) }
     val size=dp(52)
     val avatar=text(name.take(1),22f,android.graphics.Color.WHITE).apply {
@@ -200,11 +224,23 @@ private fun MainActivity.authorHead(name: String,hint: String): LinearLayout {
     }
     head.addView(avatar,lp(size,size))
     val texts=column()
-    texts.addView(text(name,20f,TvStyle.textStrong).apply {
+    // 名字与「等待中的三点」同一行：三点跟在作者名后面，而不是在头像下面另起一行——
+    // 另起一行会让这一块时高时矮（点出来多一块、数据到了又收回去）。
+    val nameRow=row()
+    // 名字吃掉剩下的宽度（长名字用省略号收尾）：给 wrap_content 的话，名字一长就把
+    // 后面那三点顶出这一行。
+    nameRow.addView(text(name,20f,TvStyle.textStrong).apply {
         setTypeface(null,Typeface.BOLD)
         maxLines=1
         ellipsize=TextUtils.TruncateAt.END
-    })
+    },lp(0,-2).apply { weight=1f })
+    if(loading) {
+        nameRow.addView(
+            com.hgtv.star.shared.ui.LoadingDotsView(this),
+            lp(-2,-2).apply { leftMargin=dp(TvStyle.GAP_INLINE) },
+        )
+    }
+    texts.addView(nameRow,lp(-1,-2))
     texts.addView(text(hint,14f,TvStyle.muted).apply { setPadding(0,dp(4),0,0) })
     gapInto(head,texts,lp(0,-2).apply { weight=1f },TvStyle.GAP_INLINE+4)
     return head
@@ -383,8 +419,10 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
             authorEntry.text=if(authorOpen) "收起作者" else "作者作品"
             authorEntry.contentDescription=authorEntry.text.toString()
         }
-        rebuildBottom(true)
+        // 先发请求再重铺：`prefetchRelated` 会**同步**把 `relatedLoading` 置真，
+        // 因此这一次重铺就能直接画出三点；反过来的话会先闪一下「这一部暂时没有相关剧集」。
         if(relatedOpen) ensureRelated(data.series.id)
+        rebuildBottom(true)
     }
     /**
      * 「作者作品」：作者名来自详情（`multi-detail` 的 `author`，见 [Series.author]）。
@@ -412,8 +450,9 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
             authorView.contentDescription=authorView.text.toString()
             relatedButton.text=if(relatedOpen) "收起相关" else "相关剧集"
             relatedButton.contentDescription=relatedButton.text.toString()
-            rebuildBottom(true)
+            // 同上：先发请求（同步置 `authorWorksLoading`），再重铺，点开就能看到三点在跑。
             if(authorOpen) ensureAuthorWorks(data.series.id,detail?.series ?: data.series)
+            rebuildBottom(true)
         }
         authorButton=authorView
         // 这之后按钮行的最后一枚是「作者作品」：按下键由它往下走（见 [buildBottom]）。
@@ -440,7 +479,8 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
     // 选集块本身也按这个视口钉住高度（见下面 `episodes.maxBlockHeight`）。
     val viewportHeight=(screenHeight-dp(2*TvStyle.FOCUS_BLEED_VERTICAL)).coerceAtLeast(1)
     content.minimumHeight=viewportHeight
-    content.addView(Space(this),lp(-1,0).apply { weight=1f })
+    val spring=Space(this)
+    content.addView(spring,lp(-1,0).apply { weight=1f })
     // 下方这一整块：默认是选集网格，点开「相关剧集」之后换成横向的相关作品列表。
     // 两者互斥——相关剧集展开时不显示选集，收起时恢复选集。
     //
@@ -481,12 +521,27 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
         bottomBuilt=true
         bottom.removeAllViews()
         episodes=null
+        // **作者作品贴在上方信息区下面**，不能被弹簧推到屏幕底部：那一栏只有头像 + 一行状态 +
+        // 几排卡片，贴底会让头像先出现在最下面、数据到了再往上跳一截（用户读到的就是
+        // 「头像姓名先跑到底部，然后又弹上来」）。选集与相关剧集仍然贴底，所以弹簧只在
+        // 作者作品展开时收起来。
+        (spring.layoutParams as? LinearLayout.LayoutParams)?.let { p ->
+            val weight=if(authorOpen) 0f else 1f
+            if(p.weight!=weight) {
+                p.weight=weight
+                spring.layoutParams=p
+            }
+        }
         if(relatedOpen) {
             val works=relatedWorks
             if(relatedLoading || (works==null && !relatedFailed)) {
-                bottom.addView(text("正在查找同系列…",16f,TvStyle.textDim).apply {
-                    setPadding(pageInset(),dp(28),pageInset(),dp(18))
-                },lp(-1,-2))
+                // 等待统一用三点动画（与列表加载 / 启动页同一个控件），不再只留一行静止的字。
+                val holder=row().apply { setPadding(pageInset(),dp(24),pageInset(),dp(18)) }
+                holder.addView(
+                    com.hgtv.star.shared.ui.LoadingDotsView(this).apply { label="正在查找同系列…" },
+                    lp(-2,-2),
+                )
+                bottom.addView(holder,lp(-1,-2))
             } else if(relatedFailed) {
                 // 失败给一个可重试的入口，而不是静默空列表。
                 val retry=row().apply { setPadding(pageInset(),dp(24),pageInset(),dp(18)) }
@@ -524,10 +579,14 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
             val currentSeries=detail?.series ?: data.series
             val name=currentSeries.author.trim()
             val works=authorWorks
-            val loading=authorLoading || (works==null && !authorFailed)
+            // 只有「已经为**这个名字**发过请求」才算在加载。名字为空、或者压根没发过请求时
+            // 不能停在「正在查找…」上——那是一个永远不会结束的等待（请求根本没发出去）。
+            val requested=name.isNotEmpty() && authorFor==name
+            val loading=authorLoading || (works==null && !authorFailed && requested)
             // 头像下面那一行小字就是这一栏的状态行：加载中 / 失败 / 只有一部 / 共 N 部，
             // 因此下面**不再另起一行**重复同一句话。
             val hint=when {
+                name.isEmpty() -> "没能取到作者信息"
                 loading -> "正在查找该作者的作品…"
                 authorFailed -> "没能取到该作者的作品"
                 (works?.size ?: 0)<=1 -> "这一位暂时只有这一部作品"
@@ -535,7 +594,8 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
                 // 客户端不重排，因此这里只报条数，不再声称某种排序口径。
                 else -> "共 ${works?.size ?: 0} 部作品"
             }
-            bottom.addView(authorHead(name,hint),lp(-1,-2))
+            // 三点直接跟在作者名后面（见 [authorHead] 的 `loading`），不再单独占一行。
+            bottom.addView(authorHead(name,hint,loading),lp(-1,-2))
             if(loading) {
                 // 还没有卡片可落焦：按下键原地不动，别把焦点丢到页面外。
                 lastAction.nextFocusDownId=lastAction.id
@@ -680,24 +740,26 @@ fun MainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
  * 见 `ContentRepository.accountReserve`），那一次会自己退避重试；让用户盯着一个没反应的
  * 按钮等几秒，比「先亮起来、失败再翻回去」难受得多。翻回去时给一句提示，状态不会骗人。
  *
- * 未登录时不改状态：预约是账号侧数据，没有 `sessionid` 平台只会回失败。
+ * 未登录时**只记本机**：不发那条注定失败的写请求，按钮状态照常切换（登录后以账号侧为准）。
  *
  * [current] 是**按钮上正显示着的那个状态**，由调用方传进来：切换要基于「用户看到的」，
  * 而不是再读一次本机表——本机还没有记录（首次进页面）时 `library.reserved` 是 false，
  * 拿它去取反会把「已预约」又发一次预约请求。
  */
 fun MainActivity.reserveSeries(series: Series, button: TvButton, current: Boolean = library.reserved(series.id)) {
-    // 预约是账号侧数据（要 `sessionid`）：没登录时不改按钮状态，只提示一句。
-    // 用专门的文案而不是通用的 [SIGN_IN_TOAST]：这里用户点的是「预约」，
-    // 提示要直接回答「为什么点了没反应」。
-    if(!repository.signedIn) { tvTools.toast("登录后才可以添加预约"); return }
     val target=!current
     fun paint(reserved: Boolean) {
         button.text=if(reserved) "已预约" else "预约"
         button.contentDescription=button.text.toString()
     }
+    // **先落本机**：预约是一份「开播提醒我」的清单，没登录也该记得住——按钮状态跟着变，
+    // 退出重进这一页还在。未登录时只写本机、不发那条注定失败的写请求。
     library.setReserved(series.id,target); paint(target)
     applyAccountReserve(series,target)
+    if(!repository.signedIn) {
+        tvTools.toast(if(target) "已预约 · 仅保存在本机" else "已取消预约")
+        return
+    }
     io.submit {
         val ok=repository.accountReserve(series.id,target)
         main.post {

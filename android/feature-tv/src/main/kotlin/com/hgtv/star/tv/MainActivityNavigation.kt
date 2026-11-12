@@ -42,6 +42,8 @@ fun MainActivity.switchTab(next: Int) {
     // 只处理「从别的标签进来」：搜索页内部按搜索键、从详情 / 播放返回都还在同一次搜索里。
     if(next==TAB_SEARCH && tab!=TAB_SEARCH) {
         query=""
+        hongguoDraft=""
+        hongguoLandFirstCard=false
         tabState.remove(TAB_SEARCH); tabFocus.remove(TAB_SEARCH)
     }
     // 换榜单 / 换分类的请求还在路上时，屏上那份列表属于**上一条**选择：
@@ -364,7 +366,10 @@ fun MainActivity.headFocusTarget(): View? {
     return when(tab) {
     // 搜索页：内容第一行按上键先进输入框下面那一行（提示词 / 热搜词），
     // 那一行收起来时才直接回输入框——方向上是连续的。
-    TAB_SEARCH -> suggestButtons.firstOrNull() ?: searchInput
+    // HG键盘模式下这两样都不可用：提示词行不建、输入框只是显示器（不可聚焦），
+    // 落点改为顶栏最左那枚「切换键盘」圆形入口，再退到那排圆形入口。
+    TAB_SEARCH -> if(hongguoKeyboardMode()) hongguoSwitch ?: navEntry()
+        else suggestButtons.firstOrNull() ?: searchInput
     // 分类页：最靠近内容的最后一行**可见**筛选，优先它的选中项。
     // 不能从完整 rows 取最后一行：时间 / 状态两行虽然由接口返回，但页面不显示，
     // 取到它们会让首卡的上键指向不存在的芯片，焦点因此回不到页头。

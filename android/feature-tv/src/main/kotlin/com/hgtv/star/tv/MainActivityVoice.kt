@@ -114,7 +114,7 @@ fun MainActivity.applyVoiceReturn() {
         }
         // 落点给「语音」按钮而不是输入框：输入框拿到焦点时，不少电视会顺手把软键盘推上来，
         // 用户刚取消一次语音就看到一屏键盘。按钮就在旁边，往左一格仍是输入框。
-        voiceButton?.requestFocus()
+        if(hongguoKeyboardMode()) focusHongguoKeyboard() else voiceButton?.requestFocus()
     }
 }
 /**

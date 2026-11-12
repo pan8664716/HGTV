@@ -142,7 +142,44 @@ class Signer(
         }
         return (hex("8404") + byteArrayOf(random.toByte(),(random shr 8).toByte(),0x40,1) + out).hex()
     }
-    private fun deviceProto(d: Map<String,String>) = proto(f(1,1,"sint"),f(2,2,"sint"),f(3,"8662"),f(4,deviceId(d)),f(5,"Ai6svO3PyrwDOUSmO6ZcResxu"),f(6,"!noperm!"),f(7,-888888,"sint"),f(8,-888888,"sint"),f(9,3,"sint"),f(10,-888888,"sint"),f(11,"!notset!"),f(12,"Asia/Shanghai,8"),f(13,"zh_CN"),f(14,4,"sint"),f(16,255.24993896484375,"float"),f(17,35.58599090576172,"float"),f(18,3.467449188232422,"float"),f(19,3.467449188232422,"float"),f(20,255.1754913330078,"float"),f(21,42.17544174194336,"float"),f(22,deviceValue(d,"os_version","16")),f(23,41,"sint"),f(24,deviceValue(d,"os_api") { "36" }.toIntOrNull() ?: 36,"sint"),f(25,1728388016635L,"sint"),f(26,1728388016635L,"sint"),f(27,1728388016635L,"sint"),f(28,1728388016637L,"sint"),f(29,-1,"sint"),f(30,deviceType(d)),f(31,deviceBrand(d)),f(32,deviceType(d)),f(33,deviceType(d)),f(34,manufacturer(d)),f(35,deviceBrand(d)),f(36,deviceBrand(d)),f(38,31,"sint"))
+    /**
+     * 官方 7.4.3.32 的 x-gorgon 前缀：`8404 + rnd16 + 00 81`。
+     *
+     * [gorgon] 保留旧前缀 `40 01` 供固定向量使用；请求路径用这个。
+     * `00 81` 是 detection 掩码 0x8100 的低 16 位，与 x-medusa 的 field 10 同源。
+     */
+    fun gorgonAligned(query: String, body: ByteArray?, ts: Int, random: Int): String {
+        val raw = hex(gorgon(query, body, ts, random))
+        raw[4] = 0x00
+        raw[5] = 0x81.toByte()
+        return raw.hex()
+    }
+    /** 官方 7.4.3.32 的 x-ladon：4 字节随机值，不是 36 字节旧 Ladon。 */
+    private fun realLadon(): String {
+        val value = ByteArray(4)
+        java.security.SecureRandom().nextBytes(value)
+        return value.base64()
+    }
+    /** 官方 7.4.3.32 的 x-argus：base64(le32(ts))。 */
+    private fun realArgus(ts: Int): String = le32(ts).base64()
+    private fun deviceProto(d: Map<String,String>): ByteArray {
+        val now = clock()
+        return proto(
+            f(1,1,"sint"), f(2,7,"sint"), f(3,"8662"), f(4,deviceId(d)),
+            f(5,"forged-token"), f(6,"forged-256"), f(7,264,"sint"),
+            f(8,268,"sint"), f(9,91,"sint"), f(10,276,"sint"),
+            f(11,"forged-296"), f(12,"Asia/Shanghai"), f(13,"zh_CN"),
+            f(14,8,"sint"), f(15,"forged-376"), f(16,8.0,"float"),
+            f(17,7.5,"float"), f(18,6.5,"float"), f(19,5.5,"float"),
+            f(20,4.5,"float"), f(21,3.5,"float"), f(22,"16"),
+            f(23,88,"sint"), f(24,72,"sint"), f(25,now-400,"sint"),
+            f(26,now-41,"sint"), f(27,now-1000,"sint"), f(28,now,"sint"),
+            f(29,1,"sint"), f(30,deviceType(d)), f(31,deviceBrand(d)),
+            f(32,"forged-board"), f(33,"forged-product"), f(34,"forged-device"),
+            f(35,manufacturer(d)), f(36,"forged-hardware"), f(37,"forged-648"),
+            f(38,648,"sint"), f(40,now-321,"sint")
+        )
+    }
     private fun xmxor(data: ByteArray, key: ByteArray): ByteArray {
         val encoded = IntArray(data.size)
         for (i in data.indices) {
@@ -163,29 +200,32 @@ class Signer(
         encoded[0] = ((encoded[0] xor encoded[1]) + encoded.drop(1).sum()) and 255
         return encoded.map { it.toByte() }.toByteArray()
     }
+    /**
+     * 每个 (device_id, device_token) 一份 Medusa 状态，跨请求推进。
+     *
+     * 放在 companion 里：App 里有多个 `ContentRepository`（首页/播放/收藏），
+     * 各自持有一个 `Signer`。如果状态跟着实例走，同一设备会出现多份计数，
+     * 服务端要求计数递增，分叉后容易把后续请求判成重放。
+     */
+    /**
+     * 最新协议的 x-medusa（协议 v5，detection `0x8100`）。
+     *
+     * 每次调用都刷新 31 位随机数并递增请求计数——真机就是这样做的；
+     * 复用旧随机数会让服务端把后续请求判成重放（HTTP 200 + 空响应）。
+     */
     fun medusa(url: String, body: ByteArray?, ts: Int, d: Map<String,String> = device): String {
-        val bodyMd5 = body?.let { digest("MD5",it) } ?: ByteArray(16)
-        val query = url.substringAfter('?').toByteArray(); val querySm3 = sm3(query)
-        val queryBodyTs = hashF13(querySm3,bodyMd5,ts)
-        val nested = proto(f(1,111,"sint"),f(2,10,"sint"),f(3,694367,"sint"),f(5,586952199,"sint"))
-        val messageRand = unsigned(rand()); val envLaunch = (random()*21).toInt()+100; val envPid = (random()*2000).toInt()+10001
-        val version = deviceValue(d,"version_name") { VendorConstants.device.getValue("version_name") }
-        val env = proto(f(1,envLaunch,"sint"),f(2,146331399,"sint"),f(3,146331396,"sint"),f(5,7,"sint"),f(6,"v04.06.04.03-bugfix"),f(7,envPid,"sint"),f(12,deviceProto(d)),f(13,proto(f(1,clock()/1000,"sint"),f(2,-2,"sint"),f(4,200,"sint"))),f(14,version))
-        val queryHash = sm3(query+bodyMd5+"none".toByteArray())
-        val message = proto(f(1,hex("f7e85ffad7d7dc3bd62ac87057cf6118")),f(2,3,"sint"),f(3,messageRand,"sint"),f(4,"8662"),f(5,deviceId(d)),f(6,"1588093228"),f(7,version),f(8,"v04.06.04-ml-android"),f(9,67503104,"sint"),f(10,hex("4001000000000000")),f(12,ts,"sint"),f(13,queryBodyTs),f(14,querySm3.copyOf(6)),f(15,nested),f(16,"AXYQOS6n2m60x1fVZHIrH3iol"),f(17,ts,"sint"),f(19,queryHash),f(20,"none"),f(21,312,"sint"),f(23,env),f(24,"""{"cmr":16777216,"cmr2":16777216,"un_h":1879194040,"vpn":0,"kd":0,"fkd":3672518972,"pd":-1872573247,"dyn":"","do":0,"tk":true}"""))
-        val r = rand(); val signKey = hex("8ebdfa3806ecc5cee79423e6029ed82540bc2218bb7eaef71cb691f7aa8aa2f5")
-        val hash = sm3(signKey+le32(r)+signKey); val d1 = (r shr 16) and 255
-        val seed = le32((((d1 shl 11) or (r ushr 24)) xor (d1 shr 5) xor d1).inv())
-        val transformed = (hex("4001000000000000")+xmxor(message,hash)).reversedArray()
-        for (i in transformed.indices) transformed[i] = (transformed[i].u() xor seed[i.inv() and 3].u()).toByte()
-        val check = ((querySm3[0].u() and 63) shl 14) or 0x18000001 or ((queryBodyTs[0].u() and 63) shl 8)
-        val packed = byteArrayOf(0x35)+le32(rand())+le32(check)+transformed+byteArrayOf((r shr 16).toByte(),(r shr 24).toByte())
-        val encrypted = AesV3(hex("f1593376766ea98d34f31b057a9d5be4"),ts).encrypt(packed,hex("1fe109a4125283f418de9e051a969e12"))
-        val versionBytes = hex("03000000f7e85ffad7d7dc3bd62ac87057cf6118")
-        val prefix = (0 until 20 step 4).fold(byteArrayOf()) { a,i -> a+le32(versionBytes.i32(i,true) xor ts) }
-        return (prefix+byteArrayOf(r.toByte(),(r shr 8).toByte(),0,1)+encrypted).base64()
+        val did = deviceId(d)
+        val token = deviceValue(d, "device_token", "")
+        val key = "$did\u0000$token"
+        val now = clock()
+        val state = synchronized(sharedMedusaStates) {
+            sharedMedusaStates.getOrPut(key) {
+                defaultAutonomousState(did, token, now).also { it.initialize(now) }
+            }
+        }
+        return state.generate(url, body, null, ts.toLong() and 0xFFFFFFFFL, now)
     }
-    fun helios(ts: Int): String {
+    fun helios(ts: Int, licenseId: String = "646637794"): String {
         val random = rand()
         val ascii = digest("MD5",le32(random)+"8662".toByteArray()).hex().toByteArray()
         val words = (0..3).map { ascii.i64(it*8,true) }.toMutableList(); val table = mutableListOf(words[0])
@@ -194,7 +234,7 @@ class Signer(
             var x8 = (java.lang.Long.rotateRight(b8,8)+b0) xor i.toLong()
             words.add(x8); x8 = x8 xor java.lang.Long.rotateRight(b0,61); table.add(x8); b0=x8; b8=words.removeAt(0)
         }
-        val text = "$ts-1588093228-8662".toByteArray(); val padding = 16 - text.size % 16
+        val text = "$ts-$licenseId-8662".toByteArray(); val padding = 16 - text.size % 16
         val data = text+ByteArray(padding) { padding.toByte() }
         var output = le32(random)
         for (at in data.indices step 16) {
@@ -219,7 +259,9 @@ class Signer(
         method: String? = null,
         deviceOverride: Map<String,String>? = null
     ): Request {
-        val d=(deviceOverride ?: device).filterValues { it.isNotBlank() }
+        val d=LinkedHashMap(device).apply {
+            deviceOverride?.let(::putAll)
+        }.filterValues { it.isNotBlank() }
         val now = clock(); val ts = (now / 1000).toInt()
         var ticket = now; var query: String
         for (offset in 0..127) {
@@ -231,8 +273,7 @@ class Signer(
                 // Passport 路径用 5051452，其余内容 / 账号接口用 6031190。
                 // 早先一律写 50561，两个都不对。
                 val passportPath = base.contains("/passport/")
-                val sign = ArgusLadon.sign(query, body, ts, d)
-                val headers = linkedMapOf("User-Agent" to VendorConstants.userAgent(d, video = body != null),"Accept" to "application/json; charset=utf-8,application/x-protobuf", "x-ss-req-ticket" to ticket.toString(),"x-tt-request-tag" to "t=0;n=0","sdk-version" to "2","passport-sdk-version" to (if(passportPath) "5051452" else "6031190"),"x-xs-from-web" to "0","x-khronos" to ts.toString(),"x-ladon" to sign.ladon,"x-argus" to sign.argus,"x-gorgon" to gorgon(query,body,ts,random),"x-helios" to helios(ts),"x-tt-dt" to "")
+                val headers = linkedMapOf("User-Agent" to VendorConstants.userAgent(d, video = body != null),"Accept" to "application/json; charset=utf-8,application/x-protobuf", "x-ss-req-ticket" to ticket.toString(),"x-tt-request-tag" to "t=0;n=0","sdk-version" to "2","passport-sdk-version" to (if(passportPath) "5051452" else "6031190"),"x-xs-from-web" to "0","x-khronos" to ts.toString(),"x-ladon" to realLadon(),"x-argus" to realArgus(ts),"x-gorgon" to gorgonAligned(query,body,ts,random),"x-helios" to helios(ts),"x-medusa" to medusa(url, body, ts, d),"x-tt-dt" to "")
                 if(passportPath) {
                     headers["x-vc-bdturing-sdk-version"]="4.0.3.cn"
                     headers["lc"]="101"
@@ -246,7 +287,7 @@ class Signer(
                 }
                 return Request(
                     url,
-                    headers.withoutMedusaHeader(),
+                    headers,
                     body,
                     method ?: if(body==null) "GET" else "POST",
                 )
@@ -255,6 +296,8 @@ class Signer(
         error("无法生成请求签名")
     }
     companion object {
+        private val sharedMedusaStates = HashMap<String, AutonomousState>()
+
         fun encode(values: Map<String,String>) = values.entries.joinToString("&") { (k,v) -> "${encode(k)}=${encode(v)}" }
         fun encode(value: String): String = URLEncoder.encode(value,"UTF-8").replace("+","%20").replace("%7E","~")
     }

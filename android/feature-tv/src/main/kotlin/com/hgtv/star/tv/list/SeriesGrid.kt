@@ -12,6 +12,8 @@ import com.hgtv.star.tv.GRID_COLUMNS_DEFAULT
 import com.hgtv.star.tv.gridContentWidth
 import com.hgtv.star.tv.gridColumns
 import com.hgtv.star.tv.wireSearchHeadDown
+import com.hgtv.star.tv.wireHongguoKeyboardFocus
+import com.hgtv.star.tv.hongguoKeyboardMode
 import com.hgtv.star.tv.noteSearchRowFocused
 import com.hgtv.star.tv.GRID_WINDOW_MAX_ROWS
 import com.hgtv.star.tv.GRID_WINDOW_MIN_ROWS
@@ -932,15 +934,18 @@ fun MainActivity.wireGridFocus(prev: View?,next: View?) {
     }
     // 搜索页：输入框与「搜索 / 历史 / 手机输入」都在导航栏里，按下键一律先落进
     // 输入框下面那一行（提示词 / 热搜词），没有那一行时直接进内容第一张卡。
-    val hintDown=suggestButtons.firstOrNull()?.id ?: first
-    searchInput?.nextFocusDownId=hintDown
-    searchButton?.nextFocusDownId=hintDown
-    searchActions.forEach { it.nextFocusDownId=hintDown }
+    if(!hongguoKeyboardMode()) {
+        val hintDown=suggestButtons.firstOrNull()?.id ?: first
+        searchInput?.nextFocusDownId=hintDown
+        searchButton?.nextFocusDownId=hintDown
+        searchActions.forEach { it.nextFocusDownId=hintDown }
+    }
     // 提示词 / 热搜芯片按下键进内容第一张卡。芯片是**渲染之后才有的**，
     // 渲染那一刻栅格可能还没铺好（那时它们只能指向自己），因此这里每次重排都补一次。
     suggestButtons.forEach { it.nextFocusDownId=first }
     // 列表最后一行按下键落在底部「展示更多」上，再按一次（确认或下键）就追加下一页。
     moreButton?.nextFocusUpId=rows.last().cards.firstOrNull()?.id ?: first
+    if(tab==TAB_SEARCH && hongguoKeyboardMode()) wireHongguoKeyboardFocus()
 }
 /**
  * 已显示进度。榜单自带总页数，所以能给「N / M 部」；

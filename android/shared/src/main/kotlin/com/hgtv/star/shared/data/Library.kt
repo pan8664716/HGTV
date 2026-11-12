@@ -1407,6 +1407,10 @@ class Library(context: Context) {
     var searchSource: SearchSource
         get() = state().settings.searchSource
         set(value) { if (value != searchSource) { state().settings = state().settings.copy(searchSource = value); put("searchSource", value.storedValue) } }
+    /** 电视搜索页的键盘选择，默认自绘键盘。 */
+    var searchKeyboard: SearchKeyboard
+        get() = state().settings.searchKeyboard
+        set(value) { if (value != searchKeyboard) { state().settings = state().settings.copy(searchKeyboard = value); put("searchKeyboard", value.storedValue) } }
     /**
      * 每一行放几张海报卡：4 / 5 / 6 / 7 / 8（默认 6，与旧版一致）。
      *
@@ -1959,6 +1963,7 @@ class Library(context: Context) {
             "recommendSwipe" to { merged.settings.recommendSwipe },
             "hiddenHome" to { merged.settings.hiddenHome.split(',').filter { it in HOME_KEYS }.toSet() },
             "reduceAnim" to { merged.settings.reduceAnim },
+            "searchKeyboard" to { merged.settings.searchKeyboard.storedValue },
             "keymap" to { merged.settings.keys }))
         flush()
     }

@@ -294,7 +294,7 @@ final class Signer {
 
     // MARK: - helios
 
-    func helios(ts: Int32) -> String {
+    func helios(ts: Int32, licenseId: String = "646637794") -> String {
         let random = rand()
         let ascii = Bytes.utf8(Bytes.hex(Hash.md5(Bytes.le32(random) + Bytes.utf8("8662"))))
         var words = (0..<4).map { Bytes.i64(ascii, $0 * 8, little: true) }
@@ -309,7 +309,7 @@ final class Signer {
             b0 = x8
             b8 = words.removeFirst()
         }
-        let text = Bytes.utf8("\(ts)-1588093228-8662")
+        let text = Bytes.utf8("\(ts)-\(licenseId)-8662")
         let padding = 16 - text.count % 16
         let data = text + [UInt8](repeating: UInt8(padding), count: padding)
         var output = Bytes.le32(random)
@@ -335,22 +335,20 @@ final class Signer {
     // MARK: - medusa
 
     private func deviceProto(_ d: [String: String]) -> [UInt8] {
-        let osVersion = deviceValue(d, "os_version", "16")
-        let osApi = Int(deviceValue(d, "os_api", "36")) ?? 36
+        let now = clock()
         return proto([
-            sint(1, 1), sint(2, 2), f(3, "8662"), f(4, deviceId(d)),
-            f(5, "Ai6svO3PyrwDOUSmO6ZcResxu"), f(6, "!noperm!"), sint(7, -888888),
-            sint(8, -888888), sint(9, 3), sint(10, -888888), f(11, "!notset!"),
-            f(12, "Asia/Shanghai,8"), f(13, "zh_CN"), sint(14, 4),
-            flt(16, 255.24993896484375), flt(17, 35.58599090576172),
-            flt(18, 3.467449188232422), flt(19, 3.467449188232422),
-            flt(20, 255.1754913330078), flt(21, 42.17544174194336),
-            f(22, osVersion), sint(23, 41), sint(24, osApi),
-            sint(25, 1728388016635), sint(26, 1728388016635), sint(27, 1728388016635),
-            sint(28, 1728388016637), sint(29, -1), f(30, deviceType(d)),
-            f(31, deviceBrand(d)), f(32, deviceType(d)), f(33, deviceType(d)),
-            f(34, manufacturer(d)), f(35, deviceBrand(d)), f(36, deviceBrand(d)),
-            sint(38, 31)
+            sint(1, 1), sint(2, 7), f(3, "8662"), f(4, deviceId(d)),
+            f(5, "forged-token"), f(6, "forged-256"), sint(7, 264),
+            sint(8, 268), sint(9, 91), sint(10, 276), f(11, "forged-296"),
+            f(12, "Asia/Shanghai"), f(13, "zh_CN"), sint(14, 8),
+            f(15, "forged-376"), flt(16, 8), flt(17, 7.5), flt(18, 6.5),
+            flt(19, 5.5), flt(20, 4.5), flt(21, 3.5), f(22, "16"),
+            sint(23, 88), sint(24, 72), sint(25, now - 400), sint(26, now - 41),
+            sint(27, now - 1000), sint(28, now), sint(29, 1),
+            f(30, deviceType(d)), f(31, deviceBrand(d)), f(32, "forged-board"),
+            f(33, "forged-product"), f(34, "forged-device"), f(35, manufacturer(d)),
+            f(36, "forged-hardware"), f(37, "forged-648"), sint(38, 648),
+            sint(40, now - 321)
         ])
     }
 
@@ -391,27 +389,27 @@ final class Signer {
         let querySm3 = Hash.sm3(query)
         let queryBodyTs = hashF13(query: querySm3, body: bodyMd5, ts: ts)
 
-        let nested = proto([sint(1, 111), sint(2, 10), sint(3, 694367), sint(5, 586952199)])
+        let nested = proto([sint(1, 101), sint(2, 202), sint(3, 303), sint(4, 404), sint(5, 505)])
         let messageRand = unsigned(rand())
         let envLaunch = Int32(random() * 21) + 100
         let envPid = Int32(random() * 2000) + 10001
-        let version = deviceValue(d, "version_name", Vendor.device["version_name"] ?? "7.1.3.32")
+        let version = deviceValue(d, "version_name", Vendor.device["version_name"] ?? "7.4.3.32")
         let env = proto([
             sint(1, Int(envLaunch)), sint(2, 146331399), sint(3, 146331396), sint(5, 7),
             f(6, "v04.06.04.03-bugfix"), sint(7, Int(envPid)), f(12, deviceProto(d)),
             f(13, proto([sint(1, Int(clock() / 1000)), sint(2, -2), sint(4, 200)])),
-            f(14, version)
+            f(14, version), sint(15, 33333)
         ])
         let queryHash = Hash.sm3(query + bodyMd5 + Bytes.utf8("none"))
         let message = proto([
             f(1, Bytes.hex("f7e85ffad7d7dc3bd62ac87057cf6118")),
             sint(2, 3), sint(3, Int(messageRand)), f(4, "8662"), f(5, deviceId(d)),
-            f(6, "1588093228"), f(7, version), f(8, "v04.06.04-ml-android"),
-            sint(9, 67503104), f(10, Bytes.hex("4001000000000000")),
+            f(6, "646637794"), f(7, version), f(8, "v04.06.04-ml-android"),
+            sint(9, 67764992), f(10, Bytes.hex("4001000000000000")),
             sint(12, Int(ts)), f(13, queryBodyTs), f(14, Array(querySm3.prefix(6))),
-            f(15, nested), f(16, "AXYQOS6n2m60x1fVZHIrH3iol"), sint(17, Int(ts)),
+            f(15, nested), f(16, deviceValue(d, "device_token", "AXYQOS6n2m60x1fVZHIrH3iol")), sint(17, Int(ts)),
             f(19, queryHash), f(20, "none"), sint(21, 312), f(23, env),
-            f(24, "{\"cmr\":16777216,\"cmr2\":16777216,\"un_h\":1879194040,\"vpn\":0,\"kd\":0,\"fkd\":3672518972,\"pd\":-1872573247,\"dyn\":\"\",\"do\":0,\"tk\":true}")
+            f(24, "{\"cmr\":16777216,\"cmr2\":16777216,\"un_h\":1892173816,\"vpn\":0,\"sts\":27,\"kd\":0,\"fkd\":3779986073,\"pd\":168017038,\"dyn\":\"\",\"do\":0,\"tk\":true}")
         ])
 
         let r = rand()
@@ -450,7 +448,11 @@ final class Signer {
               body: [UInt8]? = nil,
               method: String? = nil,
               deviceOverride: [String: String]? = nil) -> Request {
-        let d = (deviceOverride ?? device).filter { !$0.value.isEmpty }
+        var mergedDevice = device
+        if let deviceOverride {
+            mergedDevice.merge(deviceOverride) { _, overrideValue in overrideValue }
+        }
+        let d = mergedDevice.filter { !$0.value.isEmpty }
         let now = clock()
         let ts = Int32(truncatingIfNeeded: now / 1000)
         var query = ""

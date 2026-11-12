@@ -174,7 +174,11 @@ const val GRID_COLUMNS_DEFAULT=6
  * 因此 `GRID_COLUMNS_DEFAULT` 只作为「6 列的基准宽度」，不能再当常数用。
  */
 val MainActivity.gridColumns: Int
-    get() = if (library.isLoaded) library.homeColumns.coerceIn(4, 8) else GRID_COLUMNS_DEFAULT
+    get() = when {
+        tab==TAB_SEARCH && collection==null && hongguoKeyboardMode() -> 3
+        library.isLoaded -> library.homeColumns.coerceIn(4, 8)
+        else -> GRID_COLUMNS_DEFAULT
+    }
 
 /**
  * 芯片行（分类页的二级分类、搜索页的提示词）的固定高度（dp）。

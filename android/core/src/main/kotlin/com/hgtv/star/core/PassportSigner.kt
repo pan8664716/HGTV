@@ -134,7 +134,7 @@ class PassportSigner(
     // ------------------------------------------------------------------ 各个头
 
     /**
-     * X-Helios：34 轮表驱动的伪随机流，明文是 `"{ts}-1588093228-8662"`。
+     * X-Helios：34 轮表驱动的伪随机流，明文是 `"{ts}-646637794-8662"`。
      *
      * 密钥由 `MD5(le32(nonce) + "8662")` 的十六进制串前 32 字节切成 4 个 64 位字，
      * 之后每轮 `x = (rotateRight(pending0,8) + k) ^ i`、`k = x ^ rotateLeft64(k,3)`。
@@ -152,7 +152,7 @@ class PassportSigner(
             table.add(x8)
             b0 = x8; b8 = words.removeAt(0)
         }
-        val text = "$ts-1588093228-8662".toByteArray()
+        val text = "$ts-646637794-8662".toByteArray()
         val padding = 16 - text.size % 16
         val data = text + ByteArray(padding) { padding.toByte() }
         var output = le32(nonce)
@@ -280,15 +280,15 @@ class PassportSigner(
         return proto(
             blob(1, hex("f7e85ffad7d7dc3bd62ac87057cf6118")),
             sint(2, 3), sint(3, nonce.toLong()),
-            text(4, "8662"), text(5, deviceId()), text(6, "1588093228"),
+            text(4, "8662"), text(5, deviceId()), text(6, "646637794"),
             text(7, deviceValueOf("version_name") { VendorConstants.device.getValue("version_name") }),
             text(8, "v04.06.04-ml-android"),
             sint(9, 67503104), blob(10, hex("4001000000000000")),
             sint(12, ts.toLong()), blob(13, f13), blob(14, q.copyOf(6)), blob(15, count),
-            text(16, "AXYQOS6n2m60x1fVZHIrH3iol"), sint(17, ts.toLong()),
+            text(16, deviceValueOf("device_token") { "AXYQOS6n2m60x1fVZHIrH3iol" }), sint(17, ts.toLong()),
             blob(19, queryHash), text(20, "none"), sint(21, 312),
             blob(23, env),
-            text(24, """{"cmr":16777216,"cmr2":16777216,"un_h":1879194040,"vpn":0,"kd":0,"fkd":3672518972,"pd":-1872573247,"dyn":"","do":0,"tk":true}""")
+            text(24, """{"cmr":16777216,"cmr2":16777216,"un_h":1892173816,"vpn":0,"sts":27,"kd":0,"fkd":3779986073,"pd":168017038,"dyn":"","do":0,"tk":true}""")
         )
     }
 

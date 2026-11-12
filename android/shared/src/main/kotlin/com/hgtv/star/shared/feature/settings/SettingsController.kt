@@ -10,6 +10,7 @@ import com.hgtv.star.core.LibraryBackup
 import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackSpeed
 import com.hgtv.star.core.SearchSource
+import com.hgtv.star.core.SearchKeyboard
 import com.hgtv.star.core.VideoDecoderMode
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.shared.data.Library
@@ -236,6 +237,7 @@ class SettingsController(
         library.recommendSwipe = true
         library.recommendGender = ""
         library.searchSource = SearchSource.APP
+        library.searchKeyboard = SearchKeyboard.SYSTEM
         library.debugMode = false
         library.reduceAnim = false
         TvThemeStore.save(context, TvTheme.DEEP_SEA_BLUE)

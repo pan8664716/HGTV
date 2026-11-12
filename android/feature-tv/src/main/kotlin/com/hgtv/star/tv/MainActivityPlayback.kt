@@ -76,7 +76,10 @@ fun MainActivity.syncBufferingDots() {
         player?.playbackState==Player.STATE_BUFFERING -> "正在缓冲…"
         else -> null
     }
-    val show=!bufferingSuppressed && label!=null
+    // 屏幕正中已经有一枚「正在加载《…》」时，这一枚让位：两个三点 + 两行文案叠在一起
+    // 就是用户说的「几个堆积在一起」。全站同一时刻只留一处等待。
+    val centerBusy=centerLoadingMessage!=null
+    val show=!bufferingSuppressed && label!=null && !centerBusy
     bufferingDots?.apply {
         this.label=label.orEmpty()
         visibility=if(show) View.VISIBLE else View.GONE

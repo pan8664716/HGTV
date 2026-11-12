@@ -127,45 +127,53 @@ def _pure_aes_cbc(key: bytes, iv: bytes, data: bytes) -> bytes:
     def xt(a: int) -> int:
         return ((a << 1) ^ (0x1B if a & 0x80 else 0)) & 0xFF
 
-    def expand(k: bytes):
-        w = [list(k[i * 4:i * 4 + 4]) for i in range(4)]
+    def expand(k: bytes) -> bytes:
+        words = [list(k[i:i + 4]) for i in range(0, 16, 4)]
         for i in range(4, 44):
-            t = list(w[i - 1])
+            temp = list(words[i - 1])
             if i % 4 == 0:
-                t = t[1:] + t[:1]
-                t = [sbox[b] for b in t]
-                t[0] ^= rcon[i // 4 - 1]
-            w.append([w[i - 4][j] ^ t[j] for j in range(4)])
-        return w
+                temp = [sbox[temp[1]], sbox[temp[2]], sbox[temp[3]], sbox[temp[0]]]
+                temp[0] ^= rcon[i // 4 - 1]
+            words.append([words[i - 4][j] ^ temp[j] for j in range(4)])
+        return bytes(value for word in words for value in word)
 
-    def enc_block(block: bytes, w) -> bytes:
-        s = [list(block[i * 4:i * 4 + 4]) for i in range(4)]
-        for r in range(4):
-            for c in range(4):
-                s[r][c] ^= w[r][c]
-        for rnd in range(1, 11):
-            s = [[sbox[s[r][c]] for c in range(4)] for r in range(4)]
-            s = [[s[r][(c + r) % 4] for c in range(4)] for r in range(4)]
-            if rnd != 10:
-                for c in range(4):
-                    a = [s[r][c] for r in range(4)]
-                    t = a[0] ^ a[1] ^ a[2] ^ a[3]
-                    s[0][c] = a[0] ^ t ^ xt(a[0] ^ a[1])
-                    s[1][c] = a[1] ^ t ^ xt(a[1] ^ a[2])
-                    s[2][c] = a[2] ^ t ^ xt(a[2] ^ a[3])
-                    s[3][c] = a[3] ^ t ^ xt(a[3] ^ a[0])
-            w2 = w[rnd * 4:rnd * 4 + 4]
-            for r in range(4):
-                for c in range(4):
-                    s[r][c] ^= w2[r][c]
-        return bytes(b for row in s for b in row)
+    def shift_rows(state: list[int]) -> None:
+        state[1], state[5], state[9], state[13] = (
+            state[5], state[9], state[13], state[1],
+        )
+        state[2], state[6], state[10], state[14] = (
+            state[10], state[14], state[2], state[6],
+        )
+        state[3], state[7], state[11], state[15] = (
+            state[15], state[3], state[7], state[11],
+        )
 
-    w = expand(key)
+    def enc_block(block: bytes, round_keys: bytes) -> bytes:
+        state = list(block)
+        for i in range(16):
+            state[i] ^= round_keys[i]
+        for round_index in range(1, 11):
+            state = [sbox[value] for value in state]
+            shift_rows(state)
+            if round_index != 10:
+                for column in range(4):
+                    at = column * 4
+                    a0, a1, a2, a3 = state[at:at + 4]
+                    state[at] = xt(a0) ^ xt(a1) ^ a1 ^ a2 ^ a3
+                    state[at + 1] = a0 ^ xt(a1) ^ xt(a2) ^ a2 ^ a3
+                    state[at + 2] = a0 ^ a1 ^ xt(a2) ^ xt(a3) ^ a3
+                    state[at + 3] = xt(a0) ^ a0 ^ a1 ^ a2 ^ xt(a3)
+            offset = round_index * 16
+            for i in range(16):
+                state[i] ^= round_keys[offset + i]
+        return bytes(state)
+
+    round_keys = expand(key)
     out = bytearray()
     prev = iv
     for i in range(0, len(data), 16):
         block = bytes(a ^ b for a, b in zip(data[i:i + 16], prev))
-        prev = enc_block(block, w)
+        prev = enc_block(block, round_keys)
         out += prev
     return bytes(out)
 
@@ -176,7 +184,7 @@ def tt_encrypt(data: bytes, rnd: bytes | None = None) -> bytes:
     ``74 63 05 10 00 00 || rnd[32] || AES-128-CBC(key, iv, PKCS7(SHA512(data) || data))``
     其中 ``key||iv = SHA512(SHA512(rnd) || K)``，K 为 .rodata 常量（见 hgvendor）。
     """
-    rnd = rnd if rnd is not None else bytes(random.getrandbits(8) for _ in range(32))
+    rnd = rnd if rnd is not None else secrets.token_bytes(32)
     if len(rnd) != 32:
         raise ValueError("rnd 必须是 32 字节")
     d1 = digest("sha512", rnd)
@@ -215,6 +223,12 @@ def _iv(query: bytes, body: bytes, ts: int) -> int:
 
 def branch(query: str, body: bytes | None, ts: int) -> int:
     return (_iv(sm3(query.encode()), digest("md5", body) if body else bytes(16), ts) & 15) % 3
+
+
+def fyworld_branch(query: str, body: bytes | None, ts: int) -> int:
+    """Exact fyworld Signer.branch() selection rule."""
+    low = _iv(sm3(query.encode()), digest("md5", body) if body else bytes(16), ts) & 15
+    return low - ((low * 171) >> 9) * 3
 
 
 def _sum_md5(data: bytes) -> int:
@@ -268,6 +282,107 @@ def _hash_f13(query: bytes, body: bytes, ts: int) -> bytes:
     return folded + le32(_sum_md5(folded))
 
 
+_BRANCH2_SV = [
+    0xA7AEFE20, 0x7149F1D6, 0x47E4CA07, 0xE9B58F67, 0x93B924DE, 0xC614D0F5, 0x38AFE0EF, 0xB2BBAD73,
+    0xE24444C3, 0x9D3AEC9B, 0xDF7B37E4, 0xD8B16D40, 0xF8AC31B8, 0x76B9A90B, 0x31D833EE, 0x953FCE64,
+    0x353595A4, 0x4609C13B, 0x36925008, 0x8C6D0925, 0x5DF5C177, 0x1CFBF52B, 0x8A4FA7F0, 0x114CA35E,
+    0x8193F984, 0x7A7A8733, 0x316AB4D5, 0x3C20CFC9, 0xA6D84453, 0x3A18500C, 0x798EC47A, 0x97A76B28,
+    0x66C4FF96, 0x51716443, 0x0DD2FC3B, 0xB5696DA7, 0xBBEB3AC5, 0x5C53D204, 0xD32608CE, 0x7279B9EC,
+    0xF4188ECF, 0xF7D793DB, 0x332CC491, 0xAB76AE15, 0x9BEBE727, 0x18A01384, 0x5BE9F8A7, 0x5F90A754,
+    0x39B663C0, 0x36673C83, 0x7C92F514, 0x9D7D94D7, 0xE2E8D9AA, 0x5F7E9EA9, 0x7ABD4551, 0x569E05DA,
+    0x40A25632, 0x3DF5A9A5, 0xBAB37D80, 0x454286DC, 0x3F5D4E78, 0x03D7B75D, 0xB1FE4AF7, 0xA5AB26A3,
+]
+_BRANCH2_N1 = [0x8980F29B, 0xEB549C7F, 0xB08726DB, 0xD40CB5E6, 0xE8F559E4]
+_BRANCH2_SEED = bytes.fromhex("8496779dd4150bf8")
+_BRANCH2_ORDERS = bytes.fromhex(
+    "0f0704000908030a060b050d0e010c02"
+    "0f05080c0009020103070e060b0a0d04"
+    "060500070c000a04080f010b0d09020e"
+    "060b02050403080101070a000d0c090e"
+    "0d070e0f0b0208030c0509010004060a"
+    "0d0902060f0b0a040807000c0503010e"
+    "0c090f07060f030e020d0405010b0a00"
+    "0c050a090e0802040407030f01060b00"
+    "0b0f0408020a0700090d06010e03050c"
+    "0b060a0508020c03070f0e090d000104"
+    "0906080f050800040a0b030d01020c0e"
+    "090d0c0604070a03030f00080105020e"
+    "01000d0f090a0b0e0402080703060c05"
+    "01080a0c0f0905060b000304020e070d"
+    "04080f000c0f0e0d0a01060207090503"
+    "040205080d0b0a0606000e0f070c0903"
+    "0a08040f000b01060d0c0709030e0502"
+    "0a070b050f00020e0108030d0c060904"
+    "0d070f08050f06040b0a0e0c09000203"
+    "0d0c020704010b0e0e08060f09050003"
+)
+
+
+def _md5_sum_v3(message: bytes, count_v2: int, orders: bytes, count_v1: int) -> bytes:
+    sv = [ror(value, count_v1) for value in _BRANCH2_SV]
+    start = [ror(value, count_v2) for value in (0x79E0F2FB, 0xC8B52570, 0xEBC2F8CD, 0x7C104D93)]
+    end_count = (count_v2 + 6) & 255
+    end = [ror(value, end_count) for value in (0x19BE4866, 0xE85986B4, 0xE19B326E, 0x71D1D7D4)]
+    words = [i32at(message, i * 4, True) for i in range(16)]
+    a, b, c, d = start
+    shifts = (
+        (7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22, 7, 12, 17, 22),
+        (5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20, 5, 9, 14, 20),
+        (4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23, 4, 11, 16, 23),
+        (6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21, 6, 10, 15, 21),
+    )
+    for kind in range(4):
+        for i in range(16):
+            phase = i & 3
+            order = orders[kind * 16 + i] if kind * 16 + i < len(orders) else 0
+            mm = words[order & 255]
+            cc = sv[kind * 16 + i]
+            f = (
+                (b & c) | (_inv32(b) & d) if kind == 0 else
+                (b & d) | (c & _inv32(d)) if kind == 1 else
+                b ^ c ^ d if kind == 2 else
+                c ^ (b | _inv32(d))
+            )
+            step = i32(b + rol(i32(a + f + mm + cc), shifts[kind][i]))
+            if phase == 0:
+                a = step
+            elif phase == 1:
+                d = step
+            elif phase == 2:
+                c = step
+            else:
+                b = step
+    ret = b"".join(le32(i32((start[i] + value) ^ end[i])) for i, value in enumerate((a, b, c, d)))
+    return ret + le32(_sum_md5(ret))
+
+
+def _fyworld_branch2_f13(iv_value: int, query: bytes, body: bytes, ts: int) -> bytes:
+    v = (iv_value & 13) * 86
+    group = ((v >> 15) & 255) + ((v >> 8) & 255)
+    group = min(group, len(_BRANCH2_N1) - 1)
+    n1 = _BRANCH2_N1[group]
+    count_v1 = (n1 + ts + 1) & 255
+    count_v2 = i32(n1 + ts)
+    shift = (count_v2 + 5) & 7
+    pad = bytes(((value | (value << 8)) >> shift) & 255 for value in _BRANCH2_SEED)
+    message = query + body + le32(ts) + pad + bytes.fromhex("a0010000")
+    start = (group << 6)
+    orders = _BRANCH2_ORDERS[start:start + 64]
+    return _md5_sum_v3(message, count_v2, orders, count_v1)
+
+
+def _fyworld_hash_f13(query: bytes, body: bytes, ts: int) -> bytes:
+    raw = _iv(query, body, ts)
+    low = raw & 15
+    group = (low * 171) >> 9
+    branch_value = low - group * 3
+    if branch_value == 2:
+        return _fyworld_branch2_f13(raw, query, body, ts)
+    if branch_value != 0:
+        return query[:16] + body + le32(_sum_md5(query + body))
+    return _hash_f13(query, body, ts)
+
+
 def gorgon(query: str, body: bytes | None, ts: int, rnd16: int) -> str:
     head = digest("md5", query.encode())[:4] + (digest("md5", body)[:4] if body else bytes(4)) + bytes(4)
     payload = head + le32(67503104) + be32(ts)
@@ -292,6 +407,32 @@ def gorgon(query: str, body: bytes | None, ts: int, rnd16: int) -> str:
         reversed_bits = int(format((nxt ^ value) & 255, "08b")[::-1], 2)
         out[i] = _inv32(reversed_bits ^ 20) & 255
     return (bytes.fromhex("8404") + bytes([rnd16 & 255, (rnd16 >> 8) & 255, 0x40, 1]) + bytes(out)).hex()
+
+
+def gorgon_aligned(query: str, body: bytes | None, ts: int, rnd16: int) -> str:
+    """官方 74332 的 x-gorgon 前缀形态。
+
+    真机观测：``8404 + rnd16 + detection flag``。稳定态 flag = ``00 81``
+    （detection 掩码 0x8100 的低 16 位，与 x-medusa field 10 / Prefix 同源）；
+    冷启动阶段还出现过 ``0000`` / ``0405``。仓库旧实现固定 ``4001``。
+
+    负载层的 native 变换尚未复现（2026-11-11 Frida 对拍：两套已知逆变换与
+    0..255 常量扫描均无解），但消融实验证明服务端不校验该负载，因此沿用
+    已验证可用的实现，仅对齐前缀。
+    """
+    raw = bytearray(bytes.fromhex(gorgon(query, body, ts, rnd16)))
+    raw[4], raw[5] = 0x00, 0x81
+    return bytes(raw).hex()
+
+
+def real_ladon() -> str:
+    """官方 74332 的 x-ladon：4 字节随机值（不是 be32(ts)，也不是 36 字节完整 Ladon）。"""
+    return base64.b64encode(secrets.token_bytes(4)).decode()
+
+
+def real_argus(ts: int) -> str:
+    """官方 74332 的 x-argus：base64(le32(ts))。"""
+    return base64.b64encode(le32(ts)).decode()
 
 
 # --------------------------------------------------------------------------- Argus / Ladon
@@ -618,38 +759,130 @@ def _device_proto(device: dict) -> bytes:
     ])
 
 
+def _fyworld_device_proto(device: dict, process_nonce: str, process_started: int) -> bytes:
+    """Fyworld's process-identity fixes, while keeping the real device profile."""
+    f = lambda tag, value, kind="string": (tag, value, kind)
+    os_api = int(device.get("os_api") or 36)
+    return _proto([
+        f(1, 1, "sint"), f(2, 2, "sint"), f(3, "8662"),
+        f(4, device.get("device_id", "")), f(5, process_nonce),
+        f(6, "!noperm!"), f(7, -888888, "sint"), f(8, -888888, "sint"),
+        f(9, 3, "sint"), f(10, -888888, "sint"), f(11, "!notset!"),
+        f(12, "Asia/Shanghai,8"), f(13, "zh_CN"), f(14, 4, "sint"),
+        f(16, 0.0, "float"), f(17, 0.0, "float"), f(18, 0.0, "float"),
+        f(19, 0.0, "float"), f(20, 0.0, "float"), f(21, 0.0, "float"),
+        f(22, str(device.get("os_version") or "16")), f(23, 41, "sint"),
+        f(24, os_api, "sint"),
+        f(25, process_started, "sint"), f(26, process_started, "sint"),
+        f(27, process_started, "sint"), f(28, process_started, "sint"),
+        f(29, -1, "sint"),
+        f(30, str(device.get("device_type") or "25053RT47C")),
+        f(31, str(device.get("device_brand") or "Redmi")),
+        f(32, str(device.get("device_type") or "25053RT47C")),
+        f(33, str(device.get("device_type") or "25053RT47C")),
+        f(34, str(device.get("device_manufacturer") or device.get("device_brand") or "Xiaomi")),
+        f(35, str(device.get("device_brand") or "Redmi")),
+        f(36, str(device.get("device_brand") or "Redmi")),
+        f(38, 31, "sint"),
+    ])
+
+
+def _fyworld_exact_device_proto(device_id: str, process_nonce: str, process_started: int) -> bytes:
+    """Exact fyworld deviceProto: official fixed fields, process identity only."""
+    f = lambda tag, value, kind="string": (tag, value, kind)
+    return _proto([
+        f(1, 1, "sint"), f(2, 2, "sint"), f(3, "8662"), f(4, device_id),
+        f(5, process_nonce), f(6, "!noperm!"),
+        f(7, -888888, "sint"), f(8, -888888, "sint"), f(9, 3, "sint"),
+        f(10, -888888, "sint"), f(11, "!notset!"),
+        f(12, "Asia/Shanghai,8"), f(13, "zh_CN"), f(14, 4, "sint"),
+        f(16, 0.0, "float"), f(17, 0.0, "float"), f(18, 0.0, "float"),
+        f(19, 0.0, "float"), f(20, 0.0, "float"), f(21, 0.0, "float"),
+        f(22, "16"), f(23, 41, "sint"), f(24, 36, "sint"),
+        f(25, process_started, "sint"), f(26, process_started, "sint"),
+        f(27, process_started, "sint"), f(28, process_started, "sint"),
+        f(29, -1, "sint"), f(30, "25053RT47C"), f(31, "Redmi"),
+        f(32, "25053RT47C"), f(33, "25053RT47C"), f(34, "Xiaomi"),
+        f(35, "Redmi"), f(36, "Redmi"), f(38, 31, "sint"),
+    ])
+
+
 class Signer:
-    def __init__(self, device: dict | None = None, clock=None, rng=None):
+    def __init__(
+        self,
+        device: dict | None = None,
+        clock=None,
+        rng=None,
+        fingerprint: str = "legacy",
+        medusa_backend=None,
+    ):
         self.device = dict(device or hgvendor.DEVICE)
         self.clock = clock or (lambda: int(time.time() * 1000))
         self.rng = rng or random.random
+        self.fingerprint = fingerprint
+        self.medusa_backend = medusa_backend
+        self.process_started = int(self.clock())
+        self.process_nonce = (
+            base64.urlsafe_b64encode(secrets.token_bytes(18)).rstrip(b"=").decode("ascii")
+            if fingerprint == "fyworld"
+            else "AXYQOS6n2m60x1fVZHIrH3iol"
+        )
 
     def rand(self) -> int:
         return i32(int(self.rng() * 4294967296.0))
 
-    def medusa(self, url: str, body: bytes | None, ts: int) -> str:
+    def medusa(
+        self,
+        url: str,
+        body: bytes | None,
+        ts: int,
+        device_id: str | None = None,
+        version_name: str | None = None,
+        time_ms: int | None = None,
+    ) -> str:
+        device_id = device_id or self.device.get("device_id", "")
+        version_name = version_name or self.device.get("version_name", "7.4.3.32")
+        if self.medusa_backend is not None:
+            return str(
+                self.medusa_backend(
+                    url,
+                    body,
+                    ts,
+                    device_id,
+                    version_name,
+                    time_ms,
+                )
+            )
         body_md5 = digest("md5", body) if body else bytes(16)
         query = url.split("?", 1)[1].encode() if "?" in url else b""
         query_sm3 = sm3(query)
-        query_body_ts = _hash_f13(query_sm3, body_md5, ts)
+        query_body_ts = (
+            _fyworld_hash_f13(query_sm3, body_md5, ts)
+            if self.fingerprint == "fyworld"
+            else _hash_f13(query_sm3, body_md5, ts)
+        )
         nested = _proto([(1, 111, "sint"), (2, 10, "sint"), (3, 694367, "sint"), (5, 586952199, "sint")])
         message_rand = u32(self.rand())
         env_launch = int(self.rng() * 21) + 100
         env_pid = int(self.rng() * 2000) + 10001
-        version = self.device.get("version_name", "7.2.2.32")
+        device_proto = (
+            _fyworld_exact_device_proto(device_id, self.process_nonce, self.process_started)
+            if self.fingerprint == "fyworld"
+            else _device_proto(self.device)
+        )
         env = _proto([
             (1, env_launch, "sint"), (2, 146331399, "sint"), (3, 146331396, "sint"), (5, 7, "sint"),
-            (6, "v04.06.04.03-bugfix"), (7, env_pid, "sint"), (12, _device_proto(self.device)),
+            (6, "v04.06.04.03-bugfix"), (7, env_pid, "sint"), (12, device_proto),
             (13, _proto([(1, self.clock() // 1000, "sint"), (2, -2, "sint"), (4, 200, "sint")])),
-            (14, version),
+            (14, version_name),
         ])
         query_hash = sm3(query + body_md5 + b"none")
         message = _proto([
-            (1, bytes.fromhex("f7e85ffad7d7dc3bd62ac87057cf6118")), (2, 3, "sint"), (3, message_rand, "sint"),
-            (4, "8662"), (5, self.device.get("device_id", "")), (6, "1588093228"), (7, version),
+            (1, bytes.fromhex("2d4b4fca49750d433fb5ae2c226dcc56")), (2, 3, "sint"), (3, message_rand, "sint"),
+            (4, "8662"), (5, device_id), (6, "646637794"), (7, version_name),
             (8, "v04.06.04-ml-android"), (9, 67503104, "sint"), (10, bytes.fromhex("4001000000000000")),
             (12, ts, "sint"), (13, query_body_ts), (14, query_sm3[:6]), (15, nested),
-            (16, "AXYQOS6n2m60x1fVZHIrH3iol"), (17, ts, "sint"), (19, query_hash), (20, "none"),
+            (16, self.process_nonce), (17, ts, "sint"), (19, query_hash), (20, "none"),
             (21, 312, "sint"), (23, env),
             (24, '{"cmr":16777216,"cmr2":16777216,"un_h":1879194040,"vpn":0,"kd":0,"fkd":3672518972,'
                  '"pd":-1872573247,"dyn":"","do":0,"tk":true}'),
@@ -667,35 +900,35 @@ class Signer:
                   + bytes([(r >> 16) & 255, (r >> 24) & 255]))
         encrypted = AesV3(bytes.fromhex("f1593376766ea98d34f31b057a9d5be4"), ts).encrypt(
             packed, bytes.fromhex("1fe109a4125283f418de9e051a969e12"))
-        version_bytes = bytes.fromhex("03000000f7e85ffad7d7dc3bd62ac87057cf6118")
+        # 官方 74332 协议版本 5；2026-11-11 Frida 反推自真机 x-medusa 前 20 字节。
+        version_bytes = bytes.fromhex("050000002d4b4fca49750d433fb5ae2c226dcc56")
         prefix = b"".join(le32(i32at(version_bytes, i, True) ^ ts) for i in range(0, 20, 4))
         return base64.b64encode(prefix + bytes([r & 255, (r >> 8) & 255, 0, 1]) + encrypted).decode()
 
-    def helios(self, ts: int) -> str:
-        rnd = self.rand()
-        ascii_hex = digest("md5", le32(rnd) + b"8662").hex().encode()
-        words = [i64at(ascii_hex, i * 8, True) for i in range(4)]
-        table = [words[0]]
-        b0 = words.pop(0)
-        b8 = words.pop(0)
-        for i in range(34):
-            x8 = i64(ror64(b8, 8) + b0) ^ i
-            words.append(x8)
-            x8 = x8 ^ ror64(b0, 61)
-            table.append(x8)
-            b0 = x8
-            b8 = words.pop(0)
-        text = ("%d-1588093228-8662" % ts).encode()
+    def helios(self, ts: int, license_id: str = "646637794") -> str:
+        mask = 0xFFFFFFFFFFFFFFFF
+        seed = u32(self.rand()) & 0x7FFFFFFF
+        ascii_hex = digest("md5", le32(seed) + b"8662").hex().encode()
+        material = [int.from_bytes(ascii_hex[i:i + 8], "little") for i in range(0, 32, 8)]
+        keys = [0] * 34
+        left = [0] * 36
+        keys[0] = material[0]
+        left[:3] = material[1:4]
+        for i in range(33):
+            left[i + 3] = (((left[i] >> 8) | (left[i] << 56)) + keys[i]) & mask
+            left[i + 3] ^= i
+            keys[i + 1] = (((keys[i] << 3) | (keys[i] >> 61)) ^ left[i + 3]) & mask
+        text = f"{ts}-{license_id}-8662".encode()
         padding = 16 - len(text) % 16
         data = text + bytes([padding]) * padding
-        output = bytearray(le32(rnd))
+        output = bytearray(le32(seed))
         for at in range(0, len(data), 16):
-            a = i64at(data, at, True)
-            b = i64at(data, at + 8, True)
-            for i in range(34):
-                b = table[i] ^ (a + ror64(b, 8))
-                a = b ^ ror64(a, 61)
-            output += struct.pack("<q", i64(a)) + struct.pack("<q", i64(b))
+            y = int.from_bytes(data[at:at + 8], "little")
+            x = int.from_bytes(data[at + 8:at + 16], "little")
+            for key in keys:
+                x = ((((x >> 8) | (x << 56)) + y) & mask) ^ key
+                y = (((y << 3) | (y >> 61)) ^ x) & mask
+            output += le64(y) + le64(x)
         return base64.b64encode(bytes(output)).decode()
 
     def common_values(self, extra=None, app_version: bool = True) -> dict:
@@ -712,7 +945,7 @@ class Signer:
         return values
 
     def sign(self, base: str, values: dict, body: bytes | None = None, mode: str = "hg",
-             extra_headers: dict | None = None):
+             extra_headers: dict | None = None, include_medusa: bool = False):
         """返回 dict(url, headers, body)。
 
         mode: ``hg`` = gorgon 分支模型（当前 APK 在线上可用的那套）；
@@ -742,7 +975,6 @@ class Signer:
         else:
             raise RuntimeError("128 次试探都没有命中签名分支")
         rnd16 = int(self.rng() * 65536)
-        sign_nonce = secrets.token_bytes(11)
         headers.update({
             "User-Agent": hgvendor.VIDEO_UA if body is not None else hgvendor.APP_UA,
             "Accept": "application/json; charset=utf-8,application/x-protobuf",
@@ -752,12 +984,24 @@ class Signer:
             "passport-sdk-version": "50561",
             "x-xs-from-web": "0",
             "x-khronos": str(ts),
-            "x-ladon": ladon("8662", ts, sign_nonce[2:6]),
-            "x-argus": argus(query, body, ts, self.device, sign_nonce),
-            "x-gorgon": gorgon(query, body, ts, rnd16),
-            "x-helios": self.helios(ts),
+            "x-ladon": real_ladon(),
+            "x-argus": real_argus(ts),
+            "x-gorgon": gorgon_aligned(query, body, ts, rnd16),
+            "x-helios": self.helios(
+                ts,
+                "646637794",
+            ),
             "x-tt-dt": "",
         })
+        if include_medusa:
+            headers["x-medusa"] = self.medusa(
+                base + "?" + query,
+                body,
+                ts,
+                self.device.get("device_id", ""),
+                self.device.get("version_name", "7.2.2.32"),
+                ticket,
+            )
         if body is not None:
             headers["Content-Type"] = "application/json; charset=UTF-8"
             headers["x-vc-bdturing-sdk-version"] = "3.7.2.cn"
@@ -766,6 +1010,59 @@ class Signer:
             headers.update(extra_headers)
         return {"method": "POST" if body is not None else "GET", "url": base + "?" + query,
                 "headers": headers, "body": body}
+
+    def sign_playback(self, base: str, values: dict, body: bytes | None = None,
+                      user_agent: str | None = None, include_medusa: bool = True,
+                      include_ts: bool = False):
+        """Exact fyworld `signPlayback` behavior: no ts in query."""
+        now = self.clock()
+        ts = i32(now // 1000)
+        query = ""
+        ticket = now
+        for offset in range(128):
+            ticket = now + offset
+            candidate = dict(values)
+            if include_ts:
+                candidate["ts"] = str(ts)
+            candidate["_rticket"] = str(ticket)
+            query = build_query(candidate)
+            if fyworld_branch(query, body, ts) == 0:
+                break
+        else:
+            raise RuntimeError("128 次试探都没有命中 playback 签名分支")
+        url = base + "?" + query
+        rnd16 = int(self.rng() * 65536)
+        helios_value = self.helios(ts, "646637794")
+        device_id = str(values.get("device_id") or "0")
+        version_name = str(values.get("version_name") or "7.4.3.32")
+        medusa_value = (
+            self.medusa(url, body, ts, device_id, version_name, ticket)
+            if include_medusa
+            else None
+        )
+        headers = {
+            "User-Agent": user_agent or hgvendor.VIDEO_UA,
+            "Accept": "application/json; charset=utf-8,application/x-protobuf",
+            "x-ss-req-ticket": str(ticket),
+            "sdk-version": "2",
+            "x-xs-from-web": "0",
+            "x-khronos": str(ts),
+            "x-ladon": real_ladon(),
+            "x-argus": real_argus(ts),
+            "x-gorgon": gorgon_aligned(query, body, ts, rnd16),
+            "x-helios": helios_value,
+        }
+        if medusa_value is not None:
+            headers["x-medusa"] = medusa_value
+        if body is not None:
+            headers["Content-Type"] = "application/json; charset=utf-8"
+            headers["x-ss-stub"] = digest("md5", body).hex().upper()
+        return {
+            "method": "POST" if body is not None else "GET",
+            "url": url,
+            "headers": headers,
+            "body": body,
+        }
 
 
 def ror64(v: int, n: int) -> int:

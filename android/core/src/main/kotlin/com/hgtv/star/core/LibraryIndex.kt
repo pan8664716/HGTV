@@ -219,7 +219,8 @@ object LibraryDisk {
             // 推荐页左右滑动切换：旧版本磁盘没有这个键，按开启处理（与之前的行为一致）。
             values["recommendSwipe"] as? Boolean ?: true,
             // 弹幕特效：旧版本磁盘没有这个键，按开启处理，保持现有观感。
-            values["danmakuEffects"] as? Boolean ?: true)
+            values["danmakuEffects"] as? Boolean ?: true,
+            SearchKeyboard.fromStored(values["searchKeyboard"] as? String))
         val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())
         val index = LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
             SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden"),

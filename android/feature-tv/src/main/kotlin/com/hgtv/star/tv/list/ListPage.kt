@@ -68,6 +68,7 @@ import com.hgtv.star.tv.message
 import com.hgtv.star.tv.historyClearButton
 import com.hgtv.star.tv.navEntry
 import com.hgtv.star.tv.navIcons
+import com.hgtv.star.tv.pageInset
 import com.hgtv.star.tv.pageBleed
 import com.hgtv.star.tv.pageTitle
 import com.hgtv.star.tv.profileHead
@@ -78,10 +79,21 @@ import com.hgtv.star.tv.restoreChipFocus
 import com.hgtv.star.tv.row
 import com.hgtv.star.tv.scheduleSuggestions
 import com.hgtv.star.tv.searchBar
+import com.hgtv.star.tv.HongguoKeyboard
+import com.hgtv.star.tv.hongguoKeyboardMode
+import com.hgtv.star.tv.renderHongguoSideList
+import com.hgtv.star.tv.wireHongguoKeyboardFocus
+import com.hgtv.star.tv.appendHongguoDraft
+import com.hgtv.star.tv.setHongguoDraft
+import com.hgtv.star.tv.searchHongguoDraft
+import com.hgtv.star.tv.setSearchKeyboard
+import com.hgtv.star.tv.hideSystemKeyboard
 import com.hgtv.star.tv.settings
 import com.hgtv.star.tv.SETTINGS_TABS
 import com.hgtv.star.tv.SETTINGS_TAG_TAB_PREFIX
 import com.hgtv.star.tv.SETTINGS_CHIP_INLINE_MIN_WIDTH
+import com.hgtv.star.tv.SUGGEST_COUNT
+import com.hgtv.star.tv.SUGGEST_DEBOUNCE
 import com.hgtv.star.tv.widthDp
 import com.hgtv.star.tv.switchSettingsTab
 import com.hgtv.star.tv.showHint
@@ -141,6 +153,8 @@ fun MainActivity.showCatalog(
     // 「切一栏焦点就跳进内容区」。
     if(!load && !keepChip) { focusFirstCardOnLanding=false; chipFocusKey=null }
     initialCatalogPending=false; restoreStoppedPage=false; pendingDetail=null
+    val hongguo=tab==TAB_SEARCH && collection==null && hongguoKeyboardMode()
+    if(hongguo) { topArea.clear(); topAreaHidden=false; keepTopAreaState=false }
     // 榜单页与搜索结果从第 2 页起是「向下追加」：保留已经显示的剧集，只把新的一页接在后面。
     val appending=load && appendCatalog() && page>1 && catalog.isNotEmpty()
     // 首页的四个剧架不是「一页列表」：它们来自四个榜单各自的第 1 页，
@@ -158,6 +172,8 @@ fun MainActivity.showCatalog(
     // 换页（换榜单 / 换分类 / 换标签）时把「连取」预算归零：新列表从头开始算。
     if(!keepTopAreaState) prefetchChain=0
     invalidatePage(); screen="catalog"; releaseCatalogViews(); val container=base()
+    // HG键盘模式下**不改页面底色与边距**：整页与其余页面同一套主题材质，
+    // 差异只在下半部分多出来的那两栏（键盘 / 历史）。
     // 换榜单 / 换分类的请求还在路上时切走了标签（或在搜索页重新搜）：那一次的落地会被
     // [invalidatePage] 作废，落点意图因此永远等不到消费，必须在这里清掉——
     // 留着它会让新页面一直「芯片握着焦点」（不预取下一页、不恢复位置）。
@@ -179,14 +195,22 @@ fun MainActivity.showCatalog(
         // 左边与内容线对齐；右边少让一条柔光带，圆形入口的可见圆盘才正好压在内容线上。
         setPadding(pageBleed(),0,pageBleed()-dp(TvStyle.SOFT_BAND),0)
     }
-    top.addView(text(pageTitle(),30f,TvStyle.textStrong).apply {
+    // 搜索页：系统键盘模式照旧显示「搜索」标题；HG键盘模式把标题位整个让出来，
+    // 搜索框贴到最左（与键盘第一列对齐），切换键盘那枚圆形入口跟在搜索框后面
+    // （在 [searchBar] 里建，见那里）。两种模式下这一行其余的东西一个都不变。
+    val searchPage=tab==TAB_SEARCH && collection==null
+    hongguoSwitch=null
+    if(!searchPage || !hongguo) top.addView(text(pageTitle(),30f,TvStyle.textStrong).apply {
         setTypeface(typeface,Typeface.BOLD)
         setPadding(0,0,dp(4),0)
     },lp(-2,-2))
     val filterSlot=row()
-    gapInto(top,filterSlot,lp(-2,-2),TvStyle.GAP_GROUP)
-    // 搜索页：搜索框与「搜索 / 历史 / 手机输入」就在导航栏里（用户不用先按一下才够得着），
+    // 搜索页这一格不用：它原来只是给标题与输入框之间留一段 24dp 的空，
+    // 而HG键盘下输入框要贴到最左，这段空会把它顶开。
+    if(!searchPage) gapInto(top,filterSlot,lp(-2,-2),TvStyle.GAP_GROUP)
+    // 搜索页：搜索框与「搜索 / 手机输入」就在导航栏里（用户不用先按一下才够得着），
     // 输入框吃掉中间那段弹性空间；其余页面这里是一条弹性空白。
+    // HG键盘模式下输入框改成「只显示、不可聚焦」的镜子，字符由左侧键盘写进去。
     if(tab==TAB_SEARCH) searchBar(top,query.isBlank() && !load && !focusNav)
     else top.addView(Space(this),lp(0,1).apply { weight=1f })
     // 历史集合页：「已看完 / 未看完」紧跟在页面标题后面（**左边**，与标题同一组），
@@ -290,6 +314,10 @@ fun MainActivity.showCatalog(
         // 五枚排下来整排太散，读起来像五个独立的按钮而不是一组入口。
         gapInto(top,holder,lp(-2,-2),TvStyle.GAP_TIGHT)
     }
+    // 这一排圆形入口就在屏幕最上面一行：按上**停在原地**。
+    // 不显式钉住的话，框架会按几何位置往上找，把焦点交给「回到顶部」那个浮层按钮——
+    // 用户读到的就是「已经在最上面了，按上还能往上跳」。
+    navIcons().forEach { it.nextFocusUpId=it.id }
     // 「推荐」圆形入口的左右邻居：右边就是紧挨着它的搜索按钮（[nav] 里它后面那一枚），
     // 左边是这一页标题后的第一枚控件（搜索页就是搜索按钮 / 输入框）。
     // 它在页头最上面那一行：按上停在原地，别让焦点跑出屏幕。
@@ -326,21 +354,18 @@ fun MainActivity.showCatalog(
         if(historyClear==null) afterClear?.nextFocusLeftId=(historyFilterEnd ?: afterClear).id
     }
     container.addView(top,lp(-1,dp(TvStyle.TOOLBAR_HEIGHT)))
-    registerTopAreaRow(top)
+    // HG键盘页的顶栏**不登记进「随滚动收起」的区域**：左侧 3/7（键盘 + 记录列）是常驻的，
+    // 页头一收，下面那三栏就多出这一条高度，键盘的每一行被拉长、切换键与搜索框还会消失。
+    // 这一页只让右边的卡片列表滚动，顶栏始终在。
+    if(!hongguo) registerTopAreaRow(top)
     // 圆形入口建好了：把搜索页导航栏里那几件的「按上」接回它们（见 [wireHeadNavUp]）。
     if(tab==TAB_SEARCH) wireHeadNavUp()
     // 搜索页这一行的宽度按实测分配：输入框只拿「圆形入口与按钮之外剩下的那一段」，
     // 因此无论屏多宽，右边那排圆形入口都不会被顶出屏幕（见 [fitSearchRow]）。
     if(tab==TAB_SEARCH) fitSearchRow(top)
-    // 页面内提示行：应用里不弹系统 Toast，需要「刚刚发生了什么」这类反馈时显示这一行淡字。
-    // 它不参与焦点、不盖画面，几秒后自己消失；页面重建时按 [catalogHint] 复原。
-    val hintView=text("",14f,TvStyle.textDim).apply {
-        setPadding(pageBleed(),dp(4),pageBleed(),dp(2))
-        visibility=if(catalogHint==null) View.GONE else View.VISIBLE
-        text=catalogHint.orEmpty()
-    }
-    catalogHintView=hintView
-    container.addView(hintView,lp(-1,-2))
+    // 这里**没有**「页面内提示行」了：那一行在布局流里，一出现就把下面的内容整体推下去、
+    // 四秒后再弹回来（用户读到的就是「界面先变形一下」）。提示改走浮动的 toast
+    // （见 [showHint]），等待中的三点走屏幕正中（见 [showCenterLoading]），都不占布局。
     // 「我的」页的身份行：圆形头像 + 昵称 + 退出 / 刷新。
     // 放在导航栏下面（与分类页的二级分类同一层）：上面一行是「看哪一栏」，这一行是「这是谁」。
     if(tab==TAB_PROFILE) {
@@ -524,7 +549,7 @@ fun MainActivity.showCatalog(
         // 点了另一枚榜单芯片：焦点立刻交回那一枚，不等内容落地、也不经过别的控件。
         restoreChipFocus("board:")
     }
-    if(tab==TAB_SEARCH) {
+    if(tab==TAB_SEARCH && !hongguo) {
         // 输入框下面那一行：**没有输入时是热搜词，打字时换成提示词**。
         // 固定高度、宽度与内容区对齐（见 [CHIP_ROW_HEIGHT]），因此这一行换来换去
         // 不会让下面的卡片行上下跳；两者都没有时整行隐藏，不留空槽。
@@ -693,7 +718,70 @@ fun MainActivity.showCatalog(
         rankSubtitle=subtitle
         container.addView(subtitle); registerTopAreaRow(subtitle)
     }
-    val body=column(); catalogBody=body; container.addView(body,lp(-1,0).apply { weight=1f })
+    val body=column(); catalogBody=body
+    if(hongguo) {
+        // 三栏：左 2/7 键盘、中 1/7 搜索记录 / 联想词、右 4/7 结果卡片。
+        // 底色一律不画：整页用同一块主题底板，栏与栏之间只用一条分隔线（[TvStyle.separator]）区隔，
+        // 因此这一页和首页 / 榜单页是同一套材质，不再是一整块深蓝的自定义皮肤。
+        val columns=row().apply { gravity=Gravity.TOP }
+        // 键盘那一栏**不留任何内边距**：字符表直接贴到屏幕左缘。
+        // 这一栏原本还会叠上页面统一的 71dp 内容缩进，两段加在一起左侧就空出一大块，
+        // 读起来像「键盘被推到了右边」。
+        val keyboardColumn=column()
+        val sideColumn=column().apply {
+            // 顶边不留白：这一列要顶到最上面，与键盘功能行同高。
+            setPadding(dp(TvStyle.GAP_TIGHT),0,dp(TvStyle.GAP_TIGHT),dp(TvStyle.GAP_INLINE))
+        }
+        val resultsColumn=column()
+        val keyboard=HongguoKeyboard(this,
+            onLetter={ letter -> appendHongguoDraft(letter) },
+            onDelete={ setHongguoDraft(hongguoDraft.dropLast(1)) },
+            onClear={ setHongguoDraft("") },
+            onSearch={ searchHongguoDraft() },
+            onClearHistory={
+                searchController.clearHistory()
+                renderHongguoSideList()
+                showHint("搜索记录已清空")
+            },
+            onSwitchKeyboard={ setSearchKeyboard(false) })
+        keyboard.draft=hongguoDraft
+        keyboardColumn.addView(keyboard.view,LinearLayout.LayoutParams(-1,-1))
+        // 中间那一列只有一份可滚动列表：搜索记录 / 联想词按输入状态切换内容，
+        // 不画标题也不画分隔线——那一列本来就只有 1/7 宽，标题占掉的是能放词的行。
+        val sideScroll=ScrollView(this).apply {
+            isVerticalScrollBarEnabled=false
+            // 这一列的字只换颜色、不放大，没有溢出的描边要留，因此不用 [focusBleed]
+            // 那套 12dp 纵向余量——顶部只留 2dp，第一条记录就顶在列首。
+            clipChildren=false; clipToPadding=false
+            val bleed=dp(TvStyle.FOCUS_BLEED)
+            setPadding(bleed,dp(2),bleed,dp(TvStyle.FOCUS_BLEED_VERTICAL))
+        }
+        val sideList=column()
+        sideScroll.addView(sideList)
+        sideColumn.addView(tvScrollHost(sideScroll),LinearLayout.LayoutParams(-1,-1))
+        columns.addView(keyboardColumn,LinearLayout.LayoutParams(0,-1,2f))
+        columns.addView(View(this).apply { setBackgroundColor(TvStyle.separator) },LinearLayout.LayoutParams(dp(1),-1))
+        columns.addView(sideColumn,LinearLayout.LayoutParams(0,-1,1f))
+        columns.addView(View(this).apply { setBackgroundColor(TvStyle.separator) },LinearLayout.LayoutParams(dp(1),-1))
+        columns.addView(resultsColumn,LinearLayout.LayoutParams(0,-1,4f))
+        // 负的左边距把这一行拉到屏幕左缘：页面统一的 [pageInset] 缩进对键盘那一栏不生效，
+        // 右侧仍然停在内容线上（行宽因此比容器内容宽多出一个缩进）。
+        container.addView(columns,lp(-1,0).apply {
+            weight=1f
+            leftMargin=-(pageInset()-pageBleed())
+        })
+        hongguoKeyboard=keyboard
+        hongguoHistoryColumn=sideList
+        hongguoResultsColumn=resultsColumn
+        resultsColumn.addView(body,LinearLayout.LayoutParams(-1,0).apply { weight=1f })
+        searchController.refreshHistory()
+        renderHongguoSideList()
+        if(hongguoDraft.isNotBlank()) searchController.scheduleSuggestions(hongguoDraft,SUGGEST_COUNT,SUGGEST_DEBOUNCE)
+        keyboard.view.post { wireHongguoKeyboardFocus() }
+        // HG键盘常驻：这一页的字符全部由左侧键盘输入，系统输入法一次都不该弹出来。
+        // 从「系统输入法」切过来的那一次，系统键盘往往还开着，这里在页面挂上之后再按一次。
+        keyboard.view.post { if(hongguoKeyboardMode() && screen=="catalog" && tab==TAB_SEARCH) hideSystemKeyboard() }
+    } else container.addView(body,lp(-1,0).apply { weight=1f })
     if(localCatalog()) {
         // 本机集合页：一次取全（本机 + 账号合并），不分页。
         // 账号那半份可能还没拉到（首次进这一页），那就先用本机的，等 [loadAccount] 落地后重建。
@@ -1013,7 +1101,7 @@ fun MainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Bool
         }
         if(loading) loading(list) else message(list,when {
             // 搜索页的「怎么打字」在这里也说一次：这是没有结果时用户唯一能看到的说明。
-            tab==TAB_SEARCH -> if(query.isBlank()) "输入关键词后按「搜索」；遥控器用方向键选字，也可外接键盘" else "没有找到相关剧集，换个关键词试试"
+            tab==TAB_SEARCH -> if(hongguoKeyboardMode()) "用左侧键盘输入字符，按「搜索」查看结果" else if(query.isBlank()) "输入关键词后按「搜索」；遥控器用方向键选字，也可外接键盘" else "没有找到相关剧集，换个关键词试试"
             tab==TAB_CATEGORY -> "${categoryDescription()}暂时没有内容"
             collection=="favorites" -> "在剧集详情中选择收藏，喜欢的剧就会出现在这里"
             // 筛选生效时不能说「会自动保存在这里」：这一栏是空的，但本机其实有记录，
@@ -1040,11 +1128,24 @@ fun MainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Bool
         // 空页没有卡片可落。**只在焦点真的丢了的时候**才补一个落点（见 [ensureFocus]）：
         // 全站原则是不主动抢焦点，内容变空不是用户动作，不该把焦点从用户正按着的地方搬走。
         focusFirstCardOnLanding=false
-        ensureFocusView { chipControl(chipFocusKey) ?: firstHeadControl() ?: navEntry() }
+        ensureFocusView { hongguoKeyboard?.view?.takeIf { it.childCount>0 }?.let { keyboard ->
+            hongguoKeyboard?.focusFirstKey(); keyboard
+        } ?: chipControl(chipFocusKey) ?: firstHeadControl() ?: navEntry() }
         return
     }
     val gap=dp(6)
-    val gridWidth=gridContentWidth()
+    val gridWidth=if(hongguoKeyboardMode() && tab==TAB_SEARCH && collection==null) {
+        // 结果列只有 4/7 宽，卡片宽度按**这一列的实测宽度**算。但滚动容器自己左右各留了一条
+        // [TvStyle.FOCUS_BLEED] 的余量（见 [focusBleed]），内容区比列宽窄 2 条余量；
+        // 直接用列宽算，三张卡会顶出内容区十几 dp，最右边那张的右缘（连同焦点描边）
+        // 被外壳裁掉——用户读到的就是「最右边那张卡没有边框」。
+        (hongguoResultsColumn?.width ?: 0).takeIf { it>0 }?.let {
+            (it-2*dp(TvStyle.FOCUS_BLEED)-dp(4)).coerceAtLeast(dp(320))
+        } ?: run {
+            val room=(resources.displayMetrics.widthPixels-2*(pageInset()-pageBleed())-4*gap).coerceAtLeast(dp(320))
+            (room*4f/7f).toInt()
+        }
+    } else gridContentWidth()
     val columns=gridColumns
     val width=((gridWidth-gap*(columns-1))/columns).toInt()
     // 与 HomeScreen.slotHeight 同一算法：先扣掉卡片 5dp 内边距，再按 134:196 换算。
@@ -1115,6 +1216,20 @@ fun MainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Bool
     // 都以 `scroll.height` 为准，第一帧还没量到时算出来的是错的。
     // 页头 / 顶部入口这类「确定不依赖视口」的落点直接给，不等。
     when {
+        // HG键盘：**刚触发过搜索**就把焦点交给结果第一张卡（搜完直接看结果）；
+        // 其余重建（追加一页、联想词刷新）仍把焦点留在键盘上，别把正在打字的人踢走。
+        hongguoKeyboardMode() && tab==TAB_SEARCH && collection==null -> {
+            val landFirst=hongguoLandFirstCard
+            hongguoLandFirstCard=false
+            scroll.post {
+                if(catalogScroll!==scroll) return@post
+                if(landFirst) {
+                    ensureFocus { focusGridIndex(0,false) }
+                    // 没有结果 / 栅格还没物化：退回键盘，别让焦点悬空。
+                    if(!focusHeld()) hongguoKeyboard?.focusFirstKey()
+                } else hongguoKeyboard?.focusFirstKey()
+            }
+        }
         // 这两个是**显式意图**（「加载占位时把焦点放在页头」「把焦点留在页头」），
         // 不是异步落地抢焦点，因此照旧直接落；但要先把收起的页头展开，
         // 否则焦点会停在一条高度为 0 的行上（用户读到的就是「按上没反应」）。
