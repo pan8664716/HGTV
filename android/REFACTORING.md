@@ -132,7 +132,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 5：详情与发行方解析
+
+状态：已完成。
+
+- 新增 `ContentDetailParser`，集中详情响应、相关作品 cell、发行方 tab 与卡片解析。
+- 详情空响应回退、签名、缓存写入、作者补查时机、相关作品换线重试和作者作品并发仍留在原类。
+- `RelatedEntry` 移到同包内部类型，公开 API 不变。
+- `ContentRepository.kt` 从 5268 行降到 5184 行；`ContentDetailParser.kt` 为 101 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 5 只处理详情、作者作品和发行方探测的纯解析与内部编排，保留请求顺序、缓存、
-并发限制和公开方法。继续按既定计划执行。
+批次 6 只处理播放模型、取流缓存和弹幕窗口的纯解析与内部服务边界，保留反射方法、
+单飞、预算、缓存键和失败路径。继续按既定计划执行。

@@ -997,7 +997,7 @@ class ContentRepository(
      * `16` = 演员混合，`8` = 演员作品。**`5`（全部视频）刻意不用**：那一栏混着单条视频，
      * `video_id` 不一定是 `series_id`，塞进 [Series] 会让详情页拿到一个不存在的剧集。
      *
-     * 真正的顺序以服务端 `data.tabs[]` 为准（见 [publisherTab]）：先发一次默认请求，
+     * 真正的顺序以服务端 `data.tabs[]` 为准（见 [ContentDetailParser.publisherTab]）：先发一次默认请求，
      * 读它下发的 `tab_type` 与 `total`，再按这个优先级从中挑一个 `total>0` 的继续翻页。
      */
     private val PUBLISHER_TABS=intArrayOf(11,23,21,16,8)
@@ -3242,43 +3242,9 @@ class ContentRepository(
             text(retry.url,retry.withSession())
         } else raw
         if(body.isBlank()) throw IOException("剧集详情暂不可用（稍后再试）")
-        val root=JSONObject(body)
-        if(root.optInt("code",-1)!=0) throw IOException("剧集详情暂不可用（${root.optInt("code")}）")
-        val o=root.optJSONObject("data")?.optJSONObject("video_data") ?: throw IOException("剧集详情结构已变化")
-        // 未上架的剧（预告 / 预约中）**也是正常响应**：`code 0`、封面简介齐全，
-        // 只是 `episode_cnt=0`、`video_list=[]`。早先这里把空分集当异常抛，
-        // 用户点开「谁让这个文盲修仙的第六季」就只看到一页错误——现在按预告详情返回。
-        val rows=o.optJSONArray("video_list")
-        val episodes=rows?.objects()
-            ?.sortedBy { it.optInt("vid_index",0) }
-            ?.map { it.str("vid") }
-            ?.filter { it.matches(Regex("[0-9]{1,30}")) }
-            ?.distinct()
-            .orEmpty()
-        // 这两个字段决定 `video_model` 的请求语义。旧缓存没有它们时用红果当前默认值；
-        // 新详情必须保留接口值，不能只留下分集 vid。
-        val firstVideo=rows?.optJSONObject(0)
-        val playback=PlaybackProfile(
-            contentType=o.optInt("content_type",firstVideo?.optInt("content_type",1004) ?: 1004),
-            videoPlatform=o.optInt("video_platform",3),
-        )
-        val count=o.optInt("episode_cnt",episodes.size)
-        // 有分集却解析不出合法 vid：那是真的数据异常，仍然报错（不能静默变成「预告」）。
-        if(episodes.isEmpty() && count>0) throw IOException("分集数据异常")
-        val upcoming=episodes.isEmpty()
-        // 题材与列表接口同源（`category_schema` 里的 `name`），最多 5 个、 ` · ` 连接。
-        val tags=tagsOf(o)
-        // 预告文案：`series_sub_title_list` 里就是「预告 / 全0集 / 287.8万人已预约」这几条，
-        // 详情接口本身不带「预计N月N日上线」——那一句只有搜索 / 预约列表有，界面自己补。
-        val notice=runCatching { JSONArray(o.str("series_sub_title_list")) }.getOrNull()
-            ?.objects()?.mapNotNull { it.str("content") }?.firstOrNull { it.contains("预告") }
-            .orEmpty().ifEmpty { if(upcoming) "尚未上线" else "" }
-        val series=Series(id,o.str("series_title"),cleanUrl(o.str("series_cover")),o.str("series_intro"),
-            EpisodeLabel.normalize(o.str("episode_right_text")).ifEmpty { EpisodeLabel.of(count) },
-            tags,author=if(includeAuthor) authorOf(id) else "",
-            episodeCount=count,seasonIndex=o.optInt("season_index",0),
-            upcoming=upcoming,notice=notice)
-        val detail=Detail(series,episodes,upcoming,reserved=o.flag("online_subscribed"),playback=playback)
+        val detail=ContentDetailParser.parseDetail(body,id) {
+            if(includeAuthor) authorOf(id) else ""
+        }
         DetailCache.save(detail)
         return detail
     }
@@ -3468,7 +3434,7 @@ class ContentRepository(
         identity.avatar.takeIf { it.isNotBlank() && it!=cachedAvatar }
             ?.let { onAvatar?.invoke(it) }
         val first=publisherPage(identity.uid,null) ?: return null
-        val tab=publisherTab(first.tabs) ?: return null
+        val tab=ContentDetailParser.publisherTab(first.tabs,PUBLISHER_TABS) ?: return null
         // 首页问的就是这个 tab 且已有数据：直接用，省一个 RTT。
         val head=if(first.tab==tab) first else publisherPage(identity.uid,tab) ?: return null
         val works=LinkedHashMap<String,Series>()
@@ -3559,13 +3525,6 @@ class ContentRepository(
     ): java.util.concurrent.Future<List<Series>?>? = runCatching {
         WorkLanes.fanout.executor.submit(java.util.concurrent.Callable { publisherWorks(name,onAvatar) })
     }.getOrNull()
-    /** 服务端下发的 tab 表里挑一个 `total>0` 的，优先级见 [PUBLISHER_TABS]。 */
-    private fun publisherTab(tabs: List<JSONObject>): Int? {
-        val usable=tabs.filter { it.optInt("total",0)>0 }.map { it.optInt("tab_type",-1) }
-        PUBLISHER_TABS.firstOrNull { it in usable }?.let { return it }
-        // 服务端加了新命名时按它自己的顺序取第一个有数据的，别再硬编码。
-        return tabs.firstOrNull { it.optInt("total",0)>0 }?.optInt("tab_type",-1)?.takeIf { it>0 }
-    }
     /** 一页「发行方作品」：`tabs` 是这次响应下发的 tab 表，`works` 是本页的剧集。 */
     private class PublisherPage(
         val tabs: List<JSONObject>,
@@ -3615,23 +3574,10 @@ class ContentRepository(
         val tabs=data.optJSONArray("tabs")?.objects().orEmpty()
         val rows=data.optJSONArray("data_list")?.objects().orEmpty()
         val info=data.optJSONObject("common_list_info")
-        val works=rows.mapNotNull { row -> row.optJSONObject("video")?.let { publisherSeries(it) } }
+        val works=rows.mapNotNull { row ->
+            row.optJSONObject("video")?.let(ContentDetailParser::publisherSeries)
+        }
         return PublisherPage(tabs,tab ?: 11,works,info?.str("cursor").orEmpty(),info?.optBoolean("has_more",false) ?: false)
-    }
-    /** 把 `data_list[].video` 映射成 [Series]；`video_id` 就是 `series_id`。 */
-    private fun publisherSeries(video: JSONObject): Series? {
-        val id=video.str("video_id").ifEmpty { video.str("series_id") }.trim()
-        if(!id.matches(Regex("[0-9]{1,30}"))) return null
-        val common=video.optJSONObject("common")
-        val title=(common?.str("title") ?: video.str("title")).trim()
-        if(title.isEmpty()) return null
-        val cover=cleanUrl(common?.str("cover") ?: video.str("cover"))
-        val intro=common?.str("intro") ?: video.str("intro")
-        val stat=video.optJSONObject("stat")
-        // 作者留空：这里只知道 uid，署名由调用方按名字统一填，免得「同名不同号」写错。
-        return Series(id,title,cover,intro,"","",author="",episodeCount=video.optInt("episode_cnt",
-            common?.optInt("episode_cnt",0) ?: 0),heat=stat?.optLong("digg_cnt",0L) ?: 0L,
-            playCount=stat?.optInt("play_cnt",0) ?: 0)
     }
     /** 社区域（`reading.snssdk.com`）的普通 POST：**不加签名头**，理由见 [publisherWorks]。 */
     private fun publisherPost(url: String,body: ByteArray): String {
@@ -3994,14 +3940,6 @@ class ContentRepository(
     }
 
     /**
-     * 「相关作品」里的一条：卡片 + 平台给的 `tag_info.text`（`第N季` / `同IP`）。
-     *
-     * [tag] 只当参考：界面上的季号仍由剧名推出来（见 [SeriesSeasons.badge]），
-     * 因为同一个值在列表接口里没有、只有这一栏才有，两处得用同一套规则才不会互相打架。
-     */
-    private data class RelatedEntry(val series: Series, val tag: String)
-
-    /**
      * 取「相关作品」那一栏的原始条目。
      *
      * 请求体（query）按官方 App 的形态给：`scene=10`、`from=detail_page_more_related`、
@@ -4037,7 +3975,11 @@ class ContentRepository(
                 if(data.optInt("code",-1)!=0) {
                     failure=IOException("相关作品接口暂不可用（${data.optInt("code")}）"); continue
                 }
-                val rows=parseRelatedRows(data)
+                val rows=ContentDetailParser.parseRelatedRows(
+                    data,
+                    RELATED_CELL_SHOW_TYPE,
+                    RELATED_CELL_NAME,
+                )
                 if(rows.isNotEmpty()) return rows
                 failure=IOException("相关作品数据为空")
             } catch(e: Exception) {
@@ -4045,32 +3987,6 @@ class ContentRepository(
             }
         }
         throw failure ?: IOException("相关作品接口暂不可用")
-    }
-    /** 从「相关作品」响应里取出那一栏的卡片（`title` / `cover` / `video_desc` / `episode_cnt`）。 */
-    private fun parseRelatedRows(data: JSONObject): List<RelatedEntry> {
-        val cells=data.optJSONArray("data") ?: return emptyList()
-        val rows=linkedMapOf<String,RelatedEntry>()
-        for(cell in cells.objects()) {
-            if(cell.optInt("show_type")!=RELATED_CELL_SHOW_TYPE && cell.str("cell_name")!=RELATED_CELL_NAME) continue
-            for(v in (cell.optJSONArray("video_data") ?: JSONArray()).objects()) {
-                val seriesId=v.str("series_id")
-                val title=v.str("title")
-                if(!seriesId.matches(Regex("[0-9]{1,30}")) || title.isBlank()) continue
-                val count=v.optInt("episode_cnt")
-                // 同一栏里也会出现未上架的那一季：`episode_cnt=0`，`sub_title_list` 里写「预告」。
-                // 标成预告态，卡片能正常显示、点进去是预约页而不是错误页。
-                val notice=v.optJSONArray("sub_title_list")?.objects()
-                    ?.mapNotNull { it.str("content") }?.firstOrNull { it.contains("预告") }.orEmpty()
-                if(!rows.containsKey(seriesId)) rows[seriesId]=RelatedEntry(
-                    // 相关作品的 `video_data` 也带 `category_schema`：卡片第二行同样显示类型标签。
-                    Series(seriesId,title,cleanUrl(v.str("cover")),v.str("video_desc"),
-                        EpisodeLabel.of(count),tagsOf(v),episodeCount=count,
-                        seasonIndex=v.optInt("season_index",0),upcoming=count<=0,notice=notice),
-                    v.optJSONObject("tag_info")?.str("text").orEmpty()
-                )
-            }
-        }
-        return rows.values.toList()
     }
     /**
      * 取一集的播放模型（`video_model`）。
