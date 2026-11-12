@@ -54,7 +54,7 @@ class PhoneMinePage(
 
     private val compactTopBar = context.resources.configuration.orientation ==
         android.content.res.Configuration.ORIENTATION_LANDSCAPE
-    private val avatarSize = context.dp(if (compactTopBar) 32 else 44)
+    private val avatarSize = context.dp(32)
     private val leadingRowHeight = context.dp(if (compactTopBar) 56 else 76)
     private val topBar = PhoneTopBar(context)
     private val pageContent = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
@@ -62,7 +62,7 @@ class PhoneMinePage(
         val size = avatarSize
         text = "红"
         setTextColor(PhoneStyle.text)
-        phoneSize(if (compactTopBar) 14 else 17)
+        phoneSize(14)
         gravity = Gravity.CENTER
         minWidth = size
         minimumHeight = size
@@ -80,13 +80,12 @@ class PhoneMinePage(
     private val topSub = TextView(context).apply {
         text = "点这里登录 · 记录仅保存在本机"
         setTextColor(PhoneStyle.textDim)
-        phoneSize(if (compactTopBar) 10 else 12)
+        phoneSize(10)
         setPadding(0, context.dp(2) / 5, 0, 0)
-        maxLines = 2
-        ellipsize = null
+        setSingleLine(true)
     }
     private val topRefresh = LinearLayout(context).apply {
-        val size = context.dp(if (compactTopBar) 24 else 28)
+        val size = context.dp(24)
         gravity = Gravity.CENTER
         contentDescription = "刷新账号数据"
         background = null
@@ -120,8 +119,8 @@ class PhoneMinePage(
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
         addView(topRefresh, LinearLayout.LayoutParams(
-            context.dp(if (compactTopBar) 24 else 28),
-            context.dp(if (compactTopBar) 24 else 28),
+            context.dp(24),
+            context.dp(24),
         ).apply { leftMargin = context.dp(8) })
         contentDescription = "账号，未登录"
         setOnClickListener { context.phoneNav().open(Route.Account) }
@@ -217,11 +216,7 @@ class PhoneMinePage(
         // 头像之外的上下留白缩到 20%，状态栏安全区由顶栏单独保留。
         topBar.setLeadingView(
             topAccount,
-            maxOf(
-                avatarSize,
-                context.dp(if (compactTopBar) 40 else 56),
-                avatarSize + (leadingRowHeight - avatarSize) / 5,
-            ),
+            maxOf(avatarSize, context.dp(40), avatarSize + (leadingRowHeight - avatarSize) / 5),
         )
         // 底部 2dp 留白收掉：账号区与栏目之间不再叠一层。
         topBar.tightenBottom()
@@ -409,7 +404,9 @@ class PhoneMinePage(
         val profile = cached?.profile
         val signedIn = runCatching { library.account().configured }.getOrDefault(false) ||
             PhoneServices.repository(context).signedIn
-        return AccountState(signedIn, profile?.nickname, profile?.displayId)
+        val displayId = profile?.displayId?.takeIf { it.isNotBlank() }
+            ?: profile?.userId?.takeIf { it.isNotBlank() }
+        return AccountState(signedIn, profile?.nickname, displayId)
     }
 
     private fun updateTopAccount() {
