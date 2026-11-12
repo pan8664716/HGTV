@@ -653,7 +653,30 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 29：TV 调试面板状态迁移
+
+状态：已完成。
+
+- 将调试面板的视图引用、行缓存、刷新节流、最近问题与解码能力状态移到
+  `debug/TvDebugOverlayState.kt`。
+- `TvMainActivity` 保留原有属性访问器并委托到内部状态，`DebugOverlay.kt` 的刷新、
+  采样、布局、日志与节流实现未改。
+- `TvMainActivity.kt` 从 2611 行变为 2632 行；新增状态容器 26 行。本批只迁移状态归属，
+  文件行数暂未下降。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `TvMainActivity.kt` 的调试面板状态与生命周期初始化辅助，再评估把首页/详情/
-播放页面状态聚合到独立 State 对象的边界。
+继续拆 `TvMainActivity.kt` 的生命周期初始化辅助，再评估把首页/详情/播放页面状态聚合
+到独立 State 对象的边界。

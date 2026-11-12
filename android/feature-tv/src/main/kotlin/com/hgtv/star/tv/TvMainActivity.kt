@@ -464,7 +464,10 @@ class TvMainActivity: Activity() {
      * 它与播放页的 [playbackText] 分工：那一行是给用户看的一句人话，
      * 这一块是给客服与开发看的完整现场。
      */
-    var debugPanel: LinearLayout?=null
+    internal val debugOverlayState=TvDebugOverlayState()
+    var debugPanel: LinearLayout?
+        get()=debugOverlayState.panel
+        set(value) { debugOverlayState.panel=value }
     /**
      * 面板正文：一行一条，每条都是「标头 + 值」两列（见 `DebugOverlay.kt` 的 `syncDebugRows`）。
      *
@@ -472,34 +475,52 @@ class TvMainActivity: Activity() {
      * **每个条目都有自己的标头**、值又统一贴右——只有两列布局能同时做到。
      * 每秒刷新时只改值那一列的文字，不重建视图。
      */
-    var debugBody: LinearLayout?=null
-    var debugRowLabels: List<String> = emptyList()
-    val debugRowValues=mutableListOf<TextView>()
-    var debugTick: Runnable?=null
+    var debugBody: LinearLayout?
+        get()=debugOverlayState.body
+        set(value) { debugOverlayState.body=value }
+    var debugRowLabels: List<String>
+        get()=debugOverlayState.rowLabels
+        set(value) { debugOverlayState.rowLabels=value }
+    val debugRowValues get()=debugOverlayState.rowValues
+    var debugTick: Runnable?
+        get()=debugOverlayState.tick
+        set(value) { debugOverlayState.tick=value }
     /**
      * 面板连续多少轮**一个字都没变**（见 `DebugOverlay.kt` 的 `debugTickInterval`）。
      *
      * 用来退避：静态页面上没必要每秒醒一次。任何一次文字变化都会把它清零。
      */
-    var debugIdleTicks=0
+    var debugIdleTicks: Int
+        get()=debugOverlayState.idleTicks
+        set(value) { debugOverlayState.idleTicks=value }
     /**
      * 面板上的「问题」一行：**最后一件用户能看见的事**（页面打不开 / 搜不出结果 / 详情失败）。
      *
      * 与 [DebugLog] 的流水账分工：近况记「发生过什么」，这一条记「现在为什么不好用」，
      * 因此后写的覆盖先写的，并带一个时刻，读的人能判断是不是刚才那一下。
      */
-    var debugProblem: String=""
-    var debugProblemAt: Long=0L
+    var debugProblem: String
+        get()=debugOverlayState.problem
+        set(value) { debugOverlayState.problem=value }
+    var debugProblemAt: Long
+        get()=debugOverlayState.problemAt
+        set(value) { debugOverlayState.problemAt=value }
     /**
      * 上面那条问题属于哪一页（`screen|tab|collection|query`）。
      *
      * 面板是跨页常驻的：在搜索页记下的「搜不到」不能跟着用户回到首页继续挂着，
      * 否则客服看到的就是一条与当前页无关的结论。切页后这一位对不上，面板就显示「无」。
      */
-    var debugProblemPage: String=""
+    var debugProblemPage: String
+        get()=debugOverlayState.problemPage
+        set(value) { debugOverlayState.problemPage=value }
     /** 本机解码能力（后台探好后缓存，主线程只读，见 `DebugOverlay.kt`）。 */
-    var debugCapability: com.hgtv.star.shared.data.PlaybackCapability.DebugCapability?=null
-    var debugCapabilityLoading=false
+    var debugCapability: com.hgtv.star.shared.data.PlaybackCapability.DebugCapability?
+        get()=debugOverlayState.capability
+        set(value) { debugOverlayState.capability=value }
+    var debugCapabilityLoading: Boolean
+        get()=debugOverlayState.capabilityLoading
+        set(value) { debugOverlayState.capabilityLoading=value }
     /** 「画面停住」看门狗（见 [armFrameStallWatchdog]）：已经在播却突然不再出帧。 */
     var playbackStallWatchdog: Runnable?=null
     lateinit var playbackTitle: TextView
