@@ -28,7 +28,6 @@ import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
-import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.phone.ui.tabBarInset
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.shared.ui.SoftStyle
@@ -88,7 +87,7 @@ class PhoneMinePage(
         val size = context.dp(if (compactTopBar) 24 else 28)
         gravity = Gravity.CENTER
         contentDescription = "刷新账号数据"
-        background = roundedBackground(PhoneStyle.surfaceHigh, size / 2f)
+        background = null
         addView(PhoneGlyph(context, PhoneGlyph.Kind.REFRESH).apply {
             tint = PhoneStyle.text
             contentDescription = "刷新账号数据"
@@ -387,7 +386,8 @@ class PhoneMinePage(
     private fun accountState(): AccountState {
         val cached = PhoneAccountSync.data ?: runCatching { library.accountCache() }.getOrNull()?.data
         val profile = cached?.profile
-        val signedIn = runCatching { library.account().configured }.getOrDefault(false)
+        val signedIn = runCatching { library.account().configured }.getOrDefault(false) ||
+            PhoneServices.repository(context).signedIn
         return AccountState(signedIn, profile?.nickname, profile?.displayId)
     }
 

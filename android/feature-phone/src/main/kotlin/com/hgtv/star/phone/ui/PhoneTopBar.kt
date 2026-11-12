@@ -200,11 +200,10 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
     fun setLeadingView(view: View, rowHeight: Int? = null) {
         mainSlot.removeAllViews()
         mainCells.clear()
-        // 账号块要吃掉动作按钮左侧的可用宽度，不能继续按内容宽度测量；
-        // 否则昵称 / 号码会在进入横向滚动容器前就被截短。
-        tabScroll.isFillViewport = true
+        // 账号区按自身内容测量过长文字完整显示；外层横向滚动负责在极窄屏上兜底。
+        tabScroll.isFillViewport = false
         mainSlot.addView(view, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         ))
         if (rowHeight != null) {
