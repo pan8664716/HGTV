@@ -283,6 +283,7 @@ class PhonePlayerActivity : PhoneActivity() {
     private var feedChromeHeld = false
     private var chromeVisible = true
     private var userSpeed = 1f
+    internal val sessionUserSpeed get()=userSpeed
     private var tempSpeed = false
     private var pendingFullscreen = false
     internal var listenerPendingFullscreen: Boolean
@@ -327,9 +328,8 @@ class PhonePlayerActivity : PhoneActivity() {
      * 手机上这条链路比电视更常用——用户锁屏后按耳机暂停，走的就是这里。
      * 建不出来（虚拟容器把 binder 代理成 null）时静默降级，不影响播放。
      */
-    private var mediaSession: com.hgtv.star.shared.media.MediaSessionHost? = null
-    /** 建会话失败过一次就不再重试（与 TV 的 `mediaSessionFailed` 同一条规则）。 */
-    private var mediaSessionFailed = false
+    /** 媒体会话、建会话失败标记与网络恢复回调。 */
+    internal val runtimeState = PhonePlayerRuntimeState()
     /**
      * 「定时关闭」：`SleepTimer` 在 `:core`，与 TV 端是同一个类，只是这里的计时源同样是
      * `elapsedRealtime`（不受系统时间被改影响，也不受倍速影响）。
@@ -2965,32 +2965,6 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /**
-     * 建（或复用）媒体会话。
-     *
-     * 回调只做「跟播放有关的那几件事」：播放 / 暂停、拖到某处、上一集 / 下一集、停止。
-     * 每个回调都先看 `player != null`：会话可能在播放页收尾的最后一帧被系统调一下，
-     * 那时播放器已经交回推荐页，不能再被它拽回来。
-     */
-    private fun ensureMediaSession(): com.hgtv.star.shared.media.MediaSessionHost? {
-        mediaSession?.let { return it }
-        if (mediaSessionFailed) return null
-        val created = com.hgtv.star.shared.media.MediaSessionHost.create(
-            this,
-            { player?.play() },
-            { player?.pause() },
-            { position -> player?.seekTo(position) },
-            { direction ->
-                val d = detail ?: return@create
-                val target = index + direction
-                if (target in d.episodes.indices) play(target, clearDanmakuOnSwitch = true)
-            },
-            { if (!isFinishing) finish() },
-        )
-        if (created == null) mediaSessionFailed = true else mediaSession = created
-        return created
-    }
-
-    /**
      * 调试模式那一块面板：打开就挂、关掉就摘。
      *
      * 与电视端的 `syncDebugOverlay` 同一条规则：把 `:shared` 的「近况」出口接到
@@ -3081,32 +3055,6 @@ class PhonePlayerActivity : PhoneActivity() {
         )
     }
 
-    /** 把「正在放什么」同步给系统（每秒一次，与进度条同一个节拍）。 */
-    private fun syncMediaSession() {
-        val d = detail ?: return
-        val session = ensureMediaSession() ?: return
-        val p = player
-        val state = when {
-            p == null -> android.support.v4.media.session.PlaybackStateCompat.STATE_PAUSED
-            p.playbackState == Player.STATE_BUFFERING ->
-                android.support.v4.media.session.PlaybackStateCompat.STATE_BUFFERING
-            p.playbackState == Player.STATE_ENDED ->
-                android.support.v4.media.session.PlaybackStateCompat.STATE_STOPPED
-            p.isPlaying -> android.support.v4.media.session.PlaybackStateCompat.STATE_PLAYING
-            else -> android.support.v4.media.session.PlaybackStateCompat.STATE_PAUSED
-        }
-        session.update(
-            title = d.series.title,
-            episode = index,
-            duration = p?.duration?.coerceAtLeast(0) ?: 0,
-            position = p?.currentPosition ?: 0,
-            speed = userSpeed,
-            state = state,
-            previous = index > 0,
-            next = index < d.episodes.lastIndex,
-        )
-    }
-
     /**
      * 相关剧集浮层：播放设置里的「相关剧集」使用这一份。
      *
@@ -3146,48 +3094,6 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     // ---------------------------------------------------------------- 网络恢复
-
-    /** 网络回调；非空 = 正在监听（见 [watchNetwork]）。 */
-    private var networkWatch: android.net.ConnectivityManager.NetworkCallback? = null
-
-    /**
-     * 网络恢复时**立刻重取地址**，不等退避计时（与电视端 `refetchAddressOnNetwork` 同一条）。
-     *
-     * 手机切 Wi-Fi / 5G 比电视频繁：断网那一下正好在取地址，退避还要等 3~12 秒，
-     * 而网络其实已经好了。电视端早就有这条，手机端原先连网络状态都不看。
-     *
-     * 只在**正在等地址**（[sourceRetryState] 的计数 > 0）或**停在错误页**时动手，
-     * 正常播放期间网络抖动不该把这一集重来一遍。
-     */
-    private fun watchNetwork() {
-        if (networkWatch != null) return
-        // `registerDefaultNetworkCallback` 是 API 24 起才有的；更低版本交给退避重试兜底。
-        if (android.os.Build.VERSION.SDK_INT < 24) return
-        val manager = getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
-            as? android.net.ConnectivityManager ?: return
-        val callback = object : android.net.ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: android.net.Network) {
-                runOnUiThread {
-                    if (isFinishing || isDestroyed) return@runOnUiThread
-                    if (errorCard == null && sourceRetryState.count == 0) return@runOnUiThread
-                    cancelAutoRetry()
-                    val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
-                    play(index, at)
-                }
-            }
-        }
-        if (runCatching { manager.registerDefaultNetworkCallback(callback) }.isSuccess) {
-            networkWatch = callback
-        }
-    }
-
-    private fun unwatchNetwork() {
-        val callback = networkWatch ?: return
-        networkWatch = null
-        val manager = getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
-            as? android.net.ConnectivityManager
-        runCatching { manager?.unregisterNetworkCallback(callback) }
-    }
 
     // ---------------------------------------------------------------- 面板自动收起
 
@@ -3653,7 +3559,7 @@ class PhonePlayerActivity : PhoneActivity() {
         // 退到前台之外：暂停与后台都不是卡死，看门狗一律撤掉（回来时由 onResume 重装）。
         disarmPictureWatchdog()
         // 退了前台就不再占着系统媒体面板：那时面板上的按键应该交给真正在前台的应用。
-        mediaSession?.deactivate()
+        runtimeState.mediaSession?.deactivate()
         val handoff = handingBackToFeed()
         // 退回推荐页时**不在这里**还控制层：这一刻推荐页还没接完（`A.onResume` 还没跑），
         // 它手上的集号与进度条都还是离开前那一份，先亮出来就是「退回去标题 / 集号 /
@@ -3706,8 +3612,8 @@ class PhonePlayerActivity : PhoneActivity() {
         // 判断「不用重挂」——清早了它会把同一台播放器摘下来再挂回去，白闪一帧。
         // 由信息流接手后自己清零（见 `PhoneFeedView.adoptPlaying`）。
         if (feedUnderlay && !underlayBound) PhoneSession.underlayActive = false
-        mediaSession?.release()
-        mediaSession = null
+        runtimeState.mediaSession?.release()
+        runtimeState.mediaSession = null
         scope.cancel()
         super.onDestroy()
     }
