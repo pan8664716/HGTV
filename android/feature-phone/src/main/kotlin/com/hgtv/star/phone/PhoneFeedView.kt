@@ -172,7 +172,11 @@ class PhoneFeedView(
     private var playToken = 0
     internal val feedPlayToken get()=playToken
     private var boundPage: PhoneVideoPage? = null
+    internal val feedBoundPage get()=boundPage
     private var paused = false
+    internal var feedPaused: Boolean
+        get()=paused
+        set(value) { paused=value }
     /** 播放意图变化（起播 / 暂停 / 收起）：宿主据此同步屏幕常亮。 */
     var onPlayStateChanged: (() -> Unit)? = null
     /** 正在播那一屏的详情：片尾自动进正片要用它取「还有没有下一集」。 */
@@ -275,6 +279,12 @@ class PhoneFeedView(
     private var progressTick: Runnable? = null
     private var tempSpeed = false
     private var userSpeed = 1f
+    internal var feedTempSpeed: Boolean
+        get()=tempSpeed
+        set(value) { tempSpeed=value }
+    internal var feedUserSpeed: Float
+        get()=userSpeed
+        set(value) { userSpeed=value }
     private var library: Library? = null
     internal val feedLibrary get()=library
     internal var feedLibrarySlot: Library?
@@ -315,6 +325,7 @@ class PhoneFeedView(
         background = roundedBackground(0x88000000.toInt(), context.dp(14).toFloat())
         visibility = View.GONE
     }
+    internal val feedHint get()=hint
 
     /**
      * 播放设置浮层。
@@ -471,6 +482,7 @@ class PhoneFeedView(
     private fun notifyPlayStateChanged() {
         onPlayStateChanged?.invoke()
     }
+    internal fun feedNotifyPlayStateChanged() = notifyPlayStateChanged()
 
     private fun currentChromePage(): PhoneVideoPage? = pageAt(playingIndex) ?: boundPage
 
@@ -1656,18 +1668,6 @@ class PhoneFeedView(
         return holder.itemView as? PhoneVideoPage
     }
 
-    private fun togglePlay() {
-        val exo = player ?: return
-        // 判据用 `playWhenReady`（意图）而不是 `isPlaying`（此刻有没有在出帧）：
-        // 起播缓冲的那一两秒里 `isPlaying` 是 false，按 `isPlaying` 判会把「暂停」
-        // 错当成「播放」，用户点一下反而什么都没发生。
-        if (exo.playWhenReady) exo.pause() else exo.play()
-        // 记下用户自己的意图：它决定切页 / 回来时要不要自动起播（见 [paused]）。
-        paused = !exo.playWhenReady
-        boundPage?.showCenterIcon(exo.playWhenReady)
-        notifyPlayStateChanged()
-    }
-
     /**
      * 一集播完：落 completed 进度 → 进正式播放页播下一集（最后一集则换下一部）。
      *
@@ -1785,22 +1785,6 @@ class PhoneFeedView(
 
     /** 位置读数：与电视端 `formatTime` 同一份（`:core` 的 `PlaybackInfoLine.time`）。 */
     private fun clock(ms: Long): String = com.hgtv.star.core.PlaybackInfoLine.time(ms)
-
-    private fun beginTempSpeed() {
-        if (tempSpeed) return
-        tempSpeed = true
-        player?.setPlaybackSpeed(2f)
-        hint.text = "2 倍速播放中"
-        hint.visibility = View.VISIBLE
-        hint.bringToFront()
-    }
-
-    private fun endTempSpeed() {
-        if (!tempSpeed) return
-        tempSpeed = false
-        player?.setPlaybackSpeed(userSpeed)
-        hint.visibility = View.GONE
-    }
 
     // ------------------------------------------------------------------ 播放设置
 

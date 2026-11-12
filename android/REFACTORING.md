@@ -1066,6 +1066,37 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 45：手机信息流播放与临时倍速迁移
+
+状态：已完成。
+
+- 将播放 / 暂停、临时 2 倍速开始与结束移到
+  `player/PhoneFeedControls.kt`。
+- 保留 `playWhenReady` 意图判据、用户暂停状态、中心图标、宿主播放状态回调与提示显示。
+- 新增暂停、绑定页、提示、临时倍速与用户倍速的 `internal` 投影。
+- `PhoneFeedView.kt` 从 1990 行降到 1974 行；`PhoneFeedControls.kt` 为 32 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 迁移后的播放、暂停与倍速控制逻辑按字段投影归一化后与迁移前一致。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
+### 夜间阶段摘要（批次 41–45）
+
+- 批次 41–45 全部完成并独立提交，信息流导航、指标、预热、分页与播放控制已拆分。
+- `PhoneFeedView.kt` 从 2342 行降到 1974 行；新增职责文件均低于 150 行。
+- 每批聚合编译、Lint、共享单测与 Debug APK 均通过，无新增 Lint Error / Fatal。
+- `:core:test` 最近为 435 例、24 失败、28 跳过，未高于基线。
+- 下一阶段继续处理信息流播放器监听与片尾推进，再转入 `Library.kt`。
+
 ## 下一批
 
-继续拆 `PhoneFeedView.kt` 的播放器监听、进度与片尾推进职责。
+继续拆 `PhoneFeedView.kt` 的播放器监听、进度刷新与片尾推进职责。
