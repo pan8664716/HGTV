@@ -26,16 +26,16 @@ class LiveDiagTest {
 
     private fun baseQuery() = linkedMapOf(
         "iid" to iid, "device_id" to did, "ac" to "wifi", "channel" to "xiaomi_8662_64",
-        "aid" to "8662", "app_name" to "novelread", "version_code" to "73932",
-        "version_name" to "7.3.9.32", "device_platform" to "android", "os" to "android",
+        "aid" to "8662", "app_name" to "novelread", "version_code" to "74332",
+        "version_name" to "7.4.3.32", "device_platform" to "android", "os" to "android",
         "ssmix" to "a", "device_type" to "23127PN0CC", "device_brand" to "Xiaomi",
         "language" to "zh", "os_api" to "34", "os_version" to "14",
-        "manifest_version_code" to "73932", "resolution" to "1200*2670", "dpi" to "460",
-        "update_version_code" to "73932", "host_abi" to "arm64-v8a",
-        "dragon_device_type" to "phone", "pv_player" to "73932"
+        "manifest_version_code" to "74332", "resolution" to "1200*2670", "dpi" to "460",
+        "update_version_code" to "74332", "host_abi" to "arm64-v8a",
+        "dragon_device_type" to "phone", "pv_player" to "74332"
     )
 
-    private val ua = "com.phoenix.read/73932 (Linux; U; Android 14; zh_CN; 23127PN0CC; Build/UKQ1.230804.001; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
+    private val ua = "com.phoenix.read/74332 (Linux; U; Android 14; zh_CN; 23127PN0CC; Build/UKQ1.230804.001; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)"
 
     private fun post(label: String, url: String, query: Map<String, String>, body: String) {
         val signed = Signer(device = device()).sign(url, query, body.toByteArray())
@@ -65,13 +65,15 @@ class LiveDiagTest {
 
     @Test fun diag() {
         assumeTrue("HONGGUO_LIVE", System.getenv("HONGGUO_LIVE") == "1")
-        // 1) 搜索：同 IP、同身份，不同业务路径
+        // 1) 搜索：官方 7.4.3.32 的综合请求，不带 tab_type
         get(
             "search-tab", "https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/tab/v",
             baseQuery() + linkedMapOf(
                 "query" to "赘婿", "count" to "20", "offset" to "0",
-                "tab_type" to "11", "bookshelf_search_plan" to "4", "use_correct" to "true",
-                "user_is_login" to "0"
+                "bookshelf_search_plan" to "4", "use_correct" to "true", "user_is_login" to "0",
+                "search_source" to "1", "request_mode" to "0", "is_first_enter_search" to "true",
+                "bookstore_tab" to "16", "tab_name" to "feed", "only_feed" to "false",
+                "from_rs" to "false", "from_half_screen" to "false", "use_lynx" to "false"
             )
         )
         // 2) 同一个 video_id，走账号域名的播放路径

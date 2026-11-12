@@ -82,7 +82,7 @@ fun main(args: Array<String>) {
             }
             RankBoard.entries.forEach { board -> report("榜单·"+board.label,repository.rankRaw(1,board).items) }
             CategoryCatalog.groups.forEach { group -> report("分类·"+group.label,repository.category(group.path).items) }
-            val search=runCatching { repository.registerDevice() }.let { runCatching { repository.search("季",1,ContentType.COMIC) }.getOrNull() }
+            val search=runCatching { repository.registerDevice() }.let { runCatching { repository.search("季",1) }.getOrNull() }
             report("搜索（接口没有季号字段，靠剧名）",search?.items.orEmpty())
             val first=repository.homeFeed().values.firstOrNull()?.items?.firstOrNull()
             if(first!=null) {
@@ -99,19 +99,18 @@ fun main(args: Array<String>) {
         return
     }
     if(args.contains("--search")) {
-        // 搜索联调：默认「聚宝」（漫剧），也可以给关键词与 --short。
+        // 搜索联调：默认「聚宝」，一次综合请求连看 6 页。
         try {
-            val type=if(args.contains("--short")) ContentType.SHORT else ContentType.COMIC
             val keyword=keywordArg() ?: "聚宝"
             val seen=mutableSetOf<String>()
             for(page in 1..6) {
-                val result=try { repository.search(keyword,page,type) } catch(problem: Exception) {
-                    println("search=$keyword type=${type.label} page=$page failed=${problem.message}")
+                val result=try { repository.search(keyword,page) } catch(problem: Exception) {
+                    println("search=$keyword page=$page failed=${problem.message}")
                     if(repository.sessionToken.isNullOrBlank()) println("   提示：空响应体说明这台设备没在服务端注册过（本工程会自动匿名注册，见 DeviceRegister）；也可以用 --token <x-tt-token> 带上账号再试。")
                     break
                 }
                 val fresh=result.items.filter { seen.add(it.id) }
-                println("search=$keyword type=${type.label} page=$page items=${result.items.size} new=${fresh.size} hasMore=${result.hasMore}")
+                println("search=$keyword page=$page items=${result.items.size} new=${fresh.size} hasMore=${result.hasMore}")
                 fresh.take(3).forEach { println("   ${it.id} ${it.title}") }
                 if(!result.hasMore) break
             }
@@ -152,10 +151,10 @@ fun main(args: Array<String>) {
     if(args.contains("--register-search")) {
         val reg=runCatching { repository.registerDevice() }.getOrNull()
         println("registered=${reg!=null} device=${reg?.deviceId} iid=${reg?.installId}")
-        listOf(ContentType.SHORT,ContentType.COMIC).forEach { type ->
-            val page=runCatching { repository.search(keywordArg() ?: "聚宝",1,type) }.getOrElse { e -> println("search ${type.label} failed: ${e.message}"); null } ?: return@forEach
-            println("type=${type.label} n=${page.items.size}")
-            page.items.take(5).forEach { println("   ${it.id} ${it.title} author=[${it.author}] cnt=${it.episodeCount}") }
+        val page=runCatching { repository.search(keywordArg() ?: "聚宝",1) }.getOrElse { e -> println("search failed: ${e.message}"); null }
+        page?.let {
+            println("综合 n=${it.items.size}")
+            it.items.take(5).forEach { item -> println("   ${item.id} ${item.title} author=[${item.author}] cnt=${item.episodeCount}") }
         }
         repository.http.connectionPool.evictAll(); repository.http.dispatcher.executorService.shutdown()
         return

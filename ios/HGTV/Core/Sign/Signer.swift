@@ -19,6 +19,10 @@ struct OrderedParams {
     init() {}
     init(_ pairs: [(String, String)]) { items = pairs }
 
+    var dictionary: [String: String] {
+        Dictionary(items, uniquingKeysWith: { current, _ in current })
+    }
+
     subscript(_ key: String) -> String? {
         get { items.first { $0.0 == key }?.1 }
         set {

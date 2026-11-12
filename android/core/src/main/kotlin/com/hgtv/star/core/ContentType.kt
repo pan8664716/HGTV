@@ -5,8 +5,8 @@ package com.hgtv.star.core
  * 片库里的内容类型。**界面上的「漫剧 / 短剧」开关已经去掉**，搜索与首页都不再问用户「看哪一类」，
  * 这个枚举现在只剩两处用处：
  *
- * 1. [searchTab]：App 搜索接口按 `tab_type` 分 tab（`19` 漫剧、`11` 短剧 / 真人剧），
- *    搜索时两个 tab 各取一次再合并；[AI] 没有对应的 tab（`0` 表示不请求）。
+ * 1. [searchTab]：旧版 App 搜索接口按 `tab_type` 分 tab（`19` 漫剧、`11` 短剧 / 真人剧）；
+ *    界面搜索现走不带 `tab_type` 的综合请求，这里只给类型探针保留显式 tab，[AI] 为 `0`。
  * 2. [catalog]：片库目录的路由段（`comic-drama` / `real-drama` / `ai-drama`），
  *    搜索第 2 页起从这几本目录里筛片名。
  *

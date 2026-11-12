@@ -48,6 +48,13 @@ actor ContentRepository {
     private var identity: DeviceIdentity?
     private var registering = false
     private var registered = false
+    private struct SearchCursor {
+        let searchId: String
+        let passback: String
+        let offset: Int
+        let at: TimeInterval
+    }
+    private var searchCursors: [String: SearchCursor] = [:]
 
     private let categoryHost = "https://api5-normal-sinfonlineb.fqnovel.com"
     private let appHost = "https://api5-normal-sinfonlinea.fqnovel.com"
@@ -107,9 +114,9 @@ actor ContentRepository {
         return false
     }
 
-    /// 内容请求的 query：设备档案 + 本机身份。版本号按路径选（App 72232 / 播放 71332）。
+    /// 内容请求的 query：设备档案 + 本机身份；版本号由各调用方按接口指定。
     private func values(versionCode: String, versionName: String) -> OrderedParams {
-        var device = (versionCode == Vendor.videoVersionCode ? Vendor.device : Vendor.appDevice)
+        var device = versionCode == Vendor.videoVersionCode ? Vendor.device : Vendor.appDevice
         if let identity {
             // **顺序不能反**：档案里带着注册前的内置 device_id，先铺档案再盖身份，
             // 否则 query 里是内置那台旧设备，而签名器用的是新身份 → 平台回 110001 / 空响应。
@@ -128,6 +135,36 @@ actor ContentRepository {
     }
 
     private func appValues() -> OrderedParams { values(versionCode: "72232", versionName: "7.2.2.32") }
+    /** 官方 7.4.3.32 综合搜索所用的版本、上下文参数。 */
+    private func searchValues() -> OrderedParams {
+        var values = OrderedParams(Vendor.device.keys.sorted().map { ($0, Vendor.device[$0] ?? "") })
+        if let identity {
+            identity.profile.forEach { values[$0.key] = $0.value }
+            values["device_id"] = identity.deviceId
+            values["iid"] = identity.installId
+            values["cdid"] = identity.cdid
+            values["openudid"] = identity.openudid
+        }
+        ["version_code": "74332", "version_name": "7.4.3.32",
+         "manifest_version_code": "74332", "update_version_code": "74332",
+         "pv_player": "74332"].forEach { values[$0.key] = $0.value }
+        let context: [(String, String)] = [
+            ("search_source", "1"), ("request_mode", "0"), ("is_first_enter_search", "true"),
+            ("only_feed", "false"), ("from_rs", "false"), ("from_half_screen", "false"),
+            ("use_lynx", "false"), ("bookstore_tab", "16"), ("tab_name", "feed"),
+            ("last_search_page_interval", "0"), ("last_book_consume_time", "0"),
+            ("last_consume_interval", "0"), ("app_launch_time", "0"),
+            ("live_room_id", "0"), ("product_id", "0"), ("seed_product_id", "0"),
+            ("line_words_num", "0"), ("pad_column_cover", "0"), ("only_large_card", "false"),
+            ("biz_config_ctx_infos", ""), ("report_info", "")
+        ]
+        context.forEach { values[$0.0] = $0.1 }
+        return values
+    }
+    private func searchRequest(_ params: OrderedParams) -> Signer.Request {
+        signer.sign(base: appHost + searchPath, params: params, method: "GET",
+                    deviceOverride: params.dictionary)
+    }
     private func videoValues() -> OrderedParams { values(versionCode: "71332", versionName: "7.1.3.32") }
 
     private func cookieHeader() async -> String {
@@ -369,48 +406,41 @@ actor ContentRepository {
         let clean = keyword.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !clean.isEmpty else { return CatalogPage(items: [], hasMore: false, ranking: nil) }
         if source == .web { return try await webSearch(keyword: clean, page: page) }
-        var merged: [Series] = []
-        var more = false
-        var answered = false
-        var failure: Error?
-        // 19 = 漫剧，11 = 短剧 / 真人剧（AI 剧没有独立 tab）。
-        for tab in [19, 11] {
-            do {
-                let result = try await appSearch(keyword: clean, page: page, tabType: tab)
-                answered = true
-                merged += result.items
-                if result.hasMore { more = true }
-            } catch {
-                failure = error
-            }
-        }
-        if answered {
-            var seen = Set<String>()
-            return CatalogPage(items: merged.filter { seen.insert($0.id).inserted },
-                               hasMore: more, ranking: nil)
-        }
-        throw failure ?? ContentError.message("搜索接口暂不可用")
+        return try await appSearch(keyword: clean, page: page)
     }
 
-    private func appSearch(keyword: String, page: Int, tabType: Int) async throws -> CatalogPage {
+    private func appSearch(keyword: String, page: Int) async throws -> CatalogPage {
         let count = 20
-        var params = appValues()
+        var params = searchValues()
         params["query"] = keyword
         params["count"] = "\(count)"
         params["offset"] = "\((page - 1) * count)"
-        params["tab_type"] = "\(tabType)"
         params["bookshelf_search_plan"] = "4"
         params["use_correct"] = "true"
         let signedIn = await MainActor.run { SessionStore.shared.signedIn }
         params["user_is_login"] = signedIn ? "1" : "0"
-        let signed = signer.sign(base: appHost + searchPath, params: params, method: "GET")
+        let now = Date().timeIntervalSince1970
+        searchCursors = searchCursors.filter { now - $0.value.at < 300 }
+        if page == 1 { searchCursors.removeValue(forKey: keyword) }
+        if page > 1, let cursor = searchCursors[keyword] {
+            if !cursor.searchId.isEmpty { params["search_id"] = cursor.searchId }
+            if !cursor.passback.isEmpty { params["passback"] = cursor.passback }
+            params["offset"] = "\(cursor.offset)"
+        } else if page > 1 {
+            throw ContentError.message("搜索结果已过期，请重新搜索")
+        }
+        let signed = searchRequest(params)
         let text = try await send(signed)
         let root = try JSON.parse(text)
         guard root.int("code", -1) == 0 else { throw ContentError.message("搜索接口暂不可用（\(root.int("code"))）") }
         let tabs = root.arr("search_tabs").isEmpty ? (root.obj("data")?.arr("search_tabs") ?? []) : root.arr("search_tabs")
-        guard let tab = tabs.first(where: { $0.int("tab_type", -1) == tabType }) else {
-            throw ContentError.message("搜索接口没有返回这一类结果")
+        guard let tab = tabs.first(where: { !$0.arr("data").isEmpty }) ?? tabs.first else {
+            throw ContentError.message("搜索接口没有返回结果")
         }
+        let nextOffset = tab.int("next_offset", (page - 1) * count + tab.arr("data").count)
+        searchCursors[keyword] = SearchCursor(searchId: tab.str("search_id"),
+                                              passback: tab.str("passback"),
+                                              offset: nextOffset, at: now)
         var items: [Series] = []
         for cell in tab.arr("data") {
             var rows = [cell]

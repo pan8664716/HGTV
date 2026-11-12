@@ -153,14 +153,14 @@ class ContentRepositoryTest {
         val repo=repository { request ->
             if(request.url.encodedPath.contains("search/tab")) {
                 hits+=1
-                if(hits.size<3) "" else """
+                if(hits.size<2) "" else """
                     {"code":0,"search_tabs":[{"tab_type":11,"data":[{"video_data":[{"series_id":"42","title":"测试"}]}]}]}
                 """.trimIndent()
             } else """{"code":0}"""
         }
         val page=repo.search("修仙",1,ContentType.SHORT)
         assertEquals("42",page.items.single().id)
-        assertEquals(3,hits.size)
+        assertEquals(2,hits.size)
     }
 
     /** 老路径通了但没给 `video_model`（例如只有 `data.disable_vsr` 这类字段）时也要继续换路。 */
@@ -494,19 +494,19 @@ class ContentRepositoryTest {
         val repo=repository { throw IOException("offline") }
         assertThrows(IOException::class.java) { repo.homeFeed() }
     }
-    @Test fun comicSearchCarriesCursorAndKeepsTypesAndQueriesSeparate() {
+    @Test fun comicSearchCarriesCursorAndKeepsQueriesSeparate() {
         val requests=mutableListOf<Request>()
         val repo=repository { request ->
             requests+=request
             JSONObject().put("code",0).put("search_tabs",JSONArray().put(searchTab(19,"999")
                 .put("search_id","comic-session").put("passback","comic-cursor").put("next_offset",25))).toString()
         }
-        repo.search("修仙",1,ContentType.COMIC)
-        repo.search("修仙",2,ContentType.COMIC)
+        repo.search("修仙",1)
+        repo.search("修仙",2)
         assertEquals("comic-session",requests[1].url.queryParameter("search_id"))
         assertEquals("comic-cursor",requests[1].url.queryParameter("passback"))
         assertEquals("25",requests[1].url.queryParameter("offset"))
-        assertThrows(SearchSessionExpiredException::class.java) { repo.search("重生",2,ContentType.COMIC) }
+        assertThrows(SearchSessionExpiredException::class.java) { repo.search("重生",2) }
         assertEquals(2,requests.size)
     }
 
@@ -683,18 +683,21 @@ class ContentRepositoryTest {
         assertEquals("短剧版权",repo.publisher("短剧版权"))   // 不是「短剧版权 + 长编号」就不是占位串
     }
 
-    @Test fun comicSearchRequestsAndSelectsOnlyComicTab() {
+    @Test fun searchUsesOneOfficialFeedRequest() {
         var requests=0
         val repo=repository { request ->
             requests++
-            assertEquals("19",request.url.queryParameter("tab_type"))
+            assertNull(request.url.queryParameter("tab_type"))
+            assertEquals("74332",request.url.queryParameter("version_code"))
+            assertEquals("feed",request.url.queryParameter("tab_name"))
+            assertEquals("16",request.url.queryParameter("bookstore_tab"))
             assertEquals(if(requests==1) "0" else "20",request.url.queryParameter("offset"))
             assertEquals("修仙",request.url.queryParameter("query"))
             JSONObject().put("code",0).put("search_tabs",JSONArray()
-                .put(searchTab(11,"111")).put(searchTab(19,"999"))).toString()
+                .put(searchTab(11,"111"))).toString()
         }
-        repo.search("修仙",1,ContentType.COMIC)
-        assertEquals(listOf("999"),repo.search("修仙",2,ContentType.COMIC).items.map { it.id })
+        repo.search("修仙",1)
+        assertEquals(listOf("111"),repo.search("修仙",2).items.map { it.id })
     }
 
     @Test fun emptyComicSearchDoesNotFallBackToShortResults() {
@@ -817,8 +820,8 @@ class ContentRepositoryTest {
         assertEquals("某文化",rows[0].series!!.author)
         assertEquals("short_play_name",rows[0].wordType)
         assertNull("没有 series_id 的只能当查询词",rows[1].series)
-        assertEquals("/reading/bookapi/search/suggest/v",requests.single().url.encodedPath)
-        assertEquals("仙",requests.single().url.queryParameter("query"))
+        assertEquals("/reading/bookapi/search/suggest/v:version/",requests.single().url.encodedPath)
+        assertEquals("仙",requests.single().url.queryParameter("q"))
         // 空关键词不发请求。
         assertTrue(repo.suggestions("  ").isEmpty())
         assertEquals(1,requests.size)
@@ -832,13 +835,13 @@ class ContentRepositoryTest {
     @Test fun blankSearchResponseFailsOnceWithoutHammeringTheOtherTab() {
         var requests=0
         val repo=repository { requests++; "" }
-        // 空响应先原地补发 2 次（见 `ContentRepository.retryBlankSearch`），仍空才判死：
-        // 首发 + 2 次补发 = 3 条请求，全部落在第一个 tab 上。
+        // 空响应先原地补发 1 次（见 `ContentRepository.retryBlankSearch`），仍空才判死：
+        // 首发 + 1 次补发 = 2 条请求。
         assertThrows(IOException::class.java) { repo.search("修仙",1,ContentType.COMIC) }
-        assertEquals(3,requests)
-        // 判死之后不再问第二个 tab：两个 tab 结论一致，多问一次只是把首屏又推后一个 RTT。
+        assertEquals(2,requests)
+        // 判死之后不再重复发同一种请求。
         assertThrows(IOException::class.java) { repo.search("修仙",1,ContentType.SHORT) }
-        assertEquals(3,requests)
+        assertEquals(2,requests)
     }
 
     /** 游标过期要如实抛出（界面据此回到第 1 页重搜），不能拿别的页顶替。 */
@@ -878,6 +881,26 @@ class ContentRepositoryTest {
         // 记的是「降级」而不是「失败」：面板要能说清这一页是官网来的。
         assertEquals(true,SearchDiag.last?.degraded)
         assertEquals(SearchSource.WEB,SearchDiag.last?.source)
+    }
+
+    /** 自动降级首屏只拉 3 页，第二逻辑页必须接着第 4 页，不能跳到第 11 页。 */
+    @Test fun webFallbackPagesContinueWithoutGaps() {
+        val pages=mutableListOf<Int>()
+        val repo=repository { request ->
+            val url=request.url.toString()
+            when {
+                url.contains("fqnovel") -> ""
+                url.contains("hongguoduanju.com/api/search/result") -> {
+                    pages+=request.url.queryParameter("page")!!.toInt()
+                    """{"searchList":[],"totalPages":100}"""
+                }
+                else -> "{}"
+            }
+        }
+        SearchDiag.last=null
+        repo.search("神鹿降罚",1,SearchSource.APP)
+        repo.search("神鹿降罚",2,SearchSource.APP)
+        assertEquals((1..6).toList(),pages.sorted())
     }
 
     /**

@@ -21,10 +21,19 @@ class LivePageSizeProbeTest {
 
     private fun post(url: String, values: Map<String, String>, body: ByteArray? = null): String {
         val signer = Signer()
-        val signed = signer.sign(url, values, body)
+        val signed = signer.sign(url, values, body, deviceOverride = values)
         val builder = Request.Builder().url(signed.url)
         signed.headers.forEach { (k, v) -> builder.header(k, v) }
         signed.body?.let { builder.post(it.toRequestBody("application/json; charset=UTF-8".toMediaType())) }
+        http.newCall(builder.build()).execute().use { response ->
+            return response.body?.string().orEmpty()
+        }
+    }
+
+    private fun get(url: String, values: Map<String, String>): String {
+        val signed = Signer().sign(url, values, null, method = "GET", deviceOverride = values)
+        val builder = Request.Builder().url(signed.url).get()
+        signed.headers.forEach { (k, v) -> builder.header(k, v) }
         http.newCall(builder.build()).execute().use { response ->
             return response.body?.string().orEmpty()
         }
@@ -34,22 +43,26 @@ class LivePageSizeProbeTest {
     @Test fun searchCountCeiling() {
         assumeTrue("需要 HONGGUO_LIVE=1 才联网实测", live)
         val values = LinkedHashMap(VendorConstants.device).apply {
-            this["version_code"] = "73532"; this["manifest_version_code"] = "73532"
-            this["update_version_code"] = "73532"; this["version_name"] = "7.3.5.32"
+            this["version_code"] = "74332"; this["manifest_version_code"] = "74332"
+            this["update_version_code"] = "74332"; this["version_name"] = "7.4.3.32"
+            this["pv_player"] = "74332"
         }
         for (count in listOf(20, 60, 100, 200)) {
             val q = LinkedHashMap(values).apply {
                 putAll(linkedMapOf("query" to "短剧", "count" to count.toString(), "offset" to "0",
-                    "tab_type" to "1", "bookshelf_search_plan" to "4", "use_correct" to "true",
-                    "user_is_login" to "0"))
+                    "bookshelf_search_plan" to "4", "use_correct" to "true", "user_is_login" to "0",
+                    "search_source" to "1", "request_mode" to "0", "is_first_enter_search" to "true",
+                    "bookstore_tab" to "16", "tab_name" to "feed"))
             }
             val raw = runCatching {
-                post("https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/tab/v", q)
+                get("https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/tab/v", q)
             }.getOrElse { "（失败 ${it.message}）" }
             val rows = runCatching {
-                JSONObject(raw).optJSONObject("data")?.optJSONArray("video_data")?.length()
+                JSONObject(raw).optJSONArray("search_tabs")?.let { tabs ->
+                    (0 until tabs.length()).sumOf { tabs.optJSONObject(it)?.optJSONArray("data")?.length() ?: 0 }
+                }
             }.getOrNull()
-            println("[page-size] 搜索 count=$count → 响应 ${raw.length}B，video_data=$rows")
+            println("[page-size] 搜索 count=$count → 响应 ${raw.length}B，search_tabs.data=$rows")
         }
     }
 

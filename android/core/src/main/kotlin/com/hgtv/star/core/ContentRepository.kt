@@ -653,6 +653,8 @@ class ContentRepository(
      * 服务端一页只有 10 条，串行拉 10 页要 6~10 秒，因此按 [WEB_SEARCH_CONCURRENCY] 并发拉。
      */
     private val WEB_SEARCH_BATCH = 10
+    /** 官网自动降级时先给首屏的页数，后续按实际取到的物理页接着翻。 */
+    private val WEB_FALLBACK_BATCH = 3
     /**
      * 官网搜索拼页时的并发数。
      *
@@ -665,7 +667,7 @@ class ContentRepository(
      * 官网搜索单页的重试次数：`upstream_unavailable` 是瞬时抖动，重发一次通常就好了。
      *
      * 实测同一页隔 0.2s 重发多数能过，因此给两次重试（共三次），并按下标线性退避
-     *（见 [WEB_SEARCH_RETRY_DELAY]）。三次都失败才把这一页算失败。
+     * （见 [WEB_SEARCH_RETRY_DELAY]）。三次都失败才把这一页算失败。
      */
     private val WEB_SEARCH_RETRY = 2
     /** 单页重试的退避基数（毫秒）：第 1 次重试等 200ms、第 2 次等 400ms。 */
@@ -682,6 +684,8 @@ class ContentRepository(
      * 与 [searchCursors] 一样按「关键词」分组，只保留最近几组。
      */
     private val webSearchSeen=linkedMapOf<String,MutableSet<String>>()
+    /** App 搜索降级到官网后，该关键词下一次应当从第几个物理页继续取。 */
+    private val webFallbackCursors=linkedMapOf<String,Int>()
     /**
      * 本次官网搜索的「部分页失败」摘要，由 [webSearch] 写、[search] 读。
      *
@@ -691,13 +695,13 @@ class ContentRepository(
     private val webSearchNote=ThreadLocal<String>()
     private data class SearchCursor(val searchId: String, val passback: String, val offset: Int?, val updatedAt: Long)
     /**
-     * 游标表的键：类型 + 关键词 + 第几页 + **一页多少条**。
+     * 游标表的键：关键词 + 第几页 + **一页多少条**。
      *
      * 末位那个 `count` 不能省：用户手动搜一个词是 20 条一页，作者作品是 50 条一页
      *（见 [AUTHOR_WORKS_PAGE_SIZE]），两套的 `offset` 完全不同。
      * 若共用同一个键，「作者名恰好也被用户搜过」时就会拿错游标，翻页直接错位。
      */
-    private data class SearchCursorKey(val type: ContentType, val keyword: String, val page: Int, val count: Int)
+    private data class SearchCursorKey(val scope: Int, val keyword: String, val page: Int, val count: Int)
     private val searchCursors=linkedMapOf<SearchCursorKey,SearchCursor>()
     /**
      * 搜索接口还能不能用：空响应体说明这台设备没在服务端注册过（实测所有线路、多组设备参数都一样），
@@ -1337,8 +1341,8 @@ class ContentRepository(
      */
     private val RECOMMEND_ATTEMPTS=3
     /** 搜索接口空响应的原地补发次数 / 间隔（见 [retryBlankSearch]）。 */
-    private val SEARCH_BLANK_RETRIES=2
-    private val SEARCH_BLANK_RETRY_DELAY_MS=300L
+    private val SEARCH_BLANK_RETRIES=1
+    private val SEARCH_BLANK_RETRY_DELAY_MS=160L
     /**
      * App 搜索**一页多少条**（界面侧一页）。
      *
@@ -1347,6 +1351,23 @@ class ContentRepository(
      * 因此这里保持 20 不动；只有作者作品那一栏自己用 50（[AUTHOR_WORKS_PAGE_SIZE]）。
      */
     private val SEARCH_PAGE_SIZE=20
+    /** 官方综合搜索 tab：一次响应包含多个 tab，不再按内容类型分两次请求。 */
+    private val SEARCH_FEED_TAB=11
+    /** 综合请求与显式 tab 请求的游标相互隔离，避免探针把界面翻页游标改掉。 */
+    private val SEARCH_FEED_SCOPE=-1
+    private val SEARCH_FEED_CONTEXT=linkedMapOf(
+        "search_source" to "1","request_mode" to "0","is_first_enter_search" to "true",
+        "only_feed" to "false","from_rs" to "false","from_half_screen" to "false",
+        "use_lynx" to "false","bookstore_tab" to "16","tab_name" to "feed",
+        "last_search_page_interval" to "0","last_book_consume_time" to "0",
+        "last_consume_interval" to "0","app_launch_time" to "0",
+        "live_room_id" to "0","product_id" to "0","seed_product_id" to "0",
+        "line_words_num" to "0","pad_column_cover" to "0","only_large_card" to "false",
+        "biz_config_ctx_infos" to "","report_info" to "",
+    )
+    private val SEARCH_VERSION_CODE="74332"
+    private val SEARCH_VERSION_NAME="7.4.3.32"
+    private val SEARCH_PATH="reading/bookapi/search/tab/v"
     private val CATEGORY_RETRY_DELAYS=longArrayOf(100L,180L,300L,450L,650L,900L,1200L)
     /**
      * 分类 / 榜单接口用的客户端版本，与改动前手拼 URL 里的那组一致（`73532` / `7.3.5.32`）。
@@ -1609,6 +1630,15 @@ class ContentRepository(
     private fun writeValues(): LinkedHashMap<String,String> = accountValues("73932","7.3.9.32")
     /** 搜索 / 弹幕这类 App 接口共用的设备参数：与播放器版本对齐，避免平台按旧版本拒绝。 */
     private fun appValues(): LinkedHashMap<String,String> = deviceValues("72232","7.2.2.32")
+    /** 搜索接口专用：官方抓包里的 7.4.3.32 设备版本与综合搜索上下文。 */
+    private fun searchValues(): LinkedHashMap<String,String> {
+        val values=deviceValues(SEARCH_VERSION_CODE,SEARCH_VERSION_NAME)
+        values.putAll(SEARCH_FEED_CONTEXT)
+        return values
+    }
+    /** 综合搜索与用户 tab 共用这一份搜索签名。 */
+    private fun searchRequest(values: LinkedHashMap<String,String>): Signer.Request =
+        signer.sign("https://${accountHost()}/$SEARCH_PATH",values,method="GET",deviceOverride=values)
     /** 账号页读写接口使用的当前主身份参数。 */
     private fun accountAppValues(): LinkedHashMap<String,String> = accountValues("72232","7.2.2.32")
     /**
@@ -2782,10 +2812,10 @@ class ContentRepository(
      * 搜索提示词（联想词）：App 搜索框用的那个接口。
      *
      * ```
-     * GET https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/suggest/v?query={关键词}
+     * GET https://api5-normal-sinfonlinea.fqnovel.com/reading/bookapi/search/suggest/v:version/?q={关键词}
      * ```
      *
-     * 需要设备参数与签名（[appValues] + [Signer]），不需要登录态。空关键词不发请求。
+     * 需要设备参数与签名（[searchValues] + [Signer]），不需要登录态。空关键词不发请求。
      *
      * 响应里 `data.query_result_v2[]` 每条的字段：
      *
@@ -2834,13 +2864,25 @@ class ContentRepository(
         val clean=keyword.trim()
         if(clean.isEmpty()) return emptyList()
         val wanted=count.coerceIn(1,20)
-        val values=appValues()
-        values["query"]=clean
-        val signed=signer.sign("https://${accountHost()}/reading/bookapi/search/suggest/v",values)
+        val values=searchValues()
+        values["q"]=clean
+        val signed=signer.sign("https://${accountHost()}/reading/bookapi/search/suggest/v:version/",values,deviceOverride=values)
         val raw=text(signed.url,signed.withSession())
         if(raw.isBlank()) throw IOException("提示词暂不可用")
-        val data=JSONObject(raw).optJSONObject("data") ?: return emptyList()
-        val rows=data.optJSONArray("query_result_v2")?.objects() ?: return emptyList()
+        val body=JSONObject(raw)
+        val data=body.optJSONObject("data") ?: body
+        val v2=data.optJSONArray("query_result_v2")?.objects().orEmpty()
+        val legacy=data.optJSONArray("query_result")?.let { array ->
+            (0 until array.length()).mapNotNull { index ->
+                val item=array.opt(index)
+                when(item) {
+                    is String -> JSONObject().put("name",item)
+                    is JSONObject -> item
+                    else -> null
+                }
+            }
+        }.orEmpty()
+        val rows=v2.ifEmpty { legacy }
         return rows.mapNotNull { row ->
             val name=row.str("name").ifEmpty { row.optJSONArray("display_words")?.optString(0).orEmpty() }.trim()
             if(name.isEmpty()) return@mapNotNull null
@@ -2892,12 +2934,19 @@ class ContentRepository(
     /**
      * 界面上的搜索入口。
      *
-     * [source] 决定走哪一套：App 接口（默认，结果全、游标翻页）或官网 SSR 搜索页
-     * （免签名免登录，按 `page` 翻）。两套都按**逻辑页**给 100 条：官网那边由
-     * [webSearch] 把 10 个物理页拼起来，因此界面侧翻页手感一致，
-     * 也只认 [CatalogPage]，不需要知道数据是从哪来的。
+     * [source] 决定走哪一套：App 接口（默认，官方综合请求、游标翻页）或官网搜索
+     * （免签名免登录，把 10 个物理页并成 1 个逻辑页）。界面侧只认 [CatalogPage]。
      */
-    fun search(keyword: String, page: Int = 1, source: SearchSource = SearchSource.APP): CatalogPage {
+    fun search(keyword: String, page: Int = 1, source: SearchSource = SearchSource.APP, fallbackPages: Int = WEB_FALLBACK_BATCH): CatalogPage {
+        if(source==SearchSource.APP && isWebFallback(keyword,page)) {
+            val result=runCatching { webFallbackResult(keyword,page,fallbackPages) }.getOrNull()
+            if(result!=null) {
+                SearchDiag.record(keyword,page,SearchSource.WEB,result.items.size,
+                    note="App 搜索接口没有数据，已自动改用官网搜索",
+                    registered=!deviceIdentity["device_id"].isNullOrBlank(),alive=appSearchAlive,degraded=true)
+                return result
+            }
+        }
         // 每次搜索都在这里留一份现场（见 [SearchDiag]）：失败时面板给的是**判读结论**，
         // 不是页面上那句「没有找到相关剧集」。成功也要记——「0 条」只有配上
         // 「接口真的回答了」才等于「确实没有匹配」。
@@ -2916,7 +2965,7 @@ class ContentRepository(
             val registered = !deviceIdentity["device_id"].isNullOrBlank()
             try {
                 val result = if(source==SearchSource.WEB) webSearch(keyword,page)
-                    else search(keyword,page,ContentType.entries.toList())
+                    else appSearchPage(keyword,page,SEARCH_PAGE_SIZE).also { clearWebFallback(keyword) }
                 // 官网这条「部分物理页失败」不算整页失败（其余页照常出内容），但要写进判读结论：
                 // 否则面板上是「有结果 37 条」加一行 502，用户不知道少掉的那几页去哪了。
                 val note = if(source==SearchSource.WEB) webSearchNote.get().orEmpty() else ""
@@ -2943,7 +2992,7 @@ class ContentRepository(
                 //
                 // 只在「接口答了、只是没内容」时降级：真正断网时官网也一样不通，白等一个超时。
                 if(source==SearchSource.APP && worthWebFallback(e)) {
-                    val fallback=runCatching { webSearch(keyword,page) }.getOrNull()
+                    val fallback=runCatching { webFallback(keyword,page,fallbackPages) }.getOrNull()
                     if(fallback!=null) {
                         SearchDiag.record(
                             keyword,page,SearchSource.WEB,fallback.items.size,
@@ -2973,8 +3022,9 @@ class ContentRepository(
             e.reason==SearchDiag.FAILURE_DEVICE || e.reason==SearchDiag.FAILURE_FORMAT
         else -> false
     }
-    /** 只搜一种内容类型（App 搜索接口的一个 tab）：合并搜索与联调都走这一份实现。 */
-    fun search(keyword: String, page: Int, type: ContentType): CatalogPage = search(keyword,page,listOf(type))
+    /** 只搜一种内容类型：联调探针仍可显式指定 `tab_type`。 */
+    fun search(keyword: String, page: Int, type: ContentType): CatalogPage =
+        appSearch(keyword,page,type.searchTab,SEARCH_PAGE_SIZE)
     /**
      * 官网搜索：`GET https://hongguoduanju.com/api/search/result?query={关键词}&page=N`。
      *
@@ -2997,11 +3047,37 @@ class ContentRepository(
         // 上一次搜索留下的摘要不能带到这一次（同一个线程会被复用）。
         webSearchNote.set("")
         val first=(page-1)*WEB_SEARCH_BATCH+1
+        return webSearchPages(clean,page,first,WEB_SEARCH_BATCH)
+    }
+    /** App 搜索自动降级：首屏少拉几页，后续逻辑页按实际物理页游标连续取。 */
+    private fun webFallback(keyword: String,page: Int,batch: Int): CatalogPage {
+        val clean=keyword.trim().take(WEB_SEARCH_QUERY_MAX)
+        val wantedPages=batch.coerceIn(1,WEB_SEARCH_BATCH)
+        val first=synchronized(webFallbackCursors) {
+            if(page==1 || !webFallbackCursors.containsKey(clean)) 1 else webFallbackCursors.getValue(clean)
+        }
+        val result=webSearchPages(clean,page,first,wantedPages)
+        synchronized(webFallbackCursors) {
+            if(webFallbackCursors.size>=8) webFallbackCursors.keys.firstOrNull()?.let(webFallbackCursors::remove)
+            webFallbackCursors[clean]=first+wantedPages
+        }
+        return result
+    }
+    private fun clearWebFallback(keyword: String) {
+        val clean=keyword.trim().take(WEB_SEARCH_QUERY_MAX)
+        synchronized(webFallbackCursors) { webFallbackCursors.remove(clean) }
+    }
+    private fun isWebFallback(keyword: String,page: Int): Boolean = page>1 &&
+        synchronized(webFallbackCursors) { webFallbackCursors.containsKey(keyword.trim().take(WEB_SEARCH_QUERY_MAX)) }
+    private fun webFallbackResult(keyword: String,page: Int,batch: Int): CatalogPage = webFallback(keyword,page,batch)
+    private fun webSearchPages(clean: String,page: Int,first: Int,wantedPages: Int): CatalogPage {
+        // 上一次搜索留下的摘要不能带到这一次（同一个线程会被复用）。
+        webSearchNote.set("")
         val scope=RequestScope.current()
         // 与 [homeFeed] 同理：共享 `fanout` 车道，不再每次搜索新建一个 10 线程池
         // （那等于「每敲一次键盘就创建再销毁十条线程」）。
         val pool=WorkLanes.fanout.executor
-        val tasks=(first until first+WEB_SEARCH_BATCH).map { physical ->
+        val tasks=(first until first+wantedPages).map { physical ->
             pool.submit(java.util.concurrent.Callable {
                 // 取消（切页 / 重新搜索）沿着 [RequestScope] 传进这十条请求，一起收手。
                 RequestScope.withScope(scope) { runCatching { webSearchPageRetry(clean,physical) }.getOrNull() }
@@ -3012,17 +3088,17 @@ class ContentRepository(
         // 「查不到」不走这里：接口对没有结果的关键词回的是 200 + 空 `searchList`，
         // 因此走到这一句就是真的连不上（或后端整体不可用），该让界面给「重试」。
         if(parts.all { it==null }) {
-            webSearchNote.set("官网 ${WEB_SEARCH_BATCH} 个物理页全部失败")
-            NetLog.log("hongguoduanju.com/api/search/result 第${first}~${first+WEB_SEARCH_BATCH-1}页全部失败")
-            throw SearchApiException(SearchDiag.FAILURE_NETWORK,"官网 ${WEB_SEARCH_BATCH} 个物理页全部失败")
+            webSearchNote.set("官网 ${wantedPages} 个物理页全部失败")
+            NetLog.log("hongguoduanju.com/api/search/result 第${first}~${first+wantedPages-1}页全部失败")
+            throw SearchApiException(SearchDiag.FAILURE_NETWORK,"官网 ${wantedPages} 个物理页全部失败")
         }
         // 部分页失败：**只汇总一条**，不把每个 502 都写进面板（那会把 40 条近况刷满，
         // 看起来像「整个官网搜索坏了」）。逐条的 HTTP 状态已在 [webSearchPageRetry] 里静默。
         val failed=parts.count { it==null }
         if(failed>0) {
-            val note="官网搜索 ${failed}/${WEB_SEARCH_BATCH} 页重试后仍失败"
+            val note="官网搜索 ${failed}/${wantedPages} 页重试后仍失败"
             webSearchNote.set(note)
-            NetLog.log("hongguoduanju.com/api/search/result 第${first}~${first+WEB_SEARCH_BATCH-1}页 · $note")
+            NetLog.log("hongguoduanju.com/api/search/result 第${first}~${first+wantedPages-1}页 · $note")
         } else {
             webSearchNote.set("")
         }
@@ -3038,7 +3114,7 @@ class ContentRepository(
         }
         val fresh=synchronized(webSearchSeen) { items.filter { seen.add(it.id) } }
         // 「还有更多」看这一批里**最后一个成功的物理页**：它说没有了，后面几页也就没了。
-        val more=parts.filterNotNull().lastOrNull()?.hasMore==true && page<MAX_CATALOG_PAGE
+        val more=parts.filterNotNull().lastOrNull()?.hasMore==true && first+wantedPages-1<MAX_CATALOG_PAGE
         return CatalogPage(fresh,more)
     }
     /**
@@ -3168,45 +3244,26 @@ class ContentRepository(
     /**
      * 搜索：只走 App 搜索接口（`GET /reading/bookapi/search/tab/v`，参数全在 query 里）。
      *
-     * 一次搜索会把 [types] 里**每个有搜索 tab 的类型**各问一次再合并按 id 去重
-     *（`19` 漫剧、`11` 短剧 / 真人剧；AI 剧没有对应 tab，见 [ContentType.searchable]）。
-     * 第 1 页起就带游标（`search_id` / `passback` / `next_offset`）可一直往下翻，见 [appSearch]。
+     * 官方 7.4.3.32 用一次不带 `tab_type` 的综合请求返回全部 tab，取首个有数据的 tab；
+     * 第 2 页起带上一页的游标（`search_id` / `passback` / `next_offset`），见 [appSearch]。
      *
      * 失败语义：接口回空响应体 = 这台设备没在服务端注册过（见 [registerDevice]），
      * 如实抛错让界面提示，**不再**用别的数据源顶替；游标过期抛 [SearchSessionExpiredException]，
      * 由界面回到第 1 页重搜。
      */
     private fun search(keyword: String, page: Int, types: List<ContentType>, count: Int = SEARCH_PAGE_SIZE): CatalogPage {
-        require(keyword.isNotBlank() && keyword.length<=80 && page in 1..100 && types.isNotEmpty())
-        val items=mutableListOf<Series>()
-        var hasMore=false; var answered=false; var expired=false
-        var failure: IOException?=null
-        // 本机是否已经拿到注册下发的那一对身份（见 [registerDevice]）。
-        // 注册成功之后，之前那次「空响应」的结论不再成立，下面的判死要放行一次。
-        val registered=!deviceIdentity["device_id"].isNullOrBlank()
-        types.filter { it in ContentType.searchable }.distinct().forEach { type ->
-            // 已经判死（空响应 = 设备没注册）就别再问另一个 tab：两个 tab 结论一致，
-            // 多问一次只是把首屏又推后一个 RTT。
-            if(appSearchAlive==false && !registered) return@forEach
-            try {
-                val result=appSearch(keyword,page,type,count)
-                answered=true; items+=result.items; if(result.hasMore) hasMore=true
-            } catch(e: SearchSessionExpiredException) { expired=true } catch(e: Exception) {
-                failure=e as? IOException ?: IOException(e.message ?: "搜索接口暂不可用")
-            }
-        }
-        // 有一个 tab 给了答案就用它：另一个 tab 空响应 / 少 tab 都不算失败。
-        if(answered) return CatalogPage(valid(items),hasMore && page<100)
-        if(expired) throw SearchSessionExpiredException()
-        val problem=failure ?: SearchApiException(SearchDiag.FAILURE_FORMAT,"接口没有返回任何 tab 数据")
-        NetLog.error("[API] error scope=search page=$page types=${types.joinToString(",")} reason=${problem.message.orEmpty().take(220)}")
-        throw problem
+        require(types.isNotEmpty())
+        return appSearchPage(keyword,page,count)
     }
+
+    /** 官方形态的一次综合搜索。 */
+    private fun appSearchPage(keyword: String,page: Int,count: Int): CatalogPage =
+        appSearch(keyword,page,SEARCH_FEED_TAB,count)
     /**
      * 搜索接口空响应时的原地补发（见 [appSearch]）。
      *
      * 最多补 [SEARCH_BLANK_RETRIES] 次、每次隔 [SEARCH_BLANK_RETRY_DELAY_MS]。
-     * 间隔不能再省：实测同一条请求连发（0 间隔）几乎全空，隔 300 毫秒才有命中。
+     * 间隔不能省：实测同一条请求连发（0 间隔）几乎全空，短暂停顿后才有命中。
      */
     private fun retryBlankSearch(raw: String, signed: Signer.Request): String {
         var current=raw
@@ -3230,47 +3287,46 @@ class ContentRepository(
         return current
     }
 
-    private fun appSearch(keyword: String, page: Int, type: ContentType, count: Int = SEARCH_PAGE_SIZE): CatalogPage {
-        val values=appValues()
-        values.putAll(linkedMapOf("query" to keyword,"count" to count.toString(),"offset" to ((page-1)*count).toString(),"tab_type" to type.searchTab.toString(),"bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to "0"))
+    private fun appSearch(keyword: String, page: Int, tabType: Int, count: Int = SEARCH_PAGE_SIZE): CatalogPage {
+        val scope=if(tabType==SEARCH_FEED_TAB) SEARCH_FEED_SCOPE else tabType
+        val signed=searchRequest(searchQuery(keyword,page,tabType,count))
+        val tab=searchTab(searchResponse(signed),tabType)
+        return CatalogPage(parseSearchTab(tab),tab.hasMore && page<100).also {
+            synchronized(searchCursors) {
+                searchCursors[SearchCursorKey(scope,keyword,page,count)]=
+                    SearchCursor(tab.searchId,tab.passback,tab.nextOffset,clock())
+                while(searchCursors.size>100) searchCursors.remove(searchCursors.keys.first())
+            }
+        }
+    }
+    /** 官方综合搜索不带 `tab_type`；用户 / 类型专用查询继续显式指定。 */
+    private fun searchQuery(keyword: String,page: Int,tabType: Int,count: Int): LinkedHashMap<String,String> {
+        require(keyword.isNotBlank() && keyword.length<=80 && page in 1..100)
+        val scope=if(tabType==SEARCH_FEED_TAB) SEARCH_FEED_SCOPE else tabType
+        val values=searchValues()
+        values.putAll(linkedMapOf("query" to keyword,"count" to count.toString(),"offset" to ((page-1)*count).toString(),"bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to "0"))
+        if(tabType!=SEARCH_FEED_TAB) values["tab_type"]=tabType.toString()
         val cursor=synchronized(searchCursors) {
             val now=clock()
-            searchCursors.entries.removeAll { now-it.value.updatedAt>300000 || (page==1 && it.key.type==type && it.key.keyword==keyword) }
-            searchCursors[SearchCursorKey(type,keyword,page-1,count)]
+            searchCursors.entries.removeAll { now-it.value.updatedAt>300000 ||
+                (page==1 && it.key.scope==scope && it.key.keyword==keyword) }
+            searchCursors[SearchCursorKey(scope,keyword,page-1,count)]
         }
-        // 漫剧翻页必须带上一页的游标。接口已经被平台关掉（空响应体）时不再抛「搜索结果已过期」：
-        // 那样会把漫剧搜索钉死在第 1 页，用户看到的就是「第 2 页永远搜不出来」。
-        if(type==ContentType.COMIC && page>1 && cursor==null && appSearchAlive!=false) throw SearchSessionExpiredException()
+        if(page>1 && cursor==null && appSearchAlive!=false) throw SearchSessionExpiredException()
         cursor?.let {
             if(it.searchId.isNotBlank()) values["search_id"]=it.searchId
             if(it.passback.isNotBlank()) values["passback"]=it.passback
             it.offset?.takeIf { offset -> offset>=0 }?.let { offset -> values["offset"]=offset.toString() }
         }
-        // **必须 GET**：同一路径 POST 是 404（2026-10-21 实测），参数全在 query 里。
-        // 签名只覆盖 query + body、不覆盖方法，因此这里显式把方法钉成 GET。
-        val signed=signer.sign("https://${accountHost()}/reading/bookapi/search/tab/v",values,method="GET")
-        // **空响应体 = 这台设备没在服务端注册过，重发多少次都一样。**
-        //
-        // 平台按「服务端注册过的 `device_id` + `install_id`」放行：注册过的设备只回
-        // `code 0` 或间歇性 `100103`，**从不回空响应**；没注册的一律空响应。
-        // 而注册本身是匿名的（见 [registerDevice]），所以正确的做法是**去注册一台**，
-        // 而不是原地重发——旧实现在这里退避 550/800/1050/1300/1550ms 重发 5 次，
-        // 两个 tab 串行白等 12.8 秒，正是「搜索要十多秒才出结果」的来由。
-        // 现在空响应**一次即判死**，立刻抛错让界面提示（而不是原地退避重发五次）。
-        var raw=text(signed.url,signed.withSession())
-        // 平台对匿名设备返回 HTTP 200 + 空响应体，这里必须先判空：
-        // 直接丢给 JSONObject 会抛 JSONException（A JSONObject text must begin with '{'），
-        // 那既不是可读的错误，也会把「接口不可用」这个结论说清楚的机会丢掉。
-        //
-        // **空响应不等于「设备没注册」**（2026-10-27 实测修正）：已注册的设备在请求密集时
-        // 同样会被网关挡成 `200 + 0 字节`（同一台设备连打 0.15 秒一发，16 轮里 9 轮是空的），
-        // 而且隔 300 毫秒重发一次就能救回一半以上。原先这里「一次空响应即判死」，
-        // 结果是：正常设备被误判成「未注册」→ 界面层换一套身份重注册 → 新身份在高峰期又被挡
-        // → 再换，越换越乱，用户看到的就是「搜索一会儿能用一会儿不能用」。
-        // 现在空响应先原地补一次（各 300 毫秒），仍然空才当作「这台设备没注册」。
-        raw=retryBlankSearch(raw,signed)
+        return values
+    }
+    /**
+     * 发送搜索 GET，并处理空响应 / `100103`。空响应补发一次仍空才判设备未注册；
+     * 这样保留设备自愈路径，又不会在高峰期原地退避很多次。
+     */
+    private fun searchResponse(signed: Signer.Request): String {
+        var raw=retryBlankSearch(text(signed.url,signed.withSession()),signed)
         if(raw.isBlank()) { appSearchAlive=false; noteDeviceRejected(); throw DeviceNotRegisteredException() }
-        // `100103` 才是真正的间歇性错误（同一设备约一半概率），短间隔重发几次即可。
         var attempt=0
         while(attempt<3 && raw.startsWith("""{"code":100103""")) {
             attempt++
@@ -3280,15 +3336,30 @@ class ContentRepository(
             if(raw.isBlank()) { appSearchAlive=false; noteDeviceRejected(); throw DeviceNotRegisteredException() }
         }
         appSearchAlive=true
+        return raw
+    }
+    /** 从一次响应里挑出要展示的 tab，并把游标与卡片结构一起带出来。 */
+    private data class ParsedSearchTab(val cells: List<JSONObject>,val searchId: String,val passback: String,val nextOffset: Int?,val hasMore: Boolean)
+    private fun searchTab(raw: String,tabType: Int): ParsedSearchTab {
         val data=JSONObject(raw)
         val code=data.optInt("code",-1)
         if(code!=0) throw SearchApiException(SearchDiag.FAILURE_CODE,"code=$code")
         val tabs=data.optJSONArray("search_tabs") ?: data.optJSONObject("data")?.optJSONArray("search_tabs")
             ?: throw SearchApiException(SearchDiag.FAILURE_FORMAT,"没有 search_tabs")
-        val tab=tabs.objects().firstOrNull { it.optInt("tab_type")==type.searchTab }
-            ?: throw SearchApiException(SearchDiag.FAILURE_TAB,"缺少 tab_type=${type.searchTab}")
+        val rows=tabs.objects()
+        val picked=(if(tabType==SEARCH_FEED_TAB) rows.firstOrNull { (it.optJSONArray("data")?.length() ?: 0)>0 } else null)
+            ?: rows.firstOrNull { it.optInt("tab_type")==tabType }
+            ?: if(tabType==SEARCH_FEED_TAB) rows.firstOrNull() else null
+        val tab=picked ?: throw SearchApiException(SearchDiag.FAILURE_TAB,"缺少可用 search tab")
+        return ParsedSearchTab(
+            (tab.optJSONArray("data") ?: JSONArray()).objects(),tab.str("search_id"),tab.str("passback"),
+            tab.str("next_offset").toIntOrNull(),tab.optBoolean("has_more",false)
+        )
+    }
+    /** 搜索 tab 里的卡片 cell（含 lynx 内嵌 cell）统一转成列表卡片。 */
+    private fun parseSearchTab(tab: ParsedSearchTab): List<Series> {
         val list=mutableListOf<Series>()
-        for(cell in (tab.optJSONArray("data") ?: JSONArray()).objects()) {
+        for(cell in tab.cells) {
             val cells=mutableListOf(cell)
             runCatching { JSONObject(cell.str("lynx_data")).optJSONArray("cell_data")?.objects() }.getOrNull()?.let { cells.addAll(it) }
             for(row in cells) {
@@ -3323,11 +3394,7 @@ class ContentRepository(
                     episodeCount=0,upcoming=true,notice=notice)
             }
         }
-        synchronized(searchCursors) {
-            searchCursors[SearchCursorKey(type,keyword,page,count)]=SearchCursor(tab.str("search_id"),tab.str("passback"),tab.str("next_offset").toIntOrNull(),clock())
-            while(searchCursors.size>100) searchCursors.remove(searchCursors.keys.first())
-        }
-        return CatalogPage(valid(list),tab.optBoolean("has_more",false) && page<100)
+        return valid(list)
     }
     // ------------------------------------------------------------------ 账号（个人信息页）
     /**
@@ -4026,7 +4093,7 @@ class ContentRepository(
      *
      * 平台没有对外的作者主页 / 作者作品接口：`/reading/bookapi/author/...` 全部 404，
      * 详情（`video_detail`）与批量详情（`multi-detail`）都只给一个 `author` 字符串，
-     * 既没有 `author_id` 也没有头像。能用的只有全站搜索 `search/tab/v1`：
+     * 既没有 `author_id` 也没有头像。能用的只有全站搜索 `search/tab/v`：
      *
      * * 搜索结果的每一条卡片自带 `copyright`（与 [Series.author] 同源），
      *   因此**不必为了判断归属再打一次 `multi-detail`**；
@@ -4207,19 +4274,13 @@ class ContentRepository(
         val key=name.trim()
         if(key.isEmpty()) return null
         synchronized(publisherIdentities) { publisherIdentities[key] }?.let { return it }
-        val values=appValues()
+        val values=searchValues()
         values.putAll(linkedMapOf("query" to key,"count" to "20","offset" to "0","tab_type" to "27",
             "bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to "0"))
-        val signed=runCatching {
-            signer.sign("https://${accountHost()}/reading/bookapi/search/tab/v",values,method="GET")
-        }.getOrNull() ?: return null
+        val signed=runCatching { searchRequest(values) }.getOrNull() ?: return null
         val raw=runCatching { retryBlankSearch(text(signed.url,signed.withSession()),signed) }.getOrNull().orEmpty()
         if(raw.isBlank()) return null
-        val rows=runCatching { JSONObject(raw) }.getOrNull()
-            ?.optJSONArray("search_tabs")?.objects()
-            ?.firstOrNull { it.optInt("tab_type",-1)==27 }
-            ?.optJSONArray("data")?.objects()
-            .orEmpty()
+        val rows=runCatching { searchTab(raw,27).cells }.getOrDefault(emptyList())
         val identity=rows.firstNotNullOfOrNull { row ->
             val user=row.optJSONArray("celebrity_user_list")?.objects()?.firstOrNull()
             val info=user?.optJSONObject("base_info")
@@ -4388,38 +4449,13 @@ class ContentRepository(
      * 先回来且非空就用它换掉整轮搜索（一次取全，含搜索池里没有的季），搜索立即停在页边界。
      */
     /**
-     * 作者作品的一页搜索：**两个 tab 并发**，不是串行两趟。
+     * 作者作品的一页搜索：与界面搜索一致，走官方一次综合请求。
      *
-     * 为什么单独写一个：[search] 是按 `types` 顺序串行请求的（漫剧一趟、短剧一趟），
-     * 对普通搜索无所谓，但对「作者作品」这一栏就是首屏延迟翻倍——实测单趟 1.3~3.0s，
-     * 串起来 3~6s 才开始铺第一张卡。两趟之间没有依赖（各自带自己的 `search_id` / `offset`），
-     * 因此并发发出，合并顺序仍按 [ContentType.searchable] 的顺序（与串行时一致，顺序不变）。
-     *
-     * 只在**调用方线程不在 fanout 池里**时使用：`collectAuthorWorks` 由界面层的 network 道调用，
-     * 而 `fillFamilySeasons` 自己就在 fanout 池里跑，那里继续用串行版本（否则会互相等线程）。
-     *
-     * 任何一个 tab 出错都不影响另一个（与 [search] 的容错一致）；两个都失败才抛。
+     * 分开留一个入口，是因为这一栏用 50 条一页并要连取多页；游标与界面搜索的 20 条档位
+     * 按 `count` 隔离，不会互相覆盖。
      */
     private fun authorSearchPage(name: String,page: Int): CatalogPage {
-        val types=ContentType.searchable
-        if(types.size<2) return search(name,page,types,AUTHOR_WORKS_PAGE_SIZE)
-        val pool=WorkLanes.fanout.executor
-        val tasks=types.map { type ->
-            pool.submit(java.util.concurrent.Callable {
-                runCatching { search(name,page,listOf(type),AUTHOR_WORKS_PAGE_SIZE) }.getOrNull()
-            })
-        }
-        val items=mutableListOf<Series>()
-        var hasMore=false
-        var answered=false
-        tasks.forEach { task ->
-            val result=runCatching { task.get(AUTHOR_WORKS_FAMILY_TIMEOUT_MS,TimeUnit.MILLISECONDS) }.getOrNull() ?: return@forEach
-            answered=true
-            items+=result.items
-            if(result.hasMore) hasMore=true
-        }
-        if(!answered) throw IOException("作者作品搜索暂无响应")
-        return CatalogPage(items,hasMore)
+        return appSearchPage(name,page,AUTHOR_WORKS_PAGE_SIZE)
     }
     private fun collectAuthorWorks(
         name: String,
