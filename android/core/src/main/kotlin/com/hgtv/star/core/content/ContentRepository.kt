@@ -2288,19 +2288,7 @@ class ContentRepository(
         val url="$SITE_HOST/api/search/suggestion?query=${Signer.encode(clean)}&count=$wanted"
         val raw=runCatching { siteText(url) }.getOrNull().orEmpty()
         if(raw.isBlank()) return emptyList()
-        // 新接口的字段叫 `suggestionList`；老接口（`/incent_resource/suggestion`）叫 `suggest_list`。
-        // 两个都认：接口再改名时不至于整行联想词直接消失。
-        val rows=runCatching {
-            val data=JSONObject(raw)
-            (data.optJSONArray("suggestionList") ?: data.optJSONArray("suggest_list"))?.objects().orEmpty()
-        }.getOrDefault(emptyList())
-        return rows.mapNotNull { row ->
-            val name=row.str("name").ifEmpty { row.optJSONArray("display_words")?.optString(0).orEmpty() }.trim()
-            if(name.isEmpty()) return@mapNotNull null
-            val video=row.optJSONObject("video_data")?.takeIf { it.length()>0 }
-            val series=video?.let { webCard(it) }?.takeIf { it.id.matches(Regex("[0-9]{1,30}")) && it.title.isNotBlank() }
-            SearchSuggestion(name,series,row.str("word_type"))
-        }.distinctBy { it.name }.take(wanted)
+        return ContentSearchParser.parseWebSuggestions(raw,wanted)
     }
     private fun appSuggestions(keyword: String, count: Int = 10): List<SearchSuggestion> {
         val clean=keyword.trim()
@@ -2311,29 +2299,7 @@ class ContentRepository(
         val signed=signer.sign("https://${accountHost()}/reading/bookapi/search/suggest/v:version/",values,deviceOverride=values)
         val raw=text(signed.url,signed.withSession())
         if(raw.isBlank()) throw IOException("提示词暂不可用")
-        val body=JSONObject(raw)
-        val data=body.optJSONObject("data") ?: body
-        val v2=data.optJSONArray("query_result_v2")?.objects().orEmpty()
-        val legacy=data.optJSONArray("query_result")?.let { array ->
-            (0 until array.length()).mapNotNull { index ->
-                val item=array.opt(index)
-                when(item) {
-                    is String -> JSONObject().put("name",item)
-                    is JSONObject -> item
-                    else -> null
-                }
-            }
-        }.orEmpty()
-        val rows=v2.ifEmpty { legacy }
-        return rows.mapNotNull { row ->
-            val name=row.str("name").ifEmpty { row.optJSONArray("display_words")?.optString(0).orEmpty() }.trim()
-            if(name.isEmpty()) return@mapNotNull null
-            // `video_data` 里没有 `series_id` 的那些（title / common_query 这类）不算剧集，只能当查询词。
-            val video=row.optJSONObject("video_data")?.takeIf { it.length()>0 }
-            val series=video?.let(ContentCatalogParser::apiCard)
-                ?.takeIf { it.id.matches(Regex("[0-9]{1,30}")) && it.title.isNotBlank() }
-            SearchSuggestion(name,series,row.str("word_type_str"))
-        }.distinctBy { it.name }.take(wanted)
+        return ContentSearchParser.parseAppSuggestions(raw,wanted)
     }
     /**
      * 热搜词：搜索页空输入时铺在下面那一排。
@@ -2606,51 +2572,7 @@ class ContentRepository(
         // 重试放在 [webSearchPageRetry]：502 带响应体时 [siteText] 不抛异常，
         // 这里的 `code` 分支才会判失败，因此重试必须在**解析之后**做。
         val raw=siteText(url)
-        val data=JSONObject(raw)
-        // 失败时接口回的是 `{"code":...,"message":...}`（HTTP 可能是 200 / 400 / 502）：
-        // - `invalid_query`：关键词为空或超过 30 字，按「没有结果」处理；
-        // - `upstream_unavailable`：官网搜索后端瞬时不可用，重试已经用过了，这一页算失败
-        //  （[webSearch] 里十个物理页全失败才算整页失败，部分失败照常给结果）。
-        if(data.has("code")) {
-            if(data.optString("code")=="invalid_query") return CatalogPage(emptyList(),false)
-            throw IOException("官网搜索暂不可用（${data.optString("code")}）")
-        }
-        val rows=data.optJSONArray("searchList") ?: return CatalogPage(emptyList(),false)
-        // 超出末页时服务端不报错，而是**把整份结果一次性塞回来**（实测 page=99 时 216 条、
-        // 且 totalPages 被改写成 99）：那已经不是「第 N 页」，照收会让列表里多出几百条
-        // 与前面重复的内容。一页正常最多 10 条，明显超量就按「没有更多」处理。
-        if(rows.length()>WEB_SEARCH_PAGE_SIZE*3) return CatalogPage(emptyList(),false)
-        val items=ContentCatalogParser.valid(rows.objects().map(::webCard))
-        val totalPages=data.optInt("totalPages",1).coerceIn(1,MAX_CATALOG_PAGE)
-        val more=data.optBoolean("hasMore",page<totalPages) && page<totalPages
-        return CatalogPage(items,more)
-    }
-    /** 官网搜索的卡片：`video_data` 与详情页同源（`series_title` / `series_cover` / `series_intro`）。 */
-    private fun webCard(item: JSONObject): Series {
-        val o=item.optJSONObject("video_data")?.takeIf { it.length()>0 } ?: item
-        val count=o.optInt("episode_cnt",0)
-        val tags=tagsOf(o,"category_list")
-        return Series(
-            id=o.str("series_id").ifEmpty { item.str("keyword") },
-            title=o.str("series_title").ifEmpty { item.str("name") },
-            cover=cleanUrl(o.str("series_cover")),
-            description=o.str("series_intro"),
-            badge=EpisodeLabel.normalize(o.str("episode_right_text")).ifEmpty { EpisodeLabel.of(count) },
-            tags=tags,episodeCount=count,seasonIndex=ContentCatalogParser.seasonOf(o))
-    }
-    /**
-     * 搜索卡片标题。
-     *
-     * `search_high_light` 只用于展示命中词，个别设备返回的文本会丢掉剧名尾部的季号。
-     * 原始 `video_data.title` 才是完整剧名，因此必须优先用它；高亮文本仅作兜底。
-     */
-    private fun searchTitle(row: JSONObject,video: JSONObject): String {
-        val canonical=video.str("title")
-        if(canonical.isNotBlank()) return canonical
-        val highlighted=row.optJSONObject("search_high_light")
-            ?.optJSONObject("title")?.str("text").orEmpty()
-            .replace(SEARCH_HIGHLIGHT,"").trim()
-        return highlighted.ifEmpty { row.str("cell_name") }
+        return ContentSearchParser.parseWebSearchPage(raw,page,WEB_SEARCH_PAGE_SIZE,MAX_CATALOG_PAGE)
     }
     /**
      * 官网页面的一次 GET：不走 App 的签名与设备参数（那套头对官网没有意义），
@@ -2733,8 +2655,8 @@ class ContentRepository(
     private fun appSearch(keyword: String, page: Int, tabType: Int, count: Int = SEARCH_PAGE_SIZE): CatalogPage {
         val scope=if(tabType==SEARCH_FEED_TAB) SEARCH_FEED_SCOPE else tabType
         val signed=searchRequest(searchQuery(keyword,page,tabType,count))
-        val tab=searchTab(searchResponse(signed),tabType)
-        return CatalogPage(parseSearchTab(tab),tab.hasMore && page<100).also {
+        val tab=ContentSearchParser.parseTab(searchResponse(signed),tabType,SEARCH_FEED_TAB)
+        return CatalogPage(ContentSearchParser.cards(tab),tab.hasMore && page<100).also {
             synchronized(searchCursors) {
                 searchCursors[SearchCursorKey(scope,keyword,page,count)]=
                     SearchCursor(tab.searchId,tab.passback,tab.nextOffset,clock())
@@ -2780,65 +2702,6 @@ class ContentRepository(
         }
         appSearchAlive=true
         return raw
-    }
-    /** 从一次响应里挑出要展示的 tab，并把游标与卡片结构一起带出来。 */
-    private data class ParsedSearchTab(val cells: List<JSONObject>,val searchId: String,val passback: String,val nextOffset: Int?,val hasMore: Boolean)
-    private fun searchTab(raw: String,tabType: Int): ParsedSearchTab {
-        val data=JSONObject(raw)
-        val code=data.optInt("code",-1)
-        if(code!=0) throw SearchApiException(SearchDiag.FAILURE_CODE,"code=$code")
-        val tabs=data.optJSONArray("search_tabs") ?: data.optJSONObject("data")?.optJSONArray("search_tabs")
-            ?: throw SearchApiException(SearchDiag.FAILURE_FORMAT,"没有 search_tabs")
-        val rows=tabs.objects()
-        val picked=(if(tabType==SEARCH_FEED_TAB) rows.firstOrNull { (it.optJSONArray("data")?.length() ?: 0)>0 } else null)
-            ?: rows.firstOrNull { it.optInt("tab_type")==tabType }
-            ?: if(tabType==SEARCH_FEED_TAB) rows.firstOrNull() else null
-        val tab=picked ?: throw SearchApiException(SearchDiag.FAILURE_TAB,"缺少可用 search tab")
-        return ParsedSearchTab(
-            (tab.optJSONArray("data") ?: JSONArray()).objects(),tab.str("search_id"),tab.str("passback"),
-            tab.str("next_offset").toIntOrNull(),tab.optBoolean("has_more",false)
-        )
-    }
-    /** 搜索 tab 里的卡片 cell（含 lynx 内嵌 cell）统一转成列表卡片。 */
-    private fun parseSearchTab(tab: ParsedSearchTab): List<Series> {
-        val list=mutableListOf<Series>()
-        for(cell in tab.cells) {
-            val cells=mutableListOf(cell)
-            runCatching { JSONObject(cell.str("lynx_data")).optJSONArray("cell_data")?.objects() }.getOrNull()?.let { cells.addAll(it) }
-            for(row in cells) {
-                val video=row.optJSONArray("video_data")?.objects()?.firstOrNull()
-                if(video!=null) {
-                    val id=video.str("series_id").ifEmpty { row.str("book_id").ifEmpty { row.str("search_result_id") } }
-                    val title=searchTitle(row,video)
-                    val count=video.optInt("episode_cnt")
-                    val seasonIndex=ContentCatalogParser.seasonOf(video).takeIf { it>0 }
-                        ?: ContentCatalogParser.seasonOf(row)
-                    // 出品方：搜索接口的 `video_data` 也带 `copyright`（与分类 / 详情同源），
-                    // 直接取，卡片第二行就不用再为这一屏发一次 `multi-detail`。
-                    // 类型标签：搜索的 `video_data` 与列表接口同源（`category_schema`）。
-                    // 拿不到就留空，卡片第二行退回状态行（热度 / 进度），不拿季号顶替。
-                    val tags=tagsOf(video)
-                    list+=Series(id,title,cleanUrl(video.str("cover").ifEmpty { video.str("cover_url") }),video.str("video_desc"),EpisodeLabel.of(count).ifEmpty { video.str("rec_text") },tags,
-                        author=publisher(video.str("copyright")),episodeCount=count,seasonIndex=seasonIndex,
-                        // 热度 / 播放量：卡片可展示，也是链路里唯一能拿到的量级信号（不再用于本地排序）。
-                        heat=heatValue(video.str("rec_text")),playCount=video.optInt("play_cnt"))
-                    continue
-                }
-                // 未上架的剧在搜索里是另一种 cell：`show_type=462`，没有 `video_data`，
-                // 数据在 `subscribe_items[]` 里（`item_id` / `name` / `cover` / `sub_info`）。
-                // 早先这里直接 `continue`，于是「谁让这个文盲修仙的第六季」这种卡片根本不出现，
-                // 用户只能从别处点进来、再撞上详情页的 404。
-                val sub=row.optJSONArray("subscribe_items")?.objects()?.firstOrNull() ?: continue
-                val id=sub.str("item_id").ifEmpty { sub.str("item_id_str") }
-                val title=sub.str("name")
-                val tags=tagsOf(sub)
-                // `sub_info` 是「预计11月6日上线」这种最有用的一句；没有就退到「预告」角标。
-                val notice=sub.str("sub_info").ifEmpty { sub.optJSONObject("tag_info")?.str("text").orEmpty() }
-                list+=Series(id,title,cleanUrl(sub.str("cover")),sub.str("item_desc"),notice,tags,
-                    episodeCount=0,upcoming=true,notice=notice)
-            }
-        }
-        return ContentCatalogParser.valid(list)
     }
     // ------------------------------------------------------------------ 账号（个人信息页）
     /**
@@ -3724,7 +3587,9 @@ class ContentRepository(
         val signed=runCatching { searchRequest(values) }.getOrNull() ?: return null
         val raw=runCatching { retryBlankSearch(text(signed.url,signed.withSession()),signed) }.getOrNull().orEmpty()
         if(raw.isBlank()) return null
-        val rows=runCatching { searchTab(raw,27).cells }.getOrDefault(emptyList())
+        val rows=runCatching {
+            ContentSearchParser.parseTab(raw,27,SEARCH_FEED_TAB).cells
+        }.getOrDefault(emptyList())
         val identity=rows.firstNotNullOfOrNull { row ->
             val user=row.optJSONArray("celebrity_user_list")?.objects()?.firstOrNull()
             val info=user?.optJSONObject("base_info")
@@ -5425,7 +5290,6 @@ class ContentRepository(
         /** 窗口之间的最小间隔，避开平台的弹幕频控。 */
         private const val COMMENT_THROTTLE_MS=180L
         /** 搜索高亮文本可能带 `<em>` 标记；只用于兜底标题，不能让它污染季号解析。 */
-        private val SEARCH_HIGHLIGHT = Regex("</?em>",RegexOption.IGNORE_CASE)
 
         /**
          * 这一档是不是 HEVC（本工程唯一支持的视频编码）。
