@@ -676,7 +676,33 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 30：TV 首帧后初始化编排迁移
+
+状态：已完成。
+
+- 将 `initializeMainAfterFirstFrame` 的完整编排移到
+  `system/MainInitialization.kt`，`onCreate` 仍按原 32ms 延迟、销毁判断和调用顺序
+  进入第二阶段初始化。
+- 主题、运行时、详情状态收集、网络回调、封面计时、焦点监听、故障注入、预连接和
+  `loadLibrary()` 的顺序与实现体保持原样。
+- 仅增加四个 `internal` 只读/委托入口，供初始化扩展读取原私有回调、广播接收器、
+  网络监听和 tick；公开成员与生命周期回调未改。
+- `TvMainActivity.kt` 从 2632 行降到 2421 行；`MainInitialization.kt` 为 227 行。
+
+验证：
+
+- `git diff --check` 通过；迁移后的初始化实现体按缩进归一化后与迁移前逐行一致。
+- 首次编译缺少两个跨文件扩展 import，补齐后重跑通过；未改行为。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `TvMainActivity.kt` 的生命周期初始化辅助，再评估把首页/详情/播放页面状态聚合
-到独立 State 对象的边界。
+继续拆分 `TvMainActivity.kt` 的生命周期回调与页面状态，随后转入
+`PhonePlayerActivity.kt` 的职责拆分。
