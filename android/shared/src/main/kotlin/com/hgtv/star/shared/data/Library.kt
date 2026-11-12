@@ -85,6 +85,7 @@ class Library(context: Context) {
          * 再让主设备从空身份注册。旧设备保留下来，但不再参与任何请求。
          */
         const val IDENTITY_LAYOUT_KEY = "identity-layout-v2"
+        internal val identityLayoutKey get()=IDENTITY_LAYOUT_KEY
         val LEGACY_IDENTITY_KEYS = listOf(
             "registered-device-id","registered-install-id","registered-device-token",
             "registered-klink-egdi","registered-profile-stamp","registered-cookies",
@@ -92,6 +93,7 @@ class Library(context: Context) {
             "device-profile-pending","device-profile-pending-seed","device-profile-pending-stamp",
             "registration-pending",
         )
+        internal val legacyIdentityKeys get()=LEGACY_IDENTITY_KEYS
         /** 账号那三项：退出登录时要**一并从镜像里抹掉**，否则下次启动又把登出的会话救回来。 */
         val MIRROR_ACCOUNT_KEYS = listOf(
             "account-cookie","account-device","account-expires","session-token","ts-sign","last-beat-at"
@@ -121,6 +123,10 @@ class Library(context: Context) {
     private val homePrefs by lazy { app.getSharedPreferences("native-home-cache-v1", Context.MODE_PRIVATE) }
     /** 搜索登录态单独存一个文件：它不是播放偏好，也不进备份文件、不随记录一起迁移。 */
     private val sessionPrefs by lazy { app.getSharedPreferences("native-session-v1", Context.MODE_PRIVATE) }
+    internal val identitySessionPrefs get()=sessionPrefs
+    internal val identityMirror get()=mirror
+    internal val identityLayoutKeyValue get()=IDENTITY_LAYOUT_KEY
+    internal val legacyIdentityKeysValue get()=LEGACY_IDENTITY_KEYS
     private val writes = LatestWriteQueue<String, () -> Any?>("hgtv-library-write", write = { batch -> commit(prefs, batch) },
         failed = { Log.w("HGTV", "Local library commit failed; pending changes retained for retry") })
     /**
@@ -160,6 +166,10 @@ class Library(context: Context) {
      */
     @Volatile private var discarding = false
     @Volatile private var identityLayoutChecked = false
+    internal var identityLayoutInitialized: Boolean
+        get()=identityLayoutChecked
+        set(value) { identityLayoutChecked=value }
+    internal val identityDiscarding get()=discarding
     private val readyCallbacks = mutableListOf<() -> Unit>()
     private val errorCallbacks = mutableListOf<(Throwable) -> Unit>()
     val isLoaded get() = index != null
@@ -329,65 +339,7 @@ class Library(context: Context) {
      * 但不会覆盖未登录时使用的主设备档案。
      */
     private fun ensureIdentityLayout() {
-        if(identityLayoutChecked || discarding) return
-        synchronized(this) {
-            if(identityLayoutChecked || discarding) return
-            val alreadySplit=sessionPrefs.contains(IDENTITY_LAYOUT_KEY) ||
-                mirror.string(IDENTITY_LAYOUT_KEY)=="1"
-            if(!alreadySplit) {
-                val edit=sessionPrefs.edit()
-                // 旧版本把登录设备与主设备共用。升级时先把旧设备 Cookie 并进已登录账号，
-                // 否则切到独立主设备后，账号心跳会少掉 `install_id` / `ttreq`。
-                val accountCookie=sessionPrefs.getString("account-cookie",null)
-                    ?: mirror.string("account-cookie").orEmpty()
-                val legacyCookies=sessionPrefs.getString("registered-cookies",null)
-                    ?: mirror.string("registered-cookies").orEmpty()
-                if(accountCookie.contains("sessionid=") && legacyCookies.isNotBlank()) {
-                    runCatching {
-                        val merged=com.hgtv.star.core.session.CookieRecord.headerToMap(accountCookie)
-                        val json=org.json.JSONObject(legacyCookies)
-                        for(key in json.keys()) {
-                            json.optString(key).takeIf { it.isNotBlank() }?.let { merged[key]=it }
-                        }
-                        val header=com.hgtv.star.core.session.CookieRecord.mapToHeader(merged)
-                        edit.putString("account-cookie",header)
-                        mirror.put("account-cookie",header)
-                    }
-                }
-                LEGACY_IDENTITY_KEYS.forEach { key ->
-                    val value=sessionPrefs.all[key]?.toString() ?: mirror.string(key)
-                    if(value!=null) {
-                        edit.putString("legacy-$key",value)
-                        mirror.put("legacy-$key",value)
-                    }
-                    edit.remove(key)
-                    mirror.remove(key)
-                }
-                // 新主设备使用独立档案：物理机型 / 系统不变，cdid / openudid / clientudid
-                // 重新生成，避免平台把新主设备直接认回旧设备。
-                val fresh=LinkedHashMap(buildOfficialProfile(forceRandomOpenudid=true)).apply {
-                    put("openudid-source","primary_random")
-                }
-                val freshJson=org.json.JSONObject().apply {
-                    fresh.forEach { (key,value) -> put(key,value) }
-                }.toString()
-                edit.putString("device-profile",freshJson)
-                mirror.put("device-profile",freshJson)
-                edit.putString(IDENTITY_LAYOUT_KEY,"1").commit()
-                mirror.put(IDENTITY_LAYOUT_KEY,"1")
-                mirror.flush()
-                cachedProfileStamp=null
-                Log.i("HGTV","Legacy device identity archived; new main identity will be registered")
-            } else if(!sessionPrefs.contains(IDENTITY_LAYOUT_KEY)) {
-                sessionPrefs.edit().putString(IDENTITY_LAYOUT_KEY,"1").commit()
-            }
-            // 手动 device_id 已下线：升级时把旧值和旧镜像一起清掉。
-            if(sessionPrefs.contains("manual-device-id")) {
-                sessionPrefs.edit().remove("manual-device-id").apply()
-                mirror.remove("manual-device-id")
-            }
-            identityLayoutChecked=true
-        }
+        ensureIdentityLayoutImpl()
     }
     private fun put(key: String, value: Any?) {
         // 清除数据期间队列已经关掉：这时再提交会抛异常，而数据马上就要被删掉，直接丢弃。
@@ -838,6 +790,9 @@ class Library(context: Context) {
     }
     /** 当前档案的指纹（`cdid|openudid`）：只用来判断「注册结果与档案是不是同一套」。 */
     @Volatile private var cachedProfileStamp: String?=null
+    internal var identityCachedProfileStamp: String?
+        get()=cachedProfileStamp
+        set(value) { cachedProfileStamp=value }
     private fun profileStamp(): String {
         cachedProfileStamp?.let { return it }
         val profile=deviceProfile()
@@ -1139,6 +1094,8 @@ class Library(context: Context) {
             "apk_first_install_time" to installTime.toString()
         )
     }
+    internal fun buildOfficialProfileForIdentityLayout(forceRandomOpenudid: Boolean) =
+        buildOfficialProfile(forceRandomOpenudid)
     /** App 进程实际可见的 Android ID；官方 App 也是用这一个，而不是 shell 的全局值。 */
     private fun readAndroidId(): String? = runCatching {
         android.provider.Settings.Secure.getString(

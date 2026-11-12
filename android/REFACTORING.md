@@ -1167,6 +1167,31 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 49：Library 身份布局初始化迁移
+
+状态：已完成。
+
+- 将 `ensureIdentityLayout` 的实现体移到
+  `LibraryIdentityLayout.kt`，`Library` 保留同名私有门面。
+- 保留旧 Cookie 合并、`legacy-*` 归档、新主设备档案生成、镜像同步、手动 ID 清理和
+  一次性标记顺序。
+- 新增 SessionPrefs、Mirror、布局标记、profile 指纹缓存与档案生成器的 `internal` 投影；
+  公开 API 未改。
+- `Library.kt` 从 1984 行降到 1941 行；`LibraryIdentityLayout.kt` 为 74 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译发现私有 companion 不能跨文件访问，改用实例级只读投影后重跑通过；键值未变。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-开始拆 `Library.kt` 的独立持久化职责；先盘点 JSON / 数据库 / 缓存边界，无法证明安全则跳过。
+继续拆 `Library.kt` 的设备注册 Cookie 与待提交档案持久化职责。
