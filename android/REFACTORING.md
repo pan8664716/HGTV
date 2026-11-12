@@ -630,7 +630,30 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 28：TV 内存压力处理迁移
+
+状态：已完成。
+
+- 将封面摘挂、`onLowMemory` 处理、`onTrimMemory` 分级清理和推荐缓存收缩移到
+  `system/MemoryPressureController.kt`。
+- `TvMainActivity` 保留 `releaseOffscreenCovers`、`resumeVisibleCovers` 门面方法，
+  系统回调仍由 Activity 本体保留并按原顺序调用 `super`。
+- 新增只读 `artworkReady` 投影，用于跨文件判断 `lateinit artwork` 是否已初始化，
+  不改变初始化时机。
+- `TvMainActivity.kt` 从 2662 行降到 2611 行；`MemoryPressureController.kt` 为 89 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:feature-tv:compileDebugKotlin` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `TvMainActivity.kt` 的调试面板状态与内存压力处理，再评估生命周期初始化链的
-Controller 边界。
+继续拆 `TvMainActivity.kt` 的调试面板状态与生命周期初始化辅助，再评估把首页/详情/
+播放页面状态聚合到独立 State 对象的边界。
