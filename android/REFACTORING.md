@@ -535,7 +535,31 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 23：ContentRepository 弹幕与网络/设备身份迁移
+
+状态：已完成。
+
+- 将弹幕窗口、频控、线路切换和原始窗口读取移到 `ContentRepositoryDanmaku.kt`。
+- 将连接预热、签名预热、设备注册、TNC 请求和响应解析移到
+  `ContentRepositoryNetwork.kt`。
+- `danmaku`、`danmakuRawWindow`、`preconnect`、`warmSignature`、`registerDevice`、
+  `registerAnonymousDevice`、`refreshTncAsync` 均保留原公开签名。
+- `text` 反射入口暂留原文件，避免改变 `CodecProbe` 依赖的声明形态。
+- `ContentRepository.kt` 从 2248 行降到 1959 行；`ContentRepositoryDanmaku.kt` 为 99 行，
+  `ContentRepositoryNetwork.kt` 为 313 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:core:compileKotlin` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆分 `ContentRepository` 的通用 `text` 传输与请求值组装，先核对反射入口后
-再迁移；随后整理身份快照与跨服务装配。
+按业务目录重组 `core/content` 的已拆分文件，并把 TV 主入口从通用 `MainActivity`
+改为明确表达电视端职责的类名；先完成引用全量核对和导航/Manifest 回归。
