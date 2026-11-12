@@ -57,10 +57,10 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 状态：已完成。
 
 - 将 `ContentRepository.kt` 移到 `core/.../content/`，Kotlin 包名保持不变。
-- 将内容模型原样移到 `ContentModels.kt`，公开类型全限定名不变。
+- 将内容模型原样移到 `model/ContentModels.kt`，公开类型全限定名不变。
 - `CATALOG_FIRST_PAGE_SIZE` 和文件级顶层工具函数保留在原文件，以维持
   `ContentRepositoryKt` facade。
-- `ContentRepository.kt` 从 6041 行降到 5816 行；`ContentModels.kt` 为 235 行。
+- `ContentRepository.kt` 从 6041 行降到 5816 行；`model/ContentModels.kt` 为 235 行。
 
 验证：
 
@@ -81,7 +81,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 标签、季号、热度、作者和 JSON 字段读取保持原实现，仅迁移到同包内部对象。
 - `publisher`、`tagsOf`、`heatValue` 保留原公开方法签名，内部委托新解析器。
 - 网络请求、分页 offset/limit、游标推进、重试、缓存和并发逻辑未移动。
-- `ContentRepository.kt` 从 5816 行降到 5473 行；`ContentCatalogParser.kt` 为 400 行。
+- `ContentRepository.kt` 从 5816 行降到 5473 行；`catalog/CatalogParser.kt` 为 400 行。
 
 验证：
 
@@ -100,7 +100,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 新增 `ContentSearchParser`，集中联想词、官网搜索结果、搜索 tab、卡片与标题解析。
 - 搜索网络发送、空响应重试、游标、并发、官网降级、诊断和设备自愈仍留在原类。
 - 搜索 tab 数据结构改为内部解析器中的私有数据类，不暴露公开 API。
-- `ContentRepository.kt` 从 5473 行降到 5335 行；`ContentSearchParser.kt` 为 195 行。
+- `ContentRepository.kt` 从 5473 行降到 5335 行；`search/SearchParser.kt` 为 195 行。
 
 验证：
 
@@ -120,7 +120,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 新增 `ContentAccountRequests`，集中预约、收藏、进度上传和历史删除请求体。
 - 公开账号方法、重试次数、退避顺序、日志、会话校验和调用时序仍留在原类。
 - 历史删除的 `clock()` 仍按每条记录调用，没有改成整批共用时间。
-- `ContentRepository.kt` 从 5335 行降到 5268 行；`ContentAccountApi.kt` 为 174 行。
+- `ContentRepository.kt` 从 5335 行降到 5268 行；`account/AccountApi.kt` 为 174 行。
 
 验证：
 
@@ -139,7 +139,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 新增 `ContentDetailParser`，集中详情响应、相关作品 cell、发行方 tab 与卡片解析。
 - 详情空响应回退、签名、缓存写入、作者补查时机、相关作品换线重试和作者作品并发仍留在原类。
 - `RelatedEntry` 移到同包内部类型，公开 API 不变。
-- `ContentRepository.kt` 从 5268 行降到 5184 行；`ContentDetailParser.kt` 为 101 行。
+- `ContentRepository.kt` 从 5268 行降到 5184 行；`detail/DetailParser.kt` 为 101 行。
 
 验证：
 
@@ -159,7 +159,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 单飞闸门、模型缓存、身份代次、设备档位、备用设备、预算、重试和失败恢复仍留在原类。
 - `videoModel` 反射入口、`text` 反射入口和缓存键均未改变。
 - 弹幕继续使用原有独立行解析，请求窗口与频控循环未移动。
-- `ContentRepository.kt` 从 5184 行降到 5023 行；`ContentPlaybackParser.kt` 为 169 行。
+- `ContentRepository.kt` 从 5184 行降到 5023 行；`playback/PlaybackParser.kt` 为 169 行。
 
 验证：
 
@@ -353,11 +353,11 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 状态：已完成。
 
 - 将账号资料、收藏、历史、点赞、预约、写接口、清空历史和账号聚合整体移到
-  `ContentRepositoryAccount.kt`。
+  `account/AccountService.kt`。
 - 公开账号方法保留在 `ContentRepository` 上，只委托到内部扩展实现，调用方签名不变。
 - 账号传输、重试、退避、日志、写队列、历史分片和并发装配保持原实现。
 - 为跨文件扩展开放了账号相关内部成员，均使用 `internal`，没有扩大公开 API。
-- `ContentRepository.kt` 从 5023 行降到 4629 行；`ContentRepositoryAccount.kt` 为 417 行。
+- `ContentRepository.kt` 从 5023 行降到 4629 行；`account/AccountService.kt` 为 417 行。
 
 验证：
 
@@ -374,13 +374,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 状态：已完成。
 
 - 将详情、相关作品、作者作品编排、发行方作品探测、补季和作者补齐整体移到
-  `ContentRepositoryDetail.kt`。
+  `detail/DetailService.kt`。
 - `detail`、`related`、`authorWorks` 仍保留在 `ContentRepository` 上，公开签名和
   委托顺序不变。
 - 详情空响应改 GET 重试、详情缓存写入、相关作品缓存、作者作品并发探测、分页重试、
   补季并发、超时和异常吞掉范围均按原实现迁移。
 - 为跨文件扩展开放了详情/作者链路所需的 `internal` 成员；没有增加新的公开 API。
-- `ContentRepository.kt` 从 4629 行降到 3955 行；`ContentRepositoryDetail.kt` 为 695 行。
+- `ContentRepository.kt` 从 4629 行降到 3955 行；`detail/DetailService.kt` 为 695 行。
 
 验证：
 
@@ -400,13 +400,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 状态：已完成。
 
 - 将榜单取数、分类分页、分类 offset/limit、分类请求签名、空响应换线路、备用设备
-  重试和分类 URL 移到 `ContentRepositoryCatalog.kt`。
+  重试和分类 URL 移到 `catalog/CatalogService.kt`。
 - `rankRaw`、`rank`、`homeFeed`、`category`、`categoryFeed` 仍保留在
   `ContentRepository`，公开签名、默认参数和返回结构不变。
 - 分类推荐流的 `has_more` 补偿、首屏/后续页重试次数、429 与 4xx 分支、日志和线程中断
   处理均按原实现迁移。
 - 只将跨文件扩展所需的成员调整为 `internal`，没有新增公开 API。
-- `ContentRepository.kt` 从 3955 行降到 3727 行；`ContentRepositoryCatalog.kt` 为 235 行。
+- `ContentRepository.kt` 从 3955 行降到 3727 行；`catalog/CatalogService.kt` 为 235 行。
 
 验证：
 
@@ -424,11 +424,11 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 状态：已完成。
 
 - 将推荐流取数、官方推荐请求、推荐查询参数、推荐曝光上报、上报配置刷新和推荐会话头
-  移到 `ContentRepositoryRecommend.kt`。
+  移到 `recommend/RecommendService.kt`。
 - `recommendFeed` 和 `reportRecommendStats` 仍保留为 `ContentRepository` 的接口实现，
   只委托到内部扩展实现。
 - 推荐游标前进规则、官方 session UUID、配置刷新锁、上报重试与异常路径均保持原实现。
-- `ContentRepository.kt` 从 3727 行降到 3360 行；`ContentRepositoryRecommend.kt` 为 393 行。
+- `ContentRepository.kt` 从 3727 行降到 3360 行；`recommend/RecommendService.kt` 为 393 行。
 
 验证：
 
@@ -446,12 +446,12 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 状态：已完成。
 
 - 将联想词、热搜词、App 综合搜索、官网搜索、搜索游标、空响应重试、设备自愈和官网降级
-  移到 `ContentRepositorySearch.kt`。
+  移到 `search/SearchService.kt`。
 - `suggestions`、`webSuggestions`、`hotSearches`、两个 `search` 入口和 `webSearch`
   仍保留在 `ContentRepository`，公开签名与默认参数不变。
 - 搜索页并发、官网物理页重试、ThreadLocal 失败摘要、游标过期、诊断记录和取消传播
   均按原实现迁移。
-- `ContentRepository.kt` 从 3360 行降到 2980 行；`ContentRepositorySearch.kt` 为 444 行。
+- `ContentRepository.kt` 从 3360 行降到 2980 行；`search/SearchService.kt` 为 444 行。
 
 验证：
 
@@ -469,12 +469,12 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 状态：已完成。
 
 - 将播放模型探测、批量模型、模型缓存、设备档位重试、备用设备、进程级单飞闸门、
-  请求节流、预取和地址预算 client 移到 `ContentRepositoryPlaybackModel.kt`。
+  请求节流、预取和地址预算 client 移到 `playback/PlaybackModelService.kt`。
 - `videoModel` 仍保留为 `ContentRepository` 上的同名方法，参数数量不变，
   `CodecProbe` 的反射入口不被破坏。
 - `prefetchModels` 保留公开签名；模型缓存键、预算、失败顺序、空响应升级和备用设备
   时序均按原实现迁移。
-- `ContentRepository.kt` 从 2980 行降到 2397 行；`ContentRepositoryPlaybackModel.kt`
+- `ContentRepository.kt` 从 2980 行降到 2397 行；`playback/PlaybackModelService.kt`
   为 621 行。
 
 验证：
@@ -493,11 +493,11 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 状态：已完成。
 
 - 将取流、内存/落盘地址缓存、取流锁、缓存失效和重试入口移到
-  `ContentRepositoryStream.kt`。
+  `playback/StreamCacheService.kt`。
 - `stream`、`forgetStream`、`forgetStreamAllQualities`、`rotateDeviceForRetry`
   仍保留原公开签名。
 - 地址预算、缓存键、锁粒度、超时转换、落盘窗口和 `device_level` 语义均按原实现迁移。
-- `ContentRepository.kt` 从 2397 行降到 2313 行；`ContentRepositoryStream.kt` 为 109 行。
+- `ContentRepository.kt` 从 2397 行降到 2313 行；`playback/StreamCacheService.kt` 为 109 行。
 
 验证：
 
@@ -514,15 +514,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 状态：已完成。
 
-- 将弹幕窗口、频控、线路切换和原始窗口读取移到 `ContentRepositoryDanmaku.kt`。
+- 将弹幕窗口、频控、线路切换和原始窗口读取移到 `danmaku/DanmakuService.kt`。
 - 将连接预热、签名预热、设备注册、TNC 请求和响应解析移到
-  `ContentRepositoryNetwork.kt`。
+  `network/NetworkBootstrapService.kt`。
 - `danmaku`、`danmakuRawWindow`、`preconnect`、`warmSignature`、`registerDevice`、
   `registerAnonymousDevice`、`refreshTncAsync` 均保留原公开签名。
 - `text` 反射入口暂留原文件，避免改变 `CodecProbe` 依赖的声明形态。
 - 弹幕窗口上限、频控间隔、TNC 超时、注册匿名头、Cookie 覆盖和日志语义保持不变。
-- `ContentRepository.kt` 从 2248 行降到 1959 行；`ContentRepositoryDanmaku.kt` 为 99 行，
-  `ContentRepositoryNetwork.kt` 为 313 行。
+- `ContentRepository.kt` 从 2248 行降到 1959 行；`danmaku/DanmakuService.kt` 为 99 行，
+  `network/NetworkBootstrapService.kt` 为 313 行。
 
 验证：
 
@@ -535,18 +535,19 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
-### 批次 23：ContentRepository 弹幕与网络/设备身份迁移
+### 批次 24：core/content 按业务目录与职责命名重组
 
 状态：已完成。
 
-- 将弹幕窗口、频控、线路切换和原始窗口读取移到 `ContentRepositoryDanmaku.kt`。
-- 将连接预热、签名预热、设备注册、TNC 请求和响应解析移到
-  `ContentRepositoryNetwork.kt`。
-- `danmaku`、`danmakuRawWindow`、`preconnect`、`warmSignature`、`registerDevice`、
-  `registerAnonymousDevice`、`refreshTncAsync` 均保留原公开签名。
-- `text` 反射入口暂留原文件，避免改变 `CodecProbe` 依赖的声明形态。
-- `ContentRepository.kt` 从 2248 行降到 1959 行；`ContentRepositoryDanmaku.kt` 为 99 行，
-  `ContentRepositoryNetwork.kt` 为 313 行。
+- 将内容实现按 `account / catalog / detail / recommend / search / playback /
+  danmaku / network / model` 分目录。
+- 实现文件去掉 `ContentRepositoryXxx` 前缀，改为 `AccountService`、`DetailService`、
+  `CatalogService`、`RecommendService`、`SearchService`、`PlaybackModelService`、
+  `StreamCacheService`、`DanmakuService`、`NetworkBootstrapService`。
+- 解析器改为 `AccountApi`、`CatalogParser`、`DetailParser`、`SearchParser`、
+  `PlaybackParser`、`ContentModels`，目录即职责。
+- Kotlin 包名保持 `com.hgtv.star.core`，避免改变 JVM 类型名、扩展函数名和调用点。
+- 仅移动/重命名文件，代码内容、公开 API、资源、Manifest 和行为不变。
 
 验证：
 
@@ -561,5 +562,6 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 下一批
 
-按业务目录重组 `core/content` 的已拆分文件，并把 TV 主入口从通用 `MainActivity`
-改为明确表达电视端职责的类名；先完成引用全量核对和导航/Manifest 回归。
+把 TV 主入口从通用 `MainActivity` 改为明确表达电视端职责的 `TvMainActivity`，
+同步 Manifest、启动路由、显式 Intent、扩展函数和测试引用；随后按 Home、Detail、
+Player、Recommend、Search、Account、Settings 继续拆 TV 页面。
