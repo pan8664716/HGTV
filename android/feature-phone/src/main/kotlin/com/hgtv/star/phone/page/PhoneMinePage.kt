@@ -7,6 +7,7 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.HorizontalScrollView
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
@@ -29,6 +30,7 @@ import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.tabBarInset
+import com.hgtv.star.shared.compat.clipToCircleCompat
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.shared.ui.SoftStyle
 import kotlinx.coroutines.cancel
@@ -58,16 +60,17 @@ class PhoneMinePage(
     private val leadingRowHeight = context.dp(if (compactTopBar) 56 else 76)
     private val topBar = PhoneTopBar(context)
     private val pageContent = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
-    private val topAvatar = TextView(context).apply {
-        val size = avatarSize
-        text = "红"
-        setTextColor(PhoneStyle.text)
-        phoneSize(14)
-        gravity = Gravity.CENTER
-        minWidth = size
-        minimumHeight = size
-        applySoft(SoftStyle.RAISED, PhoneStyle.surfaceHigh, size / 2f, 3f)
-        contentDescription = "账号"
+    private val topAvatarImage = ImageView(context).apply {
+        scaleType = ImageView.ScaleType.CENTER_CROP
+        clipToCircleCompat(this)
+    }
+    private val topAvatar = FrameLayout(context).apply {
+        applySoft(SoftStyle.RAISED, PhoneStyle.surfaceHigh, avatarSize / 2f, 3f)
+        addView(topAvatarImage, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        contentDescription = "账号头像"
     }
     private val topName = TextView(context).apply {
         text = "未登录"
@@ -141,6 +144,7 @@ class PhoneMinePage(
     private var skipNextOnShownRefresh = initialState != null
     private var refreshing = false
     private var refreshOverlay: FrameLayout? = null
+    private var avatarUrl: String = ""
     /** 当前栏目是否处于批量选择模式；切换栏目 / 筛选或删除后退出。 */
     private var batchMode = false
     private var batchBar: LinearLayout? = null
@@ -409,13 +413,26 @@ class PhoneMinePage(
         return AccountState(signedIn, profile?.nickname, displayId)
     }
 
+    private fun accountAvatarUrl(): String =
+        (PhoneAccountSync.data ?: runCatching { library.accountCache() }.getOrNull()?.data)
+            ?.profile?.avatar.orEmpty()
+
     private fun updateTopAccount() {
         val account = accountState()
         topRefresh.visibility = if (account.signedIn) View.VISIBLE else View.GONE
-        topAvatar.text = if (account.signedIn) {
-            account.nickname?.take(1)?.takeIf { it.isNotBlank() } ?: "红"
-        } else {
-            "红"
+        val avatarUrl = if (account.signedIn) accountAvatarUrl() else ""
+        if (avatarUrl != this.avatarUrl) {
+            this.avatarUrl = avatarUrl
+            if (avatarUrl.isBlank()) {
+                topAvatarImage.setImageDrawable(null)
+            } else {
+                PhoneServices.artwork(context).load(
+                    topAvatarImage,
+                    avatarUrl,
+                    widthPx = avatarSize,
+                    heightPx = avatarSize,
+                )
+            }
         }
         topName.text = when {
             !account.signedIn -> "未登录"
