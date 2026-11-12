@@ -151,9 +151,11 @@ class PhonePlayerActivity : PhoneActivity() {
     internal val rootReady: Boolean get()=::root.isInitialized
     private lateinit var portrait: FrameLayout
     private lateinit var page: PhoneVideoPage
+    internal val playerPage get()=page
 
     private lateinit var landscape: FrameLayout
     private lateinit var landscapeVideo: PlayerView
+    internal val playerLandscapeVideo get()=landscapeVideo
     /**
      * 横屏（全屏）那一层的弹幕。
      *
@@ -258,6 +260,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 下层那一块还活着。不满足时本页自己出画面（详情页、搜索结果、长按菜单等入口）。
      */
     private var feedUnderlay = false
+    internal val playerFeedUnderlay get()=feedUnderlay
     /** 下层那一块 Surface 当前是不是**已经在出本页的画面**（转横屏后会被拿走）。 */
     private var underlayBound = false
     /**
@@ -273,6 +276,9 @@ class PhonePlayerActivity : PhoneActivity() {
     private var userSpeed = 1f
     private var tempSpeed = false
     private var pendingFullscreen = false
+    internal var listenerPendingFullscreen: Boolean
+        get()=pendingFullscreen
+        set(value) { pendingFullscreen=value }
     private var dragging = false
     /**
      * 这次 `finish()` 是「退回推荐页」而不是别的收尾。
@@ -299,6 +305,9 @@ class PhonePlayerActivity : PhoneActivity() {
         returningToFeed && isFinishing && PhoneSession.owner == PhoneSession.Owner.PLAYER
     /** 挂在进程单例播放器上的监听器：每次换集都要先摘掉旧的，否则会越积越多。 */
     private var listener: Player.Listener? = null
+    internal var playerListener: Player.Listener?
+        get()=listener
+        set(value) { listener=value }
     /**
      * 前台媒体会话：接耳机线控 / 蓝牙耳机 / 锁屏与通知栏的媒体面板。
      *
@@ -327,11 +336,23 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 最近一次视频尺寸 / 播放错误：调试面板要读，但只有监听器里才有。 */
     private var debugVideo = "?"
     private var debugError = ""
+    internal var listenerDebugVideo: String
+        get()=debugVideo
+        set(value) { debugVideo=value }
+    internal var listenerDebugError: String
+        get()=debugError
+        set(value) { debugError=value }
     private var seekFrom = 0L
     /** 上一集读到过的时长：无感换集后 `duration` 已经是新一集的，写 completed 要用旧值。 */
     private var lastDuration = 0L
+    internal var listenerLastDuration: Long
+        get()=lastDuration
+        set(value) { lastDuration=value }
     /** 下一次允许发起预热的时间（避免每秒重试）。 */
     private var prefetchAt = 0L
+    internal var listenerPrefetchAt: Long
+        get()=prefetchAt
+        set(value) { prefetchAt=value }
     /** 正在预热的那一集（防重入）。 */
     private var prefetchingFor = ""
     /** 已经挂进播放列表、等着无感推进的那一集（它的 [RemoteVideo] 要留给会话）。 */
@@ -371,6 +392,12 @@ class PhonePlayerActivity : PhoneActivity() {
     private var manualNextTarget = -1
     /** 手动切换前记下的当前进度：中途换集只能保存续播点，不能写成 completed。 */
     private var manualNextPosition = 0L
+    internal var listenerManualNextTarget: Int
+        get()=manualNextTarget
+        set(value) { manualNextTarget=value }
+    internal var listenerManualNextPosition: Long
+        get()=manualNextPosition
+        set(value) { manualNextPosition=value }
     /** 借来的那块视频现在被平移了多少像素（翻页动画的起点）。 */
     private var feedVideoDy = 0f
 
@@ -2239,7 +2266,7 @@ class PhonePlayerActivity : PhoneActivity() {
             }
         }
         PhoneSession.publish(d, sessionIndex, video, video.info.quality, PhoneSession.Owner.PLAYER)
-        attachListener(exo)
+        attachPlayerListener(exo)
         // 播放列表里可能还挂着上一轮排好的「下一集」：`swapMediaSource` 换源时已经把列表清空，
         // 但 `nextQueued` 这个标志还停在 true。不对一次的话，片尾判定会以为「已经排好了」，
         // 一集放完就停在最后一帧（用户读到的就是「没有自动下一集」）。
@@ -2734,7 +2761,7 @@ class PhonePlayerActivity : PhoneActivity() {
         PhoneSession.clearNext()
         exo.setPlaybackSpeed(userSpeed)
         exo.playWhenReady = true
-        attachListener(exo)
+        attachPlayerListener(exo)
         if (d != null) {
             PhoneSession.publish(d, index, video, video.info.quality, PhoneSession.Owner.PLAYER)
         }
@@ -2820,211 +2847,20 @@ class PhonePlayerActivity : PhoneActivity() {
         }
     }
 
-    /** 挂播放器监听（换集时先摘旧的：进程单例上不能越积越多）。 */
-    private fun attachListener(exo: ExoPlayer) {
-        listener?.let { exo.removeListener(it) }
-        val hook = object : Player.Listener {
-            /**
-             * 片尾。
-             *
-             * * 播放列表里还挂着下一集 → ExoPlayer 自己会无感推进，这里什么都不做
-             *   （界面由 [onAdvanced] 接手）；
-             * * 没有下一集 → 最后一集播完，走老路。
-             */
-            override fun onPlaybackStateChanged(state: Int) {
-                player?.let { playbackSessionState.onPlayerState(state, it.playWhenReady) }
-                syncKeepScreenOn()
-                syncDanmakuClockNow()
-                syncProgressBarsNow()
-                // 真的能放了：重试窗口结束、错误页收起（与电视端「出第一帧」同一职责）。
-                syncBufferingUi(state)
-                if (state == Player.STATE_READY) {
-                    watchdog.onReady()
-                    notePlaybackHealthy()
-                }
-                if (state == Player.STATE_ENDED) {
-                    // 进程级 `nextQueued` 可能比播放器列表晚一拍清掉。片尾只信
-                    // 播放器当前真实是否还有下一项；没有就立刻走下一季 / 全剧结束。
-                    val hasNextItem = runCatching {
-                        val exo = player ?: return@runCatching false
-                        val current = exo.currentMediaItemIndex.coerceAtLeast(0)
-                        exo.mediaItemCount > current + 1
-                    }.getOrDefault(false)
-                    if (hasNextItem) return
-                    PhoneSession.nextQueued = false
-                    next()
-                }
-            }
-
-            /** 无感换集：自动推进或手动 seek 到队列下一项时回调。 */
-            override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
-                val nextIndex = detail?.episodes?.indexOf(mediaItem?.mediaId).takeIf { it != null && it >= 0 }
-                    ?: (index + 1)
-                val manual = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK &&
-                    manualNextTarget == nextIndex
-                if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && !manual) return
-                if (manual) manualNextTarget = -1
-                if (manual) {
-                    onAdvanced(
-                        nextIndex,
-                        completedPrevious = false,
-                        previousPosition = manualNextPosition,
-                        clearDanmakuOnSwitch = true,
-                    )
-                    manualNextPosition = 0L
-                } else {
-                    onAdvanced(nextIndex)
-                }
-            }
-
-            // 只同步底部那颗按钮的图标。中心图标**不跟着 isPlaying 走**：
-            // 缓冲卡一下、片尾、切集都会让 isPlaying 变 false，那时冒出一个暂停图标
-            // 会让人以为「自己按了暂停」。中心图标只在用户明确操作时出现。
-            override fun onIsPlayingChanged(isPlaying: Boolean) {
-                syncPlayGlyph()
-                syncDanmakuClockNow()
-                syncProgressBarsNow()
-            }
-
-            override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
-                syncKeepScreenOn()
-                syncDanmakuClockNow()
-            }
-
-            override fun onPlaybackParametersChanged(parameters: com.google.android.exoplayer2.PlaybackParameters) {
-                syncDanmakuClockNow()
-            }
-
-            override fun onPositionDiscontinuity(
-                oldPosition: Player.PositionInfo,
-                newPosition: Player.PositionInfo,
-                reason: Int,
-            ) {
-                danmakuTarget()?.resetCursor()
-                syncDanmakuClockNow()
-                syncProgressBarsNow()
-            }
-
-            override fun onVideoSizeChanged(videoSize: VideoSize) {
-                playbackSessionState.onVideoSize(videoSize.width, videoSize.height)
-                debugVideo = "${videoSize.width}x${videoSize.height}"
-                // 画面模式按用户选择走，**不按片源方向强制 ZOOM**：
-                // 竖屏短剧在竖屏里等比铺满会裁掉左右，换集后突然放大就是从这里来的。
-                val target = (library?.frameMode ?: VideoFrameMode.FIT).toFit().resizeMode()
-                page.setResizeMode(target)
-                if (landscapeMode) landscapeVideo.resizeMode = target
-                if (feedUnderlay) PhoneSession.setFeedVideoResize(target)
-                page.updateVideoFrame(videoSize.width, videoSize.height)
-                updateLandscapeVideoFrame(videoSize.width, videoSize.height)
-                if (pendingFullscreen) root.post { enterPendingFullscreen() }
-            }
-
-            override fun onRenderedFirstFrame() {
-                // 部分设备只回调首帧、不走逐帧心跳；首帧同样是画面已经上屏的硬证据。
-                watchdog.onFrame()
-            }
-
-            override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
-                // 调试面板要把错误码留下：用户报「花屏 / 有声无画」时，这一行就是结论。
-                debugError = "${error.errorCodeName}(${error.errorCode})"
-                syncDebugOverlay()
-                // 自愈：同档重建 / 降档 / 退避重试 / 错误页，决策全在 `:core`（见 PhonePlaybackRecovery）。
-                handlePlayerFailure(error)
-            }
-        }
-        listener = hook
-        exo.addListener(hook)
-        // 「画面还在走」的唯一硬证据是逐帧回调：播放位置在走、声音在响，都可能只是音频在动。
-        // 回调在播放线程上、每帧一次，因此这里只写一个 volatile 字段，不碰任何 View。
-        exo.setVideoFrameMetadataListener { _, _, _, _ ->
-            // 调试包注入「有声音无画面」（`DebugFaults.STALL_FRAME`）：故意不记账，
-            // 让看门狗那条链路能在开发机上按需复现。正式包里 BuildConfig.DEBUG 是常量 false。
-            if (!com.hgtv.star.shared.BuildConfig.DEBUG ||
-                com.hgtv.star.shared.debug.DebugFaults.mode(this) !=
-                com.hgtv.star.shared.debug.DebugFaults.Mode.STALL_FRAME
-            ) {
-                lastFrameAt = android.os.SystemClock.elapsedRealtime()
-                watchdog.onFrame()
-            }
-        }
-    }
-
-    /**
-     * 无感换集：ExoPlayer 已经把下一集的 period 推上屏了，这里只把**界面与记录**跟上。
-     *
-     * 与 TV 的 `onEpisodeAdvanced` 同一套职责划分：
-     *
-     * * 播完那一集按 `completed` 落盘（此时 `duration` 已经是新一集的了，必须用旧值）；
-     * * 集号、标题、选集按钮、会话全部换到新一集；
-     * * **不重设媒体源**——重设就会黑屏重来，那正是要避免的。
-     */
-    private fun onAdvanced(
-        nextIndex: Int,
-        completedPrevious: Boolean = true,
-        previousPosition: Long = 0L,
-        clearDanmakuOnSwitch: Boolean = false,
-    ) {
-        val d = detail ?: return
-        if (nextIndex !in d.episodes.indices) return
-        val previous = index
-        val previousDuration = lastDuration
-
-        reportRecommendEvent(
-            if(completedPrevious) com.hgtv.star.core.RecommendBehavior.Event.PLAY_COMPLETE
-            else com.hgtv.star.core.RecommendBehavior.Event.SKIPPED,
-            positionMs=previousPosition,
-            durationMs=previousDuration,
-        )
-
-        // 播完那一集：写 completed（用切走之前记下的时长）。
-        val lib = library
-        if (lib != null && previous in d.episodes.indices && previousDuration > 0) {
-            // 自动推进才是「整集看完」；手动上滑是中途换集，只保存当前续播点。
-            val done = playbackSessionState.progress.snapshot(
-                series = d.series,
-                episodeId = d.episodes[previous],
-                episodeIndex = previous,
-                position = previousPosition,
-                duration = previousDuration,
-                completed = completedPrevious,
-            )
-            runCatching { lib.save(done) }
-            // 账号侧也要跟着走（与 TV 的 `syncProgress` 同一条路）：不推的话，
-            // 在手机上看完的这几集换到电视上还是「没看过」。
-            runCatching { PhoneAccountSync.progress(this, done, d.episodes.size) }
-        }
-
-        index = nextIndex
-        PhoneSession.nextQueued = false
-        PhoneSession.clearNext()
-        bindEpisodeUi(d, nextIndex, clearDanmakuOnSwitch)
-        syncChips()
-        lastDuration = 0
-        prefetchAt = 0
-        // 无感切集没有走 `attach()`：上一集出帧后看门狗已经撤掉，这里必须按新一集重挂。
-        // 否则音频继续走、视频停在上一帧时，没有任何恢复路径会被触发。
-        lastFrameAt = 0L
-        armPictureWatchdog()
-        // 会话换成**这一集**的 RemoteVideo：它在挂队列时就被 `queuedVideo` 记下了。
-        // 用 `PhoneSession.remote` 会把上一集的引用写回去——那一份马上要关，
-        // 信息流接手时会拿到一个已关闭的传输。
-        val video = queuedVideo
-        queuedVideo = null
-        queuedEpisodeId = ""
-        if (video != null) {
-            remote = video
-            PhoneSession.publish(d, nextIndex, video, video.info.quality, PhoneSession.Owner.PLAYER)
-        }
-        reportRecommendEvent(
-            com.hgtv.star.core.RecommendBehavior.Event.PLAY_START,
-            positionMs=0,
-            durationMs=0,
-            episodeIndexOverride=nextIndex,
-        )
-        prepareNextSeasonIfNeeded(d)
-        muteBufferingUi()
-        android.util.Log.i("HGTV-PHONE", "advanced seamlessly to ${nextIndex + 1}")
-    }
+    internal fun syncKeepScreenOnForListener() = syncKeepScreenOn()
+    internal fun syncDanmakuClockNowForListener() = syncDanmakuClockNow()
+    internal fun syncProgressBarsNowForListener() = syncProgressBarsNow()
+    internal fun syncBufferingUiForListener(state: Int) = syncBufferingUi(state)
+    internal fun syncPlayGlyphForListener() = syncPlayGlyph()
+    internal fun danmakuTargetForListener() = danmakuTarget()
+    internal fun updateLandscapeVideoFrameForListener(width: Int, height: Int) =
+        updateLandscapeVideoFrame(width, height)
+    internal fun enterPendingFullscreenForListener() = enterPendingFullscreen()
+    internal fun syncDebugOverlayForListener() = syncDebugOverlay()
+    internal fun bindEpisodeUiForListener(d: Detail, episodeIndex: Int, clearDanmakuOnSwitch: Boolean) =
+        bindEpisodeUi(d, episodeIndex, clearDanmakuOnSwitch)
+    internal fun muteBufferingUiForListener() = muteBufferingUi()
+    internal fun syncChipsForListener() = syncChips()
 
     private fun syncChips() {
         syncLandscapeSettingsInfo()

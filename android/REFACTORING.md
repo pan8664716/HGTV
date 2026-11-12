@@ -865,6 +865,32 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 37：手机播放器监听与无感换集迁移
+
+状态：已完成。
+
+- 将播放器监听装配、片尾判断、手动 / 自动换集、视频尺寸、首帧、错误与逐帧回调移到
+  `player/PhonePlayerListener.kt`。
+- 将无感换集的完成记录、账号进度同步、界面重绑、看门狗重挂、会话发布和下一季准备一并迁移。
+- 保留监听器先摘旧再挂新、队列项判据、回调顺序、`lastFrameAt` 与 `DebugFaults.STALL_FRAME`
+  行为。
+- 新增若干 `internal` 只读 / 委托与单行方法投影，未扩大公开 API。
+- `PhonePlayerActivity.kt` 从 4100 行降到 3936 行；`PhonePlayerListener.kt` 为 216 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 迁移后的无感换集实现体按缩进和委托名归一化后与迁移前逐行一致；监听器主体仅替换字段
+  投影。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-继续拆 `PhonePlayerActivity.kt` 的播放器监听、画面看门狗与进度落盘辅助。
+继续拆 `PhonePlayerActivity.kt` 的播放进度、预取与队列下一集辅助。
