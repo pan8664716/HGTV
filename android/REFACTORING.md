@@ -891,6 +891,39 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 38：手机播放进度、预取与队列迁移
+
+状态：已完成。
+
+- 将每秒 ticker、进度 / 缓存段刷新、断点落盘、下一集预取和队列挂载移到
+  `player/PhonePlaybackProgress.kt`。
+- 保留 2 秒预取起点、10 分钟地址安全窗口、8 秒失败退避、14 集模型队列、
+  按集定时不挂队列和挂载失败兜底。
+- 新增进度视图、ticker、拖动态、预取状态和 companion 常量的 `internal` 投影；
+  未扩大公开 API。
+- `PhonePlayerActivity.kt` 从 3936 行降到 3782 行；`PhonePlaybackProgress.kt` 为 187 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译发现 companion 常量投影需通过类名访问，修正后重跑通过；未改阈值或预取逻辑。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
+### 夜间阶段摘要（批次 34–38）
+
+- 批次 34–38 全部完成并独立提交，手机播放页的续季、地址重试、浮层、监听与进度职责已拆分。
+- `PhonePlayerActivity.kt` 从 4605 行降到 3782 行；新增职责文件均低于 300 行。
+- 每批聚合编译、Lint、共享单测与 Debug APK 均通过，无新增 Lint Error / Fatal。
+- `:core:test` 最近为 435 例、24 失败、28 跳过，未高于基线。
+- 下一阶段继续拆手机播放页的媒体会话、网络恢复与剩余形态切换辅助。
+
 ## 下一批
 
-继续拆 `PhonePlayerActivity.kt` 的播放进度、预取与队列下一集辅助。
+继续拆 `PhonePlayerActivity.kt` 的媒体会话、网络恢复与形态切换辅助。
