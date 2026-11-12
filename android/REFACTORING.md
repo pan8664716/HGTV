@@ -191,7 +191,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 8：Library 偏好编解码
+
+状态：已完成。
+
+- 新增 `LibraryPreferenceCodec`，统一导航 / 首页隐藏项、推荐游标、推荐范围、受众和设备形态的编解码。
+- 白名单过滤、逗号分隔格式、推荐体裁固定顺序、游标长度上限和控制字符过滤保持不变。
+- SharedPreferences 键、默认值、写入队列、会话镜像、设备注册和启动迁移均未移动。
+- `Library.kt` 仍为 1984 行；`LibraryPreferenceCodec.kt` 为 26 行。
+
+验证：
+
+- `git diff --check` 通过。
+- `:app:assembleDebug` 通过。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-批次 8 处理 `Library` 的设备身份、注册状态和推荐偏好存储，保留会话镜像、迁移键、
-写队列和所有持久化语义。继续按既定计划执行。
+批次 9 处理 `PhoneFeedView` 的 Pager、Adapter 和 ViewHolder，不移动播放器、推荐请求、
+预取、手势或页面交接。继续按既定计划执行。

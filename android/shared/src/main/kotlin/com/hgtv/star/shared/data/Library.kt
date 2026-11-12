@@ -1526,9 +1526,9 @@ class Library(context: Context) {
     var hiddenNav: Set<String>
         // 只保留白名单里的几枚：设置**始终显示**，
         // 旧版本磁盘上残留的这几个 key 读回来直接滤掉。
-        get() = state().settings.hiddenNav.split(',').filter { it in NAV_KEYS }.toSet()
+        get() = LibraryPreferenceCodec.decodeCsv(state().settings.hiddenNav,NAV_KEYS)
         private set(value) {
-            val clean = value.filter { it in NAV_KEYS && it != "settings" }.toSet()
+            val clean = LibraryPreferenceCodec.encodeCsv(value,NAV_KEYS,setOf("settings"))
             if (clean == hiddenNav) return
             state().settings = state().settings.copy(hiddenNav = clean.joinToString(","))
             put("hiddenNav", clean)
@@ -1587,9 +1587,9 @@ class Library(context: Context) {
      * 本机记录本身一份不删，热播栏关掉也不影响榜单页与推荐页。
      */
     var hiddenHome: Set<String>
-        get() = state().settings.hiddenHome.split(',').filter { it in HOME_KEYS }.toSet()
+        get() = LibraryPreferenceCodec.decodeCsv(state().settings.hiddenHome,HOME_KEYS)
         private set(value) {
-            val clean = value.filter { it in HOME_KEYS }.toSet()
+            val clean = LibraryPreferenceCodec.encodeCsv(value,HOME_KEYS)
             if (clean == hiddenHome) return
             state().settings = state().settings.copy(hiddenHome = clean.joinToString(","))
             put("hiddenHome", clean)
@@ -1614,7 +1614,7 @@ class Library(context: Context) {
         // 读的是 [loadAsync] 那一次读盘时抄下来的值：主线程上不碰 SharedPreferences。
         get() = recommendCursorCached
         set(value) {
-            val clean=value.take(120).filter { !it.isISOControl() }
+            val clean=LibraryPreferenceCodec.sanitizeCursor(value,120)
             if(clean==recommendCursorCached) return
             recommendCursorCached=clean
             put("recommendCursor", clean)
@@ -1632,7 +1632,7 @@ class Library(context: Context) {
     var phoneFeedCursor: String
         get() = phoneFeedCursorCached
         set(value) {
-            val clean = value.take(600).filter { !it.isISOControl() }
+            val clean = LibraryPreferenceCodec.sanitizeCursor(value,600)
             if (clean == phoneFeedCursorCached) return
             phoneFeedCursorCached = clean
             put("phoneFeedCursor", clean)
@@ -1744,13 +1744,13 @@ class Library(context: Context) {
      */
     var recommendGenreOff: Set<String>
         // 磁盘上是一行逗号分隔的标识；读的时候按白名单过滤，坏值直接当没关。
-        get() = recommendGenreOffCached.split(',').filter { it in CategoryGenres.recommendableIds }.toSet()
+        get() = LibraryPreferenceCodec.decodeGenreOff(recommendGenreOffCached)
         private set(value) {
             val clean=value.filter { it in CategoryGenres.recommendableIds }.toSet()
             // 三类全关没有任何意义（等于不筛体裁），一律按「没改」处理。
             if(clean.size>=CategoryGenres.recommendableIds.size) return
             if(clean==recommendGenreOff) return
-            val joined=CategoryGenres.recommendableIds.filter { it in clean }.joinToString(",")
+            val joined=LibraryPreferenceCodec.encodeGenreOff(clean)
             recommendGenreOffCached=joined
             put("recommendGenreOff", joined)
         }
@@ -1791,7 +1791,7 @@ class Library(context: Context) {
     var recommendGender: String
         get() = recommendGenderCached
         set(value) {
-            val clean=value.trim().take(64).filter { !it.isISOControl() }
+            val clean=LibraryPreferenceCodec.sanitizeCursor(value.trim(),64)
             if(clean==recommendGenderCached) return
             recommendGenderCached=clean
             put("recommendGender", clean)
@@ -1809,7 +1809,7 @@ class Library(context: Context) {
     var deviceForm: String
         get() = deviceFormCached
         set(value) {
-            val clean=when(value) { "phone","tablet","tv" -> value; else -> "auto" }
+            val clean=LibraryPreferenceCodec.normalizeDeviceForm(value)
             if(clean==deviceFormCached) return
             deviceFormCached=clean
             put("deviceForm", clean)
@@ -1820,7 +1820,7 @@ class Library(context: Context) {
      * 返回 false 表示写盘失败，此时调用方不应重启。
      */
     fun setDeviceFormNow(value: String): Boolean {
-        val clean=when(value) { "phone","tablet","tv" -> value; else -> "auto" }
+        val clean=LibraryPreferenceCodec.normalizeDeviceForm(value)
         val previous=deviceFormCached
         deviceFormCached=clean
         val saved=runCatching {
