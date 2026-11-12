@@ -787,7 +787,34 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `:core:test` 最近为 435 例、24 失败、28 跳过，未高于基线。
 - 下一阶段转入 `PhonePlayerActivity.kt`，优先拆状态字段与播放生命周期辅助。
 
+### 批次 34：手机播放页下一季续播职责迁移
+
+状态：已完成。
+
+- 将最后一集查询下一季、缓存命中、自动续季、底部提示、代次取消和全剧结束处理移到
+  `player/PhoneNextSeason.kt`。
+- 新增 `PhoneNextSeasonState` 内部状态容器，集中保存下一季、查询 Job、代次与提示视图；
+  迁移前已确认相关私有方法只在 `PhonePlayerActivity.kt` 内调用。
+- 保留原查询并发、`PhoneSession.relatedWorks` 缓存、协程取消、`autoNext` 判据和
+  `play(0)` 调用顺序。
+- 新增三个 `internal` 委托，供续季扩展读取定时器、提示粘滞状态并执行原定时停止逻辑。
+- `PhonePlayerActivity.kt` 从 4605 行降到 4423 行；`PhoneNextSeason.kt` 为 201 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 首次编译发现扩展协程标签与状态容器 `lateinit` 判断边界，改为捕获原 Activity 引用并
+  增加只读就绪投影后重跑通过，未改查询或取消语义。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ## 下一批
 
-开始拆分 `PhonePlayerActivity.kt` 的状态字段与播放生命周期辅助，保持手机播放行为和
-现有公开 facade 不变。
+继续拆 `PhonePlayerActivity.kt` 的播放错误、重试与看门狗状态辅助，随后处理相关剧集和
+作者作品浮层职责。

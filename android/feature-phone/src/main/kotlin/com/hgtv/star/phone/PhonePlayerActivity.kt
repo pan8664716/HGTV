@@ -279,16 +279,8 @@ class PhonePlayerActivity : PhoneActivity() {
      * 推荐页接手后再 `play()` 又要重新缓冲一次——用户读到的就是「退回去内容断了一下」。
      */
     private var returningToFeed = false
-    /** 最后一集查到的下一季与底部提示。 */
-    private var nextSeason: Series? = null
-    private var nextSeasonFor = ""
-    private var nextSeasonLoading = false
-    private var nextSeasonToken = 0
-    private var nextSeasonJob: Job? = null
-    private var autoNextSeasonPending = false
-    private var nextSeasonOpening = false
-    private var nextSeasonFinishedFor = ""
-    private lateinit var nextSeasonNotice: TextView
+    /** 最后一集查到的下一季、查询代次与底部提示。 */
+    internal val nextSeasonState = PhoneNextSeasonState()
     /** 「相关剧集」请求的代次：浮层被换掉 / 关掉之后，在途结果不再往旧视图上写。 */
     private var relatedToken = 0
     /** 「作者作品」当前请求与缓存，同一部剧打开多次不重复搜索。 */
@@ -326,6 +318,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 明天再看不该莫名其妙在半小时后停住——TV 端也是这个语义。
      */
     private val sleepTimer = com.hgtv.star.core.SleepTimer { android.os.SystemClock.elapsedRealtime() }
+    internal val nextSeasonSleepTimer get()=sleepTimer
     /** 「定时关闭」当前选中的档位（[com.hgtv.star.core.SleepTimer.LABELS] 下标）。 */
     private var sleepChoice = 0
     /** 定时已经停过一次：hint 与状态按它走，避免 tick 每秒钟重复报同一句。 */
@@ -346,6 +339,9 @@ class PhonePlayerActivity : PhoneActivity() {
     internal var queuedVideo: RemoteVideo? = null
     internal var queuedEpisodeId = ""
     private var hintSticky = false
+    internal var nextSeasonHintSticky: Boolean
+        get()=hintSticky
+        set(value) { hintSticky=value }
     /** 提示的代次：换集后那句「第N集」延迟收起时，只收自己那一句。 */
     private var hintToken = 0
 
@@ -650,7 +646,7 @@ class PhonePlayerActivity : PhoneActivity() {
             Gravity.TOP or Gravity.CENTER_HORIZONTAL
         ).apply { topMargin = dp(24) })
 
-        nextSeasonNotice = TextView(this).apply {
+        nextSeasonState.nextSeasonNotice = TextView(this).apply {
             setTextColor(PhoneStyle.playerText)
             phoneSize(13)
             gravity = Gravity.CENTER_VERTICAL or Gravity.START
@@ -660,7 +656,7 @@ class PhonePlayerActivity : PhoneActivity() {
             background = roundedBackground(0xCC000000.toInt(), dp(10).toFloat())
             visibility = View.GONE
         }
-        root.addView(nextSeasonNotice, FrameLayout.LayoutParams(
+        root.addView(nextSeasonState.nextSeasonNotice, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.BOTTOM or Gravity.START
         ).apply {
@@ -2553,7 +2549,7 @@ class PhonePlayerActivity : PhoneActivity() {
     ) {
         val d = detail ?: return
         if (episodeIndex !in d.episodes.indices) return
-        nextSeasonFinishedFor = ""
+        nextSeasonState.nextSeasonFinishedFor = ""
         val sameEpisode = episodeIndex == index
         if (!sameEpisode) {
             cancelPlaybackRequest()
@@ -3543,180 +3539,6 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /**
-     * 兜底换集：预热没成功、或列表里没挂上时，片尾仍然要能往下走。
-     *
-     * 与 TV 的 `STATE_ENDED → playEpisode` 同一条路，只是没有「无感」可言（会重新取地址）。
-     */
-    private fun next() {
-        val d = detail ?: return
-        // 定时关闭（按集计）：片尾那一下先问计时器，到点就停在这里，不进下一集。
-        // 与 TV 的 `sleepTimer.episodeEnded()` 同一条判据，且**必须在换集之前**问——
-        // 换完再问就只能停在新一集的第一帧，用户读到的是「它已经跳过去了」。
-        if (!sleepStopped && sleepTimer.episodesLeft > 0 && sleepTimer.episodeEnded()) {
-            stopForSleep()
-            return
-        }
-        if (index + 1 < d.episodes.size) play(index + 1) else advanceToNextSeasonOrFinish(d)
-    }
-
-    /**
-     * 进入最后一集时提前查下一季，查到就在画面底部提示。
-     */
-    private fun prepareNextSeasonIfNeeded(d: Detail) {
-        val active = d.series.id == detail?.series?.id &&
-            index == d.episodes.lastIndex &&
-            library?.autoNext == true &&
-            !sleepStopped
-        if (!active) {
-            clearNextSeasonLookup()
-            return
-        }
-        ensureNextSeason(d.series)
-    }
-
-    private fun clearNextSeasonLookup() {
-        nextSeasonToken++
-        nextSeasonJob?.cancel()
-        nextSeasonJob = null
-        nextSeasonFor = ""
-        nextSeason = null
-        nextSeasonLoading = false
-        autoNextSeasonPending = false
-        nextSeasonOpening = false
-        nextSeasonFinishedFor = ""
-        hideNextSeasonNotice()
-    }
-
-    private fun ensureNextSeason(series: Series) {
-        if (nextSeasonFor == series.id) {
-            if (!nextSeasonLoading) showNextSeasonNotice()
-            return
-        }
-        val token = ++nextSeasonToken
-        nextSeasonJob?.cancel()
-        nextSeasonFor = series.id
-        nextSeason = null
-        nextSeasonLoading = true
-        nextSeasonOpening = false
-        hideNextSeasonNotice()
-        val cached = PhoneSession.relatedWorks(series.id)
-        if (cached != null) {
-            completeNextSeasonLookup(series, cached, token)
-            return
-        }
-        nextSeasonJob = scope.launch {
-            val works = withContext(Dispatchers.IO) {
-                runCatching {
-                    PhoneServices.repository(this@PhonePlayerActivity).related(series.id, series.title)
-                }.getOrNull()
-            }
-            if (token != nextSeasonToken || isFinishing || isDestroyed) return@launch
-            if (works != null) PhoneSession.rememberRelated(series.id, works)
-            completeNextSeasonLookup(series, works, token)
-        }
-    }
-
-    private fun completeNextSeasonLookup(
-        series: Series,
-        works: com.hgtv.star.core.RelatedWorks?,
-        token: Int,
-    ) {
-        if (token != nextSeasonToken || isFinishing || isDestroyed) return
-        nextSeasonJob = null
-        nextSeasonLoading = false
-        nextSeason = works?.let { com.hgtv.star.core.SeriesSeasons.nextSeason(series, it) }
-        if (nextSeason != null) showNextSeasonNotice() else hideNextSeasonNotice()
-        if (autoNextSeasonPending) {
-            autoNextSeasonPending = false
-            val target = nextSeason
-            if (target != null) openNextSeason(target) else finishSeriesPlayback(series)
-        }
-    }
-
-    private fun showNextSeasonNotice() {
-        val d = detail ?: return
-        val target = nextSeason ?: return
-        val active = d.series.id == nextSeasonFor &&
-            index == d.episodes.lastIndex &&
-            library?.autoNext == true &&
-            !sleepStopped
-        if (!active) {
-            hideNextSeasonNotice()
-            return
-        }
-        nextSeasonNotice.text =
-            "将自动播放 ${com.hgtv.star.core.SeriesSeasons.titleWithSeason(target)}"
-        nextSeasonNotice.visibility = View.VISIBLE
-    }
-
-    private fun hideNextSeasonNotice() {
-        if (::nextSeasonNotice.isInitialized) nextSeasonNotice.visibility = View.GONE
-    }
-
-    /** 最后一集播完：有下一季就播第 1 集，否则停在「全剧已播完」。 */
-    private fun advanceToNextSeasonOrFinish(d: Detail) {
-        val series = d.series
-        if (nextSeasonFinishedFor == series.id) return
-        if (library?.autoNext != true) {
-            finishSeriesPlayback(series)
-            return
-        }
-        if (nextSeasonFor == series.id) {
-            if (nextSeasonLoading) {
-                autoNextSeasonPending = true
-                return
-            }
-            val target = nextSeason
-            if (target != null) openNextSeason(target) else finishSeriesPlayback(series)
-            return
-        }
-        autoNextSeasonPending = true
-        ensureNextSeason(series)
-    }
-
-    private fun openNextSeason(target: Series) {
-        if (nextSeasonOpening) return
-        nextSeasonOpening = true
-        autoNextSeasonPending = false
-        hideNextSeasonNotice()
-        val token = ++nextSeasonToken
-        nextSeasonJob?.cancel()
-        nextSeasonJob = scope.launch {
-            val loaded = withContext(Dispatchers.IO) {
-                runCatching {
-                    PhoneServices.repository(this@PhonePlayerActivity).detail(target.id)
-                }.getOrNull()
-            }
-            if (token != nextSeasonToken || isFinishing || isDestroyed) return@launch
-            if (loaded == null || loaded.episodes.isEmpty()) {
-                nextSeasonOpening = false
-                finishSeriesPlayback(detail?.series ?: target)
-                return@launch
-            }
-            nextSeasonOpening = false
-            nextSeasonJob = null
-            nextSeasonFor = ""
-            nextSeason = null
-            nextSeasonLoading = false
-            nextSeasonFinishedFor = ""
-            detail = loaded
-            play(0)
-        }
-    }
-
-    private fun finishSeriesPlayback(series: Series) {
-        nextSeasonFinishedFor = series.id
-        nextSeasonOpening = false
-        autoNextSeasonPending = false
-        hideNextSeasonNotice()
-        player?.pause()
-        hint.text = "全剧已播完"
-        hintSticky = true
-        hint.visibility = View.VISIBLE
-        hint.bringToFront()
-    }
-
-    /**
      * 相关剧集浮层：播放设置里的「相关剧集」使用这一份。
      *
      * 摆法与电视端播放设置里的相关剧集（`buildRelatedRow`）一一对应：
@@ -4248,6 +4070,7 @@ class PhonePlayerActivity : PhoneActivity() {
         syncMediaSession()
         syncKeepScreenOn()
     }
+    internal fun stopForSleepForNextSeason() = stopForSleep()
 
     /**
      * 横屏播放设置：只保留右侧 40% 的可改栏。
