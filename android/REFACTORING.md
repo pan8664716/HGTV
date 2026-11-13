@@ -2802,3 +2802,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 156：PhonePlayer 媒体挂载迁移
+
+状态：已完成。
+
+- 将媒体源交换、Surface 选择、比例修正和 prepare 延迟移到 `PhonePlayerAttach.kt`。
+- 保留下层 Surface、换集队列清理、全屏意图和重试计数清零。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
