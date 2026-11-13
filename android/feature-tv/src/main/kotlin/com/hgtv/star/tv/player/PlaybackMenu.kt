@@ -168,6 +168,7 @@ class PlaybackMenu(private val activity: Activity) : LinearLayout(activity) {
     fun addSlider(
         title: String,min: Float,max: Float,step: Float,value: Float,
         format: (Float) -> String = DanmakuStyle::percent,
+        commitDelayMs: Long = 0L,
         onValue: (Float) -> Unit
     ): PlaybackMenu {
         val line = activity.tvRow().apply {
@@ -185,7 +186,9 @@ class PlaybackMenu(private val activity: Activity) : LinearLayout(activity) {
         // 档位与上面几行的紧凑档选项对齐（52dp 高）；不画内部项名，轨道因此从底板内边距起算。
         val slider = SettingSlider(
             activity, title, min, max, step, value, onValue, format,
-            size = ButtonSize.COMPACT, showName = false
+            commitDelayMs = commitDelayMs,
+            size = ButtonSize.COMPACT,
+            showName = false,
         )
         line.addView(slider, LinearLayout.LayoutParams(0, -2).apply { weight = 1f })
         rows.add(arrayListOf<View>(slider))
@@ -237,6 +240,13 @@ class PlaybackMenu(private val activity: Activity) : LinearLayout(activity) {
      */
     fun sliderValue(row: Int, value: Float) {
         (rows.getOrNull(row)?.firstOrNull() as? SettingSlider)?.value = value
+    }
+
+    /** 面板关闭前把尚未到提交时间的滑杆值立刻落地。 */
+    fun flushPendingSliders() {
+        rows.forEach { controls ->
+            (controls.firstOrNull() as? SettingSlider)?.flushPending()
+        }
     }
 
     /** 把某一行的开关同步到 [checked]，不触发点击回调。 */

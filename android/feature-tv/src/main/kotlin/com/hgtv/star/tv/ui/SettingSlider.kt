@@ -38,6 +38,13 @@ class SettingSlider(
     /** 右侧读数的写法。默认「比例 → 百分比」（`1f` → `100%`）；1..100 的百分数直接传 `{ "${it.toInt()}%" }`。 */
     private val format: (Float) -> String = DanmakuStyle::percent,
     /**
+     * 最后一次调节后延迟多久提交。
+     *
+     * 0 = 每次变化立即回调；倍速这类需要等遥控器长按停稳再生效的滑杆传 500ms。
+     * 延迟期间继续按键 / 拖动只会重置计时，不会反复调用 [onValue]。
+     */
+    private val commitDelayMs: Long = 0L,
+    /**
      * 行高档位。设置页用 [ButtonSize.NORMAL]（与同栏的设置项同高）；
      * 播放界面那块浮层用 [ButtonSize.COMPACT]——那一栏的其它行是紧凑档选项（52dp），
      * 滑动条再高一头就会在滚动列表里显得一截一截的。
@@ -84,6 +91,9 @@ class SettingSlider(
         isClickable = true
     }
 
+    private var pendingCommit: Runnable? = null
+    private var pendingValue: Float? = null
+
     private fun describe() {
         contentDescription = "$label ${format(value)}，左右键调节"
     }
@@ -99,8 +109,34 @@ class SettingSlider(
         val index = Math.round((value - min) / step) + direction
         value = min + index * step
         if (value == before) return false
-        onValue(value)
+        publish(value)
         return true
+    }
+
+    private fun publish(next: Float) {
+        if(commitDelayMs<=0L) {
+            onValue(next)
+            return
+        }
+        pendingValue=next
+        pendingCommit?.let(::removeCallbacks)
+        val task=Runnable {
+            pendingCommit=null
+            val value=pendingValue ?: return@Runnable
+            pendingValue=null
+            onValue(value)
+        }
+        pendingCommit=task
+        postDelayed(task,commitDelayMs)
+    }
+
+    /** 面板关闭 / 控件摘下前把尚未到点的最后一次调节立即提交。 */
+    fun flushPending() {
+        pendingCommit?.let(::removeCallbacks)
+        pendingCommit=null
+        val value=pendingValue ?: return
+        pendingValue=null
+        onValue(value)
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean = when (keyCode) {
@@ -165,7 +201,7 @@ class SettingSlider(
         val next = normalize(min + fraction * (max - min))
         if (next == value) return
         value = next
-        onValue(next)
+        publish(next)
     }
 
     override fun onTouchEvent(event: MotionEvent): Boolean {
@@ -191,6 +227,11 @@ class SettingSlider(
             }
         }
         return super.onTouchEvent(event)
+    }
+
+    override fun onDetachedFromWindow() {
+        flushPending()
+        super.onDetachedFromWindow()
     }
 
     // —— 绘制 ——

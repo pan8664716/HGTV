@@ -6,7 +6,6 @@ import com.hgtv.star.core.DanmakuSpeed
 import com.hgtv.star.core.DanmakuStyle
 import com.hgtv.star.core.EpisodePageSize
 import com.hgtv.star.core.PlaybackQuality
-import com.hgtv.star.core.PlaybackSpeed
 import com.hgtv.star.core.SearchSource
 import com.hgtv.star.core.VideoDecoderMode
 import com.hgtv.star.core.VideoFrameMode
@@ -18,8 +17,6 @@ internal fun PhoneSettingsActivity.applyChoiceImpl(id: String, index: Int) {
     when (id) {
         SettingsController.ID_QUALITY ->
             settingsControllerInstance.setQuality(PlaybackQuality.options[index])
-        SettingsController.ID_SPEED ->
-            settingsControllerInstance.setSpeed(PlaybackSpeed.phoneOptions[index])
         SettingsController.ID_FRAME ->
             settingsControllerInstance.setFrame(VideoFrameMode.entries[index])
         SettingsController.ID_DECODER ->
@@ -64,6 +61,8 @@ internal fun PhoneSettingsActivity.applySwitchImpl(id: String, checked: Boolean)
 
 internal fun PhoneSettingsActivity.applySliderImpl(id: String, value: Float) {
     when (id) {
+        SettingsController.ID_SPEED ->
+            settingsControllerInstance.setSpeed(value)
         SettingsController.ID_VIDEO_SCALE ->
             settingsControllerInstance.setVideoScale(value)
         SettingsController.ID_DANMAKU_MERGE_MIN ->

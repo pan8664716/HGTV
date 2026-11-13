@@ -20,6 +20,9 @@ import com.hgtv.star.tv.R
 // 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
+/** 倍速滑杆停手 500ms 后再真正作用到播放器，避免长按过程反复重配解码器。 */
+private const val SPEED_COMMIT_DELAY_MS=500L
+
 /**
  * 打开播放设置面板。
  *
@@ -129,12 +132,19 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
                 else { menu.select(MENU_ROW_QUALITY,index); updatePlaybackText() }
             }
         })
-        .addRow("倍速",PlaybackSpeed.options.mapIndexed { index,value ->
-            PlaybackMenu.Choice(PlaybackSpeed.label(value),value==library.playbackSpeed) {
-                library.playbackSpeed=value; player?.setPlaybackSpeed(value)
-                menu.select(MENU_ROW_SPEED,index); updatePlaybackText()
-            }
-        })
+        .addSlider(
+            "倍速",
+            PlaybackSpeed.MIN,
+            PlaybackSpeed.MAX,
+            PlaybackSpeed.STEP,
+            library.playbackSpeed,
+            format=PlaybackSpeed::label,
+            commitDelayMs=SPEED_COMMIT_DELAY_MS,
+        ) { value ->
+            library.playbackSpeed=value
+            player?.setPlaybackSpeed(value)
+            updatePlaybackText()
+        }
         .addRow("画面模式",VideoFrameMode.entries.mapIndexed { index,mode ->
             PlaybackMenu.Choice(mode.label,mode==library.frameMode) {
                 library.frameMode=mode; applyResizeMode()
@@ -233,7 +243,7 @@ private fun menuShape(showsStyle: Boolean)="s${if(showsStyle) 1 else 0}"
 /** 把缓存面板的选中态与两条滑块同步到当前偏好：纯配色 / 数值修改，不建视图、不建位图。 */
 private fun TvMainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boolean) {
     menu.sync(MENU_ROW_QUALITY,PlaybackQuality.options.indexOf(playbackMaxQuality))
-    menu.sync(MENU_ROW_SPEED,PlaybackSpeed.options.indexOf(library.playbackSpeed))
+    menu.sliderValue(MENU_ROW_SPEED,library.playbackSpeed)
     menu.sync(MENU_ROW_FRAME,VideoFrameMode.entries.indexOf(library.frameMode))
     menu.sync(MENU_ROW_DECODER,VideoDecoderMode.entries.indexOf(playbackDecoderMode))
     menu.sync(MENU_ROW_DANMAKU,DanmakuMode.entries.indexOf(library.danmakuMode))
@@ -296,24 +306,6 @@ fun TvMainActivity.warmPlaybackMenu(delayMs: Long=1500L) {
     }
     warmPlaybackMenuTask=task
     main.postDelayed(task,delayMs)
-}
-fun TvMainActivity.showSpeedPicker(anchor: TextView,inPlayer: Boolean=true) {
-    if(speedDialog!=null) return
-    val speeds=PlaybackSpeed.options
-    val selected=speeds.indexOf(library.playbackSpeed)
-    // 与播放器菜单同一套选项按钮：整行左对齐的胶囊，当前值用强调色标出。
-    val picker=TvDialog(this,"全局默认倍速").choices(speeds.map(PlaybackSpeed::label),selected) { index ->
-        library.playbackSpeed=speeds[index]
-        if(inPlayer) player?.setPlaybackSpeed(library.playbackSpeed)
-        if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "倍速 " else "默认倍速  ·  ")+PlaybackSpeed.label(library.playbackSpeed)
-        if(inPlayer) updatePlaybackText()
-    }
-    picker.button("取消", icon=R.drawable.ic_menu_close)
-    speedDialog=picker
-    picker.show(anchor) {
-        speedDialog=null
-        if(anchor.attachedToWindow) { anchor.requestFocus(); if(inPlayer) showHud() }
-    }
 }
 fun TvMainActivity.showQualityPicker(anchor: TextView,inPlayer: Boolean) {
     val options=PlaybackQuality.options

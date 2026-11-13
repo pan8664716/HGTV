@@ -417,6 +417,7 @@ class PhoneSheet(private val host: FrameLayout) {
             step: Float,
             value: Float,
             format: (Float) -> String,
+            commitDelayMs: Long = 0L,
             onChange: (Float) -> Unit,
         ): LinearLayout {
             val context = host.context
@@ -426,6 +427,35 @@ class PhoneSheet(private val host: FrameLayout) {
                 orientation = LinearLayout.VERTICAL
                 setPadding(0, dp(10), 0, 0)
             }
+            var pendingCommit: Runnable? = null
+            var pendingValue: Float? = null
+            fun flushPending() {
+                pendingCommit?.let { box.removeCallbacks(it) }
+                pendingCommit = null
+                val pending = pendingValue ?: return
+                pendingValue = null
+                onChange(pending)
+            }
+            fun publish(next: Float) {
+                if(commitDelayMs<=0L) {
+                    onChange(next)
+                    return
+                }
+                pendingValue = next
+                pendingCommit?.let { box.removeCallbacks(it) }
+                val task = Runnable {
+                    pendingCommit = null
+                    val pending = pendingValue ?: return@Runnable
+                    pendingValue = null
+                    onChange(pending)
+                }
+                pendingCommit = task
+                box.postDelayed(task, commitDelayMs)
+            }
+            box.addOnAttachStateChangeListener(object : View.OnAttachStateChangeListener {
+                override fun onViewAttachedToWindow(v: View) = Unit
+                override fun onViewDetachedFromWindow(v: View) = flushPending()
+            })
             val head = LinearLayout(context).apply {
                 orientation = LinearLayout.HORIZONTAL
                 gravity = Gravity.CENTER_VERTICAL
@@ -444,7 +474,7 @@ class PhoneSheet(private val host: FrameLayout) {
             box.addView(head)
             box.addView(android.widget.SeekBar(context).apply {
                 this.max = steps
-                progress = ((value - min) / step).toInt().coerceIn(0, steps)
+                progress = Math.round((value - min) / step).toInt().coerceIn(0, steps)
                 setPadding(0, dp(2), 0, 0)
                 if (android.os.Build.VERSION.SDK_INT >= 21) runCatching {
                     progressTintList = android.content.res.ColorStateList.valueOf(PhoneStyle.accent)
@@ -454,9 +484,9 @@ class PhoneSheet(private val host: FrameLayout) {
                 }
                 setOnSeekBarChangeListener(object : android.widget.SeekBar.OnSeekBarChangeListener {
                     override fun onProgressChanged(sb: android.widget.SeekBar, progress: Int, fromUser: Boolean) {
-                        val next = min + progress * step
+                        val next = Math.round((min + progress * step) * 100f) / 100f
                         readout.text = format(next)
-                        if (fromUser) onChange(next)
+                        if (fromUser) publish(next)
                     }
                     override fun onStartTrackingTouch(sb: android.widget.SeekBar) {}
                     override fun onStopTrackingTouch(sb: android.widget.SeekBar) {}

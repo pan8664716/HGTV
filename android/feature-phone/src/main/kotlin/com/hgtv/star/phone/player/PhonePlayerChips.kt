@@ -63,15 +63,14 @@ internal fun PhonePlayerActivity.cycleDanmaku() {
 /**
  * 倍速快捷开关：点一次切到下一档，与弹幕按钮同一种操作。
  *
- * 0.75 → 1 → 1.25 → 1.5 → 1.75 → 2 → 3 → 0.75。写入书库，
+ * 快捷按钮只走 0.50 → 1.00 → 1.50 → 2.00 → 2.50 → 3.00 → 0.50 六个粗档位；写入书库，
  * 推荐页接手时读到的也是刚切好的这一档。
  *
- * 用 [PlaybackSpeed.phoneOptions] 而不是 [PlaybackSpeed.options]：3× 只在手机 / 平板上提供
- * （电视端遥控器来回调这么快的档位没有意义），但**校验**两边都认，见那边的说明。
+ * 精确到 0.05× 的完整区间在播放设置滑杆里，快捷按钮不承担连续调节。
  */
 internal fun PhonePlayerActivity.cycleSpeed() {
     val lib = library ?: return
-    val options = PlaybackSpeed.phoneOptions
+    val options = PlaybackSpeed.quickOptions
     val current = options.indexOfFirst { kotlin.math.abs(it - chipUserSpeed) < .001f }
         .takeIf { it >= 0 } ?: options.indexOf(1f).coerceAtLeast(0)
     val next = options[(current + 1) % options.size]

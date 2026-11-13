@@ -446,6 +446,8 @@ fun TvMainActivity.seek(direction: Int,repeat: Int) {
     main.removeCallbacks(seekRunnable); main.postDelayed(seekRunnable,250); updatePlaybackText(); showHud()
 }
 fun TvMainActivity.dismissPlaybackMenu() {
+    // 倍速滑杆可能还在 500ms 等待窗口里：关面板前先落地，不能让用户刚调好的值丢掉。
+    playbackMenu?.flushPendingSliders()
     playbackMenu?.let { menu -> if(menu.hasFocus()) menu.clearFocus() }
     // 面板现在是「外壳 → 滚动容器 → 面板」三层，直接 removeView(menu) 摘不掉任何东西
     // （menu 的父级是滚动容器），浮层会留在画面上。这里按最外层摘。

@@ -124,9 +124,11 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     }
     fun cellSlider(
         line: LinearLayout,label: String,min: Float,max: Float,step: Float,value: Float,
-        format: (Float)->String,onValue: (Float)->Unit
+        format: (Float)->String,
+        commitDelayMs: Long=0L,
+        onValue: (Float)->Unit
     ): SettingSlider {
-        val slider=SettingSlider(this,label,min,max,step,value,onValue,format)
+        val slider=SettingSlider(this,label,min,max,step,value,onValue,format,commitDelayMs)
         line.addView(slider,lp(0,-2).apply { weight=1f; if(line.childCount>0) leftMargin=dp(TvStyle.GAP_INLINE) })
         return slider
     }
@@ -156,8 +158,17 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     val prefRow1=lineRow(playback)
     lateinit var qualityButton: TvButton
     qualityButton=cellSetting(prefRow1,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
-    lateinit var defaultSpeed: TvButton
-    defaultSpeed=cellSetting(prefRow1,"默认倍速  ·  ${PlaybackSpeed.label(library.playbackSpeed)}") { showSpeedPicker(defaultSpeed,false) }
+    val defaultSpeed=cellSlider(
+        prefRow1,"默认倍速",PlaybackSpeed.MIN,PlaybackSpeed.MAX,PlaybackSpeed.STEP,library.playbackSpeed,
+        format=PlaybackSpeed::label,
+        commitDelayMs=500L,
+    ) { value ->
+        library.playbackSpeed=value
+        if(onPlaybackPage()) {
+            player?.setPlaybackSpeed(value)
+            updatePlaybackText()
+        }
+    }
     val prefRow2=lineRow(playback)
     lateinit var frame: TvButton
     frame=cellSetting(prefRow2,"画面模式  ·  ${library.frameMode.label}") { showFramePicker(frame,false) }

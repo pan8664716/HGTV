@@ -63,11 +63,14 @@ internal fun PhoneSettingsActivity.renderUnifiedPlayback() {
                 "${settingsLibrary.maxQuality}P",
                 PlaybackQuality.options.map { "${it}P" },
             ),
-            SettingRowSpec.Choice(
+            SettingRowSpec.Slider(
                 SettingsController.ID_SPEED,
                 "默认倍速",
+                settingsLibrary.playbackSpeed,
+                PlaybackSpeed.MIN,
+                PlaybackSpeed.MAX,
+                PlaybackSpeed.STEP,
                 PlaybackSpeed.label(settingsLibrary.playbackSpeed),
-                PlaybackSpeed.phoneOptions.map(PlaybackSpeed::label),
             ),
             SettingRowSpec.Choice(
                 SettingsController.ID_FRAME,
@@ -309,6 +312,7 @@ internal fun PhoneSettingsActivity.applyActionImpl(id: String) {
 }
 
 internal fun PhoneSettingsActivity.valueLabelForImpl(id: String, value: Float): String = when (id) {
+    SettingsController.ID_SPEED -> PlaybackSpeed.label(value)
     SettingsController.ID_VIDEO_SCALE -> "${value.roundToInt()}%"
     SettingsController.ID_DANMAKU_MERGE_MIN -> "${value.roundToInt()} 条"
     SettingsController.ID_DANMAKU_ALPHA -> DanmakuStyle.percent(value)

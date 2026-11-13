@@ -34,12 +34,14 @@ internal fun PhoneSettingsActivity.renderLandscapePlayback() {
                 settingsLibrary.maxQuality=options[i]; renderSettings()
             }
         })
-        landscapeCell(line,landscapeSetting("默认倍速",PlaybackSpeed.label(settingsLibrary.playbackSpeed)) {
-            val options=PlaybackSpeed.phoneOptions
-            pickImpl("默认倍速",options.map { PlaybackSpeed.label(it) },options.indexOf(settingsLibrary.playbackSpeed).coerceAtLeast(0)) { i ->
-                settingsLibrary.playbackSpeed=options[i]; renderSettings()
-            }
-        })
+        landscapeCell(line,landscapeSlider(
+            "默认倍速",
+            PlaybackSpeed.MIN,
+            PlaybackSpeed.MAX,
+            PlaybackSpeed.STEP,
+            settingsLibrary.playbackSpeed,
+            PlaybackSpeed::label,
+        ) { settingsLibrary.playbackSpeed=it })
     }
     landscapeLine(pref).also { line ->
         landscapeCell(line,landscapeSetting("画面模式",settingsLibrary.frameMode.label) {

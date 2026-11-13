@@ -87,7 +87,7 @@ internal fun PhoneFeedView.adoptPlayingImpl(
 
     // 重新挂监听：`onHidden` 里摘掉了，摘掉是为了不让隐藏期间的回调改界面。
     attachFeedListener(exo, feedPlayingIndex)
-    // 倍速以**书库设置**为准：用户可能刚在播放页里把 1.75 调成了 2（那一侧会落盘），
+    // 倍速以**书库设置**为准：用户可能刚在播放页里把 1.5 调成了 2（那一侧会落盘），
     // 本页字段还是进来时的旧值，直接写回去就是一次「速度突变」。
     feedUserSpeed = feedLibrary?.playbackSpeed ?: feedUserSpeed
     exo.setPlaybackSpeed(feedUserSpeed)

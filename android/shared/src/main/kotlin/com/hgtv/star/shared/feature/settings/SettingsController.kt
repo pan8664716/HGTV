@@ -26,8 +26,7 @@ class SettingsController(
     private val context: Context,
     private val library: Library,
 ) {
-    fun playbackRows(phone: Boolean): List<SettingRowSpec> {
-        val speeds = if (phone) PlaybackSpeed.phoneOptions else PlaybackSpeed.options
+    fun playbackRows(): List<SettingRowSpec> {
         val frames = VideoFrameMode.entries
         val decoders = VideoDecoderMode.entries
         val modes = DanmakuMode.entries
@@ -43,11 +42,14 @@ class SettingsController(
                 )
             )
             add(
-                SettingRowSpec.Choice(
+                SettingRowSpec.Slider(
                     id = ID_SPEED,
                     title = "默认倍速",
-                    value = PlaybackSpeed.label(library.playbackSpeed),
-                    options = speeds.map(PlaybackSpeed::label),
+                    value = library.playbackSpeed,
+                    min = PlaybackSpeed.MIN,
+                    max = PlaybackSpeed.MAX,
+                    step = PlaybackSpeed.STEP,
+                    valueLabel = PlaybackSpeed.label(library.playbackSpeed),
                 )
             )
             add(

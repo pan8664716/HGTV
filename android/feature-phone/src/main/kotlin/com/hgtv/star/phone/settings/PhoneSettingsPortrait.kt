@@ -44,14 +44,15 @@ internal fun PhoneSettingsActivity.renderPlayback() {
             renderSettings()
         }
     }
-    rowImpl("默认倍速", PlaybackSpeed.label(settingsLibrary.playbackSpeed)) {
-        // 手机 / 平板比电视多一档 3×（见 PlaybackSpeed.phoneOptions）。
-        val options = PlaybackSpeed.phoneOptions
-        pickImpl("默认倍速", options.map { PlaybackSpeed.label(it) },
-            options.indexOf(settingsLibrary.playbackSpeed).coerceAtLeast(0)) { index ->
-            settingsLibrary.playbackSpeed = options[index]
-            renderSettings()
-        }
+    sliderImpl(
+        "默认倍速",
+        PlaybackSpeed.MIN,
+        PlaybackSpeed.MAX,
+        PlaybackSpeed.STEP,
+        settingsLibrary.playbackSpeed,
+        PlaybackSpeed::label,
+    ) { value ->
+        settingsLibrary.playbackSpeed = value
     }
     rowImpl("画面模式", settingsLibrary.frameMode.label) {
         val options = VideoFrameMode.entries

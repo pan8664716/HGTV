@@ -1,27 +1,32 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.core
 
+import java.util.Locale
+
 object PlaybackSpeed {
-    /**
-     * 电视端与设置页共用的档位。
-     *
-     * 电视上停在 2×：再快就没法看了，遥控器也不方便来回调。
-     */
-    val options = listOf(0.75f,1f,1.25f,1.5f,1.75f,2f)
+    const val MIN=0.5f
+    const val MAX=3f
+    const val STEP=0.05f
 
     /**
-     * 手机 / 平板多一档 3×。
-     *
-     * 短剧节奏慢，手机上有不少人用 2× 追完再往上加；这一档**只进选择列表**。
-     * 校验（[normalize] / [isValid]）认的是全部合法值，否则同一份设置在
-     * 「手机设成 3×、换到电视打开一次」之后会被悄悄改回 1×。
+     * 两端共用的合法档位：0.50× 到 3.00×，每 0.05× 一档。
      */
-    val phoneOptions = options + 3f
+    val options = List(Math.round((MAX-MIN)/STEP).toInt()+1) { index ->
+        round(MIN+index*STEP)
+    }
 
-    /** 全部合法值（校验用）：两端可能出现过的档位并集。 */
-    private val valid = phoneOptions
+    /** 手机倍速快捷按钮使用的粗档位；完整区间仍由播放设置里的滑杆提供。 */
+    val quickOptions = listOf(0.5f,1f,1.5f,2f,2.5f,3f)
 
-    fun normalize(value: Float) = value.takeIf { it in valid } ?: 1f
-    fun isValid(value: Float) = value in valid
-    fun label(value: Float) = value.toString().removeSuffix(".0")+"×"
+    fun normalize(value: Float): Float {
+        if(!value.isFinite()) return MIN
+        val index=Math.round((value-MIN)/STEP)
+        return round(MIN+index*STEP).coerceIn(MIN,MAX)
+    }
+    fun isValid(value: Float): Boolean =
+        value.isFinite() && kotlin.math.abs(value-normalize(value))<0.0001f
+    fun label(value: Float): String =
+        String.format(Locale.ROOT,"%.2f×",normalize(value))
+
+    private fun round(value: Float): Float = Math.round(value*100f)/100f
 }
