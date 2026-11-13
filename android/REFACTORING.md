@@ -2499,3 +2499,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 129：PhonePlayer 设置入口迁移
+
+状态：已完成。
+
+- 将播放设置入口与竖屏设置浮层移到 `PhonePlayerSettingsEntry.kt`。
+- 保留书库等待、控制层恢复、横竖屏分支和自动收起。
+- `PhonePlayerActivity.kt` 从 2144 行降到 2108 行；
+  `PhonePlayerSettingsEntry.kt` 为 41 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
