@@ -2909,3 +2909,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 166：TV 互斥芯片迁移
+
+状态：已完成。
+
+- 将互斥芯片移到 `ToggleChip.kt`。
+- 保留按钮档位和选中语义。
+- `TvComponents.kt` 从 981 行降到 962 行；`ToggleChip.kt` 为 23 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
