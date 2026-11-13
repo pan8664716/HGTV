@@ -3511,3 +3511,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 215：触屏控制条与命中层迁移
+
+状态：已完成。
+
+- 将推荐入口、触屏控制条、进度拖动、触摸聚焦和弹窗触摸外壳移到
+  `TouchBar.kt`。
+- 保留第一下点击生效、拖动抬手才跳转和推荐页控制条切换行为。
+- `TouchController.kt` 从 979 行降到 728 行；`TouchBar.kt` 为 142 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
