@@ -1900,3 +1900,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 80：PhoneSettings 通用显示辅助迁移
+
+状态：已完成。
+
+- 将版本名、密度 / 字号换算、行高 / 行距、锚点 key、性别文案与状态栏高度移到
+  `PhoneSettingsSupport.kt`。
+- 保留设置页横竖屏密度比例、Android 状态栏资源回退和稳定锚点格式。
+- `PhoneSettingsActivity.kt` 从 1960 行降到 1948 行；`PhoneSettingsSupport.kt` 为 41 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。

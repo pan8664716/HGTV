@@ -81,8 +81,8 @@ enum class PhoneSettingsPage(val label: String, val hint: String) {
 private const val LAN_SYNC_SOURCE_TTL_MS = Long.MAX_VALUE
 private const val TAG_LANDSCAPE_SETTING_ROW = "landscape-setting-row"
 private const val TAG_LANDSCAPE_SETTING_SPACER = "landscape-setting-spacer"
-private const val SETTINGS_DENSITY_SCALE = .9f
-private const val SETTINGS_TEXT_SCALE = 1f
+internal const val SETTINGS_DENSITY_SCALE = .9f
+internal const val SETTINGS_TEXT_SCALE = 1f
 
 /**
  * 设置页：**与 TV 端一一对应**。
@@ -110,6 +110,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     /** 横屏时四个大项移到顶部，和 TV 设置页一致。 */
     private lateinit var pageTabs: LinearLayout
     private var landscape = false
+    internal val settingsLandscape get()=landscape
     /** 当前分区面板；竖屏为 null，继续使用原来的平铺列表。 */
     private var sectionHost: LinearLayout? = null
     private val library by lazy { PhoneServices.library(this) }
@@ -1385,9 +1386,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     }
 
-    private fun appVersionName(): String = runCatching {
-        packageManager.getPackageInfo(packageName, 0).versionName
-    }.getOrNull() ?: "?"
+    private fun appVersionName(): String = appVersionNameImpl()
 
     private fun showAboutDialog() {
         PhoneDialog(this, "关于")
@@ -1687,11 +1686,11 @@ class PhoneSettingsActivity : PhoneActivity() {
     // ---------------------------------------------------------------- 控件
 
     private fun targetHost(): LinearLayout = sectionHost ?: container
-    private fun settingsDp(value: Number): Int = dp(value.toFloat()*SETTINGS_DENSITY_SCALE)
+    private fun settingsDp(value: Number): Int = settingsDpImpl(value)
     private fun TextView.settingsTextSize(value: Number): TextView =
-        phoneSize(value.toFloat()*SETTINGS_TEXT_SCALE)
-    private fun settingRowHeight(): Int = settingsDp(if (landscape) 36 else 42)
-    private fun settingRowGap(): Int = settingsDp(if (landscape) 4 else 6)
+        settingsTextSizeImpl(value)
+    private fun settingRowHeight(): Int = settingRowHeightImpl()
+    private fun settingRowGap(): Int = settingRowGapImpl()
 
     private fun section(title: String) {
         if (landscape) {
@@ -1811,7 +1810,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         ).apply { bottomMargin = settingRowGap() })
     }
 
-    private fun anchorKey(kind: String, title: String): String = "$kind:$title"
+    private fun anchorKey(kind: String, title: String): String = anchorKeyImpl(kind, title)
 
     private fun deviceFormLabel(detected: DeviceForm): String =
         DeviceForm.ofStored(library.deviceForm)?.label ?: "自动 · ${detected.label}"
@@ -1905,22 +1904,11 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     // ---------------------------------------------------------------- 文案
 
-    private fun genderLabel(v: String) = when (v) {
-        "male" -> "男频"
-        "female" -> "女频"
-        else -> "不限"
-    }
+    private fun genderLabel(v: String) = genderLabelImpl(v)
 
-    private fun genderIndex(v: String) = when (v) {
-        "male" -> 1
-        "female" -> 2
-        else -> 0
-    }
+    private fun genderIndex(v: String) = genderIndexImpl(v)
 
-    private fun statusBarHeight(): Int {
-        val id = resources.getIdentifier("status_bar_height", "dimen", "android")
-        return if (id > 0) resources.getDimensionPixelSize(id) else dp(24)
-    }
+    private fun statusBarHeight(): Int = statusBarHeightImpl()
 
     override fun onSaveInstanceState(outState: Bundle) {
         outState.putString(KEY_PAGE, page.name)
