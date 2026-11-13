@@ -3461,3 +3461,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 本组改动未修改版本号、`versionCode`、Gradle、Manifest 或 CHANGELOG。
 - 检查前工作区干净，未创建 tag，分支无上游引用，未推送。
 - 最终 `git diff --check` 与 Debug APK 编译通过。
+
+### 批次 211：TvDialog 列表焦点出口迁移
+
+状态：已完成。
+
+- 将列表最后一项与按钮行的上下焦点出口、可聚焦控件探测移到
+  `TvDialogFocus.kt`。
+- 保留取消按钮优先、内容区焦点优先和列表滚动行为。
+- `TvDialog.kt` 从 840 行降到 780 行；`TvDialogFocus.kt` 为 55 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

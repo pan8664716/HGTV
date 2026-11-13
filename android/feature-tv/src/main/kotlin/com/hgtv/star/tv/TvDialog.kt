@@ -132,7 +132,7 @@ class TvDialog(private val activity: Activity, title: String) {
      * 才补上——纯文字弹窗留了只是白占高度；左右不留，内容自己已经有左右余量，
      * 这里再加一份会让正文比标题多缩进一条，两处对不齐。
      */
-    private val contentScroll = ScrollView(activity).apply {
+    internal val contentScroll = ScrollView(activity).apply {
         isVerticalScrollBarEnabled = false
         clipChildren = false
         clipToPadding = false
@@ -203,7 +203,7 @@ class TvDialog(private val activity: Activity, title: String) {
     private val titleView = activity.tvText(title, TITLE_SIZE, TvStyle.textStrong, bold = true)
         .apply { setPadding(dp(TvStyle.FOCUS_BLEED), 0, dp(TvStyle.FOCUS_BLEED), 0) }
 
-    private val items = activity.tvColumn().apply {
+    internal val items = activity.tvColumn().apply {
         clipChildren = false
         clipToPadding = false
         // 选项整体居中：宽度固定为弹窗宽度的 60%，左右两侧留白对称。
@@ -228,7 +228,7 @@ class TvDialog(private val activity: Activity, title: String) {
         clipChildren = false
         clipToPadding = false
     }
-    private val buttons = mutableListOf<DialogItem>()
+    internal val buttons = mutableListOf<DialogItem>()
     private var listHeight = 0
     /**
      * 内容区上限的**运行期**覆盖值（见 [fitToWindow]）。
@@ -586,47 +586,7 @@ class TvDialog(private val activity: Activity, title: String) {
      * `OnKeyListener`，早于 ScrollView 的 `executeKeyEvent`。只在「最后一项按下 / 第一项按上」
      * 这两处返回 true，中间的项仍交回 ScrollView，正常滚动与移动焦点的手感不变。
      */
-    private fun wireListExit() {
-        // 落到「取消」而不是第一枚：`choices()` 的按钮行可能是 [额外动作, 取消]，
-        // 第一枚是「清空历史」这类会再弹一层确认的动作；直接落在取消上，
-        // 用户按一下就能关掉，想清空再按左键。
-        val firstButton = buttons.firstOrNull { it.text.toString() == "取消" }
-            ?: buttons.firstOrNull()
-            ?: return
-        val count = items.childCount
-        if (count == 0) return
-        val lastItem = items.getChildAt(count - 1)
-        // 按钮行按上键回列表最后一项：按钮不在滚动容器里，普通 nextFocusUpId 就够。
-        // 内容区参与焦点链时（有可聚焦控件，或文字溢出后滚动容器自己可聚焦）**不覆盖**
-        // [wireContentFocus] 接好的「上键回内容区」——那块在列表上方，方向上是它先到。
-        val contentInFocusChain = content.firstFocusable() != null || contentScroll.isFocusable
-        // 只有**第一枚**动作按钮的「上」接回列表最后一项：动作按钮是竖排的一列，
-        // 后面的几枚已经由 [button] 接成上下相邻，覆盖掉就会让焦点链断开。
-        if (!contentInFocusChain) {
-            buttons.firstOrNull()?.nextFocusUpId = lastItem.id
-        }
-        // 最后一项按下也写一条出口：万一某台设备的 ScrollView 没吃掉按键，这条仍然生效。
-        lastItem.nextFocusDownId = firstButton.id
-        for (i in 0 until count) {
-            val item = items.getChildAt(i)
-            val isFirst = i == 0
-            val isLast = i == count - 1
-            item.setOnKeyListener { _, keyCode, event ->
-                if (event.action != KeyEvent.ACTION_DOWN) false
-                else when (keyCode) {
-                    KeyEvent.KEYCODE_DPAD_DOWN ->
-                        if (isLast) { firstButton.requestFocus(); true } else false
-                    KeyEvent.KEYCODE_DPAD_UP ->
-                        if (isFirst) {
-                            // 内容区有可聚焦控件（备份恢复那个开关）就回去，否则停在原地。
-                            val up = content.firstFocusable()
-                            if (up != null) { up.requestFocus(); true } else true
-                        } else false
-                    else -> false
-                }
-            }
-        }
-    }
+    internal fun wireListExit() = wireListExitImpl()
 
     /**
      * 内容区可用的高度上限（见 [ContentHost]）。
@@ -817,24 +777,4 @@ class TvDialog(private val activity: Activity, title: String) {
         })
         anim.start()
     }
-}
-
-/** 容器里的第一个子控件；没有就返回 null。 */
-private fun ViewGroup.firstChildOrNull(): View? = if (childCount > 0) getChildAt(0) else null
-
-/** 子树里有没有可聚焦的控件（跳过不可见的）。 */
-private fun View.anyFocusable(): Boolean {
-    if (visibility != View.VISIBLE) return false
-    if (isFocusable) return true
-    val group = this as? ViewGroup ?: return false
-    return (0 until group.childCount).any { group.getChildAt(it).anyFocusable() }
-}
-
-/** 子树里第一个可聚焦的控件（跳过不可见的），没有就返回 null。 */
-private fun View.firstFocusable(): View? {
-    if (visibility != View.VISIBLE) return null
-    if (isFocusable) return this
-    val group = this as? ViewGroup ?: return null
-    for (i in 0 until group.childCount) group.getChildAt(i).firstFocusable()?.let { return it }
-    return null
 }
