@@ -3923,3 +3923,29 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；仅目录变化。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 - 下一批：`core/playback`。
+
+### 布局批次 12：core/playback
+
+状态：已完成。
+
+- `core/BitrateProbe.kt` → `core/playback/BitrateProbe.kt`
+- `core/CodecProbe.kt` → `core/playback/CodecProbe.kt`
+- `core/KeyMap.kt` → `core/playback/KeyMap.kt`
+- `core/PlaybackAttemptLedger.kt` → `core/playback/PlaybackAttemptLedger.kt`
+- `core/PlaybackBackupDevice.kt` → `core/playback/PlaybackBackupDevice.kt`
+- `core/PlaybackCache.kt` → `core/playback/PlaybackCache.kt`
+- `core/PlaybackComfort.kt` → `core/playback/PlaybackComfort.kt`
+- `core/PlaybackDegradation.kt` → `core/playback/PlaybackDegradation.kt`
+- `core/PlaybackFailurePolicy.kt` → `core/playback/PlaybackFailurePolicy.kt`
+- `core/PlaybackInfoLine.kt` → `core/playback/PlaybackInfoLine.kt`
+- `core/PlaybackSpeed.kt` → `core/playback/PlaybackSpeed.kt`
+- `core/PlaybackStage.kt` → `core/playback/PlaybackStage.kt`
+- `core/PrefetchPolicy.kt` → `core/playback/PrefetchPolicy.kt`
+- `core/PreparedSlot.kt` → `core/playback/PreparedSlot.kt`
+- `core/Probe.kt` → `core/playback/Probe.kt`
+- `core/RemoteVideo.kt` → `core/playback/RemoteVideo.kt`
+- `core/SeekStepPump.kt` → `core/playback/SeekStepPump.kt`
+- `core/VideoProbe.kt` → `core/playback/VideoProbe.kt`
+- 外部路径引用：无；文件名、包名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`core/content/detail`（剩余根文件归位）。
