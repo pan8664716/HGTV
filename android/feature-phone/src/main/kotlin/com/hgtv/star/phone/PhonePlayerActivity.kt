@@ -2702,6 +2702,9 @@ class PhonePlayerActivity : PhoneActivity() {
 
     /** 横屏面板的外壳（左 2/3 点击收起 + 右 1/3 设置）；为 null = 没打开。 */
     private var landPanel: FrameLayout? = null
+    internal var playerLandPanel: FrameLayout?
+        get()=landPanel
+        set(value) { landPanel=value }
 
     /**
      * 播放设置的各行（竖屏 / 横屏共用，[perLine] 只在横屏的 1/3 抽屉里折行）。
@@ -2840,18 +2843,8 @@ class PhonePlayerActivity : PhoneActivity() {
      * 右边宽 40% 屏，选项按每行 3 个折行，整列通常会超过屏高——因此整列放进
      * `ScrollView`（`height=0 + weight=1`），滑到底能看到最后一行，不会像早先那样被裁掉。
      */
-    private fun openLandscapeSettings(lib: Library) {
-        if (landPanel != null) return
-        val container = PhonePlayerSettingsPanel.showLandscape(
-            this,
-            root,
-            { inner -> buildSettingsRows(inner, lib, perLine = 3) },
-            { dismissLandscapeSettings(); setChromeVisible(false) },
-        )
-        landPanel = container
-        syncLandscapeSettingsInfo()
-        scheduleChromeHide()
-    }
+    private fun openLandscapeSettings(lib: Library) =
+        openLandscapeSettingsImpl(lib)
 
     /**
      * 把「已经设置好的值」刷到进度条下面那一行。
@@ -2861,12 +2854,12 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private fun syncLandscapeSettingsInfo() = syncLandscapeSettingsInfoImpl()
 
-    private fun dismissLandscapeSettings() {
-        val panel = landPanel ?: return
-        root.removeView(panel)
-        landPanel = null
-    }
+    private fun dismissLandscapeSettings() = dismissLandscapeSettingsImpl()
     internal fun dismissLandscapeSettingsForRelated() = dismissLandscapeSettings()
+    internal fun buildSettingsRowsForLandscape(panel: LinearLayout, lib: Library) =
+        buildSettingsRows(panel, lib, perLine = 3)
+    internal fun setChromeVisibleForLandscape(visible: Boolean) = setChromeVisible(visible)
+    internal fun scheduleChromeHideForLandscape() = scheduleChromeHide()
 
     /**
      * 按用户的「画面模式」把画面落到位。
@@ -2874,13 +2867,9 @@ class PhonePlayerActivity : PhoneActivity() {
      * 早先这里对竖屏片源强制 ZOOM：首集可能按卡片字段走了 FIT，切到下一集时
      * 实际尺寸已知、突然改成 ZOOM，画面就会「等比放大、左右丢失」。
      */
-    private fun syncFrameMode() {
-        applyFrameMode(library?.frameMode ?: VideoFrameMode.FIT)
-    }
+    private fun syncFrameMode() = syncFrameModeImpl()
 
-    private fun applyFrameMode(mode: VideoFrameMode) {
-        PhonePlayerViewSupport.applyFrameMode(page,landscapeVideo,mode,feedUnderlay)
-    }
+    private fun applyFrameMode(mode: VideoFrameMode) = applyFrameModeImpl(mode)
 
     // ---------------------------------------------------------------- 选集
 
