@@ -375,6 +375,9 @@ class PhonePlayerActivity : PhoneActivity() {
      * 推荐页接手后再 `play()` 又要重新缓冲一次——用户读到的就是「退回去内容断了一下」。
      */
     private var returningToFeed = false
+    internal var playerReturningToFeed: Boolean
+        get()=returningToFeed
+        set(value) { returningToFeed=value }
     /** 最后一集查到的下一季、查询代次与底部提示。 */
     internal val nextSeasonState = PhoneNextSeasonState()
     /** 相关剧集与作者作品浮层的请求代次、缓存和打开状态。 */
@@ -2359,12 +2362,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 中间露出窗口底色——读起来就是「退出去也闪一下」。直接切过去更连贯。
      */
     override fun finish() {
-        // 交给推荐页：交接窗口内两边都不暂停，播放器一直在跑，Surface 只是换了宿主。
-        PhoneSession.playerForeground = false
-        if (intent.getBooleanExtra(EXTRA_RECOMMEND, false)) {
-            returningToFeed = true
-            PhoneSession.beginHandoff()
-        }
+        preparePlayerFinish()
         super.finish()
         @Suppress("DEPRECATION")
         overridePendingTransition(0, 0)
@@ -2380,14 +2378,7 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     override fun onNewIntent(intent: Intent?) {
         super.onNewIntent(intent)
-        intent ?: return
-        setIntent(intent)
-        val id = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
-        if (id.isBlank()) return
-        if (id == detail?.series?.id) return
-        sheet.dismiss()
-        dismissLandscapeSettings()
-        recreate()
+        handleNewPlayerIntent(intent)
     }
 
     override fun onResume() {

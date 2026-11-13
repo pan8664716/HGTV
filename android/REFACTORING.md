@@ -2420,3 +2420,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 122：PhonePlayer 退场与复用重建迁移
+
+状态：已完成。
+
+- 将退场交接准备与 singleTop 新 Intent 重建移到 `PhonePlayerExit.kt`。
+- 保留推荐页交接窗口、零转场、旧面板收起和详情复用清理。
+- `PhonePlayerActivity.kt` 从 2536 行降到 2527 行；`PhonePlayerExit.kt` 为 38 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
