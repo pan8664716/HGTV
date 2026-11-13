@@ -135,6 +135,8 @@ fun TvMainActivity.goHomeFromRecommend() {
     cancelScheduledPreload()
     evictRecommendPrepared(limit=1)
     dismissRecommendOverlay()
+    // 推荐详情可能在途中留下「正在加载《…》」；离开推荐页后不能再把它带进首页 / 设置。
+    hideCenterLoading()
     detail=null
     detachPlayerSurface()
     screen="catalog"
