@@ -2476,3 +2476,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 127：PhonePlayer 播放控件状态迁移
+
+状态：已完成。
+
+- 将播放 / 暂停、缓冲、中心图标、长按倍速和拖动反馈移到
+  `PhonePlayerControls.kt`。
+- 保留暂停不显示缓冲、无感切集压制、700ms / 1.2 秒提示时序。
+- `PhonePlayerActivity.kt` 从 2284 行降到 2184 行；`PhonePlayerControls.kt` 为 138 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

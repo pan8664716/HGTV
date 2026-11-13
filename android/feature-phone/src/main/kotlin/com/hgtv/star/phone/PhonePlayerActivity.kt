@@ -185,6 +185,7 @@ class PhonePlayerActivity : PhoneActivity() {
     internal val playerLandBottom get()=landBottom
     internal val playerLandBottomInitialized get()=::landBottom.isInitialized
     private lateinit var landPlay: PhoneGlyph
+    internal val playerLandPlay get()=landPlay
     private lateinit var landCurrent: TextView
     private lateinit var landSeek: SeekBar
     private lateinit var landTotal: TextView
@@ -215,13 +216,30 @@ class PhonePlayerActivity : PhoneActivity() {
         set(value) { portraitTop=value }
     private lateinit var centerBox: FrameLayout
     private lateinit var centerGlyph: PhoneGlyph
+    internal var playerCenterBox: FrameLayout
+        get()=centerBox
+        set(value) { centerBox=value }
+    internal var playerCenterGlyph: PhoneGlyph
+        get()=centerGlyph
+        set(value) { centerGlyph=value }
     internal lateinit var hint: TextView
 
     /** 缓冲指示：全站统一的三点动画，状态文案直接挂在动画下方。 */
     private lateinit var bufferingBox: FrameLayout
     private lateinit var bufferingDots: LoadingDotsView
+    internal var playerBufferingBox: FrameLayout
+        get()=bufferingBox
+        set(value) { bufferingBox=value }
+    internal var playerBufferingDots: LoadingDotsView
+        get()=bufferingDots
+        set(value) { bufferingDots=value }
+    internal val playerBufferingInitialized get()=
+        ::bufferingBox.isInitialized && ::bufferingDots.isInitialized
     /** 缓冲指示被压住的截止时刻（无感切集期间）。 */
     private var bufferingMutedUntil = 0L
+    internal var playerBufferingMutedUntil: Long
+        get()=bufferingMutedUntil
+        set(value) { bufferingMutedUntil=value }
 
     private lateinit var sheet: PhoneSheet
     internal val playerSheet get()=sheet
@@ -359,6 +377,9 @@ class PhonePlayerActivity : PhoneActivity() {
         get()=userSpeed
         set(value) { userSpeed=value }
     private var tempSpeed = false
+    internal var playerTempSpeed: Boolean
+        get()=tempSpeed
+        set(value) { tempSpeed=value }
     private var pendingFullscreen = false
     internal var listenerPendingFullscreen: Boolean
         get()=pendingFullscreen
@@ -439,6 +460,9 @@ class PhonePlayerActivity : PhoneActivity() {
         if (::qualityChip.isInitialized) qualityChip.text.toString() else "-"
     internal fun debugClock(ms: Long): String = clock(ms)
     private var seekFrom = 0L
+    internal var playerSeekFrom: Long
+        get()=seekFrom
+        set(value) { seekFrom=value }
     /** 上一集读到过的时长：无感换集后 `duration` 已经是新一集的，写 completed 要用旧值。 */
     private var lastDuration = 0L
     internal var listenerLastDuration: Long
@@ -458,6 +482,13 @@ class PhonePlayerActivity : PhoneActivity() {
     internal var queuedVideo: RemoteVideo? = null
     internal var queuedEpisodeId = ""
     private var hintSticky = false
+    internal var playerHintSticky: Boolean
+        get()=hintSticky
+        set(value) { hintSticky=value }
+    private var seekTarget = 0L
+    internal var playerSeekTarget: Long
+        get()=seekTarget
+        set(value) { seekTarget=value }
     internal var swipeHintSticky: Boolean
         get()=hintSticky
         set(value) { hintSticky=value }
@@ -1316,136 +1347,6 @@ class PhonePlayerActivity : PhoneActivity() {
 
     // ---------------------------------------------------------------- 播放状态
 
-    private fun togglePlay() {
-        val exo = player ?: return
-        if (exo.isPlaying) {
-            exo.pause()
-            // 用户自己暂停：不是卡死，撤掉看门狗（恢复播放时重新装）。
-            disarmPictureWatchdog()
-        } else {
-            exo.play()
-            armPictureWatchdog()
-        }
-        showCenter(!exo.isPlaying)
-        syncPlayGlyph()
-        syncBufferingUi(exo.playbackState)
-        syncKeepScreenOn()
-    }
-
-    /**
-     * 缓冲指示的显隐（与电视端的 `suppressBufferingUi` / `restoreBufferingUi` 同一套规则）。
-     *
-     * 三个条件缺一不可：正在缓冲、没有处于「无感切集」的压制窗口、用户没有主动暂停。
-     * 最后一条尤其重要：暂停后播放器也会落进 BUFFERING，那时转圈会让人以为「暂停没生效」。
-     */
-    private fun syncBufferingUi(state: Int) {
-        val label = if (state == Player.STATE_BUFFERING && player?.playWhenReady == true) {
-            "正在缓冲…"
-        } else {
-            null
-        }
-        setBufferingLabel(label)
-    }
-
-    /** 统一的加载显隐入口：文案与三点动画一起显示，不再写到进度条上。 */
-    internal fun setBufferingLabel(label: String?) {
-        if (!::bufferingBox.isInitialized || !::bufferingDots.isInitialized) return
-        val now = android.os.SystemClock.elapsedRealtime()
-        val show = label != null && now >= bufferingMutedUntil && errorCard == null
-        bufferingDots.label = label.orEmpty()
-        bufferingBox.visibility = if (show) View.VISIBLE else View.GONE
-        if (show) bufferingBox.bringToFront()
-    }
-
-    /**
-     * 无感切集：压住缓冲指示 1.2 秒。
-     *
-     * 不压的话，ExoPlayer 从队列推进到下一集时会先报 BUFFERING，屏幕上闪一个转圈——
-     * 而实际上画面一直有（停在上一集最后一帧），那个转圈纯属噪音。
-     */
-    private fun muteBufferingUi() {
-        bufferingMutedUntil = android.os.SystemClock.elapsedRealtime() + 1_200L
-        bufferingBox.visibility = View.GONE
-        root.postDelayed({
-            if (!isFinishing && !isDestroyed) syncBufferingUi(player?.playbackState ?: Player.STATE_IDLE)
-        }, 1_200L)
-    }
-
-    internal fun syncPlayGlyph() {
-        val playing = player?.isPlaying == true
-        landPlay.kind = if (playing) PhoneGlyph.Kind.PAUSE else PhoneGlyph.Kind.PLAY
-    }
-
-    /** 屏幕中心的播放 / 暂停：暂停时一直亮着，播放中闪一下。 */
-    private fun showCenter(paused: Boolean) {
-        centerGlyph.kind = if (paused) PhoneGlyph.Kind.PLAY else PhoneGlyph.Kind.PAUSE
-        centerBox.visibility = View.VISIBLE
-        centerBox.bringToFront()
-        if (!paused) {
-            centerBox.postDelayed({
-                if (player?.isPlaying == true) centerBox.visibility = View.GONE
-            }, 700)
-        }
-    }
-
-    private fun hideCenter() {
-        centerBox.visibility = View.GONE
-    }
-
-    private fun beginTempSpeed() {
-        if (tempSpeed) return
-        tempSpeed = true
-        player?.setPlaybackSpeed(2f)
-        hintSticky = true
-        hint.text = "2 倍速播放中"
-        hint.visibility = View.VISIBLE
-        hint.bringToFront()
-    }
-
-    private fun endTempSpeed() {
-        if (!tempSpeed) return
-        tempSpeed = false
-        player?.setPlaybackSpeed(userSpeed)
-        hintSticky = false
-        hint.visibility = View.GONE
-    }
-
-    private var seekTarget = 0L
-
-    /**
-     * 横滑拖进度：**进度条与时间跟着手指实时走**，松手才真正 seek。
-     *
-     * 只更新显示、不 seek：拖动过程中每一帧都 seek 会让解码器反复重开，
-     * 画面卡成一片。松手一次性跳过去，体验与 TV 端的「拖进度条」一致。
-     */
-    private fun dragTo(deltaFraction: Float) {
-        val duration = player?.duration ?: 0L
-        if (duration <= 0) return
-        seekTarget = (seekFrom + deltaFraction * duration * 1.2f).toLong().coerceIn(0, duration)
-        val permille = (seekTarget * 1000 / duration).toInt().coerceIn(0, 1000)
-        // 横屏：底部的进度条 + 左侧当前时间
-        landSeek.progress = permille
-        landCurrent.text = clock(seekTarget)
-        landTotal.text = clock(duration)
-        // 竖屏：底部信息栏里那条进度条
-        page.setProgress(permille / 1000f)
-        // 两种形态都有的上方读数
-        hint.text = "${clock(seekTarget)} / ${clock(duration)}"
-        hint.visibility = View.VISIBLE
-        hint.bringToFront()
-    }
-
-    private fun showSeekHint(fraction: Float) {
-        val duration = player?.duration ?: 0L
-        if (duration <= 0) return
-        hint.text = "${clock((duration * fraction).toLong())} / ${clock(duration)}"
-        hint.visibility = View.VISIBLE
-    }
-
-    private fun clearSeekHint() {
-        if (!hintSticky) hint.visibility = View.GONE
-    }
-
     // ---------------------------------------------------------------- 弹幕
 
     /**
@@ -2058,6 +1959,7 @@ class PhonePlayerActivity : PhoneActivity() {
         reopenCurrentEpisodeInPlace(at)
     internal fun playForReopen(index: Int, position: Long) =
         play(index, position)
+    internal fun clockForControls(ms: Long): String = clock(ms)
 
     /**
      * 横屏播放设置：只保留右侧 40% 的可改栏。
