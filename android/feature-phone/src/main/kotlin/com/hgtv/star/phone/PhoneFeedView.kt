@@ -252,6 +252,17 @@ class PhoneFeedView(
     internal fun feedRemoveCallbacks(runnable: Runnable) = list.removeCallbacks(runnable)
     internal fun feedSmoothScrollToPosition(position: Int) =
         list.smoothScrollToPosition(position)
+    internal fun revealChromeForSettings() = revealChrome()
+    internal fun playIndexForSettings(index: Int, startAt: Long) =
+        playIndex(index, startAt)
+    internal fun applyDanmakuSettingsForSettings(page: PhoneVideoPage) =
+        applyDanmakuSettings(page)
+    internal fun loadDanmakuForSettings(
+        page: PhoneVideoPage,
+        index: Int,
+        episodeId: String,
+        seriesId: String,
+    ) = loadDanmaku(page, index, episodeId, seriesId)
 
     /**
      * 服务端已经确认不吃 `filter_ids`（回空页）。
@@ -371,6 +382,7 @@ class PhoneFeedView(
         }
     }
     private val sheet: PhoneSheet by sheetDelegate
+    internal val feedSheet get()=sheet
 
     /** 收起播放设置（切 tab、借画面给播放页、重铺体裁时调用）。 */
     fun closeSheet() {
@@ -1526,65 +1538,7 @@ class PhoneFeedView(
      * 早先这里只做了倍速 / 清晰度 / 画面模式三项，用户想调字号、透明度时找不到那一行。
      */
     private fun openSettings() {
-        // 书库没读完时先等它：直接 return 会让长按中间「没反应」。
-        val lib = library
-        if (lib == null) {
-            scope.launch {
-                library = PhoneServices.awaitLibrary(context)
-                userSpeed = library?.playbackSpeed ?: userSpeed
-                openSettings()
-            }
-            return
-        }
-        // 推荐页没有正式播放页的沉浸式底板，面板可用高度按半屏留足；
-        // 内容仍然可以滚动，但不会一打开只看到前几项。
-        sheet.show("播放设置", landscape = false, heightFraction = .5f) { panel ->
-            buildPlaybackSettingsRows(
-                host = this,
-                panel = panel,
-                lib = lib,
-                perLine = 0,
-                speed = userSpeed,
-                onSpeed = { value ->
-                    userSpeed = value
-                    // 落盘：进播放页 / 退回来都读同一份，不会跳回旧值（与 TV 的倍速设置同一条路）。
-                    lib.playbackSpeed = value
-                    player?.setPlaybackSpeed(userSpeed)
-                },
-                onQuality = {
-                    // 换档要换一套地址：从当前位置重开这一屏。
-                    val position = player?.currentPosition ?: 0L
-                    sheet.dismiss()
-                    playIndex(playingIndex, position)
-                },
-                onFrame = { mode ->
-                    boundPage?.setResizeMode(mode.toFit().resizeMode())
-                },
-                onScale = { value -> boundPage?.setVideoScale(value / 100f) },
-                // 弹幕四项：只写书库不会动已经在画的弹幕层，必须立刻把当前页重刷一遍。
-                // 从「隐藏」切回可见且这一集还没拉过弹幕时补一次请求（与播放页同一判据）。
-                onDanmaku = {
-                    val page = pageAt(playingIndex) ?: boundPage
-                    if (page != null) {
-                        val wasHidden = page.danmakuView.visibility == View.GONE
-                        applyDanmakuSettings(page)
-                        if (wasHidden && lib.danmakuMode != DanmakuMode.HIDDEN) {
-                            val loader = danmakuLoaderOf(playingIndex)
-                            val episode = currentEpisodeIds[playingIndex]
-                            val series = items.getOrNull(playingIndex)
-                            if (!loader.loaded && episode != null && series != null) {
-                                loadDanmaku(page, playingIndex, episode, series.id)
-                            }
-                        }
-                    }
-                },
-                onDebug = {
-                    (context as? PhoneMainActivity)?.syncDebugOverlay()
-                },
-            )
-        }
-        onSheetVisibilityChanged?.invoke(true)
-        revealChrome()
+        openSettingsImpl()
     }
 
     // ------------------------------------------------------------------ 列表

@@ -1774,3 +1774,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 本轮批次 29–68 共 40 批，已达到夜间安全上限，因此停止自动执行。
 - 总结：未达到 DoD；主要原因是仍有 23 个生产源码文件超过 800 行，下一轮应从
   `PhoneFeedView.kt` 或 `PhoneSettingsActivity.kt` 继续拆分。
+
+## 新一轮续跑（2026-11-13，批次 69 起）
+
+### 批次 69：PhoneFeed 播放设置迁移
+
+状态：已完成。
+
+- 将信息流播放设置面板移到 `PhoneFeedSettings.kt`；原私有入口保留并委托。
+- 保留书库等待、倍速回写、换清晰度重播、画面 / 缩放、弹幕补拉和调试刷新顺序。
+- `PhoneFeedView.kt` 从 1705 行降到 1659 行；`PhoneFeedSettings.kt` 为 69 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。

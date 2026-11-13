@@ -1,0 +1,69 @@
+// SPDX-License-Identifier: GPL-3.0-only
+package com.hgtv.star.phone
+
+import android.view.View
+import com.hgtv.star.core.DanmakuMode
+import com.hgtv.star.core.toFit
+import com.hgtv.star.phone.ui.resizeMode
+import kotlinx.coroutines.launch
+
+/** 信息流长按中间打开的播放设置面板。 */
+internal fun PhoneFeedView.openSettingsImpl() {
+    val lib = feedLibrary
+    if (lib == null) {
+        feedScope.launch {
+            feedLibrarySlot = PhoneServices.awaitLibrary(context)
+            feedUserSpeed = feedLibrary?.playbackSpeed ?: feedUserSpeed
+            openSettingsImpl()
+        }
+        return
+    }
+    feedSheet.show("播放设置", landscape = false, heightFraction = .5f) { panel ->
+        buildPlaybackSettingsRows(
+            host = this,
+            panel = panel,
+            lib = lib,
+            perLine = 0,
+            speed = feedUserSpeed,
+            onSpeed = { value ->
+                feedUserSpeed = value
+                lib.playbackSpeed = value
+                feedPlayer?.setPlaybackSpeed(feedUserSpeed)
+            },
+            onQuality = {
+                val position = feedPlayer?.currentPosition ?: 0L
+                feedSheet.dismiss()
+                playIndexForSettings(feedPlayingIndex, position)
+            },
+            onFrame = { mode ->
+                feedBoundPage?.setResizeMode(mode.toFit().resizeMode())
+            },
+            onScale = { value -> feedBoundPage?.setVideoScale(value / 100f) },
+            onDanmaku = {
+                val page = feedPageAt(feedPlayingIndex) ?: feedBoundPage
+                if (page != null) {
+                    val wasHidden = page.danmakuView.visibility == View.GONE
+                    applyDanmakuSettingsForSettings(page)
+                    if (wasHidden && lib.danmakuMode != DanmakuMode.HIDDEN) {
+                        val loader = feedDanmakuLoaderOf(feedPlayingIndex)
+                        val episode = feedCurrentEpisodeIds[feedPlayingIndex]
+                        val series = feedItems.getOrNull(feedPlayingIndex)
+                        if (!loader.loaded && episode != null && series != null) {
+                            loadDanmakuForSettings(
+                                page,
+                                feedPlayingIndex,
+                                episode,
+                                series.id,
+                            )
+                        }
+                    }
+                }
+            },
+            onDebug = {
+                (context as? PhoneMainActivity)?.syncDebugOverlay()
+            },
+        )
+    }
+    onSheetVisibilityChanged?.invoke(true)
+    revealChromeForSettings()
+}
