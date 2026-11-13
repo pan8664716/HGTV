@@ -2395,3 +2395,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 120：ContentRepository 设备状态与 Cookie 迁移
+
+状态：已完成。
+
+- 将设备身份清理、拒绝计数和 Cookie 快照 / 恢复移到
+  `ContentDeviceState.kt`；公开入口保留。
+- 保留空身份不计数、Cookie 空值过滤和启动恢复行为。
+- `ContentRepository.kt` 从 1640 行降到 1633 行；`ContentDeviceState.kt` 为 30 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

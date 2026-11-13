@@ -464,22 +464,15 @@ class ContentRepository(
      * 全局计数（所有实例共享）：预取用的是另一个 [ContentRepository]，但它与主实例认的是
      * **同一台设备**，服务端拒绝也是同一件事——按实例各记一份，界面层就只看得到主实例那一次。
      */
-    val deviceRejected: Int get()=deviceRejectedCount
+    val deviceRejected: Int get()=deviceRejectedCountValue
     /**
      * 丢掉当前这份设备身份：注册结果与下发的 Cookie 一起清。
      *
      * 下一次 [registerDevice] 会拿到一套新的 `device_id` / `iid`，与当前设备档案自洽。
      */
-    fun clearDeviceIdentity() {
-        deviceIdentity=emptyMap()
-        registrationCookies=emptyMap()
-        appSearchAlive=null
-    }
+    fun clearDeviceIdentity() = clearDeviceIdentityImpl()
     /** 记一次「服务端不认这份身份」。身份为空时不计：那是真的还没注册，不是被拒。 */
-    internal fun noteDeviceRejected() {
-        if(deviceIdentity["device_id"].isNullOrBlank()) return
-        deviceRejectedCount++
-    }
+    internal fun noteDeviceRejected() = noteDeviceRejectedImpl()
 
     /**
      * @param profile 这一次注册用的设备档案；默认 [registerProfile]。
@@ -516,15 +509,11 @@ class ContentRepository(
      * 界面层拿到它写进 `native-session-v1`（键 `registered-cookies`），下次启动再用
      * [restoreDeviceCookies] 灌回来。
      */
-    fun deviceCookiesSnapshot(): Map<String,String> = LinkedHashMap(registrationCookies)
+    fun deviceCookiesSnapshot(): Map<String,String> = deviceCookiesSnapshotImpl()
     /** 当前主身份 Cookie 快照；登录后是账号设备 Cookie，未登录时是主设备 Cookie。 */
-    fun primaryCookiesSnapshot(): Map<String,String> = CookieRecord.headerToMap(primaryCookieHeader())
+    fun primaryCookiesSnapshot(): Map<String,String> = primaryCookiesSnapshotImpl()
     /** 把上次落盘的注册 Cookie 灌回来（启动时调一次即可）。 */
-    fun restoreDeviceCookies(cookies: Map<String,String>) {
-        val clean=cookies.filterValues { it.isNotBlank() }
-        if(clean.isEmpty()) return
-        registrationCookies=LinkedHashMap(registrationCookies).apply { putAll(clean) }
-    }
+    fun restoreDeviceCookies(cookies: Map<String,String>) = restoreDeviceCookiesImpl(cookies)
 
     /**
      * 后台拉取 TNC。
@@ -1498,6 +1487,8 @@ class ContentRepository(
          * 界面层只看得到主实例那一次，预取被拒就没人处理。
          */
         @Volatile private var deviceRejectedCount: Int = 0
+        internal val deviceRejectedCountValue get()=deviceRejectedCount
+        internal fun incrementDeviceRejectedCount() { deviceRejectedCount++ }
         /**
          * 取播放地址的**进程级单飞闸门**（见 [videoModel]）。
          *
