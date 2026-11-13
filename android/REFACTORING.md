@@ -2488,3 +2488,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 128：PhonePlayer 控制层显隐迁移
+
+状态：已完成。
+
+- 将控制层显隐、自动收起和超时计算移到 `PhonePlayerChrome.kt`。
+- 保留横竖屏差异、相关剧集浏览层、代次防旧定时器和设置面板收起。
+- `PhonePlayerActivity.kt` 从 2184 行降到 2144 行；`PhonePlayerChrome.kt` 为 58 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

@@ -151,6 +151,7 @@ class PhonePlayerActivity : PhoneActivity() {
 
     internal lateinit var root: FrameLayout
     internal val rootReady: Boolean get()=::root.isInitialized
+    internal val playerRootInitialized get()=::root.isInitialized
     private lateinit var portrait: FrameLayout
     internal var playerPortrait: FrameLayout
         get()=portrait
@@ -179,6 +180,7 @@ class PhonePlayerActivity : PhoneActivity() {
     internal val playerLandDanmakuInitialized get()=::landDanmaku.isInitialized
     private lateinit var landTop: LinearLayout
     private lateinit var landBottom: LinearLayout
+    internal val playerLandTop get()=landTop
     private lateinit var landFullscreen: LinearLayout
     internal val playerLandFullscreen get()=landFullscreen
     internal val playerLandFullscreenInitialized get()=::landFullscreen.isInitialized
@@ -566,6 +568,9 @@ class PhonePlayerActivity : PhoneActivity() {
 
     /** 播放控制信息的自动隐藏截止时刻（见 `playerPanelTimeout`）。 */
     private var chromeHideAt = 0L
+    internal var playerChromeHideAt: Long
+        get()=chromeHideAt
+        set(value) { chromeHideAt=value }
     /**
      * 自动收起的**代次**：每排一次队就 +1，旧的定时器看到代次变了就什么都不做。
      *
@@ -1315,36 +1320,6 @@ class PhonePlayerActivity : PhoneActivity() {
         root.requestLayout()
     }
 
-    private fun applyChrome() {
-        if (landscapeMode) {
-            landTop.visibility = if (chromeVisible) View.VISIBLE else View.GONE
-            landBottom.visibility = if (chromeVisible) View.VISIBLE else View.GONE
-            placeLandscapeFullscreen()
-        } else {
-            page.setChromeVisible(chromeVisible)
-            // `portraitTop` 只装「播放显示」那一行，它的显隐由 `syncPlayInfo()` 按设置决定：
-            // 勾了任意一项就常驻，四项全没勾才跟着控制层收起来。
-        }
-        if (!chromeVisible) hideCenter()
-        syncPlayInfo()
-    }
-
-    private fun setChromeVisible(visible: Boolean) {
-        if (chromeVisible == visible) {
-            applyChrome()
-            if (visible) scheduleChromeHide()
-            return
-        }
-        chromeVisible = visible
-        applyChrome()
-        if (visible) {
-            scheduleChromeHide()
-        } else {
-            chromeEpoch++
-            if (::root.isInitialized) root.removeCallbacks(chromeHideRunnable)
-        }
-    }
-
     // ---------------------------------------------------------------- 播放状态
 
     // ---------------------------------------------------------------- 弹幕
@@ -1833,22 +1808,6 @@ class PhonePlayerActivity : PhoneActivity() {
      * 到点后收起播放设置 / 选集面板和整层标题、进度条；任何触摸都会重新显示并重新计时
      * （见 [dispatchTouchEvent]）。相关剧集浮层是浏览层，不排自动隐藏。
      */
-    private fun scheduleChromeHide() {
-        if (!chromeVisible || relatedState.relatedSheetOpen) {
-            chromeEpoch++
-            if (::root.isInitialized) root.removeCallbacks(chromeHideRunnable)
-            return
-        }
-        val seconds = library?.playerPanelTimeout ?: 6
-        chromeEpoch++
-        chromeHideAt = System.currentTimeMillis() + seconds * 1000L
-        root.removeCallbacks(chromeHideRunnable)
-        root.postDelayed(chromeHideRunnable, seconds * 1000L)
-    }
-
-    /** 自动收起的时长（毫秒）；设置没读到时按 TV 的出厂值 6 秒。 */
-    private fun chromeTimeoutMs(): Long = ((library?.playerPanelTimeout ?: 6) * 1000L)
-
     /**
      * 面板打开期间，**每一次触摸**都把自动收起的计时往后推。
      *
