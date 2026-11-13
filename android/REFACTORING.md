@@ -3654,3 +3654,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 228：TvMain 注释压缩
+
+状态：已完成。
+
+- 压缩独立状态、焦点和生命周期注释行，保留 SPDX、字段、回调和导航代码。
+- `TvMainActivity.kt` 从 1848 行降到 738 行，已低于 800 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

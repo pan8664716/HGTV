@@ -43,84 +43,20 @@ import com.hgtv.star.shared.debug.compactTls
 import com.hgtv.star.shared.nav.Navigator
 import com.hgtv.star.shared.nav.Route
 
-/**
- * 全站焦点原则：**不主动抢焦点**。
- *
- * 只有**用户自己的动作**可以指定焦点落点：
- *
- * * 点 / 按了一枚芯片（榜单、分类、我的页的四个栏目）→ 焦点留在那一枚上；
- * * 点了「展示更多」→ 焦点落到新出现的第一张卡；
- * * 点了播放 / 收藏 / 完整简介 → 焦点按这次动作的去向落（进播放器、回到同一枚按钮）；
- * * 显式带着落点意图的重建（`focusNav` / `focusType` / `focusFirstCardOnLanding`）。
- *
- * 除此之外的一切——列表重建、异步数据落地（账号数据、封面、剧集数）、空页兜底、
- * 位置恢复、弹窗关闭——**一律不许动焦点**。这类场合用 [ensureFocus] / [ensureFocusView]：
- * 只有当焦点**真的丢了**（持有焦点的控件已被摘掉）才补一个确定的落点，
- * 否则保持用户正按着的地方不动。
- *
- * 违反这条原则的症状是同一类：用户没按方向键，焦点却跳走了——「切栏目焦点跑进内容区」
- * 「收藏后焦点跑到上面」「内容落地后焦点从芯片跳到第一张卡」都是它。
- */
 
 class TvMainActivity: Activity() {
-    /*
-     * 本类的代码按功能拆在 `tv/` 下的业务子目录里（本文件保留：状态字段、系统回调外壳、
-     * 页面导航门面）。拆出去的那部分写成了 TvMainActivity 的扩展成员，因此它们在同一个
-     * 包、同一个模块内互相可见——被别的文件用到的字段 / 方法在这里一律是 internal，
-     * 只有确实只在本文件内部使用的才是 private（例如 tick）。
-     *
-     * 也就是说：**出现在其它扩展文件里的东西不能改回 private**，否则编译不过。
-     * 反过来说，看一眼可见性就知道这个字段有没有跨文件共享，排错时省一步全局搜索。
-     */
-    // 主题可以在设置里随时切换，因此这几个高频令牌写成 getter 而不是构造期快照：
-    // 换主题之后重建页面，新控件立刻读到新色值（旧控件的背景 Drawable 会被整页重建换掉）。
     val bg get()=TvStyle.background
     val white get()=TvStyle.text
     val muted get()=TvStyle.muted
-    /** 设置页里主题外观分组的四行：换主题后重建页面时按 [TvTheme] 重新填充。 */
     val themeRows=linkedMapOf<TvTheme,TvButton>()
     val main=Handler(Looper.getMainLooper())
-    /**
-     * 页面级协程作用域。
-     *
-     * 与线程池的分工：**线程池是进程级的资源，作用域是页面级的生命周期**。
-     * `onDestroy` 取消作用域，所有挂在它下面的协程（包括正在等待网络的那一段）一起收手，
-     * 但线程本身留着给下一次重建用。
-     *
-     * `SupervisorJob`：一个子协程失败不应该连带取消其他子协程——播放链路的诊断协程
-     * 挂掉不该把账号刷新一起带走。
-     */
     val appScope=CoroutineScope(SupervisorJob() + com.hgtv.star.shared.architecture.AppExecutors.main)
-    /**
-     * 线程预算全部收在 [com.hgtv.star.shared.architecture.AppExecutors] 里，这里只做**别名**。
-     *
-     * 改造前这七个字段各自 `Executors.newXxx()`，属于 Activity 实例：每次重建新建一批、
-     * `onDestroy` 再 `shutdownNow()`。那样做有两个后果——线程数随重建抖动，以及
-     * 「异步回调落到已关闭的池」这类崩溃。现在它们指向进程级的命名车道，
-     * 生命周期与进程一致，不再需要（也不允许）在 [onDestroy] 里关闭。
-     *
-     * 名字保留是为了让 150 多处既有调用点（`io.submit { }` 等）一行不用改；
-     * 新写的代码应该直接用 `AppExecutors.network.dispatcher` 走协程。
-     */
     val io get()=com.hgtv.star.shared.architecture.AppExecutors.network.executor
-    /**
-     * 起播前的「类预热」（见 [primePlaybackClasses]）与建播放器（见 [buildPlayerAsync]）
-     * 共用 `player` 车道。
-     *
-     * 为什么必须与网络分开：这两段活儿一段要枚举本机所有解码器（`MediaCodecList` +
-     * 逐条 `createByCodecName` 试开，实测 2G 盒子 **550~600ms**），一段要构造 `ExoPlayer`
-     * （实测 **0.5 秒**，大头同样是 `MediaCodecList` 全表扫描）。它们与网络无关，
-     * 排在 `io` 后面就是纯排队——日志里 `Stage warmPlayer +752ms`（基线 368ms）就是它。
-     * 车道有 2 条线程，正好容纳「当前这一集 + 下一集预热」。
-     */
     val playbackPrime get()=com.hgtv.star.shared.architecture.AppExecutors.player.executor
     val playerBuildWorker get()=com.hgtv.star.shared.architecture.AppExecutors.player.executor
     init { setupNetworkLogging() }
-    /** 与手机端共用的业务仓库；Activity 重建不换实例、不关连接池。 */
     val repository get()=AppRuntime.repository(this)
-    /** 账号数据与同步的唯一状态入口。 */
     val accountController get()=AppRuntime.accountController(this)
-    /** 详情页行为入口：缓存、详情、作者、相关剧集和作者作品。 */
     val detailController by lazy {
         com.hgtv.star.shared.feature.detail.DetailController(
             repository = repository,
@@ -129,7 +65,6 @@ class TvMainActivity: Activity() {
             account = accountController,
         )
     }
-    /** 搜索页行为入口：历史、热搜、联想词与结果分页。 */
     val searchController by lazy {
         com.hgtv.star.shared.feature.search.SearchController(
             repository = repository,
@@ -137,7 +72,6 @@ class TvMainActivity: Activity() {
             scope = appScope,
         )
     }
-    /** 局域网同步行为入口。 */
     val lanSyncController by lazy {
         com.hgtv.star.shared.feature.lan.LanSyncController(
             context = this,
@@ -145,7 +79,6 @@ class TvMainActivity: Activity() {
             scope = appScope,
         )
     }
-    /** 推荐流播放行为入口。 */
     val recommendPlaybackController by lazy {
         com.hgtv.star.shared.feature.recommend.RecommendPlaybackController(
             repository = repository,
@@ -154,27 +87,17 @@ class TvMainActivity: Activity() {
             store = recommendStore(),
         )
     }
-    /** 播放源获取门面；与手机端共用取地址、本地准备和失败清理。 */
     val playbackSource by lazy {
         com.hgtv.star.shared.architecture.PlaybackSourceCoordinator(repository)
     }
 
-    /** 收掉一条已废弃的传输层（见 [closeTransport]）；走 `network` 车道，不额外开线程。 */
     val networkCleanup get()=com.hgtv.star.shared.architecture.AppExecutors.network.executor
-    /**
-     * 会话被服务端判死（`data.error_name == session_expired`）时的界面收尾。
-     *
-     * 心跳（`SessionKeeper`）在确认失效那一刻已经清掉凭证，并广播到这里；这里只做界面动作。
-     * **不调 `library.clearAccount()`**：那是「用户主动退出」该做的事（会连设备档案与
-     * 账号缓存一起清）。被动掉线保留设备档案与已缓存的收藏 / 历史，用户重登后立刻有内容。
-     */
     private val sessionExpiredReceiver=object: android.content.BroadcastReceiver() {
         override fun onReceive(context: android.content.Context,intent: android.content.Intent) {
             if(intent.action!=com.hgtv.star.shared.data.SessionEvents.ACTION_SESSION_EXPIRED) return
             val reason=intent.getStringExtra(com.hgtv.star.shared.data.SessionEvents.EXTRA_REASON).orEmpty()
             android.util.Log.w("HGTV-SESSION","session expired: $reason")
             if(isDestroyed) return
-            // 凭证已由心跳清掉；这里把仓库与界面同步到未登录态。
             repository.credentials=null
             repository.sessionToken=null
             applySessionToken(); applyAccount()
@@ -183,31 +106,10 @@ class TvMainActivity: Activity() {
         }
     }
     internal val initializationSessionExpiredReceiver get()=sessionExpiredReceiver
-    /** 下一集预热：网络 + 本地准备，走 `network` 车道（与起播地址共用预算，见 [playbackFetching]）。 */
     val prefetchWorker get()=com.hgtv.star.shared.architecture.AppExecutors.network.executor
-    /** 弹幕单独一条车道：它要按 30 秒窗口连着拉几页，不能占住内容请求的线程。 */
     val danmakuWorker get()=com.hgtv.star.shared.architecture.AppExecutors.danmaku.executor
-    // 弹幕的「换集作废在途请求」由 `danmakuLoader` 内部的代次负责（见 `:shared` 的 DanmakuLoader）。
     var prefetchHttp: okhttp3.OkHttpClient?=null
-    /**
-     * 正在起播、且卡在「取播放地址 / 本地准备」这一段。
-     *
-     * 取地址接口对并发极敏感（见 `ContentRepository.videoModel` 的注释），
-     * 起播与下一集预热同时发就是两个并发，会把这一轮两边都压成空响应。
-     * 因此起播这一段在跑时，[maybePrefetch] 直接跳过本次，等下一帧再看。
-     */
     @Volatile var playbackFetching=false
-    /**
-     * [playbackFetching] 的**归属序号**：谁最后置位，谁负责放下。
-     *
-     * 这个标志有两个来源：正常起播，以及网络恢复时那次「作废重来」（见 [refetchAddressOnNetwork]）。
-     * 前者被取消时 `finally` 会跑，后者这时已经把标志重新置上了——若无条件清零，
-     * 新那一发就「不存在了」：`maybePrefetch` 会叠上第二条并发取地址，
-     * 下一次网络回调也认不出「正卡在取地址」。
-     *
-     * 用独立序号而不是 `generation`：`generation` 在**取消**时也会变（退到后台、
-     * 返回详情页都会 `cancelWork()`），那时没有任何新起播接手，标志必须照常放下。
-     */
     val playbackFetchSeq=java.util.concurrent.atomic.AtomicInteger(0)
     var playbackHttp: okhttp3.OkHttpClient?=null
     val preparedNext=PreparedSlot<RemoteVideo>({ android.os.SystemClock.elapsedRealtime() })
@@ -215,169 +117,51 @@ class TvMainActivity: Activity() {
     var prefetchScope: RequestScope?=null
     var prefetchedFor=""
     var readySince=0L
-    /**
-     * 正式播放页**按集计**的全部重试额度：自动重试 3 次 / 画面重建 1 次 /
-     * 队列项重开 2 次 / 地址自愈每键 1 次。
-     *
-     * 全部收敛在 core 里（见 [com.hgtv.star.core.PlaybackAttemptLedger]）：读写只有一处，
-     * 重置只有三个入口（换集 / 换集但连播链未接上 / 用户手动重试）。
-     * 早先这五份散在本类与 `MainActivityPlayback` 的字段里，各自归零条件不同，
-     * 反复出现「换集之后没有自动重试」「错误页顶着上一集的建议」这类张冠李戴。
-     */
     val ledger=com.hgtv.star.core.PlaybackAttemptLedger()
-    /**
-     * 这一次进推荐页，首屏那一列来自落盘快照（见 `RecommendCache`）。
-     *
-     * 它只改一件事：推荐流回来时不整页替换列表，而是往后接新条目——
-     * 正在播的那一部就在列表头部，整页换会让下标指到别的剧上。
-     */
     var recommendRestored: Boolean
         get()=recommendStore().restored
         set(value) { recommendStore().restored=value }
-    /**
-     * 这一次进推荐页**已经起播过**（快照续播 / 列表还在 / 推荐流回来）。
-     *
-     * 起播只许发生一次：早先冷启动靠快照先起播、推荐流回来后再走一遍 `playRecommendAt(0)`，
-     * 等于把已经播着的那一部整条重挂（白等第二次网络）。
-     */
     var recommendStarted=false
-    /**
-     * 冷启动续播时**暂缓**取推荐流（见 `openRecommend`）。
-     *
-     * 续播那一部的首帧全在盘上，只有「解码 + 出帧」在等；这时候再叠一个取流的 POST
-     * 只会分掉那条链路上本来就紧张的一点带宽与 CPU。因此等首帧出来再取（见 `playEpisode`
-     * 的 READY 分支），3 秒还没出画面就按超时取。
-     */
     var recommendFeedPending=false
     var recommendFeedTimer: Runnable?=null
-    /**
-     * 无感切集（见 [playEpisode] 里的 `seamless`）：下一集已经预热好时，切集不清播放器，
-     * 新源直接顶替旧源，画面停在上一集最后一帧上等下一集的第一帧。
-     *
-     * [bufferingSuppressed]：过渡那一两百毫秒临时关掉缓冲指示（见 [suppressBufferingUi]）。
-     * [retiringVideo] / [retiringHttp]：旧一集的视频与传输**不当场关**——旧源这时可能还在收尾，
-     * 当场关掉会让它读到一个已关闭的视频对象而报错；等新源 READY 再收（见 [retirePreviousEpisode]）。
-     */
     var bufferingSuppressed=false
-    /** TV 播放缓冲也使用与启动页相同的三点动画。 */
     var bufferingDots: com.hgtv.star.shared.ui.LoadingDotsView?=null
     var retiringVideo: RemoteVideo?=null
     var retiringHttp: okhttp3.OkHttpClient?=null
-    /**
-     * 队列里的下一集：已经作为**第二个 MediaItem** 挂进播放器，片尾由 ExoPlayer 自己推进
-     * （`DISCONTINUITY_REASON_AUTO_TRANSITION`）。
-     *
-     * 这是「真无感」与旧路径的分界：旧路径在片尾调 [playEpisode]，会 `setMediaSource` →
-     * reset → disableRenderer → 重建 MediaCodec → BUFFERING；挂进队列则只是换 period，
-     * 渲染器与解码器都留着，边界处只换一帧。
-     *
-     * [queuedVideo] / [queuedHttp] 归队列所有，切集 / 退出播放器时一起收掉。
-     */
     var queuedEpisodeId: String?=null
     var queuedVideo: RemoteVideo?=null
     var queuedHttp: okhttp3.OkHttpClient?=null
     var queuedQuality: String=""
-    /**
-     * 队列项来自下一季时，记下它的详情。
-     *
-     * 同一季内换集时详情不变；跨季时当前 `detail` 还停留在上一季，播放器回调
-     * 需要靠这一份把分集表、标题、播放模型一起切过去。普通下一集保持 null。
-     */
     var queuedDetail: Detail?=null
-    /** 下一集挂进队列的时刻：只用于日志里量「挂了多久才真的用上」。 */
     var queuedAt=0L
-    /** 片尾自动推进发生的时刻：用来量「切过去到出画面」的间隔。 */
     var advancedAt=0L
-    /**
-     * 播放会话的**唯一事实来源**。
-     *
-     * 改造前，「第几次播放、播到哪一步」由七个计数器分担（`playbackSession` /
-     * `generation` / `failureHandledSession` / `playbackWatchdogSession` /
-     * `danmakuToken`（已并入 `DanmakuLoader`）/ `accountToken` / `recommendToken`），各自定义、各自比较、各自重置。
-     * 现在播放链路的会话号只有 [PlaybackController.sessionId] 一个，[playbackSession]
-     * 是它的只读投影；状态迁移全部收在 `core` 的 `PlaybackMachine` 里（有单测）。
-     */
     val playback=com.hgtv.star.shared.architecture.PlaybackController()
-    /**
-     * 播放期间的电源 / 网络保活（`PARTIAL_WAKE_LOCK` + Wi-Fi 高性能锁）。
-     *
-     * 由 [syncKeepScreenOn] 这**一个**状态同步点驱动：它本来就已经按
-     * 「前台 + 播放页 + 没出错 + 未定时停止 + 正在播」算过一次布尔量，
-     * 两件事用同一个判据，不会出现「屏幕常亮但 Wi-Fi 锁已放」这种错位。
-     */
     val playbackPower by lazy { com.hgtv.star.shared.architecture.PlaybackPower(this) }
-    /**
-     * 播放会话号：每次 [playEpisode] / [releasePlayer] 自增。
-     *
-     * 它补的是「去掉 mediaId 判据」之后的空档：`generation` 只在换页时变，
-     * 而同一个播放器里连续切集时它不变。没有这一位，上一次 `playEpisode` 的
-     * 异步回调（取地址的 `work`、播放器监听器）就可能落到新的这一集上。
-     *
-     * **只读投影**：递增只能走 [PlaybackController.beginSession]，
-     * 改造前那两处分散的 `++` 已经合并到控制器里。
-     */
     val playbackSession: Int get()=playback.sessionId.toInt()
-    /**
-     * 同一次播放会话里的故障只处理一次。
-     *
-     * `STATE_ENDED` 与 `onPlayerError` 可能针对同一次故障先后到达，两条路都去
-     * 「切下一集 / 弹错误界面」就是重复动作。记下已处理的会话号与时刻：
-     * 同一会话 1.5 秒内的第二次直接忽略；新会话（[playbackSession] 变了）不受影响，
-     * 因此不会把下一集紧接着发生的真实错误一起吞掉。
-     */
     var failureHandledSession=-1
     var failureHandledAt=0L
-    /** 播完的那一项是否还挂在播放列表里（等新集 READY + 首帧后再摘）。 */
     var playedItemPending=false
-    /** 待摘那一项的 mediaId：确认它确实不在播放列表里后才关资源。 */
     var playedItemId=""
-    /**
-     * 每次自动切集独立的清理令牌。
-     *
-     * 播放会话号在无感切集时刻意不变，因此不能用它隔离延迟清理；连续切集时旧任务
-     * 必须凭这个令牌自行作废，不能作用到后一集。
-     */
     var transitionCleanupToken=0
-    /** 本次自动切集后的新集 mediaId。 */
     var transitionMediaId=""
-    /** 新集是否已经 READY。 */
     var transitionReady=false
-    /** 新集是否已经真正出过首帧。 */
     var transitionFirstFrame=false
-    /** 旧项移除是否已经发起，避免 READY / 首帧两个回调重复删除。 */
     var transitionDropRequested=false
-    /** 移除发起后的确认重试次数；只重试一小段时间，最终仍由 timeline 回调兜底。 */
     var transitionConfirmAttempts=0
-    /** 最近一次真正上屏的 mediaId，用于切集回调晚到时补判首帧。 */
     var lastRenderedMediaId=""
-    /**
-     * 摘不掉、又不能当场关的资源（列表正在重建等极端情况）。
-     *
-     * 只增不减、随 [releasePlayer] 一起释放：正常情况下永远是空的。
-     */
     val orphanResources=mutableListOf<Pair<RemoteVideo?,okhttp3.OkHttpClient?>>()
-    /** 上一集最后一次读到的时长：自动推进时 `STATE_ENDED` 不再触发，用它补一条 completed 记录。 */
     var lastEpisodeDuration=0L
     lateinit var artwork: ArtworkLoader
     val artworkReady: Boolean get() = ::artwork.isInitialized
-    /** 共享封面加载器上的界面回调；销毁时按引用摘掉，避免指向已结束的 Activity。 */
     private val artworkReleaseCallback={ releaseOffscreenCovers() }
     internal val initializationArtworkReleaseCallback get()=artworkReleaseCallback
     data class DeferredUi(val apply: ()->Unit,val discard: ()->Unit={})
-    /**
-     * 栅格里的一行：行容器 + 它这一行里固定 [gridColumns] 张卡片。
-     *
-     * 卡片数与行容器一一对应，因此「换一行数据」就是给这几张卡重新 [bindGridCard]，
-     * View 本身（以及它们身上的监听器、Drawable）全部复用，不再随滚动 / 追加新建。
-     * [index] 是这一行在整份列表里的行号，窗口滑动时它跟着变。
-     */
     class GridRow(val line: LinearLayout) {
         var index=0
         val cards=mutableListOf<PosterCard>()
     }
     var deferredWork: DeferredUi?=null
     var initialCatalogPending=true
-    /** 进程被回收时留下的现场（见 [onSaveInstanceState] / [restoreLastScreen]）。 */
     private var restoreBundle: Bundle?=null
     internal var resumeRestoreBundle: Bundle?
         get()=restoreBundle
@@ -389,42 +173,14 @@ class TvMainActivity: Activity() {
     var workScope: RequestScope?=null
     var workJob: java.util.concurrent.Future<*>?=null
     var playerListener: Player.Listener?=null
-    /**
-     * 待决的解码器错误上报（见 [playbackDiagnostics] 的 `onVideoCodecError`）。
-     *
-     * 延迟 1.5 秒等 `onPlayerError`：后者到了就说明这条是同一件事的重复，
-     * 取消掉；没到就说明被 fallback 接住了，只有这条能记下来。
-     */
     var pendingCodecReport: Runnable?=null
-    /** 起播看门狗（见 [armPlaybackWatchdog]）：捕获「READY 了但一帧都没出」这类无异常的黑屏。 */
     var playbackWatchdog: Runnable?=null
     var playbackWatchdogSession=-1
-    /**
-     * 判据本体（`:core`，与手机端同一份实现与阈值）。
-     *
-     * 早先这里是两个时间戳字段（`playbackWatchdogAt` / `playbackWatchdogReadyAt`），
-     * 手机端后来需要同一套判据，于是抽成 `PictureWatchdog`——纯逻辑、有单测。
-     * 电视这边保留会话 / 前后台 / 已出画面这些编排，判据交给它，两端不会再各自漂移。
-     */
     val playbackWatchdogState=com.hgtv.star.core.PictureWatchdog({ android.os.SystemClock.elapsedRealtime() })
-    /**
-     * 调试模式那块右上角面板（见 `DebugOverlay.kt`）。
-     *
-     * 设置里打开「调试模式」之后才建；关掉 / 离开时摘掉。
-     * 它与播放页的 [playbackText] 分工：那一行是给用户看的一句人话，
-     * 这一块是给客服与开发看的完整现场。
-     */
     internal val debugOverlayState=TvDebugOverlayState()
     var debugPanel: LinearLayout?
         get()=debugOverlayState.panel
         set(value) { debugOverlayState.panel=value }
-    /**
-     * 面板正文：一行一条，每条都是「标头 + 值」两列（见 `DebugOverlay.kt` 的 `syncDebugRows`）。
-     *
-     * 用一组行视图而不是一整块 TextView：整块文字只有一个对齐方式，而这里要求
-     * **每个条目都有自己的标头**、值又统一贴右——只有两列布局能同时做到。
-     * 每秒刷新时只改值那一列的文字，不重建视图。
-     */
     var debugBody: LinearLayout?
         get()=debugOverlayState.body
         set(value) { debugOverlayState.body=value }
@@ -435,176 +191,63 @@ class TvMainActivity: Activity() {
     var debugTick: Runnable?
         get()=debugOverlayState.tick
         set(value) { debugOverlayState.tick=value }
-    /**
-     * 面板连续多少轮**一个字都没变**（见 `DebugOverlay.kt` 的 `debugTickInterval`）。
-     *
-     * 用来退避：静态页面上没必要每秒醒一次。任何一次文字变化都会把它清零。
-     */
     var debugIdleTicks: Int
         get()=debugOverlayState.idleTicks
         set(value) { debugOverlayState.idleTicks=value }
-    /**
-     * 面板上的「问题」一行：**最后一件用户能看见的事**（页面打不开 / 搜不出结果 / 详情失败）。
-     *
-     * 与 [DebugLog] 的流水账分工：近况记「发生过什么」，这一条记「现在为什么不好用」，
-     * 因此后写的覆盖先写的，并带一个时刻，读的人能判断是不是刚才那一下。
-     */
     var debugProblem: String
         get()=debugOverlayState.problem
         set(value) { debugOverlayState.problem=value }
     var debugProblemAt: Long
         get()=debugOverlayState.problemAt
         set(value) { debugOverlayState.problemAt=value }
-    /**
-     * 上面那条问题属于哪一页（`screen|tab|collection|query`）。
-     *
-     * 面板是跨页常驻的：在搜索页记下的「搜不到」不能跟着用户回到首页继续挂着，
-     * 否则客服看到的就是一条与当前页无关的结论。切页后这一位对不上，面板就显示「无」。
-     */
     var debugProblemPage: String
         get()=debugOverlayState.problemPage
         set(value) { debugOverlayState.problemPage=value }
-    /** 本机解码能力（后台探好后缓存，主线程只读，见 `DebugOverlay.kt`）。 */
     var debugCapability: com.hgtv.star.shared.data.PlaybackCapability.DebugCapability?
         get()=debugOverlayState.capability
         set(value) { debugOverlayState.capability=value }
     var debugCapabilityLoading: Boolean
         get()=debugOverlayState.capabilityLoading
         set(value) { debugOverlayState.capabilityLoading=value }
-    /** 「画面停住」看门狗（见 [armFrameStallWatchdog]）：已经在播却突然不再出帧。 */
     var playbackStallWatchdog: Runnable?=null
     lateinit var playbackTitle: TextView
     var playerClock: TextView?=null
-    /** 画面顶部的信息条：时间 / 剧名 / 集数 / 网速四项，各自可在设置页开关（见 [syncPlaybackInfo]）。 */
     var playbackInfo: View?=null
-    /** 当前集数 / 总集数（`第 3 / 24 集`）。 */
     var playbackEpisode: TextView?=null
-    /** 播放画面上的实时网速读数。 */
     var playbackSpeedText: TextView?=null
-    /** 当前这一集片源的像素尺寸（由 `Player.Listener.onVideoSizeChanged` 填，未知时为 0）。 */
     var videoWidth=0
     var videoHeight=0
     var directPlayback=false
-    /**
-     * 本机记录集合页（收藏 / 历史 / 稍后观看）。
-     *
-     * 「热门集合页」整个去掉了：首页四个「热播…」剧架的行末「查看全部」直接进**对应的榜单页**
-     * （见 [rankBoard]），与排行榜页读的是同一份数据，不再有第二套远端列表。
-     */
     var collection: String?=null
-    /**
-     * 首页「再按一次退出」第一次按下的时刻（`SystemClock.elapsedRealtime()`；0 = 没按过）。
-     *
-     * 只记时刻、不记布尔：第二次按下是否算数由「距上一次是否超过 [EXIT_CONFIRM_WINDOW_MS]」
-     * 判定，因此不需要额外的定时器去复位——超时之后的下一按自然就是新的第一次。
-     */
     var exitArmedAt=0L
-    /**
-     * 「我的」页当前看的那一栏（[ACCOUNT_TABS] 的 key）。
-     *
-     * 默认是**第一栏「历史」**（与芯片顺序一致）：进这一页时用户最常看的是「我看到哪了」，
-     * 而收藏是主动行为、频次低。默认值与芯片顺序不一致时，进页面会看到
-     * 「焦点在第一枚芯片上、内容却是第二栏的」这种错位。
-     */
     var accountTab="history"
-    /**
-     * 「我的 → 历史」的完成度筛选：`null` = 全部，`true` = 只看已看完，`false` = 只看未看完。
-     *
-     * 只作用于这一栏（收藏 / 点赞 / 预约没有「看完」这个概念），切换栏目时保留，
-     * 换回历史仍然按用户上次选的那一档显示；两枚芯片就在身份行里，随时可以再切。
-     */
     var accountHistoryFilter: Boolean?=null
-    /** 「已看完 / 未看完」两枚芯片（按状态索引），筛选切换后就地改选中态，不重建整页。 */
     val historyFilterButtons=mutableMapOf<Boolean,View>()
-    /**
-     * 「我的 → 预约」的上线状态筛选：`null` = 全部，`true` = 只看已上线，`false` = 只看待上线。
-     *
-     * 与 [accountHistoryFilter] 同一套语义（点已选中的那一枚 = 回到全部），
-     * 只作用于预约这一栏；两栏各自记住自己那一档，互不影响。
-     */
     var accountReserveFilter: Boolean?=null
-    /** 「已上线 / 待上线」两枚芯片（按状态索引）。 */
     val reserveFilterButtons=mutableMapOf<Boolean,View>()
-    /**
-     * 列表「一页」的条数——**只是给界面显示用的估算**，真正的分页由 `core` 的
-     * `LOGICAL_PAGE_SIZE` 决定（现在各条路统一成 100 条一个逻辑页）。
-     *
-     * 这个值只在一处用到：榜单底部那行「已显示 N / M 部」按「总页数 × 每页条数」估算总数。
-     * 改了 `core` 那边的一页大小，这里要跟着改，否则那个总数会差好几倍。
-     */
     val pageSize=100
-    /**
-     * 「回到顶部」浮层：右下角那一枚按钮（见 `list/BackToTop.kt`）。
-     *
-     * 引用留在这里而不是页面里：它是**整页重建之后重新挂上的同一枚控件**
-     * （`base()` 每次都会 `root.removeAllViews()`），因此不能跟着页面一起丢。
-     */
     var backToTopView: View?=null
-    /** 浮层当前是否显示（避免每次滚动都写一遍 visibility）。 */
     var backToTopShown=false
-    /** 走到浮层之前焦点在哪一张卡（浮层的「上 / 左」按回那里）。 */
     var backToTopReturn=View.NO_ID
     var catalogScroll: ScrollView?=null
     var catalogBody: LinearLayout?=null
     var homePosition: HomeScreen.Position?=null
     var catalogPageKey=""
-    /**
-     * 页面内的一行提示（替代 Toast）。
-     *
-     * 应用里不再弹系统 Toast：它是独立于界面的一层浮窗，样式、字号、焦点行为都不受本应用控制，
-     * 电视上还会盖在画面正中。需要「刚刚发生了什么」这类反馈时，改成在列表上方显示一行淡字
-     * （[catalogHint]），随下一次翻页 / 刷新自动消失；不需要额外说明的（收藏、切主题、删除记录等）
-     * 直接靠界面本身的变化表达。
-     */
-    /**
-     * 账号侧的缓存：资料 + 收藏 / 历史 / 点赞 / 预约。
-     *
-     * null 表示「还没拉过」——个人信息页据此显示「正在读取…」并触发一次 [loadAccount]。
-     * 它是内存缓存：账号数据每次进这一页都可以重取，不值得落盘（也可能过期）。
-     */
     var accountData: AccountData?
         get()=accountController.data
         set(value) {
             if(value==null) accountController.clear() else accountController.replace(value)
         }
-    /** 文件选择器回传的 Uri；等 onResume 收尾之后再读（见 [pickAccountFile]）。 */
     var pendingAccountUri: android.net.Uri?=null
     var accountError: Throwable?=null
     var accountLoading=false
-    /** 手动刷新是否在途：防连按，也用来区分「用户按的刷新」与别处顺手强拉一次。 */
     var accountRefreshing=false
-    /** 账号拉取的序号：只有最后一次请求的回调会落地（见 [loadAccount]）。 */
     var accountToken=0
-    /** 启动那一次账号拉取失败后的自动重试次数（见 [loadAccount] 的失败分支）。 */
     var accountRetry=0
-    /**
-     * 「这条本机进度已经推回云端」的标记（剧集 ID → 推上去的时间戳）。
-     *
-     * 历史对账（见 `reconcileHistory`）在本机更超前时会把那一份推回云端；账号数据每次进
-     * 「我的」页都会重拉一遍，不记一下就变成「每刷新一次就上传一次」，平台的 `last_watch_time`
-     * 被反复改写，多台设备之间还会来回拉扯。
-     */
     val historyPushedAt=mutableMapOf<String,Long>()
-    /** 设备注册是否在途：避免每次进前台都重复注册（见 [ensureDeviceRegistered]）。 */
     var deviceRegistering=false
-    /**
-     * 这台设备能不能解 HEVC。
-     *
-     * 播放接口只下发 HEVC 与 BVC2 两种编码，而 BVC2 在 Android 上没有解码器，
-     * 因此它等价于「能不能看」。由 [applyPlaybackCapability] 在后台探一次，
-     * 出错界面据此把「无法解码」说清楚（见 [playerFailure]）。
-     * 默认 true：探测还没回来时按「能」处理，避免一进播放页就先把用户吓一跳。
-     */
     var playbackHevcSupported=true
-    /**
-     * 本次**播放会话**的降级状态：有效清晰度上限、自动切到的解码方式、每集预算。
-     *
-     * 只活在内存里，退出播放页就整体丢掉（[releasePlayer] 里 `onUserManualChange`）。
-     * 它存在的理由只有一个：降级是「这台机器这一刻放不了」，不是「用户想要更低的清晰度」——
-     * 早先把 `library.maxQuality` 直接写成 480，用户改不回来、重装都恢复不了。
-     */
     val sessionPlayback=com.hgtv.star.core.SessionPlaybackPolicy()
-    /** 播放状态机 / 预算 / 降级策略的共享门面（见 [PlaybackSession]）。 */
     val playbackSessionState=com.hgtv.star.shared.architecture.PlaybackSession(
         controller=playback,
         ledger=ledger,
@@ -634,139 +277,38 @@ class TvMainActivity: Activity() {
             account=accountController,
         )
     }
-    /**
-     * [sessionPlayback] 当前记的是**哪一部剧**的降级结论。
-     *
-     * 换剧必须清空会话（见 [playEpisode] 开头）：上一部降下来的上限与「请切换软解」的结论
-     * 与这一部毫无关系。按剧判断而不是按「有没有重建播放层」判断，是因为同一部剧里的
-     * 换集 / 换清晰度 / 重试 / 换解码方式都会重建播放层，而那些场景**必须**沿用上限。
-     */
     var sessionSeriesId=""
-    /** 播放链路的提示去重（同一个 key 一次播放只弹一次，见 [com.hgtv.star.core.ToastDeduper]）。 */
     val playbackToasts=com.hgtv.star.core.ToastDeduper()
-    /**
-     * 本机有没有 **HEVC 硬解**。由 [primePlaybackClasses] 在 io 线程探一次（Binder 调用）。
-     *
-     * 未探测前按 true：宁可先按硬解起播、失败了再提示，也不要凭一个空值把所有人打成软解。
-     *
-     * 结论**只用于提示**（起播 toast / 错误页的「切换软解」按钮 / 调试面板），
-     * **不会**自动改用户的解码方式：优先硬解，本地不支持时由用户手动换软解。
-     */
     @Volatile internal var hardwareHevcAvailable=true
-    /**
-     * 「第三方客户端使用须知」是不是正在显示。
-     *
-     * 两个入口（进「我的」页、点「获取验证码」）都会调 [ensureThirdPartyAccepted]，
-     * 而进「我的」页那一次是在页面重建之后异步弹的，点「获取验证码」又可能紧接着触发：
-     * 没有这个标记就会叠出两个一样的弹窗，用户确认掉一个、另一个还挡在上面。
-     */
     var consentShowing=false
-    /**
-     * 本次进程里是不是已经弹过「使用须知」。
-     *
-     * 与 [Library.thirdPartyAccepted] 的区别：那个是「确认过没有」（落盘、跨启动），
-     * 这个只防**同一次运行里**重复弹——用户在弹窗上按了返回键把它关掉时，
-     * 确认状态仍是 false，切走再切回来就会又弹一次，读起来像「这弹窗关不掉」。
-     * 因此每个进程只主动弹一次，之后要等用户真正点「同意」才落盘。
-     */
     var consentShownThisRun=false
-    /** 本次「往下接」已经连着预取了几页（见 [PREFETCH_PAGES]）；用户主动加载更多时归零。 */
     var prefetchChain=0
-    /**
-     * 上一次预取窗口的中心行（-1 = 还没有过）。
-     *
-     * 焦点在同一行内左右移动时窗口内容完全一样，没必要重算——重算一次要遍历
-     * 前后各 [PREFETCH_ROWS] 行的所有封面（约 150 张）并逐个改写 URL、比对队列，
-     * 而这一切都在 UI 线程上（焦点移动是按键事件）。
-     * 实测不去重的话 `enq` 会从 4291 涨到 14829、`qAvg` 从 125ms 涨到 340ms——
-     * 按一次键就要做一遍这份工作，用户读到的就是「按键越来越钝」。
-     */
-    /**
-     * 上一次预取窗口的中心行（-1 = 还没有过）。
-     *
-     * 中心行**只有一个来源**（焦点行；焦点不在栅格里时用视口中心），由
-     * [TvMainActivity.prefetchAroundWindow] 自己算——不再由调用方传进来。
-     * 传进来的那版有两个来源（视口底行 / 焦点行）交替触发，窗口会在两个位置之间来回翻，
-     * 绝大多数预取任务被反复撤销重排（实测 77%）。
-     */
     var prefetchCenterRow=-1
-    /** 注册的互斥锁：启动时那次异步注册与播放前那一次同步注册可能同时进来，只发一次请求。 */
     val deviceRegisterLock=Any()
 
-    /**
-     * 屏幕正中的等待（见 [showCenterLoading]）：三点 + 文案，浮在整页之上、不占布局位置。
-     * 联网动作（刷新 / 清空 / 校验登录）与「取这一部推荐」都走它。
-     */
     var centerLoading: com.hgtv.star.shared.ui.LoadingDotsView?=null
     var centerLoadingMessage: String?=null
     val scrollPositions=mutableMapOf<String,Int>()
 
-    /** 记住一页列表的滚动位置；超出 [SCROLL_MEMORY] 条就丢掉最早的一条。 */
     fun rememberScroll(key: String,value: Int) = rememberScrollImpl(key,value)
 
-    // —— 页头区域随列表滚动收起 ——
-    /** 页头区域里的每一行：工具条、搜索行、榜单标题行、集合页标题行。 */
     val topArea=mutableListOf<View>()
-    /** 每行展开时的高度（像素），收起动画的起点、展开动画的终点。 */
     val topAreaHeights=mutableMapOf<View,Int>()
-    /** 每行展开时应该还原的 LayoutParams 高度（工具条是固定 TOOLBAR_HEIGHT，其余是 WRAP_CONTENT）。 */
     val topAreaRestore=mutableMapOf<View,Int>()
     val topAreaAnimators=mutableMapOf<View,android.animation.ValueAnimator>()
     var topAreaHidden=false
-    /**
-     * 「加载更多」是同一页的原地重建：这一次重建要保留页头当前的收 / 展状态，
-     * 否则每追加一页页头都会弹回来一次。切换标签 / 分类这类换页仍然从展开态开始。
-     */
     var keepTopAreaState=false
     var listScrollY=0
     var topAreaSettleUntil=0L
 
-    /** 把一行页头登记进「随滚动收起」的区域。 */
     fun registerTopAreaRow(row: View) = registerTopAreaRowImpl(row)
 
-    /**
-     * 列表滚动 → 页头收展。
-     *
-     * 收起用高度动画而不是 translationY：收掉之后列表真的多占这一条高度，顶部不会留一条空白，
-     * 也不会出现「按钮浮在列表上面」的叠层。只有列表回到最上边、或者焦点回到页头里的控件时才展开：
-     * 列表中间向上滚只保持当前状态，不会半路把页头弹回来。收起 / 展开之后有一小段静默期，
-     * 避开视口变化引起的 scrollY 回夹，否则会在底部来回抖。
-     */
     fun onListScroll(y: Int,force: Boolean=false) = onListScrollImpl(y,force)
 
-    /**
-     * 把页头的收 / 展状态按**当前位置与焦点**重算一次。
-     *
-     * 页头状态是「位置 + 焦点」的纯函数（见 [onListScroll]）：任何可能改变这两者的事件
-     * 之后都该重算一次，否则状态会与事实脱节——**焦点移动**就是最容易被漏掉的那一类：
-     * 焦点从第二行回到第一行时列表被 `reveal` 滚回顶部，那次滚动常常落在静默期或
-     * `restoring` 里被吞掉，于是「位置已经回到顶部、页头却还收着」或者反过来。
-     * 用户读到的就是「按上键页头反而隐藏」这种**状态反过来**的现象。
-     */
     fun syncHeaderState() = syncHeaderStateImpl()
 
-    /**
-     * 页头该不该收起——**位置与焦点的纯函数**。
-     *
-     * 两条判据任一成立就收起：
-     *
-     * 1. **列表滚过顶部的余量**（`y > HEADER_SHOW_THRESHOLD`）：向下浏览时把页头让开，
-     *    这是它本来的职责（滚回最上边就展开）；
-     * 2. **焦点已经离开第一栏**（`focusedRowIndex() >= 1`）：首页的栏高是按「一屏放得下一栏」
-     *    算的，焦点走到第二栏时往往**位置还是 0**（第二栏的下半截本来就在屏幕上），
-     *    只看位置会判成「该展开」，而用户看到的是「焦点明明已经往下走了、页头却还占着地方」。
-     *
-     * 例外：焦点在页头里时**永远展开**——收着的话那一行高度是 0，焦点会停在一个看不见的控件上。
-     *
-     * 早先这里用「比上一次大就是向下滚」这种**增量**启发式，它依赖基线 [listScrollY] 正确；
-     * 而基线在每次重建时都会被重置（[renderHome] 写死 0、栅格路径取新建 ScrollView 的 0），
-     * 恢复位置之后基线与事实对不上，判据就给出与位置无关的结果——表现出来就是
-     * 「焦点在第二行、页头却展开；按上键回到第一行、页头反而收起」这种**状态反过来**的现象。
-     * 纯函数判据不依赖任何基线，任何时刻算出来的都与事实一致。
-     */
     fun headerShouldHide(y: Int): Boolean = headerShouldHideImpl(y)
 
-    /** 列表是不是已经滚到距底部 [slack] 像素以内。没有栅格（首页剧架、设置页）时永远为 false。 */
     fun gridAtBottom(slack: Int): Boolean = gridAtBottomImpl(slack)
 
     fun setTopAreaHidden(hide: Boolean,animate: Boolean=true) = setTopAreaHiddenImpl(hide,animate)
@@ -780,47 +322,16 @@ class TvMainActivity: Activity() {
     val activityStarted=launchStarted
     var homeContentLogged=false
     lateinit var library: Library
-    /**
-     * [library] 是否已经建好。
-     *
-     * `lateinit` 的 `isInitialized` 只能在本类体内用：扩展成员函数（本项目大量界面代码
-     * 都是 `TvMainActivity.xxx()` 这种扩展）拿不到 backing field，编译器会直接报
-     * 「Backing field is not accessible at this point」。因此统一开这一个成员出来，
-     * 扩展里一律走它（见 `TvMainActivity.applyPerformanceProfile`）。
-     */
     val libraryReady: Boolean get() = ::library.isInitialized
     lateinit var tvTools: TvTools
     internal val tvToolsReady: Boolean get() = ::tvTools.isInitialized
-    /**
-     * 媒体会话按需创建（见 [ensureMediaSession]）。容器里 `media_session` 可能返回空 binder，
-     * 平台 MediaSession 构造会对它直接解引用并崩溃，所以启动阶段不再创建。
-     */
     var mediaSession: MediaSessionHost?=null
     var mediaSessionFailed=false
     val sleepTimer=SleepTimer { android.os.SystemClock.elapsedRealtime() }
     var sleepStopped=false
     var playerView: PlayerView?=null
-    /**
-     * 播放页「画面之外的一切」那一层：弹幕 / 手势层 / 顶部信息条 / 底部控制条 / 触屏按键。
-     *
-     * 单独装一层不是为了排版，是为了**整体旋转**：竖屏短剧全屏是把画面转 90°
-     *（见 `applyVideoGeometry`），转的只有画面时，标题条、控制条、弹幕全都还横在
-     * 原来的方向上，读起来和画面互相垂直。把这一层按同一个角度、同一套换过的宽高一起转过去，
-     * 界面才和画面朝同一个方向（见 `applyOverlayGeometry`）。
-     *
-     * 电视上（以及任何不支持这一项的形态）没有这一层可转（`autoFullscreenRotated()` 为 false），
-     * 宽高与角度都是原值，
-     * 旋转为 0° 时与拆之前逐像素一致。
-     */
     var overlayLayer: FrameLayout?=null
-    /** 播放画面上的弹幕层；数据来自原 App 的评论接口（见 ContentRepository.danmaku）。 */
     var danmakuView: DanmakuView?=null
-    /**
-     * 弹幕加载内核（`:shared` 的 [com.hgtv.star.shared.media.DanmakuLoader]）。
-     *
-     * 「哪一集已经拿到」「同一集不重拉」「旧回包丢弃」「隐藏时不发请求」这四条规则
-     * 原先在这里、手机播放页、手机信息流各写了一遍；现在只有这一份实现，三处都用它。
-     */
     val danmakuLoader by lazy {
         com.hgtv.star.shared.media.DanmakuLoader(
             scope = appScope,
@@ -828,59 +339,33 @@ class TvMainActivity: Activity() {
             mode = { library.danmakuMode },
             target = { danmakuView },
             post = { block -> main.post(block) },
-            // 与拆之前逐字一致：页面销毁、或已经不在播放 / 推荐这两个页面时不再碰界面。
             alive = { !isDestroyed && (screen=="player" || screen=="recommend") },
             onLoaded = { episodeId, count ->
                 android.util.Log.i("HGTV","Danmaku episode=$episodeId count=$count mode=${library.danmakuMode.storedValue}")
                 updatePlaybackText()
             },
             onFailed = { episodeId, problem ->
-                // 弹幕取不到不弹错（平台上部分剧集对匿名设备就是不开放），但要留个现场。
                 Diagnostics.warn("HGTV-DANMAKU","fetch failed episode=$episodeId",problem)
             },
         )
     }
-    /** 已经拿到弹幕的那一集（= `danmakuLoader.episode`，保留这个别名给旧代码读）。 */
     val danmakuFor: String get()=danmakuLoader.episode
     val danmakuLoaded: Boolean get()=danmakuLoader.loaded
-    /** 这一集取到多少条弹幕；-1 表示还没取回来。播放界面的状态行会显示它。 */
     val danmakuCount: Int get()=danmakuLoader.count
     lateinit var favoriteMonitor: FavoriteMonitor
-    /**
-     * 窗口化之后**不再**按剧集 id 记住「收藏状态那一行文字控件」。
-     *
-     * 卡片会被滚出窗口、回收、再拿去显示别的剧集，按 id 存下来的 TextView 引用会指到
-     * 已经换了内容的控件上。收藏标签改成「重绑当前窗口那几行」（见 [rebindGridRows]），
-     * 代价只有一屏的卡片数。
-     */
     var favoriteStatus: TextView?=null
-    /**
-     * 历史页（历史集合页与「我的 → 历史」）页头那枚「清空全部记录」。
-     *
-     * 单独存一份引用是为了接焦点链：它就在内容上方，第一行按上要落到它、
-     * 导航栏那排圆形入口按下要先经过它（见 `wireGridFocus`）。没有可清空的记录时不建。
-     */
     var historyClear: View?=null
-    /**
-     * 「清空全部记录」是不是在**顶部导航栏那一行里**（历史集合页）。
-     *
-     * 在导航栏里时它本身就是页头控件，导航栏那排圆形入口按下要直接进内容，
-     * 不能先落到它身上（那时它在同一行，方向上是「向右」而不是「向下」）。
-     * 「我的 → 历史」那一枚在身份行里，这一位是 false。
-     */
     var historyClearInline=false
     var episodePanel: EpisodePanel?=null
     var retryPending=false
     var autoRecovery=false
     var startPosition=0L
     var retryPosition=0L
-    /** 当前排着的自动重试属于哪一集；切集后旧回调即使漏网也不能再起播。 */
     var retryEpisodeId=""
     var requestedAutoplay=true
     var retryAutoplay=true
     var foreground=false
     lateinit var connectivity: ConnectivityManager
-    /** 网络变化的注册句柄：API 19 是广播接收器，21+ 是 NetworkCallback，由 [com.hgtv.star.shared.compat.NetworkWatcher] 统一。 */
     private var networkWatch: Cancellable?=null
     internal var initializationNetworkWatch: Cancellable?
         get()=networkWatch
@@ -894,61 +379,22 @@ class TvMainActivity: Activity() {
             if(!networkAvailable()) scheduleRecovery()
             else if(playbackCoordinator.consumeAutoRetry()) {
                 android.util.Log.i("HGTV","Automatic playback recovery ${playbackCoordinator.autoRetryAttempts}/3 at ${retryPosition}ms")
-                // 地址缓存必须先作废；只换号仍会命中同一条失败 URL。
                 prepareFreshPlaybackRetry()
                 playEpisode(episodeIndex,retryPosition,retryAutoplay,recovering=true)
             }
         }
     }
-    /**
-     * 正在执行「清空应用缓存」（本机数据恢复出厂）。
-     *
-     * 置位之后所有会落盘的路径（播放进度、收藏、设置）都要停手：数据马上就要删掉，
-     * 队列也已经关掉，再提交一次只会抛异常或把刚删的文件建回来。
-     */
     var resetting=false
     lateinit var root: FrameLayout
     var generation=0
-    /**
-     * 上一次网络回调时「有没有网」。
-     *
-     * 断网 / 联网各回调一次 `onLost` / `onAvailable`，中间那一段 [networkAvailable] 一直是 false；
-     * 而起播卡在「正在获取播放地址…」时没有人在看这个值——唯一的出口是那一发自己超时。
-     * 现场（2026-10-30，小米 TV）：断网切下一集 → 两秒后联网，界面冻了 **49.6 秒**才出画面。
-     * 记住前一拍才能认出「恢复」这个**边沿**，进而把在途那一发作废、按原位置立刻重取
-     * （见 [refetchAddressOnNetwork]）。只在主线程读写（回调里也先 post 到主线程）。
-     */
     var networkWasUp=false
     var screen="catalog"
-    // —— 推荐流（类似抖音的上下切换）——
-    /**
-     * 当前是不是「推荐播放界面」。
-     *
-     * 推荐页复用同一套播放内核（[playEpisode] / 播放器 / 弹幕 / 播放设置菜单），
-     * 只在这几位上分开：
-     *
-     * * [screen] 是 `recommend` 而不是 `player`：返回键回主页面、上下键换剧、确定键进正片；
-     * * **不写观看历史**（见 `saveProgress` 的守卫）：只有进入正式播放界面那一刻才写；
-     * * 不挂「下一集」队列（见 `maybePrefetch` / `enqueuePreparedNext`）：一集播完就进正片，
-     *   由正片从下一集接着播。
-     */
-    /**
-     * 冷启动时是否还要自动进入推荐页（需求 1：打开应用后自动进入推荐页面）。
-     *
-     * 只在**第一次**把本机记录读起来之后消费一次；之后无论怎么返回主页面都不再自动跳，
-     * 否则用户从推荐页返回首页、按一下方向键，页面又会自己跳回推荐。
-     */
     var launchRecommendPending=true
-    /** 冷启动闸门：书库 + 主设备注册完成前不建首屏。 */
     var startupInitializing=true
     var startupCreateTraceAt=0L
-    /** 第二阶段初始化是否完成；在此之前 onResume 不读取任何晚初始化对象。 */
     var mainInitialized=false
-    /** 推荐 Store；列表、游标、过滤、加载与曝光状态都由它持有。 */
     var recommendStoreRef: com.hgtv.star.shared.feed.RecommendStore?=null
-    /** 搜索控制器会读本机设置，必须等 `Library.loadAsync` 完成后再启动。 */
     var searchCollectorStarted=false
-    /** 推荐列表（来自分类接口的「全部推荐」流，已滤掉本机隐藏的剧）。 */
     var recommendItems: List<Series>
         get()=recommendStore().items
         set(value) { recommendStore().replaceItems(value) }
@@ -962,257 +408,74 @@ class TvMainActivity: Activity() {
     var recommendLoading: Boolean
         get()=recommendStore().loading
         set(value) { recommendStore().loading=value }
-    /**
-     * 本机兴趣画像（题材 / 出品方 → 权重）。
-     *
-     * 只在进推荐页时重建一份：它读的是本机观看历史与收藏，刷推荐的过程中这两样不会变，
-     * 每页都重算一遍纯属浪费（历史可以有几百条）。
-     */
     var recommendTasteCache: com.hgtv.star.core.RecommendTaste?
         get()=recommendStore().tasteCache
         set(value) { recommendStore().tasteCache=value }
-    /**
-     * 一页推荐的本地重排：同题材配额、同剧 / 同出品方间距、兴趣小幅上浮。
-     *
-     * 参数见 [com.hgtv.star.core.RecommendArranger]：约束只作用于**这一页**，
-     * 让不出位置的不删、贴到页尾，避免把内容池抽干（抽干的后果是重复更多）。
-     */
-    /**
-     * 带了 `filter_ids` 却回空页的次数。
-     *
-     * 服务端如果不认这个字段、或把整页都滤掉，表现就是「整屏推荐暂时取不到」。
-     * 连续两次就把这一层永久关掉（见 [com.hgtv.star.shared.data.Library.recommendFilterIdsOff]）。
-     */
     var recommendFilterMiss: Int
         get()=recommendStore().filterMiss
         set(value) { recommendStore().filterMiss=value }
-    /**
-     * 这一次运行里「带 `filter_ids` 就失败」的次数 / 结论。
-     *
-     * 与 [recommendFilterMiss] 分开：那一个由**空页**判定、会落盘永久关掉；
-     * 这一个只覆盖本次运行——请求直接失败（网关不认这个字段 / 体被撑大）时，
-     * 这一轮就不再带，但下次启动照旧试一次。网络抖一下不该让这层去重永久消失。
-     */
     var recommendFilterUnsupported: Boolean
         get()=recommendStore().filterIdsOff
         set(value) { recommendStore().filterIdsOff=value }
-    /**
-     * 「推荐受众」（男频 / 女频）在本机是否可用。
-     *
-     * 实测本机带 `gender=male` 时推荐接口**连流头都回空页**（见 `OptionalFilter`）：
-     * 用户只是先在设置里选了受众，整屏就停在「推荐暂时取不到」。
-     * 处置与 `filter_ids` 同一套：带它拿到空页 → 这一次不带它重取；连着两次仍空 → 置 false，
-     * 本进程内不再带（列表里照常有内容）。
-     */
     var recommendGenderOff: Boolean
         get()=recommendStore().genderOff
         set(value) { recommendStore().genderOff=value }
-    /**
-     * 「下一次请求先别带受众」的一次性标记。
-     *
-     * 只是**这一次**退让，不是永久关闭：`recommendGenderFilter` 的第二次空页才关。
-     * 否则偶发的一次空页会让用户选的受众当场失效。
-     */
     var recommendGenderProbe: Boolean
         get()=recommendStore().genderProbe
         set(value) { recommendStore().genderProbe=value }
-    /** 受众这一层的降级计数（与 `:core` 的 `OptionalFilter` 同一套语义）。 */
     val recommendGenderFilter: com.hgtv.star.core.OptionalFilter
         get()=recommendStore().gender
 
-    /**
-     * 推荐页正在放的这一部 + 开始的时刻，用来区分「一进来就划走」与「真的看了」。
-     *
-     * 两种结果写进同一个曝光窗口，只是冷却时长不同（划走 14 天、看了 30 天）。
-     */
     var recommendWatchingId=""
     var recommendWatchStart=0L
-    /**
-     * 这一次「进推荐页」的首屏计时起点（`elapsedRealtime`，见 [loadRecommendPage]）。
-     *
-     * 用来给首屏设一个总等待上限：超过预算就不再凑「一条重复都没有」，先放出来能播的。
-     * 只在最外层那次调用时重置，递归取页不会把它一直往后推。
-     */
-    /**
-     * 补页在途时又按了几下「下一部」（见 `switchRecommend`）。
-     *
-     * 页回来后一次往前跨这么多部。早先这里什么都没有：补页那 0.8 秒里每按一下都走
-     * 「列表没变长 → 环绕回第 0 部」，于是连按十几下就是从头把刚刷过的那批重放一遍。
-     */
     var recommendAdvancePending=0
-    /**
-     * 上一次「提前取下一页」的时刻（`elapsedRealtime`，见 `ensureRecommendLookahead`）。
-     *
-     * 只是限流：连按上下键时每一下都会走到预取判断，不该每一下都上去要一页。
-     */
     var recommendLookaheadAt=0L
-    /**
-     * 补页在途时排队的回调。
-     *
-     * 以前 `loadRecommendPage` 碰上请求在途会**立刻**回调，调用方按「列表没长」处理，
-     * 这正是上面那个重复的成因。现在排队，等这一次取页真正结束再一起放出来。
-     * 只在主线程读写。
-     */
     val recommendWaiters=mutableListOf<() -> Unit>()
-    /**
-     * 推荐流的续流游标（`session_id` + `next_offset`，见 `ContentRepository.recommendFeed`）。
-     *
-     * 接口是**有状态**的：`session_id` 传空、`offset` 每次归零，服务端永远回同一套默认列表。
-     * 首次进入时从 [com.hgtv.star.shared.data.Library.recommendCursor]（落盘）读起点，
-     * 取完一页立刻把新的游标写回去，下次打开应用就接着往下刷。
-     */
     var recommendSession: String
         get()=recommendStore().sessionId
         set(value) { recommendStore().sessionId=value }
     var recommendNext: Int
         get()=recommendStore().nextOffset
         set(value) { recommendStore().nextOffset=value }
-    /**
-     * 「推荐范围 → 受众」的可选值（男频 / 女频 …），来自分类接口的 `gender` 行。
-     *
-     * 标识只能由接口给（见 `Library.recommendGender` 的说明），因此设置页第一次打开时
-     * 现取一次面板，取到就抄进这里：同一次运行里再进设置页不再发请求。
-     * `null` = 还没取到（或取失败），那一行就先不建。
-     */
     var recommendGenderOptions: List<com.hgtv.star.core.CategoryFilterOption>?=null
-    /** 受众面板请求在途（避免同一次运行里连开设置页时重复发）。 */
     var recommendGenderLoading=false
-    /** 已经取过的推荐详情（只留最近几部，够左右相邻切换即可）。 */
-    // 淘汰走 core 的 `lruPut`，**不用匿名子类重写 `removeEldestEntry`**：那种写法会生成一条
-    // `invoke-super LinkedHashMap.getOrDefault`（API 24）的桥方法，4.4 上是颗雷（见 `lruPut`）。
     val recommendDetails=LinkedHashMap<String,Detail>(8,0.75f,true)
-    /** 正在取详情的推荐剧（避免同一部被上下键连按时重复发请求）。只在主线程读写。 */
     val recommendDetailLoading=mutableSetOf<String>()
-    /**
-     * 已经预热好的「相邻一部的第 1 集」（键 = `集id:清晰度`）。
-     *
-     * 上下键换剧时详情与首集数据都在本地，`playEpisode` 拿到它就直接起播，不用再等
-     * 取地址 + 读索引 + 首批数据那几百毫秒——这是「上下切换不卡」的关键。
-     * 只留最近 8 部（每份约 512KB，见 `RECOMMEND_PREPARED_LIMIT`），所有权在交给播放器时转移。
-     * 电视上一秒一下、3 部就够；手机上一秒两三部，3 部会在连划时被刷空。
-     */
     val recommendPrepared=LinkedHashMap<String,RemoteVideo>()
-    /**
-     * 正在预热的那些键（可以有多个在途）。
-     *
-     * 早先是**单槽**（`String`）：一次只预热一部，而且新的一次会被旧的那次挡回去。
-     * 遥控器的节奏是「一秒一下」，单槽够用；手机 / 平板是「一划一部」，
-     * 单槽的结果就是每一次切换都在等一个刚刚被作废的预热——缓存永远是空的，
-     * 于是「同一套加载逻辑」在触屏上就是另一副观感。
-     */
-    /** 每一个在途预热对应的任务（按 key 找，互不牵连；取消时连它自己的 HTTP 一起掐掉）。 */
     val recommendWarmJobs=HashMap<String,RecommendWarm>()
-    /** 推荐页起播后那一批 6 个播放模型的去重键与任务。 */
     var recommendBatchKey=""
     var recommendBatchJob: java.util.concurrent.Future<*>?=null
-    /** 从推荐页进入正片后，当前剧后 5 集模型的去重键与任务。 */
     var formalBatchKey=""
     var formalBatchJob: java.util.concurrent.Future<*>?=null
-    /**
-     * 推荐页预热走 `network` 车道。
-     *
-     * 改造前这里是独立的 2 线程池，理由是「不能堵住正片页的下一集预取」。现在
-     * 正片预取与推荐预热同在 `network`（4 条），仍然不会互相堵死：推荐页与正片页
-     * **不会同时**出现在屏幕上，两类预热天然互斥。
-     */
     val recommendWarmWorker get()=com.hgtv.star.shared.architecture.AppExecutors.network.executor
-    /**
-     * 上一次换剧的时刻（`elapsedRealtime`）与方向（+1 / -1）。
-     *
-     * 方向决定相邻预热的顺序（见 `prefetchRecommendNeighbors`）：手机上一划就是一部，
-     * 只预热 ±1 时第二下必然落空，因此先按用户正在走的方向多预热一步。
-     */
     var recommendLastSwitchAt=0L
     var recommendPrefetchDir=1
-    /**
-     * 双向滑动的窗口与降级规则（见 `core/SlideCache.kt`）。
-     *
-     * 放在 Activity 上而不是全局：它的「当前锚点 / 停留时长 / 连滑计数」都是**这一屏**的语义，
-     * 换一屏（进正片再回来）就该重新起算。
-     */
     val slideCache=com.hgtv.star.core.SlideCacheManager()
-    /**
-     * 预热排程（延迟 / 让路重试 / 停留确认 / 取消）。
-     *
-     * 实现在 `:shared` 的 [com.hgtv.star.shared.feed.PreloadScheduler] 里，手机端用的是同一个类；
-     * 这里只留一个引用，避免两端各写一套时序。懒建见 `MainActivityPreload.preloadScheduler()`。
-     */
     var preloadSchedulerRef: com.hgtv.star.shared.feed.PreloadScheduler?=null
-    /** 预热好的首集在列表里的下标（方向偏置 LRU 淘汰要它算距离）。 */
     val recommendPreparedIndex=HashMap<String,Int>()
-    /** 预热好的首集最近一次被用到的时刻（同上）。 */
     val recommendPreparedAt=HashMap<String,Long>()
-    /**
-     * 每一部**已经达到**的缓存级别（键 = `集id:清晰度`）。
-     *
-     * 只升不降：ADDRESS 做过就记 ADDRESS，之后要 META 才继续做。
-     * 它让「L3 先铺一层地址、2 秒后再升 L1」这条路不会把同一个地址取两遍。
-     */
-    /** 取详情的令牌：换剧、退出时作废在途结果。 */
     val recommendToken=java.util.concurrent.atomic.AtomicLong(0)
-    /** 取下一页推荐流的令牌（与详情那条分开：翻页不该作废正在取的那一部详情）。 */
     val recommendPageToken=java.util.concurrent.atomic.AtomicLong(0)
-    /** 从推荐进入正片时还没写出去的那条历史（起播未 READY 时补写，见播放监听器的 READY 分支）。 */
     var recommendHistoryPending=false
-    /** 这一次换剧的方向（+1 下一部 / -1 上一部），只用于切换时那一下滑动方向。 */
     var recommendShift=0
-    /**
-     * 打开播放设置的那一次菜单键按键还没抬起。
-     *
-     * 短按菜单键会先来 DOWN（这里打开菜单）、再来**同一次按键**的 UP；以前 UP 被当成
-     * 「菜单开着又按了一次菜单键」，于是菜单一闪就没了，用户必须长按住才留得住。
-     * 现在用这一位把「打开它的那一下」的抬起认出来：只吞掉，不收起。
-     */
     var playbackMenuOpenPress=false
-    /** 推荐页画面停住之后自动重建播放层的次数 / 上次时刻（见 [recoverRecommendPicture]）。 */
     var pictureRecoveries=0
     var pictureRecoveryAt=0L
-    // 正式播放页那一对已经收进 [ledger]（`formalPictureRecoveries` / `pictureCoolingDown`）：
-    // 它与自动重试、队列重开共用同一套按集归零的条件，分开存就会漏清。
-    // 推荐页那一对仍留在这里——它按**剧**计，不走按集账本。
-    /**
-     * 推荐页切换过渡用的那一层黑。
-     *
-     * 为什么需要：换剧时播放器要重挂媒体源，`SurfaceView` 在新一集出帧之前会一直显示上一帧，
-     * 而内容框的宽高比要等新源报出视频尺寸才更新——中间那一段旧画面会被按新比例拉伸，
-     * 用户看到的就是「先拉一下再恢复」。这一层盖在画面（含弹幕）之上、底部浮层之下：
-     * 切换时淡入，新一集**第一帧真正渲染出来**之后再淡出，拉伸与黑屏都被盖住。
-     */
     var recommendCover: View?=null
     var recommendCoverShownAt=0L
-    /** 过渡令牌：连着换剧时，上一次排好的「淡出」必须作废。 */
     var recommendCoverToken=0
     var recommendCoverReveal: Runnable?=null
-    /** 推荐页底部那块信息浮层（剧名 / 集数 / 操作提示）。 */
     var recommendOverlay: View?=null
     var recommendTitle: TextView?=null
     var recommendMeta: TextView?=null
 
-    /**
-     * 推荐页浮层里那条播放进度。
-     *
-     * 与正式播放的底部控制条**同一个控件、同一种画法**（`SeekIndicator` 的原始样式：
-     * 4dp 轨道 + 圆钮 + 右侧时间），只是宿主从 `hud` 换成了这块信息浮层——
-     * 两侧页面读起来是一套东西，用户不用在两处学两种进度显示。
-     */
     var recommendProgress: com.hgtv.star.tv.SeekIndicator?=null
-    /** 与进度条同一行的 `00:04 / 01:08`（字色字号同正式播放）。 */
     var recommendSpan: TextView?=null
-    /** 手指正在拖推荐页那条进度：每秒一次的刷新不能把显示顶回播放器报的位置。 */
     var recommendScrubbing=false
-    /** 浮层上那条临时提示（例如「后面的推荐暂时取不到」），几秒内优先于集数那一行显示。 */
     var recommendNotice=""
     var recommendNoticeAt=0L
-    /** 推荐页连续起播失败的次数：失败就换下一部，连换几次仍失败才停在提示上（见 `playerFailure`）。 */
     var recommendPlaybackFailures=0
-    /** 导航栏里那枚圆形「推荐」入口（不属于五个标签，见 `navIcons()`）。 */
     var recommendIcon: View?=null
-    /**
-     * 当前这一次正式播放是不是「从推荐页按确定 / 自动连播」进来的。
-     *
-     * 需求：从这里进正片后按返回要**直接回主页**（而不是先回简介页、再回主页）。
-     * 只影响返回键的去向，不改变播放本身的任何行为；离开播放界面 / 从别处进详情时清掉。
-     */
     var playbackFromRecommend=false
     var tab=0
     var page=1
@@ -1222,328 +485,110 @@ class TvMainActivity: Activity() {
     var catalogFocus=""
     data class CatalogState(val page: Int,val items: List<Series>,val hasMore: Boolean,val ranking: ComicRanking?)
     var ranking: ComicRanking?=null
-    /**
-     * 排行榜页当前看的是哪一个榜单。首页四个剧架的「查看全部」也会改它，
-     * 因此「从首页进榜单」与「在榜单页里切换」是同一条路径、同一份数据。
-     */
     var rankBoard=RankBoard.NEW
-    /** 首页四个剧架的内容（榜单第 1 页），按榜单分别存。 */
     var homeFeed=mutableMapOf<RankBoard,CatalogPage>()
-    /**
-     * 这一页的内容落地后，焦点是不是要落到第一张卡上。
-     *
-     * **不要靠「现在焦点在哪」去猜**：进榜单页 / 切榜单 / 切分类时，中间那段「正在加载…」
-     * 曾经把焦点临时交给页头的控件，落地时再看「页头有没有焦点」就会把焦点又交回页头——
-     * 表现出来就是「进榜单、切榜单之后焦点停在榜单按钮上」。因此改成显式的意图：
-     * 换了一份列表（换榜单 / 换分类 / 从首页剧架进榜单）就置 true，落地时落到第一张卡并清掉。
-     */
     var focusFirstCardOnLanding=false
-    /**
-     * 换榜单 / 换分类之后，焦点要留在**用户刚点的那一枚**芯片上。
-     *
-     * 芯片在页面重建时是新建的，旧引用已经离树（对它 requestFocus 一定失败），
-     * 因此这里记的是 key，重建后由 [chipControl] 查回新的那一枚。
-     * 取值 `board:<storedValue>` / `group:<path>` / `tag:<path>`；为空表示这次换列表不是「点了芯片」。
-     * 内容落地（或加载失败）时消费掉。
-     */
     var chipFocusKey: String?=null
-    /** 剧架 key → 榜单（[HomeLayout.board]）：首页四个「热播…」栏目与排行榜页共用同一个映射。 */
     var rankSubtitle: TextView?=null
     var moreButton: View?=null
-    /** 向下追加一页后焦点要落到的位置：新卡片 id、底部按钮（load:more）或 null（不指定）。 */
     var moreFocus: String?=null
 
-    // —— 向下追加（无感加载）——
-    /**
-     * 当前栅格列表的活引用。
-     *
-     * 「展示更多」过去是 `page++` 之后整页重建：页头、分类开关、每一张卡都重画一遍，
-     * 再靠记下来的 scrollY 把位置恢复回去。两次整页重建之间位置一夹不准就跳回顶部，
-     * 焦点又会在恢复位置和「新卡片」之间来回抢，表现出来就是加载时抖、加载完乱。
-     * 现在追加只在这张列表的末尾插新行：视口上方的像素一个都不动，
-     * ScrollView 不需要任何位置恢复，也就没有「恢复得对不对」这回事。
-     */
     var gridList: LinearLayout?=null
     var gridScroll: ScrollView?=null
-    /** 底部那一行（进度文字 + 「展示更多」），追加时先摘下来再放回去，始终待在最后。 */
     var gridPaging: LinearLayout?=null
     var moreCount: TextView?=null
-    /** 底部那一行当前是不是「还有下一页」的形态；只有它翻转时才需要重建这一行。 */
     var pagingHasMore=false
-    /**
-     * 栅格是**固定窗口**：只物化视口附近那几行，行与卡片都复用。
-     *
-     * 这是「加载几百个卡片之后越来越卡」的根治手段。窗口化之前是
-     * `ScrollView + LinearLayout` 一行一个 View 全量常驻：600 张卡就是 600 行、
-     * 每行 6 张卡、每张卡 11 个 View（约 6600 个 View），一次都不回收。
-     * 于是每张卡片的成本是**永久的**：内存只增不减、每次追加 / 每次焦点移动都要在
-     * 全部卡片上过一遍（`wireGridFocus` 重写全部焦点链、`gridCards()` 全量 flatMap），
-     * 堆上活对象越多 GC 也越贵。加载越多越卡就是这么来的。
-     *
-     * 现在列表高度由两个 Space 撑出来（纯算术，不需要测量），中间只放
-     * `[gridWindowStart, gridWindowStart + gridRows.size)` 这几行。因此：
-     * View 数、每次追加的工作量、每次滚动的重排量都与「已加载多少」无关，只与屏幕高度有关。
-     */
     var gridWindow: LinearLayout?=null
     var gridTopSpacer: View?=null
     var gridBottomSpacer: View?=null
-    /** 当前显示的全部条目（窗口化之后不再是一行一个 View）。 */
     var gridItems: List<Series> = emptyList()
-    /** 一行的像素高度（含行间距），首帧量一次；两个 spacer 的高度按它算。 */
     var gridRowStride=0
-    /** 当前物化的第一行在整份列表里的行号；[gridRows] 与它连续。 */
     var gridWindowStart=-1
-    /**
-     * 正在同步窗口。
-     *
-     * [syncGridWindow] 会被三条路径重入：滚动回调、[focusGridIndex] 里的滚动 + 自己的同步、
-     * 以及 `requestFocus` 经 `ScrollView.requestChildFocus → scrollTo` 再回到滚动回调。
-     * 内层调用如果照常挪窗口，就可能把「正要获得焦点的那一行」回收掉，焦点随即落空。
-     * 用这把标志把内层调用挡掉：外层那次算出来的窗口已经包含了焦点行。
-     */
     var gridSyncing=false
-    /** 当前物化的行，按屏幕顺序；焦点链只在这几行之间维护。 */
     val gridRows=mutableListOf<GridRow>()
-    /** 回收的行：滚出窗口的行进这里，滚进来的行优先从这里取，不再新建 View。 */
     val gridRowPool=mutableListOf<GridRow>()
     var gridCardWidth=0
     var gridGap=0
     var gridPosterHeight=0
-    /** 列表重建期间产生的滚动（位置恢复、焦点回带、内容夹取）都不算用户滚动。 */
     var gridRestoring=true
-    /** 下一页请求在途：静默预取与用户按下共用这一把锁，同一页不会请求两次。 */
     var moreInFlight=false
     var moreInFlightPage=0
-    /** 这次在途的请求是用户按出来的（底部显示「正在加载更多…」），还是静默预取（不打扰）。 */
     var moreVisible=false
-    /** 在途的请求落地之后要不要把焦点交给新行的第一张卡（静默预取途中被用户按下时也会打开）。 */
     var moreFocusWanted=false
-    /** 预取失败：底部改成重试文案，冷却后允许继续下拉自动重试。 */
     var moreFailed=false
     var moreFailedAt=0L
     var gridPrefetchJob: java.util.concurrent.Future<*>?=null
     val tabState=mutableMapOf<Int,CatalogState>()
-    /** 分类页按完整筛选条件缓存已加载的列表，切回大类时直接恢复。 */
     val categoryStates=linkedMapOf<String,CatalogState>()
-    /** 榜单页按榜单缓存已加载的列表，四个 Tab 切回时直接恢复。 */
     val rankStates=linkedMapOf<RankBoard,CatalogState>()
     val tabFocus=mutableMapOf<Int,String>()
-    /**
-     * 本次运行里已经进过哪些标签页。
-     *
-     * 用来判断「首次进入」：分类页与榜单页的**首次**落点是页头那枚芯片
-     * （分类页是二级分类的「全部」、榜单页是当前榜单「漫剧」），而不是内容第一张卡——
-     * 用户先要在这两页的页头挑一个，再往下看内容（见 [switchTab]）。
-     * 从首页剧架进榜单、点芯片换分类也算「进过」（见 [switchRankBoard] / [selectCategory]），
-     * 因此第二次进同一页时走原来的落点（内容第一张卡）。
-     */
     val tabVisited=mutableSetOf<Int>()
     val nav=mutableListOf<View>()
-    /** 圆形入口按 key（search / category / …）索引的那一份，与 [nav] 指向同一批控件。 */
     val navKeyed=linkedMapOf<String,View>()
-    /** 排行榜页的四个榜单切换芯片（推荐 / 漫剧 / AI剧 / 真人）。 */
     val boardButtons=mutableMapOf<RankBoard,View>()
-    /** 「我的」页的四个栏目切换芯片（收藏 / 历史 / 点赞 / 预约）。 */
     val accountButtons=mutableMapOf<String,View>()
-    /**
-     * 「我的」页那一行身份控件（头像 / 昵称 / 退出 / 刷新）。
-     *
-     * 它在导航栏下面、内容区上面，因此焦点链是「芯片 ↓ 这一行 ↓ 第一张卡」，
-     * 而不是直接跳到内容——方向上是连续的（见 [wireGridFocus]）。
-     */
     var profileHeadRow: View?=null
-    /**
-     * 「我的」页那一枚圆形头像。
-     *
-     * 单独留一份引用是因为它**不在内容区里**：切换栏目 / 切筛选只重建内容区
-     * （见 [refreshAccountListIfVisible]），而那条路径会 `artwork.cancelPage()`
-     * 把所有已绑定的 ImageView 清空——头像也在这份名单里，没人重新加载就会变成空白。
-     */
     var profileAvatar: android.widget.ImageView?=null
-    /** 「我的」页身份行下方的登录 / 导入内嵌面板（不是弹窗，默认收起）。 */
     var accountPanelHost: android.widget.LinearLayout?=null
-    /** 内嵌登录面板当前模式：`null` 表示收起，取值见 [ACCOUNT_PANEL_QR] / [ACCOUNT_PANEL_PHONE]。 */
     var accountPanelMode: String?=null
-    /**
-     * 未登录时「我的」页选中的登录方式（二维码 / 手机号）。
-     *
-     * 与 [accountPanelMode] 分开记：面板收起后仍然保留上一次的选择，
-     * 页面整体重建（切标签、退出账号）时用户看到的还是刚才那一种。
-     */
     var loginMode: String=ACCOUNT_PANEL_QR
-    /** 「二维码登录 / 手机登录」两枚入口（mode → 芯片），焦点链与选中态都按它接线。 */
     val loginModeChips=linkedMapOf<String,View>()
-    /** 打开面板的那枚按钮：收起时把焦点还回去。 */
     var accountPanelTrigger: View?=null
-    /** 面板里的一次性局域网会话（手机扫码上传）：切换 / 收起时立刻关掉。 */
     var accountPanelSession: java.io.Closeable?=null
-    /** 面板重建计数：异步回调据此判断自己那一份面板是否还在屏幕上。 */
     var accountPanelGeneration=0
-    /**
-     * 分类页当前选中的筛选条件（体裁 / 主题 / 设定 / 背景 / 推荐 / 受众 / 时间 / 状态）。
-     * 默认是官方 App 的「真人剧 + 全部推荐」。
-     */
     var categorySelection=CategorySelection()
-    /**
-     * 分类页的筛选面板。由分类接口一次返回（`selector_rows`），
-     * 行与选项都不再写死在客户端。
-     */
     var categoryPanel: CategoryPanel?=null
-    /** 分类页每一行筛选项的芯片：type → selector_item_id → 芯片。 */
     val categoryFilterButtons=mutableMapOf<String,MutableMap<String,View>>()
     var searchInput: View?=null
     var searchButton: View?=null
-    /** HG键盘分栏：左侧键盘、中间历史 / 联想词、右侧结果的当前实例。 */
     var hongguoKeyboard: HongguoKeyboard?=null
     var hongguoHistoryColumn: LinearLayout?=null
     var hongguoResultsColumn: LinearLayout?=null
-    /** 顶栏「切换键盘」按钮（只在系统输入法模式下建）。 */
     var hongguoSwitch: View?=null
-    /** 刚触发过一次搜索：结果落地时焦点要交给第一张卡（而不是留在键盘上）。 */
     var hongguoLandFirstCard=false
-    /** HG键盘输入框里的英文字符。 */
     var hongguoDraft: String=""
     var voiceButton: View?=null
     val searchActions=mutableListOf<View>()
-    /** 搜索输入法的请求代次：焦点离开输入框后，旧的重试必须立刻失效。 */
     var searchImeToken=0
-    /** 语音界面正在前台：防止连按重复拉起。 */
     var voiceLaunching=false
-    /** 语音界面已经返回，等待页面重建后消费结果（见 [applyVoiceReturn]）。 */
     var voiceReturned=false
-    /** 拉起语音前的输入框草稿：取消 / 失败时原样还回去。 */
     var voiceDraft: String?=null
-    /** 识别出的搜索词，等页面重建完成后再执行。 */
     var pendingVoiceQuery: String?=null
-    /**
-     * 这一次搜索页重建不要抢输入框焦点。
-     *
-     * 语音界面返回时输入框一旦 `requestFocus`，系统输入法会跟着弹出来——
-     * 用户只是说了句话，不该看到键盘。由 [searchBar] 消费一次。
-     */
     var suppressSearchFocusOnce=false
-    // —— 搜索提示词（联想词）——
-    /**
-     * 提示词那一行（横向可滚的芯片行）与它里面的按钮。
-     *
-     * 输入框每变一次就往后台丢一次请求（[SUGGEST_DEBOUNCE] 去抖），结果回来时
-     * **只重建这一行**，不整页重画——否则每敲一个字页面都要闪一下。
-     */
     var suggestRow: HorizontalScrollView?=null
-    /** 提示词那一行的**硬裁剪视口**（与分类页筛选行同一个类）：显隐与高度都改它。 */
     var suggestViewport: View?=null
     var suggestLine: LinearLayout?=null
     val suggestButtons=mutableListOf<View>()
-    /** 这一行的请求令牌：晚回来的旧结果直接丢掉，不会盖住新关键词的提示词。 */
     val suggestToken=java.util.concurrent.atomic.AtomicLong(0)
     var suggestJob: java.util.concurrent.Future<*>?=null
     val suggestRun=java.util.concurrent.atomic.AtomicReference<Runnable?>(null)
     var detail: Detail?=null
-    /**
-     * 详情页的内存缓存（本进程内，LRU 12 部）。
-     *
-     * 同一部剧短时间内再点进来**直接铺**，不再先闪一屏「加载中」：那份内容刚刚才拿到过，
-     * 再去网络上问一遍只是把已知的东西重画一次。网络那一趟仍然在后台跑（见 [openDetail]），
-     * 只有内容真的变了才重画——因此缓存旧了也不会卡在旧数据上。
-     */
     val detailMemo=LinkedHashMap<String,Detail>()
     var episodeIndex=0
-    /** 详情页是否正在看「相关剧集」：展开时下方的选集换成相关剧集（海报高度不变）。 */
     var relatedOpen=false
-    /**
-     * 重铺详情页下方那一块（选集 / 相关剧集）的入口，由 [showDetail] 在页面建好时填上。
-     *
-     * 点「相关剧集 / 收起相关」、以及相关剧集结果落地时都走这里：**只换下面那一块**，
-     * 上面的海报与信息列不重建——整页重建会让封面重新解码、海报尺寸回填，页面会闪一下。
-     * 离开详情页时由 [invalidatePage] 清空，旧引用不会指到已经拆掉的树上。
-     */
     var detailBottomRefresh: (() -> Unit)?=null
-    /** 作者补查完成后就地更新信息行，不重建整张详情页。 */
     var detailAuthorRefresh: ((String) -> Unit)?=null
     var detailAuthorLoading=false
     var detailAuthorToken=0
-    /**
-     * 相关剧集的取数状态（后台预取，用户无感）。
-     *
-     * 流程：**详情一取回来就先渲染内容**，同时把相关剧集丢到后台去查（[prefetchRelated]）。
-     * 用户点「相关剧集」时不再发新请求——取好了直接铺，还在途中就等它落地
-     * （那点时间差通常察觉不到）。相关剧集现在是 App 详情页那一个「相关作品」接口
-     * （`GET /reading/bookapi/plan/v:version/`，见 [ContentRepository.related]），
-     * 一次请求就带回全部条目，整页的可见时间不受影响。
-     */
     var relatedWorks: RelatedWorks?=null
     var relatedLoading=false
     var relatedFailed=false
-    /** 相关剧集这条请求自己的令牌与句柄：它不能走 [work]（那条路会被本页重排取消掉）。 */
     val relatedToken=java.util.concurrent.atomic.AtomicLong(0)
     var relatedJob: java.util.concurrent.Future<*>?=null
-    /** 正在预取 / 已预取的是哪一部剧，避免同一部剧重复发请求。 */
     var relatedFor=""
-    /**
-     * 详情页是否正在看「作者作品」：与 [relatedOpen] 互斥，展开时下方的选集换成该作者的作品。
-     *
-     * 数据来自 `multi-detail` 的 `author` 加上按作者名的全站搜索（见 [ContentRepository.authorWorks]）：
-     * 平台没有「作者主页」接口，这一栏只能按作者名把搜索结果里同一作者的作品筛出来。
-     */
     var authorOpen=false
     var authorWorks: List<Series>?=null
     var authorLoading=false
     var authorFailed=false
-    /** 作者作品这条请求自己的令牌与句柄：理由同 [relatedToken]（不能被本页重排取消掉）。 */
     val authorToken=java.util.concurrent.atomic.AtomicLong(0)
     var authorJob: java.util.concurrent.Future<*>?=null
-    /** 正在预取 / 已预取的是哪位作者，避免同一作者重复发请求。 */
     var authorFor=""
-    /**
-     * 播放器实例。
-     *
-     * `@Volatile` 是因为它现在**由 io 线程建**（见 `playEpisode` 的 `warmPlayer`）：
-     * 构造 ExoPlayer 要 0.5 秒（实测 `Stage player +509ms`），原先排在「取地址 + 本地准备」
-     * 之后串行执行；两条都是互不依赖的活，并起来正好省下这半秒。
-     * 建好之后由主线程读它、赋 `playerView.player`，因此必须保证可见性。
-     */
     @Volatile internal var player: ExoPlayer?=null
-    /**
-     * 建播放器的互斥锁。
-     *
-     * 播放器现在可能被两条路同时建：起播任务在 io 线程预热（[TvMainActivity.warmPlayer]）、
-     * 以及回调落到主线程时发现还没有播放器而当场补建。上一次起播被取消时它的线程
-     * 也可能还在里面。没有这把锁就会建出两个，其中一个永远没人释放（解码器 + 播放线程都留着）。
-     */
     val playerBuildLock=Any()
-    /**
-     * 播放器是否已被彻底拆除（[TvMainActivity.releasePlayer] 置位，下一次 [playEpisode] 复位）。
-     *
-     * 预热线程可能正卡在 `newPlayer()` 里（`MediaCodecList` / `AudioManager` 都是 Binder 调用，
-     * 老盒子上要几百毫秒）。没有这条标志，`onDestroy` 里的 release 抢在它前面执行时，
-     * 它会把播放器重新装回来——一个挂了 Surface、还占着解码器与音频输出的孤儿。
-     */
     @Volatile internal var playerDisposed=false
-    /**
-     * 已经做过构造后配置的那个播放器（见 `TvMainActivity.configurePlayer`）。
-     *
-     * 配置现在可能从两处到达主线程：预热线程 post 过来的那一次，以及起播回调自己那一次。
-     * 记下来保证同一个实例只配一次（`addAnalyticsListener` 重复调用会把监听挂两遍）。
-     * 播放器被拆除时一并清空。
-     */
     @Volatile internal var configuredPlayer: ExoPlayer?=null
     var video: RemoteVideo?=null
-    /**
-     * 最近一次**真的取到**的播放地址域名（由 [playEpisode] 在 `playbackSource.stream()` 之后写入）。
-     *
-     * 为什么不直接用 [video]`.host`：`video` 只在起播成功之后才有值，而「连接超时 / 被拒」
-     * 恰恰大多发生在 `prepare()` 那一步——那时 [video] 还是**上一集**的，按它清 DNS 等于
-     * 清错对象，重取回来的地址照样落在同一个死 shard 上。
-     */
     @Volatile internal var lastStreamHost=""
-    /**
-     * 播放器是否**至少 READY 过一次**（进度可信）。
-     *
-     * 兼容层：改造前这是一个 `var`，5 处赋值分散在三个文件里，每处都夹在一长串副作用中间。
-     * 现在它是 [PlaybackController] 的只读投影，写入经 `setPrepared` 走状态机——
-     * 语义仍然唯一（**只进不退**，见 `PlaybackMachine` 规则 2），但不会再出现
-     * 「playbackReady 是 true、player 却是 null」这种自相矛盾的组合。
-     */
     var playbackReady: Boolean
         get()=playback.prepared
         set(value) { playback.setPrepared(value) }
@@ -1559,141 +604,54 @@ class TvMainActivity: Activity() {
     var frameOption: TextView?=null
     var danmakuOption: TextView?=null
     var sleepOption: TextView?=null
-    // ---- 触屏适配（P0）：只有真的收到过一根手指才会被点亮，电视上恒为 false ----
-    /** 这一次运行里是否已经收到过 `ACTION_DOWN`（见 [onTouchSeen]）。 */
     var touchArmed=false
-    /**
-     * 启动时那一次形态探测的全部读数（见 `com.hgtv.star.shared.compat.detectDeviceForm`）。
-     *
-     * `null` = 还没探（正常路径上 onCreate 里就探过一次）。只给调试面板与设置页读数用，
-     * 视频几何 / 手势层这些行为判据一律走 [deviceMode]，不要在别处再算一遍。
-     */
     var deviceProfile: com.hgtv.star.shared.compat.DeviceProfile?=null
-    /** 播放页手势层（`null` = 电视，或还没进过播放页）。 */
     var touchLayer: FrameLayout?=null
-    /** 播放控制条上那一排可点按钮（只挂在触屏设备上）。 */
     var touchBar: LinearLayout?=null
-    /** 控制条上的播放 / 暂停键：文案与图标都跟着播放状态走（见 `updateTouchPlayLabel`）。 */
     var touchPlayLabel: com.hgtv.star.tv.TvButton?=null
-    /**
-     * 触屏推荐页底部那一枚「剧名」入口的两行字（见 `attachRecommendEntry`）。
-     *
-     * 推荐页不放播放页那排按键，那一块位置只有这一枚标题——点它进正片。
-     * 换剧 / 切集时由 `syncRecommendEntry` 就地改字，不重建控件。
-     */
     var touchEntryTitle: TextView?=null
     var touchEntryHint: TextView?=null
-    /** 控制条底部那枚居中的「下拉箭头」（点它开选集）。推荐页要把它藏起来。 */
     var hudEpisodeArrow: ImageView?=null
-    /** 手势层上「快进 10 秒」那条瞬时提示。 */
     var touchSeekHint: TextView?=null
-    /** 触屏长按右半屏时的「2 倍速播放中」提示（抬手即撤）。 */
     var touchBoostHint: TextView?=null
-    /**
-     * 左右滑动调进度时那块读数（`快进 00:00:35` + `目标 / 总长`）。
-     *
-     * 与 [touchSeekHint] 分开：那个是双击 / 按钮的瞬时反馈，900ms 自己消失；
-     * 这一块要一直留到手指抬起（滑动多久就显示多久），生命周期完全不同。
-     */
     var touchScrubHint: TextView?=null
-    /** 长按倍速是否生效中（见 `setPlaybackBoost`）：抬手 / 离开播放页都要恢复原速。 */
     var playbackBoost=false
-    /** 手指正在拖进度条：这一段时间进度与时间由手指决定，刷新不能顶回去。 */
     var scrubbing=false
     var panel=false
     var playbackMenu: PlaybackMenu?=null
-    /** 播放设置面板的外壳（固定屏幕下三分之一、负责裁剪与背板渐变）；摘浮层要摘这一层。 */
     var playbackMenuShell: View?=null
-    /**
-     * 播放设置面板的**实例缓存**（见 `player/PlaybackMenuController.kt` 的 [obtainPlaybackMenu]）。
-     *
-     * 面板一次要建八九行、三十来枚按钮，每枚都是一块新拟态底板——全在 UI 线程。
-     * 短按菜单键那一下就是弹幕停一下、遥控器迟一拍。缓存之后重复打开只剩「挂上去 +
-     * 同步选中态」，不再重建控件。
-     */
     var playbackMenuCache: PlaybackMenu?=null
-    /**
-     * 缓存那一份面板的行结构指纹（见 `menuShape`）：`s1c1` 这类两位编码，
-     * 第一位 = 有没有弹幕外观那三行，第二位 = 有没有「时间」那一行（只有正片有）。
-     * 指纹不同就不能复用——行数不一样，焦点下标会全错位。
-     */
     var playbackMenuCacheShape: String?=null
-    /** 预热播放设置面板的排队任务（见 [warmPlaybackMenu]）：同一时刻只留一个。 */
     var warmPlaybackMenuTask: Runnable?=null
-    /**
-     * 播放页「相关剧集 / 作者作品」浮层的重铺入口（见 `player/PlayerActions.kt`）。
-     *
-     * 数据是详情页那一份缓存（`prefetchRelated` / `prefetchAuthorWorks`），落地时机比浮层晚：
-     * 结果到了就调这里就地重铺那一块，而不是让用户关掉浮层再打开一次。
-     * 浮层收起时立刻置空——旧引用会指到已经拆掉的视图树。
-     */
     var playerStripRefresh: (() -> Unit)?=null
-    /** 本次观看选中的定时项目下标（0=关闭），只用来决定菜单里的选中态。 */
     var sleepChoice=0
     var speedDialog: TvDialog?=null
-    /** 设置页「每行卡片」选择弹窗（4 / 5 / 6 / 7 / 8 张，全局）；与其余选择器一样防重复打开。 */
     var homeColumnsDialog: TvDialog?=null
-    /** 设置页「返回顶部」选择弹窗（始终显示 / 下拉 5 行 / 下拉 8 行 / 始终不显示）。 */
     var backToTopDialog: TvDialog?=null
-    /**
-     * 设置页重建后要落回的那一行（按 `tag` 匹配）。
-     *
-     * 目前只有「导航栏圆形按钮」这个开关用到：它改的是页面级结构（导航栏整排建 / 不建），
-     * 必须整页重建；不记落点的话焦点会被系统交给新布局里第一个可聚焦控件。
-     */
     var settingsPendingFocus: String?=null
-    /**
-     * 设置页当前看的那一个大项（[SETTINGS_TABS] 的下标）。
-     *
-     * 与「我的」页的 [accountTab] 同一条思路：切大项只是换一块内容，
-     * 因此记在这里、页面重建（换主题、恢复备份）之后仍然停在原处。
-     */
     var settingsTab=0
-    /** 设置页顶部四枚大项芯片（按 [SETTINGS_TABS] 下标索引），切换时只就地改选中态。 */
     val settingsTabChips=mutableListOf<View>()
-    /**
-     * 设置页每个大项**最上面那一行**的控件（按 [SETTINGS_TABS] 下标取）。
-     *
-     * 按「上」要从这一行的**每一格**回到顶部导航栏的芯片，不能只修第一格：
-     * 推荐范围那一行有三枚开关，「漫剧」能回去、「AI剧 / 真人剧」却停在原地，
-     * 就是这个差别造成的（`wireRows` 给第一行设的 up 是「自己」）。
-     * 由 `TvMainActivity.settings()` 建完页面后赋值，`refreshSettingsTabLanding()` 每次刷新都按它改。
-     */
     var settingsTopRows: (Int)->List<View> = { emptyList() }
-    /** 设置页的滚动容器：切大项时回到顶部（见 [switchSettingsTab]）。 */
     var settingsScroll: android.widget.ScrollView?=null
 
-    /** 播放页底部的作品浮层（相关剧集 / 作者作品）。 */
     var finishedPanel: com.hgtv.star.tv.player.RelatedPanel?=null
-    /** 最后一集期间查到的下一季；只在当前剧仍是同一部、仍停在最后一集时展示。 */
     var nextSeason: Series?=null
     var nextSeasonFor=""
     var nextSeasonLoading=false
     val nextSeasonToken=java.util.concurrent.atomic.AtomicLong(0)
     var nextSeasonJob: java.util.concurrent.Future<*>?=null
-    /** 下一季第 1 集所在详情：查到后提前取好，供片尾无感起播。 */
     var nextSeasonDetail: Detail?=null
     var nextSeasonDetailFor=""
     var nextSeasonDetailLoading=false
     val nextSeasonDetailToken=java.util.concurrent.atomic.AtomicLong(0)
     var nextSeasonDetailJob: java.util.concurrent.Future<*>?=null
-    /** 设置页「同步其他设备数据」当前打开的 NSD 会话；离开设置 / 页面销毁时关闭。 */
     var lanSyncSession: LanLibrarySyncSession?=null
     val lanSyncToken=java.util.concurrent.atomic.AtomicLong(0)
-    /** 片尾等待查询结果时置位；结果落地后直接起播或结束。 */
     var autoNextSeasonPending=false
     var nextSeasonOpening=false
     var nextSeasonFinishedFor=""
-    /** 播放页底部的「将自动播放 …」提示。 */
     var nextSeasonNotice: TextView?=null
     var pendingSeek: Long?=null
-    /**
-     * 是否停在错误页上。
-     *
-     * 兼容层：改造前是一个布尔量，与 `playbackReady` 一起能组合出「出错了但进度可信」
-     * 这类自相矛盾的状态。现在它是 [PlaybackController] 的阶段投影（`FAILED`），
-     * 写入经 `setErrorFlag` 走状态机。
-     */
     var playError: Boolean
         get()=playback.failed
         set(value) { playback.setErrorFlag(value) }
@@ -1702,44 +660,15 @@ class TvMainActivity: Activity() {
         override fun run() = runTvMainTick(this)
     }
     internal val initializationTick get()=tick
-    /**
-     * 播放页三块浮层（播放设置 / 选集面板 / 底部控制条）共用的「无操作自动消失」定时器。
-     *
-     * 秒数见 `library.playerPanelTimeout`（设置页「播放显示 → 播放界面自动消失」，2–15 秒，默认 6 秒）。
-     * 三块浮层**同一个计时器、同一条规则**：最后一次操作之后再过 N 秒收起来。
-     *
-     * 到点做的事与按返回键**完全一样**，因此这里只调那两条现成的收尾路径：
-     * 播放设置与控制条都走 [hidePlaybackOverlay]（收起菜单与控制条、把顶部四项还回设置值），
-     * 选集走面板自己的 `dismiss()`（`EpisodePanel` 的关闭回调负责把焦点还回去）。
-     *
-     * 判据用「此刻屏幕上有没有这块面板」，而不是「到点时用户有没有在操作」：
-     * 每一次操作都会把定时器重新排一遍（见 [scheduleOverlayAutoHide]），
-     * 因此到点时它还没被取消，就说明这一段时间确实没人动过。
-     *
-     * **暂停也照样收**：原来控制条只在「正在播放」时才排这条定时器，一暂停它就永久留在画面上；
-     * 现在暂停与播放一视同仁，只有出错（`playError`，控制条上是错误文案）时不动。
-     *
-     * **推荐页（手机 / 平板）也算**：那一页用的是同一条控制条，用户的要求是「播放界面」整体
-     * 一个规则。电视上的推荐页不进这一支——它没有这条控制条，`hudShown()` 在
-     * `touchArmed` 为 false 时恒为 false。
-     *
-     * 手指还按在进度条上时不收：那时用户正在挑位置，收起控制条等于把他正在拖的那条抽走
-     *（`MOVE` 会不断重排定时器，这一条只是手指停住时的保险）。两个页面各有一个「拖动中」标记：
-     * 正式播放看 `scrubbing`，推荐页看 `recommendScrubbing`（见 `onRecommendScrub`）。
-     */
     val overlayAutoHide=Runnable {
         runOverlayAutoHide()
     }
     val seekRunnable=Runnable { runPendingSeek() }
-    // ---- 播放过程中要按「同一个对象」重用的字段 ----
-    // 这两枚 Runnable 会在 removeCallbacks 里按身份比对，必须是字段（扩展属性没有初始化器，
-    // 写成 getter 会每次返回新对象、removeCallbacks 就失效了）。
     val restoreBuffering=Runnable { restoreBufferingUi() }
     val retireForced=Runnable {
         runForcedRetire()
     }
 
-    // ---- 生命周期与系统回调：扩展成员不能 override，只能留在 Activity 本体里 ----
     override fun onCreate(state: Bundle?) {
         startupCreateTraceAt=StartupTrace.now()
         StartupTrace.mark("main.onCreate.start")
@@ -1747,58 +676,26 @@ class TvMainActivity: Activity() {
         initializeMainShell(state)
     }
 
-    /**
-     * 进程被回收之后的恢复点。
-     *
-     * 电视盒子（尤其 1–2GB 的）在后台停留几分钟就会被 LMK 回收；改造前全仓没有
-     * `onSaveInstanceState`，用户按 Home 再回来看到的是**首页**——播放位置、导航栈、
-     * 滚动位置全丢。对一个以「续播」为核心体验的短剧应用，这是最刺眼的体验断点。
-     *
-     * 只存六个值：整页状态塞进 `Bundle` 会撞 1MB 的 Binder 上限，而剧集对象本身
-     * 已经在本机历史里（`Library`），按 `seriesId` 反查即可，不必重复保存。
-     */
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
         saveMainState(outState)
     }
 
-    /** 文件选择器与系统语音的回传入口；真正的读取 / 搜索都交给 [onResume] 末尾消费。 */
     override fun onActivityResult(requestCode: Int,resultCode: Int,data: android.content.Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
         handleActivityResultImpl(requestCode,resultCode,data)
     }
 
-    /** 外部存储授权回来：立刻重试一次镜像恢复（见 [onMirrorStorageResult]）。 */
     override fun onRequestPermissionsResult(requestCode: Int,permissions: Array<out String>,results: IntArray) {
-        // `Activity.onRequestPermissionsResult` 是 **API 23** 才有的方法，4.4 的 `Activity` 里没有它。
-        // 直接 `super` 调用在 4.4 上是 `invoke-super` 一个不存在的方法：Dalvik 校验期把这条指令
-        // 换成「一执行就抛 NoSuchMethodError」的桩（1.2.7 现场日志里那条
-        // `Could not find method android.app.Activity.onRequestPermissionsResult` 就是它）。
-        // 4.4 上系统不会回调这里，所以实际没崩；但同一个类里只要还有一条这样的指令，
-        // 校验期就少一次「这方法能不能调」的判断余量——按版本判掉，彻底不留这条指令。
         if(android.os.Build.VERSION.SDK_INT>=23) super.onRequestPermissionsResult(requestCode,permissions,results)
         handleRequestPermissionsResultImpl(requestCode,results)
     }
 
-    // ---- 导航与返回 ----
 
-    /**
-     * 页面跳转的唯一入口（与手机端同一套 [Route] 清单）。
-     *
-     * `by lazy` 而不是直接 `TvNavigator(this)`：字段初始化发生在构造期，那时候
-     * `this` 还没构造完；懒加载把「把 Activity 交给别人」推迟到第一次真正跳页时。
-     */
     val navigator: Navigator by lazy { TvNavigator(this) }
 
     @Deprecated("TV remote back is handled through the activity")
     override fun onBackPressed()=goBackImpl()
-    /**
-     * 系统搜索入口一律不走：应用内自带搜索页。
-     *
-     * 部分电视 ROM 的 `PhoneWindow.launchDefaultSearch` 会把 `ACTION_SEARCH`
-     * 解析到一个并不存在的 `com.imtv.speechdemo`，而且不捕获 `ActivityNotFoundException`。
-     * 这里挡住「长按 / 系统搜索框」这类入口，遥控器搜索键另见 [dispatchKeyEvent]。
-     */
     override fun onSearchRequested(): Boolean = false
     override fun dispatchTouchEvent(event: MotionEvent): Boolean {
         prepareDispatchTouchEvent(event)
@@ -1824,15 +721,8 @@ class TvMainActivity: Activity() {
     override fun onStop() {
         onStopImpl { super.onStop() }
     }
-    /** 栅格里被低内存策略摘掉封面的卡数：>0 时滚动 / 焦点回调才需要检查「是不是回来了」。 */
     var suspendedCovers=0
 
-    /**
-     * 4.4~7.x 上的低内存回调（`onTrimMemory` 之外的一条独立路径）。
-     *
-     * 不实现它，老电视上「整机内存告急」时只有系统日志，进程里什么都不做——
-     * 而那正是最该放掉视口外封面的时刻。统一按最重的一档处理。
-     */
     override fun onLowMemory() {
         super.onLowMemory()
         handleLowMemory()
