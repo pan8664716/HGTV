@@ -2652,3 +2652,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 141：RecommendPage 取流主流程迁移
+
+状态：已完成。
+
+- 将取流请求、结果落地、提前补页和连按回调排空移到 `RecommendFeedLoad.kt`。
+- 保留令牌作废、筛选降级、空页提示和回前台判定。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
