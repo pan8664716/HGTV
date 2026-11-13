@@ -3060,3 +3060,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 179：ContentRepository 文本门面迁移
+
+状态：已完成。
+
+- 将出品方归一和题材标签移到 `ContentTextFacade.kt`。
+- 保留占位版权过滤和最多五个标签。
+- `ContentRepository.kt` 从 1533 行降到 1510 行；
+  `ContentTextFacade.kt` 为 29 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
