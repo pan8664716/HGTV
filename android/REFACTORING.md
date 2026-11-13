@@ -2280,3 +2280,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 110：PhonePlayer 形态过渡与弹幕对齐迁移
+
+状态：已完成。
+
+- 将形态过渡、弹幕顶部对齐和横屏画面模式落位移到
+  `PhonePlayerModeSupport.kt`。
+- 保留标题栏实测下沿、2dp / 8dp 呼吸位和 FIT / ZOOM / FILL 行为。
+- `PhonePlayerActivity.kt` 从 3038 行降到 2995 行；`PhonePlayerModeSupport.kt` 为 62 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

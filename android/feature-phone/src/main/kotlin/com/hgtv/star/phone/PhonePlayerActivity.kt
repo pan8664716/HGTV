@@ -146,7 +146,7 @@ class PhonePlayerActivity : PhoneActivity() {
          * 系统也就不给任何窗口动画——内容直接换一套布局，读起来就是「啪」一下。
          * 这一层淡入 / 放大就是补上那一段过渡。
          */
-        private const val MODE_TRANSITION_MS = 220L
+        internal const val MODE_TRANSITION_MS = 220L
     }
 
     internal lateinit var root: FrameLayout
@@ -172,6 +172,8 @@ class PhonePlayerActivity : PhoneActivity() {
      * 两层各持一个 `DanmakuView`，数据由 [danmakuLoader] 的 `replay` 在切形态时接上。
      */
     private lateinit var landDanmaku: com.hgtv.star.shared.media.DanmakuView
+    internal val playerLandDanmaku get()=landDanmaku
+    internal val playerLandDanmakuInitialized get()=::landDanmaku.isInitialized
     private lateinit var landTop: LinearLayout
     private lateinit var landBottom: LinearLayout
     private lateinit var landFullscreen: LinearLayout
@@ -271,12 +273,18 @@ class PhonePlayerActivity : PhoneActivity() {
      * 那套照电视横屏定的 104dp。
      */
     private var portraitTopBottom = 0
+    internal var playerPortraitTopBottom: Int
+        get()=portraitTopBottom
+        set(value) { portraitTopBottom=value }
     /**
      * 横屏顶部那条「播放显示」在 `landscape` 坐标系里的下沿（像素）；0 = 还没量到。
      *
      * 横屏弹幕要从它下面开始铺，否则第一行弹幕会压在剧名 / 时间上。
      */
     private var landInfoRowBottom = 0
+    internal var playerLandInfoRowBottom: Int
+        get()=landInfoRowBottom
+        set(value) { landInfoRowBottom=value }
     private var landVideoWidth = 0
     private var landVideoHeight = 0
     internal var playerLandVideoWidth: Int
@@ -1350,57 +1358,6 @@ class PhonePlayerActivity : PhoneActivity() {
             replayDanmaku()
             placeLandscapeFullscreen()
         }
-    }
-
-    /**
-     * 新形态那一层的入场过渡：淡入 + 从 97% 放到原尺寸。
-     *
-     * 为什么需要它：播放页声明了 `configChanges=orientation`，转屏**不重建 Activity**，
-     * 系统因此也不给任何窗口转场——`applyMode()` 一执行，竖屏那一整套就换成横屏那一整套，
-     * 中间一帧过渡都没有，读起来就是「啪」一下。
-     *
-     * 为什么缩放只给 3%：横屏那一层里是 `PlayerView`（SurfaceView），放大倍数一大，
-     * 边缘会露出黑边、部分机型上还会闪一下。这里靠淡入撑过渡，缩放只做一点点「推进感」。
-     */
-    private fun animateModeEnter(view: View) {
-        view.animate().cancel()
-        view.alpha = 0f
-        view.scaleX = 0.97f
-        view.scaleY = 0.97f
-        view.animate().alpha(1f).scaleX(1f).scaleY(1f)
-            .setDuration(MODE_TRANSITION_MS)
-            .setInterpolator(android.view.animation.DecelerateInterpolator())
-            .start()
-    }
-
-    /**
-     * 把竖屏弹幕的顶部起点对到**顶部标题栏下沿**。
-     *
-     * `DanmakuView` 默认让开 104dp，那是照电视横屏的标题条（96dp）定的；竖屏播放页的
-     * 标题栏按 `phoneScale` 算，和这个数对不上，滚动弹幕就会贴着屏幕顶边、压在剧名上。
-     * 这里用实测的标题栏下沿，再留 8dp 呼吸位；横屏照旧交回默认值（那边标题条本来
-     * 就是 96dp 那一档）。
-     */
-    private fun syncDanmakuTopInset() {
-        if (!::page.isInitialized) return
-        if (landscapeMode) {
-            // 横屏：让开顶部那条「播放显示」（`landInfoRow`）。它的下沿要实测——
-            // 字号跟着 `PhoneUiScale` 走，写死一个 dp 值在放大档上会被弹幕压住。
-            if (!::landInfoRow.isInitialized || !::landDanmaku.isInitialized) return
-            // 只留一点点缝（用户要求）：8dp 在 1080P 上是 24px，加上弹幕轨道自身的
-            // 行内留白，第一行弹幕离信息行看着像隔了一整行。2dp 就够。
-            if (landInfoRowBottom > 0) landDanmaku.topInsetPx = landInfoRowBottom + dp(2)
-            return
-        }
-        if (portraitTopBottom <= 0) return
-        page.danmakuView.topInsetPx = portraitTopBottom + dp(8)
-    }
-
-    /** 横屏也按用户的「画面模式」落画面，不按片源方向强制放大。 */
-    private fun applyLandscapeResize() {
-        // 竖屏片源不再因为方向被强制 ZOOM：那会把 9:16 的画面裁成中间一条，
-        // 换集时尤其明显。用户想铺满可以自己选「等比铺满」。
-        landscapeVideo.resizeMode = (library?.frameMode ?: VideoFrameMode.FIT).toFit().resizeMode()
     }
 
     private fun enterImmersive() {
