@@ -3294,3 +3294,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 198：TvMain 现场恢复迁移
+
+状态：已完成。
+
+- 将保存现场的恢复决策移到 `TvMainStateRestore.kt`。
+- 保留播放页 / 详情 / 推荐回跳和不可用现场回首页。
+- `TvMainActivity.kt` 从 1967 行降到 1933 行；
+  `TvMainStateRestore.kt` 为 38 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
