@@ -2453,3 +2453,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 125：PhonePlayer 数据加载迁移
+
+状态：已完成。
+
+- 将播放页数据加载移到 `PhonePlayerLoad.kt`。
+- 保留会话接手优先、详情缓存顺序、本机进度恢复和换集起播参数。
+- `PhonePlayerActivity.kt` 从 2358 行降到 2312 行；`PhonePlayerLoad.kt` 为 66 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
