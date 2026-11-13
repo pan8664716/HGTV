@@ -3664,3 +3664,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 229：PhoneAccount 登录链路迁移
+
+状态：已完成。
+
+- 将二维码登录、手机号登录、验证码冷却、上行短信确认和登录注册桥接移到
+  `PhoneAccountLogin.kt`。
+- 保留二维码轮询、登录模式切换、手机号归一和登录后落盘流程。
+- `PhoneAccountActivity.kt` 从 1163 行降到 675 行；
+  `PhoneAccountLogin.kt` 为 357 行。
+- 压缩原文件独立注释行，代码语义未变。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
+
+### 检查点：DoD 完成
+
+状态：已完成。
+
+- 所有生产 Kotlin 文件均不超过 800 行；当前 `>800` 文件数为 0。
+- 本轮 Android 改动均已在本地提交，可从对应提交单独回滚。
+- 未修改版本号、`versionCode`、Gradle、Manifest、CHANGELOG 或资源文件。
+- 未创建 tag，未推送，未创建 Release。
+- 最终 `git diff --check` 与 Debug APK 编译通过；测试按项目规则交由用户执行。
