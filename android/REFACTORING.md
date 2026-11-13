@@ -3452,3 +3452,12 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 检查点：批次 161–210
+
+状态：已完成，50/50。
+
+- 批次 161–210 各有独立重构提交，可从任一批次单独回滚。
+- 本组改动未修改版本号、`versionCode`、Gradle、Manifest 或 CHANGELOG。
+- 检查前工作区干净，未创建 tag，分支无上游引用，未推送。
+- 最终 `git diff --check` 与 Debug APK 编译通过。
