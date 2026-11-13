@@ -3748,3 +3748,25 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 结构，本次不移动。
 
 执行上限 30 批；单批最多 40 个文件；每批独立 commit、全量验证并记录。
+
+### 布局批次 1：core/account
+
+状态：已完成。
+
+- `core/Account.kt` → `core/account/Account.kt`
+- `core/AccountImportServer.kt` → `core/account/AccountImportServer.kt`
+- `core/AccountSnapshot.kt` → `core/account/AccountSnapshot.kt`
+- `core/DeviceRegister.kt` → `core/account/DeviceRegister.kt`
+- `core/OfficialDeviceIds.kt` → `core/account/OfficialDeviceIds.kt`
+- `core/PassportSigner.kt` → `core/account/PassportSigner.kt`
+- `core/PassportTables.kt` → `core/account/PassportTables.kt`
+- `core/PhoneLogin.kt` → `core/account/PhoneLogin.kt`
+- `core/PhoneLoginServer.kt` → `core/account/PhoneLoginServer.kt`
+- `core/PhonePage.kt` → `core/account/PhonePage.kt`
+- `core/PhoneRegion.kt` → `core/account/PhoneRegion.kt`
+- `core/QrLogin.kt` → `core/account/QrLogin.kt`
+- `core/StableDeviceIds.kt` → `core/account/StableDeviceIds.kt`
+- 外部路径引用：无；baseline 仅引用 JVM 类名，未移动或重命名类。
+- 验证：各模块 Kotlin 编译、`:shared:testDebugUnitTest`、`:app:lintDebug`、
+  `:app:assembleDebug` 通过；`:core:test` 435 例、24 失败、28 跳过，与基线一致。
+- 下一批：`core/catalog`。
