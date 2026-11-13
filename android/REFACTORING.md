@@ -3770,3 +3770,25 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 验证：各模块 Kotlin 编译、`:shared:testDebugUnitTest`、`:app:lintDebug`、
   `:app:assembleDebug` 通过；`:core:test` 435 例、24 失败、28 跳过，与基线一致。
 - 下一批：`core/catalog`。
+
+### 布局批次 2：core/catalog
+
+状态：已完成。
+
+- `core/BackToTopPolicy.kt` → `core/catalog/BackToTopPolicy.kt`
+- `core/CatalogFilter.kt` → `core/catalog/CatalogFilter.kt`
+- `core/CatalogSnapshot.kt` → `core/catalog/CatalogSnapshot.kt`
+- `core/CategoryCatalog.kt` → `core/catalog/CategoryCatalog.kt`
+- `core/CategoryFilters.kt` → `core/catalog/CategoryFilters.kt`
+- `core/CategoryPanelCache.kt` → `core/catalog/CategoryPanelCache.kt`
+- `core/ContentAuthorRules.kt` → `core/catalog/ContentAuthorRules.kt`
+- `core/ContentType.kt` → `core/catalog/ContentType.kt`
+- `core/ContentValues.kt` → `core/catalog/ContentValues.kt`
+- `core/FeedCursor.kt` → `core/catalog/FeedCursor.kt`
+- `core/HomeLayout.kt` → `core/catalog/HomeLayout.kt`
+- `core/OptionalFilter.kt` → `core/catalog/OptionalFilter.kt`
+- `core/RankBoard.kt` → `core/catalog/RankBoard.kt`
+- `core/SeriesSeasons.kt` → `core/catalog/SeriesSeasons.kt`
+- 外部路径引用：无；仅移动目录，文件名、包名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+- 下一批：`core/crypto`。
