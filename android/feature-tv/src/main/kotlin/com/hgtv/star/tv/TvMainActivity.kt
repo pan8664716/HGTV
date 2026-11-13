@@ -1835,14 +1835,14 @@ class TvMainActivity: Activity() {
      */
     override fun onLowMemory() {
         super.onLowMemory()
-        onLowMemoryImpl()
+        handleLowMemory()
     }
 
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
-        onTrimMemoryImpl(level)
+        handleTrimMemory(level)
     }
     override fun onDestroy() {
-        onDestroyImpl { super.onDestroy() }
+        handleDestroy { super.onDestroy() }
     }
 }

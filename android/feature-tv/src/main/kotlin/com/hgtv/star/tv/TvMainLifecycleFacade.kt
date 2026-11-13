@@ -27,3 +27,21 @@ fun TvMainActivity.releaseOffscreenCovers() = releaseOffscreenCoversImpl()
  * `suspendedCovers == 0` 时是**一次整数比较**，平时滚动这条路径的代价为 0。
  */
 fun TvMainActivity.resumeVisibleCovers() = resumeVisibleCoversImpl()
+
+/**
+ * 4.4~7.x 上的低内存回调（`onTrimMemory` 之外的一条独立路径）。
+ *
+ * 不实现它，老电视上「整机内存告急」时只有系统日志，进程里什么都不做——
+ * 而那正是最该放掉视口外封面的时刻。统一按最重的一档处理。
+ */
+internal fun TvMainActivity.handleLowMemory() {
+    onLowMemoryImpl()
+}
+
+internal fun TvMainActivity.handleTrimMemory(level: Int) {
+    onTrimMemoryImpl(level)
+}
+
+internal fun TvMainActivity.handleDestroy(superDestroy: () -> Unit) {
+    onDestroyImpl(superDestroy)
+}

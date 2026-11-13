@@ -3379,3 +3379,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 205：TvMain 生命周期尾部迁移
+
+状态：已完成。
+
+- 将低内存、内存裁剪和销毁尾部处理移到
+  `TvMainLifecycleFacade.kt`。
+- 保留系统回调顺序。
+- `TvMainActivity.kt` 为 1848 行；`TvMainLifecycleFacade.kt` 为 47 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
