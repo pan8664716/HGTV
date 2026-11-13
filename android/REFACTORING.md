@@ -3232,3 +3232,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 193：Library 注册 Cookie 迁移
+
+状态：已完成。
+
+- 将注册 Cookie 的读取、清理与保存移到
+  `LibraryRegistrationCookieFacade.kt`。
+- 补齐手机账号与 TV 账号界面的扩展导入。
+- `Library.kt` 从 1316 行降到 1294 行；
+  `LibraryRegistrationCookieFacade.kt` 为 27 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

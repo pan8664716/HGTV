@@ -17,6 +17,7 @@ import android.widget.PopupWindow
 import android.widget.ScrollView
 import com.hgtv.star.core.PhoneLogin
 import com.hgtv.star.core.QrLogin
+import com.hgtv.star.shared.data.registrationCookies
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
 import com.hgtv.star.tv.LoginForm
