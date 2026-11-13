@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 import android.view.View
+import android.view.MotionEvent
 
 internal fun PhonePlayerActivity.applyChrome() {
     if (playerLandscapeMode) {
@@ -56,3 +57,25 @@ internal fun PhonePlayerActivity.scheduleChromeHide() {
 /** 自动收起的时长（毫秒）；设置没读到时按 TV 的出厂值 6 秒。 */
 internal fun PhonePlayerActivity.chromeTimeoutMs(): Long =
     ((library?.playerPanelTimeout ?: 6) * 1000L)
+
+/**
+ * 面板打开期间，**每一次触摸**都把自动收起的计时往后推。
+ *
+ * 按下时重新排队；拖动（MOVE）与抬手（UP）只改截止时刻——否则拖一条滑块拖了七八秒，
+ * 面板会在手指还按着的时候被收走。MOVE 不重新排队，避免一帧一个 post。
+ */
+internal fun PhonePlayerActivity.handleChromeTouchEvent(ev: MotionEvent) {
+    if (playerChromeVisible && !relatedState.relatedSheetOpen) {
+        when (ev.actionMasked) {
+            MotionEvent.ACTION_DOWN -> scheduleChromeHide()
+            MotionEvent.ACTION_MOVE,
+            MotionEvent.ACTION_UP -> {
+                if (playerRootInitialized) {
+                    playerChromeHideAt = System.currentTimeMillis() + chromeTimeoutMs()
+                    root.removeCallbacks(relatedChromeHideRunnable)
+                    root.postDelayed(relatedChromeHideRunnable, chromeTimeoutMs())
+                }
+            }
+        }
+    }
+}

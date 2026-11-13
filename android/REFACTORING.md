@@ -2511,3 +2511,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 130：PhonePlayer 触摸续期迁移
+
+状态：已完成。
+
+- 将控制层触摸续期移到 `PhonePlayerChrome.kt`。
+- 保留按下重排、移动 / 抬手只改截止时刻和相关剧集浏览层豁免。
+- `PhonePlayerActivity.kt` 从 2108 行降到 2096 行；`PhonePlayerChrome.kt` 为 81 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

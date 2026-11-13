@@ -1815,19 +1815,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 面板会在手指还按着的时候被收走。MOVE 不重新排队，避免一帧一个 post。
      */
     override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
-        if (chromeVisible && !relatedState.relatedSheetOpen) {
-            when (ev.actionMasked) {
-                android.view.MotionEvent.ACTION_DOWN -> scheduleChromeHide()
-                android.view.MotionEvent.ACTION_MOVE,
-                android.view.MotionEvent.ACTION_UP -> {
-                    if (::root.isInitialized) {
-                        chromeHideAt = System.currentTimeMillis() + chromeTimeoutMs()
-                        root.removeCallbacks(chromeHideRunnable)
-                        root.postDelayed(chromeHideRunnable, chromeTimeoutMs())
-                    }
-                }
-            }
-        }
+        handleChromeTouchEvent(ev)
         return super.dispatchTouchEvent(ev)
     }
 
