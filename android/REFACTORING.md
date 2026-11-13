@@ -1788,6 +1788,17 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：`git revert` 本批提交。
 
+### 批次 93：PhoneFeed 地址过期原地重开迁移
+
+状态：已完成。
+
+- 将过期地址原地换源移到 `PhoneFeedReopen.kt`；原私有入口保留并委托。
+- 保留播放位置与暂停意图、播放代次、Surface 不重挂、会话发布和失败回退行为。
+- `PhoneFeedView.kt` 从 1145 行降到 1097 行；`PhoneFeedReopen.kt` 为 73 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
+
 ### 批次 92：PhoneFeed 播放器接手迁移
 
 状态：已完成。

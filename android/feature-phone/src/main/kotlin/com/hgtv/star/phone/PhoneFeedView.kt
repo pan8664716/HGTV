@@ -186,6 +186,9 @@ class PhoneFeedView(
         set(value) { recommendWatchStart=value }
     private var playToken = 0
     internal val feedPlayToken get()=playToken
+    internal var feedPlayTokenSlot: Int
+        get()=playToken
+        set(value) { playToken=value }
     private var boundPage: PhoneVideoPage? = null
     internal val feedBoundPage get()=boundPage
     internal var feedBoundPageSlot: PhoneVideoPage?
@@ -636,58 +639,7 @@ class PhoneFeedView(
      * 返回 true 表示已经在换了（异步），调用方不要再走重播那条路。
      */
     private fun reopenAtCurrentPosition(index: Int): Boolean {
-        if (!sessionBelongsToThisFeed()) return false
-        if (index !in items.indices) return false
-        val series = items[index]
-        if (!PhoneSession.live(series.id)) return false
-        val d = PhoneSession.detail ?: return false
-        val episodeIndex = PhoneSession.index.takeIf { it in d.episodes.indices } ?: return false
-        val episodeId = d.episodes.getOrNull(episodeIndex) ?: return false
-        val exo = player ?: PhoneServices.peekPlayer() ?: return false
-        // 位置优先问播放器（最准），拿不到才用会话里每秒刷新的那个读数。
-        val at = runCatching { exo.currentPosition }.getOrDefault(0L)
-            .takeIf { it > 0 } ?: PhoneSession.positionMs
-        // 换地址不改播放 / 暂停状态：暂停着退回来，换完还是暂停。
-        val wantPlay = if (PhoneSession.inHandoff()) PhoneSession.resumeOnAdopt else exo.playWhenReady
-        player = exo
-        playingIndex = index
-        playingDetail = d
-        currentEpisodeIndex[index] = episodeIndex
-        currentEpisodeIds[index] = episodeId
-        val token = ++playToken
-        scope.launch {
-            val lib = library ?: PhoneServices.awaitLibrary(context).also { library = it }
-            val maxQuality = lib.maxQuality
-            val prepared = withContext(Dispatchers.IO) {
-                runCatching {
-                    val info = playbackSource.stream(episodeId, maxQuality, d.playback)
-                    playbackSource.prepare(episodeId, info)
-                }.getOrNull()
-            }
-            if (prepared == null) {
-                // 换地址失败（断网 / 接口抖动）：退回常规起播，别把用户停在一张死画面上。
-                if (token == playToken) playIndex(index)
-                return@launch
-            }
-            if (token != playToken || !isAttachedToWindow) { prepared.close(); return@launch }
-            // **不碰 `PlayerView`**：Surface 还是那一块，画面不会黑一下。
-            val factory = DataSource.Factory { VideoDataSource(prepared) }
-            exo.swapMediaSource(episodeId, prepared.info.url, factory)
-            remote = prepared
-            PhoneSession.publish(
-                d, episodeIndex, prepared, prepared.info.quality,
-                PhoneSession.Owner.FEED, cacheKey(),
-            )
-            exo.setPlaybackSpeed(userSpeed)
-            exo.prepare()
-            if (at > 0) exo.seekTo(at)
-            exo.playWhenReady = wantPlay
-            android.util.Log.i(
-                "HGTV-PHONE",
-                "feed reopen in place episode=${episodeIndex + 1} at=$at"
-            )
-        }
-        return true
+        return reopenAtCurrentPositionImpl(index)
     }
     internal fun reopenAtCurrentPositionForResume(index: Int): Boolean =
         reopenAtCurrentPosition(index)
