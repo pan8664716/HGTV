@@ -130,8 +130,11 @@ fun TvMainActivity.importAccount(text: String,anchor: View?) {
                 com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force=true)
                 hideCenterLoading()
                 showHint("账号参数已导入")
-                showCatalog()
+                // 先发起唯一一次强制刷新，再重建页面。反过来 showCatalog() 会先自动拉一次，
+                // 紧接着这里的 force 又发一次；两条账号请求并发时，后一条可能被前一条的
+                // 在途写请求拖成空响应，历史页就会一直停在加载态。
                 loadAccount(force=true)
+                showCatalog()
             }.onFailure { failure ->
                 DebugLog.record("账号","导入失败 · ${failure.message.orEmpty().take(140)}")
                 hideCenterLoading()
@@ -559,8 +562,8 @@ fun TvMainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?)
                 com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force=true)
                 hideCenterLoading()
                 showHint("已登录")
-                showCatalog()
                 loadAccount(force=true)
+                showCatalog()
             }.onFailure { failure ->
                 repository.credentials=library.account().takeIf { it.configured }
                 DebugLog.record("账号","登录失败 · ${failure.message.orEmpty().take(140)}")

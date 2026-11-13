@@ -2,8 +2,12 @@
 package com.hgtv.star.shared.data
 import com.hgtv.star.shared.debug.Diagnostics
 
+import android.content.ContentValues
 import android.content.Context
+import android.net.Uri
+import android.os.Build
 import android.os.Environment
+import android.provider.MediaStore
 import android.util.Log
 import com.hgtv.star.core.LatestWriteQueue
 import java.io.File
@@ -31,6 +35,9 @@ import org.json.JSONObject
  *    拿到的传统存储权限直接写公共目录（见 manifest 与 `TvMainActivity.requestMirrorStorage`）。
  * 3. `Android/data/<包名>/files/`（[Context.getExternalFilesDir]）—— 不需要权限，
  *    标准 Android 在卸载时由 vold 清理，但很多真机（尤其国产 ROM）会把它残留下来。
+ * 4. Android 10+ 的 MediaStore `Download/HGTV/` —— 卸载不会删除，且重装后新 UID 可以通过
+ *    ContentResolver 读取。`/sdcard/.hgtv` 虽然文件还在，但 Android 11 电视会把文件锁在旧 UID；
+ *    只靠直读路径时，重装后实际读不到这份镜像。
  *
  * 三份互为备份：任何一份写不进去，另外两份照常落盘；启动时只要有任意一份还在，设备身份
  * 与登录会话就认得回来。补齐缺失的那几份发生在启动读盘之后（见 [preload]）。
@@ -182,7 +189,8 @@ class SessionMirror(private val app: Context) {
         val marker=runCatching { File(app.filesDir,LocalReset.RESET_MARKER) }.getOrNull()
         if(marker?.isFile==true) {
             dirs().forEach { dir -> runCatching { File(dir,FILE_NAME).delete() } }
-            val stale=dirs().any { dir -> File(dir,FILE_NAME).isFile }
+            SessionPublicCopy.delete(app)
+            val stale=dirs().any { dir -> File(dir,FILE_NAME).isFile } || SessionPublicCopy.exists(app)
             if(!stale) runCatching { marker.delete() }
             synchronized(lock) { ignore=true }
             return null
@@ -201,6 +209,14 @@ class SessionMirror(private val app: Context) {
             if(json.optJSONObject("values")==null) continue
             val at=json.optLong("saved_at",0L)
             if(best==null || at>bestAt) { best=text; bestAt=at }
+        }
+        val publicText=SessionPublicCopy.read(app)
+        if(publicText!=null) {
+            val json=runCatching { JSONObject(publicText) }.getOrNull()
+            if(json?.optInt("version",0)==VERSION && json.optJSONObject("values")!=null) {
+                val at=json.optLong("saved_at",0L)
+                if(best==null || at>bestAt) best=publicText
+            }
         }
         return best
     }
@@ -321,7 +337,7 @@ class SessionMirror(private val app: Context) {
             val file=File(dir,FILE_NAME)
             if(!file.isFile) true
             else runCatching { JSONObject(file.readText()).optLong("saved_at",0L) }.getOrDefault(-1L)!=at
-        }
+        } || SessionPublicCopy.stamp(app)!=at
         if(!stale) return
         // 补写的内容与内存完全一致；`encodeLocked` 会把 `saved_at` 抬到「现在」，
         // 于是这次写成功的每一份都对齐到同一个时间戳，下一次启动不再判定为过期。
@@ -376,6 +392,8 @@ class SessionMirror(private val app: Context) {
             }.getOrDefault(false)
             if(ok) { wrote=true; written += dir.absolutePath }
         }
+        val publicWritten=SessionPublicCopy.write(app,text)
+        if(publicWritten) wrote=true
         if(!wrote) {
             Log.w("HGTV","Session mirror unwritable; identity and session stay app-private")
             Diagnostics.warn("HGTV-MIRROR","unwritable; identity and session stay app-private")
@@ -386,9 +404,147 @@ class SessionMirror(private val app: Context) {
             val marker=File(app.filesDir,LocalReset.RESET_MARKER)
             if(marker.isFile) {
                 val stale=dirs().any { dir -> dir.absolutePath !in written && File(dir,FILE_NAME).isFile }
-                if(!stale) runCatching { marker.delete() }
+                val stalePublic=!publicWritten && SessionPublicCopy.exists(app)
+                if(!stale && !stalePublic) runCatching { marker.delete() }
             }
         }
         return wrote
+    }
+}
+
+/**
+ * Android 10+ 的公共副本。
+ *
+ * 直接路径 `/sdcard/.hgtv` 在卸载后仍归旧应用 UID；Android 11 电视的 FUSE 会拒绝新 UID 读取，
+ * 即使文件权限看起来可读。MediaStore 按内容 URI 授权读取，重装后的同一签名应用拿到存储权限后
+ * 仍能取回这份 JSON。
+ */
+internal object SessionPublicCopy {
+    fun read(app: Context): String? =
+        if(Build.VERSION.SDK_INT>=29) SessionMediaStoreCopy.read(app) else null
+
+    fun stamp(app: Context): Long? =
+        if(Build.VERSION.SDK_INT>=29) SessionMediaStoreCopy.stamp(app) else null
+
+    fun exists(app: Context): Boolean =
+        Build.VERSION.SDK_INT>=29 && SessionMediaStoreCopy.exists(app)
+
+    fun write(app: Context,text: String): Boolean =
+        Build.VERSION.SDK_INT>=29 && SessionMediaStoreCopy.write(app,text)
+
+    fun delete(app: Context) {
+        if(Build.VERSION.SDK_INT>=29) SessionMediaStoreCopy.delete(app)
+    }
+}
+
+/** 把 MediaStore 类型全部隔离在 API 29 才加载的类里，4.4 / 5.x 上不会解析 `MediaStore.Downloads`。 */
+@android.annotation.TargetApi(Build.VERSION_CODES.Q)
+private object SessionMediaStoreCopy {
+    private const val DISPLAY_NAME="hgtv-session.json"
+    private val RELATIVE_PATH="${Environment.DIRECTORY_DOWNLOADS}/HGTV/"
+
+    private fun selection()=
+        "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.RELATIVE_PATH}=?"
+
+    private fun args()=arrayOf(DISPLAY_NAME,RELATIVE_PATH)
+
+    private fun rows(app: Context): List<Pair<Uri,Long>> {
+        val projection=arrayOf(MediaStore.MediaColumns._ID,MediaStore.MediaColumns.DATE_MODIFIED)
+        return runCatching {
+            app.contentResolver.query(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                projection,
+                selection(),
+                args(),
+                "${MediaStore.MediaColumns.DATE_MODIFIED} DESC",
+            )?.use { cursor ->
+                val idColumn=cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
+                val modifiedColumn=cursor.getColumnIndexOrThrow(MediaStore.MediaColumns.DATE_MODIFIED)
+                buildList {
+                    while(cursor.moveToNext()) {
+                        add(
+                            android.content.ContentUris.withAppendedId(
+                                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                                cursor.getLong(idColumn),
+                            ) to cursor.getLong(modifiedColumn),
+                        )
+                    }
+                }
+            }.orEmpty()
+        }.getOrElse {
+            Log.w("HGTV","Session mirror MediaStore query failed",it)
+            emptyList()
+        }
+    }
+
+    fun read(app: Context): String? {
+        val uri=rows(app).firstOrNull()?.first ?: return null
+        return runCatching {
+            app.contentResolver.openInputStream(uri)?.use { input ->
+                input.readBytes().toString(Charsets.UTF_8)
+            }
+        }.onFailure {
+            Log.w("HGTV","Session mirror MediaStore read failed",it)
+        }.getOrNull()
+    }
+
+    fun stamp(app: Context): Long? =
+        read(app)?.let { text ->
+            runCatching { JSONObject(text).optLong("saved_at",0L) }.getOrNull()
+        }
+
+    fun exists(app: Context): Boolean = rows(app).isNotEmpty()
+
+    fun write(app: Context,text: String): Boolean {
+        val resolver=app.contentResolver
+        val existing=rows(app).firstOrNull()?.first
+        if(existing!=null && writeUri(app,existing,text,clearPending=false)) return true
+
+        val values=ContentValues().apply {
+            put(MediaStore.MediaColumns.DISPLAY_NAME,DISPLAY_NAME)
+            put(MediaStore.MediaColumns.MIME_TYPE,"application/json")
+            put(MediaStore.MediaColumns.RELATIVE_PATH,RELATIVE_PATH)
+            put(MediaStore.MediaColumns.IS_PENDING,1)
+        }
+        val created=runCatching {
+            resolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI,values)
+        }.onFailure {
+            Log.w("HGTV","Session mirror MediaStore insert failed",it)
+        }.getOrNull() ?: return false
+        if(writeUri(app,created,text,clearPending=true)) {
+            rows(app).map { it.first }.filter { it!=created }.forEach { old ->
+                runCatching { resolver.delete(old,null,null) }
+            }
+            return true
+        }
+        runCatching { resolver.delete(created,null,null) }
+        return false
+    }
+
+    private fun writeUri(app: Context,uri: Uri,text: String,clearPending: Boolean): Boolean {
+        val resolver=app.contentResolver
+        return runCatching {
+            resolver.openOutputStream(uri,"wt")?.use { output ->
+                output.write(text.toByteArray(Charsets.UTF_8))
+                output.flush()
+            } ?: error("MediaStore output stream unavailable")
+            val finished=ContentValues().apply {
+                if(clearPending) put(MediaStore.MediaColumns.IS_PENDING,0)
+                put(MediaStore.MediaColumns.DATE_MODIFIED,System.currentTimeMillis()/1000L)
+            }
+            resolver.update(uri,finished,null,null)
+            true
+        }.onFailure {
+            Log.w("HGTV","Session mirror MediaStore write failed",it)
+            if(clearPending) runCatching {
+                resolver.update(uri,ContentValues().apply { put(MediaStore.MediaColumns.IS_PENDING,0) },null,null)
+            }
+        }.getOrDefault(false)
+    }
+
+    fun delete(app: Context) {
+        rows(app).forEach { (uri,_) ->
+            runCatching { app.contentResolver.delete(uri,null,null) }
+        }
     }
 }
