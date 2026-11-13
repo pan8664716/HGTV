@@ -173,7 +173,7 @@ class ContentRepository(
     internal val RECOMMEND_ATTEMPTS=3
     internal val SEARCH_BLANK_RETRIES=1
     internal val SEARCH_BLANK_RETRY_DELAY_MS=160L
-    internal val SEARCH_PAGE_SIZE=20
+    internal val SEARCH_PAGE_SIZE=50
     internal val SEARCH_FEED_TAB=11
     internal val SEARCH_FEED_SCOPE=-1
     private val SEARCH_FEED_CONTEXT=linkedMapOf(

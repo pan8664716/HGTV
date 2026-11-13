@@ -4236,3 +4236,11 @@ feature-tv/
   时优先使用，角色缺失时回退原域名，不拿无关 local host 顶替。
 - TNC bootstrap、API 候选和注册线路的静态表仍作为首次启动及故障兜底保留。
 - 未修改版本号、versionCode、依赖、Manifest 或 Release 元数据。
+
+## 搜索结果单页
+
+状态：已完成。
+
+- App 搜索接口单页 `count` 从 20 调整为 50，翻页游标和 offset 同步按 50 推进。
+- 官网搜索仍按服务端固定 10 条一页并发拼页，不改接口约定。
+- 未修改版本号、versionCode 或依赖。
