@@ -3561,3 +3561,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 219：ListPage 内容入口迁移
+
+状态：已完成。
+
+- 将唯一列表入口、榜单说明、硬裁剪视口和焦点探测移到
+  `ListPageContent.kt`。
+- 保留窗口化栅格、页头收展、滚动恢复、焦点落点和分页行为。
+- `ListPage.kt` 从 1310 行降到 693 行；`ListPageContent.kt` 为 218 行。
+- 同步整理原文件独立注释行，代码语义未变。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
