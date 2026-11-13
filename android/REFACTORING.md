@@ -2407,3 +2407,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 121：PhonePlayer 常亮与下层恢复迁移
+
+状态：已完成。
+
+- 将屏幕常亮判定和推荐页 Surface 恢复检查移到
+  `PhonePlayerScreenState.kt`。
+- 保留前台、定时停止、错误页、播放意图和接管标志判据。
+- `PhonePlayerActivity.kt` 从 2565 行降到 2536 行；
+  `PhonePlayerScreenState.kt` 为 36 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
