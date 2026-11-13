@@ -1787,3 +1787,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 70：PhoneFeed 列表适配器迁移
+
+状态：已完成。
+
+- 将 `FeedAdapter` 移到 `PhoneFeedAdapter.kt`，原列表仍通过同一适配器刷新。
+- 保留每屏页面创建、手势回调、全屏 / 详情入口、进度条反馈、空列表占位和播放页重绑顺序。
+- `PhoneFeedView.kt` 从 1659 行降到 1577 行；`PhoneFeedAdapter.kt` 为 114 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。

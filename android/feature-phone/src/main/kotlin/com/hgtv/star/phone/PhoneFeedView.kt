@@ -104,8 +104,9 @@ class PhoneFeedView(
     internal val feedPlaybackSource get()=playbackSource
     private val items get()=recommendStore.items
     internal val feedItems get()=items
-    private val adapter = FeedAdapter()
+    private val adapter = PhoneFeedAdapter(this)
     private val list = VerticalPagerList(context)
+    internal val feedList get()=list
 
     private var offset: Int
         get()=recommendStore.nextOffset
@@ -116,6 +117,7 @@ class PhoneFeedView(
     private var loading: Boolean
         get()=recommendStore.loading
         set(value) { recommendStore.loading=value }
+    internal val feedLoading get()=loading
     private var ended: Boolean
         get()=!recommendStore.hasMore
         set(value) { recommendStore.hasMore=!value }
@@ -252,6 +254,23 @@ class PhoneFeedView(
     internal fun feedRemoveCallbacks(runnable: Runnable) = list.removeCallbacks(runnable)
     internal fun feedSmoothScrollToPosition(position: Int) =
         list.smoothScrollToPosition(position)
+    internal fun revealChromeForAdapter(page: PhoneVideoPage) = revealChrome(page)
+    internal fun togglePlayForAdapter() = togglePlay()
+    internal fun openSettingsForAdapter() = openSettings()
+    internal fun beginTempSpeedForAdapter() = beginTempSpeed()
+    internal fun endTempSpeedForAdapter() = endTempSpeed()
+    internal fun launchPlayerForAdapter(
+        series: Series,
+        episode: Int,
+        fullscreen: Boolean,
+        play: Boolean,
+    ) = launchPlayer(series, episode, fullscreen, play)
+    internal fun openPlayerForAdapter(page: PhoneVideoPage) =
+        openPlayer(page, fullscreen = false)
+    internal fun liveEpisodeOfForAdapter(series: Series, index: Int) =
+        liveEpisodeOf(series, index)
+    internal fun clockForAdapter(ms: Long) = clock(ms)
+    internal fun rebindCurrentPageForAdapter() = rebindCurrentPage()
     internal fun revealChromeForSettings() = revealChrome()
     internal fun playIndexForSettings(index: Int, startAt: Long) =
         playIndex(index, startAt)
@@ -1539,107 +1558,6 @@ class PhoneFeedView(
      */
     private fun openSettings() {
         openSettingsImpl()
-    }
-
-    // ------------------------------------------------------------------ 列表
-
-    private inner class FeedAdapter : RecyclerView.Adapter<PageHolder>() {
-        override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PageHolder {
-            val page = PhoneVideoPage(
-                context,
-                withTabBar = true,
-                fullscreenEntry = true,
-                // 推荐页**不接管横滑**：这里的左右手势归外层 pager（换体裁），
-                // 而且横滑一旦被这一层接住就会拦住父容器，上滑的横向抖动会被误判成拖进度。
-                dragSeek = false,
-            )
-            // 高度跟着 RecyclerView 走（= 一个屏幕）：尺寸变化不再需要重建这一页，
-            // 正在出画面的那块 Surface 因此能在转屏、进出播放页时一直活着。
-            page.layoutParams = RecyclerView.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.MATCH_PARENT,
-            )
-
-            page.onTap = {
-                // 自动收起后第一下先把信息叫回来，不顺手暂停。
-                if (!page.isChromeVisible()) revealChrome(page) else togglePlay()
-            }
-            page.onLongPress = { zone ->
-                when (zone) {
-                    PhoneTouch.Zone.CENTER -> {
-                        if (!page.isChromeVisible()) revealChrome(page)
-                        openSettings()
-                    }
-                    else -> beginTempSpeed()
-                }
-            }
-            page.onLongPressEnd = { endTempSpeed() }
-            // 信息流的「全屏」按钮：直接进播放页并让它切横屏。
-            page.onFullscreen = {
-                val series = items.getOrNull(playingIndex) ?: page.currentSeries()
-                if (series != null) {
-                    // 集号以**正在播的那一屏**为准：`getChildAdapterPosition(page)` 在全屏按钮
-                    // 刚显示、页还没完全挂上时可能返回 -1，那样传过去的就是第 1 集，
-                    // 播放页判定「集号对不上」→ 拒绝接手 → 重新取地址从头播。
-                    val episode = liveEpisodeOf(series, playingIndex)
-                    launchPlayer(
-                        series = series,
-                        episode = episode,
-                        fullscreen = true,
-                        // 全屏是「同一路继续看」：进来时的播放/暂停状态原样带过去。
-                        play = player?.playWhenReady == true,
-                    )
-                }
-            }
-            page.onWatch = { openPlayer(page, fullscreen = false) }
-            // 标题是简介页入口；选集 / 观看完整短剧仍走正式播放页。
-            page.onTitle = {
-                val series = items.getOrNull(playingIndex) ?: page.currentSeries()
-                if (series != null) {
-                    recommendPlayback.reportEvent(
-                        series,
-                        com.hgtv.star.core.RecommendBehavior.Event.CLICK,
-                        episodeId=currentEpisodeIds[playingIndex].orEmpty(),
-                        episodeIndex=currentEpisodeIndex[playingIndex] ?: -1,
-                        positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
-                        durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
-                    )
-                    context.phoneNav().open(Route.Detail(series.id, series.title))
-                }
-            }
-            // 进度条拖动：与播放页同一套反馈（拖动中显示目标时间，松手才 seek）。
-            page.onSeekStart = { }
-            page.onSeek = { fraction ->
-                val duration = player?.duration ?: 0L
-                if (duration > 0) {
-                    hint.text = "${clock((duration * fraction).toLong())} / ${clock(duration)}"
-                    hint.visibility = View.VISIBLE
-                }
-            }
-            page.onSeekEnd = { fraction ->
-                player?.let { p ->
-                    p.duration.takeIf { it > 0 }?.let { p.seekTo((it * fraction).toLong()) }
-                }
-                hint.visibility = View.GONE
-            }
-            return PageHolder(page)
-        }
-
-        override fun getItemCount(): Int = if (items.isEmpty()) 1 else items.size
-
-        override fun onBindViewHolder(holder: PageHolder, position: Int) {
-            val page = holder.itemView as PhoneVideoPage
-            if (items.isEmpty()) {
-                page.bind(Series(id = "", title = if (loading) "加载中…" else "暂无内容"), "")
-                return
-            }
-            val series = items[position]
-            val label = "第${(currentEpisodeIndex[position] ?: 0) + 1}集"
-            page.bind(series, label)
-            // 重新绑定之后，如果这一屏正是正在播的那一屏，把播放器接回来。
-            // 不接的话：列表因尺寸变化重绑 → 新的 ViewHolder 上没有 Surface → 画面黑掉。
-            if (position == playingIndex) list.post { rebindCurrentPage() }
-        }
     }
 
     /** 离开页面时释放协程；播放器留给进程（下次进来重建，省一次解码器初始化）。 */
