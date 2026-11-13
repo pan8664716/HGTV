@@ -3391,3 +3391,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 206：手机播放页视图门面迁移
+
+状态：已完成。
+
+- 将进度跳转、画面尺寸、缩放和播放信息刷新移到
+  `PhonePlayerViewFacade.kt`。
+- `PhonePlayerActivity.kt` 从 1331 行降到 1320 行；
+  `PhonePlayerViewFacade.kt` 为 33 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

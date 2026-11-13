@@ -923,19 +923,10 @@ class PhonePlayerActivity : PhoneActivity() {
 
     internal fun applyChromeForSwipe() = applyChrome()
 
-    private fun seekTo(fraction: Float) {
-        val duration = player?.duration ?: 0L
-        if (duration <= 0) return
-        player?.seekTo((duration * fraction).toLong())
-    }
-
     // ---------------------------------------------------------------- 数据
 
     internal fun playForLoad(index: Int, startAt: Long) =
         play(index, startAt, clearDanmakuOnSwitch = true)
-
-    /** 把播放器当前的画面尺寸补到页面上（`bind` 之后调用）。 */
-    private fun syncVideoFrame() = syncVideoFrameImpl()
 
     /**
      * 横屏全屏入口只给竖版片源。
@@ -949,7 +940,6 @@ class PhonePlayerActivity : PhoneActivity() {
      * 只缩**播放画面本身**：`PlayerView` 按中心等比缩放，页面底板仍是整屏黑，
      * 因此缩小后看到的是「画面变小、四周留黑」，与 TV 的 `applyVideoScale` 同一效果。
      */
-    private fun applyVideoScale() = applyVideoScaleImpl()
 
     /**
      * 把「播放显示」那四项铺到这一行上：**剧名 / 集数靠左，网速 / 时间靠右**。
@@ -963,7 +953,6 @@ class PhonePlayerActivity : PhoneActivity() {
      *
      * 横屏与竖屏各有一份（`landInfoRow` / `infoRow`），规则完全相同。
      */
-    private fun syncPlayInfo() = syncPlayInfoImpl()
 
     /**
      * 上下滑换集优先推进 ExoPlayer 已经挂好的下一项。
