@@ -113,6 +113,8 @@ class PhoneSettingsActivity : PhoneActivity() {
     internal val settingsScrollerInitialized get()=::scroller.isInitialized
     /** 横屏时四个大项移到顶部，和 TV 设置页一致。 */
     private lateinit var pageTabs: LinearLayout
+    internal val settingsPageTabs get()=pageTabs
+    internal val settingsPageTabsInitialized get()=::pageTabs.isInitialized
     private var landscape = false
     internal val settingsLandscape get()=landscape
     /** 当前分区面板；竖屏为 null，继续使用原来的平铺列表。 */
@@ -125,6 +127,9 @@ class PhoneSettingsActivity : PhoneActivity() {
     private val settingsController by lazy { SettingsController(this, library) }
     internal val settingsControllerInstance get()=settingsController
     private var page = PhoneSettingsPage.PLAYBACK
+    internal var settingsPage: PhoneSettingsPage
+        get()=page
+        set(value) { page=value }
     private val syncHandler = Handler(Looper.getMainLooper())
     internal val settingsSyncHandler get()=syncHandler
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -356,81 +361,6 @@ class PhoneSettingsActivity : PhoneActivity() {
         restoreScroll(anchor, resetTop = resetScroll)
     }
     internal fun renderSettings(resetScroll: Boolean = false) = render(resetScroll)
-
-    /** 四个大项排成两列两行，和「我的」页的四个入口使用同一组名称。 */
-    private fun renderPageSelector() {
-        if (landscape) {
-            pageTabs.removeAllViews()
-            PhoneSettingsPage.entries.forEachIndexed { index, option ->
-                val active = option == page
-                pageTabs.addView(TextView(this).apply {
-                    text = option.label
-                    settingsTextSize(11)
-                    gravity = Gravity.CENTER
-                    minWidth = settingsDp(78)
-                    minHeight = settingsDp(24)
-                    includeFontPadding = false
-                    setPadding(settingsDp(8), 0, settingsDp(8), 0)
-                    setTextColor(if (active) PhoneStyle.accent else PhoneStyle.textDim)
-                    applySoft(
-                        if (active) SoftStyle.INSET else SoftStyle.RAISED,
-                        PhoneStyle.surface, PhoneStyle.RADIUS_PILL, 3f,
-                    )
-                    contentDescription = option.label + "，" + option.hint +
-                        if (active) "，当前分区" else ""
-                    setOnClickListener {
-                        if (page == option) return@setOnClickListener
-                        page = option
-                        render(resetScroll = true)
-                    }
-                }, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.WRAP_CONTENT, settingsDp(24)
-                ).apply {
-                    if (index > 0) leftMargin = settingsDp(8)
-                })
-            }
-            return
-        }
-        val grid = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            tag = TAG_PAGE_GRID
-        }
-        PhoneSettingsPage.entries.chunked(2).forEachIndexed { rowIndex, line ->
-            val row = LinearLayout(this).apply {
-                orientation = LinearLayout.HORIZONTAL
-                if (rowIndex > 0) setPadding(0, settingsDp(6), 0, 0)
-            }
-            line.forEachIndexed { index, option ->
-                val active = option == page
-                val button = TextView(this).apply {
-                    text = option.label
-                    settingsTextSize(14)
-                    gravity = Gravity.CENTER
-                    setTextColor(if (active) PhoneStyle.accent else PhoneStyle.text)
-                    applySoft(
-                        if (active) SoftStyle.INSET else SoftStyle.RAISED,
-                        PhoneStyle.surface, PhoneStyle.RADIUS_CARD, 3f,
-                    )
-                    contentDescription = option.label + "，" + option.hint +
-                        if (active) "，当前页" else ""
-                    setOnClickListener {
-                        if (page == option) return@setOnClickListener
-                        page = option
-                        render(resetScroll = true)
-                    }
-                }
-                row.addView(button, LinearLayout.LayoutParams(0, settingsDp(42), 1f).apply {
-                    if (index > 0) leftMargin = settingsDp(6)
-                })
-            }
-            grid.addView(row, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-        }
-        container.addView(grid, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin = settingsDp(4) })
-    }
 
     @Deprecated("Activity 的旧回调；不引 androidx.activity 也能用，见 feature-phone 的依赖说明")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {

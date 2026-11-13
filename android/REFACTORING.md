@@ -2225,3 +2225,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：本批与批次 105 合并提交，回退时按文件恢复本批职责。
+
+### 批次 107：PhoneSettings 分区选择器迁移
+
+状态：已完成。
+
+- 将横屏顶部胶囊与竖屏两列分区网格移到 `PhoneSettingsPageSelector.kt`。
+- 保留当前分区语义、内容描述、滚动重置和横竖屏差异。
+- `PhoneSettingsActivity.kt` 从 590 行降到 520 行；`PhoneSettingsPageSelector.kt` 为 85 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
