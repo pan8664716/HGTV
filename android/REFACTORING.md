@@ -3498,3 +3498,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 214：SeriesGrid 分页职责迁移
+
+状态：已完成。
+
+- 将加载更多、静默预取、下一页落地、消费位置计算和底部分页行移到
+  `SeriesGridPaging.kt`。
+- 保留窗口化追加、末尾冷却、焦点交接和自动预取上限。
+- `SeriesGrid.kt` 从 968 行降到 703 行；
+  `SeriesGridPaging.kt` 为 211 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
