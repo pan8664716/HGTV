@@ -2977,3 +2977,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 172：TV 播放偏好迁移
+
+状态：已完成。
+
+- 将清晰度、解码档位和预热键计算移到 `TvPlaybackPreferences.kt`。
+- 保留会话降档优先于用户设置。
+- `PlayerController.kt` 从 1243 行降到 1200 行；
+  `TvPlaybackPreferences.kt` 为 47 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
