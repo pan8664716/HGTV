@@ -1788,29 +1788,6 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：`git revert` 本批提交。
 
-### 批次 93：PhoneFeed 地址过期原地重开迁移
-
-状态：已完成。
-
-- 将过期地址原地换源移到 `PhoneFeedReopen.kt`；原私有入口保留并委托。
-- 保留播放位置与暂停意图、播放代次、Surface 不重挂、会话发布和失败回退行为。
-- `PhoneFeedView.kt` 从 1145 行降到 1097 行；`PhoneFeedReopen.kt` 为 73 行。
-- `git diff --check` 与 Debug APK 编译通过。
-
-回滚：`git revert` 本批提交。
-
-### 批次 92：PhoneFeed 播放器接手迁移
-
-状态：已完成。
-
-- 将进程级播放器接手、IDLE 补 prepare、播放列表裁剪、倍速与暂停意图同步移到
-  `PhoneFeedAdoption.kt`；原私有入口保留并委托。
-- 保留会话归属、页面缺席仍接管、弹幕 / 进度即时对齐、地址过期重开和延迟补播顺序。
-- `PhoneFeedView.kt` 从 1267 行降到 1145 行；`PhoneFeedAdoption.kt` 为 137 行。
-- `git diff --check` 与 Debug APK 编译通过。
-
-回滚：`git revert` 本批提交。
-
 ### 批次 70：PhoneFeed 列表适配器迁移
 
 状态：已完成。
@@ -2069,6 +2046,40 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 将播放页 / 后台返回时的续接入口移到 `PhoneFeedResume.kt`；原私有入口保留。
 - 保留播放页前台判据、会话归属、下标对齐、原地重开失败回退和控制层延迟恢复顺序。
 - `PhoneFeedView.kt` 从 1337 行降到 1267 行；`PhoneFeedResume.kt` 为 85 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
+
+### 批次 92：PhoneFeed 播放器接手迁移
+
+状态：已完成。
+
+- 将进程级播放器接手、IDLE 补 prepare、播放列表裁剪、倍速与暂停意图同步移到
+  `PhoneFeedAdoption.kt`；原私有入口保留并委托。
+- 保留会话归属、页面缺席仍接管、弹幕 / 进度即时对齐、地址过期重开和延迟补播顺序。
+- `PhoneFeedView.kt` 从 1267 行降到 1145 行；`PhoneFeedAdoption.kt` 为 137 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
+
+### 批次 93：PhoneFeed 地址过期原地重开迁移
+
+状态：已完成。
+
+- 将过期地址原地换源移到 `PhoneFeedReopen.kt`；原私有入口保留并委托。
+- 保留播放位置与暂停意图、播放代次、Surface 不重挂、会话发布和失败回退行为。
+- `PhoneFeedView.kt` 从 1145 行降到 1097 行；`PhoneFeedReopen.kt` 为 73 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
+
+### 批次 94：PhoneFeed 隐藏清理迁移
+
+状态：已完成。
+
+- 将切 tab / 后台 / 播放页交接时的隐藏清理移到 `PhoneFeedHide.kt`；公开入口保留。
+- 保留交接窗口不暂停、不解绑 Surface，普通隐藏作废在途播放并注销借用入口。
+- `PhoneFeedView.kt` 从 1097 行降到 1027 行；`PhoneFeedHide.kt` 为 81 行。
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
