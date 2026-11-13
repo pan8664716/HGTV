@@ -3024,3 +3024,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 176：TV 播放器构建迁移
+
+状态：已完成。
+
+- 将播放器构建移到 `TvPlayerBuilder.kt`。
+- 保留缓冲窗口、主线程 Looper 和音频属性。
+- `PlayerController.kt` 从 1111 行降到 1065 行；
+  `TvPlayerBuilder.kt` 为 53 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
