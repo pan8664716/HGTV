@@ -3993,3 +3993,29 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；包名、文件名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`feature-phone/feed`。
+
+### 布局批次 16：feature-phone/feed
+
+状态：已完成。
+
+- `phone/PhoneFeedActions.kt` → `phone/feed/PhoneFeedActions.kt`
+- `phone/PhoneFeedAdapter.kt` → `phone/feed/PhoneFeedAdapter.kt`
+- `phone/PhoneFeedAdoption.kt` → `phone/feed/PhoneFeedAdoption.kt`
+- `phone/PhoneFeedChrome.kt` → `phone/feed/PhoneFeedChrome.kt`
+- `phone/PhoneFeedDanmaku.kt` → `phone/feed/PhoneFeedDanmaku.kt`
+- `phone/PhoneFeedHide.kt` → `phone/feed/PhoneFeedHide.kt`
+- `phone/PhoneFeedHost.kt` → `phone/feed/PhoneFeedHost.kt`
+- `phone/PhoneFeedInitializer.kt` → `phone/feed/PhoneFeedInitializer.kt`
+- `phone/PhoneFeedLifecycle.kt` → `phone/feed/PhoneFeedLifecycle.kt`
+- `phone/PhoneFeedPageSupport.kt` → `phone/feed/PhoneFeedPageSupport.kt`
+- `phone/PhoneFeedPager.kt` → `phone/feed/PhoneFeedPager.kt`
+- `phone/PhoneFeedPlayback.kt` → `phone/feed/PhoneFeedPlayback.kt`
+- `phone/PhoneFeedPrefetch.kt` → `phone/feed/PhoneFeedPrefetch.kt`
+- `phone/PhoneFeedReopen.kt` → `phone/feed/PhoneFeedReopen.kt`
+- `phone/PhoneFeedResume.kt` → `phone/feed/PhoneFeedResume.kt`
+- `phone/PhoneFeedSettings.kt` → `phone/feed/PhoneFeedSettings.kt`
+- `phone/PhoneFeedSurface.kt` → `phone/feed/PhoneFeedSurface.kt`
+- `phone/PhoneFeedView.kt` → `phone/feed/PhoneFeedView.kt`
+- 外部路径引用：无；包名、文件名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`feature-phone/player`。
