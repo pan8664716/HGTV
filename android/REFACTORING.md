@@ -3343,3 +3343,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 202：TvMain 首帧外壳迁移
+
+状态：已完成。
+
+- 将首帧外壳、系统栏和延迟初始化移到 `TvMainActivityCreate.kt`。
+- 保留 32ms 后加载业务运行时。
+- `TvMainActivity.kt` 从 1899 行降到 1879 行；
+  `TvMainActivityCreate.kt` 为 31 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
