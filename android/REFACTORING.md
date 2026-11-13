@@ -4150,3 +4150,12 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；包名、文件名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`feature-tv/home` 与 `feature-tv/library` 收尾。
+
+### 布局批次 27：feature-tv/home
+
+状态：已完成。
+
+- `tv/RecommendWarm.kt` → `tv/home/RecommendWarm.kt`
+- 外部路径引用：无；仅目录变化。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`feature-tv/library`。
