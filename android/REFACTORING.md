@@ -3644,3 +3644,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 227：PhonePlayer 注释压缩
+
+状态：已完成。
+
+- 压缩独立播放状态、横竖屏和设置注释行，保留 SPDX、播放器状态与回调代码。
+- `PhonePlayerActivity.kt` 从 1163 行降到 742 行，已低于 800 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
