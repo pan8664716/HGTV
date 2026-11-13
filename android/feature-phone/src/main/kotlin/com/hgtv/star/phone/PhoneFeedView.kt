@@ -25,10 +25,8 @@ import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackSpeed
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.StreamInfo
-import com.hgtv.star.core.toFit
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.RecommendTab
-import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.phone.ui.PhoneColor
 import com.hgtv.star.phone.ui.PhonePagerSnapHelper
 import com.hgtv.star.phone.ui.PhoneSheet
@@ -982,11 +980,7 @@ class PhoneFeedView(
      * 就强制铺满。`bind` 之后必须补一次，否则会回到默认的完整画面。
      */
     private fun applyPageVideoSettings(page: PhoneVideoPage) {
-        val lib = library
-        page.setResizeMode(
-            (lib?.frameMode ?: VideoFrameMode.FIT).toFit().resizeMode()
-        )
-        page.setVideoScale(((lib?.videoScale ?: 100f) / 100f).coerceIn(.1f, 1f))
+        applyPageVideoSettingsImpl(page)
     }
 
     /**
@@ -1143,7 +1137,7 @@ class PhoneFeedView(
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
-        if (w <= 0 || h <= 0 || items.isEmpty()) return
+        handleFeedSizeChanged(w, h)
         // **不重建整屏**。一页就是一个屏幕高，换成 `MATCH_PARENT` 之后尺寸变化由
         // RecyclerView 自己重新测量，ViewHolder 与它上面那块 Surface 都不动——
         // 这一条正是「进 / 退播放页画面不断」的前提：
@@ -1153,8 +1147,6 @@ class PhoneFeedView(
         //
         // 尺寸变了之后只要**重新对齐**当前这一页：像素滚动位置在换高度后不再是一页的整数倍，
         // 不对齐就会停在半页上。
-        val index = playingIndex.coerceAtLeast(0)
-        list.post { runCatching { list.scrollToPosition(index) } }
     }
 
     /**
@@ -1473,8 +1465,7 @@ class PhoneFeedView(
     }
 
     private fun pageAt(index: Int): PhoneVideoPage? {
-        val holder = list.findViewHolderForAdapterPosition(index) as? PageHolder ?: return null
-        return holder.itemView as? PhoneVideoPage
+        return pageAtImpl(index)
     }
     internal fun feedPageAt(index: Int): PhoneVideoPage? = pageAt(index)
 
@@ -1488,7 +1479,7 @@ class PhoneFeedView(
      * * 同一集只推进一次（`advancing` 防重入）。
      */
     /** 位置读数：与电视端 `formatTime` 同一份（`:core` 的 `PlaybackInfoLine.time`）。 */
-    private fun clock(ms: Long): String = com.hgtv.star.core.PlaybackInfoLine.time(ms)
+    private fun clock(ms: Long): String = clockImpl(ms)
 
     // ------------------------------------------------------------------ 播放设置
 

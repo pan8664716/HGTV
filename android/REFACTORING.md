@@ -1820,3 +1820,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 73：PhoneFeed 页面尺寸与画面设置迁移
+
+状态：已完成。
+
+- 将当前页查找、画面模式 / 缩放落位、转屏后当前页对齐和时间格式移到
+  `PhoneFeedPageSupport.kt`；原私有入口保留。
+- 保留 ViewHolder 查找、`MATCH_PARENT` 页面不重建、当前页重对齐和设置范围。
+- `PhoneFeedView.kt` 从 1519 行降到 1510 行；`PhoneFeedPageSupport.kt` 为 28 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
