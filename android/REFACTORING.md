@@ -1380,6 +1380,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 58：PhonePlayer 调试面板迁移
+
+状态：已完成。
+
+- 将调试面板挂载、刷新、采样回调与播放现场文本组装移到 `PhonePlayerDebug.kt`；
+  原私有调用入口保留并委托。
+- 保留调试开关、日志 sink、面板创建与放置、关闭清理、字段顺序和采样重入行为。
+- `PhonePlayerActivity.kt` 从 3620 行降到 3542 行；`PhonePlayerDebug.kt` 为 98 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ### 夜间阶段摘要（批次 51–55）
 
 - 批次 51–55 全部完成并独立提交，Library 的 Cookie、pending profile、账号凭据与设备档案已拆分。
@@ -1390,7 +1411,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 下一批
 
-继续拆 `PhonePlayerActivity.kt` 的调试面板与生命周期职责。
+继续拆 `PhonePlayerActivity.kt` 的生命周期收尾或播放器释放职责。
 
 ## 夜间验收（2026-11-13）
 

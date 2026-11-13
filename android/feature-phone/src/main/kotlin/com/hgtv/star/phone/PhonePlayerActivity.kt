@@ -351,7 +351,7 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 定时已经停过一次：hint 与状态按它走，避免 tick 每秒钟重复报同一句。 */
     internal var sleepStopped = false
     /** 调试面板（设置 → 调试模式）。只在打开时挂，关掉立刻摘掉。 */
-    private var debugOverlay: com.hgtv.star.phone.ui.PhoneDebugOverlay? = null
+    internal var debugOverlay: com.hgtv.star.phone.ui.PhoneDebugOverlay? = null
     /** 最近一次视频尺寸 / 播放错误：调试面板要读，但只有监听器里才有。 */
     private var debugVideo = "?"
     private var debugError = ""
@@ -361,6 +361,9 @@ class PhonePlayerActivity : PhoneActivity() {
     internal var listenerDebugError: String
         get()=debugError
         set(value) { debugError=value }
+    internal fun debugQualityLabel(): String =
+        if (::qualityChip.isInitialized) qualityChip.text.toString() else "-"
+    internal fun debugClock(ms: Long): String = clock(ms)
     private var seekFrom = 0L
     /** 上一集读到过的时长：无感换集后 `duration` 已经是新一集的，写 completed 要用旧值。 */
     private var lastDuration = 0L
@@ -2904,87 +2907,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 面板**不吃触摸**（见 `PhoneDebugOverlay`），开着它照样能点按钮。
      */
     private fun syncDebugOverlay() {
-        val lib = library ?: return
-        val on = runCatching { lib.debugMode }.getOrDefault(false)
-        com.hgtv.star.shared.debug.DebugLog.enabled = on
-        if (!on) {
-            if (debugOverlay?.visibility == View.VISIBLE) PhoneDebugReport.resetSamples()
-            debugOverlay?.visibility = View.GONE
-            return
-        }
-        com.hgtv.star.shared.debug.debugSink = { tag, line ->
-            com.hgtv.star.shared.debug.DebugLog.record(tag, line)
-        }
-        val overlay = debugOverlay ?: com.hgtv.star.phone.ui.PhoneDebugOverlay(this).also {
-            debugOverlay = it
-            com.hgtv.star.phone.ui.PhoneDebugOverlay.place(it, root, dp(8))
-        }
-        overlay.update(debugLines())
-        PhoneDebugReport.sampleAsync(this) {
-            if (!isFinishing && !isDestroyed) syncDebugOverlay()
-        }
-    }
-
-    /** 播放现场那几行（与电视端面板的播放页内容同源：状态 / 位置 / 解码 / 尺寸 / 错误）。 */
-    private fun debugLines(): List<String> {
-        val extras = ArrayList<Pair<String, String>>(12)
-        val d = detail
-        val p = player
-        val quality = if (::qualityChip.isInitialized) qualityChip.text.toString() else "-"
-        if (d != null) extras += "剧集" to
-            "${d.series.title} · ${index + 1}/${d.episodes.size}集 · $quality"
-        val state = when {
-            p == null -> "无播放器"
-            p.playbackState == Player.STATE_BUFFERING -> "缓冲"
-            p.playbackState == Player.STATE_READY -> if (p.isPlaying) "播放中" else "暂停"
-            p.playbackState == Player.STATE_ENDED -> "已结束"
-            else -> "空闲"
-        }
-        if (p != null) {
-            extras += "状态" to "$state · ${clock(p.currentPosition)}/${clock(p.duration.coerceAtLeast(0))}" +
-                " · 缓冲 ${clock(p.bufferedPosition.coerceAtLeast(0))}（${p.bufferedPercentage}%）" +
-                " · ${p.playbackParameters.speed}×"
-        } else {
-            extras += "状态" to state
-        }
-        val init = if (metrics.initMs >= 0) " ${metrics.initMs}ms" else ""
-        extras += "解码" to "${PhoneDecoder.mode.label} ${metrics.decoderName.ifBlank { "-" }}$init"
-        extras += "编码" to metrics.mime.ifBlank { "-" } +
-            metrics.codecs.takeIf { it.isNotBlank() }?.let { " · ${it.take(70)}" }.orEmpty()
-        val size = if (metrics.width > 0 && metrics.height > 0)
-            "${metrics.width}x${metrics.height}" else debugVideo
-        val fps = if (metrics.frameRate > 0f) "@${Math.round(metrics.frameRate)}" else ""
-        val bitrate = if (metrics.bitrate > 0) " ${metrics.bitrate / 1000}k" else ""
-        val frameAge = if (lastFrameAt > 0L) {
-            "${(android.os.SystemClock.elapsedRealtime() - lastFrameAt).coerceAtLeast(0) / 1000}s 前"
-        } else "无逐帧回调"
-        extras += "画面" to "$size$fps$bitrate · 帧龄 $frameAge · 竖屏=${d?.series?.vertical ?: false}" +
-            " · ${if (landscapeMode) "横屏" else "竖屏"}"
-        val firstFrame = lastFrameAt > 0L || metrics.firstFrameAt > 0L
-        extras += "帧数" to "首帧=${if (firstFrame) "是" else "否"}" +
-            " · 丢帧=${metrics.droppedFrames} · 欠载=${metrics.underruns}" +
-            " · 解码错=${metrics.lastCodecError.isNotBlank()}"
-        // 实际生效的档位与用户设置可能不同：自动降档只写会话层（与电视端同一条规则）。
-        val cap = playbackMaxQuality
-        val requested = library?.maxQuality ?: 0
-        extras += "默认上限" to "${if (cap > 0) "${cap}P" else "-"}" +
-            (if (cap < requested) "（本次降档）" else "") + " · 实际 $quality"
-        if (playbackSessionState.touched()) {
-            val reason = when (playbackSessionState.lastReason) {
-                com.hgtv.star.core.DegradationKind.SAME_QUALITY_REBUILD -> "原档重建"
-                com.hgtv.star.core.DegradationKind.QUALITY_DOWN -> "降清晰度"
-                null -> "待手动处理"
-            }
-            extras += "降级" to "$reason · ${playbackSessionState.budgetSummary()} · 重试=${playbackSessionState.autoRetryAttempts}"
-        }
-        val errors = listOf(debugError, metrics.lastCodecError).filter { it.isNotBlank() }
-            .joinToString(" · ")
-        return PhoneDebugReport.lines(
-            this, "播放", library, extras,
-            problem = if (errors.isBlank()) "无" else "播放失败",
-            error = errors,
-            recent = 5,
-        )
+        syncDebugOverlayImpl()
     }
 
     /**
