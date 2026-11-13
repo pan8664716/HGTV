@@ -3306,3 +3306,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 199：TvMain 活动结果迁移
+
+状态：已完成。
+
+- 将语音与账号文件活动结果处理移到 `TvMainActivityResults.kt`。
+- 保留语音返回抑制焦点和账号文件待消费语义。
+- `TvMainActivity.kt` 从 1933 行降到 1911 行；
+  `TvMainActivityResults.kt` 为 36 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

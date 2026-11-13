@@ -1792,29 +1792,7 @@ class TvMainActivity: Activity() {
     /** 文件选择器与系统语音的回传入口；真正的读取 / 搜索都交给 [onResume] 末尾消费。 */
     override fun onActivityResult(requestCode: Int,resultCode: Int,data: android.content.Intent?) {
         super.onActivityResult(requestCode,resultCode,data)
-        if(requestCode==REQUEST_VOICE) {
-            voiceLaunching=false
-            voiceReturned=true
-            // 语音界面返回后页面会重建：这一次别让输入框抢焦点、别弹输入法。
-            suppressSearchFocusOnce=true
-            val spoken=if(resultCode==RESULT_OK)
-                data?.getStringArrayListExtra(android.speech.RecognizerIntent.EXTRA_RESULTS)?.firstOrNull { it.isNotBlank() }
-            else null
-            val clean=normalizeVoiceQuery(spoken.orEmpty())
-            if(clean.isEmpty()) {
-                noteVoice(if(resultCode==RESULT_OK) "empty" else "cancel")
-                if(resultCode==RESULT_OK) showHint("没有听清，请再说一次")
-            } else {
-                pendingVoiceQuery=clean
-                noteVoice("success")
-            }
-            // 识别界面如果是对话框（本页没有 onStop），onResume 不一定还会来一次；
-            // 这里也投一次，[applyVoiceReturn] 自己保证只消费一次。
-            main.post { applyVoiceReturn() }
-            return
-        }
-        if(requestCode!=REQUEST_ACCOUNT_FILE || resultCode!=RESULT_OK) return
-        pendingAccountUri=data?.data
+        handleActivityResultImpl(requestCode,resultCode,data)
     }
 
     /** 外部存储授权回来：立刻重试一次镜像恢复（见 [onMirrorStorageResult]）。 */
