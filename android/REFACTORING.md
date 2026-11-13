@@ -1888,3 +1888,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 79：PhoneFeed 媒体源挂载迁移
+
+状态：已完成。
+
+- 将媒体源挂载、播放列表裁剪、会话发布和首帧前 prepare 移到
+  `player/PhoneFeedAttach.kt`；原私有入口保留。
+- 保留先停再换源、监听重挂、倍速、暂停意图和 Surface 可用时提前绑页顺序。
+- `PhoneFeedView.kt` 从 1395 行降到 1336 行；`PhoneFeedAttach.kt` 为 66 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。

@@ -928,7 +928,8 @@ class PhoneFeedView(
         series: Series,
         episodeIndex: Int,
         forceRebind: Boolean,
-    ) = attachPage(exo, page, series, episodeIndex, forceRebind)
+        clearDanmakuOnSwitch: Boolean = false,
+    ) = attachPage(exo, page, series, episodeIndex, forceRebind, clearDanmakuOnSwitch)
 
     /**
      * 把「画面模式」「画面缩放」按设置落到这一页上。
@@ -1297,66 +1298,7 @@ class PhoneFeedView(
         startAt: Long = 0L,
         clearDanmakuOnSwitch: Boolean = false,
     ) {
-        // 换了源就是新的一集：上一集「正在交接」的标记不再成立。
-        advancing = false
-        val token = playToken
-        val series = items.getOrNull(index)
-        val episodeIndex = currentEpisodeIndex[index] ?: 0
-        val exo = PhoneServices.player(context, library?.decoderMode)
-        player = exo
-        // 播放列表里可能还挂着「下一集」（播放页预热好的那一项）。
-        // 信息流的语义是「一集播完 → 进正式播放页」，留着它 ExoPlayer 会自己无感推进，
-        // 于是信息流里悄悄换了集、集号却没变。这里只保留当前这一项。
-        runCatching {
-            if (exo.mediaItemCount > 1) exo.removeMediaItems(1, exo.mediaItemCount)
-        }
-        // 同上：列表已经只剩这一项，标志不能再停在 true。
-        PhoneSession.nextQueued = false
-        // 那一项已经从播放列表里摘掉，它捕获的 `RemoteVideo` 也就没人用了：一起关掉。
-        PhoneSession.clearNext()
-
-        // 页面还没绑上来时（刚重建 / 刚返回）不丢这一路：媒体源照挂，
-        // Surface 交给 `onBindViewHolder → rebindCurrentPage` 补上。
-        val page = pageAt(index)
-        if (page != null && series != null) {
-            attachPage(
-                exo,
-                page,
-                series,
-                episodeIndex,
-                forceRebind = false,
-                clearDanmakuOnSwitch = clearDanmakuOnSwitch,
-                videoInfo = video.info,
-            )
-        }
-
-        // 媒体源：**带 mediaId**，播放页接手时据此判断「放的是不是同一集」。
-        val factory = DataSource.Factory { VideoDataSource(video) }
-        val episodeId = currentEpisodeIds[index].orEmpty()
-        // 先停再挂：直接 `setMediaSource` 会在出帧中的解码器上 flush，
-        // 厂商实现会抛 `CodecException 0x80000000`，整条链路随即报 4003（见 `swapMediaSource`）。
-        exo.swapMediaSource(episodeId, video.info.url, factory)
-        remote = video
-        // 记进进程级会话：播放页接手时不用重新取地址（见 [PhoneSession]）。
-        // 详情用 `playingDetail`（`playIndex` 里存的那一份，带完整集列表）。
-        val d = playingDetail
-        if (d != null) {
-            PhoneSession.publish(
-                d, episodeIndex, video, video.info.quality,
-                PhoneSession.Owner.FEED, cacheKey(),
-            )
-        }
-        exo.setPlaybackSpeed(userSpeed)
-        attachFeedListener(exo, index)
-        exo.playWhenReady = !paused
-        val prepare = {
-            if (player === exo && playingIndex == index && token == playToken) {
-                exo.prepare()
-                if (startAt > 0) exo.seekTo(startAt)
-            }
-        }
-        if (page != null) page.playerView.runAfterAspectRatioLayout(prepare) else prepare()
-        startProgressTicker()
+        attachImpl(index, video, startAt, clearDanmakuOnSwitch)
     }
 
     private fun pageAt(index: Int): PhoneVideoPage? {
