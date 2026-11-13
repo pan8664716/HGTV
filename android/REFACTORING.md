@@ -2762,3 +2762,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 152：PhonePlayer 横屏信息入口迁移
+
+状态：已完成。
+
+- 将横屏播放信息、设置入口和竖版全屏入口移到 `PhonePlayerLandscapeAssembly.kt`。
+- 保留信息行实测下沿、控制层显隐和全屏入口。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

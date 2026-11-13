@@ -189,9 +189,15 @@ class PhonePlayerActivity : PhoneActivity() {
     internal val playerLandDanmakuInitialized get()=::landDanmaku.isInitialized
     private lateinit var landTop: LinearLayout
     private lateinit var landBottom: LinearLayout
+    internal var playerLandTopSlot: LinearLayout
+        get()=landTop
+        set(value) { landTop=value }
     internal val playerLandTop get()=landTop
     private lateinit var landFullscreen: LinearLayout
     internal val playerLandFullscreen get()=landFullscreen
+    internal var playerLandFullscreenSlot: LinearLayout
+        get()=landFullscreen
+        set(value) { landFullscreen=value }
     internal val playerLandFullscreenInitialized get()=::landFullscreen.isInitialized
     internal val playerLandBottom get()=landBottom
     internal val playerLandBottomInitialized get()=::landBottom.isInitialized
@@ -273,11 +279,20 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 横屏那一份「播放显示」：与竖屏同内容，常驻在屏幕顶部。 */
     private lateinit var landInfoRow: LinearLayout
     internal val playerLandInfoRow get()=landInfoRow
+    internal var playerLandInfoRowSlot: LinearLayout
+        get()=landInfoRow
+        set(value) { landInfoRow=value }
     internal val playerLandInfoRowInitialized get()=::landInfoRow.isInitialized
     private lateinit var landInfoLeft: TextView
     internal val playerLandInfoLeft get()=landInfoLeft
+    internal var playerLandInfoLeftSlot: TextView
+        get()=landInfoLeft
+        set(value) { landInfoLeft=value }
     private lateinit var landInfoRight: TextView
     internal val playerLandInfoRight get()=landInfoRight
+    internal var playerLandInfoRightSlot: TextView
+        get()=landInfoRight
+        set(value) { landInfoRight=value }
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal var player: ExoPlayer? = null
@@ -861,115 +876,7 @@ class PhonePlayerActivity : PhoneActivity() {
         // 加在 landscape 之前，因此它永远在下面，整页滑开才露出来。
         buildLandscapeBase()
 
-        /*
-         * 横屏的「播放显示」：与竖屏同一套左右两段（剧名·集数 / 网速·时间）。
-         *
-         * 它**独立于控制层**：勾了任意一项就常驻（用户要求「全屏也要显示」），
-         * 因此不能挂在 `landTop` 里——那一层会跟着控制层一起收起来。
-         * 位置贴屏幕顶（`dp(10)`），比竖屏那条更靠上；`landTop` 让出它的高度。
-         */
-        landInfoLeft = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            phoneSize(13)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setShadowLayer(2f, 0f, 1f, 0x99000000.toInt())
-        }
-        landInfoRight = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            phoneSize(12)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(10), 0, 0, 0)
-            setShadowLayer(2f, 0f, 1f, 0x99000000.toInt())
-        }
-        landInfoRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            visibility = View.GONE
-            addView(landInfoLeft, LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
-            ))
-            addView(landInfoRight, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-        }
-        landscape.addView(landInfoRow, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.START
-        ).apply {
-            topMargin = dp(10)
-            leftMargin = dp(16)
-            rightMargin = dp(16)
-        })
-        // 量出它的下沿交给弹幕层：横屏弹幕从这一行之下才开始铺（见 `syncDanmakuTopInset`）。
-        // 收起（GONE）时高度为 0，那一帧不采信，否则弹幕会窜回屏幕顶部。
-        landInfoRow.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
-            if (bottom - top > 0) {
-                landInfoRowBottom = bottom
-                syncDanmakuTopInset()
-            }
-        }
-
-        /*
-         * 顶部第二行：**只剩播放设置按钮**（⋮），靠右。
-         *
-         * 剧名与集数已经在上面那条信息里了（`landInfoRow` 左半），这里再放一遍是重复。
-         * 这一行仍属控制层：清屏时跟 `landBottom` 一起收起；信息行则常驻。
-         */
-        landTop = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL or Gravity.END
-            setPadding(0, 0, dp(12), 0)
-        }
-
-        val more = FrameLayout(this).apply {
-            // 尺寸收一档（用户要求）：36 → 28dp、图标 22 → 18dp。
-            // 它贴在信息行下方的右侧，是辅助入口，不该比画面元素更显眼。
-            addView(PhoneGlyph(this@PhonePlayerActivity, PhoneGlyph.Kind.MORE).apply {
-                tint = Color.WHITE
-            }, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
-            setOnClickListener { openSettings() }
-        }
-        landTop.addView(more, LinearLayout.LayoutParams(dp(28), dp(28)))
-
-        landscape.addView(landTop, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP
-        ).apply {
-            // 紧接在常驻的 `landInfoRow`（贴顶 dp(10) + 一行字）下面。
-            topMargin = dp(32)
-        })
-
-        /*
-         * 横屏里的竖版短剧仍然有左右黑边。这里补一颗「全屏」入口，
-         * 点击后切回竖屏播放，让竖版画面真正铺满屏幕。
-         *
-         * 它压在画面与手势层之上，但在底部控制层之下；位置按视频实际显示范围
-         * 和底栏上沿计算，避免像推荐页那样被底栏遮住。
-         */
-        landFullscreen = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER
-            setPadding(dp(5), dp(1), dp(5), dp(1))
-            background = roundedBackground(0x33FFFFFF, dp(8).toFloat())
-            addView(PhoneGlyph(this@PhonePlayerActivity, PhoneGlyph.Kind.FULLSCREEN).apply {
-                tint = Color.WHITE
-            }, LinearLayout.LayoutParams(dp(10), dp(10)))
-            addView(TextView(this@PhonePlayerActivity).apply {
-                text = "全屏"
-                setTextColor(Color.WHITE)
-                phoneSize(9)
-                setPadding(dp(3), 0, 0, 0)
-            })
-            setOnClickListener { enterPortraitFullscreen() }
-            visibility = View.GONE
-        }
-        landscape.addView(landFullscreen, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.CENTER_HORIZONTAL
-        ).apply {
-            topMargin = dp(200)
-        })
+        buildLandscapeTopControls()
 
         // 底部两行
         landBottom = LinearLayout(this).apply {
