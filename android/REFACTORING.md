@@ -4283,6 +4283,7 @@ feature-tv/
 - 解码器按系统 `hardwareAccelerated` 分档，兼容软件解码器同时漏报 `softwareOnly` 的电视。
 - Android 10+ 额外用 MediaStore 保存会话镜像，规避卸载后外部文件仍锁在旧 UID 导致登录态丢失。
 - 登录 / 导入成功后只发起一次强制账号刷新，避免历史页并发请求互相覆盖后停在加载态。
+- Android 4.4 兼容路径增加 `Documents/.hgtv/` 直读副本；Android 10+ 仍以 MediaStore 为主。
 
 ## 播放地址逐链接超时
 

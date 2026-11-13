@@ -100,6 +100,10 @@ object LocalReset {
 
         // 自建公共目录：卸载不删的那一份会话镜像就在这里。
         runCatching { File(Environment.getExternalStorageDirectory(), ".hgtv") }.getOrNull()?.let(::remove)
+        // Android 4.4 兼容副本。
+        runCatching {
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS), ".hgtv")
+        }.getOrNull()?.let(::remove)
         // Android 10+ 的 MediaStore 副本也要一起删，否则恢复出厂后仍能从 Download/HGTV 捞回会话。
         runCatching { SessionPublicCopy.delete(app) }
 

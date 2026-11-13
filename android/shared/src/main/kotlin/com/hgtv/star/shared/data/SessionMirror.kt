@@ -35,7 +35,8 @@ import org.json.JSONObject
  *    拿到的传统存储权限直接写公共目录（见 manifest 与 `TvMainActivity.requestMirrorStorage`）。
  * 3. `Android/data/<包名>/files/`（[Context.getExternalFilesDir]）—— 不需要权限，
  *    标准 Android 在卸载时由 vold 清理，但很多真机（尤其国产 ROM）会把它残留下来。
- * 4. Android 10+ 的 MediaStore `Download/HGTV/` —— 卸载不会删除，且重装后新 UID 可以通过
+ * 4. `Documents/.hgtv/`——Android 4.4 等没有 MediaStore Downloads 的版本使用这份直读兼容路径。
+ * 5. Android 10+ 的 MediaStore `Download/HGTV/` —— 卸载不会删除，且重装后新 UID 可以通过
  *    ContentResolver 读取。`/sdcard/.hgtv` 虽然文件还在，但 Android 11 电视会把文件锁在旧 UID；
  *    只靠直读路径时，重装后实际读不到这份镜像。
  *
@@ -124,6 +125,10 @@ class SessionMirror(private val app: Context) {
         // 沙盒排第一：它没有权限门槛，读盘时也最先能读到。
         runCatching { app.filesDir }.getOrNull()?.let { add(it) }
         runCatching { File(Environment.getExternalStorageDirectory(),LEGACY_DIR) }.getOrNull()?.let { add(it) }
+        // Android 4.4 没有 MediaStore Downloads；Documents 下的直读副本是老系统的兼容路径。
+        runCatching {
+            File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),LEGACY_DIR)
+        }.getOrNull()?.let { add(it) }
         runCatching { app.getExternalFilesDir(null) }.getOrNull()?.let { add(it) }
     }
 
