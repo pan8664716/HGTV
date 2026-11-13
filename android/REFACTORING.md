@@ -2601,3 +2601,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 138：PhonePlayer 转发层清理
+
+状态：已完成。
+
+- 移除已迁出职责的 chip、染色、画面尺寸、全屏入口和释放转发方法。
+- 保留横屏底栏入口、画面缩放、全屏定位和播放器释放实现。
+- `PhonePlayerActivity.kt` 从 1875 行降到 1857 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

@@ -1070,7 +1070,7 @@ class PhonePlayerActivity : PhoneActivity() {
 
         landSeek = SeekBar(this).apply {
             max = 1000
-            tintSeekBar(this)
+            PhonePlayerViewSupport.tintSeekBar(this)
             setPadding(0, 0, 0, 0)
             setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
                 override fun onProgressChanged(sb: SeekBar, value: Int, fromUser: Boolean) {
@@ -1133,17 +1133,17 @@ class PhonePlayerActivity : PhoneActivity() {
         ))
 
         // 倍速与弹幕一样，点一次就换下一档；要细调仍可长按画面中间打开播放设置。
-        speedChip = chip(PlaybackSpeed.label(userSpeed)) { cycleSpeed() }
-        qualityChip = chip("1080P") { openSettings() }
+        speedChip = PhonePlayerViewSupport.chip(this, PlaybackSpeed.label(userSpeed)) { cycleSpeed() }
+        qualityChip = PhonePlayerViewSupport.chip(this, "1080P") { openSettings() }
         // 弹幕快捷开关（与电视播放页底部那颗「弹幕 全屏」同一职责）：
         // 电视上是遥控器一按就开菜单；手机上一次点击直接切下一档更省事，
         // 想细调（速度 / 字号 / 透明度）仍然长按中间开播放设置。
-        danmakuChip = chip("弹幕") { cycleDanmaku() }
-        episodeChip = chip("选集 1") { openEpisodes() }
-        line2.addView(speedChip, chipLp(0))
-        line2.addView(qualityChip, chipLp(6))
-        line2.addView(danmakuChip, chipLp(6))
-        line2.addView(episodeChip, chipLp(6))
+        danmakuChip = PhonePlayerViewSupport.chip(this, "弹幕") { cycleDanmaku() }
+        episodeChip = PhonePlayerViewSupport.chip(this, "选集 1") { openEpisodes() }
+        line2.addView(speedChip, PhonePlayerViewSupport.chipLp(this,0))
+        line2.addView(qualityChip, PhonePlayerViewSupport.chipLp(this,6))
+        line2.addView(danmakuChip, PhonePlayerViewSupport.chipLp(this,6))
+        line2.addView(episodeChip, PhonePlayerViewSupport.chipLp(this,6))
         landBottom.addView(line2, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
@@ -1165,15 +1165,6 @@ class PhonePlayerActivity : PhoneActivity() {
      * 四颗并排时原来要吃掉横屏一半的宽度，把左边的常驻摘要挤得只剩几个字。
      * 它们都在这一行的最右侧（左边摘要 `weight=1` 顶着），因此「靠右」是布局本身就保证的。
      */
-    private fun chip(text: String, onClick: () -> Unit): TextView =
-        PhonePlayerViewSupport.chip(this,text,onClick)
-
-    private fun chipLp(left: Int): LinearLayout.LayoutParams =
-        PhonePlayerViewSupport.chipLp(this,left)
-
-    /** 进度条染色是 API 21 才有的，19/20 上保持系统默认（不影响功能）。 */
-    private fun tintSeekBar(bar: SeekBar) = PhonePlayerViewSupport.tintSeekBar(bar)
-
     // ---------------------------------------------------------------- 下层画面
 
     // ---------------------------------------------------------------- 形态切换
@@ -1260,7 +1251,7 @@ class PhonePlayerActivity : PhoneActivity() {
 
     internal fun playSwipeTargetForSwipe(target: Int) = playSwipeTarget(target)
 
-    internal fun applyVideoScaleForSwipe() = applyVideoScale()
+    internal fun applyVideoScaleForSwipe() = applyVideoScaleImpl()
 
     internal fun applyChromeForSwipe() = applyChrome()
 
@@ -1278,17 +1269,12 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 把播放器当前的画面尺寸补到页面上（`bind` 之后调用）。 */
     private fun syncVideoFrame() = syncVideoFrameImpl()
 
-    private fun updateLandscapeVideoFrame(width: Int, height: Int) =
-        updateLandscapeVideoFrameImpl(width, height)
-
     /**
      * 横屏全屏入口只给竖版片源。
      *
      * 位置取视频 FIT 后的真实下边缘，再受底部控制层上沿限制。竖版视频在横屏里
      * 通常占满高度，若只看画面下边缘，按钮会直接落到控制层后面。
      */
-    private fun placeLandscapeFullscreen() = placeLandscapeFullscreenImpl()
-
     /**
      * 画面缩放（设置 → 播放偏好，1–100%）。
      *
@@ -1361,7 +1347,7 @@ class PhonePlayerActivity : PhoneActivity() {
             return
         }
 
-        releasePlayer()
+        releasePlayerImpl()
         setBufferingLabel("正在获取播放地址…")
         val requestScope = com.hgtv.star.core.RequestScope()
         playRequestScope = requestScope
@@ -1614,7 +1600,7 @@ class PhonePlayerActivity : PhoneActivity() {
     internal fun syncPlayGlyphForListener() = syncPlayGlyph()
     internal fun danmakuTargetForListener() = danmakuTarget()
     internal fun updateLandscapeVideoFrameForListener(width: Int, height: Int) =
-        updateLandscapeVideoFrame(width, height)
+        updateLandscapeVideoFrameImpl(width, height)
     internal fun enterPendingFullscreenForListener() = enterPendingFullscreen()
     internal fun syncDebugOverlayForListener() = syncDebugOverlay()
     internal fun applyFrameModeForSettings(mode: VideoFrameMode) = applyFrameMode(mode)
@@ -1671,10 +1657,6 @@ class PhonePlayerActivity : PhoneActivity() {
      * 数据与详情页共用 [PhoneSession.relatedWorks]（电视端同样共用 `relatedWorks`）：
      * 从详情页点进来的这一路已经取好了，打开浮层时是零等待。
      */
-    private fun releasePlayer() {
-        releasePlayerImpl()
-    }
-
     // ---------------------------------------------------------------- 网络恢复
 
     // ---------------------------------------------------------------- 面板自动收起
