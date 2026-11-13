@@ -2822,3 +2822,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 158：TvMain 播放秒调度迁移
+
+状态：已完成。
+
+- 将每秒刷新、预取、进度采样和断点落盘移到 `TvMainTick.kt`。
+- 保留 1000ms 重排和推荐页浮层刷新。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
