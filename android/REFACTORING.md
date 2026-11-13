@@ -2632,3 +2632,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   `Library.kt` 1384。
 - DoD 未达到；下一轮优先 `TvMainActivity.kt`、`RecommendPage.kt` 和
   `PhonePlayerActivity.kt` 剩余横屏装配。
+
+### 批次 139：RecommendPage 入口迁移
+
+状态：已完成。
+
+- 将推荐入口、冷启动续播和缓存判定移到 `RecommendEntry.kt`。
+- 保留已有列表续看、快照续播、曝光过滤和落盘缓存优先。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
