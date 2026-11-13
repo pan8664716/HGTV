@@ -2094,3 +2094,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 96：PhoneFeed 起播主流程迁移
+
+状态：已完成。
+
+- 将单播放器起播主流程移到 `PhoneFeedPlayback.kt`；原私有入口保留并委托。
+- 保留方向、曝光、停留计时、预热计划、播放代次、书库等待和失败诊断顺序。
+- `PhoneFeedView.kt` 从 1013 行降到 920 行；`PhoneFeedPlayback.kt` 为 114 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
