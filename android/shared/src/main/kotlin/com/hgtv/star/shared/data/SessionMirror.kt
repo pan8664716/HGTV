@@ -564,7 +564,10 @@ private object SessionMediaStoreCopy {
     fun write(app: Context,text: String): Boolean {
         val resolver=app.contentResolver
         val existing=rows(app).firstOrNull()?.first
-        if(existing!=null && writeUri(app,existing,text,clearPending=false)) return true
+        if(existing!=null && writeUri(app,existing,text,clearPending=false)) {
+            deleteOthers(app,existing)
+            return true
+        }
 
         val values=ContentValues().apply {
             put(MediaStore.MediaColumns.DISPLAY_NAME,DISPLAY_NAME)
@@ -578,9 +581,7 @@ private object SessionMediaStoreCopy {
             Log.w("HGTV","Session mirror MediaStore insert failed",it)
         }.getOrNull() ?: return false
         if(writeUri(app,created,text,clearPending=true)) {
-            rows(app).map { it.first }.filter { it!=created }.forEach { old ->
-                runCatching { resolver.delete(old,null,null) }
-            }
+            deleteOthers(app,created)
             return true
         }
         runCatching { resolver.delete(created,null,null) }
@@ -609,8 +610,26 @@ private object SessionMediaStoreCopy {
     }
 
     fun delete(app: Context) {
-        rows(app).forEach { (uri,_) ->
-            runCatching { app.contentResolver.delete(uri,null,null) }
+        val selection=
+            "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
+        val args=arrayOf(RELATIVE_PATH,"hgtv-session%")
+        runCatching {
+            app.contentResolver.delete(MediaStore.Downloads.EXTERNAL_CONTENT_URI,selection,args)
+        }.onFailure {
+            Log.w("HGTV","Session mirror MediaStore delete failed",it)
+        }
+    }
+
+    /** 写入成功后排掉旧版本留下的 `hgtv-session (1).json` 等重复副本。 */
+    private fun deleteOthers(app: Context,keep: Uri) {
+        val selection=
+            "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? AND "+
+                "${MediaStore.MediaColumns._ID}<>?"
+        val args=arrayOf(RELATIVE_PATH,"hgtv-session%",android.content.ContentUris.parseId(keep).toString())
+        runCatching {
+            app.contentResolver.delete(MediaStore.Downloads.EXTERNAL_CONTENT_URI,selection,args)
+        }.onFailure {
+            Log.w("HGTV","Session mirror cannot remove duplicate copies",it)
         }
     }
 }
