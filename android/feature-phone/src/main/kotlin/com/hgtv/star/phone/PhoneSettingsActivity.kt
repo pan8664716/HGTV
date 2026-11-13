@@ -126,12 +126,27 @@ class PhoneSettingsActivity : PhoneActivity() {
     internal val settingsControllerInstance get()=settingsController
     private var page = PhoneSettingsPage.PLAYBACK
     private val syncHandler = Handler(Looper.getMainLooper())
+    internal val settingsSyncHandler get()=syncHandler
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+    internal val settingsScope get()=scope
     private val lanSyncController by lazy { LanSyncController(this, library, scope) }
+    internal val settingsLanSyncController get()=lanSyncController
     private var lanSyncJob: Job? = null
+    internal var settingsLanSyncJob: Job?
+        get()=lanSyncJob
+        set(value) { lanSyncJob=value }
     private var lanSyncDialog: PhoneDialog? = null
+    internal var settingsLanSyncDialog: PhoneDialog?
+        get()=lanSyncDialog
+        set(value) { lanSyncDialog=value }
     private var lanSyncStep: LanSyncController.Step? = null
+    internal var settingsLanSyncStep: LanSyncController.Step?
+        get()=lanSyncStep
+        set(value) { lanSyncStep=value }
     private var lanSyncStatus: TextView? = null
+    internal var settingsLanSyncStatus: TextView?
+        get()=lanSyncStatus
+        set(value) { lanSyncStatus=value }
 
     /**
      * 设置页重建时恢复到的位置。
@@ -417,242 +432,6 @@ class PhoneSettingsActivity : PhoneActivity() {
         ).apply { bottomMargin = settingsDp(4) })
     }
 
-    internal fun appVersionName(): String = appVersionNameImpl()
-
-    internal fun showAboutDialog() {
-        PhoneDialog(this, "关于")
-            .message("版本号：${appVersionName()}")
-            .message("GitHub：${ProjectInfo.GITHUB}")
-            .message("更新请前往项目页面查看项目更新。")
-            .button("关闭") {}
-            .show()
-    }
-
-    /** 出厂值：与 `BackupSettings` 的默认参数逐项对齐。 */
-    internal fun restoreDefaults() {
-        runCatching {
-            settingsController.restoreDefaults()
-            library.autoNext = true
-            library.seekStep = 10
-            library.autoFullscreen = false
-            library.playerTitle = false
-            library.playerEpisode = false
-            library.playerClock = false
-            library.playerSpeed = false
-            library.playerPanelTimeout = 6
-            PhoneDanmakuSize.set(this, PhoneDanmakuSize.DEFAULT_PERCENT)
-            library.launchRecommend = true
-            library.episodePageSize = 20
-            library.episodeEdgeTurn = true
-        }
-        PhoneUiScale.reset(this)
-        PhoneStyle.applyTheme(TvTheme.DEEP_SEA_BLUE)
-        toast("已恢复默认设置")
-        recreate()
-    }
-
-    // ---------------------------------------------------------------- 备份 / 恢复
-
-    /**
-     * 导出：走系统的「创建文档」。
-     *
-     * 与 TV 的「手机备份与恢复」（局域网把 JSON 传给手机）不同——手机上导出再传给自己没有意义，
-     * 因此这里直接落到用户选的文件里（下载目录 / 网盘 / 聊天工具都行）。
-     * 用的是 SAF，不需要任何存储权限，4.4 起就有。
-     */
-    internal fun exportBackup() {
-        val encoded = runCatching { LibraryBackup.encode(library.snapshot()) }.getOrNull()
-        if (encoded == null) { toast("本机记录暂时无法导出"); return }
-        pendingExport = encoded
-        val name = "hgtv-backup-${System.currentTimeMillis() / 1000}.json"
-        runCatching {
-            startActivityForResult(
-                Intent(Intent.ACTION_CREATE_DOCUMENT)
-                    .addCategory(Intent.CATEGORY_OPENABLE)
-                    .setType("application/json")
-                    .putExtra(Intent.EXTRA_TITLE, name),
-                REQUEST_EXPORT
-            )
-        }.onFailure { toast("这台设备没有文件选择器") }
-    }
-
-    /** 恢复：选一个 JSON，解码后按 TV 的同一套规则合并（设置一起带回来）。 */
-    internal fun importBackup() {
-        runCatching {
-            startActivityForResult(
-                Intent(Intent.ACTION_OPEN_DOCUMENT)
-                    .addCategory(Intent.CATEGORY_OPENABLE)
-                    .setType("*/*"),
-                REQUEST_IMPORT
-            )
-        }.onFailure { toast("这台设备没有文件选择器") }
-    }
-
-    // ---------------------------------------------------------------- 局域网同步
-
-    private fun closeLanSyncSession() {
-        lanSyncJob?.cancel()
-        lanSyncJob = null
-        lanSyncDialog?.dismiss()
-        lanSyncDialog = null
-        lanSyncStatus = null
-        lanSyncStep = null
-        lanSyncController.reset()
-    }
-
-    internal fun showLanLibrarySync() {
-        closeLanSyncSession()
-        PhoneDialog(this, "同步其他设备数据")
-            .message("请选择这台设备在本次同步中的角色。")
-            .choices(
-                listOf(
-                    "我要同步其他设备的数据",
-                    "其他设备要同步我的数据",
-                ),
-            ) { index -> startLanSyncRole(sourceOnly = index == 1) }
-            .button("取消")
-            .show()
-    }
-
-    private fun startLanSyncRole(sourceOnly: Boolean) {
-        closeLanSyncSession()
-        lanSyncJob = scope.launch {
-            lanSyncController.state.collect { state -> renderLanSync(state) }
-        }
-        if (sourceOnly) lanSyncController.startSource() else lanSyncController.startReceiver()
-    }
-
-    private fun showLanSyncNoPeers() {
-        PhoneDialog(this, "未发现同步设备")
-            .message("请确认两台设备连接同一局域网，并同时打开「同步其他设备数据」。")
-            .button("重新查找") { startLanSyncRole(sourceOnly = false) }
-            .button("取消")
-            .show()
-    }
-
-    private fun showLanSyncRestoreConfirm() {
-        var login = true
-        var device = true
-        var content = true
-        var settings = true
-        fun syncSwitch(label: String, checked: Boolean, onToggle: (Boolean) -> Unit): PhoneSwitchRow =
-            PhoneSwitchRow(this, label, checked, onToggle = onToggle).apply {
-                minimumHeight = dp(if (landscape) 36 else 42)
-            }
-        val dialog = PhoneDialog(this, "选择要同步的数据")
-            .message("登录、设备与设置会覆盖本机；播放和收藏等记录会合并，并保留进度更高的一项。")
-            .content(syncSwitch("登录信息", true) { login = it })
-            .content(syncSwitch("设备参数", true) { device = it })
-            .content(syncSwitch("播放、收藏等记录", true) { content = it })
-            .content(syncSwitch("设置信息", true) { settings = it })
-        dialog.buttonsInRow()
-        dialog.button("取消")
-        dialog.button("同步所选", primary = true) {
-            val selection = DeviceSyncSelection(
-                login = login,
-                device = device,
-                content = content,
-                settings = settings,
-            )
-            if (!selection.hasAny) {
-                toast("请至少选择一类同步内容")
-            } else {
-                lanSyncController.apply(selection) { saved ->
-                    if (!saved) toast("部分数据未能写入本机，请重试")
-                }
-            }
-        }
-        dialog.show()
-    }
-
-    private fun renderLanSync(state: LanSyncController.State) {
-        when (state.step) {
-            LanSyncController.Step.IDLE -> Unit
-            LanSyncController.Step.SERVING, LanSyncController.Step.DISCOVERING -> {
-                if (lanSyncStep != state.step) {
-                    lanSyncDialog?.dismiss()
-                    lanSyncStep = state.step
-                    val text = TextView(this).apply {
-                        setTextColor(PhoneStyle.textDim)
-                        phoneSize(if (landscape) 11 else 13)
-                        setPadding(dp(4), dp(4), dp(4), dp(4))
-                    }
-                    lanSyncStatus = text
-                    val dialog = PhoneDialog(
-                        this,
-                        if (state.role == LanSyncController.Role.SOURCE) "本机作为同步源" else "同步其他设备数据",
-                    ).message(
-                        if (state.role == LanSyncController.Role.SOURCE) {
-                            "本机将一直出现在同一局域网的设备列表中。请保持此页面打开。"
-                        } else {
-                            "正在通过局域网查找其他设备。请在另一台设备上也打开这个功能。"
-                        }
-                    ).content(text)
-                    dialog.button("取消")
-                    dialog.show { if (lanSyncDialog === dialog) closeLanSyncSession() }
-                    lanSyncDialog = dialog
-                }
-                lanSyncStatus?.text = state.message.ifBlank {
-                    if (state.role == LanSyncController.Role.SOURCE) "正在开启同步源…" else "正在查找设备…"
-                }
-            }
-            LanSyncController.Step.PEERS -> {
-                if (lanSyncStep == state.step) return
-                lanSyncStep = state.step
-                lanSyncDialog?.dismiss()
-                lanSyncDialog = null
-                val peers = state.peers
-                PhoneDialog(this, "选择同步设备")
-                    .message("读取登录信息、设备参数、内容数据和全部设置。读取后仍需在本机确认，确认后会覆盖本机登录与设备身份。")
-                    .choices(peers.map { "${it.displayName}  ·  ${it.host}" }) { index ->
-                        peers.getOrNull(index)?.let(lanSyncController::loadPeer)
-                    }
-                    .button("重新查找") { startLanSyncRole(sourceOnly = false) }
-                    .button("取消") { closeLanSyncSession() }
-                    .show()
-            }
-            LanSyncController.Step.LOADING, LanSyncController.Step.APPLYING -> {
-                if (lanSyncStep == state.step) return
-                lanSyncStep = state.step
-                lanSyncDialog?.dismiss()
-                val dialog = PhoneDialog(
-                    this,
-                    if (state.step == LanSyncController.Step.LOADING) "正在同步" else "正在应用同步数据",
-                ).message(state.message).button("取消") { closeLanSyncSession() }
-                lanSyncDialog = dialog
-                dialog.show()
-            }
-            LanSyncController.Step.READY_TO_APPLY -> {
-                if (lanSyncStep == state.step) return
-                lanSyncStep = state.step
-                lanSyncDialog?.dismiss()
-                lanSyncDialog = null
-                showLanSyncRestoreConfirm()
-            }
-            LanSyncController.Step.ERROR -> {
-                lanSyncDialog?.dismiss()
-                lanSyncDialog = null
-                if (state.message == "没有发现同步设备") {
-                    closeLanSyncSession()
-                    showLanSyncNoPeers()
-                } else {
-                    lanSyncStatus?.text = state.error
-                    if (state.error.isNotBlank() && state.step != LanSyncController.Step.DISCOVERING) {
-                        toast(state.error)
-                    }
-                }
-            }
-            LanSyncController.Step.DONE -> {
-                lanSyncDialog?.dismiss()
-                lanSyncDialog = null
-                toast("同步完成，正在重启应用")
-                syncHandler.postDelayed({
-                    if (!isDestroyed) AppRelaunch.relaunchAndExit(this)
-                }, 800L)
-            }
-        }
-    }
-
     @Deprecated("Activity 的旧回调；不引 androidx.activity 也能用，见 feature-phone 的依赖说明")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
@@ -689,29 +468,6 @@ class PhoneSettingsActivity : PhoneActivity() {
                     .onFailure { toast("恢复失败") }
             }
         }
-    }
-
-    // ---------------------------------------------------------------- 清空
-
-    /**
-     * 清空本机数据：与 TV 的 `performLocalReset` 同一条路（`LocalReset`）。
-     *
-     * 手机上少两步：不释放播放器（这个页面没有播放器）、不弹存储权限（targetSdk 29 的
-     * 传统存储模式下 `LocalReset.wipe` 已经覆盖沙盒与外部私有目录；`/sdcard/.hgtv` 删不掉时
-     * 会留在 `.reset-pending` 标记后面，下次启动不会再被捞回来）。
-     */
-    internal fun performReset() {
-        LocalReset.resetting = true
-        runCatching { library.discardPendingWrites() }
-        Thread({
-            runCatching { LocalReset.wipe(this) }
-            runCatching { Thread.sleep(350) }
-            runOnUiThread {
-                runCatching { LocalReset.wipe(this) }
-                LocalReset.markPendingReset(this)
-                LocalReset.relaunchAndExit(this)
-            }
-        }, "hgtv-phone-reset").start()
     }
 
     // ---------------------------------------------------------------- 控件
@@ -803,7 +559,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     override fun onDestroy() {
-        closeLanSyncSession()
+        closeLanSyncSessionImpl()
         scope.cancel()
         syncHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
@@ -828,4 +584,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     /** 导出前先编好的 JSON：等用户在文件选择器里点完「保存」再写。 */
     private var pendingExport: String? = null
+    internal var settingsPendingExport: String?
+        get()=pendingExport
+        set(value) { pendingExport=value }
 }

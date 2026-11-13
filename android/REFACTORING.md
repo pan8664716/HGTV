@@ -2202,3 +2202,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 105：PhoneSettings 备份与清空操作迁移
+
+状态：已完成。
+
+- 将关于、恢复默认、备份导出 / 导入和清空应用移到 `PhoneSettingsActions.kt`。
+- 保留 SAF 文件选择器、备份编解码、落盘和清空重启顺序。
+- `PhoneSettingsActivity.kt` 从 831 行降到 740 行；`PhoneSettingsActions.kt` 为 106 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：本批与批次 106 合并提交，回退时按文件恢复本批职责。
+
+### 批次 106：PhoneSettings 局域网同步迁移
+
+状态：已完成。
+
+- 将局域网会话、角色选择、同步项确认、状态渲染和重启时序移到
+  `PhoneSettingsLanSync.kt`。
+- 保留设备发现、错误提示、同步内容选择和 800ms 重启延迟。
+- `PhoneSettingsActivity.kt` 从 740 行降到 590 行；`PhoneSettingsLanSync.kt` 为 192 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：本批与批次 105 合并提交，回退时按文件恢复本批职责。
