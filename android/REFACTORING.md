@@ -2247,3 +2247,23 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+## 批次 69–108 阶段检查点
+
+- 已完成 40 / 40 批；批次 91–108 的代码均已本地提交，未推送。
+- 批次 91–108 共 17 个提交，批次 105–106 合并提交：
+  `cf7146c`、`f4e40ec`、`ffb9be5`、`58adb9d`、`e61330e`、`b6a95b0`、
+  `2d93749`、`d2ff1c6`、`84d037b`、`51629bc`、`9ee7d97`、`4c2ff12`、
+  `97f8604`、`6a0afba`、`3ad2a2c`、`8c9ddab`、`fdc871c`。
+- 每批均执行 `git diff --check` 与 `:app:assembleDebug`；测试按项目规则交给用户。
+- `PhoneFeedView.kt` 从 1337 行降到 796 行；`PhoneSettingsActivity.kt` 从 1775 行降到 443 行。
+- 自本轮起点 `aeb4072` 起未修改版本、Gradle、Manifest、资源或序列化文件。
+- 当前仍有 21 个生产 Kotlin 文件超过 800 行：
+  `PhonePlayerActivity.kt` 3073、`TvMainActivity.kt` 2047、`RecommendPage.kt` 1890、
+  `ContentRepository.kt` 1831、`TvComponents.kt` 1480、`PlayerController.kt` 1432、
+  `Library.kt` 1384、`ListPage.kt` 1309、`ArtworkLoader.kt` 1240、
+  `PhoneAccountActivity.kt` 1158、`PhoneLogin.kt` 1118、`SettingsPage.kt` 1103、
+  `HomeScreen.kt` 1088、`DanmakuView.kt` 1075、`TvTools.kt` 1031、
+  `PhoneDetailActivity.kt` 1009、`PlaybackDiagnostics.kt` 981、`TouchController.kt` 979、
+  `SeriesGrid.kt` 967、`PhoneVideoPage.kt` 888、`TvDialog.kt` 840。
+- DoD 未达到；下一轮优先 `PhonePlayerActivity.kt` 与 `ContentRepository.kt`。
