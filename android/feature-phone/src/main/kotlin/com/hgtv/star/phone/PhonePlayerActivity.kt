@@ -1307,20 +1307,7 @@ class PhonePlayerActivity : PhoneActivity() {
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
         if (screenRebuildPending || isFinishing || isDestroyed) return
-        val nowLandscape = newConfig.orientation == Configuration.ORIENTATION_LANDSCAPE
-        if (nowLandscape != landscapeMode) {
-            landscapeMode = nowLandscape
-            applyMode()
-        }
-        if (nowLandscape) {
-            portraitFullscreenFromLandscape = false
-            if (finishAfterLandscapeRestore) {
-                finishAfterLandscapeRestore = false
-                root.post { if (!isFinishing && !isDestroyed) finish() }
-                return
-            }
-        }
-        root.requestLayout()
+        handlePlayerConfigurationChanged(newConfig)
     }
 
     // ---------------------------------------------------------------- 播放状态

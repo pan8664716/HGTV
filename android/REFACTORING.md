@@ -2533,3 +2533,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 132：PhonePlayer 转屏配置迁移
+
+状态：已完成。
+
+- 将转屏配置处理移到 `PhonePlayerConfiguration.kt`。
+- 保留原地切换形态、竖屏全屏恢复后结束和布局刷新。
+- `PhonePlayerActivity.kt` 从 2077 行降到 2064 行；
+  `PhonePlayerConfiguration.kt` 为 21 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
