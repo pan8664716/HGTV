@@ -10,23 +10,6 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-
-fun JSONArray.objects() = (0 until length()).mapNotNull { optJSONObject(it) }
-fun JSONObject.str(key: String) = if (isNull(key)) "" else optString(key, "").trim()
-/**
- * 宽松布尔：平台这类开关字段有时是 `true/false`、有时是 `1/0`、有时是 `"1"/"0"` 字符串。
- *
- * `optBoolean` 只认布尔与数字，字符串 `"1"` 会被当成「没有这个字段」而落回默认值——
- * 一个字符串 `online_subscribed` 就足以让简介页永远显示「预约」（用户读到的正是
- * 「明明预约过了，点进去还是预约」）。这里三种形态都接住，缺字段仍然按 `false`。
- */
-fun JSONObject.flag(key: String) = when(val value=opt(key)) {
-    is Boolean -> value
-    is Number -> value.toDouble()!=0.0
-    is String -> value.trim().let { it=="1" || it.equals("true",ignoreCase=true) || it.equals("yes",ignoreCase=true) }
-    else -> false
-}
-fun cleanUrl(s: String) = s.replace("\\/","/").replace("\\u002F","/",ignoreCase=true).replace("\\u0026","&").replace("&amp;","&")
 /** 分类 / 榜单接口的 HTTP 状态异常：4xx（429 除外）说明参数或路由有问题，重试没有意义。 */
 internal class CatalogHttpException(val status: Int, message: String) : IOException(message)
 /** 取播放地址超时：与用户主动取消分开，界面据此进入自动重试而不是静默退出。 */
@@ -48,20 +31,7 @@ class AddressTimeoutException(message: String, cause: Throwable? = null) : IOExc
  * 拿「进程不被平台 bug 打死」换几个连接，值得。
  * 图片链路（`ArtworkLoader`）不在这里，它仍然用 h2——那里并发多、复用收益真实。
  */
-private fun defaultHttpClient(): OkHttpClient {
-    val builder=HgtvTls.configure(OkHttpClient.Builder())
-        .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
-        .connectTimeout(15,TimeUnit.SECONDS)
-        .readTimeout(30,TimeUnit.SECONDS)
-        .callTimeout(45,TimeUnit.SECONDS)
-        // 会话身份（token / cookie / TokenGuard 回写）。四处 `ContentRepository(...)` 只要有默认
-        // client 就都带上；显式传 client 的几个调用点（预取、`FavoriteMonitor` 用业务 client 派生）
-        // 由它们各自的 `.newBuilder()` 继承，见 `SessionInterceptor` 的说明。
-        .addInterceptor(com.hgtv.star.core.session.SessionInterceptor())
-    // 调试包的连接耗时分解（DNS / TCP / TLS / ttfb），正式包不装（见 [NetLog.timing]）。
-    if(NetLog.timing) builder.eventListenerFactory(NetTiming.Factory)
-    return builder.build()
-}
+private fun defaultHttpClient(): OkHttpClient = defaultContentHttpClient()
 
 /** 分类 / 榜单页首屏统一取 30 条；后续页再使用大页续接。 */
 const val CATALOG_FIRST_PAGE_SIZE=30

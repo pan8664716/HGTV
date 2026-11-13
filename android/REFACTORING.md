@@ -1947,3 +1947,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 84：ContentRepository 传输与 JSON 基础迁移
+
+状态：已完成。
+
+- 将 JSON 数组 / 字符串 / 宽松布尔 / URL 清洗和默认 HTTP client 移到
+  `ContentTransport.kt`；原公开顶层函数形态保持不变。
+- 保留 HTTP/1.1、15/30/45 秒超时、SessionInterceptor 和调试时序监听。
+- `ContentRepository.kt` 从 1959 行降到 1928 行；`ContentTransport.kt` 为 39 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
