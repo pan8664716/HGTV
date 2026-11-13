@@ -3624,3 +3624,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 225：ArtworkLoader 注释压缩
+
+状态：已完成。
+
+- 压缩独立缓存、线程和网络注释行，保留 SPDX、队列、解码和缓存代码。
+- `ArtworkLoader.kt` 从 1240 行降到 670 行，已低于 800 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
