@@ -2189,3 +2189,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 104：PhoneSettings 竖屏分区迁移
+
+状态：已完成。
+
+- 将竖屏播放、弹幕、外观、主题网格、推荐与系统分区移到
+  `PhoneSettingsPortrait.kt`。
+- 保留页面文案、控件顺序、主题切换、设备类型切换和确认行为。
+- `PhoneSettingsActivity.kt` 从 1144 行降到 831 行；
+  `PhoneSettingsPortrait.kt` 为 345 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
