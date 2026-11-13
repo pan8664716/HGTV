@@ -571,20 +571,7 @@ class Library(context: Context) {
         }
     /** 导出局域网全量同步允许迁移的设备身份与登录会话。 */
     fun exportSyncSession(): Map<String,String> {
-        ensureIdentityLayout()
-        restoreFromMirror()
-        return buildMap {
-            LibrarySyncSessionKeys.ALL.forEach { key ->
-                if (key in LibrarySyncSessionKeys.LONG) {
-                    val value = sessionPrefs.getLong(key, 0L)
-                    if (value > 0L) put(key, value.toString())
-                } else {
-                    sessionPrefs.getString(key, "").orEmpty()
-                        .takeIf { it.isNotBlank() }
-                        ?.let { put(key, it) }
-                }
-            }
-        }
+        return exportSyncSessionImpl()
     }
     /**
      * 用另一台设备的完整会话覆盖本机白名单字段。
@@ -593,29 +580,7 @@ class Library(context: Context) {
      * 这是确认框明确提示的覆盖操作，不沿用镜像恢复那种「只补缺失项」的策略。
      */
     fun importSyncSession(values: Map<String,String>, selectedKeys: Set<String> = LibrarySyncSessionKeys.ALL) {
-        if(discarding) return
-        require(selectedKeys.all { it in LibrarySyncSessionKeys.ALL }) { "同步包含不支持的会话类别" }
-        LibrarySyncSessionKeys.validate(values)
-        require(values.keys.all { it in selectedKeys }) { "同步会话与所选类别不一致" }
-        val edit=sessionPrefs.edit()
-        selectedKeys.forEach { key ->
-            val value=values[key]
-            when {
-                value==null -> edit.remove(key)
-                key in LibrarySyncSessionKeys.LONG -> edit.putLong(key,value.toLong())
-                else -> edit.putString(key,value)
-            }
-        }
-        require(edit.commit()) { "设备身份与会话保存失败" }
-        selectedKeys.forEach { key ->
-            val value=values[key]
-            if(value==null) mirror.remove(key) else mirror.put(key,value)
-        }
-        mirror.flush()
-        identityLayoutChecked=true
-        mirrorChecked=true
-        cachedProfileStamp=null
-        SessionBootstrap.onSessionRestored()
+        importSyncSessionImpl(values, selectedKeys)
     }
     /**
      * 把外部镜像里**本机缺的那几项**补回 [sessionPrefs]。
@@ -625,6 +590,9 @@ class Library(context: Context) {
      * 否则一个刚注册的新 `device_id` 会被外部那份旧的顶掉。
      */
     @Volatile private var mirrorChecked = false
+    internal var identityMirrorChecked: Boolean
+        get()=mirrorChecked
+        set(value) { mirrorChecked=value }
     private fun restoreFromMirror(): Boolean {
         // 清除数据期间不再从镜像补写：补进去的任何一项都会让「恢复出厂」前功尽弃。
         if(discarding) return false

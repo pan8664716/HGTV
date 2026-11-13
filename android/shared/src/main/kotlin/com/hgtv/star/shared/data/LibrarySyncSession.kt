@@ -65,3 +65,49 @@ internal object LibrarySyncSessionKeys {
         require(total <= MAX_TOTAL_BYTES) { "同步会话数据过大" }
     }
 }
+
+internal fun Library.exportSyncSessionImpl(): Map<String,String> {
+    ensureIdentityLayoutForDeviceProfile()
+    restoreFromMirrorForRegistrationCookies()
+    return buildMap {
+        LibrarySyncSessionKeys.ALL.forEach { key ->
+            if (key in LibrarySyncSessionKeys.LONG) {
+                val value = identitySessionPrefs.getLong(key, 0L)
+                if (value > 0L) put(key, value.toString())
+            } else {
+                identitySessionPrefs.getString(key, "").orEmpty()
+                    .takeIf { it.isNotBlank() }
+                    ?.let { put(key, it) }
+            }
+        }
+    }
+}
+
+internal fun Library.importSyncSessionImpl(
+    values: Map<String,String>,
+    selectedKeys: Set<String> = LibrarySyncSessionKeys.ALL,
+) {
+    if(identityDiscarding) return
+    require(selectedKeys.all { it in LibrarySyncSessionKeys.ALL }) { "同步包含不支持的会话类别" }
+    LibrarySyncSessionKeys.validate(values)
+    require(values.keys.all { it in selectedKeys }) { "同步会话与所选类别不一致" }
+    val edit=identitySessionPrefs.edit()
+    selectedKeys.forEach { key ->
+        val value=values[key]
+        when {
+            value==null -> edit.remove(key)
+            key in LibrarySyncSessionKeys.LONG -> edit.putLong(key,value.toLong())
+            else -> edit.putString(key,value)
+        }
+    }
+    require(edit.commit()) { "设备身份与会话保存失败" }
+    selectedKeys.forEach { key ->
+        val value=values[key]
+        if(value==null) identityMirror.remove(key) else identityMirror.put(key,value)
+    }
+    identityMirror.flush()
+    identityLayoutInitialized=true
+    identityMirrorChecked=true
+    identityCachedProfileStamp=null
+    SessionBootstrap.onSessionRestored()
+}
