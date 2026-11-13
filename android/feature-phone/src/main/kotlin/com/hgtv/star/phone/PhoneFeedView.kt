@@ -136,6 +136,9 @@ class PhoneFeedView(
     /** 当前这一屏播放信息的自动收起截止时刻与代次。 */
     private var chromeHideAt = 0L
     private var chromeEpoch = 0
+    internal var feedChromeEpoch: Int
+        get()=chromeEpoch
+        set(value) { chromeEpoch=value }
 
     private val chromeHideRunnable = object : Runnable {
         override fun run() {
@@ -151,6 +154,7 @@ class PhoneFeedView(
             target.setChromeVisible(false)
         }
     }
+    internal val feedChromeHideRunnable get()=chromeHideRunnable
 
     private var player: ExoPlayer? = null
     internal val feedPlayer get()=player
@@ -158,6 +162,9 @@ class PhoneFeedView(
         get()=player
         set(value) { player=value }
     private var remote: RemoteVideo? = null
+    internal var feedRemoteSlot: RemoteVideo?
+        get()=remote
+        set(value) { remote=value }
     private var playingIndex = -1
     internal var feedPlayingIndex: Int
         get()=playingIndex
@@ -1136,31 +1143,7 @@ class PhoneFeedView(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        chromeEpoch++
-        list.removeCallbacks(chromeHideRunnable)
-        // 浮层挂在 Activity 的 decor 上，不随本页摘下：这里兜底收一次，
-        // 免得页面被回收时它留在窗口上（宿主切 tab 时已经由 `onHidden` 收过）。
-        closeSheet()
-        PhoneServices.artwork(context).cancelPage()
-        // 播放页压在上面时**不要注销**这几个入口：转横屏会让本页的视图被摘下
-        //（Activity 只是 stopped，没销毁），播放页从横屏退回竖屏正是靠这里把输出
-        // 交回本页的 Surface。注销早了它会判「下层不可用」→ 自己挂一层视频 →
-        // 换输出端那一帧就是用户看到的闪黑。
-        // 真正离开（切 tab / 宿主销毁）由 `onHidden` 与 `PhoneMainActivity.onDestroy` 注销。
-        val ownedByPlayer = PhoneSession.owner == PhoneSession.Owner.PLAYER ||
-            PhoneSession.inHandoff()
-        // 只有**会话归本页**时才注销 Surface 入口：pager 回收旧页时，
-        // 全局 `feedSurface` 可能刚被新起播的那一条流登记上，注销它就是一块黑屏。
-        if (!ownedByPlayer && sessionBelongsToThisFeed()) {
-            PhoneSession.bindFeedSurface(null)
-            PhoneSession.feedVideoOffset = null
-            PhoneSession.feedVideoResize = null
-            PhoneSession.feedVideoScale = null
-            PhoneSession.underlayActive = false
-        }
-        // **不要在这里 pause**：这条流可能在「交给播放页」的交接窗口里被系统先摘下来
-        //（Activity 停止时视图会 detach），此时暂停就等于把播放页要接的那一路按停。
-        // 真正的「退到后台要停」由 `PhoneMainActivity.onPause → onHidden()` 负责。
+        onFeedDetachedImpl()
         // 这一路归播放页时更不能停：窗口过期后转横屏，本页视图会被摘下，
         // 那时按一下就把用户正在看的画面停住了。
         if (!PhoneSession.inHandoff() && PhoneSession.owner == PhoneSession.Owner.FEED &&
@@ -1461,16 +1444,6 @@ class PhoneFeedView(
 
     /** 离开页面时释放协程；播放器留给进程（下次进来重建，省一次解码器初始化）。 */
     fun release() {
-        chromeEpoch++
-        list.removeCallbacks(chromeHideRunnable)
-        listener?.let { player?.removeListener(it) }
-        listener = null
-        feedPreloadScheduler.cancel()
-        PhonePreload.clear()
-        scope.cancel()
-        runCatching { player?.release() }
-        player = null
-        runCatching { remote?.close() }
-        remote = null
+        releaseImpl()
     }
 }

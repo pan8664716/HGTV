@@ -1844,3 +1844,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 75：PhoneFeed 视图生命周期迁移
+
+状态：已完成。
+
+- 将视图摘除与释放清理移到 `PhoneFeedLifecycle.kt`；原 override / 公开入口保留并委托。
+- 保留播放页交接期间不注销 Surface、不暂停，以及协程、播放器、远程视频释放顺序。
+- `PhoneFeedView.kt` 从 1476 行降到 1449 行；`PhoneFeedLifecycle.kt` 为 32 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
