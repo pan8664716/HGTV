@@ -2361,3 +2361,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 117：ContentRepository 签名换域迁移
+
+状态：已完成。
+
+- 将换域名重签、备用设备重签、备用查询 URL 和域名替换移到
+  `ContentSigning.kt`。
+- 保留业务参数、设备参数、Cookie、身份头与客户端版本覆盖顺序。
+- `ContentRepository.kt` 从 1831 行降到 1733 行；`ContentSigning.kt` 为 114 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
