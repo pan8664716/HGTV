@@ -227,7 +227,7 @@ private fun PhonePlayerActivity.prepareGhostImpl(direction: Int) {
             watchText = "选集 ${target + 1}/${d.episodes.size}",
         )
         swipeGhostPage.setProgress(0f)
-        swipeGhostPage.setChromeVisible(swipeChromeVisible)
+        swipeGhostPage.setChromeVisible(playerChromeVisible)
         swipeGhostPage.translationY = if (direction > 0) h else -h
         swipeGhostPage.visibility = View.VISIBLE
     }

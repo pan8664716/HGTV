@@ -1444,6 +1444,28 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 61：PhonePlayer 画面尺寸与缩放迁移
+
+状态：已完成。
+
+- 将播放器画面尺寸同步、横屏全屏按钮定位、画面缩放与横屏 PlayerView 布局移到
+  `PhonePlayerVideoFrame.kt`；原私有调用入口与 listener 入口保留并委托。
+- 保留尺寸有效性、FIT 画面比例、按钮下边缘与底栏限制、缩放范围、居中重排和
+  借下层画面缩放顺序。
+- `PhonePlayerActivity.kt` 从 3273 行降到 3202 行；`PhonePlayerVideoFrame.kt` 为 107 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ### 夜间阶段摘要（批次 51–55）
 
 - 批次 51–55 全部完成并独立提交，Library 的 Cookie、pending profile、账号凭据与设备档案已拆分。
@@ -1454,7 +1476,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 下一批
 
-继续拆 `PhonePlayerActivity.kt` 的播放画面尺寸与横屏缩放职责。
+继续拆 `PhonePlayerActivity.kt` 的播放信息栏与横屏摘要职责。
 
 ## 夜间验收（2026-11-13）
 

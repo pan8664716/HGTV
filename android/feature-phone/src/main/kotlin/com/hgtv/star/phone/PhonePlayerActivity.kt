@@ -161,6 +161,7 @@ class PhonePlayerActivity : PhoneActivity() {
 
     private lateinit var landscape: FrameLayout
     private lateinit var landscapeVideo: PlayerView
+    internal val playerLandscape get()=landscape
     internal val playerLandscapeVideo get()=landscapeVideo
     internal val playerLandscapeVideoInitialized get()=::landscapeVideo.isInitialized
     /**
@@ -174,6 +175,10 @@ class PhonePlayerActivity : PhoneActivity() {
     private lateinit var landTop: LinearLayout
     private lateinit var landBottom: LinearLayout
     private lateinit var landFullscreen: LinearLayout
+    internal val playerLandFullscreen get()=landFullscreen
+    internal val playerLandFullscreenInitialized get()=::landFullscreen.isInitialized
+    internal val playerLandBottom get()=landBottom
+    internal val playerLandBottomInitialized get()=::landBottom.isInitialized
     private lateinit var landPlay: PhoneGlyph
     private lateinit var landCurrent: TextView
     private lateinit var landSeek: SeekBar
@@ -263,6 +268,12 @@ class PhonePlayerActivity : PhoneActivity() {
     private var landInfoRowBottom = 0
     private var landVideoWidth = 0
     private var landVideoHeight = 0
+    internal var playerLandVideoWidth: Int
+        get()=landVideoWidth
+        set(value) { landVideoWidth=value }
+    internal var playerLandVideoHeight: Int
+        get()=landVideoHeight
+        set(value) { landVideoHeight=value }
     /** 本页是否在前台：屏幕常亮只看前台、真实播放意图与错误 / 定时停止状态。 */
     private var foreground = false
     /**
@@ -290,7 +301,7 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 本页是否收着下层推荐页的控制层（见 `PhoneSession.hideFeedChrome` 的计数）。 */
     private var feedChromeHeld = false
     private var chromeVisible = true
-    internal val swipeChromeVisible get()=chromeVisible
+    internal val playerChromeVisible get()=chromeVisible
     private var userSpeed = 1f
     internal val sessionUserSpeed get()=userSpeed
     internal var chipUserSpeed: Float
@@ -2176,22 +2187,10 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /** 把播放器当前的画面尺寸补到页面上（`bind` 之后调用）。 */
-    private fun syncVideoFrame() {
-        val size = player?.videoSize ?: return
-        if (size.width <= 0 || size.height <= 0) return
-        // 调试面板的「画面=」也按这一份填：接手 / 换集时不会再触发 `onVideoSizeChanged`，
-        // 只靠监听会让这一格一直停在「?」（用户报问题时最需要它）。
-        debugVideo = "${size.width}x${size.height}"
-        page.updateVideoFrame(size.width, size.height)
-        updateLandscapeVideoFrame(size.width, size.height)
-    }
+    private fun syncVideoFrame() = syncVideoFrameImpl()
 
-    private fun updateLandscapeVideoFrame(width: Int, height: Int) {
-        if (width <= 0 || height <= 0) return
-        landVideoWidth = width
-        landVideoHeight = height
-        placeLandscapeFullscreen()
-    }
+    private fun updateLandscapeVideoFrame(width: Int, height: Int) =
+        updateLandscapeVideoFrameImpl(width, height)
 
     /**
      * 横屏全屏入口只给竖版片源。
@@ -2199,47 +2198,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 位置取视频 FIT 后的真实下边缘，再受底部控制层上沿限制。竖版视频在横屏里
      * 通常占满高度，若只看画面下边缘，按钮会直接落到控制层后面。
      */
-    private fun placeLandscapeFullscreen() {
-        if (!::landFullscreen.isInitialized || !::landscapeVideo.isInitialized) return
-        val portraitVideo = landVideoHeight > landVideoWidth
-        if (!landscapeMode || !chromeVisible || !portraitVideo) {
-            landFullscreen.visibility = View.GONE
-            return
-        }
-        if (landscape.width <= 0 || landscape.height <= 0) return
-
-        landFullscreen.visibility = View.VISIBLE
-        val videoWidth = landscapeVideo.width.takeIf { it > 0 } ?: landscape.width
-        val videoHeight = landscapeVideo.height.takeIf { it > 0 } ?: landscape.height
-        val ratio = landVideoWidth.toFloat() / landVideoHeight
-        val videoRatio = videoWidth.toFloat() / videoHeight
-        val pictureHeight = if (ratio >= videoRatio) videoWidth / ratio else videoHeight.toFloat()
-        val videoTop = landscapeVideo.top.toFloat()
-        val pictureBottom = videoTop + (videoHeight + pictureHeight) / 2f
-
-        val buttonHeight = landFullscreen.measuredHeight.takeIf { it > 0 } ?: dp(18)
-        val gap = dp(10)
-        val bottomLimit = if (::landBottom.isInitialized && landBottom.height > 0) {
-            landBottom.top
-        } else {
-            landscape.height
-        }
-        val maxTop = bottomLimit - buttonHeight - gap
-        val top = (pictureBottom - buttonHeight - gap)
-            .coerceAtMost(maxTop.toFloat())
-            .coerceAtLeast(0f)
-            .toInt()
-        val lp = landFullscreen.layoutParams as FrameLayout.LayoutParams
-        if (lp.topMargin != top) {
-            lp.topMargin = top
-            landFullscreen.layoutParams = lp
-        }
-        if (landFullscreen.measuredHeight <= 0) {
-            landFullscreen.post {
-                if (landscapeMode && landFullscreen.isAttachedToWindow) placeLandscapeFullscreen()
-            }
-        }
-    }
+    private fun placeLandscapeFullscreen() = placeLandscapeFullscreenImpl()
 
     /**
      * 画面缩放（设置 → 播放偏好，1–100%）。
@@ -2247,33 +2206,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 只缩**播放画面本身**：`PlayerView` 按中心等比缩放，页面底板仍是整屏黑，
      * 因此缩小后看到的是「画面变小、四周留黑」，与 TV 的 `applyVideoScale` 同一效果。
      */
-    private fun applyVideoScale() {
-        val ratio = ((library?.videoScale ?: 100f) / 100f).coerceIn(.1f, 1f)
-        // 竖屏：改的是布局宽高（SurfaceView 不跟 scaleX 走，见 `PhoneVideoPage.setVideoScale`）。
-        page.setVideoScale(ratio)
-        // 横屏用的是另一块 PlayerView，同样按布局宽高缩。
-        applyLandscapeVideoScale(ratio)
-        if (feedUnderlay) PhoneSession.setFeedVideoScale(ratio)
-    }
-
-    /** 横屏画面缩放：改布局宽高，缩小时四周露出黑底。 */
-    private fun applyLandscapeVideoScale(ratio: Float) {
-        landscapeVideo.scaleX = 1f
-        landscapeVideo.scaleY = 1f
-        val lp = landscapeVideo.layoutParams as? FrameLayout.LayoutParams ?: return
-        if (ratio >= .999f) {
-            lp.width = FrameLayout.LayoutParams.MATCH_PARENT
-            lp.height = FrameLayout.LayoutParams.MATCH_PARENT
-        } else {
-            val w = landscape.width.takeIf { it > 0 } ?: resources.displayMetrics.widthPixels
-            val h = landscape.height.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
-            lp.width = (w * ratio).toInt().coerceAtLeast(1)
-            lp.height = (h * ratio).toInt().coerceAtLeast(1)
-        }
-        lp.gravity = Gravity.CENTER
-        landscapeVideo.layoutParams = lp
-        landscapeVideo.requestLayout()
-    }
+    private fun applyVideoScale() = applyVideoScaleImpl()
 
     /**
      * 把「播放显示」那四项铺到这一行上：**剧名 / 集数靠左，网速 / 时间靠右**。
