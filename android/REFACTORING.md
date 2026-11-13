@@ -2832,3 +2832,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 159：TvMain 播放定时器迁移
+
+状态：已完成。
+
+- 将浮层自动隐藏、待跳位置和强制 retiring 兜底移到 `TvPlaybackRunnables.kt`。
+- 保留同一 Runnable 身份用于 removeCallbacks。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

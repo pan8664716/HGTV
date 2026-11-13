@@ -1728,23 +1728,15 @@ class TvMainActivity: Activity() {
      * 正式播放看 `scrubbing`，推荐页看 `recommendScrubbing`（见 `onRecommendScrub`）。
      */
     val overlayAutoHide=Runnable {
-        when {
-            playbackMenu!=null -> hidePlaybackOverlay()
-            episodePanel!=null -> episodePanel?.dismiss()
-            onPlaybackPage() && !playError && !scrubbing && !recommendScrubbing && hudShown() ->
-                hidePlaybackOverlay()
-        }
+        runOverlayAutoHide()
     }
-    val seekRunnable=Runnable { pendingSeek?.let { player?.seekTo(it) }; pendingSeek=null }
+    val seekRunnable=Runnable { runPendingSeek() }
     // ---- 播放过程中要按「同一个对象」重用的字段 ----
     // 这两枚 Runnable 会在 removeCallbacks 里按身份比对，必须是字段（扩展属性没有初始化器，
     // 写成 getter 会每次返回新对象、removeCallbacks 就失效了）。
     val restoreBuffering=Runnable { restoreBufferingUi() }
     val retireForced=Runnable {
-        // 3 秒兜底。只有确认那一项**确实已经不在播放列表里**才关：
-        // 还在列表里就关，ExoPlayer 重新 prepare 时会读到已关闭的数据源。
-        val stillListed=playedItemId.isNotEmpty() && (0 until (player?.mediaItemCount ?: 0)).any { player?.getMediaItemAt(it)?.mediaId==playedItemId }
-        if(!stillListed) { playedItemPending=false; playedItemId=""; retirePreviousEpisode() }
+        runForcedRetire()
     }
 
     // ---- 生命周期与系统回调：扩展成员不能 override，只能留在 Activity 本体里 ----
