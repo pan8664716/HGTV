@@ -3887,3 +3887,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；包名、文件名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`core/search`。
+
+### 布局批次 9：core/search
+
+状态：已完成。
+
+- `core/PhoneSearchServer.kt` → `core/search/PhoneSearchServer.kt`
+- `core/SearchDiag.kt` → `core/search/SearchDiag.kt`
+- `core/SearchKeyboard.kt` → `core/search/SearchKeyboard.kt`
+- `core/SearchSource.kt` → `core/search/SearchSource.kt`
+- `core/VoiceQuery.kt` → `core/search/VoiceQuery.kt`
+- 外部路径引用：无；仅目录变化。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`core/label`。
