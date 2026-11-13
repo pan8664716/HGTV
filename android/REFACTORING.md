@@ -2590,3 +2590,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 137：PhonePlayer 创建初始化迁移
+
+状态：已完成。
+
+- 将播放页创建初始化移到 `PhonePlayerCreate.kt`。
+- 保留主题、方向策略、下层画面选择、建页、加载和进场耗时日志。
+- `PhonePlayerActivity.kt` 从 1931 行降到 1875 行；`PhonePlayerCreate.kt` 为 74 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
