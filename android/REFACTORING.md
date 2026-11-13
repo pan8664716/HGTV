@@ -2545,3 +2545,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 133：PhonePlayer 前台恢复迁移
+
+状态：已完成。
+
+- 将播放页前台恢复移到 `PhonePlayerResume.kt`。
+- 保留网络监听、下层 Surface、弹幕时钟、媒体会话、看门狗和控制层计时。
+- `PhonePlayerActivity.kt` 从 2064 行降到 2046 行；`PhonePlayerResume.kt` 为 27 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
