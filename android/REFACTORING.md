@@ -2953,3 +2953,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 170：TV 解码器选择迁移
+
+状态：已完成。
+
+- 将视频硬解 / 软解筛选移到 `TvPlayerDecoding.kt`。
+- 保留音频全表回退和调试故障注入。
+- `PlayerController.kt` 从 1432 行降到 1380 行；
+  `TvPlayerDecoding.kt` 为 58 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
