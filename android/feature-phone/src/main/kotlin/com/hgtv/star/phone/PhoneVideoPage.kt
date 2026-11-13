@@ -63,7 +63,7 @@ class PhoneVideoPage(
     /** 首页是信息流，底部有 60dp 的导航栏；播放页没有。 */
     private val withTabBar: Boolean = true,
     /** 是否显示「全屏」入口（信息流和正式播放页的竖屏版面共用）。 */
-    private val fullscreenEntry: Boolean = false,
+    internal val fullscreenEntry: Boolean = false,
     /**
      * 上下滑是否接管为「上一集 / 下一集」。
      *
@@ -199,26 +199,28 @@ class PhoneVideoPage(
 
     private lateinit var seekBar: SeekBar
     /** 底部通栏操作条（选集 / 观看完整短剧）。 */
-    private lateinit var actionBar: LinearLayout
+    internal lateinit var actionBar: LinearLayout
+    internal val actionBarInitialized get() = ::actionBar.isInitialized
     /** 浮在画面下边缘黑边里的「全屏」按钮（横屏片源才有）。 */
-    private lateinit var fullscreenBox: LinearLayout
-    private var wantsFullscreen = false
+    internal lateinit var fullscreenBox: LinearLayout
+    internal val fullscreenBoxInitialized get() = ::fullscreenBox.isInitialized
+    internal var wantsFullscreen = false
     private var videoWidth = 0
     private var videoHeight = 0
-    private lateinit var infoColumn: LinearLayout
-    private lateinit var bottomShade: View
-    private lateinit var topShade: View
+    internal lateinit var infoColumn: LinearLayout
+    internal lateinit var bottomShade: View
+    internal lateinit var topShade: View
 
-    private val centerGlyph = PhoneGlyph(context, PhoneGlyph.Kind.PAUSE).apply {
+    internal val centerGlyph = PhoneGlyph(context, PhoneGlyph.Kind.PAUSE).apply {
         tint = Color.WHITE
         filled = true
     }
-    private lateinit var centerBox: FrameLayout
+    internal lateinit var centerBox: FrameLayout
 
     private var series: Series? = null
-    private var chromeVisible = true
+    internal var chromeVisible = true
     private var userDragging = false
-    private var centerHideAt = 0L
+    internal var centerHideAt = 0L
 
     // ------------------------------------------------------------------ 回调
 
@@ -788,101 +790,6 @@ class PhoneVideoPage(
     fun setBufferedProgress(fraction: Float) {
         val value=(fraction.coerceIn(0f,1f)*1000).toInt()
         if(seekBar.secondaryProgress!=value) seekBar.secondaryProgress=value
-    }
-
-    // ------------------------------------------------------------------ 界面状态
-
-    /** 整块信息（含两条渐变遮罩）显不显示。 */
-    fun setChromeVisible(visible: Boolean) {
-        chromeVisible = visible
-        infoColumn.visibility = if (visible) VISIBLE else GONE
-        // 通栏条也是「信息」的一部分：只在 `infoColumn` 上切显隐的话，
-        // 借给正式播放页时它会留在下面，和上面那一条叠成两层（用户看到的「重影」）。
-        if (::actionBar.isInitialized) actionBar.visibility = if (visible) VISIBLE else GONE
-        bottomShade.visibility = if (visible) VISIBLE else GONE
-        if (fullscreenEntry && ::fullscreenBox.isInitialized) {
-            fullscreenBox.visibility = if (visible && wantsFullscreen) VISIBLE else GONE
-        }
-        if (!visible) hideCenterIcon()
-    }
-
-    /**
-     * 顶部那条压暗渐变要不要画（**只给「顶部真的有字」的时候**）。
-     *
-     * 早先它跟 [setChromeVisible] 一起开关：竖屏播放页只要控制层露着就画，
-     * 而这一页顶部其实什么都没有——「播放显示」那一行是兄弟层 `portraitTop`，
-     * 不在本页里。于是画面顶沿平白压了一条 110dp 的「51% 黑 → 透明」渐变，
-     * 缓得只有在亮场画面上仔细对比才看得出（用户反馈的「全屏顶部有一些黑雾」）。
-     *
-     * 现在由宿主按「那一行是不是真的在显示」来决定：有字才垫底，没字就不画。
-     * 推荐页（`underlay`）从不调用它，因此整页不会有这条暗带。
-     */
-    fun setTopScrimVisible(visible: Boolean) {
-        topShade.visibility = if (visible) VISIBLE else GONE
-    }
-
-    fun isChromeVisible(): Boolean = chromeVisible
-
-    /**
-     * 本页只留画面，把 Surface 借给正式播放页（或收回）。
-     *
-     * 借出去时信息栏、弹幕、遮罩全收：播放页那边会画一份同样的控制层，
-     * 两层叠着会看到两套标题、两条进度条、两层弹幕。
-     */
-    fun setUnderlayMode(on: Boolean) {
-        if (on) {
-            setChromeVisible(false)
-            danmakuView.visibility = GONE
-            hideCenterIcon()
-            if (fullscreenEntry && ::fullscreenBox.isInitialized) fullscreenBox.visibility = GONE
-        } else {
-            setChromeVisible(true)
-            // 弹幕的显隐由宿主按设置重刷（`applyDanmakuSettings`）：这里写死 VISIBLE
-            // 会把用户关掉的弹幕又打开。
-        }
-    }
-
-    /**
-     * 屏幕中心的播放 / 暂停图标。
-     *
-     * 暂停时**一直显示**（用户需要看到「这里是暂停状态」），播放中只闪一下就走。
-     */
-    fun showCenterIcon(playing: Boolean, autoHideMs: Long = 700L) {
-        centerGlyph.kind = if (playing) PhoneGlyph.Kind.PAUSE else PhoneGlyph.Kind.PLAY
-        centerBox.visibility = VISIBLE
-        centerBox.bringToFront()
-        centerHideAt = System.currentTimeMillis() + autoHideMs
-        if (playing) {
-            postDelayed({
-                if (System.currentTimeMillis() >= centerHideAt) centerBox.visibility = GONE
-            }, autoHideMs)
-        }
-    }
-
-    fun hideCenterIcon() {
-        centerBox.visibility = GONE
-        centerHideAt = 0L
-    }
-
-    fun setResizeMode(mode: Int) {
-        playerView.resizeMode = mode
-    }
-
-    /**
-     * 本层视频要不要显示。
-     *
-     * 借下层 Surface 时本层一直藏着；一旦下层不可用（横竖切换、推荐页被系统收走），
-     * 宿主把本层打开并把播放器挂回来，画面才不会丢。
-     */
-    fun setVideoSurfaceVisible(visible: Boolean) {
-        playerView.visibility = if (visible) VISIBLE else GONE
-        // 从「借下层」退回「自己出画面」时，本页要重新变成不透明黑底，
-        // 否则透过去的是下层另一部剧的画面，看起来像串台。
-        setBackgroundColor(if (visible) Color.BLACK else Color.TRANSPARENT)
-        if (visible) {
-            playerView.setShutterBackgroundColor(Color.BLACK)
-            playerView.setBackgroundColor(Color.BLACK)
-        }
     }
 
 }

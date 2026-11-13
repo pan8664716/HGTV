@@ -3473,3 +3473,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 212：PhoneVideoPage 界面状态迁移
+
+状态：已完成。
+
+- 将控制层显隐、顶部遮罩、下层画面模式、中心图标、画面尺寸与视频层显隐
+  移到 `PhoneVideoPageState.kt`。
+- 保留推荐页借 Surface、弹幕显隐由宿主刷新和中心图标自动隐藏行为。
+- `PhoneVideoPage.kt` 从 888 行降到 795 行；`PhoneVideoPageState.kt` 为 64 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
