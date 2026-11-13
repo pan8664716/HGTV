@@ -2672,3 +2672,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 143：RecommendPage 起播选择迁移
+
+状态：已完成。
+
+- 将推荐起播、详情请求和无播条目跳过移到 `RecommendPlaybackSelection.kt`。
+- 保留缓存优先、令牌作废、详情入缓存和四次跳过上限。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
