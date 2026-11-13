@@ -20,7 +20,6 @@ import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.hgtv.star.core.CategorySelection
-import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackSpeed
@@ -275,13 +274,13 @@ class PhoneFeedView(
     internal fun playIndexForSettings(index: Int, startAt: Long) =
         playIndex(index, startAt)
     internal fun applyDanmakuSettingsForSettings(page: PhoneVideoPage) =
-        applyDanmakuSettings(page)
+        applyDanmakuSettingsImpl(page)
     internal fun loadDanmakuForSettings(
         page: PhoneVideoPage,
         index: Int,
         episodeId: String,
         seriesId: String,
-    ) = loadDanmaku(page, index, episodeId, seriesId)
+    ) = loadDanmakuImpl(page, index, episodeId, seriesId)
 
     /**
      * 服务端已经确认不吃 `filter_ids`（回空页）。
@@ -1248,7 +1247,7 @@ class PhoneFeedView(
         }
         playingIndex = index
         if (clearDanmakuOnSwitch && previousIndex >= 0 && previousIndex != index) {
-            danmakuLoaderOf(previousIndex).clear()
+            danmakuLoaderOfImpl(previousIndex).clear()
         }
         // 记下落盘的「停在哪一部」：下次冷启动从它的**下一部**接着播（同电视端 `rememberPlayed`）。
         runCatching { com.hgtv.star.core.RecommendCache.rememberPlayed(series.id, cacheKey()) }
@@ -1367,20 +1366,10 @@ class PhoneFeedView(
      * 滑走再滑回来会重新拉一遍（那一份记忆属于上一屏）。
      */
     private val danmakuLoaders = HashMap<Int, com.hgtv.star.shared.media.DanmakuLoader>()
+    internal val feedDanmakuLoaders get()=danmakuLoaders
 
     /** 取（或建）某一屏的加载器：目标层与集号都按那一屏现取。 */
-    private fun danmakuLoaderOf(index: Int): com.hgtv.star.shared.media.DanmakuLoader =
-        danmakuLoaders.getOrPut(index) {
-            com.hgtv.star.shared.media.DanmakuLoader(
-                scope = scope,
-                repository = { PhoneServices.repository(context) },
-                mode = { library?.danmakuMode ?: DanmakuMode.DEFAULT },
-                target = { pageAt(index)?.danmakuView },
-                post = { block -> list.post(block) },
-                alive = { isAttachedToWindow },
-            )
-        }
-    internal fun feedDanmakuLoaderOf(index: Int) = danmakuLoaderOf(index)
+    internal fun feedDanmakuLoaderOf(index: Int) = danmakuLoaderOfImpl(index)
 
     /**
      * 片尾 30 秒内把**下一集**的地址与首块准备好（[PhoneSession.putNext]）。
@@ -1424,43 +1413,16 @@ class PhoneFeedView(
     internal fun maybePrefetchNextForClock(position: Long, duration: Long) =
         maybePrefetchNext(position, duration)
 
-    /**
-     * 把本机偏好落到这一页的弹幕层（与正式播放页同一份实现、同一批落盘值）。
-     */
-    private fun applyDanmakuSettings(page: PhoneVideoPage) {
-        val lib = library ?: return
-        val view = page.danmakuView
-        view.mode = lib.danmakuMode
-        // 横屏推荐页的视图高度只有 1080，按高度算会比正式播放页（按长边 1920）
-        // 小一档；两端统一按屏幕长边取基准，切进正式播放页时字号不会突然变大。
-        view.sizeFollowsLongEdge = true
-        view.textScale = PhoneDanmakuSize.renderScale(context)
-        view.textAlpha = lib.danmakuAlpha
-        view.speed = lib.danmakuSpeed
-        view.mergeRepeats = lib.danmakuMerge
-        view.mergeMinCount = lib.danmakuMergeMin
-        view.effectsEnabled = lib.danmakuEffects
-        view.visibility = if (lib.danmakuMode == DanmakuMode.HIDDEN) View.GONE else View.VISIBLE
-    }
+    private fun applyDanmakuSettings(page: PhoneVideoPage) =
+        applyDanmakuSettingsImpl(page)
 
-    /**
-     * 拉这一屏这一集的弹幕。
-     *
-     * 规则全在 `:shared` 的 `DanmakuLoader` 里（同一集不重拉、旧回包丢弃、隐藏时不发请求、边拉边画）。
-     */
     private fun loadDanmaku(
         page: PhoneVideoPage,
         index: Int,
         episodeId: String,
         seriesId: String,
         clearOnSwitch: Boolean = false,
-    ) {
-        val lib = library ?: return
-        val view = page.danmakuView
-        view.mode = lib.danmakuMode
-        if (index < 0) return
-        danmakuLoaderOf(index).load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
-    }
+    ) = loadDanmakuImpl(page, index, episodeId, seriesId, clearOnSwitch)
 
     private fun attach(
         index: Int,

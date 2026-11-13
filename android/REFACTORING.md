@@ -1798,3 +1798,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 71：PhoneFeed 弹幕加载迁移
+
+状态：已完成。
+
+- 将每屏弹幕加载器缓存、偏好落位和按屏拉取移到 `PhoneFeedDanmaku.kt`；原调用入口保留。
+- 保留目标页现取、列表线程投递、隐藏模式、字号基准与 `clearOnSwitch` 行为。
+- `PhoneFeedView.kt` 从 1577 行降到 1539 行；`PhoneFeedDanmaku.kt` 为 49 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
