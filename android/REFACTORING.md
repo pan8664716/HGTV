@@ -1531,6 +1531,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 65：Library 真机设备档案迁移
+
+状态：已完成。
+
+- 将 `deviceProfile()` 的档案读取、Android ID 升级、镜像补写、首次生成与同步落盘
+  移到 `LibraryDeviceProfile.kt`；原公开签名保留并委托。
+- 保留官方格式校验、`openudid-source` 判据、缓存指纹失效、`commit` 与 `flush` 顺序。
+- `Library.kt` 从 1532 行降到 1471 行；`LibraryDeviceProfile.kt` 从 69 行增至 126 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ### 夜间阶段摘要（批次 60–64）
 
 - 批次 60–64 全部完成并独立提交，PhonePlayer 的滑页、画面尺寸、信息栏、设置壳与设置行已拆分。
@@ -1549,7 +1570,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 下一批
 
-继续拆 `Library.kt` 的身份注册结果与账号同步编排职责。
+继续拆 `Library.kt` 的会话镜像恢复与导出职责。
 
 ## 夜间验收（2026-11-13）
 

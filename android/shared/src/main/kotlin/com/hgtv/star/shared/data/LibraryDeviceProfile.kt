@@ -3,6 +3,63 @@ package com.hgtv.star.shared.data
 
 import com.hgtv.star.core.OfficialDeviceIds
 
+/**
+ * 本机真机设备档案。已有官方格式档案时只读；旧格式或首次使用才生成并同步落盘。
+ */
+internal fun Library.deviceProfileImpl(): Map<String,String> {
+    ensureIdentityLayoutForDeviceProfile()
+    restoreFromMirrorForRegistrationCookies()
+    if(identityDiscarding) return emptyMap()
+    val stored=identitySessionPrefs.getString("device-profile","").orEmpty()
+    if(stored.isNotBlank()) {
+        var map=runCatching {
+            val json=org.json.JSONObject(stored)
+            buildMap {
+                for(key in json.keys()) {
+                    json.optString(key).takeIf { it.isNotBlank() }?.let { put(key,it) }
+                }
+            }
+        }.getOrNull()
+        if(map!=null &&
+            map["profile-format"]=="official-v1" &&
+            map["cdid"].orEmpty().isNotBlank() &&
+            map["openudid"].orEmpty().isNotBlank() &&
+            map["clientudid"].orEmpty().isNotBlank()
+        ) {
+            val source=map["openudid-source"].orEmpty()
+            if(source!="android_id" && source!="primary_random") {
+                val androidId=readAndroidIdImpl()
+                if(androidId!=null && androidId!=map["openudid"]) {
+                    map=LinkedHashMap(map).apply {
+                        put("openudid",androidId)
+                        put("openudid-source","android_id")
+                    }
+                    val upgraded=org.json.JSONObject()
+                    map.forEach { (key,value) -> upgraded.put(key,value) }
+                    val json=upgraded.toString()
+                    identitySessionPrefs.edit().putString("device-profile",json).commit()
+                    identityMirror.put("device-profile",json)
+                    identityMirror.flush()
+                    identityCachedProfileStamp=null
+                    android.util.Log.i("HGTV","Device openudid upgraded to Android ID")
+                }
+            }
+            val current=org.json.JSONObject()
+            map.forEach { (key,value) -> current.put(key,value) }
+            mirrorSyncForAccount("device-profile",current.toString())
+            return map
+        }
+    }
+    val fresh=buildOfficialProfileImpl(false)
+    val json=org.json.JSONObject()
+    fresh.forEach { (key,value) -> json.put(key,value) }
+    identitySessionPrefs.edit().putString("device-profile",json.toString()).commit()
+    identityMirror.put("device-profile",json.toString())
+    identityMirror.flush()
+    identityCachedProfileStamp=null
+    return fresh
+}
+
 /** 按官方默认链路生成一整套设备档案（机型 / 系统 / 分辨率 / 密度 / 三个标识）。 */
 internal fun Library.buildOfficialProfileImpl(forceRandomOpenudid: Boolean): Map<String,String> {
     val app=identityApp

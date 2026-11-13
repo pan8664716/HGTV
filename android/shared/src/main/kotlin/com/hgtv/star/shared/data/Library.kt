@@ -131,6 +131,7 @@ class Library(context: Context) {
     internal val legacyIdentityKeysValue get()=LEGACY_IDENTITY_KEYS
     internal val mirrorAccountKeysValue get()=mirrorAccountKeys
     internal fun isDeviceNumberForIdentity(value: String): Boolean = isDeviceNumber(value)
+    internal fun ensureIdentityLayoutForDeviceProfile() = ensureIdentityLayout()
     internal fun settingsState(): LibraryIndex = state()
     internal fun putSetting(key: String, value: Any?) = put(key, value)
     private val writes = LatestWriteQueue<String, () -> Any?>("hgtv-library-write", write = { batch -> commit(prefs, batch) },
@@ -839,69 +840,7 @@ class Library(context: Context) {
      * 这正是「同一台设备」该有的样子。
      */
     fun deviceProfile(): Map<String,String> {
-        ensureIdentityLayout()
-        restoreFromMirror()
-        // 清除数据期间不再采集 / 落盘：此时写进去的任何一项都会在沙盒里留下痕迹。
-        if(discarding) return emptyMap()
-        val stored=sessionPrefs.getString("device-profile","").orEmpty()
-        if(stored.isNotBlank()) {
-            var map=runCatching {
-                val json=org.json.JSONObject(stored)
-                buildMap { for(key in json.keys()) json.optString(key).takeIf { it.isNotBlank() }?.let { put(key,it) } }
-            }.getOrNull()
-            if(map!=null &&
-                map["profile-format"]=="official-v1" &&
-                map["cdid"].orEmpty().isNotBlank() &&
-                map["openudid"].orEmpty().isNotBlank() &&
-                map["clientudid"].orEmpty().isNotBlank()
-            ) {
-                // 早期版本可能在 Android ID 尚不可读时先落了一个随机兜底值。
-                // 不要把它永久当成设备身份：后续每次读档案都再试一次 Android ID，
-                // 一旦可读就把 openudid 升级为官方语义，并让注册指纹自然失效、重新注册。
-                val source=map["openudid-source"].orEmpty()
-                // 官方 App 用真实 Android ID 作为 openudid。即使旧版本曾因换设备
-                // 写过 forced_random，只要现在能读到 Android ID，也要升级回来；
-                // 否则设备会永久以 new_user=1 的陌生身份请求，第一批模型后就被限流。
-                if(source!="android_id" && source!="primary_random") {
-                    val androidId=readAndroidId()
-                    if(androidId!=null && androidId!=map["openudid"]) {
-                        map=LinkedHashMap(map).apply {
-                            put("openudid",androidId)
-                            put("openudid-source","android_id")
-                        }
-                        val upgraded=org.json.JSONObject()
-                        map.forEach { (key,value) -> upgraded.put(key,value) }
-                        val json=upgraded.toString()
-                        sessionPrefs.edit().putString("device-profile",json).commit()
-                        mirror.put("device-profile",json)
-                        mirror.flush()
-                        cachedProfileStamp=null
-                        Log.i("HGTV","Device openudid upgraded to Android ID")
-                    }
-                }
-                // 老版本只把档案写在本机私有目录里：读一次就补进镜像，卸载重装才认得回这台设备。
-                val current=org.json.JSONObject()
-                map.forEach { (key,value) -> current.put(key,value) }
-                mirrorSync("device-profile",current.toString())
-                // **升级不动身份**：老版本那份档案（种子由系统标识符派生）原样继续用。
-                // 早先这里会「升级时强制换一台设备」，实测结论是**不要**这么做：
-                // 换设备只能换来一次重新绑定，账号在平台上被当成陌生机器，而收益为零
-                //（平台认设备靠的是 `install_id` / `sessionid` 这串 Cookie，见
-                // `ContentRepository.registerDevice`）。要换只有一条路——服务端明确不认这份身份
-                //（见 `TvMainActivity.healDeviceIdentity`）。
-                return map
-            }
-        }
-        // 旧版档案没有官方格式标记：重建一次，让注册身份与官方字段重新对齐。
-        // 盘上没有（首次使用 / 刚重新注册）也走这里。
-        val fresh=buildOfficialProfile()
-        val json=org.json.JSONObject(); fresh.forEach { (key,value) -> json.put(key,value) }
-        // **同步 commit**：档案丢了就等于换了台设备，不能让它在强杀时还没写下去。
-        sessionPrefs.edit().putString("device-profile",json.toString()).commit()
-        mirror.put("device-profile",json.toString())
-        mirror.flush()
-        cachedProfileStamp=null
-        return fresh
+        return deviceProfileImpl()
     }
     /**
      * 生成一套**新的**设备身份候选（新种子 → 新档案），等注册成功再转正。
