@@ -2442,3 +2442,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 124：PhonePlayer 原地换址迁移
+
+状态：已完成。
+
+- 将过期地址原地重开移到 `PhonePlayerReopen.kt`。
+- 保留暂停意图、预热队列清理、媒体源替换和失败回退。
+- `PhonePlayerActivity.kt` 从 2402 行降到 2358 行；`PhonePlayerReopen.kt` 为 59 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
