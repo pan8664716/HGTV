@@ -6,6 +6,7 @@ import android.os.Handler
 import android.os.Looper
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.data.registrationPending
+import com.hgtv.star.shared.data.qualityChosenByUser
 import com.hgtv.star.shared.data.PlaybackCapability
 import com.hgtv.star.shared.data.SessionBootstrap
 import java.util.concurrent.CountDownLatch

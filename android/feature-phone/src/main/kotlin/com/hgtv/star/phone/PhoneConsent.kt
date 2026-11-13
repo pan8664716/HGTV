@@ -5,6 +5,7 @@ import android.app.Activity
 import com.hgtv.star.core.ThirdPartyNotice
 import com.hgtv.star.phone.ui.PhoneDialog
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.data.thirdPartyAccepted
 
 /**
  * 手机端的两条「知情同意」，与电视端**同一份文案、同一条语义**（见 `:core` 的

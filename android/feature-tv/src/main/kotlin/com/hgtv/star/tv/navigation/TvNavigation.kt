@@ -9,6 +9,7 @@ import com.hgtv.star.tv.TvMainActivity.CatalogState
 import com.hgtv.star.tv.ToggleChip
 import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.compat.attachedToWindow
+import com.hgtv.star.shared.data.thirdPartyAccepted
 
 // 本文件是从 TvMainActivity.kt 拆出来的「顶部五个入口、切换页面、分类与榜单芯片、页头导航与页标题」这一块。
 // 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，

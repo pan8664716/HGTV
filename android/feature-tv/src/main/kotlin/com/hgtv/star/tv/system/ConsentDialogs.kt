@@ -2,6 +2,7 @@
 package com.hgtv.star.tv
 
 import android.view.View
+import com.hgtv.star.shared.data.thirdPartyAccepted
 import com.hgtv.star.tv.ButtonTone
 import com.hgtv.star.tv.TvDialog
 import com.hgtv.star.tv.R
