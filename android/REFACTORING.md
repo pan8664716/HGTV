@@ -2722,3 +2722,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 148：RecommendPage 信息浮层迁移
+
+状态：已完成。
+
+- 将推荐底部浮层、运营角标和进度刷新移到 `RecommendOverlay.kt`。
+- 保留触屏分支、播放菜单让位、拖动保护和方向滑入动画。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
