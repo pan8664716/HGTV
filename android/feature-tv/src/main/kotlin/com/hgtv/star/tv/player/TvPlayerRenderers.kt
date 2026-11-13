@@ -94,6 +94,29 @@ private class SpeedSafeVideoRenderer(
     enableDecoderFallback,eventHandler,eventListener,maxDroppedFramesToNotify
 ) {
     private var lastRateCheckAt=0L
+    /**
+     * 厂商解码器一旦拒绝过 operating-rate，就不再反复尝试。
+     *
+     * `MediaCodec.setParameters` 抛出的 `CodecException` 会被 ExoPlayer 的渲染线程当成致命错误，
+     * 统一包装成 4003。这里只能关闭“强制重下发”这一层兼容，不能把真正的解码错误一起吞掉。
+     */
+    @Volatile private var rateReassertDisabled=false
+
+    /**
+     * operating-rate 是倍速兼容的**可选优化**，不是解码本身。
+     *
+     * 部分厂商在 `MediaCodec.setParameters` 里直接抛 `CodecException`；MediaCodecRenderer 会把它
+     * 冒泡成 4003，整台播放器随即停住。`setPlaybackSpeed` 在抛异常前已经写入渲染器速度字段，
+     * 因此这里吞掉这一类异常不会改变正常倍速；下一次解码失败仍会走 ExoPlayer 自己的错误链。
+     */
+    override fun setPlaybackSpeed(currentPlaybackSpeed: Float, targetPlaybackSpeed: Float) {
+        try {
+            super.setPlaybackSpeed(currentPlaybackSpeed,targetPlaybackSpeed)
+        } catch(error: IllegalStateException) {
+            if(!isCodecException(error)) throw error
+            disableRateReassert(error)
+        }
+    }
 
     override fun onStarted() {
         super.onStarted()
@@ -141,6 +164,7 @@ private class SpeedSafeVideoRenderer(
     }
 
     private fun reassertCodecOperatingRate() {
+        if(rateReassertDisabled) return
         val speed=playbackSpeed
         if(!speed.isFinite() || kotlin.math.abs(speed-1f)<0.001f) return
         // 先把速度轻微错开再恢复：MediaCodecRenderer 只在计算值变化时调用
@@ -149,4 +173,22 @@ private class SpeedSafeVideoRenderer(
         setPlaybackSpeed(nudge,1f)
         setPlaybackSpeed(speed,1f)
     }
+
+    private fun disableRateReassert(error: IllegalStateException) {
+        if(rateReassertDisabled) return
+        rateReassertDisabled=true
+        com.hgtv.star.shared.debug.Diagnostics.warn(
+            "playback_operating_rate",
+            "视频解码器拒绝 operating-rate，已停用重复下发；播放继续",
+            error,
+        )
+    }
+
+    private fun isCodecException(error: IllegalStateException): Boolean =
+        android.os.Build.VERSION.SDK_INT>=android.os.Build.VERSION_CODES.LOLLIPOP &&
+            isCodecExceptionV21(error)
+
+    @android.annotation.TargetApi(android.os.Build.VERSION_CODES.LOLLIPOP)
+    private fun isCodecExceptionV21(error: IllegalStateException): Boolean =
+        error is android.media.MediaCodec.CodecException
 }
