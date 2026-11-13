@@ -1,0 +1,171 @@
+// SPDX-License-Identifier: GPL-3.0-only
+package com.hgtv.star.tv
+
+import android.graphics.Color
+import android.view.View
+import android.widget.FrameLayout
+import com.hgtv.star.tv.TvStyle
+
+/**
+ * 切换过渡：黑场淡入（把上一部收住）/ 黑场淡出（把这一部放出来）/ 最长遮挡。
+ *
+ * 数值与 1.2.4.2 一致：120ms 淡入、260ms 淡出。再短读起来像闪一下，
+ * 再长会让连按上下键时按键反应被过渡拖住。
+ */
+private const val COVER_IN_MS=120L
+private const val COVER_OUT_MS=260L
+/**
+ * 连划时的淡出时长（只用于触屏，见 [revealRecommendCover]）。
+ *
+ * 电视保持 260ms 不动：遥控器一秒一下，过渡要读得出「换了一部」。
+ */
+private const val COVER_OUT_FAST_MS=120L
+private const val COVER_MAX_MS=2500L
+
+/**
+ * 换剧那一下把画面盖黑（需求：上下切换要有过渡，且不能看到拉伸帧）。
+ *
+ * 时机是**按键那一刻**，不是新源准备好之后：先把上一部淡出成黑，再换源、等新源第一帧，
+ * 由 [revealRecommendCover] 淡回来。这样整段过渡只有「暗 → 亮」，中间不会出现
+ * 「上一部的画面被新比例拉一下」那一帧。
+ *
+ * 行为与 1.2.4.2 一致：不抓帧、不翻页，就是一层纯黑淡入淡出。
+ *
+ * 这一层是普通 View（画在窗口层里），不是 SurfaceView，因此它的 alpha 动画在电视盒子
+ * 上也一定生效；盖住期间不参与焦点、不拦截按键（推荐页的按键本来都由 `dispatchKeyEvent` 消化）。
+ */
+fun TvMainActivity.showRecommendCover() {
+    if(screen!="recommend") return
+    val token=++recommendCoverToken
+    recommendCoverReveal?.let { main.removeCallbacks(it) }
+    recommendCoverReveal=null
+    val existing=recommendCover
+    if(existing!=null) {
+        // 已经盖着（连着换剧 / 上一部还在取详情）：保持黑，只取消上一次排好的淡出。
+        // 画面层可能在两次换剧之间被重建过（整棵树换掉），这时把这一层重新挂回去。
+        if(existing.parent==null) attachRecommendCoverView(existing)
+        existing.animate().cancel()
+        existing.alpha=1f
+    } else {
+        val cover=View(this).apply {
+            setBackgroundColor(Color.BLACK)
+            isFocusable=false; isClickable=false
+            importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+            alpha=0f
+        }
+        attachRecommendCoverView(cover)
+        recommendCover=cover
+        if(TvStyle.animate) cover.animate().alpha(1f).setDuration(COVER_IN_MS).start() else cover.alpha=1f
+    }
+    recommendCoverShownAt=android.os.SystemClock.elapsedRealtime()
+    // 兜底：新源一直没出帧（网络慢 / 这一部放不了）时也不能永远挡在黑屏后面。
+    val reveal=Runnable { if(token==recommendCoverToken) revealRecommendCover() }
+    recommendCoverReveal=reveal
+    main.postDelayed(reveal,COVER_MAX_MS)
+}
+
+/**
+ * 推荐页「有声音、没画面」的自愈：就地重建播放层。
+ *
+ * 触发点是两条看门狗（见 `PlaybackDiagnostics.kt` 的 `armPlaybackWatchdog` /
+ * `armFrameStallWatchdog`）：起播后迟迟不出帧，或播着播着不再出帧。这两条路**都不抛异常**，
+ * [playerFailure] 收不到，界面上也不会挂出错误页，用户看到的就是「黑屏、有声音、
+ * 快进快退都不好使」——拖动进度条同样要解码器吐帧，它已经不吐了，所以拖也没用。
+ *
+ * 修法与用户自己试出来的完全一致：进正片、换一集，画面就回来了。那一步的差别不是换了片源，
+ * 而是**整棵树重建**——换掉 `PlayerView` / Surface、放掉 MediaCodec 再重建
+ *（[playEpisode] 的 `recovering=true` 正是走这条路）。因此这里在原位做同一件事：
+ * 不跳剧、不写历史、不改 `screen`，从当前位置续播。
+ *
+ * 不无限重建：同一部片最多 [PICTURE_RECOVERY_LIMIT] 次、两次之间至少隔
+ * [PICTURE_RECOVERY_COOLDOWN_MS]。真的解不出画面的片源，重建几次都是黑的，
+ * 那种情形应当交给「换下一部」，而不是每 12 秒闪一下。
+ */
+private const val PICTURE_RECOVERY_LIMIT=2
+private const val PICTURE_RECOVERY_COOLDOWN_MS=20_000L
+
+fun TvMainActivity.recoverRecommendPicture(reason: String) {
+    // 只在推荐页动手：正式播放页有自己的错误界面与「重试 / 换清晰度」，不该被静默重建。
+    if(screen!="recommend" || !foreground || playError) return
+    val data=detail ?: return
+    if(episodeIndex !in data.episodes.indices) return
+    val p=player ?: return
+    val now=android.os.SystemClock.elapsedRealtime()
+    if(pictureRecoveries>=PICTURE_RECOVERY_LIMIT || (pictureRecoveryAt!=0L && now-pictureRecoveryAt<PICTURE_RECOVERY_COOLDOWN_MS)) return
+    pictureRecoveryAt=now; pictureRecoveries++
+    val position=currentPosition()
+    val autoplay=p.playWhenReady
+    android.util.Log.w("HGTV","Recommend picture lost ($reason) episode=${episodeIndex+1} at=${position}ms try=$pictureRecoveries")
+    // 下面这一下会把画面层整个换掉：先盖黑，别让旧画面按新比例被拉一下再消失。
+    showRecommendCover()
+    playEpisode(episodeIndex,position,autoplay,recovering=true)
+}
+
+/**
+ * 新一集的**第一帧已经上屏**：把黑场淡出，露出画面。
+ *
+ * 由播放监听器的 `onRenderedFirstFrame` 调用（见 MainActivityPlayer），因此「淡出」与
+ * 「真的能看见画面」是同一时刻，不会出现「黑场淡完还是黑的、再等半秒才出画面」。
+ *
+ * 行为与 1.2.4.2 一致：就是一次淡出，不做抓帧翻页。
+ */
+fun TvMainActivity.revealRecommendCover() {
+    val cover=recommendCover ?: return
+    recommendCoverReveal?.let { main.removeCallbacks(it) }
+    recommendCoverReveal=null
+    recommendCoverToken++
+    cover.animate().cancel()
+    if(!TvStyle.animate) { dismissRecommendCover(); return }
+    // 连划（触屏）时淡出收短：一秒划两三部的时候，每一次都在「换源 0.2~0.6s + 淡出 0.26s」
+    // 之后才重新看到画面，读起来就是「卡」。淡出只是收尾的柔和度，连划时短一点更跟手。
+    // 电视不受影响（`touchArmed` 恒为 false，淡出仍是 260ms，与 1.2.4.2 逐帧一致）。
+    val rapid=touchArmed && recommendLastSwitchAt!=0L &&
+        android.os.SystemClock.elapsedRealtime()-recommendLastSwitchAt<900L
+    val duration=if(rapid) COVER_OUT_FAST_MS else COVER_OUT_MS
+    cover.animate().alpha(0f).setDuration(duration).withEndAction {
+        if(recommendCover===cover) dismissRecommendCover()
+    }.start()
+}
+
+/**
+ * 把过渡黑场挂到当前这棵树里：插在底部信息浮层**下面**。
+ *
+ * 因此过渡期间剧名仍然看得见，只是画面在黑场里换；浮层自身不受影响。
+ */
+private fun TvMainActivity.attachRecommendCoverView(cover: View) {
+    (cover.parent as? android.view.ViewGroup)?.removeView(cover)
+    // 黑场挂在 root 上（**不进画面之外那一层**）：那一层会跟着画面转 90°，
+    // 黑场进去也会跟着转，转过去之后四个角会露出没盖住的画面。
+    // 它只是一整屏纯黑，挂在 root 上盖住全屏就够了。
+    //
+    // 插在画面那一层**之前**：画面被黑场盖住，而压在画面上的剧名 / 进度 / 控制条
+    // 仍然看得见（过渡期间用户还在看「换到第几部了」）。
+    val layer=overlayLayer
+    val index=if(layer!=null && layer.parent===root) root.indexOfChild(layer) else root.childCount
+    root.addView(cover,index.coerceIn(0,root.childCount),FrameLayout.LayoutParams(-1,-1))
+}
+
+/**
+ * 画面层被重建之后（`playEpisode` 整棵树换掉）把黑场补回来。
+ *
+ * 换剧走的是「复用播放器」那条路，通常不会重建；但换清晰度 / 换解码方式 / 出错重试会。
+ * 少了这一步，过渡中途重建就会露出正在被拉伸的旧画面。
+ */
+fun TvMainActivity.reattachRecommendCover() {
+    val cover=recommendCover ?: return
+    if(cover.parent!=null) return
+    attachRecommendCoverView(cover)
+    cover.animate().cancel(); cover.alpha=1f
+}
+
+/** 立刻收掉过渡黑场（离开推荐页、切到整屏提示、重建画面时用）。 */
+fun TvMainActivity.dismissRecommendCover() {
+    recommendCoverToken++
+    recommendCoverReveal?.let { main.removeCallbacks(it) }
+    recommendCoverReveal=null
+    recommendCover?.let { cover ->
+        cover.animate().cancel()
+        (cover.parent as? android.view.ViewGroup)?.removeView(cover)
+    }
+    recommendCover=null
+}

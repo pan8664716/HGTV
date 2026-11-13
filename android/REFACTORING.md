@@ -2712,3 +2712,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 147：RecommendPage 切换黑场迁移
+
+状态：已完成。
+
+- 将切换黑场、画面自愈和黑场重建移到 `RecommendCover.kt`。
+- 保留连划短淡出、2.5 秒兜底和两次重建上限。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
