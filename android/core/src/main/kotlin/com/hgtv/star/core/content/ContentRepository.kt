@@ -809,9 +809,13 @@ class ContentRepository(
         "line_words_num" to "0","pad_column_cover" to "0","only_large_card" to "false",
         "biz_config_ctx_infos" to "","report_info" to "",
     )
+    internal val searchFeedContextValue get()=SEARCH_FEED_CONTEXT
     private val SEARCH_VERSION_CODE="74332"
     private val SEARCH_VERSION_NAME="7.4.3.32"
+    internal val searchVersionCodeValue get()=SEARCH_VERSION_CODE
+    internal val searchVersionNameValue get()=SEARCH_VERSION_NAME
     private val SEARCH_PATH="reading/bookapi/search/tab/v"
+    internal val searchPathValue get()=SEARCH_PATH
     internal val CATEGORY_RETRY_DELAYS=longArrayOf(100L,180L,300L,450L,650L,900L,1200L)
     /**
      * 分类 / 榜单接口用的客户端版本，与改动前手拼 URL 里的那组一致（`73532` / `7.3.5.32`）。
@@ -1063,6 +1067,7 @@ class ContentRepository(
         "compliance_status" to "0","need_personal_recommend" to "1","player_so_load" to "1",
         "host_abi" to "arm64-v8a"
     )
+    internal val protocolValuesValue get()=PROTOCOL_VALUES
     /**
      * 写接口（追剧 / 进度 / 历史）用的设备参数。
      *
@@ -1071,38 +1076,24 @@ class ContentRepository(
      * * 叠加导入凭据时带来的**真机档案**（`cdid` / `klink_egdi` / `rom_version` 这些
      *   内置档案里根本没有，而官方请求每条都带）。
      */
-    private fun writeValues(): LinkedHashMap<String,String> = accountValues("73932","7.3.9.32")
+    private fun writeValues(): LinkedHashMap<String,String> = writeValuesImpl()
     /** 搜索 / 弹幕这类 App 接口共用的设备参数：与播放器版本对齐，避免平台按旧版本拒绝。 */
-    internal fun appValues(): LinkedHashMap<String,String> = deviceValues("72232","7.2.2.32")
+    internal fun appValues(): LinkedHashMap<String,String> = appValuesImpl()
     /** 搜索接口专用：官方抓包里的 7.4.3.32 设备版本与综合搜索上下文。 */
-    internal fun searchValues(): LinkedHashMap<String,String> {
-        val values=deviceValues(SEARCH_VERSION_CODE,SEARCH_VERSION_NAME)
-        values.putAll(SEARCH_FEED_CONTEXT)
-        return values
-    }
+    internal fun searchValues(): LinkedHashMap<String,String> = searchValuesImpl()
     /** 综合搜索与用户 tab 共用这一份搜索签名。 */
     internal fun searchRequest(values: LinkedHashMap<String,String>): Signer.Request =
-        signer.sign("https://${accountHost()}/$SEARCH_PATH",values,method="GET",deviceOverride=values)
+        searchRequestImpl(values)
     /** 账号页读写接口使用的当前主身份参数。 */
-    private fun accountAppValues(): LinkedHashMap<String,String> = accountValues("72232","7.2.2.32")
+    private fun accountAppValues(): LinkedHashMap<String,String> = accountAppValuesImpl()
     /**
      * 设备参数使用 [primaryIdentity] 的单一快照：未登录是主设备，登录后是账号设备。
      * [PROTOCOL_VALUES] 与客户端版本只覆盖协议常量，不改变身份来源。
      */
-    internal fun deviceValues(versionCode: String, versionName: String): LinkedHashMap<String,String> {
-        val values=LinkedHashMap(primaryProfile())
-        values.putAll(PROTOCOL_VALUES)
-        for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) values[key]=versionCode
-        values["version_name"]=versionName
-        return values
-    }
-    private fun accountValues(versionCode: String, versionName: String): LinkedHashMap<String,String> {
-        val values=LinkedHashMap(primaryProfile())
-        values.putAll(PROTOCOL_VALUES)
-        for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) values[key]=versionCode
-        values["version_name"]=versionName
-        return values
-    }
+    internal fun deviceValues(versionCode: String, versionName: String): LinkedHashMap<String,String> =
+        deviceValuesImpl(versionCode, versionName)
+    private fun accountValues(versionCode: String, versionName: String): LinkedHashMap<String,String> =
+        accountValuesImpl(versionCode, versionName)
     /** 普通业务请求也使用当前唯一的主身份；登录后即账号设备。 */
     internal fun Signer.Request.withSession(): Signer.Request {
         val identity=primaryIdentity()
@@ -1164,13 +1155,7 @@ class ContentRepository(
     internal fun primaryCookieHeader(): String = primaryIdentity().cookie
 
     internal fun recommendationValues(identity: PrimaryIdentity): LinkedHashMap<String,String> =
-        LinkedHashMap(identity.profile).apply {
-            putAll(PROTOCOL_VALUES)
-            for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
-                this[key]=CATEGORY_VERSION_CODE
-            }
-            this["version_name"]=CATEGORY_VERSION_NAME
-        }
+        recommendationValuesImpl(identity)
 
     /** 账号页请求显式要求当前主身份必须是登录态。 */
     private fun Signer.Request.withAccountSession(): Signer.Request {

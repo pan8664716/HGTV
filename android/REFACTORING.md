@@ -1970,3 +1970,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 86：ContentRepository 请求参数构造迁移
+
+状态：已完成。
+
+- 将写接口、App、搜索、账号和推荐请求的参数 / 签名构造移到 `ContentValues.kt`。
+- 保留版本常量、搜索上下文、主身份快照和签名路径。
+- `ContentRepository.kt` 从 1919 行降到 1899 行；`ContentValues.kt` 为 64 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
