@@ -300,8 +300,14 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private var feedUnderlay = false
     internal val playerFeedUnderlay get()=feedUnderlay
+    internal var playerFeedUnderlaySlot: Boolean
+        get()=feedUnderlay
+        set(value) { feedUnderlay=value }
     /** 下层那一块 Surface 当前是不是**已经在出本页的画面**（转横屏后会被拿走）。 */
     private var underlayBound = false
+    internal var playerUnderlayBound: Boolean
+        get()=underlayBound
+        set(value) { underlayBound=value }
     /**
      * 下一次 [attachUnderlay] 是否需要强制重挂。
      *
@@ -309,8 +315,14 @@ class PhonePlayerActivity : PhoneActivity() {
      * 先清一次屏；只有从横屏退回来、或本页自己抢过输出之后才需要。
      */
     private var underlayNeedsForce = false
+    internal var playerUnderlayNeedsForce: Boolean
+        get()=underlayNeedsForce
+        set(value) { underlayNeedsForce=value }
     /** 本页是否收着下层推荐页的控制层（见 `PhoneSession.hideFeedChrome` 的计数）。 */
     private var feedChromeHeld = false
+    internal var playerFeedChromeHeld: Boolean
+        get()=feedChromeHeld
+        set(value) { feedChromeHeld=value }
     private var chromeVisible = true
     internal val playerChromeVisible get()=chromeVisible
     private var userSpeed = 1f
@@ -1245,53 +1257,6 @@ class PhonePlayerActivity : PhoneActivity() {
     private fun tintSeekBar(bar: SeekBar) = PhonePlayerViewSupport.tintSeekBar(bar)
 
     // ---------------------------------------------------------------- 下层画面
-
-    /**
-     * 把播放器的输出交回下层推荐页的 Surface。
-     *
-     * 成功返回 true。失败说明推荐页那一块已经不在了（被系统回收 / 换了体裁），
-     * 调用方必须退回「本页自己出画面」，否则就是一块透明。
-     */
-    private fun attachUnderlay(): Boolean {
-        if (!feedUnderlay) return false
-        // 第一次进场时那块 Surface 本来就在出画面，不需要重挂；从横屏退回来时
-        // 输出已经被横屏那一层拿走，必须强制重挂。
-        val force = underlayNeedsForce
-        val ok = runCatching { PhoneSession.attachFeedSurface(force) }.getOrDefault(false)
-        if (ok) {
-            underlayNeedsForce = false
-            underlayBound = true
-            page.setVideoSurfaceVisible(false)
-            root.setBackgroundColor(Color.TRANSPARENT)
-            PhoneSession.underlayActive = true
-            return true
-        }
-        underlayBound = false
-        android.util.Log.i("HGTV-PHONE", "借下层失败 force=$force 入口=${PhoneSession.feedSurface != null}")
-        return false
-    }
-
-    /**
-     * 放弃借下层，改由本页自己出画面。
-     *
-     * 发生在两类场景：下层推荐页被系统收走；或者会话里的地址过期、需要重新取源
-     * （那时下层画面已经不是这一集了，继续借会放错内容）。
-     */
-    private fun dropUnderlay() {
-        if (!feedUnderlay) return
-        android.util.Log.i("HGTV-PHONE", "放弃借下层，改由本页出画面")
-        feedUnderlay = false
-        feedVideoDy = 0f
-        PhoneSession.setFeedVideoOffset(0f)
-        underlayBound = false
-        PhoneSession.underlayActive = false
-        root.setBackgroundColor(Color.BLACK)
-        page.setVideoSurfaceVisible(true)
-        if (feedChromeHeld) {
-            feedChromeHeld = false
-            PhoneSession.restoreFeedChrome()
-        }
-    }
 
     // ---------------------------------------------------------------- 形态切换
 

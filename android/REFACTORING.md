@@ -2267,3 +2267,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   `PhoneDetailActivity.kt` 1009、`PlaybackDiagnostics.kt` 981、`TouchController.kt` 979、
   `SeriesGrid.kt` 967、`PhoneVideoPage.kt` 888、`TvDialog.kt` 840。
 - DoD 未达到；下一轮优先 `PhonePlayerActivity.kt` 与 `ContentRepository.kt`。
+
+## 新一轮续跑（2026-11-13，批次 109 起）
+
+### 批次 109：PhonePlayer 下层画面挂载迁移
+
+状态：已完成。
+
+- 将借用推荐页 Surface 的挂载与放弃逻辑移到 `PhonePlayerUnderlay.kt`。
+- 保留强制重挂、透明底板、视频层显隐、控制层归还和失败回退。
+- `PhonePlayerActivity.kt` 从 3073 行降到 3038 行；`PhonePlayerUnderlay.kt` 为 54 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
