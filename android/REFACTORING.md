@@ -2782,3 +2782,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 154：PhonePlayer 共用界面迁移
+
+状态：已完成。
+
+- 将中心提示、缓冲、下一季提示、播放信息行和底部面板移到 `PhonePlayerCommonUi.kt`。
+- 保留面板收起、控制层续期和信息行显隐。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

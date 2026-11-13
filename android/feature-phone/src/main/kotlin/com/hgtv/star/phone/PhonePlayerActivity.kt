@@ -290,6 +290,9 @@ class PhonePlayerActivity : PhoneActivity() {
 
     private lateinit var sheet: PhoneSheet
     internal val playerSheet get()=sheet
+    internal var playerSheetSlot: PhoneSheet
+        get()=sheet
+        set(value) { sheet=value }
 
     /**
      * 播放信息条（设置 → 播放显示）：标题 / 集数 / 时间 / 倍速，四项各自开关。
@@ -299,13 +302,22 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private lateinit var infoRow: LinearLayout
     internal val playerInfoRow get()=infoRow
+    internal var playerInfoRowSlot: LinearLayout
+        get()=infoRow
+        set(value) { infoRow=value }
     internal val playerInfoRowInitialized get()=::infoRow.isInitialized
     /** 「播放显示」左半：剧集标题 + 当前集数（靠左、超长省略）。 */
     private lateinit var infoLeft: TextView
     internal val playerInfoLeft get()=infoLeft
+    internal var playerInfoLeftSlot: TextView
+        get()=infoLeft
+        set(value) { infoLeft=value }
     /** 「播放显示」右半：网速 + 当前时间（贴右）。 */
     private lateinit var infoRight: TextView
     internal val playerInfoRight get()=infoRight
+    internal var playerInfoRightSlot: TextView
+        get()=infoRight
+        set(value) { infoRight=value }
     /** 横屏那一份「播放显示」：与竖屏同内容，常驻在屏幕顶部。 */
     private lateinit var landInfoRow: LinearLayout
     internal val playerLandInfoRow get()=landInfoRow
@@ -798,104 +810,7 @@ class PhonePlayerActivity : PhoneActivity() {
         PhoneUiScale.withOrientation(this, landscape = false) { buildPortrait() }
         PhoneUiScale.withOrientation(this, landscape = true) { buildLandscape() }
 
-        // 中心播放 / 暂停与上方提示挂在 root 上：竖屏、横屏共用同一份，
-        // 切换形态时不用各建一套，也不会出现「转屏后图标留在旧的层里」。
-        centerGlyph = PhoneGlyph(this, PhoneGlyph.Kind.PAUSE).apply { tint = Color.WHITE }
-        centerBox = FrameLayout(this).apply {
-            // 只留图标本身（用户要求：调小、不要外面那圈全圆底板）。
-            // 34 → 24dp；容器 76 → 48dp 仅用于命中/定位，本身透明。
-            addView(centerGlyph, FrameLayout.LayoutParams(dp(24), dp(24), Gravity.CENTER))
-            visibility = View.GONE
-        }
-        root.addView(centerBox, FrameLayout.LayoutParams(dp(48), dp(48), Gravity.CENTER))
-
-        bufferingDots = LoadingDotsView(this)
-        bufferingBox = FrameLayout(this).apply {
-            addView(bufferingDots, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-            visibility = View.GONE
-        }
-        root.addView(bufferingBox, FrameLayout.LayoutParams(-2, -2, Gravity.CENTER))
-
-        hint = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            phoneSize(13)
-            gravity = Gravity.CENTER
-            setPadding(dp(14), dp(7), dp(14), dp(7))
-            background = roundedBackground(0x88000000.toInt(), dp(14).toFloat())
-            visibility = View.GONE
-        }
-        root.addView(hint, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.CENTER_HORIZONTAL
-        ).apply { topMargin = dp(24) })
-
-        nextSeasonState.nextSeasonNotice = TextView(this).apply {
-            setTextColor(PhoneStyle.playerText)
-            phoneSize(13)
-            gravity = Gravity.CENTER_VERTICAL or Gravity.START
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(16), dp(10), dp(16), dp(10))
-            background = roundedBackground(0xCC000000.toInt(), dp(10).toFloat())
-            visibility = View.GONE
-        }
-        root.addView(nextSeasonState.nextSeasonNotice, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.BOTTOM or Gravity.START
-        ).apply {
-            leftMargin = dp(16)
-            rightMargin = dp(24)
-            bottomMargin = dp(24)
-        })
-
-        // 「播放显示」那一行拆成左右两半：左边是剧名 + 集数（靠左、过长省略），
-        // 右边是网速 + 当前时间（贴右）。早先四项拼成一条左对齐的读数，
-        // 开了时间和网速之后整条往右挤，剧名反而被省略号吃掉。
-        infoLeft = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            phoneSize(14)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(4), 0, 0, 0)
-            // 这一行直接压在画面上（没有底板），亮画面里白字会糊：补一层细阴影。
-            setShadowLayer(2f, 0f, 1f, 0x99000000.toInt())
-        }
-        infoRight = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            phoneSize(13)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(10), 0, 0, 0)
-            setShadowLayer(2f, 0f, 1f, 0x99000000.toInt())
-        }
-        infoRow = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            visibility = View.GONE
-            addView(infoLeft, LinearLayout.LayoutParams(
-                0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
-            ))
-            addView(infoRight, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-        }
-        portraitTop.addView(infoRow, LinearLayout.LayoutParams(
-            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
-        ))
-
-        sheet = PhoneSheet(root).apply {
-            // **不再给系统导航条留白**（用户规范）：面板贴到屏幕最底边。
-            // 点空白处 / 点「关闭」= 「让开，我要看画面」：面板与控制层一起收掉
-            // （与电视端菜单打开时收起 HUD、关闭后画面干净同一条规则）。
-            // 换集、换清晰度那种程序性收起不走这里，标题与进度条仍然留着。
-            onUserDismiss = { setChromeVisible(false) }
-            onDismiss = {
-                relatedState.relatedSheetOpen = false
-                // 关掉相关剧集 / 设置后，从这一刻重新计时；相关剧集作为浏览层
-                // 本身不会被自动收起，但“看完这一层”之后仍应回到自动收起。
-                if (chromeVisible && ::root.isInitialized) scheduleChromeHide()
-            }
-        }
+        buildPlayerCommonUi()
 
         setContentView(root)
         applyMode()
