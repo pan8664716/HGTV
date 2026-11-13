@@ -2316,3 +2316,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 113：PhonePlayer 定时关闭迁移
+
+状态：已完成。
+
+- 将定时档位应用与到点停止移到 `PhonePlayerSleep.kt`。
+- 保留按集拦截、进度落盘、提示、媒体会话与常亮状态同步。
+- `PhonePlayerActivity.kt` 从 2811 行降到 2774 行；`PhonePlayerSleep.kt` 为 48 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
