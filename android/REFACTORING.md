@@ -2464,3 +2464,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 126：PhonePlayer 换集界面绑定迁移
+
+状态：已完成。
+
+- 将换集界面绑定移到 `PhonePlayerEpisodeBinding.kt`。
+- 保留标题、画面模式、缩放、播放信息、弹幕和画面尺寸刷新顺序。
+- `PhonePlayerActivity.kt` 从 2312 行降到 2284 行；
+  `PhonePlayerEpisodeBinding.kt` 为 36 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
