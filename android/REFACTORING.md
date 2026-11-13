@@ -4159,3 +4159,12 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；仅目录变化。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`feature-tv/library`。
+
+### 布局批次 28：feature-tv/library
+
+状态：已完成。
+
+- `tv/LanLibrarySync.kt` → `tv/library/LanLibrarySync.kt`
+- 外部路径引用：无；仅目录变化。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：阶段 C 全量收尾。
