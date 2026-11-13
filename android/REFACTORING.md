@@ -3170,3 +3170,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 188：ContentRepository 设备门面迁移
+
+状态：已完成。
+
+- 将设备注册、Cookie 快照恢复和 TNC 刷新门面移到
+  `ContentDeviceFacade.kt`。
+- 补齐共享运行时、设备自愈、身份绑定、备用设备池和启动入口的导入。
+- `ContentRepository.kt` 从 1298 行降到 1266 行；
+  `ContentDeviceFacade.kt` 为 58 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

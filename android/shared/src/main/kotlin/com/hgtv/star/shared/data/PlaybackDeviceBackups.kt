@@ -5,6 +5,7 @@ import android.content.Context
 import android.util.Log
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.PlaybackBackupDevice
+import com.hgtv.star.core.registerAnonymousDevice
 import com.hgtv.star.shared.debug.DebugLog
 import com.hgtv.star.shared.debug.StartupTrace
 import org.json.JSONArray

@@ -2,6 +2,9 @@
 package com.hgtv.star.shared.data
 
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.core.primaryCookiesSnapshot
+import com.hgtv.star.core.refreshTncAsync
+import com.hgtv.star.core.restoreDeviceCookies
 import com.hgtv.star.core.session.SessionBridge
 
 /**

@@ -3,6 +3,7 @@ package com.hgtv.star
 
 import android.content.Context
 import android.os.Bundle
+import com.hgtv.star.core.refreshTncAsync
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.IdentityBinder
 import com.hgtv.star.shared.data.PlaybackDeviceBackups

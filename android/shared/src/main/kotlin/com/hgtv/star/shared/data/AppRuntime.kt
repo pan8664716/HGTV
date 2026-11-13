@@ -3,6 +3,7 @@ package com.hgtv.star.shared.data
 
 import android.content.Context
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.core.refreshTncAsync
 import com.hgtv.star.shared.compat.Cancellable
 import com.hgtv.star.shared.compat.NetworkWatcher
 import com.hgtv.star.shared.debug.Diagnostics

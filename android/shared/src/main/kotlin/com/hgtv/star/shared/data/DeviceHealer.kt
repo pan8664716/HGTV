@@ -6,6 +6,7 @@ import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.core.restoreDeviceCookies
 import com.hgtv.star.shared.debug.DebugLog
 import com.hgtv.star.shared.debug.Diagnostics
 import java.util.concurrent.Executors
