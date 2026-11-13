@@ -60,6 +60,10 @@ class SessionMirror(private val app: Context) {
         const val VERSION=1
         /** 自建目录名（隐藏目录，卸载不删）。 */
         const val LEGACY_DIR=".hgtv"
+        val LEGACY_ACCOUNT_KEYS=listOf(
+            "account-cookie","account-device","account-expires","session-token",
+            "ts-sign","first-beat","last-beat-at",
+        )
     }
     private val lock=Any()
     /** 镜像内容：键与 `sessionPrefs` 的键**同名**，读回来直接塞回去，不再做一层映射。 */
@@ -142,13 +146,16 @@ class SessionMirror(private val app: Context) {
         // 先快速判一次；真正的 I/O 在锁外做，主线程调 [string] 不会被它挡住。
         if(!synchronized(lock) { !discarded && !loaded }) return
         val text=readDisk()
+        val legacyText=readLegacyMirrorText()
         synchronized(lock) {
             if(discarded || loaded) return
             // 即使一个文件都没找到也算「读过」：否则 [put] 会一直排进 [pending]、
             // 新设备第一次启动就永远不落盘，卸载重装反而恢复不了。
             loaded=true
             if(!ignore) text?.let { adopt(it) }
+            val mergedLegacy=if(ignore) false else mergeLegacyAccountLocked(legacyText)
             applyPendingLocked()
+            if(mergedLegacy) queueCurrentSnapshotLocked()
         }
         // 三处冗余：某一份缺失（例如这次才拿到存储权限、或上次写入时那一处不可写），
         // 或者那一份还是旧快照（上次写到它时失败 / 被系统回滚）时，把内存里这份补写过去。
@@ -166,11 +173,14 @@ class SessionMirror(private val app: Context) {
     fun reload() {
         if(synchronized(lock) { discarded }) return
         val text=readDisk()
+        val legacyText=readLegacyMirrorText()
         synchronized(lock) {
             if(discarded) return
             text?.let { adopt(it) }
+            val mergedLegacy=mergeLegacyAccountLocked(legacyText)
             loaded=true
             applyPendingLocked()
+            if(mergedLegacy) queueCurrentSnapshotLocked()
         }
         // 同上：补齐缺失 / 过期的那几份（权限刚拿到时 `.hgtv` 才第一次写得进去）。
         repairCopies()
@@ -219,6 +229,49 @@ class SessionMirror(private val app: Context) {
             }
         }
         return best
+    }
+
+    /**
+     * 升级安装时，新版本仍是旧 `.hgtv` 的同一个 UID，能直接读到旧账号会话。
+     *
+     * 必须在用户卸载前完成迁移；卸载后 FUSE 会把 0600 文件锁在旧 UID，系统扫描器也读不到。
+     */
+    private fun readLegacyMirrorText(): String? = runCatching {
+        File(Environment.getExternalStorageDirectory(),LEGACY_DIR)
+            .resolve(FILE_NAME)
+            .takeIf { it.isFile }
+            ?.readText()
+    }.getOrNull()
+
+    /**
+     * 旧 `.hgtv` 可能比沙盒镜像旧，整份按 `saved_at` 选最新会把里面的账号字段漏掉。
+     * 只补当前镜像缺失的登录键，不覆盖较新的设备身份。
+     */
+    private fun mergeLegacyAccountLocked(text: String?): Boolean {
+        if(text.isNullOrBlank()) return false
+        val values=runCatching { JSONObject(text).optJSONObject("values") }.getOrNull() ?: return false
+        var changed=false
+        LEGACY_ACCOUNT_KEYS.forEach { key ->
+            val incoming=values.opt(key) ?: return@forEach
+            val current=state.opt(key)
+            val missing=when(incoming) {
+                is String -> incoming.isNotBlank() && (current !is String || current.isBlank())
+                is Number -> incoming.toLong()!=0L && (current !is Number || current.toLong()==0L)
+                else -> current==null
+            }
+            if(missing) {
+                state.put(key,incoming)
+                changed=true
+            }
+        }
+        if(changed) Log.i("HGTV","Merged legacy .hgtv account mirror into the public copy")
+        return changed
+    }
+
+    private fun queueCurrentSnapshotLocked() {
+        val text=encodeLocked()
+        runCatching { writes.submit(mapOf("mirror" to { text })) }
+            .onFailure { Log.w("HGTV","Session mirror queue closed after legacy merge",it) }
     }
 
     /**
