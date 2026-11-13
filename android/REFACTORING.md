@@ -2920,3 +2920,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 167：TV 整行开关迁移
+
+状态：已完成。
+
+- 将设置页整行开关移到 `TvSwitchRow.kt`。
+- 保留轨道配色、滑块尺寸和项名绘制。
+- `TvComponents.kt` 从 962 行降到 902 行；`TvSwitchRow.kt` 为 67 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
