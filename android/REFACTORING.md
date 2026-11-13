@@ -3208,3 +3208,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 191：Library 同步会话迁移
+
+状态：已完成。
+
+- 将局域网全量会话导出与导入移到 `LibrarySyncFacade.kt`。
+- 保留白名单字段和覆盖语义。
+- `Library.kt` 从 1367 行降到 1354 行；`LibrarySyncFacade.kt` 为 20 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

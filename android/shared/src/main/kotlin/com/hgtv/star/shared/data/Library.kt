@@ -545,19 +545,6 @@ class Library(context: Context) {
             // 后者在读盘之前只会被当成「本机还没有」，盘上那份不会被抹掉。
             if(value.isBlank()) mirror.remove("x-tt-token") else mirror.put("x-tt-token",value.trim())
         }
-    /** 导出局域网全量同步允许迁移的设备身份与登录会话。 */
-    fun exportSyncSession(): Map<String,String> {
-        return exportSyncSessionImpl()
-    }
-    /**
-     * 用另一台设备的完整会话覆盖本机白名单字段。
-     *
-     * 同步语义是「让两台设备尽量一致」，因此来源没有的登录项也要在本机清掉；
-     * 这是确认框明确提示的覆盖操作，不沿用镜像恢复那种「只补缺失项」的策略。
-     */
-    fun importSyncSession(values: Map<String,String>, selectedKeys: Set<String> = LibrarySyncSessionKeys.ALL) {
-        importSyncSessionImpl(values, selectedKeys)
-    }
     /**
      * 把外部镜像里**本机缺的那几项**补回 [sessionPrefs]。
      *
