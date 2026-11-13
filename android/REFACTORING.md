@@ -2942,3 +2942,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 169：TV 播放进度条迁移
+
+状态：已完成。
+
+- 将播放进度条移到 `SeekIndicator.kt`。
+- 保留触摸拖动、缓存段、已播段和窄屏边界处理。
+- `TvComponents.kt` 从 826 行降到 743 行；`SeekIndicator.kt` 为 93 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
