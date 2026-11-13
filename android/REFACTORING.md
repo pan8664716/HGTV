@@ -3900,3 +3900,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；仅目录变化。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`core/label`。
+
+### 布局批次 10：core/label
+
+状态：已完成。
+
+- `core/CardMenu.kt` → `core/label/CardMenu.kt`
+- `core/EpisodeLabel.kt` → `core/label/EpisodeLabel.kt`
+- `core/HeatLabel.kt` → `core/label/HeatLabel.kt`
+- `core/LabelStyle.kt` → `core/label/LabelStyle.kt`
+- `core/PosterCardContent.kt` → `core/label/PosterCardContent.kt`
+- 外部路径引用：无；包名、文件名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+- 下一批：`core/common`。
