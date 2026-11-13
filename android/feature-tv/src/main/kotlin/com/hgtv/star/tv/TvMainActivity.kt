@@ -1804,10 +1804,7 @@ class TvMainActivity: Activity() {
         // 4.4 上系统不会回调这里，所以实际没崩；但同一个类里只要还有一条这样的指令，
         // 校验期就少一次「这方法能不能调」的判断余量——按版本判掉，彻底不留这条指令。
         if(android.os.Build.VERSION.SDK_INT>=23) super.onRequestPermissionsResult(requestCode,permissions,results)
-        // 清除本地数据：拿到权限（或被拒绝）都继续清，只是 `.hgtv` 那一份删不删得掉的区别。
-        if(requestCode==REQUEST_RESET_STORAGE) { performLocalReset(); return }
-        if(requestCode!=REQUEST_MIRROR_STORAGE) return
-        onMirrorStorageResult(results.isNotEmpty() && results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)
+        handleRequestPermissionsResultImpl(requestCode,results)
     }
 
     // ---- 导航与返回 ----

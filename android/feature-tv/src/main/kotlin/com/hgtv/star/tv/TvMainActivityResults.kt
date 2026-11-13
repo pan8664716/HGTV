@@ -34,3 +34,13 @@ internal fun TvMainActivity.handleActivityResultImpl(
     if(requestCode!=REQUEST_ACCOUNT_FILE || resultCode!=Activity.RESULT_OK) return
     pendingAccountUri=data?.data
 }
+
+internal fun TvMainActivity.handleRequestPermissionsResultImpl(
+    requestCode: Int,
+    results: IntArray,
+) {
+    // 清除本地数据：拿到权限（或被拒绝）都继续清，只是 `.hgtv` 那一份删不删得掉的区别。
+    if(requestCode==REQUEST_RESET_STORAGE) { performLocalReset(); return }
+    if(requestCode!=REQUEST_MIRROR_STORAGE) return
+    onMirrorStorageResult(results.isNotEmpty() && results[0]==android.content.pm.PackageManager.PERMISSION_GRANTED)
+}

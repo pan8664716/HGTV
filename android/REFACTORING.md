@@ -3318,3 +3318,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 200：TvMain 权限结果迁移
+
+状态：已完成。
+
+- 将权限回调后的本地清理与镜像恢复分流移到
+  `TvMainActivityResults.kt`。
+- 保留 API 23 以下的 super 调用规避。
+- `TvMainActivity.kt` 从 1911 行降到 1908 行；
+  `TvMainActivityResults.kt` 为 46 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
