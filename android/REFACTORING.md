@@ -2116,3 +2116,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 98：PhoneFeed 初始化装配迁移
+
+状态：已完成。
+
+- 将列表、吸附、空闲起播、书库等待和冷启动快照装配移到 `PhoneFeedInitializer.kt`。
+- 保留嵌套滚动关闭、预加载阈值、首屏快照与控制层计时初始化顺序。
+- `PhoneFeedView.kt` 从 912 行降到 872 行；`PhoneFeedInitializer.kt` 为 71 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
