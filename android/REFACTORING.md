@@ -2038,3 +2038,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   `PhoneSettingsActivity.kt` 1775、`PhoneFeedView.kt` 1337，以及其余 17 个 >800 行文件。
 - 未达 40 批上限；下一轮从批次 91 继续，优先 `PhoneFeedView` 的接管 / 地址刷新，
   再处理 `PhoneSettingsActivity` 的 action 分派与横向渲染。
+
+### 批次 91：PhoneFeed 返回续接迁移
+
+状态：已完成。
+
+- 将播放页 / 后台返回时的续接入口移到 `PhoneFeedResume.kt`；原私有入口保留。
+- 保留播放页前台判据、会话归属、下标对齐、原地重开失败回退和控制层延迟恢复顺序。
+- `PhoneFeedView.kt` 从 1337 行降到 1267 行；`PhoneFeedResume.kt` 为 85 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
