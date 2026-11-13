@@ -165,6 +165,12 @@ class PhonePlayerActivity : PhoneActivity() {
 
     private lateinit var landscape: FrameLayout
     private lateinit var landscapeVideo: PlayerView
+    internal var playerLandscapeContainer: FrameLayout
+        get()=landscape
+        set(value) { landscape=value }
+    internal var playerLandscapeVideoSlot: PlayerView
+        get()=landscapeVideo
+        set(value) { landscapeVideo=value }
     internal val playerLandscape get()=landscape
     internal val playerLandscapeVideo get()=landscapeVideo
     internal val playerLandscapeVideoInitialized get()=::landscapeVideo.isInitialized
@@ -177,6 +183,9 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private lateinit var landDanmaku: com.hgtv.star.shared.media.DanmakuView
     internal val playerLandDanmaku get()=landDanmaku
+    internal var playerLandDanmakuSlot: com.hgtv.star.shared.media.DanmakuView
+        get()=landDanmaku
+        set(value) { landDanmaku=value }
     internal val playerLandDanmakuInitialized get()=::landDanmaku.isInitialized
     private lateinit var landTop: LinearLayout
     private lateinit var landBottom: LinearLayout
@@ -390,6 +399,9 @@ class PhonePlayerActivity : PhoneActivity() {
         get()=pendingFullscreen
         set(value) { pendingFullscreen=value }
     private var dragging = false
+    internal var playerDragging: Boolean
+        get()=dragging
+        set(value) { dragging=value }
     internal var progressDragging: Boolean
         get()=dragging
         set(value) { dragging=value }
@@ -847,90 +859,7 @@ class PhonePlayerActivity : PhoneActivity() {
     private fun buildLandscape() {
         // 相邻集那一页（横屏版）：黑底 + 左上角「标题 第N集」，与竖屏的 ghost 页同一个角色。
         // 加在 landscape 之前，因此它永远在下面，整页滑开才露出来。
-        landscapeGhost = FrameLayout(this).apply {
-            setBackgroundColor(Color.BLACK)
-            visibility = View.GONE
-        }
-        landscapeGhostTitle = TextView(this).apply {
-            setTextColor(Color.WHITE)
-            phoneSize(15)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-        }
-        landscapeGhost.addView(landscapeGhostTitle, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.START
-        ).apply {
-            topMargin = dp(14)
-            leftMargin = dp(16)
-        })
-        root.addView(landscapeGhost, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
-
-        landscape = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-
-        landscapeVideo = PlayerView(this).apply {
-            useController = false
-            resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-            setShutterBackgroundColor(Color.BLACK)
-            setKeepContentOnPlayerReset(true)
-        }
-        landscape.addView(landscapeVideo, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
-
-        // 弹幕压在画面之上、手势层之下（与竖屏 `PhoneVideoPage` 里的叠放顺序一致）。
-        landDanmaku = com.hgtv.star.shared.media.DanmakuView(this).apply {
-            mode = DanmakuMode.DEFAULT
-            minTextSizeDp = 4f
-            // 与竖屏那一层同一个基准字号（见 `applyDanmakuSettings`）。
-            sizeFollowsLongEdge = true
-            setClock(0, false)
-        }
-        landscape.addView(landDanmaku, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
-
-        // 手势挂在一块**透明覆盖层**上：横屏没有「信息栏里的按钮」需要让路，
-        // 覆盖层可以整屏接管，点击一律先到状态机。
-        val touchLayer = View(this)
-        touchLayer.setOnTouchListener(
-            PhoneTouch(
-                host = touchLayer,
-                isLandscape = { true },
-                onTap = { setChromeVisible(!chromeVisible) },
-                onDoubleTap = { togglePlay() },
-                // 与竖屏同一套分区（用户要求）：中间 1/3 长按 = 播放设置，
-                // 左右 1/3 长按 = 2 倍速。早先横屏不分区，长按哪里都只加速，
-                // 用户在全屏里找不到播放设置（只能去点右上角那三个点）。
-                onLongPress = { zone ->
-                    when (zone) {
-                        PhoneTouch.Zone.CENTER -> { endTempSpeed(); openSettings() }
-                        else -> beginTempSpeed()
-                    }
-                },
-                onLongPressEnd = { endTempSpeed() },
-                onDragStart = {
-                    dragging = true
-                    seekFrom = player?.currentPosition ?: 0L
-                },
-                onDrag = { fraction -> dragTo(fraction) },
-                onDragEnd = {
-                    dragging = false
-                    val duration = player?.duration ?: 0L
-                    if (duration > 0) player?.seekTo(seekTarget)
-                    clearSeekHint()
-                },
-                // 横屏同样支持上下滑换集：竖屏有、横屏没有，用户会以为功能坏了。
-                verticalEnabled = true,
-                onVerticalStart = { beginSwipe() },
-                onVertical = { delta -> dragSwipe(delta) },
-                onVerticalEnd = { direction, _ -> endSwipe(direction) },
-            )
-        )
-        landscape.addView(touchLayer, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
+        buildLandscapeBase()
 
         /*
          * 横屏的「播放显示」：与竖屏同一套左右两段（剧名·集数 / 网速·时间）。
