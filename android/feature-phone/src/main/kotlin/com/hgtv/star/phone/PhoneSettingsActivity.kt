@@ -121,7 +121,9 @@ class PhoneSettingsActivity : PhoneActivity() {
         get()=sectionHost
         set(value) { sectionHost=value }
     private val library by lazy { PhoneServices.library(this) }
+    internal val settingsLibrary get()=library
     private val settingsController by lazy { SettingsController(this, library) }
+    internal val settingsControllerInstance get()=settingsController
     private var page = PhoneSettingsPage.PLAYBACK
     private val syncHandler = Handler(Looper.getMainLooper())
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -980,50 +982,15 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     private fun applyChoice(id: String, index: Int) {
-        when (id) {
-            SettingsController.ID_QUALITY -> settingsController.setQuality(PlaybackQuality.options[index])
-            SettingsController.ID_SPEED -> settingsController.setSpeed(PlaybackSpeed.phoneOptions[index])
-            SettingsController.ID_FRAME -> settingsController.setFrame(VideoFrameMode.entries[index])
-            SettingsController.ID_DECODER -> settingsController.setDecoder(VideoDecoderMode.entries[index])
-            SettingsController.ID_DANMAKU_MODE -> settingsController.setDanmakuMode(DanmakuMode.entries[index])
-            SettingsController.ID_DANMAKU_SPEED -> settingsController.setDanmakuSpeed(DanmakuSpeed.entries[index])
-            SettingsController.ID_RECOMMEND_GENDER -> settingsController.setRecommendGender(
-                listOf("", "male", "female")[index]
-            )
-            SettingsController.ID_SEARCH_SOURCE -> settingsController.setSearchSource(SearchSource.entries[index])
-            "appearance.uiScale" -> {
-                PhoneUiScale.set(this, PhoneUiScale.sizes[index].scale)
-                recreate()
-            }
-            "appearance.columns" -> library.gridColumns = index + 1
-            "recommend.episodePage" -> library.episodePageSize = EpisodePageSize.phoneOptions[index]
-        }
+        applyChoiceImpl(id, index)
     }
 
     private fun applySwitch(id: String, checked: Boolean) {
-        when (id) {
-            SettingsController.ID_DANMAKU_MERGE -> settingsController.setDanmakuMerge(checked)
-            SettingsController.ID_DANMAKU_EFFECTS -> settingsController.setDanmakuEffects(checked)
-            SettingsController.ID_RECOMMEND_SWIPE -> settingsController.setRecommendSwipe(checked)
-            SettingsController.ID_DEBUG_MODE -> settingsController.setDebugMode(checked)
-            SettingsController.ID_REDUCE_ANIM -> settingsController.setReduceAnim(checked)
-            "playback.autoNext" -> library.autoNext = checked
-            "play.title" -> library.playerTitle = checked
-            "play.episode" -> library.playerEpisode = checked
-            "play.speed" -> library.playerSpeed = checked
-            "play.clock" -> library.playerClock = checked
-        }
+        applySwitchImpl(id, checked)
     }
 
     private fun applySlider(id: String, value: Float) {
-        when (id) {
-            SettingsController.ID_VIDEO_SCALE -> settingsController.setVideoScale(value)
-            SettingsController.ID_DANMAKU_MERGE_MIN -> settingsController.setDanmakuMergeMin(value.roundToInt())
-            SettingsController.ID_DANMAKU_ALPHA -> settingsController.setDanmakuAlpha(DanmakuStyle.alpha(value))
-            "playback.seekStep" -> library.seekStep = value.roundToInt()
-            "play.panelTimeout" -> library.playerPanelTimeout = value.roundToInt()
-            "danmaku.phoneScale" -> PhoneDanmakuSize.set(this, value)
-        }
+        applySliderImpl(id, value)
     }
 
     private fun applyAction(id: String) {

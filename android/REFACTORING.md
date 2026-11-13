@@ -1936,3 +1936,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 83：PhoneSettings 选择与开关回写迁移
+
+状态：已完成。
+
+- 将选择、开关、滑动条回写和 UI 大小重建移到 `PhoneSettingsApply.kt`。
+- 保留各设置控制器调用、直接落盘项、透明度 / 条数 / 字号换算。
+- `PhoneSettingsActivity.kt` 从 1808 行降到 1775 行；`PhoneSettingsApply.kt` 为 77 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
