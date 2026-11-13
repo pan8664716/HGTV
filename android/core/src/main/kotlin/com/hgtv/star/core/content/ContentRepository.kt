@@ -569,21 +569,11 @@ class ContentRepository(
      * 2. [deviceIdentity]：本机身份（`device_id` / `iid`），来自 [registerDevice] 的注册结果；
      * 这里只描述未登录时的主设备；登录后请求统一改读 [primaryIdentity] 的账号设备快照。
      */
-    private fun deviceProfile(): Map<String,String> =
-        LinkedHashMap(VendorConstants.device).apply {
-            // 真机档案（机型 / 品牌 / 系统 / 分辨率 / 密度 / `rom_version` …）。
-            // **这一层是方案 A 的关键**：注册请求与请求签名共用它，因此
-            // query 的 `device_type`、注册 body 的 `device_model`、`x-medusa` 里上报的机型
-            // 是同一个值——同一次会话里出现两台设备会被风控按异常客户端处理。
-            putAll(registerProfile)
-            putAll(deviceIdentity)
-        }
+    private fun deviceProfile(): Map<String,String> = deviceProfileImpl()
 
     /** 账号设备档案：登录后作为当前主身份。 */
     private fun accountDeviceProfile(account: AccountCredentials): Map<String,String> =
-        LinkedHashMap(VendorConstants.device).apply {
-            account.device.forEach { (key,value) -> if(value.isNotBlank()) this[key]=value }
-        }
+        accountDeviceProfileImpl(account)
     /**
      * 弹幕接口是播放器接口，走 App 域名（与搜索 / 详情同一套设备参数）。
      * 站点有多条线路，单条失败时依次换线，最后一条仍失败才放弃本窗口。
@@ -592,7 +582,7 @@ class ContentRepository(
      * 「相关作品」接口的线路，按实测命中率排序（同一条线路约一半概率回空响应体，
      * 换线重发即可；六条线路轮一圈的成功率接近 1）。
      */
-    private fun relatedHosts(): List<String> = TncConfigStore.orderedApiHosts()
+    private fun relatedHosts(): List<String> = relatedHostsImpl()
     /** 「相关作品」接口最多试几次（每次换一条线路）：空响应体是常态，不是错误。 */
     private val RELATED_ATTEMPTS=8
     /** 「相关作品」那一栏的 cell 标识：`show_type=547` / `cell_name="相关作品"`。 */
@@ -698,7 +688,7 @@ class ContentRepository(
      */
     internal val publisherMisses=linkedMapOf<String,Long>()
     internal val PUBLISHER_MISS_TTL_MS=600000L
-    internal fun commentHosts(): List<String> = TncConfigStore.orderedApiHosts()
+    internal fun commentHosts(): List<String> = commentHostsImpl()
     /**
      * 播放模型请求里上报的 `device_level`。
      *

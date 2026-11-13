@@ -1959,3 +1959,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 85：ContentRepository 设备档案与线路迁移
+
+状态：已完成。
+
+- 将未登录 / 登录设备档案合并和相关 / 评论线路选择移到 `ContentProfiles.kt`。
+- 保留内置档案、真机档案、注册身份三层覆盖顺序和 TNC 线路排序。
+- `ContentRepository.kt` 从 1928 行降到 1919 行；`ContentProfiles.kt` 为 23 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
