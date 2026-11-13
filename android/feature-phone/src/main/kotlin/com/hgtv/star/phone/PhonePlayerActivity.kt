@@ -967,31 +967,6 @@ class PhonePlayerActivity : PhoneActivity() {
      * 留在屏幕上，不黑屏）；仍不行才摆错误页——那里的「立即重试」与「下一集」
      * 才是用户真正需要的出口，而不是一句没人看得见的字。
      */
-    /** 本地准备失败必须保留异常：调用方据此决定是否作废缓存后重取。 */
-    internal fun prepareSource(episodeId: String, info: StreamInfo): RemoteVideo =
-        playbackSource.prepare(episodeId, info)
-
-    /** 预热路径只需要结果，失败就丢掉；播放起播路径走 [prepareSource] 保留异常。 */
-    private fun prepare(episodeId: String, info: StreamInfo): RemoteVideo? =
-        runCatching { prepareSource(episodeId, info) }.getOrNull()
-
-    /**
-     * 完成从推荐页带进来的「全屏」意图。
-     *
-     * 不能一律转横屏：横屏推荐页里的竖版短剧点全屏时，应直接进入竖屏全屏；
-     * 否则会先停在横屏播放页，用户还得再点一次全屏。
-     */
-    private fun enterPendingFullscreen() {
-        if (!pendingFullscreen) return
-        if (landVideoWidth <= 0 || landVideoHeight <= 0) return
-        pendingFullscreen = false
-        if (landscapeMode && landVideoHeight > landVideoWidth) {
-            enterPortraitFullscreen()
-        } else {
-            enterFullscreen()
-        }
-    }
-
     internal fun syncKeepScreenOnForListener() = syncKeepScreenOn()
     internal fun syncDanmakuClockNowForListener() = syncDanmakuClockNow()
     internal fun syncProgressBarsNowForListener() = syncProgressBarsNow()

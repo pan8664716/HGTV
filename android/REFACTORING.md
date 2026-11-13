@@ -3415,3 +3415,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 208：手机播放页准备流程迁移
+
+状态：已完成。
+
+- 将媒体准备与待处理全屏意图移到 `PhonePlayerPreparation.kt`。
+- 保留异常区分和横竖版判定。
+- `PhonePlayerActivity.kt` 从 1256 行降到 1231 行；
+  `PhonePlayerPreparation.kt` 为 36 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
