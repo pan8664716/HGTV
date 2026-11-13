@@ -3792,3 +3792,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；仅移动目录，文件名、包名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 - 下一批：`core/crypto`。
+
+### 布局批次 3：core/crypto
+
+状态：已完成。
+
+- `core/AesV3.kt` → `core/crypto/AesV3.kt`
+- `core/ArgusLadon.kt` → `core/crypto/ArgusLadon.kt`
+- `core/Bytes.kt` → `core/crypto/Bytes.kt`
+- `core/MediaCrypto.kt` → `core/crypto/MediaCrypto.kt`
+- `core/MedusaAlgorithm.kt` → `core/crypto/MedusaAlgorithm.kt`
+- `core/MedusaAlgorithmTables.kt` → `core/crypto/MedusaAlgorithmTables.kt`
+- `core/MedusaCore.kt` → `core/crypto/MedusaCore.kt`
+- `core/MedusaEnvelope.kt` → `core/crypto/MedusaEnvelope.kt`
+- `core/MedusaModel.kt` → `core/crypto/MedusaModel.kt`
+- `core/MedusaPb.kt` → `core/crypto/MedusaPb.kt`
+- `core/MedusaSchema.kt` → `core/crypto/MedusaSchema.kt`
+- `core/MedusaState.kt` → `core/crypto/MedusaState.kt`
+- `core/MedusaTables.kt` → `core/crypto/MedusaTables.kt`
+- `core/Signer.kt` → `core/crypto/Signer.kt`
+- 外部路径引用：无；包名、文件名和 JVM 类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过，
+  仍在 DoD 允许范围内；额外波动为既有 `webFallbackPagesContinueWithoutGaps`。
+- 下一批：`core/network`。
