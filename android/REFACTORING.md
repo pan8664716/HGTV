@@ -4051,3 +4051,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；仅目录变化。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`feature-phone/detail`。
+
+### 布局批次 19：feature-phone/detail
+
+状态：已完成。
+
+- `phone/PhoneDetailActivity.kt` → `phone/detail/PhoneDetailActivity.kt`
+- `phone/PhoneDetailSections.kt` → `phone/detail/PhoneDetailSections.kt`
+- `phone/PhoneVideoPage.kt` → `phone/detail/PhoneVideoPage.kt`
+- `phone/PhoneVideoPageState.kt` → `phone/detail/PhoneVideoPageState.kt`
+- 外部路径引用：无；包名、文件名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`feature-phone/search`。
