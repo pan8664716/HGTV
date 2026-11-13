@@ -2578,3 +2578,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 136：PhonePlayer 页面工厂与手势迁移
+
+状态：已完成。
+
+- 将播放页工厂与手势接线移到 `PhonePlayerPageFactory.kt`。
+- 保留点击、长按、拖动、选集、标题和上下滑换集回调。
+- `PhonePlayerActivity.kt` 从 1984 行降到 1931 行；
+  `PhonePlayerPageFactory.kt` 为 62 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

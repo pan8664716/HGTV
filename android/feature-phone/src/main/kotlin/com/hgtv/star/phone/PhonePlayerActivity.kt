@@ -900,63 +900,6 @@ class PhonePlayerActivity : PhoneActivity() {
         applyMode()
     }
 
-    /** 建一页播放界面（当前页与相邻页同一份配置，否则翻页时两侧观感会不一样）。 */
-    internal fun makePage(): PhoneVideoPage = PhoneVideoPage(
-        this,
-        withTabBar = false,
-        fullscreenEntry = true,
-        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT,
-        // 上下滑换集（用户要求）：信息流里的同名手势是翻下一条视频，因此只在这里开。
-        verticalSwipe = true,
-        underlay = feedUnderlay,
-    )
-
-    /**
-     * 给一页接上手势回调。
-     *
-     * 两页都接同一份：只有**当前页**在屏幕正中、能收到触摸（翻页过程中触摸由当前页的
-     * 状态机一直持有），因此回调里一律按 [page] 取当前页，不会串到相邻页上。
-     */
-    internal fun wirePage(p: PhoneVideoPage) {
-        p.onTap = {
-            // 清屏状态下，第一下先把信息叫回来，不顺手暂停。
-            if (!page.isChromeVisible()) setChromeVisible(true) else togglePlay()
-        }
-        p.onLongPress = { zone ->
-            when (zone) {
-                PhoneTouch.Zone.CENTER -> openSettings()
-                else -> beginTempSpeed()
-            }
-        }
-        p.onLongPressEnd = { endTempSpeed() }
-        p.onWatch = { openEpisodes() }
-        p.onTitle = { detail?.series?.let { openSeries(it) } }
-        p.onFullscreen = { enterFullscreen() }
-        p.onSeekStart = { dragging = true }
-        p.onSeek = { fraction -> showSeekHint(fraction) }
-        p.onSeekEnd = { fraction ->
-            dragging = false
-            seekTo(fraction)
-            clearSeekHint()
-        }
-        // 竖屏横滑也拖进度（起点离左右边缘 24dp 以外才接管，见 PhoneTouch.edgeSafe）。
-        p.onDragStart = {
-            dragging = true
-            seekFrom = player?.currentPosition ?: 0L
-        }
-        p.onDragDelta = { delta -> dragTo(delta) }
-        p.onDragEnd = {
-            dragging = false
-            val duration = player?.duration ?: 0L
-            if (duration > 0) player?.seekTo(seekTarget)
-            clearSeekHint()
-        }
-        // 上下滑换集：向上 = 下一集，向下 = 上一集（与推荐页上滑看下一条同一手感）。
-        p.onVerticalStart = { beginSwipe() }
-        p.onVerticalDelta = { delta -> dragSwipe(delta) }
-        p.onVerticalEnd = { direction, _ -> endSwipe(direction) }
-    }
-
     private fun buildLandscape() {
         // 相邻集那一页（横屏版）：黑底 + 左上角「标题 第N集」，与竖屏的 ghost 页同一个角色。
         // 加在 landscape 之前，因此它永远在下面，整页滑开才露出来。
@@ -1914,6 +1857,10 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     internal fun playForEpisodes(i: Int) = play(i, clearDanmakuOnSwitch = true)
     internal fun scheduleChromeHideForEpisodes() = scheduleChromeHide()
+    internal fun seekToForPage(fraction: Float) = seekTo(fraction)
+    internal fun beginSwipeForPage() = beginSwipe()
+    internal fun dragSwipeForPage(delta: Float) = dragSwipe(delta)
+    internal fun endSwipeForPage(direction: Int) = endSwipe(direction)
 
     // ---------------------------------------------------------------- 生命周期
 
