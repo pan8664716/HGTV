@@ -3959,3 +3959,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 - 结果：`core` 根目录 `.kt` 文件数为 0。
 - 下一批：`feature-phone/account`。
+
+### 布局批次 14：feature-phone/account
+
+状态：已完成。
+
+- `phone/PhoneAccountActivity.kt` → `phone/account/PhoneAccountActivity.kt`
+- `phone/PhoneAccountLogin.kt` → `phone/account/PhoneAccountLogin.kt`
+- `phone/PhoneAccountSync.kt` → `phone/account/PhoneAccountSync.kt`
+- `phone/PhoneIdentity.kt` → `phone/account/PhoneIdentity.kt`
+- 外部路径引用：无；包名、文件名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+- 下一批：`feature-phone/settings`。
