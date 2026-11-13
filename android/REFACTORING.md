@@ -3857,3 +3857,20 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；包名、文件名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 - 下一批：`core/library`。
+
+### 布局批次 7：core/library
+
+状态：已完成。
+
+- `core/HistoryReconcile.kt` → `core/library/HistoryReconcile.kt`
+- `core/LatestWriteQueue.kt` → `core/library/LatestWriteQueue.kt`
+- `core/LibraryBackup.kt` → `core/library/LibraryBackup.kt`
+- `core/LibraryIndex.kt` → `core/library/LibraryIndex.kt`
+- `core/LibraryTransferServer.kt` → `core/library/LibraryTransferServer.kt`
+- `core/LruPut.kt` → `core/library/LruPut.kt`
+- `core/ViewingTools.kt` → `core/library/ViewingTools.kt`
+- `core/WatchSync.kt` → `core/library/WatchSync.kt`
+- `core/Watching.kt` → `core/library/Watching.kt`
+- 外部路径引用：无；仅目录变化。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+- 下一批：`core/recommend`。
