@@ -3048,3 +3048,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 178：TV 播放预热迁移
+
+状态：已完成。
+
+- 将播放类预热和 HEVC 硬解探测移到 `TvPlaybackWarmup.kt`。
+- 保留缓存结果只用于提示，不自动改解码档位。
+- `PlayerController.kt` 从 998 行降到 952 行；
+  `TvPlaybackWarmup.kt` 为 48 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
