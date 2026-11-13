@@ -1078,45 +1078,6 @@ class PhonePlayerActivity : PhoneActivity() {
         play(index, position)
     internal fun clockForControls(ms: Long): String = clock(ms)
 
-    /**
-     * 横屏播放设置：只保留右侧 40% 的可改栏。
-     *
-     * 已经设置好的值常驻在**进度条下方**（见 [landSettingsInfo]），打开面板时不再在左边
-     * 重复一遍：左边 2/3 留出画面，点一下即可收起。这样「我现在的设置是什么」与
-     * 「我要改哪一项」分别在底部摘要和右侧抽屉里，不用打开面板才能确认。
-     *
-     * **选集不在这里**：它是底部右下角那颗独立的按钮，点开的是自己那条抽屉。
-     * 右边宽 40% 屏，选项按每行 3 个折行，整列通常会超过屏高——因此整列放进
-     * `ScrollView`（`height=0 + weight=1`），滑到底能看到最后一行，不会像早先那样被裁掉。
-     */
-    private fun openLandscapeSettings(lib: Library) =
-        openLandscapeSettingsImpl(lib)
-
-    /**
-     * 把「已经设置好的值」刷到进度条下面那一行。
-     *
-     * 这一行是**常驻摘要**，不依赖设置面板是否打开；换集、换倍速、换清晰度、
-     * 换画面模式 / 缩放 / 解码 / 弹幕 / 定时之后都会经 [syncChips] 走到这里。
-     */
-    private fun syncLandscapeSettingsInfo() = syncLandscapeSettingsInfoImpl()
-
-    private fun dismissLandscapeSettings() = dismissLandscapeSettingsImpl()
-    internal fun dismissLandscapeSettingsForRelated() = dismissLandscapeSettings()
-    internal fun buildSettingsRowsForLandscape(panel: LinearLayout, lib: Library) =
-        buildSettingsRowsImpl(panel, lib, perLine = 3)
-    internal fun setChromeVisibleForLandscape(visible: Boolean) = setChromeVisible(visible)
-    internal fun scheduleChromeHideForLandscape() = scheduleChromeHide()
-
-    /**
-     * 按用户的「画面模式」把画面落到位。
-     *
-     * 早先这里对竖屏片源强制 ZOOM：首集可能按卡片字段走了 FIT，切到下一集时
-     * 实际尺寸已知、突然改成 ZOOM，画面就会「等比放大、左右丢失」。
-     */
-    private fun syncFrameMode() = syncFrameModeImpl()
-
-    private fun applyFrameMode(mode: VideoFrameMode) = applyFrameModeImpl(mode)
-
     // ---------------------------------------------------------------- 选集
 
     /**

@@ -3439,3 +3439,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 210：手机播放页横屏设置门面迁移
+
+状态：已完成。
+
+- 将横屏设置入口、摘要刷新、面板收起、设置行装配、控制层桥接和画面模式
+  委托移到 `PhonePlayerLandscapeSettingsFacade.kt`。
+- 保留右侧设置栏、每行 3 项、进度条下方常驻摘要和原调用时序。
+- `PhonePlayerActivity.kt` 从 1202 行降到 1163 行；
+  `PhonePlayerLandscapeSettingsFacade.kt` 为 48 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
