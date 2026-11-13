@@ -2105,3 +2105,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 97：PhoneFeed 宿主回调与换体裁迁移
+
+状态：已完成。
+
+- 将换体裁重置、回到首页和注册完成回调移到 `PhoneFeedHost.kt`；原公开入口保留。
+- 保留快照 / 游标切换、在途播放作废、列表清空、控制层恢复和补拉顺序。
+- `PhoneFeedView.kt` 从 920 行降到 912 行；`PhoneFeedHost.kt` 为 46 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

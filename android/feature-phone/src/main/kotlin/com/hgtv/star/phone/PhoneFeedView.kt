@@ -108,16 +108,28 @@ class PhoneFeedView(
     private var offset: Int
         get()=recommendStore.nextOffset
         set(value) { recommendStore.nextOffset=value }
+    internal var feedOffset: Int
+        get()=offset
+        set(value) { offset=value }
     private var sessionId: String
         get()=recommendStore.sessionId
         set(value) { recommendStore.sessionId=value }
+    internal var feedSessionId: String
+        get()=sessionId
+        set(value) { sessionId=value }
     private var loading: Boolean
         get()=recommendStore.loading
         set(value) { recommendStore.loading=value }
     internal val feedLoading get()=loading
+    internal var feedLoadingSlot: Boolean
+        get()=loading
+        set(value) { loading=value }
     private var ended: Boolean
         get()=!recommendStore.hasMore
         set(value) { recommendStore.hasMore=!value }
+    internal var feedEnded: Boolean
+        get()=ended
+        set(value) { ended=value }
     /**
      * 这一条流现在是不是「被宿主收起来了」。
      *
@@ -234,6 +246,13 @@ class PhoneFeedView(
     private var recommendPlayback=newRecommendPlayback()
     internal val feedRecommendStore get()=recommendStore
     internal val feedRecommendPlayback get()=recommendPlayback
+    internal var feedRecommendStoreSlot: com.hgtv.star.shared.feed.RecommendStore
+        get()=recommendStore
+        set(value) { recommendStore=value }
+    internal var feedRecommendPlaybackSlot:
+        com.hgtv.star.shared.feature.recommend.RecommendPlaybackController
+        get()=recommendPlayback
+        set(value) { recommendPlayback=value }
 
     private fun newRecommendPlayback()=com.hgtv.star.shared.feature.recommend.RecommendPlaybackController(
         repository=PhoneServices.repository(context),
@@ -254,6 +273,8 @@ class PhoneFeedView(
             }
         },
     )
+    internal fun newRecommendStoreForGenre() = newRecommendStore()
+    internal fun newRecommendPlaybackForGenre() = newRecommendPlayback()
 
     /**
      * 进程级会话里那一路，是不是**本体裁流**起的。
@@ -318,6 +339,9 @@ class PhoneFeedView(
     private var filterMiss: Int
         get()=recommendStore.filterMiss
         set(value) { recommendStore.filterMiss=value }
+    internal var feedFilterMiss: Int
+        get()=filterMiss
+        set(value) { filterMiss=value }
     /**
      * 「推荐受众」（男频 / 女频）这一层的降级状态（`:core` 的 `OptionalFilter`）。
      *
@@ -494,30 +518,7 @@ class PhoneFeedView(
      * 换类必须从头取，游标与快照也按类分开。
      */
     fun setGenre(value: String?) {
-        if (value == genre) return
-        genre = value
-        recommendStore=newRecommendStore()
-        recommendPlayback=newRecommendPlayback()
-        // 换体裁 = 换一条流：把上一类还在飞的 `playIndex` 作废（详情 / 取地址
-        // 晚回来时不能再把媒体源挂上去，否则新一类的首屏会被旧内容顶掉）。
-        playToken++
-        chromeEpoch++
-        list.removeCallbacks(chromeHideRunnable)
-        recommendFailures = 0
-        playingIndex = -1
-        items.clear()
-        offset = 0
-        sessionId = ""
-        ended = false
-        loading = false
-        // 换体裁 = 换一条流：游标与落盘快照都要换成那一类自己的
-        //（三条流各存各的，见 `FeedCursor` 与 `RecommendCache.fileOf`）。
-        cursorRestored = false
-        filterMiss = 0
-        adapter.notifyDataSetChanged()
-        // 新的一类先铺它自己的快照：首屏不必等取流，也不会铺出上一类的卡片。
-        restoreSnapshot()
-        loadMore()
+        setGenreImpl(value)
     }
 
     /**
@@ -528,21 +529,12 @@ class PhoneFeedView(
      * 早先这里一律 `playIndex()`，用户看到的就是「每退一次都重新加载、从头开始」。
      */
     fun onShown() {
-        if (!resumeOnShown()) return
-        // 设置页可能刚改过弹幕（显示方式 / 速度 / 字号 / 透明度）：回到这一页时重刷一次，
-        // 否则要等下一次换集才看得到，用户读到的就是「弹幕设置不生效」。
-        pageAt(playingIndex)?.let { applyDanmakuSettings(it) }
-        // 这一路接完（集号 / 进度条都已经对齐）**之后**才把控制层还回来。
-        // 顺序反了就是用户读到的「退回来内容断了一下」：控制层先亮，标题、集号、
-        // 进度条还是离开前的那一份，过一拍才跳到正确的位置。
-        PhoneSession.ensureFeedChrome()
-        revealChrome()
+        onShownImpl()
     }
 
     /** 主设备注册完成：有缓存就不动，只有空列表才用新身份重取。 */
     fun onIdentityReady() {
-        identityRefreshPending = true
-        if(!loading) refreshAfterIdentity()
+        onIdentityReadyImpl()
     }
 
     /** 当前这一条流是否真的在播：宿主用它决定窗口要不要保持常亮。 */
