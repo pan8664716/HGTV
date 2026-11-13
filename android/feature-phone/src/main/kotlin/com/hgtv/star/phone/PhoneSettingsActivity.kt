@@ -105,8 +105,12 @@ internal const val SETTINGS_TEXT_SCALE = 1f
 class PhoneSettingsActivity : PhoneActivity() {
 
     private lateinit var container: LinearLayout
+    internal val settingsContainer get()=container
+    internal val settingsContainerInitialized get()=::container.isInitialized
     /** 外层滚动容器：重建列表时用它保住当前的滚动位置。 */
     private lateinit var scroller: ScrollView
+    internal val settingsScroller get()=scroller
+    internal val settingsScrollerInitialized get()=::scroller.isInitialized
     /** 横屏时四个大项移到顶部，和 TV 设置页一致。 */
     private lateinit var pageTabs: LinearLayout
     private var landscape = false
@@ -130,10 +134,11 @@ class PhoneSettingsActivity : PhoneActivity() {
      * 只记像素不够：字体或主题换档后每一行的高度会变，同一个 scrollY 已经指着另一项。
      * 这里记「第一项可见设置」的稳定 key 与它相对屏幕顶部的偏移，重建后按同一个 key 找回。
      */
-    private data class ScrollAnchor(val key: String, val offset: Int)
-
     private var pendingScrollAnchor: ScrollAnchor? = null
     private var scrollRestoreListener: ViewTreeObserver.OnGlobalLayoutListener? = null
+    internal var settingsScrollRestoreListener: ViewTreeObserver.OnGlobalLayoutListener?
+        get()=scrollRestoreListener
+        set(value) { scrollRestoreListener=value }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -1817,40 +1822,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     /** 找出当前视口顶部第一枚带稳定 key 的设置项。 */
     private fun currentScrollAnchor(): ScrollAnchor? {
-        if (!::scroller.isInitialized || !::container.isInitialized) return null
-        val top = scroller.scrollY
-        val anchors = anchorViews()
-        val target = anchors.firstOrNull { topInContainer(it) + it.height > top } ?: anchors.lastOrNull()
-        return target?.let { ScrollAnchor(it.tag as String, topInContainer(it) - top) }
-    }
-
-    /** 横屏时设置项嵌在两列面板里，锚点需要递归收集。 */
-    private fun anchorViews(): List<View> {
-        val result = ArrayList<View>()
-        fun collect(parent: ViewGroup) {
-            for (index in 0 until parent.childCount) {
-                val child = parent.getChildAt(index)
-                val key = child.tag as? String
-                if (key != null && (
-                        key.startsWith("section:") || key.startsWith("row:") ||
-                            key.startsWith("grid:")
-                        )
-                ) result.add(child)
-                if (child is ViewGroup) collect(child)
-            }
-        }
-        collect(container)
-        return result.sortedBy(::topInContainer)
-    }
-
-    private fun topInContainer(view: View): Int {
-        var top = 0
-        var current: View? = view
-        while (current != null && current !== container) {
-            top += current.top
-            current = current.parent as? View
-        }
-        return top
+        return currentScrollAnchorImpl()
     }
 
     /**
@@ -1860,29 +1832,7 @@ class PhoneSettingsActivity : PhoneActivity() {
      * 空的，scrollTo 会被夹回 0。这里等到目标行真正有高度再恢复，并只消费一次。
      */
     private fun restoreScroll(anchor: ScrollAnchor?, resetTop: Boolean = false) {
-        scrollRestoreListener?.let { listener ->
-            runCatching { scroller.viewTreeObserver.removeOnGlobalLayoutListener(listener) }
-        }
-        scrollRestoreListener = null
-        if (anchor == null && !resetTop) return
-        val listener = object : ViewTreeObserver.OnGlobalLayoutListener {
-            override fun onGlobalLayout() {
-                val observer = scroller.viewTreeObserver
-                if (observer.isAlive) observer.removeOnGlobalLayoutListener(this)
-                scrollRestoreListener = null
-                if (resetTop || anchor == null) {
-                    scroller.scrollTo(0, 0)
-                    return
-                }
-                val target = anchorViews().firstOrNull { it.tag == anchor.key && it.height > 0 }
-                scroller.scrollTo(
-                    0,
-                    target?.let { (topInContainer(it) - anchor.offset).coerceAtLeast(0) } ?: 0,
-                )
-            }
-        }
-        scrollRestoreListener = listener
-        scroller.viewTreeObserver.addOnGlobalLayoutListener(listener)
+        restoreScrollImpl(anchor, resetTop)
     }
 
     private fun pick(title: String, labels: List<String>, selected: Int, onPick: (Int) -> Unit) {

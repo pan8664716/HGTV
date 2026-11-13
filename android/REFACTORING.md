@@ -1912,3 +1912,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 81：PhoneSettings 滚动锚点迁移
+
+状态：已完成。
+
+- 将当前可见锚点、嵌套视图收集、容器内坐标与布局后恢复滚动移到
+  `PhoneSettingsScroll.kt`。
+- 保留横屏两列面板递归查找、稳定 key、像素偏移和 resetTop 行为。
+- `PhoneSettingsActivity.kt` 从 1948 行降到 1898 行；`PhoneSettingsScroll.kt` 为 80 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
