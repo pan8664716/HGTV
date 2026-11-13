@@ -127,6 +127,9 @@ class Library(context: Context) {
     private val sessionPrefs by lazy { app.getSharedPreferences("native-session-v1", Context.MODE_PRIVATE) }
     internal val identitySessionPrefs get()=sessionPrefs
     internal val identityMirror get()=mirror
+    internal val identityMirrorKeys get()=MIRROR_KEYS
+    internal val identityLoader get()=loader
+    internal val identityMainHandler get()=main
     internal val identityLayoutKeyValue get()=IDENTITY_LAYOUT_KEY
     internal val legacyIdentityKeysValue get()=LEGACY_IDENTITY_KEYS
     internal val mirrorAccountKeysValue get()=mirrorAccountKeys
@@ -594,33 +597,7 @@ class Library(context: Context) {
         get()=mirrorChecked
         set(value) { mirrorChecked=value }
     private fun restoreFromMirror(): Boolean {
-        // 清除数据期间不再从镜像补写：补进去的任何一项都会让「恢复出厂」前功尽弃。
-        if(discarding) return false
-        if(mirrorChecked) return false
-        // 后台还没读完盘：这一次不算数，等 [preload] / [reload] 完成后再补。
-        // 否则主线程第一次调用就会把「空镜像」记成已检查，重装恢复从此失效。
-        if(!mirror.isLoaded()) return false
-        mirrorChecked = true
-        val edit = sessionPrefs.edit()
-        var changed = false
-        MIRROR_KEYS.forEach { key ->
-            if(sessionPrefs.contains(key)) return@forEach
-            val text = mirror.string(key) ?: return@forEach
-            // 过期时间是数值，其余都是字符串：这个类型差不能含糊，否则 getLong 会拿到 0。
-            // 这两项是数值：类型差不能含糊，否则 `getLong` 会拿到 0（见各自的注释）。
-            if(key=="account-expires" || key=="last-beat-at") edit.putLong(key,text.toLongOrNull() ?: 0L)
-            else edit.putString(key,text)
-            changed = true
-        }
-        if(changed) {
-            edit.apply()
-            Log.i("HGTV","Restored device identity / session from the external mirror")
-            // 补回来的可能是**会话**，而这一步通常在后台线程、比 `TvMainActivity` 那次
-            // `onAppStart` 晚：那一次判成「未登录」直接返回，`onResume` 也早已过去，
-            // 于是本轮进程再也不会有心跳（重装后第一晚的「掉登录」就是这么来的）。
-            SessionBootstrap.onSessionRestored()
-        }
-        return changed
+        return restoreFromMirrorImpl()
     }
     internal fun restoreFromMirrorForRegistrationCookies(): Boolean = restoreFromMirror()
     internal fun restoreFromMirrorForAccount(): Boolean = restoreFromMirror()
@@ -635,23 +612,7 @@ class Library(context: Context) {
      * 本身就在主线程，不能在这里碰 `/sdcard`。
      */
     fun retryMirrorRestore(onDone: (Boolean) -> Unit) {
-        // 读盘放在 loader 线程：这条路的调用方是 onRequestPermissionsResult（主线程），
-        // 在它里面读 `/sdcard/.hgtv` 正是线上那条 ANR 的直接原因。
-        runCatching {
-            loader.execute {
-                val restored=runCatching {
-                    mirror.reload()
-                    mirrorChecked=false
-                    val changed=restoreFromMirror()
-                    // 权限刚拿到：把这份镜像**立刻补写**到刚变得可写的另外两处
-                    //（`.hgtv` / `Android/data`）。不补的话，要等到下一次身份变化才会在
-                    // 外部存储里留下副本，用户中途卸载重装就又丢了。
-                    mirror.persistNow()
-                    changed
-                }.getOrDefault(false)
-                main.post { onDone(restored) }
-            }
-        }.onFailure { main.post { onDone(false) } }
+        retryMirrorRestoreImpl(onDone)
     }
     /**
      * 把本机已有的值补进镜像——**只在镜像缺它 / 与它不同**时写一次。
@@ -661,17 +622,11 @@ class Library(context: Context) {
      * 一台新设备。读的时候顺手补一次，代价只是一次字符串比较。
      */
     private fun mirrorSync(key: String,value: String) {
-        // 本机是空值时**不写镜像**：那不是「删掉」，只是「这台机器上还没有」，
-        // 而镜像里那份正是重装后要恢复的会话（见 SessionMirror.put 的说明）。
-        if(value.isBlank()) return
-        if(mirror.string(key).orEmpty()==value) return
-        mirror.put(key,value)
+        mirrorSyncImpl(key, value)
     }
     /** 同上，数值那一项（`account-expires`）；0 表示「本机还不知道」，不写镜像。 */
     private fun mirrorSync(key: String,value: Long) {
-        if(value<=0) return
-        if(mirror.string(key)==value.toString()) return
-        mirror.put(key,value)
+        mirrorSyncImpl(key, value)
     }
     internal fun mirrorSyncForAccount(key: String, value: String) = mirrorSync(key, value)
     internal fun mirrorSyncForAccount(key: String, value: Long) = mirrorSync(key, value)

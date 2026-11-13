@@ -1574,6 +1574,28 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 67：Library 外部镜像恢复迁移
+
+状态：已完成。
+
+- 将外部镜像缺项恢复、权限后重读、镜像同步辅助移到 `LibraryMirrorRestore.kt`；
+  原恢复与重试入口保留并委托。
+- 保留 loader 线程读盘、主线程回调、数值字段类型、缺失项优先、镜像立即落盘与
+  会话恢复通知顺序。
+- `Library.kt` 从 1439 行降到 1394 行；`LibraryMirrorRestore.kt` 为 64 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ### 夜间阶段摘要（批次 60–64）
 
 - 批次 60–64 全部完成并独立提交，PhonePlayer 的滑页、画面尺寸、信息栏、设置壳与设置行已拆分。
@@ -1592,7 +1614,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 下一批
 
-继续拆 `Library.kt` 的外部镜像恢复与重试职责。
+继续拆 `Library.kt` 的账号缓存身份隔离职责。
 
 ## 夜间验收（2026-11-13）
 
