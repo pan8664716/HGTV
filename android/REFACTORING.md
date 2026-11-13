@@ -1510,6 +1510,35 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 64：PhonePlayer 播放设置行迁移
+
+状态：已完成。
+
+- 将竖屏 / 横屏共用的播放设置行构建、倍速回写、换清晰度重播、画面 / 缩放 / 解码、
+  定时、相关剧集、作者作品、收藏与弹幕回调移到 `PhonePlayerSettingsRows.kt`。
+- 保留控件顺序、设置落盘、弹幕隐藏后补拉、面板关闭和调试面板刷新顺序。
+- `PhonePlayerActivity.kt` 从 3139 行降到 3073 行；`PhonePlayerSettingsRows.kt` 为 96 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
+### 夜间阶段摘要（批次 60–64）
+
+- 批次 60–64 全部完成并独立提交，PhonePlayer 的滑页、画面尺寸、信息栏、设置壳与设置行已拆分。
+- `PhonePlayerActivity.kt` 从 3513 行降到 3073 行；新增职责文件均低于 300 行。
+- 每批聚合编译、Lint、共享单测与 Debug APK 均通过，无新增 Lint Error / Fatal。
+- `:core:test` 最近为 435 例、24 失败、28 跳过，未超过基线失败数。
+- 下一阶段转向 Library 身份注册与账号同步的剩余职责，再处理 PhoneFeed。
+
 ### 夜间阶段摘要（批次 51–55）
 
 - 批次 51–55 全部完成并独立提交，Library 的 Cookie、pending profile、账号凭据与设备档案已拆分。
@@ -1520,7 +1549,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 下一批
 
-继续拆 `PhonePlayerActivity.kt` 的播放设置行构建职责。
+继续拆 `Library.kt` 的身份注册结果与账号同步编排职责。
 
 ## 夜间验收（2026-11-13）
 

@@ -376,6 +376,9 @@ class PhonePlayerActivity : PhoneActivity() {
     internal val nextSeasonSleepTimer get()=sleepTimer
     /** 「定时关闭」当前选中的档位（[com.hgtv.star.core.SleepTimer.LABELS] 下标）。 */
     private var sleepChoice = 0
+    internal var playerSleepChoice: Int
+        get()=sleepChoice
+        set(value) { sleepChoice=value }
     /** 定时已经停过一次：hint 与状态按它走，避免 tick 每秒钟重复报同一句。 */
     internal var sleepStopped = false
     /** 调试面板（设置 → 调试模式）。只在打开时挂，关掉立刻摘掉。 */
@@ -2539,6 +2542,12 @@ class PhonePlayerActivity : PhoneActivity() {
         updateLandscapeVideoFrame(width, height)
     internal fun enterPendingFullscreenForListener() = enterPendingFullscreen()
     internal fun syncDebugOverlayForListener() = syncDebugOverlay()
+    internal fun applyFrameModeForSettings(mode: VideoFrameMode) = applyFrameMode(mode)
+    internal fun applyVideoScaleForSettings() = applyVideoScale()
+    internal fun applySleepChoiceForSettings(choice: Int) = applySleepChoice(choice)
+    internal val playerDanmakuLoaded get()=danmakuLoader.loaded
+    internal fun loadDanmakuForSettings(episodeId: String, seriesId: String) =
+        loadDanmaku(episodeId, seriesId)
     internal fun syncMediaSessionForProgress() = syncMediaSession()
     internal fun syncPlayInfoForProgress() = syncPlayInfo()
     internal fun prepareForProgress(episodeId: String, info: StreamInfo): RemoteVideo? =
@@ -2712,83 +2721,8 @@ class PhonePlayerActivity : PhoneActivity() {
      * 顺序与电视端一致：先「怎么看」（清晰度 / 倍速 / 画面 / 解码 / 缩放），
      * 再「弹幕怎么滚」（显示方式 / 速度 / 字号 / 透明度）。
      */
-    private fun buildSettingsRows(panel: LinearLayout, lib: Library, perLine: Int) {
-        val series = detail?.series
-        buildPlaybackSettingsRows(
-            host = root,
-            panel = panel,
-            lib = lib,
-            perLine = perLine,
-            speed = userSpeed,
-            onSpeed = { value ->
-                userSpeed = value
-                // 落盘：退回推荐页时那一侧读同一份，不会突然变回旧倍速。
-                lib.playbackSpeed = value
-                player?.setPlaybackSpeed(userSpeed)
-                syncChips()
-            },
-            onQuality = {
-                // 用户自己选了档位：自动降档的结论与预算全部让位（与电视端同一条规则）。
-                playbackSessionState.onManualQualityChange()
-                syncChips()
-                // 换档 = 换一套地址表，必须重新取流；从当前位置接着播。
-                play(index, player?.currentPosition ?: 0L)
-            },
-            onFrame = { mode ->
-                applyFrameMode(mode)
-                syncChips()
-            },
-            // 缩放 / 解码都只改画面或下一次起播，但底部摘要要立刻反映当前选择。
-            onScale = { applyVideoScale(); syncChips() },
-            onDecoder = { syncChips() },
-            sleepChoice = if (sleepTimer.active) sleepChoice else 0,
-            onSleep = { choice -> applySleepChoice(choice) },
-            onRelated = {
-                val d = detail
-                if (d == null) {
-                    toast("还在加载剧集")
-                } else {
-                    sheet.dismiss()
-                    dismissLandscapeSettings()
-                    showRelated(d, "相关剧集", "换一部接着看")
-                }
-            },
-            onAuthor = {
-                val d = detail
-                if (d == null) {
-                    toast("还在加载剧集")
-                } else {
-                    sheet.dismiss()
-                    dismissLandscapeSettings()
-                    showAuthorWorks(d)
-                }
-            },
-            favorite = series?.let { item ->
-                runCatching { lib.favorite(item.id) }.getOrDefault(false) ||
-                    PhoneAccountSync.data?.favorites?.any { it.series.id == item.id } == true
-            } ?: false,
-            onFavorite = {
-                val d = detail
-                if (d == null) {
-                    toast("还在加载剧集")
-                    false
-                } else {
-                    toggleFavorite(d.series)
-                }
-            },
-            // 弹幕四项：立刻落到正在画的这一层（字号 / 透明度 / 速度 / 显示方式都是内存字段，
-            // 只写书库要等下一次换集才生效）。隐藏切回可见时补拉一次这一集的弹幕。
-            onDanmaku = {
-                val wasHidden = page.danmakuView.visibility == View.GONE
-                applyDanmakuSettings()
-                if (wasHidden && lib.danmakuMode != DanmakuMode.HIDDEN && !danmakuLoader.loaded) {
-                    detail?.let { d -> d.episodes.getOrNull(index)?.let { loadDanmaku(it, d.series.id) } }
-                }
-                syncChips()
-            },
-            onDebug = { syncDebugOverlay() },
-        )
-    }
+    private fun buildSettingsRows(panel: LinearLayout, lib: Library, perLine: Int) =
+        buildSettingsRowsImpl(panel, lib, perLine)
 
     /**
      * 应用「定时关闭」的选择。
