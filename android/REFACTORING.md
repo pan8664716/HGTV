@@ -2865,3 +2865,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 162：TV 图标按钮迁移
+
+状态：已完成。
+
+- 将顶部圆形图标入口移到 `IconButton.kt`。
+- 保留焦点、当前页底板和柔光尺寸。
+- `TvComponents.kt` 从 1480 行降到 1407 行；`IconButton.kt` 为 85 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
