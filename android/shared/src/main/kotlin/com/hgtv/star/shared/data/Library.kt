@@ -130,6 +130,7 @@ class Library(context: Context) {
     internal val identityLayoutKeyValue get()=IDENTITY_LAYOUT_KEY
     internal val legacyIdentityKeysValue get()=LEGACY_IDENTITY_KEYS
     internal val mirrorAccountKeysValue get()=mirrorAccountKeys
+    internal fun isDeviceNumberForIdentity(value: String): Boolean = isDeviceNumber(value)
     private val writes = LatestWriteQueue<String, () -> Any?>("hgtv-library-write", write = { batch -> commit(prefs, batch) },
         failed = { Log.w("HGTV", "Local library commit failed; pending changes retained for retry") })
     /**
@@ -714,27 +715,7 @@ class Library(context: Context) {
      * 播放前另有一次同步补注册），注册成功后 [saveDeviceIdentity] 落盘，这里就能给出来。
      */
     fun deviceIdentity(): Map<String,String> {
-        ensureIdentityLayout()
-        restoreFromMirror()
-        val registered=sessionPrefs.getString("registered-device-id","").orEmpty()
-        val registeredInstall=sessionPrefs.getString("registered-install-id","").orEmpty()
-        if(isDeviceNumber(registered) && isDeviceNumber(registeredInstall)) {
-            // 老版本装过、镜像里还没有这一对的：读的时候补进去，卸载重装才认得回这台设备。
-            mirrorSync("registered-device-id",registered); mirrorSync("registered-install-id",registeredInstall)
-            val identity=linkedMapOf("device_id" to registered,"iid" to registeredInstall)
-            sessionPrefs.getString("registered-device-token","").orEmpty()
-                .takeIf { it.isNotBlank() }?.let {
-                    mirrorSync("registered-device-token",it)
-                    identity["device_token"]=it
-                }
-            sessionPrefs.getString("registered-klink-egdi","").orEmpty()
-                .takeIf { it.isNotBlank() }?.let {
-                    mirrorSync("registered-klink-egdi",it)
-                    identity["klink_egdi"]=it
-                }
-            return identity
-        }
-        return emptyMap()
+        return deviceIdentityImpl()
     }
     /**
      * 是否**真**在平台注册过（只有注册过搜索才可能出数据）。
@@ -746,36 +727,7 @@ class Library(context: Context) {
      * 没有它，`deviceRegistered()` 只看到数字形状对就答 true，永远不会重注册。
      */
     fun deviceRegistered(): Boolean {
-        ensureIdentityLayout()
-        restoreFromMirror()
-        // **不判 `registrationPending`**：那份「待换新」只是「档案想升级」，旧身份在平台上
-        // 仍然是好的（搜索 / 播放都还能用）。判成「没注册」会让每次搜索都同步发一次注册请求，
-        // 换新失败时用户每搜一次就多等一个 RTT。换新只由启动那一次（[TvMainActivity.ensureDeviceRegistered]）
-        // 与播放前那一次兜底负责。
-        // **先取档案指纹**：这一步可能把老版本的随机档案重建成派生值，
-        // 那时 [invalidateRegistration] 会当场抹掉注册结果。因此读身份必须放在它之后，
-        // 否则读到的是「刚被抹掉之前」那一对，判成已注册。
-        val stamp=profileStamp()
-        val registered=sessionPrefs.getString("registered-device-id","").orEmpty()
-        val install=sessionPrefs.getString("registered-install-id","").orEmpty()
-        if(!isDeviceNumber(registered) || !isDeviceNumber(install)) return false
-        // 注册下发的 Cookie 里的 `install_id` 必须与这一对身份一致：它们是同一次注册的产物。
-        // 从外部镜像救回来的旧 Cookie（重装 / 升级时那一份）与新的 `registered-install-id`
-        // 对不上时，请求里会同时带「新 device_id」与「旧 install_id」，服务端按陌生设备处理——
-        // 现象与「没注册过」一样（搜索空响应、播放 101000），只有清缓存能好。
-        val cookieInstall=registrationCookies()["install_id"].orEmpty()
-        if(cookieInstall.isNotBlank() && cookieInstall!=install) {
-            // 顺手把这份对不上的 Cookie 抹掉：留着它，重新注册时 `putAll` 只会覆盖新下发的键，
-            // 旧的 `install_id` 仍在，下一次判断还是 false——那就成了每次请求都重注册一次。
-            clearRegistrationCookies()
-            return false
-        }
-        val known=sessionPrefs.getString("registered-profile-stamp","").orEmpty()
-        // 老版本没有这一项：不因为缺项就判死（那一版注册出来的身份在服务端是好的），
-        // 档案真的换过的那条路由 [invalidateRegistration] 当场作废，不靠这里兜。
-        // **不在读的时候补写**：缺项本身是「这份身份比当前版本旧」的判据，
-        // 由 [registrationNeedsRefresh] 用一次后台换新把它消掉。
-        return known.isBlank() || known==stamp
+        return deviceRegisteredImpl()
     }
     /**
      * 这份注册结果是不是**当前版本注册出来的**（缺 `registered-profile-stamp` = 不是）。
@@ -788,12 +740,7 @@ class Library(context: Context) {
      * 换新成功才替换身份，失败就继续用旧的那一对，用户不会因此连首页都看不了。
      */
     fun registrationNeedsRefresh(): Boolean {
-        ensureIdentityLayout()
-        restoreFromMirror()
-        val registered=sessionPrefs.getString("registered-device-id","").orEmpty()
-        val install=sessionPrefs.getString("registered-install-id","").orEmpty()
-        if(!isDeviceNumber(registered) || !isDeviceNumber(install)) return false
-        return sessionPrefs.getString("registered-profile-stamp","").orEmpty().isBlank()
+        return registrationNeedsRefreshImpl()
     }
     /** 当前档案的指纹（`cdid|openudid`）：只用来判断「注册结果与档案是不是同一套」。 */
     @Volatile private var cachedProfileStamp: String?=null
@@ -801,14 +748,7 @@ class Library(context: Context) {
         get()=cachedProfileStamp
         set(value) { cachedProfileStamp=value }
     private fun profileStamp(): String {
-        cachedProfileStamp?.let { return it }
-        val profile=deviceProfile()
-        val stamp=profile["cdid"].orEmpty()+"|"+profile["openudid"].orEmpty()
-        // 清除数据期间 `deviceProfile()` 返回空表：这一份不能缓存，否则清完缓存
-        // （同一个进程里还会读几次）会一直拿着 `"|"` 去比对。
-        if(profile.isEmpty()) return stamp
-        cachedProfileStamp=stamp
-        return stamp
+        return profileStampImpl()
     }
     /**
      * 作废本机的注册结果（设备身份 + 下发 Cookie + 档案指纹）。
@@ -817,18 +757,7 @@ class Library(context: Context) {
      * 少清一项都会让下一次 [deviceRegistered] 判成「还是好的」。
      */
     fun invalidateRegistration() {
-        if(discarding) return
-        sessionPrefs.edit().remove("registered-device-id").remove("registered-install-id")
-            .remove("registered-device-token")
-            .remove("registered-klink-egdi")
-            .remove("registered-profile-stamp")
-            .remove("registered-cookies")
-            .remove("registration-pending").apply()
-        listOf("registered-device-id","registered-install-id","registered-device-token",
-            "registered-klink-egdi","registered-profile-stamp",
-            "registered-cookies")
-            .forEach(mirror::remove)
-        cachedProfileStamp=null
+        invalidateRegistrationImpl()
     }
     /**
      * 这一次「换新身份」的注册失败了，下次启动 / 下次取播放地址前再试。
@@ -864,28 +793,7 @@ class Library(context: Context) {
         klinkEgdi: String = "",
         deviceToken: String = "",
     ) {
-        if(discarding) return
-        if(deviceId.isBlank() || installId.isBlank()) { invalidateRegistration(); return }
-        // 连同「这份身份是按哪套档案注册出来的」一起落盘：档案一变就能立刻判出来
-        // （见 [deviceRegistered]）。
-        val stamp=profileStamp()
-        // **同步 commit**（不是 apply）：`apply()` 的落盘由系统在后台排一次，
-        // 进程被强杀（电视盒子拔电 / 用户划掉任务）时那一次可能还没写下去。
-        // 身份丢了就等于「这台设备从没注册过」——搜索空响应、播放 110001。
-        // 这几项只在注册成功时写一次，同步写一次磁盘的代价可以忽略。
-        sessionPrefs.edit().putString("registered-device-id",deviceId).putString("registered-install-id",installId)
-            .putString("registered-device-token",deviceToken)
-            .putString("registered-klink-egdi",klinkEgdi)
-            .putString("registered-profile-stamp",stamp).commit()
-        // 身份一变（首次注册 / 重新注册）镜像立刻跟上：卸载重装后要先认回这台设备，再谈别的。
-        mirror.put("registered-device-id",deviceId); mirror.put("registered-install-id",installId)
-        if(deviceToken.isNotBlank()) mirror.put("registered-device-token",deviceToken)
-        else mirror.remove("registered-device-token")
-        if(klinkEgdi.isNotBlank()) mirror.put("registered-klink-egdi",klinkEgdi) else mirror.remove("registered-klink-egdi")
-        mirror.put("registered-profile-stamp",stamp)
-        // 不等 250 ms 的合并窗口：注册成功后用户可能马上就退出 / 强杀，
-        // 那一次写没落盘，下一次进来就又成了「未注册设备」——正是用户报的那个现象。
-        mirror.flush()
+        saveDeviceIdentityImpl(deviceId, installId, klinkEgdi, deviceToken)
     }
     /**
      * 设备注册下发的 Cookie（`install_id` / `ttreq` / `store-region` …）。
