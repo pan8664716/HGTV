@@ -2965,3 +2965,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 171：TV 渲染器工厂迁移
+
+状态：已完成。
+
+- 将渲染器工厂和倍速安全视频渲染器移到 `TvPlayerRenderers.kt`。
+- 保留 350ms 音频缓冲与解码器倍速重申。
+- `PlayerController.kt` 从 1380 行降到 1243 行；
+  `TvPlayerRenderers.kt` 为 152 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
