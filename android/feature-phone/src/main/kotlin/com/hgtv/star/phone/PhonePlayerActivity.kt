@@ -667,6 +667,7 @@ class PhonePlayerActivity : PhoneActivity() {
             alive = { !isFinishing && !isDestroyed },
         )
     }
+    internal val playerDanmakuLoader get()=danmakuLoader
 
     // ---------------------------------------------------------------- 生命周期
 
@@ -1533,64 +1534,6 @@ class PhonePlayerActivity : PhoneActivity() {
      * 竖屏在 `page` 里，全屏在 `landscape` 里——两层是各自独立的 `DanmakuView`。
      * [danmakuLoader] 每次都现取，切形态后新请求自然落到新那一层（旧数据靠 `replay` 接）。
      */
-    private fun danmakuTarget(): com.hgtv.star.shared.media.DanmakuView? = when {
-        landscapeMode && ::landDanmaku.isInitialized -> landDanmaku
-        ::page.isInitialized -> page.danmakuView
-        else -> null
-    }
-
-    /**
-     * 把本机偏好落到弹幕层上（显示方式 / 字号 / 透明度 / 速度 / 聚合）。
-     *
-     * 与 TV 的 `MainActivityPlayer` 建弹幕层那一段**逐项一致**：同一份落盘值、
-     * 同一个 [com.hgtv.star.shared.media.DanmakuView]，只是手机上字号按 density 走。
-     */
-    private fun applyDanmakuSettings() {
-        val lib = library ?: return
-        val views = buildList {
-            add(page.danmakuView)
-            add(ghostPage.danmakuView)
-            // 横屏那一层也要跟着设置走：它平时不可见，但一切全屏就要立刻是对的。
-            if (::landDanmaku.isInitialized) add(landDanmaku)
-        }
-        for (view in views) {
-            // 横竖屏两层按**同一个基准**取字号（屏幕长边）：按各自视图高度算的话，
-            // 竖屏 1920 与横屏 1080 会差 1.6 倍，切全屏字号明显跳一档。
-            view.sizeFollowsLongEdge = true
-            view.mode = lib.danmakuMode
-            view.textScale = PhoneDanmakuSize.renderScale(this)
-            view.textAlpha = lib.danmakuAlpha
-            view.speed = lib.danmakuSpeed
-            view.mergeRepeats = lib.danmakuMerge
-            view.mergeMinCount = lib.danmakuMergeMin
-            view.effectsEnabled = lib.danmakuEffects
-            // 隐藏弹幕时整层不参与绘制，也就不必让它的请求跑下去。
-            view.visibility = if (lib.danmakuMode == DanmakuMode.HIDDEN) View.GONE else View.VISIBLE
-        }
-        // 目标层换过（竖屏 ↔ 横屏、页面重建）就把已经拉到手的弹幕铺回去：
-        // 只改设置不铺数据的话，新那一层会一直空着——用户读到的就是「转个屏弹幕就没了」。
-        danmakuLoader.reattach()
-    }
-
-    /**
-     * 拉这一集的弹幕。
-     *
-     * 实现在 `:shared` 的 [com.hgtv.star.shared.media.DanmakuLoader]：与电视端、手机信息流
-     * **同一份代码**（同一集不重拉、旧回包丢弃、隐藏时不发请求、边拉边画）。
-     */
-    private fun loadDanmaku(
-        episodeId: String,
-        seriesId: String,
-        clearOnSwitch: Boolean = false,
-    ) {
-        danmakuLoader.load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
-    }
-
-    /** 把播放位置 / 播放状态 / 倍速推给弹幕层（每帧只读，不回调播放器）。 */
-    private fun syncDanmakuClock(positionMs: Long, running: Boolean, speed: Float) {
-        danmakuLoader.syncClock(positionMs, running, speed)
-    }
-
     /**
      * 每秒把弹幕时钟对齐一次（与电视端同一个节奏）。
      *
@@ -1607,38 +1550,11 @@ class PhonePlayerActivity : PhoneActivity() {
         }
     }
 
-    /** 播放器事件到达时立刻采样，不等每秒 tick。 */
-    private fun syncDanmakuClockNow() {
-        val p = player ?: return
-        val sample = runCatching {
-            Triple(
-                p.currentPosition,
-                p.isPlaying && p.playbackState == Player.STATE_READY,
-                p.playbackParameters.speed,
-            )
-        }.getOrNull() ?: return
-        syncDanmakuClock(sample.first, sample.second, sample.third)
-    }
-
-    /**
-     * 切形态后把这一集的弹幕接到新那一层上。
-     *
-     * 竖屏与全屏是两个独立的 `DanmakuView`，数据在视图内部；不重放的话，
-     * 竖屏看着有弹幕、一点全屏就空了。位置 / 状态 / 倍速一并带过去，
-     * 新那一层从当前进度接着滚，不是从头再放一遍。
-     */
-    private fun replayDanmaku() {
-        if (!danmakuLoader.loaded) return
-        val target = danmakuTarget() ?: return
-        // 同一层不重复重放：`applyMode` 同步一次、布局完再补一次，两层都重排一遍没有意义。
-        if (target === danmakuReplayTarget) return
-        val p = player ?: return
-        danmakuLoader.replay(p.currentPosition, p.isPlaying, p.playbackParameters.speed)
-        danmakuReplayTarget = target
-    }
-
     /** 上一次把弹幕重放到哪一层（见 [replayDanmaku]）。 */
     private var danmakuReplayTarget: com.hgtv.star.shared.media.DanmakuView? = null
+    internal var playerDanmakuReplayTarget: com.hgtv.star.shared.media.DanmakuView?
+        get()=danmakuReplayTarget
+        set(value) { danmakuReplayTarget=value }
 
     // ---------------------------------------------------------------- 上下滑翻页
 

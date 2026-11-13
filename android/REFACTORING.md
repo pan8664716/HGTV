@@ -2338,3 +2338,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 115：PhonePlayer 弹幕内核迁移
+
+状态：已完成。
+
+- 将弹幕目标、偏好落位、加载、时钟同步与切层重放移到
+  `PhonePlayerDanmaku.kt`。
+- 保留隐藏模式、长边字号基准、同层去重和重放位置。
+- `PhonePlayerActivity.kt` 从 2736 行降到 2652 行；`PhonePlayerDanmaku.kt` 为 98 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
