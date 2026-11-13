@@ -274,8 +274,8 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      * 默认开启；关闭后聚合本身、7 秒停留和槽位替换都不变，只把 `×N` 恢复为固定白色字号。
      */
     val danmakuEffects: Boolean=true,
-    /** 电视搜索键盘：后加字段，旧备份默认系统输入法。 */
-    val searchKeyboard: SearchKeyboard=SearchKeyboard.SYSTEM) {
+    /** 电视搜索键盘：后加字段，旧备份默认 HG 键盘。 */
+    val searchKeyboard: SearchKeyboard=SearchKeyboard.HONGGUO) {
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("danmaku",danmaku.storedValue)
         .put("danmakuScale",danmakuScale.toDouble()).put("danmakuAlpha",danmakuAlpha.toDouble()).put("danmakuSpeed",danmakuSpeed.storedValue)
         .put("keys",keys)

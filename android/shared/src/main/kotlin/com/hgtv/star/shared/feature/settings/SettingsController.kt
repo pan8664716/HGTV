@@ -237,7 +237,7 @@ class SettingsController(
         library.recommendSwipe = true
         library.recommendGender = ""
         library.searchSource = SearchSource.APP
-        library.searchKeyboard = SearchKeyboard.SYSTEM
+        library.searchKeyboard = SearchKeyboard.HONGGUO
         library.debugMode = false
         library.reduceAnim = false
         TvThemeStore.save(context, TvTheme.DEEP_SEA_BLUE)
