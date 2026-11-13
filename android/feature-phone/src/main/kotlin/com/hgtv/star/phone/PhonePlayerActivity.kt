@@ -965,112 +965,6 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private fun syncPlayInfo() = syncPlayInfoImpl()
 
-    internal fun play(
-        episodeIndex: Int,
-        startAt: Long = 0L,
-        clearDanmakuOnSwitch: Boolean = false,
-    ) {
-        val d = detail ?: return
-        if (episodeIndex !in d.episodes.indices) return
-        nextSeasonState.nextSeasonFinishedFor = ""
-        val sameEpisode = episodeIndex == index
-        if (!sameEpisode) {
-            cancelPlaybackRequest()
-            cancelSourceRetry()
-            // 上一集的帧时间不能算到这一集头上；看门狗要靠它判断新画面是否真的上屏。
-            lastFrameAt = 0L
-        }
-        index = episodeIndex
-        val episodeId = d.episodes[episodeIndex]
-        playbackCoordinator.open(
-            seriesId = d.series.id,
-            episodeId = episodeId,
-            episodeIndex = episodeIndex,
-            resumeAtMs = startAt,
-            autoplay = true,
-            resetEpisode = !sameEpisode,
-        )
-        // 换了一集：按集计的重试 / 降级额度全部归零（与电视端 `onEpisodeStart` 同一入口）。
-        // 同一集重来（换档 / 手动重试）不在这里清：那会把「每集只重建一次」变成无限次。
-        if (!sameEpisode) {
-            playbackToasts.clear()
-        }
-        recovering = false
-        cancelAutoRetry()
-        clearPlaybackError()
-        bindEpisodeUi(d, episodeIndex, clearDanmakuOnSwitch)
-        prepareNextSeasonIfNeeded(d)
-
-        // 预热命中：这一集的首块与地址都已经在手上了，只差挂媒体源（几十毫秒）。
-        // 上限也要对得上：预热那一份比现在生效的档位高时不能接（见 `PhoneSession.takeNext`）。
-        val warm = PhoneSession.takeNext(episodeId, playbackMaxQuality)
-        if (warm != null) {
-            // 旧媒体源先解绑（不 release 播放器），再挂预热好的这一集。
-            listener?.let { player?.removeListener(it) }
-            listener = null
-            // 借下层 Surface 时**不要动推荐页那一块**：它是本页现在的输出端。
-            if (!feedUnderlay) PhoneServices.detach(page.playerView)
-            PhoneServices.detach(landscapeVideo)
-            attach(warm, startAt)
-            return
-        }
-
-        releasePlayerImpl()
-        setBufferingLabel("正在获取播放地址…")
-        val requestScope = com.hgtv.star.core.RequestScope()
-        playRequestScope = requestScope
-        playRequestJob = scope.launch {
-            try {
-            // 上限读**实际生效**的那一档（自动降档结果优先），否则降档只在当前这一集生效。
-            val maxQuality = playbackMaxQuality
-            // 播放器打开先用 player 场景取当前集 + 后 14 集，避免快速跳集时二次请求。
-            val modelQueue = d.episodes.drop(episodeIndex + 1).take(PLAYER_MODEL_QUEUE_SIZE)
-            val source = withContext(Dispatchers.IO) {
-                requestScope.run {
-                    runCatching {
-                    playbackSource.stream(episodeId, maxQuality, d.playback, queue = modelQueue)
-                    }
-                }
-            }
-            if (!isActive || playRequestScope !== requestScope) return@launch
-            val info = source.getOrNull()
-            if (info == null) {
-                val problem = source.exceptionOrNull()
-                invalidateEpisodeCacheForRetry(episodeId, null)
-                onEpisodeSourceMissing(d, episodeIndex, startAt, problem)
-                return@launch
-            }
-
-            val preparedSource = withContext(Dispatchers.IO) {
-                requestScope.run { runCatching { prepareSource(episodeId, info) } }
-            }
-            if (!isActive || playRequestScope !== requestScope) return@launch
-            val prepared = preparedSource.getOrNull()
-            if (prepared == null) {
-                val problem = preparedSource.exceptionOrNull()
-                // 本地准备会读落盘索引 / 首块；缓存对应的文件或地址不认了，
-                // 继续重试同一份缓存只会重复失败。先整体作废并换请求 device_id。
-                if (problem == null || problem is java.io.IOException) {
-                    invalidateEpisodeCacheForRetry(episodeId, info)
-                }
-                onEpisodeSourceMissing(d, episodeIndex, startAt, problem)
-                return@launch
-            }
-
-            if (!isActive || playRequestScope !== requestScope) {
-                prepared.close()
-                return@launch
-            }
-            attach(prepared, startAt)
-            } finally {
-                if (playRequestScope === requestScope) {
-                    playRequestScope = null
-                    playRequestJob = null
-                }
-            }
-        }
-    }
-
     /**
      * 上下滑换集优先推进 ExoPlayer 已经挂好的下一项。
      *
@@ -1149,14 +1043,14 @@ class PhonePlayerActivity : PhoneActivity() {
      * 才是用户真正需要的出口，而不是一句没人看得见的字。
      */
     /** 本地准备失败必须保留异常：调用方据此决定是否作废缓存后重取。 */
-    private fun prepareSource(episodeId: String, info: StreamInfo): RemoteVideo =
+    internal fun prepareSource(episodeId: String, info: StreamInfo): RemoteVideo =
         playbackSource.prepare(episodeId, info)
 
     /** 预热路径只需要结果，失败就丢掉；播放起播路径走 [prepareSource] 保留异常。 */
     private fun prepare(episodeId: String, info: StreamInfo): RemoteVideo? =
         runCatching { prepareSource(episodeId, info) }.getOrNull()
 
-    private fun attach(video: RemoteVideo, startAt: Long) {
+    internal fun attach(video: RemoteVideo, startAt: Long) {
         remote = video
         val d = detail
         val episodeIndex = index

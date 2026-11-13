@@ -2792,3 +2792,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 155：PhonePlayer 播放入口迁移
+
+状态：已完成。
+
+- 将会话打开、预热命中和取流协程移到 `PhonePlayerPlay.kt`。
+- 保留换集重试归零、地址作废和请求代次守卫。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
