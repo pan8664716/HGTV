@@ -2350,3 +2350,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 116：PhonePlayer 形态切换迁移
+
+状态：已完成。
+
+- 将竖屏 / 横屏形态切换主流程移到 `PhonePlayerMode.kt`。
+- 保留 Surface 解绑顺序、推荐页借画面、沉浸式、控制层和弹幕切层。
+- `PhonePlayerActivity.kt` 从 2652 行降到 2565 行；`PhonePlayerMode.kt` 为 99 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
