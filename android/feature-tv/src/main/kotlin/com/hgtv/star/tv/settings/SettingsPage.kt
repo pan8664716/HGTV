@@ -155,6 +155,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     parent.addView(playbackPage,lp(-1,-2))
     val playback=panel(playbackPage,gap=TvStyle.GAP_INLINE)
     heading(playback,"播放偏好","所有剧集共用，播放中也可调整")
+    // 每一行左选项、右滑杆：同一行共用顶边与高度，右列天然与左侧按钮对齐。
     val prefRow1=lineRow(playback)
     lateinit var qualityButton: TvButton
     qualityButton=cellSetting(prefRow1,"默认清晰度  ·  ${library.maxQuality}P") { showQualityPicker(qualityButton,false) }
@@ -169,33 +170,37 @@ fun TvMainActivity.settings(parent: LinearLayout) {
             updatePlaybackText()
         }
     }
+
     val prefRow2=lineRow(playback)
     lateinit var frame: TvButton
     frame=cellSetting(prefRow2,"画面模式  ·  ${library.frameMode.label}") { showFramePicker(frame,false) }
-    lateinit var decoderButton: TvButton
-    decoderButton=cellSetting(prefRow2,"视频解码  ·  ${library.decoderMode.label}") { showDecoderPicker(decoderButton,false) }
-    val prefRow3=lineRow(playback)
-    val autoNextRow=cellSwitch(prefRow3,TvSwitchRow(this,"自动连播",checked=library.autoNext,onToggle={ on ->
-        library.autoNext=on
-        if(!on) dropQueuedEpisode()
-    }))
     val scaleSlider=cellSlider(
-        prefRow3,"画面缩放",1f,100f,1f,library.videoScale,
+        prefRow2,"画面缩放",1f,100f,1f,library.videoScale,
         format={ "${it.toInt()}%" }
     ) { value ->
         library.videoScale=value
         if(onPlaybackPage()) applyVideoScale()
     }
-    val prefRow4=lineRow(playback)
-    padLine(prefRow4,1)
+
+    val prefRow3=lineRow(playback)
+    lateinit var decoderButton: TvButton
+    decoderButton=cellSetting(prefRow3,"视频解码  ·  ${library.decoderMode.label}") { showDecoderPicker(decoderButton,false) }
     val seekSlider=cellSlider(
-        prefRow4,"快进快退",2f,20f,1f,library.seekStep.toFloat(),
+        prefRow3,"快进快退",2f,20f,1f,library.seekStep.toFloat(),
         format={ "${it.toInt()} 秒" }
     ) { value -> library.seekStep=value.toInt() }
+
+    val prefRow4=lineRow(playback)
+    val autoNextRow=cellSwitch(prefRow4,TvSwitchRow(this,"自动连播",checked=library.autoNext,onToggle={ on ->
+        library.autoNext=on
+        if(!on) dropQueuedEpisode()
+    }))
+    padLine(prefRow4,1)
+
     track(0,qualityButton,defaultSpeed)
-    track(0,frame,decoderButton)
-    track(0,autoNextRow,scaleSlider)
-    track(0,seekSlider)
+    track(0,frame,scaleSlider)
+    track(0,decoderButton,seekSlider)
+    track(0,autoNextRow)
 
     val playInfoPanel=panel(playbackPage)
     heading(playInfoPanel,"播放显示","默认全关 · 唤出菜单或轻点时四项全部显示")
