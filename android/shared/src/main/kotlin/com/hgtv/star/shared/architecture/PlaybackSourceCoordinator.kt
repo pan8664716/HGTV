@@ -6,6 +6,8 @@ import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.PlaybackProfile
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.StreamInfo
+import com.hgtv.star.core.forgetStreamAllQualities
+import com.hgtv.star.core.stream
 import com.hgtv.star.shared.data.PlaybackTransport
 import okhttp3.OkHttpClient
 

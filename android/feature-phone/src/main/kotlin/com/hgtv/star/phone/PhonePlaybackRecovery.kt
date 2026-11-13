@@ -24,6 +24,7 @@ import com.hgtv.star.core.RecommendBehavior
 import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackRetryPlan
 import com.hgtv.star.core.VideoDecoderMode
+import com.hgtv.star.core.rotateDeviceForRetry
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize

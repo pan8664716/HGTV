@@ -3145,3 +3145,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 186：ContentRepository 播放流门面迁移
+
+状态：已完成。
+
+- 将地址获取、地址失效清理和设备重试门面移到
+  `ContentStreamFacade.kt`。
+- 补齐共享播放源与手机恢复流程的扩展函数导入。
+- `ContentRepository.kt` 从 1362 行降到 1321 行；
+  `ContentStreamFacade.kt` 为 49 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
