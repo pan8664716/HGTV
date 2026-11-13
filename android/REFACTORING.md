@@ -3036,3 +3036,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 177：TV 播放器生命周期迁移
+
+状态：已完成。
+
+- 将播放器配置、挂载和异步预热移到 `TvPlayerLifecycle.kt`。
+- 保留单实例锁、主线程配置和独立建播放器线程。
+- `PlayerController.kt` 从 1065 行降到 998 行；
+  `TvPlayerLifecycle.kt` 为 72 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
