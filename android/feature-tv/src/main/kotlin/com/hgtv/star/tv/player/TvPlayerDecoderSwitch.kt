@@ -20,6 +20,8 @@ fun TvMainActivity.applyDecoderMode(position: Long = -1L, play: Boolean? = null)
     // 先把这一集的进度落盘：下面立刻把 player 置空，playEpisode 里那次 saveProgress 就取不到播放器了。
     saveProgress()
     playerListener?.let { old.removeListener(it) }; playerListener=null
+    // 任何在切档前已经开始的异步构建都失效：即使稍后又切回同一档，也不能把旧实例装回来。
+    playerBuildEpoch++
     playerView?.player=null; player=null; playbackReady=false
     configuredPlayer=null
     // 释放**不能**放到 io 线程：`ExoPlayerImpl.release()` 第一句就是 `verifyApplicationThread()`，

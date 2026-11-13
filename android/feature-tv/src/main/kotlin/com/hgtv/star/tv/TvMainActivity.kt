@@ -585,6 +585,8 @@ class TvMainActivity: Activity() {
     var authorFor=""
     @Volatile internal var player: ExoPlayer?=null
     val playerBuildLock=Any()
+    /** 解码方式 / 销毁会推进；异步建播放器完成后必须仍匹配，避免旧渲染器回装。 */
+    @Volatile internal var playerBuildEpoch=0L
     @Volatile internal var playerDisposed=false
     @Volatile internal var configuredPlayer: ExoPlayer?=null
     var video: RemoteVideo?=null

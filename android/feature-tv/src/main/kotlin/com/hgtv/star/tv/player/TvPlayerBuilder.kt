@@ -16,7 +16,7 @@ import com.google.android.exoplayer2.audio.AudioAttributes
  * 这个方法只碰播放器自己的状态与 `library` 里的偏好，**不碰任何 View**；
  * 挂 Surface 与构造后的配置都在主线程做，见 [attachPlayerView] / [configurePlayer]。
  */
-internal fun TvMainActivity.buildPlayer(): ExoPlayer {
+internal fun TvMainActivity.buildPlayer(mode: com.hgtv.star.core.VideoDecoderMode = playerDecoderMode()): ExoPlayer {
     // 缓冲按时间算、字节上限只做保护。
     //
     // 实测片库（40 部 1080P 短剧）整文件码率 273~1727 kbps、视频 198~1650 kbps，
@@ -34,7 +34,7 @@ internal fun TvMainActivity.buildPlayer(): ExoPlayer {
         .build()
     val renderers=TvRenderersFactory(this)
         .setEnableDecoderFallback(true)
-        .setMediaCodecSelector(decoderSelector(playerDecoderMode(),this))
+        .setMediaCodecSelector(decoderSelector(mode,this))
     // `setLooper` 显式钉死主线程：`ExoPlayer.Builder` 默认取「当前线程的 Looper，没有才退主线程」，
     // 而这个构造现在跑在 io 线程池里（没有 Looper，侥幸落到主线程）。一旦哪天 `io` 换成
     // HandlerThread，整个播放器就会认那条线程，主线程碰它立刻崩——不要依赖这个巧合。

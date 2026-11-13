@@ -44,9 +44,27 @@ internal fun TvMainActivity.attachPlayerView(p: ExoPlayer) { playerView?.player=
  */
 internal fun TvMainActivity.warmPlayer() {
     if(player!=null || playerDisposed) return
+    val epoch=playerBuildEpoch
+    val mode=playerDecoderMode()
     // 见 [playerBuildLock]：并发的第二条路只等一次，不会建出第二个播放器。
     val built=synchronized(playerBuildLock) {
-        if(player!=null || playerDisposed) null else buildPlayer().also { player=it }
+        if(player!=null || playerDisposed || epoch!=playerBuildEpoch) null
+        else buildPlayer(mode).let { candidate ->
+            if(player==null && !playerDisposed && epoch==playerBuildEpoch && mode==playerDecoderMode()) {
+                player=candidate
+                candidate
+            } else {
+                // 旧档位的构建可能刚在切档前跑完。ExoPlayer 只能在应用线程 release，
+                // 这里先交给主线程；绝不能把它装回 [player]，否则新设置也会继续用旧渲染器。
+                android.util.Log.w(
+                    "HGTV",
+                    "Discarding stale player build mode=$mode epoch=$epoch"+
+                        " currentMode=${playerDecoderMode()} currentEpoch=$playerBuildEpoch",
+                )
+                main.post { runCatching { candidate.release() } }
+                null
+            }
+        }
     } ?: return
     // 配置必须在主线程（见 [configurePlayer]）。这里只是扔回主线程，不等结果：
     // 起播回调本身在主线程，那边会再调一次（幂等），配置不会丢。

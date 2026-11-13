@@ -509,6 +509,7 @@ fun TvMainActivity.releasePlayer() {
     // 不加锁就会出现「刚 release 完又被预热装回来一个」的孤儿播放器（它已经挂不上 Surface，
     // 却还占着解码器与音频输出）。
     synchronized(playerBuildLock) {
+        playerBuildEpoch++
         runCatching { player?.release() }
         player=null
         // 下一个实例要重新配置一次（见 [TvMainActivity.configuredPlayer]）。
