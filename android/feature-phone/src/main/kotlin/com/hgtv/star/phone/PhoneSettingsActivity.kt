@@ -117,6 +117,9 @@ class PhoneSettingsActivity : PhoneActivity() {
     internal val settingsLandscape get()=landscape
     /** 当前分区面板；竖屏为 null，继续使用原来的平铺列表。 */
     private var sectionHost: LinearLayout? = null
+    internal var settingsSectionHost: LinearLayout?
+        get()=sectionHost
+        set(value) { sectionHost=value }
     private val library by lazy { PhoneServices.library(this) }
     private val settingsController by lazy { SettingsController(this, library) }
     private var page = PhoneSettingsPage.PLAYBACK
@@ -1690,7 +1693,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     // ---------------------------------------------------------------- 控件
 
-    private fun targetHost(): LinearLayout = sectionHost ?: container
+    private fun targetHost(): LinearLayout = targetHostImpl()
     private fun settingsDp(value: Number): Int = settingsDpImpl(value)
     private fun TextView.settingsTextSize(value: Number): TextView =
         settingsTextSizeImpl(value)
@@ -1698,103 +1701,26 @@ class PhoneSettingsActivity : PhoneActivity() {
     private fun settingRowGap(): Int = settingRowGapImpl()
 
     private fun section(title: String) {
-        if (landscape) {
-            val panel = LinearLayout(this).apply {
-                orientation = LinearLayout.VERTICAL
-                tag = anchorKey("section", title)
-                setPadding(settingsDp(12), settingsDp(10), settingsDp(12), settingsDp(6))
-                applySoft(SoftStyle.RAISED, PhoneStyle.surface, PhoneStyle.RADIUS_CARD, 3f)
-            }
-            panel.addView(TextView(this).apply {
-                text = title
-                setTextColor(PhoneStyle.text)
-                settingsTextSize(13)
-                setTypeface(typeface, Typeface.BOLD)
-                setPadding(settingsDp(2), 0, settingsDp(2), settingsDp(6))
-            })
-            container.addView(panel, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { bottomMargin = settingsDp(8) })
-            sectionHost = panel
-            return
-        }
-        sectionHost = null
-        container.addView(TextView(this).apply {
-            tag = anchorKey("section", title)
-            text = title
-            setTextColor(PhoneStyle.textDim)
-            settingsTextSize(12)
-            setPadding(settingsDp(6), settingsDp(20), settingsDp(6), settingsDp(6))
-        })
+        sectionImpl(title)
     }
 
     private fun hint(text: String) {
-        targetHost().addView(TextView(this).apply {
-            this.text = text
-            setTextColor(PhoneStyle.textFaint)
-            settingsTextSize(if (landscape) 11 else 12)
-            setPadding(
-                settingsDp(6),
-                settingsDp(if (landscape) 1 else 2),
-                settingsDp(6),
-                settingsDp(if (landscape) 3 else 4),
-            )
-        })
+        hintImpl(text)
     }
 
     /** 一行设置：与电视端设置按钮同一种胶囊行，左项名、右读数。 */
     private fun row(title: String, value: String, onClick: () -> Unit) {
-        val line = LinearLayout(this).apply {
-            tag = anchorKey("row", title)
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(settingsDp(14), 0, settingsDp(12), 0)
-            applySoft(SoftStyle.RAISED, PhoneStyle.surface, PhoneStyle.RADIUS_PILL, 4f)
-            addView(TextView(this@PhoneSettingsActivity).apply {
-                text = title
-                setTextColor(PhoneStyle.text)
-                settingsTextSize(if (landscape) 14 else 15)
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-            addView(TextView(this@PhoneSettingsActivity).apply {
-                text = value
-                setTextColor(PhoneStyle.textDim)
-                settingsTextSize(if (landscape) 12 else 13)
-                maxLines = 1
-                ellipsize = android.text.TextUtils.TruncateAt.END
-            })
-            addView(TextView(this@PhoneSettingsActivity).apply {
-                text = "›"
-                setTextColor(PhoneStyle.textFaint)
-                settingsTextSize(if (landscape) 13 else 14)
-                setPadding(settingsDp(6), 0, 0, 0)
-            })
-            setOnClickListener { onClick() }
-        }
-        targetHost().addView(line, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, settingRowHeight()
-        ).apply { bottomMargin = settingRowGap() })
+        rowImpl(title, value, onClick)
     }
 
     /** 整行开关：与电视端同一枚自绘轨道，点整行切换。 */
     private fun switch(title: String, checked: Boolean, onToggle: (Boolean) -> Unit) {
-        val line = PhoneSwitchRow(
-            this, title, checked,
-            densityScale=SETTINGS_DENSITY_SCALE,
-            textScale=SETTINGS_TEXT_SCALE,
-            onToggle=onToggle,
-        ).apply {
-            tag = anchorKey("row", title)
-        }
-        targetHost().addView(line, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, settingRowHeight()
-        ).apply { bottomMargin = settingRowGap() })
+        switchImpl(title, checked, onToggle)
     }
 
     /** 动作行：与电视端设置项同一种单行胶囊，右侧小字说明去向。 */
     private fun action(title: String, subtitle: String, onClick: () -> Unit) {
-        row(title, subtitle, onClick)
+        actionImpl(title, subtitle, onClick)
     }
 
     /** 滑动条与电视端同一种整行控件：项名、轨道、读数在一块胶囊底板里。 */
@@ -1803,16 +1729,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         format: (Float) -> String,
         onChange: (Float) -> Unit
     ) {
-        val control = PhoneSettingSlider(
-            this, title, min, max, step, value, onChange, format,
-            densityScale=SETTINGS_DENSITY_SCALE,
-            textScale=SETTINGS_TEXT_SCALE,
-        ).apply {
-            tag = anchorKey("row", title)
-        }
-        targetHost().addView(control, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, settingRowHeight()
-        ).apply { bottomMargin = settingRowGap() })
+        sliderImpl(title, min, max, step, value, format, onChange)
     }
 
     private fun anchorKey(kind: String, title: String): String = anchorKeyImpl(kind, title)
@@ -1836,21 +1753,14 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     private fun pick(title: String, labels: List<String>, selected: Int, onPick: (Int) -> Unit) {
-        PhoneDialog(this, title)
-            .choices(labels, selected, onPick)
-            .button("取消")
-            .show()
+        pickImpl(title, labels, selected, onPick)
     }
 
     private fun confirm(title: String, message: String, danger: Boolean = false, onOk: () -> Unit) {
-        PhoneDialog(this, title)
-            .message(message)
-            .button("取消")
-            .button(if (danger) "清空" else "确定", primary = true, danger = danger, run = onOk)
-            .show()
+        confirmImpl(title, message, danger, onOk)
     }
 
-    private fun toast(text: String) = Toast.makeText(this, text, Toast.LENGTH_SHORT).show()
+    private fun toast(text: String) = toastImpl(text)
 
     // ---------------------------------------------------------------- 文案
 

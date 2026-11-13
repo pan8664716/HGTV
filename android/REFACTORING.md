@@ -1924,3 +1924,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 82：PhoneSettings 通用控件迁移
+
+状态：已完成。
+
+- 将分组、提示、胶囊行、开关、滑动条、选择 / 确认框与 toast 移到
+  `PhoneSettingsWidgets.kt`。
+- 保留横竖屏行高 / 间距、电视端对齐的软阴影样式、稳定锚点与文案。
+- `PhoneSettingsActivity.kt` 从 1898 行降到 1808 行；`PhoneSettingsWidgets.kt` 为 191 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
