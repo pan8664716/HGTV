@@ -66,6 +66,20 @@ fun TvMainActivity.requestMirrorStorage() {
  */
 fun TvMainActivity.onMirrorStorageResult(granted: Boolean) {
     if(!granted) return
+    retryMirrorRestoreIfPermitted()
+}
+
+/**
+ * 用户可能先在权限弹窗里拒绝，随后去系统设置重新打开存储权限。
+ * 那种情况没有 `onRequestPermissionsResult`，必须在回到前台时再补读一次。
+ */
+fun TvMainActivity.retryMirrorRestoreIfPermitted() {
+    if(mirrorRestoreRetried || !library.isLoaded || repository.signedIn) return
+    if(android.os.Build.VERSION.SDK_INT<23) return
+    val granted=android.content.pm.PackageManager.PERMISSION_GRANTED==
+        androidx.core.content.ContextCompat.checkSelfPermission(this,android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
+    if(!granted) return
+    mirrorRestoreRetried=true
     // 读盘交给 loader 线程：权限回调在主线程，这里不能碰 `/sdcard`（见 Library.retryMirrorRestore）。
     library.retryMirrorRestore { restored ->
         if(!restored || isDestroyed) return@retryMirrorRestore

@@ -38,6 +38,7 @@ internal fun TvMainActivity.resumeAfterSuper(resumeStarted: Long) {
     // 回前台补一次心跳：设备休眠 / 厂商省电会让后台定时整体推迟，
     // 后台待两小时醒来时上一次心跳可能已隔了几小时。
     com.hgtv.star.shared.data.SessionBootstrap.onForeground()
+    if(library.isLoaded) retryMirrorRestoreIfPermitted()
     // 回前台补一次账号数据：用户在手机 / 电脑上看过的剧，电视这边的「我的 → 历史」
     // 与首页历史栏都靠这一次刷新才跟上。[loadAccount] 自己按 [ACCOUNT_FRESH_MS] 节流
     // （一分钟内拉过就跳过），因此按 Home 再来一次不会多发请求；
