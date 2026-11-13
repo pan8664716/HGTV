@@ -3282,3 +3282,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 197：Library 候选档案迁移
+
+状态：已完成。
+
+- 将备用设备档案生成、候选档案转正和注册档案选择移到
+  `LibraryPendingProfileFacade.kt`。
+- `Library.kt` 从 1226 行降到 1198 行；
+  `LibraryPendingProfileFacade.kt` 为 34 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

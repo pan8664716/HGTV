@@ -11,8 +11,11 @@ import com.hgtv.star.shared.data.PlaybackCapability
 import com.hgtv.star.shared.data.account
 import com.hgtv.star.shared.data.accountCache
 import com.hgtv.star.shared.data.clearRegistrationPending
+import com.hgtv.star.shared.data.commitPendingProfile
+import com.hgtv.star.shared.data.hasPendingProfile
 import com.hgtv.star.shared.data.registrationNeedsRefresh
 import com.hgtv.star.shared.data.registrationPending
+import com.hgtv.star.shared.data.registrationProfile
 import com.hgtv.star.shared.data.qualityChosenByUser
 import com.hgtv.star.shared.data.registrationCookies
 import com.hgtv.star.shared.data.saveAccount
