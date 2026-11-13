@@ -2642,3 +2642,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 140：RecommendPage 取流控制迁移
+
+状态：已完成。
+
+- 将首帧后取流、取消推荐流和预热缓存清理移到 `RecommendFeedControl.kt`。
+- 保留 3 秒兜底、预热任务取消和缓存释放顺序。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
