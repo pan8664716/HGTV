@@ -24,6 +24,7 @@ fun TvMainActivity.applyDecoderMode(position: Long = -1L, play: Boolean? = null)
     playerBuildEpoch++
     playerView?.player=null; player=null; playbackReady=false
     configuredPlayer=null
+    builtPlayerDecoderMode=null
     // 释放**不能**放到 io 线程：`ExoPlayerImpl.release()` 第一句就是 `verifyApplicationThread()`，
     // 线程不符直接抛 `Player is accessed on the wrong thread`——早先那版把它裹在 `runCatching`
     // 里，异常被吞掉，旧播放器连同播放线程、解码器一起泄漏，还会和新播放器抢同一颗解码器。
@@ -40,4 +41,30 @@ fun TvMainActivity.applyDecoderMode(position: Long = -1L, play: Boolean? = null)
     // 这期间用户可能已经返回 / 换了别的剧：那一次页面重建会把 generation 推走。
     if(isDestroyed || generation!=ticket) return
     playEpisode(episodeIndex,resumeAt,resumePlay)
+}
+
+/**
+ * 设置页改了解码档位时，播放器实例仍在后台保留。
+ *
+ * `detachPlayerSurface()` 为了下次起播更快，不会 release 播放器；但渲染器和解码器选择器
+ * 是构造期定下的。用户「播放中切软解 → 退出到设置切回硬解 → 再进播放」时，
+ * 不在这里放掉旧实例，就会继续复用软件渲染器，所有视频都表现为 4005。
+ */
+internal fun TvMainActivity.releasePlayerForDecoderMismatch() {
+    val old=player ?: return
+    val built=builtPlayerDecoderMode
+    if(built==playbackDecoderMode) return
+    android.util.Log.w(
+        "HGTV",
+        "Releasing player for decoder mismatch built=${built?.name ?: "unknown"}"+
+            " requested=${playbackDecoderMode.name}",
+    )
+    playerListener?.let { old.removeListener(it) }; playerListener=null
+    playerView?.player=null
+    playerBuildEpoch++
+    player=null
+    configuredPlayer=null
+    builtPlayerDecoderMode=null
+    playbackReady=false
+    runCatching { old.stop(); old.clearMediaItems(); old.release() }
 }

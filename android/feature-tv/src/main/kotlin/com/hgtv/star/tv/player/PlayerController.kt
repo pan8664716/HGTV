@@ -84,6 +84,8 @@ fun TvMainActivity.playEpisode(
     // 只有「推荐页确定 / 自动连播」进来的那一次才置位（见 [enterFormalPlayback]）；
     // 在正片内部换集 / 重试 / 换清晰度时 `screen` 已经是 `player`，标记原样保留。
     if(!recommendEntry && screen!="player") playbackFromRecommend=false
+    // 设置页改档不会经过 [applyDecoderMode]；进播放前发现实例档位不一致就先放掉。
+    releasePlayerForDecoderMismatch()
     // `keepMedia`（同档重建）也要保住播放层：这一趟只为把解码器放掉重开，画面 / 弹幕 /
     // 控制层一个都不用换（见 [replayWithPlan]）。它和 `recovering` 是两件事——
     // 后者还包含降档、网络自愈、手动重试，那些真的需要重来一遍。
@@ -408,7 +410,12 @@ fun TvMainActivity.playEpisode(
         video=remote; quality=remote.info.quality; PlaybackDiag.quality=quality
         // 正常情况这一步在 io 线程的 [warmPlayer] 已经建好（并行那半秒）；
         // 没建起来（例如播放器被解码方式切换清掉）就当场补一次。
-        val p=player ?: synchronized(playerBuildLock) { player ?: buildPlayer().also { player=it } }
+        val p=player ?: synchronized(playerBuildLock) {
+            player ?: buildPlayer(playbackDecoderMode).also {
+                player=it
+                builtPlayerDecoderMode=playbackDecoderMode
+            }
+        }
         // 构造后的配置（音频属性 / 诊断监听 / 逐帧心跳）只能在主线程做，且是幂等的：
         // 预热线程那边 post 过来的那次可能还没跑到（见 [configurePlayer]）。
         configurePlayer(p)

@@ -52,6 +52,7 @@ internal fun TvMainActivity.warmPlayer() {
         else buildPlayer(mode).let { candidate ->
             if(player==null && !playerDisposed && epoch==playerBuildEpoch && mode==playerDecoderMode()) {
                 player=candidate
+                builtPlayerDecoderMode=mode
                 candidate
             } else {
                 // 旧档位的构建可能刚在切档前跑完。ExoPlayer 只能在应用线程 release，

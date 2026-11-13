@@ -512,6 +512,7 @@ fun TvMainActivity.releasePlayer() {
         playerBuildEpoch++
         runCatching { player?.release() }
         player=null
+        builtPlayerDecoderMode=null
         // 下一个实例要重新配置一次（见 [TvMainActivity.configuredPlayer]）。
         configuredPlayer=null
         // 置位之后再进 [warmPlayer] 的线程会直接放弃：见 [playerDisposed]。

@@ -587,6 +587,8 @@ class TvMainActivity: Activity() {
     val playerBuildLock=Any()
     /** 解码方式 / 销毁会推进；异步建播放器完成后必须仍匹配，避免旧渲染器回装。 */
     @Volatile internal var playerBuildEpoch=0L
+    /** 当前 [player] 实际创建时使用的解码档位；设置页改档后用它发现旧实例。 */
+    @Volatile internal var builtPlayerDecoderMode: VideoDecoderMode?=null
     @Volatile internal var playerDisposed=false
     @Volatile internal var configuredPlayer: ExoPlayer?=null
     var video: RemoteVideo?=null
