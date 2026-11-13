@@ -4244,3 +4244,14 @@ feature-tv/
 - App 搜索接口单页 `count` 从 20 调整为 50，翻页游标和 offset 同步按 50 推进。
 - 官网搜索仍按服务端固定 10 条一页并发拼页，不改接口约定。
 - 未修改版本号、versionCode 或依赖。
+
+## TV 系统输入法回归
+
+状态：已完成。
+
+- `1.3.5.1` 的搜索框不接管确认键，原生 `TextView` 会把事件交给系统输入法。
+- 后续版本在 `OnKeyListener` 中吞掉确认键 `ACTION_UP`，导致依赖原生确认事件的电视
+  输入法无法弹出。
+- 现恢复确认键完整交回 `TextView`；Android 5 已知的 `onKeyUp` NPE 由专用
+  `EditText` 子类定点捕获并改用显式 IME 请求。
+- IME 重试不再要求 `hasWindowFocus()`，避免部分电视窗口焦点时序导致请求被提前放弃。

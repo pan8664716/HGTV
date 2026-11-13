@@ -21,6 +21,30 @@ import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.tv.R
 
+/**
+ * 确认键必须继续交给 [EditText] 的原生 `onKeyUp`，部分电视输入法靠它启动。
+ *
+ * Android 5 的少数固件会在原生 `onKeyUp` 里因空 `InputMethodInfo` 抛 NPE；
+ * 这里只兜住这一种已知异常，并改用显式 IME 请求，不能把所有异常都吞掉。
+ */
+private class TvSearchEditText(
+    context: Context,
+    private val imeFallback: () -> Unit,
+) : EditText(context) {
+    override fun onKeyUp(keyCode: Int,event: KeyEvent): Boolean {
+        return try {
+            super.onKeyUp(keyCode,event)
+        } catch(problem: NullPointerException) {
+            if(keyCode==KeyEvent.KEYCODE_ENTER ||
+                keyCode==KeyEvent.KEYCODE_DPAD_CENTER ||
+                keyCode==KeyEvent.KEYCODE_NUMPAD_ENTER) {
+                imeFallback()
+                true
+            } else throw problem
+        }
+    }
+}
+
 // 本文件是从 TvMainActivity.kt 拆出来的「搜索页：输入框、热词与联想提示、搜索历史」这一块。
 // 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
@@ -35,7 +59,7 @@ fun TvMainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     // 搜索框与同一行的按钮共用一套尺寸令牌：48dp 底板、胶囊圆角、左右 28dp 内边距，
     // 因此输入框和「搜索 / 历史」在一条基线上；差别只在「凹槽 vs 凸起」这一层语义。
     val searchBand=dp(TvStyle.SOFT_BAND)
-    val input=EditText(this).apply {
+    val input=TvSearchEditText(this) { focusSearchInput(120L) }.apply {
         // 提示里把「怎么打字」写清楚：电视上没有手机输入按钮之后，用户靠系统输入法
         // （遥控器方向键选字）或外接键盘打字，这一行是他唯一能看到说明的地方。
         //
@@ -129,17 +153,11 @@ fun TvMainActivity.searchBar(top: LinearLayout,requestFocus: Boolean) {
     }
     // EditText 自己会把上下键吃掉做光标移动，焦点因此困在输入框里出不去。
     // 这两下在这里显式交回页面：上=顶部圆形入口，下=提示词 / 热搜词那一行（没有时退到内容第一张卡）。
-    // 确认键的 DOWN 交回 TextView：1.3.5.1 之前部分电视输入法靠它启动 IME。
-    // 只在 UP 接管搜索：Android 5 的 TextView.onKeyUp 会在部分固件上抛 NPE。
+    // 确认键**完全交回 TextView**，与 1.3.5.1 一致。部分电视输入法只认原生
+    // ACTION_DOWN / ACTION_UP；应用在 UP 返回 true 会截断这条启动链路。
+    // Android 5 的已知 NPE 由 [TvSearchEditText.onKeyUp] 定点兜住。
     input.setOnKeyListener { view,keyCode,event ->
-        if(keyCode==KeyEvent.KEYCODE_ENTER || keyCode==KeyEvent.KEYCODE_DPAD_CENTER ||
-            keyCode==KeyEvent.KEYCODE_NUMPAD_ENTER) {
-            if(event.action==KeyEvent.ACTION_DOWN) return@setOnKeyListener false
-            if(event.action==KeyEvent.ACTION_UP) {
-                if(input.text.toString().trim().isEmpty()) focusSearchInput(120L) else search()
-            }
-            true
-        } else if(event.action!=KeyEvent.ACTION_DOWN ||
+        if(event.action!=KeyEvent.ACTION_DOWN ||
             (keyCode!=KeyEvent.KEYCODE_DPAD_UP && keyCode!=KeyEvent.KEYCODE_DPAD_DOWN)) false
         else {
             // 判据必须与「能不能真的拿到焦点」一致：只看 `isShown` 会把页头收起后
@@ -275,8 +293,8 @@ fun TvMainActivity.cancelSearchInputMethod() {
  */
 private fun TvMainActivity.requestSearchInputMethod(input: EditText,remaining: Int,token: Int) {
     if(token!=searchImeToken || isDestroyed || !input.attachedToWindow) return
-    input.requestFocus()
-    if(!input.hasWindowFocus() || !input.isFocused) {
+    val focused=input.requestFocus() || input.isFocused
+    if(!focused) {
         if(remaining>0) input.postDelayed({ requestSearchInputMethod(input,remaining-1,token) },120L)
         return
     }
