@@ -10,10 +10,6 @@ import org.json.JSONObject
 import org.json.JSONArray
 import java.io.IOException
 import java.util.concurrent.TimeUnit
-/** 分类 / 榜单接口的 HTTP 状态异常：4xx（429 除外）说明参数或路由有问题，重试没有意义。 */
-internal class CatalogHttpException(val status: Int, message: String) : IOException(message)
-/** 取播放地址超时：与用户主动取消分开，界面据此进入自动重试而不是静默退出。 */
-class AddressTimeoutException(message: String, cause: Throwable? = null) : IOException(message, cause)
 /**
  * 内容接口的默认传输层。
  *
@@ -35,32 +31,6 @@ private fun defaultHttpClient(): OkHttpClient = defaultContentHttpClient()
 
 /** 分类 / 榜单页首屏统一取 30 条；后续页再使用大页续接。 */
 const val CATALOG_FIRST_PAGE_SIZE=30
-class SearchSessionExpiredException: IOException("搜索结果已过期，请从第 1 页重新搜索")
-
-/**
- * 搜索接口明确回了「不行」，并带上原因码。
- *
- * 为什么不用一句 `IOException("搜索接口暂不可用")`：那句话把「业务码非 0」「返回格式变了」
- * 「这个类型没有搜索 tab」混成同一件事，面板上就没法判断到底该重试、该换源、还是该等更新。
- */
-class SearchApiException(val reason: String,message: String): IOException(message)
-/**
- * 这台设备还没在平台注册上（或注册还在路上）。
- *
- * 搜索接口对未注册设备回 `HTTP 200 + 0 字节`：这是「等一会儿就好」而不是「网络坏了」，
- * 因此单独给一个类型，界面据此说「设备正在初始化」，不要让用户去检查路由器。
- */
-class DeviceNotRegisteredException(message: String = "设备正在初始化，请稍后重试"): IOException(message)
-/**
- * 这个请求需要登录态，而本机还没有可用的凭据（或凭据已失效）。
- *
- * 账号侧接口（收藏 / 历史 / 点赞 / 预约 / 资料）与带登录态的搜索都要求先导入
- * `sessionid`（见 [AccountCredentials]）。未导入时它们**一律不可用**：
- * 平台对匿名设备要么回空响应体、要么把请求降级成匿名账号，两者都会让界面显示
- * 「一条记录都没有」而不是「你还没导入」——因此统一抛这个异常，由界面翻成提示。
- */
-class SignInRequiredException(message: String = "需要先导入账号参数（sessionid）"): IOException(message)
-
 class ContentRepository(
     /**
      * 传输层：显式传进来就用它（预取 / 预热各带自己的 client），不传则**用到时才建**。

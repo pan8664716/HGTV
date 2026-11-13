@@ -2013,3 +2013,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 90：ContentRepository 异常类型迁移
+
+状态：已完成。
+- 将分类、地址超时、搜索过期 / 业务错误、设备未注册和登录必需异常移到
+  `ContentTransport.kt`。
+- 保留公开类名、默认文案、原因码字段与 `IOException` 继承关系。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。

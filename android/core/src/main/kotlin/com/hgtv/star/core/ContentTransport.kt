@@ -4,6 +4,7 @@ package com.hgtv.star.core
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.IOException
 import java.util.concurrent.TimeUnit
 
 fun JSONArray.objects() = (0 until length()).mapNotNull { optJSONObject(it) }
@@ -37,3 +38,20 @@ internal fun defaultContentHttpClient(): OkHttpClient {
     if(NetLog.timing) builder.eventListenerFactory(NetTiming.Factory)
     return builder.build()
 }
+
+internal class CatalogHttpException(val status: Int, message: String) : IOException(message)
+
+class AddressTimeoutException(message: String, cause: Throwable? = null) :
+    IOException(message, cause)
+
+class SearchSessionExpiredException : IOException("搜索结果已过期，请从第 1 页重新搜索")
+
+class SearchApiException(val reason: String, message: String) : IOException(message)
+
+class DeviceNotRegisteredException(
+    message: String = "设备正在初始化，请稍后重试",
+) : IOException(message)
+
+class SignInRequiredException(
+    message: String = "需要先导入账号参数（sessionid）",
+) : IOException(message)
