@@ -3949,3 +3949,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；文件名、包名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`core/content/detail`（剩余根文件归位）。
+
+### 布局批次 13：core/content/detail 收尾
+
+状态：已完成。
+
+- `core/DetailCache.kt` → `core/content/detail/DetailCache.kt`
+- 外部路径引用：无；仅目录变化，类名与包名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+- 结果：`core` 根目录 `.kt` 文件数为 0。
+- 下一批：`feature-phone/account`。
