@@ -3971,3 +3971,25 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；包名、文件名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 - 下一批：`feature-phone/settings`。
+
+### 布局批次 15：feature-phone/settings
+
+状态：已完成。
+
+- `phone/PhoneDanmakuSize.kt` → `phone/settings/PhoneDanmakuSize.kt`
+- `phone/PhoneSettingsActions.kt` → `phone/settings/PhoneSettingsActions.kt`
+- `phone/PhoneSettingsActivity.kt` → `phone/settings/PhoneSettingsActivity.kt`
+- `phone/PhoneSettingsApply.kt` → `phone/settings/PhoneSettingsApply.kt`
+- `phone/PhoneSettingsLanSync.kt` → `phone/settings/PhoneSettingsLanSync.kt`
+- `phone/PhoneSettingsLandscapePages.kt` → `phone/settings/PhoneSettingsLandscapePages.kt`
+- `phone/PhoneSettingsLandscapeWidgets.kt` → `phone/settings/PhoneSettingsLandscapeWidgets.kt`
+- `phone/PhoneSettingsPageSelector.kt` → `phone/settings/PhoneSettingsPageSelector.kt`
+- `phone/PhoneSettingsPortrait.kt` → `phone/settings/PhoneSettingsPortrait.kt`
+- `phone/PhoneSettingsScroll.kt` → `phone/settings/PhoneSettingsScroll.kt`
+- `phone/PhoneSettingsSupport.kt` → `phone/settings/PhoneSettingsSupport.kt`
+- `phone/PhoneSettingsSystem.kt` → `phone/settings/PhoneSettingsSystem.kt`
+- `phone/PhoneSettingsUnified.kt` → `phone/settings/PhoneSettingsUnified.kt`
+- `phone/PhoneSettingsWidgets.kt` → `phone/settings/PhoneSettingsWidgets.kt`
+- 外部路径引用：无；包名、文件名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`feature-phone/feed`。
