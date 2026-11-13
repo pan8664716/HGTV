@@ -25,6 +25,7 @@ fun TvMainActivity.applyDecoderMode(position: Long = -1L, play: Boolean? = null)
     playerView?.player=null; player=null; playbackReady=false
     configuredPlayer=null
     builtPlayerDecoderMode=null
+    builtPlayerBufferProfile=null
     // 释放**不能**放到 io 线程：`ExoPlayerImpl.release()` 第一句就是 `verifyApplicationThread()`，
     // 线程不符直接抛 `Player is accessed on the wrong thread`——早先那版把它裹在 `runCatching`
     // 里，异常被吞掉，旧播放器连同播放线程、解码器一起泄漏，还会和新播放器抢同一颗解码器。
@@ -65,6 +66,7 @@ internal fun TvMainActivity.releasePlayerForDecoderMismatch() {
     player=null
     configuredPlayer=null
     builtPlayerDecoderMode=null
+    builtPlayerBufferProfile=null
     playbackReady=false
     runCatching { old.stop(); old.clearMediaItems(); old.release() }
 }

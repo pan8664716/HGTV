@@ -932,7 +932,7 @@ android/
 | `TvPlaybackPreferences.kt` | 本次播放**实际生效**的清晰度上限。 | val TvMainActivity.playbackMaxQuality、val TvMainActivity.playbackDecoderMode、fun TvMainActivity.preparedKeyFor、fun TvMainActivity.playerDecoderMode |
 | `TvPlaybackRunnables.kt` | 播放设置、选集和控制条共用同一枚「无操作自动消失」计时器。 | fun TvMainActivity.runOverlayAutoHide、fun TvMainActivity.runPendingSeek、fun TvMainActivity.runForcedRetire |
 | `TvPlaybackWarmup.kt` | 把「首帧之前才发现很贵」的几处初始化提前做掉。 | fun TvMainActivity.primePlaybackClasses、fun TvMainActivity.probeHardwareHevcDecoder |
-| `TvPlayerBuilder.kt` | 建一个播放器（**不含挂 Surface，也不做构造后的配置**）。 | fun TvMainActivity.buildPlayer |
+| `TvPlayerBuilder.kt` | 建一个播放器并解析设备 / 网络 / 首帧 EWMA 缓冲档位（**不含挂 Surface**）。 | fun TvMainActivity.buildPlayer、resolveTvBufferProfile |
 | `TvPlayerDecoderSwitch.kt` | 换解码方式：重建播放器并从当前位置接着播。 | fun TvMainActivity.applyDecoderMode |
 | `TvPlayerDecoding.kt` | 按「硬件解码 / 软件解码」筛**视频**解码器。 | fun decoderSelector |
 | `TvPlayerLifecycle.kt` | 构造之后的配置，**只能在主线程调用**。 | fun TvMainActivity.configurePlayer、fun TvMainActivity.attachPlayerView、fun TvMainActivity.warmPlayer、fun TvMainActivity.buildPlayerAsync |

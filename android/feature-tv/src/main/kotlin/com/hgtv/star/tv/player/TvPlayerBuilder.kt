@@ -5,6 +5,109 @@ import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.DefaultLoadControl
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.audio.AudioAttributes
+import com.hgtv.star.shared.compat.isMeteredConnection
+import com.hgtv.star.shared.compat.lowEndTv
+
+/**
+ * 电视端缓冲档位。
+ *
+ * 数值只用于构造 [DefaultLoadControl]，不替换 ExoPlayer 的缓冲算法。
+ */
+internal data class TvBufferProfile(
+    val name: String,
+    val minBufferMs: Int,
+    val maxBufferMs: Int,
+    val bufferForPlaybackMs: Int = 1_000,
+    val bufferForPlaybackAfterRebufferMs: Int = 2_000,
+    val targetBufferBytes: Int,
+)
+
+/**
+ * 首帧耗时用于下一次播放器构建，避免在当前播放中更换 LoadControl。
+ *
+ * 首帧耗时同时包含网络、索引准备和解码器初始化，因此只作为设备 + 网络综合等级的代理指标；
+ * 真正的缓冲策略仍由 [DefaultLoadControl] 执行。
+ */
+private object TvBufferTuning {
+    private const val PREFS="hgtv-playback-buffer"
+    private const val KEY_FIRST_FRAME_EWMA="first-frame-ewma-ms"
+    private const val EWMA_OLD_WEIGHT=0.7f
+    private const val EWMA_NEW_WEIGHT=0.3f
+
+    fun firstFrameEwmaMs(context: android.content.Context): Long =
+        runCatching {
+            context.getSharedPreferences(PREFS,android.content.Context.MODE_PRIVATE)
+                .getFloat(KEY_FIRST_FRAME_EWMA,0f).toLong()
+        }.getOrDefault(0L)
+
+    @Synchronized fun recordFirstFrame(context: android.content.Context,elapsedMs: Long) {
+        if(elapsedMs !in 1L..120_000L) return
+        val prefs=context.getSharedPreferences(PREFS,android.content.Context.MODE_PRIVATE)
+        val old=prefs.getFloat(KEY_FIRST_FRAME_EWMA,0f)
+        val next=if(old<=0f) elapsedMs.toFloat() else old*EWMA_OLD_WEIGHT+elapsedMs*EWMA_NEW_WEIGHT
+        prefs.edit().putFloat(KEY_FIRST_FRAME_EWMA,next).apply()
+    }
+}
+
+internal fun TvMainActivity.resolveTvBufferProfile(): TvBufferProfile {
+    val lowEnd=runCatching { lowEndTv() }.getOrDefault(true)
+    val metered=runCatching { connectivity.isMeteredConnection() }.getOrDefault(true)
+    val firstFrameMs=TvBufferTuning.firstFrameEwmaMs(this)
+    return when {
+        lowEnd -> TvBufferProfile(
+            name="low-end",
+            minBufferMs=30_000,
+            maxBufferMs=60_000,
+            targetBufferBytes=16*1024*1024,
+        )
+        metered || firstFrameMs>=7_000L -> TvBufferProfile(
+            name="slow-network",
+            minBufferMs=30_000,
+            maxBufferMs=90_000,
+            targetBufferBytes=24*1024*1024,
+        )
+        firstFrameMs in 1L..3_000L -> TvBufferProfile(
+            name="fast",
+            minBufferMs=10_000,
+            maxBufferMs=30_000,
+            targetBufferBytes=16*1024*1024,
+        )
+        else -> TvBufferProfile(
+            name="balanced",
+            minBufferMs=20_000,
+            maxBufferMs=60_000,
+            targetBufferBytes=24*1024*1024,
+        )
+    }
+}
+
+internal fun TvMainActivity.recordFirstFrameForBuffer(elapsedMs: Long) {
+    TvBufferTuning.recordFirstFrame(this,elapsedMs)
+}
+
+/**
+ * 首帧指标更新后，旧播放器仍持有旧的 LoadControl。下一次真正起播时在这里释放，
+ * 让新播放器按最新档位重建；当前正在播放的这一集不会被打断。
+ */
+internal fun TvMainActivity.releasePlayerForBufferMismatch() {
+    val old=player ?: return
+    val built=builtPlayerBufferProfile ?: return
+    val wanted=resolveTvBufferProfile()
+    if(built==wanted) return
+    android.util.Log.i(
+        "HGTV-BUFFER",
+        "Rebuilding player for buffer profile ${built.name} -> ${wanted.name}",
+    )
+    playerListener?.let { old.removeListener(it) }; playerListener=null
+    playerView?.player=null
+    playerBuildEpoch++
+    player=null
+    configuredPlayer=null
+    builtPlayerDecoderMode=null
+    builtPlayerBufferProfile=null
+    playbackReady=false
+    runCatching { old.stop(); old.clearMediaItems(); old.release() }
+}
 
 /**
  * 建一个播放器（**不含挂 Surface，也不做构造后的配置**）。
@@ -16,7 +119,10 @@ import com.google.android.exoplayer2.audio.AudioAttributes
  * 这个方法只碰播放器自己的状态与 `library` 里的偏好，**不碰任何 View**；
  * 挂 Surface 与构造后的配置都在主线程做，见 [attachPlayerView] / [configurePlayer]。
  */
-internal fun TvMainActivity.buildPlayer(mode: com.hgtv.star.core.VideoDecoderMode = playerDecoderMode()): ExoPlayer {
+internal fun TvMainActivity.buildPlayer(
+    mode: com.hgtv.star.core.VideoDecoderMode = playerDecoderMode(),
+    profile: TvBufferProfile = resolveTvBufferProfile(),
+): ExoPlayer {
     // 缓冲按时间算、字节上限只做保护。
     //
     // 实测片库（40 部 1080P 短剧）整文件码率 273~1727 kbps、视频 198~1650 kbps，
@@ -24,14 +130,23 @@ internal fun TvMainActivity.buildPlayer(mode: com.hgtv.star.core.VideoDecoderMod
     // 因此这里留 24MB（约等于最高码率下 110 秒）就够，既不会提前截断，
     // 又把堆内存上限压在安全区。
     //
-    // 时间是真正生效的那一维：`minBufferUs` 会被 ExoPlayer 按倍速放大，
-    // 1.5× 时最小缓冲是 30 秒媒体、2× 时是 40 秒，真实缓冲时间不再随倍速缩水。
+    // 时间仍是真正生效的那一维；档位只调整时间目标与字节保护上限。
     // `setPrioritizeTimeOverSizeThresholds(true)` 保证字节上限不会先于时间到顶。
     val load=DefaultLoadControl.Builder()
-        .setBufferDurationsMs(20000,60000,1000,2000)
-        .setTargetBufferBytes(24*1024*1024)
+        .setBufferDurationsMs(
+            profile.minBufferMs,
+            profile.maxBufferMs,
+            profile.bufferForPlaybackMs,
+            profile.bufferForPlaybackAfterRebufferMs,
+        )
+        .setTargetBufferBytes(profile.targetBufferBytes)
         .setPrioritizeTimeOverSizeThresholds(true)
         .build()
+    android.util.Log.i(
+        "HGTV-BUFFER",
+        "profile=${profile.name} min=${profile.minBufferMs}ms max=${profile.maxBufferMs}ms"+
+            " bytes=${profile.targetBufferBytes} firstFrameEwma=${TvBufferTuning.firstFrameEwmaMs(this)}ms",
+    )
     val renderers=TvRenderersFactory(this)
         .setEnableDecoderFallback(true)
         .setMediaCodecSelector(decoderSelector(mode,this))

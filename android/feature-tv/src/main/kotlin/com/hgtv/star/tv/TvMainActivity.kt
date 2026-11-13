@@ -591,6 +591,7 @@ class TvMainActivity: Activity() {
     @Volatile internal var playerBuildEpoch=0L
     /** 当前 [player] 实际创建时使用的解码档位；设置页改档后用它发现旧实例。 */
     @Volatile internal var builtPlayerDecoderMode: VideoDecoderMode?=null
+    @Volatile internal var builtPlayerBufferProfile: TvBufferProfile?=null
     @Volatile internal var playerDisposed=false
     @Volatile internal var configuredPlayer: ExoPlayer?=null
     var video: RemoteVideo?=null

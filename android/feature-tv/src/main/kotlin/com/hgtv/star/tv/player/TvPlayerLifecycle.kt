@@ -46,13 +46,15 @@ internal fun TvMainActivity.warmPlayer() {
     if(player!=null || playerDisposed) return
     val epoch=playerBuildEpoch
     val mode=playerDecoderMode()
+    val profile=resolveTvBufferProfile()
     // 见 [playerBuildLock]：并发的第二条路只等一次，不会建出第二个播放器。
     val built=synchronized(playerBuildLock) {
         if(player!=null || playerDisposed || epoch!=playerBuildEpoch) null
-        else buildPlayer(mode).let { candidate ->
+        else buildPlayer(mode,profile).let { candidate ->
             if(player==null && !playerDisposed && epoch==playerBuildEpoch && mode==playerDecoderMode()) {
                 player=candidate
                 builtPlayerDecoderMode=mode
+                builtPlayerBufferProfile=profile
                 candidate
             } else {
                 // 旧档位的构建可能刚在切档前跑完。ExoPlayer 只能在应用线程 release，

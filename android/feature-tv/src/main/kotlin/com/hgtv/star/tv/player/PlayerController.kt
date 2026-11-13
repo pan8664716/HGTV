@@ -86,6 +86,8 @@ fun TvMainActivity.playEpisode(
     if(!recommendEntry && screen!="player") playbackFromRecommend=false
     // 设置页改档不会经过 [applyDecoderMode]；进播放前发现实例档位不一致就先放掉。
     releasePlayerForDecoderMismatch()
+    // 首帧 EWMA 更新后，下一次起播按新的缓冲档位重建；当前这一集不打断。
+    releasePlayerForBufferMismatch()
     // `keepMedia`（同档重建）也要保住播放层：这一趟只为把解码器放掉重开，画面 / 弹幕 /
     // 控制层一个都不用换（见 [replayWithPlan]）。它和 `recovering` 是两件事——
     // 后者还包含降档、网络自愈、手动重试，那些真的需要重来一遍。
@@ -411,9 +413,12 @@ fun TvMainActivity.playEpisode(
         // 正常情况这一步在 io 线程的 [warmPlayer] 已经建好（并行那半秒）；
         // 没建起来（例如播放器被解码方式切换清掉）就当场补一次。
         val p=player ?: synchronized(playerBuildLock) {
-            player ?: buildPlayer(playbackDecoderMode).also {
-                player=it
-                builtPlayerDecoderMode=playbackDecoderMode
+            player ?: resolveTvBufferProfile().let { profile ->
+                buildPlayer(playbackDecoderMode,profile).also {
+                    player=it
+                    builtPlayerDecoderMode=playbackDecoderMode
+                    builtPlayerBufferProfile=profile
+                }
             }
         }
         // 构造后的配置（音频属性 / 诊断监听 / 逐帧心跳）只能在主线程做，且是幂等的：
@@ -672,7 +677,9 @@ fun TvMainActivity.playEpisode(
                 if(screen=="recommend") updateRecommendOverlay()
                 if(firstFrame) {
                     firstFrame=false
-                    android.util.Log.i("HGTV","Playback first frame episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${android.os.SystemClock.elapsedRealtime()-playbackStarted}")
+                    val elapsed=android.os.SystemClock.elapsedRealtime()-playbackStarted
+                    recordFirstFrameForBuffer(elapsed)
+                    android.util.Log.i("HGTV","Playback first frame episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=$elapsed")
                 }
                 // 片尾自动推进之后的第一帧：这是「无感」真正的验收数字。
                 // 它包含换 period + 新 period 起播的时间，不含重新取地址（那是老路才有的事）。
