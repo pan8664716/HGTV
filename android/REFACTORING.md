@@ -3084,3 +3084,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 181：ContentRepository 搜索入口迁移
+
+状态：已完成。
+
+- 将按内容类型搜索和官网搜索入口移到 `ContentSearchResultsFacade.kt`。
+- 保留 App 分页与官网十页合并逻辑。
+- `ContentRepository.kt` 从 1464 行降到 1445 行；
+  `ContentSearchResultsFacade.kt` 为 24 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
