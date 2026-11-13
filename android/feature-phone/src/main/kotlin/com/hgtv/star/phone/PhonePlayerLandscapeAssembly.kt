@@ -7,12 +7,16 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
+import android.widget.SeekBar
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
 import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.DanmakuMode
+import com.hgtv.star.core.PlaybackSpeed
 import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.PhoneGlyph
+import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.roundedBackground
+import com.hgtv.star.phone.ui.bottomScrim
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 
@@ -225,4 +229,132 @@ internal fun PhonePlayerActivity.buildLandscapeTopControls() {
         topMargin = dp(200)
     })
     playerLandFullscreenSlot = fullscreen
+}
+
+/** 横屏底栏：播放 / 进度、常驻摘要和快捷入口。 */
+internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
+    // 底部两行
+    val bottom = android.widget.LinearLayout(this).apply {
+        orientation = android.widget.LinearLayout.VERTICAL
+        setPadding(dp(16), dp(8), dp(16), dp(12))
+        background = bottomScrim(215)
+    }
+
+    val line1 = android.widget.LinearLayout(this).apply {
+        orientation = android.widget.LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+    }
+    val play = PhoneGlyph(this, PhoneGlyph.Kind.PAUSE).apply { tint = Color.WHITE }
+    val playBox = FrameLayout(this).apply {
+        addView(play, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
+        setOnClickListener { togglePlay() }
+    }
+    line1.addView(playBox, android.widget.LinearLayout.LayoutParams(dp(34), dp(34)))
+
+    val current = TextView(this).apply {
+        setTextColor(PhoneStyle.playerText)
+        phoneSize(12)
+        text = "00:00"
+        setPadding(0, 0, dp(8), 0)
+    }
+    line1.addView(current)
+
+    val seek = SeekBar(this).apply {
+        max = 1000
+        PhonePlayerViewSupport.tintSeekBar(this)
+        setPadding(0, 0, 0, 0)
+        setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
+            override fun onProgressChanged(sb: SeekBar, value: Int, fromUser: Boolean) {
+                if (!fromUser) return
+                val duration = player?.duration ?: 0L
+                if (duration > 0) current.text = debugClock(duration * value / 1000)
+            }
+
+            override fun onStartTrackingTouch(sb: SeekBar) { playerDragging = true }
+
+            override fun onStopTrackingTouch(sb: SeekBar) {
+                playerDragging = false
+                val duration = player?.duration ?: 0L
+                if (duration > 0) player?.seekTo(duration * sb.progress / 1000)
+            }
+        })
+    }
+    line1.addView(seek, android.widget.LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
+
+    val total = TextView(this).apply {
+        setTextColor(PhoneStyle.playerDim)
+        phoneSize(12)
+        text = "00:00"
+        setPadding(dp(8), 0, 0, 0)
+    }
+    line1.addView(total)
+    bottom.addView(line1, android.widget.LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+    ))
+
+    // 进度条下面**只有一行**：左边是常驻摘要，右边是四颗入口。
+    //
+    // 早先是两行（摘要独占一行 + 四颗按钮另起一行），在 1080 高的横屏上，
+    // 底栏加起来吃掉 150px 画面，而且两行之间没有视觉联系——用户看到的是
+    // 「一堆字」和「一排按钮」两块互不相干的东西。并成一行之后：
+    //
+    // ```
+    // ─────────────●──────────────────────────   ← 进度条
+    // 完整画面 · 缩放100% · 硬件解码   [1.0x][1080P][弹幕][选集 1]
+    // ```
+    //
+    // 摘要只写**四颗按钮上没有的东西**（画面 / 缩放 / 解码 / 定时），
+    // 清晰度、倍速、选集、弹幕已经由右侧按钮自己显示当前值，
+    // 再在左边重复一遍既是冗余、也会把这一行挤到省略号。
+    val line2 = android.widget.LinearLayout(this).apply {
+        orientation = android.widget.LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+        setPadding(0, dp(6), 0, 0)
+    }
+    val settingsInfo = TextView(this).apply {
+        setTextColor(PhoneStyle.playerDim)
+        phoneSize(11)
+        maxLines = 1
+        ellipsize = android.text.TextUtils.TruncateAt.END
+        setPadding(dp(2), 0, dp(10), 0)
+        text = ""
+    }
+    line2.addView(settingsInfo, android.widget.LinearLayout.LayoutParams(
+        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+    ))
+
+    // 倍速与弹幕一样，点一次就换下一档；要细调仍可长按画面中间打开播放设置。
+    val speed = PhonePlayerViewSupport.chip(this, PlaybackSpeed.label(sessionUserSpeed)) { cycleSpeed() }
+    val quality = PhonePlayerViewSupport.chip(this, "1080P") { openSettings() }
+    // 弹幕快捷开关（与电视播放页底部那颗「弹幕 全屏」同一职责）：
+    // 电视上是遥控器一按就开菜单；手机上一次点击直接切下一档更省事，
+    // 想细调（速度 / 字号 / 透明度）仍然长按中间开播放设置。
+    val danmaku = PhonePlayerViewSupport.chip(this, "弹幕") { cycleDanmaku() }
+    val episode = PhonePlayerViewSupport.chip(this, "选集 1") { openEpisodes() }
+    line2.addView(speed, PhonePlayerViewSupport.chipLp(this,0))
+    line2.addView(quality, PhonePlayerViewSupport.chipLp(this,6))
+    line2.addView(danmaku, PhonePlayerViewSupport.chipLp(this,6))
+    line2.addView(episode, PhonePlayerViewSupport.chipLp(this,6))
+    bottom.addView(line2, android.widget.LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+    ))
+
+    val landscape = playerLandscapeContainer
+    landscape.addView(bottom, FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM
+    ))
+    landscape.visibility = View.GONE
+    root.addView(landscape, FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+    ))
+    playerLandBottomSlot = bottom
+    playerLandPlaySlot = play
+    progressLandCurrentSlot = current
+    progressLandSeekSlot = seek
+    progressLandTotalSlot = total
+    playerLandSettingsInfoSlot = settingsInfo
+    chipSpeedSlot = speed
+    chipQualitySlot = quality
+    chipDanmakuSlot = danmaku
+    chipEpisodeSlot = episode
 }

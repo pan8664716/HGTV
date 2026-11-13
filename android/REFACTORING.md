@@ -2772,3 +2772,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 153：PhonePlayer 横屏底栏迁移
+
+状态：已完成。
+
+- 将横屏播放/进度行、常驻摘要和快捷 chips 移到 `PhonePlayerLandscapeAssembly.kt`。
+- 保留拖动进度、倍速/清晰度/弹幕/选集入口和横屏挂载顺序。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

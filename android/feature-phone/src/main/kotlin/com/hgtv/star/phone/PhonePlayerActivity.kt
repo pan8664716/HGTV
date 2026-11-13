@@ -200,15 +200,30 @@ class PhonePlayerActivity : PhoneActivity() {
         set(value) { landFullscreen=value }
     internal val playerLandFullscreenInitialized get()=::landFullscreen.isInitialized
     internal val playerLandBottom get()=landBottom
+    internal var playerLandBottomSlot: LinearLayout
+        get()=landBottom
+        set(value) { landBottom=value }
     internal val playerLandBottomInitialized get()=::landBottom.isInitialized
     private lateinit var landPlay: PhoneGlyph
     internal val playerLandPlay get()=landPlay
+    internal var playerLandPlaySlot: PhoneGlyph
+        get()=landPlay
+        set(value) { landPlay=value }
     private lateinit var landCurrent: TextView
     private lateinit var landSeek: SeekBar
     private lateinit var landTotal: TextView
     internal val progressLandCurrent get()=landCurrent
     internal val progressLandSeek get()=landSeek
     internal val progressLandTotal get()=landTotal
+    internal var progressLandCurrentSlot: TextView
+        get()=landCurrent
+        set(value) { landCurrent=value }
+    internal var progressLandSeekSlot: SeekBar
+        get()=landSeek
+        set(value) { landSeek=value }
+    internal var progressLandTotalSlot: TextView
+        get()=landTotal
+        set(value) { landTotal=value }
     /**
      * 进度条下面那一行「已经设置好的值」。
      *
@@ -217,6 +232,9 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private lateinit var landSettingsInfo: TextView
     internal val playerLandSettingsInfo get()=landSettingsInfo
+    internal var playerLandSettingsInfoSlot: TextView
+        get()=landSettingsInfo
+        set(value) { landSettingsInfo=value }
     internal val playerLandSettingsInfoInitialized get()=::landSettingsInfo.isInitialized
     private lateinit var speedChip: TextView
     private lateinit var qualityChip: TextView
@@ -226,6 +244,18 @@ class PhonePlayerActivity : PhoneActivity() {
     internal val chipQuality get()=qualityChip
     internal val chipDanmaku get()=danmakuChip
     internal val chipEpisode get()=episodeChip
+    internal var chipSpeedSlot: TextView
+        get()=speedChip
+        set(value) { speedChip=value }
+    internal var chipQualitySlot: TextView
+        get()=qualityChip
+        set(value) { qualityChip=value }
+    internal var chipDanmakuSlot: TextView
+        get()=danmakuChip
+        set(value) { danmakuChip=value }
+    internal var chipEpisodeSlot: TextView
+        get()=episodeChip
+        set(value) { episodeChip=value }
 
     private lateinit var portraitTop: LinearLayout
     internal var playerPortraitTop: LinearLayout
@@ -878,120 +908,7 @@ class PhonePlayerActivity : PhoneActivity() {
 
         buildLandscapeTopControls()
 
-        // 底部两行
-        landBottom = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(8), dp(16), dp(12))
-            background = bottomScrim(215)
-        }
-
-        val line1 = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-        }
-        landPlay = PhoneGlyph(this, PhoneGlyph.Kind.PAUSE).apply { tint = Color.WHITE }
-        val playBox = FrameLayout(this).apply {
-            addView(landPlay, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
-            setOnClickListener { togglePlay() }
-        }
-        line1.addView(playBox, LinearLayout.LayoutParams(dp(34), dp(34)))
-
-        landCurrent = TextView(this).apply {
-            setTextColor(PhoneStyle.playerText)
-            phoneSize(12)
-            text = "00:00"
-            setPadding(0, 0, dp(8), 0)
-        }
-        line1.addView(landCurrent)
-
-        landSeek = SeekBar(this).apply {
-            max = 1000
-            PhonePlayerViewSupport.tintSeekBar(this)
-            setPadding(0, 0, 0, 0)
-            setOnSeekBarChangeListener(object : SeekBar.OnSeekBarChangeListener {
-                override fun onProgressChanged(sb: SeekBar, value: Int, fromUser: Boolean) {
-                    if (!fromUser) return
-                    val duration = player?.duration ?: 0L
-                    if (duration > 0) landCurrent.text = clock(duration * value / 1000)
-                }
-
-                override fun onStartTrackingTouch(sb: SeekBar) { dragging = true }
-
-                override fun onStopTrackingTouch(sb: SeekBar) {
-                    dragging = false
-                    val duration = player?.duration ?: 0L
-                    if (duration > 0) player?.seekTo(duration * sb.progress / 1000)
-                }
-            })
-        }
-        line1.addView(landSeek, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-
-        landTotal = TextView(this).apply {
-            setTextColor(PhoneStyle.playerDim)
-            phoneSize(12)
-            text = "00:00"
-            setPadding(dp(8), 0, 0, 0)
-        }
-        line1.addView(landTotal)
-        landBottom.addView(line1, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-
-        // 进度条下面**只有一行**：左边是常驻摘要，右边是四颗入口。
-        //
-        // 早先是两行（摘要独占一行 + 四颗按钮另起一行），在 1080 高的横屏上，
-        // 底栏加起来吃掉 150px 画面，而且两行之间没有视觉联系——用户看到的是
-        // 「一堆字」和「一排按钮」两块互不相干的东西。并成一行之后：
-        //
-        // ```
-        // ─────────────●──────────────────────────   ← 进度条
-        // 完整画面 · 缩放100% · 硬件解码   [1.0x][1080P][弹幕][选集 1]
-        // ```
-        //
-        // 摘要只写**四颗按钮上没有的东西**（画面 / 缩放 / 解码 / 定时），
-        // 清晰度、倍速、选集、弹幕已经由右侧按钮自己显示当前值，
-        // 再在左边重复一遍既是冗余、也会把这一行挤到省略号。
-        val line2 = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(0, dp(6), 0, 0)
-        }
-        landSettingsInfo = TextView(this).apply {
-            setTextColor(PhoneStyle.playerDim)
-            phoneSize(11)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            setPadding(dp(2), 0, dp(10), 0)
-            text = ""
-        }
-        line2.addView(landSettingsInfo, LinearLayout.LayoutParams(
-            0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
-        ))
-
-        // 倍速与弹幕一样，点一次就换下一档；要细调仍可长按画面中间打开播放设置。
-        speedChip = PhonePlayerViewSupport.chip(this, PlaybackSpeed.label(userSpeed)) { cycleSpeed() }
-        qualityChip = PhonePlayerViewSupport.chip(this, "1080P") { openSettings() }
-        // 弹幕快捷开关（与电视播放页底部那颗「弹幕 全屏」同一职责）：
-        // 电视上是遥控器一按就开菜单；手机上一次点击直接切下一档更省事，
-        // 想细调（速度 / 字号 / 透明度）仍然长按中间开播放设置。
-        danmakuChip = PhonePlayerViewSupport.chip(this, "弹幕") { cycleDanmaku() }
-        episodeChip = PhonePlayerViewSupport.chip(this, "选集 1") { openEpisodes() }
-        line2.addView(speedChip, PhonePlayerViewSupport.chipLp(this,0))
-        line2.addView(qualityChip, PhonePlayerViewSupport.chipLp(this,6))
-        line2.addView(danmakuChip, PhonePlayerViewSupport.chipLp(this,6))
-        line2.addView(episodeChip, PhonePlayerViewSupport.chipLp(this,6))
-        landBottom.addView(line2, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-
-        landscape.addView(landBottom, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.BOTTOM
-        ))
-
-        landscape.visibility = View.GONE
-        root.addView(landscape, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
+        buildLandscapeBottomControls()
     }
 
     /**
