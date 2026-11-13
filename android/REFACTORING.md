@@ -2384,3 +2384,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 119：ContentRepository 作者批量补查迁移
+
+状态：已完成。
+
+- 将作者单条查询、批量补查和缓存移到 `ContentAuthors.kt`；公开入口保留。
+- 保留 ID 校验、空结果不缓存、300 条上限和整屏合并请求。
+- `ContentRepository.kt` 从 1687 行降到 1640 行；`ContentAuthors.kt` 为 57 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
