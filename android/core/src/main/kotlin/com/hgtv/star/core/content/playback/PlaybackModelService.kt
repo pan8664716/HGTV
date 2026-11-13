@@ -19,13 +19,12 @@ import java.util.concurrent.TimeUnit
      */
     internal fun ContentRepository.videoModelImpl(
         id: String,
-        deadline: Long,
         playback: PlaybackProfile,
         queue: List<String> = emptyList(),
     ): JSONObject {
         // 长时间驻留进程里配置也会过期；这里只排队后台刷新，不等待。
         refreshTncAsync()
-        // TNC 下发候选域名；最近成功的排第一。播放接口最多在 6 秒预算内试前三条。
+        // TNC 下发候选域名；最近成功的排第一。每条实际请求独立 6 秒，候选之间不共享超时。
         val hosts=TncConfigStore.orderedApiHosts().take(3)
         // 播放器打开用 `multi_video_model/player` 取当前集 + 后 14 集；
         // 单集接口只作为兼容兜底，preload 留给首帧稳定后的后台补货。
@@ -57,10 +56,8 @@ import java.util.concurrent.TimeUnit
         ContentRepository.backgroundModelScope?.cancel()
         try {
             val gate=ContentRepository.modelGate
-            // 等闸门也用余额兜住：三份实例同时起播时后来者要排队，但绝不允许排到整段预算之外
-            //（[MODEL_GATE_TIMEOUT_MS] 那 25 秒是给「上一发正在慢速完成」留的余量，
-            // 取地址整段已经被 [ADDRESS_DEADLINE_MS] 限死，这里只是个不会先到期的兜底）。
-            val waitMs=remainingOf(deadline).coerceIn(1L,ContentRepository.MODEL_GATE_TIMEOUT_MS)
+            // 排队与网络请求分开计时：等闸门最多 6 秒，拿到闸门后每条链接仍有完整 6 秒。
+            val waitMs=ADDRESS_ATTEMPT_TIMEOUT_MS
             if(!gate.tryAcquire(waitMs,TimeUnit.MILLISECONDS)) {
                 throw addressTimeout()
             }
@@ -78,8 +75,6 @@ import java.util.concurrent.TimeUnit
                     if(hostIndex>0) {
                         NetLog.retry("model_batch",hostIndex+1,hosts.size,"previous host returned no model")
                     }
-                    if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
-                    val hostDeadline=minOf(deadline,clock()+ContentRepository.MODEL_HOST_ATTEMPT_MS)
                     try {
                         val models=tryBatchModel(
                             "https://$host",
@@ -87,7 +82,6 @@ import java.util.concurrent.TimeUnit
                             "player",
                             batchIds,
                             cookie,
-                            hostDeadline,
                             playback,
                         )
                         rememberModels(models,playback)
@@ -106,7 +100,7 @@ import java.util.concurrent.TimeUnit
                     }
                 }
                 if(batchModel!=null) return batchModel
-                val model=fetchModel(id,scope,ordered,hosts,cookie,deadline,playback)
+                val model=fetchModel(id,scope,ordered,hosts,cookie,playback)
                 rememberModel(id,playback,model)
                 return model
             } finally {
@@ -162,26 +156,20 @@ import java.util.concurrent.TimeUnit
         ordered: List<String>,
         hosts: List<String>,
         cookie: String?,
-        deadline: Long,
         playback: PlaybackProfile,
     ): JSONObject {
         var failure: IOException?=null
-        hostLoop@ for((hostIndex,host) in hosts.withIndex()) {
+        for((hostIndex,host) in hosts.withIndex()) {
             if(hostIndex>0) {
                 NetLog.retry("model_host",hostIndex+1,hosts.size,failure?.message.orEmpty())
             }
-            val hostDeadline=minOf(deadline,clock()+ContentRepository.MODEL_HOST_ATTEMPT_MS)
             for((pathIndex,path) in ordered.withIndex()) {
                 if(pathIndex>0) {
                     NetLog.retry("model_path",pathIndex+1,ordered.size,"previous path returned no model")
                 }
-                // 余额用完就停：不要再往下试下一条路径 / 域名。
-                if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) {
-                    throw failure ?: addressTimeout()
-                }
                 val model=try {
                     RequestScope.withScope(scope) {
-                        tryModelPath("https://$host",path,id,cookie,hostDeadline,playback)
+                        tryModelPath("https://$host",path,id,cookie,playback)
                     }
                 } catch(e: IOException) {
                     // 用户切走了（取消域）：这不是「这条路不通」，不该再往下试。
@@ -189,7 +177,6 @@ import java.util.concurrent.TimeUnit
                     // 设备身份失效与路径 / 域名无关：换一条只会再被拒一次。
                     if(e is DeviceNotRegisteredException) throw e
                     failure=e
-                    if(e is AddressTimeoutException) continue@hostLoop
                     null
                 }
                 if(model!=null) {
@@ -217,11 +204,9 @@ import java.util.concurrent.TimeUnit
         path: String,
         id: String,
         cookie: String?,
-        deadline: Long,
         playback: PlaybackProfile,
     ): JSONObject {
-        if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        return probeModelPath(host,path,id,cookie,deadline,playback)
+        return probeModelPath(host,path,id,cookie,playback)
     }
 
     /** 播放请求使用当前唯一的主身份；登录后以账号设备为准。 */
@@ -270,17 +255,15 @@ import java.util.concurrent.TimeUnit
         path: String,
         id: String,
         cookie: String?,
-        deadline: Long,
         playback: PlaybackProfile,
     ): JSONObject? {
         val backups=runCatching { ContentRepository.playbackBackupDevices?.invoke() }.getOrNull().orEmpty()
         for((index,backup) in backups.withIndex()) {
-            if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
             if(index>0) {
                 NetLog.retry("model_backup",index+1,backups.size,"previous backup device returned no model")
             }
             try {
-                val model=probeModelPath(host,path,id,cookie,deadline,playback,backup)
+                val model=probeModelPath(host,path,id,cookie,playback,backup)
                 NetLog.emit("model backup accepted id=${backup.id.takeLast(6)}")
                 return model
             } catch(e: IOException) {
@@ -313,20 +296,14 @@ import java.util.concurrent.TimeUnit
         path: String,
         id: String,
         cookie: String?,
-        deadline: Long,
         playback: PlaybackProfile,
         backup: PlaybackBackupDevice? = null,
     ): JSONObject {
-        // 这一发最多能用多少时间 = 整段剩余预算（见 [ADDRESS_DEADLINE_MS]）。
-        // 全部用同一份「剩余预算」派生 client，因此预算是**整段**上限，不是每一发各算一次。
-        val budget=remainingOf(deadline)
-        if(budget<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
         val body=ContentPlaybackParser.modelBody(id,path,playback,deviceLevel)
         val payload=java.io.ByteArrayOutputStream().also { out ->
             java.util.zip.GZIPOutputStream(out).use { it.write(body.toByteArray()) }
         }.toByteArray()
         waitModelSlot()
-        if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
         // 注册档案包含大量仅供 device_register 使用的字段。播放接口只接受
         // MODEL_QUERY_KEYS 这一组；整份档案直接交给 signer 会把 openudid、
         // profile-format、device_token 等全部拼进 query，服务端随即回 200 + 0 字节。
@@ -363,7 +340,7 @@ import java.util.concurrent.TimeUnit
         val response=text(
             signed.url,
             request,
-            client=addressClient(budget),
+            client=addressClient(ADDRESS_ATTEMPT_TIMEOUT_MS),
             storeRegionHeaders=false,
         ) { r -> stable=r.header("tt_stable")=="1" }
         // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
@@ -371,12 +348,12 @@ import java.util.concurrent.TimeUnit
             NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=0 stable=$stable")
             if(backup!=null) throw IOException("备用设备未返回播放模型")
             // 主设备空响应先用备用设备顶替；备用池不可用时再走 4→5 档与身份自愈。
-            tryBackupModel(host,path,id,cookie,deadline,playback)?.let { return it }
+            tryBackupModel(host,path,id,cookie,playback)?.let { return it }
             // 4 档空响应先升 5 重发一次。若 5 仍为空，再按设备身份失效交给自愈流程。
             if(deviceLevel<5) {
                 NetLog.retry("model_device_level",2,2,"empty model response at device_level=$deviceLevel")
                 escalateDeviceLevel()
-                return probeModelPath(host,path,id,cookie,deadline,playback)
+                return probeModelPath(host,path,id,cookie,playback)
             }
             noteDeviceRejected()
             invalidateModelCache()
@@ -410,19 +387,15 @@ import java.util.concurrent.TimeUnit
         scene: String,
         ids: List<String>,
         cookie: String?,
-        deadline: Long,
         playback: PlaybackProfile,
         backup: PlaybackBackupDevice? = null,
     ): Map<String,JSONObject> {
         if(ids.isEmpty()) return emptyMap()
-        val budget=remainingOf(deadline)
-        if(budget<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
         val body=ContentPlaybackParser.batchModelBody(ids,playback,scene,deviceLevel)
         val payload=java.io.ByteArrayOutputStream().also { out ->
             java.util.zip.GZIPOutputStream(out).use { it.write(body.toByteArray()) }
         }.toByteArray()
         waitModelSlot()
-        if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
         val profile=backup?.profile?.let { backupProfile ->
             modelQueryProfile(LinkedHashMap(VendorConstants.device).apply {
                 putAll(backupProfile)
@@ -451,16 +424,16 @@ import java.util.concurrent.TimeUnit
         val response=text(
             signed.url,
             request,
-            client=addressClient(budget),
+            client=addressClient(ADDRESS_ATTEMPT_TIMEOUT_MS),
             storeRegionHeaders=false,
         ) { r -> stable=r.header("tt_stable")=="1" }
         if(response.isBlank()) {
             NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=0 stable=$stable")
             if(backup!=null) throw IOException("备用设备未返回批量播放模型")
-            tryBackupBatch(host,path,scene,ids,cookie,deadline,playback)?.let { return it }
+            tryBackupBatch(host,path,scene,ids,cookie,playback)?.let { return it }
             if(deviceLevel<5) {
                 escalateDeviceLevel()
-                return tryBatchModel(host,path,scene,ids,cookie,deadline,playback)
+                return tryBatchModel(host,path,scene,ids,cookie,playback)
             }
             noteDeviceRejected()
             invalidateModelCache()
@@ -488,14 +461,12 @@ import java.util.concurrent.TimeUnit
         scene: String,
         ids: List<String>,
         cookie: String?,
-        deadline: Long,
         playback: PlaybackProfile,
     ): Map<String,JSONObject>? {
         val backups=runCatching { ContentRepository.playbackBackupDevices?.invoke() }.getOrNull().orEmpty()
         for(backup in backups) {
-            if(remainingOf(deadline)<ADDRESS_MIN_BUDGET_MS) break
             try {
-                val models=tryBatchModel(host,path,scene,ids,cookie,deadline,playback,backup)
+                val models=tryBatchModel(host,path,scene,ids,cookie,playback,backup)
                 if(models.isNotEmpty()) {
                     NetLog.emit("model batch backup accepted id=${backup.id.takeLast(6)} models=${models.size}/${ids.size}")
                     return models
@@ -546,9 +517,8 @@ import java.util.concurrent.TimeUnit
             .filter { cachedModel(it,playback)==null }
             .take(ContentRepository.PRELOAD_MODEL_LIMIT)
         if(batchIds.isEmpty()) return 0
-        val deadline=clock()+ADDRESS_DEADLINE_MS
         val gate=ContentRepository.modelGate
-        val waitMs=remainingOf(deadline).coerceIn(1L,ContentRepository.MODEL_GATE_TIMEOUT_MS)
+        val waitMs=ADDRESS_ATTEMPT_TIMEOUT_MS
         if(!gate.tryAcquire(waitMs,TimeUnit.MILLISECONDS)) {
             throw addressTimeout()
         }
@@ -566,7 +536,6 @@ import java.util.concurrent.TimeUnit
                     "preload",
                     batchIds,
                     cookie,
-                    deadline,
                     playback,
                 )
             }
@@ -580,7 +549,7 @@ import java.util.concurrent.TimeUnit
     }
 
     internal fun ContentRepository.addressClient(budgetMs: Long): OkHttpClient {
-        val bucket=(((budgetMs.coerceIn(ADDRESS_MIN_BUDGET_MS,ADDRESS_DEADLINE_MS))+99)/100)*100
+        val bucket=(((budgetMs.coerceIn(1L,ADDRESS_ATTEMPT_TIMEOUT_MS))+99)/100)*100
         synchronized(addressClients) {
             addressClients[bucket]?.let { return it }
             val client=http.newBuilder()
@@ -594,17 +563,15 @@ import java.util.concurrent.TimeUnit
             return client
         }
     }
-    /** 这一轮取地址还剩多少毫秒预算。 */
-    internal fun ContentRepository.remainingOf(deadline: Long)=deadline-clock()
     /**
-     * 预算用完时抛的那个异常。
+     * 等待闸门或单条播放地址链接超时时抛出的异常。
      *
      * 用独立的 [AddressTimeoutException]：它不能伪装成 [java.io.InterruptedIOException]，
      * 否则会被界面侧当成「用户切页造成的取消」静默丢掉。超时与取消必须分开：
      * 前者要清地址 / DNS / 连接池后自动重来，后者什么都不该做。
      */
     internal fun ContentRepository.addressTimeout(cause: Throwable? = null): AddressTimeoutException =
-        AddressTimeoutException("取播放地址超过 ${ADDRESS_DEADLINE_MS}ms",cause)
+        AddressTimeoutException("播放地址请求超过 ${ADDRESS_ATTEMPT_TIMEOUT_MS}ms",cause)
 
     /** OkHttp 的 callTimeout / readTimeout 或本仓库的预算耗尽都算地址超时。 */
     internal fun Throwable.isAddressTimeout(): Boolean {

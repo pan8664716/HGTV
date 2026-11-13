@@ -32,12 +32,11 @@ internal data class ContentRepositoryStreamCacheEntry(val info: StreamInfo,val a
                 rememberStream(cacheKey,cached.info,clock())
                 return cached.info
             }
-            // **整个取地址阶段的硬上限**（见 [ContentRepository.ADDRESS_DEADLINE_MS]）：上限从这一刻算起，
-            // 之后每一次请求都只用「剩余预算」当自己的超时，余额用完立刻抛。
+            // 每个实际播放接口链接各自 6 秒（见 [ContentRepository.ADDRESS_ATTEMPT_TIMEOUT_MS]）；
+            // 这里不设整轮总预算，避免前一条慢链接把后续候选链接的额度一起吃光。
             // 缓存命中不走这里，因此点「下一个」十几毫秒就能起播的那条路一分钱都不多花。
-            val deadline=clock()+ADDRESS_DEADLINE_MS
             val info=try {
-                fetchStream(id,maxQuality,deadline,playback,queue)
+                fetchStream(id,maxQuality,playback,queue)
             } catch(e: AddressTimeoutException) {
                 throw e
             } catch(e: IOException) {
@@ -87,23 +86,26 @@ internal data class ContentRepositoryStreamCacheEntry(val info: StreamInfo,val a
 
     internal fun ContentRepository.rotateDeviceForRetryImpl(): String = invalidateModelCache()
 
-    /** 真正去取播放地址（[streamImpl] 的缓存之外那一半）。[deadline] 见 [ContentRepository.ADDRESS_DEADLINE_MS]。 */
+    /** 真正去取播放地址（[streamImpl] 的缓存之外那一半）。 */
     private fun ContentRepository.fetchStream(
         id: String,
         maxQuality: Int,
-        deadline: Long,
         playback: PlaybackProfile,
         queue: List<String>,
     ): StreamInfo {
-        val model=videoModelImpl(id,deadline,playback,queue)
+        val model=videoModelImpl(id,playback,queue)
         val raw=model.opt("fallback_api")
         val fallback=when(raw) { is JSONObject -> raw.str("fallback_api"); is JSONArray -> raw.optString(0); else -> runCatching { JSONObject(raw.toString()).str("fallback_api") }.getOrDefault(raw.toString()) }
         if(!fallback.startsWith("https://")) throw IOException("播放地址格式异常")
-        // 这一步同样是「取地址」的一部分：模型给了 `fallback_api`，但真正带 `video_list`
-        // 的是它返回的那份 JSON。余额用完就直接抛，别让它在 45 秒的默认超时上再挂一次。
-        val budget=remainingOf(deadline)
-        if(budget<ADDRESS_MIN_BUDGET_MS) throw addressTimeout()
-        val info=JSONObject(text(fallback,client=addressClient(budget),storeRegionHeaders=false))
+        // 模型给了 `fallback_api` 后，真正带 `video_list` 的是它返回的那份 JSON。
+        // 这一条链接同样单独拿完整的 6 秒，不复用模型请求的剩余时间。
+        val info=JSONObject(
+            text(
+                fallback,
+                client=addressClient(ADDRESS_ATTEMPT_TIMEOUT_MS),
+                storeRegionHeaders=false,
+            )
+        )
             .optJSONObject("video_info")?.optJSONObject("data") ?: throw IOException("没有播放资源")
         return ContentPlaybackParser.parseStreamInfo(model,info,maxQuality)
     }

@@ -74,8 +74,9 @@ object PlaybackTransport {
             .addInterceptor(com.hgtv.star.core.session.SessionInterceptor())
             // **建连最多 3 秒**（原 8 秒）。这是「断网切集」那 30~50 秒冻屏的最后一块：
             //
-            // 取地址整段已经有 3 秒硬上限（见 `ContentRepository.ADDRESS_DEADLINE_MS`），
-            // 但 `RemoteVideo.prepare()` 用的是**这条** client，它不在那段预算里。
+            // 取地址的每条链接各自有 6 秒超时（见
+            // `ContentRepository.ADDRESS_ATTEMPT_TIMEOUT_MS`），但 `RemoteVideo.prepare()`
+            // 用的是**这条** client，它不在取地址请求的超时里。
             // 断网时 `range(0,256KB)` 的 SYN 石沉大海，旧值要等满 8 秒才抛
             //（现场：`Stage prepare` 前后各卡 8~16 秒，串行两次 Range 就是 16 秒）。
             //

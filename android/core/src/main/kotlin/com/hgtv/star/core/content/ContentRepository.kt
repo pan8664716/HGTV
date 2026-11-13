@@ -377,13 +377,12 @@ class ContentRepository(
 
     private fun videoModel(
         id: String,
-        deadline: Long,
         playback: PlaybackProfile,
         queue: List<String> = emptyList(),
-    ): JSONObject = videoModelImpl(id,deadline,playback,queue)
+    ): JSONObject = videoModelImpl(id,playback,queue)
 
-    internal val ADDRESS_DEADLINE_MS=6_000L
-    internal val ADDRESS_MIN_BUDGET_MS=300L
+    /** 每个实际播放地址 HTTP 链接的独立超时；不是整轮取地址的总预算。 */
+    internal val ADDRESS_ATTEMPT_TIMEOUT_MS=6_000L
     internal val addressClients=linkedMapOf<Long,OkHttpClient>()
     companion object {
         @Volatile var deviceHeal: ((ContentRepository, String) -> Boolean)? = null
@@ -394,13 +393,11 @@ class ContentRepository(
         internal val modelGate=java.util.concurrent.Semaphore(1,true)
         internal val foregroundModelWaiters=java.util.concurrent.atomic.AtomicInteger(0)
         @Volatile internal var backgroundModelScope: RequestScope?=null
-        internal const val MODEL_GATE_TIMEOUT_MS=25_000L
         internal const val MODEL_SPACING_MS=200L
         internal val modelLastAttemptAt=java.util.concurrent.atomic.AtomicLong(0L)
         internal val deviceRotateLock=Any()
         @Volatile internal var modelCacheGen: Int=0
         internal const val MODEL_CACHE_MS=PlaybackCache.URL_FRESH_MS
-        internal const val MODEL_HOST_ATTEMPT_MS=3_000L
         internal const val PLAYER_MODEL_PATH="/novel/player/multi_video_model/player/v1"
         internal const val PLAYER_MODEL_BATCH_LIMIT=15
         internal const val BATCH_MODEL_PATH="/novel/player/multi_video_model/preload/v1"

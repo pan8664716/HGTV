@@ -165,8 +165,8 @@ internal fun TvMainActivity.initializeMainAfterFirstFrameImpl(state: Bundle?) {
                 //
                 // 不做这一步的话，用户要等 okhttp 自己超时才看到下一步——哪怕网络早就好了。
                 // 现场：断网切集 → 2 秒后联网，界面一动不动 45 秒（`callTimeout`）才开始自愈，
-                // 首帧在 49.6 秒。取地址整段现在有 6 秒的硬上限
-                //（见 `ContentRepository.ADDRESS_DEADLINE_MS`），但那是**兜底**：
+                // 首帧在 49.6 秒。取地址现在每条实际链接有独立的 6 秒超时
+                //（见 `ContentRepository.ADDRESS_ATTEMPT_TIMEOUT_MS`），但那是**兜底**：
                 // 能当场知道网络回来了，就不该白白等满。
                 if(restored) refetchAddressOnNetwork()
                 if(foreground && screen=="player" && playError && autoRecovery) {
