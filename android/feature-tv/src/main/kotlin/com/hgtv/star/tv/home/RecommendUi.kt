@@ -7,6 +7,7 @@ import android.widget.FrameLayout
 import com.hgtv.star.core.CategoryFilterOption
 import com.hgtv.star.core.CategorySelection
 import com.hgtv.star.core.Series
+import com.hgtv.star.core.categoryFeed
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.tv.TvStyle
 

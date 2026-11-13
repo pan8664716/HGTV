@@ -2852,3 +2852,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 161：ContentRepository 分类门面迁移
+
+状态：已完成。
+
+- 将榜单分页、首页并发和分类面板入口移到 `ContentCatalogFacade.kt`。
+- 保留 30 条首屏、100 条续页和面板缓存。
+- 补齐手机与 TV 调用点的扩展函数导入。
+- `ContentRepository.kt` 从 1613 行降到 1533 行；
+  `ContentCatalogFacade.kt` 为 88 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

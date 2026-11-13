@@ -12,6 +12,7 @@ import com.hgtv.star.core.CategoryGenres
 import com.hgtv.star.core.CategoryPanel
 import com.hgtv.star.core.CategoryPanelCache
 import com.hgtv.star.core.CategorySelection
+import com.hgtv.star.core.categoryFeed
 import com.hgtv.star.phone.PhonePlayerActivity
 import com.hgtv.star.phone.PhoneServices
 import com.hgtv.star.phone.phoneNav

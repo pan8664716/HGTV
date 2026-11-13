@@ -7,6 +7,7 @@ import com.hgtv.star.core.CatalogPage
 import com.hgtv.star.core.CatalogFilter
 import com.hgtv.star.core.CATALOG_FIRST_PAGE_SIZE
 import com.hgtv.star.core.RankBoard
+import com.hgtv.star.core.rank
 import com.hgtv.star.phone.PhoneServices
 import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
