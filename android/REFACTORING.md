@@ -3331,3 +3331,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 201：TvMain 配置变化迁移
+
+状态：已完成。
+
+- 将配置变化后的菜单缓存失效与页面重建移到
+  `TvMainActivityConfig.kt`。
+- `TvMainActivity.kt` 从 1908 行降到 1899 行；
+  `TvMainActivityConfig.kt` 为 23 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
