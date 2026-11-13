@@ -3427,3 +3427,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 209：手机播放页 UI 装配迁移
+
+状态：已完成。
+
+- 将竖横屏 UI 装配移到 `PhonePlayerUiAssembly.kt`。
+- 保留半透明根层、横屏基础层、顶栏、底栏及共用控制界面的装配顺序。
+- `PhonePlayerActivity.kt` 从 1231 行降到 1202 行；
+  `PhonePlayerUiAssembly.kt` 为 35 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
