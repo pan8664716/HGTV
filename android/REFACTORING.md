@@ -2003,3 +2003,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 89：ContentRepository 播放档位迁移
+
+状态：已完成。
+
+- 将每集重置 4 档和空响应升到 5 档移到 `ContentDeviceLevel.kt`。
+- 保留只使用 4 / 5 两档和升级日志。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。

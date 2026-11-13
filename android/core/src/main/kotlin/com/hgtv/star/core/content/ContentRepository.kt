@@ -708,13 +708,11 @@ class ContentRepository(
      *
      * 限流是临时的，上一集升到 5 不代表下一集也要多要档位。
      */
-    fun beginEpisode() { deviceLevel=4 }
+    fun beginEpisode() = beginEpisodeImpl()
 
     /** 4 档空响应：升到 5 再请求一次；升到 5 后本集不再回退。 */
     internal fun escalateDeviceLevel() {
-        if(deviceLevel>=5) return
-        deviceLevel=5
-        NetLog.emit("model device_level 4 -> 5")
+        escalateDeviceLevelImpl()
     }
     /**
      * 分类接口一页的条数。
