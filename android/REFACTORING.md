@@ -3634,3 +3634,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 226：ContentRepository 注释压缩
+
+状态：已完成。
+
+- 压缩独立协议、分页和兼容注释行，保留 SPDX、请求、签名和缓存代码。
+- `ContentRepository.kt` 从 1246 行降到 455 行，已低于 800 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
