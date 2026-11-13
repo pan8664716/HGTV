@@ -912,51 +912,15 @@ class PhoneFeedView(
         clearDanmakuOnSwitch: Boolean = false,
         videoInfo: StreamInfo? = null,
     ) {
-        page.bind(series, "第${episodeIndex + 1}集")
-        // `bind` 会把画面模式重置成「按卡片 vertical 猜」：从播放页退回来时，
-        // 用户在设置里选的等比铺满 / 缩放会被悄悄改回默认，读起来就是「回来画面变了一下」。
-        applyPageVideoSettings(page)
-        page.updateVideoFrame(
-            exo.videoSize.width.takeIf { it > 0 } ?: 1,
-            exo.videoSize.height.takeIf { it > 0 } ?: 1,
-        )
-        boundPage?.let { if (it !== page) it.playerView.player = null }
-        if (forceRebind) {
-            // 先置空再挂：置空只会清掉「本 View 持有的那一张」（播放页那张不受影响），
-            // 紧接着挂回去，两次都在同一帧里完成，不会多一次闪黑。
-            //
-            // 但如果**这一块 Surface 从来就没被解绑过**（播放页竖屏是借它出画面的，
-            // 见 `PhoneVideoPage.underlay`），就不要再置空：那一下会真的把它摘掉、
-            // 再挂回来又是一次空帧，正好是「退回来闪一下」。
-            // 只有「输出仍挂在推荐页 Surface 上」时才跳过：播放页竖屏借画面
-            // （`underlayActive`）时这一块从来没被摘过，重挂会先清一次屏。
-            // 其余情况（横屏播放页、详情页进来）输出已被别人拿走，必须重挂。
-            if (PhoneSession.underlayActive && page.playerView.player === exo) {
-                // 什么都不做：Surface 一直在，画面就是原来那一帧。
-            } else {
-                if (page.playerView.player === exo) page.playerView.player = null
-                page.playerView.player = exo
-            }
-        } else if (page.playerView.player !== exo) {
-            page.playerView.player = exo
-        }
-        // setPlayer() 会先按播放器旧 videoSize 写比例；挂好后再写本集真实尺寸，
-        // 保证随后 prepare 出的首帧直接按正确比例布局。
-        val width = videoInfo?.videoWidth?.takeIf { it > 0 } ?: exo.videoSize.width
-        val height = videoInfo?.videoHeight?.takeIf { it > 0 } ?: exo.videoSize.height
-        val verticalSource = if (width > 0 && height > 0) height > width else series.vertical
-        page.playerView.primeAspectRatio(width, height, verticalSource)
-        boundPage = page
-        applyDanmakuSettings(page)
-        loadDanmaku(
+        attachPageImpl(
+            exo,
             page,
-            playingIndex,
-            currentEpisodeIds[playingIndex].orEmpty(),
-            series.id,
-            clearOnSwitch=clearDanmakuOnSwitch,
+            series,
+            episodeIndex,
+            forceRebind,
+            clearDanmakuOnSwitch,
+            videoInfo,
         )
-        page.setChromeVisible(true)
-        scheduleChromeHide(page)
     }
     internal fun attachPageForSurface(
         exo: ExoPlayer,

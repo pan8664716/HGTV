@@ -1877,3 +1877,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 78：PhoneFeed 页面绑定迁移
+
+状态：已完成。
+
+- 将播放器与页面绑定移到 `player/PhoneFeedPageBinding.kt`；原私有入口保留。
+- 保留画面设置补写、旧页解绑、强制重挂判据、比例预热、弹幕加载和控制层显示顺序。
+- `PhoneFeedView.kt` 从 1431 行降到 1395 行；`PhoneFeedPageBinding.kt` 为 50 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
