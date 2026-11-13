@@ -2431,3 +2431,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 123：PhonePlayer 会话接手迁移
+
+状态：已完成。
+
+- 将会话接手判定与接手动作移到 `PhonePlayerAdoption.kt`。
+- 保留 IDLE 补 prepare、播放列表状态、预热节流、暂停意图和地址过期重开。
+- `PhonePlayerActivity.kt` 从 2527 行降到 2402 行；`PhonePlayerAdoption.kt` 为 144 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
