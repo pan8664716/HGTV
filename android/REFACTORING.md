@@ -2742,3 +2742,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 150：RecommendPage 正片与返回迁移
+
+状态：已完成。
+
+- 将确定进正片、推荐页返回和正片返回回主页移到 `RecommendNavigation.kt`。
+- 保留历史写入、预热收尾、首页刷新和连播片尾处理。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
