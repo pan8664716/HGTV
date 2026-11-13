@@ -1096,12 +1096,7 @@ class ContentRepository(
         accountValuesImpl(versionCode, versionName)
     /** 普通业务请求也使用当前唯一的主身份；登录后即账号设备。 */
     internal fun Signer.Request.withSession(): Signer.Request {
-        val identity=primaryIdentity()
-        val extra=linkedMapOf<String,String>()
-        if(identity.cookie.isNotBlank()) extra["Cookie"]=identity.cookie
-        if(identity.token.isNotBlank()) extra["x-tt-token"]=identity.token
-        if(identity.account) extra["X-HGTV-Identity"]="account"
-        return if(extra.isEmpty()) this else copy(headers=headers+extra)
+        return withSessionImpl(this@ContentRepository)
     }
 
     /**
@@ -1118,54 +1113,21 @@ class ContentRepository(
     )
 
     internal fun primaryIdentity(): PrimaryIdentity {
-        val account=credentials?.takeIf {
-            it.configured &&
-                it.device["device_id"].orEmpty().isNotBlank() &&
-                (it.device["iid"].orEmpty().isNotBlank() || it.device["install_id"].orEmpty().isNotBlank())
-        }
-            ?: return PrimaryIdentity(
-                account=false,
-                profile=deviceProfile(),
-                cookie=com.hgtv.star.core.session.CookieRecord.mapToHeader(registrationCookies),
-                token="",
-            )
-        val live=com.hgtv.star.core.session.SessionBridge.state
-        val liveCookie=live?.cookieHeader.orEmpty()
-        val liveSid=com.hgtv.star.core.session.CookieRecord.value(liveCookie,"sessionid")
-        val accountSid=com.hgtv.star.core.session.CookieRecord.value(account.cookie,"sessionid")
-        val sameSession=liveSid.isNotBlank() && liveSid==accountSid
-        val cookie=CookieRecord.headerToMap(account.cookie).toMutableMap().apply {
-            if(sameSession) putAll(CookieRecord.headerToMap(liveCookie))
-        }
-        val accountIid=account.device["iid"].orEmpty()
-            .ifBlank { account.device["install_id"].orEmpty() }
-        if(accountIid.isNotBlank() && cookie["install_id"].isNullOrBlank()) cookie["install_id"]=accountIid
-        return PrimaryIdentity(
-            account=true,
-            profile=accountDeviceProfile(account),
-            cookie=CookieRecord.mapToHeader(cookie),
-            token=if(sameSession) live?.token.orEmpty().ifBlank { account.token } else account.token,
-        )
+        return primaryIdentityImpl()
     }
 
     /** 所有请求共用的当前主设备档案：登录后以账号设备为准。 */
-    internal fun primaryProfile(): Map<String,String> = primaryIdentity().profile
+    internal fun primaryProfile(): Map<String,String> = primaryProfileImpl()
 
     /** 所有请求共用的当前主 Cookie：登录后只使用账号 Cookie，不再叠加匿名主设备 Cookie。 */
-    internal fun primaryCookieHeader(): String = primaryIdentity().cookie
+    internal fun primaryCookieHeader(): String = primaryCookieHeaderImpl()
 
     internal fun recommendationValues(identity: PrimaryIdentity): LinkedHashMap<String,String> =
         recommendationValuesImpl(identity)
 
     /** 账号页请求显式要求当前主身份必须是登录态。 */
     private fun Signer.Request.withAccountSession(): Signer.Request {
-        val identity=primaryIdentity()
-        if(!identity.account) throw SignInRequiredException()
-        val extra=linkedMapOf<String,String>()
-        if(identity.token.isNotBlank()) extra["x-tt-token"]=identity.token
-        if(identity.cookie.isNotBlank()) extra["Cookie"]=identity.cookie
-        extra["X-HGTV-Identity"]="account"
-        return copy(headers=headers+extra)
+        return withAccountSessionImpl(this@ContentRepository)
     }
     /** 有没有可用的登录态：搜索要不要优先走 App 接口、个人信息页要不要联网，都看它。 */
     val signedIn: Boolean get()=credentials?.configured==true || !sessionToken.isNullOrBlank()

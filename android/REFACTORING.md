@@ -1981,3 +1981,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 87：ContentRepository 主身份与会话头迁移
+
+状态：已完成。
+
+- 将主身份快照、主档案 / Cookie 和普通 / 账号会话头注入移到 `ContentIdentity.kt`。
+- 保留账号设备优先、同 sessionid 的 live token 合并、install_id 补写和登录校验。
+- `ContentRepository.kt` 从 1899 行降到 1866 行；`ContentIdentity.kt` 为 66 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
