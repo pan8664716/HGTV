@@ -8,6 +8,7 @@ import android.widget.*
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.data.PlaybackCapability
+import com.hgtv.star.shared.data.accountCache
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.debug.devicePrefix

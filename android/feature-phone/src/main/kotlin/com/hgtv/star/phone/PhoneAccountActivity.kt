@@ -27,6 +27,7 @@ import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.phone.ui.tabBarInset
 import com.hgtv.star.shared.account.AccountLogin
+import com.hgtv.star.shared.data.accountCache
 import com.hgtv.star.shared.ui.SoftStyle
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

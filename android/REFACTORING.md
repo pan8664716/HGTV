@@ -3196,3 +3196,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 190：Library 账号缓存迁移
+
+状态：已完成。
+
+- 将账号快照读取、写入和清理移到 `LibraryAccountFacade.kt`。
+- 补齐共享账号、手机账号与 TV 账号调用点导入。
+- `Library.kt` 从 1384 行降到 1367 行；
+  `LibraryAccountFacade.kt` 为 22 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
