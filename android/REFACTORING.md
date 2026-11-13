@@ -2612,3 +2612,23 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+## 批次 109–138 阶段检查点
+
+- 已完成 30 / 30 批，全部独立提交；工作区干净，未推送。
+- 代码提交：`3961bfa`、`e768188`、`1b98b57`、`13dd5d3`、`2c3d4bd`、
+  `ebb10bb`、`186574c`、`59d3819`、`a5cd6f0`、`5d8854b`、`abe4e20`、
+  `5e5091a`、`d3d096f`、`291c996`、`89fc6a2`、`9caa662`、`360b6e9`、
+  `26cf67b`、`428dee5`、`bf16484`、`57309fd`、`1c5f86b`、`003f9f9`、
+  `653f35e`、`abd8c80`、`b7f4efb`、`04279fd`、`9943dfd`、`bd23c74`、
+  `89480f4`。
+- 每批均执行 `git diff --check` 与 `:app:assembleDebug`；测试按项目规则交给用户。
+- `PhonePlayerActivity.kt` 从 3073 行降到 1857 行；
+  `ContentRepository.kt` 从 1831 行降到 1633 行。
+- 自本轮起点 `33ce990` 起未修改版本、Gradle、Manifest、资源或序列化文件。
+- 当前仍有 21 个生产 Kotlin 文件超过 800 行，主要大文件为
+  `TvMainActivity.kt` 2047、`RecommendPage.kt` 1890、`PhonePlayerActivity.kt` 1857、
+  `ContentRepository.kt` 1633、`TvComponents.kt` 1480、`PlayerController.kt` 1432、
+  `Library.kt` 1384。
+- DoD 未达到；下一轮优先 `TvMainActivity.kt`、`RecommendPage.kt` 和
+  `PhonePlayerActivity.kt` 剩余横屏装配。
