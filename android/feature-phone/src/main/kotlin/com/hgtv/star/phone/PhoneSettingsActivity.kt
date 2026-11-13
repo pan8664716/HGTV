@@ -79,8 +79,8 @@ enum class PhoneSettingsPage(val label: String, val hint: String) {
 }
 
 private const val LAN_SYNC_SOURCE_TTL_MS = Long.MAX_VALUE
-private const val TAG_LANDSCAPE_SETTING_ROW = "landscape-setting-row"
-private const val TAG_LANDSCAPE_SETTING_SPACER = "landscape-setting-spacer"
+internal const val TAG_LANDSCAPE_SETTING_ROW = "landscape-setting-row"
+internal const val TAG_LANDSCAPE_SETTING_SPACER = "landscape-setting-spacer"
 internal const val SETTINGS_DENSITY_SCALE = .9f
 internal const val SETTINGS_TEXT_SCALE = 1f
 
@@ -415,133 +415,6 @@ class PhoneSettingsActivity : PhoneActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = settingsDp(4) })
     }
-
-    // ---------------------------------------------------------------- 横屏 TV 式布局
-
-    /** 与 TV 设置页同一种结构：整宽面板 + 面板标题/说明 + 两列或四列设置格。 */
-    private fun landscapePanel(title: String, subtitle: String): LinearLayout {
-        val panel=LinearLayout(this).apply {
-            orientation=LinearLayout.VERTICAL
-            setPadding(settingsDp(12),settingsDp(10),settingsDp(12),settingsDp(8))
-            applySoft(SoftStyle.RAISED,PhoneStyle.surface,PhoneStyle.RADIUS_CARD,3f)
-        }
-        panel.addView(TextView(this).apply {
-            text=title
-            setTextColor(PhoneStyle.text)
-            settingsTextSize(13)
-            setTypeface(typeface,Typeface.BOLD)
-            setPadding(settingsDp(2),0,settingsDp(2),0)
-        })
-        panel.addView(TextView(this).apply {
-            text=subtitle
-            setTextColor(PhoneStyle.textDim)
-            settingsTextSize(11)
-            setPadding(settingsDp(2),settingsDp(3),settingsDp(2),settingsDp(8))
-        })
-        container.addView(panel,LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin=settingsDp(8) })
-        sectionHost=panel
-        return panel
-    }
-
-    /** 横屏设置格的两列流式容器：每行最多两个按钮，单按钮也固定占半行。 */
-    private fun landscapeLine(panel: LinearLayout): LinearLayout {
-        val flow=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-        panel.addView(flow,LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { bottomMargin=settingsDp(6) })
-        return flow
-    }
-
-    private fun landscapeCell(flow: LinearLayout,view: View) {
-        val lastRow=flow.getChildAt(flow.childCount-1) as? LinearLayout
-        val spacer=lastRow?.findViewWithTag<View>(TAG_LANDSCAPE_SETTING_SPACER)
-        if(lastRow!=null && spacer!=null) {
-            lastRow.removeView(spacer)
-            lastRow.addView(view,LinearLayout.LayoutParams(
-                0,settingRowHeight(),1f
-            ).apply { leftMargin=settingsDp(6) })
-            return
-        }
-        val row=LinearLayout(this).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.CENTER_VERTICAL
-            tag=TAG_LANDSCAPE_SETTING_ROW
-        }
-        flow.addView(row,LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { if(flow.childCount>1) topMargin=settingsDp(6) })
-        row.addView(view,LinearLayout.LayoutParams(0,settingRowHeight(),1f))
-        row.addView(
-            Space(this).apply { tag=TAG_LANDSCAPE_SETTING_SPACER },
-            LinearLayout.LayoutParams(0,1,1f),
-        )
-    }
-
-    /** 横屏双栏：左、右两列各自纵向排列。 */
-    private fun landscapeColumns(panel: LinearLayout): Pair<LinearLayout,LinearLayout> {
-        val row=LinearLayout(this).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.TOP
-        }
-        val left=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-        val right=LinearLayout(this).apply { orientation=LinearLayout.VERTICAL }
-        row.addView(left,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
-        row.addView(right,LinearLayout.LayoutParams(
-            0,ViewGroup.LayoutParams.WRAP_CONTENT,1f
-        ).apply { leftMargin=settingsDp(6) })
-        panel.addView(row,LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-        return left to right
-    }
-
-    private fun landscapeColumnCell(column: LinearLayout,view: View) {
-        column.addView(view,LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,settingRowHeight()
-        ).apply { if(column.childCount>0) topMargin=settingsDp(6) })
-    }
-
-    private fun landscapeSetting(title: String,value: String,onClick: ()->Unit): View =
-        LinearLayout(this).apply {
-            orientation=LinearLayout.HORIZONTAL
-            gravity=Gravity.CENTER_VERTICAL
-            setPadding(settingsDp(12),0,settingsDp(10),0)
-            applySoft(SoftStyle.RAISED,PhoneStyle.surfaceHigh,PhoneStyle.RADIUS_PILL,4f)
-            addView(TextView(this@PhoneSettingsActivity).apply {
-                text=title
-                setTextColor(PhoneStyle.text)
-                settingsTextSize(13)
-                maxLines=1
-                ellipsize=android.text.TextUtils.TruncateAt.END
-            },LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
-            addView(TextView(this@PhoneSettingsActivity).apply {
-                text=value
-                setTextColor(PhoneStyle.textDim)
-                settingsTextSize(11)
-                maxLines=1
-                ellipsize=android.text.TextUtils.TruncateAt.END
-            })
-            setOnClickListener { onClick() }
-        }
-
-    private fun landscapeSwitch(title: String,checked: Boolean,onToggle:(Boolean)->Unit): View =
-        PhoneSwitchRow(
-            this,title,checked,
-            densityScale=SETTINGS_DENSITY_SCALE,
-            textScale=SETTINGS_TEXT_SCALE,
-            onToggle=onToggle,
-        )
-
-    private fun landscapeSlider(
-        title: String,min: Float,max: Float,step: Float,value: Float,
-        format:(Float)->String,onValue:(Float)->Unit,
-    ): View = PhoneSettingSlider(
-        this,title,min,max,step,value,onValue,format,
-        densityScale=SETTINGS_DENSITY_SCALE,
-        textScale=SETTINGS_TEXT_SCALE,
-    )
 
     private fun renderLandscapePlayback() {
         val pref=landscapePanel("播放偏好","所有剧集共用，播放中也可调整")

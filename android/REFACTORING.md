@@ -2138,3 +2138,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 100：PhoneSettings 横屏布局基元迁移
+
+状态：已完成。
+
+- 将横屏面板、流式格、双栏、设置格、开关和滑动条移到
+  `PhoneSettingsLandscapeWidgets.kt`。
+- 保留面板阴影、标题说明、单格半行占位、行高和间距。
+- `PhoneSettingsActivity.kt` 从 1775 行降到 1648 行；
+  `PhoneSettingsLandscapeWidgets.kt` 为 160 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
