@@ -2682,3 +2682,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 144：RecommendPage 单集起播迁移
+
+状态：已完成。
+
+- 将单集起播、预热键、停留结算和曝光上报移到 `RecommendEpisode.kt`。
+- 保留预热新鲜期校验、首帧后预排和进度上报。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
