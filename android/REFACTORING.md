@@ -2556,3 +2556,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 134：PhonePlayer 后台暂停迁移
+
+状态：已完成。
+
+- 将播放页后台暂停移到 `PhonePlayerPause.kt`。
+- 保留推荐页交接不暂停、进度落盘、媒体会话停用、看门狗和弹幕计时撤销。
+- `PhonePlayerActivity.kt` 从 2046 行降到 2012 行；`PhonePlayerPause.kt` 为 40 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
