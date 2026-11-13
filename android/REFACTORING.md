@@ -2812,3 +2812,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 157：TvMain 网络日志迁移
+
+状态：已完成。
+
+- 将 NetLog 输出、TLS 面板和错误分流移到 `TvNetworkLogging.kt`。
+- 保留正式包诊断输出和统计行过滤。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

@@ -115,46 +115,7 @@ class TvMainActivity: Activity() {
      */
     val playbackPrime get()=com.hgtv.star.shared.architecture.AppExecutors.player.executor
     val playerBuildWorker get()=com.hgtv.star.shared.architecture.AppExecutors.player.executor
-    // 网络失败诊断：客户设备上「首页空白」时，这行日志给出主机名与异常类型。
-    //
-    // 注意：正式包里 `Log.i` 被 R8 整段删掉（见 proguard-rules.pro），只写 logcat 等于线上
-    // 什么都不剩。因此这三处出口都另外走一遍 [Diagnostics]——诊断层会把现场同时写进
-    // 调试面板与 logcat；U-APM 只采集崩溃与性能，不接收这些业务诊断文本。
-    init {
-        com.hgtv.star.core.NetLog.log={ line ->
-            // 只走 [Diagnostics.trace]，它本身就是 `Log.i(tag, line)`。
-            // 早先这里先 `Log.i("HGTV-NET", line)` 再 `Diagnostics.trace("HGTV-NET", line)`，
-            // 同一条日志被写了两遍——`adb logcat` 里每一行网络日志都是双份，
-            // 读起来像「同一个请求发了两次」，排查时会直接把人带沟里。
-            Diagnostics.trace("HGTV-NET",line)
-            // 调试模式打开时，网络层的每一行都进右上角那块面板：
-            // 「搜索接口暂不可用」这类问题在页面上只剩一句中文，真正的原因（哪个主机、什么码）只在这里。
-            // TLS 那一条单独归到「TLS」标头：它是平台支持的协议版本与真正启用的那两档，
-            // 与「某次请求挂了」不是一回事，混在「网络」里读起来像是又一次失败。
-            if(line.startsWith("TLS 可用版本=")) {
-                // TLS 能力是**固定一行**（面板第三行），不再抄进「近况」：
-                // 同一条信息出现两次，用户会以为那是两次不同的连接结果。
-                DebugTls.summary=compactTls(line.removePrefix("TLS "))
-            } else if(!keepNetLine(line)) {
-                // 纯统计行（`total=107ms` / `headers=… read=… chars=…` / 缓存命中）不进面板：
-                // 一次播放能连打十几条，只会把真正的失败挤出「近况」那 8 行。
-                // logcat 里照旧有（上面那一句 [Diagnostics.trace]），性能调优不受影响。
-                // 判据是白名单：见 [keepNetLine]。
-            } else if(!line.contains("interrupted",ignoreCase=true) && !line.contains("Canceled",ignoreCase=true)) {
-                // 「线程被打断 / 主动取消」不记：切页、换剧、退出时取消域会打断工作线程，
-                // 每一手都会留下一条 `InterruptedIOException: interrupted`。
-                // 这类不是网络故障，记下来只会把真正的失败挤出那 40 条近况。
-                DebugLog.record("网络",line)
-            }
-        }
-        com.hgtv.star.core.NetLog.event={ level,line ->
-            when(level) {
-                com.hgtv.star.core.NetLogLevel.ERROR -> Diagnostics.error("HGTV-NET",line)
-                com.hgtv.star.core.NetLogLevel.WARN -> Diagnostics.warn("HGTV-NET",line)
-                com.hgtv.star.core.NetLogLevel.DEBUG -> Diagnostics.trace("HGTV-NET",line)
-            }
-        }
-    }
+    init { setupNetworkLogging() }
     /** 与手机端共用的业务仓库；Activity 重建不换实例、不关连接池。 */
     val repository get()=AppRuntime.repository(this)
     /** 账号数据与同步的唯一状态入口。 */
