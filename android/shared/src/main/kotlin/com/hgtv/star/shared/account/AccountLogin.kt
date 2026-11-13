@@ -4,6 +4,7 @@ package com.hgtv.star.shared.account
 import com.hgtv.star.core.AccountCredentials
 import com.hgtv.star.core.AccountCredentialsParser
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.core.accountProfile
 import com.hgtv.star.shared.data.Library
 
 /**

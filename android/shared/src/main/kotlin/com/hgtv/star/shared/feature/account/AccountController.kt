@@ -11,6 +11,13 @@ import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.HistoryReconcile
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.WatchSync
+import com.hgtv.star.core.accountAddFavorite
+import com.hgtv.star.core.accountClearHistory
+import com.hgtv.star.core.accountData
+import com.hgtv.star.core.accountDeleteHistories
+import com.hgtv.star.core.accountRemoveFavorite
+import com.hgtv.star.core.accountReserve
+import com.hgtv.star.core.accountUploadProgress
 import com.hgtv.star.shared.data.Library
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers

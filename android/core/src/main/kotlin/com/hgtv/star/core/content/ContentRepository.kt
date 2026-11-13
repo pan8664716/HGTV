@@ -1058,24 +1058,6 @@ class ContentRepository(
         return accountTransport.retryBlank(attempts,action)
     }
 
-    fun accountProfile(): AccountProfile? = accountProfileImpl()
-    fun accountFavorites(): List<AccountFavorite> = accountFavoritesImpl()
-    fun accountHistory(): List<AccountHistory> = accountHistoryImpl()
-    fun accountLikes(): List<AccountLike> = accountLikesImpl()
-    fun accountReserves(): List<AccountReserve> = accountReservesImpl()
-    fun accountReserve(seriesId: String, subscribe: Boolean): Boolean = accountReserveImpl(seriesId,subscribe)
-    fun accountAddFavorite(seriesId: String): Boolean = accountAddFavoriteImpl(seriesId)
-    fun accountRemoveFavorite(seriesId: String): Boolean = accountRemoveFavoriteImpl(seriesId)
-    fun accountUploadProgress(seriesId: String,episodeId: String,episodeIndex: Int,position: Long,duration: Long,episodeCount: Int=0): Boolean =
-        accountUploadProgressImpl(seriesId,episodeId,episodeIndex,position,duration,episodeCount)
-    fun accountDeleteHistory(seriesId: String): Boolean = accountDeleteHistoryImpl(seriesId)
-    fun accountDeleteHistories(seriesIds: List<String>): Boolean = accountDeleteHistoriesImpl(seriesIds)
-    fun accountHistoryIds(): List<String> = accountHistoryIdsImpl()
-    fun accountClearHistory(extra: List<String> = emptyList()): Boolean = accountClearHistoryImpl(extra)
-    fun accountData(): AccountData = accountDataImpl()
-    internal fun authorOf(id: String): String = authorOfImpl(id)
-    fun authorsOf(ids: List<String>): Map<String,String> = authorsOfImpl(ids)
-
     /**
      * 剧集详情（简介 + 分集列表）：走 App 播放侧的详情接口。
      *

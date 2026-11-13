@@ -3096,3 +3096,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 182：ContentRepository 账号门面迁移
+
+状态：已完成。
+
+- 将账号资料、收藏、历史、预约、点赞和作者补查门面移到
+  `ContentAccountFacade.kt`。
+- 补齐共享账号、详情与登录控制器的扩展函数导入。
+- `ContentRepository.kt` 从 1445 行降到 1427 行；
+  `ContentAccountFacade.kt` 为 33 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
