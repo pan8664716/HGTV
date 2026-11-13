@@ -3688,3 +3688,63 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 未修改版本号、`versionCode`、Gradle、Manifest、CHANGELOG 或资源文件。
 - 未创建 tag，未推送，未创建 Release。
 - 最终 `git diff --check` 与 Debug APK 编译通过；测试按项目规则交由用户执行。
+
+## 文件系统布局重组（2026-11-13）
+
+### 目录规划（待执行）
+
+本次只移动 `.kt` 文件，不改包名、类名、文件内容或文件名。Kotlin 允许目录与包名不一致，
+因此所有 import、JVM facade、反射类名、R 类、Manifest、ProGuard 和 baseline profile
+保持原样。路径引用检查结果：构建脚本、Manifest、ProGuard、multidex 与
+`baseline-prof.txt` 均未引用 `.kt` 文件路径；baseline 只引用 JVM 类名，风险为低。
+
+#### core
+
+| 目标目录 | 文件映射 | 理由 / 风险 |
+| --- | --- | --- |
+| `account/` | `Account`、`AccountImportServer`、`AccountSnapshot`、`DeviceRegister`、`OfficialDeviceIds`、`PassportSigner`、`PassportTables`、`PhoneLogin`、`PhoneLoginServer`、`PhonePage`、`PhoneRegion`、`QrLogin`、`StableDeviceIds` | 登录、设备注册和账号导入；类名不变，低风险 |
+| `catalog/` | `BackToTopPolicy`、`CatalogFilter`、`CatalogSnapshot`、`CategoryCatalog`、`CategoryFilters`、`CategoryPanelCache`、`ContentAuthorRules`、`ContentType`、`ContentValues`、`FeedCursor`、`HomeLayout`、`OptionalFilter`、`RankBoard`、`SeriesSeasons` | 目录、筛选、榜单和首页模型；低风险 |
+| `crypto/` | `AesV3`、`ArgusLadon`、`Bytes`、`MediaCrypto`、`MedusaAlgorithm`、`MedusaAlgorithmTables`、`MedusaCore`、`MedusaEnvelope`、`MedusaModel`、`MedusaPb`、`MedusaSchema`、`MedusaState`、`MedusaTables`、`Signer` | 加解密、签名和协议数据；低风险 |
+| `network/` | `ContentTransport`、`HgtvDns`、`HgtvTls`、`NetTiming`、`OkHttp3Compat`、`PublicDns`、`RequestScope`、`TlsStatus`、`TncConfigStore` | DNS、TLS、HTTP 和请求生命周期；低风险 |
+| `identity/` | `ContentDeviceLevel`、`ContentIdentity`、`ContentProfiles`、`VendorConstants` | 设备身份和 UA/版本档案；低风险 |
+| `media/` | `ArtworkUrl`、`Danmaku`、`DanmakuEmoji`、`PictureWatchdog`、`SlideCache` | 封面、弹幕和播放媒体辅助；低风险 |
+| `library/` | `HistoryReconcile`、`LatestWriteQueue`、`LibraryBackup`、`LibraryIndex`、`LibraryTransferServer`、`LruPut`、`ViewingTools`、`WatchSync`、`Watching` | 本机书库、备份、历史与写队列；低风险 |
+| `recommend/` | `RecommendBehavior`、`RecommendCache`、`RecommendDataSource`、`RecommendFlow`、`RecommendStatConfigStore` | 推荐流、缓存和行为上报；低风险 |
+| `search/` | `PhoneSearchServer`、`SearchDiag`、`SearchKeyboard`、`SearchSource`、`VoiceQuery` | 搜索来源、诊断和局域网搜索页；低风险 |
+| `label/` | `CardMenu`、`EpisodeLabel`、`HeatLabel`、`LabelStyle`、`PosterCardContent` | 卡片标签、菜单和角标；低风险 |
+| `common/` | `ThirdPartyNotice`、`WorkLanes` | 跨域公共文案与线程预算；低风险 |
+| `playback/` | `BitrateProbe`、`CodecProbe`、`KeyMap`、`PlaybackAttemptLedger`、`PlaybackBackupDevice`、`PlaybackCache`、`PlaybackComfort`、`PlaybackDegradation`、`PlaybackFailurePolicy`、`PlaybackInfoLine`、`PlaybackSpeed`、`PlaybackStage`、`PrefetchPolicy`、`PreparedSlot`、`Probe`、`RemoteVideo`、`SeekStepPump`、`VideoProbe` | 播放状态、探测、预取和按键；低风险 |
+| `content/detail/` | `DetailCache` | 详情落盘缓存；目录与包名可不同，低风险 |
+
+#### feature-phone
+
+| 目标目录 | 文件映射 | 理由 / 风险 |
+| --- | --- | --- |
+| 根目录 | `PhoneMainActivity`、`PhoneActivity`、`PhoneServices`、`PhoneSession`、`PhoneNavigator`、`PhoneConsent`、`PhoneFirstRunTip` | 模块入口、宿主与共享门面；低风险 |
+| `account/` | `PhoneAccountActivity`、`PhoneAccountLogin`、`PhoneAccountSync`、`PhoneIdentity` | 账号登录与同步；低风险 |
+| `settings/` | `PhoneSettingsActions`、`PhoneSettingsActivity`、`PhoneSettingsApply`、`PhoneSettingsLanSync`、`PhoneSettingsLandscapePages`、`PhoneSettingsLandscapeWidgets`、`PhoneSettingsPageSelector`、`PhoneSettingsPortrait`、`PhoneSettingsScroll`、`PhoneSettingsSupport`、`PhoneSettingsSystem`、`PhoneSettingsUnified`、`PhoneSettingsWidgets`、`PhoneDanmakuSize` | 设置页面与弹幕字号偏好；低风险 |
+| `player/` | `PhonePlaybackRecovery`、`PhonePlaybackSettings`、`PhonePlayerActivity` 及其全部 `PhonePlayer*` 文件、`PhonePreload` | 播放会话、控制器、面板和生命周期；低风险 |
+| `feed/` | `PhoneFeedActions`、`PhoneFeedAdapter`、`PhoneFeedAdoption`、`PhoneFeedChrome`、`PhoneFeedDanmaku`、`PhoneFeedHide`、`PhoneFeedHost`、`PhoneFeedInitializer`、`PhoneFeedLifecycle`、`PhoneFeedPageSupport`、`PhoneFeedPager`、`PhoneFeedPlayback`、`PhoneFeedPrefetch`、`PhoneFeedReopen`、`PhoneFeedResume`、`PhoneFeedSettings`、`PhoneFeedSurface`、`PhoneFeedView` | 信息流页面、适配器、手势与预取；低风险 |
+| `detail/` | `PhoneDetailActivity`、`PhoneDetailSections`、`PhoneVideoPage`、`PhoneVideoPageState` | 详情页与竖屏视频版面；低风险 |
+| `search/` | `PhoneSearchActivity` | 手机搜索入口；低风险 |
+| `debug/` | `PhoneDebugReport`、`PhoneNetDebug`、`PhoneRecommendReporting` | 调试、网络与推荐上报；低风险 |
+
+#### feature-tv
+
+| 目标目录 | 文件映射 | 理由 / 风险 |
+| --- | --- | --- |
+| 根目录 | `AppVersion`、`TvMainActivity`、`TvMainLifecycleFacade` | 模块入口、版本与生命周期门面；低风险 |
+| `player/` | `PlaybackDiagnostics`、`PlaybackFailureLabels`、`PlaybackFailureReport`、`TvDanmakuClock`、`TvPlaybackAnalytics`、`TvPlaybackPreferences`、`TvPlaybackRunnables`、`TvPlaybackWarmup`、`TvPlayerBuilder`、`TvPlayerDecoderSwitch`、`TvPlayerDecoding`、`TvPlayerLifecycle`、`TvPlayerRenderers` | 播放内核、诊断和渲染；保留既有 `@file:JvmName` facade，低风险 |
+| `navigation/` | `TvMainStateRestore`、`TvMainTick`、`TvNavigator` | 页面状态恢复、时钟与导航；低风险 |
+| `system/` | `TvMainActivityConfig`、`TvMainActivityCreate`、`TvMainActivityResults`、`TvMainActivitySaveState` | Activity 系统回调与现场保存；低风险 |
+| `ui/` | `DialogItem`、`EpisodeCell`、`HongguoKeyboard`、`IconButton`、`LoginForm`、`PosterCard`、`SectionHeading`、`SeekIndicator`、`SettingSlider`、`ToggleChip`、`TvComponents`、`TvDialog`、`TvDialogFocus`、`TvStyle`、`TvSwitchRow`、`TvTools`、`TvToolsPhone` | 共用控件、弹窗、键盘与工具；低风险 |
+| `debug/` | `DebugOverlay`、`TvMetrics`、`TvNetworkLogging` | 调试面板、指标与网络日志；低风险 |
+| `home/` | `RecommendWarm` | 首页推荐预热；低风险 |
+| `library/` | `LanLibrarySync` | 局域网书库同步；低风险 |
+
+#### shared
+
+保持现有 `account/architecture/compat/data/debug/feature/feed/lan/media/nav/search/ui`
+结构，本次不移动。
+
+执行上限 30 批；单批最多 40 个文件；每批独立 commit、全量验证并记录。
