@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 import com.hgtv.star.core.detail
+import com.hgtv.star.core.prefetchModels
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch

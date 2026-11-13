@@ -5,6 +5,7 @@ import com.google.android.exoplayer2.MediaItem
 import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import com.google.android.exoplayer2.upstream.DataSource
 import com.hgtv.star.core.PlaybackCache
+import com.hgtv.star.core.prefetchModels
 import com.hgtv.star.shared.media.VideoDataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay

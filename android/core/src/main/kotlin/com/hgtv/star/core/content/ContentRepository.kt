@@ -1085,17 +1085,6 @@ class ContentRepository(
     ): JSONObject = videoModelImpl(id,deadline,playback,queue)
 
     /**
-     * 用一次官方批量接口预取一组播放模型。
-     *
-     * 推荐页与正式播放页的批量窗口由界面层决定；这里只负责把整组 ID 放进同一次请求，
-     * 并把响应写进共享模型缓存，后续 [stream] 直接命中。
-     */
-    fun prefetchModels(
-        ids: List<String>,
-        playback: PlaybackProfile = PlaybackProfile(),
-    ): Int = prefetchModelsImpl(ids,playback)
-
-    /**
      * 取一集的播放地址。
      *
      * 全站只有一种视频编码（HEVC），因此这里没有「挑哪条编码」这一维：
