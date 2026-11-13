@@ -174,9 +174,26 @@ object TncConfigStore {
         return hosts.firstOrNull() ?: roleHint.orEmpty()
     }
 
+    /**
+     * 给固定业务角色选 TNC local host；角色不在本次配置里时返回明确兜底。
+     *
+     * 与 [preferredLocalHost] 的区别是**绝不拿第一个无关 local host 顶替**：
+     * `security` / `reading` / `is` 这类接口的域名角色不能互换。
+     */
+    fun localHost(roleHint: String,fallback: String): String {
+        val hosts=current()?.localHosts.orEmpty()
+        return hosts.firstOrNull { it.equals(roleHint,ignoreCase=true) }
+            ?: hosts.firstOrNull { it.contains(roleHint,ignoreCase=true) }
+            ?: fallback
+    }
+
     /** 当前 TNC 入口；有服务端配置时只使用下发入口，否则使用首次启动的静态候选。 */
     fun tncHosts(): List<String> =
         current()?.tncHosts?.takeIf { it.isNotEmpty() } ?: bootstrapHosts
+
+    /** TNC 下发的非 API 业务入口，用于按角色选择域名和 DNS 预热。 */
+    fun localHosts(): List<String> =
+        current()?.localHosts.orEmpty()
 
     /** TNC 下发的日志/注册候选；首次注册仍使用静态 bootstrap。 */
     fun logHosts(): List<String> {

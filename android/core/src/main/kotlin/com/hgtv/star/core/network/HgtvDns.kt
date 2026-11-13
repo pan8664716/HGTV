@@ -266,7 +266,8 @@ object HgtvDns : Dns {
         // 排在最后时（早先的写法）预热线程按顺序逐个解析，前面的十个域名各花
         // 60~450ms，等轮到它时用户已经点到播放了——等于没预热。放第一位就一定能先解析完。
         "vas-lf-x.snssdk.com",
-    ) + TncConfigStore.bootstrapHosts + TncConfigStore.apiHosts() + TncConfigStore.preconnectHosts() + listOf(
+    ) + TncConfigStore.bootstrapHosts + TncConfigStore.apiHosts() + TncConfigStore.localHosts() +
+        TncConfigStore.preconnectHosts() + listOf(
         "p3-reading-sign.fqnovelpic.com",
         "p6-novel.byteimg.com",
         "novel.snssdk.com",

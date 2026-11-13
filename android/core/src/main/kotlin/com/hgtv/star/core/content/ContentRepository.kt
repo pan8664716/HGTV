@@ -72,7 +72,8 @@ class ContentRepository(
         "短剧最热榜前十名","AI短剧","都市逆袭","甜宠","战神归来","穿越剧大全",
         "萌宝助攻","玄幻修仙系列","悬疑","古装","逆袭人生","豪门"
     )
-    internal val SITE_HOST = "https://hongguoduanju.com"
+    internal val SITE_HOST: String
+        get() = "https://${TncConfigStore.localHost("hongguoduanju.com","hongguoduanju.com")}"
     internal val WEB_SEARCH_PAGE_SIZE = 10
     internal val WEB_SEARCH_BATCH = 10
     internal val WEB_FALLBACK_BATCH = 3

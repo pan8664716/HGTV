@@ -29,7 +29,7 @@ package com.hgtv.star.core
  *
  * * **免签镜像域名的编号不是一一对应的**。`p9-reading-sign` 的图在 `p9-novel` 上是 403，
  *   在 `p3-novel` / `p6-novel` 上却是 200（同一张图的副本在多个接入点上）。
- *   因此这里一律收敛到 [FREE_HOST] 一个入口——**947 张唯一封面 947/947 全部 200**，
+ *   因此这里一律收敛到 [freeHost] 一个入口——**947 张唯一封面 947/947 全部 200**，
  *   也省掉按编号试错。
  * * **只认这两个域名族，其余一律原样返回**：`pN-reading-sign.fqnovelpic.com`（签名，重写到免签镜像）
  *   与 `pN-novel.byteimg.com`（免签，只换模板段）。别的地址不碰——模板改写只对平台自己的图片
@@ -88,8 +88,9 @@ object ArtworkUrl {
      */
     private const val MIN_ASPECT = 70
 
-    /** 免签镜像入口：所有带签名的封面都收敛到这一个域名（实测全量可用，见类注释）。 */
-    private const val FREE_HOST = "p3-novel.byteimg.com"
+    /** 免签镜像入口：TNC 下发时优先使用，否则沿用实测可用的固定域名。 */
+    private fun freeHost(): String =
+        TncConfigStore.localHost("p3-novel.byteimg.com","p3-novel.byteimg.com")
 
     /** 带防盗链签名的封面域名：`p3-reading-sign.fqnovelpic.com` 这一类（编号 3/6/9 都有）。 */
     private val signedHost = Regex("""^p\d+-reading-sign\.fqnovelpic\.com$""")
@@ -117,7 +118,7 @@ object ArtworkUrl {
             val path = head.substringAfter('/', "")
             // 路径里没有模板段（理论上不会）时不动：那种地址拿不到免签镜像的保证。
             if (path.isEmpty() || '~' !in url) return url
-            return "https://$FREE_HOST/$path~tplv-shrink:$target:0.webp"
+            return "https://${freeHost()}/$path~tplv-shrink:$target:0.webp"
         }
         // 免签域名：只把模板段换成目标尺寸的 webp，其余（含查询串）原样。
         //

@@ -4,6 +4,7 @@ package com.hgtv.star.core.session
 import com.hgtv.star.core.body
 import com.hgtv.star.core.code
 import com.hgtv.star.core.NetLog
+import com.hgtv.star.core.TncConfigStore
 import com.hgtv.star.core.encodedPath
 import com.hgtv.star.core.host
 import okhttp3.Call
@@ -186,7 +187,7 @@ class SessionKeeper(
         if(!beatInFlight.compareAndSet(false,true)) return
         lastBeatAt = System.nanoTime()/1_000_000
         val first = SessionBridge.state?.firstBeat ?: true
-        val url = "$BEAT_BASE?scene=$scene&first_beat=$first"
+        val url = "${beatBase()}?scene=$scene&first_beat=$first"
         NetLog.debug("[API] start method=GET host=${runCatching { okhttp3.HttpUrl.parse(url)?.host }.getOrNull().orEmpty()} path=${runCatching { okhttp3.HttpUrl.parse(url)?.encodedPath }.getOrNull().orEmpty()} identity=session")
         client.newCall(beatRequest(url, injectToken = !withoutToken)).enqueue(object: Callback {
             override fun onFailure(call: Call,e: IOException) {
@@ -294,7 +295,7 @@ class SessionKeeper(
     private fun accountInfo(scene: String, withoutToken: Boolean) {
         if(!SessionBridge.signedIn()) return
         if(!infoInFlight.compareAndSet(false,true)) return
-        val url="$ACCOUNT_INFO_BASE?scene=$scene"
+        val url="${accountInfoBase()}?scene=$scene"
         NetLog.debug("[API] start method=GET host=${runCatching { okhttp3.HttpUrl.parse(url)?.host }.getOrNull().orEmpty()} path=${runCatching { okhttp3.HttpUrl.parse(url)?.encodedPath }.getOrNull().orEmpty()} identity=session")
         client.newCall(beatRequest(url, injectToken = !withoutToken)).enqueue(object: Callback {
             override fun onFailure(call: Call,e: IOException) {
@@ -370,6 +371,14 @@ class SessionKeeper(
         deviceHeaders().forEach { (name,value) -> if(value.isNotBlank()) builder.header(name,value) }
         return builder.build()
     }
+
+    private fun beatBase(): String =
+        "https://${TncConfigStore.localHost("security.snssdk.com","security.snssdk.com")}"+
+            "/passport/token/beat/v2/"
+
+    private fun accountInfoBase(): String =
+        "https://${TncConfigStore.localHost("security.snssdk.com","security.snssdk.com")}"+
+            "/passport/account/info/v2/"
 
     /** ★ 唯一判定入口：HTTP 200 + body 里的 `data.error_name`。 */
     private fun isSessionExpired(body: String): Boolean {
@@ -448,7 +457,7 @@ class SessionKeeper(
 
         const val ERR_SESSION_EXPIRED = "session_expired"
 
-        /** 硬编码在 `TTTokenManager.getHost()` 里，与原版一致。 */
+        /** TNC 不可用时的兜底；运行时优先使用 local_host_filter 中的 security 入口。 */
         const val BEAT_BASE = "https://security.snssdk.com/passport/token/beat/v2/"
         const val ACCOUNT_INFO_BASE = "https://security.snssdk.com/passport/account/info/v2/"
     }

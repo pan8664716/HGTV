@@ -357,7 +357,8 @@ import java.io.IOException
                 values["app"]="1"
                 values["settings_time"]="0"
                 values["_rticket"]=System.currentTimeMillis().toString()
-                val url="https://is.snssdk.com/service/settings/v3/?"+Signer.encode(values)
+                val host=TncConfigStore.localHost("is.snssdk.com","is.snssdk.com")
+                val url="https://$host/service/settings/v3/?"+Signer.encode(values)
                 val headers=linkedMapOf<String,String>()
                 if(identity.cookie.isNotBlank()) headers["Cookie"]=identity.cookie
                 if(identity.token.isNotBlank()) headers["x-tt-token"]=identity.token

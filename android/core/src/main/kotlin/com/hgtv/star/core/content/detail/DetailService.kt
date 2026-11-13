@@ -337,7 +337,8 @@ import java.util.concurrent.TimeUnit
         val values=linkedMapOf("aid" to "8662","app_name" to "novelread","version_code" to "72232")
         profile["device_id"]?.takeIf { it.isNotBlank() }?.let { values["device_id"]=it }
         profile["iid"]?.takeIf { it.isNotBlank() }?.let { values["iid"]=it }
-        val url="https://reading.snssdk.com/novel/commentapi/user/profile/$uid/v1/?"+
+        val host=TncConfigStore.localHost("reading.snssdk.com","reading.snssdk.com")
+        val url="https://$host/novel/commentapi/user/profile/$uid/v1/?"+
             values.entries.joinToString("&") { (k,v) -> "$k=$v" }
         var raw=""
         var attempt=0

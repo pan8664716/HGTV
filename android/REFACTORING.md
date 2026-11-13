@@ -4226,3 +4226,13 @@ feature-tv/
 - `:app:assembleDebug`：通过。
 - `:core:test`：435 例、24 失败、28 跳过；满足失败 ≤25、跳过 =28。
 - 工作区干净；未创建 tag、未推送、未创建 Release。
+
+## TNC 地址覆盖
+
+状态：已完成。
+
+- 会话心跳、推荐设置、发行方作品、官网搜索、封面镜像和 DNS 预热全部读取 TNC。
+- 固定业务角色使用 `localHost(role, fallback)`：TNC 有对应 `local_host_filter`
+  时优先使用，角色缺失时回退原域名，不拿无关 local host 顶替。
+- TNC bootstrap、API 候选和注册线路的静态表仍作为首次启动及故障兜底保留。
+- 未修改版本号、versionCode、依赖、Manifest 或 Release 元数据。
