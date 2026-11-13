@@ -2023,3 +2023,18 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+## 批次 69–90 阶段检查点
+
+- 已完成 22 / 40 批，全部独立提交；最新代码提交为 `1f96c22`。
+- 批次提交：`e591c5a`、`98ac097`、`49d368e`、`265455c`、`fdea801`、
+  `f6c7ec0`、`aada8f5`、`9306d00`、`494f32b`、`a7e6530`、`cf4818f`、
+  `c1e35be`、`a808f20`、`60a1bad`、`971b407`、`2d25af3`、`44c4094`、
+  `519d18c`、`3fdcc6e`、`7f99528`、`8529922`、`1f96c22`。
+- 每批均通过聚合编译、Lint、共享单测和 Debug APK；最近一次 `:core:test`
+  为 435 例、24 失败、28 跳过，未超过基线。
+- 当前超大文件：`PhonePlayerActivity.kt` 3073、`TvMainActivity.kt` 2047、
+  `RecommendPage.kt` 1890、`ContentRepository.kt` 1831、
+  `PhoneSettingsActivity.kt` 1775、`PhoneFeedView.kt` 1337，以及其余 17 个 >800 行文件。
+- 未达 40 批上限；下一轮从批次 91 继续，优先 `PhoneFeedView` 的接管 / 地址刷新，
+  再处理 `PhoneSettingsActivity` 的 action 分派与横向渲染。
