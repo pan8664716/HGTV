@@ -2177,3 +2177,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 103：PhoneSettings 统一渲染与 action 迁移
+
+状态：已完成。
+
+- 将统一行渲染、四个分区描述、action 分派和滑动读数格式化移到
+  `PhoneSettingsUnified.kt`。
+- 保留各控件回写、确认文案、恢复默认和设备类型切换行为。
+- `PhoneSettingsActivity.kt` 从 1435 行降到 1144 行；`PhoneSettingsUnified.kt` 为 319 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
