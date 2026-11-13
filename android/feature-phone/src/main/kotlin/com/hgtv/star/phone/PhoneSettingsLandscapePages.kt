@@ -8,15 +8,20 @@ import com.hgtv.star.core.DANMAKU_MERGE_MIN_RANGE
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.DanmakuSpeed
 import com.hgtv.star.core.DanmakuStyle
+import com.hgtv.star.core.EpisodePageSize
 import com.hgtv.star.core.PLAYER_PANEL_TIMEOUT_RANGE
 import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackSpeed
+import com.hgtv.star.core.SearchSource
 import com.hgtv.star.core.VideoDecoderMode
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneUiScale
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
+import com.hgtv.star.shared.architecture.AppRelaunch
+import com.hgtv.star.shared.compat.DeviceForm
+import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.ui.TvTheme
 import kotlin.math.roundToInt
 
@@ -158,4 +163,98 @@ internal fun PhoneSettingsActivity.renderLandscapeAppearance() {
     },LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
     ))
+}
+
+internal fun PhoneSettingsActivity.renderLandscapeRecommend() {
+    val scope=landscapePanel("推荐设置","推荐受众")
+    landscapeLine(scope).also { line ->
+        landscapeCell(line,landscapeSetting("受众",genderLabelImpl(settingsLibrary.recommendGender)) {
+            pickImpl("推荐受众",listOf("不限","男频","女频"),genderIndexImpl(settingsLibrary.recommendGender)) { i ->
+                settingsLibrary.recommendGender=listOf("","male","female")[i]; renderSettings()
+            }
+        })
+    }
+
+    val content=landscapePanel("内容管理与来源","恢复隐藏剧集、搜索接口与选集分页")
+    landscapeLine(content).also { line ->
+        landscapeCell(line,landscapeSetting("恢复隐藏的剧集","${settingsLibrary.hidden().size} 部") {
+            val count=settingsLibrary.hidden().size
+            if(count==0) { toastImpl("没有被隐藏的剧集"); return@landscapeSetting }
+            confirmImpl("恢复隐藏的剧集","把首页隐藏过的 $count 部剧全部放回列表？", false) {
+                settingsLibrary.unhideAll(); toastImpl("已恢复 $count 部"); renderSettings()
+            }
+        })
+        landscapeCell(line,landscapeSetting("搜索源",settingsLibrary.searchSource.label) {
+            val options=SearchSource.entries
+            pickImpl("搜索源",options.map { "${it.label}　${it.hint}" },options.indexOf(settingsLibrary.searchSource)) { i ->
+                settingsLibrary.searchSource=options[i]; renderSettings()
+            }
+        })
+    }
+    landscapeLine(content).also { line ->
+        landscapeCell(line,landscapeSetting("选集每页","${settingsLibrary.episodePageSize} 集") {
+            val options=EpisodePageSize.phoneOptions
+            pickImpl("选集每页（每行 5 个）",options.map { "$it 集" },
+                options.indexOf(settingsLibrary.episodePageSize).coerceAtLeast(0)) { i ->
+                settingsLibrary.episodePageSize=options[i]; renderSettings()
+            }
+        })
+    }
+}
+
+internal fun PhoneSettingsActivity.renderLandscapeSystem() {
+    val data=landscapePanel("数据维护","收藏与进度存在本机，可导出、同步与恢复")
+    landscapeLine(data).also { line ->
+        landscapeCell(line,landscapeSetting("导出备份","存成 JSON 文件") { exportBackup() })
+        landscapeCell(line,landscapeSetting("从备份恢复","合并收藏、记录与设置") { importBackup() })
+    }
+    landscapeLine(data).also { line ->
+        landscapeCell(line,landscapeSetting("清空应用缓存","恢复成刚安装的样子") {
+            confirmImpl("清空应用缓存",
+                "用于反复无法登录、账号状态异常、页面数据错乱等情况：清空后应用会重新注册设备、重新生成标识。\n\n" +
+                    "注意：本机的收藏、观看记录、搜索历史与设置也会一并清空，且无法找回。如需保留，请先导出备份。\n\n清空完成后应用会自动重启。",
+                true) { performReset() }
+        })
+        landscapeCell(line,landscapeSetting("恢复默认设置","只重置偏好") {
+            confirmImpl(
+                "恢复默认设置",
+                "把播放、弹幕、推荐、外观相关的偏好恢复成出厂值，收藏与历史不受影响。",
+                false,
+            ) {
+                restoreDefaults()
+            }
+        })
+    }
+    landscapeLine(data).also { line ->
+        landscapeCell(line,landscapeSetting("同步其他设备数据","局域网 NSD 查找设备") {
+            showLanLibrarySync()
+        })
+    }
+
+    val perf=landscapePanel("设备与性能","动画开销、现场面板与设备形态")
+    landscapeLine(perf).also { line ->
+        landscapeCell(line,landscapeSwitch("减少动画优化性能",settingsLibrary.reduceAnim) {
+            settingsLibrary.reduceAnim=it; renderSettings()
+        })
+        landscapeCell(line,landscapeSwitch("调试模式",settingsLibrary.debugMode) {
+            settingsLibrary.debugMode=it; renderSettings()
+        })
+    }
+    landscapeLine(perf).also { line ->
+        landscapeCell(line,landscapeSetting("关于","版本 ${appVersionName()}") { showAboutDialog() })
+        val detected=runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
+        val deviceLabel = DeviceForm.ofStored(settingsLibrary.deviceForm)?.label
+            ?: "自动 · ${detected.label}"
+        landscapeCell(line,landscapeSetting("设备类型",deviceLabel) {
+            pickImpl("设备类型（切换后自动重新进入）",DeviceForm.pickerLabels(detected),
+                DeviceForm.optionIndex(settingsLibrary.deviceForm)) { i ->
+                val selected=DeviceForm.OPTIONS[i]
+                if(selected==settingsLibrary.deviceForm) { renderSettings(); return@pickImpl }
+                if(!settingsLibrary.setDeviceFormNow(selected)) {
+                    toastImpl("设备类型保存失败，请重试"); renderSettings(); return@pickImpl
+                }
+                AppRelaunch.switchDeviceForm(this)
+            }
+        })
+    }
 }

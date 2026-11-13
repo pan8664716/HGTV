@@ -417,90 +417,6 @@ class PhoneSettingsActivity : PhoneActivity() {
         ).apply { bottomMargin = settingsDp(4) })
     }
 
-    private fun renderLandscapeRecommend() {
-        val scope=landscapePanel("推荐设置","推荐受众")
-        landscapeLine(scope).also { line ->
-            landscapeCell(line,landscapeSetting("受众",genderLabel(library.recommendGender)) {
-                pick("推荐受众",listOf("不限","男频","女频"),genderIndex(library.recommendGender)) { i ->
-                    library.recommendGender=listOf("","male","female")[i]; render()
-                }
-            })
-        }
-
-        val content=landscapePanel("内容管理与来源","恢复隐藏剧集、搜索接口与选集分页")
-        landscapeLine(content).also { line ->
-            landscapeCell(line,landscapeSetting("恢复隐藏的剧集","${library.hidden().size} 部") {
-                val count=library.hidden().size
-                if(count==0) { toast("没有被隐藏的剧集"); return@landscapeSetting }
-                confirm("恢复隐藏的剧集","把首页隐藏过的 $count 部剧全部放回列表？") {
-                    library.unhideAll(); toast("已恢复 $count 部"); render()
-                }
-            })
-            landscapeCell(line,landscapeSetting("搜索源",library.searchSource.label) {
-                val options=SearchSource.entries
-                pick("搜索源",options.map { "${it.label}　${it.hint}" },options.indexOf(library.searchSource)) { i ->
-                    library.searchSource=options[i]; render()
-                }
-            })
-        }
-        landscapeLine(content).also { line ->
-            landscapeCell(line,landscapeSetting("选集每页","${library.episodePageSize} 集") {
-                val options=EpisodePageSize.phoneOptions
-                pick("选集每页（每行 5 个）",options.map { "$it 集" },
-                    options.indexOf(library.episodePageSize).coerceAtLeast(0)) { i ->
-                    library.episodePageSize=options[i]; render()
-                }
-            })
-        }
-    }
-
-    private fun renderLandscapeSystem() {
-        val data=landscapePanel("数据维护","收藏与进度存在本机，可导出、同步与恢复")
-        landscapeLine(data).also { line ->
-            landscapeCell(line,landscapeSetting("导出备份","存成 JSON 文件") { exportBackup() })
-            landscapeCell(line,landscapeSetting("从备份恢复","合并收藏、记录与设置") { importBackup() })
-        }
-        landscapeLine(data).also { line ->
-            landscapeCell(line,landscapeSetting("清空应用缓存","恢复成刚安装的样子") {
-                confirm("清空应用缓存",
-                    "用于反复无法登录、账号状态异常、页面数据错乱等情况：清空后应用会重新注册设备、重新生成标识。\n\n" +
-                        "注意：本机的收藏、观看记录、搜索历史与设置也会一并清空，且无法找回。如需保留，请先导出备份。\n\n清空完成后应用会自动重启。",
-                    danger=true) { performReset() }
-            })
-            landscapeCell(line,landscapeSetting("恢复默认设置","只重置偏好") {
-                confirm("恢复默认设置","把播放、弹幕、推荐、外观相关的偏好恢复成出厂值，收藏与历史不受影响。") {
-                    restoreDefaults()
-                }
-            })
-        }
-        landscapeLine(data).also { line ->
-            landscapeCell(line,landscapeSetting("同步其他设备数据","局域网 NSD 查找设备") { showLanLibrarySync() })
-        }
-
-        val perf=landscapePanel("设备与性能","动画开销、现场面板与设备形态")
-        landscapeLine(perf).also { line ->
-            landscapeCell(line,landscapeSwitch("减少动画优化性能",library.reduceAnim) {
-                library.reduceAnim=it; render()
-            })
-            landscapeCell(line,landscapeSwitch("调试模式",library.debugMode) {
-                library.debugMode=it; render()
-            })
-        }
-        landscapeLine(perf).also { line ->
-            landscapeCell(line,landscapeSetting("关于","版本 ${appVersionName()}") { showAboutDialog() })
-            val detected=runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
-            landscapeCell(line,landscapeSetting("设备类型",deviceFormLabel(detected)) {
-                pick("设备类型（切换后自动重新进入）",DeviceForm.pickerLabels(detected),
-                    DeviceForm.optionIndex(library.deviceForm)) { i ->
-                    val selected=DeviceForm.OPTIONS[i]
-                    if(selected==library.deviceForm) { render(); return@pick }
-                    if(!library.setDeviceFormNow(selected)) { toast("设备类型保存失败，请重试"); render(); return@pick }
-                    AppRelaunch.switchDeviceForm(this)
-                }
-            })
-        }
-    }
-
     // —— 一、播放交互 ——
 
     /**
@@ -1105,9 +1021,9 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     }
 
-    private fun appVersionName(): String = appVersionNameImpl()
+    internal fun appVersionName(): String = appVersionNameImpl()
 
-    private fun showAboutDialog() {
+    internal fun showAboutDialog() {
         PhoneDialog(this, "关于")
             .message("版本号：${appVersionName()}")
             .message("GitHub：${ProjectInfo.GITHUB}")
@@ -1117,7 +1033,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     /** 出厂值：与 `BackupSettings` 的默认参数逐项对齐。 */
-    private fun restoreDefaults() {
+    internal fun restoreDefaults() {
         runCatching {
             settingsController.restoreDefaults()
             library.autoNext = true
@@ -1148,7 +1064,7 @@ class PhoneSettingsActivity : PhoneActivity() {
      * 因此这里直接落到用户选的文件里（下载目录 / 网盘 / 聊天工具都行）。
      * 用的是 SAF，不需要任何存储权限，4.4 起就有。
      */
-    private fun exportBackup() {
+    internal fun exportBackup() {
         val encoded = runCatching { LibraryBackup.encode(library.snapshot()) }.getOrNull()
         if (encoded == null) { toast("本机记录暂时无法导出"); return }
         pendingExport = encoded
@@ -1165,7 +1081,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     /** 恢复：选一个 JSON，解码后按 TV 的同一套规则合并（设置一起带回来）。 */
-    private fun importBackup() {
+    internal fun importBackup() {
         runCatching {
             startActivityForResult(
                 Intent(Intent.ACTION_OPEN_DOCUMENT)
@@ -1188,7 +1104,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         lanSyncController.reset()
     }
 
-    private fun showLanLibrarySync() {
+    internal fun showLanLibrarySync() {
         closeLanSyncSession()
         PhoneDialog(this, "同步其他设备数据")
             .message("请选择这台设备在本次同步中的角色。")
@@ -1388,7 +1304,7 @@ class PhoneSettingsActivity : PhoneActivity() {
      * 传统存储模式下 `LocalReset.wipe` 已经覆盖沙盒与外部私有目录；`/sdcard/.hgtv` 删不掉时
      * 会留在 `.reset-pending` 标记后面，下次启动不会再被捞回来）。
      */
-    private fun performReset() {
+    internal fun performReset() {
         LocalReset.resetting = true
         runCatching { library.discardPendingWrites() }
         Thread({

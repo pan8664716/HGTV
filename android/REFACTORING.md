@@ -2164,3 +2164,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 102：PhoneSettings 横屏推荐与系统迁移
+
+状态：已完成。
+
+- 将横屏推荐、内容管理、数据维护、设备与性能分区移到
+  `PhoneSettingsLandscapePages.kt`。
+- 保留隐藏剧集恢复、设备类型切换、备份、重置和局域网同步入口。
+- `PhoneSettingsActivity.kt` 从 1519 行降到 1435 行；
+  `PhoneSettingsLandscapePages.kt` 为 258 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
