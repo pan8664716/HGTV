@@ -2732,3 +2732,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 149：RecommendPage 换剧控制迁移
+
+状态：已完成。
+
+- 将上下换剧和左右快进退移到 `RecommendControls.kt`。
+- 保留补页等待、连按跨部、末尾不回卷和 250ms 合并。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
