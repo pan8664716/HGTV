@@ -3844,3 +3844,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；仅目录变化。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`core/media`。
+
+### 布局批次 6：core/media
+
+状态：已完成。
+
+- `core/ArtworkUrl.kt` → `core/media/ArtworkUrl.kt`
+- `core/Danmaku.kt` → `core/media/Danmaku.kt`
+- `core/DanmakuEmoji.kt` → `core/media/DanmakuEmoji.kt`
+- `core/PictureWatchdog.kt` → `core/media/PictureWatchdog.kt`
+- `core/SlideCache.kt` → `core/media/SlideCache.kt`
+- 外部路径引用：无；包名、文件名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
+- 下一批：`core/library`。
