@@ -23,6 +23,9 @@ import com.hgtv.star.tv.R
 /** 倍速滑杆停手 500ms 后再真正作用到播放器，避免长按过程反复重配解码器。 */
 private const val SPEED_COMMIT_DELAY_MS=500L
 
+private fun TvMainActivity.debugModeActionLabel(): String =
+    if(library.debugMode) "调试模式 开" else "调试模式 关"
+
 /**
  * 打开播放设置面板。
  *
@@ -107,7 +110,7 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
     // **这里不能 `return menu.addRow(...)`**：那样第一条链之后就返回了，弹幕速度 / 字号 /
     // 透明度、定时、时间全成了死代码——表现就是「播放设置里只有弹幕显示，没有别的弹幕项」。
     val menu=PlaybackMenu(this)
-    // **第一行**：四件平级的事（相关剧集 / 作者作品 / 加入收藏 / 查看简介）。
+    // **第一行**：五件平级的事（相关剧集 / 作者作品 / 加入收藏 / 查看简介 / 调试模式）。
     // 面板高度固定、超出的行靠下键滚动，这一排挂在末尾时用户要一路滚到底才看得见，
     // 等于没做；放在最上面则一开面板就在手边，下面再接各项设置。
     // 前两项弹出贴底浮层（不压暗画面），收藏就地翻文案，简介弹一个不打断播放的弹窗。
@@ -119,6 +122,11 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
             menu.actionLabel(MENU_ROW_ACTIONS,MENU_ACTION_FAVORITE,togglePlayerFavorite())
         },
         PlaybackMenu.Action("查看简介") { showPlayerIntro() },
+        PlaybackMenu.Action(debugModeActionLabel()) {
+            library.debugMode=!library.debugMode
+            syncDebugOverlay()
+            menu.actionLabel(MENU_ROW_ACTIONS,MENU_ACTION_DEBUG,debugModeActionLabel())
+        },
     ))
     menu
         .addRow("清晰度",PlaybackQuality.options.mapIndexed { index,value ->
@@ -204,10 +212,6 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
         applyVideoScale()
     }
     menu.addRow("定时",sleepChoices(menu))
-    menu.addSwitch("调试模式",library.debugMode) { on ->
-        library.debugMode=on
-        syncDebugOverlay()
-    }
     menu.wire()
     return menu
 }
@@ -254,10 +258,10 @@ private fun TvMainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boole
     }
     menu.sliderValue(videoScaleRow(showsStyle),library.videoScale)
     menu.sync(sleepRow(showsStyle),if(sleepTimer.active) sleepChoice else 0)
-    menu.switchValue(debugRow(showsStyle),library.debugMode)
-    // 动作行里收藏会改文案：可能在简介页 / 设置页里被改过，
-    // 因此每次挂上去之前按本机当前状态刷一遍（其余三枚是固定文案，不用动）。
+    // 动作行里的收藏与调试会改文案：可能在别处被改过，
+    // 因此每次挂上去之前按本机当前状态刷一遍（其余三枚是固定文案）。
     menu.actionLabel(MENU_ROW_ACTIONS,MENU_ACTION_FAVORITE,playerFavoriteLabel())
+    menu.actionLabel(MENU_ROW_ACTIONS,MENU_ACTION_DEBUG,debugModeActionLabel())
 }
 
 /**

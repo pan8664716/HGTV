@@ -385,7 +385,7 @@ val PLAY_INFO_ENTRIES=listOf(
  * 所以「定时」的行号不是固定的：用 [sleepRow] 现算，不要再写死 7。
  */
 /**
- * 面板**第一行**：并排的四件动作（相关剧集 / 作者作品 / 加入收藏 / 查看简介）。
+ * 面板**第一行**：并排的五件动作（相关剧集 / 作者作品 / 加入收藏 / 查看简介 / 调试模式）。
  *
  * 它恒定在第一行：面板高度固定、超出的行靠滚动，挂在末尾时用户要一路按下键滚到底
  * 才看得见这一排，等于没做。它不随弹幕外观那三行增减，因此是唯一可以写死的行号。
@@ -417,9 +417,6 @@ fun videoScaleRow(showsStyle: Boolean)=if(showsStyle) MENU_ROW_VIDEO_SCALE else 
  */
 fun sleepRow(showsStyle: Boolean)=videoScaleRow(showsStyle)+1
 
-/** 「调试模式」开关那一行：紧跟在「定时」之后。 */
-fun debugRow(showsStyle: Boolean)=sleepRow(showsStyle)+1
-
 /**
  * 那一行动作里「收藏」按钮的位置（从 0 起）。
  *
@@ -427,6 +424,8 @@ fun debugRow(showsStyle: Boolean)=sleepRow(showsStyle)+1
  * 因此同步选中态时要按这个下标单独刷一次，见 `syncPlaybackMenu`。
  */
 const val MENU_ACTION_FAVORITE=2
+/** 动作行最后一项：播放界面的调试模式开关。 */
+const val MENU_ACTION_DEBUG=4
 
 /**
  * 列表滚动位置最多记住多少页。
