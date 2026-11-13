@@ -4104,3 +4104,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；`MainActivityPlaybackKt` 多文件 facade 文件名保持不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`feature-tv/navigation`。
+
+### 布局批次 23：feature-tv/navigation
+
+状态：已完成。
+
+- `tv/TvMainStateRestore.kt` → `tv/navigation/TvMainStateRestore.kt`
+- `tv/TvMainTick.kt` → `tv/navigation/TvMainTick.kt`
+- `tv/TvNavigator.kt` → `tv/navigation/TvNavigator.kt`
+- 外部路径引用：无；包名、文件名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`feature-tv/system`。
