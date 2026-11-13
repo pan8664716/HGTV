@@ -2127,3 +2127,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 99：PhoneFeed 转发层清理
+
+状态：已完成。
+
+- 移除已迁出职责的私有转发方法，调用方直接使用对应实现入口。
+- 保留公开方法、适配器回调、设置入口和播放页 Surface 交接签名。
+- `PhoneFeedView.kt` 从 872 行降到 796 行，已低于 800 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

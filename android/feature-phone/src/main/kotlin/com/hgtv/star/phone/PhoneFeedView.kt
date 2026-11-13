@@ -300,7 +300,7 @@ class PhoneFeedView(
         list.smoothScrollToPosition(position)
     internal fun revealChromeForAdapter(page: PhoneVideoPage) = revealChrome(page)
     internal fun togglePlayForAdapter() = togglePlay()
-    internal fun openSettingsForAdapter() = openSettings()
+    internal fun openSettingsForAdapter() = openSettingsImpl()
     internal fun beginTempSpeedForAdapter() = beginTempSpeed()
     internal fun endTempSpeedForAdapter() = endTempSpeed()
     internal fun launchPlayerForAdapter(
@@ -313,8 +313,8 @@ class PhoneFeedView(
         openPlayer(page, fullscreen = false)
     internal fun liveEpisodeOfForAdapter(series: Series, index: Int) =
         liveEpisodeOf(series, index)
-    internal fun clockForAdapter(ms: Long) = clock(ms)
-    internal fun rebindCurrentPageForAdapter() = rebindCurrentPage()
+    internal fun clockForAdapter(ms: Long) = clockImpl(ms)
+    internal fun rebindCurrentPageForAdapter() = rebindCurrentPageImpl()
     internal fun revealChromeForSettings() = revealChrome()
     internal fun playIndexForSettings(
         index: Int,
@@ -547,10 +547,6 @@ class PhoneFeedView(
         scrollToTopImpl()
     }
 
-    private fun resumeOnShown(): Boolean {
-        return resumeOnShownImpl()
-    }
-
     /**
      * 播放页已经不在了（此刻前台是本页），它留下的那一路却接不上（地址过期、
      * 或者它放的那一部根本不在当前这条流里）。
@@ -558,10 +554,6 @@ class PhoneFeedView(
      * 这时必须**先按停**：不按的话，画面会切到本页这一条，声音还是播放页那一条，
      * 用户听到的就是「退回推荐页后声音和画面对不上」。接得上时不会走到这里。
      */
-    private fun stopOrphanPlayback() {
-        stopOrphanPlaybackImpl()
-    }
-
     /**
      * 把进程级播放器**接回来**：媒体源没变，只是 Surface 换了。
      *
@@ -606,10 +598,6 @@ class PhoneFeedView(
      * 这里补一次 `play()`；如果本页的 Surface 已经不是输出端了，再挂回去。
      * **不重设媒体源、不 seek**：补的是播放状态，不是内容。
      */
-    private fun keepLivePlayback() {
-        keepLivePlaybackImpl()
-    }
-
     /**
      * 把播放器挂到这一页上（Surface + 弹幕 + 集号）。
      *
@@ -617,25 +605,6 @@ class PhoneFeedView(
      *   销毁又重建过，而 `PlayerView` 里那个 `player` 字段还指着同一台播放器，
      *   它会认为「已经绑好了」、永远不再把新 Surface 交出去，画面就一直黑着。
      */
-    private fun attachPage(
-        exo: ExoPlayer,
-        page: PhoneVideoPage,
-        series: Series,
-        episodeIndex: Int,
-        forceRebind: Boolean,
-        clearDanmakuOnSwitch: Boolean = false,
-        videoInfo: StreamInfo? = null,
-    ) {
-        attachPageImpl(
-            exo,
-            page,
-            series,
-            episodeIndex,
-            forceRebind,
-            clearDanmakuOnSwitch,
-            videoInfo,
-        )
-    }
     internal fun attachPageForSurface(
         exo: ExoPlayer,
         page: PhoneVideoPage,
@@ -643,7 +612,7 @@ class PhoneFeedView(
         episodeIndex: Int,
         forceRebind: Boolean,
         clearDanmakuOnSwitch: Boolean = false,
-    ) = attachPage(exo, page, series, episodeIndex, forceRebind, clearDanmakuOnSwitch)
+    ) = attachPageImpl(exo, page, series, episodeIndex, forceRebind, clearDanmakuOnSwitch)
 
     /**
      * 把「画面模式」「画面缩放」按设置落到这一页上。
@@ -651,10 +620,6 @@ class PhoneFeedView(
      * 与播放页同一条规则：按用户选的 FIT / ZOOM / FILL 走，不再因为片源是竖屏
      * 就强制铺满。`bind` 之后必须补一次，否则会回到默认的完整画面。
      */
-    private fun applyPageVideoSettings(page: PhoneVideoPage) {
-        applyPageVideoSettingsImpl(page)
-    }
-
     /**
      * 由宿主在切走时调用：解绑 Surface、摘监听、停掉本页的计时器。
      *
@@ -690,10 +655,6 @@ class PhoneFeedView(
      * 播放页竖屏不挂自己的视频层（见 `PhoneVideoPage` 的 `underlay`），从横屏退回
      * 竖屏时它把横屏那一层摘掉，然后调这里把输出交回来——不交就是一块黑。
      */
-    private fun bindFeedSurfaceForHandoff() {
-        bindFeedSurfaceForHandoffImpl()
-    }
-
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         handleFeedSizeChanged(w, h)
@@ -714,10 +675,6 @@ class PhoneFeedView(
      * 只在会话仍属于信息流时做：属于播放页时播放器归播放页，抢过来会把那边的画面弄黑。
      * 布局变化（转屏、键盘、分屏）与列表重新绑定之后都要调一次。
      */
-    private fun rebindCurrentPage() {
-        rebindCurrentPageImpl()
-    }
-
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         onFeedDetachedImpl()
@@ -810,36 +767,10 @@ class PhoneFeedView(
      *
      * 只在信息流前台、且在播当前这一屏时做；同一集只发起一次。
      */
-    private fun maybePrefetchNext(position: Long, duration: Long) {
-        maybePrefetchNextImpl(position, duration)
-    }
     internal fun maybePrefetchNextForClock(position: Long, duration: Long) =
-        maybePrefetchNext(position, duration)
+        maybePrefetchNextImpl(position, duration)
 
-    private fun applyDanmakuSettings(page: PhoneVideoPage) =
-        applyDanmakuSettingsImpl(page)
-
-    private fun loadDanmaku(
-        page: PhoneVideoPage,
-        index: Int,
-        episodeId: String,
-        seriesId: String,
-        clearOnSwitch: Boolean = false,
-    ) = loadDanmakuImpl(page, index, episodeId, seriesId, clearOnSwitch)
-
-    private fun attach(
-        index: Int,
-        video: RemoteVideo,
-        startAt: Long = 0L,
-        clearDanmakuOnSwitch: Boolean = false,
-    ) {
-        attachImpl(index, video, startAt, clearDanmakuOnSwitch)
-    }
-
-    private fun pageAt(index: Int): PhoneVideoPage? {
-        return pageAtImpl(index)
-    }
-    internal fun feedPageAt(index: Int): PhoneVideoPage? = pageAt(index)
+    internal fun feedPageAt(index: Int): PhoneVideoPage? = pageAtImpl(index)
 
     /**
      * 一集播完：落 completed 进度 → 进正式播放页播下一集（最后一集则换下一部）。
@@ -850,9 +781,6 @@ class PhoneFeedView(
      *   提前抛出来，所以再核一次播放位置）；
      * * 同一集只推进一次（`advancing` 防重入）。
      */
-    /** 位置读数：与电视端 `formatTime` 同一份（`:core` 的 `PlaybackInfoLine.time`）。 */
-    private fun clock(ms: Long): String = clockImpl(ms)
-
     // ------------------------------------------------------------------ 播放设置
 
     /**
@@ -861,10 +789,6 @@ class PhoneFeedView(
      * **与正式播放页完全同一份面板**（[buildPlaybackSettingsRows] 的各行），
      * 早先这里只做了倍速 / 清晰度 / 画面模式三项，用户想调字号、透明度时找不到那一行。
      */
-    private fun openSettings() {
-        openSettingsImpl()
-    }
-
     /** 离开页面时释放协程；播放器留给进程（下次进来重建，省一次解码器初始化）。 */
     fun release() {
         releaseImpl()
