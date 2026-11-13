@@ -1788,6 +1788,18 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：`git revert` 本批提交。
 
+### 批次 92：PhoneFeed 播放器接手迁移
+
+状态：已完成。
+
+- 将进程级播放器接手、IDLE 补 prepare、播放列表裁剪、倍速与暂停意图同步移到
+  `PhoneFeedAdoption.kt`；原私有入口保留并委托。
+- 保留会话归属、页面缺席仍接管、弹幕 / 进度即时对齐、地址过期重开和延迟补播顺序。
+- `PhoneFeedView.kt` 从 1267 行降到 1145 行；`PhoneFeedAdoption.kt` 为 137 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
+
 ### 批次 70：PhoneFeed 列表适配器迁移
 
 状态：已完成。
