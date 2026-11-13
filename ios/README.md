@@ -59,5 +59,6 @@ swiftc -O HGTV/Core/Sign/*.swift HGTV/Core/API/*.swift HGTV/Core/MediaCrypto.swi
 - 规则（热度、集数、季号、分页、去重、降级）全部在 `Core/Rules.swift`，页面不重复实现。
 - 内容接口、扫码登录、设备注册和官网搜索优先使用 `Core/API/TncConfigStore.swift`
   的 TNC 下发地址；TNC 未命中对应角色时才回退静态域名。
+- App 搜索结果每页请求 50 条；官网搜索保持服务端固定 10 条一页，由客户端按页拼接。
 
 更完整的页面映射、数据契约与已知边界见 [`../docs/IOS_PORT.md`](../docs/IOS_PORT.md)。

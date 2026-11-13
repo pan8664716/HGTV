@@ -439,7 +439,7 @@ actor ContentRepository {
     }
 
     private func appSearch(keyword: String, page: Int) async throws -> CatalogPage {
-        let count = 20
+        let count = 50
         var params = searchValues()
         params["query"] = keyword
         params["count"] = "\(count)"
