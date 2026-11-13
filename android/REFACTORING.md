@@ -2567,3 +2567,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 135：PhonePlayer 销毁清理迁移
+
+状态：已完成。
+
+- 将播放页销毁清理移到 `PhonePlayerDestroy.kt`。
+- 保留进度落盘、Surface 交接、控制层归还、媒体会话释放和协程取消顺序。
+- `PhonePlayerActivity.kt` 从 2012 行降到 1984 行；`PhonePlayerDestroy.kt` 为 37 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
