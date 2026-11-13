@@ -56,9 +56,19 @@ actor ContentRepository {
     }
     private var searchCursors: [String: SearchCursor] = [:]
 
-    private let categoryHost = "https://api5-normal-sinfonlineb.fqnovel.com"
-    private let appHost = "https://api5-normal-sinfonlinea.fqnovel.com"
-    private let siteHost = "https://hongguoduanju.com"
+    private var categoryHost: String {
+        let host = TncConfigStore.shared.preferredHost("sinfonlineb")
+        return "https://\(host)"
+    }
+    private var appHost: String {
+        let host = TncConfigStore.shared.preferredHost("sinfonlinea")
+        return "https://\(host)"
+    }
+    private var siteHost: String {
+        let host = TncConfigStore.shared.localHost("hongguoduanju.com",
+                                                   fallback: "hongguoduanju.com")
+        return "https://\(host)"
+    }
 
     private let categoryPath = "/reading/distribution/category/landpage/v/"
     private let detailPath = "/novel/player/video_detail/v1/"
@@ -81,9 +91,18 @@ actor ContentRepository {
             profile["cdid"] = identity.cdid
             profile["openudid"] = identity.openudid
             signer.updateDevice(profile)
+            refreshTncInBackground(profile)
             return
         }
-        await registerIfNeeded()
+        if await registerIfNeeded(), let identity {
+            var profile = Vendor.device
+            identity.profile.forEach { profile[$0.key] = $0.value }
+            profile["device_id"] = identity.deviceId
+            profile["iid"] = identity.installId
+            profile["cdid"] = identity.cdid
+            profile["openudid"] = identity.openudid
+            refreshTncInBackground(profile)
+        }
     }
 
     @discardableResult
@@ -179,8 +198,18 @@ actor ContentRepository {
         var headers = request.headers
         let cookie = await cookieHeader()
         if !cookie.isEmpty { headers["Cookie"] = cookie }
-        return try await Http.shared.send(Signer.Request(url: request.url, headers: headers,
-                                                         body: request.body, method: request.method))
+        let text = try await Http.shared.send(Signer.Request(url: request.url, headers: headers,
+                                                             body: request.body, method: request.method))
+        if let host = URL(string: request.url)?.host {
+            TncConfigStore.shared.markHostSuccess(host)
+        }
+        return text
+    }
+
+    private func refreshTncInBackground(_ profile: [String: String]) {
+        Task.detached {
+            await TncConfigStore.shared.refresh(device: profile)
+        }
     }
 
     // MARK: - 分类 / 榜单 / 推荐

@@ -145,7 +145,10 @@ final class SessionStore: ObservableObject {
 
 @MainActor
 final class QrLoginService: ObservableObject {
-    static let host = "https://api5-normal-lq.fqnovel.com"
+    static var host: String {
+        let value = TncConfigStore.shared.preferredHost("lq")
+        return "https://\(value)"
+    }
     static let aid = "513755"
 
     struct Code {

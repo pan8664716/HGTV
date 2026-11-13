@@ -17,7 +17,6 @@ enum DeviceRegister {
         var cookies: [String: String] = [:]
     }
 
-    private static let host = "https://log.snssdk.com"
     private static let path = "/service/2/device_register/"
     /// ttEncrypt 的固定前缀（libEncryptor.so 的魔数）。
     private static let magic: [UInt8] = [0x74, 0x63, 0x05, 0x10, 0x00, 0x00]
@@ -148,7 +147,9 @@ enum DeviceRegister {
         ]
     }
 
-    static func url(device: [String: String], now: Int64 = Int64(Date().timeIntervalSince1970 * 1000)) -> String {
+    static func url(device: [String: String],
+                    now: Int64 = Int64(Date().timeIntervalSince1970 * 1000),
+                    host: String? = nil) -> String {
         var query: [(String, String)] = [
             ("ac", "wifi"), ("aid", "8662"), ("app_name", "novelread"),
             ("channel", value(device, "channel", "update_64")),
@@ -169,7 +170,9 @@ enum DeviceRegister {
         if let openudid = device["openudid"], !openudid.isEmpty { query.append(("openudid", openudid)) }
         query += [("tt_data", "a"), ("package", "com.phoenix.read"),
                   ("ts", "\(now / 1000)"), ("_rticket", "\(now)")]
-        return host + path + "?" + query.map { "\($0.0)=\($0.1)" }.joined(separator: "&")
+        let baseHost = host ?? TncConfigStore.shared.logHosts().first ?? "log.snssdk.com"
+        return "https://" + baseHost + path + "?" +
+            query.map { "\($0.0)=\($0.1)" }.joined(separator: "&")
     }
 
     static func parse(body: String, setCookies: [String] = []) -> Registered? {
@@ -199,18 +202,27 @@ enum DeviceRegister {
     static func register(device: [String: String]) async -> Registered? {
         let now = Int64(Date().timeIntervalSince1970 * 1000)
         let body = payload(device: device, now: now)
-        guard let url = URL(string: url(device: device, now: now)) else { return nil }
-        var request = URLRequest(url: url)
-        request.httpMethod = "POST"
-        request.httpBody = Data(body)
-        request.timeoutInterval = 20
-        for (key, value) in headers(body: body, device: device, now: now) {
-            request.setValue(value, forHTTPHeaderField: key)
+        for host in TncConfigStore.shared.logHosts() {
+            guard let url = URL(string: url(device: device, now: now, host: host)) else { continue }
+            var request = URLRequest(url: url)
+            request.httpMethod = "POST"
+            request.httpBody = Data(body)
+            request.timeoutInterval = 20
+            for (key, value) in headers(body: body, device: device, now: now) {
+                request.setValue(value, forHTTPHeaderField: key)
+            }
+            guard let (data, response) = try? await URLSession.shared.data(for: request),
+                  let http = response as? HTTPURLResponse, http.statusCode < 400,
+                  let text = String(data: data, encoding: .utf8),
+                  let registered = parse(body: text, setCookies: []) else { continue }
+            var cookies: [String: String] = [:]
+            HTTPCookieStorage.shared.cookies(for: url)?.forEach { cookies[$0.name] = $0.value }
+            return Registered(deviceId: registered.deviceId,
+                              installId: registered.installId,
+                              deviceToken: registered.deviceToken,
+                              newUser: registered.newUser,
+                              cookies: cookies)
         }
-        guard let (data, response) = try? await URLSession.shared.data(for: request),
-              let http = response as? HTTPURLResponse, http.statusCode < 400,
-              let text = String(data: data, encoding: .utf8) else { return nil }
-        let cookies = HTTPCookieStorage.shared.cookies(for: url)?.map { "\($0.name)=\($0.value)" } ?? []
-        return parse(body: text, setCookies: cookies)
+        return nil
     }
 }

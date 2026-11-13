@@ -57,5 +57,7 @@ swiftc -O HGTV/Core/Sign/*.swift HGTV/Core/API/*.swift HGTV/Core/MediaCrypto.swi
 - 版面按 360×640 设计画布等比缩放（`Design/Theme.swift` 的 `PhoneMetrics`），从 SE 到 Pro Max 比例不变。
 - 层次只用「凸起 / 凹陷」与柔光表达，不描边、不用色块分区；品牌色只做线与小色块。
 - 规则（热度、集数、季号、分页、去重、降级）全部在 `Core/Rules.swift`，页面不重复实现。
+- 内容接口、扫码登录、设备注册和官网搜索优先使用 `Core/API/TncConfigStore.swift`
+  的 TNC 下发地址；TNC 未命中对应角色时才回退静态域名。
 
 更完整的页面映射、数据契约与已知边界见 [`../docs/IOS_PORT.md`](../docs/IOS_PORT.md)。
