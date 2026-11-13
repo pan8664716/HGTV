@@ -135,6 +135,9 @@ class PhoneFeedView(
 
     /** 当前这一屏播放信息的自动收起截止时刻与代次。 */
     private var chromeHideAt = 0L
+    internal var feedChromeHideAt: Long
+        get()=chromeHideAt
+        set(value) { chromeHideAt=value }
     private var chromeEpoch = 0
     internal var feedChromeEpoch: Int
         get()=chromeEpoch
@@ -545,7 +548,7 @@ class PhoneFeedView(
     }
     internal fun feedNotifyPlayStateChanged() = notifyPlayStateChanged()
 
-    private fun currentChromePage(): PhoneVideoPage? = pageAt(playingIndex) ?: boundPage
+    private fun currentChromePage(): PhoneVideoPage? = currentChromePageImpl()
 
     /**
      * 当前这一屏的播放信息按设置里的秒数自动收起。
@@ -554,24 +557,13 @@ class PhoneFeedView(
      * 再收起标题、进度条和底部操作栏；下一次触摸只会把信息叫回来，不会顺手暂停。
      */
     private fun scheduleChromeHide(page: PhoneVideoPage? = currentChromePage()) {
-        if (hidden || PhoneSession.underlayActive || page == null || !page.isChromeVisible()) {
-            chromeEpoch++
-            list.removeCallbacks(chromeHideRunnable)
-            return
-        }
-        val seconds = library?.playerPanelTimeout ?: 6
-        chromeEpoch++
-        chromeHideAt = System.currentTimeMillis() + seconds * 1000L
-        list.removeCallbacks(chromeHideRunnable)
-        list.postDelayed(chromeHideRunnable, seconds * 1000L)
+        scheduleChromeHideImpl(page)
     }
 
-    private fun chromeTimeoutMs(): Long = ((library?.playerPanelTimeout ?: 6) * 1000L)
+    private fun chromeTimeoutMs(): Long = chromeTimeoutMsImpl()
 
     private fun revealChrome(page: PhoneVideoPage? = currentChromePage()) {
-        if (hidden || PhoneSession.underlayActive) return
-        page?.setChromeVisible(true)
-        scheduleChromeHide(page)
+        revealChromeImpl(page)
     }
 
     override fun dispatchTouchEvent(ev: MotionEvent): Boolean {

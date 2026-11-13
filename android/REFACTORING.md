@@ -1855,3 +1855,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 76：PhoneFeed 控制层计时迁移
+
+状态：已完成。
+
+- 将当前控制层页面、自动收起、超时和重现移到 `PhoneFeedChrome.kt`；原私有入口保留。
+- 保留借画面 / 隐藏时不计时、触摸重置计时和设置面板优先收起顺序。
+- `PhoneFeedView.kt` 从 1449 行降到 1441 行；`PhoneFeedChrome.kt` 为 29 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
