@@ -2151,3 +2151,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 101：PhoneSettings 横屏播放与外观迁移
+
+状态：已完成。
+
+- 将横屏播放、弹幕、界面信息和主题外观分区移到
+  `PhoneSettingsLandscapePages.kt`。
+- 保留设置值、横屏密度、主题网格、UI 大小重建和弹幕换算行为。
+- `PhoneSettingsActivity.kt` 从 1648 行降到 1519 行；
+  `PhoneSettingsLandscapePages.kt` 为 161 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

@@ -340,6 +340,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
         restoreScroll(anchor, resetTop = resetScroll)
     }
+    internal fun renderSettings(resetScroll: Boolean = false) = render(resetScroll)
 
     /** 四个大项排成两列两行，和「我的」页的四个入口使用同一组名称。 */
     private fun renderPageSelector() {
@@ -414,136 +415,6 @@ class PhoneSettingsActivity : PhoneActivity() {
         container.addView(grid, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { bottomMargin = settingsDp(4) })
-    }
-
-    private fun renderLandscapePlayback() {
-        val pref=landscapePanel("播放偏好","所有剧集共用，播放中也可调整")
-        landscapeLine(pref).also { line ->
-            landscapeCell(line,landscapeSetting("默认清晰度","${library.maxQuality}P") {
-                val options=PlaybackQuality.options
-                pick("默认清晰度",options.map { "$it P" },options.indexOf(library.maxQuality).coerceAtLeast(0)) { i ->
-                    library.maxQuality=options[i]; render()
-                }
-            })
-            landscapeCell(line,landscapeSetting("默认倍速",PlaybackSpeed.label(library.playbackSpeed)) {
-                val options=PlaybackSpeed.phoneOptions
-                pick("默认倍速",options.map { PlaybackSpeed.label(it) },options.indexOf(library.playbackSpeed).coerceAtLeast(0)) { i ->
-                    library.playbackSpeed=options[i]; render()
-                }
-            })
-        }
-        landscapeLine(pref).also { line ->
-            landscapeCell(line,landscapeSetting("画面模式",library.frameMode.label) {
-                val options=VideoFrameMode.entries
-                pick("画面模式",options.map { it.label },options.indexOf(library.frameMode)) { i ->
-                    library.frameMode=options[i]; render()
-                }
-            })
-            landscapeCell(line,landscapeSetting("视频解码",library.decoderMode.label) {
-                val options=VideoDecoderMode.entries
-                pick("视频解码",options.map { it.label },options.indexOf(library.decoderMode)) { i ->
-                    library.decoderMode=options[i]; render()
-                }
-            })
-        }
-        landscapeLine(pref).also { line ->
-            landscapeCell(line,landscapeSlider("画面缩放",1f,100f,1f,library.videoScale,
-                { "${it.roundToInt()}%" }) { library.videoScale=it })
-            landscapeCell(line,landscapeSwitch("自动连播",library.autoNext) {
-                library.autoNext=it; render()
-            })
-        }
-        landscapeLine(pref).also { line ->
-            landscapeCell(line,landscapeSlider("快进快退",2f,20f,1f,library.seekStep.toFloat(),
-                { "${it.roundToInt()} 秒" }) { library.seekStep=it.roundToInt() })
-        }
-
-        val display=landscapePanel("界面信息","播放信息显示与自动收起")
-        landscapeLine(display).also { line ->
-            landscapeCell(line,landscapeSwitch("剧名",library.playerTitle) { library.playerTitle=it; render() })
-            landscapeCell(line,landscapeSwitch("剧集",library.playerEpisode) { library.playerEpisode=it; render() })
-            landscapeCell(line,landscapeSwitch("网速",library.playerSpeed) { library.playerSpeed=it; render() })
-            landscapeCell(line,landscapeSwitch("时间",library.playerClock) { library.playerClock=it; render() })
-        }
-        landscapeLine(display).also { line ->
-            landscapeCell(line,landscapeSlider("自动收起时间",
-                PLAYER_PANEL_TIMEOUT_RANGE.first.toFloat(),PLAYER_PANEL_TIMEOUT_RANGE.last.toFloat(),1f,
-                library.playerPanelTimeout.toFloat(),{ "${it.roundToInt()} 秒" }) {
-                library.playerPanelTimeout=it.roundToInt()
-            })
-        }
-
-        val danmaku=landscapePanel("弹幕设置","显示方式 / 速度 / 聚合 / 特效 / 字号 / 透明度")
-        val (left,right)=landscapeColumns(danmaku)
-        landscapeColumnCell(left,landscapeSetting("显示方式",library.danmakuMode.label) {
-                val options=DanmakuMode.entries
-                pick("显示方式",options.map { it.label },options.indexOf(library.danmakuMode)) { i ->
-                    library.danmakuMode=options[i]; render()
-                }
-            })
-        landscapeColumnCell(left,landscapeSetting("弹幕速度",library.danmakuSpeed.label) {
-                val options=DanmakuSpeed.entries
-                pick("弹幕速度",options.map { it.label },options.indexOf(library.danmakuSpeed)) { i ->
-                    library.danmakuSpeed=options[i]; render()
-                }
-            })
-        landscapeColumnCell(left,landscapeSwitch("相同弹幕聚合",library.danmakuMerge) {
-                library.danmakuMerge=it; render()
-            })
-        landscapeColumnCell(left,landscapeSwitch("开启弹幕特效",library.danmakuEffects) {
-                library.danmakuEffects=it; render()
-            })
-        landscapeColumnCell(right,landscapeSlider("聚合条数",
-                DANMAKU_MERGE_MIN_RANGE.first.toFloat(),DANMAKU_MERGE_MIN_RANGE.last.toFloat(),1f,
-                library.danmakuMergeMin.toFloat(),{ "${it.roundToInt()} 条" }) {
-                library.danmakuMergeMin=it.roundToInt()
-            })
-        landscapeColumnCell(right,landscapeSlider("弹幕大小",
-                PhoneDanmakuSize.MIN_PERCENT.toFloat(),PhoneDanmakuSize.MAX_PERCENT.toFloat(),
-                PhoneDanmakuSize.STEP_PERCENT.toFloat(),PhoneDanmakuSize.percent(this).toFloat(),
-                { PhoneDanmakuSize.label(it) }) { PhoneDanmakuSize.set(this,it) })
-        landscapeColumnCell(right,landscapeSlider("弹幕透明度",
-                DanmakuStyle.ALPHA_MIN,DanmakuStyle.ALPHA_MAX,DanmakuStyle.ALPHA_STEP,
-                library.danmakuAlpha,{ DanmakuStyle.percent(it) }) { library.danmakuAlpha=DanmakuStyle.alpha(it) })
-    }
-
-    private fun renderLandscapeAppearance() {
-        val layout=landscapePanel("布局启动","UI大小、列表排版与推荐页滑动")
-        landscapeLine(layout).also { line ->
-            landscapeCell(line,landscapeSetting("UI大小",PhoneUiScale.label(PhoneUiScale.value)) {
-                val options=PhoneUiScale.sizes
-                pick("UI大小",options.map { it.label },
-                    options.indexOf(PhoneUiScale.sizeOf(PhoneUiScale.value))) { i ->
-                    PhoneUiScale.set(this,options[i].scale)
-                    recreate()
-                }
-            })
-            val base=library.gridColumns.coerceIn(1,3)
-            landscapeCell(line,landscapeSetting("列表每行","${base+3} 张") {
-                val options=listOf(1,2,3)
-                pick("海报列表每行几张",
-                    options.map { "竖屏 $it 张 · 横屏 ${it+3} 张" },
-                    options.indexOf(base).coerceAtLeast(0)) { i ->
-                    library.gridColumns=options[i]; render()
-                }
-            })
-        }
-        landscapeLine(layout).also { line ->
-            landscapeCell(line,landscapeSwitch("推荐页左右滑动",library.recommendSwipe) {
-                library.recommendSwipe=it; render()
-            })
-        }
-
-        val appearance=landscapePanel("主题外观","${TvTheme.entries.size} 套新拟态材质，选中即生效")
-        themeGrid()
-        appearance.addView(TextView(this).apply {
-            text="当前：${PhoneStyle.theme.label} · ${PhoneStyle.theme.scene}"
-            setTextColor(PhoneStyle.textDim)
-            phoneSize(11)
-            setPadding(dp(4),dp(6),dp(4),0)
-        },LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
     }
 
     private fun renderLandscapeRecommend() {
@@ -1070,7 +941,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     /** 二十套主题：两列一行，手机上名称与色点都能完整显示。 */
-    private fun themeGrid() {
+    internal fun themeGrid() {
         val columns = if(landscape) 5 else 2
         val chipHeight = settingsDp(if (landscape) 34 else 38)
         val grid = LinearLayout(this).apply {
