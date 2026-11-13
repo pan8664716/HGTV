@@ -155,10 +155,12 @@ class PhonePlayerActivity : PhoneActivity() {
     private lateinit var portrait: FrameLayout
     private lateinit var page: PhoneVideoPage
     internal val playerPage get()=page
+    internal val playerPageInitialized get()=::page.isInitialized
 
     private lateinit var landscape: FrameLayout
     private lateinit var landscapeVideo: PlayerView
     internal val playerLandscapeVideo get()=landscapeVideo
+    internal val playerLandscapeVideoInitialized get()=::landscapeVideo.isInitialized
     /**
      * 横屏（全屏）那一层的弹幕。
      *
@@ -323,6 +325,7 @@ class PhonePlayerActivity : PhoneActivity() {
      */
     private fun handingBackToFeed(): Boolean =
         returningToFeed && isFinishing && PhoneSession.owner == PhoneSession.Owner.PLAYER
+    internal fun handingBackToFeedForLifecycle(): Boolean = handingBackToFeed()
     /** 挂在进程单例播放器上的监听器：每次换集都要先摘掉旧的，否则会越积越多。 */
     private var listener: Player.Listener? = null
     internal var playerListener: Player.Listener?
@@ -2934,18 +2937,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 从详情页点进来的这一路已经取好了，打开浮层时是零等待。
      */
     private fun releasePlayer() {
-        playbackSessionState.release()
-        ticker?.cancel(); ticker = null
-        cancelAutoRetry()
-        clearPlaybackError()
-        listener?.let { player?.removeListener(it) }
-        listener = null
-        player?.pause()
-        if (::page.isInitialized) PhoneServices.detach(page.playerView)
-        if (::landscapeVideo.isInitialized) PhoneServices.detach(landscapeVideo)
-        player = null
-        runCatching { remote?.close() }
-        remote = null
+        releasePlayerImpl()
     }
 
     // ---------------------------------------------------------------- 网络恢复
@@ -3480,29 +3472,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 退出播放页时这一路要交回信息流，关掉就等于让它重来一遍。
      */
     private fun detachForHandoff() {
-        ticker?.cancel(); ticker = null
-        listener?.let { player?.removeListener(it) }
-        listener = null
-        val handoff = handingBackToFeed()
-        player?.let { exo ->
-            PhoneSession.markPosition(exo.currentPosition)
-            // **只在会话仍属于播放页时暂停**：退回推荐页时信息流已经先一步接手
-            //（A.onResume 早于 B.onDestroy），这里再 pause 一次会把刚恢复的播放按停，
-            // 用户看到的就是「退回去之后内容断了」。
-            PhoneSession.resumeOnAdopt = exo.playWhenReady
-            // 交接窗口内（或会话已被别人接手）一律不暂停：这一路还在被用。
-            if (!handoff && !PhoneSession.inHandoff() &&
-                PhoneSession.owner == PhoneSession.Owner.PLAYER
-            ) {
-                exo.pause()
-            }
-        }
-        if (::page.isInitialized) PhoneServices.detach(page.playerView)
-        if (::landscapeVideo.isInitialized) PhoneServices.detach(landscapeVideo)
-        // player 字段留在 Activity 里没有意义（Activity 要销毁了），但**进程级实例**必须保住：
-        // `PhoneServices.player` 是单例，这里只是不再引用它。
-        player = null
-        remote = null
+        detachForHandoffImpl()
     }
 
     @Suppress("DEPRECATION")

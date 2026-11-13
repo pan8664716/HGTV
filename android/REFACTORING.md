@@ -1401,6 +1401,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 59：PhonePlayer 播放器释放与交接解绑迁移
+
+状态：已完成。
+
+- 将 `releasePlayer` 与 `detachForHandoff` 的实现移到 `PhonePlayerLifecycle.kt`；
+  原私有调用入口保留并委托。
+- 保留会话释放、重试取消、监听器摘除、暂停、Surface 解绑、进度位置记录和交接暂停判定顺序。
+- `PhonePlayerActivity.kt` 从 3542 行降到 3513 行；`PhonePlayerLifecycle.kt` 为 51 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、24 失败、28 跳过，较基线少 1 个失败，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ### 夜间阶段摘要（批次 51–55）
 
 - 批次 51–55 全部完成并独立提交，Library 的 Cookie、pending profile、账号凭据与设备档案已拆分。
@@ -1411,7 +1432,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 下一批
 
-继续拆 `PhonePlayerActivity.kt` 的生命周期收尾或播放器释放职责。
+继续拆 `PhonePlayerActivity.kt` 的滑页换集状态或画面尺寸职责。
 
 ## 夜间验收（2026-11-13）
 
