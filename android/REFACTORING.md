@@ -4019,3 +4019,19 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；包名、文件名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`feature-phone/player`。
+
+### 布局批次 17：feature-phone/player（上）
+
+状态：已完成。
+
+- 移动 `PhonePlaybackRecovery`、`PhonePlaybackSettings`、`PhonePlayerActivity`、
+  `PhonePlayerAdoption`、`PhonePlayerAttach`、`PhonePlayerBack`、`PhonePlayerChrome`、
+  `PhonePlayerCommonUi`、`PhonePlayerConfiguration`、`PhonePlayerControls`、
+  `PhonePlayerCreate`、`PhonePlayerDanmaku`、`PhonePlayerDebug`、`PhonePlayerDestroy`、
+  `PhonePlayerEpisodeBinding`、`PhonePlayerEpisodePanels`、`PhonePlayerEpisodeSwitch`、
+  `PhonePlayerEpisodes`、`PhonePlayerExit`、`PhonePlayerFullscreen`、
+  `PhonePlayerLandscapeAssembly`、`PhonePlayerLandscapePanel`、
+  `PhonePlayerLandscapeSettingsFacade`、`PhonePlayerLifecycle` 到 `phone/player/`。
+- 外部路径引用：无；包名、文件名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`feature-phone/player`（下）。
