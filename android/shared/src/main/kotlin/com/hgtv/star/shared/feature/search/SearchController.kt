@@ -6,6 +6,8 @@ import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.SearchDiag
 import com.hgtv.star.core.SearchSource
 import com.hgtv.star.core.SearchSuggestion
+import com.hgtv.star.core.hotSearches
+import com.hgtv.star.core.suggestions
 import com.hgtv.star.shared.data.Library
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
