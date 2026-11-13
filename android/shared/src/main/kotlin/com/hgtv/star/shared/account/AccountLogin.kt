@@ -6,6 +6,9 @@ import com.hgtv.star.core.AccountCredentialsParser
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.accountProfile
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.data.account
+import com.hgtv.star.shared.data.accountDevice
+import com.hgtv.star.shared.data.saveAccountDevice
 
 /**
  * 账号凭据的落地校验（电视端与手机端共用一份）。

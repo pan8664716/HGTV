@@ -52,6 +52,7 @@ import com.hgtv.star.tv.focusHead
 import com.hgtv.star.tv.fullList
 import com.hgtv.star.tv.gapInto
 import com.hgtv.star.shared.data.NAV_KEYS
+import com.hgtv.star.shared.data.account
 import com.hgtv.star.shared.data.NAV_KEY_RECOMMEND
 import com.hgtv.star.tv.gridContentWidth
 import com.hgtv.star.tv.homeShelves

@@ -13,6 +13,8 @@ import com.hgtv.star.tv.ToggleChip
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.list.showCatalog
+import com.hgtv.star.shared.data.account
+import com.hgtv.star.shared.data.clearAccount
 import com.hgtv.star.shared.ui.SoftDrawable
 
 // 本文件是从 TvMainActivity.kt 拆出来的「「我的」页：抬头、四个栏目、账号数据与登录提示」这一块。

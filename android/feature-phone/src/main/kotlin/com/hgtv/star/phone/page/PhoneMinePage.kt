@@ -32,6 +32,7 @@ import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.tabBarInset
 import com.hgtv.star.shared.compat.clipToCircleCompat
 import com.hgtv.star.shared.data.accountCache
+import com.hgtv.star.shared.data.account
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.shared.ui.SoftStyle
 import kotlinx.coroutines.cancel
