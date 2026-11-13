@@ -3691,7 +3691,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 文件系统布局重组（2026-11-13）
 
-### 目录规划（待执行）
+### 目录规划（已执行）
 
 本次只移动 `.kt` 文件，不改包名、类名、文件内容或文件名。Kotlin 允许目录与包名不一致，
 因此所有 import、JVM facade、反射类名、R 类、Manifest、ProGuard 和 baseline profile
@@ -4168,3 +4168,61 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；仅目录变化。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：阶段 C 全量收尾。
+
+## 文件系统布局重组最终检查点
+
+状态：已完成，28 / 28 批。
+
+### 最终目录快照
+
+```text
+core/
+├── account/ 13     ├── catalog/ 14     ├── common/ 2
+├── content/ 34     ├── crypto/ 14      ├── identity/ 4
+├── label/ 5        ├── library/ 9      ├── media/ 5
+├── network/ 9      ├── playback/ 20    ├── recommend/ 5
+├── search/ 5       └── session/ 6
+
+feature-phone/
+├── account/ 4      ├── debug/ 3        ├── detail/ 4
+├── feed/ 18        ├── page/ 4         ├── player/ 64
+├── search/ 1       ├── settings/ 14    └── ui/ 21
+
+feature-tv/
+├── account/ 3      ├── debug/ 4        ├── detail/ 2
+├── home/ 15        ├── input/ 2        ├── library/ 2
+├── list/ 7         ├── navigation/ 9   ├── player/ 27
+├── search/ 2       ├── settings/ 1     ├── system/ 11
+└── ui/ 17
+```
+
+根目录 `.kt` 文件：`core` 0、`feature-phone` 7、`feature-tv` 3、
+`shared` 1（保持原状）。`shared` 目录未重组。
+
+### 批次与提交
+
+- 规划：`4b978c9`
+- 1–28：`fee0f38`、`d9294b2`、`59731e8`、`f87c306`、`583c194`、
+  `9293bcc`、`13922fe`、`df2799f`、`8e34a60`、`2ff6f34`、
+  `9822512`、`09e778c`、`b5101f4`、`9741080`、`c6cc3e5`、
+  `9ef1f6d`、`262e182`、`2a25b45`、`1f6e5e4`、`370696b`、
+  `ba55b95`、`0a7da78`、`cf5bd84`、`0a16373`、`af46b8e`、
+  `e561f4f`、`8950bb9`、`989d25a`
+
+### 最终统计
+
+- 移动 `.kt` 文件：237 个，全部为 100% rename。
+- 新增子目录：18 个。
+- 修改 Kotlin 内容：0；未改类名、方法签名、字段名、包名、文件名。
+- 外部路径引用：0；Manifest、ProGuard、baseline profile、构建脚本均未修改。
+- 待人工决策：0。
+
+### 最终验证
+
+- `:core:compileKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:shared:compileDebugKotlin` 通过。
+- `:shared:testDebugUnitTest`：24 例通过。
+- `:app:lintDebug`：0 Error、0 Fatal。
+- `:app:assembleDebug`：通过。
+- `:core:test`：435 例、24 失败、28 跳过；满足失败 ≤25、跳过 =28。
+- 工作区干净；未创建 tag、未推送、未创建 Release。
