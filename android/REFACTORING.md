@@ -2292,3 +2292,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 111：PhonePlayer 全屏与方向策略迁移
+
+状态：已完成。
+
+- 将沉浸式、全屏、竖屏全屏、方向申请和竖屏钉住移到
+  `PhonePlayerFullscreen.kt`。
+- 保留自动旋转开关、半透明窗口兼容、设备立起后交还方向的行为。
+- `PhonePlayerActivity.kt` 从 2995 行降到 2847 行；`PhonePlayerFullscreen.kt` 为 167 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
