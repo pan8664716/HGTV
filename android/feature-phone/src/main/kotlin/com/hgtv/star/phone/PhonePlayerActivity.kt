@@ -193,6 +193,8 @@ class PhonePlayerActivity : PhoneActivity() {
      * 不该先打开播放设置再从左边找。设置面板因此只留右侧可改的一栏。
      */
     private lateinit var landSettingsInfo: TextView
+    internal val playerLandSettingsInfo get()=landSettingsInfo
+    internal val playerLandSettingsInfoInitialized get()=::landSettingsInfo.isInitialized
     private lateinit var speedChip: TextView
     private lateinit var qualityChip: TextView
     private lateinit var danmakuChip: TextView
@@ -203,6 +205,7 @@ class PhonePlayerActivity : PhoneActivity() {
     internal val chipEpisode get()=episodeChip
 
     private lateinit var portraitTop: LinearLayout
+    internal val playerPortraitTop get()=portraitTop
     private lateinit var centerBox: FrameLayout
     private lateinit var centerGlyph: PhoneGlyph
     internal lateinit var hint: TextView
@@ -223,14 +226,22 @@ class PhonePlayerActivity : PhoneActivity() {
      * 再压一条上去就是同一件事写两遍。
      */
     private lateinit var infoRow: LinearLayout
+    internal val playerInfoRow get()=infoRow
+    internal val playerInfoRowInitialized get()=::infoRow.isInitialized
     /** 「播放显示」左半：剧集标题 + 当前集数（靠左、超长省略）。 */
     private lateinit var infoLeft: TextView
+    internal val playerInfoLeft get()=infoLeft
     /** 「播放显示」右半：网速 + 当前时间（贴右）。 */
     private lateinit var infoRight: TextView
+    internal val playerInfoRight get()=infoRight
     /** 横屏那一份「播放显示」：与竖屏同内容，常驻在屏幕顶部。 */
     private lateinit var landInfoRow: LinearLayout
+    internal val playerLandInfoRow get()=landInfoRow
+    internal val playerLandInfoRowInitialized get()=::landInfoRow.isInitialized
     private lateinit var landInfoLeft: TextView
+    internal val playerLandInfoLeft get()=landInfoLeft
     private lateinit var landInfoRight: TextView
+    internal val playerLandInfoRight get()=landInfoRight
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal var player: ExoPlayer? = null
@@ -2220,56 +2231,7 @@ class PhonePlayerActivity : PhoneActivity() {
      *
      * 横屏与竖屏各有一份（`landInfoRow` / `infoRow`），规则完全相同。
      */
-    private fun syncPlayInfo() {
-        val lib = library
-        val d = detail
-        if (lib == null || d == null || !::infoRow.isInitialized) return
-        val anyChecked = lib.playerTitle || lib.playerEpisode || lib.playerClock || lib.playerSpeed
-        // 全都没勾时按「四项全开」渲染——这是用户要的默认形态，但它跟着控制层收放。
-        val showAll = !anyChecked
-        val followChrome = showAll
-        // 左半：剧集标题 + 当前集数。
-        val left = ArrayList<String>(2)
-        if (showAll || lib.playerTitle) left += d.series.title
-        // 集数带总数（「第 3 / 171 集」）：与电视端信息条同一段格式（`PlaybackInfoLine`）。
-        if (showAll || lib.playerEpisode) {
-            left += com.hgtv.star.core.PlaybackInfoLine.episode(index, d.episodes.size)
-        }
-        // 右半：网速 + 当前时间。两项与电视端**同一份落盘值、同一套含义**
-        //（见 TV 的 `updatePlaybackInfoReadings`）：`playerSpeed` 是网速、`playerClock` 是当前时间。
-        // 早先手机上把它们画成了「播放位置 / 倍速」——同一个开关在两端显示不同的东西。
-        // 播放位置在底部进度条上本来就有（`landCurrent` / `landTotal`），不占这一行。
-        val right = ArrayList<String>(2)
-        if (showAll || lib.playerSpeed) right += com.hgtv.star.shared.debug.NetSpeed.line()
-        if (showAll || lib.playerClock) {
-            val calendar = java.util.Calendar.getInstance()
-            right += com.hgtv.star.core.PlaybackInfoLine.clock(
-                calendar.get(java.util.Calendar.HOUR_OF_DAY),
-                calendar.get(java.util.Calendar.MINUTE),
-            )
-        }
-        val leftText = left.joinToString("  ·  ")
-        val rightText = right.joinToString("  ·  ")
-        infoLeft.text = leftText
-        infoRight.text = rightText
-        if (::landInfoRow.isInitialized) {
-            landInfoLeft.text = leftText
-            landInfoRight.text = rightText
-        }
-        val empty = left.isEmpty() && right.isEmpty()
-        val visible = !empty && (!followChrome || chromeVisible)
-        // 竖屏：`portraitTop` 只装这一行，显隐完全由这里决定（见 `applyChrome`）。
-        infoRow.visibility = if (visible) View.VISIBLE else View.GONE
-        portraitTop.visibility = if (visible) View.VISIBLE else View.GONE
-        // 顶部那条压暗只给这一行垫底：这一行不显示时它就是一条平白无故的暗带
-        //（用户反馈「全屏顶部有一些黑雾，需要仔细对比才能发现」——渐变很缓，
-        // 亮场里才看得出）。早先它跟控制层一起开关，跟「有没有字」无关。
-        if (::page.isInitialized) page.setTopScrimVisible(visible)
-        // 横屏：贴顶那一行与 `landTop` 各管各的，清屏时它照旧常驻。
-        if (::landInfoRow.isInitialized) {
-            landInfoRow.visibility = if (visible) View.VISIBLE else View.GONE
-        }
-    }
+    private fun syncPlayInfo() = syncPlayInfoImpl()
 
     internal fun play(
         episodeIndex: Int,
@@ -2897,21 +2859,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 这一行是**常驻摘要**，不依赖设置面板是否打开；换集、换倍速、换清晰度、
      * 换画面模式 / 缩放 / 解码 / 弹幕 / 定时之后都会经 [syncChips] 走到这里。
      */
-    private fun syncLandscapeSettingsInfo() {
-        if (!::landSettingsInfo.isInitialized) return
-        val lib = library ?: run {
-            landSettingsInfo.text = ""
-            return
-        }
-        // 只写四颗按钮**没有**承载的三项（+ 定时）：清晰度 / 倍速 / 选集 / 弹幕
-        // 的当前值就在右侧按钮上，左边再列一遍会把这一行挤成省略号。
-        val parts = ArrayList<String>(4)
-        parts += lib.frameMode.label
-        parts += "缩放 ${Math.round(lib.videoScale)}%"
-        parts += lib.decoderMode.label
-        if (sleepTimer.active) parts += "定时 ${sleepTimer.label()}"
-        landSettingsInfo.text = parts.joinToString("  ·  ")
-    }
+    private fun syncLandscapeSettingsInfo() = syncLandscapeSettingsInfoImpl()
 
     private fun dismissLandscapeSettings() {
         val panel = landPanel ?: return
