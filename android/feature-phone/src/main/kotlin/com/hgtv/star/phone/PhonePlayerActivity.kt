@@ -299,6 +299,9 @@ class PhonePlayerActivity : PhoneActivity() {
         set(value) { portraitFullscreenFromLandscape=value }
     /** 返回时正在先恢复横屏，恢复完成后再结束播放页。 */
     private var finishAfterLandscapeRestore = false
+    internal var playerFinishAfterLandscapeRestore: Boolean
+        get()=finishAfterLandscapeRestore
+        set(value) { finishAfterLandscapeRestore=value }
 
     /**
      * 竖屏顶部标题栏在 `page` 坐标系里的下沿（像素）；0 = 还没量到。
@@ -2060,29 +2063,7 @@ class PhonePlayerActivity : PhoneActivity() {
 
     @Suppress("DEPRECATION")
     override fun onBackPressed() {
-        // 顺序：先收面板；横屏播放页直接返回上一页，不再先转竖屏。
-        if (landPanel != null) { dismissLandscapeSettings(); return }
-        if (landscapeMode) {
-            finish()
-            return
-        }
-        if (portraitFullscreenFromLandscape) {
-            finishAfterLandscapeRestore = true
-            portraitFullscreenFromLandscape = false
-            if (!requestOrientation(ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE)) {
-                finishAfterLandscapeRestore = false
-                finish()
-                return
-            }
-            // 个别 ROM 不回调方向变化：留一个兜底，避免返回键看起来没反应。
-            root.postDelayed({
-                if (finishAfterLandscapeRestore && !isFinishing && !isDestroyed) {
-                    finishAfterLandscapeRestore = false
-                    finish()
-                }
-            }, 800L)
-            return
-        }
+        if (handlePlayerBack()) return
         super.onBackPressed()
     }
 

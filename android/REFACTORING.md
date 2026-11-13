@@ -2522,3 +2522,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 131：PhonePlayer 返回决策迁移
+
+状态：已完成。
+
+- 将返回键决策移到 `PhonePlayerBack.kt`。
+- 保留横屏直接退出、竖屏全屏先恢复横屏和 800ms ROM 兜底。
+- `PhonePlayerActivity.kt` 从 2096 行降到 2077 行；`PhonePlayerBack.kt` 为 35 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
