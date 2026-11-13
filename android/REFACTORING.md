@@ -1832,3 +1832,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 74：PhoneFeed Surface 重挂迁移
+
+状态：已完成。
+
+- 将前台存活补播、当前页重绑、回交给播放页的 Surface / 位移 / resize / scale 入口移到
+  `PhoneFeedSurface.kt`；原私有入口保留并委托。
+- 保留会话归属、前台判据、强制置空条件、同剧校验与播放器单例复用。
+- `PhoneFeedView.kt` 从 1510 行降到 1476 行；`PhoneFeedSurface.kt` 为 62 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。

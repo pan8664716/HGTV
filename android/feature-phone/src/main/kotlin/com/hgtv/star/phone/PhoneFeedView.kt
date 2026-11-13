@@ -154,6 +154,9 @@ class PhoneFeedView(
 
     private var player: ExoPlayer? = null
     internal val feedPlayer get()=player
+    internal var feedPlayerSlot: ExoPlayer?
+        get()=player
+        set(value) { player=value }
     private var remote: RemoteVideo? = null
     private var playingIndex = -1
     internal var feedPlayingIndex: Int
@@ -172,6 +175,9 @@ class PhoneFeedView(
     internal val feedPlayToken get()=playToken
     private var boundPage: PhoneVideoPage? = null
     internal val feedBoundPage get()=boundPage
+    internal var feedBoundPageSlot: PhoneVideoPage?
+        get()=boundPage
+        set(value) { boundPage=value }
     private var paused = false
     internal var feedPaused: Boolean
         get()=paused
@@ -898,16 +904,7 @@ class PhoneFeedView(
      * **不重设媒体源、不 seek**：补的是播放状态，不是内容。
      */
     private fun keepLivePlayback() {
-        if (hidden) return
-        if (PhoneSession.owner != PhoneSession.Owner.FEED) return
-        if (!sessionBelongsToThisFeed()) return
-        val exo = player ?: return
-        if (exo.playbackState == Player.STATE_READY && exo.playWhenReady && !exo.isPlaying) {
-            runCatching { exo.play() }
-        }
-        if (PhoneSession.underlayActive) return
-        val page = pageAt(playingIndex) ?: return
-        if (page.playerView.player !== exo) page.playerView.player = exo
+        keepLivePlaybackImpl()
     }
 
     /**
@@ -972,6 +969,13 @@ class PhoneFeedView(
         page.setChromeVisible(true)
         scheduleChromeHide(page)
     }
+    internal fun attachPageForSurface(
+        exo: ExoPlayer,
+        page: PhoneVideoPage,
+        series: Series,
+        episodeIndex: Int,
+        forceRebind: Boolean,
+    ) = attachPage(exo, page, series, episodeIndex, forceRebind)
 
     /**
      * 把「画面模式」「画面缩放」按设置落到这一页上。
@@ -1103,36 +1107,7 @@ class PhoneFeedView(
      * 竖屏时它把横屏那一层摘掉，然后调这里把输出交回来——不交就是一块黑。
      */
     private fun bindFeedSurfaceForHandoff() {
-        PhoneSession.bindFeedSurface { force ->
-            val index = playingIndex
-            val page = boundPage ?: pageAt(index) ?: return@bindFeedSurface false
-            val series = items.getOrNull(index) ?: return@bindFeedSurface false
-            // 只允许借「会话里正在播的同一部剧」的 Surface。播放页横屏时，
-            // 下层分页可能因为布局或惯性滑到相邻一条；把那一块借出去就是串台。
-            if (PhoneSession.seriesId != series.id) return@bindFeedSurface false
-            val exo = player ?: PhoneServices.peekPlayer() ?: return@bindFeedSurface false
-            player = exo
-            // `force` 时才先置空：`PlayerView` 里那个 `player` 字段还指着同一台播放器，
-            // 不置空它就不会把新的 Surface 交出去（与 `attachPage` 的 forceRebind 同理）。
-            // 进场那一次输出本来就在这块 Surface 上，置空等于原地闪一下。
-            if (force && page.playerView.player === exo) page.playerView.player = null
-            if (page.playerView.player !== exo) page.playerView.player = exo
-            page.bind(series, "第${(currentEpisodeIndex[index] ?: 0) + 1}集")
-            boundPage = page
-            true
-        }
-        PhoneSession.feedVideoOffset = { dy ->
-            val page = boundPage ?: pageAt(playingIndex)
-            page?.playerView?.translationY = dy
-        }
-        // 播放页里改「画面模式」「画面缩放」时，真正出画面的是这一块：
-        // 不转过来就会变成「设置里选了等比铺满，画面还是原样」。
-        PhoneSession.feedVideoResize = { mode ->
-            (boundPage ?: pageAt(playingIndex))?.playerView?.resizeMode = mode
-        }
-        PhoneSession.feedVideoScale = { ratio ->
-            (boundPage ?: pageAt(playingIndex))?.setVideoScale(ratio)
-        }
+        bindFeedSurfaceForHandoffImpl()
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -1156,16 +1131,7 @@ class PhoneFeedView(
      * 布局变化（转屏、键盘、分屏）与列表重新绑定之后都要调一次。
      */
     private fun rebindCurrentPage() {
-        if (PhoneSession.owner != PhoneSession.Owner.FEED) return
-        // 另一条体裁流正在播时，本页即使被重新布局也不能把播放器抢回来。
-        if (hidden || !sessionBelongsToThisFeed()) return
-        val exo = player ?: return
-        val index = playingIndex
-        if (index < 0 || index !in items.indices) return
-        val page = pageAt(index) ?: return
-        val series = items[index]
-        if (page.playerView.player === exo && boundPage === page) return
-        attachPage(exo, page, series, currentEpisodeIndex[index] ?: 0, forceRebind = false)
+        rebindCurrentPageImpl()
     }
 
     override fun onDetachedFromWindow() {
