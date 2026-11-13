@@ -3121,3 +3121,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 184：ContentRepository 关系门面迁移
+
+状态：已完成。
+
+- 将热度换算与作者一致性判断移到 `ContentRelationFacade.kt`。
+- 保留空作者仅用于家族季补查的规则。
+- `ContentRepository.kt` 从 1400 行降到 1373 行；
+  `ContentRelationFacade.kt` 为 31 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
