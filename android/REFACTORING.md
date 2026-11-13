@@ -3815,3 +3815,20 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过，
   仍在 DoD 允许范围内；额外波动为既有 `webFallbackPagesContinueWithoutGaps`。
 - 下一批：`core/network`。
+
+### 布局批次 4：core/network
+
+状态：已完成。
+
+- `core/ContentTransport.kt` → `core/network/ContentTransport.kt`
+- `core/HgtvDns.kt` → `core/network/HgtvDns.kt`
+- `core/HgtvTls.kt` → `core/network/HgtvTls.kt`
+- `core/NetTiming.kt` → `core/network/NetTiming.kt`
+- `core/OkHttp3Compat.kt` → `core/network/OkHttp3Compat.kt`
+- `core/PublicDns.kt` → `core/network/PublicDns.kt`
+- `core/RequestScope.kt` → `core/network/RequestScope.kt`
+- `core/TlsStatus.kt` → `core/network/TlsStatus.kt`
+- `core/TncConfigStore.kt` → `core/network/TncConfigStore.kt`
+- 外部路径引用：无；包名、文件名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`core/identity`。
