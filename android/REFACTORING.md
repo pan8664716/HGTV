@@ -3832,3 +3832,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；包名、文件名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 - 下一批：`core/identity`。
+
+### 布局批次 5：core/identity
+
+状态：已完成。
+
+- `core/ContentDeviceLevel.kt` → `core/identity/ContentDeviceLevel.kt`
+- `core/ContentIdentity.kt` → `core/identity/ContentIdentity.kt`
+- `core/ContentProfiles.kt` → `core/identity/ContentProfiles.kt`
+- `core/VendorConstants.kt` → `core/identity/VendorConstants.kt`
+- 外部路径引用：无；仅目录变化。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`core/media`。
