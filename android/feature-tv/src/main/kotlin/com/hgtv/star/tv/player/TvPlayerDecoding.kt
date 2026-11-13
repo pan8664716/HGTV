@@ -19,6 +19,15 @@ import com.hgtv.star.shared.debug.DebugFaults
  * 「硬件解码 / 软件解码」这个用户开关本来只管视频：软解 AAC 的开销可以忽略，
  * 没有任何理由为了让 S905 少跑一个 AAC 而牺牲兼容性。因此音频一律交回全表。
  *
+ * ## 视频按 `hardwareAccelerated` 分档
+ *
+ * 不能只按 `softwareOnly` 筛软解：部分电视的软件解码器（例如 TCL 上的
+ * `OMX.google.hevc.decoder`）会把 `isHardwareAccelerated()` 报成 false、
+ * `isSoftwareOnly()` 也报成 false。只认 `softwareOnly` 时软解档会筛成空列表，
+ * ExoPlayer 连视频解码器都不会创建，最终直接报 4005。
+ *
+ * 因此硬解档只收 `hardwareAccelerated`，软解档收其余所有实现；两档互补，不会漏项。
+ *
  * ## 视频为什么不再 `ifEmpty { all }`
  *
  * 那一行是「静默降软解」：硬件档筛空就偷偷用软解跑，用户以为自己开着硬解。
@@ -52,7 +61,7 @@ internal fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context
     // 音频不受「视频解码」档位影响（见上面的类注释）。
     if(!mimeType.startsWith("video/")) return@MediaCodecSelector all
     when(mode) {
-        VideoDecoderMode.HARDWARE -> all.filter { !it.softwareOnly }
-        VideoDecoderMode.SOFTWARE -> all.filter { it.softwareOnly }
+        VideoDecoderMode.HARDWARE -> all.filter { it.hardwareAccelerated }
+        VideoDecoderMode.SOFTWARE -> all.filter { !it.hardwareAccelerated }
     }
 }
