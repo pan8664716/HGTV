@@ -156,6 +156,7 @@ class Library(context: Context) {
         ::cacheIdentityKey,
         ::cacheIdentityAvailable,
     )
+    internal val identityAccountCacheStore get()=accountCacheStore
     private var index: LibraryIndex? = null
     /**
      * 观看进度的落盘（一剧一文件，见 [ProgressStore]）。
@@ -494,18 +495,13 @@ class Library(context: Context) {
 
     /** 缓存身份：登录账号优先；未登录但设备已注册时，用主设备身份隔离匿名缓存。 */
     private fun cacheIdentityKey(): String {
-        val cookie=sessionPrefs.getString("account-cookie","").orEmpty()
-        if(cookie.isNotBlank()) return cookie
-        val device=sessionPrefs.getString("registered-device-id","").orEmpty()
-        val install=sessionPrefs.getString("registered-install-id","").orEmpty()
-        return if(isDeviceNumber(device) && isDeviceNumber(install)) "device|$device|$install" else ""
+        return cacheIdentityKeyImpl()
     }
 
-    private fun cacheIdentityAvailable(): Boolean = cacheIdentityKey().isNotBlank()
+    private fun cacheIdentityAvailable(): Boolean = cacheIdentityAvailableImpl()
 
     fun accountCache(): AccountCacheEntry? {
-        state()
-        return accountCacheStore.current()
+        return accountCacheImpl()
     }
     /**
      * 落盘一份账号快照。
@@ -515,17 +511,11 @@ class Library(context: Context) {
      * 因此播放中反复刷新也不会把磁盘写爆。
      */
     fun cacheAccount(data: AccountData, now: Long = System.currentTimeMillis()) {
-        if(discarding) return
-        // 没有可隔离的缓存身份就不该落快照：否则退出登录之后，磁盘上还留着一份「当前账号」，
-        // 下次启动会被当成已登录的内容铺出来（见 [accountCache]）。
-        if(!cacheIdentityAvailable()) return
-        state()
-        accountCacheStore.cache(data,now)
+        cacheAccountImpl(data, now)
     }
     /** 清掉账号快照（退出登录、换账号、导入新凭据时调用）。 */
     fun clearAccountCache() {
-        if(discarding) return
-        accountCacheStore.clear()
+        clearAccountCacheImpl()
     }
     var maxQuality: Int
         get() = state().settings.quality

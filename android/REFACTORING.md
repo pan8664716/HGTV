@@ -1596,6 +1596,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 68：Library 账号缓存身份隔离迁移
+
+状态：已完成。
+
+- 将账号缓存身份键、缓存可用性、快照读取 / 写入 / 清除移到
+  `LibraryAccountCache.kt`；原公开入口保留并委托。
+- 保留登录 Cookie 优先、注册设备匿名隔离、无身份不落盘、内存替换与写入队列行为。
+- `Library.kt` 从 1394 行降到 1384 行；`LibraryAccountCache.kt` 为 41 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ### 夜间阶段摘要（批次 60–64）
 
 - 批次 60–64 全部完成并独立提交，PhonePlayer 的滑页、画面尺寸、信息栏、设置壳与设置行已拆分。
@@ -1614,7 +1635,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 下一批
 
-继续拆 `Library.kt` 的账号缓存身份隔离职责。
+已达到本轮 40 批安全上限；下一轮从 `PhoneFeedView.kt` 的列表适配与交接状态开始。
 
 ## 夜间验收（2026-11-13）
 
