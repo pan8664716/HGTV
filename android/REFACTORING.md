@@ -3183,3 +3183,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 189：ContentRepository 设备状态迁移
+
+状态：已完成。
+
+- 将身份清空、拒绝计数和播放档位推进移到
+  `ContentDeviceStateFacade.kt`。
+- 保留起播重置与 4 / 5 档边界。
+- `ContentRepository.kt` 从 1266 行降到 1246 行；
+  `ContentDeviceStateFacade.kt` 为 24 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

@@ -3,6 +3,7 @@ package com.hgtv.star.shared.data
 
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.AccountCredentials
+import com.hgtv.star.core.clearDeviceIdentity
 import com.hgtv.star.core.deviceCookiesSnapshot
 import com.hgtv.star.core.primaryCookiesSnapshot
 import com.hgtv.star.core.refreshTncAsync
