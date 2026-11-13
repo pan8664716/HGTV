@@ -2662,3 +2662,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 142：RecommendPage 基础界面迁移
+
+状态：已完成。
+
+- 将受众选项、整屏说明、加载准备态和播放提示移到 `RecommendUi.kt`。
+- 保留触屏与电视端分支和提示时效。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
