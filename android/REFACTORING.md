@@ -3604,3 +3604,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 223：PhoneLogin 注释压缩
+
+状态：已完成。
+
+- 压缩独立协议与流程注释行，保留 SPDX、登录、上行短信和账号解析代码。
+- `PhoneLogin.kt` 从 1118 行降到 688 行，已低于 800 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
