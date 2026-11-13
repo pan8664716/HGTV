@@ -3001,3 +3001,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 174：TV 弹幕时钟迁移
+
+状态：已完成。
+
+- 将播放状态到弹幕时钟的采样移到 `TvDanmakuClock.kt`。
+- 保留主线程读取、异常降级和外推时钟。
+- `PlayerController.kt` 从 1162 行降到 1136 行；`TvDanmakuClock.kt` 为 31 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
