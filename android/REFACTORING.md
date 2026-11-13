@@ -3523,3 +3523,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 216：播放失败现场与上报迁移
+
+状态：已完成。
+
+- 将播放现场采集、解码器清单、格式兜底、降级记录和失败上报移到
+  `PlaybackFailureReport.kt`。
+- 保留按阶段去重、主线程抄取会话信息、后台采集和本地日志格式。
+- `PlaybackDiagnostics.kt` 从 981 行降到 709 行；
+  `PlaybackFailureReport.kt` 为 179 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
