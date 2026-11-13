@@ -3219,3 +3219,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 192：Library 注册状态迁移
+
+状态：已完成。
+
+- 将注册刷新判断、身份作废和待换新标记移到
+  `LibraryRegistrationFacade.kt`。
+- 补齐手机身份与 TV 账号动作调用点导入。
+- `Library.kt` 从 1354 行降到 1316 行；
+  `LibraryRegistrationFacade.kt` 为 45 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
