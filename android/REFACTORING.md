@@ -3258,3 +3258,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 195：Library 搜索令牌迁移
+
+状态：已完成。
+
+- 将搜索令牌属性移到 `LibrarySearchTokenFacade.kt`。
+- 保留镜像恢复、落盘和清空时同步删除。
+- `Library.kt` 从 1267 行降到 1247 行；
+  `LibrarySearchTokenFacade.kt` 为 23 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

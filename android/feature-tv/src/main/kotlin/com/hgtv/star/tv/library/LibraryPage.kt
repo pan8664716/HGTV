@@ -10,6 +10,7 @@ import android.widget.*
 import com.hgtv.star.core.*
 import com.hgtv.star.tv.TvMainActivity.DeferredUi
 import com.hgtv.star.shared.data.ArtworkLoader
+import com.hgtv.star.shared.data.searchToken
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.list.showCatalog

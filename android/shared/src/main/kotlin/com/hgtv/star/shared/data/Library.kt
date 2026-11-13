@@ -526,26 +526,6 @@ class Library(context: Context) {
      */
     fun qualityChosenByUser(): Boolean = prefs.contains("quality")
     /**
-     * 搜索登录态（可选，App 抓到的 `x-tt-token`，整段 Cookie 也可以）。
-     *
-     * 不填也能搜索（本机会先匿名注册一台设备，见 `DeviceRegister`）；填上后按该账号请求。
-     * 它只用于搜索请求，不进备份文件，也不参与「手机备份与恢复」。
-     */
-    var searchToken: String
-        get() {
-            restoreFromMirror()
-            val token=sessionPrefs.getString("x-tt-token", "").orEmpty()
-            mirrorSync("x-tt-token",token)
-            return token
-        }
-        set(value) {
-            if(discarding) return
-            sessionPrefs.edit().putString("x-tt-token", value.trim()).apply()
-            // 清空令牌是明确的删除意图（用户在设置里清掉的），走 remove 而不是 put(null)：
-            // 后者在读盘之前只会被当成「本机还没有」，盘上那份不会被抹掉。
-            if(value.isBlank()) mirror.remove("x-tt-token") else mirror.put("x-tt-token",value.trim())
-        }
-    /**
      * 把外部镜像里**本机缺的那几项**补回 [sessionPrefs]。
      *
      * 只有「重装之后第一次读」才真的会补东西：正常运行的那台机器每一项都在，这里一个键都不碰。
