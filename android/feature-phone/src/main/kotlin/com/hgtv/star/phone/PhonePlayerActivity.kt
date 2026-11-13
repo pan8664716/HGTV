@@ -40,7 +40,6 @@ import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.phone.ui.PhoneCards
 import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhoneEpisodeGrid
-import com.hgtv.star.phone.ui.PhonePagerMotion
 import com.hgtv.star.phone.ui.PhoneSheet
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTouch
@@ -155,6 +154,9 @@ class PhonePlayerActivity : PhoneActivity() {
     private lateinit var portrait: FrameLayout
     private lateinit var page: PhoneVideoPage
     internal val playerPage get()=page
+    internal var swipePlayerPage: PhoneVideoPage
+        get()=page
+        set(value) { page=value }
     internal val playerPageInitialized get()=::page.isInitialized
 
     private lateinit var landscape: FrameLayout
@@ -288,6 +290,7 @@ class PhonePlayerActivity : PhoneActivity() {
     /** 本页是否收着下层推荐页的控制层（见 `PhoneSession.hideFeedChrome` 的计数）。 */
     private var feedChromeHeld = false
     private var chromeVisible = true
+    internal val swipeChromeVisible get()=chromeVisible
     private var userSpeed = 1f
     internal val sessionUserSpeed get()=userSpeed
     internal var chipUserSpeed: Float
@@ -387,6 +390,9 @@ class PhonePlayerActivity : PhoneActivity() {
     internal var queuedVideo: RemoteVideo? = null
     internal var queuedEpisodeId = ""
     private var hintSticky = false
+    internal var swipeHintSticky: Boolean
+        get()=hintSticky
+        set(value) { hintSticky=value }
     internal var nextSeasonHintSticky: Boolean
         get()=hintSticky
         set(value) { hintSticky=value }
@@ -395,6 +401,9 @@ class PhonePlayerActivity : PhoneActivity() {
         set(value) { hintSticky=value }
     /** 提示的代次：换集后那句「第N集」延迟收起时，只收自己那一句。 */
     private var hintToken = 0
+    internal var swipeHintToken: Int
+        get()=hintToken
+        set(value) { hintToken=value }
     internal var sourceRetryHintToken: Int
         get()=hintToken
         set(value) { hintToken=value }
@@ -414,11 +423,32 @@ class PhonePlayerActivity : PhoneActivity() {
     private lateinit var ghostPage: PhoneVideoPage
     private lateinit var landscapeGhost: FrameLayout
     private lateinit var landscapeGhostTitle: TextView
+    internal var swipeGhostPage: PhoneVideoPage
+        get()=ghostPage
+        set(value) { ghostPage=value }
+    internal var swipeLandscapeGhost: FrameLayout
+        get()=landscapeGhost
+        set(value) { landscapeGhost=value }
+    internal var swipeLandscapeGhostTitle: TextView
+        get()=landscapeGhostTitle
+        set(value) { landscapeGhostTitle=value }
+    internal val swipeLandscape get()=landscape
+    internal val swipeLandscapeHeight get()=landscape.height
+    internal val swipePortraitHeight get()=portrait.height
     /** 这次拖动的目标方向：+1 = 下一集，-1 = 上一集，0 = 还没定 / 到头了。 */
     private var swipeDir = 0
     private var swipePrepared = false
+    internal var swipeDirection: Int
+        get()=swipeDir
+        set(value) { swipeDir=value }
+    internal var swipePreparedState: Boolean
+        get()=swipePrepared
+        set(value) { swipePrepared=value }
     /** 当前这一轮 pager 吸附动画：一个帧时钟同时驱动两页与底层视频。 */
     private var swipeAnimation: Runnable? = null
+    internal var swipeAnimationRunnable: Runnable?
+        get()=swipeAnimation
+        set(value) { swipeAnimation=value }
     /** 手动上滑已经推进到播放列表下一项，等 transition 回调或 post 兜底刷新界面。 */
     private var manualNextTarget = -1
     /** 手动切换前记下的当前进度：中途换集只能保存续播点，不能写成 completed。 */
@@ -431,6 +461,9 @@ class PhonePlayerActivity : PhoneActivity() {
         set(value) { manualNextPosition=value }
     /** 借来的那块视频现在被平移了多少像素（翻页动画的起点）。 */
     private var feedVideoDy = 0f
+    internal var swipeFeedVideoDy: Float
+        get()=feedVideoDy
+        set(value) { feedVideoDy=value }
 
     /** 播放控制信息的自动隐藏截止时刻（见 `playerPanelTimeout`）。 */
     private var chromeHideAt = 0L
@@ -1846,23 +1879,8 @@ class PhonePlayerActivity : PhoneActivity() {
 
     // ---------------------------------------------------------------- 上下滑翻页
 
-    /** 一屏的高度：竖屏 / 横屏各自的那一层。 */
-    private fun slideHeight(): Int {
-        val h = if (landscapeMode) landscape.height else portrait.height
-        return h.takeIf { it > 0 } ?: resources.displayMetrics.heightPixels
-    }
-
     /** 手指按下：停掉上一轮的动画，等第一次有方向的位移再决定翻向哪一集。 */
-    private fun beginSwipe() {
-        swipeDir = 0
-        swipePrepared = false
-        page.animate().cancel()
-        ghostPage.animate().cancel()
-        landscape.animate().cancel()
-        landscapeGhost.animate().cancel()
-        cancelSwipeAnimation()
-        showEpisodeHint(0f)
-    }
+    private fun beginSwipe() = beginSwipeImpl()
 
     /**
      * 拖动中：**两页一起跟手**（与推荐页的整页 pager 同一个观感）。
@@ -1872,42 +1890,7 @@ class PhonePlayerActivity : PhoneActivity() {
      *
      * 到头（第一集再往下 / 最后一集再往上）时位移只走 0.3 倍，做出「拉不动」的手感。
      */
-    private fun dragSwipe(delta: Float) {
-        val h = slideHeight()
-        val direction = if (delta < 0) 1 else -1
-        if (!swipePrepared && kotlin.math.abs(delta) > .008f) {
-            swipePrepared = true
-            swipeDir = direction
-            prepareGhost(direction)
-            // 到头时没有相邻页：保持可再次尝试，手指反向时还能接上另一侧。
-            if (swipeDir == 0) swipePrepared = false
-        } else if (swipePrepared && swipeDir != 0 && direction != swipeDir) {
-            // 手指在拖动中反方向：相邻页要换到另一侧，否则松手会吸错页。
-            swipeDir = direction
-            prepareGhost(direction)
-            if (swipeDir == 0) swipePrepared = false
-        }
-        val factor = if (swipeDir != 0) 1f else 0f
-        val dy = delta * h * factor
-        if (landscapeMode) {
-            landscape.translationY = dy
-            if (swipeDir != 0) {
-                landscapeGhost.translationY = dy + if (swipeDir > 0) h else -h
-            }
-        } else {
-            page.translationY = dy
-            // 借下层出画面时视频不在本页的视图树里：把那一块按同一个位移量平移，
-            // 观感才与推荐页的整页翻动一致（见 `PhoneSession.feedVideoOffset`）。
-            if (feedUnderlay) {
-                feedVideoDy = dy
-                PhoneSession.setFeedVideoOffset(dy)
-            }
-            if (swipeDir != 0) {
-                ghostPage.translationY = dy + if (swipeDir > 0) h else -h
-            }
-        }
-        showEpisodeHint(delta)
-    }
+    private fun dragSwipe(delta: Float) = dragSwipeImpl(delta)
 
     /**
      * 松手：够了就两页一起吸到整页（当前页滑出、相邻页滑到正中），不够就弹回。
@@ -1916,244 +1899,17 @@ class PhonePlayerActivity : PhoneActivity() {
      * 刚滑出去的那一页清空、放回另一侧备用。整个过程中用户看到的始终是两页连续运动，
      * 与推荐页 `PagerSnapHelper` 的吸附是同一个动作。
      */
-    private fun endSwipe(direction: Int) {
-        clearEpisodeHint()
-        val target = when (direction) {
-            PhoneTouch.DIRECTION_NEXT -> 1
-            PhoneTouch.DIRECTION_PREV -> -1
-            else -> 0
-        }
-        val d = detail
-        val playable = target != 0 && d != null && (index + target) in d.episodes.indices
-        if (!playable) {
-            // 到头 / 位移不够：弹回原位（到头时 [stepEpisode] 会补一句「已经是第一集」）。
-            if (target != 0) stepEpisode(target)
-            settleBack()
-            return
-        }
-        val h = slideHeight().toFloat()
-        val out = -target * h
-        val start = if (landscapeMode) landscape.translationY else page.translationY
-        // 与推荐页 `PhonePagerSnapHelper` 一样只按剩余距离决定吸附时长，不再额外叠速度。
-        val duration = PhonePagerMotion.duration(out - start, slideHeight())
-        if (landscapeMode) {
-            animateSwipe(
-                pageTarget = page.translationY,
-                ghostTarget = ghostPage.translationY,
-                landscapeTarget = out,
-                landscapeGhostTarget = 0f,
-                feedTarget = null,
-                duration = duration,
-            ) {
-                playSwipeTarget(index + target)
-                resetSwipeState()
-            }
-        } else {
-            animateSwipe(
-                pageTarget = out,
-                ghostTarget = 0f,
-                landscapeTarget = landscape.translationY,
-                landscapeGhostTarget = landscapeGhost.translationY,
-                feedTarget = if (feedUnderlay) out else null,
-                duration = duration,
-            ) {
-                val outgoing = page
-                // 先交换：`play()` 里所有绑定（媒体源、进度、信息栏）都落在新的 [page] 上。
-                page = ghostPage
-                ghostPage = outgoing
-                page.translationY = 0f
-                // 旧的这一页已经没有播放器了，解绑并放回另一侧藏着。
-                PhoneServices.detach(ghostPage.playerView)
-                ghostPage.translationY = 0f
-                ghostPage.visibility = View.GONE
-                resetSwipeState(keepCurrent = true)
-                playSwipeTarget(index + target)
-                applyVideoScale()
-                applyChrome()
-                syncChips()
-            }
-        }
-    }
-
-    /** 弹回原位（位移不够 / 到头）。 */
-    private fun settleBack() {
-        val h = slideHeight().toFloat()
-        val pageStart = if (landscapeMode) landscape.translationY else page.translationY
-        val ghostTarget = when {
-            swipeDir > 0 -> h
-            swipeDir < 0 -> -h
-            else -> 0f
-        }
-        val duration = PhonePagerMotion.duration(pageStart, slideHeight())
-        animateSwipe(
-            pageTarget = 0f,
-            ghostTarget = ghostTarget,
-            landscapeTarget = 0f,
-            landscapeGhostTarget = ghostTarget,
-            feedTarget = if (feedUnderlay && !landscapeMode) 0f else null,
-            duration = duration,
-        ) {
-            resetSwipeState()
-        }
-    }
-
-    /**
-     * 一次动画同时驱动当前页、相邻页和借用的底层视频。
-     *
-     * 推荐页只有一个 RecyclerView 滚动值，所以所有子内容天然在同一帧更新。
-     * 正式播放页原来用 2~3 个独立 Animator，启动与结束会差一帧，最后一跳看起来
-     * 就比推荐页更急；这里统一成一个进度值。
-     */
-    private fun animateSwipe(
-        pageTarget: Float,
-        ghostTarget: Float,
-        landscapeTarget: Float,
-        landscapeGhostTarget: Float,
-        feedTarget: Float?,
-        duration: Long,
-        onEnd: () -> Unit,
-    ) {
-        cancelSwipeAnimation()
-        val pageStart = page.translationY
-        val ghostStart = ghostPage.translationY
-        val landscapeStart = landscape.translationY
-        val landscapeGhostStart = landscapeGhost.translationY
-        val feedStart = feedVideoDy
-        val startedAt = android.os.SystemClock.uptimeMillis()
-        lateinit var tick: Runnable
-        tick = object : Runnable {
-            override fun run() {
-                if (swipeAnimation !== tick) return
-                val elapsed = (android.os.SystemClock.uptimeMillis() - startedAt)
-                    .coerceAtMost(duration)
-                val linear = if (duration > 0L) {
-                    (elapsed.toFloat() / duration).coerceIn(0f, 1f)
-                } else {
-                    1f
-                }
-                val fraction = PhonePagerMotion.interpolator.getInterpolation(linear)
-                page.translationY = pageStart + (pageTarget - pageStart) * fraction
-                ghostPage.translationY = ghostStart + (ghostTarget - ghostStart) * fraction
-                landscape.translationY =
-                    landscapeStart + (landscapeTarget - landscapeStart) * fraction
-                landscapeGhost.translationY =
-                    landscapeGhostStart + (landscapeGhostTarget - landscapeGhostStart) * fraction
-                if (feedTarget != null) {
-                    feedVideoDy = feedStart + (feedTarget - feedStart) * fraction
-                    PhoneSession.setFeedVideoOffset(feedVideoDy)
-                }
-                if (elapsed < duration) {
-                    root.postOnAnimation(this)
-                } else {
-                    swipeAnimation = null
-                    onEnd()
-                }
-            }
-        }
-        swipeAnimation = tick
-        root.postOnAnimation(tick)
-    }
-
-    /** 取消帧时钟动画；与 RecyclerView scroller 一样，不依赖系统 animator duration scale。 */
-    private fun cancelSwipeAnimation() {
-        swipeAnimation?.let { root.removeCallbacks(it) }
-        swipeAnimation = null
-    }
-
-    /**
-     * 铺相邻页：绑定目标集（标题 / 标签 / 集数 / 进度都按那一集来）。
-     *
-     * 视频区是黑的——与推荐页翻到下一页时一样：媒体源还没挂上去，先出信息栏。
-     */
-    private fun prepareGhost(direction: Int) {
-        val d = detail ?: run { swipeDir = 0; return }
-        val target = index + direction
-        if (target !in d.episodes.indices) {
-            swipeDir = 0
-            return
-        }
-        val label = "第${target + 1}集"
-        val h = slideHeight().toFloat()
-        if (landscapeMode) {
-            landscapeGhostTitle.text = "${d.series.title} $label"
-            landscapeGhost.translationY = if (direction > 0) h else -h
-            landscapeGhost.visibility = View.VISIBLE
-        } else {
-            ghostPage.bind(d.series, label, watchText = "选集 ${target + 1}/${d.episodes.size}")
-            ghostPage.setProgress(0f)
-            ghostPage.setChromeVisible(chromeVisible)
-            ghostPage.translationY = if (direction > 0) h else -h
-            ghostPage.visibility = View.VISIBLE
-        }
-    }
+    private fun endSwipe(direction: Int) = endSwipeImpl(direction)
 
     /** 复位两页的位置与显隐；[keepCurrent] = 刚完成交换，当前页要留在正中。 */
-    private fun resetSwipeState(keepCurrent: Boolean = false) {
-        if (keepCurrent) page.translationY = 0f
-        // 视频那一块回到原位（新的一集已经接上，位置必须是正的）。
-        if (feedUnderlay) PhoneSession.setFeedVideoOffset(0f)
-        ghostPage.translationY = 0f
-        ghostPage.visibility = View.GONE
-        landscape.translationY = 0f
-        landscapeGhost.translationY = 0f
-        landscapeGhost.visibility = View.GONE
-        swipePrepared = false
-        swipeDir = 0
-    }
+    private fun resetSwipeState(keepCurrent: Boolean = false) =
+        resetSwipeStateImpl(keepCurrent)
 
-    /**
-     * 上下滑时的提示：「下一集 第N集」/「上一集 第N集」，位移不够时写「继续滑动」。
-     *
-     * 复用画面顶部那一条 [hint]（与拖动进度的读数同一个位置、同一套样式），
-     * 因此两种手势的反馈读起来是同一种东西。手指一抬起就收起（见 [clearEpisodeHint]）。
-     */
-    private fun showEpisodeHint(delta: Float) {
-        val d = detail ?: return
-        // 向上是下一集（delta < 0），向下是上一集。
-        val target = if (delta <= 0) index + 1 else index - 1
-        val enough = kotlin.math.abs(delta) >= PhoneTouch.VERTICAL_COMMIT_RATIO
-        hint.text = when {
-            target !in d.episodes.indices && delta <= 0 -> "已经是最后一集"
-            target !in d.episodes.indices -> "已经是第一集"
-            enough -> "${if (delta <= 0) "下一集" else "上一集"} · 第${target + 1}集"
-            else -> "${if (delta <= 0) "上滑" else "下滑"}切换${if (delta <= 0) "下一集" else "上一集"}"
-        }
-        hintToken++
-        hintSticky = true
-        hint.visibility = View.VISIBLE
-    }
+    internal fun playSwipeTargetForSwipe(target: Int) = playSwipeTarget(target)
 
-    private fun clearEpisodeHint() {
-        hintSticky = false
-        hint.visibility = View.GONE
-    }
+    internal fun applyVideoScaleForSwipe() = applyVideoScale()
 
-    /**
-     * 换到相邻的一集（±1）。到头时给一句提示，不做越界播放。
-     *
-     * 优先走 [playSwipeTarget]：下一集已经排进播放列表时直接推进，避免重建播放器；
-     * 尚未准备好时才回落到 [play] 的常规取源路径。
-     */
-    private fun stepEpisode(direction: Int) {
-        val d = detail ?: return
-        val target = index + direction
-        if (target !in d.episodes.indices) {
-            hint.text = if (direction > 0) "已经是最后一集" else "已经是第一集"
-            hintToken++
-            hintSticky = true
-            hint.visibility = View.VISIBLE
-            val token = hintToken
-            root.postDelayed({ if (hintToken == token) clearEpisodeHint() }, 1200)
-            return
-        }
-        playSwipeTarget(target)
-        hint.text = "第${target + 1}集"
-        hintToken++
-        hintSticky = true
-        hint.visibility = View.VISIBLE
-        val token = hintToken
-        root.postDelayed({ if (hintToken == token) clearEpisodeHint() }, 900)
-    }
+    internal fun applyChromeForSwipe() = applyChrome()
 
     private fun seekTo(fraction: Float) {
         val duration = player?.duration ?: 0L

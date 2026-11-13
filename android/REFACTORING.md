@@ -1422,6 +1422,28 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 60：PhonePlayer 上下滑换集迁移
+
+状态：已完成。
+
+- 将上下滑翻页、相邻页准备、回弹 / 吸附动画、集数提示与相邻集切换移到
+  `PhonePlayerSwipe.kt`；原私有手势入口和状态字段保留在 Activity 上并委托。
+- 保留方向判定、相邻页绑定内容、横竖屏平移对象、底层视频同步偏移、帧时钟取消、
+  页面引用交换、播放器推进及提示代次顺序。
+- `PhonePlayerActivity.kt` 从 3513 行降到 3273 行；`PhonePlayerSwipe.kt` 为 290 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ### 夜间阶段摘要（批次 51–55）
 
 - 批次 51–55 全部完成并独立提交，Library 的 Cookie、pending profile、账号凭据与设备档案已拆分。
@@ -1432,7 +1454,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 下一批
 
-继续拆 `PhonePlayerActivity.kt` 的滑页换集状态或画面尺寸职责。
+继续拆 `PhonePlayerActivity.kt` 的播放画面尺寸与横屏缩放职责。
 
 ## 夜间验收（2026-11-13）
 
