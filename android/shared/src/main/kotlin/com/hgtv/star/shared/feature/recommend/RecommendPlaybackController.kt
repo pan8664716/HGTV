@@ -7,6 +7,7 @@ import com.hgtv.star.core.DetailCache
 import com.hgtv.star.core.RecommendBehavior
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.Series
+import com.hgtv.star.core.detail
 import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.feed.RecommendStore

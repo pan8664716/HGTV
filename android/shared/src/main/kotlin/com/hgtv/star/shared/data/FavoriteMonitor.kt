@@ -4,6 +4,7 @@ import android.os.Handler
 import android.os.Looper
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.RequestScope
+import com.hgtv.star.core.detail
 import java.util.concurrent.Executors
 import java.util.concurrent.Future
 

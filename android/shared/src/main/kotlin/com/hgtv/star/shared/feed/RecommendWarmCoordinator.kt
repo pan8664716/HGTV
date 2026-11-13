@@ -6,6 +6,7 @@ import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.DetailCache
 import com.hgtv.star.core.RemoteVideo
+import com.hgtv.star.core.detail
 import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
 import com.hgtv.star.shared.data.Library
 

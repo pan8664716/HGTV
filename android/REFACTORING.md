@@ -3109,3 +3109,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 183：ContentRepository 详情门面迁移
+
+状态：已完成。
+
+- 将剧集详情与相关作品门面移到 `ContentDetailFacade.kt`。
+- 补齐共享、手机和 TV 调用点的扩展函数导入。
+- `ContentRepository.kt` 从 1427 行降到 1400 行；
+  `ContentDetailFacade.kt` 为 36 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

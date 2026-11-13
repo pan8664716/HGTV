@@ -9,6 +9,8 @@ import com.hgtv.star.core.ResumePlayback
 import com.hgtv.star.core.ResumeTarget
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.authorsOf
+import com.hgtv.star.core.detail
+import com.hgtv.star.core.related
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.feature.account.AccountController
 import kotlinx.coroutines.CoroutineScope

@@ -7,6 +7,8 @@ import com.hgtv.star.core.Detail
 import com.hgtv.star.core.RelatedWorks
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.SeriesSeasons
+import com.hgtv.star.core.detail
+import com.hgtv.star.core.related
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch

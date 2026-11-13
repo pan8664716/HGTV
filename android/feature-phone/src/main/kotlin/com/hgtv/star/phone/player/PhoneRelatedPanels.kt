@@ -7,6 +7,7 @@ import android.widget.TextView
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.RelatedWorks
 import com.hgtv.star.core.Series
+import com.hgtv.star.core.related
 import com.hgtv.star.phone.ui.PhoneCards
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.dp

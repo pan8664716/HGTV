@@ -2,6 +2,7 @@
 package com.hgtv.star.tv
 
 import com.hgtv.star.core.Series
+import com.hgtv.star.core.detail
 import com.hgtv.star.core.lruPut
 import com.hgtv.star.shared.debug.StartupTrace
 

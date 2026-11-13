@@ -4,6 +4,7 @@ package com.hgtv.star.tv
 import com.hgtv.star.core.CacheLevel
 import com.hgtv.star.core.SlideCacheManager
 import com.hgtv.star.core.RemoteVideo
+import com.hgtv.star.core.detail
 import com.hgtv.star.core.lruPut
 
 // 推荐页的「双向滑动预加载」编排：窗口与规则在 `core/SlideCache.kt`（纯逻辑、有单测），
