@@ -3536,3 +3536,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 217：电视播放界面装配迁移
+
+状态：已完成。
+
+- 将视频层、缓冲层、弹幕层、顶部播放信息和底部 HUD 的装配移到
+  `PlaybackSurfaceBuilder.kt`。
+- 保留 TextureView 全屏选择、弹幕偏好、控制项入口和挂载顺序。
+- `PlayerController.kt` 从 952 行降到 737 行；
+  `PlaybackSurfaceBuilder.kt` 为 158 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
