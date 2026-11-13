@@ -136,7 +136,7 @@ fun TvMainActivity.ensureSearchCollector() {
             }
             val typed=(searchInput as? EditText)?.text?.toString()?.trim().orEmpty()
             when {
-                typed.isEmpty() -> renderHintRow(state.history.ifEmpty { state.hot })
+                typed.isEmpty() -> renderHintRow(state.emptyPrompts())
                 state.query==typed -> renderHintRow(state.suggestions.map { it.name })
             }
         }

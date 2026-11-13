@@ -465,7 +465,7 @@ fun TvMainActivity.loadHotSearches() {
     searchController.refreshHistory()
     searchController.loadHot()
     val state=searchController.state.value
-    renderHintRow(state.history.ifEmpty { state.hot })
+    renderHintRow(state.emptyPrompts())
 }
 /**
  * 取一次提示词。

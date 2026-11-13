@@ -97,15 +97,14 @@ fun TvMainActivity.renderHongguoSideList() {
     val state=searchController.state.value
     val typed=hongguoDraft.trim()
     if(typed.isEmpty()) {
-        val history=state.history
-        val items=history.ifEmpty { state.hot }
+        val items=state.emptyPrompts()
         // 没有搜索记录时铺**推荐词**（热搜）：这一列不能空着——它正是用户
         // 「不知道该搜什么」时唯一的入口。热搜还没取过就顺手取一次（loadHot 自带去重）。
         if(items.isEmpty()) searchController.loadHot()
         renderHongguoList(
             items,
-            if(history.isEmpty()) "正在获取推荐词…" else "暂无记录",
-            loading=history.isEmpty(),
+            if(state.hotLoading) "正在获取推荐词…" else "暂无记录",
+            loading=state.hotLoading,
         )
         return
     }

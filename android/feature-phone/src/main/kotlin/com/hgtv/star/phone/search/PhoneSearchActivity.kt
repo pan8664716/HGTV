@@ -44,7 +44,7 @@ import kotlinx.coroutines.withContext
  *
  * | 输入框 | 提示区内容 |
  * | --- | --- |
- * | 空 | 本机搜索记录（没有记录时铺热门搜索） |
+ * | 空 | 本机搜索记录在前，热门搜索在后 |
  * | 有字 | 服务端联想词（边打字边发，去抖 220ms） |
  * | 已经在看结果 | 整块收起，把屏幕让给结果 |
  *
@@ -295,10 +295,10 @@ class PhoneSearchActivity : PhoneActivity() {
             historyChips.setChips(history) { word -> runSearch(word) }
         }
 
-        // 热门搜索只在「没有输入且本机没有记录」时出现：有记录时用户想找的是自己搜过的词。
-        val showHot = typed.isEmpty() && history.isEmpty()
+        // 空输入时历史与热门一起出现：历史在前，系统推荐在后。
+        val showHot = typed.isEmpty()
         val hot = state.hot
-        hotHeader.visibility = if (showHot && hot.isEmpty()) View.GONE else if (showHot) View.VISIBLE else View.GONE
+        hotHeader.visibility = if (showHot && (hot.isNotEmpty() || state.hotLoading)) View.VISIBLE else View.GONE
         hotChips.visibility = if (showHot && hot.isNotEmpty()) View.VISIBLE else View.GONE
         if (showHot) loadHotSearches()
 

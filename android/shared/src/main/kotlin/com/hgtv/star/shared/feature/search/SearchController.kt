@@ -41,7 +41,14 @@ class SearchController(
         val suggestionsLoading: Boolean = false,
         val degraded: Boolean = false,
         val error: Throwable? = null,
-    )
+    ) {
+        /** 空输入时的提示词：本机历史在前，系统推荐在后，按首次出现顺序去重。 */
+        fun emptyPrompts(): List<String> {
+            val seen=HashSet<String>()
+            return (history+hot).map { it.trim() }
+                .filter { it.isNotEmpty() && seen.add(it) }
+        }
+    }
 
     private val _state = MutableStateFlow(State(source = library.searchSource))
     val state: StateFlow<State> = _state.asStateFlow()
@@ -114,7 +121,7 @@ class SearchController(
         _state.update { it.copy(query = clean) }
         if (clean.isEmpty()) {
             _state.update { it.copy(suggestions = emptyList(), suggestionsLoading = false) }
-            if (_state.value.history.isEmpty()) loadHot()
+            loadHot()
             return
         }
         suggestJob = scope.launch {
