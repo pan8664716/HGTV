@@ -131,6 +131,8 @@ class Library(context: Context) {
     internal val legacyIdentityKeysValue get()=LEGACY_IDENTITY_KEYS
     internal val mirrorAccountKeysValue get()=mirrorAccountKeys
     internal fun isDeviceNumberForIdentity(value: String): Boolean = isDeviceNumber(value)
+    internal fun settingsState(): LibraryIndex = state()
+    internal fun putSetting(key: String, value: Any?) = put(key, value)
     private val writes = LatestWriteQueue<String, () -> Any?>("hgtv-library-write", write = { batch -> commit(prefs, batch) },
         failed = { Log.w("HGTV", "Local library commit failed; pending changes retained for retry") })
     /**
@@ -995,176 +997,65 @@ class Library(context: Context) {
         saveAccountDeviceImpl(device)
     }
     var autoNext: Boolean
-        get() = state().settings.autoNext
-        set(value) { if (value != autoNext) { state().settings = state().settings.copy(autoNext = value); put("autoNext", value) } }
+        get() = autoNextSetting()
+        set(value) = setAutoNextSetting(value)
     var playbackSpeed: Float
-        get() = state().settings.speed
-        set(value) { val next = PlaybackSpeed.normalize(value); if (next != playbackSpeed) { state().settings = state().settings.copy(speed = next); put("playbackSpeed", next) } }
+        get() = playbackSpeedSetting()
+        set(value) = setPlaybackSpeedSetting(value)
     var frameMode: VideoFrameMode
-        get() = state().settings.frame
-        set(value) { if (value != frameMode) { state().settings = state().settings.copy(frame = value); put("frameMode", value.name) } }
-    /**
-     * 视频解码方式：硬件解码（默认）/ 软件解码。
-     *
-     * 只在**新建播放器**时读取；改档之后由 `applyDecoderMode` 立刻重建一次播放器，
-     * 因此正在看的这一集也会马上换过去，不需要退出播放界面。
-     */
+        get() = frameModeSetting()
+        set(value) = setFrameModeSetting(value)
     var decoderMode: VideoDecoderMode
-        get() = state().settings.decoder
-        set(value) { if (value != decoderMode) { state().settings = state().settings.copy(decoder = value); put("decoderMode", value.name) } }
-    /**
-     * 搜索页的数据源（App 接口 / 官网）。
-     *
-     * 只影响搜索（结果、联想词、热搜词），改完下一次搜索立刻生效；
-     * 已经显示着的那一页结果不会被就地替换——用户按「搜索」才换。
-     */
+        get() = decoderModeSetting()
+        set(value) = setDecoderModeSetting(value)
     var searchSource: SearchSource
-        get() = state().settings.searchSource
-        set(value) { if (value != searchSource) { state().settings = state().settings.copy(searchSource = value); put("searchSource", value.storedValue) } }
-    /** 电视搜索页的键盘选择，默认自绘键盘。 */
+        get() = searchSourceSetting()
+        set(value) = setSearchSourceSetting(value)
     var searchKeyboard: SearchKeyboard
-        get() = state().settings.searchKeyboard
-        set(value) { if (value != searchKeyboard) { state().settings = state().settings.copy(searchKeyboard = value); put("searchKeyboard", value.storedValue) } }
-    /**
-     * 每一行放几张海报卡：4 / 5 / 6 / 7 / 8（默认 6，与旧版一致）。
-     *
-     * **全局生效**：首页剧架、榜单 / 分类 / 搜索 / 收藏 / 历史 / 我的、详情页相关剧集
-     * 共用这一份设置；越界值一律夹回 4..6。
-     */
+        get() = searchKeyboardSetting()
+        set(value) = setSearchKeyboardSetting(value)
     var homeColumns: Int
-        get() = state().settings.homeColumns.coerceIn(4, 8)
-        set(value) {
-            val next = value.coerceIn(4, 8)
-            if (next != homeColumns) { state().settings = state().settings.copy(homeColumns = next); put("homeColumns", next) }
-        }
-    /**
-     * 手机 / 平板的海报列表基准列数（1–3，默认 2）。
-     *
-     * 与电视的 [homeColumns]（4..8）是两个键：手机上 2 列是「封面够大、标题还能读全」
-     * 的默认档；横屏实际显示时映射为 4–6 列。
-     * 坏值夹进 1..3，设置页不会出现一个选不中的状态。
-     */
+        get() = homeColumnsSetting()
+        set(value) = setHomeColumnsSetting(value)
     var gridColumns: Int
-        get() = state().settings.gridColumns.coerceIn(1, 3)
-        set(value) {
-            val next = value.coerceIn(1, 3)
-            val current = state().settings.gridColumns
-            if (next != current) { state().settings = state().settings.copy(gridColumns = next); put("gridColumns", next) }
-        }
-    /**
-     * 列表页「回到顶部」浮层的显隐方式（[BACK_TO_TOP_MODES] 四档，默认始终显示）。
-     *
-     * 只管**列表页**那枚浮层：首页剧架、详情页、播放页本来就不挂它（见 `updateBackToTop`）。
-     * 坏值一律回落到「始终显示」，设置页因此不会出现一个选不中任何一项的状态。
-     */
+        get() = gridColumnsSetting()
+        set(value) = setGridColumnsSetting(value)
     var backToTop: String
-        get() = state().settings.backToTop.takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT
-        set(value) {
-            val next = value.takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT
-            if (next != backToTop) { state().settings = state().settings.copy(backToTop = next); put("backToTop", next) }
-        }
-    /**
-     * 播放画面左上角常显的四项信息：剧集标题 / 当前集数 / 时间 / 网速。
-     *
-     * 四项各自独立开关（设置页「界面设置 → 播放显示」）。前两项与时间默认开启，
-     * 网速默认关闭——它是排障用的读数，平时不该占着画面。
-     */
+        get() = backToTopSetting()
+        set(value) = setBackToTopSetting(value)
     var playerTitle: Boolean
-        get() = state().settings.playerTitle
-        set(value) { if (value != playerTitle) { state().settings = state().settings.copy(playerTitle = value); put("playerTitle", value) } }
+        get() = playerTitleSetting()
+        set(value) = setPlayerTitleSetting(value)
     var playerEpisode: Boolean
-        get() = state().settings.playerEpisode
-        set(value) { if (value != playerEpisode) { state().settings = state().settings.copy(playerEpisode = value); put("playerEpisode", value) } }
+        get() = playerEpisodeSetting()
+        set(value) = setPlayerEpisodeSetting(value)
     var playerClock: Boolean
-        get() = state().settings.playerClock
-        set(value) { if (value != playerClock) { state().settings = state().settings.copy(playerClock = value); put("playerClock", value) } }
+        get() = playerClockSetting()
+        set(value) = setPlayerClockSetting(value)
     var playerSpeed: Boolean
-        get() = state().settings.playerSpeed
-        set(value) { if (value != playerSpeed) { state().settings = state().settings.copy(playerSpeed = value); put("playerSpeed", value) } }
-    /**
-     * 播放设置 / 选集面板「无操作几秒自动消失」（[PLAYER_PANEL_TIMEOUT_RANGE]，默认 6 秒）。
-     *
-     * 到点之后的行为与按返回键一致：播放设置收起、选集面板收起并把焦点还回控制条。
-     */
+        get() = playerSpeedSetting()
+        set(value) = setPlayerSpeedSetting(value)
     var playerPanelTimeout: Int
-        get() = state().settings.playerPanelTimeout
-        set(value) {
-            val next=value.coerceIn(PLAYER_PANEL_TIMEOUT_RANGE)
-            if (next != playerPanelTimeout) { state().settings = state().settings.copy(playerPanelTimeout = next); put("playerPanelTimeout", next) }
-        }
-    /**
-     * 快进 / 快退单次跳过的秒数（2..20，默认 10）。
-     *
-     * 播放界面按左右键时的跳跃步长（见 `com.hgtv.star.core.KeyMap.SEEK_FORWARD`）。
-     * 长按连按的加速（5 次之后每次 30 秒）仍然按固定档走，这一项只决定**单次**的步长，
-     * 因此调到 20 秒时连按依然是先 20 秒、之后按连按规则加快。
-     */
+        get() = playerPanelTimeoutSetting()
+        set(value) = setPlayerPanelTimeoutSetting(value)
     var seekStep: Int
-        get() = state().settings.seekStep
-        set(value) {
-            val next=value.coerceIn(2,20)
-            if (next != seekStep) { state().settings = state().settings.copy(seekStep = next); put("seekStep", next) }
-        }
-    /**
-     * 画面缩放百分比（1..100，默认 100 = 铺满）。
-     *
-     * 只缩播放画面本身（`playerView` 的框），弹幕层仍然是整屏坐标，
-     * 因此缩小画面时弹幕照旧铺满屏幕（见 `applyVideoScale`）。
-     */
+        get() = seekStepSetting()
+        set(value) = setSeekStepSetting(value)
     var videoScale: Float
-        get() = state().settings.videoScale.coerceIn(1f,100f)
-        set(value) {
-            val next = value.coerceIn(1f,100f).let { Math.round(it).toFloat() }
-            if (next != videoScale) { state().settings = state().settings.copy(videoScale = next); put("videoScale", next) }
-        }
-    /**
-     * 竖屏短剧全屏（默认关闭）。
-     *
-     * 打开后，**竖屏片源**（短剧）在横屏电视上会被**转 90°**：9:16 旋转后就是 16:9，
-     * 正好铺满屏幕、不裁掉任何内容（见 `autoFullscreenRotated`）。横屏片源不受影响，
-     * 仍然用用户在「画面模式」里选的那一档。
-     */
+        get() = videoScaleSetting()
+        set(value) = setVideoScaleSetting(value)
     var autoFullscreen: Boolean
-        get() = state().settings.autoFullscreen
-        set(value) { if (value != autoFullscreen) { state().settings = state().settings.copy(autoFullscreen = value); put("autoFullscreen", value) } }
-    /**
-     * 选集一页放多少集（10 / 20 / 30 / 40 / 50，默认 20）。
-     *
-     * 简介页与播放界面的选集面板共用这一份：它决定分页行怎么切段
-     *（`1-20 / 21-40 …`）、网格铺几行（固定 10 列 × 一页集数 / 10 行）。
-     * 落盘即生效——下次打开选集就是新的分段，不需要重启。
-     */
+        get() = autoFullscreenSetting()
+        set(value) = setAutoFullscreenSetting(value)
     var episodePageSize: Int
-        get() = state().settings.episodePageSize
-        set(value) {
-            val next = com.hgtv.star.core.EpisodePageSize.normalize(value)
-            if (next != episodePageSize) { state().settings = state().settings.copy(episodePageSize = next); put("episodePageSize", next) }
-        }
-    /**
-     * 分页边缘翻页（默认开启）。
-     *
-     * 开启：选集网格左右到本行两端、下到最后一行时**翻页**（跳到相邻那一页）。
-     * 关闭：边缘不再翻页，右端按右键选下一集、左端按左键选上一集（跨页自动跟过去），
-     * 换页改由分页行自己选（见 `EpisodeGrid.pageKey`）。
-     *
-     * 落盘即生效：下一次进简介页 / 打开选集面板就按新值走，已经摆好的那一屏不重建。
-     */
+        get() = episodePageSizeSetting()
+        set(value) = setEpisodePageSizeSetting(value)
     var episodeEdgeTurn: Boolean
-        get() = state().settings.episodeEdgeTurn
-        set(value) { if (value != episodeEdgeTurn) { state().settings = state().settings.copy(episodeEdgeTurn = value); put("episodeEdgeTurn", value) } }
-    /**
-     * 用户主动要求「减少动画、优先流畅」（默认关闭）。
-     *
-     * 与设备判据是**或**的关系：低配机一律按低配档跑，与这一项无关；
-     * 非低配机打开它之后，焦点缩放动画、柔光位图、海报井暗角与跑马灯全部关掉，
-     * 效果与低配机完全一致（见 `TvMainActivity.applyPerformanceProfile`）。
-     *
-     * 改完要整页重建一次才彻底生效：卡片在构造时就把「是否跑马灯」捉了一份
-     * （见 `PosterCard.marqueeOn`）。
-     */
+        get() = episodeEdgeTurnSetting()
+        set(value) = setEpisodeEdgeTurnSetting(value)
     var reduceAnim: Boolean
-        get() = state().settings.reduceAnim
-        set(value) { if (value != reduceAnim) { state().settings = state().settings.copy(reduceAnim = value); put("reduceAnim", value) } }
+        get() = reduceAnimSetting()
+        set(value) = setReduceAnimSetting(value)
     /**
      * 调试模式：打开后各页面右上角常驻一块现场面板（见 `DebugOverlay.kt`）。
      *

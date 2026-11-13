@@ -1359,6 +1359,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本批提交执行 `git revert`，不改动其他批次。
 
+### 批次 57：Library 播放与界面设置迁移
+
+状态：已完成。
+
+- 将播放、搜索、列数、播放显示、选集和动画设置移到 `LibraryPlaybackSettings.kt`；
+  原公开属性及其 JVM getter / setter 保留在 `Library` 上并委托。
+- 保留规范化、范围夹取、比较条件、磁盘键名和设置队列写入顺序。
+- `Library.kt` 从 1641 行降到 1532 行；`LibraryPlaybackSettings.kt` 为 291 行。
+
+验证：
+
+- `git diff --check` 通过。
+- 指定 JDK 17 聚合命令通过，包含 `:core:compileKotlin`、
+  `:feature-tv:compileDebugKotlin`、`:feature-phone:compileDebugKotlin`、
+  `:shared:testDebugUnitTest`、`:app:lintDebug`、`:app:assembleDebug`。
+- `:app:lintDebug` 通过，无新增 `Error` / `Fatal`。
+- `:shared:testDebugUnitTest` 24 例通过。
+- `:core:test` 为 435 例、25 失败、28 跳过，与基线一致，没有新增失败。
+
+回滚：对本批提交执行 `git revert`，不改动其他批次。
+
 ### 夜间阶段摘要（批次 51–55）
 
 - 批次 51–55 全部完成并独立提交，Library 的 Cookie、pending profile、账号凭据与设备档案已拆分。
@@ -1369,7 +1390,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 下一批
 
-继续拆 `Library.kt` 的加载编排或设置属性职责。
+继续拆 `PhonePlayerActivity.kt` 的调试面板与生命周期职责。
 
 ## 夜间验收（2026-11-13）
 
