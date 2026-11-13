@@ -4083,3 +4083,24 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；包名、文件名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 - 下一批：`feature-tv/player`。
+
+### 布局批次 22：feature-tv/player
+
+状态：已完成。
+
+- `tv/PlaybackDiagnostics.kt` → `tv/player/PlaybackDiagnostics.kt`
+- `tv/PlaybackFailureLabels.kt` → `tv/player/PlaybackFailureLabels.kt`
+- `tv/PlaybackFailureReport.kt` → `tv/player/PlaybackFailureReport.kt`
+- `tv/TvDanmakuClock.kt` → `tv/player/TvDanmakuClock.kt`
+- `tv/TvPlaybackAnalytics.kt` → `tv/player/TvPlaybackAnalytics.kt`
+- `tv/TvPlaybackPreferences.kt` → `tv/player/TvPlaybackPreferences.kt`
+- `tv/TvPlaybackRunnables.kt` → `tv/player/TvPlaybackRunnables.kt`
+- `tv/TvPlaybackWarmup.kt` → `tv/player/TvPlaybackWarmup.kt`
+- `tv/TvPlayerBuilder.kt` → `tv/player/TvPlayerBuilder.kt`
+- `tv/TvPlayerDecoderSwitch.kt` → `tv/player/TvPlayerDecoderSwitch.kt`
+- `tv/TvPlayerDecoding.kt` → `tv/player/TvPlayerDecoding.kt`
+- `tv/TvPlayerLifecycle.kt` → `tv/player/TvPlayerLifecycle.kt`
+- `tv/TvPlayerRenderers.kt` → `tv/player/TvPlayerRenderers.kt`
+- 外部路径引用：无；`MainActivityPlaybackKt` 多文件 facade 文件名保持不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`feature-tv/navigation`。
