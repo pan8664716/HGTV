@@ -124,17 +124,23 @@ fun TvMainActivity.importAccount(text: String,anchor: View?) {
             if(isDestroyed) return@post
             result.onSuccess { credentials ->
                 library.saveAccount(credentials)
-                applyAccount()
-                // 导入的会话只有 cookie、没有 `X-Tt-Token`：立刻打一次 boot 心跳，
-                // 让服务端在响应头里把 token 发回来（拦截器收到即落盘）。
-                com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force=true)
-                hideCenterLoading()
-                showHint("账号参数已导入")
-                // 先发起唯一一次强制刷新，再重建页面。反过来 showCatalog() 会先自动拉一次，
-                // 紧接着这里的 force 又发一次；两条账号请求并发时，后一条可能被前一条的
-                // 在途写请求拖成空响应，历史页就会一直停在加载态。
-                loadAccount(force=true)
-                showCatalog()
+                io.submit {
+                    library.flushBlocking()
+                    main.post {
+                        if(isDestroyed) return@post
+                        applyAccount()
+                        // 导入的会话只有 cookie、没有 `X-Tt-Token`：立刻打一次 boot 心跳，
+                        // 让服务端在响应头里把 token 发回来（拦截器收到即落盘）。
+                        com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force=true)
+                        hideCenterLoading()
+                        showHint("账号参数已导入")
+                        // 先发起唯一一次强制刷新，再重建页面。反过来 showCatalog() 会先自动拉一次，
+                        // 紧接着这里的 force 又发一次；两条账号请求并发时，后一条可能被前一条的
+                        // 在途写请求拖成空响应，历史页就会一直停在加载态。
+                        loadAccount(force=true)
+                        showCatalog()
+                    }
+                }
             }.onFailure { failure ->
                 DebugLog.record("账号","导入失败 · ${failure.message.orEmpty().take(140)}")
                 hideCenterLoading()
@@ -556,14 +562,22 @@ fun TvMainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?)
             if(isDestroyed) return@post
             result.onSuccess { valid ->
                 library.saveAccount(valid)
-                applyAccount()
-                // 登录成功立刻打一次 boot 心跳 + account/info：新会话要被服务端确认一次，
-                // 导入来的 cookie 更是只有 cookie、要靠这次响应把 `X-Tt-Token` 换回来。
-                com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force=true)
-                hideCenterLoading()
-                showHint("已登录")
-                loadAccount(force=true)
-                showCatalog()
+                // 登录成功后先等镜像队列真正落盘，再收起等待框。否则用户看到“已登录”
+                // 就立刻卸载时，250ms 的异步镜像写入可能还没到盘，重装后只剩设备身份。
+                io.submit {
+                    library.flushBlocking()
+                    main.post {
+                        if(isDestroyed) return@post
+                        applyAccount()
+                        // 登录成功立刻打一次 boot 心跳 + account/info：新会话要被服务端确认一次，
+                        // 导入来的 cookie 更是只有 cookie、要靠这次响应把 `X-Tt-Token` 换回来。
+                        com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force=true)
+                        hideCenterLoading()
+                        showHint("已登录")
+                        loadAccount(force=true)
+                        showCatalog()
+                    }
+                }
             }.onFailure { failure ->
                 repository.credentials=library.account().takeIf { it.configured }
                 DebugLog.record("账号","登录失败 · ${failure.message.orEmpty().take(140)}")

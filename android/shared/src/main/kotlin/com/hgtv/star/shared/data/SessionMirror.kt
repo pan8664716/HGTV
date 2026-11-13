@@ -373,16 +373,24 @@ class SessionMirror(private val app: Context) {
                     Diagnostics.warn("HGTV-MIRROR","cannot create $dir")
                     return@runCatching false
                 }
+                // 尽量让下一次安装（新 UID）还能读到这份镜像。部分 Android 11 电视的
+                // FUSE 会忽略 chmod，MediaStore 副本仍是兜底；能生效的设备则少一次权限依赖。
+                runCatching {
+                    dir.setReadable(true,false)
+                    dir.setExecutable(true,false)
+                }
                 // 先写临时文件再改名：进程在写一半时被杀（电视盒子被拔电是常态），
                 // 留下的半个 JSON 解析不出来，等于这一份白存了。改名在同一目录内是原子的。
                 val target=File(dir,FILE_NAME)
                 val temp=File(dir,"$FILE_NAME.tmp")
                 temp.writeText(text)
+                runCatching { temp.setReadable(true,false) }
                 if(!temp.renameTo(target)) {
                     // 少数 ROM 上 renameTo 会因目标已存在而失败：退回覆盖写。
                     target.writeText(text)
                     temp.delete()
                 }
+                runCatching { target.setReadable(true,false) }
                 true
             }.onFailure {
                 Log.w("HGTV","Session mirror cannot write $dir",it)
