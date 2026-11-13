@@ -3485,3 +3485,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 213：PhoneDetail 相关内容区迁移
+
+状态：已完成。
+
+- 将相关剧集、作者作品、栏目标题、卡片行和详情元信息移到
+  `PhoneDetailSections.kt`。
+- 保留当前剧保留原位、作者作品不截断、失败重试与横屏列数规则。
+- `PhoneDetailActivity.kt` 从 1009 行降到 790 行；
+  `PhoneDetailSections.kt` 为 184 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

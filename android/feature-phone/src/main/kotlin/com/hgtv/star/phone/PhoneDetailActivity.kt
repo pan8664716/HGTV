@@ -82,10 +82,10 @@ class PhoneDetailActivity : PhoneActivity() {
     private lateinit var root: FrameLayout
     private lateinit var scroller: ScrollView
     private lateinit var column: LinearLayout
-    private var contentEdge = 0
-    private var landscape = false
+    internal var contentEdge = 0
+    internal var landscape = false
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
-    private val detailController by lazy {
+    internal val detailController by lazy {
         DetailController(
             repository = PhoneServices.repository(this),
             library = PhoneServices.library(this),
@@ -96,8 +96,8 @@ class PhoneDetailActivity : PhoneActivity() {
 
     private val seriesId: String get() = intent.getStringExtra(EXTRA_SERIES_ID).orEmpty()
 
-    private var library: Library? = null
-    private var detail: Detail? = null
+    internal var library: Library? = null
+    internal var detail: Detail? = null
     private var detailAuthorLoading = false
 
     /** 详情请求的令牌：换剧（`onNewIntent`）时旧请求落地必须丢掉。 */
@@ -105,7 +105,7 @@ class PhoneDetailActivity : PhoneActivity() {
 
     private lateinit var titleView: TextView
     private lateinit var tagView: TextView
-    private lateinit var metaView: TextView
+    internal lateinit var metaView: TextView
     private lateinit var descView: TextView
     private lateinit var descRow: LinearLayout
     private lateinit var descToggle: TextView
@@ -115,15 +115,15 @@ class PhoneDetailActivity : PhoneActivity() {
     private lateinit var laterButton: DetailActionButton
     private lateinit var episodeHead: TextView
     private lateinit var episodeBox: LinearLayout
-    private lateinit var relatedBox: LinearLayout
+    internal lateinit var relatedBox: LinearLayout
 
     /** 「作者作品」那一栏（作者名为空 / 搜不到时不出现）。 */
-    private lateinit var authorBox: LinearLayout
-    private var authorFor = ""
+    internal lateinit var authorBox: LinearLayout
+    internal var authorFor = ""
     private var authorToken = 0
-    private var authorItems: List<Series> = emptyList()
-    private var authorLoading = false
-    private var authorFailed = false
+    internal var authorItems: List<Series> = emptyList()
+    internal var authorLoading = false
+    internal var authorFailed = false
 
     /**
      * 「相关剧集」那一栏的状态。
@@ -133,11 +133,11 @@ class PhoneDetailActivity : PhoneActivity() {
      */
     private var relatedFor = ""
     private var relatedToken = 0
-    private var relatedItems: List<Series> = emptyList()
+    internal var relatedItems: List<Series> = emptyList()
     /** 同系列季数（TV 的标题在 >1 时写成「同系列 N 季 · 相关剧集」）。 */
-    private var relatedSeasons = 0
-    private var relatedLoading = false
-    private var relatedFailed = false
+    internal var relatedSeasons = 0
+    internal var relatedLoading = false
+    internal var relatedFailed = false
 
     /** 简介当前是否展开；换剧时回到两行的简单介绍。 */
     private var descExpanded = false
@@ -521,15 +521,6 @@ class PhoneDetailActivity : PhoneActivity() {
         }
     }
 
-    private fun sameDetailContent(a: Detail,b: Detail): Boolean =
-        a.episodes==b.episodes && a.upcoming==b.upcoming && a.reserved==b.reserved &&
-            a.series.copy(author="")==b.series.copy(author="")
-
-    /** 作者补查不挡详情首屏；结果回来只更新元信息与作者作品入口。 */
-    private fun loadDetailAuthor(current: Detail) {
-        detailController.loadAuthor(current)
-    }
-
     private fun bindDetail(d: Detail) {
         val s = d.series
         titleView.text = s.title
@@ -593,18 +584,6 @@ class PhoneDetailActivity : PhoneActivity() {
         ))
     }
 
-    /** 元信息：第N季 · 全N集 · 作者；作者晚到时只重画这一行。 */
-    private fun paintMeta(d: Detail) {
-        val s=d.series
-        val meta=ArrayList<String>(4)
-        if(s.seasonIndex>0) meta+="第${s.seasonIndex}季"
-        if(d.upcoming) meta+="尚未上线"
-        else if(d.episodes.isNotEmpty()) meta+="全${d.episodes.size}集"
-        if(s.author.isNotBlank()) meta+=s.author
-        metaView.text=meta.joinToString("  ·  ")
-        metaView.visibility=if(meta.isEmpty()) View.GONE else View.VISIBLE
-    }
-
     /** 简介默认两行；只有真的被截断时才显示右侧「展开」。 */
     private fun bindDescription(text: String) {
         descText = text
@@ -642,191 +621,6 @@ class PhoneDetailActivity : PhoneActivity() {
             layout.getEllipsisCount(layout.lineCount - 1) > 0
         descToggle.visibility = if (truncated) View.VISIBLE else View.GONE
     }
-
-    // ---------------------------------------------------------------- 相关剧集
-
-    /**
-     * 相关剧集：**后台预取**，详情上屏之后才发。
-     *
-     * 与 TV 的 `prefetchRelated` 同一条规则：
-     * * 同一部剧只请求一次（已经在跑 / 已经取到就直接返回）；
-     * * 单独持有 token，换剧作废旧请求，落地前再确认「还是同一部剧」；
-     * * 不走详情页的加载协程，失败只影响这一栏，不影响详情本身。
-     */
-    private fun prefetchRelated(s: Series) {
-        detailController.ensureRelated(s.id, s.title)
-    }
-
-    /**
-     * 铺「相关剧集」这一栏。
-     *
-     * **不截断、不过滤正在看的这一部**：TV 的卡片行把当前这一季留在原位、角标写「正在看」，
-     * 手机早先 `filter { it.id != s.id }` + `take(20)` 把当前季和 20 条之后的作品一起丢了，
-     * 用户读到的就是「相关作品显示不全」。现在与 TV 同一份列表、同一套角标。
-     */
-    private fun renderRelated() {
-        val s = detail?.series
-        relatedBox.removeAllViews()
-        if (s == null || (!relatedLoading && !relatedFailed && relatedItems.isEmpty())) {
-            relatedBox.visibility = View.GONE
-            return
-        }
-        relatedBox.visibility = View.VISIBLE
-        val status = when {
-            relatedLoading -> "正在查找…"
-            relatedFailed -> "加载失败，点此重试"
-            else -> "共 ${relatedItems.size} 部"
-        }
-        val heading = if (relatedSeasons > 1) "同系列 ${relatedSeasons} 季 · 相关剧集" else "相关剧集"
-        relatedBox.addView(sectionHead(heading, status, relatedFailed) {
-            prefetchRelated(s)
-        })
-        if (relatedItems.isNotEmpty()) {
-            relatedBox.addView(cardRow(relatedItems, s.id), LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ))
-        }
-    }
-
-    // ---------------------------------------------------------------- 作者作品
-
-    /**
-     * 作者作品：**后台预取 + 两段交付**。
-     *
-     * 与 TV 的 `prefetchAuthorWorks` 一一对应：这一栏要按作者名搜（再按家族补季），
-     * 比相关剧集慢得多，因此第一页到手就先铺、完整结果回来再就地换一份。
-     * 同一作者只请求一次；换剧作废旧请求。
-     */
-    private fun prefetchAuthorWorks(s: Series) {
-        detailController.ensureAuthorWorks(s)
-    }
-
-    /**
-     * 铺「作者作品」这一栏：圆形首字头像 + 作者名 + 状态行 + 一整排卡片。
-     *
-     * 摆法与 TV 的 `authorHead` / `authorRow` 一致：**当前这一部排第一张**（不从列表里去掉），
-     * 其余按 core 返回的服务端顺序原样摆；不截断——早先 `take(20)` 让高产作者少了小半。
-     */
-    private fun renderAuthorWorks() {
-        val s = detail?.series
-        authorBox.removeAllViews()
-        if (s == null || authorFor.isBlank()) {
-            authorBox.visibility = View.GONE
-            return
-        }
-        authorBox.visibility = View.VISIBLE
-        val name = authorFor
-        val items = listOf(s) + authorItems.filter { it.id != s.id }
-
-        val head = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), dp(16), dp(2), dp(8))
-        }
-        // 作者头像是**首字头像**：作者名的第一个字 + 按名字取色的圆底，与电视端
-        // `authorHead` 是同一套观感。不取接口的 `user_avatar`——那一栏常常没有图，
-        // 或者图来得慢、裁切比例也不对，空白圆底读起来就像「头像丢了」。
-        val avatar = TextView(this).apply {
-            text = name.take(1)
-            setTextColor(android.graphics.Color.WHITE)
-            phoneSize(24)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            gravity = Gravity.CENTER
-            background = roundedBackground(authorColor(name), dp(15).toFloat())
-            contentDescription = name
-        }
-        head.addView(avatar, LinearLayout.LayoutParams(dp(30), dp(30)))
-        val texts = LinearLayout(this).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(dp(8), 0, 0, 0)
-        }
-        texts.addView(TextView(this).apply {
-            text = name
-            setTextColor(PhoneStyle.text)
-            phoneSize(15)
-            setTypeface(typeface, android.graphics.Typeface.BOLD)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-        })
-        val hint = when {
-            authorLoading -> "正在查找该作者的作品…"
-            authorFailed -> "没能取到该作者的作品，点此重试"
-            items.size <= 1 -> "这一位暂时只有这一部作品"
-            else -> "共 ${items.size} 部作品"
-        }
-        texts.addView(TextView(this).apply {
-            text = hint
-            setTextColor(if (authorFailed) PhoneStyle.accent else PhoneStyle.textFaint)
-            phoneSize(11)
-            setPadding(0, dp(3), 0, 0)
-            maxLines = 1
-            ellipsize = android.text.TextUtils.TruncateAt.END
-            if (authorFailed) setOnClickListener { prefetchAuthorWorks(s) }
-        })
-        head.addView(texts, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        authorBox.addView(head, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-
-        authorBox.addView(cardRow(items, s.id), LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ))
-    }
-
-    // ---------------------------------------------------------------- 卡片行
-
-    /** 一栏的标题行：标题 + 右侧状态（加载中 / 失败可重试 / 共 N 部）。 */
-    private fun sectionHead(
-        title: String,
-        status: String,
-        retry: Boolean,
-        onRetry: () -> Unit,
-    ): LinearLayout {
-        val row = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(2), dp(16), dp(2), dp(6))
-        }
-        row.addView(TextView(this).apply {
-            text = title
-            setTextColor(PhoneStyle.textDim)
-            phoneSize(12)
-        }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        row.addView(TextView(this).apply {
-            text = status
-            setTextColor(if (retry) PhoneStyle.accent else PhoneStyle.textFaint)
-            phoneSize(11)
-            if (retry) {
-                setPadding(dp(8), dp(2), dp(2), dp(2))
-                setOnClickListener { onRetry() }
-            }
-        })
-        return row
-    }
-
-    /**
-     * 横向卡片行（相关剧集与作者作品共用）。
-     *
-     * 保持单排横向滚动，只按全局列表列数调整一屏能看到的卡片数量。
-     */
-    private fun cardRow(items: List<Series>, currentId: String): View {
-        val base = library?.gridColumns ?: 2
-        val columns = base.coerceIn(1, 3) + if (landscape) 3 else 0
-        val available = (resources.displayMetrics.widthPixels - contentEdge * 2).coerceAtLeast(dp(200))
-        return PhoneCards.row(
-            this,
-            PhoneServices.artwork(this),
-            items,
-            currentId,
-            columns = columns,
-            availableWidthPx = available,
-        ) { item ->
-            openDetail(item)
-        }
-    }
-
-    /** 作者头像底色：色盘与算法在 `:shared`（见 [com.hgtv.star.shared.ui.authorColor]），电视端用同一份。 */
-    private fun authorColor(name: String): Int = com.hgtv.star.shared.ui.authorColor(name)
 
     // ---------------------------------------------------------------- 动作
 
@@ -870,19 +664,6 @@ class PhoneDetailActivity : PhoneActivity() {
         val saved = runCatching { library?.progress(d.series.id) }.getOrNull()
         val index = saved?.let { p -> d.episodes.indexOf(p.episodeId).takeIf { it >= 0 } } ?: 0
         openPlayer(index)
-    }
-
-    /**
-     * 详情页画「预约 / 已预约」用的状态：本机「最后已知」优先，接口值只在本地没有记录时兜底。
-     *
-     * 与 TV 详情页同一条规则（见 `MainActivityDetail` 里 `reserved` 那一行）：
-     * 平台在刚写入后的一段时间里 `online_subscribed` 仍回 0，按接口画就会把用户
-     * 刚点的「已预约」显示成「预约」。
-     */
-    private fun reservedState(d: Detail): Boolean {
-        val lib = library ?: return d.reserved
-        return runCatching { if (lib.reservedKnown(d.series.id)) lib.reserved(d.series.id) else d.reserved }
-            .getOrDefault(d.reserved)
     }
 
     private fun paintReserve(reserved: Boolean) {
@@ -948,7 +729,7 @@ class PhoneDetailActivity : PhoneActivity() {
         )
     }
 
-    private fun openDetail(series: Series) {
+    internal fun openDetail(series: Series) {
         phoneNav().open(Route.Detail(series.id, series.title))
     }
 
