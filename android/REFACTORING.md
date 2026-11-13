@@ -2083,3 +2083,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 95：PhoneFeed underlay 切换迁移
+
+状态：已完成。
+
+- 将借出 / 收回画面时的 underlay 切换移到 `PhoneFeedSurface.kt`；公开入口保留。
+- 保留面板收起、控制层计时、当前页回退、位移清理和弹幕显隐重刷行为。
+- `PhoneFeedView.kt` 从 1027 行降到 1013 行；`PhoneFeedSurface.kt` 为 81 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 import com.google.android.exoplayer2.Player
+import android.view.View
 import com.hgtv.star.phone.ui.resizeMode
 
 internal fun PhoneFeedView.keepLivePlaybackImpl() {
@@ -59,4 +60,22 @@ internal fun PhoneFeedView.rebindCurrentPageImpl() {
         feedCurrentEpisodeIndex[index] ?: 0,
         forceRebind = false,
     )
+}
+
+internal fun PhoneFeedView.setUnderlayModeImpl(on: Boolean) {
+    if (on) {
+        closeSheet()
+        feedChromeEpoch++
+        feedList.removeCallbacks(feedChromeHideRunnable)
+    }
+    // `pageAt` 在列表刚恢复布局 / 页面正在回收时可能取不到；此时用最后绑定的那一页。
+    val page = feedPageAt(feedPlayingIndex) ?: feedBoundPage
+    page?.setUnderlayMode(on)
+    if (!on) {
+        page?.playerView?.translationY = 0f
+        revealChromeImpl(page)
+    }
+    // 收回画面时按用户的设置重刷弹幕显隐（关了弹幕的不要被顺手打开）。
+    if (!on && page != null) applyDanmakuSettingsImpl(page)
+    if (on) feedHint.visibility = View.GONE
 }

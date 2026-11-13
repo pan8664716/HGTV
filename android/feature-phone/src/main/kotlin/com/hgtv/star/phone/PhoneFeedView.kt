@@ -727,21 +727,7 @@ class PhoneFeedView(
      * 一模一样（但集号更准）的控制层，两层叠着会看到两套标题与两条进度条。
      */
     fun setUnderlayMode(on: Boolean) {
-        if (on) {
-            closeSheet()
-            chromeEpoch++
-            list.removeCallbacks(chromeHideRunnable)
-        }
-        // `pageAt` 在列表刚恢复布局 / 页面正在回收时可能取不到；此时用最后绑定的那一页。
-        val page = pageAt(playingIndex) ?: boundPage
-        page?.setUnderlayMode(on)
-        if (!on) {
-            page?.playerView?.translationY = 0f
-            revealChrome(page)
-        }
-        // 收回画面时按用户的设置重刷弹幕显隐（关了弹幕的不要被顺手打开）。
-        if (!on && page != null) applyDanmakuSettings(page)
-        if (on) hint.visibility = View.GONE
+        setUnderlayModeImpl(on)
     }
 
     /**
