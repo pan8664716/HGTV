@@ -11,7 +11,7 @@ import java.io.IOException
      * 上报接口和官方书包推荐流共用 `74332 / 7.4.3.32`；分类接口仍保留原来的
      * `73532 / 7.3.5.32`，避免把已稳定的分类链路一起改掉。
      */
-    private fun ContentRepository.recommendReportValues(identity: ContentRepository.PrimaryIdentity): LinkedHashMap<String,String> =
+    private fun ContentRepository.recommendReportValues(identity: ContentPrimaryIdentity): LinkedHashMap<String,String> =
         recommendationValues(identity).apply {
             for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
                 this[key]="74332"
@@ -20,7 +20,7 @@ import java.io.IOException
             this["channel"]="update_64"
         }
 
-    internal fun Signer.Request.withRecommendationSession(identity: ContentRepository.PrimaryIdentity): Signer.Request {
+    internal fun Signer.Request.withRecommendationSession(identity: ContentPrimaryIdentity): Signer.Request {
         val extra=linkedMapOf<String,String>()
         if(identity.token.isNotBlank()) extra["x-tt-token"]=identity.token
         if(identity.cookie.isNotBlank()) extra["Cookie"]=identity.cookie
@@ -216,7 +216,7 @@ import java.io.IOException
     }
 
     private fun ContentRepository.officialRecommendationValues(
-        identity: ContentRepository.PrimaryIdentity,
+        identity: ContentPrimaryIdentity,
         tabType: Int,
         sessionUuid: String,
         offset: Int,

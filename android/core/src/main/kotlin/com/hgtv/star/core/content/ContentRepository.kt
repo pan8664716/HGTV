@@ -963,31 +963,11 @@ class ContentRepository(
         return withSessionImpl(this@ContentRepository)
     }
 
-    /**
-     * 当前唯一的主身份快照。
-     *
-     * 未登录时是主设备；登录后如果账号设备与主设备不同，以账号设备为准。
-     * profile / Cookie / token 必须从同一份快照读取，不能逐项回落到另一套身份。
-     */
-    internal data class PrimaryIdentity(
-        val account: Boolean,
-        val profile: Map<String,String>,
-        val cookie: String,
-        val token: String,
-    )
-
-    internal fun primaryIdentity(): PrimaryIdentity {
-        return primaryIdentityImpl()
-    }
-
     /** 所有请求共用的当前主设备档案：登录后以账号设备为准。 */
     internal fun primaryProfile(): Map<String,String> = primaryProfileImpl()
 
     /** 所有请求共用的当前主 Cookie：登录后只使用账号 Cookie，不再叠加匿名主设备 Cookie。 */
     internal fun primaryCookieHeader(): String = primaryCookieHeaderImpl()
-
-    internal fun recommendationValues(identity: PrimaryIdentity): LinkedHashMap<String,String> =
-        recommendationValuesImpl(identity)
 
     /** 账号页请求显式要求当前主身份必须是登录态。 */
     private fun Signer.Request.withAccountSession(): Signer.Request {

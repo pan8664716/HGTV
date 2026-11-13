@@ -53,7 +53,7 @@ private fun ContentRepository.buildValues(
 }
 
 internal fun ContentRepository.recommendationValuesImpl(
-    identity: ContentRepository.PrimaryIdentity,
+    identity: ContentPrimaryIdentity,
 ): LinkedHashMap<String,String> =
     LinkedHashMap(identity.profile).apply {
         putAll(protocolValuesValue)

@@ -2842,3 +2842,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 160：ContentRepository 主身份迁移
+
+状态：已完成。
+
+- 将主身份快照和推荐身份参数移到 `ContentPrimaryIdentity.kt`。
+- 保留登录态优先、Cookie 合并和设备档案一致。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

@@ -4,7 +4,7 @@ package com.hgtv.star.core
 import com.hgtv.star.core.session.CookieRecord
 import com.hgtv.star.core.session.SessionBridge
 
-internal fun ContentRepository.primaryIdentityImpl(): ContentRepository.PrimaryIdentity {
+internal fun ContentRepository.primaryIdentityImpl(): ContentPrimaryIdentity {
     val account=credentials?.takeIf {
         it.configured &&
             it.device["device_id"].orEmpty().isNotBlank() &&
@@ -13,7 +13,7 @@ internal fun ContentRepository.primaryIdentityImpl(): ContentRepository.PrimaryI
                     it.device["install_id"].orEmpty().isNotBlank()
                 )
     }
-        ?: return ContentRepository.PrimaryIdentity(
+        ?: return ContentPrimaryIdentity(
             account=false,
             profile=deviceProfileImpl(),
             cookie=CookieRecord.mapToHeader(registrationCookies),
@@ -32,7 +32,7 @@ internal fun ContentRepository.primaryIdentityImpl(): ContentRepository.PrimaryI
     if(accountIid.isNotBlank() && cookie["install_id"].isNullOrBlank()) {
         cookie["install_id"]=accountIid
     }
-    return ContentRepository.PrimaryIdentity(
+    return ContentPrimaryIdentity(
         account=true,
         profile=accountDeviceProfileImpl(account),
         cookie=CookieRecord.mapToHeader(cookie),
