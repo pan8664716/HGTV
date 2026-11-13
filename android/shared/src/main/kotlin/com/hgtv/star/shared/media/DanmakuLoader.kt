@@ -4,6 +4,7 @@ package com.hgtv.star.shared.media
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.Danmaku
 import com.hgtv.star.core.DanmakuMode
+import com.hgtv.star.core.danmaku
 import com.hgtv.star.shared.architecture.danmaku
 import kotlinx.coroutines.CoroutineScope
 

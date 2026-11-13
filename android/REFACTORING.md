@@ -3158,3 +3158,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 187：ContentRepository 弹幕门面迁移
+
+状态：已完成。
+
+- 将弹幕窗口与原始窗口入口移到 `ContentDanmakuFacade.kt`。
+- 补齐共享弹幕加载器的显式扩展导入，避免与协程同名。
+- `ContentRepository.kt` 从 1321 行降到 1298 行；
+  `ContentDanmakuFacade.kt` 为 37 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
