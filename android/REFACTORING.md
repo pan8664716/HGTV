@@ -3549,3 +3549,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 218：TvTools 账号导入与提示迁移
+
+状态：已完成。
+
+- 将轻量提示、局域网地址、二维码、账号导入、sessionid 输入和手机上传移到
+  `TvToolsPhone.kt`。
+- 保留局域网限制、二维码过期、输入归一和提示去重替换行为。
+- `TvTools.kt` 从 1031 行降到 760 行；`TvToolsPhone.kt` 为 210 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
