@@ -3367,3 +3367,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 204：TvMain 返回与封面门面迁移
+
+状态：已完成。
+
+- 将返回详情和封面低内存恢复入口移到 `TvMainLifecycleFacade.kt`。
+- 保留播放层释放、睡眠计时清理和视口恢复。
+- `TvMainActivity.kt` 从 1872 行降到 1848 行；
+  `TvMainLifecycleFacade.kt` 为 28 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。

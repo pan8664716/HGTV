@@ -1790,11 +1790,6 @@ class TvMainActivity: Activity() {
      */
     val navigator: Navigator by lazy { TvNavigator(this) }
 
-    fun returnToDetail(forceDetail: Boolean=false) {
-        sleepTimer.cancel(); sleepChoice=0; sleepStopped=false; saveProgress(); library.flush(); invalidatePage(); detachPlayerSurface()
-        playbackFromRecommend=false
-        if(directPlayback && !forceDetail) showCatalog() else { directPlayback=false; showDetail(true) }
-    }
     @Deprecated("TV remote back is handled through the activity")
     override fun onBackPressed()=goBackImpl()
     /**
@@ -1831,25 +1826,6 @@ class TvMainActivity: Activity() {
     }
     /** 栅格里被低内存策略摘掉封面的卡数：>0 时滚动 / 焦点回调才需要检查「是不是回来了」。 */
     var suspendedCovers=0
-
-    /**
-     * 把视口之外的封面从 ImageView 上摘掉（低内存专用，见 `ArtworkLoader.releaseHiddenCovers`）。
-     *
-     * 只摘「不在屏幕上」的那些：`getGlobalVisibleRect` 对滚出视口的卡返回 false，
-     * 焦点卡与可见卡不动，否则用户眼前会闪一片灰框。摘掉之后位图才会真的落进
-     * LRU 可淘汰的范围，`evictAll()` 才有意义（回读只要 3~10ms/张，且多数命中盘缓存）。
-     *
-     * **摘掉的是「显示」，不是「地址」**（见 `PosterCard.suspendCover`）：地址留着，
-     * 回到视口时 [resumeVisibleCovers] 直接按原地址挂回来。
-     */
-    fun releaseOffscreenCovers() = releaseOffscreenCoversImpl()
-
-    /**
-     * 把重新回到视口里的封面挂回去（滚动、焦点移动、窗口挪动之后都调一次）。
-     *
-     * `suspendedCovers == 0` 时是**一次整数比较**，平时滚动这条路径的代价为 0。
-     */
-    fun resumeVisibleCovers() = resumeVisibleCoversImpl()
 
     /**
      * 4.4~7.x 上的低内存回调（`onTrimMemory` 之外的一条独立路径）。

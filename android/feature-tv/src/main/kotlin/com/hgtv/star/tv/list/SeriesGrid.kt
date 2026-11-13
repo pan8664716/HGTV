@@ -8,6 +8,7 @@ import com.hgtv.star.tv.TvMainActivity.GridRow
 import com.hgtv.star.tv.PosterCard
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvStyle
+import com.hgtv.star.tv.resumeVisibleCovers
 import com.hgtv.star.tv.GRID_COLUMNS_DEFAULT
 import com.hgtv.star.tv.gridContentWidth
 import com.hgtv.star.tv.gridColumns
