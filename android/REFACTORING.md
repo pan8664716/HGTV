@@ -4127,3 +4127,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 外部路径引用：无；包名、文件名和类名不变。
 - 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 - 下一批：`feature-tv/ui`。
+
+### 布局批次 25：feature-tv/ui
+
+状态：已完成。
+
+- 移动 `DialogItem`、`EpisodeCell`、`HongguoKeyboard`、`IconButton`、`LoginForm`、
+  `PosterCard`、`SectionHeading`、`SeekIndicator`、`SettingSlider`、`ToggleChip`、
+  `TvComponents`、`TvDialog`、`TvDialogFocus`、`TvStyle`、`TvSwitchRow`、
+  `TvTools`、`TvToolsPhone` 到 `tv/ui/`。
+- 外部路径引用：无；包名、文件名和类名不变。
+- 验证：各模块编译、共享单测、Lint、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+- 下一批：`feature-tv/debug`。
