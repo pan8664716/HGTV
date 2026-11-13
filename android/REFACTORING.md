@@ -2373,3 +2373,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 118：ContentRepository 相关作品请求迁移
+
+状态：已完成。
+
+- 将相关作品原始行拉取移到 `ContentRelated.kt`。
+- 保留八次换线、空响应重试、业务码校验和相关卡片解析参数。
+- `ContentRepository.kt` 从 1733 行降到 1687 行；`ContentRelated.kt` 为 57 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
