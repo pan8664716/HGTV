@@ -3403,3 +3403,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 207：手机播放页换集快路径迁移
+
+状态：已完成。
+
+- 将上下滑换集队列快路径和兜底同步移到
+  `PhonePlayerEpisodeSwitch.kt`。
+- `PhonePlayerActivity.kt` 从 1320 行降到 1256 行；
+  `PhonePlayerEpisodeSwitch.kt` 为 66 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
