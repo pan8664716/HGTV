@@ -2887,3 +2887,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 164：TV 分区标题迁移
+
+状态：已完成。
+
+- 将分区标题移到 `SectionHeading.kt`。
+- 保留内容线、标题与说明间距。
+- `TvComponents.kt` 从 1295 行降到 1263 行；`SectionHeading.kt` 为 39 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
