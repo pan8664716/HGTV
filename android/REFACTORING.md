@@ -2876,3 +2876,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 163：TV 海报卡迁移
+
+状态：已完成。
+
+- 将电视海报卡移到 `PosterCard.kt`。
+- 保留材质、跑马灯、进度条与绑定规则。
+- `TvComponents.kt` 从 1407 行降到 1295 行；`PosterCard.kt` 为 126 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
