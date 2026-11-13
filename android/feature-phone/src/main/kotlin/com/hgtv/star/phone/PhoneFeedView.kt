@@ -538,13 +538,11 @@ class PhoneFeedView(
 
     /** 当前这一条流是否真的在播：宿主用它决定窗口要不要保持常亮。 */
     fun isPlayingNow(): Boolean {
-        val exo = player ?: return false
-        return !hidden && !paused && exo.playWhenReady &&
-            exo.playbackState != Player.STATE_ENDED
+        return isPlayingNowImpl()
     }
 
     private fun notifyPlayStateChanged() {
-        onPlayStateChanged?.invoke()
+        notifyPlayStateChangedImpl()
     }
     internal fun feedNotifyPlayStateChanged() = notifyPlayStateChanged()
 
@@ -585,12 +583,7 @@ class PhoneFeedView(
 
     /** 双击推荐导航：当前这条流回到第一屏，并让列表的吸附与起播逻辑跟上。 */
     fun scrollToTop() {
-        if (items.isEmpty()) return
-        list.stopScroll()
-        (list.layoutManager as? LinearLayoutManager)
-            ?.scrollToPositionWithOffset(0, 0)
-            ?: list.scrollToPosition(0)
-        list.post { if (playingIndex != 0) playIndex(0) }
+        scrollToTopImpl()
     }
 
     private fun resumeOnShown(): Boolean {
@@ -682,10 +675,7 @@ class PhoneFeedView(
      * 用户听到的就是「退回推荐页后声音和画面对不上」。接得上时不会走到这里。
      */
     private fun stopOrphanPlayback() {
-        if (PhoneSession.owner != PhoneSession.Owner.PLAYER) return
-        runCatching { PhoneServices.peekPlayer()?.pause() }
-        PhoneSession.takeOver(PhoneSession.Owner.FEED)
-        PhoneSession.endHandoff()
+        stopOrphanPlaybackImpl()
     }
 
     /**

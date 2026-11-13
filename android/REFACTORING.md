@@ -1866,3 +1866,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 77：PhoneFeed 播放状态与顶部导航迁移
+
+状态：已完成。
+
+- 将当前播放判定、播放状态通知、回到首屏和孤儿播放停止移到 `PhoneFeedActions.kt`。
+- 保留前台 / 暂停 / ENDED 判据、吸附定位、播放索引和会话接管顺序。
+- `PhoneFeedView.kt` 从 1441 行降到 1431 行；`PhoneFeedActions.kt` 为 31 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。
