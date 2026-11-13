@@ -257,51 +257,6 @@ class PhoneSettingsActivity : PhoneActivity() {
         else library.loadAsync(onFailure = { runOnUiThread { render() } }, onReady = { runOnUiThread { render() } })
     }
 
-    /** 横屏设置页使用沉浸式：状态栏和底部系统导航都隐藏，只保留一小条分区导航。 */
-    @Suppress("DEPRECATION")
-    private fun applyLandscapeImmersive() {
-        if (!landscape) return
-        if (android.os.Build.VERSION.SDK_INT >= 21) {
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
-            window.navigationBarColor = android.graphics.Color.TRANSPARENT
-        }
-        window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
-        window.decorView.systemUiVisibility = (
-            android.view.View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or android.view.View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or android.view.View.SYSTEM_UI_FLAG_FULLSCREEN
-                or android.view.View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or android.view.View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            )
-        if (android.os.Build.VERSION.SDK_INT >= 30) {
-            window.setDecorFitsSystemWindows(false)
-            window.insetsController?.let { controller ->
-                controller.hide(
-                    android.view.WindowInsets.Type.statusBars() or
-                        android.view.WindowInsets.Type.navigationBars()
-                )
-                controller.systemBarsBehavior =
-                    android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        }
-        if (android.os.Build.VERSION.SDK_INT >= 28) {
-            window.attributes = window.attributes.apply {
-                layoutInDisplayCutoutMode =
-                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
-            }
-        }
-        window.decorView.post {
-            if (!landscape || isFinishing || isDestroyed) return@post
-            if (android.os.Build.VERSION.SDK_INT >= 30) {
-                window.insetsController?.hide(
-                    android.view.WindowInsets.Type.statusBars() or
-                        android.view.WindowInsets.Type.navigationBars()
-                )
-            }
-        }
-    }
-
     override fun onResume() {
         super.onResume()
         if (landscape) applyLandscapeImmersive()
@@ -365,39 +320,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     @Deprecated("Activity 的旧回调；不引 androidx.activity 也能用，见 feature-phone 的依赖说明")
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
-        if (resultCode != RESULT_OK) return
-        val uri: Uri = data?.data ?: return
-        when (requestCode) {
-            REQUEST_EXPORT -> {
-                val payload = pendingExport ?: return
-                pendingExport = null
-                val ok = runCatching {
-                    contentResolver.openOutputStream(uri)?.use { it.write(payload.toByteArray()) }
-                        ?: error("no stream")
-                }.isSuccess
-                toast(if (ok) "备份已导出" else "写入失败")
-            }
-            REQUEST_IMPORT -> {
-                val text = runCatching {
-                    contentResolver.openInputStream(uri)?.use { input ->
-                        val buffer = ByteArray(LibraryBackup.MAX_BYTES + 1)
-                        var read = 0
-                        while (read < buffer.size) {
-                            val n = input.read(buffer, read, buffer.size - read)
-                            if (n <= 0) break
-                            read += n
-                        }
-                        String(buffer, 0, read, Charsets.UTF_8)
-                    }
-                }.getOrNull()
-                if (text.isNullOrBlank()) { toast("读不到这个文件"); return }
-                val backup = runCatching { LibraryBackup.decode(text) }.getOrNull()
-                if (backup == null) { toast("备份格式不对"); return }
-                runCatching { library.restore(backup, true) }
-                    .onSuccess { toast("记录已合并恢复"); render() }
-                    .onFailure { toast("恢复失败") }
-            }
-        }
+        handleActivityResultImpl(requestCode, resultCode, data)
     }
 
     // ---------------------------------------------------------------- 控件

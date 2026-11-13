@@ -2236,3 +2236,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 108：PhoneSettings 沉浸式与文件回调迁移
+
+状态：已完成。
+
+- 将横屏沉浸式窗口和备份文件回调移到 `PhoneSettingsSystem.kt`。
+- 保留系统栏隐藏、刘海适配、SAF 读写上限和恢复后页面重建顺序。
+- `PhoneSettingsActivity.kt` 从 520 行降到 443 行；`PhoneSettingsSystem.kt` 为 101 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
