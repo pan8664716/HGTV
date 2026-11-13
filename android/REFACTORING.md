@@ -1809,3 +1809,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 24 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 72：PhoneFeed 片尾预取迁移
+
+状态：已完成。
+
+- 将片尾下一集地址与首块预取移到 `PhoneFeedPrefetch.kt`；原时钟调用入口保留。
+- 保留当前屏判据、30 秒窗口、5 秒防重入、IO 线程和会话队列写入顺序。
+- `PhoneFeedView.kt` 从 1539 行降到 1519 行；`PhoneFeedPrefetch.kt` 为 41 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。

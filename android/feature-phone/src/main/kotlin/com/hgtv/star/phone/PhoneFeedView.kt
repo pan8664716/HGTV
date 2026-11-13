@@ -1339,6 +1339,7 @@ class PhoneFeedView(
     /** 每 500ms 把播放进度回传给页面，画在底部进度条上。 */
     /** 片尾预热窗口：与 TV 的 `PrefetchPolicy.nearEnd` 同一档（30 秒）。 */
     private val prefetchWindowMs = 30_000L
+    internal val feedPrefetchWindowMs get()=prefetchWindowMs
 
     /** 推荐流里连续几部放不了就不再自动翻（与电视端 `RECOMMEND_SKIP_LIMIT` 同值）。 */
     private val RECOMMEND_SKIP_LIMIT = 4
@@ -1355,8 +1356,14 @@ class PhoneFeedView(
     internal val feedAdvanceGuardMs get()=ADVANCE_GUARD_MS
     /** 正在预热的那一集（防重入）。 */
     private var prefetchingFor = ""
+    internal var feedPrefetchingFor: String
+        get()=prefetchingFor
+        set(value) { prefetchingFor=value }
     /** 上一次允许发起预热的时间（避免每 500ms 重试一次）。 */
     private var prefetchAt = 0L
+    internal var feedPrefetchAt: Long
+        get()=prefetchAt
+        set(value) { prefetchAt=value }
 
     // —— 弹幕（与正式播放页、电视端共用同一份加载内核与同一个 DanmakuView）——
     /**
@@ -1381,34 +1388,7 @@ class PhoneFeedView(
      * 只在信息流前台、且在播当前这一屏时做；同一集只发起一次。
      */
     private fun maybePrefetchNext(position: Long, duration: Long) {
-        val lib = library ?: return
-        val d = playingDetail ?: return
-        val index = playingIndex
-        if (index !in items.indices) return
-        val current = currentEpisodeIndex[index] ?: 0
-        val next = current + 1
-        if (next > d.episodes.lastIndex) return
-        if (duration - position > prefetchWindowMs) return
-        val nextId = d.episodes[next]
-        val now = System.currentTimeMillis()
-        if (nextId == prefetchingFor || now < prefetchAt) return
-        if (PhoneSession.nextEpisodeId == nextId) return
-        prefetchingFor = nextId
-        prefetchAt = now + 5_000L
-        val maxQuality = lib.maxQuality
-        scope.launch {
-            val remote = withContext(Dispatchers.IO) {
-                runCatching {
-                    val info = playbackSource.stream(nextId, maxQuality, d.playback)
-                    playbackSource.prepare(nextId, info)
-                }.getOrNull()
-            }
-            prefetchingFor = ""
-            if (remote != null) {
-                PhoneSession.putNext(nextId, remote)
-                android.util.Log.i("HGTV-PHONE", "feed prefetch next id=$nextId episode=${next + 1}")
-            }
-        }
+        maybePrefetchNextImpl(position, duration)
     }
     internal fun maybePrefetchNextForClock(position: Long, duration: Long) =
         maybePrefetchNext(position, duration)
