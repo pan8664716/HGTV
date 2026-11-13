@@ -152,6 +152,9 @@ class PhonePlayerActivity : PhoneActivity() {
     internal lateinit var root: FrameLayout
     internal val rootReady: Boolean get()=::root.isInitialized
     private lateinit var portrait: FrameLayout
+    internal var playerPortrait: FrameLayout
+        get()=portrait
+        set(value) { portrait=value }
     private lateinit var page: PhoneVideoPage
     internal val playerPage get()=page
     internal var swipePlayerPage: PhoneVideoPage
@@ -207,7 +210,9 @@ class PhonePlayerActivity : PhoneActivity() {
     internal val chipEpisode get()=episodeChip
 
     private lateinit var portraitTop: LinearLayout
-    internal val playerPortraitTop get()=portraitTop
+    internal var playerPortraitTop: LinearLayout
+        get()=portraitTop
+        set(value) { portraitTop=value }
     private lateinit var centerBox: FrameLayout
     private lateinit var centerGlyph: PhoneGlyph
     internal lateinit var hint: TextView
@@ -846,7 +851,7 @@ class PhonePlayerActivity : PhoneActivity() {
     }
 
     /** 建一页播放界面（当前页与相邻页同一份配置，否则翻页时两侧观感会不一样）。 */
-    private fun makePage(): PhoneVideoPage = PhoneVideoPage(
+    internal fun makePage(): PhoneVideoPage = PhoneVideoPage(
         this,
         withTabBar = false,
         fullscreenEntry = true,
@@ -862,7 +867,7 @@ class PhonePlayerActivity : PhoneActivity() {
      * 两页都接同一份：只有**当前页**在屏幕正中、能收到触摸（翻页过程中触摸由当前页的
      * 状态机一直持有），因此回调里一律按 [page] 取当前页，不会串到相邻页上。
      */
-    private fun wirePage(p: PhoneVideoPage) {
+    internal fun wirePage(p: PhoneVideoPage) {
         p.onTap = {
             // 清屏状态下，第一下先把信息叫回来，不顺手暂停。
             if (!page.isChromeVisible()) setChromeVisible(true) else togglePlay()
@@ -900,47 +905,6 @@ class PhonePlayerActivity : PhoneActivity() {
         p.onVerticalStart = { beginSwipe() }
         p.onVerticalDelta = { delta -> dragSwipe(delta) }
         p.onVerticalEnd = { direction, _ -> endSwipe(direction) }
-    }
-
-    private fun buildPortrait() {
-        portrait = FrameLayout(this)
-        // 两页：ghost 在下、当前页在上。拖动时两页一起平移，滑到位后交换引用。
-        ghostPage = makePage()
-        page = makePage()
-        portrait.addView(ghostPage, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
-        portrait.addView(page, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
-        ghostPage.visibility = View.GONE
-        wirePage(page)
-        wirePage(ghostPage)
-
-        portraitTop = LinearLayout(this).apply {
-            orientation = LinearLayout.HORIZONTAL
-            gravity = Gravity.CENTER_VERTICAL
-            setPadding(dp(12), 0, dp(12), 0)
-        }
-        portrait.addView(portraitTop, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = Gravity.TOP or Gravity.START
-            // 沉浸式：状态栏不占位，只留一小段呼吸位（早先是 `statusBar() + dp(6)`）。
-            topMargin = dp(12)
-        })
-        // 标题栏一量出高度就把弹幕的顶部起点对齐到它下沿。收起来（GONE）时高度是 0，
-        // 不能拿那一帧当新下沿——否则控制层一隐藏，弹幕就窜回屏幕顶部。
-        portraitTop.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
-            if (bottom - top > 0) {
-                portraitTopBottom = bottom
-                syncDanmakuTopInset()
-            }
-        }
-
-        root.addView(portrait, FrameLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-        ))
     }
 
     private fun buildLandscape() {

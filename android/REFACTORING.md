@@ -2304,3 +2304,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 112：PhonePlayer 竖屏装配迁移
+
+状态：已完成。
+
+- 将竖屏当前页 / 相邻页、顶部栏和弹幕下沿联动移到
+  `PhonePlayerPortraitUi.kt`。
+- 保留页面创建、手势接线、标题栏实测和相邻页初始隐藏。
+- `PhonePlayerActivity.kt` 从 2847 行降到 2811 行；`PhonePlayerPortraitUi.kt` 为 50 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
