@@ -1992,3 +1992,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 88：ContentRepository 作者规则迁移
+
+状态：已完成。
+
+- 将热度值、作者同一性和空作者兼容规则移到 `ContentAuthorRules.kt`。
+- 保留空白与大小写归一化，不引入模糊作者匹配。
+- `ContentRepository.kt` 从 1866 行降到 1863 行；`ContentAuthorRules.kt` 为 19 行。
+- 聚合编译、Lint、共享单测、Debug APK 通过；`:core:test` 25 失败 / 28 跳过。
+
+回滚：`git revert` 本批提交。

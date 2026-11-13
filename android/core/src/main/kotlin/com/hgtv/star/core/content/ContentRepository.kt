@@ -1483,7 +1483,7 @@ class ContentRepository(
     ): List<Series> = authorWorksImpl(author,reference,pages,onAvatar,onPartial)
 
     fun heatValue(raw: String): Long {
-        return ContentCatalogParser.heatValue(raw)
+        return heatValueImpl(raw)
     }
     /**
      * 两个作者名是不是同一家。
@@ -1492,8 +1492,7 @@ class ContentRepository(
      * 差异只可能出在两端空格与全角 / 半角上，做模糊匹配反而会把「同 IP」的别家作品混进来。
      */
     internal fun sameAuthor(left: String,right: String): Boolean {
-        fun norm(value: String)=value.filterNot { it.isWhitespace() }.lowercase()
-        return norm(left).isNotEmpty() && norm(left)==norm(right)
+        return sameAuthorImpl(left, right)
     }
     /**
      * 同 [sameAuthor]，但**作者为空也算命中**。
@@ -1507,9 +1506,7 @@ class ContentRepository(
      * 它没法与「未上线的自家季」区分，界面上它的作者行留空，不会误标成这一家。
      */
     internal fun authorUnknownOrSame(left: String,right: String): Boolean {
-        fun norm(value: String)=value.filterNot { it.isWhitespace() }.lowercase()
-        val name=norm(left)
-        return name.isEmpty() || name==norm(right)
+        return authorUnknownOrSameImpl(left, right)
     }
 
     /**
