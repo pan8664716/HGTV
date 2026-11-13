@@ -2692,3 +2692,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 145：RecommendPage 批量预热迁移
+
+状态：已完成。
+
+- 将相邻预排、推荐批量模型和正片批量模型移到 `RecommendBatchPreload.kt`。
+- 保留 3 秒延后、详情快照、去重键和后台失败静默。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
