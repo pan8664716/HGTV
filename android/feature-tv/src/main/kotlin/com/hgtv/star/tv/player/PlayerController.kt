@@ -53,31 +53,6 @@ fun TvMainActivity.loadDanmaku(episodeId: String,seriesId: String,clearOnSwitch:
     danmakuLoader.load(episodeId,seriesId,clearOnSwitch=clearOnSwitch)
 }
 /**
- * 播放链路的可观测点：只回答三个问题。
- *
- * 1. 换集时解码器有没有重建 —— `onVideoDecoderInitialized` 每次初始化记一行。
- *    同一集内只出现一次 = 复用；每次切集都出现 = 重建，那才是卡顿的根。
- * 2. 下一集第一帧什么时候上屏。
- * 3. 有没有真的丢帧 / 音频断流。
- *
- * 这些都是 `AnalyticsListener` 的既有事件，不改变播放行为；只在 debug 包挂。
- */
-fun TvMainActivity.playbackAnalytics()=object: com.google.android.exoplayer2.analytics.AnalyticsListener {
-    private fun tag()=player?.currentMediaItem?.mediaId ?: "-"
-    override fun onVideoDecoderInitialized(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,decoderName: String,initializedTimestampMs: Long,initializationDurationMs: Long) {
-        android.util.Log.i("HGTV","Decoder init media=${tag()} name=$decoderName durationMs=$initializationDurationMs")
-    }
-    override fun onRenderedFirstFrame(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,surface: Any,renderTimeMs: Long) {
-        android.util.Log.i("HGTV","Rendered first frame media=${tag()} renderTimeMs=$renderTimeMs at=${android.os.SystemClock.elapsedRealtime()}")
-    }
-    override fun onDroppedVideoFrames(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,droppedFrames: Int,elapsedMs: Long) {
-        if(droppedFrames>0) android.util.Log.w("HGTV","Dropped frames=$droppedFrames in ${elapsedMs}ms media=${tag()}")
-    }
-    override fun onAudioUnderrun(eventTime: com.google.android.exoplayer2.analytics.AnalyticsListener.EventTime,bufferSize: Int,bufferSizeMs: Long,elapsedSinceLastFeedMs: Long) {
-        android.util.Log.w("HGTV","Audio underrun ${bufferSizeMs}ms media=${tag()}")
-    }
-}
-/**
  * 建一个播放器（**不含挂 Surface，也不做构造后的配置**）。
  *
  * 分成两步是因为它现在需要**在 io 线程上建**：构造一次要 0.5 秒

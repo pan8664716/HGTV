@@ -3012,3 +3012,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 175：TV 播放诊断迁移
+
+状态：已完成。
+
+- 将播放诊断监听移到 `TvPlaybackAnalytics.kt`。
+- 保留解码器初始化、首帧、丢帧和音频断流记录。
+- `PlayerController.kt` 从 1136 行降到 1111 行；
+  `TvPlaybackAnalytics.kt` 为 30 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
