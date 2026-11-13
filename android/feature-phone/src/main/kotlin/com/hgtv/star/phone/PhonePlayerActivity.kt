@@ -2515,46 +2515,8 @@ class PhonePlayerActivity : PhoneActivity() {
      * 为什么分开：选集是高频、连续的动作（看两集就想换），播放设置是低频、改一次就走的；
      * 混在一个面板里，用户想换集得先找到那一段，面板还更长。
      */
-    private fun openEpisodes() {
-        val d = detail
-        if (d == null) {
-            // 详情还没到：给一句提示，别让按钮看起来是坏的。
-            toast("剧集还在加载…")
-            return
-        }
-        if (landscapeMode) openLandscapeEpisodes(d) else openPortraitEpisodes(d)
-    }
-
-    /** 竖屏选集：底部整宽浮层。每行 5 个，一页行数跟着设置走。 */
-    private fun openPortraitEpisodes(d: Detail) {
-        PhonePlayerEpisodePanels.showPortrait(
-            this,
-            sheet,
-            d,
-            index,
-            library,
-            { i -> play(i, clearDanmakuOnSwitch = true) },
-            ::scheduleChromeHide,
-        )
-    }
-
-    /**
-     * 横屏选集：TV 式底部限高浮层。
-     *
-     * **每行 10 个**；一页几行由设置页的「选集每页」决定
-     * （20 / 30 / 50 / 80 / 100 → 2 / 3 / 5 / 8 / 10 行），放不下时网格内部滚动。
-     */
-    private fun openLandscapeEpisodes(d: Detail) {
-        PhonePlayerEpisodePanels.showLandscape(
-            this,
-            sheet,
-            d,
-            index,
-            library,
-            { i -> play(i, clearDanmakuOnSwitch = true) },
-            ::scheduleChromeHide,
-        )
-    }
+    internal fun playForEpisodes(i: Int) = play(i, clearDanmakuOnSwitch = true)
+    internal fun scheduleChromeHideForEpisodes() = scheduleChromeHide()
 
     // ---------------------------------------------------------------- 生命周期
 

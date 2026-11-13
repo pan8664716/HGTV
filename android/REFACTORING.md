@@ -2327,3 +2327,14 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 114：PhonePlayer 选集入口迁移
+
+状态：已完成。
+
+- 将横竖屏选集入口移到 `PhonePlayerEpisodes.kt`。
+- 保留详情未到提示、选集页大小、换集起播和控制层计时回调。
+- `PhonePlayerActivity.kt` 从 2774 行降到 2736 行；`PhonePlayerEpisodes.kt` 为 45 行。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
