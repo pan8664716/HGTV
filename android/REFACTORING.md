@@ -1708,3 +1708,69 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 未达到 DoD。主要卡点是仍有 23 个生产源码文件超过 800 行，且 6 个原始超大文件尚未全部
 拆完；本夜所有已完成批次均可独立回滚，未出现基线、分支或工作区恢复问题。
+
+## 本轮续跑验收（2026-11-13，批次 56–68）
+
+### 新增批次与验证
+
+| 批次 | 提交 | 结果 | `:core:test` |
+| --- | --- | --- | --- |
+| 56 | `3b679f3` | 通过 | 25 失败 / 28 跳过 |
+| 57 | `0d1e5e0` | 通过 | 25 失败 / 28 跳过 |
+| 58 | `c0bf6b7` | 通过 | 24 失败 / 28 跳过 |
+| 59 | `ce60e98` | 通过 | 24 失败 / 28 跳过 |
+| 60 | `6483816` | 通过 | 25 失败 / 28 跳过 |
+| 61 | `b3cfae0` | 通过 | 25 失败 / 28 跳过 |
+| 62 | `09e248c` | 通过 | 25 失败 / 28 跳过 |
+| 63 | `a74accd` | 通过 | 25 失败 / 28 跳过 |
+| 64 | `c800a3f` | 通过 | 24 失败 / 28 跳过 |
+| 65 | `6e3e9f8` | 通过 | 24 失败 / 28 跳过 |
+| 66 | `2391b81` | 通过 | 25 失败 / 28 跳过 |
+| 67 | `4455758` | 通过 | 24 失败 / 28 跳过 |
+| 68 | `f378f5c` | 通过 | 25 失败 / 28 跳过 |
+
+每批均执行指定 JDK 17 聚合命令，`:app:assembleDebug`、`:app:lintDebug`
+与 `:shared:testDebugUnitTest` 通过；批次 29–55 的提交哈希见上表。
+
+### 当前剩余 >800 行生产文件
+
+- `PhonePlayerActivity.kt` 3073 行：播放会话、形态切换、选集和生命周期仍集中。
+- `TvMainActivity.kt` 2047 行：页面状态、焦点与系统回调仍集中。
+- `PhoneSettingsActivity.kt` 1960 行：本轮未开始拆分。
+- `ContentRepository.kt` 1959 行：反射 facade、请求装配和兼容路径仍集中。
+- `RecommendPage.kt` 1890 行：推荐流页面状态未拆。
+- `PhoneFeedView.kt` 1705 行：列表适配、滑页、设置和交接状态仍集中。
+- `TvComponents.kt` 1480 行：通用电视组件未拆。
+- `PlayerController.kt` 1432 行：电视播放状态与控制职责未拆。
+- `Library.kt` 1384 行：加载编排、设置属性与账号入口仍集中。
+- `ListPage.kt` 1309 行：列表页面状态未拆。
+- `ArtworkLoader.kt` 1240 行：图片缓存与加载职责未拆。
+- `PhoneAccountActivity.kt` 1158 行：账号页面职责未拆。
+- `PhoneLogin.kt` 1118 行：登录流程未拆。
+- `SettingsPage.kt` 1103 行：电视设置页面未拆。
+- `HomeScreen.kt` 1088 行：首页状态未拆。
+- `DanmakuView.kt` 1075 行：弹幕绘制与轨道职责未拆。
+- `TvTools.kt` 1031 行：电视工具集合未拆。
+- `PhoneDetailActivity.kt` 1009 行：详情页状态未拆。
+- `PlaybackDiagnostics.kt` 981 行：播放诊断展示未拆。
+- `TouchController.kt` 979 行：电视触摸与手势状态未拆。
+- `SeriesGrid.kt` 967 行：剧集网格未拆。
+- `PhoneVideoPage.kt` 888 行：手机视频页组件未拆。
+- `TvDialog.kt` 840 行：电视对话框未拆。
+
+### 未做 / 跳过项
+
+- `PhonePlayerActivity` 的形态切换仍依赖大量私有视图和播放状态，只拆了可证明等价的小簇。
+- `PhoneFeedView`、`PhoneSettingsActivity`、`ContentRepository` 及其他 >800 行文件尚未完成。
+- 未修改 UI、布局、资源、导航、权限、文案、Manifest、序列化、数据库 schema、混淆规则、
+  版本号或 versionCode；未推送，未创建 tag / Release。
+
+### 测试对比与 DoD
+
+- 基线：`:core:test` 435 例、25 失败、28 跳过。
+- 当前：`:core:test` 435 例、25 失败、28 跳过，没有新增失败。
+- 当前：`:shared:testDebugUnitTest` 24 例全过；`:app:lintDebug` 通过；
+  `:app:assembleDebug` 通过。
+- 本轮批次 29–68 共 40 批，已达到夜间安全上限，因此停止自动执行。
+- 总结：未达到 DoD；主要原因是仍有 23 个生产源码文件超过 800 行，下一轮应从
+  `PhoneFeedView.kt` 或 `PhoneSettingsActivity.kt` 继续拆分。
