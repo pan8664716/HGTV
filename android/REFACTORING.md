@@ -2702,3 +2702,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - `git diff --check` 与 Debug APK 编译通过。
 
 回滚：`git revert` 本批提交。
+
+### 批次 146：RecommendPage 分级预热迁移
+
+状态：已完成。
+
+- 将首集地址预热和并发槽位判断移到 `RecommendWarmDetail.kt`。
+- 保留级别去重、取消域、缓存登记和空槽补排。
+- `git diff --check` 与 Debug APK 编译通过。
+
+回滚：`git revert` 本批提交。
