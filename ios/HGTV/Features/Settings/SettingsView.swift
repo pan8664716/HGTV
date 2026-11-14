@@ -214,10 +214,12 @@ struct SettingsView: View {
 
             SectionTitle(text: "弹幕")
             HintText(text: "显示方式与速度共用电视端设置；字号按手机阅读单独调整。")
-            ChoiceRow(label: "显示方式", value: library.prefs.danmakuMode.label,
-                      options: DanmakuMode.allCases.map { value in
-                          (value.label, { library.prefs.danmakuMode = value })
-                      })
+            SliderRow(label: "显示方式", value: Binding(
+                get: { library.prefs.danmakuMode.sliderValue },
+                set: { library.prefs.danmakuMode = DanmakuMode.fromSlider($0) }
+            ), range: 0...DanmakuMode.sliderMax, step: 1, text: {
+                DanmakuMode.fromSlider($0).label
+            })
             ChoiceRow(label: "弹幕速度", value: library.prefs.danmakuSpeed.label,
                       options: DanmakuSpeed.allCases.map { value in
                           (value.label, { library.prefs.danmakuSpeed = value })

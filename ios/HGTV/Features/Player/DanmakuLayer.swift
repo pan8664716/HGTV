@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// 弹幕层：自绘（Canvas + TimelineView），与 Android `DanmakuView` 的三档模式对应
-// （只显一行 / 上方显示 / 全屏显示 / 隐藏），相同弹幕按设置聚合。
+// 弹幕层：自绘（Canvas + TimelineView），与 Android `DanmakuView` 的七档模式对应
+// （隐藏 / 一行 / 两行 / 三行 / 四行 / 上方 / 全屏），相同弹幕按设置聚合。
 //
 // 弹幕数据来自内容接口；取不到就整层不画——它只是附加内容，不能影响播放。
 
@@ -37,11 +37,17 @@ struct DanmakuLayer: View {
         let speedFactor = Double(library.prefs.danmakuSpeed.factor)
         let laneHeight = fontSize * 1.6
         let laneCount: Int
+        let maxFullLanes = max(1, Int(size.height * 0.75 / laneHeight))
         switch mode {
+        case .hidden: laneCount = 0
         case .single: laneCount = 1
+        case .two: laneCount = min(2, maxFullLanes)
+        case .three: laneCount = min(3, maxFullLanes)
+        case .four: laneCount = min(4, maxFullLanes)
         case .top: laneCount = max(1, Int(size.height * 0.35 / laneHeight))
-        default: laneCount = max(1, Int(size.height * 0.75 / laneHeight))
+        case .full: laneCount = maxFullLanes
         }
+        guard laneCount > 0 else { return }
 
         var lanes = [Int](repeating: 0, count: laneCount)
         let visible = items.filter { item in
@@ -63,7 +69,8 @@ struct DanmakuLayer: View {
             let x = size.width - progress * (size.width + width + 20)
             let lane = order % laneCount
             lanes[lane] += 1
-            let y = laneHeight * CGFloat(lane) + laneHeight * 0.9 + (mode == .full ? size.height * 0.12 : size.height * 0.08)
+            let y = laneHeight * CGFloat(lane) + laneHeight * 0.9 +
+                (mode == .full ? size.height * 0.12 : size.height * 0.08)
             context.draw(resolved, at: CGPoint(x: x, y: y), anchor: .leading)
         }
     }

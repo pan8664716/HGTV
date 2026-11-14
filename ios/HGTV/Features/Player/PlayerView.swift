@@ -408,15 +408,12 @@ struct PlayerView: View {
                     }
                 }
 
-                Text("弹幕显示").font(.system(size: m.sp(12))).foregroundStyle(theme.textDim)
-                HStack(spacing: m.dp(8)) {
-                    ForEach(DanmakuMode.allCases, id: \.self) { value in
-                        Button { library.prefs.danmakuMode = value } label: {
-                            ChipLabel(text: value.label, selected: library.prefs.danmakuMode == value, inset: true)
-                        }
-                        .buttonStyle(.plain)
-                    }
-                }
+                SliderRow(label: "弹幕显示", value: Binding(
+                    get: { library.prefs.danmakuMode.sliderValue },
+                    set: { library.prefs.danmakuMode = DanmakuMode.fromSlider($0) }
+                ), range: 0...DanmakuMode.sliderMax, step: 1, text: {
+                    DanmakuMode.fromSlider($0).label
+                })
 
                 SwitchRow(label: "调试模式", isOn: $library.prefs.debugMode)
             }

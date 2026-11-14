@@ -259,17 +259,40 @@ enum VideoDecoderMode: String, Codable, CaseIterable {
 }
 
 enum DanmakuMode: String, Codable, CaseIterable {
-    case single, top, full, hidden
+    case hidden, single, two, three, four, top, full
     var label: String {
         switch self {
-        case .single: return "只显一行"
-        case .top: return "上方显示"
-        case .full: return "全屏显示"
-        case .hidden: return "隐藏弹幕"
+        case .hidden: return "隐藏"
+        case .single: return "一行"
+        case .two: return "两行"
+        case .three: return "三行"
+        case .four: return "四行"
+        case .top: return "上方"
+        case .full: return "全屏"
         }
     }
     /// 隐藏档下字号 / 透明度 / 速度都没有意义，设置页要把这几项收起来。
     var showsStyle: Bool { self != .hidden }
+    /// 一行到四行档的固定轨道上限；上方 / 全屏由可用高度决定。
+    var lineLimit: Int? {
+        switch self {
+        case .single: return 1
+        case .two: return 2
+        case .three: return 3
+        case .four: return 4
+        case .hidden, .top, .full: return nil
+        }
+    }
+    var sliderValue: Double {
+        Double(Self.allCases.firstIndex(of: self) ?? 0)
+    }
+    static var sliderMax: Double {
+        Double(allCases.count - 1)
+    }
+    static func fromSlider(_ value: Double) -> Self {
+        let index = min(max(Int(value.rounded()), 0), allCases.count - 1)
+        return allCases[index]
+    }
 }
 
 enum DanmakuSpeed: String, Codable, CaseIterable {
