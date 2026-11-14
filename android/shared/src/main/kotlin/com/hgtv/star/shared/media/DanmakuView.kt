@@ -29,6 +29,7 @@ import com.hgtv.star.core.planHighlights
 import com.hgtv.star.core.repeatGroups
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.shared.compat.lowEndTv
+import kotlin.math.roundToInt
 
 class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Listener,SurfaceHolder.Callback {
     private companion object {
@@ -63,6 +64,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         const val REPLACE_ACTIVE_GRACE_MS=500L
         const val SEEK_BACK_TOLERANCE_MS=250L
         const val LINE_POOL_LIMIT=256
+        const val LOW_END_SURFACE_MAX_WIDTH=1280
+        const val LOW_END_SURFACE_MAX_HEIGHT=720
     }
 
     private class Line {
@@ -291,6 +294,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private var transitionClockReady=false
     private var surfaceReady=false
     private var frameScheduled=false
+    private var fixedSurfaceWidth=0
+    private var fixedSurfaceHeight=0
     private val choreographer=Choreographer.getInstance()
     private val frameCallback=object: Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
@@ -587,9 +592,29 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
 
     override fun onSizeChanged(w: Int,h: Int,oldw: Int,oldh: Int) {
         super.onSizeChanged(w,h,oldw,oldh)
+        configureSurfaceBuffer(w,h)
         baseTextSize=baseSizeFor(w,h)
         applyTextMetrics()
         relayout()
+    }
+
+    /**
+     * 低配电视的透明弹幕层由 HWC 走 Client 合成，1080P 缓冲每帧都要额外清屏和整屏混合。
+     * 内部降到 720P 后仍按视图坐标绘制，最终由 SurfaceFlinger 放大铺满画面；帧率不降。
+     */
+    private fun configureSurfaceBuffer(viewWidth: Int,viewHeight: Int) {
+        if(!lowEnd || viewWidth<=0 || viewHeight<=0) return
+        val scale=minOf(
+            1f,
+            LOW_END_SURFACE_MAX_WIDTH.toFloat()/viewWidth,
+            LOW_END_SURFACE_MAX_HEIGHT.toFloat()/viewHeight,
+        )
+        val surfaceWidth=(viewWidth*scale).roundToInt().coerceAtLeast(1)
+        val surfaceHeight=(viewHeight*scale).roundToInt().coerceAtLeast(1)
+        if(surfaceWidth==fixedSurfaceWidth && surfaceHeight==fixedSurfaceHeight) return
+        fixedSurfaceWidth=surfaceWidth
+        fixedSurfaceHeight=surfaceHeight
+        holder.setFixedSize(surfaceWidth,surfaceHeight)
     }
 
     private fun baseSizeFor(w: Int,h: Int): Float {
@@ -657,7 +682,17 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         }.getOrNull() ?: return
         try {
             canvas.drawColor(Color.TRANSPARENT,PorterDuff.Mode.CLEAR)
-            drawFrame(canvas)
+            if(canvas.width!=width || canvas.height!=height) {
+                canvas.save()
+                canvas.scale(
+                    canvas.width.toFloat()/width.coerceAtLeast(1),
+                    canvas.height.toFloat()/height.coerceAtLeast(1),
+                )
+                drawFrame(canvas)
+                canvas.restore()
+            } else {
+                drawFrame(canvas)
+            }
         } finally {
             runCatching { holder.unlockCanvasAndPost(canvas) }
         }
