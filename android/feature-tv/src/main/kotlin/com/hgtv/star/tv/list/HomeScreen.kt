@@ -235,7 +235,7 @@ class HomeScreen(
             poster.setStatus(entry.label)
             poster.setProgress(entry.progress)
             poster.setCover(entry.series.cover)
-            poster.setTags(entry.series.tags)
+            poster.setTags(if(shelfKey=="history") "" else entry.series.tags)
             poster.setEpisodeBadge(entry.series.episodeCount)
         }
         card.view.contentDescription = listOf(
@@ -479,7 +479,13 @@ class HomeScreen(
         val height = slotHeight(slotWidth)
         val card =
             if (entry == null) moreCard(key, height)
-            else posterCard(key, height, entry, preferStatus = shelf.key == "history")
+            else posterCard(
+                key,
+                height,
+                entry,
+                preferStatus = shelf.key == "history",
+                hideTags = shelf.key == "history",
+            )
         val view = card.view
         view.tag = key
         view.setOnFocusChangeListener { _, focused ->
@@ -593,10 +599,16 @@ class HomeScreen(
         TvStyle.focus(plate, focused)
     }
 
-    private fun posterCard(key: String, height: Int, entry: Entry, preferStatus: Boolean = false): Card {
+    private fun posterCard(
+        key: String,
+        height: Int,
+        entry: Entry,
+        preferStatus: Boolean = false,
+        hideTags: Boolean = false,
+    ): Card {
         val poster = PosterCard(context, height, loadCover, textScale())
         poster.bind(entry.series, entry.label, badgeFor(entry), entry.progress, false,
-            seasonBadge = true, heatServerText = entry.heat, preferStatus = preferStatus)
+            seasonBadge = true, heatServerText = entry.heat, preferStatus = preferStatus, hideTags = hideTags)
         return Card(key, poster, entry).apply {
             this.poster = poster
             image = poster.image
