@@ -192,10 +192,13 @@ class PhoneMinePage(
         setBackgroundColor(PhoneStyle.background)
 
         feed.bottomInset = context.tabBarInset() + context.dp(8)
-        // 收藏那一栏的第二行换成「更新至 N 集」：那一栏回答的是「追的剧有没有更新」，
-        // 集数与热度在这里没有意义（与 TV 的 `favoriteLabel` 同一份落盘值）。
+        // 历史与电视端一样把账号进度写在第二行；收藏则写「更新至 N 集」。
         feed.subtitleOf = { series ->
-            if (tabs.getOrNull(tab) == "收藏") library.favoriteLabel(series.id) else null
+            when (tabs.getOrNull(tab)) {
+                "历史" -> series.badge.takeIf { it.isNotBlank() }?.let { "账号 · $it" }
+                "收藏" -> library.favoriteLabel(series.id)
+                else -> null
+            }
         }
         // 历史与 TV 首页一样画已播进度；收藏 / 稍后看没有播放进度时不占位。
         feed.progressOf = { series ->
@@ -704,34 +707,27 @@ class PhoneMinePage(
     }
 
     /**
-     * 内容网格：**本机记录 + 账号记录**合并后显示。
+     * 内容网格。
      *
-     * 合并规则与 TV 端同一份（`AccountMerge`）：本机在前（带着更新状态与进度），
-     * 账号侧补在后面，同一部剧只出现一次。不合并的话，登录之后用户会以为
-     * 「我在手机上收藏的那些不见了」——其实它们还在账号里，只是这一页只读了本机那一半。
+     * 历史与电视端「我的 → 历史」一致，只读账号侧；收藏仍合并本机与账号，
+     * 避免手机端已收藏但账号侧尚未回包的条目短暂消失。
      *
-     * 账号侧的历史要滤掉「本机删过」的（[com.hgtv.star.shared.data.Library.historyDeleted]）：
+     * 账号侧历史要滤掉「本机删过」的（[com.hgtv.star.shared.data.Library.historyDeleted]）：
      * 平台对短剧进度列表的删除是软删，不滤就会「删了过一会儿又回来」。
      */
     private fun renderContent() {
         val cached = PhoneAccountSync.data ?: runCatching { library.accountCache() }.getOrNull()?.data
         val rows = when (tabs.getOrNull(tab) ?: "历史") {
-            "历史" -> com.hgtv.star.shared.account.AccountMerge.series(
-                runCatching { library.history() }.getOrDefault(emptyList())
-                    .filter { p -> historyFilter?.let { want -> p.completed == want } ?: true }
-                    .map { it.series },
-                cached?.history
-                    ?.filterNot { library.historyDeleted(it.series.id) }
-                    ?.filter { row -> historyFilter?.let { want -> historyFinished(row) == want } ?: true }
-                    // 平台那条记录里「看到第几集 / 集内秒数」是单独字段，卡片只认 `badge`：
-                    // 写进那一行，用户才看得出自己看到哪儿了（与本机进度那半份的语义一致）。
-                    ?.map { row ->
-                        row.series.copy(
-                            badge = "第 ${row.episodeIndex + 1} 集" +
-                                if (row.position > 0) " · ${clock(row.position)}" else ""
-                        )
-                    }.orEmpty(),
-            )
+            "历史" -> cached?.history
+                ?.filterNot { library.historyDeleted(it.series.id) }
+                ?.filter { row -> historyFilter?.let { want -> historyFinished(row) == want } ?: true }
+                // 平台那条记录里「看到第几集 / 集内秒数」是单独字段，卡片只认 `badge`。
+                ?.map { row ->
+                    row.series.copy(
+                        badge = "第 ${row.episodeIndex + 1} 集" +
+                            if (row.position > 0) " · ${clock(row.position)}" else ""
+                    )
+                }.orEmpty()
             "收藏" -> com.hgtv.star.shared.account.AccountMerge.series(
                 runCatching { library.favorites() }.getOrDefault(emptyList()),
                 cached?.favorites?.map { it.series }.orEmpty(),

@@ -703,16 +703,18 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             onLongPress = if (batchSelection) null else this@PhonePosterFeed.onLongPress
             // 现取入口：长按那一刻再问宿主，避免「页面晚设回调」导致这批卡片永远没有 handler。
             longPressResolver = { if (batchSelection) null else this@PhonePosterFeed.onLongPress }
+            val statusText = subtitleOf?.invoke(item).orEmpty()
             android.util.Log.i(
                 "HGTV-CARD",
                 "bind ${item.id} handler=${onLongPress != null}",
             )
             super.bind(item, PosterCardContent.of(
                 series = item,
-                statusText = subtitleOf?.invoke(item).orEmpty(),
+                statusText = statusText,
                 rankText = if (ranked) "第 ${position + 1} 名" else "",
                 rankTop = position < 3,
                 heatServerText = heatBy[item.id],
+                preferStatus = statusText.isNotBlank(),
             ))
             setProgress(progressOf?.invoke(item))
             setBatchSelection(batchSelection, item.id in selectedIds)
