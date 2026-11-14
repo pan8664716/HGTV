@@ -51,17 +51,51 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         const val SPRITE_AHEAD_MS=60_000L
         const val SPRITE_BEHIND_MS=8_000L
         const val SPRITE_REFRESH_MS=30_000L
+        const val SCHEDULE_AHEAD_MS=30_000L
+        const val LINE_RETENTION_MS=1_000L
+        const val SEEK_BACK_TOLERANCE_MS=250L
+        const val LINE_POOL_LIMIT=256
     }
 
-    private class Line(
-        val start: Float,
-        val duration: Float,
-        val width: Float,
-        val lane: Int,
-        val parts: List<DanmakuPart>,
-        val partWidths: FloatArray,
-        val spriteText: String?
-    )
+    private class Line {
+        var startMs=0L
+        var durationMs=0L
+        var width=0f
+        var lane=0
+        var parts: List<DanmakuPart> = emptyList()
+        var partWidths: FloatArray = EMPTY_WIDTHS
+        var spriteText: String?=null
+
+        val endMs get()=startMs+durationMs
+
+        fun bind(
+            startMs: Long,
+            durationMs: Long,
+            width: Float,
+            lane: Int,
+            parts: List<DanmakuPart>,
+            partWidths: FloatArray,
+            spriteText: String?,
+        ) {
+            this.startMs=startMs
+            this.durationMs=durationMs
+            this.width=width
+            this.lane=lane
+            this.parts=parts
+            this.partWidths=partWidths
+            this.spriteText=spriteText
+        }
+
+        fun clear() {
+            startMs=0L
+            durationMs=0L
+            width=0f
+            lane=0
+            parts=emptyList()
+            partWidths=EMPTY_WIDTHS
+            spriteText=null
+        }
+    }
 
     private val fill=Paint(Paint.ANTI_ALIAS_FLAG).apply {
         color=Color.WHITE
@@ -116,19 +150,26 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         get() = if (unitScale > 0f) unitScale else resources.displayMetrics.density
 
     var unitScale: Float = 0f
+    // 参照 ByteDance DanmakuRenderEngine 的分层与缓冲思路：
+    // 滚动层只保留播放点附近的数据，高亮层独立排程；行对象循环复用，避免重排时整集分配。
     private val lines=mutableListOf<Line>()
+    private val linePool=java.util.ArrayDeque<Line>(64)
     private var raw: List<Danmaku> = emptyList()
     private var groups: List<DanmakuRepeat> = emptyList()
     private var highlights: List<DanmakuHighlightRound> = emptyList()
+    private var highlightedKeys: Set<String> = emptySet()
     private val partsCache=LinkedHashMap<String,List<DanmakuPart>>(64,.75f,true)
     private val widthCache=LinkedHashMap<String,FloatArray>(64,.75f,true)
     private val prefetched=mutableSetOf<String>()
     private val hlKeys=Array(DanmakuHighlight.MAX_SLOTS){""}
     private val hlWidths=Array(DanmakuHighlight.MAX_SLOTS){FloatArray(0)}
     private val hlBodyWidths=FloatArray(DanmakuHighlight.MAX_SLOTS)
-    private var cursor=0
     private var highlightCursor=0
     private var lastPosition=-1L
+    private var lastSchedulePositionMs=-1L
+    private var nextGroupIndex=0
+    private var laneFreeMs=LongArray(0)
+    private var scheduleDirty=true
     private var laneCount=0
     private var laneHeight=0f
     private var laneTop=0f
@@ -345,9 +386,13 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     }
 
     private fun relayout() {
-        lines.clear()
-        cursor=0
+        clearScrollLayer()
+        nextGroupIndex=0
+        laneFreeMs=LongArray(0)
+        lastSchedulePositionMs=-1L
+        scheduleDirty=true
         lastPosition=-1L
+        val nowMs=clockPositionMillis()
         groups=if(mergeRepeats) repeatGroups(raw,minCount=mergeMinCount) else raw.map { DanmakuRepeat(it.text,listOf(it.offsetMs)) }
         highlights=if(mode==DanmakuMode.HIDDEN) emptyList()
         else planHighlights(
@@ -355,14 +400,15 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             highlights,
             highlightSlots,
             mergeMinCount,
-            clockPositionMillis(),
+            nowMs,
         )
+        highlightedKeys=highlights.mapTo(HashSet()) { it.group.key }
         highlightCursor=0
         layoutLanes()
         val lanes=if(mode==DanmakuMode.HIDDEN) 0 else laneCount
-        if(lanes>0 && width>0 && height>0) schedule(lanes)
+        if(lanes>0 && width>0 && height>0) scheduleScrollWindow(nowMs)
         nextSpriteRefreshAt=0L
-        refreshSpriteAtlas(clockPositionMillis())
+        refreshSpriteAtlas(nowMs)
         val fresh=mutableListOf<String>()
         groups.forEach { if(prefetched.add(it.text)) fresh+=it.text }
         if(fresh.isNotEmpty()) emoji.prefetch(fresh)
@@ -370,39 +416,86 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         invalidate()
     }
 
-    private fun schedule(lanes: Int) {
+    private fun clearScrollLayer() {
+        lines.forEach { recycleLine(it) }
+        lines.clear()
+    }
+
+    private fun obtainLine(): Line =
+        if(linePool.isEmpty()) Line() else linePool.removeLast()
+
+    private fun recycleLine(line: Line) {
+        line.clear()
+        if(linePool.size<LINE_POOL_LIMIT) linePool.addLast(line)
+    }
+
+    /**
+     * 缓冲只保留当前播放点之后 30 秒的滚动弹幕；已经结束的行立即回收。
+     *
+     * 轨道占用仍从本集开头顺序推算，因此正常播放、前后跳转和补数据重排得到的落点一致；
+     * 跳转时只重建窗口内的 [Line]，不会重新持有整集对象。
+     */
+    private fun scheduleScrollWindow(nowMs: Long) {
+        if(laneCount<=0) return
+        if(scheduleDirty || nowMs+SEEK_BACK_TOLERANCE_MS<lastSchedulePositionMs) {
+            rebaseScrollSchedule(nowMs)
+            return
+        }
+        releaseExpiredLines(nowMs)
+        scheduleGroupsThrough(nowMs+SCHEDULE_AHEAD_MS,nowMs)
+        lastSchedulePositionMs=nowMs
+    }
+
+    private fun rebaseScrollSchedule(nowMs: Long) {
+        clearScrollLayer()
+        nextGroupIndex=0
+        laneFreeMs=LongArray(laneCount)
+        scheduleDirty=false
+        lastSchedulePositionMs=nowMs
+        scheduleGroupsThrough(nowMs+SCHEDULE_AHEAD_MS,nowMs)
+    }
+
+    private fun releaseExpiredLines(nowMs: Long) {
+        val cutoff=nowMs-LINE_RETENTION_MS
+        for(index in lines.lastIndex downTo 0) {
+            if(lines[index].endMs<cutoff) recycleLine(lines.removeAt(index))
+        }
+    }
+
+    private fun scheduleGroupsThrough(untilMs: Long,nowMs: Long) {
+        if(nextGroupIndex>=groups.size || groups[nextGroupIndex].firstMs>untilMs) return
         val viewWidth=width.toFloat()
         val pixelsPerSecond=speedPx(viewWidth/BASE_SCROLL_SECONDS)
-        val laneFree=FloatArray(lanes)
-        val planned=highlights.map { it.group.key }.toSet()
         val emojiSize=fill.textSize*EMOJI_SCALE
-        groups.filterNot { it.key in planned }.forEach { group ->
+        while(nextGroupIndex<groups.size && groups[nextGroupIndex].firstMs<=untilMs) {
+            val group=groups[nextGroupIndex++]
+            if(group.key in highlightedKeys) continue
             val parts=partsOf(group.label)
             val widths=widthsOf(group.label,parts,emojiSize)
             var width=0f
             widths.forEach { width+=it }
-            val want=group.firstMs/1000f
-            val duration=(viewWidth+width)/pixelsPerSecond
+            val durationMs=(((viewWidth+width)/pixelsPerSecond)*1000f).toLong().coerceAtLeast(1L)
             var lane=0
-            var start=Float.MAX_VALUE
-            for(index in 0 until lanes) {
-                val candidate=maxOf(laneFree[index],want)
-                if(candidate<start) { start=candidate; lane=index }
+            var startMs=Long.MAX_VALUE
+            for(index in laneFreeMs.indices) {
+                val candidate=maxOf(laneFreeMs[index],group.firstMs)
+                if(candidate<startMs) { startMs=candidate; lane=index }
             }
-            if((start-want)*1000f>MAX_DELAY_MS) return@forEach
-            val startMs=(start*1000f).toLong()
-            val endMs=((start+duration)*1000f).toLong()
+            if(startMs-group.firstMs>MAX_DELAY_MS) continue
+            val endMs=startMs+durationMs
             if(mode==DanmakuMode.SINGLE &&
-                highlights.any { it.startMs<endMs && it.endMs>startMs }) return@forEach
-            laneFree[lane]=start+(width+laneGap)/pixelsPerSecond
+                highlights.any { it.startMs<endMs && it.endMs>startMs }) continue
+            laneFreeMs[lane]=startMs+(((width+laneGap)/pixelsPerSecond)*1000f).toLong()
+            if(endMs<nowMs-LINE_RETENTION_MS) continue
             // 纯文本即使被表情解析器拆成多段，也可以拼回一张图集贴图；
             // 只有真正含表情资源的行才留在逐帧文字路径上。
             val spriteText=parts.takeIf { parts.all { it.asset==null } }
                 ?.joinToString(separator="") { it.text }
                 ?.takeIf { it.isNotEmpty() }
-            lines+=Line(start,duration,width,lane,parts,widths,spriteText)
+            lines+=obtainLine().apply {
+                bind(startMs,durationMs,width,lane,parts,widths,spriteText)
+            }
         }
-        lines.sortBy { it.start }
     }
 
     private fun speedPx(pixelsPerSecond: Float)=pixelsPerSecond*speed.factor
@@ -490,26 +583,25 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
         if(mode==DanmakuMode.HIDDEN || laneCount<=0) return
-        if(lines.isEmpty() && highlights.isEmpty()) return
         val viewWidth=width.toFloat()
         val now=clockPositionMillis()
-        val seconds=now/1000f
-        if(now<lastPosition) {
-            cursor=0
+        if(now+SEEK_BACK_TOLERANCE_MS<lastPosition) {
+            scheduleDirty=true
             highlightCursor=0
             nextSpriteRefreshAt=0L
         }
         lastPosition=now
+        scheduleScrollWindow(now)
         if(now>=nextSpriteRefreshAt) refreshSpriteAtlas(now)
-        while(cursor<lines.size && seconds-lines[cursor].start>lines[cursor].duration) cursor++
         var drawn=0
-        var index=cursor
+        var index=0
         while(index<lines.size && drawn<maxLinesPerFrame) {
             val line=lines[index]
-            val elapsed=seconds-line.start
-            if(elapsed<0f) break
-            if(elapsed<=line.duration) {
-                val x=viewWidth-elapsed/line.duration*(viewWidth+line.width)
+            if(line.startMs>now) break
+            if(line.endMs>=now) {
+                val elapsed=now-line.startMs
+                val duration=line.durationMs.coerceAtLeast(1L)
+                val x=viewWidth-elapsed.toFloat()/duration*(viewWidth+line.width)
                 val baseline=laneTop+(line.lane+1)*laneHeight-fill.textSize*0.28f
                 val atlas=spriteAtlas
                 val sprite=line.spriteText?.let { atlas?.get(it) }
@@ -532,28 +624,64 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             }
             index++
         }
-        drawHighlights(canvas,now)
-        scheduleNextFrame()
+        val highlightDrawn=drawHighlights(canvas,now)
+        scheduleNextFrame(now,drawn>0 || highlightDrawn>0)
     }
 
-    /** 弹幕跟随屏幕刷新率；低配电视同样保持 60fps。 */
-    private fun scheduleNextFrame() {
+    /**
+     * 有弹幕时跟随屏幕刷新率；没有活动弹幕时停到下一批弹幕的起播点。
+     * 低配电视同样保持 60fps，空闲期不再持续做透明层重绘。
+     */
+    private fun scheduleNextFrame(nowMs: Long,hasActive: Boolean) {
         if(!clockRunning || visibility!=VISIBLE || !attachedToWindow) return
-        postInvalidateOnAnimation()
+        if(hasActive) {
+            postInvalidateOnAnimation()
+            return
+        }
+        val nextMs=nextEventMs(nowMs) ?: return
+        val playbackDelay=(nextMs-nowMs).coerceAtLeast(1L)
+        val wallDelay=(playbackDelay/clockSpeed).toLong().coerceAtLeast(1L)
+        if(wallDelay<=16L) postInvalidateOnAnimation() else postInvalidateDelayed(wallDelay)
     }
 
-    private fun drawHighlights(canvas: Canvas,nowMs: Long) {
-        if(mode==DanmakuMode.HIDDEN || highlights.isEmpty()) return
+    private fun nextEventMs(nowMs: Long): Long? {
+        var next: Long?=null
+        for(line in lines) {
+            if(line.endMs<nowMs) continue
+            if(line.startMs>nowMs) {
+                next=line.startMs
+                break
+            }
+        }
+        var index=highlightCursor
+        while(index<highlights.size && highlights[index].endMs<=nowMs) index++
+        while(index<highlights.size) {
+            val round=highlights[index++]
+            if(round.startMs<=nowMs) continue
+            if(next==null || round.startMs<next) next=round.startMs
+            break
+        }
+        if(next==null && nextGroupIndex<groups.size) next=groups[nextGroupIndex].firstMs
+        return next
+    }
+
+    private fun drawHighlights(canvas: Canvas,nowMs: Long): Int {
+        if(mode==DanmakuMode.HIDDEN || highlights.isEmpty()) return 0
         while(highlightCursor<highlights.size && highlights[highlightCursor].endMs<=nowMs) highlightCursor++
         var index=highlightCursor
         var scanned=0
+        var drawn=0
         while(index<highlights.size && scanned<32) {
             val round=highlights[index]
             if(round.startMs>nowMs) break
-            if(nowMs<round.endMs) drawHighlightRound(canvas,round,nowMs)
+            if(nowMs<round.endMs) {
+                drawHighlightRound(canvas,round,nowMs)
+                drawn++
+            }
             index++
             scanned++
         }
+        return drawn
     }
 
     private fun drawHighlightRound(canvas: Canvas,round: DanmakuHighlightRound,nowMs: Long) {
@@ -724,12 +852,12 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         val wanted=LinkedHashSet<String>()
         val until=nowMs+SPRITE_AHEAD_MS
         val since=nowMs-SPRITE_BEHIND_MS
-        var index=cursor
+        var index=0
         while(index<lines.size) {
             val line=lines[index]
-            val start=(line.start*1000f).toLong()
+            val start=line.startMs
             if(start>until) break
-            val end=((line.start+line.duration)*1000f).toLong()
+            val end=line.endMs
             if(end>=since) line.spriteText?.let { wanted+=it }
             index++
         }
@@ -750,9 +878,11 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     }
 
     fun resetCursor() {
-        cursor=0
+        scheduleDirty=true
         highlightCursor=0
         lastPosition=-1L
+        lastSchedulePositionMs=-1L
         nextSpriteRefreshAt=0L
+        if(visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
     }
 }
