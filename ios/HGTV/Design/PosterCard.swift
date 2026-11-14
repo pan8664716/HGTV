@@ -20,12 +20,14 @@ struct PosterCardView: View {
     var statusText: String = ""
     var progress: Int? = nil
     var heatServerText: String? = nil
+    /// 只显示状态行，不显示分类标签。
+    var statusOnly: Bool = false
 
     @Environment(\.metrics) private var m
     @Environment(\.theme) private var theme
 
     private var content: (episode: String, season: String, heat: String, corner: String, tags: String, status: String) {
-        let tags = PosterText.tags(series.tags)
+        let tags = statusOnly ? "" : PosterText.tags(series.tags)
         let status = EpisodeLabel.cardStatus(statusText)
         let episode = EpisodeLabel.total(series.episodeCount)
         let season = SeriesSeasons.badge(series)
@@ -65,7 +67,7 @@ struct PosterCardView: View {
         }
         .contentShape(Rectangle())
         .accessibilityElement(children: .combine)
-        .accessibilityLabel([content.corner, content.episode, series.title, content.tags]
+        .accessibilityLabel([content.corner, content.episode, series.title, content.tags, content.status]
             .filter { !$0.isEmpty }.joined(separator: "，"))
     }
 

@@ -4,7 +4,7 @@
 //
 // 与 Android `PhoneMinePage` 同一套语义：
 // * 默认落在「历史」（用户进这一页最常见的是接着看，不是先看收藏）；
-// * 历史画已播进度，收藏画「看到第 N 集」，稍后看不占位；
+// * 历史不画进度条，状态行只显示集数与时间；收藏画「看到第 N 集」，稍后看不占位；
 // * 历史可筛已看完 / 未看完（点已选中的那一枚 = 取消筛选，没有第三枚「全部」）；
 // * 长按海报 = 电视端的菜单键（继续观看 / 收藏 / 稍后看 / 详情 / 删除记录）。
 
@@ -41,18 +41,14 @@ struct MinePage: View {
                     SeriesGrid(
                         items: rows,
                         columns: library.prefs.gridColumns,
-                        progressOf: { series in
-                            guard tabs[tab] == "历史" else { return nil }
-                            guard let progress = library.progress(series.id) else { return nil }
-                            return progress.completed ? 100 : max(0, min(100, progress.percent))
-                        },
                         statusOf: { series in
                             if tabs[tab] == "收藏" { return library.favoriteLabel(series.id) ?? "" }
                             if tabs[tab] == "历史", let progress = library.progress(series.id) {
-                                return "第 \(progress.episodeIndex + 1) 集"
+                                return "第 \(progress.episodeIndex + 1) 集 · \(PlaybackInfoLine.time(progress.position))"
                             }
                             return ""
                         },
+                        statusOnly: tabs[tab] == "历史",
                         onOpen: { onRoute(.detail(seriesId: $0.id, title: $0.title)) },
                         onPlay: { series in
                             onRoute(.player(seriesId: series.id, title: series.title,

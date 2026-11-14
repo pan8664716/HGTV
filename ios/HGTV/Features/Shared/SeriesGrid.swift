@@ -13,6 +13,8 @@ struct SeriesGrid: View {
     var ranking: [String: RankPosition] = [:]
     var progressOf: ((Series) -> Int?)? = nil
     var statusOf: ((Series) -> String)? = nil
+    /// 状态行优先：隐藏分类标签，只显示状态文字（「我的」页使用）。
+    var statusOnly: Bool = false
     var onOpen: (Series) -> Void
     var onPlay: ((Series) -> Void)? = nil
     var onMenu: ((Series) -> Void)? = nil
@@ -36,7 +38,8 @@ struct SeriesGrid: View {
                         rankTop: index < 3,
                         statusText: statusOf?(series) ?? "",
                         progress: progressOf?(series),
-                        heatServerText: ranking[series.id]?.heat
+                        heatServerText: ranking[series.id]?.heat,
+                        statusOnly: statusOnly
                     )
                 }
                 .buttonStyle(.plain)
