@@ -4385,10 +4385,14 @@ feature-tv/
 
 ## 1.3.7.1 发布准备
 
-状态：发布中。
+状态：已发布。
 
 - `versionName` 更新为 `1.3.7.1`；按项目规则未改 `versionCode`，仍为 `76`。
 - `docs/CHANGELOG.md` 新增 `1.3.7.1` 正式节，电视与手机 / 平板分别列出。
 - README 的当前版本、APK 文件名和搜索每页 100 条说明已同步。
 - Release 只上传 `HGTV_1.3.7.1.apk`、`SHA256SUMS`、`update.json`，不包含源码。
 - 发布 tag `1.3.7.1` 必须指向空树 commit；不得推送源码分支，也不得让 tag 指向源码提交。
+- Release：<https://github.com/pan8664716/HGTV/releases/tag/1.3.7.1>
+- 发布 tag 指向空树 commit `5b4d9dd8b17d1e32f1d72cf134554a4f46d52163`，无父提交；
+  GitHub 自动生成的源码归档只有空目录。
+- APK SHA-256：`0f94626231872b62c371704b75ac07ceb7274511d61852099f49f53b3a86446a`。
