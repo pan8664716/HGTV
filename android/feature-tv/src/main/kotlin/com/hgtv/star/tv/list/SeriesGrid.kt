@@ -695,8 +695,5 @@ fun TvMainActivity.moreCountText(): String {
     }
 }
 /** 追加一页时把两页的名次与热度合起来，否则先加载的那几页会丢掉名次。 */
-fun TvMainActivity.mergeRanking(previous: ComicRanking?,next: ComicRanking?): ComicRanking? = when {
-    previous==null -> next
-    next==null -> previous
-    else -> next.copy(positions=previous.positions+next.positions)
-}
+fun TvMainActivity.mergeRanking(previous: ComicRanking?,next: ComicRanking?): ComicRanking? =
+    CatalogPaging.mergeRanking(previous,next)

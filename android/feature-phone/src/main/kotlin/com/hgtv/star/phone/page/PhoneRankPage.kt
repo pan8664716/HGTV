@@ -5,7 +5,7 @@ import android.content.Context
 import android.widget.LinearLayout
 import com.hgtv.star.core.CatalogPage
 import com.hgtv.star.core.CatalogFilter
-import com.hgtv.star.core.CATALOG_FIRST_PAGE_SIZE
+import com.hgtv.star.core.CatalogPaging
 import com.hgtv.star.core.RankBoard
 import com.hgtv.star.core.rank
 import com.hgtv.star.phone.PhoneServices
@@ -135,8 +135,8 @@ class PhoneRankPage(
                     PhonePosterFeed.Snapshot(
                         items=visible.items,
                         // 旧缓存可能只有 20 条：下一次先补第 1 页；完整首屏则从第 2 页续接。
-                        page=if(visible.items.size<CATALOG_FIRST_PAGE_SIZE) 1 else 2,
-                        ended=!visible.hasMore && visible.items.size>=CATALOG_FIRST_PAGE_SIZE,
+                        page=CatalogPaging.nextPageForRestored(visible.items.size,visible.hasMore),
+                        ended=!visible.hasMore,
                         heatBy=visible.ranking?.positions?.mapValues { it.value.heat }.orEmpty(),
                         emptyVisible=false,
                         emptyText="",

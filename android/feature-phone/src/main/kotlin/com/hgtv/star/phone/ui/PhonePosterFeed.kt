@@ -2,6 +2,7 @@
 package com.hgtv.star.phone.ui
 
 import android.content.Context
+import android.os.SystemClock
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -10,7 +11,10 @@ import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.hgtv.star.core.CATALOG_PREFETCH_REMAINING
+import com.hgtv.star.core.CATALOG_PREFETCH_PAGES
+import com.hgtv.star.core.CATALOG_RETRY_COOLDOWN_MS
 import com.hgtv.star.core.CatalogPage
+import com.hgtv.star.core.CatalogPaging
 import com.hgtv.star.core.PosterCardContent
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.PhoneServices
@@ -63,6 +67,9 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     private var loader: (suspend (Int) -> CatalogPage?)? = null
     private var job: Job? = null
     private var hasLoadedOnce = false
+    private var loadFailed = false
+    private var loadFailedAt = 0L
+    private var prefetchChain = 0
 
     /**
      * 服务端给的热度原串，按剧 id 存（`id → "9014万"`）。
@@ -243,7 +250,9 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 val last = (rv.layoutManager as GridLayoutManager).findLastVisibleItemPosition()
                 val lastPoster=(last-adapter.posterStart).coerceAtMost(items.lastIndex)
                 // 与 TV 同一阈值：当前页只剩 50 条时提前取下一页。
-                if(items.isNotEmpty() && items.size-(lastPoster+1)<=CATALOG_PREFETCH_REMAINING) loadMore()
+                val remaining=items.size-(lastPoster+1)
+                if(items.isNotEmpty() && CatalogPaging.shouldPrefetch(remaining)) requestMore()
+                else if(remaining>CATALOG_PREFETCH_REMAINING) prefetchChain=0
                 // **只在真的铺出子项之后**才报位置：首帧布局里 RecyclerView 还没量过
                 // 子项，`computeVerticalScrollOffset` 可能返回一个非 0 的估值。
                 if (rv.childCount > 0) {
@@ -388,6 +397,8 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         loadingVisible = true
         emptyVisible = false
         hasLoadedOnce = false
+        loadFailed = false
+        prefetchChain = 0
         adapter.notifyDataSetChanged()
     }
 
@@ -421,6 +432,8 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             heatBy = result.ranking?.positions?.mapValues { it.value.heat }.orEmpty()
             page = 2
             ended = !result.hasMore || result.items.isEmpty()
+            loadFailed = false
+            prefetchChain = 0
             emptyVisible = result.items.isEmpty()
             emptyText = "暂无内容"
             adapter.notifyDataSetChanged()
@@ -455,6 +468,8 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         loading = false
         loadingVisible = false
         ended = snapshot.ended
+        loadFailed = false
+        prefetchChain = 0
         heatBy = snapshot.heatBy
         emptyVisible = snapshot.emptyVisible
         emptyText = snapshot.emptyText
@@ -473,6 +488,19 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         loading = false
         ended = false
         hasLoadedOnce = false
+        loadFailed = false
+        prefetchChain = 0
+        loadMore()
+    }
+
+    /** 滚动到预取区后请求下一页；失败后在冷却时间内不反复打接口。 */
+    private fun requestMore() {
+        if (loading || ended) return
+        if (loadFailed) {
+            val elapsed = SystemClock.elapsedRealtime() - loadFailedAt
+            if (elapsed < CATALOG_RETRY_COOLDOWN_MS) return
+            loadFailed = false
+        }
         loadMore()
     }
 
@@ -480,6 +508,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         val loader = loader ?: return
         if (loading || ended) return
         loading = true
+        loadFailed = false
         if (items.isEmpty()) {
             loadingVisible = true
             emptyVisible = false
@@ -490,12 +519,14 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             loading = false
             loadingVisible = false
             if (result == null) {
-                ended = items.isNotEmpty()
+                loadFailed = true
+                loadFailedAt = SystemClock.elapsedRealtime()
                 if (items.isEmpty()) showEmpty("加载失败，下拉重试")
                 return@launch
             }
             hasLoadedOnce = true
-            val fresh = result.items.filter { s -> items.none { it.id == s.id } }
+            val merged = CatalogPaging.append(items, null, page, result)
+            val fresh = merged.added
             // 榜单这一页的名次与热度按 id 并入：翻页只带自己那一页，整体覆盖会把前几页的丢掉。
             result.ranking?.positions?.let { positions ->
                 if (positions.isNotEmpty()) {
@@ -503,9 +534,11 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 }
             }
             val start = items.size
-            items += fresh
-            page += 1
-            if (!result.hasMore || fresh.isEmpty()) ended = true
+            items.clear()
+            items += merged.items
+            page = merged.nextPage
+            ended = !merged.hasMore
+            loadFailed = false
             if (fresh.isNotEmpty() && emptyVisible) {
                 emptyVisible = false
                 adapter.notifyDataSetChanged()
@@ -515,6 +548,18 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 adapter.notifyItemRangeInserted(adapter.posterStart + start, fresh.size)
             }
             if (items.isEmpty()) showEmpty("暂无内容")
+            post {
+                if (loading || ended) return@post
+                val manager=grid.layoutManager as? GridLayoutManager ?: return@post
+                val last=(manager.findLastVisibleItemPosition()-adapter.posterStart).coerceAtMost(items.lastIndex)
+                val remaining=items.size-(last+1)
+                if (CatalogPaging.shouldPrefetch(remaining) && prefetchChain<CATALOG_PREFETCH_PAGES) {
+                    prefetchChain++
+                    loadMore()
+                } else if (!CatalogPaging.shouldPrefetch(remaining)) {
+                    prefetchChain=0
+                }
+            }
         }
     }
 
@@ -540,6 +585,8 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         selectedIds.retainAll(rows.map { it.id }.toSet())
         ended = !more
         page = 1
+        loadFailed = false
+        prefetchChain = 0
         loadingVisible = loading && rows.isEmpty()
         hasLoadedOnce = !loadingVisible
         emptyVisible = rows.isEmpty() && !loadingVisible

@@ -40,7 +40,7 @@
 ```text
 android/
 ├── app/  (21 files, 12 directories)
-├── core/  (225 files, 27 directories)
+├── core/  (226 files, 27 directories)
 ├── feature-phone/  (141 files, 11 directories)
 ├── feature-tv/  (154 files, 17 directories)
 ├── shared/  (104 files, 24 directories)
@@ -308,6 +308,7 @@ android/
 | --- | --- | --- |
 | `BackToTopPolicy.kt` | 「回到顶部」浮层的显隐规则（Library.backToTop 四档）。 | object BackToTopPolicy |
 | `CatalogFilter.kt` | 「用户手动隐藏的剧」不该出现在哪些地方。 | object CatalogFilter |
+| `CatalogPaging.kt` | 榜单、分类与搜索共用的分页边界、去重、空页结束、名次合并和预取规则。 | class CatalogPagingResult、object CatalogPaging |
 | `CatalogSnapshot.kt` | First-page metadata only; signed playback URLs and account data never go to disk. 首页有四个「热播…」剧架（对应四个热播榜），因此这份快照按**榜单**分别存一份， 键是 RankBoard.storedValue（见 Library.cacheHome / cachedHo… | object CatalogSnapshot |
 | `CategoryCatalog.kt` | 分类页里的一个小类。 | class CategoryTag、class CategoryGroup、object CategoryCatalog |
 | `CategoryFilters.kt` | 分类页的一枚筛选项：id 是接口的 selector_item_id，label 是 show_name。 | class CategoryFilterOption、class CategoryFilterRow、class CategoryGenreOption、object CategoryGenres、class CategoryPanel、class CategorySelection |

@@ -131,9 +131,9 @@ const val PREFETCH_TRIGGER_ITEMS=CATALOG_PREFETCH_REMAINING
  * 给「按住下键不放」那种走法留的余量：一页刚落地就又被走穿时，允许再补一页。
  * 追加后剩余条数回到 50 以上时会重置连取计数，不会把整份目录一次拉下来。
  */
-const val PREFETCH_PAGES=2
+const val PREFETCH_PAGES=CATALOG_PREFETCH_PAGES
 /** 追加页失败后，用户继续下拉时允许自动重试的冷却时间。 */
-const val LOAD_MORE_RETRY_COOLDOWN_MS=3_000L
+const val LOAD_MORE_RETRY_COOLDOWN_MS=CATALOG_RETRY_COOLDOWN_MS
 /**
  * 预取窗口的半径（行数）：在**物化窗口**的上下各这么多行之内提前取封面。
  *
@@ -250,7 +250,7 @@ const val GRID_WINDOW_MIN_ROWS=4
 const val GRID_WINDOW_MAX_ROWS=12
 
 /** 远端长列表最多向下追加到第几页（与 [ContentRepository.home] 的 `require(page in 1..100)` 对齐）。 */
-const val MAX_CATALOG_PAGE=100
+const val MAX_CATALOG_PAGE=CATALOG_MAX_PAGE
 
 /**
  * 设置页「主题外观」一行放几个主题芯片。

@@ -63,15 +63,16 @@ fun TvMainActivity.prefetchNextPage() {
 
 fun TvMainActivity.applyNextPage(next: Int,result: CatalogPage,userInitiated: Boolean) {
     if(!hasMore || !appendCatalog() || gridList==null) return
-    val added=result.items.filterNot { item -> catalog.any { it.id==item.id } }
-    catalog=catalog+added
-    ranking=mergeRanking(ranking,result.ranking)
-    hasMore=result.hasMore
-    page=next
+    val merged=CatalogPaging.append(catalog,ranking,next,result)
+    val added=merged.added
+    catalog=merged.items
+    ranking=merged.ranking
+    hasMore=merged.hasMore
+    page=merged.page
     val target=if(userInitiated) added.firstOrNull()?.id ?: LOAD_MORE else null
     if(userInitiated) catalogFocus=added.firstOrNull()?.id.orEmpty()
     appendGridItems(added,target)
-    if(hasMore && itemsLeftAfterConsumed()<=PREFETCH_TRIGGER_ITEMS) {
+    if(hasMore && CatalogPaging.shouldPrefetch(itemsLeftAfterConsumed())) {
         prefetchChain++
         if(prefetchChain<PREFETCH_PAGES) prefetchNextPage()
     } else {
@@ -81,7 +82,7 @@ fun TvMainActivity.applyNextPage(next: Int,result: CatalogPage,userInitiated: Bo
 
 fun TvMainActivity.nearGridEnd(): Boolean {
     if(gridItems.isEmpty()) return false
-    return itemsLeftAfterConsumed()<=PREFETCH_TRIGGER_ITEMS
+    return CatalogPaging.shouldPrefetch(itemsLeftAfterConsumed())
 }
 
 fun TvMainActivity.itemsLeftAfterConsumed(): Int {
