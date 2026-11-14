@@ -425,9 +425,9 @@ class ContentRepository(
         internal const val STREAM_CACHE_LIMIT=8
         internal const val COMMENT_SOURCE=4
         internal const val SERVER_CHANNEL=18
-        internal const val COMMENT_COUNT=50
-        internal const val MAX_DANMAKU_PAGES=60
-        internal const val MAX_DANMAKU=3000
+        internal const val COMMENT_COUNT=20
+        internal const val MAX_DANMAKU_PAGES=15
+        internal const val MAX_DANMAKU=300
         internal const val MAX_CATALOG_PAGE=100
         internal const val COMMENT_THROTTLE_MS=500L
 

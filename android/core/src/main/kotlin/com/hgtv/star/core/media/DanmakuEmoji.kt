@@ -452,10 +452,8 @@ object DanmakuEmoji {
     /**
      * 片段缓存条数上限。
      *
-     * 一集最多 3000 条（见 `ContentRepository.MAX_DANMAKU`）。原来定 512 就意味着长剧集里
-     * 绝大多数条目永远缓存不上——弹幕是**边拉边画**的（40 个 30 秒窗口），
-     * 每个窗口重排时都要把整集重切一遍。一条弹幕的片段总和就是它自己的长度，
-     * 4096 条撑死几百 KB。
+     * 一集最多 300 条（见 `ContentRepository.MAX_DANMAKU`）。弹幕按页追加，
+     * 片段缓存留足整集容量；一条弹幕的片段总和就是它自己的长度，开销很小。
      */
     private const val CACHE_LINES = 4096
 
