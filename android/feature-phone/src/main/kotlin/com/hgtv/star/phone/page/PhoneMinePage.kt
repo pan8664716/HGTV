@@ -35,6 +35,10 @@ import com.hgtv.star.shared.data.accountCache
 import com.hgtv.star.shared.data.account
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.shared.ui.SoftStyle
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 
@@ -157,11 +161,19 @@ class PhoneMinePage(
      * 那一页正是用户看「追的剧更新了没有」的地方。检查本身有 1 小时的新鲜度门槛，
      * 反复进出不会反复打接口。
      */
-    /** 这一页自己的协程：账号刷新与收藏检查都挂在它上面，页面销毁时一起取消。 */
-    private val loadScope =
-        kotlinx.coroutines.CoroutineScope(
-            kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Main.immediate
-        )
+    /**
+     * 这一页自己的协程：账号刷新与收藏检查都挂在它上面。
+     *
+     * 主界面会保留页面实例、切走时只 detach，回来时复用同一实例。因此不能在 detach 后
+     * 永久留下一个已取消的 Scope，否则后续 `launch` 全是空操作，账号历史只剩本机那份。
+     */
+    private var loadScope = newScope()
+
+    private fun newScope() = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
+
+    private fun ensureLoadScope() {
+        if (loadScope.coroutineContext[Job]?.isActive != true) loadScope = newScope()
+    }
 
     private val monitor by lazy {
         com.hgtv.star.shared.data.FavoriteMonitor(
@@ -248,6 +260,7 @@ class PhoneMinePage(
 
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
+        ensureLoadScope()
         val restored = restoredFeed
         if (restored?.loaded == true) {
             restoredFeed = null
@@ -260,7 +273,7 @@ class PhoneMinePage(
 
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
-        // 页面被系统回收（或换主题重建）时停掉在途的账号刷新，别让它回来改一张已经没人看的界面。
+        // 切到别的 tab 时页面会被复用，只停掉这一轮在途请求；重新挂载时由 ensureLoadScope 恢复。
         loadScope.cancel()
     }
 
@@ -280,19 +293,10 @@ class PhoneMinePage(
             return
         }
         refresh()
-        // 登录着的时候顺手刷一次账号数据（与 TV 的 `loadAccount` 同一条路）：
-        // 不进这一步，账号侧的收藏 / 历史永远不会出现在这一页上。
-        if (runCatching { PhoneServices.repository(context).signedIn }.getOrDefault(false)) {
-            post {
-                loadScope.launch {
-                    PhoneAccountSync.refresh(context)
-                    render()
-                }
-            }
-        }
     }
 
     private fun refresh() {
+        ensureLoadScope()
         // 身份 / 凭据灌进仓库：从别的入口直接进「我的」时也要成立
         //（正常情况下主界面读完书库已经灌过一次，这里是幂等的兜底）。
         if (library.isLoaded) {
@@ -323,6 +327,7 @@ class PhoneMinePage(
     /** 与 TV 一致：保留当前列表，居中显示等待，账号数据落地后按变化重绘。 */
     private fun refreshData() {
         if (refreshing) return
+        ensureLoadScope()
         refreshing = true
         showRefreshLoading()
         if (library.isLoaded) {
