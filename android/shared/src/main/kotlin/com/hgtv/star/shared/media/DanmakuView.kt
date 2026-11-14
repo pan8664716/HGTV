@@ -208,7 +208,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             if(field==value) return
             field=value
             applyTextMetrics()
-            relayout()
+            reconfigureVisual()
         }
 
     var minTextSizeDp: Float=10f
@@ -217,7 +217,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             if(field==next) return
             field=next
             applyTextMetrics()
-            relayout()
+            reconfigureVisual()
         }
 
     var sizeFollowsLongEdge: Boolean=false
@@ -227,7 +227,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             if(width>0 && height>0) {
                 baseTextSize=baseSizeFor(width,height)
                 applyTextMetrics()
-                relayout()
+                reconfigureVisual()
             }
         }
 
@@ -257,7 +257,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         set(value) {
             if(field==value) return
             field=value
-            relayout()
+            reconfigureVisual()
         }
 
     var textAlpha: Float=1f
@@ -272,7 +272,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         set(value) {
             if(field==value) return
             field=value
-            relayout()
+            reconfigureVisual()
         }
 
     private val highlightSlots: Int
@@ -493,11 +493,55 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
      */
     private fun reconfigureMode() {
         val nowMs=clockPositionMillis()
-        layoutLanes()
+        discardFutureAndExpired(nowMs)
+        rebuildDynamicSchedule(nowMs)
+    }
+
+    /**
+     * 字号、速度和顶部偏移变化时保留活动行当前横坐标，只更新尺寸与未来排程。
+     */
+    private fun reconfigureVisual() {
+        val nowMs=clockPositionMillis()
+        discardFutureAndExpired(nowMs)
+        resizeActiveLines(nowMs)
+        rebuildDynamicSchedule(nowMs)
+    }
+
+    private fun discardFutureAndExpired(nowMs: Long) {
         for(index in lines.lastIndex downTo 0) {
             val line=lines[index]
             if(line.startMs>nowMs || line.endMs<nowMs) recycleLine(lines.removeAt(index))
         }
+    }
+
+    private fun resizeActiveLines(nowMs: Long) {
+        val viewWidth=width.toFloat()
+        if(viewWidth<=0f) return
+        val pixelsPerSecond=speedPx(viewWidth/BASE_SCROLL_SECONDS)
+        if(pixelsPerSecond<=0f) return
+        val emojiSize=fill.textSize*EMOJI_SCALE
+        for(line in lines) {
+            val oldDuration=line.durationMs.coerceAtLeast(1L)
+            val oldProgress=((nowMs-line.startMs).toFloat()/oldDuration).coerceIn(0f,1f)
+            val currentX=viewWidth-oldProgress*(viewWidth+line.width)
+            val widths=FloatArray(line.parts.size) { index ->
+                val part=line.parts[index]
+                if(part.asset==null) fill.measureText(part.text) else emojiSize
+            }
+            var newWidth=0f
+            widths.forEach { newWidth+=it }
+            val newDuration=(((viewWidth+newWidth)/pixelsPerSecond)*1000f).toLong()
+                .coerceAtLeast(1L)
+            val newProgress=((viewWidth-currentX)/(viewWidth+newWidth)).coerceIn(0f,1f)
+            line.startMs=nowMs-(newProgress*newDuration).toLong()
+            line.durationMs=newDuration
+            line.width=newWidth
+            line.partWidths=widths
+        }
+    }
+
+    private fun rebuildDynamicSchedule(nowMs: Long) {
+        layoutLanes()
         highlights=if(mode==DanmakuMode.HIDDEN) emptyList()
         else planHighlights(
             groups,
@@ -673,17 +717,22 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private fun applyTextMetrics() {
         val size=(baseTextSize*textScale).coerceIn(density*minTextSizeDp,density*72f)
         val alpha=textAlpha.coerceIn(0f,1f)
-        fill.textSize=size
-        edge.textSize=size
-        edge.strokeWidth=size*0.14f
-        fill.getFontMetrics(fillMetrics)
-        fillEmojiCenter=(fillMetrics.ascent+fillMetrics.descent)/2f-size*EMOJI_SCALE/2f
-        highlightSize=(size*HIGHLIGHT_SCALE).coerceAtMost(density*72f)
-        hlFill.textSize=highlightSize
-        hlEdge.textSize=highlightSize
-        hlEdge.strokeWidth=highlightSize*0.16f
-        hlFill.getFontMetrics(hlMetrics)
-        hlEmojiCenter=(hlMetrics.ascent+hlMetrics.descent)/2f-highlightSize*EMOJI_SCALE/2f
+        if(size!=fill.textSize) {
+            fill.textSize=size
+            edge.textSize=size
+            edge.strokeWidth=size*0.14f
+            fill.getFontMetrics(fillMetrics)
+            fillEmojiCenter=(fillMetrics.ascent+fillMetrics.descent)/2f-size*EMOJI_SCALE/2f
+            highlightSize=(size*HIGHLIGHT_SCALE).coerceAtMost(density*72f)
+            hlFill.textSize=highlightSize
+            hlEdge.textSize=highlightSize
+            hlEdge.strokeWidth=highlightSize*0.16f
+            hlFill.getFontMetrics(hlMetrics)
+            hlEmojiCenter=(hlMetrics.ascent+hlMetrics.descent)/2f-highlightSize*EMOJI_SCALE/2f
+            spriteAtlas?.setStyle(size,edge.strokeWidth)
+            widthCache.clear()
+            clearHighlightMetrics()
+        }
         fill.alpha=(255*alpha).toInt().coerceIn(0,255)
         edge.alpha=(edgeAlpha*alpha).toInt().coerceIn(0,255)
         hlFill.alpha=(255*alpha).toInt().coerceIn(0,255)
@@ -691,9 +740,6 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         emojiPaint.alpha=(255*alpha).toInt().coerceIn(0,255)
         plate.alpha=(0x99*alpha).toInt().coerceIn(0,255)
         spritePaint.alpha=fill.alpha
-        spriteAtlas?.setStyle(size,edge.strokeWidth)
-        widthCache.clear()
-        clearHighlightMetrics()
     }
 
     private fun clearHighlightMetrics() {
