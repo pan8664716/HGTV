@@ -3,7 +3,6 @@ package com.hgtv.star
 
 import android.content.Context
 import android.os.Bundle
-import com.hgtv.star.core.refreshTncAsync
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.IdentityBinder
 import com.hgtv.star.shared.data.PlaybackDeviceBackups
@@ -18,9 +17,9 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * 启动页负责的本地初始化。
  *
- * 启动页不再等待本机书库：窗口首帧之后只注册缓存目录，随后立即路由；书库、TLS、DNS、
- * TNC、签名与会话预热继续在后台并行。主页面自己先铺缓存 / 骨架，读盘失败也由目标页
- * 按现有错误态处理，不把启动路由变成网络或 IO 门禁。
+ * 启动页不再等待本机书库：窗口首帧之后只注册缓存目录，随后立即路由；书库与会话保活
+ * 在后台继续。TLS 直接使用内置根证书，DNS 与 TNC 直接使用已落盘配置，签名不做启动
+ * 预热。主页面自己先铺缓存 / 骨架，不把启动路由变成网络或 IO 门禁。
  */
 internal object HgtvStartup {
     private enum class State { IDLE, RUNNING, READY, FAILED }
@@ -179,10 +178,8 @@ internal object HgtvStartup {
     private fun startRuntime(context: Context) {
         if(!runtimeStarted.compareAndSet(false,true)) return
         startCaches(context)
-        startTlsWarmup()
-        startDnsWarmup()
-        startTncBootstrap(context)
-        startSignWarmup(context)
+        // 启动阶段不读系统根证书表、不刷新 DNS / TNC、不做签名预热。首次网络请求直接使用
+        // `HgtvTls.BOOTSTRAP_ISSUERS` 中的内置 G2 根，以及 `startCaches` 注册的落盘配置。
         initSession(context)
     }
 
@@ -219,43 +216,6 @@ internal object HgtvStartup {
             com.hgtv.star.core.CategoryPanelCache.init(File(cache,"category-panels-v1.json"))
             }.onFailure { problem -> Diagnostics.warn("HGTV-CACHE","缓存目录初始化失败",problem) }
         }
-    }
-
-    private fun startTlsWarmup() {
-        Thread({
-            val startedAt=StartupTrace.now()
-            StartupTrace.mark("warmup.tls.start")
-            runCatching { com.hgtv.star.core.HgtvTls.warm() }
-                .onFailure { problem -> Diagnostics.warn("HGTV-TLS","TLS 预热失败",problem) }
-            StartupTrace.done("warmup.tls",startedAt)
-        }, "hgtv-tls-warm").start()
-    }
-
-    private fun startDnsWarmup() {
-        Thread({
-            val startedAt=StartupTrace.now()
-            StartupTrace.mark("warmup.dns.start")
-            runCatching { com.hgtv.star.core.HgtvDns.warm(com.hgtv.star.core.HgtvDns.BOOT_HOSTS) }
-            StartupTrace.done("warmup.dns",startedAt)
-        }, "hgtv-dns-warm").start()
-    }
-
-    private fun startTncBootstrap(context: Context) {
-        Thread({
-            val startedAt=StartupTrace.now()
-            StartupTrace.mark("warmup.tnc.start")
-            runCatching { AppRuntime.repository(context).refreshTncAsync() }
-            StartupTrace.done("warmup.tnc",startedAt)
-        }, "hgtv-tnc-bootstrap").start()
-    }
-
-    private fun startSignWarmup(context: Context) {
-        Thread({
-            val startedAt=StartupTrace.now()
-            StartupTrace.mark("warmup.sign.start")
-            runCatching { AppRuntime.warmSignature(context) }
-            StartupTrace.done("warmup.sign",startedAt)
-        }, "hgtv-sign-warm").start()
     }
 
     private fun initSession(context: Context) {
