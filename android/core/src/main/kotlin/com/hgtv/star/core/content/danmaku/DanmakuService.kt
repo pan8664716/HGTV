@@ -98,7 +98,7 @@ internal data class ContentRepositoryDanmakuPage(
             .put("aid",8662)
             .put("compliance_status",0)
         val payload=body.toString().toByteArray(Charsets.UTF_8)
-        val values=appValues()
+        val values=danmakuValues()
         var failure: IOException?=null
         for(host in commentHosts()) {
             try {

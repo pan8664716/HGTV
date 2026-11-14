@@ -314,6 +314,7 @@ class ContentRepository(
     internal val protocolValuesValue get()=PROTOCOL_VALUES
     private fun writeValues(): LinkedHashMap<String,String> = writeValuesImpl()
     internal fun appValues(): LinkedHashMap<String,String> = appValuesImpl()
+    internal fun danmakuValues(): LinkedHashMap<String,String> = danmakuValuesImpl()
     internal fun searchValues(): LinkedHashMap<String,String> = searchValuesImpl()
     internal fun searchRequest(values: LinkedHashMap<String,String>): Signer.Request =
         searchRequestImpl(values)

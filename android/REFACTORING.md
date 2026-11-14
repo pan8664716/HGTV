@@ -4611,6 +4611,19 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 弹幕固定使用注册设备身份
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 根因：热弹幕请求调用通用 `appValues()`，登录后它会按 `primaryIdentity()` 切换到
+  账号设备 profile，平台返回的热弹幕样本随之变化，部分账号反而明显更少。
+- 修复：新增 `danmakuValues()`，固定从 `deviceProfileImpl()` 构建
+  `72232 / 7.2.2.32` 参数；弹幕请求只使用注册设备身份，不读取账号设备 profile。
+- 其他需要登录态的业务接口继续使用原 `appValues()` / session，不受影响。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 手机播放黑边透出上一页
 
 状态：已实现，debug 构建通过，待用户真机验证。

@@ -7,6 +7,10 @@ internal fun ContentRepository.writeValuesImpl(): LinkedHashMap<String,String> =
 internal fun ContentRepository.appValuesImpl(): LinkedHashMap<String,String> =
     deviceValuesImpl("72232","7.2.2.32")
 
+/** 弹幕固定使用注册设备身份，即使已登录账号也不切换到账号设备。 */
+internal fun ContentRepository.danmakuValuesImpl(): LinkedHashMap<String,String> =
+    buildValues(deviceProfileImpl(),"72232","7.2.2.32")
+
 internal fun ContentRepository.searchValuesImpl(): LinkedHashMap<String,String> {
     val values=deviceValuesImpl(searchVersionCodeValue,searchVersionNameValue)
     values.putAll(searchFeedContextValue)
