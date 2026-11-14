@@ -69,6 +69,7 @@ internal data class ContentRepositoryDanmakuPage(
         var startMs=0L
         var cursor=""
         var hotAdded=0
+        var emptyWindows=0
         for(index in 0 until windows) {
             if(shouldStop() || hotAdded>=ContentRepository.MAX_HOT_DANMAKU ||
                 collected.size>=ContentRepository.MAX_DANMAKU) break
@@ -77,11 +78,14 @@ internal data class ContentRepositoryDanmakuPage(
             val added=mergeDanmaku(collected,page.items)
             if(added>0) {
                 hotAdded+=added
+                emptyWindows=0
                 onWindow(collected.values.sortedBy { it.offsetMs })
+            } else {
+                emptyWindows++
             }
             if(page.nextStart<=startMs) break
             if(durationMs>0 && page.nextStart>=durationMs) break
-            if(durationMs<=0 && !page.hasMore) break
+            if(emptyWindows>=3) break
             startMs=page.nextStart
             cursor=page.cursor
             if(index<windows-1) {

@@ -4624,6 +4624,10 @@ feature-tv/
   `server_channel=1000` 的热弹幕采样接口，不再请求当前游标完整流。
 - 热采样每页 90 条、30 秒窗口、最多 40 个窗口，总量上限 300 条，页间间隔 180ms。
 - 代价是单集弹幕覆盖量低于完整评论流；收益是重复短句比例更高，聚合恢复接近旧版本。
+- 修复：`DanmakuLoader` 传入的 `durationSeconds` 固定为 0，热接口又按
+  `common_list_info.has_more=false` 提前结束，部分集只取到一个窗口（实测仅有 10 条）。
+  现在未知片长时仍按 `next_query_danmaku_list_time` 继续取，最多 40 个窗口；
+  连续 3 个窗口没有新增才停止。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。
