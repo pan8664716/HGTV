@@ -77,7 +77,7 @@ internal fun PhonePlayerActivity.debugLinesImpl(): List<String> {
     // 实际生效的档位与用户设置可能不同：自动降档只写会话层（与电视端同一条规则）。
     val cap = playbackMaxQuality
     val requested = library?.maxQuality ?: 0
-    extras += "默认上限" to "${if (cap > 0) "${cap}P" else "-"}" +
+    extras += "画质" to "${if (cap > 0) "${cap}P" else "-"}" +
         (if (cap < requested) "（本次降档）" else "") + " · 实际 $quality"
     if (playbackSessionState.touched()) {
         val reason = when (playbackSessionState.lastReason) {

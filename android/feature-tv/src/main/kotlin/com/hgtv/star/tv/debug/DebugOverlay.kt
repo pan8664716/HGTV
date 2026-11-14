@@ -651,7 +651,7 @@ private fun TvMainActivity.playerDebugRows(): List<DebugRow> {
     val codecs=d.codecs.take(70)
     // 实际播放的清晰度（`720P` / `1080P（兼容资源）` 里的那个数字）。
     // 与设置里的「默认清晰度上限」不是一回事：CDN 只给到 720P 时，上限 1080P 也放不出 1080P，
-    // 这一条要能让用户自己看出来（见下面的「默认上限」行与「问题」行）。
+    // 这一条要能让用户自己看出来（见下面的「画质」行与「问题」行）。
     val actualQuality=QUALITY_TIER.find(d.quality)?.groupValues?.get(1)?.toIntOrNull() ?: 0
     // 「上限」显示**本次实际生效**的那个（会话降档优先，见 `playbackMaxQuality`），
     // 否则用户设 1080、实际被降到 720 时，面板会一直说「CDN 中没有 1080P」——
@@ -694,9 +694,9 @@ private fun TvMainActivity.playerDebugRows(): List<DebugRow> {
         add(DebugRow("帧数","首帧=${if(pictureUpNow()) "是" else "否"} · 丢帧=${d.droppedFrames} · 欠载=${d.underruns} · 解码错=${d.codecErrors}"))
         // 「网络」不再单独一行（用户要求去掉）：第一行 `页面` 里已经写了 `网络 wifi/移动`，
         // 这里是同一件事的第二份，既占高度又让人以为两处可能不一致。
-        // 默认上限与实际播放的档位并排：正片与推荐页（两个播放界面）都走这一份行，
+        // 画质上限与实际播放的档位并排：正片与推荐页（两个播放界面）都走这一份行，
         // 因此两边都能看到「设置里是 1080P、实际放的是 720P」。
-        add(DebugRow("默认上限","${if(maxQuality>0) "${maxQuality}P" else "-"}"+
+        add(DebugRow("画质","${if(maxQuality>0) "${maxQuality}P" else "-"}"+
             (if(maxQuality<requestedQuality) "（本次降档）" else "")+
             " · 实际 ${if(actualQuality>0) "${actualQuality}P" else d.quality.ifBlank { "-" }}"))
         // 降级这一行只在**真的发生过**时出现：没降过就不占高度（面板是钉子户，行数越少越好）。
