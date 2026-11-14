@@ -264,9 +264,14 @@ class DanmakuLoader(
                 clockSpeedState = speed
                 return
             }
-            if (running && runningState && positionMs < clockAt && clockAt - positionMs <= 150L) {
-                // 高频采样偶尔比外推时钟落后一点：不回拉，等播放器位置追上来。
-                return
+            if (running && runningState) {
+                val displayed = view.clockPositionMillis()
+                val behind = displayed - positionMs
+                if (behind in 1L..CLOCK_BACKWARD_TOLERANCE_MS) {
+                    // 播放器采样偶尔落后于屏幕外推时钟。小幅差异不重置，避免弹幕周期性回退；
+                    // 只有明显向后跳转（用户 seek）才接受新的播放位置。
+                    return
+                }
             }
         }
         clockAt = positionMs
@@ -284,5 +289,9 @@ class DanmakuLoader(
         clockAt = -1L
         runningState = false
         clockSpeedState = 1f
+    }
+
+    private companion object {
+        const val CLOCK_BACKWARD_TOLERANCE_MS=500L
     }
 }
