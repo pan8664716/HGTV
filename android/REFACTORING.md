@@ -4301,6 +4301,7 @@ feature-tv/
 - 手机 `PhonePosterFeed` 使用同一个 `CATALOG_PREFETCH_REMAINING=50` 阈值，分类 / 榜单 /
   搜索三个海报网格行为一致。
 - 用户已确认测试通过。
+- 31.68 已清空数据、卸载并重新安装 debug APK（`1.3.7 / 76`），首次启动正常。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 ## TV 搜索默认键盘
