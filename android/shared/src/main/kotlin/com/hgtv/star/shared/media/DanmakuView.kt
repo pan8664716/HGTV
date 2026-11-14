@@ -530,7 +530,11 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         }
     }
 
-    private fun scheduleGroupsThrough(untilMs: Long,nowMs: Long) {
+    private fun scheduleGroupsThrough(
+        untilMs: Long,
+        nowMs: Long,
+        notBeforeMs: Long=nowMs,
+    ) {
         if(nextGroupIndex>=groups.size || groups[nextGroupIndex].firstMs>untilMs) return
         val viewWidth=width.toFloat()
         val pixelsPerSecond=speedPx(viewWidth/BASE_SCROLL_SECONDS)
@@ -547,7 +551,9 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             var lane=0
             var startMs=Long.MAX_VALUE
             for(index in laneFreeMs.indices) {
-                val candidate=maxOf(laneFreeMs[index],group.firstMs)
+                // 新排入的行必须从当前帧开始向右移动；若补页回包晚于弹幕时间，
+                // 不能把 startMs 回填到过去，否则第一帧会直接出现在屏幕中间。
+                val candidate=maxOf(laneFreeMs[index],group.firstMs,notBeforeMs)
                 if(candidate<startMs) { startMs=candidate; lane=index }
             }
             if(startMs-group.firstMs>MAX_DELAY_MS) continue

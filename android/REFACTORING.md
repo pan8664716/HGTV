@@ -4611,6 +4611,21 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 补页弹幕从右边缘进入
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 根因：`appendDanmaku()` 允许补页数据回溯 `500ms`，排程又直接使用原始
+  `group.firstMs` 作为 `startMs`；首帧按已经流逝的时间计算横坐标，于是新弹幕会突然
+  出现在屏幕中间。
+- 修复：`scheduleGroupsThrough()` 增加当前帧下限，所有新排入的行都满足
+  `startMs >= 当前播放位置`；晚到但仍需展示的弹幕从右边缘开始，不再回填到过去。
+- 当前设备安装时间早于独立 Surface 构建，旧卡顿采样仍来自普通 View 渲染层；
+  独立 Surface 版本需安装最新 debug APK 后复测。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 音频 CPU 调查
 
 状态：已调查，未提交实验代码。
