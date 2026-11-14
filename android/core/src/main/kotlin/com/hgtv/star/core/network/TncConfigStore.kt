@@ -104,6 +104,7 @@ object TncConfigStore {
     private val loadedLatch=CountDownLatch(1)
     private val readyLatch=CountDownLatch(1)
     private val refreshLock=Any()
+    private val snapshotLock=Any()
     private val loader=Executors.newSingleThreadExecutor { task ->
         Thread(task,"hgtv-tnc-load").apply { isDaemon=true }
     }
@@ -294,9 +295,13 @@ object TncConfigStore {
     fun markHostSuccess(host: String) {
         val value=host.trim()
         if(value.isEmpty()) return
-        val current=current() ?: return
-        if(current.lastGoodHost==value) return
-        snapshot=current.copy(lastGoodHost=value)
+        val changed=synchronized(snapshotLock) {
+            val current=snapshot ?: return@synchronized false
+            if(current.lastGoodHost==value) return@synchronized false
+            snapshot=current.copy(lastGoodHost=value)
+            true
+        }
+        if(!changed) return
         persistAsync()
     }
 
@@ -307,24 +312,28 @@ object TncConfigStore {
 
     private fun applyResponse(response: TncResponse): Boolean {
         if(response.notModified) {
-            val previous=snapshot
-            if(previous==null) {
+            val current=synchronized(snapshotLock) {
+                val previous=snapshot ?: return@synchronized null
+                previous.copy(
+                    fetchedAt=System.currentTimeMillis(),
+                    etag=response.etag.ifBlank { previous.etag },
+                ).also { snapshot=it }
+            }
+            if(current==null) {
                 NetLog.warn("tnc unchanged without cached snapshot")
                 return false
             }
             // 服务端明确表示配置仍然有效。刷新 fetchedAt，避免下一次启动/网络切换
             // 因为旧时间戳立刻重复请求；其它字段继续使用当前快照。
-            snapshot=previous.copy(
-                fetchedAt=System.currentTimeMillis(),
-                etag=response.etag.ifBlank { previous.etag },
-            )
             persistAsync()
-            NetLog.log("tnc unchanged summary=${previous.summary.take(12)} etag=${snapshot?.etag.orEmpty().take(12)}")
+            NetLog.log("tnc unchanged summary=${current.summary.take(12)} etag=${current.etag.orEmpty().take(12)}")
             return true
         }
         val parsed=runCatching { parse(response) }.getOrNull() ?: return false
-        val previous=snapshot
-        snapshot=parsed.copy(lastGoodHost=previous?.lastGoodHost.orEmpty())
+        synchronized(snapshotLock) {
+            val previous=snapshot
+            snapshot=parsed.copy(lastGoodHost=previous?.lastGoodHost.orEmpty())
+        }
         readyLatch.countDown()
         persistAsync()
         NetLog.log(
@@ -412,7 +421,7 @@ object TncConfigStore {
             val httpDns=parseHttpDns(root.optJSONObject("httpDns"))
             val apiHosts=stringList(root.opt("apiHosts")).filter(::isApiHost)
             if(apiHosts.isEmpty()) return
-            snapshot=TncSnapshot(
+            val loadedSnapshot=TncSnapshot(
                 fetchedAt=root.optLong("fetchedAt",0L),
                 summary=root.optString("summary"),
                 etag=root.optString("etag"),
@@ -425,6 +434,13 @@ object TncConfigStore {
                 httpDns=httpDns,
                 lastGoodHost=root.optString("lastGoodHost"),
             )
+            // 网络刷新与本地读盘并行；网络已经先返回时，较旧的本地快照不能覆盖新配置。
+            synchronized(snapshotLock) {
+                val existing=snapshot
+                if(existing==null || loadedSnapshot.fetchedAt>existing.fetchedAt) {
+                    snapshot=loadedSnapshot
+                }
+            }
             readyLatch.countDown()
         } catch(_: Exception) {
             snapshot=null

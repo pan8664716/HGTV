@@ -217,9 +217,10 @@ internal object HgtvStartup {
             com.hgtv.star.core.CategoryPanelCache.init(File(cache,"category-panels-v1.json"))
             }.onFailure { problem -> Diagnostics.warn("HGTV-CACHE","缓存目录初始化失败",problem) }
         }
-        // 本地 TNC 已独立排队读盘；这里同时提交条件刷新，网络任务不会挡在启动线程上。
+        // 本地 TNC 已独立排队读盘；这里同时提交条件刷新。每次启动都发一次请求，
+        // 由服务端根据 summary / ETag 决定配置是否变化，网络任务不挡启动线程。
         Thread({
-            runCatching { AppRuntime.repository(context).refreshTncAsync() }
+            runCatching { AppRuntime.repository(context).refreshTncAsync(force=true) }
         },"hgtv-tnc-bootstrap").apply { isDaemon=true }.start()
     }
 
