@@ -37,19 +37,19 @@ fun rawDanmakuRows(rows: org.json.JSONArray?): List<org.json.JSONObject> =
  * 弹幕在播放画面上的显示方式。存进本机设置，换集与重开应用都保持。
  *
  * 顺序就是设置页 / 播放设置面板里的进度条顺序：
- * 隐藏 → 一行 → 两行 → 三行 → 四行 → 上方 → 全屏。
+ * 0 行 → 1 行 → 2 行 → 3 行 → 4 行 → 5 行 → 6 行。
  *
  * `storedValue` 是**磁盘上的值**：后加的档位只能新增，已有档位的值不能改，否则用户存过的
  * 偏好会在升级后读回默认档（旧备份里没有的档位按 [fromStored] 的兜底处理）。
  */
 enum class DanmakuMode(val storedValue: String, val label: String, val hint: String) {
-    HIDDEN("hidden","隐藏","隐藏 · 完全不显示弹幕"),
-    SINGLE("single","一行","一行 · 只在画面顶部滚动一行"),
-    TWO("two","两行","两行 · 只在画面顶部滚动两行"),
-    THREE("three","三行","三行 · 只在画面顶部滚动三行"),
-    FOUR("four","四行","四行 · 只在画面顶部滚动四行"),
-    TOP("top","上方","上方 · 只在画面上方区域滚动"),
-    FULL("full","全屏","全屏 · 整幅画面从上到下都能滚");
+    HIDDEN("hidden","0 行","0 行 · 不显示弹幕"),
+    SINGLE("single","1 行","1 行 · 只在画面顶部显示一行"),
+    TWO("two","2 行","2 行 · 只在画面顶部显示两行"),
+    THREE("three","3 行","3 行 · 只在画面顶部显示三行"),
+    FOUR("four","4 行","4 行 · 只在画面顶部显示四行"),
+    FIVE("five","5 行","5 行 · 只在画面顶部显示五行"),
+    SIX("six","6 行","6 行 · 只在画面顶部显示六行");
 
     /**
      * 这一档下弹幕文字的外观（字号 / 透明度 / 速度）还有没有意义。
@@ -60,35 +60,32 @@ enum class DanmakuMode(val storedValue: String, val label: String, val hint: Str
      */
     val showsStyle get() = this != HIDDEN
 
-    /** 一行到四行档的固定轨道上限；上方 / 全屏由可用高度决定。 */
-    val lineLimit: Int?
-        get() = when (this) {
-            SINGLE -> 1
-            TWO -> 2
-            THREE -> 3
-            FOUR -> 4
-            TOP, FULL, HIDDEN -> null
-        }
+    /** 当前档位允许显示的最大轨道数。 */
+    val lineLimit get() = ordinal
 
     /** 七档进度条上的位置。 */
     val sliderValue get() = ordinal.toFloat()
 
-    /** 选择控件里的完整档位文案，编号固定为 0..6。 */
-    val optionLabel get() = "$ordinal $label"
+    /** 选择控件里的完整档位文案。 */
+    val optionLabel get() = label
 
-    /** 选择菜单里的完整说明，编号与 [optionLabel] 一致。 */
-    val optionHint get() = "$ordinal · $hint"
+    /** 选择菜单里的完整说明。 */
+    val optionHint get() = hint
 
     /**
-     * 下一档（快捷开关用）：0 隐藏 → 1 一行 → … → 6 全屏 → 0 隐藏。
+     * 下一档（快捷开关用）：0 行 → 1 行 → … → 6 行 → 0 行。
      * 手机播放页快捷按钮与设置页、播放面板共用这一套编号顺序。
      */
     fun next(): DanmakuMode = entries[(ordinal+1)%entries.size]
 
     companion object {
-        /** 首次启动、旧数据缺字段或值损坏时使用上方显示。 */
-        val DEFAULT=TOP
-        fun fromStored(value: String?) = entries.firstOrNull { it.storedValue==value } ?: DEFAULT
+        /** 首次启动、旧数据缺字段或值损坏时使用五行显示。 */
+        val DEFAULT=FIVE
+        fun fromStored(value: String?): DanmakuMode = when(value) {
+            "top" -> FIVE
+            "full" -> SIX
+            else -> entries.firstOrNull { it.storedValue==value } ?: DEFAULT
+        }
         fun fromSlider(value: Float): DanmakuMode =
             entries[value.roundToInt().coerceIn(0, entries.lastIndex)]
     }
@@ -220,7 +217,7 @@ object DanmakuHighlight {
      * 中央最多同时放几条。
      *
      * 原来中央只有一格，几条被聚合的弹幕只能一条接一条地轮流上，屏幕上永远只有一句；
-     * 现在一格放一条、竖着排开，上方显示放两格、全屏显示放三格，几条聚合弹幕可以同时看到。
+     * 现在一格放一条、竖着排开；1 行放一格、2 行放两格、3 行及以上放三格。
      */
     const val MAX_SLOTS=3
     /**
@@ -253,7 +250,7 @@ private data class ActiveDanmakuHighlight(
  * 排一遍中央突出显示的次序（纯函数，无副作用，可以单测）。
  *
  * 规则（需求 §4.3）：
- * * 一格一条、各格互不重叠；只显一行 / 上方 / 全屏分别使用 1 / 2 / 3 格；
+ * * 一格一条、各格互不重叠；1 行 / 2 行 / 3 行及以上分别使用 1 / 2 / 3 格；
  * * 槽位有空时按计数从高到低填入；槽位已满时，新聚合只要大于任意一条，
  *   就替换当前计数最小的一条；
  * * 选「到那一刻为止累计数量最多」的那一组，数量相同选更早出现的（[DanmakuRepeat.firstMs]）；

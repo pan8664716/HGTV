@@ -392,7 +392,7 @@ fun TvMainActivity.showEpisodePageSizePicker(anchor: TextView) {
     })
 }
 /**
- * 弹幕显示方式：只显一行 / 上方显示 / 全屏显示 / 隐藏弹幕。
+ * 弹幕显示方式：0 行到 6 行。
  *
  * 排列顺序与每一档的说明都取自 [DanmakuMode.entries]（`hint`），设置页与播放设置面板不再各写一份文案——
  * 档位顺序是需求里定死的一条验收项，抄成三份迟早会走样。

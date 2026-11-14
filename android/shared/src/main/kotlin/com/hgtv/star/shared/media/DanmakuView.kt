@@ -35,8 +35,6 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private companion object {
         const val BASE_SCROLL_SECONDS=6f
         const val TOP_INSET_DP=104
-        const val TOP_MODE_SHARE=0.25f
-        const val TOP_MODE_INSET_DP=20
         const val BOTTOM_INSET_DP=120
         const val LANE_GAP_TEXT=0.9f
         const val LANE_GAP_VERTICAL=0.35f
@@ -275,15 +273,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         }
 
     private val highlightSlots: Int
-        get() = when(mode) {
-            DanmakuMode.SINGLE -> 1
-            DanmakuMode.TWO -> 2
-            DanmakuMode.THREE -> 3
-            DanmakuMode.FOUR -> DanmakuHighlight.MAX_SLOTS
-            DanmakuMode.TOP -> 2
-            DanmakuMode.FULL -> DanmakuHighlight.MAX_SLOTS
-            DanmakuMode.HIDDEN -> 1
-        }
+        get() = mode.lineLimit.coerceIn(1,DanmakuHighlight.MAX_SLOTS)
 
     private var clockBaseMs=0L
     private var clockBaseAt=0L
@@ -667,19 +657,13 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         val verticalGap=maxOf(fill.textSize*LANE_GAP_VERTICAL,density*LANE_MIN_GAP_DP)
         laneHeight=maxOf(textBox,emojiBox)+verticalGap
         if(mode==DanmakuMode.HIDDEN || laneHeight<=0f) { laneCount=0; return }
-        laneTop=when {
-            mode.lineLimit!=null -> maxOf(
-                if(topInsetPx>=0) topInsetPx.toFloat() else TOP_MODE_INSET_DP*density,
-                highlightSize*0.6f+HIGHLIGHT_PAD_DP*density*0.5f)
-            mode==DanmakuMode.TOP ->
-                if(topInsetPx>=0) topInsetPx.toFloat() else TOP_MODE_INSET_DP*density
-            else ->
-                if(topInsetPx>=0) topInsetPx.toFloat() else TOP_INSET_DP*density
-        }
-        val bottom=if(mode==DanmakuMode.TOP) height*TOP_MODE_SHARE
-        else height-BOTTOM_INSET_DP*density
+        laneTop=maxOf(
+            if(topInsetPx>=0) topInsetPx.toFloat() else TOP_INSET_DP*density,
+            highlightSize*0.6f+HIGHLIGHT_PAD_DP*density*0.5f,
+        )
+        val bottom=height-BOTTOM_INSET_DP*density
         val byHeight=((bottom-laneTop).coerceAtLeast(0f)/laneHeight).toInt().coerceIn(0,24)
-        laneCount=mode.lineLimit?.let { minOf(it,byHeight) } ?: byHeight
+        laneCount=minOf(mode.lineLimit,byHeight)
     }
 
     private fun drawSurfaceFrame() {
@@ -915,9 +899,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             DanmakuMode.SINGLE -> laneTop+laneHeight/2f
             DanmakuMode.TWO -> laneTop+laneHeight
             DanmakuMode.THREE -> laneTop+laneHeight*1.5f
-            DanmakuMode.FOUR -> laneTop+laneHeight*2f
-            DanmakuMode.TOP -> laneTop+(height*TOP_MODE_SHARE-laneTop)/2f
-            else -> height/2f
+            else -> laneTop+laneHeight*2f
         }
         val lanes=highlightSlots
         if(lanes<=1) return anchor

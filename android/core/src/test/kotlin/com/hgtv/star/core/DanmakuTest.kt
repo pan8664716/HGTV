@@ -34,15 +34,17 @@ class DanmakuTest {
     @Test fun `hidden danmaku has no text style to adjust`() {
         // 隐藏档整层不画、也不发请求，字号与透明度改完看不到变化，
         // 设置页与播放设置面板都要把这两项收起来；其余两档照常显示。
-        assertTrue(DanmakuMode.FULL.showsStyle)
-        assertTrue(DanmakuMode.TOP.showsStyle)
+        assertTrue(DanmakuMode.SIX.showsStyle)
+        assertTrue(DanmakuMode.FIVE.showsStyle)
         assertFalse(DanmakuMode.HIDDEN.showsStyle)
     }
 
     @Test fun `danmaku mode round-trips through storage`() {
         DanmakuMode.entries.forEach { mode -> assertEquals(mode,DanmakuMode.fromStored(mode.storedValue)) }
-        assertEquals(DanmakuMode.TOP,DanmakuMode.fromStored(null))
-        assertEquals(DanmakuMode.TOP,DanmakuMode.fromStored("unknown"))
+        assertEquals(DanmakuMode.FIVE,DanmakuMode.fromStored(null))
+        assertEquals(DanmakuMode.FIVE,DanmakuMode.fromStored("unknown"))
+        assertEquals(DanmakuMode.FIVE,DanmakuMode.fromStored("top"))
+        assertEquals(DanmakuMode.SIX,DanmakuMode.fromStored("full"))
     }
 
     @Test fun `quick toggle follows numeric order`() {
