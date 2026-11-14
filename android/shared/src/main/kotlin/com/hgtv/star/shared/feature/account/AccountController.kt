@@ -84,6 +84,14 @@ class AccountController(
     }
 
     /**
+     * 页面回到前台时使用：已有内存账号数据就保留，只有控制器还没初始化时才读缓存。
+     *
+     * 电视模式与手机模式共用同一个控制器。手机页若每次都走 [bindCredentials]，会用磁盘
+     * 快照覆盖电视模式刚拉到的最新历史；快照尚未落盘时更会被直接清空，最后只剩本机记录。
+     */
+    fun ensureBoundCredentials(): AccountData? = data ?: bindCredentials()
+
+    /**
      * 拉一次账号数据并对账。
      *
      * 合并、过滤墓碑、对账和本机超前项回推都在这里完成。页面只需根据

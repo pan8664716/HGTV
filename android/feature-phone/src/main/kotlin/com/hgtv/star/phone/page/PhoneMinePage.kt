@@ -302,7 +302,7 @@ class PhoneMinePage(
         if (library.isLoaded) {
             com.hgtv.star.phone.PhoneIdentity.apply(context, library)
             runCatching {
-                com.hgtv.star.shared.data.AppRuntime.accountController(context).bindCredentials()
+                com.hgtv.star.shared.data.AppRuntime.accountController(context).ensureBoundCredentials()
             }
         }
         // 使用须知：**进这一页就交代一次账号风险**（与电视端同一条语义，见 `PhoneConsent`）。
@@ -310,11 +310,8 @@ class PhoneMinePage(
         (context as? android.app.Activity)?.let { activity ->
             if (library.isLoaded) PhoneConsent.ensureUsage(activity, library)
         }
-        // 第一次挂上来时也要补一次账号数据：`onShown` 只在「回到这一页」时被调用，
-        // 首次进入走的是 `onAttachedToWindow`。
-        if (runCatching { PhoneServices.repository(context).signedIn }.getOrDefault(false)) {
-            loadScope.launch { PhoneAccountSync.refresh(context); render() }
-        }
+        // 与电视端一致：账号资料即使不可用，设备级历史 / 收藏仍可能返回，不能只看 signedIn。
+        loadScope.launch { PhoneAccountSync.refresh(context); render() }
         if (!library.isLoaded) {
             library.loadAsync(onFailure = { post { render() } }, onReady = { post { render() } })
             return
@@ -333,13 +330,8 @@ class PhoneMinePage(
         if (library.isLoaded) {
             com.hgtv.star.phone.PhoneIdentity.apply(context, library)
             runCatching {
-                com.hgtv.star.shared.data.AppRuntime.accountController(context).bindCredentials()
+                com.hgtv.star.shared.data.AppRuntime.accountController(context).ensureBoundCredentials()
             }
-        }
-        val signedIn = runCatching { PhoneServices.repository(context).signedIn }.getOrDefault(false)
-        if (!signedIn) {
-            finishRefresh(null)
-            return
         }
         loadScope.launch {
             val result = runCatching {
