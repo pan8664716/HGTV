@@ -33,8 +33,9 @@ internal fun TvMainActivity.primePlaybackClasses() {
  * 探一次「本机有没有 HEVC 硬解」。**只能在 io 线程调**（`MediaCodecList` 是 Binder 调用，
  * 盒子上实测 1~3 秒，见 `PlaybackCapability` 的类注释）。
  *
- * 用 `MediaCodecUtil.getDecoderInfos`（ExoPlayer 自己的表，含别名与厂商 workaround），
- * 而不是裸 `MediaCodecList`：判据必须与选择器一致，否则会出现「预检说没有、选择器却给出一颗」。
+ * 平台能力用 `MediaCodecList.ALL_CODECS` 扫描（见 `PlaybackCapability`），因为
+ * `REGULAR_CODECS` 在部分电视上会漏掉 secure / tunneled 组件；同时预热 ExoPlayer
+ * 自己的解码器表，选择器仍然复用它的别名与厂商 workaround。
  *
  * 结论**只用于界面提示**（错误页上的「切换软解」按钮、面板读数），不会自动改解码方式。
  */

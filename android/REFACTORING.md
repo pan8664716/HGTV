@@ -4264,6 +4264,28 @@ feature-tv/
 - 两组提示词按首次出现顺序去重，不再使用「有历史就隐藏推荐」的互斥逻辑。
 - 未修改版本号、versionCode 或依赖。
 
+## 老电视 HEVC secure / tunneled 组件
+
+状态：已修复安全路径，强制隧道播放仍单列。
+
+- Issue #79：部分电视只在 `ALL_CODECS` 注册 HEVC，`REGULAR_CODECS` 看不到；ExoPlayer
+  默认查询又会把空结果写进 `MediaCodecUtil` 静态缓存，首次失败后同进程一直误报。
+- 能力探测改为 `MediaCodecList.ALL_CODECS`，缓存增加 schema；旧版本落盘的错误结果会
+  自动重扫。查询异常不再写负结果，播放失败时同时清 ExoPlayer 静态缓存与内存结果。
+- TV / 手机选择器在普通 HEVC 硬解为空时，会补查 tunneled 组件，但只接受
+  `tunneled-playback` **supported 且非 required**、且非 secure-required 的组件。
+  它们可以继续走普通 Surface；强制 tunneled / secure 的组件不会伪装成普通硬解。
+- 开源参考：
+  - ExoPlayer #5547：tunneled 组件需要 `ALL_CODECS`，普通查询会漏项；
+  - Media3 #2541：隧道播放需要显式开启，且依赖音频会话、会限制倍速；
+  - VLC：`mediacodec-tunneled-playback` 是显式开关，默认关闭；
+  - mpv-android：`mediacodec,mediacodec-copy` 运行时回退链，不把首次失败固化成能力结论。
+- 仍待单独处理：`tunneled-playback required=true` 只能显式开隧道；开启后 ExoPlayer
+  不能做音频 Sonic 倍速，必须同时决定 1× 播放与界面提示，不能静默混入普通路径。
+- 31.68 回归：普通硬解仍选 `OMX.amlogic.hevc.decoder.awesome`，首帧正常；
+  `hgtv-playback` 已写入 schema 2、HEVC 2160、hardware=true。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
 ## TV 搜索默认键盘
 
 状态：已完成。

@@ -335,7 +335,8 @@ fun TvMainActivity.applyPlaybackCapability() {
     io.submit {
         val quality=if(chosen) 0 else PlaybackCapability.defaultQuality(this)
         val hevc=PlaybackCapability.canDecodeHevc(this)
-        val hardwareHevc=PlaybackCapability.hasHardwareHevcDecoder(this)
+        PlaybackCapability.warmHardwareHevc(this)
+        val hardwareHevc=PlaybackCapability.cachedHardwareHevc() ?: true
         main.post {
             if(isDestroyed) return@post
             // 有没有 HEVC 硬解：只用于提示（起播 toast / 错误页按钮 / 面板读数），

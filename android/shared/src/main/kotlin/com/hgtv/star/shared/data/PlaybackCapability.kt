@@ -27,6 +27,8 @@ object PlaybackCapability {
     private const val PREFS="hgtv-playback"
     private const val KEY_HEIGHT="hevc-max-height"
     private const val KEY_HARDWARE="hevc-hardware"
+    private const val KEY_SCHEMA="hevc-capability-schema"
+    private const val SCHEMA=2
     /** 还没探过（0 不是合法的可解高度）。 */
     private const val UNKNOWN=0
 
@@ -70,16 +72,15 @@ object PlaybackCapability {
      * 只回答 HEVC：全站只有这一种编码，AVC 硬解有没有已经与播放无关。
      *
      * 与 [canDecodeHevc] 的区别：那个读的是落盘的能力探测（「最多解到多高」），
-     * 这个用 ExoPlayer 自己的解码器表枚举一次（含别名与厂商 workaround），
-     * 判据与选择器**逐条一致**，因此适合用来决定「要不要在错误页上提示用户换软解」。
+     * 这个用平台 `ALL_CODECS` 扫一次，能看到只在 secure / tunneled 路径注册的组件；
+     * 选择器随后会排除 secure-required，并只接受不强制 tunneled 的普通硬解组件。
      *
      * 调用方必须在后台线程（`MediaCodecList` 是 Binder 调用，盒子上能卡 1~3 秒）。
      */
-    fun hasHardwareHevcDecoder(context: Context): Boolean = runCatching {
-        com.google.android.exoplayer2.mediacodec.MediaCodecUtil
-            .getDecoderInfos("video/hevc",false,false)
-            .any { !it.softwareOnly }
-    }.getOrDefault(true)
+    fun hasHardwareHevcDecoder(context: Context): Boolean {
+        val infos=runCatching { platformHevcInfos() }.getOrNull() ?: return true
+        return infos.any { it.hardware && !it.secureRequired }
+    }
 
     /**
      * [hasHardwareHevcDecoder] 的**内存缓存版**：给「随时可能被调用、但绝不能卡 UI」的地方用。
@@ -88,6 +89,7 @@ object PlaybackCapability {
      * 做一次 1~3 秒的 Binder 扫描）。预热见 [warmHardwareHevc]。
      */
     @Volatile private var hardwareHevcKnown: Boolean?=null
+    @Volatile private var relaxedTunneledHevcInfos: List<com.google.android.exoplayer2.mediacodec.MediaCodecInfo>?=null
 
     fun cachedHardwareHevc(): Boolean? = hardwareHevcKnown
 
@@ -99,10 +101,31 @@ object PlaybackCapability {
      */
     fun warmHardwareHevc(context: Context) {
         hardwareHevcKnown=hasHardwareHevcDecoder(context)
+        relaxedTunneledHevcInfos=runCatching { scanRelaxedTunneledHevc() }.getOrNull()
     }
 
     /** 解码器表变了（解码失败之后）把内存缓存一起作废，下次预热重新探。 */
-    fun invalidateHardwareHevc() { hardwareHevcKnown=null }
+    fun invalidateHardwareHevc() {
+        hardwareHevcKnown=null
+        relaxedTunneledHevcInfos=null
+        platformCodecs=null
+        capabilitySummary=null
+        clearExoDecoderCache()
+    }
+
+    /**
+     * 只返回“支持 tunneled、但不要求必须 tunneled”的硬件解码器。
+     *
+     * 部分电视把这类组件只放进 `ALL_CODECS`，ExoPlayer 默认查 `REGULAR_CODECS` 时看不到；
+     * 但它们仍可在普通 Surface 上工作，不能和 `tunneled-playback required=true` 混为一谈。
+     * 强制 tunneled 的组件必须走显式隧道播放，否则 configure 会失败。
+     */
+    fun relaxedTunneledHevcDecoders(): List<com.google.android.exoplayer2.mediacodec.MediaCodecInfo> {
+        relaxedTunneledHevcInfos?.let { return it }
+        val value=runCatching { scanRelaxedTunneledHevc() }.getOrDefault(emptyList())
+        relaxedTunneledHevcInfos=value
+        return value
+    }
 
     /**
      * 本机解码能力：**硬解一行、软解一行**（调试模式面板用）。
@@ -118,6 +141,7 @@ object PlaybackCapability {
     data class DebugCapability(val hardware: String,val software: String)
 
     @Volatile private var capabilitySummary: DebugCapability?=null
+    @Volatile private var platformCodecs: List<PlatformHevcCodec>?=null
 
     fun debugSummary(): DebugCapability {
         capabilitySummary?.let { return it }
@@ -127,63 +151,58 @@ object PlaybackCapability {
     }
 
     /** 调试面板重开时重新探一次（系统升级 / 换解码器之后读数会变）。 */
-    fun invalidateSummary() { capabilitySummary=null }
+    fun invalidateSummary() {
+        capabilitySummary=null
+        platformCodecs=null
+    }
 
-    private data class CodecBrief(val name: String,val hardware: Boolean,val maxHeight: Int)
+    private data class PlatformHevcCodec(
+        val name: String,
+        val hardware: Boolean,
+        val maxHeight: Int,
+        val tunnelRequired: Boolean,
+        val secureRequired: Boolean,
+    )
 
     private fun scanSummary(): DebugCapability {
-        // 只列 HEVC：全站只有这一种编码，面板上列一堆用不上的解码器只会让人误以为「还有别的路」。
-        val types=listOf("video/hevc" to "HEVC")
-        val infos: List<android.media.MediaCodecInfo> = if(Build.VERSION.SDK_INT>=21) {
-            MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos.toList()
-        } else {
-            (0 until MediaCodecList.getCodecCount()).mapNotNull {
-                runCatching { MediaCodecList.getCodecInfoAt(it) }.getOrNull()
+        val found=platformHevcInfos()
+        fun label(best: PlatformHevcCodec?): String {
+            best ?: return "无"
+            val flags=buildString {
+                if(best.tunnelRequired) append(" tunnel")
+                if(best.secureRequired) append(" secure")
             }
-        }
-        val hard=mutableListOf<String>()
-        val soft=mutableListOf<String>()
-        types.forEach { (mime,label) ->
-            val found=infos.filter { info ->
-                !info.isEncoder && info.supportedTypes.any { it.equals(mime,true) }
-            }.map { info ->
-                val hardware=if(Build.VERSION.SDK_INT>=29) info.isHardwareAccelerated
-                    else !info.name.lowercase().let { it.startsWith("omx.google.") || it.startsWith("c2.android.") }
-                // `getVideoCapabilities()` / `supportedHeights` 是 API 21 才有的。4.4 上直接调用会
-                // 抛 `NoSuchMethodError`——虽然外面套着 `runCatching` 不会崩，但**每颗解码器、每种
-                // mime 各抛一次**（5 × N 次异常构造 + 栈回溯），在 2G 盒子上是几百毫秒的白费。
-                // 先判版本，21 以下整段跳过（高度未知填 0，面板显示 `?`）。
-                val height=if(Build.VERSION.SDK_INT>=21) runCatching {
-                    info.getCapabilitiesForType(mime).videoCapabilities.supportedHeights.upper
-                }.getOrDefault(0) else 0
-                CodecBrief(info.name,hardware,height)
-            }
-            // 每类只报「最好的一颗」：面板一行放不下整串解码器名，用户要的是「能不能解、到多高」。
-            found.filter { it.hardware }.maxByOrNull { it.maxHeight }?.let { best ->
-                hard+="$label ${if(best.maxHeight>0) best.maxHeight else "?"}"
-            }
-            found.filterNot { it.hardware }.maxByOrNull { it.maxHeight }?.let { best ->
-                soft+="$label ${if(best.maxHeight>0) best.maxHeight else "?"}"
-            }
+            return "HEVC ${if(best.maxHeight>0) best.maxHeight else "?"}$flags"
         }
         return DebugCapability(
-            hardware=if(hard.isEmpty()) "无" else hard.joinToString(" "),
-            software=if(soft.isEmpty()) "无" else soft.joinToString(" ")
+            hardware=label(found.filter { it.hardware }.maxByOrNull { it.maxHeight }),
+            software=label(found.filterNot { it.hardware }.maxByOrNull { it.maxHeight }),
         )
     }
 
     /** 解码失败之后清掉缓存，下次重新探测（见 `TvMainActivity.playerFailure` 的解码分支）。 */
     fun invalidate(context: Context) {
         context.getSharedPreferences(PREFS,Context.MODE_PRIVATE).edit()
-            .remove(KEY_HEIGHT).remove(KEY_HARDWARE).apply()
+            .remove(KEY_HEIGHT).remove(KEY_HARDWARE).remove(KEY_SCHEMA).apply()
+        platformCodecs=null
+        capabilitySummary=null
+        clearExoDecoderCache()
     }
 
     private fun probe(context: Context): Pair<Int,Boolean> {
         val prefs=context.getSharedPreferences(PREFS,Context.MODE_PRIVATE)
+        if(prefs.getInt(KEY_SCHEMA,0)!=SCHEMA) {
+            prefs.edit().remove(KEY_HEIGHT).remove(KEY_HARDWARE).putInt(KEY_SCHEMA,SCHEMA).apply()
+        }
         val cached=prefs.getInt(KEY_HEIGHT,UNKNOWN)
         if(cached!=UNKNOWN) return cached to prefs.getBoolean(KEY_HARDWARE,false)
-        val (height,hardware)=scan()
-        prefs.edit().putInt(KEY_HEIGHT,height).putBoolean(KEY_HARDWARE,hardware).apply()
+        val scanned=scan() ?: return UNKNOWN to false
+        val (height,hardware)=scanned
+        prefs.edit()
+            .putInt(KEY_SCHEMA,SCHEMA)
+            .putInt(KEY_HEIGHT,height)
+            .putBoolean(KEY_HARDWARE,hardware)
+            .apply()
         return height to hardware
     }
 
@@ -194,41 +213,78 @@ object PlaybackCapability {
      * `createDecoderByType` 兜底：能创建出来就说明「至少有一个」，名字用来分软硬解。
      * 那一档读不到能力上限，按 1080 处理——真正的上限由运行期失败兜底（见 [invalidate]）。
      */
-    private fun scan(): Pair<Int,Boolean> {
-        if(Build.VERSION.SDK_INT>=21) {
-            val infos=runCatching { MediaCodecList(MediaCodecList.REGULAR_CODECS).codecInfos }
-                .getOrDefault(emptyArray())
-            var best=0
-            var hardware=false
-            for(info in infos) {
-                if(info.isEncoder) continue
-                if(!info.supportedTypes.any { it.equals("video/hevc",ignoreCase=true) }) continue
-                // `OMX.google.*` / `c2.android.*` 是软解，其余（qcom / exynos / mtk / amlogic …）按硬解算。
-                // API 29 起有 `isHardwareAccelerated`，更准，优先用它。
-                val isHardware=if(Build.VERSION.SDK_INT>=29) info.isHardwareAccelerated
-                    else !info.name.lowercase().let { it.startsWith("omx.google.") || it.startsWith("c2.android.") }
-                val height=runCatching {
-                    info.getCapabilitiesForType("video/hevc").videoCapabilities.supportedHeights.upper
-                }.getOrDefault(0)
-                if(isHardware) {
-                    if(height>best) best=height
-                    hardware=true
-                } else if(!hardware && height>best) {
-                    // 只有软解时也要记下上限：`defaultQuality` 会因此落到 480。
-                    best=height
-                }
+    private fun scan(): Pair<Int,Boolean>? {
+        val infos=runCatching { platformHevcInfos() }.getOrNull() ?: return null
+        if(infos.isEmpty()) return 0 to false
+        var best=0
+        var hardware=false
+        for(codec in infos) {
+            // secure-required 组件只能给 DRM 内容，不能拿来证明普通片源可解。
+            if(codec.secureRequired) continue
+            if(codec.hardware) {
+                hardware=true
+                if(codec.maxHeight>best) best=codec.maxHeight
+            } else if(!hardware && codec.maxHeight>best) {
+                best=codec.maxHeight
             }
-            return best to hardware
         }
-        // 4.4 / 5.0 的 `MediaCodec` 还没有 `AutoCloseable`（API 21 才加），不能用 `use`：
-        // 这里手动 release，否则会漏一个解码器实例（部分 ROM 的实例数是有限的）。
-        val codec=runCatching { android.media.MediaCodec.createDecoderByType("video/hevc") }.getOrNull()
-            ?: return 0 to false
-        val name=runCatching { codec.name }.getOrDefault("")
-        runCatching { codec.release() }
-        if(name.isBlank()) return 0 to false
-        val lower=name.lowercase()
-        val isHardware=!lower.startsWith("omx.google.") && !lower.startsWith("c2.android.")
-        return 1080 to isHardware
+        if(hardware && best<=0) best=1080
+        return best to hardware
+    }
+
+    private fun platformHevcInfos(): List<PlatformHevcCodec> {
+        platformCodecs?.let { return it }
+        val value=scanPlatformHevc()
+        platformCodecs=value
+        return value
+    }
+
+    private fun scanPlatformHevc(): List<PlatformHevcCodec> {
+        if(Build.VERSION.SDK_INT<21) {
+            // 4.4 / 5.0 的 `MediaCodec` 还没有 `AutoCloseable`（API 21 才加），不能用 `use`。
+            val codec=runCatching { android.media.MediaCodec.createDecoderByType("video/hevc") }.getOrNull()
+                ?: return emptyList()
+            val name=runCatching { codec.name }.getOrDefault("")
+            runCatching { codec.release() }
+            if(name.isBlank()) return emptyList()
+            val lower=name.lowercase()
+            val hardware=!lower.startsWith("omx.google.") && !lower.startsWith("c2.android.")
+            return listOf(PlatformHevcCodec(name,hardware,1080,false,false))
+        }
+        // `ALL_CODECS` 才能看到只注册给 secure / tunneled 路径的组件；
+        // `REGULAR_CODECS` 会在一些电视固件上把唯一一颗 HEVC 硬解直接隐藏。
+        val infos=MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+        return infos.mapNotNull { info ->
+            if(info.isEncoder) return@mapNotNull null
+            if(!info.supportedTypes.any { it.equals("video/hevc",ignoreCase=true) }) return@mapNotNull null
+            val caps=runCatching { info.getCapabilitiesForType("video/hevc") }.getOrNull()
+            val hardware=if(Build.VERSION.SDK_INT>=29) info.isHardwareAccelerated
+                else !info.name.lowercase().let { it.startsWith("omx.google.") || it.startsWith("c2.android.") }
+            val height=runCatching { caps?.videoCapabilities?.supportedHeights?.upper ?: 0 }
+                .getOrDefault(0)
+            val tunnelRequired=caps?.isFeatureRequired(
+                android.media.MediaCodecInfo.CodecCapabilities.FEATURE_TunneledPlayback,
+            )==true
+            val secureRequired=caps?.isFeatureRequired(
+                android.media.MediaCodecInfo.CodecCapabilities.FEATURE_SecurePlayback,
+            )==true
+            PlatformHevcCodec(info.name,hardware,height,tunnelRequired,secureRequired)
+        }
+    }
+
+    private fun scanRelaxedTunneledHevc(): List<com.google.android.exoplayer2.mediacodec.MediaCodecInfo> {
+        val platform=platformHevcInfos()
+        val blocked=platform.asSequence()
+            .filter { it.tunnelRequired || it.secureRequired }
+            .mapTo(HashSet()) { it.name }
+        return com.google.android.exoplayer2.mediacodec.MediaCodecUtil
+            .getDecoderInfos("video/hevc",false,true)
+            .filter { it.hardwareAccelerated && it.name !in blocked }
+    }
+
+    private fun clearExoDecoderCache() {
+        runCatching {
+            com.google.android.exoplayer2.mediacodec.MediaCodecUtil.clearDecoderInfoCache()
+        }
     }
 }

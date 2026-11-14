@@ -28,6 +28,12 @@ import com.hgtv.star.shared.debug.DebugFaults
  *
  * 因此硬解档只收 `hardwareAccelerated`，软解档收其余所有实现；两档互补，不会漏项。
  *
+ * ## secure / tunneled 组件
+ *
+ * 部分老电视只把 HEVC 放进 `MediaCodecList.ALL_CODECS`。普通硬解为空时会补查
+ * tunneled 组件，但只接受不强制 tunneled、也不是 secure-required 的实现；
+ * 强制 tunneled 必须显式开启隧道播放，不能混进普通 Surface 路径。
+ *
  * ## 视频为什么不再 `ifEmpty { all }`
  *
  * 那一行是「静默降软解」：硬件档筛空就偷偷用软解跑，用户以为自己开着硬解。
@@ -61,7 +67,27 @@ internal fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context
     // 音频不受「视频解码」档位影响（见上面的类注释）。
     if(!mimeType.startsWith("video/")) return@MediaCodecSelector all
     when(mode) {
-        VideoDecoderMode.HARDWARE -> all.filter { it.hardwareAccelerated }
+        VideoDecoderMode.HARDWARE -> {
+            val hardware=all.filter { it.hardwareAccelerated }
+            if(hardware.isNotEmpty()) return@MediaCodecSelector hardware
+            // 部分电视把 HEVC 硬解只放进 ALL_CODECS：组件声明支持 tunneled，但并未要求
+            // 必须隧道播放。ExoPlayer 默认的 REGULAR_CODECS 会漏掉它；这类组件可以安全地
+            // 走普通 Surface，强制 tunneled 的组件则由 relaxedTunneledHevcDecoders 排除。
+            if(!requiresSecureDecoder && !requiresTunnelingDecoder &&
+                mimeType.equals("video/hevc",ignoreCase=true)) {
+                val relaxed=com.hgtv.star.shared.data.PlaybackCapability
+                    .relaxedTunneledHevcDecoders()
+                if(relaxed.isNotEmpty()) {
+                    android.util.Log.w(
+                        "HGTV",
+                        "HEVC hardware hidden from REGULAR_CODECS; using non-required tunneled components="+
+                            relaxed.joinToString(",") { it.name },
+                    )
+                    return@MediaCodecSelector relaxed
+                }
+            }
+            hardware
+        }
         VideoDecoderMode.SOFTWARE -> all.filter { !it.hardwareAccelerated }
     }
 }

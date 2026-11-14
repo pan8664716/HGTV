@@ -192,7 +192,14 @@ object PhoneDecoder {
         }
         if (!mimeType.startsWith("video/")) all
         else when (mode) {
-            com.hgtv.star.core.VideoDecoderMode.HARDWARE -> all.filter { !it.softwareOnly }
+            com.hgtv.star.core.VideoDecoderMode.HARDWARE -> {
+                val hardware=all.filter { !it.softwareOnly }
+                if(hardware.isNotEmpty()) hardware
+                else if(!secure && !tunnel && mimeType.equals("video/hevc",ignoreCase=true)) {
+                    com.hgtv.star.shared.data.PlaybackCapability
+                        .relaxedTunneledHevcDecoders()
+                } else hardware
+            }
             com.hgtv.star.core.VideoDecoderMode.SOFTWARE -> all.filter { it.softwareOnly }
         }
     }
