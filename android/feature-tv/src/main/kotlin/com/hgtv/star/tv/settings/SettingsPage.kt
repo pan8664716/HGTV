@@ -289,7 +289,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     danmakuSetting=fullSlider(
         danmaku,"弹幕显示",
         0f,DanmakuMode.entries.lastIndex.toFloat(),1f,library.danmakuMode.sliderValue,
-        format={ DanmakuMode.fromSlider(it).label },
+        format={ DanmakuMode.fromSlider(it).optionLabel },
     ) { value ->
         val selected=DanmakuMode.fromSlider(value)
         library.danmakuMode=selected

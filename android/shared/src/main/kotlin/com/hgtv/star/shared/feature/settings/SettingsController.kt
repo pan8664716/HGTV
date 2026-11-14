@@ -88,7 +88,7 @@ class SettingsController(
                     min = 0f,
                     max = modes.lastIndex.toFloat(),
                     step = 1f,
-                    valueLabel = library.danmakuMode.label,
+                    valueLabel = library.danmakuMode.optionLabel,
                 )
             )
             add(

@@ -141,7 +141,7 @@ internal fun TvMainActivity.buildPlaybackSurface() {
     qualityOption=option("清晰度 ${playbackMaxQuality}P") { showPlaybackMenu(MENU_ROW_QUALITY) }
     speedOption=option("倍速 ${PlaybackSpeed.label(library.playbackSpeed)}") { showPlaybackMenu(MENU_ROW_SPEED) }
     frameOption=option("画面 ${library.frameMode.label}") { showPlaybackMenu(MENU_ROW_FRAME) }
-    danmakuOption=option("弹幕 ${library.danmakuMode.label}") { showPlaybackMenu(MENU_ROW_DANMAKU) }
+    danmakuOption=option("弹幕 ${library.danmakuMode.optionLabel}") { showPlaybackMenu(MENU_ROW_DANMAKU) }
     sleepOption=option("定时 ${sleepTimer.label()}") { showPlaybackMenu(sleepRow(library.danmakuMode.showsStyle)) }
     hud.addView(options,lp(-1,-2))
     hudEpisodeArrow=ImageView(this).apply {

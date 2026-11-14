@@ -121,8 +121,8 @@ internal fun PhoneSettingsActivity.renderUnifiedPlayback() {
             SettingRowSpec.Choice(
                 SettingsController.ID_DANMAKU_MODE,
                 "显示方式",
-                settingsLibrary.danmakuMode.label,
-                DanmakuMode.entries.map { it.label },
+                settingsLibrary.danmakuMode.optionLabel,
+                DanmakuMode.entries.map { it.optionLabel },
             ),
             SettingRowSpec.Choice(
                 SettingsController.ID_DANMAKU_SPEED,
@@ -314,7 +314,7 @@ internal fun PhoneSettingsActivity.applyActionImpl(id: String) {
 internal fun PhoneSettingsActivity.valueLabelForImpl(id: String, value: Float): String = when (id) {
     SettingsController.ID_SPEED -> PlaybackSpeed.label(value)
     SettingsController.ID_VIDEO_SCALE -> "${value.roundToInt()}%"
-    SettingsController.ID_DANMAKU_MODE -> DanmakuMode.fromSlider(value).label
+    SettingsController.ID_DANMAKU_MODE -> DanmakuMode.fromSlider(value).optionLabel
     SettingsController.ID_DANMAKU_MERGE_MIN -> "${value.roundToInt()} 条"
     SettingsController.ID_DANMAKU_ALPHA -> DanmakuStyle.percent(value)
     "playback.seekStep" -> "${value.roundToInt()} 秒"

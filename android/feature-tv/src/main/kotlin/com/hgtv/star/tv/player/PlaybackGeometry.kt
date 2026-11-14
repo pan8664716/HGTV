@@ -403,7 +403,7 @@ fun TvMainActivity.showEpisodePageSizePicker(anchor: TextView) {
  * 「弹幕透明度」三行（[DanmakuMode.showsStyle]）；播放设置面板走的是整块重建，不需要这个回调。
  */
 fun TvMainActivity.showDanmakuPicker(anchor: TextView,inPlayer: Boolean,onChanged: ()->Unit={}) {
-    tvTools.choose("弹幕显示方式",DanmakuMode.entries.map { it.hint },anchor,{ index ->
+    tvTools.choose("弹幕显示方式",DanmakuMode.entries.map { it.optionHint },anchor,{ index ->
         val selected=DanmakuMode.entries[index]
         val changed=library.danmakuMode!=selected
         library.danmakuMode=selected; danmakuView?.mode=selected
@@ -433,7 +433,7 @@ fun TvMainActivity.showDanmakuSpeedPicker(anchor: TextView,inPlayer: Boolean,onC
  * 平台只对部分剧集放开匿名弹幕，屏幕上「一条都没有」和「功能没生效」从画面上分不出来，
  * 这一行就是给这件事一个明确的读数（播放界面那排状态项太窄，放不下数字）。
  */
-fun TvMainActivity.danmakuLabel(prefix: String)=prefix+library.danmakuMode.label+
+fun TvMainActivity.danmakuLabel(prefix: String)=prefix+library.danmakuMode.optionLabel+
     if(danmakuCount<0) "" else "（上一集 ${if(danmakuCount>0) "$danmakuCount 条" else "无弹幕"}）"
 fun TvMainActivity.seek(direction: Int,repeat: Int) {
     val p=player ?: return; if(!playbackReady) return

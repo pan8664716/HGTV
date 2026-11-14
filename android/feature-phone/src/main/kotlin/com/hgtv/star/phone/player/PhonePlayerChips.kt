@@ -8,16 +8,9 @@ internal fun PhonePlayerActivity.syncChips() {
     syncLandscapeSettingsInfoForChips()
     chipSpeed.text = PlaybackSpeed.label(chipUserSpeed)
     chipQuality.text = "${library?.maxQuality ?: 1080}P"
-    // 弹幕那颗：显示当前档位（「弹幕 两行」等），隐藏档显示「弹幕 关」。
-    chipDanmaku.text = when (library?.danmakuMode ?: com.hgtv.star.core.DanmakuMode.DEFAULT) {
-        com.hgtv.star.core.DanmakuMode.HIDDEN -> "弹幕 关"
-        com.hgtv.star.core.DanmakuMode.FULL -> "弹幕 全屏"
-        com.hgtv.star.core.DanmakuMode.TOP -> "弹幕 上方"
-        com.hgtv.star.core.DanmakuMode.FOUR -> "弹幕 四行"
-        com.hgtv.star.core.DanmakuMode.THREE -> "弹幕 三行"
-        com.hgtv.star.core.DanmakuMode.TWO -> "弹幕 两行"
-        com.hgtv.star.core.DanmakuMode.SINGLE -> "弹幕 一行"
-    }
+    // 弹幕那颗：显示当前 0..6 档位。
+    val mode=library?.danmakuMode ?: com.hgtv.star.core.DanmakuMode.DEFAULT
+    chipDanmaku.text="弹幕 ${mode.optionLabel}"
     // **选集按钮永远显示**：之前按 `recommend` 把它藏了，而从推荐流进全屏正是最常见
     // 的路径（`PhoneFeedView` 一律带 `EXTRA_RECOMMEND=true`），结果就是「全屏里没有选集按钮」。
     // 文案带总数（用户要求）：`选集 3/171`，一眼知道现在在第几集、全剧多少集。
@@ -27,7 +20,7 @@ internal fun PhonePlayerActivity.syncChips() {
 }
 
 /**
- * 弹幕快捷开关：点一次切下一档（全屏 → 上方 → 四行 → 三行 → 两行 → 一行 → 关 → 全屏）。
+ * 弹幕快捷开关：点一次切下一档（0 隐藏 → 1 一行 → … → 6 全屏 → 0 隐藏）。
  *
  * 与电视播放页那颗「弹幕」按钮同一职责，只是把「弹菜单再选」压成一次点击：
  * 手机上最常见的动作就是「挡画面了，先关掉」，不该为此打开一整个设置面板。
@@ -35,7 +28,7 @@ internal fun PhonePlayerActivity.syncChips() {
  */
 internal fun PhonePlayerActivity.cycleDanmaku() {
     val lib = library ?: return
-    // 循环顺序在 `:core`（`DanmakuMode.next`，带单测）：两端共用同一套「越来越不挡画面」的次序。
+    // 循环顺序在 `:core`（`DanmakuMode.next`，带单测）：两端共用同一套 0..6 次序。
     val next = lib.danmakuMode.next()
     val previous = lib.danmakuMode
     if (com.hgtv.star.shared.BuildConfig.DEBUG) {
@@ -50,7 +43,7 @@ internal fun PhonePlayerActivity.cycleDanmaku() {
     playerPage.danmakuView.mode = next
     applyDanmakuSettingsForChips()
     syncChips()
-    hint.text = "弹幕 ${next.label}"
+    hint.text = "弹幕 ${next.optionLabel}"
     hint.visibility = View.VISIBLE
     hint.bringToFront()
     val token = chipHintToken

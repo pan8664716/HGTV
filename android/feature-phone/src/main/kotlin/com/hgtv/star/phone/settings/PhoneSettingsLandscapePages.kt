@@ -96,7 +96,7 @@ internal fun PhoneSettingsActivity.renderLandscapePlayback() {
     val (left,right)=landscapeColumns(danmaku)
     landscapeColumnCell(left,landscapeSlider("显示方式",
         0f,DanmakuMode.entries.lastIndex.toFloat(),1f,
-        settingsLibrary.danmakuMode.sliderValue,{ DanmakuMode.fromSlider(it).label }) {
+        settingsLibrary.danmakuMode.sliderValue,{ DanmakuMode.fromSlider(it).optionLabel }) {
         settingsLibrary.danmakuMode=DanmakuMode.fromSlider(it)
     })
     landscapeColumnCell(left,landscapeSetting("弹幕速度",settingsLibrary.danmakuSpeed.label) {

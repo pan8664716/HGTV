@@ -100,7 +100,7 @@ internal fun PhoneSettingsActivity.renderDanmaku() {
     sectionImpl("弹幕")
     hintImpl("显示方式、聚合与特效共用电视端设置；字号按手机阅读单独调整，改完回到播放页即生效。")
     sliderImpl("显示方式", 0f, DanmakuMode.entries.lastIndex.toFloat(), 1f,
-        settingsLibrary.danmakuMode.sliderValue, { DanmakuMode.fromSlider(it).label }) {
+        settingsLibrary.danmakuMode.sliderValue, { DanmakuMode.fromSlider(it).optionLabel }) {
         settingsLibrary.danmakuMode = DanmakuMode.fromSlider(it)
     }
     rowImpl("弹幕速度", settingsLibrary.danmakuSpeed.label) {

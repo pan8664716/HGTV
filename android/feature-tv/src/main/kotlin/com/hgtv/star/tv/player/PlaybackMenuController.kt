@@ -175,7 +175,7 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
         })
         .addSlider(
             "弹幕",0f,DanmakuMode.entries.lastIndex.toFloat(),1f,library.danmakuMode.sliderValue,
-            format={ DanmakuMode.fromSlider(it).label },
+            format={ DanmakuMode.fromSlider(it).optionLabel },
             commitDelayMs=350L,
         ) { value ->
             val mode=DanmakuMode.fromSlider(value)

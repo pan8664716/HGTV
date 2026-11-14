@@ -160,7 +160,7 @@ fun TvMainActivity.updatePlaybackText() {
     frameOption?.text="画面模式 "+library.frameMode.label
     // 状态行只放显示方式：弹幕条数放在「设置 → 弹幕显示」那一行，
     // 播放界面的这一排已经够长，再加数字会被屏宽裁掉。
-    danmakuOption?.text="弹幕 "+library.danmakuMode.label
+    danmakuOption?.text="弹幕 "+library.danmakuMode.optionLabel
     sleepOption?.text="定时 "+sleepTimer.label()
     syncBufferingDots()
     if(playError) return

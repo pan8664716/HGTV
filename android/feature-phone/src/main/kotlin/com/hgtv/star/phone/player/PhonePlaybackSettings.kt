@@ -178,7 +178,7 @@ fun buildPlaybackSettingsRows(
     panel.addView(
         PhoneSheet.sliderRow(host, "弹幕显示",
             0f, DanmakuMode.entries.lastIndex.toFloat(), 1f,
-            lib.danmakuMode.sliderValue, { DanmakuMode.fromSlider(it).label }) { value ->
+            lib.danmakuMode.sliderValue, { DanmakuMode.fromSlider(it).optionLabel }) { value ->
             lib.danmakuMode = DanmakuMode.fromSlider(value)
             onDanmaku?.invoke()
         }

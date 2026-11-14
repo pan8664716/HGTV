@@ -73,25 +73,17 @@ enum class DanmakuMode(val storedValue: String, val label: String, val hint: Str
     /** 七档进度条上的位置。 */
     val sliderValue get() = ordinal.toFloat()
 
+    /** 选择控件里的完整档位文案，编号固定为 0..6。 */
+    val optionLabel get() = "$ordinal $label"
+
+    /** 选择菜单里的完整说明，编号与 [optionLabel] 一致。 */
+    val optionHint get() = "$ordinal · $hint"
+
     /**
-     * 下一档（快捷开关用）：全屏 → 上方 → 四行 → 三行 → 两行 → 一行 → 隐藏 → 全屏。
-     *
-     * 顺序不是枚举声明顺序，而是**用户最常用的方向**：先按「越来越不挡画面」排，
-     * 关掉之后回到全屏（再点一下就是打开）。手机播放页底部那颗「弹幕」按钮
-     * 一次点击走一格，落盘值仍然是同一份 `storedValue`，与设置页、播放设置面板完全一致。
-     *
-     * 放在 `:core` 而不是各端各写一遍：电视端将来若把弹幕按钮改成单击循环，
-     * 走的就是这里同一套顺序，两端不会出现「电视上是全屏→隐藏、手机上是全屏→上方」。
+     * 下一档（快捷开关用）：0 隐藏 → 1 一行 → … → 6 全屏 → 0 隐藏。
+     * 手机播放页快捷按钮与设置页、播放面板共用这一套编号顺序。
      */
-    fun next(): DanmakuMode = when (this) {
-        FULL -> TOP
-        TOP -> FOUR
-        FOUR -> THREE
-        THREE -> TWO
-        TWO -> SINGLE
-        SINGLE -> HIDDEN
-        HIDDEN -> FULL
-    }
+    fun next(): DanmakuMode = entries[(ordinal+1)%entries.size]
 
     companion object {
         /** 首次启动、旧数据缺字段或值损坏时使用上方显示。 */
