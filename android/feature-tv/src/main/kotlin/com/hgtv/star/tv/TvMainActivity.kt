@@ -474,7 +474,7 @@ class TvMainActivity: Activity() {
     var recommendCoverReveal: Runnable?=null
     var recommendOverlay: View?=null
     var recommendTitle: TextView?=null
-    var recommendMeta: TextView?=null
+    var recommendEpisode: TextView?=null
 
     var recommendProgress: com.hgtv.star.tv.SeekIndicator?=null
     var recommendSpan: TextView?=null

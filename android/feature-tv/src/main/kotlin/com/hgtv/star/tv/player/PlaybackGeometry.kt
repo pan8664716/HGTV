@@ -246,7 +246,7 @@ fun TvMainActivity.syncPlaybackInfo() {
         val allOn=playbackOverlayShown()
         val shown=screen=="player" || (screen=="recommend" && touchArmed && allOn)
         playbackTitle.visibility=if(allOn || library.playerTitle) View.VISIBLE else View.GONE
-        // 推荐页只显示剧名 / 时间 / 网速，不显示「第 x / y 集」。
+        // 推荐页顶部条只显示剧名 / 时间 / 网速；集数读数在底部推荐浮层的标题后面。
         playbackEpisode?.visibility=if(screen!="recommend" && (allOn || library.playerEpisode)) {
             View.VISIBLE
         } else {

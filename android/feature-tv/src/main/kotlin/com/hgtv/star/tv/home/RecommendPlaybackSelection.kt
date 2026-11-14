@@ -55,6 +55,9 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
         // 若还是上一部，用户读到的就是「按了下键没换台」。
         player?.pause()
         recommendTitle?.text=series.title
+        val episodeText=recommendEpisodeLabel(1,series.episodeCount)
+        recommendEpisode?.text=episodeText
+        recommendEpisode?.visibility=if(episodeText.isEmpty()) android.view.View.GONE else android.view.View.VISIBLE
         // 换剧：详情还没回来，加载框显示在屏幕正中（浮层里那一行已经去掉了）。
         showCenterLoading("正在加载《${series.title}》…")
     }

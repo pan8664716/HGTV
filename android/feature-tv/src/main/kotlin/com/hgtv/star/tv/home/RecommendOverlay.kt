@@ -13,6 +13,14 @@ import com.hgtv.star.core.Series
 import com.hgtv.star.tv.SeekIndicator
 import com.hgtv.star.tv.TvStyle
 
+private const val RECOMMEND_INFO_ALPHA=0.7f
+
+/** 推荐标题后的集数读数：`[1/90]`。总集数未知时不显示。 */
+internal fun recommendEpisodeLabel(current: Int,total: Int): String {
+    if(total<=0) return ""
+    return "[${current.coerceIn(1,total)}/$total]"
+}
+
 /** 推荐页底部那块信息浮层：进度 + 剧名 + 操作说明。 */
 fun TvMainActivity.attachRecommendOverlay(series: Series) {
     dismissRecommendOverlay()
@@ -72,6 +80,14 @@ fun TvMainActivity.attachRecommendOverlay(series: Series) {
         setShadowLayer(6f,0f,2f,0x99000000.toInt())
     }
     titleLine.addView(title,lp(0,-2).apply { weight=1f })
+    val totalEpisodes=detail?.episodes?.size?.takeIf { it>0 } ?: series.episodeCount
+    val episodeText=recommendEpisodeLabel(episodeIndex+1,totalEpisodes)
+    val episode=text(episodeText,18f,TvStyle.playerDim).apply {
+        maxLines=1
+        visibility=if(episodeText.isEmpty()) View.GONE else View.VISIBLE
+        setShadowLayer(5f,0f,2f,0x99000000.toInt())
+    }
+    titleLine.addView(episode,lp(-2,-2).apply { leftMargin=dp(10) })
     val details=row()
     val categoryTags=info.tags.trim()
     if(categoryTags.isNotEmpty()) {
@@ -123,7 +139,8 @@ fun TvMainActivity.attachRecommendOverlay(series: Series) {
     }
     bar.addView(transport,lp(-1,-2))
     bar.addView(hint,lp(-1,-2))
-    recommendTitle=title; recommendOverlay=bar
+    listOf(titleLine,details,transport,hint).forEach { it.alpha=RECOMMEND_INFO_ALPHA }
+    recommendTitle=title; recommendEpisode=episode; recommendOverlay=bar
     // 播放设置开着时浮层让位（菜单贴底占了下三分之一），收起菜单时再露出来。
     bar.visibility=if(playbackMenu!=null) View.GONE else View.VISIBLE
     // 挂进「画面之外那一层」：竖屏短剧全屏把画面转 90° 时，这块浮层要跟着一起转，
@@ -184,7 +201,7 @@ private fun TvMainActivity.recommendChip(value: String,bg: String,size: Float): 
 
 fun TvMainActivity.dismissRecommendOverlay() {
     recommendOverlay?.let { overlay -> (overlay.parent as? android.view.ViewGroup)?.removeView(overlay) }
-    recommendOverlay=null; recommendTitle=null
+    recommendOverlay=null; recommendTitle=null; recommendEpisode=null
     // 进度条是浮层的子控件，随浮层一起消失；引用一并清掉，免得下一帧刷到已摘下的控件。
     recommendProgress=null; recommendSpan=null
 }
