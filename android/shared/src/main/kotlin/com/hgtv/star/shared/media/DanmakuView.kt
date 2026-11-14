@@ -35,6 +35,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         const val LOW_END_MAX_LINES_PER_FRAME=16
         const val LANE_GAP_TEXT=0.9f
         const val LANE_GAP_VERTICAL=0.35f
+        const val LANE_MIN_GAP_DP=12
         const val MAX_DELAY_MS=4_000L
         const val HIGHLIGHT_SCALE=1.25f
         const val HIGHLIGHT_PAD_DP=13
@@ -560,7 +561,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         val textBox=(fillMetrics.descent-fillMetrics.ascent)+fill.strokeWidth
         val emojiBox=fill.textSize*EMOJI_SCALE
         laneGap=fill.textSize*LANE_GAP_TEXT
-        laneHeight=maxOf(textBox,emojiBox)+fill.textSize*LANE_GAP_VERTICAL
+        val verticalGap=maxOf(fill.textSize*LANE_GAP_VERTICAL,density*LANE_MIN_GAP_DP)
+        laneHeight=maxOf(textBox,emojiBox)+verticalGap
         if(mode==DanmakuMode.HIDDEN || laneHeight<=0f) { laneCount=0; return }
         laneTop=when {
             mode.lineLimit!=null -> maxOf(
