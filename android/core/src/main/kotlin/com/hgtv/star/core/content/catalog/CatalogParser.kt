@@ -138,14 +138,20 @@ internal object ContentCatalogParser {
             .ifBlank { detail?.let { rawJsonValue(it,"recommend_group_id") }.orEmpty() }
             .ifBlank { runCatching { JSONObject(info).str("gid") }.getOrDefault("") }
         val tag=officialTagInfo(detail,videoData)
-        val reasonSource=videoData ?: detail
-        val heat=reasonSource?.let(::heatOf) ?: 0L
+        val explicitHeat=sequenceOf(videoData,detail)
+            .filterNotNull()
+            .map(::heatOf)
+            .firstOrNull { it>0L }
+        val rankScore=videoData?.optLong("rank_score",0L)?.takeIf { it>0L }
+            ?: detail?.optLong("rank_score",0L)?.takeIf { it>0L }
         val ranking=officialRankingInfo(videoData)
             .takeIf { it.first.isNotBlank() }
             ?: officialRankingInfo(detail)
-        val playCount=(detail?.optLong("series_play_cnt",0)
+        val playCountValue=detail?.optLong("series_play_cnt",0)
             ?: videoData?.optLong("series_play_cnt",0)
-            ?: 0L).coerceIn(0L,Int.MAX_VALUE.toLong()).toInt()
+            ?: 0L
+        val heat=explicitHeat ?: rankScore ?: playCountValue
+        val playCount=playCountValue.coerceIn(0L,Int.MAX_VALUE.toLong()).toInt()
         val vertical=detail?.optBoolean("vertical",false)==true ||
             firstVideo?.optBoolean("vertical",false)==true ||
             videoData?.optBoolean("vertical",false)==true

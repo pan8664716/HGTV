@@ -4550,6 +4550,19 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 恢复推荐页热度标签
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 官方 `bookmall/tab/v` 不再返回旧分类接口的 `recommend_reason_list.sub_title_list`
+  热度文案（`data_type=27`），因此原解析结果全部为 0，热度标签整排消失。
+- 官方卡稳定返回 `series_play_cnt`；解析热度时按“原热度文案 → `rank_score` →
+  `series_play_cnt`”顺序兜底，既兼容旧响应，也保证官方推荐流有可展示数值。
+- 该数值仍由 `HeatLabel` 统一格式化为 `🔥888万` 等样式；没有数值时继续隐藏。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 音频 CPU 调查
 
 状态：已调查，未提交实验代码。
