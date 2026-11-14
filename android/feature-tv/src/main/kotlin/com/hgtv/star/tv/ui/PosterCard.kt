@@ -83,6 +83,7 @@ class PosterCard(
         /** 服务端原串（`9014万`）；空串时退回 [Series.heat] 解析值。 */
         heatServerText: String = "",
         preferStatus: Boolean = false,
+        hideTags: Boolean = false,
     ) {
         super.bind(item, PosterCardContent.of(
             series = item,
@@ -93,6 +94,7 @@ class PosterCard(
             seasonBadge = seasonBadge,
             heatServerText = heatServerText,
             preferStatus = preferStatus,
+            hideTags = hideTags,
         ))
         setProgress(progressPercent)
     }

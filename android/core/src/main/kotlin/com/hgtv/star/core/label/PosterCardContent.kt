@@ -21,6 +21,7 @@ data class PosterCardContent(
     val cornerColors: List<Int>,
     val cornerTop: Boolean,
     val preferStatus: Boolean,
+    val hideTags: Boolean,
     val contentDescription: String,
 ) {
     companion object {
@@ -43,8 +44,9 @@ data class PosterCardContent(
             seasonBadge: Boolean = true,
             heatServerText: String? = null,
             preferStatus: Boolean = false,
+            hideTags: Boolean = false,
         ): PosterCardContent {
-            val tags = tags(series.tags)
+            val tags = if (hideTags) "" else tags(series.tags)
             val status = EpisodeLabel.cardStatus(statusText)
             val episode = EpisodeLabel.total(series.episodeCount).ifEmpty { badgeFallback }
             val season = if (seasonBadge) SeriesSeasons.badge(series) else ""
@@ -67,6 +69,7 @@ data class PosterCardContent(
                 cornerColors = cornerColors,
                 cornerTop = series.label.isBlank() && rankTop,
                 preferStatus = preferStatus,
+                hideTags = hideTags,
                 contentDescription = description,
             )
         }

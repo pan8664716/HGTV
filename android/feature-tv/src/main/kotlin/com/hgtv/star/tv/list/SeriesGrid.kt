@@ -378,7 +378,8 @@ fun TvMainActivity.bindGridCard(card: PosterCard,item: Series) {
         // 历史集合页的**账号侧**条目没有本机进度：集数与集内秒数在 [accountHistoryCard]
         // 写进了 `badge`，这里必须接住，否则第二行会退到类型标签（没标签就整行空白）。
         // 前缀与首页「历史记录」栏一致，用户一眼能分出这条记录来自账号。
-        (collection=="history" || (tab==TAB_PROFILE && accountTab=="history")) && item.badge.isNotBlank() -> "账号 · ${item.badge}"
+        tab==TAB_PROFILE && accountTab=="history" && item.badge.isNotBlank() -> item.badge
+        collection=="history" && item.badge.isNotBlank() -> "账号 · ${item.badge}"
         else -> ""
     }
     // 名次放左上角（榜单页才有）；右下角统一由卡片按 `episodeCount` 画「共 N 集」；
@@ -387,11 +388,14 @@ fun TvMainActivity.bindGridCard(card: PosterCard,item: Series) {
     card.series=item
     card.tag=item.id
     card.visibility=View.VISIBLE
+    val progressPercent=if(collection=="history") null else
+        progress?.takeIf { it.duration>0 }?.let { (it.position*100/it.duration).toInt().coerceIn(0,100) }
     // 未上架没有集数：右下角改画「预告」，否则那一角空着，卡片看起来像数据缺了。
     card.bind(item,statusText,if(item.upcoming) "预告" else "",
-        progress?.takeIf { it.duration>0 }?.let { (it.position*100/it.duration).toInt().coerceIn(0,100) },
+        progressPercent,
         rank!=null && rank<=3,rankText=rankText,heatServerText=position?.heat.orEmpty(),
-        preferStatus=collection=="history" || item.upcoming)
+        preferStatus=collection=="history" || (tab==TAB_PROFILE && accountTab=="history") || item.upcoming,
+        hideTags=(tab==TAB_PROFILE && accountTab=="history") || collection=="history")
 }
 
 /**

@@ -195,24 +195,13 @@ class PhoneMinePage(
         // 历史与电视端一样把账号进度写在第二行；收藏则写「更新至 N 集」。
         feed.subtitleOf = { series ->
             when (tabs.getOrNull(tab)) {
-                "历史" -> series.badge.takeIf { it.isNotBlank() }?.let { "账号 · $it" }
+                "历史" -> series.badge.takeIf { it.isNotBlank() }
                 "收藏" -> library.favoriteLabel(series.id)
                 else -> null
             }
         }
-        // 历史与 TV 首页一样画已播进度；收藏 / 稍后看没有播放进度时不占位。
-        feed.progressOf = { series ->
-            if (tabs.getOrNull(tab) != "历史") null
-            else runCatching {
-                library.progress(series.id)?.let { p ->
-                    when {
-                        p.completed -> 100
-                        p.duration > 0 -> (p.position * 100 / p.duration).toInt().coerceIn(0, 100)
-                        else -> null
-                    }
-                }
-            }.getOrNull()
-        }
+        // 「我的」卡片只显示状态文字，不画播放进度条。
+        feed.progressOf = null
         // 长按海报 = 电视端的菜单键。菜单项由 `:core` 的 `CardMenu` 算（与 TV 同一份规则）：
         // 历史栏多「删除记录」，收藏栏的收藏项自动写成「取消收藏」，稍后看写「移出稍后观看」。
         // 早先这里只有一个「删除这一条」的确认框，收藏 / 稍后看 / 继续观看都得绕回详情页。
@@ -426,6 +415,7 @@ class PhoneMinePage(
         // 默认页也是历史（见字段 `tab`），这里保持同一个回退目标。
         if (tab >= tabs.size) tab = 0
         updateTopAccount()
+        feed.hideTags = tabs.getOrNull(tab) == "历史"
         body.removeAllViews()
         body.addView(buildTabs())
         batchBar = buildBatchBar()

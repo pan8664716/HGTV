@@ -151,6 +151,10 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     var progressOf: ((Series) -> Int?)? = null
         set(value) { field = value; adapter.notifyDataSetChanged() }
 
+    /** 隐藏分类标签；「我的」页只保留状态文字。 */
+    var hideTags = false
+        set(value) { field = value; adapter.notifyDataSetChanged() }
+
     /** 是否画名次角标。 */
     var ranked = false
         set(value) { field = value; adapter.notifyDataSetChanged() }
@@ -715,6 +719,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 rankTop = position < 3,
                 heatServerText = heatBy[item.id],
                 preferStatus = statusText.isNotBlank(),
+                hideTags = hideTags,
             ))
             setProgress(progressOf?.invoke(item))
             setBatchSelection(batchSelection, item.id in selectedIds)

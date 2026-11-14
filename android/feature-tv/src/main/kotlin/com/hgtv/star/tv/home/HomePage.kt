@@ -122,7 +122,7 @@ fun TvMainActivity.historyRows(local: List<WatchProgress>): List<HomeScreen.Entr
     // 这一栏回答的是「我看到哪了」，进度比标签重要得多（见 PosterCard.syncMeta）。
     val rows=local.take(10).map { p -> HomeScreen.Entry(p.series,
         "第 ${p.episodeIndex+1} 集 · ${if(p.completed) "整剧已看完" else formatTime(p.position)}",!p.completed,
-        if(p.duration>0) (p.position*100/p.duration).toInt().coerceIn(0,100) else null,
+        null,
         if(p.duration>0) "${formatTime(p.position)} / ${formatTime(p.duration)}" else "第 ${p.episodeIndex+1} 集") }.toMutableList()
     val seen=rows.map { it.series.id }.toSet()
     // 账号侧那半份滤掉「本机删过」的与已经在本机那半份里出现的（见 [Library.historyDeleted]）。
