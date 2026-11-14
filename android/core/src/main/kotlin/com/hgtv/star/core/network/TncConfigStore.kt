@@ -39,8 +39,9 @@ data class TncSnapshot(
  * 这里只实现本工程需要的子集：TNC 入口、接口候选域名、HTTP DNS IP 表、更新周期和最近成功
  * 域名。QUIC / H2 / 多网络切换等 TTNet 内部策略不在这里复制。
  *
- * 启动时只读盘，不阻塞首屏；真正请求 TNC 由 [refreshAsync] 在后台单飞执行。TNC 本身失败时
- * 继续使用上一份快照，最后才回退到内置域名。
+ * 启动时本地读取与条件刷新分别占用独立后台线程，不阻塞首屏。条件刷新会先等本地快照
+ * 完成（最多 [LOAD_WAIT_MS]），本地配置仍有效时不发网络请求。TNC 本身失败时继续使用
+ * 上一份快照，最后才回退到内置域名。
  */
 object TncConfigStore {
     private const val SCHEMA_VERSION=1
@@ -103,18 +104,21 @@ object TncConfigStore {
     private val loadedLatch=CountDownLatch(1)
     private val readyLatch=CountDownLatch(1)
     private val refreshLock=Any()
-    private val worker=Executors.newSingleThreadExecutor { task ->
-        Thread(task,"hgtv-tnc").apply { isDaemon=true }
+    private val loader=Executors.newSingleThreadExecutor { task ->
+        Thread(task,"hgtv-tnc-load").apply { isDaemon=true }
+    }
+    private val refresher=Executors.newSingleThreadExecutor { task ->
+        Thread(task,"hgtv-tnc-refresh").apply { isDaemon=true }
     }
     private val writer=Executors.newSingleThreadExecutor { task ->
         Thread(task,"hgtv-tnc-store").apply { isDaemon=true }
     }
 
-    /** 由 Application 在启动缓存阶段调用；只排后台读盘，不请求网络。 */
+    /** 由启动缓存阶段调用；只排后台读盘。网络刷新由 [refreshAsync] 独立排队。 */
     fun init(file: File) {
         if(store!=null) return
         store=file
-        worker.execute { load() }
+        loader.execute { load() }
     }
 
     /** 当前配置；磁盘还没读完时最多等 300ms，和 HgtvDns 的读盘策略一致。 */
@@ -246,7 +250,18 @@ object TncConfigStore {
             if(!force && now<backoffUntil) return false
             refreshing=true
         }
-        worker.execute {
+        refresher.execute {
+            // 本地读盘与刷新任务已经并行提交；这里只等本地元数据来决定是否需要请求，
+            // 不会阻塞主线程，也不会让首屏等待 TNC 网络。
+            awaitLoaded()
+            if(!force && !refreshDue(System.currentTimeMillis())) {
+                synchronized(refreshLock) {
+                    refreshing=false
+                    pendingForce=false
+                }
+                NetLog.log("tnc refresh skipped: local config fresh")
+                return@execute
+            }
             var success=false
             try {
                 val response=fetcher(current()?.summary)

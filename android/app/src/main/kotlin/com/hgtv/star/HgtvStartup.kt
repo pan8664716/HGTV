@@ -3,6 +3,7 @@ package com.hgtv.star
 
 import android.content.Context
 import android.os.Bundle
+import com.hgtv.star.core.refreshTncAsync
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.IdentityBinder
 import com.hgtv.star.shared.data.PlaybackDeviceBackups
@@ -216,6 +217,10 @@ internal object HgtvStartup {
             com.hgtv.star.core.CategoryPanelCache.init(File(cache,"category-panels-v1.json"))
             }.onFailure { problem -> Diagnostics.warn("HGTV-CACHE","缓存目录初始化失败",problem) }
         }
+        // 本地 TNC 已独立排队读盘；这里同时提交条件刷新，网络任务不会挡在启动线程上。
+        Thread({
+            runCatching { AppRuntime.repository(context).refreshTncAsync() }
+        },"hgtv-tnc-bootstrap").apply { isDaemon=true }.start()
     }
 
     private fun initSession(context: Context) {
