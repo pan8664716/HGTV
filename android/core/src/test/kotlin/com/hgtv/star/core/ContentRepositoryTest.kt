@@ -431,11 +431,11 @@ class ContentRepositoryTest {
         bodies.forEach { body -> assertEquals("only_content",body.getString("req_type")) }
     }
 
-    /** 名次是累计的：首屏 30 条，第 2 页要从第 31 名起，不能把页内序号直接显示出来。 */
+    /** 名次是累计的：首屏 100 条，第 2 页要从第 101 名起，不能把页内序号直接显示出来。 */
     @Test fun `rank numbers continue across pages instead of restarting at one`() {
         val repo=repository { request -> rankBody(request).toString() }
         assertEquals(RankPosition(1,"5746万"),repo.rank(1,RankBoard.COMIC).ranking!!.positions["123"])
-        assertEquals(RankPosition(31,"5746万"),repo.rank(2,RankBoard.COMIC).ranking!!.positions["123"])
+        assertEquals(RankPosition(101,"5746万"),repo.rank(2,RankBoard.COMIC).ranking!!.positions["123"])
         assertEquals(RankPosition(21,"5746万"),repo.rankRaw(2,RankBoard.COMIC).ranking!!.positions["123"])
     }
 
@@ -453,15 +453,15 @@ class ContentRepositoryTest {
         assertTrue(page.hasMore)
     }
 
-    /** 首页剧架取 20 条；榜单页首屏 30 条，后续页再取 100 条。 */
-    @Test fun `rankRaw keeps the home page small while rank starts at thirty`() {
+    /** 首页剧架取 20 条；榜单页首屏与后续页都取 100 条。 */
+    @Test fun `rankRaw keeps the home page small while rank pages are one hundred`() {
         val limits=mutableListOf<Int>()
         val repo=repository { request ->
             limits+=requestBody(request).getInt("limit")
             rankBody(request).toString()
         }
         repo.rankRaw(1,RankBoard.COMIC); repo.rank(1,RankBoard.COMIC)
-        assertEquals(listOf(20,30),limits)
+        assertEquals(listOf(20,100),limits)
     }
 
     /** 页号越界直接拒绝，不发请求；接口结构变了要如实报错。 */
@@ -622,6 +622,7 @@ class ContentRepositoryTest {
         assertEquals("9 集",first.items.single().badge)
         assertTrue("has_more=true 还有下一页",first.hasMore)
         assertNull("分类页没有名次",first.ranking)
+        assertEquals(100,bodies[0].getInt("limit"))
         // 大类段给 `genre`，小类段给接口的主题标识——两者都来自同一张 [CategoryCatalog]。
         assertEquals(comic.genre,bodies[0].getJSONObject("select_items").getJSONArray("genre").getString(0))
         assertEquals(tag.themeId,bodies[0].getJSONObject("select_items").getJSONArray("category_dim_theme").getString(0))
@@ -631,6 +632,8 @@ class ContentRepositoryTest {
 
         val last=repo.category(tag.path,2)
         assertFalse("has_more=false 不再有下一页",last.hasMore)
+        assertEquals(100,bodies[2].getInt("offset"))
+        assertEquals(100,bodies[2].getInt("limit"))
     }
 
     /** 认不出的分类路径直接拒绝，不发请求。 */
@@ -691,7 +694,7 @@ class ContentRepositoryTest {
             assertEquals("74332",request.url.queryParameter("version_code"))
             assertEquals("feed",request.url.queryParameter("tab_name"))
             assertEquals("16",request.url.queryParameter("bookstore_tab"))
-            assertEquals(if(requests==1) "0" else "20",request.url.queryParameter("offset"))
+            assertEquals(if(requests==1) "0" else "100",request.url.queryParameter("offset"))
             assertEquals("修仙",request.url.queryParameter("query"))
             JSONObject().put("code",0).put("search_tabs",JSONArray()
                 .put(searchTab(11,"111"))).toString()
@@ -883,7 +886,7 @@ class ContentRepositoryTest {
         assertEquals(SearchSource.WEB,SearchDiag.last?.source)
     }
 
-    /** 自动降级首屏只拉 3 页，第二逻辑页必须接着第 4 页，不能跳到第 11 页。 */
+    /** 自动降级每个逻辑页拉 10 个物理页，第二逻辑页必须接着第 11 页，不能跳页。 */
     @Test fun webFallbackPagesContinueWithoutGaps() {
         val pages=mutableListOf<Int>()
         val repo=repository { request ->
@@ -900,7 +903,7 @@ class ContentRepositoryTest {
         SearchDiag.last=null
         repo.search("神鹿降罚",1,SearchSource.APP)
         repo.search("神鹿降罚",2,SearchSource.APP)
-        assertEquals((1..6).toList(),pages.sorted())
+        assertEquals((1..20).toList(),pages.sorted())
     }
 
     /**

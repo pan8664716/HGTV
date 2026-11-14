@@ -14,8 +14,8 @@ fun ContentRepository.search(keyword: String, page: Int, type: ContentType): Cat
  *
  * **一个逻辑页给界面 100 条**：服务端一页只有 10 条，而且 `count` / `page_size` / `limit`
  * 这类参数一律被忽略（见 `ContentRepository.WEB_SEARCH_PAGE_SIZE`），所以这里把
- * `ContentRepository.WEB_SEARCH_BATCH` 个物理页并发拉回来拼成一份，界面侧「展示更多」
- * 一次就能多出一屏十行。
+ * `ContentRepository.WEB_SEARCH_BATCH` 个物理页并发拉回来拼成一份，
+ * 与 App 搜索一样每个逻辑页 100 条。
  *
  * 查不到东西时接口回的是 `{"searchList":[],"totalPages":1}`（HTTP 200），
  * 按「没有结果」处理，让界面显示「换个关键词试试」。

@@ -52,6 +52,7 @@ fun TvMainActivity.switchTab(next: Int) {
     // 切回来自然会重新取一次（见 [chipFocusKey]）。
     tabState[tab]=CatalogState(page,if(chipFocusKey!=null) emptyList() else catalog,hasMore,ranking); tabFocus[tab]=catalogFocus
     tab=next; val saved=tabState[next]; page=saved?.page ?: 1; catalog=saved?.items ?: emptyList(); hasMore=saved?.hasMore ?: false; ranking=saved?.ranking; catalogFocus=tabFocus[next].orEmpty()
+    catalogPageOneFresh=saved?.let { it.page>1 || it.items.size>=CATALOG_FIRST_PAGE_SIZE } ?: false
     var seededRank=false
     if(next==TAB_RANK && catalog.isEmpty()) {
         cachedRankPage(rankBoard)?.let { cached ->
@@ -60,6 +61,7 @@ fun TvMainActivity.switchTab(next: Int) {
             hasMore=cached.hasMore || cached.items.size<CATALOG_FIRST_PAGE_SIZE
             ranking=cached.ranking
             seededRank=true
+            catalogPageOneFresh=false
         }
     }
     // 首页的四个剧架就在内存里（[homeFeed]），切回来不需要重新打四次网络；
@@ -129,6 +131,7 @@ fun TvMainActivity.switchRankBoard(board: RankBoard,fromHome: Boolean=false) {
         catalog=cachedState.items
         hasMore=cachedState.hasMore
         ranking=cachedState.ranking
+        catalogPageOneFresh=cachedState.page>1 || cachedState.items.size>=CATALOG_FIRST_PAGE_SIZE
         if(fromHome) tab=TAB_RANK
         chipFocusKey=if(fromChip) "board:"+board.storedValue else null
         focusFirstCardOnLanding=!fromChip
@@ -143,6 +146,7 @@ fun TvMainActivity.switchRankBoard(board: RankBoard,fromHome: Boolean=false) {
         catalog=cached.items
         hasMore=cached.hasMore || cached.items.size<CATALOG_FIRST_PAGE_SIZE
         ranking=cached.ranking
+        catalogPageOneFresh=false
     }
     // 从首页剧架进来：顺手把顶部标签切到排行榜，用户看到的就是榜单页本身
     // （页面名、来源行、底部加载都是同一套）。少了这一步，[showCatalog] 会按当前标签
@@ -498,10 +502,10 @@ fun TvMainActivity.appendCatalog()=collection==null && (tab==TAB_RANK || tab==TA
  */
 fun TvMainActivity.fullList()=collection!=null || tab==TAB_PROFILE
 /**
- * 搜索结果不再给「展示更多」按钮：滚到列表底部（或焦点走到最后一行）就自动往下取，
- * 底部只留一行不可聚焦的进度文字。
+ * 所有远端卡片列表都不再给「展示更多」按钮：滚到剩余 50 条（或焦点接近末尾）
+ * 就自动取下一页，底部只留一行不可聚焦的进度文字。
  */
-fun TvMainActivity.autoAppendCatalog()=tab==TAB_SEARCH && collection==null
+fun TvMainActivity.autoAppendCatalog()=appendCatalog()
 /** 本机记录集合页（我的收藏 / 历史记录 / 稍后观看）。 */
 fun TvMainActivity.localCatalog()=collection!=null
 /**

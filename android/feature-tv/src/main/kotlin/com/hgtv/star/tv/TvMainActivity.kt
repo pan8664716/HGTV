@@ -489,6 +489,8 @@ class TvMainActivity: Activity() {
     var query=""
     var catalog=emptyList<Series>()
     var hasMore=false
+    /** 当前榜单的第 1 页是否已经由网络刷新过；缓存种子不算。 */
+    var catalogPageOneFresh=false
     var catalogFocus=""
     data class CatalogState(val page: Int,val items: List<Series>,val hasMore: Boolean,val ranking: ComicRanking?)
     var ranking: ComicRanking?=null

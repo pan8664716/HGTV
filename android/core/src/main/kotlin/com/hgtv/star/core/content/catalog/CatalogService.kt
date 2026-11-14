@@ -75,23 +75,19 @@ import java.io.IOException
      *（`comic_series` / `short_play` / `ai_series`），小类段就是接口的主题标识（`cate_*`）。
      */
     internal fun ContentRepository.categoryApi(selection: CategorySelection, page: Int, needPanel: Boolean): CategoryFeed {
-        // 「全部推荐」是服务端的一条**推荐流**：实测到第 100 条就 `has_more=false`，
-        // 且第二页开始会混进重复条目；照它一直翻，用户看到的就是「只剩这么几部」。
-        // 因此前两页先按推荐流取完这 100 条，第 3 页起自动接上 `hot_score` 继续翻，
-        // 已显示的条目由界面按 id 去重（见 `applyNextPage`）。
-        // 推荐流只适合「什么细分条件都没选」的默认页；带了主题 / 设定等条件时它经常回 0，
-        // 这时直接从第 1 页就走 hot_score，保证细分类目也有完整列表。
-        val recommendation=selection.sort==null && selection.hasNoDetailFilters()
-        val fallback=selection.sort==null && (!recommendation || page>=3)
+        // 「全部推荐」是一条最多约 100 条的服务端推荐流，正好作为首屏。
+        // 后续页统一接 hot_score，从第 101 条继续；带了主题 / 设定等条件时首屏也直接走 hot_score。
+        val recommendation=page==1 && selection.sort==null && selection.hasNoDetailFilters()
+        val fallback=selection.sort==null && !recommendation
         val select=ContentCatalogParser.categorySelectItems(
             selection,
             if(fallback) "hot_score" else selection.sort,
         )
-        val limit=categoryLimit(page)
+        val limit=CATEGORY_PAGE_SIZE
         val body=JSONObject()
             .put("filter_ids","")
             .put("req_scene","default")
-            .put("offset",categoryOffset(selection,page))
+            .put("offset",categoryOffset(page))
             .put("need_selector_panel",needPanel)
             .put("limit",limit)
             .put("select_items",select)
@@ -104,30 +100,18 @@ import java.io.IOException
         val rows=(payload.optJSONArray("video_data") ?: JSONArray()).objects()
         val items=ContentCatalogParser.valid(rows.map(ContentCatalogParser::apiCard))
         val serverMore=payload.optBoolean("has_more",false)
-        // 推荐流第 2 页会回 `has_more=false`，但后面还要接 hot_score，所以这里补一页。
         // 服务端偶尔在“刚好装满一页”时把 has_more 错报成 false；这种满页不能提前终止，
         // 否则分类页会在同一位置停住。多请求一页，真到底时下一页为空自然结束。
         val fullPage=rows.size>=limit
-        val more=(serverMore || fullPage || (recommendation && page<=2)) && page<ContentRepository.MAX_CATALOG_PAGE
+        val more=(serverMore || fullPage) && page<ContentRepository.MAX_CATALOG_PAGE
         val panel=if(needPanel) {
             ContentCatalogParser.parseCategoryPanel(payload.optJSONArray("selector_rows"))
         } else null
         return CategoryFeed(CatalogPage(items,more),panel)
     }
-    /** 分类页的 offset：第一页 20 条，之后每页 100 条（第 2 页从 20 开始）。 */
-    private fun ContentRepository.categoryOffset(selection: CategorySelection,page: Int): Int = when {
-        // 「全部推荐」：第 1 页 20 条、第 2 页把推荐流剩下的约 80 条取完，
-        // 第 3 页起改用 `hot_score`，从 0 重新铺（界面负责去重）。
-        selection.sort==null && selection.hasNoDetailFilters() -> when {
-            page<=1 -> 0
-            page==2 -> CATEGORY_FIRST_PAGE_SIZE
-            else -> (page-3)*CATEGORY_PAGE_SIZE
-        }
-        page<=1 -> 0
-        else -> CATEGORY_FIRST_PAGE_SIZE+(page-2)*CATEGORY_PAGE_SIZE
-    }
-    private fun ContentRepository.categoryLimit(page: Int): Int =
-        if(page<=1) CATEGORY_FIRST_PAGE_SIZE else CATEGORY_PAGE_SIZE
+    /** 分类页 offset：每页 100 条，第 2 页从 100 开始。 */
+    private fun ContentRepository.categoryOffset(page: Int): Int =
+        if(page<=1) 0 else CATEGORY_FIRST_PAGE_SIZE+(page-2)*CATEGORY_PAGE_SIZE
     /**
      * 分类 / 榜单 / 推荐共用的那条 POST。
      *

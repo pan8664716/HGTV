@@ -9,6 +9,7 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.hgtv.star.core.CATALOG_PREFETCH_REMAINING
 import com.hgtv.star.core.CatalogPage
 import com.hgtv.star.core.PosterCardContent
 import com.hgtv.star.core.Series
@@ -240,7 +241,9 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         grid.addOnScrollListener(object : RecyclerView.OnScrollListener() {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
                 val last = (rv.layoutManager as GridLayoutManager).findLastVisibleItemPosition()
-                if (last >= adapter.itemCount - 5) loadMore()
+                val lastPoster=(last-adapter.posterStart).coerceAtMost(items.lastIndex)
+                // 与 TV 同一阈值：当前页只剩 50 条时提前取下一页。
+                if(items.isNotEmpty() && items.size-(lastPoster+1)<=CATALOG_PREFETCH_REMAINING) loadMore()
                 // **只在真的铺出子项之后**才报位置：首帧布局里 RecyclerView 还没量过
                 // 子项，`computeVerticalScrollOffset` 可能返回一个非 0 的估值。
                 if (rv.childCount > 0) {

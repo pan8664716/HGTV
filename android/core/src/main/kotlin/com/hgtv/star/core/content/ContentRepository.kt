@@ -12,7 +12,11 @@ import java.io.IOException
 import java.util.concurrent.TimeUnit
 private fun defaultHttpClient(): OkHttpClient = defaultContentHttpClient()
 
-const val CATALOG_FIRST_PAGE_SIZE=30
+/** 所有卡片列表统一的一页条数；首屏与后续页相同。 */
+const val CATALOG_PAGE_SIZE=100
+const val CATALOG_FIRST_PAGE_SIZE=CATALOG_PAGE_SIZE
+/** 已加载内容只剩这么多条时，界面提前请求下一页。 */
+const val CATALOG_PREFETCH_REMAINING=50
 class ContentRepository(
     httpClient: OkHttpClient? = null,
     internal val clock: () -> Long = System::currentTimeMillis,
@@ -76,7 +80,7 @@ class ContentRepository(
         get() = "https://${TncConfigStore.localHost("hongguoduanju.com","hongguoduanju.com")}"
     internal val WEB_SEARCH_PAGE_SIZE = 10
     internal val WEB_SEARCH_BATCH = 10
-    internal val WEB_FALLBACK_BATCH = 3
+    internal val WEB_FALLBACK_BATCH = WEB_SEARCH_BATCH
     private val WEB_SEARCH_CONCURRENCY = 3
     internal val WEB_SEARCH_RETRY = 2
     internal val WEB_SEARCH_RETRY_DELAY = 200L
@@ -157,13 +161,13 @@ class ContentRepository(
     @Volatile var deviceLevel: Int = 4
         set(value) { field = if(value>=5) 5 else 4 }
 
-    internal val CATEGORY_PAGE_SIZE=100
+    internal val CATEGORY_PAGE_SIZE=CATALOG_PAGE_SIZE
 
     internal val CATEGORY_FIRST_PAGE_SIZE=CATALOG_FIRST_PAGE_SIZE
 
     private val RECOMMEND_PAGE_SIZE=20
 
-    internal val LOGICAL_PAGE_SIZE=100
+    internal val LOGICAL_PAGE_SIZE=CATALOG_PAGE_SIZE
     internal val RANK_FIRST_PAGE_SIZE=CATALOG_FIRST_PAGE_SIZE
 
     internal val RANK_API_PAGE_SIZE=20
@@ -173,7 +177,7 @@ class ContentRepository(
     internal val RECOMMEND_ATTEMPTS=3
     internal val SEARCH_BLANK_RETRIES=1
     internal val SEARCH_BLANK_RETRY_DELAY_MS=160L
-    internal val SEARCH_PAGE_SIZE=50
+    internal val SEARCH_PAGE_SIZE=CATALOG_PAGE_SIZE
     internal val SEARCH_FEED_TAB=11
     internal val SEARCH_FEED_SCOPE=-1
     private val SEARCH_FEED_CONTEXT=linkedMapOf(

@@ -77,10 +77,7 @@ class LivePageSizeProbeTest {
         }
     }
 
-    /**
-     * 榜单是官网 SSR、服务端固定 20 条一页（改不了）。
-     * 这里量「并发取 5 个物理页拼成 100 条」的耗时，看能不能当作一个逻辑页用。
-     */
+    /** 榜单逻辑页固定 100 条；这里量连续取 5 页的耗时与返回量。 */
     @Test fun rankFanOutCost() {
         assumeTrue("需要 HONGGUO_LIVE=1 才联网实测", live)
         val repo = ContentRepository()
@@ -101,7 +98,7 @@ class LivePageSizeProbeTest {
         println("[page-size] 榜单并发 5 页 → $total 条，耗时 ${parallelMs}ms（串行 ${serialMs}ms）")
     }
 
-    /** 榜单（官网 SSR）一页多少条、能翻多少页。 */
+    /** 榜单每页多少条、能翻多少页。 */
     @Test fun rankPageSize() {
         assumeTrue("需要 HONGGUO_LIVE=1 才联网实测", live)
         val repo = ContentRepository()

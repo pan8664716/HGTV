@@ -561,6 +561,7 @@ fun TvMainActivity.showCatalog(
         if(collection!=null && accountData==null && accountError==null) loadAccount()
     }
     if(load && !localCatalog()) {
+        if(page==1) catalogPageOneFresh=false
         val stale=(chipFocusKey!=null || keepCatalog) && appendCatalog() && catalog.isNotEmpty()
         val holdChip=chipFocusKey!=null
         if(appending) seriesList(body,focusNav,focusType,loadingMore=true)
@@ -631,11 +632,13 @@ fun TvMainActivity.showCatalog(
                 val added=page.items.filterNot { item -> catalog.any { it.id==item.id } }
                 val wanted=moreFocus; moreFocus=null
                 catalog=catalog+added; ranking=mergeRanking(ranking,page.ranking); hasMore=page.hasMore
+                if(requestPage==1) catalogPageOneFresh=true
                 setRankSubtitle(ranking?.updatedText.orEmpty())
                 if(gridList!=null && catalogBody===body) appendGridItems(added,wanted)
                 else { body.removeAllViews(); seriesList(body,false) }
             } else {
                 catalog=page.items; ranking=page.ranking; hasMore=page.hasMore
+                if(requestPage==1) catalogPageOneFresh=true
                 clearDebugProblem()
                 setRankSubtitle(ranking?.updatedText.orEmpty())
                 val landFirst=focusFirstCardOnLanding; focusFirstCardOnLanding=false

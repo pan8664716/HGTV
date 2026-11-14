@@ -97,7 +97,7 @@ import java.util.concurrent.TimeUnit
      *
      * `count` 参数是**真的**（见 [AUTHOR_WORKS_PAGE_SIZE] 的实测表：20/50/100 分别回 20/50/100 个 cell，
      * `next_offset` 也跟着走），所以高产作者**一次请求就能拿满一页**，不必再用 4 个 20 条的小页凑。
-     * 界面侧的普通搜索与作者作品搜索都按 50 一页（[SEARCH_PAGE_SIZE]）。
+     * 界面侧普通搜索按 100 条一页（[SEARCH_PAGE_SIZE]），作者作品搜索仍按 50 条一页。
      *
      * 翻页仍然要带上一页的游标（`search_id` / `passback` / `next_offset`，由 [appSearch] 自己记），
      * 因此这里**按页顺序**调用，不能并发；换线的重试也在 [appSearch] 里。
@@ -422,7 +422,7 @@ import java.util.concurrent.TimeUnit
     /**
      * 作者作品的一页搜索：与界面搜索一致，走官方一次综合请求。
      *
-     * 分开留一个入口，是因为这一栏用 50 条一页并要连取多页；游标与界面搜索的 20 条档位
+     * 分开留一个入口，是因为这一栏用 50 条一页并要连取多页；游标与界面搜索的 100 条档位
      * 按 `count` 隔离，不会互相覆盖。
      */
     internal fun ContentRepository.authorSearchPage(name: String,page: Int): CatalogPage {

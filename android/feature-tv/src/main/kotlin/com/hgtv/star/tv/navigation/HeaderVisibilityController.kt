@@ -54,7 +54,7 @@ internal fun TvMainActivity.onListScrollImpl(y: Int,force: Boolean) {
     updateBackToTop()
     // 手指 / 遥控滚到离底部还有小半屏时就先把下一页取回来：
     // 真滚到底的时候内容已经在手上，接上是瞬间的，用户看不到「正在加载」。
-    // 触发点统一交给 [nearGridEnd]（按「还剩几行」算）：这里只管页头收展。
+    // 触发点统一交给 [nearGridEnd]（按「还剩多少条」算）：这里只管页头收展。
     if(nearGridEnd()) prefetchNextPage()
 }
 

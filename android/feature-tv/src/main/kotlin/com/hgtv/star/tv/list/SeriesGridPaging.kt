@@ -11,7 +11,7 @@ import com.hgtv.star.tv.LOAD_MORE
 import com.hgtv.star.tv.LOAD_MORE_RETRY_COOLDOWN_MS
 import com.hgtv.star.tv.MAX_CATALOG_PAGE
 import com.hgtv.star.tv.PREFETCH_PAGES
-import com.hgtv.star.tv.PREFETCH_TRIGGER_ROWS
+import com.hgtv.star.tv.PREFETCH_TRIGGER_ITEMS
 import com.hgtv.star.tv.TAB_CATEGORY
 import com.hgtv.star.tv.TAB_HOME
 import com.hgtv.star.tv.TAB_RANK
@@ -49,6 +49,7 @@ fun TvMainActivity.loadMore() {
 
 fun TvMainActivity.prefetchNextPage() {
     if(catalogSelectionInFlight()) return
+    if(workJob?.isDone==false) return
     if(screen!="catalog" || !appendCatalog() || !hasMore || moreInFlight || gridList==null) return
     if(moreFailed) {
         val elapsed=android.os.SystemClock.elapsedRealtime()-moreFailedAt
@@ -70,22 +71,23 @@ fun TvMainActivity.applyNextPage(next: Int,result: CatalogPage,userInitiated: Bo
     val target=if(userInitiated) added.firstOrNull()?.id ?: LOAD_MORE else null
     if(userInitiated) catalogFocus=added.firstOrNull()?.id.orEmpty()
     appendGridItems(added,target)
-    if(hasMore && rowsLeftAfterConsumed()<=PREFETCH_TRIGGER_ROWS) {
+    if(hasMore && itemsLeftAfterConsumed()<=PREFETCH_TRIGGER_ITEMS) {
         prefetchChain++
         if(prefetchChain<PREFETCH_PAGES) prefetchNextPage()
+    } else {
+        prefetchChain=0
     }
 }
 
 fun TvMainActivity.nearGridEnd(): Boolean {
     if(gridItems.isEmpty()) return false
-    return rowsLeftAfterConsumed()<=PREFETCH_TRIGGER_ROWS
+    return itemsLeftAfterConsumed()<=PREFETCH_TRIGGER_ITEMS
 }
 
-fun TvMainActivity.rowsLeftAfterConsumed(): Int {
+fun TvMainActivity.itemsLeftAfterConsumed(): Int {
     val consumed=gridConsumedIndex()
-    if(consumed<0) return gridRowCount()
-    val left=(gridItems.size-(consumed+1)).coerceAtLeast(0)
-    return (left+gridColumns-1)/gridColumns
+    if(consumed<0) return gridItems.size
+    return (gridItems.size-(consumed+1)).coerceAtLeast(0)
 }
 
 fun TvMainActivity.gridConsumedIndex(): Int {
@@ -106,8 +108,7 @@ fun TvMainActivity.requestNextPage(userInitiated: Boolean) {
         if(userInitiated) { moreVisible=true; moreFocusWanted=true; updateFooter() }
         return
     }
-    val refreshFirstPage=tab==TAB_RANK && page==1 &&
-        catalog.size<CATALOG_FIRST_PAGE_SIZE
+    val refreshFirstPage=tab==TAB_RANK && page==1 && !catalogPageOneFresh
     val next=if(refreshFirstPage) 1 else page+1
     if(next>MAX_CATALOG_PAGE) { hasMore=false; updateFooter(); return }
     moreInFlight=true; moreInFlightPage=next; moreVisible=userInitiated

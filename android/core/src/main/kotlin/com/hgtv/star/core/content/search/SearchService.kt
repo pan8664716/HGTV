@@ -182,7 +182,7 @@ import java.io.IOException
      *
      * **一个逻辑页给界面 100 条**：服务端一页只有 10 条，而且 `count` / `page_size` / `limit`
      * 这类参数一律被忽略（见 [WEB_SEARCH_PAGE_SIZE]），所以这里把 [WEB_SEARCH_BATCH] 个
-     * 物理页并发拉回来拼成一份，界面侧「展示更多」一次就能多出一屏十行。
+     * 物理页并发拉回来拼成一份，每个逻辑页固定 100 条。
      *
      * 查不到东西时接口回的是 `{"searchList":[],"totalPages":1}`（HTTP 200），
      * 按「没有结果」处理，让界面显示「换个关键词试试」。
@@ -197,7 +197,7 @@ import java.io.IOException
         val first=(page-1)*WEB_SEARCH_BATCH+1
         return webSearchPages(clean,page,first,WEB_SEARCH_BATCH)
     }
-    /** App 搜索自动降级：首屏少拉几页，后续逻辑页按实际物理页游标连续取。 */
+    /** App 搜索自动降级：每个逻辑页都按官网的 10 个物理页拼满 100 条。 */
     private fun ContentRepository.webFallback(keyword: String,page: Int,batch: Int): CatalogPage {
         val clean=keyword.trim().take(WEB_SEARCH_QUERY_MAX)
         val wantedPages=batch.coerceIn(1,WEB_SEARCH_BATCH)

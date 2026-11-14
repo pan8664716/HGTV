@@ -16,10 +16,9 @@ fun ContentRepository.rankRaw(page: Int = 1, board: RankBoard = RankBoard.COMIC)
 }
 
 /**
- * 榜单页的一页：首次 30 条，后续页按 [LOGICAL_PAGE_SIZE] 条续接。
+ * 榜单页的一页：首屏与后续页都按 [LOGICAL_PAGE_SIZE] 条续接。
  *
- * 首屏先给用户 30 条，减少进入页面时的等待；第 2 页从 offset=30 开始，
- * 后续每页 100 条，不会漏条。
+ * 第 2 页从 offset=100 开始，后续每页 100 条，不会漏条。
  */
 fun ContentRepository.rank(page: Int = 1, board: RankBoard = RankBoard.COMIC): CatalogPage {
     require(page in 1..100)

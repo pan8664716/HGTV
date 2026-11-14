@@ -21,7 +21,6 @@ import com.hgtv.star.tv.GRID_WINDOW_MIN_ROWS
 import com.hgtv.star.tv.LOAD_MORE
 import com.hgtv.star.tv.LOAD_MORE_RETRY_COOLDOWN_MS
 import com.hgtv.star.tv.MAX_CATALOG_PAGE
-import com.hgtv.star.tv.PREFETCH_TRIGGER_ROWS
 import com.hgtv.star.tv.PREFETCH_ROWS
 import com.hgtv.star.tv.PREFETCH_PAGES
 import com.hgtv.star.tv.TvMainActivity
@@ -467,8 +466,8 @@ fun TvMainActivity.wireGridCard(card: PosterCard) {
                 // 被低内存策略摘掉的卡不在这里重挂（它可能刚从视口外滚进来，紧接着的
                 // resumeVisibleCovers 会按「真的可见」重新挂上，并带上 FOCUSED 优先级）。
                 if(!card.coverSuspended) loadCover(card.image,item.cover)
-                // 焦点走到倒数两行就把下一页取回来，用户真按下去时内容已经在手上。
-                // 焦点一移动就按「还剩几行」判一次（见 [nearGridEnd]）：
+                // 焦点移动时按「还剩多少条」判一次，剩余 50 条就把下一页取回来，
+                // 用户真按到末尾时内容已经在手上（见 [nearGridEnd]）。
                 // 按住下键时这就是唯一会持续触发的时机。
                 if(holder!=null) prefetchNextPage()
             }
