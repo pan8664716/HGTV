@@ -105,12 +105,11 @@ internal object PhonePlayerViewSupport {
 }
 
 /**
- * 播放器 FIT 黑边遮罩。
+ * 播放器 FIT 黑边几何与兜底遮罩。
  *
- * `DanmakuView` 是全屏透明 `SurfaceView`，透明区域会继续挖穿播放页窗口。只在
- * PlayerView 外层的普通 View 上铺黑底没有用，因为这块黑底仍在 SurfaceView 的挖孔
- * 范围内；把遮罩放在弹幕层之后，才能只盖住视频画面之外的黑边，同时保留弹幕
- * 独立 Surface 的渲染性能。
+ * 正常有弹幕时，黑边由 `DanmakuView` 在自己的透明 Surface 内先画，再画弹幕，
+ * 这样既挡住下层 Activity，也不会裁掉滚到黑边里的弹幕。弹幕层不可见时，
+ * 这个普通 View 才作为兜底遮住黑边。
  */
 internal class PhoneLetterboxMask(context: Context) : View(context) {
     private val paint = Paint().apply {
@@ -165,10 +164,10 @@ internal class PhoneLetterboxMask(context: Context) : View(context) {
         }
     }
 
-    private fun pictureBounds(): RectF? {
+    fun pictureBounds(hostWidth: Int = width, hostHeight: Int = height): RectF? {
         actualVideoBounds()?.let { return it }
         if (sourceWidth <= 0 || sourceHeight <= 0) return null
-        val bounds = fallbackVideoBounds()
+        val bounds = fallbackVideoBounds(hostWidth, hostHeight)
         if (bounds.width() <= 0f || bounds.height() <= 0f) return null
         if (resizeMode != AspectRatioFrameLayout.RESIZE_MODE_FIT) return bounds
 
@@ -207,7 +206,7 @@ internal class PhoneLetterboxMask(context: Context) : View(context) {
         )
     }
 
-    private fun fallbackVideoBounds(): RectF {
+    private fun fallbackVideoBounds(hostWidth: Int, hostHeight: Int): RectF {
         val view = videoView
         if (view != null && view.visibility == VISIBLE && view.width > 0 && view.height > 0) {
             return RectF(
@@ -217,10 +216,10 @@ internal class PhoneLetterboxMask(context: Context) : View(context) {
                 view.bottom.toFloat(),
             )
         }
-        val scaledWidth = width * fallbackScale
-        val scaledHeight = height * fallbackScale
-        val left = (width - scaledWidth) / 2f
-        val top = (height - scaledHeight) / 2f
+        val scaledWidth = hostWidth * fallbackScale
+        val scaledHeight = hostHeight * fallbackScale
+        val left = (hostWidth - scaledWidth) / 2f
+        val top = (hostHeight - scaledHeight) / 2f
         return RectF(left, top, left + scaledWidth, top + scaledHeight)
     }
 }

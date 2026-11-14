@@ -143,6 +143,10 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         color=0x99000000.toInt()
         style=Paint.Style.FILL
     }
+    private val letterboxPaint=Paint().apply {
+        color=Color.BLACK
+        isAntiAlias=false
+    }
     private val emojiPaint=Paint(Paint.FILTER_BITMAP_FLAG)
     private val spritePaint=Paint(Paint.FILTER_BITMAP_FLAG)
     private val spriteDst=RectF()
@@ -289,6 +293,13 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private var transitionRunning=false
     private var pendingDanmaku: List<Danmaku>?=null
     private var transitionClockReady=false
+    var letterboxRect: RectF?=null
+        set(value) {
+            field=value?.let(::RectF)
+            requestFrame()
+        }
+    val isSurfaceReady: Boolean get()=surfaceReady
+    var onRenderStateChangedListener: (() -> Unit)?=null
     private var surfaceReady=false
     private var frameScheduled=false
     private var fixedSurfaceWidth=0
@@ -773,14 +784,28 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
                     canvas.width.toFloat()/width.coerceAtLeast(1),
                     canvas.height.toFloat()/height.coerceAtLeast(1),
                 )
+                drawLetterbox(canvas)
                 drawFrame(canvas)
                 canvas.restore()
             } else {
+                drawLetterbox(canvas)
                 drawFrame(canvas)
             }
         } finally {
             runCatching { holder.unlockCanvasAndPost(canvas) }
         }
+    }
+
+    private fun drawLetterbox(canvas: Canvas) {
+        val picture=letterboxRect ?: return
+        val left=picture.left.coerceIn(0f,width.toFloat())
+        val top=picture.top.coerceIn(0f,height.toFloat())
+        val right=picture.right.coerceIn(0f,width.toFloat())
+        val bottom=picture.bottom.coerceIn(0f,height.toFloat())
+        if(left>0f) canvas.drawRect(0f,0f,left,height.toFloat(),letterboxPaint)
+        if(right<width) canvas.drawRect(right,0f,width.toFloat(),height.toFloat(),letterboxPaint)
+        if(top>0f) canvas.drawRect(0f,0f,width.toFloat(),top,letterboxPaint)
+        if(bottom<height) canvas.drawRect(0f,bottom,width.toFloat(),height.toFloat(),letterboxPaint)
     }
 
     private fun drawFrame(canvas: Canvas) {
@@ -1114,6 +1139,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
 
     override fun onVisibilityChanged(changedView: View,visibility: Int) {
         super.onVisibilityChanged(changedView,visibility)
+        onRenderStateChangedListener?.invoke()
         if(visibility!=VISIBLE) {
             choreographer.removeFrameCallback(frameCallback)
             frameScheduled=false
@@ -1124,6 +1150,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
 
     override fun surfaceCreated(holder: SurfaceHolder) {
         surfaceReady=true
+        onRenderStateChangedListener?.invoke()
         ensureSpriteAtlas()
         nextSpriteRefreshAt=0L
         refreshSpriteAtlas(clockPositionMillis())
@@ -1136,6 +1163,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {
         surfaceReady=false
+        onRenderStateChangedListener?.invoke()
         choreographer.removeFrameCallback(frameCallback)
         frameScheduled=false
     }

@@ -23,9 +23,13 @@ internal fun PhonePlayerActivity.updateLandscapeVideoFrameImpl(width: Int, heigh
     placeLandscapeFullscreenImpl()
 }
 
-/** 横屏弹幕 Surface 的透明黑边遮罩：只跟随实际视频画面，不跟随控制层。 */
+/** 横屏弹幕 Surface 的黑边背景与兜底遮罩：只跟随实际视频画面，不跟随控制层。 */
 internal fun PhonePlayerActivity.syncLandscapeLetterboxImpl() {
-    if (!playerLandscapeVideoInitialized || !playerLandLetterboxInitialized) return
+    if (
+        !playerLandscapeVideoInitialized ||
+        !playerLandDanmakuInitialized ||
+        !playerLandLetterboxInitialized
+    ) return
     val scale = if (playerLandscape.width > 0 && playerLandscapeVideo.width > 0) {
         playerLandscapeVideo.width.toFloat() / playerLandscape.width
     } else {
@@ -38,6 +42,18 @@ internal fun PhonePlayerActivity.syncLandscapeLetterboxImpl() {
         resizeMode = playerLandscapeVideo.resizeMode,
         videoScale = scale,
     )
+    val picture = playerLandLetterbox.pictureBounds(
+        playerLandscape.width,
+        playerLandscape.height,
+    )
+    playerLandDanmaku.letterboxRect = picture
+    playerLandLetterbox.visibility =
+        if (
+            playerLandDanmaku.visibility == View.VISIBLE &&
+            playerLandDanmaku.isSurfaceReady &&
+            picture != null
+        ) View.GONE
+        else View.VISIBLE
 }
 
 /**

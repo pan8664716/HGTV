@@ -67,7 +67,7 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     landscape.addView(danmaku, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
     ))
-    // 弹幕 Surface 的透明区域会挖穿播放页窗口；黑边遮罩必须放在弹幕之后。
+    // 弹幕可见时黑边在弹幕 Surface 内绘制；这层普通 View 只在弹幕不可见时兜底。
     val letterbox = PhoneLetterboxMask(this)
     landscape.addView(letterbox, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
@@ -119,6 +119,7 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     playerLandscapeVideoSlot = video
     playerLandDanmakuSlot = danmaku
     playerLandLetterboxSlot = letterbox
+    danmaku.onRenderStateChangedListener = { syncLandscapeLetterboxImpl() }
     video.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
         if (playerLandscapeVideoInitialized && playerLandLetterboxInitialized) {
             syncLandscapeLetterboxImpl()

@@ -4666,9 +4666,10 @@ feature-tv/
   `setZOrderMediaOverlay(true)`。它的透明缓冲区会在整个播放页窗口上挖孔；视频
   Surface 的 `PixelFormat.OPAQUE` 只能保证视频画面本身不透明，无法覆盖这块全屏
   透明弹幕层，所以 FIT 黑边仍会露出下层 Activity。
-- 修复：新增 `PhoneLetterboxMask`，放在弹幕 Surface 之后、控制层之前，用普通窗口
-  View 只绘制视频画面之外的四块黑色区域；不覆盖视频中心，也不拦截触摸，因此保留
-  弹幕独立 Surface 的渲染性能。
+- 修复：给 `DanmakuView` 增加 `letterboxRect`，在每次清屏后先画黑边、再画弹幕，
+  因此滚到黑边里的弹幕仍显示在黑底上，不再被普通 View 裁掉。
+- `PhoneLetterboxMask` 继续保留为几何计算和弹幕层不可见时的普通 View 兜底；
+  弹幕可见时它自动隐藏，不参与绘制。
 - 竖屏 `PhoneVideoPage` 与横屏 `PhonePlayerActivity` 都接入了遮罩；遮罩跟随
   `PlayerView` 布局、画面尺寸、FIT/ZOOM/FILL 模式、画面缩放和借下层 Surface 的
   可见状态刷新。

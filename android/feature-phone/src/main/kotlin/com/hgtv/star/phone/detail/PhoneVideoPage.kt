@@ -126,8 +126,8 @@ class PhoneVideoPage(
     }
 
     /**
-     * 弹幕 Surface 是全屏透明的，黑边需要由窗口层里的普通 View 再盖一层。
-     * 这层只覆盖视频画面之外，不拦截触摸。
+     * 弹幕 Surface 是全屏透明的。弹幕可见时，黑边在弹幕 Surface 内部先画；
+     * 这层普通 View 只在弹幕层不可见时兜底，不拦截触摸。
      */
     internal val letterboxMask = PhoneLetterboxMask(context)
 
@@ -277,6 +277,7 @@ class PhoneVideoPage(
     init {
         // 借下层 Surface 时整页透明：只画遮罩与信息栏，画面由推荐页那一层透上来。
         setBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
+        danmakuView.onRenderStateChangedListener = { syncLetterboxMask() }
         addView(playerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // 弹幕压在画面之上（在遮罩与信息栏之前加，因此它永远在这些层下面）。
         addView(danmakuView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -528,6 +529,15 @@ class PhoneVideoPage(
             resizeMode = playerView.resizeMode,
             videoScale = videoScale,
         )
+        val picture = letterboxMask.pictureBounds(width, height)
+        danmakuView.letterboxRect = picture
+        letterboxMask.visibility =
+            if (
+                danmakuView.visibility == View.VISIBLE &&
+                danmakuView.isSurfaceReady &&
+                picture != null
+            ) View.GONE
+            else View.VISIBLE
     }
 
     private fun placeFullscreenButton() {

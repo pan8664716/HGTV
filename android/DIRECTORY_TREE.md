@@ -691,9 +691,9 @@ android/
 | `PhonePlayerSwipe.kt` | 一屏的高度：竖屏 / 横屏各自的那一层。 | fun PhonePlayerActivity.slideHeightImpl、fun PhonePlayerActivity.beginSwipeImpl、fun PhonePlayerActivity.dragSwipeImpl、fun PhonePlayerActivity.endSwipeImpl、fun PhonePlayerActivity.settleBackImpl、fun PhonePlayerActivity.animateSwipeImpl |
 | `PhonePlayerUiAssembly.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerUiAssembly 主要包含 fun PhonePlayerActivity.buildUi、fun PhonePlayerActivity.buildLandscape。 | fun PhonePlayerActivity.buildUi、fun PhonePlayerActivity.buildLandscape |
 | `PhonePlayerUnderlay.kt` | 把播放器的输出交回下层推荐页的 Surface。 | fun PhonePlayerActivity.attachUnderlay、fun PhonePlayerActivity.dropUnderlay |
-| `PhonePlayerVideoFrame.kt` | 把播放器当前的画面尺寸补到页面上（bind 之后调用），并同步横屏弹幕黑边遮罩。 | fun PhonePlayerActivity.syncVideoFrameImpl、fun PhonePlayerActivity.updateLandscapeVideoFrameImpl、fun PhonePlayerActivity.syncLandscapeLetterboxImpl、fun PhonePlayerActivity.placeLandscapeFullscreenImpl、fun PhonePlayerActivity.applyVideoScaleImpl、fun PhonePlayerActivity.applyLandscapeVideoScaleImpl |
+| `PhonePlayerVideoFrame.kt` | 把播放器当前的画面尺寸补到页面上（bind 之后调用），并同步横屏弹幕黑边背景与兜底遮罩。 | fun PhonePlayerActivity.syncVideoFrameImpl、fun PhonePlayerActivity.updateLandscapeVideoFrameImpl、fun PhonePlayerActivity.syncLandscapeLetterboxImpl、fun PhonePlayerActivity.placeLandscapeFullscreenImpl、fun PhonePlayerActivity.applyVideoScaleImpl、fun PhonePlayerActivity.applyLandscapeVideoScaleImpl |
 | `PhonePlayerViewFacade.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerViewFacade 主要包含 fun PhonePlayerActivity.seekTo、fun PhonePlayerActivity.syncVideoFrame、fun PhonePlayerActivity.applyVideoScale、fun PhonePlayerActivity.syncPlayInfo。 | fun PhonePlayerActivity.seekTo、fun PhonePlayerActivity.syncVideoFrame、fun PhonePlayerActivity.applyVideoScale、fun PhonePlayerActivity.syncPlayInfo |
-| `PhonePlayerViewSupport.kt` | 手机播放器视图支撑与弹幕 Surface 黑边遮罩。 | object PhonePlayerViewSupport、class PhoneLetterboxMask |
+| `PhonePlayerViewSupport.kt` | 手机播放器视图支撑、黑边几何计算与弹幕不可见时的兜底遮罩。 | object PhonePlayerViewSupport、class PhoneLetterboxMask |
 | `PhonePreload.kt` | 推荐流「相邻几部」的预热结果（与电视端 MainActivityPreload 同一个思路，手机化之后只留必要部分）。 | object PhonePreload |
 | `PhoneRelatedPanels.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneRelatedPanels 主要包含 class PhonePlayerRelatedState、fun PhonePlayerActivity.showRelated、fun PhonePlayerActivity.relatedHeadline、fun PhonePlayerActivity.fillRelated。 | class PhonePlayerRelatedState、fun PhonePlayerActivity.showRelated、fun PhonePlayerActivity.relatedHeadline、fun PhonePlayerActivity.fillRelated、fun PhonePlayerActivity.showAuthorWorks、fun PhonePlayerActivity.toggleFavorite |
 | `PhoneSourceRetry.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneSourceRetry 主要包含 class PhoneSourceRetryState、fun PhonePlayerActivity.resetSourceRetryForFreshAttempt、fun PhonePlayerActivity.onEpisodeSourceMissing、fun PhonePlayerActivity.invalidateEpisodeCacheForRetry。 | class PhoneSourceRetryState、fun PhonePlayerActivity.resetSourceRetryForFreshAttempt、fun PhonePlayerActivity.onEpisodeSourceMissing、fun PhonePlayerActivity.invalidateEpisodeCacheForRetry |
@@ -1113,7 +1113,7 @@ android/
 | `DanmakuEmojiStore.kt` | 弹幕表情图的解码与缓存。 | class DanmakuEmojiStore |
 | `DanmakuLoader.kt` | 「这一集拉到哪一步」的弹幕加载内核（电视端与手机端共用一份）。 | class DanmakuLoader |
 | `DanmakuSpriteAtlas.kt` | 弹幕文字图集。 | class DanmakuSpriteAtlas |
-| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情和绘制缓存。 | class DanmakuView |
+| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制。 | class DanmakuView |
 | `MediaSessionHost.kt` | 前台媒体会话：让**遥控器 / 耳机线控 / 锁屏与系统媒体面板**上的播放键能找到本应用。 | class MediaSessionHost |
 | `PlaybackFailures.kt` | 一次播放失败的**归因**：这条错误落在哪条轨上、该按哪一档、哪些档位还能换。 | object PlaybackFailures |
 | `PlaybackMetrics.kt` | 播放现场的「解码事实」：解码器名、初始化耗时、编码格式、丢帧、音频欠载。 | class PlaybackMetrics |
