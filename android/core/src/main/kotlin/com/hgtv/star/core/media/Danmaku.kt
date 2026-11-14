@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.core
+import kotlin.math.roundToInt
 
 /**
  * 一条弹幕。
@@ -35,18 +36,20 @@ fun rawDanmakuRows(rows: org.json.JSONArray?): List<org.json.JSONObject> =
 /**
  * 弹幕在播放画面上的显示方式。存进本机设置，换集与重开应用都保持。
  *
- * 顺序就是设置页 / 播放设置面板里的排列顺序（`entries` 直接被两个页面当作选项表用）：
- * 只显一行 → 上方显示 → 全屏显示 → 隐藏弹幕。
+ * 顺序就是设置页 / 播放设置面板里的进度条顺序：
+ * 隐藏 → 一行 → 两行 → 三行 → 四行 → 上方 → 全屏。
  *
  * `storedValue` 是**磁盘上的值**：后加的档位只能新增，已有档位的值不能改，否则用户存过的
  * 偏好会在升级后读回默认档（旧备份里没有的档位按 [fromStored] 的兜底处理）。
  */
 enum class DanmakuMode(val storedValue: String, val label: String, val hint: String) {
-    /** 只显一行：整屏只有一条轨道，多密也不会上下叠字。 */
-    SINGLE("single","只显一行","只显一行 · 屏幕内只滚动一行，多密也不会上下叠字"),
-    TOP("top","上方显示","上方显示 · 只在画面上方区域滚动"),
-    FULL("full","全屏显示","全屏显示 · 整幅画面从上到下都能滚"),
-    HIDDEN("hidden","隐藏弹幕","隐藏弹幕 · 完全不显示弹幕");
+    HIDDEN("hidden","隐藏","隐藏 · 完全不显示弹幕"),
+    SINGLE("single","一行","一行 · 只在画面顶部滚动一行"),
+    TWO("two","两行","两行 · 只在画面顶部滚动两行"),
+    THREE("three","三行","三行 · 只在画面顶部滚动三行"),
+    FOUR("four","四行","四行 · 只在画面顶部滚动四行"),
+    TOP("top","上方","上方 · 只在画面上方区域滚动"),
+    FULL("full","全屏","全屏 · 整幅画面从上到下都能滚");
 
     /**
      * 这一档下弹幕文字的外观（字号 / 透明度 / 速度）还有没有意义。
@@ -57,8 +60,21 @@ enum class DanmakuMode(val storedValue: String, val label: String, val hint: Str
      */
     val showsStyle get() = this != HIDDEN
 
+    /** 一行到四行档的固定轨道上限；上方 / 全屏由可用高度决定。 */
+    val lineLimit: Int?
+        get() = when (this) {
+            SINGLE -> 1
+            TWO -> 2
+            THREE -> 3
+            FOUR -> 4
+            TOP, FULL, HIDDEN -> null
+        }
+
+    /** 七档进度条上的位置。 */
+    val sliderValue get() = ordinal.toFloat()
+
     /**
-     * 下一档（快捷开关用）：全屏 → 上方 → 一行 → 隐藏 → 全屏。
+     * 下一档（快捷开关用）：全屏 → 上方 → 四行 → 三行 → 两行 → 一行 → 隐藏 → 全屏。
      *
      * 顺序不是枚举声明顺序，而是**用户最常用的方向**：先按「越来越不挡画面」排，
      * 关掉之后回到全屏（再点一下就是打开）。手机播放页底部那颗「弹幕」按钮
@@ -69,7 +85,10 @@ enum class DanmakuMode(val storedValue: String, val label: String, val hint: Str
      */
     fun next(): DanmakuMode = when (this) {
         FULL -> TOP
-        TOP -> SINGLE
+        TOP -> FOUR
+        FOUR -> THREE
+        THREE -> TWO
+        TWO -> SINGLE
         SINGLE -> HIDDEN
         HIDDEN -> FULL
     }
@@ -78,6 +97,8 @@ enum class DanmakuMode(val storedValue: String, val label: String, val hint: Str
         /** 首次启动、旧数据缺字段或值损坏时使用上方显示。 */
         val DEFAULT=TOP
         fun fromStored(value: String?) = entries.firstOrNull { it.storedValue==value } ?: DEFAULT
+        fun fromSlider(value: Float): DanmakuMode =
+            entries[value.roundToInt().coerceIn(0, entries.lastIndex)]
     }
 }
 

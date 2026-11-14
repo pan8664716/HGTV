@@ -159,7 +159,7 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
                 menu.select(MENU_ROW_FRAME,index); updatePlaybackText()
             }
         })
-        // 弹幕显示方式：全屏 / 上方 / 隐藏。选完立刻作用在画面上的弹幕层，并存进本机设置。
+        // 弹幕显示方式：七档进度条。选完立刻作用在画面上的弹幕层，并存进本机设置。
         // 解码方式：硬件（省电、4K 稳）/ 软件（兼容性好，花屏、绿屏、音画不同步时用）。
         // 选中会重建播放器并从当前位置续播，画面闪一下属正常。
         .addRow("解码",VideoDecoderMode.entries.mapIndexed { index,mode ->
@@ -173,22 +173,24 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
                 else { menu.select(MENU_ROW_DECODER,index); updatePlaybackText() }
             }
         })
-        .addRow("弹幕",DanmakuMode.entries.mapIndexed { index,mode ->
-            PlaybackMenu.Choice(mode.label,mode==library.danmakuMode) {
-                val previous=library.danmakuMode
-                library.danmakuMode=mode
-                danmakuView?.mode=mode
-                // 隐藏档不发请求：从隐藏切回可见时如果这一集还没取过，这里补一次；
-                // 已经取过的（raw 还在）只换画法，由 mode 的 setter 重排轨道，不再请求。
-                if(previous==DanmakuMode.HIDDEN && mode!=DanmakuMode.HIDDEN && !danmakuLoaded) {
-                    detail?.let { data -> data.episodes.getOrNull(episodeIndex)?.let { episode -> loadDanmaku(episode,data.series.id) } }
-                } else if(mode!=DanmakuMode.HIDDEN) danmakuView?.invalidate()
-                // 档位切换会改变面板的行数（隐藏时没有两条外观项），因此整块重建，
-                // 焦点按回刚改的这一行、落在同一个档位上。
-                if(previous!=mode) showPlaybackMenu(MENU_ROW_DANMAKU,index)
-                else { menu.select(MENU_ROW_DANMAKU,index); updatePlaybackText() }
-            }
-        })
+        .addSlider(
+            "弹幕",0f,DanmakuMode.entries.lastIndex.toFloat(),1f,library.danmakuMode.sliderValue,
+            format={ DanmakuMode.fromSlider(it).label },
+            commitDelayMs=350L,
+        ) { value ->
+            val mode=DanmakuMode.fromSlider(value)
+            val previous=library.danmakuMode
+            if(previous==mode) return@addSlider
+            library.danmakuMode=mode
+            danmakuView?.mode=mode
+            // 隐藏档不发请求：从隐藏切回可见时如果这一集还没取过，这里补一次；
+            // 已经取过的（raw 还在）只换画法，由 mode 的 setter 重排轨道，不再请求。
+            if(previous==DanmakuMode.HIDDEN && mode!=DanmakuMode.HIDDEN && !danmakuLoaded) {
+                detail?.let { data -> data.episodes.getOrNull(episodeIndex)?.let { episode -> loadDanmaku(episode,data.series.id) } }
+            } else if(mode!=DanmakuMode.HIDDEN) danmakuView?.invalidate()
+            // 隐藏档会收起外观项，停手后整块重建一次，焦点回到同一条进度条。
+            showPlaybackMenu(MENU_ROW_DANMAKU,mode.ordinal)
+        }
     // 弹幕的三项可调项：移动速度（三档，选中后整批重排轨道）+ 两项连续外观（字号缩放与不透明度）。
     // 速度排在字号前面：它决定同一条轨道能排多密，是「弹幕挤不挤」的第一观感。
     if(showsStyle) menu
@@ -250,7 +252,7 @@ private fun TvMainActivity.syncPlaybackMenu(menu: PlaybackMenu,showsStyle: Boole
     menu.sliderValue(MENU_ROW_SPEED,library.playbackSpeed)
     menu.sync(MENU_ROW_FRAME,VideoFrameMode.entries.indexOf(library.frameMode))
     menu.sync(MENU_ROW_DECODER,VideoDecoderMode.entries.indexOf(playbackDecoderMode))
-    menu.sync(MENU_ROW_DANMAKU,DanmakuMode.entries.indexOf(library.danmakuMode))
+    menu.sliderValue(MENU_ROW_DANMAKU,library.danmakuMode.sliderValue)
     if(showsStyle) {
         menu.sync(MENU_ROW_DANMAKU_SPEED,DanmakuSpeed.entries.indexOf(library.danmakuSpeed))
         menu.sliderValue(MENU_ROW_SCALE,library.danmakuScale)

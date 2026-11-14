@@ -281,13 +281,20 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     }
     refreshKeyLabels()
     val danmaku=sidePanel(mid)
-    lateinit var danmakuSetting: TvButton
+    lateinit var danmakuSetting: SettingSlider
     lateinit var danmakuSpeedSetting: TvButton
     lateinit var danmakuScaleRow: SettingSlider
     lateinit var danmakuAlphaRow: SettingSlider
     panelHead(danmaku,"弹幕设置","显示方式 / 速度 / 聚合 / 特效 / 字号 / 透明度")
-    danmakuSetting=setting(danmaku,danmakuLabel("弹幕显示  ·  ")) {}
-    danmakuSetting.setOnClickListener { showDanmakuPicker(danmakuSetting,false) }
+    danmakuSetting=fullSlider(
+        danmaku,"弹幕显示",
+        0f,DanmakuMode.entries.lastIndex.toFloat(),1f,library.danmakuMode.sliderValue,
+        format={ DanmakuMode.fromSlider(it).label },
+    ) { value ->
+        val selected=DanmakuMode.fromSlider(value)
+        library.danmakuMode=selected
+        danmakuView?.mode=selected
+    }
     danmakuSpeedSetting=setting(danmaku,"弹幕速度  ·  ${library.danmakuSpeed.label}") {
         showDanmakuSpeedPicker(danmakuSpeedSetting,false)
     }

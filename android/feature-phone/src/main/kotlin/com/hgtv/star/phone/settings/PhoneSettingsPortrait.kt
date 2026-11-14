@@ -99,12 +99,9 @@ internal fun PhoneSettingsActivity.renderPlayback() {
 internal fun PhoneSettingsActivity.renderDanmaku() {
     sectionImpl("弹幕")
     hintImpl("显示方式、聚合与特效共用电视端设置；字号按手机阅读单独调整，改完回到播放页即生效。")
-    rowImpl("显示方式", settingsLibrary.danmakuMode.label) {
-        val options = DanmakuMode.entries
-        pickImpl("显示方式", options.map { it.label }, options.indexOf(settingsLibrary.danmakuMode)) { index ->
-            settingsLibrary.danmakuMode = options[index]
-            renderSettings()
-        }
+    sliderImpl("显示方式", 0f, DanmakuMode.entries.lastIndex.toFloat(), 1f,
+        settingsLibrary.danmakuMode.sliderValue, { DanmakuMode.fromSlider(it).label }) {
+        settingsLibrary.danmakuMode = DanmakuMode.fromSlider(it)
     }
     rowImpl("弹幕速度", settingsLibrary.danmakuSpeed.label) {
         val options = DanmakuSpeed.entries

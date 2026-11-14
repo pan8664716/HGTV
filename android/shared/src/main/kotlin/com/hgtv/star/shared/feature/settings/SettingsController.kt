@@ -81,11 +81,14 @@ class SettingsController(
             )
             add(SettingRowSpec.Section("弹幕"))
             add(
-                SettingRowSpec.Choice(
+                SettingRowSpec.Slider(
                     id = ID_DANMAKU_MODE,
                     title = "显示方式",
-                    value = library.danmakuMode.label,
-                    options = modes.map { it.label },
+                    value = library.danmakuMode.sliderValue,
+                    min = 0f,
+                    max = modes.lastIndex.toFloat(),
+                    step = 1f,
+                    valueLabel = library.danmakuMode.label,
                 )
             )
             add(

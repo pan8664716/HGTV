@@ -175,11 +175,11 @@ fun buildPlaybackSettingsRows(
         )
     }
 
-    val modes = DanmakuMode.entries
     panel.addView(
-        PhoneSheet.row(host, "弹幕显示", modes.map { it.label },
-            modes.indexOf(lib.danmakuMode).coerceAtLeast(0), perLine = perLine) { i ->
-            lib.danmakuMode = modes[i]
+        PhoneSheet.sliderRow(host, "弹幕显示",
+            0f, DanmakuMode.entries.lastIndex.toFloat(), 1f,
+            lib.danmakuMode.sliderValue, { DanmakuMode.fromSlider(it).label }) { value ->
+            lib.danmakuMode = DanmakuMode.fromSlider(value)
             onDanmaku?.invoke()
         }
     )

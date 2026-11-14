@@ -260,6 +260,9 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private val highlightSlots: Int
         get() = when(mode) {
             DanmakuMode.SINGLE -> 1
+            DanmakuMode.TWO -> 2
+            DanmakuMode.THREE -> 3
+            DanmakuMode.FOUR -> DanmakuHighlight.MAX_SLOTS
             DanmakuMode.TOP -> 2
             DanmakuMode.FULL -> DanmakuHighlight.MAX_SLOTS
             DanmakuMode.HIDDEN -> 1
@@ -561,23 +564,19 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         laneGap=fill.textSize*LANE_GAP_TEXT
         laneHeight=maxOf(textBox,emojiBox)+fill.textSize*LANE_GAP_VERTICAL
         if(mode==DanmakuMode.HIDDEN || laneHeight<=0f) { laneCount=0; return }
-        val usable=when(mode) {
-            DanmakuMode.SINGLE -> {
-                laneTop=maxOf(
-                    if(topInsetPx>=0) topInsetPx.toFloat() else TOP_MODE_INSET_DP*density,
-                    highlightSize*0.6f+HIGHLIGHT_PAD_DP*density*0.5f)
-                laneHeight
-            }
-            DanmakuMode.TOP -> {
-                laneTop=if(topInsetPx>=0) topInsetPx.toFloat() else TOP_MODE_INSET_DP*density
-                (height*TOP_MODE_SHARE-laneTop).coerceAtLeast(0f)
-            }
-            else -> {
-                laneTop=if(topInsetPx>=0) topInsetPx.toFloat() else TOP_INSET_DP*density
-                (height-BOTTOM_INSET_DP*density).coerceAtLeast(laneTop+1f)-laneTop
-            }
+        laneTop=when {
+            mode.lineLimit!=null -> maxOf(
+                if(topInsetPx>=0) topInsetPx.toFloat() else TOP_MODE_INSET_DP*density,
+                highlightSize*0.6f+HIGHLIGHT_PAD_DP*density*0.5f)
+            mode==DanmakuMode.TOP ->
+                if(topInsetPx>=0) topInsetPx.toFloat() else TOP_MODE_INSET_DP*density
+            else ->
+                if(topInsetPx>=0) topInsetPx.toFloat() else TOP_INSET_DP*density
         }
-        laneCount=(usable/laneHeight).toInt().coerceIn(0,24)
+        val bottom=if(mode==DanmakuMode.TOP) height*TOP_MODE_SHARE
+        else height-BOTTOM_INSET_DP*density
+        val byHeight=((bottom-laneTop).coerceAtLeast(0f)/laneHeight).toInt().coerceIn(0,24)
+        laneCount=mode.lineLimit?.let { minOf(it,byHeight) } ?: byHeight
     }
 
     override fun onDraw(canvas: Canvas) {
@@ -778,6 +777,9 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private fun highlightCenterY(slot: Int): Float {
         val anchor=when(mode) {
             DanmakuMode.SINGLE -> laneTop+laneHeight/2f
+            DanmakuMode.TWO -> laneTop+laneHeight
+            DanmakuMode.THREE -> laneTop+laneHeight*1.5f
+            DanmakuMode.FOUR -> laneTop+laneHeight*2f
             DanmakuMode.TOP -> laneTop+(height*TOP_MODE_SHARE-laneTop)/2f
             else -> height/2f
         }

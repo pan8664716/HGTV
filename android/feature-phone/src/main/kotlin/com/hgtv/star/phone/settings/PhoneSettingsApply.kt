@@ -65,6 +65,8 @@ internal fun PhoneSettingsActivity.applySliderImpl(id: String, value: Float) {
             settingsControllerInstance.setSpeed(value)
         SettingsController.ID_VIDEO_SCALE ->
             settingsControllerInstance.setVideoScale(value)
+        SettingsController.ID_DANMAKU_MODE ->
+            settingsControllerInstance.setDanmakuMode(DanmakuMode.fromSlider(value))
         SettingsController.ID_DANMAKU_MERGE_MIN ->
             settingsControllerInstance.setDanmakuMergeMin(value.roundToInt())
         SettingsController.ID_DANMAKU_ALPHA ->

@@ -8,11 +8,14 @@ internal fun PhonePlayerActivity.syncChips() {
     syncLandscapeSettingsInfoForChips()
     chipSpeed.text = PlaybackSpeed.label(chipUserSpeed)
     chipQuality.text = "${library?.maxQuality ?: 1080}P"
-    // 弹幕那颗：显示当前档位（「弹幕 全屏」），隐藏档显示「弹幕 关」。
+    // 弹幕那颗：显示当前档位（「弹幕 两行」等），隐藏档显示「弹幕 关」。
     chipDanmaku.text = when (library?.danmakuMode ?: com.hgtv.star.core.DanmakuMode.DEFAULT) {
         com.hgtv.star.core.DanmakuMode.HIDDEN -> "弹幕 关"
         com.hgtv.star.core.DanmakuMode.FULL -> "弹幕 全屏"
         com.hgtv.star.core.DanmakuMode.TOP -> "弹幕 上方"
+        com.hgtv.star.core.DanmakuMode.FOUR -> "弹幕 四行"
+        com.hgtv.star.core.DanmakuMode.THREE -> "弹幕 三行"
+        com.hgtv.star.core.DanmakuMode.TWO -> "弹幕 两行"
         com.hgtv.star.core.DanmakuMode.SINGLE -> "弹幕 一行"
     }
     // **选集按钮永远显示**：之前按 `recommend` 把它藏了，而从推荐流进全屏正是最常见
@@ -24,11 +27,11 @@ internal fun PhonePlayerActivity.syncChips() {
 }
 
 /**
- * 弹幕快捷开关：点一次切下一档（全屏 → 上方 → 一行 → 关 → 全屏）。
+ * 弹幕快捷开关：点一次切下一档（全屏 → 上方 → 四行 → 三行 → 两行 → 一行 → 关 → 全屏）。
  *
  * 与电视播放页那颗「弹幕」按钮同一职责，只是把「弹菜单再选」压成一次点击：
  * 手机上最常见的动作就是「挡画面了，先关掉」，不该为此打开一整个设置面板。
- * 四档循环的次序按 [com.hgtv.star.core.DanmakuMode] 的枚举顺序，落盘值与设置页共用同一份。
+ * 七档循环的次序按 [com.hgtv.star.core.DanmakuMode] 的枚举顺序，落盘值与设置页共用同一份。
  */
 internal fun PhonePlayerActivity.cycleDanmaku() {
     val lib = library ?: return

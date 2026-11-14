@@ -314,6 +314,7 @@ internal fun PhoneSettingsActivity.applyActionImpl(id: String) {
 internal fun PhoneSettingsActivity.valueLabelForImpl(id: String, value: Float): String = when (id) {
     SettingsController.ID_SPEED -> PlaybackSpeed.label(value)
     SettingsController.ID_VIDEO_SCALE -> "${value.roundToInt()}%"
+    SettingsController.ID_DANMAKU_MODE -> DanmakuMode.fromSlider(value).label
     SettingsController.ID_DANMAKU_MERGE_MIN -> "${value.roundToInt()} 条"
     SettingsController.ID_DANMAKU_ALPHA -> DanmakuStyle.percent(value)
     "playback.seekStep" -> "${value.roundToInt()} 秒"

@@ -94,11 +94,10 @@ internal fun PhoneSettingsActivity.renderLandscapePlayback() {
 
     val danmaku=landscapePanel("弹幕设置","显示方式 / 速度 / 聚合 / 特效 / 字号 / 透明度")
     val (left,right)=landscapeColumns(danmaku)
-    landscapeColumnCell(left,landscapeSetting("显示方式",settingsLibrary.danmakuMode.label) {
-        val options=DanmakuMode.entries
-        pickImpl("显示方式",options.map { it.label },options.indexOf(settingsLibrary.danmakuMode)) { i ->
-            settingsLibrary.danmakuMode=options[i]; renderSettings()
-        }
+    landscapeColumnCell(left,landscapeSlider("显示方式",
+        0f,DanmakuMode.entries.lastIndex.toFloat(),1f,
+        settingsLibrary.danmakuMode.sliderValue,{ DanmakuMode.fromSlider(it).label }) {
+        settingsLibrary.danmakuMode=DanmakuMode.fromSlider(it)
     })
     landscapeColumnCell(left,landscapeSetting("弹幕速度",settingsLibrary.danmakuSpeed.label) {
         val options=DanmakuSpeed.entries
