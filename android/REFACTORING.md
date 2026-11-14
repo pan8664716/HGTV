@@ -4537,6 +4537,19 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 推荐流过滤预告片
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 官方 `VideoTabModel.VideoData` 将服务端 `is_preview_material` 映射为 `isTrailer`；
+  该字段表示卡片本身是预告 / 预览素材，不是“该剧带预告资源”。
+- 官方推荐流在解析卡片时过滤 `is_preview_material` / `is_trailer=true`；
+  AI 分类兜底流也在映射前过滤同类条目。
+- 仍按原始卡片槽位或原始条数推进游标，过滤预告片不会导致下一页重复。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 音频 CPU 调查
 
 状态：已调查，未提交实验代码。

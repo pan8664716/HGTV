@@ -83,6 +83,11 @@ internal object ContentCatalogParser {
         }
     }
 
+    /** 卡片自身是否被服务端标记为预告 / 预览素材，而不是“该剧有预告资源”。 */
+    fun isPreviewMaterial(item: JSONObject?): Boolean =
+        item?.optBoolean("is_preview_material",false)==true ||
+            item?.optBoolean("is_trailer",false)==true
+
     /**
      * 官方推荐页的原始卡片槽位数。
      *
@@ -111,6 +116,9 @@ internal object ContentCatalogParser {
         val detail=videoData?.optJSONObject("video_detail") ?: direct ?: videoData
         val firstVideo=detail?.optJSONArray("video_list")?.objects()?.firstOrNull()
             ?: detail?.optJSONArray("video_detail_list")?.objects()?.firstOrNull()
+        if(isPreviewMaterial(videoData) || isPreviewMaterial(detail) || isPreviewMaterial(firstVideo)) {
+            return null
+        }
         val id=detail?.str("series_id").orEmpty()
             .ifBlank { detail?.str("series_id_str").orEmpty() }
             .ifBlank { videoData?.str("series_id").orEmpty() }

@@ -110,6 +110,7 @@ private val SHORT_DRAMA_CONTENT_TYPES=setOf(
         val payload=data.optJSONObject("data") ?: throw IOException("推荐接口结构已变化")
         val rawItems=ContentCatalogParser.valid(
             (payload.optJSONArray("video_data") ?: JSONArray()).objects()
+                .filterNot(ContentCatalogParser::isPreviewMaterial)
                 .map(ContentCatalogParser::apiCard),
         )
         val items=rawItems.filter { it.contentType in SHORT_DRAMA_CONTENT_TYPES }
