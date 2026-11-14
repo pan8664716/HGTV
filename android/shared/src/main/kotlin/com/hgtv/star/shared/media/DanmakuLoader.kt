@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.media
 
-import android.os.SystemClock
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.Danmaku
 import com.hgtv.star.core.DanmakuMode
@@ -19,7 +18,7 @@ import kotlinx.coroutines.CoroutineScope
  * 而它们要表达的是同一件事：
  *
  * ```
- * 换集 → 作废旧请求（代次 +1）→ 手动换集立即清屏 / 片尾连播保留旧画面 → 拉窗口
+ * 换集 → 作废旧请求（代次 +1）→ 手动换集立即清屏 / 片尾连播保留旧画面 → 连续拉页
  * ```
  *
  * ## 三条容易写错的规则（都在这里）
@@ -38,7 +37,7 @@ class DanmakuLoader(
     private val mode: () -> DanmakuMode,
     /** 往哪一层的 `DanmakuView` 上画。页面重建后这个值会变，因此每次现取。 */
     private val target: () -> DanmakuView?,
-    /** 回主线程：`setDanmaku` 要碰 View，网络回包可能在任意线程。 */
+    /** 回主线程：`setDanmaku` / `appendDanmaku` 要碰 View，网络回包可能在任意线程。 */
     private val post: (() -> Unit) -> Unit,
     /** 页面还活着吗（销毁 / 已切走时不要再碰界面）。 */
     private val alive: () -> Boolean = { true },
@@ -61,12 +60,8 @@ class DanmakuLoader(
 
     /** 请求代次：换集就 +1，旧回包凭它作废。 */
     private var token = 0L
-    /** 上一次把中间窗口铺到屏幕上的时间；整集完成时不受它限制。 */
-    private var lastWindowAt = 0L
-    /** 已经上屏的窗口条数；首窗之后、播放到安全点之前不再重排。 */
+    /** 是否已经铺过首批弹幕；后续窗口只追加，不重排。 */
     @Volatile private var lastShownCount = 0
-    /** 整集数据先留在手上，播放到安全点后再替换首窗。 */
-    private var pendingFullItems: List<Danmaku>? = null
 
     /**
      * 最近一次铺到屏幕上的那一份弹幕（含边拉边画的中间态）。
@@ -131,9 +126,7 @@ class DanmakuLoader(
         episode = episodeId
         count = -1
         lastItems = emptyList()
-        lastWindowAt = 0L
         lastShownCount = 0
-        pendingFullItems = null
         if (!switchingEpisode || clearOnSwitch) {
             view.clear()
             if (clearOnSwitch) forgetClock()
@@ -141,27 +134,19 @@ class DanmakuLoader(
         if (current == DanmakuMode.HIDDEN) return
         scope.danmaku {
             val items = runCatching {
-                // 边拉边画：一个 30 秒窗口到手就先铺上屏。整集要拉几十个窗口、每个之间还要留频控间隔，
-                // 等全量再画等于前十几秒一条弹幕都没有，看上去和「弹幕功能没生效」一样。
+                // 一个线程连续拉取；首屏排一次，后续页面只追加，不清空当前轨道。
                 repository().danmaku(
                     episodeId, seriesId, 0, { token != ticket },
                     onWindow = onWindow@{ partial ->
-                        // 窗口每 30 秒一个，但网络回包会在起播阶段连续到达。
-                        // 每个回包都做一次全量排序 / 聚合 / 轨道重排，会在首秒叠出明显卡顿。
-                        // 第一窗立即上屏，之后合并中间态；整集完成时若还没到安全点，只暂存。
-                        val now = SystemClock.uptimeMillis()
-                        if (lastShownCount > 0 && clockAt < FULL_SWAP_POSITION_MS) {
-                            return@onWindow
-                        }
-                        if (lastWindowAt > 0L && now - lastWindowAt < PARTIAL_UPDATE_INTERVAL_MS) {
-                            return@onWindow
-                        }
-                        lastWindowAt = now
                         post {
                             if (!alive() || token != ticket) return@post
                             lastItems = partial
                             target()?.let { view ->
-                                view.setDanmaku(partial)
+                                if(lastShownCount==0 || view!==lastTarget) {
+                                    view.setDanmaku(partial)
+                                } else {
+                                    view.appendDanmaku(partial)
+                                }
                                 lastTarget = view
                                 lastShownCount = partial.size
                             }
@@ -175,14 +160,13 @@ class DanmakuLoader(
                 count = items.size
                 lastItems = items
                 target()?.let { view ->
-                    if (lastShownCount == 0 || clockAt >= FULL_SWAP_POSITION_MS) {
+                    if(lastShownCount==0 || view!==lastTarget) {
                         view.setDanmaku(items)
-                        lastTarget = view
-                        lastShownCount = items.size
-                        pendingFullItems = null
                     } else {
-                        pendingFullItems = items
+                        view.appendDanmaku(items)
                     }
+                    lastTarget = view
+                    lastShownCount = items.size
                 }
                 onLoaded(episodeId, items.size)
             }
@@ -199,9 +183,7 @@ class DanmakuLoader(
         episode = ""
         count = -1
         lastItems = emptyList()
-        lastWindowAt = 0L
         lastShownCount = 0
-        pendingFullItems = null
         lastTarget = null
         target()?.clear()
         forgetClock()
@@ -245,33 +227,14 @@ class DanmakuLoader(
         token++
         episode = ""
         count = -1
-        lastWindowAt = 0L
         lastShownCount = 0
-        pendingFullItems = null
         forgetClock()
-    }
-
-    private companion object {
-        const val PARTIAL_UPDATE_INTERVAL_MS=1_500L
-        /** 首窗覆盖 0–30 秒；到 20 秒再换整集数据，避开起播最敏感的一段。 */
-        const val FULL_SWAP_POSITION_MS=20_000L
     }
 
     /** 把播放位置 / 播放状态 / 倍速推给弹幕层（每帧只读，不回调播放器）。 */
     fun syncClock(positionMs: Long, running: Boolean, speed: Float) {
         if (positionMs == clockAt && running == runningState && speed == clockSpeedState) return
         val view = target()
-        pendingFullItems?.let { items ->
-            if (positionMs >= FULL_SWAP_POSITION_MS) {
-                pendingFullItems = null
-                view?.let {
-                    it.setDanmaku(items)
-                    lastTarget = it
-                    lastItems = items
-                    lastShownCount = items.size
-                }
-            }
-        }
         if (view != null) {
             if (runningState && !running) {
                 // 暂停：冻结当前屏幕位置，不把已经外推出的那几十毫秒倒回去。

@@ -170,6 +170,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private var lastPosition=-1L
     private var lastSchedulePositionMs=-1L
     private var nextGroupIndex=0
+    private val scheduledGroupKeys=mutableSetOf<String>()
     private var laneFreeMs=LongArray(0)
     private var backlogCutoffMs=Long.MIN_VALUE
     private var scheduleDirty=true
@@ -353,6 +354,36 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         replaceDanmaku(items)
     }
 
+    /**
+     * 追加后台线程陆续取到的弹幕。
+     *
+     * 只更新数据缓冲并排入当前播放点之后的新内容，不清空 [lines]，也不重排已经上屏的弹幕。
+     */
+    fun appendDanmaku(items: List<Danmaku>) {
+        if(items.isEmpty()) return
+        val merged=LinkedHashMap<String,Danmaku>()
+        raw.forEach { merged["${it.offsetMs}:${it.text}"]=it }
+        items.forEach { merged["${it.offsetMs}:${it.text}"]=it }
+        val nextRaw=merged.values.sortedBy { it.offsetMs }
+        if(nextRaw.size==raw.size) return
+        raw=nextRaw
+        groups=if(mergeRepeats) repeatGroups(raw,minCount=mergeMinCount) else raw.map { DanmakuRepeat(it.text,listOf(it.offsetMs)) }
+        val fresh=mutableListOf<String>()
+        groups.forEach { if(prefetched.add(it.text)) fresh+=it.text }
+        if(fresh.isNotEmpty()) emoji.prefetch(fresh)
+        if(mode==DanmakuMode.HIDDEN) {
+            visibility=INVISIBLE
+            return
+        }
+        val nowMs=clockPositionMillis()
+        backlogCutoffMs=nowMs-REPLACE_ACTIVE_GRACE_MS
+        nextGroupIndex=groups.indexOfFirst { it.firstMs>=backlogCutoffMs }.let { if(it<0) groups.size else it }
+        scheduleGroupsThrough(nowMs+SCHEDULE_AHEAD_MS,nowMs)
+        backlogCutoffMs=Long.MIN_VALUE
+        visibility=VISIBLE
+        invalidate()
+    }
+
     fun clear() {
         stopClock()
         transitionHold=false
@@ -398,6 +429,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private fun relayout(suppressBacklog: Boolean=false) {
         clearScrollLayer()
         nextGroupIndex=0
+        scheduledGroupKeys.clear()
         laneFreeMs=LongArray(0)
         lastSchedulePositionMs=-1L
         scheduleDirty=true
@@ -443,8 +475,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     /**
      * 缓冲只保留当前播放点之后 30 秒的滚动弹幕；已经结束的行立即回收。
      *
-     * 轨道占用仍从本集开头顺序推算，因此正常播放、前后跳转和补数据重排得到的落点一致；
-     * 跳转时只重建窗口内的 [Line]，不会重新持有整集对象。
+     * 正常播放时只增量排入新进入窗口的数据，补页不会清空 [lines]；跳转时才重建
+     * 当前窗口内的 [Line]，不会重新持有整集对象。
      */
     private fun scheduleScrollWindow(nowMs: Long) {
         if(laneCount<=0) return
@@ -460,6 +492,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private fun rebaseScrollSchedule(nowMs: Long) {
         clearScrollLayer()
         nextGroupIndex=0
+        scheduledGroupKeys.clear()
         laneFreeMs=LongArray(laneCount)
         scheduleDirty=false
         lastSchedulePositionMs=nowMs
@@ -481,6 +514,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         val emojiSize=fill.textSize*EMOJI_SCALE
         while(nextGroupIndex<groups.size && groups[nextGroupIndex].firstMs<=untilMs) {
             val group=groups[nextGroupIndex++]
+            if(!scheduledGroupKeys.add(group.key)) continue
             if(group.key in highlightedKeys) continue
             val parts=partsOf(group.label)
             val widths=widthsOf(group.label,parts,emojiSize)
@@ -669,7 +703,11 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             if(next==null || round.startMs<next) next=round.startMs
             break
         }
-        if(next==null && nextGroupIndex<groups.size) next=groups[nextGroupIndex].firstMs
+        if(next==null) {
+            var index=nextGroupIndex
+            while(index<groups.size && groups[index].key in scheduledGroupKeys) index++
+            if(index<groups.size) next=groups[index].firstMs
+        }
         return next
     }
 
