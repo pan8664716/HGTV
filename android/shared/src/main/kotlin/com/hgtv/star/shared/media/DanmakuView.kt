@@ -54,6 +54,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         const val SPRITE_REFRESH_MS=30_000L
         const val SCHEDULE_AHEAD_MS=30_000L
         const val LINE_RETENTION_MS=1_000L
+        const val REPLACE_ACTIVE_GRACE_MS=500L
         const val SEEK_BACK_TOLERANCE_MS=250L
         const val LINE_POOL_LIMIT=256
     }
@@ -170,6 +171,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private var lastSchedulePositionMs=-1L
     private var nextGroupIndex=0
     private var laneFreeMs=LongArray(0)
+    private var backlogCutoffMs=Long.MIN_VALUE
     private var scheduleDirty=true
     private var laneCount=0
     private var laneHeight=0f
@@ -292,8 +294,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
                 pendingDanmaku=null
                 transitionHold=false
                 transitionClockReady=false
-                raw=items.sortedBy { it.offsetMs }
-                relayout()
+                replaceDanmaku(items)
             }
         }
         if(visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
@@ -349,8 +350,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         transitionHold=false
         transitionClockReady=false
         pendingDanmaku=null
-        raw=items.sortedBy { it.offsetMs }
-        relayout()
+        replaceDanmaku(items)
     }
 
     fun clear() {
@@ -389,7 +389,13 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         if(visibility==VISIBLE) postInvalidateOnAnimation()
     }
 
-    private fun relayout() {
+    private fun replaceDanmaku(items: List<Danmaku>) {
+        val replacingExistingData=raw.isNotEmpty()
+        raw=items.sortedBy { it.offsetMs }
+        relayout(suppressBacklog=replacingExistingData)
+    }
+
+    private fun relayout(suppressBacklog: Boolean=false) {
         clearScrollLayer()
         nextGroupIndex=0
         laneFreeMs=LongArray(0)
@@ -397,6 +403,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         scheduleDirty=true
         lastPosition=-1L
         val nowMs=clockPositionMillis()
+        backlogCutoffMs=if(suppressBacklog) nowMs-REPLACE_ACTIVE_GRACE_MS else Long.MIN_VALUE
         groups=if(mergeRepeats) repeatGroups(raw,minCount=mergeMinCount) else raw.map { DanmakuRepeat(it.text,listOf(it.offsetMs)) }
         highlights=if(mode==DanmakuMode.HIDDEN) emptyList()
         else planHighlights(
@@ -457,6 +464,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         scheduleDirty=false
         lastSchedulePositionMs=nowMs
         scheduleGroupsThrough(nowMs+SCHEDULE_AHEAD_MS,nowMs)
+        backlogCutoffMs=Long.MIN_VALUE
     }
 
     private fun releaseExpiredLines(nowMs: Long) {
@@ -488,6 +496,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             if(startMs-group.firstMs>MAX_DELAY_MS) continue
             val endMs=startMs+durationMs
             laneFreeMs[lane]=startMs+(((width+laneGap)/pixelsPerSecond)*1000f).toLong()
+            if(startMs<backlogCutoffMs) continue
             if(endMs<nowMs-LINE_RETENTION_MS) continue
             // 纯文本即使被表情解析器拆成多段，也可以拼回一张图集贴图；
             // 只有真正含表情资源的行才留在逐帧文字路径上。
