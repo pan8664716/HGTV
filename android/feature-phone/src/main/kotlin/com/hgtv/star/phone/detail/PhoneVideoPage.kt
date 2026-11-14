@@ -125,6 +125,12 @@ class PhoneVideoPage(
         PhonePlayerViewSupport.useOpaqueVideoSurface(this)
     }
 
+    /**
+     * 弹幕 Surface 是全屏透明的，黑边需要由窗口层里的普通 View 再盖一层。
+     * 这层只覆盖视频画面之外，不拦截触摸。
+     */
+    internal val letterboxMask = PhoneLetterboxMask(context)
+
     // ------------------------------------------------------------------ 底部信息
 
     private val title = TextView(context).apply {
@@ -274,6 +280,8 @@ class PhoneVideoPage(
         addView(playerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // 弹幕压在画面之上（在遮罩与信息栏之前加，因此它永远在这些层下面）。
         addView(danmakuView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        // 弹幕层是独立 SurfaceView；普通 View 必须在它之后加入，才能遮住它的透明挖孔。
+        addView(letterboxMask, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
         // 限高到屏高的一半：整屏铺开时哪怕渐变再陡，画面中间也会被压暗一层。
         // 真实高度在 onSizeChanged 里按本页高度算（信息流每一页的高度不一样）。
@@ -489,8 +497,14 @@ class PhoneVideoPage(
         }
         // 尺寸变了：缩放是按屏宽高算的，必须按新尺寸重排一次。
         applyVideoScale()
+        syncLetterboxMask()
         // 转屏 / 换版面之后画面尺寸变了，按钮要重新贴到画面下边缘。
         if (videoWidth > 0 && videoHeight > 0) placeFullscreenButton()
+    }
+
+    override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
+        super.onLayout(changed, left, top, right, bottom)
+        syncLetterboxMask()
     }
 
     /**
@@ -502,7 +516,18 @@ class PhoneVideoPage(
         if (width <= 0 || height <= 0) return
         videoWidth = width
         videoHeight = height
+        syncLetterboxMask()
         placeFullscreenButton()
+    }
+
+    internal fun syncLetterboxMask() {
+        letterboxMask.sync(
+            videoView = playerView,
+            videoWidth = videoWidth,
+            videoHeight = videoHeight,
+            resizeMode = playerView.resizeMode,
+            videoScale = videoScale,
+        )
     }
 
     private fun placeFullscreenButton() {
@@ -638,6 +663,7 @@ class PhoneVideoPage(
         // bind 只给一个安全的初值：完整画面。真正的档位由宿主按**实际视频尺寸**随后覆盖；
         // 卡片上的 `vertical` 偶有标错，不能在这里先按它把横屏片放大。
         playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+        syncLetterboxMask()
         // 尺寸回调前先用卡片方向给一个与当前版面一致的初值；尺寸到手后仍以实际画面为准。
         wantsFullscreen = if (isLandscapePage()) series.vertical else !series.vertical
         if (!sameSeries) {
@@ -778,6 +804,7 @@ class PhoneVideoPage(
         lp.gravity = Gravity.CENTER
         playerView.layoutParams = lp
         playerView.requestLayout()
+        syncLetterboxMask()
     }
 
     /** 播放进度（0..1）。用户正在拖进度条时不覆盖他的手。 */

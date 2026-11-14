@@ -19,7 +19,25 @@ internal fun PhonePlayerActivity.updateLandscapeVideoFrameImpl(width: Int, heigh
     if (width <= 0 || height <= 0) return
     playerLandVideoWidth = width
     playerLandVideoHeight = height
+    syncLandscapeLetterboxImpl()
     placeLandscapeFullscreenImpl()
+}
+
+/** 横屏弹幕 Surface 的透明黑边遮罩：只跟随实际视频画面，不跟随控制层。 */
+internal fun PhonePlayerActivity.syncLandscapeLetterboxImpl() {
+    if (!playerLandscapeVideoInitialized || !playerLandLetterboxInitialized) return
+    val scale = if (playerLandscape.width > 0 && playerLandscapeVideo.width > 0) {
+        playerLandscapeVideo.width.toFloat() / playerLandscape.width
+    } else {
+        1f
+    }
+    playerLandLetterbox.sync(
+        videoView = playerLandscapeVideo,
+        videoWidth = playerLandVideoWidth,
+        videoHeight = playerLandVideoHeight,
+        resizeMode = playerLandscapeVideo.resizeMode,
+        videoScale = scale,
+    )
 }
 
 /**
@@ -104,4 +122,5 @@ private fun PhonePlayerActivity.applyLandscapeVideoScaleImpl(ratio: Float) {
     lp.gravity = Gravity.CENTER
     playerLandscapeVideo.layoutParams = lp
     playerLandscapeVideo.requestLayout()
+    syncLandscapeLetterboxImpl()
 }

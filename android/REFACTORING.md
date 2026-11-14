@@ -4617,9 +4617,9 @@ feature-tv/
 
 - 现象：从推荐页进入正式播放页，反复切换横竖屏后，竖屏播放画面背后重新出现推荐页
   标题、导航和弹幕。
-- 根因不是弹幕 Surface，而是手机播放页为了借推荐页视频把 Activity root 设成透明；
-  进入横屏后下层推荐页会恢复自己的界面，退回竖屏继续借 Surface 时 root 再次透明，
-  推荐页因此从整页背后透出来。
+- 这一条的根因是手机播放页为了借推荐页视频把 Activity root 设成透明；进入横屏后
+  下层推荐页会恢复自己的界面，退回竖屏继续借 Surface 时 root 再次透明，推荐页因此
+  从整页背后透出来。它和下面「FIT 黑边」的弹幕 Surface 透明问题不是同一条链路。
 - 修复：一旦进入横屏就调用 `dropUnderlay()` 永久结束本次推荐页 Surface 借用；
   退回竖屏使用播放页自己的 PlayerView，并强制 `root` 恢复为不透明黑色。
 - `PhoneSession.reassertFeedChromeHidden()` 保留用于首次借下层画面时重申收起状态，
@@ -4647,11 +4647,31 @@ feature-tv/
 
 - 现象：手机横屏播放竖版短剧，或竖屏播放横版短剧时，FIT 产生的黑边会透出进入播放页
   之前的详情页内容。
-- 根因：手机播放页窗口是半透明的，PlayerView 内部 SurfaceView 的 letterbox 区域也带
-  透明合成，挖孔后会露出下层 Activity，而不是黑色。
-- 修复：竖屏与横屏两个 PlayerView 创建后都把视频 Surface 显式设为
+- 初次排查：手机播放页窗口是半透明的，PlayerView 内部 SurfaceView 的 letterbox
+  区域也带透明合成，挖孔后会露出下层 Activity，而不是黑色。
+- 初版修复：竖屏与横屏两个 PlayerView 创建后都把视频 Surface 显式设为
   `PixelFormat.OPAQUE`，让视频画面之外的 Surface 区域按黑色输出，不再依赖 Activity
   背景遮住下层页面。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 手机播放黑边透出上一页（弹幕 Surface 二次修复）
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 复核现象：横屏播放竖版短剧、竖屏播放横版短剧时，视频画面本身正常，但 FIT 黑边
+  仍会显示进入播放页之前的详情页或推荐页内容；问题集中在黑边，不在视频画面。
+- 根因：`DanmakuView` 是**全屏透明 `SurfaceView`**，且设置了
+  `setZOrderMediaOverlay(true)`。它的透明缓冲区会在整个播放页窗口上挖孔；视频
+  Surface 的 `PixelFormat.OPAQUE` 只能保证视频画面本身不透明，无法覆盖这块全屏
+  透明弹幕层，所以 FIT 黑边仍会露出下层 Activity。
+- 修复：新增 `PhoneLetterboxMask`，放在弹幕 Surface 之后、控制层之前，用普通窗口
+  View 只绘制视频画面之外的四块黑色区域；不覆盖视频中心，也不拦截触摸，因此保留
+  弹幕独立 Surface 的渲染性能。
+- 竖屏 `PhoneVideoPage` 与横屏 `PhonePlayerActivity` 都接入了遮罩；遮罩跟随
+  `PlayerView` 布局、画面尺寸、FIT/ZOOM/FILL 模式、画面缩放和借下层 Surface 的
+  可见状态刷新。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。

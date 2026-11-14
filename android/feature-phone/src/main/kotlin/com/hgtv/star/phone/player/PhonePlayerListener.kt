@@ -101,7 +101,10 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
             // 竖屏短剧在竖屏里等比铺满会裁掉左右，换集后突然放大就是从这里来的。
             val target = (library?.frameMode ?: VideoFrameMode.FIT).toFit().resizeMode()
             playerPage.setResizeMode(target)
-            if (playerLandscapeMode) playerLandscapeVideo.resizeMode = target
+            if (playerLandscapeMode) {
+                playerLandscapeVideo.resizeMode = target
+                syncLandscapeLetterboxImpl()
+            }
             if (playerFeedUnderlay) PhoneSession.setFeedVideoResize(target)
             playerPage.updateVideoFrame(videoSize.width, videoSize.height)
             updateLandscapeVideoFrameForListener(videoSize.width, videoSize.height)

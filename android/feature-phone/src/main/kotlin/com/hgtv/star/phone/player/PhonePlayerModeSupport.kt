@@ -50,4 +50,5 @@ internal fun PhonePlayerActivity.applyLandscapeResize() {
     // 换集时尤其明显。用户想铺满可以自己选「等比铺满」。
     playerLandscapeVideo.resizeMode =
         (library?.frameMode ?: VideoFrameMode.FIT).toFit().resizeMode()
+    syncLandscapeLetterboxImpl()
 }

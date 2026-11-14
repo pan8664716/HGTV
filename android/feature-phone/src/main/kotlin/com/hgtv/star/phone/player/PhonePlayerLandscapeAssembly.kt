@@ -67,6 +67,11 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     landscape.addView(danmaku, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
     ))
+    // 弹幕 Surface 的透明区域会挖穿播放页窗口；黑边遮罩必须放在弹幕之后。
+    val letterbox = PhoneLetterboxMask(this)
+    landscape.addView(letterbox, FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+    ))
 
     // 手势挂在一块**透明覆盖层**上：横屏没有「信息栏里的按钮」需要让路，
     // 覆盖层可以整屏接管，点击一律先到状态机。
@@ -113,6 +118,12 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     playerLandscapeContainer = landscape
     playerLandscapeVideoSlot = video
     playerLandDanmakuSlot = danmaku
+    playerLandLetterboxSlot = letterbox
+    video.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
+        if (playerLandscapeVideoInitialized && playerLandLetterboxInitialized) {
+            syncLandscapeLetterboxImpl()
+        }
+    }
 }
 
 /** 横屏常驻信息行、设置入口和竖版片源全屏入口。 */

@@ -2,8 +2,12 @@
 package com.hgtv.star.phone
 
 import android.app.Activity
+import android.content.Context
+import android.graphics.Canvas
 import android.graphics.Color
+import android.graphics.Paint
 import android.graphics.PixelFormat
+import android.graphics.RectF
 import android.os.Build
 import android.view.Gravity
 import android.view.View
@@ -14,6 +18,7 @@ import android.view.SurfaceView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
 import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
@@ -25,9 +30,9 @@ import com.hgtv.star.phone.ui.resizeMode
 
 internal object PhonePlayerViewSupport {
     /**
-     * SurfaceView 默认透明区域会挖穿 Activity 窗口。播放器 FIT 后的黑边一旦落在这块
-     * 透明 Surface 上，下层详情页就会透出来。显式使用 OPAQUE Surface，让黑边由视频层
-     * 自己输出黑色，而不是依赖 Activity 背景。
+     * SurfaceView 默认透明区域会挖穿 Activity 窗口。视频 Surface 显式设为 OPAQUE，
+     * 避免视频画面本身透出下层页面；弹幕那一层仍是透明 Surface，黑边由
+     * [PhoneLetterboxMask] 在窗口层遮住。
      */
     fun useOpaqueVideoSurface(view: PlayerView) {
         runCatching {
@@ -96,5 +101,126 @@ internal object PhonePlayerViewSupport {
     fun keepScreenOn(window: Window, on: Boolean) {
         if (on) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
+}
+
+/**
+ * 播放器 FIT 黑边遮罩。
+ *
+ * `DanmakuView` 是全屏透明 `SurfaceView`，透明区域会继续挖穿播放页窗口。只在
+ * PlayerView 外层的普通 View 上铺黑底没有用，因为这块黑底仍在 SurfaceView 的挖孔
+ * 范围内；把遮罩放在弹幕层之后，才能只盖住视频画面之外的黑边，同时保留弹幕
+ * 独立 Surface 的渲染性能。
+ */
+internal class PhoneLetterboxMask(context: Context) : View(context) {
+    private val paint = Paint().apply {
+        color = Color.BLACK
+        isAntiAlias = false
+    }
+    private var sourceWidth = 0
+    private var sourceHeight = 0
+    private var resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+    private var fallbackScale = 1f
+    private var videoView: View? = null
+
+    init {
+        setWillNotDraw(false)
+        isClickable = false
+        isFocusable = false
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
+    fun sync(
+        videoView: View?,
+        videoWidth: Int,
+        videoHeight: Int,
+        resizeMode: Int,
+        videoScale: Float = 1f,
+    ) {
+        this.videoView = videoView
+        sourceWidth = videoWidth
+        sourceHeight = videoHeight
+        this.resizeMode = resizeMode
+        fallbackScale = videoScale.coerceIn(.1f, 1f)
+        invalidate()
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if (width <= 0 || height <= 0) return
+        val picture = pictureBounds()
+        if (picture == null) {
+            canvas.drawColor(Color.BLACK)
+            return
+        }
+        val left = picture.left.coerceIn(0f, width.toFloat())
+        val top = picture.top.coerceIn(0f, height.toFloat())
+        val right = picture.right.coerceIn(0f, width.toFloat())
+        val bottom = picture.bottom.coerceIn(0f, height.toFloat())
+        if (left > 0f) canvas.drawRect(0f, 0f, left, height.toFloat(), paint)
+        if (right < width) canvas.drawRect(right, 0f, width.toFloat(), height.toFloat(), paint)
+        if (top > 0f) canvas.drawRect(0f, 0f, width.toFloat(), top, paint)
+        if (bottom < height) {
+            canvas.drawRect(0f, bottom, width.toFloat(), height.toFloat(), paint)
+        }
+    }
+
+    private fun pictureBounds(): RectF? {
+        actualVideoBounds()?.let { return it }
+        if (sourceWidth <= 0 || sourceHeight <= 0) return null
+        val bounds = fallbackVideoBounds()
+        if (bounds.width() <= 0f || bounds.height() <= 0f) return null
+        if (resizeMode != AspectRatioFrameLayout.RESIZE_MODE_FIT) return bounds
+
+        val sourceRatio = sourceWidth.toFloat() / sourceHeight
+        val boundsRatio = bounds.width() / bounds.height()
+        if (boundsRatio > sourceRatio) {
+            val pictureWidth = bounds.height() * sourceRatio
+            val inset = (bounds.width() - pictureWidth) / 2f
+            return RectF(
+                bounds.left + inset,
+                bounds.top,
+                bounds.right - inset,
+                bounds.bottom,
+            )
+        }
+        val pictureHeight = bounds.width() / sourceRatio
+        val inset = (bounds.height() - pictureHeight) / 2f
+        return RectF(
+            bounds.left,
+            bounds.top + inset,
+            bounds.right,
+            bounds.bottom - inset,
+        )
+    }
+
+    private fun actualVideoBounds(): RectF? {
+        val player = videoView as? PlayerView ?: return null
+        if (player.visibility != VISIBLE) return null
+        val frame = player.videoSurfaceView?.parent as? AspectRatioFrameLayout ?: return null
+        if (frame.width <= 0 || frame.height <= 0) return null
+        return RectF(
+            (player.left + frame.left).toFloat(),
+            (player.top + frame.top).toFloat(),
+            (player.left + frame.right).toFloat(),
+            (player.top + frame.bottom).toFloat(),
+        )
+    }
+
+    private fun fallbackVideoBounds(): RectF {
+        val view = videoView
+        if (view != null && view.visibility == VISIBLE && view.width > 0 && view.height > 0) {
+            return RectF(
+                view.left.toFloat(),
+                view.top.toFloat(),
+                view.right.toFloat(),
+                view.bottom.toFloat(),
+            )
+        }
+        val scaledWidth = width * fallbackScale
+        val scaledHeight = height * fallbackScale
+        val left = (width - scaledWidth) / 2f
+        val top = (height - scaledHeight) / 2f
+        return RectF(left, top, left + scaledWidth, top + scaledHeight)
     }
 }

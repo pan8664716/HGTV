@@ -38,4 +38,6 @@ internal fun PhonePlayerActivity.applyFrameModeImpl(mode: VideoFrameMode) {
         mode,
         playerFeedUnderlay,
     )
+    playerPage.syncLetterboxMask()
+    syncLandscapeLetterboxImpl()
 }

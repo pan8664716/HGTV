@@ -52,6 +52,7 @@ fun PhoneVideoPage.hideCenterIcon() {
 
 fun PhoneVideoPage.setResizeMode(mode: Int) {
     playerView.resizeMode = mode
+    syncLetterboxMask()
 }
 
 fun PhoneVideoPage.setVideoSurfaceVisible(visible: Boolean) {
@@ -61,4 +62,5 @@ fun PhoneVideoPage.setVideoSurfaceVisible(visible: Boolean) {
         playerView.setShutterBackgroundColor(Color.BLACK)
         playerView.setBackgroundColor(Color.BLACK)
     }
+    syncLetterboxMask()
 }
