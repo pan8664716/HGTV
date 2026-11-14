@@ -220,6 +220,13 @@ object PhoneSession {
         feedChrome?.invoke(false)
     }
 
+    /** 重新借回下层 Surface 时重申收起状态，不重复增加 [feedChromeDepth]。 */
+    fun reassertFeedChromeHidden() {
+        feedChromeDepth = feedChromeDepth.coerceAtLeast(1)
+        feedChromeHidden = true
+        feedChrome?.invoke(false)
+    }
+
     /** 还回推荐页的控制层；还有别的播放页压着时不放。 */
     fun restoreFeedChrome() {
         feedChromeDepth = (feedChromeDepth - 1).coerceAtLeast(0)

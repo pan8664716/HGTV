@@ -21,6 +21,7 @@ internal fun PhonePlayerActivity.attachUnderlay(): Boolean {
         playerPage.setVideoSurfaceVisible(false)
         root.setBackgroundColor(Color.TRANSPARENT)
         PhoneSession.underlayActive = true
+        PhoneSession.reassertFeedChromeHidden()
         return true
     }
     playerUnderlayBound = false
