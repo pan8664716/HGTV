@@ -237,10 +237,10 @@ class PhoneFeedView(
     /**
      * 落盘快照 / 续流游标的命名空间：三条体裁流各存各的（见 `RecommendCache.fileOf`）。
      *
-     * `heat-v1-` 是当前缓存格式版本：切回分类接口热度推荐后，
-     * 官方书包流留下的快照与游标不能继续铺到首屏，换前缀后自然失效。
+     * `official-v1-` 是当前缓存格式版本：切到官方推荐流后，
+     * 旧分类接口留下的快照与游标不能继续铺到首屏，换前缀后自然失效。
      */
-    private fun cacheKey(): String = "heat-v1-" + genre.orEmpty().ifEmpty { "all" }
+    private fun cacheKey(): String = "official-v1-" + genre.orEmpty().ifEmpty { "all" }
     internal fun feedCacheKey(): String = cacheKey()
 
     private var recommendStore=newRecommendStore()
@@ -473,8 +473,8 @@ class PhoneFeedView(
     /**
      * 换体裁（漫剧 / 真人 / AI剧）。
      *
-     * 换类等于换一条分类推荐流：`null` 是全部体裁混排，漫剧 / 真人剧 / AI剧
-     * 分别对应分类接口的 `comic_series` / `short_play` / `ai_series`。
+     * 换类等于换一条推荐流：`null` 是全部体裁混排，漫剧 / 真人剧走官方 Tab；
+     * AI剧没有独立官方 Tab，继续对应分类接口的 `ai_series`。
      * 换类必须从头取，游标与快照也按类分开。
      */
     fun setGenre(value: String?) {

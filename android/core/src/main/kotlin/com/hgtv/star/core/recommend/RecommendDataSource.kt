@@ -4,12 +4,12 @@ package com.hgtv.star.core
 /**
  * 推荐页的四个入口。
  *
- * 推荐页当前使用分类接口；这里保留 Tab 与分类 `genre` 的映射：
+ * 综合、漫剧、真人推荐页使用官方 `bookmall/tab/v`；这里保留 Tab 与分类 `genre` 的映射：
  * * `16` 推荐
  * * `36` 漫剧
  * * `39` 真人剧
  *
- * AI 剧没有独立官方 Tab，取流时使用分类接口的 `ai_series`。
+ * AI 剧没有独立官方 Tab，取流时仍使用分类接口的 `ai_series`。
  */
 enum class RecommendTab(val tabType: Int?, val genre: String?) {
     RECOMMEND(16, null),

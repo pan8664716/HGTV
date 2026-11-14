@@ -117,9 +117,9 @@ fun TvMainActivity.recommendStore(): com.hgtv.star.shared.feed.RecommendStore =
     recommendStoreRef ?: com.hgtv.star.shared.feed.RecommendStore(
         repository = repository,
         library = library,
-        // 热度推荐流的独立快照命名空间：官方书包流的快照与游标不再复用。
+        // 官方推荐流的独立快照命名空间：旧分类流的快照与游标不再复用。
         policy = com.hgtv.star.shared.feed.RecommendFeedPolicy.standard(
-            cacheNamespace = "heat-v1",
+            cacheNamespace = "official-v1",
         ),
         debug = { line ->
             if(com.hgtv.star.tv.BuildConfig.DEBUG) {

@@ -4506,6 +4506,22 @@ feature-tv/
 - APK SHA-256：`cf0cb07489ce20334526e372fb50a5b734a4eb204ffe784493539ee2f0173b19`。
 - 未推送源码或 tag，未创建 GitHub Release。
 
+## 推荐流切换官方接口
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 依据 `tools/官方应用参考/7.4.3.32反编译代码库/7.4.3.32抓包数据.har`，推荐流
+  从旧分类 POST 切到 `GET /reading/bookapi/bookmall/tab/v`。
+- 综合、漫剧、真人分别使用 `tab_type=16/36/39`；官方抓包和 `BookstoreTabType`
+  都没有独立 AI 剧 Tab，因此 `ai_series` 保留分类接口兜底。
+- 沿用官方 `session_uuid`、`cell_data` 卡片解析和原始槽位游标；只选择请求的
+  `tab_type`，避免响应夹带多个 Tab 时串入其他体裁。
+- `bottom_tab_type_list` 按抓包统一为 `7,0,1,5,2,4`，非空 `filter_ids` 对视频流生效。
+- 手机与电视的推荐快照 / 游标命名空间从 `heat-v1` 切到 `official-v1`，旧分类流缓存自然失效。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 音频 CPU 调查
 
 状态：已调查，未提交实验代码。

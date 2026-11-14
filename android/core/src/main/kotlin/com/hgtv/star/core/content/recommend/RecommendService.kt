@@ -8,7 +8,7 @@ import java.io.IOException
     /**
      * 官方曝光上报使用的查询参数。
      *
-     * 上报接口和官方书包推荐流共用 `74332 / 7.4.3.32`；分类接口仍保留原来的
+     * 上报接口和官方推荐流共用 `74332 / 7.4.3.32`；分类接口仍保留原来的
      * `73532 / 7.3.5.32`，避免把已稳定的分类链路一起改掉。
      */
     private fun ContentRepository.recommendReportValues(identity: ContentPrimaryIdentity): LinkedHashMap<String,String> =
@@ -39,7 +39,17 @@ import java.io.IOException
     ): RecommendFeed {
         refreshRecommendStatConfigAsync()
         require(offset >= 0) { "offset 不能为负" }
-        // 统一回到旧分类接口；`hot_score` 由 categoryRecommendFeed 明确传入。
+        val tabType=tab.tabType
+        if(tabType!=null) {
+            return officialRecommendFeed(
+                tabType=tabType,
+                selection=selection,
+                sessionId=sessionId,
+                offset=offset,
+                filterIds=filterIds,
+            )
+        }
+        // 官方抓包与 7.4.3.32 枚举都没有独立的 AI 剧 Tab，只有该入口继续使用分类接口。
         return categoryRecommendFeed(
             selection=selection,
             sessionId=sessionId,
@@ -50,7 +60,7 @@ import java.io.IOException
         )
     }
 
-    /** 按热度取推荐流：分类接口 + `hot_score`，支持续流和推荐范围筛选。 */
+    /** AI 剧兜底流：官方没有独立 Tab，继续使用分类接口 + `hot_score`。 */
     private fun ContentRepository.categoryRecommendFeed(
         selection: CategorySelection,
         sessionId: String,
@@ -116,13 +126,12 @@ import java.io.IOException
      * `next_offset=0`，因此客户端必须用本页实际卡片数推进游标。
      */
     private fun ContentRepository.officialRecommendFeed(
-        tab: RecommendTab,
+        tabType: Int,
         selection: CategorySelection,
         sessionId: String,
         offset: Int,
         filterIds: String,
     ): RecommendFeed {
-        val tabType=requireNotNull(tab.tabType)
         // 旧分类接口的 session_id 不是官方 bookmall 的 UUID。换接口后若继续带着旧
         // offset 请求，官方会按新 session 解释这个位置，首屏就可能反复拿同一批 3 条。
         val validSession=sessionId.takeIf {
@@ -135,11 +144,11 @@ import java.io.IOException
         if(root.optInt("code",-1)!=0) throw IOException("推荐接口暂不可用")
         val payload=root.optJSONObject("data") ?: throw IOException("推荐接口结构已变化")
         val tabs=payload.optJSONArray("tab_item")?.objects().orEmpty()
-        fun hasCards(row: JSONObject): Boolean =
-            (row.optJSONArray("cell_data")?.length() ?: 0)>0
+        // 只认请求的 tab_type。响应里可能同时带多个 Tab 的空壳，误取其他 Tab
+        // 会让漫剧 / 真人流串内容；本页为空时应交给上层的换流和补页逻辑处理。
         val selected=tabs.firstOrNull {
-            it.optInt("tab_type",-1)==tabType && hasCards(it)
-        } ?: tabs.firstOrNull { hasCards(it) }
+            it.optInt("tab_type",Int.MIN_VALUE)==tabType
+        }
             ?: throw IOException("推荐接口没有返回 tab_type=$tabType")
         val items=ContentCatalogParser.officialFeedCards(selected)
         // 官方首包常回 next_offset=0，且偶尔夹带无法解析的空卡片。游标必须按
@@ -243,8 +252,7 @@ import java.io.IOException
         values["last_session_video_tab_type"]=tabType.toString()
         values["landing_bottom_tab_type"]="0"
         values["bottom_tab_type"]="7"
-        values["bottom_tab_type_list"]=
-            if(tabType==16) "7,0,1,2,3,4" else "7,0,1,5,2,4"
+        values["bottom_tab_type_list"]="7,0,1,5,2,4"
         values["client_req_type"]=if(tabType==16) "1028" else "4"
         values["is_horizontal_screen"]="false"
         values["screen_width_px"]=identity.profile["resolution"]
@@ -275,8 +283,8 @@ import java.io.IOException
         values["auth_aweme"]="false"
         values["auth_backward"]="true"
         values["after_genre_preference_popup"]="0"
+        if(filterIds.isNotBlank() || tabType==16) values["filter_ids"]=filterIds
         if(tabType==16) {
-            values["filter_ids"]=filterIds
             values["rec_filter_info_list"]=""
             val gender=when(val selected=selection.gender) {
                 null -> "2"
