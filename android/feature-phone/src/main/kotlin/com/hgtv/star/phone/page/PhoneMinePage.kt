@@ -150,6 +150,11 @@ class PhoneMinePage(
     private var skipNextOnShownRefresh = initialState != null
     private var refreshing = false
     private var refreshOverlay: FrameLayout? = null
+    private var accountLoading = false
+    private var accountError: Throwable? = null
+    private var accountRetry = 0
+    private var accountToken = 0
+    private var accountRetryTask: Runnable? = null
     private var avatarUrl: String = ""
     /** 当前栏目是否处于批量选择模式；切换栏目 / 筛选或删除后退出。 */
     private var batchMode = false
@@ -274,6 +279,8 @@ class PhoneMinePage(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         // 切到别的 tab 时页面会被复用，只停掉这一轮在途请求；重新挂载时由 ensureLoadScope 恢复。
+        accountRetryTask?.let(::removeCallbacks)
+        accountRetryTask = null
         loadScope.cancel()
     }
 
@@ -310,8 +317,6 @@ class PhoneMinePage(
         (context as? android.app.Activity)?.let { activity ->
             if (library.isLoaded) PhoneConsent.ensureUsage(activity, library)
         }
-        // 与电视端一致：账号资料即使不可用，设备级历史 / 收藏仍可能返回，不能只看 signedIn。
-        loadScope.launch { PhoneAccountSync.refresh(context); render() }
         if (!library.isLoaded) {
             library.loadAsync(onFailure = { post { render() } }, onReady = { post { render() } })
             return
@@ -319,26 +324,65 @@ class PhoneMinePage(
         render()
         // 进这一页顺手检查一次收藏更新（有 1 小时门槛，不会反复请求）。
         runCatching { monitor.check() }
+        loadAccount()
     }
 
-    /** 与 TV 一致：保留当前列表，居中显示等待，账号数据落地后按变化重绘。 */
+    /**
+     * 与电视端 [com.hgtv.star.tv.loadAccount] 同一套同步顺序：
+     * 缓存先铺、网络刷新、失败重试、数据落地后重绘。
+     */
+    private fun loadAccount(force: Boolean = false) {
+        if (!library.isLoaded) return
+        if (accountLoading && !force) return
+        val controller = com.hgtv.star.shared.data.AppRuntime.accountController(context)
+        controller.ensureBoundCredentials()
+        accountLoading = true
+        val manual = force && refreshing
+        val token = ++accountToken
+        loadScope.launch {
+            var failure: Throwable? = null
+            try {
+                val result = controller.refresh()
+                if (token != accountToken || !isAttachedToWindow) return@launch
+                failure = result.error
+                if (failure == null) {
+                    accountError = null
+                    accountRetry = 0
+                    accountRetryTask?.let(::removeCallbacks)
+                    accountRetryTask = null
+                    render()
+                } else {
+                    accountError = failure
+                    com.hgtv.star.shared.debug.DebugLog.record(
+                        "账号",
+                        "资料读取失败 · ${failure.message.orEmpty().take(140)}",
+                    )
+                    render()
+                    if (controller.data == null && accountRetry < ACCOUNT_RETRIES) {
+                        accountRetry++
+                        accountRetryTask?.let(::removeCallbacks)
+                        val task = Runnable {
+                            accountRetryTask = null
+                            if (isAttachedToWindow && accountError != null) loadAccount()
+                        }
+                        accountRetryTask = task
+                        postDelayed(task, ACCOUNT_RETRY_MS)
+                    }
+                }
+            } finally {
+                if (token == accountToken) accountLoading = false
+                if (manual && token == accountToken) finishRefresh(failure)
+            }
+        }
+    }
+
+    /** 与 TV 一致：保留当前列表，居中显示等待，账号数据落地后重绘。 */
     private fun refreshData() {
         if (refreshing) return
         ensureLoadScope()
         refreshing = true
         showRefreshLoading()
-        if (library.isLoaded) {
-            com.hgtv.star.phone.PhoneIdentity.apply(context, library)
-            runCatching {
-                com.hgtv.star.shared.data.AppRuntime.accountController(context).ensureBoundCredentials()
-            }
-        }
-        loadScope.launch {
-            val result = runCatching {
-                com.hgtv.star.shared.data.AppRuntime.accountController(context).refresh()
-            }
-            post { finishRefresh(result.getOrNull()?.error) }
-        }
+        loadAccount(force = true)
     }
 
     private fun showRefreshLoading() {
@@ -502,6 +546,7 @@ class PhoneMinePage(
                     exitBatchMode()
                     tab = index
                     render()
+                    loadAccount()
                 }
             })
         }
@@ -697,9 +742,7 @@ class PhoneMinePage(
                 ?.filter { row -> reserveFilter?.let { want -> row.online == want } ?: true }
                 ?.map { it.series }.orEmpty()
         }
-        val waitingForAccount = runCatching {
-            PhoneServices.repository(context).signedIn && cached == null
-        }.getOrDefault(false)
+        val waitingForAccount = accountLoading && cached == null
         feed.submit(rows, loading = waitingForAccount)
         updateBatchBar()
     }
@@ -721,4 +764,8 @@ class PhoneMinePage(
         feed.scrollToTop()
     }
 
+    private companion object {
+        const val ACCOUNT_RETRY_MS = 4_000L
+        const val ACCOUNT_RETRIES = 2
+    }
 }
