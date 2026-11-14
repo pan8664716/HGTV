@@ -423,13 +423,13 @@ class ContentRepository(
 
         internal const val STREAM_CACHE_MS=PlaybackCache.URL_FRESH_MS
         internal const val STREAM_CACHE_LIMIT=8
-        internal const val MAX_DANMAKU=6000
+        internal const val MAX_DANMAKU=1000
         internal const val HOT_COMMENT_SOURCE=601
         internal const val HOT_SERVER_CHANNEL=1000
-        internal const val HOT_COMMENT_COUNT=300
+        internal const val HOT_COMMENT_COUNT=200
         internal const val HOT_COMMENT_WINDOW_MS=30_000L
         internal const val MAX_HOT_COMMENT_WINDOWS=40
-        internal const val MAX_HOT_DANMAKU=6000
+        internal const val MAX_HOT_DANMAKU=3000
         internal const val MAX_CATALOG_PAGE=100
         internal const val HOT_COMMENT_THROTTLE_MS=180L
 

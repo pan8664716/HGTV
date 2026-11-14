@@ -22,15 +22,34 @@ internal data class ContentRepositoryDanmakuPage(
         onWindow: (List<Danmaku>) -> Unit,
     ): List<Danmaku> {
         require(vid.matches(Regex("[0-9]{1,30}")) && seriesId.matches(Regex("[0-9]{1,30}")))
+        val durationMs=(durationSeconds.coerceIn(0,4*60*60))*1000
         val collected=linkedMapOf<String,Danmaku>()
-        loadHotDanmaku(
-            vid,
-            seriesId,
-            durationSeconds,
-            shouldStop,
-            collected,
-            onWindow,
-        )
+        var startMs=0L
+        var cursor=""
+        val planned=if(durationMs>0) {
+            (durationMs+ContentRepository.HOT_COMMENT_WINDOW_MS-1)/
+                ContentRepository.HOT_COMMENT_WINDOW_MS+4L
+        } else {
+            ContentRepository.MAX_HOT_COMMENT_WINDOWS.toLong()
+        }
+        val windows=planned.coerceIn(1L,ContentRepository.MAX_HOT_COMMENT_WINDOWS.toLong()).toInt()
+        for(index in 0 until windows) {
+            if(shouldStop()) break
+            val page=runCatching { hotCommentWindow(vid,seriesId,durationMs,startMs,cursor) }
+                .getOrNull() ?: break
+            if(mergeDanmaku(collected,page.items)>0) {
+                onWindow(collected.values.sortedBy { it.offsetMs })
+            }
+            if(collected.size>=ContentRepository.MAX_DANMAKU) break
+            if(page.nextStart<=startMs) break
+            if(durationMs>0 && page.nextStart>=durationMs) break
+            if(durationMs<=0 && !page.hasMore) break
+            startMs=page.nextStart
+            cursor=page.cursor
+            if(index<windows-1) {
+                runCatching { Thread.sleep(ContentRepository.HOT_COMMENT_THROTTLE_MS) }
+            }
+        }
         return collected.values.sortedBy { it.offsetMs }
     }
 
@@ -47,46 +66,6 @@ internal data class ContentRepositoryDanmakuPage(
             }
         }
         return added
-    }
-
-    /** 热弹幕采样流单独返回一组高频短句，重复率明显高于完整评论流。 */
-    private fun ContentRepository.loadHotDanmaku(
-        vid: String,
-        seriesId: String,
-        durationSeconds: Long,
-        shouldStop: () -> Boolean,
-        collected: MutableMap<String,Danmaku>,
-        onWindow: (List<Danmaku>) -> Unit,
-    ) {
-        val durationMs=(durationSeconds.coerceIn(0,4*60*60))*1000
-        val planned=if(durationMs>0) {
-            ((durationMs+ContentRepository.HOT_COMMENT_WINDOW_MS-1)/
-                ContentRepository.HOT_COMMENT_WINDOW_MS).toInt()+4
-        } else {
-            ContentRepository.MAX_HOT_COMMENT_WINDOWS
-        }
-        val windows=planned.coerceIn(1,ContentRepository.MAX_HOT_COMMENT_WINDOWS)
-        var startMs=0L
-        var cursor=""
-        var hotAdded=0
-        for(index in 0 until windows) {
-            if(shouldStop() || hotAdded>=ContentRepository.MAX_HOT_DANMAKU ||
-                collected.size>=ContentRepository.MAX_DANMAKU) break
-            val page=runCatching { hotCommentWindow(vid,seriesId,durationMs,startMs,cursor) }
-                .getOrNull() ?: break
-            val added=mergeDanmaku(collected,page.items)
-            if(added>0) {
-                hotAdded+=added
-                onWindow(collected.values.sortedBy { it.offsetMs })
-            }
-            if(page.nextStart<=startMs) break
-            if(durationMs>0 && page.nextStart>=durationMs) break
-            startMs=page.nextStart
-            cursor=page.cursor
-            if(index<windows-1) {
-                runCatching { Thread.sleep(ContentRepository.HOT_COMMENT_THROTTLE_MS) }
-            }
-        }
     }
 
     internal fun ContentRepository.danmakuRawWindowImpl(
@@ -129,10 +108,10 @@ internal data class ContentRepositoryDanmakuPage(
                 headers["server-channel"]=ContentRepository.HOT_SERVER_CHANNEL.toString()
                 headers["x-ss-stub"]=""
                 val raw=text(signed.url,Signer.Request(signed.url,headers,payload))
-                if(raw.isBlank()) throw IOException("热弹幕接口暂无响应")
+                if(raw.isBlank()) throw IOException("弹幕接口暂无响应")
                 val data=JSONObject(raw)
-                if(data.optInt("code",-1)!=0) throw IOException("热弹幕接口暂不可用（${data.optInt("code")}）")
-                val payload=data.optJSONObject("data") ?: throw IOException("热弹幕数据为空")
+                if(data.optInt("code",-1)!=0) throw IOException("弹幕接口暂不可用（${data.optInt("code")}）")
+                val payload=data.optJSONObject("data") ?: throw IOException("弹幕数据为空")
                 val rows=payload.optJSONArray("data_list")
                 val items=parseDanmakuRows(rows)
                 val info=payload.optJSONObject("common_list_info")
@@ -149,8 +128,8 @@ internal data class ContentRepositoryDanmakuPage(
                     nextStart=next,
                 )
             } catch(e: Exception) {
-                failure=e as? IOException ?: IOException(e.message ?: "热弹幕请求失败")
+                failure=e as? IOException ?: IOException(e.message ?: "弹幕请求失败")
             }
         }
-        throw failure ?: IOException("热弹幕接口暂不可用")
+        throw failure ?: IOException("弹幕接口暂不可用")
     }

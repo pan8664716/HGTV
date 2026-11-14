@@ -1,5 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.core
+import java.text.Normalizer
+import java.util.Locale
 import kotlin.math.roundToInt
 
 /**
@@ -161,6 +163,31 @@ const val DANMAKU_REPEAT_WINDOW_MS=20_000L
  */
 val DANMAKU_MERGE_MIN_RANGE=2..10
 
+private val AGG_EMOJI_TAG=Regex("""\[[^\[\]\r\n]{1,16}]|【[^\[\]【】［］\r\n]{1,16}】|［[^\[\]【】［］\r\n]{1,16}］""")
+private val AGG_WHITESPACE=Regex("""\s+""")
+private val AGG_REPEATED_EXPRESSION=Regex("""([哈呵嘿嘻啊呀呜])\1+""")
+private val AGG_EDGE_PUNCTUATION=Regex("""^[\p{P}\p{S}]+|[\p{P}\p{S}]+$""")
+private val AGG_TRAILING_PARTICLE=Regex("""(?:吧|呢|哦|喔|啦|嘛|呀|啊|了)+$""")
+
+/**
+ * 聚合用的保守归一化键。
+ *
+ * 只处理不影响语义的表达差异；短文本不剥语气词，避免把“不行”和“不行吧”误合并。
+ */
+internal fun danmakuAggregationKey(text: String): String {
+    val trimmed=text.trim()
+    if(trimmed.isEmpty()) return ""
+    var key=Normalizer.normalize(trimmed,Normalizer.Form.NFKC)
+    key=key.replace(AGG_EMOJI_TAG,"")
+    key=key.lowercase(Locale.ROOT)
+    key=key.replace(AGG_WHITESPACE,"")
+    key=key.replace(AGG_REPEATED_EXPRESSION,"\$1")
+    key=key.replace(AGG_EDGE_PUNCTUATION,"")
+    if(key.length>=4) key=key.replace(AGG_TRAILING_PARTICLE,"")
+    key=key.replace(AGG_EDGE_PUNCTUATION,"")
+    return key.ifBlank { trimmed }
+}
+
 /**
  * 把整集弹幕按内容聚合：同一句文字连续出现、相邻间隔不超过 [windowMs] 时合成一组，按时间排序。
  *
@@ -176,8 +203,13 @@ fun repeatGroups(items: List<Danmaku>,windowMs: Long=DANMAKU_REPEAT_WINDOW_MS,mi
     val threshold=minCount.coerceIn(DANMAKU_MERGE_MIN_RANGE)
     val idleWindow=windowMs.coerceAtLeast(0)
     val groups=mutableListOf<DanmakuRepeat>()
-    items.sortedBy { it.offsetMs }.groupBy { it.text.trim() }.forEach { (text,list) ->
-        if(text.isEmpty()) return@forEach
+    val grouped=linkedMapOf<String,MutableList<Danmaku>>()
+    items.sortedBy { it.offsetMs }.forEach { item ->
+        val text=item.text.trim()
+        if(text.isNotEmpty()) grouped.getOrPut(danmakuAggregationKey(text)){mutableListOf()}+=item
+    }
+    grouped.values.forEach { list ->
+        val text=list.first().text.trim()
         var bucket=mutableListOf<Long>()
         list.forEach { item ->
             // 以「与上一条同内容弹幕的间隔」判轮次，而不是从第一条起算固定窗口。

@@ -4421,7 +4421,7 @@ feature-tv/
 
 ## 抓包弹幕接口与游标分页
 
-状态：已被下方“弹幕全部改为热采样”取代，仅保留历史记录。
+状态：历史方案；当前播放弹幕已按下方 1.3.6.2 APK 恢复为热采样接口。
 
 - 根因：旧实现使用 `comment_source=601`、`comment_type=20`、`server_channel=1000`，
   平台只返回采样热弹幕；抓包中的有效请求是 `comment_source=4`、`comment_type=4`、
@@ -4611,25 +4611,24 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
-## 弹幕全部改为热采样
+## 弹幕接口对齐 1.3.6.2 APK
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
-- API 对比：旧热弹幕采样流使用 `comment_source=601`、`comment_type=20`、
-  `server_channel=1000`；当前完整评论流使用 `comment_source=4`、`comment_type=4`、
-  `server_channel=18` 和游标分页。
-- 抓包中旧采样流的“文本+时间”重复率约 `50%`，当前完整流独立样本约 `96%` 不重复。
-  当前数据本身缺少重复文本，因此 2 条起聚也很难触发，不是聚合阈值被改坏。
-- 播放弹幕和调试原始窗口全部改走 `comment_source=601`、`comment_type=20`、
-  `server_channel=1000` 的热弹幕采样接口，不再请求当前游标完整流。
-- 热采样每页 300 条、30 秒窗口、最多 40 个窗口，总量上限 6000 条，页间间隔 180ms。
-- 代价是单集弹幕覆盖量低于完整评论流；收益是重复短句比例更高，聚合恢复接近旧版本。
-- 参考 1.3.6 源码提交 `0e27c30`：签名直接使用 `appValues()`（7.2.2.32），
-  已知时长时窗口预算为“时长窗口 + 4”。当前实现已恢复这两项；分页容量按最新要求
-  提升为每页 300 条、单集最多 6000 条。
-- `DanmakuLoader` 仍传入 `durationSeconds=0`，但未知片长时继续按
-  `next_query_danmaku_list_time` 向后取满 40 个窗口，不再因
-  `common_list_info.has_more=false` 只取到一个窗口。
+- 分析对象：`outputs/HGTV_1.3.6.2-新版签名测试版.apk`，
+  SHA-256 `358bc46e897ea37c8d906dd9aa869d5b200c59a09350b5e6379823e963ca4750`。
+- JADX 反编译 `com.hgtv.star.core.b.F()` 确认：请求体使用
+  `comment_source=601`、`server_channel=1000`、`comment_type=20`；
+  `business_param` 带 `start_offset_time`、`playlet_item_duration` 和
+  `need_danmaku_guide_type=[1,3,4,2]`。
+- 同一 APK 的签名参数来自 `t()`：版本码 `72232`、版本名 `7.2.2.32`。
+  窗口固定 30 秒、最多 40 个、窗口间隔 180ms；未知片长时
+  `has_more=false` 停止。
+- 当前实现已按上述接口与签名恢复；分页容量按最新要求为每页 200 条、单集上限 1000 条。
+  播放与调试原始窗口使用同一接口。
+- 聚合不再依赖接口返回完全相同文本。`danmakuAggregationKey()` 先做 NFKC、去表情标签、
+  去空白、去首尾标点、折叠连续“哈/啊/嘿”等表达，再按原有 20 秒空闲窗口聚合。
+- 短文本不剥语气词，避免把“不行”和“不行吧”误合并；展示文案仍保留本轮第一条的原文。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。

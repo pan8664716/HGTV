@@ -53,4 +53,18 @@ class DanmakuTest {
             assertEquals(expected,mode.next())
         }
     }
+
+    @Test fun `aggregation normalizes expression differences conservatively`() {
+        assertEquals(
+            danmakuAggregationKey("太好看了！！！[爱慕]"),
+            danmakuAggregationKey(" 太好看了[哭] "),
+        )
+        assertEquals(
+            danmakuAggregationKey("哈哈哈哈哈哈"),
+            danmakuAggregationKey("哈哈哈"),
+        )
+        assertFalse(
+            danmakuAggregationKey("不行")==danmakuAggregationKey("不行吧"),
+        )
+    }
 }

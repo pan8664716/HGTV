@@ -5,9 +5,8 @@ package com.hgtv.star.core
  * 取一集的弹幕，也就是「原 App」播放时看到的同一份数据。
  *
  * 接口是播放器自己的评论接口：`POST /novel/commentapi/comment/list/{vid}/v1/`，
- * 请求体带 `comment_source=601`（短剧）、`server_channel=1000`、`group_type=30`、`comment_type=20`，
- * `business_param` 里再给剧集 ID 与本集时长；响应按 30 秒一个窗口返回，
- * `extra.next_query_danmaku_list_time` 是下一个窗口的起点，`common_list_info.has_more` 表示还没到片尾。
+ * 请求体带 `comment_source=601`、`server_channel=1000`、`group_type=30`、`comment_type=20`，
+ * 响应按 30 秒窗口返回；`extra.next_query_danmaku_list_time` 是下一窗口起点。
  *
  * [durationSeconds] 是这一集的时长（秒），用来判断何时停：为 0 时按窗口数量上限兜底。
  * [onWindow] 每拉到一个窗口就被回调一次（传当前已收集的全部弹幕，按时间排好），
