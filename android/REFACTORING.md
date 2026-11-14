@@ -4419,6 +4419,21 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 抓包弹幕接口与游标分页
+
+状态：已修复，debug 构建通过，待用户真机验证。
+
+- 根因：旧实现使用 `comment_source=601`、`comment_type=20`、`server_channel=1000`，
+  平台只返回采样热弹幕；抓包中的有效请求是 `comment_source=4`、`comment_type=4`、
+  `server_channel=18`，并带 `need_count`、`video_innerflow` 等业务参数。
+- 修复：弹幕改为抓包接口，按 `common_list_info.cursor` 游标翻页，每页 50 条，
+  读取 `common_list_info.total`；页间间隔 500ms，仍保留六线失败转移、3000 条上限和去重。
+- 实测《全球死考：刚下刑场你让我去考试一季》第 1 集返回 `total=2858`，
+  随后复测为 `2861`，首屏 50 条。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 1.3.7.3 版本准备
 
 状态：Release 已构建，待用户真机验证。

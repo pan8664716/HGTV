@@ -423,14 +423,13 @@ class ContentRepository(
 
         internal const val STREAM_CACHE_MS=PlaybackCache.URL_FRESH_MS
         internal const val STREAM_CACHE_LIMIT=8
-        internal const val COMMENT_WINDOW_MS=30_000L
-        internal const val COMMENT_SOURCE=601
-        internal const val SERVER_CHANNEL=1000
-        internal const val COMMENT_COUNT=90
-        internal const val MAX_DANMAKU_WINDOWS=40
+        internal const val COMMENT_SOURCE=4
+        internal const val SERVER_CHANNEL=18
+        internal const val COMMENT_COUNT=50
+        internal const val MAX_DANMAKU_PAGES=60
         internal const val MAX_DANMAKU=3000
         internal const val MAX_CATALOG_PAGE=100
-        internal const val COMMENT_THROTTLE_MS=180L
+        internal const val COMMENT_THROTTLE_MS=500L
 
         fun isHevcCodec(codec: String,key: String = ""): Boolean {
             val label=codec.trim().lowercase()
