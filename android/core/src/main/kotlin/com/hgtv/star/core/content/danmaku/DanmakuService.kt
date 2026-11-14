@@ -61,7 +61,7 @@ internal data class ContentRepositoryDanmakuPage(
         val durationMs=(durationSeconds.coerceIn(0,4*60*60))*1000
         val planned=if(durationMs>0) {
             ((durationMs+ContentRepository.HOT_COMMENT_WINDOW_MS-1)/
-                ContentRepository.HOT_COMMENT_WINDOW_MS).toInt()
+                ContentRepository.HOT_COMMENT_WINDOW_MS).toInt()+4
         } else {
             ContentRepository.MAX_HOT_COMMENT_WINDOWS
         }
@@ -69,7 +69,6 @@ internal data class ContentRepositoryDanmakuPage(
         var startMs=0L
         var cursor=""
         var hotAdded=0
-        var emptyWindows=0
         for(index in 0 until windows) {
             if(shouldStop() || hotAdded>=ContentRepository.MAX_HOT_DANMAKU ||
                 collected.size>=ContentRepository.MAX_DANMAKU) break
@@ -78,14 +77,10 @@ internal data class ContentRepositoryDanmakuPage(
             val added=mergeDanmaku(collected,page.items)
             if(added>0) {
                 hotAdded+=added
-                emptyWindows=0
                 onWindow(collected.values.sortedBy { it.offsetMs })
-            } else {
-                emptyWindows++
             }
             if(page.nextStart<=startMs) break
             if(durationMs>0 && page.nextStart>=durationMs) break
-            if(emptyWindows>=3) break
             startMs=page.nextStart
             cursor=page.cursor
             if(index<windows-1) {
@@ -124,13 +119,7 @@ internal data class ContentRepositoryDanmakuPage(
             .put("aid",8662)
             .put("compliance_status",0)
         val payload=body.toString().toByteArray(Charsets.UTF_8)
-        val values=appValues().apply {
-            put("channel","update_64")
-            for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
-                put(key,"74332")
-            }
-            put("version_name","7.4.3.32")
-        }
+        val values=appValues()
         var failure: IOException?=null
         for(host in commentHosts()) {
             try {

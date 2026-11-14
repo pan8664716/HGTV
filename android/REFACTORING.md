@@ -4622,12 +4622,13 @@ feature-tv/
   当前数据本身缺少重复文本，因此 2 条起聚也很难触发，不是聚合阈值被改坏。
 - 播放弹幕和调试原始窗口全部改走 `comment_source=601`、`comment_type=20`、
   `server_channel=1000` 的热弹幕采样接口，不再请求当前游标完整流。
-- 热采样每页 90 条、30 秒窗口、最多 40 个窗口，总量上限 300 条，页间间隔 180ms。
+- 热采样每页 90 条、30 秒窗口、最多 40 个窗口，总量上限 3000 条，页间间隔 180ms。
 - 代价是单集弹幕覆盖量低于完整评论流；收益是重复短句比例更高，聚合恢复接近旧版本。
-- 修复：`DanmakuLoader` 传入的 `durationSeconds` 固定为 0，热接口又按
-  `common_list_info.has_more=false` 提前结束，部分集只取到一个窗口（实测仅有 10 条）。
-  现在未知片长时仍按 `next_query_danmaku_list_time` 继续取，最多 40 个窗口；
-  连续 3 个窗口没有新增才停止。
+- 参考 1.3.6 源码提交 `0e27c30`：签名直接使用 `appValues()`（7.2.2.32），单集上限为
+  `3000`，已知时长时窗口预算为“时长窗口 + 4”。当前实现已恢复这三项。
+- `DanmakuLoader` 仍传入 `durationSeconds=0`，但未知片长时继续按
+  `next_query_danmaku_list_time` 向后取满 40 个窗口，不再因
+  `common_list_info.has_more=false` 只取到一个窗口。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。
