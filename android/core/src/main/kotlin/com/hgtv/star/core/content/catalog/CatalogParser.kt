@@ -141,8 +141,9 @@ internal object ContentCatalogParser {
         val vertical=detail?.optBoolean("vertical",false)==true ||
             firstVideo?.optBoolean("vertical",false)==true ||
             videoData?.optBoolean("vertical",false)==true
-        val contentType=detail?.optInt("content_type",0)
-            ?: videoData?.optInt("content_type",0)
+        val contentType=detail?.optInt("content_type",0)?.takeIf { it>0 }
+            ?: videoData?.optInt("content_type",0)?.takeIf { it>0 }
+            ?: firstVideo?.optInt("content_type",0)?.takeIf { it>0 }
             ?: 0
         return Series(
             id=id,

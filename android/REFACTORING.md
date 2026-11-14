@@ -4522,6 +4522,21 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 推荐流仅保留短剧
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 抓包中 `tab_type=16` 会混入 `pugc_album_video` / `pugc_push_video`，其
+  `VideoContentType` 为 PUGC（1001），不是可连续观看的短剧。
+- 推荐流按官方剧集类型白名单保留 `ShortSeriesPlay(1)`、`ScenePlay(2)`、
+  `ShortPlay(7)`、`UnrealShortPlay(1002)`、`MotionComic(1004)`、
+  `UnrealMotionComic(1007)`；PUGC、合集、电影、长剧和推广素材不再上屏。
+- 官方流仍按原始卡片槽位推进游标；分类兜底流按过滤前的原始条数推进，
+  过滤非短剧不会造成下一页重复。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 音频 CPU 调查
 
 状态：已调查，未提交实验代码。

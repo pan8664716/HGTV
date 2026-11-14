@@ -5,6 +5,21 @@ import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
 
+/**
+ * 官方 `VideoContentType` 中的短剧类型。
+ *
+ * `tab_type=16` 会混入 PUGC（1001）和合集（1003）等普通视频卡片；
+ * 推荐页只保留能按剧集消费的内容，同时覆盖真人短剧、AI 短剧和漫剧。
+ */
+private val SHORT_DRAMA_CONTENT_TYPES=setOf(
+    1,    // ShortSeriesPlay
+    2,    // ScenePlay
+    7,    // ShortPlay
+    1002, // UnrealShortPlay
+    1004, // MotionComic
+    1007, // UnrealMotionComic
+)
+
     /**
      * 官方曝光上报使用的查询参数。
      *
@@ -93,19 +108,20 @@ import java.io.IOException
         ))
         if(data.optInt("code",-1)!=0) throw IOException("推荐接口暂不可用")
         val payload=data.optJSONObject("data") ?: throw IOException("推荐接口结构已变化")
-        val items=ContentCatalogParser.valid(
+        val rawItems=ContentCatalogParser.valid(
             (payload.optJSONArray("video_data") ?: JSONArray()).objects()
                 .map(ContentCatalogParser::apiCard),
         )
+        val items=rawItems.filter { it.contentType in SHORT_DRAMA_CONTENT_TYPES }
         // `next_offset` 偶尔缺失 / 不往前走：用「本页实际条数」兜底，保证游标一定前进，
         // 否则下一次还是同一个位置，用户看到的就是「又一套一模一样的列表」。
         val reported=payload.optInt("next_offset",-1)
         val next=when {
             reported>offset -> reported
-            items.isNotEmpty() -> offset+items.size
+            rawItems.isNotEmpty() -> offset+rawItems.size
             else -> offset+limit
         }
-        val more=payload.optBoolean("has_more",items.isNotEmpty())
+        val more=payload.optBoolean("has_more",rawItems.isNotEmpty())
         return RecommendFeed(CatalogPage(items,more),payload.optString("session_id").ifBlank { sessionId },next)
     }
 
@@ -163,7 +179,12 @@ import java.io.IOException
         val more=selected.optBoolean("bottom_unlimited",false) ||
             selected.optBoolean("has_more",items.isNotEmpty())
         return RecommendFeed(
-            page=CatalogPage(ContentCatalogParser.valid(items),more),
+            page=CatalogPage(
+                ContentCatalogParser.valid(items).filter {
+                    it.contentType in SHORT_DRAMA_CONTENT_TYPES
+                },
+                more,
+            ),
             sessionId=sessionUuid,
             nextOffset=next,
         )
