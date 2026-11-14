@@ -4405,6 +4405,20 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## TV 弹幕整集数据切换
+
+状态：已修复，31.68 debug 验证通过。
+
+- 根因：播放页每秒 tick 没有同步弹幕时钟，TV 的 `syncDanmakuClock()` 也只推
+  `DanmakuView.setClock()`，没有经过 `DanmakuLoader.syncClock()`。首窗少量弹幕能画，
+  但整集数据到齐后一直停在 `pendingFullItems`，20 秒后的整集切换永远不会发生。
+- 修复：播放页每秒同步一次弹幕时钟，TV 时钟统一走 `DanmakuLoader.syncClock()`；
+  loader 负责暂停 / 恢复、倍速变化和 20 秒后的整集数据切换。
+- 31.68 验证：首窗 2 条先显示，20 秒后切到整集 10 条，后续按时间进入轨道并绘制。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 1.3.7.3 版本准备
 
 状态：Release 已构建，待用户真机验证。

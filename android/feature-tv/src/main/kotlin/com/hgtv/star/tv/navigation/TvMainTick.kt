@@ -13,6 +13,9 @@ internal fun TvMainActivity.runTvMainTick(task: Runnable) {
         if(hud.visibility==View.VISIBLE) updatePlaybackText()
         // 顶部信息条是常驻的：时间每分钟跳一格、网速每秒刷一次，与控制层收没收起无关。
         updatePlaybackInfoReadings()
+        // 弹幕层按系统时钟外推，但整集数据要在 20 秒后由这里推一次切换；
+        // 少这一拍，首窗只有少量弹幕时后续数据会一直停在 pendingFullItems。
+        syncDanmakuClock()
         maybePrefetch()
         maybeQueueNext()
         if(screen=="recommend") updateRecommendOverlay()

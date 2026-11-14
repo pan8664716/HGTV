@@ -18,14 +18,15 @@ fun TvMainActivity.syncDanmakuClock() {
     val p=player
     if(p==null) {
         view.stopClock()
+        danmakuLoader.syncClock(view.clockPositionMillis(),false,1f)
         return
     }
     val sample=runCatching { Triple(p.currentPosition,p.isPlaying,p.playbackParameters.speed) }.getOrNull()
     if(sample==null) {
-        view.setClock(view.clockPositionMillis(),false)
+        danmakuLoader.syncClock(view.clockPositionMillis(),false,1f)
         return
     }
     val readyPlaying=sample.second && runCatching { p.playbackState==Player.STATE_READY }.getOrDefault(false)
     val running=readyPlaying && foreground && !pausedForLifecycle
-    view.setClock(sample.first,running,sample.third)
+    danmakuLoader.syncClock(sample.first,running,sample.third)
 }
