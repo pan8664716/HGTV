@@ -4405,6 +4405,15 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 1.3.7.3 版本准备
+
+状态：Release 已构建，待用户真机验证。
+
+- `versionName` 更新为 `1.3.7.3`，`versionCode` 从 `76` 更新为 `77`。
+- `:app:assembleRelease` 通过；APK 为 `android/app/build/outputs/apk/release/app-release.apk`。
+- APK SHA-256：`cf0cb07489ce20334526e372fb50a5b734a4eb204ffe784493539ee2f0173b19`。
+- 未推送源码或 tag，未创建 GitHub Release。
+
 ## 音频 CPU 调查
 
 状态：已调查，未提交实验代码。
