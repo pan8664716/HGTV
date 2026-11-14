@@ -133,7 +133,6 @@ object DeviceRegistration {
         repository.deviceIdentity = library.deviceIdentity()
         repository.restoreDeviceCookies(library.registrationCookies())
         SessionBridge.mainDeviceCookies = { repository.primaryCookiesSnapshot() }
-        runCatching { repository.refreshTncAsync() }
     }
 
     /**

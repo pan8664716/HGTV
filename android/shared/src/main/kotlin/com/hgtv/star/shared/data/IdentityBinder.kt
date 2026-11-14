@@ -3,7 +3,6 @@ package com.hgtv.star.shared.data
 
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.primaryCookiesSnapshot
-import com.hgtv.star.core.refreshTncAsync
 import com.hgtv.star.core.restoreDeviceCookies
 import com.hgtv.star.core.session.SessionBridge
 
@@ -57,8 +56,5 @@ object IdentityBinder {
         }
         // 历史遗留的「只给搜索用的口令」：搜索接口认它。
         repository.sessionToken = runCatching { library.searchToken }.getOrDefault("").ifBlank { null }
-        // 身份与注册 Cookie 就绪后再刷新 TNC。缓存未过期时这里是空操作，
-        // 过期时在后台单飞请求，不阻塞首屏。
-        runCatching { repository.refreshTncAsync() }
     }
 }
