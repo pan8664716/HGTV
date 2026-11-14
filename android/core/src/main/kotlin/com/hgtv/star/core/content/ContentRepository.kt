@@ -428,8 +428,15 @@ class ContentRepository(
         internal const val COMMENT_COUNT=20
         internal const val MAX_DANMAKU_PAGES=15
         internal const val MAX_DANMAKU=300
+        internal const val HOT_COMMENT_SOURCE=601
+        internal const val HOT_SERVER_CHANNEL=1000
+        internal const val HOT_COMMENT_COUNT=90
+        internal const val HOT_COMMENT_WINDOW_MS=30_000L
+        internal const val MAX_HOT_COMMENT_WINDOWS=8
+        internal const val MAX_HOT_DANMAKU=90
         internal const val MAX_CATALOG_PAGE=100
         internal const val COMMENT_THROTTLE_MS=500L
+        internal const val HOT_COMMENT_THROTTLE_MS=180L
 
         fun isHevcCodec(codec: String,key: String = ""): Boolean {
             val label=codec.trim().lowercase()
