@@ -24,7 +24,8 @@ import com.hgtv.star.tv.TvMainActivity
 /**
  * 启动页与形态路由：唯一带 `LAUNCHER` / `LEANBACK_LAUNCHER` 的组件。
  *
- * Logo 由系统启动画面显示；这一页只显示三点加载动画，完成本地初始化后再转发：
+ * Logo 由系统启动画面显示；这一页只显示三点加载动画并立即转发，本地初始化由目标页
+ * 在首帧之后继续完成：
  *
  * * 电视 / 盒子 → [TvMainActivity]（横屏、遥控器焦点导航、1280×720 设计画布）
  * * 手机 / 平板 → [PhoneMainActivity]（竖屏、触摸、手势播放）
@@ -47,8 +48,8 @@ import com.hgtv.star.tv.TvMainActivity
  * `phone` / `tablet` / `tv`）。这里**先读设置**，只有 `auto` 才走自动探测——
  * 否则在电视上手动切成「手机」会被下次启动重新纠正回来，那个开关等于没用。
  *
- * 初始化成功后才读取这个设置并转发；初始化失败则留在本页显示重试，不把错误状态
- * 带进主界面。
+ * 形态设置只读一个轻量偏好，不等待书库。目标页自己先铺窗口和缓存 / 骨架，
+ * 书库读盘、网络预热与设备注册都在后台继续。
  */
 class LaunchActivity : Activity() {
 
@@ -56,7 +57,6 @@ class LaunchActivity : Activity() {
     private lateinit var dots: LoadingDotsView
     private lateinit var errorText: TextView
     private lateinit var retryButton: TextView
-    private var startupCleanup: (() -> Unit)?=null
     private var routed=false
     private var traceStartedAt=0L
 
@@ -69,7 +69,8 @@ class LaunchActivity : Activity() {
         buildStartupView()
         setContentView(root)
         StartupTrace.done("launch.onCreate",traceStartedAt)
-        // 首帧可见后再启动书库 / 运行时 / 友盟等后台初始化，然后立即路由。
+        // 首帧可见后注册缓存目录、启动后台初始化，然后立即路由。
+        // 目标页负责在书库未就绪时先铺骨架 / 缓存，不能把路由卡在读盘上。
         root.postOnAnimation {
             StartupTrace.done("launch.firstFrame",traceStartedAt)
             if(!isFinishing && !isDestroyed) {
@@ -116,7 +117,7 @@ class LaunchActivity : Activity() {
             visibility=View.GONE
             setOnClickListener {
                 showLoading()
-                beginInitialization(retry=true)
+                routeToTarget()
             }
         }
         content.addView(retryButton,LinearLayout.LayoutParams(
@@ -128,30 +129,6 @@ class LaunchActivity : Activity() {
             ViewGroup.LayoutParams.WRAP_CONTENT,
             Gravity.CENTER,
         ))
-    }
-
-    private fun beginInitialization(retry: Boolean = false) {
-        val startedAt=StartupTrace.now()
-        StartupTrace.mark("launch.initialization.start", "retry=$retry")
-        startupCleanup?.invoke()
-        val ready: () -> Unit = {
-            StartupTrace.done("launch.initialization.ready",startedAt)
-            if(!isFinishing && !isDestroyed) routeToTarget()
-        }
-        val failed: (Throwable) -> Unit = { problem ->
-            StartupTrace.done(
-                "launch.initialization.failed",
-                startedAt,
-                "error=${problem.javaClass.simpleName}:${problem.message.orEmpty().take(120)}",
-            )
-            android.util.Log.w("HGTV-STARTUP","初始化失败",problem)
-            if(!isFinishing && !isDestroyed) showFailure()
-        }
-        startupCleanup=if(retry) {
-            HgtvStartup.retry(this,ready,failed)
-        } else {
-            HgtvStartup.initialize(this,ready,failed)
-        }
     }
 
     private fun routeToTarget() {
@@ -240,8 +217,6 @@ class LaunchActivity : Activity() {
 
     override fun onDestroy() {
         StartupTrace.mark("launch.onDestroy", "routed=$routed")
-        startupCleanup?.invoke()
-        startupCleanup=null
         super.onDestroy()
     }
 

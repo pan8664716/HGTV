@@ -18,15 +18,16 @@ import java.util.concurrent.atomic.AtomicBoolean
 /**
  * 启动页负责的本地初始化。
  *
- * 页面只把“可以开始首屏”的判据放在本机书库加载成功；TLS、DNS、TNC、签名与会话
- * 预热继续在后台并行，不把网络波动变成无法进入应用的阻塞条件。初始化失败时由
- * 启动页显示重试，不再先进入主界面再补一个全屏加载遮罩。
+ * 启动页不再等待本机书库：窗口首帧之后只注册缓存目录，随后立即路由；书库、TLS、DNS、
+ * TNC、签名与会话预热继续在后台并行。主页面自己先铺缓存 / 骨架，读盘失败也由目标页
+ * 按现有错误态处理，不把启动路由变成网络或 IO 门禁。
  */
 internal object HgtvStartup {
     private enum class State { IDLE, RUNNING, READY, FAILED }
 
     private val lock=Any()
     private val runtimeStarted=AtomicBoolean(false)
+    private val cacheStarted=AtomicBoolean(false)
     private val preloadStarted=AtomicBoolean(false)
     private val deferredStarted=AtomicBoolean(false)
     private var state=State.IDLE
@@ -50,6 +51,8 @@ internal object HgtvStartup {
         if(!deferredStarted.compareAndSet(false,true)) return
         StartupTrace.mark("startup.afterFirstFrame")
         configureNetLogging()
+        // 只注册缓存路径，不做读盘：目标页紧接着就要用这份路径铺缓存 / 骨架。
+        startCaches(app)
         preload(app)
         Thread({
             StartupTrace.section("startup.initUmeng") { initUmeng(app) }
@@ -204,6 +207,7 @@ internal object HgtvStartup {
     }
 
     private fun startCaches(context: Context) {
+        if(!cacheStarted.compareAndSet(false,true)) return
         StartupTrace.section("startup.cacheInit") {
             runCatching {
             val cache=context.cacheDir

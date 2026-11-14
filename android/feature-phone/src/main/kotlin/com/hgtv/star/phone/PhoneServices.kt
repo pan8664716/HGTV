@@ -2,10 +2,12 @@
 package com.hgtv.star.phone
 
 import android.content.Context
+import android.os.Looper
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.shared.data.Library
+import com.google.android.exoplayer2.DefaultLoadControl
 import com.google.android.exoplayer2.ExoPlayer
 import kotlinx.coroutines.suspendCancellableCoroutine
 import kotlin.coroutines.resume
@@ -74,6 +76,8 @@ object PhoneServices {
         PhoneDecoder.bind(context)
         return exo ?: synchronized(this) {
             exo ?: ExoPlayer.Builder(context.applicationContext)
+                .setLooper(Looper.getMainLooper())
+                .setLoadControl(phoneLoadControl())
                 .setRenderersFactory(
                     com.google.android.exoplayer2.DefaultRenderersFactory(context.applicationContext)
                         .setMediaCodecSelector(PhoneDecoder.selector)
@@ -108,6 +112,25 @@ object PhoneServices {
                 }
         }
     }
+
+    /**
+     * 手机端统一缓冲档位。
+     *
+     * ExoPlayer 默认是 50 秒最小/最大缓冲、2.5 秒起播、5 秒重缓冲；这里改成
+     * 15–30 秒缓冲、1.5 秒起播、2.5 秒恢复。只调整 LoadControl，不替换播放器、
+     * Surface 或换源逻辑；字节上限只做保护，时间仍是主目标。
+     */
+    private fun phoneLoadControl(): DefaultLoadControl =
+        DefaultLoadControl.Builder()
+            .setBufferDurationsMs(
+                15_000,
+                30_000,
+                1_500,
+                2_500,
+            )
+            .setTargetBufferBytes(16 * 1024 * 1024)
+            .setPrioritizeTimeOverSizeThresholds(true)
+            .build()
 
     /** 把播放器从某个 `PlayerView` 上解下来（切页时调，别 release）。 */
     fun detach(view: com.google.android.exoplayer2.ui.PlayerView?) {
