@@ -32,6 +32,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         const val TOP_MODE_INSET_DP=20
         const val BOTTOM_INSET_DP=120
         const val MAX_LINES_PER_FRAME=160
+        const val LOW_END_MAX_LINES_PER_FRAME=64
+        const val LOW_END_FRAME_INTERVAL_MS=33L
         const val LANE_GAP_TEXT=0.9f
         const val LANE_GAP_VERTICAL=0.35f
         const val MAX_DELAY_MS=4_000L
@@ -102,11 +104,15 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private val hlMetrics=Paint.FontMetrics()
     private val counterMetrics=Paint.FontMetrics()
     private val lowEnd=context.applicationContext.lowEndTv()
-    private val spriteAtlasWidth=if(lowEnd) 1024 else 2048
-    private val spriteAtlasHeight=if(lowEnd) 1024 else 1024
-    private val maxLinesPerFrame=if(lowEnd) 96 else MAX_LINES_PER_FRAME
+    // 一集约 150~300 条弹幕；1024 宽只能装下一部分，剩余每条每帧都要重做描边字形。
+    // 多占 4MB 位图内存，把低配电视的常见窗口完整放进图集，换来的是持续播放时更低的 CPU。
+    private val spriteAtlasWidth=2048
+    private val spriteAtlasHeight=1024
+    private val maxLinesPerFrame=if(lowEnd) LOW_END_MAX_LINES_PER_FRAME else MAX_LINES_PER_FRAME
+    private val frameIntervalMs=if(lowEnd) LOW_END_FRAME_INTERVAL_MS else 0L
     private var spriteAtlas: DanmakuSpriteAtlas?=null
     private var nextSpriteRefreshAt=0L
+    private var lastDrawAt=0L
     private var fillEmojiCenter=0f
     private var hlEmojiCenter=0f
     private val density: Float
@@ -484,6 +490,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         super.onDraw(canvas)
         if(mode==DanmakuMode.HIDDEN || laneCount<=0) return
         if(lines.isEmpty() && highlights.isEmpty()) return
+        lastDrawAt=SystemClock.uptimeMillis()
         val viewWidth=width.toFloat()
         val now=clockPositionMillis()
         val seconds=now/1000f
@@ -526,7 +533,25 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             index++
         }
         drawHighlights(canvas,now)
-        if(clockRunning && visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
+        scheduleNextFrame()
+    }
+
+    /**
+     * 低配电视的弹幕只按 30fps 重绘。
+     *
+     * 这台 2GB 盒子实测弹幕开启时进程长期吃 140%–290% CPU，关闭弹幕只占约 12%；
+     * simpleperf 的热点集中在 RenderThread 的字体轮廓和描边路径生成。弹幕位置由系统时钟
+     * 外推，不需要跟播放器逐帧同步，因此把整屏重绘降到 30fps 不会改变速度或时间轴。
+     * 高端设备继续用 Choreographer 的 60fps。
+     */
+    private fun scheduleNextFrame() {
+        if(!clockRunning || visibility!=VISIBLE || !attachedToWindow) return
+        if(frameIntervalMs<=0L) {
+            postInvalidateOnAnimation()
+            return
+        }
+        val elapsed=SystemClock.uptimeMillis()-lastDrawAt
+        postInvalidateDelayed((frameIntervalMs-elapsed).coerceAtLeast(1L))
     }
 
     private fun drawHighlights(canvas: Canvas,nowMs: Long) {
