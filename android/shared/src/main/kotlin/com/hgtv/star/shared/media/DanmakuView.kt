@@ -5,9 +5,15 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
+import android.graphics.PixelFormat
+import android.graphics.PorterDuff
 import android.graphics.RectF
 import android.graphics.Typeface
+import android.os.Build
 import android.os.SystemClock
+import android.view.Choreographer
+import android.view.SurfaceHolder
+import android.view.SurfaceView
 import android.view.View
 import com.hgtv.star.core.Danmaku
 import com.hgtv.star.core.DanmakuEmoji
@@ -24,7 +30,7 @@ import com.hgtv.star.core.repeatGroups
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.shared.compat.lowEndTv
 
-class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
+class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Listener,SurfaceHolder.Callback {
     private companion object {
         const val BASE_SCROLL_SECONDS=6f
         const val TOP_INSET_DP=104
@@ -236,7 +242,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         set(value) {
             if(field==value) return
             field=value
-            invalidate()
+            requestFrame()
         }
 
     var topInsetPx: Int=-1
@@ -251,7 +257,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             if(field==value) return
             field=value
             applyTextMetrics()
-            invalidate()
+            requestFrame()
         }
 
     var speed: DanmakuSpeed=DanmakuSpeed.NORMAL
@@ -283,6 +289,16 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private var transitionRunning=false
     private var pendingDanmaku: List<Danmaku>?=null
     private var transitionClockReady=false
+    private var surfaceReady=false
+    private var frameScheduled=false
+    private val choreographer=Choreographer.getInstance()
+    private val frameCallback=object: Choreographer.FrameCallback {
+        override fun doFrame(frameTimeNanos: Long) {
+            frameScheduled=false
+            if(!surfaceReady || visibility!=VISIBLE || !attachedToWindow) return
+            drawSurfaceFrame()
+        }
+    }
 
     fun setClock(positionMs: Long,running: Boolean,speed: Float=clockSpeed) {
         clockBaseMs=positionMs.coerceAtLeast(0)
@@ -298,7 +314,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
                 replaceDanmaku(items)
             }
         }
-        if(visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
+        requestFrame()
     }
 
     fun clockPositionMillis(): Long {
@@ -317,7 +333,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         clockBaseMs=clockPositionMillis()
         clockBaseAt=SystemClock.elapsedRealtime()
         clockRunning=false
-        if(visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
+        requestFrame()
     }
 
     fun beginTransition() {
@@ -329,7 +345,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         transitionHold=true
         transitionClockReady=false
         pendingDanmaku=null
-        if(transitionRunning && visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
+        requestFrame()
     }
 
     fun stopClock() {
@@ -338,6 +354,9 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         clockBaseAt=SystemClock.elapsedRealtime()
     }
     init {
+        holder.addCallback(this)
+        holder.setFormat(PixelFormat.TRANSLUCENT)
+        setZOrderMediaOverlay(true)
         isFocusable=false
         importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO
         visibility=INVISIBLE
@@ -381,7 +400,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         scheduleGroupsThrough(nowMs+SCHEDULE_AHEAD_MS,nowMs)
         backlogCutoffMs=Long.MIN_VALUE
         visibility=VISIBLE
-        invalidate()
+        requestFrame()
     }
 
     fun clear() {
@@ -407,9 +426,13 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         ensureSpriteAtlas()
         nextSpriteRefreshAt=0L
         refreshSpriteAtlas(clockPositionMillis())
+        requestFrame()
     }
 
     override fun onDetachedFromWindow() {
+        choreographer.removeFrameCallback(frameCallback)
+        frameScheduled=false
+        surfaceReady=false
         emoji.removeListener(this)
         spriteAtlas?.close()
         spriteAtlas=null
@@ -417,7 +440,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     }
 
     override fun onEmojiDecoded() {
-        if(visibility==VISIBLE) postInvalidateOnAnimation()
+        requestFrame()
     }
 
     private fun replaceDanmaku(items: List<Danmaku>) {
@@ -456,7 +479,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         groups.forEach { if(prefetched.add(it.text)) fresh+=it.text }
         if(fresh.isNotEmpty()) emoji.prefetch(fresh)
         visibility=if(mode==DanmakuMode.HIDDEN || raw.isEmpty()) INVISIBLE else VISIBLE
-        invalidate()
+        requestFrame()
     }
 
     private fun clearScrollLayer() {
@@ -622,8 +645,19 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         laneCount=mode.lineLimit?.let { minOf(it,byHeight) } ?: byHeight
     }
 
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
+    private fun drawSurfaceFrame() {
+        val canvas=runCatching {
+            if(Build.VERSION.SDK_INT>=26) holder.lockHardwareCanvas() else holder.lockCanvas()
+        }.getOrNull() ?: return
+        try {
+            canvas.drawColor(Color.TRANSPARENT,PorterDuff.Mode.CLEAR)
+            drawFrame(canvas)
+        } finally {
+            runCatching { holder.unlockCanvasAndPost(canvas) }
+        }
+    }
+
+    private fun drawFrame(canvas: Canvas) {
         if(mode==DanmakuMode.HIDDEN || laneCount<=0) return
         val viewWidth=width.toFloat()
         val now=clockPositionMillis()
@@ -675,15 +709,15 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
      * 低配电视同样保持 60fps，空闲期不再持续做透明层重绘。
      */
     private fun scheduleNextFrame(nowMs: Long,hasActive: Boolean) {
-        if(!clockRunning || visibility!=VISIBLE || !attachedToWindow) return
+        if(!clockRunning || visibility!=VISIBLE || !attachedToWindow || !surfaceReady) return
         if(hasActive) {
-            postInvalidateOnAnimation()
+            requestFrame()
             return
         }
         val nextMs=nextEventMs(nowMs) ?: return
         val playbackDelay=(nextMs-nowMs).coerceAtLeast(1L)
         val wallDelay=(playbackDelay/clockSpeed).toLong().coerceAtLeast(1L)
-        if(wallDelay<=16L) postInvalidateOnAnimation() else postInvalidateDelayed(wallDelay)
+        if(wallDelay<=16L) requestFrame() else requestFrame(wallDelay)
     }
 
     private fun nextEventMs(nowMs: Long): Long? {
@@ -889,7 +923,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         return DanmakuSpriteAtlas(
             spriteAtlasWidth,
             spriteAtlasHeight,
-            onReady = { if(visibility==VISIBLE) postInvalidateOnAnimation() },
+            onReady = { requestFrame() },
         ).also {
             spriteAtlas=it
             it.setStyle(fill.textSize,edge.strokeWidth)
@@ -932,6 +966,45 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         lastPosition=-1L
         lastSchedulePositionMs=-1L
         nextSpriteRefreshAt=0L
-        if(visibility==VISIBLE && attachedToWindow) postInvalidateOnAnimation()
+        requestFrame()
+    }
+
+    private fun requestFrame(delayMs: Long=0L) {
+        if(!surfaceReady || visibility!=VISIBLE || !attachedToWindow) return
+        if(frameScheduled) {
+            if(delayMs>0L) return
+            choreographer.removeFrameCallback(frameCallback)
+        }
+        frameScheduled=true
+        if(delayMs<=0L) choreographer.postFrameCallback(frameCallback)
+        else choreographer.postFrameCallbackDelayed(frameCallback,delayMs)
+    }
+
+    override fun onVisibilityChanged(changedView: View,visibility: Int) {
+        super.onVisibilityChanged(changedView,visibility)
+        if(visibility!=VISIBLE) {
+            choreographer.removeFrameCallback(frameCallback)
+            frameScheduled=false
+        } else {
+            requestFrame()
+        }
+    }
+
+    override fun surfaceCreated(holder: SurfaceHolder) {
+        surfaceReady=true
+        ensureSpriteAtlas()
+        nextSpriteRefreshAt=0L
+        refreshSpriteAtlas(clockPositionMillis())
+        requestFrame()
+    }
+
+    override fun surfaceChanged(holder: SurfaceHolder,format: Int,width: Int,height: Int) {
+        requestFrame()
+    }
+
+    override fun surfaceDestroyed(holder: SurfaceHolder) {
+        surfaceReady=false
+        choreographer.removeFrameCallback(frameCallback)
+        frameScheduled=false
     }
 }

@@ -4594,6 +4594,23 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 弹幕独立 Surface 渲染
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 真机基线：同一部 1080P 视频关闭弹幕时 UI 帧耗时中位数 / 90 分位约
+  `7ms / 16ms`；普通 View 全屏弹幕开启后变为 `97ms / 200ms`，20 秒仅 355 帧。
+- 根因不是视频解码，而是弹幕每帧 `invalidate()` 触发整个 Activity View 树重新合成。
+- `DanmakuView` 改为独立 `SurfaceView`，使用透明硬件 Surface 和 `Choreographer`
+  按屏幕刷新率调度；主窗口不再因弹幕滚动每帧重绘。
+- 保留现有轨道排程、30 秒缓冲、对象池、文字图集、聚合和高亮逻辑；不降低弹幕密度，
+  低配电视仍保持单帧最多 16 行。
+- 参考 ByteDance DanmakuRenderEngine 的独立渲染层思路：
+  <https://github.com/bytedance/DanmakuRenderEngine>（Apache-2.0）。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 音频 CPU 调查
 
 状态：已调查，未提交实验代码。
