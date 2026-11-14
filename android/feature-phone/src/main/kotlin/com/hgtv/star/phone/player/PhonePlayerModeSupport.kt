@@ -4,6 +4,7 @@ package com.hgtv.star.phone
 import android.view.View
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
+import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.resizeMode
 
 /**
@@ -25,6 +26,22 @@ internal fun PhonePlayerActivity.animateModeEnter(view: View) {
         .setDuration(PhonePlayerActivity.MODE_TRANSITION_MS)
         .setInterpolator(android.view.animation.DecelerateInterpolator())
         .start()
+}
+
+/**
+ * 手机弹幕从顶部播放信息下方开始；电视不调用这个属性，仍从屏幕顶部开始。
+ */
+internal fun PhonePlayerActivity.syncDanmakuTopInset() {
+    if (!playerPageInitialized) return
+    if (playerLandscapeMode) {
+        if (!playerLandInfoRowInitialized || !playerLandDanmakuInitialized) return
+        if (playerLandInfoRowBottom > 0) {
+            playerLandDanmaku.topInsetPx = playerLandInfoRowBottom + dp(2)
+        }
+        return
+    }
+    if (playerPortraitTopBottom <= 0) return
+    playerPage.danmakuView.topInsetPx = playerPortraitTopBottom + dp(8)
 }
 
 /** 横屏也按用户的「画面模式」落画面，不按片源方向强制放大。 */

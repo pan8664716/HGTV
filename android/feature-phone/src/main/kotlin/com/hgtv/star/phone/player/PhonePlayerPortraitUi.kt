@@ -35,6 +35,12 @@ internal fun PhonePlayerActivity.buildPortrait() {
         // 沉浸式：状态栏不占位，只留一小段呼吸位（早先是 statusBar() + dp(6)）。
         topMargin = dp(12)
     })
+    playerPortraitTop.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+        if (bottom - top > 0) {
+            playerPortraitTopBottom = bottom
+            syncDanmakuTopInset()
+        }
+    }
     root.addView(playerPortrait, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
     ))

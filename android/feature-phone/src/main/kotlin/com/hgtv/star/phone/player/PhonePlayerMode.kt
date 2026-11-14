@@ -82,6 +82,7 @@ internal fun PhonePlayerActivity.applyMode() {
     placeLandscapeFullscreenImpl()
     scheduleChromeHideForMode()
     syncChips()
+    syncDanmakuTopInset()
     // 竖屏 / 全屏是两个弹幕层：把这一集已经拉到的数据接到新那一层上，
     // 否则一点全屏就「弹幕没了」（见 replayDanmaku）。
     replayDanmaku()
@@ -89,6 +90,7 @@ internal fun PhonePlayerActivity.applyMode() {
     // Activity 不重建），不加这一层就是「啪」一下换掉。放在所有布局设置之后。
     animateModeEnter(if (playerLandscapeMode) playerLandscape else playerPortrait)
     root.post {
+        syncDanmakuTopInset()
         replayDanmaku()
         placeLandscapeFullscreenImpl()
     }

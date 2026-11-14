@@ -158,6 +158,12 @@ internal fun PhonePlayerActivity.buildLandscapeTopControls() {
         leftMargin = dp(16)
         rightMargin = dp(16)
     })
+    info.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
+        if (bottom - top > 0) {
+            playerLandInfoRowBottom = bottom
+            syncDanmakuTopInset()
+        }
+    }
     playerLandInfoLeftSlot = left
     playerLandInfoRightSlot = right
     playerLandInfoRowSlot = info

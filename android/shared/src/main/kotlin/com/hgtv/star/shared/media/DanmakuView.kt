@@ -249,6 +249,13 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             requestFrame()
         }
 
+    var topInsetPx: Int=0
+        set(value) {
+            if(field==value) return
+            field=value
+            relayout()
+        }
+
     var textAlpha: Float=1f
         set(value) {
             if(field==value) return
@@ -649,7 +656,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         val verticalGap=maxOf(fill.textSize*LANE_GAP_VERTICAL,density*LANE_MIN_GAP_DP)
         laneHeight=maxOf(textBox,emojiBox)+verticalGap
         if(mode==DanmakuMode.HIDDEN || laneHeight<=0f) { laneCount=0; return }
-        laneTop=0f
+        laneTop=topInsetPx.coerceAtLeast(0).toFloat()
         val bottom=height-BOTTOM_INSET_DP*density
         val byHeight=((bottom-laneTop).coerceAtLeast(0f)/laneHeight).toInt().coerceIn(0,24)
         laneCount=minOf(mode.lineLimit,byHeight)
