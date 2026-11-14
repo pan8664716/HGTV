@@ -26,6 +26,7 @@ import com.hgtv.star.tv.player.EpisodePanel
 import com.hgtv.star.shared.data.FavoriteMonitor
 import com.hgtv.star.tv.list.HomeScreen
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.compat.lowEndTv
 import com.hgtv.star.tv.player.PlaybackMenu
 import com.hgtv.star.tv.PosterCard
 import com.hgtv.star.tv.SeekIndicator
@@ -452,7 +453,11 @@ class TvMainActivity: Activity() {
     val recommendWarmWorker get()=com.hgtv.star.shared.architecture.AppExecutors.network.executor
     var recommendLastSwitchAt=0L
     var recommendPrefetchDir=1
-    val slideCache=com.hgtv.star.core.SlideCacheManager()
+    // 低配电视先让首帧、弹幕和音频稳定下来，再把 CPU / 带宽让给相邻预加载。
+    // 原先 300ms 就开始拉 1MB，首帧刚出来时正好和弹幕图集、视频缓冲抢核。
+    val slideCache=com.hgtv.star.core.SlideCacheManager(
+        firstFrameDelayMs=if(runCatching { lowEndTv() }.getOrDefault(true)) 3_000L else 300L,
+    )
     var preloadSchedulerRef: com.hgtv.star.shared.feed.PreloadScheduler?=null
     val recommendPreparedIndex=HashMap<String,Int>()
     val recommendPreparedAt=HashMap<String,Long>()

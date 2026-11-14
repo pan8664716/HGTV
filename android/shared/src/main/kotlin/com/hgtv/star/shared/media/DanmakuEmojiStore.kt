@@ -76,7 +76,17 @@ class DanmakuEmojiStore private constructor(context: Context) {
      */
     fun prefetch(texts: Iterable<String>) {
         if (closed) return
-        texts.forEach { text -> DanmakuEmoji.parts(text).forEach { part -> part.asset?.let { bitmap(it) } } }
+        val snapshot = texts.toList()
+        if (snapshot.isEmpty()) return
+        // 解析表情标签本身也会遍历整批文本；放到解码线程，避免首屏弹幕回包时占用主线程。
+        runCatching {
+            workers.execute {
+                if (closed) return@execute
+                snapshot.forEach { text ->
+                    DanmakuEmoji.parts(text).forEach { part -> part.asset?.let { bitmap(it) } }
+                }
+            }
+        }
     }
 
     fun addListener(listener: Listener) {

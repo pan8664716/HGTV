@@ -32,6 +32,7 @@ import com.google.android.exoplayer2.video.VideoRendererEventListener
 import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.*
 import com.hgtv.star.shared.compat.setVectorIcon
+import com.hgtv.star.shared.compat.lowEndTv
 import com.hgtv.star.shared.media.DanmakuView
 import com.hgtv.star.tv.SeekIndicator
 import com.hgtv.star.tv.TvStyle
@@ -447,10 +448,9 @@ fun TvMainActivity.playEpisode(
                     syncBufferingDots()
                     // 从推荐页进正片时这一集还没 READY，历史由这里补写（见 [enterFormalPlayback]）。
                     if(recommendHistoryPending) saveProgress()
-                    // 起播已经稳了：趁用户还没按菜单键，把播放设置面板先建好、画一遍
-                    //（见 [warmPlaybackMenu]）。不预热的话第一次打开菜单仍要现建三十来枚按钮，
-                    // 那一下弹幕会停半拍。
-                    warmPlaybackMenu()
+                    // 起播已经稳了：高端电视趁用户还没按菜单键，把播放设置面板先建好、画一遍
+                    //（见 [warmPlaybackMenu]）。低配电视跳过这段主线程预热，首开菜单再按需构建。
+                    if(!runCatching { lowEndTv() }.getOrDefault(true)) warmPlaybackMenu()
                     // 推荐页：这一部已经出画面，现在才轮到给相邻两部拉首集数据。
                     //
                     // 起播之前不预热（见 `warmRecommendDetail` 开头的 `playbackReady` 判断）：
@@ -471,7 +471,7 @@ fun TvMainActivity.playEpisode(
                         // 避免 6 个模型请求与用户下一次换剧抢同一条下行。
                         main.postDelayed({
                             if(!isDestroyed && screen=="recommend") prefetchRecommendBatchModels()
-                        },RECOMMEND_BATCH_MODEL_DELAY_MS)
+                        },if(runCatching { lowEndTv() }.getOrDefault(true)) 8_000L else RECOMMEND_BATCH_MODEL_DELAY_MS)
                         // 冷启动续播时暂缓的那一次取流：画面已经出来了，现在取不会抢首帧。
                         fireRecommendFeed()
                     }

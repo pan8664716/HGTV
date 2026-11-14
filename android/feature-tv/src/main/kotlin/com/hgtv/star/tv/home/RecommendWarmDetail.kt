@@ -125,8 +125,8 @@ fun TvMainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Ca
 private fun TvMainActivity.hasWarmSlot(level: com.hgtv.star.core.CacheLevel,metered: Boolean): Boolean {
     val inFlight=recommendStore().warmingCount()
     return when(level) {
-        com.hgtv.star.core.CacheLevel.FULL -> inFlight<(if(metered) 1 else RECOMMEND_WARM_SLOTS)
-        com.hgtv.star.core.CacheLevel.META -> inFlight<(if(metered) 1 else 3)
-        else -> inFlight<(if(metered) 2 else 4)
+        com.hgtv.star.core.CacheLevel.FULL -> inFlight<1
+        com.hgtv.star.core.CacheLevel.META -> inFlight<(if(metered) 1 else 2)
+        else -> inFlight<(if(metered) 2 else 3)
     }
 }

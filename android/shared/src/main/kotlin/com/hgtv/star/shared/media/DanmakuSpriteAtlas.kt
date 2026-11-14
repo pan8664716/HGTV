@@ -79,12 +79,21 @@ internal class DanmakuSpriteAtlas(
     /** 取一张已经生成好的弹幕；图集还没准备好时返回 null，由调用方走文字降级路径。 */
     fun get(text: String): Sprite?=current?.sprites?.get(text)
 
-    fun draw(canvas: Canvas,sprite: Sprite,x: Float,baseline: Float,paint: Paint,dst: RectF) {
+    fun draw(
+        canvas: Canvas,
+        sprite: Sprite,
+        x: Float,
+        baseline: Float,
+        paint: Paint,
+        dst: RectF,
+        scale: Float=1f,
+    ) {
+        val safeScale=scale.coerceAtLeast(0.01f)
         dst.set(
-            x+sprite.left,
-            baseline+sprite.top,
-            x+sprite.left+sprite.source.width(),
-            baseline+sprite.top+sprite.source.height(),
+            x+sprite.left*safeScale,
+            baseline+sprite.top*safeScale,
+            x+sprite.left*safeScale+sprite.source.width()*safeScale,
+            baseline+sprite.top*safeScale+sprite.source.height()*safeScale,
         )
         canvas.drawBitmap(sprite.bitmap,sprite.source,dst,paint)
     }

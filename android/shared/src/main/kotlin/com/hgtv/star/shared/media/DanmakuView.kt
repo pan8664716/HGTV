@@ -32,8 +32,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         const val TOP_MODE_INSET_DP=20
         const val BOTTOM_INSET_DP=120
         const val MAX_LINES_PER_FRAME=160
-        const val LOW_END_MAX_LINES_PER_FRAME=64
-        const val LOW_END_FRAME_INTERVAL_MS=33L
+        const val LOW_END_MAX_LINES_PER_FRAME=16
         const val LANE_GAP_TEXT=0.9f
         const val LANE_GAP_VERTICAL=0.35f
         const val MAX_DELAY_MS=4_000L
@@ -109,10 +108,8 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     private val spriteAtlasWidth=2048
     private val spriteAtlasHeight=1024
     private val maxLinesPerFrame=if(lowEnd) LOW_END_MAX_LINES_PER_FRAME else MAX_LINES_PER_FRAME
-    private val frameIntervalMs=if(lowEnd) LOW_END_FRAME_INTERVAL_MS else 0L
     private var spriteAtlas: DanmakuSpriteAtlas?=null
     private var nextSpriteRefreshAt=0L
-    private var lastDrawAt=0L
     private var fillEmojiCenter=0f
     private var hlEmojiCenter=0f
     private val density: Float
@@ -398,7 +395,11 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             if(mode==DanmakuMode.SINGLE &&
                 highlights.any { it.startMs<endMs && it.endMs>startMs }) return@forEach
             laneFree[lane]=start+(width+laneGap)/pixelsPerSecond
-            val spriteText=parts.singleOrNull()?.takeIf { it.asset==null }?.text
+            // 纯文本即使被表情解析器拆成多段，也可以拼回一张图集贴图；
+            // 只有真正含表情资源的行才留在逐帧文字路径上。
+            val spriteText=parts.takeIf { parts.all { it.asset==null } }
+                ?.joinToString(separator="") { it.text }
+                ?.takeIf { it.isNotEmpty() }
             lines+=Line(start,duration,width,lane,parts,widths,spriteText)
         }
         lines.sortBy { it.start }
@@ -490,7 +491,6 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         super.onDraw(canvas)
         if(mode==DanmakuMode.HIDDEN || laneCount<=0) return
         if(lines.isEmpty() && highlights.isEmpty()) return
-        lastDrawAt=SystemClock.uptimeMillis()
         val viewWidth=width.toFloat()
         val now=clockPositionMillis()
         val seconds=now/1000f
@@ -536,22 +536,10 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
         scheduleNextFrame()
     }
 
-    /**
-     * 低配电视的弹幕只按 30fps 重绘。
-     *
-     * 这台 2GB 盒子实测弹幕开启时进程长期吃 140%–290% CPU，关闭弹幕只占约 12%；
-     * simpleperf 的热点集中在 RenderThread 的字体轮廓和描边路径生成。弹幕位置由系统时钟
-     * 外推，不需要跟播放器逐帧同步，因此把整屏重绘降到 30fps 不会改变速度或时间轴。
-     * 高端设备继续用 Choreographer 的 60fps。
-     */
+    /** 弹幕跟随屏幕刷新率；低配电视同样保持 60fps。 */
     private fun scheduleNextFrame() {
         if(!clockRunning || visibility!=VISIBLE || !attachedToWindow) return
-        if(frameIntervalMs<=0L) {
-            postInvalidateOnAnimation()
-            return
-        }
-        val elapsed=SystemClock.uptimeMillis()-lastDrawAt
-        postInvalidateDelayed((frameIntervalMs-elapsed).coerceAtLeast(1L))
+        postInvalidateOnAnimation()
     }
 
     private fun drawHighlights(canvas: Canvas,nowMs: Long) {
@@ -624,7 +612,21 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             1f+(HIGHLIGHT_COUNTER_PULSE_MAX_SCALE-1f)*eased
         } else 1f
         val baseline=centerY-(hlMetrics.ascent+hlMetrics.descent)/2f
-        drawParts(canvas,parts,widths,left,baseline,hlFill,hlEdge,emojiSize,hlEmojiCenter)
+        val atlas=spriteAtlas
+        val sprite=atlas?.get(round.group.text)
+        if(sprite!=null) {
+            atlas.draw(
+                canvas,
+                sprite,
+                left,
+                baseline,
+                spritePaint,
+                spriteDst,
+                highlightSize/fill.textSize.coerceAtLeast(1f),
+            )
+        } else {
+            drawParts(canvas,parts,widths,left,baseline,hlFill,hlEdge,emojiSize,hlEmojiCenter)
+        }
         val counterBaseline=centerY-(counterMetrics.ascent+counterMetrics.descent)/2f
         val counterLeft=left+bodyWidth
         val counterCenterX=counterLeft+counterWidth/2f
@@ -718,7 +720,7 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
     }
 
     private fun refreshSpriteAtlas(nowMs: Long) {
-        if(lines.isEmpty() || width<=0 || height<=0) return
+        if((lines.isEmpty() && highlights.isEmpty()) || width<=0 || height<=0) return
         val wanted=LinkedHashSet<String>()
         val until=nowMs+SPRITE_AHEAD_MS
         val since=nowMs-SPRITE_BEHIND_MS
@@ -730,6 +732,18 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             val end=((line.start+line.duration)*1000f).toLong()
             if(end>=since) line.spriteText?.let { wanted+=it }
             index++
+        }
+        var highlightIndex=highlightCursor
+        while(highlightIndex<highlights.size) {
+            val round=highlights[highlightIndex]
+            if(round.startMs>until) break
+            if(round.endMs>=since) {
+                val text=round.group.text
+                if(text.isNotEmpty() && DanmakuEmoji.parts(text).all { it.asset==null }) {
+                    wanted+=text
+                }
+            }
+            highlightIndex++
         }
         nextSpriteRefreshAt=nowMs+SPRITE_REFRESH_MS
         if(wanted.isNotEmpty()) ensureSpriteAtlas()?.request(wanted)
