@@ -82,9 +82,6 @@ internal fun PhonePlayerActivity.applyMode() {
     placeLandscapeFullscreenImpl()
     scheduleChromeHideForMode()
     syncChips()
-    // 竖屏弹幕从标题栏下沿开始铺；刚切形态时标题栏可能还没量出高度，
-    // 这一帧布局完再对一次（见 syncDanmakuTopInset）。
-    syncDanmakuTopInset()
     // 竖屏 / 全屏是两个弹幕层：把这一集已经拉到的数据接到新那一层上，
     // 否则一点全屏就「弹幕没了」（见 replayDanmaku）。
     replayDanmaku()
@@ -92,7 +89,6 @@ internal fun PhonePlayerActivity.applyMode() {
     // Activity 不重建），不加这一层就是「啪」一下换掉。放在所有布局设置之后。
     animateModeEnter(if (playerLandscapeMode) playerLandscape else playerPortrait)
     root.post {
-        syncDanmakuTopInset()
         replayDanmaku()
         placeLandscapeFullscreenImpl()
     }

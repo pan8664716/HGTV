@@ -34,7 +34,6 @@ import kotlin.math.roundToInt
 class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Listener,SurfaceHolder.Callback {
     private companion object {
         const val BASE_SCROLL_SECONDS=6f
-        const val TOP_INSET_DP=104
         const val BOTTOM_INSET_DP=120
         const val LANE_GAP_TEXT=0.9f
         const val LANE_GAP_VERTICAL=0.35f
@@ -248,13 +247,6 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             if(field==value) return
             field=value
             requestFrame()
-        }
-
-    var topInsetPx: Int=-1
-        set(value) {
-            if(field==value) return
-            field=value
-            relayout()
         }
 
     var textAlpha: Float=1f
@@ -657,10 +649,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         val verticalGap=maxOf(fill.textSize*LANE_GAP_VERTICAL,density*LANE_MIN_GAP_DP)
         laneHeight=maxOf(textBox,emojiBox)+verticalGap
         if(mode==DanmakuMode.HIDDEN || laneHeight<=0f) { laneCount=0; return }
-        laneTop=maxOf(
-            if(topInsetPx>=0) topInsetPx.toFloat() else TOP_INSET_DP*density,
-            highlightSize*0.6f+HIGHLIGHT_PAD_DP*density*0.5f,
-        )
+        laneTop=0f
         val bottom=height-BOTTOM_INSET_DP*density
         val byHeight=((bottom-laneTop).coerceAtLeast(0f)/laneHeight).toInt().coerceIn(0,24)
         laneCount=minOf(mode.lineLimit,byHeight)

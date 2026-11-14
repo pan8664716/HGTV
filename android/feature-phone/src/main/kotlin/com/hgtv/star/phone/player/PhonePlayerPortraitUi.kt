@@ -35,15 +35,6 @@ internal fun PhonePlayerActivity.buildPortrait() {
         // 沉浸式：状态栏不占位，只留一小段呼吸位（早先是 statusBar() + dp(6)）。
         topMargin = dp(12)
     })
-    // 标题栏一量出高度就把弹幕的顶部起点对齐到它下沿。收起来（GONE）时高度是 0，
-    // 不能拿那一帧当新下沿——否则控制层一隐藏，弹幕就窜回屏幕顶部。
-    playerPortraitTop.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
-        if (bottom - top > 0) {
-            playerPortraitTopBottom = bottom
-            syncDanmakuTopInset()
-        }
-    }
-
     root.addView(playerPortrait, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
     ))

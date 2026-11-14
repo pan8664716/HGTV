@@ -292,14 +292,6 @@ class PhonePlayerActivity : PhoneActivity() {
         get()=finishAfterLandscapeRestore
         set(value) { finishAfterLandscapeRestore=value }
 
-    private var portraitTopBottom = 0
-    internal var playerPortraitTopBottom: Int
-        get()=portraitTopBottom
-        set(value) { portraitTopBottom=value }
-    private var landInfoRowBottom = 0
-    internal var playerLandInfoRowBottom: Int
-        get()=landInfoRowBottom
-        set(value) { landInfoRowBottom=value }
     private var landVideoWidth = 0
     private var landVideoHeight = 0
     internal var playerLandVideoWidth: Int

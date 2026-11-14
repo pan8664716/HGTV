@@ -158,14 +158,6 @@ internal fun PhonePlayerActivity.buildLandscapeTopControls() {
         leftMargin = dp(16)
         rightMargin = dp(16)
     })
-    // 量出它的下沿交给弹幕层：横屏弹幕从这一行之下才开始铺（见 `syncDanmakuTopInset`）。
-    // 收起（GONE）时高度为 0，那一帧不采信，否则弹幕会窜回屏幕顶部。
-    info.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
-        if (bottom - top > 0) {
-            playerLandInfoRowBottom = bottom
-            syncDanmakuTopInset()
-        }
-    }
     playerLandInfoLeftSlot = left
     playerLandInfoRightSlot = right
     playerLandInfoRowSlot = info
