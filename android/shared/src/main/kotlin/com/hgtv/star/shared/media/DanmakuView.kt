@@ -68,6 +68,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         var durationMs=0L
         var width=0f
         var lane=0
+        var groupKey=""
         var parts: List<DanmakuPart> = emptyList()
         var partWidths: FloatArray = EMPTY_WIDTHS
         var spriteText: String?=null
@@ -81,6 +82,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             durationMs: Long,
             width: Float,
             lane: Int,
+            groupKey: String,
             parts: List<DanmakuPart>,
             partWidths: FloatArray,
             spriteText: String?,
@@ -89,6 +91,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             this.durationMs=durationMs
             this.width=width
             this.lane=lane
+            this.groupKey=groupKey
             this.parts=parts
             this.partWidths=partWidths
             this.spriteText=spriteText
@@ -101,6 +104,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             durationMs=0L
             width=0f
             lane=0
+            groupKey=""
             parts=emptyList()
             partWidths=EMPTY_WIDTHS
             spriteText=null
@@ -196,7 +200,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         set(value) {
             if(field==value) return
             field=value
-            relayout()
+            reconfigureMode()
         }
 
     var textScale: Float=1f
@@ -481,6 +485,55 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         requestFrame()
     }
 
+    /**
+     * 行数切换只调整轨道容量，不重放已经上屏的弹幕。
+     *
+     * 活动行保持原横坐标和原轨道继续滚动；未来行重新排到新轨道容量中。
+     * 缩小行数时，旧轨道里的活动行自然滚完，不再统一从右侧重新生成。
+     */
+    private fun reconfigureMode() {
+        val nowMs=clockPositionMillis()
+        layoutLanes()
+        for(index in lines.lastIndex downTo 0) {
+            val line=lines[index]
+            if(line.startMs>nowMs || line.endMs<nowMs) recycleLine(lines.removeAt(index))
+        }
+        highlights=if(mode==DanmakuMode.HIDDEN) emptyList()
+        else planHighlights(
+            groups,
+            highlights,
+            highlightSlots,
+            mergeMinCount,
+            nowMs,
+        )
+        highlightedKeys=highlights.mapTo(HashSet()) { it.group.key }
+        highlightCursor=0
+        laneFreeMs=LongArray(laneCount)
+        laneEntryFreeMs=LongArray(laneCount)
+        scheduledGroupKeys.clear()
+        val pixelsPerSecond=if(width>0) speedPx(width/BASE_SCROLL_SECONDS) else 0f
+        for(line in lines) {
+            scheduledGroupKeys.add(line.groupKey)
+            if(pixelsPerSecond<=0f || line.lane !in laneFreeMs.indices) continue
+            val entryFreeMs=line.startMs+
+                (((line.width+laneGap)/pixelsPerSecond)*1000f).toLong()
+            laneFreeMs[line.lane]=maxOf(laneFreeMs[line.lane],entryFreeMs)
+            laneEntryFreeMs[line.lane]=maxOf(laneEntryFreeMs[line.lane],entryFreeMs)
+        }
+        nextGroupIndex=groups.indexOfFirst { it.firstMs>=nowMs }.let {
+            if(it<0) groups.size else it
+        }
+        scheduleDirty=false
+        lastSchedulePositionMs=nowMs
+        backlogCutoffMs=Long.MIN_VALUE
+        if(mode!=DanmakuMode.HIDDEN && laneCount>0 && width>0 && height>0) {
+            scheduleGroupsThrough(nowMs+SCHEDULE_AHEAD_MS,nowMs)
+        }
+        nextSpriteRefreshAt=0L
+        visibility=if(mode==DanmakuMode.HIDDEN || raw.isEmpty()) INVISIBLE else VISIBLE
+        requestFrame()
+    }
+
     private fun clearScrollLayer() {
         lines.forEach { recycleLine(it) }
         lines.clear()
@@ -567,7 +620,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
                 ?.joinToString(separator="") { it.text }
                 ?.takeIf { it.isNotEmpty() }
             lines+=obtainLine().apply {
-                bind(startMs,durationMs,width,lane,parts,widths,spriteText)
+                bind(startMs,durationMs,width,lane,group.key,parts,widths,spriteText)
             }
         }
     }
