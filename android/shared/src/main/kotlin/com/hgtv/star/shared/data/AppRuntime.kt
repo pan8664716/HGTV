@@ -80,6 +80,9 @@ object AppRuntime {
         if(tncNetworkWatch!=null) return
         synchronized(lock) {
             if(tncNetworkWatch!=null) return
+            // `registerDefaultNetworkCallback` 会立即回调一次当前网络。把它当成“网络切换”
+            // 会在每次冷启动强制刷新 TNC；先记基线，后续真实断网恢复仍按 15 秒去抖刷新。
+            lastTncNetworkRefreshAt=android.os.SystemClock.elapsedRealtime()
             tncNetworkWatch=runCatching {
                 NetworkWatcher.watch(context) {
                     val now=android.os.SystemClock.elapsedRealtime()
