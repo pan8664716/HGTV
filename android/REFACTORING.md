@@ -4617,10 +4617,13 @@ feature-tv/
 
 - 现象：从推荐页进入正式播放页，反复切换横竖屏后，竖屏播放画面背后重新出现推荐页
   标题、导航和弹幕。
-- 根因：进入横屏时 `PhoneSession.underlayActive=false`，下层推荐页会恢复自己的 chrome；
-  退回竖屏重新接回推荐页 Surface 时，只重绑了视频输出，没有再次收起推荐页控制层。
-- 修复：新增 `PhoneSession.reassertFeedChromeHidden()`，在重新借回下层 Surface 成功后
-  重申 underlay 收起状态，不重复增加 chrome 持有计数。
+- 根因不是弹幕 Surface，而是手机播放页为了借推荐页视频把 Activity root 设成透明；
+  进入横屏后下层推荐页会恢复自己的界面，退回竖屏继续借 Surface 时 root 再次透明，
+  推荐页因此从整页背后透出来。
+- 修复：一旦进入横屏就调用 `dropUnderlay()` 永久结束本次推荐页 Surface 借用；
+  退回竖屏使用播放页自己的 PlayerView，并强制 `root` 恢复为不透明黑色。
+- `PhoneSession.reassertFeedChromeHidden()` 保留用于首次借下层画面时重申收起状态，
+  但横竖屏来回切换不再走透明 underlay 路径。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。

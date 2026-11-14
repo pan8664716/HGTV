@@ -20,6 +20,9 @@ internal fun PhonePlayerActivity.applyMode() {
         playerLandscape.visibility = View.VISIBLE
         // 横屏是一整块不透明黑：下层推荐页被完全盖住，控制层收不收都一样。
         root.setBackgroundColor(Color.BLACK)
+        // 一旦进入横屏，本次播放不再借推荐页 Surface。退回竖屏时继续借会把本页 root
+        // 再次设为透明，推荐页的标题、导航和弹幕就可能从画面背后透出来。
+        dropUnderlay()
         // 上一次退出全屏时把这块 Surface 从树上摘掉了（见下面竖屏分支），先挂回去。
         // 插到 index 0：弹幕层、手势层、控制层都必须在它上面。
         if (playerLandscapeVideo.parent == null) {
@@ -41,7 +44,7 @@ internal fun PhonePlayerActivity.applyMode() {
         // 输出被横屏这一层拿走了：推荐页那边不能再认为「Surface 一直在」。
         PhoneSession.underlayActive = false
         playerUnderlayBound = false
-        playerUnderlayNeedsForce = true
+        playerUnderlayNeedsForce = false
         applyLandscapeResize()
         enterImmersive()
     } else {
@@ -64,6 +67,8 @@ internal fun PhonePlayerActivity.applyMode() {
         } else {
             // 下层接不上（推荐页被收走、地址过期）：退回到本页自己出画面。
             dropUnderlay()
+            // 不再借下层 Surface 时必须恢复整页不透明，避免透明窗口继续透出推荐页。
+            root.setBackgroundColor(Color.BLACK)
             player?.let { playerPage.playerView.player = it }
         }
         // 竖屏同样进沉浸式：**状态栏不占位、不显示**。
