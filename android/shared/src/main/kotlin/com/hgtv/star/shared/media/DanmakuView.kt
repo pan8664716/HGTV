@@ -38,8 +38,6 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         const val TOP_MODE_SHARE=0.25f
         const val TOP_MODE_INSET_DP=20
         const val BOTTOM_INSET_DP=120
-        const val MAX_LINES_PER_FRAME=160
-        const val LOW_END_MAX_LINES_PER_FRAME=16
         const val LANE_GAP_TEXT=0.9f
         const val LANE_GAP_VERTICAL=0.35f
         const val LANE_MIN_GAP_DP=12
@@ -76,6 +74,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         var parts: List<DanmakuPart> = emptyList()
         var partWidths: FloatArray = EMPTY_WIDTHS
         var spriteText: String?=null
+        var entered=false
+        var skipped=false
 
         val endMs get()=startMs+durationMs
 
@@ -95,6 +95,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             this.parts=parts
             this.partWidths=partWidths
             this.spriteText=spriteText
+            entered=false
+            skipped=false
         }
 
         fun clear() {
@@ -105,6 +107,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             parts=emptyList()
             partWidths=EMPTY_WIDTHS
             spriteText=null
+            entered=false
+            skipped=false
         }
     }
 
@@ -152,7 +156,6 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     // 多占 4MB 位图内存，把低配电视的常见窗口完整放进图集，换来的是持续播放时更低的 CPU。
     private val spriteAtlasWidth=2048
     private val spriteAtlasHeight=1024
-    private val maxLinesPerFrame=if(lowEnd) LOW_END_MAX_LINES_PER_FRAME else MAX_LINES_PER_FRAME
     private var spriteAtlas: DanmakuSpriteAtlas?=null
     private var nextSpriteRefreshAt=0L
     private var fillEmojiCenter=0f
@@ -181,6 +184,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private var nextGroupIndex=0
     private val scheduledGroupKeys=mutableSetOf<String>()
     private var laneFreeMs=LongArray(0)
+    private var laneEntryFreeMs=LongArray(0)
     private var backlogCutoffMs=Long.MIN_VALUE
     private var scheduleDirty=true
     private var laneCount=0
@@ -476,6 +480,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         highlightedKeys=highlights.mapTo(HashSet()) { it.group.key }
         highlightCursor=0
         layoutLanes()
+        laneEntryFreeMs=LongArray(laneCount)
         val lanes=if(mode==DanmakuMode.HIDDEN) 0 else laneCount
         if(lanes>0 && width>0 && height>0) scheduleScrollWindow(nowMs)
         nextSpriteRefreshAt=0L
@@ -522,6 +527,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         nextGroupIndex=0
         scheduledGroupKeys.clear()
         laneFreeMs=LongArray(laneCount)
+        laneEntryFreeMs=LongArray(laneCount)
         scheduleDirty=false
         lastSchedulePositionMs=nowMs
         scheduleGroupsThrough(nowMs+SCHEDULE_AHEAD_MS,nowMs)
@@ -710,36 +716,47 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         lastPosition=now
         scheduleScrollWindow(now)
         if(now>=nextSpriteRefreshAt) refreshSpriteAtlas(now)
+        val pixelsPerSecond=speedPx(viewWidth/BASE_SCROLL_SECONDS)
         var drawn=0
-        var index=0
-        while(index<lines.size && drawn<maxLinesPerFrame) {
-            val line=lines[index]
-            if(line.startMs>now) break
-            if(line.endMs>=now) {
-                val elapsed=now-line.startMs
-                val duration=line.durationMs.coerceAtLeast(1L)
-                val x=viewWidth-elapsed.toFloat()/duration*(viewWidth+line.width)
-                val baseline=laneTop+(line.lane+1)*laneHeight-fill.textSize*0.28f
-                val atlas=spriteAtlas
-                val sprite=line.spriteText?.let { atlas?.get(it) }
-                if(sprite==null) {
-                    drawParts(
-                        canvas,
-                        line.parts,
-                        line.partWidths,
-                        x,
-                        baseline,
-                        fill,
-                        edge,
-                        fill.textSize*EMOJI_SCALE,
-                        fillEmojiCenter,
-                    )
-                } else {
-                    atlas?.draw(canvas,sprite,x,baseline,spritePaint,spriteDst)
+        for(line in lines) {
+            if(line.skipped || line.startMs>now || line.endMs<now) continue
+            // 排程起点可能早于首次真正上屏；首次绘制时重新锚定到右边缘，
+            // 同轨按实际进入时间保留间距，避免弹幕第一次出现就落在屏幕中间。
+            if(!line.entered) {
+                val lane=line.lane.coerceIn(0,laneEntryFreeMs.lastIndex)
+                val actualStart=maxOf(now,laneEntryFreeMs[lane])
+                if(actualStart-line.startMs>MAX_DELAY_MS) {
+                    line.skipped=true
+                    continue
                 }
-                drawn++
+                line.startMs=actualStart
+                line.entered=true
+                laneEntryFreeMs[lane]=actualStart+
+                    (((line.width+laneGap)/pixelsPerSecond)*1000f).toLong()
+                if(actualStart>now) continue
             }
-            index++
+            val elapsed=now-line.startMs
+            val duration=line.durationMs.coerceAtLeast(1L)
+            val x=viewWidth-elapsed.toFloat()/duration*(viewWidth+line.width)
+            val baseline=laneTop+(line.lane+1)*laneHeight-fill.textSize*0.28f
+            val atlas=spriteAtlas
+            val sprite=line.spriteText?.let { atlas?.get(it) }
+            if(sprite==null) {
+                drawParts(
+                    canvas,
+                    line.parts,
+                    line.partWidths,
+                    x,
+                    baseline,
+                    fill,
+                    edge,
+                    fill.textSize*EMOJI_SCALE,
+                    fillEmojiCenter,
+                )
+            } else {
+                atlas?.draw(canvas,sprite,x,baseline,spritePaint,spriteDst)
+            }
+            drawn++
         }
         val highlightDrawn=drawHighlights(canvas,now)
         scheduleNextFrame(now,drawn>0 || highlightDrawn>0)
@@ -764,11 +781,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private fun nextEventMs(nowMs: Long): Long? {
         var next: Long?=null
         for(line in lines) {
-            if(line.endMs<nowMs) continue
-            if(line.startMs>nowMs) {
-                next=line.startMs
-                break
-            }
+            if(line.skipped || line.endMs<nowMs || line.startMs<=nowMs) continue
+            if(next==null || line.startMs<next) next=line.startMs
         }
         var index=highlightCursor
         while(index<highlights.size && highlights[index].endMs<=nowMs) index++
