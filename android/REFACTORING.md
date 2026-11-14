@@ -4576,6 +4576,24 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 推荐流过滤单集内容
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 设备缓存 `feed-v1-official-v1.json` 中有 14 条 `episodeCount=0` 的单集视频；
+  对应详情缓存确认 `episodes.size=1`，因此标题曾显示 `[1/1]`。
+- 推荐取流统一要求 `episodeCount>1` 且属于短剧内容类型；官方流和 AI 分类兜底流
+  都使用同一判定，单集视频不再进入列表。
+- 官方枚举虽有 `short_series_feed(37)`，但用现有抓包身份实测该 `tab_type`
+  返回 HTTP 200 空响应；主推荐 `tab_type=16` 内仍混合单集内容，不能只靠
+  `tab_type` 完成过滤。
+- 标题集数读数在总集数 `<=1` 时永不显示；总集数优先使用推荐卡片的 `episodeCount`，
+  避免详情异常只回 1 集时误显示为 `[1/1]`。
+- 手机与电视推荐快照 / 游标从 `official-v1` 升级到 `official-v2`，旧单集快照自然失效。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 音频 CPU 调查
 
 状态：已调查，未提交实验代码。

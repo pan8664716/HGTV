@@ -15,9 +15,9 @@ import com.hgtv.star.tv.TvStyle
 
 private const val RECOMMEND_INFO_ALPHA=0.7f
 
-/** 推荐标题后的集数读数：`[1/90]`。总集数未知时不显示。 */
+/** 推荐标题后的集数读数：`[1/90]`。总集数未知或不超过 1 集时不显示。 */
 internal fun recommendEpisodeLabel(current: Int,total: Int): String {
-    if(total<=0) return ""
+    if(total<=1) return ""
     return "[${current.coerceIn(1,total)}/$total]"
 }
 
@@ -80,7 +80,9 @@ fun TvMainActivity.attachRecommendOverlay(series: Series) {
         setShadowLayer(6f,0f,2f,0x99000000.toInt())
     }
     titleLine.addView(title,lp(0,-2).apply { weight=1f })
-    val totalEpisodes=detail?.episodes?.size?.takeIf { it>0 } ?: series.episodeCount
+    val totalEpisodes=series.episodeCount.takeIf { it>1 }
+        ?: detail?.episodes?.size?.takeIf { it>1 }
+        ?: 0
     val episodeText=recommendEpisodeLabel(episodeIndex+1,totalEpisodes)
     val episode=text(episodeText,18f,TvStyle.playerDim).apply {
         maxLines=1

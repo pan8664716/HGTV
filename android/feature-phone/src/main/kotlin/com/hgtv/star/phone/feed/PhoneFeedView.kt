@@ -237,10 +237,10 @@ class PhoneFeedView(
     /**
      * 落盘快照 / 续流游标的命名空间：三条体裁流各存各的（见 `RecommendCache.fileOf`）。
      *
-     * `official-v1-` 是当前缓存格式版本：切到官方推荐流后，
-     * 旧分类接口留下的快照与游标不能继续铺到首屏，换前缀后自然失效。
+     * `official-v2-` 是当前缓存格式版本：切到官方推荐流并过滤单集内容后，
+     * 旧快照与游标不能继续铺到首屏，换前缀后自然失效。
      */
-    private fun cacheKey(): String = "official-v1-" + genre.orEmpty().ifEmpty { "all" }
+    private fun cacheKey(): String = "official-v2-" + genre.orEmpty().ifEmpty { "all" }
     internal fun feedCacheKey(): String = cacheKey()
 
     private var recommendStore=newRecommendStore()

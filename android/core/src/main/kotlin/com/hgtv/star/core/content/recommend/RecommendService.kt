@@ -20,6 +20,10 @@ private val SHORT_DRAMA_CONTENT_TYPES=setOf(
     1007, // UnrealMotionComic
 )
 
+/** 推荐页只接受至少两集的短剧；单集内容不是连续剧，不能进入推荐流。 */
+private fun Series.isRecommendableShortDrama(): Boolean =
+    episodeCount>1 && contentType in SHORT_DRAMA_CONTENT_TYPES
+
     /**
      * 官方曝光上报使用的查询参数。
      *
@@ -113,7 +117,7 @@ private val SHORT_DRAMA_CONTENT_TYPES=setOf(
                 .filterNot(ContentCatalogParser::isPreviewMaterial)
                 .map(ContentCatalogParser::apiCard),
         )
-        val items=rawItems.filter { it.contentType in SHORT_DRAMA_CONTENT_TYPES }
+        val items=rawItems.filter { it.isRecommendableShortDrama() }
         // `next_offset` 偶尔缺失 / 不往前走：用「本页实际条数」兜底，保证游标一定前进，
         // 否则下一次还是同一个位置，用户看到的就是「又一套一模一样的列表」。
         val reported=payload.optInt("next_offset",-1)
@@ -182,7 +186,7 @@ private val SHORT_DRAMA_CONTENT_TYPES=setOf(
         return RecommendFeed(
             page=CatalogPage(
                 ContentCatalogParser.valid(items).filter {
-                    it.contentType in SHORT_DRAMA_CONTENT_TYPES
+                    it.isRecommendableShortDrama()
                 },
                 more,
             ),
