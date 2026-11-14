@@ -486,8 +486,6 @@ class DanmakuView(context: Context) : View(context),DanmakuEmojiStore.Listener {
             }
             if(startMs-group.firstMs>MAX_DELAY_MS) continue
             val endMs=startMs+durationMs
-            if(mode==DanmakuMode.SINGLE &&
-                highlights.any { it.startMs<endMs && it.endMs>startMs }) continue
             laneFreeMs[lane]=startMs+(((width+laneGap)/pixelsPerSecond)*1000f).toLong()
             if(endMs<nowMs-LINE_RETENTION_MS) continue
             // 纯文本即使被表情解析器拆成多段，也可以拼回一张图集贴图；
