@@ -3,12 +3,14 @@ package com.hgtv.star.phone
 
 import android.app.Activity
 import android.graphics.Color
+import android.graphics.PixelFormat
 import android.os.Build
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
+import android.view.SurfaceView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -22,6 +24,17 @@ import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.resizeMode
 
 internal object PhonePlayerViewSupport {
+    /**
+     * SurfaceView 默认透明区域会挖穿 Activity 窗口。播放器 FIT 后的黑边一旦落在这块
+     * 透明 Surface 上，下层详情页就会透出来。显式使用 OPAQUE Surface，让黑边由视频层
+     * 自己输出黑色，而不是依赖 Activity 背景。
+     */
+    fun useOpaqueVideoSurface(view: PlayerView) {
+        runCatching {
+            (view.videoSurfaceView as? SurfaceView)?.holder?.setFormat(PixelFormat.OPAQUE)
+        }
+    }
+
     /**
      * 横屏底栏入口。常态半透明白、按下更亮：点下去要有反馈。
      */

@@ -122,6 +122,7 @@ class PhoneVideoPage(
         setKeepContentOnPlayerReset(true)
         if (underlay) visibility = GONE
         setBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
+        PhonePlayerViewSupport.useOpaqueVideoSurface(this)
     }
 
     // ------------------------------------------------------------------ 底部信息

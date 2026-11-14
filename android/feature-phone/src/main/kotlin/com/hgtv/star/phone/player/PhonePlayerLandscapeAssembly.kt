@@ -50,6 +50,7 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         setShutterBackgroundColor(Color.BLACK)
         setKeepContentOnPlayerReset(true)
+        PhonePlayerViewSupport.useOpaqueVideoSurface(this)
     }
     landscape.addView(video, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT

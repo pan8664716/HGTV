@@ -4611,6 +4611,21 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 手机播放黑边透出上一页
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：手机横屏播放竖版短剧，或竖屏播放横版短剧时，FIT 产生的黑边会透出进入播放页
+  之前的详情页内容。
+- 根因：手机播放页窗口是半透明的，PlayerView 内部 SurfaceView 的 letterbox 区域也带
+  透明合成，挖孔后会露出下层 Activity，而不是黑色。
+- 修复：竖屏与横屏两个 PlayerView 创建后都把视频 Surface 显式设为
+  `PixelFormat.OPAQUE`，让视频画面之外的 Surface 区域按黑色输出，不再依赖 Activity
+  背景遮住下层页面。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 弹幕接口对齐 1.3.6.2 APK
 
 状态：已实现，debug 构建通过，待用户真机验证。
