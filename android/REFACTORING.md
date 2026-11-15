@@ -4878,10 +4878,13 @@ feature-tv/
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
-- 新安装不再调用 `detectDeviceForm()` 决定路由。`LaunchActivity` 先弹出手机 / 平板 / 电视
-  三档选择，选中后再弹确认页。
+- 新安装不再调用 `detectDeviceForm()` 决定路由。`LaunchActivity` 使用设置页同款
+  `TvDialog` 新拟态面板弹出手机 / 平板 / 电视三档选择，选中后再弹确认页。
+- 首次选择另用 `first-run-ui-v1 / deviceFormConfirmed` 标记，不依赖 `deviceForm`
+  是否已从镜像或旧数据恢复；本次安装未完成选择时一定先弹窗，返回键和点外部都不能跳过。
 - 确认输入按目标形态锁定：手机 / 平板只能触摸点击“确认”，遥控器不能完成；
-  电视只能遥控器选中并按确定键，触摸事件在按钮层被吞掉。
+  电视只能遥控器选中并按确定键，`TvDialog` 的 remote-only 模式会禁用外部触摸关闭，
+  并在按钮层吞掉触摸。
 - 设备类型写入现有的 `native-library-v1 / deviceForm`，之后启动直接按用户选择进入
   `PhoneMainActivity` 或 `TvMainActivity`；确认时同时刷新已预加载 `Library` 的内存缓存，
   本次启动立即生效，不必等下一次重启。设置页与调试面板只显示这份选择。

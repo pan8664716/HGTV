@@ -473,8 +473,17 @@ class TvDialog(private val activity: Activity, title: String) {
     /**
      * @param touchOnly 只接受触摸操作的确认框：吞掉全部按键、不抢焦点、点弹窗外部不关闭。
      *                  用于「电视误选手机 / 平板」这类必须用触摸屏明确确认的场景。
+     * @param remoteOnly 只接受遥控器 / 键盘操作：点弹窗外部不关闭，触摸由调用方在按钮层吞掉。
+     *                   用于「误选电视」这类必须用遥控器明确确认的场景。
+     * @param mandatory 必须完成选择：返回键与点外部都不能关闭弹窗。
      */
-    fun show(anchor: View? = null, touchOnly: Boolean = false, onDismiss: () -> Unit = {}) {
+    fun show(
+        anchor: View? = null,
+        touchOnly: Boolean = false,
+        remoteOnly: Boolean = false,
+        mandatory: Boolean = false,
+        onDismiss: () -> Unit = {},
+    ) {
         if (isShowing) return
         this.anchor = anchor
         dismissed = onDismiss
@@ -484,7 +493,7 @@ class TvDialog(private val activity: Activity, title: String) {
         // 套一层触摸外壳：弹窗是独立窗口，Activity 的 `dispatchTouchEvent` 管不到它。
         // 不套的话，弹窗里点一枚「当前没有焦点」的按钮仍然是两下（见 MainActivityTouch 的说明）。
         val next = AlertDialog.Builder(activity).setView(touchFocusHost(body, fillHeight = false)).create()
-        if (touchOnly) {
+        if (touchOnly || remoteOnly || mandatory) {
             next.setCancelable(false)
             next.setCanceledOnTouchOutside(false)
         }
@@ -498,6 +507,7 @@ class TvDialog(private val activity: Activity, title: String) {
         next.setOnKeyListener { _, keyCode, event ->
             // 触屏专用确认框不接受遥控器 / 键盘：连返回键也不生效，只能触摸确认或等待倒计时。
             if (touchOnly) return@setOnKeyListener true
+            if (mandatory && keyCode == KeyEvent.KEYCODE_BACK) return@setOnKeyListener true
             when (keyCode) {
                 KeyEvent.KEYCODE_SEARCH -> true
                 KeyEvent.KEYCODE_BACK -> {

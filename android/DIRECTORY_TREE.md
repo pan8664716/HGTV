@@ -983,7 +983,7 @@ android/
 | `SettingSlider.kt` | 设置页里「项名 + 滑轨」合成一行的滑动条。 | class SettingSlider |
 | `ToggleChip.kt` | 互斥开关（排行榜页的四个榜单、分类页的大类与小类）：就是统一按钮的选中态——按进去的凹槽。 | class ToggleChip |
 | `TvComponents.kt` | 电视端通用控件集合，承载按钮、卡片、开关、标签等基础 UI。 | fun Context.tvDp、fun Context.softBand、fun Context.softBandLarge、fun Context.tvText、fun T.focusOverflow、fun ScrollView.focusBleed |
-| `TvDialog.kt` | 电视端统一模态框，管理标题、内容、列表、按钮、焦点与关闭动画。 | class TvDialog |
+| `TvDialog.kt` | 电视端统一模态框，管理标题、内容、列表、按钮、焦点与关闭动画；支持 mandatory、touch-only 与 remote-only 输入模式。 | class TvDialog、fun show |
 | `TvDialogFocus.kt` | 电视共用控件、弹窗、样式、键盘与工具。文件 TvDialogFocus 主要包含 fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable。 | fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable |
 | `TvStyle.kt` | 电视端设计令牌：新拟态（Neumorphism / Soft UI）。 | object TvStyle |
 | `TvSwitchRow.kt` | 设置页的整行开关：左边是项名，右边是一枚自绘的轨道 + 圆钮。 | class TvSwitchRow |
