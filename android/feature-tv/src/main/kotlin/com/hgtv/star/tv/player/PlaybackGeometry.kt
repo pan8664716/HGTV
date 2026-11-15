@@ -38,8 +38,7 @@ fun TvMainActivity.frameResizeMode()=library.frameMode.toFit().resizeMode()
 /**
  * 「竖屏短剧全屏」**这台设备上能不能用**：只有手机 / 平板可用，电视不可用。
  *
- * 形态来自 [deviceMode]：用户手动选过（`library.deviceForm` = phone/tablet/tv）就以他选的为准，
- * 没选过（`auto`）就看启动时 [com.hgtv.star.shared.compat.detectDeviceForm] 的打分结果。
+ * 形态来自 [deviceMode]：只认用户首次启动时选择的 phone / tablet / tv。
  *
  * 为什么电视上不给用：电视是**遥控器 + 固定 16:9 大屏**，播放页的画面几何由
  * `applyVideoGeometry()` 统一算，竖屏片已经按「等比铺满、不裁内容」摆放；
@@ -49,8 +48,7 @@ fun TvMainActivity.frameResizeMode()=library.frameMode.toFit().resizeMode()
  * 因此设置页在电视上把它画成不可用（见 `MainActivitySettings` 里那一格），
  * 播放层也在这里挡住——同一份设置从手机同步到电视时，存下来的值不会在电视上偷偷生效。
  *
- * 未判定（`DeviceForm.UNKNOWN`，算法没跑起来）同样按「不可用」处理：这种形态既不能
- * 断言是手机也不能断言是平板。真要用，用户在设置里手动选「手机」或「平板」即可。
+ * 未选择（旧数据尚未迁移）同样按「不可用」处理；正常启动会先要求用户明确选择。
  */
 fun TvMainActivity.autoFullscreenAvailable(): Boolean = when(deviceMode()) {
     com.hgtv.star.shared.compat.DeviceForm.PHONE,
@@ -111,7 +109,7 @@ fun TvMainActivity.autoFullscreenRotated(): Boolean {
  * 两条路都包在 `runCatching` 里：拿不到就按 `ROTATION_0`（电视的默认行为）处理。
  */
 fun TvMainActivity.fullscreenSpinDirection(): Float {
-    // 「使用设备」钉在电视上（或自动判定就是电视）：电视恒为横屏 `ROTATION_0`，直接用 `+90`。
+    // 用户选择电视时恒为横屏 `ROTATION_0`，直接用 `+90`。
     // 电视上这一项现在不可用（见 [autoFullscreenAvailable]），走不到这里；
     // 留着这一档是为了手动选「电视」之后再切回手机 / 平板时方向仍然有确定值。
     if(deviceMode()==com.hgtv.star.shared.compat.DeviceForm.TV) return 90f

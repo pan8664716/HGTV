@@ -85,9 +85,8 @@ fun TvMainActivity.loadLibrary() {
             // 必须在建第一页之前跑——首页那一屏的卡片是按当时的档位建的
             //（跑马灯 / 柔光位图都在构造时定下来）。
             applyPerformanceProfile()
-            // 「使用设备」也是本机设置：onCreate 里那一次读到的还是默认的 `auto`，
-            // 用户手动选过的那一档到这里才读回来。第一屏马上要建了，必须在这一步之前
-            // 把形态重新落一次（触屏手势层 / 底部控制条都按它决定建不建）。
+            // 设备类型也是本机设置：第一屏马上要建了，必须在这一步之前按用户选择
+            // 重新落一次形态（触屏手势层 / 底部控制条都按它决定建不建）。
             applyDeviceForm()
             // 凭据就绪之后再起心跳：冷启动那一次 `boot` 心跳必须有完整身份（cookie + 设备档案）。
             com.hgtv.star.shared.data.SessionBootstrap.onAppStart()

@@ -16,7 +16,6 @@ import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneUiScale
 import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.compat.DeviceForm
-import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.feature.settings.SettingRowSpec
 import com.hgtv.star.shared.feature.settings.SettingsController
 import kotlin.math.roundToInt
@@ -232,9 +231,7 @@ internal fun PhoneSettingsActivity.renderUnifiedRecommend() {
 }
 
 internal fun PhoneSettingsActivity.renderUnifiedSystem() {
-    val detected = runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
-    val deviceLabel = DeviceForm.ofStored(settingsLibrary.deviceForm)?.label
-        ?: "自动 · ${detected.label}"
+    val deviceLabel = DeviceForm.ofStored(settingsLibrary.deviceForm)?.label ?: "未选择"
     renderSpecs(
         listOf(
             SettingRowSpec.Section("数据维护"),
@@ -276,10 +273,9 @@ internal fun PhoneSettingsActivity.applyActionImpl(id: String) {
         SettingsController.ID_LAN_SYNC -> showLanLibrarySync()
         "system.about" -> showAboutDialog()
         SettingsController.ID_DEVICE_FORM -> {
-            val detected = runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
             pickImpl(
                 "设备类型（切换后自动重新进入）",
-                DeviceForm.pickerLabels(detected),
+                DeviceForm.pickerLabels(),
                 DeviceForm.optionIndex(settingsLibrary.deviceForm),
             ) { index ->
                 val selected = DeviceForm.OPTIONS[index]

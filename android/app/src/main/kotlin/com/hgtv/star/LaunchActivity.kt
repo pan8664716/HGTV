@@ -2,7 +2,9 @@
 package com.hgtv.star
 
 import android.app.Activity
+import android.app.AlertDialog
 import android.content.Context
+import android.content.DialogInterface
 import android.content.Intent
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
@@ -15,8 +17,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.hgtv.star.phone.PhoneMainActivity
+import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.compat.DeviceForm
-import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.tv.TvMainActivity
@@ -42,14 +44,14 @@ import com.hgtv.star.tv.TvMainActivity
  * TV 与手机是两套完全独立的页面实现，任何一端都不该为了「能启动」去依赖另一端。
  * 放在 `:app` 里，两个 feature 模块彼此不可见，依赖方向保持单向。
  *
- * ## 用户设置优先于自动判定
+ * ## 首次启动必须选择设备类型
  *
- * 设置页里的「使用设备」可以强制成某一档（`Library.deviceForm` 落盘的
- * `phone` / `tablet` / `tv`）。这里**先读设置**，只有 `auto` 才走自动探测——
- * 否则在电视上手动切成「手机」会被下次启动重新纠正回来，那个开关等于没用。
+ * 新安装不再自动探测。用户先选手机 / 平板 / 电视，再用对应输入方式确认：
+ * 手机 / 平板必须触屏点击，电视必须遥控器确定。确认后写入 `Library.deviceForm`，
+ * 之后启动直接按这份选择路由。
  *
- * 形态设置只读一个轻量偏好，不等待书库。目标页自己先铺窗口和缓存 / 骨架，
- * 书库读盘、网络预热与设备注册都在后台继续。
+ * 等待选择期间，缓存、书库、运行时和友盟初始化仍在后台线程继续；设备注册与备用
+ * 设备要等形态确认后才启动，避免先按错误形态生成身份。
  */
 class LaunchActivity : Activity() {
 
@@ -58,6 +60,7 @@ class LaunchActivity : Activity() {
     private lateinit var errorText: TextView
     private lateinit var retryButton: TextView
     private var routed=false
+    private var formDialog: AlertDialog?=null
     private var traceStartedAt=0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -133,12 +136,17 @@ class LaunchActivity : Activity() {
 
     private fun routeToTarget() {
         if(routed) return
+        val form=storedDeviceForm()
+        if(form==null) {
+            showDeviceFormChooser()
+            return
+        }
         routed=true
         val routeStarted=StartupTrace.now()
         StartupTrace.mark("launch.route.start")
-        val target = runCatching { targetFor(this) }
-            .onFailure { android.util.Log.w("HGTV-FORM", "形态判定失败，退回电视界面", it) }
-            .getOrElse { TvMainActivity::class.java }
+        // 选择已经落盘：后台补绑设备身份并启动备用设备注册，不阻塞目标页首帧。
+        HgtvStartup.onDeviceFormSelected(this)
+        val target = targetFor(form)
         // 用 `Log.w` 而不是 `Log.i`：R8 的 `-assumenosideeffects` 会把 `Log.i` 整条删掉，
         // 正式包里就再也看不到这一行——而「点图标没反应」恰恰只在正式包上出现过一次
         // （小明 Q1 Pro，2026-11）。这两条是现场唯一能把
@@ -170,21 +178,117 @@ class LaunchActivity : Activity() {
         }
     }
 
-    private fun targetFor(context: Context): Class<*> {
-        val stored = runCatching {
-            context.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
-                .getString(KEY_DEVICE_FORM, "auto")
-        }.getOrNull().orEmpty()
-        val profile = detectDeviceForm()
-        val form = DeviceForm.ofStored(stored) ?: profile.form
-        // 形态判定只有这一次机会，判错就进错界面，而且用户很难自己走出来。
-        // 把判据原样打进 logcat：出问题时一行就能看出是「没识别到触屏」还是「品牌词误伤」。
-        android.util.Log.w(
-            "HGTV-FORM",
-            "stored=$stored form=${profile.form} touch=${profile.touch} sw=${profile.swDp}dp " +
-                "diag=${(profile.diagonalIn * 10).toInt() / 10f}in score=${profile.score} hits=${profile.hits}"
-        )
+    private fun targetFor(form: DeviceForm): Class<*> {
+        android.util.Log.w("HGTV-FORM", "selected=${DeviceForm.storedValue(form)}")
         return if (form == DeviceForm.TV) TvMainActivity::class.java else PhoneMainActivity::class.java
+    }
+
+    private fun storedDeviceForm(): DeviceForm? {
+        val stored=runCatching {
+            devicePrefs().getString(KEY_DEVICE_FORM, "auto")
+        }.getOrNull().orEmpty()
+        return DeviceForm.ofStored(stored)
+    }
+
+    private fun devicePrefs() =
+        getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    /**
+     * 首次选择同时支持触摸与遥控器。
+     *
+     * 这一层还不知道用户会选哪一端，因此列表项本身就是普通可点击、可聚焦控件：
+     * 手机上可以直接点，电视上可以用方向键移动焦点、按确定键选择。
+     */
+    private fun showDeviceFormChooser() {
+        if(isFinishing || isDestroyed || routed) return
+        if(formDialog?.isShowing==true) return
+        showLoading()
+        val dialog=AlertDialog.Builder(this)
+            .setTitle("选择设备类型")
+            .setCancelable(false)
+            .setItems(DeviceForm.pickerLabels().toTypedArray()) { _, index ->
+                val selected=DeviceForm.SELECTABLE[index]
+                formDialog?.dismiss()
+                root.post { showDeviceFormConfirm(selected) }
+            }
+            .create()
+        dialog.setCanceledOnTouchOutside(false)
+        dialog.setOnShowListener {
+            // 遥控器第一次进入弹窗时直接落在第一项，避免焦点停在窗口外层。
+            dialog.listView?.requestFocus()
+        }
+        dialog.setOnDismissListener {
+            if(formDialog===dialog) formDialog=null
+        }
+        formDialog=dialog
+        dialog.show()
+    }
+
+    /**
+     * 第二次确认按目标形态锁定输入方式：
+     * 手机 / 平板只能触摸“确认”，电视只能遥控器确定，触摸会被吞掉。
+     */
+    private fun showDeviceFormConfirm(form: DeviceForm) {
+        if(isFinishing || isDestroyed || routed) return
+        val touch=DeviceForm.requiresTouch(form)
+        val dialog=AlertDialog.Builder(this)
+            .setTitle("确认使用${form.label}界面")
+            .setMessage(
+                if(touch) {
+                    "请用触摸屏点击“确认”。遥控器不能完成这次确认；如选错了，请点“重新选择”。"
+                } else {
+                    "请用遥控器选择“确认”并按确定键。触摸屏不能完成这次确认；如选错了，请选择“重新选择”。"
+                }
+            )
+            .setCancelable(false)
+            .setPositiveButton("确认", null)
+            .setNegativeButton("重新选择") { _, _ ->
+                root.post { showDeviceFormChooser() }
+            }
+            .create()
+        dialog.setCanceledOnTouchOutside(false)
+        dialog.setOnShowListener {
+            val positive=dialog.getButton(DialogInterface.BUTTON_POSITIVE)
+            val negative=dialog.getButton(DialogInterface.BUTTON_NEGATIVE)
+            positive.setOnClickListener { confirmDeviceForm(form,dialog) }
+            if(touch) {
+                // 触摸仍然可以点击；焦点和按键一律不给“确认”。
+                positive.isFocusable=false
+                positive.isFocusableInTouchMode=false
+                positive.setOnKeyListener { _,_,_-> true }
+                negative.requestFocus()
+            } else {
+                // 遥控器确定仍然走 click；触摸事件在按钮层直接吞掉。
+                positive.setOnTouchListener { _,_->
+                    true
+                }
+                negative.setOnTouchListener { _,_->
+                    true
+                }
+                positive.requestFocus()
+            }
+        }
+        dialog.setOnDismissListener {
+            if(formDialog===dialog) formDialog=null
+        }
+        formDialog=dialog
+        dialog.show()
+    }
+
+    private fun confirmDeviceForm(form: DeviceForm, dialog: AlertDialog) {
+        val saved=devicePrefs().edit()
+            .putString(KEY_DEVICE_FORM, DeviceForm.storedValue(form))
+            .commit()
+        if(!saved) {
+            android.widget.Toast.makeText(this,"设备类型保存失败，请重试",android.widget.Toast.LENGTH_SHORT).show()
+            return
+        }
+        // 书库可能已在弹窗期间后台读完：同步更新进程内缓存，不能只写 SharedPreferences。
+        AppRuntime.library(this).deviceForm = DeviceForm.storedValue(form)
+        dialog.dismiss()
+        showLoading()
+        HgtvStartup.onDeviceFormSelected(this)
+        routeToTarget()
     }
 
     private fun showLoading() {
@@ -216,6 +320,8 @@ class LaunchActivity : Activity() {
     }
 
     override fun onDestroy() {
+        formDialog?.dismiss()
+        formDialog=null
         StartupTrace.mark("launch.onDestroy", "routed=$routed")
         super.onDestroy()
     }

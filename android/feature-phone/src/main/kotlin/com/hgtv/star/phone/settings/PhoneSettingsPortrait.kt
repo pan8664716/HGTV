@@ -27,7 +27,6 @@ import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneUiScale
 import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.compat.DeviceForm
-import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.ui.TvTheme
 import com.hgtv.star.shared.ui.TvThemeStore
@@ -285,13 +284,11 @@ internal fun PhoneSettingsActivity.renderRecommend() {
 internal fun PhoneSettingsActivity.renderSystem() {
     sectionImpl("设备与性能")
     actionImpl("关于", "版本与项目信息") { showAboutDialog() }
-    val detected = runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
-    val deviceLabel = DeviceForm.ofStored(settingsLibrary.deviceForm)?.label
-        ?: "自动 · ${detected.label}"
+    val deviceLabel = DeviceForm.ofStored(settingsLibrary.deviceForm)?.label ?: "未选择"
     rowImpl("设备类型", deviceLabel) {
         pickImpl(
             "设备类型（切换后自动重新进入）",
-            DeviceForm.pickerLabels(detected),
+            DeviceForm.pickerLabels(),
             DeviceForm.optionIndex(settingsLibrary.deviceForm),
         ) { index ->
             val selected = DeviceForm.OPTIONS[index]
@@ -308,7 +305,7 @@ internal fun PhoneSettingsActivity.renderSystem() {
             AppRelaunch.switchDeviceForm(this)
         }
     }
-    hintImpl("用于强制进入手机、平板或电视界面，切换后自动重新进入。")
+    hintImpl("用于选择手机、平板或电视界面，切换后自动重新进入。")
     switchImpl("减少动画优化性能", settingsLibrary.reduceAnim) {
         settingsLibrary.reduceAnim = it
         renderSettings()

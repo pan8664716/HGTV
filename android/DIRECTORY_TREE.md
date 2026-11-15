@@ -186,7 +186,7 @@ android/
 | --- | --- | --- |
 | `HgtvApplication.kt` | 应用进程入口，负责 Application 级初始化和全局运行时装配。 | class HgtvApplication |
 | `HgtvStartup.kt` | 启动页负责的本地初始化。 | object HgtvStartup |
-| `LaunchActivity.kt` | 启动页与设备形态路由入口，负责启动后进入电视或手机主界面。 | class LaunchActivity |
+| `LaunchActivity.kt` | 启动页与设备形态路由入口；首次启动负责手机 / 平板 / 电视选择、按输入方式二次确认，并把确认结果路由到对应主界面。 | class LaunchActivity、fun showDeviceFormChooser、fun showDeviceFormConfirm、fun confirmDeviceForm |
 
 ### core
 

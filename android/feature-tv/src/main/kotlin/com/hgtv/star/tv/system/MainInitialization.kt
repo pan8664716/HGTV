@@ -128,7 +128,7 @@ internal fun TvMainActivity.initializeMainAfterFirstFrameImpl(state: Bundle?) {
         // 换分辨率 / 投屏 / 旋转之后要按新尺寸重摆一次，否则它还停在旧屏幕的右下角。
         positionBackToTop()
     }
-    // 形态判定（手机 / 平板 / 电视）要在建第一屏之前完成：否则第一屏、第一次点按之前
+    // 用户选择的形态（手机 / 平板 / 电视）要在建第一屏之前应用：否则第一屏、第一次点按之前
     // 建出来的推荐页浮层 / 播放页控制条都是电视形态，点一下之后整块重建成触屏形态，
     // 两次看到的样子不一样（见 [applyDeviceForm]）。
     applyDeviceForm()

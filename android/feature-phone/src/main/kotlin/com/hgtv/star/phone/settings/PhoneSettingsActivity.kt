@@ -46,8 +46,6 @@ import com.hgtv.star.phone.ui.phoneEdgeToEdge
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.shared.ProjectInfo
-import com.hgtv.star.shared.compat.DeviceForm
-import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.data.LocalReset
 import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.feature.lan.LanSyncController
@@ -365,9 +363,6 @@ class PhoneSettingsActivity : PhoneActivity() {
     }
 
     private fun anchorKey(kind: String, title: String): String = anchorKeyImpl(kind, title)
-
-    private fun deviceFormLabel(detected: DeviceForm): String =
-        DeviceForm.ofStored(library.deviceForm)?.label ?: "自动 · ${detected.label}"
 
     /** 找出当前视口顶部第一枚带稳定 key 的设置项。 */
     private fun currentScrollAnchor(): ScrollAnchor? {

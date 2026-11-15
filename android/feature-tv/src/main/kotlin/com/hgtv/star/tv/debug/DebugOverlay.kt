@@ -571,18 +571,11 @@ private fun TvMainActivity.startPerfProbe() {
 /** 面板第一行：机型 + 系统。放在最上面，是因为客服第一句总是问「什么设备」。 */
 private fun deviceRow()=DebugRow("机型","${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}(${Build.VERSION.SDK_INT})")
 
-/**
- * 形态那一行：这一轮按手机 / 平板 / 电视里的哪一档在跑，以及那一次判定的明细。
- *
- * 明细（触屏 / 短边 / 对角线 / 分数 / 命中的证据）是给「判错了」这种情况用的：
- * 只有一行结论时，除了让用户去设置里手动改一档，没有任何线索可查；
- * 带上分数与命中项，一眼就能看出是哪条证据把电视认成了平板。
- */
+/** 形态那一行：只显示用户明确选择的界面类型。 */
 private fun TvMainActivity.deviceFormRow(): DebugRow {
-    val profile=deviceProfile ?: return DebugRow("形态","检测中…")
-    val manual=library.deviceForm
-    val source=if(manual=="phone"||manual=="tablet"||manual=="tv") "手动" else "自动"
-    return DebugRow("形态","${deviceMode().label}（$source） · ${profile.summary}")
+    val form=com.hgtv.star.shared.compat.DeviceForm.ofStored(library.deviceForm)
+        ?: return DebugRow("形态","未选择")
+    return DebugRow("形态","${form.label}（用户选择）")
 }
 
 /**

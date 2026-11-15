@@ -7,7 +7,6 @@ import com.hgtv.star.core.primaryCookiesSnapshot
 import com.hgtv.star.core.restoreDeviceCookies
 import com.hgtv.star.core.session.SessionBridge
 import com.hgtv.star.shared.compat.DeviceForm
-import com.hgtv.star.shared.compat.detectDeviceForm
 
 /**
  * 把**本机身份与会话**灌进进程级仓库：电视与手机共用这一份。
@@ -69,13 +68,8 @@ object IdentityBinder {
 /**
  * 是否使用电视统一设备档案。
  *
- * 以实际探测结果为准；只有探测失败时才参考用户手动选择的设备形态，避免在手机模拟器
- * 上手动切到电视 UI 后误用电视网络档案。
+ * 首次启动由用户明确选择界面形态，之后以这份选择为准，不再自动探测覆盖。
  */
 internal fun Library.isTvDeviceForProfile(): Boolean {
-    val detected=runCatching { identityApp.detectDeviceForm().form }
-        .getOrDefault(DeviceForm.UNKNOWN)
-    val selected=DeviceForm.ofStored(deviceForm)
-    return detected==DeviceForm.TV ||
-        (detected==DeviceForm.UNKNOWN && selected==DeviceForm.TV)
+    return DeviceForm.ofStored(deviceForm)==DeviceForm.TV
 }

@@ -8,6 +8,7 @@ import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.IdentityBinder
 import com.hgtv.star.shared.data.PlaybackDeviceBackups
 import com.hgtv.star.shared.data.SessionBootstrap
+import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.StartupTrace
 import com.umeng.commonsdk.UMConfigure
@@ -30,6 +31,7 @@ internal object HgtvStartup {
     private val cacheStarted=AtomicBoolean(false)
     private val preloadStarted=AtomicBoolean(false)
     private val deferredStarted=AtomicBoolean(false)
+    private val deviceFormSelected=AtomicBoolean(false)
     private var state=State.IDLE
     private var failure: Throwable?=null
     private val waiters=mutableListOf<Waiter>()
@@ -87,13 +89,33 @@ internal object HgtvStartup {
                     StartupTrace.section("startup.identityBind") {
                         IdentityBinder.bind(library,AppRuntime.repository(app))
                     }
-                    PlaybackDeviceBackups.start(app)
                 },
             )
         },"hgtv-library-preload").apply { isDaemon=true }.start()
         Thread({
             startRuntime(app)
         },"hgtv-runtime-preload").apply { isDaemon=true }.start()
+    }
+
+    /**
+     * 用户已经明确选择设备形态。
+     *
+     * 首次弹窗出现时缓存 / 书库 / 运行时已经在后台预热；这里只把依赖形态的两件事
+     * 补上：按用户选择重新绑定设备档案，再启动备用设备注册。整个过程不阻塞路由。
+     */
+    fun onDeviceFormSelected(context: Context) {
+        val app=context.applicationContext
+        if(!deviceFormSelected.compareAndSet(false,true)) return
+        Thread({
+            val library=AppRuntime.library(app)
+            library.loadAsync(
+                onFailure={ deviceFormSelected.set(false) },
+                onReady={
+                    IdentityBinder.bind(library,AppRuntime.repository(app))
+                    PlaybackDeviceBackups.start(app)
+                },
+            )
+        },"hgtv-device-form-ready").apply { isDaemon=true }.start()
     }
 
     fun initialize(
@@ -166,9 +188,8 @@ internal object HgtvStartup {
                 StartupTrace.section("startup.identityBind") {
                     IdentityBinder.bind(library,AppRuntime.repository(context))
                 }
-                // 书库已就绪后再启动备用设备线程，避免两条启动链路同时调用 loadAsync。
-                StartupTrace.section("startup.backupDevices.start") {
-                    PlaybackDeviceBackups.start(context)
+                if(DeviceForm.ofStored(library.deviceForm)!=null) {
+                    onDeviceFormSelected(context)
                 }
                 StartupTrace.done("startup.prepare",startedAt)
                 complete()

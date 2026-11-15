@@ -109,13 +109,11 @@ internal object PhoneDebugReport {
         "${Build.MANUFACTURER} ${Build.MODEL} · Android ${Build.VERSION.RELEASE}(${Build.VERSION.SDK_INT})"
 
     private fun deviceFormRow(context: Context, library: Library?): String {
+        val selected = DeviceForm.ofStored(library?.deviceForm.orEmpty()) ?: return "未选择"
         val profile = profile ?: runCatching {
             context.applicationContext.detectDeviceForm()
         }.getOrNull()?.also { profile = it } ?: return "检测中…"
-        val manual = library?.deviceForm.orEmpty()
-        val selected = DeviceForm.ofStored(manual)
-        val source = if (selected != null) "手动" else "自动"
-        return "${selected?.label ?: profile.form.label}（$source） · ${profile.summary}"
+        return "${selected.label}（用户选择） · ${profile.summary}"
     }
 
     private fun capabilityRow(): String {

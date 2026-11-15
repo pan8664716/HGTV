@@ -619,7 +619,6 @@ class TvMainActivity: Activity() {
     var danmakuOption: TextView?=null
     var sleepOption: TextView?=null
     var touchArmed=false
-    var deviceProfile: com.hgtv.star.shared.compat.DeviceProfile?=null
     var touchLayer: FrameLayout?=null
     var touchBar: LinearLayout?=null
     var touchPlayLabel: com.hgtv.star.tv.TvButton?=null

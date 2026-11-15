@@ -4873,3 +4873,23 @@ feature-tv/
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## 首次启动选择设备类型
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 新安装不再调用 `detectDeviceForm()` 决定路由。`LaunchActivity` 先弹出手机 / 平板 / 电视
+  三档选择，选中后再弹确认页。
+- 确认输入按目标形态锁定：手机 / 平板只能触摸点击“确认”，遥控器不能完成；
+  电视只能遥控器选中并按确定键，触摸事件在按钮层被吞掉。
+- 设备类型写入现有的 `native-library-v1 / deviceForm`，之后启动直接按用户选择进入
+  `PhoneMainActivity` 或 `TvMainActivity`；确认时同时刷新已预加载 `Library` 的内存缓存，
+  本次启动立即生效，不必等下一次重启。设置页与调试面板只显示这份选择。
+- `DeviceForm.OPTIONS` 从 `auto / phone / tablet / tv` 收为 `phone / tablet / tv`；
+  旧 `auto` 仅作为未迁移数据的内部占位，启动时会重新要求选择。
+- 设备档案、签名与注册统一以用户选择为准，不再由硬件探测覆盖电视档案。
+- 首帧后仍立即并行预热缓存、书库、运行时和友盟；备用设备注册与形态相关身份绑定
+  延后到用户确认后在线程中执行，不阻塞选择弹窗和目标页启动。
+- 未新增文件；`:app:assembleDebug` 通过；未改版本号、versionCode 或依赖。
+
+回滚：对本节对应提交执行 `git revert`。

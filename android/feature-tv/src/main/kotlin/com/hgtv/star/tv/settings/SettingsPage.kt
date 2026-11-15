@@ -28,7 +28,6 @@ import com.hgtv.star.tv.findTagged
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.lowEndTv
-import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.ProjectInfo
 import com.hgtv.star.tv.R
@@ -625,17 +624,13 @@ private fun TvMainActivity.showAboutDialog(anchor: View) {
 }
 
 private fun TvMainActivity.deviceFormSettingLabel(): String {
-    DeviceForm.ofStored(library.deviceForm)?.let { return it.label }
-    val detected=deviceProfile?.form
-        ?: runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
-    return "自动 · ${detected.label}"
+    return DeviceForm.ofStored(library.deviceForm)?.label ?: "未选择"
 }
 
 private fun TvMainActivity.showDeviceFormPicker(anchor: TextView) {
-    val detected=deviceProfile?.form
-        ?: runCatching { detectDeviceForm().form }.getOrDefault(DeviceForm.UNKNOWN)
+    val current=DeviceForm.ofStored(library.deviceForm)
     val picker=TvDialog(this,"设备类型").choices(
-        DeviceForm.pickerLabels(detected),
+        DeviceForm.pickerLabels(),
         DeviceForm.optionIndex(library.deviceForm),
     ) { index ->
         val selected=DeviceForm.OPTIONS[index]
@@ -643,7 +638,7 @@ private fun TvMainActivity.showDeviceFormPicker(anchor: TextView) {
             anchor.text="设备类型  ·  ${deviceFormSettingLabel()}"
             return@choices
         }
-        if(detected==DeviceForm.TV &&
+        if(current==DeviceForm.TV &&
             (selected==DeviceForm.storedValue(DeviceForm.PHONE) ||
                 selected==DeviceForm.storedValue(DeviceForm.TABLET))) {
             showTouchOnlyDeviceFormConfirm(selected,anchor)
@@ -670,7 +665,7 @@ private fun TvMainActivity.showTouchOnlyDeviceFormConfirm(selected: String,ancho
     val target=DeviceForm.shortLabel(selected)
     val dialog=TvDialog(this,"确认切换到${target}")
     dialog.message(
-        "当前设备被自动判定为电视。切换到${target}后，界面会改为触屏操作，" +
+        "当前设备类型是电视。切换到${target}后，界面会改为触屏操作，" +
             "遥控器将无法完成这次确认。"
     )
     dialog.message(

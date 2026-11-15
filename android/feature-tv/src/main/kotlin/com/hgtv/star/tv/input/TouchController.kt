@@ -13,7 +13,6 @@ import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
-import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
 import com.hgtv.star.tv.TvStyle
@@ -100,19 +99,14 @@ fun TvMainActivity.armTouchIfScreenExists() {
  *
  * **规则只有一条：形态是什么，就按什么跑。**
  *
- * 1. 用户没设过（`auto`）：形态 = 算法判定（`detectDeviceForm()` 的打分结果）；
- * 2. 用户设过（手机 / 平板 / 电视）：形态 = 他选的那一档，算法结果只留给调试面板看。
+ * 形态 = 用户首次启动时明确选择的手机 / 平板 / 电视，不再由算法覆盖。
  *
  * - 电视 → 不建手势层（遥控器 + 底部不出现触屏控制条）；
  * - 手机 / 平板 → 一律点亮（手势层 + 底部控制条 + 上滑下拉换剧）；
- * - 未判定（算法自己都没跑起来）→ 退回输入子系统探测 [armTouchIfScreenExists]。
- *
- * 耗时：`detectDeviceForm()` 只读几次系统属性 / 能力位 / 输入设备列表，
- * 实测在 2GB 盒子上是一次亚毫秒级的调用，放在建第一屏之前没有代价。
+ * - 未选择（只有旧数据 / 直接启动 TV Activity）→ 按电视界面运行，
+ *   正常启动路径不会进入这一档。
  */
 fun TvMainActivity.applyDeviceForm() {
-    val profile=runCatching { detectDeviceForm() }.getOrNull()
-    deviceProfile=profile
     when(deviceMode()) {
         // 设计画布**不按形态分档**：所有形态共用 1280×720（见 `designScale` 的说明）。
         com.hgtv.star.shared.compat.DeviceForm.TV -> touchArmed=false
@@ -121,20 +115,18 @@ fun TvMainActivity.applyDeviceForm() {
             touchArmed=true
             wireSystemInsets()
         }
-        // 算法都跑不出结果：才退回输入子系统（真有一块屏就点亮）。
-        com.hgtv.star.shared.compat.DeviceForm.UNKNOWN -> if(!touchArmed) armTouchIfScreenExists()
+        com.hgtv.star.shared.compat.DeviceForm.UNKNOWN -> touchArmed=false
     }
 }
 
 /**
- * 这一轮实际生效的形态：手动选择优先，其次是启动时的探测结果。
+ * 这一轮实际生效的形态：只认用户选择。
  *
  * 只在「需要按形态分叉」的地方用（旋转方向、设置页读数），不要再据此去算触屏与否——
  * 那件事的唯一判据是 [touchArmed]，两者可能不一样（触屏电视：形态是电视、却真有一块屏）。
  */
 fun TvMainActivity.deviceMode(): com.hgtv.star.shared.compat.DeviceForm =
     com.hgtv.star.shared.compat.DeviceForm.ofStored(library.deviceForm)
-        ?: deviceProfile?.form
         ?: com.hgtv.star.shared.compat.DeviceForm.UNKNOWN
 
 /**

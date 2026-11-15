@@ -12,14 +12,14 @@ import android.view.WindowManager
 import kotlin.math.sqrt
 
 /**
- * 这台机器在用户的眼里的形态：手机 / 平板 / 电视。
+ * 用户为这台机器选择的界面形态：手机 / 平板 / 电视。
  *
- * 判成什么样只影响三件事：
+ * 用户的选择只影响三件事：
  * 1. 需不需要触屏手势层、底部触屏控制条（[com.hgtv.star.tv.TvMainActivity.touchArmed]）；
  * 2. 「竖屏短剧全屏」旋转的方向（电视 / 横屏平板 `+90`，手机 `−90`）；
- * 3. 设置页里「设备类型」那一格显示当前判定结果。
+ * 3. 设置页里「设备类型」那一格显示当前选择。
  *
- * 因此 [UNKNOWN] 只在探测本身失败时出现，正常路径一定落到前三档之一。
+ * 新安装必须由用户明确选择；[UNKNOWN] 只作为旧数据尚未迁移时的内部占位。
  */
 enum class DeviceForm(val label: String) {
     PHONE("手机"),
@@ -28,7 +28,7 @@ enum class DeviceForm(val label: String) {
     UNKNOWN("未判定");
 
     companion object {
-        /** 落盘用的字符串（`auto` 之外的三档，见 `Library.deviceForm`）。 */
+        /** 落盘用的字符串；`auto` 只保留为旧版本未选择的兼容值。 */
         fun ofStored(value: String): DeviceForm? = when (value) {
             "phone" -> PHONE
             "tablet" -> TABLET
@@ -43,35 +43,34 @@ enum class DeviceForm(val label: String) {
             UNKNOWN -> "auto"
         }
 
-        /**
-         * 设置页「设备类型」的四档，**顺序即落盘值的顺序**（`auto` / `phone` / `tablet` / `tv`）。
-         *
-         * 两端共用这一份：电视的设置弹窗与手机的设置对话框读的是同一个列表，
-         * 落盘值也就不会出现「一端写 phone、另一端认不出来」。
-         */
-        val OPTIONS = listOf("auto", "phone", "tablet", "tv")
+        /** 首次启动与设置页共用的三档。 */
+        val SELECTABLE = listOf(PHONE, TABLET, TV)
 
-        /** 落盘值在这四档里的下标（认不出按「自动」）。 */
+        /**
+         * 设置页「设备类型」的三档，**顺序即落盘值的顺序**（`phone` / `tablet` / `tv`）。
+         */
+        val OPTIONS = listOf("phone", "tablet", "tv")
+
+        /** 落盘值在这三档里的下标（旧 `auto` 认不出时落到手机）。 */
         fun optionIndex(value: String): Int = OPTIONS.indexOf(value).coerceAtLeast(0)
 
         /**
-         * 四档的**选择文案**（设置弹窗 / 对话框的选项）。
+         * 三档的**选择文案**（首次启动与设置弹窗 / 对话框共用）。
          *
-         * [detected] 是本机自动判定的形态：第一档要写出「自动判定 · 当前：手机」，
-         * 用户才知道不选的时候实际会按什么跑。
-         *
-         * 后三档各带一句「这台形态怎么操作」——它同时是**选择理由**：
+         * 每档各带一句「这台形态怎么操作」——它同时是**选择理由**：
          * 电视档没有触屏手势、手机档没有遥控器焦点，选错会立刻读出来。
          */
-        fun pickerLabels(detected: DeviceForm): List<String> = listOf(
-            "自动判定  ·  当前：${detected.label}",
+        fun pickerLabels(): List<String> = listOf(
             "手机  ·  触屏手势 + 竖屏旋转",
             "平板  ·  触屏手势 + 横屏旋转",
             "电视  ·  遥控器 + 顺时针旋转",
         )
 
         /** 设置页那一格的短读数（行宽有限，只放形态名）。 */
-        fun shortLabel(value: String): String = ofStored(value)?.label ?: "自动"
+        fun shortLabel(value: String): String = ofStored(value)?.label ?: "未选择"
+
+        fun requiresTouch(form: DeviceForm): Boolean =
+            form == PHONE || form == TABLET
     }
 }
 
@@ -101,7 +100,10 @@ data class DeviceProfile(
 }
 
 /**
- * 判断这台机器是手机 / 平板 / 电视。
+ * 诊断这台机器的硬件形态（手机 / 平板 / 电视）。
+ *
+ * **不参与启动路由、设备档案或设置选项**；新版首次启动只认用户明确选择，
+ * 这里的结果仅用于调试面板排查硬件信息。
  *
  * ## 为什么不能只看一个标志
  *
