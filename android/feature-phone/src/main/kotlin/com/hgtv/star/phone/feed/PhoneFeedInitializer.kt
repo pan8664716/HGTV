@@ -67,5 +67,6 @@ internal fun PhoneFeedView.initializeFeed() {
     // 冷启动先铺落盘快照（电视端 RecommendCache 的同一条路）：
     // 列表与「上一次停在哪」都在盘上，首屏不必等取流那 1 秒，也不会每次都从同一部开始。
     restoreSnapshot()
-    loadMore()
+    // 当前页由 PhoneRecommendPage.onShown() 触发加载；相邻体裁页先不取流，
+    // 避免首屏同时发出多条推荐请求。
 }

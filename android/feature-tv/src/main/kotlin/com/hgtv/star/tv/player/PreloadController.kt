@@ -139,7 +139,7 @@ fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,le
     recommendDetailLoading+=series.id
     io.submit {
         // 预热拿的也只是「第 1 集是哪个 vid」：走落盘缓存，连划时这几条不必各等一次 0.4~0.6s。
-        val result=runCatching { repository.detail(series.id,cached=true) }
+        val result=runCatching { repository.detail(series.id,cached=true,includeAuthor=false) }
         main.post {
             recommendDetailLoading-=series.id
             if(isDestroyed || screen!="recommend") return@post

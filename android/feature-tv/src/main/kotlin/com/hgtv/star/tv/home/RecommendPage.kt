@@ -57,8 +57,9 @@ private const val RECOMMEND_FIRST_LIMIT=com.hgtv.star.shared.feed.RecommendFeedP
 /**
  * 分类接口一页可能因续流、筛选和去重少于首屏目标条数。
  *
- * TV 首屏必须至少凑够这一批，否则缓存与当前列表都会长期停在 3 条：
+ * TV 首屏列表的补齐目标是这一批，否则缓存与当前列表会长期停在 3 条：
  * 下一次启动只能在这 3 条里选，表现就是「每次都是同一部」。
+ * 首次起播可以先用 1 条，剩余条目在首帧后补齐。
  */
 internal const val RECOMMEND_FIRST_ITEMS=com.hgtv.star.shared.feed.RecommendFeedPolicy.MIN_ITEMS_PER_LOAD
 /**

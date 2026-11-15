@@ -26,6 +26,8 @@ import com.hgtv.star.phone.page.PhoneMinePage
 import com.hgtv.star.phone.page.PhoneRankPage
 import com.hgtv.star.phone.page.PhoneRecommendPage
 import com.hgtv.star.shared.architecture.AppExit
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
+import com.hgtv.star.shared.debug.StartupDeferredTasks
 import com.hgtv.star.shared.debug.StartupTrace
 
 /**
@@ -91,6 +93,7 @@ class PhoneMainActivity : PhoneActivity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         val traceStarted=StartupTrace.now()
         StartupTrace.mark("phoneMain.onCreate.start")
+        PlaybackStartupTrace.point("phoneMain.onCreate")
         super.onCreate(savedInstanceState)
         android.util.Log.w("HGTV-BOOT", "phone.TvMainActivity onCreate")
         StartupTrace.section("phoneMain.style") { PhoneStyle.ensure(this) }
@@ -168,6 +171,7 @@ class PhoneMainActivity : PhoneActivity() {
             StartupTrace.mark("phoneMain.library.already")
             // 后台预加载已经完成：这里直接建首屏。
             runCatching { com.hgtv.star.shared.data.SessionBootstrap.onAppStart() }
+            if(current==0) warmStartupPlayer(lib)
         } else {
             val libraryStarted=StartupTrace.now()
             StartupTrace.mark("phoneMain.library.start")
@@ -181,6 +185,7 @@ class PhoneMainActivity : PhoneActivity() {
                     // 冷启动那一次 boot 心跳：凭据此刻才从书库灌进仓库，早打等于带半成品身份去问
                     //（与电视端 `MainActivityLibrary` 里那一句同一条时序）。
                     runCatching { com.hgtv.star.shared.data.SessionBootstrap.onAppStart() }
+                    if(current==0) warmStartupPlayer(lib)
                 },
             )
         }
@@ -237,6 +242,7 @@ class PhoneMainActivity : PhoneActivity() {
     private fun revealPhoneStartup(restored: Int?) {
         val startedAt=StartupTrace.now()
         StartupTrace.mark("phoneMain.firstContent.start")
+        PlaybackStartupTrace.point("phoneMain.firstContent.start")
         content.visibility = View.VISIBLE
         tabBar.visibility = View.VISIBLE
         val lib = PhoneServices.library(this)
@@ -247,12 +253,19 @@ class PhoneMainActivity : PhoneActivity() {
         debugRoot.post {
             StartupTrace.done("phoneMain.firstContent.render",startedAt)
             StartupTrace.mark("phoneMain.firstContent.firstFrame")
+            PlaybackStartupTrace.point("phoneMain.firstContent.firstFrame")
             Thread({
                 StartupTrace.section("phoneMain.servicesWarm") {
                     PhoneServices.warm(applicationContext)
                 }
             }, "hgtv-phone-network-warm").apply { isDaemon = true }.start()
-            if(!isFinishing && !isDestroyed) preloadCategoryPage()
+            if(!isFinishing && !isDestroyed && current==0) warmStartupPlayer(lib)
+            // 分类页不是首帧依赖。等推荐首帧或 12 秒兜底后再建，避免和推荐 / 注册抢带宽。
+            StartupDeferredTasks.schedule("phone.categoryPreload",12_000L) {
+                debugRoot.post {
+                    if(!isFinishing && !isDestroyed) preloadCategoryPage()
+                }
+            }
         }
         // 首次进入提示「字号 / 每行卡片数可以在设置里调」。等首屏画出来再弹，
         // 否则窗口还没 attach，对话框会挂在一个空 Activity 上。
@@ -264,6 +277,12 @@ class PhoneMainActivity : PhoneActivity() {
         val state=pendingCategoryState
         pendingCategoryState=null
         pages[1]=PhoneCategoryPage(this,state)
+    }
+
+    private fun warmStartupPlayer(lib: com.hgtv.star.shared.data.Library) {
+        if(!lib.isLoaded || current!=0) return
+        PhoneServices.warmPlayer(this,lib.decoderMode)
+        PlaybackStartupTrace.point("player.prewarm")
     }
 
     private fun show(index: Int) {

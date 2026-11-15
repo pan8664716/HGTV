@@ -10,6 +10,7 @@ import com.hgtv.star.shared.data.PlaybackDeviceBackups
 import com.hgtv.star.shared.data.SessionBootstrap
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.debug.Diagnostics
+import com.hgtv.star.shared.debug.StartupDeferredTasks
 import com.hgtv.star.shared.debug.StartupTrace
 import com.umeng.commonsdk.UMConfigure
 import com.umeng.umcrash.UMCrash
@@ -45,8 +46,9 @@ internal object HgtvStartup {
      * 首帧已经可见后再启动进程级后台初始化。
      *
      * 这些工作原来在 `Application.onCreate` 里执行，会推迟第一个窗口出现。
-     * 现在由启动页在首帧回调中触发：日志出口先装好，再并行预热书库 / 运行时，
-     * 友盟单独一条线程，主线程只做几次非阻塞提交。
+     * 现在由启动页在首帧回调中触发：日志出口、缓存目录和会话存储先装好，
+     * 书库与运行时预热放到后台；心跳、TNC、友盟和备用设备注册延后到播放首帧
+     * 或各自兜底超时。
      */
     fun afterFirstFrame(context: Context) {
         val app=context.applicationContext
@@ -55,17 +57,22 @@ internal object HgtvStartup {
         configureNetLogging()
         // 只注册缓存路径，不做读盘：目标页紧接着就要用这份路径铺缓存 / 骨架。
         startCaches(app)
+        // 会话存储必须先装配，设备注册 Cookie 才有地方落盘；心跳客户端延后创建。
+        initSessionStore(app)
         preload(app)
-        Thread({
-            StartupTrace.section("startup.initUmeng") { initUmeng(app) }
-        },"hgtv-umeng-init").apply { isDaemon=true }.start()
+        StartupDeferredTasks.schedule("startup.sessionKeeper",8_000L) {
+            startSessionKeeper()
+        }
+        StartupDeferredTasks.schedule("startup.umeng",10_000L) {
+            initUmeng(app)
+        }
     }
 
     /**
      * 进程启动时在后台预热书库和运行时。
      *
-     * 不等待结果，也不把任何回调绑到启动页：Activity 可以立即创建，书库读盘、
-     * 缓存初始化、会话存储和网络预热在后台并行完成。TvMainActivity 自己再调
+     * 不等待结果，也不把任何回调绑到启动页：Activity 可以立即创建，书库读盘
+     * 在后台完成。TvMainActivity 自己再调
      * [com.hgtv.star.shared.data.Library.loadAsync] 时，已加载就直接命中，
      * 加载中则自然加入同一条后台任务。
      */
@@ -92,16 +99,14 @@ internal object HgtvStartup {
                 },
             )
         },"hgtv-library-preload").apply { isDaemon=true }.start()
-        Thread({
-            startRuntime(app)
-        },"hgtv-runtime-preload").apply { isDaemon=true }.start()
     }
 
     /**
      * 用户已经明确选择设备形态。
      *
      * 首次弹窗出现时缓存 / 书库 / 运行时已经在后台预热；这里只把依赖形态的两件事
-     * 补上：按用户选择重新绑定设备档案，再启动备用设备注册。整个过程不阻塞路由。
+     * 补上：按用户选择重新绑定设备档案，再排定备用设备注册。整个过程不阻塞路由，
+     * 备用设备注册等播放首帧或兜底超时后再执行。
      */
     fun onDeviceFormSelected(context: Context) {
         val app=context.applicationContext
@@ -112,7 +117,9 @@ internal object HgtvStartup {
                 onFailure={ deviceFormSelected.set(false) },
                 onReady={
                     IdentityBinder.bind(library,AppRuntime.repository(app))
-                    PlaybackDeviceBackups.start(app)
+                    StartupDeferredTasks.schedule("startup.backupDevices",10_000L) {
+                        PlaybackDeviceBackups.start(app)
+                    }
                 },
             )
         },"hgtv-device-form-ready").apply { isDaemon=true }.start()
@@ -200,9 +207,10 @@ internal object HgtvStartup {
     private fun startRuntime(context: Context) {
         if(!runtimeStarted.compareAndSet(false,true)) return
         startCaches(context)
-        // 启动阶段不读系统根证书表、不刷新 DNS / TNC、不做签名预热。首次网络请求直接使用
-        // `HgtvTls.BOOTSTRAP_ISSUERS` 中的内置 G2 根，以及 `startCaches` 注册的落盘配置。
-        initSession(context)
+        initSessionStore(context)
+        StartupDeferredTasks.schedule("startup.sessionKeeper",8_000L) {
+            startSessionKeeper()
+        }
     }
 
     private fun complete() {
@@ -238,17 +246,16 @@ internal object HgtvStartup {
             com.hgtv.star.core.CategoryPanelCache.init(File(cache,"category-panels-v1.json"))
             }.onFailure { problem -> Diagnostics.warn("HGTV-CACHE","缓存目录初始化失败",problem) }
         }
-        // 本地 TNC 已独立排队读盘；这里同时提交条件刷新。每次启动都发一次请求，
-        // 由服务端根据 summary / ETag 决定配置是否变化，网络任务不挡启动线程。
-        Thread({
+        // TNC 使用落盘快照即可完成首屏；条件刷新放到首帧之后。
+        StartupDeferredTasks.schedule("startup.tncRefresh",8_000L) {
             runCatching { AppRuntime.repository(context).refreshTncAsync(force=true) }
-        },"hgtv-tnc-bootstrap").apply { isDaemon=true }.start()
+        }
     }
 
-    private fun initSession(context: Context) {
-        StartupTrace.section("startup.sessionInit") {
+    private fun initSessionStore(context: Context) {
+        StartupTrace.section("startup.sessionStore") {
             runCatching {
-                SessionBootstrap.init(
+                SessionBootstrap.initStore(
                     context=context,
                     store=com.hgtv.star.shared.data.AppSessionStore(context),
                     log={ line -> Diagnostics.trace("HGTV-SESSION",line) },
@@ -257,6 +264,13 @@ internal object HgtvStartup {
                     },
                 )
             }.onFailure { problem -> Diagnostics.warn("HGTV-SESSION","会话保活初始化失败",problem) }
+        }
+    }
+
+    private fun startSessionKeeper() {
+        StartupTrace.section("startup.sessionKeeper") {
+            runCatching { SessionBootstrap.startKeeper() }
+                .onFailure { problem -> Diagnostics.warn("HGTV-SESSION","会话心跳初始化失败",problem) }
         }
     }
 

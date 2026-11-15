@@ -6,9 +6,11 @@ import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.DetailCache
 import com.hgtv.star.core.RemoteVideo
+import com.hgtv.star.core.StageDeadline
 import com.hgtv.star.core.detail
 import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.debug.StartupBudgets
 
 /**
  * 推荐预热的数据链：详情 → 播放地址 → 索引 / 首块。
@@ -23,7 +25,11 @@ class RecommendWarmCoordinator(
     /** 详情优先读落盘；接口拿到后回写缓存。 */
     fun detail(seriesId: String): Detail? {
         DetailCache.load(seriesId)?.let { return it }
-        val detail=runCatching { repository.detail(seriesId) }.getOrNull() ?: return null
+        val detail=runCatching {
+            StageDeadline("recommend.warm.detail",StartupBudgets.DETAIL_MS).use { deadline ->
+                deadline.run { repository.detail(seriesId,includeAuthor=false) }
+            }
+        }.getOrNull() ?: return null
         if(detail.episodes.isNotEmpty()) DetailCache.save(detail)
         return detail
     }

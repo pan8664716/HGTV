@@ -3,10 +3,12 @@ package com.hgtv.star.phone
 
 import android.content.Context
 import android.os.Looper
+import android.os.Handler
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.google.android.exoplayer2.DefaultLoadControl
 import com.google.android.exoplayer2.ExoPlayer
 import kotlinx.coroutines.suspendCancellableCoroutine
@@ -62,6 +64,7 @@ object PhoneServices {
      * 必须在主线程调用（`ExoPlayer.Builder().build()` 要求）。
      */
     @Volatile private var exo: ExoPlayer? = null
+    private var warmPlayerScheduled=false
 
     /**
      * 建播放器，并把「视频解码」那一档装进去。
@@ -109,8 +112,40 @@ object PhoneServices {
                     //（交接时解码器早就初始化完了，再挂监听收不到任何事件）。
                     runCatching { metrics.attach(player) }
                     exo = player
+                    PlaybackStartupTrace.point("player.built")
                 }
         }
+    }
+
+    /**
+     * 首屏之后的播放器预热。
+     *
+     * ExoPlayer 必须在主线程构建，但构建会扫描 MediaCodec；放到首屏动画之后再跑，
+     * 可以把它与推荐、注册和详情请求重叠，而不是等视频索引准备完才串行创建。
+     */
+    fun warmPlayer(
+        context: Context,
+        decoder: com.hgtv.star.core.VideoDecoderMode? = null,
+        delayMs: Long = 120L,
+    ) {
+        val app=context.applicationContext
+        synchronized(this) {
+            if(exo!=null || warmPlayerScheduled) return
+            warmPlayerScheduled=true
+        }
+        Handler(Looper.getMainLooper()).postDelayed({
+            var shouldBuild=false
+            synchronized(this) {
+                warmPlayerScheduled=false
+                shouldBuild=exo==null
+            }
+            if(shouldBuild) {
+                runCatching { player(app,decoder) }
+                    .onFailure { problem ->
+                        android.util.Log.w("HGTV-PHONE","播放器预热失败 ${problem.javaClass.simpleName}",problem)
+                    }
+            }
+        },delayMs.coerceAtLeast(0L))
     }
 
     /**

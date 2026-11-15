@@ -7,9 +7,12 @@ import com.hgtv.star.core.DetailCache
 import com.hgtv.star.core.RecommendBehavior
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.Series
+import com.hgtv.star.core.StageDeadline
 import com.hgtv.star.core.detail
 import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
+import com.hgtv.star.shared.debug.StartupBudgets
 import com.hgtv.star.shared.feed.RecommendStore
 
 /**
@@ -70,7 +73,23 @@ class RecommendPlaybackController(
     ): Prepared? {
         val cached = cachedDetail(series.id)
         val detail = cached ?: runCatching { DetailCache.load(series.id) }.getOrNull()
-        val loaded = detail ?: runCatching { repository.detail(series.id) }.getOrNull() ?: return null
+        val detailStarted=PlaybackStartupTrace.begin(
+            "detail",
+            "id=${series.id} cache=${detail!=null}",
+        )
+        val loaded = detail ?: runCatching {
+            StageDeadline("recommend.detail",StartupBudgets.DETAIL_MS).use { deadline ->
+                deadline.run {
+                    repository.detail(series.id,includeAuthor=false)
+                }
+            }
+        }.getOrNull()
+        PlaybackStartupTrace.done(
+            "detail",
+            detailStarted,
+            "id=${series.id} cache=${detail!=null} success=${loaded!=null}",
+        )
+        if (loaded == null) return null
         rememberDetail(loaded)
         if (loaded.episodes.isEmpty()) return null
 
@@ -88,8 +107,21 @@ class RecommendPlaybackController(
 
         val warm = takeWarm?.invoke(episodeId, maxQuality)
         val remote = warm ?: runCatching {
-            val info = source.stream(episodeId, maxQuality, loaded.playback)
-            source.prepare(episodeId, info)
+            val streamStarted=PlaybackStartupTrace.begin("stream", "episode=$episodeId")
+            val info=StageDeadline("recommend.stream",StartupBudgets.STREAM_MS).use { deadline ->
+                deadline.run {
+                    source.stream(episodeId, maxQuality, loaded.playback)
+                }
+            }
+            PlaybackStartupTrace.done("stream",streamStarted,"episode=$episodeId quality=${info.quality}")
+            val prepareStarted=PlaybackStartupTrace.begin("prepare", "episode=$episodeId")
+            StageDeadline("recommend.prepare",StartupBudgets.PREPARE_MS).use { deadline ->
+                deadline.run {
+                    source.prepare(episodeId, info)
+                }
+            }.also {
+                PlaybackStartupTrace.done("prepare",prepareStarted,"episode=$episodeId")
+            }
         }.getOrNull() ?: return null
         return Prepared(
             detail = loaded,

@@ -7,6 +7,7 @@ import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.video.VideoSize
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.phone.ui.resizeMode
 
 /**
@@ -45,6 +46,7 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
                 feedRecommendFailures = 0
                 // READY 是首帧回调缺失时的兜底；同一曝光由共用上报器短时去重。
                 reportRecommendImpression(index)
+                scheduleFeedFillAfterFirstFrame()
                 scheduleRecommendBatchModels(index)
             }
             if (state == Player.STATE_ENDED) onEpisodeEnded(index)
@@ -52,6 +54,8 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
 
         override fun onRenderedFirstFrame() {
             reportRecommendImpression(index)
+            PlaybackStartupTrace.firstFrame("phone.feed")
+            scheduleFeedFillAfterFirstFrame()
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {

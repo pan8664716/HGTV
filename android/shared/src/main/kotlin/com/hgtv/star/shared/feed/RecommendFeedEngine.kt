@@ -10,7 +10,9 @@ import com.hgtv.star.core.RecommendFlow
 import com.hgtv.star.core.RecommendTaste
 import com.hgtv.star.core.RecommendTab
 import com.hgtv.star.core.Series
+import com.hgtv.star.core.StageDeadline
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.debug.StartupBudgets
 
 /**
  * 推荐流的加载、续流、过滤、降级、重排和快照落盘。
@@ -97,20 +99,38 @@ class RecommendFeedEngine(
             requests++
             val startedAt = now()
             val attempt = runCatching {
-                input.ensureRegistered()
-                repository.recommendFeed(
-                    selection = CategorySelection(gender = gender),
-                    sessionId = session,
-                    offset = requestOffset,
-                    limit = limit,
-                    genres = input.genres,
-                    filterIds = filters,
-                    tab = input.tab,
-                )
+                if (!input.append && requests == 1) {
+                    StageDeadline("recommend.register", StartupBudgets.REGISTER_MS).use { deadline ->
+                        deadline.run { input.ensureRegistered() }
+                    }
+                } else {
+                    input.ensureRegistered()
+                }
+                val requestBudget = if (!input.append && processedPages == 0) {
+                    StartupBudgets.FEED_FIRST_MS
+                } else {
+                    StartupBudgets.FEED_PAGE_MS
+                }
+                StageDeadline("recommend.feed", requestBudget).use { deadline ->
+                    deadline.run {
+                        repository.recommendFeed(
+                            selection = CategorySelection(gender = gender),
+                            sessionId = session,
+                            offset = requestOffset,
+                            limit = limit,
+                            genres = input.genres,
+                            filterIds = filters,
+                            tab = input.tab,
+                        )
+                    }
+                }
             }
             if(attempt.isFailure) {
                 val problem = attempt.exceptionOrNull() ?: IllegalStateException("推荐请求失败")
                 val elapsed = now() - startedAt
+                if (problem is com.hgtv.star.core.StageTimeoutException) {
+                    lines += "stage timeout stage=${problem.stage} elapsed=${elapsed}ms"
+                }
                 if(filters.isNotEmpty() && elapsed < policy.quickFilterFailureMs) {
                     filterFailures++
                     if(filterFailures >= 2) filterIdsOff = true

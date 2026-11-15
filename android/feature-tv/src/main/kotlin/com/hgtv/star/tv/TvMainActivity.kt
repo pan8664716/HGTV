@@ -39,6 +39,7 @@ import com.hgtv.star.tv.TvTools
 import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.compat.Cancellable
 import com.hgtv.star.shared.debug.Diagnostics
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.debug.compactTls
 import com.hgtv.star.shared.nav.Navigator
@@ -685,6 +686,7 @@ class TvMainActivity: Activity() {
     override fun onCreate(state: Bundle?) {
         startupCreateTraceAt=StartupTrace.now()
         StartupTrace.mark("main.onCreate.start")
+        PlaybackStartupTrace.point("tvMain.onCreate")
         super.onCreate(state)
         initializeMainShell(state)
     }
@@ -725,6 +727,7 @@ class TvMainActivity: Activity() {
     override fun onResume() {
         val resumeStarted=StartupTrace.now()
         StartupTrace.mark("main.onResume.start")
+        PlaybackStartupTrace.point("tvMain.onResume")
         super.onResume()
         resumeAfterSuper(resumeStarted)
     }

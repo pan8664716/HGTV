@@ -67,7 +67,7 @@ fun TvMainActivity.prefetchRecommendBatchModels() {
             for(series in candidates) {
                 if(ids.size>=target) break
                 val item=known[series.id]
-                    ?: runCatching { repository.detail(series.id) }.getOrNull()
+                    ?: runCatching { repository.detail(series.id,includeAuthor=false) }.getOrNull()
                     ?: continue
                 val first=item.episodes.firstOrNull() ?: continue
                 if(ids.add(first) && known[series.id]==null) {

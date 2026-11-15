@@ -3,6 +3,7 @@ package com.hgtv.star.phone
 
 import com.hgtv.star.core.RecommendTab
 import com.hgtv.star.shared.data.DeviceRegistration
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.shared.feed.RecommendFeedPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -13,7 +14,7 @@ import kotlinx.coroutines.withContext
  *
  * 与电视端 `MainActivityRecommend` 的恢复逻辑同一套语义，只是简化成手机上够用的那部分：
  * 快照里的条目直接上屏、从**上一次停的那一部的下一部**接着播（不是永远第 1 条），
- * 之后由 [loadMore] 在后台把新的一页补进来。快照过期 / 没有就什么都不做。
+ * 之后由首帧后的 [loadMore] 在后台把新的一页补进来。快照过期 / 没有就什么都不做。
  */
 internal fun PhoneFeedView.restoreSnapshot() {
     if (feedItems.isNotEmpty()) return
@@ -51,6 +52,10 @@ internal fun PhoneFeedView.restoreSnapshot() {
 internal fun PhoneFeedView.loadMore() {
     if (feedRecommendStore.loading || !feedRecommendStore.hasMore) return
     feedRecommendStore.loading = true
+    val traceStarted=PlaybackStartupTrace.begin(
+        "feed.load",
+        "genre=${feedGenre ?: "all"} items=${feedItems.size} restored=${feedRecommendStore.restored}",
+    )
     feedScope.launch {
         val library = feedLibrarySlot ?: PhoneServices.awaitLibrary(context).also { feedLibrarySlot = it }
         if (!feedCursorRestored) {
@@ -67,7 +72,10 @@ internal fun PhoneFeedView.loadMore() {
             append=feedItems.isNotEmpty() && !feedRecommendStore.restored,
             genres=selectedGenres,
             tab=RecommendTab.fromGenre(feedGenre),
-            minItemsPerLoad=RecommendFeedPolicy.MIN_ITEMS_PER_LOAD,
+            // 首次无快照只要求一个可播放条目：先起播，剩余条目由首帧后的补页完成。
+            minItemsPerLoad=if(
+                feedItems.isEmpty() && feedPlayingIndex<0 && !feedRecommendStore.restored
+            ) 1 else RecommendFeedPolicy.MIN_ITEMS_PER_LOAD,
             // 备用设备线程可能已用另一份仓库完成主设备注册。这里不能只看
             // `library.deviceRegistered()`：主仓库可能仍是空身份。
             ensureRegistered = {
@@ -82,6 +90,7 @@ internal fun PhoneFeedView.loadMore() {
         }
         feedRecommendStore.loading = false
         if (result == null) {
+            PlaybackStartupTrace.done("feed.load",traceStarted,"result=null")
             if (feedItems.isEmpty()) feedNotifyDataSetChanged()
             refreshAfterIdentity()
             return@launch
@@ -95,6 +104,15 @@ internal fun PhoneFeedView.loadMore() {
             feedItems.size != oldSize -> feedNotifyDataSetChanged()
         }
         if (feedItems.isEmpty()) feedNotifyDataSetChanged()
+        PlaybackStartupTrace.done(
+            "feed.load",
+            traceStarted,
+            "items=${feedItems.size} added=${(feedItems.size-oldSize).coerceAtLeast(0)} " +
+                "pages=${result.pages}",
+        )
+        if (feedItems.isNotEmpty()) {
+            PlaybackStartupTrace.point("feed.firstItem","genre=${feedGenre ?: "all"}")
+        }
         if (com.hgtv.star.shared.BuildConfig.DEBUG) {
             android.util.Log.i(
                 "HGTV-PHONE",
@@ -116,6 +134,25 @@ internal fun PhoneFeedView.loadMore() {
     }
 }
 
+/**
+ * 首帧之后补齐首屏推荐。
+ *
+ * 首条内容优先用于起播；这里只补列表余量，不参与首帧判定。READY 与
+ * onRenderedFirstFrame 都可能调用，[feedFirstFrameFillQueued] 保证只排一次。
+ */
+internal fun PhoneFeedView.scheduleFeedFillAfterFirstFrame() {
+    if(feedFirstFrameFillQueued || feedHidden ||
+        feedItems.size>=RecommendFeedPolicy.MIN_ITEMS_PER_LOAD
+    ) return
+    feedFirstFrameFillQueued=true
+    feedPostDelayed({
+        feedFirstFrameFillQueued=false
+        if(!feedHidden && feedItems.size<RecommendFeedPolicy.MIN_ITEMS_PER_LOAD) {
+            loadMore()
+        }
+    },300L)
+}
+
 internal fun PhoneFeedView.refreshAfterIdentity() {
     if(!feedIdentityRefreshPending || feedItems.isNotEmpty()) return
     feedIdentityRefreshPending = false
@@ -125,7 +162,7 @@ internal fun PhoneFeedView.refreshAfterIdentity() {
     feedRecommendStore.nextOffset = 0
     feedRecommendStore.sessionId = ""
     feedCursorRestored = true
-    loadMore()
+    if (!feedHidden) loadMore()
 }
 
 /**

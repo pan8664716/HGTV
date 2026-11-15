@@ -7,6 +7,7 @@ import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.audio.AudioAttributes
 import com.hgtv.star.shared.compat.isMeteredConnection
 import com.hgtv.star.shared.compat.lowEndTv
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
 
 /**
  * 电视端缓冲档位。
@@ -165,4 +166,5 @@ internal fun TvMainActivity.buildPlayer(
         )
         .setHandleAudioBecomingNoisy(true)
         .build()
+        .also { PlaybackStartupTrace.point("player.built","tv") }
 }

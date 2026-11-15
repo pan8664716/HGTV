@@ -22,14 +22,21 @@ internal fun PhoneFeedView.setGenreImpl(value: String?) {
     //（三条流各存各的，见 FeedCursor 与 RecommendCache.fileOf）。
     feedCursorRestored = false
     feedFilterMiss = 0
+    feedFirstFrameFillQueued = false
     feedNotifyDataSetChanged()
     // 新的一类先铺它自己的快照：首屏不必等取流，也不会铺出上一类的卡片。
     restoreSnapshot()
-    loadMore()
+    if (!feedHidden) loadMore()
 }
 
 internal fun PhoneFeedView.onShownImpl() {
     if (!resumeOnShownImpl()) return
+    // 当前页真正上屏后才取流；有快照时先播快照，补流由首帧回调触发。
+    if (feedItems.isEmpty()) loadMore()
+    // 进程里已经有画面时不会再有新的首帧回调，这里补一次延后补流。
+    if (feedItems.isNotEmpty() && feedPlayer?.isPlaying == true) {
+        scheduleFeedFillAfterFirstFrame()
+    }
     // 设置页可能刚改过弹幕（显示方式 / 速度 / 字号 / 透明度）：回到这一页时重刷一次，
     // 否则要等下一次换集才看得到，用户读到的就是「弹幕设置不生效」。
     feedPageAt(feedPlayingIndex)?.let { applyDanmakuSettingsImpl(it) }

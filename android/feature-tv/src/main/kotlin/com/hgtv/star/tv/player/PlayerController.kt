@@ -42,6 +42,8 @@ import com.hgtv.star.shared.architecture.danmaku
 import com.hgtv.star.shared.architecture.player
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.DebugFaults
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
+import com.hgtv.star.shared.debug.StartupBudgets
 import com.hgtv.star.tv.R
 
 // 本文件是从 TvMainActivity.kt 拆出来的「播放内核：起播、切集、弹幕加载」这一块。
@@ -333,11 +335,24 @@ fun TvMainActivity.playEpisode(
             // 后者钉死 HTTP/1.1、进程级共享，切集不再关连接池（见 PlaybackTransport）。
             prefetched ?: run {
                 // 只有 HEVC 一种编码，取流只剩「上限之内取最高」这一条规则。
-                val streamInfo=playbackSource.stream(
-                    requestedId,
-                    maxQuality,
-                    detail?.playback ?: com.hgtv.star.core.PlaybackProfile(),
-                    queue=modelQueue,
+                val streamStarted=PlaybackStartupTrace.begin(
+                    "stream",
+                    "episode=$requestedId recommend=$recommendEntry",
+                )
+                val streamInfo=StageDeadline("playback.stream",StartupBudgets.STREAM_MS).use { deadline ->
+                    deadline.run {
+                        playbackSource.stream(
+                            requestedId,
+                            maxQuality,
+                            detail?.playback ?: com.hgtv.star.core.PlaybackProfile(),
+                            queue=modelQueue,
+                        )
+                    }
+                }
+                PlaybackStartupTrace.done(
+                    "stream",
+                    streamStarted,
+                    "episode=$requestedId quality=${streamInfo.quality}",
                 )
                 // 记下这一集的视频域名：`prepare()` 里建连失败时 [video] 还是上一集的，
                 // 自愈清 DNS 只能按这一条来（见 [TvMainActivity.lastStreamHost]）。
@@ -365,11 +380,19 @@ fun TvMainActivity.playEpisode(
                 // 「取地址」与「本地准备」分开包：前者失败是没有资源 / 没有可用清晰度，
                 // 后者是容器不认、索引不在文件头、加密索引读不出来——后者与设备无关，
                 // 但界面上同样说「解码失败」。换成 [PlaybackPrepareException]，上报里就能分开。
+                val prepareStarted=PlaybackStartupTrace.begin(
+                    "prepare",
+                    "episode=$requestedId recommend=$recommendEntry",
+                )
                 val remote=try {
-                    playbackSource.prepare(requestedId,streamInfo) {
-                        // 调试包的故障注入：本地准备阶段直接失败（见 [DebugFaults]）。
-                        if(BuildConfig.DEBUG && DebugFaults.mode(this@playEpisode)==DebugFaults.Mode.PREPARE_FAIL) {
-                            throw PlaybackPrepareException("调试注入：视频索引不可用")
+                    StageDeadline("playback.prepare",StartupBudgets.PREPARE_MS).use { deadline ->
+                        deadline.run {
+                            playbackSource.prepare(requestedId,streamInfo) {
+                                // 调试包的故障注入：本地准备阶段直接失败（见 [DebugFaults]）。
+                                if(BuildConfig.DEBUG && DebugFaults.mode(this@playEpisode)==DebugFaults.Mode.PREPARE_FAIL) {
+                                    throw PlaybackPrepareException("调试注入：视频索引不可用")
+                                }
+                            }
                         }
                     }
                 } catch(e: PlaybackPrepareException) {
@@ -390,6 +413,12 @@ fun TvMainActivity.playEpisode(
                     // 原样抛出，让它落到 `playback_io`，并由 [playerFailure] 换一条地址重来。
                     if(networkFailureOf(e)!=null) throw e
                     throw PlaybackPrepareException(e.message ?: "播放准备失败",e)
+                } finally {
+                    PlaybackStartupTrace.done(
+                        "prepare",
+                        prepareStarted,
+                        "episode=$requestedId",
+                    )
                 }
                 stage("prepare ${remote.total/1024}KB")
                 remote
@@ -643,6 +672,10 @@ fun TvMainActivity.playEpisode(
             }
             override fun onRenderedFirstFrame() {
                 if(!active()) return
+                PlaybackStartupTrace.firstFrame(
+                    "tv.player",
+                    "recommend=$recommendEntry preloaded=${prefetched!=null} reused=$reuse",
+                )
                 markAutoTransitionFirstFrame(p.currentMediaItem?.mediaId.orEmpty())
                 // 首帧的尺寸已经确定：竖屏短剧全屏在这之后再落一次
                 //（`onVideoSizeChanged` 在个别软解 / 隧道模式下不一定先于首帧回调，这里兜一次底）。

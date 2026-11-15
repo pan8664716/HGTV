@@ -4,6 +4,7 @@ package com.hgtv.star.shared.media
 import com.google.android.exoplayer2.Format
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.analytics.AnalyticsListener
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
 
 /**
  * 播放现场的「解码事实」：解码器名、初始化耗时、编码格式、丢帧、音频欠载。
@@ -205,6 +206,7 @@ class PlaybackMetrics {
                 renderTimeMs: Long,
             ) {
                 firstFrame(android.os.SystemClock.elapsedRealtime())
+                PlaybackStartupTrace.firstFrame("phone.metrics")
             }
         })
     }

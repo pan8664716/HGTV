@@ -125,12 +125,18 @@ fun TvMainActivity.openRecommend() {
     } else showRecommendMessage("正在加载推荐…",loading=true)
     if(snapshot.isEmpty()) {
         // 没有任何快照（第一次装 / 清过缓存）：整屏只有一行字，这一部只能由流决定。
-        loadRecommendPage(append=false) {
+        loadRecommendPage(append=false,minItemsPerLoad=1) {
             if(isDestroyed || screen!="recommend" || recommendStarted) return@loadRecommendPage
             if(recommendItems.isEmpty()) return@loadRecommendPage
             recommendStarted=true
             android.util.Log.i("HGTV","Recommend cold start play index=0 items=${recommendItems.size}")
             playRecommendAt(0)
+            // 首条已经足够起播。保留现有列表作为恢复上下文，剩余首屏条目在首帧后补齐。
+            recommendStore().restored=true
+            recommendRestored=true
+            if(recommendItems.size<RECOMMEND_FIRST_ITEMS) {
+                requestRecommendFeedAfterFirstFrame()
+            }
         }
     }
     StartupTrace.done(

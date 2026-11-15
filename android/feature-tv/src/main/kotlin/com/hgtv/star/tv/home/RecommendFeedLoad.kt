@@ -2,6 +2,7 @@
 package com.hgtv.star.tv
 
 import com.hgtv.star.shared.debug.StartupTrace
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.shared.architecture.network
 
 /**
@@ -19,6 +20,7 @@ fun TvMainActivity.loadRecommendPage(
     @Suppress("UNUSED_PARAMETER") depth: Int = 0,
     @Suppress("UNUSED_PARAMETER") restarts: Int = 0,
     noFilter: Boolean = false,
+    minItemsPerLoad: Int = RECOMMEND_FIRST_ITEMS,
     onReady: () -> Unit,
 ) {
     val traceStarted=StartupTrace.now()
@@ -28,13 +30,17 @@ fun TvMainActivity.loadRecommendPage(
         recommendWaiters += onReady
         return
     }
+    val playbackTrace=PlaybackStartupTrace.begin(
+        "feed.load",
+        "append=$append minItems=$minItemsPerLoad",
+    )
     recommendLoading = true
     val token = recommendPageToken.incrementAndGet()
     val input=recommendStore().input(
         append = append,
         noFilter = noFilter,
         genres = library.recommendGenres(),
-        minItemsPerLoad = RECOMMEND_FIRST_ITEMS,
+        minItemsPerLoad = minItemsPerLoad,
         ensureRegistered = {
             // 备用设备线程可能已用另一份仓库完成主设备注册，但主仓库仍是空身份。
             // 这里按 ID 做一次幂等补齐，只有不一致时才重绑。
@@ -48,6 +54,11 @@ fun TvMainActivity.loadRecommendPage(
         }
         main.post {
             StartupTrace.done("recommend.feed.request",traceStarted, "append=$append")
+            PlaybackStartupTrace.done(
+                "feed.load",
+                playbackTrace,
+                "append=$append success=${loaded.isSuccess}",
+            )
             if(isDestroyed || token != recommendPageToken.get() || screen != "recommend") {
                 recommendAdvancePending = 0
                 settleRecommendLoad()
@@ -66,6 +77,10 @@ fun TvMainActivity.loadRecommendPage(
                 recommendPage = result.page
                 recommendHasMore = result.hasMore
                 if(result.error == null) recommendRestored = false
+                PlaybackStartupTrace.point(
+                    "feed.firstItem",
+                    "items=${result.items.size} pages=${result.pages} append=$append",
+                )
 
                 val feedError=result.error
                 if(feedError != null) {

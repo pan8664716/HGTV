@@ -18,6 +18,7 @@ import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.DeviceFormSelection
 import com.hgtv.star.shared.data.AppRuntime
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.shared.ui.TvThemeStore
 import com.hgtv.star.tv.TvDialog
 import com.hgtv.star.tv.TvStyle
@@ -272,6 +273,7 @@ class DeviceFormActivity : Activity() {
             }
         }
         AppRuntime.library(this).deviceForm=selected
+        PlaybackStartupTrace.point("deviceForm.selected", "form=$selected firstRun=$firstRun")
         HgtvStartup.onDeviceFormSelected(this)
         finished=true
         cancelCountdown()

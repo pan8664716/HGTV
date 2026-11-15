@@ -19,6 +19,7 @@ import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.DeviceFormSelection
 import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.debug.StartupTrace
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.tv.TvMainActivity
 
@@ -65,6 +66,7 @@ class LaunchActivity : Activity() {
     override fun onCreate(savedInstanceState: Bundle?) {
         traceStartedAt=StartupTrace.now()
         StartupTrace.mark("launch.onCreate.start")
+        PlaybackStartupTrace.point("launch.onCreate")
         super.onCreate(savedInstanceState)
         window.setBackgroundDrawable(ColorDrawable(BACKGROUND))
         applyFullscreen()
@@ -75,6 +77,7 @@ class LaunchActivity : Activity() {
         // 目标页负责在书库未就绪时先铺骨架 / 缓存，不能把路由卡在读盘上。
         root.postOnAnimation {
             StartupTrace.done("launch.firstFrame",traceStartedAt)
+            PlaybackStartupTrace.point("launch.firstFrame")
             if(!isFinishing && !isDestroyed) {
                 HgtvStartup.afterFirstFrame(this)
                 routeToTarget()
@@ -143,6 +146,7 @@ class LaunchActivity : Activity() {
         routed=true
         val routeStarted=StartupTrace.now()
         StartupTrace.mark("launch.route.start")
+        PlaybackStartupTrace.point("launch.route", "target=${form.label}")
         // 选择已经落盘：后台补绑设备身份并启动备用设备注册，不阻塞目标页首帧。
         HgtvStartup.onDeviceFormSelected(this)
         val target = targetFor(form)
@@ -167,6 +171,11 @@ class LaunchActivity : Activity() {
         }
         if(started) {
             StartupTrace.done("launch.route",routeStarted, "target=${target.simpleName}")
+            PlaybackStartupTrace.done(
+                "launch.route",
+                routeStarted,
+                "target=${target.simpleName}",
+            )
             finish()
             @Suppress("DEPRECATION")
             overridePendingTransition(0, 0)

@@ -6,7 +6,11 @@ import okhttp3.Request
 import okhttp3.Response
 import org.json.JSONObject
 import java.io.IOException
+import java.util.concurrent.Executors
+import java.util.concurrent.ScheduledFuture
+import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * 网络失败的唯一出口。
@@ -310,6 +314,64 @@ class RequestScope {
                 throw e
             }
             finally { owner?.detach(call) }
+        }
+    }
+}
+
+/** 一个启动关键阶段超过预算。调用方可以据此跳过当前推荐或显示可重试错误。 */
+class StageTimeoutException(
+    val stage: String,
+    cause: Throwable? = null,
+) : IOException("$stage 超过启动预算", cause)
+
+/**
+ * 给一段阻塞网络 / 本地准备加硬预算。
+ *
+ * 计时到点后取消同一 [RequestScope] 内的 OkHttp Call；如果代码还没开始发请求，
+ * 下一次进入 [RequestScope.execute] 会立即抛出“请求已取消”，最终统一转换成
+ * [StageTimeoutException]。不依赖协程取消，因为当前启动链路大量使用阻塞调用。
+ */
+class StageDeadline(
+    private val name: String,
+    timeoutMs: Long,
+) : AutoCloseable {
+    private val scope = RequestScope()
+    private val timedOut = AtomicBoolean(false)
+    private val timeout: ScheduledFuture<*>? =
+        if (timeoutMs > 0L) {
+            scheduler.schedule(
+                {
+                    timedOut.set(true)
+                    scope.cancel()
+                },
+                timeoutMs,
+                TimeUnit.MILLISECONDS,
+            )
+        } else {
+            null
+        }
+
+    fun <T> run(action: () -> T): T {
+        try {
+            val value = scope.run(action)
+            if (timedOut.get()) throw StageTimeoutException(name)
+            return value
+        } catch (problem: StageTimeoutException) {
+            throw problem
+        } catch (problem: Throwable) {
+            if (timedOut.get()) throw StageTimeoutException(name, problem)
+            throw problem
+        }
+    }
+
+    override fun close() {
+        timeout?.cancel(false)
+        if (timedOut.get()) scope.cancel()
+    }
+
+    private companion object {
+        private val scheduler = Executors.newScheduledThreadPool(1) { runnable ->
+            Thread(runnable, "hgtv-stage-deadline").apply { isDaemon = true }
         }
     }
 }

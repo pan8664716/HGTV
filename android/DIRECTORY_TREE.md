@@ -184,10 +184,10 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `DeviceFormActivity.kt` | 首页首次启动与设置页共用的设备类型选择器；按页面使用手机 / 电视拟态弹窗，电视支持遥控器，手机 / 平板触摸确认并 6 秒自动返回，电视直接进入。 | class DeviceFormActivity、fun showPhoneChooser、fun showTvChooser、fun startCountdown |
+| `DeviceFormActivity.kt` | 首页首次启动与设置页共用的设备类型选择器；按页面使用手机 / 电视拟态弹窗，电视支持遥控器，手机 / 平板触摸确认并 6 秒自动返回，电视直接进入；记录首次形态选择锚点。 | class DeviceFormActivity、fun showPhoneChooser、fun showTvChooser、fun startCountdown |
 | `HgtvApplication.kt` | 应用进程入口，负责 Application 级初始化和全局运行时装配。 | class HgtvApplication |
-| `HgtvStartup.kt` | 启动页负责的本地初始化。 | object HgtvStartup |
-| `LaunchActivity.kt` | 启动页与设备形态路由入口；首次启动打开统一设备类型选择器，完成后路由到对应主界面。 | class LaunchActivity、fun openDeviceFormSelector、fun targetFor |
+| `HgtvStartup.kt` | 启动页负责的本地初始化；首帧后启动缓存、书库、会话存储，并把心跳、TNC、友盟和备用设备注册延后到播放首帧或兜底超时。 | object HgtvStartup、fun afterFirstFrame、fun onDeviceFormSelected |
+| `LaunchActivity.kt` | 启动页与设备形态路由入口；首次启动打开统一设备类型选择器，完成后路由到对应主界面，并记录首帧链路锚点。 | class LaunchActivity、fun openDeviceFormSelector、fun targetFor |
 
 ### core
 
@@ -425,7 +425,7 @@ android/
 | `NetTiming.kt` | 一次请求的连接耗时分解（调试包专用，见 NetLog.timing）。 | class NetTiming |
 | `OkHttp3Compat.kt` | OkHttp 3.12 is a Java API. These aliases keep the Kotlin call sites written for OkHttp 4 readable while the application needs to support Android 4.4. | val Request.url、val Request.method、val Request.headers、val Request.body、val OkHttpClient.connectionPool、val OkHttpClient.dispatcher |
 | `PublicDns.kt` | 公共 DNS 兜底解析：自己发裸 UDP 查询，不经过系统解析器。 | object PublicDns |
-| `RequestScope.kt` | 请求生命周期与网络失败统一出口，支持取消、诊断和失败记录。 | fun isInterruption、object NetLog、class NetLogLevel、class ApiRequestTrace、val apiRequestSequence、fun requestTrace |
+| `RequestScope.kt` | 请求生命周期与网络失败统一出口，支持取消、诊断、失败记录和启动阶段硬预算。 | fun isInterruption、object NetLog、class NetLogLevel、class RequestScope、class StageDeadline、class StageTimeoutException |
 | `TlsStatus.kt` | 调试面板读取的 TLS 现场。 | object TlsStatus |
 | `TncConfigStore.kt` | TNC 响应：正文以及下一轮条件请求要带的摘要 / ETag。 | class TncResponse、class TncSnapshot、object TncConfigStore |
 
@@ -567,9 +567,9 @@ android/
 | `PhoneActivity.kt` | 手机端 Activity 基类：普通页面由系统在屏幕尺寸或方向变化时重建整页。 | class PhoneActivity |
 | `PhoneConsent.kt` | 手机端的两条「知情同意」，与电视端**同一份文案、同一条语义**（见 :core 的 com.hgtv.star.core.ThirdPartyNotice）。 | object PhoneConsent |
 | `PhoneFirstRunTip.kt` | 首次进入时的「先调一下显示」提示。 | object PhoneFirstRunTip |
-| `PhoneMainActivity.kt` | 手机 / 平板端主界面。 | class PhoneMainActivity |
+| `PhoneMainActivity.kt` | 手机 / 平板端主界面；推荐首屏后预热播放器，分类页延后到推荐首帧或兜底超时再创建。 | class PhoneMainActivity、fun revealPhoneStartup、fun warmStartupPlayer |
 | `PhoneNavigator.kt` | 手机端的路由落地：把 Route 翻译成一个 Intent，交给系统返回栈。 | class PhoneNavigator、fun Context.phoneNav |
-| `PhoneServices.kt` | 手机端的进程级服务入口。 | object PhoneServices、object PhoneDecoder |
+| `PhoneServices.kt` | 手机端的进程级服务入口；支持首屏后提前构建唯一 ExoPlayer。 | object PhoneServices、object PhoneDecoder、fun warmPlayer |
 | `PhoneSession.kt` | 手机端「这一台机器现在在放什么」的进程级事实。 | object PhoneSession |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/account/`
@@ -608,8 +608,8 @@ android/
 | `PhoneFeedChrome.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedChrome 主要包含 fun PhoneFeedView.currentChromePageImpl、fun PhoneFeedView.scheduleChromeHideImpl、fun PhoneFeedView.chromeTimeoutMsImpl、fun PhoneFeedView.revealChromeImpl。 | fun PhoneFeedView.currentChromePageImpl、fun PhoneFeedView.scheduleChromeHideImpl、fun PhoneFeedView.chromeTimeoutMsImpl、fun PhoneFeedView.revealChromeImpl |
 | `PhoneFeedDanmaku.kt` | 取（或建）某一屏的弹幕加载器。 | fun PhoneFeedView.danmakuLoaderOfImpl、fun PhoneFeedView.applyDanmakuSettingsImpl、fun PhoneFeedView.loadDanmakuImpl |
 | `PhoneFeedHide.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedHide 主要包含 fun PhoneFeedView.onHiddenImpl。 | fun PhoneFeedView.onHiddenImpl |
-| `PhoneFeedHost.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedHost 主要包含 fun PhoneFeedView.setGenreImpl、fun PhoneFeedView.onShownImpl、fun PhoneFeedView.onIdentityReadyImpl。 | fun PhoneFeedView.setGenreImpl、fun PhoneFeedView.onShownImpl、fun PhoneFeedView.onIdentityReadyImpl |
-| `PhoneFeedInitializer.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedInitializer 主要包含 fun PhoneFeedView.initializeFeed。 | fun PhoneFeedView.initializeFeed |
+| `PhoneFeedHost.kt` | 手机信息流页面、适配器、手势与预取；只有当前体裁上屏后才触发取流。 | fun PhoneFeedView.setGenreImpl、fun PhoneFeedView.onShownImpl、fun PhoneFeedView.onIdentityReadyImpl |
+| `PhoneFeedInitializer.kt` | 手机信息流页面初始化；先铺快照，不主动为隐藏体裁发请求。 | fun PhoneFeedView.initializeFeed |
 | `PhoneFeedLifecycle.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedLifecycle 主要包含 fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl。 | fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl |
 | `PhoneFeedPageSupport.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedPageSupport 主要包含 fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl。 | fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl |
 | `PhoneFeedPager.kt` | 竖向信息流：**只有明显纵向的手势才滚**。 | class VerticalPagerList、class PageHolder |
@@ -619,7 +619,7 @@ android/
 | `PhoneFeedResume.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedResume 主要包含 fun PhoneFeedView.resumeOnShownImpl。 | fun PhoneFeedView.resumeOnShownImpl |
 | `PhoneFeedSettings.kt` | 信息流长按中间打开的播放设置面板。 | fun PhoneFeedView.openSettingsImpl |
 | `PhoneFeedSurface.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedSurface 主要包含 fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.setUnderlayModeImpl。 | fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.setUnderlayModeImpl |
-| `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放交接、预取和生命周期。 | class PhoneFeedView |
+| `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放交接、预取和生命周期；记录首帧后补流状态。 | class PhoneFeedView、feedFirstFrameFillQueued |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/page/`
 
@@ -637,8 +637,8 @@ android/
 | `PhoneFeedAdvance.kt` | 一集播完：落 completed 进度 → 进正式播放页播下一集（最后一集则换下一部）。 | fun PhoneFeedView.onEpisodeEnded、fun PhoneFeedView.primeHandoff |
 | `PhoneFeedAttach.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneFeedAttach 主要包含 fun PhoneFeedView.attachImpl。 | fun PhoneFeedView.attachImpl |
 | `PhoneFeedControls.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneFeedControls 主要包含 fun PhoneFeedView.togglePlay、fun PhoneFeedView.beginTempSpeed、fun PhoneFeedView.endTempSpeed。 | fun PhoneFeedView.togglePlay、fun PhoneFeedView.beginTempSpeed、fun PhoneFeedView.endTempSpeed |
-| `PhoneFeedData.kt` | 冷启动先铺落盘快照：列表 + 「上一次停在哪」。 | fun PhoneFeedView.restoreSnapshot、fun PhoneFeedView.loadMore、fun PhoneFeedView.refreshAfterIdentity、fun PhoneFeedView.adoptableIndexOf |
-| `PhoneFeedListener.kt` | 挂监听（隐藏时摘掉、回来时重挂：摘掉是为了不让隐藏期间的回调改界面）。 | fun PhoneFeedView.attachFeedListener |
+| `PhoneFeedData.kt` | 冷启动先铺落盘快照；首次无快照只取一个可播放条目，首帧后补齐列表。 | fun PhoneFeedView.restoreSnapshot、fun PhoneFeedView.loadMore、fun PhoneFeedView.scheduleFeedFillAfterFirstFrame、fun PhoneFeedView.refreshAfterIdentity、fun PhoneFeedView.adoptableIndexOf |
+| `PhoneFeedListener.kt` | 挂监听；READY / 首帧后触发补流和统一首帧追踪。 | fun PhoneFeedView.attachFeedListener |
 | `PhoneFeedMetrics.kt` | 与电视端同一套「快速划过 / 划走 / 看过」判定。 | fun PhoneFeedView.settleRecommendWatch、fun PhoneFeedView.reportRecommendImpression、fun PhoneFeedView.scheduleRecommendBatchModels |
 | `PhoneFeedNavigation.kt` | 进播放页。 | fun PhoneFeedView.openPlayer、fun PhoneFeedView.hideChromeForHandoff、fun PhoneFeedView.launchPlayer、fun PhoneFeedView.liveEpisodeOf |
 | `PhoneFeedPageBinding.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneFeedPageBinding 主要包含 fun PhoneFeedView.attachPageImpl。 | fun PhoneFeedView.attachPageImpl |
@@ -671,7 +671,7 @@ android/
 | `PhonePlayerLandscapePanel.kt` | 横屏播放设置外壳：左侧点击收起，右侧一栏承载同一套设置行。 | fun PhonePlayerActivity.openLandscapeSettingsImpl、fun PhonePlayerActivity.dismissLandscapeSettingsImpl、fun PhonePlayerActivity.syncFrameModeImpl、fun PhonePlayerActivity.applyFrameModeImpl |
 | `PhonePlayerLandscapeSettingsFacade.kt` | 横屏播放设置：只保留右侧 40% 的可改栏。 | fun PhonePlayerActivity.openLandscapeSettings、fun PhonePlayerActivity.syncLandscapeSettingsInfo、fun PhonePlayerActivity.dismissLandscapeSettings、fun PhonePlayerActivity.dismissLandscapeSettingsForRelated、fun PhonePlayerActivity.buildSettingsRowsForLandscape、fun PhonePlayerActivity.setChromeVisibleForLandscape |
 | `PhonePlayerLifecycle.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerLifecycle 主要包含 fun PhonePlayerActivity.releasePlayerImpl、fun PhonePlayerActivity.detachForHandoffImpl。 | fun PhonePlayerActivity.releasePlayerImpl、fun PhonePlayerActivity.detachForHandoffImpl |
-| `PhonePlayerListener.kt` | 挂播放器监听（换集时先摘旧的：进程单例上不能越积越多）。 | fun PhonePlayerActivity.attachPlayerListener、fun PhonePlayerActivity.onAdvanced |
+| `PhonePlayerListener.kt` | 挂播放器监听；正式播放首帧写入统一启动追踪。 | fun PhonePlayerActivity.attachPlayerListener、fun PhonePlayerActivity.onAdvanced |
 | `PhonePlayerLoad.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerLoad 主要包含 fun PhonePlayerActivity.load。 | fun PhonePlayerActivity.load |
 | `PhonePlayerMode.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerMode 主要包含 fun PhonePlayerActivity.applyMode。 | fun PhonePlayerActivity.applyMode |
 | `PhonePlayerModeSupport.kt` | 新形态那一层的入场过渡：淡入 + 从 97% 放到原尺寸。 | fun PhonePlayerActivity.animateModeEnter、fun PhonePlayerActivity.syncDanmakuTopInset、fun PhonePlayerActivity.applyLandscapeResize |
@@ -821,7 +821,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `AppVersion.kt` | 应用版本号。 | object AppVersion |
-| `TvMainActivity.kt` | 电视主界面 Activity，持有页面状态、焦点、生命周期和跨页面导航门面。 | class TvMainActivity |
+| `TvMainActivity.kt` | 电视主界面 Activity，持有页面状态、焦点、生命周期和跨页面导航门面；创建与恢复阶段记录统一首帧追踪锚点。 | class TvMainActivity |
 | `TvMainLifecycleFacade.kt` | feature-tv 模块的 TvMainLifecycleFacade.kt 职责。文件 TvMainLifecycleFacade 主要包含 fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory。 | fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory、fun TvMainActivity.handleTrimMemory、fun TvMainActivity.handleDestroy |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/account/`
@@ -853,17 +853,17 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `HomePage.kt` | 首页一栏一屏放满的条数：本机记录与榜单都按它截断，也是「查看全部」入口的门槛。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.historyRows、fun TvMainActivity.favoriteRows、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf |
-| `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址 / 首块优先；播放模型批量预取晚一点再跑。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
+| `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址 / 首块优先；播放模型批量预取晚一点再跑，预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
 | `RecommendControls.kt` | 上下键换剧。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
 | `RecommendCover.kt` | 切换过渡：黑场淡入（把上一部收住）/ 黑场淡出（把这一部放出来）/ 最长遮挡。 | val COVER_IN_MS、val COVER_OUT_MS、val COVER_OUT_FAST_MS、val COVER_MAX_MS、fun TvMainActivity.showRecommendCover、val PICTURE_RECOVERY_LIMIT |
-| `RecommendEntry.kt` | 打开推荐页并自动播放一部推荐。 | fun TvMainActivity.openRecommend、fun TvMainActivity.resumeIndex、fun TvMainActivity.nextRecommendIndex、val RESUME_CACHE_PROBE、fun TvMainActivity.mediaCached |
+| `RecommendEntry.kt` | 打开推荐页并自动播放一部推荐；无快照冷启动先取一个可播放条目，剩余列表在首帧后补齐。 | fun TvMainActivity.openRecommend、fun TvMainActivity.resumeIndex、fun TvMainActivity.nextRecommendIndex、val RESUME_CACHE_PROBE、fun TvMainActivity.mediaCached |
 | `RecommendEpisode.kt` | 「在屏幕上待多久算看了」的两个门槛（都取小一点的那一个判到就算看了）： 停留 6 秒，或者真的播了 5 秒。 | val WATCH_DWELL_MS、val WATCH_PLAY_MS、val QUICK_SWIPE_MS、fun TvMainActivity.settleRecommendWatch、fun TvMainActivity.reportRecommendImpression、fun TvMainActivity.reportRecommendProgress |
 | `RecommendFeedControl.kt` | 冷启动续播时把「取推荐流」推迟到首帧之后（RECOMMEND_FEED_DELAY_MS 兜底）。 | val RECOMMEND_FEED_DELAY_MS、fun TvMainActivity.requestRecommendFeedAfterFirstFrame、fun TvMainActivity.fireRecommendFeed、fun TvMainActivity.cancelRecommendFeed、fun TvMainActivity.closeRecommendCache、fun TvMainActivity.cancelRecommendWarm |
-| `RecommendFeedLoad.kt` | 取一页推荐流。 | fun TvMainActivity.loadRecommendPage、fun TvMainActivity.ensureRecommendLookahead、fun TvMainActivity.settleRecommendLoad |
+| `RecommendFeedLoad.kt` | 取一页推荐流；支持首条快速加载的 minItems 参数并记录统一首帧链路。 | fun TvMainActivity.loadRecommendPage、fun TvMainActivity.ensureRecommendLookahead、fun TvMainActivity.settleRecommendLoad |
 | `RecommendNavigation.kt` | 确定键：进入正式播放界面。 | fun TvMainActivity.enterFormalPlayback、fun TvMainActivity.goHomeFromRecommend、fun TvMainActivity.exitRecommendToHome、fun TvMainActivity.leaveRecommendPlaybackToHome |
 | `RecommendOverlay.kt` | 推荐页底部那块信息浮层：进度 + 剧名 + 操作说明。 | fun TvMainActivity.attachRecommendOverlay、fun TvMainActivity.recommendChip、fun TvMainActivity.dismissRecommendOverlay、fun TvMainActivity.updateRecommendOverlay |
-| `RecommendPage.kt` | 本文件是「推荐」这一条独立的播放链路：抖音式的上下换剧、确定进正片、菜单开播放设置、 返回回主页面。 | val RECOMMEND_SKIP_LIMIT、val RECOMMEND_MAX_CHAIN、val RECOMMEND_FIRST_LIMIT、val RECOMMEND_FIRST_ITEMS、val RECOMMEND_PAGE_LIMIT、val RECOMMEND_LOOKAHEAD |
-| `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend |
+| `RecommendPage.kt` | 本文件是「推荐」这一条独立的播放链路：抖音式的上下换剧、确定进正片、菜单开播放设置、返回回主页面；首条可先起播，列表在首帧后补齐。 | val RECOMMEND_SKIP_LIMIT、val RECOMMEND_MAX_CHAIN、val RECOMMEND_FIRST_LIMIT、val RECOMMEND_FIRST_ITEMS、val RECOMMEND_PAGE_LIMIT、val RECOMMEND_LOOKAHEAD |
+| `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部；推荐详情跳过作者查询并执行阶段预算。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend |
 | `RecommendUi.kt` | 本机兴趣画像（进推荐页时建一次，之后每页复用）。 | fun TvMainActivity.loadGenderOptions、fun TvMainActivity.showRecommendMessage、fun TvMainActivity.showRecommendLoading、fun TvMainActivity.showRecommendToast |
 | `RecommendWarm.kt` | 一次在途的「相邻一部预热」。 | class RecommendWarm |
 | `RecommendWarmDetail.kt` | 同时在途的预热条数上限（WiFi）。 | val RECOMMEND_WARM_SLOTS、val RECOMMEND_WARM_SLOTS_METERED、fun TvMainActivity.warmRecommendDetail、fun TvMainActivity.hasWarmSlot |
@@ -926,15 +926,15 @@ android/
 | `PlaybackRecovery.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackRecovery 主要包含 fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery、fun TvMainActivity.scheduleRecovery、fun playbackMediaKind |
 | `PlaybackSurfaceBuilder.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackSurfaceBuilder 主要包含 fun TvMainActivity.buildPlaybackSurface。 | fun TvMainActivity.buildPlaybackSurface |
 | `PlayerActions.kt` | 播放设置面板**第一行那排动作**（相关剧集 / 作者作品 / 加入收藏 / 查看简介）的实现。 | fun TvMainActivity.showPlayerRelated、fun TvMainActivity.showPlayerAuthorWorks、fun TvMainActivity.showPlayerWorksStrip、fun TvMainActivity.refreshStripData、fun TvMainActivity.showPlayerIntro、fun TvMainActivity.playerFavoriteLabel |
-| `PlayerController.kt` | 电视播放起播内核，负责换集、播放源设置、播放器监听和播放页面装配。 | fun TvMainActivity.loadDanmaku、fun TvMainActivity.playEpisode |
-| `PreloadController.kt` | 推荐页的「双向滑动预加载」编排：窗口与规则在 core/SlideCache.kt（纯逻辑、有单测）， 这里只负责把它翻译成真正的工作——取详情、取地址、解析索引、拉首块，以及什么时候让路。 | fun TvMainActivity.preloadGateOpen、val PRELOAD_MAX_TARGETS、fun TvMainActivity.cancelScheduledPreload、fun TvMainActivity.scheduleRecommendPreload、fun TvMainActivity.scheduleRecommendDwell、fun TvMainActivity.preloadScheduler |
+| `PlayerController.kt` | 电视播放起播内核，负责换集、播放源设置、播放器监听和播放页面装配；取流与本地准备有启动预算并记录首帧。 | fun TvMainActivity.loadDanmaku、fun TvMainActivity.playEpisode |
+| `PreloadController.kt` | 推荐页的「双向滑动预加载」编排：窗口与规则在 core/SlideCache.kt（纯逻辑、有单测），这里负责取详情、取地址、解析索引、拉首块和让路；预热详情不补作者。 | fun TvMainActivity.preloadGateOpen、val PRELOAD_MAX_TARGETS、fun TvMainActivity.cancelScheduledPreload、fun TvMainActivity.scheduleRecommendPreload、fun TvMainActivity.scheduleRecommendDwell、fun TvMainActivity.preloadScheduler |
 | `RelatedPanel.kt` | 播放界面底部的「换一部接着看」浮层。 | class RelatedPanel |
 | `TvDanmakuClock.kt` | 把播放器的当前状态采样给弹幕层。 | fun TvMainActivity.syncDanmakuClock |
 | `TvPlaybackAnalytics.kt` | 播放链路的可观测点：只回答三个问题。 | fun TvMainActivity.playbackAnalytics |
 | `TvPlaybackPreferences.kt` | 本次播放**实际生效**的清晰度上限。 | val TvMainActivity.playbackMaxQuality、val TvMainActivity.playbackDecoderMode、fun TvMainActivity.preparedKeyFor、fun TvMainActivity.playerDecoderMode |
 | `TvPlaybackRunnables.kt` | 播放设置、选集和控制条共用同一枚「无操作自动消失」计时器。 | fun TvMainActivity.runOverlayAutoHide、fun TvMainActivity.runPendingSeek、fun TvMainActivity.runForcedRetire |
 | `TvPlaybackWarmup.kt` | 把「首帧之前才发现很贵」的几处初始化提前做掉。 | fun TvMainActivity.primePlaybackClasses、fun TvMainActivity.probeHardwareHevcDecoder |
-| `TvPlayerBuilder.kt` | 建一个播放器并解析设备 / 网络 / 首帧 EWMA 缓冲档位（**不含挂 Surface**）。 | fun TvMainActivity.buildPlayer、resolveTvBufferProfile |
+| `TvPlayerBuilder.kt` | 建一个播放器并解析设备 / 网络 / 首帧 EWMA 缓冲档位（**不含挂 Surface**）；记录播放器构建链路。 | fun TvMainActivity.buildPlayer、resolveTvBufferProfile |
 | `TvPlayerDecoderSwitch.kt` | 换解码方式：重建播放器并从当前位置接着播。 | fun TvMainActivity.applyDecoderMode |
 | `TvPlayerDecoding.kt` | 按「硬件解码 / 软件解码」筛**视频**解码器。 | fun decoderSelector |
 | `TvPlayerLifecycle.kt` | 构造之后的配置，**只能在主线程调用**。 | fun TvMainActivity.configurePlayer、fun TvMainActivity.attachPlayerView、fun TvMainActivity.warmPlayer、fun TvMainActivity.buildPlayerAsync |
@@ -1076,7 +1076,7 @@ android/
 | `PlaybackDeviceBackups.kt` | 持久备用设备。 | object PlaybackDeviceBackups |
 | `PlaybackTransport.kt` | 播放链路（取地址 / 预热 / 分片读视频）共用的传输层。 | object PlaybackTransport |
 | `ProgressStore.kt` | 观看进度的落盘：**一剧一文件**。 | class ProgressStore |
-| `SessionBootstrap.kt` | 会话装配。 | object SessionBootstrap |
+| `SessionBootstrap.kt` | 会话装配；会话存储可先初始化，心跳客户端按首帧后延后创建。 | object SessionBootstrap、fun initStore、fun startKeeper |
 | `SessionEvents.kt` | 掉线通知。 | object SessionEvents |
 | `SessionMirror.kt` | 设备身份与登录会话的**镜像**（同一份 JSON，沙盒 files/、/sdcard/.hgtv/、Android/data/ / 各存一份）。 | class SessionMirror |
 
@@ -1089,7 +1089,7 @@ android/
 | `Diagnostics.kt` | 全站诊断的唯一出口。 | object Diagnostics、class DiagnosticsException、var debugSink、fun versionName、fun devicePrefix |
 | `NetSpeed.kt` | 调试面板上的「网速」一行：本进程**当前**的收发速率（↓1.2M/s ↑8K/s）。 | object NetSpeed |
 | `PerfStats.kt` | 调试面板上的「性能」一行：CPU / GPU / 内存 / 线程 / 温度 / 刷新率。 | object PerfStats |
-| `StartupTrace.kt` | Temporary cold-start timing trace. Every line uses TAG and Log.w, so it remains visible in release builds where informational logs may be stripped by R8. | object StartupTrace |
+| `StartupTrace.kt` | 启动与首帧追踪基础设施：阶段预算、首帧后延后任务和统一 launch id 链路。所有关键日志使用 TAG 与 Log.w，便于 release 现场排查。 | object StartupTrace、object StartupBudgets、object StartupDeferredTasks、object PlaybackStartupTrace |
 | `TlsSummary.kt` | 把 TLS 能力那一行压成面板上放得下的一句。 | fun compactTls |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/feed/`
@@ -1097,9 +1097,9 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PreloadScheduler.kt` | 推荐流「相邻预热」的**排程编排**：电视与手机共用这一份。 | class PreloadScheduler |
-| `RecommendFeedEngine.kt` | 推荐流的加载、续流、过滤、降级、重排和快照落盘。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult |
+| `RecommendFeedEngine.kt` | 推荐流的加载、续流、过滤、降级、重排和快照落盘；首屏请求按注册、首条和后续页分别执行阶段预算。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult |
 | `RecommendStore.kt` | 推荐流的页面无关状态。 | class RecommendStore |
-| `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 播放地址 → 索引 / 首块。 | class RecommendWarmCoordinator |
+| `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 播放地址 → 索引 / 首块；预热详情不补作者，避免占用首帧路径。 | class RecommendWarmCoordinator |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/lan/`
 
@@ -1118,7 +1118,7 @@ android/
 | `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制。 | class DanmakuView |
 | `MediaSessionHost.kt` | 前台媒体会话：让**遥控器 / 耳机线控 / 锁屏与系统媒体面板**上的播放键能找到本应用。 | class MediaSessionHost |
 | `PlaybackFailures.kt` | 一次播放失败的**归因**：这条错误落在哪条轨上、该按哪一档、哪些档位还能换。 | object PlaybackFailures |
-| `PlaybackMetrics.kt` | 播放现场的「解码事实」：解码器名、初始化耗时、编码格式、丢帧、音频欠载。 | class PlaybackMetrics |
+| `PlaybackMetrics.kt` | 播放现场的「解码事实」：解码器名、初始化耗时、编码格式、丢帧、音频欠载；首帧同时写入统一启动追踪。 | class PlaybackMetrics |
 | `PlayerSourceSwap.kt` | 换媒体源：**先停、再挂**。 | fun ExoPlayer.swapMediaSource |
 | `VideoDataSource.kt` | 共享媒体、弹幕、视频数据源与播放失败解析。文件 VideoDataSource 主要包含 class VideoDataSource。 | class VideoDataSource |
 
@@ -1203,7 +1203,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `RecommendPlaybackController.kt` | 推荐流中“选一部并准备播放”的共享行为。 | class RecommendPlaybackController |
+| `RecommendPlaybackController.kt` | 推荐流中“选一部并准备播放”的共享行为；首播详情跳过作者查询，并对详情、地址、准备阶段执行预算。 | class RecommendPlaybackController |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/feature/search/`
 

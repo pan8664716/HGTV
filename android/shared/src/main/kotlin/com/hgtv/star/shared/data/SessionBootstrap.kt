@@ -38,6 +38,7 @@ object SessionBootstrap {
     @Volatile private var pendingForce = false
     /** 建 keeper 的线程是否还在跑：`shutdown()` 之后它若才建完，要当场收掉。 */
     @Volatile private var stopped = false
+    @Volatile private var keeperStarting = false
 
     /**
      * 心跳用的设备档案。`Application.onCreate` 时还没有登录凭据，先用 SP 里那份；
@@ -62,8 +63,24 @@ object SessionBootstrap {
         log: (String) -> Unit = {},
         onExpired: (String) -> Unit = {}
     ) {
+        initStore(context, store, log, onExpired)
+        startKeeper()
+    }
+
+    /**
+     * 只装配会话状态，不创建心跳客户端。
+     *
+     * 注册、Cookie 续期和 `onAppStart()` 都依赖 [store]；但真正创建 keeper 要解析
+     * 系统根证书表，属于首帧之后的延后工作。把两者拆开可以让注册落盘尽早可用。
+     */
+    fun initStore(
+        context: Context,
+        store: AppSessionStore,
+        log: (String) -> Unit = {},
+        onExpired: (String) -> Unit = {}
+    ) {
         val startedAt=StartupTrace.now()
-        StartupTrace.mark("session.init.start")
+        StartupTrace.mark("session.store.start")
         this.store = store
         device = store.deviceProfile
         SessionBridge.state = store
@@ -72,6 +89,17 @@ object SessionBootstrap {
         SessionBridge.onTokenChanged = { token -> log("token rotated len=${token.length}") }
         logSink = log
         stopped = false
+        StartupTrace.done("session.store",startedAt)
+    }
+
+    /** 首帧之后启动心跳；重复调用不会创建第二个 keeper。 */
+    fun startKeeper() {
+        synchronized(this) {
+            if (keeper != null || keeperStarting || stopped) return
+            keeperStarting = true
+        }
+        val startedAt=StartupTrace.now()
+        StartupTrace.mark("session.keeper.schedule")
         // **不能在主线程建**：`SessionClients.forBeat()` 会建一个 OkHttpClient，
         // 而建 client 要解析系统根证书表（150 张 PEM，实测 2.5~3.0 秒）。
         // 这一段原先在 `Application.onCreate` 里同步跑，正是冷启动里最贵的那 3 秒
@@ -79,10 +107,14 @@ object SessionBootstrap {
         Thread({
             val workerStarted=StartupTrace.now()
             StartupTrace.mark("session.keeper.start")
-            buildKeeper()
-            StartupTrace.done("session.keeper",workerStarted)
+            try {
+                buildKeeper()
+            } finally {
+                keeperStarting = false
+                StartupTrace.done("session.keeper",workerStarted)
+            }
         }, "hgtv-session-init").start()
-        StartupTrace.done("session.init",startedAt)
+        StartupTrace.done("session.keeper.schedule",startedAt)
     }
 
     /** 在后台线程上建心跳（见 [init]）；建好之前 [onAppStart] 只记账。 */

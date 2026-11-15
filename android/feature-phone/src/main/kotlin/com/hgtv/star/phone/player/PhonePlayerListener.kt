@@ -8,6 +8,7 @@ import com.google.android.exoplayer2.video.VideoSize
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
 import com.hgtv.star.phone.ui.resizeMode
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
 
 /** 挂播放器监听（换集时先摘旧的：进程单例上不能越积越多）。 */
 internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
@@ -114,6 +115,7 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
         override fun onRenderedFirstFrame() {
             // 部分设备只回调首帧、不走逐帧心跳；首帧同样是画面已经上屏的硬证据。
             watchdog.onFrame()
+            PlaybackStartupTrace.firstFrame("phone.player")
         }
 
         override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {

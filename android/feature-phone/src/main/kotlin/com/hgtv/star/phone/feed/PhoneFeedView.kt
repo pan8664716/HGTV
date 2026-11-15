@@ -410,12 +410,16 @@ class PhoneFeedView(
     /** 推荐页起播后的 6 个模型批量预取（当前剧下一集 + 后 5 部不同剧）。 */
     private var recommendBatchKey = ""
     private var recommendBatchJob: Job? = null
+    private var firstFrameFillQueued = false
     internal var feedRecommendBatchKey: String
         get()=recommendBatchKey
         set(value) { recommendBatchKey=value }
     internal var feedRecommendBatchJob: Job?
         get()=recommendBatchJob
         set(value) { recommendBatchJob=value }
+    internal var feedFirstFrameFillQueued: Boolean
+        get()=firstFrameFillQueued
+        set(value) { firstFrameFillQueued=value }
 
     private val hint = TextView(context).apply {
         setTextColor(Color.WHITE)

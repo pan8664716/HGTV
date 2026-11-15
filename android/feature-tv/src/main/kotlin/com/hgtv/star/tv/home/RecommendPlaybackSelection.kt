@@ -4,6 +4,9 @@ package com.hgtv.star.tv
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.detail
 import com.hgtv.star.core.lruPut
+import com.hgtv.star.core.StageDeadline
+import com.hgtv.star.shared.debug.PlaybackStartupTrace
+import com.hgtv.star.shared.debug.StartupBudgets
 import com.hgtv.star.shared.debug.StartupTrace
 
 /**
@@ -62,16 +65,31 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
         showCenterLoading("正在加载《${series.title}》…")
     }
     val detailStarted=StartupTrace.now()
+    val playbackDetailStarted=PlaybackStartupTrace.begin(
+        "detail",
+        "id=${series.id} cached=${cached!=null}",
+    )
     StartupTrace.mark("recommend.detail.request", "index=$safe id=${series.id}")
     io.submit {
         // `cached=true`：推荐页起播只要「第 1 集是哪个 vid」。详情页仍然现取（见 `ContentRepository.detail`），
         // 但这里命中落盘缓存就省掉 0.4~0.6s——进程被回收过之后那一次尤其明显。
-        val result=runCatching { repository.detail(series.id,cached=true) }
+        val result=runCatching {
+            StageDeadline("recommend.detail",StartupBudgets.DETAIL_MS).use { deadline ->
+                deadline.run {
+                    repository.detail(series.id,cached=true,includeAuthor=false)
+                }
+            }
+        }
         main.post {
             StartupTrace.done(
                 "recommend.detail.request",
                 detailStarted,
                 "index=$safe success=${result.isSuccess}",
+            )
+            PlaybackStartupTrace.done(
+                "detail",
+                playbackDetailStarted,
+                "id=${series.id} success=${result.isSuccess}",
             )
             if(isDestroyed || screen!="recommend") return@post
             result.onSuccess { data ->
