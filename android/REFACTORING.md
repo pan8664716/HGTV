@@ -4373,7 +4373,7 @@ feature-tv/
 
 ## 移除备用设备链路
 
-状态：已实现，debug 构建和 ADB 后续启动验证通过，首次安装回归待测。
+状态：已实现，debug 构建和 ADB 首次 / 后续启动采样通过。
 
 - Android 不再注册、持久化或轮换备用播放设备，启动任务 `startup.backupDevices` 已删除。
 - 删除 `PlaybackDeviceBackups`、`PlaybackBackupDevice`、匿名备用设备注册门面及其
@@ -4383,8 +4383,9 @@ feature-tv/
   主身份自愈保留。
 - 启动页仍可在首帧后补绑用户选择的设备形态，但不再排定备用设备任务。首帧后的
   延迟任务由 4 个降为 3 个（会话保活、TNC 刷新、友盟）。
-- ADB 后续启动采样（S905L3B / Android 9）未出现 `identity=anonymous` 的
-  `/service/2/device_register/`，首帧后任务数为 3。
+- ADB 首次安装采样（S905L3B / Android 9，应用数据清空）首帧约 15.8 秒，后续启动
+  约 7.2 秒；两次均未出现 `identity=anonymous` 的 `/service/2/device_register/`，
+  首帧后任务数为 3。
 - `:app:assembleDebug` 使用 JDK 17 通过；未修改版本号、versionCode、依赖或 iOS 代码。
 
 回滚：对本节对应提交执行 `git revert`。
