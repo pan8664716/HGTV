@@ -261,7 +261,7 @@ class PhoneMainActivity : PhoneActivity() {
             }, "hgtv-phone-network-warm").apply { isDaemon = true }.start()
             if(!isFinishing && !isDestroyed && current==0) warmStartupPlayer(lib)
             // 分类页不是首帧依赖。等推荐首帧或 12 秒兜底后再建，避免和推荐 / 注册抢带宽。
-            StartupDeferredTasks.schedule("phone.categoryPreload",12_000L) {
+            StartupDeferredTasks.schedule("phone.categoryPreload",20_000L) {
                 debugRoot.post {
                     if(!isFinishing && !isDestroyed) preloadCategoryPage()
                 }

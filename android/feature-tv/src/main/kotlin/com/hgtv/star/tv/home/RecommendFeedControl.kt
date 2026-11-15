@@ -10,8 +10,10 @@ package com.hgtv.star.tv
  *
  * 推迟不会让「新内容」晚太多：续播的首帧正常 0.7~1.2 秒，那时才发；
  * 而它本身就是补在列表末尾的（`recommendRestored` 分支只往后接），用户在看第一部时它早就回来了。
+ * 兜底时间留到 8 秒，避免首次安装的注册、详情和播放准备较慢时，
+ * 推荐补页在真正出画面前抢同一条下行。
  */
-private const val RECOMMEND_FEED_DELAY_MS=3_000L
+private const val RECOMMEND_FEED_DELAY_MS=8_000L
 
 fun TvMainActivity.requestRecommendFeedAfterFirstFrame() {
     if(recommendFeedPending) return

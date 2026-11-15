@@ -60,7 +60,6 @@ object StartupTrace {
 object StartupBudgets {
     const val REGISTER_MS = 6_000L
     const val FEED_FIRST_MS = 4_000L
-    const val FEED_PAGE_MS = 8_000L
     const val DETAIL_MS = 4_000L
     const val STREAM_MS = 6_000L
     const val PREPARE_MS = 8_000L
@@ -86,7 +85,7 @@ object StartupDeferredTasks {
         Thread(runnable, "hgtv-startup-deferred").apply { isDaemon = true }
     }
 
-    fun schedule(key: String, timeoutMs: Long = 10_000L, action: () -> Unit) {
+    fun schedule(key: String, timeoutMs: Long = 20_000L, action: () -> Unit) {
         var runNow = false
         synchronized(lock) {
             if (!scheduledKeys.add(key)) return

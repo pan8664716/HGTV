@@ -60,10 +60,10 @@ internal object HgtvStartup {
         // 会话存储必须先装配，设备注册 Cookie 才有地方落盘；心跳客户端延后创建。
         initSessionStore(app)
         preload(app)
-        StartupDeferredTasks.schedule("startup.sessionKeeper",8_000L) {
+        StartupDeferredTasks.schedule("startup.sessionKeeper",20_000L) {
             startSessionKeeper()
         }
-        StartupDeferredTasks.schedule("startup.umeng",10_000L) {
+        StartupDeferredTasks.schedule("startup.umeng",25_000L) {
             initUmeng(app)
         }
     }
@@ -117,7 +117,7 @@ internal object HgtvStartup {
                 onFailure={ deviceFormSelected.set(false) },
                 onReady={
                     IdentityBinder.bind(library,AppRuntime.repository(app))
-                    StartupDeferredTasks.schedule("startup.backupDevices",10_000L) {
+                    StartupDeferredTasks.schedule("startup.backupDevices",25_000L) {
                         PlaybackDeviceBackups.start(app)
                     }
                 },
@@ -208,7 +208,7 @@ internal object HgtvStartup {
         if(!runtimeStarted.compareAndSet(false,true)) return
         startCaches(context)
         initSessionStore(context)
-        StartupDeferredTasks.schedule("startup.sessionKeeper",8_000L) {
+        StartupDeferredTasks.schedule("startup.sessionKeeper",20_000L) {
             startSessionKeeper()
         }
     }
@@ -247,7 +247,7 @@ internal object HgtvStartup {
             }.onFailure { problem -> Diagnostics.warn("HGTV-CACHE","缓存目录初始化失败",problem) }
         }
         // TNC 使用落盘快照即可完成首屏；条件刷新放到首帧之后。
-        StartupDeferredTasks.schedule("startup.tncRefresh",8_000L) {
+        StartupDeferredTasks.schedule("startup.tncRefresh",20_000L) {
             runCatching { AppRuntime.repository(context).refreshTncAsync(force=true) }
         }
     }

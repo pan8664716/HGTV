@@ -99,30 +99,34 @@ class RecommendFeedEngine(
             requests++
             val startedAt = now()
             val attempt = runCatching {
-                if (!input.append && requests == 1) {
+                if (!input.append && !input.restored && requests == 1) {
                     StageDeadline("recommend.register", StartupBudgets.REGISTER_MS).use { deadline ->
                         deadline.run { input.ensureRegistered() }
                     }
                 } else {
                     input.ensureRegistered()
                 }
-                val requestBudget = if (!input.append && processedPages == 0) {
-                    StartupBudgets.FEED_FIRST_MS
-                } else {
-                    StartupBudgets.FEED_PAGE_MS
+                // 只有“真正无快照的首条”使用首屏预算；快照补齐虽然 append=false，
+                // 但它已经在首帧之后，属于后台补页，不能套 4 秒的首条门槛。
+                val criticalFirstRequest = !input.append && !input.restored && processedPages == 0
+                val request = {
+                    repository.recommendFeed(
+                        selection = CategorySelection(gender = gender),
+                        sessionId = session,
+                        offset = requestOffset,
+                        limit = limit,
+                        genres = input.genres,
+                        filterIds = filters,
+                        tab = input.tab,
+                    )
                 }
-                StageDeadline("recommend.feed", requestBudget).use { deadline ->
-                    deadline.run {
-                        repository.recommendFeed(
-                            selection = CategorySelection(gender = gender),
-                            sessionId = session,
-                            offset = requestOffset,
-                            limit = limit,
-                            genres = input.genres,
-                            filterIds = filters,
-                            tab = input.tab,
-                        )
+                if (criticalFirstRequest) {
+                    StageDeadline("recommend.feed", StartupBudgets.FEED_FIRST_MS).use { deadline ->
+                        deadline.run(request)
                     }
+                } else {
+                    // 首帧后的补页 / 翻页不参与启动预算，避免后台请求慢时误报失败。
+                    request()
                 }
             }
             if(attempt.isFailure) {

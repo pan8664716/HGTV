@@ -102,7 +102,6 @@ fun TvMainActivity.openRecommend() {
         playRecommendAt(resume)
         if(recommendItems.size<RECOMMEND_FIRST_ITEMS) {
             requestRecommendFeedAfterFirstFrame()
-            fireRecommendFeed()
         }
     } else if(snapshot.isNotEmpty()) {
         val resume=resumeIndex(snapshot)
@@ -116,12 +115,9 @@ fun TvMainActivity.openRecommend() {
             "disk=${if(mediaCached(snapshot[resume])) "full" else "partial"}")
         playRecommendAt(resume)
         // 流**先不取**：这一部的详情 / 地址 / 索引 / 首块都在盘上，首帧只等解码。
-        // 这时候再插一个取流的 POST 只会和出帧抢那一点带宽与 CPU。等 READY 再取
-        // （见 `playEpisode` 的 READY 分支），3 秒还没出画面就按超时取。
+        // 这时候再插一个取流的 POST 只会和出帧抢那一点带宽与 CPU。等 READY 再取；
+        // 8 秒还没出画面才按兜底超时取。
         requestRecommendFeedAfterFirstFrame()
-        // 只有 3 条缓存时不能再等首帧后的 3 秒：这段时间用户只能反复看到同一小批，
-        // 立即补一页，让推荐列表尽快扩到可用规模。
-        if(snapshot.size<RECOMMEND_FIRST_ITEMS) fireRecommendFeed()
     } else showRecommendMessage("正在加载推荐…",loading=true)
     if(snapshot.isEmpty()) {
         // 没有任何快照（第一次装 / 清过缓存）：整屏只有一行字，这一部只能由流决定。

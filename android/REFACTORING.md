@@ -4390,6 +4390,9 @@ feature-tv/
 - 新增统一 `PlaybackStartupTrace`：使用同一 launch id 记录启动、推荐首条、详情、
   地址、视频准备、播放器构建和首帧；日志标签仍为 `HGTV-STARTUP-PROF`。
 - 同步更新 `android/DIRECTORY_TREE.md` 的启动、推荐、手机信息流和 TV 播放文件职责。
+- ADB 真机验证（S905L3B / Android 9）：首次安装完成电视形态选择后到首帧约 11.7 秒；
+  其中首条推荐请求约 3.1 秒、详情约 1.4 秒、地址约 1.2 秒、视频准备约 1.2 秒。
+  后续冷启动首帧约 6.1 秒；推荐补页在首帧之后才发出，后台补页约 11.6 秒完成且不再误报超时。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或 iOS 代码。
 
 回滚：对本节对应提交执行 `git revert`。

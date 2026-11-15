@@ -858,7 +858,7 @@ android/
 | `RecommendCover.kt` | 切换过渡：黑场淡入（把上一部收住）/ 黑场淡出（把这一部放出来）/ 最长遮挡。 | val COVER_IN_MS、val COVER_OUT_MS、val COVER_OUT_FAST_MS、val COVER_MAX_MS、fun TvMainActivity.showRecommendCover、val PICTURE_RECOVERY_LIMIT |
 | `RecommendEntry.kt` | 打开推荐页并自动播放一部推荐；无快照冷启动先取一个可播放条目，剩余列表在首帧后补齐。 | fun TvMainActivity.openRecommend、fun TvMainActivity.resumeIndex、fun TvMainActivity.nextRecommendIndex、val RESUME_CACHE_PROBE、fun TvMainActivity.mediaCached |
 | `RecommendEpisode.kt` | 「在屏幕上待多久算看了」的两个门槛（都取小一点的那一个判到就算看了）： 停留 6 秒，或者真的播了 5 秒。 | val WATCH_DWELL_MS、val WATCH_PLAY_MS、val QUICK_SWIPE_MS、fun TvMainActivity.settleRecommendWatch、fun TvMainActivity.reportRecommendImpression、fun TvMainActivity.reportRecommendProgress |
-| `RecommendFeedControl.kt` | 冷启动续播时把「取推荐流」推迟到首帧之后（RECOMMEND_FEED_DELAY_MS 兜底）。 | val RECOMMEND_FEED_DELAY_MS、fun TvMainActivity.requestRecommendFeedAfterFirstFrame、fun TvMainActivity.fireRecommendFeed、fun TvMainActivity.cancelRecommendFeed、fun TvMainActivity.closeRecommendCache、fun TvMainActivity.cancelRecommendWarm |
+| `RecommendFeedControl.kt` | 冷启动续播时把「取推荐流」推迟到首帧之后，8 秒仅作无首帧兜底。 | val RECOMMEND_FEED_DELAY_MS、fun TvMainActivity.requestRecommendFeedAfterFirstFrame、fun TvMainActivity.fireRecommendFeed、fun TvMainActivity.cancelRecommendFeed、fun TvMainActivity.closeRecommendCache、fun TvMainActivity.cancelRecommendWarm |
 | `RecommendFeedLoad.kt` | 取一页推荐流；支持首条快速加载的 minItems 参数并记录统一首帧链路。 | fun TvMainActivity.loadRecommendPage、fun TvMainActivity.ensureRecommendLookahead、fun TvMainActivity.settleRecommendLoad |
 | `RecommendNavigation.kt` | 确定键：进入正式播放界面。 | fun TvMainActivity.enterFormalPlayback、fun TvMainActivity.goHomeFromRecommend、fun TvMainActivity.exitRecommendToHome、fun TvMainActivity.leaveRecommendPlaybackToHome |
 | `RecommendOverlay.kt` | 推荐页底部那块信息浮层：进度 + 剧名 + 操作说明。 | fun TvMainActivity.attachRecommendOverlay、fun TvMainActivity.recommendChip、fun TvMainActivity.dismissRecommendOverlay、fun TvMainActivity.updateRecommendOverlay |
@@ -1097,7 +1097,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PreloadScheduler.kt` | 推荐流「相邻预热」的**排程编排**：电视与手机共用这一份。 | class PreloadScheduler |
-| `RecommendFeedEngine.kt` | 推荐流的加载、续流、过滤、降级、重排和快照落盘；首屏请求按注册、首条和后续页分别执行阶段预算。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult |
+| `RecommendFeedEngine.kt` | 推荐流的加载、续流、过滤、降级、重排和快照落盘；无快照首条执行注册和首屏请求预算，首帧后的补页不参与启动超时。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult |
 | `RecommendStore.kt` | 推荐流的页面无关状态。 | class RecommendStore |
 | `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 播放地址 → 索引 / 首块；预热详情不补作者，避免占用首帧路径。 | class RecommendWarmCoordinator |
 

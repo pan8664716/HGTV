@@ -147,6 +147,9 @@ fun TvMainActivity.loadRecommendPage(
  */
 fun TvMainActivity.ensureRecommendLookahead() {
     if(screen!="recommend" || recommendLoading || !recommendHasMore) return
+    // 快照 / 首条起播期间，补页由首帧后的 requestRecommendFeedAfterFirstFrame 负责。
+    // 这里如果立即补，会把新推荐流插到注册、详情、取地址和首帧之间。
+    if(recommendRestored) return
     if(recommendItems.isEmpty()) return
     if(recommendItems.size-recommendIndex-1>RECOMMEND_LOOKAHEAD) return
     val now=android.os.SystemClock.elapsedRealtime()
