@@ -4885,6 +4885,9 @@ feature-tv/
   是否已从镜像或旧数据恢复；本次安装未完成选择时一定先弹窗，返回键和点外部都不能跳过。
 - 设置页不再各自实现设备类型 picker；手机与 TV 都启动同一个 `DeviceFormActivity`，
   手机 / 平板使用 `PhoneDialog`，电视使用 `TvDialog`，首页与对应设置页的拟态样式一致。
+- 首页选择电视样式时同时参考 `LEANBACK_LAUNCHER`、电视探测结果与方向键输入来源；
+  `TvDialog` 在窗口真正获得焦点后补落初始焦点，第一次按方向键 / 确定键也会主动补焦点，
+  避免新 Activity 的弹窗在电视上只能触摸、遥控器无响应。
 - `DeviceFormDialogTheme` 必须继承 `AppTheme` 后再设透明窗口；不能直接继承
   `Theme.Translucent.NoTitleBar`，否则 21+ 的 `AlertDialog` 会解析到 Holo 弹框主题，
   窗口尺寸、内边距和字体与 1.3.7.3 设置页不一致。

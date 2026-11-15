@@ -76,6 +76,8 @@ enum class DeviceForm(val label: String) {
 data class DeviceProfile(
     val form: DeviceForm,
     val touch: Boolean,
+    /** 输入子系统里存在方向键来源；电视遥控器、游戏手柄与部分键盘都会提供。 */
+    val remote: Boolean,
     val swDp: Int,
     val diagonalIn: Float,
     val score: Int,
@@ -225,7 +227,7 @@ fun Context.detectDeviceForm(): DeviceProfile {
         facts.swDp >= 600 -> DeviceForm.TABLET
         else -> DeviceForm.PHONE
     }
-    return DeviceProfile(form, touch, facts.swDp, facts.diagonalIn, score, hits)
+    return DeviceProfile(form, touch, dpad, facts.swDp, facts.diagonalIn, score, hits)
 }
 
 /**

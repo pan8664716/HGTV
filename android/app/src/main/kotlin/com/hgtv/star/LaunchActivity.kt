@@ -208,7 +208,7 @@ class LaunchActivity : Activity() {
             this,
             firstRun=true,
             currentForm=storedDeviceForm()?.let { DeviceForm.storedValue(it) },
-            tvStyle=leanbackLaunch || profile.form==DeviceForm.TV || !profile.touch,
+            tvStyle=leanbackLaunch || profile.form==DeviceForm.TV || profile.remote || !profile.touch,
         )
         val started=runCatching { startActivityForResult(intent,REQUEST_DEVICE_FORM) }.isSuccess
         if(!started) {

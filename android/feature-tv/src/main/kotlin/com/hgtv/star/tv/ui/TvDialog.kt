@@ -6,6 +6,7 @@ import android.view.Gravity
 import android.view.KeyEvent
 import android.view.View
 import android.view.ViewGroup
+import android.view.ViewTreeObserver
 import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.ScrollView
@@ -246,6 +247,9 @@ class TvDialog(private val activity: Activity, title: String) {
     /** 调用方另外挂的关闭收尾（见 [setOnDismissExtra]）。 */
     private var extraDismiss: (() -> Unit)? = null
     private var anchor: View? = null
+    private var initialFocusPending = false
+    private var focusRoot: View? = null
+    private var focusObserver: ViewTreeObserver.OnWindowFocusChangeListener? = null
 
     val isShowing: Boolean get() = dialog?.isShowing == true
 
@@ -487,6 +491,7 @@ class TvDialog(private val activity: Activity, title: String) {
         onDismiss: () -> Unit = {},
     ) {
         if (isShowing) return
+        clearInitialFocusObserver()
         this.anchor = anchor
         dismissed = onDismiss
         closing = false
@@ -512,6 +517,23 @@ class TvDialog(private val activity: Activity, title: String) {
             // 触屏专用确认框不接受遥控器 / 键盘：连返回键也不生效，只能触摸确认或等待倒计时。
             if (touchOnly) return@setOnKeyListener true
             if (mandatory && keyCode == KeyEvent.KEYCODE_BACK) return@setOnKeyListener true
+            // 首页选择器是新 Activity 时，弹窗窗口可能比 `body.post` 更晚拿到焦点。
+            // 此时第一次按方向键不会经过任何子控件，先在窗口层把焦点补上。
+            val noFocus = next.window?.decorView?.findFocus()==null
+            if(event.action==KeyEvent.ACTION_DOWN && noFocus && keyCode in setOf(
+                    KeyEvent.KEYCODE_DPAD_UP,
+                    KeyEvent.KEYCODE_DPAD_DOWN,
+                    KeyEvent.KEYCODE_DPAD_LEFT,
+                    KeyEvent.KEYCODE_DPAD_RIGHT,
+                    KeyEvent.KEYCODE_DPAD_CENTER,
+                    KeyEvent.KEYCODE_ENTER,
+                    KeyEvent.KEYCODE_BUTTON_A,
+                )
+            ) {
+                initialFocusPending=true
+                body.post { requestInitialFocus() }
+                return@setOnKeyListener true
+            }
             when (keyCode) {
                 KeyEvent.KEYCODE_SEARCH -> true
                 KeyEvent.KEYCODE_BACK -> {
@@ -523,6 +545,7 @@ class TvDialog(private val activity: Activity, title: String) {
         }
         next.setOnDismissListener {
             if (dialog === next) {
+                clearInitialFocusObserver()
                 dialog = null
                 val done = dismissed
                 dismissed = null
@@ -539,6 +562,20 @@ class TvDialog(private val activity: Activity, title: String) {
         }
         dialog = next
         next.show()
+        if(!touchOnly) {
+            initialFocusPending=true
+            val root=next.window?.decorView
+            if(root!=null) {
+                val listener=ViewTreeObserver.OnWindowFocusChangeListener { hasFocus ->
+                    if(hasFocus) root.post { requestInitialFocus() }
+                }
+                focusRoot=root
+                focusObserver=listener
+                root.viewTreeObserver.addOnWindowFocusChangeListener(listener)
+                if(root.hasWindowFocus()) root.post { requestInitialFocus() }
+                body.postDelayed({ requestInitialFocus() },120L)
+            }
+        }
         next.window?.apply {
             // 弹窗是一块独立的大圆角面板：超大圆角（56）+ 深投影 + 一圈极淡的焦点色描边。
             // 描边不是「线框」，只是把面板从压暗的背景里勾出来一档（设计稿 `0 0 0 1px --focus 13%`）。
@@ -571,14 +608,42 @@ class TvDialog(private val activity: Activity, title: String) {
             // 按真实窗口高度收进屏幕：比例算不准的那些情况（系统字号放大、系统栏特别高、
             // 分屏）全靠这一道兜底，按钮行不会再被裁在窗口下面。
             fitToWindow()
-            if (touchOnly) return@post
-            val landing = if (contentFirst) content.firstFocusable() ?: items.firstChildOrNull() else null
-            (landing ?: if (items.childCount > 0) items.getChildAt(0) else buttons.firstOrNull())?.requestFocus()
+            if (touchOnly) {
+                initialFocusPending=false
+                return@post
+            }
+            requestInitialFocus()
             // 封顶由 [ContentHost] 的测量负责，这里只补一次焦点接线兜底
             // （内容为空时测量里不会报「溢出」，也就不会有人来接线）。
             wireContentFocus(content.height > contentCap())
             wireListExit()
         }
+    }
+
+    /** 窗口真正获得焦点后补落初始焦点；只执行一次，避免后续恢复窗口时抢走用户焦点。 */
+    private fun requestInitialFocus() {
+        if(!initialFocusPending || !isShowing) return
+        val landing = if (contentFirst) content.firstFocusable() ?: items.firstChildOrNull() else null
+        val target=landing ?: if (items.childCount > 0) items.getChildAt(0) else buttons.firstOrNull()
+        if(target==null) {
+            initialFocusPending=false
+            return
+        }
+        target.requestFocus()
+        target.post {
+            if(target.hasFocus()) initialFocusPending=false
+        }
+    }
+
+    private fun clearInitialFocusObserver() {
+        val root=focusRoot
+        val observer=focusObserver
+        if(root!=null && observer!=null && root.viewTreeObserver.isAlive) {
+            root.viewTreeObserver.removeOnWindowFocusChangeListener(observer)
+        }
+        focusRoot=null
+        focusObserver=null
+        initialFocusPending=false
     }
 
     /**

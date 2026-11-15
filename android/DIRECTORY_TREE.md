@@ -184,7 +184,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `DeviceFormActivity.kt` | 首页首次启动与设置页共用的设备类型选择器；按页面使用手机 / 电视拟态弹窗，手机 / 平板触摸确认并 6 秒自动返回，电视直接进入。 | class DeviceFormActivity、fun showPhoneChooser、fun showTvChooser、fun startCountdown |
+| `DeviceFormActivity.kt` | 首页首次启动与设置页共用的设备类型选择器；按页面使用手机 / 电视拟态弹窗，电视支持遥控器，手机 / 平板触摸确认并 6 秒自动返回，电视直接进入。 | class DeviceFormActivity、fun showPhoneChooser、fun showTvChooser、fun startCountdown |
 | `HgtvApplication.kt` | 应用进程入口，负责 Application 级初始化和全局运行时装配。 | class HgtvApplication |
 | `HgtvStartup.kt` | 启动页负责的本地初始化。 | object HgtvStartup |
 | `LaunchActivity.kt` | 启动页与设备形态路由入口；首次启动打开统一设备类型选择器，完成后路由到对应主界面。 | class LaunchActivity、fun openDeviceFormSelector、fun targetFor |
@@ -984,7 +984,7 @@ android/
 | `SettingSlider.kt` | 设置页里「项名 + 滑轨」合成一行的滑动条。 | class SettingSlider |
 | `ToggleChip.kt` | 互斥开关（排行榜页的四个榜单、分类页的大类与小类）：就是统一按钮的选中态——按进去的凹槽。 | class ToggleChip |
 | `TvComponents.kt` | 电视端通用控件集合，承载按钮、卡片、开关、标签等基础 UI。 | fun Context.tvDp、fun Context.softBand、fun Context.softBandLarge、fun Context.tvText、fun T.focusOverflow、fun ScrollView.focusBleed |
-| `TvDialog.kt` | 电视端统一模态框，管理标题、内容、列表、按钮、焦点与关闭动画；支持 mandatory、touch-only 与 remote-only 输入模式。 | class TvDialog、fun show |
+| `TvDialog.kt` | 电视端统一模态框，管理标题、内容、列表、按钮、焦点与关闭动画；支持 mandatory、touch-only、remote-only 与窗口焦点后补落初始焦点。 | class TvDialog、fun show、fun requestInitialFocus |
 | `TvDialogFocus.kt` | 电视共用控件、弹窗、样式、键盘与工具。文件 TvDialogFocus 主要包含 fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable。 | fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable |
 | `TvStyle.kt` | 电视端设计令牌：新拟态（Neumorphism / Soft UI）。 | object TvStyle |
 | `TvSwitchRow.kt` | 设置页的整行开关：左边是项名，右边是一枚自绘的轨道 + 圆钮。 | class TvSwitchRow |
