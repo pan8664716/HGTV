@@ -24,27 +24,29 @@ data class CategoryGroup(val label: String, val path: String, val genre: String,
  * | 真人 | `real-drama` | `short_play` | 全部 + 29 |
  * | AI剧 | `ai-drama` | `ai_series` | 全部 + 12 |
  *
- * 来源分两处，都是**接口自己的数据**（2026-10-19 实测）：
+ * 来源分两处，都是**接口自己的数据**（2026-11-16 复核）：
  *
- * * 真人：接口的 `selector_rows` 里 `category_dim_theme` 那一行（`need_selector_panel=true` 才给）。
- *   这一行**只对 `genre=short_play` 有效**：换别的 `genre` 时接口回的是同一份默认行，
- *   按那份标识去筛漫剧 / AI 剧一律 0 条（实测 34 个标识里只有 11 个能筛出内容）。
- * * 漫剧 / AI剧：从**接口返回的内容自己的题材**里采集——把热门前 500 部每条的 `category_schema`
- *   里的 `(category_id, name)` 按出现次数排序，取前 12 个。这样每一个小类都保证筛得出内容。
+ * * 真人：接口的 `selector_rows` 里的主题 / 设定 / 背景行（`need_selector_panel=true` 才给）。
+ * * 漫剧 / AI剧：接口返回的主题 / 设定 / 背景默认行只对真人有效，按那份标识筛会得到 0 条。
+ *   因此从内容自己的 `category_schema` 里采集 `(category_id, name)`：主题按出现频次取前 12 个，
+ *   设定 / 背景按中文名与真人筛选项精确匹配，只保留该体裁内容里实际存在的选项。
  *
  * 具体做法可以这么复现（改这张表时照做一遍）：
  *
  * 1. 真人：`POST /reading/distribution/category/landpage/v/` 带
  *    `{"need_selector_panel":true,"select_items":{"genre":["short_play"]}}`，取 `selector_rows` 里
- *    `type=category_dim_theme` 的那一行；
+ *    `type=category_dim_theme / category_dim_role / category_dim_epoch` 的三行；
  * 2. 漫剧 / AI剧：同一个接口、`genre=["comic_series"]` / `["ai_series"]`、`sort=["hot_score"]`、
- *    `offset` 取 0/100/200/300/400，统计返回条目 `category_schema` 里的 `(category_id,name)` 频次；
+ *    `offset` 取 0/100/200/300/400，统计返回条目 `category_schema` 里的 `(category_id,name)`；
  * 3. `themeId` 一律写成 `cate_<category_id>`。
  */
 object CategoryCatalog {
     private fun tags(path: String, vararg entries: Pair<String,String>) =
         listOf(CategoryTag("全部",path,null)) +
             entries.map { (label,themeId) -> CategoryTag(label,"$path/$themeId",themeId) }
+
+    private fun options(vararg entries: Pair<String,String>) =
+        entries.map { (label,id) -> CategoryFilterOption(id,label) }
 
     val groups: List<CategoryGroup> = listOf(
         CategoryGroup("漫剧","comic-drama","comic_series",tags("comic-drama",
@@ -73,6 +75,68 @@ object CategoryCatalog {
         )),
     )
 
+    /**
+     * 漫剧 / AI剧的 `category_dim_role` 与 `category_dim_epoch` 也不能使用接口默认表。
+     * 下表按中文名从热门前 500 部的 `category_schema` 里映射到各自 `cate_<category_id>`；
+     * 没有出现在该体裁内容里的选项不展示，避免用户点到 0 条。
+     */
+    private val comicRoles=options(
+        "女强" to "cate_6172", "神女" to "cate_6173", "大男主" to "cate_6174",
+        "男强" to "cate_6175", "忠诚男主" to "cate_6176", "群像" to "cate_6178",
+        "团宠" to "cate_6179", "反派主角" to "cate_6182", "霸道男主" to "cate_6183",
+        "商界女王" to "cate_6185", "直爽女主" to "cate_6186", "大女主" to "cate_6171",
+        "战神" to "cate_6192", "总裁" to "cate_6197", "业界精英" to "cate_6198",
+        "医生" to "cate_6199", "法医" to "cate_9323", "黑客" to "cate_6200",
+        "厨师" to "cate_6201", "厨娘" to "cate_6202", "主播" to "cate_6204",
+        "豪门千金" to "cate_6205", "真假千金" to "cate_6207", "剑客" to "cate_6212",
+        "刺客杀手" to "cate_6213", "书生" to "cate_9318", "女帝" to "cate_6237",
+        "将军" to "cate_9321", "世子" to "cate_9317", "学神" to "cate_6220",
+        "天才" to "cate_6221", "天生灵骨" to "cate_6223", "锦鲤" to "cate_6224",
+        "萌宠" to "cate_6227", "古灵精怪" to "cate_6250", "乖乖女" to "cate_6251",
+        "腹黑" to "cate_6240", "毒舌" to "cate_6241", "病娇" to "cate_6242",
+        "宠妻" to "cate_6261", "强强联合" to "cate_6267", "极品亲戚" to "cate_6271",
+        "后妈" to "cate_6272",
+    )
+
+    private val comicEpochs=options(
+        "未来" to "cate_6278", "架空" to "cate_6279", "现代" to "cate_6274",
+        "古代" to "cate_6275", "乡村" to "cate_6282", "校园" to "cate_6283",
+        "职场" to "cate_6290", "豪门" to "cate_6287", "世家" to "cate_6288",
+        "娱乐圈" to "cate_6289", "星际" to "cate_6295", "游戏世界" to "cate_6297",
+        "荒岛" to "cate_6298", "异界" to "cate_6299", "方言" to "cate_6310",
+        "英语" to "cate_9461", "韩语" to "cate_9465",
+    )
+
+    private val aiRoles=options(
+        "女强" to "cate_5754", "神女" to "cate_5755", "大男主" to "cate_5756",
+        "男强" to "cate_5757", "忠诚男主" to "cate_5758", "热血硬汉" to "cate_5759",
+        "群像" to "cate_5760", "团宠" to "cate_5761", "大叔" to "cate_5762",
+        "小人物" to "cate_5763", "反派主角" to "cate_5764", "霸道男主" to "cate_5765",
+        "市井英雄" to "cate_5766", "商界女王" to "cate_5767", "直爽女主" to "cate_5768",
+        "大女主" to "cate_5753", "神豪" to "cate_5774", "龙王" to "cate_5775",
+        "总裁" to "cate_5777", "业界精英" to "cate_5778", "医生" to "cate_5779",
+        "律师" to "cate_9431", "厨师" to "cate_5781", "厨娘" to "cate_5782",
+        "主播" to "cate_5784", "豪门千金" to "cate_5785", "落魄千金" to "cate_5786",
+        "真假千金" to "cate_5787", "武林高手" to "cate_5795", "少帅" to "cate_5788",
+        "书生" to "cate_9424", "将军" to "cate_9430", "世子" to "cate_9422",
+        "学神" to "cate_5800", "天才" to "cate_5801", "神童" to "cate_5802",
+        "锦鲤" to "cate_5804", "嘴硬心软" to "cate_5821", "甜妹" to "cate_9421",
+        "古灵精怪" to "cate_5823", "乖乖女" to "cate_5824", "大小姐" to "cate_5825",
+        "灰姑娘" to "cate_5826", "腹黑" to "cate_5813", "高冷" to "cate_5816",
+        "戏精" to "cate_5817", "痞少" to "cate_5819", "宠妻" to "cate_5833",
+        "欢喜冤家" to "cate_5838", "姐弟恋" to "cate_5829", "强强联合" to "cate_5839",
+        "极品亲戚" to "cate_5843", "后妈" to "cate_5844",
+    )
+
+    private val aiEpochs=options(
+        "架空" to "cate_5850", "现代" to "cate_5845", "古代" to "cate_5846",
+        "民国" to "cate_5847", "乡村" to "cate_5852", "校园" to "cate_5853",
+        "职场" to "cate_5859", "商界" to "cate_5860", "黑道" to "cate_5861",
+        "豪门" to "cate_5856", "世家" to "cate_5857", "娱乐圈" to "cate_5858",
+        "游戏世界" to "cate_5865", "异界" to "cate_5867", "方言" to "cate_5875",
+        "韩语" to "cate_9471",
+    )
+
     /** 默认选中：第一组的「全部」。 */
     val defaultTag: CategoryTag get() = groups.first().tags.first()
 
@@ -89,14 +153,21 @@ object CategoryCatalog {
     fun groupOf(path: String) = groups.firstOrNull { group -> group.tags.any { it.path==path } }
 
     /**
-     * 漫剧 / AI剧的主题行必须使用内容 `category_schema` 采集出的标识。
+     * 漫剧 / AI剧的主题 / 设定 / 背景必须使用内容 `category_schema` 采集出的标识。
      * 真人剧继续使用接口 `selector_rows`，返回 null 表示不改写。
      */
-    fun themeOptions(genre: String?): List<CategoryFilterOption>? {
+    fun filterOptions(genre: String?, type: String): List<CategoryFilterOption>? {
         if(genre!=CategoryGenres.COMIC && genre!=CategoryGenres.AI) return null
-        val group=groups.firstOrNull { it.genre==genre } ?: return null
-        return group.tags.mapNotNull { tag ->
-            tag.themeId?.let { id -> CategoryFilterOption(id,tag.label) }
+        return when(type) {
+            CategorySelection.TYPE_THEME -> groups
+                .firstOrNull { it.genre==genre }
+                ?.tags
+                ?.mapNotNull { tag -> tag.themeId?.let { id -> CategoryFilterOption(id,tag.label) } }
+            CategorySelection.TYPE_ROLE ->
+                if(genre==CategoryGenres.COMIC) comicRoles else aiRoles
+            CategorySelection.TYPE_EPOCH ->
+                if(genre==CategoryGenres.COMIC) comicEpochs else aiEpochs
+            else -> null
         }
     }
 

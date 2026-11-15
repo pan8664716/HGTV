@@ -67,15 +67,20 @@ data class CategoryPanel(val rows: List<CategoryFilterRow>) {
     fun labelOf(type: String, id: String?): String? = row(type)?.labelOf(id)
 
     /**
-     * 漫剧 / AI剧的接口主题行是真人剧默认表，直接请求会得到 0 条。
+     * 漫剧 / AI剧的接口主题 / 设定 / 背景行是真人剧默认表，直接请求会得到 0 条。
      * 这里按体裁换成 [CategoryCatalog] 中从内容题材采集出的有效标识。
      */
-    fun withCatalogThemes(genre: String?): CategoryPanel {
-        val options=CategoryCatalog.themeOptions(genre) ?: return this
-        val index=rows.indexOfFirst { it.type==CategorySelection.TYPE_THEME }
-        if(index<0) return this
+    fun withCatalogFilters(genre: String?): CategoryPanel {
         val normalized=rows.toMutableList()
-        normalized[index]=normalized[index].copy(options=options)
+        listOf(
+            CategorySelection.TYPE_THEME,
+            CategorySelection.TYPE_ROLE,
+            CategorySelection.TYPE_EPOCH,
+        ).forEach { type ->
+            val options=CategoryCatalog.filterOptions(genre,type) ?: return@forEach
+            val index=normalized.indexOfFirst { it.type==type }
+            if(index>=0) normalized[index]=normalized[index].copy(options=options)
+        }
         return copy(rows=normalized)
     }
 

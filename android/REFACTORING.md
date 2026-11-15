@@ -4495,15 +4495,19 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
-## 漫剧与 AI剧主题筛选修复
+## 漫剧与 AI剧细分筛选修复
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
-- 根因：接口 `selector_rows.category_dim_theme` 只对 `short_play`（真人剧）有效；
-  请求 `comic_series` / `ai_series` 时仍返回真人剧的默认题材表，用这些 `cate_*`
+- 根因：接口 `selector_rows` 里的主题 / 设定 / 背景只对 `short_play`（真人剧）有效；
+  请求 `comic_series` / `ai_series` 时仍返回真人剧的默认表，用这些 `cate_*`
   标识筛漫剧 / AI剧会得到 0 条。
-- 修复：`CategoryPanel.withCatalogThemes()` 对漫剧 / AI剧替换主题行，选项改用
-  `CategoryCatalog` 中从内容 `category_schema` 采集并实测可筛出内容的题材标识。
+- 真实接口抽样：漫剧 / AI剧使用默认表时，主题、设定、背景均返回 0；
+  受众（男频 / 女频）和排序（最新 / 热度 / 收藏）正常。
+- 修复：`CategoryPanel.withCatalogFilters()` 对漫剧 / AI剧替换主题 / 设定 / 背景三行，
+  选项改用 `CategoryCatalog` 中从内容 `category_schema` 采集并实测可筛出内容的标识。
+- 设定 / 背景按中文名与真人筛选项精确匹配，只展示该体裁内容里实际存在的选项。
+  映射后抽测漫剧 / AI剧的设定与背景均返回 100 条；韩语等窄题材返回 10–11 条，不再为 0。
 - 真人剧继续使用接口自己的 `selector_rows`；推荐大类和其它筛选行保持不变。
 - 网络响应解析、筛选面板落盘、旧筛选缓存读取三处都执行同一份归一化，已有旧缓存
   不需要等 30 天过期，也不需要手动清缓存。
