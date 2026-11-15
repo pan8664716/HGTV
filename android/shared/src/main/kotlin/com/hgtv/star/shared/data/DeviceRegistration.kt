@@ -8,6 +8,7 @@ import com.hgtv.star.core.deviceCookiesSnapshot
 import com.hgtv.star.core.primaryCookiesSnapshot
 import com.hgtv.star.core.refreshTncAsync
 import com.hgtv.star.core.registerDevice
+import com.hgtv.star.shared.debug.StartupDeferredTasks
 import com.hgtv.star.core.restoreDeviceCookies
 import com.hgtv.star.core.session.CookieRecord
 import com.hgtv.star.core.session.SessionBridge
@@ -185,7 +186,11 @@ object DeviceRegistration {
             library.saveRegistrationCookies(cookies)
             SessionBootstrap.sessionStore?.saveDeviceCookies(cookies)
             SessionBridge.mainDeviceCookies = { repository.primaryCookiesSnapshot() }
-            runCatching { repository.refreshTncAsync(force=true) }
+            // 注册 Cookie 已落盘即可继续启动；TNC 刷新放到播放首帧后，
+            // 避免首次注册时和推荐 / 详情 / 播放模型抢首帧带宽。
+            StartupDeferredTasks.schedule("startup.tncAfterRegistration",20_000L) {
+                runCatching { repository.refreshTncAsync(force=true) }
+            }
         }
     }
 

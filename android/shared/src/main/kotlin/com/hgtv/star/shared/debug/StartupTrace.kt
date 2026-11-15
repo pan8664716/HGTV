@@ -2,6 +2,8 @@
 package com.hgtv.star.shared.debug
 
 import android.os.SystemClock
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -75,12 +77,14 @@ object StartupDeferredTasks {
     private data class Task(
         val action: () -> Unit,
         val timeout: ScheduledFuture<*>?,
+        val onMain: Boolean = false,
     )
 
     private val lock = Any()
     private val scheduledKeys = HashSet<String>()
     private val tasks = LinkedHashMap<String, Task>()
     private val playbackReady = AtomicBoolean(false)
+    private val main = Handler(Looper.getMainLooper())
     private val executor = Executors.newScheduledThreadPool(2) { runnable ->
         Thread(runnable, "hgtv-startup-deferred").apply { isDaemon = true }
     }
@@ -103,6 +107,30 @@ object StartupDeferredTasks {
         if (runNow) submit(key, "already-ready", action)
     }
 
+    /**
+     * 首帧后执行，首帧前只保留同一 key 的最后一个动作。
+     *
+     * 弹幕这类“当前集”的工作会在换剧时连续调用；如果每次都排队，首帧后会把已经
+     * 划走的集也拉一遍。这里用 key 覆盖旧动作，并且始终回到主线程执行。
+     */
+    fun scheduleLatestOnMain(key: String, timeoutMs: Long = 30_000L, action: () -> Unit) {
+        var runNow=false
+        synchronized(lock) {
+            if(playbackReady.get()) {
+                runNow=true
+            } else {
+                tasks[key]?.timeout?.cancel(false)
+                val timeout=executor.schedule(
+                    { run(key, "timeout") },
+                    timeoutMs.coerceAtLeast(1L),
+                    TimeUnit.MILLISECONDS,
+                )
+                tasks[key]=Task(action, timeout, onMain=true)
+            }
+        }
+        if(runNow) submit(key, "already-ready", Task(action, null, onMain=true))
+    }
+
     fun notifyPlaybackFirstFrame() {
         if (!playbackReady.compareAndSet(false, true)) return
         val ready = synchronized(lock) {
@@ -112,21 +140,25 @@ object StartupDeferredTasks {
         }
         ready.forEachIndexed { index, task ->
             task.timeout?.cancel(false)
-            submit("first-frame-$index", "first-frame", task.action)
+            submit("first-frame-$index", "first-frame", task)
         }
         StartupTrace.mark("startup.deferred.release", "tasks=${ready.size}")
     }
 
     private fun run(key: String, reason: String) {
         val task = synchronized(lock) { tasks.remove(key) } ?: return
-        submit(key, reason, task.action)
+        submit(key, reason, task)
     }
 
     private fun submit(key: String, reason: String, action: () -> Unit) {
-        executor.execute {
+        submit(key, reason, Task(action, null))
+    }
+
+    private fun submit(key: String, reason: String, task: Task) {
+        val work = {
             val startedAt = StartupTrace.now()
             StartupTrace.mark("startup.deferred.start", "key=$key reason=$reason")
-            runCatching { action() }
+            runCatching { task.action() }
                 .onFailure { problem ->
                     Log.w(
                         StartupTrace.TAG,
@@ -136,6 +168,7 @@ object StartupDeferredTasks {
                 }
             StartupTrace.done("startup.deferred", startedAt, "key=$key reason=$reason")
         }
+        if(task.onMain) main.post(work) else executor.execute(work)
     }
 }
 

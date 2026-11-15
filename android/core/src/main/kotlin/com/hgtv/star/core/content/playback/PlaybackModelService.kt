@@ -22,8 +22,6 @@ import java.util.concurrent.TimeUnit
         playback: PlaybackProfile,
         queue: List<String> = emptyList(),
     ): JSONObject {
-        // 长时间驻留进程里配置也会过期；这里只排队后台刷新，不等待。
-        refreshTncAsync()
         // TNC 下发候选域名；最近成功的排第一。每条实际请求独立 6 秒，候选之间不共享超时。
         val hosts=TncConfigStore.orderedApiHosts().take(3)
         // 播放器打开用 `multi_video_model/player` 取当前集 + 后 14 集；

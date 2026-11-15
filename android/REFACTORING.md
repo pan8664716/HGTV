@@ -4381,12 +4381,33 @@ feature-tv/
 - `ContentRepository` 不再维护 `playbackBackupDevices` 和 `allowBackup`，分类、详情、
   播放模型和批量模型不再在空响应后切换匿名设备；域名换线、设备档位 4→5 和
   主身份自愈保留。
-- 启动页仍可在首帧后补绑用户选择的设备形态，但不再排定备用设备任务。首帧后的
-  延迟任务由 4 个降为 3 个（会话保活、TNC 刷新、友盟）。
+- 启动页仍可在首帧后补绑用户选择的设备形态，但不再排定备用设备任务。移除备用
+  设备后启动页任务由 4 个降为 3 个；本轮新增首帧后的推荐统计配置任务，当前为 4 个。
 - ADB 首次安装采样（S905L3B / Android 9，应用数据清空）首帧约 15.8 秒，后续启动
   约 7.2 秒；两次均未出现 `identity=anonymous` 的 `/service/2/device_register/`，
   首帧后任务数为 3。
 - `:app:assembleDebug` 使用 JDK 17 通过；未修改版本号、versionCode、依赖或 iOS 代码。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 首帧后 API 调度优化
+
+状态：已实现，debug 构建和 ADB 采样通过。
+
+- 推荐统计配置不再由首条推荐请求触发，改为首帧后刷新；`service/settings` 不再和
+  推荐流抢首帧网络。
+- 播放模型不再在每次取地址时排队刷新 TNC；TNC 统一由首帧后任务刷新。设备注册
+  下发的 Cookie 已落盘后，注册后的 TNC 也延后到首帧后。
+- TV / 手机弹幕加载统一经过 `StartupDeferredTasks.scheduleLatestOnMain`：首帧前只保留
+  当前集最后一次请求，首帧后回到主线程拉取，避免旧集和首帧争带宽。
+- TV 推荐页的相邻详情、批量模型、推荐补页和内存预热命中的下一部地址，统一延后到
+  `onRenderedFirstFrame`；READY 只保留曝光兜底，不再提前触发相邻预热。
+- ADB 采样中，缓存命中启动的首帧前只剩当前播放模型和 fplay；缓存未命中的路径为
+  推荐流、当前详情、当前模型、当前 fplay。统计配置、TNC 和弹幕均出现在首帧后。
+- 当前首帧后释放 5 个延迟任务：会话保活、推荐统计配置、友盟、TNC 和当前集弹幕；
+  推荐相邻预热与补页由独立的真正首帧动作触发。
+- `:app:assembleDebug` 和 `:shared:testDebugUnitTest` 使用 JDK 17 通过；未修改版本号、
+  versionCode、依赖或 iOS 代码。
 
 回滚：对本节对应提交执行 `git revert`。
 

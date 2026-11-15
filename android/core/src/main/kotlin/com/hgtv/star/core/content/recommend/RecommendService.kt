@@ -56,7 +56,6 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         filterIds: String,
         tab: RecommendTab,
     ): RecommendFeed {
-        refreshRecommendStatConfigAsync()
         require(offset >= 0) { "offset 不能为负" }
         val tabType=tab.tabType
         if(tabType!=null) {
@@ -77,6 +76,16 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             genres=genres.ifEmpty { listOfNotNull(tab.genre) },
             filterIds=filterIds,
         )
+    }
+
+    /**
+     * 首帧后刷新推荐曝光配置。
+     *
+     * 推荐流本身不依赖这份配置；把它从首条推荐请求里移出去，避免启动时多一条
+     * `service/settings` 和推荐流抢网络。
+     */
+    fun ContentRepository.refreshRecommendStatConfigAfterFirstFrame() {
+        refreshRecommendStatConfigAsync()
     }
 
     /** AI 剧兜底流：官方没有独立 Tab，继续使用分类接口 + `hot_score`。 */

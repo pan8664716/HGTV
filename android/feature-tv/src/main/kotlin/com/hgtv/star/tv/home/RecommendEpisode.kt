@@ -4,6 +4,7 @@ package com.hgtv.star.tv
 import android.view.View
 import com.hgtv.star.core.Detail
 import com.hgtv.star.shared.compat.isMeteredConnection
+import com.hgtv.star.shared.debug.StartupDeferredTasks
 import com.hgtv.star.shared.debug.StartupTrace
 
 /**
@@ -169,17 +170,20 @@ internal fun TvMainActivity.startRecommendEpisode(data: Detail,position: Long,au
     // `scheduleOverlayAutoHide`）；轻点画面照旧随时能切显隐。上下换剧走到这里会重新唤出，
     // 计时也随之重排——用户每换一部都还能看到「这是哪一部、看到第几集、播到哪儿」。
     if(touchArmed) showHud()
-    // 相邻预热不在这里立刻发起：首帧上屏后再排（见播放监听器的 READY 分支与
-    // `scheduleRecommendPreload`）。此刻发起会与**这一部自己的首块**抢带宽。
-    scheduleRecommendPreload(slideCache.firstFrameDelay(),"switch")
-    scheduleRecommendDwell()
+    // 相邻预热统一由播放监听器的 READY 分支在首帧后发起；这里不提前排。
     // 例外：这一次是**内存预热命中**（首块都在手里，这一部一个网络请求都不用发），
     // 带宽此刻是空的，顺手把下一部的地址取回来（20KB，不取首块）。
     // 遥控器「一秒一下」的节奏里，晚启动的窗口预热根本来不及跑，这一条是那段时间的兜底。
     if(prepared!=null) {
         val nextIndex=recommendIndex+slideCache.direction
         val next=recommendItems.getOrNull(nextIndex)
-        if(next!=null) warmRecommend(next,nextIndex,com.hgtv.star.core.CacheLevel.ADDRESS)
+        if(next!=null) {
+            StartupDeferredTasks.scheduleLatestOnMain("recommend.nextAddress",30_000L) {
+                if(screen=="recommend") {
+                    warmRecommend(next,nextIndex,com.hgtv.star.core.CacheLevel.ADDRESS)
+                }
+            }
+        }
     }
     // 快刷到这一批末尾了：把下一页提前取回来，别让用户在末尾那一下等网络（见 [ensureRecommendLookahead]）。
     ensureRecommendLookahead()

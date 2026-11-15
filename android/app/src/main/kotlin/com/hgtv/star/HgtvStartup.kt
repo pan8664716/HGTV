@@ -3,6 +3,7 @@ package com.hgtv.star
 
 import android.content.Context
 import android.os.Bundle
+import com.hgtv.star.core.refreshRecommendStatConfigAfterFirstFrame
 import com.hgtv.star.core.refreshTncAsync
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.IdentityBinder
@@ -60,6 +61,11 @@ internal object HgtvStartup {
         preload(app)
         StartupDeferredTasks.schedule("startup.sessionKeeper",20_000L) {
             startSessionKeeper()
+        }
+        StartupDeferredTasks.schedule("startup.recommendStat",25_000L) {
+            runCatching {
+                AppRuntime.repository(app).refreshRecommendStatConfigAfterFirstFrame()
+            }
         }
         StartupDeferredTasks.schedule("startup.umeng",25_000L) {
             initUmeng(app)
@@ -204,6 +210,11 @@ internal object HgtvStartup {
         initSessionStore(context)
         StartupDeferredTasks.schedule("startup.sessionKeeper",20_000L) {
             startSessionKeeper()
+        }
+        StartupDeferredTasks.schedule("startup.recommendStat",25_000L) {
+            runCatching {
+                AppRuntime.repository(context).refreshRecommendStatConfigAfterFirstFrame()
+            }
         }
     }
 

@@ -126,6 +126,7 @@ class TvMainActivity: Activity() {
     var recommendStarted=false
     var recommendFeedPending=false
     var recommendFeedTimer: Runnable?=null
+    var recommendAfterFirstFrameScheduled=false
     var bufferingSuppressed=false
     var bufferingDots: com.hgtv.star.shared.ui.LoadingDotsView?=null
     var retiringVideo: RemoteVideo?=null

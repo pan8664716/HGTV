@@ -4,6 +4,7 @@ package com.hgtv.star.phone
 import android.view.View
 import com.google.android.exoplayer2.Player
 import com.hgtv.star.core.DanmakuMode
+import com.hgtv.star.shared.debug.StartupDeferredTasks
 
 internal fun PhonePlayerActivity.danmakuTarget(): com.hgtv.star.shared.media.DanmakuView? = when {
     playerLandscapeMode && playerLandDanmakuInitialized -> playerLandDanmaku
@@ -55,7 +56,9 @@ internal fun PhonePlayerActivity.loadDanmaku(
     seriesId: String,
     clearOnSwitch: Boolean = false,
 ) {
-    playerDanmakuLoader.load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
+    StartupDeferredTasks.scheduleLatestOnMain("danmaku.phone.player", 30_000L) {
+        playerDanmakuLoader.load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
+    }
 }
 
 /** 把播放位置 / 播放状态 / 倍速推给弹幕层（每帧只读，不回调播放器）。 */

@@ -3,6 +3,7 @@ package com.hgtv.star.phone
 
 import android.view.View
 import com.hgtv.star.core.DanmakuMode
+import com.hgtv.star.shared.debug.StartupDeferredTasks
 
 /** 取（或建）某一屏的弹幕加载器。 */
 internal fun PhoneFeedView.danmakuLoaderOfImpl(
@@ -42,8 +43,10 @@ internal fun PhoneFeedView.loadDanmakuImpl(
     seriesId: String,
     clearOnSwitch: Boolean = false,
 ) {
-    val lib = feedLibrary ?: return
-    page.danmakuView.mode = lib.danmakuMode
-    if (index < 0) return
-    danmakuLoaderOfImpl(index).load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
+    StartupDeferredTasks.scheduleLatestOnMain("danmaku.phone.feed", 30_000L) {
+        val lib = feedLibrary ?: return@scheduleLatestOnMain
+        page.danmakuView.mode = lib.danmakuMode
+        if (index < 0) return@scheduleLatestOnMain
+        danmakuLoaderOfImpl(index).load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
+    }
 }

@@ -44,6 +44,7 @@ import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.DebugFaults
 import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.shared.debug.StartupBudgets
+import com.hgtv.star.shared.debug.StartupDeferredTasks
 import com.hgtv.star.tv.R
 
 // 本文件是从 TvMainActivity.kt 拆出来的「播放内核：起播、切集、弹幕加载」这一块。
@@ -53,8 +54,34 @@ import com.hgtv.star.tv.R
 fun TvMainActivity.loadDanmaku(episodeId: String,seriesId: String,clearOnSwitch: Boolean=false) {
     // 加载内核在 `:shared`（`DanmakuLoader`）：手机播放页与手机信息流用的是同一份，
     // 三处「同一集不重拉 / 旧回包丢弃 / 隐藏时不发请求」的规则只写一次。
-    danmakuLoader.load(episodeId,seriesId,clearOnSwitch=clearOnSwitch)
+    StartupDeferredTasks.scheduleLatestOnMain("danmaku.tv.current",30_000L) {
+        danmakuLoader.load(episodeId,seriesId,clearOnSwitch=clearOnSwitch)
+    }
 }
+
+/**
+ * 推荐页的相邻详情、批量模型和补页都等真正的首帧。
+ *
+ * READY 只表示轨道已经解出来；在低配电视上它可能比画面早几百毫秒。
+ * [StartupDeferredTasks.schedule] 同时提供首帧前等待、首帧后执行和
+ * 无首帧时的兜底；固定 key 保证 READY 与真正首帧回调只执行一次。
+ */
+private fun TvMainActivity.scheduleRecommendAfterFirstFrame() {
+    if(recommendAfterFirstFrameScheduled) return
+    recommendAfterFirstFrameScheduled=true
+    StartupDeferredTasks.schedule("recommend.afterFirstFrame-${System.identityHashCode(this)}",30_000L) {
+        main.post {
+            if(isDestroyed || screen!="recommend") return@post
+            scheduleRecommendPreload(slideCache.firstFrameDelay(),"first-frame")
+            scheduleRecommendDwell()
+            main.postDelayed({
+                if(!isDestroyed && screen=="recommend") prefetchRecommendBatchModels()
+            },if(runCatching { lowEndTv() }.getOrDefault(true)) 8_000L else RECOMMEND_BATCH_MODEL_DELAY_MS)
+            fireRecommendFeed()
+        }
+    }
+}
+
 fun TvMainActivity.playEpisode(
     index: Int,
     position: Long=0,
@@ -480,29 +507,14 @@ fun TvMainActivity.playEpisode(
                     // 起播已经稳了：高端电视趁用户还没按菜单键，把播放设置面板先建好、画一遍
                     //（见 [warmPlaybackMenu]）。低配电视跳过这段主线程预热，首开菜单再按需构建。
                     if(!runCatching { lowEndTv() }.getOrDefault(true)) warmPlaybackMenu()
-                    // 推荐页：这一部已经出画面，现在才轮到给相邻两部拉首集数据。
-                    //
-                    // 起播之前不预热（见 `warmRecommendDetail` 开头的 `playbackReady` 判断）：
-                    // 那一段里预热只会往取地址的串行闸门后面排队，把正在等的这一次推到更后面。
-                    // 因此这里必须**补一次**——`startRecommendEpisode` 调 `prefetchRecommendNeighbors`
-                    // 时 `playbackReady` 刚被置成 false，那一次会被挡回去。
-                    //
-                    // 现在改成「排定 + 短延迟 300ms」：READY 只代表解出了轨道，
-                    // 解码器还在出帧、buffer 还在填，立刻拉相邻几条会把这一部自己拖慢。
-                    // 延迟期间用户滑走的话，`playRecommendAt` 会把这一次取消掉。
+                    // READY 只代表解出了轨道，不能保证画面已经上屏；相邻预热、
+                    // 批量模型和推荐补页统一由 `scheduleRecommendAfterFirstFrame` 在
+                    // 真正出帧后启动。这里只保留曝光兜底。
                     if(screen=="recommend") {
                         // READY 是首帧回调缺失时的兜底；真正的首次曝光在 onRenderedFirstFrame
                         // 里再提交一次，由共用上报器按短时间去重。
                         reportRecommendImpression()
-                        scheduleRecommendPreload(slideCache.firstFrameDelay(),"ready")
-                        scheduleRecommendDwell()
-                        // 批量播放模型是第二优先级：先让相邻一部的详情 / 地址 / 首块跑起来，
-                        // 避免 6 个模型请求与用户下一次换剧抢同一条下行。
-                        main.postDelayed({
-                            if(!isDestroyed && screen=="recommend") prefetchRecommendBatchModels()
-                        },if(runCatching { lowEndTv() }.getOrDefault(true)) 8_000L else RECOMMEND_BATCH_MODEL_DELAY_MS)
-                        // 冷启动续播时暂缓的那一次取流：画面已经出来了，现在取不会抢首帧。
-                        fireRecommendFeed()
+                        scheduleRecommendAfterFirstFrame()
                     }
                     // 正式播放页：首帧 READY 后还要再等缓冲填起来，才让 preload 去拉后 6 集。
                     // 这样 player 场景已经保住当前集 + 后 2 集，后台补货不会和首帧抢闸门。
@@ -685,6 +697,8 @@ fun TvMainActivity.playEpisode(
                 if(screen=="recommend") {
                     reportRecommendImpression()
                     revealRecommendCover()
+                    // 真正的首帧已经上屏：现在才允许相邻预热和推荐补页。
+                    scheduleRecommendAfterFirstFrame()
                 }
                 // 出帧即撤看门狗：这是「画面真的上屏了」的硬证据（READY 只代表解出了轨道）。
                 // 同时把面板上「没有画面」那条现场清掉，否则用户会看到「有画面却说我黑屏」
