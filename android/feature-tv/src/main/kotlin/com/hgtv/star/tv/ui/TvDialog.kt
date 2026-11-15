@@ -476,12 +476,14 @@ class TvDialog(private val activity: Activity, title: String) {
      * @param remoteOnly 只接受遥控器 / 键盘操作：点弹窗外部不关闭，触摸由调用方在按钮层吞掉。
      *                   用于「误选电视」这类必须用遥控器明确确认的场景。
      * @param mandatory 必须完成选择：返回键与点外部都不能关闭弹窗。
+     * @param onUserTouch 弹窗内任意触摸交互，用于刷新自动返回倒计时。
      */
     fun show(
         anchor: View? = null,
         touchOnly: Boolean = false,
         remoteOnly: Boolean = false,
         mandatory: Boolean = false,
+        onUserTouch: (() -> Unit)? = null,
         onDismiss: () -> Unit = {},
     ) {
         if (isShowing) return
@@ -492,7 +494,9 @@ class TvDialog(private val activity: Activity, title: String) {
         capOverride = 0
         // 套一层触摸外壳：弹窗是独立窗口，Activity 的 `dispatchTouchEvent` 管不到它。
         // 不套的话，弹窗里点一枚「当前没有焦点」的按钮仍然是两下（见 MainActivityTouch 的说明）。
-        val next = AlertDialog.Builder(activity).setView(touchFocusHost(body, fillHeight = false)).create()
+        val next = AlertDialog.Builder(activity)
+            .setView(touchFocusHost(body, fillHeight = false, onTouch = onUserTouch))
+            .create()
         if (touchOnly || remoteOnly || mandatory) {
             next.setCancelable(false)
             next.setCanceledOnTouchOutside(false)

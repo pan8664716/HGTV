@@ -10,6 +10,7 @@ import android.graphics.Typeface
 import android.graphics.drawable.ColorDrawable
 import android.text.TextUtils
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.LinearLayout
@@ -76,6 +77,7 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
     private var dialog: AlertDialog? = null
     private var windowHost: android.widget.FrameLayout? = null
     private var dismissed: (() -> Unit)? = null
+    private var userTouch: (() -> Unit)? = null
     private var horizontalButtons = false
 
     val isShowing: Boolean get() = dialog?.isShowing == true
@@ -147,7 +149,19 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
     /**
      * 一列选项。选中项用按进去的凹槽标出，点任意一项立即收起并回调。
      */
-    fun choices(labels: List<String>, selected: Int = -1, onChoice: (Int) -> Unit): PhoneDialog {
+    fun choices(
+        labels: List<String>,
+        selected: Int = -1,
+        onChoice: (Int) -> Unit,
+    ): PhoneDialog = choices(labels,selected,beforeChoice={},onChoice=onChoice)
+
+    /** [beforeChoice] 在关闭弹窗前执行，供调用方记录这次点击已经开始处理。 */
+    fun choices(
+        labels: List<String>,
+        selected: Int = -1,
+        beforeChoice: () -> Unit,
+        onChoice: (Int) -> Unit,
+    ): PhoneDialog {
         labels.forEachIndexed { index, label ->
             val row = TextView(activity).apply {
                 text = label
@@ -163,6 +177,7 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
                 )
                 contentDescription = label + if (index == selected) "，当前选择" else ""
                 setOnClickListener {
+                    beforeChoice()
                     dismiss()
                     onChoice(index)
                 }
@@ -184,6 +199,17 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
         danger: Boolean = false,
         run: () -> Unit = {},
     ): PhoneDialog {
+        buttonView(label, primary, danger, run)
+        return this
+    }
+
+    /** 与 [button] 相同，但把按钮本身返回给调用方挂输入限制。 */
+    fun buttonView(
+        label: String,
+        primary: Boolean = false,
+        danger: Boolean = false,
+        run: () -> Unit = {},
+    ): TextView {
         val view = TextView(activity).apply {
             text = label
             gravity = Gravity.CENTER
@@ -232,6 +258,12 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
             }
         }
         actions.addView(view, params)
+        return view
+    }
+
+    /** 弹窗内任意一次触摸按下都会回调，用于刷新确认页的自动返回倒计时。 */
+    fun onUserTouch(action: () -> Unit): PhoneDialog {
+        userTouch = action
         return this
     }
 
@@ -243,7 +275,12 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
         // 弹窗窗口是 `WRAP_CONTENT`，内容一旦超过窗口能给的最高度，系统就会把窗口夹住，
         // 而面板比窗口高的那一截会被裁掉——读起来就是「上滑下滑都超过弹框」。
         middleScroll.maxHeightPx = scrollBudget()
-        val padded = android.widget.FrameLayout(activity).apply {
+        val padded = object: android.widget.FrameLayout(activity) {
+            override fun dispatchTouchEvent(event: MotionEvent): Boolean {
+                if(event.actionMasked==MotionEvent.ACTION_DOWN) userTouch?.invoke()
+                return super.dispatchTouchEvent(event)
+            }
+        }.apply {
             setPadding(activity.dp(4), activity.dp(4), activity.dp(4), activity.dp(4))
             addView(body, ViewGroup.LayoutParams(
                 ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
@@ -257,6 +294,7 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
             if (dialog === next) {
                 dialog = null
                 windowHost = null
+                userTouch = null
                 val done = dismissed
                 dismissed = null
                 done?.invoke()

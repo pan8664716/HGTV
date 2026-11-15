@@ -4,12 +4,27 @@ package com.hgtv.star.tv
 import android.app.Activity
 import android.content.Intent
 import android.speech.RecognizerIntent
+import com.hgtv.star.shared.architecture.AppRelaunch
+import com.hgtv.star.shared.compat.DeviceForm
+import com.hgtv.star.shared.compat.DeviceFormSelection
 
 internal fun TvMainActivity.handleActivityResultImpl(
     requestCode: Int,
     resultCode: Int,
     data: Intent?,
 ) {
+    if(requestCode==REQUEST_DEVICE_FORM) {
+        if(resultCode==Activity.RESULT_OK &&
+            data?.getBooleanExtra(DeviceFormSelection.EXTRA_CHANGED,false)==true
+        ) {
+            val selected=DeviceForm.ofStored(
+                data?.getStringExtra(DeviceFormSelection.EXTRA_SELECTED_FORM).orEmpty()
+            )
+            showHint("正在切换到${selected?.label ?: "所选"}界面")
+            AppRelaunch.switchDeviceForm(this)
+        }
+        return
+    }
     if(requestCode==REQUEST_VOICE) {
         voiceLaunching=false
         voiceReturned=true

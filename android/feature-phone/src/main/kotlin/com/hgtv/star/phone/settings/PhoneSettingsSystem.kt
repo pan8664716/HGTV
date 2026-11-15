@@ -5,6 +5,9 @@ import android.app.Activity
 import android.content.Intent
 import android.net.Uri
 import com.hgtv.star.core.LibraryBackup
+import com.hgtv.star.shared.architecture.AppRelaunch
+import com.hgtv.star.shared.compat.DeviceForm
+import com.hgtv.star.shared.compat.DeviceFormSelection
 
 /** 横屏设置页使用沉浸式：状态栏和底部系统导航都隐藏，只保留一小条分区导航。 */
 @Suppress("DEPRECATION")
@@ -56,6 +59,20 @@ internal fun PhoneSettingsActivity.handleActivityResultImpl(
     resultCode: Int,
     data: Intent?,
 ) {
+    if(requestCode==PhoneSettingsActivity.REQUEST_DEVICE_FORM) {
+        if(resultCode==Activity.RESULT_OK &&
+            data?.getBooleanExtra(DeviceFormSelection.EXTRA_CHANGED,false)==true
+        ) {
+            val selected=DeviceForm.ofStored(
+                data?.getStringExtra(DeviceFormSelection.EXTRA_SELECTED_FORM).orEmpty()
+            )
+            toastImpl("正在切换到 ${selected?.label ?: "所选"} 界面")
+            AppRelaunch.switchDeviceForm(this)
+        } else {
+            renderSettings()
+        }
+        return
+    }
     if (resultCode != Activity.RESULT_OK) return
     val uri: Uri = data?.data ?: return
     when (requestCode) {

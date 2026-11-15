@@ -25,7 +25,6 @@ import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneUiScale
-import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.ui.TvTheme
@@ -286,24 +285,7 @@ internal fun PhoneSettingsActivity.renderSystem() {
     actionImpl("关于", "版本与项目信息") { showAboutDialog() }
     val deviceLabel = DeviceForm.ofStored(settingsLibrary.deviceForm)?.label ?: "未选择"
     rowImpl("设备类型", deviceLabel) {
-        pickImpl(
-            "设备类型（切换后自动重新进入）",
-            DeviceForm.pickerLabels(),
-            DeviceForm.optionIndex(settingsLibrary.deviceForm),
-        ) { index ->
-            val selected = DeviceForm.OPTIONS[index]
-            if (selected == settingsLibrary.deviceForm) {
-                renderSettings()
-                return@pickImpl
-            }
-            if (!settingsLibrary.setDeviceFormNow(selected)) {
-                toastImpl("设备类型保存失败，请重试")
-                renderSettings()
-                return@pickImpl
-            }
-            toastImpl("正在切换到 ${DeviceForm.shortLabel(selected)} 界面")
-            AppRelaunch.switchDeviceForm(this)
-        }
+        openDeviceFormSelector()
     }
     hintImpl("用于选择手机、平板或电视界面，切换后自动重新进入。")
     switchImpl("减少动画优化性能", settingsLibrary.reduceAnim) {

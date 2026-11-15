@@ -67,6 +67,7 @@ const val REQUEST_RESET_STORAGE=0x53
  * 不能和账号导入那条路径共用分支。
  */
 const val REQUEST_VOICE=0x54
+const val REQUEST_DEVICE_FORM=0x55
 
 /** 语音识别结果与输入框共用同一条长度上限（见输入框的 `LengthFilter`）。 */
 const val VOICE_QUERY_MAX=80

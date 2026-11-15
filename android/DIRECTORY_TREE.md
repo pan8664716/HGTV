@@ -184,9 +184,10 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
+| `DeviceFormActivity.kt` | 首页首次启动与设置页共用的设备类型选择器；按页面使用手机 / 电视拟态弹窗，手机 / 平板触摸确认并 6 秒自动返回，电视直接进入。 | class DeviceFormActivity、fun showPhoneChooser、fun showTvChooser、fun startCountdown |
 | `HgtvApplication.kt` | 应用进程入口，负责 Application 级初始化和全局运行时装配。 | class HgtvApplication |
 | `HgtvStartup.kt` | 启动页负责的本地初始化。 | object HgtvStartup |
-| `LaunchActivity.kt` | 启动页与设备形态路由入口；首次启动负责手机 / 平板 / 电视选择、按输入方式二次确认，并把确认结果路由到对应主界面。 | class LaunchActivity、fun showDeviceFormChooser、fun showDeviceFormConfirm、fun confirmDeviceForm |
+| `LaunchActivity.kt` | 启动页与设备形态路由入口；首次启动打开统一设备类型选择器，完成后路由到对应主界面。 | class LaunchActivity、fun openDeviceFormSelector、fun targetFor |
 
 ### core
 
@@ -1029,6 +1030,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `DeviceForm.kt` | 这台机器在用户的眼里的形态：手机 / 平板 / 电视。 | class DeviceForm、class DeviceProfile、fun Context.detectDeviceForm、fun Context.hasInputSource、class ScreenFacts、fun Context.screenFacts |
+| `DeviceFormSelection.kt` | 首页与设置页共用的设备类型选择 Activity action / extra 契约，包含样式与结果字段。 | object DeviceFormSelection、EXTRA_TV_STYLE |
 | `OutlineCompat.kt` | 圆角 / 圆形裁剪。 | fun roundCornersCompat、fun clipToCircleCompat、object RoundCornersApi21 |
 | `Platform.kt` | Android 4.4（API 19）到现在的平台差异都收在这个文件里。 | fun Context.activityManager、fun Context.connectivityManager、fun ConnectivityManager.activeNetworkOrNull、fun ConnectivityManager.capabilitiesOf、fun ConnectivityManager.hasInternet、fun ConnectivityManager.isMeteredConnection |
 

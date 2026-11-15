@@ -27,8 +27,8 @@ import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.tv.findTagged
 import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.shared.compat.DeviceForm
+import com.hgtv.star.shared.compat.DeviceFormSelection
 import com.hgtv.star.shared.compat.lowEndTv
-import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.ProjectInfo
 import com.hgtv.star.tv.R
 
@@ -586,7 +586,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     aboutButton=cellSetting(deviceLine,"关于") { showAboutDialog(aboutButton) }
     lateinit var deviceType: TvButton
     deviceType=cellSetting(deviceLine,"设备类型  ·  ${deviceFormSettingLabel()}") {
-        showDeviceFormPicker(deviceType)
+        openDeviceFormSelector()
     }
     track(3,aboutButton,deviceType)
 
@@ -627,87 +627,16 @@ private fun TvMainActivity.deviceFormSettingLabel(): String {
     return DeviceForm.ofStored(library.deviceForm)?.label ?: "未选择"
 }
 
-private fun TvMainActivity.showDeviceFormPicker(anchor: TextView) {
-    val current=DeviceForm.ofStored(library.deviceForm)
-    val picker=TvDialog(this,"设备类型").choices(
-        DeviceForm.pickerLabels(),
-        DeviceForm.optionIndex(library.deviceForm),
-    ) { index ->
-        val selected=DeviceForm.OPTIONS[index]
-        if(selected==library.deviceForm) {
-            anchor.text="设备类型  ·  ${deviceFormSettingLabel()}"
-            return@choices
-        }
-        if(current==DeviceForm.TV &&
-            (selected==DeviceForm.storedValue(DeviceForm.PHONE) ||
-                selected==DeviceForm.storedValue(DeviceForm.TABLET))) {
-            showTouchOnlyDeviceFormConfirm(selected,anchor)
-        } else {
-            applyDeviceFormSelection(selected,anchor)
-        }
-    }
-    picker.button("取消",icon=R.drawable.ic_menu_close)
-    picker.show(anchor)
-}
-
-private fun TvMainActivity.applyDeviceFormSelection(selected: String,anchor: TextView) {
-    if(!library.setDeviceFormNow(selected)) {
-        showHint("设备类型保存失败，请重试")
-        return
-    }
-    anchor.text="设备类型  ·  ${deviceFormSettingLabel()}"
-    anchor.contentDescription="设备类型，当前${DeviceForm.shortLabel(selected)}，正在自动重新进入"
-    showHint("正在切换到${DeviceForm.shortLabel(selected)}界面")
-    AppRelaunch.switchDeviceForm(this)
-}
-
-private fun TvMainActivity.showTouchOnlyDeviceFormConfirm(selected: String,anchor: TextView) {
-    val target=DeviceForm.shortLabel(selected)
-    val dialog=TvDialog(this,"确认切换到${target}")
-    dialog.message(
-        "当前设备类型是电视。切换到${target}后，界面会改为触屏操作，" +
-            "遥控器将无法完成这次确认。"
+private fun TvMainActivity.openDeviceFormSelector() {
+    startActivityForResult(
+        DeviceFormSelection.intent(
+            this,
+            firstRun=false,
+            currentForm=DeviceForm.ofStored(library.deviceForm)?.let { DeviceForm.storedValue(it) },
+            tvStyle=true,
+        ),
+        REQUEST_DEVICE_FORM,
     )
-    dialog.message(
-        "请使用手机 / 平板的触摸屏点击下方按钮。若本机没有触摸屏，" +
-            "请不要继续；弹窗将在 6 秒后自动取消，不保存本次选择。"
-    )
-    val countdown=tvText("6 秒后自动取消",15f,TvStyle.textStrong)
-    dialog.content.addView(
-        countdown,
-        LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(TvStyle.GAP_INLINE) }
-    )
-    val confirm=dialog.button(
-        "触屏点击确认",
-        tone=ButtonTone.SECONDARY,
-        icon=R.drawable.ic_menu_check,
-    ) {
-        applyDeviceFormSelection(selected,anchor)
-    }
-    confirm.isFocusable=false
-    confirm.isFocusableInTouchMode=false
-    confirm.setOnKeyListener { _,_,_ -> true }
-    confirm.setOnTouchListener { _,event ->
-        !event.isFromSource(InputDevice.SOURCE_TOUCHSCREEN)
-    }
-
-    val handler=android.os.Handler(android.os.Looper.getMainLooper())
-    var remaining=6
-    val tick=object: Runnable {
-        override fun run() {
-            if(!dialog.isShowing) return
-            remaining--
-            if(remaining<=0) {
-                dialog.dismiss()
-                return
-            }
-            countdown.text="${remaining} 秒后自动取消"
-            handler.postDelayed(this,1000L)
-        }
-    }
-    dialog.setOnDismissExtra { handler.removeCallbacks(tick) }
-    dialog.show(anchor=anchor,touchOnly=true)
-    handler.postDelayed(tick,1000L)
 }
 
 private fun settingsPageIndexOf(view: View): Int? {

@@ -64,6 +64,8 @@
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LEANBACK_LAUNCHER"/></intent-filter>
             <intent-filter><action android:name="android.intent.action.MAIN"/><category android:name="android.intent.category.LAUNCHER"/></intent-filter>
         </activity>
+        <!-- 首页首次启动与设置页共用的设备类型选择器；透明窗口只承载 PhoneDialog / TvDialog。 -->
+        <activity android:name=".DeviceFormActivity" android:exported="false" android:theme="@style/DeviceFormDialogTheme" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
         <!-- TV 端：横屏 + 遥控器焦点导航。 -->
         <activity android:name=".tv.TvMainActivity" android:exported="true" android:theme="@style/StartupContentTheme" android:screenOrientation="landscape" android:windowSoftInputMode="adjustResize" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
         <!-- 旧组件名保留为别名，避免已有显式 Intent / 外部快捷方式因类重命名失效。 -->

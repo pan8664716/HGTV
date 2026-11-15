@@ -48,6 +48,21 @@
         <item name="android:windowAnimationStyle">@null</item>
     </style>
 
+    <!--
+      首页与设置页共用的设备类型选择 Activity。
+
+      必须继承 AppTheme：AlertDialog 会从宿主 Activity 主题解析 dialogTheme。直接继承
+      Theme.Translucent.NoTitleBar 会让 21+ 的系统弹框回到 Holo，内部拟态面板之外的窗口
+      尺寸、内边距和字体就和设置页对不上了。
+    -->
+    <style name="DeviceFormDialogTheme" parent="@style/AppTheme">
+        <item name="android:windowIsTranslucent">true</item>
+        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowNoTitle">true</item>
+        <item name="android:windowAnimationStyle">@null</item>
+        <item name="android:backgroundDimEnabled">false</item>
+    </style>
+
     <!-- 主界面在首帧前先铺稳定底色；动态三点由轻量启动壳绘制，避免窗口预览图停住。 -->
     <style name="StartupContentTheme" parent="@style/AppTheme">
         <item name="android:windowBackground">@drawable/startup_window</item>

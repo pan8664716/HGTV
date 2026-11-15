@@ -15,13 +15,12 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import com.hgtv.star.phone.PhoneMainActivity
-import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.compat.DeviceForm
+import com.hgtv.star.shared.compat.DeviceFormSelection
+import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.tv.TvMainActivity
-import com.hgtv.star.tv.TvDialog
-import com.hgtv.star.tv.R as TvR
 
 /**
  * 启动页与形态路由：唯一带 `LAUNCHER` / `LEANBACK_LAUNCHER` 的组件。
@@ -60,7 +59,7 @@ class LaunchActivity : Activity() {
     private lateinit var errorText: TextView
     private lateinit var retryButton: TextView
     private var routed=false
-    private var formDialog: TvDialog?=null
+    private var choosingForm=false
     private var traceStartedAt=0L
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -135,10 +134,10 @@ class LaunchActivity : Activity() {
     }
 
     private fun routeToTarget() {
-        if(routed) return
+        if(routed || choosingForm) return
         val form=storedDeviceForm()
         if(!deviceFormPromptCompleted() || form==null) {
-            showDeviceFormChooser()
+            openDeviceFormSelector()
             return
         }
         routed=true
@@ -199,94 +198,23 @@ class LaunchActivity : Activity() {
     private fun deviceFormPromptCompleted(): Boolean =
         firstRunPrefs().getBoolean(KEY_DEVICE_FORM_CONFIRMED, false)
 
-    /**
-     * 首次选择同时支持触摸与遥控器。
-     *
-     * 这一层还不知道用户会选哪一端，因此列表项本身就是普通可点击、可聚焦控件：
-     * 手机上可以直接点，电视上可以用方向键移动焦点、按确定键选择。
-     */
-    private fun showDeviceFormChooser() {
-        if(isFinishing || isDestroyed || routed) return
-        if(formDialog?.isShowing==true) return
+    private fun openDeviceFormSelector() {
+        if(choosingForm || isFinishing || isDestroyed) return
+        choosingForm=true
         showLoading()
-        val current=storedDeviceForm()?.let { DeviceForm.optionIndex(DeviceForm.storedValue(it)) } ?: -1
-        val dialog=TvDialog(this,"设备类型")
-        dialog.choices(
-            DeviceForm.pickerLabels(),
-            selected=current,
-        ) { index ->
-            showDeviceFormConfirm(DeviceForm.SELECTABLE[index])
-        }
-        formDialog=dialog
-        dialog.show(mandatory=true) {
-            if(formDialog===dialog) formDialog=null
-        }
-    }
-
-    /**
-     * 第二次确认按目标形态锁定输入方式：
-     * 手机 / 平板只能触摸“确认”，电视只能遥控器确定，触摸会被吞掉。
-     */
-    private fun showDeviceFormConfirm(form: DeviceForm) {
-        if(isFinishing || isDestroyed || routed) return
-        val touch=DeviceForm.requiresTouch(form)
-        val dialog=TvDialog(this,"确认使用${form.label}界面")
-        dialog.message(
-            if(touch) {
-                "请用触摸屏点击“确认”。遥控器不能完成这次确认；如选错了，请点“重新选择”。"
-            } else {
-                "请用遥控器选择“确认”并按确定键。触摸屏不能完成这次确认；如选错了，请选择“重新选择”。"
-            }
+        val profile=detectDeviceForm()
+        val leanbackLaunch=intent.hasCategory(Intent.CATEGORY_LEANBACK_LAUNCHER)
+        val intent=DeviceFormSelection.intent(
+            this,
+            firstRun=true,
+            currentForm=storedDeviceForm()?.let { DeviceForm.storedValue(it) },
+            tvStyle=leanbackLaunch || profile.form==DeviceForm.TV || !profile.touch,
         )
-        val confirm=dialog.button(
-            "确认",
-            icon=TvR.drawable.ic_menu_check,
-        ) {
-            confirmDeviceForm(form,dialog)
+        val started=runCatching { startActivityForResult(intent,REQUEST_DEVICE_FORM) }.isSuccess
+        if(!started) {
+            choosingForm=false
+            showFailure()
         }
-        val reselect=dialog.button(
-            "重新选择",
-            icon=TvR.drawable.ic_menu_close,
-        ) {
-            formDialog=null
-            root.post { showDeviceFormChooser() }
-        }
-        formDialog=dialog
-        if(touch) {
-            dialog.show(touchOnly=true,mandatory=true) {
-                if(formDialog===dialog) formDialog=null
-            }
-        } else {
-            // 电视确认必须走遥控器：按钮和弹窗外部都不接受触摸。
-            confirm.setOnTouchListener { _,_-> true }
-            reselect.setOnTouchListener { _,_-> true }
-            dialog.show(remoteOnly=true,mandatory=true) {
-                if(formDialog===dialog) formDialog=null
-            }
-        }
-    }
-
-    private fun confirmDeviceForm(form: DeviceForm, dialog: TvDialog) {
-        val formSaved=devicePrefs().edit()
-            .putString(KEY_DEVICE_FORM, DeviceForm.storedValue(form))
-            .commit()
-        if(!formSaved) {
-            android.widget.Toast.makeText(this,"设备类型保存失败，请重试",android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        val promptSaved=firstRunPrefs().edit()
-            .putBoolean(KEY_DEVICE_FORM_CONFIRMED,true)
-            .commit()
-        if(!promptSaved) {
-            android.widget.Toast.makeText(this,"首次选择保存失败，请重试",android.widget.Toast.LENGTH_SHORT).show()
-            return
-        }
-        // 书库可能已在弹窗期间后台读完：同步更新进程内缓存，不能只写 SharedPreferences。
-        AppRuntime.library(this).deviceForm = DeviceForm.storedValue(form)
-        dialog.dismiss()
-        showLoading()
-        HgtvStartup.onDeviceFormSelected(this)
-        routeToTarget()
     }
 
     private fun showLoading() {
@@ -318,10 +246,16 @@ class LaunchActivity : Activity() {
     }
 
     override fun onDestroy() {
-        formDialog?.dismiss()
-        formDialog=null
         StartupTrace.mark("launch.onDestroy", "routed=$routed")
         super.onDestroy()
+    }
+
+    @Deprecated("Activity 的旧回调；项目不引入 AndroidX Activity Result")
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if(requestCode!=REQUEST_DEVICE_FORM) return
+        choosingForm=false
+        if(!isFinishing && !isDestroyed) routeToTarget()
     }
 
     private fun dp(value: Int): Int =
@@ -329,8 +263,7 @@ class LaunchActivity : Activity() {
 
     private companion object {
         const val BACKGROUND=0xFF1E2228.toInt()
-        const val FIRST_RUN_PREFS="first-run-ui-v1"
-        const val KEY_DEVICE_FORM_CONFIRMED="deviceFormConfirmed"
+        const val REQUEST_DEVICE_FORM=0x61
         /** 与 `Library` 用的是同一个偏好文件（见 `Library.prefs`）。 */
         const val PREFS = "native-library-v1"
         const val KEY_DEVICE_FORM = "deviceForm"

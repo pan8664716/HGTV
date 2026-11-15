@@ -46,6 +46,8 @@ import com.hgtv.star.phone.ui.phoneEdgeToEdge
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.shared.ProjectInfo
+import com.hgtv.star.shared.compat.DeviceForm
+import com.hgtv.star.shared.compat.DeviceFormSelection
 import com.hgtv.star.shared.data.LocalReset
 import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.feature.lan.LanSyncController
@@ -364,6 +366,19 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     private fun anchorKey(kind: String, title: String): String = anchorKeyImpl(kind, title)
 
+    internal fun openDeviceFormSelector() {
+        val current=DeviceForm.ofStored(settingsLibrary.deviceForm)
+        startActivityForResult(
+            DeviceFormSelection.intent(
+                this,
+                firstRun=false,
+                currentForm=current?.let { DeviceForm.storedValue(it) },
+                tvStyle=false,
+            ),
+            REQUEST_DEVICE_FORM,
+        )
+    }
+
     /** 找出当前视口顶部第一枚带稳定 key 的设置项。 */
     private fun currentScrollAnchor(): ScrollAnchor? {
         return currentScrollAnchorImpl()
@@ -416,6 +431,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     companion object {
         const val REQUEST_EXPORT = 7001
         const val REQUEST_IMPORT = 7002
+        const val REQUEST_DEVICE_FORM = 7003
         const val KEY_SCROLL_ANCHOR = "settings-scroll-anchor"
         const val KEY_SCROLL_OFFSET = "settings-scroll-offset"
         const val KEY_PAGE = "settings-page"

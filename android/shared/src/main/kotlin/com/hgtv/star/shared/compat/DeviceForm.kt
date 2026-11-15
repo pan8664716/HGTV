@@ -46,13 +46,9 @@ enum class DeviceForm(val label: String) {
         /** 首次启动与设置页共用的三档。 */
         val SELECTABLE = listOf(PHONE, TABLET, TV)
 
-        /**
-         * 设置页「设备类型」的三档，**顺序即落盘值的顺序**（`phone` / `tablet` / `tv`）。
-         */
-        val OPTIONS = listOf("phone", "tablet", "tv")
-
         /** 落盘值在这三档里的下标（旧 `auto` 认不出时落到手机）。 */
-        fun optionIndex(value: String): Int = OPTIONS.indexOf(value).coerceAtLeast(0)
+        fun optionIndex(value: String): Int =
+            SELECTABLE.indexOfFirst { storedValue(it)==value }.coerceAtLeast(0)
 
         /**
          * 三档的**选择文案**（首次启动与设置弹窗 / 对话框共用）。
@@ -65,9 +61,6 @@ enum class DeviceForm(val label: String) {
             "平板  ·  触屏手势 + 横屏旋转",
             "电视  ·  遥控器 + 顺时针旋转",
         )
-
-        /** 设置页那一格的短读数（行宽有限，只放形态名）。 */
-        fun shortLabel(value: String): String = ofStored(value)?.label ?: "未选择"
 
         fun requiresTouch(form: DeviceForm): Boolean =
             form == PHONE || form == TABLET

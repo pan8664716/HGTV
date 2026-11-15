@@ -19,7 +19,6 @@ import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneUiScale
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
-import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.ui.TvTheme
 import kotlin.math.roundToInt
@@ -244,15 +243,7 @@ internal fun PhoneSettingsActivity.renderLandscapeSystem() {
         landscapeCell(line,landscapeSetting("关于","版本 ${appVersionName()}") { showAboutDialog() })
         val deviceLabel = DeviceForm.ofStored(settingsLibrary.deviceForm)?.label ?: "未选择"
         landscapeCell(line,landscapeSetting("设备类型",deviceLabel) {
-            pickImpl("设备类型（切换后自动重新进入）",DeviceForm.pickerLabels(),
-                DeviceForm.optionIndex(settingsLibrary.deviceForm)) { i ->
-                val selected=DeviceForm.OPTIONS[i]
-                if(selected==settingsLibrary.deviceForm) { renderSettings(); return@pickImpl }
-                if(!settingsLibrary.setDeviceFormNow(selected)) {
-                    toastImpl("设备类型保存失败，请重试"); renderSettings(); return@pickImpl
-                }
-                AppRelaunch.switchDeviceForm(this)
-            }
+            openDeviceFormSelector()
         })
     }
 }

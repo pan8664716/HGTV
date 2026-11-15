@@ -14,7 +14,6 @@ import com.hgtv.star.core.VideoDecoderMode
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneUiScale
-import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.feature.settings.SettingRowSpec
 import com.hgtv.star.shared.feature.settings.SettingsController
@@ -272,22 +271,7 @@ internal fun PhoneSettingsActivity.applyActionImpl(id: String) {
         }
         SettingsController.ID_LAN_SYNC -> showLanLibrarySync()
         "system.about" -> showAboutDialog()
-        SettingsController.ID_DEVICE_FORM -> {
-            pickImpl(
-                "设备类型（切换后自动重新进入）",
-                DeviceForm.pickerLabels(),
-                DeviceForm.optionIndex(settingsLibrary.deviceForm),
-            ) { index ->
-                val selected = DeviceForm.OPTIONS[index]
-                if (selected != settingsLibrary.deviceForm &&
-                    settingsLibrary.setDeviceFormNow(selected)
-                ) {
-                    AppRelaunch.switchDeviceForm(this)
-                } else {
-                    renderSettings()
-                }
-            }
-        }
+        SettingsController.ID_DEVICE_FORM -> openDeviceFormSelector()
         "recommend.unhide" -> {
             val count = settingsLibrary.hidden().size
             if (count == 0) {

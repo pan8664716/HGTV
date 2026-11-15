@@ -4878,13 +4878,19 @@ feature-tv/
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
-- 新安装不再调用 `detectDeviceForm()` 决定路由。`LaunchActivity` 使用设置页同款
-  `TvDialog` 新拟态面板弹出手机 / 平板 / 电视三档选择，选中后再弹确认页。
+- 新安装不再调用 `detectDeviceForm()` 决定路由；探测结果只用于首页选择器的样式分支。
+  首页首次启动与设置页都通过同一个 `DeviceFormActivity`，选择、确认、输入限制与保存逻辑
+  只有一份。
 - 首次选择另用 `first-run-ui-v1 / deviceFormConfirmed` 标记，不依赖 `deviceForm`
   是否已从镜像或旧数据恢复；本次安装未完成选择时一定先弹窗，返回键和点外部都不能跳过。
-- 确认输入按目标形态锁定：手机 / 平板只能触摸点击“确认”，遥控器不能完成；
-  电视只能遥控器选中并按确定键，`TvDialog` 的 remote-only 模式会禁用外部触摸关闭，
-  并在按钮层吞掉触摸。
+- 设置页不再各自实现设备类型 picker；手机与 TV 都启动同一个 `DeviceFormActivity`，
+  手机 / 平板使用 `PhoneDialog`，电视使用 `TvDialog`，首页与对应设置页的拟态样式一致。
+- `DeviceFormDialogTheme` 必须继承 `AppTheme` 后再设透明窗口；不能直接继承
+  `Theme.Translucent.NoTitleBar`，否则 21+ 的 `AlertDialog` 会解析到 Holo 弹框主题，
+  窗口尺寸、内边距和字体与 1.3.7.3 设置页不一致。
+- 手机 / 平板档进入二次确认，确认按钮只接受触摸，键盘、遥控器与鼠标事件都会被吞掉；
+  确认页任意触摸会重置 6 秒倒计时，无操作时返回设备类型选择页。
+- 电视档不再二次确认，选择后直接保存并进入；设置页切换同样复用这一规则。
 - 设备类型写入现有的 `native-library-v1 / deviceForm`，之后启动直接按用户选择进入
   `PhoneMainActivity` 或 `TvMainActivity`；确认时同时刷新已预加载 `Library` 的内存缓存，
   本次启动立即生效，不必等下一次重启。设置页与调试面板只显示这份选择。
@@ -4893,6 +4899,7 @@ feature-tv/
 - 设备档案、签名与注册统一以用户选择为准，不再由硬件探测覆盖电视档案。
 - 首帧后仍立即并行预热缓存、书库、运行时和友盟；备用设备注册与形态相关身份绑定
   延后到用户确认后在线程中执行，不阻塞选择弹窗和目标页启动。
-- 未新增文件；`:app:assembleDebug` 通过；未改版本号、versionCode 或依赖。
+- 新增 `DeviceFormActivity.kt` 与共享 action / extra 契约 `DeviceFormSelection.kt`；
+  `:app:assembleDebug` 通过；未改版本号、versionCode 或依赖。
 
 回滚：对本节对应提交执行 `git revert`。
