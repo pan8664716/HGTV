@@ -8,15 +8,19 @@ internal fun ContentRepository.appValuesImpl(): LinkedHashMap<String,String> =
     deviceValuesImpl("72232","7.2.2.32")
 
 /**
- * 弹幕固定使用官方内置设备档案。
+ * 弹幕使用本机注册设备身份，保留每台设备自己的 DID / IID。
  *
- * 热弹幕接口会按设备档案返回不同的“热评样本”：同一集、同一时间，电视的
- * `S905L3B` 只回 25 条，模拟器的手机档案回 738 条。弹幕是公共内容，不应由
- * 本机设备型号决定，因此这里固定使用 [VendorConstants.device]，让电视、手机和
- * 模拟器请求同一份样本；账号态也不覆盖它。
+ * 热弹幕接口可能按设备档案返回不同样本；这是平台行为，不能通过共享公共
+ * DID 强行抹平，否则会把不同设备混成同一个风控/分桶身份。
  */
 internal fun ContentRepository.danmakuValuesImpl(): LinkedHashMap<String,String> =
-    buildValues(VendorConstants.device,"72232","7.2.2.32")
+    run {
+        val identity=deviceIdentity
+        if(identity["device_id"].isNullOrBlank() || identity["iid"].isNullOrBlank()) {
+            throw DeviceNotRegisteredException("弹幕设备身份尚未注册")
+        }
+        buildValues(deviceProfileImpl(),"72232","7.2.2.32")
+    }
 
 internal fun ContentRepository.searchValuesImpl(): LinkedHashMap<String,String> {
     val values=deviceValuesImpl(searchVersionCodeValue,searchVersionNameValue)
