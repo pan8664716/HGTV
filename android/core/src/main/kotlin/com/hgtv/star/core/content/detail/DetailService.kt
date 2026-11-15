@@ -251,7 +251,7 @@ import java.util.concurrent.TimeUnit
      * 按作者名找 UGC `user_id`：全站搜索的**用户** tab（`tab_type=27`）。
      *
      * 为什么不用详情接口的 `main_creator_users`：本工程当前客户端版本下发的详情里**没有这个字段**
-     * （2026-10-30 实测：`GET` / `POST /novel/player/video_detail/v1/` 在 72232 / 73932 两档、
+     * （2026-10-30 实测：`GET` / `POST /novel/player/video_detail/v1/` 在 72232 / 74332 两档、
      * 六条线路上都不含 `creator` 字样），而用户搜索一次就能拿到 `user_name` + `user_id`
      * 以及 `base_info.user_avatar`，顺手还能校验「这个号真的叫这个名字」——
      * 同名账号只认完全相等的那一个。

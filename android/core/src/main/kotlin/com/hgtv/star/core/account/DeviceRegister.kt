@@ -51,7 +51,7 @@ import java.util.zip.GZIPOutputStream
  *    `x-helios` / `x-medusa`，query 里也没有 `ts` / `_rticket`。带上签名头反而会被判异常客户端。
  */
 object DeviceRegister {
-    /** 首次无 TNC 配置时，官方 7.3.9.32 冷启动注册使用的线路。 */
+    /** 首次无 TNC 配置时，官方 7.4.3.32 冷启动注册使用的线路。 */
     private const val HOST = "log5-applog-lf.fqnovel.com"
     private const val PATH = "/service/2/device_register/"
     /** ttEncrypt 的固定前缀（`libEncryptor.so` 的魔数）。 */
@@ -161,12 +161,12 @@ object DeviceRegister {
         json.put("magic_tag","ss_app_log")
         json.put("header", org.json.JSONObject().apply {
             put("display_name","红果免费短剧")
-            put("update_version_code",73932); put("manifest_version_code",73932)
-            // 2026-11-06 官方 7.3.9.32 冷启动抓包里这一项是完整版本号。
-            put("app_version_minor","7.3.9.32")
+            put("update_version_code",74332); put("manifest_version_code",74332)
+            // 2026-11-06 官方 7.4.3.32 冷启动抓包里这一项是完整版本号。
+            put("app_version_minor","7.4.3.32")
             put("aid",8662)
             put("channel", value("channel","69310258a")); put("package","com.phoenix.read")
-            put("app_version","7.3.9.32"); put("version_code",73932)
+            put("app_version","7.4.3.32"); put("version_code",74332)
             put("sdk_version","3.7.0-rc.34-fanqie-xiaoshuo"); put("sdk_target_version",29)
             // `os_version` 必须是**字符串**：写成数字（`12`）服务端直接回 `device_id=0`
             // （实测字符串 6/6 成功、数字 0/6）。`os_api` / `density_dpi` 两种都收。
@@ -179,7 +179,7 @@ object DeviceRegister {
             put("display_density", device["display_density"]?.takeIf { it.isNotBlank() } ?: "mdpi")
             put("resolution", resolution)
             put("language","zh"); put("timezone",8); put("access","wifi"); put("not_request_sender",0)
-            // 这四项在官方 7.3.9.32 注册 body 中始终存在。真实档案优先；
+            // 这四项在官方 7.4.3.32 注册 body 中始终存在。真实档案优先；
             // 模拟器 / 无电话服务时使用抓包中的官方默认值，避免字段直接缺失。
             put("carrier", value("carrier","CHINA MOBILE"))
             put("mcc_mnc", value("mcc_mnc","46000"))
@@ -198,7 +198,7 @@ object DeviceRegister {
             put("ipv6_list", ipv6List())
             put("region","CN"); put("tz_name","Asia/Shanghai"); put("tz_offset",28800)
             put("sim_region","cn"); put("sim_serial_number", org.json.JSONArray())
-            // 官方 7.3.9.32 冷启动抓包里是 false。
+            // 官方 7.4.3.32 冷启动抓包里是 false。
             put("oaid_may_support",false)
             put("req_id", java.util.UUID.randomUUID().toString())
             put("device_platform","android")
@@ -218,7 +218,7 @@ object DeviceRegister {
     /**
      * 注册请求头，逐项对齐官方冷启动抓包。**刻意不加签名头**。
      *
-     * 官方 7.3.9.32 的 HTTP/2 抓包里 `x-neptune` 是
+     * 官方 7.4.3.32 的 HTTP/2 抓包里 `x-neptune` 是
      * `-11|50:51:59`（不是早期的 `-8|...`）。`Accept-Encoding` 不能手动设置：
      * OkHttp 只有在自己添加这个头时才会透明解压响应，否则压缩 JSON 会被直接
      * 当 UTF-8 解析，表现为 `device_id=0` / 注册被拒绝。
@@ -233,7 +233,7 @@ object DeviceRegister {
         "x-tt-trace-id" to VendorConstants.traceId(),
         "User-Agent" to VendorConstants.headerSafe(
             device["user_agent"], VendorConstants.userAgent(
-                LinkedHashMap(device).apply { put("version_code","73932") },
+                LinkedHashMap(device).apply { put("version_code","74332") },
                 video = true,
             )),
         "x-neptune" to "-11|50:51:59",

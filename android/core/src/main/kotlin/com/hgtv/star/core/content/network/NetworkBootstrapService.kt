@@ -267,7 +267,7 @@ import java.io.IOException
             this["tnc_src"]="1"
             this["okhttp_version"]="4.2.243.17-hongguo"
             this["use_store_region_cookie"]="1"
-            // TNC 抓包来自播放器 7.1.3.32；播放取地址的 7.3.9.32 不混进这条配置请求。
+            // TNC 抓包来自播放器 7.1.3.32；播放取地址的 7.4.3.32 不混进这条配置请求。
             for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
                 this[key]=VendorConstants.VIDEO_VERSION_CODE
             }

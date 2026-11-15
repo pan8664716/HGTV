@@ -233,8 +233,8 @@ import java.util.concurrent.TimeUnit
             put("device_id",registeredId)
             put("iid",registeredIid)
             putAll(PROTOCOL_VALUES)
-            for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
-            this["version_name"]="7.3.9.32"
+            for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="74332"
+            this["version_name"]="7.4.3.32"
         }
         return modelQueryProfile(base)
     }
@@ -311,8 +311,8 @@ import java.util.concurrent.TimeUnit
             modelQueryProfile(LinkedHashMap(VendorConstants.device).apply {
                 putAll(backupProfile)
                 putAll(PROTOCOL_VALUES)
-                for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
-                this["version_name"]="7.3.9.32"
+                for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="74332"
+                this["version_name"]="7.4.3.32"
             })
         } ?: modelProfile()
         val effectiveCookie=backup?.cookieHeader ?: cookie
@@ -321,7 +321,7 @@ import java.util.concurrent.TimeUnit
         val extra=linkedMapOf<String,String>()
         if(effectiveCookie!=null) extra["Cookie"]=effectiveCookie
         extra["Content-Encoding"]="gzip"
-        // 视频接口按官方 7.3.9.32 抓包单独覆盖：
+        // 视频接口按官方 7.4.3.32 抓包单独覆盖：
         // * passport-sdk-version=5051452（不是内容接口的 6031190）
         // * lc=101 / x-ss-dp=8662
         // * 官方没有空 x-tt-dt，也没有 x-tt-request-tag
@@ -400,8 +400,8 @@ import java.util.concurrent.TimeUnit
             modelQueryProfile(LinkedHashMap(VendorConstants.device).apply {
                 putAll(backupProfile)
                 putAll(PROTOCOL_VALUES)
-                for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="73932"
-                this["version_name"]="7.3.9.32"
+                for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="74332"
+                this["version_name"]="7.4.3.32"
             })
         } ?: modelProfile()
         val effectiveCookie=backup?.cookieHeader ?: cookie

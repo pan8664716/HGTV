@@ -21,12 +21,12 @@ class LivePlaybackFreshTest {
         val device = linkedMapOf("device_id" to did, "iid" to iid, "install_id" to iid, "device_brand" to "Redmi", "device_type" to "25053RT47C", "os_version" to "16", "os_api" to "36")
         val query = linkedMapOf(
             "iid" to iid, "device_id" to did, "ac" to "wifi", "channel" to "update_64", "aid" to "8662",
-            "app_name" to "novelread", "version_code" to "73932", "version_name" to "7.3.9.32",
+            "app_name" to "novelread", "version_code" to "74332", "version_name" to "7.4.3.32",
             "device_platform" to "android", "os" to "android", "ssmix" to "a", "device_type" to "25053RT47C",
             "device_brand" to "Redmi", "language" to "zh", "os_api" to "36", "os_version" to "16",
-            "manifest_version_code" to "73932", "resolution" to "1280*2772", "dpi" to "520",
-            "update_version_code" to "73932", "host_abi" to "arm64-v8a", "dragon_device_type" to "phone",
-            "pv_player" to "73932", "compliance_status" to "0", "need_personal_recommend" to "1",
+            "manifest_version_code" to "74332", "resolution" to "1280*2772", "dpi" to "520",
+            "update_version_code" to "74332", "host_abi" to "arm64-v8a", "dragon_device_type" to "phone",
+            "pv_player" to "74332", "compliance_status" to "0", "need_personal_recommend" to "1",
             "player_so_load" to "1", "is_android_pad_screen" to "0"
         )
         val url: String
@@ -40,7 +40,7 @@ class LivePlaybackFreshTest {
         }
         val b = Request.Builder().url(url)
         headers.forEach { (k, v) -> b.header(k, v) }
-        b.header("User-Agent", "com.phoenix.read/73932 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)")
+        b.header("User-Agent", "com.phoenix.read/74332 (Linux; U; Android 16; zh_CN; 25053RT47C; Build/BP2A.250605.031.A3; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)")
         b.header("Accept", "application/json")
         if (withCookie != null) b.header("Cookie", withCookie)
         b.post(body.toRequestBody("application/json; charset=UTF-8".toMediaType()))

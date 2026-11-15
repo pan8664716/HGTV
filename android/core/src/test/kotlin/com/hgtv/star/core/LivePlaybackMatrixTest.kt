@@ -53,9 +53,9 @@ class LivePlaybackMatrixTest {
         val sdkBiz = """{"video_id":"7667513056330517529","biz_param":{"video_id_type":0,"need_all_video_definition":true,"video_platform":3}}"""
         send("app 72232/UA71332", "72232", "7.2.2.32", appBiz, "71332")
         send("app 72232/UA72232", "72232", "7.2.2.32", appBiz, "72232")
-        send("new 73932/UA73932 appbiz", "73932", "7.3.9.32", appBiz, "73932")
-        send("new 73932/UA73932 sdkbiz", "73932", "7.3.9.32", sdkBiz, "73932")
+        send("new 74332/UA74332 appbiz", "74332", "7.4.3.32", appBiz, "74332")
+        send("new 74332/UA74332 sdkbiz", "74332", "7.4.3.32", sdkBiz, "74332")
         send("app 72232/UA71332 nocookie", "72232", "7.2.2.32", appBiz, "71332", withCookie = false)
-        send("new 73932 nocookie", "73932", "7.3.9.32", appBiz, "73932", withCookie = false)
+        send("new 74332 nocookie", "74332", "7.4.3.32", appBiz, "74332", withCookie = false)
     }
 }

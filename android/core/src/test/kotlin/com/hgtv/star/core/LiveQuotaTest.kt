@@ -19,12 +19,12 @@ class LiveQuotaTest {
         val device = linkedMapOf("device_id" to did, "iid" to iid, "install_id" to iid, "device_brand" to "Xiaomi", "device_type" to "23127PN0CC", "os_version" to "14", "os_api" to "34")
         val query = linkedMapOf(
             "iid" to iid, "device_id" to did, "ac" to "wifi", "channel" to "xiaomi_8662_64", "aid" to "8662",
-            "app_name" to "novelread", "version_code" to "73932", "version_name" to "7.3.9.32",
+            "app_name" to "novelread", "version_code" to "74332", "version_name" to "7.4.3.32",
             "device_platform" to "android", "os" to "android", "ssmix" to "a", "device_type" to "23127PN0CC",
             "device_brand" to "Xiaomi", "language" to "zh", "os_api" to "34", "os_version" to "14",
-            "manifest_version_code" to "73932", "resolution" to "1200*2670", "dpi" to "460",
-            "update_version_code" to "73932", "host_abi" to "arm64-v8a", "dragon_device_type" to "phone",
-            "pv_player" to "73932", "compliance_status" to "0", "need_personal_recommend" to "1",
+            "manifest_version_code" to "74332", "resolution" to "1200*2670", "dpi" to "460",
+            "update_version_code" to "74332", "host_abi" to "arm64-v8a", "dragon_device_type" to "phone",
+            "pv_player" to "74332", "compliance_status" to "0", "need_personal_recommend" to "1",
             "player_so_load" to "1", "is_android_pad_screen" to "0"
         )
         cdid?.let { query["cdid"] = it }
@@ -32,7 +32,7 @@ class LiveQuotaTest {
         val signed = Signer(device = device).sign(host + "/novel/player/video_model/v1/", query, body.toByteArray())
         val b = Request.Builder().url(signed.url)
         signed.headers.forEach { (k, v) -> b.header(k, v) }
-        b.header("User-Agent", "com.phoenix.read/73932 (Linux; U; Android 14; zh_CN; 23127PN0CC; Build/UKQ1.230804.001; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)")
+        b.header("User-Agent", "com.phoenix.read/74332 (Linux; U; Android 14; zh_CN; 23127PN0CC; Build/UKQ1.230804.001; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)")
         b.header("Accept", "application/json")
         cookie?.let { b.header("Cookie", it) }
         b.post(body.toRequestBody("application/json; charset=UTF-8".toMediaType()))

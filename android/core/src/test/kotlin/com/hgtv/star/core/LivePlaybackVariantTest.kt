@@ -47,11 +47,11 @@ class LivePlaybackVariantTest {
 
     @Test fun variant() {
         assumeTrue("HONGGUO_LIVE", System.getenv("HONGGUO_LIVE") == "1")
-        send("base 73932 sdkbiz", "73932", "7.3.9.32", sdkBiz)
-        send("no openudid", "73932", "7.3.9.32", sdkBiz, includeOpen = false)
-        send("no cdid", "73932", "7.3.9.32", sdkBiz, includeCdid = false)
-        send("appbiz", "73932", "7.3.9.32", appBiz)
+        send("base 74332 sdkbiz", "74332", "7.4.3.32", sdkBiz)
+        send("no openudid", "74332", "7.4.3.32", sdkBiz, includeOpen = false)
+        send("no cdid", "74332", "7.4.3.32", sdkBiz, includeCdid = false)
+        send("appbiz", "74332", "7.4.3.32", appBiz)
         send("old 72232 appbiz", "72232", "7.2.2.32", appBiz)
-        send("no cookie", "73932", "7.3.9.32", sdkBiz, cookieIn = null)
+        send("no cookie", "74332", "7.4.3.32", sdkBiz, cookieIn = null)
     }
 }

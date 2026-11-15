@@ -2,7 +2,7 @@
 package com.hgtv.star.core
 
 internal fun ContentRepository.writeValuesImpl(): LinkedHashMap<String,String> =
-    accountValuesImpl("73932","7.3.9.32")
+    accountValuesImpl("74332","7.4.3.32")
 
 internal fun ContentRepository.appValuesImpl(): LinkedHashMap<String,String> =
     deviceValuesImpl("72232","7.2.2.32")

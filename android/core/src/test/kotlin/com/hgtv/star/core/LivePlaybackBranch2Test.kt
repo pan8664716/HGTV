@@ -15,17 +15,17 @@ class LivePlaybackBranch2Test {
         "device_id" to "3154971173098252", "iid" to "3154971173102348", "install_id" to "3154971173102348",
         "cdid" to "70a1585e-b007-43af-bc0d-4f5c176ccbbf", "openudid" to "15fcb0784fcb6042",
         "device_brand" to "Xiaomi", "device_type" to "23127PN0CC", "os_version" to "14", "os_api" to "34",
-        "version_name" to "7.3.9.32"
+        "version_name" to "7.4.3.32"
     )
     private val query = linkedMapOf(
         "iid" to "3154971173102348", "device_id" to "3154971173098252", "ac" to "wifi",
         "channel" to "xiaomi_8662_64", "aid" to "8662", "app_name" to "novelread",
-        "cdid" to "70a1585e-b007-43af-bc0d-4f5c176ccbbf", "version_code" to "73932", "version_name" to "7.3.9.32",
+        "cdid" to "70a1585e-b007-43af-bc0d-4f5c176ccbbf", "version_code" to "74332", "version_name" to "7.4.3.32",
         "device_platform" to "android", "os" to "android", "ssmix" to "a", "device_type" to "23127PN0CC",
         "device_brand" to "Xiaomi", "language" to "zh", "os_api" to "34", "os_version" to "14",
-        "manifest_version_code" to "73932", "resolution" to "1200*2670", "dpi" to "460",
-        "update_version_code" to "73932", "host_abi" to "arm64-v8a", "dragon_device_type" to "phone",
-        "pv_player" to "73932", "compliance_status" to "0", "need_personal_recommend" to "1",
+        "manifest_version_code" to "74332", "resolution" to "1200*2670", "dpi" to "460",
+        "update_version_code" to "74332", "host_abi" to "arm64-v8a", "dragon_device_type" to "phone",
+        "pv_player" to "74332", "compliance_status" to "0", "need_personal_recommend" to "1",
         "player_so_load" to "1", "is_android_pad_screen" to "0", "openudid" to "15fcb0784fcb6042"
     )
     private val cookie = "store-region=cn-gd; store-region-src=did; install_id=3154971173102348; ttreq=1\$804c087461f3bfb97c16b232f9502d254ba9871c"
@@ -45,7 +45,7 @@ class LivePlaybackBranch2Test {
             }
             val builder = Request.Builder().url(url)
             headers.forEach { (k, v) -> builder.header(k, v) }
-            builder.header("User-Agent", "com.phoenix.read/73932 (Linux; U; Android 14; zh_CN; 23127PN0CC; Build/UKQ1.230804.001; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)")
+            builder.header("User-Agent", "com.phoenix.read/74332 (Linux; U; Android 14; zh_CN; 23127PN0CC; Build/UKQ1.230804.001; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)")
             builder.header("Accept", "application/json")
             builder.header("Cookie", cookie)
             builder.post(body.toRequestBody("application/json; charset=UTF-8".toMediaType()))

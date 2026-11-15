@@ -41,8 +41,8 @@ class LiveRegComboTest {
 
     @Test fun combo() {
         assumeTrue("HONGGUO_LIVE", System.getenv("HONGGUO_LIVE") == "1")
-        send("https://log.snssdk.com 73932", "199483918948923", "199483918953019", "1029be91-9b6c-4421-a015-6e7a5f0a5418", "188cdabf909342e7", "store-region=cn-gd; store-region-src=did; install_id=199483918953019; ttreq=1\$f222d38f39fe6a983ae9ec46ce5c0753833886de", "Xiaomi", "23127PN0CC", "14", 34, "1200*2670", 460, "xiaomi_8662_64", "73932", "7.3.9.32")
+        send("https://log.snssdk.com 74332", "199483918948923", "199483918953019", "1029be91-9b6c-4421-a015-6e7a5f0a5418", "188cdabf909342e7", "store-region=cn-gd; store-region-src=did; install_id=199483918953019; ttreq=1\$f222d38f39fe6a983ae9ec46ce5c0753833886de", "Xiaomi", "23127PN0CC", "14", 34, "1200*2670", 460, "xiaomi_8662_64", "74332", "7.4.3.32")
         send("https://log5-applog-lq.fqnovel.com 73532", "3893842988773232", "3893842988777328", "61f54530-f0bc-48d4-9b1f-8fe228d39adf", "f90e6a18c4ef443f", "store-region=cn-gd; store-region-src=did; install_id=3893842988777328; ttreq=1\$e1d5b4f5c38931e47a6747f138b05d787d9dac97", "Xiaomi", "23127PN0CC", "14", 34, "1200*2670", 460, "xiaomi_8662_64", "73532", "7.3.5.32")
-        send("https://log5-applog-lq.fqnovel.com 73932", "2556836849431452", "516143268498220", "754e24db-56bd-46dd-8344-55f5720810c5", "7a810339d7994fc7", "store-region=cn-gd; store-region-src=did; install_id=516143268498220; ttreq=1\$03dfa37930815c2447e8efe31b89600e2e80e5cd", "Xiaomi", "23127PN0CC", "14", 34, "1200*2670", 460, "xiaomi_8662_64", "73932", "7.3.9.32")
+        send("https://log5-applog-lq.fqnovel.com 74332", "2556836849431452", "516143268498220", "754e24db-56bd-46dd-8344-55f5720810c5", "7a810339d7994fc7", "store-region=cn-gd; store-region-src=did; install_id=516143268498220; ttreq=1\$03dfa37930815c2447e8efe31b89600e2e80e5cd", "Xiaomi", "23127PN0CC", "14", 34, "1200*2670", 460, "xiaomi_8662_64", "74332", "7.4.3.32")
     }
 }

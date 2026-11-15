@@ -14,15 +14,15 @@ class LivePlaybackBurn2Test {
     private val sdkBiz = """{"video_id":"7667513056330517529","biz_param":{"video_id_type":0,"need_all_video_definition":true,"video_platform":3}}"""
 
     private fun send(label: String, did: String, iid: String, cdid: String, openudid: String, cookie: String, branch2: Boolean) {
-        val device = linkedMapOf("device_id" to did, "iid" to iid, "install_id" to iid, "cdid" to cdid, "openudid" to openudid, "device_brand" to "Xiaomi", "device_type" to "23127PN0CC", "os_version" to "14", "os_api" to "34", "version_name" to "7.3.9.32")
+        val device = linkedMapOf("device_id" to did, "iid" to iid, "install_id" to iid, "cdid" to cdid, "openudid" to openudid, "device_brand" to "Xiaomi", "device_type" to "23127PN0CC", "os_version" to "14", "os_api" to "34", "version_name" to "7.4.3.32")
         val query = linkedMapOf(
             "iid" to iid, "device_id" to did, "ac" to "wifi", "channel" to "xiaomi_8662_64", "aid" to "8662",
-            "app_name" to "novelread", "cdid" to cdid, "version_code" to "73932", "version_name" to "7.3.9.32",
+            "app_name" to "novelread", "cdid" to cdid, "version_code" to "74332", "version_name" to "7.4.3.32",
             "device_platform" to "android", "os" to "android", "ssmix" to "a", "device_type" to "23127PN0CC",
             "device_brand" to "Xiaomi", "language" to "zh", "os_api" to "34", "os_version" to "14",
-            "manifest_version_code" to "73932", "resolution" to "1200*2670", "dpi" to "460",
-            "update_version_code" to "73932", "host_abi" to "arm64-v8a", "dragon_device_type" to "phone",
-            "pv_player" to "73932", "compliance_status" to "0", "need_personal_recommend" to "1",
+            "manifest_version_code" to "74332", "resolution" to "1200*2670", "dpi" to "460",
+            "update_version_code" to "74332", "host_abi" to "arm64-v8a", "dragon_device_type" to "phone",
+            "pv_player" to "74332", "compliance_status" to "0", "need_personal_recommend" to "1",
             "player_so_load" to "1", "is_android_pad_screen" to "0", "openudid" to openudid
         )
         val url: String; val headers: Map<String, String>
@@ -35,7 +35,7 @@ class LivePlaybackBurn2Test {
         }
         val b = Request.Builder().url(url)
         headers.forEach { (k, v) -> b.header(k, v) }
-        b.header("User-Agent", "com.phoenix.read/73932 (Linux; U; Android 14; zh_CN; 23127PN0CC; Build/UKQ1.230804.001; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)")
+        b.header("User-Agent", "com.phoenix.read/74332 (Linux; U; Android 14; zh_CN; 23127PN0CC; Build/UKQ1.230804.001; Cronet/TTNetVersion:04657795 2026-01-23 QuicVersion:c67e9834 2025-09-08)")
         b.header("Accept", "application/json")
         b.header("Cookie", cookie)
         b.post(sdkBiz.toRequestBody("application/json; charset=UTF-8".toMediaType()))
