@@ -4628,14 +4628,17 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
-## 弹幕固定使用注册设备身份
+## 弹幕请求固定设备档案
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
-- 根因：热弹幕请求调用通用 `appValues()`，登录后它会按 `primaryIdentity()` 切换到
-  账号设备 profile，平台返回的热弹幕样本随之变化，部分账号反而明显更少。
-- 修复：新增 `danmakuValues()`，固定从 `deviceProfileImpl()` 构建
-  `72232 / 7.2.2.32` 参数；弹幕请求只使用注册设备身份，不读取账号设备 profile。
+- 复核：同一集、同一时间、电视和模拟器都显示 6 行时，模拟器日志 `count=738`，
+  电视日志 `count=25`；两边 API 都返回 200，请求体长度也相同。差异来自热弹幕接口
+  按本机设备档案返回不同样本，不是 `DanmakuView` 渲染丢行。
+- 修复：`danmakuValues()` 固定使用 `VendorConstants.device` 构建
+  `72232 / 7.2.2.32` 参数；签名使用同一份 `deviceOverride`，请求 UA 也使用同一份
+  profile。电视、手机和模拟器因此请求同一套公共弹幕样本，账号态和本机型号不再改变
+  样本集合。
 - 其他需要登录态的业务接口继续使用原 `appValues()` / session，不受影响。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 

@@ -102,12 +102,21 @@ internal data class ContentRepositoryDanmakuPage(
         var failure: IOException?=null
         for(host in commentHosts()) {
             try {
-                val signed=signer.sign("https://$host/novel/commentapi/comment/list/$vid/v1/",values,payload)
+                val signed=signer.sign(
+                    "https://$host/novel/commentapi/comment/list/$vid/v1/",
+                    values,
+                    payload,
+                    deviceOverride=values,
+                )
                 val headers=signed.headers.toMutableMap()
                 headers["comment-source"]=ContentRepository.HOT_COMMENT_SOURCE.toString()
                 headers["server-channel"]=ContentRepository.HOT_SERVER_CHANNEL.toString()
                 headers["x-ss-stub"]=""
-                val raw=text(signed.url,Signer.Request(signed.url,headers,payload))
+                val raw=text(
+                    signed.url,
+                    Signer.Request(signed.url,headers,payload),
+                    userAgentProfile=values,
+                )
                 if(raw.isBlank()) throw IOException("弹幕接口暂无响应")
                 val data=JSONObject(raw)
                 if(data.optInt("code",-1)!=0) throw IOException("弹幕接口暂不可用（${data.optInt("code")}）")

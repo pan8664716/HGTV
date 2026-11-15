@@ -315,7 +315,7 @@ android/
 | `CategoryPanelCache.kt` | 分类页筛选面板缓存，按大类分别保存。 | object CategoryPanelCache |
 | `ContentAuthorRules.kt` | 目录、分类、榜单、首页布局与筛选。文件 ContentAuthorRules 主要包含 fun ContentRepository.heatValueImpl、fun ContentRepository.sameAuthorImpl、fun ContentRepository.authorUnknownOrSameImpl。 | fun ContentRepository.heatValueImpl、fun ContentRepository.sameAuthorImpl、fun ContentRepository.authorUnknownOrSameImpl |
 | `ContentType.kt` | 片库里的内容类型。 | class ContentType |
-| `ContentValues.kt` | 目录、分类、榜单、首页布局与筛选。文件 ContentValues 主要包含 fun ContentRepository.writeValuesImpl、fun ContentRepository.appValuesImpl、fun ContentRepository.searchValuesImpl、fun ContentRepository.searchRequestImpl。 | fun ContentRepository.writeValuesImpl、fun ContentRepository.appValuesImpl、fun ContentRepository.searchValuesImpl、fun ContentRepository.searchRequestImpl、fun ContentRepository.accountAppValuesImpl、fun ContentRepository.deviceValuesImpl |
+| `ContentValues.kt` | 目录、分类、榜单、首页布局与筛选；弹幕请求固定使用官方内置设备档案。 | fun ContentRepository.writeValuesImpl、fun ContentRepository.appValuesImpl、fun ContentRepository.danmakuValuesImpl、fun ContentRepository.searchValuesImpl、fun ContentRepository.searchRequestImpl、fun ContentRepository.accountAppValuesImpl、fun ContentRepository.deviceValuesImpl |
 | `FeedCursor.kt` | 推荐流的**续流游标**：session_id + next_offset，按体裁分开存。 | object FeedCursor |
 | `HomeLayout.kt` | 首页的一栏。 | class HomeColumn、object HomeLayout |
 | `OptionalFilter.kt` | 某一层「锦上添花」的推荐筛选项（受众 / filter_ids / 体裁）在服务端回空页时的降级状态。 | class OptionalFilter |
@@ -508,7 +508,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `DanmakuService.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 DanmakuService 主要包含 class ContentRepositoryDanmakuPage。 | class ContentRepositoryDanmakuPage |
+| `DanmakuService.kt` | 热弹幕分页、请求签名、固定设备档案与响应解析。 | class ContentRepositoryDanmakuPage |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/detail/`
 
