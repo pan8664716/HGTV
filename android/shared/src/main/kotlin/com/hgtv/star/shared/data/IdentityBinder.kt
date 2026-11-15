@@ -2,9 +2,12 @@
 package com.hgtv.star.shared.data
 
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.core.VendorConstants
 import com.hgtv.star.core.primaryCookiesSnapshot
 import com.hgtv.star.core.restoreDeviceCookies
 import com.hgtv.star.core.session.SessionBridge
+import com.hgtv.star.shared.compat.DeviceForm
+import com.hgtv.star.shared.compat.detectDeviceForm
 
 /**
  * 把**本机身份与会话**灌进进程级仓库：电视与手机共用这一份。
@@ -36,8 +39,15 @@ object IdentityBinder {
      */
     fun bind(library: Library, repository: ContentRepository) {
         if (!library.isLoaded) return
+        val tv = library.isTvDeviceForProfile()
+        val tvProfile = if(tv) {
+            VendorConstants.tvProfile(seed = library.deviceProfile()["cdid"].orEmpty())
+        } else {
+            emptyMap()
+        }
+        repository.tvDeviceProfile = tvProfile
         // 设备身份：只有平台注册下发的那一对（没注册过时是空表，不自编随机值）。
-        repository.registerProfile = library.deviceProfile()
+        repository.registerProfile = if(tv) tvProfile else library.deviceProfile()
         repository.deviceIdentity = library.deviceIdentity()
         // 账号凭据：`signedIn` 与所有账号接口都看它。
         repository.credentials = runCatching { library.account() }.getOrNull()?.takeIf { it.configured }
@@ -48,13 +58,24 @@ object IdentityBinder {
         // 请求层会显式带整套 Cookie；这里只给没有显式 Cookie 的内部请求兜底。
         SessionBridge.mainDeviceCookies = { repository.primaryCookiesSnapshot() }
         // 心跳的设备头与业务请求同源：登录后使用账号设备，未登录使用主设备。
-        val account=repository.credentials?.takeIf { it.configured }
         runCatching {
-            SessionBootstrap.updateDevice(
-                account?.device?.takeIf { it.isNotEmpty() } ?: library.deviceProfile(),
-            )
+            SessionBootstrap.updateDevice(repository.effectiveDeviceProfile())
         }
         // 历史遗留的「只给搜索用的口令」：搜索接口认它。
         repository.sessionToken = runCatching { library.searchToken }.getOrDefault("").ifBlank { null }
     }
+}
+
+/**
+ * 是否使用电视统一设备档案。
+ *
+ * 以实际探测结果为准；只有探测失败时才参考用户手动选择的设备形态，避免在手机模拟器
+ * 上手动切到电视 UI 后误用电视网络档案。
+ */
+internal fun Library.isTvDeviceForProfile(): Boolean {
+    val detected=runCatching { identityApp.detectDeviceForm().form }
+        .getOrDefault(DeviceForm.UNKNOWN)
+    val selected=DeviceForm.ofStored(deviceForm)
+    return detected==DeviceForm.TV ||
+        (detected==DeviceForm.UNKNOWN && selected==DeviceForm.TV)
 }

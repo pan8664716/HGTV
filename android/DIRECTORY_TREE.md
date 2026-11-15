@@ -315,7 +315,7 @@ android/
 | `CategoryPanelCache.kt` | 分类页筛选面板缓存，按大类分别保存。 | object CategoryPanelCache |
 | `ContentAuthorRules.kt` | 目录、分类、榜单、首页布局与筛选。文件 ContentAuthorRules 主要包含 fun ContentRepository.heatValueImpl、fun ContentRepository.sameAuthorImpl、fun ContentRepository.authorUnknownOrSameImpl。 | fun ContentRepository.heatValueImpl、fun ContentRepository.sameAuthorImpl、fun ContentRepository.authorUnknownOrSameImpl |
 | `ContentType.kt` | 片库里的内容类型。 | class ContentType |
-| `ContentValues.kt` | 目录、分类、榜单、首页布局与筛选；弹幕请求使用本机注册设备身份。 | fun ContentRepository.writeValuesImpl、fun ContentRepository.appValuesImpl、fun ContentRepository.danmakuValuesImpl、fun ContentRepository.searchValuesImpl、fun ContentRepository.searchRequestImpl、fun ContentRepository.accountAppValuesImpl、fun ContentRepository.deviceValuesImpl |
+| `ContentValues.kt` | 目录、分类、榜单、首页布局与筛选；电视统一设备参数档案由底层 profile 提供。 | fun ContentRepository.writeValuesImpl、fun ContentRepository.appValuesImpl、fun ContentRepository.danmakuValuesImpl、fun ContentRepository.searchValuesImpl、fun ContentRepository.searchRequestImpl、fun ContentRepository.accountAppValuesImpl、fun ContentRepository.deviceValuesImpl |
 | `FeedCursor.kt` | 推荐流的**续流游标**：session_id + next_offset，按体裁分开存。 | object FeedCursor |
 | `HomeLayout.kt` | 首页的一栏。 | class HomeColumn、object HomeLayout |
 | `OptionalFilter.kt` | 某一层「锦上添花」的推荐筛选项（受众 / filter_ids / 体裁）在服务端回空页时的降级状态。 | class OptionalFilter |
@@ -345,7 +345,7 @@ android/
 | `ContentPrimaryIdentity.kt` | 当前唯一的主身份快照。 | class ContentPrimaryIdentity、fun ContentRepository.primaryIdentity、fun ContentRepository.recommendationValues |
 | `ContentRelated.kt` | 取「相关作品」那一栏的原始条目。 | fun ContentRepository.relatedRows |
 | `ContentRelationFacade.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentRelationFacade 主要包含 fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame。 | fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame |
-| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址与缓存服务。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository |
+| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile |
 | `ContentSearchFacade.kt` | 搜索提示词（联想词）：App 搜索框用的那个接口。 | fun ContentRepository.suggestions、fun ContentRepository.webSuggestions、fun ContentRepository.hotSearches |
 | `ContentSearchResultsFacade.kt` | 只搜一种内容类型：联调探针仍可显式指定 tab_type。 | fun ContentRepository.search、fun ContentRepository.webSearch |
 | `ContentSigning.kt` | 同一套业务参数与设备参数，只换接口域名后重签。 | fun ContentRepository.resignForHost、fun ContentRepository.alternateApiHosts、fun ContentRepository.backupRequest、fun ContentRepository.backupQueryUrl、fun ContentRepository.urlWithHost |
@@ -377,8 +377,8 @@ android/
 | --- | --- | --- |
 | `ContentDeviceLevel.kt` | 设备身份、设备等级与版本档案。文件 ContentDeviceLevel 主要包含 fun ContentRepository.beginEpisodeImpl、fun ContentRepository.escalateDeviceLevelImpl。 | fun ContentRepository.beginEpisodeImpl、fun ContentRepository.escalateDeviceLevelImpl |
 | `ContentIdentity.kt` | 设备身份、设备等级与版本档案。文件 ContentIdentity 主要包含 fun ContentRepository.primaryIdentityImpl、fun ContentRepository.primaryProfileImpl、fun ContentRepository.primaryCookieHeaderImpl、fun Signer.Request.withSessionImpl。 | fun ContentRepository.primaryIdentityImpl、fun ContentRepository.primaryProfileImpl、fun ContentRepository.primaryCookieHeaderImpl、fun Signer.Request.withSessionImpl、fun Signer.Request.withAccountSessionImpl |
-| `ContentProfiles.kt` | 设备身份、设备等级与版本档案。文件 ContentProfiles 主要包含 fun ContentRepository.deviceProfileImpl、fun ContentRepository.accountDeviceProfileImpl、fun ContentRepository.relatedHostsImpl、fun ContentRepository.commentHostsImpl。 | fun ContentRepository.deviceProfileImpl、fun ContentRepository.accountDeviceProfileImpl、fun ContentRepository.relatedHostsImpl、fun ContentRepository.commentHostsImpl |
-| `VendorConstants.kt` | 设备身份、设备等级与版本档案。文件 VendorConstants 主要包含 object VendorConstants。 | object VendorConstants |
+| `ContentProfiles.kt` | 设备身份、设备等级与版本档案；电视 profile 覆盖本机真实字段并保留身份字段。 | fun ContentRepository.deviceProfileImpl、fun ContentRepository.accountDeviceProfileImpl、fun ContentRepository.relatedHostsImpl、fun ContentRepository.commentHostsImpl |
+| `VendorConstants.kt` | 设备身份、设备等级与版本档案；提供电视统一手机兼容 profile。 | object VendorConstants、fun VendorConstants.tvProfile |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/label/`
 
@@ -1044,7 +1044,7 @@ android/
 | `DeviceHealer.kt` | 设备身份自愈：**服务端不认这份身份**时，换一台设备重注册。 | object DeviceHealer |
 | `DeviceRegistration.kt` | 设备注册（匿名）的**唯一实现**：电视与手机共用。 | object DeviceRegistration |
 | `FavoriteMonitor.kt` | Serial foreground checks; cancellation owns only calls made by this monitor. | class FavoriteMonitor |
-| `IdentityBinder.kt` | 把**本机身份与会话**灌进进程级仓库：电视与手机共用这一份。 | object IdentityBinder |
+| `IdentityBinder.kt` | 把**本机身份与会话**灌进进程级仓库，并按实际设备形态选择电视统一设备档案。 | object IdentityBinder、fun Library.isTvDeviceForProfile |
 | `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、账号缓存和持久化。 | typealias WatchProgress、class Library |
 | `LibraryAccountCache.kt` | 缓存身份：登录账号优先；未登录但设备已注册时，用主设备身份隔离匿名缓存。 | fun Library.cacheIdentityKeyImpl、fun Library.cacheIdentityAvailableImpl、fun Library.accountCacheImpl、fun Library.cacheAccountImpl、fun Library.clearAccountCacheImpl |
 | `LibraryAccountCredentials.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.accountImpl、fun Library.saveAccountImpl、fun Library.clearAccountImpl |
@@ -1057,7 +1057,7 @@ android/
 | `LibraryDeviceProfile.kt` | 本机真机设备档案。 | fun Library.deviceProfileImpl、fun Library.buildOfficialProfileImpl、fun Library.readAndroidIdImpl |
 | `LibraryIdentityLayout.kt` | 一次性把旧版设备身份归档，并清空当前主设备身份。 | fun Library.ensureIdentityLayoutImpl |
 | `LibraryMirrorRestore.kt` | 把外部镜像里本机缺的项补回会话偏好。 | fun Library.restoreFromMirrorImpl、fun Library.retryMirrorRestoreImpl、fun Library.mirrorSyncImpl |
-| `LibraryPendingProfile.kt` | 「换新身份」用的**候选档案**：派生出来但还没被平台接受的那一份。 | fun Library.pendingProfileImpl、fun Library.storePendingProfileImpl、fun Library.commitPendingProfileImpl、fun Library.registrationProfileImpl、fun Library.hasPendingProfileImpl |
+| `LibraryPendingProfile.kt` | 「换新身份」用的**候选档案**，以及电视注册时使用的统一档案。 | fun Library.pendingProfileImpl、fun Library.storePendingProfileImpl、fun Library.commitPendingProfileImpl、fun Library.registrationProfileImpl、fun Library.hasPendingProfileImpl |
 | `LibraryPendingProfileFacade.kt` | 生成一条只用于备用播放设备注册的随机档案。 | fun Library.freshPlaybackBackupProfile、fun Library.commitPendingProfile、fun Library.registrationProfile、fun Library.hasPendingProfile |
 | `LibraryPlaybackSettings.kt` | 共享数据层、Library、缓存、网络与资源加载。文件 LibraryPlaybackSettings 主要包含 fun Library.autoNextSetting、fun Library.setAutoNextSetting、fun Library.playbackSpeedSetting、fun Library.setPlaybackSpeedSetting。 | fun Library.autoNextSetting、fun Library.setAutoNextSetting、fun Library.playbackSpeedSetting、fun Library.setPlaybackSpeedSetting、fun Library.frameModeSetting、fun Library.setFrameModeSetting |
 | `LibraryPreferenceCodec.kt` | 共享数据层、Library、缓存、网络与资源加载。文件 LibraryPreferenceCodec 主要包含 object LibraryPreferenceCodec。 | object LibraryPreferenceCodec |

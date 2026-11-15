@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.data
 
 import android.util.Log
+import com.hgtv.star.core.VendorConstants
 import org.json.JSONObject
 
 /**
@@ -74,6 +75,9 @@ internal fun Library.commitPendingProfileImpl() {
  * 新档案上；而其它请求（搜索 / 播放）此刻仍用旧档案，旧身份因此继续可用。
  */
 internal fun Library.registrationProfileImpl(): Map<String,String> {
+    if(isTvDeviceForProfile()) {
+        return VendorConstants.tvProfile(seed = deviceProfile()["cdid"].orEmpty())
+    }
     pendingProfileImpl()?.let { return it }
     return deviceProfile()
 }

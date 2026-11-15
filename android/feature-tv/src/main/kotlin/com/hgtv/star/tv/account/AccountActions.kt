@@ -615,7 +615,7 @@ fun TvMainActivity.phoneLoginChoice(anchor: View?) {
     // 手机扫码那条路留给「上行短信」那一步（那一步本来就必须用手机）。
     tvTools.phoneLoginForm(
         anchor,
-        LinkedHashMap(library.deviceProfile()).apply { putAll(library.deviceIdentity()) },
+        LinkedHashMap(library.registrationProfile()).apply { putAll(library.deviceIdentity()) },
         library.registrationCookies(),
         { profile -> registerForPhoneLogin(profile) },
         { credentials -> savePhoneLogin(credentials,anchor) },

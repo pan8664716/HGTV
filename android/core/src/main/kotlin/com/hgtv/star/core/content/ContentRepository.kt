@@ -110,11 +110,17 @@ class ContentRepository(
             field=clean
             signer.updateDevice(primaryProfile())
         }
+    /**
+     * 电视端所有设备参数请求使用的手机兼容档案；手机 / 平板保持空表。
+     * 由 [com.hgtv.star.shared.data.IdentityBinder] 在书库就绪后按设备形态设置。
+     */
+    @Volatile var tvDeviceProfile: Map<String,String> = emptyMap()
     fun inheritDevice(from: ContentRepository) {
         credentials=from.credentials
         sessionToken=from.sessionToken
         registerProfile=from.registerProfile
         deviceIdentity=from.deviceIdentity
+        tvDeviceProfile=from.tvDeviceProfile
         registrationCookies=from.registrationCookies
         deviceLevel=from.deviceLevel
     }
@@ -328,6 +334,9 @@ class ContentRepository(
     }
 
     internal fun primaryProfile(): Map<String,String> = primaryProfileImpl()
+
+    /** 当前请求应使用的完整设备档案（账号态包含账号设备身份，TV 包含统一档案）。 */
+    fun effectiveDeviceProfile(): Map<String,String> = primaryProfileImpl()
 
     internal fun primaryCookieHeader(): String = primaryCookieHeaderImpl()
 

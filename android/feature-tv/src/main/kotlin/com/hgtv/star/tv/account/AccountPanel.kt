@@ -17,6 +17,7 @@ import android.widget.PopupWindow
 import android.widget.ScrollView
 import com.hgtv.star.core.PhoneLogin
 import com.hgtv.star.core.QrLogin
+import com.hgtv.star.shared.data.registrationProfile
 import com.hgtv.star.shared.data.registrationCookies
 import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
@@ -213,7 +214,7 @@ private fun TvMainActivity.buildQrLoginPanel(
 
     val login=QrLogin().apply {
         // 登录先使用当前主设备，账号设备只在登录响应带回不同设备时接管。
-        device=LinkedHashMap(library.deviceProfile()).apply { putAll(library.deviceIdentity()) }
+        device=LinkedHashMap(library.registrationProfile()).apply { putAll(library.deviceIdentity()) }
         useDeviceCookies(library.registrationCookies())
         log={ line -> android.util.Log.i("HGTV-QRLOGIN",line) }
     }
@@ -458,7 +459,7 @@ private fun TvMainActivity.buildPhoneLoginPanel(
         accountPanelHost?.visibility==View.VISIBLE
 
     val login=PhoneLogin().apply {
-        device=LinkedHashMap(library.deviceProfile()).apply { putAll(library.deviceIdentity()) }
+        device=LinkedHashMap(library.registrationProfile()).apply { putAll(library.deviceIdentity()) }
         useDeviceCookies(library.registrationCookies())
         log={ line -> android.util.Log.i("HGTV-LOGIN",line) }
     }

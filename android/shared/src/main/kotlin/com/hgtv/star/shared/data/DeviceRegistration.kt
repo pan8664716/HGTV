@@ -210,7 +210,7 @@ object DeviceRegistration {
             usingPrimary=true
             if(repository.deviceIdentity["device_id"].isNullOrBlank() ||
                 repository.deviceIdentity["iid"].isNullOrBlank()) {
-                val profile=library.deviceProfile()
+                val profile=library.registrationProfile()
                 registerLoginDevice(library,repository,profile)
                     ?: throw IllegalStateException("登录设备注册失败")
             }
