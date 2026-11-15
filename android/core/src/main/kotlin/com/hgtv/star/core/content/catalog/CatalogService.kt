@@ -98,7 +98,13 @@ import java.io.IOException
         if(data.optInt("code",-1)!=0) throw IOException("分类接口暂不可用")
         val payload=data.optJSONObject("data") ?: throw IOException("分类接口结构已变化")
         val rows=(payload.optJSONArray("video_data") ?: JSONArray()).objects()
-        val items=ContentCatalogParser.valid(rows.map(ContentCatalogParser::apiCard))
+        val offset=categoryOffset(page)
+        val positions=linkedMapOf<String,RankPosition>()
+        val items=ContentCatalogParser.valid(rows.mapIndexed { index,row ->
+            ContentCatalogParser.apiCard(row).also { series ->
+                ContentCatalogParser.apiRank(row,offset,index)?.let { positions[series.id]=it }
+            }
+        })
         val serverMore=payload.optBoolean("has_more",false)
         // 服务端偶尔在“刚好装满一页”时把 has_more 错报成 false；这种满页不能提前终止，
         // 否则分类页会在同一位置停住。多请求一页，真到底时下一页为空自然结束。
@@ -107,7 +113,10 @@ import java.io.IOException
         val panel=if(needPanel) {
             ContentCatalogParser.parseCategoryPanel(payload.optJSONArray("selector_rows"))
         } else null
-        return CategoryFeed(CatalogPage(items,more),panel)
+        val ranking=positions.takeIf { it.isNotEmpty() }?.let {
+            ComicRanking(it,page,"")
+        }
+        return CategoryFeed(CatalogPage(items,more,ranking),panel)
     }
     /** 分类页 offset：每页 100 条，第 2 页从 100 开始。 */
     private fun ContentRepository.categoryOffset(page: Int): Int =

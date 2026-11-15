@@ -12,6 +12,9 @@ import com.hgtv.star.core.CategoryGenres
 import com.hgtv.star.core.CategoryPanel
 import com.hgtv.star.core.CategoryPanelCache
 import com.hgtv.star.core.CategorySelection
+import com.hgtv.star.core.CatalogPage
+import com.hgtv.star.core.CatalogPageCache
+import com.hgtv.star.core.CatalogPaging
 import com.hgtv.star.core.categoryFeed
 import com.hgtv.star.phone.PhonePlayerActivity
 import com.hgtv.star.phone.PhoneServices
@@ -127,12 +130,11 @@ class PhoneCategoryPage(
         if (restored?.loaded == true) {
             feedCache[selection.key()] = restored
             renderFilters()
-            val repo = PhoneServices.repository(context)
-            feed.restore(restored) { page ->
-                visible(repo.categoryFeed(selection, page).page)
-            }
+            feed.restore(restored,loaderFor(selection))
         } else {
-            loadPanel()
+            // 面板已落盘时先画出来，不再等列表接口回来才显示子分类。
+            renderFilters()
+            showCachedOrLoad()
         }
     }
 
@@ -163,7 +165,7 @@ class PhoneCategoryPage(
      * 面板与内容是同一次请求回来的（`need_selector_panel=true`），这里只为拿面板，
      * 顺手把第一页内容交给网格——不多发一次请求。
      */
-    private fun loadPanel() {
+    private fun loadPanel(showLoading: Boolean = true) {
         ensureScope()
         val repo = PhoneServices.repository(context)
         val snapshot = selection
@@ -173,7 +175,7 @@ class PhoneCategoryPage(
         val generation = ++panelGeneration
         panelLoadingKey = key
         val needPanel = panel == null
-        feed.showLoading()
+        if(showLoading) feed.showLoading()
         panelJob = scope.launch {
             try {
                 val result = withContext(Dispatchers.IO) {
@@ -182,11 +184,8 @@ class PhoneCategoryPage(
                 if (snapshot != selection) return@launch
                 result.panel?.let { panel = it }
                 renderFilters()
-                feed.submit(result.page.items, result.page.hasMore)
+                feed.loadFirstPage(visible(result.page),loaderFor(snapshot))
                 rememberCurrentFeed()
-                if (result.page.hasMore) {
-                    feed.load { page -> visible(repo.categoryFeed(selection, page).page) }
-                }
             } finally {
                 if (generation == panelGeneration) {
                     panelJob = null
@@ -199,13 +198,40 @@ class PhoneCategoryPage(
     private fun showSelectedFeed() {
         val cached = feedCache[selection.key()]
         if (cached != null) {
-            val repo = PhoneServices.repository(context)
-            feed.restore(cached) { page ->
-                visible(repo.categoryFeed(selection, page).page)
-            }
+            feed.restore(cached,loaderFor(selection))
+            return
+        }
+        showCachedOrLoad()
+    }
+
+    private fun showCachedOrLoad() {
+        val cached=CatalogPageCache.load(selection)
+        if(cached!=null) {
+            val snapshot=snapshotOf(visible(cached))
+            feedCache[selection.key()]=snapshot
+            feed.restore(snapshot,loaderFor(selection))
+            if(panel==null) loadPanel(showLoading=false)
             return
         }
         loadPanel()
+    }
+
+    private fun snapshotOf(page: CatalogPage): PhonePosterFeed.Snapshot =
+        PhonePosterFeed.Snapshot(
+            items=page.items,
+            page=CatalogPaging.nextPageForRestored(page.items.size,page.hasMore),
+            ended=!page.hasMore,
+            heatBy=page.ranking?.positions?.mapValues { it.value.heat }.orEmpty(),
+            emptyVisible=page.items.isEmpty(),
+            emptyText=if(page.items.isEmpty()) "暂无内容" else "",
+            loaded=true,
+        )
+
+    private fun loaderFor(
+        snapshot: CategorySelection,
+    ): suspend (Int) -> CatalogPage? {
+        val repo=PhoneServices.repository(context)
+        return { page -> visible(repo.categoryFeed(snapshot,page).page) }
     }
 
     private fun rememberCurrentFeed() {
@@ -302,7 +328,9 @@ class PhoneCategoryPage(
         feed.applyColumnsFromSettings()
         // 切到别的 tab 时页面会 detach，正在拉的小分类请求会被取消。
         // 回到分类页时如果面板还没落地，必须补一次，否则小分类会永久消失。
-        if (panel == null) loadPanel()
+        if (panel == null) {
+            loadPanel(showLoading = feed.snapshot().items.isEmpty())
+        }
     }
 
     override fun onAttachedToWindow() {

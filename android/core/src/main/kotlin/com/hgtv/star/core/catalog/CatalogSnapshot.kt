@@ -11,15 +11,21 @@ import org.json.JSONObject
  * 键是 `RankBoard.storedValue`（见 `Library.cacheHome` / `cachedHome`）。
  */
 object CatalogSnapshot {
-    private const val MAX_AGE=7*24*60*60*1000L
+    internal const val MAX_AGE_MS=7*24*60*60*1000L
+    private const val DEFAULT_MAX_ITEMS=30
+    private const val MAX_DECODE_ITEMS=100
+    private const val DEFAULT_MAX_VALUE_CHARS=200_000
     fun encode(
         items: List<Series>,
         hasMore: Boolean,
         now: Long,
         ranking: ComicRanking? = null,
+        maxItems: Int = DEFAULT_MAX_ITEMS,
     ): String = JSONObject()
         .put("savedAt",now).put("hasMore",hasMore)
-        .put("items",JSONArray(items.take(30).map { it.copy(description=it.description.take(1500)).toJson() }))
+        .put("items",JSONArray(items.take(maxItems.coerceIn(1,MAX_DECODE_ITEMS)).map {
+            it.copy(description=it.description.take(1500)).toJson()
+        }))
         .apply {
             ranking?.let { value ->
                 put("ranking",JSONObject()
@@ -35,10 +41,14 @@ object CatalogSnapshot {
             }
         }
         .toString()
-    fun decode(value: String,now: Long): CatalogPage? = runCatching {
-        require(value.length<=200_000)
-        val o=JSONObject(value); require(now-o.getLong("savedAt") in 0..MAX_AGE)
-        val rows=o.getJSONArray("items"); require(rows.length() in 1..30)
+    fun decode(
+        value: String,
+        now: Long,
+        maxValueChars: Int = DEFAULT_MAX_VALUE_CHARS,
+    ): CatalogPage? = runCatching {
+        require(value.length<=maxValueChars)
+        val o=JSONObject(value); require(now-o.getLong("savedAt") in 0..MAX_AGE_MS)
+        val rows=o.getJSONArray("items"); require(rows.length() in 1..MAX_DECODE_ITEMS)
         val items=(0 until rows.length()).map { Series.fromJson(rows.getJSONObject(it)) }
         require(items.all { it.id.matches(Regex("[0-9]{1,30}")) && it.title.isNotBlank() })
         val ranking=o.optJSONObject("ranking")?.let { value ->

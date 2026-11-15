@@ -5,6 +5,7 @@ import android.content.Context
 import android.widget.LinearLayout
 import com.hgtv.star.core.CatalogPage
 import com.hgtv.star.core.CatalogFilter
+import com.hgtv.star.core.CatalogPageCache
 import com.hgtv.star.core.CatalogPaging
 import com.hgtv.star.core.RankBoard
 import com.hgtv.star.core.rank
@@ -127,28 +128,29 @@ class PhoneRankPage(
             return
         }
         val lib = PhoneServices.library(context)
-        val cached=runCatching { lib.cachedHome(board) }.getOrNull()
+        val cached=CatalogPageCache.load(CatalogPageCache.selectionFor(board))
+            ?: runCatching { lib.cachedHome(board) }.getOrNull()
         if(cached!=null) {
             val visible=CatalogFilter.visible(cached,runCatching { lib.hidden() }.getOrDefault(emptySet()))
             if(visible.items.isNotEmpty()) {
-                feed.restore(
-                    PhonePosterFeed.Snapshot(
-                        items=visible.items,
-                        // 旧缓存可能只有 20 条：下一次先补第 1 页；完整首屏则从第 2 页续接。
-                        page=CatalogPaging.nextPageForRestored(visible.items.size,visible.hasMore),
-                        ended=!visible.hasMore,
-                        heatBy=visible.ranking?.positions?.mapValues { it.value.heat }.orEmpty(),
-                        emptyVisible=false,
-                        emptyText="",
-                        loaded=true,
-                    ),
-                    loader=loader,
-                )
+                feed.restore(snapshotOf(visible),loader=loader)
                 return
             }
         }
         feed.load(loader)
     }
+
+    private fun snapshotOf(page: CatalogPage): PhonePosterFeed.Snapshot =
+        PhonePosterFeed.Snapshot(
+            items=page.items,
+            // 旧缓存可能只有 20 条：下一次先补第 1 页；完整首屏则从第 2 页续接。
+            page=CatalogPaging.nextPageForRestored(page.items.size,page.hasMore),
+            ended=!page.hasMore,
+            heatBy=page.ranking?.positions?.mapValues { it.value.heat }.orEmpty(),
+            emptyVisible=false,
+            emptyText="",
+            loaded=true,
+        )
 
     private fun rememberCurrentFeed() {
         val snapshot=feed.snapshot()

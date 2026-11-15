@@ -309,6 +309,7 @@ android/
 | --- | --- | --- |
 | `BackToTopPolicy.kt` | 「回到顶部」浮层的显隐规则（Library.backToTop 四档）。 | object BackToTopPolicy |
 | `CatalogFilter.kt` | 「用户手动隐藏的剧」不该出现在哪些地方。 | object CatalogFilter |
+| `CatalogPageCache.kt` | 分类 / 榜单首屏的共享持久缓存；按实际筛选条件复用，最多保留 24 份、每份 100 条。 | object CatalogPageCache |
 | `CatalogPaging.kt` | 榜单、分类与搜索共用的分页边界、去重、空页结束、名次合并和预取规则。 | class CatalogPagingResult、object CatalogPaging |
 | `CatalogSnapshot.kt` | First-page metadata only; signed playback URLs and account data never go to disk. 首页有四个「热播…」剧架（对应四个热播榜），因此这份快照按**榜单**分别存一份， 键是 RankBoard.storedValue（见 Library.cacheHome / cachedHo… | object CatalogSnapshot |
 | `CategoryCatalog.kt` | 分类页里的一个小类。 | class CategoryTag、class CategoryGroup、object CategoryCatalog |

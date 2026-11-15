@@ -249,6 +249,7 @@ internal object HgtvStartup {
             com.hgtv.star.core.RecommendCache.init(File(cache,"feed-v1.json"))
             com.hgtv.star.core.DetailCache.init(File(cache,"detail-v1.json"))
             com.hgtv.star.core.CategoryPanelCache.init(File(cache,"category-panels-v1.json"))
+            com.hgtv.star.core.CatalogPageCache.init(File(cache,"catalog-pages-v1.json"))
             }.onFailure { problem -> Diagnostics.warn("HGTV-CACHE","缓存目录初始化失败",problem) }
         }
         // TNC 使用落盘快照即可完成首屏；条件刷新放到首帧之后。

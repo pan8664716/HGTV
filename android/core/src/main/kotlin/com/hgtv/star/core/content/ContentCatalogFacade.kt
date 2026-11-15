@@ -22,9 +22,13 @@ fun ContentRepository.rankRaw(page: Int = 1, board: RankBoard = RankBoard.COMIC)
  */
 fun ContentRepository.rank(page: Int = 1, board: RankBoard = RankBoard.COMIC): CatalogPage {
     require(page in 1..100)
+    val selection=CatalogPageCache.selectionFor(board)
+    if(page==1) CatalogPageCache.load(selection)?.let { return it }
     val size=if(page==1) RANK_FIRST_PAGE_SIZE else LOGICAL_PAGE_SIZE
     val offset=if(page==1) 0 else RANK_FIRST_PAGE_SIZE+(page-2)*LOGICAL_PAGE_SIZE
-    return rankApiPage(page,board,size,offset)
+    return rankApiPage(page,board,size,offset).also { fetched ->
+        if(page==1) CatalogPageCache.save(selection,fetched)
+    }
 }
 
 /**
@@ -55,11 +59,12 @@ fun ContentRepository.homeFeed(): Map<RankBoard,CatalogPage> {
  * 分类目录的一页（`path` 来自 [CategoryCatalog]，例如 `comic-drama/fantasy`）。
  *
  * 走 App 分类接口 [categoryApi]，一次给 [CATEGORY_PAGE_SIZE] 条、
- * `has_more` 可一直往下翻；分类页**没有名次与热度**，所以 [CatalogPage.ranking] 恒为 null。
+ * `has_more` 可一直往下翻。接口响应与榜单共用，解析时保留名次 / 热度，
+ * 这样同一份首屏缓存可直接供分类和榜单使用；分类界面本身不展示名次。
  */
 fun ContentRepository.category(path: String, page: Int = 1): CatalogPage {
     require(path.isNotBlank() && path.length<=80 && page in 1..ContentRepository.MAX_CATALOG_PAGE)
-    return categoryApi(CategoryCatalog.selectionOf(path),page,needPanel=false).page
+    return categoryFeed(CategoryCatalog.selectionOf(path),page,needPanel=false).page
 }
 
 /**
@@ -78,10 +83,18 @@ fun ContentRepository.categoryFeed(selection: CategorySelection, page: Int = 1, 
     require(page in 1..ContentRepository.MAX_CATALOG_PAGE)
     if(needPanel) {
         CategoryPanelCache.load(selection.genre)?.let { panel ->
-            return CategoryFeed(categoryApi(selection,page,needPanel=false).page,panel)
+            if(page==1) CatalogPageCache.load(selection)?.let { cached ->
+                return CategoryFeed(cached,panel)
+            }
+            val fetched=categoryApi(selection,page,needPanel=false).page
+            if(page==1) CatalogPageCache.save(selection,fetched)
+            return CategoryFeed(fetched,panel)
         }
+    } else if(page==1) {
+        CatalogPageCache.load(selection)?.let { return CategoryFeed(it,null) }
     }
     val result=categoryApi(selection,page,needPanel)
+    if(page==1) CatalogPageCache.save(selection,result.page)
     if(needPanel) CategoryPanelCache.save(selection.genre,result.panel)
     return result
 }

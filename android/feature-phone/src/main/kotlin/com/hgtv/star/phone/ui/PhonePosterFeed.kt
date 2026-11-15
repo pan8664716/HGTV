@@ -608,6 +608,35 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         }
     }
 
+    /**
+     * 铺入已经拿到的第 1 页，并把下一页设为 2。
+     *
+     * 分类页原来先 [submit] 再 [load]，后者会清空刚拿到的内容并从第 1 页重发一次，
+     * 同一次进入因此发了两条首屏请求。这里保留数据并直接挂好续页 loader。
+     */
+    fun loadFirstPage(
+        page: CatalogPage,
+        loader: suspend (Int) -> CatalogPage?,
+    ) {
+        job?.cancel()
+        scrollRestoreGeneration++
+        this.loader = loader
+        items.clear()
+        items += page.items
+        selectedIds.clear()
+        this.page = if(page.hasMore) 2 else 1
+        loading = false
+        loadingVisible = false
+        ended = !page.hasMore
+        loadFailed = false
+        prefetchChain = 0
+        heatBy = page.ranking?.positions?.mapValues { it.value.heat }.orEmpty()
+        emptyVisible = page.items.isEmpty()
+        emptyText = "暂无内容"
+        hasLoadedOnce = true
+        adapter.notifyDataSetChanged()
+    }
+
     /** 外部直接塞一批数据（搜索结果、收藏 / 历史）。 */
     fun submit(rows: List<Series>, more: Boolean = false, loading: Boolean = false) {
         job?.cancel()
