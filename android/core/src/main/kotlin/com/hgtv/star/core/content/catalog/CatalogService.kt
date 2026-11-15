@@ -112,6 +112,7 @@ import java.io.IOException
         val more=(serverMore || fullPage) && page<ContentRepository.MAX_CATALOG_PAGE
         val panel=if(needPanel) {
             ContentCatalogParser.parseCategoryPanel(payload.optJSONArray("selector_rows"))
+                ?.withCatalogThemes(selection.genre)
         } else null
         val ranking=positions.takeIf { it.isNotEmpty() }?.let {
             ComicRanking(it,page,"")

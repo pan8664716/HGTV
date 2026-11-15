@@ -89,6 +89,18 @@ object CategoryCatalog {
     fun groupOf(path: String) = groups.firstOrNull { group -> group.tags.any { it.path==path } }
 
     /**
+     * 漫剧 / AI剧的主题行必须使用内容 `category_schema` 采集出的标识。
+     * 真人剧继续使用接口 `selector_rows`，返回 null 表示不改写。
+     */
+    fun themeOptions(genre: String?): List<CategoryFilterOption>? {
+        if(genre!=CategoryGenres.COMIC && genre!=CategoryGenres.AI) return null
+        val group=groups.firstOrNull { it.genre==genre } ?: return null
+        return group.tags.mapNotNull { tag ->
+            tag.themeId?.let { id -> CategoryFilterOption(id,tag.label) }
+        }
+    }
+
+    /**
      * 旧路径 → [CategorySelection]。分类页现在走接口的 `selector_rows`（见 [CategoryPanel]），
      * 这里只给旧调用方 / 探针 / 单测保留路径入口。
      */

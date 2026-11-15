@@ -4495,6 +4495,22 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 漫剧与 AI剧主题筛选修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 根因：接口 `selector_rows.category_dim_theme` 只对 `short_play`（真人剧）有效；
+  请求 `comic_series` / `ai_series` 时仍返回真人剧的默认题材表，用这些 `cate_*`
+  标识筛漫剧 / AI剧会得到 0 条。
+- 修复：`CategoryPanel.withCatalogThemes()` 对漫剧 / AI剧替换主题行，选项改用
+  `CategoryCatalog` 中从内容 `category_schema` 采集并实测可筛出内容的题材标识。
+- 真人剧继续使用接口自己的 `selector_rows`；推荐大类和其它筛选行保持不变。
+- 网络响应解析、筛选面板落盘、旧筛选缓存读取三处都执行同一份归一化，已有旧缓存
+  不需要等 30 天过期，也不需要手动清缓存。
+- `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 推荐首帧启动优化 1-7
 
 状态：已实现，debug 构建通过，待用户真机验证。

@@ -66,6 +66,19 @@ data class CategoryPanel(val rows: List<CategoryFilterRow>) {
     fun row(type: String): CategoryFilterRow? = rows.firstOrNull { it.type==type }
     fun labelOf(type: String, id: String?): String? = row(type)?.labelOf(id)
 
+    /**
+     * 漫剧 / AI剧的接口主题行是真人剧默认表，直接请求会得到 0 条。
+     * 这里按体裁换成 [CategoryCatalog] 中从内容题材采集出的有效标识。
+     */
+    fun withCatalogThemes(genre: String?): CategoryPanel {
+        val options=CategoryCatalog.themeOptions(genre) ?: return this
+        val index=rows.indexOfFirst { it.type==CategorySelection.TYPE_THEME }
+        if(index<0) return this
+        val normalized=rows.toMutableList()
+        normalized[index]=normalized[index].copy(options=options)
+        return copy(rows=normalized)
+    }
+
     /** 当前实际可见的筛选行：分类页统一不显示「时间」和「状态」。 */
     fun visibleRows(): List<CategoryFilterRow> = rows.filter { row ->
         row.type != CategorySelection.TYPE_GENRE &&

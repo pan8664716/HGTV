@@ -37,15 +37,16 @@ object CategoryPanelCache {
         if(System.currentTimeMillis()-entry.optLong("at")>TTL_MS) return null
         return runCatching {
             parsePanel(entry.getJSONObject("panel"))
-        }.getOrNull()?.takeIf { it.rows.isNotEmpty() }
+        }.getOrNull()?.takeIf { it.rows.isNotEmpty() }?.withCatalogThemes(genre)
     }
 
     /** 保存接口返回的筛选面板；写盘在独立线程完成。 */
     fun save(genre: String?, panel: CategoryPanel?) {
         if(panel==null || panel.rows.isEmpty()) return
+        val normalized=panel.withCatalogThemes(genre)
         val entry=JSONObject()
             .put("at",System.currentTimeMillis())
-            .put("panel",panelToJson(panel))
+            .put("panel",panelToJson(normalized))
         synchronized(lock) {
             map()[keyOf(genre)]=entry
         }
