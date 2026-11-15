@@ -237,6 +237,7 @@ fun TvMainActivity.updateRecommendOverlay() {
         val text=if(duration>0) "${formatTime(position)} / ${formatTime(duration)}" else "--:-- / --:--"
         if(line.text.toString()!=text) line.text=text
     }
-    // 出画面了就把「正在加载」的框收掉：它浮在屏幕正中，不占浮层的位置。
-    if(playbackReady) hideCenterLoading()
+    // READY 只代表轨道已经解出来，画面可能还要等几百毫秒；加载框必须等
+    // 真正有画面帧后再收，否则会出现「loading 先消失、画面后出现」的空档。
+    if(PlaybackDiag.firstFrame || PlaybackDiag.lastFrameAt>0L) hideCenterLoading()
 }

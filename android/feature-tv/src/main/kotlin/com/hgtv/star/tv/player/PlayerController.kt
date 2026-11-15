@@ -696,6 +696,8 @@ fun TvMainActivity.playEpisode(
                 // 用「出帧」而不是 READY：READY 只代表解出了轨道，画面可能还要等几百毫秒。
                 if(screen=="recommend") {
                     reportRecommendImpression()
+                    // 真正出帧的同一时刻再撤掉中心加载框，不能在 READY 阶段提前撤。
+                    hideCenterLoading()
                     revealRecommendCover()
                     // 真正的首帧已经上屏：现在才允许相邻预热和推荐补页。
                     scheduleRecommendAfterFirstFrame()

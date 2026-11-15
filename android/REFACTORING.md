@@ -4411,6 +4411,18 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 推荐 loading 与首帧同步
+
+状态：已实现，debug 构建和 ADB 首帧采样通过。
+
+- 根因：推荐页中心 loading 在播放器 `STATE_READY` 时被 `playbackReady` 撤掉，但 READY
+  只代表轨道解出，真正画面可能还要等几百毫秒，形成 loading 消失后的空档。
+- 现在 `RecommendOverlay` 只在 `PlaybackDiag.firstFrame` 或 `lastFrameAt` 表明真实画面
+  已上屏时撤 loading；播放器的 `onRenderedFirstFrame` 也会在同一时刻主动撤一次。
+- `:app:assembleDebug` 使用 JDK 17 通过；未修改版本号、versionCode、依赖或 iOS 代码。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 推荐首帧启动优化 1-7
 
 状态：已实现，debug 构建通过，待用户真机验证。
