@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 import com.hgtv.star.core.RecommendTab
+import com.hgtv.star.shared.data.DeviceRegistration
 import com.hgtv.star.shared.feed.RecommendFeedPolicy
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -51,7 +52,7 @@ internal fun PhoneFeedView.loadMore() {
     if (feedRecommendStore.loading || !feedRecommendStore.hasMore) return
     feedRecommendStore.loading = true
     feedScope.launch {
-        feedLibrarySlot ?: PhoneServices.awaitLibrary(context).also { feedLibrarySlot = it }
+        val library = feedLibrarySlot ?: PhoneServices.awaitLibrary(context).also { feedLibrarySlot = it }
         if (!feedCursorRestored) {
             feedCursorRestored = true
             feedRecommendStore.restoreCursor()
@@ -59,7 +60,7 @@ internal fun PhoneFeedView.loadMore() {
         val oldSize = feedItems.size
         // “推荐（全部）”入口与 TV 使用同一份推荐范围；明确的体裁 tab 仍只取自己的体裁。
         val selectedGenres = feedGenre?.let { listOf(it) }
-            ?: feedLibrary?.recommendGenres().orEmpty()
+            ?: library.recommendGenres()
         val input=feedRecommendStore.input(
             // 首屏从快照恢复时按“恢复列表”处理，和 TV 一样使用首屏预算；
             // 只有用户已经滑到列表末尾后的补页才走 append。
@@ -67,6 +68,14 @@ internal fun PhoneFeedView.loadMore() {
             genres=selectedGenres,
             tab=RecommendTab.fromGenre(feedGenre),
             minItemsPerLoad=RecommendFeedPolicy.MIN_ITEMS_PER_LOAD,
+            // 备用设备线程可能已用另一份仓库完成主设备注册。这里不能只看
+            // `library.deviceRegistered()`：主仓库可能仍是空身份。
+            ensureRegistered = {
+                DeviceRegistration.ensureBound(
+                    library = library,
+                    repository = PhoneServices.repository(context),
+                )
+            },
         )
         val result = withContext(Dispatchers.IO) {
             runCatching { feedRecommendStore.load(input) }.getOrNull()

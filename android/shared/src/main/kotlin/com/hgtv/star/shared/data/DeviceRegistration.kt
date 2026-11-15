@@ -60,6 +60,28 @@ object DeviceRegistration {
     }
 
     /**
+     * 确保主仓库已经绑定磁盘上的主设备身份。
+     *
+     * 备用设备线程会用自己的 `ContentRepository` 先完成首次主设备注册。此时书库已经
+     * `deviceRegistered()`，但进程级主仓库可能仍是空身份；推荐流若只看书库状态直接发请求，
+     * 新安装首屏就会拿匿名设备取流。这里在 ID 不一致时补绑，已经一致则不做任何事，
+     * 避免每次补页都短暂清空仓库 Cookie。
+     */
+    @Synchronized
+    fun ensureBound(library: Library, repository: ContentRepository): Outcome {
+        if (!library.deviceRegistered()) {
+            return registerOnce(library, repository)
+        }
+        val saved = library.deviceIdentity()
+        val current = repository.deviceIdentity
+        val same = current["device_id"] == saved["device_id"] &&
+            current["iid"] == saved["iid"]
+        if (same) return Outcome.ALREADY
+        bindRegisteredIdentity(library, repository)
+        return Outcome.ALREADY
+    }
+
+    /**
      * 注册一次（**阻塞**，调用方负责放到 IO 线程）。
      *
      * @param force true = 无条件换一套新身份（档案重建之后必须这么做）。

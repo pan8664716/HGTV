@@ -103,7 +103,10 @@ internal object PhoneIdentity {
     ) {
         if (registering) return
         val needsRegistration=com.hgtv.star.shared.data.DeviceRegistration.needsRegister(lib)
-        if (!needsRegistration) return
+        if (!needsRegistration) {
+            com.hgtv.star.shared.data.DeviceRegistration.ensureBound(lib, repo)
+            return
+        }
         registering = true
         val latch=CountDownLatch(1)
         registrationLatch=latch

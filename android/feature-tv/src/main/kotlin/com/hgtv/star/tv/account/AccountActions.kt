@@ -365,7 +365,10 @@ fun TvMainActivity.ensureDeviceRegistered() {
     val pending=library.registrationPending()
     val registered=library.deviceRegistered()
     val needsRegistration=pending || !registered
-    if(!needsRegistration) return
+    if(!needsRegistration) {
+        com.hgtv.star.shared.data.DeviceRegistration.ensureBound(library,repository)
+        return
+    }
     deviceRegistering=true
     // 用 io 池直接跑，**不走 [work]**：那个入口会 cancelWork()，把在途的页面请求一起掐掉。
     io.submit {

@@ -4857,3 +4857,19 @@ feature-tv/
 - 发布 tag 指向空树 commit `5b4d9dd8b17d1e32f1d72cf134554a4f46d52163`，无父提交；
   GitHub 自动生成的源码归档只有空目录。
 - APK SHA-256：`0f94626231872b62c371704b75ac07ceb7274511d61852099f49f53b3a86446a`。
+
+## 新安装推荐首屏为空
+
+状态：已修复，debug 构建通过，待用户真机验证。
+
+- 根因：备用设备线程用自己的 `ContentRepository` 先完成首次主设备注册后，书库已经
+  标记为已注册，但进程级主仓库可能仍是空身份。推荐页只检查
+  `library.deviceRegistered()` 就直接请求，平台把这次请求当成匿名设备，首屏因此为空；
+  切到其他页面再回来会重新触发加载，此时主仓库通常已恢复。
+- 修复：`DeviceRegistration.ensureBound()` 按磁盘 DID / IID 校验主仓库；不一致时补绑，
+  已一致时不做任何事，避免推荐补页时短暂清空仓库 Cookie。
+- 手机推荐请求和 TV `loadRecommendPage` 都在取流前调用该入口；手机 / TV 启动时的
+  身份检查也同步使用，覆盖备用设备线程抢先注册的竞态。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
