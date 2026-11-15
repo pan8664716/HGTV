@@ -25,15 +25,6 @@ internal fun Library.registrationPendingImpl(): Boolean {
     return identitySessionPrefs.getBoolean("registration-pending",false) || pendingProfileImpl()!=null
 }
 
-/**
- * 生成一条只用于备用播放设备注册的随机档案。
- *
- * 不改写主设备档案和主身份；返回值只交给持久备用池。
- */
-internal fun Library.freshPlaybackBackupProfileImpl(): Map<String,String> {
-    return freshDeviceProfileImpl("playback_backup")
-}
-
 internal fun Library.freshDeviceProfileImpl(source: String): Map<String,String> {
     val base=deviceProfile()
     if(base.isEmpty()) return emptyMap()

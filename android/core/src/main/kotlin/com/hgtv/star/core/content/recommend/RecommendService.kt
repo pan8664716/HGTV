@@ -235,7 +235,6 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                 val raw=text(
                     signed.url,
                     signed,
-                    allowBackup=false,
                     allowDomainFailover=true,
                     storeRegionHeaders=true,
                     userAgentProfile=identity.profile,
@@ -357,7 +356,6 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         val raw=text(
             signed.url,
             signed,
-            allowBackup=false,
             storeRegionHeaders=true,
             userAgentProfile=identity.profile,
         )
@@ -400,7 +398,6 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                 val raw=text(
                     url,
                     request,
-                    allowBackup=false,
                     allowDomainFailover=false,
                     storeRegionHeaders=true,
                     userAgentProfile=identity.profile,

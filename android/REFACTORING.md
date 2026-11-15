@@ -2,7 +2,7 @@
 
 > 基线提交：`140665f89ea816e4a38da50d3aa9428ecb722ead`
 > 重构分支：`refactor/from-140665f`
-> 最后更新：2026-11-14
+> 最后更新：2026-11-16
 
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
@@ -4371,6 +4371,24 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 移除备用设备链路
+
+状态：已实现，debug 构建和 ADB 后续启动验证通过，首次安装回归待测。
+
+- Android 不再注册、持久化或轮换备用播放设备，启动任务 `startup.backupDevices` 已删除。
+- 删除 `PlaybackDeviceBackups`、`PlaybackBackupDevice`、匿名备用设备注册门面及其
+  profile 生成入口；主设备注册失败时仍按原有重试 / 待换新机制处理。
+- `ContentRepository` 不再维护 `playbackBackupDevices` 和 `allowBackup`，分类、详情、
+  播放模型和批量模型不再在空响应后切换匿名设备；域名换线、设备档位 4→5 和
+  主身份自愈保留。
+- 启动页仍可在首帧后补绑用户选择的设备形态，但不再排定备用设备任务。首帧后的
+  延迟任务由 4 个降为 3 个（会话保活、TNC 刷新、友盟）。
+- ADB 后续启动采样（S905L3B / Android 9）未出现 `identity=anonymous` 的
+  `/service/2/device_register/`，首帧后任务数为 3。
+- `:app:assembleDebug` 使用 JDK 17 通过；未修改版本号、versionCode、依赖或 iOS 代码。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 推荐首帧启动优化 1-7
 
 状态：已实现，debug 构建通过，待用户真机验证。
@@ -4379,8 +4397,8 @@ feature-tv/
   可播放条目立即起播，剩余列表在首帧后补齐；快照路径继续先播本地快照。
 - Android 推荐播放和推荐预热统一使用 `includeAuthor=false`，作者不再占用首帧前的
   `multi-detail` 请求；详情页仍按原逻辑补作者。
-- 启动任务分为关键路径与首帧后任务。TNC 条件刷新、会话心跳客户端、友盟初始化、
-  备用设备注册和手机分类页预加载均延后到播放首帧或各自兜底超时。
+- 启动任务分为关键路径与首帧后任务。TNC 条件刷新、会话心跳客户端、友盟初始化和
+  手机分类页预加载均延后到播放首帧或各自兜底超时。
 - 手机推荐页在当前体裁上屏后才发推荐请求，相邻体裁页不再在构造期同时取流；
   首屏后提前构建进程级 `ExoPlayer`，与推荐、详情和地址请求重叠。
 - 手机有推荐快照时先播快照，`loadMore()` 不再在 `PhoneFeedView` 初始化时立即执行，
@@ -4888,14 +4906,14 @@ feature-tv/
 
 状态：已修复，debug 构建通过，待用户真机验证。
 
-- 根因：备用设备线程用自己的 `ContentRepository` 先完成首次主设备注册后，书库已经
-  标记为已注册，但进程级主仓库可能仍是空身份。推荐页只检查
+- 根因：主设备注册可能先由另一条线程完成，书库已经标记为已注册，但进程级主仓库
+  可能仍是空身份。推荐页只检查
   `library.deviceRegistered()` 就直接请求，平台把这次请求当成匿名设备，首屏因此为空；
   切到其他页面再回来会重新触发加载，此时主仓库通常已恢复。
 - 修复：`DeviceRegistration.ensureBound()` 按磁盘 DID / IID 校验主仓库；不一致时补绑，
   已一致时不做任何事，避免推荐补页时短暂清空仓库 Cookie。
 - 手机推荐请求和 TV `loadRecommendPage` 都在取流前调用该入口；手机 / TV 启动时的
-  身份检查也同步使用，覆盖备用设备线程抢先注册的竞态。
+  身份检查也同步使用，覆盖注册线程抢先完成时的竞态。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。
@@ -4926,8 +4944,8 @@ feature-tv/
 - `DeviceForm.OPTIONS` 从 `auto / phone / tablet / tv` 收为 `phone / tablet / tv`；
   旧 `auto` 仅作为未迁移数据的内部占位，启动时会重新要求选择。
 - 设备档案、签名与注册统一以用户选择为准，不再由硬件探测覆盖电视档案。
-- 首帧后仍立即并行预热缓存、书库、运行时和友盟；备用设备注册与形态相关身份绑定
-  延后到用户确认后在线程中执行，不阻塞选择弹窗和目标页启动。
+- 首帧后仍立即并行预热缓存、书库、运行时和友盟；形态相关身份绑定延后到用户确认后
+  在线程中执行，不阻塞选择弹窗和目标页启动。
 - 新增 `DeviceFormActivity.kt` 与共享 action / extra 契约 `DeviceFormSelection.kt`；
   `:app:assembleDebug` 通过；未改版本号、versionCode 或依赖。
 

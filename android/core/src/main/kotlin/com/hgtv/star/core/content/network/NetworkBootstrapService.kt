@@ -108,16 +108,6 @@ import java.io.IOException
         return registered
     }
 
-    internal fun ContentRepository.registerAnonymousDeviceImpl(profile: Map<String,String>): DeviceRegister.Registered? {
-        val device=LinkedHashMap(profile).apply {
-            remove("device_id")
-            remove("iid")
-            remove("install_id")
-            remove("klink_egdi")
-        }
-        return performDeviceRegistration(device,anonymous=true)
-    }
-
     private fun ContentRepository.performDeviceRegistration(
         device: Map<String,String>,
         anonymous: Boolean,
@@ -282,7 +272,6 @@ import java.io.IOException
             url,
             signed,
             client=tncHttp,
-            allowBackup=false,
             // TNC 的空 body 不能走业务域名 fallback；业务域名没有 /get_domains/v5/。
             allowDomainFailover=false,
             allowNotModified=true,

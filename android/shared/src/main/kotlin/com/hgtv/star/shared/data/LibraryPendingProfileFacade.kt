@@ -2,15 +2,6 @@
 package com.hgtv.star.shared.data
 
 /**
- * 生成一条只用于备用播放设备注册的随机档案。
- *
- * 不改写主设备档案和主身份；返回值只交给持久备用池。
- */
-fun Library.freshPlaybackBackupProfile(): Map<String,String> {
-    return freshPlaybackBackupProfileImpl()
-}
-
-/**
  * 注册成功之后把候选档案转正（档案与种指纹一起换）。
  *
  * **必须与 [saveDeviceIdentity] 一起调用**（先这一条、再那一条）：身份是按候选档案注册出来的，

@@ -22,14 +22,6 @@ fun ContentRepository.registerDevice(
     registerDeviceImpl(profile,withIdentity)
 
 /**
- * 匿名注册一台备用设备，不改动当前主设备身份与 Cookie。
- *
- * 仅供 `playbackBackupDevices` 对应的持久备用池初始化使用。
- */
-fun ContentRepository.registerAnonymousDevice(profile: Map<String,String>): DeviceRegister.Registered? =
-    registerAnonymousDeviceImpl(profile)
-
-/**
  * 当前注册下发的 Cookie 快照（给界面层落盘用）。
  *
  * 为什么要出去：这份 Cookie 原本只活在内存里，**进程一重启就没了**，于是每个新进程的

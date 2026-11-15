@@ -147,7 +147,7 @@ class LaunchActivity : Activity() {
         val routeStarted=StartupTrace.now()
         StartupTrace.mark("launch.route.start")
         PlaybackStartupTrace.point("launch.route", "target=${form.label}")
-        // 选择已经落盘：后台补绑设备身份并启动备用设备注册，不阻塞目标页首帧。
+        // 选择已经落盘：后台补绑设备身份，不阻塞目标页首帧。
         HgtvStartup.onDeviceFormSelected(this)
         val target = targetFor(form)
         // 用 `Log.w` 而不是 `Log.i`：R8 的 `-assumenosideeffects` 会把 `Log.i` 整条删掉，

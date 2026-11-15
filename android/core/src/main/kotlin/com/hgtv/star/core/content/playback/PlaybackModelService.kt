@@ -246,34 +246,6 @@ import java.util.concurrent.TimeUnit
         }
 
     /**
-     * 主设备拿到 `HTTP 200 + 空 body` 后，只取一台备用设备试一次。
-     *
-     * 只返回成功的播放模型，不改主设备身份、不落盘备用设备的使用结果。
-     */
-    private fun ContentRepository.tryBackupModel(
-        host: String,
-        path: String,
-        id: String,
-        cookie: String?,
-        playback: PlaybackProfile,
-    ): JSONObject? {
-        val backups=runCatching { ContentRepository.playbackBackupDevices?.invoke() }.getOrNull().orEmpty()
-        for((index,backup) in backups.withIndex()) {
-            if(index>0) {
-                NetLog.retry("model_backup",index+1,backups.size,"previous backup device returned no model")
-            }
-            try {
-                val model=probeModelPath(host,path,id,cookie,playback,backup)
-                NetLog.emit("model backup accepted id=${backup.id.takeLast(6)}")
-                return model
-            } catch(e: IOException) {
-                if(isInterruption(e) || e.message=="请求已取消") throw e
-            }
-        }
-        return null
-    }
-
-    /**
      * 作废当前设备签发的播放模型缓存。
      *
      * 重试时设备号本身不能伪造，只能等界面层重新注册；这里只保证下一次取流
@@ -297,7 +269,6 @@ import java.util.concurrent.TimeUnit
         id: String,
         cookie: String?,
         playback: PlaybackProfile,
-        backup: PlaybackBackupDevice? = null,
     ): JSONObject {
         val body=ContentPlaybackParser.modelBody(id,path,playback,deviceLevel)
         val payload=java.io.ByteArrayOutputStream().also { out ->
@@ -307,19 +278,11 @@ import java.util.concurrent.TimeUnit
         // 注册档案包含大量仅供 device_register 使用的字段。播放接口只接受
         // MODEL_QUERY_KEYS 这一组；整份档案直接交给 signer 会把 openudid、
         // profile-format、device_token 等全部拼进 query，服务端随即回 200 + 0 字节。
-        val profile=backup?.profile?.let { backupProfile ->
-            modelQueryProfile(LinkedHashMap(VendorConstants.device).apply {
-                putAll(backupProfile)
-                putAll(PROTOCOL_VALUES)
-                for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="74332"
-                this["version_name"]="7.4.3.32"
-            })
-        } ?: modelProfile()
-        val effectiveCookie=backup?.cookieHeader ?: cookie
+        val profile=modelProfile()
         // 档案要同时交给 query 与密文（`x-medusa` 里编了 device_id），否则服务端回 110001。
         val signed=signer.sign(host+path,profile,payload,deviceOverride=profile)
         val extra=linkedMapOf<String,String>()
-        if(effectiveCookie!=null) extra["Cookie"]=effectiveCookie
+        if(cookie!=null) extra["Cookie"]=cookie
         extra["Content-Encoding"]="gzip"
         // 视频接口按官方 7.4.3.32 抓包单独覆盖：
         // * passport-sdk-version=5051452（不是内容接口的 6031190）
@@ -345,10 +308,7 @@ import java.util.concurrent.TimeUnit
         ) { r -> stable=r.header("tt_stable")=="1" }
         // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
         if(response.isBlank()) {
-            NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=0 stable=$stable")
-            if(backup!=null) throw IOException("备用设备未返回播放模型")
-            // 主设备空响应先用备用设备顶替；备用池不可用时再走 4→5 档与身份自愈。
-            tryBackupModel(host,path,id,cookie,playback)?.let { return it }
+            NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} bytes=0 stable=$stable")
             // 4 档空响应先升 5 重发一次。若 5 仍为空，再按设备身份失效交给自愈流程。
             if(deviceLevel<5) {
                 NetLog.retry("model_device_level",2,2,"empty model response at device_level=$deviceLevel")
@@ -361,13 +321,12 @@ import java.util.concurrent.TimeUnit
         }
         val data=JSONObject(response)
         val code=data.optInt("Code",data.optInt("code",0))
-        NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=${response.length} code=$code")
+        NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} bytes=${response.length} code=$code")
         // 业务码非 0 就是这一条路不通（110001 是旧路径的「未知异常」，100001 是参数错误）。
         // `101000 服务异常` 正是「这台设备没在服务端注册过」那一条，单独记一笔：
         // 界面层据此换一份身份重注册，而不是让用户看到「所有影片都放不了」。
-        if(code==101000 && backup==null) { noteDeviceRejected(); invalidateModelCache() }
+        if(code==101000) { noteDeviceRejected(); invalidateModelCache() }
         if(code!=0) {
-            if(code==101000 && backup!=null) throw IOException("备用设备不可用")
             throw IOException("播放接口暂不可用（${code}）")
         }
         val model=ContentPlaybackParser.videoModelOf(data)
@@ -388,7 +347,6 @@ import java.util.concurrent.TimeUnit
         ids: List<String>,
         cookie: String?,
         playback: PlaybackProfile,
-        backup: PlaybackBackupDevice? = null,
     ): Map<String,JSONObject> {
         if(ids.isEmpty()) return emptyMap()
         val body=ContentPlaybackParser.batchModelBody(ids,playback,scene,deviceLevel)
@@ -396,18 +354,10 @@ import java.util.concurrent.TimeUnit
             java.util.zip.GZIPOutputStream(out).use { it.write(body.toByteArray()) }
         }.toByteArray()
         waitModelSlot()
-        val profile=backup?.profile?.let { backupProfile ->
-            modelQueryProfile(LinkedHashMap(VendorConstants.device).apply {
-                putAll(backupProfile)
-                putAll(PROTOCOL_VALUES)
-                for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) this[key]="74332"
-                this["version_name"]="7.4.3.32"
-            })
-        } ?: modelProfile()
-        val effectiveCookie=backup?.cookieHeader ?: cookie
+        val profile=modelProfile()
         val signed=signer.sign(host+path,profile,payload,deviceOverride=profile)
         val extra=linkedMapOf<String,String>()
-        if(effectiveCookie!=null) extra["Cookie"]=effectiveCookie
+        if(cookie!=null) extra["Cookie"]=cookie
         extra["Content-Encoding"]="gzip"
         val videoHeaders=LinkedHashMap(signed.headers).apply {
             remove("x-tt-dt")
@@ -428,9 +378,7 @@ import java.util.concurrent.TimeUnit
             storeRegionHeaders=false,
         ) { r -> stable=r.header("tt_stable")=="1" }
         if(response.isBlank()) {
-            NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=0 stable=$stable")
-            if(backup!=null) throw IOException("备用设备未返回批量播放模型")
-            tryBackupBatch(host,path,scene,ids,cookie,playback)?.let { return it }
+            NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} bytes=0 stable=$stable")
             if(deviceLevel<5) {
                 escalateDeviceLevel()
                 return tryBatchModel(host,path,scene,ids,cookie,playback)
@@ -442,40 +390,16 @@ import java.util.concurrent.TimeUnit
         val data=JSONObject(response)
         val code=data.optInt("Code",data.optInt("code",0))
         val models=ContentPlaybackParser.parseBatchModels(data,ids)
-        NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} backup=${backup!=null} bytes=${response.length} code=$code models=${models.size}/${ids.size}")
-        if(code==101000 && backup==null) {
+        NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} bytes=${response.length} code=$code models=${models.size}/${ids.size}")
+        if(code==101000) {
             noteDeviceRejected()
             invalidateModelCache()
             throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
         }
         if(code!=0) {
-            if(code==101000 && backup!=null) throw IOException("备用设备不可用")
             throw IOException("播放接口暂不可用（${code}）")
         }
         return models
-    }
-
-    private fun ContentRepository.tryBackupBatch(
-        host: String,
-        path: String,
-        scene: String,
-        ids: List<String>,
-        cookie: String?,
-        playback: PlaybackProfile,
-    ): Map<String,JSONObject>? {
-        val backups=runCatching { ContentRepository.playbackBackupDevices?.invoke() }.getOrNull().orEmpty()
-        for(backup in backups) {
-            try {
-                val models=tryBatchModel(host,path,scene,ids,cookie,playback,backup)
-                if(models.isNotEmpty()) {
-                    NetLog.emit("model batch backup accepted id=${backup.id.takeLast(6)} models=${models.size}/${ids.size}")
-                    return models
-                }
-            } catch(e: IOException) {
-                if(isInterruption(e) || e.message=="请求已取消") throw e
-            }
-        }
-        return null
     }
 
     /**

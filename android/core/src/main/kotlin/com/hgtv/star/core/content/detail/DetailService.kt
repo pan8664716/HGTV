@@ -397,11 +397,7 @@ import java.util.concurrent.TimeUnit
                 return raw
             }
         }
-        val backup=runCatching { ContentRepository.playbackBackupDevices?.invoke()?.firstOrNull() }.getOrNull() ?: return raw
-        val retryUrl=backupQueryUrl(url,backup) ?: return raw
-        NetLog.retry("publisher_backup",1,1,"primary identity returned HTTP 200 empty body")
-        NetLog.emit("device backup retry publisher id=${backup.id.takeLast(6)}")
-        return send(retryUrl,backup.cookies,backup.profile,anonymous=true)
+        return raw
     }
     /**
      * 一次「作者作品」取数的结果。

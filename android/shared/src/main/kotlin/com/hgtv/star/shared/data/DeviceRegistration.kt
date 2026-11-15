@@ -62,10 +62,9 @@ object DeviceRegistration {
     /**
      * 确保主仓库已经绑定磁盘上的主设备身份。
      *
-     * 备用设备线程会用自己的 `ContentRepository` 先完成首次主设备注册。此时书库已经
-     * `deviceRegistered()`，但进程级主仓库可能仍是空身份；推荐流若只看书库状态直接发请求，
-     * 新安装首屏就会拿匿名设备取流。这里在 ID 不一致时补绑，已经一致则不做任何事，
-     * 避免每次补页都短暂清空仓库 Cookie。
+     * 书库可能已经 `deviceRegistered()`，但进程级主仓库仍是空身份；推荐流若只看书库
+     * 状态直接发请求，新安装首屏就会拿匿名设备取流。这里在 ID 不一致时补绑，已经一致
+     * 则不做任何事，避免每次补页都短暂清空仓库 Cookie。
      */
     @Synchronized
     fun ensureBound(library: Library, repository: ContentRepository): Outcome {
@@ -104,9 +103,9 @@ object DeviceRegistration {
         detail: String = "",
     ): Outcome {
         if (!force && !regenerate && library.deviceRegistered()) {
-            // 注册可能刚由另一条线程完成（手机冷启动时备用设备线程会先等主设备）。
-            // 这时当前仓库仍是注册前的空身份，必须重新绑定磁盘上的结果，否则首屏会拿着
-            // 未注册设备去取播放地址，直到下一次启动重新读盘才恢复。
+            // 注册可能刚由另一条线程完成。这时当前仓库仍是注册前的空身份，必须重新
+            // 绑定磁盘上的结果，否则首屏会拿着未注册设备去取播放地址，直到下一次启动
+            // 重新读盘才恢复。
             bindRegisteredIdentity(library, repository)
             return Outcome.ALREADY
         }

@@ -42,7 +42,7 @@ fun TvMainActivity.loadRecommendPage(
         genres = library.recommendGenres(),
         minItemsPerLoad = minItemsPerLoad,
         ensureRegistered = {
-            // 备用设备线程可能已用另一份仓库完成主设备注册，但主仓库仍是空身份。
+            // 书库可能已完成主设备注册，但主仓库仍是空身份。
             // 这里按 ID 做一次幂等补齐，只有不一致时才重绑。
             com.hgtv.star.shared.data.DeviceRegistration.ensureBound(library, repository)
         },

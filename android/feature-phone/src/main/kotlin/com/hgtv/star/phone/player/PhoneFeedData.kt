@@ -76,8 +76,7 @@ internal fun PhoneFeedView.loadMore() {
             minItemsPerLoad=if(
                 feedItems.isEmpty() && feedPlayingIndex<0 && !feedRecommendStore.restored
             ) 1 else RecommendFeedPolicy.MIN_ITEMS_PER_LOAD,
-            // 备用设备线程可能已用另一份仓库完成主设备注册。这里不能只看
-            // `library.deviceRegistered()`：主仓库可能仍是空身份。
+            // 书库可能已完成主设备注册，但主仓库仍可能是空身份。
             ensureRegistered = {
                 DeviceRegistration.ensureBound(
                     library = library,

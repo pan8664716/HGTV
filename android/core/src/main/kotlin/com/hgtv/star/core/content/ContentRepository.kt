@@ -211,7 +211,6 @@ class ContentRepository(
         url: String,
         signed: Signer.Request? = null,
         client: OkHttpClient = http,
-        allowBackup: Boolean = true,
         allowDomainFailover: Boolean = true,
         allowNotModified: Boolean = false,
         storeRegionHeaders: Boolean = true,
@@ -272,7 +271,6 @@ class ContentRepository(
                     retry.url,
                     retry,
                     client=client,
-                    allowBackup=false,
                     allowDomainFailover=false,
                     storeRegionHeaders=storeRegionHeaders,
                     userAgentProfile=profile,
@@ -281,29 +279,6 @@ class ContentRepository(
                     TncConfigStore.markHostSuccess(host)
                     NetLog.emit("domain failover accepted host=$host")
                     return value
-                }
-            }
-        }
-        if(raw.isBlank() && httpCode==200 && allowBackup && signed!=null) {
-            val anonymous=signed.headers["X-HGTV-Anonymous"]!=null
-            val model=signed.url.contains("video_model") || signed.url.contains("multi_video_model")
-            if(!anonymous && !model) {
-                val backup=runCatching { playbackBackupDevices?.invoke()?.firstOrNull() }.getOrNull()
-                if(backup!=null) {
-                    val retry=backupRequest(signed,backup)
-                    if(retry!=null) {
-                        NetLog.retry("device_backup",1,1,"primary identity returned HTTP 200 empty body")
-                        NetLog.emit("device backup retry host=${retry.url.substringAfter("//").substringBefore("/")} id=${backup.id.takeLast(6)}")
-                        return text(
-                            retry.url,
-                            retry,
-                            client=client,
-                            allowBackup=false,
-                            allowDomainFailover=false,
-                            storeRegionHeaders=storeRegionHeaders,
-                            userAgentProfile=backup.profile,
-                        )
-                    }
                 }
             }
         }
@@ -400,7 +375,6 @@ class ContentRepository(
     internal val addressClients=linkedMapOf<Long,OkHttpClient>()
     companion object {
         @Volatile var deviceHeal: ((ContentRepository, String) -> Boolean)? = null
-        @Volatile var playbackBackupDevices: (() -> List<PlaybackBackupDevice>)? = null
         @Volatile private var deviceRejectedCount: Int = 0
         internal val deviceRejectedCountValue get()=deviceRejectedCount
         internal fun incrementDeviceRejectedCount() { deviceRejectedCount++ }
@@ -426,11 +400,6 @@ class ContentRepository(
             "need_personal_recommend","player_so_load","is_android_pad_screen",
             "rom_version","cdid",
         )
-        internal val DEVICE_QUERY_KEYS=(MODEL_QUERY_KEYS + listOf(
-            "install_id","device_token","openudid","clientudid","rom","carrier","mcc_mnc",
-            "profile-format","openudid-source","apk_first_install_time",
-        )).toSet()
-
         internal const val STREAM_CACHE_MS=PlaybackCache.URL_FRESH_MS
         internal const val STREAM_CACHE_LIMIT=8
         internal const val MAX_DANMAKU=1000

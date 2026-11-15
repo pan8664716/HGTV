@@ -6,7 +6,6 @@ import android.os.Bundle
 import com.hgtv.star.core.refreshTncAsync
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.IdentityBinder
-import com.hgtv.star.shared.data.PlaybackDeviceBackups
 import com.hgtv.star.shared.data.SessionBootstrap
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.debug.Diagnostics
@@ -47,8 +46,7 @@ internal object HgtvStartup {
      *
      * 这些工作原来在 `Application.onCreate` 里执行，会推迟第一个窗口出现。
      * 现在由启动页在首帧回调中触发：日志出口、缓存目录和会话存储先装好，
-     * 书库与运行时预热放到后台；心跳、TNC、友盟和备用设备注册延后到播放首帧
-     * 或各自兜底超时。
+     * 书库与运行时预热放到后台；心跳、TNC 和友盟延后到播放首帧或各自兜底超时。
      */
     fun afterFirstFrame(context: Context) {
         val app=context.applicationContext
@@ -104,9 +102,8 @@ internal object HgtvStartup {
     /**
      * 用户已经明确选择设备形态。
      *
-     * 首次弹窗出现时缓存 / 书库 / 运行时已经在后台预热；这里只把依赖形态的两件事
-     * 补上：按用户选择重新绑定设备档案，再排定备用设备注册。整个过程不阻塞路由，
-     * 备用设备注册等播放首帧或兜底超时后再执行。
+     * 首次弹窗出现时缓存 / 书库 / 运行时已经在后台预热；这里只把依赖形态的设备
+     * 身份补绑上。整个过程不阻塞路由。
      */
     fun onDeviceFormSelected(context: Context) {
         val app=context.applicationContext
@@ -117,9 +114,6 @@ internal object HgtvStartup {
                 onFailure={ deviceFormSelected.set(false) },
                 onReady={
                     IdentityBinder.bind(library,AppRuntime.repository(app))
-                    StartupDeferredTasks.schedule("startup.backupDevices",25_000L) {
-                        PlaybackDeviceBackups.start(app)
-                    }
                 },
             )
         },"hgtv-device-form-ready").apply { isDaemon=true }.start()

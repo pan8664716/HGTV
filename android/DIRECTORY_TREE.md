@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-13。文件总数为 649；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-16。文件总数为 649；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -40,7 +40,7 @@
 ```text
 android/
 ├── app/  (21 files, 12 directories)
-├── core/  (226 files, 27 directories)
+├── core/  (225 files, 27 directories)
 ├── feature-phone/  (141 files, 11 directories)
 ├── feature-tv/  (154 files, 17 directories)
 ├── shared/  (104 files, 24 directories)
@@ -186,7 +186,7 @@ android/
 | --- | --- | --- |
 | `DeviceFormActivity.kt` | 首页首次启动与设置页共用的设备类型选择器；按页面使用手机 / 电视拟态弹窗，电视支持遥控器，手机 / 平板触摸确认并 6 秒自动返回，电视直接进入；记录首次形态选择锚点。 | class DeviceFormActivity、fun showPhoneChooser、fun showTvChooser、fun startCountdown |
 | `HgtvApplication.kt` | 应用进程入口，负责 Application 级初始化和全局运行时装配。 | class HgtvApplication |
-| `HgtvStartup.kt` | 启动页负责的本地初始化；首帧后启动缓存、书库、会话存储，并把心跳、TNC、友盟和备用设备注册延后到播放首帧或兜底超时。 | object HgtvStartup、fun afterFirstFrame、fun onDeviceFormSelected |
+| `HgtvStartup.kt` | 启动页负责的本地初始化；首帧后启动缓存、书库、会话存储，并把心跳、TNC、友盟延后到播放首帧或兜底超时。 | object HgtvStartup、fun afterFirstFrame、fun onDeviceFormSelected |
 | `LaunchActivity.kt` | 启动页与设备形态路由入口；首次启动打开统一设备类型选择器，完成后路由到对应主界面，并记录首帧链路锚点。 | class LaunchActivity、fun openDeviceFormSelector、fun targetFor |
 
 ### core
@@ -339,7 +339,7 @@ android/
 | `ContentCatalogFacade.kt` | 榜单与分类的业务门面：分页、首页并发和筛选面板缓存都在这里决定。 | fun ContentRepository.rankRaw、fun ContentRepository.rank、fun ContentRepository.homeFeed、fun ContentRepository.category、fun ContentRepository.categoryFeed |
 | `ContentDanmakuFacade.kt` | 取一集的弹幕，也就是「原 App」播放时看到的同一份数据。 | fun ContentRepository.danmaku、fun ContentRepository.danmakuRawWindow |
 | `ContentDetailFacade.kt` | 剧集详情（简介 + 分集列表）：走 App 播放侧的详情接口。 | fun ContentRepository.detail、fun ContentRepository.related |
-| `ContentDeviceFacade.kt` | @param profile 这一次注册用的设备档案；默认 ContentRepository.registerProfile。 | fun ContentRepository.registerDevice、fun ContentRepository.registerAnonymousDevice、fun ContentRepository.deviceCookiesSnapshot、fun ContentRepository.primaryCookiesSnapshot、fun ContentRepository.restoreDeviceCookies、fun ContentRepository.refreshTncAsync |
+| `ContentDeviceFacade.kt` | @param profile 这一次注册用的设备档案；默认 ContentRepository.registerProfile。 | fun ContentRepository.registerDevice、fun ContentRepository.deviceCookiesSnapshot、fun ContentRepository.primaryCookiesSnapshot、fun ContentRepository.restoreDeviceCookies、fun ContentRepository.refreshTncAsync |
 | `ContentDeviceState.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentDeviceState 主要包含 fun ContentRepository.clearDeviceIdentityImpl、fun ContentRepository.noteDeviceRejectedImpl、fun ContentRepository.deviceCookiesSnapshotImpl、fun ContentRepository.primaryCookiesSnapshotImpl。 | fun ContentRepository.clearDeviceIdentityImpl、fun ContentRepository.noteDeviceRejectedImpl、fun ContentRepository.deviceCookiesSnapshotImpl、fun ContentRepository.primaryCookiesSnapshotImpl、fun ContentRepository.restoreDeviceCookiesImpl |
 | `ContentDeviceStateFacade.kt` | 丢掉当前这份设备身份：注册结果与下发的 Cookie 一起清。 | fun ContentRepository.clearDeviceIdentity、fun ContentRepository.noteDeviceRejected、fun ContentRepository.beginEpisode、fun ContentRepository.escalateDeviceLevel |
 | `ContentPlaybackFacade.kt` | 用一次官方批量接口预取一组播放模型。 | fun ContentRepository.prefetchModels |
@@ -349,7 +349,7 @@ android/
 | `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile |
 | `ContentSearchFacade.kt` | 搜索提示词（联想词）：App 搜索框用的那个接口。 | fun ContentRepository.suggestions、fun ContentRepository.webSuggestions、fun ContentRepository.hotSearches |
 | `ContentSearchResultsFacade.kt` | 只搜一种内容类型：联调探针仍可显式指定 tab_type。 | fun ContentRepository.search、fun ContentRepository.webSearch |
-| `ContentSigning.kt` | 同一套业务参数与设备参数，只换接口域名后重签。 | fun ContentRepository.resignForHost、fun ContentRepository.alternateApiHosts、fun ContentRepository.backupRequest、fun ContentRepository.backupQueryUrl、fun ContentRepository.urlWithHost |
+| `ContentSigning.kt` | 同一套业务参数与设备参数，只换接口域名后重签。 | fun ContentRepository.resignForHost、fun ContentRepository.alternateApiHosts、fun ContentRepository.urlWithHost |
 | `ContentStreamFacade.kt` | 取一集的播放地址。 | fun ContentRepository.stream、fun ContentRepository.forgetStream、fun ContentRepository.forgetStreamAllQualities、fun ContentRepository.rotateDeviceForRetry |
 | `ContentTextFacade.kt` | 出品方：把接口给的 copyright 归一成能直接显示的名字。 | fun ContentRepository.publisher、fun ContentRepository.tagsOf |
 
@@ -437,7 +437,6 @@ android/
 | `CodecProbe.kt` | 一次性探针：把播放接口返回的 video_list 原样摊开，看每个清晰度到底提供哪些编码。 | fun reflect、fun main |
 | `KeyMap.kt` | 播放界面里可自定义的六个键。 | class PlayerKey、class PlayerKeyAction、class KeyMap |
 | `PlaybackAttemptLedger.kt` | 正式播放页**按集计**的全部重试额度与账本：一处持有、三个入口重置。 | class PlaybackAttemptLedger |
-| `PlaybackBackupDevice.kt` | 唯一一台备用设备。 | class PlaybackBackupDevice |
 | `PlaybackCache.kt` | 播放地址、索引和首块缓存，负责过期判定与本地复用。 | object PlaybackCache |
 | `PlaybackComfort.kt` | 视频解码方式。 | class VideoDecoderMode、class VideoFrameMode、class VideoFit、fun VideoFrameMode.toFit、object SeekStep、class SleepTimer |
 | `PlaybackDegradation.kt` | 播放重试 / 降级的**全部决策**都收敛在这个文件里，纯逻辑、不碰 Android、可直接单测。 | class MediaKind、class DegradationKind、class PlaybackRetryPlan、class GiveUpReason、interface RetryDecision、class FailureAttribution |
@@ -1060,20 +1059,19 @@ android/
 | `LibraryIdentityLayout.kt` | 一次性把旧版设备身份归档，并清空当前主设备身份。 | fun Library.ensureIdentityLayoutImpl |
 | `LibraryMirrorRestore.kt` | 把外部镜像里本机缺的项补回会话偏好。 | fun Library.restoreFromMirrorImpl、fun Library.retryMirrorRestoreImpl、fun Library.mirrorSyncImpl |
 | `LibraryPendingProfile.kt` | 「换新身份」用的**候选档案**，以及电视注册时使用的统一档案。 | fun Library.pendingProfileImpl、fun Library.storePendingProfileImpl、fun Library.commitPendingProfileImpl、fun Library.registrationProfileImpl、fun Library.hasPendingProfileImpl |
-| `LibraryPendingProfileFacade.kt` | 生成一条只用于备用播放设备注册的随机档案。 | fun Library.freshPlaybackBackupProfile、fun Library.commitPendingProfile、fun Library.registrationProfile、fun Library.hasPendingProfile |
+| `LibraryPendingProfileFacade.kt` | 注册候选档案转正与注册档案选择门面。 | fun Library.commitPendingProfile、fun Library.registrationProfile、fun Library.hasPendingProfile |
 | `LibraryPlaybackSettings.kt` | 共享数据层、Library、缓存、网络与资源加载。文件 LibraryPlaybackSettings 主要包含 fun Library.autoNextSetting、fun Library.setAutoNextSetting、fun Library.playbackSpeedSetting、fun Library.setPlaybackSpeedSetting。 | fun Library.autoNextSetting、fun Library.setAutoNextSetting、fun Library.playbackSpeedSetting、fun Library.setPlaybackSpeedSetting、fun Library.frameModeSetting、fun Library.setFrameModeSetting |
 | `LibraryPreferenceCodec.kt` | 共享数据层、Library、缓存、网络与资源加载。文件 LibraryPreferenceCodec 主要包含 object LibraryPreferenceCodec。 | object LibraryPreferenceCodec |
 | `LibraryRegistrationCookieFacade.kt` | 设备注册下发的 Cookie（install_id / ttreq / store-region …）。 | fun Library.registrationCookies、fun Library.clearRegistrationCookies、fun Library.saveRegistrationCookies |
 | `LibraryRegistrationCookies.kt` | 设备注册下发的 Cookie（install_id / ttreq / store-region …）。 | fun Library.registrationCookiesImpl、fun Library.clearRegistrationCookiesImpl、fun Library.saveRegistrationCookiesImpl |
 | `LibraryRegistrationFacade.kt` | 这份注册结果是不是**当前版本注册出来的**（缺 registered-profile-stamp = 不是）。 | fun Library.registrationNeedsRefresh、fun Library.invalidateRegistration、fun Library.markRegistrationPending、fun Library.clearRegistrationPending、fun Library.registrationPending |
-| `LibraryRegistrationState.kt` | 这一次「换新身份」的注册失败了，下次启动 / 下次取播放地址前再试。 | fun Library.markRegistrationPendingImpl、fun Library.clearRegistrationPendingImpl、fun Library.registrationPendingImpl、fun Library.freshPlaybackBackupProfileImpl、fun Library.freshDeviceProfileImpl |
+| `LibraryRegistrationState.kt` | 这一次「换新身份」的注册失败了，下次启动 / 下次取播放地址前再试。 | fun Library.markRegistrationPendingImpl、fun Library.clearRegistrationPendingImpl、fun Library.registrationPendingImpl、fun Library.freshDeviceProfileImpl |
 | `LibrarySearchTokenFacade.kt` | 搜索登录态（可选，App 抓到的 x-tt-token，整段 Cookie 也可以）。 | var Library.searchToken |
 | `LibrarySyncFacade.kt` | 导出局域网全量同步允许迁移的设备身份与登录会话。 | fun Library.exportSyncSession、fun Library.importSyncSession |
 | `LibrarySyncSession.kt` | 局域网全量同步时允许跨设备的会话键白名单。 | object LibrarySyncSessionKeys、fun Library.exportSyncSessionImpl、fun Library.importSyncSessionImpl |
 | `LocalReset.kt` | 本机数据的「恢复出厂」：把应用自己留下的所有东西删干净。 | object LocalReset、val hasMultiVolumeDirs |
 | `NavKeys.kt` | 顶部导航栏里可以单独隐藏的入口 key。 | val NAV_KEY_RECOMMEND、val NAV_KEYS |
 | `PlaybackCapability.kt` | 这台设备能解什么。 | object PlaybackCapability |
-| `PlaybackDeviceBackups.kt` | 持久备用设备。 | object PlaybackDeviceBackups |
 | `PlaybackTransport.kt` | 播放链路（取地址 / 预热 / 分片读视频）共用的传输层。 | object PlaybackTransport |
 | `ProgressStore.kt` | 观看进度的落盘：**一剧一文件**。 | class ProgressStore |
 | `SessionBootstrap.kt` | 会话装配；会话存储可先初始化，心跳客户端按首帧后延后创建。 | object SessionBootstrap、fun initStore、fun startKeeper |

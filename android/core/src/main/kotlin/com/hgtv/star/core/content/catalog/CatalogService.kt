@@ -188,17 +188,6 @@ import java.io.IOException
                         }
                     }
                 }
-                if(raw.isBlank()) {
-                    val backup=runCatching { ContentRepository.playbackBackupDevices?.invoke()?.firstOrNull() }.getOrNull()
-                    if(backup!=null) {
-                        val retry=backupRequest(signed,backup)
-                        if(retry!=null) {
-                            NetLog.retry("category_backup",1,1,"primary identity returned HTTP 200 empty body")
-                            NetLog.emit("device backup retry category id=${backup.id.takeLast(6)}")
-                            raw=send(retry,backup.profile)
-                        }
-                    }
-                }
                 if(raw.isNotBlank()) return raw
                 problem=IOException("分类接口暂无响应")
             } catch(failure: IOException) {
