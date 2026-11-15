@@ -4458,6 +4458,22 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 手机列表横竖屏状态恢复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 根因一：`PhoneMainActivity` 未接管 `orientation / screenSize / screenLayout`，系统在
+  转屏时直接销毁并重建 Activity，现有 `rebuildOnSizeChange()` 与页面快照没有执行。
+- 根因二：`PhonePosterFeed.Snapshot` 只保存列表数据，没有保存 RecyclerView 的首个
+  可见项与像素偏移；即使数据命中缓存，榜单恢复后仍从顶部开始。
+- 修复：主界面接管方向变化，先保存分类 / 榜单 / 我的页面状态，再延后 `recreate()`；
+  分类页恢复选中筛选与已有列表，不重新请求第一页。
+- `PhonePosterFeed` 快照增加首个可见 adapter position 与顶部偏移，数据铺回后异步
+  `scrollToPositionWithOffset()`；用代次号防止快速切换榜单时旧定位覆盖当前列表。
+- 未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 推荐首帧启动优化 1-7
 
 状态：已实现，debug 构建通过，待用户真机验证。

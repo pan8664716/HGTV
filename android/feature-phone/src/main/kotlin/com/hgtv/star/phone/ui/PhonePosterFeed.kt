@@ -50,6 +50,10 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         val emptyVisible: Boolean,
         val emptyText: String,
         val loaded: Boolean,
+        /** 重建前 RecyclerView 的首个可见 adapter position；-1 表示没有可恢复位置。 */
+        val firstVisiblePosition: Int = RecyclerView.NO_POSITION,
+        /** 首项顶边相对 RecyclerView 内容顶部的像素偏移。 */
+        val firstVisibleOffset: Int = 0,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -70,6 +74,8 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     private var loadFailed = false
     private var loadFailedAt = 0L
     private var prefetchChain = 0
+    /** 防止连续切换筛选 / 榜单时，较早排队的滚动恢复覆盖当前列表。 */
+    private var scrollRestoreGeneration = 0
 
     /**
      * 服务端给的热度原串，按剧 id 存（`id → "9014万"`）。
@@ -392,6 +398,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     /** 请求尚未拿到第一页时显示统一的加载动画。 */
     fun showLoading() {
         job?.cancel()
+        scrollRestoreGeneration++
         items.clear()
         selectedIds.clear()
         heatBy = emptyMap()
@@ -444,15 +451,25 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         }
     }
 
-    fun snapshot(): Snapshot = Snapshot(
-        items = items.toList(),
-        page = page,
-        ended = ended,
-        heatBy = heatBy,
-        emptyVisible = emptyVisible,
-        emptyText = emptyText,
-        loaded = hasLoadedOnce,
-    )
+    fun snapshot(): Snapshot {
+        val manager = grid.layoutManager as? GridLayoutManager
+        val firstVisible = manager?.findFirstVisibleItemPosition()
+            ?: RecyclerView.NO_POSITION
+        val firstView = manager
+            ?.takeIf { firstVisible != RecyclerView.NO_POSITION }
+            ?.findViewByPosition(firstVisible)
+        return Snapshot(
+            items = items.toList(),
+            page = page,
+            ended = ended,
+            heatBy = heatBy,
+            emptyVisible = emptyVisible,
+            emptyText = emptyText,
+            loaded = hasLoadedOnce,
+            firstVisiblePosition = firstVisible,
+            firstVisibleOffset = firstView?.let { it.top - grid.paddingTop } ?: 0,
+        )
+    }
 
     /**
      * 用重建前的数据直接铺回网格。
@@ -464,6 +481,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         loader: (suspend (Int) -> CatalogPage?)? = null,
     ) {
         job?.cancel()
+        val restoreGeneration = ++scrollRestoreGeneration
         this.loader = loader
         items.clear()
         items += snapshot.items
@@ -479,10 +497,22 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         emptyText = snapshot.emptyText
         hasLoadedOnce = snapshot.loaded
         adapter.notifyDataSetChanged()
+        if (snapshot.firstVisiblePosition != RecyclerView.NO_POSITION) {
+            grid.post {
+                if (restoreGeneration != scrollRestoreGeneration) return@post
+                if (adapter.itemCount == 0) return@post
+                val position = snapshot.firstVisiblePosition
+                    .coerceIn(0, adapter.itemCount - 1)
+                (grid.layoutManager as? GridLayoutManager)
+                    ?.scrollToPositionWithOffset(position, snapshot.firstVisibleOffset)
+                    ?: grid.scrollToPosition(position)
+            }
+        }
     }
 
     fun reset() {
         job?.cancel()
+        scrollRestoreGeneration++
         items.clear()
         selectedIds.clear()
         heatBy = emptyMap()
@@ -581,6 +611,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     /** 外部直接塞一批数据（搜索结果、收藏 / 历史）。 */
     fun submit(rows: List<Series>, more: Boolean = false, loading: Boolean = false) {
         job?.cancel()
+        scrollRestoreGeneration++
         items.clear()
         // 外部塞进来的没有榜单上下文：热度只能靠 `Series.heat`（搜索结果带），
         // 其余来源为 0，卡片上那一枚自然收起。

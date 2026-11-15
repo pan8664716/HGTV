@@ -71,7 +71,7 @@
         <!-- 旧组件名保留为别名，避免已有显式 Intent / 外部快捷方式因类重命名失效。 -->
         <activity-alias android:name=".tv.MainActivity" android:targetActivity=".tv.TvMainActivity" android:exported="true" />
         <!-- 手机 / 平板端：触摸 + 跟随屏幕方向。 -->
-        <activity android:name=".phone.PhoneMainActivity" android:exported="false" android:theme="@style/StartupContentTheme" android:configChanges="keyboard|keyboardHidden|navigation|uiMode" android:launchMode="singleTop" />
+        <activity android:name=".phone.PhoneMainActivity" android:exported="false" android:theme="@style/StartupContentTheme" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|uiMode" android:launchMode="singleTop" />
         <!--
           播放页**不锁竖屏**：横版片源要点全屏按钮切到横屏（见 PhonePlayerActivity.toggleFullscreen）。
           声明 portrait 会把 setRequestedOrientation 顶回去，按钮点了没反应。

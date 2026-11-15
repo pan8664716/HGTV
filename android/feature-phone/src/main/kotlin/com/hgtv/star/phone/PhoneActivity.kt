@@ -13,6 +13,9 @@ import com.hgtv.star.phone.ui.PhoneUiScale
  * （见 `PhoneTheme`）。普通页面不在 manifest 里声明方向 / 屏幕尺寸的 `configChanges`，
  * 交给系统走标准重建，避免 HyperOS 在本地 `recreate()` 时留下未挂载的 DecorView。
  *
+ * 主界面是例外：它接管方向变化，先把分类 / 榜单等页面快照存到进程内，再延后
+ * `recreate()`，这样转屏只重建视图，不重新请求列表，也不丢滚动位置。
+ *
  * 播放页单独声明方向变化并覆盖 [rebuildOnSizeChange]，由它原地切换横竖屏。
  * 这里的重建兜底只处理个别 ROM 仍直接回调尺寸变化、但系统没有重建的情况。
  */
