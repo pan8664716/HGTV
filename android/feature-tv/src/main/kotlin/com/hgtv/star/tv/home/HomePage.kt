@@ -27,9 +27,12 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
     homeUpdateCount=library.updatedFavorites()
     // 首页没有自己的顶部入口（品牌是标识），剧卡按上键回到第一枚圆形入口。
     val top=nav.firstOrNull() ?: navIcons().firstOrNull() ?: root
-    val home=HomeScreen(this,top,pageInset(),::loadCover,
+    val cachedHome=cachedHomeScreen?.takeIf { it.parent==null && it.isFullyBuilt() }
+    val home=cachedHome ?: HomeScreen(this,top,pageInset(),::loadCover,
         { item,resume -> openSeries(item,resume) },{ item,anchor,shelf -> seriesMenu(item,anchor,shelf) },{ catalogFocus=it },
         columns=library.homeColumns)
+    home.rebindTop(top)
+    cachedHomeScreen=null
     homeScreen=home; body.addView(home,lp(-1,0).apply { weight=1f })
     // 首页**不挂**「回到顶部」：它是剧架（横滑 + 纵向滚动），回到顶部没有意义，
     // 而按钮压在最后一栏右下角反而挡住卡片。那枚按钮只属于栅格列表页
@@ -69,7 +72,19 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
     // 底部再放一个全局入口是重复的。
     // 首页没有切换芯片：焦点不在顶部入口上时直接落到第一栏第一张卡。
     val shelves=homeShelves()
-    home.render(shelves,catalogFocus,!focusNav,homePosition)
+    val structural=shelves.flatMap { shelf ->
+        shelf.entries.map { "${shelf.key}:${it.series.id}" } +
+            listOfNotNull(shelf.more?.let { "${shelf.key}:more" })
+    }.toSet()
+    val reuseView=cachedHome!=null && home.cardKeys()==structural
+    if(reuseView) {
+        // 数据没有变结构时只重绑文字 / 封面，不拆掉整棵卡片树。
+        home.refreshEntries(shelves)
+        home.onSettled?.invoke(home.scrollY())
+        if(!focusNav && !home.hasFocus()) home.firstCard()?.requestFocus()
+    } else {
+        home.render(shelves,catalogFocus,!focusNav,homePosition)
+    }
     // **首页自己把账号数据拉起来**：历史记录与「我的」共用账号历史，收藏栏也会补账号侧。
     // 与「我的」页一样不只看 signedIn：设备级历史 / 收藏仍可能返回。
     //

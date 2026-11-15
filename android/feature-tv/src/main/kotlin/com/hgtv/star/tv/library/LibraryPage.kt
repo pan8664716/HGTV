@@ -2,6 +2,8 @@
 package com.hgtv.star.tv
 
 import com.hgtv.star.tv.list.attachBackToTop
+import com.hgtv.star.tv.list.HomeScreen
+import com.hgtv.star.tv.list.recycleGridRow
 
 import android.app.Activity
 import android.graphics.Typeface
@@ -223,7 +225,10 @@ fun TvMainActivity.invalidatePage() {
     playerStripRefresh=null
 }
 fun TvMainActivity.releaseCatalogViews() {
-    homeScreen?.let { homePosition=it.capturePosition() }
+    homeScreen?.let {
+        homePosition=it.capturePosition()
+        cachedHomeScreen=it.takeIf(HomeScreen::isFullyBuilt)
+    }
     // 换榜单 / 换分类时 [catalogPageKey] 还是**上一条列表**的 key（它要到 seriesList 里才重算），
     // 因此这里照记没错：记的是上一条列表自己的浏览位置，用户切回来时还能回到原处。
     catalogScroll?.let { rememberScroll(catalogPageKey,it.scrollY) }
@@ -257,9 +262,12 @@ fun TvMainActivity.releaseCatalogViews() {
     gridItems=emptyList(); gridRowStride=0; gridWindowStart=-1
     // 换页时把窗口里与回收池里的封面一起摘掉：这两处位图不在缓存账上，
     // 只清引用不清 View 的话，换页后的旧图要等到 GC 才走（见 [recycleGridRow]）。
-    gridRows.forEach { row -> row.cards.forEach { it.releaseCover() } }
-    gridRowPool.forEach { row -> row.cards.forEach { it.releaseCover() } }
-    gridRows.clear(); gridRowPool.clear(); gridCardWidth=0; gridGap=0; gridPosterHeight=0
+    // 当前窗口回收进池；池里的卡片 View 保留给下一页复用，封面位图已在 recycle 时摘掉。
+    gridRows.toList().forEach(::recycleGridRow)
+    gridRows.clear()
+    gridWindow=null
+    gridTopSpacer=null; gridBottomSpacer=null
+    gridCardWidth=0; gridGap=0; gridPosterHeight=0
     moreInFlight=false; moreInFlightPage=0; moreVisible=false; moreFocusWanted=false
     moreFailed=false; moreFailedAt=0L
     // 页头收展状态：同一页原地追加（加载更多）保留，其余换页都从展开态开始。

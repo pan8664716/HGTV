@@ -320,6 +320,7 @@ class TvMainActivity: Activity() {
     var prefetchAttemptAt=0L
     var prefetchAttempts=0
     var homeScreen: HomeScreen?=null
+    var cachedHomeScreen: HomeScreen?=null
     var homeFromCache=false
 
     var homeUpdateCount=0

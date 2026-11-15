@@ -28,7 +28,7 @@ import com.hgtv.star.shared.ui.SoftDrawable
 
 class HomeScreen(
     context: Context,
-    private val top: View,
+    private var top: View,
     private val inset: Int,
     private val loadCover: (ImageView, String) -> Unit,
     private val open: (Series, Boolean) -> Unit,
@@ -512,6 +512,18 @@ class HomeScreen(
     fun firstId() = rows.firstOrNull()?.cards?.firstOrNull()?.view?.id ?: top.id
 
     fun firstCard() = rows.firstOrNull()?.cards?.firstOrNull()?.view
+
+    /** 页面重建后把上键出口换到新的顶部导航。 */
+    fun rebindTop(next: View) {
+        top=next
+        top.nextFocusDownId=firstId()
+        rows.firstOrNull()?.cards?.forEach { card ->
+            card.view.nextFocusUpId=top.id
+        }
+    }
+
+    /** 增量卡片和剧架都补齐后，才可以跨页面复用。 */
+    fun isFullyBuilt(): Boolean = pendingRows.isEmpty() && pendingCards.isEmpty()
 
     private fun contentWidth() =
         (resources.displayMetrics.widthPixels - 2 * inset - 2 * dp(2)).coerceAtLeast(dp(320))

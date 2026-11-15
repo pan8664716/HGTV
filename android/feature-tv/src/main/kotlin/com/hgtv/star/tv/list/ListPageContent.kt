@@ -23,9 +23,12 @@ fun TvMainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Bo
     gridList=null; gridScroll=null; gridPaging=null; moreCount=null; pagingHasMore=false
     gridWindow=null; gridTopSpacer=null; gridBottomSpacer=null
     gridItems=emptyList(); gridRowStride=0; gridWindowStart=-1
-    gridRows.forEach { row -> row.cards.forEach { it.releaseCover() } }
-    gridRowPool.forEach { row -> row.cards.forEach { it.releaseCover() } }
-    gridRows.clear(); gridRowPool.clear(); gridCardWidth=0; gridGap=0; gridPosterHeight=0
+    // 行和卡片留到 [gridRowPool] 里复用；只摘掉当前窗口的封面位图，页面切换不重建卡片。
+    gridRows.toList().forEach(::recycleGridRow)
+    gridRows.clear()
+    gridWindow=null
+    gridTopSpacer=null; gridBottomSpacer=null
+    gridCardWidth=0; gridGap=0; gridPosterHeight=0
     gridRestoring=true
     if(tab==TAB_HOME && page==1 && collection==null) { renderHome(body,focusNav,focusType,loading); return }
     if(tab==TAB_PROFILE) { catalog=accountItems(accountTab); hasMore=false; ranking=null }

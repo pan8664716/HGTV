@@ -820,7 +820,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `AppVersion.kt` | 应用版本号。 | object AppVersion |
-| `TvMainActivity.kt` | 电视主界面 Activity，持有页面状态、焦点、生命周期和跨页面导航门面；创建与恢复阶段记录统一首帧追踪锚点。 | class TvMainActivity |
+| `TvMainActivity.kt` | 电视主界面 Activity，持有页面状态、焦点、生命周期、跨页面导航与首页视图缓存。 | class TvMainActivity |
 | `TvMainLifecycleFacade.kt` | feature-tv 模块的 TvMainLifecycleFacade.kt 职责。文件 TvMainLifecycleFacade 主要包含 fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory。 | fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory、fun TvMainActivity.handleTrimMemory、fun TvMainActivity.handleDestroy |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/account/`
@@ -851,7 +851,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `HomePage.kt` | 首页一栏一屏放满的条数：本机记录与榜单都按它截断，也是「查看全部」入口的门槛。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.historyRows、fun TvMainActivity.favoriteRows、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf |
+| `HomePage.kt` | 首页剧架与卡片行；完整构建过的 `HomeScreen` 会跨页面复用并就地刷新数据。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.historyRows、fun TvMainActivity.favoriteRows、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf |
 | `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址 / 首块优先；播放模型批量预取晚一点再跑，预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
 | `RecommendControls.kt` | 上下键换剧。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
 | `RecommendCover.kt` | 切换过渡：黑场淡入 / 首帧后淡出 / 最长遮挡；淡出完成可回调撤 loading。 | val COVER_IN_MS、val COVER_OUT_MS、val COVER_OUT_FAST_MS、val COVER_MAX_MS、fun TvMainActivity.showRecommendCover、fun TvMainActivity.revealRecommendCover、val PICTURE_RECOVERY_LIMIT |
@@ -879,7 +879,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `LanLibrarySync.kt` | 电视本机书库与局域网同步。文件 LanLibrarySync 主要包含 var lanSyncUiJob、var lanSyncUiDialog、var lanSyncUiStep、var lanSyncUiStatus。 | var lanSyncUiJob、var lanSyncUiDialog、var lanSyncUiStep、var lanSyncUiStatus、fun TvMainActivity.closeLanSyncSession、fun TvMainActivity.showLanLibrarySync |
-| `LibraryPage.kt` | 本文件是从 TvMainActivity.kt 拆出来的「本机库加载、封面取图、异步任务封装与空页 / 错误提示」这一块。 | fun TvMainActivity.showLibraryError、fun TvMainActivity.showStartupShell、fun TvMainActivity.showStartupLoading、fun TvMainActivity.loadLibrary、fun TvMainActivity.ensureSearchCollector、fun TvMainActivity.applySessionToken |
+| `LibraryPage.kt` | 本机库加载、页面重建与异步任务封装；释放页面时保留栅格行池和完整首页视图供下次复用。 | fun TvMainActivity.showLibraryError、fun TvMainActivity.showStartupShell、fun TvMainActivity.showStartupLoading、fun TvMainActivity.loadLibrary、fun TvMainActivity.ensureSearchCollector、fun TvMainActivity.releaseCatalogViews |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/list/`
 
@@ -888,7 +888,7 @@ android/
 | `BackToTop.kt` | 「回到顶部」浮层：栅格列表页上的一枚快捷按钮，固定在**右下角**。 | fun TvMainActivity.attachBackToTop、fun TvMainActivity.updateBackToTop、fun TvMainActivity.backToTopVisible、val BACK_TO_TOP_EDGE_GAP、fun TvMainActivity.positionBackToTop、fun TvMainActivity.backToTopTarget |
 | `HomeScreen.kt` | 电视首页横排剧架组件；首栏先建少量卡片，其余按帧增量补齐，负责焦点、滚动恢复和封面挂载。 | class HomeScreen、val HOME_FIRST_BATCH、val HOME_FIRST_CARDS、val HOME_BATCH_BUDGET_MS、val HOME_BATCH_BUDGET_LOW_RAM_MS |
 | `ListPage.kt` | 电视列表页页面骨架，负责分类、榜单、搜索、我的页和设置页的页面组装。 | fun equalChipWidths、fun TvMainActivity.showCatalog |
-| `ListPageContent.kt` | 电视列表、网格、剧架与分页。文件 ListPageContent 主要包含 fun TvMainActivity.setRankSubtitle、fun TvMainActivity.seriesList、class ClipFrameLayout、fun lastFocusable。 | fun TvMainActivity.setRankSubtitle、fun TvMainActivity.seriesList、class ClipFrameLayout、fun lastFocusable、fun firstFocusable |
+| `ListPageContent.kt` | 电视列表、网格、剧架与分页；栅格卡片 View 通过跨页行池复用，只重绑数据与封面。 | fun TvMainActivity.setRankSubtitle、fun TvMainActivity.seriesList、class ClipFrameLayout、fun lastFocusable、fun firstFocusable |
 | `SeriesActions.kt` | 剧卡上「点一下」与「长按 / 菜单键」这两个动作，全站只有这一份实现。 | fun TvMainActivity.openSeries、fun TvMainActivity.seriesMenu |
 | `SeriesGrid.kt` | 本文件：剧卡栅格的窗口化复用、分页追加、滚动与焦点。 | fun TvMainActivity.gridCards、fun TvMainActivity.isGridTail、fun TvMainActivity.gridRowCount、fun TvMainActivity.rowStride、fun TvMainActivity.gridTextScale、fun TvMainActivity.updateGridSpacers |
 | `SeriesGridPaging.kt` | 电视列表、网格、剧架与分页。文件 SeriesGridPaging 主要包含 fun TvMainActivity.moreLabel、fun TvMainActivity.loadMore、fun TvMainActivity.prefetchNextPage、fun TvMainActivity.applyNextPage。 | fun TvMainActivity.moreLabel、fun TvMainActivity.loadMore、fun TvMainActivity.prefetchNextPage、fun TvMainActivity.applyNextPage、fun TvMainActivity.nearGridEnd、fun TvMainActivity.rowsLeftAfterConsumed |
