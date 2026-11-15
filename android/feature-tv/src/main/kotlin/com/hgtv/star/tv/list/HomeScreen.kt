@@ -73,8 +73,16 @@ class HomeScreen(
         val key: String,
         val block: LinearLayout,
         val horizontal: HorizontalScrollView,
-        val cards: List<Card>,
+        val cards: MutableList<Card>,
+        val line: LinearLayout,
         val slotWidth: Int
+    )
+
+    private data class PendingCards(
+        val shelf: Shelf,
+        val row: Row,
+        val start: Int,
+        val ticket: Int,
     )
 
     private fun dp(value: Number) = context.tvDp(value)
@@ -105,6 +113,8 @@ class HomeScreen(
     private var restoring = false
     private var revision = 0
     private val pendingRows = ArrayDeque<Shelf>()
+    private val pendingCards = ArrayDeque<PendingCards>()
+    private var pendingCardsScheduled = false
     private var pendingPosition: Position? = null
     private var restoredScrollY = -1
     private var compact = false
@@ -125,6 +135,8 @@ class HomeScreen(
         contents.removeAllViews()
         rows.clear()
         cards.clear()
+        pendingCards.clear()
+        pendingCardsScheduled=false
         lastRow = null
         shelves.filter { it.entries.isNotEmpty() }.forEach { shelf ->
             val block = LinearLayout(context).apply {
@@ -151,7 +163,7 @@ class HomeScreen(
             val rowCards = mutableListOf<Card>()
             shelf.entries.forEach { addCard(shelf, line, rowCards, it, null, ticket, slotWidth) }
             contents.addView(block, LinearLayout.LayoutParams(-1, -2))
-            rows += Row(shelf.key, block, horizontal, rowCards, slotWidth)
+            rows += Row(shelf.key, block, horizontal, rowCards, line, slotWidth)
         }
         rows.forEachIndexed { i, row ->
             row.cards.forEachIndexed { j, card ->
@@ -304,6 +316,8 @@ class HomeScreen(
         val ticket = revision
         restoring = true
         pendingRows.clear()
+        pendingCards.clear()
+        pendingCardsScheduled=false
         releaseCards()
         contents.removeAllViews()
         rows.clear()
@@ -332,6 +346,7 @@ class HomeScreen(
         if (requestFocus) target.requestFocus()
         pendingRows.addAll(visible.drop(firstBatch))
         if (pendingRows.isNotEmpty()) post { buildNextBatch(ticket) }
+        schedulePendingCards(ticket)
         post layout@{
             if (revision != ticket) return@layout
             fitArtwork()
@@ -380,15 +395,64 @@ class HomeScreen(
         block.addView(horizontal, LinearLayout.LayoutParams(-1, -2))
         val slotWidth = slotWidth()
         val rowCards = mutableListOf<Card>()
-        shelf.entries.forEach { addCard(shelf, line, rowCards, it, null, ticket, slotWidth) }
-        shelf.more?.let { action -> addCard(shelf, line, rowCards, null, action, ticket, slotWidth) }
+        // 第一栏先只建 1 张，先让页面和焦点落下来；其余卡片按帧补齐。
+        // 后面的栏位已经不在首屏阻塞路径上，可以一次建满当前可见列数。
+        val initialLimit=if(rows.isEmpty()) HOME_FIRST_CARDS else columns.coerceIn(4,8)
+        val initialCards=minOf(shelf.entries.size,initialLimit)
+        shelf.entries.take(initialCards).forEach { addCard(shelf, line, rowCards, it, null, ticket, slotWidth) }
+        if(initialCards>=shelf.entries.size) {
+            shelf.more?.let { action -> addCard(shelf, line, rowCards, null, action, ticket, slotWidth) }
+        }
         contents.addView(
             block,
             LinearLayout.LayoutParams(-1, -2).apply { bottomMargin = dp(4) }
         )
-        val row = Row(shelf.key, block, horizontal, rowCards, slotWidth)
+        val row = Row(shelf.key, block, horizontal, rowCards, line, slotWidth)
         rows += row
+        if(initialCards<shelf.entries.size) {
+            pendingCards.add(PendingCards(shelf,row,initialCards,ticket))
+        }
         pendingPosition?.horizontal?.get(shelf.key)?.let { x -> restoreRowOffset(row, x, ticket) }
+    }
+
+    private fun appendNextCard(ticket: Int) {
+        if(revision!=ticket) return
+        val pending=pendingCards.removeFirstOrNull() ?: return
+        if(pending.start<pending.shelf.entries.size) {
+            val entry=pending.shelf.entries[pending.start]
+            addCard(
+                pending.shelf,
+                pending.row.line,
+                pending.row.cards,
+                entry,
+                null,
+                ticket,
+                pending.row.slotWidth,
+            )
+            val next=pending.start+1
+            if(next<pending.shelf.entries.size || pending.shelf.more!=null) {
+                pendingCards.addFirst(pending.copy(start=next))
+            }
+        } else {
+            pending.shelf.more?.let { action ->
+                addCard(
+                    pending.shelf,
+                    pending.row.line,
+                    pending.row.cards,
+                    null,
+                    action,
+                    ticket,
+                    pending.row.slotWidth,
+                )
+            }
+        }
+        wireFocus()
+        if(pendingCards.isNotEmpty()) {
+            schedulePendingCards(ticket)
+        } else {
+            fitArtwork()
+            loadNearbySelection()
+        }
     }
 
     private fun buildNextBatch(ticket: Int) {
@@ -401,6 +465,7 @@ class HomeScreen(
             if (android.os.SystemClock.uptimeMillis() >= deadline) break
         }
         wireFocus()
+        schedulePendingCards(ticket)
         if (pendingRows.isNotEmpty()) {
             loadNearbySelection()
             post { buildNextBatch(ticket) }
@@ -416,6 +481,15 @@ class HomeScreen(
             }
             pendingPosition = null
             onSettled?.invoke(scroll.scrollY)
+        }
+    }
+
+    private fun schedulePendingCards(ticket: Int) {
+        if(pendingCardsScheduled || pendingCards.isEmpty()) return
+        pendingCardsScheduled=true
+        post {
+            pendingCardsScheduled=false
+            appendNextCard(ticket)
         }
     }
 
@@ -774,7 +848,14 @@ class HomeScreen(
     }
 }
 
-private const val HOME_FIRST_BATCH = 3
+/**
+ * 首屏同步构建的剧架数。
+ *
+ * 低配电视上一个剧架包含十张海报卡，三栏一起建会让返回首页的主线程停顿两秒以上。
+ * 先同步建第一栏让页面立即可见，其余栏由 [HomeScreen.buildNextBatch] 按帧预算补齐。
+ */
+private const val HOME_FIRST_BATCH = 1
+private const val HOME_FIRST_CARDS = 1
 
 private const val HOME_BATCH_BUDGET_MS = 6L
 private const val HOME_BATCH_BUDGET_LOW_RAM_MS = 3L

@@ -138,7 +138,7 @@ fun TvMainActivity.goHomeFromRecommend() {
     // 推荐详情可能在途中留下「正在加载《…》」；离开推荐页后不能再把它带进首页 / 设置。
     hideCenterLoading()
     detail=null
-    detachPlayerSurface()
+    detachPlayerSurface(deferResources=true)
     screen="catalog"
     tab=TAB_HOME; page=1; collection=null; catalogFocus=""
     initialCatalogPending=false; restoreStoppedPage=false

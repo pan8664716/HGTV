@@ -420,7 +420,10 @@ fun TvMainActivity.saveProgress(completed: Boolean=false) {
  * （见 [com.hgtv.star.core.SessionPlaybackPolicy.onLeavePlaybackToBackground]）。
  * 真正离开播放页时保持默认 false。
  */
-fun TvMainActivity.detachPlayerSurface(keepSession: Boolean = false) {
+fun TvMainActivity.detachPlayerSurface(
+    keepSession: Boolean = false,
+    deferResources: Boolean = false,
+) {
     // 作废所有认会话号的在途回调（监听器、延迟清理、取地址）。
     playbackSessionState.beginSession()
     disarmPlaybackWatchdog(); disarmFrameStallWatchdog()
@@ -464,13 +467,44 @@ fun TvMainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     // 已经关闭的 `VideoDataSource` 还挂在播放器上。清空之后旧项不可能再被读，
     // 下面才可以放心关它们持有的视频与传输。
     runCatching { player?.pause(); player?.stop(); player?.clearMediaItems() }
-    // 列表已经空了：队列项与上一集的资源现在都可以直接关。
-    dropQueuedEpisode(); forceRetirePrevious()
-    // 极端情况下没能当场关闭的资源，在这里统一收尾。
-    orphanResources.forEach { (v,h) -> v?.let { runCatching { it.close() } }; closeTransport(h) }
-    orphanResources.clear()
-    video?.close(); video=null
-    playerView?.player=null; playerView=null
+    if(deferResources) {
+        // 页面切换时先撤 Surface / 播放器引用，视频传输和队列资源的关闭放到首页首帧之后。
+        // 这些资源已经不再挂在播放器上，延迟关闭不会影响正在重建的首页。
+        val deferredVideo=video
+        val deferredQueuedVideo=queuedVideo
+        val deferredQueuedHttp=queuedHttp
+        val deferredRetiringVideo=retiringVideo
+        val deferredRetiringHttp=retiringHttp
+        val deferredOrphans=orphanResources.toList()
+        val deferredPlaybackHttp=playbackHttp
+        video=null
+        queuedVideo=null; queuedHttp=null
+        retiringVideo=null; retiringHttp=null
+        orphanResources.clear()
+        playbackHttp=null
+        playerView?.player=null; playerView=null
+        main.postDelayed({
+            runCatching { deferredVideo?.close() }
+            runCatching { deferredQueuedVideo?.close() }
+            closeTransport(deferredQueuedHttp)
+            runCatching { deferredRetiringVideo?.close() }
+            closeTransport(deferredRetiringHttp)
+            deferredOrphans.forEach { (v,h) ->
+                runCatching { v?.close() }
+                closeTransport(h)
+            }
+            closeTransport(deferredPlaybackHttp)
+        },1_200L)
+    } else {
+        // 列表已经空了：队列项与上一集的资源现在都可以直接关。
+        dropQueuedEpisode(); forceRetirePrevious()
+        // 极端情况下没能当场关闭的资源，在这里统一收尾。
+        orphanResources.forEach { (v,h) -> v?.let { runCatching { it.close() } }; closeTransport(h) }
+        orphanResources.clear()
+        video?.close(); video=null
+        playerView?.player=null; playerView=null
+        closeTransport(playbackHttp); playbackHttp=null
+    }
     // 状态机回到 IDLE。`playbackReady` 是它的只读投影，这一句同时把 prepared 清掉。
     playbackSessionState.release()
     // 离开播放页：本次会话的降级状态（有效上限 / 预算）全部作废。
@@ -493,7 +527,6 @@ fun TvMainActivity.detachPlayerSurface(keepSession: Boolean = false) {
     // 画面之外那一层同理：它随 root 一起没了，引用留着只会让下一次「跟着画面转」
     // 去改一个已经不在树上的 View（见 `applyOverlayGeometry`）。
     overlayLayer=null
-    closeTransport(playbackHttp); playbackHttp=null
     // 常亮统一由状态推导：这一刻 `player` 已经 pause、页面也即将换掉，
     // 判据两样都不成立，自然就放开了（见 `syncKeepScreenOn`）。
     syncKeepScreenOn()
