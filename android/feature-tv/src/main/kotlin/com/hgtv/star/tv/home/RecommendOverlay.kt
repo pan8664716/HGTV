@@ -239,5 +239,5 @@ fun TvMainActivity.updateRecommendOverlay() {
     }
     // READY 只代表轨道已经解出来，画面可能还要等几百毫秒；加载框必须等
     // 真正有画面帧后再收，否则会出现「loading 先消失、画面后出现」的空档。
-    if(PlaybackDiag.firstFrame || PlaybackDiag.lastFrameAt>0L) hideCenterLoading()
+    if(pictureUpNow() && recommendCover==null) hideCenterLoading()
 }

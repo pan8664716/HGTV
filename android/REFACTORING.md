@@ -4415,10 +4415,13 @@ feature-tv/
 
 状态：已实现，debug 构建和 ADB 首帧采样通过。
 
-- 根因：推荐页中心 loading 在播放器 `STATE_READY` 时被 `playbackReady` 撤掉，但 READY
-  只代表轨道解出，真正画面可能还要等几百毫秒，形成 loading 消失后的空档。
-- 现在 `RecommendOverlay` 只在 `PlaybackDiag.firstFrame` 或 `lastFrameAt` 表明真实画面
-  已上屏时撤 loading；播放器的 `onRenderedFirstFrame` 也会在同一时刻主动撤一次。
+- 根因有两层：中心 loading 曾在 `STATE_READY` 被 `playbackReady` 撤掉；同时
+  `buildPlaybackSurface()` 清空 root 后没有补挂 loading，详情回来、播放器 surface
+  重建时 loading 也会提前消失。
+- 现在推荐页 surface 重建会补挂中心 loading；READY 不再撤 loading，只有
+  `onRenderedFirstFrame` / 逐帧心跳确认画面已上屏后才撤。
+- 过渡黑场存在时，loading 会一直保留到黑场淡出完成，避免“loading 先消失、黑场后淡出”
+  的二次空档。
 - `:app:assembleDebug` 使用 JDK 17 通过；未修改版本号、versionCode、依赖或 iOS 代码。
 
 回滚：对本节对应提交执行 `git revert`。

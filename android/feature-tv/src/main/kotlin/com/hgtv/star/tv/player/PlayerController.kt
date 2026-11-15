@@ -531,11 +531,13 @@ fun TvMainActivity.playEpisode(
                     if(screen=="recommend") {
                         recommendPlaybackFailures=0
                         // 过渡黑场的兜底出口：复用播放器时个别设备不会再报「首帧」，
-                        // 只等那一个回调会让黑场一直挂到 2.5 秒的上限。READY 时视频尺寸已经知道，
-                        // 这时候放掉不会再看到拉伸；令牌保证「这期间又换了一部」时不会提前放。
+                        // 只等那一个回调会让黑场一直挂到 2.5 秒的上限。必须等逐帧心跳
+                        // 确认真的出过画面，不能只凭 READY 放掉黑场。
                         val coverToken=recommendCoverToken
                         main.postDelayed({
-                            if(!isDestroyed && screen=="recommend" && recommendCoverToken==coverToken) revealRecommendCover()
+                            if(!isDestroyed && screen=="recommend" && recommendCoverToken==coverToken && pictureUpNow()) {
+                                revealRecommendCover { if(!isDestroyed) hideCenterLoading() }
+                            }
                         },400)
                     }
                     // 不自动播的起播（用户进来先按了暂停、或从后台回来）也要有人盯着黑屏：
@@ -696,9 +698,8 @@ fun TvMainActivity.playEpisode(
                 // 用「出帧」而不是 READY：READY 只代表解出了轨道，画面可能还要等几百毫秒。
                 if(screen=="recommend") {
                     reportRecommendImpression()
-                    // 真正出帧的同一时刻再撤掉中心加载框，不能在 READY 阶段提前撤。
-                    hideCenterLoading()
-                    revealRecommendCover()
+                    // 黑场淡出完成后再撤中心 loading，避免用户先看到一段黑场。
+                    revealRecommendCover { if(!isDestroyed) hideCenterLoading() }
                     // 真正的首帧已经上屏：现在才允许相邻预热和推荐补页。
                     scheduleRecommendAfterFirstFrame()
                 }

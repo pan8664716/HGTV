@@ -109,13 +109,21 @@ fun TvMainActivity.recoverRecommendPicture(reason: String) {
  *
  * 行为与 1.2.4.2 一致：就是一次淡出，不做抓帧翻页。
  */
-fun TvMainActivity.revealRecommendCover() {
-    val cover=recommendCover ?: return
+fun TvMainActivity.revealRecommendCover(onRevealed: (() -> Unit)? = null) {
+    val cover=recommendCover
+    if(cover==null) {
+        onRevealed?.invoke()
+        return
+    }
     recommendCoverReveal?.let { main.removeCallbacks(it) }
     recommendCoverReveal=null
-    recommendCoverToken++
+    val revealToken=++recommendCoverToken
     cover.animate().cancel()
-    if(!TvStyle.animate) { dismissRecommendCover(); return }
+    if(!TvStyle.animate) {
+        dismissRecommendCover()
+        onRevealed?.invoke()
+        return
+    }
     // 连划（触屏）时淡出收短：一秒划两三部的时候，每一次都在「换源 0.2~0.6s + 淡出 0.26s」
     // 之后才重新看到画面，读起来就是「卡」。淡出只是收尾的柔和度，连划时短一点更跟手。
     // 电视不受影响（`touchArmed` 恒为 false，淡出仍是 260ms，与 1.2.4.2 逐帧一致）。
@@ -123,7 +131,10 @@ fun TvMainActivity.revealRecommendCover() {
         android.os.SystemClock.elapsedRealtime()-recommendLastSwitchAt<900L
     val duration=if(rapid) COVER_OUT_FAST_MS else COVER_OUT_MS
     cover.animate().alpha(0f).setDuration(duration).withEndAction {
-        if(recommendCover===cover) dismissRecommendCover()
+        if(recommendCover===cover && revealToken==recommendCoverToken) {
+            dismissRecommendCover()
+            onRevealed?.invoke()
+        }
     }.start()
 }
 

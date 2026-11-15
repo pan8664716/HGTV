@@ -156,4 +156,7 @@ internal fun TvMainActivity.buildPlaybackSurface() {
     )
     controls=row().apply { setPadding(0,dp(12),0,0); visibility=View.GONE }; hud.addView(controls)
     layer.addView(ScrollView(this).apply { isVerticalScrollBarEnabled=false; clipChildren=false; clipToPadding=false; addView(hud) },FrameLayout.LayoutParams(-1,-2,Gravity.BOTTOM))
+    // 播放器 surface 重建会清空 root；推荐页从“加载详情”切到播放器时，
+    // 中心 loading 必须跟着补挂回来，否则会提前露出黑场。正式播放页不挂这个等待。
+    if(screen=="recommend") reattachCenterLoading()
 }
