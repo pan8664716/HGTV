@@ -4499,7 +4499,7 @@ feature-tv/
 
 ## 1.3.7.3 版本准备
 
-状态：正式包已构建并通过签名校验，待用户真机验证。
+状态：GitHub Release 已发布，待用户真机验证。
 
 - `versionName` 为 `1.3.7.3`，按发布要求将 `versionCode` 从 `77` 更新为 `78`。
 - `docs/CHANGELOG.md` 的 `1.3.7.3` 已按电视、手机 / 平板分节；README 同步版本
@@ -4513,6 +4513,9 @@ feature-tv/
   `684f0234669e639698629db34a0cba09afdeb0a901f0ca8aca6276067cced002`。
 - Release 只上传 `HGTV_1.3.7.3.apk`、`SHA256SUMS`、`update.json`。tag
   `1.3.7.3` 必须指向独立空树 commit，不得推送源码分支或指向源码提交。
+- 版本准备源码提交为 `f4c99bc`；发布 tag 指向空树提交
+  `493c3bd80c04649618433dfe60fe2f8352a5120c`，未推送源码分支。
+- Release：<https://github.com/pan8664716/HGTV/releases/tag/1.3.7.3>。
 
 ## 推荐流切换官方接口
 
