@@ -10,19 +10,19 @@ class LibraryBackupTest {
     private fun progress(id: String,time: Long)=BackupProgress(series(id),"100$id",0,time,10000,false,time)
     private fun data()=BackupData(listOf(series("1")),listOf(progress("1",100)),setOf("1"),listOf(RecentSearch("你好")),BackupSettings())
     @Test fun `backup round trips records and settings with cover and text sanitization`() {
-        val original=data().copy(settings=BackupSettings(720,1.5f,false,ContentType.COMIC,VideoFrameMode.ZOOM,DanmakuMode.TOP))
+        val original=data().copy(settings=BackupSettings(720,1.5f,false,ContentType.COMIC,VideoFrameMode.ZOOM,DanmakuMode.DEFAULT))
         assertEquals(original,LibraryBackup.decode(LibraryBackup.encode(original)))
         val sanitized=original.copy(favorites=listOf(series("1").copy(title="你\n好",cover="http://127.0.0.1/secret")))
         val result=LibraryBackup.decode(LibraryBackup.encode(sanitized))
         assertEquals("你 好",result.favorites.single().title); assertEquals("",result.favorites.single().cover)
     }
-    @Test fun `danmaku display mode defaults to top and survives a backup round trip`() {
-        assertEquals(DanmakuMode.TOP,DanmakuMode.fromStored(null))
+    @Test fun `danmaku display mode defaults and survives a backup round trip`() {
+        assertEquals(DanmakuMode.DEFAULT,DanmakuMode.fromStored(null))
         assertEquals(DanmakuMode.HIDDEN,DanmakuMode.fromStored("hidden"))
-        // 旧备份里没有 danmaku 字段：按当前默认的「上方显示」读回来。
+        // 旧备份里没有 danmaku 字段：按当前默认档读回来。
         val legacy=LibraryBackup.encode(data()).let { JSONObject(it).apply { getJSONObject("settings").remove("danmaku") }.toString() }
-        assertEquals(DanmakuMode.TOP,LibraryBackup.decode(legacy).settings.danmaku)
-        assertEquals(DanmakuMode.TOP,LibraryBackup.decode(LibraryBackup.encode(data().copy(settings=BackupSettings(danmaku=DanmakuMode.TOP)))).settings.danmaku)
+        assertEquals(DanmakuMode.DEFAULT,LibraryBackup.decode(legacy).settings.danmaku)
+        assertEquals(DanmakuMode.DEFAULT,LibraryBackup.decode(LibraryBackup.encode(data().copy(settings=BackupSettings(danmaku=DanmakuMode.DEFAULT)))).settings.danmaku)
     }
     @Test fun `merge retains newer progress and watched state unless imported progress is newer`() {
         val local=data(); val incoming=data().copy(favorites=listOf(series("2"),series("1")),history=listOf(progress("1",50),progress("2",200)),watched=emptySet(),settings=BackupSettings(480,2f))

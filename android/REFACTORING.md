@@ -4499,12 +4499,20 @@ feature-tv/
 
 ## 1.3.7.3 版本准备
 
-状态：Release 已构建，待用户真机验证。
+状态：正式包已构建并通过签名校验，待用户真机验证。
 
-- `versionName` 更新为 `1.3.7.3`，`versionCode` 从 `76` 更新为 `77`。
-- `:app:assembleRelease` 通过；APK 为 `android/app/build/outputs/apk/release/app-release.apk`。
-- APK SHA-256：`cf0cb07489ce20334526e372fb50a5b734a4eb204ffe784493539ee2f0173b19`。
-- 未推送源码或 tag，未创建 GitHub Release。
+- `versionName` 为 `1.3.7.3`，按发布要求将 `versionCode` 从 `77` 更新为 `78`。
+- `docs/CHANGELOG.md` 的 `1.3.7.3` 已按电视、手机 / 平板分节；README 同步版本
+  code、手机黑边修复和电视 / 手机弹幕数量差异说明。
+- 修复 `LibraryBackupTest` 对已删除 `DanmakuMode.TOP` 的旧引用；定向测试通过。
+- `:core:test` 仍有 27 个既有失败，集中在旧设备身份、缓存和签名期望，与本次版本
+  准备无关；`:app:assembleDebug`、`:app:lintRelease`、`:app:assembleRelease` 均通过。
+- APK 为 `android/app/build/outputs/apk/release/app-release.apk`，`aapt` 确认
+  `versionName=1.3.7.3`、`versionCode=78`，`apksigner` v1 / v2 校验通过。
+- APK 大小 `3947979` 字节；SHA-256：
+  `684f0234669e639698629db34a0cba09afdeb0a901f0ca8aca6276067cced002`。
+- Release 只上传 `HGTV_1.3.7.3.apk`、`SHA256SUMS`、`update.json`。tag
+  `1.3.7.3` 必须指向独立空树 commit，不得推送源码分支或指向源码提交。
 
 ## 推荐流切换官方接口
 
