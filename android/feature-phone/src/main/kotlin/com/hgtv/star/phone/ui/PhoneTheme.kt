@@ -158,7 +158,8 @@ fun Context.phoneScale(): Float {
  * 手机端字体与控件大小的统一倍率。
  *
  * 只放大文字会让单行文案挤进原来的按钮，因此 [phoneScale] 把这一档同时乘进
- * 字号、按钮高度、图标、内边距与卡片尺寸。默认 1.2，可选 1.0–1.5。
+ * 字号、按钮高度、图标、内边距与卡片尺寸。默认 1.2，可选 1.0–2.0 共十一档，
+ * 每 0.1 一档；保留原来的 1.0–1.5，再补 1.6 / 1.7 / 1.8 / 1.9 / 2.0。
  */
 object PhoneUiScale {
 
@@ -169,6 +170,11 @@ object PhoneUiScale {
         X13(1.3f, "1.3"),
         X14(1.4f, "1.4"),
         X15(1.5f, "1.5"),
+        X16(1.6f, "1.6"),
+        X17(1.7f, "1.7"),
+        X18(1.8f, "1.8"),
+        X19(1.9f, "1.9"),
+        X20(2.0f, "2.0"),
     }
 
     val sizes = Size.entries
@@ -271,8 +277,8 @@ object PhoneUiScale {
 
     fun label(value: Float): String = sizeOf(value).label
 
-    private fun normalize(value: Float): Float =
-        value.coerceIn(sizes.first().scale, sizes.last().scale)
+    /** 落盘值只保留十一档中的一档，避免旧版本任意小数落在两个选项之间。 */
+    private fun normalize(value: Float): Float = sizeOf(value).scale
 
     private fun isLandscape(context: Context): Boolean =
         context.resources.configuration.orientation ==
