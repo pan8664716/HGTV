@@ -60,6 +60,7 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     val danmaku = com.hgtv.star.shared.media.DanmakuView(this).apply {
         mode = DanmakuMode.DEFAULT
         minTextSizeDp = 4f
+        topGapDp = 0f
         // 与竖屏那一层同一个基准字号（见 `applyDanmakuSettings`）。
         sizeFollowsLongEdge = true
         setClock(0, false)

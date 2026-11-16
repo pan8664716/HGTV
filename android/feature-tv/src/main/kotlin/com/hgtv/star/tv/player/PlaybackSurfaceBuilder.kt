@@ -39,6 +39,7 @@ internal fun TvMainActivity.buildPlaybackSurface() {
     applyVideoGeometry()
     val overlay=DanmakuView(this).apply {
         unitScale=designSize(1f)
+        topGapDp=16f
         mode=library.danmakuMode
         textScale=library.danmakuScale
         textAlpha=library.danmakuAlpha

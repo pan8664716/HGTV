@@ -35,8 +35,6 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private companion object {
         const val BASE_SCROLL_SECONDS=6f
         const val BOTTOM_INSET_DP=120
-        /** 所有弹幕轨道的统一顶部呼吸位；电视与手机的动态 topInset 之外再加这一小段。 */
-        const val TOP_GAP_DP=16
         const val LANE_GAP_TEXT=0.9f
         const val LANE_GAP_VERTICAL=0.35f
         const val LANE_MIN_GAP_DP=12
@@ -263,6 +261,19 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         set(value) {
             if(field==value) return
             field=value
+            reconfigureVisual()
+        }
+
+    /**
+     * 平台追加的顶部间距。
+     *
+     * TV 与手机竖屏显式设置为 16dp；手机横屏保持 0，沿用原有的动态 topInset。
+     */
+    var topGapDp: Float=0f
+        set(value) {
+            val next=value.coerceAtLeast(0f)
+            if(field==next) return
+            field=next
             reconfigureVisual()
         }
 
@@ -768,7 +779,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         val verticalGap=maxOf(fill.textSize*LANE_GAP_VERTICAL,density*LANE_MIN_GAP_DP)
         laneHeight=maxOf(textBox,emojiBox)+verticalGap
         if(mode==DanmakuMode.HIDDEN || laneHeight<=0f) { laneCount=0; return }
-        laneTop=topInsetPx.coerceAtLeast(0)+density*TOP_GAP_DP
+        laneTop=topInsetPx.coerceAtLeast(0)+density*topGapDp
         val bottom=height-BOTTOM_INSET_DP*density
         val byHeight=((bottom-laneTop).coerceAtLeast(0f)/laneHeight).toInt().coerceIn(0,24)
         laneCount=minOf(mode.lineLimit,byHeight)
