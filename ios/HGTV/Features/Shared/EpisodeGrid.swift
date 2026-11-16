@@ -19,7 +19,7 @@ struct EpisodeGrid: View {
 
     @State private var page = 0
 
-    private var perPage: Int { max(5, pageSize) }
+    private var perPage: Int { max(AppConfig.LibraryDefaults.episodePageMin, pageSize) }
     private var pages: Int { EpisodePaging.pages(count, perPage: perPage) }
 
     var body: some View {
@@ -56,7 +56,10 @@ struct EpisodeGrid: View {
 
             let range = EpisodePaging.range(count, perPage: perPage, page: page)
             if let range {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: m.dp(4)), count: 5),
+                LazyVGrid(columns: Array(
+                    repeating: GridItem(.flexible(), spacing: m.dp(4)),
+                    count: AppConfig.LibraryDefaults.episodeColumns
+                ),
                           spacing: m.dp(4)) {
                     ForEach(Array(range), id: \.self) { index in
                         Button {

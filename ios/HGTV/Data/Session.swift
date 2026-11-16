@@ -224,7 +224,8 @@ final class QrLoginService: ObservableObject {
             let nickname = user.str("screen_name").isEmpty ? user.str("name") : user.str("screen_name")
             let session = AccountSession(cookie: cookieHeader(), token: token,
                                          nickname: nickname, displayId: "",
-                                         expiresAt: Int64(Date().timeIntervalSince1970) + 30 * 24 * 3600,
+                                         expiresAt: Int64(Date().timeIntervalSince1970)
+                                            + Int64(AppConfig.Network.sessionLifetime),
                                          savedAt: Int64(Date().timeIntervalSince1970))
             return .confirmed(session)
         case "4", "5", "expired":

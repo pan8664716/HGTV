@@ -218,7 +218,8 @@ actor ContentRepository {
     func categoryFeed(_ selection: CategorySelection, page: Int, needPanel: Bool) async throws -> (page: CatalogPage, panel: CategoryPanel?) {
         // 「全部推荐」前两页走推荐序，第 3 页起接 hot_score（与 Android 同一条规则）。
         let recommendation = selection.sort == nil && selection.hasNoDetailFilters
-        let fallback = selection.sort == nil && (!recommendation || page >= 3)
+        let fallback = selection.sort == nil &&
+            (!recommendation || page >= AppConfig.Catalog.categoryFallbackStartPage)
         var body: [String: Any] = [
             "filter_ids": "",
             "req_scene": "default",
@@ -237,7 +238,10 @@ actor ContentRepository {
         let payload = root.obj("data") ?? [:]
         let items = payload.arr("video_data").map(card).filter { !$0.id.isEmpty }
         let serverMore = payload.bool("has_more")
-        let more = (serverMore || (recommendation && page <= 2)) && page < AppConfig.Catalog.maxPage
+        let more = (
+            serverMore ||
+            (recommendation && page <= AppConfig.Catalog.categoryRecommendationPages)
+            ) && page < AppConfig.Catalog.maxPage
         let panel = needPanel ? parsePanel(payload.arr("selector_rows")) : nil
         return (CatalogPage(items: items, hasMore: more, ranking: nil), panel)
     }
@@ -314,10 +318,14 @@ actor ContentRepository {
     private func offset(_ selection: CategorySelection, _ page: Int) -> Int {
         if selection.sort == nil && selection.hasNoDetailFilters {
             if page <= 1 { return 0 }
-            if page == 2 { return 20 }
-            return (page - 3) * 60
+            if page == 2 { return AppConfig.Catalog.categoryFirstLimit }
+            return (page - AppConfig.Catalog.categoryFallbackStartPage) *
+                AppConfig.Catalog.categoryOffsetStep
         }
-        return page <= 1 ? 0 : 20 + (page - 2) * 60
+        return page <= 1
+            ? 0
+            : AppConfig.Catalog.categoryFirstLimit +
+                (page - 2) * AppConfig.Catalog.categoryOffsetStep
     }
 
     private func selectItems(_ selection: CategorySelection, sort: String?, genres: [String] = []) -> [String: Any] {
@@ -545,7 +553,10 @@ actor ContentRepository {
                           tags: tagsOf(video, key: "category_list"),
                           episodeCount: count)
         }
-        let totalPages = max(1, min(root.int("totalPages", 1), 100))
+        let totalPages = max(
+            1,
+            min(root.int("totalPages", 1), AppConfig.Catalog.webSearchMaxPage)
+        )
         return CatalogPage(items: items,
                            hasMore: (root.bool("hasMore", page < totalPages)) && page < totalPages,
                            ranking: nil)
@@ -553,7 +564,7 @@ actor ContentRepository {
 
     func hotSearches() async throws -> [String] {
         var params = appValues()
-        params["count"] = "12"
+        params["count"] = "\(AppConfig.Catalog.hotSearchRequestCount)"
         let signed = signer.sign(base: appHost + "/reading/bookapi/search/rank/v", params: params, method: "GET")
         let text = try await send(signed)
         let root = try JSON.parse(text)
@@ -588,7 +599,7 @@ actor ContentRepository {
 
         var model: [String: Any]?
         var lastError: Error = ContentError.message("播放接口暂无响应")
-        for _ in 0..<3 {
+        for _ in 0..<AppConfig.Catalog.streamModelAttempts {
             let modelId = String(Int64.random(in: 100_000_000_000_000...999_999_999_999_999))
             var params = videoValues()
             params["device_id"] = modelId
@@ -791,7 +802,7 @@ actor ContentRepository {
             let name = item.str("name").isEmpty ? item.str("show_name") : item.str("name")
             if !name.isEmpty && !names.contains(name) { names.append(name) }
         }
-        return names.prefix(5).joined(separator: " · ")
+        return names.prefix(AppConfig.Catalog.labelItemLimit).joined(separator: " · ")
     }
 
     /// 季号：`sub_title_list` 里 `data_type == 0` 的那条「第N季」，或 `season_index`。

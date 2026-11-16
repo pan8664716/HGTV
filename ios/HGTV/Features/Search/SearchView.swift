@@ -167,7 +167,10 @@ struct SearchView: View {
         guard !word.isEmpty else { return [] }
         let pool = library.data.searches + hot
         var seen = Set<String>()
-        return pool.filter { $0.contains(word) && seen.insert($0).inserted }.prefix(8).map { $0 }
+        return pool
+            .filter { $0.contains(word) && seen.insert($0).inserted }
+            .prefix(AppConfig.Ui.searchSuggestionLimit)
+            .map { $0 }
     }
 
     private func chipGrid(_ words: [String]) -> some View {

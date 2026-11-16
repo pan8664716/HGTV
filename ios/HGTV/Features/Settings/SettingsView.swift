@@ -189,14 +189,16 @@ struct SettingsView: View {
             SliderRow(label: "画面缩放", value: Binding(
                 get: { Double(library.prefs.videoScale) },
                 set: { library.prefs.videoScale = Float($0) }
-            ), range: 1...100, step: 1, text: { "\(Int($0))%" })
+            ), range: AppConfig.LibraryDefaults.videoScaleMin...AppConfig.LibraryDefaults.videoScaleMax,
+               step: 1, text: { "\(Int($0))%" })
 
             SwitchRow(label: "自动连播", isOn: $library.prefs.autoNext)
 
             SliderRow(label: "快进快退", value: Binding(
                 get: { Double(library.prefs.seekStep) },
                 set: { library.prefs.seekStep = Int($0) }
-            ), range: 2...20, step: 1, text: { "\(Int($0)) 秒" })
+            ), range: Double(AppConfig.LibraryDefaults.seekStepMin)...Double(AppConfig.LibraryDefaults.seekStepMax),
+               step: 1, text: { "\(Int($0)) 秒" })
 
             SectionTitle(text: "播放显示")
             HintText(text: "画面左上角常驻的几项信息，默认全关。")
@@ -209,7 +211,8 @@ struct SettingsView: View {
             SliderRow(label: "自动消失", value: Binding(
                 get: { Double(library.prefs.playerPanelTimeout) },
                 set: { library.prefs.playerPanelTimeout = Int($0) }
-            ), range: 2...15, step: 1, text: { "\(Int($0)) 秒" })
+            ), range: Double(AppConfig.LibraryDefaults.panelTimeoutMin)...Double(AppConfig.LibraryDefaults.panelTimeoutMax),
+               step: 1, text: { "\(Int($0)) 秒" })
             HintText(text: "播放界面上的控制条与面板无操作后自动收起，点一下画面恢复。")
 
             SectionTitle(text: "弹幕")
@@ -228,15 +231,20 @@ struct SettingsView: View {
             SliderRow(label: "聚合条数", value: Binding(
                 get: { Double(library.prefs.danmakuMergeMin) },
                 set: { library.prefs.danmakuMergeMin = Int($0) }
-            ), range: 2...10, step: 1, text: { "\(Int($0)) 条" })
+            ), range: Double(AppConfig.Playback.danmakuMergeMin)...Double(AppConfig.Playback.danmakuMergeMax),
+               step: 1, text: { "\(Int($0)) 条" })
             SliderRow(label: "弹幕大小", value: Binding(
                 get: { Double(library.prefs.danmakuSizePercent) },
                 set: { library.prefs.danmakuSizePercent = Int($0) }
-            ), range: 50...150, step: 5, text: { "\(Int($0))%" })
+            ), range: Double(AppConfig.LibraryDefaults.danmakuSizeMin)...Double(AppConfig.LibraryDefaults.danmakuSizeMax),
+               step: Double(AppConfig.LibraryDefaults.danmakuSizeStep),
+               text: { "\(Int($0))%" })
             SliderRow(label: "弹幕透明度", value: Binding(
                 get: { Double(library.prefs.danmakuAlpha) },
                 set: { library.prefs.danmakuAlpha = Float($0) }
-            ), range: 0.2...1, step: 0.05, text: { "\(Int($0 * 100))%" })
+            ), range: AppConfig.LibraryDefaults.danmakuAlphaMin...AppConfig.LibraryDefaults.danmakuAlphaMax,
+               step: AppConfig.LibraryDefaults.danmakuAlphaStep,
+               text: { "\(Int($0 * 100))%" })
         }
     }
 

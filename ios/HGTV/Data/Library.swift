@@ -195,7 +195,9 @@ final class Library: ObservableObject {
         data.progress[series.id] = entry
         data.history.removeAll { $0.series.id == series.id }
         data.history.insert(entry, at: 0)
-        if data.history.count > 200 { data.history = Array(data.history.prefix(200)) }
+        if data.history.count > AppConfig.LibraryDefaults.historyLimit {
+            data.history = Array(data.history.prefix(AppConfig.LibraryDefaults.historyLimit))
+        }
         scheduleSave()
     }
 
@@ -238,7 +240,9 @@ final class Library: ObservableObject {
         guard !clean.isEmpty else { return }
         data.searches.removeAll { $0 == clean }
         data.searches.insert(clean, at: 0)
-        if data.searches.count > 20 { data.searches = Array(data.searches.prefix(20)) }
+        if data.searches.count > AppConfig.LibraryDefaults.searchHistoryLimit {
+            data.searches = Array(data.searches.prefix(AppConfig.LibraryDefaults.searchHistoryLimit))
+        }
         scheduleSave()
     }
 

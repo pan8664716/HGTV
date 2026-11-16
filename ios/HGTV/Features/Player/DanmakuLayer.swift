@@ -34,19 +34,29 @@ struct DanmakuLayer: View {
     }
 
     private func draw(context: inout GraphicsContext, size: CGSize, mode: DanmakuMode) {
-        let fontSize = max(10, m.sp(15) * CGFloat(library.prefs.danmakuSizePercent) / 100)
+        let fontSize = max(
+            AppConfig.Danmaku.minFontSize,
+            m.sp(AppConfig.Danmaku.baseFontSize) * CGFloat(library.prefs.danmakuSizePercent) / 100
+        )
         let opacity = Double(library.prefs.danmakuAlpha)
         let speedFactor = Double(library.prefs.danmakuSpeed.factor)
-        let laneHeight = fontSize * 1.6
+        let laneHeight = fontSize * AppConfig.Danmaku.laneHeightScale
         let laneCount: Int
-        let maxFullLanes = max(1, Int(size.height * 0.75 / laneHeight))
+        let maxFullLanes = max(
+            1,
+            Int(size.height * AppConfig.Danmaku.fullHeightRatio / laneHeight)
+        )
         switch mode {
         case .hidden: laneCount = 0
         case .single: laneCount = 1
         case .two: laneCount = min(2, maxFullLanes)
         case .three: laneCount = min(3, maxFullLanes)
         case .four: laneCount = min(4, maxFullLanes)
-        case .top: laneCount = max(1, Int(size.height * 0.35 / laneHeight))
+        case .top:
+            laneCount = max(
+                1,
+                Int(size.height * AppConfig.Danmaku.topHeightRatio / laneHeight)
+            )
         case .full: laneCount = maxFullLanes
         }
         guard laneCount > 0 else { return }
@@ -68,11 +78,15 @@ struct DanmakuLayer: View {
                     .foregroundColor(PhoneTheme.playerText.opacity(opacity))
             )
             let width = resolved.measure(in: size).width
-            let x = size.width - progress * (size.width + width + 20)
+            let x = size.width -
+                progress * (size.width + width + AppConfig.Danmaku.exitWidthGap)
             let lane = order % laneCount
             lanes[lane] += 1
-            let y = laneHeight * CGFloat(lane) + laneHeight * 0.9 +
-                (mode == .full ? size.height * 0.12 : size.height * 0.08)
+            let y = laneHeight * CGFloat(lane) +
+                laneHeight * AppConfig.Danmaku.laneCenterOffset +
+                (mode == .full
+                    ? size.height * AppConfig.Danmaku.fullTopOffsetRatio
+                    : size.height * AppConfig.Danmaku.normalTopOffsetRatio)
             context.draw(resolved, at: CGPoint(x: x, y: y), anchor: .leading)
         }
     }

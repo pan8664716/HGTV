@@ -218,8 +218,11 @@ final class TncConfigStore: @unchecked Sendable {
         let tncHosts = stringList(payload["send_tnc_host_arrays"])
             .filter { $0.lowercased().hasSuffix(".zijieapi.com") }
             .reduce(into: [String]()) { appendUnique($1, to: &$0) }
-        let seconds = number(payload["tnc_update_interval"]) ?? 3600
-        let interval = min(max(seconds, 300), 86_400)
+        let seconds = number(payload["tnc_update_interval"]) ?? AppConfig.Network.tncDefaultUpdateInterval
+        let interval = min(
+            max(seconds, AppConfig.Network.tncMinUpdateInterval),
+            AppConfig.Network.tncMaxUpdateInterval
+        )
         let previousLastGood = current()?.lastGoodHost ?? ""
         return TncSnapshot(
             fetchedAt: Date().timeIntervalSince1970,

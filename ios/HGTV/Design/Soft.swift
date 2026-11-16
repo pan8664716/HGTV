@@ -106,7 +106,8 @@ struct SoftPressStyle: ButtonStyle {
         configuration.label
             .soft(.raised, fill: configuration.isPressed ? theme.surfaceHigh : fill, radius: radius)
             .scaleEffect(configuration.isPressed ? 0.985 : 1)
-            .animation(.easeOut(duration: 0.12), value: configuration.isPressed)
+            .animation(.easeOut(duration: AppConfig.Ui.pressAnimationDuration),
+                       value: configuration.isPressed)
     }
 }
 

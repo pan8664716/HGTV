@@ -170,7 +170,7 @@ struct PosterGrid<Content: View>: View {
 
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: m.dp(spacing)),
-                                 count: max(1, min(3, columns))),
+                                 count: max(1, min(AppConfig.LibraryDefaults.maxPosterColumns, columns))),
                   spacing: m.dp(spacing)) {
             content
         }

@@ -139,7 +139,7 @@ final class FeedStore: ObservableObject {
             playCurrent()
         }
         // 接近末尾：提前取下一页。
-        if index >= items.count - AppConfig.Recommend.loadMoreThreshold { loadMore() }
+        if index >= items.count - AppConfig.Recommend.nearEndLoadThreshold { loadMore() }
     }
 
     func setActive(_ active: Bool) {

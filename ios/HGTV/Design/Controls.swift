@@ -124,7 +124,8 @@ struct BottomTabBar: View {
             ForEach(items.indices, id: \.self) { index in
                 Button {
                     let now = Date()
-                    if index == lastTapIndex && now.timeIntervalSince(lastTapAt) <= 0.32 {
+                    if index == lastTapIndex &&
+                        now.timeIntervalSince(lastTapAt) <= AppConfig.Ui.tabDoubleTapWindow {
                         lastTapIndex = -1
                         onRepeatTap?(index)
                     } else {

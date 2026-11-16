@@ -270,11 +270,15 @@ enum PlaybackDegradation {
     static func decide(code: Int, state: State) -> Action {
         switch code {
         case 4001, 4003:
-            if state.rebuilds < 2 { return .rebuild }
-            if state.drops < 2, let next = lower(state.level) { return .drop(to: next) }
+            if state.rebuilds < AppConfig.Playback.sameQualityRebuildLimit { return .rebuild }
+            if state.drops < AppConfig.Playback.qualityDownLimit, let next = lower(state.level) {
+                return .drop(to: next)
+            }
             return .fail
         case 4004, 4005:
-            if state.drops < 2, let next = lower(state.level) { return .drop(to: next) }
+            if state.drops < AppConfig.Playback.qualityDownLimit, let next = lower(state.level) {
+                return .drop(to: next)
+            }
             return .fail
         default:
             return .fail

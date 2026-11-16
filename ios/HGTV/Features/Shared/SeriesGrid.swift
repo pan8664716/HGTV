@@ -26,7 +26,7 @@ struct SeriesGrid: View {
 
     var body: some View {
         LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: m.dp(PhoneDimen.posterGap)),
-                                 count: max(1, min(3, columns))),
+                                 count: max(1, min(AppConfig.LibraryDefaults.maxPosterColumns, columns))),
                   spacing: m.dp(PhoneDimen.posterGap)) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, series in
                 Button {

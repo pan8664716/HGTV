@@ -8,6 +8,7 @@
 // - 时间值按属性名中的单位使用；纳秒值直接用于 Task.sleep。
 
 import Foundation
+import CoreGraphics
 
 enum AppConfig {
     /// 网络请求超时。除特别标注外，单位均为秒。
@@ -35,6 +36,18 @@ enum AppConfig {
 
         /// 封面图片下载超时。
         static let artworkTimeout: TimeInterval = 15
+
+        /// TNC 没有下发更新周期时的默认刷新间隔，单位秒。
+        static let tncDefaultUpdateInterval: TimeInterval = 3_600
+
+        /// TNC 刷新周期下限，单位秒。
+        static let tncMinUpdateInterval: TimeInterval = 300
+
+        /// TNC 刷新周期上限，单位秒。
+        static let tncMaxUpdateInterval: TimeInterval = 86_400
+
+        /// 扫码登录成功后本地会话默认保留时间，单位秒。
+        static let sessionLifetime: TimeInterval = 30 * 24 * 3_600
     }
 
     /// 目录、榜单、推荐和搜索分页参数。
@@ -68,6 +81,39 @@ enum AppConfig {
 
         /// 播放地址请求重试间隔。
         static let streamRetryDelayNanoseconds: UInt64 = 220_000_000
+
+        /// 播放模型请求最多换几次设备身份。
+        static let streamModelAttempts = 3
+
+        /// 官网搜索单页最大页码。
+        static let webSearchMaxPage = 100
+
+        /// 搜索关键词最大字符数。
+        static let searchKeywordMaxLength = 80
+
+        /// 官网搜索服务端允许的最大查询字符数。
+        static let webSearchQueryMaxLength = 30
+
+        /// 搜索联想词最大返回条数。
+        static let suggestionLimit = 20
+
+        /// 热搜词最大返回条数。
+        static let hotSearchLimit = 30
+
+        /// 热搜接口默认请求条数。
+        static let hotSearchRequestCount = 12
+
+        /// 分类接口前多少页继续走推荐序。
+        static let categoryRecommendationPages = 2
+
+        /// 分类接口从第几页开始回退 hot_score。
+        static let categoryFallbackStartPage = 3
+
+        /// 分类第 3 页之后的 offset 步长。
+        static let categoryOffsetStep = 60
+
+        /// 标签、作者等多值字段在卡片上最多展示几项。
+        static let labelItemLimit = 5
     }
 
     /// 推荐去重窗口和失败跳过策略。
@@ -81,11 +127,11 @@ enum AppConfig {
         /// 回传给服务端的 filter_ids 最多保留多少条。
         static let filterIdsLimit = 300
 
-        /// 距离列表末尾多少条时提前加载下一页。
-        static let loadMoreThreshold = 3
-
         /// 连续多少条播放失败后停止自动跳过。
         static let failureSkipLimit = 2
+
+        /// 距离列表末尾多少条时提前加载下一页。
+        static let nearEndLoadThreshold = 3
     }
 
     /// 播放、弹幕、动画和手势参数。
@@ -146,6 +192,21 @@ enum AppConfig {
 
         /// 设置页和播放面板可选的倍速档位。
         static let speedOptions: [Float] = [0.75, 1, 1.25, 1.5, 1.75, 2]
+
+        /// 播放地址失败后的自动重试次数。
+        static let sourceRetryLimit = 2
+
+        /// 播放地址失败后的退避步长，单位秒。
+        static let sourceRetryStep: TimeInterval = 3
+
+        /// 每集允许同档重建次数。
+        static let sameQualityRebuildLimit = 2
+
+        /// 每集允许自动降档次数。
+        static let qualityDownLimit = 2
+
+        /// 片尾 seek 保护，避免提前触发播放结束，单位秒。
+        static let seekTailGuard: Double = 0.5
     }
 
     /// 首次安装和恢复默认设置时使用的偏好值。
@@ -197,6 +258,60 @@ enum AppConfig {
 
         /// 偏好修改后的写盘防抖时间。
         static let saveDebounceNanoseconds: UInt64 = 250_000_000
+
+        /// 本机历史记录上限。
+        static let historyLimit = 200
+
+        /// 本机搜索历史上限。
+        static let searchHistoryLimit = 20
+
+        /// 设置页画面缩放下限。
+        static let videoScaleMin: Double = 1
+
+        /// 设置页画面缩放上限。
+        static let videoScaleMax: Double = 100
+
+        /// 设置页快进 / 快退最小秒数。
+        static let seekStepMin = 2
+
+        /// 设置页快进 / 快退最大秒数。
+        static let seekStepMax = 20
+
+        /// 播放控制层自动收起最小秒数。
+        static let panelTimeoutMin = 2
+
+        /// 播放控制层自动收起最大秒数。
+        static let panelTimeoutMax = 15
+
+        /// 弹幕大小百分比下限。
+        static let danmakuSizeMin = 50
+
+        /// 弹幕大小百分比上限。
+        static let danmakuSizeMax = 150
+
+        /// 弹幕大小百分比步长。
+        static let danmakuSizeStep = 5
+
+        /// 弹幕透明度下限。
+        static let danmakuAlphaMin: Double = 0.2
+
+        /// 弹幕透明度上限。
+        static let danmakuAlphaMax: Double = 1
+
+        /// 弹幕透明度步长。
+        static let danmakuAlphaStep: Double = 0.05
+
+        /// 手机列表最大列数。
+        static let maxGridColumns = 3
+
+        /// 选集每页最小集数。
+        static let episodePageMin = 5
+
+        /// 选集网格每行集数。
+        static let episodeColumns = 5
+
+        /// 海报网格最大列数。
+        static let maxPosterColumns = 3
     }
 
     /// 封面和离线视频缓存上限。
@@ -209,6 +324,36 @@ enum AppConfig {
 
         /// 离线解密视频缓存总大小。
         static let offlineVideoBytes: Int64 = 1_200 * 1024 * 1024
+    }
+
+    /// 弹幕绘制的基础排版参数。
+    enum Danmaku {
+        /// 弹幕最小字号。
+        static let minFontSize: CGFloat = 10
+
+        /// 弹幕基准字号。
+        static let baseFontSize: CGFloat = 15
+
+        /// 轨道高度相对字号的倍数。
+        static let laneHeightScale: CGFloat = 1.6
+
+        /// 全屏模式可用高度比例。
+        static let fullHeightRatio: CGFloat = 0.75
+
+        /// 顶部模式可用高度比例。
+        static let topHeightRatio: CGFloat = 0.35
+
+        /// 轨道文字垂直居中偏移。
+        static let laneCenterOffset: CGFloat = 0.9
+
+        /// 全屏模式顶部额外偏移比例。
+        static let fullTopOffsetRatio: CGFloat = 0.12
+
+        /// 普通模式顶部额外偏移比例。
+        static let normalTopOffsetRatio: CGFloat = 0.08
+
+        /// 弹幕离开右边缘后再进入的额外宽度。
+        static let exitWidthGap: CGFloat = 20
     }
 
     /// 通用提示、扫码轮询和手势识别阈值。
@@ -242,5 +387,14 @@ enum AppConfig {
 
         /// 长按中间设置区域的结束比例。
         static let centerTapZoneMaxRatio: Double = 0.66
+
+        /// 底部导航同一格双击判定窗口，单位秒。
+        static let tabDoubleTapWindow: TimeInterval = 0.32
+
+        /// 轻触反馈动画时长。
+        static let pressAnimationDuration: TimeInterval = 0.12
+
+        /// 搜索候选词最多显示条数。
+        static let searchSuggestionLimit = 8
     }
 }
