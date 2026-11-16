@@ -273,19 +273,19 @@ struct SettingsView: View {
             .padding(.top, m.dp(4))
 
             ChoiceRow(label: "字体大小", value: scaleLabel, options: [
-                ("超小", { library.prefs.uiScale = 1.3 }),
-                ("较小", { library.prefs.uiScale = 1.45 }),
-                ("标准", { library.prefs.uiScale = 1.6 }),
-                ("较大", { library.prefs.uiScale = 1.75 }),
-                ("超大", { library.prefs.uiScale = 1.9 })
+                ("超小", { library.prefs.uiScale = AppConfig.LibraryDefaults.uiScaleOptions[0] }),
+                ("较小", { library.prefs.uiScale = AppConfig.LibraryDefaults.uiScaleOptions[1] }),
+                ("标准", { library.prefs.uiScale = AppConfig.LibraryDefaults.uiScaleOptions[2] }),
+                ("较大", { library.prefs.uiScale = AppConfig.LibraryDefaults.uiScaleOptions[3] }),
+                ("超大", { library.prefs.uiScale = AppConfig.LibraryDefaults.uiScaleOptions[4] })
             ])
             HintText(text: "字号、按钮高度、图标与卡片尺寸一起缩放，不会出现「字变大、按钮没变」。")
 
             SectionTitle(text: "列表布局")
             ChoiceRow(label: "列表每行", value: "\(library.prefs.gridColumns) 张", options: [
-                ("1 张", { library.prefs.gridColumns = 1 }),
-                ("2 张", { library.prefs.gridColumns = 2 }),
-                ("3 张", { library.prefs.gridColumns = 3 })
+                ("1 张", { library.prefs.gridColumns = AppConfig.LibraryDefaults.gridColumnOptions[0] }),
+                ("2 张", { library.prefs.gridColumns = AppConfig.LibraryDefaults.gridColumnOptions[1] }),
+                ("3 张", { library.prefs.gridColumns = AppConfig.LibraryDefaults.gridColumnOptions[2] })
             ])
             SwitchRow(label: "推荐页左右滑动", isOn: $library.prefs.recommendSwipe)
             HintText(text: "关闭后推荐页只能用顶部体裁标签换流，手指左右划不会整页翻走。")

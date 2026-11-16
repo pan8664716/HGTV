@@ -12,7 +12,7 @@ actor OfflineVideo {
     static let shared = OfflineVideo()
 
     private let folder: URL
-    private let limit: Int64 = 1_200 * 1024 * 1024
+    private let limit: Int64 = AppConfig.Cache.offlineVideoBytes
 
     init() {
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
@@ -32,7 +32,7 @@ actor OfflineVideo {
         if FileManager.default.fileExists(atPath: target.path) { return target }
 
         var request = URLRequest(url: URL(string: info.url)!)
-        request.timeoutInterval = 60
+        request.timeoutInterval = AppConfig.Network.offlineVideoTimeout
         request.setValue(Vendor.userAgent(Vendor.device, video: true), forHTTPHeaderField: "User-Agent")
         let (data, response) = try await URLSession.shared.data(for: request)
         guard let http = response as? HTTPURLResponse, http.statusCode < 400, data.count > 1024 else {

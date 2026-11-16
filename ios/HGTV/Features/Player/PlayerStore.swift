@@ -24,8 +24,8 @@ final class PlayerStore: ObservableObject {
     @Published private(set) var errorText: String?
     @Published private(set) var danmaku: [DanmakuItem] = []
     @Published var chromeVisible = true
-    @Published private(set) var speed: Float = 1
-    @Published private(set) var quality: Int = 1080
+    @Published private(set) var speed: Float = AppConfig.LibraryDefaults.playbackSpeed
+    @Published private(set) var quality: Int = AppConfig.LibraryDefaults.maxQuality
     @Published private(set) var sleepDeadline: Date?
 
     private var timeObserver: Any?
@@ -33,7 +33,11 @@ final class PlayerStore: ObservableObject {
     private var hideTask: Task<Void, Never>?
     private var playTask: Task<Void, Never>?
     private var danmakuTask: Task<Void, Never>?
-    private var degradation = PlaybackDegradation.State(rebuilds: 0, drops: 0, level: 1080)
+    private var degradation = PlaybackDegradation.State(
+        rebuilds: 0,
+        drops: 0,
+        level: AppConfig.LibraryDefaults.maxQuality
+    )
     private var requestedEpisode: Int?
 
     init(seriesId: String, title: String, episode: Int?) {
@@ -43,7 +47,8 @@ final class PlayerStore: ObservableObject {
         self.speed = Library.shared.prefs.playbackSpeed
         self.quality = Library.shared.prefs.maxQuality
         player.actionAtItemEnd = .pause
-        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: AppConfig.Playback.periodicInterval, preferredTimescale: 600),
                                                       queue: .main) { [weak self] time in
             Task { @MainActor in self?.tick(time) }
         }
@@ -51,7 +56,10 @@ final class PlayerStore: ObservableObject {
                                                object: nil, queue: .main) { [weak self] _ in
             Task { @MainActor in self?.handleEnded() }
         }
-        saveTimer = Timer.scheduledTimer(withTimeInterval: 5, repeats: true) { [weak self] _ in
+        saveTimer = Timer.scheduledTimer(
+            withTimeInterval: AppConfig.Playback.progressSaveInterval,
+            repeats: true
+        ) { [weak self] _ in
             Task { @MainActor in self?.saveProgress() }
         }
     }
@@ -209,19 +217,21 @@ final class PlayerStore: ObservableObject {
     }
 
     func toggleChrome() {
-        withAnimation(.easeOut(duration: 0.18)) { chromeVisible.toggle() }
+        withAnimation(.easeOut(duration: AppConfig.Playback.animationDuration)) { chromeVisible.toggle() }
         if chromeVisible { scheduleChromeHide() }
     }
 
     func scheduleChromeHide() {
         hideTask?.cancel()
-        let seconds = max(2, Library.shared.prefs.playerPanelTimeout)
+        let seconds = max(AppConfig.Playback.panelTimeoutMinSeconds, Library.shared.prefs.playerPanelTimeout)
         hideTask = Task { [weak self] in
             try? await Task.sleep(nanoseconds: UInt64(seconds) * 1_000_000_000)
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self, self.isPlaying else { return }
-                withAnimation(.easeOut(duration: 0.18)) { self.chromeVisible = false }
+                withAnimation(.easeOut(duration: AppConfig.Playback.animationDuration)) {
+                    self.chromeVisible = false
+                }
             }
         }
     }

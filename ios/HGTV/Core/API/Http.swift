@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
 // 传输层：URLSession + 显式 Cookie（账号会话跨主机共享）。
-// 与 Android 的 OkHttp 配置对齐：15s 连接、30s 读、45s 整次调用上限。
+// 超时统一由 AppConfig.Network 管理。
 
 import Foundation
 
@@ -28,8 +28,8 @@ final class Http {
 
     private init() {
         let config = URLSessionConfiguration.default
-        config.timeoutIntervalForRequest = 30
-        config.timeoutIntervalForResource = 45
+        config.timeoutIntervalForRequest = AppConfig.Network.defaultRequestTimeout
+        config.timeoutIntervalForResource = AppConfig.Network.resourceTimeout
         config.httpShouldSetCookies = true
         config.httpCookieAcceptPolicy = .always
         config.httpCookieStorage = HTTPCookieStorage.shared
@@ -43,7 +43,7 @@ final class Http {
         guard let url = URL(string: request.url) else { throw HttpError.network("地址格式异常") }
         var urlRequest = URLRequest(url: url)
         urlRequest.httpMethod = request.method
-        urlRequest.timeoutInterval = timeout ?? 30
+        urlRequest.timeoutInterval = timeout ?? AppConfig.Network.defaultRequestTimeout
         if let body = request.body { urlRequest.httpBody = Data(body) }
         for (key, value) in request.headers {
             urlRequest.setValue(value, forHTTPHeaderField: key)
@@ -63,7 +63,8 @@ final class Http {
     }
 
     /// 简单 GET（官网搜索、二维码图片这类不需要签名的请求）。
-    func get(_ url: String, headers: [String: String] = [:], timeout: TimeInterval = 20) async throws -> (Data, [String: String]) {
+    func get(_ url: String, headers: [String: String] = [:],
+             timeout: TimeInterval = AppConfig.Network.getRequestTimeout) async throws -> (Data, [String: String]) {
         guard let link = URL(string: url) else { throw HttpError.network("地址格式异常") }
         var request = URLRequest(url: link)
         request.timeoutInterval = timeout

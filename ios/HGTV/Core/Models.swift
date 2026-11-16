@@ -229,12 +229,12 @@ struct CategorySelection: Equatable {
 
 enum PlaybackQuality {
     /// 五档与平台下发的 360/480/576/720/1080 一致。
-    static let options = [360, 480, 576, 720, 1080]
+    static let options = AppConfig.Playback.qualityOptions
     static func normalize(_ value: Int) -> Int { options.contains(value) ? value : 1080 }
 }
 
 enum PlaybackSpeed {
-    static let options: [Float] = [0.75, 1, 1.25, 1.5, 1.75, 2]
+    static let options = AppConfig.Playback.speedOptions
     static func normalize(_ value: Float) -> Float { options.contains(value) ? value : 1 }
     static func label(_ value: Float) -> String {
         let text = value == value.rounded() ? String(Int(value)) : String(format: "%.2f", value)
@@ -320,7 +320,7 @@ enum SearchSource: String, Codable, CaseIterable {
 }
 
 enum EpisodePageSize {
-    static let phoneOptions = [20, 30, 50, 80, 100]
+    static let phoneOptions = AppConfig.LibraryDefaults.episodePageSizeOptions
     static func normalize(_ value: Int) -> Int { phoneOptions.contains(value) ? value : 20 }
 }
 
@@ -336,7 +336,7 @@ struct WatchProgress: Codable {
     var updatedAt: Int64
 
     /// 离片尾不到 3 秒算看完（与 Android 的 `COMPLETE_TAIL_MS` 同值）。
-    static let completeTailMs: Int64 = 3000
+    static let completeTailMs: Int64 = AppConfig.Playback.completeTailMs
 
     var fraction: Double {
         guard duration > 0 else { return 0 }

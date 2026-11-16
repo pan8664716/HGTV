@@ -224,7 +224,7 @@ struct AccountView: View {
                 status = message
                 return
             }
-            try? await Task.sleep(nanoseconds: 1_100_000_000)
+            try? await Task.sleep(nanoseconds: AppConfig.Ui.accountQrPollNanoseconds)
         }
     }
 }

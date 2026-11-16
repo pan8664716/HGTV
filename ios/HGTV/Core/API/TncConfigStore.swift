@@ -171,7 +171,7 @@ final class TncConfigStore: @unchecked Sendable {
             guard let url = components.url else { continue }
 
             var request = URLRequest(url: url)
-            request.timeoutInterval = 8
+            request.timeoutInterval = AppConfig.Network.tncTimeout
             request.setValue(Vendor.userAgent(values, video: true), forHTTPHeaderField: "User-Agent")
             request.setValue("application/json", forHTTPHeaderField: "Accept")
             request.setValue("8662", forHTTPHeaderField: "X-SS-DP")

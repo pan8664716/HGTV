@@ -38,13 +38,14 @@ final class FeedStore: ObservableObject {
     private var timeObserver: Any?
     private var failures = 0
     private var temporarySpeed = false
-    private var userSpeed: Float = 1
+    private var userSpeed: Float = AppConfig.LibraryDefaults.playbackSpeed
 
     init(genre: RankBoard) {
         self.genre = genre
         player.actionAtItemEnd = .pause
         player.automaticallyWaitsToMinimizeStalling = true
-        timeObserver = player.addPeriodicTimeObserver(forInterval: CMTime(seconds: 0.5, preferredTimescale: 600),
+        timeObserver = player.addPeriodicTimeObserver(
+            forInterval: CMTime(seconds: AppConfig.Playback.periodicInterval, preferredTimescale: 600),
                                                       queue: .main) { [weak self] time in
             Task { @MainActor in self?.tick(time) }
         }
@@ -138,7 +139,7 @@ final class FeedStore: ObservableObject {
             playCurrent()
         }
         // 接近末尾：提前取下一页。
-        if index >= items.count - 3 { loadMore() }
+        if index >= items.count - AppConfig.Recommend.loadMoreThreshold { loadMore() }
     }
 
     func setActive(_ active: Bool) {
@@ -192,7 +193,7 @@ final class FeedStore: ObservableObject {
                 await MainActor.run {
                     self.buffering = false
                     self.failures += 1
-                    if self.failures <= 2 {
+                    if self.failures <= AppConfig.Recommend.failureSkipLimit {
                         self.skipToNext()
                     } else {
                         self.errorText = "这一条流暂时放不了，上滑换一部"
@@ -215,7 +216,7 @@ final class FeedStore: ObservableObject {
     /// 长按倍速：松手恢复（与 Android 的 2× 长按同一条）。
     func setTemporarySpeed(_ fast: Bool) {
         temporarySpeed = fast
-        player.rate = fast ? 2 : userSpeed
+        player.rate = fast ? AppConfig.Playback.temporarySpeed : userSpeed
     }
 
     func setSpeed(_ value: Float) {

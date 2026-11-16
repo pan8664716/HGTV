@@ -16,30 +16,30 @@ import SwiftUI
 // MARK: - 偏好
 
 struct LibraryPrefs: Codable, Equatable {
-    var maxQuality: Int = 1080
-    var playbackSpeed: Float = 1
+    var maxQuality: Int = AppConfig.LibraryDefaults.maxQuality
+    var playbackSpeed: Float = AppConfig.LibraryDefaults.playbackSpeed
     var frameMode: VideoFrameMode = .fit
     var decoderMode: VideoDecoderMode = .hardware
-    var videoScale: Float = 100
+    var videoScale: Float = AppConfig.LibraryDefaults.videoScale
     var autoNext: Bool = true
-    var seekStep: Int = 10
+    var seekStep: Int = AppConfig.LibraryDefaults.seekStep
     var autoFullscreen: Bool = false
 
     var playerTitle: Bool = false
     var playerEpisode: Bool = false
     var playerClock: Bool = false
     var playerSpeed: Bool = false
-    var playerPanelTimeout: Int = 6
+    var playerPanelTimeout: Int = AppConfig.LibraryDefaults.playerPanelTimeout
 
     var danmakuMode: DanmakuMode = .full
     var danmakuSpeed: DanmakuSpeed = .normal
     var danmakuMerge: Bool = true
-    var danmakuMergeMin: Int = 2
-    var danmakuAlpha: Float = 1
-    var danmakuSizePercent: Int = 100
+    var danmakuMergeMin: Int = AppConfig.LibraryDefaults.danmakuMergeMin
+    var danmakuAlpha: Float = AppConfig.LibraryDefaults.danmakuAlpha
+    var danmakuSizePercent: Int = AppConfig.LibraryDefaults.danmakuSizePercent
 
-    var gridColumns: Int = 2
-    var episodePageSize: Int = 20
+    var gridColumns: Int = AppConfig.LibraryDefaults.gridColumns
+    var episodePageSize: Int = AppConfig.LibraryDefaults.episodePageSize
     var episodeEdgeTurn: Bool = true
     var searchSource: SearchSource = .app
     var reduceAnim: Bool = false
@@ -51,7 +51,7 @@ struct LibraryPrefs: Codable, Equatable {
     var recommendGenreOff: [String] = []
 
     var theme: String = PhoneTheme.deepSeaBlue.storedValue
-    var uiScale: Float = 1.6
+    var uiScale: Float = AppConfig.LibraryDefaults.uiScale
 
     var isRecommendGenreEnabled: Bool { true }
 
@@ -102,7 +102,9 @@ final class Library: ObservableObject {
     private func migrateDefaultsIfNeeded() {
         let key = "uiScaleDefaultMigrated"
         if !UserDefaults.standard.bool(forKey: key) {
-            if abs(prefs.uiScale - 1.3) < 0.001 { prefs.uiScale = 1.6 }
+            if abs(prefs.uiScale - AppConfig.LibraryDefaults.legacyUiScale) < 0.001 {
+                prefs.uiScale = AppConfig.LibraryDefaults.uiScale
+            }
             UserDefaults.standard.set(true, forKey: key)
             scheduleSave()
         }
@@ -113,7 +115,7 @@ final class Library: ObservableObject {
     private func scheduleSave() {
         saveTask?.cancel()
         saveTask = Task { [weak self] in
-            try? await Task.sleep(nanoseconds: 250_000_000)
+            try? await Task.sleep(nanoseconds: AppConfig.LibraryDefaults.saveDebounceNanoseconds)
             guard !Task.isCancelled else { return }
             self?.saveNow()
         }

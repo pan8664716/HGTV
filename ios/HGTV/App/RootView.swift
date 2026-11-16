@@ -41,7 +41,7 @@ final class ToastCenter: ObservableObject {
     @Published private(set) var text: String?
     private var task: Task<Void, Never>?
 
-    func show(_ message: String, seconds: Double = 1.6) {
+    func show(_ message: String, seconds: Double = AppConfig.Ui.toastSeconds) {
         text = message
         task?.cancel()
         task = Task {
@@ -117,7 +117,7 @@ struct RootView: View {
                     ToastView(text: text).padding(.bottom, metrics.dp(80))
                 }
             }
-            .animation(.easeOut(duration: 0.18), value: toast.text)
+            .animation(.easeOut(duration: AppConfig.Ui.toastAnimationDuration), value: toast.text)
             .onChange(of: tab) { _, value in
                 feedActive = value == 0
             }

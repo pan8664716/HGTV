@@ -15,14 +15,16 @@ struct DanmakuLayer: View {
     @Environment(\.metrics) private var m
 
     /// 一条弹幕在屏幕上存活的时间（秒）：与 Android 的滚动时长同量级。
-    private let life: Double = 8
+    private let life = AppConfig.Playback.danmakuLife
 
     var body: some View {
         let mode = library.prefs.danmakuMode
         if mode == .hidden || items.isEmpty {
             EmptyView()
         } else {
-            TimelineView(.animation(minimumInterval: 1.0 / 30.0)) { _ in
+            TimelineView(.animation(
+                minimumInterval: 1.0 / AppConfig.Playback.danmakuFrameRate
+            )) { _ in
                 Canvas { context, size in
                     draw(context: &context, size: size, mode: mode)
                 }
@@ -78,10 +80,14 @@ struct DanmakuLayer: View {
     /// 相同弹幕聚合：`这剧好看 ×4`（与 Android 的聚合口径一致：2–10 条起聚）。
     private func mergedText(_ item: DanmakuItem, at index: Int) -> String {
         guard library.prefs.danmakuMerge else { return item.text }
-        let window = Double(max(2, library.prefs.danmakuMergeMin))
+        let threshold = min(
+            AppConfig.Playback.danmakuMergeMax,
+            max(AppConfig.Playback.danmakuMergeMin, library.prefs.danmakuMergeMin)
+        )
+        let window = Double(threshold)
         let count = items.filter {
             $0.text == item.text && abs(Double($0.offsetMs - item.offsetMs)) / 1000 <= window
         }.count
-        return count >= max(2, library.prefs.danmakuMergeMin) ? "\(item.text) ×\(count)" : item.text
+        return count >= threshold ? "\(item.text) ×\(count)" : item.text
     }
 }

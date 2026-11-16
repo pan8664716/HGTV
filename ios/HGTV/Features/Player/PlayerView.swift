@@ -137,20 +137,21 @@ struct PlayerView: View {
             )
             .onTapGesture {
                 store.togglePlay()
-                withAnimation(.easeOut(duration: 0.12)) { showPlayIcon = true }
+                withAnimation(.easeOut(duration: AppConfig.Playback.tapAnimationDuration)) { showPlayIcon = true }
                 Task {
-                    try? await Task.sleep(nanoseconds: 450_000_000)
-                    withAnimation(.easeOut(duration: 0.18)) { showPlayIcon = false }
+                    try? await Task.sleep(nanoseconds: AppConfig.Playback.playIconVisibleNanoseconds)
+                    withAnimation(.easeOut(duration: AppConfig.Playback.animationDuration)) { showPlayIcon = false }
                 }
             }
-            .onLongPressGesture(minimumDuration: 0.35) {
+            .onLongPressGesture(minimumDuration: AppConfig.Playback.longPressDuration) {
                 let ratio = pressPoint.x / max(1, UIScreen.main.bounds.width)
-                if ratio > 0.34 && ratio < 0.66 {
+                if ratio > CGFloat(AppConfig.Ui.centerTapZoneMinRatio) &&
+                    ratio < CGFloat(AppConfig.Ui.centerTapZoneMaxRatio) {
                     showSettings = true
                     return
                 }
                 longPressed = true
-                store.player.rate = 2
+                store.player.rate = AppConfig.Playback.temporarySpeed
                 hint = "2× 快进中"
             } onPressingChanged: { pressing in
                 if !pressing && longPressed {
@@ -160,11 +161,11 @@ struct PlayerView: View {
                 }
             }
             .simultaneousGesture(
-                DragGesture(minimumDistance: 16)
+                DragGesture(minimumDistance: CGFloat(AppConfig.Ui.gestureMinimumDistance))
                     .onChanged { value in
                         let dx = value.translation.width
                         let dy = value.translation.height
-                        guard abs(dx) > abs(dy) * 1.3 else { return }
+                        guard abs(dx) > abs(dy) * CGFloat(AppConfig.Ui.horizontalDirectionBias) else { return }
                         guard store.duration > 0 else { return }
                         if dragStart == nil { dragStart = store.position }
                         let delta = Double(dx) / Double(max(1, UIScreen.main.bounds.width)) * store.duration
@@ -174,9 +175,9 @@ struct PlayerView: View {
                     .onEnded { value in
                         let dx = value.translation.width
                         let dy = value.translation.height
-                        if abs(dx) > abs(dy) * 1.3 {
+                        if abs(dx) > abs(dy) * CGFloat(AppConfig.Ui.horizontalDirectionBias) {
                             if let value = dragFraction { store.seek(to: value) }
-                        } else if abs(dy) > 60 {
+                        } else if abs(dy) > CGFloat(AppConfig.Ui.verticalSwitchDistance) {
                             dy < 0 ? store.next() : store.previous()
                         }
                         dragStart = nil
@@ -230,7 +231,7 @@ struct PlayerView: View {
             Spacer()
         }
         .opacity(store.chromeVisible ? 1 : 0)
-        .animation(.easeOut(duration: 0.18), value: store.chromeVisible)
+        .animation(.easeOut(duration: AppConfig.Playback.animationDuration), value: store.chromeVisible)
     }
 
     private var centerIcon: some View {
@@ -285,7 +286,7 @@ struct PlayerView: View {
             .background(BottomScrim(alpha: 0.85).ignoresSafeArea(edges: .bottom))
         }
         .opacity(store.chromeVisible ? 1 : 0)
-        .animation(.easeOut(duration: 0.18), value: store.chromeVisible)
+        .animation(.easeOut(duration: AppConfig.Playback.animationDuration), value: store.chromeVisible)
     }
 
     private func control(_ label: String, _ icon: String, action: @escaping () -> Void) -> some View {

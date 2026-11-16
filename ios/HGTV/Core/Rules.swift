@@ -222,8 +222,8 @@ enum CatalogFilter {
 struct RecommendWindow {
     private struct Entry { let id: String; let title: String; let at: TimeInterval }
     private var entries: [Entry] = []
-    private let limit = 1200
-    private let ttl: TimeInterval = 7 * 24 * 3600
+    private let limit = AppConfig.Recommend.windowLimit
+    private let ttl: TimeInterval = AppConfig.Recommend.windowTTL
 
     mutating func remember(_ series: Series) {
         let now = Date().timeIntervalSince1970
@@ -243,7 +243,7 @@ struct RecommendWindow {
 
     /// 推给服务端的 `filter_ids`：最近看过的剧 id（长度按平台的 4KB 量级留足余量）。
     var filterIds: String {
-        let ids = entries.suffix(300).map { $0.id }
+        let ids = entries.suffix(AppConfig.Recommend.filterIdsLimit).map { $0.id }
         return ids.joined(separator: ",")
     }
 

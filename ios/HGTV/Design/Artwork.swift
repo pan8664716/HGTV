@@ -13,8 +13,8 @@ actor ArtworkLoader {
     private let folder: URL
 
     init() {
-        memory.countLimit = 160
-        memory.totalCostLimit = 96 * 1024 * 1024
+        memory.countLimit = AppConfig.Cache.artworkMemoryCount
+        memory.totalCostLimit = AppConfig.Cache.artworkMemoryBytes
         let base = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask)[0]
         folder = base.appendingPathComponent("artwork", isDirectory: true)
         try? FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
@@ -33,7 +33,7 @@ actor ArtworkLoader {
 
         var request = URLRequest(url: link)
         request.setValue("https://www.fanqienovel.com/", forHTTPHeaderField: "Referer")
-        request.timeoutInterval = 15
+        request.timeoutInterval = AppConfig.Network.artworkTimeout
         guard let (data, response) = try? await URLSession.shared.data(for: request),
               (response as? HTTPURLResponse)?.statusCode ?? 0 < 400,
               let image = UIImage(data: data) else { return nil }
@@ -71,6 +71,6 @@ struct ArtworkView: View {
         .task(id: url) {
             image = await ArtworkLoader.shared.image(url: url)
         }
-        .animation(.easeOut(duration: 0.18), value: image != nil)
+        .animation(.easeOut(duration: AppConfig.Playback.animationDuration), value: image != nil)
     }
 }

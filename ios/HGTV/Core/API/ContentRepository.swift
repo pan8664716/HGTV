@@ -224,20 +224,20 @@ actor ContentRepository {
             "req_scene": "default",
             "offset": offset(selection, page),
             "need_selector_panel": needPanel,
-            "limit": page <= 1 ? 20 : 60,
+            "limit": page <= 1 ? AppConfig.Catalog.categoryFirstLimit : AppConfig.Catalog.categoryPageLimit,
             "select_items": selectItems(selection, sort: fallback ? "hot_score" : selection.sort),
             "session_id": "",
             "req_type": needPanel ? "default" : "only_content",
             "client_req_type": 3
         ]
-        if page <= 1 && !needPanel { body["limit"] = 20 }
+        if page <= 1 && !needPanel { body["limit"] = AppConfig.Catalog.categoryFirstLimit }
         let text = try await postCategory(body)
         let root = try JSON.parse(text)
         guard root.int("code", -1) == 0 else { throw ContentError.message("分类接口暂不可用") }
         let payload = root.obj("data") ?? [:]
         let items = payload.arr("video_data").map(card).filter { !$0.id.isEmpty }
         let serverMore = payload.bool("has_more")
-        let more = (serverMore || (recommendation && page <= 2)) && page < 100
+        let more = (serverMore || (recommendation && page <= 2)) && page < AppConfig.Catalog.maxPage
         let panel = needPanel ? parsePanel(payload.arr("selector_rows")) : nil
         return (CatalogPage(items: items, hasMore: more, ranking: nil), panel)
     }
@@ -246,7 +246,7 @@ actor ContentRepository {
         var selection = CategorySelection()
         selection.genre = board.genre
         selection.sort = board.sort
-        let limit = 100
+        let limit = AppConfig.Catalog.rankLimit
         let body: [String: Any] = [
             "filter_ids": "",
             "req_scene": "default",
@@ -284,7 +284,7 @@ actor ContentRepository {
 
     func recommendFeed(sessionId: String, offset: Int, genres: [String], gender: String,
                        filterIds: String) async throws -> RecommendFeed {
-        let limit = 20
+        let limit = AppConfig.Catalog.recommendLimit
         var selection = CategorySelection()
         selection.gender = gender.isEmpty ? nil : gender
         let body: [String: Any] = [
@@ -339,8 +339,10 @@ actor ContentRepository {
     private func postCategory(_ body: [String: Any]) async throws -> String {
         let payload = JSON.body(body)
         var lastError: Error = ContentError.message("分类接口暂无响应")
-        for attempt in 0..<4 {
-            if attempt > 0 { try? await Task.sleep(nanoseconds: 250_000_000) }
+        for attempt in 0..<AppConfig.Catalog.categoryAttempts {
+            if attempt > 0 {
+                try? await Task.sleep(nanoseconds: AppConfig.Catalog.categoryRetryDelayNanoseconds)
+            }
             do {
                 let signed = signer.sign(base: categoryHost + categoryPath, params: appValues(),
                                          body: payload, method: "POST")
@@ -439,7 +441,7 @@ actor ContentRepository {
     }
 
     private func appSearch(keyword: String, page: Int) async throws -> CatalogPage {
-        let count = 50
+        let count = AppConfig.Catalog.appSearchPageSize
         var params = searchValues()
         params["query"] = keyword
         params["count"] = "\(count)"
@@ -510,7 +512,7 @@ actor ContentRepository {
             }
         }
         return CatalogPage(items: items.filter { !$0.id.isEmpty },
-                           hasMore: tab.bool("has_more") && page < 100, ranking: nil)
+                           hasMore: tab.bool("has_more") && page < AppConfig.Catalog.maxPage, ranking: nil)
     }
 
     /// 官网搜索（不需要签名，字段与详情同源）。
@@ -619,7 +621,7 @@ actor ContentRepository {
             } catch HttpError.empty {
                 // 200 + 0 字节 = 这个 device_id 的额度用完了：换号再试（与 Android 同一条处置）。
                 lastError = ContentError.message("播放接口暂无响应")
-                try? await Task.sleep(nanoseconds: 220_000_000)
+                try? await Task.sleep(nanoseconds: AppConfig.Catalog.streamRetryDelayNanoseconds)
             }
         }
         guard let model else { throw lastError }

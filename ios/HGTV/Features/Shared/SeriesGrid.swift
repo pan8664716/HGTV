@@ -7,7 +7,7 @@ import SwiftUI
 
 struct SeriesGrid: View {
     let items: [Series]
-    var columns: Int = 2
+    var columns: Int = AppConfig.LibraryDefaults.gridColumns
     var ranked: Bool = false
     /// 榜单页的名次与热度由服务端给（`CatalogRanking`），这里按 id 取。
     var ranking: [String: RankPosition] = [:]

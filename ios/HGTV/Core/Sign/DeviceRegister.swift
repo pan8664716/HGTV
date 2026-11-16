@@ -207,7 +207,7 @@ enum DeviceRegister {
             var request = URLRequest(url: url)
             request.httpMethod = "POST"
             request.httpBody = Data(body)
-            request.timeoutInterval = 20
+            request.timeoutInterval = AppConfig.Network.deviceRegisterTimeout
             for (key, value) in headers(body: body, device: device, now: now) {
                 request.setValue(value, forHTTPHeaderField: key)
             }

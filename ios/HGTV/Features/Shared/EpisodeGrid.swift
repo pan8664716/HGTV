@@ -10,7 +10,7 @@ import SwiftUI
 struct EpisodeGrid: View {
     let count: Int
     var current: Int = 0
-    var pageSize: Int = 20
+    var pageSize: Int = AppConfig.LibraryDefaults.episodePageSize
     var compact: Bool = false
     var onSelect: (Int) -> Void
 

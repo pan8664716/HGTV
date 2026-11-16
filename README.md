@@ -11,6 +11,7 @@
 - [下载](#下载)
 - [当前限制](#当前限制)
 - [工程结构](#工程结构)
+- [统一参数配置](#统一参数配置)
 - [开发](#开发)
 - [维护者](#维护者)
 - [参与贡献](#参与贡献)
@@ -124,6 +125,17 @@ README.md
 ```
 
 依赖方向单向，不允许反向或横向依赖：`:core` ← `:shared` ← `:feature-tv` / `:feature-phone` ← `:app`。
+
+## 统一参数配置
+
+可调的应用级参数集中放在平台配置入口，页面与业务模块只引用，不再重复写数值：
+
+- Android：[`android/core/src/main/kotlin/com/hgtv/star/core/AppConfig.kt`](android/core/src/main/kotlin/com/hgtv/star/core/AppConfig.kt)
+- iOS：[`ios/HGTV/Core/AppConfig.swift`](ios/HGTV/Core/AppConfig.swift)
+
+配置按网络、启动、目录、推荐、播放、缓存、书库、弹幕和 UI 分组。协议字段、设备身份、
+状态机枚举与页面专属主题令牌仍留在各自模块；已有公开常量保留为兼容别名，但数值来源只认
+`AppConfig`。
 
 ## 开发
 

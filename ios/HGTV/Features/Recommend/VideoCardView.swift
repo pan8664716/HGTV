@@ -109,7 +109,7 @@ struct VideoCardView: View {
                     }
             )
             .onTapGesture { handleTap() }
-            .onLongPressGesture(minimumDuration: 0.35) {
+            .onLongPressGesture(minimumDuration: AppConfig.Playback.longPressDuration) {
                 handleLongPress(width: geo.size.width)
             } onPressingChanged: { pressing in
                 if !pressing && longPressed {
@@ -119,10 +119,13 @@ struct VideoCardView: View {
                 }
             }
             .simultaneousGesture(
-                DragGesture(minimumDistance: 12)
+                DragGesture(minimumDistance: CGFloat(AppConfig.Ui.cardGestureMinimumDistance))
                     .onChanged { value in
                         guard store.duration > 0 else { return }
-                        guard abs(value.translation.width) > abs(value.translation.height) * 1.4 else { return }
+                        guard abs(value.translation.width) >
+                            abs(value.translation.height) * CGFloat(AppConfig.Ui.cardHorizontalDirectionBias) else {
+                            return
+                        }
                         if dragStart == nil {
                             dragStart = store.position
                             showPlayIcon = false
@@ -160,16 +163,17 @@ struct VideoCardView: View {
 
     private func handleTap() {
         store.togglePlay()
-        withAnimation(.easeOut(duration: 0.15)) { showPlayIcon = true }
+        withAnimation(.easeOut(duration: AppConfig.Playback.quickAnimationDuration)) { showPlayIcon = true }
         Task {
-            try? await Task.sleep(nanoseconds: 500_000_000)
-            withAnimation(.easeOut(duration: 0.2)) { showPlayIcon = false }
+            try? await Task.sleep(nanoseconds: AppConfig.Playback.cardPlayIconVisibleNanoseconds)
+            withAnimation(.easeOut(duration: AppConfig.Playback.releaseAnimationDuration)) { showPlayIcon = false }
         }
     }
 
     private func handleLongPress(width: CGFloat) {
         let ratio = width > 0 ? pressPoint.x / width : 0.5
-        if ratio > 0.34 && ratio < 0.66 {
+        if ratio > CGFloat(AppConfig.Ui.centerTapZoneMinRatio) &&
+            ratio < CGFloat(AppConfig.Ui.centerTapZoneMaxRatio) {
             // 中间 1/3：播放设置（倍速 / 清晰度 / 画面模式），与 Android 的分区一致。
             showSettings = true
             return

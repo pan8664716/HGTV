@@ -177,7 +177,7 @@ final class QrLoginService: ObservableObject {
     private func request(_ path: String, _ params: [(String, String)]) async -> [String: Any]? {
         let url = endpoint(path, params)
         var request = URLRequest(url: URL(string: url)!)
-        request.timeoutInterval = 20
+        request.timeoutInterval = AppConfig.Network.sessionTimeout
         request.setValue(Vendor.userAgent(Vendor.appDevice, video: false), forHTTPHeaderField: "User-Agent")
         request.setValue("application/json, text/plain, */*", forHTTPHeaderField: "Accept")
         request.setValue(QrLoginService.host + "/", forHTTPHeaderField: "Referer")
