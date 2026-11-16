@@ -36,7 +36,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         const val BASE_SCROLL_SECONDS=6f
         const val BOTTOM_INSET_DP=120
         /** 所有弹幕轨道的统一顶部呼吸位；电视与手机的动态 topInset 之外再加这一小段。 */
-        const val TOP_GAP_DP=8
+        const val TOP_GAP_DP=16
         const val LANE_GAP_TEXT=0.9f
         const val LANE_GAP_VERTICAL=0.35f
         const val LANE_MIN_GAP_DP=12

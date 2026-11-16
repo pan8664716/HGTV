@@ -4461,7 +4461,7 @@ feature-tv/
 
 - 共享 `DanmakuView` 的轨道起点由 `topInsetPx` 直接决定；电视不设置动态避让，
   因此此前从屏幕最上沿开始，聚合弹幕离边界过近。
-- 在共享层增加 `TOP_GAP_DP=8`，电视在 `topInsetPx=0` 之外统一下移 8dp；
+- 在共享层增加 `TOP_GAP_DP=16`，电视在 `topInsetPx=0` 之外统一下移 16dp；
   手机竖屏 / 横屏在各自播放信息栏动态 `topInsetPx` 之外再下移同一距离，
   不改变轨道数量、字号、速度或聚合算法。
 - `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖或 iOS 代码。
