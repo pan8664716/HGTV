@@ -51,7 +51,7 @@ object RecommendFlow {
      */
     const val MARK_LIMIT = AppConfig.Recommend.MARKS_LIMIT
     /**
-     * 回传给服务端的 `filter_ids` 最多带几条（文档 §2.1：有上限、超限会被截断）。
+     * 兼容旧调用时，`filter_ids` 最多带几条（文档 §2.1：有上限、超限会被截断）。
      *
      * 带的是**最新的**那些：老条目本来也快到失效时刻了，截断它们的代价最小。
      */
@@ -86,7 +86,7 @@ object RecommendFlow {
     }
 
     /**
-     * 一页推荐里**还能推给用户**的那些：电视与手机共用这六条规则。
+     * 一页推荐里**还能推给用户**的那些：电视与手机共用同一套规则。
      *
      * 六条规则原先在两端各写一遍（`MainActivityRecommend.loadRecommendPage` 与
      * `PhoneFeedView.loadMore`），任何一端多一条过滤、另一头就悄悄不一致：
@@ -96,14 +96,15 @@ object RecommendFlow {
      * 规则本身（含理由）与 `MainActivityRecommend` 里那段注释一致：
      * 1. 手动隐藏的（`library.hidden()`）；
      * 2. 已经追完的（文档 §4.2 硬过滤）；
-     * 3. 曝光窗口里推过的 id（`library.recommendSeen()`）；
+     * 3. 曝光窗口里推过的 id（可选，推荐取页现在关闭）；
      * 4. **本次会话列表里已经有的**（换页 / 换流回来不该重复出现；这一份只在内存）；
-     * 5. 曝光窗口里推过的剧名（同剧另一季 / 同 IP 另一版，id 不同但用户一眼认出）；
+     * 5. 曝光窗口里推过的剧名（可选，推荐取页现在关闭）；
      * 6. 本次会话列表里已有的剧名（同上，内存那一份）。
      *
      * @param loadedIds 当前列表里已有的 id（内存）
      * @param loadedTitles 当前列表里已有的 [titleKey]（内存）
      * @param seenTitle 曝光窗口里是否推过这个剧名（`library.recommendSeenTitle`）
+     * @param filterExposure 是否按曝光窗口删卡；推荐取页传 false，曝光记录只用于统计和续播选择
      */
     fun fresh(
         items: List<Series>,
@@ -113,15 +114,16 @@ object RecommendFlow {
         loadedIds: Set<String>,
         loadedTitles: Set<String>,
         seenTitle: (String) -> Boolean = { false },
+        filterExposure: Boolean = true,
     ): List<Series> {
         if (items.isEmpty()) return emptyList()
         val out = ArrayList<Series>(items.size)
         for (item in items) {
             if (item.id in hidden) continue
             if (item.id in finished) continue
-            if (item.id in seen) continue
+            if (filterExposure && item.id in seen) continue
             if (item.id in loadedIds) continue
-            if (seenTitle(item.title)) continue
+            if (filterExposure && seenTitle(item.title)) continue
             val key = titleKey(item.title)
             if (key.isNotEmpty() && key in loadedTitles) continue
             out += item
@@ -156,7 +158,7 @@ object RecommendFlow {
  * 剧级曝光窗口（文档 §6.7 的 `FeedDedup`，只保留它真正需要的两部分）。
  *
  * 一条记录 = `键 @ 失效时刻`。键有两种：
- * * **剧 id**：同时用于本地过滤与回传 `filter_ids`；
+ * * **剧 id**：用于曝光统计和续播选择；兼容调用仍可生成 `filter_ids`；
  * * `#归一化剧名`：只用于本地过滤（同剧不同季 / 同 IP 多版本），服务端不认识这种键。
  *
  * 线程：调用方按需加锁，本类内部每个入口都 `@Synchronized`——`library.recommendSeen()`
@@ -241,7 +243,8 @@ class RecommendMarks(private val limit: Int = RecommendFlow.MARK_LIMIT) {
     }
 
     /**
-     * 回传给服务端的 `filter_ids`：最新的 [limit] 条剧 id，逗号分隔（没有就是空串）。
+     * 兼容旧调用生成 `filter_ids`：最新的 [limit] 条剧 id，逗号分隔。
+     * 推荐取页当前不回传这份列表。
      *
      * 官方客户端就是这么回传的（文档 §4.4 的 `m6` 那个 LRU 队列）；空串是「不带」，
      * 与旧版请求逐字节一致。

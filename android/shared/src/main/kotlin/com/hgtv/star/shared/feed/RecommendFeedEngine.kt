@@ -19,8 +19,8 @@ import com.hgtv.star.shared.debug.StartupBudgets
  * 推荐流的加载、续流、过滤、降级、重排和快照落盘。
  *
  * TV 与手机使用同一套 [RecommendFeedPolicy]；`cacheNamespace` 只用于区分不同的
- * 推荐流，不改变行为顺序。页面不再自己拼 `filter_ids`、判断空页、重试受众、
- * 处理游标停滞或合并分页。
+ * 推荐流，不改变行为顺序。页面不再自己拼 `filter_ids`；曝光记录不参与取流，
+ * 空页、受众降级、游标停滞和分页合并仍由这里统一处理。
  */
 class RecommendFeedEngine(
     private val repository: RecommendFeedSource,
@@ -45,14 +45,12 @@ class RecommendFeedEngine(
         var session = input.sessionId
         var offset = input.nextOffset
         var filterMiss = input.filterMiss
-        var filterIdsOff = input.filterIdsOff || library.recommendFilterIdsOff
+        var filterIdsOff = input.filterIdsOff
         var genderProbe = input.genderProbe
         var processedPages = 0
         var emptyChain = 0
         var restarts = 0
         var requests = 0
-        var filterFailures = 0
-        var skipFilterOnce = false
         val firstLoadAt = if(input.append) 0L else now()
         val lines = ArrayList<String>(4)
 
@@ -93,14 +91,12 @@ class RecommendFeedEngine(
             }
 
             val requestOffset = offset
-            val filters = if(input.noFilter || filterIdsOff || skipFilterOnce) "" else library.recommendFilterIds()
-            skipFilterOnce = false
+            // 曝光窗口不再参与推荐流取数：既不回传 filter_ids，也不在本地删卡。
             val gender = library.recommendGender.ifEmpty { null }
                 .takeIf { !genderFilter.off && !genderProbe }
             genderProbe = false
             val limit = if(input.append) policy.pageLimit else policy.firstLimit
             requests++
-            val startedAt = now()
             val attempt = runCatching {
                 if (!input.append && !input.restored && requests == 1) {
                     StageDeadline("recommend.register", StartupBudgets.REGISTER_MS).use { deadline ->
@@ -119,7 +115,7 @@ class RecommendFeedEngine(
                         offset = requestOffset,
                         limit = limit,
                         genres = input.genres,
-                        filterIds = filters,
+                        filterIds = "",
                         tab = input.tab,
                         horizontalOnly = horizontalOnly,
                     )
@@ -135,19 +131,8 @@ class RecommendFeedEngine(
             }
             if(attempt.isFailure) {
                 val problem = attempt.exceptionOrNull() ?: IllegalStateException("推荐请求失败")
-                val elapsed = now() - startedAt
                 if (problem is com.hgtv.star.core.StageTimeoutException) {
-                    lines += "stage timeout stage=${problem.stage} elapsed=${elapsed}ms"
-                }
-                if(filters.isNotEmpty() && elapsed < policy.quickFilterFailureMs) {
-                    filterFailures++
-                    if(filterFailures >= 2) filterIdsOff = true
-                    skipFilterOnce = true
-                    lines += "filter retry after ${elapsed}ms failures=$filterFailures"
-                    continue
-                }
-                if(filters.isNotEmpty() && policy.disableFilterOnAnyFailure) {
-                    filterIdsOff = true
+                    lines += "stage timeout stage=${problem.stage}"
                 }
                 return result(
                     items, page, hasMore, session, offset, filterMiss, filterIdsOff,
@@ -155,18 +140,6 @@ class RecommendFeedEngine(
                 )
             }
             val feed = attempt.getOrThrow()
-
-            if(filters.isNotEmpty() && feed.page.items.isEmpty()) {
-                val miss = RecommendFlow.noteFilterMiss(filterMiss)
-                filterMiss = miss.first
-                if(miss.second) {
-                    filterIdsOff = true
-                    library.recommendFilterIdsOff = true
-                }
-                lines += "empty page with filter_ids=${filters.length}B"
-                // 不带过滤重取一次，不把这次算成又翻了一页。
-                continue
-            }
 
             if(feed.page.items.isEmpty() && gender != null && !genderFilter.off) {
                 genderFilter.onEmpty()
@@ -176,10 +149,6 @@ class RecommendFeedEngine(
                 continue
             }
 
-            if(filters.isNotEmpty()) {
-                filterMiss = 0
-                filterFailures = 0
-            }
             if(gender != null && feed.page.items.isNotEmpty()) genderFilter.onFilled()
 
             if(!input.append && feed.page.items.isEmpty() &&
@@ -202,7 +171,6 @@ class RecommendFeedEngine(
 
             val hidden = runCatching { library.hidden() }.getOrDefault(emptySet())
             val finished = runCatching { library.recommendFinished() }.getOrDefault(emptySet())
-            val seen = runCatching { library.recommendSeen() }.getOrDefault(emptySet())
             val loadedIds = items.mapTo(HashSet(items.size)) { it.id }
             val loadedTitles = items.mapNotNull {
                 RecommendFlow.titleKey(it.title).takeIf(String::isNotEmpty)
@@ -212,10 +180,10 @@ class RecommendFeedEngine(
                 items = pageItems,
                 hidden = hidden,
                 finished = finished,
-                seen = seen,
+                seen = emptySet(),
                 loadedIds = loadedIds,
                 loadedTitles = loadedTitles,
-                seenTitle = { library.recommendSeenTitle(it) },
+                filterExposure = false,
             )
             val expired = !input.append &&
                 now() - firstLoadAt >= policy.firstBudgetMs

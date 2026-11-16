@@ -39,6 +39,22 @@ class RecommendFlowFilterTest {
     }
 
     @Test
+    fun recommendation_feed_can_ignore_exposure_history() {
+        val items = listOf(series("1", "曝光窗口里推过"), series("2", "新的一部"))
+        val kept = RecommendFlow.fresh(
+            items = items,
+            hidden = emptySet(),
+            finished = emptySet(),
+            seen = setOf("1"),
+            loadedIds = emptySet(),
+            loadedTitles = emptySet(),
+            seenTitle = { it == "曝光窗口里推过" },
+            filterExposure = false,
+        )
+        assertEquals(listOf("1", "2"), kept.map { it.id })
+    }
+
+    @Test
     fun same_id_appearing_twice_in_one_page_is_kept_as_is() {
         // 本函数只按「外部给的集合」过滤，不负责页内去重（服务端偶发同页重复，
         // 由列表层的 id 判断处理）。锁住这一点，避免以后有人顺手加去重改变行为。

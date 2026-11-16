@@ -106,8 +106,8 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             .put("offset",offset)
             .put("need_selector_panel",false)
             .put("limit",limit)
-            // 推荐页也固定按最高热度取候选：保留续流游标、去重和曝光过滤，
-            // 但不再使用服务端那套容易混入冷门内容的默认推荐序。
+            // 推荐页也固定按最高热度取候选：保留续流游标和内容过滤，
+            // 曝光记录不再参与服务端去重，也不再使用容易混入冷门内容的默认推荐序。
             .put("select_items",ContentCatalogParser.categorySelectItems(
                 selection,
                 CategorySelection.DEFAULT_SORT,
