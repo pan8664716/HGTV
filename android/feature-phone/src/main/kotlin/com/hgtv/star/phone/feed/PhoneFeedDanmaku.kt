@@ -25,6 +25,8 @@ internal fun PhoneFeedView.applyDanmakuSettingsImpl(page: PhoneVideoPage) {
     val lib = feedLibrary ?: return
     val view = page.danmakuView
     view.topInsetPx = feedDanmakuTopInsetPx
+    // 推荐流首行紧贴顶部导航；正式播放页仍保留 PhoneVideoPage 的 16dp 呼吸位。
+    view.topGapDp = 0f
     view.mode = lib.danmakuMode
     view.sizeFollowsLongEdge = true
     view.textScale = PhoneDanmakuSize.renderScale(context)
