@@ -245,6 +245,9 @@ fun TvMainActivity.playEpisode(
     artwork.cancelPage(clearMemory=true)
     playbackHttp=claimedHttp; video=prefetched
     var firstReady=true; var firstFrame=true
+    // 新片源真正 setMediaSource 的时刻：READY 后的兜底只能认这之后的新帧，
+    // 不能把上一部残留的逐帧心跳当成当前作品已经出画面。
+    var sourceSetAt=0L
     autoRecovery=false; readySince=0; lastEpisodeDuration=0; advancedAt=0
     startPosition=position.coerceAtLeast(0); requestedAutoplay=autoplay
     if(autoplay) sleepStopped=false
@@ -538,7 +541,9 @@ fun TvMainActivity.playEpisode(
                         // 确认真的出过画面，不能只凭 READY 放掉黑场。
                         val coverToken=recommendCoverToken
                         main.postDelayed({
-                            if(!isDestroyed && screen=="recommend" && recommendCoverToken==coverToken && pictureUpNow()) {
+                            val currentFrame=sourceSetAt>0L &&
+                                (!firstFrame || PlaybackDiag.lastFrameAt>sourceSetAt)
+                            if(!isDestroyed && screen=="recommend" && recommendCoverToken==coverToken && currentFrame) {
                                 revealRecommendCover { if(!isDestroyed) hideCenterLoading() }
                             }
                         },400)
@@ -783,6 +788,9 @@ fun TvMainActivity.playEpisode(
         // 起点一次设定：`setMediaSource(source, startPositionMs)` 内部先摘空旧项、
         // 再按给定位置掩码时间线，等价于「`setMediaSource` + `seekTo`」，少一次
         // `onPositionDiscontinuity`（那条回调会连带刷新媒体会话与弹幕指针）。
+        // 旧帧心跳清到 0，并以这一刻作为新片源首帧的下限；否则 READY 兜底可能提前揭黑。
+        PlaybackDiag.lastFrameAt=0L
+        sourceSetAt=android.os.SystemClock.elapsedRealtime()
         p.setMediaSource(source,position.coerceAtLeast(0)); p.prepare(); p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle
         stage("sourceSet")
         // 起播看门狗：兜住「READY 了但一帧都没出」的黑屏——那条路不抛异常，进不了 [playerFailure]。

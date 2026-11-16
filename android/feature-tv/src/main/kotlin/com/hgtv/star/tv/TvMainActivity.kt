@@ -474,7 +474,6 @@ class TvMainActivity: Activity() {
     var recommendCover: View?=null
     var recommendCoverShownAt=0L
     var recommendCoverToken=0
-    var recommendCoverReveal: Runnable?=null
     var recommendOverlay: View?=null
     var recommendTitle: TextView?=null
     var recommendEpisode: TextView?=null

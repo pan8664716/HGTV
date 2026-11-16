@@ -7,12 +7,11 @@ import android.widget.FrameLayout
 import com.hgtv.star.tv.TvStyle
 
 /**
- * 切换过渡：黑场淡入（把上一部收住）/ 黑场淡出（把这一部放出来）/ 最长遮挡。
+ * 切换过渡：按键瞬间全黑（把上一部收住）/ 新片源首帧后淡出（把这一部放出来）。
  *
- * 数值与 1.2.4.2 一致：120ms 淡入、260ms 淡出。再短读起来像闪一下，
- * 再长会让连按上下键时按键反应被过渡拖住。
+ * 换作瞬间必须**立即全黑**，不能把上一部保留在 Surface 上的旧帧露出来；
+ * 新片源真实出帧后仍用 260ms 淡出，保留换台的柔和过渡。
  */
-private const val COVER_IN_MS=120L
 private const val COVER_OUT_MS=260L
 /**
  * 连划时的淡出时长（只用于触屏，见 [revealRecommendCover]）。
@@ -20,25 +19,22 @@ private const val COVER_OUT_MS=260L
  * 电视保持 260ms 不动：遥控器一秒一下，过渡要读得出「换了一部」。
  */
 private const val COVER_OUT_FAST_MS=120L
-private const val COVER_MAX_MS=2500L
-
 /**
- * 换剧那一下把画面盖黑（需求：上下切换要有过渡，且不能看到拉伸帧）。
+ * 换剧那一下**立即**把画面盖黑（需求：上下切换要有过渡，且不能看到旧帧拉伸）。
  *
- * 时机是**按键那一刻**，不是新源准备好之后：先把上一部淡出成黑，再换源、等新源第一帧，
- * 由 [revealRecommendCover] 淡回来。这样整段过渡只有「暗 → 亮」，中间不会出现
- * 「上一部的画面被新比例拉一下」那一帧。
+ * 时机是**按键那一刻**，不是新源准备好之后：先全黑，再换源、等新源第一帧，
+ * 由 [revealRecommendCover] 淡回来。这里不做淡入：无缓存时取地址 / 准备索引要 1 秒以上，
+ * 如果黑场还在半透明阶段，PlayerView 会保留上一部内容并按新布局显示，用户就会看到旧帧被拉伸。
  *
- * 行为与 1.2.4.2 一致：不抓帧、不翻页，就是一层纯黑淡入淡出。
+ * 不抓帧、不翻页，就是一层纯黑；只有新片源真实出帧后才淡出。
  *
  * 这一层是普通 View（画在窗口层里），不是 SurfaceView，因此它的 alpha 动画在电视盒子
  * 上也一定生效；盖住期间不参与焦点、不拦截按键（推荐页的按键本来都由 `dispatchKeyEvent` 消化）。
  */
 fun TvMainActivity.showRecommendCover() {
     if(screen!="recommend") return
-    val token=++recommendCoverToken
-    recommendCoverReveal?.let { main.removeCallbacks(it) }
-    recommendCoverReveal=null
+    // 推进令牌会取消上一轮尚未完成的淡出，保证这次换作不会被上一部提前揭开。
+    recommendCoverToken++
     val existing=recommendCover
     if(existing!=null) {
         // 已经盖着（连着换剧 / 上一部还在取详情）：保持黑，只取消上一次排好的淡出。
@@ -51,17 +47,13 @@ fun TvMainActivity.showRecommendCover() {
             setBackgroundColor(Color.BLACK)
             isFocusable=false; isClickable=false
             importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
-            alpha=0f
+            // 不做淡入：从按键这一帧起就必须挡住 PlayerView 保留的上一部内容。
+            alpha=1f
         }
         attachRecommendCoverView(cover)
         recommendCover=cover
-        if(TvStyle.animate) cover.animate().alpha(1f).setDuration(COVER_IN_MS).start() else cover.alpha=1f
     }
     recommendCoverShownAt=android.os.SystemClock.elapsedRealtime()
-    // 兜底：新源一直没出帧（网络慢 / 这一部放不了）时也不能永远挡在黑屏后面。
-    val reveal=Runnable { if(token==recommendCoverToken) revealRecommendCover() }
-    recommendCoverReveal=reveal
-    main.postDelayed(reveal,COVER_MAX_MS)
 }
 
 /**
@@ -115,8 +107,6 @@ fun TvMainActivity.revealRecommendCover(onRevealed: (() -> Unit)? = null) {
         onRevealed?.invoke()
         return
     }
-    recommendCoverReveal?.let { main.removeCallbacks(it) }
-    recommendCoverReveal=null
     val revealToken=++recommendCoverToken
     cover.animate().cancel()
     if(!TvStyle.animate) {
@@ -172,8 +162,6 @@ fun TvMainActivity.reattachRecommendCover() {
 /** 立刻收掉过渡黑场（离开推荐页、切到整屏提示、重建画面时用）。 */
 fun TvMainActivity.dismissRecommendCover() {
     recommendCoverToken++
-    recommendCoverReveal?.let { main.removeCallbacks(it) }
-    recommendCoverReveal=null
     recommendCover?.let { cover ->
         cover.animate().cancel()
         (cover.parent as? android.view.ViewGroup)?.removeView(cover)
