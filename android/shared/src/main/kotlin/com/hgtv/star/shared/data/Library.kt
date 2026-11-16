@@ -91,16 +91,17 @@ class Library(context: Context) {
         ::cacheIdentityAvailable,
     )
     internal val identityAccountCacheStore get()=accountCacheStore
-    private var index: LibraryIndex? = null
+    @Volatile private var index: LibraryIndex? = null
     private val progressStore = ProgressStore(java.io.File(app.filesDir, "library/progress"))
-    private var loading = false
-    private var closed = false
+    @Volatile private var loading = false
+    @Volatile private var closed = false
     @Volatile private var discarding = false
     @Volatile private var identityLayoutChecked = false
     internal var identityLayoutInitialized: Boolean
         get()=identityLayoutChecked
         set(value) { identityLayoutChecked=value }
     internal val identityDiscarding get()=discarding
+    private val callbackLock = Any()
     private val readyCallbacks = mutableListOf<() -> Unit>()
     private val errorCallbacks = mutableListOf<(Throwable) -> Unit>()
     val isLoaded get() = index != null
@@ -111,19 +112,28 @@ class Library(context: Context) {
     }, onReady: () -> Unit) {
         val traceStarted=StartupTrace.now()
         StartupTrace.mark("library.load.request")
-        check(!closed)
-        if (isLoaded) {
+        var startLoader=false
+        val loadedNow=synchronized(callbackLock) {
+            check(!closed)
+            if(index!=null) true else {
+                readyCallbacks += onReady
+                errorCallbacks += onFailure
+                if(!loading) {
+                    loading=true
+                    startLoader=true
+                }
+                false
+            }
+        }
+        if (loadedNow) {
             StartupTrace.done("library.load.already",traceStarted)
             onReady()
             return
         }
-        readyCallbacks += onReady
-        errorCallbacks += onFailure
-        if (loading) {
+        if (!startLoader) {
             StartupTrace.mark("library.load.join")
             return
         }
-        loading = true
         loader.execute {
             StartupTrace.mark("library.worker.start")
             val mirrorStarted=StartupTrace.now()
@@ -204,13 +214,22 @@ class Library(context: Context) {
             val dispatchStarted=StartupTrace.now()
             main.post {
                 StartupTrace.done("library.mainDispatch",dispatchStarted)
-                loading = false
-                if (closed) {
-                    StartupTrace.done("library.load.closed",traceStarted)
-                    readyCallbacks.clear(); errorCallbacks.clear(); return@post
+                val callbacks=synchronized(callbackLock) {
+                    loading=false
+                    if(closed) {
+                        readyCallbacks.clear(); errorCallbacks.clear()
+                        null
+                    } else {
+                        val ready=readyCallbacks.toList(); readyCallbacks.clear()
+                        val errors=errorCallbacks.toList(); errorCallbacks.clear()
+                        ready to errors
+                    }
                 }
-                val ready = readyCallbacks.toList(); readyCallbacks.clear()
-                val errors = errorCallbacks.toList(); errorCallbacks.clear()
+                if (callbacks==null) {
+                    StartupTrace.done("library.load.closed",traceStarted)
+                    return@post
+                }
+                val (ready,errors)=callbacks
                 result.onSuccess { (local, account) ->
                     val (loaded, cached, stamps) = local
                     index = loaded
@@ -701,7 +720,7 @@ class Library(context: Context) {
         if (closed) return
         discarding = true
         closed = true
-        readyCallbacks.clear(); errorCallbacks.clear()
+        synchronized(callbackLock) { readyCallbacks.clear(); errorCallbacks.clear() }
         loader.shutdownNow()
         writes.discard(); homeWrites.discard(); accountWrites.discard()
         mirror.discard()
@@ -709,7 +728,7 @@ class Library(context: Context) {
     fun close() {
         if (closed) return
         closed = true
-        readyCallbacks.clear(); errorCallbacks.clear()
+        synchronized(callbackLock) { readyCallbacks.clear(); errorCallbacks.clear() }
         loader.shutdown()
         synchronized(retiredWrites) {
             writes.close(); homeWrites.close(); accountWrites.close()

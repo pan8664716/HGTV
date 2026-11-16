@@ -4438,6 +4438,20 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 书库加载回调竞态崩溃
+
+状态：已修复，debug 构建通过，待用户真机验证。
+
+- crash buffer 另有一条 `Library.loadAsync$lambda... Function0.invoke` 空引用：
+  书库加载完成时，`readyCallbacks` / `errorCallbacks` 在多个后台预热线程注册，
+  主线程同时快照并清空，列表没有同步保护，可能读到空元素或重复启动 loader。
+- 修复：回调注册、loading 状态切换、完成时快照与关闭清理统一使用 `callbackLock`；
+  `index` / `loading` / `closed` 增加可见性保护，多个线程只会启动一条书库加载。
+- 慢启动 / 页面重建期间，迟到回调不会再从损坏的列表里调用 null。
+- `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖或 iOS 代码。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 移除备用设备链路
 
 状态：已实现，debug 构建和 ADB 首次 / 后续启动采样通过。

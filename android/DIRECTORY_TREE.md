@@ -1047,7 +1047,7 @@ android/
 | `DeviceRegistration.kt` | 设备注册的**唯一实现**：电视与手机共用；注册后的 TNC 刷新延后到播放首帧。 | object DeviceRegistration |
 | `FavoriteMonitor.kt` | Serial foreground checks; cancellation owns only calls made by this monitor. | class FavoriteMonitor |
 | `IdentityBinder.kt` | 把**本机身份与会话**灌进进程级仓库，并按实际设备形态选择电视统一设备档案。 | object IdentityBinder、fun Library.isTvDeviceForProfile |
-| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、账号缓存和持久化。 | typealias WatchProgress、class Library |
+| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、账号缓存和持久化；加载回调与 loader 启动由同一把锁串行化。 | typealias WatchProgress、class Library、fun loadAsync、fun discardPendingWrites、fun close |
 | `LibraryAccountCache.kt` | 缓存身份：登录账号优先；未登录但设备已注册时，用主设备身份隔离匿名缓存。 | fun Library.cacheIdentityKeyImpl、fun Library.cacheIdentityAvailableImpl、fun Library.accountCacheImpl、fun Library.cacheAccountImpl、fun Library.clearAccountCacheImpl |
 | `LibraryAccountCredentials.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.accountImpl、fun Library.saveAccountImpl、fun Library.clearAccountImpl |
 | `LibraryAccountCredentialsFacade.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.account、fun Library.saveAccount、fun Library.clearAccount、fun Library.accountDevice、fun Library.saveAccountDevice |
