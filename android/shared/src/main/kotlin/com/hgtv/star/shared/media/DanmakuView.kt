@@ -844,7 +844,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             val elapsed=now-line.startMs
             val duration=line.durationMs.coerceAtLeast(1L)
             val x=viewWidth-elapsed.toFloat()/duration*(viewWidth+line.width)
-            val baseline=laneTop+(line.lane+1)*laneHeight-fill.textSize*0.28f
+            val baseline=normalLaneBaseline(line.lane)
             val atlas=spriteAtlas
             val sprite=line.spriteText?.let { atlas?.get(it) }
             if(sprite==null) {
@@ -1017,19 +1017,18 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     }
 
     private fun highlightCenterY(slot: Int): Float {
-        val anchor=when(mode) {
-            DanmakuMode.SINGLE -> laneTop+laneHeight/2f
-            DanmakuMode.TWO -> laneTop+laneHeight
-            DanmakuMode.THREE -> laneTop+laneHeight*1.5f
-            else -> laneTop+laneHeight*2f
-        }
-        val lanes=highlightSlots
-        if(lanes<=1) return anchor
-        val row=highlightRowHeight()
-        return anchor+(slot-(lanes-1)/2f)*row
+        // 聚合弹幕的第一行和普通弹幕的第一行共用同一个文本中心；
+        // 后续聚合槽位再按聚合框自身高度向下排，避免互相压住。
+        return normalLaneCenterY(0)+slot.coerceAtLeast(0)*highlightRowHeight()
     }
 
     private fun highlightRowHeight(): Float=highlightSize*0.95f+HIGHLIGHT_PAD_DP*density+density*6f
+
+    private fun normalLaneBaseline(lane: Int): Float =
+        laneTop+(lane+1)*laneHeight-fill.textSize*0.28f
+
+    private fun normalLaneCenterY(lane: Int): Float =
+        normalLaneBaseline(lane)+(fillMetrics.ascent+fillMetrics.descent)/2f
 
     private fun highlightWidths(round: DanmakuHighlightRound,parts: List<DanmakuPart>,emojiSize: Float,slot: Int): FloatArray {
         val key="${round.group.key}@$highlightSize@$emojiSize"
