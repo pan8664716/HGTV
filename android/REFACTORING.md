@@ -4372,6 +4372,23 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 电视推荐冷启动续播命名空间修复
+
+状态：已修复，debug 构建通过，待用户真机验证。
+
+- 根因：TV 推荐快照和续流游标使用 `official-v2` 命名空间，但记录 / 读取“上次播放到哪一部”
+  仍使用默认命名空间。`lastPlayed()` 因此检查默认的 `feed-v1.json`，而实际快照是
+  `feed-v1-official-v2.json`，位置文件虽然写出也始终被判为空；冷启动于是从列表前部重新选择，
+  表现为每次关闭 App 再进入都像同一批推荐。
+- 修复：抽出 `RECOMMEND_CACHE_NAMESPACE`，让 TV 快照、`rememberPlayed()`、`lastPlayed()`、
+  `resumeIndex()` 和 `nextRecommendIndex()` 全部使用同一命名空间。
+- 兼容：升级后的第一次启动会把旧版默认位置 `feed-v1.pos` 迁移到
+  `feed-v1.pos.official-v2`，避免旧安装第一次重开仍从头选。
+- 这是缓存键隔离错误，不改变推荐接口、过滤规则、曝光窗口或播放选择顺序。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 电视推荐换作预热链
 
 状态：已实现，debug 构建通过，待用户真机验证。

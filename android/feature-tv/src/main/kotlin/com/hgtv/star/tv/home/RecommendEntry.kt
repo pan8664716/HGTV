@@ -81,11 +81,14 @@ fun TvMainActivity.openRecommend() {
     //
     // 早先这里直接 `playRecommendAt(0)`：快照第 0 条正是**本轮最早**看过的那一部，
     // 于是每次打开都是同一部（用户看到的「还是 a，还是 a」）。
-    // 现在用 `RecommendCache.lastPlayed()` 记住停在哪，再 +1 往后走。
+    // 现在用 `RecommendCache.lastPlayed(RECOMMEND_CACHE_NAMESPACE)` 记住停在哪，再 +1 往后走。
     //
     // 本机隐藏 / 已追完的剧不进列表（与取页时那两道过滤同一套判据，见 `loadRecommendPage`）：
     // 快照是上一轮写的，用户在这之间可能刚把某一部隐藏掉。
     recommendStarted=false
+    // 旧版本把位置写在默认文件，快照已经切到命名空间；升级后先把这一行迁移过来，
+    // 否则第一次冷启动仍会从头选，用户会误以为修复没有生效。
+    com.hgtv.star.core.RecommendCache.migratePosition(toNamespace=RECOMMEND_CACHE_NAMESPACE)
     val hidden=library.hidden()
     val snapshot=if(retained) emptyList() else recommendStore().restoreSnapshot(hidden)
     recommendRestored=retained
@@ -111,7 +114,7 @@ fun TvMainActivity.openRecommend() {
         recommendIndex=resume
         recommendStarted=true
         android.util.Log.i("HGTV","Recommend resume items=${snapshot.size} index=$resume "+
-            "last=${com.hgtv.star.core.RecommendCache.lastPlayed().takeLast(6)} "+
+            "last=${com.hgtv.star.core.RecommendCache.lastPlayed(RECOMMEND_CACHE_NAMESPACE).takeLast(6)} "+
             "disk=${if(mediaCached(snapshot[resume])) "full" else "partial"}")
         playRecommendAt(resume)
         // 流**先不取**：这一部的详情 / 地址 / 索引 / 首块都在盘上，首帧只等解码。
@@ -156,7 +159,7 @@ fun TvMainActivity.openRecommend() {
  * 那一部再放一遍就是重复。跳过已推过的正好把这两种情况统一掉。
  */
 private fun TvMainActivity.resumeIndex(snapshot: List<com.hgtv.star.core.Series>): Int {
-    val last=com.hgtv.star.core.RecommendCache.lastPlayed()
+    val last=com.hgtv.star.core.RecommendCache.lastPlayed(RECOMMEND_CACHE_NAMESPACE)
     val seen=runCatching { library.recommendSeen() }.getOrDefault(emptySet())
     fun fresh(series: com.hgtv.star.core.Series)=
         series.id !in seen && !library.recommendSeenTitle(series.title)
@@ -191,7 +194,7 @@ private fun TvMainActivity.resumeIndex(snapshot: List<com.hgtv.star.core.Series>
  */
 private fun TvMainActivity.nextRecommendIndex(items: List<com.hgtv.star.core.Series>): Int {
     if(items.isEmpty()) return 0
-    val last=com.hgtv.star.core.RecommendCache.lastPlayed()
+    val last=com.hgtv.star.core.RecommendCache.lastPlayed(RECOMMEND_CACHE_NAMESPACE)
     val at=if(last.isEmpty()) -1 else items.indexOfFirst { it.id==last }
     val next=(if(at>=0) at else recommendIndex)+1
     if(next<=items.lastIndex) return next

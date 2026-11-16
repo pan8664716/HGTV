@@ -115,14 +115,33 @@ object RecommendCache {
         if(text.isEmpty()) return
         runCatching {
             writer.execute {
-                runCatching {
-                    val tmp=File(target.path+".tmp")
-                    tmp.writeText(text)
-                    target.delete()
-                    tmp.renameTo(target)
-                }
+                runCatching { writePosition(target,text) }
             }
         }
+    }
+
+    /**
+     * 把旧版本写在默认命名空间的位置迁移到新的流命名空间。
+     *
+     * 早期 TV 快照使用默认文件，后来快照切到 `official-v2`；如果位置文件不一起迁移，
+     * 升级后的第一次冷启动会找不到上一次播放项。迁移只在目标位置不存在时执行，
+     * 只复制一行剧 id，不会覆盖新版本已经写下的位置。
+     */
+    fun migratePosition(fromNamespace: String = "", toNamespace: String) {
+        if(fromNamespace==toNamespace) return
+        val source=positionOf(fromNamespace) ?: return
+        val target=positionOf(toNamespace) ?: return
+        if(target.isFile || !source.isFile) return
+        val text=runCatching { source.readText(Charsets.UTF_8).trim() }.getOrDefault("")
+        if(text.isEmpty()) return
+        runCatching { writePosition(target,text) }
+    }
+
+    private fun writePosition(target: File,text: String) {
+        val tmp=File(target.path+".tmp")
+        tmp.writeText(text)
+        target.delete()
+        tmp.renameTo(target)
     }
 
     /** 上一次停在的那一部（没有 / 过期就是空串）。 */

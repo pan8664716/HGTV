@@ -96,7 +96,7 @@ internal fun TvMainActivity.startRecommendEpisode(data: Detail,position: Long,au
     recommendWatchStart=android.os.SystemClock.elapsedRealtime()
     // 记住「停在哪儿」：下次进程刚起时从它的**下一部**接着播（见 `openRecommend` 的
     // `resumeIndex`）。写一行剧 id，几字节、后台线程，不从主线程碰 IO。
-    com.hgtv.star.core.RecommendCache.rememberPlayed(data.series.id)
+    com.hgtv.star.core.RecommendCache.rememberPlayed(data.series.id,RECOMMEND_CACHE_NAMESPACE)
     // 换到另一部：上一次「画面丢了自动重建」的额度重新给满（见 [recoverRecommendPicture]）。
     // 不清的话，看过一部要重建两回的片子之后，后面每一部都只剩一次机会。
     pictureRecoveries=0; pictureRecoveryAt=0L

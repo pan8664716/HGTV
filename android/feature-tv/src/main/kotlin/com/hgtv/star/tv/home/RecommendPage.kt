@@ -110,6 +110,13 @@ private const val RECOMMEND_FILTER_RETRY_MS=com.hgtv.star.shared.feed.RecommendF
  * 换两次仍然全是旧货，就不再纠缠，交给用户（上下键照样能看）。
  */
 internal const val RECOMMEND_MAX_RESTARTS=com.hgtv.star.shared.feed.RecommendFeedPolicy.MAX_RESTARTS
+/**
+ * TV 推荐快照、续流位置和续流游标共用的缓存命名空间。
+ *
+ * 快照由 [com.hgtv.star.core.RecommendCache] 按命名空间分文件保存；记录“上次播放到哪一部”
+ * 也必须使用同一个命名空间，否则会去检查不存在的默认快照，位置永远读不回来。
+ */
+internal const val RECOMMEND_CACHE_NAMESPACE="official-v2"
 
 /**
  * TV 的推荐 Store。策略来自共享的 standard 配置，之后页面只读 Store 状态。
@@ -120,7 +127,7 @@ fun TvMainActivity.recommendStore(): com.hgtv.star.shared.feed.RecommendStore =
         library = library,
         // 官方推荐流过滤单集内容后的独立快照命名空间：旧快照与游标不再复用。
         policy = com.hgtv.star.shared.feed.RecommendFeedPolicy.standard(
-            cacheNamespace = "official-v2",
+            cacheNamespace = RECOMMEND_CACHE_NAMESPACE,
         ),
         debug = { line ->
             if(com.hgtv.star.tv.BuildConfig.DEBUG) {
