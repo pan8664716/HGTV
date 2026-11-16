@@ -41,6 +41,7 @@ interface RecommendFeedSource {
         genres: List<String> = emptyList(),
         filterIds: String = "",
         tab: RecommendTab = RecommendTab.RECOMMEND,
+        horizontalOnly: Boolean = false,
     ): RecommendFeed
 }
 

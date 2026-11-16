@@ -449,9 +449,9 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         checked=library.recommendHorizontalOnly,
         onToggle={ on ->
             library.recommendHorizontalOnly=on
-            if(on) invalidateRecommendForFilterChange()
+            invalidateRecommendForFilterChange()
             refreshScopeLabel()
-            showHint(if(on) "已开启：竖屏短剧不推荐，也不写入推荐缓存" else "已关闭横屏过滤")
+            showHint(if(on) "已开启：推荐页切换为横屏推荐流" else "已关闭：推荐页恢复默认推荐流")
         },
     ))
     val scopeRow=lineRow(scope)

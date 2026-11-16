@@ -47,9 +47,9 @@ data class Series(
     /**
      * 这一部是不是**竖屏**（接口卡片里的 `vertical` 字段，分类 / 榜单 / 搜索都带）。
      *
-     * 接口**没有**「只要横屏」这样的筛选参数：`select_items.vertical` 会被忽略（实测
-     * `["0"]` / `["1"]` 回同一批数据），`filter_ids` 传什么都不认。所以只能在客户端按这个
-     * 字段筛。默认 false（老数据 / 备份里没有这个字段时按横屏算）。
+     * 官方推荐接口用 `is_horizontal_screen` 选择横屏候选流；分类接口的
+     * `select_items.vertical` 会被忽略。这个字段保留为卡片事实，不再作为 TV 推荐过滤条件。
+     * 默认 false（老数据 / 备份里没有这个字段时按横屏算）。
      */
     val vertical: Boolean = false,
     /**

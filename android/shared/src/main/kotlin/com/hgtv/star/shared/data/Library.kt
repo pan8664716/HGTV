@@ -619,10 +619,10 @@ class Library(context: Context) {
         }
     @Volatile private var recommendGenderCached: String=""
     /**
-     * TV 推荐流是否只保留横屏短剧。
+     * TV 推荐请求是否使用官方横屏候选流。
      *
-     * 服务端没有可用的横竖屏筛选参数，必须在客户端按 [Series.vertical] 过滤；
-     * 过滤同时覆盖新取回的页面、续流合并和落盘快照，避免竖屏卡片从补页或缓存绕回来。
+     * 开启后官方推荐请求传 `is_horizontal_screen=true`；卡片 `vertical` 字段只用于展示事实，
+     * 不再在客户端二次过滤。
      */
     var recommendHorizontalOnly: Boolean
         get() = recommendHorizontalOnlyCached

@@ -55,6 +55,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         genres: List<String>,
         filterIds: String,
         tab: RecommendTab,
+        horizontalOnly: Boolean,
     ): RecommendFeed {
         require(offset >= 0) { "offset 不能为负" }
         val tabType=tab.tabType
@@ -65,6 +66,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                 sessionId=sessionId,
                 offset=offset,
                 filterIds=filterIds,
+                horizontalOnly=horizontalOnly,
             )
         }
         // 官方抓包与 7.4.3.32 枚举都没有独立的 AI 剧 Tab，只有该入口继续使用分类接口。
@@ -161,6 +163,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         sessionId: String,
         offset: Int,
         filterIds: String,
+        horizontalOnly: Boolean,
     ): RecommendFeed {
         // 旧分类接口的 session_id 不是官方 bookmall 的 UUID。换接口后若继续带着旧
         // offset 请求，官方会按新 session 解释这个位置，首屏就可能反复拿同一批 3 条。
@@ -169,7 +172,14 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         }
         val sessionUuid=validSession ?: java.util.UUID.randomUUID().toString()
         val requestOffset=if(validSession==null) 0 else offset
-        val raw=officialRecommendRaw(tabType,sessionUuid,requestOffset,filterIds,selection)
+        val raw=officialRecommendRaw(
+            tabType,
+            sessionUuid,
+            requestOffset,
+            filterIds,
+            selection,
+            horizontalOnly,
+        )
         val root=JSONObject(raw)
         if(root.optInt("code",-1)!=0) throw IOException("推荐接口暂不可用")
         val payload=root.optJSONObject("data") ?: throw IOException("推荐接口结构已变化")
@@ -213,6 +223,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         offset: Int,
         filterIds: String,
         selection: CategorySelection,
+        horizontalOnly: Boolean,
     ): String {
         var problem: IOException=IOException("推荐接口暂无响应")
         repeat(RECOMMEND_ATTEMPTS) { attempt ->
@@ -235,6 +246,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                     offset=offset,
                     filterIds=filterIds,
                     selection=selection,
+                    horizontalOnly=horizontalOnly,
                 )
                 val signed=signer.sign(
                     "https://${videoHost()}/reading/bookapi/bookmall/tab/v",
@@ -265,6 +277,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         offset: Int,
         filterIds: String,
         selection: CategorySelection,
+        horizontalOnly: Boolean,
     ): LinkedHashMap<String,String> {
         val values=recommendationValues(identity)
         for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
@@ -288,7 +301,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         values["bottom_tab_type"]="7"
         values["bottom_tab_type_list"]="7,0,1,5,2,4"
         values["client_req_type"]=if(tabType==16) "1028" else "4"
-        values["is_horizontal_screen"]="false"
+        values["is_horizontal_screen"]=horizontalOnly.toString()
         values["screen_width_px"]=identity.profile["resolution"]
             ?.substringBefore('*')
             ?.toIntOrNull()

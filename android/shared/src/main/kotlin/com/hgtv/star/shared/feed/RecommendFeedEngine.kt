@@ -36,10 +36,9 @@ class RecommendFeedEngine(
      * 直到得到可展示结果、确定没有更多内容或遇到不可恢复的错误。
      */
     suspend fun load(input: RecommendFeedInput): RecommendFeedResult {
-        // 只推荐横屏是 TV 的偏好；在入口先裁一次，既保证新页不混入竖屏，也避免
-        // 已恢复的旧列表在下一次 save 时把竖屏卡片重新写回快照。
+        // 只推荐横屏是 TV 的请求偏好；筛选由官方推荐接口完成，客户端不再按卡片字段二次过滤。
         val horizontalOnly = policy.supportsHorizontalOnly && library.recommendHorizontalOnly
-        var items = if(horizontalOnly) input.items.filterNot { it.vertical } else input.items
+        var items = input.items
         var page = input.page
         var hasMore = input.hasMore
         var session = input.sessionId
@@ -60,7 +59,7 @@ class RecommendFeedEngine(
             session = ""
             offset = 0
             hasMore = true
-            persistCursor("", 0)
+            persistCursor("", 0, horizontalOnly)
         }
 
         while (requests < policy.maxRequestsPerLoad) {
@@ -121,6 +120,7 @@ class RecommendFeedEngine(
                         genres = input.genres,
                         filterIds = filters,
                         tab = input.tab,
+                        horizontalOnly = horizontalOnly,
                     )
                 }
                 if (criticalFirstRequest) {
@@ -197,7 +197,7 @@ class RecommendFeedEngine(
 
             session = feed.sessionId
             offset = feed.nextOffset
-            persistCursor(session, offset)
+            persistCursor(session, offset, horizontalOnly)
 
             val hidden = runCatching { library.hidden() }.getOrDefault(emptySet())
             val finished = runCatching { library.recommendFinished() }.getOrDefault(emptySet())
@@ -206,7 +206,7 @@ class RecommendFeedEngine(
             val loadedTitles = items.mapNotNull {
                 RecommendFlow.titleKey(it.title).takeIf(String::isNotEmpty)
             }.toHashSet()
-            val pageItems = if(horizontalOnly) feed.page.items.filterNot { it.vertical } else feed.page.items
+            val pageItems = feed.page.items
             val candidates = RecommendFlow.fresh(
                 items = pageItems,
                 hidden = hidden,
@@ -237,18 +237,10 @@ class RecommendFeedEngine(
             hasMore = feed.page.hasMore
             processedPages++
             if(!input.append || policy.saveOnAppend) {
-                // 设置可能在请求途中切换；落盘时再按当前偏好裁一次，避免在途请求
-                // 把已经取回的竖屏卡片重新写进刚清空的缓存。
-                val saveHorizontalOnly = policy.supportsHorizontalOnly && library.recommendHorizontalOnly
-                val cacheItems = if(saveHorizontalOnly) items.filterNot { it.vertical } else items
-                if(cacheItems.isEmpty() && saveHorizontalOnly) {
-                    RecommendCache.clearAfterPendingWrites(policy.cacheNamespace)
-                } else if(cacheItems.isNotEmpty()) {
-                    RecommendCache.save(cacheItems, policy.cacheNamespace)
-                }
+                if(items.isNotEmpty()) RecommendCache.save(items, policy.cacheNamespace)
             }
             val added = (items.size - before).coerceAtLeast(0)
-            lines += "page=$page raw=${feed.page.items.size} horizontal=${pageItems.size} kept=${shown.size} " +
+            lines += "page=$page raw=${feed.page.items.size} kept=${shown.size} " +
                 "arranged=${arranged.size} added=$added hasMore=$hasMore"
             if(shown.isEmpty() && feed.page.hasMore && !expired && items.isEmpty()) {
                 emptyChain++
@@ -282,11 +274,11 @@ class RecommendFeedEngine(
         )
     }
 
-    private fun persistCursor(session: String, offset: Int) {
+    private fun persistCursor(session: String, offset: Int, horizontalOnly: Boolean) {
         if(policy.namespacedCursor) {
             library.phoneFeedCursor = FeedCursor.upsert(
                 library.phoneFeedCursor,
-                FeedCursor.Entry(policy.cacheNamespace, session, offset),
+                FeedCursor.Entry(policy.cursorNamespace(horizontalOnly), session, offset),
             )
         } else {
             library.recommendCursor = if(session.isEmpty() && offset == 0) "" else "$session|$offset"
@@ -340,7 +332,7 @@ class RecommendFeedEngine(
 /** TV 与 Phone 共用的推荐加载策略。 */
 data class RecommendFeedPolicy(
     val cacheNamespace: String = "",
-    /** 是否支持 TV 的「只推荐横屏短剧」本机偏好。手机 / 平板保持 false。 */
+    /** 是否支持 TV 的「只推荐横屏短剧」服务端请求参数。手机 / 平板保持 false。 */
     val supportsHorizontalOnly: Boolean = false,
     val firstLimit: Int = 20,
     val pageLimit: Int = 20,
@@ -355,6 +347,10 @@ data class RecommendFeedPolicy(
     val saveOnAppend: Boolean = true,
     val namespacedCursor: Boolean = true,
 ) {
+    fun cursorNamespace(horizontalOnly: Boolean): String =
+        if(supportsHorizontalOnly && horizontalOnly) "$cacheNamespace-horizontal"
+        else cacheNamespace
+
     companion object {
         /** TV 与 Phone 共用的推荐加载节奏。 */
         const val FIRST_LIMIT = 60
@@ -367,7 +363,7 @@ data class RecommendFeedPolicy(
         const val MIN_ITEMS_PER_LOAD = 6
 
         /**
-         * 两端差异只有推荐流命名空间和 TV 的横屏过滤能力位：Phone 按体裁拆流，
+         * 两端差异只有推荐流命名空间和 TV 的横屏请求能力位：Phone 按体裁拆流，
          * TV 只有一条主推荐流；取流、补页、过滤、重试和落盘节奏仍共用同一套。
          */
         fun standard(cacheNamespace: String, supportsHorizontalOnly: Boolean = false) = RecommendFeedPolicy(

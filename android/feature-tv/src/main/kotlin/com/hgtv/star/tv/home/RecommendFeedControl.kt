@@ -44,11 +44,10 @@ fun TvMainActivity.cancelRecommendFeed() {
 }
 
 /**
- * 推荐过滤条件改变时丢掉当前列表和落盘快照。
+ * 推荐范围或横屏请求条件改变时丢掉当前列表、落盘快照和续流位置。
  *
- * 只过滤新请求是不够的：设置页返回后页面可能还保留着上一轮的内存列表，
+ * 只切换新请求参数是不够的：设置页返回后页面可能还保留着上一轮的内存列表，
  * 冷启动也可能先读到旧快照。这里一并清掉，下一次进推荐页会按新条件重新取流并写缓存。
- * 续流游标保留，用户仍从当前流位置往后看。
  */
 fun TvMainActivity.invalidateRecommendForFilterChange() {
     recommendToken.incrementAndGet()
@@ -65,6 +64,7 @@ fun TvMainActivity.invalidateRecommendForFilterChange() {
     recommendDetails.clear()
     cancelRecommendBatchModels()
     closeRecommendCache()
+    recommendStore().resetCursor()
     com.hgtv.star.core.RecommendCache.clear(RECOMMEND_CACHE_NAMESPACE)
     com.hgtv.star.core.RecommendCache.clearAfterPendingWrites(RECOMMEND_CACHE_NAMESPACE)
 }

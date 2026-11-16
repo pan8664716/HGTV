@@ -327,7 +327,9 @@ class ContentRepository(
         genres: List<String>,
         filterIds: String,
         tab: RecommendTab,
-    ): RecommendFeed = recommendFeedImpl(selection,sessionId,offset,limit,genres,filterIds,tab)
+        horizontalOnly: Boolean,
+    ): RecommendFeed =
+        recommendFeedImpl(selection,sessionId,offset,limit,genres,filterIds,tab,horizontalOnly)
 
     override fun reportRecommendStats(events: List<RecommendStatData>) =
         reportRecommendStatsImpl(events)
