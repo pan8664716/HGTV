@@ -4372,6 +4372,21 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 电视栅格复用崩溃修复
+
+状态：已修复，debug 构建通过，待用户真机验证。
+
+- 崩溃现场：`SeriesGrid.materializeGridRow()` 向窗口添加复用行时抛出
+  `IllegalStateException: The specified child already has a parent`。
+- 根因：页面重建先把 `gridWindow` 置空，再回收旧 `gridRows`；回收函数只从当前
+  `gridWindow` 摘行，导致旧行仍挂在旧父容器上，却进入 `gridRowPool` 被下一次复用。
+- 修复：回收时从 `holder.line.parent` 这个实际父容器摘除；复用池取出时再做一次防御性
+  摘除，保证任何旧状态都不会带着 parent 进入新的窗口。
+- 崩溃来自已安装的 `1.3.7.3`；本修复会进入后续构建。`:app:assembleDebug` 已通过，
+  交用户真机验证。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 1.3.7.4 发布准备
 
 状态：release 已编译，签名校验通过，待用户真机安装验证。

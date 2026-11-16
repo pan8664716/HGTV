@@ -293,7 +293,11 @@ fun TvMainActivity.obtainGridRow(): GridRow {
     // 否则会把一张多余的卡留在行末（不显示但占宽），或者最后一格永远空着。
     while(true) {
         val holder=gridRowPool.removeLastOrNull() ?: break
-        if(holder.cards.size==columns && holder.cards.firstOrNull()?.textScale==textScale) return holder
+        if(holder.cards.size==columns && holder.cards.firstOrNull()?.textScale==textScale) {
+            // 防御旧版本或异常路径留下的 stale parent，保证复用的行可以直接 addView。
+            (holder.line.parent as? ViewGroup)?.removeView(holder.line)
+            return holder
+        }
         holder.cards.forEach { it.releaseCover() }
     }
     val line=row().apply { gravity=Gravity.TOP; clipChildren=false; clipToPadding=false }
@@ -331,7 +335,9 @@ fun TvMainActivity.materializeGridRow(index: Int,atFront: Boolean) {
  * 只有缓存刚好把它挤掉时才需要读盘（3~10ms）。比「整机 OOM」便宜得多。
  */
 fun TvMainActivity.recycleGridRow(holder: GridRow) {
-    gridWindow?.removeView(holder.line)
+    // 页面重建会先把 gridWindow 置空再回收行；只按 gridWindow 摘除会漏掉旧父容器，
+    // 行带着旧 parent 进入复用池后，下一次 addView 就会抛 "already has a parent"。
+    (holder.line.parent as? ViewGroup)?.removeView(holder.line)
     gridRows.remove(holder)
     holder.cards.forEach { it.releaseCover() }
     // 池子封顶：滚动时同时进出的行只有个位数，留 4 行足够，

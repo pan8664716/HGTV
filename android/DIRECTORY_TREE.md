@@ -891,7 +891,7 @@ android/
 | `ListPage.kt` | 电视列表页页面骨架，负责分类、榜单、搜索、我的页和设置页的页面组装。 | fun equalChipWidths、fun TvMainActivity.showCatalog |
 | `ListPageContent.kt` | 电视列表、网格、剧架与分页；栅格卡片 View 通过跨页行池复用，只重绑数据与封面。 | fun TvMainActivity.setRankSubtitle、fun TvMainActivity.seriesList、class ClipFrameLayout、fun lastFocusable、fun firstFocusable |
 | `SeriesActions.kt` | 剧卡上「点一下」与「长按 / 菜单键」这两个动作，全站只有这一份实现。 | fun TvMainActivity.openSeries、fun TvMainActivity.seriesMenu |
-| `SeriesGrid.kt` | 本文件：剧卡栅格的窗口化复用、分页追加、滚动与焦点。 | fun TvMainActivity.gridCards、fun TvMainActivity.isGridTail、fun TvMainActivity.gridRowCount、fun TvMainActivity.rowStride、fun TvMainActivity.gridTextScale、fun TvMainActivity.updateGridSpacers |
+| `SeriesGrid.kt` | 剧卡栅格的窗口化复用、分页追加、滚动与焦点；回收行时从实际父容器摘除，避免复用 stale parent。 | fun TvMainActivity.gridCards、fun TvMainActivity.isGridTail、fun TvMainActivity.gridRowCount、fun TvMainActivity.rowStride、fun TvMainActivity.gridTextScale、fun TvMainActivity.updateGridSpacers、fun TvMainActivity.recycleGridRow |
 | `SeriesGridPaging.kt` | 电视列表、网格、剧架与分页。文件 SeriesGridPaging 主要包含 fun TvMainActivity.moreLabel、fun TvMainActivity.loadMore、fun TvMainActivity.prefetchNextPage、fun TvMainActivity.applyNextPage。 | fun TvMainActivity.moreLabel、fun TvMainActivity.loadMore、fun TvMainActivity.prefetchNextPage、fun TvMainActivity.applyNextPage、fun TvMainActivity.nearGridEnd、fun TvMainActivity.rowsLeftAfterConsumed |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/navigation/`
