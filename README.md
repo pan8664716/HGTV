@@ -134,7 +134,8 @@ README.md
 - iOS：[`ios/HGTV/Core/AppConfig.swift`](ios/HGTV/Core/AppConfig.swift)
 
 配置按网络、启动、目录、内容仓库、账号、推荐、播放、封面、局域网、缓存、书库、弹幕、
-诊断和 UI 分组。协议字段、设备身份、状态机枚举与页面专属主题令牌仍留在各自模块；
+诊断和 UI 分组。UI 内继续区分页面结构（`Navigation / Settings`）与手机 / 电视几何尺寸
+（`Ui.Phone / Ui.Tv`）。协议字段、设备身份、状态机枚举与页面专属主题色仍留在各自模块；
 已有公开常量保留为兼容别名，但数值来源只认 `AppConfig`。
 
 ## 开发

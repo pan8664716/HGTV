@@ -11,6 +11,21 @@ import Foundation
 import CoreGraphics
 
 enum AppConfig {
+    /// 页面结构与默认顺序。
+    enum Navigation {
+        /// 手机底部 tab 的 key 顺序。
+        static let phoneTabKeys = ["recommend", "category", "rank", "mine"]
+
+        /// 榜单页顶部芯片顺序。
+        static let rankBoardOrder = ["new", "comic", "ai", "real"]
+
+        /// 设置页四大分页顺序。
+        static let settingsPageOrder = ["playback", "appearance", "recommend", "system"]
+
+        /// 顶部导航可隐藏入口 key。
+        static let navKeys = ["recommend", "search", "category", "rank", "profile"]
+    }
+
     /// 网络请求超时。除特别标注外，单位均为秒。
     enum Network {
         /// URLSession 默认单次请求超时。
@@ -396,5 +411,68 @@ enum AppConfig {
 
         /// 搜索候选词最多显示条数。
         static let searchSuggestionLimit = 8
+
+        /// 手机 / 平板几何参数。
+        enum Phone {
+            /// 海报网格左右边距。
+            static let pageInset: CGFloat = 0
+
+            /// 底部导航左右留白。
+            static let tabInset: CGFloat = 8
+
+            /// 卡片间距。
+            static let cardGap: CGFloat = 8
+
+            /// 海报卡之间横纵间距。
+            static let posterGap: CGFloat = 0
+
+            /// 频道 chip 行高。
+            static let chipRow: CGFloat = 45
+
+            /// 剧场卡片宽度。
+            static let posterWidth: CGFloat = 293
+
+            /// 播放页右侧操作项高度。
+            static let actionItem: CGFloat = 65
+
+            /// 柔光带宽度。
+            static let softBand: CGFloat = 6
+
+            /// 大面板柔光带宽度。
+            static let softBandLarge: CGFloat = 10
+
+            /// 卡片圆角。
+            static let radiusCard: CGFloat = 8
+
+            /// 胶囊圆角。
+            static let radiusPill: CGFloat = 26
+
+            /// 弹窗 / 抽屉圆角。
+            static let radiusSheet: CGFloat = 24
+
+            /// 进度条轨道高度。
+            static let trackHeight: CGFloat = 3
+
+            /// 底部导航栏高度。
+            static let tabBar: CGFloat = 42
+
+            /// 选集网格每行集数。
+            static let episodeGridColumns = 5
+
+            /// 选集网格间距。
+            static let episodeGridSpacing: CGFloat = 4
+
+            /// 紧凑模式分页条最大宽度。
+            static let episodePagerCompactWidth: CGFloat = 140
+
+            /// 常规模式分页条最大宽度。
+            static let episodePagerWidth: CGFloat = 200
+
+            /// 紧凑模式选集格高度。
+            static let episodeCellHeightCompact: CGFloat = 30
+
+            /// 常规模式选集格高度。
+            static let episodeCellHeight: CGFloat = 34
+        }
     }
 }

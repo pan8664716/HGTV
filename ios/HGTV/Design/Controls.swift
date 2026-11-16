@@ -112,9 +112,14 @@ struct BottomTabBar: View {
     @Environment(\.theme) private var theme
     @Environment(\.safeAreaInsets) private var insets
 
-    private let items: [(String, TabIcon)] = [
-        ("推荐", .home), ("分类", .grid), ("榜单", .rank), ("我的", .mine)
-    ]
+    private let items: [(String, TabIcon)] = AppConfig.Navigation.phoneTabKeys.map { key in
+        switch key {
+        case "recommend": return ("推荐", .home)
+        case "category": return ("分类", .grid)
+        case "rank": return ("榜单", .rank)
+        default: return ("我的", .mine)
+        }
+    }
 
     @State private var lastTapIndex = -1
     @State private var lastTapAt = Date.distantPast

@@ -217,23 +217,23 @@ enum PhoneTheme: String, CaseIterable, Identifiable {
 
 enum PhoneDimen {
     /// 海报网格左右边距：0，卡片直接顶到屏幕边缘。
-    static let pageInset: CGFloat = 0
-    static let tabInset: CGFloat = 8
-    static let cardGap: CGFloat = 8
-    static let posterGap: CGFloat = 0
-    static let chipRow: CGFloat = 45
-    static let posterWidth: CGFloat = 293
-    static let actionItem: CGFloat = 65
+    static let pageInset = AppConfig.Ui.Phone.pageInset
+    static let tabInset = AppConfig.Ui.Phone.tabInset
+    static let cardGap = AppConfig.Ui.Phone.cardGap
+    static let posterGap = AppConfig.Ui.Phone.posterGap
+    static let chipRow = AppConfig.Ui.Phone.chipRow
+    static let posterWidth = AppConfig.Ui.Phone.posterWidth
+    static let actionItem = AppConfig.Ui.Phone.actionItem
 
     /// 柔光带：控件的 padding，投影与高光全部画在这条带里。
-    static let softBand: CGFloat = 6
-    static let softBandLarge: CGFloat = 10
-    static let radiusCard: CGFloat = 8
-    static let radiusPill: CGFloat = 26
-    static let radiusSheet: CGFloat = 24
-    static let trackHeight: CGFloat = 3
+    static let softBand = AppConfig.Ui.Phone.softBand
+    static let softBandLarge = AppConfig.Ui.Phone.softBandLarge
+    static let radiusCard = AppConfig.Ui.Phone.radiusCard
+    static let radiusPill = AppConfig.Ui.Phone.radiusPill
+    static let radiusSheet = AppConfig.Ui.Phone.radiusSheet
+    static let trackHeight = AppConfig.Ui.Phone.trackHeight
     /// 底部导航栏自身高度（设计单位）。
-    static let tabBar: CGFloat = 42
+    static let tabBar = AppConfig.Ui.Phone.tabBar
 }
 
 // MARK: - 画布与字号

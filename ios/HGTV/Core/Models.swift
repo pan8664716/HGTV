@@ -64,7 +64,9 @@ enum RankBoard: String, CaseIterable, Identifiable {
     case comic, real, ai, new
 
     /// 顶部榜单顺序：推荐（原上新）/ 漫剧 / AI剧 / 真人。
-    static let navOrder: [RankBoard] = [.new, .comic, .ai, .real]
+    static let navOrder: [RankBoard] = AppConfig.Navigation.rankBoardOrder.compactMap {
+        RankBoard(rawValue: $0)
+    }
 
     var id: String { rawValue }
 

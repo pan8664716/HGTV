@@ -14,6 +14,10 @@ import UniformTypeIdentifiers
 enum SettingsPage: String, CaseIterable, Hashable {
     case playback, appearance, recommend, system
 
+    static let orderedCases: [SettingsPage] = AppConfig.Navigation.settingsPageOrder.compactMap {
+        SettingsPage(rawValue: $0)
+    }
+
     var label: String {
         switch self {
         case .playback: return "播放交互"
@@ -144,7 +148,7 @@ struct SettingsView: View {
     private var pageSelector: some View {
         LazyVGrid(columns: [GridItem(.flexible(), spacing: m.dp(6)), GridItem(.flexible(), spacing: m.dp(6))],
                   spacing: m.dp(6)) {
-            ForEach(SettingsPage.allCases, id: \.self) { option in
+            ForEach(SettingsPage.orderedCases, id: \.self) { option in
                 Button {
                     page = option
                 } label: {

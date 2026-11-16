@@ -50,7 +50,9 @@ struct EpisodeGrid: View {
                             }
                         }
                     }
-                    .frame(maxWidth: m.dp(compact ? 140 : 200))
+                    .frame(maxWidth: m.dp(compact
+                        ? AppConfig.Ui.Phone.episodePagerCompactWidth
+                        : AppConfig.Ui.Phone.episodePagerWidth))
                 }
             }
 
@@ -58,9 +60,9 @@ struct EpisodeGrid: View {
             if let range {
                 LazyVGrid(columns: Array(
                     repeating: GridItem(.flexible(), spacing: m.dp(4)),
-                    count: AppConfig.LibraryDefaults.episodeColumns
+                    count: AppConfig.Ui.Phone.episodeGridColumns
                 ),
-                          spacing: m.dp(4)) {
+                          spacing: m.dp(AppConfig.Ui.Phone.episodeGridSpacing)) {
                     ForEach(Array(range), id: \.self) { index in
                         Button {
                             onSelect(index)
@@ -70,7 +72,9 @@ struct EpisodeGrid: View {
                                               weight: index == current ? .bold : .regular))
                                 .foregroundStyle(index == current ? theme.accent : theme.text)
                                 .frame(maxWidth: .infinity)
-                                .frame(height: m.dp(compact ? 30 : 34))
+                                .frame(height: m.dp(compact
+                                    ? AppConfig.Ui.Phone.episodeCellHeightCompact
+                                    : AppConfig.Ui.Phone.episodeCellHeight))
                                 .background {
                                     RoundedRectangle(cornerRadius: m.dp(6), style: .continuous)
                                         .fill(index == current ? theme.surfaceHigh : theme.surface)
