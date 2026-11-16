@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
@@ -333,57 +334,85 @@ class PhoneMainActivity : PhoneActivity() {
             applyLandscapeImmersive()
             return
         }
-        val immersive = index == 0
-        if (android.os.Build.VERSION.SDK_INT >= 30) {
+        applySystemBars(immersive = index == 0, hideNavigation = false)
+    }
+
+    @Suppress("DEPRECATION")
+    private fun applySystemBars(immersive: Boolean, hideNavigation: Boolean) {
+        // Android 17 上仅设置旧的全屏标志可能仍保留状态栏底板。
+        // 先把窗口铺到整个屏幕，再关闭 decor fit，最后应用系统栏显隐。
+        window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
+        if (immersive || hideNavigation) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        } else {
+            window.clearFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
+        }
+        if (Build.VERSION.SDK_INT >= 21) {
+            window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+            window.statusBarColor = if (immersive) Color.BLACK else Color.TRANSPARENT
+            if (hideNavigation) window.navigationBarColor = Color.BLACK
+        }
+        if (Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            window.isStatusBarContrastEnforced = false
+            if (hideNavigation) window.isNavigationBarContrastEnforced = false
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+        }
+        window.decorView.systemUiVisibility = when {
+            hideNavigation -> (
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE
+                    or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_FULLSCREEN
+                    or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
+                    or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
+                )
+            immersive -> (
+                // 隐藏状态栏并让内容铺到它的位置（`phoneEdgeToEdge()` 已经打开了 LAYOUT_FULLSCREEN）。
+                View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                    View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_FULLSCREEN
+                )
+            else -> View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        }
+        if (Build.VERSION.SDK_INT >= 30) {
             window.insetsController?.let { controller ->
-                if (immersive) {
+                if (immersive || hideNavigation) {
                     controller.hide(android.view.WindowInsets.Type.statusBars())
                 } else {
                     controller.show(android.view.WindowInsets.Type.statusBars())
+                }
+                if (hideNavigation) {
+                    controller.hide(android.view.WindowInsets.Type.navigationBars())
+                } else {
+                    controller.show(android.view.WindowInsets.Type.navigationBars())
                 }
                 controller.systemBarsBehavior =
                     android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
             }
         }
-        @Suppress("DEPRECATION")
-        window.decorView.systemUiVisibility = if (immersive) {
-            // 隐藏状态栏并让内容铺到它的位置（`phoneEdgeToEdge()` 已经打开了 LAYOUT_FULLSCREEN）。
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
-                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
-                View.SYSTEM_UI_FLAG_FULLSCREEN
-        } else {
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+        window.setBackgroundDrawable(ColorDrawable(if (immersive) Color.BLACK else PhoneColor.BG))
+        if (::content.isInitialized) {
+            content.requestLayout()
+            if (Build.VERSION.SDK_INT >= 20) window.decorView.requestApplyInsets()
         }
     }
 
     /** 横屏主页隐藏系统状态栏与导航栏，内容直接铺满窗口。 */
-    @Suppress("DEPRECATION")
     private fun applyLandscapeImmersive() {
-        window.addFlags(WindowManager.LayoutParams.FLAG_FULLSCREEN)
-        window.decorView.systemUiVisibility = (
-            View.SYSTEM_UI_FLAG_LAYOUT_STABLE
-                or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_FULLSCREEN
-                or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
-                or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
-            )
-        if (Build.VERSION.SDK_INT >= 30) {
-            window.setDecorFitsSystemWindows(false)
-            window.insetsController?.let { controller ->
-                controller.hide(
-                    android.view.WindowInsets.Type.statusBars() or
-                        android.view.WindowInsets.Type.navigationBars()
-                )
-                controller.systemBarsBehavior =
-                    android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-            }
-        }
+        applySystemBars(immersive = true, hideNavigation = true)
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus && landscape) applyLandscapeImmersive()
+        if (hasFocus && current >= 0) applyStatusBarFor(current)
     }
 
     override fun onResume() {

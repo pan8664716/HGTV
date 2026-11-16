@@ -2,9 +2,41 @@
 package com.hgtv.star.phone
 
 import android.content.pm.ActivityInfo
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
+import android.os.Build
 import android.view.View
+import android.view.WindowManager
 
+@Suppress("DEPRECATION")
 internal fun PhonePlayerActivity.enterImmersive() {
+    // Android 17 上只隐藏系统栏仍可能在顶部保留一块系统栏高度的底板。
+    // `LAYOUT_IN_SCREEN` 先让窗口本身铺到状态栏 / 刘海区域，再关闭 decor fit；
+    // 旧的全屏标志必须放在 `setDecorFitsSystemWindows(false)` 之后，避免被新版窗口重置。
+    window.addFlags(
+        WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN or
+            WindowManager.LayoutParams.FLAG_FULLSCREEN
+    )
+    if (Build.VERSION.SDK_INT >= 21) {
+        window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+        // 系统栏被隐藏时黑色不可见；若新版系统短暂保留底板，也只会与视频黑边融合。
+        window.statusBarColor = Color.BLACK
+        window.navigationBarColor = Color.BLACK
+    }
+    if (Build.VERSION.SDK_INT >= 28) {
+        window.attributes = window.attributes.apply {
+            layoutInDisplayCutoutMode =
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+        }
+    }
+    if (Build.VERSION.SDK_INT >= 29) {
+        window.isStatusBarContrastEnforced = false
+        window.isNavigationBarContrastEnforced = false
+    }
+    if (Build.VERSION.SDK_INT >= 30) {
+        window.setDecorFitsSystemWindows(false)
+    }
+
     // **四个 LAYOUT 标志缺一不可**。
     //
     // 早先只有 FULLSCREEN | HIDE_NAVIGATION | IMMERSIVE_STICKY | LAYOUT_STABLE：
@@ -13,7 +45,6 @@ internal fun PhonePlayerActivity.enterImmersive() {
     //
     // LAYOUT_FULLSCREEN / LAYOUT_HIDE_NAVIGATION 让内容真正铺到两条系统栏底下，
     // LAYOUT_STABLE 保证隐藏 / 显示过程中布局不跳。三条一起才等价于「全屏」。
-    @Suppress("DEPRECATION")
     window.decorView.systemUiVisibility = (
         View.SYSTEM_UI_FLAG_LAYOUT_STABLE
             or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
@@ -22,10 +53,7 @@ internal fun PhonePlayerActivity.enterImmersive() {
             or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
             or View.SYSTEM_UI_FLAG_IMMERSIVE_STICKY
         )
-    if (android.os.Build.VERSION.SDK_INT >= 30) {
-        // 30+ 的窗口默认会「避让」系统栏，旧的 systemUiVisibility 有一部分被忽略。
-        // 显式关掉 fit，再把两条栏一起藏掉，新版系统上才是真正的一整屏。
-        window.setDecorFitsSystemWindows(false)
+    if (Build.VERSION.SDK_INT >= 30) {
         window.insetsController?.let { controller ->
             controller.hide(
                 android.view.WindowInsets.Type.statusBars() or
@@ -35,8 +63,14 @@ internal fun PhonePlayerActivity.enterImmersive() {
                 android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
         }
     }
+    // 不借下层 Surface 时给窗口本身也铺黑，避免任何未覆盖区域落回系统白色兜底。
+    window.setBackgroundDrawable(
+        ColorDrawable(if (playerFeedUnderlay) Color.TRANSPARENT else Color.BLACK)
+    )
     // 横屏顶部那条标题栏本来就贴 0：全屏时不要任何额外留白。
     root.setPadding(0, 0, 0, 0)
+    root.requestLayout()
+    if (Build.VERSION.SDK_INT >= 20) window.decorView.requestApplyInsets()
 }
 
 /**

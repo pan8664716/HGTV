@@ -591,6 +591,13 @@ class PhonePlayerActivity : PhoneActivity() {
         handlePlayerConfigurationChanged(newConfig)
     }
 
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus && playerRootInitialized && !isFinishing && !isDestroyed) {
+            enterImmersive()
+        }
+    }
+
 
 
     private val danmakuTick=object: Runnable {
