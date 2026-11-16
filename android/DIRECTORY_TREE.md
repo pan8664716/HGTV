@@ -863,7 +863,7 @@ android/
 | `RecommendNavigation.kt` | 推荐页进入正式播放与返回首页路由；返回首页优先复用缓存并延后播放器重资源回收。 | fun TvMainActivity.enterFormalPlayback、fun TvMainActivity.goHomeFromRecommend、fun TvMainActivity.exitRecommendToHome、fun TvMainActivity.leaveRecommendPlaybackToHome |
 | `RecommendOverlay.kt` | 推荐页底部那块信息浮层：进度 + 剧名 + 操作说明；中心 loading 只在真实首帧后撤掉。 | fun TvMainActivity.attachRecommendOverlay、fun TvMainActivity.recommendChip、fun TvMainActivity.dismissRecommendOverlay、fun TvMainActivity.updateRecommendOverlay |
 | `RecommendPage.kt` | 本文件是「推荐」这一条独立的播放链路：抖音式的上下换剧、确定进正片、菜单开播放设置、返回回主页面；首条可先起播，列表在首帧后补齐。 | val RECOMMEND_SKIP_LIMIT、val RECOMMEND_MAX_CHAIN、val RECOMMEND_FIRST_LIMIT、val RECOMMEND_FIRST_ITEMS、val RECOMMEND_PAGE_LIMIT、val RECOMMEND_LOOKAHEAD |
-| `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部；换到另一部时先 detach 旧 PlayerView / Surface、清空旧媒体与传输，再显示当前作品 loading 并取详情；推荐详情跳过作者查询。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend |
+| `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部；换到另一部时保留稳定 PlayerView，通过 keep-content=false 清空旧 Surface、停止旧媒体、立即作废旧 work，再显示当前作品 loading 并取详情；推荐详情跳过作者查询。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend、fun TvMainActivity.resetRecommendPlaybackForSwitch |
 | `RecommendUi.kt` | 本机兴趣画像（进推荐页时建一次，之后每页复用）。 | fun TvMainActivity.loadGenderOptions、fun TvMainActivity.showRecommendMessage、fun TvMainActivity.showRecommendLoading、fun TvMainActivity.showRecommendToast |
 | `RecommendWarm.kt` | 一次在途的「相邻一部预热」。 | class RecommendWarm |
 | `RecommendWarmDetail.kt` | 同时在途的预热条数上限（WiFi）。 | val RECOMMEND_WARM_SLOTS、val RECOMMEND_WARM_SLOTS_METERED、fun TvMainActivity.warmRecommendDetail、fun TvMainActivity.hasWarmSlot |

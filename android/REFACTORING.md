@@ -4418,18 +4418,22 @@ feature-tv/
   “尺寸未知”的整屏布局揭黑，首帧先被拉伸、随后才恢复。现在同时等待本轮
   `onVideoSizeChanged` 给出有效宽高、当前片源首帧证据成立，并把揭黑延后一帧，
   让 `AspectRatioFrameLayout` 完成布局后再淡出；没有尺寸就不揭黑，宁可短暂纯黑。
-- 进一步修复：索引变化时 `playRecommendAt` 在取详情 / 地址之前调用
-  `detachPlayerSurface(keepSession=true)`，立即摘掉旧 `PlayerView` / Surface，
-  停止并清空旧播放器媒体、视频源与传输；随后先铺当前作品的纯黑 loading，
-  再创建新播放层。这样不依赖普通 View 遮罩与 SurfaceView 的合成顺序，
-  即使黑场层受 z-order 影响，也没有旧 Surface 可显示。
-- 代价是每次换作都会重建一次播放层，命中预热缓存时也走同一套硬切；这是为彻底
-  消除两部作品共享画面的有意取舍。
+- 快速连切 / 串音 / 卡住修复：真机 `data_app_crash` 多次记录
+  `FrameLayout.layoutChildren` 的空 View 崩溃；现场同时存在快速换作、反复
+  `removeAllViews`、旧 work 返回和 Surface 重建。原来的整层 hard cut 虽然挡住了
+  旧帧，但把播放层布局与异步起播叠在了一起。
+- 现在索引变化时保留同一个 `PlayerView`，先 `setKeepContentOnPlayerReset(false)`、
+  将 player 暂时置空、`stop/clearMediaItems` 清掉旧音视频，再把 player 挂回；
+  同时立即 `generation++ / cancelWork()`，让上一部的详情、取地址和准备结果全部作废。
+  不再为每次换作重建整棵播放层，旧 Surface 内容仍会变黑，当前作品再复用同一层起播。
+- 这样避免了两部作品共享播放器音轨，也避免快速连切时反复销毁/创建
+  `FrameLayout` 子层；命中预热缓存时同样复用稳定播放层。
 - 慢网 / 取地址失败时保持黑场，由现有错误页、整屏提示、返回 / 再次换作或播放
   看门狗收尾，不再用上一部旧帧冒充当前画面。
 - 真机回归：清掉下一部预热缓存后连续换作，确认取地址期间只有纯黑 / loading，
   当前作品真实出帧后才淡入；同时确认正常预热命中时过渡没有变慢。
 - 用户文案：修复：推荐无缓存换作闪现上一部旧帧。
+- 用户文案：修复：推荐快速切换卡住、串音与崩溃。
 - `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖或 iOS 代码。
 
 回滚：对本节对应提交执行 `git revert`。

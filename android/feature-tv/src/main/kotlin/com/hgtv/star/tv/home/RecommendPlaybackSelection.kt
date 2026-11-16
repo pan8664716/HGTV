@@ -18,11 +18,11 @@ import com.hgtv.star.shared.debug.StartupTrace
 fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,skipped: Int=0,autoplay: Boolean=true) {
     if(screen!="recommend" || recommendItems.isEmpty()) return
     val safe=index.coerceIn(0,recommendItems.lastIndex)
-    // 换到另一部时先和上一部彻底断开：摘掉旧 PlayerView / Surface、清空旧媒体与传输。
-    // 无缓存时详情和地址还要等网络，如果继续复用上一部的 Surface，它会保留上一部首帧，
-    // 并在新布局下被拉伸显示。这里宁可多重建一次播放层，也不让两部作品共享画面。
+    // 换到另一部时先和上一部彻底断开：保留稳定的 PlayerView（避免快速连切反复
+    // removeAllViews / 新建 Surface 导致 FrameLayout 布局崩溃），但清空旧 Surface 内容、
+    // 停止旧媒体并作废旧 work。旧作品不能再发声，新作品也不会继承旧首帧。
     val switching=safe!=recommendIndex && playerView!=null
-    if(switching) detachPlayerSurface(keepSession=true)
+    if(switching) resetRecommendPlaybackForSwitch()
     recommendIndex=safe; recommendShift=direction
     // 换剧方向与时刻：相邻预热按「用户正在走的方向」排优先级（见 [prefetchRecommendNeighbors]）。
     // 方向为 0 时（进页面第一次起播、重试同一部）不动它，沿用上一次的方向。
@@ -134,6 +134,39 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
             }
         }
     }
+}
+
+/**
+ * 推荐换作的稳定清屏：不重建整棵播放层，只把当前 PlayerView 的旧内容清掉。
+ *
+ * 快速连续换作时，整层 removeAllViews + 新建 PlayerView 会让旧 work、旧 Surface
+ * 和布局遍历交错，既可能串音，也可能触发 FrameLayout 布局异常。这里保留视图，
+ * 用 ExoPlayer 的 keep-content 开关让 Surface 回到黑屏，再复用同一个播放器实例。
+ */
+private fun TvMainActivity.resetRecommendPlaybackForSwitch() {
+    // 先盖黑，再清旧内容；顺序不能反，否则清 Surface 的一帧可能露出上一部。
+    showRecommendCover()
+    // 立即作废旧起播 work；只在后续 playEpisode 里等 generation 变化太晚，
+    // 旧请求可能在这中间回来并重新挂上上一部音轨。
+    generation++
+    cancelWork()
+    cancelPrefetch()
+    val p=player
+    val view=playerView
+    playerListener?.let { listener -> p?.removeListener(listener) }
+    playerListener=null
+    view?.setKeepContentOnPlayerReset(false)
+    view?.setShutterBackgroundColor(android.graphics.Color.BLACK)
+    view?.player=null
+    p?.let { runCatching { it.pause(); it.stop(); it.clearMediaItems() } }
+    view?.player=p
+    view?.setKeepContentOnPlayerReset(true)
+    playbackReady=false
+    playbackSessionState.beginSession()
+    video?.let { runCatching { it.close() } }
+    video=null
+    closeTransport(playbackHttp)
+    playbackHttp=null
 }
 
 /** 这一部放不了：跳到下一部；连跳太多次就停在一句提示上，不无限空转。 */
