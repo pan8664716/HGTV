@@ -336,31 +336,89 @@ private fun PhoneAccountActivity.renderUpsms(
         visibility = View.GONE
     }
     body.addView(state, blockTop())
-    body.addView(primaryButton("我已发送") {
+    lateinit var verifyButton: TextView
+    verifyButton = primaryButton("我已发送") {
+        verifyButton.isEnabled = false
+        verifyButton.alpha = .45f
         state.visibility = View.VISIBLE
         state.text = "正在确认…"
         scope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { session.verifyUpsms() }.getOrNull() }
             when (result) {
                 is com.hgtv.star.core.PhoneLogin.UpsmsResult.Ticket -> {
-                    state.text = "验证通过，正在登录…"
-                    val resent = withContext(Dispatchers.IO) {
-                        runCatching { session.sendCode(pendingPhone) { profile -> registerForLogin(profile) } }.getOrNull()
-                    }
-                    when (resent) {
-                        is com.hgtv.star.core.PhoneLogin.Result.Sent -> {
-                            pendingCode = ""
-                            renderPhoneLogin()
-                            toast("验证通过，新的验证码已发出")
+                    if (session.mfaFromSendCode) {
+                        state.text = "验证通过，正在重新获取验证码…"
+                        val resent = withContext(Dispatchers.IO) {
+                            runCatching {
+                                session.sendCode(pendingPhone) { profile -> registerForLogin(profile) }
+                            }.getOrNull()
                         }
-                        is com.hgtv.star.core.PhoneLogin.Result.Failed -> toast(resent.message)
-                        else -> renderPhoneLogin()
+                        when (resent) {
+                            is com.hgtv.star.core.PhoneLogin.Result.Sent -> {
+                                pendingCode = ""
+                                renderPhoneLogin()
+                                toast("验证通过，新的验证码已发出")
+                            }
+                            is com.hgtv.star.core.PhoneLogin.Result.NeedUpsms -> {
+                                pendingCode = ""
+                                renderUpsms(session, resent.number, resent.content)
+                            }
+                            is com.hgtv.star.core.PhoneLogin.Result.LoggedIn ->
+                                finishLogin(resent.credentials, "手机号登录")
+                            is com.hgtv.star.core.PhoneLogin.Result.Failed -> {
+                                state.text = resent.message
+                                toast(resent.message)
+                                verifyButton.isEnabled = true
+                                verifyButton.alpha = 1f
+                            }
+                            null -> {
+                                state.text = "网络异常，请稍后重试。"
+                                verifyButton.isEnabled = true
+                                verifyButton.alpha = 1f
+                            }
+                        }
+                        return@launch
+                    }
+                    state.text = "验证通过，正在登录…"
+                    val logged = withContext(Dispatchers.IO) {
+                        runCatching {
+                            session.login(pendingPhone, pendingCode, result.value)
+                        }.getOrNull()
+                    }
+                    when (logged) {
+                        is com.hgtv.star.core.PhoneLogin.Result.LoggedIn ->
+                            finishLogin(logged.credentials, "手机号登录")
+                        is com.hgtv.star.core.PhoneLogin.Result.Failed -> {
+                            state.text = logged.message
+                            toast(logged.message)
+                            verifyButton.isEnabled = true
+                            verifyButton.alpha = 1f
+                        }
+                        is com.hgtv.star.core.PhoneLogin.Result.NeedUpsms -> {
+                            state.text = "平台仍要求二次验证，请重新获取验证码后再试。"
+                            verifyButton.isEnabled = true
+                            verifyButton.alpha = 1f
+                        }
+                        else -> {
+                            state.text = "登录状态未确认，请重新获取验证码后再试。"
+                            verifyButton.isEnabled = true
+                            verifyButton.alpha = 1f
+                        }
                     }
                 }
-                is com.hgtv.star.core.PhoneLogin.UpsmsResult.Failed -> state.text = result.message
-                else -> state.text = "平台还没看到这条短信，稍等几秒再点一次。"
+                is com.hgtv.star.core.PhoneLogin.UpsmsResult.Failed -> {
+                    state.text = result.message
+                    verifyButton.isEnabled = true
+                    verifyButton.alpha = 1f
+                }
+                else -> {
+                    state.text = "平台还没看到这条短信，稍等几秒再点一次。"
+                    verifyButton.isEnabled = true
+                    verifyButton.alpha = 1f
+                }
             }
         }
-    }, blockTop())
+    }
+    body.addView(verifyButton, blockTop())
     if (!landscape) body.addView(secondaryButton("返回") { render() }, blockTop())
 }
