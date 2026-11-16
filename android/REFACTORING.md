@@ -5353,3 +5353,15 @@ feature-tv/
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖，未推送、未创建 Release。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## 手机推荐弹幕避让与换视频首帧比例
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 推荐页读取顶部导航的实际底边，并同步给当前及后续信息流页的弹幕层；第一行不再压在导航下。
+- 根因：页面绑定重构后，跨视频起播没有传入新片源尺寸，`PlayerView` 会拿上一路的
+  `videoSize` 预置首帧比例，先拉伸再等 `onVideoSizeChanged` 修正。
+- 修复：换视频时传递新片源宽高；不同剧集不再沿用上一路尺寸，同剧返回与交接仍复用当前画面尺寸。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖，未推送、未创建 Release。
+
+回滚：对本节对应提交执行 `git revert`。

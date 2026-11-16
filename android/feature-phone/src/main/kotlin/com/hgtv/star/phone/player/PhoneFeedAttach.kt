@@ -34,6 +34,7 @@ internal fun PhoneFeedView.attachImpl(
             episodeIndex,
             forceRebind = false,
             clearDanmakuOnSwitch = clearDanmakuOnSwitch,
+            videoInfo = video.info,
         )
     }
 

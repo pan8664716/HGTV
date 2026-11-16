@@ -62,6 +62,11 @@ class PhoneRecommendPage(
         // 顶栏因此不再为状态栏留白。
         setImmersive(true)
     }
+    private var feedDanmakuTopInset = 0
+    private val topBarLayoutListener =
+        View.OnLayoutChangeListener { _, _, _, _, bottom, _, _, _, _ ->
+            syncFeedDanmakuTopInset(bottom)
+        }
     private var current = 0
     /**
      * 设置页「推荐页左右滑动切换」是否开启（`Library.recommendSwipe`）。
@@ -106,6 +111,7 @@ class PhoneRecommendPage(
         setBackgroundColor(PhoneColor.BG)
         genres = enabledGenres()
         swipeEnabled = swipeEnabledFromSettings()
+        topBar.addOnLayoutChangeListener(topBarLayoutListener)
         buildUi()
         // 冷启动时书库还没读完，上面那一次读到的是兜底值（true）。
         // 读完必须再对一次，否则「关掉推荐页左右滑动」重启后不生效——
@@ -204,7 +210,15 @@ class PhoneRecommendPage(
             gravity = android.view.Gravity.TOP
         })
         topBar.bringToFront()
+        topBar.post { syncFeedDanmakuTopInset(topBar.bottom) }
         pager.post { runCatching { pager.scrollToPosition(current) } }
+    }
+
+    /** 顶栏是覆盖层；弹幕轨道必须从它实际占用的下沿之后再开始。 */
+    private fun syncFeedDanmakuTopInset(bottom: Int) {
+        if (bottom <= 0) return
+        feedDanmakuTopInset = bottom
+        feeds.forEach { it?.setDanmakuTopInset(bottom) }
     }
 
     /** 当前体裁的稳定标识，供宿主在转屏重建前保存。 */
@@ -222,6 +236,7 @@ class PhoneRecommendPage(
         // 播放页切横屏时本页会跟着转一次屏，早先那一次重建正是「一转屏就黑一下」的来源。
         // 尺寸变了只重新对齐当前这一页（换高度后旧的像素偏移不再是一页的整数倍）。
         pager.post { runCatching { pager.scrollToPosition(current) } }
+        topBar.post { syncFeedDanmakuTopInset(topBar.bottom) }
     }
 
     private fun goTo(index: Int) {
@@ -324,6 +339,7 @@ class PhoneRecommendPage(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
                 )
+                setDanmakuTopInset(feedDanmakuTopInset)
                 onPlayStateChanged = { this@PhoneRecommendPage.onPlayStateChanged?.invoke() }
                 // 播放设置面板开着时锁住横向翻页（见 `PhoneFeedView.onSheetVisibilityChanged`）。
                 onSheetVisibilityChanged = { open -> sheetOpen = open; applySwipeState() }

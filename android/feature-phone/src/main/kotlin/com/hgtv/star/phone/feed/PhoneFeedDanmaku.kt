@@ -24,6 +24,7 @@ internal fun PhoneFeedView.danmakuLoaderOfImpl(
 internal fun PhoneFeedView.applyDanmakuSettingsImpl(page: PhoneVideoPage) {
     val lib = feedLibrary ?: return
     val view = page.danmakuView
+    view.topInsetPx = feedDanmakuTopInsetPx
     view.mode = lib.danmakuMode
     view.sizeFollowsLongEdge = true
     view.textScale = PhoneDanmakuSize.renderScale(context)
@@ -33,6 +34,17 @@ internal fun PhoneFeedView.applyDanmakuSettingsImpl(page: PhoneVideoPage) {
     view.mergeMinCount = lib.danmakuMergeMin
     view.effectsEnabled = lib.danmakuEffects
     view.visibility = if (lib.danmakuMode == DanmakuMode.HIDDEN) View.GONE else View.VISIBLE
+}
+
+/** 推荐页顶栏尺寸变化后，同时更新当前已铺出的相邻信息流页。 */
+internal fun PhoneFeedView.applyDanmakuTopInsetImpl(insetPx: Int) {
+    val inset = insetPx.coerceAtLeast(0)
+    if (feedDanmakuTopInsetPx == inset) return
+    feedDanmakuTopInsetPx = inset
+    for (index in 0 until feedList.childCount) {
+        val page = feedList.getChildAt(index) as? PhoneVideoPage ?: continue
+        page.danmakuView.topInsetPx = inset
+    }
 }
 
 /** 拉这一屏这一集的弹幕。 */

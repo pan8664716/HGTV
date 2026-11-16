@@ -616,7 +616,16 @@ class PhoneFeedView(
         episodeIndex: Int,
         forceRebind: Boolean,
         clearDanmakuOnSwitch: Boolean = false,
-    ) = attachPageImpl(exo, page, series, episodeIndex, forceRebind, clearDanmakuOnSwitch)
+        videoInfo: StreamInfo? = null,
+    ) = attachPageImpl(
+        exo,
+        page,
+        series,
+        episodeIndex,
+        forceRebind,
+        clearDanmakuOnSwitch,
+        videoInfo,
+    )
 
     /**
      * 把「画面模式」「画面缩放」按设置落到这一页上。
@@ -651,6 +660,11 @@ class PhoneFeedView(
      */
     fun setUnderlayMode(on: Boolean) {
         setUnderlayModeImpl(on)
+    }
+
+    /** 推荐页顶栏压在视频上：弹幕第一行从这里记录的实际底边之下开始。 */
+    fun setDanmakuTopInset(insetPx: Int) {
+        applyDanmakuTopInsetImpl(insetPx)
     }
 
     /**
@@ -758,6 +772,10 @@ class PhoneFeedView(
      */
     private val danmakuLoaders = HashMap<Int, com.hgtv.star.shared.media.DanmakuLoader>()
     internal val feedDanmakuLoaders get()=danmakuLoaders
+    private var danmakuTopInsetPx = 0
+    internal var feedDanmakuTopInsetPx: Int
+        get()=danmakuTopInsetPx
+        set(value) { danmakuTopInsetPx=value }
 
     /** 取（或建）某一屏的加载器：目标层与集号都按那一屏现取。 */
     internal fun feedDanmakuLoaderOf(index: Int) = danmakuLoaderOfImpl(index)

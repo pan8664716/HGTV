@@ -15,12 +15,20 @@ internal fun PhoneFeedView.attachPageImpl(
     clearDanmakuOnSwitch: Boolean = false,
     videoInfo: StreamInfo? = null,
 ) {
+    val targetMediaId = feedCurrentEpisodeIds[feedPlayingIndex].orEmpty()
+    val playerMediaId = runCatching { exo.currentMediaItem?.mediaId }.getOrNull().orEmpty()
+    val sameSource = targetMediaId.isNotEmpty() && targetMediaId == playerMediaId
     page.bind(series, "第${episodeIndex + 1}集")
     applyPageVideoSettingsImpl(page)
-    page.updateVideoFrame(
-        exo.videoSize.width.takeIf { it > 0 } ?: 1,
-        exo.videoSize.height.takeIf { it > 0 } ?: 1,
-    )
+    val exoSize = exo.videoSize
+    // 换源时 exo 仍是上一路；不能拿它预置新页面的比例或黑边。
+    val width = videoInfo?.videoWidth?.takeIf { it > 0 }
+        ?: exoSize.width.takeIf { sameSource && it > 0 }
+        ?: 0
+    val height = videoInfo?.videoHeight?.takeIf { it > 0 }
+        ?: exoSize.height.takeIf { sameSource && it > 0 }
+        ?: 0
+    if (width > 0 && height > 0) page.updateVideoFrame(width, height)
     feedBoundPage?.let { if (it !== page) it.playerView.player = null }
     if (forceRebind) {
         if (PhoneSession.underlayActive && page.playerView.player === exo) {
@@ -32,8 +40,6 @@ internal fun PhoneFeedView.attachPageImpl(
     } else if (page.playerView.player !== exo) {
         page.playerView.player = exo
     }
-    val width = videoInfo?.videoWidth?.takeIf { it > 0 } ?: exo.videoSize.width
-    val height = videoInfo?.videoHeight?.takeIf { it > 0 } ?: exo.videoSize.height
     val verticalSource = if (width > 0 && height > 0) height > width else series.vertical
     page.playerView.primeAspectRatio(width, height, verticalSource)
     feedBoundPageSlot = page
