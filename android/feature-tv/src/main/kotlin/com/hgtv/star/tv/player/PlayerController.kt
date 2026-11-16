@@ -63,13 +63,16 @@ fun TvMainActivity.loadDanmaku(episodeId: String,seriesId: String,clearOnSwitch:
  * 推荐页的相邻详情、批量模型和补页都等真正的首帧。
  *
  * READY 只表示轨道已经解出来；在低配电视上它可能比画面早几百毫秒。
- * [StartupDeferredTasks.schedule] 同时提供首帧前等待、首帧后执行和
- * 无首帧时的兜底；固定 key 保证 READY 与真正首帧回调只执行一次。
+ * [StartupDeferredTasks.scheduleLatestOnMain] 同时提供首帧前等待、首帧后执行和
+ * 无首帧时的兜底；页面用本轮标记保证 READY 与真正首帧回调只执行一次，换剧后重置。
  */
 private fun TvMainActivity.scheduleRecommendAfterFirstFrame() {
     if(recommendAfterFirstFrameScheduled) return
     recommendAfterFirstFrameScheduled=true
-    StartupDeferredTasks.schedule("recommend.afterFirstFrame-${System.identityHashCode(this)}",30_000L) {
+    StartupDeferredTasks.scheduleLatestOnMain(
+        "recommend.afterFirstFrame-${System.identityHashCode(this)}",
+        30_000L,
+    ) {
         main.post {
             if(isDestroyed || screen!="recommend") return@post
             scheduleRecommendPreload(slideCache.firstFrameDelay(),"first-frame")

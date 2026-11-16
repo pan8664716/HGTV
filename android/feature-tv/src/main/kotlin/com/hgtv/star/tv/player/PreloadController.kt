@@ -6,6 +6,7 @@ import com.hgtv.star.core.SlideCacheManager
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.detail
 import com.hgtv.star.core.lruPut
+import com.hgtv.star.shared.compat.lowEndTv
 
 // 推荐页的「双向滑动预加载」编排：窗口与规则在 `core/SlideCache.kt`（纯逻辑、有单测），
 // 这里只负责把它翻译成真正的工作——取详情、取地址、解析索引、拉首块，以及什么时候让路。
@@ -102,10 +103,20 @@ fun TvMainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: Strin
     if(plan.mode==SlideCacheManager.Mode.FLING) {
         if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","preloadSkip reason=fling anchor=${plan.anchor}")
     }
+    // 低配电视首帧后先只准备主方向最近的一部，完成后由 warmRecommendDetail 自动续上
+    // 其余相邻作品。早先整窗同时派发时，详情、取地址和首块会一起抢当前画面刚恢复的
+    // 带宽与 CPU，用户在前几秒换台仍然只能走冷启动。
+    val targets=if(reason=="first-frame" && runCatching { lowEndTv() }.getOrDefault(true)) {
+        // 片尾附近主方向可能越界；仍要从计划里取第一条真实存在的目标，
+        // 不能让一个空下标挡住后面的反方向缓存。
+        plan.targets.filter { it.index in recommendItems.indices }.take(1)
+    } else {
+        plan.targets
+    }
     // 一次最多派 [PRELOAD_MAX_TARGETS] 条：计划里的顺序就是优先级，后面那些
     // （更远的地址预取）留给下一次换剧时再补。四条以上同时发只会互相抢带宽。
     var dispatched=0
-    for(target in plan.targets) {
+    for(target in targets) {
         if(dispatched>=PRELOAD_MAX_TARGETS) break
         val series=recommendItems.getOrNull(target.index) ?: continue
         val accepted=when(target.level) {

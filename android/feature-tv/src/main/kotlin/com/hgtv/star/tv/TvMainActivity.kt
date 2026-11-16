@@ -456,10 +456,10 @@ class TvMainActivity: Activity() {
     val recommendWarmWorker get()=com.hgtv.star.shared.architecture.AppExecutors.network.executor
     var recommendLastSwitchAt=0L
     var recommendPrefetchDir=1
-    // 低配电视先让首帧、弹幕和音频稳定下来，再把 CPU / 带宽让给相邻预加载。
-    // 原先 300ms 就开始拉 1MB，首帧刚出来时正好和弹幕图集、视频缓冲抢核。
+    // 低配电视首帧后稍让出一点时间，再优先准备**下一部**；其余相邻作品由完成后的
+    // 预热链继续补。窗口总延迟仍由 preloadGateOpen 按当前缓冲决定是否让路。
     val slideCache=com.hgtv.star.core.SlideCacheManager(
-        firstFrameDelayMs=if(runCatching { lowEndTv() }.getOrDefault(true)) 3_000L else 300L,
+        firstFrameDelayMs=if(runCatching { lowEndTv() }.getOrDefault(true)) 500L else 300L,
     )
     var preloadSchedulerRef: com.hgtv.star.shared.feed.PreloadScheduler?=null
     val recommendPreparedIndex=HashMap<String,Int>()

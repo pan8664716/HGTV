@@ -87,6 +87,8 @@ internal fun TvMainActivity.startRecommendEpisode(data: Detail,position: Long,au
         "id=${data.series.id} title=${data.series.title.take(40)} autoplay=$autoplay",
     )
     cancelRecommendBatchModels()
+    // READY 与真正首帧都会尝试排一次预热；这是新一部的预热轮次，不能沿用上一部的标记。
+    recommendAfterFirstFrameScheduled=false
     detail=data
     recommendHistoryPending=false
     // 从这里开始计时：换下一部时由 [settleRecommendWatch] 结掉（看了 → 30 天，划走 → 14 天）。

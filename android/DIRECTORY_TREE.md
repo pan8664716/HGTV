@@ -821,7 +821,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `AppVersion.kt` | 应用版本号。 | object AppVersion |
-| `TvMainActivity.kt` | 电视主界面 Activity，持有页面状态、焦点、生命周期、跨页面导航与首页视图缓存。 | class TvMainActivity |
+| `TvMainActivity.kt` | 电视主界面 Activity，持有页面状态、焦点、生命周期、跨页面导航与首页视图缓存；推荐预热按设备档位选择首目标延迟。 | class TvMainActivity |
 | `TvMainLifecycleFacade.kt` | feature-tv 模块的 TvMainLifecycleFacade.kt 职责。文件 TvMainLifecycleFacade 主要包含 fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory。 | fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory、fun TvMainActivity.handleTrimMemory、fun TvMainActivity.handleDestroy |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/account/`
@@ -857,7 +857,7 @@ android/
 | `RecommendControls.kt` | 上下键换剧。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
 | `RecommendCover.kt` | 切换过渡：黑场淡入 / 首帧后淡出 / 最长遮挡；淡出完成可回调撤 loading。 | val COVER_IN_MS、val COVER_OUT_MS、val COVER_OUT_FAST_MS、val COVER_MAX_MS、fun TvMainActivity.showRecommendCover、fun TvMainActivity.revealRecommendCover、val PICTURE_RECOVERY_LIMIT |
 | `RecommendEntry.kt` | 打开推荐页并自动播放一部推荐；无快照冷启动先取一个可播放条目，剩余列表在首帧后补齐。 | fun TvMainActivity.openRecommend、fun TvMainActivity.resumeIndex、fun TvMainActivity.nextRecommendIndex、val RESUME_CACHE_PROBE、fun TvMainActivity.mediaCached |
-| `RecommendEpisode.kt` | 推荐页单集起播、停留结算、曝光上报与首帧后相邻地址预取。 | val WATCH_DWELL_MS、val WATCH_PLAY_MS、val QUICK_SWIPE_MS、fun TvMainActivity.settleRecommendWatch、fun TvMainActivity.reportRecommendImpression、fun TvMainActivity.reportRecommendProgress |
+| `RecommendEpisode.kt` | 推荐页单集起播、停留结算、曝光上报与每部起播时重置预热轮次；相邻地址与首块由播放首帧后的预热链补上。 | val WATCH_DWELL_MS、val WATCH_PLAY_MS、val QUICK_SWIPE_MS、fun TvMainActivity.startRecommendEpisode、fun TvMainActivity.settleRecommendWatch、fun TvMainActivity.reportRecommendImpression、fun TvMainActivity.reportRecommendProgress |
 | `RecommendFeedControl.kt` | 冷启动续播时把「取推荐流」推迟到首帧之后，8 秒仅作无首帧兜底。 | val RECOMMEND_FEED_DELAY_MS、fun TvMainActivity.requestRecommendFeedAfterFirstFrame、fun TvMainActivity.fireRecommendFeed、fun TvMainActivity.cancelRecommendFeed、fun TvMainActivity.closeRecommendCache、fun TvMainActivity.cancelRecommendWarm |
 | `RecommendFeedLoad.kt` | 取一页推荐流；支持首条快速加载的 minItems 参数并记录统一首帧链路。 | fun TvMainActivity.loadRecommendPage、fun TvMainActivity.ensureRecommendLookahead、fun TvMainActivity.settleRecommendLoad |
 | `RecommendNavigation.kt` | 推荐页进入正式播放与返回首页路由；返回首页优先复用缓存并延后播放器重资源回收。 | fun TvMainActivity.enterFormalPlayback、fun TvMainActivity.goHomeFromRecommend、fun TvMainActivity.exitRecommendToHome、fun TvMainActivity.leaveRecommendPlaybackToHome |
@@ -926,8 +926,8 @@ android/
 | `PlaybackRecovery.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackRecovery 主要包含 fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery、fun TvMainActivity.scheduleRecovery、fun playbackMediaKind |
 | `PlaybackSurfaceBuilder.kt` | 重建电视播放器 surface 与覆盖层；推荐页重建时补挂中心 loading，避免黑场空档。 | fun TvMainActivity.buildPlaybackSurface |
 | `PlayerActions.kt` | 播放设置面板**第一行那排动作**（相关剧集 / 作者作品 / 加入收藏 / 查看简介）的实现。 | fun TvMainActivity.showPlayerRelated、fun TvMainActivity.showPlayerAuthorWorks、fun TvMainActivity.showPlayerWorksStrip、fun TvMainActivity.refreshStripData、fun TvMainActivity.showPlayerIntro、fun TvMainActivity.playerFavoriteLabel |
-| `PlayerController.kt` | 电视播放起播内核，负责换集、播放源设置、播放器监听和播放页面装配；弹幕与相邻预热延后到真正首帧。 | fun TvMainActivity.loadDanmaku、fun TvMainActivity.playEpisode |
-| `PreloadController.kt` | 推荐页的「双向滑动预加载」编排：窗口与规则在 core/SlideCache.kt（纯逻辑、有单测），这里负责取详情、取地址、解析索引、拉首块和让路；预热详情不补作者。 | fun TvMainActivity.preloadGateOpen、val PRELOAD_MAX_TARGETS、fun TvMainActivity.cancelScheduledPreload、fun TvMainActivity.scheduleRecommendPreload、fun TvMainActivity.scheduleRecommendDwell、fun TvMainActivity.preloadScheduler |
+| `PlayerController.kt` | 电视播放起播内核，负责换集、播放源设置、播放器监听和播放页面装配；弹幕与相邻预热延后到真正首帧，并允许每部重新排一次预热。 | fun TvMainActivity.loadDanmaku、fun TvMainActivity.playEpisode、fun TvMainActivity.scheduleRecommendAfterFirstFrame |
+| `PreloadController.kt` | 推荐页的「双向滑动预加载」编排：窗口与规则在 core/SlideCache.kt（纯逻辑、有单测），这里负责取详情、取地址、解析索引、拉首块和让路；低配电视首帧先准备最近一部，再自动续补其余目标，预热详情不补作者。 | fun TvMainActivity.preloadGateOpen、val PRELOAD_MAX_TARGETS、fun TvMainActivity.cancelScheduledPreload、fun TvMainActivity.scheduleRecommendPreload、fun TvMainActivity.scheduleRecommendDwell、fun TvMainActivity.preloadScheduler、fun TvMainActivity.applyRecommendPlan |
 | `RelatedPanel.kt` | 播放界面底部的「换一部接着看」浮层。 | class RelatedPanel |
 | `TvDanmakuClock.kt` | 把播放器的当前状态采样给弹幕层。 | fun TvMainActivity.syncDanmakuClock |
 | `TvPlaybackAnalytics.kt` | 播放链路的可观测点：只回答三个问题。 | fun TvMainActivity.playbackAnalytics |
