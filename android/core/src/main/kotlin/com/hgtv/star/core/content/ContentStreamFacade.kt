@@ -12,7 +12,8 @@ fun ContentRepository.stream(
     maxQuality: Int = 1080,
     playback: PlaybackProfile = PlaybackProfile(),
     queue: List<String> = emptyList(),
-): StreamInfo = streamImpl(id,maxQuality,playback,queue)
+    direct: Boolean = false,
+): StreamInfo = streamImpl(id,maxQuality,playback,queue,direct)
 
 /**
  * [maxQuality] 必须与当初 [stream] 用的那个一致，且**读的是当前档位**：
@@ -23,7 +24,8 @@ fun ContentRepository.forgetStream(
     id: String,
     maxQuality: Int = 1080,
     playback: PlaybackProfile = PlaybackProfile(),
-) = forgetStreamImpl(id,maxQuality,playback)
+    direct: Boolean = false,
+) = forgetStreamImpl(id,maxQuality,playback,direct)
 
 /**
  * 这一集**所有档位**的地址都不认了。

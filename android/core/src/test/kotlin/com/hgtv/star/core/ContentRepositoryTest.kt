@@ -364,6 +364,57 @@ class ContentRepositoryTest {
         assertTrue(bodies.single(),bodies.single().contains("\"need_all_video_definition\":true"))
     }
 
+    /**
+     * 用户主动点集走独立单集请求：只发一个 ID、固定 1 档，并且模型内联的 `video_list`
+     * 已经够用时不再请求 `fallback_api`。这条路径直接决定「第 1 集跳到最后一集」的等待时间。
+     */
+    @Test fun directPlaybackUsesSingleLevelOneRequestAndInlineVideoList() {
+        val bodies=mutableListOf<String>()
+        var fallbackCalls=0
+        val inlineModel=JSONObject()
+            .put("video_list",JSONArray().put(JSONObject()
+                .put("main_url","https://example.com/inline")
+                .put("video_meta",JSONObject()
+                    .put("definition","720P")
+                    .put("codec_type","bytevc1")
+                    .put("vwidth",720)
+                    .put("vheight",1280))
+                .put("encrypt_info",JSONObject().put("encrypt",false))))
+        val response=JSONObject()
+            .put("code",0)
+            .put("data",JSONObject().put("123",JSONObject().put("video_model",inlineModel)))
+        val repo=repository { request ->
+            if(request.url.host=="example.com") {
+                fallbackCalls++
+                ""
+            } else {
+                val bytes=request.body?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readByteArray() } ?: ByteArray(0)
+                bodies+=runCatching {
+                    java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(bytes))
+                        .bufferedReader(Charsets.UTF_8)
+                        .use { it.readText() }
+                }.getOrElse { bytes.toString(Charsets.UTF_8) }
+                response.toString()
+            }
+        }
+        repo.deviceIdentity=mapOf(
+            "device_id" to "123456789012345",
+            "iid" to "987654321098765",
+        )
+
+        val result=repo.stream("123",1080,direct=true)
+
+        assertEquals("https://example.com/inline",result.url)
+        assertEquals("720P",result.quality)
+        assertEquals(0,fallbackCalls)
+        assertEquals(1,bodies.size)
+        val body=bodies.single()
+        assertTrue(body,body.contains("\"device_level\":1"))
+        assertTrue(body,body.contains("\"use_server_dns\":false"))
+        assertFalse(body,body.contains("use_server_dns_scene"))
+        assertTrue(body,body.contains("\"1004\":[\"123\"]"))
+    }
+
     @Test fun legacyMissingCodecLabelKeepsQualityLimit() {
         val repo=streamRepository(Triple(720,"","https://example.com/legacy"),Triple(1080,"bytevc1","https://example.com/hevc"))
         assertEquals("720P",repo.stream("123",720).quality)

@@ -29,7 +29,8 @@ class PlaybackSourceCoordinator(
         maxQuality: Int,
         playback: PlaybackProfile,
         queue: List<String> = emptyList(),
-    ): StreamInfo = repository.stream(episodeId,maxQuality,playback,queue)
+        direct: Boolean = false,
+    ): StreamInfo = repository.stream(episodeId,maxQuality,playback,queue,direct)
 
     /**
      * 准备一份可挂到播放器的源。
@@ -58,10 +59,11 @@ class PlaybackSourceCoordinator(
         maxQuality: Int,
         playback: PlaybackProfile,
         queue: List<String> = emptyList(),
+        direct: Boolean = false,
         beforePrepare: ((RemoteVideo) -> Unit)? = null,
     ): RemoteVideo = prepare(
         episodeId,
-        stream(episodeId,maxQuality,playback,queue),
+        stream(episodeId,maxQuality,playback,queue,direct),
         beforePrepare,
     )
 

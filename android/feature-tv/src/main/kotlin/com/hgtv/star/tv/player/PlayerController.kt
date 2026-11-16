@@ -93,8 +93,10 @@ fun TvMainActivity.playEpisode(
     prepared: RemoteVideo?=null,
     keepMedia: Boolean=false,
     clearDanmakuOnSwitch: Boolean=false,
+    direct: Boolean=true,
 ) {
     val data=detail ?: return
+    val directRequest=direct && !recovering
     // 用户主动换集 / 手动重来会开启新一轮起播；上一轮排着的自动重试必须先作废。
     // 已经进入取地址阶段的旧请求由下面的 work() 统一 cancelWork() 取消。
     if(!recovering) cancelRecovery()
@@ -137,7 +139,7 @@ fun TvMainActivity.playEpisode(
     // 正式播放页先用 player 场景取当前集 + 后 5 集；更远的集在首帧稳定后 preload。
     // 推荐页的 6 个模型在起播 READY 后单独预取，
     // 窗口是「当前剧下一集 + 后 5 部不同剧」，不能混进这里。
-    val modelQueue=if(recommendEntry) emptyList() else data.episodes.drop(selectedIndex+1).take(5)
+    val modelQueue=if(recommendEntry || directRequest) emptyList() else data.episodes.drop(selectedIndex+1).take(5)
     // 队列里正好挂着这一集（用户自己按了「下一集」、或点选集切到下一集）：
     // 把它接过来当预热结果，省掉一次取地址。注意队列里那一项是「播完自动推进」用的，
     // 这里要从头重放，所以仍然要重挂一次源，只是不再走网络。
@@ -403,6 +405,7 @@ fun TvMainActivity.playEpisode(
                             maxQuality,
                             detail?.playback ?: com.hgtv.star.core.PlaybackProfile(),
                             queue=modelQueue,
+                            direct=directRequest,
                         )
                     }
                 }
@@ -628,6 +631,7 @@ fun TvMainActivity.playEpisode(
                         playEpisode(
                             episodeIndex+1,
                             autoplay=requestedAutoplay,
+                            direct=false,
                         )
                     }
                     else if(continuous && detail?.let { episodeIndex>=it.episodes.lastIndex }==true) {
@@ -693,7 +697,7 @@ fun TvMainActivity.playEpisode(
                         cancelPrefetch()
                         dropQueuedEpisode()
                         forceRetirePrevious()
-                        playEpisode(next,0,requestedAutoplay)
+                        playEpisode(next,0,requestedAutoplay,direct=false)
                     }
                     return
                 }
@@ -844,7 +848,7 @@ fun TvMainActivity.playEpisode(
         if(deviceRejectionOf(problem) && healDeviceIdentity("播放被拒") {
                 // 用**这一次**请求的起点重来（不是上一轮的 `retryPosition`）：
                 // 自愈发生在取地址阶段，播放器还没起来，位置只能从入参拿。
-                playEpisode(episodeIndex,position.coerceAtLeast(0),autoplay)
+                playEpisode(episodeIndex,position.coerceAtLeast(0),autoplay,direct=directRequest)
             }) return@work
         playerFailure(problem)
     })

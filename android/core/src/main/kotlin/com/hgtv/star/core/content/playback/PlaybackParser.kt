@@ -40,6 +40,33 @@ internal object ContentPlaybackParser {
     }
 
     /**
+     * 用户主动点集时使用的单集播放模型请求。
+     *
+     * 与后台批量预取分开：只带当前这一集，`device_level=1` 优先拿平台可解码资源，
+     * 并关闭服务端 DNS 场景，尽量缩短用户等待的首个往返。
+     */
+    fun directModelBody(id: String, playback: PlaybackProfile): String {
+        val biz=JSONObject()
+            .put("detail_page_version",0)
+            .put("device_level",ContentRepository.DIRECT_DEVICE_LEVEL)
+            .put("disable_digg_stat",false)
+            .put("disable_video_relate_book",false)
+            .put("need_all_video_definition",true)
+            .put("need_mp4_align",false)
+            .put("use_os_player",false)
+            .put("use_server_dns",false)
+            .put("video_platform",1024)
+        return JSONObject()
+            .put("biz_param",biz)
+            .put("dr_scene","player")
+            .put("mixed_video_id_map",JSONObject().put(
+                playback.contentType.toString(),
+                JSONArray().put(id),
+            ))
+            .toString()
+    }
+
+    /**
      * 一次播放模型请求的 body。
      *
      * `biz_param` 必须是**对象**，不是序列化后的字符串。
@@ -111,28 +138,45 @@ internal object ContentPlaybackParser {
         else -> emptyList()
     }
 
-    fun parseStreamInfo(model: JSONObject,info: JSONObject,maxQuality: Int): StreamInfo {
-        val videoList=info.optJSONObject("video_list") ?: throw IOException("没有可用清晰度")
+    /** 播放模型自身已经带 `video_list` 时直接解析，避免再请求一次 `fallback_api`。 */
+    fun parseInlineStreamInfo(model: JSONObject,maxQuality: Int): StreamInfo? =
+        parseStreamInfoOrNull(model,model,model.opt("video_list"),maxQuality)
+
+    fun parseStreamInfo(model: JSONObject,info: JSONObject,maxQuality: Int): StreamInfo =
+        parseStreamInfoOrNull(model,info,info.opt("video_list"),maxQuality)
+            ?: throw IOException("没有电视可播放的清晰度，请稍后再试或选择其他剧集")
+
+    private fun parseStreamInfoOrNull(
+        model: JSONObject,
+        info: JSONObject,
+        rawVideoList: Any?,
+        maxQuality: Int,
+    ): StreamInfo? {
         // 只留 **HEVC** 的档位（全站只有这一种编码）。
-        val candidates=videoList.keys().asSequence().mapNotNull { k -> videoList.optJSONObject(k)?.let { k to it } }
-            .filter { (k,o) ->
-                o.str("main_url").isNotEmpty() && ContentRepository.isHevcCodec(o.str("codec_type"),k)
-            }
-            .map { (k,o) -> ContentRepository.qualityOf(o,k) to o }
-            .filter { it.first>0 }
-            .sortedByDescending { it.first }
-            .toList()
-        if(candidates.isEmpty()) throw IOException("没有电视可播放的清晰度，请稍后再试或选择其他剧集")
+        val candidates=videoEntries(rawVideoList).mapNotNull { (key,o) ->
+            val meta=o.optJSONObject("video_meta")
+            val codec=listOf(
+                o.str("codec_type"),
+                o.str("gear_des_key"),
+                meta?.str("codec_type").orEmpty(),
+            ).joinToString(" ").lowercase()
+            if(!isHevcCodec(codec,key)) return@mapNotNull null
+            val quality=qualityOf(o,meta,key)
+            if(quality<=0) return@mapNotNull null
+            quality to VideoCandidate(o,meta,quality)
+        }.sortedByDescending { it.first }
+        if(candidates.isEmpty()) return null
         // 选档：上限内取最高的一档；一档都不满足上限时取**最低**的一档（向上兼容），
         // 并在标签上写清「兼容资源」，界面据此提示。
         val affordable=candidates.filter { it.first<=maxQuality }
         val selected=affordable.firstOrNull() ?: candidates.last()
-        val quality=selected.first; val item=selected.second
+        val quality=selected.first; val candidate=selected.second; val item=candidate.row; val meta=candidate.meta
         val seed=info.str("key_seed").ifEmpty { model.str("key_seed") }
         val seedBytes=seed.takeIf { it.isNotEmpty() }?.let(::decode64)
         val urls=linkedSetOf<String>()
         listOf(
             item.opt("main_url"),
+            item.opt("play_url"),
             item.opt("backup_url"),
             item.opt("backup_url_1"),
             item.opt("backup_url_2"),
@@ -149,11 +193,17 @@ internal object ContentPlaybackParser {
                 }
             }
         }
-        val url=urls.firstOrNull() ?: throw IOException("播放地址无效")
-        val key=item.str("spade_a").takeIf { it.isNotEmpty() }?.let(MediaCrypto::deriveKey)
+        val url=urls.firstOrNull() ?: return null
+        val encryption=item.optJSONObject("encrypt_info")
+        val key=encryption?.str("spade_a").orEmpty()
+            .ifEmpty { item.str("spade_a") }
+            .takeIf { it.isNotEmpty() }?.let(MediaCrypto::deriveKey)
+        if(encryption!=null && key==null && encryption.opt("encrypt") !in listOf(false,0,"0","false")) {
+            return null
+        }
         val label="${quality}P"+(if(quality>maxQuality) "（兼容资源）" else "")
-        val videoWidth=item.str("vwidth").toIntOrNull()?.takeIf { it>0 } ?: 0
-        val videoHeight=item.str("vheight").toIntOrNull()?.takeIf { it>0 } ?: 0
+        val videoWidth=dimension(item,meta,"vwidth","width")
+        val videoHeight=dimension(item,meta,"vheight","height")
         return StreamInfo(
             url=url,
             key=key,
@@ -165,5 +215,53 @@ internal object ContentPlaybackParser {
             videoWidth=videoWidth,
             videoHeight=videoHeight,
         )
+    }
+
+    private data class VideoCandidate(
+        val row: JSONObject,
+        val meta: JSONObject?,
+        val quality: Int,
+    )
+
+    private fun videoEntries(raw: Any?): List<Pair<String,JSONObject>> = when(raw) {
+        is JSONObject -> raw.keys().asSequence().mapNotNull { key ->
+            raw.optJSONObject(key)?.let { key to it }
+        }.toList()
+        is JSONArray -> (0 until raw.length()).mapNotNull { index ->
+            raw.optJSONObject(index)?.let { "" to it }
+        }
+        else -> emptyList()
+    }
+
+    private fun qualityOf(row: JSONObject,meta: JSONObject?,key: String): Int {
+        ContentRepository.qualityNumber(
+            row.str("quality_desc").ifEmpty { meta?.str("definition").orEmpty() },
+        ).takeIf { it>0 }?.let { return it }
+        val width=dimension(row,meta,"vwidth","width")
+        val height=dimension(row,meta,"vheight","height")
+        if(width>0 && height>0) {
+            ContentRepository.qualityNumber(minOf(width,height).toString()).takeIf { it>0 }?.let { return it }
+        }
+        if(height>0) ContentRepository.qualityNumber(height.toString()).takeIf { it>0 }?.let { return it }
+        ContentRepository.qualityNumber(row.str("height")).takeIf { it>0 }?.let { return it }
+        ContentRepository.qualityNumber(row.str("quality")).takeIf { it>0 }?.let { return it }
+        return ContentRepository.qualityNumber(key)
+    }
+
+    private fun dimension(row: JSONObject,meta: JSONObject?,vararg keys: String): Int {
+        for(key in keys) {
+            row.str(key).toIntOrNull()?.takeIf { it>0 }?.let { return it }
+            meta?.str(key)?.toIntOrNull()?.takeIf { it>0 }?.let { return it }
+        }
+        return 0
+    }
+
+    private fun isHevcCodec(label: String,key: String): Boolean {
+        val value=label.lowercase()
+        if(listOf("bytevc2","bvc2","h264","avc","avc1","h263","vp9","av01","mp4v-es").any { value.contains(it) }) {
+            return false
+        }
+        if(listOf("bytevc1","hevc","h265","hvc1","hev1").any { value.contains(it) }) return true
+        return ContentRepository.isHevcCodec("",key)
     }
 }

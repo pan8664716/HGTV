@@ -354,11 +354,11 @@ android/
 | `ContentPrimaryIdentity.kt` | 当前唯一的主身份快照。 | class ContentPrimaryIdentity、fun ContentRepository.primaryIdentity、fun ContentRepository.recommendationValues |
 | `ContentRelated.kt` | 取「相关作品」那一栏的原始条目。 | fun ContentRepository.relatedRows |
 | `ContentRelationFacade.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentRelationFacade 主要包含 fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame。 | fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame |
-| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile |
+| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态；保留主动点集的 1 档直连常量。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile、DIRECT_DEVICE_LEVEL |
 | `ContentSearchFacade.kt` | 搜索提示词（联想词）：App 搜索框用的那个接口。 | fun ContentRepository.suggestions、fun ContentRepository.webSuggestions、fun ContentRepository.hotSearches |
 | `ContentSearchResultsFacade.kt` | 只搜一种内容类型：联调探针仍可显式指定 tab_type。 | fun ContentRepository.search、fun ContentRepository.webSearch |
 | `ContentSigning.kt` | 同一套业务参数与设备参数，只换接口域名后重签。 | fun ContentRepository.resignForHost、fun ContentRepository.alternateApiHosts、fun ContentRepository.urlWithHost |
-| `ContentStreamFacade.kt` | 取一集的播放地址。 | fun ContentRepository.stream、fun ContentRepository.forgetStream、fun ContentRepository.forgetStreamAllQualities、fun ContentRepository.rotateDeviceForRetry |
+| `ContentStreamFacade.kt` | 取一集的播放地址，并区分主动点集的直连参数与后台兼容路径。 | fun ContentRepository.stream、fun ContentRepository.forgetStream、fun ContentRepository.forgetStreamAllQualities、fun ContentRepository.rotateDeviceForRetry |
 | `ContentTextFacade.kt` | 出品方：把接口给的 copyright 归一成能直接显示的名字。 | fun ContentRepository.publisher、fun ContentRepository.tagsOf |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/crypto/`
@@ -542,9 +542,9 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PlaybackModelService.kt` | 取一集的播放模型（video_model）。 | — |
-| `PlaybackParser.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 PlaybackParser 主要包含 object ContentPlaybackParser。 | object ContentPlaybackParser |
-| `StreamCacheService.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 StreamCacheService 主要包含 class ContentRepositoryStreamCacheEntry。 | class ContentRepositoryStreamCacheEntry |
+| `PlaybackModelService.kt` | 取一集的播放模型；用户主动点集走单集 1 档直连，自动连播和后台预取保留批量兼容路径。 | — |
+| `PlaybackParser.kt` | 播放模型、单集直连请求体、内联 / fallback 清晰度解析；同时兼容对象与数组形态的 `video_list`。 | object ContentPlaybackParser |
+| `StreamCacheService.kt` | 播放地址内存 / 落盘缓存与取流；先解析模型内联 `video_list`，缺失时才请求 `fallback_api`。 | class ContentRepositoryStreamCacheEntry |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/recommend/`
 
@@ -934,7 +934,7 @@ android/
 | `PlaybackRecovery.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackRecovery 主要包含 fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery、fun TvMainActivity.scheduleRecovery、fun playbackMediaKind |
 | `PlaybackSurfaceBuilder.kt` | 重建电视播放器 surface 与覆盖层；推荐页重建时补挂中心 loading，避免黑场空档。 | fun TvMainActivity.buildPlaybackSurface |
 | `PlayerActions.kt` | 播放设置面板**第一行那排动作**（相关剧集 / 作者作品 / 加入收藏 / 查看简介）的实现。 | fun TvMainActivity.showPlayerRelated、fun TvMainActivity.showPlayerAuthorWorks、fun TvMainActivity.showPlayerWorksStrip、fun TvMainActivity.refreshStripData、fun TvMainActivity.showPlayerIntro、fun TvMainActivity.playerFavoriteLabel |
-| `PlayerController.kt` | 电视播放起播内核，负责换集、播放源设置、播放器监听和播放页面装配；推荐换作的黑场只认本轮新片源首帧 / 新帧心跳，并等视频宽高和画面布局就绪后淡出。 | fun TvMainActivity.loadDanmaku、fun TvMainActivity.playEpisode、fun TvMainActivity.scheduleRecommendAfterFirstFrame |
+| `PlayerController.kt` | 电视播放起播内核，负责换集、播放源设置、播放器监听和播放页面装配；用户主动点集传直连标记，自动连播与恢复保持批量路径。 | fun TvMainActivity.loadDanmaku、fun TvMainActivity.playEpisode、fun TvMainActivity.scheduleRecommendAfterFirstFrame |
 | `PreloadController.kt` | 推荐页的「双向滑动预加载」编排：窗口与规则在 core/SlideCache.kt（纯逻辑、有单测），这里负责取详情、取地址、解析索引、拉首块和让路；低配电视首帧先准备最近一部，再自动续补其余目标，预热详情不补作者。 | fun TvMainActivity.preloadGateOpen、val PRELOAD_MAX_TARGETS、fun TvMainActivity.cancelScheduledPreload、fun TvMainActivity.scheduleRecommendPreload、fun TvMainActivity.scheduleRecommendDwell、fun TvMainActivity.preloadScheduler、fun TvMainActivity.applyRecommendPlan |
 | `RelatedPanel.kt` | 播放界面底部的「换一部接着看」浮层。 | class RelatedPanel |
 | `TvDanmakuClock.kt` | 把播放器的当前状态采样给弹幕层。 | fun TvMainActivity.syncDanmakuClock |
@@ -1031,7 +1031,7 @@ android/
 | `PlaybackPower.kt` | 播放期间的**电源与网络保活**。 | class PlaybackPower |
 | `PlaybackProgressTracker.kt` | 播放进度采样与落盘节拍。 | class PlaybackProgressTracker |
 | `PlaybackSession.kt` | 播放行为的共享门面。 | class PlaybackSession |
-| `PlaybackSourceCoordinator.kt` | TV / Phone 共用的播放源获取门面。 | class PlaybackSourceCoordinator |
+| `PlaybackSourceCoordinator.kt` | TV / Phone 共用的播放源获取门面，透传主动点集的直连参数。 | class PlaybackSourceCoordinator |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/compat/`
 

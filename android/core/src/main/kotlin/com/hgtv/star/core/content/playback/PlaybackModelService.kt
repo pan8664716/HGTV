@@ -21,6 +21,7 @@ import java.util.concurrent.TimeUnit
         id: String,
         playback: PlaybackProfile,
         queue: List<String> = emptyList(),
+        direct: Boolean = false,
     ): JSONObject {
         // TNC 下发候选域名；最近成功的排第一。每条实际请求独立 20 秒，候选之间不共享超时。
         val hosts=TncConfigStore.orderedApiHosts().take(AppConfig.Content.MODEL_HOST_ATTEMPTS)
@@ -44,7 +45,8 @@ import java.util.concurrent.TimeUnit
         // 各发一轮就是三份并发（见下面的单飞闸门）。缓存很短（[MODEL_CACHE_MS]），
         // 地址本身小时级有效，这里只是用来把「同一刻的重复请求」合并掉。
         // 键里带播放档案、[deviceLevel] 与 [modelCacheGen]：不同类型 / 平台不能复用模型。
-        cachedModel(id,playback)?.let { return it }
+        val requestLevel=if(direct) ContentRepository.DIRECT_DEVICE_LEVEL else deviceLevel
+        cachedModel(id,playback,requestLevel)?.let { return it }
         // **进程级单飞**：这条接口对并发极敏感（20 并发 0 命中、单发 50~80% 命中），
         // 而点一次播放就可能同时存在主实例 / 预取实例 / 推荐页预热实例三份请求。
         // 因此整个取地址段串行化：后来的等前一个结束，然后再查一次上面那份缓存。
@@ -60,7 +62,33 @@ import java.util.concurrent.TimeUnit
                 throw addressTimeout()
             }
             try {
-                cachedModel(id,playback)?.let { return it }
+                cachedModel(id,playback,requestLevel)?.let { return it }
+                if(direct) {
+                    val host=hosts.firstOrNull { it.isNotBlank() } ?: "api5-normal-sinfonlinea.fqnovel.com"
+                    try {
+                        val model=probeModelPath(
+                            "https://$host",
+                            ContentRepository.PLAYER_MODEL_PATH,
+                            id,
+                            cookie,
+                            playback,
+                            bodyOverride=ContentPlaybackParser.directModelBody(id,playback),
+                            requestLevel=ContentRepository.DIRECT_DEVICE_LEVEL,
+                            allowLevelEscalation=false,
+                            rejectDeviceOnBlank=false,
+                            stage="model-direct",
+                        )
+                        rememberModel(id,playback,model,level=ContentRepository.DIRECT_DEVICE_LEVEL)
+                        TncConfigStore.markHostSuccess(host)
+                        NetLog.emit("model direct host=$host accepted level=${ContentRepository.DIRECT_DEVICE_LEVEL}")
+                        return model
+                    } catch(e: DeviceNotRegisteredException) {
+                        throw e
+                    } catch(e: IOException) {
+                        // 直连是前台加速路径；失败时仍回落到既有批量 / 兼容路径，不牺牲可播性。
+                        NetLog.emit("model direct host=$host fallback ${e.javaClass.simpleName}")
+                    }
+                }
                 // 播放器打开取当前集 + 后 14 集：官方同一批可返回 15 个模型，
                 // 覆盖短剧常见的快速跳到第 8 / 15 集，避免第二次请求撞设备额度。
                 // 更远的集交给首帧稳定后的 preload。
@@ -82,7 +110,7 @@ import java.util.concurrent.TimeUnit
                             cookie,
                             playback,
                         )
-                        rememberModels(models,playback)
+                        rememberModels(models,playback,deviceLevel)
                         batchModel=models[id]
                         if(batchModel!=null) {
                             TncConfigStore.markHostSuccess(host)
@@ -99,7 +127,7 @@ import java.util.concurrent.TimeUnit
                 }
                 if(batchModel!=null) return batchModel
                 val model=fetchModel(id,scope,ordered,hosts,cookie,playback)
-                rememberModel(id,playback,model)
+                rememberModel(id,playback,model,level=deviceLevel)
                 return model
             } finally {
                 gate.release()
@@ -110,12 +138,12 @@ import java.util.concurrent.TimeUnit
     }
 
     /** 播放模型的合并缓存键：集 + 播放档案 + 当前档位 + 身份代次（见 [videoModelImpl]）。 */
-    private fun ContentRepository.modelCacheKey(id: String,playback: PlaybackProfile)=
-        "$id@${playback.contentType}:${playback.videoPlatform}@$deviceLevel@g${ContentRepository.modelCacheGen}"
+    private fun ContentRepository.modelCacheKey(id: String,playback: PlaybackProfile,level: Int)=
+        "$id@${playback.contentType}:${playback.videoPlatform}@$level@g${ContentRepository.modelCacheGen}"
 
-    private fun ContentRepository.cachedModel(id: String,playback: PlaybackProfile): JSONObject? {
+    private fun ContentRepository.cachedModel(id: String,playback: PlaybackProfile,level: Int): JSONObject? {
         if(modelCacheTtl<=0L) return null
-        val key=modelCacheKey(id,playback)
+        val key=modelCacheKey(id,playback,level)
         val cached=modelCache[key] ?: return null
         if(System.currentTimeMillis()-cached.first<=modelCacheTtl) return cached.second
         modelCache.remove(key)
@@ -126,20 +154,25 @@ import java.util.concurrent.TimeUnit
         id: String,
         playback: PlaybackProfile,
         model: JSONObject,
+        level: Int,
         at: Long = System.currentTimeMillis(),
     ) {
         if(modelCacheTtl<=0L) return
-        val key=modelCacheKey(id,playback)
+        val key=modelCacheKey(id,playback,level)
         if(modelCache.size>=ContentRepository.MODEL_CACHE_LIMIT && !modelCache.containsKey(key)) {
             modelCache.minByOrNull { it.value.first }?.key?.let(modelCache::remove)
         }
         modelCache[key]=at to model
     }
 
-    private fun ContentRepository.rememberModels(models: Map<String,JSONObject>,playback: PlaybackProfile) {
+    private fun ContentRepository.rememberModels(
+        models: Map<String,JSONObject>,
+        playback: PlaybackProfile,
+        level: Int,
+    ) {
         if(models.isEmpty() || modelCacheTtl<=0L) return
         val at=System.currentTimeMillis()
-        models.forEach { (videoId,model) -> rememberModel(videoId,playback,model,at) }
+        models.forEach { (videoId,model) -> rememberModel(videoId,playback,model,level,at) }
     }
 
     /**
@@ -267,8 +300,13 @@ import java.util.concurrent.TimeUnit
         id: String,
         cookie: String?,
         playback: PlaybackProfile,
+        bodyOverride: String? = null,
+        requestLevel: Int = deviceLevel,
+        allowLevelEscalation: Boolean = true,
+        rejectDeviceOnBlank: Boolean = true,
+        stage: String = "model",
     ): JSONObject {
-        val body=ContentPlaybackParser.modelBody(id,path,playback,deviceLevel)
+        val body=bodyOverride ?: ContentPlaybackParser.modelBody(id,path,playback,requestLevel)
         val payload=java.io.ByteArrayOutputStream().also { out ->
             java.util.zip.GZIPOutputStream(out).use { it.write(body.toByteArray()) }
         }.toByteArray()
@@ -306,20 +344,21 @@ import java.util.concurrent.TimeUnit
         ) { r -> stable=r.header("tt_stable")=="1" }
         // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
         if(response.isBlank()) {
-            NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} bytes=0 stable=$stable")
+            NetLog.emit("$stage path=$path type=${playback.contentType}/${playback.videoPlatform} level=$requestLevel id=${profile["device_id"]?.takeLast(6)} bytes=0 stable=$stable")
             // 4 档空响应先升 5 重发一次。若 5 仍为空，再按设备身份失效交给自愈流程。
-            if(deviceLevel<5) {
+            if(allowLevelEscalation && requestLevel<5) {
                 NetLog.retry("model_device_level",2,2,"empty model response at device_level=$deviceLevel")
                 escalateDeviceLevel()
                 return probeModelPath(host,path,id,cookie,playback)
             }
+            if(!rejectDeviceOnBlank) throw IOException("播放信息为空（$stage）")
             noteDeviceRejected()
             invalidateModelCache()
             throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
         }
         val data=JSONObject(response)
         val code=data.optInt("Code",data.optInt("code",0))
-        NetLog.emit("model path=$path type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} bytes=${response.length} code=$code")
+        NetLog.emit("$stage path=$path type=${playback.contentType}/${playback.videoPlatform} level=$requestLevel id=${profile["device_id"]?.takeLast(6)} bytes=${response.length} code=$code")
         // 业务码非 0 就是这一条路不通（110001 是旧路径的「未知异常」，100001 是参数错误）。
         // `101000 服务异常` 正是「这台设备没在服务端注册过」那一条，单独记一笔：
         // 界面层据此换一份身份重注册，而不是让用户看到「所有影片都放不了」。
@@ -436,7 +475,7 @@ import java.util.concurrent.TimeUnit
             .filter { it.matches(Regex("[0-9]{1,30}")) }
             .distinct()
             // preload 只补当前缓存缺口，避免把 player 已经拿到的当前集 / 后 2 集再请求一遍。
-            .filter { cachedModel(it,playback)==null }
+            .filter { cachedModel(it,playback,deviceLevel)==null }
             .take(ContentRepository.PRELOAD_MODEL_LIMIT)
         if(batchIds.isEmpty()) return 0
         val gate=ContentRepository.modelGate
@@ -462,7 +501,7 @@ import java.util.concurrent.TimeUnit
                 )
             }
             if(models.isNotEmpty()) TncConfigStore.markHostSuccess(host)
-            rememberModels(models,playback)
+            rememberModels(models,playback,deviceLevel)
             return models.size
         } finally {
             if(ContentRepository.backgroundModelScope===scope) ContentRepository.backgroundModelScope=null

@@ -394,6 +394,8 @@ class ContentRepository(
         @Volatile internal var modelCacheGen: Int=0
         internal const val MODEL_CACHE_MS=PlaybackCache.URL_FRESH_MS
         internal const val PLAYER_MODEL_PATH="/novel/player/multi_video_model/player/v1"
+        /** 用户主动点集时固定请求的兼容档位；后台批量仍使用 [deviceLevel] 的 4 / 5。 */
+        internal const val DIRECT_DEVICE_LEVEL=1
         internal const val PLAYER_MODEL_BATCH_LIMIT=AppConfig.Playback.PLAYER_MODEL_BATCH_LIMIT
         internal const val BATCH_MODEL_PATH="/novel/player/multi_video_model/preload/v1"
         internal const val PRELOAD_MODEL_LIMIT=AppConfig.Playback.PRELOAD_MODEL_LIMIT

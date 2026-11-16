@@ -755,7 +755,7 @@ fun TvMainActivity.enterNextSeason(next: Detail) {
     nextSeasonFinishedFor=""
     detail=next
     requestedAutoplay=true
-    playEpisode(0,0,autoplay=true)
+    playEpisode(0,0,autoplay=true,direct=false)
 }
 
 private fun TvMainActivity.finishSeriesPlayback(series: Series) {

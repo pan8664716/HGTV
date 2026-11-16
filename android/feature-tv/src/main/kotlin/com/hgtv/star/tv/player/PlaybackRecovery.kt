@@ -62,7 +62,7 @@ fun TvMainActivity.refetchAddressOnNetwork() {
         "Network restored while fetching address; refetching episode=${episodeIndex+1} at=${startPosition}ms"
     )
     generation++; cancelWork()
-    playEpisode(episodeIndex,startPosition.coerceAtLeast(0),requestedAutoplay)
+    playEpisode(episodeIndex,startPosition.coerceAtLeast(0),requestedAutoplay,direct=false)
 }
 fun TvMainActivity.currentPosition(): Long = pendingSeek ?: player?.currentPosition?.takeIf { playbackReady } ?: startPosition
 fun TvMainActivity.cancelRecovery() {
