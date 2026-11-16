@@ -5210,3 +5210,16 @@ feature-tv/
   `:app:assembleDebug` 通过；未改版本号、versionCode 或依赖。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## 局域网同步数值范围校验修复
+
+状态：已修复，debug 构建通过，待用户真机验证。
+
+- 根因：局域网同步复用 `LibraryBackup.decode`，但该解码器把 `homeColumns` 的合法上限
+  写成 6、把 `gridColumns` 的合法上限写成 2；设置页实际允许首页 4..8 列、手机 1..3 列。
+  同步源设置为 7/8 列或 3 列时，接收端会以“数值范围无效”拒绝整份同步包。
+- 修复：解码校验上限与设置页、落盘范围对齐，`homeColumns` 接受 4..8，
+  `gridColumns` 接受 1..3；其他字段的校验和同步合并逻辑不变。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。

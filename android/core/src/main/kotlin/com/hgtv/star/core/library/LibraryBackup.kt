@@ -125,7 +125,7 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      */
     val searchSource: SearchSource=SearchSource.APP,
     /**
-     * 每一行放几张卡片：4 / 5 / 6（默认 6，与旧版一致），全局生效。
+     * 每一行放几张卡片：4..8（默认 6，与旧版一致），全局生效。
      *
      * 后加字段：旧备份没有它，读回来按 6 处理。
      */
@@ -415,8 +415,8 @@ object LibraryBackup {
         val seekStep=settings.optInt("seekStep",10).coerceIn(2,20)
         // 搜索源同样是后加字段：旧备份没有它，按 App 处理。
         val searchSource=SearchSource.fromStored(settings.optString("searchSource").takeIf { settings.has("searchSource") })
-        // 首页每行卡片数也是后加字段：只接受 4 / 5 / 6，旧备份与坏值都按 6 处理。
-        val homeColumns=if(settings.has("homeColumns")) settings.number("homeColumns",6).toInt().coerceIn(4,8) else 6
+        // 首页每行卡片数也是后加字段：设置页允许 4..8，旧备份与坏值都按 6 处理。
+        val homeColumns=if(settings.has("homeColumns")) settings.number("homeColumns",8).toInt().coerceIn(4,8) else 6
         // 播放显示四项与画面缩放：后加字段，旧备份没有它们时按默认值处理
         // （四项全关、画面 100%）。旧备份没有这几个键 = 新装的默认状态。
         val playerTitle=settings.optBoolean("playerTitle",false)
@@ -436,8 +436,8 @@ object LibraryBackup {
         // 「返回顶部」浮层的显隐方式：后加字段，旧备份没有它、或值不在四档里，
         // 都按「始终显示」处理（正是加这一项之前的行为）。
         val backToTop=settings.optString("backToTop",BACK_TO_TOP_DEFAULT).takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT
-        // 手机列表每行基准列数：后加字段，旧备份没有它时按 2 处理；坏值夹进 1..3。
-        val gridColumns=if(settings.has("gridColumns")) settings.number("gridColumns",2).toInt().coerceIn(1,3) else 2
+        // 手机列表每行基准列数：后加字段，旧备份没有它时按 2 处理；合法范围 1..3。
+        val gridColumns=if(settings.has("gridColumns")) settings.number("gridColumns",3).toInt().coerceIn(1,3) else 2
         // 推荐页左右滑动切换：后加字段，旧备份没有它时按开启处理（与之前的行为一致）。
         val recommendSwipe=settings.optBoolean("recommendSwipe",true)
         // 导航栏圆形入口：逐个开关，值是被隐藏的那些 key；旧备份没有这个字段 = 全部显示。

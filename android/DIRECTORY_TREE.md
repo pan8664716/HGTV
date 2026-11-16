@@ -398,7 +398,7 @@ android/
 | --- | --- | --- |
 | `HistoryReconcile.kt` | 本机进度与账号历史的**对账**（电视端与手机端共用一份，纯计算、可单测）。 | object HistoryReconcile |
 | `LatestWriteQueue.kt` | Serial persistence with one pending value per key; serialization belongs inside write. | class LatestWriteQueue |
-| `LibraryBackup.kt` | 首页七栏的 key：本机记录三栏（历史记录 / 我的收藏 / 稍后观看）+ 榜单四栏（热播漫剧 / 热播真人 / 热播AI / 推荐榜，key 形如 rank-comic）。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT |
+| `LibraryBackup.kt` | 本机记录备份的编码、解码、范围校验与局域网同步数据校验；首页栏位 key 和设置默认值也在这里。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT、object LibraryBackup |
 | `LibraryIndex.kt` | Main-thread-owned library. JSON is parsed once, and getters never parse or sort. | class LibraryIndex、object LibraryDisk |
 | `LibraryTransferServer.kt` | Short-lived LAN transfer. Uploaded records are validated here, but only the TV may apply them. | class LibraryTransferServer |
 | `LruPut.kt` | 往定长 LRU 里写一条：写完把最久没用过的那条挤出去。 | fun LinkedHashMap |
