@@ -38,7 +38,11 @@ internal fun PhoneFeedView.initializeFeed() {
             if (index >= 0 && index != feedPlayingIndex) {
                 playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
             }
-            if (index >= feedItems.size - 3) loadMore()
+            if (index >= 0 &&
+                com.hgtv.star.shared.feed.RecommendFeedPolicy.shouldPrefetch(
+                    feedItems.size - index - 1,
+                )
+            ) loadMore()
         }
     })
     addView(

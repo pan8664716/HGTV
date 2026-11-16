@@ -477,10 +477,10 @@ object AppConfig {
      */
     object Recommend {
         /** 推荐首屏请求条数。 */
-        const val FIRST_LIMIT = 60
+        const val FIRST_LIMIT = 20
 
         /** 推荐后续页请求条数。 */
-        const val PAGE_LIMIT = 60
+        const val PAGE_LIMIT = 20
 
         /** 单次加载最多连续处理多少页，防止空页链无限循环。 */
         const val MAX_PAGES_PER_LOAD = 3
@@ -506,8 +506,11 @@ object AppConfig {
         /** 推荐流连续播放失败多少条后停止自动翻页。 */
         const val SKIP_LIMIT = 4
 
+        /** 一页 20 条时，剩余约三分之一（7 条）即开始预取下一页。 */
+        const val PREFETCH_REMAINING = 7
+
         /** 当前卡片之后预留多少条，用于快速翻页和预取。 */
-        const val LOOKAHEAD = 10
+        const val LOOKAHEAD = PREFETCH_REMAINING
 
         /** 推荐页最多保留多少份已准备播放结果。 */
         const val PREPARED_LIMIT = 8

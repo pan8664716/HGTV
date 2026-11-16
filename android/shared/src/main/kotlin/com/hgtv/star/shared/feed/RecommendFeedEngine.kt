@@ -340,6 +340,7 @@ data class RecommendFeedPolicy(
     val maxPagesPerLoad: Int = AppConfig.Recommend.MAX_PAGES_PER_LOAD,
     val maxRestarts: Int = AppConfig.Recommend.MAX_RESTARTS,
     val maxRequestsPerLoad: Int = AppConfig.Recommend.MAX_REQUESTS_PER_LOAD,
+    val prefetchRemaining: Int = AppConfig.Recommend.PREFETCH_REMAINING,
     val deepCursor: Int = Int.MAX_VALUE,
     val firstBudgetMs: Long = Long.MAX_VALUE,
     val quickFilterFailureMs: Long = Long.MAX_VALUE,
@@ -352,6 +353,9 @@ data class RecommendFeedPolicy(
         if(supportsHorizontalOnly && horizontalOnly) "$cacheNamespace-horizontal"
         else cacheNamespace
 
+    /** 当前页还剩多少条时补下一页；20 条一页时等价于消费约 2/3 后预取。 */
+    fun shouldPrefetch(remaining: Int): Boolean = remaining <= prefetchRemaining
+
     companion object {
         /** TV 与 Phone 共用的推荐加载节奏。 */
         const val FIRST_LIMIT = AppConfig.Recommend.FIRST_LIMIT
@@ -362,6 +366,9 @@ data class RecommendFeedPolicy(
         const val FIRST_BUDGET_MS = AppConfig.Recommend.FIRST_BUDGET_MS
         const val QUICK_FILTER_FAILURE_MS = AppConfig.Recommend.QUICK_FILTER_FAILURE_MS
         const val MIN_ITEMS_PER_LOAD = AppConfig.Recommend.MIN_ITEMS_PER_LOAD
+        const val PREFETCH_REMAINING = AppConfig.Recommend.PREFETCH_REMAINING
+
+        fun shouldPrefetch(remaining: Int): Boolean = remaining <= PREFETCH_REMAINING
 
         /**
          * 两端差异只有推荐流命名空间和 TV 的横屏请求能力位：Phone 按体裁拆流，
@@ -374,6 +381,7 @@ data class RecommendFeedPolicy(
             pageLimit = PAGE_LIMIT,
             maxPagesPerLoad = MAX_PAGES_PER_LOAD,
             maxRestarts = MAX_RESTARTS,
+            prefetchRemaining = PREFETCH_REMAINING,
             deepCursor = DEEP_CURSOR,
             firstBudgetMs = FIRST_BUDGET_MS,
             quickFilterFailureMs = QUICK_FILTER_FAILURE_MS,

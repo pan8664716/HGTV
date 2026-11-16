@@ -5439,3 +5439,17 @@ feature-tv/
   `:core:test` 从干净 HEAD 基线的 29 项失败降到 27 项，剩余均为既有设备身份 / 测试夹具失败。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## 推荐流每页 20 条与 2/3 预取
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 推荐首屏和后续补页统一请求 20 条，不再一次请求 60 条。
+- 当前列表剩余 7 条（20 条约消费 2/3）时提前取下一页；TV 在用户切换作品后检查，
+  Phone 在信息流滑动到对应位置时检查。
+- 共享 `RecommendFeedPolicy` 提供 `shouldPrefetch(remaining)`，两端不再各自写死
+  “剩 3 条”或 10 条窗口。
+- 新增 `RecommendFeedPolicyTest` 覆盖 20 条请求和剩余 7 条预取边界。
+- `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖，未推送。
+
+回滚：对本节对应提交执行 `git revert`。

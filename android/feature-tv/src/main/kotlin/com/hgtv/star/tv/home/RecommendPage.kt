@@ -50,8 +50,7 @@ internal const val RECOMMEND_MAX_CHAIN=com.hgtv.star.shared.feed.RecommendFeedPo
 /**
  * 首屏一次要多少条。
  *
- * 与 20 条同一个价（940ms vs 780ms），但候选是 3 倍：一次就凑出「够新鲜的一页」的概率高得多，
- * 少翻的页数远大于那 160ms。之后补页仍按 20 条。
+ * 首屏和后续补页统一按 20 条请求；首屏预算只负责在弱网时先把已有内容放出来。
  */
 private const val RECOMMEND_FIRST_LIMIT=com.hgtv.star.shared.feed.RecommendFeedPolicy.FIRST_LIMIT
 /**
@@ -65,20 +64,13 @@ internal const val RECOMMEND_FIRST_ITEMS=com.hgtv.star.shared.feed.RecommendFeed
 /**
  * 补页一次要多少条。
  *
- * 同样是 60：一页 20 条与 60 条的耗时只差约 160ms（实测 775ms / 942ms），但「两次补页之间
- * 用户能连刷多少部」直接变成 3 倍。早先 20 条时，一次补页的净新条目只有 13~17 部
- * （补页那 20 条里总有一部分已经刷过 / 同名的被滤掉），于是每刷十几部就撞一次补页——
- * 用户看到的就是「隔十几部黑一下、跳过去一部」。
+ * 每页请求 20 条，避免一次拉太多旧内容，也让游标推进更细。
  */
 private const val RECOMMEND_PAGE_LIMIT=com.hgtv.star.shared.feed.RecommendFeedPolicy.PAGE_LIMIT
 /**
- * 快刷到这一批末尾还剩这么多部时，提前把下一页取回来（[ensureRecommendLookahead]）。
- *
- * 10 部的提前量：连按十几下时用户从第 N-10 部按到第 N 部可能只有 3~5 秒，而一次补页
- * 实测 0.8~2 秒（网络差时更久）——3 部的余量在「快按」时来不及，所以放宽到 10 部。
- * 代价只是一次更早的后台请求，用户感知不到；换来的是按到末尾那一帧已经有内容。
+ * 已消费约 2/3（20 条剩 7 条）时提前取下一页（[ensureRecommendLookahead]）。
  */
-internal const val RECOMMEND_LOOKAHEAD=com.hgtv.star.core.AppConfig.Recommend.LOOKAHEAD
+internal const val RECOMMEND_LOOKAHEAD=com.hgtv.star.shared.feed.RecommendFeedPolicy.PREFETCH_REMAINING
 /**
  * 首屏最多等多久（毫秒）。超过它就不再往下凑「一条重复都没有」，把手里这一页照原样放出来。
  *

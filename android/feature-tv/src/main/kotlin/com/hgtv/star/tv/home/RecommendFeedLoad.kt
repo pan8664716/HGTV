@@ -139,7 +139,7 @@ fun TvMainActivity.loadRecommendPage(
  * 为什么需要：补页是有网络的（实测一页 0.8~2s）。以前只在**按到最后一部**那一下才知道
  * 要补页，于是每一次补页都必然是「停在最后一部 → 黑场 → 等网络 → 跳到下一部」——
  * 用户读到的就是「每隔十几部有一个画面没有播放、被略过」。
- * 提前 [RECOMMEND_LOOKAHEAD]（10）部开始取，等真按到末尾时新条目已经在列表里，
+ * 提前 [RECOMMEND_LOOKAHEAD]（7）部开始取，等真按到末尾时新条目已经在列表里，
  * 切换就是即时的一帧。
  *
  * 只在**用户自己的按键**之后调用（见 `startRecommendEpisode`），不在取页成功里递归调用：
@@ -151,7 +151,9 @@ fun TvMainActivity.ensureRecommendLookahead() {
     // 这里如果立即补，会把新推荐流插到注册、详情、取地址和首帧之间。
     if(recommendRestored) return
     if(recommendItems.isEmpty()) return
-    if(recommendItems.size-recommendIndex-1>RECOMMEND_LOOKAHEAD) return
+    if(!com.hgtv.star.shared.feed.RecommendFeedPolicy.shouldPrefetch(
+            recommendItems.size-recommendIndex-1,
+        )) return
     val now=android.os.SystemClock.elapsedRealtime()
     // 限流 1.5s：连按上下键时每一下都会走到这里，不该每一下都上去要一页。
     if(now-recommendLookaheadAt<1_500L) return
