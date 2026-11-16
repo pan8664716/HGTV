@@ -55,6 +55,12 @@ class RecommendFlowFilterTest {
     }
 
     @Test
+    fun feed_filter_ids_only_uses_the_current_window() {
+        val items = listOf(series("1", "一"), series("2", "二"), series("3", "三"))
+        assertEquals("2,3", RecommendFlow.feedFilterIds(items, limit = 2))
+    }
+
+    @Test
     fun same_id_appearing_twice_in_one_page_is_kept_as_is() {
         // 本函数只按「外部给的集合」过滤，不负责页内去重（服务端偶发同页重复，
         // 由列表层的 id 判断处理）。锁住这一点，避免以后有人顺手加去重改变行为。

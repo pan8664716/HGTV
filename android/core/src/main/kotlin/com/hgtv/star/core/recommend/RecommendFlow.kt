@@ -152,13 +152,27 @@ object RecommendFlow {
         val next = current + 1
         return next to (next >= FILTER_MISS_LIMIT)
     }
+
+    /**
+     * 推荐取页回传的 `filter_ids`：只带当前列表最新的少量 ID。
+     *
+     * 这里不能用曝光窗口：历史 ID 过多时服务端可能把整页过滤空；当前列表足够
+     * 让深游标避开重复卡片，同时请求长度也可控。
+     */
+    fun feedFilterIds(
+        items: List<Series>,
+        limit: Int = AppConfig.Recommend.FILTER_IDS_SENT_LIMIT,
+    ): String = items.map { it.id }
+        .filter { it.isNotBlank() }
+        .takeLast(limit.coerceAtLeast(1))
+        .joinToString(",")
 }
 
 /**
  * 剧级曝光窗口（文档 §6.7 的 `FeedDedup`，只保留它真正需要的两部分）。
  *
  * 一条记录 = `键 @ 失效时刻`。键有两种：
- * * **剧 id**：用于曝光统计和续播选择；兼容调用仍可生成 `filter_ids`；
+ * * **剧 id**：用于曝光统计和续播选择；推荐取页只把当前列表 ID 作为 `filter_ids`；
  * * `#归一化剧名`：只用于本地过滤（同剧不同季 / 同 IP 多版本），服务端不认识这种键。
  *
  * 线程：调用方按需加锁，本类内部每个入口都 `@Synchronized`——`library.recommendSeen()`
@@ -243,8 +257,8 @@ class RecommendMarks(private val limit: Int = RecommendFlow.MARK_LIMIT) {
     }
 
     /**
-     * 兼容旧调用生成 `filter_ids`：最新的 [limit] 条剧 id，逗号分隔。
-     * 推荐取页当前不回传这份列表。
+     * 兼容旧调用生成曝光窗口 `filter_ids`：最新的 [limit] 条剧 id，逗号分隔。
+     * 推荐取页不回传这份曝光窗口，改用 [RecommendFlow.feedFilterIds] 的当前列表。
      *
      * 官方客户端就是这么回传的（文档 §4.4 的 `m6` 那个 LRU 队列）；空串是「不带」，
      * 与旧版请求逐字节一致。

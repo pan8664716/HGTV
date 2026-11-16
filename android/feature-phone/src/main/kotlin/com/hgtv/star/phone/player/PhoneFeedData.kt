@@ -44,7 +44,8 @@ internal fun PhoneFeedView.restoreSnapshot() {
  *
  * * **续流游标落盘**（按体裁分开，见 [com.hgtv.star.core.FeedCursor]）：接口是有状态的，
  *   `session_id` 传空 + `offset=0` 永远回同一套默认列表，于是「每次打开都是这几部」；
- * * 曝光记录不再回传 `filter_ids`，也不再按曝光过的 ID / 剧名删除推荐流卡片；
+ * * 曝光记录不再回传 `filter_ids`；取页只回传当前列表少量 ID 给服务端去重；
+ * * 不再按曝光过的 ID / 剧名删除推荐流卡片；
  * * 仍过滤隐藏、追完和当前列表内已加载的重复项，一页全被滤光就接着取下一页（最多 3 页）；
  * * 游标不前进（服务端把 `next_offset` 钳住）或首屏空页：退回流头重取一次。
  */

@@ -1104,7 +1104,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PreloadScheduler.kt` | 推荐流「相邻预热」的**排程编排**：电视与手机共用这一份。 | class PreloadScheduler |
-| `RecommendFeedEngine.kt` | 推荐流的加载、续流、降级、重排和快照落盘；曝光记录不参与删卡或服务端去重，统一每页 20 条并在剩余约 1/3 时预取，TV 横屏偏好只传服务端。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult |
+| `RecommendFeedEngine.kt` | 推荐流的加载、续流、降级、重排和快照落盘；曝光记录不参与删卡，回传当前列表少量 ID 做深游标去重，统一每页 20 条并在剩余约 1/3 时预取，TV 横屏偏好只传服务端。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult |
 | `RecommendStore.kt` | 推荐流的页面无关状态；按横屏/默认请求模式隔离续流游标，并在条件变化时支持重置。 | class RecommendStore |
 | `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 单集直连地址 → 索引 / 首块；预热详情不补作者，避免占用首帧路径。 | class RecommendWarmCoordinator |
 

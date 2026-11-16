@@ -51,6 +51,8 @@ class RecommendFeedEngine(
         var emptyChain = 0
         var restarts = 0
         var requests = 0
+        var filterFailures = 0
+        var skipFilterOnce = false
         val firstLoadAt = if(input.append) 0L else now()
         val lines = ArrayList<String>(4)
 
@@ -70,7 +72,7 @@ class RecommendFeedEngine(
                     continue
                 }
                 return result(
-                    items, page, hasMore, session, offset, filterMiss, filterIdsOff,
+                    items, page, false, session, offset, filterMiss, filterIdsOff,
                     genderProbe, processedPages, restarts, exhausted = true, lines = lines,
                 )
             }
@@ -91,12 +93,20 @@ class RecommendFeedEngine(
             }
 
             val requestOffset = offset
-            // 曝光窗口不再参与推荐流取数：既不回传 filter_ids，也不在本地删卡。
+            // 只回传当前列表的 ID，不用历史曝光窗口；这样服务端能避开已经展示的
+            // 深游标重复卡，又不会因为上千条历史 ID 把整页过滤空。
+            val filters = if(input.noFilter || filterIdsOff || skipFilterOnce) {
+                ""
+            } else {
+                RecommendFlow.feedFilterIds(items)
+            }
+            skipFilterOnce = false
             val gender = library.recommendGender.ifEmpty { null }
                 .takeIf { !genderFilter.off && !genderProbe }
             genderProbe = false
             val limit = if(input.append) policy.pageLimit else policy.firstLimit
             requests++
+            val startedAt = now()
             val attempt = runCatching {
                 if (!input.append && !input.restored && requests == 1) {
                     StageDeadline("recommend.register", StartupBudgets.REGISTER_MS).use { deadline ->
@@ -115,7 +125,7 @@ class RecommendFeedEngine(
                         offset = requestOffset,
                         limit = limit,
                         genres = input.genres,
-                        filterIds = "",
+                        filterIds = filters,
                         tab = input.tab,
                         horizontalOnly = horizontalOnly,
                     )
@@ -131,8 +141,19 @@ class RecommendFeedEngine(
             }
             if(attempt.isFailure) {
                 val problem = attempt.exceptionOrNull() ?: IllegalStateException("推荐请求失败")
+                val elapsed = now() - startedAt
                 if (problem is com.hgtv.star.core.StageTimeoutException) {
-                    lines += "stage timeout stage=${problem.stage}"
+                    lines += "stage timeout stage=${problem.stage} elapsed=${elapsed}ms"
+                }
+                if(filters.isNotEmpty() && elapsed < policy.quickFilterFailureMs) {
+                    filterFailures++
+                    if(filterFailures >= 2) filterIdsOff = true
+                    skipFilterOnce = true
+                    lines += "filter retry after ${elapsed}ms failures=$filterFailures"
+                    continue
+                }
+                if(filters.isNotEmpty() && policy.disableFilterOnAnyFailure) {
+                    filterIdsOff = true
                 }
                 return result(
                     items, page, hasMore, session, offset, filterMiss, filterIdsOff,
@@ -140,6 +161,18 @@ class RecommendFeedEngine(
                 )
             }
             val feed = attempt.getOrThrow()
+
+            if(filters.isNotEmpty() && feed.page.items.isEmpty()) {
+                val miss = RecommendFlow.noteFilterMiss(filterMiss)
+                filterMiss = miss.first
+                if(miss.second) {
+                    filterIdsOff = true
+                    library.recommendFilterIdsOff = true
+                }
+                lines += "empty page with filter_ids=${filters.length}B"
+                // 不带当前列表过滤重取一次，不把这次算成又翻了一页。
+                continue
+            }
 
             if(feed.page.items.isEmpty() && gender != null && !genderFilter.off) {
                 genderFilter.onEmpty()
@@ -149,6 +182,10 @@ class RecommendFeedEngine(
                 continue
             }
 
+            if(filters.isNotEmpty()) {
+                filterMiss = 0
+                filterFailures = 0
+            }
             if(gender != null && feed.page.items.isNotEmpty()) genderFilter.onFilled()
 
             if(!input.append && feed.page.items.isEmpty() &&
@@ -211,13 +248,15 @@ class RecommendFeedEngine(
             val added = (items.size - before).coerceAtLeast(0)
             lines += "page=$page raw=${feed.page.items.size} kept=${shown.size} " +
                 "arranged=${arranged.size} added=$added hasMore=$hasMore"
-            if(shown.isEmpty() && feed.page.hasMore && !expired && items.isEmpty()) {
+            lines += "rawIds=${pageItems.joinToString(",") { it.id }} loaded=${loadedIds.size} " +
+                "hidden=${hidden.size} finished=${finished.size}"
+            if(shown.isEmpty() && feed.page.hasMore && !expired) {
                 emptyChain++
                 continue
             }
             if(items.isEmpty()) {
                 return result(
-                    items, page, hasMore, session, offset, filterMiss, filterIdsOff,
+                    items, page, false, session, offset, filterMiss, filterIdsOff,
                     genderProbe, processedPages, restarts, exhausted = true, lines = lines,
                 )
             }
@@ -238,7 +277,7 @@ class RecommendFeedEngine(
         }
 
         return result(
-            items, page, hasMore, session, offset, filterMiss, filterIdsOff,
+            items, page, false, session, offset, filterMiss, filterIdsOff,
             genderProbe, processedPages, restarts, exhausted = true, lines = lines,
         )
     }

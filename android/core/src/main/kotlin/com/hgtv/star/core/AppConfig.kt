@@ -545,8 +545,8 @@ object AppConfig {
         /** 本地过滤窗口保存的曝光条数上限。 */
         const val FILTER_IDS_LIMIT = 200
 
-        /** 回传给服务端的 filter_ids 最多带多少条。 */
-        const val FILTER_IDS_SENT_LIMIT = 300
+        /** 推荐取页回传给服务端的当前列表 filter_ids 最多带多少条。 */
+        const val FILTER_IDS_SENT_LIMIT = 50
 
         /** 带过滤条件连续回空多少次后永久关闭该条件。 */
         const val FILTER_MISS_LIMIT = 2
