@@ -512,6 +512,9 @@ fun TvMainActivity.playEpisode(
         // 预热线程那边 post 过来的那次可能还没跑到（见 [configurePlayer]）。
         configurePlayer(p)
         // 复用那条路不重建播放器，也不重建 PlayerView：这里补一次绑定是幂等的。
+        // 推荐换作期间 PlayerView 会暂时 detach / INVISIBLE，等新源准备好后再恢复。
+        playerView?.setKeepContentOnPlayerReset(true)
+        playerView?.visibility=View.VISIBLE
         if(playerView?.player!==p) attachPlayerView(p)
         p.setPlaybackSpeed(library.playbackSpeed)
         stage("player")

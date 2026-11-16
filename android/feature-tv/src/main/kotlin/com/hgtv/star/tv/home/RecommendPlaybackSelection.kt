@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import android.view.View
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.detail
 import com.hgtv.star.core.lruPut
@@ -159,8 +160,9 @@ private fun TvMainActivity.resetRecommendPlaybackForSwitch() {
     view?.setShutterBackgroundColor(android.graphics.Color.BLACK)
     view?.player=null
     p?.let { runCatching { it.pause(); it.stop(); it.clearMediaItems() } }
-    view?.player=p
-    view?.setKeepContentOnPlayerReset(true)
+    // player 保持 detach，旧 Surface 也先不可见；等新源准备完成时再由 playEpisode
+    // 重新挂回 player 并恢复可见。这样加载期没有上一帧的可见窗口。
+    view?.visibility=View.INVISIBLE
     playbackReady=false
     playbackSessionState.beginSession()
     video?.let { runCatching { it.close() } }

@@ -4423,9 +4423,12 @@ feature-tv/
   `removeAllViews`、旧 work 返回和 Surface 重建。原来的整层 hard cut 虽然挡住了
   旧帧，但把播放层布局与异步起播叠在了一起。
 - 现在索引变化时保留同一个 `PlayerView`，先 `setKeepContentOnPlayerReset(false)`、
-  将 player 暂时置空、`stop/clearMediaItems` 清掉旧音视频，再把 player 挂回；
+  将 player 暂时置空、`stop/clearMediaItems` 清掉旧音视频，并暂不挂回；
   同时立即 `generation++ / cancelWork()`，让上一部的详情、取地址和准备结果全部作废。
   不再为每次换作重建整棵播放层，旧 Surface 内容仍会变黑，当前作品再复用同一层起播。
+- 复核时发现“挂回空 player”仍可能让部分电视继续显示旧 Surface 像素，因此改为：
+  player 保持 detach、PlayerView 暂时 `INVISIBLE`，直到新作品媒体源准备完成、
+  即将 `setMediaSource` 时才恢复可见并挂回播放器。加载期没有任何旧帧可见窗口。
 - 这样避免了两部作品共享播放器音轨，也避免快速连切时反复销毁/创建
   `FrameLayout` 子层；命中预热缓存时同样复用稳定播放层。
 - 慢网 / 取地址失败时保持黑场，由现有错误页、整屏提示、返回 / 再次换作或播放
