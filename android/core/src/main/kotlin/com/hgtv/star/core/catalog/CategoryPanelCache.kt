@@ -13,7 +13,7 @@ import java.io.File
  */
 object CategoryPanelCache {
     private const val VERSION=1
-    private const val TTL_MS=30L*24*60*60*1000
+    private const val TTL_MS=AppConfig.Catalog.PANEL_CACHE_TTL_MS
 
     @Volatile private var file: File?=null
     private val lock=Any()

@@ -331,10 +331,10 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
 
     private companion object {
         /** 首块目标：够解出第一帧（见 [startHeadPrefetch]）。 */
-        const val HEAD_CHUNK=512L*1024
+        const val HEAD_CHUNK=AppConfig.Playback.HEAD_CHUNK_BYTES
         /** 预热（下一集 / 相邻剧集）保留的长度，与改动前一致。 */
-        const val WARM_BYTES=1024L*1024
+        const val WARM_BYTES=AppConfig.Playback.WARM_BYTES
         /** 等预取的上限：超过就自己发 Range，绝不在首帧路径上干等。 */
-        const val HEAD_WAIT_MS=3_000L
+        const val HEAD_WAIT_MS=AppConfig.Playback.HEAD_WAIT_MS
     }
 }

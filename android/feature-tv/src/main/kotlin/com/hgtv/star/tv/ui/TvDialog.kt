@@ -96,7 +96,7 @@ class TvDialog(private val activity: Activity, title: String) {
          * 100–150ms 是人眼读作「淡出」而不是「闪」的下限区间：
          * 再短（<80ms）仍会被读成瞬变，再长会让「确认」按下去半天不关。
          */
-        const val EXIT_FADE_MS = 120L
+        const val EXIT_FADE_MS = com.hgtv.star.core.AppConfig.Ui.DIALOG_EXIT_FADE_MS
     }
 
     private val dp = { value: Number -> activity.tvDp(value) }

@@ -48,8 +48,8 @@ import java.util.concurrent.ConcurrentHashMap
  *   （连接失败上层还能重试，解析失败在界面上的表现就是「什么都放不了」）。
  */
 object HgtvDns : Dns {
-    private const val TTL_MS = 10*60*1000L
-    private const val DISK_TTL_MS = 30*60*1000L
+    private const val TTL_MS = AppConfig.Network.DNS_MEMORY_TTL_MS
+    private const val DISK_TTL_MS = AppConfig.Network.DNS_DISK_TTL_MS
     /**
      * 兜底寿命：**30 分钟**（改造前是 12 小时）。
      *
@@ -61,8 +61,8 @@ object HgtvDns : Dns {
      * 一次观看会话远短于 30 分钟；超过这个窗口的 IP 已经不值得为它冒「连不上」的风险。
      * 视频 CDN 域名另有更严格的规则（见 [isVideoHost]，完全不用兜底）。
      */
-    private const val FALLBACK_TTL_MS = 30*60*1000L
-    private const val MAX_HOSTS = 32
+    private const val FALLBACK_TTL_MS = AppConfig.Network.DNS_FALLBACK_TTL_MS
+    private const val MAX_HOSTS = AppConfig.Network.DNS_MAX_HOSTS
 
     private class Entry(val addresses: List<InetAddress>,val at: Long)
 
@@ -253,7 +253,12 @@ object HgtvDns : Dns {
 
     private fun awaitDisk() {
         if(store==null) return
-        runCatching { diskReady.await(300,java.util.concurrent.TimeUnit.MILLISECONDS) }
+        runCatching {
+            diskReady.await(
+                AppConfig.Network.DNS_DISK_READY_WAIT_MS,
+                java.util.concurrent.TimeUnit.MILLISECONDS,
+            )
+        }
     }
 
     /** 冷启动会碰到的域名（内容接口 / 图片 / 视频 Referer / 日志与安全接口）。 */

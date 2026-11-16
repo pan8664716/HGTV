@@ -87,16 +87,16 @@ class PhonePlayerActivity : PhoneActivity() {
 
         const val EXTRA_RECOMMEND = "recommend"
 
-        private const val PREFETCH_START_MS = 2_000L
+        private const val PREFETCH_START_MS = com.hgtv.star.core.AppConfig.Playback.PHONE_PREFETCH_START_MS
 
-        private const val PREFETCH_URL_RESERVE_MS = 30_000L
+        private const val PREFETCH_URL_RESERVE_MS = com.hgtv.star.core.AppConfig.Playback.PHONE_PREFETCH_URL_RESERVE_MS
 
-        private const val PLAYER_MODEL_QUEUE_SIZE = 14
+        private const val PLAYER_MODEL_QUEUE_SIZE = com.hgtv.star.core.AppConfig.Playback.PHONE_MODEL_QUEUE_SIZE
         internal val prefetchStartMs get()=PREFETCH_START_MS
         internal val prefetchUrlReserveMs get()=PREFETCH_URL_RESERVE_MS
         internal val playerModelQueueSize get()=PLAYER_MODEL_QUEUE_SIZE
 
-        internal const val MODE_TRANSITION_MS = 220L
+        internal const val MODE_TRANSITION_MS = com.hgtv.star.core.AppConfig.Playback.MODE_TRANSITION_MS
     }
 
     internal lateinit var root: FrameLayout

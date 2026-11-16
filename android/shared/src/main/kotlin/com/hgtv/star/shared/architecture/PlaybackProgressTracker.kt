@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.architecture
 
 import com.hgtv.star.core.BackupProgress
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.Series
 
 /**
@@ -43,6 +44,6 @@ class PlaybackProgressTracker(
         }
 
     companion object {
-        const val DEFAULT_INTERVAL_MS=15_000L
+        const val DEFAULT_INTERVAL_MS=AppConfig.Playback.PROGRESS_SAVE_INTERVAL_MS
     }
 }

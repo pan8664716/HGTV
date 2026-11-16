@@ -354,7 +354,7 @@ object PhoneSession {
      */
     @Volatile private var handoffUntil: Long = 0
 
-    private const val HANDOFF_WINDOW_MS = 3_000L
+    private const val HANDOFF_WINDOW_MS = com.hgtv.star.core.AppConfig.Ui.HANDOFF_WINDOW_MS
 
     /** 声明「现在正在把这一路交给另一个界面」：窗口期内不允许暂停。 */
     fun beginHandoff() {

@@ -13,7 +13,7 @@ package com.hgtv.star.tv
  * 兜底时间留到 8 秒，避免首次安装的注册、详情和播放准备较慢时，
  * 推荐补页在真正出画面前抢同一条下行。
  */
-private const val RECOMMEND_FEED_DELAY_MS=8_000L
+private const val RECOMMEND_FEED_DELAY_MS=com.hgtv.star.core.AppConfig.Recommend.FEED_DELAY_MS
 
 fun TvMainActivity.requestRecommendFeedAfterFirstFrame() {
     if(recommendFeedPending) return

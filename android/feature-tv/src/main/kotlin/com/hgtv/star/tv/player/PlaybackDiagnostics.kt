@@ -577,8 +577,8 @@ fun TvMainActivity.playbackFrameClock()=com.google.android.exoplayer2.video.Vide
  * 同一个巡检还负责**播到一半掉进 BUFFERING**：起播看门狗在首帧后就撤了，而下面这条
  * 停帧判据要求 `STATE_READY`，于是「永远转圈」过去没有任何看门狗覆盖（见 [BUFFER_STALL_MS]）。
  */
-private const val FRAME_STALL_TICK_MS = 4_000L
-private const val FRAME_STALL_MS = 12_000L
+private const val FRAME_STALL_TICK_MS = com.hgtv.star.core.AppConfig.Playback.FRAME_STALL_TICK_MS
+private const val FRAME_STALL_MS = com.hgtv.star.core.AppConfig.Playback.FRAME_STALL_MS
 
 /**
  * 已经在播、却停在 BUFFERING 多久算死。
@@ -586,7 +586,7 @@ private const val FRAME_STALL_MS = 12_000L
  * 判据用**缓冲位置不再前进**而不是绝对时长：弱网下 `bufferedPosition` 一直在涨就还有希望，
  * 把「慢」误判成「死」比不判更糟。30 秒足够覆盖一次正常的 seek 回填与弱网抖动。
  */
-private const val BUFFER_STALL_MS = 30_000L
+private const val BUFFER_STALL_MS = com.hgtv.star.core.AppConfig.Playback.BUFFER_STALL_MS
 
 fun TvMainActivity.armFrameStallWatchdog(playSession: Int) {
     disarmFrameStallWatchdog()
@@ -682,8 +682,8 @@ fun TvMainActivity.recoverLostPicture(reason: String) {
  * 由用户决定。换解码方式与换清晰度都是他的知情选择，这里不做。
  * 冷却窗口用于挡掉「起播看门狗与停帧看门狗同时命中」这一类重复触发。
  */
-private const val FORMAL_PICTURE_RECOVERY_LIMIT=1
-private const val FORMAL_PICTURE_RECOVERY_COOLDOWN_MS=20_000L
+private const val FORMAL_PICTURE_RECOVERY_LIMIT=com.hgtv.star.core.AppConfig.Playback.FORMAL_PICTURE_RECOVERY_LIMIT
+private const val FORMAL_PICTURE_RECOVERY_COOLDOWN_MS=com.hgtv.star.core.AppConfig.Playback.FORMAL_PICTURE_RECOVERY_COOLDOWN_MS
 
 fun TvMainActivity.recoverFormalPicture(reason: String) {
     // 只在正式播放页动手：推荐页有自己的换剧策略（[recoverRecommendPicture]）。

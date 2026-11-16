@@ -47,7 +47,8 @@ internal fun PhonePlayerActivity.scheduleChromeHide() {
         if (playerRootInitialized) root.removeCallbacks(relatedChromeHideRunnable)
         return
     }
-    val seconds = library?.playerPanelTimeout ?: 6
+    val seconds = library?.playerPanelTimeout ?:
+        com.hgtv.star.core.AppConfig.Library.PLAYER_PANEL_TIMEOUT_DEFAULT_SECONDS
     relatedChromeEpoch++
     playerChromeHideAt = System.currentTimeMillis() + seconds * 1000L
     root.removeCallbacks(relatedChromeHideRunnable)
@@ -56,7 +57,8 @@ internal fun PhonePlayerActivity.scheduleChromeHide() {
 
 /** 自动收起的时长（毫秒）；设置没读到时按 TV 的出厂值 6 秒。 */
 internal fun PhonePlayerActivity.chromeTimeoutMs(): Long =
-    ((library?.playerPanelTimeout ?: 6) * 1000L)
+    ((library?.playerPanelTimeout ?:
+        com.hgtv.star.core.AppConfig.Library.PLAYER_PANEL_TIMEOUT_DEFAULT_SECONDS) * 1000L)
 
 /**
  * 面板打开期间，**每一次触摸**都把自动收起的计时往后推。

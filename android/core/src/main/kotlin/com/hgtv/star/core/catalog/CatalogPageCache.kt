@@ -13,7 +13,7 @@ import java.io.File
  */
 object CatalogPageCache {
     private const val VERSION = 1
-    private const val MAX_ENTRIES = 24
+    private const val MAX_ENTRIES = AppConfig.Catalog.PAGE_CACHE_MAX_ENTRIES
 
     private data class Entry(
         val page: CatalogPage,
@@ -55,7 +55,7 @@ object CatalogPageCache {
             hasMore = page.hasMore,
             now = now,
             ranking = page.ranking,
-            maxItems = 100,
+            maxItems = AppConfig.Catalog.PAGE_CACHE_MAX_ITEMS,
         )
         val key = cacheKey(selection)
         val entry = Entry(page, now, raw)

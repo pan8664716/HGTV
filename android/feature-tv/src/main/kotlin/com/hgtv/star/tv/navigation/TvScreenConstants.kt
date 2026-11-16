@@ -79,8 +79,8 @@ const val VOICE_QUERY_MAX=80
  * 这一次账号拉取失败并不罕见。原先失败了就只能靠用户自己去点一次「我的」把数据逼出来；
  * 这里自动补两次，首页那两栏（历史 / 收藏）自己就填上了。
  */
-const val ACCOUNT_RETRY_MS=4000L
-const val ACCOUNT_RETRIES=2
+const val ACCOUNT_RETRY_MS=com.hgtv.star.core.AppConfig.Ui.ACCOUNT_RETRY_MS
+const val ACCOUNT_RETRIES=com.hgtv.star.core.AppConfig.Ui.ACCOUNT_RETRIES
 
 
 /**
@@ -115,7 +115,7 @@ const val HEADER_SHOW_THRESHOLD=12
  * 一分钟是这两件事的折中：回一次前台 / 进一次「我的」最多补一次（五个请求），
  * 而「刚在别处看过」的那几十秒之内基本都能拿到。想立刻要最新的仍然可以按页头那枚「刷新」。
  */
-const val ACCOUNT_FRESH_MS=60_000L
+const val ACCOUNT_FRESH_MS=com.hgtv.star.core.AppConfig.Ui.ACCOUNT_FRESH_MS
 
 /**
  * 预取下一页的触发点：**已加载的内容只剩下这么多条**就开始取下一页。
@@ -148,16 +148,16 @@ const val LOAD_MORE_RETRY_COOLDOWN_MS=CATALOG_RETRY_COOLDOWN_MS
  *
  * 不取更大：排在队尾的来不及在用户看到之前完成，取多了只是把真正要用的那几张挤到后面。
  */
-const val PREFETCH_ROWS=12
+const val PREFETCH_ROWS=com.hgtv.star.core.AppConfig.Ui.PREFETCH_ROWS
 
 /** 需要登录态的功能在未导入凭据时的统一提示。 */
 const val SIGN_IN_TOAST="需要先在「我的」页导入账号参数（sessionid）"
 
 /** 「我的」页导航栏里那个圆形头像的直径（与工具条同一行，不能比圆形入口大）。 */
-const val PROFILE_AVATAR=40
+const val PROFILE_AVATAR=com.hgtv.star.core.AppConfig.Ui.PROFILE_AVATAR_DP
 
 /** 卡片一行的默认张数（6）：首页剧架与所有卡片栅格共用的基线宽度。 */
-const val GRID_COLUMNS_DEFAULT=6
+const val GRID_COLUMNS_DEFAULT=com.hgtv.star.core.AppConfig.Ui.GRID_COLUMNS_DEFAULT
 
 /**
  * 当前设置下一行放几张卡片：4 / 5 / 6 / 7 / 8。

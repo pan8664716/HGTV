@@ -20,8 +20,11 @@ fun main() {
     )
     val client = HgtvTls.configure(OkHttpClient.Builder())
         .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
-        .connectTimeout(15, TimeUnit.SECONDS).readTimeout(30, TimeUnit.SECONDS)
-        .callTimeout(45, TimeUnit.SECONDS).build()
+        .connectTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .readTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .writeTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .callTimeout(REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+        .build()
     val signer = Signer()
 
     val repository = ContentRepository()

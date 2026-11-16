@@ -7,6 +7,10 @@ import org.json.JSONObject
 import java.io.IOException
 import java.util.concurrent.TimeUnit
 
+/** 兼容旧调用点；统一值见 [AppConfig.Network]。 */
+const val REQUEST_TIMEOUT_SECONDS = AppConfig.Network.REQUEST_TIMEOUT_SECONDS
+const val REQUEST_TIMEOUT_MS = AppConfig.Network.REQUEST_TIMEOUT_MS
+
 fun JSONArray.objects() = (0 until length()).mapNotNull { optJSONObject(it) }
 
 fun JSONObject.str(key: String) = if (isNull(key)) "" else optString(key, "").trim()
@@ -31,9 +35,10 @@ fun cleanUrl(s: String) = s.replace("\\/","/")
 internal fun defaultContentHttpClient(): OkHttpClient {
     val builder=HgtvTls.configure(OkHttpClient.Builder())
         .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
-        .connectTimeout(15,TimeUnit.SECONDS)
-        .readTimeout(30,TimeUnit.SECONDS)
-        .callTimeout(45,TimeUnit.SECONDS)
+        .connectTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+        .readTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+        .writeTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+        .callTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
         .addInterceptor(com.hgtv.star.core.session.SessionInterceptor())
     if(NetLog.timing) builder.eventListenerFactory(NetTiming.Factory)
     return builder.build()

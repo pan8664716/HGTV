@@ -56,7 +56,7 @@ object PlaybackCache {
     private const val URL_VERSION=5
     private const val HEAD_VERSION=1
     /** 首块上限：与 `RemoteVideo.HEAD_CHUNK` 一致（512KB），留一点余量。 */
-    private const val MAX_HEAD_BYTES=1024*1024
+    private const val MAX_HEAD_BYTES=AppConfig.Playback.HEAD_MAX_BYTES_INT
 
     /**
      * **地址的统一窗口期：10 分钟。超过就重新取地址。**
@@ -81,7 +81,7 @@ object PlaybackCache {
      * 「重看已看过的集」从 20 分钟内免取地址降到 10 分钟。超出窗口的那一次多一次网络往返，
      * 换来的是「不会拿死地址起播」——用户可感知的失败比半秒等待贵得多。
      */
-    const val URL_FRESH_MS=10*60*1000L
+    const val URL_FRESH_MS=AppConfig.Playback.URL_FRESH_MS
 
     /**
      * 一份**预热结果**还能不能直接拿去起播。
@@ -94,7 +94,7 @@ object PlaybackCache {
      * 但改造前**只用来做 LRU 排序，取用时从不校验**。用户在片尾暂停十几分钟再继续，
      * 或者十几分钟后才划回预热过的那一部，就会拿一条已经作废的地址去起播。
      */
-    const val PREPARED_FRESH_MS=URL_FRESH_MS
+    const val PREPARED_FRESH_MS=AppConfig.Playback.PREPARED_FRESH_MS
 
     /**
      * 一份预热结果还能不能用。
@@ -105,13 +105,13 @@ object PlaybackCache {
     fun isPreparedFresh(preparedAt: Long,now: Long): Boolean =
         preparedAt>0L && now-preparedAt in 0..PREPARED_FRESH_MS
     /** 索引的兜底寿命：文件本身变了会先被 `total` 校验挡掉，这里只防目录无限长草。 */
-    private const val INDEX_TTL_MS=7L*24*60*60*1000
+    private const val INDEX_TTL_MS=AppConfig.Playback.INDEX_TTL_MS
     /** 目录总大小上限：索引 0.6~1.5MB 一条，48MB 够留二十多集。 */
-    private const val MAX_BYTES=48L*1024*1024
+    private const val MAX_BYTES=AppConfig.Playback.CACHE_MAX_BYTES
     /** 一条索引的上限（`MediaCrypto.headerEnd` 允许 8MB 的头部，这里留足余量）。 */
-    private const val MAX_FILE_BYTES=16L*1024*1024
+    private const val MAX_FILE_BYTES=AppConfig.Playback.INDEX_MAX_FILE_BYTES
     /** 最近解析过的索引留在内存里，避免连续上下翻页时反复反序列化同一份。 */
-    private const val INDEX_MEMORY_LIMIT=3
+    private const val INDEX_MEMORY_LIMIT=AppConfig.Playback.INDEX_MEMORY_LIMIT
 
     data class Index(val total: Long,val prepared: MediaCrypto.Prepared)
     data class Url(val info: StreamInfo,val at: Long)

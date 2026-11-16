@@ -34,8 +34,8 @@ import java.io.File
  */
 object RecommendCache {
     /** 这份快照最多当多久的「首屏」。 */
-    private const val TTL_MS=30*60*1000L
-    private const val MAX_ITEMS=60
+    private const val TTL_MS=AppConfig.Recommend.CACHE_TTL_MS
+    private const val MAX_ITEMS=AppConfig.Recommend.CACHE_MAX_ITEMS
 
     @Volatile private var file: File?=null
     /** 「上一次停在哪儿」：一行的剧 id（几字节），与 [file] **分开写**。 */

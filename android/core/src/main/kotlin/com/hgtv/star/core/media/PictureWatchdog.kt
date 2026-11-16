@@ -107,12 +107,12 @@ class PictureWatchdog(
 
     companion object {
         /** 就绪之后等多久还没画面就判「有声音没画面」。 */
-        const val NO_FRAME_MS = 15_000L
+        const val NO_FRAME_MS = AppConfig.Playback.WATCHDOG_NO_FRAME_MS
 
         /** 起播之后等多久还没进入可播放状态就判「卡在缓冲」。 */
-        const val STALL_MS = 90_000L
+        const val STALL_MS = AppConfig.Playback.WATCHDOG_STALL_MS
 
         /** 轮询间隔。必须**远小于** [NO_FRAME_MS]：否则「READY 了但没画面」会被拖到 30 秒才处置。 */
-        const val TICK_MS = 3_000L
+        const val TICK_MS = AppConfig.Playback.WATCHDOG_TICK_MS
     }
 }

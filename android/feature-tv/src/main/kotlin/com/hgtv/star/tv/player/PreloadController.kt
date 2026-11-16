@@ -35,7 +35,7 @@ private fun TvMainActivity.preloadGateOpen(): Boolean {
  * 这台盒子上一次取地址要 500~1100ms，5 条排队就是 5 秒，而用户 2 秒后可能已经换台了。
  * 4 条刚好覆盖「主方向三步 + 回看一步」。
  */
-private const val PRELOAD_MAX_TARGETS=4
+private const val PRELOAD_MAX_TARGETS=com.hgtv.star.core.AppConfig.Playback.PRELOAD_MAX_TARGETS
 
 /**
  * 取消已经排定、还没开跑的那一次窗口预热。

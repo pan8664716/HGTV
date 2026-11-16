@@ -3,6 +3,7 @@ package com.hgtv.star.shared.data
 
 import android.content.Context
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.refreshTncAsync
 import com.hgtv.star.shared.compat.Cancellable
 import com.hgtv.star.shared.compat.NetworkWatcher
@@ -141,14 +142,19 @@ object AppRuntime {
     /**
      * 收藏更新检查共用的短超时仓库。
      *
-     * 检查是一条一条串行发的，某部剧卡住不该按普通请求的 45 秒一直占着；因此它保留
-     * 12 秒整调用超时。client 仍只建一份，且**第一次取用会初始化业务 client 与证书表**，
+     * 检查是一条一条串行发的，所有业务请求统一使用 20 秒超时。client 仍只建一份，
+     * 且**第一次取用会初始化业务 client 与证书表**，
      * 所以只能在后台线程调用（见 [FavoriteMonitor]）。
      */
     fun favoriteRepository(source: ContentRepository): ContentRepository {
         val target = favoriteRepositoryInstance ?: synchronized(lock) {
             favoriteRepositoryInstance ?: ContentRepository(
-                source.http.newBuilder().callTimeout(12, TimeUnit.SECONDS).build()
+                source.http.newBuilder()
+                    .connectTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .readTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .writeTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .callTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+                    .build()
             ).apply {
                 writeLog = { line -> Diagnostics.trace("HGTV-WRITE", line) }
             }.also { favoriteRepositoryInstance = it }

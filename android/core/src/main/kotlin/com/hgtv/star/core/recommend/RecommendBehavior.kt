@@ -14,9 +14,9 @@ import org.json.JSONObject
  * 推荐排序使用，但不会把非曝光行为混入官方曝光接口。
  */
 object RecommendBehavior {
-    const val QUICK_SWIPE_MS = 1_200L
-    const val WATCH_DWELL_MS = 6_000L
-    const val WATCH_PLAY_MS = 5_000L
+    const val QUICK_SWIPE_MS = AppConfig.Recommend.QUICK_SWIPE_MS
+    const val WATCH_DWELL_MS = AppConfig.Recommend.WATCH_DWELL_MS
+    const val WATCH_PLAY_MS = AppConfig.Recommend.WATCH_PLAY_MS
 
     enum class Outcome { QUICK_SWIPE, SKIPPED, WATCHED }
 

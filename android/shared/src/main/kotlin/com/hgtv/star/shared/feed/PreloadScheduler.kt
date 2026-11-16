@@ -4,6 +4,7 @@ package com.hgtv.star.shared.feed
 import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.SlideCacheManager
 
 /**
@@ -121,9 +122,9 @@ class PreloadScheduler(
 
     private companion object {
         /** 让路之后重试的间隔：缓冲一旦够，就尽快把相邻一部接上。 */
-        const val RETRY_DELAY_MS = 750L
+        const val RETRY_DELAY_MS = AppConfig.Playback.Preload.RETRY_DELAY_MS
 
         /** 停留多久算「确认」（与 `SlideCacheManager.dwellPromoteMs` 同值）。 */
-        const val DWELL_DELAY_MS = 600L
+        const val DWELL_DELAY_MS = AppConfig.Playback.Preload.DWELL_DELAY_MS
     }
 }

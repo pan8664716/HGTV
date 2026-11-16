@@ -24,14 +24,14 @@ import kotlin.math.abs
  */
 object WatchSync {
     /** 两份时间差在这个范围内算「同一时刻」（毫秒）。平台时间戳只到秒，留一点余量。 */
-    const val SAME_MS=2_000L
+    const val SAME_MS=AppConfig.Library.WATCH_SYNC_SAME_MS
     /**
      * 同一集里判「谁更超前」时，时间要差到这个程度才以时间为准（毫秒）。
      *
      * 两台设备的时钟天然有几十秒偏差，进度上传又很密：不给一个死区，两边会互相把对方
      * 盖掉，云端那一行来回跳。死区之内一律以「集内位置更大」为准。
      */
-    const val SKEW_MS=120_000L
+    const val SKEW_MS=AppConfig.Library.WATCH_SYNC_SKEW_MS
     /** 超过这个值就当成毫秒（1e11 毫秒 ≈ 1973 年，秒级时间戳远达不到）。 */
     private const val EPOCH_MS=100_000_000_000L
 

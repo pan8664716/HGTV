@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.core.session
 
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.body
 import com.hgtv.star.core.code
 import com.hgtv.star.core.NetLog
@@ -428,19 +429,19 @@ class SessionKeeper(
 
     companion object {
         /** 原版 `z68.c.f484030d` = 600000。 */
-        const val INTERVAL_MS = 600_000L
+        const val INTERVAL_MS = AppConfig.Network.SESSION_HEARTBEAT_INTERVAL_MS
         /** 原版 `sendEmptyMessageDelayed(2000, 60000)`。 */
-        const val SELF_CHECK_DELAY_MS = 60_000L
-        const val FRONTIER_RESUME_MS = 3_000L
+        const val SELF_CHECK_DELAY_MS = AppConfig.Network.SESSION_SELF_CHECK_DELAY_MS
+        const val FRONTIER_RESUME_MS = AppConfig.Network.SESSION_FRONTIER_RESUME_MS
         /** 回前台的补发节流：一分钟内只补一次。 */
-        const val FOREGROUND_MIN_GAP_MS = 60_000L
+        const val FOREGROUND_MIN_GAP_MS = AppConfig.Network.SESSION_FOREGROUND_MIN_GAP_MS
         /**
          * 「开应用时该不该补一发」的时间阈值：距上一次成功心跳超过 30 分钟才补。
          *
          * 与 10 分钟循环同一个量级：应用关掉 / 待机半小时以上再打开，就补一发把 token 续上；
          * 用户来回切页签、几分钟内重复进「我的」页则不再重复请求。
          */
-        const val RENEW_INTERVAL_MS = 30*60_000L
+        const val RENEW_INTERVAL_MS = AppConfig.Network.SESSION_RENEW_INTERVAL_MS
         /**
          * 「快到期」的阈值：剩余不足 3 天才补这一发。
          *
@@ -448,7 +449,7 @@ class SessionKeeper(
          * 打开应用时剩余时间总有几十天——那就不该为此多发一次请求。留 3 天余量是为了
          * 容忍「用户连着几天不开应用」这种情形。
          */
-        const val RENEW_BEFORE_MS = 3*24*3_600_000L
+        const val RENEW_BEFORE_MS = AppConfig.Network.SESSION_RENEW_BEFORE_MS
 
         const val SCENE_BOOT = "boot"
         const val SCENE_POLLING = "polling"

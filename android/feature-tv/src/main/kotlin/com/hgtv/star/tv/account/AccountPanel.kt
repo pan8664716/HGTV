@@ -46,7 +46,7 @@ const val ACCOUNT_PANEL_QR="qr"
 val ACCOUNT_LOGIN_MODES=listOf(ACCOUNT_PANEL_QR to "二维码登录",ACCOUNT_PANEL_PHONE to "手机登录")
 
 /** 二维码的显示边长（设计单位，与登录卡同一条 1280dp 画布）。 */
-private const val QR_LOGIN_SIZE=250
+private const val QR_LOGIN_SIZE=com.hgtv.star.core.AppConfig.Ui.QR_LOGIN_SIZE_DP
 
 /**
  * 登录表单左侧的区号候选（默认 +86）。
@@ -410,7 +410,13 @@ private fun TvMainActivity.buildQrLoginPanel(
                     }
                 }
                 // 失败（断网 / 网关挡掉）不是终局：隔得久一点再问，别按 1.1 秒硬敲。
-                schedule(if(outcome is QrLogin.Outcome.Failed) 3000L else QrLogin.POLL_MS)
+                schedule(
+                    if(outcome is QrLogin.Outcome.Failed) {
+                        com.hgtv.star.core.AppConfig.Ui.QR_FAILURE_RETRY_MS
+                    } else {
+                        QrLogin.POLL_MS
+                    },
+                )
             }
         }
     }

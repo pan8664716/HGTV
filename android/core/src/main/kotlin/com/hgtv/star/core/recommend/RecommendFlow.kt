@@ -49,15 +49,15 @@ object RecommendFlow {
      * 官方那个 200 太少（一屏 6 条 ≈ 33 屏）；1200 条约等于 7 天重度使用（一页 20 条 × 60 页），
      * 落盘约 30KB，与已有的 800 条 id 记录同一量级。
      */
-    const val MARK_LIMIT = 1200
+    const val MARK_LIMIT = AppConfig.Recommend.MARKS_LIMIT
     /**
      * 回传给服务端的 `filter_ids` 最多带几条（文档 §2.1：有上限、超限会被截断）。
      *
      * 带的是**最新的**那些：老条目本来也快到失效时刻了，截断它们的代价最小。
      */
-    const val FILTER_IDS_LIMIT = 200
+    const val FILTER_IDS_LIMIT = AppConfig.Recommend.FILTER_IDS_LIMIT
     /** 兴趣权重的半衰期（天）：半个月前的口味算一半。 */
-    const val TASTE_HALF_LIFE_DAYS = 14.0
+    const val TASTE_HALF_LIFE_DAYS = AppConfig.Recommend.TASTE_HALF_LIFE_DAYS
     /** 剧名归一化后的内部前缀：与剧 id 共用一个窗口，但绝不进 `filter_ids`。 */
     private const val TITLE_PREFIX = "#"
 
@@ -143,7 +143,7 @@ object RecommendFlow {
      * 它是锦上添花的一层：服务端不吃这个字段时，带了它整页会被滤光，绝不能因此让推荐页空屏。
      * 两次即关，与两端原来的阈值一致（电视 `recommendFilterMiss>=2`、手机 `filterMiss>=2`）。
      */
-    const val FILTER_MISS_LIMIT = 2
+    const val FILTER_MISS_LIMIT = AppConfig.Recommend.FILTER_MISS_LIMIT
 
     /** 记一次「带了 filter_ids 却回空页」：返回下一次的计数与是否该永久关掉。 */
     fun noteFilterMiss(current: Int): Pair<Int, Boolean> {

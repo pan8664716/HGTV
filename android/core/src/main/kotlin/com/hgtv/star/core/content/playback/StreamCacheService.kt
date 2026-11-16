@@ -32,7 +32,7 @@ internal data class ContentRepositoryStreamCacheEntry(val info: StreamInfo,val a
                 rememberStream(cacheKey,cached.info,clock())
                 return cached.info
             }
-            // 每个实际播放接口链接各自 6 秒（见 [ContentRepository.ADDRESS_ATTEMPT_TIMEOUT_MS]）；
+            // 每个实际播放接口链接各自 20 秒（见 [ContentRepository.ADDRESS_ATTEMPT_TIMEOUT_MS]）；
             // 这里不设整轮总预算，避免前一条慢链接把后续候选链接的额度一起吃光。
             // 缓存命中不走这里，因此点「下一个」十几毫秒就能起播的那条路一分钱都不多花。
             val info=try {
@@ -98,7 +98,7 @@ internal data class ContentRepositoryStreamCacheEntry(val info: StreamInfo,val a
         val fallback=when(raw) { is JSONObject -> raw.str("fallback_api"); is JSONArray -> raw.optString(0); else -> runCatching { JSONObject(raw.toString()).str("fallback_api") }.getOrDefault(raw.toString()) }
         if(!fallback.startsWith("https://")) throw IOException("播放地址格式异常")
         // 模型给了 `fallback_api` 后，真正带 `video_list` 的是它返回的那份 JSON。
-        // 这一条链接同样单独拿完整的 6 秒，不复用模型请求的剩余时间。
+        // 这一条链接同样单独拿完整的 20 秒，不复用模型请求的剩余时间。
         val info=JSONObject(
             text(
                 fallback,

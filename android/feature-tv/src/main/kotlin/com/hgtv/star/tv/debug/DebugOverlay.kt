@@ -31,7 +31,7 @@ import com.hgtv.star.core.TlsStatus
 // 两者都带设备与版本，用户拍一张照就能定位。
 
 /** 面板刷新间隔：状态里的秒数要跟着走，1 秒够用。 */
-private const val DEBUG_TICK_MS=1_000L
+private const val DEBUG_TICK_MS=com.hgtv.star.core.AppConfig.Ui.DEBUG_TICK_MS
 /**
  * 内容没变时的退避间隔。
  *
@@ -39,10 +39,10 @@ private const val DEBUG_TICK_MS=1_000L
  * 静态页面（首页、设置、我的）不该每秒醒一次：连续 [DEBUG_IDLE_BACKOFF] 轮没有变化之后
  * 改到 2 秒，再 [DEBUG_IDLE_DEEP] 轮改到 5 秒。播放页位置每秒都在变，永远走 1 秒这一档。
  */
-private const val DEBUG_TICK_IDLE_MS=2_000L
-private const val DEBUG_TICK_SLOW_MS=5_000L
-private const val DEBUG_IDLE_BACKOFF=3
-private const val DEBUG_IDLE_DEEP=8
+private const val DEBUG_TICK_IDLE_MS=com.hgtv.star.core.AppConfig.Ui.DEBUG_TICK_IDLE_MS
+private const val DEBUG_TICK_SLOW_MS=com.hgtv.star.core.AppConfig.Ui.DEBUG_TICK_SLOW_MS
+private const val DEBUG_IDLE_BACKOFF=com.hgtv.star.core.AppConfig.Ui.DEBUG_IDLE_BACKOFF
+private const val DEBUG_IDLE_DEEP=com.hgtv.star.core.AppConfig.Ui.DEBUG_IDLE_DEEP
 
 /**
  * 面板上那几个「读系统状态」的值：**缓存几秒**，不每秒去问一次。
@@ -54,7 +54,7 @@ private const val DEBUG_IDLE_DEEP=8
  * 每秒各问一次在电视盒子上是能感觉到的（尤其播放时），而它们的变化以「分钟」计。
  * 5 秒足够跟上「刚注册成功」「刚切到移动网络」这类事件，代价是面板最多滞后 5 秒。
  */
-private const val DEBUG_ENV_TTL_MS=5_000L
+private const val DEBUG_ENV_TTL_MS=com.hgtv.star.core.AppConfig.Ui.DEBUG_ENV_TTL_MS
 
 /**
  * 「性能」那一行的标头。

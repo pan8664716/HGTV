@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
 
@@ -37,7 +38,7 @@ object PhonePreload {
     )
 
     /** 同时留几份「完整预热」。手机上 2 份已经覆盖主方向一步 + 回看一步。 */
-    private const val MAX_FULL = 2
+    private const val MAX_FULL = AppConfig.Playback.Preload.PHONE_MAX_FULL
 
     private val lock = Any()
     private val slots = LinkedHashMap<String, Entry>()
@@ -112,6 +113,6 @@ object PhonePreload {
     private fun closeLater(remote: RemoteVideo) {
         android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
             runCatching { remote.close() }
-        }, 1_000L)
+        }, AppConfig.Playback.Preload.PHONE_CLOSE_DELAY_MS)
     }
 }

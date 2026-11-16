@@ -1,13 +1,14 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.core.session
 
+import com.hgtv.star.core.AppConfig
 import okhttp3.OkHttpClient
 import java.util.concurrent.TimeUnit
 
 /**
  * 会话模块自己的 client。**只给心跳用**，不复用业务 client：
  *
- * * 业务 client 的 `callTimeout` 是 45 秒、`readTimeout` 30 秒，心跳没必要等这么久；
+ * * 业务 client 统一使用 20 秒超时；心跳仍然独立，避免业务 client 被取消时连带受影响；
  * * 心跳要能在业务 client 被 `cancelAll()` / 连接池被 `evictAll()` 时**不受影响**
  *   （`TvMainActivity.onDestroy` 会干这件事）。
  */
@@ -25,10 +26,10 @@ object SessionClients {
     private val beat: OkHttpClient by lazy {
         tls(OkHttpClient.Builder())
             .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
-            .connectTimeout(10,TimeUnit.SECONDS)
-            .readTimeout(15,TimeUnit.SECONDS)
-            .writeTimeout(15,TimeUnit.SECONDS)
-            .callTimeout(20,TimeUnit.SECONDS)
+            .connectTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+            .readTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+            .writeTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+            .callTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             // 心跳**不要**自动重试整套请求链：一次 beat 失败就等下一个 10 分钟，别放大流量
             .addInterceptor(SessionInterceptor())

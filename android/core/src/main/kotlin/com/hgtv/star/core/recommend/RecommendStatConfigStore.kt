@@ -10,7 +10,7 @@ import org.json.JSONObject
  * `{"enable":true,"duration":1.0}`。服务端没有下发或读取失败时按项目约定使用 10 秒兜底。
  */
 object RecommendStatConfigStore {
-    const val DEFAULT_DURATION_MS=10_000L
+    const val DEFAULT_DURATION_MS=AppConfig.Recommend.REPORT_DEFAULT_DURATION_MS
     const val CONFIG_KEY="short_video_recommend_stat_report_duration"
 
     @Volatile private var enabled=true

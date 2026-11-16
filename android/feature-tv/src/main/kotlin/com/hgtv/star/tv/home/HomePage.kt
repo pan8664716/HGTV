@@ -17,7 +17,7 @@ import com.hgtv.star.shared.data.WatchProgress
 import com.hgtv.star.tv.R
 
 /** 首页一栏一屏放满的条数：本机记录与榜单都按它截断，也是「查看全部」入口的门槛。 */
-private const val SHELF_SIZE=10
+private const val SHELF_SIZE=com.hgtv.star.core.AppConfig.Ui.HOME_SHELF_SIZE
 
 // 本文件是从 TvMainActivity.kt 拆出来的「首页四个剧架与剧卡的快捷菜单（收藏 / 稍后看）」这一块。
 // 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，

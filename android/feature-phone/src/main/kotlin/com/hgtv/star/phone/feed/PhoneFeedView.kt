@@ -722,11 +722,11 @@ class PhoneFeedView(
 
     /** 每 500ms 把播放进度回传给页面，画在底部进度条上。 */
     /** 片尾预热窗口：与 TV 的 `PrefetchPolicy.nearEnd` 同一档（30 秒）。 */
-    private val prefetchWindowMs = 30_000L
+    private val prefetchWindowMs = com.hgtv.star.core.AppConfig.Playback.PREFETCH_WINDOW_MS
     internal val feedPrefetchWindowMs get()=prefetchWindowMs
 
     /** 推荐流里连续几部放不了就不再自动翻（与电视端 `RECOMMEND_SKIP_LIMIT` 同值）。 */
-    private val RECOMMEND_SKIP_LIMIT = 4
+    private val RECOMMEND_SKIP_LIMIT = com.hgtv.star.core.AppConfig.Recommend.SKIP_LIMIT
     internal val feedRecommendSkipLimit get()=RECOMMEND_SKIP_LIMIT
 
     /**
@@ -736,7 +736,7 @@ class PhoneFeedView(
      * 用户中途返回、跳转被系统拦掉），标志会一直卡着，之后每一集都不再连播。
      * 超过这个时间就当作失效，允许重新推进。
      */
-    private val ADVANCE_GUARD_MS = 5_000L
+    private val ADVANCE_GUARD_MS = com.hgtv.star.core.AppConfig.Ui.ADVANCE_GUARD_MS
     internal val feedAdvanceGuardMs get()=ADVANCE_GUARD_MS
     /** 正在预热的那一集（防重入）。 */
     private var prefetchingFor = ""

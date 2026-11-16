@@ -42,7 +42,7 @@ fun TvMainActivity.networkAvailable(): Boolean = connectivity.hasInternet()
  * 而网络其实在第 2 秒就回来了。用户的感受是「网络已经好了，它还在转圈」。
  *
  * 现在有两道闸：
- * 1. 取地址每条实际链接 6 秒超时（见 `ContentRepository.ADDRESS_ATTEMPT_TIMEOUT_MS`）——**兜底**；
+ * 1. 取地址每条实际链接 20 秒超时（见 `ContentRepository.ADDRESS_ATTEMPT_TIMEOUT_MS`）——**兜底**；
  * 2. 这一条：网络恢复的那一刻就把在途那一发作废重来——**不再等兜底**。
  *
  * ## 作废为什么用 `generation++` + [cancelWork]

@@ -10,6 +10,7 @@ import android.os.Build
 import android.os.Handler
 import android.os.Looper
 import com.hgtv.star.core.LibraryTransferServer
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.shared.compat.activeNetworkOrNull
 import java.io.ByteArrayOutputStream
 import java.io.Closeable
@@ -48,8 +49,8 @@ class LanLibrarySyncSession(
             val host = if (rawHost.contains(':') && !rawHost.startsWith("[")) "[$rawHost]" else rawHost
             val connection = (URL("http://$host:${peer.port}$path").openConnection() as HttpURLConnection).apply {
                 requestMethod = "GET"
-                connectTimeout = 5_000
-                readTimeout = 10_000
+                connectTimeout = AppConfig.Network.LAN_TIMEOUT_MS.toInt()
+                readTimeout = AppConfig.Network.LAN_TIMEOUT_MS.toInt()
                 useCaches = false
                 setRequestProperty("Accept", "application/json")
             }

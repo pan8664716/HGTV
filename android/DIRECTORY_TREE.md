@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-16。文件总数为 649；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-16。文件总数为 651；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -13,6 +13,7 @@
 
 | 问题域 | 首选目录 | 关键入口 |
 | --- | --- | --- |
+| 全局可调参数 | `core/` | `AppConfig.kt` |
 | 内容接口、账号/详情/搜索/推荐数据 | `core/content/` | `ContentRepository.kt` 及各子域 Service/Parser |
 | 登录、设备注册、凭据 | `core/account/` | `PhoneLogin.kt`、`QrLogin.kt`、`DeviceRegister.kt` |
 | 播放地址、缓存、降级、速度 | `core/playback/` | `PlaybackCache.kt`、`PlaybackDegradation.kt` |
@@ -40,7 +41,7 @@
 ```text
 android/
 ├── app/  (21 files, 12 directories)
-├── core/  (225 files, 27 directories)
+├── core/  (227 files, 27 directories)
 ├── feature-phone/  (141 files, 11 directories)
 ├── feature-tv/  (154 files, 17 directories)
 ├── shared/  (104 files, 24 directories)
@@ -196,6 +197,12 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `build.gradle.kts` | Gradle Kotlin DSL 构建或设置脚本。 | gradle |
+
+#### `core/src/main/kotlin/com/hgtv/star/core/`
+
+| 文件 | 作用 | 关键符号 |
+| --- | --- | --- |
+| `AppConfig.kt` | 应用级可调参数的唯一来源；按网络、启动、目录、推荐、播放、缓存、书库、弹幕和 UI 分组，供 core / shared / phone / TV 引用。 | object AppConfig |
 
 #### `core/src/test/resources/`
 
@@ -420,7 +427,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `ContentTransport.kt` | DNS、TLS、HTTP、网络计时与请求作用域。文件 ContentTransport 主要包含 fun JSONArray.objects、fun JSONObject.str、fun JSONObject.flag、fun cleanUrl。 | fun JSONArray.objects、fun JSONObject.str、fun JSONObject.flag、fun cleanUrl、fun defaultContentHttpClient、class CatalogHttpException |
+| `ContentTransport.kt` | DNS、TLS、HTTP、网络计时与请求作用域；旧超时常量保留为 `AppConfig.Network` 的兼容别名。 | fun JSONArray.objects、fun JSONObject.str、fun JSONObject.flag、fun cleanUrl、fun defaultContentHttpClient、class CatalogHttpException |
 | `HgtvDns.kt` | 带缓存的 DNS，替换 OkHttp 默认的「每次新建连接都问一遍系统」。 | object HgtvDns |
 | `HgtvTls.kt` | 全工程共用的 TLS 协商参数。 | object HgtvTls、class PrepareTlsSocketFactory |
 | `NetTiming.kt` | 一次请求的连接耗时分解（调试包专用，见 NetLog.timing）。 | class NetTiming |

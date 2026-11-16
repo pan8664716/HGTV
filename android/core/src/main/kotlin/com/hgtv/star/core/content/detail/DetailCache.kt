@@ -29,9 +29,9 @@ import java.io.File
  */
 object DetailCache {
     private const val VERSION=1
-    private const val MAX_ENTRIES=8
+    private const val MAX_ENTRIES=AppConfig.Recommend.DETAIL_LIMIT
     /** 与 [RecommendCache] 的 TTL 对齐：快照能当首屏多久，详情就能配它多久。 */
-    private const val TTL_MS=30*60*1000L
+    private const val TTL_MS=AppConfig.Recommend.CACHE_TTL_MS
 
     @Volatile private var file: File?=null
     private val lock=Any()

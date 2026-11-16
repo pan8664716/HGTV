@@ -866,8 +866,8 @@ class HomeScreen(
  * 低配电视上一个剧架包含十张海报卡，三栏一起建会让返回首页的主线程停顿两秒以上。
  * 先同步建第一栏让页面立即可见，其余栏由 [HomeScreen.buildNextBatch] 按帧预算补齐。
  */
-private const val HOME_FIRST_BATCH = 1
-private const val HOME_FIRST_CARDS = 1
+private const val HOME_FIRST_BATCH = com.hgtv.star.core.AppConfig.Ui.HOME_FIRST_BATCH
+private const val HOME_FIRST_CARDS = com.hgtv.star.core.AppConfig.Ui.HOME_FIRST_CARDS
 
-private const val HOME_BATCH_BUDGET_MS = 6L
-private const val HOME_BATCH_BUDGET_LOW_RAM_MS = 3L
+private const val HOME_BATCH_BUDGET_MS = com.hgtv.star.core.AppConfig.Ui.HOME_BATCH_BUDGET_MS
+private const val HOME_BATCH_BUDGET_LOW_RAM_MS = com.hgtv.star.core.AppConfig.Ui.HOME_BATCH_BUDGET_LOW_RAM_MS

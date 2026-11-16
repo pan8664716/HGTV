@@ -2,11 +2,11 @@
 package com.hgtv.star.core
 
 /** 榜单、分类、搜索和本机列表共用的分页边界。 */
-const val CATALOG_MAX_PAGE = 100
+const val CATALOG_MAX_PAGE = AppConfig.Catalog.MAX_PAGE
 /** 一次预取最多连续补这么多页，避免一页刚落地就被再次取空。 */
-const val CATALOG_PREFETCH_PAGES = 2
+const val CATALOG_PREFETCH_PAGES = AppConfig.Catalog.PREFETCH_PAGES
 /** 追加失败后的自动重试冷却时间。 */
-const val CATALOG_RETRY_COOLDOWN_MS = 3_000L
+const val CATALOG_RETRY_COOLDOWN_MS = AppConfig.Catalog.RETRY_COOLDOWN_MS
 
 /**
  * 一页目录数据追加后的统一结果。

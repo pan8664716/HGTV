@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.data
 import com.hgtv.star.core.body
 import com.hgtv.star.core.connectionPool
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.dispatcher
 import com.hgtv.star.core.executorService
 import com.hgtv.star.core.protocol
@@ -119,8 +120,10 @@ class ArtworkLoader(context: Context) {
     }
     private val httpRef = lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         com.hgtv.star.core.HgtvTls.configure(OkHttpClient.Builder())
-            .connectTimeout(5, TimeUnit.SECONDS)
-            .readTimeout(8, TimeUnit.SECONDS).callTimeout(12, TimeUnit.SECONDS)
+            .connectTimeout(AppConfig.Network.IMAGE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(AppConfig.Network.IMAGE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(AppConfig.Network.IMAGE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(AppConfig.Network.IMAGE_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .dispatcher(okhttp3.Dispatcher().apply {
                 maxRequests = MAX_REQUESTS
                 maxRequestsPerHost = MAX_REQUESTS

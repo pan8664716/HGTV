@@ -45,11 +45,11 @@ data class TncSnapshot(
  */
 object TncConfigStore {
     private const val SCHEMA_VERSION=1
-    private const val DEFAULT_UPDATE_INTERVAL_MS=60*60*1000L
-    private const val MIN_UPDATE_INTERVAL_MS=5*60*1000L
-    private const val MAX_UPDATE_INTERVAL_MS=24*60*60*1000L
-    private const val LOAD_WAIT_MS=300L
-    private const val MAX_BACKOFF_MS=30*60*1000L
+    private const val DEFAULT_UPDATE_INTERVAL_MS=AppConfig.Network.TNC_DEFAULT_UPDATE_INTERVAL_MS
+    private const val MIN_UPDATE_INTERVAL_MS=AppConfig.Network.TNC_MIN_UPDATE_INTERVAL_MS
+    private const val MAX_UPDATE_INTERVAL_MS=AppConfig.Network.TNC_MAX_UPDATE_INTERVAL_MS
+    private const val LOAD_WAIT_MS=AppConfig.Network.TNC_LOAD_WAIT_MS
+    private const val MAX_BACKOFF_MS=AppConfig.Network.TNC_MAX_BACKOFF_MS
 
     /**
      * TNC 静态入口。

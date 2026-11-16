@@ -35,7 +35,7 @@ import com.hgtv.star.shared.ui.LoadingDotsView
 // 4. 没有可聚焦控件：所有方向键都由 `dispatchKeyEvent` 消化，焦点不会跑出画面。
 
 /** 推荐流一次取多少（分类接口的「全部推荐」流第一页就是 20 条，之后每页 100 条）。 */
-const val RECOMMEND_SKIP_LIMIT=4
+const val RECOMMEND_SKIP_LIMIT=com.hgtv.star.core.AppConfig.Recommend.SKIP_LIMIT
 /**
  * 一次加载里最多连着取多少页。
  *
@@ -78,12 +78,12 @@ private const val RECOMMEND_PAGE_LIMIT=com.hgtv.star.shared.feed.RecommendFeedPo
  * 实测 0.8~2 秒（网络差时更久）——3 部的余量在「快按」时来不及，所以放宽到 10 部。
  * 代价只是一次更早的后台请求，用户感知不到；换来的是按到末尾那一帧已经有内容。
  */
-internal const val RECOMMEND_LOOKAHEAD=10
+internal const val RECOMMEND_LOOKAHEAD=com.hgtv.star.core.AppConfig.Recommend.LOOKAHEAD
 /**
  * 首屏最多等多久（毫秒）。超过它就不再往下凑「一条重复都没有」，把手里这一页照原样放出来。
  *
- * 依据同一组实测：正常一页 0.8s、换流一次 0.8s，3 秒足够走完「取一页 + 换一条流」；
- * 再等下去用户面对的就是一块「正在加载推荐…」的静止画面——那比看到两部看过的更糟。
+ * 正常一页约 0.8s，但弱网和平台抖动时可能更慢；统一给到 20 秒，避免冷启动补页
+ * 在首屏还没凑齐时被过早截断。
  */
 private const val RECOMMEND_FIRST_BUDGET_MS=com.hgtv.star.shared.feed.RecommendFeedPolicy.FIRST_BUDGET_MS
 /**
@@ -137,11 +137,11 @@ fun TvMainActivity.recommendStore(): com.hgtv.star.shared.feed.RecommendStore =
         },
     ).also { recommendStoreRef=it }
 /** 预热好的首集最多留几份（每份约 512KB）。8 份 = 连划八部仍然可以直接换源。 */
-const val RECOMMEND_PREPARED_LIMIT=8
+const val RECOMMEND_PREPARED_LIMIT=com.hgtv.star.core.AppConfig.Recommend.PREPARED_LIMIT
 /** 同时在途的「相邻详情」请求上限：给当前这一部的详情留出线程（见 `prefetchRecommendNeighbors`）。 */
-const val DETAIL_PREFETCH_LIMIT=3
+const val DETAIL_PREFETCH_LIMIT=com.hgtv.star.core.AppConfig.Recommend.DETAIL_PREFETCH_LIMIT
 /** 推荐页详情缓存留几部：左右相邻来回切够用，再多只是占内存。 */
-const val RECOMMEND_DETAIL_LIMIT=8
+const val RECOMMEND_DETAIL_LIMIT=com.hgtv.star.core.AppConfig.Recommend.DETAIL_LIMIT
 
 /**
  * 推荐页进度条的拖动：拖动期间只改显示，抬手才真跳一次。

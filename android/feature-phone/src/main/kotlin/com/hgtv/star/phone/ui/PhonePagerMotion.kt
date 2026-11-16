@@ -23,8 +23,8 @@ object PhonePagerMotion {
      */
     const val SNAP_DISTANCE_RATIO = 0.5f
 
-    private const val BASE_MS = 300f
-    private const val MAX_DURATION_MS = 2_000L
+    private const val BASE_MS = com.hgtv.star.core.AppConfig.Ui.PAGER_BASE_DURATION_MS
+    private const val MAX_DURATION_MS = com.hgtv.star.core.AppConfig.Ui.PAGER_MAX_DURATION_MS
 
     /** 与 RecyclerView / PagerSnapHelper 使用的系统快甩阈值完全一致。 */
     fun minimumFlingVelocityPxPerSecond(context: Context): Int =

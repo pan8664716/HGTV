@@ -32,11 +32,11 @@ import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.ui.SoftStyle
 
 /** 一条提示显示多久（毫秒）。短是刻意的：它只用来交代「刚才那一下失败了」。 */
-internal const val TOAST_MS=1900L
+internal const val TOAST_MS=com.hgtv.star.core.AppConfig.Ui.TOAST_MS
 /** 提示淡入的时长（毫秒）。 */
-internal const val TOAST_FADE=120L
+internal const val TOAST_FADE=com.hgtv.star.core.AppConfig.Ui.TOAST_FADE_MS
 /** 提示距屏幕底边的距离（dp）。 */
-internal const val TOAST_MARGIN=34
+internal const val TOAST_MARGIN=com.hgtv.star.core.AppConfig.Ui.TOAST_MARGIN_DP
 
 /** 手填 sessionid 那个输入框的可见高度（与常规按钮同档，比默认的一行高出一倍）。 */
 internal const val SESSION_FIELD_HEIGHT=TvStyle.BUTTON_HERO
@@ -51,7 +51,7 @@ internal const val SESSION_FIELD_TEXT=20f
  * 这里不再设次数上限：问多久由平台自己决定——
  * 它认了就给 ticket，它明确结束了就回 9001 那类话，[PhoneLogin] 里也有 10 分钟窗口兜底。
  */
-private const val UPSMS_POLL_MS=4000L
+private const val UPSMS_POLL_MS=com.hgtv.star.core.AppConfig.Ui.UPSMS_POLL_MS
 /**
  * 上行短信页出现后**先等这么久**再发第一次确认。
  *
@@ -59,7 +59,7 @@ private const val UPSMS_POLL_MS=4000L
  * 会在他还没看清号码时就把结果定掉（一旦换票失败，这一页立刻被关掉，
  * 表现就是「还没让我发短信就报错」）。这里留 8 秒，之后再按 4 秒一轮。
  */
-private const val UPSMS_FIRST_POLL_MS=8000L
+private const val UPSMS_FIRST_POLL_MS=com.hgtv.star.core.AppConfig.Ui.UPSMS_FIRST_POLL_MS
 
 /**
  * 原生模态交互：手机输入、备份恢复、二次确认、列表选择。

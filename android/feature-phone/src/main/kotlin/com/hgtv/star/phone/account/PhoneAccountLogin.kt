@@ -138,7 +138,13 @@ private fun PhoneAccountActivity.startQr(session: QrLogin, code: ImageView, stat
                 is QrLogin.Outcome.Failed ->
                     state.text = outcome.message.ifBlank { "扫码状态读取失败，正在重试…" }
             }
-            schedule(if (outcome is QrLogin.Outcome.Failed) 3000L else QrLogin.POLL_MS)
+            schedule(
+                if (outcome is QrLogin.Outcome.Failed) {
+                    com.hgtv.star.core.AppConfig.Ui.QR_FAILURE_RETRY_MS
+                } else {
+                    QrLogin.POLL_MS
+                },
+            )
         }
     }
     fetchCode(manual = false)

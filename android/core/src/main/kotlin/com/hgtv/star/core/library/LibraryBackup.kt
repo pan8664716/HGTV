@@ -36,10 +36,10 @@ val BACK_TO_TOP_MODES=setOf(BACK_TO_TOP_ALWAYS,BACK_TO_TOP_ROWS5,BACK_TO_TOP_ROW
  * 下限 2 秒：再短就成了「还没看清就没了」；上限 15 秒：再长等于不消失，那正是加这一项之前的状态。
  * 默认 [PLAYER_PANEL_TIMEOUT_DEFAULT]（6 秒）取一个「读完一行、按一下方向键」都不至于被打断的值。
  */
-val PLAYER_PANEL_TIMEOUT_RANGE=2..15
+val PLAYER_PANEL_TIMEOUT_RANGE=AppConfig.Library.PLAYER_PANEL_TIMEOUT_MIN_SECONDS..AppConfig.Library.PLAYER_PANEL_TIMEOUT_MAX_SECONDS
 
 /** 播放设置 / 选集面板自动消失的出厂秒数（见 [PLAYER_PANEL_TIMEOUT_RANGE]）。 */
-const val PLAYER_PANEL_TIMEOUT_DEFAULT=6
+const val PLAYER_PANEL_TIMEOUT_DEFAULT=AppConfig.Library.PLAYER_PANEL_TIMEOUT_DEFAULT_SECONDS
 data class BackupProgress(val series: Series,val episodeId: String,val episodeIndex: Int,val position: Long,val duration: Long,val completed: Boolean,val updatedAt: Long) {
     fun json()=JSONObject().put("series",LibraryBackup.seriesJson(series)).put("episodeId",episodeId).put("episodeIndex",episodeIndex).put("position",position).put("duration",duration).put("completed",completed).put("updatedAt",updatedAt)
 
@@ -50,7 +50,7 @@ data class BackupProgress(val series: Series,val episodeId: String,val episodeIn
          * 与电视端、手机端播放页 / 信息流共用的同一个数：早先三处各写一个魔数，
          * 有一处写成 2 秒之后，同一次观看在两端就会被记成「看完」与「没看完」。
          */
-        const val COMPLETE_TAIL_MS = 3_000L
+        const val COMPLETE_TAIL_MS = AppConfig.Playback.COMPLETE_TAIL_MS
 
         /**
          * 由播放现场生成一条观看进度。
@@ -320,7 +320,7 @@ data class BackupData(
 )
 
 object LibraryBackup {
-    const val MAX_BYTES=2*1024*1024
+    const val MAX_BYTES=AppConfig.Library.BACKUP_MAX_BYTES
     private val idPattern=Regex("[0-9]{1,30}")
     private fun id(value: String)=value.also { require(idPattern.matches(it)) { "剧集标识无效" } }
     private fun cleanCover(value: String): String=runCatching {

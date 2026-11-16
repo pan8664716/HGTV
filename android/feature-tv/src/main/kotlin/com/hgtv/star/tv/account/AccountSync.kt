@@ -24,7 +24,7 @@ import com.hgtv.star.tv.R
  * 那张表只记「这份进度已经推回云端」，不是业务数据：超过上限整表清掉即可，
  * 最坏的结果是同一份进度多推一次（平台侧本来就是幂等覆盖）。
  */
-private const val HISTORY_PUSHED_LIMIT=300
+private const val HISTORY_PUSHED_LIMIT=com.hgtv.star.core.AppConfig.Library.HISTORY_PUSHED_LIMIT
 
 /**
  * 本机观看进度被账号那一份改写之后，重画**读本机进度**的那几处。

@@ -7,9 +7,9 @@ import com.hgtv.star.shared.compat.isMeteredConnection
 import com.hgtv.star.shared.data.AppRuntime
 
 /** 同时在途的预热条数上限（WiFi）。再多只会互相抢带宽，当前这一部反而起播更慢。 */
-const val RECOMMEND_WARM_SLOTS=2
+const val RECOMMEND_WARM_SLOTS=com.hgtv.star.core.AppConfig.Recommend.WARM_SLOTS
 /** 同时在途的预热条数上限（移动网络）：够「下一部」就好，别拿用户流量去猜方向。 */
-const val RECOMMEND_WARM_SLOTS_METERED=1
+const val RECOMMEND_WARM_SLOTS_METERED=com.hgtv.star.core.AppConfig.Recommend.WARM_SLOTS_METERED
 
 /**
  * 取首集地址并预热（索引 + 前 1MB）。已经有同一份、或正在预热同一份时直接跳过。

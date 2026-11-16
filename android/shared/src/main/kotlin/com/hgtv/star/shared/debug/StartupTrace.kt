@@ -5,6 +5,7 @@ import android.os.SystemClock
 import android.os.Handler
 import android.os.Looper
 import android.util.Log
+import com.hgtv.star.core.AppConfig
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
 import java.util.concurrent.TimeUnit
@@ -60,11 +61,11 @@ object StartupTrace {
  * 避免注册、推荐、详情或播放准备把用户无限期卡在加载态。
  */
 object StartupBudgets {
-    const val REGISTER_MS = 6_000L
-    const val FEED_FIRST_MS = 4_000L
-    const val DETAIL_MS = 4_000L
-    const val STREAM_MS = 6_000L
-    const val PREPARE_MS = 8_000L
+    const val REGISTER_MS = AppConfig.Startup.REGISTER_MS
+    const val FEED_FIRST_MS = AppConfig.Startup.FEED_FIRST_MS
+    const val DETAIL_MS = AppConfig.Startup.DETAIL_MS
+    const val STREAM_MS = AppConfig.Startup.STREAM_MS
+    const val PREPARE_MS = AppConfig.Startup.PREPARE_MS
 }
 
 /**
@@ -89,7 +90,7 @@ object StartupDeferredTasks {
         Thread(runnable, "hgtv-startup-deferred").apply { isDaemon = true }
     }
 
-    fun schedule(key: String, timeoutMs: Long = 20_000L, action: () -> Unit) {
+    fun schedule(key: String, timeoutMs: Long = AppConfig.Startup.DEFERRED_TASK_TIMEOUT_MS, action: () -> Unit) {
         var runNow = false
         synchronized(lock) {
             if (!scheduledKeys.add(key)) return
@@ -113,7 +114,7 @@ object StartupDeferredTasks {
      * 弹幕这类“当前集”的工作会在换剧时连续调用；如果每次都排队，首帧后会把已经
      * 划走的集也拉一遍。这里用 key 覆盖旧动作，并且始终回到主线程执行。
      */
-    fun scheduleLatestOnMain(key: String, timeoutMs: Long = 30_000L, action: () -> Unit) {
+    fun scheduleLatestOnMain(key: String, timeoutMs: Long = AppConfig.Startup.DEFERRED_LATEST_TIMEOUT_MS, action: () -> Unit) {
         var runNow=false
         synchronized(lock) {
             if(playbackReady.get()) {

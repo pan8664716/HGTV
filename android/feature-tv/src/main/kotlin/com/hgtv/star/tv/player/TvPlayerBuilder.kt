@@ -5,6 +5,7 @@ import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.DefaultLoadControl
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.audio.AudioAttributes
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.shared.compat.isMeteredConnection
 import com.hgtv.star.shared.compat.lowEndTv
 import com.hgtv.star.shared.debug.PlaybackStartupTrace
@@ -18,8 +19,9 @@ internal data class TvBufferProfile(
     val name: String,
     val minBufferMs: Int,
     val maxBufferMs: Int,
-    val bufferForPlaybackMs: Int = 1_000,
-    val bufferForPlaybackAfterRebufferMs: Int = 2_000,
+    val bufferForPlaybackMs: Int = AppConfig.Playback.TvBuffer.DEFAULT_BUFFER_FOR_PLAYBACK_MS,
+    val bufferForPlaybackAfterRebufferMs: Int =
+        AppConfig.Playback.TvBuffer.DEFAULT_BUFFER_FOR_PLAYBACK_AFTER_REBUFFER_MS,
     val targetBufferBytes: Int,
 )
 
@@ -32,8 +34,8 @@ internal data class TvBufferProfile(
 private object TvBufferTuning {
     private const val PREFS="hgtv-playback-buffer"
     private const val KEY_FIRST_FRAME_EWMA="first-frame-ewma-ms"
-    private const val EWMA_OLD_WEIGHT=0.7f
-    private const val EWMA_NEW_WEIGHT=0.3f
+    private const val EWMA_OLD_WEIGHT=AppConfig.Playback.TvBuffer.EWMA_OLD_WEIGHT
+    private const val EWMA_NEW_WEIGHT=AppConfig.Playback.TvBuffer.EWMA_NEW_WEIGHT
 
     fun firstFrameEwmaMs(context: android.content.Context): Long =
         runCatching {
@@ -42,7 +44,7 @@ private object TvBufferTuning {
         }.getOrDefault(0L)
 
     @Synchronized fun recordFirstFrame(context: android.content.Context,elapsedMs: Long) {
-        if(elapsedMs !in 1L..120_000L) return
+        if(elapsedMs !in 1L..AppConfig.Playback.TvBuffer.EWMA_SAMPLE_MAX_MS) return
         val prefs=context.getSharedPreferences(PREFS,android.content.Context.MODE_PRIVATE)
         val old=prefs.getFloat(KEY_FIRST_FRAME_EWMA,0f)
         val next=if(old<=0f) elapsedMs.toFloat() else old*EWMA_OLD_WEIGHT+elapsedMs*EWMA_NEW_WEIGHT
@@ -57,27 +59,27 @@ internal fun TvMainActivity.resolveTvBufferProfile(): TvBufferProfile {
     return when {
         lowEnd -> TvBufferProfile(
             name="low-end",
-            minBufferMs=30_000,
-            maxBufferMs=60_000,
-            targetBufferBytes=16*1024*1024,
+            minBufferMs=AppConfig.Playback.TvBuffer.LOW_END_MIN_BUFFER_MS,
+            maxBufferMs=AppConfig.Playback.TvBuffer.LOW_END_MAX_BUFFER_MS,
+            targetBufferBytes=AppConfig.Playback.TvBuffer.LOW_END_TARGET_BYTES,
         )
-        metered || firstFrameMs>=7_000L -> TvBufferProfile(
+        metered || firstFrameMs>=AppConfig.Playback.TvBuffer.SLOW_FIRST_FRAME_MS -> TvBufferProfile(
             name="slow-network",
-            minBufferMs=30_000,
-            maxBufferMs=90_000,
-            targetBufferBytes=24*1024*1024,
+            minBufferMs=AppConfig.Playback.TvBuffer.SLOW_MIN_BUFFER_MS,
+            maxBufferMs=AppConfig.Playback.TvBuffer.SLOW_MAX_BUFFER_MS,
+            targetBufferBytes=AppConfig.Playback.TvBuffer.SLOW_TARGET_BYTES,
         )
-        firstFrameMs in 1L..3_000L -> TvBufferProfile(
+        firstFrameMs in 1L..AppConfig.Playback.TvBuffer.FAST_FIRST_FRAME_MAX_MS -> TvBufferProfile(
             name="fast",
-            minBufferMs=10_000,
-            maxBufferMs=30_000,
-            targetBufferBytes=16*1024*1024,
+            minBufferMs=AppConfig.Playback.TvBuffer.FAST_MIN_BUFFER_MS,
+            maxBufferMs=AppConfig.Playback.TvBuffer.FAST_MAX_BUFFER_MS,
+            targetBufferBytes=AppConfig.Playback.TvBuffer.FAST_TARGET_BYTES,
         )
         else -> TvBufferProfile(
             name="balanced",
-            minBufferMs=20_000,
-            maxBufferMs=60_000,
-            targetBufferBytes=24*1024*1024,
+            minBufferMs=AppConfig.Playback.TvBuffer.BALANCED_MIN_BUFFER_MS,
+            maxBufferMs=AppConfig.Playback.TvBuffer.BALANCED_MAX_BUFFER_MS,
+            targetBufferBytes=AppConfig.Playback.TvBuffer.BALANCED_TARGET_BYTES,
         )
     }
 }

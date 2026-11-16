@@ -22,7 +22,7 @@ import java.util.concurrent.TimeUnit
         playback: PlaybackProfile,
         queue: List<String> = emptyList(),
     ): JSONObject {
-        // TNC 下发候选域名；最近成功的排第一。每条实际请求独立 6 秒，候选之间不共享超时。
+        // TNC 下发候选域名；最近成功的排第一。每条实际请求独立 20 秒，候选之间不共享超时。
         val hosts=TncConfigStore.orderedApiHosts().take(3)
         // 播放器打开用 `multi_video_model/player` 取当前集 + 后 14 集；
         // 单集接口只作为兼容兜底，preload 留给首帧稳定后的后台补货。
@@ -54,7 +54,7 @@ import java.util.concurrent.TimeUnit
         ContentRepository.backgroundModelScope?.cancel()
         try {
             val gate=ContentRepository.modelGate
-            // 排队与网络请求分开计时：等闸门最多 6 秒，拿到闸门后每条链接仍有完整 6 秒。
+            // 排队与网络请求分开计时：等闸门最多 20 秒，拿到闸门后每条链接仍有完整 20 秒。
             val waitMs=ADDRESS_ATTEMPT_TIMEOUT_MS
             if(!gate.tryAcquire(waitMs,TimeUnit.MILLISECONDS)) {
                 throw addressTimeout()

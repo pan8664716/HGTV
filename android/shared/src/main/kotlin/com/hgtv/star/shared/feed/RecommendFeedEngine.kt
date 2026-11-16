@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.feed
 
 import com.hgtv.star.core.CategorySelection
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.RecommendFeedSource
 import com.hgtv.star.core.FeedCursor
 import com.hgtv.star.core.OptionalFilter
@@ -109,7 +110,7 @@ class RecommendFeedEngine(
                     input.ensureRegistered()
                 }
                 // 只有“真正无快照的首条”使用首屏预算；快照补齐虽然 append=false，
-                // 但它已经在首帧之后，属于后台补页，不能套 4 秒的首条门槛。
+                // 但它已经在首帧之后，属于后台补页，不能套首条门槛。
                 val criticalFirstRequest = !input.append && !input.restored && processedPages == 0
                 val request = {
                     repository.recommendFeed(
@@ -334,11 +335,11 @@ data class RecommendFeedPolicy(
     val cacheNamespace: String = "",
     /** 是否支持 TV 的「只推荐横屏短剧」服务端请求参数。手机 / 平板保持 false。 */
     val supportsHorizontalOnly: Boolean = false,
-    val firstLimit: Int = 20,
-    val pageLimit: Int = 20,
-    val maxPagesPerLoad: Int = 3,
-    val maxRestarts: Int = 2,
-    val maxRequestsPerLoad: Int = 12,
+    val firstLimit: Int = AppConfig.Recommend.FIRST_LIMIT,
+    val pageLimit: Int = AppConfig.Recommend.PAGE_LIMIT,
+    val maxPagesPerLoad: Int = AppConfig.Recommend.MAX_PAGES_PER_LOAD,
+    val maxRestarts: Int = AppConfig.Recommend.MAX_RESTARTS,
+    val maxRequestsPerLoad: Int = AppConfig.Recommend.MAX_REQUESTS_PER_LOAD,
     val deepCursor: Int = Int.MAX_VALUE,
     val firstBudgetMs: Long = Long.MAX_VALUE,
     val quickFilterFailureMs: Long = Long.MAX_VALUE,
@@ -353,14 +354,14 @@ data class RecommendFeedPolicy(
 
     companion object {
         /** TV 与 Phone 共用的推荐加载节奏。 */
-        const val FIRST_LIMIT = 60
-        const val PAGE_LIMIT = 60
-        const val MAX_PAGES_PER_LOAD = 3
-        const val MAX_RESTARTS = 2
-        const val DEEP_CURSOR = 120
-        const val FIRST_BUDGET_MS = 3_000L
-        const val QUICK_FILTER_FAILURE_MS = 1_500L
-        const val MIN_ITEMS_PER_LOAD = 6
+        const val FIRST_LIMIT = AppConfig.Recommend.FIRST_LIMIT
+        const val PAGE_LIMIT = AppConfig.Recommend.PAGE_LIMIT
+        const val MAX_PAGES_PER_LOAD = AppConfig.Recommend.MAX_PAGES_PER_LOAD
+        const val MAX_RESTARTS = AppConfig.Recommend.MAX_RESTARTS
+        const val DEEP_CURSOR = AppConfig.Recommend.DEEP_CURSOR
+        const val FIRST_BUDGET_MS = AppConfig.Recommend.FIRST_BUDGET_MS
+        const val QUICK_FILTER_FAILURE_MS = AppConfig.Recommend.QUICK_FILTER_FAILURE_MS
+        const val MIN_ITEMS_PER_LOAD = AppConfig.Recommend.MIN_ITEMS_PER_LOAD
 
         /**
          * 两端差异只有推荐流命名空间和 TV 的横屏请求能力位：Phone 按体裁拆流，

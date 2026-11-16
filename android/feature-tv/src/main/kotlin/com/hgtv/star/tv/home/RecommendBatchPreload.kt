@@ -6,7 +6,7 @@ import com.hgtv.star.core.detail
 import com.hgtv.star.core.prefetchModels
 
 /** 相邻一部的详情 / 地址 / 首块优先；播放模型批量预取晚一点再跑。 */
-internal const val RECOMMEND_BATCH_MODEL_DELAY_MS=3_000L
+internal const val RECOMMEND_BATCH_MODEL_DELAY_MS=com.hgtv.star.core.AppConfig.Recommend.BATCH_MODEL_DELAY_MS
 
 /**
  * 把推荐列表里当前这一部**前后相邻的几部**预热起来。

@@ -751,7 +751,7 @@ class PhoneMinePage(
     }
 
     private companion object {
-        const val ACCOUNT_RETRY_MS = 4_000L
-        const val ACCOUNT_RETRIES = 2
+        const val ACCOUNT_RETRY_MS = com.hgtv.star.core.AppConfig.Ui.ACCOUNT_RETRY_MS
+        const val ACCOUNT_RETRIES = com.hgtv.star.core.AppConfig.Ui.ACCOUNT_RETRIES
     }
 }

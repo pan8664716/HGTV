@@ -20,7 +20,7 @@ class LibraryTransferServer(address: String,private val backup: String,private v
     private val maxBytes: Int=LibraryBackup.MAX_BYTES,private val singleDownload: Boolean=true,
     private val onDownloaded: ()->Unit={}): Closeable {
     private companion object {
-        const val MAX_TTL_MILLIS=24*60*60*1000L
+        const val MAX_TTL_MILLIS=AppConfig.Library.TRANSFER_MAX_TTL_MS
     }
     private val byteLimit=maxBytes.coerceIn(1,8*1024*1024)
     private val ttl=if(ttlMillis==Long.MAX_VALUE) Long.MAX_VALUE else ttlMillis.coerceIn(1,MAX_TTL_MILLIS)

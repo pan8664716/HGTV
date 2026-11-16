@@ -15,6 +15,7 @@ import android.view.Choreographer
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.View
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.Danmaku
 import com.hgtv.star.core.DanmakuEmoji
 import com.hgtv.star.core.DanmakuHighlight
@@ -33,34 +34,34 @@ import kotlin.math.roundToInt
 
 class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Listener,SurfaceHolder.Callback {
     private companion object {
-        const val BASE_SCROLL_SECONDS=6f
-        const val BOTTOM_INSET_DP=120
-        const val LANE_GAP_TEXT=0.9f
-        const val LANE_GAP_VERTICAL=0.35f
-        const val LANE_MIN_GAP_DP=12
-        const val MAX_DELAY_MS=4_000L
-        const val HIGHLIGHT_SCALE=1.25f
-        const val HIGHLIGHT_PAD_DP=13
-        const val HIGHLIGHT_COUNTER_FULL_COUNT=40
-        const val HIGHLIGHT_COUNTER_MAX_SCALE=1.4f
-        const val HIGHLIGHT_COUNTER_WARM_COLOR=0xFFFFC857.toInt()
-        const val HIGHLIGHT_COUNTER_HOT_COLOR=0xFFFF5722.toInt()
-        const val HIGHLIGHT_COUNTER_PULSE_MIN_COUNT=20
-        const val HIGHLIGHT_COUNTER_PULSE_DURATION_MS=420L
-        const val HIGHLIGHT_COUNTER_PULSE_MAX_SCALE=1.6f
-        const val EMOJI_SCALE=1.2f
-        const val CACHE_LINES=4096
+        const val BASE_SCROLL_SECONDS=AppConfig.Danmaku.BASE_SCROLL_SECONDS
+        const val BOTTOM_INSET_DP=AppConfig.Danmaku.BOTTOM_INSET_DP
+        const val LANE_GAP_TEXT=AppConfig.Danmaku.LANE_GAP_TEXT
+        const val LANE_GAP_VERTICAL=AppConfig.Danmaku.LANE_GAP_VERTICAL
+        const val LANE_MIN_GAP_DP=AppConfig.Danmaku.LANE_MIN_GAP_DP
+        const val MAX_DELAY_MS=AppConfig.Danmaku.MAX_DELAY_MS
+        const val HIGHLIGHT_SCALE=AppConfig.Danmaku.HIGHLIGHT_SCALE
+        const val HIGHLIGHT_PAD_DP=AppConfig.Danmaku.HIGHLIGHT_PAD_DP
+        const val HIGHLIGHT_COUNTER_FULL_COUNT=AppConfig.Danmaku.HIGHLIGHT_COUNTER_FULL_COUNT
+        const val HIGHLIGHT_COUNTER_MAX_SCALE=AppConfig.Danmaku.HIGHLIGHT_COUNTER_MAX_SCALE
+        const val HIGHLIGHT_COUNTER_WARM_COLOR=AppConfig.Danmaku.HIGHLIGHT_COUNTER_WARM_COLOR
+        const val HIGHLIGHT_COUNTER_HOT_COLOR=AppConfig.Danmaku.HIGHLIGHT_COUNTER_HOT_COLOR
+        const val HIGHLIGHT_COUNTER_PULSE_MIN_COUNT=AppConfig.Danmaku.HIGHLIGHT_COUNTER_PULSE_MIN_COUNT
+        const val HIGHLIGHT_COUNTER_PULSE_DURATION_MS=AppConfig.Danmaku.HIGHLIGHT_COUNTER_PULSE_DURATION_MS
+        const val HIGHLIGHT_COUNTER_PULSE_MAX_SCALE=AppConfig.Danmaku.HIGHLIGHT_COUNTER_PULSE_MAX_SCALE
+        const val EMOJI_SCALE=AppConfig.Danmaku.EMOJI_SCALE
+        const val CACHE_LINES=AppConfig.Danmaku.CACHE_LINES
         val EMPTY_WIDTHS=FloatArray(0)
-        const val SPRITE_AHEAD_MS=60_000L
-        const val SPRITE_BEHIND_MS=8_000L
-        const val SPRITE_REFRESH_MS=30_000L
-        const val SCHEDULE_AHEAD_MS=30_000L
-        const val LINE_RETENTION_MS=1_000L
-        const val REPLACE_ACTIVE_GRACE_MS=500L
-        const val SEEK_BACK_TOLERANCE_MS=250L
-        const val LINE_POOL_LIMIT=256
-        const val LOW_END_SURFACE_MAX_WIDTH=1280
-        const val LOW_END_SURFACE_MAX_HEIGHT=720
+        const val SPRITE_AHEAD_MS=AppConfig.Danmaku.SPRITE_AHEAD_MS
+        const val SPRITE_BEHIND_MS=AppConfig.Danmaku.SPRITE_BEHIND_MS
+        const val SPRITE_REFRESH_MS=AppConfig.Danmaku.SPRITE_REFRESH_MS
+        const val SCHEDULE_AHEAD_MS=AppConfig.Danmaku.SCHEDULE_AHEAD_MS
+        const val LINE_RETENTION_MS=AppConfig.Danmaku.LINE_RETENTION_MS
+        const val REPLACE_ACTIVE_GRACE_MS=AppConfig.Danmaku.REPLACE_ACTIVE_GRACE_MS
+        const val SEEK_BACK_TOLERANCE_MS=AppConfig.Danmaku.SEEK_BACK_TOLERANCE_MS
+        const val LINE_POOL_LIMIT=AppConfig.Danmaku.LINE_POOL_LIMIT
+        const val LOW_END_SURFACE_MAX_WIDTH=AppConfig.Danmaku.LOW_END_SURFACE_MAX_WIDTH
+        const val LOW_END_SURFACE_MAX_HEIGHT=AppConfig.Danmaku.LOW_END_SURFACE_MAX_HEIGHT
     }
 
     private class Line {

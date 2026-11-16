@@ -42,9 +42,9 @@ class PhoneMainActivity : PhoneActivity() {
         /** 重建（改分辨率 / dpi / 主题）后回到原来那一页。 */
         const val STATE_TAB = "phone_main_tab"
         /** 底部导航同一格连点两次的判定窗口。 */
-        const val TAB_DOUBLE_TAP_MS = 320L
+        const val TAB_DOUBLE_TAP_MS = com.hgtv.star.core.AppConfig.Ui.TAB_DOUBLE_TAP_MS
         /** 主界面两次返回退出的判定窗口。 */
-        const val EXIT_DOUBLE_BACK_MS = 2_000L
+        const val EXIT_DOUBLE_BACK_MS = com.hgtv.star.core.AppConfig.Ui.EXIT_DOUBLE_BACK_MS
 
         /**
          * 重建前记下的页号。

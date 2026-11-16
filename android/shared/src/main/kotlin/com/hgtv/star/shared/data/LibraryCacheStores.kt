@@ -4,6 +4,7 @@ package com.hgtv.star.shared.data
 import com.hgtv.star.core.AccountData
 import com.hgtv.star.core.AccountCacheEntry
 import com.hgtv.star.core.AccountSnapshot
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.CatalogPage
 import com.hgtv.star.core.CatalogSnapshot
 import com.hgtv.star.core.ComicRanking
@@ -28,7 +29,7 @@ internal class LibraryHomeCacheStore(
 
     fun cached(board: RankBoard): CatalogPage? {
         val age = clock() - (savedAt[board] ?: return null)
-        return homes[board].takeIf { age in 0..7 * 24 * 60 * 60 * 1000L }
+        return homes[board].takeIf { age in 0..AppConfig.Library.HOME_CACHE_TTL_MS }
     }
 
     fun cache(
@@ -39,7 +40,8 @@ internal class LibraryHomeCacheStore(
     ) {
         if (items.isEmpty()) return
         val now = clock()
-        val retained = items.take(30).map { it.copy(description = it.description.take(1500)) }
+        val retained = items.take(AppConfig.Library.HOME_CACHE_MAX_ITEMS)
+            .map { it.copy(description = it.description.take(1500)) }
         homes[board] = CatalogPage(retained, hasMore, ranking)
         savedAt[board] = now
         writes.submit(mapOf(cacheKey(board) to {

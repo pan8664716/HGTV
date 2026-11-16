@@ -73,8 +73,8 @@ fun TvMainActivity.showRecommendCover() {
  * [PICTURE_RECOVERY_COOLDOWN_MS]。真的解不出画面的片源，重建几次都是黑的，
  * 那种情形应当交给「换下一部」，而不是每 12 秒闪一下。
  */
-private const val PICTURE_RECOVERY_LIMIT=2
-private const val PICTURE_RECOVERY_COOLDOWN_MS=20_000L
+private const val PICTURE_RECOVERY_LIMIT=com.hgtv.star.core.AppConfig.Playback.PICTURE_RECOVERY_LIMIT
+private const val PICTURE_RECOVERY_COOLDOWN_MS=com.hgtv.star.core.AppConfig.Playback.PICTURE_RECOVERY_COOLDOWN_MS
 
 fun TvMainActivity.recoverRecommendPicture(reason: String) {
     // 只在推荐页动手：正式播放页有自己的错误界面与「重试 / 换清晰度」，不该被静默重建。

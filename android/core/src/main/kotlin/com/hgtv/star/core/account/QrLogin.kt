@@ -39,9 +39,10 @@ class QrLogin(
     // 钉死 HTTP/1.1：与 ContentRepository / PhoneLogin 同一理由（平台 h2 读线程异常会打死进程）。
     private val http: OkHttpClient = HgtvTls.configure(OkHttpClient.Builder())
         .protocols(listOf(okhttp3.Protocol.HTTP_1_1))
-        .connectTimeout(15,TimeUnit.SECONDS)
-        .readTimeout(20,TimeUnit.SECONDS)
-        .callTimeout(30,TimeUnit.SECONDS)
+        .connectTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+        .readTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+        .writeTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+        .callTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
         .build(),
     private val clock: () -> Long = System::currentTimeMillis
 ) {
@@ -59,7 +60,7 @@ class QrLogin(
             "path","domain","expires","max-age","secure","httponly","samesite","priority","partitioned"
         )
         /** 轮询间隔：与官方前端 `setTimeout(fn, 1000)` 对齐（网络 RTT ≈ 100ms）。 */
-        const val POLL_MS = 1100L
+        const val POLL_MS = AppConfig.Network.QR_POLL_MS
     }
 
     /** 一张二维码（token + PNG 字节 + 过期时刻，秒）。 */

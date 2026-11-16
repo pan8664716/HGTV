@@ -153,7 +153,7 @@ data class DanmakuRepeat(val text: String,val offsets: List<Long>) {
  * 只有停发超过这个时间之后再次出现，才开启新的一轮。这样持续刷屏的同一句话不会在
  * 第 20 秒突然从 `×1` 重新计数；连续出现多久，计数就累计多久。
  */
-const val DANMAKU_REPEAT_WINDOW_MS=20_000L
+const val DANMAKU_REPEAT_WINDOW_MS=AppConfig.Danmaku.REPEAT_WINDOW_MS
 
 /**
  * 「相同弹幕达到几条才聚合」的取值范围：2..10（设置页那条滑动条的区间）。
@@ -161,7 +161,7 @@ const val DANMAKU_REPEAT_WINDOW_MS=20_000L
  * 下限是 2：一条弹幕谈不上「重复」，把它算成聚合只会给每条都挂一个 `×1`。
  * 上限 10：再往上调，屏幕上同一句话得刷十遍才合并，实际等于把聚合关掉了。
  */
-val DANMAKU_MERGE_MIN_RANGE=2..10
+val DANMAKU_MERGE_MIN_RANGE=AppConfig.Danmaku.MERGE_MIN_COUNT..AppConfig.Danmaku.MERGE_MAX_COUNT
 
 private val AGG_EMOJI_TAG=Regex("""\[[^\[\]\r\n]{1,16}]|【[^\[\]【】［］\r\n]{1,16}】|［[^\[\]【】［］\r\n]{1,16}］""")
 private val AGG_WHITESPACE=Regex("""\s+""")
@@ -244,21 +244,21 @@ private fun bucketToGroups(text: String,bucket: List<Long>,threshold: Int): List
  */
 object DanmakuHighlight {
     /** 至少重复这么多次才算「重复弹幕」，才有资格进中央。 */
-    const val MIN_COUNT=2
+    const val MIN_COUNT=AppConfig.Danmaku.HIGHLIGHT_MIN_COUNT
     /**
      * 中央最多同时放几条。
      *
      * 原来中央只有一格，几条被聚合的弹幕只能一条接一条地轮流上，屏幕上永远只有一句；
      * 现在一格放一条、竖着排开；1 行放一格、2 行放两格、3 行及以上放三格。
      */
-    const val MAX_SLOTS=3
+    const val MAX_SLOTS=AppConfig.Danmaku.HIGHLIGHT_MAX_SLOTS
     /**
      * 一条中央弹幕停留多久：**从最后一次 +1 起算**。
      *
      * 也就是说，聚合到 `×5` 的那一条正在展示时又来了一条变成 `×6`，消失时间就从这一条出现
      * 的那一刻重新开始算 7 秒；只有「数量又 +1」才会重新计时。
      */
-    const val MIN_DWELL_MS=7_000L
+    const val MIN_DWELL_MS=AppConfig.Danmaku.HIGHLIGHT_MIN_DWELL_MS
 }
 
 /**
@@ -449,12 +449,12 @@ private fun roundEnd(group: DanmakuRepeat,startMs: Long): Long {
  * 不会出现 1.3000001 这种值在面板上显示 130%、写盘却和 130% 不相等的情况。
  */
 object DanmakuStyle {
-    const val SCALE_MIN=0.6f
-    const val SCALE_MAX=2f
-    const val SCALE_STEP=0.1f
-    const val ALPHA_MIN=0.2f
-    const val ALPHA_MAX=1f
-    const val ALPHA_STEP=0.1f
+    const val SCALE_MIN=AppConfig.Danmaku.SCALE_MIN
+    const val SCALE_MAX=AppConfig.Danmaku.SCALE_MAX
+    const val SCALE_STEP=AppConfig.Danmaku.SCALE_STEP
+    const val ALPHA_MIN=AppConfig.Danmaku.ALPHA_MIN
+    const val ALPHA_MAX=AppConfig.Danmaku.ALPHA_MAX
+    const val ALPHA_STEP=AppConfig.Danmaku.ALPHA_STEP
 
     fun scale(value: Float)=snap(value,SCALE_MIN,SCALE_MAX,SCALE_STEP)
     fun alpha(value: Float)=snap(value,ALPHA_MIN,ALPHA_MAX,ALPHA_STEP)

@@ -262,7 +262,7 @@ private fun PhonePlayerActivity.recoverQueuedCurrent(position: Long): Boolean {
 }
 
 /** 片尾窗口：与电视端 `queuedNearEnd` 同一个 2 秒。 */
-private const val QUEUED_NEAR_END_MS = 2_000L
+private const val QUEUED_NEAR_END_MS = com.hgtv.star.core.AppConfig.Ui.QUEUED_NEAR_END_MS
 
 /**
  * 推荐来源的行为上报。只接受从推荐流带进来的同一部剧，避免把普通详情页播放算进推荐。
@@ -292,7 +292,7 @@ internal fun PhonePlayerActivity.reportRecommendEvent(
 }
 
 /** 队列项接回当前集的最多次数（按「集 + 上限」计）。 */
-private const val QUEUED_RECOVER_LIMIT = 1
+private const val QUEUED_RECOVER_LIMIT = com.hgtv.star.core.AppConfig.Ui.QUEUED_RECOVER_LIMIT
 
 /**
  * 按计划重来一次：**参数只改一个维度**（同档重建 / 降一档），断点续播。

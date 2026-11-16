@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.data
 import com.hgtv.star.core.connectionPool
+import com.hgtv.star.core.AppConfig
 import okhttp3.ConnectionPool
 import okhttp3.Dispatcher
 import okhttp3.OkHttpClient
@@ -72,26 +73,11 @@ object PlaybackTransport {
             // 两遍就是两次完整 body 拷贝 + 两次 UTF-8 解码，而这段代码正好在
             // `/novel/player/video_model` 的响应上——也就是首帧关键路径。
             .addInterceptor(com.hgtv.star.core.session.SessionInterceptor())
-            // **建连最多 3 秒**（原 8 秒）。这是「断网切集」那 30~50 秒冻屏的最后一块：
-            //
-            // 取地址的每条链接各自有 6 秒超时（见
-            // `ContentRepository.ADDRESS_ATTEMPT_TIMEOUT_MS`），但 `RemoteVideo.prepare()`
-            // 用的是**这条** client，它不在取地址请求的超时里。
-            // 断网时 `range(0,256KB)` 的 SYN 石沉大海，旧值要等满 8 秒才抛
-            //（现场：`Stage prepare` 前后各卡 8~16 秒，串行两次 Range 就是 16 秒）。
-            //
-            // 为什么是 3 秒而不是更短：正常建连是十几毫秒，最坏的一次实测是
-            // **3105ms**（2026-10-30，小米 TV，断网恢复那一刻的冷 DNS + 冷路由，
-            // 日志 `net POST … tcp=3135ms`）。3 秒正好兜住它；再短就会把「慢但能成」
-            // 的一发判成失败，白多一轮重来。
-            //
-            // **只收这一项**：`readTimeout` / `callTimeout` 不动。分片读 1MB 在这台盒子的
-            // 弱网下真的会慢到几十秒，收它们是拿正常播放去换一个已经由上层兜住的场景。
-            .connectTimeout(3, TimeUnit.SECONDS)
-            // 与改动前播放用的超时一致：一次 Range 读最多 1 MB，30 秒读超时、
-            // 45 秒整调用超时。不要再收紧——电视盒子在弱网下真的会慢到这个量级。
-            .readTimeout(30, TimeUnit.SECONDS)
-            .callTimeout(45, TimeUnit.SECONDS)
+            // 播放链路的所有请求统一使用 20 秒超时。
+            .connectTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .readTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .writeTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
+            .callTimeout(AppConfig.Network.REQUEST_TIMEOUT_SECONDS, TimeUnit.SECONDS)
             .retryOnConnectionFailure(true)
             .dispatcher(Dispatcher().apply {
                 // 播放是顺序 Range 读，并发本来就只有 1~2；预热另算一条。

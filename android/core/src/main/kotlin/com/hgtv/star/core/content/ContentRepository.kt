@@ -13,10 +13,10 @@ import java.util.concurrent.TimeUnit
 private fun defaultHttpClient(): OkHttpClient = defaultContentHttpClient()
 
 /** 所有卡片列表统一的一页条数；首屏与后续页相同。 */
-const val CATALOG_PAGE_SIZE=100
+const val CATALOG_PAGE_SIZE=AppConfig.Catalog.PAGE_SIZE
 const val CATALOG_FIRST_PAGE_SIZE=CATALOG_PAGE_SIZE
 /** 已加载内容只剩这么多条时，界面提前请求下一页。 */
-const val CATALOG_PREFETCH_REMAINING=50
+const val CATALOG_PREFETCH_REMAINING=AppConfig.Catalog.PREFETCH_REMAINING
 class ContentRepository(
     httpClient: OkHttpClient? = null,
     internal val clock: () -> Long = System::currentTimeMillis,
@@ -36,9 +36,10 @@ class ContentRepository(
         "eyJyZWNlbnRfZGlzbGlrZV9naWQiOltdLCJzZXNzaW9uX2FwcF9zdGF5X3RpbWUiOjB9"
     internal val tncHttp by lazy(LazyThreadSafetyMode.SYNCHRONIZED) {
         http.newBuilder()
-            .connectTimeout(4,TimeUnit.SECONDS)
-            .readTimeout(6,TimeUnit.SECONDS)
-            .callTimeout(8,TimeUnit.SECONDS)
+            .connectTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+            .readTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+            .writeTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
+            .callTimeout(REQUEST_TIMEOUT_SECONDS,TimeUnit.SECONDS)
             .build()
     }
     fun hasHttpClient(): Boolean = httpRef.isInitialized()
@@ -78,13 +79,13 @@ class ContentRepository(
     )
     internal val SITE_HOST: String
         get() = "https://${TncConfigStore.localHost("hongguoduanju.com","hongguoduanju.com")}"
-    internal val WEB_SEARCH_PAGE_SIZE = 10
-    internal val WEB_SEARCH_BATCH = 10
+    internal val WEB_SEARCH_PAGE_SIZE = AppConfig.Catalog.WEB_SEARCH_PAGE_SIZE
+    internal val WEB_SEARCH_BATCH = AppConfig.Catalog.WEB_SEARCH_BATCH
     internal val WEB_FALLBACK_BATCH = WEB_SEARCH_BATCH
-    private val WEB_SEARCH_CONCURRENCY = 3
-    internal val WEB_SEARCH_RETRY = 2
-    internal val WEB_SEARCH_RETRY_DELAY = 200L
-    internal val WEB_SEARCH_QUERY_MAX = 30
+    private val WEB_SEARCH_CONCURRENCY = AppConfig.Catalog.WEB_SEARCH_CONCURRENCY
+    internal val WEB_SEARCH_RETRY = AppConfig.Catalog.WEB_SEARCH_RETRY
+    internal val WEB_SEARCH_RETRY_DELAY = AppConfig.Catalog.WEB_SEARCH_RETRY_DELAY_MS
+    internal val WEB_SEARCH_QUERY_MAX = AppConfig.Catalog.WEB_SEARCH_QUERY_MAX
     internal val webSearchSeen=linkedMapOf<String,MutableSet<String>>()
     internal val webFallbackCursors=linkedMapOf<String,Int>()
     internal val webSearchNote=ThreadLocal<String>()
@@ -153,7 +154,7 @@ class ContentRepository(
     internal val AUTHOR_WORKS_EMPTY_PAGES=2
     private val AUTHOR_WORKS_FAMILY_FANOUT=3
     internal val AUTHOR_WORKS_FAMILY_MAX=12
-    internal val AUTHOR_WORKS_FAMILY_TIMEOUT_MS=12000L
+    internal val AUTHOR_WORKS_FAMILY_TIMEOUT_MS=REQUEST_TIMEOUT_MS
     internal val authorWorksCache=linkedMapOf<String,AuthorWorksResult>()
     internal val PUBLISHER_PAGE_SIZE=50
     internal val PUBLISHER_PAGES=6
@@ -171,18 +172,18 @@ class ContentRepository(
 
     internal val CATEGORY_FIRST_PAGE_SIZE=CATALOG_FIRST_PAGE_SIZE
 
-    private val RECOMMEND_PAGE_SIZE=20
+    private val RECOMMEND_PAGE_SIZE=AppConfig.Catalog.RECOMMEND_PAGE_LIMIT
 
     internal val LOGICAL_PAGE_SIZE=CATALOG_PAGE_SIZE
     internal val RANK_FIRST_PAGE_SIZE=CATALOG_FIRST_PAGE_SIZE
 
-    internal val RANK_API_PAGE_SIZE=20
+    internal val RANK_API_PAGE_SIZE=AppConfig.Catalog.RANK_API_LIMIT
 
     internal val CATEGORY_ATTEMPTS=8
     internal val FIRST_PAGE_ATTEMPTS=3
     internal val RECOMMEND_ATTEMPTS=3
     internal val SEARCH_BLANK_RETRIES=1
-    internal val SEARCH_BLANK_RETRY_DELAY_MS=160L
+    internal val SEARCH_BLANK_RETRY_DELAY_MS=AppConfig.Catalog.SEARCH_BLANK_RETRY_DELAY_MS
     internal val SEARCH_PAGE_SIZE=CATALOG_PAGE_SIZE
     internal val SEARCH_FEED_TAB=11
     internal val SEARCH_FEED_SCOPE=-1
@@ -373,7 +374,7 @@ class ContentRepository(
     ): JSONObject = videoModelImpl(id,playback,queue)
 
     /** 每个实际播放地址 HTTP 链接的独立超时；不是整轮取地址的总预算。 */
-    internal val ADDRESS_ATTEMPT_TIMEOUT_MS=6_000L
+    internal val ADDRESS_ATTEMPT_TIMEOUT_MS=REQUEST_TIMEOUT_MS
     internal val addressClients=linkedMapOf<Long,OkHttpClient>()
     companion object {
         @Volatile var deviceHeal: ((ContentRepository, String) -> Boolean)? = null
@@ -383,16 +384,16 @@ class ContentRepository(
         internal val modelGate=java.util.concurrent.Semaphore(1,true)
         internal val foregroundModelWaiters=java.util.concurrent.atomic.AtomicInteger(0)
         @Volatile internal var backgroundModelScope: RequestScope?=null
-        internal const val MODEL_SPACING_MS=200L
+        internal const val MODEL_SPACING_MS=AppConfig.Playback.MODEL_SPACING_MS
         internal val modelLastAttemptAt=java.util.concurrent.atomic.AtomicLong(0L)
         internal val deviceRotateLock=Any()
         @Volatile internal var modelCacheGen: Int=0
         internal const val MODEL_CACHE_MS=PlaybackCache.URL_FRESH_MS
         internal const val PLAYER_MODEL_PATH="/novel/player/multi_video_model/player/v1"
-        internal const val PLAYER_MODEL_BATCH_LIMIT=15
+        internal const val PLAYER_MODEL_BATCH_LIMIT=AppConfig.Playback.PLAYER_MODEL_BATCH_LIMIT
         internal const val BATCH_MODEL_PATH="/novel/player/multi_video_model/preload/v1"
-        internal const val PRELOAD_MODEL_LIMIT=6
-        internal const val MODEL_CACHE_LIMIT=32
+        internal const val PRELOAD_MODEL_LIMIT=AppConfig.Playback.PRELOAD_MODEL_LIMIT
+        internal const val MODEL_CACHE_LIMIT=AppConfig.Playback.MODEL_CACHE_LIMIT
         internal val MODEL_QUERY_KEYS=listOf(
             "klink_egdi","iid","device_id","ac","channel","aid","app_name",
             "version_code","version_name","device_platform","os","ssmix",
@@ -403,16 +404,16 @@ class ContentRepository(
             "rom_version","cdid",
         )
         internal const val STREAM_CACHE_MS=PlaybackCache.URL_FRESH_MS
-        internal const val STREAM_CACHE_LIMIT=8
-        internal const val MAX_DANMAKU=1000
+        internal const val STREAM_CACHE_LIMIT=AppConfig.Playback.STREAM_CACHE_LIMIT
+        internal const val MAX_DANMAKU=AppConfig.Playback.MAX_DANMAKU
         internal const val HOT_COMMENT_SOURCE=601
         internal const val HOT_SERVER_CHANNEL=1000
-        internal const val HOT_COMMENT_COUNT=200
-        internal const val HOT_COMMENT_WINDOW_MS=30_000L
-        internal const val MAX_HOT_COMMENT_WINDOWS=40
-        internal const val MAX_HOT_DANMAKU=3000
-        internal const val MAX_CATALOG_PAGE=100
-        internal const val HOT_COMMENT_THROTTLE_MS=180L
+        internal const val HOT_COMMENT_COUNT=AppConfig.Playback.HOT_COMMENT_COUNT
+        internal const val HOT_COMMENT_WINDOW_MS=AppConfig.Playback.HOT_COMMENT_WINDOW_MS
+        internal const val MAX_HOT_COMMENT_WINDOWS=AppConfig.Playback.MAX_HOT_COMMENT_WINDOWS
+        internal const val MAX_HOT_DANMAKU=AppConfig.Playback.MAX_HOT_DANMAKU
+        internal const val MAX_CATALOG_PAGE=AppConfig.Catalog.MAX_PAGE
+        internal const val HOT_COMMENT_THROTTLE_MS=AppConfig.Playback.HOT_COMMENT_THROTTLE_MS
 
         fun isHevcCodec(codec: String,key: String = ""): Boolean {
             val label=codec.trim().lowercase()

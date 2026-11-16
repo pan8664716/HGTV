@@ -5285,3 +5285,23 @@ feature-tv/
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## 应用参数统一配置入口
+
+状态：已实现，Android / iOS debug 构建通过，待用户真机验证。
+
+- Android 新增 `core/AppConfig.kt`，按 `Network / Startup / Catalog / Recommend /
+  Playback / Library / Danmaku / Ui` 分组收口网络超时、启动预算、分页与缓存窗口、
+  推荐策略、播放预取与看门狗、书库默认值、弹幕时序和交互时长。
+- iOS 新增 `Core/AppConfig.swift`，使用同名职责分组收口网络超时、目录分页、推荐窗口、
+  播放时序、缓存上限、偏好默认值和手势阈值。
+- 原有公开常量继续作为兼容别名，数值来源改为 `AppConfig`；页面、业务服务和测试入口
+  的公开名称不变，避免反射、baseline profile 和旧调用点失效。
+- 协议字段、设备身份、状态机枚举、颜色 / 圆角 / 字体等页面设计令牌不进入配置入口，
+  仍由各自模块维护，防止把协议语义和视觉样式混成全局变量。
+- 新增可调参数时先判断是否跨页面复用；跨页面复用的时序、预算、上限或默认值应加入
+  `AppConfig`，一次性局部算法常量继续留在所属文件。
+- 验证：`:app:assembleDebug` 通过；iOS `xcodebuild ... -configuration Debug` 通过；
+  未改版本号、versionCode、依赖，未推送、未创建 Release。
+
+回滚：对本节对应提交执行 `git revert`。

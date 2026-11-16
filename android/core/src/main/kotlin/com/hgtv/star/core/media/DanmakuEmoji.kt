@@ -455,7 +455,7 @@ object DanmakuEmoji {
      * 一集最多 300 条（见 `ContentRepository.MAX_DANMAKU`）。弹幕按页追加，
      * 片段缓存留足整集容量；一条弹幕的片段总和就是它自己的长度，开销很小。
      */
-    private const val CACHE_LINES = 4096
+    private const val CACHE_LINES = AppConfig.Danmaku.CACHE_LINES
 
     /**
      * 把文本里的标签换成字形，其余原样保留。

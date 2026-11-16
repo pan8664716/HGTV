@@ -12,7 +12,8 @@ internal fun PhoneFeedView.scheduleChromeHideImpl(
         feedList.removeCallbacks(feedChromeHideRunnable)
         return
     }
-    val seconds = feedLibrary?.playerPanelTimeout ?: 6
+    val seconds = feedLibrary?.playerPanelTimeout ?:
+        com.hgtv.star.core.AppConfig.Library.PLAYER_PANEL_TIMEOUT_DEFAULT_SECONDS
     feedChromeEpoch++
     feedChromeHideAt = System.currentTimeMillis() + seconds * 1000L
     feedList.removeCallbacks(feedChromeHideRunnable)
@@ -20,7 +21,8 @@ internal fun PhoneFeedView.scheduleChromeHideImpl(
 }
 
 internal fun PhoneFeedView.chromeTimeoutMsImpl(): Long =
-    (feedLibrary?.playerPanelTimeout ?: 6) * 1000L
+    (feedLibrary?.playerPanelTimeout ?:
+        com.hgtv.star.core.AppConfig.Library.PLAYER_PANEL_TIMEOUT_DEFAULT_SECONDS) * 1000L
 
 internal fun PhoneFeedView.revealChromeImpl(page: PhoneVideoPage?) {
     if (feedHidden || PhoneSession.underlayActive) return

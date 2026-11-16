@@ -4,6 +4,7 @@ import android.net.Uri
 import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.upstream.BaseDataSource
 import com.google.android.exoplayer2.upstream.DataSpec
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.RemoteVideo
 
 class VideoDataSource(private val video: RemoteVideo): BaseDataSource(true) {
@@ -56,8 +57,8 @@ class VideoDataSource(private val video: RemoteVideo): BaseDataSource(true) {
     override fun close() { buffer=byteArrayOf(); uri=null; if(opened) { opened=false; transferEnded() } }
     private companion object {
         /** 首块：只够一个 1080P 的 I 帧 + 若干 P 帧。 */
-        const val FIRST_CHUNK=512L*1024
+        const val FIRST_CHUNK=AppConfig.Playback.DATA_FIRST_CHUNK_BYTES
         /** 后续分片：512KB，优先保证弹幕与主线程帧率，不追求单次传输字节数。 */
-        const val BUFFER_CHUNK=512L*1024
+        const val BUFFER_CHUNK=AppConfig.Playback.DATA_BUFFER_CHUNK_BYTES
     }
 }

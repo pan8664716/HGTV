@@ -47,7 +47,7 @@ import java.net.InetAddress
 object PublicDns {
     /** 三个公共 DNS，按国内可达性排序；全部超时才放弃。 */
     private val SERVERS = listOf("223.5.5.5","119.29.29.29","180.76.76.76")
-    private const val TIMEOUT_MS = 1_500
+    private const val TIMEOUT_MS = AppConfig.Network.PUBLIC_DNS_TIMEOUT_MS
     private const val TYPE_A = 1
     private const val TYPE_AAAA = 28
     private const val CLASS_IN = 1

@@ -40,25 +40,25 @@ enum class CacheLevel { NONE, ADDRESS, META, FULL }
  */
 class SlideCacheManager(
     /** 主方向窗口（含 L1）。 */
-    private val forwardWindow: Int = 3,
+    private val forwardWindow: Int = AppConfig.Playback.Preload.FORWARD_WINDOW,
     /** 反方向窗口。 */
-    private val backwardWindow: Int = 2,
+    private val backwardWindow: Int = AppConfig.Playback.Preload.BACKWARD_WINDOW,
     /** 主方向前几步做完整预热（地址 + 索引 + 首块）。 */
-    private val l1Depth: Int = 1,
+    private val l1Depth: Int = AppConfig.Playback.Preload.L1_DEPTH,
     /** 主方向前几步做元数据预热（地址 + 索引，不取首块）。 */
-    private val l2Depth: Int = 2,
+    private val l2Depth: Int = AppConfig.Playback.Preload.L2_DEPTH,
     /** 两次换剧间隔小于它就记一次「快滑」。 */
-    private val flingPerItemMs: Long = 500L,
+    private val flingPerItemMs: Long = AppConfig.Playback.Preload.FLING_PER_ITEM_MS,
     /** 连续快滑几次进入 [Mode.FLING]。 */
-    private val flingStreak: Int = 3,
+    private val flingStreak: Int = AppConfig.Playback.Preload.FLING_STREAK,
     /** 停留超过它才算「慢滑 / 停留」。 */
-    private val slowSlideMs: Long = 1_000L,
+    private val slowSlideMs: Long = AppConfig.Playback.Preload.SLOW_SLIDE_MS,
     /** 滑回来多快算「回看」（升 L1）。 */
-    private val revisitMs: Long = 3_000L,
+    private val revisitMs: Long = AppConfig.Playback.Preload.REVISIT_MS,
     /** 停留多久算「确认」（升 L1）。 */
-    private val dwellPromoteMs: Long = 600L,
+    private val dwellPromoteMs: Long = AppConfig.Playback.Preload.DWELL_PROMOTE_MS,
     /** 首帧之后延迟多久开始预热。 */
-    private val firstFrameDelayMs: Long = 300L,
+    private val firstFrameDelayMs: Long = AppConfig.Playback.Preload.FIRST_FRAME_DELAY_MS,
 ) {
     data class Target(val index: Int, val level: CacheLevel)
     enum class Mode { NORMAL, FLING }

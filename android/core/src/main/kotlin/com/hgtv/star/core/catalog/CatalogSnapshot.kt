@@ -11,10 +11,10 @@ import org.json.JSONObject
  * 键是 `RankBoard.storedValue`（见 `Library.cacheHome` / `cachedHome`）。
  */
 object CatalogSnapshot {
-    internal const val MAX_AGE_MS=7*24*60*60*1000L
-    private const val DEFAULT_MAX_ITEMS=30
-    private const val MAX_DECODE_ITEMS=100
-    private const val DEFAULT_MAX_VALUE_CHARS=200_000
+    internal const val MAX_AGE_MS=AppConfig.Catalog.SNAPSHOT_MAX_AGE_MS
+    private const val DEFAULT_MAX_ITEMS=AppConfig.Catalog.SNAPSHOT_DEFAULT_ITEMS
+    private const val MAX_DECODE_ITEMS=AppConfig.Catalog.SNAPSHOT_MAX_DECODE_ITEMS
+    private const val DEFAULT_MAX_VALUE_CHARS=AppConfig.Catalog.SNAPSHOT_MAX_VALUE_CHARS
     fun encode(
         items: List<Series>,
         hasMore: Boolean,
