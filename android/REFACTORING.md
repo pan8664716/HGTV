@@ -4372,6 +4372,21 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 1.3.7.4 发布准备
+
+状态：release 已编译，签名校验通过，待用户真机安装验证。
+
+- `versionName` 更新为 `1.3.7.4`，`versionCode` 从 `78` 更新为 `79`。
+- 本次发布包含 TV「只推荐横屏短剧」、推荐冷启动续播命名空间修复和局域网同步列数范围修复。
+- 计划产物：`outputs/HGTV_1.3.7.4.apk`。
+- `:app:assembleRelease` 通过；`aapt` 确认 `versionName=1.3.7.4`、`versionCode=79`，
+  `apksigner` v1 / v2 校验通过。
+- APK SHA-256：`953788e937bd082540f30de4aced90bb4da2aee27f8500c763a26bee191dc3a6`。
+- 本地 tag `1.3.7.4` 指向空提交 `9899bbf28541ef63fd370c13c8663d53a4fdcb58`，不含源码；
+  未推送、未创建 GitHub Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 电视推荐只保留横屏短剧
 
 状态：已实现，debug 构建通过，待用户真机验证。
