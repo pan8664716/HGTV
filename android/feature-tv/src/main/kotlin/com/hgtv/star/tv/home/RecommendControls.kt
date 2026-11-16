@@ -20,9 +20,8 @@ fun TvMainActivity.switchRecommend(direction: Int) {
     val from=recommendIndex
     val next=from+direction
     when {
-        // 目标在列表里：这一下按键就是过渡的起点，先把画面盖黑再换（见 [showRecommendCover]）。
+        // 目标在列表里：交给 [playRecommendAt] 强制摘掉旧播放层，再准备新作品。
         next in recommendItems.indices -> {
-            if(playerView!=null) showRecommendCover()
             playRecommendAt(next,0L,direction)
         }
         // 走到末尾：先补一页再往下走。这条流已经到底（`has_more=false`）时，补页那一侧
@@ -43,7 +42,6 @@ fun TvMainActivity.switchRecommend(direction: Int) {
                 // 页真的长出新条目：按累计的按键次数往前跨（连按 10 下就跳 10 部），
                 // 而不是只挪 1 部、也不是回到第 0 部把刚刷过的重放一遍。
                 if(recommendItems.size>before) {
-                    if(playerView!=null) showRecommendCover()
                     playRecommendAt((from+steps).coerceAtMost(recommendItems.lastIndex),0L,1)
                 } else {
                     // 页没长：这条流确实没有新内容了。停在当前这一部并说明，
@@ -54,7 +52,6 @@ fun TvMainActivity.switchRecommend(direction: Int) {
         }
         // 往上按到头：环绕到末尾（抖音式的无限流；往回刷重复一部不算问题）。
         else -> {
-            if(playerView!=null) showRecommendCover()
             playRecommendAt(recommendItems.lastIndex,0L,direction)
         }
     }

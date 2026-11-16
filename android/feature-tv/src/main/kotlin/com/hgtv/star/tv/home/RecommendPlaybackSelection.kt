@@ -18,6 +18,11 @@ import com.hgtv.star.shared.debug.StartupTrace
 fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,skipped: Int=0,autoplay: Boolean=true) {
     if(screen!="recommend" || recommendItems.isEmpty()) return
     val safe=index.coerceIn(0,recommendItems.lastIndex)
+    // 换到另一部时先和上一部彻底断开：摘掉旧 PlayerView / Surface、清空旧媒体与传输。
+    // 无缓存时详情和地址还要等网络，如果继续复用上一部的 Surface，它会保留上一部首帧，
+    // 并在新布局下被拉伸显示。这里宁可多重建一次播放层，也不让两部作品共享画面。
+    val switching=safe!=recommendIndex && playerView!=null
+    if(switching) detachPlayerSurface(keepSession=true)
     recommendIndex=safe; recommendShift=direction
     // 换剧方向与时刻：相邻预热按「用户正在走的方向」排优先级（见 [prefetchRecommendNeighbors]）。
     // 方向为 0 时（进页面第一次起播、重试同一部）不动它，沿用上一次的方向。
@@ -45,6 +50,9 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // （缓存命中这条早退路径也必须换，否则上一次在途的结果会把刚切过来的这一部顶掉。）
     val token=recommendToken.incrementAndGet()
     val cached=recommendDetails[series.id]
+    // 硬切后没有播放层了：先在纯黑画面上显示当前作品的 loading，
+    // 不能在详情缓存命中时直接带着上一部的根视图进入 playEpisode。
+    if(playerView==null) showRecommendLoading(series)
     val playStarted=StartupTrace.now()
     StartupTrace.mark("recommend.play.start", "index=$safe cached=${cached!=null}")
     if(cached!=null) {
@@ -52,8 +60,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
         startRecommendEpisode(cached,position,autoplay)
         return
     }
-    if(playerView==null) showRecommendLoading(series)
-    else {
+    if(playerView!=null) {
         // 换剧那一下先把上一部停住：详情要几百毫秒才回来，这段时间里画面与声音
         // 若还是上一部，用户读到的就是「按了下键没换台」。
         player?.pause()
@@ -67,7 +74,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     val detailStarted=StartupTrace.now()
     val playbackDetailStarted=PlaybackStartupTrace.begin(
         "detail",
-        "id=${series.id} cached=${cached!=null}",
+        "id=${series.id} cached=false",
     )
     StartupTrace.mark("recommend.detail.request", "index=$safe id=${series.id}")
     io.submit {
