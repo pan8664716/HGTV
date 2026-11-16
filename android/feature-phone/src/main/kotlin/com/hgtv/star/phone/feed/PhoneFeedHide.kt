@@ -25,17 +25,26 @@ internal fun PhoneFeedView.onHiddenImpl(handoff: Boolean = false) {
     if (!already && !handoff) {
         PhoneSession.resumeOnAdopt = feedPlayer?.playWhenReady == true
     }
-    feedListener?.let { feedPlayer?.removeListener(it) }
-    feedListener = null
+    detachAllFeedListeners()
+    val keepPlayer = if (handoff || PhoneSession.inHandoff() ||
+        PhoneSession.owner == PhoneSession.Owner.PLAYER
+    ) {
+        PhoneServices.peekPlayer() ?: feedPlayer
+    } else {
+        feedPlayer
+    }
+    pausePooledPlayersExcept(keepPlayer)
+    // 只保留当前页播放器；相邻页的独立实例立刻归还解码器与图形内存。
+    // 当前页保留到回到前台，避免短暂切 tab / 退后台后重新建播放器。
+    releasePooledPlayersExcept(keepPlayer)
     // 交接窗口内也不暂停：同一个切页动作会被通知两次（自己一次、宿主 `onPause` 一次），
     // 第二次进来时 `handoff` 是 false，但这一路已经在往播放页交了，不能按停。
     // 判据再加一条 `owner`：交接窗口只有 3 秒，用户在播放页里看久了再让本页收起来
     //（转横屏、系统回收视图）时窗口早已过期，只看窗口就会把播放页正在放的那一路按停。
     if (!handoff && !PhoneSession.inHandoff() &&
-        PhoneSession.owner == PhoneSession.Owner.FEED &&
-        feedSessionBelongsToThisFeed()
+        PhoneSession.owner != PhoneSession.Owner.PLAYER
     ) {
-        feedPlayer?.pause()
+        keepPlayer?.pause()
     }
     // 把「借 Surface」的入口登记下来：正式播放页竖屏时就用这一块出画面，
     // 从横屏退回竖屏也靠它把输出交回来。只登记一次（重复通知会走到这里）。
@@ -75,6 +84,7 @@ internal fun PhoneFeedView.onHiddenImpl(handoff: Boolean = false) {
     val handingOff = handoff || PhoneSession.inHandoff() ||
         PhoneSession.owner != PhoneSession.Owner.FEED
     if (!handingOff) PhoneServices.detach(feedBoundPage?.playerView)
+    if (!handingOff) schedulePoolIdleRelease() else cancelPoolIdleRelease()
     // boundPage 保留：回来时要把它重新绑上去。
     feedHint.visibility = View.GONE
     notifyPlayStateChangedImpl()

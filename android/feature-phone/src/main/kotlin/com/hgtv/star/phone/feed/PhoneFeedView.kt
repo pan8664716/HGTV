@@ -50,6 +50,7 @@ import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import java.util.IdentityHashMap
 
 /**
  * 首页：竖屏全屏视频流，一屏一集、上下滑切换、进屏即播。
@@ -62,15 +63,15 @@ import kotlinx.coroutines.withContext
  * | 长按左 / 右 1/3 | 2 倍速，松手恢复，上方提示 |
  * | 长按中间 1/3 | 播放设置（倍速 / 清晰度 / 画面模式） |
  *
- * ## 为什么只留一个播放器
+ * ## 播放器池
  *
- * 每屏一个 `ExoPlayer` 在 2GB 的 4.4 机器上会被系统直接杀掉（一个解码器实例
- * 就要占掉几十 MB 的图形内存）。这里全程只有一个播放器，切页时只换数据源、
- * 把 `PlayerView` 重新绑过去——与抖音那类信息流的做法一致。
+ * 每屏有独立 `PlayerView`，池按“上一页 / 当前页 / 下一页”保留独立 `ExoPlayer`。
+ * 切页只切换活动实例，不把同一块 Surface 从上一作品交给下一作品；正常设备最多
+ * 3 台，低内存设备最多 2 台，超窗立即 release，隐藏页超时后归还解码器。
  *
  * ## 切页时的三件事
  *
- * 1. 旧页 `PlayerView.player = null`（Surface 不能同时挂在两个 View 上）；
+ * 1. 旧页暂停但保留自己的播放器与 Surface，回看时可直接恢复；
  * 2. 取消上一页还在飞的取地址请求（`playToken`），避免「滑走了又跳回来」；
  * 3. 新页按本机进度续播（续播在播放页里也走同一份 `Library.progress`）。
  *
@@ -140,7 +141,7 @@ class PhoneFeedView(
      *
      * **初始值是 true**：三条体裁流都在 pager 里，只有真正上屏的那一条才该起播
      * （见 `PhoneRecommendPage` 建页时按 `current` 调 `onShown()`）。早先默认 false，
-     * 于是横滑换体裁时，三条流会同时 `playIndex(0)`、抢同一台播放器——
+     * 于是横滑换体裁时，三条流会同时 `playIndex(0)`、争抢活动播放器与会话——
      * 用户看到的是「换个体裁，画面先是别的剧，再跳回来」。
      */
     private var hidden = true
@@ -179,7 +180,24 @@ class PhoneFeedView(
     internal val feedPlayer get()=player
     internal var feedPlayerSlot: ExoPlayer?
         get()=player
-        set(value) { player=value }
+        set(value) {
+            player=value
+            if (value != null) PhoneServices.activate(value)
+        }
+    /**
+     * 推荐流播放器池：每个保留的页面都有自己的播放器，索引就是适配器位置。
+     *
+     * 池只保留当前页与相邻页；页面离开窗口后由 [trimPooledPlayers] 立即释放，
+     * 因此不会回到“每屏永久一台”的内存模型。
+     */
+    private val pooledPlayers = LinkedHashMap<Int, FeedPlayerSlot>()
+    internal val feedPooledPlayers get()=pooledPlayers
+    private val playerListeners = IdentityHashMap<ExoPlayer, Player.Listener>()
+    internal val feedPlayerListeners get()=playerListeners
+    private var poolIdleRelease: Runnable? = null
+    internal var feedPoolIdleRelease: Runnable?
+        get()=poolIdleRelease
+        set(value) { poolIdleRelease=value }
     private var remote: RemoteVideo? = null
     internal var feedRemoteSlot: RemoteVideo?
         get()=remote
@@ -280,7 +298,7 @@ class PhoneFeedView(
     /**
      * 进程级会话里那一路，是不是**本体裁流**起的。
      *
-     * 三条流共用一台播放器，但各自是独立的列表：切 tab 时不能把另一条流正在播的
+     * 三条体裁流各自维护播放器池与独立列表：切 tab 时不能把另一条流正在播的
      * 那一部当成自己的当前项接过来（服务端三条流有重叠剧集，只看 `seriesId`
      * 会让三个 tab 永远停在同一个视频上）。会话的归属由 [PhoneSession.publish]
      * 的 `feed` 参数写入，播放页换集不会改写。
@@ -384,12 +402,6 @@ class PhoneFeedView(
     internal var feedLibrarySlot: Library?
         get()=library
         set(value) { library=value }
-    /** 进程单例播放器上的监听器：换屏/换集前先摘掉，否则会越积越多。 */
-    private var listener: Player.Listener? = null
-    internal var feedListener: Player.Listener?
-        get()=listener
-        set(value) { listener=value }
-
     /**
      * 推荐流里连续几部放不了（与电视端 `recommendPlaybackFailures` 同一语义、同一上限）。
      *

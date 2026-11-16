@@ -14,8 +14,8 @@ import com.hgtv.star.core.Series
  *
  * ## 为什么需要它
  *
- * 推荐信息流与正式播放页是两个 Activity，但它们共用**同一个** [com.google.android.exoplayer2.ExoPlayer]
- * （见 [PhoneServices.player]）。早先两边各管各的：
+ * 推荐信息流与正式播放页是两个 Activity。推荐页内部用有上限的播放器池，
+ * 当前活动实例登记为 [PhoneServices.player]；正式播放页接手的是这一台。早先两边各管各的：
  *
  * * 从推荐进播放页 → 播放页重新取详情、重新取地址、重新 prepare，从头开始；
  * * 从播放页退回推荐 → 信息流再走一遍 `playIndex`，同样重新取地址、重新 prepare。
@@ -30,8 +30,8 @@ import com.hgtv.star.core.Series
  * ## 谁负责关 remote
  *
  * `RemoteVideo` 里挂着未完成的 Range 请求与首块缓存，提前关掉会让正在播的这一集直接断流。
- * 因此约定：**换掉的那一刻才关旧的**（[publish] 里统一做，延后 1 秒，等旧 MediaSource
- * 真的 release 完）。任何界面都不在「只是离开」时关闭它。
+ * 因此约定：**换掉且没有池槽继续使用时才关旧的**（[publish] 的 `closePrevious`）。
+ * 推荐池仍保留的上一页不会被关闭，池淘汰该页时才延后关闭。
  */
 object PhoneSession {
 
@@ -67,7 +67,7 @@ object PhoneSession {
     /**
      * 这一路属于推荐页的哪一条体裁流（`PhoneFeedView.cacheKey()`）。
      *
-     * 三条体裁流共用同一台进程级播放器，但它们是**三条独立的流**：漫剧的第 44 部、
+     * 三条体裁流各自维护播放器池，但它们是**三条独立的流**：漫剧的第 44 部、
      * 真人的第 12 部、AI剧的第 30 部在服务端碰巧可能是同一部剧。早先接手只看
      * `seriesId`，切 tab 时新流会把旧流正在播的那一部当成“自己的当前项”接过来，
      * 于是三个 tab 永远放同一个视频（用户报的就是这一条）。
@@ -299,6 +299,14 @@ object PhoneSession {
         by: Owner,
         /** 推荐流的体裁键；`null` = 不改变现有的归属（播放页换集走这一条）。 */
         feed: String? = null,
+        /**
+         * 是否关闭上一条 [RemoteVideo]。
+         *
+         * 推荐页播放器池会让上一页继续持有自己的播放器与媒体源；切到下一页时
+         * 不能在这里把上一页仍在使用的 RemoteVideo 关掉，否则滑回去就无法继续播。
+         * 池外回收时由播放器池负责关闭。
+         */
+        closePrevious: Boolean = true,
     ) {
         if (feed != null) this.feedKey = feed
         val previous = this.remote
@@ -314,7 +322,7 @@ object PhoneSession {
         this.owner = by
         if (!sameEpisode) this.positionMs = 0
         this.publishedAt = SystemClock.elapsedRealtime()
-        if (previous != null && previous !== remote) {
+        if (previous != null && previous !== remote && closePrevious) {
             // 延后关：旧 MediaSource 可能还在 release，立刻关会让它报「读取被中断」。
             main.postDelayed(
                 { runCatching { previous.close() } },

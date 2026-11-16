@@ -4,6 +4,7 @@ package com.hgtv.star.phone
 import android.os.SystemClock
 
 internal fun PhoneFeedView.resumeOnShownImpl(): Boolean {
+    cancelPoolIdleRelease()
     // 播放页是半透明窗口：转屏时下层本页可能也会收到 onResume。
     // 这时本页仍被播放页盖着，不能接手播放器、不能注销借 Surface 的入口，
     // 也不能把控制层透出来。真正退回本页时播放页会先清掉这个标志。

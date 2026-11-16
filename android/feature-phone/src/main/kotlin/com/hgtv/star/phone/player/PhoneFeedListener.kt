@@ -11,16 +11,34 @@ import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.phone.ui.resizeMode
 
 /**
+ * 摘掉某台池内播放器的监听。
+ *
+ * 池里同时可能有两三台播放器，不能再用一个全局 listener 字段互相覆盖。
+ */
+internal fun PhoneFeedView.detachFeedListener(exo: ExoPlayer) {
+    feedPlayerListeners.remove(exo)?.let(exo::removeListener)
+}
+
+internal fun PhoneFeedView.detachAllFeedListeners() {
+    feedPlayerListeners.entries.toList().forEach { (exo, listener) ->
+        exo.removeListener(listener)
+    }
+    feedPlayerListeners.clear()
+}
+
+/**
  * 挂监听（隐藏时摘掉、回来时重挂：摘掉是为了不让隐藏期间的回调改界面）。
  *
  * 回调里一律用 `feedBoundPage` 现取目标页，不捕获构造时的那个：交接、重建、重新绑定之后
  * 播放器可能已经挂到另一张页上，捕获旧页会把画面尺寸写到已经回收的 View 上。
  */
 internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
-    feedListener?.let { exo.removeListener(it) }
+    detachFeedListener(exo)
     val hook = object : Player.Listener {
         override fun onVideoSizeChanged(videoSize: VideoSize) {
-            val page = feedBoundPage ?: return
+            val page = feedPageAt(index) ?: feedBoundPage?.takeIf {
+                index == feedPlayingIndex
+            } ?: return
             // 不再按片源方向强制 ZOOM：竖屏短剧在竖屏里铺满会裁掉左右，
             // 从播放页退回来时也会突然放大。画面模式只认用户选择。
             val target = (feedLibrary?.frameMode ?: VideoFrameMode.FIT).toFit().resizeMode()
@@ -38,38 +56,54 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
          * 最后一集播完则「换一部接着看」——TV 是弹一份相关剧集，手机就是往下滑一屏。
          */
         override fun onPlaybackStateChanged(state: Int) {
-            feedNotifyPlayStateChanged()
-            syncDanmakuClockNow(exo, index)
-            syncProgressBarsNow(exo, index)
+            if (index == feedPlayingIndex) {
+                feedNotifyPlayStateChanged()
+                syncDanmakuClockNow(exo, index)
+                syncProgressBarsNow(exo, index)
+            }
             // 真的出画面了：连续失败计数归零（取地址成功不算，能放才算）。
             if (state == Player.STATE_READY) {
+                markPooledPlayerSourceReady(index)
+                if (index != feedPlayingIndex) return
                 feedRecommendFailures = 0
                 // READY 是首帧回调缺失时的兜底；同一曝光由共用上报器短时去重。
                 reportRecommendImpression(index)
                 scheduleFeedFillAfterFirstFrame()
                 scheduleRecommendBatchModels(index)
             }
-            if (state == Player.STATE_ENDED) onEpisodeEnded(index)
+            if (state == Player.STATE_ENDED && index == feedPlayingIndex) onEpisodeEnded(index)
         }
 
         override fun onRenderedFirstFrame() {
+            markPooledPlayerFirstFrame(index)
+            if (index != feedPlayingIndex) return
             reportRecommendImpression(index)
             PlaybackStartupTrace.firstFrame("phone.feed")
             scheduleFeedFillAfterFirstFrame()
+            if (com.hgtv.star.shared.BuildConfig.DEBUG) {
+                android.util.Log.i(
+                    "HGTV-PHONE",
+                    "feed first frame index=$index media=" +
+                        runCatching { exo.currentMediaItem?.mediaId }.getOrNull().orEmpty(),
+                )
+            }
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (index != feedPlayingIndex) return
             feedNotifyPlayStateChanged()
             syncDanmakuClockNow(exo, index)
         }
 
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (index != feedPlayingIndex) return
             feedNotifyPlayStateChanged()
             syncDanmakuClockNow(exo, index)
             syncProgressBarsNow(exo, index)
         }
 
         override fun onPlaybackParametersChanged(parameters: com.google.android.exoplayer2.PlaybackParameters) {
+            if (index != feedPlayingIndex) return
             syncDanmakuClockNow(exo, index)
         }
 
@@ -78,6 +112,7 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
             newPosition: Player.PositionInfo,
             reason: Int,
         ) {
+            if (index != feedPlayingIndex) return
             feedPageAt(index)?.danmakuView?.resetCursor()
             syncDanmakuClockNow(exo, index)
             syncProgressBarsNow(exo, index)
@@ -94,6 +129,10 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
                 "HGTV-PHONE",
                 "feed error ${error.errorCodeName}(${error.errorCode}) index=$index failures=$feedRecommendFailures"
             )
+            if (index != feedPlayingIndex) {
+                releasePooledPlayerSlot(index)
+                return
+            }
             if (feedPaused || feedHidden) return
             feedItems.getOrNull(index)?.let { series ->
                 feedRecommendPlayback.reportEvent(
@@ -129,6 +168,6 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
             }
         }
     }
-    feedListener = hook
+    feedPlayerListeners[exo] = hook
     exo.addListener(hook)
 }

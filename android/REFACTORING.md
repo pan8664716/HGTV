@@ -5399,3 +5399,26 @@ feature-tv/
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## 手机推荐流播放器池与上下切换首帧闪烁
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：推荐页上下切换作品时，新页首帧会闪一下，切换过程不像独立播放器信息流那样连续。
+- 根因：推荐流原先只有一台进程级 `ExoPlayer`。换页时先把新页 `PlayerView` 接到仍持有
+  上一作品的播放器，随后才 `stop + setMediaSource + prepare`；Surface 输出切换、上一路
+  残留缓冲和 `keepContentOnPlayerReset` 会在同一小段时间内竞争，新首帧到达后又替换一次。
+- 修复：新增 `PhoneFeedPlayerPool`，每个保留页绑定独立 `ExoPlayer` 与独立 `PlayerView`。
+  正常设备最多保留上一页 / 当前页 / 下一页 3 台，低内存设备最多 2 台；切页只切换活动
+  实例，不再把同一块 Surface 从上一作品交给下一作品。
+- 相邻页完整预热时直接创建独立播放器、挂源并 `prepare`，保持 `playWhenReady=false`；
+  用户滑到时直接激活，不重新换 Surface、不重新设置媒体源。
+- `PhoneSession.publish` 增加 `closePrevious`：上一页仍在池内时保留其 `RemoteVideo`，
+  只有播放器槽被淘汰或整个池释放时才延后关闭，避免滑回去后地址已被关闭。
+- 正式播放页仍接手池中的当前活动实例；交接时释放相邻播放器。返回推荐页后把同一实例
+  重新收进当前页槽位。隐藏体裁页先释放相邻播放器，20 秒后仍不可见再释放当前播放器。
+- 池淘汰、ViewHolder 复用和体裁重铺都会关闭 `PlayerView` 快门并摘掉旧输出，防止旧作品
+  缓冲在下一轮复用页面时再次露出。
+- `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖或 iOS 代码。
+
+回滚：对本节对应提交执行 `git revert`。

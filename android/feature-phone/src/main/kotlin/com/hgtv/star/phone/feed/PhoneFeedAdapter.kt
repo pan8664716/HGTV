@@ -109,6 +109,8 @@ internal class PhoneFeedAdapter(
         page.bind(series, label)
         if (position == host.feedPlayingIndex) {
             host.feedList.post { host.rebindCurrentPageForAdapter() }
+        } else {
+            host.attachPooledPlayerForAdapter(page, position)
         }
     }
 }

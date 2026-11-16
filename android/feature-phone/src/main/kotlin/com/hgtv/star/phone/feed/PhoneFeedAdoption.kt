@@ -46,6 +46,16 @@ internal fun PhoneFeedView.adoptPlayingImpl(
     feedCurrentEpisodeIndex[feedPlayingIndex] = episodeIndex
     feedCurrentEpisodeIds[feedPlayingIndex] = d.episodes.getOrNull(episodeIndex).orEmpty()
     feedPlayingDetailSlot = d
+    adoptPooledPlayerSlot(
+        index = feedPlayingIndex,
+        player = exo,
+        seriesId = series.id,
+        episodeId = feedCurrentEpisodeIds[feedPlayingIndex].orEmpty(),
+        detail = d,
+        episodeIndex = episodeIndex,
+        remote = PhoneSession.remote,
+    )
+    pausePooledPlayersExcept(exo)
 
     // 播放列表里可能还挂着「下一集」（播放页预热好的那一项）。
     // 信息流的语义是「一集播完 → 进正式播放页」，留着它 ExoPlayer 会自己无感推进，

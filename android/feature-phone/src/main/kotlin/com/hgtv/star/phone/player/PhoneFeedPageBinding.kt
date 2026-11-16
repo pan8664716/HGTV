@@ -29,15 +29,17 @@ internal fun PhoneFeedView.attachPageImpl(
         ?: exoSize.height.takeIf { sameSource && it > 0 }
         ?: 0
     if (width > 0 && height > 0) page.updateVideoFrame(width, height)
-    feedBoundPage?.let { if (it !== page) it.playerView.player = null }
+    // 池里每一页都有自己的播放器与 Surface。切到下一页时不能摘掉上一页的
+    // player：保留那块 Surface，回看时可以直接恢复，不会重新交接一块空画面。
     if (forceRebind) {
         if (PhoneSession.underlayActive && page.playerView.player === exo) {
             // Surface is already live; do not detach it for a no-op rebind.
         } else {
-            if (page.playerView.player === exo) page.playerView.player = null
+            if (page.playerView.player === exo) page.playerView.detachPooledOutput()
             page.playerView.player = exo
         }
     } else if (page.playerView.player !== exo) {
+        page.playerView.detachPooledOutput()
         page.playerView.player = exo
     }
     val verticalSource = if (width > 0 && height > 0) height > width else series.vertical

@@ -55,13 +55,25 @@ internal fun PhoneFeedView.reopenAtCurrentPositionImpl(index: Int): Boolean {
         // **不碰 `PlayerView`**：Surface 还是那一块，画面不会黑一下。
         val factory = DataSource.Factory { VideoDataSource(prepared) }
         exo.swapMediaSource(episodeId, prepared.info.url, factory)
-        feedRemoteSlot = prepared
-        PhoneSession.publish(
-            d, episodeIndex, prepared, prepared.info.quality,
-            PhoneSession.Owner.FEED, feedCacheKey(),
+        adoptPooledPlayerSlot(
+            index = index,
+            player = exo,
+            seriesId = series.id,
+            episodeId = episodeId,
+            detail = d,
+            episodeIndex = episodeIndex,
+            remote = prepared,
         )
+        pooledPlayerSlot(index)?.sourcePrepared = false
+        pausePooledPlayersExcept(exo)
+        feedRemoteSlot = prepared
+        publishPooledSession(d, episodeIndex, prepared, prepared.info.quality)
         exo.setPlaybackSpeed(feedUserSpeed)
         exo.prepare()
+        pooledPlayerSlot(index)?.let {
+            it.sourcePrepared = true
+            it.preparedAt = android.os.SystemClock.elapsedRealtime()
+        }
         if (at > 0) exo.seekTo(at)
         exo.playWhenReady = wantPlay
         android.util.Log.i(

@@ -9,6 +9,8 @@ internal fun PhoneFeedView.setGenreImpl(value: String?) {
     // 换体裁 = 换一条流：把上一类还在飞的 playIndex 作废（详情 / 取地址
     // 晚回来时不能再把媒体源挂上去，否则新一类的首屏会被旧内容顶掉）。
     feedPlayTokenSlot++
+    detachAllFeedListeners()
+    releaseAllPooledPlayers(resetSession = feedSessionBelongsToThisFeed())
     feedChromeEpoch++
     feedList.removeCallbacks(feedChromeHideRunnable)
     feedRecommendFailures = 0

@@ -15,9 +15,20 @@ internal fun PhoneFeedView.attachImpl(
 ) {
     feedAdvancing = false
     val token = feedPlayToken
-    val series = feedItems.getOrNull(index)
+    val series = feedItems.getOrNull(index) ?: run {
+        runCatching { video.close() }
+        return
+    }
     val episodeIndex = feedCurrentEpisodeIndex[index] ?: 0
-    val exo = PhoneServices.player(context, feedLibrary?.decoderMode)
+    val episodeId = feedCurrentEpisodeIds[index].orEmpty()
+    val slot = ensurePooledPlayerSlot(index, series.id, episodeId)
+    slot.detail = feedPlayingDetail
+    slot.episodeIndex = episodeIndex
+    slot.remote = video
+    slot.sourcePrepared = false
+    slot.firstFrameRendered = false
+    val exo = slot.player
+    pausePooledPlayersExcept(exo)
     feedPlayerSlot = exo
     runCatching {
         if (exo.mediaItemCount > 1) exo.removeMediaItems(1, exo.mediaItemCount)
@@ -26,7 +37,7 @@ internal fun PhoneFeedView.attachImpl(
     PhoneSession.clearNext()
 
     val page = feedPageAt(index)
-    if (page != null && series != null) {
+    if (page != null) {
         attachPageForSurface(
             exo,
             page,
@@ -39,15 +50,12 @@ internal fun PhoneFeedView.attachImpl(
     }
 
     val factory = DataSource.Factory { VideoDataSource(video) }
-    val episodeId = feedCurrentEpisodeIds[index].orEmpty()
     exo.swapMediaSource(episodeId, video.info.url, factory)
+    slot.sourcePrepared = false
     feedRemoteSlot = video
     val d = feedPlayingDetail
     if (d != null) {
-        PhoneSession.publish(
-            d, episodeIndex, video, video.info.quality,
-            PhoneSession.Owner.FEED, feedCacheKey(),
-        )
+        publishPooledSession(d, episodeIndex, video, video.info.quality)
     }
     exo.setPlaybackSpeed(feedUserSpeed)
     attachFeedListener(exo, index)
@@ -60,8 +68,11 @@ internal fun PhoneFeedView.attachImpl(
         ) {
             exo.prepare()
             if (startAt > 0) exo.seekTo(startAt)
+            slot.sourcePrepared = true
+            slot.preparedAt = android.os.SystemClock.elapsedRealtime()
         }
     }
     if (page != null) page.playerView.runAfterAspectRatioLayout(prepare) else prepare()
     startProgressTicker()
+    trimPooledPlayers(index)
 }

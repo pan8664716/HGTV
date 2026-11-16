@@ -33,6 +33,8 @@ internal fun PhoneFeedView.playIndexImpl(
         0
     }
     feedPlayingIndex = index
+    // 每次明确的换作都推进代次。池命中也必须作废上一轮还在飞的详情 / 地址请求。
+    val token = ++feedPlayTokenSlot
     if (clearDanmakuOnSwitch && previousIndex >= 0 && previousIndex != index) {
         danmakuLoaderOfImpl(previousIndex).clear()
     }
@@ -71,7 +73,24 @@ internal fun PhoneFeedView.playIndexImpl(
         schedulePreload(feedFirstFrameDelay())
         return
     }
-    val token = ++feedPlayTokenSlot
+    // 相邻页已经有一台独立播放器时直接激活它。这里不发生 Surface 交接，
+    // 也不重新 setMediaSource / prepare，因此上一部和下一部不会共享输出。
+    val pooled = pooledPlayerSlot(index)
+    if (pooled?.sourcePrepared == true && !pooled.sourceFresh()) {
+        releasePooledPlayerSlot(index)
+    }
+    if (
+        startAt < 0 &&
+        pooled?.sourcePrepared == true &&
+        pooled.sourceFresh() &&
+        activatePreparedPooledPlayerImpl(index, pooled, clearDanmakuOnSwitch)
+    ) {
+        schedulePreload(feedFirstFrameDelay())
+        return
+    }
+    // 池里没有这一项，需要走详情 / 地址准备。旧页仍保留在池里供回看，
+    // 但必须先停掉它的声音；否则新页还在取地址时，用户听到的仍是上一部。
+    pausePooledPlayersExcept(null)
     feedScope.launch {
         val lib = feedLibrary ?: PhoneServices.awaitLibrary(context).also {
             feedLibrarySlot = it

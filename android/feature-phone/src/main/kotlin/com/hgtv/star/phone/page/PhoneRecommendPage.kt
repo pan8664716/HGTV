@@ -165,7 +165,10 @@ class PhoneRecommendPage(
     private fun buildUi() {
         // 播放设置浮层挂在 Activity 的 decor 上，不随本页 `removeAllViews` 消失：
         // 重铺体裁之前先把它收掉，否则会留在新的一屏上。
-        feeds.forEach { it?.closeSheet() }
+        feeds.forEach {
+            it?.closeSheet()
+            it?.release()
+        }
         removeAllViews()
         appliedGenres = genres
         feeds = arrayOfNulls(genres.size)
@@ -346,7 +349,7 @@ class PhoneRecommendPage(
             }
             feeds[viewType] = feed
             // 建出来就**只让当前这一条上屏起播**（`PhoneFeedView` 默认是「收起来」的）。
-            // pager 会预建左右相邻的体裁页，不区分的话三条流会同时起播、抢同一台播放器。
+            // pager 会预建左右相邻的体裁页，不区分的话三条流会同时起播、争抢活动播放器。
             if (viewType == current) feed.onShown()
             return PagerHolder(feed)
         }

@@ -54,12 +54,10 @@ object PhoneServices {
     }
 
     /**
-     * **进程级唯一的播放器**。
+     * 正式播放页当前接手的播放器。
      *
-     * 之前每个页面各建一个 `ExoPlayer`：信息流三个体裁三个、播放页一个，一共四个解码器实例。
-     * 后果是「切换页面后另一条流还在响」「点进播放页从头开始」「偶发状态错乱」——
-     * 都来自多个播放器各记各的状态。现在全进程只有一个，各页面只是把自己的
-     * `PlayerView` 绑上去 / 解下来，切页不再重建解码器。
+     * 推荐页使用有上限的播放器池；当前活动实例会通过 [activate] 登记到这里，
+     * 因此正式播放页仍能原样接手，而相邻页的独立播放器不会被全局字段覆盖。
      *
      * 必须在主线程调用（`ExoPlayer.Builder().build()` 要求）。
      */
@@ -69,51 +67,81 @@ object PhoneServices {
     /**
      * 建播放器，并把「视频解码」那一档装进去。
      *
-     * 解码方式只能在**建渲染器时**定死，而播放器是进程单例（见上面的类注释：多实例会
-     * 抢解码器、留两条音轨），因此不能为了换一档就重建它。这里走的是「选择器读一个可变值」：
+     * 解码方式只能在**建渲染器时**定死，而推荐池会复用实例；不能为了换一档就重建它。
+     * 这里走的是「选择器读一个可变值」：
      * [PhoneDecoder.mode] 由每次取播放器时按设置写入，渲染器在下一次初始化解码器时读到的
      * 就是新值——效果与 TV 的「改完下一次起播生效」一致，且不会把正在用它的信息流打断。
      */
     fun player(context: Context, decoder: com.hgtv.star.core.VideoDecoderMode? = null): ExoPlayer {
+        return exo ?: synchronized(this) {
+            exo ?: newPlayer(context, decoder).also { exo = it }
+        }
+    }
+
+    /**
+     * 建一台不自动成为进程主播放器的实例，供推荐页播放器池使用。
+     *
+     * 池内当前页会把实例登记到 [activate]；相邻页的播放器只在本页池里存在，
+     * 不参与正式播放页的全局接手，回收时也不会误伤正在播放的那一台。
+     */
+    fun newPlayer(
+        context: Context,
+        decoder: com.hgtv.star.core.VideoDecoderMode? = null,
+    ): ExoPlayer {
         if (decoder != null) PhoneDecoder.mode = decoder
         PhoneDecoder.bind(context)
-        return exo ?: synchronized(this) {
-            exo ?: ExoPlayer.Builder(context.applicationContext)
-                .setLooper(Looper.getMainLooper())
-                .setLoadControl(phoneLoadControl())
-                .setRenderersFactory(
-                    com.google.android.exoplayer2.DefaultRenderersFactory(context.applicationContext)
-                        .setMediaCodecSelector(PhoneDecoder.selector)
-                        // 解码器兜底：首选解码器初始化失败时自动换一颗（与电视端
-                        // `TvRenderersFactory.setEnableDecoderFallback(true)` 同一条）。
-                        // 少了它，片源的编码稍微偏门一点就是「有声音没画面」，且不会自愈。
-                        .setEnableDecoderFallback(true)
-                )
-                // 音频焦点与「拔耳机就停」：手机上这两条比电视重要得多。
-                // * `USAGE_MEDIA` + `AUDIO_CONTENT_TYPE_MOVIE`：来电、通知、其它应用播放时
-                //   系统才知道该怎么让路（暂停 / 压低音量），否则就是两条声音叠着响。
-                // * `setHandleAudioBecomingNoisy`：拔耳机 / 断蓝牙那一刻自动暂停，
-                //   不暂停就会从外放突然放出来——公共场合非常难堪。
-                .setAudioAttributes(
-                    com.google.android.exoplayer2.audio.AudioAttributes.Builder()
-                        .setUsage(com.google.android.exoplayer2.C.USAGE_MEDIA)
-                        .setContentType(com.google.android.exoplayer2.C.AUDIO_CONTENT_TYPE_MOVIE)
-                        .build(),
-                    true
-                )
-                .setHandleAudioBecomingNoisy(true)
-                // 后台 / 锁屏继续放时保住 CPU（与电视端 `setWakeMode` 同一条）：
-                // 不保的话，锁屏几十秒后连接就断，回来要重走 DNS + TLS + 取地址。
-                .apply { runCatching { setWakeMode(com.google.android.exoplayer2.C.WAKE_MODE_NETWORK) } }
-                .build()
-                .also { player ->
-                    // 解码现场**在这里挂**：播放器是进程单例，解码器初始化事件只会发生一次；
-                    // 挂在某个 Activity 上就会漏掉「推荐页预热好、播放页接手」的那一集
-                    //（交接时解码器早就初始化完了，再挂监听收不到任何事件）。
-                    runCatching { metrics.attach(player) }
-                    exo = player
-                    PlaybackStartupTrace.point("player.built")
-                }
+        return ExoPlayer.Builder(context.applicationContext)
+            .setLooper(Looper.getMainLooper())
+            .setLoadControl(phoneLoadControl())
+            .setRenderersFactory(
+                com.google.android.exoplayer2.DefaultRenderersFactory(context.applicationContext)
+                    .setMediaCodecSelector(PhoneDecoder.selector)
+                    // 解码器兜底：首选解码器初始化失败时自动换一颗（与电视端
+                    // `TvRenderersFactory.setEnableDecoderFallback(true)` 同一条）。
+                    // 少了它，片源的编码稍微偏门一点就是「有声音没画面」，且不会自愈。
+                    .setEnableDecoderFallback(true)
+            )
+            // 音频焦点与「拔耳机就停」：手机上这两条比电视重要得多。
+            // * `USAGE_MEDIA` + `AUDIO_CONTENT_TYPE_MOVIE`：来电、通知、其它应用播放时
+            //   系统才知道该怎么让路（暂停 / 压低音量），否则就是两条声音叠着响。
+            // * `setHandleAudioBecomingNoisy`：拔耳机 / 断蓝牙那一刻自动暂停，
+            //   不暂停就会从外放突然放出来——公共场合非常难堪。
+            .setAudioAttributes(
+                com.google.android.exoplayer2.audio.AudioAttributes.Builder()
+                    .setUsage(com.google.android.exoplayer2.C.USAGE_MEDIA)
+                    .setContentType(com.google.android.exoplayer2.C.AUDIO_CONTENT_TYPE_MOVIE)
+                    .build(),
+                true
+            )
+            .setHandleAudioBecomingNoisy(true)
+            // 后台 / 锁屏继续放时保住 CPU（与电视端 `setWakeMode` 同一条）：
+            // 不保的话，锁屏几十秒后连接就断，回来要重走 DNS + TLS + 取地址。
+            .apply { runCatching { setWakeMode(com.google.android.exoplayer2.C.WAKE_MODE_NETWORK) } }
+            .build()
+            .also { player ->
+                // 解码现场跟着实例走；池内播放器同样需要这份现场。
+                runCatching { metrics.attach(player) }
+                PlaybackStartupTrace.point("player.built")
+            }
+    }
+
+    /**
+     * 把推荐页池中的当前播放器登记为正式播放页可接手的实例。
+     *
+     * 只切换“当前”指针，不释放旧实例：旧实例可能仍是推荐池里的相邻页，
+     * 由池按距离统一回收。
+     */
+    fun activate(player: ExoPlayer) {
+        synchronized(this) {
+            exo = player
+        }
+        runCatching { metrics.attach(player) }
+    }
+
+    /** 池内播放器被回收时清掉全局当前指针；只清同一实例，不影响新接手的播放器。 */
+    fun deactivate(player: ExoPlayer) {
+        synchronized(this) {
+            if (exo === player) exo = null
         }
     }
 

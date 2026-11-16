@@ -794,6 +794,15 @@ object AppConfig {
             /** 手机端最多保留多少份完整预热。 */
             const val PHONE_MAX_FULL = 2
 
+            /** 推荐页最多同时保留几台播放器：当前页 + 前后各一台。 */
+            const val PHONE_PLAYER_POOL_SIZE = 3
+
+            /** 低内存设备只保留当前页与主方向下一台，避免多解码器一起占图形内存。 */
+            const val PHONE_LOW_RAM_PLAYER_POOL_SIZE = 2
+
+            /** 离开推荐页后，空闲播放器延迟多久释放。 */
+            const val PHONE_PLAYER_POOL_IDLE_RELEASE_MS = 20_000L
+
             /** 淘汰预热对象后延迟关闭的时间，等待旧 MediaSource 释放。 */
             const val PHONE_CLOSE_DELAY_MS = 1_000L
         }
