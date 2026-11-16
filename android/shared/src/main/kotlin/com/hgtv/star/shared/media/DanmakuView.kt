@@ -278,6 +278,20 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             reconfigureVisual()
         }
 
+    /**
+     * 可选的首行文字顶边锚点。
+     *
+     * [topInsetPx] 对齐的是轨道框顶边，文字还会因字体基线和行内间距向下偏移。
+     * 需要紧贴宿主覆盖层时设置本项，按文字实际绘制边界对齐。
+     */
+    var topTextAnchorPx: Int?=null
+        set(value) {
+            val next=value?.coerceAtLeast(0)
+            if(field==next) return
+            field=next
+            reconfigureVisual()
+        }
+
     var textAlpha: Float=1f
         set(value) {
             if(field==value) return
@@ -780,7 +794,13 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         val verticalGap=maxOf(fill.textSize*LANE_GAP_VERTICAL,density*LANE_MIN_GAP_DP)
         laneHeight=maxOf(textBox,emojiBox)+verticalGap
         if(mode==DanmakuMode.HIDDEN || laneHeight<=0f) { laneCount=0; return }
-        laneTop=topInsetPx.coerceAtLeast(0)+density*topGapDp
+        val anchor=topTextAnchorPx
+        laneTop=if(anchor!=null) {
+            val textTopOffset=laneHeight-fill.textSize*0.28f+fillMetrics.ascent-edge.strokeWidth*0.5f
+            (anchor-textTopOffset).coerceAtLeast(0f)
+        } else {
+            topInsetPx.coerceAtLeast(0)+density*topGapDp
+        }
         val bottom=height-BOTTOM_INSET_DP*density
         val byHeight=((bottom-laneTop).coerceAtLeast(0f)/laneHeight).toInt().coerceIn(0,24)
         laneCount=minOf(mode.lineLimit,byHeight)
