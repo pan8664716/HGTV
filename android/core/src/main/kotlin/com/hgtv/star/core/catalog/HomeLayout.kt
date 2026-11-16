@@ -21,11 +21,24 @@ data class HomeColumn(val key: String, val title: String, val board: RankBoard?)
  * 某一栏没有内容就不渲染（栏目仍然在这里，只是界面上不出现）。
  */
 object HomeLayout {
-    val columns: List<HomeColumn> = listOf(
+    private val localColumns = listOf(
         HomeColumn("history","历史记录",null),
         HomeColumn("favorites","我的收藏",null),
-        HomeColumn("later","稍后观看",null)
-    ) + RankBoard.entries.map { HomeColumn("rank-${it.storedValue}",it.homeTitle,it) }
+        HomeColumn("later","稍后观看",null),
+    ).associateBy { it.key }
+
+    private val rankColumns = RankBoard.entries.associate { board ->
+        "rank-${board.storedValue}" to HomeColumn(
+            "rank-${board.storedValue}",
+            board.homeTitle,
+            board,
+        )
+    }
+
+    /** 首页栏目顺序由 [AppConfig.Navigation.HOME_COLUMN_KEYS] 决定。 */
+    val columns: List<HomeColumn> = AppConfig.Navigation.HOME_COLUMN_KEYS.mapNotNull { key ->
+        localColumns[key] ?: rankColumns[key]
+    }
 
     /** 栏目名，按 key 查（界面上不重复写一遍中文，避免两处名字对不上）。 */
     fun title(key: String) = columns.firstOrNull { it.key==key }?.title ?: key

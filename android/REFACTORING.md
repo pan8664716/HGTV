@@ -5323,3 +5323,21 @@ feature-tv/
   未改版本号、versionCode、依赖，未推送、未创建 Release。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## 统一配置第三轮：界面结构
+
+状态：已实现，Android / iOS debug 构建通过，待用户真机验证。
+
+- Android 新增 `AppConfig.Navigation`：集中导航 key、首页栏目顺序、榜单顺序、账号栏目、
+  登录方式、设置分页和播放信息顺序。
+- Android 新增 `AppConfig.Settings`：共享设置页按配置项 ID 的顺序渲染；从顺序表删除一项
+  即隐藏该设置，调整位置即改变页面顺序。
+- Android `AppConfig.Ui.Phone / Ui.Tv` 收口页面边距、卡片/按钮尺寸、圆角、柔光带、焦点余量、
+  登录/弹窗几何和选集网格参数；`PhoneDimen / PhoneStyle / TvStyle` 保留为兼容别名。
+- iOS 新增 `AppConfig.Navigation`，集中底部 tab、榜单芯片和设置分页顺序；`Ui.Phone` 收口
+  页面间距、卡片/弹窗尺寸、选集网格和导航高度。
+- 原有页面、公开常量和调用名称保持不变；主题色、协议字段和设备身份没有迁入配置。
+- 验证：`:app:assembleDebug` 通过；iOS `xcodebuild ... -configuration Debug` 通过；
+  未改版本号、versionCode、依赖，未推送、未创建 Release。
+
+回滚：对本节对应提交执行 `git revert`。

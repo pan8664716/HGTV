@@ -3,6 +3,7 @@ package com.hgtv.star.phone.ui
 
 import android.content.Context
 import android.graphics.Color
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.shared.ui.Soft
 import com.hgtv.star.shared.ui.SoftPalette
 import com.hgtv.star.shared.ui.TvTheme
@@ -128,22 +129,22 @@ object PhoneStyle {
     // —— 几何 ——
 
     /** 柔光带：控件的 padding，投影与高光全部画在这条带里。 */
-    const val SOFT_BAND = 6f
+    const val SOFT_BAND = AppConfig.Ui.Phone.SOFT_BAND_DP
 
     /** 大面板的柔光带。 */
-    const val SOFT_BAND_LARGE = 10f
+    const val SOFT_BAND_LARGE = AppConfig.Ui.Phone.SOFT_BAND_LARGE_DP
 
     /** 卡片圆角：小圆角，避免把海报压成胶囊形。 */
-    const val RADIUS_CARD = 8f
+    const val RADIUS_CARD = AppConfig.Ui.Phone.RADIUS_CARD_DP
 
     /** 胶囊（按钮、chip、导航）。 */
-    const val RADIUS_PILL = 26f
+    const val RADIUS_PILL = AppConfig.Ui.Phone.RADIUS_PILL_DP
 
     /** 弹窗 / 抽屉。 */
-    const val RADIUS_SHEET = 24f
+    const val RADIUS_SHEET = AppConfig.Ui.Phone.RADIUS_SHEET_DP
 
     /** 进度条轨道高度。 */
-    const val TRACK_HEIGHT = 3f
+    const val TRACK_HEIGHT = AppConfig.Ui.Phone.TRACK_HEIGHT_DP
 
     /** 播放界面压在视频上的字，永远暖白，不跟主题。 */
     val playerText = 0xFFF5F2EC.toInt()

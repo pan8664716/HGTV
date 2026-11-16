@@ -689,7 +689,7 @@ class EpisodeGrid(
 private val PAGER_HEIGHT = ButtonSize.DENSE.height + 2 * TvStyle.SOFT_BAND + 8
 
 /** 格子之间的横向间距（dp）：10 列各留一道，算格子宽度时要先扣掉。 */
-private const val CELL_GAP = 4
+private const val CELL_GAP = com.hgtv.star.core.AppConfig.Ui.Tv.EPISODE_CELL_GAP
 
 /**
  * 格子高度的下限（dp）：16sp 的集数上下各留一条柔光带大致就是这个高度。
@@ -697,7 +697,7 @@ private const val CELL_GAP = 4
  * 再矮数字就会顶到柔光带上、焦点框也压不住。碰到这个下限说明屏幕太窄或一页集数太多，
  * 此时宁可让面板内部滚动，也不把格子继续压扁。
  */
-private const val CELL_MIN = 32
+private const val CELL_MIN = com.hgtv.star.core.AppConfig.Ui.Tv.EPISODE_CELL_MIN
 
 /**
  * 格子高度的上限（dp）= **改版前的默认大小**（[TvStyle.BUTTON_NORMAL] + 两条柔光带 = 60dp）。
@@ -714,7 +714,7 @@ private val CELL_MAX = TvStyle.BUTTON_NORMAL + 2 * TvStyle.SOFT_BAND
  * 两边内容线不同，同一档分页算出来的格子就会差几个 dp。统一之后播放页与简介页的
  * 选集按钮一样大（见 [EpisodeGrid.fitCells]）。首帧占位也按它估算。
  */
-private const val PAGE_SIDE_PAD = 78
+private const val PAGE_SIDE_PAD = com.hgtv.star.core.AppConfig.Ui.Tv.EPISODE_PAGE_SIDE_PAD
 
 /**
  * 一页固定 10 列。
@@ -722,7 +722,7 @@ private const val PAGE_SIDE_PAD = 78
  * 列数不跟「一页集数」一起变：一页放 10 集时铺 1 行、放 50 集时铺 5 行。
  * 列数一变，单元格宽度跟着变，两种宿主（简介页 / 播放面板）的观感就会随设置跳来跳去。
  */
-private const val COLUMNS = 10
+private const val COLUMNS = com.hgtv.star.core.AppConfig.Ui.Tv.EPISODE_COLUMNS
 
 /**
  * 分页行的显示边界：与搜索页推荐词那一行同一套做法。

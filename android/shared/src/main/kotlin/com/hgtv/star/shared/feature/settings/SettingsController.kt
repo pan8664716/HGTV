@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.feature.settings
 
 import android.content.Context
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.BackupData
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.DanmakuSpeed
@@ -134,7 +135,7 @@ class SettingsController(
                     valueLabel = DanmakuStyle.percent(library.danmakuAlpha),
                 )
             )
-        }
+        }.applyConfigOrder(AppConfig.Settings.PLAYBACK_ORDER)
     }
 
     fun appearanceRows(phone: Boolean): List<SettingRowSpec> = buildList {
@@ -160,7 +161,7 @@ class SettingsController(
                 )
             )
         }
-    }
+    }.applyConfigOrder(AppConfig.Settings.APPEARANCE_ORDER)
 
     fun recommendRows(): List<SettingRowSpec> = buildList {
         add(SettingRowSpec.Section("内容推荐"))
@@ -184,7 +185,7 @@ class SettingsController(
                 options = SearchSource.entries.map { it.label },
             )
         )
-    }
+    }.applyConfigOrder(AppConfig.Settings.RECOMMEND_ORDER)
 
     fun systemRows(phone: Boolean): List<SettingRowSpec> = buildList {
         add(SettingRowSpec.Section("系统高级"))
@@ -196,7 +197,7 @@ class SettingsController(
         add(SettingRowSpec.Action(ID_RESET_APP, "清空应用缓存", "重启后生效"))
         add(SettingRowSpec.Switch(ID_DEBUG_MODE, "调试模式", library.debugMode))
         if (!phone) add(SettingRowSpec.Switch(ID_REDUCE_ANIM, "减少动画优化性能", library.reduceAnim))
-    }
+    }.applyConfigOrder(AppConfig.Settings.SYSTEM_ORDER)
 
     fun setQuality(value: Int) { library.maxQuality = PlaybackQuality.normalize(value) }
     fun setSpeed(value: Float) { library.playbackSpeed = value }
@@ -275,4 +276,14 @@ class SettingsController(
         const val ID_DEBUG_MODE = "system.debug"
         const val ID_REDUCE_ANIM = "system.reduceAnim"
     }
+}
+
+/**
+ * 按 [AppConfig.Settings] 中的顺序过滤并重排设置项。
+ *
+ * 未出现在顺序表里的项视为隐藏，因此增删配置项即可控制页面包含哪些子项。
+ */
+private fun List<SettingRowSpec>.applyConfigOrder(order: List<String>): List<SettingRowSpec> {
+    val byId = associateBy { it.id }
+    return order.mapNotNull(byId::get)
 }

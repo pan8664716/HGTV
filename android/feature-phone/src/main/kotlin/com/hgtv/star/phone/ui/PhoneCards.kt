@@ -43,10 +43,10 @@ object PhoneCards {
      * 从 104 加到 116：横排卡片原先只有 312px（1080P），缩略图认不出是哪部剧；
      * 加宽后与网格卡的观感接近，一屏仍能露出两张半。
      */
-    const val WIDTH_DP = 116
+    const val WIDTH_DP = com.hgtv.star.core.AppConfig.Ui.Phone.CARD_WIDTH_DP
 
     /** 手机横屏播放页底部浮层用的小卡宽：避免卡片过高被底部面板裁切。 */
-    const val COMPACT_WIDTH_DP = 84
+    const val COMPACT_WIDTH_DP = com.hgtv.star.core.AppConfig.Ui.Phone.CARD_COMPACT_WIDTH_DP
 
     /**
      * 一张卡片。与分类 / 榜单 / 搜索页的网格卡共用 [PhonePosterCard]。

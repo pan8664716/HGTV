@@ -192,13 +192,14 @@ class PhoneVideoPage(
          * 32 → **26**（用户要求「太高了」）：它是「选集 / 观看完整短剧」的出口，
          * 一条窄栏就够，不需要占掉画面下方一整条。
          */
-        const val ACTION_BAR_DP = 26
+        const val ACTION_BAR_DP = com.hgtv.star.core.AppConfig.Ui.Phone.VIDEO_ACTION_BAR_DP
         /** 标题与底部操作图标的同一条左边线：只留一点点，避免信息区贴死屏幕。 */
-        const val INFO_EDGE_DP = 6
+        const val INFO_EDGE_DP = com.hgtv.star.core.AppConfig.Ui.Phone.VIDEO_INFO_EDGE_DP
         /** 播放三角自身在 12dp 画布里左侧留了约 4dp，容器再收 4dp 才能和文字真正对齐。 */
-        const val ACTION_GLYPH_EDGE_DP = 2
+        const val ACTION_GLYPH_EDGE_DP =
+            com.hgtv.star.core.AppConfig.Ui.Phone.VIDEO_ACTION_GLYPH_EDGE_DP
         /** 播放页「选集」那条通栏的底板不透明度。 */
-        const val ACTION_BAR_ALPHA = .4f
+        const val ACTION_BAR_ALPHA = com.hgtv.star.core.AppConfig.Ui.Phone.VIDEO_ACTION_BAR_ALPHA
     }
 
     private val fullscreenGlyph = PhoneGlyph(context, PhoneGlyph.Kind.FULLSCREEN).apply {

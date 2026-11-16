@@ -13,6 +13,7 @@ import android.graphics.drawable.Drawable
 import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.widget.TextView
+import com.hgtv.star.core.AppConfig
 import kotlin.math.abs
 
 /**
@@ -62,9 +63,9 @@ object PhoneColor {
      * **42 → 34**（用户要求「太高、整体小一点」）：图标 16 → 14dp、字 13 → 11 号、
      * 间隙 2 → 1dp，内容约 21dp，上下各留 6.5dp。整条比原来矮 19%。
      */
-    const val TAB_BAR_DP = 34f
+    const val TAB_BAR_DP = AppConfig.Ui.Phone.TAB_BAR_DP
     /** 横屏沉浸时底栏进一步压扁。 */
-    const val TAB_BAR_LANDSCAPE_DP = 24f
+    const val TAB_BAR_LANDSCAPE_DP = AppConfig.Ui.Phone.TAB_BAR_LANDSCAPE_DP
 }
 
 /** 与官方实测一致的尺寸令牌（dp）。 */
@@ -75,23 +76,23 @@ object PhoneDimen {
      * 两列布局里这一圈白边完全是从卡宽里扣的；用户在连续几轮里都在要「卡片更大」，
      * 这里是最后一个可让的量。
      */
-    const val PAGE_INSET = 0f
+    const val PAGE_INSET = AppConfig.Ui.Phone.PAGE_INSET_DP
     /** 底部导航栏左右留白（官方 14px）。 */
-    const val TAB_INSET = 8f
+    const val TAB_INSET = AppConfig.Ui.Phone.TAB_INSET_DP
     /** 卡片间距（官方 14px）。 */
-    const val CARD_GAP = 8f
+    const val CARD_GAP = AppConfig.Ui.Phone.CARD_GAP_DP
     /**
      * 海报卡之间的间距（横纵同值）：**0**，两列直接贴合。
      *
      * 卡与卡之间靠卡片自带的柔光带（各 2dp）分开，看起来是一整块画面被一条细影切开。
      */
-    const val POSTER_GAP = 0f
+    const val POSTER_GAP = AppConfig.Ui.Phone.POSTER_GAP_DP
     /** 频道 chip 行高（官方 79px）。 */
-    const val CHIP_ROW = 45f
+    const val CHIP_ROW = AppConfig.Ui.Phone.CHIP_ROW_DP
     /** 剧场卡片宽（官方 512px）。 */
-    const val POSTER_WIDTH = 293f
+    const val POSTER_WIDTH = AppConfig.Ui.Phone.POSTER_WIDTH_DP
     /** 播放页右侧操作项高度（官方 113px）。 */
-    const val ACTION_ITEM = 65f
+    const val ACTION_ITEM = AppConfig.Ui.Phone.ACTION_ITEM_DP
 }
 
 /**

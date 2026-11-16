@@ -46,7 +46,9 @@ enum class RankBoard(
 
     companion object {
         /** 顶部榜单导航顺序：推荐 / 漫剧 / AI剧 / 真人。 */
-        val navEntries: List<RankBoard> = listOf(NEW, COMIC, AI, REAL)
+        val navEntries: List<RankBoard> = AppConfig.Navigation.RANK_NAV_ORDER.mapNotNull { value ->
+            entries.firstOrNull { it.storedValue == value }
+        }
 
         fun fromStored(value: String?) = entries.firstOrNull { it.storedValue == value } ?: COMIC
     }

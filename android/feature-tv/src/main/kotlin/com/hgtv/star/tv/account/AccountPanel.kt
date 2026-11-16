@@ -43,7 +43,13 @@ const val ACCOUNT_PANEL_QR="qr"
  * 未登录时「我的」页顶部导航栏里的两个入口，**顺序就是默认值**：
  * 第一个（二维码）是进页面时的落点。
  */
-val ACCOUNT_LOGIN_MODES=listOf(ACCOUNT_PANEL_QR to "二维码登录",ACCOUNT_PANEL_PHONE to "手机登录")
+private val accountLoginLabels = mapOf(
+    ACCOUNT_PANEL_QR to "二维码登录",
+    ACCOUNT_PANEL_PHONE to "手机登录",
+)
+val ACCOUNT_LOGIN_MODES=com.hgtv.star.core.AppConfig.Navigation.ACCOUNT_LOGIN_MODE_KEYS.mapNotNull { key ->
+    accountLoginLabels[key]?.let { key to it }
+}
 
 /** 二维码的显示边长（设计单位，与登录卡同一条 1280dp 画布）。 */
 private const val QR_LOGIN_SIZE=com.hgtv.star.core.AppConfig.Ui.QR_LOGIN_SIZE_DP

@@ -151,12 +151,15 @@ private fun phonePosterScale(context: Context, cardWidth: Int): Float =
  * * [PHONE_SOFT_BAND] 柔光带：**2**。两列贴合时它是唯一的分界——卡片之间共 12px
  *   （各 6px），再小就分不出边界了。
  */
-private const val PHONE_POSTER_INSET = 0
-private const val PHONE_SOFT_BAND = 2
-private const val PHONE_BADGE_TEXT_SCALE = .78f
-private const val PHONE_TITLE_TEXT_SCALE = .85f
-private const val PHONE_POSTER_RADIUS = 10
-private const val PHONE_CARD_BOTTOM_RADIUS = 6f
+private const val PHONE_POSTER_INSET = com.hgtv.star.core.AppConfig.Ui.Phone.POSTER_INSET_DP
+private const val PHONE_SOFT_BAND = com.hgtv.star.core.AppConfig.Ui.Phone.POSTER_SOFT_BAND_DP
+private const val PHONE_BADGE_TEXT_SCALE =
+    com.hgtv.star.core.AppConfig.Ui.Phone.POSTER_BADGE_TEXT_SCALE
+private const val PHONE_TITLE_TEXT_SCALE =
+    com.hgtv.star.core.AppConfig.Ui.Phone.POSTER_TITLE_TEXT_SCALE
+private const val PHONE_POSTER_RADIUS = com.hgtv.star.core.AppConfig.Ui.Phone.POSTER_RADIUS_DP
+private const val PHONE_CARD_BOTTOM_RADIUS =
+    com.hgtv.star.core.AppConfig.Ui.Phone.POSTER_BOTTOM_RADIUS_DP
 
 private fun phonePosterPosterHeight(context: Context, cardWidth: Int): Int {
     // 与电视端同一条：卡宽先扣掉两侧柔光带与海报井内衬，再按 3:4 求高。

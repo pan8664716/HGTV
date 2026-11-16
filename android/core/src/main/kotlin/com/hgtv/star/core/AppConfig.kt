@@ -1054,6 +1054,95 @@ object AppConfig {
     }
 
     /**
+     * 页面结构：有哪些入口、栏目和分页，以及它们默认的展示顺序。
+     *
+     * 这里只放稳定 key 与顺序；中文文案仍由各端资源映射，避免配置层承担本地化。
+     */
+    object Navigation {
+        /** 顶部导航可隐藏入口顺序。 */
+        val NAV_KEYS = listOf("recommend", "search", "category", "rank", "profile")
+
+        /** 首页栏目默认顺序：本机三栏 + 四个榜单。 */
+        val HOME_COLUMN_KEYS = listOf(
+            "history",
+            "favorites",
+            "later",
+            "rank-comic",
+            "rank-real",
+            "rank-ai",
+            "rank-new",
+        )
+
+        /** 榜单页顶部芯片顺序。 */
+        val RANK_NAV_ORDER = listOf("new", "comic", "ai", "real")
+
+        /** 「我的」账号侧栏目顺序。 */
+        val ACCOUNT_TAB_KEYS = listOf("history", "favorites", "likes", "reserves")
+
+        /** 未登录时账号登录方式顺序。 */
+        val ACCOUNT_LOGIN_MODE_KEYS = listOf("qr", "phone")
+
+        /** 设置页四大分页顺序。 */
+        val SETTINGS_PAGE_LABELS = listOf("播放交互", "外观导航", "内容推荐", "系统高级")
+
+        /** 播放画面左上角信息项顺序。 */
+        val PLAY_INFO_KEYS = listOf("title", "episode", "speed", "clock")
+    }
+
+    /**
+     * 共享设置列表的项与顺序。
+     *
+     * 删除某一项即从对应设置页隐藏；调整顺序即改变页面渲染顺序。Section 也作为一项参与排序。
+     */
+    object Settings {
+        /** 播放页设置项顺序。 */
+        val PLAYBACK_ORDER = listOf(
+            "section:播放",
+            "playback.quality",
+            "playback.speed",
+            "playback.frame",
+            "playback.decoder",
+            "playback.scale",
+            "section:弹幕",
+            "danmaku.mode",
+            "danmaku.speed",
+            "danmaku.merge",
+            "danmaku.effects",
+            "danmaku.merge.min",
+            "danmaku.scale",
+            "danmaku.alpha",
+        )
+
+        /** 外观与布局设置项顺序。 */
+        val APPEARANCE_ORDER = listOf(
+            "section:外观与布局",
+            "theme-grid",
+            "layout.columns",
+            "recommend.swipe",
+        )
+
+        /** 内容推荐设置项顺序。 */
+        val RECOMMEND_ORDER = listOf(
+            "section:内容推荐",
+            "recommend.gender",
+            "search.source",
+        )
+
+        /** 系统高级设置项顺序。 */
+        val SYSTEM_ORDER = listOf(
+            "section:系统高级",
+            "system.deviceForm",
+            "system.lanSync",
+            "system.export",
+            "system.import",
+            "system.restoreDefaults",
+            "system.reset",
+            "system.debug",
+            "system.reduceAnim",
+        )
+    }
+
+    /**
      * 页面交互时长、登录轮询、账号刷新和调试面板节奏。
      */
     object Ui {
@@ -1158,6 +1247,265 @@ object AppConfig {
 
         /** 调试面板系统状态缓存时间。 */
         const val DEBUG_ENV_TTL_MS = 5_000L
+
+        /**
+         * 手机 / 平板的几何参数。
+         */
+        object Phone {
+            /** 海报网格左右边距。 */
+            const val PAGE_INSET_DP = 0f
+
+            /** 底部导航左右留白。 */
+            const val TAB_INSET_DP = 8f
+
+            /** 卡片间距。 */
+            const val CARD_GAP_DP = 8f
+
+            /** 海报卡之间横纵间距。 */
+            const val POSTER_GAP_DP = 0f
+
+            /** 频道 chip 行高。 */
+            const val CHIP_ROW_DP = 45f
+
+            /** 剧场卡片宽度。 */
+            const val POSTER_WIDTH_DP = 293f
+
+            /** 播放页右侧操作项高度。 */
+            const val ACTION_ITEM_DP = 65f
+
+            /** 柔光带宽度。 */
+            const val SOFT_BAND_DP = 6f
+
+            /** 大面板柔光带宽度。 */
+            const val SOFT_BAND_LARGE_DP = 10f
+
+            /** 卡片圆角。 */
+            const val RADIUS_CARD_DP = 8f
+
+            /** 胶囊圆角。 */
+            const val RADIUS_PILL_DP = 26f
+
+            /** 弹窗 / 抽屉圆角。 */
+            const val RADIUS_SHEET_DP = 24f
+
+            /** 进度条轨道高度。 */
+            const val TRACK_HEIGHT_DP = 3f
+
+            /** 竖屏底部导航高度。 */
+            const val TAB_BAR_DP = 34f
+
+            /** 横屏沉浸时底部导航高度。 */
+            const val TAB_BAR_LANDSCAPE_DP = 24f
+
+            /** 常规卡片宽度。 */
+            const val CARD_WIDTH_DP = 116
+
+            /** 紧凑卡片宽度。 */
+            const val CARD_COMPACT_WIDTH_DP = 84
+
+            /** 海报卡内容内缩。 */
+            const val POSTER_INSET_DP = 0
+
+            /** 海报卡柔光带宽度。 */
+            const val POSTER_SOFT_BAND_DP = 2
+
+            /** 海报角标文字缩放。 */
+            const val POSTER_BADGE_TEXT_SCALE = .78f
+
+            /** 海报标题文字缩放。 */
+            const val POSTER_TITLE_TEXT_SCALE = .85f
+
+            /** 海报卡圆角。 */
+            const val POSTER_RADIUS_DP = 10
+
+            /** 海报卡底部圆角。 */
+            const val POSTER_BOTTOM_RADIUS_DP = 6f
+
+            /** 竖屏视频操作栏高度。 */
+            const val VIDEO_ACTION_BAR_DP = 26
+
+            /** 竖屏视频信息左右边距。 */
+            const val VIDEO_INFO_EDGE_DP = 6
+
+            /** 竖屏视频操作图标边距。 */
+            const val VIDEO_ACTION_GLYPH_EDGE_DP = 2
+
+            /** 竖屏视频操作栏透明度。 */
+            const val VIDEO_ACTION_BAR_ALPHA = .4f
+        }
+
+        /**
+         * 电视 1280×720 设计画布上的几何参数。
+         */
+        object Tv {
+            /** 海报圆角。 */
+            const val RADIUS_POSTER = 16
+
+            /** 卡片圆角。 */
+            const val RADIUS_CARD = 20
+
+            /** 胶囊圆角。 */
+            const val RADIUS_PILL = 999
+
+            /** 模态框圆角。 */
+            const val RADIUS_DIALOG = 32
+
+            /** 弹窗面板圆角。 */
+            const val RADIUS_DIALOG_PANEL = 30
+
+            /** 弹窗宽度。 */
+            const val DIALOG_WIDTH = 472
+
+            /** 弹窗缩略图宽度。 */
+            const val DIALOG_THUMB_WIDTH = 96
+
+            /** 弹窗缩略图高度。 */
+            const val DIALOG_THUMB_HEIGHT = 60
+
+            /** 弹窗缩略图圆角。 */
+            const val DIALOG_THUMB_RADIUS = 30
+
+            /** 弹窗选项行高度。 */
+            const val DIALOG_ITEM_HEIGHT = 62
+
+            /** 弹窗选项行左右内边距。 */
+            const val DIALOG_ITEM_PAD = 30
+
+            /** 弹窗选项图标边长。 */
+            const val DIALOG_ITEM_ICON = 22
+
+            /** 弹窗图标与文字间距。 */
+            const val DIALOG_ITEM_ICON_GAP = 15
+
+            /** 弹窗选项间距。 */
+            const val DIALOG_ITEM_GAP = 11
+
+            /** 登录卡宽度。 */
+            const val LOGIN_CARD_WIDTH = 680
+
+            /** 登录卡圆角。 */
+            const val RADIUS_LOGIN_CARD = 32
+
+            /** 登录卡上内边距。 */
+            const val LOGIN_PAD_TOP = 28
+
+            /** 登录卡左右内边距。 */
+            const val LOGIN_PAD_SIDE = 44
+
+            /** 登录卡下内边距。 */
+            const val LOGIN_PAD_BOTTOM = 26
+
+            /** 登录输入框高度。 */
+            const val LOGIN_FIELD_HEIGHT = 56
+
+            /** 登录输入框左右内边距。 */
+            const val LOGIN_INPUT_PAD = 30
+
+            /** 区号按钮宽度。 */
+            const val LOGIN_REGION_WIDTH = 116
+
+            /** 获取验证码按钮宽度。 */
+            const val LOGIN_SEND_WIDTH = 158
+
+            /** 登录主按钮高度。 */
+            const val LOGIN_BUTTON_HEIGHT = 60
+
+            /** 登录字段间距。 */
+            const val LOGIN_FIELD_GAP = 16
+
+            /** 弹窗顶部内边距。 */
+            const val DIALOG_PAD_TOP = 26
+
+            /** 弹窗左右内边距。 */
+            const val DIALOG_PAD_SIDE = 22
+
+            /** 弹窗底部内边距。 */
+            const val DIALOG_PAD_BOTTOM = 24
+
+            /** 焦点描边宽度。 */
+            const val RING = 2
+
+            /** 焦点描边圆角。 */
+            const val RING_RADIUS = 20
+
+            /** 柔光带宽度。 */
+            const val SOFT_BAND = 6
+
+            /** 大面板柔光带宽度。 */
+            const val SOFT_BAND_LARGE = 10
+
+            /** 焦点放大比例。 */
+            const val FOCUS_SCALE = 1.05f
+
+            /** 焦点动画时长。 */
+            const val DURATION_MS = 200L
+
+            /** 横向焦点余量。 */
+            const val FOCUS_BLEED = 7
+
+            /** 纵向焦点余量。 */
+            const val FOCUS_BLEED_VERTICAL = 12
+
+            /** 紧凑按钮高度。 */
+            const val BUTTON_COMPACT = 40
+
+            /** 弹窗按钮高度。 */
+            const val BUTTON_DIALOG = 36
+
+            /** 常规按钮高度。 */
+            const val BUTTON_NORMAL = 48
+
+            /** 主操作按钮高度。 */
+            const val BUTTON_HERO = 56
+
+            /** 紧凑按钮内边距。 */
+            const val BUTTON_PAD_COMPACT = 18
+
+            /** 常规按钮内边距。 */
+            const val BUTTON_PAD_NORMAL = 28
+
+            /** 主操作按钮内边距。 */
+            const val BUTTON_PAD_HERO = 36
+
+            /** 弹窗按钮内边距。 */
+            const val BUTTON_PAD_DIALOG = 14
+
+            /** 收紧按钮内边距。 */
+            const val BUTTON_PAD_TIGHT = 12
+
+            /** 收紧按钮最小宽度。 */
+            const val BUTTON_MIN_WIDTH_TIGHT = 44
+
+            /** 常规按钮最小宽度。 */
+            const val BUTTON_MIN_WIDTH = 92
+
+            /** 顶部工具栏高度。 */
+            const val TOOLBAR_HEIGHT = 88
+
+            /** 同一行控件间距。 */
+            const val GAP_INLINE = 12
+
+            /** 密集排布间距。 */
+            const val GAP_TIGHT = 8
+
+            /** 区块间距。 */
+            const val GAP_BLOCK = 16
+
+            /** 大分组间距。 */
+            const val GAP_GROUP = 24
+
+            /** 电视选集网格列数。 */
+            const val EPISODE_COLUMNS = 10
+
+            /** 电视选集单元格间距。 */
+            const val EPISODE_CELL_GAP = 4
+
+            /** 电视选集单元格最小尺寸。 */
+            const val EPISODE_CELL_MIN = 32
+
+            /** 电视选集左右页边距。 */
+            const val EPISODE_PAGE_SIDE_PAD = 78
+        }
     }
 
     /**

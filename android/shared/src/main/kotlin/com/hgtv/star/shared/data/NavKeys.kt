@@ -1,6 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.data
 
+import com.hgtv.star.core.AppConfig
+
 /**
  * 顶部导航栏里可以单独隐藏的入口 key。
  *
@@ -13,4 +15,4 @@ package com.hgtv.star.shared.data
  */
 const val NAV_KEY_RECOMMEND = "recommend"
 
-val NAV_KEYS = setOf("recommend", "search", "category", "rank", "profile")
+val NAV_KEYS = AppConfig.Navigation.NAV_KEYS.toSet()

@@ -89,12 +89,15 @@ const val ACCOUNT_RETRIES=com.hgtv.star.core.AppConfig.Ui.ACCOUNT_RETRIES
  * 与首页那三栏（历史记录 / 我的收藏 / 稍后观看）**不是同一份数据**：这里是账号侧的，
  * 走 App 接口（见 `ContentRepository.accountData`），本机记录不受影响。
  */
-val ACCOUNT_TABS = listOf(
-"history" to "历史",
-"favorites" to "收藏",
-"likes" to "点赞",
-"reserves" to "预约"
+private val accountTabLabels = mapOf(
+    "history" to "历史",
+    "favorites" to "收藏",
+    "likes" to "点赞",
+    "reserves" to "预约",
 )
+val ACCOUNT_TABS = com.hgtv.star.core.AppConfig.Navigation.ACCOUNT_TAB_KEYS.mapNotNull { key ->
+    accountTabLabels[key]?.let { key to it }
+}
 
 /**
  * 页头随滚动收起时，「列表算回到最上边」的阈值（dp）。
@@ -315,7 +318,7 @@ const val NAV_GRID_COLUMNS=4
  * 四块内容在进设置页时一次性建好，切换只改可见性（见 `TvMainActivity.switchSettingsTab`），
  * 因此这里只放显示名，不放任何取值。
  */
-val SETTINGS_TABS=listOf("播放交互","外观导航","内容推荐","系统高级")
+val SETTINGS_TABS=com.hgtv.star.core.AppConfig.Navigation.SETTINGS_PAGE_LABELS
 
 /** 设置页某一大项的内容块（`tag = settings-page-<下标>`）：切大项按它取块、按它找回焦点。 */
 const val SETTINGS_TAG_PAGE_PREFIX="settings-page-"
@@ -359,12 +362,15 @@ const val SETTINGS_TAG_GENRE_PREFIX="settings-genre-"
  * `key` 与 [com.hgtv.star.shared.data.Library] 上的四个偏好一一对应；
  * 顺序就是画面上的排列顺序：**剧名 → 剧集 → 网速 → 时间**。
  */
-val PLAY_INFO_ENTRIES=listOf(
+private val playInfoLabels = mapOf(
     "title" to "剧名",
     "episode" to "剧集",
     "speed" to "网速",
-    "clock" to "时间"
+    "clock" to "时间",
 )
+val PLAY_INFO_ENTRIES=com.hgtv.star.core.AppConfig.Navigation.PLAY_INFO_KEYS.mapNotNull { key ->
+    playInfoLabels[key]?.let { key to it }
+}
 
 /**
  * 播放设置面板的行号。

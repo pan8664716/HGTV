@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.view.View
 import android.view.animation.DecelerateInterpolator
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.shared.ui.Soft
 import com.hgtv.star.shared.ui.TvTheme
 import com.hgtv.star.shared.ui.SoftStyle
@@ -259,12 +260,12 @@ object TvStyle {
     // —— 圆角：按设计稿再放大一档 ——
     // 新拟态的柔和来自「大圆角 + 柔光」；胶囊一律取 999，由绘制层夹到高度的一半。
 
-    const val RADIUS_POSTER = 16
-    const val RADIUS_CARD = 20
-    const val RADIUS_PILL = 999
+    const val RADIUS_POSTER = AppConfig.Ui.Tv.RADIUS_POSTER
+    const val RADIUS_CARD = AppConfig.Ui.Tv.RADIUS_CARD
+    const val RADIUS_PILL = AppConfig.Ui.Tv.RADIUS_PILL
 
     /** 模态框面板的圆角：比卡片大、比胶囊小，一眼能看出是浮层。 */
-    const val RADIUS_DIALOG = 32
+    const val RADIUS_DIALOG = AppConfig.Ui.Tv.RADIUS_DIALOG
 
     /**
      * 弹窗面板的圆角：比卡片大一档（卡片 20），但**不再走设计稿的 56**。
@@ -273,13 +274,13 @@ object TvStyle {
      * 与面板里那些胶囊选项叠在一起显得过软。收到 30 之后：
      * 面板仍是明显的大圆角浮层，边角又收得住，选项的胶囊形状才成为画面里唯一的圆形。
      */
-    const val RADIUS_DIALOG_PANEL = 30
+    const val RADIUS_DIALOG_PANEL = AppConfig.Ui.Tv.RADIUS_DIALOG_PANEL
 
     // —— 弹窗几何（设计稿 1280 × 720 画布上的数值） ——
     // 弹窗是一块独立的小面板：宽 472、标题 20、副标题 12.5、选项高 62 / 图标 22 / 字号 19。
 
     /** 弹窗面板宽度（设计 dp）。窄屏会按「屏宽 − 两侧留白」夹一次。 */
-    const val DIALOG_WIDTH = 472
+    const val DIALOG_WIDTH = AppConfig.Ui.Tv.DIALOG_WIDTH
 
     /** 弹窗标题字号。 */
     const val DIALOG_TITLE_TEXT = 20f
@@ -288,40 +289,40 @@ object TvStyle {
     const val DIALOG_SUB_TEXT = 12.5f
 
     /** 顶部封面缩略图：宽 / 高 / 圆角。 */
-    const val DIALOG_THUMB_WIDTH = 96
-    const val DIALOG_THUMB_HEIGHT = 60
-    const val DIALOG_THUMB_RADIUS = 30
+    const val DIALOG_THUMB_WIDTH = AppConfig.Ui.Tv.DIALOG_THUMB_WIDTH
+    const val DIALOG_THUMB_HEIGHT = AppConfig.Ui.Tv.DIALOG_THUMB_HEIGHT
+    const val DIALOG_THUMB_RADIUS = AppConfig.Ui.Tv.DIALOG_THUMB_RADIUS
 
     /** 选项行的高度（底板，不含柔光带）。 */
-    const val DIALOG_ITEM_HEIGHT = 62
+    const val DIALOG_ITEM_HEIGHT = AppConfig.Ui.Tv.DIALOG_ITEM_HEIGHT
 
     /** 选项行左右内边距（图标 / 文字到面板边缘的距离）。 */
-    const val DIALOG_ITEM_PAD = 30
+    const val DIALOG_ITEM_PAD = AppConfig.Ui.Tv.DIALOG_ITEM_PAD
 
     /** 选项行图标边长与「图标 → 文字」的间距。 */
-    const val DIALOG_ITEM_ICON = 22
-    const val DIALOG_ITEM_ICON_GAP = 15
+    const val DIALOG_ITEM_ICON = AppConfig.Ui.Tv.DIALOG_ITEM_ICON
+    const val DIALOG_ITEM_ICON_GAP = AppConfig.Ui.Tv.DIALOG_ITEM_ICON_GAP
 
     /** 选项行字号。 */
     const val DIALOG_ITEM_TEXT = 19f
 
     /** 选项之间的竖向间距。 */
-    const val DIALOG_ITEM_GAP = 11
+    const val DIALOG_ITEM_GAP = AppConfig.Ui.Tv.DIALOG_ITEM_GAP
 
     // —— 登录界面（设计稿 1280 × 720 画布上的数值） ——
     // 一张居中的登录卡：宽 680、圆角 32、内边距 40 / 48 / 40；
     // 卡片里是「小号 logo + 大标题 + 一行说明」，下面两行胶囊输入，最后一条整宽主按钮。
 
     /** 登录卡宽度（设计 dp）。窄屏按「屏宽 − 两侧留白」夹一次。 */
-    const val LOGIN_CARD_WIDTH = 680
+    const val LOGIN_CARD_WIDTH = AppConfig.Ui.Tv.LOGIN_CARD_WIDTH
 
     /** 登录卡圆角：比弹窗小一档，比卡片大一档。 */
-    const val RADIUS_LOGIN_CARD = 32
+    const val RADIUS_LOGIN_CARD = AppConfig.Ui.Tv.RADIUS_LOGIN_CARD
 
     /** 登录卡内边距（上 / 左右 / 下）。整体收紧一档：卡片矮一点，一屏里不显得空。 */
-    const val LOGIN_PAD_TOP = 28
-    const val LOGIN_PAD_SIDE = 44
-    const val LOGIN_PAD_BOTTOM = 26
+    const val LOGIN_PAD_TOP = AppConfig.Ui.Tv.LOGIN_PAD_TOP
+    const val LOGIN_PAD_SIDE = AppConfig.Ui.Tv.LOGIN_PAD_SIDE
+    const val LOGIN_PAD_BOTTOM = AppConfig.Ui.Tv.LOGIN_PAD_BOTTOM
 
     /** 小号 logo 文字（字母拉开的那种标识行）。 */
     const val LOGIN_LOGO_TEXT = 12f
@@ -336,57 +337,57 @@ object TvStyle {
     const val LOGIN_LABEL_TEXT = 13f
 
     /** 输入框 / 地区码 / 获取验证码这三件的高度（底板）。 */
-    const val LOGIN_FIELD_HEIGHT = 56
+    const val LOGIN_FIELD_HEIGHT = AppConfig.Ui.Tv.LOGIN_FIELD_HEIGHT
 
     /** 输入框里的字号。 */
     const val LOGIN_INPUT_TEXT = 20f
 
     /** 输入框左右内边距（到面板边缘的距离）。 */
-    const val LOGIN_INPUT_PAD = 30
+    const val LOGIN_INPUT_PAD = AppConfig.Ui.Tv.LOGIN_INPUT_PAD
 
     /** 地区码按钮的宽度。 */
-    const val LOGIN_REGION_WIDTH = 116
+    const val LOGIN_REGION_WIDTH = AppConfig.Ui.Tv.LOGIN_REGION_WIDTH
 
     /** 「获取验证码」按钮的宽度。 */
-    const val LOGIN_SEND_WIDTH = 158
+    const val LOGIN_SEND_WIDTH = AppConfig.Ui.Tv.LOGIN_SEND_WIDTH
 
     /** 登录主按钮的高度。 */
-    const val LOGIN_BUTTON_HEIGHT = 60
+    const val LOGIN_BUTTON_HEIGHT = AppConfig.Ui.Tv.LOGIN_BUTTON_HEIGHT
 
     /** 登录主按钮的字号。 */
     const val LOGIN_BUTTON_TEXT = 18f
 
     /** 登录卡里各字段之间的竖向间距。 */
-    const val LOGIN_FIELD_GAP = 16
+    const val LOGIN_FIELD_GAP = AppConfig.Ui.Tv.LOGIN_FIELD_GAP
 
     /** 弹窗顶部 / 左右 / 底部的内边距。 */
-    const val DIALOG_PAD_TOP = 26
-    const val DIALOG_PAD_SIDE = 22
-    const val DIALOG_PAD_BOTTOM = 24
-    const val RING = 2
+    const val DIALOG_PAD_TOP = AppConfig.Ui.Tv.DIALOG_PAD_TOP
+    const val DIALOG_PAD_SIDE = AppConfig.Ui.Tv.DIALOG_PAD_SIDE
+    const val DIALOG_PAD_BOTTOM = AppConfig.Ui.Tv.DIALOG_PAD_BOTTOM
+    const val RING = AppConfig.Ui.Tv.RING
 
     /** 焦点描边圆角。 */
-    const val RING_RADIUS = 20
+    const val RING_RADIUS = AppConfig.Ui.Tv.RING_RADIUS
 
     // —— 柔光带宽 ——
     // 控件四周为投影 / 高光预留的透明带，也是控件自身的内边距。
     // 5dp 的带里能放下「偏移 1.7dp + 模糊 4.8dp」的投影，观感是柔和的，同时不会把
     // 一屏 6 张的海报架撑得过宽；弹窗、设置分组、播放器底座这类大面板用 9dp。
 
-    const val SOFT_BAND = 6
+    const val SOFT_BAND = AppConfig.Ui.Tv.SOFT_BAND
 
     /** 大面板的柔光带宽。 */
-    const val SOFT_BAND_LARGE = 10
+    const val SOFT_BAND_LARGE = AppConfig.Ui.Tv.SOFT_BAND_LARGE
 
-    const val FOCUS_SCALE = 1.05f
-    const val DURATION = 200L
+    const val FOCUS_SCALE = AppConfig.Ui.Tv.FOCUS_SCALE
+    const val DURATION = AppConfig.Ui.Tv.DURATION_MS
 
     /**
      * 焦点余量：放大 [FOCUS_SCALE] 后，控件会画出自身槽位 (FOCUS_SCALE-1)/2 ≈ 2.5%，
      * 175dp 的海报卡就是 4.4dp。**滚动容器必须左右各留这么多内边距**，
      * 否则最左 / 最右那一张的焦点描边会被滚动容器自己裁掉——这正是「第一张卡片左边框看不见」的原因。
      */
-    const val FOCUS_BLEED = 7
+    const val FOCUS_BLEED = AppConfig.Ui.Tv.FOCUS_BLEED
 
     /**
      * 纵向焦点余量：比横向大一档，因为卡片是竖的。
@@ -395,14 +396,14 @@ object TvStyle {
      * 再加上 [RING] 描边有一半画在边界外，一张 288dp 高的海报卡就要 0.025×288 + 1 ≈ 8.2dp；
      * 4K 画布（1920dp 宽）上卡片约 410dp 高，需要约 11.3dp。取 12dp 覆盖到约 440dp 的卡片。
      */
-    const val FOCUS_BLEED_VERTICAL = 12
+    const val FOCUS_BLEED_VERTICAL = AppConfig.Ui.Tv.FOCUS_BLEED_VERTICAL
 
     // —— 按钮 ——
     // 全站按钮只有三档高度，横向内边距与字号跟着档位走；圆角一律胶囊（RADIUS_PILL）。
     // 这里的高度是**底板高度**，控件实际高度还要加上四周的柔光带（见 paintButton）。
 
     /** 紧凑档：菜单选项、行内文字按钮（更多 ›）。 */
-    const val BUTTON_COMPACT = 40
+    const val BUTTON_COMPACT = AppConfig.Ui.Tv.BUTTON_COMPACT
 
     /**
      * 弹窗档：**只给弹窗里的按钮用**（底部动作行与选项列表）。
@@ -411,18 +412,18 @@ object TvStyle {
      * 一行「取消 / 确认」各占一百多 dp，视觉上比弹窗标题还抢。这里统一收一档
      * （36dp 底板 / 14dp 内边距 / 14sp），弹窗内的按钮因此比页面上的常规按钮小一圈。
      */
-    const val BUTTON_DIALOG = 36
+    const val BUTTON_DIALOG = AppConfig.Ui.Tv.BUTTON_DIALOG
 
     /** 默认档：返回、分页、重试、收藏、刷新这类常规操作。 */
-    const val BUTTON_NORMAL = 48
+    const val BUTTON_NORMAL = AppConfig.Ui.Tv.BUTTON_NORMAL
 
     /** 主操作档：详情页「开始观看」这类页面里唯一的强调按钮。 */
-    const val BUTTON_HERO = 56
+    const val BUTTON_HERO = AppConfig.Ui.Tv.BUTTON_HERO
 
-    const val BUTTON_PAD_COMPACT = 18
-    const val BUTTON_PAD_NORMAL = 28
-    const val BUTTON_PAD_HERO = 36
-    const val BUTTON_PAD_DIALOG = 14
+    const val BUTTON_PAD_COMPACT = AppConfig.Ui.Tv.BUTTON_PAD_COMPACT
+    const val BUTTON_PAD_NORMAL = AppConfig.Ui.Tv.BUTTON_PAD_NORMAL
+    const val BUTTON_PAD_HERO = AppConfig.Ui.Tv.BUTTON_PAD_HERO
+    const val BUTTON_PAD_DIALOG = AppConfig.Ui.Tv.BUTTON_PAD_DIALOG
 
     /**
      * 收紧档：**只有搜索页导航栏里那两枚按钮用**（搜索 / 手机输入）。
@@ -431,10 +432,10 @@ object TvStyle {
      * 让「手机输入」占到 132dp，两枚加起来就顶掉了输入框一半的宽度。
      * 收到 12dp 之后高度与字号都不变，只是横向收窄，与同一行的输入框仍是同一档观感。
      */
-    const val BUTTON_PAD_TIGHT = 12
+    const val BUTTON_PAD_TIGHT = AppConfig.Ui.Tv.BUTTON_PAD_TIGHT
 
     /** 收紧档的最小宽度：两三个字按内容宽收紧，不撑到常规档的 92dp。 */
-    const val BUTTON_MIN_WIDTH_TIGHT = 44
+    const val BUTTON_MIN_WIDTH_TIGHT = AppConfig.Ui.Tv.BUTTON_MIN_WIDTH_TIGHT
 
     /**
      * 分区芯片的字号：比常规档（16sp）小一档，但高度仍是 [BUTTON_NORMAL]。
@@ -458,7 +459,7 @@ object TvStyle {
     const val POSTER_BADGE_TEXT = 12f
 
     /** 按钮最小宽度：短文案（「收藏」「重试」）也不会瘦成一条。 */
-    const val BUTTON_MIN_WIDTH = 92
+    const val BUTTON_MIN_WIDTH = AppConfig.Ui.Tv.BUTTON_MIN_WIDTH
 
     /**
      * 顶部导航栏的高度。
@@ -468,19 +469,19 @@ object TvStyle {
      * 文字与图标都按内容线（`pageInset()` 78dp）对齐。页头收展动画直接改这一行的高度，
      * 因此它必须是固定值。
      */
-    const val TOOLBAR_HEIGHT = 88
+    const val TOOLBAR_HEIGHT = AppConfig.Ui.Tv.TOOLBAR_HEIGHT
 
     /** 同一行按钮之间、行内控件之间的间距。 */
-    const val GAP_INLINE = 12
+    const val GAP_INLINE = AppConfig.Ui.Tv.GAP_INLINE
 
     /** 网格单元格、密集排布的间距。 */
-    const val GAP_TIGHT = 8
+    const val GAP_TIGHT = AppConfig.Ui.Tv.GAP_TIGHT
 
     /** 区块之间、按钮行与正文之间的间距。 */
-    const val GAP_BLOCK = 16
+    const val GAP_BLOCK = AppConfig.Ui.Tv.GAP_BLOCK
 
     /** 大分组之间的间距。 */
-    const val GAP_GROUP = 24
+    const val GAP_GROUP = AppConfig.Ui.Tv.GAP_GROUP
 
     /** 禁用态整体透明度，三档按钮一致。 */
     const val DISABLED_ALPHA = .4f
