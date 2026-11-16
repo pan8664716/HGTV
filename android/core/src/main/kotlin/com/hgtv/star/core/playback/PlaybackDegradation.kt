@@ -312,13 +312,13 @@ class SessionPlaybackPolicy {
          * 一次就够：解码器实例被占是瞬态的，重开一次没救回来，说明问题不在「这一次初始化」
          * 而在这一档本身（或者这颗解码器彻底坏了），再重建只是让用户多看一次黑屏。
          */
-        const val SAME_REBUILD_LIMIT=1
+        const val SAME_REBUILD_LIMIT=AppConfig.Playback.SAME_REBUILD_LIMIT
 
         /** 每集最多自动降两档：1080 → 720 → 480，再低就没有意义了。 */
-        const val QUALITY_DOWN_LIMIT=2
+        const val QUALITY_DOWN_LIMIT=AppConfig.Playback.QUALITY_DOWN_LIMIT
 
         /** 每集最多「归还」两次手动重试的预算（见 [manualRetries]）。 */
-        const val MANUAL_RETRY_LIMIT=2
+        const val MANUAL_RETRY_LIMIT=AppConfig.Playback.MANUAL_RETRY_LIMIT
 
         /**
          * 音频轨的同档重建额度：每集一次。
@@ -327,7 +327,7 @@ class SessionPlaybackPolicy {
          * 4001（init 失败）/ 4003（解到坏帧）在音频上同样是瞬态的——早先这一维是 0，
          * 于是一次 AAC 抖动就把用户直接扔进错误页，而那页面上没有任何对音频有效的按钮。
          */
-        const val AUDIO_REBUILD_LIMIT=1
+        const val AUDIO_REBUILD_LIMIT=AppConfig.Playback.AUDIO_REBUILD_LIMIT
     }
 }
 

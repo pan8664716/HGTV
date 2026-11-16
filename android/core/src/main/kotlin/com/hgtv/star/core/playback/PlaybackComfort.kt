@@ -65,20 +65,20 @@ fun VideoFrameMode.toFit(verticalSource: Boolean = false): VideoFit =
 object SeekStep {
 
     /** 设置页「快进快退」的档位范围（与电视同一个滑块）。 */
-    const val MIN_SECONDS = 2
-    const val MAX_SECONDS = 20
+    const val MIN_SECONDS = AppConfig.Playback.SEEK_MIN_SECONDS
+    const val MAX_SECONDS = AppConfig.Playback.SEEK_MAX_SECONDS
 
     /** 相邻操作的合并窗：窗内的多次点击只发一次 seek。 */
-    const val MERGE_WINDOW_MS = 250L
+    const val MERGE_WINDOW_MS = AppConfig.Playback.SEEK_MERGE_WINDOW_MS
 
     /** 片尾保护：不跳到最后一帧，避免提前触发自动连播。 */
-    const val TAIL_GUARD_MS = 500L
+    const val TAIL_GUARD_MS = AppConfig.Playback.SEEK_TAIL_GUARD_MS
 
     /** 从第几次操作起加速（判据是 `tap > ACCEL_AFTER_TAPS`）。 */
-    const val ACCEL_AFTER_TAPS = 5
+    const val ACCEL_AFTER_TAPS = AppConfig.Playback.SEEK_ACCEL_AFTER_TAPS
 
     /** 加速倍数（与电视端一致：10 秒档连按之后每次 30 秒）。 */
-    const val ACCEL_FACTOR = 3
+    const val ACCEL_FACTOR = AppConfig.Playback.SEEK_ACCEL_FACTOR
 
     /**
      * 单次步长（毫秒）。

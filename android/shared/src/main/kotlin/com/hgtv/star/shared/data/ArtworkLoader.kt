@@ -44,17 +44,17 @@ class ArtworkLoader(context: Context) {
         const val PRIORITY_VISIBLE = 1
         const val PRIORITY_NEARBY = 2
         const val PRIORITY_PREFETCH = 3
-        private const val MAX_PENDING = 320
+        private const val MAX_PENDING = AppConfig.Artwork.LOADER_MAX_PENDING
 
-        private const val MAX_REQUESTS = 16
+        private const val MAX_REQUESTS = AppConfig.Artwork.LOADER_MAX_REQUESTS
 
-        private const val MAX_IDLE_CONNECTIONS = 16
+        private const val MAX_IDLE_CONNECTIONS = AppConfig.Artwork.LOADER_MAX_IDLE_CONNECTIONS
 
-        private const val MAX_BYTES = 4 * 1024 * 1024
+        private const val MAX_BYTES = AppConfig.Artwork.LOADER_MAX_DECODE_BYTES
 
-        private const val DEFAULT_WORKERS = 8
+        private const val DEFAULT_WORKERS = AppConfig.Artwork.LOADER_WORKERS
 
-        private const val HEAP_TIGHT_BYTES = 256L * 1024 * 1024
+        private const val HEAP_TIGHT_BYTES = AppConfig.Artwork.LOADER_HEAP_TIGHT_BYTES
     }
 
     private data class Key(val url: String, val tier: Int)
@@ -62,7 +62,10 @@ class ArtworkLoader(context: Context) {
     private fun tierOf(targetWidth: Int) = if (targetWidth > 400) 640 else 320
 
     private fun normalize(widthPx: Int, heightPx: Int): Pair<Int, Int> {
-        val scale = min(1.0, 1024.0 / max(widthPx, heightPx))
+        val scale = min(
+            1.0,
+            AppConfig.Artwork.LOADER_MAX_DECODE_DIMENSION.toDouble() / max(widthPx, heightPx),
+        )
         val rawWidth = max(1, (widthPx * scale).toInt())
         val rawHeight = max(1, (heightPx * scale).toInt())
         val stepped = ArtworkUrl.decodeWidth(rawWidth, rawHeight)
@@ -94,9 +97,21 @@ class ArtworkLoader(context: Context) {
         Runtime.getRuntime().maxMemory() <= HEAP_TIGHT_BYTES
     private val maxHeapBytes = Runtime.getRuntime().maxMemory()
     private val cacheBytes: Int = run {
-        val share = if (lowRam) maxHeapBytes / 5 else maxHeapBytes / 3
-        val floorBytes = (if (lowRam) 8L else 24L) * 1024 * 1024
-        val ceilingBytes = (if (lowRam) 32L else 192L) * 1024 * 1024
+        val share = if (lowRam) {
+            maxHeapBytes / AppConfig.Artwork.LOADER_LOW_RAM_HEAP_DIVISOR
+        } else {
+            maxHeapBytes / AppConfig.Artwork.LOADER_NORMAL_HEAP_DIVISOR
+        }
+        val floorBytes = if (lowRam) {
+            AppConfig.Artwork.LOADER_LOW_RAM_FLOOR_BYTES
+        } else {
+            AppConfig.Artwork.LOADER_NORMAL_FLOOR_BYTES
+        }
+        val ceilingBytes = if (lowRam) {
+            AppConfig.Artwork.LOADER_LOW_RAM_CEILING_BYTES
+        } else {
+            AppConfig.Artwork.LOADER_NORMAL_CEILING_BYTES
+        }
         share.coerceIn(floorBytes, ceilingBytes).toInt()
     }
     private val cache = object : LruCache<Key, Bitmap>(cacheBytes) {

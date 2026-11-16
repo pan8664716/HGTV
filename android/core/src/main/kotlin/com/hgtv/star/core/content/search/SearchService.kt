@@ -16,7 +16,7 @@ import java.io.IOException
     internal fun ContentRepository.webSuggestionsImpl(keyword: String, count: Int): List<SearchSuggestion> {
         val clean=keyword.trim().take(WEB_SEARCH_QUERY_MAX)
         if(clean.isEmpty()) return emptyList()
-        val wanted=count.coerceIn(1,20)
+        val wanted=count.coerceIn(1,AppConfig.Content.SUGGESTION_LIMIT)
         val url="$SITE_HOST/api/search/suggestion?query=${Signer.encode(clean)}&count=$wanted"
         val raw=runCatching { siteText(url) }.getOrNull().orEmpty()
         if(raw.isBlank()) return emptyList()
@@ -26,7 +26,7 @@ import java.io.IOException
     internal fun ContentRepository.appSuggestions(keyword: String, count: Int): List<SearchSuggestion> {
         val clean=keyword.trim()
         if(clean.isEmpty()) return emptyList()
-        val wanted=count.coerceIn(1,20)
+        val wanted=count.coerceIn(1,AppConfig.Content.SUGGESTION_LIMIT)
         val values=searchValues()
         values["q"]=clean
         val signed=signer.sign("https://${accountHost()}/reading/bookapi/search/suggest/v:version/",values,deviceOverride=values)
@@ -47,7 +47,7 @@ import java.io.IOException
      * 全部种子词都失败时退回 [FALLBACK_HOT]：搜索页不能因为一个提示接口而空着。
      */
     internal fun ContentRepository.hotSearchesImpl(limit: Int, source: SearchSource): List<String> {
-        val wanted=limit.coerceIn(1,30)
+        val wanted=limit.coerceIn(1,AppConfig.Content.HOT_SEARCH_LIMIT)
         // 种子词**并发**问（串行五个要 1.8s，并发后是单次请求的时间）。
         // API 19 没有 CompletableFuture（API 24），用普通的 Future 提交到同一个池子里等齐。
         val tasks=SUGGEST_SEEDS.map { seed -> SUGGEST_POOL.submit(java.util.concurrent.Callable { suggestionsPool(seed,source) }) }
@@ -71,7 +71,8 @@ import java.io.IOException
 
     /** 一个种子词的候选：`(词, word_type)`，过滤掉剧名、过长过短的与重复的。 */
     private fun ContentRepository.suggestionsPool(seed: String,source: SearchSource): List<Pair<String,String>> =
-        runCatching { suggestions(seed,20,source) }.getOrDefault(emptyList())
+        runCatching { suggestions(seed,AppConfig.Content.SUGGESTION_LIMIT,source) }
+            .getOrDefault(emptyList())
             .filter { it.series==null && it.name.length in 2..12 }
             .map { it.name to it.wordType }
             .distinctBy { it.first }
@@ -188,7 +189,11 @@ import java.io.IOException
      * 按「没有结果」处理，让界面显示「换个关键词试试」。
      */
     internal fun ContentRepository.webSearchImpl(keyword: String,page: Int): CatalogPage {
-        require(keyword.isNotBlank() && keyword.length<=80 && page in 1..ContentRepository.MAX_CATALOG_PAGE)
+        require(
+            keyword.isNotBlank() &&
+                keyword.length<=AppConfig.Content.SEARCH_KEYWORD_MAX_CHARS &&
+                page in 1..AppConfig.Catalog.MAX_PAGE,
+        )
         // 服务端只收 30 个字符（更长的回 400）：这里先截断，宁可少两个字的查询，
         // 也不要让用户看到「官网搜索没有结果」。
         val clean=keyword.trim().take(WEB_SEARCH_QUERY_MAX)
@@ -206,7 +211,9 @@ import java.io.IOException
         }
         val result=webSearchPages(clean,page,first,wantedPages)
         synchronized(webFallbackCursors) {
-            if(webFallbackCursors.size>=8) webFallbackCursors.keys.firstOrNull()?.let(webFallbackCursors::remove)
+            if(webFallbackCursors.size>=AppConfig.Content.SEARCH_CACHE_LIMIT) {
+                webFallbackCursors.keys.firstOrNull()?.let(webFallbackCursors::remove)
+            }
             webFallbackCursors[clean]=first+wantedPages
         }
         return result
@@ -255,7 +262,9 @@ import java.io.IOException
         // 服务端分页偶尔重复（同一部剧出现在相邻两页）：按关键词记一份已发过的 id，只回新的。
         val seen=synchronized(webSearchSeen) {
             if(page==1) {
-                if(webSearchSeen.size>=8) webSearchSeen.keys.firstOrNull()?.let(webSearchSeen::remove)
+                if(webSearchSeen.size>=AppConfig.Content.SEARCH_CACHE_LIMIT) {
+                    webSearchSeen.keys.firstOrNull()?.let(webSearchSeen::remove)
+                }
                 webSearchSeen[clean]=mutableSetOf()
             }
             webSearchSeen.getOrPut(clean) { mutableSetOf() }
@@ -395,17 +404,26 @@ import java.io.IOException
         val scope=if(tabType==SEARCH_FEED_TAB) SEARCH_FEED_SCOPE else tabType
         val signed=searchRequest(searchQuery(keyword,page,tabType,count))
         val tab=ContentSearchParser.parseTab(searchResponse(signed),tabType,SEARCH_FEED_TAB)
-        return CatalogPage(ContentSearchParser.cards(tab),tab.hasMore && page<100).also {
+        return CatalogPage(
+            ContentSearchParser.cards(tab),
+            tab.hasMore && page<AppConfig.Catalog.MAX_PAGE,
+        ).also {
             synchronized(searchCursors) {
                 searchCursors[ContentRepository.SearchCursorKey(scope,keyword,page,count)]=
                     ContentRepository.SearchCursor(tab.searchId,tab.passback,tab.nextOffset,clock())
-                while(searchCursors.size>100) searchCursors.remove(searchCursors.keys.first())
+                while(searchCursors.size>AppConfig.Content.SEARCH_CURSOR_LIMIT) {
+                    searchCursors.remove(searchCursors.keys.first())
+                }
             }
         }
     }
     /** 官方综合搜索不带 `tab_type`；用户 / 类型专用查询继续显式指定。 */
     private fun ContentRepository.searchQuery(keyword: String,page: Int,tabType: Int,count: Int): LinkedHashMap<String,String> {
-        require(keyword.isNotBlank() && keyword.length<=80 && page in 1..100)
+        require(
+            keyword.isNotBlank() &&
+                keyword.length<=AppConfig.Content.SEARCH_KEYWORD_MAX_CHARS &&
+                page in 1..AppConfig.Catalog.MAX_PAGE,
+        )
         val scope=if(tabType==SEARCH_FEED_TAB) SEARCH_FEED_SCOPE else tabType
         val values=searchValues()
         values.putAll(linkedMapOf("query" to keyword,"count" to count.toString(),"offset" to ((page-1)*count).toString(),"bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to "0"))

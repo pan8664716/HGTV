@@ -225,7 +225,12 @@ fun TvMainActivity.togglePlayback()=requestPlayback(!(if(playbackReady) player?.
 fun TvMainActivity.seekTo(position: Long) {
     val p=player ?: return; if(!playbackReady || p.duration<=0) return
     main.removeCallbacks(seekRunnable); pendingSeek=null
-    p.seekTo(position.coerceIn(0,(p.duration-500).coerceAtLeast(0))); updatePlaybackText(); syncMediaSession(); showHud()
+    p.seekTo(
+        position.coerceIn(
+            0,
+            (p.duration - com.hgtv.star.core.AppConfig.Playback.HUD_TAIL_GUARD_MS).coerceAtLeast(0),
+        ),
+    ); updatePlaybackText(); syncMediaSession(); showHud()
 }
 fun TvMainActivity.skipEpisode(direction: Int) {
     if(!foreground || (screen!="player" && screen!="recommend")) return

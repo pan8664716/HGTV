@@ -22,12 +22,14 @@ class LibraryTransferServer(address: String,private val backup: String,private v
     private companion object {
         const val MAX_TTL_MILLIS=AppConfig.Library.TRANSFER_MAX_TTL_MS
     }
-    private val byteLimit=maxBytes.coerceIn(1,8*1024*1024)
+    private val byteLimit=maxBytes.coerceIn(1,AppConfig.Lan.TRANSFER_MAX_BYTES)
     private val ttl=if(ttlMillis==Long.MAX_VALUE) Long.MAX_VALUE else ttlMillis.coerceIn(1,MAX_TTL_MILLIS)
     private val stopped=AtomicBoolean(false)
     private val expiry=Timer("hgtv-transfer-expiry",true)
     private val local=InetAddress.getByName(address).also { require(it.isLoopbackAddress || it.isSiteLocalAddress) }
-    private val listener=ServerSocket(0,4,local).apply { soTimeout=250 }
+    private val listener=ServerSocket(0,4,local).apply {
+        soTimeout=AppConfig.Lan.TRANSFER_ACCEPT_TIMEOUT_MS
+    }
     @Volatile private var active: Socket?=null
     private val deadline=if(ttl==Long.MAX_VALUE) Long.MAX_VALUE else System.nanoTime()+ttl*1_000_000
     private val token=ByteArray(16).also { SecureRandom().nextBytes(it) }.joinToString("") { "%02x".format(it.toInt() and 255) }
@@ -46,7 +48,10 @@ class LibraryTransferServer(address: String,private val backup: String,private v
             while(!stopped.get() && System.nanoTime()<deadline) {
                 val socket=try { listener.accept() } catch(_: SocketTimeoutException) { continue }
                 active=socket
-                socket.use { it.soTimeout=2000; if(!stopped.get()) runCatching { handle(it) } }
+                socket.use {
+                    it.soTimeout=AppConfig.Lan.TRANSFER_SOCKET_TIMEOUT_MS
+                    if(!stopped.get()) runCatching { handle(it) }
+                }
                 active=null
             }
         } catch(_: Exception) { /* Closing the TV dialog interrupts accept/read. */ }
@@ -68,8 +73,8 @@ class LibraryTransferServer(address: String,private val backup: String,private v
         val headers=mutableMapOf<String,String>(); var size=0
         while(true) {
             // 单个头 8 KB、总量 16 KB：手机浏览器（微信 / QQ 内置）的 UA 与 Sec-CH-UA 系列很长。
-            val next=line(input,8192); size+=next.length+2
-            if(size>16384) return respond(socket,431,"请求过大")
+            val next=line(input,AppConfig.Lan.HEADER_LINE_MAX_BYTES); size+=next.length+2
+            if(size>AppConfig.Lan.HEADER_TOTAL_MAX_BYTES) return respond(socket,431,"请求过大")
             if(next.isEmpty()) break
             val at=next.indexOf(':'); if(at<=0) return respond(socket,400,"请求格式错误")
             if(headers.put(next.substring(0,at).lowercase(Locale.ROOT),next.substring(at+1).trim())!=null) return respond(socket,400,"重复请求头")

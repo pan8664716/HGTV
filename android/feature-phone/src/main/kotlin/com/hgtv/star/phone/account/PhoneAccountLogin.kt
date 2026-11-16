@@ -105,7 +105,10 @@ private fun PhoneAccountActivity.startQr(session: QrLogin, code: ImageView, stat
             if (qrClosed || isFinishing) return@launch
             if (fresh == null) {
                 state.text = session.lastError.ifBlank { "二维码获取失败，正在重试…" }
-                schedule(QrLogin.POLL_MS * 4)
+                schedule(
+                    QrLogin.POLL_MS *
+                        com.hgtv.star.core.AppConfig.Ui.QR_REFRESH_POLL_MULTIPLIER,
+                )
                 return@launch
             }
             paint(fresh)

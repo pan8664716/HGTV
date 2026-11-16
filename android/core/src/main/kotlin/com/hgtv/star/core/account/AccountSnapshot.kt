@@ -27,16 +27,16 @@ data class AccountCacheEntry(val data: AccountData, val savedAt: Long)
  */
 object AccountSnapshot {
     /** 一份快照的体积上限。实测 200 条收藏 + 200 条历史约 120 KB，留足余量。 */
-    const val MAX_BYTES = 512 * 1024
+    const val MAX_BYTES = AppConfig.Account.SNAPSHOT_MAX_BYTES
     /** 快照的保留上限：比这更旧的直接当没有。 */
-    const val MAX_AGE = 7 * 24 * 60 * 60 * 1000L
+    const val MAX_AGE = AppConfig.Account.SNAPSHOT_MAX_AGE_MS
     /** 每一栏最多缓存多少条（接口单页就是 50 条量级，多出来的只是冗余）。 */
-    const val MAX_ROWS = 200
+    const val MAX_ROWS = AppConfig.Account.SNAPSHOT_MAX_ROWS
     private const val VERSION = 1
     /** 五栏的名字（[AccountData.errors] 的键名），也是 [changedKeys] 的取值域。 */
     val KEYS = setOf("资料", "收藏", "历史", "点赞", "预约")
     /** 简介在快照里只留开头这么多字：卡片上显示不了那么多，缓存里也不必带着。 */
-    private const val DESCRIPTION = 400
+    private const val DESCRIPTION = AppConfig.Account.SNAPSHOT_DESCRIPTION_CHARS
     private val idPattern = Regex("[0-9]{1,30}")
 
     // —— 编码 ——

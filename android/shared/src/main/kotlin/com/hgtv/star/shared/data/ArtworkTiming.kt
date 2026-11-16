@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.data
 import android.os.SystemClock
 import android.util.Log
+import com.hgtv.star.core.AppConfig
 
 /**
  * 封面加载的**计时统计**（只在 debug 包里用日志看，不参与界面逻辑）。
@@ -38,7 +39,7 @@ class ArtworkTiming {
          */
         @Volatile var WORKER_HINT = 8
         /** 存多少条样本用于算分位数（够 500 张就行，留足余量）。 */
-        private const val SAMPLE_LIMIT = 8000
+        private const val SAMPLE_LIMIT = AppConfig.Diagnostics.ARTWORK_TIMING_SAMPLE_LIMIT
         /** 在这些张数上打汇总行。 */
         private val MARKS = setOf(25, 50, 75, 100, 150, 200, 250, 300, 350, 400, 450, 500,
             600, 700, 800, 1000, 1250, 1500, 2000, 3000, 4000, 5000)

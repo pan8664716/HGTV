@@ -81,7 +81,10 @@ fun TvMainActivity.onScrubProgress(fraction: Float,finished: Boolean) {
     val p=player ?: return
     val duration=p.duration
     if(duration<=0 || !playbackReady) return
-    val target=(duration*fraction).toLong().coerceIn(0,(duration-500).coerceAtLeast(0))
+    val target=(duration*fraction).toLong().coerceIn(
+        0,
+        (duration-com.hgtv.star.core.AppConfig.Playback.HUD_TAIL_GUARD_MS).coerceAtLeast(0),
+    )
     if(!finished) {
         scrubbing=true
         progressBar.progress=fraction

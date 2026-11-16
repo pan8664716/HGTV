@@ -5307,3 +5307,19 @@ feature-tv/
   未改版本号、versionCode、依赖，未推送、未创建 Release。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## 统一配置第二轮补全
+
+状态：已实现，Android / iOS debug 构建通过，待用户真机验证。
+
+- Android `AppConfig` 从 240 项扩到 367 项，新增 `Content / Account / Artwork / Lan /
+  Diagnostics` 分组，并继续扩充 `Playback / Library`。
+- 收口内容仓库重试与缓存上限、账号快照与导入限制、封面内存 / 磁盘缓存、局域网传输、
+  书库容量与写队列、播放降级额度、片尾保护、诊断上报上限和设备自愈预算。
+- iOS `AppConfig` 从 71 项扩到 121 项，补齐 TNC 刷新范围、会话有效期、分类分页阈值、
+  搜索与热搜上限、播放降级额度、书库容量、设置范围、弹幕排版和手势窗口。
+- 仍保留公开常量和旧调用名称；协议字段、设备身份、状态机枚举和主题视觉令牌没有迁入。
+- 验证：`:app:assembleDebug` 通过；iOS `xcodebuild ... -configuration Debug` 通过；
+  未改版本号、versionCode、依赖，未推送、未创建 Release。
+
+回滚：对本节对应提交执行 `git revert`。

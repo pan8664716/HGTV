@@ -48,26 +48,30 @@ class ContentRepository(
     internal val signer = Signer()
     internal fun accountHost(): String = TncConfigStore.preferredHost("sinfonlinea")
     internal fun videoHost(): String = TncConfigStore.preferredHost("sinfonlineb")
-    internal val ACCOUNT_PRECONNECT_DELAY_MS=2_000L
-    private val ACCOUNT_RETRIES = 4
+    internal val ACCOUNT_PRECONNECT_DELAY_MS=AppConfig.Content.ACCOUNT_PRECONNECT_DELAY_MS
+    private val ACCOUNT_RETRIES = AppConfig.Content.ACCOUNT_RETRIES
     internal val BOOK_TYPE_WATCH = 2
     internal val VIDEO_SHELF_ADD_SHELF = 0
     internal val VIDEO_SHELF_DEL_SHELF = 1
     var writeLog: (String) -> Unit = {}
-    internal val ACCOUNT_WRITE_ATTEMPTS = 4
-    internal val ACCOUNT_WRITE_BACKOFF = longArrayOf(1_200L,4_000L,12_000L)
-    internal val MULTI_DETAIL_LIMIT = 50
+    internal val ACCOUNT_WRITE_ATTEMPTS = AppConfig.Content.ACCOUNT_WRITE_ATTEMPTS
+    internal val ACCOUNT_WRITE_BACKOFF = longArrayOf(
+        AppConfig.Content.ACCOUNT_WRITE_BACKOFF_1_MS,
+        AppConfig.Content.ACCOUNT_WRITE_BACKOFF_2_MS,
+        AppConfig.Content.ACCOUNT_WRITE_BACKOFF_3_MS,
+    )
+    internal val MULTI_DETAIL_LIMIT = AppConfig.Content.MULTI_DETAIL_LIMIT
     internal val HISTORY_BOOK_TYPES = listOf(2,3,4)
 
-    internal val HISTORY_DELETE_BATCH = 50
+    internal val HISTORY_DELETE_BATCH = AppConfig.Content.HISTORY_DELETE_BATCH
     internal val streamCache=java.util.concurrent.ConcurrentHashMap<String,ContentRepositoryStreamCacheEntry>()
     internal val streamLocks=java.util.concurrent.ConcurrentHashMap<String,Any>()
     internal val modelCache=java.util.concurrent.ConcurrentHashMap<String,Pair<Long,JSONObject>>()
     @Volatile internal var preferredModelPath: String=""
-    internal val HISTORY_CLEAR_ATTEMPTS = 3
+    internal val HISTORY_CLEAR_ATTEMPTS = AppConfig.Content.HISTORY_CLEAR_ATTEMPTS
     private val authorCache=java.util.LinkedHashMap<String,String>()
     internal val authorCacheStore get()=authorCache
-    private val AUTHOR_CACHE_LIMIT = 300
+    private val AUTHOR_CACHE_LIMIT = AppConfig.Content.AUTHOR_CACHE_LIMIT
     internal val authorCacheLimit get()=AUTHOR_CACHE_LIMIT
     internal val accountPool get()=WorkLanes.fanout.executor
     internal val SUGGEST_SEEDS = listOf("短剧","都市","逆袭","甜宠","战神")
@@ -137,33 +141,33 @@ class ContentRepository(
     private fun accountDeviceProfile(account: AccountCredentials): Map<String,String> =
         accountDeviceProfileImpl(account)
     internal fun relatedHosts(): List<String> = relatedHostsImpl()
-    private val RELATED_ATTEMPTS=8
+    private val RELATED_ATTEMPTS=AppConfig.Content.RELATED_ATTEMPTS
     internal val relatedAttempts get()=RELATED_ATTEMPTS
     private val RELATED_CELL_SHOW_TYPE=547
     private val RELATED_CELL_NAME="相关作品"
     internal val relatedCellShowType get()=RELATED_CELL_SHOW_TYPE
     internal val relatedCellName get()=RELATED_CELL_NAME
-    internal val RELATED_CACHE_LIMIT=16
+    internal val RELATED_CACHE_LIMIT=AppConfig.Content.RELATED_CACHE_LIMIT
     internal val relatedCache=linkedMapOf<String,RelatedWorks>()
-    internal val AUTHOR_WORKS_CACHE_LIMIT=8
-    internal val AUTHOR_WORKS_PAGE_SIZE=50
-    internal val AUTHOR_WORKS_PAGES=6
-    internal val AUTHOR_WORKS_PAGES_MAX=6
-    internal val AUTHOR_WORKS_PAGE_ATTEMPTS=3
-    internal val AUTHOR_WORKS_PAGE_RETRY_MS=300L
-    internal val AUTHOR_WORKS_EMPTY_PAGES=2
-    private val AUTHOR_WORKS_FAMILY_FANOUT=3
-    internal val AUTHOR_WORKS_FAMILY_MAX=12
+    internal val AUTHOR_WORKS_CACHE_LIMIT=AppConfig.Content.AUTHOR_WORKS_CACHE_LIMIT
+    internal val AUTHOR_WORKS_PAGE_SIZE=AppConfig.Content.AUTHOR_WORKS_PAGE_SIZE
+    internal val AUTHOR_WORKS_PAGES=AppConfig.Content.AUTHOR_WORKS_PAGES
+    internal val AUTHOR_WORKS_PAGES_MAX=AppConfig.Content.AUTHOR_WORKS_PAGES_MAX
+    internal val AUTHOR_WORKS_PAGE_ATTEMPTS=AppConfig.Content.AUTHOR_WORKS_PAGE_ATTEMPTS
+    internal val AUTHOR_WORKS_PAGE_RETRY_MS=AppConfig.Content.AUTHOR_WORKS_PAGE_RETRY_MS
+    internal val AUTHOR_WORKS_EMPTY_PAGES=AppConfig.Content.AUTHOR_WORKS_EMPTY_PAGES
+    private val AUTHOR_WORKS_FAMILY_FANOUT=AppConfig.Content.AUTHOR_WORKS_FAMILY_FANOUT
+    internal val AUTHOR_WORKS_FAMILY_MAX=AppConfig.Content.AUTHOR_WORKS_FAMILY_MAX
     internal val AUTHOR_WORKS_FAMILY_TIMEOUT_MS=REQUEST_TIMEOUT_MS
     internal val authorWorksCache=linkedMapOf<String,AuthorWorksResult>()
-    internal val PUBLISHER_PAGE_SIZE=50
-    internal val PUBLISHER_PAGES=6
+    internal val PUBLISHER_PAGE_SIZE=AppConfig.Content.PUBLISHER_PAGE_SIZE
+    internal val PUBLISHER_PAGES=AppConfig.Content.PUBLISHER_PAGES
     internal val PUBLISHER_TABS=intArrayOf(11,23,21,16,8)
     internal data class PublisherIdentity(val uid: String, val avatar: String)
     internal val publisherIdentities=linkedMapOf<String,PublisherIdentity>()
-    internal val PUBLISHER_UIDS_LIMIT=96
+    internal val PUBLISHER_UIDS_LIMIT=AppConfig.Content.PUBLISHER_UIDS_LIMIT
     internal val publisherMisses=linkedMapOf<String,Long>()
-    internal val PUBLISHER_MISS_TTL_MS=600000L
+    internal val PUBLISHER_MISS_TTL_MS=AppConfig.Content.PUBLISHER_MISS_TTL_MS
     internal fun commentHosts(): List<String> = commentHostsImpl()
     @Volatile var deviceLevel: Int = 4
         set(value) { field = if(value>=5) 5 else 4 }
@@ -179,10 +183,10 @@ class ContentRepository(
 
     internal val RANK_API_PAGE_SIZE=AppConfig.Catalog.RANK_API_LIMIT
 
-    internal val CATEGORY_ATTEMPTS=8
-    internal val FIRST_PAGE_ATTEMPTS=3
-    internal val RECOMMEND_ATTEMPTS=3
-    internal val SEARCH_BLANK_RETRIES=1
+    internal val CATEGORY_ATTEMPTS=AppConfig.Content.CATEGORY_ATTEMPTS
+    internal val FIRST_PAGE_ATTEMPTS=AppConfig.Content.FIRST_PAGE_ATTEMPTS
+    internal val RECOMMEND_ATTEMPTS=AppConfig.Content.RECOMMEND_ATTEMPTS
+    internal val SEARCH_BLANK_RETRIES=AppConfig.Content.SEARCH_BLANK_RETRIES
     internal val SEARCH_BLANK_RETRY_DELAY_MS=AppConfig.Catalog.SEARCH_BLANK_RETRY_DELAY_MS
     internal val SEARCH_PAGE_SIZE=CATALOG_PAGE_SIZE
     internal val SEARCH_FEED_TAB=11
@@ -255,7 +259,7 @@ class ContentRepository(
             if (body.contentLength() > 16*1024*1024) throw IOException("内容响应过大")
             val input=body.byteStream(); val out=java.io.ByteArrayOutputStream(); val buffer=ByteArray(8192)
             while(out.size()<=16*1024*1024) { val n=input.read(buffer); if(n<0) break; out.write(buffer,0,n) }; val bytes=out.toByteArray()
-            if(bytes.size > 16*1024*1024) throw IOException("内容响应过大")
+            if(bytes.size > AppConfig.Content.MAX_RESPONSE_BYTES) throw IOException("内容响应过大")
             String(bytes,Charsets.UTF_8)
         }
         if(raw.isBlank() && httpCode==200 && !allowNotModified) {

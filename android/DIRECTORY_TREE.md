@@ -202,7 +202,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AppConfig.kt` | 应用级可调参数的唯一来源；按网络、启动、目录、推荐、播放、缓存、书库、弹幕和 UI 分组，供 core / shared / phone / TV 引用。 | object AppConfig |
+| `AppConfig.kt` | 应用级可调参数的唯一来源；按网络、启动、目录、内容仓库、账号、推荐、播放、封面、局域网、缓存、书库、弹幕、诊断和 UI 分组，供 core / shared / phone / TV 引用。 | object AppConfig |
 
 #### `core/src/test/resources/`
 

@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.feature.lan
 
 import android.content.Context
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.lan.DeviceSyncPackage
 import com.hgtv.star.shared.lan.DeviceSyncPayload
@@ -29,7 +30,7 @@ class LanSyncController(
     private val context: Context,
     private val library: Library,
     private val scope: CoroutineScope,
-    private val discoveryWindowMs: Long = 6_000L,
+    private val discoveryWindowMs: Long = AppConfig.Lan.DISCOVERY_WINDOW_MS,
     private val sourceTtlMs: Long = Long.MAX_VALUE,
 ) {
     enum class Role { NONE, SOURCE, RECEIVER }

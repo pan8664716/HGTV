@@ -6,15 +6,18 @@ import org.json.JSONObject
 
 /** Main-thread-owned library. JSON is parsed once, and getters never parse or sort. */
 class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = emptyMap()) {
-    private var favoriteRows = data.favorites.distinctBy { it.id }.take(500)
+    private var favoriteRows = data.favorites.distinctBy { it.id }.take(AppConfig.Library.FAVORITES_LIMIT)
     private var favoriteIds = favoriteRows.map { it.id }.toSet()
-    private var laterRows = data.later.distinctBy { it.id }.take(100)
+    private var laterRows = data.later.distinctBy { it.id }.take(AppConfig.Library.LATER_LIMIT)
     private var laterIds = laterRows.map { it.id }.toSet()
-    private var historyRows = data.history.sortedByDescending { it.updatedAt }.distinctBy { it.series.id }.take(200)
+    private var historyRows = data.history
+        .sortedByDescending { it.updatedAt }
+        .distinctBy { it.series.id }
+        .take(AppConfig.Library.HISTORY_LIMIT)
     private val progressById = historyRows.associateBy { it.series.id }.toMutableMap()
     private var watchedIds = data.watched.toSet()
-    private var hiddenIds = data.hidden.take(500).toSet()
-    private var searchRows = data.searches.take(20)
+    private var hiddenIds = data.hidden.take(AppConfig.Library.HIDDEN_LIMIT).toSet()
+    private var searchRows = data.searches.take(AppConfig.Library.SEARCH_HISTORY_LIMIT)
     /**
      * 用户在本机删掉过的观看记录（剧集 ID）。
      *
@@ -28,7 +31,8 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
      * 因此本机自己记一份墓碑：删过的 id 在合并时一律过滤掉，不论平台那边还回不回来。
      * 只有**用户重新看这部剧**（写入新进度）时才摘掉墓碑——那时它本来就该重新出现。
      */
-    private var deletedHistoryIds: Set<String> = data.historyDeleted.take(500).toSet()
+    private var deletedHistoryIds: Set<String> =
+        data.historyDeleted.take(AppConfig.Library.HISTORY_DELETED_LIMIT).toSet()
     private var updateRows = updates.filterKeys { it in favoriteIds }
     private var updateCount = updateRows.values.count { it.added > 0 }
     /**
@@ -50,7 +54,9 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
     fun history() = historyRows
     fun historyDeleted(): Set<String> = deletedHistoryIds
     fun historyDeleted(id: String) = id in deletedHistoryIds
-    fun setHistoryDeleted(ids: Set<String>) { deletedHistoryIds = ids.take(500).toSet() }
+    fun setHistoryDeleted(ids: Set<String>) {
+        deletedHistoryIds = ids.take(AppConfig.Library.HISTORY_DELETED_LIMIT).toSet()
+    }
     fun progress(id: String) = progressById[id]
     fun watched(id: String) = id in watchedIds
     fun watched() = watchedIds
@@ -66,7 +72,10 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
 
     fun toggle(series: Series): Boolean {
         val added = !favorite(series.id)
-        favoriteRows = (if (added) listOf(series) + favoriteRows else favoriteRows.filterNot { it.id == series.id }).take(500)
+        favoriteRows = (
+            if (added) listOf(series) + favoriteRows
+            else favoriteRows.filterNot { it.id == series.id }
+            ).take(AppConfig.Library.FAVORITES_LIMIT)
         favoriteIds = favoriteRows.map { it.id }.toSet()
         updateRows = updateRows.filterKeys { it in favoriteIds }
         updateCount = updateRows.values.count { it.added > 0 }
@@ -74,7 +83,10 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
     }
     fun toggleLater(series: Series): Boolean {
         val added = !queued(series.id)
-        laterRows = (if (added) listOf(series) + laterRows else laterRows.filterNot { it.id == series.id }).take(100)
+        laterRows = (
+            if (added) listOf(series) + laterRows
+            else laterRows.filterNot { it.id == series.id }
+            ).take(AppConfig.Library.LATER_LIMIT)
         laterIds = laterRows.map { it.id }.toSet()
         return added
     }
@@ -82,7 +94,9 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
     fun save(progress: BackupProgress): Boolean {
         val previous = progressById[progress.series.id]
         if (previous != null && previous.copy(updatedAt = progress.updatedAt) == progress) return false
-        historyRows = (listOf(progress) + historyRows.filterNot { it.series.id == progress.series.id }).take(200).sortedByDescending { it.updatedAt }
+        historyRows = (
+            listOf(progress) + historyRows.filterNot { it.series.id == progress.series.id }
+            ).take(AppConfig.Library.HISTORY_LIMIT).sortedByDescending { it.updatedAt }
         progressById.clear()
         historyRows.forEach { progressById[it.series.id] = it }
         // 用户重新看了这部剧：墓碑摘掉，账号侧那一条也该重新出现。
@@ -94,7 +108,9 @@ class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = empt
         watchedIds = if (value) watchedIds + id else watchedIds - id
         return true
     }
-    fun hide(id: String) { hiddenIds = (hiddenIds + id).toList().takeLast(500).toSet() }
+    fun hide(id: String) {
+        hiddenIds = (hiddenIds + id).toList().takeLast(AppConfig.Library.HIDDEN_LIMIT).toSet()
+    }
     fun unhideAll() { hiddenIds = emptySet() }
     fun rememberSearch(query: String) { searchRows = SearchHistory.remember(searchRows, query) }
     fun clearSearches() { searchRows = emptyList() }

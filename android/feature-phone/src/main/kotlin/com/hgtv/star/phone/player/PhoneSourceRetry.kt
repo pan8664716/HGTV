@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 import android.view.View
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.StreamInfo
 import com.hgtv.star.shared.data.DeviceHealer
@@ -9,8 +10,8 @@ import com.hgtv.star.shared.media.PlaybackFailures
 
 internal class PhoneSourceRetryState {
     var runnable: Runnable? = null
-    val limit = 2
-    val stepMs = 3_000L
+    val limit = AppConfig.Playback.PHONE_SOURCE_RETRY_LIMIT
+    val stepMs = AppConfig.Playback.PHONE_SOURCE_RETRY_STEP_MS
     val missingCode = 2000
     var episode = ""
     var count = 0

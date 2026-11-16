@@ -46,7 +46,7 @@ object PlaybackTransport {
      * 连接池上限：同一时刻最多两集在跑（当前 + 预热），各留一条连接就够了，
      * 多留几条是为了切集瞬间的交接。
      */
-    private const val MAX_IDLE = 4
+    private const val MAX_IDLE = AppConfig.Network.PLAYBACK_TRANSPORT_MAX_IDLE
 
     /**
      * 丢掉池里所有**空闲**连接（在途的那条不动，由 `RemoteVideo.close()` 取消）。

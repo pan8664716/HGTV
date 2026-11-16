@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.data
+import com.hgtv.star.core.AppConfig
 import java.io.File
 import java.security.MessageDigest
 
@@ -20,7 +21,7 @@ import java.security.MessageDigest
 class ArtworkCache(private val directory: File) {
     companion object {
         /** 单条上限：目标尺寸的 WebP 远小于它，超过就是异常数据，不落盘。 */
-        private const val MAX_ENTRY_BYTES = 512 * 1024
+        private const val MAX_ENTRY_BYTES = AppConfig.Artwork.DISK_MAX_ENTRY_BYTES
 
         /**
          * 总量与条数上限。
@@ -36,8 +37,8 @@ class ArtworkCache(private val directory: File) {
          * 而 1000 张已经覆盖了「一屏 + 预取窗口 + 往回滚几屏」的量；
          * 再大只是在电视那点存储上白占地方。
          */
-        private const val MAX_TOTAL_BYTES = 96L * 1024 * 1024
-        private const val MAX_ENTRIES = 6000
+        private const val MAX_TOTAL_BYTES = AppConfig.Artwork.DISK_MAX_TOTAL_BYTES
+        private const val MAX_ENTRIES = AppConfig.Artwork.DISK_MAX_ENTRIES
 
         /**
          * 清理的**低水位**：降到这个比例就停手。
@@ -48,7 +49,7 @@ class ArtworkCache(private val directory: File) {
          * 有 83ms 是这个），而 `put` 是 `@Synchronized`，8 个 worker 全排在它后面。
          * 一次删到 70% 之后，接下来几百张写入都不用再扫目录。
          */
-        private const val PRUNE_TARGET = 0.7
+        private const val PRUNE_TARGET = AppConfig.Artwork.DISK_PRUNE_TARGET
 
         /** [ArtworkCache.knownBytes] 的「还没数过」标记。 */
         private const val UNKNOWN = -1L
@@ -67,14 +68,14 @@ class ArtworkCache(private val directory: File) {
     @Synchronized fun has(key: String): Boolean = runCatching {
         val f = file(key)
         f.isFile && f.length() in 1..MAX_ENTRY_BYTES &&
-            System.currentTimeMillis() - f.lastModified() in 0..30L * 24 * 60 * 60 * 1000
+            System.currentTimeMillis() - f.lastModified() in 0..AppConfig.Artwork.DISK_TTL_MS
     }.getOrDefault(false)
 
     @Synchronized fun get(key: String): ByteArray? = runCatching {
         val f = file(key)
         // 有效期拉长到 30 天：封面基本不变，早先的 7 天会让长列表「放几天回来又要重下」。
         if (!f.isFile || f.length() !in 1..MAX_ENTRY_BYTES ||
-            System.currentTimeMillis() - f.lastModified() !in 0..30L * 24 * 60 * 60 * 1000) null
+            System.currentTimeMillis() - f.lastModified() !in 0..AppConfig.Artwork.DISK_TTL_MS) null
         else f.readBytes()
     }.getOrNull()
 

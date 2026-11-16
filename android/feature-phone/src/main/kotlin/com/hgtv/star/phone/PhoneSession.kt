@@ -316,7 +316,10 @@ object PhoneSession {
         this.publishedAt = SystemClock.elapsedRealtime()
         if (previous != null && previous !== remote) {
             // 延后关：旧 MediaSource 可能还在 release，立刻关会让它报「读取被中断」。
-            main.postDelayed({ runCatching { previous.close() } }, 1_000)
+            main.postDelayed(
+                { runCatching { previous.close() } },
+                com.hgtv.star.core.AppConfig.Playback.PHONE_PREVIOUS_CLOSE_DELAY_MS,
+            )
         }
     }
 
@@ -424,7 +427,12 @@ object PhoneSession {
         nextAt = 0
         nextQuality = 0
         nextQueued = false
-        if (close && previous != null) main.postDelayed({ runCatching { previous.close() } }, 800)
+        if (close && previous != null) {
+            main.postDelayed(
+                { runCatching { previous.close() } },
+                com.hgtv.star.core.AppConfig.Playback.PHONE_REPLACE_CLOSE_DELAY_MS,
+            )
+        }
     }
 
     /**

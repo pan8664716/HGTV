@@ -597,7 +597,7 @@ fun TvMainActivity.playerFailure(problem: Throwable) {
  *
  * 次数按「集 + 当前上限」计：换集（非 `recovering`）归零，见 [playEpisode]。
  */
-private const val QUEUED_RECOVERY_LIMIT=2
+private const val QUEUED_RECOVERY_LIMIT=com.hgtv.star.core.AppConfig.Playback.TV_QUEUED_RECOVERY_LIMIT
 
 private fun TvMainActivity.recoverQueuedCurrent(): Boolean {
     val key="${detail?.episodes?.getOrNull(episodeIndex).orEmpty()}:${playbackMaxQuality}"

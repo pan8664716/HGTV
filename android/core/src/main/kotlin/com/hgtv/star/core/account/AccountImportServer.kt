@@ -193,6 +193,6 @@ class AccountImportServer(address: String, private val onImport: (String)->Unit,
 
     companion object {
         /** 上传上限：`cookieStore.xml` 实测约 180 KB，留一倍余量。 */
-        const val MAX_BYTES = 512 * 1024
+        const val MAX_BYTES = AppConfig.Account.IMPORT_MAX_BYTES
     }
 }

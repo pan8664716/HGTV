@@ -27,17 +27,17 @@ class PhoneLogin(
             "https://${TncConfigStore.preferredLocalHost("i.snssdk.com")}"
         val VERIFY_HOST: String get() = verifyHost()
         const val SMS_TYPE = "24"
-        const val PHONE_MIN_DIGITS = 6
-        const val PHONE_MAX_DIGITS = 15
-        const val MFA_WINDOW_MS = 10 * 60 * 1000L
+        const val PHONE_MIN_DIGITS = AppConfig.Account.PHONE_MIN_DIGITS
+        const val PHONE_MAX_DIGITS = AppConfig.Account.PHONE_MAX_DIGITS
+        const val MFA_WINDOW_MS = AppConfig.Account.MFA_WINDOW_MS
         val CODE = Regex("[0-9]{4,8}")
         val MFA_ENDED = listOf(
             "验证已过期","验证过期","验证已失效","长时间未操作",
             "验证码已过期","验证码过期","验证码已失效","重新获取验证码"
         )
         const val CODE_PENDING = "1045"
-        const val UPSMS_ERROR_LIMIT = 4
-        const val UPSMS_PENDING_LIMIT = 6
+        const val UPSMS_ERROR_LIMIT = AppConfig.Account.UPSMS_ERROR_LIMIT
+        const val UPSMS_PENDING_LIMIT = AppConfig.Account.UPSMS_PENDING_LIMIT
         val SET_COOKIE_ATTRIBUTES = setOf(
             "path","domain","expires","max-age","secure","httponly","samesite","priority","partitioned"
         )

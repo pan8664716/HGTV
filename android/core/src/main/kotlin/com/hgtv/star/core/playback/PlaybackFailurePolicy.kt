@@ -139,7 +139,7 @@ sealed interface FailureAction {
 object PlaybackFailurePolicy {
 
     /** 推荐页连续失败几部才停手。 */
-    const val RECOMMEND_SKIP_LIMIT = 3
+    const val RECOMMEND_SKIP_LIMIT = AppConfig.Playback.FAILURE_RECOMMEND_SKIP_LIMIT
 
     fun decide(
         facts: FailureFacts,

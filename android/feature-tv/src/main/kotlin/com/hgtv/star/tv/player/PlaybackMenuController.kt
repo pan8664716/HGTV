@@ -21,7 +21,7 @@ import com.hgtv.star.tv.R
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 /** 倍速滑杆停手 500ms 后再真正作用到播放器，避免长按过程反复重配解码器。 */
-private const val SPEED_COMMIT_DELAY_MS=500L
+private const val SPEED_COMMIT_DELAY_MS=com.hgtv.star.core.AppConfig.Playback.TV_SPEED_COMMIT_DELAY_MS
 
 private fun TvMainActivity.debugModeActionLabel(): String =
     if(library.debugMode) "调试模式 开" else "调试模式 关"

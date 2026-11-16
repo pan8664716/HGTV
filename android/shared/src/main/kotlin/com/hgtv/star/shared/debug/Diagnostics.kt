@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.debug
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.shared.compat.connectivityManager
 import com.hgtv.star.shared.compat.isMeteredConnection
 
@@ -27,7 +28,7 @@ import com.hgtv.star.shared.compat.isMeteredConnection
  */
 object Diagnostics {
     /** 单进程记录上限：异常路径不能变成刷屏。 */
-    private const val MAX_ISSUES = 30
+    private const val MAX_ISSUES = AppConfig.Diagnostics.MAX_ISSUES
 
     private var issues = 0
     private val claimed = mutableSetOf<String>()

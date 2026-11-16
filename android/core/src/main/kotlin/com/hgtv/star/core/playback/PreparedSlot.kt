@@ -13,7 +13,10 @@ import java.io.Closeable
  *
  * 10 分钟是**上限**，不是目标值：任何一条持有地址的路径都不得超过它。
  */
-class PreparedSlot<T: Closeable>(private val clock: ()->Long,private val ttl: Long=120_000) {
+class PreparedSlot<T: Closeable>(
+    private val clock: ()->Long,
+    private val ttl: Long=AppConfig.Playback.PREPARED_SLOT_TTL_MS,
+) {
     private var revision=0L
     private var key=""
     private var readyAt=0L

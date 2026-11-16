@@ -34,7 +34,7 @@ class LanLibrarySyncSession(
     private val discoverPeers: Boolean = true,
     private val onServing: () -> Unit = {},
     private val onDownloaded: () -> Unit = {},
-    private val ttlMillis: Long = 300_000,
+    private val ttlMillis: Long = AppConfig.Lan.DEFAULT_TTL_MS,
 ) : Closeable {
     companion object {
         private const val SERVICE_TYPE = "_hgtv._tcp."

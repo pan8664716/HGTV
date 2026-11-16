@@ -7,6 +7,7 @@ import android.opengl.EGLConfig
 import android.opengl.GLES20
 import android.os.Build
 import android.os.SystemClock
+import com.hgtv.star.core.AppConfig
 import java.io.File
 
 /**
@@ -32,16 +33,16 @@ import java.io.File
  */
 object PerfStats {
     /** 采样间隔：CPU 占比要看一段时间内的变化，1 秒抖动太大、3 秒又跟不上。 */
-    const val INTERVAL_MS=2_000L
+    const val INTERVAL_MS=AppConfig.Diagnostics.PERF_INTERVAL_MS
     /** GPU 探测最多试几次（每次都要建一次离屏 EGL 上下文）。 */
-    private const val GPU_RETRIES=3
+    private const val GPU_RETRIES=AppConfig.Diagnostics.PERF_GPU_RETRIES
     /**
      * 温度与刷新率隔几次采样读一遍。
      *
      * 温度要扫一遍 `/sys/class/thermal`（盒子上二三十个 zone，每个一次 open+read），
      * 是这一行里最重的两项之一；而机身温度以「秒」为单位变化，每 2 秒读一次没有意义。
      */
-    private const val SLOW_EVERY=3
+    private const val SLOW_EVERY=AppConfig.Diagnostics.PERF_SLOW_EVERY
 
     /** 面板上那一行的值；第一次采样完成之前是「采样中…」。 */
     @Volatile var summary: String=""

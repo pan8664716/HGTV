@@ -84,6 +84,12 @@ object AppConfig {
 
         /** 扫码登录轮询间隔；过短会增加平台压力，过长会让确认状态延迟。 */
         const val QR_POLL_MS = 1_100L
+
+        /** 会话响应体只嗅探开头这么多字节，避免为识别失效标记缓存整份正文。 */
+        const val SESSION_SNIFF_LIMIT_BYTES = 32L * 1024L
+
+        /** 播放传输连接池最多保留多少条空闲连接。 */
+        const val PLAYBACK_TRANSPORT_MAX_IDLE = 4
     }
 
     /**
@@ -189,6 +195,281 @@ object AppConfig {
 
         /** 分类筛选面板缓存有效期；筛选项变化很慢，可以比内容缓存更长。 */
         const val PANEL_CACHE_TTL_MS = 30L * 24L * 60L * 60L * 1_000L
+    }
+
+    /**
+     * 内容仓库的请求重试、缓存容量和子域上限。
+     */
+    object Content {
+        /** 账号仓库预热后延迟多久开始账号请求，避免和首屏内容抢带宽。 */
+        const val ACCOUNT_PRECONNECT_DELAY_MS = 2_000L
+
+        /** 账号读请求失败后的重试次数。 */
+        const val ACCOUNT_RETRIES = 4
+
+        /** 账号写请求失败后的重试次数。 */
+        const val ACCOUNT_WRITE_ATTEMPTS = 4
+
+        /** 账号写请求第一次退避时间。 */
+        const val ACCOUNT_WRITE_BACKOFF_1_MS = 1_200L
+
+        /** 账号写请求第二次退避时间。 */
+        const val ACCOUNT_WRITE_BACKOFF_2_MS = 4_000L
+
+        /** 账号写请求第三次退避时间。 */
+        const val ACCOUNT_WRITE_BACKOFF_3_MS = 12_000L
+
+        /** 一次批量详情请求最多带多少集。 */
+        const val MULTI_DETAIL_LIMIT = 50
+
+        /** 历史记录删除接口单批最多提交多少条。 */
+        const val HISTORY_DELETE_BATCH = 50
+
+        /** 清空历史失败后的重试次数。 */
+        const val HISTORY_CLEAR_ATTEMPTS = 3
+
+        /** 相关作品接口最多尝试几个候选域名。 */
+        const val RELATED_ATTEMPTS = 8
+
+        /** 相关作品内存缓存条数。 */
+        const val RELATED_CACHE_LIMIT = 16
+
+        /** 作者名解析缓存条数。 */
+        const val AUTHOR_CACHE_LIMIT = 300
+
+        /** 作者作品结果缓存条数。 */
+        const val AUTHOR_WORKS_CACHE_LIMIT = 8
+
+        /** 作者作品每页请求条数。 */
+        const val AUTHOR_WORKS_PAGE_SIZE = 50
+
+        /** 作者作品默认请求页数。 */
+        const val AUTHOR_WORKS_PAGES = 6
+
+        /** 作者作品最大请求页数。 */
+        const val AUTHOR_WORKS_PAGES_MAX = 6
+
+        /** 作者作品单页请求尝试次数。 */
+        const val AUTHOR_WORKS_PAGE_ATTEMPTS = 3
+
+        /** 作者作品页重试间隔。 */
+        const val AUTHOR_WORKS_PAGE_RETRY_MS = 300L
+
+        /** 连续多少空页后停止继续补作者作品。 */
+        const val AUTHOR_WORKS_EMPTY_PAGES = 2
+
+        /** 作者作品按系列并发补查的并发数。 */
+        const val AUTHOR_WORKS_FAMILY_FANOUT = 3
+
+        /** 作者作品按系列补查的最大结果数。 */
+        const val AUTHOR_WORKS_FAMILY_MAX = 12
+
+        /** 出品方作品每页请求条数。 */
+        const val PUBLISHER_PAGE_SIZE = 50
+
+        /** 出品方作品默认请求页数。 */
+        const val PUBLISHER_PAGES = 6
+
+        /** 出品方身份缓存上限。 */
+        const val PUBLISHER_UIDS_LIMIT = 96
+
+        /** 出品方未命中缓存的有效期。 */
+        const val PUBLISHER_MISS_TTL_MS = 600_000L
+
+        /** 分类接口最多尝试次数。 */
+        const val CATEGORY_ATTEMPTS = 8
+
+        /** 分类 / 榜单首屏最多尝试次数。 */
+        const val FIRST_PAGE_ATTEMPTS = 3
+
+        /** 推荐接口最多尝试次数。 */
+        const val RECOMMEND_ATTEMPTS = 3
+
+        /** App 搜索空正文重试次数。 */
+        const val SEARCH_BLANK_RETRIES = 1
+
+        /** 搜索游标缓存最多保留多少个查询上下文。 */
+        const val SEARCH_CURSOR_LIMIT = 100
+
+        /** 单个关键词最大字符数。 */
+        const val SEARCH_KEYWORD_MAX_CHARS = 80
+
+        /** 单次搜索联想词最大返回条数。 */
+        const val SUGGESTION_LIMIT = 20
+
+        /** 热搜词最大返回条数。 */
+        const val HOT_SEARCH_LIMIT = 30
+
+        /** 官网搜索游标 / 已见集合缓存上限。 */
+        const val SEARCH_CACHE_LIMIT = 8
+
+        /** 官网搜索单次返回条数上限。 */
+        const val WEB_SEARCH_RESULT_LIMIT = 30
+
+        /** 单个内容响应体最大字节数，防止异常响应撑爆内存。 */
+        const val MAX_RESPONSE_BYTES = 16 * 1024 * 1024
+
+        /** 播放模型最多尝试几个 TNC 候选域名。 */
+        const val MODEL_HOST_ATTEMPTS = 3
+
+        /** 播放地址专用 OkHttpClient 缓存上限。 */
+        const val ADDRESS_CLIENT_CACHE_LIMIT = 8
+
+        /** 播放模型预算分桶步长，减少相近预算生成过多客户端。 */
+        const val MODEL_BUDGET_BUCKET_MS = 100L
+    }
+
+    /**
+     * 账号快照、导入、手机号登录和设备自愈限制。
+     */
+    object Account {
+        /** 账号快照 JSON 最大字节数。 */
+        const val SNAPSHOT_MAX_BYTES = 512 * 1024
+
+        /** 账号快照最长使用时间。 */
+        const val SNAPSHOT_MAX_AGE_MS = 7L * 24L * 60L * 60L * 1_000L
+
+        /** 账号快照每一栏最多保存多少条。 */
+        const val SNAPSHOT_MAX_ROWS = 200
+
+        /** 账号快照里单部剧简介最多保留多少字符。 */
+        const val SNAPSHOT_DESCRIPTION_CHARS = 400
+
+        /** 导入账号参数页面允许上传的最大文件。 */
+        const val IMPORT_MAX_BYTES = 512 * 1024
+
+        /** 手机号最小位数。 */
+        const val PHONE_MIN_DIGITS = 6
+
+        /** 手机号最大位数。 */
+        const val PHONE_MAX_DIGITS = 15
+
+        /** 上行短信验证流程总窗口。 */
+        const val MFA_WINDOW_MS = 10L * 60L * 1_000L
+
+        /** 上行短信连续错误多少次后停止等待。 */
+        const val UPSMS_ERROR_LIMIT = 4
+
+        /** 上行短信最多允许多少轮 pending。 */
+        const val UPSMS_PENDING_LIMIT = 6
+
+        /** 电视端上行短信服务默认轮询次数。 */
+        const val UPSMS_SERVER_POLLS = 5
+
+        /** 电视端上行短信服务轮询间隔。 */
+        const val UPSMS_SERVER_POLL_MS = 3_000L
+
+        /** 一次进程最多触发几次设备身份自愈。 */
+        const val DEVICE_HEAL_LIMIT = 2
+
+        /** 两次设备身份自愈之间的最小间隔。 */
+        const val DEVICE_HEAL_GAP_MS = 20_000L
+    }
+
+    /**
+     * 封面 URL、内存缓存和磁盘缓存参数。
+     */
+    object Artwork {
+        /** 封面请求固定宽度。 */
+        const val URL_REQUEST_WIDTH = 640
+
+        /** 封面解码宽度下限。 */
+        const val URL_MIN_WIDTH = 160
+
+        /** 封面解码宽度上限。 */
+        const val URL_MAX_WIDTH = 640
+
+        /** 封面宽度取整档位。 */
+        const val URL_WIDTH_STEP = 80
+
+        /** 封面长宽比下限，百分比。 */
+        const val URL_MIN_ASPECT_PERCENT = 70
+
+        /** 图片加载队列最多等待多少个任务。 */
+        const val LOADER_MAX_PENDING = 320
+
+        /** 图片网络并发请求上限。 */
+        const val LOADER_MAX_REQUESTS = 16
+
+        /** 图片连接池空闲连接上限。 */
+        const val LOADER_MAX_IDLE_CONNECTIONS = 16
+
+        /** 单张封面解码后允许的最大像素字节数。 */
+        const val LOADER_MAX_DECODE_BYTES = 4 * 1024 * 1024
+
+        /** 图片解码工作线程数。 */
+        const val LOADER_WORKERS = 8
+
+        /** 低于这个堆上限时按低内存设备处理。 */
+        const val LOADER_HEAP_TIGHT_BYTES = 256L * 1024 * 1024
+
+        /** 封面内存缓存占堆比例的低内存分支分母。 */
+        const val LOADER_LOW_RAM_HEAP_DIVISOR = 5
+
+        /** 封面内存缓存占堆比例的常规分支分母。 */
+        const val LOADER_NORMAL_HEAP_DIVISOR = 3
+
+        /** 低内存设备封面内存缓存下限。 */
+        const val LOADER_LOW_RAM_FLOOR_BYTES = 8L * 1024 * 1024
+
+        /** 常规设备封面内存缓存下限。 */
+        const val LOADER_NORMAL_FLOOR_BYTES = 24L * 1024 * 1024
+
+        /** 低内存设备封面内存缓存上限。 */
+        const val LOADER_LOW_RAM_CEILING_BYTES = 32L * 1024 * 1024
+
+        /** 常规设备封面内存缓存上限。 */
+        const val LOADER_NORMAL_CEILING_BYTES = 192L * 1024 * 1024
+
+        /** 封面解码最长边上限。 */
+        const val LOADER_MAX_DECODE_DIMENSION = 1024
+
+        /** 封面磁盘缓存单条上限。 */
+        const val DISK_MAX_ENTRY_BYTES = 512 * 1024
+
+        /** 封面磁盘缓存总字节上限。 */
+        const val DISK_MAX_TOTAL_BYTES = 96L * 1024 * 1024
+
+        /** 封面磁盘缓存条数上限。 */
+        const val DISK_MAX_ENTRIES = 6_000
+
+        /** 磁盘清理后的低水位比例。 */
+        const val DISK_PRUNE_TARGET = 0.7
+
+        /** 封面磁盘缓存有效期。 */
+        const val DISK_TTL_MS = 30L * 24L * 60L * 60L * 1_000L
+    }
+
+    /**
+     * 局域网发现、同步包和本地传输会话参数。
+     */
+    object Lan {
+        /** 局域网同步会话默认有效期。 */
+        const val DEFAULT_TTL_MS = 300_000L
+
+        /** 发现其他设备的默认等待窗口。 */
+        const val DISCOVERY_WINDOW_MS = 6_000L
+
+        /** 同步包单个值最大字节数。 */
+        const val MAX_VALUE_BYTES = 128 * 1024
+
+        /** 同步包总字节数上限。 */
+        const val MAX_TOTAL_BYTES = 512 * 1024
+
+        /** 本机传输服务允许的最大上传字节数。 */
+        const val TRANSFER_MAX_BYTES = 8 * 1024 * 1024
+
+        /** 传输服务单次 socket 读写超时。 */
+        const val TRANSFER_SOCKET_TIMEOUT_MS = 2_000
+
+        /** 传输服务 accept 轮询超时。 */
+        const val TRANSFER_ACCEPT_TIMEOUT_MS = 250
+
+        /** 单个 HTTP 头最大长度。 */
+        const val HEADER_LINE_MAX_BYTES = 8 * 1024
+
+        /** 请求头总长度上限。 */
+        const val HEADER_TOTAL_MAX_BYTES = 16 * 1024
     }
 
     /**
@@ -413,6 +694,63 @@ object AppConfig {
         /** 手机横竖屏切换时控制层过渡时长。 */
         const val MODE_TRANSITION_MS = 220L
 
+        /** PreparedSlot 中预热结果的有效期，刻意短于播放地址窗口。 */
+        const val PREPARED_SLOT_TTL_MS = 120_000L
+
+        /** 推荐页连续播放失败多少条后停止自动跳过。 */
+        const val FAILURE_RECOMMEND_SKIP_LIMIT = 3
+
+        /** 每集允许同档重建次数。 */
+        const val SAME_REBUILD_LIMIT = 1
+
+        /** 每集允许自动降档次数。 */
+        const val QUALITY_DOWN_LIMIT = 2
+
+        /** 每集允许手动重试归还次数。 */
+        const val MANUAL_RETRY_LIMIT = 2
+
+        /** 音频轨每集允许同档重建次数。 */
+        const val AUDIO_REBUILD_LIMIT = 1
+
+        /** 快进 / 快退设置的最小秒数。 */
+        const val SEEK_MIN_SECONDS = 2
+
+        /** 快进 / 快退设置的最大秒数。 */
+        const val SEEK_MAX_SECONDS = 20
+
+        /** 连续快进 / 快退的合并窗口。 */
+        const val SEEK_MERGE_WINDOW_MS = 250L
+
+        /** 片尾保护时间，避免提前触发自动连播。 */
+        const val SEEK_TAIL_GUARD_MS = 500L
+
+        /** 从第几次连续操作开始加速。 */
+        const val SEEK_ACCEL_AFTER_TAPS = 5
+
+        /** 连续操作加速倍数。 */
+        const val SEEK_ACCEL_FACTOR = 3
+
+        /** 手机取播放地址失败后的重试次数。 */
+        const val PHONE_SOURCE_RETRY_LIMIT = 2
+
+        /** 手机取播放地址失败后的退避步长。 */
+        const val PHONE_SOURCE_RETRY_STEP_MS = 3_000L
+
+        /** 电视队列项接回当前集的最多次数。 */
+        const val TV_QUEUED_RECOVERY_LIMIT = 2
+
+        /** 电视倍速滑杆停止多久后才提交到播放器。 */
+        const val TV_SPEED_COMMIT_DELAY_MS = 500L
+
+        /** 电视播放 HUD 进度条片尾保护时间。 */
+        const val HUD_TAIL_GUARD_MS = 500L
+
+        /** 手机换源时，旧播放器延迟多久关闭，避免 Surface 提前失效。 */
+        const val PHONE_PREVIOUS_CLOSE_DELAY_MS = 1_000L
+
+        /** 手机替换预热源时，旧对象延迟多久关闭。 */
+        const val PHONE_REPLACE_CLOSE_DELAY_MS = 800L
+
         /**
          * 相邻内容滑动预取规则。
          */
@@ -558,6 +896,39 @@ object AppConfig {
 
         /** 播放设置面板自动收起的出厂默认秒数。 */
         const val PLAYER_PANEL_TIMEOUT_DEFAULT_SECONDS = 6
+
+        /** 本机收藏列表上限。 */
+        const val FAVORITES_LIMIT = 500
+
+        /** 稍后观看列表上限。 */
+        const val LATER_LIMIT = 100
+
+        /** 本机历史记录上限。 */
+        const val HISTORY_LIMIT = 200
+
+        /** 隐藏剧集记录上限。 */
+        const val HIDDEN_LIMIT = 500
+
+        /** 搜索历史上限。 */
+        const val SEARCH_HISTORY_LIMIT = 20
+
+        /** 单条搜索历史允许的最大字符数。 */
+        const val SEARCH_QUERY_MAX_CHARS = 80
+
+        /** 历史删除墓碑上限。 */
+        const val HISTORY_DELETED_LIMIT = 500
+
+        /** 已看完集合上限。 */
+        const val WATCHED_LIMIT = 500
+
+        /** 写队列默认防抖时间。 */
+        const val WRITE_QUEUE_DELAY_MS = 250L
+
+        /** 写队列失败后的重试次数。 */
+        const val WRITE_QUEUE_RETRIES = 2
+
+        /** 写队列失败重试延迟。 */
+        const val WRITE_QUEUE_RETRY_DELAY_MS = 1_000L
     }
 
     /**
@@ -713,6 +1084,9 @@ object AppConfig {
         /** 扫码失败后的重试间隔。 */
         const val QR_FAILURE_RETRY_MS = 3_000L
 
+        /** 二维码长时间未确认时，刷新轮询间隔相对正常轮询的倍数。 */
+        const val QR_REFRESH_POLL_MULTIPLIER = 4
+
         /** 账号数据拉取失败后的自动重试间隔。 */
         const val ACCOUNT_RETRY_MS = 4_000L
 
@@ -784,5 +1158,37 @@ object AppConfig {
 
         /** 调试面板系统状态缓存时间。 */
         const val DEBUG_ENV_TTL_MS = 5_000L
+    }
+
+    /**
+     * 调试日志、性能采样和播放诊断上报上限。
+     */
+    object Diagnostics {
+        /** 进程内播放诊断记录上限。 */
+        const val PLAYBACK_MAX_REPORTS = 12
+
+        /** 解码器错误上报上限。 */
+        const val PLAYBACK_MAX_CODEC_ERROR_REPORTS = 3
+
+        /** 播放失败后延迟上报的时间。 */
+        const val PLAYBACK_REPORT_DELAY_MS = 1_500L
+
+        /** 调试问题列表上限。 */
+        const val MAX_ISSUES = 30
+
+        /** 调试日志滚动条数上限。 */
+        const val DEBUG_LOG_LIMIT = 40
+
+        /** 性能采样间隔。 */
+        const val PERF_INTERVAL_MS = 2_000L
+
+        /** GPU 名称读取重试次数。 */
+        const val PERF_GPU_RETRIES = 3
+
+        /** 每多少次采样记录一条慢样本。 */
+        const val PERF_SLOW_EVERY = 3
+
+        /** 封面耗时诊断样本上限。 */
+        const val ARTWORK_TIMING_SAMPLE_LIMIT = 8_000
     }
 }

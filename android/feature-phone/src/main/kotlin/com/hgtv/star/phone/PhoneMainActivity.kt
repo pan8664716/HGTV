@@ -261,7 +261,10 @@ class PhoneMainActivity : PhoneActivity() {
             }, "hgtv-phone-network-warm").apply { isDaemon = true }.start()
             if(!isFinishing && !isDestroyed && current==0) warmStartupPlayer(lib)
             // 分类页不是首帧依赖。等推荐首帧或 12 秒兜底后再建，避免和推荐 / 注册抢带宽。
-            StartupDeferredTasks.schedule("phone.categoryPreload",20_000L) {
+            StartupDeferredTasks.schedule(
+                "phone.categoryPreload",
+                com.hgtv.star.core.AppConfig.Startup.DEFERRED_TASK_TIMEOUT_MS,
+            ) {
                 debugRoot.post {
                     if(!isFinishing && !isDestroyed) preloadCategoryPage()
                 }
@@ -476,7 +479,10 @@ class PhoneMainActivity : PhoneActivity() {
             // 书库还在读盘：半秒后再试一次。早先这里直接 return，而刷新只由 `onResume`
             // 触发——冷启动时正好读不完，整块面板就再也不出现了。
             debugRoot.removeCallbacks(debugTicker)
-            debugRoot.postDelayed(debugTicker, 500)
+            debugRoot.postDelayed(
+                debugTicker,
+                com.hgtv.star.core.AppConfig.Ui.DEBUG_TICK_MS / 2,
+            )
             return
         }
         val on = runCatching { lib.debugMode }.getOrDefault(false)
@@ -507,7 +513,10 @@ class PhoneMainActivity : PhoneActivity() {
         // 「近况」是持续写入的（接口失败、登录失败），面板要跟着刷。
         // 与 TV 一样每秒一次：遍历 40 条环形缓冲再拼几行字符串，代价可以忽略。
         debugRoot.removeCallbacks(debugTicker)
-        debugRoot.postDelayed(debugTicker, 1000)
+            debugRoot.postDelayed(
+                debugTicker,
+                com.hgtv.star.core.AppConfig.Ui.DEBUG_TICK_MS,
+            )
     }
 
     /** 面板的每秒刷新；关掉调试模式后不再排队（[syncDebugOverlay] 会提前返回）。 */

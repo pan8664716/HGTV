@@ -16,17 +16,18 @@ object SearchHistory {
      */
     fun remember(existing: List<RecentSearch>, query: String): List<RecentSearch> {
         val clean=query.trim()
-        if(clean.isEmpty() || clean.length>80) return existing
+        if(clean.isEmpty() || clean.length>AppConfig.Library.SEARCH_QUERY_MAX_CHARS) return existing
         val entry=RecentSearch(clean)
-        return (listOf(entry)+existing.filterNot { it==entry }).take(20)
+        return (listOf(entry)+existing.filterNot { it==entry })
+            .take(AppConfig.Library.SEARCH_HISTORY_LIMIT)
     }
     fun decode(value: String): List<RecentSearch> = runCatching {
         val rows=JSONArray(value)
         (0 until rows.length()).mapNotNull { i ->
             val row=rows.optJSONObject(i) ?: return@mapNotNull null
             val query=row.optString("query").trim()
-            if(query.isEmpty() || query.length>80) null else RecentSearch(query)
-        }.distinct().take(20)
+            if(query.isEmpty() || query.length>AppConfig.Library.SEARCH_QUERY_MAX_CHARS) null else RecentSearch(query)
+        }.distinct().take(AppConfig.Library.SEARCH_HISTORY_LIMIT)
     }.getOrDefault(emptyList())
     fun encode(rows: List<RecentSearch>) = JSONArray(rows.map { JSONObject().put("query",it.query) }).toString()
 }

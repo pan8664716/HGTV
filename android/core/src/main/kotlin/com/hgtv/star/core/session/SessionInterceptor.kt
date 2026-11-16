@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.core.session
 
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.body
 import com.hgtv.star.core.code
 import com.hgtv.star.core.encodedPath
@@ -133,7 +134,7 @@ class SessionInterceptor(
             "ecombdapi.com","luckysf.net","iluckysf.net",
             "awemeughun.com","awemeugsoul.com"
         )
-        const val SNIFF_LIMIT = 32L*1024
+        const val SNIFF_LIMIT = AppConfig.Network.SESSION_SNIFF_LIMIT_BYTES
         const val ERR_SESSION_EXPIRED = "session_expired"
     }
 }

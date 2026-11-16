@@ -74,19 +74,19 @@ object ArtworkUrl {
      * 实测这是全站最热的尺寸（官方首页在用、CDN 命中率 58~84%，见类注释），
      * 同时字节数（webp 80 KB）远没到带宽敏感区。
      */
-    const val REQUEST_WIDTH = 640
+    const val REQUEST_WIDTH = AppConfig.Artwork.URL_REQUEST_WIDTH
     /** 解码宽度下限：比这更小的图在电视上会明显发虚，不如多花几 KB。 */
-    const val MIN_WIDTH = 160
+    const val MIN_WIDTH = AppConfig.Artwork.URL_MIN_WIDTH
     /** 解码宽度上限：再大就是浪费——一屏最多六列，1080p 下卡片也就 300 出头。 */
-    const val MAX_WIDTH = 640
+    const val MAX_WIDTH = AppConfig.Artwork.URL_MAX_WIDTH
     /** 宽度取整的档位。CDN 的变换结果会被缓存，档位固定能让同一张图在不同槽位间复用。 */
-    private const val STEP = 80
+    private const val STEP = AppConfig.Artwork.URL_WIDTH_STEP
     /**
      * 平台封面的长宽比下限（百分比）：竖版海报实测约 70%（如 240×343）。
      *
      * 只用来在「框特别高」时反推源图至少要有多宽，不参与常规计算。
      */
-    private const val MIN_ASPECT = 70
+    private const val MIN_ASPECT = AppConfig.Artwork.URL_MIN_ASPECT_PERCENT
 
     /** 免签镜像入口：TNC 下发时优先使用，否则沿用实测可用的固定域名。 */
     private fun freeHost(): String =

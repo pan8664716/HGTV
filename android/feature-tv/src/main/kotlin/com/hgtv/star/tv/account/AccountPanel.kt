@@ -347,7 +347,11 @@ private fun TvMainActivity.buildQrLoginPanel(
                         }
                     }
                     retry=again
-                    main.postDelayed(again,QrLogin.POLL_MS*4)
+                    main.postDelayed(
+                        again,
+                        QrLogin.POLL_MS *
+                            com.hgtv.star.core.AppConfig.Ui.QR_REFRESH_POLL_MULTIPLIER,
+                    )
                     return@post
                 }
                 paint(fresh)

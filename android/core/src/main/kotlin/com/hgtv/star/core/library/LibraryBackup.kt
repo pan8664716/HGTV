@@ -333,7 +333,11 @@ object LibraryBackup {
         val result=JSONObject().put("format","hgtv.library").put("version",1).put("createdAt",System.currentTimeMillis())
             .put("later",JSONArray(data.later.map(::seriesJson))).put("hidden",JSONArray(data.hidden.toList()))
             .put("favorites",JSONArray(data.favorites.map(::seriesJson))).put("history",JSONArray(data.history.map { it.json() }))
-            .put("watched",JSONArray(data.watched.intersect((data.favorites.map { it.id }+data.history.map { it.series.id }).toSet()).take(500)))
+            .put("watched",JSONArray(
+                data.watched
+                    .intersect((data.favorites.map { it.id } + data.history.map { it.series.id }).toSet())
+                    .take(AppConfig.Library.WATCHED_LIMIT),
+            ))
             .put("searches",JSONArray(SearchHistory.encode(data.searches.map { it.copy(query=cleanText(it.query,80)) }))).put("settings",data.settings.json()).toString()
         require(result.toByteArray(Charsets.UTF_8).size<=MAX_BYTES) { "备份超过 2 MB 限制" }
         return result
@@ -467,7 +471,9 @@ object LibraryBackup {
     }
     /** Existing favorites stay first; imported progress wins when it is further along. */
     fun merge(local: BackupData,incoming: BackupData,restoreSettings: Boolean): BackupData {
-        val favorites=(local.favorites+incoming.favorites).distinctBy { it.id }.take(500)
+        val favorites=(local.favorites+incoming.favorites)
+            .distinctBy { it.id }
+            .take(AppConfig.Library.FAVORITES_LIMIT)
         val records=local.history.associateBy { it.series.id }.toMutableMap()
         val watched=local.watched.toMutableSet()
         incoming.history.forEach { candidate ->
@@ -478,11 +484,28 @@ object LibraryBackup {
             }
         }
         incoming.watched.filter { id -> id !in records && local.favorites.none { it.id==id } }.forEach { watched.add(it) }
-        val history=records.values.sortedByDescending { it.updatedAt }.take(200)
+        val history=records.values
+            .sortedByDescending { it.updatedAt }
+            .take(AppConfig.Library.HISTORY_LIMIT)
         val retained=(favorites.map { it.id }+history.map { it.series.id }).toSet()
         // 墓碑跟着本机那份走，但**恢复备份是明确的「把我的记录拿回来」**：
         // 备份里出现的那几条要把墓碑摘掉，否则恢复完界面上仍然看不到它们。
         val deleted=local.historyDeleted - incoming.history.map { it.series.id }.toSet()
-        return BackupData(favorites,history,watched.intersect(retained).take(500).toSet(),(local.searches+incoming.searches).distinct().take(20),if(restoreSettings) incoming.settings else local.settings,(local.later+incoming.later).distinctBy { it.id }.take(100),(local.hidden+incoming.hidden).take(500).toSet(),deleted)
+        return BackupData(
+            favorites,
+            history,
+            watched.intersect(retained).take(AppConfig.Library.WATCHED_LIMIT).toSet(),
+            (local.searches + incoming.searches)
+                .distinct()
+                .take(AppConfig.Library.SEARCH_HISTORY_LIMIT),
+            if(restoreSettings) incoming.settings else local.settings,
+            (local.later + incoming.later)
+                .distinctBy { it.id }
+                .take(AppConfig.Library.LATER_LIMIT),
+            (local.hidden + incoming.hidden)
+                .take(AppConfig.Library.HIDDEN_LIMIT)
+                .toSet(),
+            deleted,
+        )
     }
 }

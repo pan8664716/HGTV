@@ -20,8 +20,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * 这一页是同步页面，用户的浏览器会一直转圈，因此只替用户等十几秒就把控制权还回去
  * （页面会原样保留「我已发送」按钮，再点一次继续等）。
  */
-private const val UPSMS_POLLS=5
-private const val UPSMS_POLL_MS=3000L
+private const val UPSMS_POLLS=AppConfig.Account.UPSMS_SERVER_POLLS
+private const val UPSMS_POLL_MS=AppConfig.Account.UPSMS_SERVER_POLL_MS
 
 /**
  * 手机号登录的一次性局域网页面：**在手机上**输手机号、收验证码、填验证码。

@@ -23,7 +23,7 @@ import java.util.concurrent.TimeUnit
         queue: List<String> = emptyList(),
     ): JSONObject {
         // TNC 下发候选域名；最近成功的排第一。每条实际请求独立 20 秒，候选之间不共享超时。
-        val hosts=TncConfigStore.orderedApiHosts().take(3)
+        val hosts=TncConfigStore.orderedApiHosts().take(AppConfig.Content.MODEL_HOST_ATTEMPTS)
         // 播放器打开用 `multi_video_model/player` 取当前集 + 后 14 集；
         // 单集接口只作为兼容兜底，preload 留给首帧稳定后的后台补货。
         // 新匿名设备连续发单集请求时，第二发起会被网关静默丢弃（HTTP 200 + 0 字节）。
@@ -471,7 +471,11 @@ import java.util.concurrent.TimeUnit
     }
 
     internal fun ContentRepository.addressClient(budgetMs: Long): OkHttpClient {
-        val bucket=(((budgetMs.coerceIn(1L,ADDRESS_ATTEMPT_TIMEOUT_MS))+99)/100)*100
+        val bucket=(
+            (budgetMs.coerceIn(1L,ADDRESS_ATTEMPT_TIMEOUT_MS) +
+                AppConfig.Content.MODEL_BUDGET_BUCKET_MS - 1) /
+                AppConfig.Content.MODEL_BUDGET_BUCKET_MS
+            ) * AppConfig.Content.MODEL_BUDGET_BUCKET_MS
         synchronized(addressClients) {
             addressClients[bucket]?.let { return it }
             val client=http.newBuilder()
@@ -480,7 +484,9 @@ import java.util.concurrent.TimeUnit
                 .writeTimeout(bucket,TimeUnit.MILLISECONDS)
                 .callTimeout(bucket,TimeUnit.MILLISECONDS)
                 .build()
-            if(addressClients.size>=8) addressClients.keys.firstOrNull()?.let(addressClients::remove)
+            if(addressClients.size>=AppConfig.Content.ADDRESS_CLIENT_CACHE_LIMIT) {
+                addressClients.keys.firstOrNull()?.let(addressClients::remove)
+            }
             addressClients[bucket]=client
             return client
         }

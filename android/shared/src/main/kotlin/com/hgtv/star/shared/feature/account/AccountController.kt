@@ -414,6 +414,6 @@ class AccountController(
     )
 
     private companion object {
-        const val PUSHED_LIMIT = 300
+        const val PUSHED_LIMIT = com.hgtv.star.core.AppConfig.Library.HISTORY_PUSHED_LIMIT
     }
 }

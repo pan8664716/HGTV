@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.data
+import com.hgtv.star.core.AppConfig
 
 /**
  * 局域网全量同步时允许跨设备的会话键白名单。
@@ -46,8 +47,8 @@ internal object LibrarySyncSessionKeys {
     )
 
     val ALL = LOGIN + DEVICE
-    private const val MAX_VALUE_BYTES = 128 * 1024
-    private const val MAX_TOTAL_BYTES = 512 * 1024
+    private const val MAX_VALUE_BYTES = AppConfig.Lan.MAX_VALUE_BYTES
+    private const val MAX_TOTAL_BYTES = AppConfig.Lan.MAX_TOTAL_BYTES
 
     fun validate(values: Map<String, String>) {
         require(values.keys.all { it in ALL }) { "同步包含不支持的会话字段" }

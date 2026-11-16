@@ -8,7 +8,7 @@ import java.util.concurrent.TimeUnit
 /** Serial persistence with one pending value per key; serialization belongs inside [write]. */
 class LatestWriteQueue<K, V>(
     name: String,
-    private val delayMillis: Long = 250,
+    private val delayMillis: Long = AppConfig.Library.WRITE_QUEUE_DELAY_MS,
     private val write: (Map<K, V>) -> Boolean,
     private val failed: () -> Unit = {}
 ) {
@@ -66,7 +66,9 @@ class LatestWriteQueue<K, V>(
                 batch.forEach { (key, value) -> if (!pending.containsKey(key)) pending[key] = value }
                 retries++
                 failed()
-                if (!closed && retries <= 2 && scheduled == null) schedule(1000)
+                if (!closed && retries <= AppConfig.Library.WRITE_QUEUE_RETRIES && scheduled == null) {
+                    schedule(AppConfig.Library.WRITE_QUEUE_RETRY_DELAY_MS)
+                }
             }
         }
     }

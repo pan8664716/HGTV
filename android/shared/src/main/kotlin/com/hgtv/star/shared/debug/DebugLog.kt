@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.debug
+import com.hgtv.star.core.AppConfig
 
 /**
  * 调试模式的「近况」环形缓冲：两端共用。
@@ -10,7 +11,7 @@ package com.hgtv.star.shared.debug
  *
  * 只在打开调试模式时才写（见 [enabled]）：正常使用时不拼一次字符串。
  */
-const val DEBUG_LOG_LIMIT = 40
+const val DEBUG_LOG_LIMIT = AppConfig.Diagnostics.DEBUG_LOG_LIMIT
 
 /**
  * 最近发生的事：网络、接口、登录、播放失败。

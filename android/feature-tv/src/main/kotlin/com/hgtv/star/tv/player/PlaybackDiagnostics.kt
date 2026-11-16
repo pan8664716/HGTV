@@ -39,9 +39,10 @@ object PlaybackDiag {
      * （source / io / parse / decoder_init / decoder_query / decoding / limits / unsupported / codec_error），
      * 一眼就能看出「这台是解码器初始化挂」还是「这台根本没缓冲到」。
      */
-    private const val MAX_REPORTS = 12
+    private const val MAX_REPORTS = com.hgtv.star.core.AppConfig.Diagnostics.PLAYBACK_MAX_REPORTS
     /** 解码器自报错误的额度（见 [claim]）。 */
-    private const val MAX_CODEC_ERROR_REPORTS = 3
+    private const val MAX_CODEC_ERROR_REPORTS =
+        com.hgtv.star.core.AppConfig.Diagnostics.PLAYBACK_MAX_CODEC_ERROR_REPORTS
 
     private var reports = 0
     private var codecErrorReports = 0
@@ -371,7 +372,10 @@ fun TvMainActivity.playbackDiagnostics()=object: AnalyticsListener {
         }
         pendingCodecReport?.let { main.removeCallbacks(it) }
         pendingCodecReport=pending
-        main.postDelayed(pending,1_500)
+        main.postDelayed(
+            pending,
+            com.hgtv.star.core.AppConfig.Diagnostics.PLAYBACK_REPORT_DELAY_MS,
+        )
     }
     /**
      * 首帧上屏的第二条证据链。

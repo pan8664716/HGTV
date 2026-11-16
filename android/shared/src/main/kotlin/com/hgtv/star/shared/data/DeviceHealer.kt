@@ -5,6 +5,7 @@ import android.os.Handler
 import android.os.Looper
 import android.os.SystemClock
 import android.util.Log
+import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.ContentRepository
 import com.hgtv.star.core.restoreDeviceCookies
 import com.hgtv.star.shared.debug.DebugLog
@@ -41,10 +42,10 @@ import java.util.concurrent.Executors
 object DeviceHealer {
 
     /** 一次进程最多自愈几次。 */
-    const val LIMIT = 2
+    const val LIMIT = AppConfig.Account.DEVICE_HEAL_LIMIT
 
     /** 两次自愈之间的最小间隔。 */
-    const val GAP_MS = 20_000L
+    const val GAP_MS = AppConfig.Account.DEVICE_HEAL_GAP_MS
 
     private val lock = Any()
     private var tried = 0
