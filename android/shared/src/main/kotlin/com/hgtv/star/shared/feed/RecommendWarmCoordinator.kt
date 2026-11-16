@@ -47,7 +47,7 @@ class RecommendWarmCoordinator(
         level: CacheLevel,
     ): RemoteVideo? {
         if(level==CacheLevel.NONE || episodeId.isEmpty()) return null
-        val info=source.stream(episodeId,quality,detail.playback)
+        val info=source.stream(episodeId,quality,detail.playback,direct=true)
         return when(level) {
             CacheLevel.NONE, CacheLevel.ADDRESS -> null
             CacheLevel.META -> source.warm(episodeId,info) { it.warmMeta() }

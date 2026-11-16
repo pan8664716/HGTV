@@ -471,7 +471,7 @@ fun TvMainActivity.playerFailure(problem: Throwable) {
             val hardware=PlaybackCapability.cachedHardwareHevc() ?: true
             main.post {
                 if(isDestroyed) return@post
-                // device_level 默认 4、空响应升 5，与解码能力无关，这里不动它。
+                // device_level 默认 1、空响应升 5，与解码能力无关，这里不动它。
                 playbackHevcSupported=hevc
                 hardwareHevcAvailable=hardware
             }

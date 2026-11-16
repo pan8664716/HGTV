@@ -316,52 +316,54 @@ class ContentRepositoryTest {
     }
 
     /**
-     * 播放模型请求默认报 `device_level=4`，并带上 `need_all_video_definition=true`。
+     * 播放模型请求默认报 `device_level=1`，并带上 `need_all_video_definition=true`。
      *
-     * `device_level` 只有 4 / 5 两档（见 [ContentRepository.deviceLevel]）：4 是默认档，
-     * 被限流换号还不行才升 5。`need_all_video_definition=true` 是「拿满 5 档」的前提，
+     * `device_level` 只有 1 / 5 两档（见 [ContentRepository.deviceLevel]）：1 是默认档，
+     * 空响应才升 5。`need_all_video_definition=true` 是「拿满 5 档」的前提，
      * 不带它服务端只回一档。这里把请求体钉住，防止再被改回去。
      */
     @Test fun playbackModelRequestsTheDeviceLevelThatKeepsLowQualitiesDecodable() {
         val bodies=mutableListOf<String>()
         val repo=repository { request ->
             val model=request.url.host!="example.com"
-            if(model) bodies+=request.body?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty()
+            if(model) bodies+=decodedRequestBody(request)
             when {
                 !model -> fallbackList("bytevc1" to "https://example.com/stream")
                 else -> videoModel("https://example.com/stream")
             }
         }
+        repo.deviceIdentity=testDeviceIdentity()
         assertEquals("https://example.com/stream",repo.stream("123").url)
-        val body=bodies.single()
-        assertTrue(body,body.contains("\"device_level\":4"))
+        val body=bodies.last()
+        assertTrue(body,body.contains("\"device_level\":1"))
         assertTrue(body,body.contains("\"need_all_video_definition\":true"))
     }
 
     /**
-     * `device_level` 只有 4 / 5 两档：默认 4，写别的值都会被夹到这两档之一。
+     * `device_level` 只有 1 / 5 两档：默认 1，写别的值都会被夹到这两档之一。
      *
      * 这里同时钉住「字段被读进请求体」这件事，它是 [ContentRepository.deviceLevel] 生效的唯一通道。
      */
-    @Test fun deviceLevelIsClampedToFourOrFiveAndInjectedIntoTheRequest() {
+    @Test fun deviceLevelIsClampedToOneOrFiveAndInjectedIntoTheRequest() {
         val bodies=mutableListOf<String>()
         val repo=repository { request ->
             val model=request.url.host!="example.com"
-            if(model) bodies+=request.body?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readUtf8() }.orEmpty()
+            if(model) bodies+=decodedRequestBody(request)
             when {
                 !model -> fallbackList("bytevc1" to "https://example.com/stream")
                 else -> videoModel("https://example.com/stream")
             }
         }
-        assertEquals(4,repo.deviceLevel)
+        repo.deviceIdentity=testDeviceIdentity()
+        assertEquals(1,repo.deviceLevel)
         repo.deviceLevel=3
-        assertEquals(4,repo.deviceLevel)
+        assertEquals(1,repo.deviceLevel)
         repo.deviceLevel=9
         assertEquals(5,repo.deviceLevel)
-        repo.deviceLevel=4
+        repo.deviceLevel=1
         assertEquals("https://example.com/stream",repo.stream("123").url)
-        assertTrue(bodies.single(),bodies.single().contains("\"device_level\":4"))
-        assertTrue(bodies.single(),bodies.single().contains("\"need_all_video_definition\":true"))
+        assertTrue(bodies.last(),bodies.last().contains("\"device_level\":1"))
+        assertTrue(bodies.last(),bodies.last().contains("\"need_all_video_definition\":true"))
     }
 
     /**
@@ -388,19 +390,11 @@ class ContentRepositoryTest {
                 fallbackCalls++
                 ""
             } else {
-                val bytes=request.body?.let { payload -> okio.Buffer().also { payload.writeTo(it) }.readByteArray() } ?: ByteArray(0)
-                bodies+=runCatching {
-                    java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(bytes))
-                        .bufferedReader(Charsets.UTF_8)
-                        .use { it.readText() }
-                }.getOrElse { bytes.toString(Charsets.UTF_8) }
+                bodies+=decodedRequestBody(request)
                 response.toString()
             }
         }
-        repo.deviceIdentity=mapOf(
-            "device_id" to "123456789012345",
-            "iid" to "987654321098765",
-        )
+        repo.deviceIdentity=testDeviceIdentity()
 
         val result=repo.stream("123",1080,direct=true)
 
@@ -426,6 +420,22 @@ class ContentRepositoryTest {
 .code(200).message("OK").body(respond(chain.request()).toResponseBody(null)).build()
         }.build(),clock,0L,0L
     )
+
+    private fun testDeviceIdentity()=mapOf(
+        "device_id" to "123456789012345",
+        "iid" to "987654321098765",
+    )
+
+    private fun decodedRequestBody(request: Request): String {
+        val bytes=request.body?.let { payload ->
+            okio.Buffer().also { payload.writeTo(it) }.readByteArray()
+        } ?: ByteArray(0)
+        return runCatching {
+            java.util.zip.GZIPInputStream(java.io.ByteArrayInputStream(bytes))
+                .bufferedReader(Charsets.UTF_8)
+                .use { it.readText() }
+        }.getOrElse { bytes.toString(Charsets.UTF_8) }
+    }
 
     /**
      * 榜单来自 App 分类接口按「最高热度」排（该接口 2026-10-21 起要签名）：`sort=["hot_score"]`，

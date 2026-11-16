@@ -25,7 +25,7 @@ internal fun PhoneFeedView.maybePrefetchNextImpl(position: Long, duration: Long)
     feedScope.launch {
         val remote = withContext(Dispatchers.IO) {
             runCatching {
-                val info = feedPlaybackSource.stream(nextId, maxQuality, d.playback)
+                val info = feedPlaybackSource.stream(nextId, maxQuality, d.playback, direct=true)
                 feedPlaybackSource.prepare(nextId, info)
             }.getOrNull()
         }

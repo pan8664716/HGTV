@@ -39,7 +39,7 @@ internal fun PhoneFeedView.reopenAtCurrentPositionImpl(index: Int): Boolean {
         val maxQuality = lib.maxQuality
         val prepared = withContext(Dispatchers.IO) {
             runCatching {
-                val info = feedPlaybackSource.stream(episodeId, maxQuality, d.playback)
+                val info = feedPlaybackSource.stream(episodeId, maxQuality, d.playback, direct=true)
                 feedPlaybackSource.prepare(episodeId, info)
             }.getOrNull()
         }

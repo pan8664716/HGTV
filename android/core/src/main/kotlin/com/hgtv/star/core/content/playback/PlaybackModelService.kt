@@ -179,7 +179,7 @@ import java.util.concurrent.TimeUnit
      * [videoModelImpl] 里真正打请求的那一段（持锁执行，见那里的 `modelGate`）。
      *
      * 平台只接受**注册下发的 `device_id`**。空响应先按额度/档位问题处理：
-     * 4 档升 5 重发一次；5 档仍为空才视为设备身份失效，交给界面层重注册。
+     * 1 档升 5 重发一次；5 档仍为空才视为设备身份失效，交给界面层重注册。
      */
     private fun ContentRepository.fetchModel(
         id: String,
@@ -345,7 +345,7 @@ import java.util.concurrent.TimeUnit
         // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
         if(response.isBlank()) {
             NetLog.emit("$stage path=$path type=${playback.contentType}/${playback.videoPlatform} level=$requestLevel id=${profile["device_id"]?.takeLast(6)} bytes=0 stable=$stable")
-            // 4 档空响应先升 5 重发一次。若 5 仍为空，再按设备身份失效交给自愈流程。
+            // 1 档空响应先升 5 重发一次。若 5 仍为空，再按设备身份失效交给自愈流程。
             if(allowLevelEscalation && requestLevel<5) {
                 NetLog.retry("model_device_level",2,2,"empty model response at device_level=$deviceLevel")
                 escalateDeviceLevel()

@@ -110,7 +110,7 @@ class RecommendPlaybackController(
             val streamStarted=PlaybackStartupTrace.begin("stream", "episode=$episodeId")
             val info=StageDeadline("recommend.stream",StartupBudgets.STREAM_MS).use { deadline ->
                 deadline.run {
-                    source.stream(episodeId, maxQuality, loaded.playback)
+                    source.stream(episodeId, maxQuality, loaded.playback, direct=true)
                 }
             }
             PlaybackStartupTrace.done("stream",streamStarted,"episode=$episodeId quality=${info.quality}")

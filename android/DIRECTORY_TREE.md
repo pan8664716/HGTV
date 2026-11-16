@@ -349,12 +349,12 @@ android/
 | `ContentDetailFacade.kt` | 剧集详情（简介 + 分集列表）：走 App 播放侧的详情接口。 | fun ContentRepository.detail、fun ContentRepository.related |
 | `ContentDeviceFacade.kt` | @param profile 这一次注册用的设备档案；默认 ContentRepository.registerProfile。 | fun ContentRepository.registerDevice、fun ContentRepository.deviceCookiesSnapshot、fun ContentRepository.primaryCookiesSnapshot、fun ContentRepository.restoreDeviceCookies、fun ContentRepository.refreshTncAsync |
 | `ContentDeviceState.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentDeviceState 主要包含 fun ContentRepository.clearDeviceIdentityImpl、fun ContentRepository.noteDeviceRejectedImpl、fun ContentRepository.deviceCookiesSnapshotImpl、fun ContentRepository.primaryCookiesSnapshotImpl。 | fun ContentRepository.clearDeviceIdentityImpl、fun ContentRepository.noteDeviceRejectedImpl、fun ContentRepository.deviceCookiesSnapshotImpl、fun ContentRepository.primaryCookiesSnapshotImpl、fun ContentRepository.restoreDeviceCookiesImpl |
-| `ContentDeviceStateFacade.kt` | 丢掉当前这份设备身份：注册结果与下发的 Cookie 一起清。 | fun ContentRepository.clearDeviceIdentity、fun ContentRepository.noteDeviceRejected、fun ContentRepository.beginEpisode、fun ContentRepository.escalateDeviceLevel |
+| `ContentDeviceStateFacade.kt` | 设备身份与播放档位门面；每集重置 1 档，空响应时兼容升 5。 | fun ContentRepository.clearDeviceIdentity、fun ContentRepository.noteDeviceRejected、fun ContentRepository.beginEpisode、fun ContentRepository.escalateDeviceLevel |
 | `ContentPlaybackFacade.kt` | 用一次官方批量接口预取一组播放模型。 | fun ContentRepository.prefetchModels |
 | `ContentPrimaryIdentity.kt` | 当前唯一的主身份快照。 | class ContentPrimaryIdentity、fun ContentRepository.primaryIdentity、fun ContentRepository.recommendationValues |
 | `ContentRelated.kt` | 取「相关作品」那一栏的原始条目。 | fun ContentRepository.relatedRows |
 | `ContentRelationFacade.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentRelationFacade 主要包含 fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame。 | fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame |
-| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态；保留主动点集的 1 档直连常量。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile、DIRECT_DEVICE_LEVEL |
+| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态；播放模型默认 1 档，空响应兼容升 5。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile、DIRECT_DEVICE_LEVEL |
 | `ContentSearchFacade.kt` | 搜索提示词（联想词）：App 搜索框用的那个接口。 | fun ContentRepository.suggestions、fun ContentRepository.webSuggestions、fun ContentRepository.hotSearches |
 | `ContentSearchResultsFacade.kt` | 只搜一种内容类型：联调探针仍可显式指定 tab_type。 | fun ContentRepository.search、fun ContentRepository.webSearch |
 | `ContentSigning.kt` | 同一套业务参数与设备参数，只换接口域名后重签。 | fun ContentRepository.resignForHost、fun ContentRepository.alternateApiHosts、fun ContentRepository.urlWithHost |
@@ -542,7 +542,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PlaybackModelService.kt` | 取一集的播放模型；用户主动点集走单集 1 档直连，自动连播和后台预取保留批量兼容路径。 | — |
+| `PlaybackModelService.kt` | 取一集的播放模型；所有请求优先 1 档，用户主动点集走单集直连，空响应才兼容升到 5 档。 | — |
 | `PlaybackParser.kt` | 播放模型、单集直连请求体、内联 / fallback 清晰度解析；同时兼容对象与数组形态的 `video_list`。 | object ContentPlaybackParser |
 | `StreamCacheService.kt` | 播放地址内存 / 落盘缓存与取流；先解析模型内联 `video_list`，缺失时才请求 `fallback_api`。 | class ContentRepositoryStreamCacheEntry |
 
@@ -622,8 +622,8 @@ android/
 | `PhoneFeedPager.kt` | 竖向信息流：**只有明显纵向的手势才滚**。 | class VerticalPagerList、class PageHolder |
 | `PhoneFeedPlayback.kt` | 推荐换作入口；优先激活已预热的独立播放器，池未命中时才走详情与地址准备，并立即暂停旧活动实例。 | fun PhoneFeedView.playIndexImpl |
 | `PhoneFeedPlayerPool.kt` | 有上限的推荐播放器池：独立播放器/MediaSource、相邻页预热、活动切换、按距离淘汰、低内存上限、隐藏页延迟回收与 `RemoteVideo` 所有权。 | class FeedPlayerSlot、fun PhoneFeedView.ensurePooledPlayerSlot、fun PhoneFeedView.primePooledPlayerImpl、fun PhoneFeedView.activatePreparedPooledPlayerImpl、fun PhoneFeedView.trimPooledPlayers |
-| `PhoneFeedPrefetch.kt` | 片尾 30 秒内准备下一集地址与首块。 | fun PhoneFeedView.maybePrefetchNextImpl |
-| `PhoneFeedReopen.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedReopen 主要包含 fun PhoneFeedView.reopenAtCurrentPositionImpl。 | fun PhoneFeedView.reopenAtCurrentPositionImpl |
+| `PhoneFeedPrefetch.kt` | 片尾 30 秒内用单集直连准备下一集地址与首块。 | fun PhoneFeedView.maybePrefetchNextImpl |
+| `PhoneFeedReopen.kt` | 手机信息流原地重开当前集；地址走单集直连并复用内联清晰度。 | fun PhoneFeedView.reopenAtCurrentPositionImpl |
 | `PhoneFeedResume.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedResume 主要包含 fun PhoneFeedView.resumeOnShownImpl。 | fun PhoneFeedView.resumeOnShownImpl |
 | `PhoneFeedSettings.kt` | 信息流长按中间打开的播放设置面板。 | fun PhoneFeedView.openSettingsImpl |
 | `PhoneFeedSurface.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedSurface 主要包含 fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.setUnderlayModeImpl。 | fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.setUnderlayModeImpl |
@@ -1106,7 +1106,7 @@ android/
 | `PreloadScheduler.kt` | 推荐流「相邻预热」的**排程编排**：电视与手机共用这一份。 | class PreloadScheduler |
 | `RecommendFeedEngine.kt` | 推荐流的加载、续流、降级、重排和快照落盘；TV 横屏偏好只传给服务端，不在客户端过滤卡片。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult |
 | `RecommendStore.kt` | 推荐流的页面无关状态；按横屏/默认请求模式隔离续流游标，并在条件变化时支持重置。 | class RecommendStore |
-| `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 播放地址 → 索引 / 首块；预热详情不补作者，避免占用首帧路径。 | class RecommendWarmCoordinator |
+| `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 单集直连地址 → 索引 / 首块；预热详情不补作者，避免占用首帧路径。 | class RecommendWarmCoordinator |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/lan/`
 
@@ -1210,7 +1210,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `RecommendPlaybackController.kt` | 推荐流中“选一部并准备播放”的共享行为；首播详情跳过作者查询，并对详情、地址、准备阶段执行预算。 | class RecommendPlaybackController |
+| `RecommendPlaybackController.kt` | 推荐流中“选一部并准备播放”的共享行为；推荐地址走单集直连，首播详情跳过作者查询，并对详情、地址、准备阶段执行预算。 | class RecommendPlaybackController |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/feature/search/`
 
