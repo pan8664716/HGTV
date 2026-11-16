@@ -4416,6 +4416,19 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 1.3.7.5 发布准备
+
+状态：版本准备中。
+
+- `versionName` 更新为 `1.3.7.5`，`versionCode` 从 `79` 更新为 `80`。
+- TV「只推荐横屏短剧」改用官方推荐接口 `is_horizontal_screen` 参数，移除客户端
+  `Series.vertical` 二次过滤；横屏与默认流使用独立续流游标。
+- `docs/CHANGELOG.md` 按电视、手机 / 平板分节；README、Release 正文和更新元数据同步。
+- 计划产物：`outputs/release-1.3.7.5/HGTV_1.3.7.5.apk`。
+- Release 只允许上传 APK、`SHA256SUMS`、`update.json`；tag 必须指向空树提交。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 电视推荐只保留横屏短剧
 
 状态：已改为服务端请求参数，debug 构建通过，待用户真机验证。
