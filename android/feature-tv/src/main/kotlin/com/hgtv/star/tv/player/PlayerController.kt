@@ -226,7 +226,12 @@ fun TvMainActivity.playEpisode(
     // 早先这里清一次，等于把「降档」和「切软解时同时降档」都做成了空操作：
     // 下面读到的 `playbackMaxQuality` 又回到用户设置的那一档，下一发必然再撞同一个失败。
     // 真正离开播放页（`returnToDetail` / 进推荐页 / 换剧）走的是不带这个参数的默认值。
-    } else detachPlayerSurface(keepSession=true)
+    } else {
+        detachPlayerSurface(keepSession=true)
+        // 重建播放层会清掉旧的过渡黑场；推荐换作必须在新 Surface 挂上之前重新盖黑，
+        // 否则新 Surface 在视频尺寸回调前会先按整屏显示一帧。
+        if(recommendEntry) showRecommendCover()
+    }
     // 会话号必须在 `detachPlayerSurface()` **之后**取：那条路自己也会自增（作废旧回调），
     // 先取再调会让本次监听器的 `active()` 永远不成立——表现就是首次进播放页
     // 一直「正在缓冲」、进度条拖不动，切一集才恢复。
@@ -248,6 +253,25 @@ fun TvMainActivity.playEpisode(
     // 新片源真正 setMediaSource 的时刻：READY 后的兜底只能认这之后的新帧，
     // 不能把上一部残留的逐帧心跳当成当前作品已经出画面。
     var sourceSetAt=0L
+    var videoSizeReady=false
+    var firstFrameRendered=false
+    var recommendRevealed=false
+    fun revealRecommendWhenReady() {
+        if(screen!="recommend" || recommendRevealed || !videoSizeReady) return
+        val frameReady=firstFrameRendered ||
+            (sourceSetAt>0L && PlaybackDiag.lastFrameAt>sourceSetAt)
+        if(!frameReady) return
+        recommendRevealed=true
+        // 尺寸回调只代表播放器知道了比例，PlayerView 的 AspectRatioFrameLayout
+        // 还要等下一次布局才会把画面框到正确大小。延后一帧揭黑，避免用户先看到
+        // “整屏拉伸”再恢复成正确比例。
+        val coverToken=recommendCoverToken
+        main.post {
+            if(!isDestroyed && screen=="recommend" && recommendCoverToken==coverToken) {
+                revealRecommendCover { if(!isDestroyed) hideCenterLoading() }
+            }
+        }
+    }
     autoRecovery=false; readySince=0; lastEpisodeDuration=0; advancedAt=0
     startPosition=position.coerceAtLeast(0); requestedAutoplay=autoplay
     if(autoplay) sleepStopped=false
@@ -541,10 +565,12 @@ fun TvMainActivity.playEpisode(
                         // 确认真的出过画面，不能只凭 READY 放掉黑场。
                         val coverToken=recommendCoverToken
                         main.postDelayed({
-                            val currentFrame=sourceSetAt>0L &&
-                                (!firstFrame || PlaybackDiag.lastFrameAt>sourceSetAt)
-                            if(!isDestroyed && screen=="recommend" && recommendCoverToken==coverToken && currentFrame) {
-                                revealRecommendCover { if(!isDestroyed) hideCenterLoading() }
+                            if(!isDestroyed && screen=="recommend" && recommendCoverToken==coverToken) {
+                                if(!firstFrameRendered && sourceSetAt>0L &&
+                                    PlaybackDiag.lastFrameAt>sourceSetAt) {
+                                    firstFrameRendered=true
+                                }
+                                revealRecommendWhenReady()
                             }
                         },400)
                     }
@@ -690,10 +716,17 @@ fun TvMainActivity.playEpisode(
                 val rawH=if(swapped) videoSize.width else videoSize.height
                 videoWidth=Math.round(rawW*ratio)
                 videoHeight=rawH
+                videoSizeReady=videoWidth>0 && videoHeight>0
                 applyResizeMode()
+                if(videoSizeReady && !firstFrameRendered && sourceSetAt>0L &&
+                    PlaybackDiag.lastFrameAt>sourceSetAt) {
+                    firstFrameRendered=true
+                }
+                revealRecommendWhenReady()
             }
             override fun onRenderedFirstFrame() {
                 if(!active()) return
+                firstFrameRendered=true
                 PlaybackStartupTrace.firstFrame(
                     "tv.player",
                     "recommend=$recommendEntry preloaded=${prefetched!=null} reused=$reuse",
@@ -707,7 +740,7 @@ fun TvMainActivity.playEpisode(
                 if(screen=="recommend") {
                     reportRecommendImpression()
                     // 黑场淡出完成后再撤中心 loading，避免用户先看到一段黑场。
-                    revealRecommendCover { if(!isDestroyed) hideCenterLoading() }
+                    revealRecommendWhenReady()
                     // 真正的首帧已经上屏：现在才允许相邻预热和推荐补页。
                     scheduleRecommendAfterFirstFrame()
                 }
@@ -789,6 +822,9 @@ fun TvMainActivity.playEpisode(
         // 再按给定位置掩码时间线，等价于「`setMediaSource` + `seekTo`」，少一次
         // `onPositionDiscontinuity`（那条回调会连带刷新媒体会话与弹幕指针）。
         // 旧帧心跳清到 0，并以这一刻作为新片源首帧的下限；否则 READY 兜底可能提前揭黑。
+        // 尺寸也在这里重新归零：监听器已经挂上，旧片源的迟到尺寸回调不能算到新片源。
+        videoWidth=0; videoHeight=0
+        videoSizeReady=false; firstFrameRendered=false
         PlaybackDiag.lastFrameAt=0L
         sourceSetAt=android.os.SystemClock.elapsedRealtime()
         p.setMediaSource(source,position.coerceAtLeast(0)); p.prepare(); p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle

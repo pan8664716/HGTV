@@ -4414,6 +4414,10 @@ feature-tv/
   逐帧心跳可能被误认为当前作品已经出画面。
 - 修复：换作按键当帧把黑场设为完全不透明，不做淡入；取消超时无条件揭黑；
   只有本轮 `setMediaSource` 之后的新片源首帧，或该时刻之后的新帧心跳，才允许淡出。
+- 首帧比例修复：`onRenderedFirstFrame` 可能早于 `onVideoSizeChanged`，早先会按
+  “尺寸未知”的整屏布局揭黑，首帧先被拉伸、随后才恢复。现在同时等待本轮
+  `onVideoSizeChanged` 给出有效宽高、当前片源首帧证据成立，并把揭黑延后一帧，
+  让 `AspectRatioFrameLayout` 完成布局后再淡出；没有尺寸就不揭黑，宁可短暂纯黑。
 - 进一步修复：索引变化时 `playRecommendAt` 在取详情 / 地址之前调用
   `detachPlayerSurface(keepSession=true)`，立即摘掉旧 `PlayerView` / Surface，
   停止并清空旧播放器媒体、视频源与传输；随后先铺当前作品的纯黑 loading，
