@@ -4418,14 +4418,19 @@ feature-tv/
 
 ## 1.3.7.5 发布准备
 
-状态：版本准备中。
+状态：GitHub Release 已发布，待用户真机验证。
 
 - `versionName` 更新为 `1.3.7.5`，`versionCode` 从 `79` 更新为 `80`。
 - TV「只推荐横屏短剧」改用官方推荐接口 `is_horizontal_screen` 参数，移除客户端
   `Series.vertical` 二次过滤；横屏与默认流使用独立续流游标。
 - `docs/CHANGELOG.md` 按电视、手机 / 平板分节；README、Release 正文和更新元数据同步。
-- 计划产物：`outputs/release-1.3.7.5/HGTV_1.3.7.5.apk`。
-- Release 只允许上传 APK、`SHA256SUMS`、`update.json`；tag 必须指向空树提交。
+- `:app:assembleRelease`、`:app:lintRelease` 通过；`:core:test` 436 项中 29 项为
+  既有失败（设备身份、签名固定向量和旧缓存断言），与本次横屏参数改动无关。
+- APK：`outputs/release-1.3.7.5/HGTV_1.3.7.5.apk`，大小 `3965171` 字节；
+  SHA-256：`c1b095d4be58b9f0eadb29f19f9c75cb73a6ce55df83b35e3f768d6a48256495`。
+- Release 只上传 APK、`SHA256SUMS`、`update.json`；tag `1.3.7.5` 指向空树提交
+  `9edc6e05912971204a0417d3732894aeaf6e3939`，不含源码。
+- Release：<https://github.com/pan8664716/HGTV/releases/tag/1.3.7.5>。
 
 回滚：对本节对应提交执行 `git revert`。
 
