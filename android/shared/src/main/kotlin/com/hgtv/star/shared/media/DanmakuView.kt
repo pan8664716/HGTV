@@ -35,6 +35,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private companion object {
         const val BASE_SCROLL_SECONDS=6f
         const val BOTTOM_INSET_DP=120
+        /** 所有弹幕轨道的统一顶部呼吸位；电视与手机的动态 topInset 之外再加这一小段。 */
+        const val TOP_GAP_DP=8
         const val LANE_GAP_TEXT=0.9f
         const val LANE_GAP_VERTICAL=0.35f
         const val LANE_MIN_GAP_DP=12
@@ -766,7 +768,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         val verticalGap=maxOf(fill.textSize*LANE_GAP_VERTICAL,density*LANE_MIN_GAP_DP)
         laneHeight=maxOf(textBox,emojiBox)+verticalGap
         if(mode==DanmakuMode.HIDDEN || laneHeight<=0f) { laneCount=0; return }
-        laneTop=topInsetPx.coerceAtLeast(0).toFloat()
+        laneTop=topInsetPx.coerceAtLeast(0)+density*TOP_GAP_DP
         val bottom=height-BOTTOM_INSET_DP*density
         val byHeight=((bottom-laneTop).coerceAtLeast(0f)/laneHeight).toInt().coerceIn(0,24)
         laneCount=minOf(mode.lineLimit,byHeight)

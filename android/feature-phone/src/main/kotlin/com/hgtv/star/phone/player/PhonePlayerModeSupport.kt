@@ -29,7 +29,7 @@ internal fun PhonePlayerActivity.animateModeEnter(view: View) {
 }
 
 /**
- * 手机弹幕从顶部播放信息下方开始；电视不调用这个属性，仍从屏幕顶部开始。
+ * 手机弹幕从顶部播放信息下方开始；电视不设置动态避让，使用共享层的统一顶部呼吸位。
  */
 internal fun PhonePlayerActivity.syncDanmakuTopInset() {
     if (!playerPageInitialized) return

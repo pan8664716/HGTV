@@ -1114,7 +1114,7 @@ android/
 | `DanmakuEmojiStore.kt` | 弹幕表情图的解码与缓存。 | class DanmakuEmojiStore |
 | `DanmakuLoader.kt` | 「这一集拉到哪一步」的弹幕加载内核（电视端与手机端共用一份）。 | class DanmakuLoader |
 | `DanmakuSpriteAtlas.kt` | 弹幕文字图集。 | class DanmakuSpriteAtlas |
-| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制。 | class DanmakuView |
+| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；所有端统一保留 8dp 顶部呼吸位。 | class DanmakuView、val TOP_GAP_DP |
 | `MediaSessionHost.kt` | 前台媒体会话：让**遥控器 / 耳机线控 / 锁屏与系统媒体面板**上的播放键能找到本应用。 | class MediaSessionHost |
 | `PlaybackFailures.kt` | 一次播放失败的**归因**：这条错误落在哪条轨上、该按哪一档、哪些档位还能换。 | object PlaybackFailures |
 | `PlaybackMetrics.kt` | 播放现场的「解码事实」：解码器名、初始化耗时、编码格式、丢帧、音频欠载；首帧同时写入统一启动追踪。 | class PlaybackMetrics |
