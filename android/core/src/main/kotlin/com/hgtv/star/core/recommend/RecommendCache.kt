@@ -158,4 +158,23 @@ object RecommendCache {
         runCatching { fileOf(namespace)?.delete() }
         runCatching { positionOf(namespace)?.delete() }
     }
+
+    /**
+     * 等已经排队的快照写入结束后再删一次。
+     *
+     * 切换过滤条件时可能刚好有一个旧快照正在后台落盘；只做同步 [clear] 的话，
+     * 旧任务随后仍会把竖屏卡片写回来。这个清理任务排在写队列尾部，保证最终文件为空。
+     */
+    fun clearAfterPendingWrites(namespace: String = "") {
+        val snapshot=fileOf(namespace) ?: return
+        val position=positionOf(namespace) ?: return
+        runCatching {
+            writer.execute {
+                runCatching {
+                    snapshot.delete()
+                    position.delete()
+                }
+            }
+        }
+    }
 }

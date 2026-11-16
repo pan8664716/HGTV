@@ -427,7 +427,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     val recommendPage=pageColumn(2)
     parent.addView(recommendPage,lp(-1,-2))
     val scope=panel(recommendPage,gap=TvStyle.GAP_INLINE)
-    heading(scope,"推荐范围","推荐页从这里取内容：大类至少留一个，受众可不限")
+    heading(scope,"推荐范围","推荐页从这里取内容：大类至少留一个，受众可不限，可只保留横屏短剧")
     val scopeSummary=text("",13f,TvStyle.textDim)
     fun scopeLabel(): String {
         val on=CategoryGenres.recommendable.filter { library.recommendGenreEnabled(it.id.orEmpty()) }
@@ -436,12 +436,24 @@ fun TvMainActivity.settings(parent: LinearLayout) {
             val label=recommendGenderOptions?.firstOrNull { it.id==library.recommendGender }?.label
             parts+=if(label!=null) "受众 $label" else "已限受众"
         }
+        if(library.recommendHorizontalOnly) parts+="仅横屏"
         return "当前："+parts.joinToString(" · ")
     }
     fun refreshScopeLabel() {
         val label=scopeLabel()
         scopeSummary.text=label; scopeSummary.contentDescription=label
     }
+    val horizontalOnlyRow=switchSetting(scope,TvSwitchRow(
+        this,
+        "只推荐横屏短剧",
+        checked=library.recommendHorizontalOnly,
+        onToggle={ on ->
+            library.recommendHorizontalOnly=on
+            if(on) invalidateRecommendForFilterChange()
+            refreshScopeLabel()
+            showHint(if(on) "已开启：竖屏短剧不推荐，也不写入推荐缓存" else "已关闭横屏过滤")
+        },
+    ))
     val scopeRow=lineRow(scope)
     val scopeCells=mutableListOf<TvSwitchRow>()
     CategoryGenres.recommendable.forEachIndexed { index,genre ->
@@ -509,6 +521,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     }
     scope.addView(scopeSummary,lp(-1,-2).apply { topMargin=dp(TvStyle.GAP_BLOCK) })
     refreshScopeLabel()
+    track(2,horizontalOnlyRow)
     track(2,*scopeCells.toTypedArray())
     loadGenderOptions { options -> buildGenderRow(options) }
 

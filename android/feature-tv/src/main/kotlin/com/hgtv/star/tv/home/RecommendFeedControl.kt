@@ -44,6 +44,32 @@ fun TvMainActivity.cancelRecommendFeed() {
 }
 
 /**
+ * 推荐过滤条件改变时丢掉当前列表和落盘快照。
+ *
+ * 只过滤新请求是不够的：设置页返回后页面可能还保留着上一轮的内存列表，
+ * 冷启动也可能先读到旧快照。这里一并清掉，下一次进推荐页会按新条件重新取流并写缓存。
+ * 续流游标保留，用户仍从当前流位置往后看。
+ */
+fun TvMainActivity.invalidateRecommendForFilterChange() {
+    recommendToken.incrementAndGet()
+    recommendPageToken.incrementAndGet()
+    recommendLoading=false
+    recommendWaiters.clear()
+    recommendAdvancePending=0
+    recommendStarted=false
+    recommendItems=emptyList()
+    recommendIndex=0
+    recommendPage=0
+    recommendHasMore=true
+    recommendRestored=false
+    recommendDetails.clear()
+    cancelRecommendBatchModels()
+    closeRecommendCache()
+    com.hgtv.star.core.RecommendCache.clear(RECOMMEND_CACHE_NAMESPACE)
+    com.hgtv.star.core.RecommendCache.clearAfterPendingWrites(RECOMMEND_CACHE_NAMESPACE)
+}
+
+/**
  * 丢掉所有预热好的相邻剧集（关闭画面、退出应用、内存吃紧时）。
  *
  * 推荐列表每次进页面都会重新取一页，这几份预热只在当前这一屏有意义；一旦离开推荐页

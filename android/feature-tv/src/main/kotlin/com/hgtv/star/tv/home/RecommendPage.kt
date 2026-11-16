@@ -128,6 +128,7 @@ fun TvMainActivity.recommendStore(): com.hgtv.star.shared.feed.RecommendStore =
         // 官方推荐流过滤单集内容后的独立快照命名空间：旧快照与游标不再复用。
         policy = com.hgtv.star.shared.feed.RecommendFeedPolicy.standard(
             cacheNamespace = RECOMMEND_CACHE_NAMESPACE,
+            supportsHorizontalOnly = true,
         ),
         debug = { line ->
             if(com.hgtv.star.tv.BuildConfig.DEBUG) {

@@ -241,6 +241,7 @@ class SettingsController(
         library.homeColumns = 6
         library.recommendSwipe = true
         library.recommendGender = ""
+        library.recommendHorizontalOnly = false
         library.searchSource = SearchSource.APP
         library.searchKeyboard = SearchKeyboard.HONGGUO
         library.debugMode = false

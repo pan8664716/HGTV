@@ -178,6 +178,7 @@ class Library(context: Context) {
                 recommendFilterIdsOffCached = values["recommendFilterIdsOff"] as? Boolean ?: false
                 recommendGenreOffCached = (values["recommendGenreOff"] as? String).orEmpty()
                 recommendGenderCached = (values["recommendGender"] as? String).orEmpty()
+                recommendHorizontalOnlyCached = values["recommendHorizontalOnly"] as? Boolean ?: false
                 deviceFormCached = (values["deviceForm"] as? String).orEmpty().ifEmpty { "auto" }
                 val now = System.currentTimeMillis()
                 val cached = mutableMapOf<RankBoard, CatalogPage>()
@@ -617,6 +618,20 @@ class Library(context: Context) {
             put("recommendGender", clean)
         }
     @Volatile private var recommendGenderCached: String=""
+    /**
+     * TV 推荐流是否只保留横屏短剧。
+     *
+     * 服务端没有可用的横竖屏筛选参数，必须在客户端按 [Series.vertical] 过滤；
+     * 过滤同时覆盖新取回的页面、续流合并和落盘快照，避免竖屏卡片从补页或缓存绕回来。
+     */
+    var recommendHorizontalOnly: Boolean
+        get() = recommendHorizontalOnlyCached
+        set(value) {
+            if(value==recommendHorizontalOnlyCached) return
+            recommendHorizontalOnlyCached=value
+            put("recommendHorizontalOnly", value)
+        }
+    @Volatile private var recommendHorizontalOnlyCached=false
     var deviceForm: String
         get() = deviceFormCached
         set(value) {

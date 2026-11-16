@@ -70,10 +70,17 @@ class RecommendStore(
 
     /** 恢复落盘快照；返回真正可用的条目，空表示没有可用快照。 */
     fun restoreSnapshot(hidden: Set<String> = emptySet()): List<Series> {
+        val horizontalOnly=policy.supportsHorizontalOnly && library.recommendHorizontalOnly
         val snapshot=runCatching { RecommendCache.load(policy.cacheNamespace) }
             .getOrDefault(emptyList())
-            .filterNot { it.id in hidden }
-        if(snapshot.isEmpty()) return emptyList()
+            .filterNot { it.id in hidden || (horizontalOnly && it.vertical) }
+        if(snapshot.isEmpty()) {
+            if(horizontalOnly) RecommendCache.clearAfterPendingWrites(policy.cacheNamespace)
+            return emptyList()
+        }
+        // 旧快照可能是在打开横屏过滤之前写的：恢复时重写一份过滤后的快照，
+        // 确保竖屏卡片不会继续留在缓存里。
+        if(horizontalOnly) RecommendCache.save(snapshot,policy.cacheNamespace)
         items=snapshot.toMutableList()
         restored=true
         hasMore=true
@@ -82,7 +89,8 @@ class RecommendStore(
 
     /** 接管页面已经持有的列表（本进程返回推荐页 / 预热结果交接）。 */
     fun replaceItems(value: List<Series>, markRestored: Boolean = restored) {
-        items=value.toMutableList()
+        val horizontalOnly=policy.supportsHorizontalOnly && library.recommendHorizontalOnly
+        items=(if(horizontalOnly) value.filterNot { it.vertical } else value).toMutableList()
         restored=markRestored
     }
 

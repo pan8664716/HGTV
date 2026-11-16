@@ -36,7 +36,10 @@ class RecommendFeedEngine(
      * 直到得到可展示结果、确定没有更多内容或遇到不可恢复的错误。
      */
     suspend fun load(input: RecommendFeedInput): RecommendFeedResult {
-        var items = input.items
+        // 只推荐横屏是 TV 的偏好；在入口先裁一次，既保证新页不混入竖屏，也避免
+        // 已恢复的旧列表在下一次 save 时把竖屏卡片重新写回快照。
+        val horizontalOnly = policy.supportsHorizontalOnly && library.recommendHorizontalOnly
+        var items = if(horizontalOnly) input.items.filterNot { it.vertical } else input.items
         var page = input.page
         var hasMore = input.hasMore
         var session = input.sessionId
@@ -203,8 +206,9 @@ class RecommendFeedEngine(
             val loadedTitles = items.mapNotNull {
                 RecommendFlow.titleKey(it.title).takeIf(String::isNotEmpty)
             }.toHashSet()
+            val pageItems = if(horizontalOnly) feed.page.items.filterNot { it.vertical } else feed.page.items
             val candidates = RecommendFlow.fresh(
-                items = feed.page.items,
+                items = pageItems,
                 hidden = hidden,
                 finished = finished,
                 seen = seen,
@@ -216,7 +220,7 @@ class RecommendFeedEngine(
                 now() - firstLoadAt >= policy.firstBudgetMs
             val exhausted = !feed.page.hasMore || restarts >= policy.maxRestarts || expired
             val shown = if(candidates.isEmpty() && exhausted) {
-                feed.page.items.filterNot { it.id in hidden || it.id in finished }
+                pageItems.filterNot { it.id in hidden || it.id in finished }
             } else {
                 candidates
             }
@@ -233,10 +237,18 @@ class RecommendFeedEngine(
             hasMore = feed.page.hasMore
             processedPages++
             if(!input.append || policy.saveOnAppend) {
-                RecommendCache.save(items, policy.cacheNamespace)
+                // 设置可能在请求途中切换；落盘时再按当前偏好裁一次，避免在途请求
+                // 把已经取回的竖屏卡片重新写进刚清空的缓存。
+                val saveHorizontalOnly = policy.supportsHorizontalOnly && library.recommendHorizontalOnly
+                val cacheItems = if(saveHorizontalOnly) items.filterNot { it.vertical } else items
+                if(cacheItems.isEmpty() && saveHorizontalOnly) {
+                    RecommendCache.clearAfterPendingWrites(policy.cacheNamespace)
+                } else if(cacheItems.isNotEmpty()) {
+                    RecommendCache.save(cacheItems, policy.cacheNamespace)
+                }
             }
             val added = (items.size - before).coerceAtLeast(0)
-            lines += "page=$page raw=${feed.page.items.size} kept=${shown.size} " +
+            lines += "page=$page raw=${feed.page.items.size} horizontal=${pageItems.size} kept=${shown.size} " +
                 "arranged=${arranged.size} added=$added hasMore=$hasMore"
             if(shown.isEmpty() && feed.page.hasMore && !expired && items.isEmpty()) {
                 emptyChain++
@@ -328,6 +340,8 @@ class RecommendFeedEngine(
 /** TV 与 Phone 共用的推荐加载策略。 */
 data class RecommendFeedPolicy(
     val cacheNamespace: String = "",
+    /** 是否支持 TV 的「只推荐横屏短剧」本机偏好。手机 / 平板保持 false。 */
+    val supportsHorizontalOnly: Boolean = false,
     val firstLimit: Int = 20,
     val pageLimit: Int = 20,
     val maxPagesPerLoad: Int = 3,
@@ -353,11 +367,12 @@ data class RecommendFeedPolicy(
         const val MIN_ITEMS_PER_LOAD = 6
 
         /**
-         * 两端唯一的差异是推荐流命名空间：Phone 按体裁拆流，TV 只有一条主推荐流。
-         * 其余取流、补页、过滤、重试和落盘节奏必须完全一致。
+         * 两端差异只有推荐流命名空间和 TV 的横屏过滤能力位：Phone 按体裁拆流，
+         * TV 只有一条主推荐流；取流、补页、过滤、重试和落盘节奏仍共用同一套。
          */
-        fun standard(cacheNamespace: String) = RecommendFeedPolicy(
+        fun standard(cacheNamespace: String, supportsHorizontalOnly: Boolean = false) = RecommendFeedPolicy(
             cacheNamespace = cacheNamespace,
+            supportsHorizontalOnly = supportsHorizontalOnly,
             firstLimit = FIRST_LIMIT,
             pageLimit = PAGE_LIMIT,
             maxPagesPerLoad = MAX_PAGES_PER_LOAD,

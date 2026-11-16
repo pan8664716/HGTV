@@ -459,7 +459,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `RecommendBehavior.kt` | 推荐流客户端共用的曝光判定与上报入口。 | object RecommendBehavior、class RecommendStatData、object RecommendBehaviorReporter |
-| `RecommendCache.kt` | 推荐页那一列卡片的落盘快照：**先画出来，再刷新**；支持按命名空间保存快照和播放位置，并迁移旧版位置。 | object RecommendCache、fun migratePosition |
+| `RecommendCache.kt` | 推荐页那一列卡片的落盘快照：**先画出来，再刷新**；支持按命名空间保存快照和播放位置、迁移旧版位置，并在过滤条件变化后排空旧写任务。 | object RecommendCache、fun migratePosition、fun clearAfterPendingWrites |
 | `RecommendDataSource.kt` | 推荐页的四个入口。 | class RecommendTab、interface RecommendFeedSource、interface RecommendReportSink、interface RecommendDataSource |
 | `RecommendFlow.kt` | 推荐流的**客户端那一半治理**：剧级去重窗口 + 本机兴趣排序 + 播放列表打散。 | object RecommendFlow、class RecommendMarks、class RecommendTaste、class RecommendArranger |
 | `RecommendStatConfigStore.kt` | 推荐曝光上报的远程配置。 | object RecommendStatConfigStore |
@@ -951,7 +951,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `SettingsPage.kt` | 电视设置页构建入口，组装播放、外观、推荐和系统设置分组。 | fun TvMainActivity.settings、fun TvMainActivity.showAboutDialog、fun TvMainActivity.deviceFormSettingLabel、fun TvMainActivity.showDeviceFormPicker、fun TvMainActivity.applyDeviceFormSelection、fun TvMainActivity.showTouchOnlyDeviceFormConfirm |
+| `SettingsPage.kt` | 电视设置页构建入口，组装播放、外观、推荐和系统设置分组；推荐范围支持只保留横屏短剧。 | fun TvMainActivity.settings、fun TvMainActivity.showAboutDialog、fun TvMainActivity.deviceFormSettingLabel、fun TvMainActivity.showDeviceFormPicker、fun TvMainActivity.applyDeviceFormSelection、fun TvMainActivity.showTouchOnlyDeviceFormConfirm |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/system/`
 
@@ -1047,7 +1047,7 @@ android/
 | `DeviceRegistration.kt` | 设备注册的**唯一实现**：电视与手机共用；注册后的 TNC 刷新延后到播放首帧。 | object DeviceRegistration |
 | `FavoriteMonitor.kt` | Serial foreground checks; cancellation owns only calls made by this monitor. | class FavoriteMonitor |
 | `IdentityBinder.kt` | 把**本机身份与会话**灌进进程级仓库，并按实际设备形态选择电视统一设备档案。 | object IdentityBinder、fun Library.isTvDeviceForProfile |
-| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、账号缓存和持久化；加载回调与 loader 启动由同一把锁串行化。 | typealias WatchProgress、class Library、fun loadAsync、fun discardPendingWrites、fun close |
+| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、推荐过滤偏好、账号缓存和持久化；加载回调与 loader 启动由同一把锁串行化。 | typealias WatchProgress、class Library、fun loadAsync、fun discardPendingWrites、fun close、val recommendHorizontalOnly |
 | `LibraryAccountCache.kt` | 缓存身份：登录账号优先；未登录但设备已注册时，用主设备身份隔离匿名缓存。 | fun Library.cacheIdentityKeyImpl、fun Library.cacheIdentityAvailableImpl、fun Library.accountCacheImpl、fun Library.cacheAccountImpl、fun Library.clearAccountCacheImpl |
 | `LibraryAccountCredentials.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.accountImpl、fun Library.saveAccountImpl、fun Library.clearAccountImpl |
 | `LibraryAccountCredentialsFacade.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.account、fun Library.saveAccount、fun Library.clearAccount、fun Library.accountDevice、fun Library.saveAccountDevice |
@@ -1096,8 +1096,8 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PreloadScheduler.kt` | 推荐流「相邻预热」的**排程编排**：电视与手机共用这一份。 | class PreloadScheduler |
-| `RecommendFeedEngine.kt` | 推荐流的加载、续流、过滤、降级、重排和快照落盘；无快照首条执行注册和首屏请求预算，首帧后的补页不参与启动超时。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult |
-| `RecommendStore.kt` | 推荐流的页面无关状态。 | class RecommendStore |
+| `RecommendFeedEngine.kt` | 推荐流的加载、续流、过滤、降级、重排和快照落盘；横屏过滤在候选合并前执行，避免竖屏卡片进入快照。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult |
+| `RecommendStore.kt` | 推荐流的页面无关状态；恢复快照时按 TV 横屏过滤并重写过滤后的缓存。 | class RecommendStore |
 | `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 播放地址 → 索引 / 首块；预热详情不补作者，避免占用首帧路径。 | class RecommendWarmCoordinator |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/lan/`
