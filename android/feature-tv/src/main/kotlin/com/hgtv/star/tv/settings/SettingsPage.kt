@@ -372,21 +372,24 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         settingsPendingFocus=SETTINGS_TAG_LAUNCH_RECOMMEND
         showCatalog()
     }).apply { tag=SETTINGS_TAG_LAUNCH_RECOMMEND })
-    val historyCardSwitch=cellSwitch(layoutRow,TvSwitchRow(this,"优先进入简介",checked=library.historyPreferDetail,onToggle={ on ->
-        library.historyPreferDetail=on
-    }))
-    track(1,homeColumnsButton,launchRecommendRow,historyCardSwitch)
+    track(1,homeColumnsButton,launchRecommendRow)
     val backToTopRow=lineRow(layoutPanel)
     lateinit var backToTopButton: TvButton
     backToTopButton=cellSetting(backToTopRow,"返回顶部  ·  "+backToTopShort(library.backToTop)) {
         showBackToTopPicker(backToTopButton)
     }
     backToTopButton.tag=SETTINGS_TAG_BACK_TO_TOP
+    val historyCardSwitch=cellSwitch(backToTopRow,TvSwitchRow(this,"优先进入简介",checked=library.historyPreferDetail,onToggle={ on ->
+        library.historyPreferDetail=on
+    }))
+    track(1,backToTopButton,historyCardSwitch)
+    val keyboardRow=lineRow(layoutPanel)
     lateinit var defaultKeyboardButton: TvButton
-    defaultKeyboardButton=cellSetting(backToTopRow,"默认输入法  ·  ${library.searchKeyboard.label}") {
+    defaultKeyboardButton=cellSetting(keyboardRow,"默认输入法  ·  ${library.searchKeyboard.label}") {
         showDefaultKeyboardPicker(defaultKeyboardButton)
     }
-    track(1,backToTopButton,defaultKeyboardButton)
+    padLine(keyboardRow,1)
+    track(1,defaultKeyboardButton)
 
     val navPanel=panel(appearancePage)
     heading(navPanel,"导航显隐","关掉的入口不建控件、关掉的栏目不铺首页，设置始终显示")
