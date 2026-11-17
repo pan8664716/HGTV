@@ -17,15 +17,11 @@ import java.security.MessageDigest
 /**
  * 累计前台运行三十分钟后校验一次包名与签名。
  *
- * debug 构建当前是反向测试模式：一分钟到点后，如果包名与签名正常，反而弹出提示，
- * 用来验证弹窗本身。release 构建仍是正常的三十分钟、异常才弹。
- *
  * 这是二次打包的初级防线，不是不可绕过的 DRM：攻击者仍可修改客户端代码。
  * 它的目标是让普通改包、换签名的安装包在长时间使用后明确暴露，而不是静默运行。
  */
 internal object AppIntegrityGuard : Application.ActivityLifecycleCallbacks {
-    private val invertedSignatureTest = BuildConfig.DEBUG
-    private val checkAfterMs = if (invertedSignatureTest) 60L * 1000L else 30L * 60L * 1000L
+    private const val CHECK_AFTER_MS = 30L * 60L * 1000L
     private const val OFFICIAL_PACKAGE = "com.hgtv.star"
     private const val OFFICIAL_CERT_SHA256 =
         "27da90725c2bcec6c334096ee438877b480875dfaa1339b5dbedc5fd9fcee019"
@@ -96,7 +92,7 @@ internal object AppIntegrityGuard : Application.ActivityLifecycleCallbacks {
     private fun scheduleCheck() {
         main.removeCallbacks(checkRunnable)
         if (checked || resumedActivities.isEmpty()) return
-        val remaining = (checkAfterMs - elapsedForeground()).coerceAtLeast(0L)
+        val remaining = (CHECK_AFTER_MS - elapsedForeground()).coerceAtLeast(0L)
         if (remaining == 0L) main.post(checkRunnable)
         else main.postDelayed(checkRunnable, remaining)
     }
@@ -105,8 +101,7 @@ internal object AppIntegrityGuard : Application.ActivityLifecycleCallbacks {
         if (checked || resumedActivities.isEmpty()) return
         val activity = currentActivity?.get() ?: return
         checked = true
-        val official = runCatching { isOfficial(activity) }.getOrDefault(false)
-        invalid = if (invertedSignatureTest) official else !official
+        invalid = !runCatching { isOfficial(activity) }.getOrDefault(false)
         if (invalid) showInvalidDialog(activity)
     }
 
