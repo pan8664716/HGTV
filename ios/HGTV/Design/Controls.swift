@@ -4,7 +4,7 @@
 //
 // 结构照 Android 的 `PhoneTopBar` / `PhoneTabBar` / `PhoneSheet` / `PhoneSettingControls`：
 // 顶栏 = 状态栏留白 + 主行（标题或大分类 tab）+ 右侧动作 + 可选副行 chips；
-// 底栏 = 悬浮圆角底板 + 四枚等尺寸圆形凸起入口；选中项只切换图标强调色。
+// 底栏 = 横向长条底板 + 四枚等尺寸圆形凸起入口；选中项只切换图标强调色。
 
 import SwiftUI
 
@@ -128,7 +128,7 @@ struct BottomTabBar: View {
         let barHeight = m.dp(PhoneDimen.tabBar)
         let circleSize = m.dp(PhoneDimen.tabBar * 0.62)
         let iconSize = m.dp(PhoneDimen.tabBar * 0.33)
-        let panelRadius = m.dp(m.isPortrait ? 18 : 12)
+        let panelRadius = m.dp(m.isPortrait ? 8 : 6)
 
         ZStack(alignment: .top) {
             HStack(spacing: 0) {
