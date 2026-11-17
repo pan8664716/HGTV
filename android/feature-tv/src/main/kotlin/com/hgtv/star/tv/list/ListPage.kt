@@ -19,6 +19,7 @@ import com.hgtv.star.tv.focusBleed
 import com.hgtv.star.tv.tvScrollHost
 import com.hgtv.star.tv.ACCOUNT_TABS
 import com.hgtv.star.tv.CHIP_ROW_HEIGHT
+import com.hgtv.star.tv.RANK_NAV_ACTION_GAP
 import com.hgtv.star.tv.FILTER_ROW_HEIGHT
 import com.hgtv.star.tv.gridColumns
 import com.hgtv.star.tv.LOAD_MORE
@@ -389,6 +390,7 @@ fun TvMainActivity.showCatalog(
         (filterSlot.layoutParams as? LinearLayout.LayoutParams)?.apply {
             width=0
             weight=1f
+            rightMargin=dp(RANK_NAV_ACTION_GAP)
             filterSlot.layoutParams=this
         }
         val afterBoards=recommendIcon ?: nav.firstOrNull()

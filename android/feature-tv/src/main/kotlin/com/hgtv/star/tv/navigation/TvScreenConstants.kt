@@ -183,6 +183,8 @@ val TvMainActivity.gridColumns: Int
  * 提示词更是随输入实时增减；高度跟着内容走的话下面的卡片行会跟着上下跳。
  */
 const val CHIP_ROW_HEIGHT=68
+/** 榜单横滑视口与右侧圆形入口之间至少保留一个完整圆钮的宽度。 */
+const val RANK_NAV_ACTION_GAP=TvStyle.BUTTON_NORMAL+2*TvStyle.SOFT_BAND
 
 /**
  * 分类页筛选行的高度（dp）。芯片用 [com.hgtv.star.tv.ButtonSize.DENSE]
