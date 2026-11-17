@@ -68,11 +68,11 @@
 从 [Releases](https://github.com/pan8664716/HGTV/releases/latest) 下载最新正式 APK，拷到设备安装，或用 ADB 覆盖安装：
 
 ```sh
-adb install -r HGTV_1.3.7.5.apk    # 文件名：<标识>_<版本号>.apk
+adb install -r HGTV_1.3.7.6.apk    # 文件名：<标识>_<版本号>.apk
 ```
 
 应用内不提供更新入口，新版一律手动下载覆盖安装（本机收藏、进度与设置保留）。
-当前版本 `1.3.7.5`（versionCode 80），各版本改动见[变更记录](docs/CHANGELOG.md)。
+当前版本 `1.3.7.6`（versionCode 81），各版本改动见[变更记录](docs/CHANGELOG.md)。
 连不上 GitHub 时可用[镜像地址](https://gh-proxy.org/https://github.com/pan8664716/HGTV/releases/latest)。
 GitHub Release 只提供 APK、校验文件和更新元数据，不附带项目源码。
 
