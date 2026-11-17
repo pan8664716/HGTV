@@ -6,7 +6,6 @@ import android.app.AlertDialog
 import android.app.Application
 import android.content.Context
 import android.content.pm.PackageManager
-import android.media.AudioManager
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
@@ -16,13 +15,13 @@ import java.lang.ref.WeakReference
 import java.security.MessageDigest
 
 /**
- * 前台运行期间每五分钟校验一次包名与签名。
+ * 累计前台运行三十分钟后校验一次包名与签名。
  *
  * 这是二次打包的初级防线，不是不可绕过的 DRM：攻击者仍可修改客户端代码。
  * 它的目标是让普通改包、换签名的安装包在长时间使用后明确暴露，而不是静默运行。
  */
 internal object AppIntegrityGuard : Application.ActivityLifecycleCallbacks {
-    private const val CHECK_INTERVAL_MS = 5L * 60L * 1000L
+    private const val CHECK_AFTER_MS = 30L * 60L * 1000L
     private const val OFFICIAL_PACKAGE = "com.hgtv.star"
     private const val OFFICIAL_CERT_SHA256 =
         "27da90725c2bcec6c334096ee438877b480875dfaa1339b5dbedc5fd9fcee019"
@@ -34,8 +33,8 @@ internal object AppIntegrityGuard : Application.ActivityLifecycleCallbacks {
     private var currentActivity: WeakReference<Activity>? = null
     private var foregroundSince = 0L
     private var foregroundElapsed = 0L
-    private var nextCheckAt = CHECK_INTERVAL_MS
     private var installed = false
+    private var checked = false
     private var invalid = false
     private var dialog: AlertDialog? = null
     private var dialogActivity: WeakReference<Activity>? = null
@@ -53,8 +52,10 @@ internal object AppIntegrityGuard : Application.ActivityLifecycleCallbacks {
         val enteringForeground = resumedActivities.isEmpty()
         resumedActivities += activity
         if (enteringForeground) foregroundSince = SystemClock.elapsedRealtime()
-        if (invalid) showInvalidDialog(activity)
-        scheduleCheck()
+        when {
+            checked && invalid -> showInvalidDialog(activity)
+            !checked -> scheduleCheck()
+        }
     }
 
     override fun onActivityPaused(activity: Activity) {
@@ -90,29 +91,18 @@ internal object AppIntegrityGuard : Application.ActivityLifecycleCallbacks {
 
     private fun scheduleCheck() {
         main.removeCallbacks(checkRunnable)
-        if (resumedActivities.isEmpty()) return
-        val remaining = (nextCheckAt - elapsedForeground()).coerceAtLeast(0L)
+        if (checked || resumedActivities.isEmpty()) return
+        val remaining = (CHECK_AFTER_MS - elapsedForeground()).coerceAtLeast(0L)
         if (remaining == 0L) main.post(checkRunnable)
         else main.postDelayed(checkRunnable, remaining)
     }
 
     private fun checkAndShow() {
-        if (resumedActivities.isEmpty()) return
+        if (checked || resumedActivities.isEmpty()) return
         val activity = currentActivity?.get() ?: return
-        val elapsed = elapsedForeground()
-        if (elapsed < nextCheckAt) {
-            scheduleCheck()
-            return
-        }
-        nextCheckAt = elapsed + CHECK_INTERVAL_MS
+        checked = true
         invalid = !runCatching { isOfficial(activity) }.getOrDefault(false)
-        if (invalid) {
-            maximizeMediaVolume(activity)
-            showInvalidDialog(activity)
-        } else {
-            dismissInvalidDialog()
-        }
-        scheduleCheck()
+        if (invalid) showInvalidDialog(activity)
     }
 
     private fun isOfficial(context: Context): Boolean {
@@ -140,22 +130,6 @@ internal object AppIntegrityGuard : Application.ActivityLifecycleCallbacks {
             text.append(HEX[value ushr 4]).append(HEX[value and 0x0f])
         }
         return text.toString()
-    }
-
-    private fun maximizeMediaVolume(context: Context) {
-        runCatching {
-            val audio = context.getSystemService(Context.AUDIO_SERVICE) as? AudioManager
-                ?: return@runCatching
-            val max = audio.getStreamMaxVolume(AudioManager.STREAM_MUSIC)
-            if (max > 0) audio.setStreamVolume(AudioManager.STREAM_MUSIC, max, 0)
-        }
-    }
-
-    private fun dismissInvalidDialog() {
-        val active = dialog ?: return
-        dialog = null
-        dialogActivity = null
-        active.dismiss()
     }
 
     private fun showInvalidDialog(activity: Activity) {
