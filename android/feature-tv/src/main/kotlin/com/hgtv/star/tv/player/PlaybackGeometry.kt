@@ -268,7 +268,25 @@ fun TvMainActivity.syncPlaybackInfo() {
         // 这里不按它让位、不改内边距，否则顶部这条会被压窄（用户要求「不要挤压任何元素」）。
         // 面板盖住哪一格就盖住哪一格，关掉即恢复。
     }
+    applyDanmakuTopProtection()
     updatePlaybackInfoReadings()
+}
+
+/**
+ * 弹幕首行避开顶部四项播放显示。
+ *
+ * `topTextAnchorPx` 对齐的是文字实际顶边，不是轨道框顶边，因此 2dp 的 gap 在
+ * 不同字号 / 行高下仍稳定。关闭开关或顶部条没显示时清掉锚点，回到原来的
+ * `topInsetPx + topGapDp` 轨道。
+ */
+internal fun TvMainActivity.applyDanmakuTopProtection() {
+    val view=danmakuView ?: return
+    val bar=playbackInfo
+    val active=screen=="player" &&
+        library.danmakuAvoidPlaybackInfo &&
+        bar?.visibility==View.VISIBLE &&
+        bar.height>0
+    view.topTextAnchorPx=if(active) bar.bottom+dp(2) else null
 }
 /** 只换字、不动布局：时间每分钟一格，网速每一秒一格（见每秒一次的 tick）。 */
 fun TvMainActivity.updatePlaybackInfoReadings() {

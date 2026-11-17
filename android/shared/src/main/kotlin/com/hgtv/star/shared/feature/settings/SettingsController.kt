@@ -239,6 +239,7 @@ class SettingsController(
         library.danmakuMergeMin = 2
         library.danmakuScale = 1f
         library.danmakuAlpha = 1f
+        library.danmakuAvoidPlaybackInfo = false
         library.homeColumns = 6
         library.recommendSwipe = true
         library.recommendGender = ""

@@ -275,7 +275,13 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      */
     val danmakuEffects: Boolean=true,
     /** 电视搜索键盘：后加字段，旧备份默认 HG 键盘。 */
-    val searchKeyboard: SearchKeyboard=SearchKeyboard.HONGGUO) {
+    val searchKeyboard: SearchKeyboard=SearchKeyboard.HONGGUO,
+    /**
+     * 弹幕首行避开播放页顶部的剧名 / 剧集 / 网速 / 时间。
+     *
+     * 后加字段，旧备份默认关闭；开启后首行文字锚到顶部信息底边下方 2dp。
+     */
+    val danmakuAvoidPlaybackInfo: Boolean=false) {
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("danmaku",danmaku.storedValue)
         .put("danmakuScale",danmakuScale.toDouble()).put("danmakuAlpha",danmakuAlpha.toDouble()).put("danmakuSpeed",danmakuSpeed.storedValue)
         .put("keys",keys)
@@ -303,6 +309,7 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
         .put("hiddenHome",hiddenHome)
         .put("reduceAnim",reduceAnim)
         .put("searchKeyboard",searchKeyboard.storedValue)
+        .put("danmakuAvoidPlaybackInfo",danmakuAvoidPlaybackInfo)
 }
 data class BackupData(
     val favorites: List<Series>,
@@ -455,7 +462,8 @@ object LibraryBackup {
         // 「减少动画」：后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。
         val reduceAnim=settings.optBoolean("reduceAnim",false)
         val searchKeyboard=SearchKeyboard.fromStored(settings.optString("searchKeyboard").takeIf { settings.has("searchKeyboard") })
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,danmakuEffects=danmakuEffects,searchKeyboard=searchKeyboard),later,hiddenIds)
+        val danmakuAvoidPlaybackInfo=settings.optBoolean("danmakuAvoidPlaybackInfo",false)
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,danmakuEffects=danmakuEffects,searchKeyboard=searchKeyboard,danmakuAvoidPlaybackInfo=danmakuAvoidPlaybackInfo),later,hiddenIds)
     }
     /**
      * 同一部剧保留进度更高的一条：先看集数，再看是否看完，再看同集位置，

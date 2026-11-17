@@ -109,8 +109,13 @@ internal fun TvMainActivity.buildPlaybackSurface() {
     playerClock=clock
     right.addView(clock,lp(-2,-2))
     info.addView(right,lp(-2,-2))
-    layer.addView(info,FrameLayout.LayoutParams(-1,dp(96),Gravity.TOP))
+    // 72dp 时文字中心约在 36dp，比原来的 96dp 再上移约 12dp；行高仍容得下 24sp 标题。
+    layer.addView(info,FrameLayout.LayoutParams(-1,dp(72),Gravity.TOP))
     playbackInfo=info
+    info.addOnLayoutChangeListener { _,_,_,_,_,_,_,_,_ ->
+        applyDanmakuTopProtection()
+    }
+    applyDanmakuTopProtection()
 
     hud=column().apply {
         setPadding(dp(78),dp(70),dp(78),0)

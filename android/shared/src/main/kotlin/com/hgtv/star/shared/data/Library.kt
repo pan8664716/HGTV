@@ -675,6 +675,13 @@ class Library(context: Context) {
     var danmakuEffects: Boolean
         get() = state().settings.danmakuEffects
         set(value) { if (value != danmakuEffects) { state().settings = state().settings.copy(danmakuEffects = value); put("danmakuEffects", value) } }
+    var danmakuAvoidPlaybackInfo: Boolean
+        get() = state().settings.danmakuAvoidPlaybackInfo
+        set(value) {
+            if(value==danmakuAvoidPlaybackInfo) return
+            state().settings=state().settings.copy(danmakuAvoidPlaybackInfo=value)
+            put("danmakuAvoidPlaybackInfo",value)
+        }
     var keyMap: KeyMap
         get() = KeyMap.decode(state().settings.keys)
         set(value) {
@@ -697,6 +704,7 @@ class Library(context: Context) {
             "danmakuMerge" to { merged.settings.danmakuMerge },
             "danmakuMergeMin" to { merged.settings.danmakuMergeMin.coerceIn(DANMAKU_MERGE_MIN_RANGE) },
             "danmakuEffects" to { merged.settings.danmakuEffects },
+            "danmakuAvoidPlaybackInfo" to { merged.settings.danmakuAvoidPlaybackInfo },
             "searchSource" to { merged.settings.searchSource.storedValue },
             "homeColumns" to { merged.settings.homeColumns.coerceIn(4, 8) },
             "gridColumns" to { merged.settings.gridColumns.coerceIn(1, 3) },

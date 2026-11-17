@@ -405,7 +405,7 @@ android/
 | --- | --- | --- |
 | `HistoryReconcile.kt` | 本机进度与账号历史的**对账**（电视端与手机端共用一份，纯计算、可单测）。 | object HistoryReconcile |
 | `LatestWriteQueue.kt` | Serial persistence with one pending value per key; serialization belongs inside write. | class LatestWriteQueue |
-| `LibraryBackup.kt` | 本机记录备份的编码、解码、范围校验与局域网同步数据校验；首页栏位 key 和设置默认值也在这里。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT、object LibraryBackup |
+| `LibraryBackup.kt` | 本机记录备份的编码、解码、范围校验与局域网同步数据校验；首页栏位 key、弹幕顶部避让等设置默认值也在这里。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT、object LibraryBackup |
 | `LibraryIndex.kt` | Main-thread-owned library. JSON is parsed once, and getters never parse or sort. | class LibraryIndex、object LibraryDisk |
 | `LibraryTransferServer.kt` | Short-lived LAN transfer. Uploaded records are validated here, but only the TV may apply them. | class LibraryTransferServer |
 | `LruPut.kt` | 往定长 LRU 里写一条：写完把最久没用过的那条挤出去。 | fun LinkedHashMap |
@@ -927,12 +927,12 @@ android/
 | `PlaybackDiagnostics.kt` | 播放失败的可观测层：**正式包里唯一还活着的那份证据**。 | object PlaybackDiag、class PlaybackDiagnosticException、class PlaybackPrepareException、fun playbackStage、fun decoderOf、fun chainOf |
 | `PlaybackFailureLabels.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackFailureLabels 主要包含 object PlaybackFailureLabels。 | object PlaybackFailureLabels |
 | `PlaybackFailureReport.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackFailureReport 主要包含 fun TvMainActivity.playbackScene、val decoderTableCache、fun availableDecoders、fun looksSoftware。 | fun TvMainActivity.playbackScene、val decoderTableCache、fun availableDecoders、fun looksSoftware、fun PlaybackDiag.fillFormatFrom、fun formatLine |
-| `PlaybackGeometry.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackGeometry 主要包含 fun com.hgtv.star.core.VideoFit.resizeMode、fun TvMainActivity.frameResizeMode、fun TvMainActivity.autoFullscreenAvailable、fun TvMainActivity.autoFullscreenRotated。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun com.hgtv.star.core.VideoFit.resizeMode、fun TvMainActivity.frameResizeMode、fun TvMainActivity.autoFullscreenAvailable、fun TvMainActivity.autoFullscreenRotated、fun TvMainActivity.fullscreenSpinDirection、fun TvMainActivity.applyVideoGeometry |
+| `PlaybackGeometry.kt` | 电视播放内核、HUD、恢复、渲染与诊断；顶部四项显隐后同步调整弹幕首行避让锚点。 | fun TvMainActivity.syncPlaybackInfo、fun TvMainActivity.applyDanmakuTopProtection、fun TvMainActivity.applyVideoGeometry |
 | `PlaybackHud.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackHud 主要包含 fun TvMainActivity.hidePlaybackOverlay、fun TvMainActivity.scheduleOverlayAutoHide、fun TvMainActivity.cancelOverlayAutoHide、fun TvMainActivity.hudShown。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.hidePlaybackOverlay、fun TvMainActivity.scheduleOverlayAutoHide、fun TvMainActivity.cancelOverlayAutoHide、fun TvMainActivity.hudShown、fun TvMainActivity.onPlaybackPage、fun TvMainActivity.syncKeepScreenOn |
 | `PlaybackMenu.kt` | 播放器的底部设置面板（遥控器「上」打开）。 | class PlaybackMenu |
 | `PlaybackMenuController.kt` | 播放菜单与选择器、进度保存，以及页面切换时播放器 Surface/资源的分离回收。 | fun TvMainActivity.showPlaybackMenu、fun TvMainActivity.buildPlaybackMenu、fun TvMainActivity.obtainPlaybackMenu、fun TvMainActivity.detachPlayerSurface、fun menuShape、fun TvMainActivity.syncPlaybackMenu、fun TvMainActivity.dropPlaybackMenuCache |
 | `PlaybackRecovery.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackRecovery 主要包含 fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery、fun TvMainActivity.scheduleRecovery、fun playbackMediaKind |
-| `PlaybackSurfaceBuilder.kt` | 重建电视播放器 surface 与覆盖层；推荐页重建时补挂中心 loading，避免黑场空档。 | fun TvMainActivity.buildPlaybackSurface |
+| `PlaybackSurfaceBuilder.kt` | 重建电视播放器 surface 与覆盖层；顶部四项采用 72dp 行高，并在布局变化时刷新弹幕避让；推荐页重建时补挂中心 loading。 | fun TvMainActivity.buildPlaybackSurface |
 | `PlayerActions.kt` | 播放设置面板**第一行那排动作**（相关剧集 / 作者作品 / 加入收藏 / 查看简介）的实现。 | fun TvMainActivity.showPlayerRelated、fun TvMainActivity.showPlayerAuthorWorks、fun TvMainActivity.showPlayerWorksStrip、fun TvMainActivity.refreshStripData、fun TvMainActivity.showPlayerIntro、fun TvMainActivity.playerFavoriteLabel |
 | `PlayerController.kt` | 电视播放起播内核，负责换集、播放源设置、播放器监听和播放页面装配；用户主动点集传直连标记，自动连播与恢复保持批量路径。 | fun TvMainActivity.loadDanmaku、fun TvMainActivity.playEpisode、fun TvMainActivity.scheduleRecommendAfterFirstFrame |
 | `PreloadController.kt` | 推荐页的「双向滑动预加载」编排：窗口与规则在 core/SlideCache.kt（纯逻辑、有单测），这里负责取详情、取地址、解析索引、拉首块和让路；低配电视首帧先准备最近一部，再自动续补其余目标，预热详情不补作者。 | fun TvMainActivity.preloadGateOpen、val PRELOAD_MAX_TARGETS、fun TvMainActivity.cancelScheduledPreload、fun TvMainActivity.scheduleRecommendPreload、fun TvMainActivity.scheduleRecommendDwell、fun TvMainActivity.preloadScheduler、fun TvMainActivity.applyRecommendPlan |
@@ -959,7 +959,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `SettingsPage.kt` | 电视设置页构建入口，组装播放、外观、推荐和系统设置分组；推荐范围支持只保留横屏短剧。 | fun TvMainActivity.settings、fun TvMainActivity.showAboutDialog、fun TvMainActivity.deviceFormSettingLabel、fun TvMainActivity.showDeviceFormPicker、fun TvMainActivity.applyDeviceFormSelection、fun TvMainActivity.showTouchOnlyDeviceFormConfirm |
+| `SettingsPage.kt` | 电视设置页构建入口，组装播放、外观、推荐和系统设置分组；弹幕设置支持首行避开顶部播放信息。 | fun TvMainActivity.settings、fun TvMainActivity.showAboutDialog、fun TvMainActivity.deviceFormSettingLabel、fun TvMainActivity.showDeviceFormPicker、fun TvMainActivity.applyDeviceFormSelection、fun TvMainActivity.showTouchOnlyDeviceFormConfirm |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/system/`
 

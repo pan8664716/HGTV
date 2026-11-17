@@ -284,7 +284,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     lateinit var danmakuSpeedSetting: TvButton
     lateinit var danmakuScaleRow: SettingSlider
     lateinit var danmakuAlphaRow: SettingSlider
-    panelHead(danmaku,"弹幕设置","显示方式 / 速度 / 聚合 / 特效 / 字号 / 透明度")
+    panelHead(danmaku,"弹幕设置","显示方式 / 速度 / 聚合 / 特效 / 字号 / 透明度 / 顶部避让")
     danmakuSetting=fullSlider(
         danmaku,"弹幕显示",
         0f,DanmakuMode.entries.lastIndex.toFloat(),1f,library.danmakuMode.sliderValue,
@@ -305,6 +305,15 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         library.danmakuEffects=on
         danmakuView?.effectsEnabled=on
     }))
+    val danmakuAvoidInfoRow=switchSetting(danmaku,TvSwitchRow(
+        this,
+        "避开顶部播放显示",
+        checked=library.danmakuAvoidPlaybackInfo,
+        onToggle={ on ->
+            library.danmakuAvoidPlaybackInfo=on
+            applyDanmakuTopProtection()
+        },
+    ))
     val danmakuMergeMinRow=fullSlider(
         danmaku,"聚合条数",
         DANMAKU_MERGE_MIN_RANGE.first.toFloat(),DANMAKU_MERGE_MIN_RANGE.last.toFloat(),1f,
@@ -320,7 +329,16 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         library.danmakuAlpha=value; danmakuView?.textAlpha=value
     }
     equalHeights(mid,listOf(keys,danmaku))
-    val danmakuColumn=listOf<View>(danmakuSetting,danmakuSpeedSetting,danmakuMergeRow,danmakuEffectsRow,danmakuMergeMinRow,danmakuScaleRow,danmakuAlphaRow)
+    val danmakuColumn=listOf<View>(
+        danmakuSetting,
+        danmakuSpeedSetting,
+        danmakuMergeRow,
+        danmakuEffectsRow,
+        danmakuAvoidInfoRow,
+        danmakuMergeMinRow,
+        danmakuScaleRow,
+        danmakuAlphaRow,
+    )
     val keyColumn=listOf<View>(restore)+keyCells
     keyColumn.forEachIndexed { i,v -> track(0,*listOfNotNull(v,danmakuColumn.getOrNull(i)).toTypedArray()) }
     danmakuColumn.drop(keyColumn.size).forEach { track(0,it) }
