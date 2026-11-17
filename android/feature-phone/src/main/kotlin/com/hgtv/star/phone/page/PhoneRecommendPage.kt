@@ -8,7 +8,7 @@ import android.view.MotionEvent
 import android.widget.FrameLayout
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
-import com.hgtv.star.core.RankBoard
+import com.hgtv.star.core.RecommendGenre
 import com.hgtv.star.phone.PhoneFeedView
 import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
@@ -47,12 +47,12 @@ class PhoneRecommendPage(
      * 顶部那枚入口也不出现——与 TV 的 `recommendFeed(genres=…)` 同一份落盘值。
      * 至少留一条：`Library` 那边保证不会三类全关，这里再兜一次底（空表就全开）。
      */
-    private var genres: List<RankBoard> = RankBoard.navEntries
+    private var genres: List<RecommendGenre> = listOf(RecommendGenre.RECOMMEND) + RecommendGenre.typed
     /** 宿主重建页面时带回来的体裁；首次铺完后清空。 */
     private var restoreGenre: String? = initialGenre
     /** 已经铺出来的那一次筛选结果：设置变了就整屏重建一次。 */
-    private var appliedGenres: List<RankBoard> = emptyList()
-    private var feeds = arrayOfNulls<PhoneFeedView>(RankBoard.navEntries.size)
+    private var appliedGenres: List<RecommendGenre> = emptyList()
+    private var feeds = arrayOfNulls<PhoneFeedView>(genres.size)
     private val adapter = PagerAdapter()
     private val pager = LockablePager(context)
     /** 与分类 / 榜单共用同一个顶栏：tab 起点、字号和搜索按钮位置因此完全一致。 */
@@ -148,12 +148,12 @@ class PhoneRecommendPage(
      *
      * 推荐页本身不能关掉；三类全关时仍保留推荐这一条混排流。
      */
-    private fun enabledGenres(): List<RankBoard> {
-        val typed = listOf(RankBoard.COMIC, RankBoard.AI, RankBoard.REAL)
+    private fun enabledGenres(): List<RecommendGenre> {
+        val typed = RecommendGenre.typed
         val lib = runCatching { com.hgtv.star.phone.PhoneServices.library(context) }.getOrNull()
-        if (lib == null || !lib.isLoaded) return RankBoard.navEntries
+        if (lib == null || !lib.isLoaded) return listOf(RecommendGenre.RECOMMEND) + typed
         val on = typed.filter { lib.recommendGenreEnabled(it.genre.orEmpty()) }
-        return listOf(RankBoard.NEW) + on.ifEmpty { typed }
+        return listOf(RecommendGenre.RECOMMEND) + on.ifEmpty { typed }
     }
 
     /**

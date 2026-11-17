@@ -17,7 +17,10 @@ enum AppConfig {
         static let phoneTabKeys = ["recommend", "category", "rank", "mine"]
 
         /// 榜单页顶部芯片顺序。
-        static let rankBoardOrder = ["new", "comic", "ai", "real"]
+        static let rankBoardOrder = [
+            "recommend", "hot", "subscribe", "new-release",
+            "hot-search", "chase", "must-watch", "followed"
+        ]
 
         /// 设置页四大分页顺序。
         static let settingsPageOrder = ["playback", "appearance", "recommend", "system"]
@@ -73,8 +76,8 @@ enum AppConfig {
         /// 分类后续页请求条数。
         static let categoryPageLimit = 60
 
-        /// 榜单单页请求条数。
-        static let rankLimit = 100
+        /// 榜单接口单页返回条数；HAR 的 `cell/change` 固定每页 10 条。
+        static let rankLimit = 10
 
         /// 推荐流单页请求条数。
         static let recommendLimit = 20

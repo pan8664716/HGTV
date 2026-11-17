@@ -2,54 +2,63 @@
 package com.hgtv.star.core
 
 /**
- * 四个榜单。首页的四个剧架与排行榜页的四个榜单**是同一份数据**：
- * 剧架的行末「查看全部」直接进对应的榜单页，不再另做一套「热门集合页」。
+ * 榜单页的八个榜单，参数与顺序来自 2026-11-18 的 `bangdan.har`。
  *
- * 数据全部来自 **App 分类接口按 [sort] 排序**，四个榜都按最高热度（`hot_score`）取数，
- * 名次与热度都是服务端给的（见 `ContentRepository.rankApiPage`）。每个榜对应的分类：
- *
- * | 榜单 | 推荐流 / 榜单 Tab [label] | App 分类 [genre] | [sort] | `rankKey` | 首页栏目 [homeTitle] |
- * | --- | --- | --- | --- | --- | --- |
- * | [COMIC] | 漫剧 | `comic_series` | `hot_score` | `comic` | 热播漫剧 |
- * | [REAL] | 真人 | `short_play` | `hot_score` | `real` | 热播真人 |
- * | [AI] | AI剧 | `ai_series` | `hot_score` | `ai` | 热播AI |
- * | [NEW] | 推荐 | 全站综合（不筛分类） | `hot_score` | `new` | 推荐榜 |
- *
- * [label] 同时供手机推荐流和榜单页使用，所以 [NEW] 两处都叫「推荐」；
- * [homeTitle] 只用于首页栏目，[NEW] 在首页叫「推荐榜」。
- *
- * [storedValue] 同时是 `rankKey`、本机首页缓存的键后缀，以及 [HomeLayout] 里剧架 key 的后缀；
- * 枚举顺序就是界面顺序（首页四栏、榜单页四个切换芯片）。
+ * 接口是 `GET /reading/bookapi/bookmall/cell/change/v:version/`：
+ * `selected_items=all`，[apiValue] 写入 `sub_selected_items`，单页 10 条。
+ * [storedValue] 只用于本机缓存与设置 key，不能和旧版的漫剧 / 真人 / AI 分类混用。
  */
 enum class RankBoard(
     val storedValue: String,
-    /** 推荐流与榜单页 Tab 的短名；[NEW] 在这里仍是「推荐」。 */
+    /** 榜单页顶部两字导航。 */
     val label: String,
-    /** 首页栏目名。 */
+    /** 首页剧架与设置显隐使用的完整榜单名。 */
     val homeTitle: String,
-    /**
-     * App 分类接口里的分类标识（`select_items.genre`）。
-     *
-     * `null` = 不筛分类：接口按「全站综合热度」排，也就是「HGTV热播榜」那个全站榜。
-     * 三个非空值取自接口自己的 `selector_rows`（`真人剧` / `漫剧` / `AI剧`）。
-     */
-    val genre: String?,
-    /** App 分类接口的 `select_items.sort`；四个榜都按热度取推荐榜。 */
-    val sort: String,
+    val apiValue: String,
 ) {
-    COMIC("comic", "漫剧", "热播漫剧", "comic_series", "hot_score"),
-    REAL("real", "真人", "热播真人", "short_play", "hot_score"),
-    // 「AI剧」与分类页那个大类的写法一致（分类页是 漫剧 / 真人 / AI剧）。
-    AI("ai", "AI剧", "热播AI", "ai_series", "hot_score"),
-    // 推荐榜：不筛分类，取全站综合热度；推荐流与榜单页 Tab 都显示「推荐」。
-    NEW("new", "推荐", "推荐榜", null, "hot_score");
+    RECOMMEND("recommend", "推荐", "推荐榜", "ranklist_hot_sc"),
+    HOT("hot", "热播", "热播榜", "ranklist_hot_play_sc"),
+    SUBSCRIBE("subscribe", "预约", "预约榜", "ranklist_subscribe"),
+    NEW_RELEASE("new-release", "新剧", "新剧榜", "ranklist_new_rank_sc"),
+    HOT_SEARCH("hot-search", "热搜", "热搜榜", "ranklist_hot_search_sc"),
+    CHASE("chase", "追更", "追更榜", "ranklist_chase_update"),
+    MUST_WATCH("must-watch", "必看", "必看榜", "ranklist_must_watch"),
+    FOLLOWED("followed", "收藏", "收藏榜", "ranklist_followed");
 
     companion object {
-        /** 顶部榜单导航顺序：推荐 / 漫剧 / AI剧 / 真人。 */
+        /** 顶部榜单导航顺序与 HAR 的展示顺序一致。 */
         val navEntries: List<RankBoard> = AppConfig.Navigation.RANK_NAV_ORDER.mapNotNull { value ->
             entries.firstOrNull { it.storedValue == value }
         }
 
-        fun fromStored(value: String?) = entries.firstOrNull { it.storedValue == value } ?: COMIC
+        /**
+         * 旧版本首页缓存里是 `comic / real / ai / new`，其中 `new` 是当时的推荐榜。
+         * 这些旧键统一落到新推荐榜；其余未知值也使用默认项。
+         */
+        fun fromStored(value: String?) = when(value) {
+            "comic", "real", "ai", "new" -> RECOMMEND
+            else -> entries.firstOrNull { it.storedValue == value } ?: RECOMMEND
+        }
+    }
+}
+
+/**
+ * 推荐流与分类页共用的体裁入口，和榜单无关。
+ *
+ * 推荐页的「推荐 / 漫剧 / AI剧 / 真人」是内容体裁；榜单页的八个榜是平台榜单。
+ * 两者拆开后，后续榜单继续增加时不会再把推荐流的 pager 撑成八页。
+ */
+enum class RecommendGenre(
+    val storedValue: String,
+    val label: String,
+    val genre: String?,
+) {
+    RECOMMEND("recommend", "推荐", null),
+    COMIC("comic", "漫剧", "comic_series"),
+    AI("ai", "AI剧", "ai_series"),
+    REAL("real", "真人", "short_play");
+
+    companion object {
+        val typed: List<RecommendGenre> = listOf(COMIC, AI, REAL)
     }
 }

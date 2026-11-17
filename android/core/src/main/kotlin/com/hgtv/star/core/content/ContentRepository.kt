@@ -15,6 +15,10 @@ private fun defaultHttpClient(): OkHttpClient = defaultContentHttpClient()
 /** 所有卡片列表统一的一页条数；首屏与后续页相同。 */
 const val CATALOG_PAGE_SIZE=AppConfig.Catalog.PAGE_SIZE
 const val CATALOG_FIRST_PAGE_SIZE=CATALOG_PAGE_SIZE
+/** `cell/change` 榜单固定单页条数。 */
+const val RANK_PAGE_SIZE=AppConfig.Catalog.RANK_API_LIMIT
+/** HAR 中榜单 cell 的稳定标识。 */
+const val RANK_CELL_ID="7470092475068071998"
 /** 已加载内容只剩这么多条时，界面提前请求下一页。 */
 const val CATALOG_PREFETCH_REMAINING=AppConfig.Catalog.PREFETCH_REMAINING
 class ContentRepository(
@@ -30,6 +34,7 @@ class ContentRepository(
     internal var recommendStatConfigNextAt=0L
     internal val officialNormalSessionId="${java.util.UUID.randomUUID()}#1"
     internal val officialColdStartSessionId=java.util.UUID.randomUUID().toString()
+    internal val rankSessionUuid=java.util.UUID.randomUUID().toString()
     internal val OFFICIAL_RECOMMEND_STREAM_COUNT=
         "[{\"scene\":\"1\",\"StreamCount\":1,\"StreamType\":\"1\"}]"
     internal val OFFICIAL_RECOMMEND_EXTRA=

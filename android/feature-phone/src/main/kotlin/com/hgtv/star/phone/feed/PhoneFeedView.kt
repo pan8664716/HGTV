@@ -247,7 +247,7 @@ class PhoneFeedView(
     internal var feedAdvancingAt: Long
         get()=advancingAt
         set(value) { advancingAt=value }
-    /** 推荐流的体裁筛选（`RankBoard.genre`）；null = 全部混排。 */
+    /** 推荐流的体裁筛选（`RecommendGenre.genre`）；null = 全部混排。 */
     private var genre: String? = initialGenre
     internal var feedGenre: String?
         get()=genre

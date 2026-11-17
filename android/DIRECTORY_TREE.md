@@ -317,9 +317,9 @@ android/
 | --- | --- | --- |
 | `BackToTopPolicy.kt` | 「回到顶部」浮层的显隐规则（Library.backToTop 四档）。 | object BackToTopPolicy |
 | `CatalogFilter.kt` | 「用户手动隐藏的剧」不该出现在哪些地方。 | object CatalogFilter |
-| `CatalogPageCache.kt` | 分类 / 榜单首屏的共享持久缓存；按实际筛选条件复用，最多保留 24 份、每份 100 条。 | object CatalogPageCache |
+| `CatalogPageCache.kt` | 分类与八榜首屏的共享持久缓存；分类按筛选条件、榜单按 `rank-v2:<board>` 分别复用。 | object CatalogPageCache |
 | `CatalogPaging.kt` | 榜单、分类与搜索共用的分页边界、去重、空页结束、名次合并和预取规则。 | class CatalogPagingResult、object CatalogPaging |
-| `CatalogSnapshot.kt` | First-page metadata only; signed playback URLs and account data never go to disk. 首页有四个「热播…」剧架（对应四个热播榜），因此这份快照按**榜单**分别存一份， 键是 RankBoard.storedValue（见 Library.cacheHome / cachedHo… | object CatalogSnapshot |
+| `CatalogSnapshot.kt` | First-page metadata only; signed playback URLs and account data never go to disk. 首页八个榜单剧架按 RankBoard 分别保存，并持久化 cell/change 分页游标。 | object CatalogSnapshot |
 | `CategoryCatalog.kt` | 分类页里的一个小类。 | class CategoryTag、class CategoryGroup、object CategoryCatalog |
 | `CategoryFilters.kt` | 分类页的一枚筛选项：id 是接口的 selector_item_id，label 是 show_name。 | class CategoryFilterOption、class CategoryFilterRow、class CategoryGenreOption、object CategoryGenres、class CategoryPanel、class CategorySelection |
 | `CategoryPanelCache.kt` | 分类页筛选面板缓存，按大类分别保存。 | object CategoryPanelCache |
@@ -327,9 +327,9 @@ android/
 | `ContentType.kt` | 片库里的内容类型。 | class ContentType |
 | `ContentValues.kt` | 目录、分类、榜单、首页布局与筛选；电视统一设备参数档案由底层 profile 提供。 | fun ContentRepository.writeValuesImpl、fun ContentRepository.appValuesImpl、fun ContentRepository.danmakuValuesImpl、fun ContentRepository.searchValuesImpl、fun ContentRepository.searchRequestImpl、fun ContentRepository.accountAppValuesImpl、fun ContentRepository.deviceValuesImpl |
 | `FeedCursor.kt` | 推荐流的**续流游标**：session_id + next_offset，按体裁分开存。 | object FeedCursor |
-| `HomeLayout.kt` | 首页的一栏。 | class HomeColumn、object HomeLayout |
+| `HomeLayout.kt` | 首页栏目模型；固定本机三栏与八个榜单，供首页渲染、设置显隐和备份白名单共用。 | class HomeColumn、object HomeLayout |
 | `OptionalFilter.kt` | 某一层「锦上添花」的推荐筛选项（受众 / filter_ids / 体裁）在服务端回空页时的降级状态。 | class OptionalFilter |
-| `RankBoard.kt` | 四个榜单。 | class RankBoard |
+| `RankBoard.kt` | 八个榜单及独立推荐流体裁模型；包含 HAR 的 sub_selected_items 映射。 | class RankBoard、class RecommendGenre |
 | `SeriesSeasons.kt` | 剧名里的季号解析。 | object SeriesSeasons |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/common/`
@@ -345,7 +345,7 @@ android/
 | --- | --- | --- |
 | `ContentAccountFacade.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentAccountFacade 主要包含 fun ContentRepository.accountProfile、fun ContentRepository.accountFavorites、fun ContentRepository.accountHistory、fun ContentRepository.accountLikes。 | fun ContentRepository.accountProfile、fun ContentRepository.accountFavorites、fun ContentRepository.accountHistory、fun ContentRepository.accountLikes、fun ContentRepository.accountReserves、fun ContentRepository.accountReserve |
 | `ContentAuthors.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentAuthors 主要包含 fun ContentRepository.authorOfImpl、fun ContentRepository.authorsOfImpl。 | fun ContentRepository.authorOfImpl、fun ContentRepository.authorsOfImpl |
-| `ContentCatalogFacade.kt` | 榜单与分类的业务门面：分页、首页并发和筛选面板缓存都在这里决定。 | fun ContentRepository.rankRaw、fun ContentRepository.rank、fun ContentRepository.homeFeed、fun ContentRepository.category、fun ContentRepository.categoryFeed |
+| `ContentCatalogFacade.kt` | 八榜与分类的业务门面：榜单游标分页、首页八榜并发和筛选面板缓存都在这里决定。 | fun ContentRepository.rankRaw、fun ContentRepository.rank、fun ContentRepository.homeFeed、fun ContentRepository.category、fun ContentRepository.categoryFeed |
 | `ContentDanmakuFacade.kt` | 取一集的弹幕，也就是「原 App」播放时看到的同一份数据。 | fun ContentRepository.danmaku、fun ContentRepository.danmakuRawWindow |
 | `ContentDetailFacade.kt` | 剧集详情（简介 + 分集列表）：走 App 播放侧的详情接口。 | fun ContentRepository.detail、fun ContentRepository.related |
 | `ContentDeviceFacade.kt` | @param profile 这一次注册用的设备档案；默认 ContentRepository.registerProfile。 | fun ContentRepository.registerDevice、fun ContentRepository.deviceCookiesSnapshot、fun ContentRepository.primaryCookiesSnapshot、fun ContentRepository.restoreDeviceCookies、fun ContentRepository.refreshTncAsync |
@@ -511,7 +511,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `CatalogParser.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 CatalogParser 主要包含 object ContentCatalogParser。 | object ContentCatalogParser |
-| `CatalogService.kt` | 榜单页：四个榜单（RankBoard）共用这一套取数，只有分类与排序不同。 | — |
+| `CatalogService.kt` | 榜单页与首页剧架共用的 cell/change GET 取数；解析八榜、名次、热度和后续页游标。 | — |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/danmaku/`
 
@@ -531,7 +531,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `ContentModels.kt` | 内容仓库、模型、解析、请求编排与缓存；推荐流同时携带 `tab/v` 首包与 `cell/change/v` 续页游标。 | class Series、class PlaybackProfile、class Detail、class RelatedWorks、class RecommendCellCursor、class RecommendFeed |
+| `ContentModels.kt` | 内容仓库、模型、解析、请求编排与缓存；推荐流携带 `tab/v` 游标，榜单模型携带 `cell/change` 分页游标。 | class Series、class PlaybackProfile、class Detail、class RelatedWorks、class RecommendCellCursor、class ComicRanking |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/network/`
 
@@ -636,7 +636,7 @@ android/
 | --- | --- | --- |
 | `PhoneCategoryPage.kt` | 分类页：**完全按 TV 端的两层筛选结构**。 | class PhoneCategoryPage |
 | `PhoneMinePage.kt` | 我的页：顶部账号入口 + 历史 / 收藏栏目 + 内容网格；历史已看完的当前季显示“看完了”。 | class PhoneMinePage |
-| `PhoneRankPage.kt` | 榜单页：四个榜单（推荐 / 漫剧 / AI剧 / 真人）+ 带名次的两列海报。 | class PhoneRankPage |
+| `PhoneRankPage.kt` | 榜单页：八个榜单 + 带名次的海报网格，并保存每榜分页游标。 | class PhoneRankPage |
 | `PhoneRecommendPage.kt` | 推荐页：四条件裁横向滑动，每页一条独立的竖屏视频流，并把顶栏实际高度同步给弹幕层。 | class PhoneRecommendPage |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/player/`
@@ -862,7 +862,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `HomePage.kt` | 首页剧架与卡片行；本机历史先占位，账号历史回来后就地合并；历史卡片读取“优先进入简介”设置，已看完的当前季显示“看完了”；完整构建过的 `HomeScreen` 会跨页面复用并就地刷新数据。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.historyRows、fun TvMainActivity.favoriteRows、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf |
+| `HomePage.kt` | 首页本机三栏与八个榜单剧架；栏目顺序、设置显隐和行末“查看全部”共用 HomeLayout / RankBoard。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf、fun TvMainActivity.rankShelf |
 | `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址 / 首块优先；推荐播放链接首次批量 20 个，消耗 10 个后补充，预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
 | `RecommendControls.kt` | 上下键换剧；索引变化交给播放选择层先摘除旧播放层，再准备下一部；补页期间合并连续下键。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
 | `RecommendCover.kt` | 切换过渡：换作瞬间全黑，新片源真实出帧且宽高就绪后才淡出；加载期不暴露上一部旧帧，淡出完成可回调撤 loading。 | val COVER_OUT_MS、val COVER_OUT_FAST_MS、fun TvMainActivity.showRecommendCover、fun TvMainActivity.revealRecommendCover、val PICTURE_RECOVERY_LIMIT |
@@ -898,7 +898,7 @@ android/
 | --- | --- | --- |
 | `BackToTop.kt` | 「回到顶部」浮层：栅格列表页上的一枚快捷按钮，固定在**右下角**。 | fun TvMainActivity.attachBackToTop、fun TvMainActivity.updateBackToTop、fun TvMainActivity.backToTopVisible、val BACK_TO_TOP_EDGE_GAP、fun TvMainActivity.positionBackToTop、fun TvMainActivity.backToTopTarget |
 | `HomeScreen.kt` | 电视首页横排剧架组件；首栏先建少量卡片，其余按帧增量补齐，结构比较包含待建卡片与“查看全部”，避免缓存后网络回包整页重建。 | class HomeScreen、val HOME_FIRST_BATCH、val HOME_FIRST_CARDS、val HOME_BATCH_BUDGET_MS、val HOME_BATCH_BUDGET_LOW_RAM_MS |
-| `ListPage.kt` | 电视列表页页面骨架，负责分类、榜单、搜索、我的页和设置页的页面组装；首页网络刷新结构一致时原地更新，避免列表闪烁。 | fun equalChipWidths、fun TvMainActivity.showCatalog |
+| `ListPage.kt` | 电视列表页页面骨架；榜单八枚两字芯片在页头下方固定横滑区，分类、搜索、我的和设置页共用页面组装。 | fun equalChipWidths、fun TvMainActivity.showCatalog |
 | `ListPageContent.kt` | 电视列表、网格、剧架与分页；栅格卡片 View 通过跨页行池复用，只重绑数据与封面。 | fun TvMainActivity.setRankSubtitle、fun TvMainActivity.seriesList、class ClipFrameLayout、fun lastFocusable、fun firstFocusable |
 | `SeriesActions.kt` | 剧卡上「点一下」与「长按 / 菜单键」这两个动作，全站只有这一份实现；历史卡片关闭“优先进入简介”时直接进入播放页。 | fun TvMainActivity.openSeries、fun TvMainActivity.seriesMenu |
 | `SeriesGrid.kt` | 剧卡栅格的窗口化复用、分页追加、滚动与焦点；历史已看完的当前季显示“看完了”，回收行时从实际父容器摘除，避免复用 stale parent。 | fun TvMainActivity.gridCards、fun TvMainActivity.isGridTail、fun TvMainActivity.gridRowCount、fun TvMainActivity.rowStride、fun TvMainActivity.gridTextScale、fun TvMainActivity.updateGridSpacers、fun TvMainActivity.recycleGridRow |
@@ -992,7 +992,7 @@ android/
 | `SectionHeading.kt` | 分区标题：一行粗体文字，从内容线开始。 | class SectionHeading |
 | `SeekIndicator.kt` | 播放进度条（对应播放器控制层，**不套新拟态**）。 | class SeekIndicator |
 | `SettingSlider.kt` | 设置页里「项名 + 滑轨」合成一行的滑动条。 | class SettingSlider |
-| `ToggleChip.kt` | 互斥开关（排行榜页的四个榜单、分类页的大类与小类）：就是统一按钮的选中态——按进去的凹槽。 | class ToggleChip |
+| `ToggleChip.kt` | 互斥开关（排行榜页的八个榜单、分类页的大类与小类）：就是统一按钮的选中态——按进去的凹槽。 | class ToggleChip |
 | `TvComponents.kt` | 电视端通用控件集合，承载按钮、卡片、开关、标签等基础 UI。 | fun Context.tvDp、fun Context.softBand、fun Context.softBandLarge、fun Context.tvText、fun T.focusOverflow、fun ScrollView.focusBleed |
 | `TvDialog.kt` | 电视端统一模态框，管理标题、内容、列表、按钮、焦点与关闭动画；支持 mandatory、touch-only、remote-only 与窗口焦点后补落初始焦点。 | class TvDialog、fun show、fun requestInitialFocus |
 | `TvDialogFocus.kt` | 电视共用控件、弹窗、样式、键盘与工具。文件 TvDialogFocus 主要包含 fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable。 | fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable |

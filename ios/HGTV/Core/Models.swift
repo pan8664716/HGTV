@@ -56,14 +56,24 @@ struct RankPosition {
 struct CatalogRanking {
     /// 剧 id → 名次与热度（服务端原串 `9014万`）。
     var positions: [String: RankPosition]
+    /// `cell/change` 下一页游标；首页榜单与榜单页都原样带回。
+    var nextOffset: Int = 0
+    var rankVersion: String = ""
+    var sessionId: String = ""
+    var filterIds: String = ""
 }
 
 // MARK: - 榜单
 
 enum RankBoard: String, CaseIterable, Identifiable {
-    case comic, real, ai, new
+    case recommend, hot, subscribe
+    case newRelease = "new-release"
+    case hotSearch = "hot-search"
+    case chase
+    case mustWatch = "must-watch"
+    case followed
 
-    /// 顶部榜单顺序：推荐（原上新）/ 漫剧 / AI剧 / 真人。
+    /// 顶部榜单顺序与 HAR 的 `cell_selector` 一致。
     static let navOrder: [RankBoard] = AppConfig.Navigation.rankBoardOrder.compactMap {
         RankBoard(rawValue: $0)
     }
@@ -72,38 +82,56 @@ enum RankBoard: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .comic: return "漫剧"
-        case .real: return "真人"
-        case .ai: return "AI剧"
-        case .new: return "推荐"
+        case .recommend: return "推荐"
+        case .hot: return "热播"
+        case .subscribe: return "预约"
+        case .newRelease: return "新剧"
+        case .hotSearch: return "热搜"
+        case .chase: return "追更"
+        case .mustWatch: return "必看"
+        case .followed: return "收藏"
         }
     }
 
-    var homeTitle: String {
+    var apiValue: String {
         switch self {
-        case .comic: return "热播漫剧"
-        case .real: return "热播真人"
-        case .ai: return "热播AI"
-        case .new: return "热播上新"
+        case .recommend: return "ranklist_hot_sc"
+        case .hot: return "ranklist_hot_play_sc"
+        case .subscribe: return "ranklist_subscribe"
+        case .newRelease: return "ranklist_new_rank_sc"
+        case .hotSearch: return "ranklist_hot_search_sc"
+        case .chase: return "ranklist_chase_update"
+        case .mustWatch: return "ranklist_must_watch"
+        case .followed: return "ranklist_followed"
+        }
+    }
+}
+
+/// 推荐流与分类页共用的体裁入口，不再复用榜单枚举。
+enum RecommendGenre: String, CaseIterable, Identifiable {
+    case recommend, comic, ai, real
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .recommend: return "推荐"
+        case .comic: return "漫剧"
+        case .ai: return "AI剧"
+        case .real: return "真人"
         }
     }
 
-    /// 分类接口的 `select_items.genre`；`nil` = 全站综合（不筛分类）。
     var genre: String? {
         switch self {
+        case .recommend: return nil
         case .comic: return "comic_series"
-        case .real: return "short_play"
         case .ai: return "ai_series"
-        case .new: return nil
+        case .real: return "short_play"
         }
     }
 
-    var sort: String {
-        self == .new ? "online_time" : "hot_score"
-    }
-
-    /// 时间序的「推荐」（原上新）不画名次。
-    var ranked: Bool { self != .new }
+    static let typed: [RecommendGenre] = [.comic, .ai, .real]
 }
 
 // MARK: - 分类

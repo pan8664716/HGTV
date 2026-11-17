@@ -698,7 +698,7 @@ fun TvMainActivity.wireGridFocus(prev: View?,next: View?) {
  * 搜索结果只知道自己追加到第几页，就只报已显示数量，加载完再明确说「全部」。
  */
 fun TvMainActivity.moreCountText(): String {
-    val total=(ranking?.totalPages ?: 0)*pageSize
+    val total=(ranking?.totalPages ?: 0)*(if(tab==TAB_RANK) RANK_PAGE_SIZE else pageSize)
     return when {
         !hasMore -> "已显示全部 ${catalog.size} 部"
         total>catalog.size -> "已显示 ${catalog.size} / $total 部"

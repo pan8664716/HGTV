@@ -7,55 +7,150 @@ import org.json.JSONObject
 import java.io.IOException
 
     /**
-     * 榜单页：四个榜单（[RankBoard]）共用这一套取数，只有分类与排序不同。
+     * 榜单页与首页榜单剧架共用的 `cell/change` 取数。
      *
-     * 首页的四个「热播…」剧架与排行榜页的四个榜单读的是**同一份数据**，
-     * 因此剧架行末的「查看全部」直接进对应的榜单页，不再另做一套「热门集合页」。
-     *
-     * 数据取自 **App 分类接口按 [RankBoard.sort] 排**（参数与 [categoryApi] 同一套）：
-     * 四个榜都按最高热度（`hot_score`）取数；推荐榜不筛分类，取全站综合热度。
-     * 名次与热度都由服务端给——
-     * 名次取 `recommend_info.rank`，热度取 `recommend_reason_list.sub_title_list` 里 `data_type==27`
-     * 的那一段（形如「9014万」）。分类见 [RankBoard.genre]，`null` 表示不筛分类（全站综合）。
+     * HAR 中每个榜都使用 `selected_items=all` + [RankBoard.apiValue]，
+     * 单页 10 条。后续页需要把上一页返回的 `next_offset`、`rank_version`、
+     * `session_id` 和 `filter_ids` 原样带回；这些游标保存在 [ComicRanking]。
      */
     internal fun ContentRepository.rankApiPage(
         page: Int,
         board: RankBoard,
-        size: Int,
-        offset: Int = (page-1)*size,
+        size: Int = RANK_API_PAGE_SIZE,
+        cursor: ComicRanking? = null,
     ): CatalogPage {
-        val body=JSONObject()
-            .put("filter_ids","")
-            .put("req_scene","default")
-            .put("offset",offset)
-            .put("need_selector_panel",false)
-            .put("limit",size)
-            .put("select_items",JSONObject()
-                // 不筛分类时给一个空数组（与不传这一项等价，实测返回全站综合榜）。
-                .put("genre",JSONArray().apply { board.genre?.let { put(it) } })
-                .put("sort",JSONArray().put(board.sort)))
-            .put("session_id","")
-            .put("req_type","only_content")
-            .put("client_req_type",3)
-        val data=JSONObject(categoryApiRaw(body,if(page<=1) FIRST_PAGE_ATTEMPTS else CATEGORY_ATTEMPTS))
-        if(data.optInt("code",-1)!=0) throw IOException("${board.label}榜接口暂不可用")
-        val payload=data.optJSONObject("data") ?: throw IOException("${board.label}榜接口结构已变化")
+        val offset=when {
+            cursor!=null -> cursor.nextOffset.coerceAtLeast(0)
+            page<=1 -> 0
+            else -> (page-1)*size
+        }
+        val identity=primaryIdentity()
+        val values=recommendationValues(identity).apply {
+            for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
+                this[key]="74332"
+            }
+            this["version_name"]="7.4.3.32"
+            this["session_uuid"]=rankSessionUuid
+            this["cell_id"]=RANK_CELL_ID
+            this["cell_sub_id"]="0"
+            this["client_req_type"]="2"
+            this["client_template"]="2"
+            this["tab_type"]="26"
+            this["source_tab_type"]="0"
+            this["selected_items"]="all"
+            this["sub_selected_items"]=board.apiValue
+            this["offset"]=offset.toString()
+            this["limit"]="0"
+            this["rank_sub_info_id"]="0"
+            this["rank_version"]=cursor?.rankVersion.orEmpty()
+            this["unlimited_selector_change_type"]=if(cursor==null) "2" else "1"
+            this["screen_width_px"]=(identity.profile["resolution"]
+                ?.substringBefore('*')
+                ?.toIntOrNull()
+                ?.times(2)
+                ?: 1080).toString()
+            putRankDefaults(this)
+            cursor?.sessionId?.takeIf { it.isNotBlank() }?.let { this["session_id"]=it }
+            cursor?.filterIds?.takeIf { it.isNotBlank() }?.let { this["filter_ids"]=it }
+        }
+        val signed=signer.sign(rankApiUrl(),values,method="GET")
+            .withRecommendationSession(identity)
+        val raw=text(
+            signed.url,
+            signed,
+            allowDomainFailover=true,
+            storeRegionHeaders=true,
+            userAgentProfile=identity.profile,
+        )
+        if(raw.isBlank()) throw IOException("${board.label}接口暂无响应")
+        val root=JSONObject(raw)
+        if(root.optString("message").isNotBlank() &&
+            !root.optString("message").equals("SUCCESS",ignoreCase=true)) {
+            throw IOException("${board.label}接口暂不可用")
+        }
+        val payload=root.optJSONObject("data") ?: throw IOException("${board.label}接口结构已变化")
+        val cellView=payload.optJSONObject("cell_view")
+        val rows=cellView?.optJSONArray("cell_data")?.objects().orEmpty()
+            .flatMap { cell -> cell.optJSONArray("video_data")?.objects().orEmpty() }
         val positions=linkedMapOf<String,RankPosition>()
-        // 卡片字段与分类页是同一套（`apiCard`：title / cover / video_desc / copyright / episode_cnt…），
-        // 因此这里直接复用，只有名次与热度要多读两处。
-        val rows=payload.optJSONArray("video_data")?.objects().orEmpty()
-        // 名次要换算：这一页的「页内序号」加上前面已经排过的条数，才是榜单上的名次。
-        val base=offset
-        val items=ContentCatalogParser.valid(rows.mapIndexed { index, row ->
+        val items=ContentCatalogParser.valid(rows.mapIndexed { index,row ->
             ContentCatalogParser.apiCard(row).also { series ->
-                ContentCatalogParser.apiRank(row,base,index)?.let { positions[series.id]=it }
+                positions[series.id]=RankPosition(
+                    rank=offset+index+1,
+                    heat=ContentCatalogParser.rankHeat(row),
+                )
             }
         })
-        if(items.isEmpty()) throw IOException("${board.label}榜暂无数据")
-        // 接口只给 `has_more`，**没有总数**：因此不编造总量，只报「已看到第几页」。
-        // 界面「N / M 部」据此显示（见 `moreCountText`），加载到底自然变成「已显示全部 N 部」。
-        // 更新时间这一条接口没有，留空即由界面把那一行整行收起来（不显示任何来源文案）。
-        return CatalogPage(items,payload.optBoolean("has_more",false),ComicRanking(positions,page,""))
+        if(items.isEmpty()) throw IOException("${board.label}暂无数据")
+        val nextOffset=payload.optInt("next_offset",-1)
+            .takeIf { it>=0 }
+            ?: cellView?.optInt("next_offset",-1)?.takeIf { it>=0 }
+            ?: (offset+rows.size)
+        val hasMore=payload.optBoolean("has_more",cellView?.optBoolean("has_more",false)==true)
+        val rankVersion=payload.optString("rank_version")
+            .ifBlank { cellView?.optString("rank_version").orEmpty() }
+        val sessionId=payload.optString("session_id")
+            .ifBlank { cellView?.optString("session_id").orEmpty() }
+        val filterIds=rows.mapNotNull { row ->
+            row.optString("series_id").takeIf { it.isNotBlank() }
+        }.joinToString(",")
+        val updatedText=ContentCatalogParser.rankSubtitle(cellView?.optJSONObject("cell_selector"),board)
+        return CatalogPage(
+            items=items,
+            hasMore=hasMore,
+            ranking=ComicRanking(
+                positions=positions,
+                totalPages=page,
+                updatedText=updatedText,
+                nextOffset=nextOffset,
+                rankVersion=rankVersion,
+                sessionId=sessionId,
+                filterIds=filterIds,
+            ),
+        )
+    }
+
+    private fun putRankDefaults(values: LinkedHashMap<String,String>) {
+        val defaults=linkedMapOf(
+            "app_launch_times" to "0",
+            "author_id" to "0",
+            "background_selected_items" to "",
+            "book_comment_id" to "0",
+            "category_id" to "0",
+            "celebrity_user_id" to "",
+            "cold_start_session" to "0",
+            "current_chapter_num" to "0",
+            "disable_digg_stat" to "false",
+            "ecom_category_id" to "0",
+            "ecom_impression_start_time" to "0",
+            "ecom_refresh_type" to "0",
+            "ecom_sort_by" to "0",
+            "genre" to "0",
+            "genre_type" to "0",
+            "idol_tag_id" to "0",
+            "inner_algo" to "0",
+            "inner_category_id" to "0",
+            "is_horizontal_screen" to "false",
+            "item_id" to "0",
+            "pad_column_cover" to "0",
+            "pad_column_detail" to "0",
+            "page" to "0",
+            "page_entry_time" to "0",
+            "panel_selected_items" to "",
+            "plan_id" to "0",
+            "post_id" to "0",
+            "reader_single_col_from_ip_strategy" to "false",
+            "related_book_id" to "0",
+            "search_tab_type" to "0",
+            "sub_genre" to "0",
+            "sub_tag_id" to "0",
+            "support_gender_list" to "false",
+            "tag_id" to "0",
+            "total_chapter_num" to "0",
+            "video_tab_cold_start" to "0",
+            "web_page_version_code" to "0",
+        )
+        defaults.forEach { (key,value) -> values.putIfAbsent(key,value) }
     }
 
     /**
@@ -216,3 +311,6 @@ import java.io.IOException
 
     internal fun ContentRepository.categoryApiUrl(): String =
         "https://${videoHost()}/reading/distribution/category/landpage/v/"
+
+    internal fun ContentRepository.rankApiUrl(): String =
+        "https://${videoHost()}/reading/bookapi/bookmall/cell/change/v:version/"

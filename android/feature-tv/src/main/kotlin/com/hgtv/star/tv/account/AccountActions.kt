@@ -382,7 +382,7 @@ fun TvMainActivity.ensureDeviceRegistered() {
             repository.deviceIdentity=library.deviceIdentity()
             if(!foreground || screen!="catalog") return@post
             when {
-                // 首页：四个剧架按新身份重取。
+                // 首页：八个榜单剧架按新身份重取。
                 tab==TAB_HOME -> showCatalog(load=true)
                 // 搜索页：用户可能正停在「重试」上等这台设备初始化，注册一落地就替他重搜。
                 tab==TAB_SEARCH && query.isNotBlank() -> showCatalog(load=true)

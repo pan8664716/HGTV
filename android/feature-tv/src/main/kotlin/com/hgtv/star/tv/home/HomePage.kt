@@ -19,7 +19,7 @@ import com.hgtv.star.tv.R
 /** 首页一栏一屏放满的条数：本机记录与榜单都按它截断，也是「查看全部」入口的门槛。 */
 private const val SHELF_SIZE=com.hgtv.star.core.AppConfig.Ui.HOME_SHELF_SIZE
 
-// 本文件是从 TvMainActivity.kt 拆出来的「首页四个剧架与剧卡的快捷菜单（收藏 / 稍后看）」这一块。
+// 本文件是从 TvMainActivity.kt 拆出来的「首页本机剧架、八个榜单剧架与剧卡快捷菜单」这一块。
 // 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
@@ -130,8 +130,8 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
  * 1. 历史记录 —— 本机观看进度，按最近观看排序；未看完的条目确认后直接续播。
  * 2. 我的收藏 —— 本机收藏，带「更新至第几集」的状态行。
  * 3. 稍后观看 —— 本机稍后观看清单。
- * 4. 热播漫剧 / 5. 热播真人 / 6. 热播AI / 7. 推荐榜 —— 榜单接口排出来的四个榜，
- *    与排行榜页的四个榜单**是同一份数据**：行末「查看全部」直接进对应的榜单页。
+ * 4-11. 推荐 / 热播 / 预约 / 新剧 / 热搜 / 追更 / 必看 / 收藏 —— 与排行榜页的
+ *    八个榜单**是同一份数据**：行末「查看全部」直接进对应的榜单页。
  *
  * 每栏最多十部；本机没有记录的三栏、远端取不到的榜单都不占位（[HomeScreen.render] 过滤空架子）。
  */
@@ -230,8 +230,7 @@ fun TvMainActivity.localShelf(key: String,entries: List<HomeScreen.Entry>): Home
 /**
  * 首页的一个「热播…」栏目：内容是该榜单第 1 页的前十部（已过滤本机隐藏的剧集）。
  *
- * 栏目名与榜单名不一样（见 [RankBoard]）：栏目按用户认得的片库分类写（热播漫剧…），
- * 榜单页里写的是接口那套榜名（HGTV漫剧热播榜…）。
+ * 栏目名与榜单页的芯片一致，全部取自 [RankBoard.label]。
  */
 fun TvMainActivity.rankShelf(board: RankBoard): HomeScreen.Shelf? {
     val page=homeFeed[board]
@@ -326,7 +325,7 @@ fun TvMainActivity.quickActions(series: Series,anchor: View,shelf: String?=null)
         favorite=isFavorite(series.id),
         queued=library.queued(series.id),
         inHistory=inHistory,
-        // 「不在热播榜中显示」只对**热播榜**有意义：首页四个热播剧架与排行榜页保留，
+        // 「不在热播榜中显示」只对**热播榜**有意义：首页榜单剧架与排行榜页保留，
         // 本机记录页（收藏 / 历史 / 稍后观看）与详情页的相关剧集都不出现这一项。
         hotList=screen=="catalog" && collection==null && (tab==TAB_RANK || (tab==TAB_HOME && shelf?.startsWith("rank-")==true)))
     // 每项一枚线性图标（顺序与 [CardMenu.items] 一一对应；按动作取，不按下标，

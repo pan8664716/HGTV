@@ -53,19 +53,20 @@ fun TvMainActivity.switchTab(next: Int) {
     // 切回来自然会重新取一次（见 [chipFocusKey]）。
     tabState[tab]=CatalogState(page,if(chipFocusKey!=null) emptyList() else catalog,hasMore,ranking); tabFocus[tab]=catalogFocus
     tab=next; val saved=tabState[next]; page=saved?.page ?: 1; catalog=saved?.items ?: emptyList(); hasMore=saved?.hasMore ?: false; ranking=saved?.ranking; catalogFocus=tabFocus[next].orEmpty()
-    catalogPageOneFresh=saved?.let { it.page>1 || it.items.size>=CATALOG_FIRST_PAGE_SIZE } ?: false
+    val pageSize=if(next==TAB_RANK) RANK_PAGE_SIZE else CATALOG_FIRST_PAGE_SIZE
+    catalogPageOneFresh=saved?.let { it.page>1 || it.items.size>=pageSize } ?: false
     var seededRank=false
     if(next==TAB_RANK && catalog.isEmpty()) {
         cachedRankPage(rankBoard)?.let { cached ->
             catalog=cached.items
             // 旧首页缓存只有 20 条：先允许补拉第 1 页，避免直接跳第 2 页漏内容。
-            hasMore=cached.hasMore || cached.items.size<CATALOG_FIRST_PAGE_SIZE
+            hasMore=cached.hasMore || cached.items.size<RANK_PAGE_SIZE
             ranking=cached.ranking
             seededRank=true
             catalogPageOneFresh=false
         }
     }
-    // 首页的四个剧架就在内存里（[homeFeed]），切回来不需要重新打四次网络；
+    // 首页的八个剧架就在内存里（[homeFeed]），切回来不需要重新打八次网络；
     // 想要最新的一份按顶部圆形「刷新」。搜索页与榜单页仍然是「没内容才去取」。
     val needsLoad=when(next) {
         TAB_HOME -> homeFeed.isEmpty()
@@ -101,7 +102,7 @@ fun TvMainActivity.switchTab(next: Int) {
     }
 }
 /**
- * 切换排行榜页看的榜单。首页四个剧架的「查看全部」走的也是这里——
+ * 切换排行榜页看的榜单。首页八个剧架的「查看全部」走的也是这里——
  * 它们与榜单页读的是同一份数据（[ContentRepository.rank]），只是入口不同。
  *
  * [fromHome] 为真表示这是从首页剧架进来的：顺手把顶部标签切到排行榜，
@@ -109,7 +110,7 @@ fun TvMainActivity.switchTab(next: Int) {
  */
 fun TvMainActivity.switchRankBoard(board: RankBoard,fromHome: Boolean=false) {
     if(rankBoard==board && !fromHome && tab==TAB_RANK) return
-    // 先把当前榜单已经加载到的页数收进缓存；四个榜单之间切换时直接恢复，
+    // 先把当前榜单已经加载到的页数收进缓存；八个榜单之间切换时直接恢复，
     // 与分类页的 categoryStates 使用同一套语义。
     if(tab==TAB_RANK && chipFocusKey==null && catalog.isNotEmpty()) rememberRankState(rankBoard)
     // 从首页剧架「查看全部」进来也算进过榜单页：之后点「榜单」图标不该再按「首次进入」处理。
@@ -132,7 +133,7 @@ fun TvMainActivity.switchRankBoard(board: RankBoard,fromHome: Boolean=false) {
         catalog=cachedState.items
         hasMore=cachedState.hasMore
         ranking=cachedState.ranking
-        catalogPageOneFresh=cachedState.page>1 || cachedState.items.size>=CATALOG_FIRST_PAGE_SIZE
+        catalogPageOneFresh=cachedState.page>1 || cachedState.items.size>=RANK_PAGE_SIZE
         if(fromHome) tab=TAB_RANK
         chipFocusKey=if(fromChip) "board:"+board.storedValue else null
         focusFirstCardOnLanding=!fromChip
@@ -145,7 +146,7 @@ fun TvMainActivity.switchRankBoard(board: RankBoard,fromHome: Boolean=false) {
     val cached=cachedRankPage(board)
     if(cached!=null) {
         catalog=cached.items
-        hasMore=cached.hasMore || cached.items.size<CATALOG_FIRST_PAGE_SIZE
+        hasMore=cached.hasMore || cached.items.size<RANK_PAGE_SIZE
         ranking=cached.ranking
         catalogPageOneFresh=false
     }
@@ -320,12 +321,12 @@ fun TvMainActivity.showNavPicker(anchor: View?) {
 /**
  * 页头里「把焦点交回页头」时该落到哪一枚控件。
  *
- * 榜单页是四个榜单芯片、分类页是大类芯片（两页都有自己的切换行），其余页面退到顶部圆形入口。
+ * 榜单页是八个榜单芯片、分类页是大类芯片（两页都有自己的切换行），其余页面退到顶部圆形入口。
  * 首页返回 null：品牌不是按钮，调用方改落到第一栏第一张卡。
  */
 fun TvMainActivity.firstHeadControl(): View? {
     return when(tab) {
-    // 榜单页是四个榜单芯片、分类页是大类芯片（两页都有自己的切换行）。
+    // 榜单页是八个榜单芯片、分类页是大类芯片（两页都有自己的切换行）。
     TAB_RANK -> boardButtons[rankBoard]
     // 分类页：体裁那一行里当前选中的芯片（分类页始终有一个体裁）。
     TAB_CATEGORY -> categoryFilterButtons[CategorySelection.TYPE_GENRE]?.get(categorySelection.genre.orEmpty())
@@ -440,7 +441,8 @@ fun TvMainActivity.categoryDescription(): String {
     return parts.joinToString(" · ")
 }
 /**
- * 页头那一行的切换芯片（榜单页的四个榜单、分类页的三个一级分类）是否放进导航栏里。
+ * 页头那一行的切换芯片（分类页的三个一级分类）是否放进导航栏里。
+ * 榜单页的八枚两字芯片始终使用下方固定横滑区，避免挤压右侧圆形按钮。
  * 屏幕窄或字号放大时退回导航栏下方单独一行——芯片本身按文字宽度排布，
  * 挤在导航栏里会把右边的圆形入口顶出屏幕。
  */
@@ -490,7 +492,7 @@ fun TvMainActivity.wireChipRow(
     if(after!=null) after.nextFocusLeftId=chips.last().id
 }
 /**
- * 远端长列表：排行榜页的四个榜单，以及搜索结果。
+ * 远端长列表：排行榜页的八个榜单，以及搜索结果。
  * 这些列表都是「往下接」而不是「翻页」：已显示的剧集不动，新的一页接在末尾。
  */
 fun TvMainActivity.appendCatalog()=collection==null && (tab==TAB_RANK || tab==TAB_CATEGORY || tab==TAB_SEARCH)

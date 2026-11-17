@@ -185,7 +185,21 @@ data class SearchSuggestion(
 )
 
 data class RankPosition(val rank: Int?, val heat: String)
-data class ComicRanking(val positions: Map<String,RankPosition>, val totalPages: Int, val updatedText: String)
+/**
+ * 榜单名次与下一页游标。
+ *
+ * [nextOffset] / [rankVersion] / [sessionId] / [filterIds] 来自 HAR 的
+ * `cell/change` 响应；后续页必须原样带回，服务端才会接着上一页返回。
+ */
+data class ComicRanking(
+    val positions: Map<String,RankPosition>,
+    val totalPages: Int,
+    val updatedText: String,
+    val nextOffset: Int = 0,
+    val rankVersion: String = "",
+    val sessionId: String = "",
+    val filterIds: String = "",
+)
 data class CatalogPage(val items: List<Series>, val hasMore: Boolean, val ranking: ComicRanking? = null)
 
 /**

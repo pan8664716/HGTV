@@ -55,10 +55,14 @@ object CatalogPaging {
         remaining <= CATALOG_PREFETCH_REMAINING
 
     /** 恢复缓存时推断下一次应请求哪一页；不完整首屏重新补第 1 页。 */
-    fun nextPageForRestored(items: Int, hasMore: Boolean): Int = when {
-        !hasMore -> ((items + CATALOG_PAGE_SIZE - 1) / CATALOG_PAGE_SIZE).coerceAtLeast(1)
-        items < CATALOG_PAGE_SIZE -> 1
-        else -> items / CATALOG_PAGE_SIZE + 1
+    fun nextPageForRestored(
+        items: Int,
+        hasMore: Boolean,
+        pageSize: Int = CATALOG_PAGE_SIZE,
+    ): Int = when {
+        !hasMore -> ((items + pageSize - 1) / pageSize).coerceAtLeast(1)
+        items < pageSize -> 1
+        else -> items / pageSize + 1
     }.coerceIn(1, CATALOG_MAX_PAGE)
 
     /** 榜单追加页只带自己那一页的名次，必须与之前页合并。 */

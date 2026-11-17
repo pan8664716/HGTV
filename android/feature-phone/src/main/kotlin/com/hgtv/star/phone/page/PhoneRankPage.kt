@@ -7,7 +7,9 @@ import com.hgtv.star.core.CatalogPage
 import com.hgtv.star.core.CatalogFilter
 import com.hgtv.star.core.CatalogPageCache
 import com.hgtv.star.core.CatalogPaging
+import com.hgtv.star.core.ComicRanking
 import com.hgtv.star.core.RankBoard
+import com.hgtv.star.core.RANK_PAGE_SIZE
 import com.hgtv.star.core.rank
 import com.hgtv.star.phone.PhoneServices
 import com.hgtv.star.phone.phoneNav
@@ -19,11 +21,9 @@ import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.tabBarInset
 
 /**
- * 榜单页：四个榜单（推荐 / 漫剧 / AI剧 / 真人）+ 带名次的两列海报。
+ * 榜单页：八个榜单（推荐 / 热播 / 预约 / 新剧 / 热搜 / 追更 / 必看 / 收藏）+ 带名次的海报。
  *
- * 四个榜单就是 `RankBoard` 的四个枚举值，**与 TV 端完全同一套**：
- * 接口的 `genre` 与 `sort` 都写在枚举里，这里不再拼参数。
- * 「推荐榜」与首页同名栏目取同一份推荐热度榜，画名次。
+ * 八个榜单与 TV 端共用 `RankBoard`，请求参数来自 HAR 的 `cell_selector`。
  *
  * 顶栏与分类页一样固定常驻，不随海报列表滚动自动收起。
  */
@@ -119,7 +119,7 @@ class PhoneRankPage(
 
     private fun showSelectedBoard() {
         val board = boards[selected]
-        // 四个榜单都来自服务端热度榜，统一显示名次。
+        // 八个榜单都显示服务端名次。
         feed.ranked = true
         val loader=loaderFor(board)
         val cachedFeed=feedCache[board]
@@ -128,7 +128,7 @@ class PhoneRankPage(
             return
         }
         val lib = PhoneServices.library(context)
-        val cached=CatalogPageCache.load(CatalogPageCache.selectionFor(board))
+        val cached=CatalogPageCache.loadRank(board)
             ?: runCatching { lib.cachedHome(board) }.getOrNull()
         if(cached!=null) {
             val visible=CatalogFilter.visible(cached,runCatching { lib.hidden() }.getOrDefault(emptySet()))
@@ -144,9 +144,10 @@ class PhoneRankPage(
         PhonePosterFeed.Snapshot(
             items=page.items,
             // 旧缓存可能只有 20 条：下一次先补第 1 页；完整首屏则从第 2 页续接。
-            page=CatalogPaging.nextPageForRestored(page.items.size,page.hasMore),
+            page=CatalogPaging.nextPageForRestored(page.items.size,page.hasMore,RANK_PAGE_SIZE),
             ended=!page.hasMore,
             heatBy=page.ranking?.positions?.mapValues { it.value.heat }.orEmpty(),
+            ranking=page.ranking,
             emptyVisible=false,
             emptyText="",
             loaded=true,
@@ -167,11 +168,11 @@ class PhoneRankPage(
      * 榜单取数统一出口：第 1 页同步更新首页 / 榜单共用的持久缓存，
      * 后续页只负责续接当前 [PhonePosterFeed]。
      */
-    private fun loaderFor(board: RankBoard): suspend (Int) -> CatalogPage? {
+    private fun loaderFor(board: RankBoard): suspend (Int, ComicRanking?) -> CatalogPage? {
         val repo = PhoneServices.repository(context)
         val lib = PhoneServices.library(context)
-        return { page ->
-            repo.rank(page, board)?.let { fetched ->
+        return { page, previous ->
+            repo.rank(page, board, previous)?.let { fetched ->
                 val visible=CatalogFilter.visible(
                     fetched,
                     runCatching { lib.hidden() }.getOrDefault(emptySet()),

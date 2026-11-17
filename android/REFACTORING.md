@@ -50,6 +50,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 | `feature-tv/.../player/PlaybackController.kt` | 2232 |
 | `shared/.../Library.kt` | 2027 |
 
+## 2026-11-18：八榜、横滑导航与首页榜单
+
+状态：已实现，Android / iOS Debug 构建通过，待用户真机验证。
+
+- 按 `bangdan.har` 将榜单改为推荐榜 / 热播榜 / 预约榜 / 新剧榜 / 热搜榜 /
+  追更榜 / 必看榜 / 收藏榜，请求切到 GET `cell/change/v:version`。
+- 榜单分页保存 `next_offset / rank_version / session_id / filter_ids`，首页与榜单页
+  共用首屏缓存；TV 首页新增八个榜单剧架，设置显隐列表由 `HomeLayout` 自动同步。
+- 推荐流体裁拆成 `RecommendGenre`，继续保留推荐 / 漫剧 / AI剧 / 真人四条流。
+- TV / 手机 / iOS 的榜单顶部导航统一为两字芯片并支持横向滚动；TV 固定在页头下方
+  独立区域，不占用右侧圆形入口空间。iOS 同步同一套八榜与游标分页。
+- 未改版本号、versionCode、依赖或发布元数据；未推送。
+
+验证：
+
+- `JAVA_HOME=$(/usr/libexec/java_home -v 17) ./gradlew :app:assembleDebug` 通过。
+- `xcodebuild -project HGTV.xcodeproj -target HGTV -sdk iphonesimulator -configuration Debug build CODE_SIGNING_ALLOWED=NO` 通过。
+- 未运行单元测试，按项目规则交由用户验证。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 批次记录
 
 ### 批次 1：内容模型与目录整理

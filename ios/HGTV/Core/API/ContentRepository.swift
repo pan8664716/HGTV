@@ -46,6 +46,7 @@ actor ContentRepository {
 
     private let signer = Signer(device: Vendor.device)
     private var identity: DeviceIdentity?
+    private let rankSessionUuid = UUID().uuidString
     private var registering = false
     private var registered = false
     private struct SearchCursor {
@@ -71,6 +72,7 @@ actor ContentRepository {
     }
 
     private let categoryPath = "/reading/distribution/category/landpage/v/"
+    private let rankPath = "/reading/bookapi/bookmall/cell/change/v:version/"
     private let detailPath = "/novel/player/video_detail/v1/"
     private let searchPath = "/reading/bookapi/search/tab/v"
     private let planPath = "/reading/bookapi/plan/v:version/"
@@ -246,44 +248,76 @@ actor ContentRepository {
         return (CatalogPage(items: items, hasMore: more, ranking: nil), panel)
     }
 
-    func rank(page: Int, board: RankBoard) async throws -> CatalogPage {
-        var selection = CategorySelection()
-        selection.genre = board.genre
-        selection.sort = board.sort
-        let limit = AppConfig.Catalog.rankLimit
-        let body: [String: Any] = [
-            "filter_ids": "",
-            "req_scene": "default",
-            "offset": (page - 1) * limit,
-            "need_selector_panel": false,
-            "limit": limit,
-            "select_items": selectItems(selection, sort: board.sort),
-            "session_id": "",
-            "req_type": "only_content",
-            "client_req_type": 3
-        ]
-        let text = try await postCategory(body)
+    func rank(page: Int, board: RankBoard, cursor: CatalogRanking? = nil) async throws -> CatalogPage {
+        let offset = cursor?.nextOffset ?? (page - 1) * AppConfig.Catalog.rankLimit
+        var params = appValues()
+        for key in ["version_code", "manifest_version_code", "update_version_code", "pv_player"] {
+            params[key] = "74332"
+        }
+        params["version_name"] = "7.4.3.32"
+        params["session_uuid"] = rankSessionUuid
+        params["cell_id"] = "7470092475068071998"
+        params["cell_sub_id"] = "0"
+        params["client_req_type"] = "2"
+        params["client_template"] = "2"
+        params["tab_type"] = "26"
+        params["source_tab_type"] = "0"
+        params["selected_items"] = "all"
+        params["sub_selected_items"] = board.apiValue
+        params["offset"] = "\(offset)"
+        params["limit"] = "0"
+        params["rank_sub_info_id"] = "0"
+        params["rank_version"] = cursor?.rankVersion ?? ""
+        params["unlimited_selector_change_type"] = cursor == nil ? "2" : "1"
+        let width = Int((identity?.profile["resolution"] ?? Vendor.device["resolution"] ?? "1280")
+            .split(separator: "*").first ?? "1280") ?? 1280
+        params["screen_width_px"] = "\(width * 2)"
+        rankDefaults.forEach { key, value in params[key] = value }
+        if let sessionId = cursor?.sessionId, !sessionId.isEmpty {
+            params["session_id"] = sessionId
+        }
+        if let filterIds = cursor?.filterIds, !filterIds.isEmpty {
+            params["filter_ids"] = filterIds
+        }
+        let signed = signer.sign(base: categoryHost + rankPath, params: params, method: "GET")
+        let text = try await send(signed)
         let root = try JSON.parse(text)
-        guard root.int("code", -1) == 0 else { throw ContentError.message("榜单接口暂不可用") }
+        let message = root.str("message")
+        guard message.isEmpty || message.uppercased() == "SUCCESS" else {
+            throw ContentError.message("\(board.label)接口暂不可用")
+        }
         let payload = root.obj("data") ?? [:]
-        let rows = payload.arr("video_data")
+        let cellView = payload.obj("cell_view") ?? [:]
+        let rows = cellView.arr("cell_data").flatMap { $0.arr("video_data") }
         var positions: [String: RankPosition] = [:]
-        let base = (page - 1) * limit
         for (index, row) in rows.enumerated() {
             let series = card(row)
             guard !series.id.isEmpty else { continue }
-            let info = row.objectOrJSON("recommend_info") ?? [:]
-            let local = info.int("rank", 0)
-            let heat = row.objectOrJSON("recommend_reason_list")?
-                .arr("sub_title_list")
-                .first { $0.int("data_type", -1) == 27 }?.str("content") ?? ""
-            if local > 0 || !heat.isEmpty {
-                positions[series.id] = RankPosition(rank: base + (local > 0 ? local : index + 1), heat: heat)
-            }
+            positions[series.id] = RankPosition(rank: offset + index + 1, heat: rankHeat(row))
         }
         let items = rows.map(card).filter { !$0.id.isEmpty }
-        return CatalogPage(items: items, hasMore: payload.bool("has_more", items.count >= limit),
-                           ranking: CatalogRanking(positions: positions))
+        guard !items.isEmpty else { throw ContentError.message("\(board.label)暂无数据") }
+        let reportedNext = payload.int("next_offset", -1)
+        let cellNext = cellView.int("next_offset", -1)
+        let nextOffset = reportedNext >= 0 ? reportedNext : (cellNext >= 0 ? cellNext : offset + rows.count)
+        let hasMore = payload.bool("has_more") || cellView.bool("has_more")
+        let rankVersion = payload.str("rank_version").isEmpty ? cellView.str("rank_version") : payload.str("rank_version")
+        let sessionId = payload.str("session_id").isEmpty ? cellView.str("session_id") : payload.str("session_id")
+        let filterIds = rows.compactMap { row -> String? in
+            let id = row.str("series_id")
+            return id.isEmpty ? nil : id
+        }.joined(separator: ",")
+        return CatalogPage(
+            items: items,
+            hasMore: hasMore,
+            ranking: CatalogRanking(
+                positions: positions,
+                nextOffset: nextOffset,
+                rankVersion: rankVersion,
+                sessionId: sessionId,
+                filterIds: filterIds
+            )
+        )
     }
 
     func recommendFeed(sessionId: String, offset: Int, genres: [String], gender: String,
@@ -823,6 +857,57 @@ actor ContentRepository {
             if value > 0 { return value }
         }
         return heatValue(row.str("rec_text"))
+    }
+
+    private var rankDefaults: [(String, String)] {
+        [
+            ("app_launch_times", "0"), ("author_id", "0"),
+            ("background_selected_items", ""), ("book_comment_id", "0"),
+            ("category_id", "0"), ("celebrity_user_id", ""),
+            ("cold_start_session", "0"), ("current_chapter_num", "0"),
+            ("disable_digg_stat", "false"), ("ecom_category_id", "0"),
+            ("ecom_impression_start_time", "0"), ("ecom_refresh_type", "0"),
+            ("ecom_sort_by", "0"), ("genre", "0"), ("genre_type", "0"),
+            ("idol_tag_id", "0"), ("inner_algo", "0"), ("inner_category_id", "0"),
+            ("is_horizontal_screen", "false"), ("item_id", "0"),
+            ("pad_column_cover", "0"), ("pad_column_detail", "0"), ("page", "0"),
+            ("page_entry_time", "0"), ("panel_selected_items", ""), ("plan_id", "0"),
+            ("post_id", "0"), ("reader_single_col_from_ip_strategy", "false"),
+            ("related_book_id", "0"), ("search_tab_type", "0"), ("sub_genre", "0"),
+            ("sub_tag_id", "0"), ("support_gender_list", "false"), ("tag_id", "0"),
+            ("total_chapter_num", "0"), ("video_tab_cold_start", "0"),
+            ("web_page_version_code", "0")
+        ]
+    }
+
+    private func rankHeat(_ row: [String: Any]) -> String {
+        let item = row.obj("rec_text_item") ?? [:]
+        let direct = item.str("RecommendText").isEmpty ? item.str("recommend_text") : item.str("RecommendText")
+        if !direct.isEmpty { return direct }
+        if let reason = row.objectOrJSON("recommend_reason_list"),
+           let heat = reason.arr("sub_title_list").first(where: { $0.int("data_type", -1) == 27 })?.str("content"),
+           !heat.isEmpty {
+            return heat
+        }
+        return row.str("rec_text")
+    }
+
+    private func rankSubtitle(_ value: Any?, board: RankBoard) -> String {
+        if let object = value as? [String: Any] {
+            if object.str("selector_item_id") == board.apiValue {
+                return object.str("sub_title")
+            }
+            for child in object.values {
+                let found = rankSubtitle(child, board: board)
+                if !found.isEmpty { return found }
+            }
+        } else if let rows = value as? [Any] {
+            for child in rows {
+                let found = rankSubtitle(child, board: board)
+                if !found.isEmpty { return found }
+            }
+        }
+        return ""
     }
 
     /// 「9014万」/「1204万热度」/「1.2亿」→ 数字。

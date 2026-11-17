@@ -19,8 +19,7 @@ internal class LibraryHomeCacheStore(
     private val homes = mutableMapOf<RankBoard, CatalogPage>()
     private val savedAt = mutableMapOf<RankBoard, Long>()
 
-    fun cacheKey(board: RankBoard): String =
-        "home-${board.storedValue}${if(board==RankBoard.NEW) "-recommend-v2" else ""}"
+    fun cacheKey(board: RankBoard): String = "home-${board.storedValue}-v3"
 
     fun replace(cached: Map<RankBoard, CatalogPage>, stamps: Map<RankBoard, Long>) {
         homes.putAll(cached)

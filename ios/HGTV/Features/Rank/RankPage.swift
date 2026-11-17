@@ -1,10 +1,8 @@
 // SPDX-License-Identifier: GPL-3.0-only
 //
-// 榜单页：四个榜单（推荐 / 漫剧 / AI剧 / 真人）+ 带名次的海报网格。
+// 榜单页：推荐榜 / 热播榜 / 预约榜 / 新剧榜 / 热搜榜 / 追更榜 / 必看榜 / 收藏榜。
 //
-// 四个榜单就是 `RankBoard` 的四个枚举值，**与 TV 端完全同一套**：
-// 接口的 genre 与 sort 都写在枚举里，页面不再拼参数。
-// 「推荐」沿用原「上新」的时间序，不画名次（`RankBoard.ranked == false`）。
+// 八个榜单与 Android 共用 HAR 的 `cell/change` 参数；下一页依赖服务端游标。
 
 import SwiftUI
 
@@ -19,6 +17,7 @@ struct RankPage: View {
     @State private var boardIndex = 0
     @State private var items: [Series] = []
     @State private var ranking: [String: RankPosition] = [:]
+    @State private var cursor: CatalogRanking?
     @State private var page = 1
     @State private var hasMore = false
     @State private var loading = false
@@ -47,7 +46,7 @@ struct RankPage: View {
                     SeriesGrid(
                         items: items,
                         columns: library.prefs.gridColumns,
-                        ranked: boards[boardIndex].ranked,
+                        ranked: true,
                         ranking: ranking,
                         onOpen: { onRoute(.detail(seriesId: $0.id, title: $0.title)) },
                         onPlay: { series in
@@ -85,6 +84,7 @@ struct RankPage: View {
         boardIndex = index
         items = []
         ranking = [:]
+        cursor = nil
         Task { await load(reset: true) }
     }
 
@@ -95,7 +95,8 @@ struct RankPage: View {
         defer { loading = false }
         do {
             let result = try await ContentRepository.shared.rank(
-                page: reset ? 1 : page, board: boards[boardIndex])
+                page: reset ? 1 : page, board: boards[boardIndex],
+                cursor: reset ? nil : cursor)
             let hidden = library.hidden()
             let visible = CatalogFilter.visible(result.items, hidden: hidden)
             if reset {
@@ -107,6 +108,7 @@ struct RankPage: View {
                 page += 1
             }
             ranking.merge(result.ranking?.positions ?? [:]) { _, new in new }
+            cursor = result.ranking
             hasMore = result.hasMore
             errorText = nil
         } catch {

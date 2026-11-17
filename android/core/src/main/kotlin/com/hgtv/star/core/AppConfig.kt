@@ -148,8 +148,8 @@ object AppConfig {
         /** 分类后续页请求条数。 */
         const val CATEGORY_PAGE_LIMIT = 60
 
-        /** 榜单接口单页请求条数。 */
-        const val RANK_API_LIMIT = 20
+        /** 榜单接口单页返回条数；HAR 的 `cell/change` 固定每页 10 条。 */
+        const val RANK_API_LIMIT = 10
 
         /** 推荐接口单页请求条数。 */
         const val RECOMMEND_PAGE_LIMIT = 20
@@ -1083,19 +1083,32 @@ object AppConfig {
         /** 顶部导航可隐藏入口顺序。 */
         val NAV_KEYS = listOf("recommend", "search", "category", "rank", "profile")
 
-        /** 首页栏目默认顺序：本机三栏 + 四个榜单。 */
+        /** 首页栏目默认顺序：本机三栏 + 八个榜单。 */
         val HOME_COLUMN_KEYS = listOf(
             "history",
             "favorites",
             "later",
-            "rank-comic",
-            "rank-real",
-            "rank-ai",
-            "rank-new",
+            "rank-recommend",
+            "rank-hot",
+            "rank-subscribe",
+            "rank-new-release",
+            "rank-hot-search",
+            "rank-chase",
+            "rank-must-watch",
+            "rank-followed",
         )
 
         /** 榜单页顶部芯片顺序。 */
-        val RANK_NAV_ORDER = listOf("new", "comic", "ai", "real")
+        val RANK_NAV_ORDER = listOf(
+            "recommend",
+            "hot",
+            "subscribe",
+            "new-release",
+            "hot-search",
+            "chase",
+            "must-watch",
+            "followed",
+        )
 
         /** 「我的」账号侧栏目顺序。 */
         val ACCOUNT_TAB_KEYS = listOf("history", "favorites", "likes", "reserves")

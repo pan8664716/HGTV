@@ -127,7 +127,7 @@ fun TvMainActivity.requestNextPage(userInitiated: Boolean) {
             when {
                 requestTab==TAB_SEARCH && scope==null -> repository.search(requestQuery,next,requestSource)
                 requestTab==TAB_CATEGORY && scope==null -> repository.categoryFeed(category,next,needPanel=false).page
-                else -> repository.rank(next,board)
+                else -> repository.rank(next,board,ranking)
             }
         }.getOrNull()
         main.post {

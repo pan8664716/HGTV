@@ -6,8 +6,8 @@ import org.json.JSONObject
 import java.net.URI
 
 /**
- * 首页七栏的 key：本机记录三栏（历史记录 / 我的收藏 / 稍后观看）+
- * 榜单四栏（热播漫剧 / 热播真人 / 热播AI / 推荐榜，key 形如 `rank-comic`）。
+ * 首页十一栏的 key：本机记录三栏（历史记录 / 我的收藏 / 稍后观看）+
+ * 八个榜单（推荐 / 热播 / 预约 / 新剧 / 热搜 / 追更 / 必看 / 收藏）。
  *
  * 与顶部导航那几枚入口不是一组：这些管的是**首页铺不铺那一栏**，
  * 设置页各有一枚「是否显示」的开关（见 `Library.hiddenHome`）。
@@ -152,7 +152,7 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      */
     val launchRecommend: Boolean=true,
     /**
-     * 首页七栏（本机三栏 + 热播四栏）里**被隐藏**的那些，逗号分隔（key 见 [HOME_KEYS]）。
+     * 首页十一栏（本机三栏 + 榜单八栏）里**被隐藏**的那些，逗号分隔（key 见 [HOME_KEYS]）。
      *
      * 默认空串 = 全都显示（与旧版一致）；旧备份没有这个字段时读回空串。
      * 关掉只影响首页铺不铺那一栏，记录本身一份不删；热播栏关掉后首页不再铺那一条剧架，
@@ -464,7 +464,7 @@ object LibraryBackup {
         // 启动进入推荐：后加字段，旧备份没有它时按开启处理（与需求 1 的默认行为一致）。
         val launchRecommend=settings.optBoolean("launchRecommend",true)
         // 首页本机记录三栏：同样是后加字段，旧备份没有它 = 三栏全显示。
-        // 七栏的 key 全写满约 61 个字符，上限给到 120：留出以后再加几栏的余量，
+        // 十一栏的 key 全写满仍远低于上限，给到 120 以留出以后再加几栏的余量，
         // 又不至于让一份手改过的备份把任意长文本塞进设置（写进去的仍是白名单过滤后的集合）。
         val hiddenHome=settings.optString("hiddenHome","").takeIf { it.length<=120 && it.none(Char::isISOControl) }.orEmpty()
         // 「减少动画」：后加字段，旧备份没有它时按关闭处理（与之前的行为一致）。

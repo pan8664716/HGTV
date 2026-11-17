@@ -358,6 +358,13 @@ fun TvMainActivity.showCatalog(
     }
     if(tab==TAB_RANK) {
         val boards=row().apply { setPadding(pageBleed(),0,pageBleed(),dp(4)) }
+        val boardScroll=HorizontalScrollView(this).apply {
+            isHorizontalScrollBarEnabled=false
+            isFillViewport=false
+            clipChildren=false; clipToPadding=false
+            overScrollMode=View.OVER_SCROLL_NEVER
+            addView(boards)
+        }
         val boardChips=mutableListOf<View>()
         RankBoard.navEntries.forEach { board ->
             val chip=ToggleChip(this,board.label,rankBoard==board) { switchRankBoard(board) }
@@ -365,13 +372,10 @@ fun TvMainActivity.showCatalog(
             boardChips+=chip
             gapInto(boards,chip,lp(-2,-2))
         }
-        val afterBoards=if(inlineHeadChips()) recommendIcon ?: nav.firstOrNull() else null
-        wireChipRow(boardChips,{ boardChips[it] },afterBoards)
-        if(inlineHeadChips()) {
-            boards.setPadding(0,0,0,0); filterSlot.addView(boards)
-        } else {
-            container.addView(boards)
-        }
+        // 八枚两字芯片始终放在页头下方的固定横滑区，不占右上角圆形入口的位置。
+        wireChipRow(boardChips,{ boardChips[it] })
+        container.addView(boardScroll,lp(-1,dp(CHIP_ROW_HEIGHT)))
+        registerTopAreaRow(boardScroll)
         navIcons().forEach { it.nextFocusDownId=boardButtons.getValue(rankBoard).id }
         boardButtons.values.forEach { it.nextFocusDownId=it.id }
         restoreChipFocus("board:")

@@ -38,18 +38,28 @@ struct TopBar: View {
                         .frame(height: m.dp(34))
                 }
                 if !tabs.isEmpty {
-                    HStack(spacing: 0) {
-                        ForEach(tabs.indices, id: \.self) { index in
-                            Button {
-                                onSelect?(index)
-                            } label: {
-                                Text(tabs[index])
-                                    .font(.system(size: m.sp(19), weight: index == selected ? .bold : .regular))
-                                    .foregroundStyle(index == selected ? theme.text : theme.textFaint)
-                                    .padding(.trailing, m.dp(18))
-                                    .frame(height: m.dp(34))
+                    ScrollViewReader { proxy in
+                        ScrollView(.horizontal, showsIndicators: false) {
+                            HStack(spacing: 0) {
+                                ForEach(tabs.indices, id: \.self) { index in
+                                    Button {
+                                        onSelect?(index)
+                                    } label: {
+                                        Text(tabs[index])
+                                            .font(.system(size: m.sp(19), weight: index == selected ? .bold : .regular))
+                                            .foregroundStyle(index == selected ? theme.text : theme.textFaint)
+                                            .padding(.trailing, m.dp(18))
+                                            .frame(height: m.dp(34))
+                                            .id(index)
+                                    }
+                                    .buttonStyle(.plain)
+                                }
                             }
-                            .buttonStyle(.plain)
+                        }
+                        .onChange(of: selected) { _, index in
+                            withAnimation(.easeOut(duration: 0.2)) {
+                                proxy.scrollTo(index, anchor: .center)
+                            }
                         }
                     }
                 }

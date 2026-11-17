@@ -500,7 +500,7 @@ class TvMainActivity: Activity() {
     var catalogFocus=""
     data class CatalogState(val page: Int,val items: List<Series>,val hasMore: Boolean,val ranking: ComicRanking?)
     var ranking: ComicRanking?=null
-    var rankBoard=RankBoard.NEW
+    var rankBoard=RankBoard.RECOMMEND
     var homeFeed=mutableMapOf<RankBoard,CatalogPage>()
     var focusFirstCardOnLanding=false
     var chipFocusKey: String?=null

@@ -13,7 +13,7 @@ import SwiftUI
 
 @MainActor
 final class FeedStore: ObservableObject {
-    let genre: RankBoard
+    let genre: RecommendGenre
 
     @Published private(set) var items: [Series] = []
     @Published private(set) var currentIndex = 0
@@ -40,7 +40,7 @@ final class FeedStore: ObservableObject {
     private var temporarySpeed = false
     private var userSpeed: Float = AppConfig.LibraryDefaults.playbackSpeed
 
-    init(genre: RankBoard) {
+    init(genre: RecommendGenre) {
         self.genre = genre
         player.actionAtItemEnd = .pause
         player.automaticallyWaitsToMinimizeStalling = true

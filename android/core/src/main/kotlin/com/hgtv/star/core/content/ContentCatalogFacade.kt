@@ -8,34 +8,36 @@ import java.io.IOException
 /**
  * 榜单的**一个小页**（[RANK_API_PAGE_SIZE] 条）。
  *
- * 首页那四个剧架每栏只显示 10 条，取 20 条已经足够。
+ * 首页八个榜单剧架每栏只显示 10 条，正好复用榜单接口的一页。
  */
-fun ContentRepository.rankRaw(page: Int = 1, board: RankBoard = RankBoard.COMIC): CatalogPage {
+fun ContentRepository.rankRaw(page: Int = 1, board: RankBoard = RankBoard.RECOMMEND): CatalogPage {
     require(page in 1..100)
     return rankApiPage(page,board,RANK_API_PAGE_SIZE)
 }
 
 /**
- * 榜单页的一页：首屏与后续页都按 [LOGICAL_PAGE_SIZE] 条续接。
+ * 榜单页的一页：首屏与后续页都由接口的 `next_offset` 游标续接。
  *
- * 第 2 页从 offset=100 开始，后续每页 100 条，不会漏条。
+ * [previous] 是上一页返回的 [ComicRanking]；其中保存了 `rank_version`、
+ * `session_id`、`filter_ids` 和 `next_offset`。首页缓存恢复后也要把它交给下一页请求。
  */
-fun ContentRepository.rank(page: Int = 1, board: RankBoard = RankBoard.COMIC): CatalogPage {
+fun ContentRepository.rank(
+    page: Int = 1,
+    board: RankBoard = RankBoard.RECOMMEND,
+    previous: ComicRanking? = null,
+): CatalogPage {
     require(page in 1..100)
-    val selection=CatalogPageCache.selectionFor(board)
-    if(page==1) CatalogPageCache.load(selection)?.let { return it }
-    val size=if(page==1) RANK_FIRST_PAGE_SIZE else LOGICAL_PAGE_SIZE
-    val offset=if(page==1) 0 else RANK_FIRST_PAGE_SIZE+(page-2)*LOGICAL_PAGE_SIZE
-    return rankApiPage(page,board,size,offset).also { fetched ->
-        if(page==1) CatalogPageCache.save(selection,fetched)
+    if(page==1) CatalogPageCache.loadRank(board)?.let { return it }
+    return rankApiPage(page,board,RANK_API_PAGE_SIZE,cursor=previous).also { fetched ->
+        if(page==1) CatalogPageCache.saveRank(board,fetched)
     }
 }
 
 /**
- * 首页四个榜单剧架的第 1 页：四个榜单彼此独立，串行要等四份 RTT，因此并发取。
+ * 首页八个榜单剧架的第 1 页：八个榜单彼此独立，串行要等八份 RTT，因此并发取。
  *
- * 单个榜单失败只让那一栏不出现（首页其余内容照常上屏），四个都失败才抛错。
- * 取消（切页 / 换标签）沿着 [RequestScope] 传进工作线程，在途的四个请求会一起收手。
+ * 单个榜单失败只让那一栏不出现（首页其余内容照常上屏），八个都失败才抛错。
+ * 取消（切页 / 换标签）沿着 [RequestScope] 传进工作线程，在途请求会一起收手。
  *
  * **不再每次调用新建一个池**：改造前这里是 `newFixedThreadPool(4)` + `finally shutdownNow()`，
  * 每次进首页都创建再销毁四条线程；`shutdownNow()` 还会打断在途请求（被下游的

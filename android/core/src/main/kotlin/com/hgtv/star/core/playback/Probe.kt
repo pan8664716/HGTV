@@ -10,17 +10,19 @@ fun main(args: Array<String>) {
     if(tokenAt>=0) repository.sessionToken=args.getOrNull(tokenAt+1)
     fun keywordArg(): String? = args.withIndex().firstOrNull { (index,value) -> !value.startsWith("--") && value.isNotBlank() && index!=tokenAt+1 }?.value
     if(args.contains("--ranking")) {
-        // 四个热播榜逐个验证：分页、名次、热度、更新时间；再验证首页四栏（并发取）与它们一致。
+        // 八个榜单逐个验证：分页、名次、热度、更新时间；再验证首页八栏（并发取）与它们一致。
         try {
             val boards=if(args.contains("--board")) listOf(RankBoard.fromStored(keywordArg())) else RankBoard.entries.toList()
             boards.forEach { board ->
                 val seen=mutableSetOf<String>()
                 var previousLast=0
+                var cursor: ComicRanking?=null
                 // 最多连看 3 页：App 接口只给 `has_more`、**没有总数**（`totalPages` 只记到当前页），
                 // 因此这里不比对总量，改看两件硬要求——翻页不重复、名次跨页连续。
                 for(pageNumber in 1..3) {
-                    val result=repository.rank(pageNumber,board)
+                    val result=repository.rank(pageNumber,board,cursor)
                     val ranking=checkNotNull(result.ranking)
+                    cursor=ranking
                     check(result.items.isNotEmpty()) { "${board.label} page=$pageNumber 空页" }
                     check(result.items.none { it.id in seen }) { "${board.label} page=$pageNumber 与前面的页重复" }
                     seen.addAll(result.items.map { it.id })
@@ -163,7 +165,7 @@ fun main(args: Array<String>) {
         // 作者联调：逐部打印详情页拿到的作者（走真实代码路径）。
         try {
             val ids=args.filter { it.matches(Regex("[0-9]{10,30}")) }.ifEmpty {
-                repository.rank(1,RankBoard.COMIC).items.take(4).map { it.id }
+                repository.rank(1,RankBoard.RECOMMEND).items.take(4).map { it.id }
             }
             ids.forEach { id ->
                 val detail=repository.detail(id)
@@ -177,7 +179,7 @@ fun main(args: Array<String>) {
     if(args.contains("--related")) {
         // 相关短剧联调：默认取短剧首页第一部，也可以直接给剧集 ID。
         try {
-            val seriesId=args.firstOrNull { it.matches(Regex("[0-9]{1,30}")) } ?: repository.rank(1,RankBoard.COMIC).items.first().id
+            val seriesId=args.firstOrNull { it.matches(Regex("[0-9]{1,30}")) } ?: repository.rank(1,RankBoard.RECOMMEND).items.first().id
             // 详情本身不带相关剧集：界面上是「详情先上屏 + 相关剧集后台预取」，
             // 这里分别量一下两段（详情那段就是用户实际等待的时间）。
             val started=System.currentTimeMillis()
@@ -208,7 +210,7 @@ fun main(args: Array<String>) {
     if(args.contains("--emoji-raw")) {
         // 看接口原始 JSON：带方括号标签的那几条，字段到底长什么样（表情有没有结构化字段）。
         try {
-            val work=repository.rank(1,RankBoard.COMIC).items.first()
+            val work=repository.rank(1,RankBoard.RECOMMEND).items.first()
             val detail=repository.detail(work.id)
             val episode=detail.episodes.first()
             val rows=repository.danmakuRawWindow(episode,detail.series.id)
@@ -236,7 +238,7 @@ fun main(args: Array<String>) {
             val seen=linkedMapOf<String,Int>()
             val samples=linkedMapOf<String,String>()
             var lines=0
-            val catalog=repository.rank(1,RankBoard.COMIC).items.take(works)
+            val catalog=repository.rank(1,RankBoard.RECOMMEND).items.take(works)
             catalog.forEachIndexed { index,work ->
                 runCatching {
                     val detail=repository.detail(work.id)
@@ -268,7 +270,7 @@ fun main(args: Array<String>) {
     if(args.contains("--danmaku")) {
         // 弹幕接口联调：默认取漫剧热播榜第一部，也可以直接给剧集 ID。
         try {
-            val seriesId=args.firstOrNull { it.matches(Regex("[0-9]{1,30}")) } ?: repository.rank(1,RankBoard.COMIC).items.first().id
+            val seriesId=args.firstOrNull { it.matches(Regex("[0-9]{1,30}")) } ?: repository.rank(1,RankBoard.RECOMMEND).items.first().id
             val detail=repository.detail(seriesId)
             val episode=detail.episodes.first()
             val items=repository.danmaku(episode,detail.series.id)

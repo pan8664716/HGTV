@@ -307,6 +307,36 @@ internal object ContentCatalogParser {
         return heatValue(item.str("rec_text"))
     }
 
+    /** `cell/change` 榜单卡片的原始热度文案（`9119万热度` / `999万推荐`）。 */
+    fun rankHeat(item: JSONObject): String =
+        item.optJSONObject("rec_text_item")?.str("RecommendText").orEmpty()
+            .ifBlank { item.optJSONObject("rec_text_item")?.str("recommend_text").orEmpty() }
+            .ifBlank {
+                reasonPayload(item)?.optJSONArray("sub_title_list")?.objects()
+                    ?.firstOrNull { it.optInt("data_type",-1)==27 }?.str("content").orEmpty()
+            }
+            .ifBlank { item.str("rec_text") }
+
+    /**
+     * 从榜单响应里的 `cell_selector` 递归找到当前榜，读取 HAR 提供的更新时间说明。
+     */
+    fun rankSubtitle(selector: JSONObject?, board: RankBoard): String {
+        fun find(value: Any?): String? = when(value) {
+            is JSONObject -> {
+                if(value.optString("selector_item_id")==board.apiValue) {
+                    value.optString("sub_title").takeIf { it.isNotBlank() }
+                } else {
+                    value.keys().asSequence().map { find(value.opt(it)) }.firstOrNull { it!=null }
+                }
+            }
+            is JSONArray -> (0 until value.length()).asSequence()
+                .map { find(value.opt(it)) }
+                .firstOrNull { it!=null }
+            else -> null
+        }
+        return selector?.let(::find).orEmpty()
+    }
+
     /** `recommend_reason_list` 可能是对象，也可能是一段 JSON 字符串。 */
     fun reasonPayload(item: JSONObject): JSONObject? =
         item.optJSONObject("recommend_reason_list")

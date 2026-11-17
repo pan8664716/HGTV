@@ -15,6 +15,7 @@ import com.hgtv.star.core.CATALOG_PREFETCH_PAGES
 import com.hgtv.star.core.CATALOG_RETRY_COOLDOWN_MS
 import com.hgtv.star.core.CatalogPage
 import com.hgtv.star.core.CatalogPaging
+import com.hgtv.star.core.ComicRanking
 import com.hgtv.star.core.PosterCardContent
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.PhoneServices
@@ -37,7 +38,7 @@ import kotlinx.coroutines.withContext
  * ```
  *
  * 名次（[ranked]）只影响卡片左上角那枚角标：榜单页要画，分类页与搜索结果不画——
- * 榜单页四个榜都显示服务端名次；这里保留开关供非榜单列表复用。
+ * 榜单页八个榜都显示服务端名次；这里保留开关供非榜单列表复用。
  */
 class PhonePosterFeed(context: Context) : FrameLayout(context) {
 
@@ -54,6 +55,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         val firstVisiblePosition: Int = RecyclerView.NO_POSITION,
         /** 首项顶边相对 RecyclerView 内容顶部的像素偏移。 */
         val firstVisibleOffset: Int = 0,
+        val ranking: ComicRanking? = null,
     )
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -68,7 +70,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     private var header: View? = null
     private var emptyVisible = false
     private var loadingVisible = false
-    private var loader: (suspend (Int) -> CatalogPage?)? = null
+    private var loader: (suspend (Int, ComicRanking?) -> CatalogPage?)? = null
     private var job: Job? = null
     private var hasLoadedOnce = false
     private var loadFailed = false
@@ -85,6 +87,8 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
      * （服务端自己排的，带单位、已经取整）。翻页时按页并入，不整体覆盖。
      */
     private var heatBy: Map<String, String> = emptyMap()
+    /** 榜单分页游标；下一页必须带回 `next_offset / rank_version / session_id / filter_ids`。 */
+    private var ranking: ComicRanking? = null
 
     /** 点卡片。 */
     var onOpen: ((Series) -> Unit)? = null
@@ -390,7 +394,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     }
 
     /** 换数据源：清空后从第 1 页重新取。 */
-    fun load(loader: suspend (Int) -> CatalogPage?) {
+    fun load(loader: suspend (Int, ComicRanking?) -> CatalogPage?) {
         this.loader = loader
         reset()
     }
@@ -402,6 +406,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         items.clear()
         selectedIds.clear()
         heatBy = emptyMap()
+        ranking = null
         page = 1
         loading = false
         ended = false
@@ -419,7 +424,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
      * 与 [load] 的区别是首帧不闪空页：用户进榜单时先看到上次内容，
      * 新数据落地后再无动画地换掉。
      */
-    fun refresh(loader: suspend (Int) -> CatalogPage?) {
+    fun refresh(loader: suspend (Int, ComicRanking?) -> CatalogPage?) {
         this.loader = loader
         job?.cancel()
         loading = true
@@ -429,7 +434,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             adapter.notifyDataSetChanged()
         }
         job = scope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { loader(1) }.getOrNull() }
+            val result = withContext(Dispatchers.IO) { runCatching { loader(1, null) }.getOrNull() }
             loading = false
             loadingVisible = false
             if (result == null) {
@@ -441,6 +446,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             items += result.items
             selectedIds.clear()
             heatBy = result.ranking?.positions?.mapValues { it.value.heat }.orEmpty()
+            ranking = result.ranking
             page = 2
             ended = !result.hasMore || result.items.isEmpty()
             loadFailed = false
@@ -468,6 +474,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             loaded = hasLoadedOnce,
             firstVisiblePosition = firstVisible,
             firstVisibleOffset = firstView?.let { it.top - grid.paddingTop } ?: 0,
+            ranking = ranking,
         )
     }
 
@@ -478,7 +485,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
      */
     fun restore(
         snapshot: Snapshot,
-        loader: (suspend (Int) -> CatalogPage?)? = null,
+        loader: (suspend (Int, ComicRanking?) -> CatalogPage?)? = null,
     ) {
         job?.cancel()
         val restoreGeneration = ++scrollRestoreGeneration
@@ -493,6 +500,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         loadFailed = false
         prefetchChain = 0
         heatBy = snapshot.heatBy
+        ranking = snapshot.ranking
         emptyVisible = snapshot.emptyVisible
         emptyText = snapshot.emptyText
         hasLoadedOnce = snapshot.loaded
@@ -510,12 +518,18 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         }
     }
 
+    fun restore(
+        snapshot: Snapshot,
+        loader: suspend (Int) -> CatalogPage?,
+    ) = restore(snapshot) { next, _ -> loader(next) }
+
     fun reset() {
         job?.cancel()
         scrollRestoreGeneration++
         items.clear()
         selectedIds.clear()
         heatBy = emptyMap()
+        ranking = null
         emptyVisible = false
         adapter.notifyDataSetChanged()
         page = 1
@@ -549,7 +563,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             adapter.notifyDataSetChanged()
         }
         job = scope.launch {
-            val result = withContext(Dispatchers.IO) { runCatching { loader(page) }.getOrNull() }
+            val result = withContext(Dispatchers.IO) { runCatching { loader(page, ranking) }.getOrNull() }
             loading = false
             loadingVisible = false
             if (result == null) {
@@ -559,7 +573,8 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 return@launch
             }
             hasLoadedOnce = true
-            val merged = CatalogPaging.append(items, null, page, result)
+            val merged = CatalogPaging.append(items, ranking, page, result)
+            ranking = merged.ranking
             val fresh = merged.added
             // 榜单这一页的名次与热度按 id 并入：翻页只带自己那一页，整体覆盖会把前几页的丢掉。
             result.ranking?.positions?.let { positions ->
@@ -617,6 +632,11 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
     fun loadFirstPage(
         page: CatalogPage,
         loader: suspend (Int) -> CatalogPage?,
+    ) = loadFirstPage(page) { next, _ -> loader(next) }
+
+    fun loadFirstPage(
+        page: CatalogPage,
+        loader: suspend (Int, ComicRanking?) -> CatalogPage?,
     ) {
         job?.cancel()
         scrollRestoreGeneration++
@@ -631,6 +651,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         loadFailed = false
         prefetchChain = 0
         heatBy = page.ranking?.positions?.mapValues { it.value.heat }.orEmpty()
+        ranking = page.ranking
         emptyVisible = page.items.isEmpty()
         emptyText = "暂无内容"
         hasLoadedOnce = true
@@ -645,6 +666,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         // 外部塞进来的没有榜单上下文：热度只能靠 `Series.heat`（搜索结果带），
         // 其余来源为 0，卡片上那一枚自然收起。
         heatBy = emptyMap()
+        ranking = null
         items += rows
         selectedIds.retainAll(rows.map { it.id }.toSet())
         ended = !more

@@ -429,7 +429,7 @@ class PhoneSearchActivity : PhoneActivity() {
         feed.visibility = View.VISIBLE
         // 搜索源（设置 → 内容管理与来源）：App 接口 / 官网接口。
         // 与 TV 的 `library.searchSource` 同一份落盘值，只影响搜索（分类 / 榜单 / 播放不走它）。
-        feed.load { p ->
+        feed.load { p, _ ->
             val result = searchController.page(keyword, p, source)
             // 这一次是不是「App 接口没数据、自动改走官网」（见 `ContentRepository.search`）。
             // 只提示第 1 页，翻页时不重复打扰。

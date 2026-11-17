@@ -84,16 +84,16 @@ struct RecommendPage: View {
 
 @MainActor
 final class RecommendModel: ObservableObject {
-    @Published private(set) var genres: [RankBoard] = RankBoard.navOrder
+    @Published private(set) var genres: [RecommendGenre] = [.recommend] + RecommendGenre.typed
     private var stores: [String: FeedStore] = [:]
 
     init() {
-        for board in RankBoard.navOrder {
+        for board in genres {
             stores[board.id] = FeedStore(genre: board)
         }
     }
 
-    func store(_ board: RankBoard) -> FeedStore {
+    func store(_ board: RecommendGenre) -> FeedStore {
         if let existing = stores[board.id] { return existing }
         let created = FeedStore(genre: board)
         stores[board.id] = created
@@ -102,12 +102,12 @@ final class RecommendModel: ObservableObject {
 
     /// 「推荐范围」：关掉的体裁不再铺页；一条都不剩时退回全开（与 Android 同一条兜底）。
     func applySettings(library: Library) {
-        let typed: [RankBoard] = [.comic, .ai, .real]
+        let typed = RecommendGenre.typed
         let enabled = typed.filter { board in
             guard let id = board.genre else { return true }
             return library.prefs.genreEnabled(id)
         }
-        genres = [.new] + (enabled.isEmpty ? typed : enabled)
+        genres = [.recommend] + (enabled.isEmpty ? typed : enabled)
         genres.forEach { store($0).loadFirstPage() }
     }
 

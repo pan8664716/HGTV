@@ -7,7 +7,7 @@ import org.json.JSONObject
 /**
  * First-page metadata only; signed playback URLs and account data never go to disk.
  *
- * 首页有四个「热播…」剧架（对应四个热播榜），因此这份快照按**榜单**分别存一份，
+ * 首页有八个榜单剧架，因此这份快照按**榜单**分别存一份，
  * 键是 `RankBoard.storedValue`（见 `Library.cacheHome` / `cachedHome`）。
  */
 object CatalogSnapshot {
@@ -31,6 +31,10 @@ object CatalogSnapshot {
                 put("ranking",JSONObject()
                     .put("totalPages",value.totalPages)
                     .put("updatedText",value.updatedText)
+                    .put("nextOffset",value.nextOffset)
+                    .put("rankVersion",value.rankVersion)
+                    .put("sessionId",value.sessionId)
+                    .put("filterIds",value.filterIds)
                     .put("positions",JSONObject().apply {
                         value.positions.forEach { (id,position) ->
                             put(id,JSONObject().put("heat",position.heat).apply {
@@ -66,6 +70,10 @@ object CatalogSnapshot {
                 positions=positions,
                 totalPages=value.optInt("totalPages",0),
                 updatedText=value.optString("updatedText"),
+                nextOffset=value.optInt("nextOffset",0),
+                rankVersion=value.optString("rankVersion"),
+                sessionId=value.optString("sessionId"),
+                filterIds=value.optString("filterIds"),
             )
         }
         CatalogPage(items.distinctBy { it.id },o.getBoolean("hasMore"),ranking)

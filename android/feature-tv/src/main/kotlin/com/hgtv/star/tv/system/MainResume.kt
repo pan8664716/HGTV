@@ -78,8 +78,8 @@ internal fun TvMainActivity.resumeAfterSuper(resumeStarted: Long) {
                 "recommend" -> if(recommendItems.isEmpty()) openRecommend()
                     else playRecommendAt(recommendIndex,startPosition,autoplay=false)
                 "detail" -> if(detail!=null) showDetail(false) else pendingDetail?.let { openDetail(it,directPlayback,autoplay=false) } ?: showCatalog()
-                // 首页判空看的是四个剧架（[homeFeed]）：它的 catalog 本来就是空的，
-                // 用 catalog 判断会让每次回到前台都重打四个榜单。
+                // 首页判空看的是八个剧架（[homeFeed]）：它的 catalog 本来就是空的，
+                // 用 catalog 判断会让每次回到前台都重打八个榜单。
                 else -> showCatalog(load=when {
                     // 集合页的内容是「本机 + 账号」合并出来的：回前台只重建（栅格分支里会
                     // 触发一次 loadAccount，账号那边新收藏 / 新看的剧随之出现）。

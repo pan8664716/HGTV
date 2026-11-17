@@ -7,9 +7,8 @@ import java.io.File
 /**
  * 分类 / 榜单首屏的共享持久缓存。
  *
- * 键只包含真正会发给 `category/landpage` 的筛选条件。分类页顶部四个体裁在未选细分条件时
- * 与对应榜单的请求完全相同，因此两个页面直接复用同一份首屏；分类页选了主题 / 设定 /
- * 受众后键不同，不会错误串数据。
+ * 分类按 `category/landpage` 的筛选条件缓存；榜单来自独立的 `cell/change`，
+ * 使用 `rank-v2:<board>` 键，避免和旧分类榜或旧版四榜缓存串数据。
  */
 object CatalogPageCache {
     private const val VERSION = 1
@@ -42,12 +41,26 @@ object CatalogPageCache {
     }
 
     fun load(selection: CategorySelection): CatalogPage? {
-        val entry = synchronized(lock) { entries?.get(cacheKey(selection)) } ?: return null
+        return loadKey(cacheKey(selection))
+    }
+
+    fun loadRank(board: RankBoard): CatalogPage? = loadKey(rankCacheKey(board))
+
+    private fun loadKey(key: String): CatalogPage? {
+        val entry = synchronized(lock) { entries?.get(key) } ?: return null
         val age = System.currentTimeMillis() - entry.savedAt
         return entry.page.takeIf { age in 0..CatalogSnapshot.MAX_AGE_MS }
     }
 
     fun save(selection: CategorySelection, page: CatalogPage) {
+        saveKey(cacheKey(selection), page)
+    }
+
+    fun saveRank(board: RankBoard, page: CatalogPage) {
+        saveKey(rankCacheKey(board), page)
+    }
+
+    private fun saveKey(key: String, page: CatalogPage) {
         if (page.items.isEmpty()) return
         val now = System.currentTimeMillis()
         val raw = CatalogSnapshot.encode(
@@ -57,7 +70,6 @@ object CatalogPageCache {
             ranking = page.ranking,
             maxItems = AppConfig.Catalog.PAGE_CACHE_MAX_ITEMS,
         )
-        val key = cacheKey(selection)
         val entry = Entry(page, now, raw)
         synchronized(lock) {
             val all = map()
@@ -81,8 +93,7 @@ object CatalogPageCache {
         runCatching { file?.delete() }
     }
 
-    fun selectionFor(board: RankBoard): CategorySelection =
-        CategorySelection(genre = board.genre, sort = board.sort)
+    private fun rankCacheKey(board: RankBoard): String = "rank-v2|${board.storedValue}"
 
     fun cacheKey(selection: CategorySelection): String {
         // sort=null 在无细分条件时走推荐流；有细分条件时 categoryApi 会回退到 hot_score。
