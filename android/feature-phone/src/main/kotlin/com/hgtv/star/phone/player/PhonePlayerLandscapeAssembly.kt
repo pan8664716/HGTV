@@ -355,7 +355,7 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
     // 想细调（速度 / 字号 / 透明度）仍然长按中间开播放设置。
     val danmaku = PhonePlayerViewSupport.chip(this, "弹幕") { cycleDanmaku() }
     val episode = PhonePlayerViewSupport.chip(this, "选集 1") { openEpisodes() }
-    val (lock, lockGlyph) = PhonePlayerViewSupport.lockButton(this, 30f) {
+    val (lock, lockGlyph) = PhonePlayerViewSupport.lockButton(this, 22f) {
         togglePlaybackLock()
     }
     line2.addView(speed, PhonePlayerViewSupport.chipLp(this,0))
@@ -363,7 +363,7 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
     line2.addView(danmaku, PhonePlayerViewSupport.chipLp(this,6))
     line2.addView(episode, PhonePlayerViewSupport.chipLp(this,6))
     line2.addView(lock, android.widget.LinearLayout.LayoutParams(
-        dp(30), dp(30)
+        dp(22), dp(22)
     ).apply { leftMargin = dp(6) })
     bottom.addView(line2, android.widget.LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT

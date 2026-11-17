@@ -397,15 +397,15 @@ class PhoneVideoPage(
             0, LayoutParams.MATCH_PARENT, 1f
         ))
         if (showLockButton) {
-            val (box, glyph) = PhonePlayerViewSupport.lockButton(context, 24f) {
+            val (box, glyph) = PhonePlayerViewSupport.lockButton(context, 20f) {
                 onLock?.invoke()
             }
             lockBox = box
             lockGlyph = glyph
             actionBar.addView(lockBox, LinearLayout.LayoutParams(
-                context.dp(24), context.dp(24)
+                context.dp(20), context.dp(20)
             ).apply {
-                rightMargin = context.dp(8)
+                rightMargin = context.dp(6)
             })
         }
 
