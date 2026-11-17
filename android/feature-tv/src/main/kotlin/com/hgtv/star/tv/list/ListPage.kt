@@ -520,6 +520,13 @@ fun TvMainActivity.showCatalog(
             onDelete={ setHongguoDraft(hongguoDraft.dropLast(1)) },
             onClear={ setHongguoDraft("") },
             onSearch={ searchHongguoDraft() },
+            onPhoneInput={
+                tvTools.phoneInput(hongguoKeyboard?.view) { word ->
+                    showHint("已从手机收到「$word」")
+                    setHongguoDraft(word)
+                    searchHongguoDraft()
+                }
+            },
             onClearHistory={
                 searchController.clearHistory()
                 renderHongguoSideList()

@@ -983,7 +983,7 @@ android/
 | --- | --- | --- |
 | `DialogItem.kt` | 弹窗里的选项行（设计稿的 .mitem）：整行胶囊，左边一枚线性图标，右边文字。 | class DialogItem |
 | `EpisodeCell.kt` | 选集单元格：网格里的方块，高度、字号、焦点反馈与按钮共用同一套令牌。 | class EpisodeCell |
-| `HongguoKeyboard.kt` | HG键盘的字符表：**每行 6 个**，字母在前、数字在后，中间不断行。 | val LETTER_ROWS、val NUMBER_ROWS、val KEY_COLUMNS、val FUNCTION_KEYS、val FOCUS_RADIUS、val ICON_SIZE |
+| `HongguoKeyboard.kt` | HG键盘的字符表：字母与数字每行 6 个；功能行新增“扫码输入”，复用电视手机输入二维码通道。 | val LETTER_ROWS、val NUMBER_ROWS、val KEY_COLUMNS、val FUNCTION_KEYS、val FOCUS_RADIUS、val ICON_SIZE |
 | `IconButton.kt` | 顶部导航的圆形图标入口（搜索 / 排行榜 / 设置）。 | class IconButton |
 | `LoginForm.kt` | 「手机号 + 验证码」登录表单的视觉件：输入框、字段说明、按钮行。 | object LoginForm |
 | `PosterCard.kt` | 电视端海报卡：结构来自 PosterCardView，这里只补电视的材质、字号、进度条与焦点。 | class PosterCard |
