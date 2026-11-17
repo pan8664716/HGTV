@@ -4418,14 +4418,19 @@ feature-tv/
 
 ## 1.3.7.6 发布准备
 
-状态：版本准备中。
+状态：GitHub Release 已发布，待用户真机验证。
 
 - `versionName` 更新为 `1.3.7.6`，`versionCode` 从 `80` 更新为 `81`。
 - TV 与手机 / 平板共用推荐流当前列表 `filter_ids` 去重规则，修复推荐后段重复卡导致
   `raw>0 / kept=0` 和无法继续翻页。
 - `docs/CHANGELOG.md` 已按电视、手机 / 平板分节；README、Release 正文和更新元数据同步。
-- 计划产物：`outputs/release-1.3.7.6/HGTV_1.3.7.6.apk`。
-- Release 只允许上传 APK、`SHA256SUMS`、`update.json`；tag 必须指向空树提交，不含源码。
+- `:app:assembleRelease`、`:app:lintRelease` 通过；APK 的 `aapt` 版本信息为
+  `versionName=1.3.7.6`、`versionCode=81`，`apksigner` v1 / v2 校验通过。
+- APK：`outputs/release-1.3.7.6/HGTV_1.3.7.6.apk`，大小 `3972952` 字节；
+  SHA-256：`3c667c5be796d28b4b3b9d5ba29c650b1979844ec8513525a12eb8f11dd362fe`。
+- Release 只上传 `HGTV_1.3.7.6.apk`、`SHA256SUMS`、`update.json`，不含源码；
+  tag `1.3.7.6` 指向空树提交 `c69b887e077b3a437f800a3b6ce59e04ec91b85b`。
+- Release：<https://github.com/pan8664716/HGTV/releases/tag/1.3.7.6>。
 
 回滚：对本节对应提交执行 `git revert`。
 
