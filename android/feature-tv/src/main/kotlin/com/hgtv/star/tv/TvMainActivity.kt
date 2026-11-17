@@ -322,6 +322,8 @@ class TvMainActivity: Activity() {
     var homeScreen: HomeScreen?=null
     var cachedHomeScreen: HomeScreen?=null
     var homeFromCache=false
+    /** 首页已经完成首次稳定落焦；后续异步刷新不再主动抢焦点。 */
+    var homeFocusRequested=false
 
     var homeUpdateCount=0
     var launchStarted=android.os.SystemClock.elapsedRealtime()

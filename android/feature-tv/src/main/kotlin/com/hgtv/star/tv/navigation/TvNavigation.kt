@@ -16,6 +16,7 @@ import com.hgtv.star.shared.data.thirdPartyAccepted
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 fun TvMainActivity.switchTab(next: Int) {
+    if(tab==TAB_HOME && next!=TAB_HOME) homeFocusRequested=false
     // 本次运行第一次进这一页（见 [tabVisited]）。
     val firstVisit=tabVisited.add(next)
     // 首次进入分类页：回到默认的「推荐」；有缓存时直接铺出小分类。

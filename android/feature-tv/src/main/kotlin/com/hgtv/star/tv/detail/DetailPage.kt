@@ -246,6 +246,7 @@ private fun TvMainActivity.authorHead(name: String,hint: String,loading: Boolean
     return head
 }
 fun TvMainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
+    if(tab==TAB_HOME && collection==null) homeFocusRequested=false
     invalidatePage(); releaseCatalogViews(); screen="detail"; val data=detail ?: return showCatalog()
     // 详情页不留页头：顶部是完整竖版海报 + 剧集信息（78dp 栅格内），
     // 下方选集网格整幅贴底，与播放器选集面板同一份实现。

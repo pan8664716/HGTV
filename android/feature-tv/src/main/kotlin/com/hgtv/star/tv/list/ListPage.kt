@@ -607,9 +607,18 @@ fun TvMainActivity.showCatalog(
                     body.removeAllViews(); seriesList(body,keepNav || focusNav)
                 } else {
                     val shelves=homeShelves()
+                    val requestHomeFocus=!keepNav && !focusNav && !homeFocusRequested
                     val structural=shelves.flatMap { shelf -> shelf.entries.map { "${shelf.key}:${it.series.id}" } }.toSet()
-                    if(structural==homeView.cardKeys()) homeView.refreshEntries(shelves)
-                    else homeView.updateShelves(shelves)
+                    if(structural==homeView.cardKeys()) {
+                        homeView.refreshEntries(shelves)
+                        if(requestHomeFocus && !homeView.hasFocus()) {
+                            homeView.firstCard()?.requestFocus()
+                            if(homeView.firstCard()!=null) homeFocusRequested=true
+                        }
+                    } else {
+                        homeView.updateShelves(shelves,requestFocus=homeView.hasFocus() || requestHomeFocus)
+                        if(requestHomeFocus && homeView.firstCard()!=null) homeFocusRequested=true
+                    }
                 }
                 return@work
             }

@@ -65,6 +65,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                 selection=selection,
                 sessionId=sessionId,
                 offset=offset,
+                limit=limit,
                 filterIds=filterIds,
                 horizontalOnly=horizontalOnly,
             )
@@ -162,6 +163,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         selection: CategorySelection,
         sessionId: String,
         offset: Int,
+        limit: Int,
         filterIds: String,
         horizontalOnly: Boolean,
     ): RecommendFeed {
@@ -179,6 +181,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             filterIds,
             selection,
             horizontalOnly,
+            limit,
         )
         val root=JSONObject(raw)
         if(root.optInt("code",-1)!=0) throw IOException("推荐接口暂不可用")
@@ -224,6 +227,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         filterIds: String,
         selection: CategorySelection,
         horizontalOnly: Boolean,
+        limit: Int,
     ): String {
         var problem: IOException=IOException("推荐接口暂无响应")
         repeat(RECOMMEND_ATTEMPTS) { attempt ->
@@ -247,6 +251,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                     filterIds=filterIds,
                     selection=selection,
                     horizontalOnly=horizontalOnly,
+                    limit=limit,
                 )
                 val signed=signer.sign(
                     "https://${videoHost()}/reading/bookapi/bookmall/tab/v",
@@ -278,6 +283,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         filterIds: String,
         selection: CategorySelection,
         horizontalOnly: Boolean,
+        limit: Int,
     ): LinkedHashMap<String,String> {
         val values=recommendationValues(identity)
         for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
@@ -294,6 +300,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         values["tab_type"]=tabType.toString()
         values["tab_index"]="0"
         values["offset"]=offset.toString()
+        values["limit"]=limit.toString()
         values["last_tab_index"]="0"
         values["last_tab_type"]="0"
         values["last_session_video_tab_type"]=tabType.toString()

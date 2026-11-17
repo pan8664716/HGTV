@@ -71,7 +71,11 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
     // 首页底部不再挂「更多热门」：四个「热播…」剧架的行末「查看全部」直接进对应的榜单页，
     // 底部再放一个全局入口是重复的。
     // 首页没有切换芯片：焦点不在顶部入口上时直接落到第一栏第一张卡。
+    // 先把账号读取排进后台，缓存或本机历史可让历史栏在首帧就有稳定位置；
+    // 真正的网络回调仍走 refreshAccountViews，不会在这里同步等待。
+    if(library.isLoaded && accountData==null && accountError==null && !accountLoading) loadAccount()
     val shelves=homeShelves()
+    val canRequestFocus=!focusNav && !loading && !homeFocusRequested
     val structural=shelves.flatMap { shelf ->
         shelf.entries.map { "${shelf.key}:${it.series.id}" } +
             listOfNotNull(shelf.more?.let { "${shelf.key}:more" })
@@ -81,9 +85,13 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
         // 数据没有变结构时只重绑文字 / 封面，不拆掉整棵卡片树。
         home.refreshEntries(shelves)
         home.onSettled?.invoke(home.scrollY())
-        if(!focusNav && !home.hasFocus()) home.firstCard()?.requestFocus()
+        if(canRequestFocus && !home.hasFocus()) {
+            home.firstCard()?.requestFocus()
+            if(home.firstCard()!=null) homeFocusRequested=true
+        }
     } else {
-        home.render(shelves,catalogFocus,!focusNav,homePosition)
+        home.render(shelves,catalogFocus,canRequestFocus || home.hasFocus(),homePosition)
+        if(canRequestFocus && home.firstCard()!=null) homeFocusRequested=true
     }
     // **首页自己把账号数据拉起来**：历史记录与「我的」共用账号历史，收藏栏也会补账号侧。
     // 与「我的」页一样不只看 signedIn：设备级历史 / 收藏仍可能返回。
@@ -102,7 +110,10 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
     }
     // 首页没有自己的顶部入口（品牌是标识、不参与焦点链），所以要「把焦点留在页头」时
     // 只能退到第一栏第一张卡：焦点始终有落点，不会凭空消失。
-    if(focusNav) (navEntry() ?: home.firstCard())?.requestFocus()
+    if(focusNav) {
+        (navEntry() ?: home.firstCard())?.requestFocus()
+        homeFocusRequested=true
+    }
     if(homeFeed.values.any { it.items.isNotEmpty() } && !homeContentLogged) {
         homeContentLogged=true
         body.post { android.util.Log.i("HGTV","Home content ready cached=$homeFromCache elapsedMs=${android.os.SystemClock.elapsedRealtime()-activityStarted}") }
@@ -125,16 +136,33 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
  * 每栏最多十部；本机没有记录的三栏、远端取不到的榜单都不占位（[HomeScreen.render] 过滤空架子）。
  */
 /**
- * 首页「历史记录」栏与「我的 → 历史」使用同一份账号历史。
+ * 首页「历史记录」栏：先用本机历史立即占位，账号历史回来后再按 id 合并。
  *
- * 本机历史不再混入：两处若一边合并本机、一边只读账号，就会出现同一账号在两处看到
- * 不同记录集合。状态行统一为「第 N 集 · MM:SS」，不显示分类标签与播放进度条。
+ * 账号历史单独读网络时，冷启动会在热播栏已经落焦后才从上方插入一整栏；
+ * 本机进度本来就在书库里，先铺它可以让栏目顺序和焦点都保持稳定。
  */
-fun TvMainActivity.historyRows(): List<HomeScreen.Entry> =
-    accountData?.history
-        ?.filterNot { library.historyDeleted(it.series.id) }
-        ?.take(SHELF_SIZE)
-        ?.map { row ->
+fun TvMainActivity.historyRows(): List<HomeScreen.Entry> {
+    val local=library.history()
+        .take(SHELF_SIZE)
+        .map { row ->
+            val card=row.series.copy(
+                badge="第 ${row.episodeIndex+1} 集" +
+                    if(row.position>0) " · ${formatTime(row.position)}" else "",
+            )
+            HomeScreen.Entry(
+                series=card,
+                label=card.badge,
+                resume=true,
+                progress=null,
+                time=card.badge,
+            )
+        }
+    val seen=local.mapTo(HashSet(local.size)) { it.series.id }
+    val account=accountData?.history.orEmpty()
+        .asSequence()
+        .filterNot { library.historyDeleted(it.series.id) }
+        .filter { it.series.id !in seen }
+        .map { row ->
             val card=accountHistoryCard(row)
             HomeScreen.Entry(
                 series=card,
@@ -143,7 +171,10 @@ fun TvMainActivity.historyRows(): List<HomeScreen.Entry> =
                 progress=null,
                 time=card.badge,
             )
-        }.orEmpty()
+        }
+        .toList()
+    return (local+account).take(SHELF_SIZE)
+}
 /**
  * 首页「我的收藏」栏：本机收藏在前（带「更新至第几集」状态），账号侧的收藏补在后面。
  *
