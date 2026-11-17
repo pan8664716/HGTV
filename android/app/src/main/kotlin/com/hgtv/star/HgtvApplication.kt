@@ -18,4 +18,9 @@ class HgtvApplication: Application() {
         super.attachBaseContext(base)
         if(android.os.Build.VERSION.SDK_INT<21) MultiDex.install(this)
     }
+
+    override fun onCreate() {
+        super.onCreate()
+        AppIntegrityGuard.install(this)
+    }
 }
