@@ -363,7 +363,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     val appearancePage=pageColumn(1)
     parent.addView(appearancePage,lp(-1,-2))
     val layoutPanel=panel(appearancePage,gap=TvStyle.GAP_INLINE)
-    heading(layoutPanel,"布局启动","列表怎么排、默认输入法、启动落点与回到顶部")
+    heading(layoutPanel,"布局启动","列表怎么排、历史点击、默认输入法、启动落点与回到顶部")
     val layoutRow=lineRow(layoutPanel)
     lateinit var homeColumnsButton: TvButton
     homeColumnsButton=cellSetting(layoutRow,"每行卡片  ·  ${library.homeColumns} 张") { showHomeColumnsPicker(homeColumnsButton) }
@@ -373,6 +373,11 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         showCatalog()
     }).apply { tag=SETTINGS_TAG_LAUNCH_RECOMMEND })
     track(1,homeColumnsButton,launchRecommendRow)
+    val historyCardRow=lineRow(layoutPanel)
+    val historyCardSwitch=cellSwitch(historyCardRow,TvSwitchRow(this,"历史卡片直接续播",checked=library.historyCardDirectPlay,onToggle={ on ->
+        library.historyCardDirectPlay=on
+    }))
+    track(1,historyCardSwitch)
     val backToTopRow=lineRow(layoutPanel)
     lateinit var backToTopButton: TvButton
     backToTopButton=cellSetting(backToTopRow,"返回顶部  ·  "+backToTopShort(library.backToTop)) {

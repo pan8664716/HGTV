@@ -142,6 +142,9 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
  * 本机进度本来就在书库里，先铺它可以让栏目顺序和焦点都保持稳定。
  */
 fun TvMainActivity.historyRows(): List<HomeScreen.Entry> {
+    // 历史栏的点击方式由设置统一决定；账号侧没有本机进度时，
+    // 详情控制器仍会用账号历史算出续播目标。
+    val directPlay=library.historyCardDirectPlay
     val local=library.history()
         .take(SHELF_SIZE)
         .map { row ->
@@ -152,7 +155,7 @@ fun TvMainActivity.historyRows(): List<HomeScreen.Entry> {
             HomeScreen.Entry(
                 series=card,
                 label=card.badge,
-                resume=true,
+                resume=directPlay,
                 progress=null,
                 time=card.badge,
             )
@@ -167,7 +170,7 @@ fun TvMainActivity.historyRows(): List<HomeScreen.Entry> {
             HomeScreen.Entry(
                 series=card,
                 label=card.badge,
-                resume=library.progress(card.id)!=null,
+                resume=directPlay,
                 progress=null,
                 time=card.badge,
             )

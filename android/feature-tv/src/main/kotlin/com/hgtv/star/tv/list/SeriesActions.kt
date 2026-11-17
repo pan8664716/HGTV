@@ -11,17 +11,17 @@ import com.hgtv.star.tv.quickActions
  *
  * 首页剧架（[HomeScreen]）与列表页栅格（[SeriesGrid]）是同一个列表组件的两种排版，
  * 卡片本身都是 [com.hgtv.star.tv.PosterCard]，因此这两个动作也必须一致：
- * 点一张卡 = 记住它是谁 → 进详情页（本机历史记录那一栏带续播）；
+ * 点一张卡 = 记住它是谁 → 进详情页（历史记录那一栏按设置决定是否直接续播）；
  * 长按 / 菜单键 = 记住它是谁 → 弹出这张卡的快捷菜单（收藏 / 稍后观看 / 详情）。
  *
  * 「记住它是谁」指的是 [TvMainActivity.catalogFocus]：它是这一页的焦点落点 key，
  * 返回列表时要按它把焦点放回原来那张卡，因此两个动作都要先记再走。
  */
 
-/** 点一张剧卡：记住它的 id，然后按 [resume] 决定进详情页还是直接接着上次看到的位置播。 */
+/** 点一张剧卡：记住它的 id，然后按 [resume] 与设置决定进详情页还是直接接着上次看到的位置播。 */
 fun TvMainActivity.openSeries(item: Series, resume: Boolean = false) {
     catalogFocus = item.id
-    openDetail(item, resume)
+    openDetail(item, resume && library.historyCardDirectPlay)
 }
 
 /**

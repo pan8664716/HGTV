@@ -518,6 +518,13 @@ class Library(context: Context) {
     /** 磁盘上是否已经显式保存过「打开应用进入推荐」。 */
     val launchRecommendStored: Boolean
         get() = state().launchRecommendStored
+    var historyCardDirectPlay: Boolean
+        get() = state().settings.historyCardDirectPlay
+        set(value) {
+            if (value == historyCardDirectPlay) return
+            state().settings = state().settings.copy(historyCardDirectPlay = value)
+            put("historyCardDirectPlay", value)
+        }
     var recommendSwipe: Boolean
         get() = state().settings.recommendSwipe
         set(value) { if (value != recommendSwipe) { state().settings = state().settings.copy(recommendSwipe = value); put("recommendSwipe", value) } }
@@ -732,7 +739,8 @@ class Library(context: Context) {
             "hiddenHome" to { merged.settings.hiddenHome.split(',').filter { it in HOME_KEYS }.toSet() },
             "reduceAnim" to { merged.settings.reduceAnim },
             "searchKeyboard" to { merged.settings.searchKeyboard.storedValue },
-            "keymap" to { merged.settings.keys }))
+            "keymap" to { merged.settings.keys },
+            "historyCardDirectPlay" to { merged.settings.historyCardDirectPlay }))
         flush()
     }
     fun flush() { writes.flush(); homeWrites.flush(); accountWrites.flush(); mirror.flush() }
