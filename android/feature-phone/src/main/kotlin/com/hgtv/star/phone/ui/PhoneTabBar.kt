@@ -15,7 +15,7 @@ import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.shared.ui.SoftStyle
 
 /**
- * 手机底部导航：横向长条底板 + 四枚等尺寸圆形凸起入口。
+ * 手机底部导航：满宽横向长条底板 + 四枚等尺寸圆形凸起入口。
  *
  * 版式参考 ShadeCraft 的 Elevated Tab：不显示文字，不做选中项位移，
  * 当前入口只通过强调色图标表达。推荐 / 分类 / 榜单 / 我的四个业务入口保持不变，
@@ -59,10 +59,7 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 ViewGroup.LayoutParams.MATCH_PARENT,
                 Gravity.CENTER,
-            ).apply {
-                leftMargin = context.dp(PhoneDimen.TAB_INSET)
-                rightMargin = context.dp(PhoneDimen.TAB_INSET)
-            },
+            ),
         )
 
         items.forEachIndexed { index, item ->
