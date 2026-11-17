@@ -854,7 +854,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `DetailPage.kt` | 本文件是从 TvMainActivity.kt 拆出来的「详情页：简介、选集、相关推荐」这一块；当前季已看完的历史记录不会自动重播最后一集。 | val DETAIL_MEMO_LIMIT、fun TvMainActivity.openDetail、fun sameDetailContent、fun TvMainActivity.loadDetailAuthor、fun TvMainActivity.resumeTargetFor、fun TvMainActivity.prefetchRelated |
+| `DetailPage.kt` | 本文件是从 TvMainActivity.kt 拆出来的「详情页：简介、选集、相关推荐」这一块；历史直进播放页，当前季已看完的历史记录不会自动重播最后一集。 | val DETAIL_MEMO_LIMIT、fun TvMainActivity.openDetail、fun TvMainActivity.openDirectPlayback、fun sameDetailContent、fun TvMainActivity.loadDetailAuthor、fun TvMainActivity.resumeTargetFor、fun TvMainActivity.prefetchRelated |
 | `HongguoSearchPage.kt` | 当前搜索页是否用自绘键盘；书库未加载完成时沿用系统键盘页面。 | fun TvMainActivity.hongguoKeyboardMode、fun TvMainActivity.setSearchKeyboard、fun TvMainActivity.keyboardSwitchButton、fun TvMainActivity.appendHongguoDraft、fun TvMainActivity.setHongguoDraft、fun TvMainActivity.syncHongguoInput |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/home/`
@@ -899,7 +899,7 @@ android/
 | `HomeScreen.kt` | 电视首页横排剧架组件；首栏先建少量卡片，其余按帧增量补齐，结构比较包含待建卡片与“查看全部”，避免缓存后网络回包整页重建。 | class HomeScreen、val HOME_FIRST_BATCH、val HOME_FIRST_CARDS、val HOME_BATCH_BUDGET_MS、val HOME_BATCH_BUDGET_LOW_RAM_MS |
 | `ListPage.kt` | 电视列表页页面骨架，负责分类、榜单、搜索、我的页和设置页的页面组装；首页网络刷新结构一致时原地更新，避免列表闪烁。 | fun equalChipWidths、fun TvMainActivity.showCatalog |
 | `ListPageContent.kt` | 电视列表、网格、剧架与分页；栅格卡片 View 通过跨页行池复用，只重绑数据与封面。 | fun TvMainActivity.setRankSubtitle、fun TvMainActivity.seriesList、class ClipFrameLayout、fun lastFocusable、fun firstFocusable |
-| `SeriesActions.kt` | 剧卡上「点一下」与「长按 / 菜单键」这两个动作，全站只有这一份实现；历史卡片点击时按“优先进入简介”设置决定详情或续播。 | fun TvMainActivity.openSeries、fun TvMainActivity.seriesMenu |
+| `SeriesActions.kt` | 剧卡上「点一下」与「长按 / 菜单键」这两个动作，全站只有这一份实现；历史卡片关闭“优先进入简介”时直接进入播放页。 | fun TvMainActivity.openSeries、fun TvMainActivity.seriesMenu |
 | `SeriesGrid.kt` | 剧卡栅格的窗口化复用、分页追加、滚动与焦点；历史已看完的当前季显示“看完了”，回收行时从实际父容器摘除，避免复用 stale parent。 | fun TvMainActivity.gridCards、fun TvMainActivity.isGridTail、fun TvMainActivity.gridRowCount、fun TvMainActivity.rowStride、fun TvMainActivity.gridTextScale、fun TvMainActivity.updateGridSpacers、fun TvMainActivity.recycleGridRow |
 | `SeriesGridPaging.kt` | 电视列表、网格、剧架与分页。文件 SeriesGridPaging 主要包含 fun TvMainActivity.moreLabel、fun TvMainActivity.loadMore、fun TvMainActivity.prefetchNextPage、fun TvMainActivity.applyNextPage。 | fun TvMainActivity.moreLabel、fun TvMainActivity.loadMore、fun TvMainActivity.prefetchNextPage、fun TvMainActivity.applyNextPage、fun TvMainActivity.nearGridEnd、fun TvMainActivity.rowsLeftAfterConsumed |
 

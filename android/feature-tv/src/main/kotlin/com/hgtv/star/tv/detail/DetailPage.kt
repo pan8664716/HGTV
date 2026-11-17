@@ -105,6 +105,77 @@ fun TvMainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boo
         },
     )
 }
+
+/**
+ * 从历史记录直接进入播放页。
+ *
+ * 这里不能复用 [openDetail] 再在加载完成后起播：那样会先建立详情页，用户会看到
+ * 详情页闪一下再跳到播放器。直进路径先把页面切成播放页的加载态，详情落地后直接
+ * 调用 [playEpisode]；只有当前季已经看完、或详情显示未上架时，才退回详情页。
+ */
+fun TvMainActivity.openDirectPlayback(series: Series,autoplay: Boolean=true) {
+    pendingDetail=series; detailAutoplay=autoplay
+    playbackFromRecommend=false
+    invalidatePage(); releaseCatalogViews()
+    screen="player"; directPlayback=true; detail=null
+    relatedOpen=false
+    relatedWorks=null; relatedLoading=false; relatedFailed=false; relatedFor=""
+    relatedToken.incrementAndGet(); relatedJob?.cancel(true); relatedJob=null
+    authorOpen=false
+    authorWorks=null; authorLoading=false; authorFailed=false; authorFor=""
+    authorToken.incrementAndGet(); authorJob?.cancel(true); authorJob=null
+    detailAuthorLoading=false
+    detailAuthorToken++
+    root.removeAllViews()
+    root.setBackgroundColor(android.graphics.Color.BLACK)
+    showCenterLoading("正在加载《${series.title}》…")
+    detailController.clear()
+
+    var started=false
+    fun start(result: Detail) {
+        if(started || screen!="player" || result.series.id!=series.id) return
+        started=true
+        detail=result
+        detailMemo.lruPut(DETAIL_MEMO_LIMIT,result.series.id,result)
+        hideCenterLoading()
+        clearDebugProblem()
+        val target=resumeTargetFor(result.series.id,result.episodes)
+        episodeIndex=target.index
+        val localFinished=library.progress(series.id)?.isFinished(result.episodes.size)==true
+        val accountFinished=accountData?.history
+            ?.firstOrNull { it.series.id==series.id }
+            ?.isFinished()==true
+        if(result.upcoming || localFinished || accountFinished) {
+            // 未上架 / 已看完的当前季没有可自动续播的目标，交给详情页。
+            directPlayback=false
+            showDetail(false)
+        } else {
+            playEpisode(target.index,target.position,autoplay=detailAutoplay,clearDanmakuOnSwitch=true)
+        }
+    }
+
+    detailController.load(
+        series=series,
+        onCached={cached ->
+            // 本地缓存有完整分集时可以先起播，网络返回后再静默更新缓存。
+            if(cached.episodes.isNotEmpty() && !cached.upcoming) start(cached)
+        },
+        onLoaded={result,_,_ -> start(result) },
+        onError={problem ->
+            if(detail?.series?.id!=series.id) {
+                hideCenterLoading()
+                val body=base(series.title)
+                error(body,problem,stage="content_detail") { openDirectPlayback(series,autoplay) }
+            }
+        },
+        loadDetail={
+            if(BuildConfig.DEBUG && DebugFaults.mode(this)==DebugFaults.Mode.CONTENT_FAIL)
+                throw java.io.IOException("调试注入：详情接口不可用")
+            repository.detail(series.id,includeAuthor=false)
+        },
+    )
+}
+
 /** 详情主体一致时不重建整页；作者由 [detailAuthorRefresh] 单独补。 */
 private fun sameDetailContent(a: Detail,b: Detail): Boolean =
     a.episodes==b.episodes && a.upcoming==b.upcoming && a.reserved==b.reserved &&

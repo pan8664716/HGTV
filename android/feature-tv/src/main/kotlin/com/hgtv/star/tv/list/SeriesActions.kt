@@ -4,6 +4,7 @@ import android.view.View
 import com.hgtv.star.tv.TvMainActivity
 import com.hgtv.star.core.Series
 import com.hgtv.star.tv.openDetail
+import com.hgtv.star.tv.openDirectPlayback
 import com.hgtv.star.tv.quickActions
 
 /*
@@ -21,7 +22,11 @@ import com.hgtv.star.tv.quickActions
 /** 点一张剧卡：记住它的 id，然后按 [resume] 与设置决定进详情页还是直接接着上次看到的位置播。 */
 fun TvMainActivity.openSeries(item: Series, resume: Boolean = false) {
     catalogFocus = item.id
-    openDetail(item, resume && !library.historyPreferDetail)
+    if(resume && !library.historyPreferDetail) {
+        openDirectPlayback(item)
+    } else {
+        openDetail(item)
+    }
 }
 
 /**
