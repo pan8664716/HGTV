@@ -15,10 +15,10 @@ import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.shared.ui.SoftStyle
 
 /**
- * 手机底部导航：满宽横向长条底板 + 四枚等尺寸圆形凸起入口。
+ * 手机底部导航：满宽直角长条 + 四枚等尺寸圆形入口。
  *
- * 版式参考 ShadeCraft 的 Elevated Tab：不显示文字，不做选中项位移，
- * 当前入口只通过强调色图标表达。推荐 / 分类 / 榜单 / 我的四个业务入口保持不变，
+ * 版式参考 ShadeCraft 的 Elevated Tab：不显示文字，不做选中项位移；
+ * 未选中入口凸起，当前入口按进去并使用强调色图标。推荐 / 分类 / 榜单 / 我的四个业务入口保持不变，
  * 切页与双击回顶继续由 [com.hgtv.star.phone.PhoneMainActivity] 统一处理。
  */
 class PhoneTabBar(context: Context, private val compact: Boolean = false) : FrameLayout(context) {
@@ -45,13 +45,7 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
-            applySoft(
-                style = SoftStyle.RAISED,
-                fill = PhoneStyle.surface,
-                radiusDp = if (compact) 6f else 8f,
-                bandDp = if (compact) 2f else 2.6f,
-                depth = 1f,
-            )
+            setBackgroundColor(PhoneStyle.surface)
         }
         addView(
             panel,
@@ -95,36 +89,42 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
         private val circleSize = context.dp(barDp * .62f)
         private val iconSize = context.dp(barDp * .33f)
         private val iconView = Glyph(context, item.icon)
+        private val circle = FrameLayout(context)
 
         init {
             isClickable = true
             isFocusable = true
             contentDescription = item.label
 
-            val circle = FrameLayout(context).apply {
-                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
-                applySoft(
-                    style = SoftStyle.RAISED,
-                    fill = PhoneStyle.surfaceHigh,
-                    radiusDp = barDp * .31f,
-                    bandDp = if (compact) 1.8f else 2.2f,
-                    depth = 1f,
-                )
-                addView(
-                    iconView,
-                    LayoutParams(iconSize, iconSize, Gravity.CENTER),
-                )
-            }
+            circle.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+            circle.addView(
+                iconView,
+                LayoutParams(iconSize, iconSize, Gravity.CENTER),
+            )
             addView(
                 circle,
                 LayoutParams(circleSize, circleSize, Gravity.CENTER),
             )
+            styleCircle(selected = false)
             iconView.tint = PhoneStyle.textDim
         }
 
         fun applySelected(selected: Boolean) {
             isSelected = selected
+            styleCircle(selected)
             iconView.tint = if (selected) PhoneStyle.accent else PhoneStyle.textDim
+        }
+
+        private fun styleCircle(selected: Boolean) {
+            circle.background = null
+            circle.setPadding(0, 0, 0, 0)
+            circle.applySoft(
+                style = if (selected) SoftStyle.INSET else SoftStyle.RAISED,
+                fill = if (selected) PhoneStyle.well else PhoneStyle.surfaceHigh,
+                radiusDp = barDp * .31f,
+                bandDp = if (compact) 1.8f else 2.2f,
+                depth = 1f,
+            )
         }
     }
 
