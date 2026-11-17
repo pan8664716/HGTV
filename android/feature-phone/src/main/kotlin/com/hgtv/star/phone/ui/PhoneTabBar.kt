@@ -7,6 +7,7 @@ import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
@@ -35,17 +36,19 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
     )
     private val cells = ArrayList<Cell>()
     private var selected = -1
+    private val edgePaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     var onSelect: ((Int) -> Unit)? = null
 
     init {
+        setBackgroundColor(PhoneStyle.surface)
+        setWillNotDraw(false)
         isClickable = true
         setOnClickListener { }
 
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
-            setBackgroundColor(PhoneStyle.surface)
         }
         addView(
             panel,
@@ -68,6 +71,14 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
         applySelected(0)
     }
 
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        // 与参考实现一致：长条本身保持平直，只用一条顶部高光交代材质边界。
+        edgePaint.color = PhoneStyle.shadowLight
+        edgePaint.strokeWidth = 1f
+        canvas.drawLine(0f, .5f, width.toFloat(), .5f, edgePaint)
+    }
+
     fun select(index: Int) = applySelected(index)
 
     /** 宿主切页后同步选中态，不触发业务回调。 */
@@ -86,8 +97,10 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
     ) : FrameLayout(context) {
 
         private val barDp = if (compact) PhoneColor.TAB_BAR_LANDSCAPE_DP else PhoneColor.TAB_BAR_DP
-        private val circleSize = context.dp(barDp * .62f)
-        private val iconSize = context.dp(barDp * .33f)
+        private val circleDp = barDp * if (compact) .80f else .82f
+        private val circleSize = context.dp(circleDp)
+        private val iconSize = context.dp(barDp * if (compact) .38f else .40f)
+        private val softBandDp = if (compact) 2.2f else 3.2f
         private val iconView = Glyph(context, item.icon)
         private val circle = FrameLayout(context)
 
@@ -95,6 +108,13 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
             isClickable = true
             isFocusable = true
             contentDescription = item.label
+            setOnTouchListener { _, event ->
+                when (event.actionMasked) {
+                    MotionEvent.ACTION_DOWN -> styleCircle(selected = true)
+                    MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> styleCircle(isSelected)
+                }
+                false
+            }
 
             circle.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
             circle.addView(
@@ -121,8 +141,8 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
             circle.applySoft(
                 style = if (selected) SoftStyle.INSET else SoftStyle.RAISED,
                 fill = if (selected) PhoneStyle.well else PhoneStyle.surfaceHigh,
-                radiusDp = barDp * .31f,
-                bandDp = if (compact) 1.8f else 2.2f,
+                radiusDp = circleDp / 2f,
+                bandDp = softBandDp,
                 depth = 1f,
             )
         }
