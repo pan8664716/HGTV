@@ -104,6 +104,7 @@ object Soft {
 
     private val cache = LinkedHashMap<String, Layers>(32, .75f, true)
     private var bytes = 0
+    private var bitmapFailed = false
 
     fun layers(key: String, build: () -> Layers): Layers {
         cache[key]?.let { return it }
@@ -129,6 +130,17 @@ object Soft {
     }
 
     fun maxBitmapBytes() = MAX_BITMAP_BYTES
+
+    internal fun shadowBitmapAvailable() = !bitmapFailed
+
+    /**
+     * 预渲染柔光只是装饰层。只要有一张分配失败，本进程后续都退回纯色底板，
+     * 避免每次焦点移动都在同一处继续撞 OOM。
+     */
+    internal fun disableShadowBitmaps() {
+        bitmapFailed = true
+        trim()
+    }
 
     /**
      * 低内存时**按比例**收缩柔光缓存，而不是整份清空。
@@ -380,6 +392,7 @@ class SoftDrawable(
             // 暗角是整卡面积的径向渐变（逐像素 sqrt）：低配直接不画，见 [Soft.vignette]。
             if (Soft.vignette) Soft.Layers(null, null, vignette()) else Soft.Layers(null, null, null)
         else -> when {
+            !Soft.shadowBitmapAvailable() -> Soft.Layers(null, null, null)
             // 完全透明、又没有外发光的底板（文字按钮的常态）不画任何东西：
             // 免得为一块看不见的板子白生成一张柔光位图。
             Color.alpha(fill) == 0 && Color.alpha(glowColor) == 0 -> Soft.Layers(null, null, null)
@@ -423,53 +436,67 @@ class SoftDrawable(
         val height = (bounds.height() * scale).toInt().coerceAtLeast(1)
         if (width.toLong() * height * 4 > Soft.maxBitmapBytes()) return null
         val quality = Soft.quality
-        val out = Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
-        val canvas = Canvas(out)
-        val brush = Paint(Paint.ANTI_ALIAS_FLAG)
-        val band = bandPx * scale
-        val rect = RectF(band, band, width - band, height - band)
-        val radius = radiusPx * scale
-        val bottomRadius = bottomRadiusPx * scale
-        if (rect.width() <= 0f || rect.height() <= 0f) return null
-        val path = if (radiusPx != bottomRadiusPx) {
-            Path().apply {
-                addRoundRect(
-                    rect,
-                    floatArrayOf(
-                        radius, radius, radius, radius,
-                        bottomRadius, bottomRadius, bottomRadius, bottomRadius,
-                    ),
-                    Path.Direction.CW,
-                )
+        val out = try {
+            Bitmap.createBitmap(width, height, Bitmap.Config.ARGB_8888)
+        } catch (_: OutOfMemoryError) {
+            Soft.disableShadowBitmaps()
+            return null
+        }
+        try {
+            val canvas = Canvas(out)
+            val brush = Paint(Paint.ANTI_ALIAS_FLAG)
+            val band = bandPx * scale
+            val rect = RectF(band, band, width - band, height - band)
+            val radius = radiusPx * scale
+            val bottomRadius = bottomRadiusPx * scale
+            if (rect.width() <= 0f || rect.height() <= 0f) {
+                out.recycle()
+                return null
             }
-        } else {
-            null
-        }
-        fun drawShape() {
-            if (path == null) canvas.drawRoundRect(rect, radius, radius, brush)
-            else canvas.drawPath(path, brush)
-        }
-        if (Color.alpha(glowColor) > 0) {
-            brush.color = glowColor
-            brush.setShadowLayer(band * 1.35f * quality, 0f, 0f, glowColor)
+            val path = if (radiusPx != bottomRadiusPx) {
+                Path().apply {
+                    addRoundRect(
+                        rect,
+                        floatArrayOf(
+                            radius, radius, radius, radius,
+                            bottomRadius, bottomRadius, bottomRadius, bottomRadius,
+                        ),
+                        Path.Direction.CW,
+                    )
+                }
+            } else {
+                null
+            }
+            fun drawShape() {
+                if (path == null) canvas.drawRoundRect(rect, radius, radius, brush)
+                else canvas.drawPath(path, brush)
+            }
+            if (Color.alpha(glowColor) > 0) {
+                brush.color = glowColor
+                brush.setShadowLayer(band * 1.35f * quality, 0f, 0f, glowColor)
+                drawShape()
+            }
+            brush.setShadowLayer(
+                band * 1.05f * quality,
+                band * .36f * depth * quality,
+                band * .46f * depth * quality,
+                SoftPalette.shadowDark
+            )
+            brush.color = SoftPalette.shadowDark
             drawShape()
+            brush.setShadowLayer(
+                band * .95f * quality,
+                -band * .32f * depth * quality,
+                -band * .40f * depth * quality,
+                SoftPalette.shadowLight
+            )
+            brush.color = SoftPalette.shadowLight
+            drawShape()
+            return out
+        } catch (_: OutOfMemoryError) {
+            out.recycle()
+            Soft.disableShadowBitmaps()
+            return null
         }
-        brush.setShadowLayer(
-            band * 1.05f * quality,
-            band * .36f * depth * quality,
-            band * .46f * depth * quality,
-            SoftPalette.shadowDark
-        )
-        brush.color = SoftPalette.shadowDark
-        drawShape()
-        brush.setShadowLayer(
-            band * .95f * quality,
-            -band * .32f * depth * quality,
-            -band * .40f * depth * quality,
-            SoftPalette.shadowLight
-        )
-        brush.color = SoftPalette.shadowLight
-        drawShape()
-        return out
     }
 }

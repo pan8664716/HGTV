@@ -334,7 +334,7 @@ class StageTimeoutException(
 class StageDeadline(
     private val name: String,
     timeoutMs: Long,
-) : AutoCloseable {
+) {
     private val scope = RequestScope()
     private val timedOut = AtomicBoolean(false)
     private val timeout: ScheduledFuture<*>? =
@@ -364,7 +364,21 @@ class StageDeadline(
         }
     }
 
-    override fun close() {
+    /**
+     * 不使用 `AutoCloseable` / `Closeable`。
+     *
+     * 少数 4.x 盒子把 `SDK_INT` 报成 19，框架实际仍是 4.2；加载带
+     * `AutoCloseable` 超类型的类会直接失败。这里保留原来的 `use {}` 调用形式，
+     * 由普通成员函数负责 finally 关闭。
+     */
+    inline fun <T> use(block: (StageDeadline) -> T): T =
+        try {
+            block(this)
+        } finally {
+            close()
+        }
+
+    fun close() {
         timeout?.cancel(false)
         if (timedOut.get()) scope.cancel()
     }

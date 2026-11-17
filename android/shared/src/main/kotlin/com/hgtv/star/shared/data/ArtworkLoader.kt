@@ -174,7 +174,14 @@ class ArtworkLoader(context: Context) {
         })
     private val downloaded = HashSet<Key>()
     private val jobs = mutableMapOf<Key, Job>()
-    private val bindings = WeakHashMap<ImageView, Binding>()
+    /**
+     * 只用于按 View 查当前绑定，**绝不直接遍历**。
+     *
+     * `WeakHashMap` 的迭代器在旧 Dalvik 上会被 GC 清 key 打断，线上表现为
+     * `NoSuchElementException`。需要遍历时统一读 [activeBindings]。
+     */
+    private val bindingByView = WeakHashMap<ImageView, Binding>()
+    private val activeBindings = linkedSetOf<Binding>()
     private val waiting = HashSet<Binding>()
     @Volatile private var refillScheduled = false
     private var owner = 0L
@@ -207,7 +214,7 @@ class ArtworkLoader(context: Context) {
 
     fun load(view: ImageView, url: String, priority: Int = PRIORITY_VISIBLE, widthPx: Int = 0, heightPx: Int = 0) {
         if (closed) return
-        val previous = bindings[view]
+        val previous = bindingByView[view]
         if (previous != null && previous.owner == owner && previous.url == url && previous.width == widthPx && previous.height == heightPx) {
             previous.priority = priority.coerceIn(PRIORITY_FOCUSED, PRIORITY_PREFETCH)
             previous.failed = null
@@ -223,7 +230,8 @@ class ArtworkLoader(context: Context) {
             override fun onViewAttachedToWindow(v: View) { request(binding) }
             override fun onViewDetachedFromWindow(v: View) { unbind(binding) }
         }
-        bindings[view] = binding
+        bindingByView[view] = binding
+        activeBindings += binding
         view.addOnLayoutChangeListener(binding.layout)
         view.addOnAttachStateChangeListener(binding.attach)
         request(binding)
@@ -271,7 +279,7 @@ class ArtworkLoader(context: Context) {
 
     private fun request(binding: Binding) {
         val view = binding.view.get() ?: return
-        if (closed || binding.owner != owner || bindings[view] !== binding) return
+        if (closed || binding.owner != owner || bindingByView[view] !== binding) return
         val width = if (binding.width > 0) binding.width else view.width - view.paddingLeft - view.paddingRight
         val height = if (binding.height > 0) binding.height else view.height - view.paddingTop - view.paddingBottom
         if (width <= 0 || height <= 0) return
@@ -351,10 +359,11 @@ class ArtworkLoader(context: Context) {
     }
 
     private fun unbind(binding: Binding) {
+        activeBindings.remove(binding)
         binding.view.get()?.let { view ->
             view.removeOnLayoutChangeListener(binding.layout)
             view.removeOnAttachStateChangeListener(binding.attach)
-            if (bindings[view] === binding) bindings.remove(view)
+            if (bindingByView[view] === binding) bindingByView.remove(view)
         }
         detachJob(binding)
         binding.view.clear()
@@ -363,7 +372,7 @@ class ArtworkLoader(context: Context) {
     fun cancelPage(clearMemory: Boolean = false) {
         timing.mark(if(clearMemory) "cancelPage(clearMemory)" else "cancelPage")
         owner++
-        val old = bindings.values.toList()
+        val old = activeBindings.toList()
         old.forEach { binding -> binding.view.get()?.setImageDrawable(null); unbind(binding) }
         val cancelled = synchronized(signal) {
             jobs.values.toList().also { list -> list.forEach(::cancelLocked); signal.notifyAll() }
@@ -506,7 +515,7 @@ class ArtworkLoader(context: Context) {
                         val now = android.os.SystemClock.elapsedRealtime()
                         listeners.forEach { binding ->
                             val view = binding.view.get()
-                            if (view != null && bindings[view] === binding && binding.key == job.key) {
+                            if (view != null && bindingByView[view] === binding && binding.key == job.key) {
                                 if (bitmap != null) {
                                     view.setImageBitmap(bitmap); binding.applied = job.key
                                     binding.blankAt.takeIf { it > 0 }?.let { started -> timing.blank(now - started) }
@@ -547,7 +556,7 @@ class ArtworkLoader(context: Context) {
         candidates.sortedBy { it.priority }.forEach { binding ->
             val view = binding.view.get()
             if (view == null) { dead += binding; return@forEach }
-            if (bindings[view] !== binding) { dead += binding; return@forEach }
+            if (bindingByView[view] !== binding) { dead += binding; return@forEach }
             val key = binding.key ?: return@forEach
             if (binding.applied == key || binding.failed == key) return@forEach
             if (view.getGlobalVisibleRect(rect)) request(binding)

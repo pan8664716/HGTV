@@ -5644,3 +5644,25 @@ feature-tv/
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## TV 崩溃批次：旧框架初始化、封面绑定与柔光 OOM
+
+状态：已修复，debug 构建通过，待用户真机验证。
+
+- 附件共 8 条，归并为 4 类：低版本初始化失败 2 条、封面绑定
+  `NoSuchElementException` 4 条、柔光位图 OOM 1 条、旧版 `setClipToOutline` 1 条。
+- 低版本初始化：`StageDeadline` 曾直接继承 `AutoCloseable`。少数盒子把
+  `SDK_INT` 报成 19、框架实际仍是 4.2，加载该类会失败并留下
+  `NoClassDefFoundError: Could not initialize class`。现在改为普通类，并提供成员
+  `use {}` 保持所有调用点的关闭语义。
+- 封面绑定：`ArtworkLoader.cancelPage()` 直接遍历 `WeakHashMap.values`，旧 Dalvik
+  在 GC 清 key 时会在迭代器里抛 `NoSuchElementException`。现在弱表只用于按 View
+  查找，遍历统一走不持有 View 的强引用绑定集合。
+- 柔光 OOM：`SoftDrawable` 预渲染阴影位图时未捕获 `OutOfMemoryError`。现在分配或
+  绘制失败会回收半成品、清空柔光缓存，并在本进程后续退回纯色底板。
+- `setClipToOutline` 崩溃来自 `1.3.5`，当前源码已全部改用 `roundCornersCompat`；
+  未再发现该 API 直调。
+- `:app:assembleDebug` 使用 JDK 17 通过；DEX 确认 `StageDeadline` 只继承
+  `java.lang.Object`。未改版本号、versionCode、依赖或目录结构。
+
+回滚：对本节对应提交执行 `git revert`。
