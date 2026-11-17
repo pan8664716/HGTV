@@ -255,7 +255,10 @@ fun TvMainActivity.refreshLibraryCards(changedId: String,removed: Boolean=false)
         // 观感就是用户说的「画面闪缩一下」。
         val shelves=homeShelves()
         // 结构没变（每一栏的 key 与卡片 key 都在）才就地刷新；多了 / 少了条目就得重建。
-        val structural=shelves.flatMap { shelf -> shelf.entries.map { "${shelf.key}:${it.series.id}" } }.toSet()
+        val structural=shelves.flatMap { shelf ->
+            shelf.entries.map { "${shelf.key}:${it.series.id}" } +
+                listOfNotNull(shelf.more?.let { "${shelf.key}:more" })
+        }.toSet()
         val existing=home.cardKeys()
         if(structural==existing) { home.refreshEntries(shelves); return }
         // 结构变了才重建，而且**不抢焦点**（见类头的焦点原则）。

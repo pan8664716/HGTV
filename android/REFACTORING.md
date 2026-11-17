@@ -4372,6 +4372,23 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 电视首页冷启动结构比较
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：冷启动先铺首页缓存，网络回包后整页 `HomeScreen` 重建，列表闪烁第二次。
+- 根因：网络回调的结构键只包含普通卡片，未包含每栏满一屏时生成的 `shelf:more`
+  “查看全部”卡片；而 `HomeScreen.cardKeys()` 包含它。只要任意一栏达到 6 张，
+  两边集合就必然不相等，网络刷新永远走整页重建。
+- 修复：`ListPage`、`HomePage` 的结构键统一加入 `more` 卡片；`HomeScreen.cardKeys()`
+  同时把尚在 `pendingCards` 中、逐帧待建的卡片计入，避免网络回包刚好落在增量铺卡
+  窗口时再次误判。
+- 结构一致时走 `refreshEntries()` 原地更新标题、状态、封面和热度；尚未建出的卡片
+  也会同步更新 `pendingCards` 里的数据，不再拆掉整棵首页视图。
+- `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 手机竖屏播放顶部信息对齐
 
 状态：已实现，debug 构建通过，待用户真机验证。

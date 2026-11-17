@@ -608,7 +608,10 @@ fun TvMainActivity.showCatalog(
                 } else {
                     val shelves=homeShelves()
                     val requestHomeFocus=!keepNav && !focusNav && !homeFocusRequested
-                    val structural=shelves.flatMap { shelf -> shelf.entries.map { "${shelf.key}:${it.series.id}" } }.toSet()
+                    val structural=shelves.flatMap { shelf ->
+                        shelf.entries.map { "${shelf.key}:${it.series.id}" } +
+                            listOfNotNull(shelf.more?.let { "${shelf.key}:more" })
+                    }.toSet()
                     if(structural==homeView.cardKeys()) {
                         homeView.refreshEntries(shelves)
                         if(requestHomeFocus && !homeView.hasFocus()) {

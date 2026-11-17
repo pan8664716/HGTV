@@ -217,6 +217,21 @@ class HomeScreen(
                 pendingRows[at] = shelf.copy(entries = shelf.entries.map { if (it.series.id == entry.series.id) entry else it })
                 continue
             }
+            var pendingUpdated = false
+            for (index in pendingCards.indices) {
+                val pending = pendingCards[index]
+                if (pending.shelf.key != shelfKey) continue
+                val entryAt = pending.shelf.entries.indexOfFirst { it.series.id == entry.series.id }
+                if (entryAt < pending.start) continue
+                val shelf = pending.shelf.copy(
+                    entries = pending.shelf.entries.map {
+                        if (it.series.id == entry.series.id) entry else it
+                    },
+                )
+                pendingCards[index] = pending.copy(shelf = shelf)
+                pendingUpdated = true
+            }
+            if (pendingUpdated) continue
             missing += "$shelfKey:${entry.series.id}"
         }
         return missing
@@ -227,6 +242,15 @@ class HomeScreen(
         pendingRows.forEach { shelf ->
             shelf.entries.forEach { add("${shelf.key}:${it.series.id}") }
             if (shelf.more != null) add("${shelf.key}:more")
+        }
+        // 首屏为了尽快落焦点会先只建 1~6 张，其余卡片在 pendingCards 里逐帧补齐。
+        // 网络回包可能正好落在这个窗口里；若这里漏掉待建卡片，结构比较会误判成
+        // “网络数据变了”，触发整页 updateShelves()，表现就是冷启动列表闪第二次。
+        pendingCards.forEach { pending ->
+            pending.shelf.entries.drop(pending.start).forEach {
+                add("${pending.shelf.key}:${it.series.id}")
+            }
+            if (pending.shelf.more != null) add("${pending.shelf.key}:more")
         }
     }
 
