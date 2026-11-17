@@ -476,20 +476,20 @@ object AppConfig {
      * 推荐流的取页、重试、去重、预热和行为上报参数。
      */
     object Recommend {
-        /** 推荐首屏请求条数。 */
-        const val FIRST_LIMIT = 20
+        /** 推荐首屏目标条数。 */
+        const val FIRST_LIMIT = 60
 
         /** 推荐后续页请求条数。 */
         const val PAGE_LIMIT = 20
 
         /** 单次加载最多连续处理多少页，防止空页链无限循环。 */
-        const val MAX_PAGES_PER_LOAD = 3
+        const val MAX_PAGES_PER_LOAD = 12
 
         /** 空页 / 游标停滞时最多重启几次推荐流。 */
         const val MAX_RESTARTS = 2
 
         /** 单次加载总请求上限，是所有重试分支的最后保险。 */
-        const val MAX_REQUESTS_PER_LOAD = 12
+        const val MAX_REQUESTS_PER_LOAD = 24
 
         /** 游标达到这个深度后，首屏加载会主动重置一次流头。 */
         const val DEEP_CURSOR = 120
@@ -501,13 +501,13 @@ object AppConfig {
         const val QUICK_FILTER_FAILURE_MS = 1_500L
 
         /** 首屏至少尝试凑到多少条。 */
-        const val MIN_ITEMS_PER_LOAD = 6
+        const val MIN_ITEMS_PER_LOAD = 60
 
         /** 推荐流连续播放失败多少条后停止自动翻页。 */
         const val SKIP_LIMIT = 4
 
-        /** 一页 20 条时，剩余约三分之一（7 条）即开始预取下一页。 */
-        const val PREFETCH_REMAINING = 7
+        /** 首屏 60 条时，剩余约三分之一（20 条）即开始预取下一页。 */
+        const val PREFETCH_REMAINING = 20
 
         /** 当前卡片之后预留多少条，用于快速翻页和预取。 */
         const val LOOKAHEAD = PREFETCH_REMAINING
@@ -529,6 +529,12 @@ object AppConfig {
 
         /** 推荐卡片首帧稳定后，延迟多久批量预取播放模型。 */
         const val BATCH_MODEL_DELAY_MS = 3_000L
+
+        /** 推荐页一次批量预取多少个播放链接。 */
+        const val BATCH_MODEL_SIZE = 20
+
+        /** 当前锚点消耗多少条后补充下一批播放链接。 */
+        const val BATCH_MODEL_REPLENISH_AFTER = 10
 
         /** 推荐流后台补页延迟，避免和首屏播放抢带宽。 */
         const val FEED_DELAY_MS = 8_000L
@@ -614,10 +620,10 @@ object AppConfig {
         const val MODEL_SPACING_MS = 200L
 
         /** 播放器批量模型单次请求上限。 */
-        const val PLAYER_MODEL_BATCH_LIMIT = 15
+        const val PLAYER_MODEL_BATCH_LIMIT = 20
 
         /** 后台预加载模型单次请求上限。 */
-        const val PRELOAD_MODEL_LIMIT = 6
+        const val PRELOAD_MODEL_LIMIT = 20
 
         /** 播放模型内存缓存条数。 */
         const val MODEL_CACHE_LIMIT = 32

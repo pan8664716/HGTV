@@ -337,6 +337,30 @@ class RecommendFeedEngine(
     }
 }
 
+/**
+ * 推荐播放链接批量窗口：首次立即取一批，之后每消耗 [replenishAfter] 条再补一批。
+ *
+ * 状态只在当前推荐页的主线程使用；切换体裁、清空推荐流或离开推荐页时重置。
+ */
+class RecommendPlaybackBatchState(
+    private val replenishAfter: Int = AppConfig.Recommend.BATCH_MODEL_REPLENISH_AFTER,
+) {
+    private var lastAnchor: Int? = null
+
+    fun shouldSchedule(anchor: Int): Boolean {
+        val previous=lastAnchor
+        if(previous==null || anchor-previous>=replenishAfter) {
+            lastAnchor=anchor
+            return true
+        }
+        return false
+    }
+
+    fun reset() {
+        lastAnchor=null
+    }
+}
+
 /** TV 与 Phone 共用的推荐加载策略。 */
 data class RecommendFeedPolicy(
     val cacheNamespace: String = "",
@@ -360,7 +384,7 @@ data class RecommendFeedPolicy(
         if(supportsHorizontalOnly && horizontalOnly) "$cacheNamespace-horizontal"
         else cacheNamespace
 
-    /** 当前页还剩多少条时补下一页；20 条一页时等价于消费约 2/3 后预取。 */
+    /** 当前列表还剩多少条时补下一页；首屏 60 条时等价于消费约 2/3 后预取。 */
     fun shouldPrefetch(remaining: Int): Boolean = remaining <= prefetchRemaining
 
     companion object {

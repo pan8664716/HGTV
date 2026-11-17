@@ -136,7 +136,7 @@ internal fun PhoneFeedView.loadMore() {
 /**
  * 首帧之后补齐首屏推荐。
  *
- * 首条内容优先用于起播；这里只补列表余量，不参与首帧判定。READY 与
+ * 首条内容优先用于起播；这里把列表补到首屏目标 60 条，不参与首帧判定。READY 与
  * onRenderedFirstFrame 都可能调用，[feedFirstFrameFillQueued] 保证只排一次。
  */
 internal fun PhoneFeedView.scheduleFeedFillAfterFirstFrame() {

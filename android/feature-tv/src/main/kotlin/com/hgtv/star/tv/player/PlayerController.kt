@@ -137,8 +137,8 @@ fun TvMainActivity.playEpisode(
     val selectedIndex=index.coerceIn(0,data.episodes.lastIndex)
     val targetId=data.episodes[selectedIndex]
     // 正式播放页先用 player 场景取当前集 + 后 5 集；更远的集在首帧稳定后 preload。
-    // 推荐页的 6 个模型在起播 READY 后单独预取，
-    // 窗口是「当前剧下一集 + 后 5 部不同剧」，不能混进这里。
+    // 推荐页的 20 个模型在起播 READY 后单独预取，
+    // 窗口是「当前剧下一集 + 后 19 部不同剧」，消耗 10 个后补充，不能混进这里。
     val modelQueue=if(recommendEntry || directRequest) emptyList() else data.episodes.drop(selectedIndex+1).take(5)
     // 队列里正好挂着这一集（用户自己按了「下一集」、或点选集切到下一集）：
     // 把它接过来当预热结果，省掉一次取地址。注意队列里那一项是「播完自动推进」用的，

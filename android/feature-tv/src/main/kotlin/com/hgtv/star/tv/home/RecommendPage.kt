@@ -34,23 +34,21 @@ import com.hgtv.star.shared.ui.LoadingDotsView
 // 3. 不挂「下一集」队列（见 `maybePrefetch`）：一集播完直接进正片，由正片接着播下一集；
 // 4. 没有可聚焦控件：所有方向键都由 `dispatchKeyEvent` 消化，焦点不会跑出画面。
 
-/** 推荐流一次取多少（分类接口的「全部推荐」流第一页就是 20 条，之后每页 100 条）。 */
+/** 推荐流连续播放失败后的换剧上限。 */
 const val RECOMMEND_SKIP_LIMIT=com.hgtv.star.core.AppConfig.Recommend.SKIP_LIMIT
 /**
  * 一次加载里最多连着取多少页。
  *
  * 只有「这一页筛完一条不剩」（整页都是本机隐藏的 / 全是推过的）才会接着取下一页，正常一页就返回。
  *
- * **实测一页要 700~1000ms**（20 条；60 条 940ms、100 条 1s，条数几乎不额外花钱）。
- * 早先这里是 14：一次进推荐最坏要串行等 14 页（≈11s）再换流重来两轮（≈30s），
- * 用户看到的就是「正在加载推荐…」一直转。页数深了本来就全是旧货（服务端在 2000 钳位），
- * 往下挖的性价比极低，因此这里收到 3 页：宁可早一点换一条新流。
+ * 官方接口单页返回条数有限，首屏目标 60 条可能需要连续取多页；这里保留一个
+ * 12 页上限，既能让首屏凑够目标，也能在服务端空页时及时换流。
  */
 internal const val RECOMMEND_MAX_CHAIN=com.hgtv.star.shared.feed.RecommendFeedPolicy.MAX_PAGES_PER_LOAD
 /**
  * 首屏一次要多少条。
  *
- * 首屏和后续补页统一按 20 条请求；首屏预算只负责在弱网时先把已有内容放出来。
+ * 首屏目标 60 条，后续补页按 20 条请求；首屏预算只负责在弱网时先把已有内容放出来。
  */
 private const val RECOMMEND_FIRST_LIMIT=com.hgtv.star.shared.feed.RecommendFeedPolicy.FIRST_LIMIT
 /**
@@ -68,7 +66,7 @@ internal const val RECOMMEND_FIRST_ITEMS=com.hgtv.star.shared.feed.RecommendFeed
  */
 private const val RECOMMEND_PAGE_LIMIT=com.hgtv.star.shared.feed.RecommendFeedPolicy.PAGE_LIMIT
 /**
- * 已消费约 2/3（20 条剩 7 条）时提前取下一页（[ensureRecommendLookahead]）。
+ * 首屏 60 条已消费约 2/3（剩 20 条）时提前取下一页（[ensureRecommendLookahead]）。
  */
 internal const val RECOMMEND_LOOKAHEAD=com.hgtv.star.shared.feed.RecommendFeedPolicy.PREFETCH_REMAINING
 /**

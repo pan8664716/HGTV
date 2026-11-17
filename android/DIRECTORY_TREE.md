@@ -647,7 +647,7 @@ android/
 | `PhoneFeedControls.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneFeedControls 主要包含 fun PhoneFeedView.togglePlay、fun PhoneFeedView.beginTempSpeed、fun PhoneFeedView.endTempSpeed。 | fun PhoneFeedView.togglePlay、fun PhoneFeedView.beginTempSpeed、fun PhoneFeedView.endTempSpeed |
 | `PhoneFeedData.kt` | 冷启动先铺落盘快照；首次无快照只取一个可播放条目，首帧后补齐列表。 | fun PhoneFeedView.restoreSnapshot、fun PhoneFeedView.loadMore、fun PhoneFeedView.scheduleFeedFillAfterFirstFrame、fun PhoneFeedView.refreshAfterIdentity、fun PhoneFeedView.adoptableIndexOf |
 | `PhoneFeedListener.kt` | 每台池播放器独立挂监听；按索引更新对应页面，READY / 首帧后触发补流、首帧追踪与池状态。 | fun PhoneFeedView.attachFeedListener、fun PhoneFeedView.detachFeedListener、fun PhoneFeedView.detachAllFeedListeners |
-| `PhoneFeedMetrics.kt` | 与电视端同一套「快速划过 / 划走 / 看过」判定。 | fun PhoneFeedView.settleRecommendWatch、fun PhoneFeedView.reportRecommendImpression、fun PhoneFeedView.scheduleRecommendBatchModels |
+| `PhoneFeedMetrics.kt` | 与电视端同一套「快速划过 / 划走 / 看过」判定；推荐播放链接首次批量 20 个，消耗 10 个后补充。 | fun PhoneFeedView.settleRecommendWatch、fun PhoneFeedView.reportRecommendImpression、fun PhoneFeedView.scheduleRecommendBatchModels |
 | `PhoneFeedNavigation.kt` | 进播放页。 | fun PhoneFeedView.openPlayer、fun PhoneFeedView.hideChromeForHandoff、fun PhoneFeedView.launchPlayer、fun PhoneFeedView.liveEpisodeOf |
 | `PhoneFeedPageBinding.kt` | 活动页绑定；保留上一页自己的播放器与 Surface，按新片源尺寸预置首帧比例。 | fun PhoneFeedView.attachPageImpl |
 | `PhoneFeedPlaybackClock.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneFeedPlaybackClock 主要包含 fun PhoneFeedView.syncDanmakuClock、fun PhoneFeedView.syncDanmakuClockNow、fun PhoneFeedView.syncProgressBarsNow、fun PhoneFeedView.startProgressTicker。 | fun PhoneFeedView.syncDanmakuClock、fun PhoneFeedView.syncDanmakuClockNow、fun PhoneFeedView.syncProgressBarsNow、fun PhoneFeedView.startProgressTicker |
@@ -861,16 +861,16 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `HomePage.kt` | 首页剧架与卡片行；完整构建过的 `HomeScreen` 会跨页面复用并就地刷新数据。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.historyRows、fun TvMainActivity.favoriteRows、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf |
-| `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址 / 首块优先；播放模型批量预取晚一点再跑，预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
+| `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址 / 首块优先；推荐播放链接首次批量 20 个，消耗 10 个后补充，预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
 | `RecommendControls.kt` | 上下键换剧；索引变化交给播放选择层先摘除旧播放层，再准备下一部。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
 | `RecommendCover.kt` | 切换过渡：换作瞬间全黑，新片源真实出帧且宽高就绪后才淡出；加载期不暴露上一部旧帧，淡出完成可回调撤 loading。 | val COVER_OUT_MS、val COVER_OUT_FAST_MS、fun TvMainActivity.showRecommendCover、fun TvMainActivity.revealRecommendCover、val PICTURE_RECOVERY_LIMIT |
 | `RecommendEntry.kt` | 打开推荐页并自动播放一部推荐；冷启动按统一命名空间读取上次播放位置，无快照时先取一个可播放条目，剩余列表在首帧后补齐。 | fun TvMainActivity.openRecommend、fun TvMainActivity.resumeIndex、fun TvMainActivity.nextRecommendIndex、val RESUME_CACHE_PROBE、fun TvMainActivity.mediaCached |
 | `RecommendEpisode.kt` | 推荐页单集起播、停留结算、曝光上报与每部起播时重置预热轮次；播放位置写入与快照一致的命名空间，相邻地址与首块由播放首帧后的预热链补上。 | val WATCH_DWELL_MS、val WATCH_PLAY_MS、val QUICK_SWIPE_MS、fun TvMainActivity.startRecommendEpisode、fun TvMainActivity.settleRecommendWatch、fun TvMainActivity.reportRecommendImpression、fun TvMainActivity.reportRecommendProgress |
 | `RecommendFeedControl.kt` | 冷启动续播时把「取推荐流」推迟到首帧之后；推荐范围或横屏请求变化时清列表、快照和游标。 | val RECOMMEND_FEED_DELAY_MS、fun TvMainActivity.requestRecommendFeedAfterFirstFrame、fun TvMainActivity.fireRecommendFeed、fun TvMainActivity.cancelRecommendFeed、fun TvMainActivity.invalidateRecommendForFilterChange、fun TvMainActivity.closeRecommendCache、fun TvMainActivity.cancelRecommendWarm |
-| `RecommendFeedLoad.kt` | 取一页推荐流；每页 20 条，剩余 7 条时预取下一页，并记录统一首帧链路。 | fun TvMainActivity.loadRecommendPage、fun TvMainActivity.ensureRecommendLookahead、fun TvMainActivity.settleRecommendLoad |
+| `RecommendFeedLoad.kt` | 取一页推荐流；首屏目标 60 条、后续每页 20 条，剩余 20 条时预取下一页，并记录统一首帧链路。 | fun TvMainActivity.loadRecommendPage、fun TvMainActivity.ensureRecommendLookahead、fun TvMainActivity.settleRecommendLoad |
 | `RecommendNavigation.kt` | 推荐页进入正式播放与返回首页路由；返回首页优先复用缓存并延后播放器重资源回收。 | fun TvMainActivity.enterFormalPlayback、fun TvMainActivity.goHomeFromRecommend、fun TvMainActivity.exitRecommendToHome、fun TvMainActivity.leaveRecommendPlaybackToHome |
 | `RecommendOverlay.kt` | 推荐页底部那块信息浮层：进度 + 剧名 + 操作说明；中心 loading 只在真实首帧后撤掉。 | fun TvMainActivity.attachRecommendOverlay、fun TvMainActivity.recommendChip、fun TvMainActivity.dismissRecommendOverlay、fun TvMainActivity.updateRecommendOverlay |
-| `RecommendPage.kt` | 本文件是「推荐」这一条独立的播放链路：抖音式的上下换剧、确定进正片、菜单开播放设置、返回回主页面；每页 20 条，消费约 2/3 后预取。 | val RECOMMEND_SKIP_LIMIT、val RECOMMEND_MAX_CHAIN、val RECOMMEND_CACHE_NAMESPACE、val RECOMMEND_FIRST_LIMIT、val RECOMMEND_FIRST_ITEMS、val RECOMMEND_PAGE_LIMIT、val RECOMMEND_LOOKAHEAD |
+| `RecommendPage.kt` | 本文件是「推荐」这一条独立的播放链路：抖音式的上下换剧、确定进正片、菜单开播放设置、返回回主页面；首屏目标 60 条，消费约 2/3 后预取。 | val RECOMMEND_SKIP_LIMIT、val RECOMMEND_MAX_CHAIN、val RECOMMEND_CACHE_NAMESPACE、val RECOMMEND_FIRST_LIMIT、val RECOMMEND_FIRST_ITEMS、val RECOMMEND_PAGE_LIMIT、val RECOMMEND_LOOKAHEAD |
 | `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部；换到另一部时保留稳定 PlayerView，通过 keep-content=false 清空旧 Surface、detach 并隐藏到新源准备完成、停止旧媒体、立即作废旧 work，再显示当前作品 loading 并取详情；推荐详情跳过作者查询。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend、fun TvMainActivity.resetRecommendPlaybackForSwitch |
 | `RecommendUi.kt` | 本机兴趣画像（进推荐页时建一次，之后每页复用）。 | fun TvMainActivity.loadGenderOptions、fun TvMainActivity.showRecommendMessage、fun TvMainActivity.showRecommendLoading、fun TvMainActivity.showRecommendToast |
 | `RecommendWarm.kt` | 一次在途的「相邻一部预热」。 | class RecommendWarm |
@@ -1104,7 +1104,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PreloadScheduler.kt` | 推荐流「相邻预热」的**排程编排**：电视与手机共用这一份。 | class PreloadScheduler |
-| `RecommendFeedEngine.kt` | 推荐流的加载、续流、降级、重排和快照落盘；曝光记录不参与删卡，回传当前列表少量 ID 做深游标去重，统一每页 20 条并在剩余约 1/3 时预取，TV 横屏偏好只传服务端。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult |
+| `RecommendFeedEngine.kt` | 推荐流的加载、续流、降级、重排和快照落盘；曝光记录不参与删卡，回传当前列表少量 ID 做深游标去重，首屏目标 60 条并在剩余约 1/3 时预取，TV 横屏偏好只传服务端。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult、class RecommendPlaybackBatchState |
 | `RecommendStore.kt` | 推荐流的页面无关状态；按横屏/默认请求模式隔离续流游标，并在条件变化时支持重置。 | class RecommendStore |
 | `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 单集直连地址 → 索引 / 首块；预热详情不补作者，避免占用首帧路径。 | class RecommendWarmCoordinator |
 
@@ -1180,7 +1180,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `RecommendFeedPolicyTest.kt` | 推荐流每页 20 条、消费约 2/3 后预取的回归测试。 | class RecommendFeedPolicyTest |
+| `RecommendFeedPolicyTest.kt` | 推荐流首屏 60 条、消费约 2/3 后预取和播放链接批量补充节奏的回归测试。 | class RecommendFeedPolicyTest |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/feature/account/`
 

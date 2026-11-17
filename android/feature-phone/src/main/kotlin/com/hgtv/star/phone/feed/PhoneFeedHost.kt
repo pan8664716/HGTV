@@ -25,6 +25,7 @@ internal fun PhoneFeedView.setGenreImpl(value: String?) {
     feedCursorRestored = false
     feedFilterMiss = 0
     feedFirstFrameFillQueued = false
+    feedPlaybackBatchState.reset()
     feedNotifyDataSetChanged()
     // 新的一类先铺它自己的快照：首屏不必等取流，也不会铺出上一类的卡片。
     restoreSnapshot()

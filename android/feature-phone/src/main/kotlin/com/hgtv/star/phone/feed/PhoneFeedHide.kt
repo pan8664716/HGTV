@@ -73,6 +73,7 @@ internal fun PhoneFeedView.onHiddenImpl(handoff: Boolean = false) {
     // 而停留确认本来就是「这一屏还在前台停着」才成立的事。
     feedPreloadScheduler.cancel()
     feedPendingPlan = null
+    feedPlaybackBatchState.reset()
     // 交接时**不解绑 Surface**：SurfaceView 的 surface 在窗口切走时会被系统销毁、
     // 切回来时重建，播放器自己会跟上；这里解绑反而要在回来时重新 `setPlayer`，
     // 那一下会先清屏再挂新的，用户看到的是一次闪黑。

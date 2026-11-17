@@ -419,7 +419,9 @@ class PhoneFeedView(
     private val currentEpisodeIndex = HashMap<Int, Int>()
     internal val feedCurrentEpisodeIds get()=currentEpisodeIds
     internal val feedCurrentEpisodeIndex get()=currentEpisodeIndex
-    /** 推荐页起播后的 6 个模型批量预取（当前剧下一集 + 后 5 部不同剧）。 */
+    /** 推荐页播放链接批量窗口：首次 20 个，消耗 10 个后再补。 */
+    private val playbackBatchState=com.hgtv.star.shared.feed.RecommendPlaybackBatchState()
+    internal val feedPlaybackBatchState get()=playbackBatchState
     private var recommendBatchKey = ""
     private var recommendBatchJob: Job? = null
     private var firstFrameFillQueued = false

@@ -32,25 +32,28 @@ fun TvMainActivity.prefetchRecommendNeighbors(index: Int,direction: Int=recommen
 }
 
 /** 换剧 / 进正片时作废上一部还没发完的推荐批量预取。 */
-fun TvMainActivity.cancelRecommendBatchModels() {
+fun TvMainActivity.cancelRecommendBatchModels(resetWindow: Boolean = true) {
     recommendBatchJob?.cancel(true)
     recommendBatchJob=null
     recommendBatchKey=""
+    if(resetWindow) recommendPlaybackBatchState.reset()
 }
 
 /**
- * 推荐页起播后预取 6 个播放模型：
- * 当前剧的下一集 + 后面 5 部不同推荐剧的首集。
+ * 推荐页起播后预取 20 个播放模型：
+ * 当前剧的下一集 + 后面 19 部不同推荐剧的首集；消耗 10 条后再补下一批。
  */
 fun TvMainActivity.prefetchRecommendBatchModels() {
     if(screen!="recommend") return
     val data=detail ?: return
+    if(!recommendPlaybackBatchState.shouldSchedule(recommendIndex)) return
     val currentNext=data.episodes.getOrNull(episodeIndex+1).orEmpty()
     val candidates=(recommendIndex+1 until recommendItems.size)
         .mapNotNull { recommendItems.getOrNull(it) }
         .filter { it.id!=data.series.id }
         .distinctBy { it.id }
-    val key="${data.series.id}:$currentNext:${candidates.take(8).joinToString(",") { it.id }}"
+        .take(com.hgtv.star.core.AppConfig.Recommend.BATCH_MODEL_SIZE)
+    val key="${data.series.id}:$currentNext:${candidates.joinToString(",") { it.id }}"
     if(recommendBatchKey==key && recommendBatchJob?.isDone==false) return
     recommendBatchJob?.cancel(true)
     recommendBatchKey=key
@@ -63,7 +66,7 @@ fun TvMainActivity.prefetchRecommendBatchModels() {
         currentNext.takeIf { it.isNotBlank() }?.let(ids::add)
         try {
             if(!library.deviceRegistered()) registerDeviceOnce()
-            val target=if(currentNext.isBlank()) 5 else 6
+            val target=com.hgtv.star.core.AppConfig.Recommend.BATCH_MODEL_SIZE
             for(series in candidates) {
                 if(ids.size>=target) break
                 val item=known[series.id]

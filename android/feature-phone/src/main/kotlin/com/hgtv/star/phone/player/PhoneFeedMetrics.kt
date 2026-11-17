@@ -35,19 +35,20 @@ internal fun PhoneFeedView.reportRecommendImpression(index: Int) {
 }
 
 /**
- * 推荐页出画面后，用一次批量接口预取 6 个模型：
- * 当前剧下一集 + 后面 5 部不同推荐剧的首集。
+ * 推荐页出画面后，用一次批量接口预取 20 个模型：
+ * 当前剧下一集 + 后面 19 部不同推荐剧的首集；消耗 10 条后再补下一批。
  */
 internal fun PhoneFeedView.scheduleRecommendBatchModels(anchor: Int) {
     if (feedHidden || anchor != feedPlayingIndex) return
     val data = feedPlayingDetail ?: return
     val current = feedCurrentEpisodeIndex[anchor] ?: return
+    if (!feedPlaybackBatchState.shouldSchedule(anchor)) return
     val nextId = data.episodes.getOrNull(current + 1).orEmpty()
     val candidates = (anchor + 1 until feedItems.size)
         .mapNotNull(feedItems::getOrNull)
         .filter { it.id != data.series.id }
         .distinctBy { it.id }
-        .take(8)
+        .take(com.hgtv.star.core.AppConfig.Recommend.BATCH_MODEL_SIZE)
     val key = "${data.series.id}:$nextId:${candidates.joinToString(",") { it.id }}"
     if (feedRecommendBatchKey == key && feedRecommendBatchJob?.isActive == true) return
     feedRecommendBatchJob?.cancel()
@@ -60,7 +61,7 @@ internal fun PhoneFeedView.scheduleRecommendBatchModels(anchor: Int) {
         val repo = PhoneServices.repository(view.context)
         val ids = linkedSetOf<String>()
         if (nextId.isNotBlank()) ids += nextId
-        val target = if (nextId.isBlank()) 5 else 6
+        val target = com.hgtv.star.core.AppConfig.Recommend.BATCH_MODEL_SIZE
         withContext(Dispatchers.IO) {
             for (series in candidates) {
                 if (ids.size >= target) break
