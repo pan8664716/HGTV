@@ -58,6 +58,8 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   追更榜 / 必看榜 / 收藏榜，请求切到 GET `cell/change/v:version`。
 - 榜单分页保存 `next_offset / rank_version / session_id / filter_ids`，首页与榜单页
   共用首屏缓存；TV 首页新增八个榜单剧架，设置显隐列表由 `HomeLayout` 自动同步。
+- TV 首页默认只显示推荐榜 / 热播榜 / 新剧榜；预约、热搜、追更、必看、收藏默认隐藏，
+  用户可在设置中重新打开，已显式保存的显隐配置不被覆盖。
 - 推荐流体裁拆成 `RecommendGenre`，继续保留推荐 / 漫剧 / AI剧 / 真人四条流。
 - TV / 手机 / iOS 的榜单顶部导航统一为两字芯片并支持横向滚动；TV 在页头行内占满
   标题与右侧圆形入口之间的固定剩余宽度，并在右侧至少留出一个完整圆钮的距离；

@@ -327,7 +327,7 @@ android/
 | `ContentType.kt` | 片库里的内容类型。 | class ContentType |
 | `ContentValues.kt` | 目录、分类、榜单、首页布局与筛选；电视统一设备参数档案由底层 profile 提供。 | fun ContentRepository.writeValuesImpl、fun ContentRepository.appValuesImpl、fun ContentRepository.danmakuValuesImpl、fun ContentRepository.searchValuesImpl、fun ContentRepository.searchRequestImpl、fun ContentRepository.accountAppValuesImpl、fun ContentRepository.deviceValuesImpl |
 | `FeedCursor.kt` | 推荐流的**续流游标**：session_id + next_offset，按体裁分开存。 | object FeedCursor |
-| `HomeLayout.kt` | 首页栏目模型；固定本机三栏与八个榜单，供首页渲染、设置显隐和备份白名单共用。 | class HomeColumn、object HomeLayout |
+| `HomeLayout.kt` | 首页栏目模型；固定本机三栏与八个榜单，并提供默认只显示推荐/热播/新剧的隐藏集合。 | class HomeColumn、object HomeLayout、val defaultHiddenKeys |
 | `OptionalFilter.kt` | 某一层「锦上添花」的推荐筛选项（受众 / filter_ids / 体裁）在服务端回空页时的降级状态。 | class OptionalFilter |
 | `RankBoard.kt` | 八个榜单及独立推荐流体裁模型；包含 HAR 的 sub_selected_items 映射。 | class RankBoard、class RecommendGenre |
 | `SeriesSeasons.kt` | 剧名里的季号解析。 | object SeriesSeasons |

@@ -212,8 +212,11 @@ object LibraryDisk {
             values["debugMode"] as? Boolean ?: false,
             // 启动进入推荐：旧版本磁盘没有这个键，按开启处理（与需求 1 一致）。
             values["launchRecommend"] as? Boolean ?: true,
-            // 首页本机记录三栏：与 [hiddenNav] 一样存成字符串集合；旧版本磁盘没有这个键 = 三栏全显示。
-            (values["hiddenHome"] as? Set<*>)?.filterIsInstance<String>()?.filter { it in HOME_KEYS }?.joinToString(",") ?: "",
+            // 首页栏目显隐：磁盘没有这个键时使用首页模型的默认隐藏集合；显式保存的空集合仍表示全部显示。
+            ((values["hiddenHome"] as? Set<*>)
+                ?.filterIsInstance<String>()
+                ?.filter { it in HOME_KEYS }
+                ?: HomeLayout.defaultHiddenKeys).joinToString(","),
             // 「减少动画」：旧版本磁盘没有这个键，按关闭处理（与之前的行为一致）。
             values["reduceAnim"] as? Boolean ?: false,
             // 播放显示四项：旧版本磁盘没有这些键，按默认值处理（**四项全关**：

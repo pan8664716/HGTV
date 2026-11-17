@@ -22,6 +22,19 @@ data class HomeColumn(val key: String, val title: String, val board: RankBoard?)
  * 某一栏没有内容就不渲染（栏目仍然在这里，只是界面上不出现）。
  */
 object HomeLayout {
+    /**
+     * 首次使用和旧设置没有保存首页显隐时，默认只显示推荐榜、热播榜、新剧榜。
+     *
+     * 其余五个榜单仍在设置页可重新打开；这里只影响首页是否铺那一栏。
+     */
+    val defaultHiddenKeys: Set<String> = setOf(
+        "rank-subscribe",
+        "rank-hot-search",
+        "rank-chase",
+        "rank-must-watch",
+        "rank-followed",
+    )
+
     private val localColumns = listOf(
         HomeColumn("history","历史记录",null),
         HomeColumn("favorites","我的收藏",null),
