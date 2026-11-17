@@ -27,7 +27,6 @@ import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.phoneTabBarHeightPx
 import com.hgtv.star.phone.ui.roundedBackground
-import com.hgtv.star.phone.ui.topScrim
 
 /**
  * 竖屏播放版面：**推荐（信息流）与正式播放页共用这一块**。
@@ -218,7 +217,6 @@ class PhoneVideoPage(
     private var videoHeight = 0
     internal lateinit var infoColumn: LinearLayout
     internal lateinit var bottomShade: View
-    internal lateinit var topShade: View
 
     internal val centerGlyph = PhoneGlyph(context, PhoneGlyph.Kind.PAUSE).apply {
         tint = Color.WHITE
@@ -292,15 +290,6 @@ class PhoneVideoPage(
         addView(bottomShade, LayoutParams(LayoutParams.MATCH_PARENT, 0).apply {
             gravity = Gravity.BOTTOM
         })
-        topShade = View(context).apply { background = topScrim(130) }
-        // 默认不画：这一页顶部本来什么都没有（竖屏的「播放显示」那一行是**兄弟层**
-        // `portraitTop`，不在本页里）。渐变留着就是画面上沿一层黑雾，
-        // 只有真的要为那一行垫底时才由宿主调 [setTopScrimVisible] 打开。
-        topShade.visibility = GONE
-        addView(topShade, LayoutParams(LayoutParams.MATCH_PARENT, context.dp(110)).apply {
-            gravity = Gravity.TOP
-        })
-
         // 正式播放页的纵滑换集要整页稳定接管：PlayerView / 弹幕层都是全屏子 View，
         // 手势如果只挂在根页面上，触摸会先被子 View 吃掉，状态机经常收不到 DOWN。
         // 这一层压在画面与弹幕之上、信息栏与按钮之下：视频区域始终能收到手势，

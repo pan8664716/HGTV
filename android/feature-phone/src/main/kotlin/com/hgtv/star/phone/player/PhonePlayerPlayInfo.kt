@@ -42,7 +42,6 @@ internal fun PhonePlayerActivity.syncPlayInfoImpl() {
     val visible = !empty && (!followChrome || playerChromeVisible)
     playerInfoRow.visibility = if (visible) View.VISIBLE else View.GONE
     playerPortraitTop.visibility = if (visible) View.VISIBLE else View.GONE
-    if (playerPageInitialized) playerPage.setTopScrimVisible(visible)
     if (playerLandInfoRowInitialized) {
         playerLandInfoRow.visibility = if (visible) View.VISIBLE else View.GONE
     }

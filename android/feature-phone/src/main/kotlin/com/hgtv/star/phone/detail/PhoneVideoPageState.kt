@@ -16,10 +16,6 @@ fun PhoneVideoPage.setChromeVisible(visible: Boolean) {
     if (!visible) hideCenterIcon()
 }
 
-fun PhoneVideoPage.setTopScrimVisible(visible: Boolean) {
-    topShade.visibility = if (visible) View.VISIBLE else View.GONE
-}
-
 fun PhoneVideoPage.isChromeVisible(): Boolean = chromeVisible
 
 fun PhoneVideoPage.setUnderlayMode(on: Boolean) {
