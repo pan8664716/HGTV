@@ -4520,6 +4520,24 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 1.3.7.8 发布准备
+
+状态：GitHub Release 已发布，待用户真机验证。
+
+- `versionName` 更新为 `1.3.7.8`，`versionCode` 从 `82` 更新为 `83`。
+- TV 包含播放顶部信息上移、弹幕避开顶部播放信息和首页冷启动列表闪烁修复。
+- 手机 / 平板包含竖屏播放顶部信息对齐、顶部黑雾修复和推荐播放页弹幕首行对齐。
+- `docs/CHANGELOG.md` 已按电视、手机 / 平板分节；README、Release 正文和更新元数据同步。
+- `:app:assembleRelease`、`:app:lintRelease` 通过；APK 的 `aapt` 版本信息为
+  `versionName=1.3.7.8`、`versionCode=83`，`apksigner` v1 / v2 校验通过。
+- APK：`outputs/release-1.3.7.8/HGTV_1.3.7.8.apk`，大小 `3977573` 字节；
+  SHA-256：`c13ff45fe2f608aaa518038e620390285636dc102c8941285c4dccfbe8e7f803`。
+- Release 只上传 `HGTV_1.3.7.8.apk`、`SHA256SUMS`、`update.json`，不含源码；
+  tag `1.3.7.8` 指向空树提交 `c71b749f7bf170c8b6d124202bd99a9b9a8c8d9d`。
+- Release：<https://github.com/pan8664716/HGTV/releases/tag/1.3.7.8>。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 1.3.7.4 发布准备
 
 状态：release 已编译，签名校验通过，待用户真机安装验证。
