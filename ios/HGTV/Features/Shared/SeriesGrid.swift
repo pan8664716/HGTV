@@ -29,13 +29,14 @@ struct SeriesGrid: View {
                                  count: max(1, min(AppConfig.LibraryDefaults.maxPosterColumns, columns))),
                   spacing: m.dp(PhoneDimen.posterGap)) {
             ForEach(Array(items.enumerated()), id: \.element.id) { index, series in
+                let rank = ranked ? (ranking[series.id]?.rank ?? index + 1) : nil
                 Button {
                     onOpen(series)
                 } label: {
                     PosterCardView(
                         series: series,
-                        rank: ranked ? (ranking[series.id]?.rank ?? index + 1) : nil,
-                        rankTop: index < 3,
+                        rank: rank,
+                        rankTop: rank.map { $0 <= 3 } ?? false,
                         statusText: statusOf?(series) ?? "",
                         progress: progressOf?(series),
                         heatServerText: ranking[series.id]?.heat,

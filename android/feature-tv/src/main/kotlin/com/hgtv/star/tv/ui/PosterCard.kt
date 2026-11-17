@@ -70,7 +70,7 @@ class PosterCard(
 
     /**
      * 绑定一张卡。内容规则全部走 [PosterCardContent]：
-     * 季号默认第 1 季、系统标签优先于名次、集数优先于兜底角标、热度原串优先。
+     * 季号默认第 1 季、榜单页只显示名次、集数优先于兜底角标、热度原串优先。
      */
     fun bind(
         item: Series,
@@ -78,6 +78,7 @@ class PosterCard(
         badgeText: String,
         progressPercent: Int?,
         rankTop: Boolean,
+        rank: Int? = null,
         seasonBadge: Boolean = true,
         rankText: String = "",
         /** 服务端原串（`9014万`）；空串时退回 [Series.heat] 解析值。 */
@@ -90,6 +91,7 @@ class PosterCard(
             statusText = statusText,
             badgeFallback = badgeText,
             rankText = rankText,
+            rank = rank,
             rankTop = rankTop,
             seasonBadge = seasonBadge,
             heatServerText = heatServerText,

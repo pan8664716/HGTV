@@ -400,7 +400,7 @@ fun TvMainActivity.bindGridCard(card: PosterCard,item: Series) {
     // 未上架没有集数：右下角改画「预告」，否则那一角空着，卡片看起来像数据缺了。
     card.bind(item,statusText,if(item.upcoming) "预告" else "",
         progressPercent,
-        rank!=null && rank<=3,rankText=rankText,heatServerText=position?.heat.orEmpty(),
+        rank!=null && rank<=3,rank=rank,rankText=rankText,heatServerText=position?.heat.orEmpty(),
         preferStatus=collection=="history" || (tab==TAB_PROFILE && accountTab=="history") || item.upcoming,
         hideTags=(tab==TAB_PROFILE && accountTab=="history") || collection=="history")
 }

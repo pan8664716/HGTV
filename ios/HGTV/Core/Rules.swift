@@ -175,6 +175,22 @@ enum LabelStyle {
     }
 }
 
+/// 榜单前三名的金银铜渐变。
+enum RankBadgeStyle {
+    static let gold: [UInt32] = [0xD6A21A, 0x7A4D00]
+    static let silver: [UInt32] = [0xBFC8D4, 0x5F6B7A]
+    static let bronze: [UInt32] = [0xC47A42, 0x6A351B]
+
+    static func colors(_ rank: Int) -> [UInt32] {
+        switch rank {
+        case 1: return gold
+        case 2: return silver
+        case 3: return bronze
+        default: return []
+        }
+    }
+}
+
 // MARK: - 播放读数
 
 enum PlaybackInfoLine {

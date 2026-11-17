@@ -5,7 +5,7 @@ package com.hgtv.star.core
  * 一张海报卡要显示的全部文案与角标状态。
  *
  * 这里只做纯逻辑，不碰 Android View：电视与手机虽然字号、焦点和材质不同，
- * 但「季号缺省第 1 季」「系统标签优先于名次」「集数优先于兜底角标」
+ * 但「榜单页只显示名次」「前三名使用金银铜渐变」「集数优先于兜底角标」
  * 「热度优先用服务端原串」「第二行标签最多三个」这些规则必须完全一致。
  *
  * 标题与封面仍取 [Series]；这个对象只描述**卡片上各处该怎么写**。
@@ -31,7 +31,8 @@ data class PosterCardContent(
          * @param statusText 第二行状态（历史进度 / 收藏更新 / 上线时间）；空白表示没有。
          * @param badgeFallback 没有集数时右下角显示的兜底文案（`预告` 这类）。
          * @param rankText 榜单名次（`第 3 名`）；非榜单页传空串。
-         * @param rankTop 名次是否在前三（决定提示色）。
+         * @param rank 榜单名次数字；非榜单页传 null。
+         * @param rankTop 兼容旧调用；榜单颜色现在按 [rank] 判断。
          * @param heatServerText 服务端给的热度原串（榜单接口）；没有时用 [Series.heat]。
          * @param preferStatus 第二行是否状态优先（历史栏）。
          */
@@ -40,6 +41,7 @@ data class PosterCardContent(
             statusText: String = "",
             badgeFallback: String = "",
             rankText: String = "",
+            rank: Int? = null,
             rankTop: Boolean = false,
             seasonBadge: Boolean = true,
             heatServerText: String? = null,
@@ -51,11 +53,14 @@ data class PosterCardContent(
             val episode = EpisodeLabel.total(series.episodeCount).ifEmpty { badgeFallback }
             val season = if (seasonBadge) SeriesSeasons.badge(series) else ""
             val heat = HeatLabel.badge(heatServerText, series.heat)
-            val corner = series.label.ifBlank { rankText }
-            val cornerColors = if (series.label.isBlank()) emptyList()
+            val parsedRank = rank ?: rankText.filter(Char::isDigit).toIntOrNull()
+            val ranking = parsedRank != null || rankText.isNotBlank()
+            val corner = if (ranking) rankText.ifBlank { "第 ${parsedRank ?: 1} 名" } else series.label
+            val cornerColors = if (parsedRank != null) RankBadgeStyle.colors(parsedRank)
+                else if (ranking) emptyList()
                 else LabelStyle.colors(series.label, series.labelBg)
             val description = listOf(
-                series.label, episode, season, series.title, tags, status,
+                corner, episode, season, series.title, tags, status,
                 if (heat.isBlank()) "" else "$heat 热度",
             ).filter { it.isNotBlank() }.joinToString("，")
             return PosterCardContent(
@@ -67,7 +72,7 @@ data class PosterCardContent(
                 heat = heat,
                 corner = corner,
                 cornerColors = cornerColors,
-                cornerTop = series.label.isBlank() && rankTop,
+                cornerTop = false,
                 preferStatus = preferStatus,
                 hideTags = hideTags,
                 contentDescription = description,
@@ -85,5 +90,19 @@ data class PosterCardContent(
             .filter { it.isNotEmpty() && !it.contains("集") }
             .take(3)
             .joinToString(" · ")
+    }
+}
+
+/** 榜单前三名的角标渐变：金 / 银 / 铜。 */
+object RankBadgeStyle {
+    private val GOLD = listOf(0xFFD6A21A.toInt(), 0xFF7A4D00.toInt())
+    private val SILVER = listOf(0xFFBFC8D4.toInt(), 0xFF5F6B7A.toInt())
+    private val BRONZE = listOf(0xFFC47A42.toInt(), 0xFF6A351B.toInt())
+
+    fun colors(rank: Int): List<Int> = when(rank) {
+        1 -> GOLD
+        2 -> SILVER
+        3 -> BRONZE
+        else -> emptyList()
     }
 }

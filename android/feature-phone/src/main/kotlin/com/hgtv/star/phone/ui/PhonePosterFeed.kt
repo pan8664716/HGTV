@@ -794,11 +794,13 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
                 "HGTV-CARD",
                 "bind ${item.id} handler=${onLongPress != null}",
             )
+            val rank = if(ranked) ranking?.positions?.get(item.id)?.rank ?: (position+1) else null
             super.bind(item, PosterCardContent.of(
                 series = item,
                 statusText = statusText,
-                rankText = if (ranked) "第 ${position + 1} 名" else "",
-                rankTop = position < 3,
+                rankText = rank?.let { "第 $it 名" }.orEmpty(),
+                rank = rank,
+                rankTop = rank != null && rank<=3,
                 heatServerText = heatBy[item.id],
                 preferStatus = statusText.isNotBlank(),
                 hideTags = hideTags,

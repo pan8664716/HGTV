@@ -32,7 +32,7 @@ struct PosterCardView: View {
         let episode = EpisodeLabel.total(series.episodeCount)
         let season = SeriesSeasons.badge(series)
         let heat = HeatLabel.badge(serverText: heatServerText, value: series.heat)
-        let corner = series.label.isEmpty ? (rank.map { "第 \($0) 名" } ?? "") : series.label
+        let corner = rank.map { "第 \($0) 名" } ?? series.label
         return (episode, season, heat, corner, tags, status)
     }
 
@@ -137,7 +137,13 @@ struct PosterCardView: View {
     }
 
     private var cornerBackground: LinearGradient {
-        let colors = LabelStyle.colors(series.label, series.labelBg).map { Color(rgb: $0) }
+        let source: [UInt32]
+        if let rank {
+            source = RankBadgeStyle.colors(rank)
+        } else {
+            source = LabelStyle.colors(series.label, series.labelBg)
+        }
+        let colors = source.map { Color(rgb: $0) }
         if colors.count >= 2 {
             return LinearGradient(colors: Array(colors.prefix(2)), startPoint: .topLeading, endPoint: .bottomTrailing)
         }

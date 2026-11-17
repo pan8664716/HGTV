@@ -398,7 +398,7 @@ android/
 | `EpisodeLabel.kt` | 卡片 / 简介页上的「集数」文案。 | object EpisodeLabel、object EpisodePaging |
 | `HeatLabel.kt` | 卡片上那个「热度」数字怎么显示。 | object HeatLabel |
 | `LabelStyle.kt` | 卡片左上角那个「系统标签」的配色。 | object LabelStyle |
-| `PosterCardContent.kt` | 一张海报卡要显示的全部文案与角标状态。 | class PosterCardContent |
+| `PosterCardContent.kt` | 一张海报卡要显示的全部文案与角标状态；榜单模式优先显示真实排名，前三名提供金银铜渐变。 | class PosterCardContent、object RankBadgeStyle |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/library/`
 
