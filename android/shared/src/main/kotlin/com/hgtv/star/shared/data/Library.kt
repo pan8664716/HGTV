@@ -621,8 +621,8 @@ class Library(context: Context) {
     /**
      * TV 推荐请求是否使用官方横屏候选流。
      *
-     * 开启后官方推荐请求传 `is_horizontal_screen=true`；卡片 `vertical` 字段只用于展示事实，
-     * 不再在客户端二次过滤。
+     * 开启后官方推荐请求传 `is_horizontal_screen=true`；服务端仍可能返回竖屏卡，
+     * 因此客户端同时按卡片 `vertical` 字段做兜底过滤。
      */
     var recommendHorizontalOnly: Boolean
         get() = recommendHorizontalOnlyCached

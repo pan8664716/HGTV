@@ -232,7 +232,7 @@ class RecommendFeedEngine(
                 RecommendFlow.titleKey(it.title).takeIf(String::isNotEmpty)
             }.toHashSet()
             val pageItems = feed.page.items
-            val candidates = RecommendFlow.fresh(
+            val fresh = RecommendFlow.fresh(
                 items = pageItems,
                 hidden = hidden,
                 finished = finished,
@@ -241,11 +241,20 @@ class RecommendFeedEngine(
                 loadedTitles = loadedTitles,
                 filterExposure = false,
             )
+            // 服务端 is_horizontal_screen=true 仍会夹带竖屏卡（实测 60 条里 15 条
+            // vertical=true）。请求参数继续保留，客户端再做一次兜底过滤。
+            val candidates = if(horizontalOnly) fresh.filterNot { it.vertical } else fresh
+            val verticalDropped = fresh.size-candidates.size
             val expired = !input.append &&
                 now() - firstLoadAt >= policy.firstBudgetMs
             val exhausted = !feed.page.hasMore || restarts >= policy.maxRestarts || expired
+            val fallbackItems = if(horizontalOnly) {
+                pageItems.filterNot { it.vertical }
+            } else {
+                pageItems
+            }
             val shown = if(candidates.isEmpty() && exhausted) {
-                pageItems.filterNot { it.id in hidden || it.id in finished }
+                fallbackItems.filterNot { it.id in hidden || it.id in finished }
             } else {
                 candidates
             }
@@ -267,7 +276,8 @@ class RecommendFeedEngine(
             val added = (items.size - before).coerceAtLeast(0)
             if(added>0) emptyChain=0
             lines += "page=$page raw=${feed.page.items.size} kept=${shown.size} " +
-                "arranged=${arranged.size} added=$added hasMore=$hasMore"
+                "arranged=${arranged.size} added=$added hasMore=$hasMore " +
+                "horizontal=$horizontalOnly verticalDropped=$verticalDropped"
             lines += "rawIds=${pageItems.joinToString(",") { it.id }} loaded=${loadedIds.size} " +
                 "hidden=${hidden.size} finished=${finished.size}"
             if(shown.isEmpty() && feed.page.hasMore && !expired) {

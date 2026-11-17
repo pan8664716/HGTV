@@ -4383,6 +4383,12 @@ feature-tv/
   `next_offset / has_more`。
 - 新增共享 `RecommendCellCursor`，首包从 `tab/v` 提取 cell id、session 和 template，
   后续 TV / 手机都走 `cell/change/v`；推荐请求的 `device_level` 统一为 1。
+- `tab/v` 与 `cell/change/v` 都继续传 `is_horizontal_screen`。实测服务端在
+  `true` 时仍会夹带 `vertical=true` 卡片（60 条中 15 条），因此 TV 同时按卡片字段
+  做客户端兜底过滤，避免“只推荐横屏短剧”失效。
+- 本地真实设备探测（`HONGGUO_LIVE=1`）确认：`tab/v` 在 `limit=20/60/100` 时都只回
+  3 条，`is_horizontal_screen=true` 时这 3 条为 `vertical=0`。因此不能用“多请求
+  tab/v”替代 `cell/change/v`，否则列表仍会停在首包 3 条；横屏问题由客户端兜底解决。
 - 首屏 60 条不再在一次加载里串行等完：每次只落一页到 UI，再后台继续补下一页，
   列表按 `4 → 9 → 15…` 增长，用户可以立即继续下滑。
 - 末尾预取、失败跳剧和播放恢复也统一为一次只取一页；已有列表连续两页无新增就先返回，

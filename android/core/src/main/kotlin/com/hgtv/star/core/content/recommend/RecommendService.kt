@@ -348,6 +348,9 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                     horizontalOnly=horizontalOnly,
                     limit=limit,
                 )
+                NetLog.debug(
+                    "recommend-tab tab=$tabType offset=$offset horizontal=$horizontalOnly limit=$limit",
+                )
                 val signed=signer.sign(
                     "https://${videoHost()}/reading/bookapi/bookmall/tab/v",
                     values,
@@ -404,6 +407,10 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                     filterIds=filterIds,
                     selection=selection,
                     horizontalOnly=horizontalOnly,
+                )
+                NetLog.debug(
+                    "recommend-cell cell=${cell.id.takeLast(8)} offset=$offset " +
+                        "horizontal=$horizontalOnly limit=${limit.coerceIn(1,20)}",
                 )
                 val signed=signer.sign(
                     "https://${videoHost()}/reading/bookapi/bookmall/cell/change/v",

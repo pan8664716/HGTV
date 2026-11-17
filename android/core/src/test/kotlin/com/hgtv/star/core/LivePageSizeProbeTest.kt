@@ -108,4 +108,65 @@ class LivePageSizeProbeTest {
                 "hasMore=${result.getOrNull()?.hasMore} 失败=${result.exceptionOrNull()?.message}")
         }
     }
+
+    /**
+     * 官方推荐 tab/v 单次能返回多少张卡。
+     *
+     * 这里刻意只传空 cell 游标，确保请求不会走到 cell/change/v；只观察 tab/v 的
+     * `limit` 对首包卡片数和横屏卡片比例的影响。
+     */
+    @Test fun recommendTabLimitAndHorizontal() {
+        assumeTrue("需要 HONGGUO_LIVE=1 才联网实测", live)
+        val deviceId=System.getenv("HONGGUO_DEVICE_ID").orEmpty()
+        val installId=System.getenv("HONGGUO_INSTALL_ID").orEmpty()
+        val profileJson=System.getenv("HONGGUO_DEVICE_PROFILE").orEmpty()
+        val cookiesJson=System.getenv("HONGGUO_COOKIES").orEmpty()
+        assumeTrue(
+            "需要真实设备的 DEVICE_ID / INSTALL_ID / PROFILE / COOKIES",
+            deviceId.isNotBlank() && installId.isNotBlank() &&
+                profileJson.isNotBlank() && cookiesJson.isNotBlank(),
+        )
+        val repo=ContentRepository()
+        repo.tvDeviceProfile=JSONObject(profileJson).stringMap()
+        repo.deviceIdentity=linkedMapOf(
+            "device_id" to deviceId,
+            "iid" to installId,
+            "install_id" to installId,
+            "device_token" to System.getenv("HONGGUO_DEVICE_TOKEN").orEmpty(),
+            "klink_egdi" to System.getenv("HONGGUO_KLINK_EGDI").orEmpty(),
+        )
+        repo.registrationCookies=JSONObject(cookiesJson).stringMap()
+        for(tab in listOf(RecommendTab.RECOMMEND,RecommendTab.COMIC)) {
+            for(limit in listOf(20,60,100)) {
+                val result=runCatching {
+                    repo.recommendFeed(
+                        selection=CategorySelection(),
+                        sessionId="",
+                        offset=0,
+                        limit=limit,
+                        tab=tab,
+                        horizontalOnly=true,
+                    )
+                }
+                val feed=result.getOrNull()
+                println(
+                    "[page-size] tab/v tab=${tab.tabType} limit=$limit → " +
+                        "items=${feed?.page?.items?.size ?: -1} " +
+                        "vertical=${feed?.page?.items?.count { it.vertical } ?: -1} " +
+                        "hasMore=${feed?.page?.hasMore} next=${feed?.nextOffset} " +
+                        "cell=${feed?.cell?.id?.takeLast(8)} " +
+                        "failure=${result.exceptionOrNull()?.message}",
+                )
+            }
+        }
+    }
+
+    private fun JSONObject.stringMap(): LinkedHashMap<String,String> {
+        val out=LinkedHashMap<String,String>()
+        keys().forEach { key ->
+            val value=optString(key).trim()
+            if(value.isNotEmpty()) out[key]=value
+        }
+        return out
+    }
 }

@@ -47,8 +47,9 @@ data class Series(
     /**
      * 这一部是不是**竖屏**（接口卡片里的 `vertical` 字段，分类 / 榜单 / 搜索都带）。
      *
-     * 官方推荐接口用 `is_horizontal_screen` 选择横屏候选流；分类接口的
-     * `select_items.vertical` 会被忽略。这个字段保留为卡片事实，不再作为 TV 推荐过滤条件。
+     * 官方推荐接口用 `is_horizontal_screen` 选择横屏候选流，但服务端仍可能夹带
+     * `vertical=true` 的卡片；TV 开启“只推荐横屏短剧”时，客户端会用这个字段做兜底过滤。
+     * 分类接口的 `select_items.vertical` 仍会被忽略。
      * 默认 false（老数据 / 备份里没有这个字段时按横屏算）。
      */
     val vertical: Boolean = false,
