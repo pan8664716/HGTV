@@ -56,6 +56,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         filterIds: String,
         tab: RecommendTab,
         horizontalOnly: Boolean,
+        cell: RecommendCellCursor,
     ): RecommendFeed {
         require(offset >= 0) { "offset 不能为负" }
         val tabType=tab.tabType
@@ -68,6 +69,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                 limit=limit,
                 filterIds=filterIds,
                 horizontalOnly=horizontalOnly,
+                cell=cell,
             )
         }
         // 官方抓包与 7.4.3.32 枚举都没有独立的 AI 剧 Tab，只有该入口继续使用分类接口。
@@ -166,6 +168,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         limit: Int,
         filterIds: String,
         horizontalOnly: Boolean,
+        cell: RecommendCellCursor,
     ): RecommendFeed {
         // 旧分类接口的 session_id 不是官方 bookmall 的 UUID。换接口后若继续带着旧
         // offset 请求，官方会按新 session 解释这个位置，首屏就可能反复拿同一批 3 条。
@@ -173,6 +176,18 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             runCatching { java.util.UUID.fromString(it) }.isSuccess
         }
         val sessionUuid=validSession ?: java.util.UUID.randomUUID().toString()
+        if(cell.usable) {
+            return officialRecommendCellFeed(
+                tabType=tabType,
+                sessionUuid=sessionUuid,
+                cell=cell,
+                offset=offset,
+                limit=limit,
+                filterIds=filterIds,
+                selection=selection,
+                horizontalOnly=horizontalOnly,
+            )
+        }
         val requestOffset=if(validSession==null) 0 else offset
         val raw=officialRecommendRaw(
             tabType,
@@ -194,11 +209,37 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         }
             ?: throw IOException("推荐接口没有返回 tab_type=$tabType")
         val items=ContentCatalogParser.officialFeedCards(selected)
+        // 官方首页把整条推荐流放在一个“猜你喜欢”cell 里。tab/v 只负责首包，
+        // 后续扩量必须用这个 cell 的 id/session 调 cell/change/v，继续翻 tab/v
+        // 只会反复拿到同一组静态卡。
+        val recommendCell=selected.optJSONArray("cell_data")?.objects().orEmpty()
+            .firstOrNull { item ->
+                item.optLong("cell_id",0L)>0L &&
+                    (item.optJSONArray("cell_data")?.length() ?: 0)>0
+            }
+        val cellId=recommendCell?.optString("cell_id_str").orEmpty()
+            .ifBlank {
+                recommendCell?.optLong("cell_id",0L)
+                    ?.takeIf { it>0L }
+                    ?.toString()
+                    .orEmpty()
+            }
+        val cellSessionId=payload.optString("session_id")
+            .ifBlank { selected.optString("session_id") }
+        val cellTemplate=selected.optInt(
+            "client_template",
+            recommendCell?.optInt("client_template",0) ?: 0,
+        )
+        val nextCell=if(cellId.isNotBlank() && cellSessionId.isNotBlank()) {
+            RecommendCellCursor(cellId,cellSessionId,cellTemplate)
+        } else {
+            RecommendCellCursor()
+        }
         // 官方首包常回 next_offset=0，且偶尔夹带无法解析的空卡片。游标必须按
         // 原始卡片槽位推进，不能按解析成功的条数推进，否则会跳过或重复一页。
         val rawSlots=ContentCatalogParser.officialFeedRawCardCount(selected)
         val reported=selected.optInt("next_offset",-1)
-        val next=when {
+        val next=if(nextCell.usable) 0 else when {
             reported>requestOffset -> reported
             rawSlots>0 -> requestOffset+rawSlots
             else -> requestOffset+3
@@ -214,6 +255,60 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             ),
             sessionId=sessionUuid,
             nextOffset=next,
+            cell=nextCell,
+        )
+    }
+
+    /**
+     * 官方首页“猜你喜欢”cell 的续页。
+     *
+     * `tab/v` 的首包只带 3 张卡；同一 cell 后续通过 `cell/change/v` 按
+     * `cell_id + session_id + offset` 扩量，响应里的 `next_offset/has_more`
+     * 才是真正可持续下滑的游标。
+     */
+    private fun ContentRepository.officialRecommendCellFeed(
+        tabType: Int,
+        sessionUuid: String,
+        cell: RecommendCellCursor,
+        offset: Int,
+        limit: Int,
+        filterIds: String,
+        selection: CategorySelection,
+        horizontalOnly: Boolean,
+    ): RecommendFeed {
+        val raw=officialRecommendCellRaw(
+            tabType=tabType,
+            sessionUuid=sessionUuid,
+            cell=cell,
+            offset=offset,
+            limit=limit,
+            filterIds=filterIds,
+            selection=selection,
+            horizontalOnly=horizontalOnly,
+        )
+        val root=JSONObject(raw)
+        if(root.optInt("code",-1)!=0) throw IOException("推荐接口暂不可用")
+        val payload=root.optJSONObject("data") ?: throw IOException("推荐接口结构已变化")
+        val view=payload.optJSONObject("cell_view") ?: throw IOException("推荐 cell 结构已变化")
+        val items=ContentCatalogParser.valid(
+            ContentCatalogParser.officialFeedCards(view),
+        ).filter { it.isRecommendableShortDrama() }
+        val rawSlots=ContentCatalogParser.officialFeedRawCardCount(view)
+        val reported=payload.optInt("next_offset",-1)
+        val next=when {
+            reported>offset -> reported
+            rawSlots>0 -> offset+rawSlots
+            else -> offset+3
+        }
+        val nextSession=payload.optString("session_id").ifBlank { cell.sessionId }
+        return RecommendFeed(
+            page=CatalogPage(
+                items,
+                payload.optBoolean("has_more",items.isNotEmpty()),
+            ),
+            sessionId=sessionUuid,
+            nextOffset=next,
+            cell=cell.copy(sessionId=nextSession),
         )
     }
 
@@ -275,6 +370,63 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         throw problem
     }
 
+    private fun ContentRepository.officialRecommendCellRaw(
+        tabType: Int,
+        sessionUuid: String,
+        cell: RecommendCellCursor,
+        offset: Int,
+        limit: Int,
+        filterIds: String,
+        selection: CategorySelection,
+        horizontalOnly: Boolean,
+    ): String {
+        var problem: IOException=IOException("推荐接口暂无响应")
+        repeat(RECOMMEND_ATTEMPTS) { attempt ->
+            if(attempt>0) {
+                val delay=CATEGORY_RETRY_DELAYS[(attempt-1).coerceAtMost(CATEGORY_RETRY_DELAYS.lastIndex)]
+                NetLog.retry("recommend-cell",attempt+1,RECOMMEND_ATTEMPTS,problem.message.orEmpty(),delay)
+                try {
+                    Thread.sleep(delay)
+                } catch(cancelled: InterruptedException) {
+                    Thread.currentThread().interrupt()
+                    throw IOException("请求已取消",cancelled)
+                }
+            }
+            try {
+                val identity=primaryIdentity()
+                val values=officialRecommendCellValues(
+                    identity=identity,
+                    tabType=tabType,
+                    sessionUuid=sessionUuid,
+                    cell=cell,
+                    offset=offset,
+                    limit=limit,
+                    filterIds=filterIds,
+                    selection=selection,
+                    horizontalOnly=horizontalOnly,
+                )
+                val signed=signer.sign(
+                    "https://${videoHost()}/reading/bookapi/bookmall/cell/change/v",
+                    values,
+                    method="GET",
+                ).withRecommendationSession(identity)
+                val raw=text(
+                    signed.url,
+                    signed,
+                    allowDomainFailover=true,
+                    storeRegionHeaders=true,
+                    userAgentProfile=identity.profile,
+                )
+                if(raw.isNotBlank()) return raw
+                problem=IOException("推荐接口暂无响应")
+            } catch(failure: IOException) {
+                if(Thread.currentThread().isInterrupted) throw failure
+                problem=failure
+            }
+        }
+        throw problem
+    }
+
     private fun ContentRepository.officialRecommendationValues(
         identity: ContentPrimaryIdentity,
         tabType: Int,
@@ -314,7 +466,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             ?.toIntOrNull()
             ?.toString()
             ?: "1080"
-        values["device_level"]="3"
+        values["device_level"]="1"
         values["stream_count"]=OFFICIAL_RECOMMEND_STREAM_COUNT
         values["recommend_extra"]=OFFICIAL_RECOMMEND_EXTRA
         values["is_video_feed_tab_first_request_cold_start"]=
@@ -340,6 +492,57 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         if(filterIds.isNotBlank() || tabType==16) values["filter_ids"]=filterIds
         if(tabType==16) {
             values["rec_filter_info_list"]=""
+            val gender=when(val selected=selection.gender) {
+                null -> "2"
+                "male" -> "1"
+                "female" -> "0"
+                else -> selected.takeIf { it.matches(Regex("[0-9]+")) }
+            }
+            gender?.let { values["gender"]=it }
+        }
+        return values
+    }
+
+    private fun ContentRepository.officialRecommendCellValues(
+        identity: ContentPrimaryIdentity,
+        tabType: Int,
+        sessionUuid: String,
+        cell: RecommendCellCursor,
+        offset: Int,
+        limit: Int,
+        filterIds: String,
+        selection: CategorySelection,
+        horizontalOnly: Boolean,
+    ): LinkedHashMap<String,String> {
+        val values=recommendationValues(identity)
+        for(key in listOf("version_code","manifest_version_code","update_version_code","pv_player")) {
+            values[key]="74332"
+        }
+        values["version_name"]="7.4.3.32"
+        values["cell_id"]=cell.id
+        values["cell_sub_id"]="0"
+        values["session_id"]=cell.sessionId
+        values["session_uuid"]=sessionUuid
+        values["offset"]=offset.toString()
+        values["limit"]=limit.coerceIn(1,20).toString()
+        values["client_req_type"]="2"
+        values["change_type"]="0"
+        values["tab_type"]=tabType.toString()
+        values["source_tab_type"]="0"
+        values["client_template"]=cell.template.toString()
+        values["bottom_tab_type"]="7"
+        values["is_horizontal_screen"]=horizontalOnly.toString()
+        values["screen_width_px"]=identity.profile["resolution"]
+            ?.substringBefore('*')
+            ?.toIntOrNull()
+            ?.toString()
+            ?: "1080"
+        values["device_level"]="1"
+        values["filter_ids"]=filterIds
+        values["unlimited_selector_change_type"]="0"
+        values["refresh_action_info"]=
+            """{"first_screen_impression_gids":[],"has_active_refresh":true,"latest_impression_gids":""}"""
+        if(tabType==16) {
             val gender=when(val selected=selection.gender) {
                 null -> "2"
                 "male" -> "1"

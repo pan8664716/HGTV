@@ -7,6 +7,7 @@ import com.hgtv.star.core.FeedCursor
 import com.hgtv.star.core.OptionalFilter
 import com.hgtv.star.core.RecommendBehavior
 import com.hgtv.star.core.RecommendCache
+import com.hgtv.star.core.RecommendCellCursor
 import com.hgtv.star.core.RecommendTaste
 import com.hgtv.star.core.RecommendTab
 import com.hgtv.star.core.Series
@@ -41,6 +42,7 @@ class RecommendStore(
     var items: MutableList<Series> = mutableListOf()
     var sessionId: String = ""
     var nextOffset: Int = 0
+    var cell: RecommendCellCursor = RecommendCellCursor()
     var page: Int = 0
     var hasMore: Boolean = true
     var filterMiss: Int = 0
@@ -74,6 +76,7 @@ class RecommendStore(
         val horizontalOnly=policy.supportsHorizontalOnly && library.recommendHorizontalOnly
         sessionId=""
         nextOffset=0
+        cell=RecommendCellCursor()
         page=0
         hasMore=true
         if(policy.namespacedCursor) {
@@ -138,6 +141,7 @@ class RecommendStore(
         taste=taste(),
         minItemsPerLoad=minItemsPerLoad,
         ensureRegistered=ensureRegistered,
+        cell=cell,
     )
 
     /** 在后台线程取数；结果由页面回到 UI 线程后调用 [apply]。 */
@@ -151,6 +155,7 @@ class RecommendStore(
         genderProbe=result.genderProbe
         sessionId=result.sessionId
         nextOffset=result.nextOffset
+        cell=result.cell
         items=result.items.toMutableList()
         page=result.page
         hasMore=result.hasMore

@@ -75,7 +75,7 @@ internal fun PhoneFeedView.loadMore() {
             // 首次无快照只要求一个可播放条目：先起播，剩余条目由首帧后的补页完成。
             minItemsPerLoad=if(
                 feedItems.isEmpty() && feedPlayingIndex<0 && !feedRecommendStore.restored
-            ) 1 else RecommendFeedPolicy.MIN_ITEMS_PER_LOAD,
+            ) 1 else feedItems.size+1,
             // 书库可能已完成主设备注册，但主仓库仍可能是空身份。
             ensureRegistered = {
                 DeviceRegistration.ensureBound(
@@ -128,6 +128,9 @@ internal fun PhoneFeedView.loadMore() {
             } else {
                 feedPlayIndex(0)
             }
+        }
+        if(feedItems.size<RecommendFeedPolicy.MIN_ITEMS_PER_LOAD && !feedHidden) {
+            scheduleFeedFillAfterFirstFrame()
         }
         refreshAfterIdentity()
     }

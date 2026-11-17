@@ -7,6 +7,7 @@ import com.hgtv.star.core.RecommendFeedSource
 import com.hgtv.star.core.FeedCursor
 import com.hgtv.star.core.OptionalFilter
 import com.hgtv.star.core.RecommendCache
+import com.hgtv.star.core.RecommendCellCursor
 import com.hgtv.star.core.RecommendFlow
 import com.hgtv.star.core.RecommendTaste
 import com.hgtv.star.core.RecommendTab
@@ -44,6 +45,7 @@ class RecommendFeedEngine(
         var hasMore = input.hasMore
         var session = input.sessionId
         var offset = input.nextOffset
+        var cell = input.cell
         var filterMiss = input.filterMiss
         var filterIdsOff = input.filterIdsOff
         var genderProbe = input.genderProbe
@@ -59,12 +61,21 @@ class RecommendFeedEngine(
         fun resetStream() {
             session = ""
             offset = 0
+            cell = RecommendCellCursor()
             hasMore = true
             persistCursor("", 0, horizontalOnly)
         }
 
         while (requests < policy.maxRequestsPerLoad) {
-            if(emptyChain >= policy.maxPagesPerLoad) {
+            val appendHasItems=input.append && items.isNotEmpty()
+            val emptyLimit=if(appendHasItems) policy.maxAppendEmptyPages else policy.maxPagesPerLoad
+            if(emptyChain >= emptyLimit) {
+                if(appendHasItems) {
+                    return result(
+                        items, page, hasMore, session, offset, filterMiss, filterIdsOff,
+                        genderProbe, processedPages, restarts, lines = lines, cell = cell,
+                    )
+                }
                 if(restarts < policy.maxRestarts) {
                     restarts++
                     emptyChain = 0
@@ -74,6 +85,7 @@ class RecommendFeedEngine(
                 return result(
                     items, page, false, session, offset, filterMiss, filterIdsOff,
                     genderProbe, processedPages, restarts, exhausted = true, lines = lines,
+                    cell = cell,
                 )
             }
             if(input.append && !hasMore) {
@@ -81,6 +93,7 @@ class RecommendFeedEngine(
                     return result(
                         items, page, hasMore, session, offset, filterMiss, filterIdsOff,
                         genderProbe, processedPages, restarts, exhausted = true, lines = lines,
+                        cell = cell,
                     )
                 }
                 restarts++
@@ -128,6 +141,7 @@ class RecommendFeedEngine(
                         filterIds = filters,
                         tab = input.tab,
                         horizontalOnly = horizontalOnly,
+                        cell = cell,
                     )
                 }
                 if (criticalFirstRequest) {
@@ -158,6 +172,7 @@ class RecommendFeedEngine(
                 return result(
                     items, page, hasMore, session, offset, filterMiss, filterIdsOff,
                     genderProbe, processedPages, restarts, error = problem, lines = lines,
+                    cell = cell,
                 )
             }
             val feed = attempt.getOrThrow()
@@ -195,7 +210,10 @@ class RecommendFeedEngine(
                 continue
             }
 
-            val stalled = RecommendFlow.stalled(requestOffset, feed.nextOffset)
+            // 从 tab/v 首次拿到 cell 时，offset 会从旧的 tab 游标切回 cell 的 0；
+            // 这是合法换轨，不能按“游标停滞”重置，否则会永远停在首包 3 条。
+            val enteredCell = !cell.usable && feed.cell.usable
+            val stalled = !enteredCell && RecommendFlow.stalled(requestOffset, feed.nextOffset)
             if(stalled && restarts < policy.maxRestarts) {
                 restarts++
                 resetStream()
@@ -204,6 +222,7 @@ class RecommendFeedEngine(
 
             session = feed.sessionId
             offset = feed.nextOffset
+            cell = feed.cell
             persistCursor(session, offset, horizontalOnly)
 
             val hidden = runCatching { library.hidden() }.getOrDefault(emptySet())
@@ -246,6 +265,7 @@ class RecommendFeedEngine(
                 if(items.isNotEmpty()) RecommendCache.save(items, policy.cacheNamespace)
             }
             val added = (items.size - before).coerceAtLeast(0)
+            if(added>0) emptyChain=0
             lines += "page=$page raw=${feed.page.items.size} kept=${shown.size} " +
                 "arranged=${arranged.size} added=$added hasMore=$hasMore"
             lines += "rawIds=${pageItems.joinToString(",") { it.id }} loaded=${loadedIds.size} " +
@@ -258,6 +278,7 @@ class RecommendFeedEngine(
                 return result(
                     items, page, false, session, offset, filterMiss, filterIdsOff,
                     genderProbe, processedPages, restarts, exhausted = true, lines = lines,
+                    cell = cell,
                 )
             }
             // minItemsPerLoad 约束的是当前列表的总条数，不是单页新增数。
@@ -272,13 +293,14 @@ class RecommendFeedEngine(
             }
             return result(
                 items, page, hasMore, session, offset, filterMiss, filterIdsOff,
-                genderProbe, processedPages, restarts, lines = lines,
+                genderProbe, processedPages, restarts, lines = lines, cell = cell,
             )
         }
 
         return result(
             items, page, false, session, offset, filterMiss, filterIdsOff,
             genderProbe, processedPages, restarts, exhausted = true, lines = lines,
+            cell = cell,
         )
     }
 
@@ -316,6 +338,7 @@ class RecommendFeedEngine(
         exhausted: Boolean = false,
         error: Throwable? = null,
         lines: List<String> = emptyList(),
+        cell: RecommendCellCursor = RecommendCellCursor(),
     ): RecommendFeedResult {
         lines.forEach(debug)
         return RecommendFeedResult(
@@ -333,6 +356,7 @@ class RecommendFeedEngine(
             exhausted = exhausted,
             empty = items.isEmpty(),
             error = error,
+            cell = cell,
         )
     }
 }
@@ -369,6 +393,7 @@ data class RecommendFeedPolicy(
     val firstLimit: Int = AppConfig.Recommend.FIRST_LIMIT,
     val pageLimit: Int = AppConfig.Recommend.PAGE_LIMIT,
     val maxPagesPerLoad: Int = AppConfig.Recommend.MAX_PAGES_PER_LOAD,
+    val maxAppendEmptyPages: Int = AppConfig.Recommend.MAX_APPEND_EMPTY_PAGES,
     val maxRestarts: Int = AppConfig.Recommend.MAX_RESTARTS,
     val maxRequestsPerLoad: Int = AppConfig.Recommend.MAX_REQUESTS_PER_LOAD,
     val prefetchRemaining: Int = AppConfig.Recommend.PREFETCH_REMAINING,
@@ -392,6 +417,7 @@ data class RecommendFeedPolicy(
         const val FIRST_LIMIT = AppConfig.Recommend.FIRST_LIMIT
         const val PAGE_LIMIT = AppConfig.Recommend.PAGE_LIMIT
         const val MAX_PAGES_PER_LOAD = AppConfig.Recommend.MAX_PAGES_PER_LOAD
+        const val MAX_APPEND_EMPTY_PAGES = AppConfig.Recommend.MAX_APPEND_EMPTY_PAGES
         const val MAX_RESTARTS = AppConfig.Recommend.MAX_RESTARTS
         const val DEEP_CURSOR = AppConfig.Recommend.DEEP_CURSOR
         const val FIRST_BUDGET_MS = AppConfig.Recommend.FIRST_BUDGET_MS
@@ -411,6 +437,7 @@ data class RecommendFeedPolicy(
             firstLimit = FIRST_LIMIT,
             pageLimit = PAGE_LIMIT,
             maxPagesPerLoad = MAX_PAGES_PER_LOAD,
+            maxAppendEmptyPages = MAX_APPEND_EMPTY_PAGES,
             maxRestarts = MAX_RESTARTS,
             prefetchRemaining = PREFETCH_REMAINING,
             deepCursor = DEEP_CURSOR,
@@ -441,6 +468,7 @@ data class RecommendFeedInput(
     val taste: RecommendTaste,
     val minItemsPerLoad: Int = 0,
     val ensureRegistered: () -> Unit = {},
+    val cell: RecommendCellCursor = RecommendCellCursor(),
 )
 
 data class RecommendFeedResult(
@@ -458,4 +486,5 @@ data class RecommendFeedResult(
     val exhausted: Boolean,
     val empty: Boolean,
     val error: Throwable? = null,
+    val cell: RecommendCellCursor = RecommendCellCursor(),
 )

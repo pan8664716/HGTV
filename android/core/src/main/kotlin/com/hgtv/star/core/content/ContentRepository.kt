@@ -334,8 +334,9 @@ class ContentRepository(
         filterIds: String,
         tab: RecommendTab,
         horizontalOnly: Boolean,
+        cell: RecommendCellCursor,
     ): RecommendFeed =
-        recommendFeedImpl(selection,sessionId,offset,limit,genres,filterIds,tab,horizontalOnly)
+        recommendFeedImpl(selection,sessionId,offset,limit,genres,filterIds,tab,horizontalOnly,cell)
 
     override fun reportRecommendStats(events: List<RecommendStatData>) =
         reportRecommendStatsImpl(events)

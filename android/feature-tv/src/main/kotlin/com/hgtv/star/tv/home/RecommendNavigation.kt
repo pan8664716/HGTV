@@ -118,7 +118,7 @@ fun TvMainActivity.goHomeFromRecommend() {
     settleRecommendWatch()
     // 补页在途 / 排队的连按意图一起作废：回到首页后它们已经没有去处，
     // 留着会让下次进推荐的第一次按键凭空多跨几部。
-    recommendWaiters.clear(); recommendAdvancePending=0
+    recommendWaiters.clear(); recommendAdvancePending=0; recommendAdvanceWaiterQueued=false
     recommendToken.incrementAndGet(); recommendPageToken.incrementAndGet()
     recommendPlaybackFailures=0; recommendHistoryPending=false; playbackFromRecommend=false
     dismissRecommendCover()

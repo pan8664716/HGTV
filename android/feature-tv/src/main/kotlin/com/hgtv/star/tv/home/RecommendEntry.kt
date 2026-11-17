@@ -62,7 +62,7 @@ fun TvMainActivity.openRecommend() {
     // 上一次进推荐排的「首帧后取流」作废：这一次会重新排（或直接取）。
     cancelRecommendFeed()
     // 上一轮排队的按键意图与回调一起作废：新的一次进页面不该继承上一次的连按计数。
-    recommendWaiters.clear(); recommendAdvancePending=0
+    recommendWaiters.clear(); recommendAdvancePending=0; recommendAdvanceWaiterQueued=false
     // 起点来自落盘的游标（`session_id|next_offset`）：上次刷到哪儿，这次就从哪儿往下取。
     recommendStore().restoreCursor()
     // 这一次进页面「放哪一部」，两条路：

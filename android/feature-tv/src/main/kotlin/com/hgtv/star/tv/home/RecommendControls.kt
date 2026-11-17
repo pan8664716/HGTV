@@ -31,11 +31,20 @@ fun TvMainActivity.switchRecommend(direction: Int) {
             val guard=recommendToken.get()
             // 这一下按的是「再往下」，但页还没到：把意图记下来，页回来后一次跨过去。
             recommendAdvancePending++
+            // 补页期间连按很多下只排一个回调；按键次数由 recommendAdvancePending 累计。
+            // 以前每一下都往 recommendWaiters 里塞一个 lambda，页回来后十几个回调同时
+            // 执行，既会重复切换，也会把列表状态搅乱。
+            if(recommendAdvanceWaiterQueued) return
+            recommendAdvanceWaiterQueued=true
             val before=recommendItems.size
             // **不盖黑场**：页还没到，盖黑只会让用户对着一块黑屏（这就是「有一个画面没播放
             // 就被略过」的观感来源）。让当前这一部继续播，等页回来、真要换的时候才盖。
             // 正常情况下根本走不到这里——快刷到末尾时 [ensureRecommendLookahead] 已经把页取好了。
-            loadRecommendPage(true) {
+            loadRecommendPage(
+                append=true,
+                minItemsPerLoad=recommendItems.size+1,
+            ) {
+                recommendAdvanceWaiterQueued=false
                 if(recommendToken.get()!=guard) return@loadRecommendPage
                 val steps=recommendAdvancePending.coerceAtLeast(1)
                 recommendAdvancePending=0

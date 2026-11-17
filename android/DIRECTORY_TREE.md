@@ -530,7 +530,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `ContentModels.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentModels 主要包含 class Series、class PlaybackProfile、class Detail、class RelatedWorks。 | class Series、class PlaybackProfile、class Detail、class RelatedWorks、class SearchSuggestion、class RankPosition |
+| `ContentModels.kt` | 内容仓库、模型、解析、请求编排与缓存；推荐流同时携带 `tab/v` 首包与 `cell/change/v` 续页游标。 | class Series、class PlaybackProfile、class Detail、class RelatedWorks、class RecommendCellCursor、class RecommendFeed |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/network/`
 
@@ -550,7 +550,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `RecommendService.kt` | 官方推荐流（含 `is_horizontal_screen`、分页 `limit` 请求参数）、曝光上报参数与首帧后的统计配置刷新。 | — |
+| `RecommendService.kt` | 官方推荐流：`bookmall/tab/v` 取“猜你喜欢”cell 首包，`bookmall/cell/change/v` 按 cell 游标续页；含曝光上报参数与统计配置刷新。 | — |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/search/`
 
@@ -645,7 +645,7 @@ android/
 | `PhoneFeedAdvance.kt` | 一集播完：落 completed 进度 → 进正式播放页播下一集（最后一集则换下一部）。 | fun PhoneFeedView.onEpisodeEnded、fun PhoneFeedView.primeHandoff |
 | `PhoneFeedAttach.kt` | 池未命中时的起播路径；为目标页创建/复用独立播放器、挂源、发布会话并在宽高比布局后 prepare。 | fun PhoneFeedView.attachImpl |
 | `PhoneFeedControls.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneFeedControls 主要包含 fun PhoneFeedView.togglePlay、fun PhoneFeedView.beginTempSpeed、fun PhoneFeedView.endTempSpeed。 | fun PhoneFeedView.togglePlay、fun PhoneFeedView.beginTempSpeed、fun PhoneFeedView.endTempSpeed |
-| `PhoneFeedData.kt` | 冷启动先铺落盘快照；首次无快照只取一个可播放条目，首帧后补齐列表。 | fun PhoneFeedView.restoreSnapshot、fun PhoneFeedView.loadMore、fun PhoneFeedView.scheduleFeedFillAfterFirstFrame、fun PhoneFeedView.refreshAfterIdentity、fun PhoneFeedView.adoptableIndexOf |
+| `PhoneFeedData.kt` | 冷启动先铺落盘快照；首次无快照只取一个可播放条目，首帧后按页补齐列表并逐页上屏。 | fun PhoneFeedView.restoreSnapshot、fun PhoneFeedView.loadMore、fun PhoneFeedView.scheduleFeedFillAfterFirstFrame、fun PhoneFeedView.refreshAfterIdentity、fun PhoneFeedView.adoptableIndexOf |
 | `PhoneFeedListener.kt` | 每台池播放器独立挂监听；按索引更新对应页面，READY / 首帧后触发补流、首帧追踪与池状态。 | fun PhoneFeedView.attachFeedListener、fun PhoneFeedView.detachFeedListener、fun PhoneFeedView.detachAllFeedListeners |
 | `PhoneFeedMetrics.kt` | 与电视端同一套「快速划过 / 划走 / 看过」判定；推荐播放链接首次批量 20 个，消耗 10 个后补充。 | fun PhoneFeedView.settleRecommendWatch、fun PhoneFeedView.reportRecommendImpression、fun PhoneFeedView.scheduleRecommendBatchModels |
 | `PhoneFeedNavigation.kt` | 进播放页。 | fun PhoneFeedView.openPlayer、fun PhoneFeedView.hideChromeForHandoff、fun PhoneFeedView.launchPlayer、fun PhoneFeedView.liveEpisodeOf |
@@ -862,11 +862,11 @@ android/
 | --- | --- | --- |
 | `HomePage.kt` | 首页剧架与卡片行；本机历史先占位，账号历史回来后就地合并；完整构建过的 `HomeScreen` 会跨页面复用并就地刷新数据。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.historyRows、fun TvMainActivity.favoriteRows、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf |
 | `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址 / 首块优先；推荐播放链接首次批量 20 个，消耗 10 个后补充，预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
-| `RecommendControls.kt` | 上下键换剧；索引变化交给播放选择层先摘除旧播放层，再准备下一部。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
+| `RecommendControls.kt` | 上下键换剧；索引变化交给播放选择层先摘除旧播放层，再准备下一部；补页期间合并连续下键。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
 | `RecommendCover.kt` | 切换过渡：换作瞬间全黑，新片源真实出帧且宽高就绪后才淡出；加载期不暴露上一部旧帧，淡出完成可回调撤 loading。 | val COVER_OUT_MS、val COVER_OUT_FAST_MS、fun TvMainActivity.showRecommendCover、fun TvMainActivity.revealRecommendCover、val PICTURE_RECOVERY_LIMIT |
 | `RecommendEntry.kt` | 打开推荐页并自动播放一部推荐；冷启动按统一命名空间读取上次播放位置，无快照时先取一个可播放条目，剩余列表在首帧后补齐。 | fun TvMainActivity.openRecommend、fun TvMainActivity.resumeIndex、fun TvMainActivity.nextRecommendIndex、val RESUME_CACHE_PROBE、fun TvMainActivity.mediaCached |
 | `RecommendEpisode.kt` | 推荐页单集起播、停留结算、曝光上报与每部起播时重置预热轮次；播放位置写入与快照一致的命名空间，相邻地址与首块由播放首帧后的预热链补上。 | val WATCH_DWELL_MS、val WATCH_PLAY_MS、val QUICK_SWIPE_MS、fun TvMainActivity.startRecommendEpisode、fun TvMainActivity.settleRecommendWatch、fun TvMainActivity.reportRecommendImpression、fun TvMainActivity.reportRecommendProgress |
-| `RecommendFeedControl.kt` | 冷启动续播时把「取推荐流」推迟到首帧之后；推荐范围或横屏请求变化时清列表、快照和游标。 | val RECOMMEND_FEED_DELAY_MS、fun TvMainActivity.requestRecommendFeedAfterFirstFrame、fun TvMainActivity.fireRecommendFeed、fun TvMainActivity.cancelRecommendFeed、fun TvMainActivity.invalidateRecommendForFilterChange、fun TvMainActivity.closeRecommendCache、fun TvMainActivity.cancelRecommendWarm |
+| `RecommendFeedControl.kt` | 冷启动续播时把「取推荐流」推迟到首帧之后；首屏按页补齐并逐页上屏；推荐范围或横屏请求变化时清列表、快照和游标。 | val RECOMMEND_FEED_DELAY_MS、fun TvMainActivity.requestRecommendFeedAfterFirstFrame、fun TvMainActivity.fireRecommendFeed、fun TvMainActivity.cancelRecommendFeed、fun TvMainActivity.invalidateRecommendForFilterChange、fun TvMainActivity.closeRecommendCache、fun TvMainActivity.cancelRecommendWarm |
 | `RecommendFeedLoad.kt` | 取一页推荐流；首屏目标 60 条、后续每页 20 条，剩余 20 条时预取下一页，并记录统一首帧链路。 | fun TvMainActivity.loadRecommendPage、fun TvMainActivity.ensureRecommendLookahead、fun TvMainActivity.settleRecommendLoad |
 | `RecommendNavigation.kt` | 推荐页进入正式播放与返回首页路由；返回首页优先复用缓存并延后播放器重资源回收。 | fun TvMainActivity.enterFormalPlayback、fun TvMainActivity.goHomeFromRecommend、fun TvMainActivity.exitRecommendToHome、fun TvMainActivity.leaveRecommendPlaybackToHome |
 | `RecommendOverlay.kt` | 推荐页底部那块信息浮层：进度 + 剧名 + 操作说明；中心 loading 只在真实首帧后撤掉。 | fun TvMainActivity.attachRecommendOverlay、fun TvMainActivity.recommendChip、fun TvMainActivity.dismissRecommendOverlay、fun TvMainActivity.updateRecommendOverlay |
@@ -1104,7 +1104,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PreloadScheduler.kt` | 推荐流「相邻预热」的**排程编排**：电视与手机共用这一份。 | class PreloadScheduler |
-| `RecommendFeedEngine.kt` | 推荐流的加载、续流、降级、重排和快照落盘；曝光记录不参与删卡，回传当前列表少量 ID 做深游标去重，首屏目标 60 条并在剩余约 1/3 时预取，TV 横屏偏好只传服务端。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult、class RecommendPlaybackBatchState |
+| `RecommendFeedEngine.kt` | 推荐流的加载、cell 续流、降级、重排和快照落盘；曝光记录不参与删卡，回传当前列表少量 ID 做深游标去重，已有列表连续重复页快速返回，首屏目标 60 条并在剩余约 1/3 时预取。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult、class RecommendPlaybackBatchState |
 | `RecommendStore.kt` | 推荐流的页面无关状态；按横屏/默认请求模式隔离续流游标，并在条件变化时支持重置。 | class RecommendStore |
 | `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 单集直连地址 → 索引 / 首块；预热详情不补作者，避免占用首帧路径。 | class RecommendWarmCoordinator |
 

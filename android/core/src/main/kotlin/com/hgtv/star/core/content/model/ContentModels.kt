@@ -195,7 +195,20 @@ data class CatalogPage(val items: List<Series>, val hasMore: Boolean, val rankin
  * （实测：连续 8 次 `offset=0&session_id=""`，返回的 20 条完全一致）。
  * 因此客户端必须把这两个值记下来，下次进推荐接着往下取，而不是从头再来。
  */
-data class RecommendFeed(val page: CatalogPage, val sessionId: String, val nextOffset: Int)
+data class RecommendCellCursor(
+    val id: String = "",
+    val sessionId: String = "",
+    val template: Int = 0,
+) {
+    val usable: Boolean get()=id.isNotBlank() && sessionId.isNotBlank()
+}
+
+data class RecommendFeed(
+    val page: CatalogPage,
+    val sessionId: String,
+    val nextOffset: Int,
+    val cell: RecommendCellCursor = RecommendCellCursor(),
+)
 
 /**
  * 一次取流的结果。

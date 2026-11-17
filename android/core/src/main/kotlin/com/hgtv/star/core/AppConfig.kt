@@ -485,6 +485,9 @@ object AppConfig {
         /** 单次加载最多连续处理多少页，防止空页链无限循环。 */
         const val MAX_PAGES_PER_LOAD = 12
 
+        /** 列表已有内容时，补页连续遇到这么多重复页就先回到用户操作，稍后再补。 */
+        const val MAX_APPEND_EMPTY_PAGES = 2
+
         /** 空页 / 游标停滞时最多重启几次推荐流。 */
         const val MAX_RESTARTS = 2
 

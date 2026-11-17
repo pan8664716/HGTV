@@ -4372,6 +4372,27 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 推荐 cell 真实续页与逐页落地
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 根因：官方 `bookmall/tab/v` 首包只给“猜你喜欢”cell 的 1–3 张卡；继续翻 `tab/v`
+  的 offset 会反复拿同一组静态卡，用户滑 3–4 部后就没有新内容。
+- 官方 7.4.3.32 抓包确认续页接口为 `bookmall/cell/change/v`，按
+  `cell_id + session_id + offset` 取下一页；实测每次新增 4–6 条，响应自带
+  `next_offset / has_more`。
+- 新增共享 `RecommendCellCursor`，首包从 `tab/v` 提取 cell id、session 和 template，
+  后续 TV / 手机都走 `cell/change/v`；推荐请求的 `device_level` 统一为 1。
+- 首屏 60 条不再在一次加载里串行等完：每次只落一页到 UI，再后台继续补下一页，
+  列表按 `4 → 9 → 15…` 增长，用户可以立即继续下滑。
+- 末尾预取、失败跳剧和播放恢复也统一为一次只取一页；已有列表连续两页无新增就先返回，
+  不再一次空转 10 多页、等待 30 秒。
+- 补页期间连按上下键只保留一个待执行回调，按键次数单独累计，避免页返回后多个回调
+  同时切换列表。
+- `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 首页冷启动历史栏与焦点稳定
 
 状态：已实现，debug 构建通过，待用户真机验证。

@@ -187,7 +187,10 @@ private fun TvMainActivity.skipRecommend(series: Series,index: Int,direction: In
             // 补页回调可能来得比用户下一手还晚：起播令牌变了（已经换了另一部 / 进了正片）
             // 就说明这一下补页的意图已经过时，直接放弃，别再把人拽回列表开头。
             val guard=recommendToken.get()
-            loadRecommendPage(true) {
+            loadRecommendPage(
+                append=true,
+                minItemsPerLoad=recommendItems.size+1,
+            ) {
                 if(recommendToken.get()!=guard) return@loadRecommendPage
                 val target=index+1
                 if(target in recommendItems.indices) playRecommendAt(target,0L,1,skipped+1)

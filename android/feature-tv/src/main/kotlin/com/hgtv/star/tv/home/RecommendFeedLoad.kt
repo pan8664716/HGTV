@@ -159,7 +159,10 @@ fun TvMainActivity.ensureRecommendLookahead() {
     if(now-recommendLookaheadAt<1_500L) return
     recommendLookaheadAt=now
     // 空回调：这一次只为把下一页取到手上，不换剧。取不到也不提示——用户还没按到末尾。
-    loadRecommendPage(true) { }
+    loadRecommendPage(
+        append=true,
+        minItemsPerLoad=recommendItems.size+1,
+    ) { }
 }
 
 /**

@@ -42,6 +42,7 @@ interface RecommendFeedSource {
         filterIds: String = "",
         tab: RecommendTab = RecommendTab.RECOMMEND,
         horizontalOnly: Boolean = false,
+        cell: RecommendCellCursor = RecommendCellCursor(),
     ): RecommendFeed
 }
 

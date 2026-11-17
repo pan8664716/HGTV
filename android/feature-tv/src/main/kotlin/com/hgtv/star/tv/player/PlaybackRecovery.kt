@@ -404,7 +404,10 @@ fun TvMainActivity.playerFailure(problem: Throwable) {
                         else showRecommendMessage("暂时没有可播放的推荐\n按确定键重试，按返回键回主页面")
                     } else {
                         val guard=recommendToken.get()
-                        loadRecommendPage(true) {
+                        loadRecommendPage(
+                            append=true,
+                            minItemsPerLoad=recommendItems.size+1,
+                        ) {
                             if(recommendToken.get()!=guard) return@loadRecommendPage
                             if(recommendItems.isNotEmpty()) playRecommendAt(0,0L,1)
                             else showRecommendMessage("暂时没有可播放的推荐\n按确定键重试，按返回键回主页面")

@@ -437,6 +437,7 @@ class TvMainActivity: Activity() {
     var recommendWatchingId=""
     var recommendWatchStart=0L
     var recommendAdvancePending=0
+    var recommendAdvanceWaiterQueued=false
     var recommendLookaheadAt=0L
     val recommendWaiters=mutableListOf<() -> Unit>()
     var recommendSession: String

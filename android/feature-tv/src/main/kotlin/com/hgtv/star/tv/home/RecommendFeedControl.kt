@@ -14,8 +14,13 @@ package com.hgtv.star.tv
  * 推荐补页在真正出画面前抢同一条下行。
  */
 private const val RECOMMEND_FEED_DELAY_MS=com.hgtv.star.core.AppConfig.Recommend.FEED_DELAY_MS
+private const val RECOMMEND_FEED_BURST_DELAY_MS=150L
 
 fun TvMainActivity.requestRecommendFeedAfterFirstFrame() {
+    requestRecommendFeedSoon(RECOMMEND_FEED_DELAY_MS)
+}
+
+private fun TvMainActivity.requestRecommendFeedSoon(delayMs: Long) {
     if(recommendFeedPending) return
     recommendFeedPending=true
     val timer=Runnable {
@@ -24,7 +29,7 @@ fun TvMainActivity.requestRecommendFeedAfterFirstFrame() {
         fireRecommendFeed()
     }
     recommendFeedTimer=timer
-    main.postDelayed(timer,RECOMMEND_FEED_DELAY_MS)
+    main.postDelayed(timer,delayMs)
 }
 
 /** 真的去取那一页推荐（首帧已出 / 超时）。只生效一次。 */
@@ -33,8 +38,18 @@ fun TvMainActivity.fireRecommendFeed() {
     recommendFeedPending=false
     recommendFeedTimer?.let { main.removeCallbacks(it) }
     recommendFeedTimer=null
-    // 空回调：这一次只为把新条目接到列表末尾，不换正在播的这一部。
-    loadRecommendPage(append=false) { }
+    // 每次只把一页落到列表：先让用户能继续下滑，再在后台补下一页。
+    // 如果一次追到 60 条，cell/change 的十几次请求会让 UI 几十秒都停在首包 1~3 条。
+    loadRecommendPage(
+        append=recommendItems.isNotEmpty(),
+        minItemsPerLoad=recommendItems.size+1,
+    ) {
+        if(screen=="recommend" && recommendHasMore &&
+            recommendItems.size<RECOMMEND_FIRST_ITEMS
+        ) {
+            requestRecommendFeedSoon(RECOMMEND_FEED_BURST_DELAY_MS)
+        }
+    }
 }
 
 fun TvMainActivity.cancelRecommendFeed() {
@@ -55,6 +70,7 @@ fun TvMainActivity.invalidateRecommendForFilterChange() {
     recommendLoading=false
     recommendWaiters.clear()
     recommendAdvancePending=0
+    recommendAdvanceWaiterQueued=false
     recommendStarted=false
     recommendItems=emptyList()
     recommendIndex=0
