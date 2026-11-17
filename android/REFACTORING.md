@@ -2,7 +2,7 @@
 
 > 基线提交：`140665f89ea816e4a38da50d3aa9428ecb722ead`
 > 重构分支：`refactor/from-140665f`
-> 最后更新：2026-11-17
+> 最后更新：2026-11-18
 
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
@@ -5627,5 +5627,20 @@ feature-tv/
   的去重行为不变。
 - 新增 `RecommendFlowFilterTest` 覆盖关闭曝光过滤和当前列表过滤窗口。
 - `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## Android 4.4 播放页网络监听类加载崩溃
+
+状态：已修复，debug 构建通过，待用户真机验证。
+
+- 现象：GPD G5A / Android 4.4.4 打开播放页时，`PhonePlayerActivity.onResume()` 抛出
+  `NoClassDefFoundError: android.net.ConnectivityManager$NetworkCallback`。
+- 根因：`NetworkCallback` 是 API 21 类，但播放页运行状态直接声明了该字段类型。
+  Dalvik 在进入 `onResume()` 前解析播放页及其状态类时就会失败，方法内的 SDK 判断来不及执行。
+- 修复：播放页只保存版本无关的 `Cancellable`，网络监听统一委托共享 `NetworkWatcher`；
+  4.4 走系统广播，API 21–23 走显式网络请求，API 24+ 走默认网络回调。
+- 恢复低版本网络恢复后立即重取地址；正常播放期间网络变化的判断条件保持不变。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构。
 
 回滚：对本节对应提交执行 `git revert`。

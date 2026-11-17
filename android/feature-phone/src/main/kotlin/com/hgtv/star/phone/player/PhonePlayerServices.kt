@@ -1,14 +1,15 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
-import android.net.ConnectivityManager
 import com.google.android.exoplayer2.Player
+import com.hgtv.star.shared.compat.Cancellable
+import com.hgtv.star.shared.compat.NetworkWatcher
 import com.hgtv.star.shared.media.MediaSessionHost
 
 internal class PhonePlayerRuntimeState {
     var mediaSession: MediaSessionHost? = null
     var mediaSessionFailed = false
-    var networkWatch: ConnectivityManager.NetworkCallback? = null
+    var networkWatch: Cancellable? = null
 }
 
 /**
@@ -75,12 +76,10 @@ internal fun PhonePlayerActivity.syncMediaSession() {
  */
 internal fun PhonePlayerActivity.watchNetwork() {
     if (runtimeState.networkWatch != null) return
-    // `registerDefaultNetworkCallback` 是 API 24 起才有的；更低版本交给退避重试兜底。
-    if (android.os.Build.VERSION.SDK_INT < 24) return
-    val manager = getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
-        as? ConnectivityManager ?: return
-    val callback = object : ConnectivityManager.NetworkCallback() {
-        override fun onAvailable(network: android.net.Network) {
+    // NetworkCallback 是 API 21 类。不能把这个类型放进播放页运行状态，否则 4.4 在
+    // 进入 onResume 时就会因类解析失败崩溃；版本分流统一交给 NetworkWatcher。
+    val watch = runCatching {
+        NetworkWatcher.watch(this) {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
                 if (errorCard == null && sourceRetryState.count == 0) return@runOnUiThread
@@ -89,16 +88,12 @@ internal fun PhonePlayerActivity.watchNetwork() {
                 play(index, at)
             }
         }
-    }
-    if (runCatching { manager.registerDefaultNetworkCallback(callback) }.isSuccess) {
-        runtimeState.networkWatch = callback
-    }
+    }.getOrNull() ?: return
+    runtimeState.networkWatch = watch
 }
 
 internal fun PhonePlayerActivity.unwatchNetwork() {
-    val callback = runtimeState.networkWatch ?: return
+    val watch = runtimeState.networkWatch ?: return
     runtimeState.networkWatch = null
-    val manager = getSystemService(android.content.Context.CONNECTIVITY_SERVICE)
-        as? ConnectivityManager
-    runCatching { manager?.unregisterNetworkCallback(callback) }
+    watch.cancel()
 }
