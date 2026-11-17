@@ -405,13 +405,13 @@ android/
 | --- | --- | --- |
 | `HistoryReconcile.kt` | 本机进度与账号历史的**对账**（电视端与手机端共用一份，纯计算、可单测）。 | object HistoryReconcile |
 | `LatestWriteQueue.kt` | Serial persistence with one pending value per key; serialization belongs inside write. | class LatestWriteQueue |
-| `LibraryBackup.kt` | 本机记录备份的编码、解码、范围校验与局域网同步数据校验；首页栏位 key、弹幕顶部避让、历史卡片续播方式等设置默认值也在这里。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT、object LibraryBackup |
+| `LibraryBackup.kt` | 本机记录备份的编码、解码、范围校验与局域网同步数据校验；首页栏位 key、弹幕顶部避让、历史卡片优先简介等设置默认值也在这里。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT、object LibraryBackup |
 | `LibraryIndex.kt` | Main-thread-owned library. JSON is parsed once, and getters never parse or sort；记录“打开应用进入推荐”是否已在磁盘显式保存。 | class LibraryIndex、val launchRecommendStored、object LibraryDisk |
 | `LibraryTransferServer.kt` | Short-lived LAN transfer. Uploaded records are validated here, but only the TV may apply them. | class LibraryTransferServer |
 | `LruPut.kt` | 往定长 LRU 里写一条：写完把最久没用过的那条挤出去。 | fun LinkedHashMap |
 | `ViewingTools.kt` | 一条搜索历史：只有关键词。 | class RecentSearch、object SearchHistory、object EpisodeTarget |
 | `WatchSync.kt` | 本机观看进度（BackupProgress）与账号侧观看历史（AccountHistory）的对账规则。 | object WatchSync |
-| `Watching.kt` | 本机书库、历史、进度、备份与写队列。文件 Watching 主要包含 object PlaybackQuality、class RecoveryBudget、class ResumeTarget、object ResumePlayback。 | object PlaybackQuality、class RecoveryBudget、class ResumeTarget、object ResumePlayback、class FavoriteUpdate、object EpisodePageSize |
+| `Watching.kt` | 本机书库、历史、进度、备份与写队列；提供本机进度与账号历史的当前季完播判断。 | object PlaybackQuality、class RecoveryBudget、class ResumeTarget、object ResumePlayback、fun BackupProgress.isFinished、fun AccountHistory.isFinished、class FavoriteUpdate、object EpisodePageSize |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/media/`
 
@@ -634,7 +634,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PhoneCategoryPage.kt` | 分类页：**完全按 TV 端的两层筛选结构**。 | class PhoneCategoryPage |
-| `PhoneMinePage.kt` | 我的页：顶部账号入口 + 历史 / 收藏栏目 + 内容网格，右上角提供设置入口。 | class PhoneMinePage |
+| `PhoneMinePage.kt` | 我的页：顶部账号入口 + 历史 / 收藏栏目 + 内容网格；历史已看完的当前季显示“看完了”。 | class PhoneMinePage |
 | `PhoneRankPage.kt` | 榜单页：四个榜单（推荐 / 漫剧 / AI剧 / 真人）+ 带名次的两列海报。 | class PhoneRankPage |
 | `PhoneRecommendPage.kt` | 推荐页：四条件裁横向滑动，每页一条独立的竖屏视频流，并把顶栏实际高度同步给弹幕层。 | class PhoneRecommendPage |
 
@@ -854,14 +854,14 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `DetailPage.kt` | 本文件是从 TvMainActivity.kt 拆出来的「详情页：简介、选集、相关推荐」这一块。 | val DETAIL_MEMO_LIMIT、fun TvMainActivity.openDetail、fun sameDetailContent、fun TvMainActivity.loadDetailAuthor、fun TvMainActivity.resumeTargetFor、fun TvMainActivity.prefetchRelated |
+| `DetailPage.kt` | 本文件是从 TvMainActivity.kt 拆出来的「详情页：简介、选集、相关推荐」这一块；当前季已看完的历史记录不会自动重播最后一集。 | val DETAIL_MEMO_LIMIT、fun TvMainActivity.openDetail、fun sameDetailContent、fun TvMainActivity.loadDetailAuthor、fun TvMainActivity.resumeTargetFor、fun TvMainActivity.prefetchRelated |
 | `HongguoSearchPage.kt` | 当前搜索页是否用自绘键盘；书库未加载完成时沿用系统键盘页面。 | fun TvMainActivity.hongguoKeyboardMode、fun TvMainActivity.setSearchKeyboard、fun TvMainActivity.keyboardSwitchButton、fun TvMainActivity.appendHongguoDraft、fun TvMainActivity.setHongguoDraft、fun TvMainActivity.syncHongguoInput |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/home/`
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `HomePage.kt` | 首页剧架与卡片行；本机历史先占位，账号历史回来后就地合并；历史卡片点击方式读取“直接续播”设置；完整构建过的 `HomeScreen` 会跨页面复用并就地刷新数据。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.historyRows、fun TvMainActivity.favoriteRows、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf |
+| `HomePage.kt` | 首页剧架与卡片行；本机历史先占位，账号历史回来后就地合并；历史卡片读取“优先进入简介”设置，已看完的当前季显示“看完了”；完整构建过的 `HomeScreen` 会跨页面复用并就地刷新数据。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.historyRows、fun TvMainActivity.favoriteRows、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf |
 | `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址 / 首块优先；推荐播放链接首次批量 20 个，消耗 10 个后补充，预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
 | `RecommendControls.kt` | 上下键换剧；索引变化交给播放选择层先摘除旧播放层，再准备下一部；补页期间合并连续下键。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
 | `RecommendCover.kt` | 切换过渡：换作瞬间全黑，新片源真实出帧且宽高就绪后才淡出；加载期不暴露上一部旧帧，淡出完成可回调撤 loading。 | val COVER_OUT_MS、val COVER_OUT_FAST_MS、fun TvMainActivity.showRecommendCover、fun TvMainActivity.revealRecommendCover、val PICTURE_RECOVERY_LIMIT |
@@ -899,8 +899,8 @@ android/
 | `HomeScreen.kt` | 电视首页横排剧架组件；首栏先建少量卡片，其余按帧增量补齐，结构比较包含待建卡片与“查看全部”，避免缓存后网络回包整页重建。 | class HomeScreen、val HOME_FIRST_BATCH、val HOME_FIRST_CARDS、val HOME_BATCH_BUDGET_MS、val HOME_BATCH_BUDGET_LOW_RAM_MS |
 | `ListPage.kt` | 电视列表页页面骨架，负责分类、榜单、搜索、我的页和设置页的页面组装；首页网络刷新结构一致时原地更新，避免列表闪烁。 | fun equalChipWidths、fun TvMainActivity.showCatalog |
 | `ListPageContent.kt` | 电视列表、网格、剧架与分页；栅格卡片 View 通过跨页行池复用，只重绑数据与封面。 | fun TvMainActivity.setRankSubtitle、fun TvMainActivity.seriesList、class ClipFrameLayout、fun lastFocusable、fun firstFocusable |
-| `SeriesActions.kt` | 剧卡上「点一下」与「长按 / 菜单键」这两个动作，全站只有这一份实现；历史卡片点击时按设置决定详情或续播。 | fun TvMainActivity.openSeries、fun TvMainActivity.seriesMenu |
-| `SeriesGrid.kt` | 剧卡栅格的窗口化复用、分页追加、滚动与焦点；回收行时从实际父容器摘除，避免复用 stale parent。 | fun TvMainActivity.gridCards、fun TvMainActivity.isGridTail、fun TvMainActivity.gridRowCount、fun TvMainActivity.rowStride、fun TvMainActivity.gridTextScale、fun TvMainActivity.updateGridSpacers、fun TvMainActivity.recycleGridRow |
+| `SeriesActions.kt` | 剧卡上「点一下」与「长按 / 菜单键」这两个动作，全站只有这一份实现；历史卡片点击时按“优先进入简介”设置决定详情或续播。 | fun TvMainActivity.openSeries、fun TvMainActivity.seriesMenu |
+| `SeriesGrid.kt` | 剧卡栅格的窗口化复用、分页追加、滚动与焦点；历史已看完的当前季显示“看完了”，回收行时从实际父容器摘除，避免复用 stale parent。 | fun TvMainActivity.gridCards、fun TvMainActivity.isGridTail、fun TvMainActivity.gridRowCount、fun TvMainActivity.rowStride、fun TvMainActivity.gridTextScale、fun TvMainActivity.updateGridSpacers、fun TvMainActivity.recycleGridRow |
 | `SeriesGridPaging.kt` | 电视列表、网格、剧架与分页。文件 SeriesGridPaging 主要包含 fun TvMainActivity.moreLabel、fun TvMainActivity.loadMore、fun TvMainActivity.prefetchNextPage、fun TvMainActivity.applyNextPage。 | fun TvMainActivity.moreLabel、fun TvMainActivity.loadMore、fun TvMainActivity.prefetchNextPage、fun TvMainActivity.applyNextPage、fun TvMainActivity.nearGridEnd、fun TvMainActivity.rowsLeftAfterConsumed |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/navigation/`
@@ -913,7 +913,7 @@ android/
 | `TvLayout.kt` | 本文件是从 TvMainActivity.kt 拆出来的「尺寸换算、控件工厂（按钮 / 文本 / 行 / 页骨架）与窗口背景、主题切换」这一块。 | fun TvMainActivity.dp、fun TvMainActivity.widthDp、fun TvMainActivity.pageInset、fun TvMainActivity.pageBleed、fun TvMainActivity.applyPerformanceProfile、fun TvMainActivity.lp |
 | `TvMainStateRestore.kt` | 按 onSaveInstanceState 存下的现场回到原来的页面。 | fun TvMainActivity.restoreLastScreenForResume |
 | `TvMainTick.kt` | 播放页每秒调度：定时停止、界面刷新、预取、进度采样和落盘节拍。 | fun TvMainActivity.runTvMainTick |
-| `TvNavigation.kt` | 本文件是从 TvMainActivity.kt 拆出来的「顶部五个入口、切换页面、分类与榜单芯片、页头导航与页标题」这一块。 | fun TvMainActivity.switchTab、fun TvMainActivity.switchRankBoard、fun TvMainActivity.cachedRankPage、fun categoryChipKey、fun TvMainActivity.catalogSelectionInFlight、fun TvMainActivity.rememberCategoryState |
+| `TvNavigation.kt` | 本文件是从 TvMainActivity.kt 拆出来的「顶部五个入口、切换页面、分类与榜单芯片、页头导航与页标题」这一块；历史完成度筛选按当前季是否看完判断。 | fun TvMainActivity.switchTab、fun TvMainActivity.switchRankBoard、fun TvMainActivity.cachedRankPage、fun categoryChipKey、fun TvMainActivity.catalogSelectionInFlight、fun TvMainActivity.rememberCategoryState |
 | `TvNavigator.kt` | 电视端的路由落地：把 Route 翻译成「切 screen + 重建视图树」。 | class TvNavigator |
 | `TvScreenConstants.kt` | 本文件是从 TvMainActivity.kt 拆出来的「全站常量与静态表（标签下标、栅格列数、面板行号、阈值……）」这一块。 | val LOAD_MORE、val TAB_HOME、val TAB_SEARCH、val TAB_CATEGORY、val TAB_RANK、val TAB_SETTINGS |
 
@@ -960,7 +960,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `SettingsPage.kt` | 电视设置页构建入口，组装播放、外观、推荐和系统设置分组；布局启动可切换历史卡片详情 / 直接续播，弹幕设置支持首行避开顶部播放信息。 | fun TvMainActivity.settings、fun TvMainActivity.showAboutDialog、fun TvMainActivity.deviceFormSettingLabel、fun TvMainActivity.showDeviceFormPicker、fun TvMainActivity.applyDeviceFormSelection、fun TvMainActivity.showTouchOnlyDeviceFormConfirm |
+| `SettingsPage.kt` | 电视设置页构建入口，组装播放、外观、推荐和系统设置分组；布局启动可切换历史卡片“优先进入简介”，弹幕设置支持首行避开顶部播放信息。 | fun TvMainActivity.settings、fun TvMainActivity.showAboutDialog、fun TvMainActivity.deviceFormSettingLabel、fun TvMainActivity.showDeviceFormPicker、fun TvMainActivity.applyDeviceFormSelection、fun TvMainActivity.showTouchOnlyDeviceFormConfirm |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/system/`
 
@@ -972,7 +972,7 @@ android/
 | `MainInitialization.kt` | 第二阶段的完整主界面初始化。 | fun TvMainActivity.initializeMainAfterFirstFrameImpl |
 | `MainResume.kt` | onResume 在调用 super 之后的页面恢复编排；TV 默认落在首页，用户主动开启后才进推荐。 | fun TvMainActivity.resumeAfterSuper |
 | `MemoryPressureController.kt` | 把视口之外的封面从 ImageView 上摘掉（低内存专用，见 ArtworkLoader.releaseHiddenCovers）。 | fun TvMainActivity.releaseOffscreenCoversImpl、fun TvMainActivity.resumeVisibleCoversImpl、fun TvMainActivity.onLowMemoryImpl、fun TvMainActivity.onTrimMemoryImpl |
-| `PerformanceProfile.kt` | 本文件是从 TvMainActivity.kt 拆出来的「「我的」页：抬头、四个栏目、账号数据与登录提示」这一块。 | fun TvMainActivity.profileHead、fun TvMainActivity.accountItems、fun TvMainActivity.historyFinished、fun TvMainActivity.accountHistoryCard、fun TvMainActivity.switchAccountTab、fun TvMainActivity.profileHeadControls |
+| `PerformanceProfile.kt` | 本文件是从 TvMainActivity.kt 拆出来的「「我的」页：抬头、四个栏目、账号数据与登录提示」这一块；账号历史已看完的当前季显示“看完了”。 | fun TvMainActivity.profileHead、fun TvMainActivity.accountItems、fun TvMainActivity.historyFinished、fun TvMainActivity.accountHistoryCard、fun TvMainActivity.switchAccountTab、fun TvMainActivity.profileHeadControls |
 | `TvMainActivityConfig.kt` | TvMainActivity 创建、配置、权限结果与现场保存。文件 TvMainActivityConfig 主要包含 fun TvMainActivity.reloadAfterConfigurationChange。 | fun TvMainActivity.reloadAfterConfigurationChange |
 | `TvMainActivityCreate.kt` | TvMainActivity 创建、配置、权限结果与现场保存。文件 TvMainActivityCreate 主要包含 fun TvMainActivity.initializeMainShell。 | fun TvMainActivity.initializeMainShell |
 | `TvMainActivityResults.kt` | TvMainActivity 创建、配置、权限结果与现场保存。文件 TvMainActivityResults 主要包含 fun TvMainActivity.handleActivityResultImpl、fun TvMainActivity.handleRequestPermissionsResultImpl。 | fun TvMainActivity.handleActivityResultImpl、fun TvMainActivity.handleRequestPermissionsResultImpl |
@@ -1056,7 +1056,7 @@ android/
 | `DeviceRegistration.kt` | 设备注册的**唯一实现**：电视与手机共用；注册后的 TNC 刷新延后到播放首帧。 | object DeviceRegistration |
 | `FavoriteMonitor.kt` | Serial foreground checks; cancellation owns only calls made by this monitor. | class FavoriteMonitor |
 | `IdentityBinder.kt` | 把**本机身份与会话**灌进进程级仓库，并按实际设备形态选择电视统一设备档案。 | object IdentityBinder、fun Library.isTvDeviceForProfile |
-| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、推荐请求偏好、账号缓存和持久化；暴露“启动进入推荐”是否显式保存供 TV 首次默认迁移，并保存历史卡片直接续播设置。 | typealias WatchProgress、class Library、fun loadAsync、val launchRecommendStored、fun discardPendingWrites、fun close、val recommendHorizontalOnly |
+| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、推荐请求偏好、账号缓存和持久化；暴露“启动进入推荐”是否显式保存供 TV 首次默认迁移，并保存历史卡片“优先进入简介”设置。 | typealias WatchProgress、class Library、fun loadAsync、val launchRecommendStored、fun discardPendingWrites、fun close、val recommendHorizontalOnly |
 | `LibraryAccountCache.kt` | 缓存身份：登录账号优先；未登录但设备已注册时，用主设备身份隔离匿名缓存。 | fun Library.cacheIdentityKeyImpl、fun Library.cacheIdentityAvailableImpl、fun Library.accountCacheImpl、fun Library.cacheAccountImpl、fun Library.clearAccountCacheImpl |
 | `LibraryAccountCredentials.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.accountImpl、fun Library.saveAccountImpl、fun Library.clearAccountImpl |
 | `LibraryAccountCredentialsFacade.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.account、fun Library.saveAccount、fun Library.clearAccount、fun Library.accountDevice、fun Library.saveAccountDevice |

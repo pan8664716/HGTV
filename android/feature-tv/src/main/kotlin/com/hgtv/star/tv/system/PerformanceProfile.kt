@@ -196,11 +196,15 @@ fun TvMainActivity.accountItems(key: String): List<Series> {
  * 把不确定的算成「已看完」会让用户找不到自己还在追的剧。
  */
 fun TvMainActivity.historyFinished(row: AccountHistory): Boolean {
-    if(library.progress(row.series.id)?.completed==true) return true
-    return row.episodes>0 && row.episodeIndex+1>=row.episodes
+    val local=library.progress(row.series.id)
+    val total=row.episodes.takeIf { it>0 } ?: row.series.episodeCount
+    return local?.isFinished(total)==true || row.isFinished()
 }
 fun TvMainActivity.accountHistoryCard(row: AccountHistory): Series =
-    row.series.copy(badge="第 ${row.episodeIndex+1} 集"+(if(row.position>0) " · ${formatTime(row.position)}" else ""))
+    row.series.copy(
+        badge=if(row.isFinished()) "看完了" else
+            "第 ${row.episodeIndex+1} 集"+(if(row.position>0) " · ${formatTime(row.position)}" else ""),
+    )
 /**
  * 切换「我的」页的栏目。
  *

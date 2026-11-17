@@ -380,12 +380,13 @@ fun TvMainActivity.bindGridCard(card: PosterCard,item: Series) {
         // 热度不再写在这里：它有了自己的左下角角标（见 `PosterCard.bind` 的 `heatText`）。
         // 留在第二行会变成同一张卡上出现两次「9014万」。
         tab==TAB_RANK -> ""
-        progress!=null -> if(library.watched(item.id)) "整剧已看完" else "第 ${progress.episodeIndex+1} 集 · ${formatTime(progress.position)}"
+        progress!=null -> if(progress.isFinished() || library.watched(item.id)) "看完了" else "第 ${progress.episodeIndex+1} 集 · ${formatTime(progress.position)}"
         // 历史集合页的**账号侧**条目没有本机进度：集数与集内秒数在 [accountHistoryCard]
         // 写进了 `badge`，这里必须接住，否则第二行会退到类型标签（没标签就整行空白）。
         // 前缀与首页「历史记录」栏一致，用户一眼能分出这条记录来自账号。
         tab==TAB_PROFILE && accountTab=="history" && item.badge.isNotBlank() -> item.badge
-        collection=="history" && item.badge.isNotBlank() -> "账号 · ${item.badge}"
+        collection=="history" && item.badge.isNotBlank() ->
+            if(item.badge=="看完了") item.badge else "账号 · ${item.badge}"
         else -> ""
     }
     // 名次放左上角（榜单页才有）；右下角统一由卡片按 `episodeCount` 画「共 N 集」；

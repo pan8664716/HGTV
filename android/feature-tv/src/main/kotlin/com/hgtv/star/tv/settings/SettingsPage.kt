@@ -372,12 +372,10 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         settingsPendingFocus=SETTINGS_TAG_LAUNCH_RECOMMEND
         showCatalog()
     }).apply { tag=SETTINGS_TAG_LAUNCH_RECOMMEND })
-    track(1,homeColumnsButton,launchRecommendRow)
-    val historyCardRow=lineRow(layoutPanel)
-    val historyCardSwitch=cellSwitch(historyCardRow,TvSwitchRow(this,"历史卡片直接续播",checked=library.historyCardDirectPlay,onToggle={ on ->
-        library.historyCardDirectPlay=on
+    val historyCardSwitch=cellSwitch(layoutRow,TvSwitchRow(this,"优先进入简介",checked=library.historyPreferDetail,onToggle={ on ->
+        library.historyPreferDetail=on
     }))
-    track(1,historyCardSwitch)
+    track(1,homeColumnsButton,launchRecommendRow,historyCardSwitch)
     val backToTopRow=lineRow(layoutPanel)
     lateinit var backToTopButton: TvButton
     backToTopButton=cellSetting(backToTopRow,"返回顶部  ·  "+backToTopShort(library.backToTop)) {

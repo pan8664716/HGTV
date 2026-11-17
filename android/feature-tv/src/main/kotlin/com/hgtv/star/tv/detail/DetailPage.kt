@@ -74,7 +74,18 @@ fun TvMainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boo
             clearDebugProblem()
             episodeIndex=target.index
             if(resume && !result.upcoming) {
-                playEpisode(target.index,target.position,autoplay=detailAutoplay,clearDanmakuOnSwitch=true)
+                // 已经看完当前季时，历史卡片只打开简介，不再把最后一集从头自动播一遍。
+                // 手动点「播放」仍然可以重看。
+                val localFinished=library.progress(series.id)?.isFinished(result.episodes.size)==true
+                val accountFinished=accountData?.history
+                    ?.firstOrNull { it.series.id==series.id }
+                    ?.isFinished()==true
+                if(localFinished || accountFinished) {
+                    directPlayback=false
+                    showDetail(false)
+                } else {
+                    playEpisode(target.index,target.position,autoplay=detailAutoplay,clearDanmakuOnSwitch=true)
+                }
             } else if(changed) {
                 showDetail(false)
             }

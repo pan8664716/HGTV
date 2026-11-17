@@ -248,8 +248,11 @@ object LibraryDisk {
             values["danmakuEffects"] as? Boolean ?: true,
             SearchKeyboard.fromStored(values["searchKeyboard"] as? String),
             values["danmakuAvoidPlaybackInfo"] as? Boolean ?: false,
-            // 历史卡片点击直接续播：旧版本磁盘没有这个键，按开启处理（与之前的行为一致）。
-            values["historyCardDirectPlay"] as? Boolean ?: true)
+            // 历史卡片优先进入简介：旧版本磁盘没有这个键，按关闭处理（保持直接续播）；
+            // 同时兼容上一版刚写入的「直接续播」布尔值。
+            values["historyPreferDetail"] as? Boolean
+                ?: (values["historyCardDirectPlay"] as? Boolean)?.let { !it }
+                ?: false)
         val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())
         val index = LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
             SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden"),

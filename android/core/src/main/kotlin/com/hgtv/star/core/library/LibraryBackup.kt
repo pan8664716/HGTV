@@ -283,12 +283,12 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      */
     val danmakuAvoidPlaybackInfo: Boolean=false,
     /**
-     * 历史卡片点击后是否直接续播（默认开启，保持旧行为）。
+     * 历史卡片是否优先进入简介（默认关闭，保持原来的直接续播行为）。
      *
-     * 只由 TV 设置页「布局启动」控制；关闭后先进入详情页，由用户再点播放。
-     * 旧备份 / 旧磁盘没有这个字段时按开启处理。
+     * 只由 TV 设置页「布局启动」控制；开启后先进入详情页，由用户再点播放。
+     * 旧备份 / 旧磁盘没有这个字段时按关闭处理。
      */
-    val historyCardDirectPlay: Boolean=true) {
+    val historyPreferDetail: Boolean=false) {
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("danmaku",danmaku.storedValue)
         .put("danmakuScale",danmakuScale.toDouble()).put("danmakuAlpha",danmakuAlpha.toDouble()).put("danmakuSpeed",danmakuSpeed.storedValue)
         .put("keys",keys)
@@ -317,7 +317,7 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
         .put("reduceAnim",reduceAnim)
         .put("searchKeyboard",searchKeyboard.storedValue)
         .put("danmakuAvoidPlaybackInfo",danmakuAvoidPlaybackInfo)
-        .put("historyCardDirectPlay",historyCardDirectPlay)
+        .put("historyPreferDetail",historyPreferDetail)
 }
 data class BackupData(
     val favorites: List<Series>,
@@ -471,8 +471,13 @@ object LibraryBackup {
         val reduceAnim=settings.optBoolean("reduceAnim",false)
         val searchKeyboard=SearchKeyboard.fromStored(settings.optString("searchKeyboard").takeIf { settings.has("searchKeyboard") })
         val danmakuAvoidPlaybackInfo=settings.optBoolean("danmakuAvoidPlaybackInfo",false)
-        val historyCardDirectPlay=settings.optBoolean("historyCardDirectPlay",true)
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,danmakuEffects=danmakuEffects,searchKeyboard=searchKeyboard,danmakuAvoidPlaybackInfo=danmakuAvoidPlaybackInfo,historyCardDirectPlay=historyCardDirectPlay),later,hiddenIds)
+        val historyPreferDetail=if(settings.has("historyPreferDetail")) {
+            settings.optBoolean("historyPreferDetail",false)
+        } else {
+            // 兼容上一版刚引入的「直接续播」字段：旧值 true = 新字段 false。
+            !settings.optBoolean("historyCardDirectPlay",true)
+        }
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,danmakuEffects=danmakuEffects,searchKeyboard=searchKeyboard,danmakuAvoidPlaybackInfo=danmakuAvoidPlaybackInfo,historyPreferDetail=historyPreferDetail),later,hiddenIds)
     }
     /**
      * 同一部剧保留进度更高的一条：先看集数，再看是否看完，再看同集位置，

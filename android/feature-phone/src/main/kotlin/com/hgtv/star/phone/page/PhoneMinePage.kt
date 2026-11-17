@@ -12,6 +12,7 @@ import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
 import com.hgtv.star.core.Series
+import com.hgtv.star.core.isFinished
 import com.hgtv.star.phone.PhoneAccountSync
 import com.hgtv.star.phone.PhoneConsent
 import com.hgtv.star.phone.PhonePlayerActivity
@@ -714,8 +715,9 @@ class PhoneMinePage(
                 // 平台那条记录里「看到第几集 / 集内秒数」是单独字段，卡片只认 `badge`。
                 ?.map { row ->
                     row.series.copy(
-                        badge = "第 ${row.episodeIndex + 1} 集" +
-                            if (row.position > 0) " · ${clock(row.position)}" else ""
+                        badge = if (historyFinished(row)) "看完了" else
+                            "第 ${row.episodeIndex + 1} 集" +
+                                if (row.position > 0) " · ${clock(row.position)}" else "",
                     )
                 }.orEmpty()
             "收藏" -> com.hgtv.star.shared.account.AccountMerge.series(
@@ -733,10 +735,11 @@ class PhoneMinePage(
         updateBatchBar()
     }
 
-    /** 本机有一条同剧进度且标着 `completed`，或平台说看到的就是最后一集。 */
+    /** 本机同剧进度或平台记录表明当前季已经看完。 */
     private fun historyFinished(row: com.hgtv.star.core.AccountHistory): Boolean {
-        if (runCatching { library.progress(row.series.id)?.completed }.getOrNull() == true) return true
-        return row.episodes > 0 && row.episodeIndex + 1 >= row.episodes
+        val local = runCatching { library.progress(row.series.id) }.getOrNull()
+        val total = row.episodes.takeIf { it > 0 } ?: row.series.episodeCount
+        return local?.isFinished(total) == true || row.isFinished()
     }
 
     /** 位置读数：与电视端 `formatTime` 同一份（`:core` 的 `PlaybackInfoLine.time`）。 */

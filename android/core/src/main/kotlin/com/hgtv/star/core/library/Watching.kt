@@ -55,6 +55,21 @@ object ResumePlayback {
     }
 }
 
+/**
+ * 本机进度是否已经看完当前季。
+ *
+ * [episodeCount] 默认取卡片上记录的总集数；详情页拿到真实分集表时显式传入，
+ * 避免历史卡片上的旧集数与详情接口不一致。
+ */
+fun BackupProgress.isFinished(episodeCount: Int = series.episodeCount): Boolean =
+    completed && episodeCount > 0 && episodeIndex >= episodeCount - 1
+
+/** 账号历史是否已经看完当前季。 */
+fun AccountHistory.isFinished(): Boolean {
+    val total = episodes.takeIf { it > 0 } ?: series.episodeCount
+    return total > 0 && episodeIndex >= total - 1
+}
+
 /** Seen count is a high-water mark, so temporary catalog shrinkage is not a new update. */
 data class FavoriteUpdate(val total: Int,val seen: Int,val checkedAt: Long) {
     val added get()=(total-seen).coerceAtLeast(0)

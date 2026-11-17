@@ -522,7 +522,7 @@ fun TvMainActivity.localItems(): List<Series> = when(collection) {
     // 走的是阅读历史那条软删，短剧进度列表不一定真的摘掉，不滤就会「删了过一会儿又回来」。
     // 完成度筛选与「我的 → 历史」共用（见 [accountHistoryFilter]）：两处看到的是同一档。
     "history" -> mergeAccount(
-        library.history().filter { p -> accountHistoryFilter?.let { want -> p.completed==want } ?: true }
+        library.history().filter { p -> accountHistoryFilter?.let { want -> p.isFinished()==want } ?: true }
             .map { it.series }
     ) {
         accountData?.history

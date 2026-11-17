@@ -144,13 +144,14 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
 fun TvMainActivity.historyRows(): List<HomeScreen.Entry> {
     // 历史栏的点击方式由设置统一决定；账号侧没有本机进度时，
     // 详情控制器仍会用账号历史算出续播目标。
-    val directPlay=library.historyCardDirectPlay
+    val directPlay=!library.historyPreferDetail
     val local=library.history()
         .take(SHELF_SIZE)
         .map { row ->
             val card=row.series.copy(
-                badge="第 ${row.episodeIndex+1} 集" +
-                    if(row.position>0) " · ${formatTime(row.position)}" else "",
+                badge=if(row.isFinished()) "看完了" else
+                    "第 ${row.episodeIndex+1} 集" +
+                        if(row.position>0) " · ${formatTime(row.position)}" else "",
             )
             HomeScreen.Entry(
                 series=card,
