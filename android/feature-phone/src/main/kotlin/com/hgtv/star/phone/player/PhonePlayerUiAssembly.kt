@@ -21,6 +21,7 @@ internal fun PhonePlayerActivity.buildUi() {
     buildPlayerCommonUi()
 
     setContentView(root)
+    syncPlaybackLockUi()
     applyMode()
 }
 

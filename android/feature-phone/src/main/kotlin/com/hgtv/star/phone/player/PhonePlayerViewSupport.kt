@@ -15,6 +15,7 @@ import android.view.ViewGroup
 import android.view.Window
 import android.view.WindowManager
 import android.view.SurfaceView
+import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -23,10 +24,12 @@ import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
 import com.hgtv.star.phone.ui.PhoneSheet
+import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.resizeMode
+import com.hgtv.star.phone.ui.roundedBackground
 
 internal object PhonePlayerViewSupport {
     /**
@@ -58,6 +61,43 @@ internal object PhonePlayerViewSupport {
     fun chipLp(activity: Activity, left: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(
         activity.dp(64), ViewGroup.LayoutParams.WRAP_CONTENT
     ).apply { leftMargin = activity.dp(left) }
+
+    fun lockButton(
+        context: Context,
+        sizeDp: Float,
+        onClick: () -> Unit,
+    ): Pair<FrameLayout, PhoneGlyph> {
+        val glyph = PhoneGlyph(context, PhoneGlyph.Kind.LOCK)
+        val box = FrameLayout(context).apply {
+            tag = sizeDp
+            addView(
+                glyph,
+                FrameLayout.LayoutParams(
+                    context.dp(sizeDp * .58f),
+                    context.dp(sizeDp * .58f),
+                    Gravity.CENTER,
+                ),
+            )
+            setOnClickListener { onClick() }
+        }
+        styleLockButton(box, glyph, locked = false)
+        return box to glyph
+    }
+
+    fun styleLockButton(box: FrameLayout, glyph: PhoneGlyph, locked: Boolean) {
+        val fill = if (locked) {
+            (PhoneStyle.accent and 0x00FFFFFF) or (0x44 shl 24)
+        } else {
+            0x33FFFFFF
+        }
+        val sizeDp = box.tag as? Float ?: 28f
+        box.background = roundedBackground(fill, box.context.dp(sizeDp / 2f).toFloat())
+        glyph.kind = if (locked) PhoneGlyph.Kind.UNLOCK else PhoneGlyph.Kind.LOCK
+        glyph.tint = if (locked) PhoneStyle.accent else Color.WHITE
+        val label = if (locked) "解锁播放控制" else "锁定播放控制"
+        box.contentDescription = label
+        glyph.contentDescription = label
+    }
 
     /** 进度条染色是 API 21 才有的，19/20 上保持系统默认（不影响功能）。 */
     fun tintSeekBar(bar: SeekBar) {

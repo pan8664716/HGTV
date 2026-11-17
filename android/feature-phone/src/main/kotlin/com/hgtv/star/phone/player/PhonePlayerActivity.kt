@@ -179,6 +179,15 @@ class PhonePlayerActivity : PhoneActivity() {
         get()=landSettingsInfo
         set(value) { landSettingsInfo=value }
     internal val playerLandSettingsInfoInitialized get()=::landSettingsInfo.isInitialized
+    private lateinit var landLock: FrameLayout
+    private lateinit var landLockGlyph: PhoneGlyph
+    internal val playerLandLockInitialized get()=::landLock.isInitialized
+    internal var playerLandLockSlot: FrameLayout
+        get()=landLock
+        set(value) { landLock=value }
+    internal var playerLandLockGlyphSlot: PhoneGlyph
+        get()=landLockGlyph
+        set(value) { landLockGlyph=value }
     private lateinit var speedChip: TextView
     private lateinit var qualityChip: TextView
     private lateinit var danmakuChip: TextView
@@ -340,6 +349,10 @@ class PhonePlayerActivity : PhoneActivity() {
     internal var playerChromeVisibleSlot: Boolean
         get()=chromeVisible
         set(value) { chromeVisible=value }
+    private var controlsLocked = false
+    internal var playerControlsLocked: Boolean
+        get()=controlsLocked
+        set(value) { controlsLocked=value }
     private var userSpeed = 1f
     internal val sessionUserSpeed get()=userSpeed
     internal var chipUserSpeed: Float
@@ -702,7 +715,9 @@ class PhonePlayerActivity : PhoneActivity() {
     internal fun clockForControls(ms: Long): String = clock(ms)
 
 
-    internal fun playForEpisodes(i: Int) = play(i, clearDanmakuOnSwitch = true)
+    internal fun playForEpisodes(i: Int) {
+        if (!playerControlsLocked) play(i, clearDanmakuOnSwitch = true)
+    }
     internal fun scheduleChromeHideForEpisodes() = scheduleChromeHide()
     internal fun seekToForPage(fraction: Float) = seekTo(fraction)
     internal fun beginSwipeForPage() = beginSwipe()

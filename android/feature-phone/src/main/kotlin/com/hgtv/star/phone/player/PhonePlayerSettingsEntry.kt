@@ -6,6 +6,7 @@ import com.hgtv.star.shared.data.Library
 import kotlinx.coroutines.launch
 
 internal fun PhonePlayerActivity.openSettings() {
+    if (playerControlsLocked) return
     val activity = this
     // 自动收起之后长按中间仍然能打开设置：先把控制层叫回来，
     // 否则面板会出现在一层已经隐藏的界面上，用户看不到自己改的是哪一页。

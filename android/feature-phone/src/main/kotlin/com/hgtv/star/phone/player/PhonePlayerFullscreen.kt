@@ -80,6 +80,7 @@ internal fun PhonePlayerActivity.enterImmersive() {
  * 根据手机姿态反复切回竖屏。退出全屏或离开播放页时再恢复系统方向策略。
  */
 internal fun PhonePlayerActivity.enterFullscreen() {
+    if (playerControlsLocked) return
     if (playerLandscapeMode) return
     // 全屏期间不再借用推荐页 Surface，避免转屏过程中透出下层的相邻页。
     dropUnderlay()
@@ -152,6 +153,7 @@ internal fun PhonePlayerActivity.exitFullscreen() {
  * 应稳定停在竖屏，直到返回或离开播放页。
  */
 internal fun PhonePlayerActivity.enterPortraitFullscreen() {
+    if (playerControlsLocked) return
     if (!playerLandscapeMode) return
     // 横屏里看竖版短剧时，下层推荐页可能已经滑到下一页。
     // 切回竖屏全屏必须使用本页自己的画面，不能继续借那一块 Surface。

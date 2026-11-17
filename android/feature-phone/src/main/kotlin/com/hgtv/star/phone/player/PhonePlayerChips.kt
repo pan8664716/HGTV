@@ -27,6 +27,7 @@ internal fun PhonePlayerActivity.syncChips() {
  * 七档循环的次序按 [com.hgtv.star.core.DanmakuMode] 的枚举顺序，落盘值与设置页共用同一份。
  */
 internal fun PhonePlayerActivity.cycleDanmaku() {
+    if (playerControlsLocked) return
     val lib = library ?: return
     // 循环顺序在 `:core`（`DanmakuMode.next`，带单测）：两端共用同一套 0..6 次序。
     val next = lib.danmakuMode.next()
@@ -65,6 +66,7 @@ internal fun PhonePlayerActivity.cycleDanmaku() {
  * 精确到 0.05× 的完整区间在播放设置滑杆里，快捷按钮不承担连续调节。
  */
 internal fun PhonePlayerActivity.cycleSpeed() {
+    if (playerControlsLocked) return
     val lib = library ?: return
     val options = PlaybackSpeed.quickOptions
     val current = options.indexOfFirst { kotlin.math.abs(it - chipUserSpeed) < .001f }

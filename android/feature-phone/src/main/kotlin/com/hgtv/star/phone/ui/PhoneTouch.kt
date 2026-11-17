@@ -18,7 +18,7 @@ import android.view.ViewConfiguration
  *            ├──(横向位移 > slop)──► DRAGGING ──UP──► 提交 seek
  *            ├──(纵向位移 > slop，正式播放页)──► VERTICAL ──UP──► 上一集 / 下一集（横竖屏都接管）
  *            │
- *            └──(UP)──► 竖屏：立刻单击；横屏：等 260ms 看有没有第二次点击
+ *            └──(UP)──► 信息流：立刻单击；正式播放器：等 260ms 看有没有第二次点击
  *                         ├── 有 ──► 双击
  *                         └── 无 ──► 单击
  * ```
@@ -26,12 +26,12 @@ import android.view.ViewConfiguration
  * 三条优先级由状态迁移保证，不再靠「堆监听器、各自判一次」：
  * 进入 DRAGGING 之后不再判长按；长按一旦触发就不再算单击；横屏的单击要等双击窗口结束。
  *
- * **竖屏不等双击窗口**：竖屏的单击是「播放 / 暂停」，等 260ms 会让人觉得点了没反应；
- * 竖屏也没有双击语义（双击是横屏的播放 / 暂停），所以直接触发。
+ * 信息流不等双击窗口：它的单击是「播放 / 暂停」，等 260ms 会让人觉得点了没反应。
+ * 正式播放器横竖屏都启用双击，因此单击显隐信息、双击播放 / 暂停。
  */
 class PhoneTouch(
     private val host: View,
-    /** 当前是不是横屏。横屏才接管横滑与双击，竖屏单击立即生效。 */
+    /** 当前是不是横屏；横屏横滑从任意位置起手，竖屏保留左右系统返回手势区。 */
     private val isLandscape: () -> Boolean,
     private val onTap: () -> Unit,
     private val onDoubleTap: () -> Unit,
@@ -63,6 +63,12 @@ class PhoneTouch(
      * [DIRECTION_NONE] 位移不够（当作没发生）。
      */
     private val onVerticalEnd: (direction: Int, velocityY: Float) -> Unit = { _, _ -> },
+    /**
+     * 单击是否等待双击窗口。
+     *
+     * 正式播放器开启：单击显隐信息，双击播放 / 暂停；信息流关闭，单击仍立即播放 / 暂停。
+     */
+    private val doubleTapEnabled: Boolean = false,
 ) : View.OnTouchListener {
 
     /** 长按落在画面的哪一段：左 / 中 / 右各 1/3。 */
@@ -298,9 +304,9 @@ class PhoneTouch(
         return true
     }
 
-    /** 抬手判定：竖屏直接单击；横屏等双击窗口。 */
+    /** 抬手判定：需要双击语义的页面先等双击窗口，其余页面立即单击。 */
     private fun tap() {
-        if (!isLandscape()) {
+        if (!doubleTapEnabled) {
             onTap()
             return
         }

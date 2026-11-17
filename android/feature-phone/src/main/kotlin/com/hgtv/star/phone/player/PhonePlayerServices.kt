@@ -23,10 +23,11 @@ internal fun PhonePlayerActivity.ensureMediaSession(): MediaSessionHost? {
     if (runtimeState.mediaSessionFailed) return null
     val created = MediaSessionHost.create(
         this,
-        { player?.play() },
-        { player?.pause() },
-        { position -> player?.seekTo(position) },
+        { if (!playerControlsLocked) player?.play() },
+        { if (!playerControlsLocked) player?.pause() },
+        { position -> if (!playerControlsLocked) player?.seekTo(position) },
         { direction ->
+            if (playerControlsLocked) return@create
             val d = detail ?: return@create
             val target = index + direction
             if (target in d.episodes.indices) play(target, clearDanmakuOnSwitch = true)

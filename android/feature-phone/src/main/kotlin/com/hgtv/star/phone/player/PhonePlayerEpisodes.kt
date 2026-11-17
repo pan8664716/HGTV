@@ -4,6 +4,7 @@ package com.hgtv.star.phone
 import com.hgtv.star.core.Detail
 
 internal fun PhonePlayerActivity.openEpisodes() {
+    if (playerControlsLocked) return
     val d = detail
     if (d == null) {
         // 详情还没到：给一句提示，别让按钮看起来是坏的。

@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 internal fun PhonePlayerActivity.seekTo(fraction: Float) {
+    if (playerControlsLocked) return
     val duration = player?.duration ?: 0L
     if (duration <= 0) return
     player?.seekTo((duration * fraction).toLong())

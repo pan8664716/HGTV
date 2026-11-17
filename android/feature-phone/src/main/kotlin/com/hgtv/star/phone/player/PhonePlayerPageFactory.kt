@@ -12,6 +12,8 @@ internal fun PhonePlayerActivity.makePage(): PhoneVideoPage = PhoneVideoPage(
     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT,
     // 上下滑换集（用户要求）：信息流里的同名手势是翻下一条视频，因此只在这里开。
     verticalSwipe = true,
+    doubleTapPlayback = true,
+    showLockButton = true,
     underlay = playerFeedUnderlay,
 )
 
@@ -23,17 +25,20 @@ internal fun PhonePlayerActivity.makePage(): PhoneVideoPage = PhoneVideoPage(
  */
 internal fun PhonePlayerActivity.wirePage(p: PhoneVideoPage) {
     p.onTap = {
-        // 清屏状态下，第一下先把信息叫回来，不顺手暂停。
-        if (!playerPage.isChromeVisible()) setChromeVisible(true) else togglePlay()
+        setChromeVisible(!playerPage.isChromeVisible())
     }
+    p.onDoubleTap = { if (!playerControlsLocked) togglePlay() }
     p.onLongPress = { zone ->
-        when (zone) {
-            PhoneTouch.Zone.CENTER -> openSettings()
-            else -> beginTempSpeed()
+        if (!playerControlsLocked) {
+            when (zone) {
+                PhoneTouch.Zone.CENTER -> openSettings()
+                else -> beginTempSpeed()
+            }
         }
     }
     p.onLongPressEnd = { endTempSpeed() }
     p.onWatch = { openEpisodes() }
+    p.onLock = { togglePlaybackLock() }
     p.onTitle = { detail?.series?.let { openSeries(it) } }
     p.onFullscreen = { enterFullscreen() }
     p.onSeekStart = { progressDragging = true }
@@ -45,18 +50,25 @@ internal fun PhonePlayerActivity.wirePage(p: PhoneVideoPage) {
     }
     // 竖屏横滑也拖进度（起点离左右边缘 24dp 以外才接管，见 PhoneTouch.edgeSafe）。
     p.onDragStart = {
-        progressDragging = true
-        playerSeekFrom = player?.currentPosition ?: 0L
+        if (!playerControlsLocked) {
+            progressDragging = true
+            playerSeekFrom = player?.currentPosition ?: 0L
+        }
     }
-    p.onDragDelta = { delta -> dragTo(delta) }
+    p.onDragDelta = { delta -> if (!playerControlsLocked) dragTo(delta) }
     p.onDragEnd = {
-        progressDragging = false
-        val duration = player?.duration ?: 0L
-        if (duration > 0) player?.seekTo(playerSeekTarget)
-        clearSeekHint()
+        if (!playerControlsLocked) {
+            progressDragging = false
+            val duration = player?.duration ?: 0L
+            if (duration > 0) player?.seekTo(playerSeekTarget)
+            clearSeekHint()
+        }
     }
     // 上下滑换集：向上 = 下一集，向下 = 上一集（与推荐页上滑看下一条同一手感）。
-    p.onVerticalStart = { beginSwipeForPage() }
-    p.onVerticalDelta = { delta -> dragSwipeForPage(delta) }
-    p.onVerticalEnd = { direction, _ -> endSwipeForPage(direction) }
+    p.onVerticalStart = { if (!playerControlsLocked) beginSwipeForPage() }
+    p.onVerticalDelta = { delta -> if (!playerControlsLocked) dragSwipeForPage(delta) }
+    p.onVerticalEnd = { direction, _ ->
+        if (!playerControlsLocked) endSwipeForPage(direction)
+    }
+    p.setPlaybackLocked(playerControlsLocked)
 }

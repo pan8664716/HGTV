@@ -70,6 +70,10 @@ class PhoneVideoPage(
      * 这里接管会把翻流的手势吃掉。
      */
     private val verticalSwipe: Boolean = false,
+    /** 正式播放器：单击显隐信息，双击播放 / 暂停。信息流仍保持单击播放 / 暂停。 */
+    private val doubleTapPlayback: Boolean = false,
+    /** 正式播放器：在选集操作行末尾显示圆形锁定按钮。 */
+    private val showLockButton: Boolean = false,
     /**
      * 横滑是否接管为「拖进度」。
      *
@@ -148,7 +152,13 @@ class PhoneVideoPage(
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
         // 没接标题点击时，落到「点屏幕」上：否则这一块会把点击吃掉，什么都不发生。
-        setOnClickListener { if (onTitle != null) onTitle?.invoke() else onTap?.invoke() }
+        setOnClickListener {
+            if (playbackLocked) {
+                onTap?.invoke()
+            } else {
+                if (onTitle != null) onTitle?.invoke() else onTap?.invoke()
+            }
+        }
     }
 
     private val tagRow = LinearLayout(context).apply {
@@ -223,16 +233,20 @@ class PhoneVideoPage(
     internal lateinit var centerBox: FrameLayout
 
     private var series: Series? = null
+    private var playbackLocked = false
+    private lateinit var watchRow: LinearLayout
+    private lateinit var lockBox: FrameLayout
+    private lateinit var lockGlyph: PhoneGlyph
     internal var chromeVisible = true
     private var userDragging = false
     internal var centerHideAt = 0L
 
     // ------------------------------------------------------------------ 回调
 
-    /** 单击：竖屏 = 播放 / 暂停；横屏由宿主改成「显隐界面」。 */
+    /** 单击：信息流 = 播放 / 暂停；正式播放器 = 显隐信息。 */
     var onTap: (() -> Unit)? = null
 
-    /** 双击（只有横屏会触发）。 */
+    /** 双击：正式播放器播放 / 暂停。 */
     var onDoubleTap: (() -> Unit)? = null
 
     /** 长按：竖屏按左 / 中 / 右分区，横屏任意区域。 */
@@ -263,6 +277,9 @@ class PhoneVideoPage(
 
     /** 「观看完整短剧」/「选集 全N集」按钮。 */
     var onWatch: (() -> Unit)? = null
+
+    /** 锁定 / 解锁播放控制。 */
+    var onLock: (() -> Unit)? = null
 
     /** 点标题（进详情）。 */
     var onTitle: (() -> Unit)? = null
@@ -308,6 +325,7 @@ class PhoneVideoPage(
             onVerticalStart = { onVerticalStart?.invoke() },
             onVertical = { delta -> onVerticalDelta?.invoke(delta) },
             onVerticalEnd = { direction, velocity -> onVerticalEnd?.invoke(direction, velocity) },
+            doubleTapEnabled = doubleTapPlayback,
         )
         if (verticalSwipe) {
             addView(View(context).apply {
@@ -367,8 +385,9 @@ class PhoneVideoPage(
             gravity = Gravity.CENTER_VERTICAL
             // 播放三角在图标画布内有左侧留白：容器用 2dp，三角的可见左缘才落在标题的 6dp 边线上。
             setPadding(context.dp(ACTION_GLYPH_EDGE_DP), 0, context.dp(14), 0)
-            setOnClickListener { onWatch?.invoke() }
+            setOnClickListener { if (!playbackLocked) onWatch?.invoke() }
         }
+        watchRow = watch
         watchGlyph.tint = PhoneStyle.accent
         watch.addView(watchGlyph, LinearLayout.LayoutParams(context.dp(11), context.dp(11)))
         watch.addView(watchLabel, LinearLayout.LayoutParams(
@@ -377,6 +396,18 @@ class PhoneVideoPage(
         actionBar.addView(watch, LinearLayout.LayoutParams(
             0, LayoutParams.MATCH_PARENT, 1f
         ))
+        if (showLockButton) {
+            val (box, glyph) = PhonePlayerViewSupport.lockButton(context, 24f) {
+                onLock?.invoke()
+            }
+            lockBox = box
+            lockGlyph = glyph
+            actionBar.addView(lockBox, LinearLayout.LayoutParams(
+                context.dp(24), context.dp(24)
+            ).apply {
+                rightMargin = context.dp(8)
+            })
+        }
 
         // 进度条
         seekBar = SeekBar(context).apply {
@@ -453,7 +484,7 @@ class PhoneVideoPage(
                     phoneSize(9)
                     setPadding(context.dp(3), 0, 0, 0)
                 })
-                setOnClickListener { onFullscreen?.invoke() }
+                setOnClickListener { if (!playbackLocked) onFullscreen?.invoke() }
                 visibility = GONE
             }
             addView(fullscreenBox, LayoutParams(
@@ -675,6 +706,21 @@ class PhoneVideoPage(
             "观看完整短剧 · 全${series.episodeCount}集"
         } else {
             "观看完整短剧"
+        }
+    }
+
+    internal fun setPlaybackLocked(locked: Boolean) {
+        playbackLocked = locked
+        if (::watchRow.isInitialized) {
+            watchRow.isEnabled = !locked
+            watchRow.alpha = if (locked) .45f else 1f
+        }
+        if (::seekBar.isInitialized) {
+            seekBar.isEnabled = !locked
+            seekBar.alpha = if (locked) .55f else 1f
+        }
+        if (::lockBox.isInitialized) {
+            PhonePlayerViewSupport.styleLockButton(lockBox, lockGlyph, locked)
         }
     }
 

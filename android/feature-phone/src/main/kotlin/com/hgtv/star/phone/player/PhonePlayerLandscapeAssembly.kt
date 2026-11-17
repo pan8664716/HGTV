@@ -87,28 +87,37 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
             // 左右 1/3 长按 = 2 倍速。早先横屏不分区，长按哪里都只加速，
             // 用户在全屏里找不到播放设置（只能去点右上角那三个点）。
             onLongPress = { zone ->
-                when (zone) {
-                    PhoneTouch.Zone.CENTER -> { endTempSpeed(); openSettings() }
-                    else -> beginTempSpeed()
+                if (!playerControlsLocked) {
+                    when (zone) {
+                        PhoneTouch.Zone.CENTER -> { endTempSpeed(); openSettings() }
+                        else -> beginTempSpeed()
+                    }
                 }
             },
             onLongPressEnd = { endTempSpeed() },
             onDragStart = {
-                playerDragging = true
-                playerSeekFrom = player?.currentPosition ?: 0L
+                if (!playerControlsLocked) {
+                    playerDragging = true
+                    playerSeekFrom = player?.currentPosition ?: 0L
+                }
             },
-            onDrag = { fraction -> dragTo(fraction) },
+            onDrag = { fraction -> if (!playerControlsLocked) dragTo(fraction) },
             onDragEnd = {
-                playerDragging = false
-                val duration = player?.duration ?: 0L
-                if (duration > 0) player?.seekTo(playerSeekTarget)
-                clearSeekHint()
+                if (!playerControlsLocked) {
+                    playerDragging = false
+                    val duration = player?.duration ?: 0L
+                    if (duration > 0) player?.seekTo(playerSeekTarget)
+                    clearSeekHint()
+                }
             },
             // 横屏同样支持上下滑换集：竖屏有、横屏没有，用户会以为功能坏了。
             verticalEnabled = true,
-                onVerticalStart = { beginSwipeImpl() },
-                onVertical = { delta -> dragSwipeImpl(delta) },
-                onVerticalEnd = { direction, _ -> endSwipeImpl(direction) },
+                onVerticalStart = { if (!playerControlsLocked) beginSwipeImpl() },
+                onVertical = { delta -> if (!playerControlsLocked) dragSwipeImpl(delta) },
+                onVerticalEnd = { direction, _ ->
+                    if (!playerControlsLocked) endSwipeImpl(direction)
+                },
+                doubleTapEnabled = true,
         )
     )
     landscape.addView(touchLayer, FrameLayout.LayoutParams(
@@ -282,10 +291,13 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
                 if (duration > 0) current.text = debugClock(duration * value / 1000)
             }
 
-            override fun onStartTrackingTouch(sb: SeekBar) { playerDragging = true }
+            override fun onStartTrackingTouch(sb: SeekBar) {
+                if (!playerControlsLocked) playerDragging = true
+            }
 
             override fun onStopTrackingTouch(sb: SeekBar) {
                 playerDragging = false
+                if (playerControlsLocked) return
                 val duration = player?.duration ?: 0L
                 if (duration > 0) player?.seekTo(duration * sb.progress / 1000)
             }
@@ -343,10 +355,16 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
     // 想细调（速度 / 字号 / 透明度）仍然长按中间开播放设置。
     val danmaku = PhonePlayerViewSupport.chip(this, "弹幕") { cycleDanmaku() }
     val episode = PhonePlayerViewSupport.chip(this, "选集 1") { openEpisodes() }
+    val (lock, lockGlyph) = PhonePlayerViewSupport.lockButton(this, 30f) {
+        togglePlaybackLock()
+    }
     line2.addView(speed, PhonePlayerViewSupport.chipLp(this,0))
     line2.addView(quality, PhonePlayerViewSupport.chipLp(this,6))
     line2.addView(danmaku, PhonePlayerViewSupport.chipLp(this,6))
     line2.addView(episode, PhonePlayerViewSupport.chipLp(this,6))
+    line2.addView(lock, android.widget.LinearLayout.LayoutParams(
+        dp(30), dp(30)
+    ).apply { leftMargin = dp(6) })
     bottom.addView(line2, android.widget.LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
@@ -369,4 +387,6 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
     chipQualitySlot = quality
     chipDanmakuSlot = danmaku
     chipEpisodeSlot = episode
+    playerLandLockSlot = lock
+    playerLandLockGlyphSlot = lockGlyph
 }

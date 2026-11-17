@@ -6,6 +6,7 @@ import com.google.android.exoplayer2.Player
 import com.hgtv.star.phone.ui.PhoneGlyph
 
 internal fun PhonePlayerActivity.togglePlay() {
+    if (playerControlsLocked) return
     val exo = player ?: return
     if (exo.isPlaying) {
         exo.pause()
@@ -19,6 +20,46 @@ internal fun PhonePlayerActivity.togglePlay() {
     syncPlayGlyph()
     syncBufferingUi(exo.playbackState)
     syncKeepScreenOn()
+}
+
+/**
+ * 锁定后只保留“单击显隐信息”和解锁按钮。
+ *
+ * 竖屏与横屏共用这一份状态；锁定期间播放、进度、长按、选集、翻页入口都在各自入口处拦截。
+ */
+internal fun PhonePlayerActivity.togglePlaybackLock() {
+    playerControlsLocked = !playerControlsLocked
+    if (playerControlsLocked) {
+        endTempSpeed()
+        playerDragging = false
+        progressDragging = false
+        if (playerSheet.isOpen) playerSheet.dismiss()
+        if (playerLandPanel != null) dismissLandscapeSettings()
+        clearSeekHint()
+        hideCenter()
+    }
+    syncPlaybackLockUi()
+    scheduleChromeHide()
+}
+
+internal fun PhonePlayerActivity.syncPlaybackLockUi() {
+    val locked = playerControlsLocked
+    if (playerPageInitialized) {
+        playerPage.setPlaybackLocked(locked)
+        swipeGhostPage.setPlaybackLocked(locked)
+    }
+    if (playerLandLockInitialized) {
+        PhonePlayerViewSupport.styleLockButton(playerLandLockSlot, playerLandLockGlyphSlot, locked)
+    }
+    if (playerLandBottomInitialized) {
+        progressLandSeek.isEnabled = !locked
+        progressLandSeek.alpha = if (locked) .55f else 1f
+        playerLandPlay.tint = if (locked) 0x66FFFFFF else android.graphics.Color.WHITE
+        listOf(chipSpeed, chipQuality, chipDanmaku, chipEpisode).forEach { chip ->
+            chip.isEnabled = !locked
+            chip.alpha = if (locked) .45f else 1f
+        }
+    }
 }
 
 /**
@@ -84,6 +125,7 @@ internal fun PhonePlayerActivity.hideCenter() {
 }
 
 internal fun PhonePlayerActivity.beginTempSpeed() {
+    if (playerControlsLocked) return
     if (playerTempSpeed) return
     playerTempSpeed = true
     player?.setPlaybackSpeed(2f)
@@ -108,6 +150,7 @@ internal fun PhonePlayerActivity.endTempSpeed() {
  * 画面卡成一片。松手一次性跳过去，体验与 TV 端的「拖进度条」一致。
  */
 internal fun PhonePlayerActivity.dragTo(deltaFraction: Float) {
+    if (playerControlsLocked) return
     val duration = player?.duration ?: 0L
     if (duration <= 0) return
     playerSeekTarget =

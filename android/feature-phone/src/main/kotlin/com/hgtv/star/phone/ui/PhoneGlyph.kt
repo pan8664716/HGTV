@@ -25,6 +25,7 @@ class PhoneGlyph(context: Context, kind: Kind) : View(context) {
     enum class Kind {
         HEART, COMMENT, STAR, SHARE, PLAY, PAUSE, BACK, MORE, SEARCH, SETTINGS, DANMAKU,
         FULLSCREEN, SHRINK, INFO, CHEVRON, BOOKMARK,
+        LOCK, UNLOCK,
         /** 竖屏转全屏：左边一个竖框、右边一个横框，一眼看出「从这里横过来」。 */
         ROTATE_FULLSCREEN,
         /** 刷新：开口圆环 + 箭头。 */
@@ -262,6 +263,28 @@ class PhoneGlyph(context: Context, kind: Kind) : View(context) {
                 canvas.drawRoundRect(rect, w * .08f, w * .08f, stroke)
                 rect.set(w * .32f, h * .5f, w * .88f, h * .8f)
                 canvas.drawRoundRect(rect, w * .08f, w * .08f, stroke)
+            }
+            Kind.LOCK, Kind.UNLOCK -> {
+                rect.set(w * .24f, h * .46f, w * .76f, h * .84f)
+                canvas.drawRoundRect(rect, w * .08f, w * .08f, stroke)
+                path.reset()
+                if (kind == Kind.LOCK) {
+                    path.moveTo(w * .34f, h * .46f)
+                    path.cubicTo(
+                        w * .34f, h * .20f,
+                        w * .66f, h * .20f,
+                        w * .66f, h * .46f,
+                    )
+                } else {
+                    path.moveTo(w * .34f, h * .46f)
+                    path.cubicTo(
+                        w * .34f, h * .20f,
+                        w * .66f, h * .20f,
+                        w * .70f, h * .34f,
+                    )
+                }
+                canvas.drawPath(path, stroke)
+                canvas.drawCircle(w * .50f, h * .63f, w * .045f, fill)
             }
         }
     }
