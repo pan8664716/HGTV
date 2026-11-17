@@ -687,7 +687,7 @@ android/
 | `PhonePlayerPause.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerPause 主要包含 fun PhonePlayerActivity.handlePlayerPause。 | fun PhonePlayerActivity.handlePlayerPause |
 | `PhonePlayerPlay.kt` | 播放入口：打开会话、接预热源或后台取流并准备播放。 | fun PhonePlayerActivity.play |
 | `PhonePlayerPlayInfo.kt` | 把「播放显示」四项铺到竖屏与横屏的信息行：剧名 / 集数靠左，网速 / 时间靠右。 | fun PhonePlayerActivity.syncPlayInfoImpl、fun PhonePlayerActivity.syncLandscapeSettingsInfoImpl |
-| `PhonePlayerPortraitUi.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerPortraitUi 主要包含 fun PhonePlayerActivity.buildPortrait。 | fun PhonePlayerActivity.buildPortrait |
+| `PhonePlayerPortraitUi.kt` | 手机播放器、控制、选集、恢复与预加载；竖屏播放信息复用体裁栏的 10dp 顶部与 34dp 主行高度对齐。 | fun PhonePlayerActivity.buildPortrait |
 | `PhonePlayerPreparation.kt` | 本地准备失败必须保留异常：调用方据此决定是否作废缓存后重取。 | fun PhonePlayerActivity.prepareSource、fun PhonePlayerActivity.prepare、fun PhonePlayerActivity.enterPendingFullscreen |
 | `PhonePlayerReopen.kt` | 原地换一条地址：**不换集、不换 Surface、不回片头**。 | fun PhonePlayerActivity.reopenCurrentEpisodeInPlace |
 | `PhonePlayerResume.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerResume 主要包含 fun PhonePlayerActivity.handlePlayerResume。 | fun PhonePlayerActivity.handlePlayerResume |
@@ -752,7 +752,7 @@ android/
 | `PhoneStyle.kt` | 手机端的新拟态令牌。 | object PhoneStyle |
 | `PhoneTabBar.kt` | 底部导航栏：**贴底固定**，不做悬浮胶囊。 | class PhoneTabBar |
 | `PhoneTheme.kt` | 手机 / 平板的视觉令牌。 | object PhoneColor、object PhoneDimen、fun Context.phoneScale、object PhoneUiScale、fun Context.dp、fun android.view.View.dp |
-| `PhoneTopBar.kt` | 手机端统一的页面顶部栏。 | class PhoneTopBar |
+| `PhoneTopBar.kt` | 手机端统一的页面顶部栏；导出沉浸式 10dp 顶部与 34dp 主行常量，供竖屏播放信息对齐复用。 | class PhoneTopBar、PHONE_TOP_BAR_IMMERSIVE_TOP_DP、PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP |
 | `PhoneTopCollapse.kt` | 列表上滑时把页头收起来、回到顶部再放出来（TV 的 onListScroll / setTopAreaHidden 同一条语义）。 | class PhoneTopCollapse |
 | `PhoneTouch.kt` | 播放界面的手势状态机（竖屏信息流与播放页共用这一份）。 | class PhoneTouch |
 | `PhoneWindow.kt` | 手机端统一的沉浸式窗口设置。 | fun Activity.phoneEdgeToEdge、fun Activity.phoneStatusBarHeight |

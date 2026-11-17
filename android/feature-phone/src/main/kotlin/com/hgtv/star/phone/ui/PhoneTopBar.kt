@@ -9,6 +9,9 @@ import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
 
+internal const val PHONE_TOP_BAR_IMMERSIVE_TOP_DP=10
+internal const val PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP=34
+
 /**
  * 手机端统一的页面顶部栏。
  *
@@ -106,12 +109,20 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
             ViewGroup.LayoutParams.WRAP_CONTENT, actionSize
         ))
         actionRow.addView(actionBox, LinearLayout.LayoutParams(actionSize, actionSize))
-        mainRow.addView(tabScroll, LinearLayout.LayoutParams(0, context.dp(if (compact) 24 else 34), 1f))
+        mainRow.addView(
+            tabScroll,
+            LinearLayout.LayoutParams(
+                0,
+                context.dp(if (compact) 24 else PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP),
+                1f,
+            ),
+        )
         mainRow.addView(actionRow, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.WRAP_CONTENT, actionSize
         ))
         addView(mainRow, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT, context.dp(if (compact) 24 else 34)
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            context.dp(if (compact) 24 else PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP),
         ))
 
         addView(chipScroll, LinearLayout.LayoutParams(
@@ -154,7 +165,13 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
      * 视频明明已经铺到顶部，控件却还悬在下面。
      */
     fun setImmersive(on: Boolean) {
-        val top = if (compact) 0 else if (on) context.dp(10) else statusBar(context) + context.dp(4)
+        val top = if (compact) {
+            0
+        } else if (on) {
+            context.dp(PHONE_TOP_BAR_IMMERSIVE_TOP_DP)
+        } else {
+            statusBar(context) + context.dp(4)
+        }
         if (paddingTop == top) return
         setPadding(paddingLeft, top, paddingRight, paddingBottom)
     }

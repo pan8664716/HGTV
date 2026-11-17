@@ -6,6 +6,8 @@ import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
+import com.hgtv.star.phone.ui.PHONE_TOP_BAR_IMMERSIVE_TOP_DP
+import com.hgtv.star.phone.ui.PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP
 import com.hgtv.star.phone.ui.dp
 
 internal fun PhonePlayerActivity.buildPortrait() {
@@ -29,11 +31,13 @@ internal fun PhonePlayerActivity.buildPortrait() {
         setPadding(dp(12), 0, dp(12), 0)
     }
     playerPortrait.addView(playerPortraitTop, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        dp(PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP),
     ).apply {
         gravity = Gravity.TOP or Gravity.START
-        // 沉浸式：状态栏不占位，只留一小段呼吸位（早先是 statusBar() + dp(6)）。
-        topMargin = dp(12)
+        // 与推荐页 / 分类页的沉浸式体裁栏共用同一条中心线：
+        // 10dp 顶部留白 + 34dp 主行，播放信息在其中垂直居中。
+        topMargin = dp(PHONE_TOP_BAR_IMMERSIVE_TOP_DP)
     })
     playerPortraitTop.addOnLayoutChangeListener { _, _, top, _, bottom, _, _, _, _ ->
         if (bottom - top > 0) {
