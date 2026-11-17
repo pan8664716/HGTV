@@ -360,7 +360,8 @@ fun TvMainActivity.showCatalog(
         restoreChipFocus("account:")
     }
     if(tab==TAB_RANK) {
-        val boards=row().apply { setPadding(pageBleed(),0,pageBleed(),dp(4)) }
+        // 与分类页的体裁芯片使用同一父级起点；横向不能再叠加 pageBleed。
+        val boards=row().apply { setPadding(0,0,0,dp(4)) }
         val boardScroll=HorizontalScrollView(this).apply {
             isHorizontalScrollBarEnabled=false
             isFillViewport=false
