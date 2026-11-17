@@ -197,8 +197,6 @@ class PhoneVideoPage(
         /** 播放三角自身在 12dp 画布里左侧留了约 4dp，容器再收 4dp 才能和文字真正对齐。 */
         const val ACTION_GLYPH_EDGE_DP =
             com.hgtv.star.core.AppConfig.Ui.Phone.VIDEO_ACTION_GLYPH_EDGE_DP
-        /** 播放页「选集」那条通栏的底板不透明度。 */
-        const val ACTION_BAR_ALPHA = com.hgtv.star.core.AppConfig.Ui.Phone.VIDEO_ACTION_BAR_ALPHA
     }
 
     private val fullscreenGlyph = PhoneGlyph(context, PhoneGlyph.Kind.FULLSCREEN).apply {
@@ -358,17 +356,11 @@ class PhoneVideoPage(
             LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = context.dp(6) })
 
-        // 观看完整短剧：**通栏方角操作条**，左右贴屏幕边缘、不留内缩（用户规范）。
-        //
-        // 早先是 16dp 内缩 + 19dp 圆角的半透明胶囊，和上面「标题 / 标签 / 简介」
-        // 那段文字块同属一个视觉层级——看起来像又一张卡片。改成通栏方角之后它变成
-        // 一条**操作栏**：边界与屏幕对齐，材质与下方 tab 栏同一档（`surface`），
-        // 视觉上「这一条是出口，上面那一块是内容」。
-        //
+        // 观看完整短剧 / 选集：不再单独铺半透明底板，作为信息区最后一行直接排版。
         actionBar = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            background = actionBarBackground()
+            background = null
         }
         val watch = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
@@ -430,19 +422,14 @@ class PhoneVideoPage(
         column.addView(seekBar, LinearLayout.LayoutParams(
             LayoutParams.MATCH_PARENT, context.dp(18)
         ).apply { topMargin = context.dp(2) })
+        column.addView(actionBar, LinearLayout.LayoutParams(
+            LayoutParams.MATCH_PARENT, context.dp(ACTION_BAR_DP)
+        ))
 
         infoColumn = column
-        // 信息块要让开下面那根通栏条：条高 + 6dp 间隙。
+        // 操作行已经是信息块的一部分，只让开底部导航或系统安全区。
         addView(column, LayoutParams(
             LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT
-        ).apply {
-            gravity = Gravity.BOTTOM
-            bottomMargin = bottomInset() + context.dp(ACTION_BAR_DP) + context.dp(6)
-        })
-
-        // 通栏条本身：贴底、贴左右边，**没有外边距**——「完全覆盖屏幕宽度」。
-        addView(actionBar, LayoutParams(
-            LayoutParams.MATCH_PARENT, context.dp(ACTION_BAR_DP)
         ).apply {
             gravity = Gravity.BOTTOM
             bottomMargin = bottomInset()
@@ -559,8 +546,7 @@ class PhoneVideoPage(
         // 下方信息块（标题 / 标签 / 简介 / 进度条）的最上沿。字号调大时它会往上顶，
         // 顶到按钮所在的这条黑边上就会把按钮盖住。
         val infoTop = if (::infoColumn.isInitialized && infoColumn.measuredHeight > 0) {
-            (height - bottomInset() - context.dp(ACTION_BAR_DP) - context.dp(6) -
-                infoColumn.measuredHeight).toFloat()
+            (height - bottomInset() - infoColumn.measuredHeight).toFloat()
         } else height.toFloat()
 
         val below = pictureBottom + gap
@@ -590,49 +576,6 @@ class PhoneVideoPage(
         addView(centerBox, LayoutParams(context.dp(36), context.dp(36)).apply {
             gravity = Gravity.CENTER
         })
-    }
-
-    /** 通栏操作条的底板：主题 `surface` + 顶部一条 1px 高光。 */
-    private fun actionBarBackground(): android.graphics.drawable.Drawable {
-        val alpha = ACTION_BAR_ALPHA
-        return TopLineDrawable(
-            withAlpha(PhoneStyle.surface, alpha),
-            withAlpha(PhoneStyle.shadowLight, alpha),
-            1
-        )
-    }
-
-    /** 给一个 ARGB 色乘上不透明度（保留它自己的 alpha）。 */
-    private fun withAlpha(color: Int, alpha: Float): Int =
-        android.graphics.Color.argb(
-            (android.graphics.Color.alpha(color) * alpha).toInt(),
-            android.graphics.Color.red(color),
-            android.graphics.Color.green(color),
-            android.graphics.Color.blue(color)
-        )
-
-    /** 底色 + 顶部一条 1px 高光。方角、通栏，没有圆角与描边。 */
-    private class TopLineDrawable(
-        private val fill: Int,
-        private val line: Int,
-        private val linePx: Int,
-    ) : android.graphics.drawable.Drawable() {
-        private val paint = android.graphics.Paint(android.graphics.Paint.ANTI_ALIAS_FLAG)
-
-        override fun draw(canvas: android.graphics.Canvas) {
-            paint.color = fill
-            canvas.drawRect(bounds, paint)
-            paint.color = line
-            canvas.drawRect(
-                bounds.left.toFloat(), bounds.top.toFloat(),
-                bounds.right.toFloat(), (bounds.top + linePx).toFloat(), paint
-            )
-        }
-
-        override fun setAlpha(alpha: Int) { paint.alpha = alpha }
-        override fun setColorFilter(cf: android.graphics.ColorFilter?) { paint.colorFilter = cf }
-        @Deprecated("Deprecated in Java")
-        override fun getOpacity(): Int = android.graphics.PixelFormat.TRANSLUCENT
     }
 
     /**

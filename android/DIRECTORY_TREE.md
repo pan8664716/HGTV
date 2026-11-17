@@ -602,7 +602,7 @@ android/
 | --- | --- | --- |
 | `PhoneDetailActivity.kt` | 详情页：**与 TV 端的详情页一一对应**，按手机形态重排。 | class PhoneDetailActivity |
 | `PhoneDetailSections.kt` | 手机详情页与竖屏视频版面。文件 PhoneDetailSections 主要包含 fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks。 | fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks、fun PhoneDetailActivity.sectionHead、fun PhoneDetailActivity.cardRow |
-| `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、弹幕黑边遮罩、信息区和控制层。 | class PhoneVideoPage |
+| `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、弹幕黑边遮罩、信息区和控制层；观看完整短剧 / 选集作为信息区末行，不使用独立半透明底板。 | class PhoneVideoPage |
 | `PhoneVideoPageState.kt` | 手机详情页与竖屏视频版面。文件 PhoneVideoPageState 主要包含 fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode。 | fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode、fun PhoneVideoPage.showCenterIcon、fun PhoneVideoPage.hideCenterIcon、fun PhoneVideoPage.setResizeMode、fun PhoneVideoPage.setVideoSurfaceVisible |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/feed/`

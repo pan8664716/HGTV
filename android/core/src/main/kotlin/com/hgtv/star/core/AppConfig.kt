@@ -1350,9 +1350,6 @@ object AppConfig {
 
             /** 竖屏视频操作图标边距。 */
             const val VIDEO_ACTION_GLYPH_EDGE_DP = 2
-
-            /** 竖屏视频操作栏透明度。 */
-            const val VIDEO_ACTION_BAR_ALPHA = .4f
         }
 
         /**
