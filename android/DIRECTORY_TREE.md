@@ -406,7 +406,7 @@ android/
 | `HistoryReconcile.kt` | 本机进度与账号历史的**对账**（电视端与手机端共用一份，纯计算、可单测）。 | object HistoryReconcile |
 | `LatestWriteQueue.kt` | Serial persistence with one pending value per key; serialization belongs inside write. | class LatestWriteQueue |
 | `LibraryBackup.kt` | 本机记录备份的编码、解码、范围校验与局域网同步数据校验；首页栏位 key、弹幕顶部避让等设置默认值也在这里。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT、object LibraryBackup |
-| `LibraryIndex.kt` | Main-thread-owned library. JSON is parsed once, and getters never parse or sort. | class LibraryIndex、object LibraryDisk |
+| `LibraryIndex.kt` | Main-thread-owned library. JSON is parsed once, and getters never parse or sort；记录“打开应用进入推荐”是否已在磁盘显式保存。 | class LibraryIndex、val launchRecommendStored、object LibraryDisk |
 | `LibraryTransferServer.kt` | Short-lived LAN transfer. Uploaded records are validated here, but only the TV may apply them. | class LibraryTransferServer |
 | `LruPut.kt` | 往定长 LRU 里写一条：写完把最久没用过的那条挤出去。 | fun LinkedHashMap |
 | `ViewingTools.kt` | 一条搜索历史：只有关键词。 | class RecentSearch、object SearchHistory、object EpisodeTarget |
@@ -889,7 +889,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `LanLibrarySync.kt` | 电视本机书库与局域网同步。文件 LanLibrarySync 主要包含 var lanSyncUiJob、var lanSyncUiDialog、var lanSyncUiStep、var lanSyncUiStatus。 | var lanSyncUiJob、var lanSyncUiDialog、var lanSyncUiStep、var lanSyncUiStatus、fun TvMainActivity.closeLanSyncSession、fun TvMainActivity.showLanLibrarySync |
-| `LibraryPage.kt` | 本机库加载、页面重建与异步任务封装；释放页面时保留栅格行池和完整首页视图供下次复用。 | fun TvMainActivity.showLibraryError、fun TvMainActivity.showStartupShell、fun TvMainActivity.showStartupLoading、fun TvMainActivity.loadLibrary、fun TvMainActivity.ensureSearchCollector、fun TvMainActivity.releaseCatalogViews |
+| `LibraryPage.kt` | 本机库加载、TV 启动推荐默认值迁移、页面重建与异步任务封装；释放页面时保留栅格行池和完整首页视图供下次复用。 | fun TvMainActivity.showLibraryError、fun TvMainActivity.showStartupShell、fun TvMainActivity.showStartupLoading、fun TvMainActivity.loadLibrary、fun TvMainActivity.ensureTvLaunchRecommendDefault、fun TvMainActivity.ensureSearchCollector、fun TvMainActivity.releaseCatalogViews |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/list/`
 
@@ -970,7 +970,7 @@ android/
 | `LocalReset.kt` | 本文件是从 TvMainActivity.kt 拆出来的「清空应用缓存（恢复出厂）」这一块。 | fun TvMainActivity.clearLocalData、var resetStorageAsked、fun TvMainActivity.performLocalReset、fun TvMainActivity.resetStorageGranted、fun resetLabel |
 | `MainBackgroundLifecycle.kt` | TvMainActivity 创建、配置、权限结果与现场保存。文件 MainBackgroundLifecycle 主要包含 fun TvMainActivity.onPauseImpl、fun TvMainActivity.onStopImpl、fun TvMainActivity.onDestroyImpl。 | fun TvMainActivity.onPauseImpl、fun TvMainActivity.onStopImpl、fun TvMainActivity.onDestroyImpl |
 | `MainInitialization.kt` | 第二阶段的完整主界面初始化。 | fun TvMainActivity.initializeMainAfterFirstFrameImpl |
-| `MainResume.kt` | onResume 在调用 super 之后的页面恢复编排。 | fun TvMainActivity.resumeAfterSuper |
+| `MainResume.kt` | onResume 在调用 super 之后的页面恢复编排；TV 默认落在首页，用户主动开启后才进推荐。 | fun TvMainActivity.resumeAfterSuper |
 | `MemoryPressureController.kt` | 把视口之外的封面从 ImageView 上摘掉（低内存专用，见 ArtworkLoader.releaseHiddenCovers）。 | fun TvMainActivity.releaseOffscreenCoversImpl、fun TvMainActivity.resumeVisibleCoversImpl、fun TvMainActivity.onLowMemoryImpl、fun TvMainActivity.onTrimMemoryImpl |
 | `PerformanceProfile.kt` | 本文件是从 TvMainActivity.kt 拆出来的「「我的」页：抬头、四个栏目、账号数据与登录提示」这一块。 | fun TvMainActivity.profileHead、fun TvMainActivity.accountItems、fun TvMainActivity.historyFinished、fun TvMainActivity.accountHistoryCard、fun TvMainActivity.switchAccountTab、fun TvMainActivity.profileHeadControls |
 | `TvMainActivityConfig.kt` | TvMainActivity 创建、配置、权限结果与现场保存。文件 TvMainActivityConfig 主要包含 fun TvMainActivity.reloadAfterConfigurationChange。 | fun TvMainActivity.reloadAfterConfigurationChange |
@@ -1056,7 +1056,7 @@ android/
 | `DeviceRegistration.kt` | 设备注册的**唯一实现**：电视与手机共用；注册后的 TNC 刷新延后到播放首帧。 | object DeviceRegistration |
 | `FavoriteMonitor.kt` | Serial foreground checks; cancellation owns only calls made by this monitor. | class FavoriteMonitor |
 | `IdentityBinder.kt` | 把**本机身份与会话**灌进进程级仓库，并按实际设备形态选择电视统一设备档案。 | object IdentityBinder、fun Library.isTvDeviceForProfile |
-| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、推荐请求偏好、账号缓存和持久化；加载回调与 loader 启动由同一把锁串行化。 | typealias WatchProgress、class Library、fun loadAsync、fun discardPendingWrites、fun close、val recommendHorizontalOnly |
+| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、推荐请求偏好、账号缓存和持久化；暴露“启动进入推荐”是否显式保存供 TV 首次默认迁移。 | typealias WatchProgress、class Library、fun loadAsync、val launchRecommendStored、fun discardPendingWrites、fun close、val recommendHorizontalOnly |
 | `LibraryAccountCache.kt` | 缓存身份：登录账号优先；未登录但设备已注册时，用主设备身份隔离匿名缓存。 | fun Library.cacheIdentityKeyImpl、fun Library.cacheIdentityAvailableImpl、fun Library.accountCacheImpl、fun Library.cacheAccountImpl、fun Library.clearAccountCacheImpl |
 | `LibraryAccountCredentials.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.accountImpl、fun Library.saveAccountImpl、fun Library.clearAccountImpl |
 | `LibraryAccountCredentialsFacade.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.account、fun Library.saveAccount、fun Library.clearAccount、fun Library.accountDevice、fun Library.saveAccountDevice |

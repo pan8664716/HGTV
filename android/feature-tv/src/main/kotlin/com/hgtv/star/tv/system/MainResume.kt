@@ -45,9 +45,10 @@ internal fun TvMainActivity.resumeAfterSuper(resumeStarted: Long) {
     // 拉回来之后由 [refreshAccountViews] / [reconcileHistory] 只重画真的变了的那几处。
     if(library.isLoaded && repository.signedIn) loadAccount()
     if(library.isLoaded) {
+        ensureTvLaunchRecommendDefault(library)
         val contentStarted=StartupTrace.now()
         StartupTrace.mark("main.onResume.content.start")
-        // 冷启动落在推荐页（需求：打开应用自动进入推荐）；设置里关掉之后落点回首页。
+        // TV 默认落在首页；只有用户在设置里主动开启“打开应用进入推荐”才进推荐。
         //
         // 但**进程被回收后重建**是例外：这时用户按 Home 之前停在哪一页，就回哪一页
         //（见 [restoreLastScreen]）。改造前这里没有这一支，回来永远是首页。

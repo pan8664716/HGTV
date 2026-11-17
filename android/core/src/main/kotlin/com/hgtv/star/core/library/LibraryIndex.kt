@@ -5,7 +5,17 @@ import org.json.JSONArray
 import org.json.JSONObject
 
 /** Main-thread-owned library. JSON is parsed once, and getters never parse or sort. */
-class LibraryIndex(data: BackupData, updates: Map<String, FavoriteUpdate> = emptyMap()) {
+class LibraryIndex(
+    data: BackupData,
+    updates: Map<String, FavoriteUpdate> = emptyMap(),
+    launchRecommendStored: Boolean = true,
+) {
+    /**
+     * 磁盘上是否已经保存过「打开应用进入推荐」。
+     *
+     * 共享层的旧值兼容默认仍是开启；TV 用它判断是否需要在首次读取后落成自己的默认关闭。
+     */
+    var launchRecommendStored: Boolean = launchRecommendStored
     private var favoriteRows = data.favorites.distinctBy { it.id }.take(AppConfig.Library.FAVORITES_LIMIT)
     private var favoriteIds = favoriteRows.map { it.id }.toSet()
     private var laterRows = data.later.distinctBy { it.id }.take(AppConfig.Library.LATER_LIMIT)
@@ -241,7 +251,7 @@ object LibraryDisk {
         val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())
         val index = LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
             SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden"),
-            ids("historyDeleted")), updates)
+            ids("historyDeleted")), updates, values.containsKey("launchRecommend"))
         reserves.keys().asSequence().forEach { id -> index.setReserved(id, reserves.optBoolean(id, false)) }
         return index
     }

@@ -501,17 +501,23 @@ class Library(context: Context) {
         hiddenNav = if (hidden) hiddenNav + key else hiddenNav - key
         if (key == NAV_KEY_RECOMMEND && hidden && state().settings.launchRecommend) {
             state().settings = state().settings.copy(launchRecommend = false)
+            state().launchRecommendStored = true
             put("launchRecommend", false)
         }
     }
     var launchRecommend: Boolean
         get() = state().settings.launchRecommend && NAV_KEY_RECOMMEND !in hiddenNav
         set(value) {
-            if (value == launchRecommend) return
+            val current = launchRecommend
+            state().launchRecommendStored = true
+            if (value == current) return
             if (value && NAV_KEY_RECOMMEND in hiddenNav) hiddenNav = hiddenNav - NAV_KEY_RECOMMEND
             state().settings = state().settings.copy(launchRecommend = value)
             put("launchRecommend", value)
         }
+    /** 磁盘上是否已经显式保存过「打开应用进入推荐」。 */
+    val launchRecommendStored: Boolean
+        get() = state().launchRecommendStored
     var recommendSwipe: Boolean
         get() = state().settings.recommendSwipe
         set(value) { if (value != recommendSwipe) { state().settings = state().settings.copy(recommendSwipe = value); put("recommendSwipe", value) } }

@@ -92,11 +92,9 @@ fun TvMainActivity.loadLibrary() {
             applyDeviceForm()
             // 凭据就绪之后再起心跳：冷启动那一次 `boot` 心跳必须有完整身份（cookie + 设备档案）。
             com.hgtv.star.shared.data.SessionBootstrap.onAppStart()
-            // 冷启动落点是推荐页（需求 1）：本机记录一读起来就直接进推荐、自动起播，
-            // 不先闪一下首页。之后从推荐返回主页面不会再把用户跳回推荐（见 [launchRecommendPending]）。
-            //
-            // 设置里关掉「打开应用进入推荐」（或关掉导航栏那枚推荐入口）之后落点改回首页：
-            // 这是同一份偏好的两种说法，冷启动必须跟着它走。
+            // TV 首次读取书库时把未保存过的“打开应用进入推荐”落成关闭；
+            // 用户之后在设置里主动开启，仍按保存值进入推荐。
+            ensureTvLaunchRecommendDefault(library)
             val startRecommend=launchRecommendPending && library.launchRecommend
             launchRecommendPending=false
             // applyAccount() 已经把注册放到后台；首屏不再等待网络。推荐流自己的
@@ -114,6 +112,16 @@ fun TvMainActivity.loadLibrary() {
             if(repository.signedIn) loadAccount()
         }
     }
+}
+
+/**
+ * TV 专用默认值：共享层对旧数据仍按开启兼容，但电视首次运行默认落在首页。
+ *
+ * 只处理磁盘上从未保存过这一项的电视；已经保存过开启 / 关闭的用户设置不受影响。
+ */
+internal fun TvMainActivity.ensureTvLaunchRecommendDefault(library: com.hgtv.star.shared.data.Library) {
+    if (!library.isLoaded || library.launchRecommendStored) return
+    library.launchRecommend = false
 }
 
 /**
