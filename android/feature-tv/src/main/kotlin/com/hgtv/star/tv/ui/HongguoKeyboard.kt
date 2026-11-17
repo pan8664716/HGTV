@@ -17,7 +17,7 @@ import com.hgtv.star.shared.ui.SoftStyle
 /**
  * HG键盘的字符表：**每行 6 个**，字母在前、数字在后，中间不断行。
  *
- * 第一行是七个功能键（删除 / 空格 / 清空 / 搜索 / 扫码输入 / 清空历史记录 / 切换键盘），全部用图标表示、
+ * 第一行是六个功能键（删除 / 空格 / 清空 / 搜索 / 扫码输入 / 切换键盘），全部用图标表示、
  * 等分整行；拿到焦点时图标下方会显示名称。往下是 26 个字母 + 10 个数字连续每 6 个一行——
  * 字母排到第 5 行只剩 `Y Z`，数字就从它们后面直接接着排，36 个字符正好铺满 6 行。
  *
@@ -29,8 +29,8 @@ private const val NUMBER_ROWS="123456|7890"
 /** 每行固定 6 格。 */
 private const val KEY_COLUMNS=6
 
-/** 功能行的键数：删除 / 空格 / 清空 / 搜索 / 扫码输入 / 清空记录 / 切换键盘。 */
-private const val FUNCTION_KEYS=7
+/** 功能行的键数：删除 / 空格 / 清空 / 搜索 / 扫码输入 / 切换键盘。 */
+private const val FUNCTION_KEYS=6
 
 /** 焦点底牌的圆角（设计 dp）：小圆角矩形，不是胶囊。 */
 private const val FOCUS_RADIUS=8
@@ -57,7 +57,6 @@ class HongguoKeyboard(
     private val onClear: ()->Unit,
     private val onSearch: ()->Unit,
     private val onPhoneInput: ()->Unit,
-    private val onClearHistory: ()->Unit,
     private val onSwitchKeyboard: ()->Unit,
 ) {
     private lateinit var keyRows: List<List<View>>
@@ -103,7 +102,7 @@ class HongguoKeyboard(
      * 多出来的一百多 dp 如果全堆在底部，键盘看起来就像「没铺满」；这里把它平均分到各行之间，
      * 键盘因此铺满整栏、上下间距更松，而键本身仍然是正方形。
      *
-     * 功能行 7 格（每格 1/7 栏宽）、字符行 6 格（1/6 栏宽），两行边长因此不同。
+     * 功能行与字符行都是 6 格（1/6 栏宽）。
      */
     private fun layoutCells(width: Int,height: Int) {
         if(width<=0) return
@@ -135,17 +134,15 @@ class HongguoKeyboard(
         grid.removeAllViews()
         rowViews.clear()
         val lines=mutableListOf<MutableList<View>>()
-        // 第一行：七个功能键，全部图标，等分整行。
-        // 顺序：删除 / 空格 / 清空输入 / 搜索 / 扫码输入 / 清空搜索记录 / 切换键盘。
-        // 「清空输入」用叉、「清空记录」用垃圾桶：两枚都是清空，图标必须一眼分得开。
+        // 第一行：六个功能键，全部图标，等分整行。
+        // 顺序：删除 / 空格 / 清空输入 / 搜索 / 扫码输入 / 切换键盘。
         // 每枚在拿到焦点时于图标下方显示自己的名称（见 [KeyCell]）。
         lines+=mutableListOf(
             iconKey(com.hgtv.star.tv.R.drawable.ic_key_delete,"删除") { onDelete() },
             iconKey(com.hgtv.star.tv.R.drawable.ic_key_space,"空格") { onLetter(" ") },
             iconKey(com.hgtv.star.tv.R.drawable.ic_key_clear_input,"清空") { onClear() },
             iconKey(com.hgtv.star.tv.R.drawable.ic_toolbar_search,"搜索") { onSearch() },
-            iconKey(com.hgtv.star.tv.R.drawable.ic_action_phone,"扫码输入") { onPhoneInput() },
-            iconKey(com.hgtv.star.tv.R.drawable.ic_key_clear,"清空历史") { onClearHistory() },
+            iconKey(com.hgtv.star.tv.R.drawable.ic_key_scan_qr,"扫码输入") { onPhoneInput() },
             iconKey(com.hgtv.star.tv.R.drawable.ic_toolbar_keyboard,"切换键盘") { onSwitchKeyboard() },
         )
         // 字母接数字，**连续每 6 个一行**：36 个字符正好 6 行、每行满格。
@@ -178,7 +175,7 @@ class HongguoKeyboard(
      * 行内左右直连、行间上下直连；两端与上下边界先指向自己，由 [wireAcross] 接出去。
      *
      * 上下跨行时**按列号找，找不到就落到那一行的最后一格**：各行的格数并不一样
-     * （功能行 7 格、字符行 6 格），不做这个兜底的话，从最后一列按上是「原地不动」。
+     * 各行列数一致时这个兜底仍然保留，后续增减功能键不会让焦点链断掉。
      */
     private fun wireKeys() {
         keyRows.forEachIndexed { rowIndex,buttons ->

@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-17。文件总数为 656；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-17。文件总数为 657；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -43,7 +43,7 @@ android/
 ├── app/  (23 files, 12 directories)
 ├── core/  (227 files, 27 directories)
 ├── feature-phone/  (142 files, 11 directories)
-├── feature-tv/  (154 files, 17 directories)
+├── feature-tv/  (155 files, 17 directories)
 ├── shared/  (104 files, 24 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
@@ -786,6 +786,7 @@ android/
 | `ic_key_clear.xml` | Drawable 图形资源，根节点 vector。 | vector |
 | `ic_key_clear_input.xml` | Drawable 图形资源，根节点 vector。 | vector |
 | `ic_key_delete.xml` | Drawable 图形资源，根节点 vector。 | vector |
+| `ic_key_scan_qr.xml` | 二维码扫描图标，供 HG 键盘“扫码输入”功能键使用。 | vector |
 | `ic_key_space.xml` | Drawable 图形资源，根节点 vector。 | vector |
 | `ic_menu_check.xml` | Drawable 图形资源，根节点 vector。 | vector |
 | `ic_menu_clock.xml` | Drawable 图形资源，根节点 vector。 | vector |
@@ -983,7 +984,7 @@ android/
 | --- | --- | --- |
 | `DialogItem.kt` | 弹窗里的选项行（设计稿的 .mitem）：整行胶囊，左边一枚线性图标，右边文字。 | class DialogItem |
 | `EpisodeCell.kt` | 选集单元格：网格里的方块，高度、字号、焦点反馈与按钮共用同一套令牌。 | class EpisodeCell |
-| `HongguoKeyboard.kt` | HG键盘的字符表：字母与数字每行 6 个；功能行新增“扫码输入”，复用电视手机输入二维码通道。 | val LETTER_ROWS、val NUMBER_ROWS、val KEY_COLUMNS、val FUNCTION_KEYS、val FOCUS_RADIUS、val ICON_SIZE |
+| `HongguoKeyboard.kt` | HG键盘的字符表：字母与数字每行 6 个；功能行含专用扫码图标入口，复用电视手机输入二维码通道。 | val LETTER_ROWS、val NUMBER_ROWS、val KEY_COLUMNS、val FUNCTION_KEYS、val FOCUS_RADIUS、val ICON_SIZE |
 | `IconButton.kt` | 顶部导航的圆形图标入口（搜索 / 排行榜 / 设置）。 | class IconButton |
 | `LoginForm.kt` | 「手机号 + 验证码」登录表单的视觉件：输入框、字段说明、按钮行。 | object LoginForm |
 | `PosterCard.kt` | 电视端海报卡：结构来自 PosterCardView，这里只补电视的材质、字号、进度条与焦点。 | class PosterCard |

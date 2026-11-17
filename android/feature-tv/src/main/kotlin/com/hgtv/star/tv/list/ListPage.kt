@@ -527,11 +527,6 @@ fun TvMainActivity.showCatalog(
                     searchHongguoDraft()
                 }
             },
-            onClearHistory={
-                searchController.clearHistory()
-                renderHongguoSideList()
-                showHint("搜索记录已清空")
-            },
             onSwitchKeyboard={ setSearchKeyboard(false) })
         keyboard.draft=hongguoDraft
         keyboardColumn.addView(keyboard.view,LinearLayout.LayoutParams(-1,-1))
