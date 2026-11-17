@@ -1313,10 +1313,10 @@ object AppConfig {
             const val TRACK_HEIGHT_DP = 3f
 
             /** 竖屏底部导航高度。 */
-            const val TAB_BAR_DP = 34f
+            const val TAB_BAR_DP = 30f
 
             /** 横屏沉浸时底部导航高度。 */
-            const val TAB_BAR_LANDSCAPE_DP = 24f
+            const val TAB_BAR_LANDSCAPE_DP = 22f
 
             /** 常规卡片宽度。 */
             const val CARD_WIDTH_DP = 116
