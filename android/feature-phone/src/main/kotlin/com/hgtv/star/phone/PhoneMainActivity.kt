@@ -129,8 +129,8 @@ class PhoneMainActivity : PhoneActivity() {
                 }
             }
         }
-        // 贴底固定：高度 = 栏本身 + 系统导航条，导航条那一截由 PhoneTabBar 自己留白。
-        // 不做悬浮胶囊、不留左右边距——新拟态的层次靠材质，不靠「浮起来」。
+        // 导航底板贴底，选中入口由 PhoneTabBar 上浮到内容区；页面底部安全距离
+        // 统一由 tabBarInset() 提供，避免列表最后一行被入口或系统导航条压住。
         root.addView(tabBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             phoneTabBarHeightPx(),

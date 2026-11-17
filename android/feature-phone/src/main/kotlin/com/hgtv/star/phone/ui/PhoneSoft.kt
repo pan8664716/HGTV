@@ -86,16 +86,4 @@ object PhoneSoft {
         bandDp: Float = PhoneStyle.SOFT_BAND,
     ): SoftDrawable = applySoft(SoftStyle.INSET, fill, radiusDp, bandDp)
 
-    /**
-     * 一整条贴底导航栏的底板。
-     *
-     * 它不需要柔光带（上下都是屏幕边缘 / 内容区，没有父容器裁剪问题），
-     * 因此单独走一个「只填充 + 一条上分隔线」的路径，避免 50dp 高的条里
-     * 被 6dp 的 padding 吃掉内容高度。
-     */
-    fun View.applyBar(fill: Int = PhoneStyle.surface) {
-        background = android.graphics.drawable.GradientDrawable().apply {
-            setColor(fill)
-        }
-    }
 }
