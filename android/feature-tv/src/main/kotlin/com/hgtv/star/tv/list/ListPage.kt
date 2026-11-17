@@ -19,6 +19,7 @@ import com.hgtv.star.tv.focusBleed
 import com.hgtv.star.tv.tvScrollHost
 import com.hgtv.star.tv.ACCOUNT_TABS
 import com.hgtv.star.tv.CHIP_ROW_HEIGHT
+import com.hgtv.star.tv.RANK_CHIP_VIEWPORT_WIDTH
 import com.hgtv.star.tv.FILTER_ROW_HEIGHT
 import com.hgtv.star.tv.gridColumns
 import com.hgtv.star.tv.LOAD_MORE
@@ -365,6 +366,10 @@ fun TvMainActivity.showCatalog(
             overScrollMode=View.OVER_SCROLL_NEVER
             addView(boards)
         }
+        val boardViewport=ClipFrameLayout(this).apply {
+            clipChildren=true; clipToPadding=true
+            addView(boardScroll,FrameLayout.LayoutParams(-1,-1))
+        }
         val boardChips=mutableListOf<View>()
         RankBoard.navEntries.forEach { board ->
             val chip=ToggleChip(this,board.label,rankBoard==board) { switchRankBoard(board) }
@@ -372,10 +377,13 @@ fun TvMainActivity.showCatalog(
             boardChips+=chip
             gapInto(boards,chip,lp(-2,-2))
         }
-        // 八枚两字芯片始终放在页头下方的固定横滑区，不占右上角圆形入口的位置。
-        wireChipRow(boardChips,{ boardChips[it] })
-        container.addView(boardScroll,lp(-1,dp(CHIP_ROW_HEIGHT)))
-        registerTopAreaRow(boardScroll)
+        // 固定宽高留在页头行内，超出的芯片只在内部向右滚动，不挤压右侧圆形入口。
+        val afterBoards=recommendIcon ?: nav.firstOrNull()
+        wireChipRow(boardChips,{ boardChips[it] },afterBoards)
+        filterSlot.addView(
+            boardViewport,
+            lp(dp(RANK_CHIP_VIEWPORT_WIDTH),dp(CHIP_ROW_HEIGHT)),
+        )
         navIcons().forEach { it.nextFocusDownId=boardButtons.getValue(rankBoard).id }
         boardButtons.values.forEach { it.nextFocusDownId=it.id }
         restoreChipFocus("board:")

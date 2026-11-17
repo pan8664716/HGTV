@@ -183,6 +183,8 @@ val TvMainActivity.gridColumns: Int
  * 提示词更是随输入实时增减；高度跟着内容走的话下面的卡片行会跟着上下跳。
  */
 const val CHIP_ROW_HEIGHT=68
+/** 榜单页顶部芯片的固定可视宽度；超出部分只在容器内部向右滚动。 */
+const val RANK_CHIP_VIEWPORT_WIDTH=360
 
 /**
  * 分类页筛选行的高度（dp）。芯片用 [com.hgtv.star.tv.ButtonSize.DENSE]
