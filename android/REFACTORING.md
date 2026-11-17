@@ -4372,6 +4372,22 @@ feature-tv/
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 手机推荐播放页弹幕首行与正式播放页对齐
+
+状态：已修复，debug 构建通过，待用户真机验证。
+
+- 现象：手机竖屏推荐播放页的弹幕第一行比正式播放页更高；两页顶部信息栏视觉位置
+  已经对齐，但弹幕落点仍不同。
+- 根因：正式播放页使用 `topInsetPx = 顶部信息栏底边 + 8dp`，再由
+  `PhoneVideoPage` 的 `topGapDp = 16dp` 追加文字呼吸位；推荐流此前使用
+  `topTextAnchorPx` 把文字顶边直接锚到顶栏底边，并把 `topGapDp` 设为 0。
+- 修复：新增 `DanmakuView.alignBelowPhonePortraitChrome`，正式播放页和推荐流都清空
+  文字锚点，统一使用“顶部信息栏底边 + 8dp”的轨道起点和共享的 16dp 呼吸位。
+  推荐流在顶栏尺寸变化及相邻页绑定时复用同一入口。
+- `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 电视首页冷启动结构比较
 
 状态：已实现，debug 构建通过，待用户真机验证。

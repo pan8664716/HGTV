@@ -6,6 +6,22 @@ import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.resizeMode
+import com.hgtv.star.shared.media.DanmakuView
+
+internal const val PHONE_PORTRAIT_DANMAKU_TOP_GAP_DP=16f
+
+/**
+ * 手机竖屏“顶部信息栏”和弹幕共用的落点。
+ *
+ * 正式播放页与推荐流顶部栏高度相同，但过去推荐流用文字锚点、正式页用
+ * `topInset + topGap`，两边首行位置不一致。统一走这一处后：
+ * 轨道顶边 = 顶栏底边 + 8dp，文字再吃 DanmakuView 自己的 16dp 呼吸位。
+ */
+internal fun DanmakuView.alignBelowPhonePortraitChrome(bottomPx: Int, infoGapPx: Int) {
+    topTextAnchorPx=null
+    topGapDp=PHONE_PORTRAIT_DANMAKU_TOP_GAP_DP
+    topInsetPx=bottomPx.coerceAtLeast(0)+infoGapPx.coerceAtLeast(0)
+}
 
 /**
  * 新形态那一层的入场过渡：淡入 + 从 97% 放到原尺寸。
@@ -41,7 +57,10 @@ internal fun PhonePlayerActivity.syncDanmakuTopInset() {
         return
     }
     if (playerPortraitTopBottom <= 0) return
-    playerPage.danmakuView.topInsetPx = playerPortraitTopBottom + dp(8)
+    playerPage.danmakuView.alignBelowPhonePortraitChrome(
+        bottomPx=playerPortraitTopBottom,
+        infoGapPx=dp(8),
+    )
 }
 
 /** 横屏也按用户的「画面模式」落画面，不按片源方向强制放大。 */

@@ -3,6 +3,7 @@ package com.hgtv.star.phone
 
 import android.view.View
 import com.hgtv.star.core.DanmakuMode
+import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.shared.debug.StartupDeferredTasks
 
 /** 取（或建）某一屏的弹幕加载器。 */
@@ -24,10 +25,10 @@ internal fun PhoneFeedView.danmakuLoaderOfImpl(
 internal fun PhoneFeedView.applyDanmakuSettingsImpl(page: PhoneVideoPage) {
     val lib = feedLibrary ?: return
     val view = page.danmakuView
-    view.topInsetPx = feedDanmakuTopInsetPx
-    // 推荐流首行紧贴顶部导航；正式播放页仍保留 PhoneVideoPage 的 16dp 呼吸位。
-    view.topTextAnchorPx = feedDanmakuTopInsetPx.takeIf { it > 0 }
-    view.topGapDp = 0f
+    view.alignBelowPhonePortraitChrome(
+        bottomPx=feedDanmakuTopInsetPx,
+        infoGapPx=context.dp(8),
+    )
     view.mode = lib.danmakuMode
     view.sizeFollowsLongEdge = true
     view.textScale = PhoneDanmakuSize.renderScale(context)
@@ -46,8 +47,10 @@ internal fun PhoneFeedView.applyDanmakuTopInsetImpl(insetPx: Int) {
     feedDanmakuTopInsetPx = inset
     for (index in 0 until feedList.childCount) {
         val page = feedList.getChildAt(index) as? PhoneVideoPage ?: continue
-        page.danmakuView.topInsetPx = inset
-        page.danmakuView.topTextAnchorPx = inset.takeIf { it > 0 }
+        page.danmakuView.alignBelowPhonePortraitChrome(
+            bottomPx=inset,
+            infoGapPx=context.dp(8),
+        )
     }
 }
 
