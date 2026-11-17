@@ -898,7 +898,7 @@ android/
 | --- | --- | --- |
 | `BackToTop.kt` | 「回到顶部」浮层：栅格列表页上的一枚快捷按钮，固定在**右下角**。 | fun TvMainActivity.attachBackToTop、fun TvMainActivity.updateBackToTop、fun TvMainActivity.backToTopVisible、val BACK_TO_TOP_EDGE_GAP、fun TvMainActivity.positionBackToTop、fun TvMainActivity.backToTopTarget |
 | `HomeScreen.kt` | 电视首页横排剧架组件；首栏先建少量卡片，其余按帧增量补齐，结构比较包含待建卡片与“查看全部”，避免缓存后网络回包整页重建。 | class HomeScreen、val HOME_FIRST_BATCH、val HOME_FIRST_CARDS、val HOME_BATCH_BUDGET_MS、val HOME_BATCH_BUDGET_LOW_RAM_MS |
-| `ListPage.kt` | 电视列表页页面骨架；榜单八枚两字芯片在页头行内使用固定宽度横滑视口，分类、搜索、我的和设置页共用页面组装。 | fun equalChipWidths、fun TvMainActivity.showCatalog |
+| `ListPage.kt` | 电视列表页页面骨架；榜单八枚两字芯片占满标题与圆形按钮之间的固定剩余宽度并横滑，分类、搜索、我的和设置页共用页面组装。 | fun equalChipWidths、fun TvMainActivity.showCatalog |
 | `ListPageContent.kt` | 电视列表、网格、剧架与分页；栅格卡片 View 通过跨页行池复用，只重绑数据与封面。 | fun TvMainActivity.setRankSubtitle、fun TvMainActivity.seriesList、class ClipFrameLayout、fun lastFocusable、fun firstFocusable |
 | `SeriesActions.kt` | 剧卡上「点一下」与「长按 / 菜单键」这两个动作，全站只有这一份实现；历史卡片关闭“优先进入简介”时直接进入播放页。 | fun TvMainActivity.openSeries、fun TvMainActivity.seriesMenu |
 | `SeriesGrid.kt` | 剧卡栅格的窗口化复用、分页追加、滚动与焦点；历史已看完的当前季显示“看完了”，回收行时从实际父容器摘除，避免复用 stale parent。 | fun TvMainActivity.gridCards、fun TvMainActivity.isGridTail、fun TvMainActivity.gridRowCount、fun TvMainActivity.rowStride、fun TvMainActivity.gridTextScale、fun TvMainActivity.updateGridSpacers、fun TvMainActivity.recycleGridRow |

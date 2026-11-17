@@ -59,8 +59,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 榜单分页保存 `next_offset / rank_version / session_id / filter_ids`，首页与榜单页
   共用首屏缓存；TV 首页新增八个榜单剧架，设置显隐列表由 `HomeLayout` 自动同步。
 - 推荐流体裁拆成 `RecommendGenre`，继续保留推荐 / 漫剧 / AI剧 / 真人四条流。
-- TV / 手机 / iOS 的榜单顶部导航统一为两字芯片并支持横向滚动；TV 在页头行内使用
-  固定宽度视口，芯片只在内部向右滚动，不挤压右侧圆形入口。iOS 同步同一套八榜与游标分页。
+- TV / 手机 / iOS 的榜单顶部导航统一为两字芯片并支持横向滚动；TV 在页头行内占满
+  标题与右侧圆形入口之间的固定剩余宽度，芯片只在内部向右滚动，不挤压按钮。
+  iOS 同步同一套八榜与游标分页。
 - 未改版本号、versionCode、依赖或发布元数据；未推送。
 
 验证：

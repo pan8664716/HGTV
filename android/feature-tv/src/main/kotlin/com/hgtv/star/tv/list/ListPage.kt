@@ -19,7 +19,6 @@ import com.hgtv.star.tv.focusBleed
 import com.hgtv.star.tv.tvScrollHost
 import com.hgtv.star.tv.ACCOUNT_TABS
 import com.hgtv.star.tv.CHIP_ROW_HEIGHT
-import com.hgtv.star.tv.RANK_CHIP_VIEWPORT_WIDTH
 import com.hgtv.star.tv.FILTER_ROW_HEIGHT
 import com.hgtv.star.tv.gridColumns
 import com.hgtv.star.tv.LOAD_MORE
@@ -167,7 +166,9 @@ fun TvMainActivity.showCatalog(
     val filterSlot=row()
     if(!searchPage) gapInto(top,filterSlot,lp(-2,-2),TvStyle.GAP_GROUP)
     if(tab==TAB_SEARCH) searchBar(top,query.isBlank() && !load && !focusNav)
-    else top.addView(Space(this),lp(0,1).apply { weight=1f })
+    val topSpacer=if(tab==TAB_SEARCH) null else Space(this).also {
+        top.addView(it,lp(0,1).apply { weight=1f })
+    }
     var historyFilterEnd: View?=null
     if(collection=="history") {
         historyClearInline=true
@@ -377,12 +378,24 @@ fun TvMainActivity.showCatalog(
             boardChips+=chip
             gapInto(boards,chip,lp(-2,-2))
         }
-        // 固定宽高留在页头行内，超出的芯片只在内部向右滚动，不挤压右侧圆形入口。
+        // 视口占满标题与右侧圆形入口之间的固定剩余宽度，芯片只在内部向右滚动。
+        topSpacer?.let { spacer ->
+            (spacer.layoutParams as? LinearLayout.LayoutParams)?.apply {
+                width=0
+                weight=0f
+                spacer.layoutParams=this
+            }
+        }
+        (filterSlot.layoutParams as? LinearLayout.LayoutParams)?.apply {
+            width=0
+            weight=1f
+            filterSlot.layoutParams=this
+        }
         val afterBoards=recommendIcon ?: nav.firstOrNull()
         wireChipRow(boardChips,{ boardChips[it] },afterBoards)
         filterSlot.addView(
             boardViewport,
-            lp(dp(RANK_CHIP_VIEWPORT_WIDTH),dp(CHIP_ROW_HEIGHT)),
+            lp(-1,dp(CHIP_ROW_HEIGHT)),
         )
         navIcons().forEach { it.nextFocusDownId=boardButtons.getValue(rankBoard).id }
         boardButtons.values.forEach { it.nextFocusDownId=it.id }
