@@ -1,34 +1,27 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.ui
 
-import android.animation.ArgbEvaluator
-import android.animation.ValueAnimator
 import android.content.Context
 import android.graphics.Canvas
-import android.graphics.LinearGradient
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
-import android.graphics.Shader
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
-import android.view.animation.DecelerateInterpolator
 import android.widget.FrameLayout
 import android.widget.LinearLayout
-import com.hgtv.star.phone.PhoneServices
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
-import com.hgtv.star.phone.ui.PhoneSoft.restyleSoft
 import com.hgtv.star.shared.ui.SoftStyle
 
 /**
- * 手机底部导航：整条柔光底板 + 四枚独立圆形按钮。
+ * 手机底部导航：悬浮圆角底板 + 四枚等尺寸圆形凸起入口。
  *
- * 视觉参考 ShadeCraft 的 Elevated Tab：未选中项落在栏内，当前项上浮半条栏高、
- * 放大并切换为强调色。业务入口仍是推荐 / 分类 / 榜单 / 我的，切页与双击回顶
- * 继续由 [com.hgtv.star.phone.PhoneMainActivity] 统一处理。
+ * 版式参考 ShadeCraft 的 Elevated Tab：不显示文字，不做选中项位移，
+ * 当前入口只通过强调色图标表达。推荐 / 分类 / 榜单 / 我的四个业务入口保持不变，
+ * 切页与双击回顶继续由 [com.hgtv.star.phone.PhoneMainActivity] 统一处理。
  */
-class PhoneTabBar(context: Context, private val compact: Boolean = false) : LinearLayout(context) {
+class PhoneTabBar(context: Context, private val compact: Boolean = false) : FrameLayout(context) {
 
     enum class Icon { HOME, GRID, RANK, MINE }
 
@@ -42,184 +35,104 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Line
     )
     private val cells = ArrayList<Cell>()
     private var selected = -1
-    private val reduceMotion = runCatching {
-        PhoneServices.library(context).takeIf { it.isLoaded }?.reduceAnim == true
-    }.getOrDefault(false)
-
-    private val plate = Path()
-    private val plateRect = RectF()
-    private val fillPaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val edgePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val topShadePaint = Paint(Paint.ANTI_ALIAS_FLAG)
-    private val argb = ArgbEvaluator()
 
     var onSelect: ((Int) -> Unit)? = null
 
     init {
-        orientation = HORIZONTAL
-        setPadding(context.dp(PhoneDimen.TAB_INSET), 0, context.dp(PhoneDimen.TAB_INSET), 0)
-        clipChildren = false
-        clipToPadding = false
-        setWillNotDraw(false)
-        // 栏内空白也要吃掉点击，避免穿透到下面的视频 / 列表。
         isClickable = true
         setOnClickListener { }
 
+        val panel = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+            applySoft(
+                style = SoftStyle.RAISED,
+                fill = PhoneStyle.surface,
+                radiusDp = if (compact) 12f else 18f,
+                bandDp = if (compact) 2f else 2.6f,
+                depth = 1f,
+            )
+        }
+        addView(
+            panel,
+            LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                ViewGroup.LayoutParams.MATCH_PARENT,
+                Gravity.CENTER,
+            ).apply {
+                leftMargin = context.dp(PhoneDimen.TAB_INSET)
+                rightMargin = context.dp(PhoneDimen.TAB_INSET)
+            },
+        )
+
         items.forEachIndexed { index, item ->
-            val cell = Cell(context, item, compact, reduceMotion)
+            val cell = Cell(context, item, compact)
             cell.setOnClickListener {
                 select(index)
                 onSelect?.invoke(index)
             }
             cells += cell
-            addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
+            panel.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         }
-        applySelected(0, animate = false)
+        applySelected(0)
     }
 
-    fun select(index: Int) = applySelected(index, animate = true)
+    fun select(index: Int) = applySelected(index)
 
-    /** 宿主切页后同步选中态，不重复播放入场动画。 */
-    fun setSelected(index: Int) = applySelected(index, animate = false)
+    /** 宿主切页后同步选中态，不触发业务回调。 */
+    fun setSelected(index: Int) = applySelected(index)
 
-    private fun applySelected(index: Int, animate: Boolean) {
+    private fun applySelected(index: Int) {
         if (index !in cells.indices || index == selected) return
         selected = index
-        cells.forEachIndexed { i, cell -> cell.applySelected(i == index, animate) }
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        val radius = dp(if (compact) 12 else 18).toFloat()
-        plateRect.set(0f, 0f, width.toFloat(), height.toFloat() + radius)
-        plate.reset()
-        plate.addRoundRect(
-            plateRect,
-            floatArrayOf(radius, radius, radius, radius, 0f, 0f, 0f, 0f),
-            Path.Direction.CW,
-        )
-
-        fillPaint.color = PhoneStyle.surface
-        canvas.drawPath(plate, fillPaint)
-
-        // 底板与内容之间用一条深色渐隐 + 顶部高光分开，替代悬浮卡片的硬阴影。
-        val shadeHeight = dp(if (compact) 2 else 4).coerceAtLeast(1)
-        topShadePaint.shader = LinearGradient(
-            0f,
-            0f,
-            0f,
-            shadeHeight.toFloat(),
-            PhoneStyle.shadowDark,
-            PhoneStyle.shadowDark and 0x00FFFFFF,
-            Shader.TileMode.CLAMP,
-        )
-        canvas.save()
-        canvas.clipPath(plate)
-        canvas.drawRect(0f, 0f, width.toFloat(), shadeHeight.toFloat(), topShadePaint)
-        canvas.restore()
-
-        edgePaint.color = PhoneStyle.shadowLight
-        edgePaint.strokeWidth = 1f
-        canvas.drawLine(radius, .5f, width - radius, .5f, edgePaint)
+        cells.forEachIndexed { i, cell -> cell.applySelected(i == index) }
     }
 
     private inner class Cell(
         context: Context,
         private val item: Item,
         compact: Boolean,
-        private val reduceMotion: Boolean,
     ) : FrameLayout(context) {
 
         private val barDp = if (compact) PhoneColor.TAB_BAR_LANDSCAPE_DP else PhoneColor.TAB_BAR_DP
-        private val circleDp = barDp * .88f
-        private val circleSize = context.dp(circleDp)
-        private val iconSize = context.dp(barDp * .42f)
-        private val lift = context.dp(barDp / 2f).toFloat()
-        private val idleScale = if (compact) .82f else .84f
+        private val circleSize = context.dp(barDp * .62f)
+        private val iconSize = context.dp(barDp * .33f)
         private val iconView = Glyph(context, item.icon)
-        private val button = FrameLayout(context)
-        private var fill = PhoneStyle.surface
-        private var tint = PhoneStyle.textFaint
-        private var animator: ValueAnimator? = null
 
         init {
             isClickable = true
             isFocusable = true
             contentDescription = item.label
-            clipChildren = false
-            clipToPadding = false
 
-            button.applySoft(
-                style = SoftStyle.RAISED,
-                fill = fill,
-                radiusDp = circleDp / 2f,
-                bandDp = if (compact) 2.2f else 2.8f,
-                depth = 1f,
-            )
-            button.importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
-            button.addView(
-                iconView,
-                LayoutParams(iconSize, iconSize, Gravity.CENTER),
-            )
+            val circle = FrameLayout(context).apply {
+                importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
+                applySoft(
+                    style = SoftStyle.RAISED,
+                    fill = PhoneStyle.surfaceHigh,
+                    radiusDp = barDp * .31f,
+                    bandDp = if (compact) 1.8f else 2.2f,
+                    depth = 1f,
+                )
+                addView(
+                    iconView,
+                    LayoutParams(iconSize, iconSize, Gravity.CENTER),
+                )
+            }
             addView(
-                button,
+                circle,
                 LayoutParams(circleSize, circleSize, Gravity.CENTER),
             )
-            iconView.tint = tint
-            button.scaleX = idleScale
-            button.scaleY = idleScale
+            iconView.tint = PhoneStyle.textDim
         }
 
-        fun applySelected(selected: Boolean, animate: Boolean) {
+        fun applySelected(selected: Boolean) {
             isSelected = selected
-            val targetFill = if (selected) PhoneStyle.surfaceHigh else PhoneStyle.surface
-            val targetTint = if (selected) PhoneStyle.accent else PhoneStyle.textFaint
-            val targetScale = if (selected) 1f else idleScale
-            val targetY = if (selected) -lift else 0f
-
-            animator?.cancel()
-            if (!animate || reduceMotion || !isAttachedToWindow) {
-                setFrame(targetFill, targetTint, targetScale, targetY)
-                return
-            }
-
-            val startFill = fill
-            val startTint = tint
-            val startScale = button.scaleX
-            val startY = button.translationY
-            animator = ValueAnimator.ofFloat(0f, 1f).apply {
-                duration = 300L
-                interpolator = DecelerateInterpolator()
-                addUpdateListener {
-                    val t = it.animatedValue as Float
-                    setFrame(
-                        argb.evaluate(t, startFill, targetFill) as Int,
-                        argb.evaluate(t, startTint, targetTint) as Int,
-                        startScale + (targetScale - startScale) * t,
-                        startY + (targetY - startY) * t,
-                    )
-                }
-                start()
-            }
-        }
-
-        private fun setFrame(nextFill: Int, nextTint: Int, scale: Float, translation: Float) {
-            fill = nextFill
-            tint = nextTint
-            button.restyleSoft(fill = nextFill)
-            iconView.tint = nextTint
-            button.scaleX = scale
-            button.scaleY = scale
-            button.translationY = translation
-        }
-
-        override fun onDetachedFromWindow() {
-            animator?.cancel()
-            super.onDetachedFromWindow()
+            iconView.tint = if (selected) PhoneStyle.accent else PhoneStyle.textDim
         }
     }
 
     private class Glyph(context: Context, private val icon: Icon) : View(context) {
-        var tint: Int = PhoneStyle.textFaint
+        var tint: Int = PhoneStyle.textDim
             set(value) {
                 field = value
                 invalidate()

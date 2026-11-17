@@ -4,7 +4,7 @@
 //
 // 结构照 Android 的 `PhoneTopBar` / `PhoneTabBar` / `PhoneSheet` / `PhoneSettingControls`：
 // 顶栏 = 状态栏留白 + 主行（标题或大分类 tab）+ 右侧动作 + 可选副行 chips；
-// 底栏 = 柔光底板 + 四枚圆形凸起入口；选中项上浮半条栏高、放大并切换强调色。
+// 底栏 = 悬浮圆角底板 + 四枚等尺寸圆形凸起入口；选中项只切换图标强调色。
 
 import SwiftUI
 
@@ -104,29 +104,6 @@ struct TopBar: View {
 
 // MARK: - 底栏
 
-private struct TabBarPlate: Shape {
-    let topRadius: CGFloat
-
-    func path(in rect: CGRect) -> Path {
-        var path = Path()
-        let radius = min(topRadius, rect.width / 2)
-        path.move(to: CGPoint(x: rect.minX, y: rect.maxY))
-        path.addLine(to: CGPoint(x: rect.minX, y: rect.minY + radius))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.minX + radius, y: rect.minY),
-            control: CGPoint(x: rect.minX, y: rect.minY)
-        )
-        path.addLine(to: CGPoint(x: rect.maxX - radius, y: rect.minY))
-        path.addQuadCurve(
-            to: CGPoint(x: rect.maxX, y: rect.minY + radius),
-            control: CGPoint(x: rect.maxX, y: rect.minY)
-        )
-        path.addLine(to: CGPoint(x: rect.maxX, y: rect.maxY))
-        path.closeSubpath()
-        return path
-    }
-}
-
 struct BottomTabBar: View {
     @Binding var selected: Int
     var onRepeatTap: ((Int) -> Void)?
@@ -134,8 +111,6 @@ struct BottomTabBar: View {
     @Environment(\.metrics) private var m
     @Environment(\.theme) private var theme
     @Environment(\.safeAreaInsets) private var insets
-    @Environment(\.accessibilityReduceMotion) private var systemReduceMotion
-    @EnvironmentObject private var library: Library
 
     private let items: [(String, TabIcon)] = AppConfig.Navigation.phoneTabKeys.map { key in
         switch key {
@@ -149,18 +124,11 @@ struct BottomTabBar: View {
     @State private var lastTapIndex = -1
     @State private var lastTapAt = Date.distantPast
 
-    private var selectionAnimation: Animation? {
-        if systemReduceMotion || library.prefs.reduceAnim { return nil }
-        return .easeOut(duration: 0.3)
-    }
-
     var body: some View {
         let barHeight = m.dp(PhoneDimen.tabBar)
-        let circleSize = m.dp(PhoneDimen.tabBar * 0.88)
-        let iconSize = m.dp(PhoneDimen.tabBar * 0.42)
-        let lift = m.dp(PhoneDimen.tabBar / 2)
-        let idleScale = m.isPortrait ? 0.84 : 0.82
-        let topRadius = m.dp(m.isPortrait ? 18 : 12)
+        let circleSize = m.dp(PhoneDimen.tabBar * 0.62)
+        let iconSize = m.dp(PhoneDimen.tabBar * 0.33)
+        let panelRadius = m.dp(m.isPortrait ? 18 : 12)
 
         ZStack(alignment: .top) {
             HStack(spacing: 0) {
@@ -179,53 +147,36 @@ struct BottomTabBar: View {
                     } label: {
                         TabGlyph(
                             kind: items[index].1,
-                            tint: index == selected ? theme.accent : theme.textFaint,
+                            tint: index == selected ? theme.accent : theme.textDim,
                             lineWidth: max(1, m.dp(1.3))
                         )
                         .frame(width: iconSize, height: iconSize)
                         .frame(width: circleSize, height: circleSize)
                         .soft(
                             .raised,
-                            fill: index == selected ? theme.surfaceHigh : theme.surface,
+                            fill: theme.surfaceHigh,
                             radius: circleSize / 2,
-                            depth: max(1, m.dp(index == selected ? 2.8 : 2.4))
+                            depth: max(1, m.dp(1.8))
                         )
-                        .scaleEffect(index == selected ? 1 : idleScale)
-                        .offset(y: index == selected ? -lift : 0)
-                        .animation(selectionAnimation, value: selected)
                         .frame(maxWidth: .infinity, maxHeight: .infinity)
                     }
                     .buttonStyle(.plain)
                     .contentShape(Rectangle())
                     .accessibilityLabel(items[index].0)
                     .accessibilityValue(index == selected ? "已选中" : "")
-                    .zIndex(index == selected ? 1 : 0)
                 }
             }
+            .padding(.horizontal, m.dp(4))
             .frame(height: barHeight)
+            .soft(
+                .raised,
+                fill: theme.surface,
+                radius: panelRadius,
+                depth: max(1, m.dp(2))
+            )
             .padding(.horizontal, m.dp(PhoneDimen.tabInset))
         }
         .frame(height: barHeight + insets.bottom)
-        .background {
-            TabBarPlate(topRadius: topRadius)
-                .fill(theme.surface)
-                .overlay(alignment: .top) {
-                    LinearGradient(
-                        colors: [theme.shadowDark, theme.shadowDark.opacity(0)],
-                        startPoint: .top,
-                        endPoint: .bottom
-                    )
-                    .frame(height: m.dp(m.isPortrait ? 4 : 2))
-                    .clipShape(TabBarPlate(topRadius: topRadius))
-                }
-                .overlay(alignment: .top) {
-                    Rectangle()
-                        .fill(theme.shadowLight)
-                        .frame(height: 0.5)
-                        .padding(.horizontal, topRadius)
-                }
-                .ignoresSafeArea(edges: .bottom)
-        }
     }
 }
 

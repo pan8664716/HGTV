@@ -129,8 +129,8 @@ class PhoneMainActivity : PhoneActivity() {
                 }
             }
         }
-        // 导航底板贴底，选中入口由 PhoneTabBar 上浮到内容区；页面底部安全距离
-        // 统一由 tabBarInset() 提供，避免列表最后一行被入口或系统导航条压住。
+        // 导航是贴底的悬浮圆角底板，入口固定不动；页面底部安全距离统一由
+        // tabBarInset() 提供，避免列表最后一行被导航或系统导航条压住。
         root.addView(tabBar, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             phoneTabBarHeightPx(),

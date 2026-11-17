@@ -750,7 +750,7 @@ android/
 | `PhoneSheet.kt` | 播放界面上的浮层（播放设置 / 选集共用一套壳）。 | class PhoneSheet |
 | `PhoneSoft.kt` | 手机端的新拟态绘制入口。 | object PhoneSoft |
 | `PhoneStyle.kt` | 手机端的新拟态令牌。 | object PhoneStyle |
-| `PhoneTabBar.kt` | 手机底部导航：柔光底板 + 四枚圆形凸起入口；选中项上浮、放大并切换强调色，保留切页与双击回顶回调。 | class PhoneTabBar、fun select、fun setSelected |
+| `PhoneTabBar.kt` | 手机底部导航：悬浮圆角底板 + 四枚等尺寸圆形凸起入口；当前项只切换图标强调色，保留切页与双击回顶回调。 | class PhoneTabBar、fun select、fun setSelected |
 | `PhoneTheme.kt` | 手机 / 平板的视觉令牌。 | object PhoneColor、object PhoneDimen、fun Context.phoneScale、object PhoneUiScale、fun Context.dp、fun android.view.View.dp |
 | `PhoneTopBar.kt` | 手机端统一的页面顶部栏；导出沉浸式 10dp 顶部与 34dp 主行常量，供竖屏播放信息对齐复用。 | class PhoneTopBar、PHONE_TOP_BAR_IMMERSIVE_TOP_DP、PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP |
 | `PhoneTopCollapse.kt` | 列表上滑时把页头收起来、回到顶部再放出来（TV 的 onListScroll / setTopAreaHidden 同一条语义）。 | class PhoneTopCollapse |
