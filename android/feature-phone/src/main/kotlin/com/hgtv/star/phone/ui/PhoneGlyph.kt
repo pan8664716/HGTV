@@ -265,26 +265,29 @@ class PhoneGlyph(context: Context, kind: Kind) : View(context) {
                 canvas.drawRoundRect(rect, w * .08f, w * .08f, stroke)
             }
             Kind.LOCK, Kind.UNLOCK -> {
-                rect.set(w * .24f, h * .46f, w * .76f, h * .84f)
-                canvas.drawRoundRect(rect, w * .08f, w * .08f, stroke)
+                // 简洁线框：锁体 + 锁扣，不再画钥匙孔，避免小尺寸下糊成一团。
+                rect.set(w * .28f, h * .45f, w * .72f, h * .82f)
+                canvas.drawRoundRect(rect, w * .07f, w * .07f, thin)
                 path.reset()
                 if (kind == Kind.LOCK) {
-                    path.moveTo(w * .34f, h * .46f)
+                    path.moveTo(w * .36f, h * .45f)
+                    path.lineTo(w * .36f, h * .36f)
                     path.cubicTo(
-                        w * .34f, h * .20f,
-                        w * .66f, h * .20f,
-                        w * .66f, h * .46f,
+                        w * .36f, h * .22f,
+                        w * .64f, h * .22f,
+                        w * .64f, h * .36f,
                     )
+                    path.lineTo(w * .64f, h * .45f)
                 } else {
-                    path.moveTo(w * .34f, h * .46f)
+                    path.moveTo(w * .36f, h * .45f)
+                    path.lineTo(w * .36f, h * .36f)
                     path.cubicTo(
-                        w * .34f, h * .20f,
-                        w * .66f, h * .20f,
-                        w * .70f, h * .34f,
+                        w * .36f, h * .22f,
+                        w * .64f, h * .22f,
+                        w * .68f, h * .32f,
                     )
                 }
-                canvas.drawPath(path, stroke)
-                canvas.drawCircle(w * .50f, h * .63f, w * .045f, fill)
+                canvas.drawPath(path, thin)
             }
         }
     }
