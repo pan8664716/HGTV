@@ -112,6 +112,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   批量模型任务先补详情，再按各自的 `PlaybackProfile` 分组预取首集模型。
 - 当前播放关键路径仍只等待当前这一部：详情缓存命中直接取集，未命中才调用
   `video_detail/v1`；模型缓存命中直接播放，未命中才调用 `video_model/v1`。
+- 推荐滑动计划现在先批量预热目标窗口的整屏封面；电视在 `applyRecommendPlan` 派发
+  详情 / 地址前执行，手机在 `onItemChanged` 后立即执行。真正切剧时封面请求复用同一
+  `ArtworkLoader` 缓存任务并提升为前台优先级，不再等切过去后才下载。
 - 前台播放模型改为官方 `video_model/v1`，后台批量改为
   `multi_video_model/preload/v1`；默认档位改为 3，空响应依次升到 4、5。
 - 未改版本号、versionCode、依赖或发布元数据；未运行单元测试，测试交给用户。

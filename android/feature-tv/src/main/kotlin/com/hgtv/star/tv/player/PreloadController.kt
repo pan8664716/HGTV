@@ -99,6 +99,14 @@ fun TvMainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: Strin
         val summary=plan.targets.joinToString(",") { "${it.index}:${it.level.name.first()}" }
         android.util.Log.i("HGTV-PERF","preload reason=$reason mode=${plan.mode} anchor=${plan.anchor} targets=$summary")
     }
+    // 封面比详情和视频首块轻得多，但换剧时最先上屏。先按计划窗口批量预热；
+    // 用户真正切过去时 showRecommendCover 会复用同一份缓存并把任务提升为前台。
+    val coverWidth=root.width.coerceAtLeast(640)
+    val coverHeight=root.height.coerceAtLeast(360)
+    val covers=plan.targets.mapNotNull { target ->
+        recommendItems.getOrNull(target.index)?.cover?.takeIf { it.isNotBlank() }
+    }.distinct()
+    if(covers.isNotEmpty() && artworkReady) artwork.prefetchWindow(covers,coverWidth,coverHeight)
     // 快速 fling：只留地址预取（文档 4.2）。数据预加载全部跳过——用户根本不会停在这些条目上。
     if(plan.mode==SlideCacheManager.Mode.FLING) {
         if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","preloadSkip reason=fling anchor=${plan.anchor}")
