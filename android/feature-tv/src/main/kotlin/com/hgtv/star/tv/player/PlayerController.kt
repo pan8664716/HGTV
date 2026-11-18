@@ -825,6 +825,16 @@ fun TvMainActivity.playEpisode(
         }
         playerListener=listener; p.addListener(listener)
         val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(MimeTypes.VIDEO_MP4).build())
+        // 正式播放换集：旧帧不能留在 Surface 上等新比例把它拉一遍；同时先按接口下发的
+        // 本集宽高预置 AspectRatioFrameLayout，等这一帧布局完成后再 prepare。
+        if(screen=="player") {
+            playerView?.setKeepContentOnPlayerReset(false)
+            playerView?.primeAspectRatio(
+                remote.info.videoWidth,
+                remote.info.videoHeight,
+                data.series.vertical,
+            )
+        }
         // 起点一次设定：`setMediaSource(source, startPositionMs)` 内部先摘空旧项、
         // 再按给定位置掩码时间线，等价于「`setMediaSource` + `seekTo`」，少一次
         // `onPositionDiscontinuity`（那条回调会连带刷新媒体会话与弹幕指针）。
@@ -834,7 +844,18 @@ fun TvMainActivity.playEpisode(
         videoSizeReady=false; firstFrameRendered=false
         PlaybackDiag.lastFrameAt=0L
         sourceSetAt=android.os.SystemClock.elapsedRealtime()
-        p.setMediaSource(source,position.coerceAtLeast(0)); p.prepare(); p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle
+        p.setMediaSource(source,position.coerceAtLeast(0))
+        val prepare={
+            if(player===p && generation==ticket && session==playbackSession) {
+                p.prepare()
+                p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle
+            }
+        }
+        if(screen=="player" && playerView!=null) {
+            playerView?.runAfterAspectRatioLayout(prepare)
+        } else {
+            prepare()
+        }
         stage("sourceSet")
         // 起播看门狗：兜住「READY 了但一帧都没出」的黑屏——那条路不抛异常，进不了 [playerFailure]。
         if(autoplay) armPlaybackWatchdog(session)

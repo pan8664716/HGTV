@@ -62,6 +62,18 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 正式播放手动换集首帧比例修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- TV 正式播放换源前关闭旧帧保留，按接口下发的本集宽高预置
+  `AspectRatioFrameLayout`，等一次布局完成后再 `prepare()`。
+- Phone 手动换集时同步关闭竖屏、横屏及推荐页下层 Surface 的旧帧保留；
+  新首帧上屏后恢复常态。
+- 未改版本号、versionCode、依赖或目录结构；未运行测试、未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 1.3.8 发布准备
 
 状态：GitHub Release 已发布，待用户真机验证。

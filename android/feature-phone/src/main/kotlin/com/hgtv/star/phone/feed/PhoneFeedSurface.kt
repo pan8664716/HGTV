@@ -28,6 +28,7 @@ internal fun PhoneFeedView.bindFeedSurfaceForHandoffImpl() {
         feedPlayerSlot = exo
         if (force && page.playerView.player === exo) page.playerView.player = null
         if (page.playerView.player !== exo) page.playerView.player = exo
+        page.playerView.setKeepContentOnPlayerReset(PhoneSession.feedKeepContentOnResetValue)
         page.bind(series, "第${(feedCurrentEpisodeIndex[index] ?: 0) + 1}集")
         feedBoundPageSlot = page
         true
@@ -41,6 +42,11 @@ internal fun PhoneFeedView.bindFeedSurfaceForHandoffImpl() {
     }
     PhoneSession.feedVideoScale = { ratio ->
         (feedBoundPage ?: feedPageAt(feedPlayingIndex))?.setVideoScale(ratio)
+    }
+    PhoneSession.feedKeepContentOnReset = { keep ->
+        (feedBoundPage ?: feedPageAt(feedPlayingIndex))
+            ?.playerView
+            ?.setKeepContentOnPlayerReset(keep)
     }
 }
 

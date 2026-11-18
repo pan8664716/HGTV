@@ -630,7 +630,7 @@ android/
 | `PhoneFeedReopen.kt` | 手机信息流原地重开当前集；地址走单集直连并复用内联清晰度。 | fun PhoneFeedView.reopenAtCurrentPositionImpl |
 | `PhoneFeedResume.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedResume 主要包含 fun PhoneFeedView.resumeOnShownImpl。 | fun PhoneFeedView.resumeOnShownImpl |
 | `PhoneFeedSettings.kt` | 信息流长按中间打开的播放设置面板。 | fun PhoneFeedView.openSettingsImpl |
-| `PhoneFeedSurface.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedSurface 主要包含 fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.setUnderlayModeImpl。 | fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.setUnderlayModeImpl |
+| `PhoneFeedSurface.kt` | 手机信息流页面、适配器、手势与预取；下层 Surface 交接时同步画面模式、缩放和旧帧保留状态。 | fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.setUnderlayModeImpl |
 | `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放器池、播放交接、预取和生命周期；记录首帧后补流状态。 | class PhoneFeedView、feedPooledPlayers、feedPlayerListeners、feedFirstFrameFillQueued |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/page/`
@@ -689,7 +689,7 @@ android/
 | `PhonePlayerModeSupport.kt` | 新形态那一层的入场过渡、竖屏顶部信息栏下方的弹幕落点，以及横屏画面模式。 | fun DanmakuView.alignBelowPhonePortraitChrome、fun PhonePlayerActivity.animateModeEnter、fun PhonePlayerActivity.syncDanmakuTopInset、fun PhonePlayerActivity.applyLandscapeResize |
 | `PhonePlayerPageFactory.kt` | 建一页正式播放界面并接线：单击显隐信息、双击播放暂停、锁定按钮和受锁保护的手势入口。 | fun PhonePlayerActivity.makePage、fun PhonePlayerActivity.wirePage |
 | `PhonePlayerPause.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerPause 主要包含 fun PhonePlayerActivity.handlePlayerPause。 | fun PhonePlayerActivity.handlePlayerPause |
-| `PhonePlayerPlay.kt` | 播放入口：打开会话、接预热源或后台取流并准备播放。 | fun PhonePlayerActivity.play |
+| `PhonePlayerPlay.kt` | 播放入口：打开会话、接预热源或后台取流并准备播放；手动换集先清掉旧帧。 | fun PhonePlayerActivity.play |
 | `PhonePlayerPlayInfo.kt` | 把「播放显示」四项铺到竖屏与横屏的信息行：剧名 / 集数靠左，网速 / 时间靠右。 | fun PhonePlayerActivity.syncPlayInfoImpl、fun PhonePlayerActivity.syncLandscapeSettingsInfoImpl |
 | `PhonePlayerPortraitUi.kt` | 手机播放器、控制、选集、恢复与预加载；竖屏播放信息复用体裁栏的 10dp 顶部与 34dp 主行高度对齐。 | fun PhonePlayerActivity.buildPortrait |
 | `PhonePlayerPreparation.kt` | 本地准备失败必须保留异常：调用方据此决定是否作废缓存后重取。 | fun PhonePlayerActivity.prepareSource、fun PhonePlayerActivity.prepare、fun PhonePlayerActivity.enterPendingFullscreen |
@@ -934,7 +934,7 @@ android/
 | `PlaybackDiagnostics.kt` | 播放失败的可观测层：**正式包里唯一还活着的那份证据**。 | object PlaybackDiag、class PlaybackDiagnosticException、class PlaybackPrepareException、fun playbackStage、fun decoderOf、fun chainOf |
 | `PlaybackFailureLabels.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackFailureLabels 主要包含 object PlaybackFailureLabels。 | object PlaybackFailureLabels |
 | `PlaybackFailureReport.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackFailureReport 主要包含 fun TvMainActivity.playbackScene、val decoderTableCache、fun availableDecoders、fun looksSoftware。 | fun TvMainActivity.playbackScene、val decoderTableCache、fun availableDecoders、fun looksSoftware、fun PlaybackDiag.fillFormatFrom、fun formatLine |
-| `PlaybackGeometry.kt` | 电视播放内核、HUD、恢复、渲染与诊断；顶部四项显隐后同步调整弹幕首行避让锚点。 | fun TvMainActivity.syncPlaybackInfo、fun TvMainActivity.applyDanmakuTopProtection、fun TvMainActivity.applyVideoGeometry |
+| `PlaybackGeometry.kt` | 电视播放几何与首帧比例：画面模式、缩放、旋转，以及换源前宽高比预置和布局等待。 | fun TvMainActivity.syncPlaybackInfo、fun TvMainActivity.applyVideoGeometry、fun PlayerView.primeAspectRatio、fun PlayerView.runAfterAspectRatioLayout |
 | `PlaybackHud.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackHud 主要包含 fun TvMainActivity.hidePlaybackOverlay、fun TvMainActivity.scheduleOverlayAutoHide、fun TvMainActivity.cancelOverlayAutoHide、fun TvMainActivity.hudShown。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.hidePlaybackOverlay、fun TvMainActivity.scheduleOverlayAutoHide、fun TvMainActivity.cancelOverlayAutoHide、fun TvMainActivity.hudShown、fun TvMainActivity.onPlaybackPage、fun TvMainActivity.syncKeepScreenOn |
 | `PlaybackMenu.kt` | 播放器的底部设置面板（遥控器「上」打开）。 | class PlaybackMenu |
 | `PlaybackMenuController.kt` | 播放菜单与选择器、进度保存，以及页面切换时播放器 Surface/资源的分离回收。 | fun TvMainActivity.showPlaybackMenu、fun TvMainActivity.buildPlaybackMenu、fun TvMainActivity.obtainPlaybackMenu、fun TvMainActivity.detachPlayerSurface、fun menuShape、fun TvMainActivity.syncPlaybackMenu、fun TvMainActivity.dropPlaybackMenuCache |

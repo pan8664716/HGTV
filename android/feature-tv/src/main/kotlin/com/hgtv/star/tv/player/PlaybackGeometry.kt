@@ -199,6 +199,44 @@ fun TvMainActivity.applyResizeMode(target: PlayerView?=playerView) {
     // 旋转与否可能跟着变（竖屏剧 ⟷ 横屏剧），这里一并落下去。
     applyVideoGeometry(target)
 }
+
+/** 换源前先写入本集宽高比，避免首帧先按上一集比例铺开。 */
+internal fun PlayerView.primeAspectRatio(
+    width: Int,
+    height: Int,
+    verticalSource: Boolean,
+) {
+    val aspectRatio = if(width>0 && height>0) {
+        width.toFloat()/height
+    } else {
+        if(verticalSource) 9f/16f else 16f/9f
+    }
+    (videoSurfaceView?.parent as? com.google.android.exoplayer2.ui.AspectRatioFrameLayout)
+        ?.setAspectRatio(aspectRatio)
+}
+
+/** 等预置比例完成一次布局后再 prepare，确保首帧落到正确尺寸的 Surface。 */
+internal fun PlayerView.runAfterAspectRatioLayout(action: () -> Unit) {
+    val frame=videoSurfaceView?.parent as? com.google.android.exoplayer2.ui.AspectRatioFrameLayout
+    if(frame==null) {
+        post(action)
+        return
+    }
+    val observer=frame.viewTreeObserver
+    if(!observer.isAlive) {
+        post(action)
+        return
+    }
+    observer.addOnPreDrawListener(object: ViewTreeObserver.OnPreDrawListener {
+        override fun onPreDraw(): Boolean {
+            if(observer.isAlive) observer.removeOnPreDrawListener(this)
+            action()
+            return true
+        }
+    })
+    frame.requestLayout()
+}
+
 /**
  * 画面缩放 / 竖屏短剧全屏：两者的落点都是 [playerView] 这一层的几何，
  * 因此统一交给 [applyVideoGeometry]（旋转与缩放一起算，缺一个都会排错边）。

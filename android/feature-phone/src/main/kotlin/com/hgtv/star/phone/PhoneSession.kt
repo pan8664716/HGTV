@@ -190,6 +190,18 @@ object PhoneSession {
         feedVideoScale?.invoke(ratio)
     }
 
+    /**
+     * 正式播放手动换集时，下层推荐页那块 PlayerView 也不能保留旧帧。
+     * 首帧出来后再恢复，避免后续正常缓冲时频繁黑屏。
+     */
+    @Volatile var feedKeepContentOnReset: ((Boolean) -> Unit)? = null
+    @Volatile var feedKeepContentOnResetValue: Boolean = true
+
+    fun setFeedKeepContentOnReset(keep: Boolean) {
+        feedKeepContentOnResetValue=keep
+        feedKeepContentOnReset?.invoke(keep)
+    }
+
     /** 登记 / 注销「推荐页 Surface 重新接上」的入口。 */
     fun bindFeedSurface(binder: ((Boolean) -> Boolean)?) {
         feedSurface = binder
