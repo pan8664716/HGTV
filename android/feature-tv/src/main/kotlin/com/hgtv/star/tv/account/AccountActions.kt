@@ -315,7 +315,7 @@ fun TvMainActivity.applyAccount() {
  *
  * ## 为什么 `device_level` 不在这里给了
  *
- * `device_level` 默认 1，5 只在空响应时由取地址层升上去（见 `ContentRepository.deviceLevel`）。
+ * `device_level` 默认 4，5 只在空响应时由取地址层升上去（见 `ContentRepository.deviceLevel`）。
  * 它与本机解码能力**无关**——
  * 两档下发的都是 HEVC，能不能播由硬解决定，而不是由档位决定。
  * 1/2/3 档的低清晰度是 `bytevc2`，Android 没有解码器，因此不参与播放请求。

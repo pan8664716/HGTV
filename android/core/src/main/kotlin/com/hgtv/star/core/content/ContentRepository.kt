@@ -174,9 +174,9 @@ class ContentRepository(
     internal val publisherMisses=linkedMapOf<String,Long>()
     internal val PUBLISHER_MISS_TTL_MS=AppConfig.Content.PUBLISHER_MISS_TTL_MS
     internal fun commentHosts(): List<String> = commentHostsImpl()
-    /** 播放模型优先使用 1 档；只有空响应时才由兼容逻辑升到 5 档。 */
-    @Volatile var deviceLevel: Int = 1
-        set(value) { field = if(value>=5) 5 else 1 }
+    /** 播放模型默认使用 4 档；只有空响应时才由兼容逻辑升到 5 档。 */
+    @Volatile var deviceLevel: Int = 4
+        set(value) { field = if(value>=5) 5 else 4 }
 
     internal val CATEGORY_PAGE_SIZE=CATALOG_PAGE_SIZE
 
@@ -401,8 +401,8 @@ class ContentRepository(
         @Volatile internal var modelCacheGen: Int=0
         internal const val MODEL_CACHE_MS=PlaybackCache.URL_FRESH_MS
         internal const val PLAYER_MODEL_PATH="/novel/player/multi_video_model/player/v1"
-        /** 前台直连和推荐流的首选档位；批量兼容路径也默认从这里开始。 */
-        internal const val DIRECT_DEVICE_LEVEL=1
+        /** 前台直连和推荐流的默认档位；批量兼容路径也默认从这里开始。 */
+        internal const val DIRECT_DEVICE_LEVEL=4
         internal const val PLAYER_MODEL_BATCH_LIMIT=AppConfig.Playback.PLAYER_MODEL_BATCH_LIMIT
         internal const val BATCH_MODEL_PATH="/novel/player/multi_video_model/preload/v1"
         internal const val PRELOAD_MODEL_LIMIT=AppConfig.Playback.PRELOAD_MODEL_LIMIT

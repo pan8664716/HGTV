@@ -316,9 +316,9 @@ class ContentRepositoryTest {
     }
 
     /**
-     * 播放模型请求默认报 `device_level=1`，并带上 `need_all_video_definition=true`。
+     * 播放模型请求默认报 `device_level=4`，并带上 `need_all_video_definition=true`。
      *
-     * `device_level` 只有 1 / 5 两档（见 [ContentRepository.deviceLevel]）：1 是默认档，
+     * `device_level` 只有 4 / 5 两档（见 [ContentRepository.deviceLevel]）：4 是默认档，
      * 空响应才升 5。`need_all_video_definition=true` 是「拿满 5 档」的前提，
      * 不带它服务端只回一档。这里把请求体钉住，防止再被改回去。
      */
@@ -335,16 +335,16 @@ class ContentRepositoryTest {
         repo.deviceIdentity=testDeviceIdentity()
         assertEquals("https://example.com/stream",repo.stream("123").url)
         val body=bodies.last()
-        assertTrue(body,body.contains("\"device_level\":1"))
+        assertTrue(body,body.contains("\"device_level\":4"))
         assertTrue(body,body.contains("\"need_all_video_definition\":true"))
     }
 
     /**
-     * `device_level` 只有 1 / 5 两档：默认 1，写别的值都会被夹到这两档之一。
+     * `device_level` 只有 4 / 5 两档：默认 4，写别的值都会被夹到这两档之一。
      *
      * 这里同时钉住「字段被读进请求体」这件事，它是 [ContentRepository.deviceLevel] 生效的唯一通道。
      */
-    @Test fun deviceLevelIsClampedToOneOrFiveAndInjectedIntoTheRequest() {
+    @Test fun deviceLevelIsClampedToFourOrFiveAndInjectedIntoTheRequest() {
         val bodies=mutableListOf<String>()
         val repo=repository { request ->
             val model=request.url.host!="example.com"
@@ -355,22 +355,22 @@ class ContentRepositoryTest {
             }
         }
         repo.deviceIdentity=testDeviceIdentity()
-        assertEquals(1,repo.deviceLevel)
+        assertEquals(4,repo.deviceLevel)
         repo.deviceLevel=3
-        assertEquals(1,repo.deviceLevel)
+        assertEquals(4,repo.deviceLevel)
         repo.deviceLevel=9
         assertEquals(5,repo.deviceLevel)
-        repo.deviceLevel=1
+        repo.deviceLevel=4
         assertEquals("https://example.com/stream",repo.stream("123").url)
-        assertTrue(bodies.last(),bodies.last().contains("\"device_level\":1"))
+        assertTrue(bodies.last(),bodies.last().contains("\"device_level\":4"))
         assertTrue(bodies.last(),bodies.last().contains("\"need_all_video_definition\":true"))
     }
 
     /**
-     * 用户主动点集走独立单集请求：只发一个 ID、固定 1 档，并且模型内联的 `video_list`
+     * 用户主动点集走独立单集请求：只发一个 ID、固定 4 档，并且模型内联的 `video_list`
      * 已经够用时不再请求 `fallback_api`。这条路径直接决定「第 1 集跳到最后一集」的等待时间。
      */
-    @Test fun directPlaybackUsesSingleLevelOneRequestAndInlineVideoList() {
+    @Test fun directPlaybackUsesSingleLevelFourRequestAndInlineVideoList() {
         val bodies=mutableListOf<String>()
         var fallbackCalls=0
         val inlineModel=JSONObject()
@@ -403,7 +403,7 @@ class ContentRepositoryTest {
         assertEquals(0,fallbackCalls)
         assertEquals(1,bodies.size)
         val body=bodies.single()
-        assertTrue(body,body.contains("\"device_level\":1"))
+        assertTrue(body,body.contains("\"device_level\":4"))
         assertTrue(body,body.contains("\"use_server_dns\":false"))
         assertFalse(body,body.contains("use_server_dns_scene"))
         assertTrue(body,body.contains("\"1004\":[\"123\"]"))

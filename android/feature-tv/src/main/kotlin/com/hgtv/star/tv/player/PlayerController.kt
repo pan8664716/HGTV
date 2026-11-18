@@ -381,7 +381,7 @@ fun TvMainActivity.playEpisode(
             // 注册还没落地时先补一次，免得取地址落到内置那份被拉黑的档案上。
             if(!library.deviceRegistered()) registerDeviceOnce()
             stage("register")
-            // 播放默认按 1 档请求；取地址层遇到空响应会升到 5 再试一次。
+            // 播放默认按 4 档请求；取地址层遇到空响应会升到 5 再试一次。
             // 故障重来也保持同一档，避免缓存键和请求参数无意义地变化。
             if(!recovering) repository.beginEpisode()
             stage("deviceLevel ${repository.deviceLevel}")

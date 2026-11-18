@@ -42,7 +42,7 @@ internal object ContentPlaybackParser {
     /**
      * 用户主动点集时使用的单集播放模型请求。
      *
-     * 与后台批量预取分开：只带当前这一集，`device_level=1` 优先拿平台可解码资源，
+     * 与后台批量预取分开：只带当前这一集，`device_level=4` 优先拿平台可解码资源，
      * 并关闭服务端 DNS 场景，尽量缩短用户等待的首个往返。
      */
     fun directModelBody(id: String, playback: PlaybackProfile): String {

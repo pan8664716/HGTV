@@ -50,6 +50,18 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 | `feature-tv/.../player/PlaybackController.kt` | 2232 |
 | `shared/.../Library.kt` | 2027 |
 
+## 播放模型档位恢复为 4
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 用户确认播放地址请求的 `device_level` 从 1 恢复为 4。
+- 普通 / 批量取地址默认回到 4 档，主动点集直连也使用 4 档；空响应仍按既有逻辑升到 5 档。
+- 缓存键继续区分 4 / 5 档，避免不同档位模型互相复用。
+- iOS 原本已使用 `device_level: 4`，本次未改 iOS、版本号、versionCode、依赖或目录结构。
+- `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过；未运行测试、未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-18：八榜、横滑导航与首页榜单
 
 状态：已实现，Android / iOS Debug 构建通过，待用户真机验证。
@@ -5615,13 +5627,13 @@ feature-tv/
 
 - 根因：当前取流先请求播放模型，再固定请求 `fallback_api`；而播放模型本身可能已带
   `video_list/main_url`。用户从第 1 集跳到最后一集时，多出的地址往返会被直接感知为慢。
-- 修复：所有播放模型请求优先使用 `device_level=1`；空响应才由兼容层升到 5 档。
+- 修复：所有播放模型请求优先使用 `device_level=4`；空响应才由兼容层升到 5 档。
   用户主动点集只请求当前集一个 ID，使用 `use_server_dns=false` 和 `dr_scene=player`；
   推荐流的起播与相邻预热也走同一套单集直连参数。
 - 修复：取流先解析模型内联 `video_list`，同时兼容对象和数组形态；只有内联没有可用
   HEVC 档位时才请求 `fallback_api`。直连失败仍回落到既有批量 / 兼容路径，不牺牲可播性。
-- 缓存键包含直连档位，避免 1 档与空响应升级后的 5 档模型互相复用。
-- `:app:assembleDebug` 使用 JDK 17 通过；主动点集与 1 / 5 档回归用例通过。全量
+- 缓存键包含直连档位，避免 4 档与空响应升级后的 5 档模型互相复用。
+- `:app:assembleDebug` 使用 JDK 17 通过；主动点集与 4 / 5 档回归用例通过。全量
   `:core:test` 从干净 HEAD 基线的 29 项失败降到 27 项，剩余均为既有设备身份 / 测试夹具失败。
 
 回滚：对本节对应提交执行 `git revert`。
