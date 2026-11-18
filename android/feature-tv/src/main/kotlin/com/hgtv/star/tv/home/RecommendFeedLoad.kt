@@ -61,6 +61,7 @@ fun TvMainActivity.loadRecommendPage(
             )
             if(isDestroyed || token != recommendPageToken.get() || screen != "recommend") {
                 recommendAdvancePending = 0
+                recommendAdvanceWaiterQueued = false
                 settleRecommendLoad()
                 return@post
             }
@@ -73,7 +74,17 @@ fun TvMainActivity.loadRecommendPage(
                 recommendGenderProbe = result.genderProbe
                 recommendSession = result.sessionId
                 recommendNext = result.nextOffset
+                val currentSeriesId=recommendItems.getOrNull(recommendIndex)?.id
                 recommendItems = result.items
+                // 补页会合并新旧列表；不能只保留旧数字下标。按剧 ID 重映射，
+                // 否则列表一变，用户按“上一条”就会落到错误位置，甚至一直停在第一条。
+                if(currentSeriesId!=null) {
+                    val remapped=result.items.indexOfFirst { it.id==currentSeriesId }
+                    if(remapped>=0) recommendIndex=remapped
+                    else recommendIndex=recommendIndex.coerceIn(0,result.items.lastIndex.coerceAtLeast(0))
+                } else if(result.items.isNotEmpty()) {
+                    recommendIndex=recommendIndex.coerceIn(0,result.items.lastIndex)
+                }
                 recommendPage = result.page
                 recommendHasMore = result.hasMore
                 if(result.error == null) recommendRestored = false

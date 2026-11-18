@@ -17,8 +17,16 @@ fun TvMainActivity.switchRecommend(direction: Int) {
     recommendPlaybackFailures=0
     if(playbackMenu!=null) hidePlaybackOverlay()
     if(recommendItems.isEmpty()) { openRecommend(); return }
-    val from=recommendIndex
+    val from=recommendIndex.coerceIn(0,recommendItems.lastIndex)
+    // 反向操作优先于尚未完成的向下补页：旧意图不能等页回来后把用户又往前推。
+    if(direction<0) recommendAdvancePending=0
     val next=from+direction
+    if(BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-PERF",
+            "switchRecommend from=$from direction=$direction next=$next items=${recommendItems.size} pending=$recommendAdvancePending",
+        )
+    }
     when {
         // 目标在列表里：交给 [playRecommendAt] 强制摘掉旧播放层，再准备新作品。
         next in recommendItems.indices -> {
@@ -45,7 +53,10 @@ fun TvMainActivity.switchRecommend(direction: Int) {
                 minItemsPerLoad=recommendItems.size+1,
             ) {
                 recommendAdvanceWaiterQueued=false
-                if(recommendToken.get()!=guard) return@loadRecommendPage
+                if(recommendToken.get()!=guard) {
+                    recommendAdvancePending=0
+                    return@loadRecommendPage
+                }
                 val steps=recommendAdvancePending.coerceAtLeast(1)
                 recommendAdvancePending=0
                 // 页真的长出新条目：按累计的按键次数往前跨（连按 10 下就跳 10 部），

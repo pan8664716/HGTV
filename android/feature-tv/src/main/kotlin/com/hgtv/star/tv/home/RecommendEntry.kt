@@ -162,7 +162,11 @@ private fun TvMainActivity.resumeIndex(snapshot: List<com.hgtv.star.core.Series>
     val seen=runCatching { library.recommendSeen() }.getOrDefault(emptySet())
     fun fresh(series: com.hgtv.star.core.Series)=
         series.id !in seen && !library.recommendSeenTitle(series.title)
-    val start=(snapshot.indexOfFirst { it.id==last }.takeIf { it>=0 }?.plus(1) ?: 0).coerceIn(0,snapshot.lastIndex)
+    val lastIndex=snapshot.indexOfFirst { it.id==last }
+    // 快照里还没有走出第一条时，启动仍从第一条开始。否则 `last + 1` 会把用户
+    // 刚看到的第 0 条当成“已消费”，直接跳到第 1 条——就是启动后第一条闪一下被略过。
+    if(lastIndex==0) return 0
+    val start=(if(lastIndex>=0) lastIndex+1 else 0).coerceIn(0,snapshot.lastIndex)
     // 往后找第一条没推过的；**最近 3 条里优先挑索引 + 首块都在盘上的那一条**。
     //
     // 为什么要挑：`i+1` 有地址但没索引 / 首块（用户划得快、预热没跑完就关了应用）时，
@@ -195,6 +199,8 @@ private fun TvMainActivity.nextRecommendIndex(items: List<com.hgtv.star.core.Ser
     if(items.isEmpty()) return 0
     val last=com.hgtv.star.core.RecommendCache.lastPlayed(RECOMMEND_CACHE_NAMESPACE)
     val at=if(last.isEmpty()) -1 else items.indexOfFirst { it.id==last }
+    // 同 [resumeIndex]：第 0 条还没有真正离开时不要跳过它。
+    if(at==0) return 0
     val next=(if(at>=0) at else recommendIndex)+1
     if(next<=items.lastIndex) return next
     // 末尾回卷：挑第一条不是「上一次那一部」的；只有整列就这一部时才回到 0。

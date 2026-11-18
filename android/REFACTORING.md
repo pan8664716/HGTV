@@ -117,6 +117,20 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 2026-11-18：推荐启动首条与补页回看修复
+
+状态：已实现，Android debug 构建通过，待用户真机验证。
+
+- 冷启动快照停在第 0 条时，恢复逻辑不再强制 `last + 1`；重新进入推荐页也保留
+  第 0 条，避免启动时首条只闪一下就被第 1 条覆盖。
+- 推荐补页合并列表后按当前剧 ID 重映射 `recommendIndex`，不再依赖可能漂移的数字下标。
+- 反向切换时清除尚未完成的向下补页意图；过期回调同时清空 pending / queued 状态，
+  避免用户按上一条后被旧回调推回后面。
+- 未改版本号、versionCode、依赖或发布元数据；未运行单元测试，测试交给用户。
+- `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-18：官方推荐预加载与播放关键路径（历史记录）
 
 状态：历史记录。相邻五条首块预取已被上一节移除，其余接口与缓存策略保留。
