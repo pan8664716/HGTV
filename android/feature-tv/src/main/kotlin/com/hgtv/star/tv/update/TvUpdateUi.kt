@@ -25,13 +25,13 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
             dialog.message("正在检查更新…")
         update==null && state.error.isNotBlank() -> {
             dialog.message(state.error)
-            dialog.button("重新检查",icon=R.drawable.ic_action_restore) {
+            dialog.button("重新检查",icon=R.drawable.ic_toolbar_update) {
                 updateController.check(force=true)
             }
         }
         update==null -> {
             dialog.message("当前版本 ${AppVersion.name} 已是最新")
-            dialog.button("检查更新",icon=R.drawable.ic_action_restore) {
+            dialog.button("检查更新",icon=R.drawable.ic_toolbar_update) {
                 updateController.check(force=true)
             }
         }
@@ -39,13 +39,13 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
             dialog.message("${update.versionName} · ${"%.1f".format(update.size / 1048576.0)} MB")
             dialog.message(update.notes.ifBlank { "新版已发布。" })
             if (state.ready) {
-                dialog.button("安装更新",tone=ButtonTone.PRIMARY,icon=R.drawable.ic_action_restore) {
+                dialog.button("安装更新",tone=ButtonTone.PRIMARY,icon=R.drawable.ic_toolbar_update) {
                     updateController.install()
                 }
             } else if (state.downloading) {
                 dialog.message("正在下载更新 · ${state.progress}%")
             } else {
-                dialog.button("下载并安装",tone=ButtonTone.PRIMARY,icon=R.drawable.ic_action_restore) {
+                dialog.button("下载并安装",tone=ButtonTone.PRIMARY,icon=R.drawable.ic_toolbar_update) {
                     updateController.downloadAndInstall()
                 }
             }

@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-17。文件总数为 661；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-17。文件总数为 662；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -43,7 +43,7 @@ android/
 ├── app/  (23 files, 12 directories)
 ├── core/  (227 files, 27 directories)
 ├── feature-phone/  (143 files, 11 directories)
-├── feature-tv/  (156 files, 18 directories)
+├── feature-tv/  (157 files, 18 directories)
 ├── shared/  (105 files, 25 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
@@ -823,6 +823,7 @@ android/
 | `ic_toolbar_recommend.xml` | Drawable 图形资源，根节点 vector。 | vector |
 | `ic_toolbar_search.xml` | Drawable 图形资源，根节点 vector。 | vector |
 | `ic_toolbar_settings.xml` | Drawable 图形资源，根节点 vector。 | vector |
+| `ic_toolbar_update.xml` | TV 更新入口的上传箭头图标。 | vector |
 
 #### `feature-tv/src/main/res/layout/`
 

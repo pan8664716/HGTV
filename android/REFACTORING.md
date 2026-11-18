@@ -87,8 +87,8 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   `FileProvider` 直接交给系统安装器，不再创建 `PackageInstaller` 会话，也不等待安装回执。
 - 共享层新增 `AppUpdateController`：静默检查 `update.json`，兼容当前无 `v` 的 tag，
   下载到 `filesDir/updates`，保留长度与 SHA-256 校验；安装只打开系统安装器。
-- TV 顶栏最后一枚圆形入口为「更新」，发现新版只亮红点，不主动弹窗；点击后显示版本说明和
-  「下载并安装 / 安装更新」。
+- TV 顶栏最后一枚圆形入口为「更新」，使用用户提供的上传箭头图标；发现新版只亮红点，
+  不主动弹窗；点击后显示版本说明和「下载并安装 / 安装更新」。
 - Phone 在设置 → 系统高级增加「检查更新」行，发现新版显示小红点，不主动弹窗。
 - 未改版本号、versionCode、依赖或发布元数据；未运行测试、未推送。
 - `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。

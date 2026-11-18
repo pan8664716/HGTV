@@ -237,7 +237,7 @@ fun TvMainActivity.showCatalog(
         navKeyed[entry.first]=item
         gapInto(top,holder,lp(-2,-2),TvStyle.GAP_TIGHT)
     }
-    val updateButton=IconButton(this,com.hgtv.star.tv.R.drawable.ic_action_restore,"更新") {
+    val updateButton=IconButton(this,com.hgtv.star.tv.R.drawable.ic_toolbar_update,"更新") {
         showUpdateDialog(updateIcon)
     }
     updateButton.tag="nav:update"
