@@ -61,6 +61,7 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
             dialog.button("重新检查",icon=R.drawable.ic_toolbar_update) {
                 updateController.check(force=true)
             }
+            dialog.button("修改更新地址") { showUpdateSourceDialog(anchor) }
         }
         update==null -> {
             dialog.message("当前版本 ${AppVersion.name} 已是最新")
@@ -82,6 +83,7 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
                     updateController.downloadAndInstall()
                 }
             }
+            dialog.button("修改更新地址") { showUpdateSourceDialog(anchor) }
             if (state.error.isNotBlank()) dialog.message(state.error)
         }
     }

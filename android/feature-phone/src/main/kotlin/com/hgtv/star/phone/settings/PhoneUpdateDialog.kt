@@ -63,6 +63,7 @@ internal fun PhoneSettingsActivity.showUpdateDialog() {
                     settingsUpdateController.downloadAndInstall()
                 }
             }
+            dialog.button("修改更新地址") { showUpdateSourceDialog() }
             if(state.error.isNotBlank()) dialog.message(state.error)
         }
     }
