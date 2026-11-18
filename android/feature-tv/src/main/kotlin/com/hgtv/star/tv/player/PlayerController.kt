@@ -753,8 +753,14 @@ fun TvMainActivity.playEpisode(
                 )
                 val waitingForAspectLayout=playerView?.completeFirstFrameAspectRatio()==true
                 if(!waitingForAspectLayout) playerView?.clearPlaybackFreezeFrame()
-                // 这一帧已经上屏；缓存下来供下一次换源盖住黑快门。
-                playerView?.capturePlaybackStillFrame()
+                // 首帧回调当下 Surface 可能还没真正合成出像素；稍后再取静帧，
+                // 否则会把一张全黑图缓存成下一次换源的过渡画面。
+                val captureView=playerView
+                main.postDelayed({
+                    if(active() && firstFrameRendered && captureView===playerView) {
+                        captureView?.capturePlaybackStillFrame()
+                    }
+                },600L)
                 PlaybackStartupTrace.firstFrame(
                     "tv.player",
                     "recommend=$recommendEntry preloaded=${prefetched!=null} reused=$reuse",

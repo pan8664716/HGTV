@@ -9,6 +9,7 @@ import com.hgtv.star.shared.compat.isMeteredConnection
 import android.app.Activity
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Color
 import android.os.Build
 import android.os.Handler
 import android.os.Looper
@@ -230,6 +231,13 @@ private class PlaybackStillFrameView(context: Context): ImageView(context) {
 
     fun replaceStill(frame: Bitmap) {
         if(still===frame) return
+        if(!frame.hasVisibleContent()) {
+            frame.recycle()
+            if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+                android.util.Log.i("HGTV-RATIO","freezeRejectBlack")
+            }
+            return
+        }
         if(visibility==View.VISIBLE) {
             if(pending!==frame) {
                 pending?.recycle()
@@ -259,6 +267,28 @@ private class PlaybackStillFrameView(context: Context): ImageView(context) {
         still?.recycle()
         still=null
     }
+}
+
+private fun Bitmap.hasVisibleContent(): Boolean {
+    if(width<=0 || height<=0) return false
+    return runCatching {
+        val stepX=(width/16).coerceAtLeast(1)
+        val stepY=(height/16).coerceAtLeast(1)
+        var visible=0
+        var total=0
+        var y=0
+        while(y<height) {
+            var x=0
+            while(x<width) {
+                val color=getPixel(x,y)
+                if(maxOf(Color.red(color),Color.green(color),Color.blue(color))>16) visible++
+                total++
+                x+=stepX
+            }
+            y+=stepY
+        }
+        visible*20>=total
+    }.getOrDefault(false)
 }
 
 private fun PlayerView.playbackStillFrame(): PlaybackStillFrameView? {

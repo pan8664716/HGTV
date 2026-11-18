@@ -69,7 +69,10 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 历史 logcat 显示推荐页换剧从 `player.stop()` 到新首帧约 `428–578ms`，
   期间 `exo_shutter` 可见，用户看到的是整段黑屏后突然起播。
 - TV 播放层新增单帧静帧缓存：每次 `onRenderedFirstFrame` 后通过 SurfaceView
-  `PixelCopy`（API 24+）或 TextureView `bitmap` 保存一帧，不连续截屏。
+  `PixelCopy`（API 24+）或 TextureView `bitmap` 保存一帧，不连续截屏；静帧延后
+  600ms 采集，避免首帧回调时 Surface 尚未合成出像素。
+- 采集结果会抽样拒绝近全黑画面，避免把空 Surface 缓存成下一次换源的过渡图；
+  新静帧无效时继续保留上一张有效画面。
 - 下一次推荐页换剧时，在 `stop/clearMediaItems` 前立即盖上静帧；新首帧到达且
   比例布局完成后再撤掉。横竖屏比例切换时静帧保持原尺寸，避免再次拉伸。
 - 静帧只占一张 Bitmap，替换和播放层销毁时回收；首帧回调晚于比例布局时先暂存，
