@@ -9,6 +9,7 @@ import com.hgtv.star.shared.compat.isMeteredConnection
 import android.app.Activity
 import android.content.Context
 import android.graphics.Bitmap
+import android.graphics.Canvas
 import android.graphics.Color
 import android.os.Build
 import android.os.Handler
@@ -220,13 +221,29 @@ private class PlaybackStillFrameView(context: Context): ImageView(context) {
     var still: Bitmap?=null
     private var pending: Bitmap?=null
     var captureToken=0
+    private var drawLogged=false
 
     init {
         visibility=View.GONE
         scaleType=ScaleType.FIT_XY
+        alpha=1f
         isClickable=false
         isFocusable=false
         importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
+    override fun onDraw(canvas: Canvas) {
+        super.onDraw(canvas)
+        if(visibility==View.VISIBLE && !drawLogged) {
+            drawLogged=true
+            if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+                android.util.Log.i("HGTV-RATIO","freezeDraw size=${width}x$height")
+            }
+        }
+    }
+
+    fun armDrawLog() {
+        drawLogged=false
     }
 
     fun replaceStill(frame: Bitmap) {
@@ -252,6 +269,7 @@ private class PlaybackStillFrameView(context: Context): ImageView(context) {
 
     fun clearVisible() {
         visibility=View.GONE
+        drawLogged=false
         pending?.let { frame ->
             setImageBitmap(frame)
             still?.recycle()
@@ -292,16 +310,18 @@ private fun Bitmap.hasVisibleContent(): Boolean {
 }
 
 private fun PlayerView.playbackStillFrame(): PlaybackStillFrameView? {
-    for(i in 0 until childCount) {
-        (getChildAt(i) as? PlaybackStillFrameView)?.let { return it }
+    val host=parent as? ViewGroup ?: return null
+    for(i in 0 until host.childCount) {
+        (host.getChildAt(i) as? PlaybackStillFrameView)?.let { return it }
     }
     return null
 }
 
-private fun PlayerView.obtainPlaybackStillFrame(): PlaybackStillFrameView {
+private fun PlayerView.obtainPlaybackStillFrame(): PlaybackStillFrameView? {
+    val host=parent as? ViewGroup ?: return null
     playbackStillFrame()?.let { return it }
     return PlaybackStillFrameView(context).also {
-        addView(it,FrameLayout.LayoutParams(0,0,Gravity.CENTER))
+        host.addView(it,FrameLayout.LayoutParams(0,0))
         it.bringToFront()
     }
 }
@@ -313,7 +333,7 @@ private fun PlayerView.obtainPlaybackStillFrame(): PlaybackStillFrameView {
  * 一帧，不做连续截屏；每次换源后都会被新的首帧替换。
  */
 internal fun PlayerView.capturePlaybackStillFrame() {
-    val target=obtainPlaybackStillFrame()
+    val target=obtainPlaybackStillFrame() ?: return
     val token=++target.captureToken
     val surface=videoSurfaceView
     if(surface is TextureView) {
@@ -341,13 +361,23 @@ internal fun PlayerView.capturePlaybackStillFrame() {
 
 /** 换源前立即盖上上一集的首帧，旧 Surface 被 stop 清掉时用户不会先看到黑屏。 */
 internal fun PlayerView.showPlaybackStillFrame() {
+    val host=parent as? ViewGroup ?: return
     val overlay=playbackStillFrame() ?: return
     if(overlay.still==null) return
     val frame=videoSurfaceView?.parent as? AspectRatioFrameLayout
     val width=frame?.width ?: videoSurfaceView?.width ?: 0
     val height=frame?.height ?: videoSurfaceView?.height ?: 0
     if(width<=0 || height<=0) return
-    overlay.layoutParams=FrameLayout.LayoutParams(width,height,Gravity.CENTER)
+    val frameAt=IntArray(2).also { frame?.getLocationInWindow(it) }
+    val hostAt=IntArray(2).also { host.getLocationInWindow(it) }
+    overlay.layoutParams=FrameLayout.LayoutParams(width,height).apply {
+        leftMargin=frameAt[0]-hostAt[0]
+        topMargin=frameAt[1]-hostAt[1]
+    }
+    if(Build.VERSION.SDK_INT>=Build.VERSION_CODES.LOLLIPOP) {
+        overlay.translationZ=10_000f
+    }
+    overlay.armDrawLog()
     overlay.visibility=View.VISIBLE
     overlay.bringToFront()
     if(com.hgtv.star.tv.BuildConfig.DEBUG) {
