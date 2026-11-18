@@ -102,9 +102,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
-## 2026-11-18：移除推荐流相邻首块预取
+## 2026-11-18：移除推荐流相邻首块预取（历史记录）
 
-状态：已实现，Android debug 构建通过，待用户真机验证。
+状态：历史记录。相邻视频字节预取仍已移除；后续重新接入批量详情里的分集首帧图。
 
 - TV / Phone 推荐窗口仍保留 `n-2..n+2`，但全部改为 `ADDRESS`：只取详情与单集直连
   播放地址，不创建 `RemoteVideo`、不解析索引、不读取任何视频字节。
@@ -112,6 +112,23 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   播放内核正常取源、解析并起播。手机删除 `PhonePreload` 与相邻页播放器预 prepare。
 - 推荐流继续保留无封面策略、详情缓存、地址预热和播放模型批量预取；正式播放页的
   下一集预取链路未改。
+- 未改版本号、versionCode、依赖或发布元数据；未运行单元测试，测试交给用户。
+- `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-18：推荐切换分集首帧图占位
+
+状态：已实现，Android debug 构建通过，待用户真机验证。
+
+- HAR 确认 `multi_video_detail/preload` 的 `video_list[].episode_cover`（并带 `cover` 兜底）
+  就是批量详情中的分集画面图；`multi_video_model` 另有 `big_thumbs` 雪碧图，但不作为
+  本次切换占位的首选数据源。
+- 批量详情写入 `DetailCache` 后，使用 `ArtworkLoader` 批量预取首集图，内存和磁盘图片缓存
+  都由现有加载器负责。
+- 推荐切换时优先从详情缓存读取 `episode_cover`，没有图片才保留黑场；不恢复推荐卡片
+  封面作为伪首帧。
+- 推荐播放切换清屏保留正在进行的图片预取任务，避免刚预取的图被页面取消。
 - 未改版本号、versionCode、依赖或发布元数据；未运行单元测试，测试交给用户。
 - `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。
 

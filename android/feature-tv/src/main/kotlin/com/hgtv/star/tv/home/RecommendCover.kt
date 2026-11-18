@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.view.View
 import android.widget.FrameLayout
 import android.widget.ImageView
+import com.hgtv.star.core.Detail
 import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.tv.TvStyle
 
@@ -21,6 +22,15 @@ private const val COVER_OUT_MS=260L
  * 电视保持 260ms 不动：遥控器一秒一下，过渡要读得出「换了一部」。
  */
 private const val COVER_OUT_FAST_MS=120L
+
+/**
+ * 推荐切换时使用的分集首帧图。
+ *
+ * 批量 `multi_video_detail/preload` 的 `video_list[].episode_cover` 已经由详情解析器
+ * 写入 `Detail.episodeCovers`；没有分集图时才回退到详情里的剧集封面。
+ */
+internal fun Detail.recommendCoverUrl(): String =
+    episodes.firstOrNull()?.let(::episodeCover).orEmpty().ifBlank { series.cover }
 /**
  * 换剧那一下**立即**把目标集封面盖上去（没有封面时退回黑底），
  * 不能看到上一部旧帧被拉伸。

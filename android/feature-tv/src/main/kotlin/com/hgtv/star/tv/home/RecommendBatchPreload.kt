@@ -2,6 +2,7 @@
 package com.hgtv.star.tv
 
 import com.hgtv.star.core.lruPut
+import com.hgtv.star.core.Detail
 import com.hgtv.star.core.detail
 import com.hgtv.star.core.DetailCache
 import com.hgtv.star.core.PlaybackProfile
@@ -10,6 +11,18 @@ import com.hgtv.star.core.prefetchModels
 
 /** 相邻一部的详情 / 地址优先；播放模型批量预取晚一点再跑。 */
 internal const val RECOMMEND_BATCH_MODEL_DELAY_MS=com.hgtv.star.core.AppConfig.Recommend.BATCH_MODEL_DELAY_MS
+
+/** 批量详情拿到后预取首集图；图片没回来时切换仍显示黑场。 */
+internal fun TvMainActivity.prefetchRecommendCovers(details: Iterable<Detail>) {
+    prefetchRecommendCoverUrls(details.map { it.recommendCoverUrl() })
+}
+
+internal fun TvMainActivity.prefetchRecommendCoverUrls(urls: Iterable<String>) {
+    if(!artworkReady) return
+    val covers=urls.filter(String::isNotBlank).distinct()
+    if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","coverPrefetch count=${covers.size}")
+    if(covers.isNotEmpty()) artwork.prefetchWindow(covers,1920,1080)
+}
 
 /**
  * 把推荐列表里当前这一部**前后相邻的几部**预热起来。
@@ -63,6 +76,7 @@ fun TvMainActivity.prefetchRecommendBatchModels() {
     }
     recommendBatchJob=recommendWarmWorker.submit {
         val models=linkedMapOf<PlaybackProfile,MutableList<String>>()
+        val covers=linkedSetOf<String>()
         fun addModel(id: String,playback: PlaybackProfile) {
             if(id.isBlank()) return
             models.getOrPut(playback) { mutableListOf() }.add(id)
@@ -85,6 +99,7 @@ fun TvMainActivity.prefetchRecommendBatchModels() {
                     ?: runCatching { repository.detail(series.id,includeAuthor=false) }.getOrNull()
                     ?: continue
                 val first=item.episodes.firstOrNull() ?: continue
+                item.recommendCoverUrl().takeIf(String::isNotBlank)?.let(covers::add)
                 if(models.values.none { first in it }) {
                     addModel(first,item.playback)
                 }
@@ -107,6 +122,7 @@ fun TvMainActivity.prefetchRecommendBatchModels() {
                     recommendBatchJob=null
                     recommendBatchKey=""
                 }
+                if(!isDestroyed && screen=="recommend") prefetchRecommendCoverUrls(covers)
             }
         }
     }

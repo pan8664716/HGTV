@@ -133,6 +133,7 @@ fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int): 
         android.util.Log.i("HGTV-PERF","addressDispatch index=$index detail=${if(cached!=null) 1 else 0}")
     }
     if(cached!=null) {
+        prefetchRecommendCovers(listOf(cached))
         return warmRecommendDetail(cached,index)
     }
     if(series.id in recommendDetailLoading) return false
@@ -147,6 +148,7 @@ fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int): 
             result.onSuccess { data ->
                 if(data.episodes.isEmpty()) return@onSuccess
                 recommendDetails.lruPut(RECOMMEND_DETAIL_LIMIT,series.id,data)
+                prefetchRecommendCovers(listOf(data))
                 // 仍然在窗口里才继续（用户可能已经连着换了好几部）。
                 val position=recommendItems.indexOfFirst { it.id==series.id }
                 if(position>=0 && kotlin.math.abs(position-recommendIndex)<=4) warmRecommendDetail(data,position)

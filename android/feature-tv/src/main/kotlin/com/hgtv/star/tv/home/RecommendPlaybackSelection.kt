@@ -2,6 +2,7 @@
 package com.hgtv.star.tv
 
 import android.view.View
+import com.hgtv.star.core.DetailCache
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.detail
 import com.hgtv.star.core.lruPut
@@ -23,8 +24,16 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // removeAllViews / 新建 Surface 导致 FrameLayout 布局崩溃），但清空旧 Surface 内容、
     // 停止旧媒体并作废旧 work。旧作品不能再发声，新作品也不会继承旧首帧。
     val series=recommendItems[safe]
+    val cachedDetail=recommendDetails[series.id] ?: runCatching { DetailCache.load(series.id) }.getOrNull()
+    val cachedCover=cachedDetail?.recommendCoverUrl().orEmpty()
+    if(BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-PERF",
+            "coverSwitch index=$safe detail=${if(cachedDetail!=null) 1 else 0} image=${if(cachedCover.isBlank()) 0 else 1}",
+        )
+    }
     val switching=safe!=recommendIndex && playerView!=null
-    if(switching) resetRecommendPlaybackForSwitch()
+    if(switching) resetRecommendPlaybackForSwitch(cachedCover)
     recommendIndex=safe; recommendShift=direction
     // 换剧方向与时刻：相邻预热按「用户正在走的方向」排优先级（见 [prefetchRecommendNeighbors]）。
     // 方向为 0 时（进页面第一次起播、重试同一部）不动它，沿用上一次的方向。
@@ -50,11 +59,11 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // 每一次「切到某一部」都换一次令牌：上一次那部还在取详情时，它的结果回来就作废。
     // （缓存命中这条早退路径也必须换，否则上一次在途的结果会把刚切过来的这一部顶掉。）
     val token=recommendToken.incrementAndGet()
-    val cached=recommendDetails[series.id]
+    val cached=cachedDetail
     // 硬切后没有播放层了：先在纯黑画面上显示当前作品的 loading，
     // 不能在详情缓存命中时直接带着上一部的根视图进入 playEpisode。
     if(playerView==null) {
-        showRecommendCover()
+        showRecommendCover(cachedCover)
         showRecommendLoading(series)
     }
     val playStarted=StartupTrace.now()
@@ -125,6 +134,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
                 }
                 // 同上：后台只把详情收进缓存，起播留给回到前台那一次。
                 if(!foreground) return@post
+                showRecommendCover(data.recommendCoverUrl())
                 startRecommendEpisode(data,position,autoplay)
             }.onFailure { problem ->
                 if(token!=recommendToken.get()) return@post
@@ -147,10 +157,10 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
  * 和布局遍历交错，既可能串音，也可能触发 FrameLayout 布局异常。这里保留视图，
  * 用 ExoPlayer 的 keep-content 开关让 Surface 回到黑屏，再复用同一个播放器实例。
  */
-private fun TvMainActivity.resetRecommendPlaybackForSwitch() {
+private fun TvMainActivity.resetRecommendPlaybackForSwitch(coverUrl: String?=null) {
     // 先盖黑，再清旧内容；顺序不能反，否则清 Surface 的一帧可能露出上一部。
-    // 推荐流不再加载 cover；相邻首块预热负责把新画面尽快接上。
-    showRecommendCover()
+    // 批量详情已经预取的首帧图优先；没有图片时才退回纯黑。
+    showRecommendCover(coverUrl)
     // 立即作废旧起播 work；只在后续 playEpisode 里等 generation 变化太晚，
     // 旧请求可能在这中间回来并重新挂上上一部音轨。
     generation++

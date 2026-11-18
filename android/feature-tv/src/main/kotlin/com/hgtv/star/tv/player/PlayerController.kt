@@ -141,9 +141,8 @@ fun TvMainActivity.playEpisode(
     if(!recommendEntry) library.setWatched(data.series.id,false)
     val selectedIndex=index.coerceIn(0,data.episodes.lastIndex)
     val targetId=data.episodes[selectedIndex]
-    // 推荐流不使用封面：相邻首块已经预热，切换只保留黑场保护直到新视频首帧。
-    // 正式播放页仍保留分集封面过渡。
-    artwork.cancelPage(clearMemory=false)
+    // 推荐切换保留批量详情已经预取的首帧图任务；没有图片时才显示黑场。
+    artwork.cancelPage(clearMemory=false,keepPrefetch=recommendEntry)
     if(!recommendEntry) {
         artwork.prefetchWindow(
             (selectedIndex-2..selectedIndex+10).mapNotNull { at ->
@@ -154,7 +153,7 @@ fun TvMainActivity.playEpisode(
         )
         showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
     } else {
-        showRecommendCover()
+        showRecommendCover(data.recommendCoverUrl())
     }
     // 正式播放页先用 player 场景取当前集 + 后 5 集；更远的集在首帧稳定后 preload。
     // 推荐页的 20 个模型在起播 READY 后单独预取，
