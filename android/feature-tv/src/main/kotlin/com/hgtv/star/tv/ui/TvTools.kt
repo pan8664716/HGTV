@@ -206,20 +206,25 @@ class TvTools(internal val activity: Activity) {
         into.addView(row)
     }
     /**
-     * 手机输入剧名：电视出二维码，手机扫码后在一张竖屏页面上把词打完发过来。
+     * 手机扫码输入：电视出二维码，手机扫码后在一次性页面录入文本并送回电视。
      *
-     * 遥控器上敲中文要按几十下方向键，而搜索框是这一页唯一需要长文本的地方，
-     * 因此这里把「打字」整个搬到手机上：手机上打完按发送，电视立刻按这个词搜索。
-     *
-     * 与「手机号登录 / 导入账号参数 / 备份恢复」同一套一次性局域网约束
+     * 搜索剧名与更新地址共用这一条通道；表单文案、校验和回调由调用方传入。
+     * 与「手机号登录 / 导入账号参数 / 备份恢复」遵循同一套一次性局域网约束
      * （随机地址、只监听局域网、限时、用完即关，见 [PhoneSearchServer]）。
      */
-    fun phoneInput(anchor: View?, submit: (String)->Unit) {
+    fun phoneInput(
+        anchor: View?,
+        title: String = "手机输入剧名",
+        instructions: String = "用手机相机扫下面的码，打开电视发的一次性页面\n在手机上把剧名打完，按「发送到电视」\n电视会按当前选择的漫剧 / 短剧分类立刻搜索",
+        form: PhoneSearchServer.Form = PhoneSearchServer.Form.search,
+        validate: (String)->String? = { null },
+        submit: (String)->Unit,
+    ) {
         val address=lanAddress()
         if(address==null) {
             info("手机输入","请让电视和手机连接同一局域网（Wi-Fi 或有线网络）后重试。",anchor); return
         }
-        val next=TvDialog(activity,"手机输入剧名")
+        val next=TvDialog(activity,title)
         next.button("关闭", icon=R.drawable.ic_menu_close)
         val status=label("正在生成二维码…"); next.content.addView(status)
         open(next,anchor)
@@ -229,11 +234,14 @@ class TvTools(internal val activity: Activity) {
                     // 收到就先把这一句写进页面提示行，再走搜索：手机那边点了「发送到电视」，
                     // 电视上必须**看得见**它收到了什么，否则「发送成功但搜索框没变」分不清是哪一端的问题。
                     { query -> main.post { if(dialog===next) { next.dismiss(); submit(query) } } },
-                    { main.post { if(dialog===next) { next.content.removeAllViews(); next.content.addView(label("二维码已过期，请关闭后重新打开。")) } } })
+                    { main.post { if(dialog===next) { next.content.removeAllViews(); next.content.addView(label("二维码已过期，请关闭后重新打开。")) } } },
+                    form=form,
+                    validate=validate,
+                )
                 main.post {
                     if(dialog!==next) { session.close(); return@post }
                     phone=session; next.content.removeAllViews()
-                    scanBody("用手机相机扫下面的码，打开电视发的一次性页面\n在手机上把剧名打完，按「发送到电视」\n电视会按当前选择的漫剧 / 短剧分类立刻搜索",session.url,next.content)
+                    scanBody(instructions,session.url,next.content)
                 }
             } catch(e: Exception) {
                 // 弹窗打不开时界面只给一句「请检查网络」，真正的原因（容器不支持、

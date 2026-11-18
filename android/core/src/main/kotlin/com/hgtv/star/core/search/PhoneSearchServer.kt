@@ -18,8 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * nothing stored server-side; it only receives what the operator types on the phone and hands the
  * value to [onQuery].
  *
- * 同一份实现服务两个表单：[Form.search]（手机输入剧名）与 [Form.sessionToken]
- *（粘贴搜索登录态）。
+ * 同一份实现服务三个表单：[Form.search]（手机输入剧名）、[Form.sessionToken]
+ *（粘贴搜索登录态）与 [Form.updateSource]（设置更新地址）。
  */
 class PhoneSearchServer(
     address: String,
@@ -30,10 +30,31 @@ class PhoneSearchServer(
     private val validate: (String)->String? = { null },
 ): Closeable {
     /** 表单文案与校验：[field] 是表单字段名，[maxLength] 是字符上限，[maxBytes] 是请求体上限。 */
-    class Form(val title: String,val prompt: String,val field: String,val placeholder: String,val submit: String,val done: String,val maxLength: Int,val maxBytes: Int) {
+    class Form(
+        val title: String,
+        val prompt: String,
+        val field: String,
+        val placeholder: String,
+        val submit: String,
+        val done: String,
+        val maxLength: Int,
+        val maxBytes: Int,
+        val hint: String = "",
+    ) {
         companion object {
             val search=Form("在电视上搜索","输入剧名，电视会按当前选择的漫剧或短剧分类搜索。","query","输入剧名或关键词","发送到电视","已发送到电视",80,4096)
             val sessionToken=Form("填写搜索登录态","粘贴 App 抓到的 x-tt-token（整段 Cookie 也可以）。电视只把它用在搜索请求上，不联网核对、不上传。","token","粘贴 x-tt-token","保存到电视","已保存到电视",4096,8192)
+            val updateSource=Form(
+                "设置更新地址",
+                "输入 GitHub 用户/项目（例如 owner/repo），或一个 update.json 更新地址。长链接会自动提取 GitHub 用户/项目。",
+                "source",
+                "owner/repo 或 update.json 地址",
+                "保存到电视",
+                "已保存到电视",
+                4096,
+                8192,
+                hint = "保存后电视立即检查更新。",
+            )
         }
     }
     private val stopped=AtomicBoolean(false)
@@ -129,8 +150,10 @@ class PhoneSearchServer(
         val hint = when (form.field) {
             "token" -> "整段 Cookie 也可以直接粘进来。"
             "device_id" -> "只填官方 App「关于」页显示的纯数字。"
+            "source" -> form.hint.ifBlank { "保存后电视立即检查更新。" }
             else -> "发送后电视立刻开始搜索。"
         }
+        val inputMode = if(form.field=="source") "url" else "text"
         return PhonePage.shell(form.title,
             """<span class="pill">手机输入</span>""" +
             """<h1>${form.title}</h1>""" +
@@ -138,7 +161,7 @@ class PhoneSearchServer(
             """<div class="card">""" +
             """<form method="post" action="/$token/submit">""" +
             """<input name="${form.field}" maxlength="${form.maxLength}" required autofocus """ +
-            """placeholder="${form.placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false">""" +
+            """inputmode="$inputMode" placeholder="${form.placeholder}" autocomplete="off" autocapitalize="off" spellcheck="false">""" +
             """<button class="btn-primary" type="submit">${form.submit}</button>""" +
             """</form>""" +
             """<p class="hint">$hint</p>""" +

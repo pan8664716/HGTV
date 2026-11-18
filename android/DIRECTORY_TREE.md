@@ -479,7 +479,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PhoneSearchServer.kt` | A one-use, short-lived LAN form. The page itself carries no cookies, no external resources and nothing stored server-side; it only receives what the operator types on the phone an… | class PhoneSearchServer |
+| `PhoneSearchServer.kt` | 一次性、短时局域网表单；手机输入剧名、搜索登录态或更新地址后回传电视，页面不携带 Cookie、外部资源或服务端存储。 | class PhoneSearchServer、class Form |
 | `SearchDiag.kt` | 上一次搜索到底发生了什么。 | object SearchDiag |
 | `SearchKeyboard.kt` | 电视搜索页用哪一套键盘。 | class SearchKeyboard |
 | `SearchSource.kt` | 搜索页的数据源（设置里可选）。 | class SearchSource |
@@ -735,7 +735,7 @@ android/
 | `PhoneSettingsSystem.kt` | 横屏设置页使用沉浸式：状态栏和底部系统导航都隐藏，只保留一小条分区导航。 | fun PhoneSettingsActivity.applyLandscapeImmersive、fun PhoneSettingsActivity.handleActivityResultImpl |
 | `PhoneSettingsUnified.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsUnified 主要包含 fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend。 | fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend、fun PhoneSettingsActivity.renderUnifiedSystem、fun PhoneSettingsActivity.applyActionImpl |
 | `PhoneSettingsWidgets.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsWidgets 主要包含 fun PhoneSettingsActivity.targetHostImpl、fun PhoneSettingsActivity.sectionImpl、fun PhoneSettingsActivity.hintImpl、fun PhoneSettingsActivity.rowImpl。 | fun PhoneSettingsActivity.targetHostImpl、fun PhoneSettingsActivity.sectionImpl、fun PhoneSettingsActivity.hintImpl、fun PhoneSettingsActivity.rowImpl、fun PhoneSettingsActivity.switchImpl、fun PhoneSettingsActivity.actionImpl |
-| `PhoneUpdateDialog.kt` | 手机设置页的被动更新入口：显示版本说明，下载校验后交给系统安装器。 | fun PhoneSettingsActivity.showUpdateDialog |
+| `PhoneUpdateDialog.kt` | 手机设置页的被动更新入口：首次录入项目或更新地址，显示版本说明，下载校验后交给系统安装器。 | fun PhoneSettingsActivity.showUpdateDialog |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/ui/`
 
@@ -1003,14 +1003,14 @@ android/
 | `TvDialogFocus.kt` | 电视共用控件、弹窗、样式、键盘与工具。文件 TvDialogFocus 主要包含 fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable。 | fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable |
 | `TvStyle.kt` | 电视端设计令牌：新拟态（Neumorphism / Soft UI）。 | object TvStyle |
 | `TvSwitchRow.kt` | 设置页的整行开关：左边是项名，右边是一枚自绘的轨道 + 圆钮。 | class TvSwitchRow |
-| `TvTools.kt` | 一条提示显示多久（毫秒）。 | val TOAST_MS、val TOAST_FADE、val TOAST_MARGIN、val SESSION_FIELD_HEIGHT、val SESSION_FIELD_TEXT、val UPSMS_POLL_MS |
+| `TvTools.kt` | 电视端弹窗、提示与手机扫码输入工具；扫码表单支持搜索词、登录态和更新地址。 | val TOAST_MS、val TOAST_FADE、val TOAST_MARGIN、fun TvTools.phoneInput |
 | `TvToolsPhone.kt` | 电视共用控件、弹窗、样式、键盘与工具。文件 TvToolsPhone 主要包含 fun TvTools.toast、fun TvTools.clearToast、fun TvTools.qr、fun TvTools.lanAddress。 | fun TvTools.toast、fun TvTools.clearToast、fun TvTools.qr、fun TvTools.lanAddress、fun TvTools.smsFallback、fun TvTools.accountImport |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/update/`
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `TvUpdateUi.kt` | TV 顶栏更新入口的红点绑定与被动更新弹窗；安装直接交给系统安装器。 | fun TvMainActivity.bindUpdateDot、fun TvMainActivity.showUpdateDialog |
+| `TvUpdateUi.kt` | TV 顶栏更新入口的红点绑定与被动更新弹窗；无来源时改用手机扫码录入更新地址。 | fun TvMainActivity.bindUpdateEntry、fun TvMainActivity.showUpdateDialog |
 
 ### shared
 
@@ -1174,7 +1174,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AppUpdateController.kt` | 两端共用的更新元数据解析、下载校验、静默检查与系统安装入口。 | class AppUpdateController、data class AppUpdate、data class AppUpdateState |
+| `AppUpdateController.kt` | 两端共用的更新来源解析、元数据下载校验、静默检查与系统安装入口；不内置更新地址。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
 
 #### `shared/src/test/kotlin/com/hgtv/star/shared/debug/`
 

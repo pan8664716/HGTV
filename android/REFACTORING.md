@@ -95,6 +95,10 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   该分组固定每行两个设置格。
 - 手机「我的」页右上角设置入口在发现新版时显示红点；手机主界面启动时触发同一份静默检查。
 - Phone 在设置 → 系统高级增加「检查更新」行，发现新版显示小红点，不主动弹窗。
+- 发布包不内置更新仓库或元数据地址；`AppUpdateController.check()` 在未配置来源时直接返回，
+  不发起网络请求。用户首次点击「检查更新」时再录入来源并保存到本机。
+- Phone 使用文本输入，支持 `owner/repo`、GitHub 项目 / Release 长链接和 `update.json` 地址；
+  TV 使用一次性局域网扫码输入。GitHub 输入会提取用户/项目并重建最新 Release 的元数据与下载地址。
 - 未改版本号、versionCode、依赖或发布元数据；未运行测试、未推送。
 - `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。
 
