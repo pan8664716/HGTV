@@ -110,27 +110,24 @@ class DanmakuLoader(
             return
         }
         val switchingEpisode = episode != episodeId
-        // 首次进入、手动换集、主动清屏：都要先清掉上一集的数据，再把首批弹幕挂起，
-        // 等视频真正出帧开播（running=true 的 setClock）才铺开。
-        //
-        // 原来只有换集走 beginTransition，首次进入直接 setDanmaku：那会儿视频还在 buffering，
-        // 时钟停在 0，弹幕先按 0 时刻显示；等 READY 后时钟跳到真实位置又重排一次，
-        // 用户读到的就是「弹幕先跑出来、视频开始播又清空重跑」。Phone / TV 同源。
+        // 首次进入 / 手动换集 / 主动清屏：清掉上一集并把首批挂起，等视频出首帧才铺开
+        //（否则 buffering 期间弹幕先按 0 时刻显示、出帧后再重排，看起来是「先跑又清空重跑」）。
+        // 片尾自动连播（switchingEpisode && !clearOnSwitch）**不能挂起**：它走无感切换，
+        // surface 不重建、不会再有 onRenderedFirstFrame 回调，挂起的新弹幕永远等不到
+        // markFrameRendered 放行，屏幕上就一直是上一集的。自动连播让新数据到达时直接替换即可。
         val holdUntilPlayback = !switchingEpisode || clearOnSwitch
         if (holdUntilPlayback) {
             view.clear()
             if (clearOnSwitch) forgetClock()
-        } else {
-            // 片尾自动连播：保留旧画面滚动到首批新弹幕到达，不清屏。
-            view.resetCursor()
-        }
-        if (holdUntilPlayback || switchingEpisode) {
             view.beginTransition()
             // 过渡期间首批弹幕先挂起，要等**视频开播的时钟**落到视图上才铺开（见 `DanmakuView.setClock`）。
             // syncClock 对「位置 / 状态 / 倍速都没变」的调用去重：新一集从 0 开始、状态也
             // 「正在播」时与上次采样一样，setClock 一次都不会落地——挂起的那份永远等不到。
             // 这里清掉去重基准，保证下一次 syncClock 一定打到视图上。
             forgetClock()
+        } else {
+            // 片尾自动连播：保留旧画面滚动到首批新弹幕到达，不清屏也不挂起。
+            view.resetCursor()
         }
         val ticket = ++token
         episode = episodeId
