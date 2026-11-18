@@ -51,7 +51,8 @@ class RecommendWarmCoordinator(
         return when(level) {
             CacheLevel.NONE, CacheLevel.ADDRESS -> null
             CacheLevel.META -> source.warm(episodeId,info) { it.warmMeta() }
-            CacheLevel.FULL -> source.warm(episodeId,info) { it.warm(512L*1024) }
+            // 推荐相邻窗口使用完整首块；具体大小由 RemoteVideo.warm() 的 WARM_BYTES 统一控制。
+            CacheLevel.FULL -> source.warm(episodeId,info) { it.warm() }
         }
     }
 }

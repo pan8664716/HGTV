@@ -377,9 +377,6 @@ internal fun PhoneFeedView.primePooledPlayerImpl(
     val page = feedPageAt(index)
     if (page != null) {
         page.bind(series, "第${episodeIndex + 1}集")
-        page.showEpisodeCover(
-            series.cover.ifBlank { detail.episodeCover(episodeId) }
-        )
         applyPageVideoSettingsImpl(page)
         page.updateVideoFrame(video.info.videoWidth, video.info.videoHeight)
         if (page.playerView.player !== slot.player) {

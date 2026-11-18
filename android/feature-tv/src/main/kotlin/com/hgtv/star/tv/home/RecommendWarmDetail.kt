@@ -12,14 +12,14 @@ const val RECOMMEND_WARM_SLOTS=com.hgtv.star.core.AppConfig.Recommend.WARM_SLOTS
 const val RECOMMEND_WARM_SLOTS_METERED=com.hgtv.star.core.AppConfig.Recommend.WARM_SLOTS_METERED
 
 /**
- * 取首集地址并预热（索引 + 前 1MB）。已经有同一份、或正在预热同一份时直接跳过。
+ * 取首集地址并预热（索引 + 前约 2.5MB）。已经有同一份、或正在预热同一份时直接跳过。
  *
  * 三条与「手机比电视卡」直接相关的取舍：
  *
  * * **不再因为「移动网络」整条退出**。早先这里对 `isMeteredConnection()` 直接 return：
  *   电视永远是 WiFi / 有线，所以电视一切正常；手机一用流量，预热**一次都没有**，
  *   每次切换都是「详情 0.5s + 取地址 + 首批数据 1s」的冷启动——那才是触屏上那股卡劲。
- *   用户本来就在放视频流，相邻一部的 1MB 与它同一个量级，省这一下毫无意义。
+ *   用户本来就在放视频流，相邻一部的约 2.5MB 与它同一个量级，省这一下毫无意义。
  *   现在改成「在途条数减到 1」，流量上仍然克制。
  * * **多槽**：单槽时新的一次会被旧的那次挡回去（`if(recommendWarming.isNotEmpty()) return`），
  *   连划几下就再也没有预热落地，[recommendPrepared] 一直是空的。
@@ -67,12 +67,6 @@ fun TvMainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Ca
             val sourceCoordinator=com.hgtv.star.shared.architecture.PlaybackSourceCoordinator(source,http)
             val warmCoordinator=com.hgtv.star.shared.feed.RecommendWarmCoordinator(source,library,sourceCoordinator)
             if(!library.deviceRegistered()) { registerDeviceOnce(); source.inheritDevice(repository) }
-            // 封面比 1MB 视频首块轻得多，先发它；用户划到这一部时可以先看到目标集画面。
-            data.episodeCover(data.episodes.firstOrNull().orEmpty())
-                .ifBlank { data.series.cover }
-                .takeIf { it.isNotBlank() }?.let { cover ->
-                artwork.prefetch(cover,1920,1080)
-            }
             // 整段都在这一次预热自己的取消域里：划过去之后 `cancelRecommendWarm` 能立刻
             // 把在途的 HTTP 掐掉（否则那个线程还在读 512KB，结果没人要）。
             val prepared=warm.scope.run {
@@ -88,7 +82,7 @@ fun TvMainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Ca
                     recommendStore().finishWarm(key)
                 } else {
                     // 这一次预热已经被取消（它正好被起播了 / 划过去了 / 离开了推荐页）：
-                    // 结果没人要，当场关掉那 1MB 与它的连接。
+                    // 结果没人要，当场关掉那份首块与它的连接。
                     runCatching { prepared?.close() }
                     return@post
                 }

@@ -141,25 +141,21 @@ fun TvMainActivity.playEpisode(
     if(!recommendEntry) library.setWatched(data.series.id,false)
     val selectedIndex=index.coerceIn(0,data.episodes.lastIndex)
     val targetId=data.episodes[selectedIndex]
-    // 先取消详情页旧绑定，但保留内存缓存；随后预热当前集附近的封面。
-    // 之前在这里调用 clearMemory=true，而且发生在 showRecommendCover 之后，
-    // 会把刚挂上的目标集封面一起清掉，实际仍然露出黑屏。
-    // 保留后台封面预取：它正是切换时用来盖住黑屏的那一张图，不能在这里被一起取消。
-    artwork.cancelPage(clearMemory=false,keepPrefetch=true)
-    artwork.prefetchWindow(
-        (selectedIndex-2..selectedIndex+10).mapNotNull { at ->
-            data.episodes.getOrNull(at)?.let(data::episodeCover)
-        }.filter { it.isNotBlank() },
-        1920,
-        1080,
-    )
-    // 详情接口的 video_list[] 自带这一集的 cover / episode_cover。换源前先显示
-    // 目标集自己的封面，而不是上一集的画面；图片已在相邻预热时预取，命中时直接上屏。
-    // 推荐流切剧先用卡片自带的 cover 兜底；正式播放换集才优先用分集封面。
-    showRecommendCover(
-        if(recommendEntry) data.series.cover
-        else data.episodeCover(targetId).ifBlank { data.series.cover }
-    )
+    // 推荐流不使用封面：相邻首块已经预热，切换只保留黑场保护直到新视频首帧。
+    // 正式播放页仍保留分集封面过渡。
+    artwork.cancelPage(clearMemory=false)
+    if(!recommendEntry) {
+        artwork.prefetchWindow(
+            (selectedIndex-2..selectedIndex+10).mapNotNull { at ->
+                data.episodes.getOrNull(at)?.let(data::episodeCover)
+            }.filter { it.isNotBlank() },
+            1920,
+            1080,
+        )
+        showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
+    } else {
+        showRecommendCover()
+    }
     // 正式播放页先用 player 场景取当前集 + 后 5 集；更远的集在首帧稳定后 preload。
     // 推荐页的 20 个模型在起播 READY 后单独预取，
     // 窗口是「当前剧下一集 + 后 19 部不同剧」，消耗 10 个后补充，不能混进这里。
@@ -329,8 +325,7 @@ fun TvMainActivity.playEpisode(
         buildPlaybackSurface()
         // 首次进入播放页会重建根层，前面挂上的封面会被 removeAllViews 摘掉，这里补挂一次。
         showRecommendCover(
-            if(recommendEntry) data.series.cover
-            else data.episodeCover(targetId).ifBlank { data.series.cover }
+            if(recommendEntry) "" else data.episodeCover(targetId).ifBlank { data.series.cover }
         )
     }
     // 触屏设备：`reuse` 那一路不重建视图，因此这三步不能只放在 `!reuse` 里面——

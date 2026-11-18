@@ -66,8 +66,9 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
     /**
      * 头部预取的目标长度（[prepare] 时读一次）。
      *
-     * 冷起播只要 [HEAD_CHUNK]（够解第一帧）；[warm] 是「下一集预热」，它要 1MB，
-     * 于是先把目标放大再 `prepare()`——这样那 1MB 仍然只发**一次** Range，
+     * 冷起播只要 [HEAD_CHUNK]（够解第一帧）；[warm] 是「下一集预热」，它要
+     * [WARM_BYTES]（当前约 2.5MB，覆盖约 2～3 秒），于是先把目标放大再 `prepare()`——
+     * 这样这段数据仍然只发**一次** Range，
      * 而且照样与索引解析并行（不要预热时再补第二次，那是白多一个往返）。
      */
     @Volatile private var headTarget=HEAD_CHUNK
@@ -320,8 +321,8 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
     /**
      * 关掉这一集。
      *
-     * `head` 是**为了少走一次网络**而留的前 1 MB 原始字节（见 [warm]），
-     * 它跟播放器生命周期同长；一集切走之后没有人还会读它，留着就是白占 1 MB——
+     * `head` 是**为了少走一次网络**而留的前 [WARM_BYTES] 原始字节（见 [warm]），
+     * 它跟播放器生命周期同长；一集切走之后没有人还会读它，留着就是白占内存——
      * 切集时 `video` / `queuedVideo` / `retiringVideo` 可能同时存在，最多就是 3 MB。
      */
     override fun close() {

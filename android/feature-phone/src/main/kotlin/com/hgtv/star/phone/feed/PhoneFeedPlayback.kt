@@ -33,7 +33,6 @@ internal fun PhoneFeedView.playIndexImpl(
         0
     }
     feedPlayingIndex = index
-    feedPageAt(index)?.showEpisodeCover(series.cover)
     // 每次明确的换作都推进代次。池命中也必须作废上一轮还在飞的详情 / 地址请求。
     val token = ++feedPlayTokenSlot
     if (clearDanmakuOnSwitch && previousIndex >= 0 && previousIndex != index) {
@@ -61,12 +60,12 @@ internal fun PhoneFeedView.playIndexImpl(
     // 回看那一部时主方向第二步会被升到完整预热（见 SlideCacheManager.plan）。
     // 早先这里把返回值丢掉、预热时重新 plan(index)，原因永远是 WINDOW，
     // 于是「滑走又滑回来」那一条享受不到提升，回来的第一下仍是冷启动。
-    feedPendingPlan = feedPreloadState.slideCache.onItemChanged(
+    feedPreloadState.slideCache.onItemChanged(
         index,
         direction,
         SystemClock.elapsedRealtime(),
     )
-    feedPendingPlan?.let { prefetchRecommendCovers(it) }
+    feedPendingPlan = feedPreloadState.slideCache.neighborWindow(index)
     scheduleDwell()
     // 进程里如果还挂着**这部剧**的这一路（从正片退回来、视图刚被重建），先试着接。
     // 接上就什么都不做：不取详情、不取地址、不 prepare、不 seek——画面就是原来那一秒。

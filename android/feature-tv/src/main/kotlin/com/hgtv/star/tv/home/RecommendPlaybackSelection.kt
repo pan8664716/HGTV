@@ -24,7 +24,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // 停止旧媒体并作废旧 work。旧作品不能再发声，新作品也不会继承旧首帧。
     val series=recommendItems[safe]
     val switching=safe!=recommendIndex && playerView!=null
-    if(switching) resetRecommendPlaybackForSwitch(series.cover)
+    if(switching) resetRecommendPlaybackForSwitch()
     recommendIndex=safe; recommendShift=direction
     // 换剧方向与时刻：相邻预热按「用户正在走的方向」排优先级（见 [prefetchRecommendNeighbors]）。
     // 方向为 0 时（进页面第一次起播、重试同一部）不动它，沿用上一次的方向。
@@ -54,7 +54,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // 硬切后没有播放层了：先在纯黑画面上显示当前作品的 loading，
     // 不能在详情缓存命中时直接带着上一部的根视图进入 playEpisode。
     if(playerView==null) {
-        showRecommendCover(series.cover)
+        showRecommendCover()
         showRecommendLoading(series)
     }
     val playStarted=StartupTrace.now()
@@ -147,9 +147,10 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
  * 和布局遍历交错，既可能串音，也可能触发 FrameLayout 布局异常。这里保留视图，
  * 用 ExoPlayer 的 keep-content 开关让 Surface 回到黑屏，再复用同一个播放器实例。
  */
-private fun TvMainActivity.resetRecommendPlaybackForSwitch(coverUrl: String) {
+private fun TvMainActivity.resetRecommendPlaybackForSwitch() {
     // 先盖黑，再清旧内容；顺序不能反，否则清 Surface 的一帧可能露出上一部。
-    showRecommendCover(coverUrl)
+    // 推荐流不再加载 cover；相邻首块预热负责把新画面尽快接上。
+    showRecommendCover()
     // 立即作废旧起播 work；只在后续 playEpisode 里等 generation 变化太晚，
     // 旧请求可能在这中间回来并重新挂上上一部音轨。
     generation++

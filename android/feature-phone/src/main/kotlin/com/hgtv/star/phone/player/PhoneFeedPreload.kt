@@ -64,28 +64,9 @@ internal fun PhoneFeedView.schedulePreload(delayMs: Long) {
 }
 
 /**
- * 换剧瞬间先预取目标窗口的整屏封面。
- *
- * 这里只排图片队列，不碰详情、地址或播放器；真正切过去时
- * [PhoneVideoPage.showEpisodeCover] 会把同一张图的缓存任务提升为前台优先级。
- */
-internal fun PhoneFeedView.prefetchRecommendCovers(plan: SlideCacheManager.Plan) {
-    val urls=plan.targets.mapNotNull { target ->
-        feedItems.getOrNull(target.index)?.cover?.takeIf { it.isNotBlank() }
-    }.distinct()
-    if(urls.isEmpty()) return
-    val metrics=resources.displayMetrics
-    PhoneServices.artwork(context).prefetchWindow(
-        urls,
-        metrics.widthPixels.coerceAtLeast(360),
-        metrics.heightPixels.coerceAtLeast(640),
-    )
-}
-
-/**
  * 按计划真正发起预热。
  *
- * 只派前 3 条（电视端 `PRELOAD_MAX_TARGETS` 同一条理由：同时发太多只会互相抢带宽）。
+ * 只派前 5 条（电视端 `PRELOAD_MAX_TARGETS` 同一条理由：同时发太多只会互相抢带宽）。
  * 地址级只调一次 `stream()` 把地址落进缓存；完整级再 `prepare()` 出索引与首块。
  */
 internal fun PhoneFeedView.applyPreload(plan: SlideCacheManager.Plan) {
@@ -94,7 +75,7 @@ internal fun PhoneFeedView.applyPreload(plan: SlideCacheManager.Plan) {
     val warmCoordinator=RecommendWarmCoordinator(repo,lib,feedPlaybackSource)
     var dispatched = 0
     for (target in plan.targets) {
-        if (dispatched >= 3) break
+        if (dispatched >= 5) break
         val series = feedItems.getOrNull(target.index) ?: continue
         // 正在放的那一部不预热（它的地址与首块本来就是热的）。
         if (target.index == feedPlayingIndex) continue

@@ -516,7 +516,8 @@ object AppConfig {
         const val LOOKAHEAD = PREFETCH_REMAINING
 
         /** 推荐页最多保留多少份已准备播放结果。 */
-        const val PREPARED_LIMIT = 8
+        /** 当前剧和前后各两部：推荐页始终保留 5 份完整首块。 */
+        const val PREPARED_LIMIT = 5
 
         /** 详情预取并发上限。 */
         const val DETAIL_PREFETCH_LIMIT = 3
@@ -607,8 +608,13 @@ object AppConfig {
         /** 首帧只需要的前块大小。 */
         const val HEAD_CHUNK_BYTES = 512L * 1024L
 
-        /** 下一集预热时保留的原始视频字节数。 */
-        const val WARM_BYTES = 1024L * 1024L
+        /**
+         * 相邻剧集预热保留的原始视频字节数。
+         *
+         * 当前短剧 720P 的实际码率约 1～2Mbps，2.5MB 覆盖约 2～3 秒；
+         * 这是内存预热上限，不改变首帧所需的 [HEAD_CHUNK_BYTES]。
+         */
+        const val WARM_BYTES = 2_500_000L
 
         /** 等待别处预热首块的上限，超时后自己发 Range。 */
         const val HEAD_WAIT_MS = 3_000L
@@ -692,7 +698,7 @@ object AppConfig {
         const val FORMAL_PICTURE_RECOVERY_COOLDOWN_MS = 20_000L
 
         /** 电视相邻内容预加载最多同时保留多少个目标。 */
-        const val PRELOAD_MAX_TARGETS = 4
+        const val PRELOAD_MAX_TARGETS = 5
 
         /** 手机播放器首帧后多久开始预取相邻集。 */
         const val PHONE_PREFETCH_START_MS = 2_000L

@@ -166,6 +166,17 @@ class SlideCacheManager(
         return Plan(anchor,mode,reason,targets)
     }
 
+    /**
+     * 推荐流固定窗口：`n-2..n+2` 全部做完整首块预热。
+     *
+     * 这是用户明确要求的相邻五部窗口；不随快滑降级成地址预取，
+     * 因为切换相邻视频时真正需要的是已经解码 / 可立即接管的视频首块。
+     */
+    fun neighborWindow(anchor: Int): Plan {
+        val targets=(anchor-2..anchor+2).map { Target(it,CacheLevel.FULL) }
+        return Plan(anchor,Mode.NORMAL,Reason.WINDOW,targets)
+    }
+
     private fun sameDirectionStreak(): Int {
         if(directions.size<3) return 0
         val last=directions.last()
