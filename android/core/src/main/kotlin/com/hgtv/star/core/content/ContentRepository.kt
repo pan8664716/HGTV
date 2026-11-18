@@ -402,7 +402,7 @@ class ContentRepository(
         internal const val MODEL_CACHE_MS=PlaybackCache.URL_FRESH_MS
         internal const val PLAYER_MODEL_PATH="/novel/player/multi_video_model/player/v1"
         /** 前台直连和推荐流的默认档位；批量兼容路径也默认从这里开始。 */
-        internal const val DIRECT_DEVICE_LEVEL=4
+        internal const val DIRECT_DEVICE_LEVEL=3
         internal const val PLAYER_MODEL_BATCH_LIMIT=AppConfig.Playback.PLAYER_MODEL_BATCH_LIMIT
         internal const val BATCH_MODEL_PATH="/novel/player/multi_video_model/preload/v1"
         internal const val PRELOAD_MODEL_LIMIT=AppConfig.Playback.PRELOAD_MODEL_LIMIT

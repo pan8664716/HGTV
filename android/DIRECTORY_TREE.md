@@ -547,8 +547,8 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PlaybackModelService.kt` | 取一集的播放模型；所有请求默认 4 档，用户主动点集走单集直连，空响应才兼容升到 5 档。 | — |
-| `PlaybackParser.kt` | 播放模型、单集直连请求体、内联 / fallback 清晰度解析；同时兼容对象与数组形态的 `video_list`。 | object ContentPlaybackParser |
+| `PlaybackModelService.kt` | 取一集的播放模型；主动点集按最新抓包使用 3 档、服务端 DNS 场景和最多 3 集批量，空响应才兼容升到 5 档。 | — |
+| `PlaybackParser.kt` | 播放模型、主动点集批量请求体、内联 / fallback 清晰度解析；同时兼容对象与数组形态的 `video_list`。 | object ContentPlaybackParser |
 | `StreamCacheService.kt` | 播放地址内存 / 落盘缓存与取流；先解析模型内联 `video_list`，缺失时才请求 `fallback_api`。 | class ContentRepositoryStreamCacheEntry |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/recommend/`

@@ -133,7 +133,11 @@ object DeviceRegister {
      * 字段与抓包里那份逐一对齐；`install_id` / `device_id` **不带**（冷启动首注册就是不带，
      * 由服务端下发）。`_gen_time` 是毫秒时间戳。
      */
-    fun payload(device: Map<String,String>, now: Long = System.currentTimeMillis()): ByteArray {
+    fun payload(
+        device: Map<String,String>,
+        now: Long = System.currentTimeMillis(),
+        reqId: String = UUID.randomUUID().toString(),
+    ): ByteArray {
         fun value(key: String, fallback: String) = device[key]?.takeIf { it.isNotBlank() } ?: fallback
         val brand = value("device_brand","Redmi")
         val model = value("device_type","25053RT47C")
@@ -157,6 +161,8 @@ object DeviceRegister {
             if(a!=null && b!=null) "${minOf(a,b)}x${maxOf(a,b)}" else "1280x2772"
         }
         val dpi = value("dpi","520").toIntOrNull() ?: 520
+        val channel = value("channel","69310258a")
+        val resolutionV2 = resolution
         val json = org.json.JSONObject()
         json.put("magic_tag","ss_app_log")
         json.put("header", org.json.JSONObject().apply {
@@ -165,9 +171,12 @@ object DeviceRegister {
             // 2026-11-06 官方 7.4.3.32 冷启动抓包里这一项是完整版本号。
             put("app_version_minor","7.4.3.32")
             put("aid",8662)
-            put("channel", value("channel","69310258a")); put("package","com.phoenix.read")
+            put("channel", channel); put("package","com.phoenix.read")
             put("app_version","7.4.3.32"); put("version_code",74332)
-            put("sdk_version","3.7.0-rc.34-fanqie-xiaoshuo"); put("sdk_target_version",29)
+            put("sdk_version","4.3.2-rc.44"); put("sdk_target_version",30)
+            put("sdk_version_code",4030294)
+            put("app_name","novelread")
+            put("tweaked_channel",channel)
             // `os_version` 必须是**字符串**：写成数字（`12`）服务端直接回 `device_id=0`
             // （实测字符串 6/6 成功、数字 0/6）。`os_api` / `density_dpi` 两种都收。
             put("os","Android"); put("os_version", value("os_version","12"))
@@ -178,29 +187,27 @@ object DeviceRegister {
             put("density_dpi", dpi)
             put("display_density", device["display_density"]?.takeIf { it.isNotBlank() } ?: "mdpi")
             put("resolution", resolution)
-            put("language","zh"); put("timezone",8); put("access","wifi"); put("not_request_sender",0)
+            put("display_density_v2", device["display_density_v2"]?.takeIf { it.isNotBlank() } ?: "hdpi")
+            put("resolution_v2", resolutionV2)
+            put("language","zh"); put("timezone",8); put("access","wifi"); put("not_request_sender",1)
             // 这四项在官方 7.4.3.32 注册 body 中始终存在。真实档案优先；
             // 模拟器 / 无电话服务时使用抓包中的官方默认值，避免字段直接缺失。
             put("carrier", value("carrier","CHINA MOBILE"))
             put("mcc_mnc", value("mcc_mnc","46000"))
             put("rom", value("rom","1135"))
             put("rom_version", value("rom_version","W528JS release-keys"))
-            put("git_hash","3a88f4e")
+            put("git_hash","27660d0")
             put("sig_hash","56a962410c494bbaf0b58dba20cae56f")
-            put("release_build","b5e187f")
+            put("release_build","652bb85")
             put("cdid", value("cdid", java.util.UUID.randomUUID().toString()))
             put("openudid", value("openudid", OfficialDeviceIds.openudid(null)))
             put("clientudid", value("clientudid", java.util.UUID.randomUUID().toString()))
-            // 已有设备重注册时，官方会把上一轮身份一起带回；首次注册时这几项为空。
-            device["device_id"]?.takeIf { it.isNotBlank() }?.let { put("device_id",it) }
-            (device["iid"] ?: device["install_id"])?.takeIf { it.isNotBlank() }?.let { put("install_id",it) }
-            device["klink_egdi"]?.takeIf { it.isNotBlank() }?.let { put("klink_egdi",it) }
             put("ipv6_list", ipv6List())
             put("region","CN"); put("tz_name","Asia/Shanghai"); put("tz_offset",28800)
             put("sim_region","cn"); put("sim_serial_number", org.json.JSONArray())
             // 官方 7.4.3.32 冷启动抓包里是 false。
             put("oaid_may_support",false)
-            put("req_id", java.util.UUID.randomUUID().toString())
+            put("req_id", reqId)
             put("device_platform","android")
             put("custom", org.json.JSONObject().apply {
                 put("account_region_src","fallback"); put("host_bit",64)
@@ -209,7 +216,7 @@ object DeviceRegister {
             })
             put("pre_installed_channel","")
             put("apk_first_install_time", device["apk_first_install_time"]?.toLongOrNull() ?: now)
-            put("is_system_app",0); put("sdk_flavor","china"); put("guest_mode",0)
+            put("is_system_app",0); put("sdk_flavor","cnInner"); put("guest_mode",0)
         })
         json.put("_gen_time", now)
         return ttEncrypt(gzip(json.toString().toByteArray(Charsets.UTF_8)))
@@ -236,15 +243,16 @@ object DeviceRegister {
                 LinkedHashMap(device).apply { put("version_code","74332") },
                 video = true,
             )),
-        "x-neptune" to "-11|50:51:59",
+        "x-neptune" to "-11|50:51:59:30:40:47",
     )
 
     fun url(
         device: Map<String,String> = emptyMap(),
         now: Long = System.currentTimeMillis(),
         host: String = HOST,
+        reqId: String = UUID.randomUUID().toString(),
     ): String =
-        "https://$host" + PATH + "?tt_data=a&cronet_version=8d40f833_2026-03-03"+
+        "https://$host" + PATH + "?req_id=${Signer.encode(reqId)}&tt_data=a&cronet_version=8d40f833_2026-03-03"+
             "&ttnet_version=4.2.243.31-douyin&use_store_region_cookie=1"
 
     /**

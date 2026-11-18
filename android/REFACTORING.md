@@ -62,6 +62,23 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 最新 7.4.3.32 抓包对齐：设备注册与播放模型
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 最新 HAR（2026-11-18）确认：同一 DID 连续多次 `multi_video_model/player` 均返回
+  `code=0`，不是按 DID 的一发冷却。官方播放请求形态为 2~3 个视频 ID、
+  `device_level=3`、`use_server_dns=true`、`use_server_dns_scene=cold_start_stage`。
+- 官方 `device_register` 的 query 和 body 使用同一个 `req_id`；重注册 body 不带旧
+  `device_id` / `install_id` / `klink_egdi`。注册 body 还包含 `app_name`、
+  `tweaked_channel`、`resolution_v2`、`display_density_v2`、`sdk_version_code`、
+  `sdk_flavor=cnInner` 等字段。
+- 已对齐注册 URL 的 `req_id`、注册 body 字段和 `x-neptune`；重注册不再把旧身份塞回
+  body。主动点集改为 3 档、服务端 DNS 场景，并把当前集与后续最多 2 集放进同一批。
+- `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖或发布元数据。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## TV 分集封面过渡与相邻预取
 
 状态：已实现，debug 构建通过，待用户真机验证。

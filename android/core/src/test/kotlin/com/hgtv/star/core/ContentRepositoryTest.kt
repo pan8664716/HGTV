@@ -370,7 +370,7 @@ class ContentRepositoryTest {
      * 用户主动点集走独立单集请求：只发一个 ID、固定 4 档，并且模型内联的 `video_list`
      * 已经够用时不再请求 `fallback_api`。这条路径直接决定「第 1 集跳到最后一集」的等待时间。
      */
-    @Test fun directPlaybackUsesSingleLevelFourRequestAndInlineVideoList() {
+    @Test fun directPlaybackUsesLevelThreeDnsSceneAndInlineVideoList() {
         val bodies=mutableListOf<String>()
         var fallbackCalls=0
         val inlineModel=JSONObject()
@@ -403,9 +403,9 @@ class ContentRepositoryTest {
         assertEquals(0,fallbackCalls)
         assertEquals(1,bodies.size)
         val body=bodies.single()
-        assertTrue(body,body.contains("\"device_level\":4"))
-        assertTrue(body,body.contains("\"use_server_dns\":false"))
-        assertFalse(body,body.contains("use_server_dns_scene"))
+        assertTrue(body,body.contains("\"device_level\":3"))
+        assertTrue(body,body.contains("\"use_server_dns\":true"))
+        assertTrue(body,body.contains("\"use_server_dns_scene\":\"cold_start_stage\""))
         assertTrue(body,body.contains("\"1004\":[\"123\"]"))
     }
 
