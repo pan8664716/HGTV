@@ -15,7 +15,7 @@ Android 的内容、账号、目录、搜索和播放请求统一使用 Go 参�
 ## video_model 参数
 
 播放模型 query 按 Go 抓包顺序生成，`_rticket` 保留在固定位置。单集
-`video_model` 使用 `content_type=1004`、`device_level=3`、`source=1`、
+`video_model` 使用 `content_type=1004`、`device_level=4`、`source=1`、
 `video_platform=3` 和 `use_server_dns=false`。
 
 ## 验证

@@ -20,7 +20,7 @@ internal object ContentPlaybackParser {
     ): String {
         val biz=JSONObject()
             .put("detail_page_version",0)
-            .put("device_level",minOf(deviceLevel,3))
+            .put("device_level",4)
             .put("disable_digg_stat",false)
             .put("disable_video_relate_book",false)
             .put("need_all_video_definition",true)
@@ -80,7 +80,7 @@ internal object ContentPlaybackParser {
     ): String {
         val newRoute=!path.contains("multi_video_model")
         val biz=JSONObject()
-            .put("detail_page_version",0).put("device_level",minOf(deviceLevel,3)).put("disable_digg_stat",false)
+            .put("detail_page_version",0).put("device_level",4).put("disable_digg_stat",false)
             .put("need_all_video_definition",true).put("need_mp4_align",false)
             .put("use_os_player",false).put("use_server_dns",false)
         return if(newRoute) {
