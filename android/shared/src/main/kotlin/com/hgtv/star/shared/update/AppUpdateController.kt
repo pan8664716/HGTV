@@ -10,7 +10,6 @@ import com.hgtv.star.shared.architecture.AppExecutors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -26,6 +25,7 @@ import java.io.IOException
 import java.io.InputStream
 import java.security.MessageDigest
 import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicBoolean
 
 /**
  * Release 元数据。tag 兼容当前无 `v` 的 `1.3.8` 和旧版的 `v1.2.4.2`。
@@ -105,18 +105,21 @@ data class AppUpdateState(
  * 用户点击入口后才下载，下载完成后用系统安装器打开 APK，不建立
  * PackageInstaller 会话，也不等待安装结果广播。
  */
-class AppUpdateController(context: Context) {
+class AppUpdateController private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val repository = AppUpdateRepository()
     private val apk = File(appContext.filesDir, "updates/update.apk")
     private val _state = MutableStateFlow(AppUpdateState())
+    private val checkedThisProcess = AtomicBoolean(false)
     val state: StateFlow<AppUpdateState> = _state.asStateFlow()
 
     fun check(force: Boolean = false) {
         val current = _state.value
         if (current.checking || current.downloading) return
         if (!force && (current.checked || current.hasUpdate)) return
+        // 自动检查每个应用进程只发一次；用户主动点击检查仍可 force 重试。
+        if (!force && !checkedThisProcess.compareAndSet(false, true)) return
         _state.update { it.copy(checking = true, error = "") }
         scope.launch {
             try {
@@ -198,11 +201,6 @@ class AppUpdateController(context: Context) {
         }
     }
 
-    fun close() {
-        scope.cancel()
-        repository.close()
-    }
-
     private fun installerUri(file: File): Uri =
         if (Build.VERSION.SDK_INT >= 24) {
             FileProvider.getUriForFile(appContext, "${appContext.packageName}.updates", file)
@@ -218,8 +216,14 @@ class AppUpdateController(context: Context) {
         return if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
     }
 
-    private companion object {
-        const val APK_MIME = "application/vnd.android.package-archive"
+    companion object {
+        private const val APK_MIME = "application/vnd.android.package-archive"
+        @Volatile private var instance: AppUpdateController? = null
+
+        fun get(context: Context): AppUpdateController =
+            instance ?: synchronized(this) {
+                instance ?: AppUpdateController(context).also { instance = it }
+            }
     }
 }
 

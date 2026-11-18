@@ -83,7 +83,7 @@ class TvMainActivity: Activity() {
             scope = appScope,
         )
     }
-    val updateController by lazy { AppUpdateController(this) }
+    val updateController by lazy { AppUpdateController.get(this) }
     var updateState=AppUpdateState()
     var updateIcon: View?=null
     var updateDot: View?=null

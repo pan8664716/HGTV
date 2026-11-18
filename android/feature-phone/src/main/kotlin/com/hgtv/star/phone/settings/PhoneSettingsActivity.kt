@@ -128,7 +128,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     internal val settingsLibrary get()=library
     private val settingsController by lazy { SettingsController(this, library) }
     internal val settingsControllerInstance get()=settingsController
-    private val updateController by lazy { AppUpdateController(this) }
+    private val updateController by lazy { AppUpdateController.get(this) }
     internal val settingsUpdateController get()=updateController
     private var updateState=AppUpdateState()
     internal val settingsUpdateState get()=updateState
@@ -441,7 +441,6 @@ class PhoneSettingsActivity : PhoneActivity() {
         closeLanSyncSessionImpl()
         updateCollector?.cancel()
         updateCollector=null
-        updateController.close()
         scope.cancel()
         syncHandler.removeCallbacksAndMessages(null)
         super.onDestroy()
