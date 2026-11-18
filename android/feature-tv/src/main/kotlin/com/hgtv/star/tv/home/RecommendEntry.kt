@@ -99,8 +99,7 @@ fun TvMainActivity.openRecommend() {
         recommendIndex=resume
         // 这一列是上一轮留下的快照/列表；补页时按「恢复列表」合并，不能把正在看的旧列整页替换。
         recommendStore().restored=true
-        android.util.Log.i("HGTV","Recommend retained items=${recommendItems.size} index=$resume "+
-            "prepared=${recommendPrepared.size}")
+        android.util.Log.i("HGTV","Recommend retained items=${recommendItems.size} index=$resume")
         recommendStarted=true
         playRecommendAt(resume)
         if(recommendItems.size<RECOMMEND_FIRST_ITEMS) {

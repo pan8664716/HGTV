@@ -33,7 +33,6 @@ internal fun PhoneFeedView.releaseImpl() {
     feedList.removeCallbacks(feedChromeHideRunnable)
     detachAllFeedListeners()
     feedPreloadScheduler.cancel()
-    PhonePreload.clear()
     feedScope.cancel()
     val playerOwnsCurrent = PhoneSession.owner == PhoneSession.Owner.PLAYER ||
         PhoneSession.inHandoff()

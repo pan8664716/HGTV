@@ -166,23 +166,17 @@ class SlideCacheManager(
         return Plan(anchor,mode,reason,targets)
     }
 
-    /**
-     * 推荐流固定窗口：`n-2..n+2` 全部做完整首块预热。
-     *
-     * 这是用户明确要求的相邻五部窗口；不随快滑降级成地址预取，
-     * 因为切换相邻视频时真正需要的是已经解码 / 可立即接管的视频首块。
-     */
+    /** 推荐流固定地址窗口：`n-2..n+2` 只预取播放地址，不读取任何视频字节。 */
     fun neighborWindow(anchor: Int, direction: Int = 1): Plan {
         val step=if(direction>=0) 1 else -1
-        // 集合仍是 n-2..n+2，但派发顺序把用户下一步最可能去的相邻项放前面。
-        // 低配电视首帧后只取第一条时，不能先去拉 n-2。
+        // 派发顺序把用户下一步最可能去的相邻项放前面。
         val targets=linkedSetOf(
             anchor+step,
             anchor-step,
             anchor+2*step,
             anchor-2*step,
             anchor,
-        ).map { Target(it,CacheLevel.FULL) }
+        ).map { Target(it,CacheLevel.ADDRESS) }
         return Plan(anchor,Mode.NORMAL,Reason.WINDOW,targets)
     }
 

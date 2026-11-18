@@ -3,8 +3,6 @@ package com.hgtv.star.tv
 
 import android.view.View
 import com.hgtv.star.core.Detail
-import com.hgtv.star.shared.compat.isMeteredConnection
-import com.hgtv.star.shared.debug.StartupDeferredTasks
 import com.hgtv.star.shared.debug.StartupTrace
 
 /**
@@ -100,56 +98,21 @@ internal fun TvMainActivity.startRecommendEpisode(data: Detail,position: Long,au
     // 换到另一部：上一次「画面丢了自动重建」的额度重新给满（见 [recoverRecommendPicture]）。
     // 不清的话，看过一部要重建两回的片子之后，后面每一部都只剩一次机会。
     pictureRecoveries=0; pictureRecoveryAt=0L
-    // 相邻那一部的首集如果已经预热好，直接把它交给播放内核：不用再取地址、读索引、
-    // 拉首批数据，切换就是「换一帧」而不是「等一次网络」。取走之后所有权归播放器。
+    // 相邻项只预热详情与播放地址；当前这一部仍然由播放内核正常取源、解析并起播。
     val key=preparedKey(data)
     val fromStart=position<=0L
-    // 这一部正好在预热、而且这次要从头起播：取消**这一份**。
-    //
-    // 不取消的话，预热线程还在拉同一集的地址 / 首块，播放器又发一条完全相同的请求，
-    // 两条会互相抢带宽，用户看到的反而是「越预热越慢」。其他相邻条目的预热不动，
-    // 因此不会退回到「每次滑动都把整个窗口掐掉」。
-    //
-    // 移动网络本来就只开一个预热槽，同样必须在这里让路。
     val warmingCurrent=key.isNotEmpty() && recommendStore().isWarming(key)
-    val metered=runCatching { connectivity.isMeteredConnection() }.getOrDefault(false)
-    if(fromStart && key.isNotEmpty() && (warmingCurrent || metered)) {
+    if(fromStart && key.isNotEmpty() && warmingCurrent) {
         cancelRecommendWarm(key)
     }
-    // 预热结果的**年龄校验**：超过 [PlaybackCache.PREPARED_FRESH_MS] 的那一份不能再用。
-    //
-    // 推荐页的预热是「划到附近就提前把首集地址取回来」，用户可能十几分钟后才划到它；
-    // 而地址是服务端签发的带时效地址，过期后 `RemoteVideo.range` 读到 403，界面报
-    // 「地址过期：播放地址已失效（HTTP 403）」。退出重进就好了——因为缓存被清掉、重新取地址。
-    //
-    // 宁可丢掉这一份重新取（多 500~1100ms），也不要拿一条已作废的地址去起播。
-    val preparedAt=recommendPreparedAt[key] ?: 0L
-    val preparedFresh=com.hgtv.star.core.PlaybackCache.isPreparedFresh(
-        preparedAt,android.os.SystemClock.elapsedRealtime())
-    val prepared=if(fromStart && preparedFresh) recommendPrepared.remove(key) else null
-    // 过期的这一份要**当场关掉**：它还握着 1MB 首块与一条传输，留着只是占内存。
-    if(fromStart && !preparedFresh) recommendPrepared.remove(key)?.let { runCatching { it.close() } }
-    // `FULL` 表示内存池里仍有 2.5MB 首块。播放器取走这一份后，内存所有权已经转给
-    // `video`，池里不再有可复用项；必须降回 `META`，否则窗口补货会把「历史做过 FULL」
-    // 误判成「现在还有 FULL」，之后这一条永远不再发预热请求。
-    if(fromStart && key.isNotEmpty()) {
-        recommendStore().downgradeWarm(key,com.hgtv.star.core.CacheLevel.FULL,com.hgtv.star.core.CacheLevel.META)
-    }
-    // 取走之后下标/时刻表也要跟着摘掉，否则淘汰时会对着一个已经不存在的键算分。
-    if(prepared!=null || fromStart) { recommendPreparedIndex.remove(key); recommendPreparedAt.remove(key) }
-    // 起播路径的命中情况：一次换剧到底靠的是内存预热、磁盘索引还是全新拉取。
-    // 只在调试包打（`Playback first frame` 那一行只给总时长，看不出钱花在哪儿）。
     if(BuildConfig.DEBUG) {
-        // 地址键带 `device_level`（见 `ContentRepository.stream`）；
-        // 索引 / 首块键带的是「集 + 实际档位」（见 `StreamInfo.mediaKey`）。
-        // 早先这里把两段拼成一个键去查，`meta` / `head` 永远是 0——日志上看着像「缓存没用上」。
         val episode=data.episodes.firstOrNull().orEmpty()
         val urlKey="$episode:${playbackMaxQuality}:${repository.deviceLevel}"
-        // 索引键优先用**这一份预热实际取到的**那个（`mediaKey` 用实际档位，可能低于上限）。
-        val mediaKey=prepared?.info?.mediaKey(episode) ?: key
-        android.util.Log.i("HGTV-PERF","switch prepared=${if(prepared!=null) 1 else 0} "+
-            com.hgtv.star.core.PlaybackCache.probe(urlKey,mediaKey)+
-            " level=${recommendStore().warmedLevel(key) ?: "-"} cancelledWarm=${if(warmingCurrent) 1 else 0}")
+        android.util.Log.i(
+            "HGTV-PERF",
+            "switch ${com.hgtv.star.core.PlaybackCache.probe(urlKey,key)} "+
+                "level=${recommendStore().warmedLevel(key) ?: "-"} cancelledWarm=${if(warmingCurrent) 1 else 0}",
+        )
     }
     // 连续失败计数**不在这里**归零：起播（取地址成功）不等于能放，
     // 真正出画面之后才清零（见播放监听器的 READY 分支），否则整条推荐都坏掉时
@@ -162,7 +125,6 @@ internal fun TvMainActivity.startRecommendEpisode(data: Detail,position: Long,au
         0,
         position.coerceAtLeast(0),
         autoplay=autoplay,
-        prepared=prepared,
         clearDanmakuOnSwitch=true,
     )
     screen="recommend"
@@ -178,36 +140,20 @@ internal fun TvMainActivity.startRecommendEpisode(data: Detail,position: Long,au
     // `scheduleOverlayAutoHide`）；轻点画面照旧随时能切显隐。上下换剧走到这里会重新唤出，
     // 计时也随之重排——用户每换一部都还能看到「这是哪一部、看到第几集、播到哪儿」。
     if(touchArmed) showHud()
-    // 相邻预热统一由播放监听器的 READY 分支在首帧后发起；这里不提前排。
-    // 例外：这一次是**内存预热命中**（首块都在手里，这一部一个网络请求都不用发），
-    // 带宽此刻是空的，顺手把下一部的地址取回来（20KB，不取首块）。
-    // 遥控器「一秒一下」的节奏里，晚启动的窗口预热根本来不及跑，这一条是那段时间的兜底。
-    if(prepared!=null) {
-        val nextIndex=recommendIndex+slideCache.direction
-        val next=recommendItems.getOrNull(nextIndex)
-        if(next!=null) {
-            StartupDeferredTasks.scheduleLatestOnMain("recommend.nextAddress",30_000L) {
-                if(screen=="recommend") {
-                    warmRecommend(next,nextIndex,com.hgtv.star.core.CacheLevel.ADDRESS)
-                }
-            }
-        }
-    }
+    // 相邻地址预热统一由播放监听器在首帧后发起。
     // 快刷到这一批末尾了：把下一页提前取回来，别让用户在末尾那一下等网络（见 [ensureRecommendLookahead]）。
     ensureRecommendLookahead()
     StartupTrace.done(
         "recommend.episode.start",
         startedAt,
-        "id=${data.series.id} prepared=${prepared!=null}",
+        "id=${data.series.id}",
     )
 }
 
 /**
- * 预热用的缓存键：`集id:清晰度`。
+ * 推荐地址预热用的缓存键：`集id:清晰度`。
  *
- * 换清晰度之后旧的那份自然对不上、会被丢掉——档位一变就是**另一个文件**，
- * 沿用旧键会把别的码流交给播放器，也可能把刚预热好的那份顶掉。
- * 全站只有 HEVC 一种编码，键里不再需要编码族那一段。
+ * 换清晰度之后旧地址自然对不上，避免把另一档的地址当成当前档命中。
  */
 fun TvMainActivity.preparedKey(data: Detail): String {
     val id=data.episodes.firstOrNull() ?: return ""

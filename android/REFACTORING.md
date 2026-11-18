@@ -102,9 +102,24 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
-## 2026-11-18：官方推荐预加载与播放关键路径
+## 2026-11-18：移除推荐流相邻首块预取
 
 状态：已实现，Android debug 构建通过，待用户真机验证。
+
+- TV / Phone 推荐窗口仍保留 `n-2..n+2`，但全部改为 `ADDRESS`：只取详情与单集直连
+  播放地址，不创建 `RemoteVideo`、不解析索引、不读取任何视频字节。
+- TV 删除 `recommendPrepared` 内存池、方向偏置淘汰和首块完成日志；当前这一部由
+  播放内核正常取源、解析并起播。手机删除 `PhonePreload` 与相邻页播放器预 prepare。
+- 推荐流继续保留无封面策略、详情缓存、地址预热和播放模型批量预取；正式播放页的
+  下一集预取链路未改。
+- 未改版本号、versionCode、依赖或发布元数据；未运行单元测试，测试交给用户。
+- `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-18：官方推荐预加载与播放关键路径（历史记录）
+
+状态：历史记录。相邻五条首块预取已被上一节移除，其余接口与缓存策略保留。
 
 - 推荐首包和 `cell/change` 返回的内嵌 `video_detail` 现在统一写入 `DetailCache`；
   推荐页点击已有详情的卡片不再重复请求单条详情。

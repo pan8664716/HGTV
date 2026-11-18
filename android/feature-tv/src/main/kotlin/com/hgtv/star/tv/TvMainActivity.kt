@@ -458,7 +458,6 @@ class TvMainActivity: Activity() {
     var recommendGenderLoading=false
     val recommendDetails=LinkedHashMap<String,Detail>(8,0.75f,true)
     val recommendDetailLoading=mutableSetOf<String>()
-    val recommendPrepared=LinkedHashMap<String,RemoteVideo>()
     val recommendWarmJobs=HashMap<String,RecommendWarm>()
     val recommendPlaybackBatchState=com.hgtv.star.shared.feed.RecommendPlaybackBatchState()
     var recommendBatchKey=""
@@ -474,8 +473,6 @@ class TvMainActivity: Activity() {
         firstFrameDelayMs=if(runCatching { lowEndTv() }.getOrDefault(true)) 500L else 300L,
     )
     var preloadSchedulerRef: com.hgtv.star.shared.feed.PreloadScheduler?=null
-    val recommendPreparedIndex=HashMap<String,Int>()
-    val recommendPreparedAt=HashMap<String,Long>()
     val recommendToken=java.util.concurrent.atomic.AtomicLong(0)
     val recommendPageToken=java.util.concurrent.atomic.AtomicLong(0)
     var recommendHistoryPending=false

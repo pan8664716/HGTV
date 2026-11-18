@@ -103,9 +103,6 @@ internal fun PhoneFeedView.playIndexImpl(
                     maxQuality = lib.maxQuality,
                     startAt = startAt,
                     resumeSaved = true,
-                    takeWarm = { episodeId, quality ->
-                        PhonePreload.take(series.id, episodeId, quality)
-                    },
                 )
             }.getOrNull()
         }

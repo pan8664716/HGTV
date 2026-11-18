@@ -1,15 +1,13 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
-import com.hgtv.star.core.CacheLevel
 import com.hgtv.star.core.SlideCacheManager
-import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.detail
 import com.hgtv.star.core.lruPut
 import com.hgtv.star.shared.compat.lowEndTv
 
 // 推荐页的「双向滑动预加载」编排：窗口与规则在 `core/SlideCache.kt`（纯逻辑、有单测），
-// 这里只负责把它翻译成真正的工作——取详情、取地址、解析索引、拉首块，以及什么时候让路。
+// 这里只负责取详情和播放地址，不读取视频索引或首块。
 
 /**
  * 现在能不能做后台预加载。
@@ -64,8 +62,7 @@ fun TvMainActivity.scheduleRecommendPreload(delayMs: Long,reason: String) {
 /**
  * 停留确认（文档 4.1 第二条）：当前这一部放了 1 秒还没被划走。
  *
- * 它只在一件事上起作用：快速连划时窗口被降级成「仅地址」，停下来之后要把
- * 「下一部」重新升回完整预热——否则用户停在某一条上，下一步按下去仍然是冷启动。
+ * 它只在一件事上起作用：快速连划后停下来，重新排一次「下一部」的地址预热。
  */
 fun TvMainActivity.scheduleRecommendDwell() {
     preloadScheduler().scheduleDwell()
@@ -104,8 +101,7 @@ fun TvMainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: Strin
         if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","preloadSkip reason=fling anchor=${plan.anchor}")
     }
     // 低配电视首帧后先只准备主方向最近的一部，完成后由 warmRecommendDetail 自动续上
-    // 其余相邻作品。早先整窗同时派发时，详情、取地址和首块会一起抢当前画面刚恢复的
-    // 带宽与 CPU，用户在前几秒换台仍然只能走冷启动。
+    // 其余相邻作品，避免多个详情 / 地址请求同时抢当前画面恢复时的网络。
     val targets=if(reason=="first-frame" && runCatching { lowEndTv() }.getOrDefault(true)) {
         // 片尾附近主方向可能越界；仍要从计划里取第一条真实存在的目标，
         // 不能让一个空下标挡住后面的反方向缓存。
@@ -119,34 +115,25 @@ fun TvMainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: Strin
     for(target in targets) {
         if(dispatched>=PRELOAD_MAX_TARGETS) break
         val series=recommendItems.getOrNull(target.index) ?: continue
-        val accepted=when(target.level) {
-            CacheLevel.ADDRESS -> warmRecommend(series,target.index,CacheLevel.ADDRESS)
-            CacheLevel.META -> warmRecommend(series,target.index,CacheLevel.META)
-            CacheLevel.FULL -> warmRecommend(series,target.index,CacheLevel.FULL)
-            CacheLevel.NONE -> false
-        }
+        if(target.level==com.hgtv.star.core.CacheLevel.NONE) continue
+        val accepted=warmRecommend(series,target.index)
         if(accepted) dispatched++
     }
 }
 
 /**
- * 把「某一部预热到某一级」派出去。
+ * 把「某一部」的详情与播放地址预热出去。
  *
- * 详情没有就先取详情（受 [DETAIL_PREFETCH_LIMIT] 限制），拿到之后按级别分派：
- *
- * | 级别 | 动作 | 数据量 |
- * |---|---|---|
- * | [CacheLevel.ADDRESS] | 只取播放地址（写盘） | ~20KB |
- * | [CacheLevel.META] | 取地址 + 解析索引（写盘），不取首块 | ~400KB |
- * | [CacheLevel.FULL] | 取地址 + 索引 + 约 2.5MB 首块，留在内存里等切换 | ~3MB |
+ * 详情没有就先取详情（受 [DETAIL_PREFETCH_LIMIT] 限制），拿到之后只取播放地址。
+ * 不创建 RemoteVideo，因此不会解析索引，也不会读取任何视频字节。
  */
-fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,level: CacheLevel): Boolean {
+fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int): Boolean {
     val cached=recommendDetails[series.id]
     if(BuildConfig.DEBUG) {
-        android.util.Log.i("HGTV-PERF","warmDispatch index=$index level=$level detail=${if(cached!=null) 1 else 0}")
+        android.util.Log.i("HGTV-PERF","addressDispatch index=$index detail=${if(cached!=null) 1 else 0}")
     }
     if(cached!=null) {
-        return warmRecommendDetail(cached,level,index)
+        return warmRecommendDetail(cached,index)
     }
     if(series.id in recommendDetailLoading) return false
     if(recommendDetailLoading.size>=DETAIL_PREFETCH_LIMIT) return false
@@ -162,12 +149,12 @@ fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,le
                 recommendDetails.lruPut(RECOMMEND_DETAIL_LIMIT,series.id,data)
                 // 仍然在窗口里才继续（用户可能已经连着换了好几部）。
                 val position=recommendItems.indexOfFirst { it.id==series.id }
-                if(position>=0 && kotlin.math.abs(position-recommendIndex)<=4) warmRecommendDetail(data,level,position)
+                if(position>=0 && kotlin.math.abs(position-recommendIndex)<=4) warmRecommendDetail(data,position)
             }.onFailure { problem ->
                 if(BuildConfig.DEBUG) {
                     android.util.Log.w(
                         "HGTV-PERF",
-                        "warmDetailFailed index=$index id=${series.id} "+
+                        "addressDetailFailed index=$index id=${series.id} "+
                             "error=${problem.javaClass.simpleName}:${problem.message.orEmpty().take(160)}",
                     )
                 }
@@ -175,37 +162,4 @@ fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,le
         }
     }
     return true
-}
-
-/**
- * 淘汰「预热好的首集」：**方向偏置 LRU**（文档第 6 节）。
- *
- * 纯 LRU 对双向滑动不友好——用户滑回来时，刚被淘汰的那一份正是他要的。
- * 评分与窗口保护都在 [SlideCacheManager.evictionOrder] 里，这里只负责真的关掉。
- */
-fun TvMainActivity.evictRecommendPrepared(limit: Int = RECOMMEND_PREPARED_LIMIT) {
-    if(recommendPrepared.size<=limit) return
-    val now=android.os.SystemClock.elapsedRealtime()
-    val direction=slideCache.direction
-    val entries=recommendPrepared.keys.map { key ->
-        val index=recommendPreparedIndex[key] ?: -1
-        SlideCacheManager.Entry(key,index,recommendPreparedAt[key] ?: 0L,slideCache.dwellOf(index),direction)
-    }
-    // 窗口外的先按评分淘汰；仍然超限时（窗口本身就有五六条）再按最旧的时间淘汰。
-    // 下标未知的那些（-1）不参与评分：评分里的「距离」对它们没有意义，放到最后按时间淘汰。
-    val known=entries.filter { it.index>=0 }
-    val unknown=entries.filter { it.index<0 }.sortedBy { it.lastAccessAt }.map { it.key }
-    val order=slideCache.evictionOrder(known,recommendIndex,now)+unknown
-    var excess=recommendPrepared.size-limit
-    for(key in order) {
-        if(excess<=0) break
-        val remote=recommendPrepared.remove(key) ?: continue
-        recommendPreparedIndex.remove(key); recommendPreparedAt.remove(key)
-        runCatching { remote.close() }
-        // 内存里那份首块没了，但索引还在盘上（见 `PlaybackCache`）：级别降回 META，
-        // 这样它万一又滑回窗口里，还能重新只补那 512KB，而不是整条重来。
-        recommendStore().downgradeWarm(key,CacheLevel.FULL,CacheLevel.META)
-        excess--
-        if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","evictReason=score key=$key left=${recommendPrepared.size}")
-    }
 }

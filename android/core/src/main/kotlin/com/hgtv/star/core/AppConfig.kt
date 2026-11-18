@@ -515,10 +515,6 @@ object AppConfig {
         /** 当前卡片之后预留多少条，用于快速翻页和预取。 */
         const val LOOKAHEAD = PREFETCH_REMAINING
 
-        /** 推荐页最多保留多少份已准备播放结果。 */
-        /** 当前剧和前后各两部：推荐页始终保留 5 份完整首块。 */
-        const val PREPARED_LIMIT = 5
-
         /** 详情预取并发上限。 */
         const val DETAIL_PREFETCH_LIMIT = 3
 

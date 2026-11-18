@@ -90,9 +90,8 @@ object PlaybackCache {
      * 没有任何理由比落盘的地址活得更久。
      *
      * 现场故障「播几集后按下一集 → 地址过期（HTTP 403）」的直接成因就在这里：
-     * 队列项（`queuedVideo`）与推荐页预热（`recommendPrepared`）都记了生成时刻，
-     * 但改造前**只用来做 LRU 排序，取用时从不校验**。用户在片尾暂停十几分钟再继续，
-     * 或者十几分钟后才划回预热过的那一部，就会拿一条已经作废的地址去起播。
+     * 队列项（`queuedVideo`）记录了生成时刻，但改造前**只用来做 LRU 排序，取用时从不校验**。
+     * 用户在片尾暂停十几分钟再继续，就会拿一条已经作废的地址去起播。
      */
     const val PREPARED_FRESH_MS=AppConfig.Playback.PREPARED_FRESH_MS
 

@@ -125,15 +125,9 @@ fun TvMainActivity.goHomeFromRecommend() {
     // 在途的「取推荐流」这一下作废：它的回调会因为令牌 / 页面不对而丢弃，
     // 这个标记必须在这里一起清掉，否则下次进推荐会一直以为还在加载、什么都不做。
     recommendLoading=false
-    // 相邻剧集的预热：只留**当前这一部**那一份（约 1MB），其余收掉。
-    //
-    // 早先这里整份 `closeRecommendCache()`（连 `recommendItems` / `recommendDetails` 一起清），
-    // 于是「主页 → 推荐」变成一次完整冷启动——用户读到的就是「缓存没用上」。
-    // 现在：列表与详情留在内存（几十 KB），首集只保一份，回来时按原下标接着放，
-    // 取地址 / 索引都命中磁盘（见 `PlaybackCache`）。
+    // 相邻地址预热可以取消；列表与详情留在内存，回来时按原下标接着放。
     cancelRecommendWarm()
     cancelScheduledPreload()
-    evictRecommendPrepared(limit=1)
     dismissRecommendOverlay()
     // 推荐详情可能在途中留下「正在加载《…》」；离开推荐页后不能再把它带进首页 / 设置。
     hideCenterLoading()

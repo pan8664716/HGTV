@@ -35,7 +35,6 @@ class RecommendPlaybackController(
         val episodeId: String,
         val position: Long,
         val remote: RemoteVideo,
-        val cacheHit: Boolean,
     )
 
     private val details = object : LinkedHashMap<String, Detail>(detailLimit, 0.75f, true) {
@@ -61,15 +60,13 @@ class RecommendPlaybackController(
     /**
      * 准备推荐中的一部。
      *
-     * [startAt] < 0 时按 [resumeSaved] 决定是否从本机进度续播；
-     * [takeWarm] 用于接入页面已有的相邻预热槽，命中时不再取地址和读索引。
+     * [startAt] < 0 时按 [resumeSaved] 决定是否从本机进度续播。
      */
     suspend fun prepare(
         series: Series,
         maxQuality: Int,
         startAt: Long = -1L,
         resumeSaved: Boolean = true,
-        takeWarm: ((String, Int) -> RemoteVideo?)? = null,
     ): Prepared? {
         val cached = cachedDetail(series.id)
         val detail = cached ?: runCatching { DetailCache.load(series.id) }.getOrNull()
@@ -105,8 +102,7 @@ class RecommendPlaybackController(
             else -> 0L
         }
 
-        val warm = takeWarm?.invoke(episodeId, maxQuality)
-        val remote = warm ?: runCatching {
+        val remote = runCatching {
             val streamStarted=PlaybackStartupTrace.begin("stream", "episode=$episodeId")
             val info=StageDeadline("recommend.stream",StartupBudgets.STREAM_MS).use { deadline ->
                 deadline.run {
@@ -129,7 +125,6 @@ class RecommendPlaybackController(
             episodeId = episodeId,
             position = position,
             remote = remote,
-            cacheHit = warm != null,
         )
     }
 

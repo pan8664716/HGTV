@@ -88,16 +88,13 @@ fun TvMainActivity.invalidateRecommendForFilterChange() {
 /**
  * 丢掉所有预热好的相邻剧集（关闭画面、退出应用、内存吃紧时）。
  *
- * 推荐列表每次进页面都会重新取一页，这几份预热只在当前这一屏有意义；一旦离开推荐页
- * 就不再需要，留着只会白占内存（每部约 1MB）。
+ * 推荐列表每次进页面都会重新取一页，相邻地址预热只在当前这一屏有意义。
  */
 fun TvMainActivity.closeRecommendCache() {
     cancelRecommendWarm()
     cancelScheduledPreload()
     cancelRecommendFeed()
-    recommendPrepared.values.forEach { runCatching { it.close() } }
-    recommendPrepared.clear()
-    recommendPreparedIndex.clear(); recommendPreparedAt.clear(); recommendStore().clearWarm()
+    recommendStore().clearWarm()
     recommendDetailLoading.clear()
 }
 
@@ -105,7 +102,6 @@ fun TvMainActivity.closeRecommendCache() {
  * 取消某一部的在途预热（它正好要被起播 / 已经划过去了）。
  *
  * 三件事一起做：把键从「在途」里摘掉、把线程任务打断、把这次预热自己的取消域关掉。
- * 只做前两件时，那个线程还在 OkHttp 里读 1MB——结果没人要，带宽照样占着。
  */
 fun TvMainActivity.cancelRecommendWarm(key: String) {
     recommendStore().cancelWarm(key)

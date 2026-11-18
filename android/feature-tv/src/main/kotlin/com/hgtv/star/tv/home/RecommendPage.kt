@@ -126,8 +126,6 @@ fun TvMainActivity.recommendStore(): com.hgtv.star.shared.feed.RecommendStore =
             }
         },
     ).also { recommendStoreRef=it }
-/** 预热好的首集最多留 5 份（每份约 2.5MB）。固定覆盖当前前后各两部。 */
-const val RECOMMEND_PREPARED_LIMIT=com.hgtv.star.core.AppConfig.Recommend.PREPARED_LIMIT
 /** 同时在途的「相邻详情」请求上限：给当前这一部的详情留出线程（见 `prefetchRecommendNeighbors`）。 */
 const val DETAIL_PREFETCH_LIMIT=com.hgtv.star.core.AppConfig.Recommend.DETAIL_PREFETCH_LIMIT
 /** 推荐页详情缓存留几部：左右相邻来回切够用，再多只是占内存。 */

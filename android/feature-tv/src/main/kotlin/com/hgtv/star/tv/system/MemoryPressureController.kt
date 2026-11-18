@@ -75,15 +75,12 @@ internal fun TvMainActivity.onTrimMemoryImpl(level: Int) {
             severe=level>=ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL,
         )
         cancelPrefetch()
-        // 推荐页的相邻预热（每部约 1MB）是可重建的纯缓存：内存吃紧时先放掉，
-        // 下一次切换会重新预热，不会影响正在放的这一部。
+        // 推荐页的相邻地址预热是可重建的纯缓存：内存吃紧时先取消。
         if(screen!="recommend") closeRecommendCache()
-        // 推荐页**不能整份清掉**（正在播的那一部就在里面），改成降到只保「下一部」：
-        // 窗口收窄到一条、其余按方向偏置 LRU 淘汰到 1 份（文档 7 / 10）。
+        // 推荐页不能整份清掉（正在播的那一部就在里面），只收窄后续预热窗口。
         else {
             cancelScheduledPreload()
             slideCache.onTrimMemory(level>=ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
-            evictRecommendPrepared(limit=1)
         }
     }
 }

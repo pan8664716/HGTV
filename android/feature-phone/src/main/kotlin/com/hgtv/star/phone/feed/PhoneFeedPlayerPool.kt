@@ -6,14 +6,11 @@ import android.content.Context
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ui.PlayerView
-import com.google.android.exoplayer2.upstream.DataSource
 import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.phone.ui.primeAspectRatio
-import com.hgtv.star.shared.media.VideoDataSource
-import com.hgtv.star.shared.media.swapMediaSource
 import kotlin.math.abs
 
 internal class FeedPlayerSlot(
@@ -344,84 +341,6 @@ internal fun PlayerView.detachPooledOutput() {
     setKeepContentOnPlayerReset(false)
     player = null
     setKeepContentOnPlayerReset(true)
-}
-
-/**
- * 相邻页完整预热：独立播放器、独立 MediaSource，默认不播放也不出声。
- */
-internal fun PhoneFeedView.primePooledPlayerImpl(
-    index: Int,
-    detail: Detail,
-    episodeIndex: Int,
-    episodeId: String,
-    video: RemoteVideo,
-): Boolean {
-    if (index !in feedItems.indices || abs(index - feedPlayingIndex) > 1) {
-        runCatching { video.close() }
-        return false
-    }
-    val existing = pooledPlayerSlot(index)
-    if (existing?.sourcePrepared == true) {
-        runCatching { video.close() }
-        return false
-    }
-    val series = feedItems[index]
-    val slot = ensurePooledPlayerSlot(index, series.id, episodeId)
-    slot.detail = detail
-    slot.episodeIndex = episodeIndex
-    slot.remote = video
-    slot.sourcePrepared = false
-    slot.firstFrameRendered = false
-    slot.preparedAt = 0L
-
-    val page = feedPageAt(index)
-    if (page != null) {
-        page.bind(series, "第${episodeIndex + 1}集")
-        applyPageVideoSettingsImpl(page)
-        page.updateVideoFrame(video.info.videoWidth, video.info.videoHeight)
-        if (page.playerView.player !== slot.player) {
-            page.playerView.detachPooledOutput()
-            page.playerView.player = slot.player
-        }
-        val verticalSource = if (video.info.videoWidth > 0 && video.info.videoHeight > 0) {
-            video.info.videoHeight > video.info.videoWidth
-        } else {
-            series.vertical
-        }
-        page.playerView.primeAspectRatio(
-            video.info.videoWidth,
-            video.info.videoHeight,
-            verticalSource,
-        )
-    }
-
-    val factory = DataSource.Factory { VideoDataSource(video) }
-    slot.player.swapMediaSource(episodeId, video.info.url, factory)
-    slot.sourcePrepared = false
-    slot.player.setPlaybackSpeed(feedUserSpeed)
-    slot.player.playWhenReady = false
-    attachFeedListener(slot.player, index)
-    if (abs(index - feedPlayingIndex) <= 1) {
-        // 相邻页此时不可见，不需要等 AspectRatioFrameLayout 出首帧；提前 prepare
-        // 才能让用户滑过来时真的已经有一台可播放的独立播放器。
-        val prepared = runCatching { slot.player.prepare() }.isSuccess
-        if (prepared) {
-            if (feedPooledPlayers[index] !== slot) return false
-            slot.sourcePrepared = true
-            slot.preparedAt = android.os.SystemClock.elapsedRealtime()
-            if (com.hgtv.star.shared.BuildConfig.DEBUG) {
-                android.util.Log.i(
-                    "HGTV-PHONE",
-                    "player pool prime index=$index anchor=$feedPlayingIndex " +
-                        "page=${page != null}",
-                )
-            }
-        } else {
-            releasePooledPlayerSlot(index)
-            return false
-        }
-    }
-    return true
 }
 
 /**

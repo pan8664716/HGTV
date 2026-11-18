@@ -32,7 +32,7 @@ class PreparedFreshnessTest {
     }
 
     @Test fun `没有时间戳一律当过期`() {
-        // `queuedAt` / `recommendPreparedAt` 初值都是 0：没记过时刻就是「不知道多旧」，
+        // `queuedAt` 初值是 0：没记过时刻就是「不知道多旧」，
         // 按过期处理（重新取地址），不要赌它。
         assertFalse(PlaybackCache.isPreparedFresh(0L, 1_000L))
         assertFalse(PlaybackCache.isPreparedFresh(-1L, 1_000L))

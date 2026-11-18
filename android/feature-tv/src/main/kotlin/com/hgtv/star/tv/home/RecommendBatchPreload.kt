@@ -8,16 +8,15 @@ import com.hgtv.star.core.PlaybackProfile
 import com.hgtv.star.core.prefetchDetails
 import com.hgtv.star.core.prefetchModels
 
-/** 相邻一部的详情 / 地址 / 首块优先；播放模型批量预取晚一点再跑。 */
+/** 相邻一部的详情 / 地址优先；播放模型批量预取晚一点再跑。 */
 internal const val RECOMMEND_BATCH_MODEL_DELAY_MS=com.hgtv.star.core.AppConfig.Recommend.BATCH_MODEL_DELAY_MS
 
 /**
  * 把推荐列表里当前这一部**前后相邻的几部**预热起来。
  *
- * 分两步，都是为了「一划就换台」：
+ * 分两步：
  * 1. 详情（分集表）：一部几百毫秒，先取回来放进 [recommendDetails]；
- * 2. 首集数据：详情到手后取播放地址并把索引 / 前 1MB 拉下来（[RemoteVideo.warm]），
- *    放进 [recommendPrepared]，起播时直接交给播放器。
+ * 2. 首集播放地址：详情到手后只取地址写入缓存，不解析索引、不读取首块。
  *
  * ## 为什么按方向、而且不止一部
  *
@@ -28,9 +27,7 @@ internal const val RECOMMEND_BATCH_MODEL_DELAY_MS=com.hgtv.star.core.AppConfig.R
  */
 fun TvMainActivity.prefetchRecommendNeighbors(index: Int,direction: Int=recommendPrefetchDir) {
     if(screen!="recommend") return
-    // 窗口与级别由 [SlideCacheManager] 决定（非对称前后窗口 + fling 降级 + 回看提升），
-    // 这里只按它给的清单发起。原先写死的「前两步 + 反方向一步」在双向滑动下有两个洞：
-    // 回看方向没有货、连划时四条 1MB 互相抢带宽。
+    // 窗口与派发顺序由 [SlideCacheManager] 决定，这里只按它给的清单取详情和地址。
     applyRecommendPlan(slideCache.neighborWindow(index,slideCache.direction),"window")
 }
 
