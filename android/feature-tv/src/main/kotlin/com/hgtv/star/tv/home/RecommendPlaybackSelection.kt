@@ -151,6 +151,11 @@ private fun TvMainActivity.resetRecommendPlaybackForSwitch() {
     // 先盖黑，再清旧内容；顺序不能反，否则清 Surface 的一帧可能露出上一部。
     // 推荐流不再加载 cover；相邻首块预热负责把新画面尽快接上。
     showRecommendCover()
+    // 上下键换剧的那一刻就停住弹幕：弹幕加载是延迟调度的（见 loadDanmaku），
+    // 若等它的 clear 落地，中间这段「正在获取地址 / 正在缓冲」里上一集的弹幕时钟
+    // 还在按系统时钟外推，会继续走一段再被清掉，用户看到的就是"旧弹幕又跑了一下"。
+    // clear() 同步停时钟 + 清 surface + 作废在途回包，新剧弹幕由随后的 load 挂起等首帧。
+    danmakuLoader.clear()
     // 立即作废旧起播 work；只在后续 playEpisode 里等 generation 变化太晚，
     // 旧请求可能在这中间回来并重新挂上上一部音轨。
     generation++

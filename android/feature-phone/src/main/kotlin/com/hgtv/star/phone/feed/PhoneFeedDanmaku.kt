@@ -62,6 +62,8 @@ internal fun PhoneFeedView.loadDanmakuImpl(
     seriesId: String,
     clearOnSwitch: Boolean = false,
 ) {
+    // 主动换剧立刻停住旧弹幕：load 是延迟调度的，等它落地时缓冲期旧弹幕还在走。
+    if (clearOnSwitch && index >= 0) danmakuLoaderOfImpl(index).clear()
     StartupDeferredTasks.scheduleLatestOnMain("danmaku.phone.feed", 30_000L) {
         val lib = feedLibrary ?: return@scheduleLatestOnMain
         page.danmakuView.mode = lib.danmakuMode

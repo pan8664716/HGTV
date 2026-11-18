@@ -54,6 +54,9 @@ import com.hgtv.star.tv.R
 fun TvMainActivity.loadDanmaku(episodeId: String,seriesId: String,clearOnSwitch: Boolean=false) {
     // 加载内核在 `:shared`（`DanmakuLoader`）：手机播放页与手机信息流用的是同一份，
     // 三处「同一集不重拉 / 旧回包丢弃 / 隐藏时不发请求」的规则只写一次。
+    // 主动换集要立刻停住旧弹幕：下面的 load 是延迟调度的，等它落地时缓冲期里
+    // 旧弹幕时钟还在走，用户会看到"上一集弹幕又跑一下"。这里先同步清一次。
+    if(clearOnSwitch) danmakuLoader.clear()
     StartupDeferredTasks.scheduleLatestOnMain("danmaku.tv.current",30_000L) {
         danmakuLoader.load(episodeId,seriesId,clearOnSwitch=clearOnSwitch)
     }

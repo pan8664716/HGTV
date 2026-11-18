@@ -56,6 +56,8 @@ internal fun PhonePlayerActivity.loadDanmaku(
     seriesId: String,
     clearOnSwitch: Boolean = false,
 ) {
+    // 主动换集立刻停住旧弹幕：load 是延迟调度的，等它落地时缓冲期旧弹幕还在走。
+    if (clearOnSwitch) playerDanmakuLoader.clear()
     StartupDeferredTasks.scheduleLatestOnMain("danmaku.phone.player", 30_000L) {
         playerDanmakuLoader.load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
     }
