@@ -141,10 +141,9 @@ fun TvMainActivity.playEpisode(
     if(!recommendEntry) library.setWatched(data.series.id,false)
     val selectedIndex=index.coerceIn(0,data.episodes.lastIndex)
     val targetId=data.episodes[selectedIndex]
-    // 必须先结束上一页的图片绑定，再挂这一次的封面。反过来的话 cancelPage 会把
-    // 刚命中内存并设置到 ImageView 的位图清空，日志里看得到 memoryHit，屏幕上却仍是黑。
-    artwork.cancelPage(clearMemory=false,keepPrefetch=recommendEntry)
-    // 推荐切换保留批量详情已经预取的首帧图任务；没有图片时才显示黑场。
+    // 推荐流不使用封面：相邻首块已经预热，切换只保留黑场保护直到新视频首帧。
+    // 正式播放页仍保留分集封面过渡。
+    artwork.cancelPage(clearMemory=false)
     if(!recommendEntry) {
         artwork.prefetchWindow(
             (selectedIndex-2..selectedIndex+10).mapNotNull { at ->
@@ -155,7 +154,7 @@ fun TvMainActivity.playEpisode(
         )
         showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
     } else {
-        showRecommendCover(data.recommendCoverUrl())
+        showRecommendCover()
     }
     // 正式播放页先用 player 场景取当前集 + 后 5 集；更远的集在首帧稳定后 preload。
     // 推荐页的 20 个模型在起播 READY 后单独预取，
@@ -253,7 +252,7 @@ fun TvMainActivity.playEpisode(
         detachPlayerSurface(keepSession=true)
         // 重建播放层会清掉旧的过渡黑场；推荐换作必须在新 Surface 挂上之前重新盖黑，
         // 否则新 Surface 在视频尺寸回调前会先按整屏显示一帧。
-        if(recommendEntry) showRecommendCover(data.recommendCoverUrl())
+        if(recommendEntry) showRecommendCover()
     }
     // 会话号必须在 `detachPlayerSurface()` **之后**取：那条路自己也会自增（作废旧回调），
     // 先取再调会让本次监听器的 `active()` 永远不成立——表现就是首次进播放页
@@ -326,8 +325,7 @@ fun TvMainActivity.playEpisode(
         buildPlaybackSurface()
         // 首次进入播放页会重建根层，前面挂上的封面会被 removeAllViews 摘掉，这里补挂一次。
         showRecommendCover(
-            if(recommendEntry) data.recommendCoverUrl()
-            else data.episodeCover(targetId).ifBlank { data.series.cover }
+            if(recommendEntry) "" else data.episodeCover(targetId).ifBlank { data.series.cover }
         )
     }
     // 触屏设备：`reuse` 那一路不重建视图，因此这三步不能只放在 `!reuse` 里面——

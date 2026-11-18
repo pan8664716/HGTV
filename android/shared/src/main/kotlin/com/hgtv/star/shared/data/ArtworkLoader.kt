@@ -59,14 +59,6 @@ class ArtworkLoader(context: Context) {
 
     private data class Key(val url: String, val tier: Int)
 
-    private fun logCover(action: String,key: Key,extra: String="") {
-        if(!com.hgtv.star.shared.BuildConfig.DEBUG) return
-        android.util.Log.i(
-            "HGTV-IMG",
-            "cover $action hash=${key.url.hashCode()} tier=${key.tier} $extra",
-        )
-    }
-
     private fun tierOf(targetWidth: Int) = if (targetWidth > 400) 640 else 320
 
     private fun normalize(widthPx: Int, heightPx: Int): Pair<Int, Int> {
@@ -220,20 +212,8 @@ class ArtworkLoader(context: Context) {
             "diskFiles=${runCatching { disk.count() }.getOrDefault(-1)}"
     }
 
-    fun load(
-        view: ImageView,
-        url: String,
-        priority: Int = PRIORITY_VISIBLE,
-        widthPx: Int = 0,
-        heightPx: Int = 0,
-    ) {
+    fun load(view: ImageView, url: String, priority: Int = PRIORITY_VISIBLE, widthPx: Int = 0, heightPx: Int = 0) {
         if (closed) return
-        if(com.hgtv.star.shared.BuildConfig.DEBUG) {
-            android.util.Log.i(
-                "HGTV-IMG",
-                "cover request hash=${url.hashCode()} w=$widthPx h=$heightPx priority=$priority",
-            )
-        }
         val previous = bindingByView[view]
         if (previous != null && previous.owner == owner && previous.url == url && previous.width == widthPx && previous.height == heightPx) {
             previous.priority = priority.coerceIn(PRIORITY_FOCUSED, PRIORITY_PREFETCH)
@@ -311,7 +291,6 @@ class ArtworkLoader(context: Context) {
             return
         }
         cache.get(key)?.let { bitmap ->
-            logCover("memoryHit",key,"view=${width}x${height}")
             view.setImageBitmap(bitmap); binding.applied = key; binding.blankAt = 0L
             synchronized(signal) { waiting.remove(binding) }
             return
@@ -548,14 +527,10 @@ class ArtworkLoader(context: Context) {
                             val view = binding.view.get()
                             if (view != null && bindingByView[view] === binding && binding.key == job.key) {
                                 if (bitmap != null) {
-                                    logCover("applied",job.key,"view=${view.width}x${view.height}")
                                     view.setImageBitmap(bitmap); binding.applied = job.key
                                     binding.blankAt.takeIf { it > 0 }?.let { started -> timing.blank(now - started) }
                                     binding.blankAt = 0L
-                                } else {
-                                    logCover("failed",job.key)
-                                    binding.failed = job.key
-                                }
+                                } else binding.failed = job.key
                             }
                         }
                         scheduleRefill()
@@ -637,7 +612,6 @@ class ArtworkLoader(context: Context) {
     private fun fetch(job: Job, startedAt: Long): Bitmap? {
         val t0=android.os.SystemClock.elapsedRealtime()
         val cached = disk.get(diskKey(job.key))
-        if(cached!=null) logCover("diskHit",job.key,"bytes=${cached.size}")
         val tDisk=android.os.SystemClock.elapsedRealtime()
         timing.diskGet(tDisk - t0)
         var proto = "-"

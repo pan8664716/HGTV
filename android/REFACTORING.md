@@ -50,27 +50,24 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 | `feature-tv/.../player/PlaybackController.kt` | 2232 |
 | `shared/.../Library.kt` | 2027 |
 
-## TV 推荐切换封面被隐藏与 Surface 重建修复
+## 2026-11-19：移除推荐流首帧图片过渡
 
-状态：已实现，debug 构建通过，待用户真机验证。
+状态：已回退，debug 构建通过，待用户真机验证。
 
-- 现场日志同时出现 `cover memoryHit` 和长时间黑屏，证明封面位图已经命中，问题在显示层。
-- 相邻切换曾把整个 `PlayerView` 设为 `INVISIBLE`，后来挂在它内部的封面也一起隐藏；
-  现固定把过渡封面挂在 root 层，位于播放层之上、信息浮层之下。
-- 推荐切换不再执行 `playerView.player=null`，也不再隐藏 PlayerView。播放器继续使用
-  同一个 SurfaceView，只停止并清空媒体；旧帧由 root 封面遮住，避免电视 ROM 反复创建
-  同名 Surface 图层造成亮暗闪烁。
-- 保留 `setKeepContentOnPlayerReset(false)` 清理旧内容，新源挂载时恢复 keep-content；
-  仍不使用 TextureView。
-- `ArtworkLoader` 保留 DEBUG 下的 request / memoryHit / diskHit / applied / failed 日志，
-  便于后续只看 logcat 判断是缓存未命中还是 View 层被遮挡。
+- 推荐流切换不再读取或预取 `episode_cover`，也不再尝试用分集首帧图占位。
+- 推荐切换只保留原来的黑场保护，等新视频真正出帧后淡出；没有图片加载、图片缓存和
+  Surface 封面层参与。
+- 正式播放页原有的分集封面过渡保持不变。
+- 回退提交：`16f457a`、`f3b5ff2`。
 - 未改版本号、versionCode、依赖或目录结构；未推送。
 
 回滚：对本节对应提交执行 `git revert`。
 
 ## 推荐流与正式播放分集封面过渡修复
 
-状态：已实现，debug 构建通过，待用户真机验证。
+状态：历史记录。推荐流部分已被上一节回退；正式播放页的分集封面过渡仍保留。
+
+> 2026-11-19 起，推荐流不再加载或显示 `episode_cover` / 剧集 cover，只使用黑场过渡。
 
 - 手机竖屏播放页新增目标集封面层：正式播放换集、信息流换作、上下滑预览与
   横屏版面都会先显示 `Detail.episodeCovers[vid]`，回退剧集封面；首帧到达后淡出。
@@ -120,9 +117,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
-## 2026-11-18：移除推荐流相邻首块预取（历史记录）
+## 2026-11-18：移除推荐流相邻首块预取
 
-状态：历史记录。相邻视频字节预取仍已移除；后续重新接入批量详情里的分集首帧图。
+状态：已实现，Android debug 构建通过，待用户真机验证。
 
 - TV / Phone 推荐窗口仍保留 `n-2..n+2`，但全部改为 `ADDRESS`：只取详情与单集直连
   播放地址，不创建 `RemoteVideo`、不解析索引、不读取任何视频字节。
@@ -130,23 +127,6 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   播放内核正常取源、解析并起播。手机删除 `PhonePreload` 与相邻页播放器预 prepare。
 - 推荐流继续保留无封面策略、详情缓存、地址预热和播放模型批量预取；正式播放页的
   下一集预取链路未改。
-- 未改版本号、versionCode、依赖或发布元数据；未运行单元测试，测试交给用户。
-- `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。
-
-回滚：对本节对应提交执行 `git revert`。
-
-## 2026-11-18：推荐切换分集首帧图占位
-
-状态：已实现，Android debug 构建通过，待用户真机验证。
-
-- HAR 确认 `multi_video_detail/preload` 的 `video_list[].episode_cover`（并带 `cover` 兜底）
-  就是批量详情中的分集画面图；`multi_video_model` 另有 `big_thumbs` 雪碧图，但不作为
-  本次切换占位的首选数据源。
-- 批量详情写入 `DetailCache` 后，使用 `ArtworkLoader` 批量预取首集图，内存和磁盘图片缓存
-  都由现有加载器负责。
-- 推荐切换时优先从详情缓存读取 `episode_cover`，没有图片才保留黑场；不恢复推荐卡片
-  封面作为伪首帧。
-- 推荐播放切换清屏保留正在进行的图片预取任务，避免刚预取的图被页面取消。
 - 未改版本号、versionCode、依赖或发布元数据；未运行单元测试，测试交给用户。
 - `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。
 
