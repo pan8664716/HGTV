@@ -22,8 +22,9 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // 换到另一部时先和上一部彻底断开：保留稳定的 PlayerView（避免快速连切反复
     // removeAllViews / 新建 Surface 导致 FrameLayout 布局崩溃），但清空旧 Surface 内容、
     // 停止旧媒体并作废旧 work。旧作品不能再发声，新作品也不会继承旧首帧。
+    val series=recommendItems[safe]
     val switching=safe!=recommendIndex && playerView!=null
-    if(switching) resetRecommendPlaybackForSwitch()
+    if(switching) resetRecommendPlaybackForSwitch(series.cover)
     recommendIndex=safe; recommendShift=direction
     // 换剧方向与时刻：相邻预热按「用户正在走的方向」排优先级（见 [prefetchRecommendNeighbors]）。
     // 方向为 0 时（进页面第一次起播、重试同一部）不动它，沿用上一次的方向。
@@ -40,7 +41,6 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     if(slideCache.mode==com.hgtv.star.core.SlideCacheManager.Mode.FLING && BuildConfig.DEBUG) {
         android.util.Log.i("HGTV-PERF","preloadSkip reason=fling anchor=$safe")
     }
-    val series=recommendItems[safe]
     // 这一部真的上屏了：记进剧级曝光窗口（`series_id` + 归一化剧名，7 天）。
     // 这是文档 §6.7 那个 `onExpose` 的等价物——只记**上过屏**的，不记「列表里有」的。
     recommendPlaybackController.rememberShown(series)
@@ -53,7 +53,10 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     val cached=recommendDetails[series.id]
     // 硬切后没有播放层了：先在纯黑画面上显示当前作品的 loading，
     // 不能在详情缓存命中时直接带着上一部的根视图进入 playEpisode。
-    if(playerView==null) showRecommendLoading(series)
+    if(playerView==null) {
+        showRecommendCover(series.cover)
+        showRecommendLoading(series)
+    }
     val playStarted=StartupTrace.now()
     StartupTrace.mark("recommend.play.start", "index=$safe cached=${cached!=null}")
     if(cached!=null) {
@@ -144,9 +147,9 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
  * 和布局遍历交错，既可能串音，也可能触发 FrameLayout 布局异常。这里保留视图，
  * 用 ExoPlayer 的 keep-content 开关让 Surface 回到黑屏，再复用同一个播放器实例。
  */
-private fun TvMainActivity.resetRecommendPlaybackForSwitch() {
+private fun TvMainActivity.resetRecommendPlaybackForSwitch(coverUrl: String) {
     // 先盖黑，再清旧内容；顺序不能反，否则清 Surface 的一帧可能露出上一部。
-    showRecommendCover()
+    showRecommendCover(coverUrl)
     // 立即作废旧起播 work；只在后续 playEpisode 里等 generation 变化太晚，
     // 旧请求可能在这中间回来并重新挂上上一部音轨。
     generation++

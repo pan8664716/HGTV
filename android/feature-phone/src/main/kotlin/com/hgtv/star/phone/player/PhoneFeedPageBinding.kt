@@ -20,7 +20,9 @@ internal fun PhoneFeedView.attachPageImpl(
     val sameSource = targetMediaId.isNotEmpty() && targetMediaId == playerMediaId
     page.bind(series, "第${episodeIndex + 1}集")
     page.showEpisodeCover(
-        feedPlayingDetail?.episodeCover(targetMediaId).orEmpty().ifBlank { series.cover }
+        series.cover.ifBlank {
+            feedPlayingDetail?.episodeCover(targetMediaId).orEmpty()
+        }
     )
     applyPageVideoSettingsImpl(page)
     val exoSize = exo.videoSize

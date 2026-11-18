@@ -154,7 +154,11 @@ fun TvMainActivity.playEpisode(
     )
     // 详情接口的 video_list[] 自带这一集的 cover / episode_cover。换源前先显示
     // 目标集自己的封面，而不是上一集的画面；图片已在相邻预热时预取，命中时直接上屏。
-    showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
+    // 推荐流切剧先用卡片自带的 cover 兜底；正式播放换集才优先用分集封面。
+    showRecommendCover(
+        if(recommendEntry) data.series.cover
+        else data.episodeCover(targetId).ifBlank { data.series.cover }
+    )
     // 正式播放页先用 player 场景取当前集 + 后 5 集；更远的集在首帧稳定后 preload。
     // 推荐页的 20 个模型在起播 READY 后单独预取，
     // 窗口是「当前剧下一集 + 后 19 部不同剧」，消耗 10 个后补充，不能混进这里。
@@ -323,7 +327,10 @@ fun TvMainActivity.playEpisode(
     if(!reuse) {
         buildPlaybackSurface()
         // 首次进入播放页会重建根层，前面挂上的封面会被 removeAllViews 摘掉，这里补挂一次。
-        showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
+        showRecommendCover(
+            if(recommendEntry) data.series.cover
+            else data.episodeCover(targetId).ifBlank { data.series.cover }
+        )
     }
     // 触屏设备：`reuse` 那一路不重建视图，因此这三步不能只放在 `!reuse` 里面——
     // 从推荐页进正片、换清晰度之后的回到播放页都走 `reuse`，漏了就整页点不动。
