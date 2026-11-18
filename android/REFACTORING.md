@@ -62,6 +62,21 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 1.3.8 发布准备
+
+状态：release 已编译，签名校验通过，等待本地 tag 与 GitHub Release。
+
+- `versionName` 更新为 `1.3.8`，`versionCode` 从 `84` 更新为 `85`。
+- CHANGELOG 已按手机 / 平板、电视分节；README、Release 正文与更新元数据同步。
+- `:app:assembleDebug`、`:app:assembleRelease` 通过；`aapt` 确认
+  `versionName=1.3.8`、`versionCode=85`，`apksigner` v1 / v2 校验通过。
+- APK：`outputs/release-1.3.8/HGTV_1.3.8.apk`，大小 `3988171` 字节；
+  SHA-256：`e56b353f455a2ff28a2590e8171e45eac17e50b6298c00caa67afc9a0dc019de`。
+- Release 只上传 APK、`SHA256SUMS`、`update.json`，不含源码；发布 tag 将指向
+  独立空树提交，不推送源码分支。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-18：八榜、横滑导航与首页榜单
 
 状态：已实现，Android / iOS Debug 构建通过，待用户真机验证。
