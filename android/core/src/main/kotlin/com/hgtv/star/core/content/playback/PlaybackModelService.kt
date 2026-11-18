@@ -25,13 +25,8 @@ import java.util.concurrent.TimeUnit
     ): JSONObject {
         // TNC 下发候选域名；最近成功的排第一。每条实际请求独立 20 秒，候选之间不共享超时。
         val hosts=TncConfigStore.orderedApiHosts().take(AppConfig.Content.MODEL_HOST_ATTEMPTS)
-        // 播放器打开用 `multi_video_model/player` 取当前集 + 后 14 集；
-        // 单集接口只作为兼容兜底，preload 留给首帧稳定后的后台补货。
-        // 新匿名设备连续发单集请求时，第二发起会被网关静默丢弃（HTTP 200 + 0 字节）。
-        val candidates=listOf(
-            "/novel/player/video_model/v1/",
-            "/novel/player/multi_video_model/v1/"
-        )
+        // 官方前台只走 `video_model`；`multi_video_model/preload` 只负责后台补货。
+        val candidates=listOf(ContentRepository.PLAYER_MODEL_PATH)
         // 播放接口对**匿名设备**也放行（官方 App 冷启动未登录即可播放，见 HAR），
         // 前提是这台设备已在服务端注册过（见 [registerDevice]）：未注册回 `101000 服务异常`
         // 或 `200 + 0 字节`，注册后回 `code 0` + 完整播放模型。
@@ -104,7 +99,7 @@ import java.util.concurrent.TimeUnit
                     try {
                         val models=tryBatchModel(
                             "https://$host",
-                            ContentRepository.PLAYER_MODEL_PATH,
+                            ContentRepository.BATCH_MODEL_PATH,
                             "player",
                             batchIds,
                             cookie,
@@ -354,7 +349,7 @@ import java.util.concurrent.TimeUnit
         // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
         if(response.isBlank()) {
             NetLog.emit("$stage path=$path type=${playback.contentType}/${playback.videoPlatform} level=$requestLevel id=${profile["device_id"]?.takeLast(6)} bytes=0 stable=$stable")
-            // 4 档空响应先升 5 重发一次。若 5 仍为空，再按设备身份失效交给自愈流程。
+            // 空响应按 3 -> 4 -> 5 逐级重发；5 仍为空才按设备身份失效交给自愈流程。
             if(allowLevelEscalation && requestLevel<5) {
                 NetLog.retry("model_device_level",2,2,"empty model response at device_level=$deviceLevel")
                 escalateDeviceLevel()

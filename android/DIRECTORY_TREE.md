@@ -351,15 +351,15 @@ android/
 | `ContentAuthors.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentAuthors 主要包含 fun ContentRepository.authorOfImpl、fun ContentRepository.authorsOfImpl。 | fun ContentRepository.authorOfImpl、fun ContentRepository.authorsOfImpl |
 | `ContentCatalogFacade.kt` | 八榜与分类的业务门面：榜单游标分页、首页八榜并发和筛选面板缓存都在这里决定。 | fun ContentRepository.rankRaw、fun ContentRepository.rank、fun ContentRepository.homeFeed、fun ContentRepository.category、fun ContentRepository.categoryFeed |
 | `ContentDanmakuFacade.kt` | 取一集的弹幕，也就是「原 App」播放时看到的同一份数据。 | fun ContentRepository.danmaku、fun ContentRepository.danmakuRawWindow |
-| `ContentDetailFacade.kt` | 剧集详情（简介 + 分集列表）：走 App 播放侧的详情接口。 | fun ContentRepository.detail、fun ContentRepository.related |
+| `ContentDetailFacade.kt` | 剧集详情（简介 + 分集列表）：走 App 播放侧的详情接口；后台批量详情预热由推荐预加载服务承接。 | fun ContentRepository.detail、fun ContentRepository.related、fun ContentRepository.prefetchDetails |
 | `ContentDeviceFacade.kt` | @param profile 这一次注册用的设备档案；默认 ContentRepository.registerProfile。 | fun ContentRepository.registerDevice、fun ContentRepository.deviceCookiesSnapshot、fun ContentRepository.primaryCookiesSnapshot、fun ContentRepository.restoreDeviceCookies、fun ContentRepository.refreshTncAsync |
 | `ContentDeviceState.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentDeviceState 主要包含 fun ContentRepository.clearDeviceIdentityImpl、fun ContentRepository.noteDeviceRejectedImpl、fun ContentRepository.deviceCookiesSnapshotImpl、fun ContentRepository.primaryCookiesSnapshotImpl。 | fun ContentRepository.clearDeviceIdentityImpl、fun ContentRepository.noteDeviceRejectedImpl、fun ContentRepository.deviceCookiesSnapshotImpl、fun ContentRepository.primaryCookiesSnapshotImpl、fun ContentRepository.restoreDeviceCookiesImpl |
-| `ContentDeviceStateFacade.kt` | 设备身份与播放档位门面；每集重置 4 档，空响应时兼容升 5。 | fun ContentRepository.clearDeviceIdentity、fun ContentRepository.noteDeviceRejected、fun ContentRepository.beginEpisode、fun ContentRepository.escalateDeviceLevel |
+| `ContentDeviceStateFacade.kt` | 设备身份与播放档位门面；每集重置 3 档，空响应时依次兼容升到 4、5。 | fun ContentRepository.clearDeviceIdentity、fun ContentRepository.noteDeviceRejected、fun ContentRepository.beginEpisode、fun ContentRepository.escalateDeviceLevel |
 | `ContentPlaybackFacade.kt` | 用一次官方批量接口预取一组播放模型。 | fun ContentRepository.prefetchModels |
 | `ContentPrimaryIdentity.kt` | 当前唯一的主身份快照。 | class ContentPrimaryIdentity、fun ContentRepository.primaryIdentity、fun ContentRepository.recommendationValues |
 | `ContentRelated.kt` | 取「相关作品」那一栏的原始条目。 | fun ContentRepository.relatedRows |
 | `ContentRelationFacade.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentRelationFacade 主要包含 fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame。 | fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame |
-| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态；播放模型默认 4 档，空响应兼容升 5。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile、DIRECT_DEVICE_LEVEL |
+| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态；播放模型默认 3 档，空响应按 4、5 档兼容升级。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile、DIRECT_DEVICE_LEVEL |
 | `ContentSearchFacade.kt` | 搜索提示词（联想词）：App 搜索框用的那个接口。 | fun ContentRepository.suggestions、fun ContentRepository.webSuggestions、fun ContentRepository.hotSearches |
 | `ContentSearchResultsFacade.kt` | 只搜一种内容类型：联调探针仍可显式指定 tab_type。 | fun ContentRepository.search、fun ContentRepository.webSearch |
 | `ContentSigning.kt` | 同一套业务参数与设备参数，只换接口域名后重签。 | fun ContentRepository.resignForHost、fun ContentRepository.alternateApiHosts、fun ContentRepository.urlWithHost |
@@ -548,8 +548,8 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PlaybackModelService.kt` | 取一集的播放模型；查询参数按 v5 抓包顺序交给统一签名器，空响应按原设备自愈流程处理。 | fun ContentRepository.videoModelImpl、fun ContentRepository.modelQueryProfile |
-| `PlaybackParser.kt` | 播放模型、主动点集批量请求体、内联 / fallback 清晰度解析；同时兼容对象与数组形态的 `video_list`。 | object ContentPlaybackParser |
+| `PlaybackModelService.kt` | 取一集的播放模型；前台走 `video_model/v1`，后台走 `multi_video_model/preload/v1`，空响应按 3→4→5 档兼容升级。 | fun ContentRepository.videoModelImpl、fun ContentRepository.modelQueryProfile |
+| `PlaybackParser.kt` | 官方 `video_model` 单集请求体、`multi_video_model/preload` 批量请求体、内联 / fallback 清晰度解析；同时兼容对象与数组形态的 `video_list`。 | object ContentPlaybackParser |
 | `StreamCacheService.kt` | 播放地址内存 / 落盘缓存与取流；先解析模型内联 `video_list`，缺失时才请求 `fallback_api`。 | class ContentRepositoryStreamCacheEntry |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/recommend/`
@@ -557,6 +557,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `RecommendService.kt` | 官方推荐流：`bookmall/tab/v` 取“猜你喜欢”cell 首包，`bookmall/cell/change/v` 按 cell 游标续页；含曝光上报参数与统计配置刷新。 | — |
+| `RecommendPreloadService.kt` | 官方推荐详情预热：从首包 / 续页缓存内嵌详情，并按 6 部一批调用 `multi_video_detail/preload/v1`；只供后台预热，不阻塞当前播放。 | fun ContentRepository.prefetchRecommendDetailsImpl、fun ContentRepository.cacheRecommendDetails |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/search/`
 
@@ -653,7 +654,7 @@ android/
 | `PhoneFeedControls.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneFeedControls 主要包含 fun PhoneFeedView.togglePlay、fun PhoneFeedView.beginTempSpeed、fun PhoneFeedView.endTempSpeed。 | fun PhoneFeedView.togglePlay、fun PhoneFeedView.beginTempSpeed、fun PhoneFeedView.endTempSpeed |
 | `PhoneFeedData.kt` | 冷启动先铺落盘快照；首次无快照只取一个可播放条目，首帧后按页补齐列表并逐页上屏。 | fun PhoneFeedView.restoreSnapshot、fun PhoneFeedView.loadMore、fun PhoneFeedView.scheduleFeedFillAfterFirstFrame、fun PhoneFeedView.refreshAfterIdentity、fun PhoneFeedView.adoptableIndexOf |
 | `PhoneFeedListener.kt` | 每台池播放器独立挂监听；按索引更新对应页面，READY / 首帧后触发补流、首帧追踪与池状态。 | fun PhoneFeedView.attachFeedListener、fun PhoneFeedView.detachFeedListener、fun PhoneFeedView.detachAllFeedListeners |
-| `PhoneFeedMetrics.kt` | 与电视端同一套「快速划过 / 划走 / 看过」判定；推荐播放链接首次批量 20 个，消耗 10 个后补充。 | fun PhoneFeedView.settleRecommendWatch、fun PhoneFeedView.reportRecommendImpression、fun PhoneFeedView.scheduleRecommendBatchModels |
+| `PhoneFeedMetrics.kt` | 与电视端同一套「快速划过 / 划走 / 看过」判定；推荐播放链接首次批量 20 个，先批量补详情，再按播放档案补首集模型。 | fun PhoneFeedView.settleRecommendWatch、fun PhoneFeedView.reportRecommendImpression、fun PhoneFeedView.scheduleRecommendBatchModels |
 | `PhoneFeedNavigation.kt` | 进播放页。 | fun PhoneFeedView.openPlayer、fun PhoneFeedView.hideChromeForHandoff、fun PhoneFeedView.launchPlayer、fun PhoneFeedView.liveEpisodeOf |
 | `PhoneFeedPageBinding.kt` | 活动页绑定；保留上一页自己的播放器与 Surface，按新片源尺寸预置首帧比例，并先显示目标集封面。 | fun PhoneFeedView.attachPageImpl |
 | `PhoneFeedPlaybackClock.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneFeedPlaybackClock 主要包含 fun PhoneFeedView.syncDanmakuClock、fun PhoneFeedView.syncDanmakuClockNow、fun PhoneFeedView.syncProgressBarsNow、fun PhoneFeedView.startProgressTicker。 | fun PhoneFeedView.syncDanmakuClock、fun PhoneFeedView.syncDanmakuClockNow、fun PhoneFeedView.syncProgressBarsNow、fun PhoneFeedView.startProgressTicker |
@@ -870,7 +871,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `HomePage.kt` | 首页本机三栏与八个榜单剧架；栏目顺序、设置显隐和行末“查看全部”共用 HomeLayout / RankBoard。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf、fun TvMainActivity.rankShelf |
-| `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址 / 首块优先；推荐播放链接首次批量 20 个，消耗 10 个后补充，预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
+| `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址 / 首块优先；推荐播放链接首次批量 20 个，先批量补详情，再按播放档案补首集模型；预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
 | `RecommendControls.kt` | 上下键换剧；索引变化交给播放选择层先摘除旧播放层，再准备下一部；补页期间合并连续下键。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
 | `RecommendCover.kt` | 切换过渡：换作瞬间全黑，新片源真实出帧且宽高就绪后才淡出；加载期不暴露上一部旧帧，淡出完成可回调撤 loading。 | val COVER_OUT_MS、val COVER_OUT_FAST_MS、fun TvMainActivity.showRecommendCover、fun TvMainActivity.revealRecommendCover、val PICTURE_RECOVERY_LIMIT |
 | `RecommendEntry.kt` | 打开推荐页并自动播放一部推荐；冷启动按统一命名空间读取上次播放位置，无快照时先取一个可播放条目，剩余列表在首帧后补齐。 | fun TvMainActivity.openRecommend、fun TvMainActivity.resumeIndex、fun TvMainActivity.nextRecommendIndex、val RESUME_CACHE_PROBE、fun TvMainActivity.mediaCached |

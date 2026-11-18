@@ -3,6 +3,9 @@ package com.hgtv.star.tv
 
 import com.hgtv.star.core.lruPut
 import com.hgtv.star.core.detail
+import com.hgtv.star.core.DetailCache
+import com.hgtv.star.core.PlaybackProfile
+import com.hgtv.star.core.prefetchDetails
 import com.hgtv.star.core.prefetchModels
 
 /** 相邻一部的详情 / 地址 / 首块优先；播放模型批量预取晚一点再跑。 */
@@ -62,23 +65,43 @@ fun TvMainActivity.prefetchRecommendBatchModels() {
         for(series in candidates) recommendDetails[series.id]?.let { put(series.id,it) }
     }
     recommendBatchJob=recommendWarmWorker.submit {
-        val ids=linkedSetOf<String>()
-        currentNext.takeIf { it.isNotBlank() }?.let(ids::add)
+        val models=linkedMapOf<PlaybackProfile,MutableList<String>>()
+        fun addModel(id: String,playback: PlaybackProfile) {
+            if(id.isBlank()) return
+            models.getOrPut(playback) { mutableListOf() }.add(id)
+        }
+        addModel(currentNext,data.playback)
         try {
             if(!library.deviceRegistered()) registerDeviceOnce()
             val target=com.hgtv.star.core.AppConfig.Recommend.BATCH_MODEL_SIZE
+            val missingDetails=candidates.map { it.id }.filter { seriesId ->
+                known[seriesId]==null && DetailCache.load(seriesId)==null
+            }
+            if(missingDetails.isNotEmpty()) {
+                // 批量详情只做后台加速；失败时下面的单条详情仍是兼容兜底。
+                runCatching { repository.prefetchDetails(missingDetails) }
+            }
             for(series in candidates) {
-                if(ids.size>=target) break
+                if(models.values.sumOf { it.size }>=target) break
                 val item=known[series.id]
+                    ?: DetailCache.load(series.id)
                     ?: runCatching { repository.detail(series.id,includeAuthor=false) }.getOrNull()
                     ?: continue
                 val first=item.episodes.firstOrNull() ?: continue
-                if(ids.add(first) && known[series.id]==null) {
+                if(models.values.none { first in it }) {
+                    addModel(first,item.playback)
+                }
+                if(known[series.id]==null) {
                     main.post { if(!isDestroyed) recommendDetails.lruPut(RECOMMEND_DETAIL_LIMIT,series.id,item) }
                 }
             }
-            if(ids.isNotEmpty()) repository.prefetchModels(ids.toList(),data.playback)
-            if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","recommend batch models=${ids.size} currentNext=${currentNext.isNotEmpty()}")
+            models.forEach { (playback,ids) ->
+                if(ids.isNotEmpty()) repository.prefetchModels(ids.distinct(),playback)
+            }
+            if(BuildConfig.DEBUG) {
+                val count=models.values.sumOf { it.size }
+                android.util.Log.i("HGTV-PERF","recommend batch models=$count currentNext=${currentNext.isNotEmpty()}")
+            }
         } catch(_: Exception) {
             // 批量模型是后台加速，不影响当前推荐起播。
         } finally {

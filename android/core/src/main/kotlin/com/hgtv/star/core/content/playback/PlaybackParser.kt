@@ -20,13 +20,14 @@ internal object ContentPlaybackParser {
     ): String {
         val biz=JSONObject()
             .put("detail_page_version",0)
-            .put("device_level",4)
+            .put("device_level",deviceLevel.coerceIn(3,5))
             .put("disable_digg_stat",false)
             .put("disable_video_relate_book",false)
             .put("need_all_video_definition",true)
             .put("need_mp4_align",false)
             .put("use_os_player",false)
-            .put("use_server_dns",false)
+            .put("use_server_dns",true)
+            .put("use_server_dns_scene","cold_start_stage")
             .put("video_platform",1024)
         return JSONObject()
             .put("biz_param",biz)
@@ -41,36 +42,22 @@ internal object ContentPlaybackParser {
     /**
      * 用户主动点集时使用的单集播放模型请求。
      *
-     * 与后台批量预取分开：只带当前这一集，`device_level=4` 优先拿平台可解码资源，
-     * 并关闭服务端 DNS 场景，尽量缩短用户等待的首个往返。
+     * 与后台批量预取分开：只带当前这一集，使用官方 `video_model` 的单集结构。
      */
     fun directModelBody(id: String, playback: PlaybackProfile): String {
-        val biz=JSONObject()
-            .put("detail_page_version",0)
-            .put("device_level",ContentRepository.DIRECT_DEVICE_LEVEL)
-            .put("disable_digg_stat",false)
-            .put("disable_video_relate_book",false)
-            .put("need_all_video_definition",true)
-            .put("need_mp4_align",false)
-            .put("use_os_player",false)
-            .put("use_server_dns",false)
-            .put("video_platform",1024)
-        return JSONObject()
-            .put("biz_param",biz)
-            .put("dr_scene","player")
-            .put("mixed_video_id_map",JSONObject().put(
-                playback.contentType.toString(),
-                JSONArray().put(id),
-            ))
-            .toString()
+        return modelBody(
+            id,
+            ContentRepository.PLAYER_MODEL_PATH,
+            playback,
+            ContentRepository.DIRECT_DEVICE_LEVEL,
+        )
     }
 
     /**
      * 一次播放模型请求的 body。
      *
-     * `biz_param` 必须是**对象**，不是序列化后的字符串。
-     * 新路由对齐官方抓包：`content_type` 在顶层，`video_platform=3`，并带 `source=1`。
-     * 老路由仍使用 `mixed_video_id_map` 与 Mixed=1024；preload 额外带 `dr_scene=preload`。
+     * 官方前台 `video_model` 使用顶层 `video_id` / `content_type`；
+     * `video_platform` 来自详情，不再使用旧 mixed map 结构。
      */
     fun modelBody(
         id: String,
@@ -78,27 +65,24 @@ internal object ContentPlaybackParser {
         playback: PlaybackProfile,
         deviceLevel: Int,
     ): String {
-        val newRoute=!path.contains("multi_video_model")
         val biz=JSONObject()
-            .put("detail_page_version",0).put("device_level",4).put("disable_digg_stat",false)
-            .put("need_all_video_definition",true).put("need_mp4_align",false)
-            .put("use_os_player",false).put("use_server_dns",false)
-        return if(newRoute) {
-            biz.put("disable_video_relate_book",false).put("from_video_id","")
-                .put("source",1).put("video_platform",playback.videoPlatform)
-            JSONObject()
-                .put("video_id",id)
-                .put("content_type",playback.contentType)
-                .put("biz_param",biz)
-                .toString()
-        } else {
-            biz.put("disable_video_relate_book",false).put("video_platform",1024)
-            JSONObject()
-                .put("biz_param",biz)
-                .put("mixed_video_id_map",JSONObject().put(playback.contentType.toString(),JSONArray().put(id)))
-                .apply { if(path.contains("/preload/")) put("dr_scene","preload") }
-                .toString()
-        }
+            .put("detail_page_version",0)
+            .put("device_level",deviceLevel.coerceIn(3,5))
+            .put("disable_digg_stat",false)
+            .put("disable_video_relate_book",false)
+            .put("from_video_id","")
+            .put("need_all_video_definition",true)
+            .put("need_mp4_align",false)
+            .put("use_os_player",false)
+            .put("use_server_dns",true)
+            .put("use_server_dns_scene","cold_start_stage")
+            .put("source",4)
+            .put("video_platform",playback.videoPlatform)
+        return JSONObject()
+            .put("video_id",id)
+            .put("content_type",playback.contentType)
+            .put("biz_param",biz)
+            .toString()
     }
 
     fun parseBatchModels(data: JSONObject,ids: List<String>): Map<String,JSONObject> {

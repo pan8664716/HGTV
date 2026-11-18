@@ -2,6 +2,9 @@
 package com.hgtv.star.phone
 
 import com.hgtv.star.core.detail
+import com.hgtv.star.core.DetailCache
+import com.hgtv.star.core.PlaybackProfile
+import com.hgtv.star.core.prefetchDetails
 import com.hgtv.star.core.prefetchModels
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -59,26 +62,40 @@ internal fun PhoneFeedView.scheduleRecommendBatchModels(anchor: Int) {
         delay(feedFirstFrameDelay())
         if (feedHidden || anchor != feedPlayingIndex || token != feedPlayToken) return@launch
         val repo = PhoneServices.repository(view.context)
-        val ids = linkedSetOf<String>()
-        if (nextId.isNotBlank()) ids += nextId
+        val models = linkedMapOf<PlaybackProfile, MutableList<String>>()
+        fun addModel(id: String, playback: PlaybackProfile) {
+            if (id.isBlank()) return
+            models.getOrPut(playback) { mutableListOf() }.add(id)
+        }
+        addModel(nextId, data.playback)
         val target = com.hgtv.star.core.AppConfig.Recommend.BATCH_MODEL_SIZE
         withContext(Dispatchers.IO) {
+            val missingDetails=candidates.map { it.id }.filter { seriesId ->
+                DetailCache.load(seriesId)==null
+            }
+            if(missingDetails.isNotEmpty()) {
+                runCatching { repo.prefetchDetails(missingDetails) }
+            }
             for (series in candidates) {
-                if (ids.size >= target) break
-                val item = runCatching { com.hgtv.star.core.DetailCache.load(series.id) }.getOrNull()
+                if (models.values.sumOf { it.size } >= target) break
+                val item = runCatching { DetailCache.load(series.id) }.getOrNull()
                     ?: runCatching { repo.detail(series.id) }.getOrNull()
                     ?: continue
                 val first = item.episodes.firstOrNull() ?: continue
-                ids += first
+                if (models.values.none { first in it }) {
+                    addModel(first, item.playback)
+                }
             }
-            if (ids.isNotEmpty()) {
-                runCatching { repo.prefetchModels(ids.toList(), data.playback) }
+            models.forEach { (playback, ids) ->
+                if (ids.isNotEmpty()) {
+                    runCatching { repo.prefetchModels(ids.distinct(), playback) }
+                }
             }
         }
         if (com.hgtv.star.shared.BuildConfig.DEBUG) {
             android.util.Log.i(
                 "HGTV-PHONE",
-                "recommend batch models=${ids.size} anchor=$anchor",
+                "recommend batch models=${models.values.sumOf { it.size }} anchor=$anchor",
             )
         }
         if (feedRecommendBatchKey == key) {

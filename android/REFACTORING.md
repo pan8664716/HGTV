@@ -90,15 +90,32 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
-## 播放模型档位恢复为 4
+## 播放模型档位恢复为 4（历史记录，已被后续抓包对齐取代）
 
-状态：已实现，debug 构建通过，待用户真机验证。
+状态：历史记录。后续 7.4.3.32 抓包对齐已将默认档位改为 3。
 
 - 用户确认播放地址请求的 `device_level` 从 1 恢复为 4。
 - 普通 / 批量取地址默认回到 4 档，主动点集直连也使用 4 档；空响应仍按既有逻辑升到 5 档。
 - 缓存键继续区分 4 / 5 档，避免不同档位模型互相复用。
 - iOS 原本已使用 `device_level: 4`，本次未改 iOS、版本号、versionCode、依赖或目录结构。
 - `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过；未运行测试、未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-18：官方推荐预加载与播放关键路径
+
+状态：已实现，Android debug 构建通过，待用户真机验证。
+
+- 推荐首包和 `cell/change` 返回的内嵌 `video_detail` 现在统一写入 `DetailCache`；
+  推荐页点击已有详情的卡片不再重复请求单条详情。
+- 新增 `multi_video_detail/preload/v1` 后台批量预热，一次最多 6 部；电视和手机的
+  批量模型任务先补详情，再按各自的 `PlaybackProfile` 分组预取首集模型。
+- 当前播放关键路径仍只等待当前这一部：详情缓存命中直接取集，未命中才调用
+  `video_detail/v1`；模型缓存命中直接播放，未命中才调用 `video_model/v1`。
+- 前台播放模型改为官方 `video_model/v1`，后台批量改为
+  `multi_video_model/preload/v1`；默认档位改为 3，空响应依次升到 4、5。
+- 未改版本号、versionCode、依赖或发布元数据；未运行单元测试，测试交给用户。
+- `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。
 
 回滚：对本节对应提交执行 `git revert`。
 

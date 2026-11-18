@@ -208,6 +208,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             it.optInt("tab_type",Int.MIN_VALUE)==tabType
         }
             ?: throw IOException("推荐接口没有返回 tab_type=$tabType")
+        runCatching { cacheRecommendDetails(selected) }
         val items=ContentCatalogParser.officialFeedCards(selected)
         // 官方首页把整条推荐流放在一个“猜你喜欢”cell 里。tab/v 只负责首包，
         // 后续扩量必须用这个 cell 的 id/session 调 cell/change/v，继续翻 tab/v
@@ -290,6 +291,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         if(root.optInt("code",-1)!=0) throw IOException("推荐接口暂不可用")
         val payload=root.optJSONObject("data") ?: throw IOException("推荐接口结构已变化")
         val view=payload.optJSONObject("cell_view") ?: throw IOException("推荐 cell 结构已变化")
+        runCatching { cacheRecommendDetails(view) }
         val items=ContentCatalogParser.valid(
             ContentCatalogParser.officialFeedCards(view),
         ).filter { it.isRecommendableShortDrama() }
@@ -473,7 +475,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             ?.toIntOrNull()
             ?.toString()
             ?: "1080"
-        values["device_level"]="1"
+        values["device_level"]="3"
         values["stream_count"]=OFFICIAL_RECOMMEND_STREAM_COUNT
         values["recommend_extra"]=OFFICIAL_RECOMMEND_EXTRA
         values["is_video_feed_tab_first_request_cold_start"]=
@@ -544,7 +546,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             ?.toIntOrNull()
             ?.toString()
             ?: "1080"
-        values["device_level"]="1"
+        values["device_level"]="3"
         values["filter_ids"]=filterIds
         values["unlimited_selector_change_type"]="0"
         values["refresh_action_info"]=

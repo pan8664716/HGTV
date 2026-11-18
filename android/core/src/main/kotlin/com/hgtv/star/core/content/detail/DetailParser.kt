@@ -12,6 +12,17 @@ internal object ContentDetailParser {
         val root=JSONObject(raw)
         if(root.optInt("code",-1)!=0) throw IOException("剧集详情暂不可用（${root.optInt("code")}）")
         val o=root.optJSONObject("data")?.optJSONObject("video_data") ?: throw IOException("剧集详情结构已变化")
+        return parseVideoData(o,id,author)
+    }
+
+    /**
+     * 把一份 `video_data` 转成详情。
+     *
+     * 单条详情、推荐流内嵌详情和 `multi_video_detail/preload` 返回的是同一套
+     * `video_data` 结构，只是外层包装不同。统一从这里解析，详情缓存才不会出现
+     * “推荐页有、点进去又没有”的两套结果。
+     */
+    fun parseVideoData(o: JSONObject,fallbackId: String,author: () -> String): Detail {
         // 未上架的剧（预告 / 预约中）**也是正常响应**：`code 0`、封面简介齐全，
         // 只是 `episode_cnt=0`、`video_list=[]`。早先这里把空分集当异常抛，
         // 用户点开「谁让这个文盲修仙的第六季」就只看到一页错误——现在按预告详情返回。
@@ -45,6 +56,8 @@ internal object ContentDetailParser {
         val notice=runCatching { JSONArray(o.str("series_sub_title_list")) }.getOrNull()
             ?.objects()?.mapNotNull { it.str("content") }?.firstOrNull { it.contains("预告") }
             .orEmpty().ifEmpty { if(upcoming) "尚未上线" else "" }
+        val id=o.str("series_id").ifBlank { o.str("series_id_str") }.ifBlank { fallbackId }
+        if(!id.matches(Regex("[0-9]{1,30}"))) throw IOException("剧集详情缺少有效 ID")
         val series=Series(id,o.str("series_title"),cleanUrl(o.str("series_cover")),o.str("series_intro"),
             EpisodeLabel.normalize(o.str("episode_right_text")).ifEmpty { EpisodeLabel.of(count) },
             tags,author=author(),

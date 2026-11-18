@@ -34,3 +34,12 @@ fun ContentRepository.detail(
 
 fun ContentRepository.related(id: String, title: String = ""): RelatedWorks =
     relatedImpl(id,title)
+
+/**
+ * 后台批量预热推荐详情。
+ *
+ * 返回成功写入详情缓存的条数。调用方应放在 IO 线程，并允许失败后继续使用
+ * 单条 [detail] 兜底；这个函数不参与推荐首屏和当前播放的关键路径。
+ */
+fun ContentRepository.prefetchDetails(ids: List<String>): Int =
+    prefetchRecommendDetailsImpl(ids)
