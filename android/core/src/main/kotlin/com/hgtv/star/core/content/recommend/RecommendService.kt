@@ -105,7 +105,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
         val body=JSONObject()
             // 服务端字段是**字符串**（给数组会回 `expected string`，见 `categoryApi` 的说明）。
             .put("filter_ids",filterIds)
-            .put("req_scene","default")
+            .put("req_scene",categoryRequestScene(selection.genre ?: genres.singleOrNull()))
             .put("offset",offset)
             .put("need_selector_panel",false)
             .put("limit",limit)

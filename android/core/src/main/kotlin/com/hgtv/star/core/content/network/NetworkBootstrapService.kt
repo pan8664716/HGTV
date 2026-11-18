@@ -75,7 +75,7 @@ import java.io.IOException
             val valuesAt=System.nanoTime()
             val values=deviceValues(CATEGORY_VERSION_CODE,CATEGORY_VERSION_NAME)
             val signAt=System.nanoTime()
-            signer.sign(categoryApiUrl(),values,body,method="POST").withSession()
+            signer.sign(categoryApiUrl(),values,body,method="POST",gzipBody=false).withSession()
             NetLog.log(
                 "sign warm body=${body.size}B values=${(valuesAt-began)/1_000_000}ms"+
                 " sign=${(signAt-valuesAt)/1_000_000}ms total=${(System.nanoTime()-began)/1_000_000}ms"

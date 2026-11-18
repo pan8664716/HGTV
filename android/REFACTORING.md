@@ -76,11 +76,15 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
-- 分类和弹幕都已使用统一 v5 签名，并非漏加 `x-medusa`。
-- 根因是 v5 签名器把 JSON 压成 gzip，并按压缩字节生成 `Content-Encoding` 与
-  `x-ss-stub`；两个调用点却重新发送未压缩 JSON，导致 body 与签名摘要不一致。
-- 分类改为发送签名器返回的压缩 body；弹幕改为复用完整签名请求，不再清空
-  `x-ss-stub`。失败响应此前分别为 HTTP 200 空 body 和 `110001`。
+- 2026-11-18 抓包确认：分类路径是
+  `/reading/distribution/category/landpage/v:version/`，旧 `/v/` 已返回空 body。
+- 分类和 `comment_source=601` 热弹幕都发送未压缩 JSON；v5 六头必须按这份原始
+  body 计算。分类保留明文 MD5 `x-ss-stub`，热弹幕按官方请求发送空摘要。
+- 分类 `req_scene` 按体裁使用 `comic_series` / `ai_series` / `default`；筛选面板改为
+  独立 `only_panel` 请求，内容请求固定 `only_content`。
+- 弹幕查询版本统一为 `74332 / 7.4.3.32`；此前手机端错误使用
+  `72232 / 7.2.2.32`。
+- 换域重签会保留原请求是否 gzip，避免分类 / 热弹幕在重试时改变 body 编码。
 - `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug`
   通过；未改版本号、versionCode、依赖或目录结构，未运行测试，未推送。
 

@@ -36,7 +36,7 @@ internal object ContentCatalogParser {
     }
 
     /**
-     * `select_items`：每个维度都是数组，未选中的维度不传（与接口的「全部」等价）。
+     * `select_items`：每个维度都是数组，未选中的维度传空数组。
      * `genre` 始终传一个值：分类页与官方 App 一样始终停在一个体裁上。
      */
     fun categorySelectItems(
@@ -48,14 +48,24 @@ internal object ContentCatalogParser {
         // [genres] 非空时用它替代 [CategorySelection.genre]：推荐页的「推荐范围」可以同时开好几类，
         // 接口的 `genre` 本来就是数组（分类页始终只传一个，走的是下面这条空列表分支）。
         val picked=genres.ifEmpty { listOfNotNull(selection.genre) }
-        val select=JSONObject().put("genre",JSONArray().apply { picked.forEach { put(it) } })
+        // 官方分类请求会把所有维度都显式序列化成数组；未选中的维度传空数组。
+        val select=JSONObject()
+            .put(CategorySelection.TYPE_EPOCH,JSONArray())
+            .put(CategorySelection.TYPE_ONLINE_TIME,JSONArray())
+            .put(CategorySelection.TYPE_GENDER,JSONArray())
+            .put(CategorySelection.TYPE_ROLE,JSONArray())
+            .put(CategorySelection.TYPE_GENRE,JSONArray().apply { picked.forEach { put(it) } })
+        if(picked.contains(CategoryGenres.COMIC)) {
+            select.put(CategorySelection.TYPE_CREATION_STATUS,JSONArray())
+        }
+        select
+            .put(CategorySelection.TYPE_SORT,JSONArray().apply { sort?.let { put(it) } })
+            .put(CategorySelection.TYPE_THEME,JSONArray())
         selection.theme?.let { select.put(CategorySelection.TYPE_THEME,JSONArray().put(it)) }
         selection.role?.let { select.put(CategorySelection.TYPE_ROLE,JSONArray().put(it)) }
         selection.epoch?.let { select.put(CategorySelection.TYPE_EPOCH,JSONArray().put(it)) }
         selection.gender?.let { select.put(CategorySelection.TYPE_GENDER,JSONArray().put(it)) }
-        // 分类页已统一移除「时间」「状态」两栏；旧缓存里即使残留值也不再发送。
-        // 排序为空 = 用户主动选择服务端推荐序；分类页默认与推荐流都传 hot_score。
-        sort?.let { select.put(CategorySelection.TYPE_SORT,JSONArray().put(it)) }
+        // 分类页已统一移除「时间」「状态」两栏；旧缓存里即使残留值也不发送非空值。
         return select
     }
 

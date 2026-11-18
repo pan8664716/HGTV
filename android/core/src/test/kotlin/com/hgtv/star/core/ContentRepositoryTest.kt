@@ -479,7 +479,7 @@ class ContentRepositoryTest {
     @Test fun `every board asks the api for its own genre and sort`() {
         val bodies=mutableListOf<JSONObject>()
         val repo=repository { request ->
-            assertEquals("/reading/distribution/category/landpage/v/",request.url.encodedPath)
+            assertEquals("/reading/distribution/category/landpage/v:version/",request.url.encodedPath)
             bodies+=requestBody(request)
             rankBody(request).toString()
         }
@@ -575,7 +575,7 @@ class ContentRepositoryTest {
      * 搜索走 **GET**，分类 / 榜单走 **POST**——两条接口对方法的要求是相反的：
      *
      * * `GET /reading/bookapi/search/tab/v`：参数全在 query 里，同一路径 POST 是 404；
-     * * `POST /reading/distribution/category/landpage/v/`：JSON body，GET 该路径是 404。
+     * * `POST /reading/distribution/category/landpage/v:version/`：JSON body。
      *
      * 签名不覆盖 HTTP 方法，所以方法必须由调用方显式钉住（[Signer.Request.method]），
      * 不能靠「有没有 body」去猜。
@@ -657,7 +657,7 @@ class ContentRepositoryTest {
     }
 
     /**
-     * 分类目录走 App 分类接口（`/reading/distribution/category/landpage/v/`，要签名）：
+     * 分类目录走 App 分类接口（`/reading/distribution/category/landpage/v:version/`，要签名）：
      * 翻页靠 body 里的 `offset`，分类与小类靠 `select_items` 的 `genre` + `category_dim_theme`，
      * `has_more` 决定还有没有下一页，且没有名次与热度。
      */
@@ -678,7 +678,7 @@ class ContentRepositoryTest {
         val comic=CategoryCatalog.groups.first()
         val tag=comic.tags[1]
         val first=repo.category(tag.path)
-        assertEquals("/reading/distribution/category/landpage/v/",requests[0].url.encodedPath)
+        assertEquals("/reading/distribution/category/landpage/v:version/",requests[0].url.encodedPath)
         assertEquals("玄幻漫剧",first.items.single().title)
         assertEquals("9 集",first.items.single().badge)
         assertTrue("has_more=true 还有下一页",first.hasMore)

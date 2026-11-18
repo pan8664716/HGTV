@@ -174,5 +174,12 @@ data class CategorySelection(
     }
 }
 
+/** 分类接口的 `req_scene`：漫剧 / AI 剧按体裁区分，真人和其他情况用 default。 */
+internal fun categoryRequestScene(genre: String?): String = when(genre) {
+    CategoryGenres.AI -> "ai_series"
+    CategoryGenres.COMIC -> "comic_series"
+    else -> "default"
+}
+
 /** 分类页一次请求的落地结果：内容一页 + （可选）整份筛选面板。 */
 data class CategoryFeed(val page: CatalogPage, val panel: CategoryPanel?)

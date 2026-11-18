@@ -18,11 +18,8 @@ internal fun ContentRepository.danmakuValuesImpl(): LinkedHashMap<String,String>
     if(identity["device_id"].isNullOrBlank() || identity["iid"].isNullOrBlank()) {
         throw DeviceNotRegisteredException("弹幕设备身份尚未注册")
     }
-    val tv=tvDeviceProfile.isNotEmpty()
     val profile=deviceProfileImpl()
-    val versionCode=if(tv) "74332" else "72232"
-    val versionName=if(tv) "7.4.3.32" else "7.2.2.32"
-    return buildValues(profile,versionCode,versionName)
+    return buildValues(profile,"74332","7.4.3.32")
 }
 
 internal fun ContentRepository.searchValuesImpl(): LinkedHashMap<String,String> {

@@ -107,13 +107,16 @@ internal data class ContentRepositoryDanmakuPage(
                     values,
                     payload,
                     deviceOverride=values,
+                    // 热弹幕采样接口发送未压缩 JSON，六头必须按同一份原始 body 计算。
+                    gzipBody=false,
                 )
                 val headers=signed.headers.toMutableMap()
                 headers["comment-source"]=ContentRepository.HOT_COMMENT_SOURCE.toString()
                 headers["server-channel"]=ContentRepository.HOT_SERVER_CHANNEL.toString()
+                // 官方 source=601 热弹幕请求使用空摘要。
+                headers["x-ss-stub"]=""
                 val raw=text(
                     signed.url,
-                    // v5 body 是 gzip；保留签名器生成的 Content-Encoding、body 和 x-ss-stub。
                     signed.copy(headers=headers),
                     userAgentProfile=values,
                 )

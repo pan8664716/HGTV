@@ -330,6 +330,7 @@ class Signer(
      * 签名一条请求。
      *
      * [deviceOverride] 非空时，**这一次**签名用它的档案（query 参数仍以 [values] 为准）。
+     * [gzipBody] 默认压缩 JSON；分类和热弹幕按官方抓包传 `false`，签名仍覆盖原始 body。
      *
      * 为什么需要：[values] 里的 `device_id` 与 [device] 必须一致，否则 `x-medusa`
      * 会把旧 id 编进密文，服务端看到 query 与密文不一致就回 `110001`。
@@ -339,9 +340,10 @@ class Signer(
         values: Map<String,String>,
         body: ByteArray? = null,
         method: String? = null,
-        deviceOverride: Map<String,String>? = null
+        deviceOverride: Map<String,String>? = null,
+        gzipBody: Boolean = true,
     ): Request {
-        if(mobileV5) return signV5(base, values, body, method, clock(), deviceOverride)
+        if(mobileV5) return signV5(base, values, body, method, clock(), deviceOverride, gzipBody)
         val d=LinkedHashMap(device).apply {
             deviceOverride?.let(::putAll)
         }.filterValues { it.isNotBlank() }
@@ -386,15 +388,16 @@ class Signer(
         body: ByteArray? = null,
         now: Long = clock(),
     ): Request {
-        return signV5(base, values, body, "POST", now, null)
+        return signV5(base, values, body, "POST", now, null, gzipBody=true)
     }
 
     /**
      * Unified v5 signer for every content/account request.
      *
      * Unlike the legacy path this does not add `ts`, always emits the six
-     * security headers, and stores the MD5 of the gzip-encoded body in
-     * `x-ss-stub`. A body that is already gzip-encoded is left untouched.
+     * security headers, and stores the MD5 of the body actually sent in
+     * `x-ss-stub`. [gzipBody] controls whether a plain body is compressed;
+     * a body that is already gzip-encoded is always left untouched.
      */
     private fun signV5(
         base: String,
@@ -403,11 +406,12 @@ class Signer(
         method: String?,
         now: Long,
         deviceOverride: Map<String,String>?,
+        gzipBody: Boolean,
     ): Request {
         val d = LinkedHashMap(device).apply {
             deviceOverride?.let(::putAll)
         }.filterValues { it.isNotBlank() }
-        val encodedBody = encodeV5Body(body)
+        val encodedBody = encodeV5Body(body, gzipBody)
         val ts = (now / 1000).toInt()
         for (offset in 0..1023) {
             val ticket = now + offset
@@ -439,7 +443,7 @@ class Signer(
             )
             if (encodedBody != null) {
                 headers["Content-Type"] = "application/json; charset=utf-8"
-                headers["Content-Encoding"] = "gzip"
+                if (encodedBody.isGzip()) headers["Content-Encoding"] = "gzip"
                 headers["x-reading-request"] = "$ticket-${rand().toUInt()}"
                 headers["x-ss-stub"] = digest("MD5", encodedBody).hex().uppercase()
             }
@@ -453,13 +457,16 @@ class Signer(
         error("无法生成 v5 请求签名")
     }
 
-    private fun encodeV5Body(body: ByteArray?): ByteArray? {
+    private fun encodeV5Body(body: ByteArray?, gzipBody: Boolean): ByteArray? {
         if (body == null) return null
-        if (body.size >= 2 && body[0] == 0x1f.toByte() && body[1] == 0x8b.toByte()) return body
+        if (body.isGzip() || !gzipBody) return body
         return ByteArrayOutputStream().also { out ->
             GZIPOutputStream(out).use { it.write(body) }
         }.toByteArray()
     }
+
+    private fun ByteArray.isGzip(): Boolean =
+        size >= 2 && this[0] == 0x1f.toByte() && this[1] == 0x8b.toByte()
 
     companion object {
         private val sharedMedusaStates = HashMap<String, AutonomousState>()

@@ -33,7 +33,7 @@ data class CategoryGroup(val label: String, val path: String, val genre: String,
  *
  * 具体做法可以这么复现（改这张表时照做一遍）：
  *
- * 1. 真人：`POST /reading/distribution/category/landpage/v/` 带
+ * 1. 真人：`POST /reading/distribution/category/landpage/v:version/` 带
  *    `{"need_selector_panel":true,"select_items":{"genre":["short_play"]}}`，取 `selector_rows` 里
  *    `type=category_dim_theme / category_dim_role / category_dim_epoch` 的三行；
  * 2. 漫剧 / AI剧：同一个接口、`genre=["comic_series"]` / `["ai_series"]`、`sort=["hot_score"]`、

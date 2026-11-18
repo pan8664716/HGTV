@@ -13,7 +13,17 @@ internal fun ContentRepository.resignForHost(
         if(name!="ts" && name!="_rticket") parsed.queryParameter(name)?.let { values[name]=it }
     }
     val base=parsed.newBuilder().scheme("https").host(host).query(null).build().toString()
-    val next=signer.sign(base,values,signed.body,signed.method,deviceOverride=profile)
+    val gzipBody=signed.headers.any { (key,value) ->
+        key.equals("Content-Encoding",ignoreCase=true) && value.equals("gzip",ignoreCase=true)
+    }
+    val next=signer.sign(
+        base,
+        values,
+        signed.body,
+        signed.method,
+        deviceOverride=profile,
+        gzipBody=gzipBody,
+    )
     val preserved=signed.headers.filterKeys {
         it.equals("Cookie",ignoreCase=true) ||
             it.equals("x-tt-token",ignoreCase=true) ||

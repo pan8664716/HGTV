@@ -154,7 +154,7 @@ import java.io.IOException
     }
 
     /**
-     * 分类接口：`POST /reading/distribution/category/landpage/v/`。
+     * 分类接口：`POST /reading/distribution/category/landpage/v:version/`。
      *
      * **2026-10-21 起要签名**（早先只带 User-Agent / Accept / Content-Type 三个头就能用，
      * 现在缺签名头一律回空响应，见 [categoryApiRaw]）。不需要登录态。参数要点：
@@ -181,13 +181,13 @@ import java.io.IOException
         val limit=CATEGORY_PAGE_SIZE
         val body=JSONObject()
             .put("filter_ids","")
-            .put("req_scene","default")
+            .put("req_scene",categoryRequestScene(selection.genre))
             .put("offset",categoryOffset(page))
-            .put("need_selector_panel",needPanel)
+            .put("need_selector_panel",false)
             .put("limit",limit)
             .put("select_items",select)
             .put("session_id","")
-            .put("req_type",if(needPanel) "default" else "only_content")
+            .put("req_type","only_content")
             .put("client_req_type",3)
         val data=JSONObject(categoryApiRaw(body,if(page<=1) FIRST_PAGE_ATTEMPTS else CATEGORY_ATTEMPTS))
         if(data.optInt("code",-1)!=0) throw IOException("分类接口暂不可用")
@@ -206,14 +206,31 @@ import java.io.IOException
         val fullPage=rows.size>=limit
         val more=(serverMore || fullPage) && page<ContentRepository.MAX_CATALOG_PAGE
         val panel=if(needPanel) {
-            ContentCatalogParser.parseCategoryPanel(payload.optJSONArray("selector_rows"))
-                ?.withCatalogFilters(selection.genre)
+            runCatching { categoryPanel(selection) }.getOrNull()
+                ?: ContentCatalogParser.parseCategoryPanel(payload.optJSONArray("selector_rows"))
+                    ?.withCatalogFilters(selection.genre)
         } else null
         val ranking=positions.takeIf { it.isNotEmpty() }?.let {
             ComicRanking(it,page,"")
         }
         return CategoryFeed(CatalogPage(items,more,ranking),panel)
     }
+
+    /**
+     * 官方分类面板是独立 `only_panel` 请求，内容响应不再同时携带 `selector_rows`。
+     */
+    private fun ContentRepository.categoryPanel(selection: CategorySelection): CategoryPanel? {
+        val body=JSONObject()
+            .put("req_scene",categoryRequestScene(selection.genre))
+            .put("need_selector_panel",false)
+            .put("req_type","only_panel")
+        val data=JSONObject(categoryApiRaw(body,FIRST_PAGE_ATTEMPTS))
+        if(data.optInt("code",-1)!=0) throw IOException("分类面板暂不可用")
+        val payload=data.optJSONObject("data") ?: return null
+        return ContentCatalogParser.parseCategoryPanel(payload.optJSONArray("selector_rows"))
+            ?.withCatalogFilters(selection.genre)
+    }
+
     /** 分类页 offset：每页 100 条，第 2 页从 100 开始。 */
     private fun ContentRepository.categoryOffset(page: Int): Int =
         if(page<=1) 0 else CATEGORY_FIRST_PAGE_SIZE+(page-2)*CATEGORY_PAGE_SIZE
@@ -247,7 +264,14 @@ import java.io.IOException
                 // 分类 / 榜单这条只认 POST + JSON body（GET 该路径回 404）。
                 val signAt=System.nanoTime()
                 val values=recommendationValues(identity)
-                val signed=signer.sign(categoryApiUrl(),values,payload,method="POST")
+                // 官方分类请求是未压缩 JSON，x-ss-stub 与 v5 六头都按这份原始 body 计算。
+                val signed=signer.sign(
+                    categoryApiUrl(),
+                    values,
+                    payload,
+                    method="POST",
+                    gzipBody=false,
+                )
                     .withRecommendationSession(identity)
                 if(NetLog.timing) {
                     NetLog.log("sign ${signed.url.substringAfter("//").substringBefore("/")} body=${payload.size}B took=${(System.nanoTime()-signAt)/1_000_000}ms")
@@ -313,7 +337,7 @@ import java.io.IOException
     }
 
     internal fun ContentRepository.categoryApiUrl(): String =
-        "https://${videoHost()}/reading/distribution/category/landpage/v/"
+        "https://${videoHost()}/reading/distribution/category/landpage/v:version/"
 
     internal fun ContentRepository.rankApiUrl(): String =
         "https://${videoHost()}/reading/bookapi/bookmall/cell/change/v:version/"
