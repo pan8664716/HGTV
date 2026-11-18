@@ -45,6 +45,13 @@ internal fun Detail.recommendCoverUrl(): String =
  * 上也一定生效；盖住期间不参与焦点、不拦截按键（推荐页的按键本来都由 `dispatchKeyEvent` 消化）。
  */
 fun TvMainActivity.showRecommendCover(imageUrl: String?=null) {
+    if(BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-PERF",
+            "coverShow image=${if(imageUrl.isNullOrBlank()) 0 else 1} "+
+                "hash=${imageUrl.orEmpty().hashCode()} existing=${if(recommendCover!=null) 1 else 0}",
+        )
+    }
     // 推进令牌会取消上一轮尚未完成的淡出，保证这次换作不会被上一部提前揭开。
     recommendCoverToken++
     val existing=recommendCover
@@ -53,6 +60,7 @@ fun TvMainActivity.showRecommendCover(imageUrl: String?=null) {
         // 画面层可能在两次换剧之间被重建过（整棵树换掉），这时把这一层重新挂回去。
         if(existing.parent==null) attachRecommendCoverView(existing)
         existing.animate().cancel()
+        existing.visibility=View.VISIBLE
         existing.alpha=1f
         if(existing is ImageView) {
             if(imageUrl.isNullOrBlank()) existing.setImageDrawable(null)
@@ -135,6 +143,13 @@ fun TvMainActivity.recoverRecommendPicture(reason: String) {
  */
 fun TvMainActivity.revealRecommendCover(onRevealed: (() -> Unit)? = null) {
     val cover=recommendCover
+    if(BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-PERF",
+            "coverReveal visible=${if(cover?.visibility==View.VISIBLE) 1 else 0} "+
+                "alpha=${cover?.alpha ?: -1f}",
+        )
+    }
     if(cover==null) {
         onRevealed?.invoke()
         return
@@ -167,12 +182,9 @@ fun TvMainActivity.revealRecommendCover(onRevealed: (() -> Unit)? = null) {
  */
 private fun TvMainActivity.attachRecommendCoverView(cover: View) {
     (cover.parent as? android.view.ViewGroup)?.removeView(cover)
-    // 黑场挂在 root 上（**不进画面之外那一层**）：那一层会跟着画面转 90°，
-    // 黑场进去也会跟着转，转过去之后四个角会露出没盖住的画面。
-    // 它是一整屏封面（无图时黑底），挂在 root 上盖住全屏就够了。
-    //
-    // 插在画面那一层**之前**：画面被黑场盖住，而压在画面上的剧名 / 进度 / 控制条
-    // 仍然看得见（过渡期间用户还在看「换到第几部了」）。
+    // 必须挂在 root，而不是 PlayerView 里面：推荐切换时 PlayerView 会在新源准备期间
+    // 保持不可见，挂在它里面的封面也会一起消失。插在 overlayLayer 之前，剧名 / 进度条
+    // 仍然压在 cover 上方；SurfaceView 使用默认 Z 序，窗口内的普通 View 可以盖住它。
     val layer=overlayLayer
     val index=if(layer!=null && layer.parent===root) root.indexOfChild(layer) else root.childCount
     root.addView(cover,index.coerceIn(0,root.childCount),FrameLayout.LayoutParams(-1,-1))
@@ -194,6 +206,12 @@ fun TvMainActivity.reattachRecommendCover() {
 /** 立刻收掉过渡黑场（离开推荐页、切到整屏提示、重建画面时用）。 */
 fun TvMainActivity.dismissRecommendCover() {
     recommendCoverToken++
+    if(BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-PERF",
+            "coverDismiss shownMs=${if(recommendCoverShownAt==0L) 0 else android.os.SystemClock.elapsedRealtime()-recommendCoverShownAt}",
+        )
+    }
     recommendCover?.let { cover ->
         cover.animate().cancel()
         (cover.parent as? android.view.ViewGroup)?.removeView(cover)

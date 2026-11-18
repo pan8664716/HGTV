@@ -2,7 +2,7 @@
 
 > 基线提交：`140665f89ea816e4a38da50d3aa9428ecb722ead`
 > 重构分支：`refactor/from-140665f`
-> 最后更新：2026-11-18
+> 最后更新：2026-11-19
 
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
@@ -49,6 +49,24 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 | `feature-phone/.../PhoneFeedView.kt` | 2387 |
 | `feature-tv/.../player/PlaybackController.kt` | 2232 |
 | `shared/.../Library.kt` | 2027 |
+
+## TV 推荐切换封面被隐藏与 Surface 重建修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现场日志同时出现 `cover memoryHit` 和长时间黑屏，证明封面位图已经命中，问题在显示层。
+- 相邻切换曾把整个 `PlayerView` 设为 `INVISIBLE`，后来挂在它内部的封面也一起隐藏；
+  现固定把过渡封面挂在 root 层，位于播放层之上、信息浮层之下。
+- 推荐切换不再执行 `playerView.player=null`，也不再隐藏 PlayerView。播放器继续使用
+  同一个 SurfaceView，只停止并清空媒体；旧帧由 root 封面遮住，避免电视 ROM 反复创建
+  同名 Surface 图层造成亮暗闪烁。
+- 保留 `setKeepContentOnPlayerReset(false)` 清理旧内容，新源挂载时恢复 keep-content；
+  仍不使用 TextureView。
+- `ArtworkLoader` 保留 DEBUG 下的 request / memoryHit / diskHit / applied / failed 日志，
+  便于后续只看 logcat 判断是缓存未命中还是 View 层被遮挡。
+- 未改版本号、versionCode、依赖或目录结构；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
 
 ## 推荐流与正式播放分集封面过渡修复
 

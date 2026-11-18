@@ -26,6 +26,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     val series=recommendItems[safe]
     val cachedDetail=recommendDetails[series.id] ?: runCatching { DetailCache.load(series.id) }.getOrNull()
     val cachedCover=cachedDetail?.recommendCoverUrl().orEmpty()
+    if(cachedDetail!=null) prefetchRecommendCovers(listOf(cachedDetail))
     if(BuildConfig.DEBUG) {
         android.util.Log.i(
             "HGTV-PERF",
@@ -63,8 +64,9 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // 硬切后没有播放层了：先在纯黑画面上显示当前作品的 loading，
     // 不能在详情缓存命中时直接带着上一部的根视图进入 playEpisode。
     if(playerView==null) {
-        showRecommendCover(cachedCover)
         showRecommendLoading(series)
+        // showRecommendLoading 会重建 root 并主动撤掉旧 cover；图片必须在它之后挂。
+        showRecommendCover(cachedCover)
     }
     val playStarted=StartupTrace.now()
     StartupTrace.mark("recommend.play.start", "index=$safe cached=${cached!=null}")
@@ -134,6 +136,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
                 }
                 // 同上：后台只把详情收进缓存，起播留给回到前台那一次。
                 if(!foreground) return@post
+                prefetchRecommendCovers(listOf(data))
                 showRecommendCover(data.recommendCoverUrl())
                 startRecommendEpisode(data,position,autoplay)
             }.onFailure { problem ->
@@ -172,11 +175,11 @@ private fun TvMainActivity.resetRecommendPlaybackForSwitch(coverUrl: String?=nul
     playerListener=null
     view?.setKeepContentOnPlayerReset(false)
     view?.setShutterBackgroundColor(android.graphics.Color.BLACK)
-    view?.player=null
     p?.let { runCatching { it.pause(); it.stop(); it.clearMediaItems() } }
-    // player 保持 detach，旧 Surface 也先不可见；等新源准备完成时再由 playEpisode
-    // 重新挂回 player 并恢复可见。这样加载期没有上一帧的可见窗口。
-    view?.visibility=View.INVISIBLE
+    // PlayerView / SurfaceView 保持挂载。推荐切换时反复解绑再挂回会在电视 ROM 上
+    // 产生两个同名 Surface 图层，用户看到的就是亮暗闪烁。旧帧由 root 上的封面盖住，
+    // 播放器本身只清空媒体，不再销毁 Surface。
+    view?.visibility=View.VISIBLE
     playbackReady=false
     playbackSessionState.beginSession()
     video?.let { runCatching { it.close() } }
