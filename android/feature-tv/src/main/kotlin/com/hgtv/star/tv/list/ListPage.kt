@@ -683,6 +683,13 @@ fun TvMainActivity.showCatalog(
                             homeView.firstCard()?.requestFocus()
                             if(homeView.firstCard()!=null) homeFocusRequested=true
                         }
+                    } else if(homeView.rebindShelves(shelves)) {
+                        // 栏目与卡片数没变，只是换了一批剧：就地重绑，不拆视图。
+                        // 冷启动「快照先铺、网络后到」走的就是这一支，页面不会再整页重铺。
+                        if(requestHomeFocus && !homeView.hasFocus()) {
+                            homeView.firstCard()?.requestFocus()
+                            if(homeView.firstCard()!=null) homeFocusRequested=true
+                        }
                     } else {
                         homeView.updateShelves(shelves,requestFocus=homeView.hasFocus() || requestHomeFocus)
                         if(requestHomeFocus && homeView.firstCard()!=null) homeFocusRequested=true

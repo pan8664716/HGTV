@@ -89,6 +89,13 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
             home.firstCard()?.requestFocus()
             if(home.firstCard()!=null) homeFocusRequested=true
         }
+    } else if(cachedHome!=null && home.rebindShelves(shelves)) {
+        // 复用的那棵卡片树栏目没变、只是换了一批剧：就地重绑，同样不重建。
+        home.onSettled?.invoke(home.scrollY())
+        if(canRequestFocus && !home.hasFocus()) {
+            home.firstCard()?.requestFocus()
+            if(home.firstCard()!=null) homeFocusRequested=true
+        }
     } else {
         home.render(shelves,catalogFocus,canRequestFocus || home.hasFocus(),homePosition)
         if(canRequestFocus && home.firstCard()!=null) homeFocusRequested=true
@@ -264,6 +271,8 @@ fun TvMainActivity.refreshLibraryCards(changedId: String,removed: Boolean=false)
         }.toSet()
         val existing=home.cardKeys()
         if(structural==existing) { home.refreshEntries(shelves); return }
+        // 栏目与卡片数没变、只是换了一批剧：就地重绑，不拆视图（冷启动网络回包走这一支）。
+        if(home.rebindShelves(shelves)) return
         // 结构变了才重建，而且**不抢焦点**（见类头的焦点原则）。
         home.updateShelves(shelves)
         return
@@ -403,7 +412,7 @@ fun TvMainActivity.refreshFavoriteLabels() {
         val shelves=homeShelves()
         if(shelves.flatMap { shelf -> shelf.entries.map { "${shelf.key}:${it.series.id}" } }.toSet()==home.cardKeys())
             home.refreshEntries(shelves)
-        else home.updateShelves(shelves)
+        else if(!home.rebindShelves(shelves)) home.updateShelves(shelves)
     }
 }
 /** 窗口底色跟着主题走：启动那一帧、页面之间的空档不会闪出另一套材质。 */

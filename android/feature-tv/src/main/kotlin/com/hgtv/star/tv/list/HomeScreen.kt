@@ -62,7 +62,11 @@ class HomeScreen(
         val horizontal: Map<String, Int>
     )
 
-    private class Card(val key: String, val view: View, var entry: Entry?) {
+    /**
+     * 一张卡片。`key` 是**可变**的：数据刷新时可以就地把它重绑到另一部剧
+     * （见 [rebindShelves]），此时视图、焦点和位置都不动，只换内容。
+     */
+    private class Card(var key: String, val view: View, var entry: Entry?) {
         var image: ImageView? = null
         var poster: PosterCard? = null
         var pending = false
@@ -261,6 +265,83 @@ class HomeScreen(
     fun updateShelves(next: List<Shelf>, requestFocus: Boolean = hasFocus()) {
         val position = capturePosition()
         render(next, position.focus, requestFocus, position)
+    }
+
+    /**
+     * 数据刷新时**就地重绑**当前剧架，不拆视图、不重建卡片。
+     *
+     * 首页冷启动是「先铺本机快照，网络回包再换一批」：两次数据的**栏目和卡片数完全一样**
+     * （八个榜单各 10 张），差的只是每张卡绑的是哪一部剧。旧实现按「剧 ID 集合」判结构，
+     * 只要有任意一部换了就整页 `removeAllViews()` 重铺——用户看到的就是
+     * 「卡片全消失，再一张张长回来」，封面还要重新解码。
+     *
+     * 这里按位置重绑：视图、焦点、滚动位置、封面位图都留着，
+     * 只有内容真的变了的那几张卡会换文案与封面（封面地址没变的卡连解码都省了，
+     * 见 `PosterCardView.setCover` 的同地址短路）。还没建完的卡片（逐帧补齐窗口）
+     * 直接换掉待建数据，位置不变。
+     *
+     * 返回 false 表示结构对不上（栏目增删、卡片数变少），调用方退回 [updateShelves]。
+     */
+    fun rebindShelves(next: List<Shelf>): Boolean {
+        if (next.isEmpty() || rows.size > next.size) return false
+        // 还没建的那几栏必须真的在待建队列里；队列被清过（视图已脱离窗口）就交给整页重建。
+        if (rows.size < next.size && pendingRows.isEmpty()) return false
+        // 已经建出来的那几栏必须和新数据一一对应（栏目顺序固定，见 `HomeLayout.columns`）。
+        for (index in rows.indices) if (rows[index].key != next[index].key) return false
+        // 目标卡片数不能少于已经建出来的：多出来的只能是行末底板，那种情形交给整页重建。
+        for (index in rows.indices) {
+            val shelf = next[index]
+            val want = shelf.entries.size + if (shelf.more != null) 1 else 0
+            if (rows[index].cards.size > want) return false
+        }
+        // 1) 已经建好的卡片按位置重绑。
+        for (index in rows.indices) {
+            val row = rows[index]
+            val shelf = next[index]
+            val posters = minOf(row.cards.size, shelf.entries.size)
+            for (column in 0 until posters) rebindCard(row.cards[column], shelf, shelf.entries[column])
+        }
+        // 2) 还没建完的卡片换成新数据：位置与数量都不变，只是绑的剧换了。
+        //    冷启动时网络回包经常正好落在「逐帧补齐」这个窗口里，少了这一步就只能退回整页重建。
+        if (pendingCards.isNotEmpty()) {
+            val replaced = pendingCards.map { pending ->
+                next.firstOrNull { it.key == pending.shelf.key }?.let { pending.copy(shelf = it) } ?: pending
+            }
+            pendingCards.clear()
+            pendingCards.addAll(replaced)
+        }
+        if (pendingRows.isNotEmpty()) {
+            pendingRows.clear()
+            pendingRows.addAll(next.drop(rows.size))
+        }
+        shelves = next
+        wireFocus()
+        loadNearbySelection()
+        return true
+    }
+
+    private fun rebindCard(card: Card, shelf: Shelf, entry: Entry) {
+        val oldKey = card.key
+        val newKey = "${shelf.key}:${entry.series.id}"
+        card.entry = entry
+        card.key = newKey
+        card.view.tag = newKey
+        card.poster?.bind(
+            entry.series,
+            entry.label,
+            badgeFor(entry),
+            entry.progress,
+            false,
+            seasonBadge = true,
+            heatServerText = entry.heat,
+            preferStatus = shelf.key == "history",
+            hideTags = shelf.key == "history",
+        )
+        if (oldKey != newKey) {
+            cards.remove(oldKey)
+            cards[newKey] = card
+            if (lastFocus == oldKey) lastFocus = newKey
+        }
     }
 
     fun updateEntry(shelfKey: String, entry: Entry): Boolean {
@@ -597,13 +678,15 @@ class HomeScreen(
                 hideTags = shelf.key == "history",
             )
         val view = card.view
-        view.tag = key
+        // 所有回调都读 `card.key` 而不是这里捕获的 `key`：数据刷新时 [rebindShelves]
+        // 会把同一张卡片重绑到另一部剧，捕获的旧键会让「记住焦点」「长按菜单」落到上一部。
+        view.tag = card.key
         view.setOnFocusChangeListener { _, focused ->
             card.poster?.setFocused(focused)
             card.repaint(focused)
             if (focused) {
-                lastFocus = key
-                remember(key)
+                lastFocus = card.key
+                remember(card.key)
                 if (!restoring) {
                     loadNearbySelection()
                     if (lastRow != shelf.key)
@@ -616,8 +699,8 @@ class HomeScreen(
             }
         }
         view.setOnClickListener {
-            lastFocus = key
-            remember(key)
+            lastFocus = card.key
+            remember(card.key)
             card.entry?.let { open(it.series, it.resume) } ?: moreAction?.invoke()
         }
         view.setOnKeyListener { _, code, event ->
@@ -626,16 +709,16 @@ class HomeScreen(
                 val first = rows.firstOrNull() ?: return@setOnKeyListener false
                 if (first.key != shelf.key) false
                 else {
-                    lastFocus = key
-                    remember(key)
+                    lastFocus = card.key
+                    remember(card.key)
                     onHeadUp?.invoke() ?: false
                 }
             }
         }
         if (entry != null) {
             view.setOnLongClickListener {
-                lastFocus = key
-                remember(key)
+                lastFocus = card.key
+                remember(card.key)
                 card.entry?.let { actions(it.series, view, shelf.key) }
                 true
             }
@@ -643,8 +726,8 @@ class HomeScreen(
                 when {
                     code == KeyEvent.KEYCODE_MENU -> {
                         if (event.action == KeyEvent.ACTION_UP) {
-                            lastFocus = key
-                            remember(key)
+                            lastFocus = card.key
+                            remember(card.key)
                             card.entry?.let { actions(it.series, target, shelf.key) }
                         }
                         true
@@ -652,8 +735,8 @@ class HomeScreen(
                     code == KeyEvent.KEYCODE_DPAD_RIGHT && event.action == KeyEvent.ACTION_DOWN &&
                         event.repeatCount == 0 && rowCards.lastOrNull { it.entry != null } === card ->
                         shelves.firstOrNull { it.key == shelf.key }?.more?.let { go ->
-                            lastFocus = key
-                            remember(key)
+                            lastFocus = card.key
+                            remember(card.key)
                             go()
                             true
                         } ?: false
