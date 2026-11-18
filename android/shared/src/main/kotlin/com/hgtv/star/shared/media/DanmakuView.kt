@@ -62,6 +62,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         const val LINE_POOL_LIMIT=AppConfig.Danmaku.LINE_POOL_LIMIT
         const val LOW_END_SURFACE_MAX_WIDTH=AppConfig.Danmaku.LOW_END_SURFACE_MAX_WIDTH
         const val LOW_END_SURFACE_MAX_HEIGHT=AppConfig.Danmaku.LOW_END_SURFACE_MAX_HEIGHT
+        /** 挂起弹幕等开播的最长时间：超时（长缓冲 / 暂停播放）也铺开，避免永远空白。 */
+        const val TRANSITION_RELEASE_TIMEOUT_MS=5_000L
     }
 
     private class Line {
@@ -314,6 +316,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private var clockBaseAt=0L
     private var clockSpeed=1f
     private var clockRunning=false
+    /** 本集是否已经真正开播过一次（running=true 到过）。挂起弹幕等的就是这个信号。 */
+    private var hasStartedPlayback=false
     private var transitionHold=false
     private var transitionBaseMs=0L
     private var transitionBaseAt=0L
@@ -346,7 +350,9 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         clockBaseAt=SystemClock.elapsedRealtime()
         clockSpeed=speed.coerceIn(0.25f,4f)
         clockRunning=running
-        if(transitionHold) {
+        if(running) hasStartedPlayback=true
+        val timedOut=SystemClock.elapsedRealtime()-transitionBaseAt>=TRANSITION_RELEASE_TIMEOUT_MS
+        if(transitionHold && (hasStartedPlayback || (timedOut && pendingDanmaku!=null))) {
             transitionClockReady=true
             pendingDanmaku?.let { items ->
                 pendingDanmaku=null
@@ -386,6 +392,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         transitionHold=true
         transitionClockReady=false
         pendingDanmaku=null
+        // 新的一集要重新等它自己的开播信号；不能继承上一集的 hasStartedPlayback。
+        hasStartedPlayback=false
         requestFrame()
     }
 
@@ -452,6 +460,12 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
      */
     fun appendDanmaku(items: List<Danmaku>) {
         if(items.isEmpty()) return
+        // 挂起期间（等视频开播）后续窗口也不能绕过闸门显示，否则弹幕会先跑出来；
+        // 合并进 pendingDanmaku，等 setClock 落地时和首包一起铺开。
+        if(transitionHold) {
+            pendingDanmaku=(pendingDanmaku.orEmpty()+items).distinctBy { "${it.offsetMs}:${it.text}" }
+            return
+        }
         val merged=LinkedHashMap<String,Danmaku>()
         raw.forEach { merged["${it.offsetMs}:${it.text}"]=it }
         items.forEach { merged["${it.offsetMs}:${it.text}"]=it }
@@ -480,6 +494,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         transitionHold=false
         transitionClockReady=false
         pendingDanmaku=null
+        hasStartedPlayback=false
         raw=emptyList()
         highlights=emptyList()
         highlightCursor=0
