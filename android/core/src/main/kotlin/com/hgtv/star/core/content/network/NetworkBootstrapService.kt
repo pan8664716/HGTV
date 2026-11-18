@@ -112,15 +112,14 @@ import java.io.IOException
         device: Map<String,String>,
         anonymous: Boolean,
     ): DeviceRegister.Registered? {
-        val reqId=java.util.UUID.randomUUID().toString()
-        val body=DeviceRegister.payload(device,reqId=reqId)
+        val body=DeviceRegister.payload(device)
         val headers=DeviceRegister.headers(body,device)
         var lastFailure: Throwable?=null
         val hosts=TncConfigStore.logHosts()
         for((index,host) in hosts.withIndex()) {
             if(index>0) NetLog.retry("device_register",index+1,hosts.size,lastFailure?.message.orEmpty())
             val registered=runCatching {
-                val request=Request.Builder().url(DeviceRegister.url(device,host=host,reqId=reqId))
+                val request=Request.Builder().url(DeviceRegister.url(device,host=host))
                 headers.forEach { (key,value) -> request.header(key,value) }
                 // 换新身份必须匿名：带上 Cookie / token 的话服务端会按旧设备回同一对数字。
                 if(anonymous) request.header("X-HGTV-Anonymous","1")

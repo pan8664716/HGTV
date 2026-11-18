@@ -42,20 +42,10 @@ internal object ContentPlaybackParser {
     /**
      * 用户主动点集时使用的单集播放模型请求。
      *
-     * 兼容旧调用：只带当前一集；实际播放器入口会走下面的多 ID 重载，
-     * 对齐最新抓包的 `device_level=3` 和服务端 DNS 场景。
+     * 与后台批量预取分开：只带当前这一集，`device_level=4` 优先拿平台可解码资源，
+     * 并关闭服务端 DNS 场景，尽量缩短用户等待的首个往返。
      */
-    fun directModelBody(id: String, playback: PlaybackProfile): String =
-        directModelBody(listOf(id),playback)
-
-    /**
-     * 官方播放器场景一次带当前集和后两集。
-     *
-     * 最新 7.4.3.32 抓包里 `player` 请求使用 `device_level=3`、
-     * `use_server_dns=true` 和 `use_server_dns_scene=cold_start_stage`；
-     * 单集 body 会被平台接受一次，但后续请求容易进入异常路径。
-     */
-    fun directModelBody(ids: List<String>, playback: PlaybackProfile): String {
+    fun directModelBody(id: String, playback: PlaybackProfile): String {
         val biz=JSONObject()
             .put("detail_page_version",0)
             .put("device_level",ContentRepository.DIRECT_DEVICE_LEVEL)
@@ -64,15 +54,14 @@ internal object ContentPlaybackParser {
             .put("need_all_video_definition",true)
             .put("need_mp4_align",false)
             .put("use_os_player",false)
-            .put("use_server_dns",true)
-            .put("use_server_dns_scene","cold_start_stage")
+            .put("use_server_dns",false)
             .put("video_platform",1024)
         return JSONObject()
             .put("biz_param",biz)
             .put("dr_scene","player")
             .put("mixed_video_id_map",JSONObject().put(
                 playback.contentType.toString(),
-                JSONArray(ids),
+                JSONArray().put(id),
             ))
             .toString()
     }
@@ -94,8 +83,7 @@ internal object ContentPlaybackParser {
         val biz=JSONObject()
             .put("detail_page_version",0).put("device_level",deviceLevel).put("disable_digg_stat",false)
             .put("need_all_video_definition",true).put("need_mp4_align",false)
-            .put("use_os_player",false).put("use_server_dns",true)
-            .put("use_server_dns_scene","cold_start_stage")
+            .put("use_os_player",false).put("use_server_dns",false)
         return if(newRoute) {
             biz.put("disable_video_relate_book",false).put("from_video_id","")
                 .put("source",4).put("video_platform",playback.videoPlatform)

@@ -65,10 +65,6 @@ import java.util.concurrent.TimeUnit
                 cachedModel(id,playback,requestLevel)?.let { return it }
                 if(direct) {
                     val host=hosts.firstOrNull { it.isNotBlank() } ?: "api5-normal-sinfonlinea.fqnovel.com"
-                    val directIds=(listOf(id)+queue)
-                        .filter { it.matches(Regex("[0-9]{1,30}")) }
-                        .distinct()
-                        .take(3)
                     try {
                         val model=probeModelPath(
                             "https://$host",
@@ -76,7 +72,7 @@ import java.util.concurrent.TimeUnit
                             id,
                             cookie,
                             playback,
-                            bodyOverride=ContentPlaybackParser.directModelBody(directIds,playback),
+                            bodyOverride=ContentPlaybackParser.directModelBody(id,playback),
                             requestLevel=ContentRepository.DIRECT_DEVICE_LEVEL,
                             allowLevelEscalation=false,
                             rejectDeviceOnBlank=false,
