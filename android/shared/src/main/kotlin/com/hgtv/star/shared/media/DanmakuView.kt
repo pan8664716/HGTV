@@ -336,7 +336,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private val frameCallback=object: Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             frameScheduled=false
-            if(!surfaceReady || alpha==0f || visibility!=VISIBLE || !attachedToWindow) return
+            if(!surfaceReady || surfaceHidden || visibility!=VISIBLE || !attachedToWindow) return
             drawSurfaceFrame()
         }
     }
@@ -401,16 +401,37 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         isFocusable=false
         importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO
         visibility=VISIBLE
-        alpha=0f
+        alpha=1f
     }
 
     /**
-     * 弹幕层的「隐藏」不能改 SurfaceView 的 visibility：设为 INVISIBLE 时系统会直接销毁
-     * 它的 surface，下一次显示要重建，重建那一帧露出黑底——推荐页换剧时弹幕层跟着闪一下。
-     * 这里保持 VISIBLE、只用 alpha 透光，surface 全程活着；绘制循环在 alpha=0 时短路。
+     * 弹幕层是否处于「无内容」状态。
+     *
+     * 不能用 visibility=INVISIBLE 来隐藏 SurfaceView：系统会直接销毁它的 surface，
+     * 下次显示重建时露一帧黑底（推荐页换剧因此亮暗跳变）。也不能只设 alpha=0：
+     * 在这台 S905L3B 上 alpha 不作用于独立 Surface 图层，最后一帧会继续盖在视频上。
+     *
+     * 所以保持 VISIBLE + alpha=1，用 [clearSurfaceNow] 提交一帧全透明来「隐藏」。
+     * 绘制循环在 surfaceHidden 时不再排帧，surface 上就停在那一帧透明画面上。
      */
+    private var surfaceHidden=true
+
     private fun setSurfaceShown(show: Boolean) {
-        alpha=if(show) 1f else 0f
+        if(!show && !surfaceHidden) clearSurfaceNow()
+        surfaceHidden=!show
+        if(show) requestFrame()
+    }
+
+    /** 把 surface 擦成全透明（格式是 TRANSLUCENT，见 init）。 */
+    private fun clearSurfaceNow() {
+        val canvas=runCatching {
+            if(Build.VERSION.SDK_INT>=26) holder.lockHardwareCanvas() else holder.lockCanvas()
+        }.getOrNull() ?: return
+        try {
+            canvas.drawColor(Color.TRANSPARENT,PorterDuff.Mode.CLEAR)
+        } finally {
+            runCatching { holder.unlockCanvasAndPost(canvas) }
+        }
     }
 
     fun setDanmaku(items: List<Danmaku>) {
@@ -915,7 +936,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
      * 低配电视同样保持 60fps，空闲期不再持续做透明层重绘。
      */
     private fun scheduleNextFrame(nowMs: Long,hasActive: Boolean) {
-        if(!clockRunning || alpha==0f || visibility!=VISIBLE || !attachedToWindow || !surfaceReady) return
+        if(!clockRunning || surfaceHidden || visibility!=VISIBLE || !attachedToWindow || !surfaceReady) return
         if(hasActive) {
             requestFrame()
             return
@@ -1170,7 +1191,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     }
 
     private fun requestFrame(delayMs: Long=0L) {
-        if(!surfaceReady || alpha==0f || visibility!=VISIBLE || !attachedToWindow) return
+        if(!surfaceReady || surfaceHidden || visibility!=VISIBLE || !attachedToWindow) return
         if(frameScheduled) {
             if(delayMs>0L) return
             choreographer.removeFrameCallback(frameCallback)
