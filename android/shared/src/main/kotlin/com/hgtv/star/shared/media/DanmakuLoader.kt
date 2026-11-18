@@ -237,6 +237,16 @@ class DanmakuLoader(
         forgetClock()
     }
 
+    /**
+     * 视频真正出了首帧：放行挂起的首批弹幕，并按首帧位置对齐时钟。
+     *
+     * 必须由播放端在 onRenderedFirstFrame 调用。不能用 STATE_READY 代替——
+     * 真机上 READY 之后还可能回 BUFFERING 好几秒，提前放行会让弹幕先跑出来、出帧后再重排。
+     */
+    fun onFrameRendered(positionMs: Long) {
+        target()?.markFrameRendered(positionMs)
+    }
+
     /** 把播放位置 / 播放状态 / 倍速推给弹幕层（每帧只读，不回调播放器）。 */
     fun syncClock(positionMs: Long, running: Boolean, speed: Float) {
         if (positionMs == clockAt && running == runningState && speed == clockSpeedState) return

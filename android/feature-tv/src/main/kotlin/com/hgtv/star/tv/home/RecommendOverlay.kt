@@ -227,10 +227,14 @@ fun TvMainActivity.updateRecommendOverlay() {
     // 手指正在拖：这一秒的刷新不能把进度条与时间顶回播放器报的位置（同正式播放的 `scrubbing`）。
     if(recommendScrubbing) return
     // 进度与时间先刷：与正式播放同一套读数（拖动合并窗里显示目标位置）。
+    // 画面还没真正出帧时，ExoPlayer 的 currentPosition 会在短暂 READY 阶段报出 1~2 秒的
+    // 虚假位置，随后回 buffering 又归零——进度条读出来就是「先进一两秒、开播又回0」。
+    // 统一按出帧闸门：没出帧就当 0，与「正在缓冲」的提示一致。
     val duration=p?.duration?.coerceAtLeast(0) ?: 0L
-    val position=pendingSeek ?: p?.currentPosition ?: 0L
+    val pictureUp=pictureUpNow()
+    val position=if(pictureUp) (pendingSeek ?: p?.currentPosition ?: 0L) else 0L
     recommendProgress?.progress=if(duration>0) position.toFloat()/duration else 0f
-    recommendProgress?.bufferedProgress=if(duration>0) {
+    recommendProgress?.bufferedProgress=if(duration>0 && pictureUp) {
         (p?.bufferedPosition ?: 0L).coerceIn(0,duration).toFloat()/duration
     } else 0f
     recommendSpan?.let { line ->

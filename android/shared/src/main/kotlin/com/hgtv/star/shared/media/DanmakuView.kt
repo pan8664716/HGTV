@@ -316,8 +316,6 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private var clockBaseAt=0L
     private var clockSpeed=1f
     private var clockRunning=false
-    /** 本集是否已经真正开播过一次（running=true 到过）。挂起弹幕等的就是这个信号。 */
-    private var hasStartedPlayback=false
     private var transitionHold=false
     private var transitionBaseMs=0L
     private var transitionBaseAt=0L
@@ -345,23 +343,48 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         }
     }
 
+    /**
+     * 本集视频是否已经真正出过首帧。弹幕首批就等这个信号——比 STATE_READY 可靠：
+     * 真机上出现过 READY 1ms 后又回 BUFFERING、6 秒后才真正出帧的情况，
+     * 若认 READY 弹幕会提前铺开、出帧后再重排，看起来就是「先跑出来又清空重跑」。
+     */
+    private var frameRendered=false
+
     fun setClock(positionMs: Long,running: Boolean,speed: Float=clockSpeed) {
         clockBaseMs=positionMs.coerceAtLeast(0)
         clockBaseAt=SystemClock.elapsedRealtime()
         clockSpeed=speed.coerceIn(0.25f,4f)
         clockRunning=running
-        if(running) hasStartedPlayback=true
-        val timedOut=SystemClock.elapsedRealtime()-transitionBaseAt>=TRANSITION_RELEASE_TIMEOUT_MS
-        if(transitionHold && (hasStartedPlayback || (timedOut && pendingDanmaku!=null))) {
-            transitionClockReady=true
-            pendingDanmaku?.let { items ->
-                pendingDanmaku=null
-                transitionHold=false
-                transitionClockReady=false
-                replaceDanmaku(items)
-            }
-        }
+        tryReleaseTransition()
         requestFrame()
+    }
+
+    /**
+     * 视频真正出了首帧：此时才放行挂起的弹幕。
+     * [positionMs] 用首帧那一刻的播放位置对齐，避免弹幕从 0 开始而画面已经走到别处。
+     */
+    fun markFrameRendered(positionMs: Long) {
+        frameRendered=true
+        if(positionMs>=0L) {
+            clockBaseMs=positionMs
+            clockBaseAt=SystemClock.elapsedRealtime()
+        }
+        tryReleaseTransition()
+        requestFrame()
+    }
+
+    /** 挂起的弹幕在「已出首帧」或「超时兜底」后铺开。 */
+    private fun tryReleaseTransition() {
+        if(!transitionHold) return
+        val timedOut=SystemClock.elapsedRealtime()-transitionBaseAt>=TRANSITION_RELEASE_TIMEOUT_MS
+        if(!frameRendered && !(timedOut && pendingDanmaku!=null)) return
+        val items=pendingDanmaku
+        pendingDanmaku=null
+        transitionHold=false
+        transitionClockReady=false
+        // 首帧已出但这一集可能压根没弹幕（pending 为空）：也要结束过渡，
+        // 否则 clockPositionMillis 会一直走 transition 分支，时钟停在过去。
+        if(items!=null) replaceDanmaku(items)
     }
 
     fun clockPositionMillis(): Long {
@@ -392,8 +415,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         transitionHold=true
         transitionClockReady=false
         pendingDanmaku=null
-        // 新的一集要重新等它自己的开播信号；不能继承上一集的 hasStartedPlayback。
-        hasStartedPlayback=false
+        // 新的一集要重新等它自己的首帧；不能继承上一集的 frameRendered。
+        frameRendered=false
         requestFrame()
     }
 
@@ -443,7 +466,9 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     }
 
     fun setDanmaku(items: List<Danmaku>) {
-        if(transitionHold && !transitionClockReady) {
+        // 首帧还没出：挂起等 markFrameRendered 放行。
+        // 首帧已出但弹幕晚到（网络慢于画面）：直接铺开，此时不会再有第二次首帧回调。
+        if(transitionHold && !transitionClockReady && !frameRendered) {
             pendingDanmaku=items
             return
         }
@@ -462,7 +487,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         if(items.isEmpty()) return
         // 挂起期间（等视频开播）后续窗口也不能绕过闸门显示，否则弹幕会先跑出来；
         // 合并进 pendingDanmaku，等 setClock 落地时和首包一起铺开。
-        if(transitionHold) {
+        if(transitionHold && !frameRendered) {
             pendingDanmaku=(pendingDanmaku.orEmpty()+items).distinctBy { "${it.offsetMs}:${it.text}" }
             return
         }
@@ -494,7 +519,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         transitionHold=false
         transitionClockReady=false
         pendingDanmaku=null
-        hasStartedPlayback=false
+        frameRendered=false
         raw=emptyList()
         highlights=emptyList()
         highlightCursor=0

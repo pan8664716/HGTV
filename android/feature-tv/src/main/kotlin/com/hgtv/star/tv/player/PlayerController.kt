@@ -814,6 +814,9 @@ fun TvMainActivity.playEpisode(
                     " cap=${playbackMaxQuality}P plan=${playbackSessionState.lastReason?.name ?: "-"}"+
                     " codec=${PlaybackDiag.codecFamily} res=${PlaybackDiag.resolution}"+
                     " dev=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
+                // 画面真的上屏了才放行弹幕：READY 后还可能回 buffering 好几秒，
+                // 那时放行会让弹幕先跑、出帧后再清空重排（Phone / TV 同源）。
+                danmakuLoader.onFrameRendered(p.currentPosition)
                 syncDanmakuClock()
                 // 推荐页：时长一确定就把进度条右侧那段时间填上，不等下一次每秒 tick——
                 // 否则刚打开的那一两秒是「--:-- / --:--」，与点击唤出来的那一版不一致。

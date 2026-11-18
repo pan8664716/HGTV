@@ -123,6 +123,9 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
             completeFirstFrameAspectRatio()
             hideEpisodeCover()
             PlaybackStartupTrace.firstFrame("phone.player")
+            // 画面真的上屏才放行弹幕；STATE_READY 后还可能回 buffering，
+            // 那时放行会让弹幕先跑、出帧后再清空重排（与 TV 端同一闸门）。
+            playerDanmakuLoader.onFrameRendered(player?.currentPosition ?: 0L)
         }
 
         override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
