@@ -1065,7 +1065,7 @@ android/
 | `AppRuntime.kt` | TV 与手机共用的进程级运行时。 | object AppRuntime |
 | `AppSessionStore.kt` | SessionState 的落盘实现。 | class AppSessionStore |
 | `ArtworkCache.kt` | 封面磁盘缓存：存的是**已经缩到卡片尺寸的 WebP**，不是原图。 | class ArtworkCache |
-| `ArtworkLoader.kt` | 封面加载器，负责请求调度、磁盘/内存缓存、解码、预取和低内存裁剪。 | class ArtworkLoader |
+| `ArtworkLoader.kt` | 封面加载器，负责请求调度、磁盘/内存缓存、解码、预取和低内存裁剪；换页时可保留后台预取，由前台绑定接管同一任务。 | class ArtworkLoader |
 | `ArtworkTiming.kt` | 封面加载的**计时统计**（只在 debug 包里用日志看，不参与界面逻辑）。 | class ArtworkTiming |
 | `DeviceHealer.kt` | 设备身份自愈：**服务端不认这份身份**时，换一台设备重注册。 | object DeviceHealer |
 | `DeviceRegistration.kt` | 设备注册的**唯一实现**：电视与手机共用；注册后的 TNC 刷新延后到播放首帧。 | object DeviceRegistration |

@@ -115,6 +115,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 推荐滑动计划现在先批量预热目标窗口的整屏封面；电视在 `applyRecommendPlan` 派发
   详情 / 地址前执行，手机在 `onItemChanged` 后立即执行。真正切剧时封面请求复用同一
   `ArtworkLoader` 缓存任务并提升为前台优先级，不再等切过去后才下载。
+- 黑屏根因之一已修：电视 `playEpisode()` 换页时原会 `cancelPage()` 掉刚排入的封面
+  预取，随后只能重新下载。现在 `cancelPage(keepPrefetch=true)` 保留后台预取，前台
+  封面绑定接管任务 owner，已完成或进行中的图片都能继续用于过渡层。
 - 前台播放模型改为官方 `video_model/v1`，后台批量改为
   `multi_video_model/preload/v1`；默认档位改为 3，空响应依次升到 4、5。
 - 未改版本号、versionCode、依赖或发布元数据；未运行单元测试，测试交给用户。

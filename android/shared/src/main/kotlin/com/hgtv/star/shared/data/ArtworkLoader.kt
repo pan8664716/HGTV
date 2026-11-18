@@ -82,7 +82,7 @@ class ArtworkLoader(context: Context) {
         lateinit var layout: View.OnLayoutChangeListener
         lateinit var attach: View.OnAttachStateChangeListener
     }
-    private class Job(val key: Key, val owner: Long, var priority: Int, val order: Long,
+    private class Job(val key: Key, var owner: Long, var priority: Int, val order: Long,
                       var targetWidth: Int = 0, var targetHeight: Int = 0) {
         val listeners = linkedSetOf<Binding>()
         val queuedAt = android.os.SystemClock.elapsedRealtime()
@@ -305,6 +305,8 @@ class ArtworkLoader(context: Context) {
             val existing = jobs[key]
             if (existing != null) {
                 existing.listeners += binding
+                // 预取任务可能属于上一页；前台绑定接管后，完成回调必须按新 owner 放行。
+                existing.owner = binding.owner
                 if (targetWidth > 0) existing.targetWidth = targetWidth
                 if (targetHeight > 0) existing.targetHeight = targetHeight
                 if (binding.priority < existing.priority) {
@@ -369,13 +371,21 @@ class ArtworkLoader(context: Context) {
         binding.view.clear()
     }
 
-    fun cancelPage(clearMemory: Boolean = false) {
-        timing.mark(if(clearMemory) "cancelPage(clearMemory)" else "cancelPage")
+    fun cancelPage(clearMemory: Boolean = false, keepPrefetch: Boolean = false) {
+        timing.mark(
+            when {
+                clearMemory -> "cancelPage(clearMemory)"
+                keepPrefetch -> "cancelPage(keepPrefetch)"
+                else -> "cancelPage"
+            }
+        )
         owner++
         val old = activeBindings.toList()
         old.forEach { binding -> binding.view.get()?.setImageDrawable(null); unbind(binding) }
         val cancelled = synchronized(signal) {
-            jobs.values.toList().also { list -> list.forEach(::cancelLocked); signal.notifyAll() }
+            jobs.values.toList()
+                .filterNot { keepPrefetch && it.listeners.isEmpty() && it.priority == PRIORITY_PREFETCH }
+                .also { list -> list.forEach(::cancelLocked); signal.notifyAll() }
         }
         if(cancelled.isNotEmpty()) timing.pageCancel(cancelled.size)
         cancelled.forEach { it.call?.cancel() }

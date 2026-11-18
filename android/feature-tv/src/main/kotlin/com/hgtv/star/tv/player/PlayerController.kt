@@ -144,7 +144,8 @@ fun TvMainActivity.playEpisode(
     // 先取消详情页旧绑定，但保留内存缓存；随后预热当前集附近的封面。
     // 之前在这里调用 clearMemory=true，而且发生在 showRecommendCover 之后，
     // 会把刚挂上的目标集封面一起清掉，实际仍然露出黑屏。
-    artwork.cancelPage(clearMemory=false)
+    // 保留后台封面预取：它正是切换时用来盖住黑屏的那一张图，不能在这里被一起取消。
+    artwork.cancelPage(clearMemory=false,keepPrefetch=true)
     artwork.prefetchWindow(
         (selectedIndex-2..selectedIndex+10).mapNotNull { at ->
             data.episodes.getOrNull(at)?.let(data::episodeCover)
