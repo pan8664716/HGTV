@@ -13,9 +13,11 @@ internal fun TvMainActivity.bindUpdateEntry() {
     settingsUpdateButton?.setLabel(settingsUpdateLabel())
     if(show) {
         val left=nav.lastOrNull() ?: recommendIcon
-        if(left!=null) {
-            left.nextFocusRightId=updateIcon?.id ?: left.id
-            updateIcon?.nextFocusLeftId=left.id
+        val icon=updateIcon
+        if(left!=null && icon!=null) {
+            left.nextFocusRightId=icon.id
+            icon.nextFocusLeftId=left.id
+            icon.nextFocusRightId=icon.id
         }
     }
 }

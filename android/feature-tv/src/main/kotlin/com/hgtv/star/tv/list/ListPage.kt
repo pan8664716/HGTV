@@ -265,8 +265,10 @@ fun TvMainActivity.showCatalog(
     if(updateState.hasUpdate && updateLeft!=null) {
         updateLeft.nextFocusRightId=updateButton.id
         updateButton.nextFocusLeftId=updateLeft.id
+        updateButton.nextFocusRightId=updateButton.id
     } else if(updateState.hasUpdate) {
         updateButton.nextFocusLeftId=updateButton.id
+        updateButton.nextFocusRightId=updateButton.id
     }
     navIcons().forEach { it.nextFocusUpId=it.id }
     if(recommendIcon!=null && recommendHolder!=null) run {
@@ -281,7 +283,7 @@ fun TvMainActivity.showCatalog(
         if(left!==recommendIcon) left.nextFocusRightId=recommendIcon.id
     }
     if(collection=="history") {
-        val afterClear=updateIcon ?: recommendIcon ?: nav.firstOrNull()
+        val afterClear=recommendIcon ?: nav.firstOrNull()
         val right=historyClear ?: afterClear
         historyFilterEnd?.nextFocusRightId=right?.id ?: historyFilterEnd.id
         historyClear?.let { clear ->
@@ -306,7 +308,7 @@ fun TvMainActivity.showCatalog(
                 modeChips+=chip
             }
             equalChipWidths(modeChips)
-            wireChipRow(modeChips,{ modeChips[it] },updateIcon ?: recommendIcon ?: nav.firstOrNull())
+            wireChipRow(modeChips,{ modeChips[it] },recommendIcon ?: nav.firstOrNull())
             val panelHost=column().apply {
                 visibility=View.GONE
                 gravity=Gravity.CENTER_HORIZONTAL
@@ -353,7 +355,7 @@ fun TvMainActivity.showCatalog(
             chips+=chip
         }
         wireChipRow(
-            chips,{ chips[it] },if(inlineTabs) updateIcon ?: recommendIcon ?: nav.firstOrNull() else null,
+            chips,{ chips[it] },if(inlineTabs) recommendIcon ?: nav.firstOrNull() else null,
             onDown={ index ->
                 if(settingsTab!=index) { switchSettingsTab(index,focusContent=true); true } else false
             }
@@ -377,7 +379,7 @@ fun TvMainActivity.showCatalog(
             accountButtons[entry.first]=chip
             chips+=chip
         }
-        val afterChips=if(inlineHeadChips()) updateIcon ?: recommendIcon ?: nav.firstOrNull() else null
+        val afterChips=if(inlineHeadChips()) recommendIcon ?: nav.firstOrNull() else null
         wireChipRow(chips,{ chips[it] },afterChips)
         if(inlineHeadChips()) {
             chips.forEach { gapInto(filterSlot,it,lp(-2,-2),TvStyle.GAP_INLINE) }
@@ -427,7 +429,7 @@ fun TvMainActivity.showCatalog(
             rightMargin=dp(RANK_NAV_ACTION_GAP)
             filterSlot.layoutParams=this
         }
-        val afterBoards=updateIcon ?: recommendIcon ?: nav.firstOrNull()
+        val afterBoards=recommendIcon ?: nav.firstOrNull()
         wireChipRow(boardChips,{ boardChips[it] },afterBoards)
         filterSlot.addView(
             boardViewport,
@@ -473,7 +475,7 @@ fun TvMainActivity.showCatalog(
                 gapInto(genreGroup,chip,lp(-2,-2))
             }
             filterSlot.addView(genreGroup)
-            wireChipRow(genreChips,{ genreChips[it] },updateIcon ?: recommendIcon ?: nav.firstOrNull())
+            wireChipRow(genreChips,{ genreChips[it] },recommendIcon ?: nav.firstOrNull())
         }
         val panel=categoryPanel
         val rowChips=mutableListOf<MutableList<View>>()
