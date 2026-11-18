@@ -50,6 +50,25 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 | `feature-tv/.../player/PlaybackController.kt` | 2232 |
 | `shared/.../Library.kt` | 2027 |
 
+## 推荐流与正式播放分集封面过渡修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 手机竖屏播放页新增目标集封面层：正式播放换集、信息流换作、上下滑预览与
+  横屏版面都会先显示 `Detail.episodeCovers[vid]`，回退剧集封面；首帧到达后淡出。
+- 信息流相邻页预热播放器时同步挂封面；切页命中预热播放器时不会重新露出黑屏。
+- 正式播放从推荐页借用下层 Surface 时，只要播放页内部换集就立即收回本页 Surface，
+  避免下层旧画面盖住本页的封面过渡。
+- 手机播放页加载详情后预热当前集前后 10 集封面，快速连续选集优先命中内存缓存。
+- TV 原实现虽然调用了 `showRecommendCover()`，但随后 `artwork.cancelPage(clearMemory=true)`
+  会清掉刚绑定的封面与内存缓存。现在改为先取消旧绑定但保留内存缓存，再预热当前集
+  前后封面并立即显示目标集封面。
+- TV / Phone 都保留 `onRenderedFirstFrame` 撤图，并增加 READY 后逐帧心跳兜底，
+  避免少数设备不回调首帧时封面一直遮住画面。
+- 未改版本号、versionCode、依赖；未运行测试、未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 播放模型档位恢复为 4
 
 状态：已实现，debug 构建通过，待用户真机验证。

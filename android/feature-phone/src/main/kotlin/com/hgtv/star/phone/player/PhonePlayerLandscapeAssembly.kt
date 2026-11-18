@@ -33,6 +33,10 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
         phoneSize(15)
         setTypeface(typeface, android.graphics.Typeface.BOLD)
     }
+    val ghostCover = episodeCoverView(this)
+    ghost.addView(ghostCover, FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+    ))
     ghost.addView(ghostTitle, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
         Gravity.TOP or Gravity.START
@@ -53,6 +57,10 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
         PhonePlayerViewSupport.useOpaqueVideoSurface(this)
     }
     landscape.addView(video, FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+    ))
+    val cover = episodeCoverView(this)
+    landscape.addView(cover, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
     ))
 
@@ -127,6 +135,8 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     swipeLandscapeGhostTitle = ghostTitle
     playerLandscapeContainer = landscape
     playerLandscapeVideoSlot = video
+    playerLandscapeCover = cover
+    playerLandscapeGhostCover = ghostCover
     playerLandDanmakuSlot = danmaku
     playerLandLetterboxSlot = letterbox
     danmaku.onRenderStateChangedListener = { syncLandscapeLetterboxImpl() }

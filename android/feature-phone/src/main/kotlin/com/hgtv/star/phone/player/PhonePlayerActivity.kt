@@ -13,6 +13,7 @@ import android.view.ViewGroup
 import android.view.WindowManager
 import android.widget.FrameLayout
 import android.widget.GridLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.ScrollView
 import android.widget.SeekBar
@@ -119,6 +120,8 @@ class PhonePlayerActivity : PhoneActivity() {
     internal var playerLandscapeVideoSlot: PlayerView
         get()=landscapeVideo
         set(value) { landscapeVideo=value }
+    internal var playerLandscapeCover: ImageView?=null
+    internal var playerLandscapeGhostCover: ImageView?=null
     internal val playerLandscape get()=landscape
     internal val playerLandscapeVideo get()=landscapeVideo
     internal val playerLandscapeVideoInitialized get()=::landscapeVideo.isInitialized

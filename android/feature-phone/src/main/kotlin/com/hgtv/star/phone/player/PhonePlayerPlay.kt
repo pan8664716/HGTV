@@ -22,9 +22,14 @@ internal fun PhonePlayerActivity.play(
         // 上一集的帧时间不能算到这一集头上；看门狗要靠它判断新画面是否真的上屏。
         lastFrameAt = 0L
         holdFirstFrameAspectRatio()
+        // 借下层推荐页 Surface 只适合进入播放页时同一集的交接。
+        // 正式播放内部换集必须回到本页自己的 PlayerView，否则封面层在本页被隐藏，
+        // 用户会继续看到下层旧画面直到新源出帧。
+        if (playerFeedUnderlay) dropUnderlay()
     }
     index = episodeIndex
     val episodeId = d.episodes[episodeIndex]
+    showEpisodeCover(d.episodeCover(episodeId).ifBlank { d.series.cover })
     playbackCoordinator.open(
         seriesId = d.series.id,
         episodeId = episodeId,

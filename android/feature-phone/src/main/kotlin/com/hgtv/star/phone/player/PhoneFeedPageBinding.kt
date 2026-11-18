@@ -19,6 +19,9 @@ internal fun PhoneFeedView.attachPageImpl(
     val playerMediaId = runCatching { exo.currentMediaItem?.mediaId }.getOrNull().orEmpty()
     val sameSource = targetMediaId.isNotEmpty() && targetMediaId == playerMediaId
     page.bind(series, "第${episodeIndex + 1}集")
+    page.showEpisodeCover(
+        feedPlayingDetail?.episodeCover(targetMediaId).orEmpty().ifBlank { series.cover }
+    )
     applyPageVideoSettingsImpl(page)
     val exoSize = exo.videoSize
     // 换源时 exo 仍是上一路；不能拿它预置新页面的比例或黑边。

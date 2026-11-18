@@ -31,6 +31,11 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
             if (state == Player.STATE_READY) {
                 watchdog.onReady()
                 notePlaybackHealthy()
+                // 个别设备不回调 onRenderedFirstFrame：READY 后短暂兜底撤图，
+                // 避免封面一直盖着已经播放的画面。
+                root.postDelayed({
+                    if (player?.playbackState == Player.STATE_READY) hideEpisodeCover()
+                }, 600L)
             }
             if (state == Player.STATE_ENDED) {
                 // 进程级 `nextQueued` 可能比播放器列表晚一拍清掉。片尾只信
@@ -116,6 +121,7 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
             // 部分设备只回调首帧、不走逐帧心跳；首帧同样是画面已经上屏的硬证据。
             watchdog.onFrame()
             completeFirstFrameAspectRatio()
+            hideEpisodeCover()
             PlaybackStartupTrace.firstFrame("phone.player")
         }
 

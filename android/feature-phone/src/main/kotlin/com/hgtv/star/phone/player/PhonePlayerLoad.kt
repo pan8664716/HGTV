@@ -63,6 +63,13 @@ internal fun PhonePlayerActivity.load(seriesId: String) {
         val start = intent.getIntExtra(PhonePlayerActivity.EXTRA_EPISODE, -1)
             .takeIf { it in d.episodes.indices } ?: resumeIndex
         val startAt = if (start == resumeIndex) resumeAt else 0L
+        PhoneServices.artwork(activity).prefetchWindow(
+            ((start - 2)..(start + 10)).mapNotNull { at ->
+                d.episodes.getOrNull(at)?.let(d::episodeCover)
+            }.filter { it.isNotBlank() },
+            1080,
+            1920,
+        )
         playForLoad(start, startAt)
     }
 }

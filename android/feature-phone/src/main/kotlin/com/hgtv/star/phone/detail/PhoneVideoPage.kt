@@ -9,6 +9,7 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
+import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -18,6 +19,7 @@ import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.HeatLabel
 import com.hgtv.star.core.LabelStyle
 import com.hgtv.star.shared.media.DanmakuView
+import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhoneStyle
@@ -127,6 +129,20 @@ class PhoneVideoPage(
         if (underlay) visibility = GONE
         setBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
         PhonePlayerViewSupport.useOpaqueVideoSurface(this)
+    }
+
+    /**
+     * 换集过渡封面：播放器 reset / prepare 期间盖住旧帧或黑屏。
+     *
+     * 放在 PlayerView 之上、弹幕与信息层之下；首帧真正上屏后淡出。
+     */
+    private val episodeCover = ImageView(context).apply {
+        setBackgroundColor(Color.BLACK)
+        scaleType = ImageView.ScaleType.FIT_CENTER
+        visibility = GONE
+        isFocusable = false
+        isClickable = false
+        importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
 
     /**
@@ -294,6 +310,7 @@ class PhoneVideoPage(
         setBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
         danmakuView.onRenderStateChangedListener = { syncLetterboxMask() }
         addView(playerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        addView(episodeCover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // 弹幕压在画面之上（在遮罩与信息栏之前加，因此它永远在这些层下面）。
         addView(danmakuView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // 弹幕层是独立 SurfaceView；普通 View 必须在它之后加入，才能遮住它的透明挖孔。
@@ -338,6 +355,37 @@ class PhoneVideoPage(
 
         buildInfo()
         buildCenter()
+    }
+
+    /** 立即盖住目标集封面；没有封面时仍保留黑底，避免露出上一集旧帧。 */
+    internal fun showEpisodeCover(url: String) {
+        episodeCover.animate().cancel()
+        episodeCover.alpha = 1f
+        episodeCover.visibility = VISIBLE
+        if (url.isBlank()) {
+            episodeCover.setImageDrawable(null)
+            return
+        }
+        val metrics = resources.displayMetrics
+        PhoneServices.artwork(context).load(
+            episodeCover,
+            url,
+            ArtworkLoader.PRIORITY_FOCUSED,
+            width.coerceAtLeast(metrics.widthPixels),
+            height.coerceAtLeast(metrics.heightPixels),
+        )
+    }
+
+    /** 新一集首帧上屏后撤掉封面。 */
+    internal fun hideEpisodeCover() {
+        if (episodeCover.visibility != VISIBLE) return
+        episodeCover.animate().cancel()
+        episodeCover.animate().alpha(0f).setDuration(120L).withEndAction {
+            if (episodeCover.alpha == 0f) {
+                episodeCover.visibility = GONE
+                episodeCover.setImageDrawable(null)
+            }
+        }.start()
     }
 
     private fun buildInfo() {
@@ -644,6 +692,10 @@ class PhoneVideoPage(
         if (!sameSeries) {
             videoWidth = 0
             videoHeight = 0
+            episodeCover.animate().cancel()
+            episodeCover.alpha = 1f
+            episodeCover.visibility = GONE
+            episodeCover.setImageDrawable(null)
             // 换剧就清掉上一屏留下的暂停图标：ViewHolder 会被复用，`centerBox` 的状态
             // 跟着同一个 View 走。不清的话，用户在上一屏按过暂停，滑到下一屏（复用同一页）
             // 会先看到一枚暂停按钮，读起来就是「切过来是暂停的」。

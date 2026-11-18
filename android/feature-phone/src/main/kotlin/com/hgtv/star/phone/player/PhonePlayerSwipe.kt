@@ -215,9 +215,11 @@ private fun PhonePlayerActivity.prepareGhostImpl(direction: Int) {
         return
     }
     val label = "第${target + 1}集"
+    val cover = d.episodeCover(d.episodes[target]).ifBlank { d.series.cover }
     val h = slideHeightImpl().toFloat()
     if (playerLandscapeMode) {
         swipeLandscapeGhostTitle.text = "${d.series.title} $label"
+        showLandscapeGhostEpisodeCover(cover)
         swipeLandscapeGhost.translationY = if (direction > 0) h else -h
         swipeLandscapeGhost.visibility = View.VISIBLE
     } else {
@@ -226,6 +228,7 @@ private fun PhonePlayerActivity.prepareGhostImpl(direction: Int) {
             label,
             watchText = "选集 ${target + 1}/${d.episodes.size}",
         )
+        swipeGhostPage.showEpisodeCover(cover)
         swipeGhostPage.setProgress(0f)
         swipeGhostPage.setChromeVisible(playerChromeVisible)
         swipeGhostPage.translationY = if (direction > 0) h else -h

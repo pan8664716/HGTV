@@ -70,6 +70,9 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
                 reportRecommendImpression(index)
                 scheduleFeedFillAfterFirstFrame()
                 scheduleRecommendBatchModels(index)
+                postDelayed({
+                    if (index == feedPlayingIndex) feedPageAt(index)?.hideEpisodeCover()
+                }, 600L)
             }
             if (state == Player.STATE_ENDED && index == feedPlayingIndex) onEpisodeEnded(index)
         }
@@ -77,6 +80,7 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
         override fun onRenderedFirstFrame() {
             markPooledPlayerFirstFrame(index)
             if (index != feedPlayingIndex) return
+            feedPageAt(index)?.hideEpisodeCover()
             reportRecommendImpression(index)
             PlaybackStartupTrace.firstFrame("phone.feed")
             scheduleFeedFillAfterFirstFrame()

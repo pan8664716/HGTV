@@ -141,6 +141,17 @@ fun TvMainActivity.playEpisode(
     if(!recommendEntry) library.setWatched(data.series.id,false)
     val selectedIndex=index.coerceIn(0,data.episodes.lastIndex)
     val targetId=data.episodes[selectedIndex]
+    // 先取消详情页旧绑定，但保留内存缓存；随后预热当前集附近的封面。
+    // 之前在这里调用 clearMemory=true，而且发生在 showRecommendCover 之后，
+    // 会把刚挂上的目标集封面一起清掉，实际仍然露出黑屏。
+    artwork.cancelPage(clearMemory=false)
+    artwork.prefetchWindow(
+        (selectedIndex-2..selectedIndex+10).mapNotNull { at ->
+            data.episodes.getOrNull(at)?.let(data::episodeCover)
+        }.filter { it.isNotBlank() },
+        1920,
+        1080,
+    )
     // 详情接口的 video_list[] 自带这一集的 cover / episode_cover。换源前先显示
     // 目标集自己的封面，而不是上一集的画面；图片已在相邻预热时预取，命中时直接上屏。
     showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
@@ -257,7 +268,6 @@ fun TvMainActivity.playEpisode(
         seamless = seamless,
         resetEpisode = !recovering,
     ).toInt()
-    artwork.cancelPage(clearMemory=true)
     playbackHttp=claimedHttp; video=prefetched
     var firstReady=true; var firstFrame=true
     // 新片源真正 setMediaSource 的时刻：READY 后的兜底只能认这之后的新帧，
@@ -565,6 +575,15 @@ fun TvMainActivity.playEpisode(
                     // 正式播放页：首帧 READY 后还要再等缓冲填起来，才让 preload 去拉后 6 集。
                     // 这样 player 场景已经保住当前集 + 后 2 集，后台补货不会和首帧抢闸门。
                     if(screen=="player") {
+                        val coverToken=recommendCoverToken
+                        main.postDelayed({
+                            if(!isDestroyed && screen=="player" &&
+                                recommendCoverToken==coverToken &&
+                                sourceSetAt>0L &&
+                                PlaybackDiag.lastFrameAt>sourceSetAt) {
+                                revealRecommendCover()
+                            }
+                        },600L)
                         main.postDelayed({
                             val current=player
                             if(!isDestroyed && screen=="player" && current===p &&

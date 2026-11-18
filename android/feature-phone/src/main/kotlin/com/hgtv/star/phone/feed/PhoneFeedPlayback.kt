@@ -33,6 +33,7 @@ internal fun PhoneFeedView.playIndexImpl(
         0
     }
     feedPlayingIndex = index
+    feedPageAt(index)?.showEpisodeCover(series.cover)
     // 每次明确的换作都推进代次。池命中也必须作废上一轮还在飞的详情 / 地址请求。
     val token = ++feedPlayTokenSlot
     if (clearDanmakuOnSwitch && previousIndex >= 0 && previousIndex != index) {
