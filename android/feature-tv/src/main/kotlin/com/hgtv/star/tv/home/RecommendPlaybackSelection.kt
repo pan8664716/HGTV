@@ -164,9 +164,11 @@ private fun TvMainActivity.resetRecommendPlaybackForSwitch() {
     view?.setShutterBackgroundColor(android.graphics.Color.BLACK)
     view?.player=null
     p?.let { runCatching { it.pause(); it.stop(); it.clearMediaItems() } }
-    // player 保持 detach，旧 Surface 也先不可见；等新源准备完成时再由 playEpisode
-    // 重新挂回 player 并恢复可见。这样加载期没有上一帧的可见窗口。
-    view?.visibility=View.INVISIBLE
+    // player 保持 detach，但 PlayerView 本身保持 VISIBLE。
+    // SurfaceView 一旦设为 INVISIBLE，系统会直接销毁它的 surface；新源准备好再挂回来时
+    // 要先重建一层黑底（真机采样到视频层在切换那一刻消失），这就是「亮暗」里的一跳。
+    // 旧帧仍然不会露出：setKeepContentOnPlayerReset(false) 让 ExoPlayer 的 shutter 显示黑，
+    // 上面还有一整屏 recommendCover 盖着（普通 View，绘制在 SurfaceView 之上）。
     playbackReady=false
     playbackSessionState.beginSession()
     video?.let { runCatching { it.close() } }

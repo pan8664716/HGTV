@@ -91,7 +91,9 @@ class LoadingDotsView(context: Context) : View(context) {
         repeat(3) { index ->
             val phase=(progress+index/3f)%1f
             val pulse=1f-abs(phase*2f-1f)
-            paint.alpha=(90+pulse*165).toInt().coerceIn(0,255)
+            // 纯黑背景上 90→255 的脉冲会被读成整块屏幕在「亮暗亮暗」。
+            // 收窄到 150→255：三点仍在走，但不再把黑屏照得一闪一闪。
+            paint.alpha=(150+pulse*105).toInt().coerceIn(0,255)
             canvas.drawCircle(
                 startX+gap*index,
                 centerY,

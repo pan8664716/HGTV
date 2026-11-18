@@ -336,7 +336,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private val frameCallback=object: Choreographer.FrameCallback {
         override fun doFrame(frameTimeNanos: Long) {
             frameScheduled=false
-            if(!surfaceReady || visibility!=VISIBLE || !attachedToWindow) return
+            if(!surfaceReady || alpha==0f || visibility!=VISIBLE || !attachedToWindow) return
             drawSurfaceFrame()
         }
     }
@@ -400,7 +400,17 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         setZOrderMediaOverlay(true)
         isFocusable=false
         importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO
-        visibility=INVISIBLE
+        visibility=VISIBLE
+        alpha=0f
+    }
+
+    /**
+     * 弹幕层的「隐藏」不能改 SurfaceView 的 visibility：设为 INVISIBLE 时系统会直接销毁
+     * 它的 surface，下一次显示要重建，重建那一帧露出黑底——推荐页换剧时弹幕层跟着闪一下。
+     * 这里保持 VISIBLE、只用 alpha 透光，surface 全程活着；绘制循环在 alpha=0 时短路。
+     */
+    private fun setSurfaceShown(show: Boolean) {
+        alpha=if(show) 1f else 0f
     }
 
     fun setDanmaku(items: List<Danmaku>) {
@@ -432,7 +442,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         groups.forEach { if(prefetched.add(it.text)) fresh+=it.text }
         if(fresh.isNotEmpty()) emoji.prefetch(fresh)
         if(mode==DanmakuMode.HIDDEN) {
-            visibility=INVISIBLE
+            setSurfaceShown(false)
             return
         }
         val nowMs=clockPositionMillis()
@@ -440,7 +450,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         nextGroupIndex=groups.indexOfFirst { it.firstMs>=backlogCutoffMs }.let { if(it<0) groups.size else it }
         scheduleGroupsThrough(nowMs+SCHEDULE_AHEAD_MS,nowMs)
         backlogCutoffMs=Long.MIN_VALUE
-        visibility=VISIBLE
+        setSurfaceShown(true)
         requestFrame()
     }
 
@@ -520,7 +530,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         val fresh=mutableListOf<String>()
         groups.forEach { if(prefetched.add(it.text)) fresh+=it.text }
         if(fresh.isNotEmpty()) emoji.prefetch(fresh)
-        visibility=if(mode==DanmakuMode.HIDDEN || raw.isEmpty()) INVISIBLE else VISIBLE
+        setSurfaceShown(mode!=DanmakuMode.HIDDEN && raw.isNotEmpty())
         requestFrame()
     }
 
@@ -613,7 +623,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             scheduleGroupsThrough(nowMs+SCHEDULE_AHEAD_MS,nowMs)
         }
         nextSpriteRefreshAt=0L
-        visibility=if(mode==DanmakuMode.HIDDEN || raw.isEmpty()) INVISIBLE else VISIBLE
+        setSurfaceShown(mode!=DanmakuMode.HIDDEN && raw.isNotEmpty())
         requestFrame()
     }
 
@@ -905,7 +915,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
      * 低配电视同样保持 60fps，空闲期不再持续做透明层重绘。
      */
     private fun scheduleNextFrame(nowMs: Long,hasActive: Boolean) {
-        if(!clockRunning || visibility!=VISIBLE || !attachedToWindow || !surfaceReady) return
+        if(!clockRunning || alpha==0f || visibility!=VISIBLE || !attachedToWindow || !surfaceReady) return
         if(hasActive) {
             requestFrame()
             return
@@ -1160,7 +1170,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     }
 
     private fun requestFrame(delayMs: Long=0L) {
-        if(!surfaceReady || visibility!=VISIBLE || !attachedToWindow) return
+        if(!surfaceReady || alpha==0f || visibility!=VISIBLE || !attachedToWindow) return
         if(frameScheduled) {
             if(delayMs>0L) return
             choreographer.removeFrameCallback(frameCallback)

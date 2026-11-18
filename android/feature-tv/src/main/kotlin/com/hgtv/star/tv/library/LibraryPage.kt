@@ -384,8 +384,10 @@ fun TvMainActivity.hideCenterLoading() {
     centerLoadingMessage=null
     centerLoading?.let { dots -> (dots.parent as? ViewGroup)?.removeView(dots) }
     centerLoading=null
-    // 让位的那一枚按当前状态重新判一次（此时多半已经不需要显示）。
-    runCatching { syncBufferingDots() }
+    // 刚揭黑就把「正在加载《…》」换成第二枚三点「正在缓冲…」，屏幕上等于重新亮起一次，
+    // 观感就是又一轮「亮暗」。给一个短窗口：真正还要 buffering 时窗口结束照常显示。
+    // 复用缓冲抑制器，超时后它会自己调 syncBufferingDots() 恢复。
+    runCatching { suppressBufferingUi(700L) }
 }
 
 /** 整页重建之后补挂（见 [showCenterLoading] 的说明）。 */
