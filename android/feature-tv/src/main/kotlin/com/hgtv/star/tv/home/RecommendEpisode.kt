@@ -129,6 +129,12 @@ internal fun TvMainActivity.startRecommendEpisode(data: Detail,position: Long,au
     val prepared=if(fromStart && preparedFresh) recommendPrepared.remove(key) else null
     // 过期的这一份要**当场关掉**：它还握着 1MB 首块与一条传输，留着只是占内存。
     if(fromStart && !preparedFresh) recommendPrepared.remove(key)?.let { runCatching { it.close() } }
+    // `FULL` 表示内存池里仍有 2.5MB 首块。播放器取走这一份后，内存所有权已经转给
+    // `video`，池里不再有可复用项；必须降回 `META`，否则窗口补货会把「历史做过 FULL」
+    // 误判成「现在还有 FULL」，之后这一条永远不再发预热请求。
+    if(fromStart && key.isNotEmpty()) {
+        recommendStore().downgradeWarm(key,com.hgtv.star.core.CacheLevel.FULL,com.hgtv.star.core.CacheLevel.META)
+    }
     // 取走之后下标/时刻表也要跟着摘掉，否则淘汰时会对着一个已经不存在的键算分。
     if(prepared!=null || fromStart) { recommendPreparedIndex.remove(key); recommendPreparedAt.remove(key) }
     // 起播路径的命中情况：一次换剧到底靠的是内存预热、磁盘索引还是全新拉取。

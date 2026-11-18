@@ -259,13 +259,32 @@ class RemoteVideo(private val http: OkHttpClient, val info: StreamInfo, private 
         val job=headJob ?: return
         runCatching { job.join(HEAD_WAIT_MS) }
     }
+
+    /**
+     * 预热路径等同一个首块线程完整结束。
+     *
+     * [awaitHead] 有首帧预算，超时后会由播放读取自己补 Range；但预热不在用户可见的
+     * 关键路径上，不能沿用这个超时。否则 2.5MB 在慢电视上超过 3 秒时，会同时存在
+     * 原首块线程和 warm 补拉两条完全相同的 Range，既翻倍耗流量，也把双方都拖慢。
+     */
+    private fun awaitHeadComplete() {
+        val job=headJob ?: return
+        if(Thread.currentThread()===job) return
+        try {
+            job.join()
+        } catch(problem: InterruptedException) {
+            Thread.currentThread().interrupt()
+            throw IOException("视频预热已取消",problem)
+        }
+    }
     /** Bounded warm-up. Retains raw bytes so decryption still uses the absolute sample offset. */
     @Synchronized fun warm(limit: Long = WARM_BYTES): RemoteVideo {
         // 见 [headTarget]：先放大目标再 `prepare()`，1MB 只发一次 Range。
         headTarget=limit.coerceIn(HEAD_CHUNK,WARM_BYTES)
         prepare()
         val size=minOf(total,headTarget).toInt()
-        awaitHead(size.toLong())
+        // 预热是后台任务，可以等它自己完整结束；这里不能套用首帧的 3 秒超时。
+        awaitHeadComplete()
         val current=head
         if(current.size<size) {
             val more=range(current.size.toLong(),size-1L).bytes

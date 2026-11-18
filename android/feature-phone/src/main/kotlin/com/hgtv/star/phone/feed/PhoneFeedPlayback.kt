@@ -65,7 +65,7 @@ internal fun PhoneFeedView.playIndexImpl(
         direction,
         SystemClock.elapsedRealtime(),
     )
-    feedPendingPlan = feedPreloadState.slideCache.neighborWindow(index)
+    feedPendingPlan = feedPreloadState.slideCache.neighborWindow(index,direction)
     scheduleDwell()
     // 进程里如果还挂着**这部剧**的这一路（从正片退回来、视图刚被重建），先试着接。
     // 接上就什么都不做：不取详情、不取地址、不 prepare、不 seek——画面就是原来那一秒。

@@ -46,8 +46,8 @@ fun TvMainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Ca
     if(recommendStore().isWarming(key)) return false
     if(!networkAvailable()) return false
     val metered=runCatching { connectivity.isMeteredConnection() }.getOrDefault(false)
-    // 分级并发上限（文档第 7 节）：同一时刻最多 1 个完整预热 + 2 个元数据 + 3 个地址。
-    // 低端机网络只有一条通道，多开只会让**当前这一部**的首帧更慢。
+    // 分级并发上限（文档第 7 节）：WiFi 同时最多 2 个完整预热，流量网络 1 个；
+    // 元数据 / 地址预热仍按各自的更轻量额度执行。
     if(!hasWarmSlot(level,metered)) {
         if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","preloadSkip reason=slot level=$level inFlight=${recommendStore().warmingCount()}")
         return false
@@ -106,10 +106,17 @@ fun TvMainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Ca
                 // 空出来的槽位马上补上：连划时总有两条在转（见 [prefetchRecommendNeighbors]）。
                 if(recommendStore().warmingCount()<RECOMMEND_WARM_SLOTS) prefetchRecommendNeighbors(recommendIndex)
             }
-        } catch(_: Exception) {
+        } catch(problem: Exception) {
             remote?.close()
             main.post {
                 if(recommendWarmJobs.remove(key)===warm) recommendStore().finishWarm(key)
+            }
+            if(BuildConfig.DEBUG) {
+                android.util.Log.w(
+                    "HGTV-PERF",
+                    "warmFailed level=$level index=$index key=$key "+
+                        "error=${problem.javaClass.simpleName}:${problem.message.orEmpty().take(160)}",
+                )
             }
         }
     }
@@ -119,13 +126,13 @@ fun TvMainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Ca
 /**
  * 这一级还有没有并发额度（文档第 7 节的优先级表）。
  *
- * 完整预热最贵（512KB + 一次索引解析），所以只给 1 个名额：多开两个的结果是
- * 三条线程各拿三分之一带宽，谁都不够快。地址预取只有 20KB，可以多开几条。
+ * 完整预热最贵（512KB + 一次索引解析），WiFi 最多两路；再多会让每条都变慢。
+ * 流量网络仍只开一路。地址预取只有 20KB，可以多开几条。
  */
 private fun TvMainActivity.hasWarmSlot(level: com.hgtv.star.core.CacheLevel,metered: Boolean): Boolean {
     val inFlight=recommendStore().warmingCount()
     return when(level) {
-        com.hgtv.star.core.CacheLevel.FULL -> inFlight<1
+        com.hgtv.star.core.CacheLevel.FULL -> inFlight<(if(metered) RECOMMEND_WARM_SLOTS_METERED else RECOMMEND_WARM_SLOTS)
         com.hgtv.star.core.CacheLevel.META -> inFlight<(if(metered) 1 else 2)
         else -> inFlight<(if(metered) 2 else 3)
     }

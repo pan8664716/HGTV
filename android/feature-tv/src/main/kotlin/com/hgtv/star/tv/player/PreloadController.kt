@@ -83,7 +83,7 @@ private fun TvMainActivity.preloadScheduler(): com.hgtv.star.shared.feed.Preload
         anchor={ recommendIndex },
         active={ !isDestroyed && screen=="recommend" },
         gateOpen={ preloadGateOpen() },
-        plan={ slideCache.neighborWindow(recommendIndex) },
+        plan={ slideCache.neighborWindow(recommendIndex,slideCache.direction) },
         apply={ planned,reason -> applyRecommendPlan(planned,reason) },
         main=main,
     ).also { preloadSchedulerRef=it }
@@ -142,6 +142,9 @@ fun TvMainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: Strin
  */
 fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,level: CacheLevel): Boolean {
     val cached=recommendDetails[series.id]
+    if(BuildConfig.DEBUG) {
+        android.util.Log.i("HGTV-PERF","warmDispatch index=$index level=$level detail=${if(cached!=null) 1 else 0}")
+    }
     if(cached!=null) {
         return warmRecommendDetail(cached,level,index)
     }
@@ -160,6 +163,14 @@ fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int,le
                 // 仍然在窗口里才继续（用户可能已经连着换了好几部）。
                 val position=recommendItems.indexOfFirst { it.id==series.id }
                 if(position>=0 && kotlin.math.abs(position-recommendIndex)<=4) warmRecommendDetail(data,level,position)
+            }.onFailure { problem ->
+                if(BuildConfig.DEBUG) {
+                    android.util.Log.w(
+                        "HGTV-PERF",
+                        "warmDetailFailed index=$index id=${series.id} "+
+                            "error=${problem.javaClass.simpleName}:${problem.message.orEmpty().take(160)}",
+                    )
+                }
             }
         }
     }

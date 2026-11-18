@@ -172,8 +172,17 @@ class SlideCacheManager(
      * 这是用户明确要求的相邻五部窗口；不随快滑降级成地址预取，
      * 因为切换相邻视频时真正需要的是已经解码 / 可立即接管的视频首块。
      */
-    fun neighborWindow(anchor: Int): Plan {
-        val targets=(anchor-2..anchor+2).map { Target(it,CacheLevel.FULL) }
+    fun neighborWindow(anchor: Int, direction: Int = 1): Plan {
+        val step=if(direction>=0) 1 else -1
+        // 集合仍是 n-2..n+2，但派发顺序把用户下一步最可能去的相邻项放前面。
+        // 低配电视首帧后只取第一条时，不能先去拉 n-2。
+        val targets=linkedSetOf(
+            anchor+step,
+            anchor-step,
+            anchor+2*step,
+            anchor-2*step,
+            anchor,
+        ).map { Target(it,CacheLevel.FULL) }
         return Plan(anchor,Mode.NORMAL,Reason.WINDOW,targets)
     }
 

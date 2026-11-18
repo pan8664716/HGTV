@@ -31,7 +31,7 @@ fun TvMainActivity.prefetchRecommendNeighbors(index: Int,direction: Int=recommen
     // 窗口与级别由 [SlideCacheManager] 决定（非对称前后窗口 + fling 降级 + 回看提升），
     // 这里只按它给的清单发起。原先写死的「前两步 + 反方向一步」在双向滑动下有两个洞：
     // 回看方向没有货、连划时四条 1MB 互相抢带宽。
-    applyRecommendPlan(slideCache.neighborWindow(index),"window")
+    applyRecommendPlan(slideCache.neighborWindow(index,slideCache.direction),"window")
 }
 
 /** 换剧 / 进正片时作废上一部还没发完的推荐批量预取。 */

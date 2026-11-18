@@ -116,6 +116,12 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   由相邻视频首块预热负责把新画面尽快接上。正式播放页的分集封面过渡仍保留。
 - 推荐预加载窗口固定为 `n-2..n+2`，五份都是完整首块；`RemoteVideo.warm()` 默认
   保留约 2.5MB，按当前 720P 码率覆盖约 2～3 秒，当前项被播放器接管后由下一轮窗口补回。
+- 五条预热按 `n+1, n-1, n+2, n-2, n` 派发，低配电视首帧后只开第一条时优先准备
+  用户最可能切换到的 `n+1`；WiFi 同时最多两路完整预热，流量网络仍为一路。
+- 播放器取走某一条的 `RemoteVideo` 后，该键从 `FULL` 降回 `META`，避免“历史预热过”
+  被误判为“内存池现在仍有完整首块”而不再补货。
+- `RemoteVideo.warm()` 会等待自己启动的首块线程完整结束，不再在 3 秒后重复发起
+  同一条 2.5MB Range；调试日志新增 `warmDispatch` / `warmFailed` / `warmDetailFailed`。
 - 前台播放模型改为官方 `video_model/v1`，后台批量改为
   `multi_video_model/preload/v1`；默认档位改为 3，空响应依次升到 4、5。
 - 未改版本号、versionCode、依赖或发布元数据；未运行单元测试，测试交给用户。
