@@ -95,12 +95,14 @@ data class AppUpdateSource(
 
     companion object {
         private const val REPOSITORY = "pan8664716/HGTV"
-        private const val RELEASES = "https://github.com/$REPOSITORY/releases"
+        private const val GITHUB_RELEASES = "https://github.com/$REPOSITORY/releases"
+        /** 国内网络下 GitHub 直连不稳，元数据与安装包都走 gh 镜像。 */
+        private const val MIRROR = "https://gh-proxy.org/"
 
         /** 写死的唯一更新地址。没有设置入口，也没有偏好存储。 */
         val BUILT_IN = AppUpdateSource(
-            metadataUrl = "$RELEASES/latest/download/update.json",
-            downloadBaseUrl = "$RELEASES/download",
+            metadataUrl = "$MIRROR$GITHUB_RELEASES/latest/download/update.json",
+            downloadBaseUrl = "$MIRROR$GITHUB_RELEASES/download",
         )
     }
 }

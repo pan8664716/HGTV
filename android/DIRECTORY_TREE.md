@@ -1176,7 +1176,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AppUpdateController.kt` | 两端共用的更新控制器：内置写死的 GitHub 更新地址（不可由用户设置），元数据下载校验、静默检查与系统安装入口。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
+| `AppUpdateController.kt` | 两端共用的更新控制器：内置写死 GitHub 更新地址（不可由用户设置），元数据与安装包均走 gh-proxy.org 镜像，下载校验、静默检查与系统安装入口。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
 
 #### `shared/src/test/kotlin/com/hgtv/star/shared/debug/`
 
