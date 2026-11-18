@@ -89,8 +89,8 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   下载到 `filesDir/updates`，保留长度与 SHA-256 校验；安装只打开系统安装器。
 - `AppUpdateController` 是进程级单例；自动检查每次应用启动只发一次请求，TV 与 Phone
   共用同一份检查状态，用户主动点击时仍可强制重试。
-- TV 顶栏最后一枚圆形入口为「更新」，使用用户提供的上传箭头图标；发现新版只亮红点，
-  不主动弹窗；点击后显示版本说明和「下载并安装 / 安装更新」。
+- TV 顶栏最后一枚圆形入口为「更新」，使用用户提供的上传箭头图标；没有新版时整枚入口隐藏，
+  发现新版才显示圆钮和红点，不主动弹窗；点击后显示版本说明和「下载并安装 / 安装更新」。
 - Phone 在设置 → 系统高级增加「检查更新」行，发现新版显示小红点，不主动弹窗。
 - 未改版本号、versionCode、依赖或发布元数据；未运行测试、未推送。
 - `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。

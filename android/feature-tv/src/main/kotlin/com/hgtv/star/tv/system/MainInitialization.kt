@@ -84,7 +84,7 @@ internal fun TvMainActivity.initializeMainAfterFirstFrameImpl(state: Bundle?) {
     appScope.launch {
         updateController.state.collect { state ->
             updateState=state
-            bindUpdateDot()
+            bindUpdateEntry()
         }
     }
     updateController.check()

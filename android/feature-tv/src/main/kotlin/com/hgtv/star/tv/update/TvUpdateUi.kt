@@ -4,9 +4,19 @@ package com.hgtv.star.tv
 import android.view.View
 import com.hgtv.star.tv.R
 
-/** TV 顶栏更新入口的红点。 */
-internal fun TvMainActivity.bindUpdateDot() {
-    updateDot?.visibility = if (updateState.hasUpdate) View.VISIBLE else View.GONE
+/** TV 顶栏更新入口：没有新版时整枚入口隐藏，有新版时才显示并亮红点。 */
+internal fun TvMainActivity.bindUpdateEntry() {
+    val show=updateState.hasUpdate
+    updateHolder?.visibility = if(show) View.VISIBLE else View.GONE
+    updateIcon?.visibility = if(show) View.VISIBLE else View.GONE
+    updateDot?.visibility = if(show) View.VISIBLE else View.GONE
+    if(show) {
+        val left=nav.lastOrNull() ?: recommendIcon
+        if(left!=null) {
+            left.nextFocusRightId=updateIcon?.id ?: left.id
+            updateIcon?.nextFocusLeftId=left.id
+        }
+    }
 }
 
 /**

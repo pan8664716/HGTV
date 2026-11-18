@@ -86,6 +86,7 @@ class TvMainActivity: Activity() {
     val updateController by lazy { AppUpdateController.get(this) }
     var updateState=AppUpdateState()
     var updateIcon: View?=null
+    var updateHolder: View?=null
     var updateDot: View?=null
     val recommendPlaybackController by lazy {
         com.hgtv.star.shared.feature.recommend.RecommendPlaybackController(

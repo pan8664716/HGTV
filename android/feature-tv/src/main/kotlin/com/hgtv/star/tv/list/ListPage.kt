@@ -109,7 +109,7 @@ import com.hgtv.star.tv.wireChipRow
 import com.hgtv.star.tv.wireHeadNavUp
 import com.hgtv.star.tv.work
 import com.hgtv.star.tv.error
-import com.hgtv.star.tv.bindUpdateDot
+import com.hgtv.star.tv.bindUpdateEntry
 import com.hgtv.star.tv.showUpdateDialog
 
 
@@ -257,19 +257,20 @@ fun TvMainActivity.showCatalog(
         rightMargin=dp(4)
     })
     this.updateIcon=updateButton
+    this.updateHolder=updateHolder
     this.updateDot=updateDot
-    bindUpdateDot()
+    bindUpdateEntry()
     gapInto(top,updateHolder,lp(-2,-2),TvStyle.GAP_TIGHT)
     val updateLeft=nav.lastOrNull() ?: recommendIcon
-    if(updateLeft!=null) {
+    if(updateState.hasUpdate && updateLeft!=null) {
         updateLeft.nextFocusRightId=updateButton.id
         updateButton.nextFocusLeftId=updateLeft.id
-    } else {
+    } else if(updateState.hasUpdate) {
         updateButton.nextFocusLeftId=updateButton.id
     }
     navIcons().forEach { it.nextFocusUpId=it.id }
     if(recommendIcon!=null && recommendHolder!=null) run {
-        val right=nav.firstOrNull() ?: updateIcon
+        val right=nav.firstOrNull() ?: updateIcon?.takeIf { it.visibility==View.VISIBLE }
         val own=top.indexOfChild(recommendHolder)
         val left=(own-1 downTo 0).firstNotNullOfOrNull { index -> lastFocusable(top.getChildAt(index)) }
             ?: recommendIcon
