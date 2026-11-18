@@ -253,6 +253,9 @@ import java.io.IOException
                     NetLog.log("sign ${signed.url.substringAfter("//").substringBefore("/")} body=${payload.size}B took=${(System.nanoTime()-signAt)/1_000_000}ms")
                 }
                 fun send(one: Signer.Request,profile: Map<String,String>): String {
+                    // v5 签名器会把 JSON 压成 gzip，x-ss-stub 也按压缩后的字节计算。
+                    // 这里必须发送签名器返回的 body，不能重新发送未压缩的 payload。
+                    val encodedPayload=one.body ?: payload
                     val request=Request.Builder().url(one.url)
                     one.headers.forEach { (key,value) -> if(key!="User-Agent" && key!="Accept") request.header(key,value) }
                     // UA / Accept 保持与改动前一致：UA 用 App 那条（签名默认按「有 body」选视频 UA）。
@@ -261,7 +264,7 @@ import java.io.IOException
                         video = false,
                     ))
                     request.header("Accept","application/json; charset=utf-8,application/x-protobuf")
-                    request.post(payload.toRequestBody("application/json; charset=utf-8".toMediaType()))
+                    request.post(encodedPayload.toRequestBody("application/json; charset=utf-8".toMediaType()))
                     val callAt=System.nanoTime()
                     return RequestScope.execute(http.newCall(request.build())) { response ->
                         if(!response.isSuccessful) {

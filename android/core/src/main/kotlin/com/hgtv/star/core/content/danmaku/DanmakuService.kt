@@ -111,10 +111,10 @@ internal data class ContentRepositoryDanmakuPage(
                 val headers=signed.headers.toMutableMap()
                 headers["comment-source"]=ContentRepository.HOT_COMMENT_SOURCE.toString()
                 headers["server-channel"]=ContentRepository.HOT_SERVER_CHANNEL.toString()
-                headers["x-ss-stub"]=""
                 val raw=text(
                     signed.url,
-                    Signer.Request(signed.url,headers,payload),
+                    // v5 body 是 gzip；保留签名器生成的 Content-Encoding、body 和 x-ss-stub。
+                    signed.copy(headers=headers),
                     userAgentProfile=values,
                 )
                 if(raw.isBlank()) throw IOException("弹幕接口暂无响应")

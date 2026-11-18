@@ -72,6 +72,20 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 分类与弹幕 v5 请求体修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 分类和弹幕都已使用统一 v5 签名，并非漏加 `x-medusa`。
+- 根因是 v5 签名器把 JSON 压成 gzip，并按压缩字节生成 `Content-Encoding` 与
+  `x-ss-stub`；两个调用点却重新发送未压缩 JSON，导致 body 与签名摘要不一致。
+- 分类改为发送签名器返回的压缩 body；弹幕改为复用完整签名请求，不再清空
+  `x-ss-stub`。失败响应此前分别为 HTTP 200 空 body 和 `110001`。
+- `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug`
+  通过；未改版本号、versionCode、依赖或目录结构，未运行测试，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 播放模型档位恢复为 4
 
 状态：已实现，debug 构建通过，待用户真机验证。
