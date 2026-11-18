@@ -134,8 +134,6 @@ fun TvMainActivity.playEpisode(
     // 必须先冻结，再 stop/clearMediaItems：停旧媒体会让 PlayerView 收到一次 ratio=0，
     // 如果这时还没 hold，AspectRatioFrameLayout 会立刻撑满整屏，用户看到的就是拉伸首帧。
     if((screen=="player" || recommendEntry) && reuse && !keep) {
-        // 上一集首帧的静帧先盖住 PlayerView；Surface 被 stop 清掉后不会露出黑快门。
-        playerView?.showPlaybackStillFrame()
         playerView?.holdFirstFrameAspectRatio()
     }
     // 「已看完」标记只在**正式播放**里清掉。推荐页还没进正片（需求 3：进正片才算开始看），
@@ -143,6 +141,9 @@ fun TvMainActivity.playEpisode(
     if(!recommendEntry) library.setWatched(data.series.id,false)
     val selectedIndex=index.coerceIn(0,data.episodes.lastIndex)
     val targetId=data.episodes[selectedIndex]
+    // 详情接口的 video_list[] 自带这一集的 cover / episode_cover。换源前先显示
+    // 目标集自己的封面，而不是上一集的画面；图片已在相邻预热时预取，命中时直接上屏。
+    showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
     // 正式播放页先用 player 场景取当前集 + 后 5 集；更远的集在首帧稳定后 preload。
     // 推荐页的 20 个模型在起播 READY 后单独预取，
     // 窗口是「当前剧下一集 + 后 19 部不同剧」，消耗 10 个后补充，不能混进这里。
@@ -311,6 +312,8 @@ fun TvMainActivity.playEpisode(
     syncKeepScreenOn()
     if(!reuse) {
         buildPlaybackSurface()
+        // 首次进入播放页会重建根层，前面挂上的封面会被 removeAllViews 摘掉，这里补挂一次。
+        showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
     }
     // 触屏设备：`reuse` 那一路不重建视图，因此这三步不能只放在 `!reuse` 里面——
     // 从推荐页进正片、换清晰度之后的回到播放页都走 `reuse`，漏了就整页点不动。
@@ -751,16 +754,7 @@ fun TvMainActivity.playEpisode(
                     "HGTV-RATIO",
                     "renderedFirstFrame view=${playerView?.javaClass?.simpleName} video=${videoWidth}x$videoHeight"
                 )
-                val waitingForAspectLayout=playerView?.completeFirstFrameAspectRatio()==true
-                if(!waitingForAspectLayout) playerView?.clearPlaybackFreezeFrame()
-                // 首帧回调当下 Surface 可能还没真正合成出像素；稍后再取静帧，
-                // 否则会把一张全黑图缓存成下一次换源的过渡画面。
-                val captureView=playerView
-                main.postDelayed({
-                    if(captureView===playerView && captureView?.isAttachedToWindow==true) {
-                        captureView?.capturePlaybackStillFrame()
-                    }
-                },300L)
+                playerView?.completeFirstFrameAspectRatio()
                 PlaybackStartupTrace.firstFrame(
                     "tv.player",
                     "recommend=$recommendEntry preloaded=${prefetched!=null} reused=$reuse",
@@ -769,6 +763,7 @@ fun TvMainActivity.playEpisode(
                 // 首帧的尺寸已经确定：竖屏短剧全屏在这之后再落一次
                 //（`onVideoSizeChanged` 在个别软解 / 隧道模式下不一定先于首帧回调，这里兜一次底）。
                 applyResizeMode()
+                if(screen=="player") revealRecommendCover()
                 // 推荐页：新一集的第一帧真的上屏了，过渡黑场这时候才淡出（见 [revealRecommendCover]）。
                 // 用「出帧」而不是 READY：READY 只代表解出了轨道，画面可能还要等几百毫秒。
                 if(screen=="recommend") {
@@ -860,7 +855,6 @@ fun TvMainActivity.playEpisode(
                     "view=${playerView?.javaClass?.simpleName} " +
                     "source=${remote.info.videoWidth}x${remote.info.videoHeight}"
             )
-            if(reuse) playerView?.showPlaybackStillFrame()
             playerView?.holdFirstFrameAspectRatio()
         }
         // 起点一次设定：`setMediaSource(source, startPositionMs)` 内部先摘空旧项、

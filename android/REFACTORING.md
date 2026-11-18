@@ -62,28 +62,19 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
-## TV 推荐页换剧静帧过渡
+## TV 分集封面过渡与相邻预取
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
 - 历史 logcat 显示推荐页换剧从 `player.stop()` 到新首帧约 `428–578ms`，
   期间 `exo_shutter` 可见，用户看到的是整段黑屏后突然起播。
-- TV 播放层新增单帧静帧缓存：每次 `onRenderedFirstFrame` 后通过 SurfaceView
-  `PixelCopy`（API 24+）或 TextureView `bitmap` 保存一帧，不连续截屏；静帧延后
-  300ms 采集，避免首帧回调时 Surface 尚未合成出像素。
-- 采样只校验 PlayerView 仍是当前实例且已挂载，不再依赖播放会话的
-  `active()`；后者会在推荐换剧过程中提前失效，导致静帧根本没有采集。
-- 采集结果会抽样拒绝近全黑画面，避免把空 Surface 缓存成下一次换源的过渡图；
-  新静帧无效时继续保留上一张有效画面。
-- 静帧视图挂在播放页根层而不是 `PlayerView` 内部，并提高 `translationZ`，
-  避免被 SurfaceView / PlayerView 内部层级盖住；调试日志用 `freezeDraw`
-  确认静帧确实完成一次绘制。
-- `PixelCopy` 回调必须校验静帧的父容器是 PlayerView 的父容器（播放页根层）；
-  早期误写成 `target.parent === PlayerView`，会把成功截帧全部丢弃。
-- 下一次推荐页换剧时，在 `stop/clearMediaItems` 前立即盖上静帧；新首帧到达且
-  比例布局完成后再撤掉。横竖屏比例切换时静帧保持原尺寸，避免再次拉伸。
-- 静帧只占一张 Bitmap，替换和播放层销毁时回收；首帧回调晚于比例布局时先暂存，
-  避免把新画面按旧比例提前铺开。
+- 官方 HAR 已确认 `video_detail.data.video_data.video_list[]` 每条分集都带
+  `cover` / `episode_cover`；这两张图就是目标集自己的画面图，不需要保留上一集首帧。
+- `Detail` 新增 `episodeCovers`（分集 ID → 封面），详情解析优先取
+  `episode_cover`，回退 `cover`；`DetailCache` 同步保存，缓存版本升到 2。
+- 推荐页相邻详情预热时同时 `ArtworkLoader.prefetch` 首集封面；正式播放的下一集
+  在片尾预取窗口也提前取封面。切换时直接显示目标集封面，首帧上屏后淡出。
+- 无封面时保留黑底作为兜底；不再通过 `PixelCopy` 截上一集画面，也不复用旧静帧。
 - 未改版本号、versionCode、依赖或目录结构；未运行测试、未推送。
 
 回滚：对本节对应提交执行 `git revert`。

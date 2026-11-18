@@ -502,6 +502,11 @@ fun TvMainActivity.maybePrefetch() {
     val id=if(seasonBoundary) target.episodes.firstOrNull()
         else target.episodes.getOrNull(episodeIndex+1)
     if(id==null) return
+    // 下一集自己的封面也提前取好，片尾/手动换集时先显示目标集画面图，
+    // 不再沿用上一集的首帧。
+    target.episodeCover(id).ifBlank { target.series.cover }.takeIf { it.isNotBlank() }?.let { cover ->
+        artwork.prefetch(cover,1920,1080)
+    }
     // 键 = 集 + 上限（见 [preparedKeyFor]）：全站只有 HEVC 一种编码，不需要再区分编码族。
     val quality=playbackMaxQuality
     val key=preparedKeyFor(id)

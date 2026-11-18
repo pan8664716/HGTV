@@ -156,7 +156,16 @@ data class Detail(
     val upcoming: Boolean = false,
     val reserved: Boolean = false,
     val playback: PlaybackProfile = PlaybackProfile(),
-)
+    /**
+     * 分集 ID → 接口下发的分集封面。
+     *
+     * `video_detail` 的 `video_list[]` 每条都有 `cover` / `episode_cover`，
+     * 推荐换剧与正式播放换集时先显示目标集的这张图，首帧到达后再撤掉。
+     */
+    val episodeCovers: Map<String,String> = emptyMap(),
+) {
+    fun episodeCover(episodeId: String): String = episodeCovers[episodeId].orEmpty()
+}
 
 /**
  * 简介页下方那一栏的内容：同系列各季在前（按季号升序），其余相关作品在后，已去重。

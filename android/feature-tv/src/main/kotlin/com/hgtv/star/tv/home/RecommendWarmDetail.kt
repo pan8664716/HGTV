@@ -67,6 +67,12 @@ fun TvMainActivity.warmRecommendDetail(data: Detail,level: com.hgtv.star.core.Ca
             val sourceCoordinator=com.hgtv.star.shared.architecture.PlaybackSourceCoordinator(source,http)
             val warmCoordinator=com.hgtv.star.shared.feed.RecommendWarmCoordinator(source,library,sourceCoordinator)
             if(!library.deviceRegistered()) { registerDeviceOnce(); source.inheritDevice(repository) }
+            // 封面比 1MB 视频首块轻得多，先发它；用户划到这一部时可以先看到目标集画面。
+            data.episodeCover(data.episodes.firstOrNull().orEmpty())
+                .ifBlank { data.series.cover }
+                .takeIf { it.isNotBlank() }?.let { cover ->
+                artwork.prefetch(cover,1920,1080)
+            }
             // 整段都在这一次预热自己的取消域里：划过去之后 `cancelRecommendWarm` 能立刻
             // 把在途的 HTTP 掐掉（否则那个线程还在读 512KB，结果没人要）。
             val prepared=warm.scope.run {

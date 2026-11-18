@@ -15,16 +15,21 @@ internal object ContentDetailParser {
         // 未上架的剧（预告 / 预约中）**也是正常响应**：`code 0`、封面简介齐全，
         // 只是 `episode_cnt=0`、`video_list=[]`。早先这里把空分集当异常抛，
         // 用户点开「谁让这个文盲修仙的第六季」就只看到一页错误——现在按预告详情返回。
-        val rows=o.optJSONArray("video_list")
-        val episodes=rows?.objects()
+        val rows=o.optJSONArray("video_list")?.objects()
             ?.sortedBy { it.optInt("vid_index",0) }
-            ?.map { it.str("vid") }
-            ?.filter { it.matches(Regex("[0-9]{1,30}")) }
-            ?.distinct()
             .orEmpty()
+        val episodes=rows
+            .map { it.str("vid") }
+            .filter { it.matches(Regex("[0-9]{1,30}")) }
+            .distinct()
+        val episodeCovers=rows.mapNotNull { row ->
+            val vid=row.str("vid")
+            val cover=cleanUrl(row.str("episode_cover").ifBlank { row.str("cover") })
+            if(vid in episodes && cover.isNotBlank()) vid to cover else null
+        }.toMap()
         // 这两个字段决定 `video_model` 的请求语义。旧缓存没有它们时用红果当前默认值；
         // 新详情必须保留接口值，不能只留下分集 vid。
-        val firstVideo=rows?.optJSONObject(0)
+        val firstVideo=rows.firstOrNull()
         val playback=PlaybackProfile(
             contentType=o.optInt("content_type",firstVideo?.optInt("content_type",1004) ?: 1004),
             videoPlatform=o.optInt("video_platform",3),
@@ -45,7 +50,14 @@ internal object ContentDetailParser {
             tags,author=author(),
             episodeCount=count,seasonIndex=o.optInt("season_index",0),
             upcoming=upcoming,notice=notice)
-        return Detail(series,episodes,upcoming,reserved=o.flag("online_subscribed"),playback=playback)
+        return Detail(
+            series,
+            episodes,
+            upcoming,
+            reserved=o.flag("online_subscribed"),
+            playback=playback,
+            episodeCovers=episodeCovers,
+        )
     }
 
     /** 从「相关作品」响应里取出那一栏的卡片（`title` / `cover` / `video_desc` / `episode_cnt`）。 */

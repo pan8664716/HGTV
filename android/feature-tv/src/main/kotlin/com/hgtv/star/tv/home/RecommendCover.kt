@@ -4,6 +4,8 @@ package com.hgtv.star.tv
 import android.graphics.Color
 import android.view.View
 import android.widget.FrameLayout
+import android.widget.ImageView
+import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.tv.TvStyle
 
 /**
@@ -20,19 +22,19 @@ private const val COVER_OUT_MS=260L
  */
 private const val COVER_OUT_FAST_MS=120L
 /**
- * 换剧那一下**立即**把画面盖黑（需求：上下切换要有过渡，且不能看到旧帧拉伸）。
+ * 换剧那一下**立即**把目标集封面盖上去（没有封面时退回黑底），
+ * 不能看到上一部旧帧被拉伸。
  *
- * 时机是**按键那一刻**，不是新源准备好之后：先全黑，再换源、等新源第一帧，
- * 由 [revealRecommendCover] 淡回来。这里不做淡入：无缓存时取地址 / 准备索引要 1 秒以上，
+ * 时机是**按键那一刻**，不是新源准备好之后：先盖目标集封面（无图则黑底），再换源、
+ * 等新源第一帧，由 [revealRecommendCover] 淡回来。这里不做淡入：无缓存时取地址 / 准备索引要 1 秒以上，
  * 如果黑场还在半透明阶段，PlayerView 会保留上一部内容并按新布局显示，用户就会看到旧帧被拉伸。
  *
- * 不抓帧、不翻页，就是一层纯黑；只有新片源真实出帧后才淡出。
+ * 不抓上一部帧、不翻页；只有新片源真实出帧后才淡出。
  *
  * 这一层是普通 View（画在窗口层里），不是 SurfaceView，因此它的 alpha 动画在电视盒子
  * 上也一定生效；盖住期间不参与焦点、不拦截按键（推荐页的按键本来都由 `dispatchKeyEvent` 消化）。
  */
-fun TvMainActivity.showRecommendCover() {
-    if(screen!="recommend") return
+fun TvMainActivity.showRecommendCover(imageUrl: String?=null) {
     // 推进令牌会取消上一轮尚未完成的淡出，保证这次换作不会被上一部提前揭开。
     recommendCoverToken++
     val existing=recommendCover
@@ -42,13 +44,33 @@ fun TvMainActivity.showRecommendCover() {
         if(existing.parent==null) attachRecommendCoverView(existing)
         existing.animate().cancel()
         existing.alpha=1f
+        if(existing is ImageView) {
+            if(imageUrl.isNullOrBlank()) existing.setImageDrawable(null)
+            else artwork.load(
+                existing,
+                imageUrl,
+                ArtworkLoader.PRIORITY_FOCUSED,
+                root.width.coerceAtLeast(640),
+                root.height.coerceAtLeast(360),
+            )
+        }
     } else {
-        val cover=View(this).apply {
+        val cover=ImageView(this).apply {
             setBackgroundColor(Color.BLACK)
+            scaleType=ImageView.ScaleType.FIT_CENTER
             isFocusable=false; isClickable=false
             importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
             // 不做淡入：从按键这一帧起就必须挡住 PlayerView 保留的上一部内容。
             alpha=1f
+        }
+        if(!imageUrl.isNullOrBlank()) {
+            artwork.load(
+                cover,
+                imageUrl,
+                ArtworkLoader.PRIORITY_FOCUSED,
+                root.width.coerceAtLeast(640),
+                root.height.coerceAtLeast(360),
+            )
         }
         attachRecommendCoverView(cover)
         recommendCover=cover
@@ -137,7 +159,7 @@ private fun TvMainActivity.attachRecommendCoverView(cover: View) {
     (cover.parent as? android.view.ViewGroup)?.removeView(cover)
     // 黑场挂在 root 上（**不进画面之外那一层**）：那一层会跟着画面转 90°，
     // 黑场进去也会跟着转，转过去之后四个角会露出没盖住的画面。
-    // 它只是一整屏纯黑，挂在 root 上盖住全屏就够了。
+    // 它是一整屏封面（无图时黑底），挂在 root 上盖住全屏就够了。
     //
     // 插在画面那一层**之前**：画面被黑场盖住，而压在画面上的剧名 / 进度 / 控制条
     // 仍然看得见（过渡期间用户还在看「换到第几部了」）。

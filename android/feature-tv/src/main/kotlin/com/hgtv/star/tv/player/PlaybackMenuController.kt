@@ -453,7 +453,6 @@ fun TvMainActivity.detachPlayerSurface(
     // 推荐页的信息浮层与切换过渡黑场也属于播放页这一层：离开时一起摘掉，否则会浮在新页面上。
     dismissRecommendOverlay()
     dismissRecommendCover()
-    playerView?.releasePlaybackStillFrame()
     cancelOverlayAutoHide(); main.removeCallbacks(seekRunnable); pendingSeek=null
     restoreBufferingUi()
     playedItemPending=false; playedItemId=""

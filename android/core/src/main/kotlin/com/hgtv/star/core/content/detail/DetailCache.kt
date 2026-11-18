@@ -28,7 +28,7 @@ import java.io.File
  * * 详情页**仍会现取**：缓存只负责首帧，不替代后台刷新。
  */
 object DetailCache {
-    private const val VERSION=1
+    private const val VERSION=2
     private const val MAX_ENTRIES=AppConfig.Recommend.DETAIL_LIMIT
     /** 与 [RecommendCache] 的 TTL 对齐：快照能当首屏多久，详情就能配它多久。 */
     private const val TTL_MS=AppConfig.Recommend.CACHE_TTL_MS
@@ -55,6 +55,13 @@ object DetailCache {
             val series=Series.fromJson(entry.getJSONObject("series"))
             val rows=entry.optJSONArray("episodes") ?: JSONArray()
             val episodes=(0 until rows.length()).mapNotNull { rows.optString(it).takeIf { vid -> vid.isNotEmpty() } }
+            val coverRows=entry.optJSONObject("episodeCovers")
+            val covers=buildMap {
+                coverRows?.keys()?.forEach { vid ->
+                    val cover=coverRows.optString(vid)
+                    if(vid.isNotBlank() && cover.isNotBlank()) put(vid,cover)
+                }
+            }
             if(series.id.isEmpty()) return@runCatching null
             Detail(
                 series,
@@ -62,6 +69,7 @@ object DetailCache {
                 entry.optBoolean("upcoming",false),
                 entry.optBoolean("reserved",false),
                 PlaybackProfile.fromJson(entry.optJSONObject("playback")),
+                covers,
             )
         }.getOrNull() ?: return null
         if(NetLog.timing) NetLog.log("detail cache hit id=${id.takeLast(6)} episodes=${detail.episodes.size} took=${(System.nanoTime()-began)/1_000_000}ms")
@@ -76,6 +84,9 @@ object DetailCache {
             JSONObject().put("at",System.currentTimeMillis())
                 .put("series",detail.series.toJson())
                 .put("episodes",JSONArray().apply { detail.episodes.forEach { put(it) } })
+                .put("episodeCovers",JSONObject().apply {
+                    detail.episodeCovers.forEach { (vid,cover) -> put(vid,cover) }
+                })
                 .put("upcoming",detail.upcoming)
                 .put("reserved",detail.reserved)
                 .put("playback",detail.playback.toJson())
