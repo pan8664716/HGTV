@@ -15,7 +15,7 @@ class LivePlaybackVariantTest {
     private val cdid = "427b7bd5-02a6-48d3-be13-9af736071521"; private val openudid = "f9ea37f42d180231"
     private val cookie = "store-region=cn-gd; store-region-src=did; install_id=4474385128496860; ttreq=1\$399d5347042c09a52ff0841add8adbc8ffd07264"
     private val sdkBiz = """{"video_id":"7667513056330517529","biz_param":{"video_id_type":0,"need_all_video_definition":true,"video_platform":3}}"""
-    private val appBiz = """{"video_id":"7667513056330517529","biz_param":{"detail_page_version":0,"device_level":3,"disable_digg_stat":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,"use_server_dns":false,"video_platform":1024}}"""
+    private val appBiz = """{"video_id":"7667513056330517529","biz_param":{"detail_page_version":0,"device_level":4,"disable_digg_stat":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,"use_server_dns":false,"video_platform":1024}}"""
 
     private fun send(label: String, vc: String, vn: String, body: String, includeCdid: Boolean = true, includeOpen: Boolean = true, cookieIn: String? = cookie) {
         val device = linkedMapOf("device_id" to did, "iid" to iid, "install_id" to iid, "cdid" to cdid, "openudid" to openudid, "device_brand" to "Xiaomi", "device_type" to "23127PN0CC", "os_version" to "14", "os_api" to "34", "version_name" to vn)

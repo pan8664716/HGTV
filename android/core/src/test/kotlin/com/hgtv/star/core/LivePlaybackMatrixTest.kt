@@ -49,7 +49,7 @@ class LivePlaybackMatrixTest {
 
     @Test fun matrix() {
         assumeTrue("HONGGUO_LIVE", System.getenv("HONGGUO_LIVE") == "1")
-        val appBiz = """{"video_id":"7667513056330517529","biz_param":{"detail_page_version":0,"device_level":3,"disable_digg_stat":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,"use_server_dns":false,"video_platform":1024}}"""
+        val appBiz = """{"video_id":"7667513056330517529","biz_param":{"detail_page_version":0,"device_level":4,"disable_digg_stat":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,"use_server_dns":false,"video_platform":1024}}"""
         val sdkBiz = """{"video_id":"7667513056330517529","biz_param":{"video_id_type":0,"need_all_video_definition":true,"video_platform":3}}"""
         send("app 72232/UA71332", "72232", "7.2.2.32", appBiz, "71332")
         send("app 72232/UA72232", "72232", "7.2.2.32", appBiz, "72232")

@@ -475,7 +475,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             ?.toIntOrNull()
             ?.toString()
             ?: "1080"
-        values["device_level"]="3"
+        values["device_level"]="4"
         values["stream_count"]=OFFICIAL_RECOMMEND_STREAM_COUNT
         values["recommend_extra"]=OFFICIAL_RECOMMEND_EXTRA
         values["is_video_feed_tab_first_request_cold_start"]=
@@ -546,7 +546,7 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             ?.toIntOrNull()
             ?.toString()
             ?: "1080"
-        values["device_level"]="3"
+        values["device_level"]="4"
         values["filter_ids"]=filterIds
         values["unlimited_selector_change_type"]="0"
         values["refresh_action_info"]=

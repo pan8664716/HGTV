@@ -18,7 +18,7 @@ class LiveSigningProbeTest {
     private val vid = System.getenv("HONGGUO_LIVE_VID")?.takeIf { it.matches(Regex("[0-9]{1,30}")) } ?: "7691249364097829913"
     private val seriesId = System.getenv("HONGGUO_LIVE_SERIES")?.takeIf { it.matches(Regex("[0-9]{1,30}")) } ?: "7691228619774905368"
 
-    private fun payload(id: String) = """{"biz_param":{"detail_page_version":0,"device_level":3,"disable_digg_stat":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,"use_server_dns":false,"video_platform":1024},"mixed_video_id_map":{"1004":["$id"]}}""".toByteArray()
+    private fun payload(id: String) = """{"biz_param":{"detail_page_version":0,"device_level":4,"disable_digg_stat":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,"use_server_dns":false,"video_platform":1024},"mixed_video_id_map":{"1004":["$id"]}}""".toByteArray()
 
     /** 搜索 / 弹幕这类 App 接口共用的设备参数（App 版本 7.2.2.32）。 */
     private fun appValues() = LinkedHashMap(VendorConstants.device).apply {

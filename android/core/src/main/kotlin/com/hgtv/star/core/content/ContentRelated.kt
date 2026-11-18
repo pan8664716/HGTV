@@ -29,7 +29,7 @@ internal fun ContentRepository.relatedRows(id: String): List<RelatedEntry> {
             "new_search_middle_page" to "false","bookstore_tab_type" to "0",
             "query_history_removed" to "false","user_is_login" to "0",
             "bookstore_tab" to "0","search_middle_page_version" to "0","pad_column_detail" to "0",
-            "hot_word_exchange" to "false","device_level" to "3","limit" to "0","offset" to "0",
+            "hot_word_exchange" to "false","device_level" to "4","limit" to "0","offset" to "0",
             "is_horizontal_screen" to "false","reader_single_col_from_ip_strategy" to "false"
         ))
         try {

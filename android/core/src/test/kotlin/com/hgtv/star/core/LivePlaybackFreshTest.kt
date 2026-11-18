@@ -12,7 +12,7 @@ import org.junit.Test
 
 class LivePlaybackFreshTest {
     private val host = "https://api5-normal-sinfonlineb.fqnovel.com"
-    private val appBiz = """{"video_id":"7667513056330517529","biz_param":{"detail_page_version":0,"device_level":3,"disable_digg_stat":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,use_server_dns":false,"video_platform":1024}}"""
+    private val appBiz = """{"video_id":"7667513056330517529","biz_param":{"detail_page_version":0,"device_level":4,"disable_digg_stat":false,"need_all_video_definition":true,"need_mp4_align":false,"use_os_player":false,use_server_dns":false,"video_platform":1024}}"""
     private val sdkBiz = """{"video_id":"7667513056330517529","biz_param":{"video_id_type":0,"need_all_video_definition":true,"video_platform":3}}"""
 
     private fun rid() = Random.nextLong(1_000_000_000_000_000L, 9_999_999_999_999_999L).toString()
