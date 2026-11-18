@@ -189,4 +189,4 @@ xcodebuild -project HGTV.xcodeproj -target HGTV -sdk iphonesimulator \
 
 ## 交流
 
-文档里没写到的那些事，仓库主页侧栏留了个去处；能复现的问题仍建议开 Issue，方便留档与检索。
+Telegram 交流反馈：[hgtvhub](https://t.me/hgtvhub)。能复现的问题仍建议开 Issue，方便留档与检索。

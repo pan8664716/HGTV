@@ -1024,7 +1024,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `ProjectInfo.kt` | 项目公开地址。 | object ProjectInfo |
+| `ProjectInfo.kt` | 项目公开地址与交流反馈入口。 | object ProjectInfo |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/account/`
 

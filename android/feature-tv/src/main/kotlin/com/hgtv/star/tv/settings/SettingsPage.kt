@@ -663,6 +663,7 @@ private fun TvMainActivity.showAboutDialog(anchor: View) {
     val dialog=TvDialog(this,"关于")
     dialog.message("版本号：${AppVersion.name}")
     dialog.message("GitHub：${ProjectInfo.GITHUB}")
+    dialog.message("交流反馈：${ProjectInfo.TELEGRAM}")
     dialog.message("更新请前往项目页面查看项目更新。")
     dialog.button("关闭") {}
     dialog.show(anchor)

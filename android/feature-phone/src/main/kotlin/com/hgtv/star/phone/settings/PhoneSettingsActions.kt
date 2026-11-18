@@ -16,6 +16,7 @@ internal fun PhoneSettingsActivity.showAboutDialog() {
     PhoneDialog(this, "关于")
         .message("版本号：${appVersionName()}")
         .message("GitHub：${ProjectInfo.GITHUB}")
+        .message("交流反馈：${ProjectInfo.TELEGRAM}")
         .message("更新请前往项目页面查看项目更新。")
         .button("关闭") {}
         .show()
