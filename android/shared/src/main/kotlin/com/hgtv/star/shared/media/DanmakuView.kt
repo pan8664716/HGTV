@@ -1126,22 +1126,22 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     }
 
     /**
-     * 相邻两条聚合弹幕的行距。
+     * 相邻两条聚合弹幕的行距 = plate 的真实高度 + 一道薄间隔。
      *
-     * 必须按**放大后**的计数徽标高度算，不能用 [highlightSize]：plate 的 box 取的是
-     * `max(highlightSize*0.95, counterHeight)`，而计数徽标字号随热度放大到
-     * [HIGHLIGHT_COUNTER_MAX_SCALE] 倍、脉冲瞬间还会再放到 [HIGHLIGHT_COUNTER_PULSE_MAX_SCALE] 倍。
-     * 早先按 0.95 倍算，高计数弹幕的徽标一放大就压到下一行——三条并排时就是互相遮挡。
-     * 这里用最大字号实测一次 fontMetrics 高度，取最坏 box 再加上下留白与最小间隔。
+     * plate 的 box 是 `max(highlightSize*0.95, counterHeight)`，而 counterHeight 按
+     * `counterFill.textSize = highlightSize*counterScale`（常态上限 [HIGHLIGHT_COUNTER_MAX_SCALE]）
+     * 实测。脉冲的 [HIGHLIGHT_COUNTER_PULSE_MAX_SCALE] 只是 `canvas.scale()` 对计数文字做瞬时
+     * 放大，plate 本身不变；早先拿它算行距把三条聚合撑得过开。plate 总高 = box + PAD*density
+     *（上下各 padY = PAD*0.5），所以行距取 maxBox + PAD*density 已不重叠，再留一点缝即可。
      */
     private fun highlightRowHeight(): Float {
         val saved=counterFill.textSize
-        counterFill.textSize=highlightSize*HIGHLIGHT_COUNTER_PULSE_MAX_SCALE
+        counterFill.textSize=highlightSize*HIGHLIGHT_COUNTER_MAX_SCALE
         counterFill.getFontMetrics(counterMetrics)
         counterFill.textSize=saved
         val maxCounterHeight=counterMetrics.descent-counterMetrics.ascent
         val maxBox=maxOf(highlightSize*0.95f,maxCounterHeight)
-        return maxBox+HIGHLIGHT_PAD_DP*density+density*6f
+        return maxBox+HIGHLIGHT_PAD_DP*density+density*2f
     }
 
     private fun normalLaneBaseline(lane: Int): Float =
