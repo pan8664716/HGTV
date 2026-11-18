@@ -273,7 +273,13 @@ import java.util.concurrent.TimeUnit
     /** 官方 `video_model` query 的字段集合与顺序；设备档案里的其它字段不带进播放请求。 */
     internal fun ContentRepository.modelQueryProfile(values: Map<String,String>): LinkedHashMap<String,String> =
         linkedMapOf<String,String>().apply {
-            for(key in ContentRepository.MODEL_QUERY_KEYS) values[key]?.takeIf { it.isNotBlank() }?.let { put(key,it) }
+            for(key in ContentRepository.MODEL_QUERY_KEYS) {
+                if(key=="_rticket") {
+                    put(key,values[key].orEmpty())
+                } else {
+                    values[key]?.takeIf { it.isNotBlank() }?.let { put(key,it) }
+                }
+            }
         }
 
     /**

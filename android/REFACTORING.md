@@ -177,6 +177,30 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 2026-11-18：Android v5 Medusa 请求协议对齐
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 内容、账号和播放请求统一使用 v5 Medusa；播放模型与 `video_model` 共用同一套
+  `x-khronos / x-ladon / x-argus / x-gorgon / x-helios / x-medusa` 签名流程，不再区分
+  `video_model` 专用算法。
+- 播放模型 query 按 HAR 顺序补齐 `device_platform/os/ssmix/_rticket/.../klink_egdi`；
+  `_rticket` 保留固定位置，请求体使用 gzip，`x-ss-stub` 使用压缩后正文的 MD5。
+- 单集 `video_model` 参数改为 `content_type=1004`、`device_level=3`、`source=1`、
+  `video_platform=3`、`use_server_dns=false`；批量 preload 删除
+  `use_server_dns_scene` 并关闭服务端 DNS。
+- Medusa v5 状态按设备、token、版本和渠道复用，跨请求推进随机数与 TLS；设备 token
+  为空时按设备号回落，避免后续请求签名漂移。
+- 未改版本号、versionCode、依赖或目录结构；未推送。
+
+验证：
+
+- `JAVA_HOME=/opt/homebrew/Cellar/openjdk@17/17.0.20.1/libexec/openjdk.jdk/Contents/Home ./gradlew :app:assembleDebug` 通过。
+- `:core:test` 未进入用例执行：现有测试源码仍引用已不存在的
+  `RankBoard` 枚举成员（`COMIC`、`REAL`、`AI`、`NEW` 等），测试编译失败与本次生产签名改动无关。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 批次记录
 
 ### 批次 1：内容模型与目录整理

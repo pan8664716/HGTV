@@ -408,13 +408,12 @@ class ContentRepository(
         internal const val PRELOAD_MODEL_LIMIT=AppConfig.Playback.PRELOAD_MODEL_LIMIT
         internal const val MODEL_CACHE_LIMIT=AppConfig.Playback.MODEL_CACHE_LIMIT
         internal val MODEL_QUERY_KEYS=listOf(
-            "klink_egdi","iid","device_id","ac","channel","aid","app_name",
-            "version_code","version_name","device_platform","os","ssmix",
-            "device_type","device_brand","language","os_api","os_version",
-            "manifest_version_code","resolution","dpi","update_version_code",
-            "host_abi","dragon_device_type","pv_player","compliance_status",
-            "need_personal_recommend","player_so_load","is_android_pad_screen",
-            "rom_version","cdid",
+            "device_platform","os","ssmix","_rticket","cdid","channel","aid",
+            "app_name","version_code","version_name","manifest_version_code",
+            "update_version_code","resolution","dpi","device_type","device_brand",
+            "language","os_api","os_version","ac","host_abi","dragon_device_type",
+            "pv_player","compliance_status","need_personal_recommend","player_so_load",
+            "is_android_pad_screen","rom_version","iid","device_id","klink_egdi",
         )
         internal const val STREAM_CACHE_MS=PlaybackCache.URL_FRESH_MS
         internal const val STREAM_CACHE_LIMIT=AppConfig.Playback.STREAM_CACHE_LIMIT

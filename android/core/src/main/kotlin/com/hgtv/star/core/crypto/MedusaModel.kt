@@ -11,25 +11,31 @@ internal data class MedusaIdentity(
     val sdkPlatform: String,
 )
 
-/**
- * 设备档案：只保留**真正需要采集**的字段。
- *
- * 原先 40 个字段里有 21 个是常量或由 `now`/identity 推出的派生值
- * （`cachedToken` = identity.token、`cachedAppVersion` = identity.appVersion、
- * `cache168` = 初始化时刻秒、`fltkTimeMS`/`firstCollectionMS`/`bootTimeMS`/`loadTimeMS`
- * = 初始化时刻减固定偏移，其余恒 0/空）。这些在 [medusaDeviceMessage] 里现算，
- * 不再进状态。proto3 不编码默认值，所以删掉字段与原来写 0 的编码结果一致。
- */
+/** v5 抓包中的设备字段；默认值仍由 protobuf 编码规则省略。 */
 internal data class MedusaDevice(
     val collectionState: Int = 0,
+    val cachedToken: String = "",
     val cache256: String = "",
+    val cache264: Int = 0,
+    val cache268: Int = 0,
+    val batteryHealth: Int = 0,
+    val cache276: Int = 0,
+    val cache296: String = "",
     val timezone: String = "",
     val locale: String = "",
     val cpuCoreCount: Int = 0,
+    val cache376: String = "",
     val storageRAMGiB: FloatArray = FloatArray(6),
     val androidRelease: String = "",
     val brightness: Int = 0,
     val systemVolume: Int = 0,
+    val fltkTimeMS: Long = 0,
+    val firstCollectionMS: Long = 0,
+    val bootTimeMS: Long = 0,
+    val loadTimeMS: Long = 0,
+    val cache168: Long = 0,
+    val cache176: Int = 0,
+    val cache200: Int = 0,
     val usbConnected: Int = 0,
     val model: String = "",
     val brand: String = "",
@@ -51,20 +57,16 @@ internal data class MedusaConfigMaps(
     fun text(key: String): String = strings[key] ?: ""
 }
 
-/**
- * SDK 侧状态：只保留会进输出的字段。
- *
- * 删掉的都是恒定量：`startedAtSeconds`（field 1 恒 0）、`mode`（恒 0）、
- * `clockValue`（field 16 恒 0）、`state232`（env.do 恒 0）、`primaryID`/`secondaryID`
- * （恒空，root17 恒等于 ts）、`config48`/`config56`/`extensionChecks`（extension 段未启用）、
- * `signKey`（恒用默认 key）、`cdid`（未使用）。
- */
+/** v5 SDK 状态：进程、时间、检测位、配置映射和摘要校验。 */
 internal data class MedusaSdk(
     val configMask: Long = 0,
     val root22: Int = 0,
+    val startedAtSeconds: Long = 0,
     val devicePresent: Boolean = true,
     val processID: Int = 0,
     val parentProcessID: Int = 0,
+    val clockValue: Long = 0,
+    val state232: Int = 0,
     val detectionTypes: List<Int> = emptyList(),
     val cmr: Long = 0,
     val cmr2: Long = 0,
@@ -175,17 +177,23 @@ internal fun medusaDeviceMessage(
     v[2] = d.collectionState
     v[3] = i.aid
     v[4] = i.deviceID
-    v[5] = i.token
+    v[5] = d.cachedToken.ifBlank { i.token }
     v[6] = d.cache256
+    v[7] = d.cache264
+    v[8] = d.cache268
+    v[9] = d.batteryHealth
+    v[10] = d.cache276
+    v[11] = d.cache296
     v[12] = d.timezone
     v[13] = d.locale
     v[14] = d.cpuCoreCount
+    v[15] = d.cache376
     v[22] = d.androidRelease
     v[23] = d.brightness
     v[24] = d.systemVolume
-    v[25] = record0 - 400
-    v[26] = record0 - 41
-    v[27] = record0 - 1000
+    v[25] = d.fltkTimeMS.takeIf { it != 0L } ?: (record0 - 400)
+    v[26] = d.firstCollectionMS.takeIf { it != 0L } ?: (record0 - 41)
+    v[27] = d.bootTimeMS.takeIf { it != 0L } ?: (record0 - 1000)
     v[28] = nowMS
     v[29] = d.usbConnected
     v[30] = d.model
@@ -196,7 +204,7 @@ internal fun medusaDeviceMessage(
     v[35] = d.manufacturer
     v[36] = d.hardware
     v[38] = d.featureBits
-    v[40] = record0 - 321
+    v[40] = d.loadTimeMS.takeIf { it != 0L } ?: (record0 - 321)
     for (n in 0 until 6) v[16 + n] = d.storageRAMGiB[n]
     return v
 }
@@ -214,6 +222,9 @@ internal fun medusaContext(
     val p17 = ((saved and 15L.inv()) or ((saved and 240L) ushr 4)) xor
         ((s.configMask ushr 28) and 15)
     val v = HashMap<Int, Any?>()
+    if (s.startedAtSeconds != 0L) {
+        v[1] = ((o.timestamp - s.startedAtSeconds) and 0xFFFFFFFFL).toInt()
+    }
     v[2] = m.integer("45ca7e170e474edadd7d40972a193ace").toLong()
     v[3] = m.integer("f866b105da86ad7edbaf9846a68fdbab").toLong()
     v[5] = m.integer("593fa435c8460ab2ac0b86b32e28de66")
@@ -222,6 +233,7 @@ internal fun medusaContext(
     v[8] = i.channel
     v[14] = i.appVersion
     v[15] = s.parentProcessID
+    if (s.clockValue != 0L) v[16] = s.clockValue
     v[17] = p17
     v[18] = t.firstTPIDR xor t.callbackAddress xor (o.timestamp and 0xFFFFFFFFL)
     v[19] = ((t.pointerGap xor (o.timestamp and 0xFFFFFFFFL)) and 0xFFFFFFFFL).toInt()
@@ -232,9 +244,9 @@ internal fun medusaContext(
         v[12] = medusaDeviceMessage(d, i, o.timeMS, t.process.record0)
     }
     v[13] = mapOf(
-        1 to t.process.record0 / 1000,
-        2 to 3,
-        4 to 200,
+        1 to (d.cache168.takeIf { it != 0L } ?: (t.process.record0 / 1000)),
+        2 to (d.cache176.takeIf { it != 0 } ?: 3),
+        4 to (d.cache200.takeIf { it != 0 } ?: 200),
     )
     return v
 }
@@ -265,7 +277,7 @@ internal fun medusaEnvironment(i: MedusaIdentity, s: MedusaSdk, t: MedusaThread)
         append(",\"lp\":\"").append(lp).append('"')
         append(",\"fl\":\"").append(fl).append('"')
         append(",\"dyn\":\"").append(dyn).append('"')
-        append(",\"do\":0")
+        append(",\"do\":").append(s.state232)
         append(",\"tk\":").append(tk)
         append('}')
     }

@@ -20,14 +20,13 @@ internal object ContentPlaybackParser {
     ): String {
         val biz=JSONObject()
             .put("detail_page_version",0)
-            .put("device_level",deviceLevel)
+            .put("device_level",minOf(deviceLevel,3))
             .put("disable_digg_stat",false)
             .put("disable_video_relate_book",false)
             .put("need_all_video_definition",true)
             .put("need_mp4_align",false)
             .put("use_os_player",false)
-            .put("use_server_dns",true)
-            .put("use_server_dns_scene","cold_start_stage")
+            .put("use_server_dns",false)
             .put("video_platform",1024)
         return JSONObject()
             .put("biz_param",biz)
@@ -70,7 +69,7 @@ internal object ContentPlaybackParser {
      * 一次播放模型请求的 body。
      *
      * `biz_param` 必须是**对象**，不是序列化后的字符串。
-     * 新路由对齐官方抓包：`content_type` 在顶层，`video_platform=3`，并带 `source=4`。
+     * 新路由对齐官方抓包：`content_type` 在顶层，`video_platform=3`，并带 `source=1`。
      * 老路由仍使用 `mixed_video_id_map` 与 Mixed=1024；preload 额外带 `dr_scene=preload`。
      */
     fun modelBody(
@@ -81,12 +80,12 @@ internal object ContentPlaybackParser {
     ): String {
         val newRoute=!path.contains("multi_video_model")
         val biz=JSONObject()
-            .put("detail_page_version",0).put("device_level",deviceLevel).put("disable_digg_stat",false)
+            .put("detail_page_version",0).put("device_level",minOf(deviceLevel,3)).put("disable_digg_stat",false)
             .put("need_all_video_definition",true).put("need_mp4_align",false)
             .put("use_os_player",false).put("use_server_dns",false)
         return if(newRoute) {
             biz.put("disable_video_relate_book",false).put("from_video_id","")
-                .put("source",4).put("video_platform",playback.videoPlatform)
+                .put("source",1).put("video_platform",playback.videoPlatform)
             JSONObject()
                 .put("video_id",id)
                 .put("content_type",playback.contentType)

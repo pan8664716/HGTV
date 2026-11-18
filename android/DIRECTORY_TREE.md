@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-18。文件总数为 663；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-18。文件总数为 664；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -41,7 +41,7 @@
 ```text
 android/
 ├── app/  (23 files, 12 directories)
-├── core/  (228 files, 27 directories)
+├── core/  (229 files, 27 directories)
 ├── feature-phone/  (143 files, 11 directories)
 ├── feature-tv/  (157 files, 18 directories)
 ├── shared/  (105 files, 25 directories)
@@ -370,7 +370,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AesV3.kt` | 加解密、签名与字节编解码。文件 AesV3 主要包含 class AesV3。 | class AesV3 |
+| `AesV3.kt` | 旧版与 v5 共用的 Medusa 分组变换；v5 使用独立 sbox、轮排列和位压缩表。 | class AesV3 |
 | `ArgusLadon.kt` | X-Argus / X-Ladon 容器。 | object ArgusLadon |
 | `Bytes.kt` | 加解密、签名与字节编解码。文件 Bytes 主要包含 fun Byte.u、fun hex、fun ByteArray.hex、val BASE64。 | fun Byte.u、fun hex、fun ByteArray.hex、val BASE64、fun decode64、fun ByteArray.base64 |
 | `MediaCrypto.kt` | 加解密、签名与字节编解码。文件 MediaCrypto 主要包含 object MediaCrypto。 | object MediaCrypto |
@@ -383,7 +383,8 @@ android/
 | `MedusaSchema.kt` | 从 Go sign/x-header.go 的 medusaSchema 机械提取，请勿手改。 | class MedusaDescriptor、val medusaSchema |
 | `MedusaState.kt` | 加解密、签名与字节编解码。文件 MedusaState 主要包含 val MEDUSA_ROOT_MAGIC、val MEDUSA_DEFAULT_KEY、val medusaFLTable、fun readLe32。 | val MEDUSA_ROOT_MAGIC、val MEDUSA_DEFAULT_KEY、val medusaFLTable、fun readLe32、fun medusaCRC64、fun medusaQuery |
 | `MedusaTables.kt` | 从 Go sign/x-header.go 机械提取的 Medusa 常量表，请勿手改。 | val medusaSboxes、val medusaRcon、val medusaPerms、val medusaRow3、val medusaSelect、val medusaPatch |
-| `Signer.kt` | 加解密、签名与字节编解码。文件 Signer 主要包含 class Signer。 | class Signer |
+| `Signer.kt` | 请求签名；支持旧协议与 Android v04.10.03 播放签名（branch 12、v5 medusa、三头）。 | class Signer |
+| `V5Constants.kt` | Android v04.10.03 播放签名常量：magic、license、sign key 与 sbox。 | object V5Constants |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/identity/`
 
@@ -547,7 +548,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PlaybackModelService.kt` | 取一集的播放模型；主动点集按最新抓包使用 3 档、服务端 DNS 场景和最多 3 集批量，空响应才兼容升到 5 档。 | — |
+| `PlaybackModelService.kt` | 取一集的播放模型；查询参数按 v5 抓包顺序交给统一签名器，空响应按原设备自愈流程处理。 | fun ContentRepository.videoModelImpl、fun ContentRepository.modelQueryProfile |
 | `PlaybackParser.kt` | 播放模型、主动点集批量请求体、内联 / fallback 清晰度解析；同时兼容对象与数组形态的 `video_list`。 | object ContentPlaybackParser |
 | `StreamCacheService.kt` | 播放地址内存 / 落盘缓存与取流；先解析模型内联 `video_list`，缺失时才请求 `fallback_api`。 | class ContentRepositoryStreamCacheEntry |
 

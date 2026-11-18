@@ -173,8 +173,10 @@ internal fun medusaDetailed(
  * 推出，两者都不再落状态（每次签名现算，结果相同）。
  */
 internal class AutonomousProcess(
+    val fl: IntArray = IntArray(9),
     var record0: Long = 0,
     var record8: Long = 0,
+    var tls: Long = 0,
     var firstTPIDR: Long = 0,
     var callbackAddress: Long = 0,
     var pointerGap: Long = 0,
@@ -236,10 +238,10 @@ internal class AutonomousState(
         val integers = HashMap(sdk.maps.integers)
         integers[KEY_C1] = requestCount.toInt()
         val sdkCopy = sdk.copy(maps = sdk.maps.copy(integers = integers))
-        val processCopy = MedusaProcess(IntArray(9), process.record0, process.record8)
+        val processCopy = MedusaProcess(process.fl.copyOf(), process.record0, process.record8)
         applyFLStages(processCopy, 2, 3, 4, 5, 6)
         val thread = MedusaThread(
-            tls = medusaTlsInput(identity.licenseID, ts),
+            tls = if (process.tls != 0L) process.tls else medusaTlsInput(identity.licenseID, ts),
             firstTPIDR = process.firstTPIDR,
             callbackAddress = process.callbackAddress,
             pointerGap = process.pointerGap,
@@ -264,6 +266,7 @@ internal class AutonomousState(
         )
         val result = medusaDetailed(url, identity, device, sdkCopy, thread, options)
         requestCount++
+        process.tls = result.tls
         process.record8 = processCopy.record8
         return result
     }
@@ -357,6 +360,139 @@ internal fun defaultAutonomousState(
         sdk = sdk,
         process = process,
         requestCount = 1,
+        random = longArrayOf(1234567, 2345678, 3456789),
+    )
+}
+
+internal fun sdkToken(registerToken: String, deviceID: String): String {
+    val token = registerToken.ifBlank { deviceID }
+    val source = "hgtv-sdk-token\u0000$token\u0000$deviceID"
+    return digest("SHA-256", source.toByteArray())
+        .copyOf(18)
+        .base64()
+        .trimEnd('=')
+        .replace('+', '-')
+        .replace('/', '_')
+}
+
+/** V5 profile shared by all content and playback requests. */
+internal fun defaultV5AutonomousState(
+    deviceID: String,
+    processNonce: String,
+    deviceToken: String,
+    nowMS: Long,
+    profile: Map<String,String>,
+    processStartedMS: Long = nowMS - 6_936_472L,
+): AutonomousState {
+    val ts = nowMS / 1000
+    val loadTime = nowMS - 180_663L
+    val resolution = profile["resolution"].orEmpty()
+    val physical = runCatching {
+        val values = resolution.split('*').map(String::toInt)
+        "Physical size: ${minOf(values[0], values[1])}x${maxOf(values[0], values[1])}"
+    }.getOrDefault("Physical size: 1080x2400")
+    val tokenPointerLP = 523425248256L
+    val tlsMask = java.lang.Long.rotateLeft(
+        tokenPointerLP xor medusaCRC64("646637794".toByteArray()) xor (ts and 0xFFFFFFFFL),
+        4,
+    ) and 0xFFFFFFFFL
+    val device = MedusaDevice(
+        collectionState = 2,
+        cachedToken = sdkToken(deviceToken, deviceID),
+        cache256 = "!noperm!",
+        cache264 = -888888,
+        cache268 = -888888,
+        batteryHealth = 2,
+        cache276 = -888888,
+        cache296 = "!notset!",
+        timezone = "Asia/Shanghai,8",
+        locale = "zh_CN",
+        cpuCoreCount = 3,
+        cache376 = physical,
+        storageRAMGiB = floatArrayOf(124.99121f, 121.888664f, 3.8510208f, 0.09474182f, 249.98242f, 243.77733f),
+        androidRelease = profile["os_version"].orEmpty().ifBlank { "12" },
+        brightness = 102,
+        systemVolume = 5,
+        fltkTimeMS = processStartedMS,
+        firstCollectionMS = nowMS - 180_290L,
+        bootTimeMS = nowMS - 6_117_375L,
+        loadTimeMS = loadTime,
+        cache168 = loadTime / 1000 + 3,
+        cache176 = 3,
+        cache200 = 200,
+        usbConnected = -1,
+        model = profile["device_type"].orEmpty().ifBlank { "PGT-AN10" },
+        brand = profile["device_brand"].orEmpty().ifBlank { "OnePlus" },
+        board = "kona",
+        product = "arm64_mac_qemu",
+        device = "OnePlus8Pro",
+        manufacturer = "OnePlus",
+        hardware = "unknown",
+        featureBits = 21,
+    )
+    val sdk = MedusaSdk(
+        configMask = 312,
+        root22 = 0,
+        startedAtSeconds = ts - 180,
+        processID = 22088,
+        parentProcessID = 2113,
+        clockValue = 27,
+        state232 = 1,
+        detectionTypes = listOf(2, 8, 10, 15),
+        cmr = 16777216,
+        cmr2 = 16777216,
+        unH = 1893996536,
+        sts = 32251,
+        fkd = 2187746471,
+        pd = 1417818606,
+        maps = MedusaConfigMaps(
+            integers = mapOf(
+                "45ca7e170e474edadd7d40972a193ace" to 247235599,
+                "f866b105da86ad7edbaf9846a68fdbab" to 247235596,
+                "593fa435c8460ab2ac0b86b32e28de66" to 7,
+                "04b29480233f4def5c875875b6bdc3b1" to 1,
+                "e98d2f001da5678b39482efbdf5770dc" to 5,
+                "7dc22b2c6a992f0232345df41303f5ea" to 694367,
+                "f0036511a681da731501008a14354fa3" to 0,
+                "73e41d5295b696cc41657fef7bba312e" to 281826712,
+                "cede084aa3812c79e4614ee74ba582dd" to -780914011,
+                "30c8cb0fcd3ea4c95cfd5170df341924" to -780914011,
+                "167774bf518c11948aa0784351ccf5a9" to 0,
+            ),
+            longs = mapOf("fd8d1a41d3c56026d47f1f8ba146eb99" to 2491),
+            strings = mapOf("fa4c0a5bbd8dcedf5ee28719c5bb1df1" to ""),
+        ),
+        requestChecks = DigestChecks(configCount = 1),
+    )
+    val process = AutonomousProcess(
+        fl = intArrayOf(
+            0, 0, 3995815572L.toInt(), 2488151022L.toInt(),
+            3896811223L.toInt(), 825108232, 761683983, 0, 0,
+        ),
+        record0 = loadTime,
+        record8 = 511,
+        tls = (4103350170L xor tlsMask) and 0xFFFFFFFFL,
+        firstTPIDR = 518304718848,
+        callbackAddress = 519321784724,
+        pointerGap = 1804,
+        tokenPointerTLS = 0,
+        tokenPointerLP = tokenPointerLP,
+    )
+    return AutonomousState(
+        identity = MedusaIdentity(
+            aid = "8662",
+            deviceID = deviceID,
+            licenseID = "646637794",
+            appVersion = profile["version_name"].orEmpty().ifBlank { "7.4.3.32" },
+            sdkVersion = "v04.10.03.04-bugfix",
+            channel = profile["channel"].orEmpty().ifBlank { "update_64" },
+            token = processNonce,
+            sdkPlatform = "v04.10.03-ml-android",
+        ),
+        device = device,
+        sdk = sdk,
+        process = process,
+        requestCount = 316,
         random = longArrayOf(1234567, 2345678, 3456789),
     )
 }
