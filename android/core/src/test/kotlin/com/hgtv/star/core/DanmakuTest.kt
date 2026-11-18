@@ -54,6 +54,15 @@ class DanmakuTest {
         }
     }
 
+    @Test fun `highlight slots grow every two lines`() {
+        // 1~2 行只放一条聚合，3~4 行两条，5~6 行三条。
+        assertEquals(listOf(1,1,2,2,3,3),
+            (1..6).map { DanmakuHighlight.slotsForLines(it) })
+        // 越界输入收敛到合法区间。
+        assertEquals(1,DanmakuHighlight.slotsForLines(0))
+        assertEquals(DanmakuHighlight.MAX_SLOTS,DanmakuHighlight.slotsForLines(99))
+    }
+
     @Test fun `aggregation normalizes expression differences conservatively`() {
         assertEquals(
             danmakuAggregationKey("太好看了！！！[爱慕]"),

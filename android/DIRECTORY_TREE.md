@@ -424,7 +424,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `ArtworkUrl.kt` | 封面地址的改写：**换到免签镜像域名、按卡片尺寸取图、用 webp**。 | object ArtworkUrl |
-| `Danmaku.kt` | 一条弹幕。 | class Danmaku、fun parseDanmakuRows、fun rawDanmakuRows、class DanmakuMode、class DanmakuSpeed、class DanmakuRepeat |
+| `Danmaku.kt` | 一条弹幕。聚合弹幕按显示行数占槽：1~2 行 1 条、3~4 行 2 条、5~6 行 3 条。 | class Danmaku、fun parseDanmakuRows、fun rawDanmakuRows、class DanmakuMode、class DanmakuSpeed、class DanmakuRepeat、fun slotsForLines |
 | `DanmakuEmoji.kt` | 弹幕文本里的表情标签。 | object DanmakuEmoji、class DanmakuPart |
 | `PictureWatchdog.kt` | 「有声音、没画面」与「一直卡在缓冲」这两种**不会抛异常**的故障的判据。 | class PictureWatchdog |
 | `SlideCache.kt` | 缓存分级（文档第 3 节）。 | class CacheLevel、class SlideCacheManager |
@@ -1137,7 +1137,7 @@ android/
 | `DanmakuEmojiStore.kt` | 弹幕表情图的解码与缓存。 | class DanmakuEmojiStore |
 | `DanmakuLoader.kt` | 「这一集拉到哪一步」的弹幕加载内核（电视端与手机端共用一份）。 | class DanmakuLoader |
 | `DanmakuSpriteAtlas.kt` | 弹幕文字图集。 | class DanmakuSpriteAtlas |
-| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；隐藏时保持 Surface 存活，提交一帧全透明擦掉旧内容（不用 visibility 也不依赖 alpha，部分电视 ROM 上 alpha 不作用于独立图层）；TV 与手机竖屏追加 16dp 顶部呼吸位，手机横屏保持原位置；推荐流可把首行文字实际顶边锚定到顶部导航。 | class DanmakuView、val topGapDp、val topTextAnchorPx |
+| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；聚合弹幕行距按放大后的计数高度算，多条并排不互相遮挡；隐藏时保持 Surface 存活，提交一帧全透明擦掉旧内容（不用 visibility 也不依赖 alpha，部分电视 ROM 上 alpha 不作用于独立图层）；TV 与手机竖屏追加 16dp 顶部呼吸位，手机横屏保持原位置；推荐流可把首行文字实际顶边锚定到顶部导航。 | class DanmakuView、val topGapDp、val topTextAnchorPx |
 | `MediaSessionHost.kt` | 前台媒体会话：让**遥控器 / 耳机线控 / 锁屏与系统媒体面板**上的播放键能找到本应用。 | class MediaSessionHost |
 | `PlaybackFailures.kt` | 一次播放失败的**归因**：这条错误落在哪条轨上、该按哪一档、哪些档位还能换。 | object PlaybackFailures |
 | `PlaybackMetrics.kt` | 播放现场的「解码事实」：解码器名、初始化耗时、编码格式、丢帧、音频欠载；首帧同时写入统一启动追踪。 | class PlaybackMetrics |

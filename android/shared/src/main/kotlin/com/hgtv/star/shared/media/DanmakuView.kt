@@ -308,7 +308,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         }
 
     private val highlightSlots: Int
-        get() = mode.lineLimit.coerceIn(1,DanmakuHighlight.MAX_SLOTS)
+        get() = DanmakuHighlight.slotsForLines(mode.lineLimit)
 
     private var clockBaseMs=0L
     private var clockBaseAt=0L
@@ -1085,7 +1085,24 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         return normalLaneCenterY(0)+slot.coerceAtLeast(0)*highlightRowHeight()
     }
 
-    private fun highlightRowHeight(): Float=highlightSize*0.95f+HIGHLIGHT_PAD_DP*density+density*6f
+    /**
+     * 相邻两条聚合弹幕的行距。
+     *
+     * 必须按**放大后**的计数徽标高度算，不能用 [highlightSize]：plate 的 box 取的是
+     * `max(highlightSize*0.95, counterHeight)`，而计数徽标字号随热度放大到
+     * [HIGHLIGHT_COUNTER_MAX_SCALE] 倍、脉冲瞬间还会再放到 [HIGHLIGHT_COUNTER_PULSE_MAX_SCALE] 倍。
+     * 早先按 0.95 倍算，高计数弹幕的徽标一放大就压到下一行——三条并排时就是互相遮挡。
+     * 这里用最大字号实测一次 fontMetrics 高度，取最坏 box 再加上下留白与最小间隔。
+     */
+    private fun highlightRowHeight(): Float {
+        val saved=counterFill.textSize
+        counterFill.textSize=highlightSize*HIGHLIGHT_COUNTER_PULSE_MAX_SCALE
+        counterFill.getFontMetrics(counterMetrics)
+        counterFill.textSize=saved
+        val maxCounterHeight=counterMetrics.descent-counterMetrics.ascent
+        val maxBox=maxOf(highlightSize*0.95f,maxCounterHeight)
+        return maxBox+HIGHLIGHT_PAD_DP*density+density*6f
+    }
 
     private fun normalLaneBaseline(lane: Int): Float =
         laneTop+(lane+1)*laneHeight-fill.textSize*0.28f
