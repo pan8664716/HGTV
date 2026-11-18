@@ -2,9 +2,11 @@
 package com.hgtv.star.phone.ui
 
 import android.content.Context
+import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
+import android.widget.FrameLayout
 import android.widget.HorizontalScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -65,10 +67,22 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
         tint = PhoneStyle.text
         contentDescription = "搜索"
     }
-    private val actionBox = LinearLayout(context).apply {
-        gravity = Gravity.CENTER
+    private val actionDot = View(context).apply {
+        background = GradientDrawable().apply {
+            shape = GradientDrawable.OVAL
+            setColor(0xFFE5484D.toInt())
+        }
+        visibility = View.GONE
+        importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+    private val actionBox = FrameLayout(context).apply {
+        foregroundGravity = Gravity.CENTER
         setPadding(0, 0, 0, 0)
-        addView(actionGlyph, LinearLayout.LayoutParams(context.dp(16), context.dp(16)))
+        addView(actionGlyph, FrameLayout.LayoutParams(context.dp(16), context.dp(16), Gravity.CENTER))
+        addView(actionDot, FrameLayout.LayoutParams(context.dp(6), context.dp(6), Gravity.END or Gravity.TOP).apply {
+            topMargin = context.dp(1)
+            rightMargin = context.dp(1)
+        })
         contentDescription = "搜索"
         setOnClickListener { (customAction ?: onSearch)?.invoke() }
     }
@@ -182,6 +196,11 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
         actionGlyph.contentDescription = description
         actionBox.contentDescription = description
         customAction = onClick
+    }
+
+    /** 设置入口的新版红点；只有「我的」页的设置动作会用到。 */
+    fun setActionBadge(show: Boolean) {
+        actionDot.visibility = if (show) View.VISIBLE else View.GONE
     }
 
     /** 主动作左侧追加一枚图标：右侧动作较多时仍保持固定尺寸，不挤压标题区。 */

@@ -34,6 +34,7 @@ import com.hgtv.star.phone.ui.tabBarInset
 import com.hgtv.star.shared.compat.clipToCircleCompat
 import com.hgtv.star.shared.data.accountCache
 import com.hgtv.star.shared.data.account
+import com.hgtv.star.shared.update.AppUpdateController
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.shared.ui.SoftStyle
 import kotlinx.coroutines.CoroutineScope
@@ -174,6 +175,7 @@ class PhoneMinePage(
      * 永久留下一个已取消的 Scope，否则后续 `launch` 全是空操作，账号历史只剩本机那份。
      */
     private var loadScope = newScope()
+    private var updateBadgeJob: Job? = null
 
     private fun newScope() = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
 
@@ -259,6 +261,12 @@ class PhoneMinePage(
     override fun onAttachedToWindow() {
         super.onAttachedToWindow()
         ensureLoadScope()
+        updateBadgeJob?.cancel()
+        updateBadgeJob = loadScope.launch {
+            AppUpdateController.get(context).state.collect { state ->
+                topBar.setActionBadge(state.hasUpdate)
+            }
+        }
         val restored = restoredFeed
         if (restored?.loaded == true) {
             restoredFeed = null
@@ -274,6 +282,8 @@ class PhoneMinePage(
         // 切到别的 tab 时页面会被复用，只停掉这一轮在途请求；重新挂载时由 ensureLoadScope 恢复。
         accountRetryTask?.let(::removeCallbacks)
         accountRetryTask = null
+        updateBadgeJob?.cancel()
+        updateBadgeJob = null
         loadScope.cancel()
     }
 

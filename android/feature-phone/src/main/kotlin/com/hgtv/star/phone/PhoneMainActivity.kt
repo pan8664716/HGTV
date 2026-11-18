@@ -30,6 +30,7 @@ import com.hgtv.star.shared.architecture.AppExit
 import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.shared.debug.StartupDeferredTasks
 import com.hgtv.star.shared.debug.StartupTrace
+import com.hgtv.star.shared.update.AppUpdateController
 
 /**
  * 手机 / 平板端主界面。
@@ -103,6 +104,7 @@ class PhoneMainActivity : PhoneActivity() {
         builtTheme = PhoneStyle.theme.ordinal
         builtUiScale = PhoneUiScale.value
         phoneEdgeToEdge()
+        AppUpdateController.get(this).check()
 
         val root = FrameLayout(this).apply { setBackgroundColor(PhoneColor.BG) }
 

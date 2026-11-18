@@ -93,6 +93,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   发现新版才显示圆钮和红点，不主动弹窗；点击后显示版本说明和「下载并安装 / 安装更新」。
 - TV 设置「设备与性能」常驻「检查更新」按钮，按钮文案随检查中 / 发现新版 / 检查失败变化；
   该分组固定每行两个设置格。
+- 手机「我的」页右上角设置入口在发现新版时显示红点；手机主界面启动时触发同一份静默检查。
 - Phone 在设置 → 系统高级增加「检查更新」行，发现新版显示小红点，不主动弹窗。
 - 未改版本号、versionCode、依赖或发布元数据；未运行测试、未推送。
 - `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。
