@@ -481,7 +481,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PhoneSearchServer.kt` | 一次性、短时局域网表单；手机输入剧名、搜索登录态或更新地址后回传电视，页面不携带 Cookie、外部资源或服务端存储。 | class PhoneSearchServer、class Form |
+| `PhoneSearchServer.kt` | 一次性、短时局域网表单；手机输入剧名或搜索登录态后回传电视，页面不携带 Cookie、外部资源或服务端存储。 | class PhoneSearchServer、class Form |
 | `SearchDiag.kt` | 上一次搜索到底发生了什么。 | object SearchDiag |
 | `SearchKeyboard.kt` | 电视搜索页用哪一套键盘。 | class SearchKeyboard |
 | `SearchSource.kt` | 搜索页的数据源（设置里可选）。 | class SearchSource |
@@ -737,7 +737,7 @@ android/
 | `PhoneSettingsSystem.kt` | 横屏设置页使用沉浸式：状态栏和底部系统导航都隐藏，只保留一小条分区导航。 | fun PhoneSettingsActivity.applyLandscapeImmersive、fun PhoneSettingsActivity.handleActivityResultImpl |
 | `PhoneSettingsUnified.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsUnified 主要包含 fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend。 | fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend、fun PhoneSettingsActivity.renderUnifiedSystem、fun PhoneSettingsActivity.applyActionImpl |
 | `PhoneSettingsWidgets.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsWidgets 主要包含 fun PhoneSettingsActivity.targetHostImpl、fun PhoneSettingsActivity.sectionImpl、fun PhoneSettingsActivity.hintImpl、fun PhoneSettingsActivity.rowImpl。 | fun PhoneSettingsActivity.targetHostImpl、fun PhoneSettingsActivity.sectionImpl、fun PhoneSettingsActivity.hintImpl、fun PhoneSettingsActivity.rowImpl、fun PhoneSettingsActivity.switchImpl、fun PhoneSettingsActivity.actionImpl |
-| `PhoneUpdateDialog.kt` | 手机设置页的被动更新入口：首次录入项目或更新地址，显示版本说明，下载校验后交给系统安装器。 | fun PhoneSettingsActivity.showUpdateDialog |
+| `PhoneUpdateDialog.kt` | 手机设置页的被动更新入口：显示版本说明，下载校验后交给系统安装器；更新地址内置不可改。 | fun PhoneSettingsActivity.showUpdateDialog |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/ui/`
 
@@ -1012,7 +1012,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `TvUpdateUi.kt` | TV 顶栏更新入口的红点绑定与被动更新弹窗；无来源时改用手机扫码录入更新地址。 | fun TvMainActivity.bindUpdateEntry、fun TvMainActivity.showUpdateDialog |
+| `TvUpdateUi.kt` | TV 顶栏更新入口的红点绑定与被动更新弹窗；更新地址内置不可改。 | fun TvMainActivity.bindUpdateEntry、fun TvMainActivity.showUpdateDialog |
 
 ### shared
 
@@ -1176,7 +1176,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AppUpdateController.kt` | 两端共用的更新来源解析、元数据下载校验、静默检查与系统安装入口；不内置更新地址。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
+| `AppUpdateController.kt` | 两端共用的更新控制器：内置写死的 GitHub 更新地址（不可由用户设置），元数据下载校验、静默检查与系统安装入口。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
 
 #### `shared/src/test/kotlin/com/hgtv/star/shared/debug/`
 

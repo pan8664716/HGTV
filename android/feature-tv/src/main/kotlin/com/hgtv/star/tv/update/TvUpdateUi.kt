@@ -2,7 +2,6 @@
 package com.hgtv.star.tv
 
 import android.view.View
-import com.hgtv.star.core.PhoneSearchServer
 import com.hgtv.star.tv.R
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -35,20 +34,17 @@ internal fun TvMainActivity.settingsUpdateLabel(): String = when {
 /**
  * 用户点击顶栏更新入口后才打开；启动检查本身不会弹窗。
  *
+ * 更新地址写死在 AppUpdateSource.BUILT_IN，没有设置入口。
  * 安装按钮只调用 [com.hgtv.star.shared.update.AppUpdateController.install]，由系统
  * 安装器负责确认与覆盖安装，不在应用内等待安装结果。
  */
-internal fun TvMainActivity.showUpdateDialog(anchor: View?, allowSourceEdit: Boolean = false) {
-    if (!updateController.hasSource()) {
-        if (allowSourceEdit) showUpdateSourceDialog(anchor)
-        return
-    }
+internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
     if (!updateController.state.value.checked && !updateController.state.value.checking) {
         updateController.check()
     }
     val state=updateController.state.value
     if (state.checking) {
-        showUpdateCheckingDialog(anchor, allowSourceEdit)
+        showUpdateCheckingDialog(anchor)
         return
     }
     val dialog=TvDialog(this,"版本更新")
@@ -61,7 +57,6 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?, allowSourceEdit: Boo
             dialog.button("重新检查",icon=R.drawable.ic_toolbar_update) {
                 updateController.check(force=true)
             }
-            if (allowSourceEdit) dialog.button("修改更新地址") { showUpdateSourceDialog(anchor) }
         }
         update==null -> {
             dialog.message("当前版本 ${AppVersion.name} 已是最新")
@@ -83,7 +78,6 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?, allowSourceEdit: Boo
                     updateController.downloadAndInstall()
                 }
             }
-            if (allowSourceEdit) dialog.button("修改更新地址") { showUpdateSourceDialog(anchor) }
             if (state.error.isNotBlank()) dialog.message(state.error)
         }
     }
@@ -91,7 +85,7 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?, allowSourceEdit: Boo
     dialog.show(anchor)
 }
 
-private fun TvMainActivity.showUpdateCheckingDialog(anchor: View?, allowSourceEdit: Boolean) {
+private fun TvMainActivity.showUpdateCheckingDialog(anchor: View?) {
     val dialog=TvDialog(this,"版本更新")
     dialog.message("正在检查版本更新…")
     dialog.button("关闭",icon=R.drawable.ic_menu_close)
@@ -104,35 +98,9 @@ private fun TvMainActivity.showUpdateCheckingDialog(anchor: View?, allowSourceEd
     }
     dialog.show(anchor=anchor,onDismiss={
         if(advance && !isFinishing && !isDestroyed) {
-            showUpdateDialog(anchor, allowSourceEdit)
+            showUpdateDialog(anchor)
         } else {
             job.cancel()
         }
     })
-}
-
-/** TV 没有可用的文本输入法时，更新地址也走手机扫码的一次性表单。 */
-private fun TvMainActivity.showUpdateSourceDialog(anchor: View?) {
-    tvTools.phoneInput(
-        anchor = anchor,
-        title = "设置更新地址",
-        instructions = "用手机相机扫下面的码，打开电视发的一次性页面\n" +
-            "在手机上输入更新地址\n" +
-            "保存后电视立即检查更新",
-        form = PhoneSearchServer.Form.updateSource,
-        validate = updateController::validateSource,
-    ) { input ->
-        updateController.setSource(input)
-            .onSuccess {
-                updateController.check(force = true)
-                showUpdateDialog(anchor, allowSourceEdit = true)
-            }
-            .onFailure { error ->
-                tvTools.info(
-                    "更新地址无效",
-                    error.message ?: "请检查项目名或地址后重试。",
-                    anchor,
-                )
-            }
-    }
 }

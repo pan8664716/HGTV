@@ -81,10 +81,10 @@ data class AppUpdate(
 }
 
 /**
- * 用户自行配置的更新来源。
+ * 内置更新来源。
  *
- * 发布包不内置任何更新地址。GitHub 项目会归一成最新 Release 的 update.json；
- * 直接地址则保留用户填写的元数据地址，并按同级 releases/download 目录拼出安装包地址。
+ * 写死官方仓库，不再支持用户自行设置：GitHub 项目归一成最新 Release 的 update.json；
+ * 直接地址保留元数据地址，并按同级 releases/download 目录拼出安装包地址。
  */
 data class AppUpdateSource(
     val metadataUrl: String,
@@ -94,88 +94,14 @@ data class AppUpdateSource(
         "${downloadBaseUrl.trimEnd('/')}/${update.tag}/${update.fileName}"
 
     companion object {
-        const val MAX_INPUT_LENGTH = 4096
+        private const val REPOSITORY = "pan8664716/HGTV"
+        private const val RELEASES = "https://github.com/$REPOSITORY/releases"
 
-        private val OWNER = Regex("[A-Za-z0-9](?:[A-Za-z0-9-]{0,37}[A-Za-z0-9])?")
-        private val REPOSITORY = Regex("[A-Za-z0-9._-]{1,100}")
-
-        fun parse(input: String): AppUpdateSource {
-            val value = input.trim()
-            require(value.isNotEmpty()) { "请输入更新地址" }
-            require(value.length <= MAX_INPUT_LENGTH) { "输入内容过长" }
-            require(value.none { it.isISOControl() }) { "更新地址包含无效字符" }
-
-            parseProject(value)?.let { return it }
-            val candidate = when {
-                value.startsWith("github.com/", ignoreCase = true) ||
-                    value.startsWith("www.github.com/", ignoreCase = true) -> "https://$value"
-                value.startsWith("http://", ignoreCase = true) ||
-                    value.startsWith("https://", ignoreCase = true) -> value
-                else -> value
-            }
-            val uri = runCatching { Uri.parse(candidate) }.getOrNull()
-            if (uri != null && uri.scheme != null) {
-                val scheme = uri.scheme.orEmpty().lowercase()
-                require(scheme == "http" || scheme == "https") { "更新地址只支持 http 或 https" }
-                require(!uri.host.isNullOrBlank()) { "更新地址缺少主机名" }
-                github(uri)?.let { return it }
-                return direct(uri)
-            }
-            throw IllegalArgumentException("请输入 http(s) 更新地址")
-        }
-
-        private fun parseProject(value: String): AppUpdateSource? {
-            val project = value.trimEnd('/')
-            val parts = project.split('/', limit = 3)
-            if (parts.size != 2 || !validOwner(parts[0]) || !validRepository(parts[1])) return null
-            return github(parts[0], parts[1].removeSuffix(".git"))
-        }
-
-        private fun github(uri: Uri): AppUpdateSource? {
-            val host = uri.host?.lowercase() ?: return null
-            if (host != "github.com" && host != "www.github.com") return null
-            val segments = uri.pathSegments
-            require(segments.size >= 2) { "更新地址格式不正确" }
-            return github(segments[0], segments[1].removeSuffix(".git"))
-        }
-
-        private fun github(owner: String, repository: String): AppUpdateSource {
-            require(validOwner(owner) && validRepository(repository)) { "更新地址格式不正确" }
-            val base = "https://github.com/$owner/$repository"
-            return AppUpdateSource(
-                metadataUrl = "$base/releases/latest/download/update.json",
-                downloadBaseUrl = "$base/releases/download",
-            )
-        }
-
-        private fun direct(uri: Uri): AppUpdateSource {
-            val metadataUrl = uri.buildUpon().fragment(null).build().toString()
-            val path = uri.encodedPath.orEmpty()
-            val lower = path.lowercase()
-            val basePath = when {
-                lower.endsWith("/latest/download/update.json") ->
-                    path.dropLast("/latest/download/update.json".length) + "/download"
-                lower.endsWith("/download/update.json") ->
-                    path.dropLast("/update.json".length)
-                lower.endsWith("/update.json") ->
-                    path.dropLast("/update.json".length) + "/download"
-                else -> path.trimEnd('/') + "/download"
-            }
-            val downloadBaseUrl = uri.buildUpon()
-                .encodedPath(basePath)
-                .query(null)
-                .fragment(null)
-                .build()
-                .toString()
-                .trimEnd('/')
-            return AppUpdateSource(metadataUrl, downloadBaseUrl)
-        }
-
-        private fun validOwner(value: String): Boolean =
-            value.length in 1..39 && OWNER.matches(value)
-
-        private fun validRepository(value: String): Boolean =
-            value != "." && value != ".." && REPOSITORY.matches(value)
+        /** 写死的唯一更新地址。没有设置入口，也没有偏好存储。 */
+        val BUILT_IN = AppUpdateSource(
+            metadataUrl = "$RELEASES/latest/download/update.json",
+            downloadBaseUrl = "$RELEASES/download",
+        )
     }
 }
 
@@ -203,31 +129,12 @@ class AppUpdateController private constructor(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val repository = AppUpdateRepository()
     private val apk = File(appContext.filesDir, "updates/update.apk")
-    private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
-    @Volatile private var source = loadSource()
     private val _state = MutableStateFlow(AppUpdateState())
     private val checkedThisProcess = AtomicBoolean(false)
     val state: StateFlow<AppUpdateState> = _state.asStateFlow()
 
-    fun hasSource(): Boolean = source != null
-
-    /** 保存用户输入；失败时保留原来源，不触发任何网络请求。 */
-    fun setSource(input: String): Result<AppUpdateSource> = runCatching {
-        val parsed = AppUpdateSource.parse(input)
-        preferences.edit()
-            .putString(KEY_METADATA_URL, parsed.metadataUrl)
-            .putString(KEY_DOWNLOAD_BASE_URL, parsed.downloadBaseUrl)
-            .apply()
-        source = parsed
-        _state.value = AppUpdateState()
-        parsed
-    }
-
-    fun validateSource(input: String): String? =
-        runCatching { AppUpdateSource.parse(input) }.exceptionOrNull()?.message
-
     fun check(force: Boolean = false): Boolean {
-        val configured = source ?: return false
+        val configured = AppUpdateSource.BUILT_IN
         val current = _state.value
         if (current.checking || current.downloading) return false
         if (!force && (current.checked || current.hasUpdate)) return false
@@ -278,8 +185,7 @@ class AppUpdateController private constructor(context: Context) {
         scope.launch {
             try {
                 withContext(AppExecutors.network.dispatcher) {
-                    val configured = source ?: throw IOException("尚未设置更新地址")
-                    repository.download(configured, update, apk) { percent ->
+                    repository.download(AppUpdateSource.BUILT_IN, update, apk) { percent ->
                         _state.update { it.copy(progress = percent) }
                     }
                 }
@@ -331,18 +237,8 @@ class AppUpdateController private constructor(context: Context) {
         return if (Build.VERSION.SDK_INT >= 28) info.longVersionCode else info.versionCode.toLong()
     }
 
-    private fun loadSource(): AppUpdateSource? {
-        val metadataUrl = preferences.getString(KEY_METADATA_URL, null).orEmpty()
-        val downloadBaseUrl = preferences.getString(KEY_DOWNLOAD_BASE_URL, null).orEmpty()
-        if (metadataUrl.isBlank() || downloadBaseUrl.isBlank()) return null
-        return AppUpdateSource(metadataUrl, downloadBaseUrl)
-    }
-
     companion object {
         private const val APK_MIME = "application/vnd.android.package-archive"
-        private const val PREFERENCES = "app_update"
-        private const val KEY_METADATA_URL = "metadata_url"
-        private const val KEY_DOWNLOAD_BASE_URL = "download_base_url"
         @Volatile private var instance: AppUpdateController? = null
 
         fun get(context: Context): AppUpdateController =

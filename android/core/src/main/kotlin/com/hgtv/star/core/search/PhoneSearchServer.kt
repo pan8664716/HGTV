@@ -18,8 +18,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * nothing stored server-side; it only receives what the operator types on the phone and hands the
  * value to [onQuery].
  *
- * 同一份实现服务三个表单：[Form.search]（手机输入剧名）、[Form.sessionToken]
- *（粘贴搜索登录态）与 [Form.updateSource]（设置更新地址）。
+ * 同一份实现服务两个表单：[Form.search]（手机输入剧名）与 [Form.sessionToken]
+ *（粘贴搜索登录态）。
  */
 class PhoneSearchServer(
     address: String,
@@ -39,22 +39,10 @@ class PhoneSearchServer(
         val done: String,
         val maxLength: Int,
         val maxBytes: Int,
-        val hint: String = "",
     ) {
         companion object {
             val search=Form("在电视上搜索","输入剧名，电视会按当前选择的漫剧或短剧分类搜索。","query","输入剧名或关键词","发送到电视","已发送到电视",80,4096)
             val sessionToken=Form("填写搜索登录态","粘贴 App 抓到的 x-tt-token（整段 Cookie 也可以）。电视只把它用在搜索请求上，不联网核对、不上传。","token","粘贴 x-tt-token","保存到电视","已保存到电视",4096,8192)
-            val updateSource=Form(
-                "设置更新地址",
-                "输入更新地址，保存后电视会立即检查版本更新。",
-                "source",
-                "输入更新地址",
-                "保存到电视",
-                "已保存到电视",
-                4096,
-                8192,
-                hint = "保存后电视立即检查更新。",
-            )
         }
     }
     private val stopped=AtomicBoolean(false)
@@ -150,10 +138,9 @@ class PhoneSearchServer(
         val hint = when (form.field) {
             "token" -> "整段 Cookie 也可以直接粘进来。"
             "device_id" -> "只填官方 App「关于」页显示的纯数字。"
-            "source" -> form.hint.ifBlank { "保存后电视立即检查更新。" }
             else -> "发送后电视立刻开始搜索。"
         }
-        val inputMode = if(form.field=="source") "url" else "text"
+        val inputMode = "text"
         return PhonePage.shell(form.title,
             """<span class="pill">手机输入</span>""" +
             """<h1>${form.title}</h1>""" +

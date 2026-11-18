@@ -623,7 +623,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     aboutButton=cellSetting(deviceLine,"关于") { showAboutDialog(aboutButton) }
     lateinit var updateButton: TvSettingButton
     updateButton=cellSetting(deviceLine,settingsUpdateLabel()) {
-        showUpdateDialog(updateButton, allowSourceEdit = true)
+        showUpdateDialog(updateButton)
     }
     settingsUpdateButton=updateButton
     track(3,aboutButton,updateButton)

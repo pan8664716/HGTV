@@ -1,15 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
-import android.text.InputFilter
-import android.text.InputType
-import android.widget.EditText
 import com.hgtv.star.phone.ui.PhoneDialog
-import com.hgtv.star.phone.ui.PhoneSoft.applyWell
-import com.hgtv.star.phone.ui.PhoneStyle
-import com.hgtv.star.phone.ui.dp
-import com.hgtv.star.phone.ui.phoneSize
-import com.hgtv.star.shared.update.AppUpdateSource
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 
@@ -17,13 +9,10 @@ import kotlinx.coroutines.launch
  * Phone 设置里的被动更新入口。
  *
  * 更新检查不会主动弹窗；这里只在用户点击设置行后显示版本信息和操作。
+ * 更新地址写死在 AppUpdateSource.BUILT_IN，没有设置入口。
  * 下载完成后直接交给系统安装器，不等待安装回执。
  */
 internal fun PhoneSettingsActivity.showUpdateDialog() {
-    if(!settingsUpdateController.hasSource()) {
-        showUpdateSourceDialog()
-        return
-    }
     val controller=settingsUpdateController
     if(!controller.state.value.checked && !controller.state.value.checking) controller.check()
     val state=controller.state.value
@@ -41,7 +30,6 @@ internal fun PhoneSettingsActivity.showUpdateDialog() {
             dialog.button("重新检查",primary=true) {
                 settingsUpdateController.check(force=true)
             }
-            dialog.button("修改更新地址") { showUpdateSourceDialog() }
         }
         update==null -> {
             dialog.message("当前版本 ${appVersionName()} 已是最新")
@@ -63,7 +51,6 @@ internal fun PhoneSettingsActivity.showUpdateDialog() {
                     settingsUpdateController.downloadAndInstall()
                 }
             }
-            dialog.button("修改更新地址") { showUpdateSourceDialog() }
             if(state.error.isNotBlank()) dialog.message(state.error)
         }
     }
@@ -85,43 +72,4 @@ private fun PhoneSettingsActivity.showUpdateCheckingDialog() {
     dialog.show {
         if(advance && !isFinishing && !isDestroyed) showUpdateDialog() else job.cancel()
     }
-}
-
-private fun PhoneSettingsActivity.showUpdateSourceDialog(
-    error: String?=null,
-    initial: String="",
-) {
-    val input=EditText(this).apply {
-        hint="输入更新地址"
-        setText(initial)
-        setSelection(text.length)
-        setHintTextColor(PhoneStyle.textFaint)
-        setTextColor(PhoneStyle.text)
-        phoneSize(13)
-        inputType=InputType.TYPE_CLASS_TEXT or InputType.TYPE_TEXT_FLAG_NO_SUGGESTIONS
-        filters=arrayOf(InputFilter.LengthFilter(AppUpdateSource.MAX_INPUT_LENGTH))
-        minLines=1
-        maxLines=3
-        setPadding(dp(14),dp(10),dp(14),dp(10))
-        applyWell(PhoneStyle.well,14f,4f)
-    }
-    val dialog=PhoneDialog(this,"设置更新地址")
-    dialog.message("请输入更新地址。保存后会立即检查版本更新。")
-    if(!error.isNullOrBlank()) dialog.message(error)
-    dialog.content(input)
-    dialog.button("取消")
-    dialog.button("保存并检查",primary=true) {
-        settingsUpdateController.setSource(input.text?.toString().orEmpty())
-            .onSuccess {
-                settingsUpdateController.check(force=true)
-                showUpdateDialog()
-            }
-            .onFailure {
-                showUpdateSourceDialog(
-                    error=it.message ?: "更新地址无效，请重试。",
-                    initial=input.text?.toString().orEmpty(),
-                )
-            }
-    }
-    dialog.show()
 }
