@@ -96,7 +96,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 1.3.8.1 发布准备
 
-状态：release 已编译，签名校验通过，待发布 GitHub Release。
+状态：GitHub Release 已发布，待用户真机验证。
 
 - `versionName` 更新为 `1.3.8.1`，`versionCode` 从线上 `1.3.8` 的 `85` 更新为 `86`。
 - CHANGELOG 已按手机 / 平板、电视分节；README、Release 正文与更新元数据同步。
@@ -106,7 +106,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - APK：`outputs/release-1.3.8.1/HGTV_1.3.8.1.apk`，大小 `4019406` 字节；
   SHA-256：`47221cb4c22af116fa35e30ffbb52289c023e1fac07c46a078ce20cae9db8e75`。
 - Release 只上传 `HGTV_1.3.8.1.apk`、`SHA256SUMS`、`update.json`，不含源码；
-  发布 tag 指向独立空树提交，只推送 tag，不推送源码分支。
+  tag `1.3.8.1` 指向独立空树提交 `33a53292bac13356de740e178c5e7dee654ffbb2`，
+  只推送 tag，不推送源码分支。
+- Release：<https://github.com/pan8664716/HGTV/releases/tag/1.3.8.1>。
 
 回滚：对本节对应提交执行 `git revert`。
 
