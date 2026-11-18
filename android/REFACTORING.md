@@ -78,6 +78,8 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 静帧视图挂在播放页根层而不是 `PlayerView` 内部，并提高 `translationZ`，
   避免被 SurfaceView / PlayerView 内部层级盖住；调试日志用 `freezeDraw`
   确认静帧确实完成一次绘制。
+- `PixelCopy` 回调必须校验静帧的父容器是 PlayerView 的父容器（播放页根层）；
+  早期误写成 `target.parent === PlayerView`，会把成功截帧全部丢弃。
 - 下一次推荐页换剧时，在 `stop/clearMediaItems` 前立即盖上静帧；新首帧到达且
   比例布局完成后再撤掉。横竖屏比例切换时静帧保持原尺寸，避免再次拉伸。
 - 静帧只占一张 Bitmap，替换和播放层销毁时回收；首帧回调晚于比例布局时先暂存，

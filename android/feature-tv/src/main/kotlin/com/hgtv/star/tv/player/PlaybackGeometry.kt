@@ -333,6 +333,7 @@ private fun PlayerView.obtainPlaybackStillFrame(): PlaybackStillFrameView? {
  * 一帧，不做连续截屏；每次换源后都会被新的首帧替换。
  */
 internal fun PlayerView.capturePlaybackStillFrame() {
+    val host=parent
     val target=obtainPlaybackStillFrame() ?: return
     val token=++target.captureToken
     val surface=videoSurfaceView
@@ -353,7 +354,7 @@ internal fun PlayerView.capturePlaybackStillFrame() {
     runCatching {
         PixelCopy.request(surface,frame,{ result ->
             if(result==PixelCopy.SUCCESS && token==target.captureToken &&
-                target.parent===this && isAttachedToWindow) {
+                host!=null && target.parent===host && isAttachedToWindow) {
                 target.replaceStill(frame)
                 if(com.hgtv.star.tv.BuildConfig.DEBUG) {
                     android.util.Log.i("HGTV-RATIO","freezeCapture result=ok")
@@ -361,7 +362,11 @@ internal fun PlayerView.capturePlaybackStillFrame() {
             } else {
                 frame.recycle()
                 if(com.hgtv.star.tv.BuildConfig.DEBUG) {
-                    android.util.Log.i("HGTV-RATIO","freezeCapture result=$result")
+                    android.util.Log.i(
+                        "HGTV-RATIO",
+                        "freezeCapture result=$result host=${target.parent===host} " +
+                            "token=${token==target.captureToken} attached=$isAttachedToWindow"
+                    )
                 }
             }
         },handler)
