@@ -101,7 +101,7 @@ data class AppUpdateSource(
 
         fun parse(input: String): AppUpdateSource {
             val value = input.trim()
-            require(value.isNotEmpty()) { "请输入 GitHub 用户/项目或更新地址" }
+            require(value.isNotEmpty()) { "请输入更新地址" }
             require(value.length <= MAX_INPUT_LENGTH) { "输入内容过长" }
             require(value.none { it.isISOControl() }) { "更新地址包含无效字符" }
 
@@ -121,7 +121,7 @@ data class AppUpdateSource(
                 github(uri)?.let { return it }
                 return direct(uri)
             }
-            throw IllegalArgumentException("请输入 GitHub 用户/项目或 http(s) 更新地址")
+            throw IllegalArgumentException("请输入 http(s) 更新地址")
         }
 
         private fun parseProject(value: String): AppUpdateSource? {
@@ -135,12 +135,12 @@ data class AppUpdateSource(
             val host = uri.host?.lowercase() ?: return null
             if (host != "github.com" && host != "www.github.com") return null
             val segments = uri.pathSegments
-            require(segments.size >= 2) { "GitHub 地址缺少用户或项目" }
+            require(segments.size >= 2) { "更新地址格式不正确" }
             return github(segments[0], segments[1].removeSuffix(".git"))
         }
 
         private fun github(owner: String, repository: String): AppUpdateSource {
-            require(validOwner(owner) && validRepository(repository)) { "GitHub 用户或项目格式不正确" }
+            require(validOwner(owner) && validRepository(repository)) { "更新地址格式不正确" }
             val base = "https://github.com/$owner/$repository"
             return AppUpdateSource(
                 metadataUrl = "$base/releases/latest/download/update.json",

@@ -10,6 +10,8 @@ import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.shared.update.AppUpdateSource
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /**
  * Phone 设置里的被动更新入口。
@@ -22,8 +24,13 @@ internal fun PhoneSettingsActivity.showUpdateDialog() {
         showUpdateSourceDialog()
         return
     }
-    val state=settingsUpdateState
-    if(!state.checked && !state.checking) settingsUpdateController.check()
+    val controller=settingsUpdateController
+    if(!controller.state.value.checked && !controller.state.value.checking) controller.check()
+    val state=controller.state.value
+    if(state.checking) {
+        showUpdateCheckingDialog()
+        return
+    }
     val dialog=PhoneDialog(this,"版本更新")
     val update=state.available
     when {
@@ -63,12 +70,28 @@ internal fun PhoneSettingsActivity.showUpdateDialog() {
     dialog.show()
 }
 
+private fun PhoneSettingsActivity.showUpdateCheckingDialog() {
+    val dialog=PhoneDialog(this,"版本更新")
+    dialog.message("正在检查版本更新…")
+    dialog.button("关闭")
+    var advance=false
+    val job=settingsScope.launch {
+        settingsUpdateController.state.first { !it.checking }
+        if(!dialog.isShowing) return@launch
+        advance=true
+        dialog.dismiss()
+    }
+    dialog.show {
+        if(advance && !isFinishing && !isDestroyed) showUpdateDialog() else job.cancel()
+    }
+}
+
 private fun PhoneSettingsActivity.showUpdateSourceDialog(
     error: String?=null,
     initial: String="",
 ) {
     val input=EditText(this).apply {
-        hint="owner/repo 或 update.json 地址"
+        hint="输入更新地址"
         setText(initial)
         setSelection(text.length)
         setHintTextColor(PhoneStyle.textFaint)
@@ -82,7 +105,7 @@ private fun PhoneSettingsActivity.showUpdateSourceDialog(
         applyWell(PhoneStyle.well,14f,4f)
     }
     val dialog=PhoneDialog(this,"设置更新地址")
-    dialog.message("输入 GitHub 用户/项目（例如 owner/repo），或 update.json 更新地址。保存后会立即检查。")
+    dialog.message("请输入更新地址。保存后会立即检查版本更新。")
     if(!error.isNullOrBlank()) dialog.message(error)
     dialog.content(input)
     dialog.button("取消")

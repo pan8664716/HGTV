@@ -46,9 +46,9 @@ class PhoneSearchServer(
             val sessionToken=Form("填写搜索登录态","粘贴 App 抓到的 x-tt-token（整段 Cookie 也可以）。电视只把它用在搜索请求上，不联网核对、不上传。","token","粘贴 x-tt-token","保存到电视","已保存到电视",4096,8192)
             val updateSource=Form(
                 "设置更新地址",
-                "输入 GitHub 用户/项目（例如 owner/repo），或一个 update.json 更新地址。长链接会自动提取 GitHub 用户/项目。",
+                "输入更新地址，保存后电视会立即检查版本更新。",
                 "source",
-                "owner/repo 或 update.json 地址",
+                "输入更新地址",
                 "保存到电视",
                 "已保存到电视",
                 4096,

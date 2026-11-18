@@ -4,6 +4,8 @@ package com.hgtv.star.tv
 import android.view.View
 import com.hgtv.star.core.PhoneSearchServer
 import com.hgtv.star.tv.R
+import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 
 /** TV 顶栏更新入口：没有新版时整枚入口隐藏，有新版时才显示并亮红点。 */
 internal fun TvMainActivity.bindUpdateEntry() {
@@ -41,8 +43,14 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
         showUpdateSourceDialog(anchor)
         return
     }
-    val state=updateState
-    if (!state.checked && !state.checking) updateController.check()
+    if (!updateController.state.value.checked && !updateController.state.value.checking) {
+        updateController.check()
+    }
+    val state=updateController.state.value
+    if (state.checking) {
+        showUpdateCheckingDialog(anchor)
+        return
+    }
     val dialog=TvDialog(this,"版本更新")
     val update=state.available
     when {
@@ -81,13 +89,29 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
     dialog.show(anchor)
 }
 
+private fun TvMainActivity.showUpdateCheckingDialog(anchor: View?) {
+    val dialog=TvDialog(this,"版本更新")
+    dialog.message("正在检查版本更新…")
+    dialog.button("关闭",icon=R.drawable.ic_menu_close)
+    var advance=false
+    val job=appScope.launch {
+        updateController.state.first { !it.checking }
+        if(!dialog.isShowing) return@launch
+        advance=true
+        dialog.dismiss()
+    }
+    dialog.show(anchor=anchor,onDismiss={
+        if(advance && !isFinishing && !isDestroyed) showUpdateDialog(anchor) else job.cancel()
+    })
+}
+
 /** TV 没有可用的文本输入法时，更新地址也走手机扫码的一次性表单。 */
 private fun TvMainActivity.showUpdateSourceDialog(anchor: View?) {
     tvTools.phoneInput(
         anchor = anchor,
         title = "设置更新地址",
         instructions = "用手机相机扫下面的码，打开电视发的一次性页面\n" +
-            "在手机上输入 GitHub 用户/项目或 update.json 地址\n" +
+            "在手机上输入更新地址\n" +
             "保存后电视立即检查更新",
         form = PhoneSearchServer.Form.updateSource,
         validate = updateController::validateSource,
