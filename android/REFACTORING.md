@@ -5810,3 +5810,22 @@ feature-tv/
 - `:app:assembleDebug` 使用 JDK 17 通过；未改版本号、versionCode、依赖或发布元数据。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## 播放地址 API 对比与空响应重试收敛
+
+状态：已修复，debug 构建通过，待用户真机验证。
+
+- 现场电视身份（`device_id` 尾号 `042464`）对五个播放模型 API 各请求一次：
+  `multi/player`、`video_model`、旧 `multi_video_model`、`preload` 均在
+  `60~130ms` 返回；前三类为 `HTTP 200 + 0 字节`，旧路径为 `110001`。
+  因此慢的主因不是 API 本身，也不是单次网络耗时，而是这份设备身份被平台拒绝。
+- 播放模型请求原先还经过 `ContentRepository.text()` 的通用空响应换域：一次
+  `multi/player` 直连会被扩成 TNC 表中 11 个域名串行请求。日志中一轮约 10.6 秒，
+  之后还会继续回落到批量路径。
+- 播放模型两处请求关闭通用换域，由 `PlaybackModelService` 自己按
+  `MODEL_HOST_ATTEMPTS=3` 控制候选域名；空响应仍按 4→5 档与设备自愈处理。
+- 新增 `LivePlaybackApiCompareTest`，用真实注册身份串行比较五条播放 API 的耗时、
+  业务码与内联地址，必须设置 `HONGGUO_LIVE=1` 和身份环境变量才会运行。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或发布元数据。
+
+回滚：对本节对应提交执行 `git revert`。

@@ -340,6 +340,9 @@ import java.util.concurrent.TimeUnit
             signed.url,
             request,
             client=addressClient(ADDRESS_ATTEMPT_TIMEOUT_MS),
+            // 播放模型已经由本文件按 TNC 顺序逐域重签并限次尝试。
+            // 再走通用空响应换域会把一次直连放大成 11 个串行请求。
+            allowDomainFailover=false,
             storeRegionHeaders=false,
         ) { r -> stable=r.header("tt_stable")=="1" }
         // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
@@ -412,6 +415,8 @@ import java.util.concurrent.TimeUnit
             signed.url,
             request,
             client=addressClient(ADDRESS_ATTEMPT_TIMEOUT_MS),
+            // 域名切换由调用方的 hosts 循环负责，避免通用层再串行重试整张 TNC 表。
+            allowDomainFailover=false,
             storeRegionHeaders=false,
         ) { r -> stable=r.header("tt_stable")=="1" }
         if(response.isBlank()) {

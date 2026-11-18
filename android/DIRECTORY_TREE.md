@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-17。文件总数为 662；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-18。文件总数为 663；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -41,7 +41,7 @@
 ```text
 android/
 ├── app/  (23 files, 12 directories)
-├── core/  (227 files, 27 directories)
+├── core/  (228 files, 27 directories)
 ├── feature-phone/  (143 files, 11 directories)
 ├── feature-tv/  (157 files, 18 directories)
 ├── shared/  (105 files, 25 directories)
@@ -245,6 +245,7 @@ android/
 | `LivePageSizeProbeTest.kt` | 自动化测试，覆盖 LivePageSizeProbeTest 相关行为。 | class LivePageSizeProbeTest |
 | `LivePassportSignTest.kt` | 用 branch-2 签名打真实的 Passport 端点，验证签名**被接受**。 | class LivePassportSignTest |
 | `LivePhoneLoginTest.kt` | 手机号登录链路的联网验收：注册设备 → 发码 → （人工给码后）换会话。 | class LivePhoneLoginTest |
+| `LivePlaybackApiCompareTest.kt` | 用同一份真实注册身份串行比较播放模型 API 的耗时、业务码与内联地址。 | class LivePlaybackApiCompareTest |
 | `LivePlaybackBranch2Test.kt` | 自动化测试，覆盖 LivePlaybackBranch2Test 相关行为。 | class LivePlaybackBranch2Test |
 | `LivePlaybackBurn2Test.kt` | 自动化测试，覆盖 LivePlaybackBurn2Test 相关行为。 | class LivePlaybackBurn2Test |
 | `LivePlaybackBurnTest.kt` | 自动化测试，覆盖 LivePlaybackBurnTest 相关行为。 | class LivePlaybackBurnTest |
