@@ -8,6 +8,10 @@ import com.hgtv.star.shared.compat.isMeteredConnection
 
 import android.app.Activity
 import android.content.Context
+import android.graphics.Bitmap
+import android.os.Build
+import android.os.Handler
+import android.os.Looper
 import android.util.AttributeSet
 import android.view.*
 import android.widget.*
@@ -211,6 +215,127 @@ fun TvMainActivity.applyResizeMode(target: PlayerView?=playerView) {
  * Surface 帧会先被拉伸一下。这里暂存新比例，首帧回调时合一次快门、应用比例并等
  * 布局完成后再揭开；用户看到的是旧帧稳定停住，然后直接进入比例正确的新画面。
  */
+private class PlaybackStillFrameView(context: Context): ImageView(context) {
+    var still: Bitmap?=null
+    private var pending: Bitmap?=null
+    var captureToken=0
+
+    init {
+        visibility=View.GONE
+        scaleType=ScaleType.FIT_XY
+        isClickable=false
+        isFocusable=false
+        importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
+    }
+
+    fun replaceStill(frame: Bitmap) {
+        if(still===frame) return
+        if(visibility==View.VISIBLE) {
+            if(pending!==frame) {
+                pending?.recycle()
+                pending=frame
+            }
+            return
+        }
+        setImageBitmap(frame)
+        still?.recycle()
+        still=frame
+    }
+
+    fun clearVisible() {
+        visibility=View.GONE
+        pending?.let { frame ->
+            setImageBitmap(frame)
+            still?.recycle()
+            still=frame
+            pending=null
+        }
+    }
+
+    fun releaseStill() {
+        setImageDrawable(null)
+        pending?.recycle()
+        pending=null
+        still?.recycle()
+        still=null
+    }
+}
+
+private fun PlayerView.playbackStillFrame(): PlaybackStillFrameView? {
+    for(i in 0 until childCount) {
+        (getChildAt(i) as? PlaybackStillFrameView)?.let { return it }
+    }
+    return null
+}
+
+private fun PlayerView.obtainPlaybackStillFrame(): PlaybackStillFrameView {
+    playbackStillFrame()?.let { return it }
+    return PlaybackStillFrameView(context).also {
+        addView(it,FrameLayout.LayoutParams(0,0,Gravity.CENTER))
+        it.bringToFront()
+    }
+}
+
+/**
+ * 首帧上屏后留一张静帧，下一次换源时先盖住 PlayerView 的黑快门。
+ *
+ * SurfaceView 用 PixelCopy，旋转播放使用的 TextureView 直接读 bitmap。这里只缓存
+ * 一帧，不做连续截屏；每次换源后都会被新的首帧替换。
+ */
+internal fun PlayerView.capturePlaybackStillFrame() {
+    val target=obtainPlaybackStillFrame()
+    val token=++target.captureToken
+    val surface=videoSurfaceView
+    if(surface is TextureView) {
+        val frame=runCatching { surface.bitmap }.getOrNull() ?: return
+        if(token==target.captureToken) target.replaceStill(frame) else frame.recycle()
+        return
+    }
+    if(surface !is SurfaceView || Build.VERSION.SDK_INT<Build.VERSION_CODES.N) return
+    val width=surface.width
+    val height=surface.height
+    if(width<=0 || height<=0 || !surface.holder.surface.isValid) return
+    val frame=Bitmap.createBitmap(width,height,Bitmap.Config.ARGB_8888)
+    val handler=Handler(Looper.getMainLooper())
+    runCatching {
+        PixelCopy.request(surface,frame,{ result ->
+            if(result==PixelCopy.SUCCESS && token==target.captureToken &&
+                target.parent===this && isAttachedToWindow) {
+                target.replaceStill(frame)
+            } else {
+                frame.recycle()
+            }
+        },handler)
+    }.onFailure { frame.recycle() }
+}
+
+/** 换源前立即盖上上一集的首帧，旧 Surface 被 stop 清掉时用户不会先看到黑屏。 */
+internal fun PlayerView.showPlaybackStillFrame() {
+    val overlay=playbackStillFrame() ?: return
+    if(overlay.still==null) return
+    val frame=videoSurfaceView?.parent as? AspectRatioFrameLayout
+    val width=frame?.width ?: videoSurfaceView?.width ?: 0
+    val height=frame?.height ?: videoSurfaceView?.height ?: 0
+    if(width<=0 || height<=0) return
+    overlay.layoutParams=FrameLayout.LayoutParams(width,height,Gravity.CENTER)
+    overlay.visibility=View.VISIBLE
+    overlay.bringToFront()
+    if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+        android.util.Log.i("HGTV-RATIO","freezeShow size=${width}x$height")
+    }
+}
+
+internal fun PlayerView.clearPlaybackFreezeFrame() {
+    playbackStillFrame()?.clearVisible()
+}
+
+internal fun PlayerView.releasePlaybackStillFrame() {
+    val overlay=playbackStillFrame() ?: return
+    overlay.captureToken++
+    overlay.releaseStill()
+    removeView(overlay)
+}
+
 class FixedFirstFramePlayerView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet?=null,
@@ -221,8 +346,35 @@ class FixedFirstFramePlayerView @JvmOverloads constructor(
     private var pendingAspectRatio=0f
     private var appliedAspectRatio=0f
     private var contentFrame: AspectRatioFrameLayout?=null
+    private var frameLayoutListener: View.OnLayoutChangeListener?=null
     private val shutterView by lazy {
         findViewById<View>(com.google.android.exoplayer2.ui.R.id.exo_shutter)
+    }
+
+    private fun ratioLog(message: String) {
+        if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+            android.util.Log.i("HGTV-RATIO",message)
+        }
+    }
+
+    private fun frameSize(): String {
+        val frame=contentFrame ?: videoSurfaceView?.parent as? AspectRatioFrameLayout
+        return "${frame?.width ?: 0}x${frame?.height ?: 0}"
+    }
+
+    private fun observeFrame(frame: AspectRatioFrameLayout) {
+        if(contentFrame===frame && frameLayoutListener!=null) return
+        frameLayoutListener?.let { old -> contentFrame?.removeOnLayoutChangeListener(old) }
+        val listener=View.OnLayoutChangeListener { view,_,_,_,_,oldLeft,oldTop,oldRight,oldBottom ->
+            if(view.width!=oldRight-oldLeft || view.height!=oldBottom-oldTop) {
+                ratioLog(
+                    "frameLayout=${view.width}x${view.height} old=${oldRight-oldLeft}x${oldBottom-oldTop} " +
+                        "applied=$appliedAspectRatio pending=$pendingAspectRatio hold=$holdAspectRatio"
+                )
+            }
+        }
+        frameLayoutListener=listener
+        frame.addOnLayoutChangeListener(listener)
     }
 
     override fun onContentAspectRatioChanged(
@@ -230,6 +382,11 @@ class FixedFirstFramePlayerView @JvmOverloads constructor(
         aspectRatio: Float,
     ) {
         this.contentFrame=contentFrame
+        contentFrame?.let(::observeFrame)
+        ratioLog(
+            "contentRatio=$aspectRatio hold=$holdAspectRatio firstFrameSeen=$firstFrameSeen " +
+                "applied=$appliedAspectRatio frame=${frameSize()} shutter=${shutterView?.visibility}"
+        )
         if(holdAspectRatio) {
             pendingAspectRatio=aspectRatio
             if(firstFrameSeen) completeFirstFrameAspectRatio()
@@ -240,20 +397,39 @@ class FixedFirstFramePlayerView @JvmOverloads constructor(
     }
 
     fun holdFirstFrameAspectRatio() {
+        ratioLog(
+            "hold applied=$appliedAspectRatio pending=$pendingAspectRatio frame=${frameSize()} " +
+                "view=${width}x${height} shutter=${shutterView?.visibility}"
+        )
         holdAspectRatio=true
         firstFrameSeen=false
         pendingAspectRatio=0f
     }
 
-    fun completeFirstFrameAspectRatio() {
-        if(!holdAspectRatio) return
+    fun completeFirstFrameAspectRatio(): Boolean {
+        if(!holdAspectRatio) {
+            clearPlaybackFreezeFrame()
+            return false
+        }
         firstFrameSeen=true
         val ratio=pendingAspectRatio
-        if(ratio<=0f) return
+        ratioLog(
+            "complete ratio=$ratio applied=$appliedAspectRatio frame=${frameSize()} " +
+                "shutter=${shutterView?.visibility}"
+        )
+        if(ratio<=0f) {
+            shutterView?.visibility=View.INVISIBLE
+            clearPlaybackFreezeFrame()
+            return false
+        }
         holdAspectRatio=false
         val frame=contentFrame ?: videoSurfaceView?.parent as? AspectRatioFrameLayout
         pendingAspectRatio=0f
-        if(frame==null || abs(ratio-appliedAspectRatio)<.0001f) return
+        if(frame==null || abs(ratio-appliedAspectRatio)<.0001f) {
+            shutterView?.visibility=View.INVISIBLE
+            clearPlaybackFreezeFrame()
+            return false
+        }
         appliedAspectRatio=ratio
         val shutter=shutterView
         shutter?.visibility=View.VISIBLE
@@ -262,15 +438,19 @@ class FixedFirstFramePlayerView @JvmOverloads constructor(
         val observer=frame.viewTreeObserver
         if(!observer.isAlive) {
             shutter?.visibility=View.INVISIBLE
-            return
+            clearPlaybackFreezeFrame()
+            return false
         }
         observer.addOnPreDrawListener(object: ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
                 if(observer.isAlive) observer.removeOnPreDrawListener(this)
+                ratioLog("reveal frame=${frameSize()} ratio=$ratio")
                 shutter?.visibility=View.INVISIBLE
+                clearPlaybackFreezeFrame()
                 return true
             }
         })
+        return true
     }
 }
 
@@ -278,9 +458,8 @@ internal fun PlayerView.holdFirstFrameAspectRatio() {
     (this as? FixedFirstFramePlayerView)?.holdFirstFrameAspectRatio()
 }
 
-internal fun PlayerView.completeFirstFrameAspectRatio() {
-    (this as? FixedFirstFramePlayerView)?.completeFirstFrameAspectRatio()
-}
+internal fun PlayerView.completeFirstFrameAspectRatio(): Boolean =
+    (this as? FixedFirstFramePlayerView)?.completeFirstFrameAspectRatio() ?: false
 
 /**
  * 画面缩放 / 竖屏短剧全屏：两者的落点都是 [playerView] 这一层的几何，

@@ -17,6 +17,7 @@ import com.hgtv.star.shared.media.DanmakuView
 import com.hgtv.star.shared.ui.LoadingDotsView
 
 internal fun TvMainActivity.buildPlaybackSurface() {
+    playerView?.releasePlaybackStillFrame()
     root.removeAllViews(); root.setBackgroundColor(Color.BLACK)
     touchLayer=null; touchBar=null; touchPlayLabel=null; touchSeekHint=null; touchBoostHint=null
     touchScrubHint=null

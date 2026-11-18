@@ -131,6 +131,13 @@ fun TvMainActivity.playEpisode(
     // close）。预热被换出 / 已经关掉时读不出数据，必须落回「重新取地址 + 本地准备」那条路。
     // 此时视图仍然复用（`reuse` 看的是 `keepMedia`）——那一步不需要重建整棵树。
     val keep=keepMedia && video?.isReusable==true
+    // 必须先冻结，再 stop/clearMediaItems：停旧媒体会让 PlayerView 收到一次 ratio=0，
+    // 如果这时还没 hold，AspectRatioFrameLayout 会立刻撑满整屏，用户看到的就是拉伸首帧。
+    if((screen=="player" || recommendEntry) && reuse && !keep) {
+        // 上一集首帧的静帧先盖住 PlayerView；Surface 被 stop 清掉后不会露出黑快门。
+        playerView?.showPlaybackStillFrame()
+        playerView?.holdFirstFrameAspectRatio()
+    }
     // 「已看完」标记只在**正式播放**里清掉。推荐页还没进正片（需求 3：进正片才算开始看），
     // 这时改本机记录就等于「只看了一眼推荐，历史里那部剧的已看完标记就没了」。
     if(!recommendEntry) library.setWatched(data.series.id,false)
@@ -724,6 +731,11 @@ fun TvMainActivity.playEpisode(
                 videoWidth=Math.round(rawW*ratio)
                 videoHeight=rawH
                 videoSizeReady=videoWidth>0 && videoHeight>0
+                if(BuildConfig.DEBUG) android.util.Log.i(
+                    "HGTV-RATIO",
+                    "videoSize=${videoSize.width}x${videoSize.height} applied=${videoWidth}x$videoHeight " +
+                        "firstFrame=$firstFrameRendered view=${playerView?.javaClass?.simpleName}"
+                )
                 applyResizeMode()
                 if(videoSizeReady && !firstFrameRendered && sourceSetAt>0L &&
                     PlaybackDiag.lastFrameAt>sourceSetAt) {
@@ -735,7 +747,14 @@ fun TvMainActivity.playEpisode(
             override fun onRenderedFirstFrame() {
                 if(!active()) return
                 firstFrameRendered=true
-                if(screen=="player") playerView?.completeFirstFrameAspectRatio()
+                if(BuildConfig.DEBUG) android.util.Log.i(
+                    "HGTV-RATIO",
+                    "renderedFirstFrame view=${playerView?.javaClass?.simpleName} video=${videoWidth}x$videoHeight"
+                )
+                val waitingForAspectLayout=playerView?.completeFirstFrameAspectRatio()==true
+                if(!waitingForAspectLayout) playerView?.clearPlaybackFreezeFrame()
+                // 这一帧已经上屏；缓存下来供下一次换源盖住黑快门。
+                playerView?.capturePlaybackStillFrame()
                 PlaybackStartupTrace.firstFrame(
                     "tv.player",
                     "recommend=$recommendEntry preloaded=${prefetched!=null} reused=$reuse",
@@ -828,7 +847,16 @@ fun TvMainActivity.playEpisode(
         playerListener=listener; p.addListener(listener)
         val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(MimeTypes.VIDEO_MP4).build())
         // 正式播放换集：PlayerView 先冻结旧比例，等新首帧真的上屏后再应用新比例。
-        if(screen=="player") playerView?.holdFirstFrameAspectRatio()
+        if(screen=="player" || screen=="recommend") {
+            if(BuildConfig.DEBUG) android.util.Log.i(
+                "HGTV-RATIO",
+                "sourceSet screen=$screen episode=${episodeIndex+1} reuse=$reuse seamless=$seamless " +
+                    "view=${playerView?.javaClass?.simpleName} " +
+                    "source=${remote.info.videoWidth}x${remote.info.videoHeight}"
+            )
+            if(reuse) playerView?.showPlaybackStillFrame()
+            playerView?.holdFirstFrameAspectRatio()
+        }
         // 起点一次设定：`setMediaSource(source, startPositionMs)` 内部先摘空旧项、
         // 再按给定位置掩码时间线，等价于「`setMediaSource` + `seekTo`」，少一次
         // `onPositionDiscontinuity`（那条回调会连带刷新媒体会话与弹幕指针）。

@@ -62,6 +62,22 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## TV 推荐页换剧静帧过渡
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 历史 logcat 显示推荐页换剧从 `player.stop()` 到新首帧约 `428–578ms`，
+  期间 `exo_shutter` 可见，用户看到的是整段黑屏后突然起播。
+- TV 播放层新增单帧静帧缓存：每次 `onRenderedFirstFrame` 后通过 SurfaceView
+  `PixelCopy`（API 24+）或 TextureView `bitmap` 保存一帧，不连续截屏。
+- 下一次推荐页换剧时，在 `stop/clearMediaItems` 前立即盖上静帧；新首帧到达且
+  比例布局完成后再撤掉。横竖屏比例切换时静帧保持原尺寸，避免再次拉伸。
+- 静帧只占一张 Bitmap，替换和播放层销毁时回收；首帧回调晚于比例布局时先暂存，
+  避免把新画面按旧比例提前铺开。
+- 未改版本号、versionCode、依赖或目录结构；未运行测试、未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 正式播放手动换集首帧比例修复
 
 状态：已实现，debug 构建通过，待用户真机验证。
