@@ -20,7 +20,7 @@ internal object ContentPlaybackParser {
     ): String {
         val biz=JSONObject()
             .put("detail_page_version",0)
-            .put("device_level",deviceLevel.coerceIn(3,5))
+            .put("device_level",deviceLevel.coerceIn(4,5))
             .put("disable_digg_stat",false)
             .put("disable_video_relate_book",false)
             .put("need_all_video_definition",true)
@@ -67,7 +67,7 @@ internal object ContentPlaybackParser {
     ): String {
         val biz=JSONObject()
             .put("detail_page_version",0)
-            .put("device_level",deviceLevel.coerceIn(3,5))
+            .put("device_level",deviceLevel.coerceIn(4,5))
             .put("disable_digg_stat",false)
             .put("disable_video_relate_book",false)
             .put("from_video_id","")

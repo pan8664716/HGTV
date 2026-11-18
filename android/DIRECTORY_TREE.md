@@ -359,7 +359,7 @@ android/
 | `ContentPrimaryIdentity.kt` | 当前唯一的主身份快照。 | class ContentPrimaryIdentity、fun ContentRepository.primaryIdentity、fun ContentRepository.recommendationValues |
 | `ContentRelated.kt` | 取「相关作品」那一栏的原始条目。 | fun ContentRepository.relatedRows |
 | `ContentRelationFacade.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentRelationFacade 主要包含 fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame。 | fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame |
-| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态；播放模型默认 3 档，空响应按 4、5 档兼容升级。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile、DIRECT_DEVICE_LEVEL |
+| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态；播放模型默认 4 档，空响应升 5 档兼容。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile、DIRECT_DEVICE_LEVEL |
 | `ContentSearchFacade.kt` | 搜索提示词（联想词）：App 搜索框用的那个接口。 | fun ContentRepository.suggestions、fun ContentRepository.webSuggestions、fun ContentRepository.hotSearches |
 | `ContentSearchResultsFacade.kt` | 只搜一种内容类型：联调探针仍可显式指定 tab_type。 | fun ContentRepository.search、fun ContentRepository.webSearch |
 | `ContentSigning.kt` | 同一套业务参数与设备参数，只换接口域名后重签。 | fun ContentRepository.resignForHost、fun ContentRepository.alternateApiHosts、fun ContentRepository.urlWithHost |

@@ -2,7 +2,7 @@
 package com.hgtv.star.core
 
 internal fun ContentRepository.beginEpisodeImpl() {
-    deviceLevel=3
+    deviceLevel=4
 }
 
 internal fun ContentRepository.escalateDeviceLevelImpl() {
