@@ -757,10 +757,10 @@ fun TvMainActivity.playEpisode(
                 // 否则会把一张全黑图缓存成下一次换源的过渡画面。
                 val captureView=playerView
                 main.postDelayed({
-                    if(active() && firstFrameRendered && captureView===playerView) {
+                    if(captureView===playerView && captureView?.isAttachedToWindow==true) {
                         captureView?.capturePlaybackStillFrame()
                     }
-                },600L)
+                },300L)
                 PlaybackStartupTrace.firstFrame(
                     "tv.player",
                     "recommend=$recommendEntry preloaded=${prefetched!=null} reused=$reuse",

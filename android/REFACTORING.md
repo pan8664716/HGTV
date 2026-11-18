@@ -70,7 +70,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   期间 `exo_shutter` 可见，用户看到的是整段黑屏后突然起播。
 - TV 播放层新增单帧静帧缓存：每次 `onRenderedFirstFrame` 后通过 SurfaceView
   `PixelCopy`（API 24+）或 TextureView `bitmap` 保存一帧，不连续截屏；静帧延后
-  600ms 采集，避免首帧回调时 Surface 尚未合成出像素。
+  300ms 采集，避免首帧回调时 Surface 尚未合成出像素。
+- 采样只校验 PlayerView 仍是当前实例且已挂载，不再依赖播放会话的
+  `active()`；后者会在推荐换剧过程中提前失效，导致静帧根本没有采集。
 - 采集结果会抽样拒绝近全黑画面，避免把空 Surface 缓存成下一次换源的过渡图；
   新静帧无效时继续保留上一张有效画面。
 - 静帧视图挂在播放页根层而不是 `PlayerView` 内部，并提高 `translationZ`，

@@ -336,6 +336,9 @@ internal fun PlayerView.capturePlaybackStillFrame() {
     val target=obtainPlaybackStillFrame() ?: return
     val token=++target.captureToken
     val surface=videoSurfaceView
+    if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+        android.util.Log.i("HGTV-RATIO","freezeCapture surface=${surface?.javaClass?.simpleName}")
+    }
     if(surface is TextureView) {
         val frame=runCatching { surface.bitmap }.getOrNull() ?: return
         if(token==target.captureToken) target.replaceStill(frame) else frame.recycle()
@@ -352,11 +355,22 @@ internal fun PlayerView.capturePlaybackStillFrame() {
             if(result==PixelCopy.SUCCESS && token==target.captureToken &&
                 target.parent===this && isAttachedToWindow) {
                 target.replaceStill(frame)
+                if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+                    android.util.Log.i("HGTV-RATIO","freezeCapture result=ok")
+                }
             } else {
                 frame.recycle()
+                if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+                    android.util.Log.i("HGTV-RATIO","freezeCapture result=$result")
+                }
             }
         },handler)
-    }.onFailure { frame.recycle() }
+    }.onFailure {
+        frame.recycle()
+        if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+            android.util.Log.i("HGTV-RATIO","freezeCapture failed")
+        }
+    }
 }
 
 /** 换源前立即盖上上一集的首帧，旧 Surface 被 stop 清掉时用户不会先看到黑屏。 */
