@@ -95,6 +95,16 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 本地降版触发更新验证
+
+状态：本地测试版本，debug 构建通过。
+
+- 为触发线上 `1.3.8 / 85` 更新，本地临时降为 `1.3.7.9 / 84`。
+- 复用已有本地 tag `1.3.7.9`，不移动线上 tag，不改 README、Release 元数据或线上版本。
+- 设备已安装 `1.3.8` 时覆盖安装测试包需使用 `adb install -r -d` 允许降级；安装 `1.3.7.9` 后可直接测试更新入口。
+
+回滚：把 `android/app/build.gradle.kts` 的版本恢复为 `1.3.8 / 85`。
+
 ## 2026-11-18：八榜、横滑导航与首页榜单
 
 状态：已实现，Android / iOS Debug 构建通过，待用户真机验证。
