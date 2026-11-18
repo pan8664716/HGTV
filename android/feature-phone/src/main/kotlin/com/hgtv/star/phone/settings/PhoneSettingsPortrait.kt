@@ -283,6 +283,11 @@ internal fun PhoneSettingsActivity.renderRecommend() {
 internal fun PhoneSettingsActivity.renderSystem() {
     sectionImpl("设备与性能")
     actionImpl("关于", "版本与项目信息") { showAboutDialog() }
+    actionImpl(
+        "检查更新",
+        if(settingsUpdateState.hasUpdate) "发现新版本" else "手动检查",
+        badge=settingsUpdateState.hasUpdate,
+    ) { showUpdateDialog() }
     val deviceLabel = DeviceForm.ofStored(settingsLibrary.deviceForm)?.label ?: "未选择"
     rowImpl("设备类型", deviceLabel) {
         openDeviceFormSelector()

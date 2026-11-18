@@ -304,7 +304,7 @@ fun navKeyOf(tab: Int): String? = when(tab) {
  * 于是「圆形入口按下键进内容」这条焦点链根本没接上（表现出来就是「按上回不到按钮 / 按下不动」）。
  */
 fun TvMainActivity.navIcons(): List<View> =
-    (listOfNotNull(recommendIcon)+nav).filter { it.visibility==View.VISIBLE }
+    (listOfNotNull(recommendIcon)+nav+listOfNotNull(updateIcon)).filter { it.visibility==View.VISIBLE }
 
 /**
  * 导航栏圆形入口关掉之后的**页面切换兜底**：遥控器「菜单」键弹一个页面列表。

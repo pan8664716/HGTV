@@ -62,6 +62,8 @@ import com.hgtv.star.shared.lan.lanIpv4Address
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.ui.TvTheme
 import com.hgtv.star.shared.ui.TvThemeStore
+import com.hgtv.star.shared.update.AppUpdateController
+import com.hgtv.star.shared.update.AppUpdateState
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
@@ -126,6 +128,11 @@ class PhoneSettingsActivity : PhoneActivity() {
     internal val settingsLibrary get()=library
     private val settingsController by lazy { SettingsController(this, library) }
     internal val settingsControllerInstance get()=settingsController
+    private val updateController by lazy { AppUpdateController(this) }
+    internal val settingsUpdateController get()=updateController
+    private var updateState=AppUpdateState()
+    internal val settingsUpdateState get()=updateState
+    private var updateCollector: Job? = null
     private var page = PhoneSettingsPage.PLAYBACK
     internal var settingsPage: PhoneSettingsPage
         get()=page
@@ -260,6 +267,15 @@ class PhoneSettingsActivity : PhoneActivity() {
     override fun onResume() {
         super.onResume()
         if (landscape) applyLandscapeImmersive()
+        updateCollector?.cancel()
+        updateCollector=settingsScope.launch {
+            updateController.state.collect { state ->
+                val hadUpdate=updateState.hasUpdate
+                updateState=state
+                if(hadUpdate!=state.hasUpdate && library.isLoaded) renderSettings()
+            }
+        }
+        updateController.check()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -342,7 +358,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     /** 一行设置：与电视端设置按钮同一种胶囊行，左项名、右读数。 */
     private fun row(title: String, value: String, onClick: () -> Unit) {
-        rowImpl(title, value, onClick)
+        rowImpl(title, value, false, onClick)
     }
 
     /** 整行开关：与电视端同一枚自绘轨道，点整行切换。 */
@@ -352,7 +368,7 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     /** 动作行：与电视端设置项同一种单行胶囊，右侧小字说明去向。 */
     private fun action(title: String, subtitle: String, onClick: () -> Unit) {
-        actionImpl(title, subtitle, onClick)
+        actionImpl(title, subtitle, false, onClick)
     }
 
     /** 滑动条与电视端同一种整行控件：项名、轨道、读数在一块胶囊底板里。 */
@@ -423,6 +439,9 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     override fun onDestroy() {
         closeLanSyncSessionImpl()
+        updateCollector?.cancel()
+        updateCollector=null
+        updateController.close()
         scope.cancel()
         syncHandler.removeCallbacksAndMessages(null)
         super.onDestroy()

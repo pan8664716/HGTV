@@ -43,6 +43,7 @@ internal fun TvMainActivity.onDestroyImpl(superOnDestroy: () -> Unit) {
     }
     generation++; cancelWork()
     closeLanSyncSession()
+    updateController.close()
     runCatching { unregisterReceiver(initializationSessionExpiredReceiver) }
     runCatching { initializationNetworkWatch?.cancel() }; initializationNetworkWatch=null
     recommendToken.incrementAndGet(); recommendPageToken.incrementAndGet(); closeRecommendCache()

@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 import android.graphics.Typeface
+import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
 import android.view.Gravity
 import android.view.View
@@ -108,6 +109,7 @@ internal fun PhoneSettingsActivity.landscapeColumnCell(column: LinearLayout, vie
 internal fun PhoneSettingsActivity.landscapeSetting(
     title: String,
     value: String,
+    badge: Boolean = false,
     onClick: () -> Unit,
 ): View {
     val activity = this
@@ -116,13 +118,28 @@ internal fun PhoneSettingsActivity.landscapeSetting(
         gravity=Gravity.CENTER_VERTICAL
         setPadding(settingsDpImpl(12),0,settingsDpImpl(10),0)
         applySoft(SoftStyle.RAISED,PhoneStyle.surfaceHigh,PhoneStyle.RADIUS_PILL,4f)
-        addView(TextView(activity).apply {
+        val titleSlot=LinearLayout(activity).apply {
+            orientation=LinearLayout.HORIZONTAL
+            gravity=Gravity.CENTER_VERTICAL
+        }
+        titleSlot.addView(TextView(activity).apply {
             text=title
             setTextColor(PhoneStyle.text)
             settingsTextSizeImpl(13)
             maxLines=1
             ellipsize=TextUtils.TruncateAt.END
         },LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
+        if(badge) {
+            titleSlot.addView(View(activity).apply {
+                background=GradientDrawable().apply {
+                    shape=GradientDrawable.OVAL
+                    setColor(0xFFE5484D.toInt())
+                }
+            },LinearLayout.LayoutParams(
+                settingsDpImpl(6),settingsDpImpl(6)
+            ).apply { leftMargin=settingsDpImpl(6) })
+        }
+        addView(titleSlot,LinearLayout.LayoutParams(0,ViewGroup.LayoutParams.WRAP_CONTENT,1f))
         addView(TextView(activity).apply {
             text=value
             setTextColor(PhoneStyle.textDim)

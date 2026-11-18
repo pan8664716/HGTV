@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-17。文件总数为 657；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-17。文件总数为 661；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -42,9 +42,9 @@
 android/
 ├── app/  (23 files, 12 directories)
 ├── core/  (227 files, 27 directories)
-├── feature-phone/  (142 files, 11 directories)
-├── feature-tv/  (155 files, 17 directories)
-├── shared/  (104 files, 24 directories)
+├── feature-phone/  (143 files, 11 directories)
+├── feature-tv/  (156 files, 18 directories)
+├── shared/  (105 files, 25 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
 ```
@@ -90,6 +90,7 @@ android/
 - `feature-tv/settings/`：电视设置页。
 - `feature-tv/system/`：TvMainActivity 的创建、配置、权限结果、保存状态和系统回调。
 - `feature-tv/ui/`：电视共用控件、弹窗、样式、键盘与工具。
+- `feature-tv/update/`：电视顶栏更新入口与被动更新弹窗。
 - `shared/`：shared 模块入口、共享门面或根级配置。
 - `shared/account/`：共享账号模型。
 - `shared/architecture/`：共享架构、执行器和播放状态协调。
@@ -103,6 +104,7 @@ android/
 - `shared/nav/`：共享路由定义。
 - `shared/search/`：共享搜索状态。
 - `shared/ui/`：共享 UI 工具、颜色、滑块和对话框布局。
+- `shared/update/`：更新元数据、下载校验与系统安装入口。
 
 ## 文件清单与作用
 
@@ -174,6 +176,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `network_security_config.xml` | XML 配置资源，根节点 network-security-config。 | network-security-config |
+| `update_paths.xml` | 更新 APK 的 FileProvider 路径，只暴露 `files/updates/`。 | files-path |
 
 #### `app/src/main/java/com/umeng/pagesdk/`
 
@@ -732,6 +735,7 @@ android/
 | `PhoneSettingsSystem.kt` | 横屏设置页使用沉浸式：状态栏和底部系统导航都隐藏，只保留一小条分区导航。 | fun PhoneSettingsActivity.applyLandscapeImmersive、fun PhoneSettingsActivity.handleActivityResultImpl |
 | `PhoneSettingsUnified.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsUnified 主要包含 fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend。 | fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend、fun PhoneSettingsActivity.renderUnifiedSystem、fun PhoneSettingsActivity.applyActionImpl |
 | `PhoneSettingsWidgets.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsWidgets 主要包含 fun PhoneSettingsActivity.targetHostImpl、fun PhoneSettingsActivity.sectionImpl、fun PhoneSettingsActivity.hintImpl、fun PhoneSettingsActivity.rowImpl。 | fun PhoneSettingsActivity.targetHostImpl、fun PhoneSettingsActivity.sectionImpl、fun PhoneSettingsActivity.hintImpl、fun PhoneSettingsActivity.rowImpl、fun PhoneSettingsActivity.switchImpl、fun PhoneSettingsActivity.actionImpl |
+| `PhoneUpdateDialog.kt` | 手机设置页的被动更新入口：显示版本说明，下载校验后交给系统安装器。 | fun PhoneSettingsActivity.showUpdateDialog |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/ui/`
 
@@ -1001,6 +1005,12 @@ android/
 | `TvTools.kt` | 一条提示显示多久（毫秒）。 | val TOAST_MS、val TOAST_FADE、val TOAST_MARGIN、val SESSION_FIELD_HEIGHT、val SESSION_FIELD_TEXT、val UPSMS_POLL_MS |
 | `TvToolsPhone.kt` | 电视共用控件、弹窗、样式、键盘与工具。文件 TvToolsPhone 主要包含 fun TvTools.toast、fun TvTools.clearToast、fun TvTools.qr、fun TvTools.lanAddress。 | fun TvTools.toast、fun TvTools.clearToast、fun TvTools.qr、fun TvTools.lanAddress、fun TvTools.smsFallback、fun TvTools.accountImport |
 
+#### `feature-tv/src/main/kotlin/com/hgtv/star/tv/update/`
+
+| 文件 | 作用 | 关键符号 |
+| --- | --- | --- |
+| `TvUpdateUi.kt` | TV 顶栏更新入口的红点绑定与被动更新弹窗；安装直接交给系统安装器。 | fun TvMainActivity.bindUpdateDot、fun TvMainActivity.showUpdateDialog |
+
 ### shared
 
 #### `shared/`
@@ -1158,6 +1168,12 @@ android/
 | `Soft.kt` | 新拟态的底板形态。 | class SoftStyle、object Soft、class SoftDrawable |
 | `SoftPalette.kt` | 柔光位图要用到的四个颜色 + 主题标识。 | object SoftPalette |
 | `TvTheme.kt` | 主题：二十套新拟态配色（设置 → 主题外观）。 | class TvTheme、fun mix、fun alpha、object TvThemeStore |
+
+#### `shared/src/main/kotlin/com/hgtv/star/shared/update/`
+
+| 文件 | 作用 | 关键符号 |
+| --- | --- | --- |
+| `AppUpdateController.kt` | 两端共用的更新元数据解析、下载校验、静默检查与系统安装入口。 | class AppUpdateController、data class AppUpdate、data class AppUpdateState |
 
 #### `shared/src/test/kotlin/com/hgtv/star/shared/debug/`
 

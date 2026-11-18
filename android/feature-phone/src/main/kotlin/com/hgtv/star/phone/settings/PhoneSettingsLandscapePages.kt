@@ -241,6 +241,13 @@ internal fun PhoneSettingsActivity.renderLandscapeSystem() {
     }
     landscapeLine(perf).also { line ->
         landscapeCell(line,landscapeSetting("关于","版本 ${appVersionName()}") { showAboutDialog() })
+        landscapeCell(line,landscapeSetting(
+            "检查更新",
+            if(settingsUpdateState.hasUpdate) "发现新版本" else "手动检查",
+            badge=settingsUpdateState.hasUpdate,
+        ) { showUpdateDialog() })
+    }
+    landscapeLine(perf).also { line ->
         val deviceLabel = DeviceForm.ofStored(settingsLibrary.deviceForm)?.label ?: "未选择"
         landscapeCell(line,landscapeSetting("设备类型",deviceLabel) {
             openDeviceFormSelector()

@@ -44,6 +44,8 @@ import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.debug.compactTls
 import com.hgtv.star.shared.nav.Navigator
 import com.hgtv.star.shared.nav.Route
+import com.hgtv.star.shared.update.AppUpdateController
+import com.hgtv.star.shared.update.AppUpdateState
 
 
 class TvMainActivity: Activity() {
@@ -81,6 +83,10 @@ class TvMainActivity: Activity() {
             scope = appScope,
         )
     }
+    val updateController by lazy { AppUpdateController(this) }
+    var updateState=AppUpdateState()
+    var updateIcon: View?=null
+    var updateDot: View?=null
     val recommendPlaybackController by lazy {
         com.hgtv.star.shared.feature.recommend.RecommendPlaybackController(
             repository = repository,

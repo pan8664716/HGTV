@@ -81,6 +81,13 @@ internal fun TvMainActivity.initializeMainAfterFirstFrameImpl(state: Bundle?) {
         }
     }
     StartupTrace.mark("main.collectors.launched")
+    appScope.launch {
+        updateController.state.collect { state ->
+            updateState=state
+            bindUpdateDot()
+        }
+    }
+    updateController.check()
     // 内存吃紧时由界面把**视口之外**的封面从 ImageView 上摘掉：LRU 的 evictAll 只解除
     // 自己的引用，位图挂在 View 上就仍然活着——首页常驻 77 张（约 44MB）正是这一份。
     artwork.releaseHiddenCovers=initializationArtworkReleaseCallback
