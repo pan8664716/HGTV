@@ -626,11 +626,14 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         showUpdateDialog(updateButton)
     }
     settingsUpdateButton=updateButton
+    track(3,aboutButton,updateButton)
+    val deviceTypeLine=lineRow(perf)
     lateinit var deviceType: TvButton
-    deviceType=cellSetting(deviceLine,"设备类型  ·  ${deviceFormSettingLabel()}") {
+    deviceType=cellSetting(deviceTypeLine,"设备类型  ·  ${deviceFormSettingLabel()}") {
         openDeviceFormSelector()
     }
-    track(3,aboutButton,updateButton,deviceType)
+    padLine(deviceTypeLine,1)
+    track(3,deviceType)
 
     SETTINGS_TABS.indices.forEach { wireRows(it) }
     rewireSidePanels()
