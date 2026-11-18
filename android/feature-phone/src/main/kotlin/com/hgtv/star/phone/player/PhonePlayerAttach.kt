@@ -5,7 +5,6 @@ import com.hgtv.star.core.RemoteVideo
 import com.google.android.exoplayer2.upstream.DataSource
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
-import com.hgtv.star.phone.ui.primeAspectRatio
 import com.hgtv.star.phone.ui.runAfterAspectRatioLayout
 
 /** 把已准备好的视频源挂到当前形态对应的 PlayerView，并安排首帧前的 prepare。 */
@@ -17,6 +16,7 @@ internal fun PhonePlayerActivity.attach(video: RemoteVideo, startAt: Long) {
     val exo = PhoneServices.player(this, library?.decoderMode)
     val factory = DataSource.Factory { VideoDataSource(video) }
     val episodeId = d?.episodes?.getOrNull(index).orEmpty()
+    holdFirstFrameAspectRatio()
     // 先停再挂（见 `swapMediaSource`）：预热命中时播放器可能正在出帧，
     // 直接换源会在 flush 编解码器时抛 0x80000000，随即报 4003。
     exo.swapMediaSource(episodeId, video.info.url, factory)
@@ -46,23 +46,6 @@ internal fun PhonePlayerActivity.attach(video: RemoteVideo, startAt: Long) {
             playerPage.playerView.player = exo
         }
     }
-    // `PlayerView.setPlayer()` 会先按播放器上一集的 videoSize 覆盖宽高比；
-    // 必须在挂好之后、prepare 之前再写入本集的真实尺寸，首帧才不会先按旧比例铺开。
-    val verticalSource = if (video.info.videoWidth > 0 && video.info.videoHeight > 0) {
-        video.info.videoHeight > video.info.videoWidth
-    } else {
-        d?.series?.vertical == true
-    }
-    playerPage.playerView.primeAspectRatio(
-        video.info.videoWidth,
-        video.info.videoHeight,
-        verticalSource,
-    )
-    playerLandscapeVideo.primeAspectRatio(
-        video.info.videoWidth,
-        video.info.videoHeight,
-        verticalSource,
-    )
     setBufferingLabel("正在缓冲…")
     syncVideoFrameImpl()
     val prepare = {

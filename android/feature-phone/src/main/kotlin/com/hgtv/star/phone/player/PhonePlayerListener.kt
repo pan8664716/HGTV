@@ -115,12 +115,7 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
         override fun onRenderedFirstFrame() {
             // 部分设备只回调首帧、不走逐帧心跳；首帧同样是画面已经上屏的硬证据。
             watchdog.onFrame()
-            // 手动换集时临时关闭了旧帧保留；新首帧已经按正确比例上屏，恢复常态。
-            if (playerPageInitialized) playerPage.playerView.setKeepContentOnPlayerReset(true)
-            if (playerLandscapeVideoInitialized) {
-                playerLandscapeVideo.setKeepContentOnPlayerReset(true)
-            }
-            if (playerFeedUnderlay) PhoneSession.setFeedKeepContentOnReset(true)
+            completeFirstFrameAspectRatio()
             PlaybackStartupTrace.firstFrame("phone.player")
         }
 

@@ -33,10 +33,8 @@ import com.hgtv.star.phone.ui.PhoneSheet
 import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
-import com.hgtv.star.phone.ui.primeAspectRatio
 import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.phone.ui.roundedBackground
-import com.hgtv.star.phone.ui.runAfterAspectRatioLayout
 import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.media.VideoDataSource

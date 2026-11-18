@@ -190,16 +190,16 @@ object PhoneSession {
         feedVideoScale?.invoke(ratio)
     }
 
-    /**
-     * 正式播放手动换集时，下层推荐页那块 PlayerView 也不能保留旧帧。
-     * 首帧出来后再恢复，避免后续正常缓冲时频繁黑屏。
-     */
-    @Volatile var feedKeepContentOnReset: ((Boolean) -> Unit)? = null
-    @Volatile var feedKeepContentOnResetValue: Boolean = true
+    /** 正式播放换集时，下层推荐页那块 PlayerView 也要冻结旧画面比例。 */
+    @Volatile var feedHoldFirstFrameAspectRatio: (() -> Unit)? = null
+    @Volatile var feedCompleteFirstFrameAspectRatio: (() -> Unit)? = null
 
-    fun setFeedKeepContentOnReset(keep: Boolean) {
-        feedKeepContentOnResetValue=keep
-        feedKeepContentOnReset?.invoke(keep)
+    fun holdFeedFirstFrameAspectRatio() {
+        feedHoldFirstFrameAspectRatio?.invoke()
+    }
+
+    fun completeFeedFirstFrameAspectRatio() {
+        feedCompleteFirstFrameAspectRatio?.invoke()
     }
 
     /** 登记 / 注销「推荐页 Surface 重新接上」的入口。 */

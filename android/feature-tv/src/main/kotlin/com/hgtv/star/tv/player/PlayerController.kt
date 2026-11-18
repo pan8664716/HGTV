@@ -728,12 +728,14 @@ fun TvMainActivity.playEpisode(
                 if(videoSizeReady && !firstFrameRendered && sourceSetAt>0L &&
                     PlaybackDiag.lastFrameAt>sourceSetAt) {
                     firstFrameRendered=true
+                    playerView?.completeFirstFrameAspectRatio()
                 }
                 revealRecommendWhenReady()
             }
             override fun onRenderedFirstFrame() {
                 if(!active()) return
                 firstFrameRendered=true
+                if(screen=="player") playerView?.completeFirstFrameAspectRatio()
                 PlaybackStartupTrace.firstFrame(
                     "tv.player",
                     "recommend=$recommendEntry preloaded=${prefetched!=null} reused=$reuse",
@@ -825,16 +827,8 @@ fun TvMainActivity.playEpisode(
         }
         playerListener=listener; p.addListener(listener)
         val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(MimeTypes.VIDEO_MP4).build())
-        // 正式播放换集：旧帧不能留在 Surface 上等新比例把它拉一遍；同时先按接口下发的
-        // 本集宽高预置 AspectRatioFrameLayout，等这一帧布局完成后再 prepare。
-        if(screen=="player") {
-            playerView?.setKeepContentOnPlayerReset(false)
-            playerView?.primeAspectRatio(
-                remote.info.videoWidth,
-                remote.info.videoHeight,
-                data.series.vertical,
-            )
-        }
+        // 正式播放换集：PlayerView 先冻结旧比例，等新首帧真的上屏后再应用新比例。
+        if(screen=="player") playerView?.holdFirstFrameAspectRatio()
         // 起点一次设定：`setMediaSource(source, startPositionMs)` 内部先摘空旧项、
         // 再按给定位置掩码时间线，等价于「`setMediaSource` + `seekTo`」，少一次
         // `onPositionDiscontinuity`（那条回调会连带刷新媒体会话与弹幕指针）。
@@ -845,17 +839,8 @@ fun TvMainActivity.playEpisode(
         PlaybackDiag.lastFrameAt=0L
         sourceSetAt=android.os.SystemClock.elapsedRealtime()
         p.setMediaSource(source,position.coerceAtLeast(0))
-        val prepare={
-            if(player===p && generation==ticket && session==playbackSession) {
-                p.prepare()
-                p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle
-            }
-        }
-        if(screen=="player" && playerView!=null) {
-            playerView?.runAfterAspectRatioLayout(prepare)
-        } else {
-            prepare()
-        }
+        p.prepare()
+        p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle
         stage("sourceSet")
         // 起播看门狗：兜住「READY 了但一帧都没出」的黑屏——那条路不抛异常，进不了 [playerFailure]。
         if(autoplay) armPlaybackWatchdog(session)

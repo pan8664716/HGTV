@@ -116,7 +116,7 @@ class PhoneVideoPage(
         setClock(0, false)
     }
 
-    val playerView: PlayerView = PlayerView(context).apply {
+    val playerView: PlayerView = FixedFirstFramePlayerView(context).apply {
         useController = false
         this.resizeMode = resizeMode
         // 借下层 Surface 时本层不出画面：快门也必须是透明的，否则它自己就是一块黑。

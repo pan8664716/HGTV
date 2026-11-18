@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
-import com.hgtv.star.phone.ui.primeAspectRatio
-
 /**
  * 上下滑换集优先推进 ExoPlayer 已经挂好的下一项。
  *
@@ -22,26 +20,12 @@ internal fun PhonePlayerActivity.playSwipeTarget(target: Int) {
 
 private fun PhonePlayerActivity.seekToQueuedNext(target: Int): Boolean {
     if (!PhoneSession.nextQueued) return false
-    val video = queuedVideo ?: return false
+    if (queuedVideo == null) return false
     if (queuedEpisodeId.isEmpty()) return false
     val exo = player ?: return false
     val current = exo.currentMediaItemIndex
     if (current < 0 || exo.mediaItemCount <= current + 1) return false
-    val verticalSource = if (video.info.videoWidth > 0 && video.info.videoHeight > 0) {
-        video.info.videoHeight > video.info.videoWidth
-    } else {
-        detail?.series?.vertical == true
-    }
-    playerPage.playerView.primeAspectRatio(
-        video.info.videoWidth,
-        video.info.videoHeight,
-        verticalSource,
-    )
-    playerLandscapeVideo.primeAspectRatio(
-        video.info.videoWidth,
-        video.info.videoHeight,
-        verticalSource,
-    )
+    holdFirstFrameAspectRatio()
     listenerManualNextTarget = target
     listenerManualNextPosition = exo.currentPosition.coerceAtLeast(0L)
     exo.playWhenReady = true

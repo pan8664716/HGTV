@@ -7,6 +7,8 @@ import com.hgtv.star.shared.compat.hasInternet
 import com.hgtv.star.shared.compat.isMeteredConnection
 
 import android.app.Activity
+import android.content.Context
+import android.util.AttributeSet
 import android.view.*
 import android.widget.*
 import com.google.android.exoplayer2.MediaItem
@@ -15,6 +17,7 @@ import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.mediacodec.MediaCodecRenderer
 import com.google.android.exoplayer2.source.ProgressiveMediaSource
+import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
 import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.*
 import com.hgtv.star.shared.data.WatchProgress
@@ -29,6 +32,7 @@ import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.shared.architecture.network
 import com.hgtv.star.shared.debug.NetSpeed
 import com.hgtv.star.tv.R
+import kotlin.math.abs
 fun com.hgtv.star.core.VideoFit.resizeMode()=when(this) {
     com.hgtv.star.core.VideoFit.FIT -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_FIT
     com.hgtv.star.core.VideoFit.ZOOM -> com.google.android.exoplayer2.ui.AspectRatioFrameLayout.RESIZE_MODE_ZOOM
@@ -200,41 +204,82 @@ fun TvMainActivity.applyResizeMode(target: PlayerView?=playerView) {
     applyVideoGeometry(target)
 }
 
-/** 换源前先写入本集宽高比，避免首帧先按上一集比例铺开。 */
-internal fun PlayerView.primeAspectRatio(
-    width: Int,
-    height: Int,
-    verticalSource: Boolean,
-) {
-    val aspectRatio = if(width>0 && height>0) {
-        width.toFloat()/height
-    } else {
-        if(verticalSource) 9f/16f else 16f/9f
+/**
+ * 换集时冻结旧画面比例，直到新一集真正出首帧。
+ *
+ * PlayerView 默认会在 `onVideoSizeChanged` 就把内容框切到新比例，上一集留下的
+ * Surface 帧会先被拉伸一下。这里暂存新比例，首帧回调时合一次快门、应用比例并等
+ * 布局完成后再揭开；用户看到的是旧帧稳定停住，然后直接进入比例正确的新画面。
+ */
+class FixedFirstFramePlayerView @JvmOverloads constructor(
+    context: Context,
+    attrs: AttributeSet?=null,
+    defStyleAttr: Int=0,
+) : PlayerView(context,attrs,defStyleAttr) {
+    private var holdAspectRatio=false
+    private var firstFrameSeen=false
+    private var pendingAspectRatio=0f
+    private var appliedAspectRatio=0f
+    private var contentFrame: AspectRatioFrameLayout?=null
+    private val shutterView by lazy {
+        findViewById<View>(com.google.android.exoplayer2.ui.R.id.exo_shutter)
     }
-    (videoSurfaceView?.parent as? com.google.android.exoplayer2.ui.AspectRatioFrameLayout)
-        ?.setAspectRatio(aspectRatio)
+
+    override fun onContentAspectRatioChanged(
+        contentFrame: AspectRatioFrameLayout?,
+        aspectRatio: Float,
+    ) {
+        this.contentFrame=contentFrame
+        if(holdAspectRatio) {
+            pendingAspectRatio=aspectRatio
+            if(firstFrameSeen) completeFirstFrameAspectRatio()
+            return
+        }
+        appliedAspectRatio=aspectRatio
+        super.onContentAspectRatioChanged(contentFrame,aspectRatio)
+    }
+
+    fun holdFirstFrameAspectRatio() {
+        holdAspectRatio=true
+        firstFrameSeen=false
+        pendingAspectRatio=0f
+    }
+
+    fun completeFirstFrameAspectRatio() {
+        if(!holdAspectRatio) return
+        firstFrameSeen=true
+        val ratio=pendingAspectRatio
+        if(ratio<=0f) return
+        holdAspectRatio=false
+        val frame=contentFrame ?: videoSurfaceView?.parent as? AspectRatioFrameLayout
+        pendingAspectRatio=0f
+        if(frame==null || abs(ratio-appliedAspectRatio)<.0001f) return
+        appliedAspectRatio=ratio
+        val shutter=shutterView
+        shutter?.visibility=View.VISIBLE
+        frame.setAspectRatio(ratio)
+        frame.requestLayout()
+        val observer=frame.viewTreeObserver
+        if(!observer.isAlive) {
+            shutter?.visibility=View.INVISIBLE
+            return
+        }
+        observer.addOnPreDrawListener(object: ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if(observer.isAlive) observer.removeOnPreDrawListener(this)
+                shutter?.visibility=View.INVISIBLE
+                return true
+            }
+        })
+    }
 }
 
-/** 等预置比例完成一次布局后再 prepare，确保首帧落到正确尺寸的 Surface。 */
-internal fun PlayerView.runAfterAspectRatioLayout(action: () -> Unit) {
-    val frame=videoSurfaceView?.parent as? com.google.android.exoplayer2.ui.AspectRatioFrameLayout
-    if(frame==null) {
-        post(action)
-        return
-    }
-    val observer=frame.viewTreeObserver
-    if(!observer.isAlive) {
-        post(action)
-        return
-    }
-    observer.addOnPreDrawListener(object: ViewTreeObserver.OnPreDrawListener {
-        override fun onPreDraw(): Boolean {
-            if(observer.isAlive) observer.removeOnPreDrawListener(this)
-            action()
-            return true
-        }
-    })
-    frame.requestLayout()
+internal fun PlayerView.holdFirstFrameAspectRatio() {
+    (this as? FixedFirstFramePlayerView)?.holdFirstFrameAspectRatio()
+}
+
+internal fun PlayerView.completeFirstFrameAspectRatio() {
+    (this as? FixedFirstFramePlayerView)?.completeFirstFrameAspectRatio()
 }
 
 /**

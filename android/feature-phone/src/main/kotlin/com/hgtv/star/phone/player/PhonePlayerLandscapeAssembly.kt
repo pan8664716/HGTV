@@ -45,7 +45,7 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     ))
 
     val landscape = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-    val video = PlayerView(this).apply {
+    val video = FixedFirstFramePlayerView(this).apply {
         useController = false
         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         setShutterBackgroundColor(Color.BLACK)

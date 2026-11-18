@@ -25,7 +25,7 @@ internal fun TvMainActivity.buildPlaybackSurface() {
     touchEntryTitle=null; touchEntryHint=null
     playbackBoost=false
     val rotatedSurface=library.autoFullscreen && autoFullscreenAvailable()
-    val view=(if(rotatedSurface) layoutInflater.inflate(R.layout.player_surface_texture,root,false) as PlayerView else PlayerView(this)).apply {
+    val view=(if(rotatedSurface) layoutInflater.inflate(R.layout.player_surface_texture,root,false) as PlayerView else FixedFirstFramePlayerView(this)).apply {
         useController=false; resizeMode=frameResizeMode(); isFocusable=false
         setKeepContentOnPlayerReset(true); setShutterBackgroundColor(Color.BLACK); setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
     }

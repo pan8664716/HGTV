@@ -21,13 +21,7 @@ internal fun PhonePlayerActivity.play(
         cancelSourceRetry()
         // 上一集的帧时间不能算到这一集头上；看门狗要靠它判断新画面是否真的上屏。
         lastFrameAt = 0L
-        // 手动换集时不要保留上一帧：宽高比框已经按新一集预置，旧帧留在这里会被
-        // 拉伸成新比例，等新首帧上来后才恢复。首帧回调里再恢复 keepContent。
-        if (playerPageInitialized) playerPage.playerView.setKeepContentOnPlayerReset(false)
-        if (playerLandscapeVideoInitialized) {
-            playerLandscapeVideo.setKeepContentOnPlayerReset(false)
-        }
-        if (playerFeedUnderlay) PhoneSession.setFeedKeepContentOnReset(false)
+        holdFirstFrameAspectRatio()
     }
     index = episodeIndex
     val episodeId = d.episodes[episodeIndex]

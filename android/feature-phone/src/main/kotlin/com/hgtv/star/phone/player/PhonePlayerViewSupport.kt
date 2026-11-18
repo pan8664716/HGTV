@@ -30,6 +30,93 @@ import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.phone.ui.roundedBackground
+import kotlin.math.abs
+
+/**
+ * 正式播放换集时冻结旧画面的宽高比。
+ *
+ * PlayerView 默认在 `onVideoSizeChanged` 就把内容框切到新比例，旧帧会在新首帧
+ * 到达前被拉伸一下。这里先把新比例暂存，等 `onRenderedFirstFrame` 后一次性应用；
+ * 应用时短暂合上快门，完成布局后再揭开，因此用户只会看到旧帧稳定停住，再切到新帧。
+ */
+internal class FixedFirstFramePlayerView(context: Context) : PlayerView(context) {
+    private var holdAspectRatio = false
+    private var firstFrameSeen = false
+    private var pendingAspectRatio = 0f
+    private var appliedAspectRatio = 0f
+    private var contentFrame: AspectRatioFrameLayout? = null
+    private val shutterView by lazy {
+        findViewById<View>(com.google.android.exoplayer2.ui.R.id.exo_shutter)
+    }
+
+    override fun onContentAspectRatioChanged(
+        contentFrame: AspectRatioFrameLayout?,
+        aspectRatio: Float,
+    ) {
+        this.contentFrame=contentFrame
+        if(holdAspectRatio) {
+            pendingAspectRatio=aspectRatio
+            if(firstFrameSeen) completeFirstFrameAspectRatio()
+            return
+        }
+        appliedAspectRatio=aspectRatio
+        super.onContentAspectRatioChanged(contentFrame,aspectRatio)
+    }
+
+    fun holdFirstFrameAspectRatio() {
+        holdAspectRatio=true
+        firstFrameSeen=false
+        pendingAspectRatio=0f
+    }
+
+    fun completeFirstFrameAspectRatio() {
+        if(!holdAspectRatio) return
+        firstFrameSeen=true
+        val ratio=pendingAspectRatio
+        if(ratio<=0f) return
+        holdAspectRatio=false
+        val frame=contentFrame ?: videoSurfaceView?.parent as? AspectRatioFrameLayout
+        pendingAspectRatio=0f
+        if(frame==null || abs(ratio-appliedAspectRatio)<.0001f) return
+        appliedAspectRatio=ratio
+        val shutter=shutterView
+        shutter?.visibility=View.VISIBLE
+        frame.setAspectRatio(ratio)
+        frame.requestLayout()
+        val observer=frame.viewTreeObserver
+        if(!observer.isAlive) {
+            shutter?.visibility=View.INVISIBLE
+            return
+        }
+        observer.addOnPreDrawListener(object: android.view.ViewTreeObserver.OnPreDrawListener {
+            override fun onPreDraw(): Boolean {
+                if(observer.isAlive) observer.removeOnPreDrawListener(this)
+                shutter?.visibility=View.INVISIBLE
+                return true
+            }
+        })
+    }
+}
+
+internal fun PlayerView.holdFirstFrameAspectRatio() {
+    (this as? FixedFirstFramePlayerView)?.holdFirstFrameAspectRatio()
+}
+
+internal fun PlayerView.completeFirstFrameAspectRatio() {
+    (this as? FixedFirstFramePlayerView)?.completeFirstFrameAspectRatio()
+}
+
+internal fun PhonePlayerActivity.holdFirstFrameAspectRatio() {
+    if(playerPageInitialized) playerPage.playerView.holdFirstFrameAspectRatio()
+    if(playerLandscapeVideoInitialized) playerLandscapeVideo.holdFirstFrameAspectRatio()
+    if(playerFeedUnderlay) PhoneSession.holdFeedFirstFrameAspectRatio()
+}
+
+internal fun PhonePlayerActivity.completeFirstFrameAspectRatio() {
+    if(playerPageInitialized) playerPage.playerView.completeFirstFrameAspectRatio()
+    if(playerLandscapeVideoInitialized) playerLandscapeVideo.completeFirstFrameAspectRatio()
+    if(playerFeedUnderlay) PhoneSession.completeFeedFirstFrameAspectRatio()
+}
 
 internal object PhonePlayerViewSupport {
     /**

@@ -66,10 +66,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
-- TV 正式播放换源前关闭旧帧保留，按接口下发的本集宽高预置
-  `AspectRatioFrameLayout`，等一次布局完成后再 `prepare()`。
-- Phone 手动换集时同步关闭竖屏、横屏及推荐页下层 Surface 的旧帧保留；
-  新首帧上屏后恢复常态。
+- 对照 `N3urda/hongguoTV`：对方使用 Media3 1.8 的 `PlayerView`，换集时保留旧帧，
+  首帧到达后再完成比例切换；本项目继续兼容 ExoPlayer 2.19.1 / Android 4.4。
+- TV 与 Phone 新增 `FixedFirstFramePlayerView`：覆盖
+  `onContentAspectRatioChanged()`，换集期间冻结旧比例，只暂存新的 `videoSize`。
+- 新一集 `onRenderedFirstFrame` 到达后，短暂合上快门、应用新比例并等待一次布局，
+  再揭开画面；旧帧保持稳定，新首帧不会先被拉伸。
+- Phone 同时覆盖竖屏、横屏和推荐页下层 Surface。
 - 未改版本号、versionCode、依赖或目录结构；未运行测试、未推送。
 
 回滚：对本节对应提交执行 `git revert`。
