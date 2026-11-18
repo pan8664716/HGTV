@@ -38,9 +38,9 @@ internal fun TvMainActivity.settingsUpdateLabel(): String = when {
  * 安装按钮只调用 [com.hgtv.star.shared.update.AppUpdateController.install]，由系统
  * 安装器负责确认与覆盖安装，不在应用内等待安装结果。
  */
-internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
+internal fun TvMainActivity.showUpdateDialog(anchor: View?, allowSourceEdit: Boolean = false) {
     if (!updateController.hasSource()) {
-        showUpdateSourceDialog(anchor)
+        if (allowSourceEdit) showUpdateSourceDialog(anchor)
         return
     }
     if (!updateController.state.value.checked && !updateController.state.value.checking) {
@@ -48,7 +48,7 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
     }
     val state=updateController.state.value
     if (state.checking) {
-        showUpdateCheckingDialog(anchor)
+        showUpdateCheckingDialog(anchor, allowSourceEdit)
         return
     }
     val dialog=TvDialog(this,"版本更新")
@@ -61,7 +61,7 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
             dialog.button("重新检查",icon=R.drawable.ic_toolbar_update) {
                 updateController.check(force=true)
             }
-            dialog.button("修改更新地址") { showUpdateSourceDialog(anchor) }
+            if (allowSourceEdit) dialog.button("修改更新地址") { showUpdateSourceDialog(anchor) }
         }
         update==null -> {
             dialog.message("当前版本 ${AppVersion.name} 已是最新")
@@ -83,7 +83,7 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
                     updateController.downloadAndInstall()
                 }
             }
-            dialog.button("修改更新地址") { showUpdateSourceDialog(anchor) }
+            if (allowSourceEdit) dialog.button("修改更新地址") { showUpdateSourceDialog(anchor) }
             if (state.error.isNotBlank()) dialog.message(state.error)
         }
     }
@@ -91,7 +91,7 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
     dialog.show(anchor)
 }
 
-private fun TvMainActivity.showUpdateCheckingDialog(anchor: View?) {
+private fun TvMainActivity.showUpdateCheckingDialog(anchor: View?, allowSourceEdit: Boolean) {
     val dialog=TvDialog(this,"版本更新")
     dialog.message("正在检查版本更新…")
     dialog.button("关闭",icon=R.drawable.ic_menu_close)
@@ -103,7 +103,11 @@ private fun TvMainActivity.showUpdateCheckingDialog(anchor: View?) {
         dialog.dismiss()
     }
     dialog.show(anchor=anchor,onDismiss={
-        if(advance && !isFinishing && !isDestroyed) showUpdateDialog(anchor) else job.cancel()
+        if(advance && !isFinishing && !isDestroyed) {
+            showUpdateDialog(anchor, allowSourceEdit)
+        } else {
+            job.cancel()
+        }
     })
 }
 
@@ -121,7 +125,7 @@ private fun TvMainActivity.showUpdateSourceDialog(anchor: View?) {
         updateController.setSource(input)
             .onSuccess {
                 updateController.check(force = true)
-                showUpdateDialog(anchor)
+                showUpdateDialog(anchor, allowSourceEdit = true)
             }
             .onFailure { error ->
                 tvTools.info(

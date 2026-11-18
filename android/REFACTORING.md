@@ -99,6 +99,8 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   不发起网络请求。用户首次点击「检查更新」时再录入来源并保存到本机。
 - Phone 使用文本输入，支持 `owner/repo`、GitHub 项目 / Release 长链接和 `update.json` 地址；
   TV 使用一次性局域网扫码输入。GitHub 输入会提取用户/项目并重建最新 Release 的元数据与下载地址。
+- TV 顶栏圆钮与设置检查更新共用结果弹窗；只有设置入口允许「修改更新地址」，
+  顶栏入口不提供改地址操作。
 - 未改版本号、versionCode、依赖或发布元数据；未运行测试、未推送。
 - `JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew :app:assembleDebug` 通过。
 
