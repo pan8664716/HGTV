@@ -244,7 +244,7 @@ fun TvMainActivity.releaseCatalogViews() {
     homeScreen=null; catalogScroll=null
     // 低内存摘封面的计数跟着旧页面一起作废，否则新页面上会一直走「检查是否回视口」那条路。
     suspendedCovers=0
-    nav.clear(); navKeyed.clear(); recommendIcon=null; updateIcon=null; updateHolder=null; updateDot=null; boardButtons.clear(); accountButtons.clear(); profileHeadRow=null; profileAvatar=null
+    nav.clear(); navKeyed.clear(); recommendIcon=null; updateIcon=null; updateHolder=null; updateDot=null; settingsUpdateButton=null; boardButtons.clear(); accountButtons.clear(); profileHeadRow=null; profileAvatar=null
     historyFilterButtons.clear(); reserveFilterButtons.clear()
     // 页面整块重建：内嵌登录面板跟着旧页面一起作废，在途的一次性会话立刻关掉。
     closeAccountPanelSession()

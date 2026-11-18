@@ -116,7 +116,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         })
         return group
     }
-    fun cellSetting(line: LinearLayout,label: String,action: ()->Unit): TvButton {
+    fun cellSetting(line: LinearLayout,label: String,action: ()->Unit): TvSettingButton {
         val view=TvSettingButton(this,label,ButtonSize.NORMAL,ButtonTone.SECONDARY,action=action)
         line.addView(view,lp(0,-2).apply { weight=1f; if(line.childCount>0) leftMargin=dp(TvStyle.GAP_INLINE) })
         return view
@@ -621,11 +621,16 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     val deviceLine=lineRow(perf)
     lateinit var aboutButton: TvButton
     aboutButton=cellSetting(deviceLine,"关于") { showAboutDialog(aboutButton) }
+    lateinit var updateButton: TvSettingButton
+    updateButton=cellSetting(deviceLine,settingsUpdateLabel()) {
+        showUpdateDialog(updateButton)
+    }
+    settingsUpdateButton=updateButton
     lateinit var deviceType: TvButton
     deviceType=cellSetting(deviceLine,"设备类型  ·  ${deviceFormSettingLabel()}") {
         openDeviceFormSelector()
     }
-    track(3,aboutButton,deviceType)
+    track(3,aboutButton,updateButton,deviceType)
 
     SETTINGS_TABS.indices.forEach { wireRows(it) }
     rewireSidePanels()

@@ -88,6 +88,7 @@ class TvMainActivity: Activity() {
     var updateIcon: View?=null
     var updateHolder: View?=null
     var updateDot: View?=null
+    var settingsUpdateButton: TvSettingButton?=null
     val recommendPlaybackController by lazy {
         com.hgtv.star.shared.feature.recommend.RecommendPlaybackController(
             repository = repository,

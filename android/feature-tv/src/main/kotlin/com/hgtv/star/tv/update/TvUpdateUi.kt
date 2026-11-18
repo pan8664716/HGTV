@@ -10,6 +10,7 @@ internal fun TvMainActivity.bindUpdateEntry() {
     updateHolder?.visibility = if(show) View.VISIBLE else View.GONE
     updateIcon?.visibility = if(show) View.VISIBLE else View.GONE
     updateDot?.visibility = if(show) View.VISIBLE else View.GONE
+    settingsUpdateButton?.setLabel(settingsUpdateLabel())
     if(show) {
         val left=nav.lastOrNull() ?: recommendIcon
         if(left!=null) {
@@ -17,6 +18,13 @@ internal fun TvMainActivity.bindUpdateEntry() {
             updateIcon?.nextFocusLeftId=left.id
         }
     }
+}
+
+internal fun TvMainActivity.settingsUpdateLabel(): String = when {
+    updateState.hasUpdate -> "检查更新  ·  发现新版本"
+    updateState.checking -> "检查更新  ·  正在检查"
+    updateState.error.isNotBlank() -> "检查更新  ·  检查失败"
+    else -> "检查更新"
 }
 
 /**
