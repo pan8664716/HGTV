@@ -39,6 +39,7 @@ class PhoneRecommendPage(
     context: Context,
     initialGenre: String? = null,
     initialSeriesId: String? = null,
+    initialPositionMs: Long = -1L,
 ) : FrameLayout(context) {
 
     /**
@@ -53,6 +54,8 @@ class PhoneRecommendPage(
     private var restoreGenre: String? = initialGenre
     /** 宿主重建页面时带回来的当前剧；只交给当前体裁流，避免误恢复相邻流。 */
     private var restoreSeriesId: String? = initialSeriesId
+    /** 宿主重建页面时带回来的播放位置；只用于需要重新 prepare 的恢复路径。 */
+    private var restorePositionMs: Long = initialPositionMs
     /** 已经铺出来的那一次筛选结果：设置变了就整屏重建一次。 */
     private var appliedGenres: List<RecommendGenre> = emptyList()
     private var feeds = arrayOfNulls<PhoneFeedView>(genres.size)
@@ -230,6 +233,7 @@ class PhoneRecommendPage(
     /** 当前体裁的稳定标识，供宿主在转屏重建前保存。 */
     fun currentGenreKey(): String? = genres.getOrNull(current)?.genre
     fun currentSeriesId(): String? = feeds.getOrNull(current)?.currentSeriesId()
+    fun currentPositionMs(): Long = feeds.getOrNull(current)?.currentPositionMs() ?: -1L
 
     fun scrollToTop() {
         feeds.getOrNull(current)?.scrollToTop()
@@ -342,7 +346,13 @@ class PhoneRecommendPage(
             // 体裁在构造时就定下来：`PhoneFeedView.init` 会立刻按它铺快照、取第一页。
             // 建完再 `setGenre` 的话，构造期那一次全站混排的请求会晚回来、污染这一类的列表。
             val restoreSeries = if (viewType == current) restoreSeriesId else null
-            val feed = PhoneFeedView(context, genres[viewType].genre, restoreSeries).apply {
+            val restorePosition = if (viewType == current) restorePositionMs else -1L
+            val feed = PhoneFeedView(
+                context,
+                genres[viewType].genre,
+                restoreSeries,
+                restorePosition,
+            ).apply {
                 layoutParams = RecyclerView.LayoutParams(
                     ViewGroup.LayoutParams.MATCH_PARENT,
                     ViewGroup.LayoutParams.MATCH_PARENT,
@@ -352,7 +362,10 @@ class PhoneRecommendPage(
                 // 播放设置面板开着时锁住横向翻页（见 `PhoneFeedView.onSheetVisibilityChanged`）。
                 onSheetVisibilityChanged = { open -> sheetOpen = open; applySwipeState() }
             }
-            if (viewType == current) restoreSeriesId = null
+            if (viewType == current) {
+                restoreSeriesId = null
+                restorePositionMs = -1L
+            }
             feeds[viewType] = feed
             // 建出来就**只让当前这一条上屏起播**（`PhoneFeedView` 默认是「收起来」的）。
             // pager 会预建左右相邻的体裁页，不区分的话三条流会同时起播、争抢活动播放器。

@@ -5,6 +5,7 @@ import android.view.View
 
 internal fun PhoneFeedView.onHiddenImpl(handoff: Boolean = false) {
     settleRecommendWatch()
+    feedPlayer?.takeIf { it.isFeedPlayerAlive() }?.currentPosition?.let(PhoneSession::markPosition)
     // 浮层挂在 Activity 的 decor 上，不随本页 `removeAllViews` 消失：切 tab / 进播放页
     // 之前必须显式收掉，否则它会一直压在别的页面上。
     closeSheet()

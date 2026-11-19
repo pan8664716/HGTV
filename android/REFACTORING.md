@@ -68,6 +68,19 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
+## 2026-11-19：推荐页横竖屏重建后从头播放修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 推荐播放 ticker 每次刷新进度时同步写入 `PhoneSession.positionMs`，页面隐藏前再记录
+  一次当前播放器位置。
+- 横竖屏 / Activity 重建时把当前播放位置随当前剧一起传入新页面；旧播放器能直接接手时
+  保持原位，只有必须重新取地址 / prepare 时才 seek 回记录位置。
+- 修复旧缓冲播完后新数据源从 0 开始播放的问题。
+- 未改版本号、versionCode、依赖或目录结构；未运行测试、未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-19：推荐页横竖屏切换后自动换作修复
 
 状态：已实现，debug 构建通过，待用户真机验证。

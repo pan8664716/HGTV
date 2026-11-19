@@ -581,7 +581,7 @@ android/
 | `PhoneActivity.kt` | 手机端 Activity 基类：普通页面由系统在屏幕尺寸或方向变化时重建整页。 | class PhoneActivity |
 | `PhoneConsent.kt` | 手机端的两条「知情同意」，与电视端**同一份文案、同一条语义**（见 :core 的 com.hgtv.star.core.ThirdPartyNotice）。 | object PhoneConsent |
 | `PhoneFirstRunTip.kt` | 首次进入时的「先调一下显示」提示。 | object PhoneFirstRunTip |
-| `PhoneMainActivity.kt` | 手机 / 平板端主界面；推荐首屏后预热播放器，分类页延后到推荐首帧或兜底超时再创建；重建时保存推荐页当前体裁与当前剧，避免横竖屏切换跳到下一部。 | class PhoneMainActivity、fun revealPhoneStartup、fun warmStartupPlayer |
+| `PhoneMainActivity.kt` | 手机 / 平板端主界面；推荐首屏后预热播放器，分类页延后到推荐首帧或兜底超时再创建；重建时保存推荐页当前体裁、当前剧与播放位置，避免横竖屏切换跳作或从头播放。 | class PhoneMainActivity、fun revealPhoneStartup、fun warmStartupPlayer |
 | `PhoneNavigator.kt` | 手机端的路由落地：把 Route 翻译成一个 Intent，交给系统返回栈。 | class PhoneNavigator、fun Context.phoneNav |
 | `PhoneServices.kt` | 手机端服务入口；正式播放页使用当前活动 ExoPlayer，推荐池通过 `newPlayer` 创建独立实例并由 `activate` 登记当前实例。 | object PhoneServices、object PhoneDecoder、fun player、fun newPlayer、fun activate、fun warmPlayer |
 | `PhoneSession.kt` | 手机端「这一台机器现在在放什么」的进程级事实。 | object PhoneSession |
@@ -621,7 +621,7 @@ android/
 | `PhoneFeedAdoption.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedAdoption 主要包含 fun PhoneFeedView.adoptPlayingImpl。 | fun PhoneFeedView.adoptPlayingImpl |
 | `PhoneFeedChrome.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedChrome 主要包含 fun PhoneFeedView.currentChromePageImpl、fun PhoneFeedView.scheduleChromeHideImpl、fun PhoneFeedView.chromeTimeoutMsImpl、fun PhoneFeedView.revealChromeImpl。 | fun PhoneFeedView.currentChromePageImpl、fun PhoneFeedView.scheduleChromeHideImpl、fun PhoneFeedView.chromeTimeoutMsImpl、fun PhoneFeedView.revealChromeImpl |
 | `PhoneFeedDanmaku.kt` | 取（或建）某一屏的弹幕加载器；首帧前只保留最后一次加载请求，首帧后再拉取；推荐页与正式播放页共用顶部信息栏下方的弹幕落点。 | fun PhoneFeedView.danmakuLoaderOfImpl、fun PhoneFeedView.applyDanmakuSettingsImpl、fun PhoneFeedView.applyDanmakuTopInsetImpl、fun PhoneFeedView.loadDanmakuImpl |
-| `PhoneFeedHide.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedHide 主要包含 fun PhoneFeedView.onHiddenImpl。 | fun PhoneFeedView.onHiddenImpl |
+| `PhoneFeedHide.kt` | 手机信息流隐藏、暂停与延迟回收；收起前记录当前播放位置，供重建或原地换地址时续播。 | fun PhoneFeedView.onHiddenImpl |
 | `PhoneFeedHost.kt` | 手机信息流页面、适配器、手势与预取；只有当前体裁上屏后才触发取流。 | fun PhoneFeedView.setGenreImpl、fun PhoneFeedView.onShownImpl、fun PhoneFeedView.onIdentityReadyImpl |
 | `PhoneFeedInitializer.kt` | 手机信息流页面初始化；先铺快照，不主动为隐藏体裁发请求，并在剩余约 1/3 时预取下一页；只有真实纵向手势的滚动 IDLE 才切换播放项。 | fun PhoneFeedView.initializeFeed |
 | `PhoneFeedLifecycle.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedLifecycle 主要包含 fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl。 | fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl |
@@ -634,7 +634,7 @@ android/
 | `PhoneFeedResume.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedResume 主要包含 fun PhoneFeedView.resumeOnShownImpl。 | fun PhoneFeedView.resumeOnShownImpl |
 | `PhoneFeedSettings.kt` | 信息流长按中间打开的播放设置面板。 | fun PhoneFeedView.openSettingsImpl |
 | `PhoneFeedSurface.kt` | 手机信息流页面、适配器、手势与预取；下层 Surface 交接时同步画面模式、缩放和旧帧保留状态。 | fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.setUnderlayModeImpl |
-| `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放器池、播放交接、预取和生命周期；记录首帧后补流状态，并区分冷启动下一部与重建恢复当前剧。 | class PhoneFeedView、feedPooledPlayers、feedPlayerListeners、fun currentSeriesId、fun takeRestoreSeriesId |
+| `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放器池、播放交接、预取和生命周期；记录首帧后补流状态，并区分冷启动下一部与重建恢复当前剧及播放位置。 | class PhoneFeedView、feedPooledPlayers、feedPlayerListeners、fun currentSeriesId、fun takeRestoreSeriesId、fun takeRestorePositionMs |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/page/`
 
@@ -643,7 +643,7 @@ android/
 | `PhoneCategoryPage.kt` | 分类页：**完全按 TV 端的两层筛选结构**。 | class PhoneCategoryPage |
 | `PhoneMinePage.kt` | 我的页：顶部账号入口 + 历史 / 收藏栏目 + 内容网格；历史已看完的当前季显示“看完了”。 | class PhoneMinePage |
 | `PhoneRankPage.kt` | 榜单页：八个榜单 + 带名次的海报网格，并保存每榜分页游标。 | class PhoneRankPage |
-| `PhoneRecommendPage.kt` | 推荐页：四条件裁横向滑动，每页一条独立的竖屏视频流，并把顶栏实际高度同步给弹幕层；页面重建时把当前体裁与当前剧传给对应信息流。 | class PhoneRecommendPage、fun currentGenreKey、fun currentSeriesId |
+| `PhoneRecommendPage.kt` | 推荐页：四条件裁横向滑动，每页一条独立的竖屏视频流，并把顶栏实际高度同步给弹幕层；页面重建时把当前体裁、当前剧与播放位置传给对应信息流。 | class PhoneRecommendPage、fun currentGenreKey、fun currentSeriesId、fun currentPositionMs |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/player/`
 
@@ -657,7 +657,7 @@ android/
 | `PhoneFeedMetrics.kt` | 与电视端同一套「快速划过 / 划走 / 看过」判定；推荐播放链接首次批量 20 个，先批量补详情，再按播放档案补首集模型。 | fun PhoneFeedView.settleRecommendWatch、fun PhoneFeedView.reportRecommendImpression、fun PhoneFeedView.scheduleRecommendBatchModels |
 | `PhoneFeedNavigation.kt` | 进播放页。 | fun PhoneFeedView.openPlayer、fun PhoneFeedView.hideChromeForHandoff、fun PhoneFeedView.launchPlayer、fun PhoneFeedView.liveEpisodeOf |
 | `PhoneFeedPageBinding.kt` | 活动页绑定；保留上一页自己的播放器与 Surface，按新片源尺寸预置首帧比例；推荐信息流不再加载封面过渡。 | fun PhoneFeedView.attachPageImpl |
-| `PhoneFeedPlaybackClock.kt` | 推荐页进度、弹幕时钟与片尾兜底；ticker 同时监测当前播放器是否已被释放，发现失效立即触发自动恢复。 | fun PhoneFeedView.syncDanmakuClock、fun PhoneFeedView.syncDanmakuClockNow、fun PhoneFeedView.syncProgressBarsNow、fun PhoneFeedView.startProgressTicker |
+| `PhoneFeedPlaybackClock.kt` | 推荐页进度、弹幕时钟与片尾兜底；ticker 同步记录当前播放位置，并监测播放器是否已被释放，发现失效立即触发自动恢复。 | fun PhoneFeedView.syncDanmakuClock、fun PhoneFeedView.syncDanmakuClockNow、fun PhoneFeedView.syncProgressBarsNow、fun PhoneFeedView.startProgressTicker |
 | `PhoneFeedPreload.kt` | 相邻页调度；固定窗口 `n-2..n+2` 只预取详情与播放地址，不解析索引、不读取首块。 | class PhoneFeedPreloadState、fun PhoneFeedView.preloadGateOpen、fun PhoneFeedView.scheduleDwell、fun PhoneFeedView.schedulePreload、fun PhoneFeedView.applyPreload |
 | `PhoneNextSeason.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneNextSeason 主要包含 class PhoneNextSeasonState、fun PhonePlayerActivity.next、fun PhonePlayerActivity.prepareNextSeasonIfNeeded、fun PhonePlayerActivity.clearNextSeasonLookup。 | class PhoneNextSeasonState、fun PhonePlayerActivity.next、fun PhonePlayerActivity.prepareNextSeasonIfNeeded、fun PhonePlayerActivity.clearNextSeasonLookup、fun PhonePlayerActivity.ensureNextSeason、fun PhonePlayerActivity.completeNextSeasonLookup |
 | `PhonePlaybackProgress.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlaybackProgress 主要包含 fun PhonePlayerActivity.startTicker、fun PhonePlayerActivity.updateProgress、fun PhonePlayerActivity.syncProgressBarsNow、fun PhonePlayerActivity.saveProgress。 | fun PhonePlayerActivity.startTicker、fun PhonePlayerActivity.updateProgress、fun PhonePlayerActivity.syncProgressBarsNow、fun PhonePlayerActivity.saveProgress、fun PhonePlayerActivity.maybePrefetchNext、fun PhonePlayerActivity.enqueueNextIfReady |

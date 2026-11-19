@@ -9,6 +9,7 @@ internal fun PhoneFeedView.resumeOnShownImpl(): Boolean {
     // 这时本页仍被播放页盖着，不能接手播放器、不能注销借 Surface 的入口，
     // 也不能把控制层透出来。真正退回本页时播放页会先清掉这个标志。
     if (PhoneSession.playerForeground) return false
+    val restorePosition = takeRestorePositionMs()
     // 之前确实被收起来过（离开去播放页 / 退到后台）。重复通知时不要动 Surface：
     // 重挂一次 `player` 会让 `PlayerView` 先清掉再交出去，白闪一下。
     val resuming = feedHidden
@@ -51,7 +52,7 @@ internal fun PhoneFeedView.resumeOnShownImpl(): Boolean {
         val resumed = adoptableIndexOf()
         if (resumed >= 0) {
             feedList.scrollToPosition(resumed)
-            playIndexForSettings(resumed, -1L)
+            playIndexForSettings(resumed, restorePosition)
         } else {
             stopOrphanPlaybackImpl()
             if (feedItems.isNotEmpty()) playIndexForSettings(0, -1L)
@@ -81,6 +82,6 @@ internal fun PhoneFeedView.resumeOnShownImpl(): Boolean {
         return true
     }
     stopOrphanPlaybackImpl()
-    playIndexForSettings(feedPlayingIndex, -1L)
+    playIndexForSettings(feedPlayingIndex, restorePosition)
     return true
 }

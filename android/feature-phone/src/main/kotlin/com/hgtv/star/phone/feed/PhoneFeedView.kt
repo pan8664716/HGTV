@@ -93,6 +93,7 @@ class PhoneFeedView(
      */
     initialGenre: String? = null,
     initialSeriesId: String? = null,
+    initialPositionMs: Long = -1L,
 ) : FrameLayout(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -106,6 +107,7 @@ class PhoneFeedView(
     private val list = VerticalPagerList(context)
     internal val feedList get()=list
     private var restoreSeriesId: String? = initialSeriesId
+    private var restorePositionMs: Long = initialPositionMs
 
     private var offset: Int
         get()=recommendStore.nextOffset
@@ -308,9 +310,16 @@ class PhoneFeedView(
     internal fun feedSessionBelongsToThisFeed(): Boolean = sessionBelongsToThisFeed()
     internal fun currentSeriesId(): String? =
         feedItems.getOrNull(feedPlayingIndex)?.id
+    internal fun currentPositionMs(): Long =
+        runCatching { feedPlayer?.currentPosition ?: -1L }.getOrDefault(-1L)
     internal fun takeRestoreSeriesId(): String? {
         val value = restoreSeriesId
         restoreSeriesId = null
+        return value
+    }
+    internal fun takeRestorePositionMs(): Long {
+        val value = restorePositionMs
+        restorePositionMs = -1L
         return value
     }
     internal fun feedNotifyDataSetChanged() = adapter.notifyDataSetChanged()

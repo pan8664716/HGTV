@@ -62,6 +62,8 @@ class PhoneMainActivity : PhoneActivity() {
         var pendingRecommendGenre: String? = null
         /** 推荐页重建前正在看的剧，避免横竖屏切换被当成冷启动而跳到下一部。 */
         var pendingRecommendSeriesId: String? = null
+        /** 推荐页重建前的播放位置；只有重新 prepare 时才用于续播。 */
+        var pendingRecommendPositionMs: Long = -1L
         var pendingCategoryState: PhoneCategoryPage.State? = null
         var pendingRankState: PhoneRankPage.State? = null
         var pendingMineState: PhoneMinePage.State? = null
@@ -218,9 +220,13 @@ class PhoneMainActivity : PhoneActivity() {
     }
 
     private fun rememberPageStates() {
+        pendingRecommendGenre = null
+        pendingRecommendSeriesId = null
+        pendingRecommendPositionMs = -1L
         (pages.getOrNull(0) as? PhoneRecommendPage)?.let { page ->
             pendingRecommendGenre = page.currentGenreKey()
             pendingRecommendSeriesId = page.currentSeriesId()
+            pendingRecommendPositionMs = page.currentPositionMs()
         }
         pendingCategoryState =
             (pages.getOrNull(1) as? PhoneCategoryPage)?.snapshotState()
@@ -595,9 +601,11 @@ class PhoneMainActivity : PhoneActivity() {
         0 -> {
             val genre = pendingRecommendGenre
             val seriesId = pendingRecommendSeriesId
+            val positionMs = pendingRecommendPositionMs
             pendingRecommendGenre = null
             pendingRecommendSeriesId = null
-            PhoneRecommendPage(this, genre, seriesId).apply {
+            pendingRecommendPositionMs = -1L
+            PhoneRecommendPage(this, genre, seriesId, positionMs).apply {
                 onPlayStateChanged = { syncKeepScreenOn() }
             }
         }

@@ -51,6 +51,7 @@ internal fun PhoneFeedView.startProgressTicker() {
                 val duration = exo.duration
                 if (duration > 0) {
                     val position = exo.currentPosition
+                    PhoneSession.markPosition(position)
                     page.setProgress(position.toFloat() / duration)
                     page.setBufferedProgress(exo.bufferedPosition.toFloat() / duration)
                     if (exo.isPlaying) {
