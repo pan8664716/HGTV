@@ -293,6 +293,7 @@ internal fun PhoneFeedView.pausePooledPlayersExcept(player: ExoPlayer?) {
             slot.preRendering = false
             slot.previewPlaying = false
             runCatching {
+                slot.player.volume = 0f
                 slot.player.playWhenReady = false
                 slot.player.pause()
             }

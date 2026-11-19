@@ -117,6 +117,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 快速连翻时 50% 预览增加 60ms 去抖，连续滚动只保留最后一轮的预览请求，不会让
   中间页轮流抢音频焦点。IDLE 的最终落页判定延后 16ms，等列表完成布局吸附后再执行，
   避免新页尚未就位时误恢复起始页声音。
+- 每次新手势开始时先清空所有残留预览并暂停当前实例；预览、恢复和激活都先把其他池
+  实例统一静音、暂停并释放焦点，保证任一时刻最多只有目标实例可以出声。IDLE 最终页
+  优先取 `findFirstCompletelyVisibleItemPosition`，只有完全可见页不可用时才回退。
 - 未改版本号、versionCode、依赖或接口；`:app:assembleDebug` 使用 JDK 17 通过，
   未引入 `TextureView`，测试待用户真机验证，未推送。
 

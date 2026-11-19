@@ -68,6 +68,8 @@ internal fun PhoneFeedView.initializeFeed() {
                     pendingVisiblePlay = null
                     pendingSwipePreview?.let(feedList::removeCallbacks)
                     pendingSwipePreview = null
+                    finishFeedSwipePreviewImpl()
+                    pausePooledPlayersExcept(feedPlayer)
                     if (feedList.userScroll) pauseCurrentForFeedSwipeImpl()
                 }
                 return
@@ -79,8 +81,8 @@ internal fun PhoneFeedView.initializeFeed() {
             feedList.postDelayed({
                 if (feedList.scrollState != RecyclerView.SCROLL_STATE_IDLE) return@postDelayed
                 val manager = rv.layoutManager as LinearLayoutManager
-                val index = dominantVisiblePage(rv).takeIf { it >= 0 }
-                    ?: manager.findFirstCompletelyVisibleItemPosition().takeIf { it >= 0 }
+                val index = manager.findFirstCompletelyVisibleItemPosition().takeIf { it >= 0 }
+                    ?: dominantVisiblePage(rv).takeIf { it >= 0 }
                     ?: manager.findFirstVisibleItemPosition()
                 val userScroll = feedList.userScroll
                 feedList.userScroll = false
@@ -166,9 +168,11 @@ internal fun PhoneFeedView.resumeCurrentAfterFeedSwipeImpl() {
     val resume = feedSwipeResumeCurrent
     clearFeedSwipePauseImpl()
     if (!resume || feedHidden) return
-    feedPlayer?.let {
-        PhoneServices.enableAudioFocus(it, true)
-        it.playWhenReady = true
+    feedPlayer?.let { exo ->
+        pausePooledPlayersExcept(exo)
+        exo.volume = 1f
+        PhoneServices.enableAudioFocus(exo, true)
+        exo.playWhenReady = true
     }
     notifyPlayStateChangedImpl()
 }
@@ -202,6 +206,7 @@ internal fun PhoneFeedView.startFeedSwipePreviewImpl(index: Int): Boolean {
     pauseCurrentForFeedSwipeImpl()
     val slot = pooledPlayerSlot(index) ?: return false
     if (!slot.sourcePrepared || !slot.player.isFeedPlayerAlive()) return false
+    pausePooledPlayersExcept(slot.player)
     feedPageAt(index)?.let { page -> attachPooledPlayerToPageImpl(page, index) }
     slot.preRendering = false
     slot.previewPlaying = true
