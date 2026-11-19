@@ -68,7 +68,22 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
-## 2026-11-19：简介页进入正式播放页上下滑透出简介页修复
+## 2026-11-19：简介页进入正式播放页上下滑透出简介页修复（二次）
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 复核：用户安装二次修复后的 debug 包，`dumpsys window` 仍显示
+  `PhonePlayerActivity` 为 `fmt=TRANSLUCENT`，简介页窗口仍在同一任务中。
+- 根因：`Activity.setTheme()` 在 Activity attach 之后调用，只切换资源主题，
+  不会更新已经创建窗口的 `WindowManager.LayoutParams.format`。
+- 修复：非推荐页入口在 `initializePlayerActivity` 中直接
+  `window.setFormat(PixelFormat.OPAQUE)`，让窗口管理器按不透明窗口处理；
+  推荐页入口不执行该覆盖，继续保留透明交接。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或接口；测试待用户真机验证，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-19：简介页进入正式播放页上下滑透出简介页修复（历史）
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
