@@ -46,7 +46,13 @@ internal fun PhonePlayerActivity.attach(video: RemoteVideo, startAt: Long) {
         if (!(playerFeedUnderlay && attachUnderlay())) {
             dropUnderlay()
             PhoneSession.underlayActive = false
-            playerPage.playerView.player = exo
+            selectPlayerPagerEpisode(index)
+            attachCurrentPlayerToPagerPage()
+            playerEpisodePager.post {
+                if (player === exo && !playerLandscapeMode) {
+                    attachCurrentPlayerToPagerPage()
+                }
+            }
         }
     }
     setBufferingLabel("正在缓冲…")

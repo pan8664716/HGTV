@@ -88,6 +88,59 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 2026-11-20：手机正式播放页横竖屏迁移 ViewPager2
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 正式播放页原来竖屏用两块 `PhoneVideoPage` 手工平移，横屏用当前层 + ghost 层手动动画；
+  相邻集虽然有独立播放器，但页面和 `SurfaceView` 的创建时机仍由手势状态机控制，
+  快速翻集容易先黑屏再出帧。
+- 修复：竖屏改为整剧集 `ViewPager2`，横屏改为 `LandscapePlayerPage` 的整剧集
+  `ViewPager2`，两边都设置 `offscreenPageLimit=1`。当前集、上一集、下一集各自持有
+  独立视频、弹幕和 `SurfaceView`，相邻集播放器提前绑定并静音预渲染首帧。
+- 翻页状态由 `onPageScrolled` / `onPageScrollStateChanged` 驱动：拖动开始立即暂停当前集，
+  过半恢复目标集音量与音频焦点，IDLE 沿用已预览实例提交。播放锁定会同时禁用 ViewPager2
+  纵向输入，横滑进度和点击手势保持原行为。
+- 选集直达、自动连播和横竖屏切换都会同步两套 ViewPager2 当前集页；横屏控制层仍作为
+  pager 上方整层覆盖，不随单集页重复创建。
+- 删除竖屏旧 ghost 页、横屏 ghost 层和手工交换引用路径；继续使用 `SurfaceView`，未引入 `TextureView`。
+  未改版本号或 versionCode；`:app:assembleDebug` 使用 JDK 17 通过，测试待用户真机验证。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-20：手机推荐页横向体裁迁移 ViewPager2
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 推荐页外层四条体裁流原由横向 `RecyclerView + PagerSnapHelper` 承载；内层视频流已经使用
+  竖向 `ViewPager2`，横竖屏下仍有两套不同翻页机制。
+- 修复：外层改为横向 `ViewPager2`，设置 `offscreenPageLimit=1`，与内层竖向 `ViewPager2`
+  组成统一的横竖双轴 pager。外层只接明显横向手势，纵向手势关闭外层输入并交给内层。
+- 保留「推荐页左右滑动切换」设置、播放设置面板锁页、点 tab 直接切流、横竖屏尺寸变化后
+  重新对齐当前体裁页，以及相邻体裁页提前创建。未改版本号或 versionCode。
+- `:app:assembleDebug` 使用 JDK 17 通过；测试待用户真机验证，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-20：手机推荐 / 播放页滑动卡顿与换集弹幕修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：推荐页和正式播放页上下滑动持续丢帧；正式页切到下一集后弹幕不出现，拖动进度后才恢复。
+- 根因一：`onPageScrolled` 每帧都会重复进入目标页预览逻辑，重复执行页面绑定、封面加载、
+  播放器静音/音量切换和相邻页 attach，主线程承担了大量无变化工作。
+- 修复：竖屏、横屏和推荐流的过半预览都改为目标变化时只触发一次；已经预览的实例再次收到
+  同一 offset 直接返回。相邻播放器已挂到目标 Surface 时也跳过重复页面绑定。
+- 根因二：隐藏的体裁页和未显示的另一形态 pager 仍保留前后页 Surface；现在隐藏时降为
+  ViewPager2 默认 offscreen，只保留当前页，重新显示时再恢复 `offscreenPageLimit=1`。
+- 根因三：首帧后弹幕任务异步释放，`onFrameRendered` 可能先于 `DanmakuLoader.load()` 执行；
+  `load()` 随后重新挂起首批弹幕，但不会再有新的首帧回调。现在启动门闩已就绪时同步执行
+  load，并在当前集已出帧时立即补一次 `onFrameRendered`。换集时也在刷新 UI 前清掉旧
+  `lastFrameAt`，避免把上一集首帧误判成新集已出画面。
+- 未改版本号或 versionCode；`:app:assembleDebug` 使用 JDK 17 通过，测试待用户真机验证。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-20：手机推荐流迁移 ViewPager2 相邻页预渲染
 
 状态：已实现，debug 构建通过，待用户真机验证。

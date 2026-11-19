@@ -70,6 +70,8 @@ internal fun PhonePlayerActivity.load(seriesId: String) {
             1080,
             1920,
         )
-        playForLoad(start, startAt)
+        preparePlayerPager(d, start) {
+            playForLoad(start, startAt)
+        }
     }
 }

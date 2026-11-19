@@ -13,6 +13,7 @@ internal fun PhoneFeedView.onHiddenImpl(handoff: Boolean = false) {
     closeSheet()
     val already = feedHidden
     feedHiddenSlot = true
+    feedList.setActive(false)
     feedPaused = true
     feedChromeEpoch++
     feedList.removeCallbacks(feedChromeHideRunnable)

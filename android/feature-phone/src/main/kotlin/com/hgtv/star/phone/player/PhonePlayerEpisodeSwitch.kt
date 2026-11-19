@@ -36,6 +36,7 @@ private fun PhonePlayerActivity.seekToQueuedNext(target: Int): Boolean {
     val current = exo.currentMediaItemIndex
     if (current < 0 || exo.mediaItemCount <= current + 1) return false
     holdFirstFrameAspectRatio()
+    selectPlayerPagerEpisode(target)
     if (!bindQueuedNextOutput()) return false
     listenerManualNextTarget = target
     listenerManualNextPosition = exo.currentPosition.coerceAtLeast(0L)
@@ -72,15 +73,11 @@ private fun PhonePlayerActivity.seekToQueuedNext(target: Int): Boolean {
 private fun PhonePlayerActivity.bindQueuedNextOutput(): Boolean {
     val exo = player ?: return false
     if (playerLandscapeMode) {
-        if (playerLandscapeVideo.player !== exo) playerLandscapeVideo.player = exo
+        attachCurrentPlayerToLandscapePagerPage()
         return playerLandscapeVideo.player === exo
     }
     // 正式播放内部换集不再借推荐页 Surface，否则新页自己的 PlayerView 会保持隐藏。
     if (playerFeedUnderlay) dropUnderlay()
-    // 从推荐页进入时两页最初都按 underlay 隐藏。第一次换集只恢复了其中一页；
-    // 下一次换到另一页时必须再次显式恢复，否则音频和进度正常但视频 Surface 仍是 GONE。
-    playerPage.setVideoSurfaceVisible(true)
-    PhoneServices.detachAndClear(swipeGhostPage.playerView)
-    if (playerPage.playerView.player !== exo) playerPage.playerView.player = exo
+    attachCurrentPlayerToPagerPage()
     return playerPage.playerView.player === exo
 }

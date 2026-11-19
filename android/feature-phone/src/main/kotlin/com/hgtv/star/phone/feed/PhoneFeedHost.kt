@@ -33,6 +33,7 @@ internal fun PhoneFeedView.setGenreImpl(value: String?) {
 }
 
 internal fun PhoneFeedView.onShownImpl() {
+    feedList.setActive(true)
     if (!resumeOnShownImpl()) return
     // 当前页真正上屏后才取流；有快照时先播快照，补流由首帧回调触发。
     if (feedItems.isEmpty()) loadMore()

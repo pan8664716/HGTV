@@ -46,7 +46,13 @@ internal fun PhonePlayerActivity.syncPlaybackLockUi() {
     val locked = playerControlsLocked
     if (playerPageInitialized) {
         playerPage.setPlaybackLocked(locked)
-        swipeGhostPage.setPlaybackLocked(locked)
+        if (playerEpisodePagerInitialized) {
+            playerEpisodePager.gesturesEnabled = !locked
+            playerEpisodePager.pages().forEach { it.setPlaybackLocked(locked) }
+        }
+    }
+    if (playerLandscapePagerInitialized) {
+        playerLandscapePager.gesturesEnabled = !locked
     }
     if (playerLandLockInitialized) {
         PhonePlayerViewSupport.styleLockButton(playerLandLockSlot, playerLandLockGlyphSlot, locked)

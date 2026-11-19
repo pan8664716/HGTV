@@ -19,30 +19,42 @@ internal fun PhonePlayerActivity.danmakuTarget(): com.hgtv.star.shared.media.Dan
  * 同一个 DanmakuView，只是手机上字号按 density 走。
  */
 internal fun PhonePlayerActivity.applyDanmakuSettings() {
-    val lib = library ?: return
     val views = buildList {
-        add(playerPage.danmakuView)
-        add(swipeGhostPage.danmakuView)
-        // 横屏那一层也要跟着设置走：它平时不可见，但一切全屏就要立刻是对的。
-        if (playerLandDanmakuInitialized) add(playerLandDanmaku)
+        if (playerEpisodePagerInitialized) {
+            playerEpisodePager.pages().forEach { add(it.danmakuView) }
+        } else if (playerPageInitialized) {
+            add(playerPage.danmakuView)
+        }
+        if (playerLandscapePagerInitialized) {
+            playerLandscapePager.pages().forEach { add(it.danmaku) }
+        } else if (playerLandDanmakuInitialized) {
+            add(playerLandDanmaku)
+        }
     }
-    for (view in views) {
-        // 横竖屏两层按**同一个基准**取字号（屏幕长边）：按各自视图高度算的话，
-        // 竖屏 1920 与横屏 1080 会差 1.6 倍，切全屏字号明显跳一档。
-        view.sizeFollowsLongEdge = true
-        view.mode = lib.danmakuMode
-        view.textScale = PhoneDanmakuSize.renderScale(this)
-        view.textAlpha = lib.danmakuAlpha
-        view.speed = lib.danmakuSpeed
-        view.mergeRepeats = lib.danmakuMerge
-        view.mergeMinCount = lib.danmakuMergeMin
-        view.effectsEnabled = lib.danmakuEffects
-        // 隐藏弹幕时整层不参与绘制，也就不必让它的请求跑下去。
-        view.visibility = if (lib.danmakuMode == DanmakuMode.HIDDEN) View.GONE else View.VISIBLE
+    for (view in views.distinct()) {
+        applyDanmakuSettingsToView(view)
     }
     // 目标层换过（竖屏 ↔ 横屏、页面重建）就把已经拉到手的弹幕铺回去：
     // 只改设置不铺数据的话，新那一层会一直空着——用户读到的就是「转个屏弹幕就没了」。
     playerDanmakuLoader.reattach()
+}
+
+internal fun PhonePlayerActivity.applyDanmakuSettingsToView(
+    view: com.hgtv.star.shared.media.DanmakuView,
+) {
+    val lib = library ?: return
+    // 横竖屏两层按**同一个基准**取字号（屏幕长边）：按各自视图高度算的话，
+    // 竖屏 1920 与横屏 1080 会差 1.6 倍，切全屏字号明显跳一档。
+    view.sizeFollowsLongEdge = true
+    view.mode = lib.danmakuMode
+    view.textScale = PhoneDanmakuSize.renderScale(this)
+    view.textAlpha = lib.danmakuAlpha
+    view.speed = lib.danmakuSpeed
+    view.mergeRepeats = lib.danmakuMerge
+    view.mergeMinCount = lib.danmakuMergeMin
+    view.effectsEnabled = lib.danmakuEffects
+    // 隐藏弹幕时整层不参与绘制，也就不必让它的请求跑下去。
+    view.visibility = if (lib.danmakuMode == DanmakuMode.HIDDEN) View.GONE else View.VISIBLE
 }
 
 /**
@@ -58,8 +70,17 @@ internal fun PhonePlayerActivity.loadDanmaku(
 ) {
     // 主动换集立刻停住旧弹幕：load 是延迟调度的，等它落地时缓冲期旧弹幕还在走。
     if (clearOnSwitch) playerDanmakuLoader.clear()
-    StartupDeferredTasks.scheduleLatestOnMain("danmaku.phone.player", 30_000L) {
+    val run = {
         playerDanmakuLoader.load(episodeId, seriesId, clearOnSwitch = clearOnSwitch)
+        val exo = player
+        if (exo?.playbackState == Player.STATE_READY && lastFrameAt > 0L) {
+            playerDanmakuLoader.onFrameRendered(exo.currentPosition)
+        }
+    }
+    if (StartupDeferredTasks.isPlaybackReady()) {
+        run()
+    } else {
+        StartupDeferredTasks.scheduleLatestOnMain("danmaku.phone.player", 30_000L, run)
     }
 }
 

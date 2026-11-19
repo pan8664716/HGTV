@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.Player
 
 /** adoptFromSession 的前置检查；返回 null = 可以接，否则返回不能接的原因（只用于日志）。 */
@@ -72,6 +73,29 @@ internal fun PhonePlayerActivity.adoptFromSession(seriesId: String): Boolean {
     detail = d
     index = sessionIndex
     remote = video
+    preparePlayerPager(d, sessionIndex) {
+        finishAdoptFromSession(
+            seriesId = seriesId,
+            d = d,
+            video = video,
+            sessionIndex = sessionIndex,
+            resumeAt = resumeAt,
+            wasIdle = wasIdle,
+            exo = exo,
+        )
+    }
+    return true
+}
+
+private fun PhonePlayerActivity.finishAdoptFromSession(
+    seriesId: String,
+    d: com.hgtv.star.core.Detail,
+    video: com.hgtv.star.core.RemoteVideo,
+    sessionIndex: Int,
+    resumeAt: Long,
+    wasIdle: Boolean,
+    exo: ExoPlayer,
+) {
     bindEpisodeUiForAdoption(d, sessionIndex)
 
     player = exo
@@ -87,7 +111,8 @@ internal fun PhonePlayerActivity.adoptFromSession(seriesId: String): Boolean {
         if (!(playerFeedUnderlay && attachUnderlay())) {
             dropUnderlay()
             PhoneSession.underlayActive = false
-            playerPage.playerView.player = exo
+            selectPlayerPagerEpisode(sessionIndex)
+            attachCurrentPlayerToPagerPage()
         }
     }
     PhoneSession.publish(d, sessionIndex, video, video.info.quality, PhoneSession.Owner.PLAYER)
@@ -140,5 +165,4 @@ internal fun PhonePlayerActivity.adoptFromSession(seriesId: String): Boolean {
         "HGTV-PHONE",
         "adopt session series=$seriesId episode=${sessionIndex + 1}",
     )
-    return true
 }

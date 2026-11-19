@@ -71,6 +71,8 @@ internal fun PhoneFeedView.initializeFeed() {
             topMargin = context.dp(64)
         },
     )
+    // 隐藏的体裁页只保留当前视频页，别让三个相邻 SurfaceView 一起常驻。
+    feedList.setActive(false)
 
     feedScope.launch {
         feedLibrarySlot = PhoneServices.awaitLibrary(context)
@@ -125,6 +127,7 @@ private fun PhoneFeedView.updateFeedSwipePreviewImpl(target: Int) {
         return
     }
     if (feedSwipePreviewIndex == target) {
+        if (pooledPlayerSlot(target)?.previewPlaying == true) return
         startFeedSwipePreviewImpl(target)
         return
     }
@@ -138,6 +141,7 @@ internal fun PhoneFeedView.startFeedSwipePreviewImpl(index: Int): Boolean {
     pauseCurrentForFeedSwipeImpl()
     val slot = pooledPlayerSlot(index) ?: return false
     if (!slot.sourcePrepared || !slot.player.isFeedPlayerAlive()) return false
+    if (slot.previewPlaying) return true
     pausePooledPlayersExcept(slot.player)
     feedPageAt(index)?.let { page -> attachPooledPlayerToPageImpl(page, index) }
     slot.preRendering = false

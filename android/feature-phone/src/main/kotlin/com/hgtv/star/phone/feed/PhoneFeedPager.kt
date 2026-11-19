@@ -61,6 +61,10 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
         pager.registerOnPageChangeCallback(callback)
     }
 
+    fun setActive(active: Boolean) {
+        pager.offscreenPageLimit = if (active) 1 else ViewPager2.OFFSCREEN_PAGE_LIMIT_DEFAULT
+    }
+
     fun setCurrentItem(position: Int, smoothScroll: Boolean) {
         pager.setCurrentItem(position, smoothScroll)
     }

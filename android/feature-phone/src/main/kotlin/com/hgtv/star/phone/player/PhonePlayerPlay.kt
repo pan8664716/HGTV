@@ -14,7 +14,6 @@ internal fun PhonePlayerActivity.play(
 ) {
     val d = detail ?: return
     if (episodeIndex !in d.episodes.indices) return
-    if (episodeIndex != index) swipeLogicalTarget = -1
     nextSeasonState.nextSeasonFinishedFor = ""
     val sameEpisode = episodeIndex == index
     if (!sameEpisode) {
@@ -31,6 +30,7 @@ internal fun PhonePlayerActivity.play(
         playerPage.setVideoSurfaceVisible(true)
     }
     index = episodeIndex
+    selectPlayerPagerEpisode(episodeIndex)
     val episodeId = d.episodes[episodeIndex]
     showEpisodeCover(d.episodeCover(episodeId).ifBlank { d.series.cover })
     playbackCoordinator.open(

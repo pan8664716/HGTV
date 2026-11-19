@@ -2,7 +2,6 @@
 package com.hgtv.star.phone
 
 import android.view.Gravity
-import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -12,18 +11,15 @@ import com.hgtv.star.phone.ui.dp
 
 internal fun PhonePlayerActivity.buildPortrait() {
     playerPortrait = FrameLayout(this)
-    // 两页：ghost 在下、当前页在上。拖动时两页一起平移，滑到位后交换引用。
-    swipeGhostPage = makePage()
     swipePlayerPage = makePage()
-    playerPortrait.addView(swipeGhostPage, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-    ))
-    playerPortrait.addView(playerPage, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-    ))
-    swipeGhostPage.visibility = View.GONE
     wirePage(playerPage)
-    wirePage(swipeGhostPage)
+    playerEpisodePager = VerticalEpisodePager(this)
+    playerEpisodePagerAdapter = PhonePlayerPagerAdapter(this, playerPage)
+    playerEpisodePager.adapter = playerEpisodePagerAdapter
+    installPlayerPagerCallbacks()
+    playerPortrait.addView(playerEpisodePager, FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+    ))
 
     playerPortraitTop = LinearLayout(this).apply {
         orientation = LinearLayout.HORIZONTAL

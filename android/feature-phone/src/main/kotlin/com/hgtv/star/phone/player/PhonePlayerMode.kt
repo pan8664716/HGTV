@@ -3,16 +3,17 @@ package com.hgtv.star.phone
 
 import android.graphics.Color
 import android.view.View
-import android.view.ViewGroup
-import android.widget.FrameLayout
 
 internal fun PhonePlayerActivity.applyMode() {
+    // 竖屏与横屏 ViewPager2 使用不同 Surface；切形态前先摘掉相邻集输出，
+    // 等新形态布局完成后统一重挂，避免旧 Surface 被 GONE 后预渲染卡在“已开始”状态。
+    pauseAdjacentPlayers()
+    if (playerEpisodePagerInitialized) playerEpisodePager.setActive(!playerLandscapeMode)
+    if (playerLandscapePagerInitialized) playerLandscapePager.setActive(playerLandscapeMode)
     // 形态一变，面板的宽度与位置就都不对了（横屏是右侧 1/3 抽屉，竖屏是底部整宽），
     // 直接收起，避免留一块尺寸错误的浮层。
     playerSheet.dismiss()
     dismissLandscapeSettingsImpl()
-    // 形态一变，上一轮的平移量就没有意义了：清零并收掉相邻页。
-    resetSwipeStateImpl()
     swipeFeedVideoDy = 0f
     PhoneSession.setFeedVideoOffset(0f)
     if (playerLandscapeMode) {
@@ -23,13 +24,6 @@ internal fun PhonePlayerActivity.applyMode() {
         // 一旦进入横屏，本次播放不再借推荐页 Surface。退回竖屏时继续借会把本页 root
         // 再次设为透明，推荐页的标题、导航和弹幕就可能从画面背后透出来。
         dropUnderlay()
-        // 上一次退出全屏时把这块 Surface 从树上摘掉了（见下面竖屏分支），先挂回去。
-        // 插到 index 0：弹幕层、手势层、控制层都必须在它上面。
-        if (playerLandscapeVideo.parent == null) {
-            playerLandscape.addView(playerLandscapeVideo, 0, FrameLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-            ))
-        }
         // PlayerView.setPlayer(null) 会清掉它自己绑过的视频 Surface。
         // 必须先解绑旧画面，再挂新画面；反序时旧 View 会把刚挂上的新 Surface
         // 又清掉，解码器随后报 -32，画面就停在切换前的一帧。
@@ -39,8 +33,9 @@ internal fun PhonePlayerActivity.applyMode() {
         playerPage.playerView.setKeepContentOnPlayerReset(false)
         PhoneServices.detach(playerPage.playerView)
         // 横屏这一层此后要长期出画面：换集时保留上一帧，避免闪黑。
+        selectLandscapePagerEpisode(index)
         playerLandscapeVideo.setKeepContentOnPlayerReset(true)
-        player?.let { playerLandscapeVideo.player = it }
+        attachCurrentPlayerToLandscapePagerPage()
         // 输出被横屏这一层拿走了：推荐页那边不能再认为「Surface 一直在」。
         PhoneSession.underlayActive = false
         playerUnderlayBound = false
@@ -54,10 +49,7 @@ internal fun PhonePlayerActivity.applyMode() {
         // 否则它的 Surface 会带着横屏尺寸的旧帧一起留在窗口里（退出全屏后那块残留）。
         playerLandscapeVideo.setKeepContentOnPlayerReset(false)
         playerLandscapeVideo.player = null
-        // 光解绑不够：SurfaceView 在 GONE 之后仍可能把最后一帧合成到窗口上，
-        // 表现就是「退出全屏后有一块画面卡着，怎么点都去不掉」。从视图树里摘掉，
-        // Surface 才会真正销毁；下次进全屏再挂回 index 0（见上面横屏分支）。
-        playerLandscape.removeView(playerLandscapeVideo)
+        playerLandscapeVideo.setKeepContentOnPlayerReset(true)
         // 旧输出清完后再挂竖屏要用的那一块。借下层时挂的是推荐页那块
         // Surface（attachUnderlay）；否则直接挂本页 PlayerView。
         val attached = playerFeedUnderlay && attachUnderlay()
@@ -69,7 +61,7 @@ internal fun PhonePlayerActivity.applyMode() {
             dropUnderlay()
             // 不再借下层 Surface 时必须恢复整页不透明，避免透明窗口继续透出推荐页。
             root.setBackgroundColor(Color.BLACK)
-            player?.let { playerPage.playerView.player = it }
+            if (player != null) attachCurrentPlayerToPagerPage()
         }
         // 竖屏同样进沉浸式：**状态栏不占位、不显示**。
         // 早先这里走 exitImmersive()，顶部留着一条状态栏，竖屏短剧的画面被压下去一截，
@@ -92,6 +84,7 @@ internal fun PhonePlayerActivity.applyMode() {
     // 否则一点全屏就「弹幕没了」（见 replayDanmaku）。
     replayDanmaku()
     rebindAdjacentGhostForMode()
+    scheduleAdjacentEpisodeWarmup()
     // 形态切换的过渡：系统在同一个窗口里换布局是没有动画的（configChanges 让
     // Activity 不重建），不加这一层就是「啪」一下换掉。放在所有布局设置之后。
     animateModeEnter(if (playerLandscapeMode) playerLandscape else playerPortrait)

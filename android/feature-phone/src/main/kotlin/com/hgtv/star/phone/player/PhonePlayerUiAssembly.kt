@@ -28,8 +28,7 @@ internal fun PhonePlayerActivity.buildUi() {
 }
 
 private fun PhonePlayerActivity.buildLandscape() {
-    // 相邻集那一页（横屏版）：黑底 + 左上角「标题 第N集」，与竖屏的 ghost 页同一个角色。
-    // 加在 landscape 之前，因此它永远在下面，整页滑开才露出来。
+    // 横屏 ViewPager2 集页：每页独立视频、封面、弹幕与黑边层。
     buildLandscapeBase()
 
     buildLandscapeTopControls()

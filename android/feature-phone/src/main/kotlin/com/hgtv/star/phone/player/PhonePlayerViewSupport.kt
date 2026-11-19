@@ -154,28 +154,9 @@ internal fun PhonePlayerActivity.showEpisodeCover(url: String) {
     loadLandscapeEpisodeCover(url)
 }
 
-internal fun PhonePlayerActivity.showLandscapeGhostEpisodeCover(url: String) {
-    val cover = playerLandscapeGhostCover ?: return
-    cover.animate().cancel()
-    cover.alpha = 1f
-    cover.visibility = View.VISIBLE
-    if (url.isBlank()) {
-        cover.setImageDrawable(null)
-        return
-    }
-    val metrics = resources.displayMetrics
-    PhoneServices.artwork(this).load(
-        cover,
-        url,
-        ArtworkLoader.PRIORITY_FOCUSED,
-        metrics.widthPixels,
-        metrics.heightPixels,
-    )
-}
-
 internal fun PhonePlayerActivity.hideEpisodeCover() {
     if (playerPageInitialized) playerPage.hideEpisodeCover()
-    listOfNotNull(playerLandscapeCover, playerLandscapeGhostCover).forEach { cover ->
+    listOfNotNull(playerLandscapeCover).forEach { cover ->
         if (cover.visibility != View.VISIBLE) return@forEach
         cover.animate().cancel()
         cover.animate().alpha(0f).setDuration(120L).withEndAction {

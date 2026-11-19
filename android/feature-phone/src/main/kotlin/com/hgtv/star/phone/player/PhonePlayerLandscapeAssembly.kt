@@ -8,11 +8,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.SeekBar
-import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
-import com.google.android.exoplayer2.ui.PlayerView
-import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.PlaybackSpeed
-import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.roundedBackground
@@ -22,146 +18,21 @@ import com.hgtv.star.phone.ui.phoneSize
 
 /** 横屏装配：相邻集页、视频、弹幕和透明手势层。 */
 internal fun PhonePlayerActivity.buildLandscapeBase() {
-    // 相邻集那一页（横屏版）：黑底 + 左上角「标题 第N集」，与竖屏的 ghost 页同一个角色。
-    // 加在 landscape 之前，因此它永远在下面，整页滑开才露出来。
-    val ghost = FrameLayout(this).apply {
-        setBackgroundColor(Color.BLACK)
-        visibility = View.GONE
-    }
-    val ghostTitle = TextView(this).apply {
-        setTextColor(Color.WHITE)
-        phoneSize(15)
-        setTypeface(typeface, android.graphics.Typeface.BOLD)
-    }
-    val ghostVideo = FixedFirstFramePlayerView(this).apply {
-        useController = false
-        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-        setShutterBackgroundColor(Color.BLACK)
-        setKeepContentOnPlayerReset(true)
-        PhonePlayerViewSupport.useOpaqueVideoSurface(this)
-    }
-    val ghostCover = episodeCoverView(this)
-    ghost.addView(ghostVideo, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-    ))
-    ghost.addView(ghostCover, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-    ))
-    ghost.addView(ghostTitle, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT,
-        Gravity.TOP or Gravity.START
-    ).apply {
-        topMargin = dp(14)
-        leftMargin = dp(16)
-    })
-    root.addView(ghost, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-    ))
-
     val landscape = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-    val video = FixedFirstFramePlayerView(this).apply {
-        useController = false
-        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-        setShutterBackgroundColor(Color.BLACK)
-        setKeepContentOnPlayerReset(true)
-        PhonePlayerViewSupport.useOpaqueVideoSurface(this)
-    }
-    landscape.addView(video, FrameLayout.LayoutParams(
+    val initialPage = LandscapePlayerPage(this)
+    playerLandscapePager = VerticalLandscapePager(this)
+    playerLandscapePagerAdapter = LandscapePlayerPagerAdapter(this, initialPage)
+    playerLandscapePager.adapter = playerLandscapePagerAdapter
+    installLandscapePlayerPagerCallbacks()
+    landscape.addView(playerLandscapePager, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
     ))
-    val cover = episodeCoverView(this)
-    landscape.addView(cover, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-    ))
-    video.setAspectRatioListener { _, _, _ ->
-        if (playerLandscapeVideoInitialized && playerLandLetterboxInitialized) {
-            syncLandscapeLetterboxImpl()
-        }
-    }
-
-    // 弹幕压在画面之上、手势层之下（与竖屏 `PhoneVideoPage` 里的叠放顺序一致）。
-    val danmaku = com.hgtv.star.shared.media.DanmakuView(this).apply {
-        mode = DanmakuMode.DEFAULT
-        minTextSizeDp = 4f
-        topGapDp = 0f
-        // 与竖屏那一层同一个基准字号（见 `applyDanmakuSettings`）。
-        sizeFollowsLongEdge = true
-        setClock(0, false)
-    }
-    landscape.addView(danmaku, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-    ))
-    // 弹幕可见时黑边在弹幕 Surface 内绘制；这层普通 View 只在弹幕不可见时兜底。
-    val letterbox = PhoneLetterboxMask(this)
-    landscape.addView(letterbox, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-    ))
-
-    // 手势挂在一块**透明覆盖层**上：横屏没有「信息栏里的按钮」需要让路，
-    // 覆盖层可以整屏接管，点击一律先到状态机。
-    val touchLayer = View(this)
-    touchLayer.setOnTouchListener(
-        PhoneTouch(
-            host = touchLayer,
-            isLandscape = { true },
-                onTap = { setChromeVisible(!playerChromeVisibleSlot) },
-            onDoubleTap = { togglePlay() },
-            // 与竖屏同一套分区（用户要求）：中间 1/3 长按 = 播放设置，
-            // 左右 1/3 长按 = 2 倍速。早先横屏不分区，长按哪里都只加速，
-            // 用户在全屏里找不到播放设置（只能去点右上角那三个点）。
-            onLongPress = { zone ->
-                if (!playerControlsLocked) {
-                    when (zone) {
-                        PhoneTouch.Zone.CENTER -> { endTempSpeed(); openSettings() }
-                        else -> beginTempSpeed()
-                    }
-                }
-            },
-            onLongPressEnd = { endTempSpeed() },
-            onDragStart = {
-                if (!playerControlsLocked) {
-                    playerDragging = true
-                    playerSeekFrom = player?.currentPosition ?: 0L
-                }
-            },
-            onDrag = { fraction -> if (!playerControlsLocked) dragTo(fraction) },
-            onDragEnd = {
-                if (!playerControlsLocked) {
-                    playerDragging = false
-                    val duration = player?.duration ?: 0L
-                    if (duration > 0) player?.seekTo(playerSeekTarget)
-                    clearSeekHint()
-                }
-            },
-            // 横屏同样支持上下滑换集：竖屏有、横屏没有，用户会以为功能坏了。
-            verticalEnabled = true,
-                onVerticalStart = { if (!playerControlsLocked) beginSwipeImpl() },
-                onVertical = { delta -> if (!playerControlsLocked) dragSwipeImpl(delta) },
-                onVerticalEnd = { direction, _ ->
-                    if (!playerControlsLocked) endSwipeImpl(direction)
-                },
-                doubleTapEnabled = true,
-        )
-    )
-    landscape.addView(touchLayer, FrameLayout.LayoutParams(
-        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
-    ))
-    swipeLandscapeGhost = ghost
-    swipeLandscapeGhostVideo = ghostVideo
-    swipeLandscapeGhostCover = ghostCover
-    swipeLandscapeGhostTitle = ghostTitle
     playerLandscapeContainer = landscape
-    playerLandscapeVideoSlot = video
-    playerLandscapeCover = cover
-    playerLandscapeGhostCover = ghostCover
-    playerLandDanmakuSlot = danmaku
-    playerLandLetterboxSlot = letterbox
-    danmaku.onRenderStateChangedListener = { syncLandscapeLetterboxImpl() }
-    video.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
-        if (playerLandscapeVideoInitialized && playerLandLetterboxInitialized) {
-            syncLandscapeLetterboxImpl()
-        }
-    }
+    playerLandscapeVideoSlot = initialPage.video
+    playerLandscapeCover = initialPage.cover
+    playerLandDanmakuSlot = initialPage.danmaku
+    playerLandLetterboxSlot = initialPage.letterbox
+
 }
 
 /** 横屏常驻信息行、设置入口和竖版片源全屏入口。 */

@@ -184,18 +184,10 @@ internal fun PhonePlayerActivity.onAdvanced(
     if (nextIndex !in d.episodes.indices) return
     val previous = index
     val previousDuration = listenerLastDuration
-    showEpisodeCover(
-        d.episodeCover(d.episodes[nextIndex]).ifBlank { d.series.cover }
-    )
     // 无感换集也必须结束“借用推荐页 Surface”的交接状态。继续借会把下层页面
     // 留在透明播放页背后，横竖片源比例切换时正好从新黑边里透出来。
     if (playerFeedUnderlay) {
         dropUnderlay()
-        player?.let { exo ->
-            if (playerPage.playerView.player !== exo) {
-                playerPage.playerView.player = exo
-            }
-        }
     }
 
     reportRecommendEvent(
@@ -224,17 +216,22 @@ internal fun PhonePlayerActivity.onAdvanced(
     }
 
     index = nextIndex
-    swipeLogicalTarget = -1
+    selectPlayerPagerEpisode(nextIndex)
+    attachCurrentPlayerToPagerPage()
+    showEpisodeCover(
+        d.episodeCover(d.episodes[nextIndex]).ifBlank { d.series.cover }
+    )
     reconcileAdjacentSlots()
     PhoneSession.nextQueued = false
     PhoneSession.clearNext()
+    // 新一集必须先清掉上一集的帧证据，弹幕加载才不会把旧首帧误判成新集已出画面。
+    lastFrameAt = 0L
     bindEpisodeUiForListener(d, nextIndex, clearDanmakuOnSwitch)
     syncChipsForListener()
     listenerLastDuration = 0
     listenerPrefetchAt = 0
     // 无感切集没有走 `attach()`：上一集出帧后看门狗已经撤掉，这里必须按新一集重挂。
     // 否则音频继续走、视频停在上一帧时，没有任何恢复路径会被触发。
-    lastFrameAt = 0L
     armPictureWatchdog()
     // 会话换成**这一集**的 RemoteVideo：它在挂队列时就被 `queuedVideo` 记下了。
     // 用 `PhoneSession.remote` 会把上一集的引用写回去——那一份马上要关，

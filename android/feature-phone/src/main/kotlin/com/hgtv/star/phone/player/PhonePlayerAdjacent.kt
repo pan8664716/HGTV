@@ -6,10 +6,14 @@ import android.view.View
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ui.PlayerView
+import com.google.android.exoplayer2.video.VideoSize
 import com.google.android.exoplayer2.upstream.DataSource
 import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
+import com.hgtv.star.core.VideoFrameMode
+import com.hgtv.star.core.toFit
+import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
 import kotlinx.coroutines.Dispatchers
@@ -35,10 +39,6 @@ internal class PhonePlayerAdjacentSlot(
 internal class PhonePlayerAdjacentState {
     val slots = LinkedHashMap<Int, PhonePlayerAdjacentSlot>()
     val warming = mutableSetOf<Int>()
-    var ghostIndex = -1
-    var ghostDirection = 1
-    var ghostLandscape = false
-    var ghostAttached = false
     var generation = 0
     var warmRunnable: Runnable? = null
 }
@@ -47,8 +47,8 @@ internal class PhonePlayerAdjacentState {
  * 正式播放页的前后相邻集池。
  *
  * 当前集仍由 Activity 的 `player` 持有；这里只保留前后各一集。主方向下一集会在
- * ghost 页的独立 SurfaceView 上静音预渲染首帧，上一集则保留刚离开的那台播放器，
- * 下滑时重新挂回 ghost Surface 即可继续。
+ * 对应 ViewPager2 集页的独立 SurfaceView 上静音预渲染首帧，
+ * 上一集则保留刚离开的那台播放器，下滑时重新挂回该集 Surface 即可继续。
  */
 internal fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup() {
     if (!playerRootInitialized) return
@@ -128,12 +128,7 @@ internal fun PhonePlayerActivity.ensureAdjacentEpisode(target: Int) {
                 return@launch
             }
             slot.preparedAt = SystemClock.elapsedRealtime()
-            if (target == index + 1 || playerAdjacentState.ghostIndex == target) {
-                attachAdjacentToGhost(
-                    target,
-                    direction = playerAdjacentState.ghostDirection,
-                )
-            }
+            attachAdjacentToPagerPage(target)
             if (com.hgtv.star.shared.BuildConfig.DEBUG) {
                 android.util.Log.i(
                     "HGTV-PHONE",
@@ -149,13 +144,33 @@ internal fun PhonePlayerActivity.ensureAdjacentEpisode(target: Int) {
 private fun PhonePlayerActivity.attachAdjacentPlayerListener(slot: PhonePlayerAdjacentSlot) {
     if (slot.listener != null) return
     val hook = object : Player.Listener {
+        override fun onVideoSizeChanged(videoSize: VideoSize) {
+            if (playerLandscapeMode) return
+            val page = playerEpisodePager.pageAt(slot.index) ?: return
+            if (page.playerView.player !== slot.player) return
+            page.setResizeMode(
+                (library?.frameMode ?: VideoFrameMode.FIT)
+                    .toFit()
+                    .resizeMode()
+            )
+            page.updateVideoFrame(videoSize.width, videoSize.height)
+        }
+
         override fun onRenderedFirstFrame() {
             slot.firstFrameRendered = true
             slot.preRendering = false
             if (!slot.previewPlaying && (player !== slot.player || index != slot.index)) {
                 runCatching { slot.player.pause() }
             }
-            if (playerAdjacentState.ghostIndex == slot.index) showAdjacentGhostFrame(slot)
+            if (playerLandscapeMode) {
+                playerLandscapePager.pageAt(slot.index)?.let { page ->
+                    if (page.video.player === slot.player) page.hideCover()
+                }
+            } else {
+                playerEpisodePager.pageAt(slot.index)?.let { page ->
+                    if (page.playerView.player === slot.player) page.hideEpisodeCover()
+                }
+            }
         }
 
         override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
@@ -170,90 +185,96 @@ private fun PhonePlayerActivity.attachAdjacentPlayerListener(slot: PhonePlayerAd
     slot.player.addListener(hook)
 }
 
-internal fun PhonePlayerActivity.attachAdjacentToGhost(
-    target: Int,
-    direction: Int,
-) {
-    val d = detail ?: return
+/**
+ * 把相邻集播放器挂到它对应的 ViewPager2 页面。
+ *
+ * 页面由 `offscreenPageLimit=1` 提前创建，因此这里在用户开始滑动之前就能把
+ * 独立 `SurfaceView` 与独立 ExoPlayer 绑定，并以 0 音量完成首帧预渲染。
+ */
+internal fun PhonePlayerActivity.attachAdjacentToPagerPage(target: Int) {
+    if (playerLandscapeMode) {
+        attachAdjacentToLandscapePagerPage(target)
+        return
+    }
+    val page = playerEpisodePager.pageAt(target) ?: run {
+        ensureAdjacentEpisode(target)
+        return
+    }
     val slot = playerAdjacentState.slots[target] ?: run {
         ensureAdjacentEpisode(target)
         return
     }
-    if (target !in d.episodes.indices) return
-    if (playerAdjacentState.ghostIndex == target &&
-        playerAdjacentState.ghostLandscape == playerLandscapeMode &&
-        playerAdjacentState.ghostAttached
-    ) {
-        playerAdjacentState.ghostDirection = direction
-        val h = slideHeightImpl().toFloat()
-        val directionOffset = if (direction > 0) h else -h
-        if (playerLandscapeMode) {
-            swipeLandscapeGhost.visibility = View.VISIBLE
-            swipeLandscapeGhost.translationY =
-                swipeLandscape.translationY + directionOffset
-        } else {
-            swipeGhostPage.visibility = View.VISIBLE
-            swipeGhostPage.translationY = playerPage.translationY + directionOffset
-        }
-        if (slot.firstFrameRendered) showAdjacentGhostFrame(slot) else startAdjacentPreRender(slot)
-        if (swipePlaybackPreviewIndex == target) startAdjacentSwipePreview(target)
-        return
-    }
-    val previousGhostIndex = playerAdjacentState.ghostIndex
-    if (previousGhostIndex != target) {
-        playerAdjacentState.slots[previousGhostIndex]?.let { previous ->
-            previous.preRendering = false
-            previous.previewPlaying = false
-            previous.preRenderToken++
-            runCatching {
-                previous.player.volume = 0f
-                previous.player.playWhenReady = false
-                previous.player.pause()
-            }
-            PhoneServices.enableAudioFocus(previous.player, false)
-        }
-    }
-    detachAdjacentGhostOutput()
-    playerAdjacentState.ghostIndex = target
-    playerAdjacentState.ghostDirection = direction
-    playerAdjacentState.ghostLandscape = playerLandscapeMode
-    playerAdjacentState.ghostAttached = true
-    val label = "第${target + 1}集"
+    val d = detail ?: return
+    if (target !in d.episodes.indices || target == index) return
     val episodeId = d.episodes[target]
     val cover = d.episodeCover(episodeId).ifBlank { d.series.cover }
-    val h = slideHeightImpl().toFloat()
-    val directionOffset = if (direction > 0) h else -h
-    attachAdjacentPlayerListener(slot)
-
-    if (playerLandscapeMode) {
-        if (playerLandscapeVideoInitialized) {
-            swipeLandscapeGhostTitle.text = "${d.series.title} $label"
-            showLandscapeGhostEpisodeCover(cover)
-            slot.firstFrameRendered = false
-            swipeLandscapeGhostVideo.player = slot.player
-            swipeLandscapeGhostVideo.visibility = View.VISIBLE
-            swipeLandscapeGhost.visibility = View.VISIBLE
-            swipeLandscapeGhost.translationY =
-                swipeLandscape.translationY + directionOffset
-        }
-    } else {
-        swipeGhostPage.danmakuView.clear()
-        swipeGhostPage.bind(
-            d.series,
-            label,
-            watchText = "选集 ${target + 1}/${d.episodes.size}",
-        )
-        swipeGhostPage.setVideoSurfaceVisible(true)
-        slot.firstFrameRendered = false
-        swipeGhostPage.playerView.player = slot.player
-        swipeGhostPage.showEpisodeCover(cover)
-        swipeGhostPage.setProgress(0f)
-        swipeGhostPage.setChromeVisible(playerChromeVisible)
-        swipeGhostPage.visibility = View.VISIBLE
-        swipeGhostPage.translationY = playerPage.translationY + directionOffset
+    if (page.playerView.player === slot.player) {
+        startAdjacentPreRender(slot)
+        if (swipePlaybackPreviewIndex == target) playAdjacentPreview(slot)
+        return
     }
+    page.danmakuView.clear()
+    page.bind(
+        d.series,
+        "第${target + 1}集",
+        watchText = "选集 ${target + 1}/${d.episodes.size}",
+    )
+    page.setPlaybackLocked(playerControlsLocked)
+    page.setChromeVisible(playerChromeVisible)
+    page.setResizeMode(
+        (library?.frameMode ?: VideoFrameMode.FIT)
+            .toFit()
+            .resizeMode()
+    )
+    page.setVideoScale(((library?.videoScale ?: 100f) / 100f).coerceIn(.1f, 1f))
+    val width = slot.remote.info.videoWidth.takeIf { it > 0 } ?: 0
+    val height = slot.remote.info.videoHeight.takeIf { it > 0 } ?: 0
+    if (width > 0 && height > 0) page.updateVideoFrame(width, height)
+    page.setVideoSurfaceVisible(true)
+    if (page.playerView.player !== slot.player) {
+        detachAdjacentOutput(page.playerView)
+        page.playerView.player = slot.player
+    }
+    if (slot.firstFrameRendered) page.hideEpisodeCover() else page.showEpisodeCover(cover)
+    val duration = runCatching { slot.player.duration }.getOrDefault(0L)
+    val position = runCatching { slot.player.currentPosition }.getOrDefault(0L)
+    page.setProgress(if (duration > 0L) position.toFloat() / duration else 0f)
     startAdjacentPreRender(slot)
-    if (swipePlaybackPreviewIndex == target) startAdjacentSwipePreview(target)
+    if (swipePlaybackPreviewIndex == target) playAdjacentPreview(slot)
+}
+
+internal fun PhonePlayerActivity.attachAdjacentToLandscapePagerPage(target: Int) {
+    if (!playerLandscapeMode) {
+        attachAdjacentToPagerPage(target)
+        return
+    }
+    val page = playerLandscapePager.pageAt(target) ?: run {
+        ensureAdjacentEpisode(target)
+        return
+    }
+    val slot = playerAdjacentState.slots[target] ?: run {
+        ensureAdjacentEpisode(target)
+        return
+    }
+    val d = detail ?: return
+    if (target !in d.episodes.indices || target == index) return
+    val cover = d.episodeCover(d.episodes[target]).ifBlank { d.series.cover }
+    if (page.video.player === slot.player) {
+        startAdjacentPreRender(slot)
+        if (swipePlaybackPreviewIndex == target) playAdjacentPreview(slot)
+        return
+    }
+    page.bind(d, target)
+    applyDanmakuSettingsToView(page.danmaku)
+    attachAdjacentPlayerListener(slot)
+    page.video.visibility = View.VISIBLE
+    if (page.video.player !== slot.player) {
+        detachAdjacentOutput(page.video)
+        page.video.player = slot.player
+    }
+    if (slot.firstFrameRendered) page.hideCover() else page.showCover(cover)
+    startAdjacentPreRender(slot)
+    if (swipePlaybackPreviewIndex == target) playAdjacentPreview(slot)
 }
 
 private fun PhonePlayerActivity.startAdjacentPreRender(slot: PhonePlayerAdjacentSlot) {
@@ -279,7 +300,26 @@ private fun PhonePlayerActivity.startAdjacentPreRender(slot: PhonePlayerAdjacent
 
 internal fun PhonePlayerActivity.startAdjacentSwipePreview(target: Int): Boolean {
     val slot = playerAdjacentState.slots[target] ?: return false
-    if (playerAdjacentState.ghostIndex != target || !playerAdjacentState.ghostAttached) return false
+    if (playerLandscapeMode) {
+        val page = playerLandscapePager.pageAt(target) ?: return false
+        if (page.video.player !== slot.player) {
+            attachAdjacentToLandscapePagerPage(target)
+            return slot.previewPlaying
+        }
+        if (playerLandscapePager.pageAt(target)?.video?.player !== slot.player) return false
+    } else {
+        val page = playerEpisodePager.pageAt(target) ?: return false
+        if (page.playerView.player !== slot.player) {
+            attachAdjacentToPagerPage(target)
+            return slot.previewPlaying
+        }
+        if (playerEpisodePager.pageAt(target)?.playerView?.player !== slot.player) return false
+    }
+    if (slot.index == index || player === slot.player) return false
+    return playAdjacentPreview(slot)
+}
+
+private fun PhonePlayerActivity.playAdjacentPreview(slot: PhonePlayerAdjacentSlot): Boolean {
     if (slot.index == index || player === slot.player) return false
     slot.previewPlaying = true
     slot.preRendering = false
@@ -301,54 +341,16 @@ internal fun PhonePlayerActivity.stopAdjacentSwipePreview(target: Int = swipePla
     PhoneServices.enableAudioFocus(slot.player, false)
 }
 
-private fun PhonePlayerActivity.showAdjacentGhostFrame(slot: PhonePlayerAdjacentSlot) {
-    if (playerLandscapeMode) {
-        swipeLandscapeGhostCover?.apply {
-            animate().cancel()
-            visibility = View.GONE
-        }
-        swipeLandscapeGhostVideo.visibility = View.VISIBLE
-    } else {
-        swipeGhostPage.setVideoSurfaceVisible(true)
-        swipeGhostPage.hideEpisodeCover()
-    }
-}
-
 internal fun PhonePlayerActivity.restoreAdjacentGhostOffscreen() {
-    val target = index + 1
-    if (playerAdjacentState.slots.containsKey(target)) {
-        attachAdjacentToGhost(target, direction = 1)
-        return
-    }
-    hideAdjacentGhost()
+    attachAdjacentToPagerPage(index + 1)
 }
 
 internal fun PhonePlayerActivity.rebindAdjacentGhostForMode() {
-    val target = playerAdjacentState.ghostIndex
-    if (target >= 0 && playerAdjacentState.slots.containsKey(target)) {
-        attachAdjacentToGhost(
-            target,
-            direction = playerAdjacentState.ghostDirection,
-        )
-    } else {
-        restoreAdjacentGhostOffscreen()
-    }
+    attachAdjacentToPagerPage(index + 1)
 }
 
 internal fun PhonePlayerActivity.hideAdjacentGhost() {
     detachAdjacentGhostOutput()
-    playerAdjacentState.ghostIndex = -1
-    playerAdjacentState.ghostDirection = 1
-    playerAdjacentState.ghostLandscape = false
-    playerAdjacentState.ghostAttached = false
-    if (playerPageInitialized) {
-        swipeGhostPage.visibility = View.GONE
-        swipeGhostPage.translationY = 0f
-    }
-    if (playerLandscapeVideoInitialized) {
-        swipeLandscapeGhost.visibility = View.GONE
-        swipeLandscapeGhost.translationY = 0f
-    }
 }
 
 internal fun PhonePlayerActivity.activateAdjacentEpisode(
@@ -365,11 +367,6 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
         playerAdjacentState.slots[target] = slot
         releaseAdjacentSlot(target)
         return false
-    }
-    if (playerAdjacentState.ghostIndex == target) {
-        detachAdjacentGhostOutput()
-        playerAdjacentState.ghostIndex = -1
-        playerAdjacentState.ghostLandscape = false
     }
     val oldPlayer = player ?: return false
     val oldIndex = index
@@ -411,7 +408,7 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
 
     slot.listener?.let(slot.player::removeListener)
     slot.listener = null
-    val firstFrameOnCurrentSurface = slot.firstFrameRendered && !playerLandscapeMode
+    val firstFrameOnCurrentSurface = slot.firstFrameRendered
     slot.preRendering = false
     slot.previewPlaying = false
     slot.preRenderToken++
@@ -452,11 +449,10 @@ private fun PhonePlayerActivity.attachCurrentPlayerOutput() {
     val exo = player ?: return
     if (playerLandscapeMode) {
         playerPage.playerView.player = null
-        playerLandscapeVideo.player = exo
+        attachCurrentPlayerToLandscapePagerPage()
     } else {
         playerLandscapeVideo.player = null
-        playerPage.setVideoSurfaceVisible(true)
-        playerPage.playerView.player = exo
+        attachCurrentPlayerToPagerPage()
     }
 }
 
@@ -467,9 +463,8 @@ internal fun PhonePlayerActivity.releaseAdjacentSlot(target: Int) {
     slot.preRendering = false
     slot.previewPlaying = false
     slot.preRenderToken++
-    if (playerAdjacentState.ghostIndex == target) {
-        hideAdjacentGhost()
-    }
+    playerEpisodePager.pageAt(target)?.let(::detachPlayerPagerPage)
+    playerLandscapePager.pageAt(target)?.let(::detachLandscapePagerPage)
     runCatching { slot.player.pause() }
     runCatching { slot.player.release() }
     if (PhoneServices.peekPlayer() === slot.player) PhoneServices.deactivate(slot.player)
@@ -539,9 +534,12 @@ private fun PhonePlayerActivity.silenceAdjacentPlayers(except: ExoPlayer?) {
 }
 
 internal fun PhonePlayerActivity.detachAdjacentGhostOutput() {
-    if (playerPageInitialized) detachAdjacentOutput(swipeGhostPage.playerView)
-    if (playerLandscapeVideoInitialized) detachAdjacentOutput(swipeLandscapeGhostVideo)
-    playerAdjacentState.ghostAttached = false
+    if (playerEpisodePagerInitialized && !playerLandscapeMode) {
+        detachPlayerPagerOutputsExcept(playerPage)
+    }
+    if (playerLandscapePagerInitialized) {
+        detachLandscapePagerOutputsExcept(playerLandscapePager.pageAt(index))
+    }
 }
 
 private fun detachAdjacentOutput(view: PlayerView) {

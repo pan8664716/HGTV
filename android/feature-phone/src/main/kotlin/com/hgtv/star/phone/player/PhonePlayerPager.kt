@@ -1,0 +1,387 @@
+// SPDX-License-Identifier: GPL-3.0-only
+package com.hgtv.star.phone
+
+import android.content.Context
+import android.view.MotionEvent
+import android.view.View
+import android.view.ViewConfiguration
+import android.view.ViewGroup
+import android.widget.FrameLayout
+import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager2.widget.ViewPager2
+import com.google.android.exoplayer2.Player
+import com.hgtv.star.core.Detail
+import com.hgtv.star.core.Series
+import com.hgtv.star.core.VideoFrameMode
+import com.hgtv.star.core.toFit
+import com.hgtv.star.phone.ui.dp
+import com.hgtv.star.phone.ui.resizeMode
+
+/**
+ * 正式播放页竖屏容器。
+ *
+ * `offscreenPageLimit=1` 让当前集、上一集、下一集的 [PhoneVideoPage] 常驻，
+ * 三个独立 `SurfaceView` 可以在滑动前分别完成当前输出与相邻集静音预渲染。
+ * 横滑仍归页面自己的进度手势，只有明显纵向拖动才交给 ViewPager2。
+ */
+internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
+    private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private var downX = 0f
+    private var downY = 0f
+    private var axis = 0
+
+    var userScroll = false
+    var gesturesEnabled: Boolean = true
+        set(value) {
+            field = value
+            if (!value) userScroll = false
+            pager.isUserInputEnabled = value
+        }
+
+    private val pager = ViewPager2(context).apply {
+        orientation = ViewPager2.ORIENTATION_VERTICAL
+        offscreenPageLimit = 1
+        overScrollMode = View.OVER_SCROLL_NEVER
+    }
+
+    val pageRecycler: RecyclerView
+        get() = pager.getChildAt(0) as RecyclerView
+
+    var adapter: RecyclerView.Adapter<*>?
+        get() = pager.adapter
+        set(value) {
+            pager.adapter = value
+        }
+
+    val currentItem: Int
+        get() = pager.currentItem
+
+    init {
+        setBackgroundColor(android.graphics.Color.BLACK)
+        addView(
+            pager,
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
+        pageRecycler.isNestedScrollingEnabled = false
+        pageRecycler.itemAnimator = null
+    }
+
+    fun registerOnPageChangeCallback(callback: ViewPager2.OnPageChangeCallback) {
+        pager.registerOnPageChangeCallback(callback)
+    }
+
+    fun setActive(active: Boolean) {
+        pager.offscreenPageLimit = if (active) 1 else ViewPager2.OFFSCREEN_PAGE_LIMIT_DEFAULT
+    }
+
+    fun setCurrentItem(position: Int, smoothScroll: Boolean = false) {
+        pager.setCurrentItem(position, smoothScroll)
+    }
+
+    fun pageAt(position: Int): PhoneVideoPage? =
+        (pageRecycler.findViewHolderForAdapterPosition(position) as? PhonePlayerPageHolder)
+            ?.page
+
+    fun pages(): List<PhoneVideoPage> = buildList {
+        for (childIndex in 0 until pageRecycler.childCount) {
+            (pageRecycler.getChildAt(childIndex) as? PhoneVideoPage)?.let(::add)
+        }
+    }
+
+    override fun dispatchTouchEvent(e: MotionEvent): Boolean {
+        when (e.actionMasked) {
+            MotionEvent.ACTION_DOWN -> {
+                downX = e.x
+                downY = e.y
+                axis = 0
+                userScroll = false
+                pager.isUserInputEnabled = gesturesEnabled
+            }
+            MotionEvent.ACTION_MOVE -> {
+                if (axis == 0) {
+                    val dx = Math.abs(e.x - downX)
+                    val dy = Math.abs(e.y - downY)
+                    if (dx > slop || dy > slop) {
+                        axis = if (dy > dx) 1 else 2
+                        if (axis == 1) {
+                            userScroll = gesturesEnabled
+                        } else {
+                            pager.isUserInputEnabled = false
+                            parent?.requestDisallowInterceptTouchEvent(false)
+                        }
+                    }
+                }
+                if (axis == 2) pager.isUserInputEnabled = false
+            }
+            MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                axis = 0
+                pager.isUserInputEnabled = gesturesEnabled
+            }
+        }
+        return super.dispatchTouchEvent(e)
+    }
+}
+
+internal class PhonePlayerPageHolder(
+    val page: PhoneVideoPage,
+) : RecyclerView.ViewHolder(page)
+
+internal class PhonePlayerPagerAdapter(
+    private val host: PhonePlayerActivity,
+    private val initialPage: PhoneVideoPage,
+) : RecyclerView.Adapter<PhonePlayerPageHolder>() {
+    private var initialPageAvailable = true
+
+    override fun getItemCount(): Int =
+        host.detail?.episodes?.size?.coerceAtLeast(1) ?: 1
+
+    override fun onCreateViewHolder(parent: ViewGroup, viewType: Int): PhonePlayerPageHolder {
+        val page = if (initialPageAvailable) {
+            initialPageAvailable = false
+            initialPage
+        } else {
+            host.makePage().also(host::wirePage)
+        }
+        page.layoutParams = RecyclerView.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        )
+        return PhonePlayerPageHolder(page)
+    }
+
+    override fun onBindViewHolder(holder: PhonePlayerPageHolder, position: Int) {
+        host.bindPlayerPagerPage(holder.page, position)
+    }
+
+    override fun onViewRecycled(holder: PhonePlayerPageHolder) {
+        host.detachPlayerPagerPage(holder.page)
+    }
+}
+
+internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
+    playerEpisodePager.registerOnPageChangeCallback(
+        object : ViewPager2.OnPageChangeCallback() {
+            override fun onPageScrolled(
+                position: Int,
+                positionOffset: Float,
+                positionOffsetPixels: Int,
+            ) {
+                if (playerLandscapeMode || !playerEpisodePager.userScroll) return
+                val target = if (positionOffset > 0.5f) position + 1 else position
+                val size = detail?.episodes?.size ?: return
+                if (target in 0 until size) previewPlayerPagerTarget(target)
+            }
+
+            override fun onPageSelected(position: Int) {
+                if (!playerEpisodePager.userScroll) {
+                    syncPlayerPagerPage(position, attachCurrent = position == index)
+                }
+            }
+
+            override fun onPageScrollStateChanged(state: Int) {
+                if (playerLandscapeMode) return
+                if (state == ViewPager2.SCROLL_STATE_DRAGGING) {
+                    if (!playerEpisodePager.userScroll) return
+                    stopAdjacentSwipePreview()
+                    swipePlaybackPreviewIndex = -1
+                    pauseCurrentForSwipeImpl()
+                    return
+                }
+                if (state != ViewPager2.SCROLL_STATE_IDLE) return
+                val target = playerEpisodePager.currentItem
+                val userScroll = playerEpisodePager.userScroll
+                playerEpisodePager.userScroll = false
+                if (!userScroll) {
+                    syncPlayerPagerPage(target, attachCurrent = target == index)
+                    return
+                }
+                if (target != index && detail?.episodes?.getOrNull(target) != null) {
+                    syncPlayerPagerPage(target, attachCurrent = false)
+                    playSwipeTarget(target)
+                } else {
+                    syncPlayerPagerPage(index, attachCurrent = true)
+                    stopAdjacentSwipePreview()
+                    swipePlaybackPreviewIndex = -1
+                    resumeCurrentAfterSwipeImpl()
+                }
+            }
+        },
+    )
+}
+
+private fun PhonePlayerActivity.previewPlayerPagerTarget(target: Int) {
+    if (target == index) {
+        stopAdjacentSwipePreview()
+        swipePlaybackPreviewIndex = -1
+        return
+    }
+    if (swipePlaybackPreviewIndex == target) return
+    stopAdjacentSwipePreview()
+    swipePlaybackPreviewIndex = target
+    pauseCurrentForSwipeImpl()
+    attachAdjacentToPagerPage(target)
+    startAdjacentSwipePreview(target)
+}
+
+internal fun PhonePlayerActivity.preparePlayerPager(
+    detail: Detail,
+    start: Int,
+    onReady: () -> Unit,
+) {
+    var remaining = 2
+    val ready = {
+        remaining--
+        if (remaining == 0) onReady()
+    }
+    preparePortraitPlayerPager(detail, start, ready)
+    prepareLandscapePlayerPager(detail, start, ready)
+}
+
+private fun PhonePlayerActivity.preparePortraitPlayerPager(
+    detail: Detail,
+    start: Int,
+    onReady: () -> Unit,
+) {
+    if (!playerEpisodePagerInitialized) {
+        onReady()
+        return
+    }
+    val position = start.coerceIn(detail.episodes.indices)
+    playerEpisodePager.visibility = View.INVISIBLE
+    playerEpisodePagerAdapter.notifyDataSetChanged()
+    playerEpisodePager.setCurrentItem(position, false)
+    awaitPlayerPagerPage(position, 3) {
+        playerEpisodePager.visibility = View.VISIBLE
+        onReady()
+    }
+}
+
+private fun PhonePlayerActivity.awaitPlayerPagerPage(
+    position: Int,
+    attempts: Int,
+    onReady: () -> Unit,
+) {
+    playerEpisodePager.post {
+        if (isFinishing || isDestroyed) return@post
+        if (syncPlayerPagerPage(position, attachCurrent = position == index) || attempts <= 0) {
+            onReady()
+        } else {
+            awaitPlayerPagerPage(position, attempts - 1, onReady)
+        }
+    }
+}
+
+internal fun PhonePlayerActivity.selectPlayerPagerEpisode(position: Int) {
+    if (playerEpisodePagerInitialized) {
+        if (playerEpisodePager.currentItem != position) {
+            playerEpisodePager.setCurrentItem(position, false)
+        }
+        syncPlayerPagerPage(position, attachCurrent = position == index)
+        playerEpisodePager.post {
+            if (playerEpisodePager.currentItem == position) {
+                syncPlayerPagerPage(position, attachCurrent = position == index)
+            }
+        }
+    }
+    selectLandscapePagerEpisode(position)
+}
+
+internal fun PhonePlayerActivity.syncPlayerPagerPage(
+    position: Int,
+    attachCurrent: Boolean,
+): Boolean {
+    if (!playerEpisodePagerInitialized) return false
+    val page = playerEpisodePager.pageAt(position) ?: return false
+    swipePlayerPage = page
+    if (playerLandscapeMode) return true
+    page.setPlaybackLocked(playerControlsLocked)
+    page.setChromeVisible(playerChromeVisible)
+    if (attachCurrent && position == index) attachCurrentPlayerToPagerPage()
+    return true
+}
+
+internal fun PhonePlayerActivity.bindPlayerPagerPage(page: PhoneVideoPage, position: Int) {
+    val d = detail
+    if (d == null || position !in d.episodes.indices) {
+        page.bind(
+            Series(
+                id = "",
+                title = if (d == null) "加载中…" else "暂无内容",
+            ),
+            "",
+        )
+        page.setPlaybackLocked(playerControlsLocked)
+        page.setChromeVisible(playerChromeVisible)
+        return
+    }
+    val label = "第${position + 1}集"
+    page.bind(
+        d.series,
+        label,
+        watchText = "选集 ${position + 1}/${d.episodes.size}",
+    )
+    page.setPlaybackLocked(playerControlsLocked)
+    page.setChromeVisible(playerChromeVisible)
+    page.setResizeMode(
+        (library?.frameMode ?: VideoFrameMode.FIT).toFit().resizeMode()
+    )
+    page.setVideoScale(((library?.videoScale ?: 100f) / 100f).coerceIn(.1f, 1f))
+    page.danmakuView.alignBelowPhonePortraitChrome(
+        bottomPx = playerPortraitTopBottom,
+        infoGapPx = dp(8),
+    )
+    applyDanmakuSettingsToView(page.danmakuView)
+    if (position == index && !playerLandscapeMode) {
+        attachCurrentPlayerToPagerPage()
+        if (player?.playbackState == Player.STATE_READY && lastFrameAt > 0L) {
+            page.hideEpisodeCover()
+        } else {
+            page.showEpisodeCover(
+                d.episodeCover(d.episodes[position]).ifBlank { d.series.cover }
+            )
+        }
+    } else {
+        val slot = playerAdjacentState.slots[position]
+        if (slot != null) {
+            attachAdjacentToPagerPage(position)
+        } else {
+            detachPlayerPagerPage(page)
+            page.showEpisodeCover(
+                d.episodeCover(d.episodes[position]).ifBlank { d.series.cover }
+            )
+            ensureAdjacentEpisode(position)
+        }
+    }
+}
+
+internal fun PhonePlayerActivity.attachCurrentPlayerToPagerPage() {
+    if (playerLandscapeMode || !playerPageInitialized) return
+    val exo = player ?: return
+    if (playerEpisodePagerInitialized) {
+        playerEpisodePager.pages().forEach { page ->
+            if (page !== playerPage && page.playerView.player === exo) {
+                detachPlayerPagerPage(page)
+            }
+        }
+    }
+    playerPage.setVideoSurfaceVisible(true)
+    if (playerPage.playerView.player !== exo) {
+        playerPage.playerView.player = exo
+    }
+}
+
+internal fun PhonePlayerActivity.detachPlayerPagerOutputsExcept(keep: PhoneVideoPage?) {
+    if (!playerEpisodePagerInitialized) return
+    playerEpisodePager.pages().forEach { page ->
+        if (page !== keep && page.playerView.player != null) {
+            detachPlayerPagerPage(page)
+        }
+    }
+}
+
+internal fun PhonePlayerActivity.detachPlayerPagerPage(page: PhoneVideoPage) {
+    if (page === playerPage && !playerLandscapeMode) return
+    page.playerView.setKeepContentOnPlayerReset(false)
+    page.playerView.player = null
+    page.playerView.setKeepContentOnPlayerReset(true)
+}

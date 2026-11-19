@@ -4,14 +4,14 @@ package com.hgtv.star.phone
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
 import com.hgtv.star.phone.ui.PhoneTouch
 
-/** 建一页播放界面（当前页与相邻页同一份配置，否则翻页时两侧观感会不一样）。 */
+/** 建一页播放界面（ViewPager2 当前页与前后集同一份配置，否则翻页时两侧观感会不一样）。 */
 internal fun PhonePlayerActivity.makePage(): PhoneVideoPage = PhoneVideoPage(
     this,
     withTabBar = false,
     fullscreenEntry = true,
     resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT,
-    // 上下滑换集（用户要求）：信息流里的同名手势是翻下一条视频，因此只在这里开。
-    verticalSwipe = true,
+    // 竖屏上下翻集由外层 ViewPager2 接管；页面只处理点击、长按和横滑进度。
+    verticalSwipe = false,
     doubleTapPlayback = true,
     showLockButton = true,
     underlay = playerFeedUnderlay,
@@ -20,8 +20,8 @@ internal fun PhonePlayerActivity.makePage(): PhoneVideoPage = PhoneVideoPage(
 /**
  * 给一页接上手势回调。
  *
- * 两页都接同一份：只有**当前页**在屏幕正中、能收到触摸（翻页过程中触摸由当前页的
- * 状态机一直持有），因此回调里一律按 playerPage 取当前页，不会串到相邻页上。
+ * 每个集页都接同一份；纵向拖动由外层 ViewPager2 接管，页面自己的状态机只处理
+ * 点击、长按和横滑进度。
  */
 internal fun PhonePlayerActivity.wirePage(p: PhoneVideoPage) {
     p.onTap = {
@@ -63,12 +63,6 @@ internal fun PhonePlayerActivity.wirePage(p: PhoneVideoPage) {
             if (duration > 0) player?.seekTo(playerSeekTarget)
             clearSeekHint()
         }
-    }
-    // 上下滑换集：向上 = 下一集，向下 = 上一集（与推荐页上滑看下一条同一手感）。
-    p.onVerticalStart = { if (!playerControlsLocked) beginSwipeForPage() }
-    p.onVerticalDelta = { delta -> if (!playerControlsLocked) dragSwipeForPage(delta) }
-    p.onVerticalEnd = { direction, _ ->
-        if (!playerControlsLocked) endSwipeForPage(direction)
     }
     p.setPlaybackLocked(playerControlsLocked)
 }

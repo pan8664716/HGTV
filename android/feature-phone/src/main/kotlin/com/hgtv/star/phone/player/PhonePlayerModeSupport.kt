@@ -53,14 +53,26 @@ internal fun PhonePlayerActivity.syncDanmakuTopInset() {
         if (!playerLandInfoRowInitialized || !playerLandDanmakuInitialized) return
         if (playerLandInfoRowBottom > 0) {
             playerLandDanmaku.topInsetPx = playerLandInfoRowBottom + dp(2)
+            if (playerLandscapePagerInitialized) {
+                playerLandscapePager.pages().forEach {
+                    it.danmaku.topInsetPx = playerLandInfoRowBottom + dp(2)
+                }
+            }
         }
         return
     }
     if (playerPortraitTopBottom <= 0) return
-    playerPage.danmakuView.alignBelowPhonePortraitChrome(
-        bottomPx=playerPortraitTopBottom,
-        infoGapPx=dp(8),
-    )
+    val pages = if (playerEpisodePagerInitialized) {
+        playerEpisodePager.pages()
+    } else {
+        listOf(playerPage)
+    }
+    pages.forEach { page ->
+        page.danmakuView.alignBelowPhonePortraitChrome(
+            bottomPx=playerPortraitTopBottom,
+            infoGapPx=dp(8),
+        )
+    }
 }
 
 /** 横屏也按用户的「画面模式」落画面，不按片源方向强制放大。 */

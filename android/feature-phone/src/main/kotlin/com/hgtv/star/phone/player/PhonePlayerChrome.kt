@@ -10,7 +10,11 @@ internal fun PhonePlayerActivity.applyChrome() {
         playerLandBottom.visibility = if (playerChromeVisible) View.VISIBLE else View.GONE
         placeLandscapeFullscreenImpl()
     } else {
-        playerPage.setChromeVisible(playerChromeVisible)
+        if (playerEpisodePagerInitialized) {
+            playerEpisodePager.pages().forEach { it.setChromeVisible(playerChromeVisible) }
+        } else if (playerPageInitialized) {
+            playerPage.setChromeVisible(playerChromeVisible)
+        }
         // portraitTop 只装「播放显示」那一行，它的显隐由 syncPlayInfo() 按设置决定：
         // 勾了任意一项就常驻，四项全没勾才跟着控制层收起来。
     }

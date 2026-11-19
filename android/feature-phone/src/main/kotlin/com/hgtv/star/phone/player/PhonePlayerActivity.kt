@@ -111,6 +111,24 @@ open class PhonePlayerActivity : PhoneActivity() {
         get()=page
         set(value) { page=value }
     internal val playerPageInitialized get()=::page.isInitialized
+    private lateinit var episodePager: VerticalEpisodePager
+    internal var playerEpisodePager: VerticalEpisodePager
+        get()=episodePager
+        set(value) { episodePager=value }
+    internal val playerEpisodePagerInitialized get()=::episodePager.isInitialized
+    private lateinit var episodePagerAdapter: PhonePlayerPagerAdapter
+    internal var playerEpisodePagerAdapter: PhonePlayerPagerAdapter
+        get()=episodePagerAdapter
+        set(value) { episodePagerAdapter=value }
+    private lateinit var landscapePager: VerticalLandscapePager
+    internal var playerLandscapePager: VerticalLandscapePager
+        get()=landscapePager
+        set(value) { landscapePager=value }
+    internal val playerLandscapePagerInitialized get()=::landscapePager.isInitialized
+    private lateinit var landscapePagerAdapter: LandscapePlayerPagerAdapter
+    internal var playerLandscapePagerAdapter: LandscapePlayerPagerAdapter
+        get()=landscapePagerAdapter
+        set(value) { landscapePagerAdapter=value }
 
     private lateinit var landscape: FrameLayout
     private lateinit var landscapeVideo: PlayerView
@@ -121,7 +139,6 @@ open class PhonePlayerActivity : PhoneActivity() {
         get()=landscapeVideo
         set(value) { landscapeVideo=value }
     internal var playerLandscapeCover: ImageView?=null
-    internal var playerLandscapeGhostCover: ImageView?=null
     internal val playerLandscape get()=landscape
     internal val playerLandscapeVideo get()=landscapeVideo
     internal val playerLandscapeVideoInitialized get()=::landscapeVideo.isInitialized
@@ -454,44 +471,9 @@ open class PhonePlayerActivity : PhoneActivity() {
         get()=hintToken
         set(value) { hintToken=value }
 
-    private lateinit var ghostPage: PhoneVideoPage
-    private lateinit var landscapeGhost: FrameLayout
-    private lateinit var landscapeGhostVideo: FixedFirstFramePlayerView
-    private var landscapeGhostCover: ImageView? = null
-    private lateinit var landscapeGhostTitle: TextView
-    internal var swipeGhostPage: PhoneVideoPage
-        get()=ghostPage
-        set(value) { ghostPage=value }
-    internal var swipeLandscapeGhost: FrameLayout
-        get()=landscapeGhost
-        set(value) { landscapeGhost=value }
-    internal var swipeLandscapeGhostVideo: FixedFirstFramePlayerView
-        get()=landscapeGhostVideo
-        set(value) { landscapeGhostVideo=value }
-    internal var swipeLandscapeGhostCover: ImageView?
-        get()=landscapeGhostCover
-        set(value) { landscapeGhostCover=value }
-    internal var swipeLandscapeGhostTitle: TextView
-        get()=landscapeGhostTitle
-        set(value) { landscapeGhostTitle=value }
-    internal val swipeLandscape get()=landscape
-    internal val swipeLandscapeHeight get()=landscape.height
-    internal val swipePortraitHeight get()=portrait.height
-    private var swipeDir = 0
-    private var swipePrepared = false
-    private var swipeLogicalIndex = -1
     private var swipePausedCurrent = false
     private var swipeResumeCurrent = false
     private var swipePreviewIndex = -1
-    internal var swipeDirection: Int
-        get()=swipeDir
-        set(value) { swipeDir=value }
-    internal var swipePreparedState: Boolean
-        get()=swipePrepared
-        set(value) { swipePrepared=value }
-    internal var swipeLogicalTarget: Int
-        get()=swipeLogicalIndex
-        set(value) { swipeLogicalIndex=value }
     internal var swipeCurrentPaused: Boolean
         get()=swipePausedCurrent
         set(value) { swipePausedCurrent=value }
@@ -501,10 +483,6 @@ open class PhonePlayerActivity : PhoneActivity() {
     internal var swipePlaybackPreviewIndex: Int
         get()=swipePreviewIndex
         set(value) { swipePreviewIndex=value }
-    private var swipeAnimation: Runnable? = null
-    internal var swipeAnimationRunnable: Runnable?
-        get()=swipeAnimation
-        set(value) { swipeAnimation=value }
     private var manualNextTarget = -1
     private var manualNextPosition = 0L
     internal var listenerManualNextTarget: Int
@@ -655,19 +633,7 @@ open class PhonePlayerActivity : PhoneActivity() {
         get()=danmakuReplayTarget
         set(value) { danmakuReplayTarget=value }
 
-
-    private fun beginSwipe() = beginSwipeImpl()
-
-    private fun dragSwipe(delta: Float) = dragSwipeImpl(delta)
-
-    private fun endSwipe(direction: Int) = endSwipeImpl(direction)
-
-    private fun resetSwipeState(keepCurrent: Boolean = false) =
-        resetSwipeStateImpl(keepCurrent)
-
     internal fun playSwipeTargetForSwipe(target: Int) = playSwipeTarget(target)
-
-    internal fun applyVideoScaleForSwipe() = applyVideoScaleImpl()
 
     internal fun applyChromeForSwipe() = applyChrome()
 
@@ -748,11 +714,6 @@ open class PhonePlayerActivity : PhoneActivity() {
     }
     internal fun scheduleChromeHideForEpisodes() = scheduleChromeHide()
     internal fun seekToForPage(fraction: Float) = seekTo(fraction)
-    internal fun beginSwipeForPage() = beginSwipe()
-    internal fun dragSwipeForPage(delta: Float) = dragSwipe(delta)
-    internal fun endSwipeForPage(direction: Int) = endSwipe(direction)
-
-
     override fun finish() {
         preparePlayerFinish()
         super.finish()

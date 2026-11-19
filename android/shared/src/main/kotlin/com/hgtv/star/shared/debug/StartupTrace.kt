@@ -90,6 +90,8 @@ object StartupDeferredTasks {
         Thread(runnable, "hgtv-startup-deferred").apply { isDaemon = true }
     }
 
+    fun isPlaybackReady(): Boolean = playbackReady.get()
+
     fun schedule(key: String, timeoutMs: Long = AppConfig.Startup.DEFERRED_TASK_TIMEOUT_MS, action: () -> Unit) {
         var runNow = false
         synchronized(lock) {
