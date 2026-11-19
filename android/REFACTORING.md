@@ -114,6 +114,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 慢滑时两个页面可能在 50% 边界短暂都不到半屏；推荐页此时保留已经开始的预览，
   只有当前页重新成为过半主导页才停止。IDLE 也改用“实际过半可见页”判定最终目标，
   不再依赖可能暂时指向上一个页面的 `findFirstVisibleItemPosition`。
+- 快速连翻时 50% 预览增加 60ms 去抖，连续滚动只保留最后一轮的预览请求，不会让
+  中间页轮流抢音频焦点。IDLE 的最终落页判定延后 16ms，等列表完成布局吸附后再执行，
+  避免新页尚未就位时误恢复起始页声音。
 - 未改版本号、versionCode、依赖或接口；`:app:assembleDebug` 使用 JDK 17 通过，
   未引入 `TextureView`，测试待用户真机验证，未推送。
 

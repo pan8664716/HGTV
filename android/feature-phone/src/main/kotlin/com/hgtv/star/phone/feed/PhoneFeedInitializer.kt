@@ -32,11 +32,22 @@ internal fun PhoneFeedView.initializeFeed() {
     feedList.isNestedScrollingEnabled = false
     PhonePagerSnapHelper { feedList.height }.attachToRecyclerView(feedList)
     var pendingVisiblePlay: Runnable? = null
+    var pendingSwipePreview: Runnable? = null
     feedList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
         override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
             if (!feedList.userScroll || dy == 0 || feedHidden) return
             val index = dominantVisiblePage(rv)
-            updateFeedSwipePreviewImpl(index)
+            if (index >= 0) {
+                pendingSwipePreview?.let(feedList::removeCallbacks)
+                val preview = Runnable {
+                    pendingSwipePreview = null
+                    if (feedList.userScroll && !feedHidden) {
+                        updateFeedSwipePreviewImpl(index)
+                    }
+                }
+                pendingSwipePreview = preview
+                feedList.postDelayed(preview, 60L)
+            }
             if (rv.scrollState != RecyclerView.SCROLL_STATE_SETTLING) return
             if (index < 0 || index == feedPlayingIndex) return
             pendingVisiblePlay?.let(feedList::removeCallbacks)
@@ -55,27 +66,36 @@ internal fun PhoneFeedView.initializeFeed() {
                 if (state == RecyclerView.SCROLL_STATE_DRAGGING) {
                     pendingVisiblePlay?.let(feedList::removeCallbacks)
                     pendingVisiblePlay = null
+                    pendingSwipePreview?.let(feedList::removeCallbacks)
+                    pendingSwipePreview = null
                     if (feedList.userScroll) pauseCurrentForFeedSwipeImpl()
                 }
                 return
             }
             pendingVisiblePlay?.let(feedList::removeCallbacks)
             pendingVisiblePlay = null
-            val index = dominantVisiblePage(rv).takeIf { it >= 0 }
-                ?: (rv.layoutManager as LinearLayoutManager).findFirstVisibleItemPosition()
-            val userScroll = feedList.userScroll
-            feedList.userScroll = false
-            if (userScroll && index >= 0 && index != feedPlayingIndex) {
-                playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
-            } else if (userScroll) {
-                finishFeedSwipePreviewImpl()
-                resumeCurrentAfterFeedSwipeImpl()
-            }
-            if (index >= 0 &&
-                com.hgtv.star.shared.feed.RecommendFeedPolicy.shouldPrefetch(
-                    feedItems.size - index - 1,
-                )
-            ) loadMore()
+            pendingSwipePreview?.let(feedList::removeCallbacks)
+            pendingSwipePreview = null
+            feedList.postDelayed({
+                if (feedList.scrollState != RecyclerView.SCROLL_STATE_IDLE) return@postDelayed
+                val manager = rv.layoutManager as LinearLayoutManager
+                val index = dominantVisiblePage(rv).takeIf { it >= 0 }
+                    ?: manager.findFirstCompletelyVisibleItemPosition().takeIf { it >= 0 }
+                    ?: manager.findFirstVisibleItemPosition()
+                val userScroll = feedList.userScroll
+                feedList.userScroll = false
+                if (userScroll && index >= 0 && index != feedPlayingIndex) {
+                    playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
+                } else if (userScroll) {
+                    finishFeedSwipePreviewImpl()
+                    resumeCurrentAfterFeedSwipeImpl()
+                }
+                if (index >= 0 &&
+                    com.hgtv.star.shared.feed.RecommendFeedPolicy.shouldPrefetch(
+                        feedItems.size - index - 1,
+                    )
+                ) loadMore()
+            }, 16L)
         }
     })
     addView(
