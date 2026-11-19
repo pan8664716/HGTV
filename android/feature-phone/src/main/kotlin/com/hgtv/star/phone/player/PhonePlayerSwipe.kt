@@ -77,6 +77,9 @@ internal fun PhonePlayerActivity.endSwipeImpl(direction: Int) {
         settleBackImpl()
         return
     }
+    // 一旦确认翻页，旧页的弹幕必须在本轮滑动动画开始前清掉；等到 onAdvanced
+    // 再清时，Surface 弹幕层已经盖到目标页上了。
+    playerDanmakuLoader.clear()
     val h = slideHeightImpl().toFloat()
     val out = -target * h
     val start = if (playerLandscapeMode) {
@@ -233,6 +236,8 @@ private fun PhonePlayerActivity.prepareGhostImpl(direction: Int) {
         swipeLandscapeGhost.translationY = if (direction > 0) h else -h
         swipeLandscapeGhost.visibility = View.VISIBLE
     } else {
+        // 相邻页会复用上一轮用过的 DanmakuView，先把残留内容清掉再露出预览。
+        swipeGhostPage.danmakuView.clear()
         // 这一页复用过上一轮已经出过画面的 PlayerView，SurfaceView 可能保留旧帧并透到
         // 封面层之上。预览阶段先彻底隐藏视频层；提交翻页时再由 bindQueuedNextOutput 恢复。
         swipeGhostPage.setVideoSurfaceVisible(false)
