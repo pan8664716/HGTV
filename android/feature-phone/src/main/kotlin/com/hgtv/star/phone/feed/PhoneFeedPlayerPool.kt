@@ -29,6 +29,7 @@ internal class FeedPlayerSlot(
     var sourcePrepared: Boolean = false
     var firstFrameRendered: Boolean = false
     var preRendering: Boolean = false
+    var previewPlaying: Boolean = false
     var preparedAt: Long = 0L
 
     fun sourceFresh(): Boolean =
@@ -136,6 +137,7 @@ internal fun PhoneFeedView.adoptPooledPlayerSlot(
     slot.remote = remote
     slot.sourcePrepared = true
     slot.preRendering = false
+    slot.previewPlaying = false
     slot.preparedAt = android.os.SystemClock.elapsedRealtime()
     runCatching { player.volume = 1f }
     trimPooledPlayers(feedPlayingIndex)
@@ -289,6 +291,7 @@ internal fun PhoneFeedView.pausePooledPlayersExcept(player: ExoPlayer?) {
     feedPooledPlayers.values.forEach { slot ->
         if (slot.player !== player) {
             slot.preRendering = false
+            slot.previewPlaying = false
             runCatching {
                 slot.player.playWhenReady = false
                 slot.player.pause()
@@ -433,7 +436,7 @@ internal fun PlayerView.detachPooledOutput() {
 internal fun PhoneFeedView.startPooledPreRenderImpl(index: Int, slot: FeedPlayerSlot) {
     val page = feedPageAt(index) ?: return
     if (feedHidden || index == feedPlayingIndex || slot.firstFrameRendered || slot.preRendering ||
-        !slot.sourcePrepared || !page.isAttachedToWindow
+        slot.previewPlaying || !slot.sourcePrepared || !page.isAttachedToWindow
     ) return
     slot.preRendering = true
     runCatching { slot.player.volume = 0f }
@@ -442,7 +445,7 @@ internal fun PhoneFeedView.startPooledPreRenderImpl(index: Int, slot: FeedPlayer
     feedPostDelayed(
         {
             if (feedPooledPlayers[index] !== slot || !slot.preRendering ||
-                index == feedPlayingIndex || slot.player !== player
+                index == feedPlayingIndex || slot.player !== player || slot.previewPlaying
             ) return@feedPostDelayed
             slot.preRendering = false
             runCatching { player.pause() }
@@ -460,7 +463,7 @@ internal fun PhoneFeedView.startPooledPreRenderImpl(index: Int, slot: FeedPlayer
 /** 相邻页首帧已经上屏：立刻暂停静音预渲染，保留这一帧等待用户滑入。 */
 internal fun PhoneFeedView.finishPooledPreRenderImpl(index: Int, player: ExoPlayer) {
     val slot = feedPooledPlayers[index] ?: return
-    if (!slot.preRendering || slot.player !== player) return
+    if (!slot.preRendering || slot.player !== player || slot.previewPlaying) return
     slot.preRendering = false
     if (index != feedPlayingIndex) runCatching { player.pause() }
 }
@@ -522,6 +525,7 @@ internal fun PhoneFeedView.primePooledPlayerImpl(
     slot.sourcePrepared = true
     slot.preparedAt = android.os.SystemClock.elapsedRealtime()
     startPooledPreRenderImpl(index, slot)
+    if (feedSwipePreviewIndex == index) startFeedSwipePreviewImpl(index)
     trimPooledPlayers(feedPlayingIndex, preferred = index)
     if (com.hgtv.star.shared.BuildConfig.DEBUG) {
         android.util.Log.i(
@@ -551,6 +555,7 @@ internal fun PhoneFeedView.activatePreparedPooledPlayerImpl(
 
     pausePooledPlayersExcept(slot.player)
     slot.preRendering = false
+    slot.previewPlaying = false
     feedPlayerSlot = slot.player
     feedPlayingDetailSlot = detail
     feedRemoteSlot = remote

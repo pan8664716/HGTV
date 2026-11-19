@@ -28,6 +28,7 @@ internal fun PhoneFeedView.attachImpl(
     slot.sourcePrepared = false
     slot.firstFrameRendered = false
     slot.preRendering = false
+    slot.previewPlaying = false
     val exo = slot.player
     pausePooledPlayersExcept(exo)
     runCatching { exo.volume = 1f }

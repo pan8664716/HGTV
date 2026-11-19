@@ -34,10 +34,10 @@ internal fun PhoneFeedView.initializeFeed() {
     var pendingVisiblePlay: Runnable? = null
     feedList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
         override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-            if (!feedList.userScroll || dy == 0 || feedHidden ||
-                rv.scrollState != RecyclerView.SCROLL_STATE_SETTLING
-            ) return
+            if (!feedList.userScroll || dy == 0 || feedHidden) return
             val index = dominantVisiblePage(rv)
+            updateFeedSwipePreviewImpl(index)
+            if (rv.scrollState != RecyclerView.SCROLL_STATE_SETTLING) return
             if (index < 0 || index == feedPlayingIndex) return
             pendingVisiblePlay?.let(feedList::removeCallbacks)
             val task = Runnable {
@@ -67,6 +67,7 @@ internal fun PhoneFeedView.initializeFeed() {
             if (userScroll && index >= 0 && index != feedPlayingIndex) {
                 playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
             } else if (userScroll) {
+                stopFeedSwipePreviewImpl()
                 resumeCurrentAfterFeedSwipeImpl()
             }
             if (index >= 0 &&
@@ -135,6 +136,7 @@ internal fun PhoneFeedView.pauseCurrentForFeedSwipeImpl() {
     feedSwipeResumeCurrent = exo.playWhenReady || exo.isPlaying
     exo.playWhenReady = false
     runCatching { exo.pause() }
+    PhoneServices.enableAudioFocus(exo, false)
     notifyPlayStateChangedImpl()
 }
 
@@ -143,11 +145,62 @@ internal fun PhoneFeedView.resumeCurrentAfterFeedSwipeImpl() {
     val resume = feedSwipeResumeCurrent
     clearFeedSwipePauseImpl()
     if (!resume || feedHidden) return
-    feedPlayer?.playWhenReady = true
+    feedPlayer?.let {
+        PhoneServices.enableAudioFocus(it, true)
+        it.playWhenReady = true
+    }
     notifyPlayStateChangedImpl()
 }
 
 internal fun PhoneFeedView.clearFeedSwipePauseImpl() {
     feedSwipePausedCurrent = false
     feedSwipeResumeCurrent = false
+}
+
+private fun PhoneFeedView.updateFeedSwipePreviewImpl(target: Int) {
+    if (target < 0 || target == feedPlayingIndex) {
+        stopFeedSwipePreviewImpl()
+        return
+    }
+    if (feedSwipePreviewIndex == target) {
+        startFeedSwipePreviewImpl(target)
+        return
+    }
+    stopFeedSwipePreviewImpl()
+    feedSwipePreviewIndex = target
+    startFeedSwipePreviewImpl(target)
+}
+
+internal fun PhoneFeedView.startFeedSwipePreviewImpl(index: Int): Boolean {
+    if (feedHidden || index == feedPlayingIndex) return false
+    pauseCurrentForFeedSwipeImpl()
+    val slot = pooledPlayerSlot(index) ?: return false
+    if (!slot.sourcePrepared || !slot.player.isFeedPlayerAlive()) return false
+    feedPageAt(index)?.let { page -> attachPooledPlayerToPageImpl(page, index) }
+    slot.preRendering = false
+    slot.previewPlaying = true
+    slot.player.volume = 1f
+    PhoneServices.enableAudioFocus(slot.player, true)
+    slot.player.playWhenReady = true
+    return true
+}
+
+internal fun PhoneFeedView.stopFeedSwipePreviewImpl(index: Int = feedSwipePreviewIndex) {
+    if (index < 0) return
+    val slot = pooledPlayerSlot(index) ?: return
+    if (slot.player === feedPlayer) {
+        slot.previewPlaying = false
+        return
+    }
+    slot.previewPlaying = false
+    slot.player.volume = 0f
+    slot.player.playWhenReady = false
+    runCatching { slot.player.pause() }
+    PhoneServices.enableAudioFocus(slot.player, false)
+}
+
+internal fun PhoneFeedView.prepareFeedSwipePreviewForCommit(index: Int) {
+    val preview = feedSwipePreviewIndex
+    feedSwipePreviewIndex = -1
+    if (preview >= 0 && preview != index) stopFeedSwipePreviewImpl(preview)
 }

@@ -12,6 +12,7 @@ internal fun PhoneFeedView.playIndexImpl(
     clearDanmakuOnSwitch: Boolean = false,
 ) {
     val series = feedItems.getOrNull(index) ?: return
+    prepareFeedSwipePreviewForCommit(index)
     clearFeedSwipePauseImpl()
     val previousIndex = feedPlayingIndex
     PhoneSession.rememberRecommendSeries(series, feedCacheKey())
@@ -71,6 +72,7 @@ internal fun PhoneFeedView.playIndexImpl(
     // 进程里如果还挂着**这部剧**的这一路（从正片退回来、视图刚被重建），先试着接。
     // 接上就什么都不做：不取详情、不取地址、不 prepare、不 seek——画面就是原来那一秒。
     if (startAt < 0 && adoptPlayingForPlayback(clearDanmakuOnSwitch)) {
+        stopFeedSwipePreviewImpl(index)
         PhoneSession.endHandoff()
         schedulePreload(feedFirstFrameDelay())
         return
@@ -92,6 +94,7 @@ internal fun PhoneFeedView.playIndexImpl(
     }
     // 池里没有这一项，需要走详情 / 地址准备。旧页仍保留在池里供回看，
     // 但必须先停掉它的声音；否则新页还在取地址时，用户听到的仍是上一部。
+    stopFeedSwipePreviewImpl(index)
     pausePooledPlayersExcept(null)
     feedScope.launch {
         val lib = feedLibrary ?: PhoneServices.awaitLibrary(context).also {
