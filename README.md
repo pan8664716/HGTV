@@ -1,5 +1,35 @@
 <p align="center"><img src="docs/preview/app-logo.png" width="192" alt="HGTV 应用图标"></p>
 
+<p align="center">
+  <a href="https://github.com/pan8664716/HGTV/releases/latest"><img src="https://img.shields.io/github/v/release/pan8664716/HGTV?style=for-the-badge&logo=github&label=Release&color=2ea44f" alt="最新 Release"></a>
+  <a href="https://github.com/pan8664716/HGTV/releases"><img src="https://img.shields.io/github/downloads/pan8664716/HGTV/total?style=for-the-badge&logo=github&label=Total%20Downloads&color=0969da" alt="Release 总下载次数"></a>
+  <a href="https://github.com/pan8664716/HGTV/releases/latest"><img src="https://img.shields.io/github/downloads/pan8664716/HGTV/latest/total?style=for-the-badge&logo=github&label=Latest%20Downloads&color=1f883d" alt="最新版下载次数"></a>
+  <a href="https://github.com/pan8664716/HGTV/stargazers"><img src="https://img.shields.io/github/stars/pan8664716/HGTV?style=for-the-badge&logo=github&label=Stars&color=e3b341" alt="GitHub Stars"></a>
+  <a href="https://github.com/pan8664716/HGTV/network/members"><img src="https://img.shields.io/github/forks/pan8664716/HGTV?style=for-the-badge&logo=github&label=Forks&color=6f42c1" alt="GitHub Forks"></a>
+  <a href="https://github.com/pan8664716/HGTV/watchers"><img src="https://img.shields.io/github/watchers/pan8664716/HGTV?style=for-the-badge&logo=github&label=Watchers&color=bf8700" alt="GitHub Watchers"></a>
+  <a href="https://github.com/pan8664716/HGTV/graphs/contributors"><img src="https://img.shields.io/github/contributors/pan8664716/HGTV?style=for-the-badge&logo=github&label=Contributors&color=8250df" alt="贡献者"></a>
+  <a href="https://t.me/hgtvhub"><img src="https://img.shields.io/badge/Telegram-hgtvhub-26A5E4?style=for-the-badge&logo=telegram&logoColor=white" alt="Telegram 交流群"></a>
+  <br>
+  <a href="https://github.com/pan8664716/HGTV/issues"><img src="https://img.shields.io/github/issues/pan8664716/HGTV?style=for-the-badge&logo=github&label=Issues&color=d73a49" alt="Open Issues"></a>
+  <a href="https://github.com/pan8664716/HGTV/pulls"><img src="https://img.shields.io/github/issues-pr/pan8664716/HGTV?style=for-the-badge&logo=github&label=Pull%20Requests&color=0969da" alt="Pull Requests"></a>
+  <a href="https://github.com/pan8664716/HGTV/commits"><img src="https://img.shields.io/github/last-commit/pan8664716/HGTV?style=for-the-badge&logo=git&label=Last%20Commit&color=2ea44f" alt="最后提交"></a>
+  <a href="https://github.com/pan8664716/HGTV/graphs/commit-activity"><img src="https://img.shields.io/github/commit-activity/m/pan8664716/HGTV?style=for-the-badge&logo=git&label=Commits%20%2F%20Month&color=1f883d" alt="每月提交次数"></a>
+  <a href="https://github.com/pan8664716/HGTV"><img src="https://img.shields.io/github/repo-size/pan8664716/HGTV?style=for-the-badge&logo=github&label=Repo%20Size&color=6e7781" alt="仓库大小"></a>
+  <a href="https://github.com/pan8664716/HGTV/blob/main/LICENSE"><img src="https://img.shields.io/github/license/pan8664716/HGTV?style=for-the-badge&label=License&color=2ea44f" alt="开源许可证"></a>
+  <a href="https://github.com/pan8664716/HGTV/actions/workflows/release.yml"><img src="https://img.shields.io/github/actions/workflow/status/pan8664716/HGTV/release.yml?style=for-the-badge&logo=githubactions&label=Release%20Build" alt="Release 构建状态"></a>
+  <a href="https://github.com/pan8664716/HGTV/releases"><img src="https://img.shields.io/github/release-date/pan8664716/HGTV?style=for-the-badge&logo=github&label=Latest%20Release&color=2ea44f" alt="最新发布日期"></a>
+  <br>
+  <a href="https://github.com/pan8664716"><img src="https://img.shields.io/github/followers/pan8664716?style=for-the-badge&logo=github&label=Followers&color=6f42c1" alt="维护者关注者"></a>
+  <a href="https://github.com/pan8664716/HGTV"><img src="https://img.shields.io/github/languages/top/pan8664716/HGTV?style=for-the-badge&logo=kotlin&label=Top%20Language&color=7F52FF" alt="主要开发语言"></a>
+  <a href="android/app/build.gradle.kts"><img src="https://img.shields.io/badge/Android-4.4%2B-3DDC84?style=for-the-badge&logo=android&logoColor=white" alt="Android 4.4 及以上"></a>
+  <a href="https://kotlinlang.org/"><img src="https://img.shields.io/badge/Kotlin-100%25-7F52FF?style=for-the-badge&logo=kotlin&logoColor=white" alt="Kotlin"></a>
+  <a href="https://github.com/androidx/media"><img src="https://img.shields.io/badge/ExoPlayer-2.19.1-4CAF50?style=for-the-badge&logo=android&logoColor=white" alt="ExoPlayer 2.19.1"></a>
+  <a href="android/feature-tv"><img src="https://img.shields.io/badge/Android%20TV-Remote%20Ready-3DDC84?style=for-the-badge&logo=androidtv&logoColor=white" alt="Android TV"></a>
+  <a href="android/feature-phone"><img src="https://img.shields.io/badge/Phone%20%2F%20Tablet-Touch%20Ready-4285F4?style=for-the-badge&logo=android&logoColor=white" alt="手机和平板"></a>
+  <a href="https://github.com/pan8664716/HGTV/releases/latest"><img src="https://img.shields.io/badge/Package-Single%20APK-2ea44f?style=for-the-badge&logo=android&logoColor=white" alt="单 APK"></a>
+  <a href="#功能"><img src="https://img.shields.io/badge/Guest%20Mode-No%20Login%20Required-0969da?style=for-the-badge" alt="无需登录即可浏览播放"></a>
+</p>
+
 # HGTV（Android TV / 手机 / 平板，4.4+）
 
 短剧客户端：单 APK、Kotlin + ExoPlayer，电视用遥控器、手机平板用触屏，装好联网即可看；不登录也能浏览播放，登录可同步云端收藏、历史与预约，同一局域网还可迁移完整本机数据。
@@ -133,7 +163,6 @@ README.md
 可调的应用级参数集中放在平台配置入口，页面与业务模块只引用，不再重复写数值：
 
 - Android：[`android/core/src/main/kotlin/com/hgtv/star/core/AppConfig.kt`](android/core/src/main/kotlin/com/hgtv/star/core/AppConfig.kt)
-- iOS：[`ios/HGTV/Core/AppConfig.swift`](ios/HGTV/Core/AppConfig.swift)
 
 配置按网络、启动、目录、内容仓库、账号、推荐、播放、封面、局域网、缓存、书库、弹幕、
 诊断和 UI 分组。UI 内继续区分页面结构（`Navigation / Settings`）与手机 / 电视几何尺寸
@@ -162,20 +191,6 @@ python3 tools/neumorphism-preview.py     # 首页 / 按钮六态 / 强调色校�
 python3 tools/maintainer-avatars.py --check  # 维护者头像是否为 256px 圆形透明底
 tools/version.sh                            # 应用名 / 标识 / 版本号 / 版本 code / 产物名
 ```
-
-## iOS 端（iPhone）
-
-`ios/` 是与手机端功能对等的 iOS 应用（SwiftUI，iOS 17+）：推荐流、分类、榜单、详情、播放、
-搜索、我的、设置、扫码登录全部落地，接口签名与解密链路和 Android 同一套。
-
-```sh
-cd ios
-python3 tools/gen_project.py     # 新增 .swift 后重跑，生成 HGTV.xcodeproj
-xcodebuild -project HGTV.xcodeproj -target HGTV -sdk iphonesimulator \
-           -configuration Debug build CODE_SIGNING_ALLOWED=NO
-```
-
-移植细节、页面映射、数据契约与已知边界见 [`docs/IOS_PORT.md`](docs/IOS_PORT.md)。
 
 ## 维护者
 <table>
