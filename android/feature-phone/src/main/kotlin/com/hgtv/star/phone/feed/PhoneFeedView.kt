@@ -429,6 +429,15 @@ class PhoneFeedView(
     internal var feedRecommendFailures: Int
         get()=recommendFailures
         set(value) { recommendFailures=value }
+    /** 最近一次因 IO/Source 错误尝试原地恢复的项与时刻，防止同一错误短时间反复重开。 */
+    private var sourceRecoveryIndex = -1
+    private var sourceRecoveryAt = 0L
+    internal var feedSourceRecoveryIndex: Int
+        get()=sourceRecoveryIndex
+        set(value) { sourceRecoveryIndex=value }
+    internal var feedSourceRecoveryAt: Long
+        get()=sourceRecoveryAt
+        set(value) { sourceRecoveryAt=value }
 
     /** 每一屏当前在播的集（续播时可能不是第 1 集）。 */
     private val currentEpisodeIds = HashMap<Int, String>()

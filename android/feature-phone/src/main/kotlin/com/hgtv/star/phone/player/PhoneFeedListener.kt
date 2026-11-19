@@ -63,6 +63,7 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
             }
             // 真的出画面了：连续失败计数归零（取地址成功不算，能放才算）。
             if (state == Player.STATE_READY) {
+                feedSourceRecoveryIndex = -1
                 markPooledPlayerSourceReady(index)
                 if (index != feedPlayingIndex) return
                 feedRecommendFailures = 0
@@ -78,6 +79,7 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
         }
 
         override fun onRenderedFirstFrame() {
+            feedSourceRecoveryIndex = -1
             markPooledPlayerFirstFrame(index)
             if (index != feedPlayingIndex) return
             feedPageAt(index)?.hideEpisodeCover()
@@ -141,6 +143,15 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
                 return
             }
             if (feedPaused || feedHidden) return
+            val at = runCatching { feedPlayer?.currentPosition ?: -1L }.getOrDefault(-1L)
+                .takeIf { it > 0L } ?: PhoneSession.positionMs
+            if (error.isRecoverableSourceError() && shouldRetrySource(index)) {
+                feedSourceRecoveryIndex = index
+                feedSourceRecoveryAt = android.os.SystemClock.elapsedRealtime()
+                PhoneSession.markPosition(at)
+                playIndexForSettings(index, at, clearDanmakuOnSwitch = false)
+                return
+            }
             feedItems.getOrNull(index)?.let { series ->
                 feedRecommendPlayback.reportEvent(
                     series,
@@ -179,3 +190,21 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
     feedPlayerListeners[exo] = hook
     exo.addListener(hook)
 }
+
+private fun com.google.android.exoplayer2.PlaybackException.isRecoverableSourceError(): Boolean =
+    when (errorCode) {
+        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_FAILED,
+        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
+        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
+        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
+        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
+        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED,
+        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
+        -> true
+        else -> false
+    }
+
+private fun PhoneFeedView.shouldRetrySource(index: Int): Boolean =
+    feedSourceRecoveryIndex != index ||
+        android.os.SystemClock.elapsedRealtime() - feedSourceRecoveryAt > 10_000L

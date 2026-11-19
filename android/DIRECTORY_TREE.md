@@ -634,7 +634,7 @@ android/
 | `PhoneFeedResume.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedResume 主要包含 fun PhoneFeedView.resumeOnShownImpl。 | fun PhoneFeedView.resumeOnShownImpl |
 | `PhoneFeedSettings.kt` | 信息流长按中间打开的播放设置面板。 | fun PhoneFeedView.openSettingsImpl |
 | `PhoneFeedSurface.kt` | 手机信息流页面、适配器、手势与预取；下层 Surface 交接时同步画面模式、缩放和旧帧保留状态。 | fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.setUnderlayModeImpl |
-| `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放器池、播放交接、预取和生命周期；记录首帧后补流状态，并区分冷启动下一部与重建恢复当前剧及播放位置。 | class PhoneFeedView、feedPooledPlayers、feedPlayerListeners、fun currentSeriesId、fun takeRestoreSeriesId、fun takeRestorePositionMs |
+| `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放器池、播放交接、预取和生命周期；记录首帧后补流状态，并区分冷启动下一部与重建恢复当前剧及播放位置；保存 IO 错误原地恢复的短期防重状态。 | class PhoneFeedView、feedPooledPlayers、feedPlayerListeners、fun currentSeriesId、fun takeRestoreSeriesId、fun takeRestorePositionMs |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/page/`
 
@@ -653,7 +653,7 @@ android/
 | `PhoneFeedAttach.kt` | 池未命中时的起播路径；为目标页创建/复用独立播放器、挂源、发布会话并在宽高比布局后 prepare。 | fun PhoneFeedView.attachImpl |
 | `PhoneFeedControls.kt` | 推荐页播放/暂停与临时倍速入口；调用前检查播放器是否仍存活，失效时转入自动恢复而不是继续操作已释放实例。 | fun PhoneFeedView.togglePlay、fun PhoneFeedView.beginTempSpeed、fun PhoneFeedView.endTempSpeed |
 | `PhoneFeedData.kt` | 冷启动先铺落盘快照；首次无快照只取一个可播放条目，首帧后按页补齐列表并逐页上屏。 | fun PhoneFeedView.restoreSnapshot、fun PhoneFeedView.loadMore、fun PhoneFeedView.scheduleFeedFillAfterFirstFrame、fun PhoneFeedView.refreshAfterIdentity、fun PhoneFeedView.adoptableIndexOf |
-| `PhoneFeedListener.kt` | 每台池播放器独立挂监听；按索引更新对应页面，READY / 首帧后触发补流、首帧追踪与池状态。 | fun PhoneFeedView.attachFeedListener、fun PhoneFeedView.detachFeedListener、fun PhoneFeedView.detachAllFeedListeners |
+| `PhoneFeedListener.kt` | 每台池播放器独立挂监听；按索引更新对应页面，READY / 首帧后触发补流、首帧追踪与池状态；IO / Source 错误先按当前位置恢复同一项，恢复失败才换下一部。 | fun PhoneFeedView.attachFeedListener、fun PhoneFeedView.detachFeedListener、fun PhoneFeedView.detachAllFeedListeners |
 | `PhoneFeedMetrics.kt` | 与电视端同一套「快速划过 / 划走 / 看过」判定；推荐播放链接首次批量 20 个，先批量补详情，再按播放档案补首集模型。 | fun PhoneFeedView.settleRecommendWatch、fun PhoneFeedView.reportRecommendImpression、fun PhoneFeedView.scheduleRecommendBatchModels |
 | `PhoneFeedNavigation.kt` | 进播放页。 | fun PhoneFeedView.openPlayer、fun PhoneFeedView.hideChromeForHandoff、fun PhoneFeedView.launchPlayer、fun PhoneFeedView.liveEpisodeOf |
 | `PhoneFeedPageBinding.kt` | 活动页绑定；保留上一页自己的播放器与 Surface，按新片源尺寸预置首帧比例；推荐信息流不再加载封面过渡。 | fun PhoneFeedView.attachPageImpl |
