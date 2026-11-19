@@ -14,6 +14,7 @@ import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.PlaybackSpeed
 import com.hgtv.star.shared.compat.setVectorIcon
 import com.hgtv.star.shared.media.DanmakuView
+import com.hgtv.star.shared.media.PlayerLetterboxMask
 import com.hgtv.star.shared.ui.LoadingDotsView
 
 internal fun TvMainActivity.buildPlaybackSurface() {
@@ -22,12 +23,14 @@ internal fun TvMainActivity.buildPlaybackSurface() {
     touchScrubHint=null
     scrubbing=false; recommendScrubbing=false
     overlayLayer=null
+    playerLetterboxMask=null
     touchEntryTitle=null; touchEntryHint=null
     playbackBoost=false
     val rotatedSurface=library.autoFullscreen && autoFullscreenAvailable()
     val view=(if(rotatedSurface) layoutInflater.inflate(R.layout.player_surface_texture,root,false) as PlayerView else FixedFirstFramePlayerView(this)).apply {
         useController=false; resizeMode=frameResizeMode(); isFocusable=false
         setKeepContentOnPlayerReset(true); setShutterBackgroundColor(Color.BLACK); setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
+        setAspectRatioListener { _,_,_ -> syncPlaybackLetterbox() }
     }
     view.player=player
     playerView=view; root.addView(view,FrameLayout.LayoutParams(-1,-1))
@@ -50,7 +53,12 @@ internal fun TvMainActivity.buildPlaybackSurface() {
         setClock(0,false)
     }
     danmakuView=overlay
+    overlay.onRenderStateChangedListener={ syncPlaybackLetterbox() }
     layer.addView(overlay,FrameLayout.LayoutParams(-1,-1))
+    val letterbox=PlayerLetterboxMask(this)
+    playerLetterboxMask=letterbox
+    layer.addView(letterbox,FrameLayout.LayoutParams(-1,-1))
+    syncPlaybackLetterbox()
     val notice=text("",18f,TvStyle.playerText).apply {
         gravity=Gravity.CENTER_VERTICAL or Gravity.START
         maxLines=1

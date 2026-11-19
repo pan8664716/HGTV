@@ -760,6 +760,7 @@ fun TvMainActivity.playEpisode(
                 videoWidth=Math.round(rawW*ratio)
                 videoHeight=rawH
                 videoSizeReady=videoWidth>0 && videoHeight>0
+                syncPlaybackLetterbox()
                 if(BuildConfig.DEBUG) android.util.Log.i(
                     "HGTV-RATIO",
                     "videoSize=${videoSize.width}x${videoSize.height} applied=${videoWidth}x$videoHeight " +
@@ -781,6 +782,7 @@ fun TvMainActivity.playEpisode(
                     "renderedFirstFrame view=${playerView?.javaClass?.simpleName} video=${videoWidth}x$videoHeight"
                 )
                 playerView?.completeFirstFrameAspectRatio()
+                syncPlaybackLetterbox()
                 PlaybackStartupTrace.firstFrame(
                     "tv.player",
                     "recommend=$recommendEntry preloaded=${prefetched!=null} reused=$reuse",

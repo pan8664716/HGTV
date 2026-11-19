@@ -329,6 +329,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
             requestFrame()
         }
     val isSurfaceReady: Boolean get()=surfaceReady
+    val isSurfaceActive: Boolean get()=surfaceReady && !surfaceHidden && visibility==VISIBLE
     var onRenderStateChangedListener: (() -> Unit)?=null
     private var surfaceReady=false
     private var frameScheduled=false
@@ -448,9 +449,11 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private var surfaceHidden=true
 
     private fun setSurfaceShown(show: Boolean) {
+        val changed=surfaceHidden==show
         if(!show && !surfaceHidden) clearSurfaceNow()
         surfaceHidden=!show
         if(show) requestFrame()
+        if(changed) onRenderStateChangedListener?.invoke()
     }
 
     /** 把 surface 擦成全透明（格式是 TRANSLUCENT，见 init）。 */

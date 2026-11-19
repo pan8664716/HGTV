@@ -172,6 +172,19 @@ internal fun PhonePlayerActivity.onAdvanced(
     if (nextIndex !in d.episodes.indices) return
     val previous = index
     val previousDuration = listenerLastDuration
+    showEpisodeCover(
+        d.episodeCover(d.episodes[nextIndex]).ifBlank { d.series.cover }
+    )
+    // 无感换集也必须结束“借用推荐页 Surface”的交接状态。继续借会把下层页面
+    // 留在透明播放页背后，横竖片源比例切换时正好从新黑边里透出来。
+    if (playerFeedUnderlay) {
+        dropUnderlay()
+        player?.let { exo ->
+            if (playerPage.playerView.player !== exo) {
+                playerPage.playerView.player = exo
+            }
+        }
+    }
 
     reportRecommendEvent(
         if(completedPrevious) com.hgtv.star.core.RecommendBehavior.Event.PLAY_COMPLETE

@@ -158,10 +158,14 @@ fun TvMainActivity.applyVideoGeometry(target: PlayerView?=playerView) {
     applyOverlayGeometry()
     if(params.width==width && params.height==height &&
         params.gravity==Gravity.CENTER && view.rotation==rotation
-    ) return
+    ) {
+        view.post { syncPlaybackLetterbox() }
+        return
+    }
     params.width=width; params.height=height; params.gravity=Gravity.CENTER
     view.rotation=rotation
     view.layoutParams=params
+    view.post { syncPlaybackLetterbox() }
 }
 /**
  * 画面之外那一层（弹幕 / 手势层 / 顶部信息条 / 底部控制条）的几何。

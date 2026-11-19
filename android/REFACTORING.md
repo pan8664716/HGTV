@@ -63,6 +63,29 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 正式播放横竖片源换集背景透出修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：TV 与 Phone 正式播放页在横屏播竖屏剧、竖屏播横屏剧时，换集瞬间会从
+  FIT 黑边或透明播放层露出后面的页面背景。
+- Phone 根因：自动 / 无感换集没有走 `play()` 的换集分支，仍可能继续借用推荐页
+  Surface；同时首帧比例冻结解除后，弹幕透明 Surface 的黑边没有立即重算。
+- TV 根因：透明弹幕 Surface 没有设置 `letterboxRect`，黑边只靠窗口黑底兜底，
+  片源比例跨横竖切换时缺少与播放器内容框同步的遮罩。
+- 新增共享 `PlayerLetterboxMask`；Phone 继续用它计算实际内容框，TV 用同一几何
+  计算片源比例、缩放与旋转后的 FIT 黑边。
+- Phone 的竖屏 / 横屏 `PlayerView` 与 TV 的 `PlayerView` 都监听实际比例更新；
+  TV 在布局、`onVideoSizeChanged`、首帧和弹幕 Surface 状态变化时刷新黑边。
+- 弹幕层新增 `isSurfaceActive`：关闭弹幕、无弹幕数据或 Surface 尚未就绪时，
+  TV / Phone 改由普通 View 兜底遮罩，避免透明 Surface 留在屏幕上挖孔。
+- Phone 无感换集先显示目标集封面并立即 `dropUnderlay()`，把输出收回本页
+  `PlayerView`；TV 无感换集也先挂目标集封面，首帧后按原流程淡出。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录外的发布元数据；
+  未运行测试、未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 推荐流与正式播放分集封面过渡修复
 
 状态：历史记录。推荐流部分已被上一节回退；正式播放页的分集封面过渡仍保留。

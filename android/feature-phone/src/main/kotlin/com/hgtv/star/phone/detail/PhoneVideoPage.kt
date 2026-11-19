@@ -308,6 +308,7 @@ class PhoneVideoPage(
     init {
         // 借下层 Surface 时整页透明：只画遮罩与信息栏，画面由推荐页那一层透上来。
         setBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
+        playerView.setAspectRatioListener { _, _, _ -> syncLetterboxMask() }
         danmakuView.onRenderStateChangedListener = { syncLetterboxMask() }
         addView(playerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(episodeCover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -580,18 +581,17 @@ class PhoneVideoPage(
 
     internal fun syncLetterboxMask() {
         letterboxMask.sync(
-            videoView = playerView,
+            videoBoundsProvider = { playerView.visibleVideoBoundsIn(letterboxMask) },
             videoWidth = videoWidth,
             videoHeight = videoHeight,
-            resizeMode = playerView.resizeMode,
+            fitMode = playerView.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT,
             videoScale = videoScale,
         )
         val picture = letterboxMask.pictureBounds(width, height)
         danmakuView.letterboxRect = picture
         letterboxMask.visibility =
             if (
-                danmakuView.visibility == View.VISIBLE &&
-                danmakuView.isSurfaceReady &&
+                danmakuView.isSurfaceActive &&
                 picture != null
             ) View.GONE
             else View.VISIBLE

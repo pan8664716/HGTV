@@ -4,6 +4,7 @@ package com.hgtv.star.phone
 import android.view.Gravity
 import android.view.View
 import android.widget.FrameLayout
+import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
 import com.hgtv.star.phone.ui.dp
 
 /** 把播放器当前的画面尺寸补到页面上（`bind` 之后调用）。 */
@@ -36,10 +37,12 @@ internal fun PhonePlayerActivity.syncLandscapeLetterboxImpl() {
         1f
     }
     playerLandLetterbox.sync(
-        videoView = playerLandscapeVideo,
+        videoBoundsProvider = {
+            playerLandscapeVideo.visibleVideoBoundsIn(playerLandLetterbox)
+        },
         videoWidth = playerLandVideoWidth,
         videoHeight = playerLandVideoHeight,
-        resizeMode = playerLandscapeVideo.resizeMode,
+        fitMode = playerLandscapeVideo.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT,
         videoScale = scale,
     )
     val picture = playerLandLetterbox.pictureBounds(
@@ -49,8 +52,7 @@ internal fun PhonePlayerActivity.syncLandscapeLetterboxImpl() {
     playerLandDanmaku.letterboxRect = picture
     playerLandLetterbox.visibility =
         if (
-            playerLandDanmaku.visibility == View.VISIBLE &&
-            playerLandDanmaku.isSurfaceReady &&
+            playerLandDanmaku.isSurfaceActive &&
             picture != null
         ) View.GONE
         else View.VISIBLE

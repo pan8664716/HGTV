@@ -27,6 +27,7 @@ import com.hgtv.star.shared.data.FavoriteMonitor
 import com.hgtv.star.tv.list.HomeScreen
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.compat.lowEndTv
+import com.hgtv.star.shared.media.PlayerLetterboxMask
 import com.hgtv.star.tv.player.PlaybackMenu
 import com.hgtv.star.tv.PosterCard
 import com.hgtv.star.tv.SeekIndicator
@@ -348,6 +349,7 @@ class TvMainActivity: Activity() {
     var playerView: PlayerView?=null
     var overlayLayer: FrameLayout?=null
     var danmakuView: DanmakuView?=null
+    var playerLetterboxMask: PlayerLetterboxMask?=null
     val danmakuLoader by lazy {
         com.hgtv.star.shared.media.DanmakuLoader(
             scope = appScope,

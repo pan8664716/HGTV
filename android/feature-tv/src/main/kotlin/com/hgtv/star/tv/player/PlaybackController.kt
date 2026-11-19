@@ -370,9 +370,23 @@ private fun TvMainActivity.finishSeamlessAdvance(
 ) {
     val p=player ?: return
     if(next !in nextData.episodes.indices) return
+    if(screen=="player") {
+        showRecommendCover(
+            nextData.episodeCover(nextData.episodes[next]).ifBlank { nextData.series.cover }
+        )
+    }
     val previous=episodeIndex
     val queuedFor=queuedAt
     advancedAt=android.os.SystemClock.elapsedRealtime()
+    if(screen=="player") {
+        val coverToken=recommendCoverToken
+        main.postDelayed({
+            if(!isDestroyed && screen=="player" && recommendCoverToken==coverToken &&
+                PlaybackDiag.lastFrameAt>=advancedAt) {
+                revealRecommendCover()
+            }
+        },600L)
+    }
     // 播完那一集：用切走之前记下的时长写一条 completed 记录。
     // 这里**不能**读 `p.duration`：回调到达时播放器已经在报下一集的时长了。
     // 时长未知（这一集没走到 READY）就不写：写一条 0/0 的「已看完」比不写更糟，

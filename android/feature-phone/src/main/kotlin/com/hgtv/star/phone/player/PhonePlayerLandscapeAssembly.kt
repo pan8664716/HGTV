@@ -63,6 +63,11 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     landscape.addView(cover, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
     ))
+    video.setAspectRatioListener { _, _, _ ->
+        if (playerLandscapeVideoInitialized && playerLandLetterboxInitialized) {
+            syncLandscapeLetterboxImpl()
+        }
+    }
 
     // 弹幕压在画面之上、手势层之下（与竖屏 `PhoneVideoPage` 里的叠放顺序一致）。
     val danmaku = com.hgtv.star.shared.media.DanmakuView(this).apply {
