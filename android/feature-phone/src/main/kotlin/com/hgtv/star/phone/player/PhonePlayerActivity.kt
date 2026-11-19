@@ -580,6 +580,8 @@ class PhonePlayerActivity : PhoneActivity() {
             target = { danmakuTarget() },
             post = { block -> runOnUiThread(block) },
             alive = { !isFinishing && !isDestroyed },
+            // 正式播放页换集必须等视频真正出帧；超时放行会在长缓冲时先滚弹幕。
+            allowTransitionTimeout = false,
         )
     }
     internal val playerDanmakuLoader get()=danmakuLoader

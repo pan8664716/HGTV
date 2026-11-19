@@ -317,6 +317,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     private var clockSpeed=1f
     private var clockRunning=false
     private var transitionHold=false
+    private var transitionTimeoutFallback=true
     private var transitionBaseMs=0L
     private var transitionBaseAt=0L
     private var transitionSpeed=1f
@@ -377,8 +378,11 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     /** 挂起的弹幕在「已出首帧」或「超时兜底」后铺开。 */
     private fun tryReleaseTransition() {
         if(!transitionHold) return
-        val timedOut=SystemClock.elapsedRealtime()-transitionBaseAt>=TRANSITION_RELEASE_TIMEOUT_MS
-        if(!frameRendered && !(timedOut && pendingDanmaku!=null)) return
+        if(!frameRendered) {
+            if(!transitionTimeoutFallback) return
+            val timedOut=SystemClock.elapsedRealtime()-transitionBaseAt>=TRANSITION_RELEASE_TIMEOUT_MS
+            if(!timedOut || pendingDanmaku==null) return
+        }
         val items=pendingDanmaku
         pendingDanmaku=null
         transitionHold=false
@@ -407,8 +411,9 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         requestFrame()
     }
 
-    fun beginTransition() {
+    fun beginTransition(allowTimeoutFallback: Boolean=true) {
         if(transitionHold) return
+        transitionTimeoutFallback=allowTimeoutFallback
         transitionBaseMs=clockPositionMillis()
         transitionBaseAt=SystemClock.elapsedRealtime()
         transitionSpeed=clockSpeed

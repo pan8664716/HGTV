@@ -45,6 +45,12 @@ class DanmakuLoader(
     private val onLoaded: (episodeId: String, count: Int) -> Unit = { _, _ -> },
     /** 拉取失败：弹幕取不到不影响播放，由调用方决定要不要留现场。 */
     private val onFailed: (episodeId: String, error: Throwable) -> Unit = { _, _ -> },
+    /**
+     * 首批弹幕等待视频出帧时，是否允许超时后强制放行。
+     *
+     * 手机正式播放页必须关闭：长缓冲时超时放行会让弹幕先滚、视频后出。
+     */
+    private val allowTransitionTimeout: Boolean = true,
 ) {
 
     /** 已经拿到（或正在拿）的是哪一集。 */
@@ -119,7 +125,7 @@ class DanmakuLoader(
         if (holdUntilPlayback) {
             view.clear()
             if (clearOnSwitch) forgetClock()
-            view.beginTransition()
+            view.beginTransition(allowTransitionTimeout)
             // 过渡期间首批弹幕先挂起，要等**视频开播的时钟**落到视图上才铺开（见 `DanmakuView.setClock`）。
             // syncClock 对「位置 / 状态 / 倍速都没变」的调用去重：新一集从 0 开始、状态也
             // 「正在播」时与上次采样一样，setClock 一次都不会落地——挂起的那份永远等不到。

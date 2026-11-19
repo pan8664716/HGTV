@@ -663,7 +663,7 @@ android/
 | `PhonePlaybackProgress.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlaybackProgress 主要包含 fun PhonePlayerActivity.startTicker、fun PhonePlayerActivity.updateProgress、fun PhonePlayerActivity.syncProgressBarsNow、fun PhonePlayerActivity.saveProgress。 | fun PhonePlayerActivity.startTicker、fun PhonePlayerActivity.updateProgress、fun PhonePlayerActivity.syncProgressBarsNow、fun PhonePlayerActivity.saveProgress、fun PhonePlayerActivity.maybePrefetchNext、fun PhonePlayerActivity.enqueueNextIfReady |
 | `PhonePlaybackRecovery.kt` | 手机端的播放失败自愈：**决策全部来自 :core，与电视端同一套**。 | val PhonePlayerActivity.playbackMaxQuality、fun PhonePlayerActivity.playbackAttribution、fun PhonePlayerActivity.handlePlayerFailure、fun PhonePlayerActivity.decideAndRun、fun PhonePlayerActivity.refetchAndReplay、fun PhonePlayerActivity.recoverQueuedCurrent |
 | `PhonePlaybackSettings.kt` | 播放设置面板的各行：**推荐信息流与正式播放页共用这一份**。 | fun buildPlaybackSettingsRows |
-| `PhonePlayerActivity.kt` | 手机正式播放页 Activity，持有播放器、横竖屏状态、控制层、跨形态播放锁定状态和页面生命周期。 | class PhonePlayerActivity、playerControlsLocked |
+| `PhonePlayerActivity.kt` | 手机正式播放页 Activity，持有播放器、横竖屏状态、控制层、跨形态播放锁定状态和页面生命周期；正式页弹幕加载器禁止用超时绕过首帧门闩。 | class PhonePlayerActivity、playerControlsLocked |
 | `PhonePlayerAdoption.kt` | adoptFromSession 的前置检查；返回 null = 可以接，否则返回不能接的原因（只用于日志）。 | fun PhonePlayerActivity.adoptReject、fun PhonePlayerActivity.adoptFromSession |
 | `PhonePlayerAttach.kt` | 把已准备好的视频源挂到当前形态对应的 PlayerView，冻结旧比例并安排首帧前的 prepare。 | fun PhonePlayerActivity.attach |
 | `PhonePlayerBack.kt` | 返回键决策；true = 已消费，false = 交给 Activity 默认返回。 | fun PhonePlayerActivity.handlePlayerBack |
@@ -673,7 +673,7 @@ android/
 | `PhonePlayerConfiguration.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerConfiguration 主要包含 fun PhonePlayerActivity.handlePlayerConfigurationChanged。 | fun PhonePlayerActivity.handlePlayerConfigurationChanged |
 | `PhonePlayerControls.kt` | 手机播放控制与跨横竖屏播放锁定；锁定时只保留单击显隐信息和解锁按钮。 | fun PhonePlayerActivity.togglePlay、fun PhonePlayerActivity.togglePlaybackLock、fun PhonePlayerActivity.syncPlaybackLockUi、fun PhonePlayerActivity.dragTo |
 | `PhonePlayerCreate.kt` | 手机正式播放页初始化：铺不透明窗口底色，固定使用本页不透明 SurfaceView，不借用推荐页 Surface。 | fun PhonePlayerActivity.initializePlayerActivity |
-| `PhonePlayerDanmaku.kt` | 手机播放器弹幕层与加载门面；当前集弹幕延后到播放首帧，换集后只保留最后一次请求。 | fun PhonePlayerActivity.danmakuTarget、fun PhonePlayerActivity.applyDanmakuSettings、fun PhonePlayerActivity.loadDanmaku、fun PhonePlayerActivity.syncDanmakuClock、fun PhonePlayerActivity.syncDanmakuClockNow、fun PhonePlayerActivity.replayDanmaku |
+| `PhonePlayerDanmaku.kt` | 手机播放器弹幕层与加载门面；当前集弹幕严格延后到视频真实首帧，换集后立即清掉旧弹幕且只保留最后一次请求。 | fun PhonePlayerActivity.danmakuTarget、fun PhonePlayerActivity.applyDanmakuSettings、fun PhonePlayerActivity.loadDanmaku、fun PhonePlayerActivity.syncDanmakuClock、fun PhonePlayerActivity.syncDanmakuClockNow、fun PhonePlayerActivity.replayDanmaku |
 | `PhonePlayerDebug.kt` | 调试模式那一块面板：打开就挂、关掉就摘。 | fun PhonePlayerActivity.syncDebugOverlayImpl、fun PhonePlayerActivity.debugLinesImpl |
 | `PhonePlayerDestroy.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerDestroy 主要包含 fun PhonePlayerActivity.handlePlayerDestroy。 | fun PhonePlayerActivity.handlePlayerDestroy |
 | `PhonePlayerEpisodeBinding.kt` | 把「第几集」这件事刷到所有界面上（竖屏信息栏 / 横屏标题 / 选集按钮）。 | fun PhonePlayerActivity.bindEpisodeUi |
@@ -1136,9 +1136,9 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `DanmakuEmojiStore.kt` | 弹幕表情图的解码与缓存。 | class DanmakuEmojiStore |
-| `DanmakuLoader.kt` | 「这一集拉到哪一步」的弹幕加载内核（电视端与手机端共用一份）；首包挂起等视频真正出帧后才铺开，避免弹幕先跑出来。 | class DanmakuLoader |
+| `DanmakuLoader.kt` | 「这一集拉到哪一步」的弹幕加载内核（电视端与手机端共用一份）；首包挂起等视频真正出帧后才铺开，并可关闭超时兜底供手机正式页严格等待。 | class DanmakuLoader |
 | `DanmakuSpriteAtlas.kt` | 弹幕文字图集。 | class DanmakuSpriteAtlas |
-| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；首批弹幕挂起等 onRenderedFirstFrame 才铺开（不用 STATE_READY，它在真机上会短暂假阳性），按首帧位置对齐、5 秒兜底防永久空白；聚合弹幕行距按放大后的计数高度算，多条并排不互相遮挡；隐藏时保持 Surface 存活，提交一帧全透明擦掉旧内容（不用 visibility 也不依赖 alpha，部分电视 ROM 上 alpha 不作用于独立图层），并通过 isSurfaceActive 告知宿主是否需要普通 View 兜底；TV 与手机竖屏追加 16dp 顶部呼吸位，手机横屏保持原位置；推荐流可把首行文字实际顶边锚定到顶部导航。 | class DanmakuView、val isSurfaceActive、val topGapDp、val topTextAnchorPx |
+| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；首批弹幕挂起等 onRenderedFirstFrame 才铺开（不用 STATE_READY，它在真机上会短暂假阳性），按首帧位置对齐，并可配置 5 秒兜底或严格等待首帧；聚合弹幕行距按放大后的计数高度算，多条并排不互相遮挡；隐藏时保持 Surface 存活，提交一帧全透明擦掉旧内容（不用 visibility 也不依赖 alpha，部分电视 ROM 上 alpha 不作用于独立图层），并通过 isSurfaceActive 告知宿主是否需要普通 View 兜底；TV 与手机竖屏追加 16dp 顶部呼吸位，手机横屏保持原位置；推荐流可把首行文字实际顶边锚定到顶部导航。 | class DanmakuView、fun beginTransition、val isSurfaceActive、val topGapDp、val topTextAnchorPx |
 | `MediaSessionHost.kt` | 前台媒体会话：让**遥控器 / 耳机线控 / 锁屏与系统媒体面板**上的播放键能找到本应用。 | class MediaSessionHost |
 | `PlaybackFailures.kt` | 一次播放失败的**归因**：这条错误落在哪条轨上、该按哪一档、哪些档位还能换。 | object PlaybackFailures |
 | `PlaybackMetrics.kt` | 播放现场的「解码事实」：解码器名、初始化耗时、编码格式、丢帧、音频欠载；首帧同时写入统一启动追踪。 | class PlaybackMetrics |

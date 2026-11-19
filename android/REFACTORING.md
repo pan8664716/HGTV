@@ -68,7 +68,20 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
-## 2026-11-19：正式播放页 SurfaceView 旧帧穿透修复
+## 2026-11-19：正式播放页换集弹幕提前滚动修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：手机正式播放页上下滑到下一集后，视频仍在缓冲或尚未出画面，弹幕已经开始滚动。
+- 根因：换集时首批弹幕本来会挂起到视频首帧，但 `DanmakuView` 还有 5 秒超时兜底；
+  长缓冲超过 5 秒时，挂起的弹幕被提前放行。
+- 修复：`DanmakuLoader` 增加是否允许超时放行的配置，手机正式播放页关闭该兜底，
+  只接受视频真实 `onRenderedFirstFrame`；电视端与推荐信息流保留原行为。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或接口；测试待用户真机验证，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-19：正式播放页 SurfaceView 旧帧穿透修复（历史）
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
