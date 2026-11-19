@@ -84,6 +84,7 @@ internal fun PhoneFeedView.onEpisodeEnded(index: Int) {
         val nextSeries = index + 1
         if (nextSeries < feedItems.size) {
             feedSmoothScrollToPosition(nextSeries)
+            playIndexForSettings(nextSeries, -1L, clearDanmakuOnSwitch = true)
         } else {
             loadMore()
             feedHint.text = "全剧已播完，正在换下一部…"

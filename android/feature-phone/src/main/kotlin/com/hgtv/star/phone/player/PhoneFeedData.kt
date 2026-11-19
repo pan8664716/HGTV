@@ -22,11 +22,19 @@ internal fun PhoneFeedView.restoreSnapshot() {
     val usable = feedRecommendStore.restoreSnapshot(hiddenIds)
     if (usable.isEmpty()) return
     feedNotifyDataSetChanged()
-    // 起点 = 上一次停的那一部的下一条（到末尾就回到第一条）。
+    // 横竖屏 / Activity 重建时优先恢复当前这一部；只有冷启动才按“上次停的下一部”。
+    val restoreSeries = takeRestoreSeriesId()
+    val restoreIndex = restoreSeries?.let { seriesId ->
+        usable.indexOfFirst { it.id == seriesId }
+    } ?: -1
     val last = runCatching { com.hgtv.star.core.RecommendCache.lastPlayed(feedCacheKey()) }
         .getOrDefault("")
     val lastIndex = usable.indexOfFirst { it.id == last }
-    val start = if (lastIndex >= 0) (lastIndex + 1) % usable.size else 0
+    val start = when {
+        restoreIndex >= 0 -> restoreIndex
+        lastIndex >= 0 -> (lastIndex + 1) % usable.size
+        else -> 0
+    }
     feedPlayingIndex = start
     // 还没上屏的那一条只摆好列表与下标，不出声音：真正起播由 `onShown()` 负责。
     if (!feedHidden) feedPlayIndex(start)

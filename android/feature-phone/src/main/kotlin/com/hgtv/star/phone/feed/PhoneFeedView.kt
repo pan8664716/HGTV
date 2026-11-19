@@ -92,6 +92,7 @@ class PhoneFeedView(
      * 会追加到刚清空的列表里——三个 tab 的快照互相污染，最后每个 tab 都放着同一批视频。
      */
     initialGenre: String? = null,
+    initialSeriesId: String? = null,
 ) : FrameLayout(context) {
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -104,6 +105,7 @@ class PhoneFeedView(
     internal val feedAdapter get()=adapter
     private val list = VerticalPagerList(context)
     internal val feedList get()=list
+    private var restoreSeriesId: String? = initialSeriesId
 
     private var offset: Int
         get()=recommendStore.nextOffset
@@ -304,6 +306,13 @@ class PhoneFeedView(
     private fun sessionBelongsToThisFeed(): Boolean =
         PhoneSession.feedKey == cacheKey()
     internal fun feedSessionBelongsToThisFeed(): Boolean = sessionBelongsToThisFeed()
+    internal fun currentSeriesId(): String? =
+        feedItems.getOrNull(feedPlayingIndex)?.id
+    internal fun takeRestoreSeriesId(): String? {
+        val value = restoreSeriesId
+        restoreSeriesId = null
+        return value
+    }
     internal fun feedNotifyDataSetChanged() = adapter.notifyDataSetChanged()
     internal fun feedNotifyItemRangeInserted(start: Int, count: Int) =
         adapter.notifyItemRangeInserted(start, count)

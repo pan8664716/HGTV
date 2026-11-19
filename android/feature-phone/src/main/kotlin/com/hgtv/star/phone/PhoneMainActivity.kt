@@ -60,6 +60,8 @@ class PhoneMainActivity : PhoneActivity() {
         var pendingTab = -1
         /** 推荐页重建前选中的体裁，避免转屏后总是回到漫剧。 */
         var pendingRecommendGenre: String? = null
+        /** 推荐页重建前正在看的剧，避免横竖屏切换被当成冷启动而跳到下一部。 */
+        var pendingRecommendSeriesId: String? = null
         var pendingCategoryState: PhoneCategoryPage.State? = null
         var pendingRankState: PhoneRankPage.State? = null
         var pendingMineState: PhoneMinePage.State? = null
@@ -216,8 +218,10 @@ class PhoneMainActivity : PhoneActivity() {
     }
 
     private fun rememberPageStates() {
-        pendingRecommendGenre =
-            (pages.getOrNull(0) as? PhoneRecommendPage)?.currentGenreKey()
+        (pages.getOrNull(0) as? PhoneRecommendPage)?.let { page ->
+            pendingRecommendGenre = page.currentGenreKey()
+            pendingRecommendSeriesId = page.currentSeriesId()
+        }
         pendingCategoryState =
             (pages.getOrNull(1) as? PhoneCategoryPage)?.snapshotState()
         pendingRankState =
@@ -590,8 +594,10 @@ class PhoneMainActivity : PhoneActivity() {
     private fun createPage(index: Int): View = when (index) {
         0 -> {
             val genre = pendingRecommendGenre
+            val seriesId = pendingRecommendSeriesId
             pendingRecommendGenre = null
-            PhoneRecommendPage(this, genre).apply {
+            pendingRecommendSeriesId = null
+            PhoneRecommendPage(this, genre, seriesId).apply {
                 onPlayStateChanged = { syncKeepScreenOn() }
             }
         }

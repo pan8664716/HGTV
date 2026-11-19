@@ -167,6 +167,7 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
                 feedHint.visibility = View.VISIBLE
                 feedHint.bringToFront()
                 feedSmoothScrollToPosition(next)
+                playIndexForSettings(next, -1L, clearDanmakuOnSwitch = true)
             } else {
                 loadMore()
                 feedHint.text = "这一部放不了，正在换下一部…"

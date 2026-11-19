@@ -25,6 +25,8 @@ internal class VerticalPagerList(context: Context) : RecyclerView(context) {
 
     /** 0 = 未定性，1 = 纵向（这一下归列表），2 = 横向（这一下不归列表）。 */
     private var axis = 0
+    /** 当前这次滚动是否由真实纵向手势发起；布局补发的 IDLE 不得换播。 */
+    var userScroll = false
 
     override fun onInterceptTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
@@ -32,12 +34,16 @@ internal class VerticalPagerList(context: Context) : RecyclerView(context) {
                 downX = e.x
                 downY = e.y
                 axis = 0
+                userScroll = false
             }
             MotionEvent.ACTION_MOVE -> {
                 if (axis == 0) {
                     val dx = Math.abs(e.x - downX)
                     val dy = Math.abs(e.y - downY)
-                    if (dx > slop || dy > slop) axis = if (dy > dx) 1 else 2
+                    if (dx > slop || dy > slop) {
+                        axis = if (dy > dx) 1 else 2
+                        if (axis == 1) userScroll = true
+                    }
                 }
                 if (axis == 2) return false
             }

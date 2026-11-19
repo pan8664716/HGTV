@@ -35,7 +35,9 @@ internal fun PhoneFeedView.initializeFeed() {
         override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
             if (state != RecyclerView.SCROLL_STATE_IDLE) return
             val index = (rv.layoutManager as LinearLayoutManager).findFirstVisibleItemPosition()
-            if (index >= 0 && index != feedPlayingIndex) {
+            val userScroll = feedList.userScroll
+            feedList.userScroll = false
+            if (userScroll && index >= 0 && index != feedPlayingIndex) {
                 playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
             }
             if (index >= 0 &&
