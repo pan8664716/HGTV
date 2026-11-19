@@ -7,9 +7,26 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
-## 2026-11-20：电视推荐页 / 正式播放页迁移 ViewPager2 与播放器池
+## 2026-11-20：电视推荐页保留播放器池，正式播放页恢复单 SurfaceView
 
 状态：已实现，debug 构建通过，待用户真机验证。
+
+- 推荐页继续使用竖向 `ViewPager2 + 三路播放器池 + offscreenPageLimit=1`，保留相邻作品
+  静音预渲染、池实例提升和首帧比例保护。
+- 电视正式播放页不再创建 `TvPlaybackPager`，也不再取池槽或调度相邻分集；从推荐页进入
+  正片时释放池、解绑 pager 当前页，重新建立原来的单个 `PlayerView/SurfaceView`。
+- 正式页换集、自动连播、选集和恢复路径重新走原有的单播放器 `reuse + setMediaSource`
+  链路，`PlayerController` 中所有池命中与相邻页预热都限定为 `screen=recommend`。
+- 推荐页遥控器上下切换相邻作品时使用 `ViewPager2.setCurrentItem(..., smooth=true)` 的
+  原生竖向短滑动；跨多页、首次定位和快速连按仍直切，避免动画排队影响起播。
+- 动画不增加缩放、透明、共享元素或额外布局层，保留现有 `itemAnimator=null`，避免低端
+  电视因转场合成增加掉帧。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-20：电视推荐页 / 正式播放页迁移 ViewPager2 与播放器池
+
+状态：历史记录。正式播放页部分已由上一节回退，推荐页部分继续保留。
 
 - 推荐页和正式播放页共用竖向 `ViewPager2`，`offscreenPageLimit=1` 让当前、上一页、
   下一页各有一块独立 `PlayerView/SurfaceView`。遥控器上下键仍由原有按键分发驱动，

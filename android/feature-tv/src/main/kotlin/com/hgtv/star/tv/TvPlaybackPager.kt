@@ -12,11 +12,11 @@ import androidx.viewpager2.widget.ViewPager2
 import com.google.android.exoplayer2.ui.PlayerView
 
 /**
- * 电视播放页的三页窗口。
+ * 电视推荐页的三页窗口。
  *
  * ViewPager2 负责当前 / 前后页的 Surface 常驻与转场；播放中控仍然只面向当前活动
  * [com.google.android.exoplayer2.ExoPlayer]。相邻页的具体播放器由 [TvPlaybackPoolState]
- * 独立维护，切换时把命中的池实例提升为活动实例。
+ * 独立维护，切换时把命中的池实例提升为活动实例。正式播放页不创建这个容器。
  */
 internal class TvPlaybackPager(
     private val host: TvMainActivity,
@@ -66,10 +66,9 @@ internal class TvPlaybackPager(
     }
 
     /**
-     * 推荐页与正式播放页共用同一个 pager 实例。
+     * 切换 pager 当前的数据页并同步活动播放器。
      *
-     * 进入正片时只切换页数据与当前页，不拆掉整棵播放层；当前活动播放器仍由
-     * [syncCurrentPlayer] 挂到目标页的独立 Surface 上。
+     * 当前仅推荐页使用；正式播放页会在进入时释放 pager，恢复单个 PlayerView。
      */
     fun switchScreen(next: String,index: Int) {
         screen=next

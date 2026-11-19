@@ -443,20 +443,6 @@ private fun TvMainActivity.finishSeamlessAdvance(
     episodeIndex=next
     detail=nextData
     sessionSeriesId=nextData.series.id
-    if(screen=="player") {
-        releaseTvPoolSlotAt(next)
-        tvPlaybackPager?.refreshPages()
-        tvPlaybackPager?.setCurrentIndex(next,false)
-        tvPlaybackPager?.pageAt(next)?.let { playerView=it.playerView }
-        tvPlaybackPager?.syncCurrentPlayerWhenReady(next)
-        tvPlaybackPager?.post {
-            if(!isDestroyed && screen=="player" && episodeIndex==next) {
-                tvPlaybackPager?.pageAt(next)?.let { playerView=it.playerView }
-                tvPlaybackPager?.syncCurrentPlayerWhenReady(next)
-                applyVideoGeometry()
-            }
-        }
-    }
     if(playbackFromRecommend) {
         recommendPlaybackController.reportEventById(
             nextData.series.id,

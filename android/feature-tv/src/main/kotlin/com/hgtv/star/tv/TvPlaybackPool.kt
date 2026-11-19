@@ -67,11 +67,12 @@ internal fun TvMainActivity.currentPlaybackPageIndex(): Int =
     if(screen=="recommend") recommendIndex.coerceAtLeast(0) else episodeIndex.coerceAtLeast(0)
 
 /**
- * 在同一套播放层里切换推荐 / 正片页数据。
+ * 推荐页内部切换 pager 当前作品，并同步活动播放器。
  *
- * 不能直接重建 `PlayerView`：那样会把当前活动播放器的 Surface 摘掉，电视上会黑一帧。
+ * 正式播放页不经过这里：它使用独立的单 PlayerView，避免把两套 Surface 生命周期混在一起。
  */
 internal fun TvMainActivity.switchTvPlaybackPagerScreen(next: String,index: Int) {
+    if(next!="recommend") return
     val pager=tvPlaybackPager ?: return
     if(pager.screen==next) {
         pager.setCurrentIndex(index,false)
@@ -167,11 +168,11 @@ private fun TvMainActivity.startTvPoolPreRender(slot: TvPlaybackPoolSlot) {
 }
 
 internal fun TvMainActivity.storeActivePlayerInTvPool() {
+    if(screen!="recommend") return
     val p=player ?: return
     val r=video ?: return
     val d=detail ?: return
-    if(screen!="recommend" && screen!="player") return
-    val index=if(screen=="recommend") recommendIndex else episodeIndex
+    val index=recommendIndex
     val episodeIndex=this.episodeIndex.coerceAtLeast(0)
     val episodeId=d.episodes.getOrNull(episodeIndex) ?: return
     val key=tvPlaybackPool.key(screen,d.series.id,episodeId)
@@ -222,6 +223,7 @@ internal fun TvMainActivity.takeTvPlaybackPooledSlot(
     seriesId: String,
     episodeId: String,
 ): TvPlaybackPoolSlot? {
+    if(screen!="recommend") return null
     val key=tvPlaybackPool.key(screen,seriesId,episodeId)
     val slot=tvPlaybackPool.slots[key] ?: return null
     if(slot.pageIndex!=index) return null
@@ -327,18 +329,12 @@ private fun TvMainActivity.releaseTvPoolEntry(key: String) {
  */
 internal fun TvMainActivity.scheduleTvPlaybackPoolNeighbors() {
     val pager=tvPlaybackPager ?: return
-    if(screen!="recommend" && screen!="player") return
+    if(screen!="recommend") return
     if(!foreground || playError || pausedForLifecycle) return
     val anchor=currentPlaybackPageIndex()
     // 当前页由活动播放器持有；旧任务留下的同页槽位必须让位给下一页。
     releaseTvPoolSlotAt(anchor)
-    val allTargets=when(screen) {
-        "recommend" -> listOf(anchor+1,anchor-1).filter { it in recommendItems.indices }
-        "player" -> listOf(anchor+1,anchor-1).filter {
-            detail?.episodes?.indices?.contains(it)==true
-        }
-        else -> emptyList()
-    }
+    val allTargets=listOf(anchor+1,anchor-1).filter { it in recommendItems.indices }
     val targets=if(tvPoolLimit()<=1 && allTargets.size>1) {
         val preferred=anchor+1
         listOf(allTargets.firstOrNull { it==preferred } ?: allTargets.first())
@@ -348,21 +344,15 @@ internal fun TvMainActivity.scheduleTvPlaybackPoolNeighbors() {
     var inFlight=tvPlaybackPool.jobs.keys.count { it.startsWith("$screen|") || it.startsWith("detail|") }
     for(target in targets) {
         if(inFlight>=1) break
-        val sourceDetail=when(screen) {
-            "recommend" -> recommendItems.getOrNull(target)?.let { recommendDetails[it.id] }
-            else -> detail
-        }
-        val seriesId=when(screen) {
-            "recommend" -> recommendItems.getOrNull(target)?.id.orEmpty()
-            else -> detail?.series?.id.orEmpty()
-        }
+        val sourceDetail=recommendItems.getOrNull(target)?.let { recommendDetails[it.id] }
+        val seriesId=recommendItems.getOrNull(target)?.id.orEmpty()
         if(seriesId.isEmpty()) continue
         if(sourceDetail==null) {
             prepareTvPoolRecommendDetail(target,seriesId,generation)
             inFlight++
             continue
         }
-        val episodeIndex=if(screen=="recommend") 0 else target
+        val episodeIndex=0
         val episodeId=sourceDetail.episodes.getOrNull(episodeIndex) ?: continue
         val key=tvPlaybackPool.key(screen,seriesId,episodeId)
         if(tvPlaybackPool.slots.containsKey(key) || tvPlaybackPool.jobs.containsKey(key)) continue
@@ -550,8 +540,8 @@ private fun TvMainActivity.prepareTvPoolSlot(
 }
 
 private fun TvMainActivity.tvPoolNeighbor(pageIndex: Int): Boolean {
-    if(screen!="recommend" && screen!="player") return false
-    val count=if(screen=="recommend") recommendItems.size else detail?.episodes?.size ?: 0
+    if(screen!="recommend") return false
+    val count=recommendItems.size
     if(pageIndex !in 0 until count) return false
     return kotlin.math.abs(pageIndex-currentPlaybackPageIndex())<=1
 }
@@ -560,8 +550,4 @@ private fun TvMainActivity.tvPoolTargetNeighbor(pageIndex: Int): Boolean =
     pageIndex!=currentPlaybackPageIndex() && tvPoolNeighbor(pageIndex)
 
 private fun TvMainActivity.tvPoolSlotMatches(slot: TvPlaybackPoolSlot,index: Int): Boolean =
-    when(screen) {
-        "recommend" -> recommendItems.getOrNull(index)?.id==slot.seriesId
-        "player" -> detail?.episodes?.getOrNull(index)==slot.episodeId
-        else -> false
-    }
+    screen=="recommend" && recommendItems.getOrNull(index)?.id==slot.seriesId

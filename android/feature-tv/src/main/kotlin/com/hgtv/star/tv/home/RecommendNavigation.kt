@@ -24,8 +24,12 @@ fun TvMainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
     }
     // 先把状态切到正片：下面 playEpisode 会按进入时的 screen 决定留在哪一页。
     screen="player"
-    // pager 的页数要从推荐作品切成当前剧的分集；活动播放器保持不动。
-    switchTvPlaybackPagerScreen("player",episodeIndex)
+    // 正式播放页不使用推荐页的 ViewPager2 / 播放器池，恢复单个 PlayerView。
+    // 保留活动播放器实例，只把输出层从 pager 页切回普通 Surface。
+    releaseTvPlaybackPool()
+    tvPlaybackPager?.currentPage()?.detachPlayerOutput()
+    tvPlaybackPager=null
+    buildPlaybackSurface()
     // 进正片：过渡黑场立刻收掉（画面本来就没断，继续盖着会黑一下）。
     dismissRecommendCover()
     // 记下来源：从这里进的正片，返回键要直接回主页（需求 4），不回简介页。
@@ -39,9 +43,8 @@ fun TvMainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
     dismissRecommendOverlay()
     hud.visibility=View.GONE
     syncPlaybackInfo()
-    // 这一页的控件是「推荐页」那一次建的（`playEpisode` 没有重跑），手势层 / 底部那一块 /
-    // 进度拖动因此在这里重接一次（三者都幂等）。**必须先把推荐页那块摘掉**：
-    // 那一块只有一枚剧名（点它进正片），正片里要的是六枚按键，两者内容不同。
+    // 上面已把播放层重建成正式页控件；手势层 / 底部按钮 / 进度拖动在这里重新接一次，
+    // 三者都幂等，避免从推荐页复用活动播放器时漏掉正式页的输入入口。
     if(touchArmed) { attachTouchLayer(); resetTouchBar(); attachTouchBar(); wireSeekTouch() }
     // 进正片 = 开始正式观看：立刻把这一集记进历史。
     // 画面还没 READY 时 `saveProgress` 会拒绝写（时长未知），这时挂一个待写标记，
