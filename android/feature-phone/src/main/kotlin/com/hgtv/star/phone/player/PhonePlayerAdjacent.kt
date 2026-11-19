@@ -108,7 +108,11 @@ internal fun PhonePlayerActivity.ensureAdjacentEpisode(target: Int) {
                 return@launch
             }
 
-            val exo = PhoneServices.newPlayer(this@ensureAdjacentEpisode, library?.decoderMode)
+            val exo = PhoneServices.newPlayer(
+                this@ensureAdjacentEpisode,
+                library?.decoderMode,
+                handleAudioFocus = false,
+            )
             val factory = DataSource.Factory { VideoDataSource(prepared) }
             exo.swapMediaSource(episodeId, prepared.info.url, factory)
             exo.setPlaybackSpeed(sessionUserSpeed)
@@ -344,8 +348,8 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
     playerListener?.let(oldPlayer::removeListener)
     playerListener = null
     oldPlayer.playWhenReady = false
-    runCatching { oldPlayer.pause() }
     oldPlayer.volume = 0f
+    PhoneServices.enableAudioFocus(oldPlayer, false)
     runCatching {
         val current = oldPlayer.currentMediaItemIndex.coerceAtLeast(0)
         if (oldPlayer.mediaItemCount > current + 1) {
@@ -372,7 +376,7 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
     } else {
         runCatching { oldPlayer.release() }
     }
-    silenceAdjacentPlayers(except = null)
+    silenceAdjacentPlayers(except = oldPlayer)
 
     slot.listener?.let(slot.player::removeListener)
     slot.listener = null
@@ -384,7 +388,8 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
     remote = slot.remote
     slot.player.setPlaybackSpeed(sessionUserSpeed)
     slot.player.volume = 1f
-    slot.player.playWhenReady = false
+    PhoneServices.enableAudioFocus(slot.player, true)
+    slot.player.playWhenReady = true
     listenerLastDuration = previousDuration
     attachCurrentPlayerOutput()
 
@@ -397,7 +402,7 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
         closePreviousRemote = false,
     )
     attachPlayerListener(slot.player)
-    slot.player.playWhenReady = true
+    runCatching { oldPlayer.pause() }
     if (firstFrameOnCurrentSurface) {
         completeFirstFrameAspectRatio()
         hideEpisodeCover()
@@ -466,6 +471,7 @@ internal fun PhonePlayerActivity.pauseAdjacentPlayers() {
             slot.player.playWhenReady = false
             slot.player.pause()
         }
+        PhoneServices.enableAudioFocus(slot.player, false)
     }
     detachAdjacentGhostOutput()
 }
@@ -492,6 +498,7 @@ private fun PhonePlayerActivity.silenceAdjacentPlayers(except: ExoPlayer?) {
                 slot.player.playWhenReady = false
                 slot.player.pause()
             }
+            PhoneServices.enableAudioFocus(slot.player, false)
         }
     }
 }

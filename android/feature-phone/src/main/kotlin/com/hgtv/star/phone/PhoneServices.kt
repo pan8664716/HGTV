@@ -87,6 +87,7 @@ object PhoneServices {
     fun newPlayer(
         context: Context,
         decoder: com.hgtv.star.core.VideoDecoderMode? = null,
+        handleAudioFocus: Boolean = true,
     ): ExoPlayer {
         if (decoder != null) PhoneDecoder.mode = decoder
         PhoneDecoder.bind(context)
@@ -106,13 +107,7 @@ object PhoneServices {
             //   系统才知道该怎么让路（暂停 / 压低音量），否则就是两条声音叠着响。
             // * `setHandleAudioBecomingNoisy`：拔耳机 / 断蓝牙那一刻自动暂停，
             //   不暂停就会从外放突然放出来——公共场合非常难堪。
-            .setAudioAttributes(
-                com.google.android.exoplayer2.audio.AudioAttributes.Builder()
-                    .setUsage(com.google.android.exoplayer2.C.USAGE_MEDIA)
-                    .setContentType(com.google.android.exoplayer2.C.AUDIO_CONTENT_TYPE_MOVIE)
-                    .build(),
-                true
-            )
+            .setAudioAttributes(phoneAudioAttributes(), handleAudioFocus)
             .setHandleAudioBecomingNoisy(true)
             // 后台 / 锁屏继续放时保住 CPU（与电视端 `setWakeMode` 同一条）：
             // 不保的话，锁屏几十秒后连接就断，回来要重走 DNS + TLS + 取地址。
@@ -124,6 +119,20 @@ object PhoneServices {
                 PlaybackStartupTrace.point("player.built")
             }
     }
+
+    /**
+     * 相邻预渲染播放器必须关闭音频焦点，否则 0 音量播放也会抢走当前集的焦点，
+     * 系统会把正在播放的实例暂停。真正切为当前集时再调用 [enableAudioFocus]。
+     */
+    fun enableAudioFocus(player: ExoPlayer, enabled: Boolean) {
+        runCatching { player.setAudioAttributes(phoneAudioAttributes(), enabled) }
+    }
+
+    private fun phoneAudioAttributes() =
+        com.google.android.exoplayer2.audio.AudioAttributes.Builder()
+            .setUsage(com.google.android.exoplayer2.C.USAGE_MEDIA)
+            .setContentType(com.google.android.exoplayer2.C.AUDIO_CONTENT_TYPE_MOVIE)
+            .build()
 
     /**
      * 把推荐页池中的当前播放器登记为正式播放页可接手的实例。

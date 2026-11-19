@@ -583,7 +583,7 @@ android/
 | `PhoneFirstRunTip.kt` | 首次进入时的「先调一下显示」提示。 | object PhoneFirstRunTip |
 | `PhoneMainActivity.kt` | 手机 / 平板端主界面；统一从 WindowInsets 更新底部 tab 栏和四个 tab 页的安全区，处理系统导航栏透明、对比度蒙层和图标亮暗；推荐页横竖屏原地重排并保留视频 Surface。 | class PhoneMainActivity、fun revealPhoneStartup、fun warmStartupPlayer、fun applySystemBottomInset |
 | `PhoneNavigator.kt` | 手机端的路由落地：把 Route 翻译成一个 Intent，交给系统返回栈。 | class PhoneNavigator、fun Context.phoneNav |
-| `PhoneServices.kt` | 手机端服务入口；正式播放页使用当前活动 ExoPlayer，推荐池通过 `newPlayer` 创建独立实例并由 `activate` 登记当前实例；换页解绑时可同步清掉 SurfaceView 旧帧。 | object PhoneServices、object PhoneDecoder、fun player、fun newPlayer、fun activate、fun warmPlayer、fun detachAndClear |
+| `PhoneServices.kt` | 手机端服务入口；相邻播放器默认不申请音频焦点，激活当前集时才接管；推荐池通过 `newPlayer` 创建独立实例并由 `activate` 登记当前实例。 | object PhoneServices、object PhoneDecoder、fun player、fun newPlayer、fun enableAudioFocus、fun activate、fun warmPlayer、fun detachAndClear |
 | `PhoneSession.kt` | 手机端「这一台机器现在在放什么」的进程级事实。 | object PhoneSession |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/account/`
@@ -664,7 +664,7 @@ android/
 | `PhonePlaybackRecovery.kt` | 手机端的播放失败自愈：**决策全部来自 :core，与电视端同一套**。 | val PhonePlayerActivity.playbackMaxQuality、fun PhonePlayerActivity.playbackAttribution、fun PhonePlayerActivity.handlePlayerFailure、fun PhonePlayerActivity.decideAndRun、fun PhonePlayerActivity.refetchAndReplay、fun PhonePlayerActivity.recoverQueuedCurrent |
 | `PhonePlaybackSettings.kt` | 播放设置面板的各行：**推荐信息流与正式播放页共用这一份**。 | fun buildPlaybackSettingsRows |
 | `PhonePlayerActivity.kt` | 手机正式播放页基类，持有播放器、横竖屏状态、控制层、跨形态播放锁定状态和页面生命周期；推荐页入口使用半透明主题，正式页弹幕加载器禁止用超时绕过首帧门闩。 | open class PhonePlayerActivity、playerControlsLocked |
-| `PhonePlayerAdjacent.kt` | 正式播放页前后相邻集播放器池：后台取源、独立 `ExoPlayer`、ghost 页静音首帧预渲染、滑动激活、上一集复用和前后台资源回收；预渲染首帧只暂停尚未激活的实例。 | class PhonePlayerAdjacentSlot、fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup、fun PhonePlayerActivity.attachAdjacentToGhost、fun PhonePlayerActivity.activateAdjacentEpisode、fun PhonePlayerActivity.releaseAllAdjacentPlayers |
+| `PhonePlayerAdjacent.kt` | 正式播放页前后相邻集播放器池：后台取源、独立 `ExoPlayer`、ghost 页静音首帧预渲染、音频焦点隔离、无空档激活、上一集复用和资源回收。 | class PhonePlayerAdjacentSlot、fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup、fun PhonePlayerActivity.attachAdjacentToGhost、fun PhonePlayerActivity.activateAdjacentEpisode、fun PhonePlayerActivity.releaseAllAdjacentPlayers |
 | `PhonePlayerOpaqueActivity.kt` | 非推荐页入口的正式播放页子类；Manifest 固定不透明主题，避免透明 SurfaceView 在上下滑时露出简介页。 | class PhonePlayerOpaqueActivity |
 | `PhonePlayerAdoption.kt` | adoptFromSession 的前置检查；返回 null = 可以接，否则返回不能接的原因（只用于日志）。 | fun PhonePlayerActivity.adoptReject、fun PhonePlayerActivity.adoptFromSession |
 | `PhonePlayerAttach.kt` | 把已准备好的视频源挂到当前形态对应的 PlayerView，冻结旧比例并安排首帧前的 prepare。 | fun PhonePlayerActivity.attach |

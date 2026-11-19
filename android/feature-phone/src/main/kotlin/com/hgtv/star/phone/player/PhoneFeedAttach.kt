@@ -31,6 +31,7 @@ internal fun PhoneFeedView.attachImpl(
     val exo = slot.player
     pausePooledPlayersExcept(exo)
     runCatching { exo.volume = 1f }
+    PhoneServices.enableAudioFocus(exo, true)
     feedPlayerSlot = exo
     runCatching {
         if (exo.mediaItemCount > 1) exo.removeMediaItems(1, exo.mediaItemCount)

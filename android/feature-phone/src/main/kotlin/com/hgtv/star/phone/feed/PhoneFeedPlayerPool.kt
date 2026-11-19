@@ -72,7 +72,11 @@ internal fun PhoneFeedView.ensurePooledPlayerSlot(
         detail = null,
         episodeIndex = feedCurrentEpisodeIndex[index] ?: 0,
         remote = null,
-        player = PhoneServices.newPlayer(context, feedLibrary?.decoderMode),
+        player = PhoneServices.newPlayer(
+            context,
+            feedLibrary?.decoderMode,
+            handleAudioFocus = false,
+        ),
     )
     feedPooledPlayers[index] = slot
     trimPooledPlayers(feedPlayingIndex, preferred = index)
@@ -289,6 +293,7 @@ internal fun PhoneFeedView.pausePooledPlayersExcept(player: ExoPlayer?) {
                 slot.player.playWhenReady = false
                 slot.player.pause()
             }
+            PhoneServices.enableAudioFocus(slot.player, false)
         }
     }
 }
@@ -569,6 +574,7 @@ internal fun PhoneFeedView.activatePreparedPooledPlayerImpl(
     publishPooledSession(detail, slot.episodeIndex, remote, remote.info.quality)
     slot.player.setPlaybackSpeed(feedUserSpeed)
     runCatching { slot.player.volume = 1f }
+    PhoneServices.enableAudioFocus(slot.player, true)
     slot.player.playWhenReady = !feedPaused
     if (slot.firstFrameRendered || slot.player.playbackState == Player.STATE_READY) {
         reportRecommendImpression(index)
