@@ -61,13 +61,14 @@ internal fun PhoneFeedView.initializeFeed() {
             }
             pendingVisiblePlay?.let(feedList::removeCallbacks)
             pendingVisiblePlay = null
-            val index = (rv.layoutManager as LinearLayoutManager).findFirstVisibleItemPosition()
+            val index = dominantVisiblePage(rv).takeIf { it >= 0 }
+                ?: (rv.layoutManager as LinearLayoutManager).findFirstVisibleItemPosition()
             val userScroll = feedList.userScroll
             feedList.userScroll = false
             if (userScroll && index >= 0 && index != feedPlayingIndex) {
                 playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
             } else if (userScroll) {
-                stopFeedSwipePreviewImpl()
+                finishFeedSwipePreviewImpl()
                 resumeCurrentAfterFeedSwipeImpl()
             }
             if (index >= 0 &&
@@ -158,8 +159,13 @@ internal fun PhoneFeedView.clearFeedSwipePauseImpl() {
 }
 
 private fun PhoneFeedView.updateFeedSwipePreviewImpl(target: Int) {
-    if (target < 0 || target == feedPlayingIndex) {
-        stopFeedSwipePreviewImpl()
+    if (target < 0) {
+        // 50% 边界处两个页面可能短暂都不到半屏；此时保留已经开始的预览，
+        // 等当前页重新成为主导页或 IDLE 时再决定是否停止。
+        return
+    }
+    if (target == feedPlayingIndex) {
+        finishFeedSwipePreviewImpl()
         return
     }
     if (feedSwipePreviewIndex == target) {
@@ -197,6 +203,11 @@ internal fun PhoneFeedView.stopFeedSwipePreviewImpl(index: Int = feedSwipePrevie
     slot.player.playWhenReady = false
     runCatching { slot.player.pause() }
     PhoneServices.enableAudioFocus(slot.player, false)
+}
+
+internal fun PhoneFeedView.finishFeedSwipePreviewImpl() {
+    stopFeedSwipePreviewImpl()
+    feedSwipePreviewIndex = -1
 }
 
 internal fun PhoneFeedView.prepareFeedSwipePreviewForCommit(index: Int) {

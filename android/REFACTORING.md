@@ -111,6 +111,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   实例，不在动画结束点再次启停。
 - 推荐页采用同一规则：拖动超过半屏时，目标页的池播放器立即恢复音量并开始播放；
   滑回半屏以内立即停止目标，松手弹回后恢复原视频。提交时沿用预览实例，不再二次启停。
+- 慢滑时两个页面可能在 50% 边界短暂都不到半屏；推荐页此时保留已经开始的预览，
+  只有当前页重新成为过半主导页才停止。IDLE 也改用“实际过半可见页”判定最终目标，
+  不再依赖可能暂时指向上一个页面的 `findFirstVisibleItemPosition`。
 - 未改版本号、versionCode、依赖或接口；`:app:assembleDebug` 使用 JDK 17 通过，
   未引入 `TextureView`，测试待用户真机验证，未推送。
 
