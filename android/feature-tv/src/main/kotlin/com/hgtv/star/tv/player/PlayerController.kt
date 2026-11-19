@@ -172,7 +172,9 @@ fun TvMainActivity.playEpisode(
     val keep=(keepMedia && video?.isReusable==true) || pooledAdopt!=null
     // 必须先冻结，再 stop/clearMediaItems：停旧媒体会让 PlayerView 收到一次 ratio=0，
     // 如果这时还没 hold，AspectRatioFrameLayout 会立刻撑满整屏，用户看到的就是拉伸首帧。
-    if((screen=="player" || recommendEntry) && reuse && !keep) {
+    if((screen=="player" || recommendEntry) && reuse && (!keep || pooledAdopt!=null)) {
+        // 池实例可能已经在另一页预渲染过，但当前页的 PlayerView 仍可能保留整屏比例；
+        // 先把比例冻结，等目标首帧/尺寸回调后再一次性落下去。
         playerView?.holdFirstFrameAspectRatio()
     }
     // 「已看完」标记只在**正式播放**里清掉。推荐页还没进正片（需求 3：进正片才算开始看），

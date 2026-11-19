@@ -14,7 +14,6 @@ import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.VideoDecoderMode
 import com.hgtv.star.core.detail
 import com.hgtv.star.core.lruPut
-import com.hgtv.star.shared.compat.lowEndTv
 import com.hgtv.star.shared.media.VideoDataSource
 import java.util.concurrent.Future
 
@@ -91,8 +90,13 @@ internal fun TvMainActivity.switchTvPlaybackPagerScreen(next: String,index: Int)
     }
 }
 
-private fun TvMainActivity.tvPoolLimit(): Int =
-    if(runCatching { lowEndTv() }.getOrDefault(true)) 1 else 2
+/**
+ * 电视端池上限。
+ *
+ * 当前页由活动播放器持有；低端电视也保留前后两个池槽，避免为了回看上一页
+ * 把下一页的预渲染实例挤掉。解码器压力由串行预热和内存回收路径兜住。
+ */
+private fun TvMainActivity.tvPoolLimit(): Int = 2
 
 internal fun TvMainActivity.bindTvPlaybackPage(page: TvPlaybackSurfacePage,index: Int) {
     val entry=tvPlaybackPool.slots.entries.firstOrNull { it.value.pageIndex==index }
@@ -121,8 +125,17 @@ private fun TvMainActivity.attachTvPoolSlotToPage(
 ) {
     page ?: return
     if(slot.player===player || page.playerView.player===player) return
+    if(slot.pageIndex==currentPlaybackPageIndex()) return
+    if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-POOL",
+            "attach key=${slot.seriesId}|${slot.episodeId} page=${slot.pageIndex} "+
+                "surface=${page.playerView.videoSurfaceView?.javaClass?.simpleName}",
+        )
+    }
     page.playerView.setKeepContentOnPlayerReset(true)
     page.playerView.visibility=View.VISIBLE
+    if(!slot.firstFrameRendered) page.playerView.holdFirstFrameAspectRatio()
     if(page.playerView.player!==slot.player) {
         page.detachPlayerOutput()
         page.playerView.player=slot.player
@@ -218,6 +231,16 @@ internal fun TvMainActivity.takeTvPlaybackPooledSlot(
 }
 
 private fun TvMainActivity.trimTvPlaybackPool(anchor: Int) {
+    if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-POOL",
+            "trim anchor=$anchor screen=$screen limit=${tvPoolLimit()} "+
+                tvPlaybackPool.slots.values.joinToString(",") {
+                    "page=${it.pageIndex}:series=${it.seriesId}:episode=${it.episodeId}:match="+
+                        tvPoolSlotMatches(it,it.pageIndex)
+                },
+        )
+    }
     tvPlaybackPool.slots.entries
         .filter { !tvPoolSlotMatches(it.value,it.value.pageIndex) }
         .map { it.key }
@@ -228,13 +251,14 @@ private fun TvMainActivity.trimTvPlaybackPool(anchor: Int) {
     val keep=tvPlaybackPool.slots.entries
         .sortedWith(
             compareBy<MutableMap.MutableEntry<String,TvPlaybackPoolSlot>> {
-                kotlin.math.abs(it.value.pageIndex-anchor)
-            }.thenBy {
+                // 池槽数量不足时，下一页预渲染优先于回看上一页。
                 when(it.value.pageIndex) {
                     preferred -> 0
-                    anchor -> 1
-                    else -> 2
+                    anchor -> 2
+                    else -> 1
                 }
+            }.thenBy {
+                kotlin.math.abs(it.value.pageIndex-anchor)
             }.thenBy { it.value.pageIndex }
         )
         .take(limit)
@@ -271,6 +295,13 @@ internal fun TvMainActivity.releaseTvPoolSlotAt(pageIndex: Int) {
 
 private fun TvMainActivity.releaseTvPoolEntry(key: String) {
     val slot=tvPlaybackPool.slots.remove(key) ?: return
+    if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-POOL",
+            "release key=$key page=${slot.pageIndex} active=${slot.player===player} "+
+                "screen=$screen current=${currentPlaybackPageIndex()}",
+        )
+    }
     tvPlaybackPager?.pageAt(slot.pageIndex)?.let { page ->
         if(page.playerView.player===slot.player) page.detachPlayerOutput()
     }
@@ -291,6 +322,8 @@ internal fun TvMainActivity.scheduleTvPlaybackPoolNeighbors() {
     if(screen!="recommend" && screen!="player") return
     if(!foreground || playError || pausedForLifecycle) return
     val anchor=currentPlaybackPageIndex()
+    // 当前页由活动播放器持有；旧任务留下的同页槽位必须让位给下一页。
+    releaseTvPoolSlotAt(anchor)
     val allTargets=when(screen) {
         "recommend" -> listOf(anchor-1,anchor+1).filter { it in recommendItems.indices }
         "player" -> listOf(anchor-1,anchor+1).filter {
@@ -356,7 +389,7 @@ private fun TvMainActivity.prepareTvPoolRecommendDetail(
             if(d==null || generation!=tvPlaybackPool.generation ||
                 isDestroyed || screen!="recommend" ||
                 recommendItems.getOrNull(pageIndex)?.id!=seriesId ||
-                !tvPoolNeighbor(pageIndex)
+                !tvPoolTargetNeighbor(pageIndex)
             ) return@post
             if(d.episodes.isEmpty()) return@post
             recommendDetails.lruPut(RECOMMEND_DETAIL_LIMIT,seriesId,d)
@@ -409,7 +442,7 @@ private fun TvMainActivity.prepareTvPoolSlot(
                 return@post
             }
             if(generation!=tvPlaybackPool.generation || isDestroyed ||
-                screen!=poolScreen || !tvPoolNeighbor(pageIndex)
+                screen!=poolScreen || !tvPoolTargetNeighbor(pageIndex)
             ) {
                 runCatching { built.release() }
                 runCatching { remote.close() }
@@ -433,9 +466,20 @@ private fun TvMainActivity.prepareTvPoolSlot(
             val listener=object: Player.Listener {
                 override fun onRenderedFirstFrame() {
                     if(tvPlaybackPool.slots.values.none { it===slot }) return
+                    if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+                        android.util.Log.i(
+                            "HGTV-POOL",
+                            "firstFrame page=${slot.pageIndex} series=${slot.seriesId} "+
+                                "episode=${slot.episodeId}",
+                        )
+                    }
                     slot.firstFrameRendered=true
                     slot.preRendering=false
                     slot.preRenderToken++
+                    tvPlaybackPager?.pageAt(slot.pageIndex)?.let { page ->
+                        page.playerView.completeFirstFrameAspectRatio()
+                        page.playerView.requestLayout()
+                    }
                     if(slot.player!==player) {
                         runCatching { slot.player.pause() }
                         slot.player.volume=0f
@@ -473,7 +517,20 @@ private fun TvMainActivity.prepareTvPoolSlot(
                 runCatching { remote.close() }
                 return@post
             }
+            if(!tvPoolTargetNeighbor(pageIndex)) {
+                slot.listener?.let(built::removeListener)
+                runCatching { built.release() }
+                runCatching { remote.close() }
+                return@post
+            }
             tvPlaybackPool.slots[key]=slot
+            if(com.hgtv.star.tv.BuildConfig.DEBUG) {
+                android.util.Log.i(
+                    "HGTV-POOL",
+                    "insert key=$key page=$pageIndex series=$seriesId episode=$episodeId "+
+                        "screen=$screen current=${currentPlaybackPageIndex()}",
+                )
+            }
             trimTvPlaybackPool(currentPlaybackPageIndex())
             attachTvPoolSlotToPage(slot)
             scheduleTvPlaybackPoolNeighbors()
@@ -487,6 +544,9 @@ private fun TvMainActivity.tvPoolNeighbor(pageIndex: Int): Boolean {
     if(pageIndex !in 0 until count) return false
     return kotlin.math.abs(pageIndex-currentPlaybackPageIndex())<=1
 }
+
+private fun TvMainActivity.tvPoolTargetNeighbor(pageIndex: Int): Boolean =
+    pageIndex!=currentPlaybackPageIndex() && tvPoolNeighbor(pageIndex)
 
 private fun TvMainActivity.tvPoolSlotMatches(slot: TvPlaybackPoolSlot,index: Int): Boolean =
     when(screen) {
