@@ -3,6 +3,7 @@ package com.hgtv.star.tv
 
 import android.graphics.Color
 import android.view.Gravity
+import android.view.View
 import android.widget.FrameLayout
 import com.hgtv.star.core.CategoryFilterOption
 import com.hgtv.star.core.CategorySelection
@@ -90,8 +91,8 @@ fun TvMainActivity.showRecommendLoading(series: Series) {
     // 目标 Surface 和池一起销毁，切换必然回到“黑屏等完整起播”的旧路径。
     if(tvPlaybackPager!=null) {
         showRecommendCover()
-        attachRecommendOverlay(series)
-        showCenterLoading("正在加载《${series.title}》…")
+        // 只保留黑场；浮层和中心 loading 等目标页 ready 后再更新。
+        // 这里改文字会触发 root measure/layout，正好卡住 awaitPage。
         return
     }
     dismissRecommendOverlay()

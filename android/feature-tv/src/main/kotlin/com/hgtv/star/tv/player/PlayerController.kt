@@ -160,7 +160,8 @@ fun TvMainActivity.playEpisode(
     // `keepMedia`（同档重建）也要保住播放层：这一趟只为把解码器放掉重开，画面 / 弹幕 /
     // 控制层一个都不用换（见 [replayWithPlan]）。它和 `recovering` 是两件事——
     // 后者还包含降档、网络自愈、手动重试，那些真的需要重来一遍。
-    val reuse=(screen=="player" || recommendEntry) && player!=null &&
+    val pagerSurfaceReusable=recommendEntry && playerView!=null && tvPlaybackPager!=null
+    val reuse=(screen=="player" || recommendEntry) && (player!=null || pagerSurfaceReusable) &&
         (playerView!=null || pooledAdopt!=null) &&
         (!recovering || keepMedia) && !playError
     // 「这一集的数据也一并留着」：只有**还能用**的那一份才算数（已经 prepare 过、且没被

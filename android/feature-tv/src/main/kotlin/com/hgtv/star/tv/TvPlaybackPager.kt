@@ -49,7 +49,20 @@ internal class TvPlaybackPager(
 
     fun setCurrentIndex(index: Int,smooth: Boolean=true) {
         val safe=index.coerceIn(0,(adapter.itemCount-1).coerceAtLeast(0))
+        if(BuildConfig.DEBUG) {
+            android.util.Log.i(
+                "HGTV-SWITCH",
+                "pager.set index=$safe smooth=$smooth current=${pager.currentItem} "+
+                    "count=${adapter.itemCount} children=${pageRecycler.childCount}",
+            )
+        }
         if(pager.currentItem!=safe) pager.setCurrentItem(safe,smooth)
+        if(BuildConfig.DEBUG) {
+            android.util.Log.i(
+                "HGTV-SWITCH",
+                "pager.done index=$safe current=${pager.currentItem} children=${pageRecycler.childCount}",
+            )
+        }
     }
 
     /**
@@ -104,6 +117,7 @@ internal class TvPlaybackPager(
      * 不能把“播放器已经准备好”误当成“目标 Surface 已经可挂载”。
      */
     fun awaitPage(index: Int,attempts: Int=60,onReady: ()->Unit) {
+        val startedAt=android.os.SystemClock.elapsedRealtime()
         if(attempts==60 && BuildConfig.DEBUG) {
             android.util.Log.i(
                 "HGTV-POOL",
@@ -111,10 +125,22 @@ internal class TvPlaybackPager(
             )
         }
         if(isAttachedToWindow && pageAt(index)!=null) {
+            if(BuildConfig.DEBUG) {
+                android.util.Log.i(
+                    "HGTV-SWITCH",
+                    "await.ready page=$index elapsed=${android.os.SystemClock.elapsedRealtime()-startedAt}ms",
+                )
+            }
             onReady()
             return
         }
         if(attempts<=0) {
+            if(BuildConfig.DEBUG) {
+                android.util.Log.i(
+                    "HGTV-SWITCH",
+                    "await.timeout page=$index elapsed=${android.os.SystemClock.elapsedRealtime()-startedAt}ms",
+                )
+            }
             onReady()
             return
         }

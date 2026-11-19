@@ -31,6 +31,9 @@
 - 竖屏片在首帧前先按 `RemoteVideo` 的宽高预摆内容框，快门等真实首帧再揭开；
   播放 loading 同时校验实际 `isPlaying + READY + 当前媒体 + 已出帧`，避免池实例
   早于监听器 READY 时永久卡住“正在缓冲”。
+- 推荐页换作增加 `HGTV-SWITCH` 分段日志；已有相邻页时复用换作前已存在的 ViewHolder，
+  不再把起播硬等到 `awaitPage` 布局完成。中心 loading 复用已有 View，换作时只切换
+  alpha，避免重复 add/remove 触发 root 布局。
 - 每个页面保持黑色不透明底；SurfaceView 分支关闭 Z 轴覆盖并设置
   `PixelFormat.OPAQUE`，避免换页时透出底层页面或上一帧。
 - 新增 `androidx.viewpager2:viewpager2:1.1.0` 依赖，并显式对齐

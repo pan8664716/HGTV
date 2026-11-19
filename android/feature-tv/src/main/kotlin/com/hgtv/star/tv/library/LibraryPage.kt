@@ -366,6 +366,7 @@ fun TvMainActivity.showCenterLoading(message: String) {
     val existing=centerLoading
     if(existing!=null && existing.parent===root) {
         existing.label=message
+        existing.alpha=1f
         return
     }
     val dots=com.hgtv.star.shared.ui.LoadingDotsView(this).apply {
@@ -382,8 +383,9 @@ fun TvMainActivity.showCenterLoading(message: String) {
 /** 收起屏幕正中的等待（动作结束、失败、被取消都要调，否则它会一直转）。 */
 fun TvMainActivity.hideCenterLoading() {
     centerLoadingMessage=null
-    centerLoading?.let { dots -> (dots.parent as? ViewGroup)?.removeView(dots) }
-    centerLoading=null
+    // 保留 View，只隐藏绘制。推荐页换作时反复 add/remove 会触发整棵 root
+    // measure/layout，低端电视上会把 pager 的下一帧推迟数百毫秒。
+    centerLoading?.alpha=0f
     // 刚揭黑就把「正在加载《…》」换成第二枚三点「正在缓冲…」，屏幕上等于重新亮起一次，
     // 观感就是又一轮「亮暗」。给一个短窗口：真正还要 buffering 时窗口结束照常显示。
     // 复用缓冲抑制器，超时后它会自己调 syncBufferingDots() 恢复。
