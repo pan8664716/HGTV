@@ -482,6 +482,7 @@ open class PhonePlayerActivity : PhoneActivity() {
     private var swipeLogicalIndex = -1
     private var swipePausedCurrent = false
     private var swipeResumeCurrent = false
+    private var swipePreviewIndex = -1
     internal var swipeDirection: Int
         get()=swipeDir
         set(value) { swipeDir=value }
@@ -497,6 +498,9 @@ open class PhonePlayerActivity : PhoneActivity() {
     internal var swipeShouldResumeCurrent: Boolean
         get()=swipeResumeCurrent
         set(value) { swipeResumeCurrent=value }
+    internal var swipePlaybackPreviewIndex: Int
+        get()=swipePreviewIndex
+        set(value) { swipePreviewIndex=value }
     private var swipeAnimation: Runnable? = null
     internal var swipeAnimationRunnable: Runnable?
         get()=swipeAnimation

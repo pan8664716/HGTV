@@ -5,6 +5,8 @@ import android.view.View
 import com.hgtv.star.phone.ui.PhonePagerMotion
 import com.hgtv.star.phone.ui.PhoneTouch
 
+private const val SWIPE_PREVIEW_START_RATIO = 0.5f
+
 /** 一屏的高度：竖屏 / 横屏各自的那一层。 */
 internal fun PhonePlayerActivity.slideHeightImpl(): Int {
     val h = if (playerLandscapeMode) swipeLandscapeHeight else swipePortraitHeight
@@ -14,6 +16,8 @@ internal fun PhonePlayerActivity.slideHeightImpl(): Int {
 /** 手指按下：停掉上一轮的动画，等第一次有方向的位移再决定翻向哪一集。 */
 internal fun PhonePlayerActivity.beginSwipeImpl() {
     pauseCurrentForSwipeImpl()
+    stopAdjacentSwipePreview()
+    swipePlaybackPreviewIndex = -1
     swipeDirection = 0
     swipePreparedState = false
     playerPage.animate().cancel()
@@ -32,17 +36,22 @@ internal fun PhonePlayerActivity.dragSwipeImpl(delta: Float) {
     val h = slideHeightImpl()
     val direction = if (delta < 0) 1 else -1
     if (!swipePreparedState && kotlin.math.abs(delta) > .008f) {
+        stopAdjacentSwipePreview()
+        swipePlaybackPreviewIndex = -1
         swipePreparedState = true
         swipeDirection = direction
         prepareGhostImpl(direction)
         if (swipeDirection == 0) swipePreparedState = false
     } else if (swipePreparedState && swipeDirection != 0 && direction != swipeDirection) {
+        stopAdjacentSwipePreview()
+        swipePlaybackPreviewIndex = -1
         swipeDirection = direction
         prepareGhostImpl(direction)
         if (swipeDirection == 0) swipePreparedState = false
     }
     val factor = if (swipeDirection != 0) 1f else 0f
     val dy = delta * h * factor
+    updateSwipePreviewPlayback(delta)
     if (playerLandscapeMode) {
         swipeLandscape.translationY = dy
         if (swipeDirection != 0) {
@@ -153,6 +162,8 @@ private fun PhonePlayerActivity.settleBackImpl() {
         feedTarget = if (playerFeedUnderlay && !playerLandscapeMode) 0f else null,
         duration = duration,
     ) {
+        stopAdjacentSwipePreview()
+        swipePlaybackPreviewIndex = -1
         resetSwipeStateImpl()
         resumeCurrentAfterSwipeImpl()
     }
@@ -336,6 +347,7 @@ internal fun PhonePlayerActivity.pauseCurrentForSwipeImpl() {
     swipeShouldResumeCurrent = exo.playWhenReady || exo.isPlaying
     exo.playWhenReady = false
     runCatching { exo.pause() }
+    PhoneServices.enableAudioFocus(exo, false)
     syncPlayGlyph()
 }
 
@@ -346,6 +358,7 @@ internal fun PhonePlayerActivity.resumeCurrentAfterSwipeImpl() {
     swipeShouldResumeCurrent = false
     if (!resume) return
     val exo = player ?: return
+    PhoneServices.enableAudioFocus(exo, true)
     exo.playWhenReady = true
     syncPlayGlyph()
     syncKeepScreenOn()
@@ -354,4 +367,34 @@ internal fun PhonePlayerActivity.resumeCurrentAfterSwipeImpl() {
 internal fun PhonePlayerActivity.clearSwipePauseForSwitchImpl() {
     swipeCurrentPaused = false
     swipeShouldResumeCurrent = false
+}
+
+private fun PhonePlayerActivity.updateSwipePreviewPlayback(delta: Float) {
+    if (swipeDirection == 0) return
+    val baseIndex = swipeLogicalTarget.takeIf { it >= 0 } ?: index
+    val target = baseIndex + swipeDirection
+    val d = detail
+    val canPlay = d != null && target in d.episodes.indices
+    if (target == index ||
+        kotlin.math.abs(delta) < SWIPE_PREVIEW_START_RATIO || !canPlay
+    ) {
+        if (swipePlaybackPreviewIndex >= 0) {
+            stopAdjacentSwipePreview()
+            swipePlaybackPreviewIndex = -1
+        }
+        return
+    }
+    if (swipePlaybackPreviewIndex != target) {
+        stopAdjacentSwipePreview()
+        swipePlaybackPreviewIndex = target
+    }
+    if (!startAdjacentSwipePreview(target)) {
+        attachAdjacentToGhost(target, swipeDirection)
+    }
+}
+
+internal fun PhonePlayerActivity.prepareSwipePreviewForCommit(target: Int) {
+    val preview = swipePlaybackPreviewIndex
+    swipePlaybackPreviewIndex = -1
+    if (preview >= 0 && preview != target) stopAdjacentSwipePreview(preview)
 }

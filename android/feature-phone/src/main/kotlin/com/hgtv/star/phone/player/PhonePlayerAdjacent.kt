@@ -26,6 +26,7 @@ internal class PhonePlayerAdjacentSlot(
     var sourcePrepared: Boolean = true
     var firstFrameRendered: Boolean = false
     var preRendering: Boolean = false
+    var previewPlaying: Boolean = false
     var preRenderToken: Int = 0
     var preparedAt: Long = 0L
     var listener: Player.Listener? = null
@@ -151,7 +152,7 @@ private fun PhonePlayerActivity.attachAdjacentPlayerListener(slot: PhonePlayerAd
         override fun onRenderedFirstFrame() {
             slot.firstFrameRendered = true
             slot.preRendering = false
-            if (player !== slot.player || index != slot.index) {
+            if (!slot.previewPlaying && (player !== slot.player || index != slot.index)) {
                 runCatching { slot.player.pause() }
             }
             if (playerAdjacentState.ghostIndex == slot.index) showAdjacentGhostFrame(slot)
@@ -195,18 +196,21 @@ internal fun PhonePlayerActivity.attachAdjacentToGhost(
             swipeGhostPage.translationY = playerPage.translationY + directionOffset
         }
         if (slot.firstFrameRendered) showAdjacentGhostFrame(slot) else startAdjacentPreRender(slot)
+        if (swipePlaybackPreviewIndex == target) startAdjacentSwipePreview(target)
         return
     }
     val previousGhostIndex = playerAdjacentState.ghostIndex
     if (previousGhostIndex != target) {
         playerAdjacentState.slots[previousGhostIndex]?.let { previous ->
             previous.preRendering = false
+            previous.previewPlaying = false
             previous.preRenderToken++
             runCatching {
                 previous.player.volume = 0f
                 previous.player.playWhenReady = false
                 previous.player.pause()
             }
+            PhoneServices.enableAudioFocus(previous.player, false)
         }
     }
     detachAdjacentGhostOutput()
@@ -249,10 +253,13 @@ internal fun PhonePlayerActivity.attachAdjacentToGhost(
         swipeGhostPage.translationY = playerPage.translationY + directionOffset
     }
     startAdjacentPreRender(slot)
+    if (swipePlaybackPreviewIndex == target) startAdjacentSwipePreview(target)
 }
 
 private fun PhonePlayerActivity.startAdjacentPreRender(slot: PhonePlayerAdjacentSlot) {
-    if (slot.index == index || !slot.sourcePrepared || slot.firstFrameRendered || slot.preRendering) return
+    if (slot.index == index || !slot.sourcePrepared || slot.firstFrameRendered ||
+        slot.preRendering || slot.previewPlaying
+    ) return
     slot.preRendering = true
     slot.player.volume = 0f
     slot.player.playWhenReady = true
@@ -261,13 +268,37 @@ private fun PhonePlayerActivity.startAdjacentPreRender(slot: PhonePlayerAdjacent
         {
             if (playerAdjacentState.slots[slot.index] !== slot ||
                 slot.preRenderToken != token || !slot.preRendering ||
-                slot.index == index
+                slot.index == index || slot.previewPlaying
             ) return@postDelayed
             slot.preRendering = false
             runCatching { slot.player.pause() }
         },
         AppConfig.Playback.Preload.PHONE_PRE_RENDER_TIMEOUT_MS,
     )
+}
+
+internal fun PhonePlayerActivity.startAdjacentSwipePreview(target: Int): Boolean {
+    val slot = playerAdjacentState.slots[target] ?: return false
+    if (playerAdjacentState.ghostIndex != target || !playerAdjacentState.ghostAttached) return false
+    if (slot.index == index || player === slot.player) return false
+    slot.previewPlaying = true
+    slot.preRendering = false
+    slot.preRenderToken++
+    slot.player.volume = 1f
+    PhoneServices.enableAudioFocus(slot.player, true)
+    slot.player.playWhenReady = true
+    return true
+}
+
+internal fun PhonePlayerActivity.stopAdjacentSwipePreview(target: Int = swipePlaybackPreviewIndex) {
+    if (target < 0) return
+    val slot = playerAdjacentState.slots[target] ?: return
+    if (player === slot.player) return
+    slot.previewPlaying = false
+    slot.player.volume = 0f
+    slot.player.playWhenReady = false
+    runCatching { slot.player.pause() }
+    PhoneServices.enableAudioFocus(slot.player, false)
 }
 
 private fun PhonePlayerActivity.showAdjacentGhostFrame(slot: PhonePlayerAdjacentSlot) {
@@ -382,6 +413,7 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
     slot.listener = null
     val firstFrameOnCurrentSurface = slot.firstFrameRendered && !playerLandscapeMode
     slot.preRendering = false
+    slot.previewPlaying = false
     slot.preRenderToken++
     PhoneServices.activate(slot.player)
     player = slot.player
@@ -433,6 +465,7 @@ internal fun PhonePlayerActivity.releaseAdjacentSlot(target: Int) {
     slot.listener?.let(slot.player::removeListener)
     slot.listener = null
     slot.preRendering = false
+    slot.previewPlaying = false
     slot.preRenderToken++
     if (playerAdjacentState.ghostIndex == target) {
         hideAdjacentGhost()
@@ -465,6 +498,7 @@ internal fun PhonePlayerActivity.pauseAdjacentPlayers() {
     playerAdjacentState.slots.values.forEach { slot ->
         slot.firstFrameRendered = false
         slot.preRendering = false
+        slot.previewPlaying = false
         slot.preRenderToken++
         runCatching {
             slot.player.volume = 0f
@@ -492,6 +526,7 @@ private fun PhonePlayerActivity.silenceAdjacentPlayers(except: ExoPlayer?) {
     playerAdjacentState.slots.values.forEach { slot ->
         if (slot.player !== except) {
             slot.preRendering = false
+            slot.previewPlaying = false
             slot.preRenderToken++
             runCatching {
                 slot.player.volume = 0f
