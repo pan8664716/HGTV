@@ -110,7 +110,7 @@ internal fun PhonePlayerActivity.endSwipeImpl(direction: Int) {
             swipePlayerPage = swipeGhostPage
             swipeGhostPage = outgoing
             playerPage.translationY = 0f
-            PhoneServices.detach(swipeGhostPage.playerView)
+            PhoneServices.detachAndClear(swipeGhostPage.playerView)
             swipeGhostPage.translationY = 0f
             swipeGhostPage.visibility = View.GONE
             resetSwipeStateImpl(keepCurrent = true)

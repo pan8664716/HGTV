@@ -189,13 +189,17 @@ internal fun PhonePlayerActivity.hideEpisodeCover() {
 
 internal object PhonePlayerViewSupport {
     /**
-     * SurfaceView 默认透明区域会挖穿 Activity 窗口。视频 Surface 显式设为 OPAQUE，
-     * 避免视频画面本身透出下层页面；弹幕那一层仍是透明 Surface，黑边由
-     * [PlayerLetterboxMask] 在窗口层遮住。
+     * 正式播放页只使用 SurfaceView。显式关闭上浮层级并设为 OPAQUE，
+     * 避免 Surface 透明区域透出 Activity 或旧页面；弹幕那一层仍是透明 Surface，
+     * 黑边由 [PlayerLetterboxMask] 在窗口层遮住。
      */
     fun useOpaqueVideoSurface(view: PlayerView) {
         runCatching {
-            (view.videoSurfaceView as? SurfaceView)?.holder?.setFormat(PixelFormat.OPAQUE)
+            val surface = view.videoSurfaceView as? SurfaceView ?: return@runCatching
+            surface.setZOrderOnTop(false)
+            surface.setZOrderMediaOverlay(false)
+            surface.holder.setFormat(PixelFormat.OPAQUE)
+            surface.setBackgroundColor(Color.BLACK)
         }
     }
 

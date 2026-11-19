@@ -200,6 +200,19 @@ object PhoneServices {
         if (view != null && view.player === exo) view.player = null
     }
 
+    /**
+     * 页面退出时清掉 SurfaceView 保留的最后一帧。
+     *
+     * 正式播放页会复用两个 PlayerView。若只解绑 player，keep-content 会让旧集的
+     * 最后一帧留在 Surface 上，下一次复用时就会在首帧前露出上一集。
+     */
+    fun detachAndClear(view: com.google.android.exoplayer2.ui.PlayerView?) {
+        if (view == null || view.player !== exo) return
+        view.setKeepContentOnPlayerReset(false)
+        view.player = null
+        view.setKeepContentOnPlayerReset(true)
+    }
+
     /** 用户主动退出：释放进程级播放器，随后由 [com.hgtv.star.shared.architecture.AppExit] 结束进程。 */
     fun releaseForExit() {
         synchronized(this) {

@@ -70,7 +70,7 @@ private fun PhonePlayerActivity.bindQueuedNextOutput(): Boolean {
     // 从推荐页进入时两页最初都按 underlay 隐藏。第一次换集只恢复了其中一页；
     // 下一次换到另一页时必须再次显式恢复，否则音频和进度正常但视频 Surface 仍是 GONE。
     playerPage.setVideoSurfaceVisible(true)
-    PhoneServices.detach(swipeGhostPage.playerView)
+    PhoneServices.detachAndClear(swipeGhostPage.playerView)
     if (playerPage.playerView.player !== exo) playerPage.playerView.player = exo
     return playerPage.playerView.player === exo
 }

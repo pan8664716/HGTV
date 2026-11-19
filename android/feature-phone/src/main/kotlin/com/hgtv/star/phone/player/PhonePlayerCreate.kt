@@ -3,7 +3,8 @@ package com.hgtv.star.phone
 
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
-import android.os.Build
+import android.graphics.Color
+import android.graphics.drawable.ColorDrawable
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
 
@@ -11,6 +12,8 @@ internal fun PhonePlayerActivity.initializePlayerActivity(tEnter: Long) {
     // 主题：播放页可能被系统单独拉起（最近任务 / 深链），不保证经过主页面。
     PhoneStyle.ensure(this)
     phoneEdgeToEdge()
+    // PlayerTheme 是半透明窗口；窗口本身先铺黑，首帧前也不透出推荐页或桌面。
+    window.setBackgroundDrawable(ColorDrawable(Color.BLACK))
     val seriesId = intent.getStringExtra(PhonePlayerActivity.EXTRA_SERIES_ID).orEmpty()
     if (seriesId.isBlank()) {
         finish()
@@ -32,11 +35,9 @@ internal fun PhonePlayerActivity.initializePlayerActivity(tEnter: Long) {
     if (!listenerPendingFullscreen) {
         requestOrientation(ActivityInfo.SCREEN_ORIENTATION_USER)
     }
-    // 全屏是明确的「把画面独立出来」：不借下层推荐页的 Surface。
-    // 下层可能已经停在下一页，或因为转屏换了布局；继续借会透出另一条剧，
-    // 甚至让两个界面抢同一个视频输出。全屏路径始终使用本页自己的 PlayerView。
-    playerFeedUnderlaySlot =
-        !listenerPendingFullscreen && canBorrowFeedSurface(seriesId)
+    // 正式播放页始终使用自己的不透明 SurfaceView。跨 Activity 借用 Surface 会让
+    // 独立系统图层不受本页封面和上下滑页面控制，容易露出上一集旧帧。
+    playerFeedUnderlaySlot = false
 
     buildUi()
     val tUi = android.os.SystemClock.elapsedRealtime()
@@ -56,19 +57,4 @@ internal fun PhonePlayerActivity.initializePlayerActivity(tEnter: Long) {
                 "underlay=$playerFeedUnderlay at=$tEnter shown=${android.os.SystemClock.elapsedRealtime()}"
         )
     }
-}
-
-/**
- * 只有播放页要放的集与会话里的集一致时，才借推荐页的 Surface。
- *
- * 集号不一致时下层画面已经不代表本页内容。部分手机 / 平板上，透明播放页
- * 无法稳定合成下层 SurfaceView，表现就是声音正常、画面全黑；这种情况下
- * 必须从建页开始就使用本页自己的 PlayerView。
- */
-private fun PhonePlayerActivity.canBorrowFeedSurface(seriesId: String): Boolean {
-    if (Build.VERSION.SDK_INT < 28) return false
-    if (!intent.getBooleanExtra(PhonePlayerActivity.EXTRA_RECOMMEND, false)) return false
-    if (!PhoneSession.feedUnderlayUsable(seriesId)) return false
-    val wanted = intent.getIntExtra(PhonePlayerActivity.EXTRA_EPISODE, -1)
-    return wanted < 0 || wanted == PhoneSession.index
 }

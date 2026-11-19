@@ -68,7 +68,24 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
-## 2026-11-19：正式播放页上下滑换集画面停帧修复
+## 2026-11-19：正式播放页 SurfaceView 旧帧穿透修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：正式播放页上下滑换集时，目标集页面会透出上一集最后一帧。
+- 方案约束：只使用 `SurfaceView`，不使用 `TextureView`。
+- 根因：两个正式播放页会复用 `PlayerView`；解绑播放器时开启了
+  `setKeepContentOnPlayerReset(true)`，旧集最后一帧会留在 Surface 上。
+  从推荐页借用 Surface 时，视频层还跨 Activity 共用了同一块系统图层。
+- 修复：正式播放页只使用自己的 `SurfaceView`，显式关闭上浮层级并设置
+  `PixelFormat.OPAQUE` 与黑色背景；页面退出时先关闭旧帧保留、解绑播放器，
+  再恢复保留策略，使下一次复用从黑屏开始。
+- 正式播放页窗口与根节点保持不透明黑底，不再借用推荐页 Surface。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或接口；测试待用户真机验证，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-19：正式播放页上下滑换集画面停帧修复（历史）
 
 状态：已实现，debug 构建通过，待用户真机验证。
 
