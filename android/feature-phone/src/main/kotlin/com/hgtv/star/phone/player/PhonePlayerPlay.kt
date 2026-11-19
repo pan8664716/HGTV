@@ -26,6 +26,8 @@ internal fun PhonePlayerActivity.play(
         // 正式播放内部换集必须回到本页自己的 PlayerView，否则封面层在本页被隐藏，
         // 用户会继续看到下层旧画面直到新源出帧。
         if (playerFeedUnderlay) dropUnderlay()
+        // 滑动预览会隐藏目标页的视频 Surface；完整起播兜底时也要恢复，避免只有封面层。
+        playerPage.setVideoSurfaceVisible(true)
     }
     index = episodeIndex
     val episodeId = d.episodes[episodeIndex]

@@ -215,7 +215,17 @@ private fun PhonePlayerActivity.prepareGhostImpl(direction: Int) {
         return
     }
     val label = "第${target + 1}集"
-    val cover = d.episodeCover(d.episodes[target]).ifBlank { d.series.cover }
+    val episodeId = d.episodes[target]
+    val episodeCover = d.episodeCover(episodeId)
+    val cover = episodeCover.ifBlank { d.series.cover }
+    if (com.hgtv.star.shared.BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-PHONE",
+            "swipe preview episode=${target + 1} id=${episodeId.takeLast(6)} " +
+                "source=${if (episodeCover.isBlank()) "series" else "episode"} " +
+                "covers=${d.episodeCovers.size}",
+        )
+    }
     val h = slideHeightImpl().toFloat()
     if (playerLandscapeMode) {
         swipeLandscapeGhostTitle.text = "${d.series.title} $label"
@@ -223,6 +233,9 @@ private fun PhonePlayerActivity.prepareGhostImpl(direction: Int) {
         swipeLandscapeGhost.translationY = if (direction > 0) h else -h
         swipeLandscapeGhost.visibility = View.VISIBLE
     } else {
+        // 这一页复用过上一轮已经出过画面的 PlayerView，SurfaceView 可能保留旧帧并透到
+        // 封面层之上。预览阶段先彻底隐藏视频层；提交翻页时再由 bindQueuedNextOutput 恢复。
+        swipeGhostPage.setVideoSurfaceVisible(false)
         swipeGhostPage.bind(
             d.series,
             label,

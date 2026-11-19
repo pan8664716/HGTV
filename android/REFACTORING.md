@@ -73,10 +73,13 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 状态：已实现，debug 构建通过，待用户真机验证。
 
 - 现象：手机正式播放页上下滑换集时，偶发音频与进度正常，但画面停在封面或上一帧。
-- 根因：竖屏翻页动画结束后旧页 `PlayerView` 已解绑；若下一集已预热入队，快路径只执行
-  `seekToNextMediaItem()`，没有像完整 `play()` 一样把播放器重新挂到新页的视频层。
-- 修复：快路径切集前先把同一 `ExoPlayer` 绑定到翻页后的当前 `PlayerView`，并停止借用
-  推荐页 Surface；绑定失败自动回落到完整起播路径。
+- 根因：从推荐页借下层 Surface 进入正式播放时，两页 `PlayerView` 最初都隐藏。第一次
+  内部换集只恢复了其中一页；下一次换到另一页时未再恢复视频层，因此音频和进度正常，
+  但解码帧全部输出到隐藏 Surface，形成隔一集卡一帧。
+- 修复：快路径切集前恢复当前页视频 Surface，再把同一 `ExoPlayer` 绑定到翻页后的
+  `PlayerView`；绑定失败自动回落到完整起播路径。
+- 滑动预览页复用了保留旧帧的 `PlayerView`，部分 ROM 会让旧 Surface 透到目标集封面上。
+  预览阶段现在先隐藏视频 Surface，提交翻页或回落完整起播时再恢复。
 - 未改版本号、versionCode、依赖或目录结构；未运行测试、未推送。
 
 回滚：对本节对应提交执行 `git revert`。
