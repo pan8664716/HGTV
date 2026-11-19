@@ -50,6 +50,21 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 | `feature-tv/.../player/PlaybackController.kt` | 2232 |
 | `shared/.../Library.kt` | 2027 |
 
+## 1.3.8.3 发布准备
+
+状态：正式包已生成，待创建空树 tag 与 GitHub Release。
+
+- `versionName` 更新为 `1.3.8.3`，`versionCode` 从 `87` 更新为 `88`。
+- CHANGELOG 已按手机 / 平板、电视分节；README、Release 正文与更新元数据同步。
+- `:app:assembleRelease` 通过；`aapt` 确认 `versionName=1.3.8.3`、
+  `versionCode=88`，`apksigner` v1 / v2 校验与 zipalign 通过。
+- APK：`outputs/release-1.3.8.3/HGTV_1.3.8.3.apk`，大小 `4020580` 字节；
+  SHA-256：`d3ee91ec35265931f8d3e350279ecd967b28764539d19f98fa8e5a5ab7c9b5cf`。
+- Release 只上传 `HGTV_1.3.8.3.apk`、`SHA256SUMS`、`update.json`，不附带源码。
+- 发布 tag 必须指向独立空树提交，只推送 tag，不推送源码分支。
+
+回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
+
 ## 2026-11-19：移除推荐流首帧图片过渡
 
 状态：已回退，debug 构建通过，待用户真机验证。
