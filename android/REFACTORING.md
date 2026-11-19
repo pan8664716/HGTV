@@ -99,6 +99,27 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 | `feature-tv/.../player/PlaybackController.kt` | 2232 |
 | `shared/.../Library.kt` | 2027 |
 
+## 1.3.8.4 发布准备
+
+状态：GitHub Release 已发布，待用户真机验证。
+
+- `versionName` 使用 `1.3.8.4`，`versionCode` 使用 `89`；通过
+  `HGTV_VERSION_NAME` / `HGTV_VERSION_CODE` 构建，不修改也不提交 Android 源码。
+- CHANGELOG 已按手机、电视分节；README 已更新版本号、versionCode、APK 文件名和徽章。
+- `:app:lintRelease`、`:app:assembleRelease` 通过；`aapt` 确认
+  `versionName=1.3.8.4`、`versionCode=89`、`minSdk=19`，`apksigner` v1 / v2
+  校验与 `zipalign` 通过。
+- `:core:test` 仍被仓库现有测试源码的未解析枚举挡住（`COMIC` / `REAL` / `AI` / `NEW`），
+  本次未改测试源码，测试交给用户。
+- APK：`outputs/release-1.3.8.4/HGTV_1.3.8.4.apk`，大小 `4052642` 字节；
+  SHA-256：`7c84bf54f104b0f1f8970c3dfd5173f26c42d7d364841a44d89923488ae39470`。
+- tag `1.3.8.4` 指向独立空树提交 `4d20262b1cd2a2f5d5a03b72af6fd9fb5a1e489d`，
+  无父提交、文件数为 `0`；只推送 tag，不推送源码分支。
+- Release 只包含 `HGTV_1.3.8.4.apk`、`SHA256SUMS`、`update.json`，下载复验通过。
+- Release：<https://github.com/pan8664716/HGTV/releases/tag/1.3.8.4>。
+
+回滚：删除对应 Release / tag 后，对文档提交执行 `git revert`。
+
 ## 1.3.8.3 发布准备
 
 状态：GitHub Release 已发布，待用户真机验证。
