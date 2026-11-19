@@ -43,6 +43,10 @@ internal fun PhoneFeedView.startProgressTicker() {
         override fun run() {
             val exo = feedPlayer
             val page = feedBoundPage
+            if (exo != null && !exo.isFeedPlayerAlive()) {
+                recoverReleasedFeedPlayer(exo)
+                return
+            }
             if (exo != null && page != null) {
                 val duration = exo.duration
                 if (duration > 0) {

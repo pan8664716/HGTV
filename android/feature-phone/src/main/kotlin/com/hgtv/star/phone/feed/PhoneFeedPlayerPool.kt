@@ -170,6 +170,72 @@ internal fun PhoneFeedView.releaseAllPooledPlayers(resetSession: Boolean = false
     }
 }
 
+/** ExoPlayer.release() 之后内部播放线程会退出；池里不能再把这种实例当成可播放对象。 */
+internal fun ExoPlayer.isFeedPlayerAlive(): Boolean =
+    runCatching { playbackLooper.thread.isAlive }.getOrDefault(false)
+
+/**
+ * 丢弃已经 release 的实例，不再次调用 pause / release。
+ *
+ * 播放器可能已经从池里删掉，但另一个重建中的 FeedView 仍拿着旧字段；这时必须
+ * 同时清掉池槽、PlayerView 输出和进程级活动指针，避免后续点击落到 dead handler。
+ */
+internal fun PhoneFeedView.discardReleasedPooledPlayer(player: ExoPlayer): Boolean {
+    var found = false
+    feedPooledPlayers
+        .filterValues { it.player === player }
+        .keys
+        .toList()
+        .forEach { index ->
+            val slot = feedPooledPlayers.remove(index) ?: return@forEach
+            found = true
+            feedPlayerListeners.remove(slot.player)
+            feedPageAt(index)?.let { page ->
+                if (page.playerView.player === slot.player) page.playerView.detachPooledOutput()
+            }
+            slot.remote?.takeIf { it !== PhoneSession.remote }?.let(::closeRemoteLater)
+        }
+    if (feedPlayer === player) {
+        feedPlayerSlot = null
+        found = true
+    }
+    PhoneServices.deactivate(player)
+    return found
+}
+
+/**
+ * 当前播放器被误释放后自动恢复。
+ *
+ * 点击播放/暂停和进度 ticker 都会调用这里：先彻底摘掉失效实例，再按当前卡片重新
+ * 取详情 / 地址并起播。旧实例已经 release，绝不能继续在它上面 pause / play / prepare。
+ */
+internal fun PhoneFeedView.recoverReleasedFeedPlayer(player: ExoPlayer) {
+    val index = feedPlayingIndex
+    val canRestart = !feedHidden && isAttachedToWindow && index in feedItems.indices
+    val sessionBelongsHere = PhoneSession.owner == PhoneSession.Owner.FEED &&
+        feedSessionBelongsToThisFeed()
+    val sessionRemote = PhoneSession.remote.takeIf { sessionBelongsHere }
+    discardReleasedPooledPlayer(player)
+    if (sessionBelongsHere) {
+        PhoneSession.reset()
+        if (sessionRemote != null) closeRemoteLater(sessionRemote)
+    }
+    feedPlayingDetailSlot = null
+    feedRemoteSlot = null
+    feedPaused = false
+    if (com.hgtv.star.shared.BuildConfig.DEBUG) {
+        android.util.Log.w(
+            "HGTV-PHONE",
+            "recover released player index=$index attached=$isAttachedToWindow " +
+                "hidden=$feedHidden restart=$canRestart",
+        )
+    }
+    notifyPlayStateChangedImpl()
+    if (canRestart) {
+        playIndexForSettings(index, -1L, clearDanmakuOnSwitch = false)
+    }
+}
+
 private fun closeRemoteLater(remote: RemoteVideo) {
     android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
         { runCatching { remote.close() } },

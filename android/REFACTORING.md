@@ -68,6 +68,19 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
+## 2026-11-19：推荐页释放播放器后卡死与黑屏修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 真机日志确认：当前推荐播放器被 release 后，旧 FeedView 仍持有实例；点击
+  `play/pause` 会落到 ExoPlayer 已退出的播放线程，随后不再产帧并黑屏。
+- 播放器池新增存活检查与失效实例摘除；失效实例不再执行 pause / release。
+- 播放/暂停、临时倍速和 500ms 进度 ticker 共用自动恢复入口；发现实例已释放时，
+  按当前卡片重新取详情 / 地址并起播。
+- 未改版本号、versionCode、依赖或目录结构；未运行测试、未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-19：移除推荐流首帧图片过渡
 
 状态：已回退，debug 构建通过，待用户真机验证。
