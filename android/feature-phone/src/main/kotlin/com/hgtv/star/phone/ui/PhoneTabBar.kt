@@ -3,6 +3,7 @@ package com.hgtv.star.phone.ui
 
 import android.content.Context
 import android.graphics.Canvas
+import android.graphics.Color
 import android.graphics.Paint
 import android.graphics.Path
 import android.graphics.RectF
@@ -40,6 +41,9 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
     var onSelect: ((Int) -> Unit)? = null
 
     init {
+        // 底栏保留原高度和整条点击区域，只把背景填充改为透明。
+        minimumHeight = context.phoneTabBarHeightPx()
+        setBackgroundColor(Color.TRANSPARENT)
         isClickable = true
         setOnClickListener { }
 

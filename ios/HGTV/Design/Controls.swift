@@ -179,6 +179,7 @@ struct BottomTabBar: View {
             .frame(height: barHeight)
             .padding(.horizontal, m.dp(PhoneDimen.tabInset))
         }
+        .background(Color.clear)
         .frame(height: barHeight + insets.bottom)
     }
 }

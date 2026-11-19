@@ -67,8 +67,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 状态：已实现，Android / iOS debug 构建通过，待用户真机验证。
 
-- Android 与 iOS 手机底栏移除整条底板和顶部高光，只保留四枚圆形入口。
-- 系统底部安全区、切页和双击回顶行为不变。
+- Android 与 iOS 手机底栏保留原有高度、整条点击区域与系统底部安全区，只把背景填充
+  改为透明；四枚圆形入口继续显示。
+- 切页和双击回顶行为不变。
 - 未改版本号、versionCode、依赖或目录结构；未运行测试、未推送。
 
 回滚：对本节对应提交执行 `git revert`。
