@@ -52,7 +52,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 1.3.8.3 发布准备
 
-状态：正式包已生成，待创建空树 tag 与 GitHub Release。
+状态：GitHub Release 已发布，待用户真机验证。
 
 - `versionName` 更新为 `1.3.8.3`，`versionCode` 从 `87` 更新为 `88`。
 - CHANGELOG 已按手机 / 平板、电视分节；README、Release 正文与更新元数据同步。
@@ -61,7 +61,10 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - APK：`outputs/release-1.3.8.3/HGTV_1.3.8.3.apk`，大小 `4020580` 字节；
   SHA-256：`d3ee91ec35265931f8d3e350279ecd967b28764539d19f98fa8e5a5ab7c9b5cf`。
 - Release 只上传 `HGTV_1.3.8.3.apk`、`SHA256SUMS`、`update.json`，不附带源码。
-- 发布 tag 必须指向独立空树提交，只推送 tag，不推送源码分支。
+- Release 只包含 `HGTV_1.3.8.3.apk`、`SHA256SUMS`、`update.json`，下载复验通过。
+- tag `1.3.8.3` 指向独立空树提交 `ed588048157dea772f11415be9248a0831e14fff`，
+  无父提交、文件数为 `0`；只推送 tag，不推送源码分支。
+- Release：<https://github.com/pan8664716/HGTV/releases/tag/1.3.8.3>。
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
