@@ -168,7 +168,6 @@ internal class TvPlaybackPager(
             }
         }
         host.playerView=page.playerView
-        if(!host.playbackReady) page.playerView.holdFirstFrameAspectRatio()
         if(page.playerView.player!==host.player) page.playerView.player=host.player
         return true
     }

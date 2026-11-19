@@ -8,7 +8,6 @@ import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import com.google.android.exoplayer2.util.MimeTypes
 import com.hgtv.star.core.Detail
-import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.VideoDecoderMode
@@ -16,6 +15,9 @@ import com.hgtv.star.core.detail
 import com.hgtv.star.core.lruPut
 import com.hgtv.star.shared.media.VideoDataSource
 import java.util.concurrent.Future
+
+/** 低端电视解码器初始化明显慢于手机，池首帧不能沿用 Phone 的 1.2 秒超时。 */
+private const val TV_PRE_RENDER_TIMEOUT_MS=3_000L
 
 internal class TvPlaybackPoolSlot(
     val pageIndex: Int,
@@ -155,7 +157,7 @@ private fun TvMainActivity.startTvPoolPreRender(slot: TvPlaybackPoolSlot) {
             slot.preRendering=false
             runCatching { slot.player.pause() }
         }
-    },AppConfig.Playback.Preload.PHONE_PRE_RENDER_TIMEOUT_MS)
+    },TV_PRE_RENDER_TIMEOUT_MS)
 }
 
 internal fun TvMainActivity.storeActivePlayerInTvPool() {

@@ -26,6 +26,8 @@
   loading 状态只覆盖当前播放层，不再调用 `detachPlayerSurface()` 销毁 pager。
 - 池预热使用与 Phone 相同的 `warm()` 路径，避免在低端电视上提前做完整 `prepare()`；
   当前页 READY 后就开始准备下一页，不把首帧当成唯一起点。
+- 池首帧只由 `onRenderedFirstFrame` 完成比例应用，`onVideoSizeChanged` 不再用旧帧心跳
+  提前揭开；低端电视池预渲染超时从 Phone 的 1.2 秒延长到 3 秒，提高首帧成功率。
 - 每个页面保持黑色不透明底；SurfaceView 分支关闭 Z 轴覆盖并设置
   `PixelFormat.OPAQUE`，避免换页时透出底层页面或上一帧。
 - 新增 `androidx.viewpager2:viewpager2:1.1.0` 依赖，并显式对齐

@@ -169,7 +169,9 @@ fun TvMainActivity.playEpisode(
     val keep=(keepMedia && video?.isReusable==true) || pooledAdopt!=null
     // 必须先冻结，再 stop/clearMediaItems：停旧媒体会让 PlayerView 收到一次 ratio=0，
     // 如果这时还没 hold，AspectRatioFrameLayout 会立刻撑满整屏，用户看到的就是拉伸首帧。
-    if((screen=="player" || recommendEntry) && reuse && (!keep || pooledAdopt!=null)) {
+    if((screen=="player" || recommendEntry) && reuse &&
+        (!keep || (pooledAdopt!=null && !pooledAdopt.firstFrameRendered))
+    ) {
         // 池实例可能已经在另一页预渲染过，但当前页的 PlayerView 仍可能保留整屏比例；
         // 先把比例冻结，等目标首帧/尺寸回调后再一次性落下去。
         playerView?.holdFirstFrameAspectRatio()
@@ -810,11 +812,6 @@ fun TvMainActivity.playEpisode(
                         "firstFrame=$firstFrameRendered view=${playerView?.javaClass?.simpleName}"
                 )
                 applyResizeMode()
-                if(videoSizeReady && !firstFrameRendered && sourceSetAt>0L &&
-                    PlaybackDiag.lastFrameAt>sourceSetAt) {
-                    firstFrameRendered=true
-                    playerView?.completeFirstFrameAspectRatio()
-                }
                 revealRecommendWhenReady()
             }
             override fun onRenderedFirstFrame() {
@@ -923,7 +920,9 @@ fun TvMainActivity.playEpisode(
         playerListener=listener; p.addListener(listener)
         val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(MimeTypes.VIDEO_MP4).build())
         // 正式播放换集：PlayerView 先冻结旧比例，等新首帧真的上屏后再应用新比例。
-        if(screen=="player" || screen=="recommend") {
+        if((screen=="player" || screen=="recommend") &&
+            (pooledAdopt==null || !pooledAdopt.firstFrameRendered)
+        ) {
             if(BuildConfig.DEBUG) android.util.Log.i(
                 "HGTV-RATIO",
                 "sourceSet screen=$screen episode=${episodeIndex+1} reuse=$reuse seamless=$seamless " +
@@ -951,6 +950,16 @@ fun TvMainActivity.playEpisode(
         }
         p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle
         stage("sourceSet")
+        if(pooledAdopt==null && (screen=="recommend" || screen=="player")) {
+            // 不能等真正的首帧才开始准备下一页：低端电视首帧可能还要几秒，
+            // 这期间用户已经切页时池里一定没有目标实例。源已 set 后先让池线程
+            // 用 warm 路径准备下一集，READY / 首帧路径仍会幂等补一次。
+            main.postDelayed({
+                if(!isDestroyed && player===p && (screen=="recommend" || screen=="player")) {
+                    scheduleTvPlaybackPoolNeighbors()
+                }
+            },300L)
+        }
         if(pooledAdopt!=null) {
             playerView?.setKeepContentOnPlayerReset(true)
             playerView?.visibility=View.VISIBLE
