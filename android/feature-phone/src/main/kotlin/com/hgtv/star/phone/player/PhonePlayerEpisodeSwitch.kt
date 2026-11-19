@@ -18,6 +18,10 @@ internal fun PhonePlayerActivity.playSwipeTarget(target: Int) {
     val previousDuration = player?.duration?.coerceAtLeast(0L) ?: listenerLastDuration
     if (activateAdjacentEpisode(target, previousPosition, previousDuration)) return
     if (target == index + 1 && seekToQueuedNext(target)) return
+    // 相邻槽位没准备好时，旧页的声音必须先停。否则快速连翻期间新页还在取源，
+    // 用户会一边看到目标页封面/黑底，一边继续听到上一集。
+    player?.pause()
+    playerBufferingMutedUntil = 0L
     play(target, clearDanmakuOnSwitch = true)
 }
 

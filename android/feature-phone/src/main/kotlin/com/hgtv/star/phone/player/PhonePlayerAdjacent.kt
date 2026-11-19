@@ -147,7 +147,9 @@ private fun PhonePlayerActivity.attachAdjacentPlayerListener(slot: PhonePlayerAd
         override fun onRenderedFirstFrame() {
             slot.firstFrameRendered = true
             slot.preRendering = false
-            runCatching { slot.player.pause() }
+            if (player !== slot.player || index != slot.index) {
+                runCatching { slot.player.pause() }
+            }
             if (playerAdjacentState.ghostIndex == slot.index) showAdjacentGhostFrame(slot)
         }
 
@@ -370,6 +372,7 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
     } else {
         runCatching { oldPlayer.release() }
     }
+    silenceAdjacentPlayers(except = null)
 
     slot.listener?.let(slot.player::removeListener)
     slot.listener = null
@@ -399,6 +402,9 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
         completeFirstFrameAspectRatio()
         hideEpisodeCover()
         playerDanmakuLoader.onFrameRendered(slot.player.currentPosition)
+    } else {
+        playerBufferingMutedUntil = 0L
+        setBufferingLabel("正在准备第${target + 1}集…")
     }
     trimAdjacentSlots()
     android.util.Log.i("HGTV-PHONE", "adjacent activated episode=${target + 1}")
@@ -474,6 +480,20 @@ private fun PhonePlayerActivity.trimAdjacentSlots() {
         .filter { abs(it - index) > 1 }
         .toList()
         .forEach(::releaseAdjacentSlot)
+}
+
+private fun PhonePlayerActivity.silenceAdjacentPlayers(except: ExoPlayer?) {
+    playerAdjacentState.slots.values.forEach { slot ->
+        if (slot.player !== except) {
+            slot.preRendering = false
+            slot.preRenderToken++
+            runCatching {
+                slot.player.volume = 0f
+                slot.player.playWhenReady = false
+                slot.player.pause()
+            }
+        }
+    }
 }
 
 internal fun PhonePlayerActivity.detachAdjacentGhostOutput() {

@@ -664,7 +664,7 @@ android/
 | `PhonePlaybackRecovery.kt` | 手机端的播放失败自愈：**决策全部来自 :core，与电视端同一套**。 | val PhonePlayerActivity.playbackMaxQuality、fun PhonePlayerActivity.playbackAttribution、fun PhonePlayerActivity.handlePlayerFailure、fun PhonePlayerActivity.decideAndRun、fun PhonePlayerActivity.refetchAndReplay、fun PhonePlayerActivity.recoverQueuedCurrent |
 | `PhonePlaybackSettings.kt` | 播放设置面板的各行：**推荐信息流与正式播放页共用这一份**。 | fun buildPlaybackSettingsRows |
 | `PhonePlayerActivity.kt` | 手机正式播放页基类，持有播放器、横竖屏状态、控制层、跨形态播放锁定状态和页面生命周期；推荐页入口使用半透明主题，正式页弹幕加载器禁止用超时绕过首帧门闩。 | open class PhonePlayerActivity、playerControlsLocked |
-| `PhonePlayerAdjacent.kt` | 正式播放页前后相邻集播放器池：后台取源、独立 `ExoPlayer`、ghost 页静音首帧预渲染、滑动激活、上一集复用和前后台资源回收。 | class PhonePlayerAdjacentSlot、fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup、fun PhonePlayerActivity.attachAdjacentToGhost、fun PhonePlayerActivity.activateAdjacentEpisode、fun PhonePlayerActivity.releaseAllAdjacentPlayers |
+| `PhonePlayerAdjacent.kt` | 正式播放页前后相邻集播放器池：后台取源、独立 `ExoPlayer`、ghost 页静音首帧预渲染、滑动激活、上一集复用和前后台资源回收；预渲染首帧只暂停尚未激活的实例。 | class PhonePlayerAdjacentSlot、fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup、fun PhonePlayerActivity.attachAdjacentToGhost、fun PhonePlayerActivity.activateAdjacentEpisode、fun PhonePlayerActivity.releaseAllAdjacentPlayers |
 | `PhonePlayerOpaqueActivity.kt` | 非推荐页入口的正式播放页子类；Manifest 固定不透明主题，避免透明 SurfaceView 在上下滑时露出简介页。 | class PhonePlayerOpaqueActivity |
 | `PhonePlayerAdoption.kt` | adoptFromSession 的前置检查；返回 null = 可以接，否则返回不能接的原因（只用于日志）。 | fun PhonePlayerActivity.adoptReject、fun PhonePlayerActivity.adoptFromSession |
 | `PhonePlayerAttach.kt` | 把已准备好的视频源挂到当前形态对应的 PlayerView，冻结旧比例并安排首帧前的 prepare。 | fun PhonePlayerActivity.attach |
@@ -688,7 +688,7 @@ android/
 | `PhonePlayerLandscapePanel.kt` | 横屏播放设置外壳：左侧点击收起，右侧一栏承载同一套设置行。 | fun PhonePlayerActivity.openLandscapeSettingsImpl、fun PhonePlayerActivity.dismissLandscapeSettingsImpl、fun PhonePlayerActivity.syncFrameModeImpl、fun PhonePlayerActivity.applyFrameModeImpl |
 | `PhonePlayerLandscapeSettingsFacade.kt` | 横屏播放设置：只保留右侧 40% 的可改栏。 | fun PhonePlayerActivity.openLandscapeSettings、fun PhonePlayerActivity.syncLandscapeSettingsInfo、fun PhonePlayerActivity.dismissLandscapeSettings、fun PhonePlayerActivity.dismissLandscapeSettingsForRelated、fun PhonePlayerActivity.buildSettingsRowsForLandscape、fun PhonePlayerActivity.setChromeVisibleForLandscape |
 | `PhonePlayerLifecycle.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerLifecycle 主要包含 fun PhonePlayerActivity.releasePlayerImpl、fun PhonePlayerActivity.detachForHandoffImpl。 | fun PhonePlayerActivity.releasePlayerImpl、fun PhonePlayerActivity.detachForHandoffImpl |
-| `PhonePlayerListener.kt` | 挂播放器监听；正式播放首帧写入统一启动追踪。 | fun PhonePlayerActivity.attachPlayerListener、fun PhonePlayerActivity.onAdvanced |
+| `PhonePlayerListener.kt` | 正式页播放器监听只接受当前实例回调；旧实例排队中的状态、首帧、尺寸和错误事件不会暂停新播放器或改写新页面。 | fun PhonePlayerActivity.attachPlayerListener、fun PhonePlayerActivity.onAdvanced |
 | `PhonePlayerLoad.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerLoad 主要包含 fun PhonePlayerActivity.load。 | fun PhonePlayerActivity.load |
 | `PhonePlayerMode.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerMode 主要包含 fun PhonePlayerActivity.applyMode。 | fun PhonePlayerActivity.applyMode |
 | `PhonePlayerModeSupport.kt` | 新形态那一层的入场过渡、竖屏顶部信息栏下方的弹幕落点，以及横屏画面模式。 | fun DanmakuView.alignBelowPhonePortraitChrome、fun PhonePlayerActivity.animateModeEnter、fun PhonePlayerActivity.syncDanmakuTopInset、fun PhonePlayerActivity.applyLandscapeResize |

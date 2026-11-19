@@ -22,6 +22,7 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
          * * 没有下一集 → 最后一集播完，走老路。
          */
         override fun onPlaybackStateChanged(state: Int) {
+            if (player !== exo) return
             player?.let { playbackSessionState.onPlayerState(state, it.playWhenReady) }
             syncKeepScreenOnForListener()
             syncDanmakuClockNowForListener()
@@ -53,6 +54,7 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
 
         /** 无感换集：自动推进或手动 seek 到队列下一项时回调。 */
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
+            if (player !== exo) return
             val nextIndex = detail?.episodes?.indexOf(mediaItem?.mediaId).takeIf { it != null && it >= 0 }
                 ?: (index + 1)
             val manual = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK &&
@@ -76,17 +78,20 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
         // 缓冲卡一下、片尾、切集都会让 isPlaying 变 false，那时冒出一个暂停图标
         // 会让人以为「自己按了暂停」。中心图标只在用户明确操作时出现。
         override fun onIsPlayingChanged(isPlaying: Boolean) {
+            if (player !== exo) return
             syncPlayGlyphForListener()
             syncDanmakuClockNowForListener()
             syncProgressBarsNowForListener()
         }
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+            if (player !== exo) return
             syncKeepScreenOnForListener()
             syncDanmakuClockNowForListener()
         }
 
         override fun onPlaybackParametersChanged(parameters: com.google.android.exoplayer2.PlaybackParameters) {
+            if (player !== exo) return
             syncDanmakuClockNowForListener()
         }
 
@@ -95,12 +100,14 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
             newPosition: Player.PositionInfo,
             reason: Int,
         ) {
+            if (player !== exo) return
             danmakuTargetForListener()?.resetCursor()
             syncDanmakuClockNowForListener()
             syncProgressBarsNowForListener()
         }
 
         override fun onVideoSizeChanged(videoSize: VideoSize) {
+            if (player !== exo) return
             playbackSessionState.onVideoSize(videoSize.width, videoSize.height)
             listenerDebugVideo = "${videoSize.width}x${videoSize.height}"
             // 画面模式按用户选择走，**不按片源方向强制 ZOOM**：
@@ -118,10 +125,12 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
         }
 
         override fun onRenderedFirstFrame() {
+            if (player !== exo) return
             // 部分设备只回调首帧、不走逐帧心跳；首帧同样是画面已经上屏的硬证据。
             watchdog.onFrame()
             completeFirstFrameAspectRatio()
             hideEpisodeCover()
+            setBufferingLabel(null)
             PlaybackStartupTrace.firstFrame("phone.player")
             // 画面真的上屏才放行弹幕；STATE_READY 后还可能回 buffering，
             // 那时放行会让弹幕先跑、出帧后再清空重排（与 TV 端同一闸门）。
@@ -129,6 +138,7 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
         }
 
         override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {
+            if (player !== exo) return
             // 调试面板要把错误码留下：用户报「花屏 / 有声无画」时，这一行就是结论。
             listenerDebugError = "${error.errorCodeName}(${error.errorCode})"
             syncDebugOverlayForListener()
@@ -141,6 +151,7 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
     // 「画面还在走」的唯一硬证据是逐帧回调：播放位置在走、声音在响，都可能只是音频在动。
     // 回调在播放线程上、每帧一次，因此这里只写一个 volatile 字段，不碰任何 View。
     exo.setVideoFrameMetadataListener { _, _, _, _ ->
+        if (player !== exo) return@setVideoFrameMetadataListener
         // 调试包注入「有声音无画面」（`DebugFaults.STALL_FRAME`）：故意不记账，
         // 让看门狗那条链路能在开发机上按需复现。正式包里 BuildConfig.DEBUG 是常量 false。
         if (!com.hgtv.star.shared.BuildConfig.DEBUG ||
