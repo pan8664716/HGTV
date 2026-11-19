@@ -72,8 +72,19 @@ fun TvMainActivity.restoreBufferingUi() {
 
 /** 把 ExoPlayer 的缓冲状态映射到统一三点动画；过渡窗口内临时隐藏。 */
 fun TvMainActivity.syncBufferingDots() {
+    val currentId=detail?.episodes?.getOrNull(episodeIndex).orEmpty()
+    val mediaId=player?.currentMediaItem?.mediaId.orEmpty()
+    val actuallyPlaying=player?.isPlaying==true &&
+        player?.playbackState==Player.STATE_READY &&
+        currentId.isNotEmpty() && mediaId==currentId
+    if(actuallyPlaying) playbackReady=true
+    val frameUp=actuallyPlaying && pictureUpNow()
+    if(frameUp && recommendCover==null && centerLoadingMessage!=null) {
+        hideCenterLoading()
+    }
     val label=when {
         playError || sleepStopped -> null
+        frameUp -> null
         !playbackReady -> if(video==null) "正在获取播放地址…" else "正在缓冲…"
         player?.playbackState==Player.STATE_BUFFERING -> "正在缓冲…"
         else -> null

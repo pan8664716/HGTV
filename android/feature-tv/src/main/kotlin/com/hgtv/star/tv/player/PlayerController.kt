@@ -930,6 +930,10 @@ fun TvMainActivity.playEpisode(
                     "source=${remote.info.videoWidth}x${remote.info.videoHeight}"
             )
             playerView?.holdFirstFrameAspectRatio()
+            playerView?.primeFirstFrameAspectRatio(
+                remote.info.videoWidth,
+                remote.info.videoHeight,
+            )
         }
         // 起点一次设定：`setMediaSource(source, startPositionMs)` 内部先摘空旧项、
         // 再按给定位置掩码时间线，等价于「`setMediaSource` + `seekTo`」，少一次
@@ -970,6 +974,7 @@ fun TvMainActivity.playEpisode(
             videoHeight=pooledAdopt.remote.info.videoHeight
             videoSizeReady=videoWidth>0 && videoHeight>0
             applyResizeMode()
+            if(p.playbackState==Player.STATE_READY) playbackReady=true
             if(firstFrameRendered) {
                 playbackReady=true
                 playerView?.completeFirstFrameAspectRatio()

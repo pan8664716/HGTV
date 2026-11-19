@@ -285,6 +285,20 @@ class FixedFirstFramePlayerView @JvmOverloads constructor(
         pendingAspectRatio=0f
     }
 
+    /**
+     * 在首帧到来前先按片源尺寸摆好内容框，快门仍然由首帧回调负责揭开。
+     * 这样竖屏片不会先按整屏 16:9 显示一帧再跳成 9:16。
+     */
+    fun primeFirstFrameAspectRatio(width: Int,height: Int) {
+        if(width<=0 || height<=0) return
+        val ratio=width.toFloat()/height
+        pendingAspectRatio=ratio
+        if(!holdAspectRatio) return
+        val frame=contentFrame ?: videoSurfaceView?.parent as? AspectRatioFrameLayout ?: return
+        frame.setAspectRatio(ratio)
+        frame.requestLayout()
+    }
+
     fun completeFirstFrameAspectRatio() {
         if(!holdAspectRatio) return
         firstFrameSeen=true
@@ -325,6 +339,10 @@ internal fun PlayerView.holdFirstFrameAspectRatio() {
 
 internal fun PlayerView.completeFirstFrameAspectRatio() {
     (this as? FixedFirstFramePlayerView)?.completeFirstFrameAspectRatio()
+}
+
+internal fun PlayerView.primeFirstFrameAspectRatio(width: Int,height: Int) {
+    (this as? FixedFirstFramePlayerView)?.primeFirstFrameAspectRatio(width,height)
 }
 
 /**

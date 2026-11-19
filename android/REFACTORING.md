@@ -28,6 +28,9 @@
   当前页 READY 后就开始准备下一页，不把首帧当成唯一起点。
 - 池首帧只由 `onRenderedFirstFrame` 完成比例应用，`onVideoSizeChanged` 不再用旧帧心跳
   提前揭开；低端电视池预渲染超时从 Phone 的 1.2 秒延长到 3 秒，提高首帧成功率。
+- 竖屏片在首帧前先按 `RemoteVideo` 的宽高预摆内容框，快门等真实首帧再揭开；
+  播放 loading 同时校验实际 `isPlaying + READY + 当前媒体 + 已出帧`，避免池实例
+  早于监听器 READY 时永久卡住“正在缓冲”。
 - 每个页面保持黑色不透明底；SurfaceView 分支关闭 Z 轴覆盖并设置
   `PixelFormat.OPAQUE`，避免换页时透出底层页面或上一帧。
 - 新增 `androidx.viewpager2:viewpager2:1.1.0` 依赖，并显式对齐

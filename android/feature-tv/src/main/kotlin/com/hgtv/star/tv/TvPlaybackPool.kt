@@ -137,7 +137,13 @@ private fun TvMainActivity.attachTvPoolSlotToPage(
     }
     page.playerView.setKeepContentOnPlayerReset(true)
     page.playerView.visibility=View.VISIBLE
-    if(!slot.firstFrameRendered) page.playerView.holdFirstFrameAspectRatio()
+    if(!slot.firstFrameRendered) {
+        page.playerView.holdFirstFrameAspectRatio()
+        page.playerView.primeFirstFrameAspectRatio(
+            slot.remote.info.videoWidth,
+            slot.remote.info.videoHeight,
+        )
+    }
     if(page.playerView.player!==slot.player) {
         page.detachPlayerOutput()
         page.playerView.player=slot.player
