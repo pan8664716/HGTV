@@ -2,7 +2,7 @@
 
 > 基线提交：`140665f89ea816e4a38da50d3aa9428ecb722ead`
 > 重构分支：`refactor/from-140665f`
-> 最后更新：2026-11-19
+> 最后更新：2026-11-20
 
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
@@ -84,6 +84,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   不再重新取详情、取地址、换 Surface 或初始化解码器。
 - 预热带宽让路阈值由 3 秒降为 1.5 秒，与电视端一致；正常设备保留当前 / 前后相邻
   3 台，低内存设备仍只保留 2 台。未改版本号、versionCode、依赖或接口。
+- `:app:assembleDebug` 使用 JDK 17 通过；测试待用户真机验证，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-20：手机推荐流迁移 ViewPager2 相邻页预渲染
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：推荐流虽然已有三台池播放器和静音预渲染，但竖向 `RecyclerView` 不保证提前创建
+  下一页 ViewHolder；滑动开始时目标 `SurfaceView` 才出现，首帧只能在过半后重新等待。
+- 根因：播放器与媒体源可以提前准备，但 `SurfaceView` 的输出面不存在时无法完成首帧渲染。
+  日志里的 `page=false` 就是播放器已 prime、目标页面还没创建的窗口。
+- 修复：推荐流改用竖向 `ViewPager2`，设置 `offscreenPageLimit=1`，让当前页、上一页、
+  下一页及其独立 `SurfaceView` 常驻；池播放器在滑动前即可绑定到相邻页并静音预渲染。
+- 翻页状态改由 `onPageScrolled` / `onPageScrollStateChanged` 驱动：拖动开始暂停当前实例，
+  过半恢复目标实例音量与音频焦点，IDLE 沿用已经预览的实例完成提交。开始拖动时保留
+  相邻页的 0 音量首帧预渲染，避免把它误暂停后又在过半处重新等解码器。
+- 保留原竖向主轴锁，横滑仍交还外层体裁 pager；继续使用 `SurfaceView`，未引入
+  `TextureView`。新增 `androidx.viewpager2:viewpager2:1.1.0` 依赖，并显式对齐其
+  `androidx.recyclerview:recyclerview:1.3.1` 传递依赖；未改版本号或 versionCode。
 - `:app:assembleDebug` 使用 JDK 17 通过；测试待用户真机验证，未推送。
 
 回滚：对本节对应提交执行 `git revert`。

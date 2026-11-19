@@ -287,9 +287,18 @@ internal fun PhoneFeedView.trimPooledPlayers(anchor: Int, preferred: Int = ancho
         .forEach(::releasePooledPlayerSlot)
 }
 
-internal fun PhoneFeedView.pausePooledPlayersExcept(player: ExoPlayer?) {
+internal fun PhoneFeedView.pausePooledPlayersExcept(
+    player: ExoPlayer?,
+    preservePreRendering: Boolean = false,
+) {
     feedPooledPlayers.values.forEach { slot ->
         if (slot.player !== player) {
+            if (preservePreRendering && slot.preRendering) {
+                slot.previewPlaying = false
+                runCatching { slot.player.volume = 0f }
+                PhoneServices.enableAudioFocus(slot.player, false)
+                return@forEach
+            }
             slot.preRendering = false
             slot.previewPlaying = false
             runCatching {

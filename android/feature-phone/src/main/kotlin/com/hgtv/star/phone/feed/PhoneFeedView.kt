@@ -17,8 +17,6 @@ import com.google.android.exoplayer2.video.VideoSize
 import com.google.android.exoplayer2.upstream.DataSource
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.source.ProgressiveMediaSource
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
 import com.hgtv.star.core.CategorySelection
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackQuality
@@ -28,7 +26,6 @@ import com.hgtv.star.core.StreamInfo
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.RecommendTab
 import com.hgtv.star.phone.ui.PhoneColor
-import com.hgtv.star.phone.ui.PhonePagerSnapHelper
 import com.hgtv.star.phone.ui.PhoneSheet
 import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.dp
@@ -104,13 +101,13 @@ class PhoneFeedView(
     internal val feedItems get()=items
     private val adapter = PhoneFeedAdapter(this)
     internal val feedAdapter get()=adapter
-    private val list = VerticalPagerList(context)
+    private val list = VerticalFeedPager(context)
     internal val feedList get()=list
 
     internal fun refreshBottomInsets() {
         list.requestLayout()
-        for (index in 0 until list.childCount) {
-            list.getChildAt(index)?.requestLayout()
+        for (index in 0 until list.pageChildCount()) {
+            list.pageChildAt(index)?.requestLayout()
         }
     }
     private var restoreSeriesId: String? = initialSeriesId

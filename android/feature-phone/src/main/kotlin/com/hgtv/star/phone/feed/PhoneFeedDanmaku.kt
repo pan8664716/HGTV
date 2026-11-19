@@ -45,8 +45,8 @@ internal fun PhoneFeedView.applyDanmakuTopInsetImpl(insetPx: Int) {
     val inset = insetPx.coerceAtLeast(0)
     if (feedDanmakuTopInsetPx == inset) return
     feedDanmakuTopInsetPx = inset
-    for (index in 0 until feedList.childCount) {
-        val page = feedList.getChildAt(index) as? PhoneVideoPage ?: continue
+    for (index in 0 until feedList.pageChildCount()) {
+        val page = feedList.pageChildAt(index) as? PhoneVideoPage ?: continue
         page.danmakuView.alignBelowPhonePortraitChrome(
             bottomPx=inset,
             infoGapPx=context.dp(8),

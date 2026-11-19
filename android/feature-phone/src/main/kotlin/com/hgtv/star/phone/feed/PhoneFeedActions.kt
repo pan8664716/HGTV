@@ -1,7 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
-import androidx.recyclerview.widget.LinearLayoutManager
 import com.google.android.exoplayer2.Player
 
 internal fun PhoneFeedView.isPlayingNowImpl(): Boolean {
@@ -17,9 +16,7 @@ internal fun PhoneFeedView.notifyPlayStateChangedImpl() {
 internal fun PhoneFeedView.scrollToTopImpl() {
     if (feedItems.isEmpty()) return
     feedList.stopScroll()
-    (feedList.layoutManager as? LinearLayoutManager)
-        ?.scrollToPositionWithOffset(0, 0)
-        ?: feedList.scrollToPosition(0)
+    feedList.setCurrentItem(0, false)
     feedList.post { if (feedPlayingIndex != 0) playIndexForSettings(0, 0L) }
 }
 

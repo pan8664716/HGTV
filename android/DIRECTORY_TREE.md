@@ -623,10 +623,10 @@ android/
 | `PhoneFeedDanmaku.kt` | 取（或建）某一屏的弹幕加载器；首帧前只保留最后一次加载请求，首帧后再拉取；推荐页与正式播放页共用顶部信息栏下方的弹幕落点。 | fun PhoneFeedView.danmakuLoaderOfImpl、fun PhoneFeedView.applyDanmakuSettingsImpl、fun PhoneFeedView.applyDanmakuTopInsetImpl、fun PhoneFeedView.loadDanmakuImpl |
 | `PhoneFeedHide.kt` | 手机信息流隐藏、暂停与延迟回收；收起前记录当前播放位置，供重建或原地换地址时续播。 | fun PhoneFeedView.onHiddenImpl |
 | `PhoneFeedHost.kt` | 手机信息流页面、适配器、手势与预取；只有当前体裁上屏后才触发取流。 | fun PhoneFeedView.setGenreImpl、fun PhoneFeedView.onShownImpl、fun PhoneFeedView.onIdentityReadyImpl |
-| `PhoneFeedInitializer.kt` | 手机信息流页面初始化；手势起点清空预览并暂停当前页，目标过半独占音频播放；快速滑行去抖，IDLE 延后一帧优先按完全可见页确认最终目标。 | fun PhoneFeedView.initializeFeed |
+| `PhoneFeedInitializer.kt` | 手机信息流页面初始化；ViewPager2 在拖动开始时暂停当前页，过半立即独占音频播放目标页，IDLE 确认最终页并保留相邻页预渲染。 | fun PhoneFeedView.initializeFeed |
 | `PhoneFeedLifecycle.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedLifecycle 主要包含 fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl。 | fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl |
 | `PhoneFeedPageSupport.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedPageSupport 主要包含 fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl。 | fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl |
-| `PhoneFeedPager.kt` | 竖向信息流：**只有明显纵向的手势才滚**，并记录本次滚动是否由真实用户手势发起，供换播判定过滤布局补发的 IDLE。 | class VerticalPagerList、val userScroll、class PageHolder |
+| `PhoneFeedPager.kt` | 竖向 ViewPager2 信息流容器：`offscreenPageLimit=1` 让前后页 SurfaceView 常驻，只有明显纵向手势才翻页，并记录本次滚动是否由真实用户发起。 | class VerticalFeedPager、val pageRecycler、val userScroll、class PageHolder |
 | `PhoneFeedPlayback.kt` | 推荐换作入口；使用方向 / 快滑 / 回看计划，优先激活已预热的独立播放器，池未命中时才走详情与地址准备。 | fun PhoneFeedView.playIndexImpl |
 | `PhoneFeedPlayerPool.kt` | 有上限的推荐播放器池：相邻页独立播放器/MediaSource、静音首帧预渲染、过半预览播放、目标封面占位、活动切换、按距离淘汰和 `RemoteVideo` 所有权。 | class FeedPlayerSlot、fun PhoneFeedView.primePooledPlayerImpl、fun PhoneFeedView.startPooledPreRenderImpl、fun PhoneFeedView.finishPooledPreRenderImpl、fun PhoneFeedView.activatePreparedPooledPlayerImpl、fun PhoneFeedView.trimPooledPlayers |
 | `PhoneFeedPrefetch.kt` | 片尾 30 秒内用单集直连准备下一集地址与首块。 | fun PhoneFeedView.maybePrefetchNextImpl |

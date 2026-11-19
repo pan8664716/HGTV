@@ -25,7 +25,7 @@ android {
 dependencies {
     api(project(":shared"))
     implementation("com.google.android.exoplayer:exoplayer-ui:2.19.1")
-    // 推荐流（整屏吸附）与剧场网格都用它：1.2.1 是最后一条支持 minSdk 14 的稳定线，
-    // 与 Android 4.4 的底线一致。
-    implementation("androidx.recyclerview:recyclerview:1.2.1")
+    // 推荐流整屏翻页与剧场网格共用 RecyclerView；ViewPager2 负责推荐流的相邻页常驻。
+    implementation("androidx.recyclerview:recyclerview:1.3.1")
+    implementation("androidx.viewpager2:viewpager2:1.1.0")
 }

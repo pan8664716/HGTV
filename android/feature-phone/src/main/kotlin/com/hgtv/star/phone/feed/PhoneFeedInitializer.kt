@@ -5,99 +5,53 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import androidx.recyclerview.widget.LinearLayoutManager
-import androidx.recyclerview.widget.RecyclerView
+import androidx.viewpager2.widget.ViewPager2
 import com.hgtv.star.phone.ui.PhoneColor
-import com.hgtv.star.phone.ui.PhonePagerSnapHelper
 import com.hgtv.star.phone.ui.dp
 import kotlinx.coroutines.launch
 
 internal fun PhoneFeedView.initializeFeed() {
     setBackgroundColor(PhoneColor.BG)
-    feedList.layoutManager = LinearLayoutManager(context, RecyclerView.VERTICAL, false)
     feedList.adapter = feedAdapter
-    feedList.overScrollMode = View.OVER_SCROLL_NEVER
-    /*
-     * 关掉这一层列表的**嵌套滚动**。
-     *
-     * 推荐页外面是横向 pager，本列表只吃纵向位移，横向那一份会被
-     * `dispatchNestedPreScroll` 交给 pager——那条分发不经过 `onInterceptTouchEvent`，
-     * 于是 pager 的「锁住横滑」形同虚设：设置里关掉「推荐页左右滑动」后，
-     * 手指在视频上横着一划照样整页翻走，用户读到的就是「关了没生效」。
-     *
-     * 关掉它不影响任何纵向行为：上下滑、翻页吸附、惯性都是列表自己算的；
-     * 横向手势此后只走标准的触摸分发（父 pager 的 `onInterceptTouchEvent`），
-     * 那条路上才有锁。
-     */
-    feedList.isNestedScrollingEnabled = false
-    PhonePagerSnapHelper { feedList.height }.attachToRecyclerView(feedList)
-    var pendingVisiblePlay: Runnable? = null
-    var pendingSwipePreview: Runnable? = null
-    feedList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
-        override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-            if (!feedList.userScroll || dy == 0 || feedHidden) return
-            val index = dominantVisiblePage(rv)
-            if (index >= 0) {
-                pendingSwipePreview?.let(feedList::removeCallbacks)
-                val preview = Runnable {
-                    pendingSwipePreview = null
-                    if (feedList.userScroll && !feedHidden) {
-                        updateFeedSwipePreviewImpl(index)
-                    }
-                }
-                pendingSwipePreview = preview
-                feedList.postDelayed(preview, 60L)
-            }
-            if (rv.scrollState != RecyclerView.SCROLL_STATE_SETTLING) return
-            if (index < 0 || index == feedPlayingIndex) return
-            pendingVisiblePlay?.let(feedList::removeCallbacks)
-            val task = Runnable {
-                pendingVisiblePlay = null
-                if (feedList.userScroll && !feedHidden && index != feedPlayingIndex) {
-                    playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
-                }
-            }
-            pendingVisiblePlay = task
-            feedList.postDelayed(task, 90L)
+    feedList.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+        override fun onPageScrolled(
+            position: Int,
+            positionOffset: Float,
+            positionOffsetPixels: Int,
+        ) {
+            if (!feedList.userScroll || feedHidden || feedItems.isEmpty()) return
+            val target = if (positionOffset > 0.5f) position + 1 else position
+            if (target in feedItems.indices) updateFeedSwipePreviewImpl(target)
         }
 
-        override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
-            if (state != RecyclerView.SCROLL_STATE_IDLE) {
-                if (state == RecyclerView.SCROLL_STATE_DRAGGING) {
-                    pendingVisiblePlay?.let(feedList::removeCallbacks)
-                    pendingVisiblePlay = null
-                    pendingSwipePreview?.let(feedList::removeCallbacks)
-                    pendingSwipePreview = null
-                    finishFeedSwipePreviewImpl()
-                    pausePooledPlayersExcept(feedPlayer)
-                    if (feedList.userScroll) pauseCurrentForFeedSwipeImpl()
+        override fun onPageScrollStateChanged(state: Int) {
+            if (state == ViewPager2.SCROLL_STATE_DRAGGING) {
+                finishFeedSwipePreviewImpl()
+                if (feedList.userScroll) {
+                    // 相邻页可能正在 0 音量预渲染首帧；开始滑动只暂停当前出声实例，
+                    // 不能把即将上屏的那一页重新按停，否则过半时又要等解码器。
+                    pausePooledPlayersExcept(feedPlayer, preservePreRendering = true)
+                    pauseCurrentForFeedSwipeImpl()
                 }
                 return
             }
-            pendingVisiblePlay?.let(feedList::removeCallbacks)
-            pendingVisiblePlay = null
-            pendingSwipePreview?.let(feedList::removeCallbacks)
-            pendingSwipePreview = null
-            feedList.postDelayed({
-                if (feedList.scrollState != RecyclerView.SCROLL_STATE_IDLE) return@postDelayed
-                val manager = rv.layoutManager as LinearLayoutManager
-                val index = manager.findFirstCompletelyVisibleItemPosition().takeIf { it >= 0 }
-                    ?: dominantVisiblePage(rv).takeIf { it >= 0 }
-                    ?: manager.findFirstVisibleItemPosition()
-                val userScroll = feedList.userScroll
-                feedList.userScroll = false
-                if (userScroll && index >= 0 && index != feedPlayingIndex) {
+            if (state != ViewPager2.SCROLL_STATE_IDLE) return
+            val index = feedList.currentItem
+            val userScroll = feedList.userScroll
+            feedList.userScroll = false
+            if (userScroll) {
+                if (index in feedItems.indices && index != feedPlayingIndex) {
                     playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
-                } else if (userScroll) {
+                } else {
                     finishFeedSwipePreviewImpl()
                     resumeCurrentAfterFeedSwipeImpl()
                 }
-                if (index >= 0 &&
-                    com.hgtv.star.shared.feed.RecommendFeedPolicy.shouldPrefetch(
-                        feedItems.size - index - 1,
-                    )
-                ) loadMore()
-            }, 16L)
+            }
+            if (index >= 0 &&
+                com.hgtv.star.shared.feed.RecommendFeedPolicy.shouldPrefetch(
+                    feedItems.size - index - 1,
+                )
+            ) loadMore()
         }
     })
     addView(
@@ -128,28 +82,6 @@ internal fun PhoneFeedView.initializeFeed() {
     restoreSnapshot()
     // 当前页由 PhoneRecommendPage.onShown() 触发加载；相邻体裁页先不取流，
     // 避免首屏同时发出多条推荐请求。
-}
-
-/**
- * 目标页超过半屏就开始激活。
- *
- * `PagerSnapHelper` 在 `IDLE` 时才给出最终页；这里只在松手吸附后、滚动短暂停顿
- * 时提前接管，既避开手指拖动中的抖动，也避免快速滑行时逐页误激活。
- */
-private fun dominantVisiblePage(list: RecyclerView): Int {
-    var bestIndex = -1
-    var bestVisible = 0
-    for (childIndex in 0 until list.childCount) {
-        val child = list.getChildAt(childIndex)
-        val position = list.getChildAdapterPosition(child)
-        if (position == RecyclerView.NO_POSITION) continue
-        val visible = minOf(child.bottom, list.height) - maxOf(child.top, 0)
-        if (visible > bestVisible) {
-            bestVisible = visible
-            bestIndex = position
-        }
-    }
-    return if (bestVisible * 2 >= list.height) bestIndex else -1
 }
 
 internal fun PhoneFeedView.pauseCurrentForFeedSwipeImpl() {
