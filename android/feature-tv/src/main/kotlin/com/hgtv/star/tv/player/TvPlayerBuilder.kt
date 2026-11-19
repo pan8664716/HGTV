@@ -88,6 +88,18 @@ internal fun TvMainActivity.recordFirstFrameForBuffer(elapsedMs: Long) {
     TvBufferTuning.recordFirstFrame(this,elapsedMs)
 }
 
+internal fun TvMainActivity.setTvPlayerAudioFocus(player: ExoPlayer, enabled: Boolean) {
+    runCatching {
+        player.setAudioAttributes(
+            AudioAttributes.Builder()
+                .setUsage(C.USAGE_MEDIA)
+                .setContentType(C.AUDIO_CONTENT_TYPE_MOVIE)
+                .build(),
+            enabled,
+        )
+    }
+}
+
 /**
  * 首帧指标更新后，旧播放器仍持有旧的 LoadControl。下一次真正起播时在这里释放，
  * 让新播放器按最新档位重建；当前正在播放的这一集不会被打断。
@@ -97,6 +109,7 @@ internal fun TvMainActivity.releasePlayerForBufferMismatch() {
     val built=builtPlayerBufferProfile ?: return
     val wanted=resolveTvBufferProfile()
     if(built==wanted) return
+    releaseTvPlaybackPool()
     android.util.Log.i(
         "HGTV-BUFFER",
         "Rebuilding player for buffer profile ${built.name} -> ${wanted.name}",
@@ -125,6 +138,7 @@ internal fun TvMainActivity.releasePlayerForBufferMismatch() {
 internal fun TvMainActivity.buildPlayer(
     mode: com.hgtv.star.core.VideoDecoderMode = playerDecoderMode(),
     profile: TvBufferProfile = resolveTvBufferProfile(),
+    handleAudioFocus: Boolean = true,
 ): ExoPlayer {
     // 缓冲按时间算、字节上限只做保护。
     //
@@ -164,7 +178,7 @@ internal fun TvMainActivity.buildPlayer(
         .setAudioAttributes(
             AudioAttributes.Builder()
                 .setUsage(C.USAGE_MEDIA).setContentType(C.AUDIO_CONTENT_TYPE_MOVIE).build(),
-            true
+            handleAudioFocus,
         )
         .setHandleAudioBecomingNoisy(true)
         .build()

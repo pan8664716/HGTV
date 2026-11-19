@@ -10,7 +10,6 @@ import android.widget.FrameLayout
 import android.widget.ImageView
 import android.widget.ScrollView
 import android.widget.TextView
-import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.PlaybackSpeed
 import com.hgtv.star.shared.compat.setVectorIcon
 import com.hgtv.star.shared.media.DanmakuView
@@ -26,14 +25,17 @@ internal fun TvMainActivity.buildPlaybackSurface() {
     playerLetterboxMask=null
     touchEntryTitle=null; touchEntryHint=null
     playbackBoost=false
-    val rotatedSurface=library.autoFullscreen && autoFullscreenAvailable()
-    val view=(if(rotatedSurface) layoutInflater.inflate(R.layout.player_surface_texture,root,false) as PlayerView else FixedFirstFramePlayerView(this)).apply {
-        useController=false; resizeMode=frameResizeMode(); isFocusable=false
-        setKeepContentOnPlayerReset(true); setShutterBackgroundColor(Color.BLACK); setShowBuffering(PlayerView.SHOW_BUFFERING_NEVER)
-        setAspectRatioListener { _,_,_ -> syncPlaybackLetterbox() }
-    }
+    val playbackPager=TvPlaybackPager(this)
+    tvPlaybackPager=playbackPager
+    root.addView(playbackPager,FrameLayout.LayoutParams(-1,-1))
+    val view=playbackPager.currentPage()?.playerView ?: playbackPager.initialPage.playerView
     view.player=player
-    playerView=view; root.addView(view,FrameLayout.LayoutParams(-1,-1))
+    playerView=view
+    playbackPager.post {
+        if(isDestroyed || tvPlaybackPager!==playbackPager) return@post
+        playbackPager.syncCurrentPlayer()
+        applyVideoGeometry()
+    }
     bufferingDots=LoadingDotsView(this).apply { visibility=View.GONE }
     root.addView(bufferingDots,FrameLayout.LayoutParams(-2,-2,Gravity.CENTER))
     val layer=FrameLayout(this).apply { clipChildren=false; clipToPadding=false }

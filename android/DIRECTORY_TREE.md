@@ -43,7 +43,7 @@ android/
 ├── app/  (23 files, 12 directories)
 ├── core/  (229 files, 27 directories)
 ├── feature-phone/  (143 files, 11 directories)
-├── feature-tv/  (157 files, 18 directories)
+├── feature-tv/  (159 files, 18 directories)
 ├── shared/  (105 files, 25 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
@@ -842,7 +842,9 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `AppVersion.kt` | 应用版本号。 | object AppVersion |
-| `TvMainActivity.kt` | 电视主界面 Activity，持有页面状态、焦点、生命周期、跨页面导航与首页视图缓存；推荐预热按设备档位选择首目标延迟。 | class TvMainActivity |
+| `TvMainActivity.kt` | 电视主界面 Activity，持有页面状态、焦点、生命周期、跨页面导航、首页视图缓存与电视播放页的 ViewPager2 / 播放器池引用；推荐预热按设备档位选择首目标延迟。 | class TvMainActivity |
+| `TvPlaybackPager.kt` | 电视推荐页与正式播放页共用的竖向 ViewPager2 三页窗口；每页独立 PlayerView，当前页绑定活动播放器，前后页承载池化实例，SurfaceView 强制不透明并保持黑底。 | class TvPlaybackPager、class TvPlaybackSurfacePage、class TvPlaybackPageAdapter |
+| `TvPlaybackPool.kt` | 电视播放器池：相邻推荐 / 分集独立取源、静音预渲染首帧、命中后提升为活动播放器，按低配设备限制池大小并统一回收 RemoteVideo、HTTP 与播放器。 | class TvPlaybackPoolSlot、class TvPlaybackPoolState、fun TvMainActivity.scheduleTvPlaybackPoolNeighbors、fun TvMainActivity.storeActivePlayerInTvPool、fun TvMainActivity.takeTvPlaybackPooledSlot |
 | `TvMainLifecycleFacade.kt` | feature-tv 模块的 TvMainLifecycleFacade.kt 职责。文件 TvMainLifecycleFacade 主要包含 fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory。 | fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory、fun TvMainActivity.handleTrimMemory、fun TvMainActivity.handleDestroy |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/account/`
@@ -884,7 +886,7 @@ android/
 | `RecommendNavigation.kt` | 推荐页进入正式播放与返回首页路由；返回首页优先复用缓存并延后播放器重资源回收。 | fun TvMainActivity.enterFormalPlayback、fun TvMainActivity.goHomeFromRecommend、fun TvMainActivity.exitRecommendToHome、fun TvMainActivity.leaveRecommendPlaybackToHome |
 | `RecommendOverlay.kt` | 推荐页底部那块信息浮层：进度 + 剧名 + 操作说明；中心 loading 只在真实首帧后撤掉。 | fun TvMainActivity.attachRecommendOverlay、fun TvMainActivity.recommendChip、fun TvMainActivity.dismissRecommendOverlay、fun TvMainActivity.updateRecommendOverlay |
 | `RecommendPage.kt` | 本文件是「推荐」这一条独立的播放链路：抖音式的上下换剧、确定进正片、菜单开播放设置、返回回主页面；首屏目标 60 条，消费约 2/3 后预取。 | val RECOMMEND_SKIP_LIMIT、val RECOMMEND_MAX_CHAIN、val RECOMMEND_CACHE_NAMESPACE、val RECOMMEND_FIRST_LIMIT、val RECOMMEND_FIRST_ITEMS、val RECOMMEND_PAGE_LIMIT、val RECOMMEND_LOOKAHEAD |
-| `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部；换到另一部时保留稳定 PlayerView，通过 keep-content=false 清空旧 Surface、detach player 但保持视图 VISIBLE（避免 SurfaceView 被系统回收后重建闪黑），停止旧媒体、立即作废旧 work，再显示当前作品 loading 并取详情；推荐详情跳过作者查询。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend、fun TvMainActivity.resetRecommendPlaybackForSwitch |
+| `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部；换到另一部时把旧活动实例收进电视播放器池，切换 ViewPager2 当前作品页并优先提升预渲染池实例；停止旧媒体、立即作废旧 work，再显示当前作品 loading 并取详情；推荐详情跳过作者查询。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend、fun TvMainActivity.resetRecommendPlaybackForSwitch |
 | `RecommendUi.kt` | 本机兴趣画像（进推荐页时建一次，之后每页复用）。 | fun TvMainActivity.loadGenderOptions、fun TvMainActivity.showRecommendMessage、fun TvMainActivity.showRecommendLoading、fun TvMainActivity.showRecommendToast |
 | `RecommendWarm.kt` | 一次在途的「相邻一部预热」。 | class RecommendWarm |
 | `RecommendWarmDetail.kt` | 推荐相邻播放地址预热；只取详情与单集直连地址，不解析索引、不读取首块，也不在推荐流加载封面。 | val RECOMMEND_WARM_SLOTS、val RECOMMEND_WARM_SLOTS_METERED、fun TvMainActivity.warmRecommendDetail、fun TvMainActivity.hasWarmSlot |
@@ -946,7 +948,7 @@ android/
 | `PlaybackMenu.kt` | 播放器的底部设置面板（遥控器「上」打开）。 | class PlaybackMenu |
 | `PlaybackMenuController.kt` | 播放菜单与选择器、进度保存，以及页面切换时播放器 Surface/资源的分离回收。 | fun TvMainActivity.showPlaybackMenu、fun TvMainActivity.buildPlaybackMenu、fun TvMainActivity.obtainPlaybackMenu、fun TvMainActivity.detachPlayerSurface、fun menuShape、fun TvMainActivity.syncPlaybackMenu、fun TvMainActivity.dropPlaybackMenuCache |
 | `PlaybackRecovery.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackRecovery 主要包含 fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery、fun TvMainActivity.scheduleRecovery、fun playbackMediaKind |
-| `PlaybackSurfaceBuilder.kt` | 重建电视播放器 surface 与覆盖层；顶部四项采用 72dp 行高，并在布局变化时刷新弹幕避让；推荐页重建时补挂中心 loading。 | fun TvMainActivity.buildPlaybackSurface |
+| `PlaybackSurfaceBuilder.kt` | 重建电视播放器 surface 与覆盖层：根层挂 ViewPager2，当前页挂活动播放器，弹幕 / HUD / 控制层作为 pager 上方覆盖层；顶部四项采用 72dp 行高，并在布局变化时刷新弹幕避让。 | fun TvMainActivity.buildPlaybackSurface |
 | `PlayerActions.kt` | 播放设置面板**第一行那排动作**（相关剧集 / 作者作品 / 加入收藏 / 查看简介）的实现。 | fun TvMainActivity.showPlayerRelated、fun TvMainActivity.showPlayerAuthorWorks、fun TvMainActivity.showPlayerWorksStrip、fun TvMainActivity.refreshStripData、fun TvMainActivity.showPlayerIntro、fun TvMainActivity.playerFavoriteLabel |
 | `PlayerController.kt` | 电视播放起播内核，负责换集、播放源设置、播放器监听和播放页面装配；推荐流不再使用封面过渡，正式播放仍保留分集封面。 | fun TvMainActivity.loadDanmaku、fun TvMainActivity.playEpisode、fun TvMainActivity.scheduleRecommendAfterFirstFrame |
 | `PreloadController.kt` | 推荐页的固定五窗口地址预加载编排：`n-2..n+2` 只取详情与播放地址，不解析索引、不读取首块；低配电视首帧先准备最近一部，再自动续补其余目标。 | fun TvMainActivity.preloadGateOpen、val PRELOAD_MAX_TARGETS、fun TvMainActivity.cancelScheduledPreload、fun TvMainActivity.scheduleRecommendPreload、fun TvMainActivity.scheduleRecommendDwell、fun TvMainActivity.preloadScheduler、fun TvMainActivity.applyRecommendPlan |

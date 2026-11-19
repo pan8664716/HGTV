@@ -7,6 +7,27 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 2026-11-20：电视推荐页 / 正式播放页迁移 ViewPager2 与播放器池
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 推荐页和正式播放页共用竖向 `ViewPager2`，`offscreenPageLimit=1` 让当前、上一页、
+  下一页各有一块独立 `PlayerView/SurfaceView`。遥控器上下键仍由原有按键分发驱动，
+  pager 不接收触摸滑动，避免影响左右快进、菜单、焦点和自动连播。
+- 新增电视播放器池：相邻推荐 / 分集独立创建 `ExoPlayer` 和 `RemoteVideo`，默认不申请
+  音频焦点，以 0 音量 prepare 并静音预渲染首帧；命中后只提升实例、恢复焦点与音量，
+  不再重新取地址或重设媒体源。低配电视只保留一个池槽，正常设备保留两个。
+- 推荐切到正片时就地切换 pager 的页数据模型（作品 -> 分集），不拆当前活动 Surface；
+  自动连播和选集也会同步 pager 当前页。活动播放器仍由原有单一播放中控管理。
+- 池实例统一记录解码模式、缓冲档位、源地址时间与页面下标；切换解码、缓冲档位、
+  离开播放页、内存紧张或 Activity 销毁时统一释放播放器、RemoteVideo 与传输层。
+- 每个页面保持黑色不透明底；SurfaceView 分支关闭 Z 轴覆盖并设置
+  `PixelFormat.OPAQUE`，避免换页时透出底层页面或上一帧。
+- 新增 `androidx.viewpager2:viewpager2:1.1.0` 依赖，并显式对齐
+  `androidx.recyclerview:recyclerview:1.3.1`。未改版本号或 versionCode；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 硬约束
 
 - 不改变 UI、布局、资源、导航、交互、权限或可见文案。

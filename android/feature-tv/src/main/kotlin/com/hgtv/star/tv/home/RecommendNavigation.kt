@@ -24,6 +24,8 @@ fun TvMainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
     }
     // 先把状态切到正片：下面 playEpisode 会按进入时的 screen 决定留在哪一页。
     screen="player"
+    // pager 的页数要从推荐作品切成当前剧的分集；活动播放器保持不动。
+    switchTvPlaybackPagerScreen("player",episodeIndex)
     // 进正片：过渡黑场立刻收掉（画面本来就没断，继续盖着会黑一下）。
     dismissRecommendCover()
     // 记下来源：从这里进的正片，返回键要直接回主页（需求 4），不回简介页。

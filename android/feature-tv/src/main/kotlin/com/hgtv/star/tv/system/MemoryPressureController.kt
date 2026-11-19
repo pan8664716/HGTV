@@ -54,6 +54,7 @@ internal fun TvMainActivity.resumeVisibleCoversImpl() {
  */
 internal fun TvMainActivity.onLowMemoryImpl() {
     PlaybackCache.trimMemory(severe=true)
+    releaseTvPlaybackPool()
     releaseOffscreenCovers()
     if(artworkReady) artwork.trimMemory(ComponentCallbacks2.TRIM_MEMORY_COMPLETE)
     runCatching { Soft.trimMemory(0.2f) }
@@ -75,6 +76,8 @@ internal fun TvMainActivity.onTrimMemoryImpl(level: Int) {
             severe=level>=ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL,
         )
         cancelPrefetch()
+        // 池播放器是可重建的相邻页缓存；内存吃紧时先归还解码器，当前活动实例不动。
+        releaseTvPlaybackPool()
         // 推荐页的相邻地址预热是可重建的纯缓存：内存吃紧时先取消。
         if(screen!="recommend") closeRecommendCache()
         // 推荐页不能整份清掉（正在播的那一部就在里面），只收窄后续预热窗口。

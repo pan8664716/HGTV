@@ -423,7 +423,10 @@ fun TvMainActivity.saveProgress(completed: Boolean=false) {
 fun TvMainActivity.detachPlayerSurface(
     keepSession: Boolean = false,
     deferResources: Boolean = false,
+    releasePlaybackPool: Boolean = true,
 ) {
+    if(releasePlaybackPool) releaseTvPlaybackPool()
+    tvPlaybackPager=null
     // 作废所有认会话号的在途回调（监听器、延迟清理、取地址）。
     playbackSessionState.beginSession()
     disarmPlaybackWatchdog(); disarmFrameStallWatchdog()

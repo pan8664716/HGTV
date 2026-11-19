@@ -23,9 +23,23 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // removeAllViews / 新建 Surface 导致 FrameLayout 布局崩溃），但清空旧 Surface 内容、
     // 停止旧媒体并作废旧 work。旧作品不能再发声，新作品也不会继承旧首帧。
     val series=recommendItems[safe]
-    val switching=safe!=recommendIndex && playerView!=null
-    if(switching) resetRecommendPlaybackForSwitch()
+    val switching=safe!=recommendIndex && (player!=null || playerView!=null)
+    if(switching) {
+        // 旧活动实例先收进池：返回上一部时直接提升，不必重新取源。
+        storeActivePlayerInTvPool()
+        player=null
+        video=null
+        playbackHttp=null
+        playerView=null
+        resetRecommendPlaybackForSwitch()
+    }
     recommendIndex=safe; recommendShift=direction
+    if(tvPlaybackPager!=null && tvPlaybackPager?.screen!="recommend") {
+        switchTvPlaybackPagerScreen("recommend",safe)
+    }
+    tvPlaybackPager?.refreshPages()
+    tvPlaybackPager?.setCurrentIndex(safe)
+    tvPlaybackPager?.pageAt(safe)?.let { playerView=it.playerView }
     // 换剧方向与时刻：相邻预热按「用户正在走的方向」排优先级（见 [prefetchRecommendNeighbors]）。
     // 方向为 0 时（进页面第一次起播、重试同一部）不动它，沿用上一次的方向。
     if(direction!=0) {
