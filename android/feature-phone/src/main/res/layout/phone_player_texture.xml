@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  正式播放页的视频层。SurfaceView 是独立系统图层，普通封面和上下滑页面无法
+  在所有 ROM 上可靠遮住它；TextureView 参与普通视图合成，换集时旧帧不会穿透。
+-->
+<com.hgtv.star.phone.FixedFirstFramePlayerView
+    xmlns:android="http://schemas.android.com/apk/res/android"
+    xmlns:app="http://schemas.android.com/apk/res-auto"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    app:surface_type="texture_view" />

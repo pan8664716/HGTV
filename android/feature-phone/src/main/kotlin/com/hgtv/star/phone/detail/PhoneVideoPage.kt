@@ -98,6 +98,8 @@ class PhoneVideoPage(
      * 自己出画面，否则就是一整块透明。
      */
     private val underlay: Boolean = false,
+    /** 正式播放页使用 TextureView；推荐信息流保持 SurfaceView。 */
+    private val textureVideoSurface: Boolean = false,
     // 默认完整画面；真正的档位由宿主按用户的「画面模式」随后覆盖，
     // 不再按片源方向强制铺满。
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -118,7 +120,8 @@ class PhoneVideoPage(
         setClock(0, false)
     }
 
-    val playerView: PlayerView = FixedFirstFramePlayerView(context).apply {
+    val playerView: PlayerView =
+        PhonePlayerViewSupport.fixedFirstFramePlayerView(context, textureVideoSurface).apply {
         useController = false
         this.resizeMode = resizeMode
         // 借下层 Surface 时本层不出画面：快门也必须是透明的，否则它自己就是一块黑。

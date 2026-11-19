@@ -9,7 +9,6 @@ import android.widget.FrameLayout
 import android.widget.TextView
 import android.widget.SeekBar
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
-import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.PlaybackSpeed
 import com.hgtv.star.phone.ui.PhoneTouch
@@ -49,7 +48,10 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     ))
 
     val landscape = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-    val video = FixedFirstFramePlayerView(this).apply {
+    val video = PhonePlayerViewSupport.fixedFirstFramePlayerView(
+        this,
+        textureSurface = true,
+    ).apply {
         useController = false
         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         setShutterBackgroundColor(Color.BLACK)

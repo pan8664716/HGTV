@@ -8,6 +8,7 @@ import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.os.Build
 import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -42,7 +43,11 @@ internal typealias PhoneLetterboxMask = PlayerLetterboxMask
  * 到达前被拉伸一下。这里先把新比例暂存，等 `onRenderedFirstFrame` 后一次性应用；
  * 应用时短暂合上快门，完成布局后再揭开，因此用户只会看到旧帧稳定停住，再切到新帧。
  */
-internal class FixedFirstFramePlayerView(context: Context) : PlayerView(context) {
+internal class FixedFirstFramePlayerView @JvmOverloads constructor(
+    context: Context,
+    attrs: android.util.AttributeSet? = null,
+    defStyleAttr: Int = 0,
+) : PlayerView(context, attrs, defStyleAttr) {
     private var holdAspectRatio = false
     private var firstFrameSeen = false
     private var pendingAspectRatio = 0f
@@ -188,6 +193,20 @@ internal fun PhonePlayerActivity.hideEpisodeCover() {
 }
 
 internal object PhonePlayerViewSupport {
+    /**
+     * 正式播放页用 TextureView 参与普通视图合成，封面和上下滑页面才能可靠遮住旧帧。
+     * 推荐信息流继续使用 SurfaceView，避免扩大解码和合成的性能影响。
+     */
+    fun fixedFirstFramePlayerView(
+        context: Context,
+        textureSurface: Boolean,
+    ): FixedFirstFramePlayerView = if (textureSurface) {
+        LayoutInflater.from(context)
+            .inflate(R.layout.phone_player_texture, null, false) as FixedFirstFramePlayerView
+    } else {
+        FixedFirstFramePlayerView(context)
+    }
+
     /**
      * SurfaceView 默认透明区域会挖穿 Activity 窗口。视频 Surface 显式设为 OPAQUE，
      * 避免视频画面本身透出下层页面；弹幕那一层仍是透明 Surface，黑边由
