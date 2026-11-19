@@ -224,6 +224,7 @@ internal fun PhonePlayerActivity.onAdvanced(
     }
 
     index = nextIndex
+    swipeLogicalTarget = -1
     reconcileAdjacentSlots()
     PhoneSession.nextQueued = false
     PhoneSession.clearNext()

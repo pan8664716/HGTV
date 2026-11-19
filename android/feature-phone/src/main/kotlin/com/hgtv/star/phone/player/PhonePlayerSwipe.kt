@@ -71,12 +71,15 @@ internal fun PhonePlayerActivity.endSwipeImpl(direction: Int) {
         else -> 0
     }
     val d = detail
-    val playable = target != 0 && d != null && (index + target) in d.episodes.indices
+    val baseIndex = swipeLogicalTarget.takeIf { it >= 0 } ?: index
+    val targetIndex = baseIndex + target
+    val playable = target != 0 && d != null && targetIndex in d.episodes.indices
     if (!playable) {
         if (target != 0) stepEpisodeImpl(target)
         settleBackImpl()
         return
     }
+    swipeLogicalTarget = targetIndex
     // 一旦确认翻页，旧页的弹幕必须在本轮滑动动画开始前清掉；等到 onAdvanced
     // 再清时，Surface 弹幕层已经盖到目标页上了。
     playerDanmakuLoader.clear()
@@ -97,7 +100,8 @@ internal fun PhonePlayerActivity.endSwipeImpl(direction: Int) {
             feedTarget = null,
             duration = duration,
         ) {
-            playSwipeTargetForSwipe(index + target)
+            if (swipeLogicalTarget == targetIndex) swipeLogicalTarget = -1
+            playSwipeTargetForSwipe(targetIndex)
             resetSwipeStateImpl()
         }
     } else {
@@ -117,7 +121,8 @@ internal fun PhonePlayerActivity.endSwipeImpl(direction: Int) {
             swipeGhostPage.translationY = 0f
             swipeGhostPage.visibility = View.GONE
             resetSwipeStateImpl(keepCurrent = true)
-            playSwipeTargetForSwipe(index + target)
+            if (swipeLogicalTarget == targetIndex) swipeLogicalTarget = -1
+            playSwipeTargetForSwipe(targetIndex)
             applyVideoScaleForSwipe()
             applyChromeForSwipe()
             syncChips()
@@ -212,7 +217,8 @@ private fun PhonePlayerActivity.cancelSwipeAnimationImpl() {
 /** 铺相邻页：绑定目标集，视频区保持黑，先出真实信息栏。 */
 private fun PhonePlayerActivity.prepareGhostImpl(direction: Int) {
     val d = detail ?: run { swipeDirection = 0; return }
-    val target = index + direction
+    val baseIndex = swipeLogicalTarget.takeIf { it >= 0 } ?: index
+    val target = baseIndex + direction
     if (target !in d.episodes.indices) {
         swipeDirection = 0
         return
@@ -278,7 +284,8 @@ internal fun PhonePlayerActivity.resetSwipeStateImpl(keepCurrent: Boolean = fals
 /** 上下滑时的集数提示，复用画面顶部那一条 hint。 */
 private fun PhonePlayerActivity.showEpisodeHintImpl(delta: Float) {
     val d = detail ?: return
-    val target = if (delta <= 0) index + 1 else index - 1
+    val baseIndex = swipeLogicalTarget.takeIf { it >= 0 } ?: index
+    val target = if (delta <= 0) baseIndex + 1 else baseIndex - 1
     val enough = kotlin.math.abs(delta) >= PhoneTouch.VERTICAL_COMMIT_RATIO
     hint.text = when {
         target !in d.episodes.indices && delta <= 0 -> "已经是最后一集"
@@ -299,7 +306,8 @@ private fun PhonePlayerActivity.clearEpisodeHintImpl() {
 /** 换到相邻的一集（±1）。到头时给一句提示，不做越界播放。 */
 private fun PhonePlayerActivity.stepEpisodeImpl(direction: Int) {
     val d = detail ?: return
-    val target = index + direction
+    val baseIndex = swipeLogicalTarget.takeIf { it >= 0 } ?: index
+    val target = baseIndex + direction
     if (target !in d.episodes.indices) {
         hint.text = if (direction > 0) "已经是最后一集" else "已经是第一集"
         swipeHintToken++

@@ -389,6 +389,7 @@ internal fun PhoneFeedView.attachPooledPlayerToPageImpl(
     }
     val verticalSource = if (width > 0 && height > 0) height > width else series.vertical
     page.playerView.primeAspectRatio(width, height, verticalSource)
+    if (slot.firstFrameRendered) page.hideEpisodeCover() else page.showEpisodeCover(series.cover)
     if (index != feedPlayingIndex) slot.player.playWhenReady = false
     if (index != feedPlayingIndex) startPooledPreRenderImpl(index, slot)
 }
@@ -562,6 +563,7 @@ internal fun PhoneFeedView.activatePreparedPooledPlayerImpl(
             clearDanmakuOnSwitch = clearDanmakuOnSwitch,
             videoInfo = remote.info,
         )
+        if (!slot.firstFrameRendered) page.showEpisodeCover(series.cover)
     }
     attachFeedListener(slot.player, index)
     publishPooledSession(detail, slot.episodeIndex, remote, remote.info.quality)

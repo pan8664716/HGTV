@@ -479,12 +479,16 @@ open class PhonePlayerActivity : PhoneActivity() {
     internal val swipePortraitHeight get()=portrait.height
     private var swipeDir = 0
     private var swipePrepared = false
+    private var swipeLogicalIndex = -1
     internal var swipeDirection: Int
         get()=swipeDir
         set(value) { swipeDir=value }
     internal var swipePreparedState: Boolean
         get()=swipePrepared
         set(value) { swipePrepared=value }
+    internal var swipeLogicalTarget: Int
+        get()=swipeLogicalIndex
+        set(value) { swipeLogicalIndex=value }
     private var swipeAnimation: Runnable? = null
     internal var swipeAnimationRunnable: Runnable?
         get()=swipeAnimation

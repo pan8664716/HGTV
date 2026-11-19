@@ -31,17 +31,35 @@ internal fun PhoneFeedView.initializeFeed() {
      */
     feedList.isNestedScrollingEnabled = false
     PhonePagerSnapHelper { feedList.height }.attachToRecyclerView(feedList)
+    var pendingVisiblePlay: Runnable? = null
     feedList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
         override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
-            if (!feedList.userScroll || dy == 0 || feedHidden) return
+            if (!feedList.userScroll || dy == 0 || feedHidden ||
+                rv.scrollState != RecyclerView.SCROLL_STATE_SETTLING
+            ) return
             val index = dominantVisiblePage(rv)
-            if (index >= 0 && index != feedPlayingIndex) {
-                playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
+            if (index < 0 || index == feedPlayingIndex) return
+            pendingVisiblePlay?.let(feedList::removeCallbacks)
+            val task = Runnable {
+                pendingVisiblePlay = null
+                if (feedList.userScroll && !feedHidden && index != feedPlayingIndex) {
+                    playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
+                }
             }
+            pendingVisiblePlay = task
+            feedList.postDelayed(task, 90L)
         }
 
         override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
-            if (state != RecyclerView.SCROLL_STATE_IDLE) return
+            if (state != RecyclerView.SCROLL_STATE_IDLE) {
+                if (state == RecyclerView.SCROLL_STATE_DRAGGING) {
+                    pendingVisiblePlay?.let(feedList::removeCallbacks)
+                    pendingVisiblePlay = null
+                }
+                return
+            }
+            pendingVisiblePlay?.let(feedList::removeCallbacks)
+            pendingVisiblePlay = null
             val index = (rv.layoutManager as LinearLayoutManager).findFirstVisibleItemPosition()
             val userScroll = feedList.userScroll
             feedList.userScroll = false
@@ -88,8 +106,8 @@ internal fun PhoneFeedView.initializeFeed() {
 /**
  * 目标页超过半屏就开始激活。
  *
- * `PagerSnapHelper` 在 `IDLE` 时才给出最终页，但那时用户已经看到新页停稳；
- * 这里在滑动过程中提前半个屏幕接管，让已经 `prepare` 的相邻播放器开始出帧。
+ * `PagerSnapHelper` 在 `IDLE` 时才给出最终页；这里只在松手吸附后、滚动短暂停顿
+ * 时提前接管，既避开手指拖动中的抖动，也避免快速滑行时逐页误激活。
  */
 private fun dominantVisiblePage(list: RecyclerView): Int {
     var bestIndex = -1
