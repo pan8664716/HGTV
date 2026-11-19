@@ -113,6 +113,9 @@ class PhoneMainActivity : PhoneActivity() {
         builtTheme = PhoneStyle.theme.ordinal
         builtUiScale = PhoneUiScale.value
         phoneEdgeToEdge()
+        // 先把系统栏颜色和图标统一到首帧主题，避免窗口第一次绘制时
+        // 状态栏透明、导航栏仍是主题默认色，等 applySystemBars 才恢复。
+        applyPhoneNavigationBar(phoneNavigationBarUsesLightIcons())
         AppUpdateController.get(this).check()
 
         val root = FrameLayout(this).apply { setBackgroundColor(PhoneColor.BG) }
@@ -410,7 +413,7 @@ class PhoneMainActivity : PhoneActivity() {
         }
         if (Build.VERSION.SDK_INT >= 21) {
             window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-            window.statusBarColor = if (immersive) Color.BLACK else Color.TRANSPARENT
+            window.statusBarColor = Color.TRANSPARENT
             window.navigationBarColor = if (hideNavigation) Color.BLACK else Color.TRANSPARENT
         }
         if (Build.VERSION.SDK_INT >= 28) {
@@ -474,7 +477,7 @@ class PhoneMainActivity : PhoneActivity() {
                 }
             }
         }
-        window.setBackgroundDrawable(ColorDrawable(if (immersive) Color.BLACK else PhoneColor.BG))
+        window.setBackgroundDrawable(ColorDrawable(PhoneColor.BG))
         if (::content.isInitialized) {
             content.requestLayout()
             if (Build.VERSION.SDK_INT >= 20) window.decorView.requestApplyInsets()

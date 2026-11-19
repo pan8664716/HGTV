@@ -151,19 +151,19 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `styles.xml` | Android 9+ 播放页主题；推荐页入口保持半透明，`PlayerOpaqueTheme` 覆盖为不透明窗口。 | resources、PlayerTheme、PlayerOpaqueTheme |
+| `styles.xml` | Android 5.0+ Material 基础主题；首帧状态栏和导航栏使用统一启动底色。 | resources、AppTheme |
 
 #### `app/src/main/res/values-v23/`
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `styles.xml` | Values 资源定义，根节点 resources。 | resources |
+| `styles.xml` | Android 6.0+ 基础主题；保持与启动底色一致的系统栏颜色和状态栏图标配置。 | resources、AppTheme |
 
 #### `app/src/main/res/values-v28/`
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `styles.xml` | Values 资源定义，根节点 resources。 | resources |
+| `styles.xml` | Android 12+ 启动画面主题；同时保持首帧状态栏和导航栏为统一启动底色。 | resources、AppTheme |
 
 #### `app/src/main/res/values-v31/`
 
