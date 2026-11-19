@@ -68,6 +68,18 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
+## 2026-11-19：推荐页横竖屏切换黑屏修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 推荐页横竖屏时不再重建 `PhoneMainActivity`，视频 `SurfaceView` 随原视图原地改尺寸，
+  避免旧 Surface 销毁到新首帧之间出现黑屏。
+- 底栏改为可动态切换紧凑尺寸；状态栏、导航栏和底部安全区按新方向重新应用。
+- 分类、榜单、我的等非视频主页仍保留原来的 Activity 重建逻辑。
+- 未改版本号、versionCode、依赖或目录结构；未运行测试、未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-19：推荐页播放请求取消后误跳下一部修复
 
 状态：已实现，debug 构建通过，待用户真机验证。

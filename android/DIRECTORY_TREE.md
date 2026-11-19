@@ -581,7 +581,7 @@ android/
 | `PhoneActivity.kt` | 手机端 Activity 基类：普通页面由系统在屏幕尺寸或方向变化时重建整页。 | class PhoneActivity |
 | `PhoneConsent.kt` | 手机端的两条「知情同意」，与电视端**同一份文案、同一条语义**（见 :core 的 com.hgtv.star.core.ThirdPartyNotice）。 | object PhoneConsent |
 | `PhoneFirstRunTip.kt` | 首次进入时的「先调一下显示」提示。 | object PhoneFirstRunTip |
-| `PhoneMainActivity.kt` | 手机 / 平板端主界面；推荐首屏后预热播放器，分类页延后到推荐首帧或兜底超时再创建；重建时保存推荐页当前体裁、当前剧与播放位置，避免横竖屏切换跳作或从头播放。 | class PhoneMainActivity、fun revealPhoneStartup、fun warmStartupPlayer |
+| `PhoneMainActivity.kt` | 手机 / 平板端主界面；推荐首屏后预热播放器，分类页延后到推荐首帧或兜底超时再创建；推荐页横竖屏原地重排并保留视频 Surface，其他页仍按原逻辑重建。 | class PhoneMainActivity、fun revealPhoneStartup、fun warmStartupPlayer |
 | `PhoneNavigator.kt` | 手机端的路由落地：把 Route 翻译成一个 Intent，交给系统返回栈。 | class PhoneNavigator、fun Context.phoneNav |
 | `PhoneServices.kt` | 手机端服务入口；正式播放页使用当前活动 ExoPlayer，推荐池通过 `newPlayer` 创建独立实例并由 `activate` 登记当前实例。 | object PhoneServices、object PhoneDecoder、fun player、fun newPlayer、fun activate、fun warmPlayer |
 | `PhoneSession.kt` | 手机端「这一台机器现在在放什么」的进程级事实。 | object PhoneSession |
@@ -757,7 +757,7 @@ android/
 | `PhoneSheet.kt` | 播放界面上的浮层（播放设置 / 选集共用一套壳）。 | class PhoneSheet |
 | `PhoneSoft.kt` | 手机端的新拟态绘制入口。 | object PhoneSoft |
 | `PhoneStyle.kt` | 手机端的新拟态令牌。 | object PhoneStyle |
-| `PhoneTabBar.kt` | 手机底部导航：透明底 + 四枚大尺寸圆形入口；未选中凸起、当前项凹陷并使用强调色图标，保留切页与双击回顶回调。 | class PhoneTabBar、fun select、fun setSelected |
+| `PhoneTabBar.kt` | 手机底部导航：透明底 + 四枚大尺寸圆形入口；未选中凸起、当前项凹陷并使用强调色图标，保留切页与双击回顶回调，并可在横竖屏切换时原地重建紧凑尺寸。 | class PhoneTabBar、fun select、fun setSelected、fun setCompact |
 | `PhoneTheme.kt` | 手机 / 平板的视觉令牌。 | object PhoneColor、object PhoneDimen、fun Context.phoneScale、object PhoneUiScale、fun Context.dp、fun android.view.View.dp |
 | `PhoneTopBar.kt` | 手机端统一的页面顶部栏；导出沉浸式 10dp 顶部与 34dp 主行常量，供竖屏播放信息对齐复用。 | class PhoneTopBar、PHONE_TOP_BAR_IMMERSIVE_TOP_DP、PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP |
 | `PhoneTopCollapse.kt` | 列表上滑时把页头收起来、回到顶部再放出来（TV 的 onListScroll / setTopAreaHidden 同一条语义）。 | class PhoneTopCollapse |

@@ -23,7 +23,7 @@ import com.hgtv.star.shared.ui.SoftStyle
  * 未选中入口凸起，当前入口按进去并使用强调色图标。推荐 / 分类 / 榜单 / 我的四个业务入口保持不变，
  * 切页与双击回顶继续由 [com.hgtv.star.phone.PhoneMainActivity] 统一处理。
  */
-class PhoneTabBar(context: Context, private val compact: Boolean = false) : FrameLayout(context) {
+class PhoneTabBar(context: Context, compact: Boolean = false) : FrameLayout(context) {
 
     enum class Icon { HOME, GRID, RANK, MINE }
 
@@ -37,6 +37,7 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
     )
     private val cells = ArrayList<Cell>()
     private var selected = -1
+    private var compact = compact
 
     var onSelect: ((Int) -> Unit)? = null
 
@@ -46,7 +47,12 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
         setBackgroundColor(Color.TRANSPARENT)
         isClickable = true
         setOnClickListener { }
+        buildCells()
+    }
 
+    private fun buildCells() {
+        removeAllViews()
+        cells.clear()
         val panel = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
@@ -69,7 +75,19 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
             cells += cell
             panel.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         }
-        applySelected(0)
+        if (selected < 0) {
+            applySelected(0)
+        } else {
+            cells.forEachIndexed { index, cell -> cell.applySelected(index == selected) }
+        }
+    }
+
+    /** 横竖屏切换时只重建底栏自身，保留宿主 Activity 与视频 Surface。 */
+    fun setCompact(value: Boolean) {
+        if (compact == value) return
+        compact = value
+        minimumHeight = context.phoneTabBarHeightPx()
+        buildCells()
     }
 
     fun select(index: Int) = applySelected(index)

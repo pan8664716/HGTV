@@ -215,6 +215,17 @@ class PhoneMainActivity : PhoneActivity() {
             rebuildOnResume = true
             return false
         }
+        // 推荐页的视频 Surface 不能跟着 Activity 一起销毁：横竖屏只让视图原地重排，
+        // 底栏尺寸单独刷新。其他页面仍按原逻辑重建。
+        if (current == 0) {
+            landscape = newConfig.orientation ==
+                android.content.res.Configuration.ORIENTATION_LANDSCAPE
+            tabBar.setCompact(landscape)
+            applyTabBarHeight(tabBarSystemInset.coerceAtLeast(0))
+            applyStatusBarFor(0)
+            if (Build.VERSION.SDK_INT >= 20) window.decorView.requestApplyInsets()
+            return false
+        }
         pendingTab = current
         return true
     }
@@ -376,9 +387,13 @@ class PhoneMainActivity : PhoneActivity() {
         }
         if (bottom == tabBarSystemInset) return
         tabBarSystemInset = bottom
-        tabBar.setPadding(0, 0, 0, bottom)
+        applyTabBarHeight(bottom)
+    }
+
+    private fun applyTabBarHeight(bottomInset: Int) {
+        tabBar.setPadding(0, 0, 0, bottomInset)
         (tabBar.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
-            params.height = phoneTabBarHeightPx() + bottom
+            params.height = phoneTabBarHeightPx() + bottomInset
             tabBar.layoutParams = params
         }
     }
