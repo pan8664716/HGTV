@@ -14,8 +14,7 @@ internal fun PhonePlayerActivity.makePage(): PhoneVideoPage = PhoneVideoPage(
     verticalSwipe = true,
     doubleTapPlayback = true,
     showLockButton = true,
-    underlay = false,
-    textureVideoSurface = true,
+    underlay = playerFeedUnderlay,
 )
 
 /**
