@@ -843,7 +843,7 @@ android/
 | --- | --- | --- |
 | `AppVersion.kt` | 应用版本号。 | object AppVersion |
 | `TvMainActivity.kt` | 电视主界面 Activity，持有页面状态、焦点、生命周期、跨页面导航、首页视图缓存与推荐页 ViewPager2 / 播放器池引用；正式播放页使用单个 PlayerView。 | class TvMainActivity |
-| `TvPlaybackPager.kt` | 电视推荐页专用的竖向 ViewPager2 三页窗口；每页独立 PlayerView，当前页绑定活动播放器，前后页承载池化实例，相邻换作使用原生轻量滑动。 | class TvPlaybackPager、class TvPlaybackSurfacePage、class TvPlaybackPageAdapter |
+| `TvPlaybackPager.kt` | 电视推荐页专用的竖向 ViewPager2 三页窗口；每页独立 PlayerView，当前页绑定活动播放器，前后页承载池化实例，换作保持即时直切。 | class TvPlaybackPager、class TvPlaybackSurfacePage、class TvPlaybackPageAdapter |
 | `TvPlaybackPool.kt` | 电视推荐页播放器池：相邻作品独立取源、静音预渲染首帧、命中后提升为活动播放器，按低配设备限制池大小并统一回收 RemoteVideo、HTTP 与播放器。 | class TvPlaybackPoolSlot、class TvPlaybackPoolState、fun TvMainActivity.scheduleTvPlaybackPoolNeighbors、fun TvMainActivity.storeActivePlayerInTvPool、fun TvMainActivity.takeTvPlaybackPooledSlot |
 | `TvMainLifecycleFacade.kt` | feature-tv 模块的 TvMainLifecycleFacade.kt 职责。文件 TvMainLifecycleFacade 主要包含 fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory。 | fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory、fun TvMainActivity.handleTrimMemory、fun TvMainActivity.handleDestroy |
 
@@ -886,7 +886,7 @@ android/
 | `RecommendNavigation.kt` | 推荐页进入正式播放与返回首页路由；进入正片时释放推荐池并把输出层恢复为单个 PlayerView，返回首页优先复用缓存并延后播放器重资源回收。 | fun TvMainActivity.enterFormalPlayback、fun TvMainActivity.goHomeFromRecommend、fun TvMainActivity.exitRecommendToHome、fun TvMainActivity.leaveRecommendPlaybackToHome |
 | `RecommendOverlay.kt` | 推荐页底部那块信息浮层：进度 + 剧名 + 操作说明；中心 loading 只在真实首帧后撤掉。 | fun TvMainActivity.attachRecommendOverlay、fun TvMainActivity.recommendChip、fun TvMainActivity.dismissRecommendOverlay、fun TvMainActivity.updateRecommendOverlay |
 | `RecommendPage.kt` | 本文件是「推荐」这一条独立的播放链路：抖音式的上下换剧、确定进正片、菜单开播放设置、返回回主页面；首屏目标 60 条，消费约 2/3 后预取。 | val RECOMMEND_SKIP_LIMIT、val RECOMMEND_MAX_CHAIN、val RECOMMEND_CACHE_NAMESPACE、val RECOMMEND_FIRST_LIMIT、val RECOMMEND_FIRST_ITEMS、val RECOMMEND_PAGE_LIMIT、val RECOMMEND_LOOKAHEAD |
-| `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部；换到相邻作品时播放轻量 ViewPager2 竖向过渡，把旧活动实例收进池并优先提升预渲染实例；停止旧媒体、立即作废旧 work，再显示当前作品 loading 并取详情。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend、fun TvMainActivity.resetRecommendPlaybackForSwitch |
+| `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部；换作即时定位 ViewPager2 当前页，把旧活动实例收进池并优先提升预渲染实例；停止旧媒体、立即作废旧 work，再显示当前作品 loading 并取详情。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend、fun TvMainActivity.resetRecommendPlaybackForSwitch |
 | `RecommendUi.kt` | 本机兴趣画像（进推荐页时建一次，之后每页复用）。 | fun TvMainActivity.loadGenderOptions、fun TvMainActivity.showRecommendMessage、fun TvMainActivity.showRecommendLoading、fun TvMainActivity.showRecommendToast |
 | `RecommendWarm.kt` | 一次在途的「相邻一部预热」。 | class RecommendWarm |
 | `RecommendWarmDetail.kt` | 推荐相邻播放地址预热；只取详情与单集直连地址，不解析索引、不读取首块，也不在推荐流加载封面。 | val RECOMMEND_WARM_SLOTS、val RECOMMEND_WARM_SLOTS_METERED、fun TvMainActivity.warmRecommendDetail、fun TvMainActivity.hasWarmSlot |

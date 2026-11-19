@@ -55,10 +55,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
         switchTvPlaybackPagerScreen("recommend",safe)
     }
     tvPlaybackPager?.refreshPages()
-    val pagerDistance=kotlin.math.abs(safe-(tvPlaybackPager?.currentIndex ?: safe))
-    // 相邻作品使用 ViewPager2 自带的短滑动；跨多页和首次定位仍然直切，避免遥控器连按时
-    // 动画排队拖慢起播。这里不加缩放 / 透明变换，保持轻量。
-    tvPlaybackPager?.setCurrentIndex(safe,smooth=direction!=0 && pagerDistance==1)
+    tvPlaybackPager?.setCurrentIndex(safe,smooth=false)
     switchTrace("pager-positioned")
     (tvPlaybackPager?.pageAt(safe) ?: targetPageBefore)?.let { playerView=it.playerView }
     // 换剧方向与时刻：相邻预热按「用户正在走的方向」排优先级（见 [prefetchRecommendNeighbors]）。

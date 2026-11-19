@@ -17,10 +17,8 @@
   正片时释放池、解绑 pager 当前页，重新建立原来的单个 `PlayerView/SurfaceView`。
 - 正式页换集、自动连播、选集和恢复路径重新走原有的单播放器 `reuse + setMediaSource`
   链路，`PlayerController` 中所有池命中与相邻页预热都限定为 `screen=recommend`。
-- 推荐页遥控器上下切换相邻作品时使用 `ViewPager2.setCurrentItem(..., smooth=true)` 的
-  原生竖向短滑动；跨多页、首次定位和快速连按仍直切，避免动画排队影响起播。
-- 动画不增加缩放、透明、共享元素或额外布局层，保留现有 `itemAnimator=null`，避免低端
-  电视因转场合成增加掉帧。
+- 推荐页遥控器上下切换统一即时直切，不启用 `ViewPager2` 平滑滚动、缩放、透明或共享
+  元素动画；保留 `itemAnimator=null`，避免低端电视因转场合成增加掉帧或拖慢起播。
 
 回滚：对本节对应提交执行 `git revert`。
 
