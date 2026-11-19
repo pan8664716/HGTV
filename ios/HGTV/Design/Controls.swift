@@ -138,7 +138,6 @@ struct BottomTabBar: View {
         let barHeight = m.dp(PhoneDimen.tabBar)
         let circleSize = m.dp(PhoneDimen.tabBar * 0.62)
         let iconSize = m.dp(PhoneDimen.tabBar * 0.33)
-        let panelRadius = m.dp(m.isPortrait ? 8 : 6)
 
         ZStack(alignment: .top) {
             HStack(spacing: 0) {
@@ -178,12 +177,6 @@ struct BottomTabBar: View {
             }
             .padding(.horizontal, m.dp(4))
             .frame(height: barHeight)
-            .soft(
-                .raised,
-                fill: theme.surface,
-                radius: panelRadius,
-                depth: max(1, m.dp(2))
-            )
             .padding(.horizontal, m.dp(PhoneDimen.tabInset))
         }
         .frame(height: barHeight + insets.bottom)

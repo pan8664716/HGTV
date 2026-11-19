@@ -16,7 +16,7 @@ import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.shared.ui.SoftStyle
 
 /**
- * 手机底部导航：满宽直角长条 + 四枚等尺寸圆形入口。
+ * 手机底部导航：透明底 + 四枚等尺寸圆形入口。
  *
  * 版式参考 ShadeCraft 的 Elevated Tab：不显示文字，不做选中项位移；
  * 未选中入口凸起，当前入口按进去并使用强调色图标。推荐 / 分类 / 榜单 / 我的四个业务入口保持不变，
@@ -36,13 +36,10 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
     )
     private val cells = ArrayList<Cell>()
     private var selected = -1
-    private val edgePaint = Paint(Paint.ANTI_ALIAS_FLAG)
 
     var onSelect: ((Int) -> Unit)? = null
 
     init {
-        setBackgroundColor(PhoneStyle.surface)
-        setWillNotDraw(false)
         isClickable = true
         setOnClickListener { }
 
@@ -69,14 +66,6 @@ class PhoneTabBar(context: Context, private val compact: Boolean = false) : Fram
             panel.addView(cell, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.MATCH_PARENT, 1f))
         }
         applySelected(0)
-    }
-
-    override fun onDraw(canvas: Canvas) {
-        super.onDraw(canvas)
-        // 与参考实现一致：长条本身保持平直，只用一条顶部高光交代材质边界。
-        edgePaint.color = PhoneStyle.shadowLight
-        edgePaint.strokeWidth = 1f
-        canvas.drawLine(0f, .5f, width.toFloat(), .5f, edgePaint)
     }
 
     fun select(index: Int) = applySelected(index)
