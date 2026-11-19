@@ -77,6 +77,7 @@ internal fun PhonePlayerActivity.attach(video: RemoteVideo, startAt: Long) {
     // 不清的话，网络恢复回调会拿一个过期的计数把正常播放的这一集重来一遍。
     sourceRetryState.episode = ""
     sourceRetryState.count = 0
+    scheduleAdjacentEpisodeWarmup()
 
     if (listenerPendingFullscreen) {
         // 画面已经挂上解码器，这时切换全屏不会黑屏。

@@ -388,6 +388,7 @@ open class PhonePlayerActivity : PhoneActivity() {
         get()=listener
         set(value) { listener=value }
     internal val runtimeState = PhonePlayerRuntimeState()
+    internal val playerAdjacentState = PhonePlayerAdjacentState()
     private val sleepTimer = com.hgtv.star.core.SleepTimer { android.os.SystemClock.elapsedRealtime() }
     internal val nextSeasonSleepTimer get()=sleepTimer
     private var sleepChoice = 0
@@ -455,6 +456,8 @@ open class PhonePlayerActivity : PhoneActivity() {
 
     private lateinit var ghostPage: PhoneVideoPage
     private lateinit var landscapeGhost: FrameLayout
+    private lateinit var landscapeGhostVideo: FixedFirstFramePlayerView
+    private var landscapeGhostCover: ImageView? = null
     private lateinit var landscapeGhostTitle: TextView
     internal var swipeGhostPage: PhoneVideoPage
         get()=ghostPage
@@ -462,6 +465,12 @@ open class PhonePlayerActivity : PhoneActivity() {
     internal var swipeLandscapeGhost: FrameLayout
         get()=landscapeGhost
         set(value) { landscapeGhost=value }
+    internal var swipeLandscapeGhostVideo: FixedFirstFramePlayerView
+        get()=landscapeGhostVideo
+        set(value) { landscapeGhostVideo=value }
+    internal var swipeLandscapeGhostCover: ImageView?
+        get()=landscapeGhostCover
+        set(value) { landscapeGhostCover=value }
     internal var swipeLandscapeGhostTitle: TextView
         get()=landscapeGhostTitle
         set(value) { landscapeGhostTitle=value }

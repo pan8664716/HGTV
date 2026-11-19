@@ -33,7 +33,17 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
         phoneSize(15)
         setTypeface(typeface, android.graphics.Typeface.BOLD)
     }
+    val ghostVideo = FixedFirstFramePlayerView(this).apply {
+        useController = false
+        resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
+        setShutterBackgroundColor(Color.BLACK)
+        setKeepContentOnPlayerReset(true)
+        PhonePlayerViewSupport.useOpaqueVideoSurface(this)
+    }
     val ghostCover = episodeCoverView(this)
+    ghost.addView(ghostVideo, FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
+    ))
     ghost.addView(ghostCover, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
     ))
@@ -137,6 +147,8 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
     ))
     swipeLandscapeGhost = ghost
+    swipeLandscapeGhostVideo = ghostVideo
+    swipeLandscapeGhostCover = ghostCover
     swipeLandscapeGhostTitle = ghostTitle
     playerLandscapeContainer = landscape
     playerLandscapeVideoSlot = video

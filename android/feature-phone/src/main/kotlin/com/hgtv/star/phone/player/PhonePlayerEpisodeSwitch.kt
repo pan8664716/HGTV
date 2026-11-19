@@ -14,6 +14,9 @@ internal fun PhonePlayerActivity.playSwipeTarget(target: Int) {
     cancelAutoRetry()
     cancelPlaybackRequest()
     cancelSourceRetry()
+    val previousPosition = player?.currentPosition?.coerceAtLeast(0L) ?: 0L
+    val previousDuration = player?.duration?.coerceAtLeast(0L) ?: listenerLastDuration
+    if (activateAdjacentEpisode(target, previousPosition, previousDuration)) return
     if (target == index + 1 && seekToQueuedNext(target)) return
     play(target, clearDanmakuOnSwitch = true)
 }

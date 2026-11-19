@@ -12,6 +12,7 @@ internal fun PhonePlayerActivity.handlePlayerPause() {
     root.removeCallbacks(playerDanmakuTick)
     // 退到前台之外：暂停与后台都不是卡死，看门狗一律撤掉（回来时由 onResume 重装）。
     disarmPictureWatchdog()
+    pauseAdjacentPlayers()
     // 退了前台就不再占着系统媒体面板：那时面板上的按键应该交给真正在前台的应用。
     runtimeState.mediaSession?.deactivate()
     val handoff = handingBackToFeedForLifecycle()

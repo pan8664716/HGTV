@@ -217,6 +217,15 @@ private fun PhonePlayerActivity.prepareGhostImpl(direction: Int) {
         swipeDirection = 0
         return
     }
+    if (playerAdjacentState.slots.containsKey(target)) {
+        attachAdjacentToGhost(target, direction)
+        return
+    }
+    ensureAdjacentEpisode(target)
+    detachAdjacentGhostOutput()
+    playerAdjacentState.ghostIndex = target
+    playerAdjacentState.ghostDirection = direction
+    playerAdjacentState.ghostLandscape = playerLandscapeMode
     val label = "第${target + 1}集"
     val episodeId = d.episodes[target]
     val episodeCover = d.episodeCover(episodeId)
@@ -259,12 +268,11 @@ internal fun PhonePlayerActivity.resetSwipeStateImpl(keepCurrent: Boolean = fals
     if (keepCurrent) playerPage.translationY = 0f
     if (playerFeedUnderlay) PhoneSession.setFeedVideoOffset(0f)
     swipeGhostPage.translationY = 0f
-    swipeGhostPage.visibility = View.GONE
     swipeLandscape.translationY = 0f
     swipeLandscapeGhost.translationY = 0f
-    swipeLandscapeGhost.visibility = View.GONE
     swipePreparedState = false
     swipeDirection = 0
+    restoreAdjacentGhostOffscreen()
 }
 
 /** 上下滑时的集数提示，复用画面顶部那一条 hint。 */

@@ -167,6 +167,7 @@ internal fun PhonePlayerActivity.onAdvanced(
     completedPrevious: Boolean = true,
     previousPosition: Long = 0L,
     clearDanmakuOnSwitch: Boolean = false,
+    closePreviousRemote: Boolean = true,
 ) {
     val d = detail ?: return
     if (nextIndex !in d.episodes.indices) return
@@ -212,6 +213,7 @@ internal fun PhonePlayerActivity.onAdvanced(
     }
 
     index = nextIndex
+    reconcileAdjacentSlots()
     PhoneSession.nextQueued = false
     PhoneSession.clearNext()
     bindEpisodeUiForListener(d, nextIndex, clearDanmakuOnSwitch)
@@ -230,7 +232,14 @@ internal fun PhonePlayerActivity.onAdvanced(
     queuedEpisodeId = ""
     if (video != null) {
         remote = video
-        PhoneSession.publish(d, nextIndex, video, video.info.quality, PhoneSession.Owner.PLAYER)
+        PhoneSession.publish(
+            d,
+            nextIndex,
+            video,
+            video.info.quality,
+            PhoneSession.Owner.PLAYER,
+            closePrevious = closePreviousRemote,
+        )
     }
     reportRecommendEvent(
         com.hgtv.star.core.RecommendBehavior.Event.PLAY_START,
@@ -239,6 +248,7 @@ internal fun PhonePlayerActivity.onAdvanced(
         episodeIndexOverride=nextIndex,
     )
     prepareNextSeasonIfNeeded(d)
+    scheduleAdjacentEpisodeWarmup()
     muteBufferingUiForListener()
     android.util.Log.i("HGTV-PHONE", "advanced seamlessly to ${nextIndex + 1}")
 }

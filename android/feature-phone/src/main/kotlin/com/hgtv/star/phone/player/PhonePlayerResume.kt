@@ -23,5 +23,7 @@ internal fun PhonePlayerActivity.handlePlayerResume() {
     syncMediaSession()
     syncDebugOverlayForLifecycle()
     syncKeepScreenOn()
+    scheduleAdjacentEpisodeWarmup()
+    rebindAdjacentGhostForMode()
     if (playerChromeVisible) scheduleChromeHide()
 }

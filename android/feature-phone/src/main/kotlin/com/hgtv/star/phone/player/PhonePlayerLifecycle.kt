@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 internal fun PhonePlayerActivity.releasePlayerImpl() {
+    releaseAllAdjacentPlayers()
     playbackSessionState.release()
     progressTicker?.cancel()
     progressTicker = null
@@ -24,6 +25,7 @@ internal fun PhonePlayerActivity.releasePlayerImpl() {
  * 退出播放页时这一路要交回信息流，关掉就等于让它重来一遍。
  */
 internal fun PhonePlayerActivity.detachForHandoffImpl() {
+    releaseAllAdjacentPlayers()
     progressTicker?.cancel()
     progressTicker = null
     playerListener?.let { player?.removeListener(it) }
