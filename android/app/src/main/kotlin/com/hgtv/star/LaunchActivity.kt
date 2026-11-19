@@ -240,6 +240,11 @@ class LaunchActivity : Activity() {
 
     @Suppress("DEPRECATION")
     private fun applyFullscreen() {
+        window.addFlags(
+            android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN or
+                android.view.WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+        )
+        window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_FORCE_NOT_FULLSCREEN)
         if (android.os.Build.VERSION.SDK_INT >= 21) {
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
@@ -254,6 +259,12 @@ class LaunchActivity : Activity() {
         }
         if (android.os.Build.VERSION.SDK_INT >= 30) {
             window.setDecorFitsSystemWindows(false)
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 28) {
+            window.attributes = window.attributes.apply {
+                layoutInDisplayCutoutMode =
+                    android.view.WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
         }
         window.decorView.systemUiVisibility=(
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE

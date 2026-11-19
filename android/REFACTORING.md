@@ -70,7 +70,7 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 ## 2026-11-19：手机启动首帧系统栏颜色闪动修复
 
-状态：已实现，debug 构建通过，待用户真机验证。
+状态：已实现，debug 真机验证、Release 构建通过。
 
 - 现象：手机冷启动后第一帧顶部状态栏与底部系统导航栏颜色不一致，随后闪一下才恢复。
 - 根因：`phoneEdgeToEdge()` 只提前把状态栏设透明，导航栏仍沿用主题默认色；
@@ -80,7 +80,12 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 - 复核启动截图后又补了一层：`LaunchActivity` 在透明系统栏未成功隐藏时会露出系统黑底，
   现在状态栏/导航栏兜底色统一为启动底色，并在 Android 11+ 使用
   `setDecorFitsSystemWindows(false)` 与 `WindowInsetsController` 主动隐藏系统栏。
-- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或接口；测试待用户真机验证，未推送。
+- 真机复核仍发现 `LaunchActivity` 窗口 frame 从 `y=138` 开始，MIUI 没有仅凭系统栏
+  visibility 将窗口铺到屏幕顶部。启动窗口现增加 `FLAG_FULLSCREEN` /
+  `FLAG_LAYOUT_IN_SCREEN`，清除 `FLAG_FORCE_NOT_FULLSCREEN`，并允许铺入短边刘海；
+  `LaunchRouter` 同时设置 `android:windowFullscreen=true`。
+- 安装最新 debug 包后复核，启动页内容已从屏幕顶部开始；`:app:assembleDebug` 与
+  `:app:assembleRelease` 均通过。未改版本号、versionCode、依赖或接口；未推送。
 
 回滚：对本节对应提交执行 `git revert`。
 

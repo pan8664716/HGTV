@@ -58,6 +58,7 @@
     -->
     <style name="LaunchRouter" parent="@style/AppTheme">
         <item name="android:windowBackground">@drawable/startup_window</item>
+        <item name="android:windowFullscreen">true</item>
         <item name="android:windowNoTitle">true</item>
         <item name="android:windowAnimationStyle">@null</item>
     </style>
