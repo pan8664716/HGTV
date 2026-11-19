@@ -4,7 +4,6 @@ package com.hgtv.star
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
-import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.graphics.drawable.GradientDrawable
 import android.os.Bundle
@@ -241,6 +240,21 @@ class LaunchActivity : Activity() {
 
     @Suppress("DEPRECATION")
     private fun applyFullscreen() {
+        if (android.os.Build.VERSION.SDK_INT >= 21) {
+            window.addFlags(android.view.WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
+            window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
+            // 即使个别 ROM 暂时没有隐藏状态栏，也让它与启动页同色，避免露出系统黑底。
+            window.statusBarColor = BACKGROUND
+            window.navigationBarColor = BACKGROUND
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            window.isStatusBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
+        }
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            window.setDecorFitsSystemWindows(false)
+        }
         window.decorView.systemUiVisibility=(
             View.SYSTEM_UI_FLAG_LAYOUT_STABLE
                 or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
@@ -248,9 +262,25 @@ class LaunchActivity : Activity() {
                 or View.SYSTEM_UI_FLAG_FULLSCREEN
                 or View.SYSTEM_UI_FLAG_HIDE_NAVIGATION
             )
-        if(android.os.Build.VERSION.SDK_INT>=21) {
-            window.statusBarColor=Color.TRANSPARENT
-            window.navigationBarColor=Color.TRANSPARENT
+        if (android.os.Build.VERSION.SDK_INT >= 30) {
+            window.insetsController?.let { controller ->
+                controller.hide(
+                    android.view.WindowInsets.Type.statusBars() or
+                        android.view.WindowInsets.Type.navigationBars()
+                )
+                controller.systemBarsBehavior =
+                    android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            }
+        }
+        // MIUI 在首帧前可能重新挂回系统栏背景，布局完成后再隐藏一次。
+        window.decorView.post {
+            if (isFinishing || isDestroyed) return@post
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                window.insetsController?.hide(
+                    android.view.WindowInsets.Type.statusBars() or
+                        android.view.WindowInsets.Type.navigationBars()
+                )
+            }
         }
     }
 

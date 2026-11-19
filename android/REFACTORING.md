@@ -77,6 +77,9 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
   `PhoneMainActivity.applySystemBars()` 执行后才把导航栏改透明，首帧因此短暂不一致。
 - 修复：窗口初始化阶段同时把状态栏、导航栏设为透明并关闭导航栏对比度蒙层；
   主界面首帧前同步导航栏图标亮暗；主题中的首帧系统栏底色统一为启动底色。
+- 复核启动截图后又补了一层：`LaunchActivity` 在透明系统栏未成功隐藏时会露出系统黑底，
+  现在状态栏/导航栏兜底色统一为启动底色，并在 Android 11+ 使用
+  `setDecorFitsSystemWindows(false)` 与 `WindowInsetsController` 主动隐藏系统栏。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或接口；测试待用户真机验证，未推送。
 
 回滚：对本节对应提交执行 `git revert`。
