@@ -63,6 +63,18 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 2026-11-19：手机底栏避开系统导航区
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- Android 11+ 主界面铺到系统导航栏后方时，底栏按真实导航栏 / 手势区 inset 增加底部
+  安全距离；四个入口不再被三键导航或底部手势条遮挡。
+- 底栏底色继续铺满系统栏后方，Android 10 及以下维持系统原有避让，避免重复留白。
+- iOS 已按 `safeAreaInsets.bottom` 避让，本次不改。
+- 未改版本号、versionCode、依赖或目录结构；未运行测试、未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 正式播放横竖片源换集背景透出修复
 
 状态：已实现，debug 构建通过，待用户真机验证。

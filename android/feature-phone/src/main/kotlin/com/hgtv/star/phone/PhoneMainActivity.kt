@@ -14,6 +14,8 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
+import androidx.core.view.ViewCompat
+import androidx.core.view.WindowInsetsCompat
 import com.hgtv.star.phone.ui.PhoneColor
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTabBar
@@ -84,6 +86,8 @@ class PhoneMainActivity : PhoneActivity() {
     /** 主界面是否在前台：只有推荐流真的在播时才保持屏幕常亮。 */
     private var resumed = false
     private var landscape = false
+    /** 底栏已经为系统导航区留出的高度；-1 表示还没拿到窗口 inset。 */
+    private var tabBarSystemInset = -1
 
     /** 调试面板（设置 → 调试模式）：与 TV 一样挂在 root 上，跨 tab 存活。 */
     private var debugOverlay: com.hgtv.star.phone.ui.PhoneDebugOverlay? = null
@@ -140,6 +144,10 @@ class PhoneMainActivity : PhoneActivity() {
         ))
 
         setContentView(root)
+        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
+            syncTabBarSystemInset(insets)
+            insets
+        }
         root.post { StartupTrace.mark("phoneMain.shell.firstFrame") }
         // 播放页竖屏要借推荐页的 Surface 出画面（见 `PhoneVideoPage.underlay`）：
         // 把「收起 / 恢复下层控制层」的入口登记给它，否则会看到两套标题、两条进度条。
@@ -337,6 +345,32 @@ class PhoneMainActivity : PhoneActivity() {
             return
         }
         applySystemBars(immersive = index == 0, hideNavigation = false)
+    }
+
+    /**
+     * 主界面从 Android 11 起铺到系统导航栏后方。
+     *
+     * 底栏自身只占 [phoneTabBarHeightPx]；把系统底部 inset 加进宿主高度并作为底栏
+     * padding，入口就会落在导航按钮 / 手势条上方，底栏底色仍可铺满系统栏后方。
+     * Android 10 及以下的内容窗口本来就在导航栏上方，不能再加一次。
+     */
+    private fun syncTabBarSystemInset(insets: WindowInsetsCompat) {
+        val bottom = if (Build.VERSION.SDK_INT < 30 || landscape) {
+            0
+        } else {
+            insets.getInsets(
+                WindowInsetsCompat.Type.navigationBars() or
+                    WindowInsetsCompat.Type.systemGestures() or
+                    WindowInsetsCompat.Type.mandatorySystemGestures(),
+            ).bottom
+        }
+        if (bottom == tabBarSystemInset) return
+        tabBarSystemInset = bottom
+        tabBar.setPadding(0, 0, 0, bottom)
+        (tabBar.layoutParams as? FrameLayout.LayoutParams)?.let { params ->
+            params.height = phoneTabBarHeightPx() + bottom
+            tabBar.layoutParams = params
+        }
     }
 
     @Suppress("DEPRECATION")
