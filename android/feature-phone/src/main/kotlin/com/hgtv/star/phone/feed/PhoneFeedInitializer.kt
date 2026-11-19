@@ -55,6 +55,7 @@ internal fun PhoneFeedView.initializeFeed() {
                 if (state == RecyclerView.SCROLL_STATE_DRAGGING) {
                     pendingVisiblePlay?.let(feedList::removeCallbacks)
                     pendingVisiblePlay = null
+                    if (feedList.userScroll) pauseCurrentForFeedSwipeImpl()
                 }
                 return
             }
@@ -65,6 +66,8 @@ internal fun PhoneFeedView.initializeFeed() {
             feedList.userScroll = false
             if (userScroll && index >= 0 && index != feedPlayingIndex) {
                 playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
+            } else if (userScroll) {
+                resumeCurrentAfterFeedSwipeImpl()
             }
             if (index >= 0 &&
                 com.hgtv.star.shared.feed.RecommendFeedPolicy.shouldPrefetch(
@@ -123,4 +126,28 @@ private fun dominantVisiblePage(list: RecyclerView): Int {
         }
     }
     return if (bestVisible * 2 >= list.height) bestIndex else -1
+}
+
+internal fun PhoneFeedView.pauseCurrentForFeedSwipeImpl() {
+    if (feedHidden || PhoneSession.underlayActive || feedSwipePausedCurrent) return
+    val exo = feedPlayer ?: return
+    feedSwipePausedCurrent = true
+    feedSwipeResumeCurrent = exo.playWhenReady || exo.isPlaying
+    exo.playWhenReady = false
+    runCatching { exo.pause() }
+    notifyPlayStateChangedImpl()
+}
+
+internal fun PhoneFeedView.resumeCurrentAfterFeedSwipeImpl() {
+    if (!feedSwipePausedCurrent) return
+    val resume = feedSwipeResumeCurrent
+    clearFeedSwipePauseImpl()
+    if (!resume || feedHidden) return
+    feedPlayer?.playWhenReady = true
+    notifyPlayStateChangedImpl()
+}
+
+internal fun PhoneFeedView.clearFeedSwipePauseImpl() {
+    feedSwipePausedCurrent = false
+    feedSwipeResumeCurrent = false
 }

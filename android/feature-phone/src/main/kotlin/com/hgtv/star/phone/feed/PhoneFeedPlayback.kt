@@ -12,6 +12,7 @@ internal fun PhoneFeedView.playIndexImpl(
     clearDanmakuOnSwitch: Boolean = false,
 ) {
     val series = feedItems.getOrNull(index) ?: return
+    clearFeedSwipePauseImpl()
     val previousIndex = feedPlayingIndex
     PhoneSession.rememberRecommendSeries(series, feedCacheKey())
     if (feedPlayingIndex >= 0 && feedPlayingIndex != index) settleRecommendWatch()

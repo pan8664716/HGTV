@@ -480,6 +480,8 @@ open class PhonePlayerActivity : PhoneActivity() {
     private var swipeDir = 0
     private var swipePrepared = false
     private var swipeLogicalIndex = -1
+    private var swipePausedCurrent = false
+    private var swipeResumeCurrent = false
     internal var swipeDirection: Int
         get()=swipeDir
         set(value) { swipeDir=value }
@@ -489,6 +491,12 @@ open class PhonePlayerActivity : PhoneActivity() {
     internal var swipeLogicalTarget: Int
         get()=swipeLogicalIndex
         set(value) { swipeLogicalIndex=value }
+    internal var swipeCurrentPaused: Boolean
+        get()=swipePausedCurrent
+        set(value) { swipePausedCurrent=value }
+    internal var swipeShouldResumeCurrent: Boolean
+        get()=swipeResumeCurrent
+        set(value) { swipeResumeCurrent=value }
     private var swipeAnimation: Runnable? = null
     internal var swipeAnimationRunnable: Runnable?
         get()=swipeAnimation

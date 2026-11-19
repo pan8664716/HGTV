@@ -13,6 +13,7 @@ internal fun PhonePlayerActivity.slideHeightImpl(): Int {
 
 /** 手指按下：停掉上一轮的动画，等第一次有方向的位移再决定翻向哪一集。 */
 internal fun PhonePlayerActivity.beginSwipeImpl() {
+    pauseCurrentForSwipeImpl()
     swipeDirection = 0
     swipePreparedState = false
     playerPage.animate().cancel()
@@ -153,6 +154,7 @@ private fun PhonePlayerActivity.settleBackImpl() {
         duration = duration,
     ) {
         resetSwipeStateImpl()
+        resumeCurrentAfterSwipeImpl()
     }
 }
 
@@ -324,4 +326,32 @@ private fun PhonePlayerActivity.stepEpisodeImpl(direction: Int) {
     hint.visibility = View.VISIBLE
     val token = swipeHintToken
     root.postDelayed({ if (swipeHintToken == token) clearEpisodeHintImpl() }, 900)
+}
+
+/** 滑动一开始就停当前声音；只有手势弹回时才恢复。 */
+internal fun PhonePlayerActivity.pauseCurrentForSwipeImpl() {
+    if (swipeCurrentPaused) return
+    val exo = player ?: return
+    swipeCurrentPaused = true
+    swipeShouldResumeCurrent = exo.playWhenReady || exo.isPlaying
+    exo.playWhenReady = false
+    runCatching { exo.pause() }
+    syncPlayGlyph()
+}
+
+internal fun PhonePlayerActivity.resumeCurrentAfterSwipeImpl() {
+    if (!swipeCurrentPaused) return
+    val resume = swipeShouldResumeCurrent
+    swipeCurrentPaused = false
+    swipeShouldResumeCurrent = false
+    if (!resume) return
+    val exo = player ?: return
+    exo.playWhenReady = true
+    syncPlayGlyph()
+    syncKeepScreenOn()
+}
+
+internal fun PhonePlayerActivity.clearSwipePauseForSwitchImpl() {
+    swipeCurrentPaused = false
+    swipeShouldResumeCurrent = false
 }

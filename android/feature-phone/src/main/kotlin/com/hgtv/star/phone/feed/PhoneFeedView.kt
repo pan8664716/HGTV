@@ -238,6 +238,14 @@ class PhoneFeedView(
     internal var feedPaused: Boolean
         get()=paused
         set(value) { paused=value }
+    private var swipePausedCurrent = false
+    internal var feedSwipePausedCurrent: Boolean
+        get()=swipePausedCurrent
+        set(value) { swipePausedCurrent=value }
+    private var swipeResumeCurrent = false
+    internal var feedSwipeResumeCurrent: Boolean
+        get()=swipeResumeCurrent
+        set(value) { swipeResumeCurrent=value }
     /** 播放意图变化（起播 / 暂停 / 收起）：宿主据此同步屏幕常亮。 */
     var onPlayStateChanged: (() -> Unit)? = null
     /** 正在播那一屏的详情：片尾自动进正片要用它取「还有没有下一集」。 */
