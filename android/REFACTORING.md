@@ -68,7 +68,22 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
-## 2026-11-19：正式播放页换集残留上一集弹幕修复
+## 2026-11-19：简介页进入正式播放页上下滑透出简介页修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：手机从简介页进入正式播放页后，上下滑换集会透出简介页内容。
+- 排查：`dumpsys window` 确认播放页窗口仍是 `fmt=TRANSLUCENT`，简介页窗口
+  仍在同一任务中可见；播放页同时有多块透明 / 独立 `SurfaceView`。
+- 根因：正式播放页所有入口都沿用推荐页交接用的半透明 `PlayerTheme`。简介页入口
+  没有下层视频需要保活，透明窗口让弹幕 `SurfaceView` 的透明区域直接露出简介页。
+- 修复：非推荐页入口在 `onCreate` 建窗前切换到不透明 `PlayerOpaqueTheme`；
+  推荐页入口继续使用半透明 `PlayerTheme`，不影响原视频交接。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或接口；测试待用户真机验证，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-19：正式播放页换集残留上一集弹幕修复（历史）
 
 状态：已实现，debug 构建通过，待用户真机验证。
 

@@ -35,6 +35,20 @@
     </style>
 
     <!--
+      非推荐页入口的正式播放页使用不透明窗口。
+
+      详情页 / 搜索 / 卡片菜单没有下层视频需要交接；继续使用半透明窗口时，
+      弹幕 SurfaceView 的透明区域会在上下滑时直接露出下层简介页。
+      推荐页入口仍使用 PlayerTheme 保留交接能力。
+    -->
+    <style name="PlayerOpaqueTheme" parent="@style/PlayerTheme">
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
+
+    <!--
       启动页（`LaunchActivity`）：正常、不透明窗口。
 
       Logo 由系统启动画面显示，页面内只保留三点加载动画；本地初始化成功后才进入 TV / Phone。

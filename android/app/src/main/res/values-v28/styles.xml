@@ -34,4 +34,12 @@
         <item name="android:windowAnimationStyle">@null</item>
         <item name="android:windowNoTitle">true</item>
     </style>
+
+    <!-- 非推荐页入口没有下层视频需要保活，窗口必须不透明，避免 SurfaceView 挖孔露页。 -->
+    <style name="PlayerOpaqueTheme" parent="@style/PlayerTheme">
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowBackground">#000000</item>
+        <item name="android:backgroundDimEnabled">false</item>
+        <item name="android:windowAnimationStyle">@null</item>
+    </style>
 </resources>
