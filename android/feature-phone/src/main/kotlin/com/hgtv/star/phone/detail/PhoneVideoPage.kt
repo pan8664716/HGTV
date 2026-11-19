@@ -27,8 +27,8 @@ import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.bottomScrim
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
-import com.hgtv.star.phone.ui.phoneTabBarHeightPx
 import com.hgtv.star.phone.ui.roundedBackground
+import com.hgtv.star.phone.ui.tabBarInset
 
 /**
  * 竖屏播放版面：**推荐（信息流）与正式播放页共用这一块**。
@@ -38,7 +38,7 @@ import com.hgtv.star.phone.ui.roundedBackground
  *
  * | 差别 | 信息流 | 正式播放页 |
  * | --- | --- | --- |
- * | 底部导航留白 | 让开 60dp 的 tab 栏 | 只让开系统导航条 |
+ * | 底部导航留白 | 让开底栏与系统安全区的总高度 | 只让开系统导航条 |
  *
  * ## 版面（自下而上）
  *
@@ -658,14 +658,14 @@ class PhoneVideoPage(
     }
 
     /**
-     * 底部让开多少：信息流让开 tab 栏，正式播放页 **一点都不让**。
+     * 底部让开多少：信息流让开 tab 栏与系统安全区的总高度，正式播放页 **一点都不让**。
      *
      * 播放页是全屏沉浸（`enterImmersive` 把状态栏与导航条一起藏了），
      * 再按 `navigation_bar_height` 留白就会在条子下面空出一条 48dp 的黑带——
      * 用户读到的就是「信息悬在半空、底下空一格」。让开量归零之后条子贴住屏幕底边。
      */
     private fun bottomInset(): Int =
-        if (withTabBar) context.phoneTabBarHeightPx() else 0
+        if (withTabBar) context.tabBarInset() else 0
 
     private fun isLandscapePage(): Boolean =
         if (width > 0 && height > 0) {
