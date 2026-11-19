@@ -26,6 +26,7 @@ private fun PhonePlayerActivity.seekToQueuedNext(target: Int): Boolean {
     val current = exo.currentMediaItemIndex
     if (current < 0 || exo.mediaItemCount <= current + 1) return false
     holdFirstFrameAspectRatio()
+    if (!bindQueuedNextOutput()) return false
     listenerManualNextTarget = target
     listenerManualNextPosition = exo.currentPosition.coerceAtLeast(0L)
     exo.playWhenReady = true
@@ -49,4 +50,24 @@ private fun PhonePlayerActivity.seekToQueuedNext(target: Int): Boolean {
         }
     }
     return true
+}
+
+/**
+ * 把进程播放器接到翻页后的当前画面层。
+ *
+ * 竖屏换集时两页会交换引用，旧页的 PlayerView 在动画结束时已经解绑。快路径只
+ * `seekToNextMediaItem()`，不像 [play] 那样会重新 `attach()`；漏掉这一步时音频与
+ * 进度会继续走，但新页没有视频 Surface，表现就是一直停在封面或上一帧。
+ */
+private fun PhonePlayerActivity.bindQueuedNextOutput(): Boolean {
+    val exo = player ?: return false
+    if (playerLandscapeMode) {
+        if (playerLandscapeVideo.player !== exo) playerLandscapeVideo.player = exo
+        return playerLandscapeVideo.player === exo
+    }
+    // 正式播放内部换集不再借推荐页 Surface，否则新页自己的 PlayerView 会保持隐藏。
+    if (playerFeedUnderlay) dropUnderlay()
+    PhoneServices.detach(swipeGhostPage.playerView)
+    if (playerPage.playerView.player !== exo) playerPage.playerView.player = exo
+    return playerPage.playerView.player === exo
 }
