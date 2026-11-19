@@ -68,7 +68,24 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
-## 2026-11-19：简介页进入正式播放页上下滑透出简介页修复（三次）
+## 2026-11-19：手机底部导航栏统一适配
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 参考掘金《史上最完美的Android沉浸式状态导航栏攻略》，复核现有实现后发现：
+  普通页面未恢复透明导航栏、对比度蒙层只在隐藏时关闭、未处理导航图标亮暗，
+  且大量页面仍使用 `navigation_bar_height` 资源计算底部安全区。
+- 新增 `PhoneWindow` 的 WindowInsets 缓存与 `bindPhoneInsets`：所有底部安全区
+  统一来自 `navigationBars + systemGestures + mandatorySystemGestures` 的真实 inset。
+- `phoneEdgeToEdge()` 现在同时铺到系统导航栏后方；主界面 tab 栏、推荐/分类/榜单/我的
+  内容区，以及搜索、详情、账号、设置和播放浮层都使用同一份底部 inset。
+- `applyPhoneNavigationBar` 统一设置透明导航栏、关闭 Android 10+ 对比度蒙层，
+  并按页面背景切换浅色/深色导航图标；离开沉浸模式时不再残留黑色导航栏。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或接口；测试待用户真机验证，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-19：简介页进入正式播放页上下滑透出简介页修复（历史三次）
 
 状态：已实现，debug 构建通过，待用户真机验证。
 

@@ -4,6 +4,7 @@ package com.hgtv.star.phone
 import android.view.View
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.toFit
+import com.hgtv.star.phone.ui.navigationBarPx
 import com.hgtv.star.phone.ui.resizeMode
 import kotlinx.coroutines.launch
 
@@ -18,6 +19,7 @@ internal fun PhoneFeedView.openSettingsImpl() {
         }
         return
     }
+    feedSheet.bottomInset = context.navigationBarPx()
     feedSheet.show("播放设置", landscape = false, heightFraction = .5f) { panel ->
         buildPlaybackSettingsRows(
             host = this,

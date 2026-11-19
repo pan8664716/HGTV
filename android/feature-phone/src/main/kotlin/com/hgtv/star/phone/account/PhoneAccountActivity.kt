@@ -21,11 +21,14 @@ import com.hgtv.star.phone.ui.PhoneDialog
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.phone.ui.PhoneSoft.applyWell
 import com.hgtv.star.phone.ui.PhoneStyle
+import com.hgtv.star.phone.ui.applyPhoneNavigationBar
+import com.hgtv.star.phone.ui.bindPhoneInsets
 import com.hgtv.star.phone.ui.dp
+import com.hgtv.star.phone.ui.phoneBottomInsetPx
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
+import com.hgtv.star.phone.ui.phoneNavigationBarUsesLightIcons
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
-import com.hgtv.star.phone.ui.tabBarInset
 import com.hgtv.star.shared.account.AccountLogin
 import com.hgtv.star.shared.data.account
 import com.hgtv.star.shared.data.accountCache
@@ -52,6 +55,7 @@ class PhoneAccountActivity : PhoneActivity() {
 
     internal lateinit var root: FrameLayout
     internal lateinit var body: LinearLayout
+    private lateinit var outer: LinearLayout
     private lateinit var title: TextView
     private lateinit var modeBar: LinearLayout
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
@@ -75,6 +79,7 @@ class PhoneAccountActivity : PhoneActivity() {
         super.onCreate(savedInstanceState)
         PhoneStyle.ensure(this)
         phoneEdgeToEdge()
+        applyPhoneNavigationBar(phoneNavigationBarUsesLightIcons())
         landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         loginMode = savedInstanceState?.getInt(STATE_LOGIN_MODE, LOGIN_QR)
             ?.takeIf { it in LOGIN_LABELS.indices } ?: LOGIN_QR
@@ -125,13 +130,13 @@ class PhoneAccountActivity : PhoneActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP
         ))
 
-        val outer = LinearLayout(this).apply {
+        outer = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
             if (landscape) {
                 gravity = Gravity.CENTER
-                setPadding(dp(20), dp(4), dp(20), dp(8))
+                setPadding(dp(20), dp(4), dp(20), dp(8) + phoneBottomInsetPx())
             } else {
-                setPadding(dp(16), dp(6), dp(16), tabBarInset() + dp(20))
+                setPadding(dp(16), dp(6), dp(16), phoneBottomInsetPx() + dp(20))
             }
         }
         body = LinearLayout(this).apply {
@@ -162,7 +167,16 @@ class PhoneAccountActivity : PhoneActivity() {
         ).apply { topMargin = if (landscape) dp(40) else status + dp(56) })
 
         setContentView(root)
+        root.bindPhoneInsets { bottom -> applyBottomInset(bottom) }
         if (landscape) applyLandscapeImmersive()
+    }
+
+    private fun applyBottomInset(bottomInsetPx: Int) {
+        if (landscape) {
+            outer.setPadding(dp(20), dp(4), dp(20), dp(8) + bottomInsetPx)
+        } else {
+            outer.setPadding(dp(16), dp(6), dp(16), dp(20) + bottomInsetPx)
+        }
     }
 
     internal fun render() {
@@ -604,6 +618,7 @@ class PhoneAccountActivity : PhoneActivity() {
     @Suppress("DEPRECATION")
     private fun applyLandscapeImmersive() {
         if (!landscape) return
+        applyPhoneNavigationBar(false)
         if (android.os.Build.VERSION.SDK_INT >= 21) {
             window.statusBarColor = android.graphics.Color.TRANSPARENT
             window.navigationBarColor = android.graphics.Color.TRANSPARENT

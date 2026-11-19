@@ -581,7 +581,7 @@ android/
 | `PhoneActivity.kt` | 手机端 Activity 基类：普通页面由系统在屏幕尺寸或方向变化时重建整页。 | class PhoneActivity |
 | `PhoneConsent.kt` | 手机端的两条「知情同意」，与电视端**同一份文案、同一条语义**（见 :core 的 com.hgtv.star.core.ThirdPartyNotice）。 | object PhoneConsent |
 | `PhoneFirstRunTip.kt` | 首次进入时的「先调一下显示」提示。 | object PhoneFirstRunTip |
-| `PhoneMainActivity.kt` | 手机 / 平板端主界面；推荐首屏后预热播放器，分类页延后到推荐首帧或兜底超时再创建；推荐页横竖屏原地重排并保留视频 Surface，其他页仍按原逻辑重建。 | class PhoneMainActivity、fun revealPhoneStartup、fun warmStartupPlayer |
+| `PhoneMainActivity.kt` | 手机 / 平板端主界面；统一从 WindowInsets 更新底部 tab 栏和四个 tab 页的安全区，处理系统导航栏透明、对比度蒙层和图标亮暗；推荐页横竖屏原地重排并保留视频 Surface。 | class PhoneMainActivity、fun revealPhoneStartup、fun warmStartupPlayer、fun applySystemBottomInset |
 | `PhoneNavigator.kt` | 手机端的路由落地：把 Route 翻译成一个 Intent，交给系统返回栈。 | class PhoneNavigator、fun Context.phoneNav |
 | `PhoneServices.kt` | 手机端服务入口；正式播放页使用当前活动 ExoPlayer，推荐池通过 `newPlayer` 创建独立实例并由 `activate` 登记当前实例；换页解绑时可同步清掉 SurfaceView 旧帧。 | object PhoneServices、object PhoneDecoder、fun player、fun newPlayer、fun activate、fun warmPlayer、fun detachAndClear |
 | `PhoneSession.kt` | 手机端「这一台机器现在在放什么」的进程级事实。 | object PhoneSession |
@@ -590,7 +590,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PhoneAccountActivity.kt` | 手机账号页 Activity，管理登录模式、账号渲染和登录结果收尾。 | class PhoneAccountActivity |
+| `PhoneAccountActivity.kt` | 手机账号页 Activity，管理登录模式、账号渲染和登录结果收尾；底部内容按真实系统导航 inset 留白。 | class PhoneAccountActivity |
 | `PhoneAccountLogin.kt` | 手机账号登录、同步与设备身份。文件 PhoneAccountLogin 主要包含 fun PhoneAccountActivity.renderQr、fun PhoneAccountActivity.startQr、fun PhoneAccountActivity.stopQr、fun PhoneAccountActivity.renderPhoneLogin。 | fun PhoneAccountActivity.renderQr、fun PhoneAccountActivity.startQr、fun PhoneAccountActivity.stopQr、fun PhoneAccountActivity.renderPhoneLogin、fun PhoneAccountActivity.doLogin、fun PhoneAccountActivity.renderUpsms |
 | `PhoneAccountSync.kt` | Phone 侧的账号兼容壳。 | object PhoneAccountSync |
 | `PhoneIdentity.kt` | 把**本机身份与会话**灌进进程级仓库——电视端 TvMainActivity.applyAccount() 的手机版。 | object PhoneIdentity |
@@ -607,7 +607,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PhoneDetailActivity.kt` | 详情页：**与 TV 端的详情页一一对应**，按手机形态重排。 | class PhoneDetailActivity |
+| `PhoneDetailActivity.kt` | 详情页：**与 TV 端的详情页一一对应**，按手机形态重排；底部内容使用真实 WindowInsets 安全区。 | class PhoneDetailActivity |
 | `PhoneDetailSections.kt` | 手机详情页与竖屏视频版面。文件 PhoneDetailSections 主要包含 fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks。 | fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks、fun PhoneDetailActivity.sectionHead、fun PhoneDetailActivity.cardRow |
 | `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、目标集预览封面、弹幕黑边遮罩、信息区和控制层；正式播放器选集行末尾提供圆形锁定按钮。 | class PhoneVideoPage、fun showEpisodeCover、fun hideEpisodeCover、fun setPlaybackLocked |
 | `PhoneVideoPageState.kt` | 手机详情页与竖屏视频版面。文件 PhoneVideoPageState 主要包含 fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode。 | fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode、fun PhoneVideoPage.showCenterIcon、fun PhoneVideoPage.hideCenterIcon、fun PhoneVideoPage.setResizeMode、fun PhoneVideoPage.setVideoSurfaceVisible |
@@ -632,9 +632,9 @@ android/
 | `PhoneFeedPrefetch.kt` | 片尾 30 秒内用单集直连准备下一集地址与首块。 | fun PhoneFeedView.maybePrefetchNextImpl |
 | `PhoneFeedReopen.kt` | 手机信息流原地重开当前集；地址走单集直连并复用内联清晰度。 | fun PhoneFeedView.reopenAtCurrentPositionImpl |
 | `PhoneFeedResume.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedResume 主要包含 fun PhoneFeedView.resumeOnShownImpl。 | fun PhoneFeedView.resumeOnShownImpl |
-| `PhoneFeedSettings.kt` | 信息流长按中间打开的播放设置面板。 | fun PhoneFeedView.openSettingsImpl |
+| `PhoneFeedSettings.kt` | 信息流长按中间打开的播放设置面板；打开时使用当前真实系统底部 inset。 | fun PhoneFeedView.openSettingsImpl |
 | `PhoneFeedSurface.kt` | 手机信息流页面、适配器、手势与预取；下层 Surface 交接时同步画面模式、缩放和旧帧保留状态。 | fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.setUnderlayModeImpl |
-| `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放器池、播放交接、预取和生命周期；记录首帧后补流状态，并区分冷启动下一部与重建恢复当前剧及播放位置；保存 IO 错误原地恢复的短期防重状态。 | class PhoneFeedView、feedPooledPlayers、feedPlayerListeners、fun currentSeriesId、fun takeRestoreSeriesId、fun takeRestorePositionMs |
+| `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放器池、播放交接、预取和生命周期；系统 inset 变化时刷新各页底部安全区；记录首帧后补流状态，并区分冷启动下一部与重建恢复当前剧及播放位置。 | class PhoneFeedView、feedPooledPlayers、feedPlayerListeners、fun refreshBottomInsets、fun currentSeriesId、fun takeRestoreSeriesId、fun takeRestorePositionMs |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/page/`
 
@@ -706,7 +706,7 @@ android/
 | `PhonePlayerSettingsRows.kt` | 播放设置的各行：清晰度、倍速、画面、解码、缩放、定时、相关剧集、收藏与弹幕。 | fun PhonePlayerActivity.buildSettingsRowsImpl |
 | `PhonePlayerSleep.kt` | 应用「定时关闭」的选择。 | fun PhonePlayerActivity.applySleepChoice、fun PhonePlayerActivity.stopForSleep |
 | `PhonePlayerSwipe.kt` | 正式播放页上下滑换集：提交时先清当前页弹幕，目标页露出前清复用弹幕层，页面交换后解绑并清掉退出页 SurfaceView 的旧帧。 | fun PhonePlayerActivity.slideHeightImpl、fun PhonePlayerActivity.beginSwipeImpl、fun PhonePlayerActivity.dragSwipeImpl、fun PhonePlayerActivity.endSwipeImpl、fun PhonePlayerActivity.settleBackImpl、fun PhonePlayerActivity.animateSwipeImpl |
-| `PhonePlayerUiAssembly.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerUiAssembly 主要包含 fun PhonePlayerActivity.buildUi、fun PhonePlayerActivity.buildLandscape。 | fun PhonePlayerActivity.buildUi、fun PhonePlayerActivity.buildLandscape |
+| `PhonePlayerUiAssembly.kt` | 手机播放器装配；播放页根 View 绑定真实系统 inset，供播放浮层和底部安全区使用。 | fun PhonePlayerActivity.buildUi、fun PhonePlayerActivity.buildLandscape |
 | `PhonePlayerUnderlay.kt` | 把播放器的输出交回下层推荐页的 Surface。 | fun PhonePlayerActivity.attachUnderlay、fun PhonePlayerActivity.dropUnderlay |
 | `PhonePlayerVideoFrame.kt` | 把播放器当前的画面尺寸补到页面上（bind 之后调用），并同步横屏弹幕黑边背景与兜底遮罩。 | fun PhonePlayerActivity.syncVideoFrameImpl、fun PhonePlayerActivity.updateLandscapeVideoFrameImpl、fun PhonePlayerActivity.syncLandscapeLetterboxImpl、fun PhonePlayerActivity.placeLandscapeFullscreenImpl、fun PhonePlayerActivity.applyVideoScaleImpl、fun PhonePlayerActivity.applyLandscapeVideoScaleImpl |
 | `PhonePlayerViewFacade.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerViewFacade 主要包含 fun PhonePlayerActivity.seekTo、fun PhonePlayerActivity.syncVideoFrame、fun PhonePlayerActivity.applyVideoScale、fun PhonePlayerActivity.syncPlayInfo。 | fun PhonePlayerActivity.seekTo、fun PhonePlayerActivity.syncVideoFrame、fun PhonePlayerActivity.applyVideoScale、fun PhonePlayerActivity.syncPlayInfo |
@@ -718,7 +718,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PhoneSearchActivity.kt` | 搜索页：输入框 + 提示区 + 两列结果。 | class PhoneSearchActivity |
+| `PhoneSearchActivity.kt` | 搜索页：输入框 + 提示区 + 两列结果；底部结果区和提示区使用真实系统导航 inset。 | class PhoneSearchActivity |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/settings/`
 
@@ -726,7 +726,7 @@ android/
 | --- | --- | --- |
 | `PhoneDanmakuSize.kt` | 手机端弹幕字号。 | object PhoneDanmakuSize |
 | `PhoneSettingsActions.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsActions 主要包含 fun PhoneSettingsActivity.appVersionName、fun PhoneSettingsActivity.showAboutDialog、fun PhoneSettingsActivity.restoreDefaults、fun PhoneSettingsActivity.exportBackup。 | fun PhoneSettingsActivity.appVersionName、fun PhoneSettingsActivity.showAboutDialog、fun PhoneSettingsActivity.restoreDefaults、fun PhoneSettingsActivity.exportBackup、fun PhoneSettingsActivity.importBackup、fun PhoneSettingsActivity.performReset |
-| `PhoneSettingsActivity.kt` | 手机设置页 Activity，协调横竖屏布局、设置写入和页面生命周期。 | class PhoneSettingsPage、val LAN_SYNC_SOURCE_TTL_MS、val TAG_LANDSCAPE_SETTING_ROW、val TAG_LANDSCAPE_SETTING_SPACER、val SETTINGS_DENSITY_SCALE、val SETTINGS_TEXT_SCALE |
+| `PhoneSettingsActivity.kt` | 手机设置页 Activity，协调横竖屏布局、设置写入和页面生命周期；竖屏底部内容按真实 WindowInsets 留白。 | class PhoneSettingsPage、val LAN_SYNC_SOURCE_TTL_MS、val TAG_LANDSCAPE_SETTING_ROW、val TAG_LANDSCAPE_SETTING_SPACER、val SETTINGS_DENSITY_SCALE、val SETTINGS_TEXT_SCALE |
 | `PhoneSettingsApply.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsApply 主要包含 fun PhoneSettingsActivity.applyChoiceImpl、fun PhoneSettingsActivity.applySwitchImpl、fun PhoneSettingsActivity.applySliderImpl。 | fun PhoneSettingsActivity.applyChoiceImpl、fun PhoneSettingsActivity.applySwitchImpl、fun PhoneSettingsActivity.applySliderImpl |
 | `PhoneSettingsLanSync.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsLanSync 主要包含 fun PhoneSettingsActivity.closeLanSyncSessionImpl、fun PhoneSettingsActivity.showLanLibrarySync、fun PhoneSettingsActivity.startLanSyncRoleImpl、fun PhoneSettingsActivity.showLanSyncNoPeersImpl。 | fun PhoneSettingsActivity.closeLanSyncSessionImpl、fun PhoneSettingsActivity.showLanLibrarySync、fun PhoneSettingsActivity.startLanSyncRoleImpl、fun PhoneSettingsActivity.showLanSyncNoPeersImpl、fun PhoneSettingsActivity.showLanSyncRestoreConfirmImpl、fun PhoneSettingsActivity.renderLanSyncImpl |
 | `PhoneSettingsLandscapePages.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsLandscapePages 主要包含 fun PhoneSettingsActivity.renderLandscapePlayback、fun PhoneSettingsActivity.renderLandscapeAppearance、fun PhoneSettingsActivity.renderLandscapeRecommend、fun PhoneSettingsActivity.renderLandscapeSystem。 | fun PhoneSettingsActivity.renderLandscapePlayback、fun PhoneSettingsActivity.renderLandscapeAppearance、fun PhoneSettingsActivity.renderLandscapeRecommend、fun PhoneSettingsActivity.renderLandscapeSystem |
@@ -755,15 +755,15 @@ android/
 | `PhonePosterCard.kt` | 手机端统一海报卡：网格页与详情页 / 播放页的横排相关剧集共用。 | class PhonePosterCard、fun phonePosterScale、val PHONE_POSTER_INSET、val PHONE_SOFT_BAND、val PHONE_BADGE_TEXT_SCALE、val PHONE_TITLE_TEXT_SCALE |
 | `PhonePosterFeed.kt` | 海报网格（竖屏基准 1–3 列，横屏映射为 4–6 列），分类 / 榜单 / 搜索三个页面共用。 | class PhonePosterFeed |
 | `PhoneSettingControls.kt` | 设置页整行开关：左侧项名，右侧一枚自绘轨道。 | class PhoneSwitchRow、class PhoneSettingSlider |
-| `PhoneSheet.kt` | 播放界面上的浮层（播放设置 / 选集共用一套壳）。 | class PhoneSheet |
+| `PhoneSheet.kt` | 播放界面上的浮层（播放设置 / 选集共用一套壳）；底部额外留白由调用方传入真实系统导航 inset。 | class PhoneSheet |
 | `PhoneSoft.kt` | 手机端的新拟态绘制入口。 | object PhoneSoft |
 | `PhoneStyle.kt` | 手机端的新拟态令牌。 | object PhoneStyle |
 | `PhoneTabBar.kt` | 手机底部导航：透明底 + 四枚大尺寸圆形入口；未选中凸起、当前项凹陷并使用强调色图标，保留切页与双击回顶回调，并可在横竖屏切换时原地重建紧凑尺寸。 | class PhoneTabBar、fun select、fun setSelected、fun setCompact |
-| `PhoneTheme.kt` | 手机 / 平板的视觉令牌。 | object PhoneColor、object PhoneDimen、fun Context.phoneScale、object PhoneUiScale、fun Context.dp、fun android.view.View.dp |
+| `PhoneTheme.kt` | 手机 / 平板的视觉令牌；`navigationBarPx()` 读取 Activity 缓存的真实 WindowInsets，不再使用 `navigation_bar_height` 资源。 | object PhoneColor、object PhoneDimen、fun Context.phoneScale、object PhoneUiScale、fun Context.dp、fun android.view.View.dp、fun Context.navigationBarPx |
 | `PhoneTopBar.kt` | 手机端统一的页面顶部栏；导出沉浸式 10dp 顶部与 34dp 主行常量，供竖屏播放信息对齐复用。 | class PhoneTopBar、PHONE_TOP_BAR_IMMERSIVE_TOP_DP、PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP |
 | `PhoneTopCollapse.kt` | 列表上滑时把页头收起来、回到顶部再放出来（TV 的 onListScroll / setTopAreaHidden 同一条语义）。 | class PhoneTopCollapse |
 | `PhoneTouch.kt` | 播放界面的手势状态机；正式播放器横竖屏统一单击显隐信息、双击播放暂停，信息流保持单击播放暂停。 | class PhoneTouch |
-| `PhoneWindow.kt` | 手机端统一的沉浸式窗口设置。 | fun Activity.phoneEdgeToEdge、fun Activity.phoneStatusBarHeight |
+| `PhoneWindow.kt` | 手机端统一的沉浸式窗口设置与 WindowInsets 缓存；负责导航栏透明、对比度关闭、图标亮暗和底部安全区广播。 | fun Activity.phoneEdgeToEdge、fun View.bindPhoneInsets、fun Context.phoneBottomInsetPx、fun Activity.applyPhoneNavigationBar、fun Activity.phoneStatusBarHeight |
 | `VideoFitUi.kt` | 画面模式 → ExoPlayer 的 RESIZE_MODE_*，**手机端唯一的一处绑定**。 | fun VideoFit.resizeMode、fun PlayerView.primeAspectRatio、fun PlayerView.runAfterAspectRatioLayout |
 
 ### feature-tv

@@ -106,6 +106,13 @@ class PhoneFeedView(
     internal val feedAdapter get()=adapter
     private val list = VerticalPagerList(context)
     internal val feedList get()=list
+
+    internal fun refreshBottomInsets() {
+        list.requestLayout()
+        for (index in 0 until list.childCount) {
+            list.getChildAt(index)?.requestLayout()
+        }
+    }
     private var restoreSeriesId: String? = initialSeriesId
     private var restorePositionMs: Long = initialPositionMs
 

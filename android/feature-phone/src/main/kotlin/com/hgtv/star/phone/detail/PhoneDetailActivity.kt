@@ -22,9 +22,12 @@ import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhoneSheet
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.phone.ui.PhoneStyle
+import com.hgtv.star.phone.ui.applyPhoneNavigationBar
+import com.hgtv.star.phone.ui.bindPhoneInsets
 import com.hgtv.star.phone.ui.dp
-import com.hgtv.star.phone.ui.navigationBarPx
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
+import com.hgtv.star.phone.ui.phoneBottomInsetPx
+import com.hgtv.star.phone.ui.phoneNavigationBarUsesLightIcons
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.shared.data.Library
@@ -147,6 +150,7 @@ class PhoneDetailActivity : PhoneActivity() {
         super.onCreate(savedInstanceState)
         PhoneStyle.ensure(this)
         phoneEdgeToEdge()
+        applyPhoneNavigationBar(phoneNavigationBarUsesLightIcons())
         landscape = resources.configuration.orientation ==
             android.content.res.Configuration.ORIENTATION_LANDSCAPE
         if (seriesId.isBlank()) { finish(); return }
@@ -192,7 +196,7 @@ class PhoneDetailActivity : PhoneActivity() {
             contentEdge = edge
             // 底部留白要盖过系统导航条：`phoneEdgeToEdge()` 之后内容会铺到手势区，
             // 最后一行卡片正好落在那里，点击会被系统手势拦走——表现就是「卡片点不动」。
-            setPadding(edge, dp(6), edge, dp(32) + navigationBarPx())
+            setPadding(edge, dp(6), edge, dp(32) + phoneBottomInsetPx())
         }
         scroller = ScrollView(this).apply {
             isFillViewport = false
@@ -210,6 +214,11 @@ class PhoneDetailActivity : PhoneActivity() {
         buildRelatedArea()
 
         setContentView(root)
+        root.bindPhoneInsets { bottom -> applyBottomInset(bottom) }
+    }
+
+    private fun applyBottomInset(bottomInsetPx: Int) {
+        column.setPadding(contentEdge, dp(6), contentEdge, dp(32) + bottomInsetPx)
     }
 
     /** 头部：左封面 + 右信息列（标题 / 元信息 / 三个按钮），完整简介接在头部下方。 */

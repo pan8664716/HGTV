@@ -42,8 +42,12 @@ import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneSwitchRow
 import com.hgtv.star.phone.ui.PhoneUiScale
+import com.hgtv.star.phone.ui.applyPhoneNavigationBar
+import com.hgtv.star.phone.ui.bindPhoneInsets
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
 import com.hgtv.star.phone.ui.dp
+import com.hgtv.star.phone.ui.phoneBottomInsetPx
+import com.hgtv.star.phone.ui.phoneNavigationBarUsesLightIcons
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.shared.ProjectInfo
 import com.hgtv.star.shared.compat.DeviceForm
@@ -181,6 +185,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         PhoneStyle.ensure(this)
         phoneEdgeToEdge()
         landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        if (!landscape) applyPhoneNavigationBar(phoneNavigationBarUsesLightIcons())
         savedInstanceState?.let { state ->
             val key = state.getString(KEY_SCROLL_ANCHOR).orEmpty()
             if (key.isNotBlank()) {
@@ -237,7 +242,7 @@ class PhoneSettingsActivity : PhoneActivity() {
                 dp(if (landscape) 20 else 16),
                 dp(2),
                 dp(if (landscape) 20 else 16),
-                dp(if (landscape) 4 else 40),
+                dp(if (landscape) 4 else 40) + phoneBottomInsetPx(),
             )
         }
         scroller = ScrollView(this).apply {
@@ -258,6 +263,16 @@ class PhoneSettingsActivity : PhoneActivity() {
         ).apply { topMargin = if (landscape) dp(40) else status + dp(30) })
 
         setContentView(root)
+        root.bindPhoneInsets { bottom ->
+            if (!landscape) {
+                container.setPadding(
+                    dp(16),
+                    dp(2),
+                    dp(16),
+                    dp(40) + bottom,
+                )
+            }
+        }
         if (landscape) applyLandscapeImmersive()
 
         if (library.isLoaded) render()

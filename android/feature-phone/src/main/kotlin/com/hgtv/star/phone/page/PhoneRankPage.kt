@@ -55,7 +55,7 @@ class PhoneRankPage(
         // 分类 / 榜单默认 2 列：封面够大，一屏也能扫到几张。
         // 列数跟着设置：竖屏 1–3，横屏映射为 4–6，与分类页同一份。
         feed.applyColumnsFromSettings()
-        feed.bottomInset = context.tabBarInset() + context.dp(8)
+        applySystemBottomInset(0)
         // 点海报先进详情页（与 TV 一致）。
         feed.onOpen = { series ->
             context.phoneNav().open(Route.Detail(series.id, series.title))
@@ -91,6 +91,10 @@ class PhoneRankPage(
         } else {
             selectBoard(selected)
         }
+    }
+
+    internal fun applySystemBottomInset(@Suppress("UNUSED_PARAMETER") bottomInsetPx: Int) {
+        feed.bottomInset = context.tabBarInset() + context.dp(8)
     }
 
     fun snapshotState(): State {

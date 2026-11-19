@@ -105,7 +105,7 @@ class PhoneCategoryPage(
 
         // 列数跟着设置：竖屏 1–3，横屏映射为 4–6；书库未就绪时先用出厂值。
         feed.applyColumnsFromSettings()
-        feed.bottomInset = context.tabBarInset() + context.dp(8)
+        applySystemBottomInset(0)
         // 点海报先进详情页（与 TV 一致）：收藏 / 挑集 / 相关推荐都在那一页。
         feed.onOpen = { series ->
             context.phoneNav().open(Route.Detail(series.id, series.title))
@@ -136,6 +136,10 @@ class PhoneCategoryPage(
             renderFilters()
             showCachedOrLoad()
         }
+    }
+
+    internal fun applySystemBottomInset(@Suppress("UNUSED_PARAMETER") bottomInsetPx: Int) {
+        feed.bottomInset = context.tabBarInset() + context.dp(8)
     }
 
     fun snapshotState(): State = State(

@@ -360,11 +360,8 @@ const val PHONE_TEXT_SCALE = .5f
 fun TextView.phoneSize(value: Number): TextView =
     apply { setTextSize(TypedValue.COMPLEX_UNIT_PX, context.sp(value)) }
 
-/** 系统导航条高度（手势导航的机型为 0）。 */
-fun Context.navigationBarPx(): Int {
-    val id = resources.getIdentifier("navigation_bar_height", "dimen", "android")
-    return if (id > 0) resources.getDimensionPixelSize(id) else 0
-}
+/** 当前窗口的真实系统底部安全区；由 Activity 根 View 的 WindowInsets 更新。 */
+fun Context.navigationBarPx(): Int = phoneBottomInsetPx()
 
 /**
  * 底部导航栏占掉的总高度：栏本身 + 系统导航条。

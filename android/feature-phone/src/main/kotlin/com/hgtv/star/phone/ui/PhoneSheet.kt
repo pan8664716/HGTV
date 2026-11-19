@@ -56,7 +56,7 @@ class PhoneSheet(private val host: FrameLayout) {
      *
      * 播放页的浮层贴着画面底，`0` 就够；而从**主界面**（分类 / 榜单 / 搜索 / 我的）弹出的浮层
      * 是挂在 decor 上的，会一直贴到屏幕最下沿，被系统导航条压住最后一行。
-     * 调用方传 `navigationBarPx()` 即可，横屏与手势导航（没有导航条）时它本来就是 0。
+     * 调用方传 `navigationBarPx()` 即可；它来自当前 Activity 的真实 WindowInsets。
      */
     var bottomInset: Int = 0
 

@@ -3,6 +3,7 @@ package com.hgtv.star.phone
 
 import android.graphics.Color
 import android.widget.FrameLayout
+import com.hgtv.star.phone.ui.bindPhoneInsets
 import com.hgtv.star.phone.ui.PhoneUiScale
 
 internal fun PhonePlayerActivity.buildUi() {
@@ -21,6 +22,7 @@ internal fun PhonePlayerActivity.buildUi() {
     buildPlayerCommonUi()
 
     setContentView(root)
+    root.bindPhoneInsets()
     syncPlaybackLockUi()
     applyMode()
 }

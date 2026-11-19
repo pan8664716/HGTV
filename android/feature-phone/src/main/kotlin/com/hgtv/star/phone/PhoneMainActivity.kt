@@ -14,15 +14,16 @@ import android.widget.FrameLayout
 import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
-import androidx.core.view.ViewCompat
-import androidx.core.view.WindowInsetsCompat
 import com.hgtv.star.phone.ui.PhoneColor
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTabBar
 import com.hgtv.star.phone.ui.PhoneUiScale
+import com.hgtv.star.phone.ui.applyPhoneNavigationBar
+import com.hgtv.star.phone.ui.bindPhoneInsets
 import com.hgtv.star.phone.ui.dp
-import com.hgtv.star.phone.ui.navigationBarPx
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
+import com.hgtv.star.phone.ui.phoneBottomInsetPx
+import com.hgtv.star.phone.ui.phoneNavigationBarUsesLightIcons
 import com.hgtv.star.phone.ui.phoneTabBarHeightPx
 import com.hgtv.star.phone.page.PhoneCategoryPage
 import com.hgtv.star.phone.page.PhoneMinePage
@@ -148,10 +149,7 @@ class PhoneMainActivity : PhoneActivity() {
         ))
 
         setContentView(root)
-        ViewCompat.setOnApplyWindowInsetsListener(root) { _, insets ->
-            syncTabBarSystemInset(insets)
-            insets
-        }
+        root.bindPhoneInsets { bottom -> applySystemBottomInset(bottom) }
         root.post { StartupTrace.mark("phoneMain.shell.firstFrame") }
         // 播放页竖屏要借推荐页的 Surface 出画面（见 `PhoneVideoPage.underlay`）：
         // 把「收起 / 恢复下层控制层」的入口登记给它，否则会看到两套标题、两条进度条。
@@ -338,6 +336,7 @@ class PhoneMainActivity : PhoneActivity() {
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
         current = index
+        applyPageBottomInsets()
         android.util.Log.i("HGTV-PAGE", "shown index=$index parent=${page.parent} attached=${page.isAttachedToWindow}")
         // tab 的选中态以「实际显示的页」为准：两边一旦不同步，用户点 tab 会被当成
         // 「已经在这一页」而不响应。
@@ -365,29 +364,26 @@ class PhoneMainActivity : PhoneActivity() {
             applyLandscapeImmersive()
             return
         }
-        applySystemBars(immersive = index == 0, hideNavigation = false)
+        applySystemBars(
+            immersive = index == 0,
+            hideNavigation = false,
+            lightNavigationIcons = index != 0 && phoneNavigationBarUsesLightIcons(),
+        )
     }
 
-    /**
-     * 主界面从 Android 11 起铺到系统导航栏后方。
-     *
-     * 底栏自身只占 [phoneTabBarHeightPx]；把系统底部 inset 加进宿主高度并作为底栏
-     * padding，入口就会落在导航按钮 / 手势条上方，底栏底色仍可铺满系统栏后方。
-     * Android 10 及以下的内容窗口本来就在导航栏上方，不能再加一次。
-     */
-    private fun syncTabBarSystemInset(insets: WindowInsetsCompat) {
-        val bottom = if (Build.VERSION.SDK_INT < 30 || landscape) {
-            0
-        } else {
-            insets.getInsets(
-                WindowInsetsCompat.Type.navigationBars() or
-                    WindowInsetsCompat.Type.systemGestures() or
-                    WindowInsetsCompat.Type.mandatorySystemGestures(),
-            ).bottom
-        }
+    private fun applySystemBottomInset(bottom: Int) {
         if (bottom == tabBarSystemInset) return
         tabBarSystemInset = bottom
         applyTabBarHeight(bottom)
+        applyPageBottomInsets()
+    }
+
+    private fun applyPageBottomInsets() {
+        val bottom = phoneBottomInsetPx()
+        (pages.getOrNull(0) as? PhoneRecommendPage)?.applySystemBottomInset(bottom)
+        (pages.getOrNull(1) as? PhoneCategoryPage)?.applySystemBottomInset(bottom)
+        (pages.getOrNull(2) as? PhoneRankPage)?.applySystemBottomInset(bottom)
+        (pages.getOrNull(3) as? PhoneMinePage)?.applySystemBottomInset(bottom)
     }
 
     private fun applyTabBarHeight(bottomInset: Int) {
@@ -399,7 +395,11 @@ class PhoneMainActivity : PhoneActivity() {
     }
 
     @Suppress("DEPRECATION")
-    private fun applySystemBars(immersive: Boolean, hideNavigation: Boolean) {
+    private fun applySystemBars(
+        immersive: Boolean,
+        hideNavigation: Boolean,
+        lightNavigationIcons: Boolean = false,
+    ) {
         // Android 17 上仅设置旧的全屏标志可能仍保留状态栏底板。
         // 先把窗口铺到整个屏幕，再关闭 decor fit，最后应用系统栏显隐。
         window.addFlags(WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN)
@@ -411,7 +411,7 @@ class PhoneMainActivity : PhoneActivity() {
         if (Build.VERSION.SDK_INT >= 21) {
             window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
             window.statusBarColor = if (immersive) Color.BLACK else Color.TRANSPARENT
-            if (hideNavigation) window.navigationBarColor = Color.BLACK
+            window.navigationBarColor = if (hideNavigation) Color.BLACK else Color.TRANSPARENT
         }
         if (Build.VERSION.SDK_INT >= 28) {
             window.attributes = window.attributes.apply {
@@ -421,7 +421,7 @@ class PhoneMainActivity : PhoneActivity() {
         }
         if (Build.VERSION.SDK_INT >= 29) {
             window.isStatusBarContrastEnforced = false
-            if (hideNavigation) window.isNavigationBarContrastEnforced = false
+            window.isNavigationBarContrastEnforced = false
         }
         if (Build.VERSION.SDK_INT >= 30) {
             window.setDecorFitsSystemWindows(false)
@@ -439,10 +439,15 @@ class PhoneMainActivity : PhoneActivity() {
                 // 隐藏状态栏并让内容铺到它的位置（`phoneEdgeToEdge()` 已经打开了 LAYOUT_FULLSCREEN）。
                 View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
                     View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                    View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION or
                     View.SYSTEM_UI_FLAG_FULLSCREEN
                 )
-            else -> View.SYSTEM_UI_FLAG_LAYOUT_STABLE or View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN
+            else -> View.SYSTEM_UI_FLAG_LAYOUT_STABLE or
+                View.SYSTEM_UI_FLAG_LAYOUT_FULLSCREEN or
+                View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
         }
+        applyPhoneNavigationBar(if (hideNavigation) false else lightNavigationIcons)
+        if (hideNavigation) window.navigationBarColor = Color.BLACK
         if (Build.VERSION.SDK_INT >= 30) {
             window.insetsController?.let { controller ->
                 if (immersive || hideNavigation) {
@@ -457,6 +462,16 @@ class PhoneMainActivity : PhoneActivity() {
                 }
                 controller.systemBarsBehavior =
                     android.view.WindowInsetsController.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+                if (!hideNavigation) {
+                    controller.setSystemBarsAppearance(
+                        if (lightNavigationIcons) {
+                            android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS
+                        } else {
+                            0
+                        },
+                        android.view.WindowInsetsController.APPEARANCE_LIGHT_NAVIGATION_BARS,
+                    )
+                }
             }
         }
         window.setBackgroundDrawable(ColorDrawable(if (immersive) Color.BLACK else PhoneColor.BG))
@@ -468,7 +483,11 @@ class PhoneMainActivity : PhoneActivity() {
 
     /** 横屏主页隐藏系统状态栏与导航栏，内容直接铺满窗口。 */
     private fun applyLandscapeImmersive() {
-        applySystemBars(immersive = true, hideNavigation = true)
+        applySystemBars(
+            immersive = true,
+            hideNavigation = true,
+            lightNavigationIcons = false,
+        )
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {

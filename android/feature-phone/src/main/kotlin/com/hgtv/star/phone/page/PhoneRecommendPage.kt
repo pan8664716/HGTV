@@ -239,6 +239,10 @@ class PhoneRecommendPage(
         feeds.getOrNull(current)?.scrollToTop()
     }
 
+    internal fun applySystemBottomInset(@Suppress("UNUSED_PARAMETER") bottomInsetPx: Int) {
+        feeds.forEach { it?.refreshBottomInsets() }
+    }
+
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
         super.onSizeChanged(w, h, oldw, oldh)
         if (w <= 0 || h <= 0) return

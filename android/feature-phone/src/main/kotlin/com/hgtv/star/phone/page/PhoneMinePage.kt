@@ -194,7 +194,7 @@ class PhoneMinePage(
         pageContent.orientation = LinearLayout.VERTICAL
         setBackgroundColor(PhoneStyle.background)
 
-        feed.bottomInset = context.tabBarInset() + context.dp(8)
+        applySystemBottomInset(0)
         // 历史与电视端一样把账号进度写在第二行；收藏则写「更新至 N 集」。
         feed.subtitleOf = { series ->
             when (tabs.getOrNull(tab)) {
@@ -256,6 +256,10 @@ class PhoneMinePage(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         ))
+    }
+
+    internal fun applySystemBottomInset(@Suppress("UNUSED_PARAMETER") bottomInsetPx: Int) {
+        feed.bottomInset = context.tabBarInset() + context.dp(8)
     }
 
     override fun onAttachedToWindow() {

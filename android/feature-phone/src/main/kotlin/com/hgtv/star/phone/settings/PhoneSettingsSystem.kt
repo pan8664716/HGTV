@@ -8,11 +8,13 @@ import com.hgtv.star.core.LibraryBackup
 import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.DeviceFormSelection
+import com.hgtv.star.phone.ui.applyPhoneNavigationBar
 
 /** 横屏设置页使用沉浸式：状态栏和底部系统导航都隐藏，只保留一小条分区导航。 */
 @Suppress("DEPRECATION")
 internal fun PhoneSettingsActivity.applyLandscapeImmersive() {
     if (!settingsLandscape) return
+    applyPhoneNavigationBar(false)
     if (android.os.Build.VERSION.SDK_INT >= 21) {
         window.statusBarColor = android.graphics.Color.TRANSPARENT
         window.navigationBarColor = android.graphics.Color.TRANSPARENT

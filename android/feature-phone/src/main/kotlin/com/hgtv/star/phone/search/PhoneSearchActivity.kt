@@ -23,10 +23,13 @@ import com.hgtv.star.phone.ui.PhonePosterFeed
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.phone.ui.PhoneSoft.applyWell
 import com.hgtv.star.phone.ui.PhoneStyle
+import com.hgtv.star.phone.ui.applyPhoneNavigationBar
+import com.hgtv.star.phone.ui.bindPhoneInsets
 import com.hgtv.star.phone.ui.dp
+import com.hgtv.star.phone.ui.phoneBottomInsetPx
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
+import com.hgtv.star.phone.ui.phoneNavigationBarUsesLightIcons
 import com.hgtv.star.phone.ui.phoneSize
-import com.hgtv.star.phone.ui.tabBarInset
 import com.hgtv.star.shared.feature.search.SearchController
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.nav.Route
@@ -98,6 +101,7 @@ class PhoneSearchActivity : PhoneActivity() {
         PhoneStyle.ensure(this)
         // 状态栏透明：否则它会用自己的底色盖在页面顶部，与石墨底拼成两条颜色。
         phoneEdgeToEdge()
+        applyPhoneNavigationBar(phoneNavigationBarUsesLightIcons())
         buildUi()
         scope.launch {
             searchController.state.collect { state ->
@@ -174,7 +178,7 @@ class PhoneSearchActivity : PhoneActivity() {
         feed = PhonePosterFeed(this).apply {
             // 搜索结果也是海报栅格：列数跟着设置里的「列表每行」，与分类 / 榜单一致。
             applyColumnsFromSettings()
-            bottomInset = tabBarInset() + dp(8)
+            bottomInset = phoneBottomInsetPx() + dp(8)
             visibility = View.GONE
             // 点结果先进详情页（与 TV 一致）。
             onOpen = { series ->
@@ -191,13 +195,19 @@ class PhoneSearchActivity : PhoneActivity() {
         ).apply { topMargin = status + dp(58) })
 
         setContentView(root)
+        root.bindPhoneInsets { bottom -> applyBottomInset(bottom) }
         input.requestFocus()
+    }
+
+    private fun applyBottomInset(bottomInsetPx: Int) {
+        feed.bottomInset = bottomInsetPx + dp(8)
+        hintColumn.setPadding(dp(16), dp(6), dp(16), bottomInsetPx + dp(12))
     }
 
     private fun buildHints() {
         hintColumn = LinearLayout(this).apply {
             orientation = LinearLayout.VERTICAL
-            setPadding(dp(16), dp(6), dp(16), tabBarInset() + dp(12))
+            setPadding(dp(16), dp(6), dp(16), phoneBottomInsetPx() + dp(12))
         }
 
         // —— 最近搜索 ——
