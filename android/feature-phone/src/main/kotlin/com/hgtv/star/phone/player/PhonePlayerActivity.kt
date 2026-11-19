@@ -74,7 +74,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 
-class PhonePlayerActivity : PhoneActivity() {
+open class PhonePlayerActivity : PhoneActivity() {
 
     companion object {
         const val EXTRA_SERIES_ID = "series_id"
@@ -588,16 +588,6 @@ class PhonePlayerActivity : PhoneActivity() {
 
 
     override fun onCreate(savedInstanceState: Bundle?) {
-        // 简介页等普通入口没有下层视频需要交接；半透明窗口会让弹幕 SurfaceView
-        // 的透明区域在上下滑时露出简介页。推荐页入口继续保留透明窗口。
-        if (!intent.getBooleanExtra(EXTRA_RECOMMEND, false)) {
-            val opaqueTheme = resources.getIdentifier(
-                "PlayerOpaqueTheme",
-                "style",
-                packageName,
-            )
-            if (opaqueTheme != 0) setTheme(opaqueTheme)
-        }
         val tEnter = android.os.SystemClock.elapsedRealtime()
         super.onCreate(savedInstanceState)
         initializePlayerActivity(tEnter)

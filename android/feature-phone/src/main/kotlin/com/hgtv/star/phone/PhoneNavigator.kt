@@ -75,7 +75,14 @@ class PhoneNavigator(private val context: Context) : Navigator {
      *   但不写能让 `dumpsys` 里的 Intent 少两个噪音键。
      */
     private fun playerIntent(route: Route.Player): Intent =
-        Intent(context, PhonePlayerActivity::class.java).apply {
+        Intent(
+            context,
+            if (route.fromRecommend) {
+                PhonePlayerActivity::class.java
+            } else {
+                PhonePlayerOpaqueActivity::class.java
+            },
+        ).apply {
             putExtra(PhonePlayerActivity.EXTRA_SERIES_ID, route.seriesId)
             putExtra(PhonePlayerActivity.EXTRA_TITLE, route.title)
             route.episode?.let { putExtra(PhonePlayerActivity.EXTRA_EPISODE, it) }

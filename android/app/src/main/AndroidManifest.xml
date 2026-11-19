@@ -95,5 +95,10 @@
           这是「推荐页 ↔ 播放页内容不断」的前提，理由见 styles.xml 里那一段注释。
         -->
         <activity android:name=".phone.PhonePlayerActivity" android:exported="false" android:theme="@style/PlayerTheme" android:screenOrientation="unspecified" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode" android:launchMode="singleTop" />
+        <!--
+          非推荐页入口使用独立 Activity，Manifest 主题从窗口创建时就固定不透明。
+          运行时 setTheme / setFormat 无法可靠修改已经 attach 的半透明窗口。
+        -->
+        <activity android:name=".phone.PhonePlayerOpaqueActivity" android:exported="false" android:theme="@style/PlayerOpaqueTheme" android:screenOrientation="unspecified" android:configChanges="keyboard|keyboardHidden|navigation|orientation|screenSize|screenLayout|smallestScreenSize|uiMode" android:launchMode="singleTop" />
     </application>
 </manifest>

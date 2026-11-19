@@ -68,7 +68,23 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
-## 2026-11-19：简介页进入正式播放页上下滑透出简介页修复（二次）
+## 2026-11-19：简介页进入正式播放页上下滑透出简介页修复（三次）
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 复核：安装强制 `window.setFormat(PixelFormat.OPAQUE)` 的 debug 包后，
+  `dumpsys window` 仍显示播放页 `fmt=TRANSLUCENT`。
+- 根因：Activity 窗口在 attach 阶段已按 Manifest 的 `PlayerTheme` 创建；
+  运行时 `setTheme()` 与 `window.setFormat()` 都不能可靠改写窗口的透明属性。
+- 修复：新增 `PhonePlayerOpaqueActivity` 子类，并在 Manifest 直接绑定
+  `PlayerOpaqueTheme`。简介页等非推荐页入口由导航器启动这个子类，
+  推荐页入口继续启动原来的 `PhonePlayerActivity` 透明交接版本。
+- `:app:assembleDebug` 通过；合并 Manifest 已确认非推荐页入口绑定
+  `PlayerOpaqueTheme`。未改版本号、versionCode、依赖或接口；测试待用户真机验证，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## 2026-11-19：简介页进入正式播放页上下滑透出简介页修复（历史二次）
 
 状态：已实现，debug 构建通过，待用户真机验证。
 

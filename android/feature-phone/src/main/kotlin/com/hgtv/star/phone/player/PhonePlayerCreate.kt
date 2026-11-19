@@ -4,7 +4,6 @@ package com.hgtv.star.phone
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Color
-import android.graphics.PixelFormat
 import android.graphics.drawable.ColorDrawable
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.phoneEdgeToEdge
@@ -12,11 +11,6 @@ import com.hgtv.star.phone.ui.phoneEdgeToEdge
 internal fun PhonePlayerActivity.initializePlayerActivity(tEnter: Long) {
     // 主题：播放页可能被系统单独拉起（最近任务 / 深链），不保证经过主页面。
     PhoneStyle.ensure(this)
-    // setTheme 发生在 Activity attach 之后，只改资源主题，无法改掉已经创建的窗口格式。
-    // 非推荐页入口没有下层视频需要透出，必须直接覆盖窗口 format。
-    if (!intent.getBooleanExtra(PhonePlayerActivity.EXTRA_RECOMMEND, false)) {
-        window.setFormat(PixelFormat.OPAQUE)
-    }
     phoneEdgeToEdge()
     // PlayerTheme 是半透明窗口；窗口本身先铺黑，首帧前也不透出推荐页或桌面。
     window.setBackgroundDrawable(ColorDrawable(Color.BLACK))
