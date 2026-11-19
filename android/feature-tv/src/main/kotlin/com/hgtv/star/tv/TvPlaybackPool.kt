@@ -75,7 +75,7 @@ internal fun TvMainActivity.switchTvPlaybackPagerScreen(next: String,index: Int)
         pager.setCurrentIndex(index,false)
         pager.post {
             if(!isDestroyed && tvPlaybackPager===pager && pager.currentIndex==index) {
-                pager.syncCurrentPlayer()
+                pager.syncCurrentPlayerWhenReady(index)
             }
         }
         return
@@ -84,7 +84,7 @@ internal fun TvMainActivity.switchTvPlaybackPagerScreen(next: String,index: Int)
     pager.switchScreen(next,index)
     pager.post {
         if(!isDestroyed && tvPlaybackPager===pager && pager.currentIndex==index) {
-            pager.syncCurrentPlayer()
+            pager.syncCurrentPlayerWhenReady(index)
             applyVideoGeometry()
         }
     }
@@ -93,10 +93,10 @@ internal fun TvMainActivity.switchTvPlaybackPagerScreen(next: String,index: Int)
 /**
  * 电视端池上限。
  *
- * 当前页由活动播放器持有；低端电视也保留前后两个池槽，避免为了回看上一页
- * 把下一页的预渲染实例挤掉。解码器压力由串行预热和内存回收路径兜住。
+ * 池容量按 Phone 对齐为 3。当前页由活动播放器单独持有，池里主要保留前后相邻页；
+ * 低端电视也不把容量降成 1，避免为了回看上一页把下一页的预渲染实例挤掉。
  */
-private fun TvMainActivity.tvPoolLimit(): Int = 2
+private fun TvMainActivity.tvPoolLimit(): Int = 3
 
 internal fun TvMainActivity.bindTvPlaybackPage(page: TvPlaybackSurfacePage,index: Int) {
     val entry=tvPlaybackPool.slots.entries.firstOrNull { it.value.pageIndex==index }
@@ -325,8 +325,8 @@ internal fun TvMainActivity.scheduleTvPlaybackPoolNeighbors() {
     // 当前页由活动播放器持有；旧任务留下的同页槽位必须让位给下一页。
     releaseTvPoolSlotAt(anchor)
     val allTargets=when(screen) {
-        "recommend" -> listOf(anchor-1,anchor+1).filter { it in recommendItems.indices }
-        "player" -> listOf(anchor-1,anchor+1).filter {
+        "recommend" -> listOf(anchor+1,anchor-1).filter { it in recommendItems.indices }
+        "player" -> listOf(anchor+1,anchor-1).filter {
             detail?.episodes?.indices?.contains(it)==true
         }
         else -> emptyList()
@@ -418,9 +418,12 @@ private fun TvMainActivity.prepareTvPoolSlot(
                 playbackMaxQuality,
                 detail.playback,
                 queue=queue,
-                direct=false,
+                direct=poolScreen=="recommend",
             )
-            playbackSource.prepare(episodeId,info) { it.prepare() }
+            // 与 Phone 的 FULL 预热一致：这里只做 warm（地址 / 索引元数据 / 首块），
+            // 不在池线程上提前做一次完整 prepare；真正 prepare 交给池播放器，
+            // 否则 S905 这类低端设备会把相邻页预热拖到 2 秒以上。
+            playbackSource.warm(episodeId,info) { it.warm() }
         }.getOrNull()
         if(remote==null) {
             main.post { tvPlaybackPool.jobs.remove(key) }

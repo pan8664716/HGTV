@@ -85,6 +85,15 @@ fun TvMainActivity.showRecommendMessage(message: String,loading: Boolean=false) 
  * 标题不会从“正在加载《剧名》…”突然变成“剧名”，只会有内容替换，没有文字闪动。
  */
 fun TvMainActivity.showRecommendLoading(series: Series) {
+    // 推荐换作已经有 ViewPager2 / 池化播放器时，只切 loading 覆盖层；
+    // 不能走下面的 detachPlayerSurface + root.removeAllViews，否则会把刚预热好的
+    // 目标 Surface 和池一起销毁，切换必然回到“黑屏等完整起播”的旧路径。
+    if(tvPlaybackPager!=null) {
+        showRecommendCover()
+        attachRecommendOverlay(series)
+        showCenterLoading("正在加载《${series.title}》…")
+        return
+    }
     dismissRecommendOverlay()
     dismissRecommendCover()
     if(playerView!=null) detachPlayerSurface()

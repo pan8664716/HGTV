@@ -38,7 +38,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
         switchTvPlaybackPagerScreen("recommend",safe)
     }
     tvPlaybackPager?.refreshPages()
-    tvPlaybackPager?.setCurrentIndex(safe)
+    tvPlaybackPager?.setCurrentIndex(safe,smooth=false)
     tvPlaybackPager?.pageAt(safe)?.let { playerView=it.playerView }
     // 换剧方向与时刻：相邻预热按「用户正在走的方向」排优先级（见 [prefetchRecommendNeighbors]）。
     // 方向为 0 时（进页面第一次起播、重试同一部）不动它，沿用上一次的方向。
@@ -65,6 +65,17 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // （缓存命中这条早退路径也必须换，否则上一次在途的结果会把刚切过来的这一部顶掉。）
     val token=recommendToken.incrementAndGet()
     val cached=recommendDetails[series.id]
+    fun startWhenPageReady(data: com.hgtv.star.core.Detail,entryToken: Long) {
+        val pager=tvPlaybackPager
+        if(pager==null) {
+            startRecommendEpisode(data,position,autoplay)
+            return
+        }
+        pager.awaitPage(safe) {
+            if(isDestroyed || screen!="recommend" || entryToken!=recommendToken.get()) return@awaitPage
+            startRecommendEpisode(data,position,autoplay)
+        }
+    }
     // 硬切后没有播放层了：先在纯黑画面上显示当前作品的 loading，
     // 不能在详情缓存命中时直接带着上一部的根视图进入 playEpisode。
     if(playerView==null) {
@@ -75,7 +86,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     StartupTrace.mark("recommend.play.start", "index=$safe cached=${cached!=null}")
     if(cached!=null) {
         StartupTrace.done("recommend.play.cached",playStarted)
-        startRecommendEpisode(cached,position,autoplay)
+        startWhenPageReady(cached,token)
         return
     }
     if(playerView!=null) {
@@ -139,7 +150,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
                 }
                 // 同上：后台只把详情收进缓存，起播留给回到前台那一次。
                 if(!foreground) return@post
-                startRecommendEpisode(data,position,autoplay)
+                startWhenPageReady(data,token)
             }.onFailure { problem ->
                 if(token!=recommendToken.get()) return@post
                 android.util.Log.w("HGTV","Recommend detail failed id=${series.id}",problem)

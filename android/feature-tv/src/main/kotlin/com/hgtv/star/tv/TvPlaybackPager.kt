@@ -60,17 +60,21 @@ internal class TvPlaybackPager(
      */
     fun switchScreen(next: String,index: Int) {
         screen=next
+        adapter.lastItemCount=adapter.itemCount
         adapter.notifyDataSetChanged()
         setCurrentIndex(index,false)
         post {
             if(isAttachedToWindow && screen==next && pager.currentItem==index) {
-                syncCurrentPlayer()
+                syncCurrentPlayerWhenReady(index)
             }
         }
     }
 
     fun refreshPages() {
-        adapter.notifyDataSetChanged()
+        if(adapter.itemCount!=adapter.lastItemCount) {
+            adapter.lastItemCount=adapter.itemCount
+            adapter.notifyDataSetChanged()
+        }
         if(adapter.itemCount>0) {
             setCurrentIndex(pager.currentItem.coerceIn(0,adapter.itemCount-1),false)
         }
@@ -92,8 +96,68 @@ internal class TvPlaybackPager(
 
     fun currentPage(): TvPlaybackSurfacePage? = pageAt(pager.currentItem)
 
+    /**
+     * 等 ViewPager2 真正创建目标页后再启动该页的播放器。
+     *
+     * 推荐页换作会同时触发 `notifyDataSetChanged` / `setCurrentItem`，ViewHolder
+     * 不保证在下一帧就存在。Phone 端的 `awaitPlayerPagerPage` 也在这里等页，
+     * 不能把“播放器已经准备好”误当成“目标 Surface 已经可挂载”。
+     */
+    fun awaitPage(index: Int,attempts: Int=60,onReady: ()->Unit) {
+        if(attempts==60 && BuildConfig.DEBUG) {
+            android.util.Log.i(
+                "HGTV-POOL",
+                "await page=$index attached=$isAttachedToWindow found=${pageAt(index)!=null}",
+            )
+        }
+        if(isAttachedToWindow && pageAt(index)!=null) {
+            onReady()
+            return
+        }
+        if(attempts<=0) {
+            onReady()
+            return
+        }
+        postDelayed({
+            // 不能因为 pager 正在切树 / 暂时 detached 就把这次起播静默丢掉。
+            // 等不到 ViewHolder 也必须回到播放中控，让它在下一帧继续建层或恢复。
+            if(!isAttachedToWindow) {
+                onReady()
+                return@postDelayed
+            }
+            awaitPage(index,attempts-1,onReady)
+        },16L)
+    }
+
     fun syncCurrentPlayer() {
-        val page=currentPage() ?: return
+        syncCurrentPlayerAt(pager.currentItem)
+    }
+
+    /**
+     * 页面可能刚经历 notifyDataSetChanged / 平滑翻页，ViewHolder 要等下一次布局才可用。
+     * Phone 端的 `awaitPlayerPagerPage` 就是同一套思路；这里用有限次 post 重试，
+     * 找到目标页后立即把活动播放器挂到它自己的 Surface 上。
+     */
+    fun syncCurrentPlayerWhenReady(index: Int=pager.currentItem,attempts: Int=8) {
+        if(syncCurrentPlayerAt(index)) return
+        if(attempts<=0) return
+        post {
+            if(!isAttachedToWindow) return@post
+            syncCurrentPlayerWhenReady(index,attempts-1)
+        }
+    }
+
+    private fun syncCurrentPlayerAt(index: Int): Boolean {
+        val page=pageAt(index)
+        if(BuildConfig.DEBUG) {
+            android.util.Log.i(
+                "HGTV-POOL",
+                "sync page=$index found=${page!=null} current=${pager.currentItem} "+
+                    "children=${pageRecycler.childCount} attached=$isAttachedToWindow "+
+                    "player=${host.player?.hashCode()}",
+            )
+        }
+        page ?: return false
         val active=host.player
         val recycler=pageRecycler
         for(index in 0 until recycler.childCount) {
@@ -104,7 +168,9 @@ internal class TvPlaybackPager(
             }
         }
         host.playerView=page.playerView
+        if(!host.playbackReady) page.playerView.holdFirstFrameAspectRatio()
         if(page.playerView.player!==host.player) page.playerView.player=host.player
+        return true
     }
 
 }
@@ -119,6 +185,7 @@ private class TvPlaybackPageAdapter(
     private val screen: ()->String,
 ) : RecyclerView.Adapter<TvPlaybackPageHolder>() {
     private var initialAvailable=true
+    var lastItemCount=-1
 
     override fun getItemCount(): Int = when(screen()) {
         "recommend" -> host.recommendItems.size.coerceAtLeast(1)

@@ -132,20 +132,17 @@ fun TvMainActivity.playEpisode(
         // 就地切数据并重绑当前页，避免先拆 Surface 再重建造成黑帧。
         switchTvPlaybackPagerScreen(desiredScreen,pageIndex)
     }
-    // 下一季、推荐补页或分集表变化后，adapter 的 itemCount 必须先刷新再定位。
-    tvPlaybackPager?.refreshPages()
-    tvPlaybackPager?.setCurrentIndex(pageIndex)
-    tvPlaybackPager?.pageAt(pageIndex)?.let { playerView=it.playerView }
-    tvPlaybackPager?.post {
-        if(!isDestroyed && tvPlaybackPager?.currentIndex==pageIndex) {
-            tvPlaybackPager?.syncCurrentPlayer()
-        }
-    }
     // 相邻页池命中：把目标池实例提升为活动播放器，旧活动实例收进池里供返回。
     // 这一步必须在 `reuse` 判定之前，下面的播放中控只面向新的活动实例。
     val pooledAdopt=if(!recovering && position==0L && prepared==null) {
         takeTvPlaybackPooledSlot(pageIndex,data.series.id,targetId)
     } else null
+    // 下一季、推荐补页或分集表变化后，adapter 的 itemCount 必须先刷新再定位。
+    tvPlaybackPager?.refreshPages()
+    // 命中池实例时不能等平滑翻页结束才挂 Surface：先直接定位目标页，
+    // 否则播放器已经 READY，但当前页的 PlayerView 仍为空，用户会看到黑屏。
+    tvPlaybackPager?.setCurrentIndex(pageIndex,smooth=pooledAdopt==null)
+    tvPlaybackPager?.pageAt(pageIndex)?.let { playerView=it.playerView }
     if(pooledAdopt!=null) {
         storeActivePlayerInTvPool()
         pooledAdopt.listener?.let(pooledAdopt.player::removeListener)
@@ -371,6 +368,9 @@ fun TvMainActivity.playEpisode(
             if(recommendEntry) "" else data.episodeCover(targetId).ifBlank { data.series.cover }
         )
     }
+    // 目标页可能刚创建 / 刚从 ViewPager2 的 RecyclerView 复用池里出来。
+    // 池实例命中时尤其不能只依赖一次同步，否则 player 已就绪但 Surface 还没挂上。
+    tvPlaybackPager?.syncCurrentPlayerWhenReady(pageIndex)
     // 触屏设备：`reuse` 那一路不重建视图，因此这三步不能只放在 `!reuse` 里面——
     // 从推荐页进正片、换清晰度之后的回到播放页都走 `reuse`，漏了就整页点不动。
     // 三处调用都自带「已经有了就直接返回」，重复进播放页是空操作。
@@ -605,6 +605,9 @@ fun TvMainActivity.playEpisode(
                     }
                     playbackReady=true
                     syncBufferingDots()
+                    // 低端电视的首帧可能比 READY 晚几秒；池预热不能一直等到首帧，
+                    // 否则用户在这几秒内切换时一定没有下一页实例可用。
+                    scheduleTvPlaybackPoolNeighbors()
                     // 从推荐页进正片时这一集还没 READY，历史由这里补写（见 [enterFormalPlayback]）。
                     if(recommendHistoryPending) saveProgress()
                     // 起播已经稳了：高端电视趁用户还没按菜单键，把播放设置面板先建好、画一遍

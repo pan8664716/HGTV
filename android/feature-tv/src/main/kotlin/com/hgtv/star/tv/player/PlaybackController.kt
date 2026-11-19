@@ -432,11 +432,11 @@ private fun TvMainActivity.finishSeamlessAdvance(
         tvPlaybackPager?.refreshPages()
         tvPlaybackPager?.setCurrentIndex(next,false)
         tvPlaybackPager?.pageAt(next)?.let { playerView=it.playerView }
-        tvPlaybackPager?.syncCurrentPlayer()
+        tvPlaybackPager?.syncCurrentPlayerWhenReady(next)
         tvPlaybackPager?.post {
             if(!isDestroyed && screen=="player" && episodeIndex==next) {
                 tvPlaybackPager?.pageAt(next)?.let { playerView=it.playerView }
-                tvPlaybackPager?.syncCurrentPlayer()
+                tvPlaybackPager?.syncCurrentPlayerWhenReady(next)
                 applyVideoGeometry()
             }
         }

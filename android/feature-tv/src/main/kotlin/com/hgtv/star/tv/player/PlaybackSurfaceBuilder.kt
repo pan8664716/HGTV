@@ -33,7 +33,7 @@ internal fun TvMainActivity.buildPlaybackSurface() {
     playerView=view
     playbackPager.post {
         if(isDestroyed || tvPlaybackPager!==playbackPager) return@post
-        playbackPager.syncCurrentPlayer()
+        playbackPager.syncCurrentPlayerWhenReady()
         applyVideoGeometry()
     }
     bufferingDots=LoadingDotsView(this).apply { visibility=View.GONE }
