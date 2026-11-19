@@ -228,6 +228,7 @@ internal class AutonomousState(
     fun generate(url: String, body: ByteArray?, bodyMD5: ByteArray?, ts: Long, nowMS: Long): String =
         generateDetailed(url, body, bodyMD5, ts, nowMS).header
 
+    @Synchronized
     fun generateDetailed(
         url: String,
         body: ByteArray?,

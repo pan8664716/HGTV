@@ -49,11 +49,23 @@ fun ContentRepository.homeFeed(): Map<RankBoard,CatalogPage> {
     val pool=WorkLanes.fanout.executor
     val futures=RankBoard.entries.map { board ->
         // 首页每栏只显示 10 条，取 [RANK_API_PAGE_SIZE] 条的小页就够。
-        board to pool.submit(java.util.concurrent.Callable { RequestScope.withScope(scope) { runCatching { rankRaw(1,board) }.getOrNull() } })
+        board to pool.submit(java.util.concurrent.Callable {
+            runCatching { RequestScope.withScope(scope) { rankRaw(1,board) } }
+        })
     }
     val result=LinkedHashMap<RankBoard,CatalogPage>()
-    futures.forEach { (board,future) -> future.get()?.let { page -> result[board]=page } }
-    if(result.values.none { it.items.isNotEmpty() }) throw IOException("热门榜暂不可用")
+    var firstFailure: Throwable?=null
+    futures.forEach { (board,future) ->
+        val outcome=runCatching { future.get() }
+            .getOrElse { failure -> Result.failure(failure.cause ?: failure) }
+        outcome.onSuccess { page -> result[board]=page }
+            .onFailure { failure -> if(firstFailure==null) firstFailure=failure }
+    }
+    if(result.values.none { it.items.isNotEmpty() }) {
+        val failure=firstFailure
+        if(failure is IOException) throw failure
+        throw IOException("热门榜暂不可用",failure)
+    }
     return result
 }
 
