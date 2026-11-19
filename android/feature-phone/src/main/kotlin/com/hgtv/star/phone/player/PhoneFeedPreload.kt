@@ -1,17 +1,20 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.core.CacheLevel
 import com.hgtv.star.core.SlideCacheManager
 import com.hgtv.star.shared.feed.PreloadScheduler
 import com.hgtv.star.shared.feed.RecommendWarmCoordinator
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import kotlin.math.abs
 
 internal class PhoneFeedPreloadState(private val host: PhoneFeedView) {
     val slideCache = SlideCacheManager()
     var preloadAt = 0L
     var pendingPlan: SlideCacheManager.Plan? = null
+    val priming = mutableSetOf<Int>()
     val scheduler by lazy {
         PreloadScheduler(
             slideCache = slideCache,
@@ -30,11 +33,11 @@ internal class PhoneFeedPreloadState(private val host: PhoneFeedView) {
     }
 }
 
-/** 带宽能不能让出来：正在放的那一部 buffer 不足 3 秒时，预加载不该抢同一条下行。 */
+/** 带宽能不能让出来：正在放的那一部 buffer 不足 1.5 秒时，预加载不该抢同一条下行。 */
 internal fun PhoneFeedView.preloadGateOpen(): Boolean {
     val exo = feedPlayer ?: return true
     if (!exo.isPlaying) return true
-    return exo.bufferedPosition - exo.currentPosition >= 3_000L
+    return exo.bufferedPosition - exo.currentPosition >= 1_500L
 }
 
 /**
@@ -66,46 +69,81 @@ internal fun PhoneFeedView.schedulePreload(delayMs: Long) {
  * 按计划真正发起预热。
  *
  * 只派前 5 条（电视端 `PRELOAD_MAX_TARGETS` 同一条理由：同时发太多只会互相抢带宽）。
- * 每个目标只调一次 `stream()` 把播放地址落进缓存，不读取视频字节。
+ * 主方向最近的一条升级为完整预热，并提前创建相邻页独立播放器；其余目标只取地址或索引。
  */
 internal fun PhoneFeedView.applyPreload(plan: SlideCacheManager.Plan) {
+    val anchor = feedPlayingIndex
+    if (plan.anchor != anchor || feedHidden || !isAttachedToWindow) return
     val lib = feedLibrary ?: return
     val repo = PhoneServices.repository(context)
     val warmCoordinator=RecommendWarmCoordinator(repo,lib,feedPlaybackSource)
+    val mainNeighbor = anchor + feedPreloadState.slideCache.direction
     var dispatched = 0
     for (target in plan.targets) {
         if (dispatched >= 5) break
         val series = feedItems.getOrNull(target.index) ?: continue
         // 正在放的那一部不预热。
-        if (target.index == feedPlayingIndex) continue
-        if (target.level == com.hgtv.star.core.CacheLevel.NONE) continue
+        if (target.index == anchor) continue
+        val level = when {
+            target.level == CacheLevel.NONE -> CacheLevel.NONE
+            target.index == mainNeighbor -> CacheLevel.FULL
+            else -> target.level
+        }
+        if (level == CacheLevel.NONE) continue
         // 相邻页已经有独立播放器并挂好源时，不再重复取地址。
         if (pooledPlayerSlot(target.index)?.sourcePrepared == true) continue
+        val prime = level == CacheLevel.FULL && abs(target.index - anchor) <= 1
+        if (prime && !feedPreloadState.priming.add(target.index)) continue
         dispatched++
         feedScope.launch {
-            val detail = withContext(Dispatchers.IO) {
-                runCatching { warmCoordinator.detail(series.id) }.getOrNull()
-            } ?: return@launch
-            if (detail.episodes.isEmpty()) return@launch
-            val saved = withContext(Dispatchers.IO) {
-                runCatching { lib.progress(series.id) }.getOrNull()
-            }
-            val epIndex = saved?.let { s -> detail.episodes.indexOf(s.episodeId).takeIf { it >= 0 } } ?: 0
-            val episodeId = detail.episodes.getOrNull(epIndex) ?: return@launch
-            withContext(Dispatchers.IO) {
-                runCatching {
-                    warmCoordinator.prefetch(
+            try {
+                val detail = withContext(Dispatchers.IO) {
+                    runCatching { warmCoordinator.detail(series.id) }.getOrNull()
+                } ?: return@launch
+                if (detail.episodes.isEmpty()) return@launch
+                val saved = withContext(Dispatchers.IO) {
+                    runCatching { lib.progress(series.id) }.getOrNull()
+                }
+                val epIndex = saved?.let { s ->
+                    detail.episodes.indexOf(s.episodeId).takeIf { it >= 0 }
+                } ?: 0
+                val episodeId = detail.episodes.getOrNull(epIndex) ?: return@launch
+                val prepared = withContext(Dispatchers.IO) {
+                    runCatching {
+                        warmCoordinator.warm(
+                            detail=detail,
+                            episodeId=episodeId,
+                            quality=lib.maxQuality,
+                            level=level,
+                        )
+                    }.getOrNull()
+                }
+                if (level == CacheLevel.FULL) {
+                    if (prepared == null) return@launch
+                    if (feedHidden || !isAttachedToWindow ||
+                        feedItems.getOrNull(target.index)?.id != series.id ||
+                        abs(target.index - feedPlayingIndex) > 1
+                    ) {
+                        runCatching { prepared.close() }
+                        return@launch
+                    }
+                    primePooledPlayerImpl(
+                        index=target.index,
                         detail=detail,
+                        episodeIndex=epIndex,
                         episodeId=episodeId,
-                        quality=lib.maxQuality,
+                        video=prepared,
                     )
                 }
-            }
-            if (com.hgtv.star.shared.BuildConfig.DEBUG) {
-                android.util.Log.i(
-                    "HGTV-PHONE",
-                    "address preload done index=${target.index} anchor=$feedPlayingIndex"
-                )
+                if (com.hgtv.star.shared.BuildConfig.DEBUG) {
+                    android.util.Log.i(
+                        "HGTV-PHONE",
+                        "preload done index=${target.index} level=$level " +
+                            "anchor=$feedPlayingIndex",
+                    )
+                }
+            } finally {
+                if (prime) feedPreloadState.priming.remove(target.index)
             }
         }
     }

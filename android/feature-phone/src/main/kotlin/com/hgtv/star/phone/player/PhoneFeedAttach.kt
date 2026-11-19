@@ -27,8 +27,10 @@ internal fun PhoneFeedView.attachImpl(
     slot.remote = video
     slot.sourcePrepared = false
     slot.firstFrameRendered = false
+    slot.preRendering = false
     val exo = slot.player
     pausePooledPlayersExcept(exo)
+    runCatching { exo.volume = 1f }
     feedPlayerSlot = exo
     runCatching {
         if (exo.mediaItemCount > 1) exo.removeMediaItems(1, exo.mediaItemCount)

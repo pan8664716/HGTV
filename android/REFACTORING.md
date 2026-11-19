@@ -68,6 +68,26 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
 
+## 2026-11-19：手机推荐流上下滑无缝播放
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 对照 `volcengine/VEVodDemo-android` 后确认：`PlayerPool` 本身只按媒体复用实例，
+  无缝体验来自相邻页提前绑定源、策略预加载和 `PreRenderSurfaceHolder` 首帧预渲染。
+- 原手机端虽然定义了 3 台播放器上限，但相邻页槽位只在当前页起播时创建；
+  `applyPreload()` 也只取播放地址，因此实际没有可激活的下一页播放器。
+- 修复：恢复 `CacheLevel` 语义，主方向最近一条执行详情、地址、索引、首块完整预热，
+  创建独立 `ExoPlayer` 并挂到该页自己的不透明 `SurfaceView`；其余目标只取地址或索引。
+- 相邻页以 0 音量提前播放，`onRenderedFirstFrame` 后立即暂停并保留首帧；最长等待
+  1.2 秒，超时暂停等待滑入。继续使用 `SurfaceView`，未引入 `TextureView`。
+- 切换时机从滚动 `IDLE` 提前到目标页过半可见；命中预渲染播放器时恢复音量并直接播放，
+  不再重新取详情、取地址、换 Surface 或初始化解码器。
+- 预热带宽让路阈值由 3 秒降为 1.5 秒，与电视端一致；正常设备保留当前 / 前后相邻
+  3 台，低内存设备仍只保留 2 台。未改版本号、versionCode、依赖或接口。
+- `:app:assembleDebug` 使用 JDK 17 通过；测试待用户真机验证，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-19：手机启动首帧系统栏颜色闪动修复
 
 状态：已实现，debug 真机验证、Release 构建通过。

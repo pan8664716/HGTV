@@ -817,6 +817,9 @@ object AppConfig {
             /** 离开推荐页后，空闲播放器延迟多久释放。 */
             const val PHONE_PLAYER_POOL_IDLE_RELEASE_MS = 20_000L
 
+            /** 相邻页静音预渲染首帧的最长等待时间，超时后暂停等待用户滑入。 */
+            const val PHONE_PRE_RENDER_TIMEOUT_MS = 1_200L
+
             /** 淘汰预热对象后延迟关闭的时间，等待旧 MediaSource 释放。 */
             const val PHONE_CLOSE_DELAY_MS = 1_000L
         }

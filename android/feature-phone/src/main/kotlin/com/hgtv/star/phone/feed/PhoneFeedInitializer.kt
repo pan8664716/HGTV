@@ -32,6 +32,14 @@ internal fun PhoneFeedView.initializeFeed() {
     feedList.isNestedScrollingEnabled = false
     PhonePagerSnapHelper { feedList.height }.attachToRecyclerView(feedList)
     feedList.addOnScrollListener(object : RecyclerView.OnScrollListener() {
+        override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
+            if (!feedList.userScroll || dy == 0 || feedHidden) return
+            val index = dominantVisiblePage(rv)
+            if (index >= 0 && index != feedPlayingIndex) {
+                playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
+            }
+        }
+
         override fun onScrollStateChanged(rv: RecyclerView, state: Int) {
             if (state != RecyclerView.SCROLL_STATE_IDLE) return
             val index = (rv.layoutManager as LinearLayoutManager).findFirstVisibleItemPosition()
@@ -75,4 +83,26 @@ internal fun PhoneFeedView.initializeFeed() {
     restoreSnapshot()
     // 当前页由 PhoneRecommendPage.onShown() 触发加载；相邻体裁页先不取流，
     // 避免首屏同时发出多条推荐请求。
+}
+
+/**
+ * 目标页超过半屏就开始激活。
+ *
+ * `PagerSnapHelper` 在 `IDLE` 时才给出最终页，但那时用户已经看到新页停稳；
+ * 这里在滑动过程中提前半个屏幕接管，让已经 `prepare` 的相邻播放器开始出帧。
+ */
+private fun dominantVisiblePage(list: RecyclerView): Int {
+    var bestIndex = -1
+    var bestVisible = 0
+    for (childIndex in 0 until list.childCount) {
+        val child = list.getChildAt(childIndex)
+        val position = list.getChildAdapterPosition(child)
+        if (position == RecyclerView.NO_POSITION) continue
+        val visible = minOf(child.bottom, list.height) - maxOf(child.top, 0)
+        if (visible > bestVisible) {
+            bestVisible = visible
+            bestIndex = position
+        }
+    }
+    return if (bestVisible * 2 >= list.height) bestIndex else -1
 }

@@ -623,12 +623,12 @@ android/
 | `PhoneFeedDanmaku.kt` | 取（或建）某一屏的弹幕加载器；首帧前只保留最后一次加载请求，首帧后再拉取；推荐页与正式播放页共用顶部信息栏下方的弹幕落点。 | fun PhoneFeedView.danmakuLoaderOfImpl、fun PhoneFeedView.applyDanmakuSettingsImpl、fun PhoneFeedView.applyDanmakuTopInsetImpl、fun PhoneFeedView.loadDanmakuImpl |
 | `PhoneFeedHide.kt` | 手机信息流隐藏、暂停与延迟回收；收起前记录当前播放位置，供重建或原地换地址时续播。 | fun PhoneFeedView.onHiddenImpl |
 | `PhoneFeedHost.kt` | 手机信息流页面、适配器、手势与预取；只有当前体裁上屏后才触发取流。 | fun PhoneFeedView.setGenreImpl、fun PhoneFeedView.onShownImpl、fun PhoneFeedView.onIdentityReadyImpl |
-| `PhoneFeedInitializer.kt` | 手机信息流页面初始化；先铺快照，不主动为隐藏体裁发请求，并在剩余约 1/3 时预取下一页；只有真实纵向手势的滚动 IDLE 才切换播放项。 | fun PhoneFeedView.initializeFeed |
+| `PhoneFeedInitializer.kt` | 手机信息流页面初始化；先铺快照，不主动为隐藏体裁发请求，并在剩余约 1/3 时预取下一页；真实纵向手势中目标页过半即切换，IDLE 只负责最终校正。 | fun PhoneFeedView.initializeFeed |
 | `PhoneFeedLifecycle.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedLifecycle 主要包含 fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl。 | fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl |
 | `PhoneFeedPageSupport.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedPageSupport 主要包含 fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl。 | fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl |
 | `PhoneFeedPager.kt` | 竖向信息流：**只有明显纵向的手势才滚**，并记录本次滚动是否由真实用户手势发起，供换播判定过滤布局补发的 IDLE。 | class VerticalPagerList、val userScroll、class PageHolder |
-| `PhoneFeedPlayback.kt` | 推荐换作入口；优先激活已预热的独立播放器，池未命中时才走详情与地址准备，并立即暂停旧活动实例。 | fun PhoneFeedView.playIndexImpl |
-| `PhoneFeedPlayerPool.kt` | 有上限的推荐播放器池：独立播放器/MediaSource、活动切换、按距离淘汰、低内存上限、隐藏页延迟回收、`RemoteVideo` 所有权，以及已释放实例的摘除与当前页自动恢复。 | class FeedPlayerSlot、fun PhoneFeedView.ensurePooledPlayerSlot、fun PhoneFeedView.activatePreparedPooledPlayerImpl、fun PhoneFeedView.trimPooledPlayers、fun PhoneFeedView.recoverReleasedFeedPlayer |
+| `PhoneFeedPlayback.kt` | 推荐换作入口；使用方向 / 快滑 / 回看计划，优先激活已预热的独立播放器，池未命中时才走详情与地址准备。 | fun PhoneFeedView.playIndexImpl |
+| `PhoneFeedPlayerPool.kt` | 有上限的推荐播放器池：相邻页独立播放器/MediaSource、完整源预热、静音首帧预渲染、活动切换、按距离淘汰、低内存上限和 `RemoteVideo` 所有权。 | class FeedPlayerSlot、fun PhoneFeedView.primePooledPlayerImpl、fun PhoneFeedView.startPooledPreRenderImpl、fun PhoneFeedView.finishPooledPreRenderImpl、fun PhoneFeedView.activatePreparedPooledPlayerImpl、fun PhoneFeedView.trimPooledPlayers |
 | `PhoneFeedPrefetch.kt` | 片尾 30 秒内用单集直连准备下一集地址与首块。 | fun PhoneFeedView.maybePrefetchNextImpl |
 | `PhoneFeedReopen.kt` | 手机信息流原地重开当前集；地址走单集直连并复用内联清晰度。 | fun PhoneFeedView.reopenAtCurrentPositionImpl |
 | `PhoneFeedResume.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedResume 主要包含 fun PhoneFeedView.resumeOnShownImpl。 | fun PhoneFeedView.resumeOnShownImpl |
@@ -653,12 +653,12 @@ android/
 | `PhoneFeedAttach.kt` | 池未命中时的起播路径；为目标页创建/复用独立播放器、挂源、发布会话并在宽高比布局后 prepare。 | fun PhoneFeedView.attachImpl |
 | `PhoneFeedControls.kt` | 推荐页播放/暂停与临时倍速入口；调用前检查播放器是否仍存活，失效时转入自动恢复而不是继续操作已释放实例。 | fun PhoneFeedView.togglePlay、fun PhoneFeedView.beginTempSpeed、fun PhoneFeedView.endTempSpeed |
 | `PhoneFeedData.kt` | 冷启动先铺落盘快照；首次无快照只取一个可播放条目，首帧后按页补齐列表并逐页上屏。 | fun PhoneFeedView.restoreSnapshot、fun PhoneFeedView.loadMore、fun PhoneFeedView.scheduleFeedFillAfterFirstFrame、fun PhoneFeedView.refreshAfterIdentity、fun PhoneFeedView.adoptableIndexOf |
-| `PhoneFeedListener.kt` | 每台池播放器独立挂监听；按索引更新对应页面，READY / 首帧后触发补流、首帧追踪与池状态；IO / Source 错误先按当前位置恢复同一项，恢复失败才换下一部。 | fun PhoneFeedView.attachFeedListener、fun PhoneFeedView.detachFeedListener、fun PhoneFeedView.detachAllFeedListeners |
+| `PhoneFeedListener.kt` | 每台池播放器独立挂监听；相邻页静音预渲染首帧后立即暂停并保留画面，当前页 READY / 首帧后触发补流和追踪；错误先原地恢复再换下一部。 | fun PhoneFeedView.attachFeedListener、fun PhoneFeedView.detachFeedListener、fun PhoneFeedView.detachAllFeedListeners |
 | `PhoneFeedMetrics.kt` | 与电视端同一套「快速划过 / 划走 / 看过」判定；推荐播放链接首次批量 20 个，先批量补详情，再按播放档案补首集模型。 | fun PhoneFeedView.settleRecommendWatch、fun PhoneFeedView.reportRecommendImpression、fun PhoneFeedView.scheduleRecommendBatchModels |
 | `PhoneFeedNavigation.kt` | 进播放页。 | fun PhoneFeedView.openPlayer、fun PhoneFeedView.hideChromeForHandoff、fun PhoneFeedView.launchPlayer、fun PhoneFeedView.liveEpisodeOf |
 | `PhoneFeedPageBinding.kt` | 活动页绑定；保留上一页自己的播放器与 Surface，按新片源尺寸预置首帧比例；推荐信息流不再加载封面过渡。 | fun PhoneFeedView.attachPageImpl |
 | `PhoneFeedPlaybackClock.kt` | 推荐页进度、弹幕时钟与片尾兜底；ticker 同步记录当前播放位置，并监测播放器是否已被释放，发现失效立即触发自动恢复。 | fun PhoneFeedView.syncDanmakuClock、fun PhoneFeedView.syncDanmakuClockNow、fun PhoneFeedView.syncProgressBarsNow、fun PhoneFeedView.startProgressTicker |
-| `PhoneFeedPreload.kt` | 相邻页调度；固定窗口 `n-2..n+2` 只预取详情与播放地址，不解析索引、不读取首块。 | class PhoneFeedPreloadState、fun PhoneFeedView.preloadGateOpen、fun PhoneFeedView.scheduleDwell、fun PhoneFeedView.schedulePreload、fun PhoneFeedView.applyPreload |
+| `PhoneFeedPreload.kt` | 相邻页调度；主方向最近一条完整预热并创建独立播放器，其余目标按地址 / 索引分级预热，快滑时仍保证下一部可播。 | class PhoneFeedPreloadState、fun PhoneFeedView.preloadGateOpen、fun PhoneFeedView.scheduleDwell、fun PhoneFeedView.schedulePreload、fun PhoneFeedView.applyPreload |
 | `PhoneNextSeason.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneNextSeason 主要包含 class PhoneNextSeasonState、fun PhonePlayerActivity.next、fun PhonePlayerActivity.prepareNextSeasonIfNeeded、fun PhonePlayerActivity.clearNextSeasonLookup。 | class PhoneNextSeasonState、fun PhonePlayerActivity.next、fun PhonePlayerActivity.prepareNextSeasonIfNeeded、fun PhonePlayerActivity.clearNextSeasonLookup、fun PhonePlayerActivity.ensureNextSeason、fun PhonePlayerActivity.completeNextSeasonLookup |
 | `PhonePlaybackProgress.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlaybackProgress 主要包含 fun PhonePlayerActivity.startTicker、fun PhonePlayerActivity.updateProgress、fun PhonePlayerActivity.syncProgressBarsNow、fun PhonePlayerActivity.saveProgress。 | fun PhonePlayerActivity.startTicker、fun PhonePlayerActivity.updateProgress、fun PhonePlayerActivity.syncProgressBarsNow、fun PhonePlayerActivity.saveProgress、fun PhonePlayerActivity.maybePrefetchNext、fun PhonePlayerActivity.enqueueNextIfReady |
 | `PhonePlaybackRecovery.kt` | 手机端的播放失败自愈：**决策全部来自 :core，与电视端同一套**。 | val PhonePlayerActivity.playbackMaxQuality、fun PhonePlayerActivity.playbackAttribution、fun PhonePlayerActivity.handlePlayerFailure、fun PhonePlayerActivity.decideAndRun、fun PhonePlayerActivity.refetchAndReplay、fun PhonePlayerActivity.recoverQueuedCurrent |
@@ -1123,7 +1123,7 @@ android/
 | `PreloadScheduler.kt` | 推荐流「相邻预热」的**排程编排**：电视与手机共用这一份。 | class PreloadScheduler |
 | `RecommendFeedEngine.kt` | 推荐流的加载、cell 续流、降级、重排和快照落盘；曝光记录不参与删卡，回传当前列表少量 ID 做深游标去重，已有列表连续重复页快速返回，首屏目标 60 条并在剩余约 1/3 时预取。 | class RecommendFeedEngine、class RecommendFeedPolicy、class RecommendFeedInput、class RecommendFeedResult、class RecommendPlaybackBatchState |
 | `RecommendStore.kt` | 推荐流的页面无关状态；按横屏/默认请求模式隔离续流游标，并在条件变化时支持重置。 | class RecommendStore |
-| `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 单集直连地址；预热详情不补作者，不创建 `RemoteVideo`、不读取视频字节。 | class RecommendWarmCoordinator |
+| `RecommendWarmCoordinator.kt` | 推荐预热的数据链：详情 → 单集直连地址 → 索引 / 首块；按 ADDRESS / META / FULL 分级，完整结果交给手机播放器池。 | class RecommendWarmCoordinator、fun RecommendWarmCoordinator.warm、fun RecommendWarmCoordinator.prefetch |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/lan/`
 

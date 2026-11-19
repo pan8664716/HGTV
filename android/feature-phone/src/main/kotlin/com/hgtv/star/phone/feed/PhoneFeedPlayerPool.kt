@@ -6,11 +6,14 @@ import android.content.Context
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.Player
 import com.google.android.exoplayer2.ui.PlayerView
+import com.google.android.exoplayer2.upstream.DataSource
 import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.phone.ui.primeAspectRatio
+import com.hgtv.star.shared.media.VideoDataSource
+import com.hgtv.star.shared.media.swapMediaSource
 import kotlin.math.abs
 
 internal class FeedPlayerSlot(
@@ -25,6 +28,7 @@ internal class FeedPlayerSlot(
     /** 媒体源已经挂上并调用过 prepare；不代表首帧一定已经出现。 */
     var sourcePrepared: Boolean = false
     var firstFrameRendered: Boolean = false
+    var preRendering: Boolean = false
     var preparedAt: Long = 0L
 
     fun sourceFresh(): Boolean =
@@ -127,7 +131,9 @@ internal fun PhoneFeedView.adoptPooledPlayerSlot(
     slot.episodeIndex = episodeIndex
     slot.remote = remote
     slot.sourcePrepared = true
+    slot.preRendering = false
     slot.preparedAt = android.os.SystemClock.elapsedRealtime()
+    runCatching { player.volume = 1f }
     trimPooledPlayers(feedPlayingIndex)
 }
 
@@ -278,6 +284,7 @@ internal fun PhoneFeedView.trimPooledPlayers(anchor: Int, preferred: Int = ancho
 internal fun PhoneFeedView.pausePooledPlayersExcept(player: ExoPlayer?) {
     feedPooledPlayers.values.forEach { slot ->
         if (slot.player !== player) {
+            slot.preRendering = false
             runCatching {
                 slot.player.playWhenReady = false
                 slot.player.pause()
@@ -383,6 +390,7 @@ internal fun PhoneFeedView.attachPooledPlayerToPageImpl(
     val verticalSource = if (width > 0 && height > 0) height > width else series.vertical
     page.playerView.primeAspectRatio(width, height, verticalSource)
     if (index != feedPlayingIndex) slot.player.playWhenReady = false
+    if (index != feedPlayingIndex) startPooledPreRenderImpl(index, slot)
 }
 
 /** ViewHolder 复用时：池里没有这一项就摘掉旧引用，有就挂回它自己的独立播放器。 */
@@ -410,6 +418,116 @@ internal fun PlayerView.detachPooledOutput() {
 }
 
 /**
+ * 在相邻页自己的 Surface 上静音预渲染首帧。
+ *
+ * ExoPlayer 的 `prepare + playWhenReady=false` 只完成缓冲，解码器通常要等真正播放
+ * 才启动。这里短暂以 0 音量播放，拿到 `onRenderedFirstFrame` 后立即暂停；用户滑入时
+ * 直接恢复音量与播放状态，避免切页后再等解码器初始化。
+ */
+internal fun PhoneFeedView.startPooledPreRenderImpl(index: Int, slot: FeedPlayerSlot) {
+    val page = feedPageAt(index) ?: return
+    if (feedHidden || index == feedPlayingIndex || slot.firstFrameRendered || slot.preRendering ||
+        !slot.sourcePrepared || !page.isAttachedToWindow
+    ) return
+    slot.preRendering = true
+    runCatching { slot.player.volume = 0f }
+    slot.player.playWhenReady = true
+    val player = slot.player
+    feedPostDelayed(
+        {
+            if (feedPooledPlayers[index] !== slot || !slot.preRendering ||
+                index == feedPlayingIndex || slot.player !== player
+            ) return@feedPostDelayed
+            slot.preRendering = false
+            runCatching { player.pause() }
+            if (com.hgtv.star.shared.BuildConfig.DEBUG) {
+                android.util.Log.i(
+                    "HGTV-PHONE",
+                    "player pool pre-render timeout index=$index anchor=$feedPlayingIndex",
+                )
+            }
+        },
+        AppConfig.Playback.Preload.PHONE_PRE_RENDER_TIMEOUT_MS,
+    )
+}
+
+/** 相邻页首帧已经上屏：立刻暂停静音预渲染，保留这一帧等待用户滑入。 */
+internal fun PhoneFeedView.finishPooledPreRenderImpl(index: Int, player: ExoPlayer) {
+    val slot = feedPooledPlayers[index] ?: return
+    if (!slot.preRendering || slot.player !== player) return
+    slot.preRendering = false
+    if (index != feedPlayingIndex) runCatching { player.pause() }
+}
+
+/**
+ * 相邻页完整预热：独立播放器、独立 MediaSource，默认不播放也不出声。
+ *
+ * 这是手机端接近 VEVod 无缝体验的关键：用户滑到下一页之前，目标页已经有自己的
+ * `ExoPlayer`、索引、首块和 Surface；切页只激活实例，不再从详情和地址请求开始。
+ * [video] 的所有权在进入本方法后归播放器池；失败时由这里负责关闭。
+ */
+internal fun PhoneFeedView.primePooledPlayerImpl(
+    index: Int,
+    detail: Detail,
+    episodeIndex: Int,
+    episodeId: String,
+    video: RemoteVideo,
+): Boolean {
+    if (feedHidden || !isAttachedToWindow || index !in feedItems.indices ||
+        abs(index - feedPlayingIndex) > 1
+    ) {
+        runCatching { video.close() }
+        return false
+    }
+    val series = feedItems[index]
+    if (series.id != detail.series.id) {
+        runCatching { video.close() }
+        return false
+    }
+    val existing = pooledPlayerSlot(index)
+    if (existing?.sourcePrepared == true || existing?.player === feedPlayer) {
+        runCatching { video.close() }
+        return false
+    }
+
+    val slot = ensurePooledPlayerSlot(index, series.id, episodeId)
+    slot.detail = detail
+    slot.episodeIndex = episodeIndex
+    slot.remote = video
+    slot.sourcePrepared = false
+    slot.firstFrameRendered = false
+    slot.preparedAt = 0L
+
+    val prepared = runCatching {
+        feedPageAt(index)?.let { page ->
+            attachPooledPlayerToPageImpl(page, index)
+        }
+        val factory = DataSource.Factory { VideoDataSource(video) }
+        slot.player.swapMediaSource(episodeId, video.info.url, factory)
+        slot.player.setPlaybackSpeed(feedUserSpeed)
+        slot.player.playWhenReady = false
+        attachFeedListener(slot.player, index)
+        slot.player.prepare()
+    }.isSuccess
+    if (!prepared) {
+        releasePooledPlayerSlot(index)
+        return false
+    }
+    slot.sourcePrepared = true
+    slot.preparedAt = android.os.SystemClock.elapsedRealtime()
+    startPooledPreRenderImpl(index, slot)
+    trimPooledPlayers(feedPlayingIndex, preferred = index)
+    if (com.hgtv.star.shared.BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-PHONE",
+            "player pool prime index=$index anchor=$feedPlayingIndex " +
+                "episode=${episodeIndex + 1} page=${feedPageAt(index) != null}",
+        )
+    }
+    return true
+}
+
+/**
  * 当前页已有独立预热播放器时直接激活，不再换 Surface、不再 setMediaSource。
  */
 internal fun PhoneFeedView.activatePreparedPooledPlayerImpl(
@@ -417,12 +535,16 @@ internal fun PhoneFeedView.activatePreparedPooledPlayerImpl(
     slot: FeedPlayerSlot,
     clearDanmakuOnSwitch: Boolean,
 ): Boolean {
-    if (!slot.sourcePrepared) return false
+    if (!slot.sourcePrepared || !slot.player.isFeedPlayerAlive() || slot.player.playerError != null) {
+        releasePooledPlayerSlot(index)
+        return false
+    }
     val series = feedItems.getOrNull(index) ?: return false
     val detail = slot.detail ?: return false
     val remote = slot.remote ?: return false
 
     pausePooledPlayersExcept(slot.player)
+    slot.preRendering = false
     feedPlayerSlot = slot.player
     feedPlayingDetailSlot = detail
     feedRemoteSlot = remote
@@ -444,6 +566,7 @@ internal fun PhoneFeedView.activatePreparedPooledPlayerImpl(
     attachFeedListener(slot.player, index)
     publishPooledSession(detail, slot.episodeIndex, remote, remote.info.quality)
     slot.player.setPlaybackSpeed(feedUserSpeed)
+    runCatching { slot.player.volume = 1f }
     slot.player.playWhenReady = !feedPaused
     if (slot.firstFrameRendered || slot.player.playbackState == Player.STATE_READY) {
         reportRecommendImpression(index)
