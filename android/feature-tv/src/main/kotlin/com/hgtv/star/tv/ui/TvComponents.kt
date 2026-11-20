@@ -175,6 +175,9 @@ enum class ButtonSize(val height: Int, val pad: Int, val text: Float) {
     /** 分类页筛选行：比紧凑档再小一档（30dp 底板 / 10dp 内边距 / 13sp）。 */
     DENSE(30, 10, 13f),
 
+    /** 分类页二级筛选：沿用 DENSE 的高度和内边距，只把字号放大 1/3。 */
+    CATEGORY_FILTER(30, 10, 17.333334f),
+
     /**
      * 弹窗档：**只有弹窗里的按钮用这一档**（底部动作行 + 选项列表）。
      *

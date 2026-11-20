@@ -195,7 +195,7 @@ const val CHIP_ROW_HEIGHT=68
 const val RANK_NAV_ACTION_GAP=TvStyle.BUTTON_NORMAL+2*TvStyle.SOFT_BAND
 
 /**
- * 分类页筛选行的高度（dp）。芯片用 [com.hgtv.star.tv.ButtonSize.DENSE]
+ * 分类页筛选行的高度（dp）。芯片用 [com.hgtv.star.tv.ButtonSize.CATEGORY_FILTER]
  * （30dp 底板 + 上下各 6dp 柔光带 = 42dp），行内不再额外留纵向间距。
  */
 const val FILTER_ROW_HEIGHT=42

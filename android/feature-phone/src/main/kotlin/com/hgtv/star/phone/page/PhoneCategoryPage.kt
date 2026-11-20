@@ -417,7 +417,8 @@ class PhoneCategoryPage(
         line.addView(TextView(context).apply {
             text = label
             setTextColor(PhoneStyle.textDim)
-            phoneSize(9)
+            // 子分类字号在原 9sp 基础上放大 1/3。
+            phoneSize(12)
             maxLines = 1
         }, LayoutParams(context.dp(30), LayoutParams.WRAP_CONTENT))
 
@@ -433,7 +434,8 @@ class PhoneCategoryPage(
             val on = id == selectedId
             chips.addView(TextView(context).apply {
                 this.text = text
-                phoneSize(9)
+                // 子分类选项字号与原标签保持同一档。
+                phoneSize(12)
                 gravity = Gravity.CENTER
                 setTextColor(if (on) PhoneStyle.text else PhoneStyle.textDim)
                 background = if (on) {

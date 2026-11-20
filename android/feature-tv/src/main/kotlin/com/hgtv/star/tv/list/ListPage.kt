@@ -497,7 +497,8 @@ fun TvMainActivity.showCatalog(
                     clipChildren=true; clipToPadding=true
                 }
                 val title=filterRow.title.removePrefix(UiText.get(com.hgtv.star.shared.R.string.ui_0032)).ifBlank { filterRow.title }
-                val label=text(title,12f,muted).apply {
+                // 子分类字号在原 12sp 基础上放大 1/3。
+                val label=text(title,16f,muted).apply {
                     gravity=Gravity.CENTER_VERTICAL
                     maxLines=1
                     ellipsize=android.text.TextUtils.TruncateAt.END
@@ -510,7 +511,7 @@ fun TvMainActivity.showCatalog(
                 buttons.clear()
                 run {
                     val active=categorySelection.valueOf(filterRow.type)==null
-                    val chip=ToggleChip(this,"全部",active,ButtonSize.DENSE) {
+                    val chip=ToggleChip(this,"全部",active,ButtonSize.CATEGORY_FILTER) {
                         selectCategoryFilter(filterRow.type,null)
                     }
                     buttons[""]=chip
@@ -519,7 +520,7 @@ fun TvMainActivity.showCatalog(
                 }
                 filterRow.options.forEach { option ->
                     val active=categorySelection.valueOf(filterRow.type)==option.id
-                    val chip=ToggleChip(this,option.label,active,ButtonSize.DENSE) {
+                    val chip=ToggleChip(this,option.label,active,ButtonSize.CATEGORY_FILTER) {
                         selectCategoryFilter(filterRow.type,option.id)
                     }
                     buttons[option.id]=chip
