@@ -45,7 +45,6 @@ internal class LandscapePlayerPage(
             if (host.playerLandDanmaku === this) host.syncLandscapeLetterboxImpl()
         }
     }
-    val letterbox = PhoneLetterboxMask(host)
     private val touch = View(host)
 
     init {
@@ -53,7 +52,6 @@ internal class LandscapePlayerPage(
         addView(video, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(cover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(danmaku, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(letterbox, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         touch.setOnTouchListener(
             PhoneTouch(
                 host = touch,
@@ -96,7 +94,7 @@ internal class LandscapePlayerPage(
         addView(touch, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         video.addOnLayoutChangeListener { _, _, _, _, _, _, _, _, _ ->
             if (host.playerLandscapeVideo === video &&
-                host.playerLandLetterboxInitialized
+                host.playerLandDanmakuInitialized
             ) {
                 host.syncLandscapeLetterboxImpl()
             }
@@ -390,7 +388,6 @@ internal fun PhonePlayerActivity.syncLandscapePlayerPagerPage(
     playerLandscapeVideoSlot = page.video
     playerLandscapeCover = page.cover
     playerLandDanmakuSlot = page.danmaku
-    playerLandLetterboxSlot = page.letterbox
     if (attachCurrent && position == index && playerLandscapeMode) {
         attachCurrentPlayerToLandscapePagerPage()
     }
@@ -453,7 +450,6 @@ internal fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage(
     playerLandscapeVideoSlot = current.video
     playerLandscapeCover = current.cover
     playerLandDanmakuSlot = current.danmaku
-    playerLandLetterboxSlot = current.letterbox
     current.video.visibility = View.VISIBLE
     if (force) current.video.forceBindVideoSurface(exo)
     else if (current.video.player !== exo) current.video.player = exo

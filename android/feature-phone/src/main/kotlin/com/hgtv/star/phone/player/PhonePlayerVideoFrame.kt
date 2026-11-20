@@ -6,6 +6,7 @@ import android.view.View
 import android.widget.FrameLayout
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
 import com.hgtv.star.phone.ui.dp
+import com.hgtv.star.shared.media.videoPictureBounds
 
 /** 把播放器当前的画面尺寸补到页面上（`bind` 之后调用）。 */
 internal fun PhonePlayerActivity.syncVideoFrameImpl() {
@@ -24,34 +25,29 @@ internal fun PhonePlayerActivity.updateLandscapeVideoFrameImpl(width: Int, heigh
     placeLandscapeFullscreenImpl()
 }
 
-/** 横屏弹幕 Surface 的黑边背景与兜底遮罩：只跟随实际视频画面，不跟随控制层。 */
+/** 横屏弹幕 Surface 的黑边背景：只跟随实际视频画面，不跟随控制层。 */
 internal fun PhonePlayerActivity.syncLandscapeLetterboxImpl() {
     if (
         !playerLandscapeVideoInitialized ||
-        !playerLandDanmakuInitialized ||
-        !playerLandLetterboxInitialized
+        !playerLandDanmakuInitialized
     ) return
     val scale = if (playerLandscape.width > 0 && playerLandscapeVideo.width > 0) {
         playerLandscapeVideo.width.toFloat() / playerLandscape.width
     } else {
         1f
     }
-    playerLandLetterbox.sync(
-        videoBoundsProvider = {
-            playerLandscapeVideo.visibleVideoBoundsIn(playerLandLetterbox)
-        },
+    val picture = videoPictureBounds(
+        hostWidth = playerLandscape.width,
+        hostHeight = playerLandscape.height,
         videoWidth = playerLandVideoWidth,
         videoHeight = playerLandVideoHeight,
         fitMode = playerLandscapeVideo.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT,
         videoScale = scale,
-    )
-    val picture = playerLandLetterbox.pictureBounds(
-        playerLandscape.width,
-        playerLandscape.height,
+        videoBoundsProvider = {
+            playerLandscapeVideo.visibleVideoBoundsIn(playerLandDanmaku)
+        },
     )
     playerLandDanmaku.letterboxRect = picture
-    playerLandLetterbox.visibility =
-        if (picture == null || playerLandDanmaku.isSurfaceActive) View.GONE else View.VISIBLE
 }
 
 /**

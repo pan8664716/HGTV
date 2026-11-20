@@ -19,6 +19,7 @@ import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.HeatLabel
 import com.hgtv.star.core.LabelStyle
 import com.hgtv.star.shared.media.DanmakuView
+import com.hgtv.star.shared.media.videoPictureBounds
 import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.ui.PhoneGlyph
@@ -144,12 +145,6 @@ class PhoneVideoPage(
         isClickable = false
         importantForAccessibility = IMPORTANT_FOR_ACCESSIBILITY_NO
     }
-
-    /**
-     * 弹幕 Surface 是全屏透明的。弹幕可见时，黑边在弹幕 Surface 内部先画；
-     * 这层普通 View 只在弹幕层不可见时兜底，不拦截触摸。
-     */
-    internal val letterboxMask = PhoneLetterboxMask(context)
 
     // ------------------------------------------------------------------ 底部信息
 
@@ -306,16 +301,14 @@ class PhoneVideoPage(
     // ------------------------------------------------------------------ 构建
 
     init {
-        // 借下层 Surface 时整页透明：只画遮罩与信息栏，画面由推荐页那一层透上来。
+        // 借下层 Surface 时整页透明：只画控制层，画面由推荐页那一层透上来。
         setBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
-        playerView.setAspectRatioListener { _, _, _ -> syncLetterboxMask() }
-        danmakuView.onRenderStateChangedListener = { syncLetterboxMask() }
+        playerView.setAspectRatioListener { _, _, _ -> syncDanmakuLetterbox() }
+        danmakuView.onRenderStateChangedListener = { syncDanmakuLetterbox() }
         addView(playerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(episodeCover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        // 弹幕压在画面之上（在遮罩与信息栏之前加，因此它永远在这些层下面）。
+        // 弹幕压在画面之上，黑边也由这块透明 Surface 自己绘制。
         addView(danmakuView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        // 弹幕层是独立 SurfaceView；普通 View 必须在它之后加入，才能遮住它的透明挖孔。
-        addView(letterboxMask, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
         // 限高到屏高的一半：整屏铺开时哪怕渐变再陡，画面中间也会被压暗一层。
         // 真实高度在 onSizeChanged 里按本页高度算（信息流每一页的高度不一样）。
@@ -556,14 +549,14 @@ class PhoneVideoPage(
         }
         // 尺寸变了：缩放是按屏宽高算的，必须按新尺寸重排一次。
         applyVideoScale()
-        syncLetterboxMask()
+        syncDanmakuLetterbox()
         // 转屏 / 换版面之后画面尺寸变了，按钮要重新贴到画面下边缘。
         if (videoWidth > 0 && videoHeight > 0) placeFullscreenButton()
     }
 
     override fun onLayout(changed: Boolean, left: Int, top: Int, right: Int, bottom: Int) {
         super.onLayout(changed, left, top, right, bottom)
-        syncLetterboxMask()
+        syncDanmakuLetterbox()
     }
 
     /**
@@ -575,22 +568,21 @@ class PhoneVideoPage(
         if (width <= 0 || height <= 0) return
         videoWidth = width
         videoHeight = height
-        syncLetterboxMask()
+        syncDanmakuLetterbox()
         placeFullscreenButton()
     }
 
-    internal fun syncLetterboxMask() {
-        letterboxMask.sync(
-            videoBoundsProvider = { playerView.visibleVideoBoundsIn(letterboxMask) },
+    internal fun syncDanmakuLetterbox() {
+        val picture = videoPictureBounds(
+            hostWidth = width,
+            hostHeight = height,
             videoWidth = videoWidth,
             videoHeight = videoHeight,
             fitMode = playerView.resizeMode == AspectRatioFrameLayout.RESIZE_MODE_FIT,
             videoScale = videoScale,
+            videoBoundsProvider = { playerView.visibleVideoBoundsIn(danmakuView) },
         )
-        val picture = letterboxMask.pictureBounds(width, height)
         danmakuView.letterboxRect = picture
-        letterboxMask.visibility =
-            if (picture == null || danmakuView.isSurfaceActive) View.GONE else View.VISIBLE
     }
 
     private fun placeFullscreenButton() {
@@ -682,7 +674,7 @@ class PhoneVideoPage(
         // bind 只给一个安全的初值：完整画面。真正的档位由宿主按**实际视频尺寸**随后覆盖；
         // 卡片上的 `vertical` 偶有标错，不能在这里先按它把横屏片放大。
         playerView.resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
-        syncLetterboxMask()
+        syncDanmakuLetterbox()
         // 尺寸回调前先用卡片方向给一个与当前版面一致的初值；尺寸到手后仍以实际画面为准。
         wantsFullscreen = if (isLandscapePage()) series.vertical else !series.vertical
         if (!sameSeries) {
@@ -842,7 +834,7 @@ class PhoneVideoPage(
         lp.gravity = Gravity.CENTER
         playerView.layoutParams = lp
         playerView.requestLayout()
-        syncLetterboxMask()
+        syncDanmakuLetterbox()
     }
 
     /** 播放进度（0..1）。用户正在拖进度条时不覆盖他的手。 */

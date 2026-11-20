@@ -24,7 +24,6 @@ import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
 import com.hgtv.star.shared.data.ArtworkLoader
-import com.hgtv.star.shared.media.PlayerLetterboxMask
 import com.hgtv.star.phone.ui.PhoneSheet
 import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhoneStyle
@@ -33,8 +32,6 @@ import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.phone.ui.roundedBackground
 import kotlin.math.abs
-
-internal typealias PhoneLetterboxMask = PlayerLetterboxMask
 
 /**
  * 正式播放换集时冻结旧画面的宽高比。
@@ -190,7 +187,7 @@ internal object PhonePlayerViewSupport {
     /**
      * 正式播放页只使用 SurfaceView。显式关闭上浮层级并设为 OPAQUE，
      * 避免 Surface 透明区域透出 Activity 或旧页面；弹幕那一层仍是透明 Surface，
-     * 黑边由 [PlayerLetterboxMask] 在窗口层遮住。
+     * 黑边由弹幕 Surface 自己绘制，不再额外挂普通 View 兜底层。
      */
     fun useOpaqueVideoSurface(view: PlayerView) {
         runCatching {

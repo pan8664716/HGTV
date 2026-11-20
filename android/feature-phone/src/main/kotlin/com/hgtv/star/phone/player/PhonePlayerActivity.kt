@@ -148,12 +148,6 @@ open class PhonePlayerActivity : PhoneActivity() {
         get()=landDanmaku
         set(value) { landDanmaku=value }
     internal val playerLandDanmakuInitialized get()=::landDanmaku.isInitialized
-    private lateinit var landLetterbox: PhoneLetterboxMask
-    internal val playerLandLetterbox get()=landLetterbox
-    internal var playerLandLetterboxSlot: PhoneLetterboxMask
-        get()=landLetterbox
-        set(value) { landLetterbox=value }
-    internal val playerLandLetterboxInitialized get()=::landLetterbox.isInitialized
     private lateinit var landTop: LinearLayout
     private lateinit var landBottom: LinearLayout
     internal var playerLandTopSlot: LinearLayout
