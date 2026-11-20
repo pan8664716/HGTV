@@ -109,6 +109,18 @@ class PhoneMinePage(
         }, LinearLayout.LayoutParams(context.dp(16), context.dp(16)))
         setOnClickListener { refreshData() }
     }
+    private val topTextColumn = LinearLayout(context).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(context.dp(10), 0, 0, 0)
+        addView(topName, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+        addView(topSub, LinearLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.WRAP_CONTENT,
+        ))
+    }
     private val topAccount = LinearLayout(context).apply {
         orientation = LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
@@ -120,18 +132,7 @@ class PhoneMinePage(
             avatarSize,
             avatarSize,
         ))
-        addView(LinearLayout(context).apply {
-            orientation = LinearLayout.VERTICAL
-            setPadding(context.dp(10), 0, 0, 0)
-            addView(topName, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ))
-            addView(topSub, LinearLayout.LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT,
-                ViewGroup.LayoutParams.WRAP_CONTENT,
-            ))
-        }, LinearLayout.LayoutParams(
+        addView(topTextColumn, LinearLayout.LayoutParams(
             0,
             ViewGroup.LayoutParams.WRAP_CONTENT,
             1f,
@@ -653,8 +654,17 @@ class PhoneMinePage(
             !account.nickname.isNullOrBlank() -> account.nickname.orEmpty()
             else -> "已登录"
         }
-        topSub.text = if (account.signedIn) "" else "记录仅保存在本机"
-        topSub.visibility = if (account.signedIn) View.GONE else View.VISIBLE
+        if (account.signedIn) {
+            topTextColumn.removeView(topSub)
+        } else {
+            topSub.text = "记录仅保存在本机"
+            if (topSub.parent == null) {
+                topTextColumn.addView(topSub, LinearLayout.LayoutParams(
+                    ViewGroup.LayoutParams.MATCH_PARENT,
+                    ViewGroup.LayoutParams.WRAP_CONTENT,
+                ))
+            }
+        }
         topAccount.contentDescription = if (account.signedIn) {
             "账号${account.nickname.orEmpty()}"
         } else {
