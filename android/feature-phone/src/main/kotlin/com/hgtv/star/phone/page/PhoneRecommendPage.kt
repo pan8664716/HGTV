@@ -14,6 +14,7 @@ import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneColor
 import com.hgtv.star.phone.ui.PhoneTopBar
+import com.hgtv.star.phone.ui.navigationBarPx
 
 /**
  * 推荐页：四条件裁横向滑动，每页一条独立的竖屏视频流。
@@ -204,8 +205,8 @@ class PhoneRecommendPage(
         feeds.getOrNull(current)?.scrollToTop()
     }
 
-    internal fun applySystemBottomInset(@Suppress("UNUSED_PARAMETER") bottomInsetPx: Int) {
-        feeds.forEach { it?.refreshBottomInsets() }
+    internal fun applySystemBottomInset(bottomInsetPx: Int) {
+        feeds.forEach { it?.refreshBottomInsets(bottomInsetPx) }
     }
 
     override fun onSizeChanged(w: Int, h: Int, oldw: Int, oldh: Int) {
@@ -217,6 +218,8 @@ class PhoneRecommendPage(
         // 尺寸变了只重新对齐当前这一页（换高度后旧的像素偏移不再是一页的整数倍）。
         pager.post { runCatching { pager.setCurrentItem(current, false) } }
         topBar.post { syncFeedDanmakuTopInset(topBar.bottom) }
+        val bottomInsetPx = context.navigationBarPx()
+        feeds.forEach { it?.refreshBottomInsets(bottomInsetPx) }
     }
 
     private fun goTo(index: Int) {

@@ -29,6 +29,7 @@ import com.hgtv.star.phone.ui.PhoneColor
 import com.hgtv.star.phone.ui.PhoneSheet
 import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.dp
+import com.hgtv.star.phone.ui.navigationBarPx
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.phone.ui.roundedBackground
@@ -104,10 +105,13 @@ class PhoneFeedView(
     private val list = VerticalFeedPager(context)
     internal val feedList get()=list
 
-    internal fun refreshBottomInsets() {
+    internal fun refreshBottomInsets(
+        bottomInsetPx: Int = context.navigationBarPx(),
+    ) {
         list.requestLayout()
         for (index in 0 until list.pageChildCount()) {
-            list.pageChildAt(index)?.requestLayout()
+            (list.pageChildAt(index) as? PhoneVideoPage)
+                ?.applyBottomSystemInset(bottomInsetPx)
         }
     }
     private var restoreSeriesId: String? = initialSeriesId

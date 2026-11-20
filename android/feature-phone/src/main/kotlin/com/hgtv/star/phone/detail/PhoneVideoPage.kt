@@ -27,6 +27,8 @@ import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.bottomScrim
 import com.hgtv.star.phone.ui.dp
+import com.hgtv.star.phone.ui.navigationBarPx
+import com.hgtv.star.phone.ui.phoneTabBarHeightPx
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.phone.ui.tabBarInset
@@ -549,6 +551,7 @@ class PhoneVideoPage(
         }
         // 尺寸变了：缩放是按屏宽高算的，必须按新尺寸重排一次。
         applyVideoScale()
+        applyBottomSystemInset(context.navigationBarPx())
         syncDanmakuLetterbox()
         // 转屏 / 换版面之后画面尺寸变了，按钮要重新贴到画面下边缘。
         if (videoWidth > 0 && videoHeight > 0) placeFullscreenButton()
@@ -654,6 +657,29 @@ class PhoneVideoPage(
      */
     private fun bottomInset(): Int =
         if (withTabBar) context.tabBarInset() else 0
+
+    /**
+     * WindowInsets 往往晚于第一屏页面创建到达。
+     *
+     * 创建时写进 LayoutParams 的 bottomMargin 不会跟着 [requestLayout] 自己变化，
+     * 必须在 inset 回调里显式重写；否则偶发停在 0，操作条会落到应用导航栏下面。
+     */
+    internal fun applyBottomSystemInset(bottomInsetPx: Int) {
+        if (!::infoColumn.isInitialized) return
+        val landscape = resources.configuration.orientation ==
+            android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        val target = if (withTabBar) {
+            context.phoneTabBarHeightPx() +
+                if (landscape) 0 else bottomInsetPx.coerceAtLeast(0)
+        } else {
+            0
+        }
+        val lp = infoColumn.layoutParams as? LayoutParams ?: return
+        if (lp.bottomMargin == target) return
+        lp.bottomMargin = target
+        infoColumn.layoutParams = lp
+        placeFullscreenButton()
+    }
 
     private fun isLandscapePage(): Boolean =
         if (width > 0 && height > 0) {

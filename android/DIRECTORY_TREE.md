@@ -609,7 +609,7 @@ android/
 | --- | --- | --- |
 | `PhoneDetailActivity.kt` | 详情页：**与 TV 端的详情页一一对应**，按手机形态重排；底部内容使用真实 WindowInsets 安全区。 | class PhoneDetailActivity |
 | `PhoneDetailSections.kt` | 手机详情页与竖屏视频版面。文件 PhoneDetailSections 主要包含 fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks。 | fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks、fun PhoneDetailActivity.sectionHead、fun PhoneDetailActivity.cardRow |
-| `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、目标集预览封面、弹幕 Surface 黑边、信息区和控制层；不再挂普通 View 黑边兜底；正式播放器选集行末尾提供圆形锁定按钮。 | class PhoneVideoPage、fun showEpisodeCover、fun hideEpisodeCover、fun setPlaybackLocked |
+| `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、目标集预览封面、弹幕 Surface 黑边、信息区和控制层；WindowInsets 晚到时显式重写操作条底部边距；不再挂普通 View 黑边兜底；正式播放器选集行末尾提供圆形锁定按钮。 | class PhoneVideoPage、fun showEpisodeCover、fun hideEpisodeCover、fun setPlaybackLocked |
 | `PhoneVideoPageState.kt` | 手机详情页与竖屏视频版面。文件 PhoneVideoPageState 主要包含 fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode。 | fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode、fun PhoneVideoPage.showCenterIcon、fun PhoneVideoPage.hideCenterIcon、fun PhoneVideoPage.setResizeMode、fun PhoneVideoPage.setVideoSurfaceVisible |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/feed/`
@@ -643,7 +643,7 @@ android/
 | `PhoneCategoryPage.kt` | 分类页：**完全按 TV 端的两层筛选结构**。 | class PhoneCategoryPage |
 | `PhoneMinePage.kt` | 我的页：顶部账号入口 + 历史 / 收藏栏目 + 内容网格；历史已看完的当前季显示“看完了”。 | class PhoneMinePage |
 | `PhoneRankPage.kt` | 榜单页：八个榜单 + 带名次的海报网格，并保存每榜分页游标。 | class PhoneRankPage |
-| `PhoneRecommendPage.kt` | 推荐页：外层横向 ViewPager2 承载四条体裁流，每页内部再用竖向 ViewPager2 承载视频；顶栏高度同步给弹幕层，重建时恢复当前体裁、当前剧与播放位置。 | class PhoneRecommendPage、class RecommendGenrePager、fun currentGenreKey、fun currentSeriesId、fun currentPositionMs |
+| `PhoneRecommendPage.kt` | 推荐页：外层横向 ViewPager2 承载四条体裁流，每页内部再用竖向 ViewPager2 承载视频；顶栏高度同步给弹幕层，底部系统 inset 与尺寸变化同步给已创建视频页，重建时恢复当前体裁、当前剧与播放位置。 | class PhoneRecommendPage、class RecommendGenrePager、fun currentGenreKey、fun currentSeriesId、fun currentPositionMs |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/player/`
 
