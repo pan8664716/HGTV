@@ -412,7 +412,7 @@ class PhoneRecommendPage(
                     } else {
                         1f - positionOffset
                     }
-                    if (progress >= 0.8f) {
+                    if (progress >= com.hgtv.star.phone.ui.PhonePagerMotion.FOCUS_SWITCH_PROGRESS) {
                         focusSent = true
                         onFocusTarget?.invoke(settleTarget)
                     }

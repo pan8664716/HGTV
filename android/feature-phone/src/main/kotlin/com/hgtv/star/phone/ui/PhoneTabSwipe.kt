@@ -15,7 +15,7 @@ import kotlin.math.abs
 /**
  * 分类 / 榜单 / 我的页的横向切页容器。
  *
- * 松手后页面自然翻动；翻页动画走到约 80% 时再切顶部焦点。
+ * 松手后页面自然翻动；翻页动画走到约 70% 时再切顶部焦点。
  * 第一次越过 touch slop 时按 1:1 锁定横纵轴。筛选 chips 等横向滚动区域不接管。
  * 拖动时会同步铺出目标邻页预览，避免当前页移开时露出深色背景。
  */
@@ -24,7 +24,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     companion object {
         const val DIRECTION_PREV = -1
         const val DIRECTION_NEXT = 1
-        const val COMMIT_DISTANCE_RATIO = 0.5f
+        const val COMMIT_DISTANCE_RATIO = PhonePagerMotion.SNAP_DISTANCE_RATIO
     }
 
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
@@ -40,12 +40,11 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     private var tracking = false
     private var intercepting = false
     private var settling = false
-    private var focusRunnable: Runnable? = null
     private var velocityTracker: VelocityTracker? = null
 
     var canSwipe: (Int) -> Boolean = { false }
     var onSwipe: (Int) -> Unit = {}
-    /** 翻页动画约走到 80% 后通知顶部标签切换到目标页。 */
+    /** 翻页动画约走到 70% 后通知顶部标签切换到目标页。 */
     var onFocusDirection: ((Int) -> Unit)? = null
     var previewProvider: ((Int) -> View?)? = null
     var previewReleaser: ((View) -> Unit)? = null
@@ -70,10 +69,10 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     }
 
     fun cancelSwipe() {
-        cancelScheduledFocus()
         onFocusDirection?.invoke(0)
         velocityTracker?.recycle()
         velocityTracker = null
+        content?.animate()?.setUpdateListener(null)
         content?.animate()?.cancel()
         content?.translationX = 0f
         removePreview()
@@ -208,15 +207,26 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         settling = true
         val pageWidth = width.coerceAtLeast(1)
         val target = -direction * pageWidth.toFloat()
+        val startX = view.translationX
+        val distance = abs(target - startX).coerceAtLeast(1f)
+        var focusSent = false
         val duration = PhonePagerMotion.duration(
-            distancePx = target - view.translationX,
+            distancePx = target - startX,
             viewportPx = pageWidth,
         )
-        scheduleFocus(direction, duration)
         view.animate()
             .translationX(target)
             .setDuration(duration)
             .setInterpolator(PhonePagerMotion.interpolator)
+            .setUpdateListener {
+                if (focusSent || !settling) return@setUpdateListener
+                val progress = (abs(view.translationX - startX) / distance).coerceIn(0f, 1f)
+                if (progress >= PhonePagerMotion.FOCUS_SWITCH_PROGRESS) {
+                    focusSent = true
+                    onFocusDirection?.invoke(direction)
+                }
+            }
+            .withEndAction { view.animate().setUpdateListener(null) }
             .start()
         val previewView = preview
         if (previewView == null) {
@@ -239,8 +249,8 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     }
 
     private fun settleBack() {
-        cancelScheduledFocus()
         val view = content ?: return
+        view.animate().setUpdateListener(null)
         val distance = abs(view.translationX)
         if (distance < 1f) {
             view.translationX = 0f
@@ -325,21 +335,6 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
                 settling = false
             }
         }
-    }
-
-    private fun scheduleFocus(direction: Int, durationMs: Long) {
-        cancelScheduledFocus()
-        val runnable = Runnable {
-            focusRunnable = null
-            if (settling) onFocusDirection?.invoke(direction)
-        }
-        focusRunnable = runnable
-        content?.postDelayed(runnable, (durationMs * 0.8f).toLong().coerceAtLeast(0L))
-    }
-
-    private fun cancelScheduledFocus() {
-        focusRunnable?.let { content?.removeCallbacks(it) }
-        focusRunnable = null
     }
 
     private fun resetGesture() {

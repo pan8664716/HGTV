@@ -23,6 +23,9 @@ object PhonePagerMotion {
      */
     const val SNAP_DISTANCE_RATIO = 0.5f
 
+    /** 松手翻页后，页面实际行进到该比例时同步顶部焦点。 */
+    const val FOCUS_SWITCH_PROGRESS = 0.7f
+
     private const val BASE_MS = com.hgtv.star.core.AppConfig.Ui.PAGER_BASE_DURATION_MS
     private const val MAX_DURATION_MS = com.hgtv.star.core.AppConfig.Ui.PAGER_MAX_DURATION_MS
 
