@@ -29,7 +29,7 @@
     <string name="ui_0027">"停止自動重試"</string>
     <string name="ui_0028">"全劇已播完"</string>
     <string name="ui_0029">"全劇已播完，正在換下一部…"</string>
-    <string name="ui_0030">"全域性預設清晰度"</string>
+    <string name="ui_0030">"全域預設畫質"</string>
     <string name="ui_0031">"全屏"</string>
     <string name="ui_0032">"全部"</string>
     <string name="ui_0033">"共 %1$s 部"</string>
@@ -81,7 +81,7 @@
     <string name="ui_0079">"已收藏"</string>
     <string name="ui_0080">"已登入"</string>
     <string name="ui_0081">"已移出稍後觀看"</string>
-    <string name="ui_0082">"已自動重試 3 次，仍無法播放。可手動重試或切換清晰度。"</string>
+    <string name="ui_0082">"已自動重試 3 次，仍無法播放。可手動重試或切換畫質。"</string>
     <string name="ui_0083">"已選中"</string>
     <string name="ui_0084">"已預約"</string>
     <string name="ui_0085">"已預約 · 僅儲存在本機"</string>
@@ -165,8 +165,8 @@
     <string name="ui_0163">"每行卡片  ·  %1$s 張"</string>
     <string name="ui_0164">"沒能取到 %1$s 的作品"</string>
     <string name="ui_0165">"沒能取到作者資訊"</string>
-    <string name="ui_0166">"清晰度"</string>
-    <string name="ui_0167">"清晰度 "</string>
+    <string name="ui_0166">"畫質"</string>
+    <string name="ui_0167">"畫質 "</string>
     <string name="ui_0168">"清空"</string>
     <string name="ui_0169">"熱門搜尋"</string>
     <string name="ui_0170">"版本號：%1$s"</string>
@@ -274,8 +274,8 @@
     <string name="ui_0272">"驗證透過，正在登入…"</string>
     <string name="ui_0273">"驗證透過，正在重新獲取驗證碼…"</string>
     <string name="ui_0274">"預設倍速"</string>
-    <string name="ui_0275">"預設清晰度"</string>
-    <string name="ui_0276">"預設清晰度  ·  "</string>
+    <string name="ui_0275">"預設畫質"</string>
+    <string name="ui_0276">"預設畫質  ·  "</string>
     <string name="ui_0277">"預設輸入法  ·  %1$s"</string>
     <string name="ui_0278">"預設輸入法，當前%1$s"</string>
     <string name="ui_0279">"，已選中"</string>
@@ -298,7 +298,7 @@
     <string name="ui_0296">"不限"</string>
     <string name="ui_0297">"倍速 %1$s"</string>
     <string name="ui_0298">"偏好自動儲存，下一部劇繼續使用。"</string>
-    <string name="ui_0299">"全域性畫面模式"</string>
+    <string name="ui_0299">"全域畫面模式"</string>
     <string name="ui_0300">"關"</string>
     <string name="ui_0301">"準備恢復播放"</string>
     <string name="ui_0302">"準備恢復暫停位置"</string>
@@ -330,7 +330,7 @@
     <string name="ui_0328">"正在讀取本機資料…"</string>
     <string name="ui_0329">"每頁 10 集 · 一屏一行"</string>
     <string name="ui_0330">"每頁 20 集 · 一屏兩行（預設）"</string>
-    <string name="ui_0331">"清晰度 %1$sP"</string>
+    <string name="ui_0331">"畫質 %1$sP"</string>
     <string name="ui_0332">"清空歷史"</string>
     <string name="ui_0333">"男頻"</string>
     <string name="ui_0334">"畫面 %1$s"</string>
@@ -364,7 +364,7 @@
     <string name="ui_0362">"預約"</string>
     <string name="ui_0363">"手機號登入"</string>
     <string name="ui_0364">"匯入帳號引數"</string>
-    <string name="ui_0365">"清晰度"</string>
+    <string name="ui_0365">"畫質"</string>
     <string name="ui_0366">"2 倍速播放中"</string>
     <string name="ui_0367">"正在查詢同系列…"</string>
     <string name="ui_0368">"相關劇集載入失敗"</string>
