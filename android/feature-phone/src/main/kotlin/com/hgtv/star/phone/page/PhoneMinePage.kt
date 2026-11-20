@@ -2,6 +2,7 @@
 package com.hgtv.star.phone.page
 
 import android.content.Context
+import android.util.TypedValue
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -11,6 +12,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.Space
 import android.widget.TextView
+import androidx.core.widget.TextViewCompat
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.isFinished
 import com.hgtv.star.phone.PhoneAccountSync
@@ -31,6 +33,7 @@ import com.hgtv.star.phone.ui.PhoneTabSwipeHost
 import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
+import com.hgtv.star.phone.ui.sp
 import com.hgtv.star.phone.ui.tabBarInset
 import com.hgtv.star.shared.compat.clipToCircleCompat
 import com.hgtv.star.shared.data.accountCache
@@ -67,6 +70,10 @@ class PhoneMinePage(
         android.content.res.Configuration.ORIENTATION_LANDSCAPE
     private val avatarSize = context.dp(32)
     private val leadingRowHeight = context.dp(if (compactTopBar) 56 else 76)
+    private val leadingTextMaxWidth = (
+        context.resources.displayMetrics.widthPixels *
+            if (compactTopBar) 0.5f else 0.42f
+        ).toInt()
     private val topBar = PhoneTopBar(context)
     private val pageContent = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val topAvatarImage = ImageView(context).apply {
@@ -88,6 +95,7 @@ class PhoneMinePage(
         setTypeface(typeface, android.graphics.Typeface.BOLD)
         maxLines = 2
         ellipsize = null
+        maxWidth = leadingTextMaxWidth
     }
     private val topSub = TextView(context).apply {
         text = "点这里登录 · 记录仅保存在本机"
@@ -95,6 +103,16 @@ class PhoneMinePage(
         phoneSize(10)
         setPadding(0, context.dp(2) / 5, 0, 0)
         setSingleLine(true)
+        maxLines = 1
+        ellipsize = null
+        maxWidth = leadingTextMaxWidth
+        TextViewCompat.setAutoSizeTextTypeUniformWithConfiguration(
+            this,
+            context.sp(7).toInt(),
+            context.sp(10).toInt(),
+            1,
+            TypedValue.COMPLEX_UNIT_PX,
+        )
     }
     private val topRefresh = LinearLayout(context).apply {
         val size = context.dp(24)
