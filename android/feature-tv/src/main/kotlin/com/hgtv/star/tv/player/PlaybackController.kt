@@ -725,7 +725,7 @@ private fun TvMainActivity.hideNextSeasonNotice() {
 }
 
 /**
- * 最后一集播完：有下一季就播它第 1 集，否则停在「全剧已播完」。
+ * 最后一集播完：有下一季就播它第 1 集，否则停在「全剧已播完」并展示相关剧集。
  *
  * 查询可能还在路上；此时先挂起，结果落地后由 [completeNextSeasonLookup] 接着推进。
  */
@@ -802,4 +802,5 @@ private fun TvMainActivity.finishSeriesPlayback(series: Series) {
     player?.pause()
     runCatching { playbackText.text="全剧已播完" }
     showHud()
+    if (detail?.series?.id == series.id) showPlayerRelated()
 }

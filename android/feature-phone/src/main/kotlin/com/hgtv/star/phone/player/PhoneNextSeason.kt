@@ -141,7 +141,7 @@ internal fun PhonePlayerActivity.hideNextSeasonNotice() {
     }
 }
 
-/** 最后一集播完：有下一季就播第 1 集，否则停在「全剧已播完」。 */
+/** 最后一集播完：有下一季就播第 1 集，否则停在「全剧已播完」并展示相关剧集。 */
 internal fun PhonePlayerActivity.advanceToNextSeasonOrFinish(d: Detail) {
     val series = d.series
     if (nextSeasonState.nextSeasonFinishedFor == series.id) return
@@ -203,4 +203,8 @@ internal fun PhonePlayerActivity.finishSeriesPlayback(series: Series) {
     nextSeasonHintSticky = true
     hint.visibility = View.VISIBLE
     hint.bringToFront()
+    val finished = detail?.takeIf { it.series.id == series.id } ?: return
+    if (rootReady && !isFinishing && !isDestroyed) {
+        showRelated(finished, "相关剧集", "换一部接着看")
+    }
 }
