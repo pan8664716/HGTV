@@ -80,4 +80,6 @@ internal fun PhoneFeedView.attachImpl(
     if (page != null) page.playerView.runAfterAspectRatioLayout(prepare) else prepare()
     startProgressTicker()
     trimPooledPlayers(index)
+    // 监听器是在播放器可能已经在播之后才挂上的；显式同步一次，宿主不会漏掉常亮。
+    notifyPlayStateChangedImpl()
 }

@@ -611,6 +611,7 @@ open class PhonePlayerActivity : PhoneActivity() {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus && playerRootInitialized && !isFinishing && !isDestroyed) {
             enterImmersive()
+            syncKeepScreenOn()
         }
     }
 

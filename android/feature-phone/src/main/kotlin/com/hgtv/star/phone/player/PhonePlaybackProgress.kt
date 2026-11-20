@@ -18,6 +18,7 @@ internal fun PhonePlayerActivity.startTicker() {
     progressTicker = scope.launch {
         while (true) {
             delay(1000)
+            syncKeepScreenOnForListener()
             val p = player ?: continue
             val duration = p.duration
             if (duration > 0) {

@@ -495,7 +495,10 @@ class PhoneMainActivity : PhoneActivity() {
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus && current >= 0) applyStatusBarFor(current)
+        if (hasFocus && current >= 0) {
+            applyStatusBarFor(current)
+            syncKeepScreenOn()
+        }
     }
 
     override fun onResume() {
@@ -672,8 +675,7 @@ class PhoneMainActivity : PhoneActivity() {
     private fun syncKeepScreenOn() {
         val playing = resumed &&
             (pages.getOrNull(current) as? PhoneRecommendPage)?.isPlayingNow() == true
-        if (playing) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        PhonePlayerViewSupport.keepScreenOn(window, playing)
     }
 
     /** 双击底部当前导航按钮：回到这一页列表的第一条。 */

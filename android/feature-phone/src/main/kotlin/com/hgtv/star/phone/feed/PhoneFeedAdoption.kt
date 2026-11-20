@@ -134,6 +134,8 @@ internal fun PhoneFeedView.adoptPlayingImpl(
     exo.playWhenReady = PhoneSession.resumeOnAdopt
     // 暂停状态跟着走：不然片尾判定（`paused` 为 false）会在暂停的画面上误触发换集。
     feedPaused = !exo.playWhenReady
+    // 接手的实例可能本来就在播，`playWhenReady` 没有发生 true/false 变化，监听器不会回调。
+    notifyPlayStateChangedImpl()
     // 进度条立刻对齐到接手的那一秒，不要等 500ms 后的第一个 tick。
     val dur = exo.duration
     if (page != null && dur > 0) {

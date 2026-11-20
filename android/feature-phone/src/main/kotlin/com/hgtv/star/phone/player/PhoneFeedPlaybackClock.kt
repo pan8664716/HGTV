@@ -43,6 +43,9 @@ internal fun PhoneFeedView.startProgressTicker() {
         override fun run() {
             val exo = feedPlayer
             val page = feedBoundPage
+            // 播放器池接管时 `playWhenReady` 可能已经是 true，ExoPlayer 不会再发变化回调。
+            // 进度 ticker 顺手对一次窗口常亮，避免自动连播后漏掉「开始播放」那一下。
+            notifyPlayStateChangedImpl()
             if (exo != null && !exo.isFeedPlayerAlive()) {
                 recoverReleasedFeedPlayer(exo)
                 return

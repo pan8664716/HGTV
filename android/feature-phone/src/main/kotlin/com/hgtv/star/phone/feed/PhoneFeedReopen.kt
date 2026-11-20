@@ -76,6 +76,7 @@ internal fun PhoneFeedView.reopenAtCurrentPositionImpl(index: Int): Boolean {
         }
         if (at > 0) exo.seekTo(at)
         exo.playWhenReady = wantPlay
+        notifyPlayStateChangedImpl()
         android.util.Log.i(
             "HGTV-PHONE",
             "feed reopen in place episode=${episodeIndex + 1} at=$at"

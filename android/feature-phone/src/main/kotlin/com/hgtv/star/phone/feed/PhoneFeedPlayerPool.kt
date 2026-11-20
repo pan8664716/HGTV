@@ -620,5 +620,6 @@ internal fun PhoneFeedView.activatePreparedPooledPlayerImpl(
         )
     }
     PhoneSession.endHandoff()
+    notifyPlayStateChangedImpl()
     return true
 }
