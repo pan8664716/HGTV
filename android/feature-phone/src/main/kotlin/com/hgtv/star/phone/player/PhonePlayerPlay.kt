@@ -16,6 +16,9 @@ internal fun PhonePlayerActivity.play(
     if (episodeIndex !in d.episodes.indices) return
     nextSeasonState.nextSeasonFinishedFor = ""
     val sameEpisode = episodeIndex == index
+    // 换集时旧 PlayerView 可能仍绑着同一个进程级播放器；attach 后必须强制重交
+    // 当前集自己的 Surface，否则解码在跑但画面一直不上屏。
+    val rebindSurfaceAfterAttach = !sameEpisode || player == null
     if (!sameEpisode) {
         cancelPlaybackRequest()
         cancelSourceRetry()
@@ -63,7 +66,7 @@ internal fun PhonePlayerActivity.play(
         // 借下层 Surface 时**不要动推荐页那一块**：它是本页现在的输出端。
         if (!playerFeedUnderlay) PhoneServices.detach(playerPage.playerView)
         PhoneServices.detach(playerLandscapeVideo)
-        attach(warm, startAt)
+        attach(warm, startAt, rebindSurface = rebindSurfaceAfterAttach)
         return
     }
 
@@ -113,7 +116,7 @@ internal fun PhonePlayerActivity.play(
                 prepared.close()
                 return@launch
             }
-            attach(prepared, startAt)
+            attach(prepared, startAt, rebindSurface = rebindSurfaceAfterAttach)
         } finally {
             if (playRequestScope === requestScope) {
                 playRequestScope = null

@@ -8,7 +8,11 @@ import com.hgtv.star.shared.media.swapMediaSource
 import com.hgtv.star.phone.ui.runAfterAspectRatioLayout
 
 /** 把已准备好的视频源挂到当前形态对应的 PlayerView，并安排首帧前的 prepare。 */
-internal fun PhonePlayerActivity.attach(video: RemoteVideo, startAt: Long) {
+internal fun PhonePlayerActivity.attach(
+    video: RemoteVideo,
+    startAt: Long,
+    rebindSurface: Boolean = false,
+) {
     remote = video
     val d = detail
     val episodeIndex = index
@@ -79,6 +83,16 @@ internal fun PhonePlayerActivity.attach(video: RemoteVideo, startAt: Long) {
     syncChips()
     startTicker()
     armPictureWatchdog()
+    if (rebindSurface && !playerFeedUnderlay) {
+        // 非相邻集切换时，目标页和旧页可能复用同一个进程级播放器。PlayerView 与
+        // ExoPlayer 都会把“同一个 player / surface”当成无需重绑，实际输出面却还
+        // 停在旧页，表现为一直缓冲。等目标页建好后强制重交一次当前集 Surface。
+        android.util.Log.i(
+            "HGTV-PHONE",
+            "surface rebind queued episode=${episodeIndex + 1}",
+        )
+        scheduleCurrentPlayerSurfaceRebind(baselineFrameAt = 0L, attempts = 24)
+    }
     // 这一集真的挂上了：取地址失败的重试计数归零（见 `onEpisodeSourceMissing`）。
     // 不清的话，网络恢复回调会拿一个过期的计数把正常播放的这一集重来一遍。
     sourceRetryState.episode = ""
