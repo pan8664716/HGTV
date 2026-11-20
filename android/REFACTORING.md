@@ -7,6 +7,18 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 1.3.8.5 发布准备
+
+状态：release 构建与签名校验通过，待用户真机验证。
+
+- 源码默认版本更新为 `versionName=1.3.8.5`、`versionCode=89`。
+- `:app:assembleRelease` 通过；`aapt` 确认 `versionName=1.3.8.5`、
+  `versionCode=89`、`minSdk=19`，`apksigner` v1 / v2 与 `zipalign` 校验通过。
+- APK：`android/app/build/outputs/apk/release/app-release.apk`，
+  SHA-256 为 `cf1b477183a5f50a72769f2ee945ee66baeae57d6761b43b8eecb011643c8885`。
+- 本地 tag `1.3.8.5` 指向独立空树提交，不包含项目源码。
+- 未推送，未创建 GitHub Release。
+
 ## 2026-11-20：Android 5/6 首页八榜请求前兼容修复
 
 状态：已实现，debug 构建通过，待用户真机验证。
