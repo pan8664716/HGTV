@@ -53,6 +53,9 @@ internal fun PhoneFeedView.attachPageImpl(
         series.id,
         clearOnSwitch=clearDanmakuOnSwitch,
     )
+    if (feedPooledPlayers[feedPlayingIndex]?.firstFrameRendered != true) {
+        page.showEpisodeCover(series.cover)
+    }
     page.setChromeVisible(true)
     scheduleChromeHideImpl(page)
 }

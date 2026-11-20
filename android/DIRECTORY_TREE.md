@@ -617,7 +617,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PhoneFeedActions.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedActions 主要包含 fun PhoneFeedView.isPlayingNowImpl、fun PhoneFeedView.notifyPlayStateChangedImpl、fun PhoneFeedView.scrollToTopImpl、fun PhoneFeedView.stopOrphanPlaybackImpl。 | fun PhoneFeedView.isPlayingNowImpl、fun PhoneFeedView.notifyPlayStateChangedImpl、fun PhoneFeedView.scrollToTopImpl、fun PhoneFeedView.stopOrphanPlaybackImpl |
-| `PhoneFeedAdapter.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedAdapter 主要包含 class PhoneFeedAdapter。 | class PhoneFeedAdapter |
+| `PhoneFeedAdapter.kt` | 手机信息流页面、适配器、手势与预取；快照恢复后先显示缓存封面，避免首帧前黑屏。 | class PhoneFeedAdapter |
 | `PhoneFeedAdoption.kt` | 手机信息流接手正式页播放；接手已在播放的实例后显式通知宿主同步常亮。 | fun PhoneFeedView.adoptPlayingImpl |
 | `PhoneFeedChrome.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedChrome 主要包含 fun PhoneFeedView.currentChromePageImpl、fun PhoneFeedView.scheduleChromeHideImpl、fun PhoneFeedView.chromeTimeoutMsImpl、fun PhoneFeedView.revealChromeImpl。 | fun PhoneFeedView.currentChromePageImpl、fun PhoneFeedView.scheduleChromeHideImpl、fun PhoneFeedView.chromeTimeoutMsImpl、fun PhoneFeedView.revealChromeImpl |
 | `PhoneFeedDanmaku.kt` | 取（或建）某一屏的弹幕加载器；首帧前只保留最后一次加载请求，首帧后再拉取；0 行时保持弹幕 Surface 存活并清成透明；推荐页与正式播放页共用顶部信息栏下方的弹幕落点。 | fun PhoneFeedView.danmakuLoaderOfImpl、fun PhoneFeedView.applyDanmakuSettingsImpl、fun PhoneFeedView.applyDanmakuTopInsetImpl、fun PhoneFeedView.loadDanmakuImpl |
@@ -656,7 +656,7 @@ android/
 | `PhoneFeedListener.kt` | 每台池播放器独立挂监听；UI、错误和播放状态只接受当前活动实例回调，旧实例排队事件不会暂停新播放器或改错页面。 | fun PhoneFeedView.attachFeedListener、fun PhoneFeedView.detachFeedListener、fun PhoneFeedView.detachAllFeedListeners |
 | `PhoneFeedMetrics.kt` | 与电视端同一套「快速划过 / 划走 / 看过」判定；推荐播放链接首次批量 20 个，先批量补详情，再按播放档案补首集模型。 | fun PhoneFeedView.settleRecommendWatch、fun PhoneFeedView.reportRecommendImpression、fun PhoneFeedView.scheduleRecommendBatchModels |
 | `PhoneFeedNavigation.kt` | 进播放页。 | fun PhoneFeedView.openPlayer、fun PhoneFeedView.hideChromeForHandoff、fun PhoneFeedView.launchPlayer、fun PhoneFeedView.liveEpisodeOf |
-| `PhoneFeedPageBinding.kt` | 活动页绑定；保留上一页自己的播放器与 Surface，按新片源尺寸预置首帧比例；推荐信息流不再加载封面过渡。 | fun PhoneFeedView.attachPageImpl |
+| `PhoneFeedPageBinding.kt` | 活动页绑定；保留上一页自己的播放器与 Surface，按新片源尺寸预置首帧比例；推荐首帧前显示缓存封面。 | fun PhoneFeedView.attachPageImpl |
 | `PhoneFeedPlaybackClock.kt` | 推荐页进度、弹幕时钟与片尾兜底；ticker 同时兜底同步屏幕常亮，并监测失效播放器。 | fun PhoneFeedView.syncDanmakuClock、fun PhoneFeedView.syncProgressBarsNow、fun PhoneFeedView.startProgressTicker |
 | `PhoneFeedPreload.kt` | 相邻页调度；主方向最近一条完整预热并创建独立播放器，其余目标按地址 / 索引分级预热，快滑时仍保证下一部可播。 | class PhoneFeedPreloadState、fun PhoneFeedView.preloadGateOpen、fun PhoneFeedView.scheduleDwell、fun PhoneFeedView.schedulePreload、fun PhoneFeedView.applyPreload |
 | `PhoneNextSeason.kt` | 手机下一季编排：提前取下一季详情与第 1 集模型，交给相邻集播放器池；片尾优先激活池实例并切换整页数据集，失败才回退完整起播。 | class PhoneNextSeasonState、fun PhonePlayerActivity.ensureNextSeason、fun PhonePlayerActivity.ensureNextSeasonDetail、fun PhonePlayerActivity.activateNextSeasonPool、fun PhonePlayerActivity.advanceToNextSeasonOrFinish |
