@@ -65,7 +65,8 @@ internal fun PhonePlayerActivity.attach(
         if (
             player === exo &&
             index == episodeIndex &&
-            playbackSessionState.sessionId == session
+            playbackSessionState.sessionId == session &&
+            exo.playbackState == com.google.android.exoplayer2.Player.STATE_IDLE
         ) {
             exo.prepare()
             if (startAt > 0) exo.seekTo(startAt)
@@ -76,6 +77,23 @@ internal fun PhonePlayerActivity.attach(
     } else {
         val target = if (landscape) playerLandscapeVideo else playerPage.playerView
         target.runAfterAspectRatioLayout(prepare)
+        // 非相邻集跳转时，目标页可能还没创建；上面的 pre-draw 监听可能挂在旧页上，
+        // 旧页随后被 ViewPager2 回收，回调永远不会执行。给主源一个固定兜底，
+        // 到点时若仍为 IDLE 就主动 prepare。Surface 重绑任务会先于这里把当前页接好。
+        root.postDelayed({
+            if (
+                player === exo &&
+                index == episodeIndex &&
+                playbackSessionState.sessionId == session &&
+                exo.playbackState == com.google.android.exoplayer2.Player.STATE_IDLE
+            ) {
+                android.util.Log.w(
+                    "HGTV-PHONE",
+                    "prepare fallback episode=${episodeIndex + 1}",
+                )
+                prepare()
+            }
+        }, 180L)
     }
     // 媒体源已经挂好，交接结束：之后退到后台就按正常规则暂停。
     PhoneSession.endHandoff()
