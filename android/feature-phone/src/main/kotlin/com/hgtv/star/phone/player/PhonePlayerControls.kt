@@ -8,15 +8,27 @@ import com.hgtv.star.phone.ui.PhoneGlyph
 internal fun PhonePlayerActivity.togglePlay() {
     if (playerControlsLocked) return
     val exo = player ?: return
-    if (exo.isPlaying) {
+    // 用用户意图（playWhenReady）而不是 isPlaying 判断：缓冲、seek、解码器重建期间
+    // isPlaying 都可能短暂为 false，拿它判断会把“暂停”又点成“播放”。
+    val pause = exo.playWhenReady
+    android.util.Log.i(
+        "HGTV-PHONE",
+        "toggle ${if (pause) "pause" else "resume"} state=${exo.playbackState} " +
+            "pwr=${exo.playWhenReady} playing=${exo.isPlaying}",
+    )
+    if (pause) {
         exo.pause()
         // 用户自己暂停：不是卡死，撤掉看门狗（恢复播放时重新装）。
         disarmPictureWatchdog()
     } else {
+        if (exo.playbackState == Player.STATE_IDLE) runCatching { exo.prepare() }
         exo.play()
+        // 暂停期间 Surface 可能被 ViewPager2 / 系统回收。恢复后强制确认当前页输出面，
+        // 避免声音恢复但画面一直黑着。
+        scheduleCurrentPlayerSurfaceRebind(baselineFrameAt = lastFrameAt)
         armPictureWatchdog()
     }
-    showCenter(!exo.isPlaying)
+    showCenter(!exo.playWhenReady)
     syncPlayGlyph()
     syncBufferingUi(exo.playbackState)
     syncKeepScreenOn()
@@ -110,8 +122,8 @@ internal fun PhonePlayerActivity.muteBufferingUi() {
 }
 
 internal fun PhonePlayerActivity.syncPlayGlyph() {
-    val playing = player?.isPlaying == true
-    playerLandPlay.kind = if (playing) PhoneGlyph.Kind.PAUSE else PhoneGlyph.Kind.PLAY
+    val wantsPlay = player?.playWhenReady == true
+    playerLandPlay.kind = if (wantsPlay) PhoneGlyph.Kind.PAUSE else PhoneGlyph.Kind.PLAY
 }
 
 /** 屏幕中心的播放 / 暂停：暂停时一直亮着，播放中闪一下。 */

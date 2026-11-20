@@ -52,6 +52,24 @@
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 2026-11-21：Phone 双击暂停状态与恢复黑屏修复
+
+状态：已实现，`:app:assembleDebug` 通过，待 Phone 真机验证。
+
+- 现象：正式播放页双击暂停后，界面播放 / 暂停图标与操作相反；再次双击无法恢复，
+  画面保持黑屏。
+- 根因：播放控制用 `isPlaying` 判断状态。缓冲、seek、解码器重建期间 `isPlaying`
+  会滞后或为 false，第一次暂停后第二次双击被误判成“继续播放”；恢复时又没有重新
+  确认当前页输出面，Surface 已失效时只剩黑屏。
+- 修复：双击切换统一按 `playWhenReady` 判断用户意图，中心和底栏图标也只跟随该值；
+  恢复播放前若仍为 IDLE 会主动 prepare，并安排一次当前页 Surface 强制重绑。
+- 新增 `HGTV-PHONE toggle pause/resume` 日志，记录动作前后的播放状态、意图和
+  `isPlaying`，便于下一次从设备日志直接确认。
+- 未改版本号、versionCode、依赖或目录结构；只编译 Android debug，未运行单元测试或
+  真机测试；未推送、未创建 tag 或 Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-21：Phone / TV 登录头像与收藏加载态
 
 状态：已实现，`:app:assembleDebug` 通过，待 Phone / TV 真机验证。
