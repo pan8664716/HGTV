@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.Player
 
 internal fun PhoneFeedView.adoptPlayingImpl(
@@ -13,9 +14,32 @@ internal fun PhoneFeedView.adoptPlayingImpl(
     // 只看「这一路还活着」，不看地址新不新鲜：切页只换了 Surface，媒体源与解码器一直在跑，
     // 接上去就能出帧。地址过期由 reopenAtCurrentPosition 在接上之后单独处理。
     if (!PhoneSession.live(series.id)) return false
+    val d = PhoneSession.detail ?: return false
+    fun episodeIdOf(player: ExoPlayer?): String =
+        player?.let { runCatching { it.currentMediaItem?.mediaId }.getOrNull() }.orEmpty()
+    fun belongsToSession(player: ExoPlayer?): Boolean =
+        player?.isFeedPlayerAlive() == true && episodeIdOf(player) in d.episodes
     // 播放器可能不在本视图的字段上：本视图刚被重建（转屏、体裁重铺、Activity 重建），
     // 但进程里那一台还在放。这时照样能接——这正是「退回来内容不断」要覆盖的场景。
-    val exo = feedPlayer ?: PhoneServices.peekPlayer() ?: return false
+    // 正式页换集会激活相邻集播放器，此时本页字段仍指向进入正式页时的旧实例；
+    // 必须先接进程里真正匹配当前剧集的那一台，否则返回后会接错实例并出现双音轨。
+    val processPlayer = PhoneServices.peekPlayer()
+    val processOwnsSession = PhoneSession.owner == PhoneSession.Owner.PLAYER &&
+        processPlayer?.isFeedPlayerAlive() == true
+    val exo = processPlayer?.takeIf { belongsToSession(it) || processOwnsSession }
+        ?: feedPlayer?.takeIf(::belongsToSession)
+        ?: feedPlayer?.takeIf { it.isFeedPlayerAlive() }
+        ?: processPlayer?.takeIf { it.isFeedPlayerAlive() }
+        ?: return false
+    // 接上新实例之前先彻底静音旧实例。池槽随后会释放它，但不能把双音轨留到释放任务之后。
+    feedPlayer?.takeIf { it !== exo }?.let { stale ->
+        runCatching {
+            stale.volume = 0f
+            stale.playWhenReady = false
+            stale.pause()
+        }
+        PhoneServices.enableAudioFocus(stale, false)
+    }
     if (com.hgtv.star.shared.BuildConfig.DEBUG) {
         // 接手前后的读数：位置有没有被谁清零 / 播放列表有没有被谁改过，
         // 这行是最直接的证据（用户报「切一次就从头」时先看它）。
@@ -24,24 +48,27 @@ internal fun PhoneFeedView.adoptPlayingImpl(
             "adopt begin pos=${runCatching { exo.currentPosition }.getOrDefault(-1)} " +
                 "state=${exo.playbackState} pwr=${exo.playWhenReady} " +
                 "items=${exo.mediaItemCount} cur=${exo.currentMediaItemIndex} " +
-                "underlay=${PhoneSession.underlayActive} sessionPos=${PhoneSession.positionMs}"
+                "underlay=${PhoneSession.underlayActive} sessionPos=${PhoneSession.positionMs} " +
+                "process=${processPlayer === exo} feed=${feedPlayer === exo}"
         )
     }
-    val d = PhoneSession.detail ?: return false
     // IDLE 不等于接不上：`swapMediaSource` 是「先 stop 再挂源」，挂完到 prepare 之间
     // 播放器就是 IDLE（播放页原地换地址、片尾交接都落在这个窗口里）。这时播放器上
     // 挂着的**就是这一集**，接过来补一次 prepare 即可；判成接不上就会重新取地址、
     // 重新 prepare，用户读到的又是一次「退回来内容断了」。
     var idleNeedsPrepare = false
     if (exo.playbackState == Player.STATE_IDLE) {
-        val wantedId = d.episodes.getOrNull(PhoneSession.index.takeIf { it >= 0 } ?: 0).orEmpty()
-        val onPlayer = runCatching { exo.currentMediaItem?.mediaId }.getOrNull().orEmpty()
+        val wantedId = episodeIdOf(exo).ifEmpty {
+            d.episodes.getOrNull(PhoneSession.index.takeIf { it >= 0 } ?: 0).orEmpty()
+        }
+        val onPlayer = episodeIdOf(exo)
         if (wantedId.isEmpty() || onPlayer != wantedId) return false
         idleNeedsPrepare = true
     }
     feedPlayerSlot = exo
 
-    val episodeIndex = PhoneSession.index.takeIf { it >= 0 } ?: 0
+    val episodeIndex = d.episodes.indexOf(episodeIdOf(exo)).takeIf { it >= 0 }
+        ?: PhoneSession.index.takeIf { it >= 0 } ?: 0
     // 集号 / 标题按会话里那一集重新刷一遍（播放页里可能已经换过集）。
     feedCurrentEpisodeIndex[feedPlayingIndex] = episodeIndex
     feedCurrentEpisodeIds[feedPlayingIndex] = d.episodes.getOrNull(episodeIndex).orEmpty()

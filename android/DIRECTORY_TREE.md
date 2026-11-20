@@ -618,7 +618,7 @@ android/
 | --- | --- | --- |
 | `PhoneFeedActions.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedActions 主要包含 fun PhoneFeedView.isPlayingNowImpl、fun PhoneFeedView.notifyPlayStateChangedImpl、fun PhoneFeedView.scrollToTopImpl、fun PhoneFeedView.stopOrphanPlaybackImpl。 | fun PhoneFeedView.isPlayingNowImpl、fun PhoneFeedView.notifyPlayStateChangedImpl、fun PhoneFeedView.scrollToTopImpl、fun PhoneFeedView.stopOrphanPlaybackImpl |
 | `PhoneFeedAdapter.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedAdapter 主要包含 class PhoneFeedAdapter。 | class PhoneFeedAdapter |
-| `PhoneFeedAdoption.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedAdoption 主要包含 fun PhoneFeedView.adoptPlayingImpl。 | fun PhoneFeedView.adoptPlayingImpl |
+| `PhoneFeedAdoption.kt` | 手机信息流接手正式页播放：优先选择进程当前且媒体项属于会话剧集的播放器，再用播放器真实集号对齐信息流，避免接回换集前的旧实例。 | fun PhoneFeedView.adoptPlayingImpl |
 | `PhoneFeedChrome.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedChrome 主要包含 fun PhoneFeedView.currentChromePageImpl、fun PhoneFeedView.scheduleChromeHideImpl、fun PhoneFeedView.chromeTimeoutMsImpl、fun PhoneFeedView.revealChromeImpl。 | fun PhoneFeedView.currentChromePageImpl、fun PhoneFeedView.scheduleChromeHideImpl、fun PhoneFeedView.chromeTimeoutMsImpl、fun PhoneFeedView.revealChromeImpl |
 | `PhoneFeedDanmaku.kt` | 取（或建）某一屏的弹幕加载器；首帧前只保留最后一次加载请求，首帧后再拉取；0 行时保持弹幕 Surface 存活并清成透明；推荐页与正式播放页共用顶部信息栏下方的弹幕落点。 | fun PhoneFeedView.danmakuLoaderOfImpl、fun PhoneFeedView.applyDanmakuSettingsImpl、fun PhoneFeedView.applyDanmakuTopInsetImpl、fun PhoneFeedView.loadDanmakuImpl |
 | `PhoneFeedHide.kt` | 手机信息流隐藏、暂停与延迟回收；收起前记录当前播放位置，供重建或原地换地址时续播。 | fun PhoneFeedView.onHiddenImpl |
