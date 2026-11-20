@@ -764,7 +764,7 @@ android/
 | `PhoneStyle.kt` | 手机端的新拟态令牌。 | object PhoneStyle |
 | `PhoneTabBar.kt` | 手机底部导航：透明底 + 四枚大尺寸圆形入口；未选中凸起、当前项凹陷并使用强调色图标，保留切页与双击回顶回调，并可在横竖屏切换时原地重建紧凑尺寸。 | class PhoneTabBar、fun select、fun setSelected、fun setCompact |
 | `PhoneTheme.kt` | 手机 / 平板的视觉令牌；`navigationBarPx()` 读取 Activity 缓存的真实 WindowInsets，不再使用 `navigation_bar_height` 资源。 | object PhoneColor、object PhoneDimen、fun Context.phoneScale、object PhoneUiScale、fun Context.dp、fun android.view.View.dp、fun Context.navigationBarPx |
-| `PhoneTopBar.kt` | 手机端统一的页面顶部栏；导出沉浸式 10dp 顶部与 34dp 主行常量，供竖屏播放信息对齐复用。 | class PhoneTopBar、PHONE_TOP_BAR_IMMERSIVE_TOP_DP、PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP |
+| `PhoneTopBar.kt` | 手机端统一的页面顶部栏；导出沉浸式 10dp 顶部与 34dp 主行常量，支持账号区铺满剩余宽度并由内部文字列自适应。 | class PhoneTopBar、PHONE_TOP_BAR_IMMERSIVE_TOP_DP、PHONE_TOP_BAR_PORTRAIT_ROW_HEIGHT_DP |
 | `PhoneTopCollapse.kt` | 列表上滑时把页头收起来、回到顶部再放出来（TV 的 onListScroll / setTopAreaHidden 同一条语义）。 | class PhoneTopCollapse |
 | `PhoneTouch.kt` | 播放界面的手势状态机与系统边缘手势判定；正式播放器横竖屏统一单击显隐信息、双击播放暂停，信息流保持单击播放暂停。 | class PhoneTouch、fun View.isTopSystemBarGestureOrigin、fun View.isSystemBarGestureOrigin |
 | `PhoneWindow.kt` | 手机端统一的沉浸式窗口设置与 WindowInsets 缓存；负责导航栏透明、对比度关闭、图标亮暗和底部安全区广播。 | fun Activity.phoneEdgeToEdge、fun View.bindPhoneInsets、fun Context.phoneBottomInsetPx、fun Activity.applyPhoneNavigationBar、fun Activity.phoneStatusBarHeight |

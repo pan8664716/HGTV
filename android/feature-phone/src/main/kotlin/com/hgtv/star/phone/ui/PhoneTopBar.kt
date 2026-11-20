@@ -242,13 +242,23 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
      * [rowHeight] 非空时同时调整主行高度；「我的」页的账号区比普通标题高，
      * 不调整会把头像和副标题裁在 34dp 的主行里。其它页面仍使用默认高度。
      */
-    fun setLeadingView(view: View, rowHeight: Int? = null) {
+    fun setLeadingView(
+        view: View,
+        rowHeight: Int? = null,
+        fillWidth: Boolean = false,
+    ) {
         mainSlot.removeAllViews()
         mainCells.clear()
-        // 账号区按自身内容测量过长文字完整显示；外层横向滚动负责在极窄屏上兜底。
-        tabScroll.isFillViewport = false
+        // 普通标题按内容测量；账号区可选择铺满顶栏剩余宽度，让内部文字列按权重自适应。
+        tabScroll.isFillViewport = fillWidth
+        mainSlot.layoutParams = FrameLayout.LayoutParams(
+            if (fillWidth) ViewGroup.LayoutParams.MATCH_PARENT
+            else ViewGroup.LayoutParams.WRAP_CONTENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        )
         mainSlot.addView(view, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.WRAP_CONTENT,
+            if (fillWidth) ViewGroup.LayoutParams.MATCH_PARENT
+            else ViewGroup.LayoutParams.WRAP_CONTENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         ))
         if (rowHeight != null) {
