@@ -84,6 +84,26 @@
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 1.3.8.6 发布准备
+
+状态：GitHub Release 已发布，待用户真机验证。
+
+- 源码默认版本更新为 `versionName=1.3.8.6`、`versionCode=90`。
+- CHANGELOG 已按手机、TV 分节；README 已更新版本号、versionCode 与 APK 文件名。
+- `:app:lintRelease`、`:app:assembleRelease` 通过；`aapt` 确认
+  `versionName=1.3.8.6`、`versionCode=90`、`minSdk=19`。
+- `apksigner` v1 / v2 校验通过，证书 SHA-256 与 1.3.8.5 一致；
+  `zipalign` 校验通过。
+- APK：`outputs/release-1.3.8.6/HGTV_1.3.8.6.apk`，大小 `4053585` 字节；
+  SHA-256 为 `45f6d8b838079c9afcada438df393485d5dfb08954456bc6e3703b3e5423b9f0`。
+- Release 只允许上传 `HGTV_1.3.8.6.apk`、`SHA256SUMS`、`update.json`。
+- 发布 tag `1.3.8.6` 指向独立空树提交
+  `125ca1192d3b918341f6692659fbeff6f96c107f`，不包含项目源码。
+- 线上三个附件下载复验通过；Release：
+  <https://github.com/pan8664716/HGTV/releases/tag/1.3.8.6>。
+
+回滚：删除对应 Release / tag 后，对发布准备提交执行 `git revert`。
+
 ## 1.3.8.5 发布准备
 
 状态：release 构建与签名校验通过，待用户真机验证。
