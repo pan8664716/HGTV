@@ -227,14 +227,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
             .withEndAction {
                 onSwipe(direction)
                 view.translationX = 0f
-                previewView.animate()
-                    .alpha(0f)
-                    .setDuration(120L)
-                    .withEndAction {
-                        removePreview()
-                        settling = false
-                    }
-                    .start()
+                releasePreviewAfterHandoff(previewView)
             }
             .start()
     }
@@ -304,6 +297,27 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         previewReleaser?.invoke(view)
         preview = null
         previewDirection = 0
+    }
+
+    /**
+     * 正式列表已在预览层下面完成换页。等两帧让它先完成绑定和绘制，再原子移除预览；
+     * 不做交叉淡出，避免同一张卡片的左上角标签被两层重复绘制后看起来又亮了一次。
+     */
+    private fun releasePreviewAfterHandoff(previewView: View) {
+        previewView.postOnAnimation {
+            if (preview !== previewView) {
+                settling = false
+                return@postOnAnimation
+            }
+            previewView.postOnAnimation {
+                if (preview !== previewView) {
+                    settling = false
+                    return@postOnAnimation
+                }
+                removePreview()
+                settling = false
+            }
+        }
     }
 
     private fun addVelocitySample(tracker: VelocityTracker, event: MotionEvent) {
