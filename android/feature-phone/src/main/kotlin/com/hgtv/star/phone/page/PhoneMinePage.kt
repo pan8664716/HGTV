@@ -251,6 +251,9 @@ class PhoneMinePage(
         swipeHost.onSwipe = { direction ->
             selectTab((tab + direction).coerceIn(tabs.indices))
         }
+        swipeHost.onFocusDirection = { direction ->
+            topBar.applyTabSelection((tab + direction).coerceIn(tabs.indices))
+        }
         swipeHost.previewProvider = ::previewFor
         swipeHost.previewReleaser = { (it.tag as? PhonePosterFeed)?.release() }
         swipeHost.refreshSwipeSetting()

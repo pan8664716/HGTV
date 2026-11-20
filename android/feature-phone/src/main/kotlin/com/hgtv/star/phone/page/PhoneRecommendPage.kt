@@ -13,6 +13,7 @@ import com.hgtv.star.phone.PhoneFeedView
 import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneColor
+import com.hgtv.star.phone.ui.PhoneTabSwipeHost
 import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.navigationBarPx
 
@@ -354,6 +355,7 @@ class PhoneRecommendPage(
         private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
         private var downX = 0f
         private var downY = 0f
+        private var startItem = 0
         /** 0 = 未定性，1 = 纵向，2 = 横向。 */
         private var axis = 0
 
@@ -406,6 +408,7 @@ class PhoneRecommendPage(
                 MotionEvent.ACTION_DOWN -> {
                     downX = e.x
                     downY = e.y
+                    startItem = pager.currentItem
                     axis = 0
                     userScroll = false
                     pager.isUserInputEnabled = gesturesEnabled
@@ -427,8 +430,18 @@ class PhoneRecommendPage(
                     if (axis == 1) pager.isUserInputEnabled = false
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val horizontalSwipe = axis == 2 && gesturesEnabled
+                    val width = pager.width.coerceAtLeast(1)
+                    val distance = Math.abs(e.x - downX)
                     axis = 0
                     pager.isUserInputEnabled = gesturesEnabled
+                    if (e.actionMasked == MotionEvent.ACTION_UP && horizontalSwipe &&
+                        distance < width * PhoneTabSwipeHost.COMMIT_DISTANCE_RATIO
+                    ) {
+                        pager.post {
+                            pager.setCurrentItem(startItem, true)
+                        }
+                    }
                 }
             }
             return super.dispatchTouchEvent(e)

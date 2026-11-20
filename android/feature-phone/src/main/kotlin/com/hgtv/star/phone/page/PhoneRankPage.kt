@@ -87,6 +87,9 @@ class PhoneRankPage(
         swipeHost.onSwipe = { direction ->
             selectBoard((selected + direction).coerceIn(boards.indices))
         }
+        swipeHost.onFocusDirection = { direction ->
+            topBar.applyTabSelection((selected + direction).coerceIn(boards.indices))
+        }
         swipeHost.previewProvider = ::previewFor
         swipeHost.previewReleaser = { (it as? PhonePosterFeed)?.release() }
         swipeHost.refreshSwipeSetting()

@@ -110,6 +110,11 @@ class PhoneCategoryPage(
         swipeHost.onSwipe = { direction ->
             selectGenre((genreIndex + direction).coerceIn(CategoryGenres.options.indices))
         }
+        swipeHost.onFocusDirection = { direction ->
+            topBar.applyTabSelection(
+                (genreIndex + direction).coerceIn(CategoryGenres.options.indices),
+            )
+        }
         swipeHost.previewProvider = ::previewFor
         swipeHost.previewReleaser = { (it.tag as? PhonePosterFeed)?.release() }
         swipeHost.refreshSwipeSetting()

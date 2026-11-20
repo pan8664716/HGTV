@@ -220,12 +220,9 @@ class PhoneEpisodeGrid(
 
     private var downX = 0f
     private var downY = 0f
-    private var downAt = 0L
     private var interceptingSwipe = false
     private var swipeAllowed = false
     private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
-    private val minimumFlingVelocity =
-        PhonePagerMotion.minimumFlingVelocityPxPerSecond(context).toFloat()
     /** 翻页动画进行中：这一小段时间不再接新手势，避免两段动画叠在一起把位移算歪。 */
     private var animating = false
     /** 滑出动画期间已经确定、但还没渲染的目标页。连续操作时先提交它，再计算下一页。 */
@@ -281,7 +278,6 @@ class PhoneEpisodeGrid(
                 if (animating) cancelRunningAnimation()
                 downX = ev.x
                 downY = ev.y
-                downAt = ev.eventTime
                 interceptingSwipe = false
                 // 分页芯片那一行本身要能横向滚动，左右翻页只从网格区域起手。
                 swipeAllowed = ev.y >= gridScroll.top
@@ -327,11 +323,10 @@ class PhoneEpisodeGrid(
             }
             android.view.MotionEvent.ACTION_UP -> {
                 val dx = ev.x - downX
-                val dt = (ev.eventTime - downAt).coerceAtLeast(1L)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 interceptingSwipe = false
                 swipeAllowed = false
-                settleDrag(dx, dx / dt)
+                settleDrag(dx)
                 return true
             }
             android.view.MotionEvent.ACTION_CANCEL -> {
@@ -393,16 +388,14 @@ class PhoneEpisodeGrid(
     /**
      * 松手结算：过阈值就翻页，否则弹回。
      *
-     * 翻页分两段——当前页沿手势方向滑出，换页后新页从反方向滑入。看起来是「翻过去了」，
-     * 而不是原来那种「松手瞬间换一块内容」。快速轻扫（速度够）不必滑过半屏也能翻。
+     * 松手后拖动距离超过 70% 才翻页，否则回弹；不再按拖动过半或快甩速度提前切换。
      */
-    private fun settleDrag(dx: Float, velocity: Float) {
+    private fun settleDrag(dx: Float) {
         val w = pageWidth()
-        val velocityPxPerSecond = velocity * 1_000f
-        val threshold = w * PhonePagerMotion.SNAP_DISTANCE_RATIO
+        val threshold = w * PhoneTabSwipeHost.COMMIT_DISTANCE_RATIO
         val dir = when {
-            dx <= -threshold || velocityPxPerSecond <= -minimumFlingVelocity -> 1
-            dx >= threshold || velocityPxPerSecond >= minimumFlingVelocity -> -1
+            dx <= -threshold -> 1
+            dx >= threshold -> -1
             else -> 0
         }
         if (paging.canMove(dir)) {

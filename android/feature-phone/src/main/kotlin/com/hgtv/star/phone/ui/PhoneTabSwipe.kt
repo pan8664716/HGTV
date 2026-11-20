@@ -3,7 +3,6 @@ package com.hgtv.star.phone.ui
 
 import android.content.Context
 import android.view.MotionEvent
-import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
@@ -15,7 +14,7 @@ import kotlin.math.abs
 /**
  * 分类 / 榜单 / 我的页的横向切页容器。
  *
- * 判定参数与推荐页一致：越过半页吸附，或达到系统最小快甩速度即切页；
+ * 松手后拖动距离超过 70% 才切页；拖动过程中只预览，不提前切顶部焦点。
  * 第一次越过 touch slop 时按 1:1 锁定横纵轴。筛选 chips 等横向滚动区域不接管。
  * 拖动时会同步铺出目标邻页预览，避免当前页移开时露出深色背景。
  */
@@ -24,15 +23,13 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     companion object {
         const val DIRECTION_PREV = -1
         const val DIRECTION_NEXT = 1
+        const val COMMIT_DISTANCE_RATIO = 0.7f
     }
 
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
-    private val minimumFlingVelocity =
-        PhonePagerMotion.minimumFlingVelocityPxPerSecond(context).toFloat()
     private var content: View? = null
     private var preview: View? = null
     private var previewDirection = 0
-    private var velocityTracker: VelocityTracker? = null
     private var downX = 0f
     private var downY = 0f
     /** 0 = 未定性，1 = 纵向，2 = 横向。 */
@@ -43,6 +40,8 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
 
     var canSwipe: (Int) -> Boolean = { false }
     var onSwipe: (Int) -> Unit = {}
+    /** 松手并超过 70% 后通知顶部标签切换到目标页。 */
+    var onFocusDirection: ((Int) -> Unit)? = null
     var previewProvider: ((Int) -> View?)? = null
     var previewReleaser: ((View) -> Unit)? = null
     var swipeEnabled = true
@@ -66,8 +65,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     }
 
     fun cancelSwipe() {
-        velocityTracker?.recycle()
-        velocityTracker = null
+        onFocusDirection?.invoke(0)
         content?.animate()?.cancel()
         content?.translationX = 0f
         removePreview()
@@ -99,13 +97,11 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         downX = event.x
         downY = event.y
         tracking = true
-        velocityTracker = VelocityTracker.obtain().also { addVelocitySample(it, event) }
     }
 
     private fun handleMove(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
-                velocityTracker?.let { addVelocitySample(it, event) }
                 val dx = event.x - downX
                 val dy = event.y - downY
                 if (axis == 0 && (abs(dx) > slop || abs(dy) > slop)) {
@@ -134,22 +130,16 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
                     resetGesture()
                     return false
                 }
-                velocityTracker?.let { tracker ->
-                    addVelocitySample(tracker, event)
-                    tracker.computeCurrentVelocity(1_000)
-                }
                 val dx = event.x - downX
-                val velocity = velocityTracker?.xVelocity ?: 0f
-                val direction = commitDirection(dx, velocity)
+                val direction = commitDirection(dx)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 if (direction != 0 && canSwipe(direction)) {
+                    onFocusDirection?.invoke(direction)
                     ensurePreview(direction)
                     settleCommit(direction)
                 } else {
                     settleBack()
                 }
-                velocityTracker?.recycle()
-                velocityTracker = null
                 tracking = false
                 intercepting = false
                 axis = 0
@@ -188,12 +178,11 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         }
     }
 
-    private fun commitDirection(dx: Float, velocity: Float): Int {
-        val threshold = width.toFloat().coerceAtLeast(1f) *
-            PhonePagerMotion.SNAP_DISTANCE_RATIO
+    private fun commitDirection(dx: Float): Int {
+        val threshold = width.toFloat().coerceAtLeast(1f) * COMMIT_DISTANCE_RATIO
         return when {
-            dx <= -threshold || velocity <= -minimumFlingVelocity -> DIRECTION_NEXT
-            dx >= threshold || velocity >= minimumFlingVelocity -> DIRECTION_PREV
+            dx <= -threshold -> DIRECTION_NEXT
+            dx >= threshold -> DIRECTION_PREV
             else -> 0
         }
     }
@@ -320,16 +309,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         }
     }
 
-    private fun addVelocitySample(tracker: VelocityTracker, event: MotionEvent) {
-        val copy = MotionEvent.obtain(event)
-        copy.offsetLocation(event.rawX - event.x, event.rawY - event.y)
-        tracker.addMovement(copy)
-        copy.recycle()
-    }
-
     private fun resetGesture() {
-        velocityTracker?.recycle()
-        velocityTracker = null
         tracking = false
         intercepting = false
         axis = 0
