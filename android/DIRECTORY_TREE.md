@@ -755,6 +755,7 @@ android/
 | `PhoneEpisodeGrid.kt` | 选集网格（**带分页**，做法照 TV 端的 EpisodeGrid）。 | class PhoneEpisodeGrid |
 | `PhoneGlyph.kt` | 通用矢量图标（自绘），包含播放器锁定 / 解锁图标。 | class PhoneGlyph、val SETTINGS_PATH_DATA |
 | `PhonePagerMotion.kt` | 手机端所有整页翻动的统一运动参数。 | object PhonePagerMotion、class PhonePagerSnapHelper |
+| `PhoneTabSwipe.kt` | 分类 / 榜单页的横向切页容器，复用推荐页的半页吸附、快甩阈值与方向锁。 | class PhoneTabSwipeHost、DIRECTION_PREV、DIRECTION_NEXT |
 | `PhonePosterCard.kt` | 手机端统一海报卡：网格页与详情页 / 播放页的横排相关剧集共用。 | class PhonePosterCard、fun phonePosterScale、val PHONE_POSTER_INSET、val PHONE_SOFT_BAND、val PHONE_BADGE_TEXT_SCALE、val PHONE_TITLE_TEXT_SCALE |
 | `PhonePosterFeed.kt` | 海报网格；支持外部数据源消费到当前列表一半时触发继续加载。 | class PhonePosterFeed、var PhonePosterFeed.onLoadMore |
 | `PhoneSettingControls.kt` | 设置页整行开关：左侧项名，右侧一枚自绘轨道。 | class PhoneSwitchRow、class PhoneSettingSlider |

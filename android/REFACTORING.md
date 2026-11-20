@@ -28,6 +28,24 @@
 
 回滚：删除对应 Release / tag 后，对文档发布提交执行 `git revert`。
 
+## 2026-11-21：手机分类 / 榜单横向切页
+
+状态：已实现，`:app:assembleDebug` 通过，待 Phone 真机验证。
+
+- 分类页与榜单页的内容区新增左右滑动手势，分别切换顶部体裁和榜单标签；
+  原有缓存、分页、长按菜单、点击海报和点标签切页路径保持不变。
+- 手势判定复用推荐页参数：越过半页吸附，或达到系统最小快甩速度即切页；
+  第一次越过 touch slop 后按 1:1 锁定横纵轴，动画复用 `PhonePagerMotion` 的时长和插值。
+- 横向拖动时当前内容跟手；到达首尾标签后只做阻尼回弹，不切到不存在的页面。
+- 分类筛选 chips 和其他 `HorizontalScrollView` 区域的横滑仍由控件自身处理，不触发整页切换。
+- 原有 `recommendSwipe` 设置扩展为推荐、分类、榜单三页共用，手机设置项名称改为
+  「页面左右滑动」，关闭后三页都只能点顶部标签切换。
+- 新增 `PhoneTabSwipeHost`，并同步更新 `android/DIRECTORY_TREE.md`。
+- 未改版本号、versionCode、依赖或 iOS 代码；只编译 Android debug，未运行测试；
+  未推送、未创建 tag 或 Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-21：本地历史批量同步身份保护
 
 状态：已实现，`:app:assembleDebug` 通过，待 Phone / TV 真机验证。

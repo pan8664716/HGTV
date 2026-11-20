@@ -75,7 +75,7 @@ class PhoneRecommendPage(
         }
     private var current = 0
     /**
-     * 设置页「推荐页左右滑动切换」是否开启（`Library.recommendSwipe`）。
+     * 设置页「页面左右滑动」是否开启（`Library.recommendSwipe`）。
      *
      * 关掉时整条流的横向手势都交还给视频层，只能点顶部 tab 换流。与
      * [sheetOpen] 是两个独立来源：面板开着只是**临时**锁住，设置关掉是**一直**锁住。

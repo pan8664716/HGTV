@@ -16,6 +16,7 @@ import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneCardMenu
 import com.hgtv.star.phone.ui.PhonePosterFeed
+import com.hgtv.star.phone.ui.PhoneTabSwipeHost
 import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.tabBarInset
@@ -40,6 +41,7 @@ class PhoneRankPage(
 
     private val topBar = PhoneTopBar(context)
     private val feed = PhonePosterFeed(context)
+    private val swipeHost = PhoneTabSwipeHost(context)
     private var selected = initialState?.selected ?: 0
     private val feedCache = linkedMapOf<RankBoard, PhonePosterFeed.Snapshot>().apply {
         putAll(initialState?.feeds.orEmpty())
@@ -80,9 +82,15 @@ class PhoneRankPage(
         topBar.onSearch = {
             context.phoneNav().open(Route.Search)
         }
+        swipeHost.setContent(feed)
+        swipeHost.canSwipe = { direction -> selected + direction in boards.indices }
+        swipeHost.onSwipe = { direction ->
+            selectBoard((selected + direction).coerceIn(boards.indices))
+        }
+        swipeHost.refreshSwipeSetting()
         // 顶栏在上、网格在下：垂直排列，网格不会被顶栏盖住。
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        addView(feed, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        addView(swipeHost, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
         val restored = initialState?.feed
         if (restored?.loaded == true) {
@@ -196,5 +204,11 @@ class PhoneRankPage(
     /** 从设置页返回时重新对齐「列表每行」。 */
     fun onShown() {
         feed.applyColumnsFromSettings()
+        swipeHost.refreshSwipeSetting()
+    }
+
+    override fun onDetachedFromWindow() {
+        swipeHost.cancelSwipe()
+        super.onDetachedFromWindow()
     }
 }

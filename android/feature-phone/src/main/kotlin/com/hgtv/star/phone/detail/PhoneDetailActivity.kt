@@ -592,7 +592,7 @@ class PhoneDetailActivity : PhoneActivity() {
             tvStyle = landscape,
             tvSideInsetDp = 14,
             // 与播放页的选集**完全对齐**：手机上「分页边缘翻页」这一项已经没有设置入口
-            // （那一项改成了「推荐页左右滑动」），所以这里不再读 `episodeEdgeTurn`——
+            // （那一项改成了「页面左右滑动」），所以这里不再读 `episodeEdgeTurn`——
             // 老设备上它可能是历史遗留的 false，会让详情页「怎么滑都不翻页」。
             swipePages = true,
         ) { index -> openPlayer(index) }

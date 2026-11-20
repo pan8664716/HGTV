@@ -23,6 +23,7 @@ import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhonePosterFeed
 import com.hgtv.star.phone.ui.PhoneCardMenu
 import com.hgtv.star.phone.ui.PhoneStyle
+import com.hgtv.star.phone.ui.PhoneTabSwipeHost
 import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
@@ -75,6 +76,7 @@ class PhoneCategoryPage(
         setPadding(0, 0, 0, 0)
     }
     private val feed = PhonePosterFeed(context)
+    private val swipeHost = PhoneTabSwipeHost(context)
     private var scope = newScope()
     private var panelJob: Job? = null
     private var panelLoadingKey = ""
@@ -100,8 +102,16 @@ class PhoneCategoryPage(
 
         // 顶栏固定；筛选行交给网格当第一项，滚动时和列表一起自然移出屏幕。
         feed.setHeader(filterBox)
+        swipeHost.setContent(feed)
+        swipeHost.canSwipe = { direction ->
+            genreIndex + direction in CategoryGenres.options.indices
+        }
+        swipeHost.onSwipe = { direction ->
+            selectGenre((genreIndex + direction).coerceIn(CategoryGenres.options.indices))
+        }
+        swipeHost.refreshSwipeSetting()
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
-        addView(feed, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
+        addView(swipeHost, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
 
         // 列数跟着设置：竖屏 1–3，横屏映射为 4–6；书库未就绪时先用出厂值。
         feed.applyColumnsFromSettings()
@@ -330,6 +340,7 @@ class PhoneCategoryPage(
     /** 从设置页返回时重新对齐「列表每行」。 */
     fun onShown() {
         feed.applyColumnsFromSettings()
+        swipeHost.refreshSwipeSetting()
         // 切到别的 tab 时页面会 detach，正在拉的小分类请求会被取消。
         // 回到分类页时如果面板还没落地，必须补一次，否则小分类会永久消失。
         if (panel == null) {
@@ -349,6 +360,7 @@ class PhoneCategoryPage(
 
     /** 释放页面任务；预加载但从未 attach 的分类页也由宿主在销毁时调用。 */
     fun release() {
+        swipeHost.cancelSwipe()
         panelGeneration++
         panelJob = null
         panelLoadingKey = ""

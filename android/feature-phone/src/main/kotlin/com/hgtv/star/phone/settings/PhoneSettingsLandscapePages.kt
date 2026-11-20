@@ -147,7 +147,7 @@ internal fun PhoneSettingsActivity.renderLandscapeAppearance() {
         })
     }
     landscapeLine(layout).also { line ->
-        landscapeCell(line,landscapeSwitch("推荐页左右滑动",settingsLibrary.recommendSwipe) {
+        landscapeCell(line,landscapeSwitch("页面左右滑动",settingsLibrary.recommendSwipe) {
             settingsLibrary.recommendSwipe=it; renderSettings()
         })
     }

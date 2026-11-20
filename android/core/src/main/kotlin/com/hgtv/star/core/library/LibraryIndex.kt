@@ -245,7 +245,7 @@ object LibraryDisk {
             (values["seekStep"] as? Number)?.toInt()?.coerceIn(2,20) ?: 10,
             // 手机列表每行基准列数：旧版本磁盘没有这个键，按 2 列处理；坏值夹进 1..3。
             (values["gridColumns"] as? Number)?.toInt()?.coerceIn(1,3) ?: 2,
-            // 推荐页左右滑动切换：旧版本磁盘没有这个键，按开启处理（与之前的行为一致）。
+            // 页面左右滑动切换：旧版本磁盘没有这个键，按开启处理（与之前的行为一致）。
             values["recommendSwipe"] as? Boolean ?: true,
             // 弹幕特效：旧版本磁盘没有这个键，按开启处理，保持现有观感。
             values["danmakuEffects"] as? Boolean ?: true,

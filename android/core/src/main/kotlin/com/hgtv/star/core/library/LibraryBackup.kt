@@ -457,7 +457,7 @@ object LibraryBackup {
         val backToTop=settings.optString("backToTop",BACK_TO_TOP_DEFAULT).takeIf { it in BACK_TO_TOP_MODES } ?: BACK_TO_TOP_DEFAULT
         // 手机列表每行基准列数：后加字段，旧备份没有它时按 2 处理；合法范围 1..3。
         val gridColumns=if(settings.has("gridColumns")) settings.number("gridColumns",3).toInt().coerceIn(1,3) else 2
-        // 推荐页左右滑动切换：后加字段，旧备份没有它时按开启处理（与之前的行为一致）。
+        // 页面左右滑动切换：后加字段，旧备份没有它时按开启处理（与之前的行为一致）。
         val recommendSwipe=settings.optBoolean("recommendSwipe",true)
         // 导航栏圆形入口：逐个开关，值是被隐藏的那些 key；旧备份没有这个字段 = 全部显示。
         val hiddenNav=settings.optString("hiddenNav","").takeIf { it.length<=80 && it.none(Char::isISOControl) }.orEmpty()

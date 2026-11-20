@@ -159,13 +159,13 @@ internal fun PhoneSettingsActivity.renderAppearance() {
         }
     }
     hintImpl("竖屏可选 1–3 张；横屏对应显示 4–6 张。")
-    // 推荐页三个体裁（漫剧 / 真人 / AI 剧）之间能不能用手指左右划。
-    // 关掉之后只剩顶部那三个体裁标签换流——竖屏短剧一屏一集，横滑误触太常见。
-    switchImpl("推荐页左右滑动", settingsLibrary.recommendSwipe) {
+    // 推荐、分类和榜单页能不能用手指左右划着切换顶部标签。
+    // 关掉之后只剩点标签切换，避免竖屏短剧场景里的横滑误触。
+    switchImpl("页面左右滑动", settingsLibrary.recommendSwipe) {
         settingsLibrary.recommendSwipe = it
         renderSettings()
     }
-    hintImpl("关闭后推荐页只能用顶部体裁标签换流，手指左右划不会整页翻走。")
+    hintImpl("关闭后推荐、分类和榜单只能用顶部标签切换，手指左右划不会整页翻走。")
 
     // 主题放在最后：二十套色卡占的地方最大，日常不需要频繁改。
     hintImpl("当前：${PhoneStyle.theme.label} · ${PhoneStyle.theme.scene}　（${TvTheme.entries.size} 套，选中即生效）")

@@ -156,7 +156,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Switch(
                     id = ID_RECOMMEND_SWIPE,
-                    title = "推荐页左右滑动",
+                    title = "页面左右滑动",
                     checked = library.recommendSwipe,
                 )
             )

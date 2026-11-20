@@ -188,7 +188,7 @@ internal fun PhoneSettingsActivity.renderUnifiedAppearance() {
             ),
             SettingRowSpec.Switch(
                 SettingsController.ID_RECOMMEND_SWIPE,
-                "推荐页左右滑动",
+                "页面左右滑动",
                 settingsLibrary.recommendSwipe,
             ),
             SettingRowSpec.Section("主题外观"),
