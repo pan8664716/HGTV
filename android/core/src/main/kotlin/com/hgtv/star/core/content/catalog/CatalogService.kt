@@ -150,7 +150,11 @@ import java.io.IOException
             "video_tab_cold_start" to "0",
             "web_page_version_code" to "0",
         )
-        defaults.forEach { (key,value) -> values.putIfAbsent(key,value) }
+        // Android 5/6 的 java.util.Map 没有 Java 8 的 putIfAbsent；这里在发请求前就会
+        // 抛 NoSuchMethodError，导致八大榜单连网络请求都发不出去。
+        defaults.forEach { (key,value) ->
+            if (key !in values) values[key]=value
+        }
     }
 
     /**

@@ -516,7 +516,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `CatalogParser.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 CatalogParser 主要包含 object ContentCatalogParser。 | object ContentCatalogParser |
-| `CatalogService.kt` | 榜单页与首页剧架共用的 cell/change GET 取数；解析八榜、名次、热度和后续页游标。 | — |
+| `CatalogService.kt` | 榜单页与首页剧架共用的 cell/change GET 取数；解析八榜、名次、热度和后续页游标；请求默认参数兼容 Android 5/6。 | — |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/danmaku/`
 
