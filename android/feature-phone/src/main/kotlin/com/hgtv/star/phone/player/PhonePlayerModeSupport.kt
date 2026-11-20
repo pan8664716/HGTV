@@ -2,6 +2,7 @@
 package com.hgtv.star.phone
 
 import android.view.View
+import com.google.android.exoplayer2.Player
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
 import com.hgtv.star.phone.ui.dp
@@ -9,6 +10,86 @@ import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.shared.media.DanmakuView
 
 internal const val PHONE_PORTRAIT_DANMAKU_TOP_GAP_DP=16f
+
+/**
+ * 横竖屏切换后的输出面交接。
+ *
+ * 旧 `SurfaceView` 的销毁和新页面布局不一定在同一帧完成。立即挂载时可能碰到：
+ * 新页还没有 ViewHolder、Surface 尚未创建，或 `PlayerView.player` / ExoPlayer 的
+ * Surface 已指向同一实例而重挂被短路。结果就是继续出声，但实际输出面为空。
+ *
+ * 这里等新形态完成布局后强制重挂；若重挂后短时间内仍没有新视频帧，再强制一次。
+ * 不改媒体源、不 seek、不暂停音频。
+ */
+internal fun PhonePlayerActivity.scheduleCurrentPlayerSurfaceRebind(
+    baselineFrameAt: Long = lastFrameAt,
+    attempts: Int = 12,
+) {
+    if (!playerRootInitialized) return
+    val exo = player ?: return
+    val token = ++playerSurfaceRebindToken
+    val baselineSurfaceFrameAt = lastSurfaceFirstFrameAt
+
+    fun attachCurrent(): Boolean = if (playerLandscapeMode) {
+        attachCurrentPlayerToLandscapePagerPage(force = true)
+    } else {
+        attachCurrentPlayerToPagerPage(force = true)
+    }
+
+    fun verifySurface(remaining: Int) {
+        root.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            if (token != playerSurfaceRebindToken || player !== exo) return@postDelayed
+            if (!exo.playWhenReady || exo.playbackState != Player.STATE_READY) return@postDelayed
+            if (
+                lastFrameAt > baselineFrameAt ||
+                lastSurfaceFirstFrameAt > baselineSurfaceFrameAt
+            ) {
+                return@postDelayed
+            }
+            if (attachCurrent() && remaining > 1) verifySurface(remaining - 1)
+        }, if (remaining == 2) 650L else 900L)
+    }
+
+    fun attempt(remaining: Int) {
+        root.postDelayed({
+            if (isFinishing || isDestroyed) return@postDelayed
+            if (token != playerSurfaceRebindToken || player !== exo) return@postDelayed
+            if (playerLandscapeMode) {
+                if (
+                    playerLandscapePagerInitialized &&
+                    playerLandscapePager.currentItem != index
+                ) {
+                    playerLandscapePager.setCurrentItem(index, false)
+                }
+            } else if (
+                playerEpisodePagerInitialized &&
+                playerEpisodePager.currentItem != index
+            ) {
+                playerEpisodePager.setCurrentItem(index, false)
+            }
+            val targetAttached = if (playerLandscapeMode) {
+                playerLandscapePagerInitialized &&
+                    playerLandscapePager.pageAt(index)?.isAttachedToWindow == true
+            } else {
+                playerEpisodePagerInitialized &&
+                    playerEpisodePager.pageAt(index)?.isAttachedToWindow == true
+            }
+            if (!targetAttached) {
+                if (remaining > 1) attempt(remaining - 1)
+                return@postDelayed
+            }
+            val attached = attachCurrent()
+            if (!attached) {
+                if (remaining > 1) attempt(remaining - 1)
+                return@postDelayed
+            }
+            verifySurface(remaining = 2)
+        }, if (remaining == attempts) 48L else 50L)
+    }
+
+    attempt(attempts)
+}
 
 /**
  * 手机竖屏“顶部信息栏”和弹幕共用的落点。

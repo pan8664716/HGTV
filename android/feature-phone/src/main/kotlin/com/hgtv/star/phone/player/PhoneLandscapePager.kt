@@ -434,19 +434,14 @@ internal fun PhonePlayerActivity.bindLandscapePagerPage(
  * 这里只按集号取页，不再回退到 `playerLandscapeVideo`：后者可能还指向 pager 缓存里的
  * 旧页，挂错后就是“声音在走、当前页全黑”，切一次集又碰巧恢复。
  */
-internal fun PhonePlayerActivity.scheduleCurrentLandscapeAttach(attempts: Int = 5) {
+internal fun PhonePlayerActivity.scheduleCurrentLandscapeAttach(attempts: Int = 12) {
     if (!playerLandscapeMode || !playerLandscapePagerInitialized) return
-    val exo = player ?: return
-    playerLandscapePager.postDelayed({
-        if (!playerLandscapeMode || player !== exo) return@postDelayed
-        selectLandscapePagerEpisode(index)
-        if (!attachCurrentPlayerToLandscapePagerPage() && attempts > 1) {
-            scheduleCurrentLandscapeAttach(attempts - 1)
-        }
-    }, if (attempts == 5) 0L else 32L)
+    scheduleCurrentPlayerSurfaceRebind(attempts = attempts)
 }
 
-internal fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage(): Boolean {
+internal fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage(
+    force: Boolean = false,
+): Boolean {
     if (!playerLandscapeMode || !playerLandscapePagerInitialized) return false
     val exo = player ?: return false
     val current = playerLandscapePager.pageAt(index) ?: return false
@@ -460,7 +455,8 @@ internal fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage(): Bool
     playerLandDanmakuSlot = current.danmaku
     playerLandLetterboxSlot = current.letterbox
     current.video.visibility = View.VISIBLE
-    if (current.video.player !== exo) current.video.player = exo
+    if (force) current.video.forceBindVideoSurface(exo)
+    else if (current.video.player !== exo) current.video.player = exo
     return true
 }
 

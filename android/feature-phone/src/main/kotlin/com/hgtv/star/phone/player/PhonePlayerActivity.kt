@@ -297,6 +297,8 @@ open class PhonePlayerActivity : PhoneActivity() {
 
     internal val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal var player: ExoPlayer? = null
+    /** 横竖屏切换时，作废旧一轮 Surface 重挂任务。 */
+    internal var playerSurfaceRebindToken = 0
     internal var remote: RemoteVideo? = null
     internal var detail: Detail? = null
     internal var library: Library? = null
@@ -564,6 +566,7 @@ open class PhonePlayerActivity : PhoneActivity() {
     internal var watchdogTick: Runnable? = null
 
     @Volatile internal var lastFrameAt: Long = 0L
+    @Volatile internal var lastSurfaceFirstFrameAt: Long = 0L
 
     internal val playbackToasts = com.hgtv.star.core.ToastDeduper()
 

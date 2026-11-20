@@ -5,6 +5,7 @@ import android.graphics.Color
 import android.view.View
 
 internal fun PhonePlayerActivity.applyMode() {
+    val frameBaseline = lastFrameAt
     // 竖屏与横屏 ViewPager2 使用不同 Surface；切形态前先摘掉相邻集输出，
     // 等新形态布局完成后统一重挂，避免旧 Surface 被 GONE 后预渲染卡在“已开始”状态。
     pauseAdjacentPlayers()
@@ -30,12 +31,18 @@ internal fun PhonePlayerActivity.applyMode() {
         // 竖屏这一层在横屏期间不出画面，而且尺寸马上会从竖屏变横屏。
         // 保留最后一帧的话，回竖屏时那帧旧 buffer 会残留一块在新尺寸的 Surface 上——
         // 用户截图里「一块画面卡在屏幕上」就是这个。先关掉再解绑，它才会清屏。
-        playerPage.playerView.setKeepContentOnPlayerReset(false)
-        PhoneServices.detach(playerPage.playerView)
+        val portraitView = if (playerEpisodePagerInitialized) {
+            playerEpisodePager.pageAt(index)?.playerView ?: playerPage.playerView
+        } else {
+            playerPage.playerView
+        }
+        portraitView.setKeepContentOnPlayerReset(false)
+        portraitView.player = null
+        portraitView.setKeepContentOnPlayerReset(true)
         // 横屏这一层此后要长期出画面：换集时保留上一帧，避免闪黑。
         selectLandscapePagerEpisode(index)
         playerLandscapeVideo.setKeepContentOnPlayerReset(true)
-        scheduleCurrentLandscapeAttach()
+        scheduleCurrentPlayerSurfaceRebind(frameBaseline)
         // 输出被横屏这一层拿走了：推荐页那边不能再认为「Surface 一直在」。
         PhoneSession.underlayActive = false
         playerUnderlayBound = false
@@ -61,7 +68,7 @@ internal fun PhonePlayerActivity.applyMode() {
             dropUnderlay()
             // 不再借下层 Surface 时必须恢复整页不透明，避免透明窗口继续透出推荐页。
             root.setBackgroundColor(Color.BLACK)
-            if (player != null) attachCurrentPlayerToPagerPage()
+            if (player != null) scheduleCurrentPlayerSurfaceRebind(frameBaseline)
         }
         // 竖屏同样进沉浸式：**状态栏不占位、不显示**。
         // 早先这里走 exitImmersive()，顶部留着一条状态栏，竖屏短剧的画面被压下去一截，

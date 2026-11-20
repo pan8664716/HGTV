@@ -51,11 +51,7 @@ internal fun PhonePlayerActivity.syncLandscapeLetterboxImpl() {
     )
     playerLandDanmaku.letterboxRect = picture
     playerLandLetterbox.visibility =
-        if (
-            playerLandDanmaku.isSurfaceActive &&
-            picture != null
-        ) View.GONE
-        else View.VISIBLE
+        if (picture == null || playerLandDanmaku.isSurfaceActive) View.GONE else View.VISIBLE
 }
 
 /**

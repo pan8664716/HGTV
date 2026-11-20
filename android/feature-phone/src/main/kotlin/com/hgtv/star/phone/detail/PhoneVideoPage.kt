@@ -590,11 +590,7 @@ class PhoneVideoPage(
         val picture = letterboxMask.pictureBounds(width, height)
         danmakuView.letterboxRect = picture
         letterboxMask.visibility =
-            if (
-                danmakuView.isSurfaceActive &&
-                picture != null
-            ) View.GONE
-            else View.VISIBLE
+            if (picture == null || danmakuView.isSurfaceActive) View.GONE else View.VISIBLE
     }
 
     private fun placeFullscreenButton() {

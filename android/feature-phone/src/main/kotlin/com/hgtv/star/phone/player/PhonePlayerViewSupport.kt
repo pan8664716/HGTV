@@ -18,6 +18,7 @@ import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
+import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
 import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.VideoFrameMode
@@ -107,6 +108,23 @@ internal fun PlayerView.holdFirstFrameAspectRatio() {
 
 internal fun PlayerView.completeFirstFrameAspectRatio() {
     (this as? FixedFirstFramePlayerView)?.completeFirstFrameAspectRatio()
+}
+
+/**
+ * 强制把播放器重新交给这一块 Surface。
+ *
+ * `PlayerView.setPlayer` 在实例相同时会直接返回；旋转后如果 View 上的 player 字段没变，
+ * 但 ExoPlayer 的实际输出面已经被另一形态接管，单靠重新赋值不会恢复画面。
+ */
+internal fun PlayerView.forceBindVideoSurface(exo: ExoPlayer) {
+    if (player !== exo) player = exo
+    val surface = videoSurfaceView as? SurfaceView ?: return
+    // ExoPlayer 对同一个 Surface 实例也会走“输出面没变”的短路。必须先清掉，
+    // 再把 holder 交回去，渲染器才会重新执行 setOutputSurface / 重建解码输出。
+    exo.clearVideoSurfaceView(surface)
+    exo.setVideoSurfaceView(surface)
+    surface.requestLayout()
+    surface.invalidate()
 }
 
 internal fun PhonePlayerActivity.holdFirstFrameAspectRatio() {

@@ -226,6 +226,10 @@ class PhoneFeedView(
     internal var feedPlayTokenSlot: Int
         get()=playToken
         set(value) { playToken=value }
+    private var surfaceRebindToken = 0
+    internal var feedSurfaceRebindToken: Int
+        get()=surfaceRebindToken
+        set(value) { surfaceRebindToken=value }
     private var boundPage: PhoneVideoPage? = null
     internal val feedBoundPage get()=boundPage
     internal var feedBoundPageSlot: PhoneVideoPage?

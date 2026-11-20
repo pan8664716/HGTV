@@ -127,6 +127,7 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
         override fun onRenderedFirstFrame() {
             if (player !== exo) return
             // 部分设备只回调首帧、不走逐帧心跳；首帧同样是画面已经上屏的硬证据。
+            lastSurfaceFirstFrameAt = android.os.SystemClock.elapsedRealtime()
             watchdog.onFrame()
             completeFirstFrameAspectRatio()
             hideEpisodeCover()
@@ -226,6 +227,7 @@ internal fun PhonePlayerActivity.onAdvanced(
     PhoneSession.clearNext()
     // 新一集必须先清掉上一集的帧证据，弹幕加载才不会把旧首帧误判成新集已出画面。
     lastFrameAt = 0L
+    lastSurfaceFirstFrameAt = 0L
     bindEpisodeUiForListener(d, nextIndex, clearDanmakuOnSwitch)
     syncChipsForListener()
     listenerLastDuration = 0

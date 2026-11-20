@@ -354,20 +354,28 @@ internal fun PhonePlayerActivity.bindPlayerPagerPage(page: PhoneVideoPage, posit
     }
 }
 
-internal fun PhonePlayerActivity.attachCurrentPlayerToPagerPage() {
-    if (playerLandscapeMode || !playerPageInitialized) return
-    val exo = player ?: return
+internal fun PhonePlayerActivity.attachCurrentPlayerToPagerPage(
+    force: Boolean = false,
+): Boolean {
+    if (playerLandscapeMode || !playerPageInitialized) return false
+    val exo = player ?: return false
+    val current = if (playerEpisodePagerInitialized) {
+        playerEpisodePager.pageAt(index) ?: return false
+    } else {
+        playerPage
+    }
+    swipePlayerPage = current
     if (playerEpisodePagerInitialized) {
         playerEpisodePager.pages().forEach { page ->
-            if (page !== playerPage && page.playerView.player === exo) {
+            if (page !== current && page.playerView.player === exo) {
                 detachPlayerPagerPage(page)
             }
         }
     }
-    playerPage.setVideoSurfaceVisible(true)
-    if (playerPage.playerView.player !== exo) {
-        playerPage.playerView.player = exo
-    }
+    current.setVideoSurfaceVisible(true)
+    if (force) current.playerView.forceBindVideoSurface(exo)
+    else if (current.playerView.player !== exo) current.playerView.player = exo
+    return true
 }
 
 internal fun PhonePlayerActivity.detachPlayerPagerOutputsExcept(keep: PhoneVideoPage?) {

@@ -80,16 +80,27 @@ internal fun PhoneFeedView.rebindCurrentSurfaceAfterSizeChangeImpl() {
     val exo = feedPlayer ?: return
     val index = feedPlayingIndex
     if (index < 0 || index !in feedItems.indices) return
-    feedList.post {
-        if (feedHidden || feedPlayer !== exo || feedPlayingIndex != index) return@post
-        if (PhoneSession.underlayActive) return@post
-        val page = feedPageAt(index) ?: feedBoundPage?.takeIf {
-            feedList.getChildAdapterPosition(it) == index
-        } ?: return@post
-        if (page.playerView.player === exo) page.playerView.detachPooledOutput()
-        page.playerView.player = exo
-        feedBoundPageSlot = page
+    val token = ++feedSurfaceRebindToken
+
+    fun attempt(remaining: Int) {
+        feedList.postDelayed({
+            if (token != feedSurfaceRebindToken) return@postDelayed
+            if (feedHidden || feedPlayer !== exo || feedPlayingIndex != index) return@postDelayed
+            if (PhoneSession.owner != PhoneSession.Owner.FEED) return@postDelayed
+            if (PhoneSession.underlayActive) return@postDelayed
+            val page = feedPageAt(index) ?: feedBoundPage?.takeIf {
+                feedList.getChildAdapterPosition(it) == index
+            }
+            if (page == null || !page.isAttachedToWindow) {
+                if (remaining > 1) attempt(remaining - 1)
+                return@postDelayed
+            }
+            page.playerView.forceBindVideoSurface(exo)
+            feedBoundPageSlot = page
+        }, if (remaining == 12) 48L else 50L)
     }
+
+    attempt(12)
 }
 
 internal fun PhoneFeedView.setUnderlayModeImpl(on: Boolean) {
