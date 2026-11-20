@@ -89,15 +89,6 @@ class PhoneMinePage(
         maxLines = 2
         ellipsize = null
     }
-    private val topSub = TextView(context).apply {
-        text = "记录仅保存在本机"
-        setTextColor(PhoneStyle.textDim)
-        phoneSize(10)
-        setPadding(0, context.dp(2) / 5, 0, 0)
-        setSingleLine(true)
-        maxLines = 1
-        ellipsize = null
-    }
     private val topRefresh = LinearLayout(context).apply {
         val size = context.dp(24)
         gravity = Gravity.CENTER
@@ -113,10 +104,6 @@ class PhoneMinePage(
         orientation = LinearLayout.VERTICAL
         setPadding(context.dp(10), 0, 0, 0)
         addView(topName, LinearLayout.LayoutParams(
-            ViewGroup.LayoutParams.MATCH_PARENT,
-            ViewGroup.LayoutParams.WRAP_CONTENT,
-        ))
-        addView(topSub, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
@@ -656,17 +643,6 @@ class PhoneMinePage(
             !account.signedIn -> "未登录"
             !account.nickname.isNullOrBlank() -> account.nickname.orEmpty()
             else -> "已登录"
-        }
-        if (account.signedIn) {
-            topTextColumn.removeView(topSub)
-        } else {
-            topSub.text = "记录仅保存在本机"
-            if (topSub.parent == null) {
-                topTextColumn.addView(topSub, LinearLayout.LayoutParams(
-                    ViewGroup.LayoutParams.MATCH_PARENT,
-                    ViewGroup.LayoutParams.WRAP_CONTENT,
-                ))
-            }
         }
         topAccount.contentDescription = if (account.signedIn) {
             "账号${account.nickname.orEmpty()}"
