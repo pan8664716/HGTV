@@ -98,6 +98,14 @@ class PhoneTouch(
         const val TOP_GUARD_DP = 16f
 
         /**
+         * 屏幕底部这一条（dp）不接管翻页：那是系统手势导航的「回到桌面 / 切换应用」区。
+         *
+         * 播放页是全屏沉浸的，底部上滑既要能唤出系统导航条，也不能让 ViewPager2
+         * 跟着切成下一集。取值只覆盖最底部边缘，避免影响底栏按钮的正常点击。
+         */
+        const val BOTTOM_GUARD_DP = 24f
+
+        /**
          * 从顶部这一带（dp）**向下**拉，不当作「上一集」。
          *
          * 系统的下拉手势区在部分 ROM 上比 [TOP_GUARD_DP] 更深（整条标题栏都算）。
@@ -189,7 +197,7 @@ class PhoneTouch(
 
     /** 起点是否在屏幕顶部那条系统手势区里（见 [TOP_GUARD_DP]）。 */
     private fun topGuardSafe(rawY: Float): Boolean =
-        rawY >= host.context.dp(TOP_GUARD_DP).toFloat()
+        !host.isTopSystemBarGestureOrigin(rawY)
 
     override fun onTouch(v: View, event: MotionEvent): Boolean {
         // 顶部那一条不接：从那里按下就是用户在拉通知栏，交回系统。
@@ -323,4 +331,14 @@ class PhoneTouch(
             handler.postDelayed(singleTap, DOUBLE_TAP_MS)
         }
     }
+}
+
+/** 按下点是否位于顶部系统状态栏手势区。 */
+internal fun View.isTopSystemBarGestureOrigin(rawY: Float): Boolean =
+    rawY <= context.dp(PhoneTouch.TOP_GUARD_DP).toFloat()
+
+/** 按下点是否位于顶部状态栏或底部系统导航手势区。 */
+internal fun View.isSystemBarGestureOrigin(rawY: Float): Boolean {
+    val bottomGuard = context.dp(PhoneTouch.BOTTOM_GUARD_DP).toFloat()
+    return isTopSystemBarGestureOrigin(rawY) || rawY >= height - bottomGuard
 }

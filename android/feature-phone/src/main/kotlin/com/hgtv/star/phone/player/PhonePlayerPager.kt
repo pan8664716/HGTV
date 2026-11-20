@@ -15,6 +15,7 @@ import com.hgtv.star.core.Series
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
 import com.hgtv.star.phone.ui.dp
+import com.hgtv.star.phone.ui.isSystemBarGestureOrigin
 import com.hgtv.star.phone.ui.resizeMode
 
 /**
@@ -29,6 +30,7 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
     private var downX = 0f
     private var downY = 0f
     private var axis = 0
+    private var systemBarGesture = false
 
     var userScroll = false
     var gesturesEnabled: Boolean = true
@@ -95,7 +97,8 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
                 downY = e.y
                 axis = 0
                 userScroll = false
-                pager.isUserInputEnabled = gesturesEnabled
+                systemBarGesture = isSystemBarGestureOrigin(e.rawY)
+                pager.isUserInputEnabled = gesturesEnabled && !systemBarGesture
             }
             MotionEvent.ACTION_MOVE -> {
                 if (axis == 0) {
@@ -104,7 +107,7 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
                     if (dx > slop || dy > slop) {
                         axis = if (dy > dx) 1 else 2
                         if (axis == 1) {
-                            userScroll = gesturesEnabled
+                            userScroll = gesturesEnabled && !systemBarGesture
                         } else {
                             pager.isUserInputEnabled = false
                             parent?.requestDisallowInterceptTouchEvent(false)
@@ -115,6 +118,7 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 axis = 0
+                systemBarGesture = false
                 pager.isUserInputEnabled = gesturesEnabled
             }
         }
