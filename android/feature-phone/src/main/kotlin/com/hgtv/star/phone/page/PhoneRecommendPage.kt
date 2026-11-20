@@ -13,7 +13,6 @@ import com.hgtv.star.phone.PhoneFeedView
 import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneColor
-import com.hgtv.star.phone.ui.PhoneTabSwipeHost
 import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.navigationBarPx
 
@@ -102,6 +101,9 @@ class PhoneRecommendPage(
         swipeEnabled = swipeEnabledFromSettings()
         topBar.addOnLayoutChangeListener(topBarLayoutListener)
         pager.registerOnPageChangeCallback(pageCallback)
+        pager.onFocusTarget = { index ->
+            if (index in genres.indices) topBar.applyTabSelection(index)
+        }
         buildUi()
         // 冷启动时书库还没读完，上面那一次读到的是兜底值（true）。
         // 读完必须再对一次，否则「关掉推荐页左右滑动」重启后不生效——
@@ -356,8 +358,13 @@ class PhoneRecommendPage(
         private var downX = 0f
         private var downY = 0f
         private var startItem = 0
+        private var dragDirection = 0
+        private var settleStart = 0
+        private var settleTarget = -1
+        private var focusSent = false
         /** 0 = 未定性，1 = 纵向，2 = 横向。 */
         private var axis = 0
+        var onFocusTarget: ((Int) -> Unit)? = null
 
         var userScroll = false
         var gesturesEnabled = true
@@ -393,6 +400,39 @@ class PhoneRecommendPage(
             )
             pageRecycler.isNestedScrollingEnabled = false
             pageRecycler.itemAnimator = null
+            pager.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
+                override fun onPageScrolled(
+                    position: Int,
+                    positionOffset: Float,
+                    positionOffsetPixels: Int,
+                ) {
+                    if (!userScroll || settleTarget < 0 || focusSent) return
+                    val progress = if (settleTarget > settleStart) {
+                        positionOffset
+                    } else {
+                        1f - positionOffset
+                    }
+                    if (progress >= 0.8f) {
+                        focusSent = true
+                        onFocusTarget?.invoke(settleTarget)
+                    }
+                }
+
+                override fun onPageScrollStateChanged(state: Int) {
+                    if (state == ViewPager2.SCROLL_STATE_SETTLING &&
+                        userScroll && dragDirection != 0
+                    ) {
+                        settleStart = startItem
+                        settleTarget = startItem + dragDirection
+                        focusSent = false
+                    }
+                    if (state == ViewPager2.SCROLL_STATE_IDLE) {
+                        settleTarget = -1
+                        dragDirection = 0
+                        focusSent = false
+                    }
+                }
+            })
         }
 
         fun registerOnPageChangeCallback(callback: ViewPager2.OnPageChangeCallback) {
@@ -409,6 +449,9 @@ class PhoneRecommendPage(
                     downX = e.x
                     downY = e.y
                     startItem = pager.currentItem
+                    dragDirection = 0
+                    settleTarget = -1
+                    focusSent = false
                     axis = 0
                     userScroll = false
                     pager.isUserInputEnabled = gesturesEnabled
@@ -421,27 +464,22 @@ class PhoneRecommendPage(
                             axis = if (dx > dy) 2 else 1
                             if (axis == 2) {
                                 userScroll = gesturesEnabled
+                                dragDirection = if (e.x < downX) 1 else -1
                             } else {
                                 pager.isUserInputEnabled = false
                                 parent?.requestDisallowInterceptTouchEvent(false)
                             }
                         }
                     }
+                    if (axis == 2 && Math.abs(e.x - downX) > slop) {
+                        dragDirection = if (e.x < downX) 1 else -1
+                    }
                     if (axis == 1) pager.isUserInputEnabled = false
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
-                    val horizontalSwipe = axis == 2 && gesturesEnabled
-                    val width = pager.width.coerceAtLeast(1)
-                    val distance = Math.abs(e.x - downX)
                     axis = 0
                     pager.isUserInputEnabled = gesturesEnabled
-                    if (e.actionMasked == MotionEvent.ACTION_UP && horizontalSwipe &&
-                        distance < width * PhoneTabSwipeHost.COMMIT_DISTANCE_RATIO
-                    ) {
-                        pager.post {
-                            pager.setCurrentItem(startItem, true)
-                        }
-                    }
+                    if (e.actionMasked == MotionEvent.ACTION_CANCEL) dragDirection = 0
                 }
             }
             return super.dispatchTouchEvent(e)

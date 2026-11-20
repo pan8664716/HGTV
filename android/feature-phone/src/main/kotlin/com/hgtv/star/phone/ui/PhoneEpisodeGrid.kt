@@ -388,11 +388,11 @@ class PhoneEpisodeGrid(
     /**
      * 松手结算：过阈值就翻页，否则弹回。
      *
-     * 松手后拖动距离超过 70% 才翻页，否则回弹；不再按拖动过半或快甩速度提前切换。
+     * 松手后按原翻页手感吸附；顶部焦点由主页面在翻页动画后段处理。
      */
     private fun settleDrag(dx: Float) {
         val w = pageWidth()
-        val threshold = w * PhoneTabSwipeHost.COMMIT_DISTANCE_RATIO
+        val threshold = w * PhonePagerMotion.SNAP_DISTANCE_RATIO
         val dir = when {
             dx <= -threshold -> 1
             dx >= threshold -> -1
