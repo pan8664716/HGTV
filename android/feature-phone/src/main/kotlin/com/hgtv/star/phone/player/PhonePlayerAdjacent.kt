@@ -9,6 +9,7 @@ import com.google.android.exoplayer2.ui.PlayerView
 import com.google.android.exoplayer2.video.VideoSize
 import com.google.android.exoplayer2.upstream.DataSource
 import com.hgtv.star.core.AppConfig
+import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.VideoFrameMode
@@ -27,6 +28,8 @@ internal class PhonePlayerAdjacentSlot(
     val remote: RemoteVideo,
     val player: ExoPlayer,
 ) {
+    var detail: Detail? = null
+    var episodeIndex: Int = index
     var sourcePrepared: Boolean = true
     var firstFrameRendered: Boolean = false
     var preRendering: Boolean = false
@@ -120,6 +123,8 @@ internal fun PhonePlayerActivity.ensureAdjacentEpisode(target: Int) {
             exo.volume = 0f
             exo.playWhenReady = false
             val slot = PhonePlayerAdjacentSlot(target, episodeId, prepared, exo)
+            slot.detail = d
+            slot.episodeIndex = target
             attachAdjacentPlayerListener(slot)
             playerAdjacentState.slots[target] = slot
             trimAdjacentSlots()
@@ -139,6 +144,104 @@ internal fun PhonePlayerActivity.ensureAdjacentEpisode(target: Int) {
             playerAdjacentState.warming.remove(target)
         }
     }
+}
+
+/**
+ * 把下一季第 1 集放进相邻集播放器池。
+ *
+ * 它没有对应的当前季 ViewPager2 页面，因此只完成取地址、首块和 `prepare`；
+ * 片尾激活时再把播放器挂到下一页并切换整页数据集。
+ */
+internal fun PhonePlayerActivity.ensureNextSeasonEpisode(targetDetail: Detail) {
+    if (!playerForeground) return
+    val current = detail ?: return
+    if (index != current.episodes.lastIndex) return
+    val episodeId = targetDetail.episodes.firstOrNull() ?: return
+    val key = current.episodes.size
+    if (playerAdjacentState.slots[key]?.detail?.series?.id == targetDetail.series.id) return
+    if (!playerAdjacentState.warming.add(key)) return
+
+    val currentSeriesId = current.series.id
+    val currentEpisodeCount = current.episodes.size
+    val quality = playbackMaxQuality
+    val generation = playerAdjacentState.generation
+    nextSeasonState.nextSeasonPoolLoading = true
+    nextSeasonState.nextSeasonPoolFor = targetDetail.series.id
+    scope.launch {
+        try {
+            val prepared = withContext(Dispatchers.IO) {
+                runCatching {
+                    val queue = targetDetail.episodes.drop(1).take(PhonePlayerActivity.playerModelQueueSize)
+                    val info = playbackSource.stream(
+                        episodeId,
+                        quality,
+                        targetDetail.playback,
+                        queue,
+                    )
+                    playbackSource.warm(episodeId, info) { it.warm() }
+                }.getOrNull()
+            } ?: return@launch
+            if (generation != playerAdjacentState.generation ||
+                isFinishing || isDestroyed ||
+                detail?.series?.id != currentSeriesId ||
+                detail?.episodes?.size != currentEpisodeCount ||
+                index != currentEpisodeCount - 1
+            ) {
+                prepared.close()
+                return@launch
+            }
+
+            playerAdjacentState.slots[key]?.let { old ->
+                playerAdjacentState.slots.remove(key)
+                old.listener?.let(old.player::removeListener)
+                runCatching { old.player.release() }
+                runCatching { old.remote.close() }
+            }
+            val exo = PhoneServices.newPlayer(
+                this@ensureNextSeasonEpisode,
+                library?.decoderMode,
+                handleAudioFocus = false,
+            )
+            val factory = DataSource.Factory { VideoDataSource(prepared) }
+            exo.swapMediaSource(episodeId, prepared.info.url, factory)
+            exo.setPlaybackSpeed(sessionUserSpeed)
+            exo.volume = 0f
+            exo.playWhenReady = false
+            val slot = PhonePlayerAdjacentSlot(key, episodeId, prepared, exo).apply {
+                detail = targetDetail
+                episodeIndex = 0
+            }
+            attachAdjacentPlayerListener(slot)
+            playerAdjacentState.slots[key] = slot
+            if (runCatching { exo.prepare() }.isFailure) {
+                releaseAdjacentSlot(key)
+                return@launch
+            }
+            slot.preparedAt = SystemClock.elapsedRealtime()
+            nextSeasonState.nextSeasonPoolLoading = false
+            android.util.Log.i(
+                "HGTV-PHONE",
+                "next season pooled series=${targetDetail.series.id} episode=${episodeId.takeLast(6)}",
+            )
+            if (nextSeasonState.autoNextSeasonPending &&
+                detail?.episodes?.lastIndex == index
+            ) {
+                activateNextSeasonPool(targetDetail)
+            }
+        } finally {
+            playerAdjacentState.warming.remove(key)
+            if (nextSeasonState.nextSeasonPoolFor == targetDetail.series.id) {
+                nextSeasonState.nextSeasonPoolLoading = false
+            }
+        }
+    }
+}
+
+internal fun PhonePlayerActivity.releaseNextSeasonPoolSlot() {
+    val current = detail ?: return
+    val key = current.episodes.size
+    val slot = playerAdjacentState.slots[key] ?: return
+    if (slot.detail?.series?.id != current.series.id) releaseAdjacentSlot(key)
 }
 
 private fun PhonePlayerActivity.attachAdjacentPlayerListener(slot: PhonePlayerAdjacentSlot) {
@@ -397,6 +500,8 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
             remote = oldRemote,
             player = oldPlayer,
         ).also {
+            it.detail = d
+            it.episodeIndex = oldIndex
             it.firstFrameRendered = false
             it.preparedAt = SystemClock.elapsedRealtime()
             playerAdjacentState.slots[oldIndex] = it
@@ -445,7 +550,7 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
     return true
 }
 
-private fun PhonePlayerActivity.attachCurrentPlayerOutput() {
+internal fun PhonePlayerActivity.attachCurrentPlayerOutput() {
     val exo = player ?: return
     if (playerLandscapeMode) {
         playerPage.playerView.player = null

@@ -183,8 +183,30 @@ internal fun PhonePlayerActivity.onAdvanced(
 ) {
     val d = detail ?: return
     if (nextIndex !in d.episodes.indices) return
+    finishAdvanced(
+        nextData = d,
+        nextIndex = nextIndex,
+        previousData = d,
+        previousPosition = previousPosition,
+        previousDuration = listenerLastDuration,
+        completedPrevious = completedPrevious,
+        clearDanmakuOnSwitch = clearDanmakuOnSwitch,
+        closePreviousRemote = closePreviousRemote,
+    )
+}
+
+internal fun PhonePlayerActivity.finishAdvanced(
+    nextData: com.hgtv.star.core.Detail,
+    nextIndex: Int,
+    previousData: com.hgtv.star.core.Detail,
+    previousPosition: Long,
+    previousDuration: Long,
+    completedPrevious: Boolean,
+    clearDanmakuOnSwitch: Boolean,
+    closePreviousRemote: Boolean,
+) {
+    if (nextIndex !in nextData.episodes.indices) return
     val previous = index
-    val previousDuration = listenerLastDuration
     // 无感换集也必须结束“借用推荐页 Surface”的交接状态。继续借会把下层页面
     // 留在透明播放页背后，横竖片源比例切换时正好从新黑边里透出来。
     if (playerFeedUnderlay) {
@@ -200,11 +222,11 @@ internal fun PhonePlayerActivity.onAdvanced(
 
     // 播完那一集：写 completed（用切走之前记下的时长）。
     val lib = library
-    if (lib != null && previous in d.episodes.indices && previousDuration > 0) {
+    if (lib != null && previous in previousData.episodes.indices && previousDuration > 0) {
         // 自动推进才是「整集看完」；手动上滑是中途换集，只保存当前续播点。
         val done = playbackSessionState.progress.snapshot(
-            series = d.series,
-            episodeId = d.episodes[previous],
+            series = previousData.series,
+            episodeId = previousData.episodes[previous],
             episodeIndex = previous,
             position = previousPosition,
             duration = previousDuration,
@@ -213,14 +235,15 @@ internal fun PhonePlayerActivity.onAdvanced(
         runCatching { lib.save(done) }
         // 账号侧也要跟着走（与 TV 的 `syncProgress` 同一条路）：不推的话，
         // 在手机上看完的这几集换到电视上还是「没看过」。
-        runCatching { PhoneAccountSync.progress(this, done, d.episodes.size) }
+        runCatching { PhoneAccountSync.progress(this, done, previousData.episodes.size) }
     }
 
+    detail = nextData
     index = nextIndex
     selectPlayerPagerEpisode(nextIndex)
     attachCurrentPlayerToPagerPage()
     showEpisodeCover(
-        d.episodeCover(d.episodes[nextIndex]).ifBlank { d.series.cover }
+        nextData.episodeCover(nextData.episodes[nextIndex]).ifBlank { nextData.series.cover }
     )
     reconcileAdjacentSlots()
     PhoneSession.nextQueued = false
@@ -228,7 +251,7 @@ internal fun PhonePlayerActivity.onAdvanced(
     // 新一集必须先清掉上一集的帧证据，弹幕加载才不会把旧首帧误判成新集已出画面。
     lastFrameAt = 0L
     lastSurfaceFirstFrameAt = 0L
-    bindEpisodeUiForListener(d, nextIndex, clearDanmakuOnSwitch)
+    bindEpisodeUiForListener(nextData, nextIndex, clearDanmakuOnSwitch)
     syncChipsForListener()
     listenerLastDuration = 0
     listenerPrefetchAt = 0
@@ -244,7 +267,7 @@ internal fun PhonePlayerActivity.onAdvanced(
     if (video != null) {
         remote = video
         PhoneSession.publish(
-            d,
+            nextData,
             nextIndex,
             video,
             video.info.quality,
@@ -258,8 +281,11 @@ internal fun PhonePlayerActivity.onAdvanced(
         durationMs=0,
         episodeIndexOverride=nextIndex,
     )
-    prepareNextSeasonIfNeeded(d)
+    prepareNextSeasonIfNeeded(nextData)
     scheduleAdjacentEpisodeWarmup()
     muteBufferingUiForListener()
-    android.util.Log.i("HGTV-PHONE", "advanced seamlessly to ${nextIndex + 1}")
+    android.util.Log.i(
+        "HGTV-PHONE",
+        "advanced seamlessly series=${nextData.series.id} episode=${nextIndex + 1}",
+    )
 }

@@ -19,6 +19,13 @@ internal class PhoneNextSeasonState {
     var nextSeasonLoading = false
     var nextSeasonToken = 0
     var nextSeasonJob: Job? = null
+    var nextSeasonDetail: Detail? = null
+    var nextSeasonDetailFor = ""
+    var nextSeasonDetailLoading = false
+    var nextSeasonDetailToken = 0
+    var nextSeasonDetailJob: Job? = null
+    var nextSeasonPoolLoading = false
+    var nextSeasonPoolFor = ""
     var autoNextSeasonPending = false
     var nextSeasonOpening = false
     var nextSeasonFinishedFor = ""
@@ -65,10 +72,19 @@ internal fun PhonePlayerActivity.clearNextSeasonLookup() {
     nextSeasonState.nextSeasonFor = ""
     nextSeasonState.nextSeason = null
     nextSeasonState.nextSeasonLoading = false
+    nextSeasonState.nextSeasonDetailToken++
+    nextSeasonState.nextSeasonDetailJob?.cancel()
+    nextSeasonState.nextSeasonDetailJob = null
+    nextSeasonState.nextSeasonDetailFor = ""
+    nextSeasonState.nextSeasonDetail = null
+    nextSeasonState.nextSeasonDetailLoading = false
+    nextSeasonState.nextSeasonPoolLoading = false
+    nextSeasonState.nextSeasonPoolFor = ""
     nextSeasonState.autoNextSeasonPending = false
     nextSeasonState.nextSeasonOpening = false
     nextSeasonState.nextSeasonFinishedFor = ""
     hideNextSeasonNotice()
+    releaseNextSeasonPoolSlot()
 }
 
 internal fun PhonePlayerActivity.ensureNextSeason(series: Series) {
@@ -104,11 +120,60 @@ internal fun PhonePlayerActivity.completeNextSeasonLookup(
     nextSeasonState.nextSeasonJob = null
     nextSeasonState.nextSeasonLoading = false
     nextSeasonState.nextSeason = seasons?.let { SeriesSeasons.nextSeason(series, it) }
-    if (nextSeasonState.nextSeason != null) showNextSeasonNotice() else hideNextSeasonNotice()
+    val target = nextSeasonState.nextSeason
+    if (target != null) {
+        showNextSeasonNotice()
+        ensureNextSeasonDetail(target)
+    } else {
+        hideNextSeasonNotice()
+    }
     if (nextSeasonState.autoNextSeasonPending) {
-        nextSeasonState.autoNextSeasonPending = false
-        val target = nextSeasonState.nextSeason
-        if (target != null) openNextSeason(target) else finishSeriesPlayback(series)
+        if (target == null) {
+            nextSeasonState.autoNextSeasonPending = false
+            finishSeriesPlayback(series)
+        }
+    }
+}
+
+private fun PhonePlayerActivity.ensureNextSeasonDetail(target: Series) {
+    if (nextSeasonState.nextSeasonDetailFor == target.id) return
+    nextSeasonState.nextSeasonDetailToken++
+    nextSeasonState.nextSeasonDetailJob?.cancel()
+    val token = nextSeasonState.nextSeasonDetailToken
+    nextSeasonState.nextSeasonDetailFor = target.id
+    nextSeasonState.nextSeasonDetail = null
+    nextSeasonState.nextSeasonDetailLoading = true
+    nextSeasonState.nextSeasonPoolLoading = false
+    nextSeasonState.nextSeasonPoolFor = ""
+    val activity = this
+    nextSeasonState.nextSeasonDetailJob = scope.launch {
+        val loaded = withContext(Dispatchers.IO) {
+            runCatching {
+                PhoneServices.repository(activity).detail(target.id)
+            }.getOrNull()
+        }
+        if (token != nextSeasonState.nextSeasonDetailToken || isFinishing || isDestroyed) return@launch
+        nextSeasonState.nextSeasonDetailLoading = false
+        nextSeasonState.nextSeasonDetailJob = null
+        val detail = loaded?.takeIf { it.episodes.isNotEmpty() }
+        if (detail == null) {
+            if (nextSeasonState.autoNextSeasonPending) {
+                nextSeasonState.autoNextSeasonPending = false
+                openNextSeason(target)
+            }
+            return@launch
+        }
+        nextSeasonState.nextSeasonDetail = detail
+        ensureNextSeasonEpisode(detail)
+        if (nextSeasonState.autoNextSeasonPending &&
+            !activateNextSeasonPool(detail)
+        ) {
+            // 池仍在准备时继续等；池准备完成后会在 `ensureNextSeasonEpisode` 里激活。
+            if (!nextSeasonState.nextSeasonPoolLoading) {
+                nextSeasonState.autoNextSeasonPending = false
+                playNextSeasonDirect(detail)
+            }
+        }
     }
 }
 
@@ -157,6 +222,26 @@ internal fun PhonePlayerActivity.advanceToNextSeasonOrFinish(d: Detail) {
 
 internal fun PhonePlayerActivity.openNextSeason(target: Series) {
     if (nextSeasonState.nextSeasonOpening) return
+    val cached = nextSeasonState.nextSeasonDetail?.takeIf {
+        nextSeasonState.nextSeasonDetailFor == target.id && it.episodes.isNotEmpty()
+    }
+    if (cached != null) {
+        if (activateNextSeasonPool(cached)) return
+        if (nextSeasonState.nextSeasonPoolLoading &&
+            nextSeasonState.nextSeasonPoolFor == target.id
+        ) {
+            nextSeasonState.autoNextSeasonPending = true
+            return
+        }
+        playNextSeasonDirect(cached)
+        return
+    }
+    if (nextSeasonState.nextSeasonDetailLoading &&
+        nextSeasonState.nextSeasonDetailFor == target.id
+    ) {
+        nextSeasonState.autoNextSeasonPending = true
+        return
+    }
     nextSeasonState.nextSeasonOpening = true
     nextSeasonState.autoNextSeasonPending = false
     hideNextSeasonNotice()
@@ -181,9 +266,115 @@ internal fun PhonePlayerActivity.openNextSeason(target: Series) {
         nextSeasonState.nextSeason = null
         nextSeasonState.nextSeasonLoading = false
         nextSeasonState.nextSeasonFinishedFor = ""
-        detail = loaded
-        play(0)
+        nextSeasonState.nextSeasonDetail = loaded
+        nextSeasonState.nextSeasonDetailFor = loaded.series.id
+        if (!activateNextSeasonPool(loaded)) playNextSeasonDirect(loaded)
     }
+}
+
+private fun PhonePlayerActivity.playNextSeasonDirect(target: Detail) {
+    releaseNextSeasonPoolSlot()
+    nextSeasonState.nextSeasonOpening = false
+    nextSeasonState.autoNextSeasonPending = false
+    nextSeasonState.nextSeasonDetailToken++
+    nextSeasonState.nextSeasonDetailJob?.cancel()
+    nextSeasonState.nextSeasonDetailJob = null
+    nextSeasonState.nextSeasonDetail = null
+    nextSeasonState.nextSeasonDetailFor = ""
+    nextSeasonState.nextSeasonDetailLoading = false
+    nextSeasonState.nextSeasonPoolLoading = false
+    nextSeasonState.nextSeasonPoolFor = ""
+    nextSeasonState.nextSeasonFor = ""
+    nextSeasonState.nextSeason = null
+    nextSeasonState.nextSeasonLoading = false
+    nextSeasonState.nextSeasonFinishedFor = ""
+    detail = target
+    play(0)
+}
+
+internal fun PhonePlayerActivity.activateNextSeasonPool(target: Detail): Boolean {
+    val current = detail ?: return false
+    if (index != current.episodes.lastIndex) return false
+    if (nextSeasonState.nextSeasonDetailFor != target.series.id) return false
+    val key = current.episodes.size
+    val slot = playerAdjacentState.slots[key] ?: return false
+    if (slot.detail?.series?.id != target.series.id || slot.episodeIndex != 0) return false
+    if (slot.preparedAt <= 0L ||
+        android.os.SystemClock.elapsedRealtime() - slot.preparedAt >
+        com.hgtv.star.core.PlaybackCache.URL_FRESH_MS
+    ) {
+        releaseAdjacentSlot(key)
+        return false
+    }
+    val oldPlayer = player ?: return false
+    val oldRemote = remote
+    val previousPosition = runCatching { oldPlayer.currentPosition }.getOrDefault(0L)
+    val previousDuration = listenerLastDuration.coerceAtLeast(
+        runCatching { oldPlayer.duration }.getOrDefault(0L)
+    )
+
+    playerAdjacentState.slots.remove(key)
+    playerListener?.let(oldPlayer::removeListener)
+    playerListener = null
+    runCatching {
+        oldPlayer.volume = 0f
+        oldPlayer.playWhenReady = false
+        oldPlayer.pause()
+    }
+    PhoneServices.enableAudioFocus(oldPlayer, false)
+    playerAdjacentState.slots.keys.toList().forEach(::releaseAdjacentSlot)
+    if (PhoneServices.peekPlayer() === oldPlayer) PhoneServices.deactivate(oldPlayer)
+    runCatching { oldPlayer.release() }
+
+    slot.listener?.let(slot.player::removeListener)
+    slot.listener = null
+    slot.preRendering = false
+    slot.previewPlaying = false
+    slot.preRenderToken++
+    player = slot.player
+    remote = slot.remote
+    queuedVideo = slot.remote
+    PhoneServices.activate(slot.player)
+    slot.player.setPlaybackSpeed(sessionUserSpeed)
+    slot.player.volume = 1f
+    PhoneServices.enableAudioFocus(slot.player, true)
+    slot.player.playWhenReady = true
+
+    detail = target
+    if (playerEpisodePagerInitialized) playerEpisodePagerAdapter.notifyDataSetChanged()
+    if (playerLandscapePagerInitialized) playerLandscapePagerAdapter.notifyDataSetChanged()
+    selectPlayerPagerEpisode(0)
+    attachCurrentPlayerOutput()
+    finishAdvanced(
+        nextData = target,
+        nextIndex = 0,
+        previousData = current,
+        previousPosition = previousPosition,
+        previousDuration = previousDuration,
+        completedPrevious = true,
+        clearDanmakuOnSwitch = true,
+        closePreviousRemote = true,
+    )
+    attachPlayerListener(slot.player)
+    root.post {
+        if (player === slot.player && index == 0) attachCurrentPlayerOutput()
+    }
+    nextSeasonState.nextSeasonDetail = null
+    nextSeasonState.nextSeasonDetailFor = ""
+    nextSeasonState.nextSeasonPoolLoading = false
+    nextSeasonState.nextSeasonPoolFor = ""
+    nextSeasonState.nextSeasonFor = ""
+    nextSeasonState.nextSeason = null
+    nextSeasonState.nextSeasonLoading = false
+    nextSeasonState.nextSeasonOpening = false
+    nextSeasonState.autoNextSeasonPending = false
+    nextSeasonState.nextSeasonFinishedFor = ""
+    hideNextSeasonNotice()
+    android.util.Log.i(
+        "HGTV-PHONE",
+        "next season activated from pool series=${target.series.id}",
+    )
+    return true
 }
 
 internal fun PhonePlayerActivity.finishSeriesPlayback(series: Series) {

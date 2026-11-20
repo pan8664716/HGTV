@@ -146,11 +146,23 @@ internal fun PhoneFeedView.adoptPooledPlayerSlot(
 internal fun PhoneFeedView.releasePooledPlayerSlot(index: Int) {
     val slot = feedPooledPlayers.remove(index) ?: return
     val wasActive = feedPlayer === slot.player
+    val ownedByPlayerPage = PhoneSession.owner == PhoneSession.Owner.PLAYER &&
+        slot.player === PhoneServices.peekPlayer()
     detachFeedListener(slot.player)
     feedPageAt(index)?.let { page ->
         if (page.playerView.player === slot.player) page.playerView.detachPooledOutput()
     }
     if (feedPlayer === slot.player) feedPlayerSlot = null
+    if (ownedByPlayerPage) {
+        if (com.hgtv.star.shared.BuildConfig.DEBUG) {
+            android.util.Log.i(
+                "HGTV-PHONE",
+                "player pool detach index=$index active=$wasActive size=${feedPooledPlayers.size} " +
+                    "owner=player",
+            )
+        }
+        return
+    }
     PhoneServices.deactivate(slot.player)
     runCatching { slot.player.pause() }
     runCatching { slot.player.release() }
@@ -171,10 +183,12 @@ internal fun PhoneFeedView.releaseAllPooledPlayers(resetSession: Boolean = false
     feedPoolIdleRelease?.let { feedRemoveCallbacks(it) }
     feedPoolIdleRelease = null
     val sessionRemote = PhoneSession.remote
+    val playerPageOwnsSession = PhoneSession.owner == PhoneSession.Owner.PLAYER &&
+        PhoneServices.peekPlayer() != null
     feedPooledPlayers.keys.toList().forEach(::releasePooledPlayerSlot)
     feedPlayerSlot = null
     feedRemoteSlot = null
-    if (resetSession) {
+    if (resetSession && !playerPageOwnsSession) {
         PhoneSession.reset()
         if (sessionRemote != null) {
             closeRemoteLater(sessionRemote)
