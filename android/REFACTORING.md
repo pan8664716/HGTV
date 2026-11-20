@@ -9,7 +9,7 @@
 
 ## 1.3.8.7 发布准备
 
-状态：debug / release 构建与签名校验通过，待发布 GitHub Release。
+状态：GitHub Release 已发布，待用户真机验证。
 
 - 源码默认版本更新为 `versionName=1.3.8.7`、`versionCode=91`。
 - CHANGELOG 已按手机、TV 分节；README 已更新版本号、versionCode 与 APK 文件名。
@@ -20,8 +20,11 @@
   `zipalign` 校验通过。
 - APK：`outputs/release-1.3.8.7/HGTV_1.3.8.7.apk`，大小 `4066678` 字节；
   SHA-256 为 `f9dbba88e7f1517c193bb41e9f0e42a5723ca50ccd4cfa495b36dc65b3e0f66b`。
-- 发布 tag 将指向独立空树提交，不包含项目源码。
+- 发布 tag `1.3.8.7` 指向独立空树提交
+  `fe1b1e51835d6c67a5a00954a84e0c0a7f974061`，不包含项目源码。
 - Release 只允许上传 `HGTV_1.3.8.7.apk`、`SHA256SUMS`、`update.json`。
+- 线上三个附件下载复验通过；Release：
+  <https://github.com/pan8664716/HGTV/releases/tag/1.3.8.7>。
 
 回滚：删除对应 Release / tag 后，对文档发布提交执行 `git revert`。
 
