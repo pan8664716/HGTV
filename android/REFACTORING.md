@@ -7,6 +7,24 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 2026-11-20：自动下一季改用系列剧接口
+
+状态：已实现，`:app:assembleDebug` 通过，待用户真机验证。
+
+- 对照 74332 HAR：详情页「相关作品」使用
+  `/reading/bookapi/plan/v:version/?from=detail_page_more_related`，结果会混入同 IP
+  的其他剧；自动连播应使用同一路径的
+  `from=single_col_same_ip_series&book_id={当前剧 ID}&filter_ids={当前剧 ID}`。
+- 「系列剧」响应仍是 `show_type=547`，但 `cell_name="系列剧"`，`video_data[]`
+  包含同一部剧的当前季、后续季和未上架季。`season_index` 与 `episode_cnt`
+  继续用于排序和过滤，未上架季不会成为自动起播目标。
+- 新增 `ContentRepository.seriesSeasons(id)` 专用取数入口；TV 与 Phone 的自动下一季
+  都改走它。详情页「相关剧集」继续走原 `related()`，两类数据不再混用。
+- 空响应继续按原策略换线重试。未改版本号、versionCode、依赖或目录结构；
+  只编译 Android debug，未运行单元测试或真机测试；未推送、未创建 tag 或 Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-20：片尾下一季识别与相关剧集兜底
 
 状态：已实现，`:app:assembleDebug` 通过，待用户真机验证。

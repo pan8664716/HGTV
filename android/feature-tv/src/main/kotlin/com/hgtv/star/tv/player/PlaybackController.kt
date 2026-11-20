@@ -614,24 +614,17 @@ private fun TvMainActivity.ensureNextSeason(series: Series) {
         if(!nextSeasonLoading) showNextSeasonNotice()
         return
     }
-    val cached=relatedWorks?.takeIf { relatedFor==series.id && !relatedFailed }
     val token=nextSeasonToken.incrementAndGet()
     nextSeasonJob?.cancel(true)
     nextSeasonFor=series.id; nextSeason=null; nextSeasonLoading=true; nextSeasonOpening=false
     hideNextSeasonNotice()
-    if(cached!=null) {
-        completeNextSeasonLookup(series,cached,token)
-        return
-    }
     nextSeasonJob=io.submit {
-        val result=runCatching { repository.related(series.id,series.title) }
+        val result=runCatching { repository.seriesSeasons(series.id) }
         main.post {
             if(isDestroyed || nextSeasonToken.get()!=token) return@post
-            result.onSuccess { works ->
-                relatedWorks=works; relatedFor=series.id; relatedFailed=false
-                completeNextSeasonLookup(series,works,token)
+            result.onSuccess { seasons ->
+                completeNextSeasonLookup(series,seasons,token)
             }.onFailure {
-                relatedFailed=true
                 completeNextSeasonLookup(series,null,token)
             }
         }
@@ -640,13 +633,13 @@ private fun TvMainActivity.ensureNextSeason(series: Series) {
 
 private fun TvMainActivity.completeNextSeasonLookup(
     series: Series,
-    works: RelatedWorks?,
+    seasons: List<Series>?,
     token: Long,
 ) {
     if(token!=nextSeasonToken.get()) return
     nextSeasonJob=null
     nextSeasonLoading=false
-    nextSeason=works?.let { SeriesSeasons.nextSeason(series,it) }
+    nextSeason=seasons?.let { SeriesSeasons.nextSeason(series,it) }
     val target=nextSeason
     if(target!=null) {
         showNextSeasonNotice()

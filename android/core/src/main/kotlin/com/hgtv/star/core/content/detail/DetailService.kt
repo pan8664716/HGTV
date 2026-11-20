@@ -75,6 +75,20 @@ import java.util.concurrent.TimeUnit
     }
 
     /**
+     * 自动连播用的同系列各季。
+     *
+     * 与详情页「相关作品」分开请求：抓包里的 `single_col_same_ip_series` 返回
+     * `cell_name="系列剧"`，只包含同一部剧的各季，不再把同 IP 的其他剧混进来。
+     */
+    internal fun ContentRepository.seriesSeasonsImpl(id: String): List<Series> {
+        require(id.matches(Regex("[0-9]{1,30}")))
+        val rows=runCatching { sameSeriesRows(id) }.getOrNull().orEmpty()
+        return rows.map { it.series }
+            .distinctBy { it.id }
+            .sortedWith(compareBy({ SeriesSeasons.season(it) },{ it.title }))
+    }
+
+    /**
      * 作者作品：把同一作者名下的作品凑成一栏（详情页的「作者作品」用它）。
      *
      * ## 为什么是按作者名搜索，而不是一条「作者」接口

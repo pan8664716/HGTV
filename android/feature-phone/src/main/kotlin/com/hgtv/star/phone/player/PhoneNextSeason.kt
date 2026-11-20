@@ -4,11 +4,10 @@ package com.hgtv.star.phone
 import android.view.View
 import android.widget.TextView
 import com.hgtv.star.core.Detail
-import com.hgtv.star.core.RelatedWorks
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.SeriesSeasons
 import com.hgtv.star.core.detail
-import com.hgtv.star.core.related
+import com.hgtv.star.core.seriesSeasons
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -84,33 +83,27 @@ internal fun PhonePlayerActivity.ensureNextSeason(series: Series) {
     nextSeasonState.nextSeasonLoading = true
     nextSeasonState.nextSeasonOpening = false
     hideNextSeasonNotice()
-    val cached = PhoneSession.relatedWorks(series.id)
-    if (cached != null) {
-        completeNextSeasonLookup(series, cached, token)
-        return
-    }
     val activity=this
     nextSeasonState.nextSeasonJob = scope.launch {
-        val works = withContext(Dispatchers.IO) {
+        val seasons = withContext(Dispatchers.IO) {
             runCatching {
-                PhoneServices.repository(activity).related(series.id, series.title)
+                PhoneServices.repository(activity).seriesSeasons(series.id)
             }.getOrNull()
         }
         if (token != nextSeasonState.nextSeasonToken || isFinishing || isDestroyed) return@launch
-        if (works != null) PhoneSession.rememberRelated(series.id, works)
-        completeNextSeasonLookup(series, works, token)
+        completeNextSeasonLookup(series, seasons, token)
     }
 }
 
 internal fun PhonePlayerActivity.completeNextSeasonLookup(
     series: Series,
-    works: RelatedWorks?,
+    seasons: List<Series>?,
     token: Int,
 ) {
     if (token != nextSeasonState.nextSeasonToken || isFinishing || isDestroyed) return
     nextSeasonState.nextSeasonJob = null
     nextSeasonState.nextSeasonLoading = false
-    nextSeasonState.nextSeason = works?.let { SeriesSeasons.nextSeason(series, it) }
+    nextSeasonState.nextSeason = seasons?.let { SeriesSeasons.nextSeason(series, it) }
     if (nextSeasonState.nextSeason != null) showNextSeasonNotice() else hideNextSeasonNotice()
     if (nextSeasonState.autoNextSeasonPending) {
         nextSeasonState.autoNextSeasonPending = false

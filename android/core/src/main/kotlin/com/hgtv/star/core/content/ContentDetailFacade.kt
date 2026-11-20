@@ -35,6 +35,9 @@ fun ContentRepository.detail(
 fun ContentRepository.related(id: String, title: String = ""): RelatedWorks =
     relatedImpl(id,title)
 
+fun ContentRepository.seriesSeasons(id: String): List<Series> =
+    seriesSeasonsImpl(id)
+
 /**
  * 后台批量预热推荐详情。
  *

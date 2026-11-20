@@ -150,8 +150,10 @@ class ContentRepository(
     internal val relatedAttempts get()=RELATED_ATTEMPTS
     private val RELATED_CELL_SHOW_TYPE=547
     private val RELATED_CELL_NAME="相关作品"
+    private val SERIES_CELL_NAME="系列剧"
     internal val relatedCellShowType get()=RELATED_CELL_SHOW_TYPE
     internal val relatedCellName get()=RELATED_CELL_NAME
+    internal val seriesCellName get()=SERIES_CELL_NAME
     internal val RELATED_CACHE_LIMIT=AppConfig.Content.RELATED_CACHE_LIMIT
     internal val relatedCache=linkedMapOf<String,RelatedWorks>()
     internal val AUTHOR_WORKS_CACHE_LIMIT=AppConfig.Content.AUTHOR_WORKS_CACHE_LIMIT
