@@ -81,6 +81,7 @@ class PhoneCategoryPage(
     private var panelJob: Job? = null
     private var panelLoadingKey = ""
     private var panelGeneration = 0
+    private val prefetchJobs = linkedMapOf<String, Job>()
 
     private var selection = initialState?.selection ?: CategorySelection()
     private var genreIndex = initialState?.genreIndex ?: 0
@@ -110,7 +111,7 @@ class PhoneCategoryPage(
             selectGenre((genreIndex + direction).coerceIn(CategoryGenres.options.indices))
         }
         swipeHost.previewProvider = ::previewFor
-        swipeHost.previewReleaser = { (it as? PhonePosterFeed)?.release() }
+        swipeHost.previewReleaser = { (it.tag as? PhonePosterFeed)?.release() }
         swipeHost.refreshSwipeSetting()
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(swipeHost, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
@@ -143,6 +144,7 @@ class PhoneCategoryPage(
             feedCache[selection.key()] = restored
             renderFilters()
             feed.restore(restored,loaderFor(selection))
+            prefetchNeighbors()
         } else {
             // 面板已落盘时先画出来，不再等列表接口回来才显示子分类。
             renderFilters()
@@ -173,6 +175,7 @@ class PhoneCategoryPage(
         panel = CategoryPanelCache.load(selection.genre)
         renderFilters()
         showSelectedFeed()
+        prefetchNeighbors()
     }
 
     /**
@@ -202,6 +205,7 @@ class PhoneCategoryPage(
                 renderFilters()
                 feed.loadFirstPage(visible(result.page),loaderFor(snapshot))
                 rememberCurrentFeed()
+                prefetchNeighbors()
             } finally {
                 if (generation == panelGeneration) {
                     panelJob = null
@@ -215,6 +219,7 @@ class PhoneCategoryPage(
         val cached = feedCache[selection.key()]
         if (cached != null) {
             feed.restore(cached,loaderFor(selection))
+            prefetchNeighbors()
             return
         }
         showCachedOrLoad()
@@ -254,24 +259,96 @@ class PhoneCategoryPage(
         val index = genreIndex + direction
         if (index !in CategoryGenres.options.indices) return null
         val previewSelection = selection.newGenre(CategoryGenres.options[index].id)
+        val previewFilters = LinearLayout(context).apply {
+            orientation = VERTICAL
+            setPadding(0, 0, 0, 0)
+        }
         val preview = PhonePosterFeed(context).apply {
             applyColumnsFromSettings()
             gridTopInset = 0
             bottomInset = context.tabBarInset() + context.dp(8)
+            setHeader(previewFilters)
+        }
+        val root = LinearLayout(context).apply {
+            orientation = VERTICAL
+            setBackgroundColor(PhoneStyle.background)
+            tag = preview
+            addView(preview, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
         }
         val loader = loaderFor(previewSelection)
         val cachedFeed = feedCache[previewSelection.key()]
-        if (cachedFeed?.loaded == true) {
-            preview.restore(cachedFeed, loader)
-            return preview
+        val previewPanel = CategoryPanelCache.load(previewSelection.genre)
+        if (previewPanel != null) {
+            renderFilterRows(previewFilters, previewSelection, previewPanel, interactive = false)
+            if (cachedFeed?.loaded == true) {
+                preview.restore(cachedFeed, loader)
+            } else {
+                loadPreviewContent(preview, previewSelection, loader)
+            }
+            return root
         }
+        previewFilters.visibility = View.GONE
+        preview.showLoading()
+        scope.launch {
+            val result = withContext(Dispatchers.IO) {
+                runCatching {
+                    PhoneServices.repository(context).categoryFeed(previewSelection, 1, true)
+                }.getOrNull()
+            } ?: return@launch
+            val visiblePage = visible(result.page)
+            if (feedCache[previewSelection.key()]?.loaded != true) {
+                feedCache[previewSelection.key()] = snapshotOf(visiblePage)
+            }
+            if (root.isAttachedToWindow) {
+                renderFilterRows(previewFilters, previewSelection, result.panel, interactive = false)
+                preview.refreshHeader()
+                preview.loadFirstPage(visiblePage, loader)
+            }
+        }
+        return root
+    }
+
+    private fun loadPreviewContent(
+        preview: PhonePosterFeed,
+        previewSelection: CategorySelection,
+        loader: suspend (Int) -> CatalogPage?,
+    ) {
         val cachedPage = CatalogPageCache.load(previewSelection)
         if (cachedPage != null) {
             preview.restore(snapshotOf(visible(cachedPage)), loader)
         } else {
             preview.load { page, _ -> loader(page) }
         }
-        return preview
+    }
+
+    private fun prefetchNeighbors() {
+        ensureScope()
+        listOf(genreIndex - 1, genreIndex + 1).forEach { index ->
+            if (index !in CategoryGenres.options.indices) return@forEach
+            val target = selection.newGenre(CategoryGenres.options[index].id)
+            val key = target.key()
+            if (feedCache[key]?.loaded == true && CategoryPanelCache.load(target.genre) != null) {
+                return@forEach
+            }
+            if (prefetchJobs[key]?.isActive == true) return@forEach
+            prefetchJobs[key] = scope.launch {
+                try {
+                    val result = withContext(Dispatchers.IO) {
+                        runCatching {
+                            PhoneServices.repository(context).categoryFeed(target, 1, true)
+                        }.getOrNull()
+                    } ?: return@launch
+                    if (feedCache[key]?.loaded != true) {
+                        feedCache[key] = snapshotOf(visible(result.page))
+                    }
+                    while (feedCache.size > 16) {
+                        feedCache.remove(feedCache.keys.firstOrNull() ?: break)
+                    }
+                } finally {
+                    prefetchJobs.remove(key)
+                }
+            }
+        }
     }
 
     private fun rememberCurrentFeed() {
@@ -293,16 +370,26 @@ class PhoneCategoryPage(
     // ---------------------------------------------------------------- 筛选行
 
     private fun renderFilters() {
-        filterBox.removeAllViews()
-        val rows = panel?.visibleRows().orEmpty()
+        renderFilterRows(filterBox, selection, panel, interactive = true)
+        feed.refreshHeader()
+    }
+
+    private fun renderFilterRows(
+        container: LinearLayout,
+        selected: CategorySelection,
+        source: CategoryPanel?,
+        interactive: Boolean,
+    ) {
+        container.removeAllViews()
+        val rows = source?.visibleRows().orEmpty()
         if (rows.isEmpty()) {
-            filterBox.visibility = View.GONE
-            feed.refreshHeader()
+            container.visibility = View.GONE
             return
         }
-        filterBox.visibility = View.VISIBLE
-        rows.forEach { row -> filterBox.addView(buildRow(row)) }
-        feed.refreshHeader()
+        container.visibility = View.VISIBLE
+        rows.forEach { row ->
+            container.addView(buildRow(row, selected, interactive))
+        }
     }
 
     /**
@@ -310,7 +397,11 @@ class PhoneCategoryPage(
      *
      * 与 TV 的排版同构：标签只说明这一栏管什么、不参与选择；chips 的第一个是「全部」。
      */
-    private fun buildRow(row: CategoryFilterRow): View {
+    private fun buildRow(
+        row: CategoryFilterRow,
+        selected: CategorySelection,
+        interactive: Boolean,
+    ): View {
         val line = LinearLayout(context).apply {
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -329,7 +420,7 @@ class PhoneCategoryPage(
             orientation = HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
         }
-        val selectedId = selection.valueOf(row.type)
+        val selectedId = selected.valueOf(row.type)
         // 「全部」排第一：语义是「不传这个维度」，接口返回的 options 里通常没有它。
         val options = listOf<Pair<String?, String>>(null to "全部") +
             row.options.map { it.id to it.label }
@@ -344,11 +435,13 @@ class PhoneCategoryPage(
                     roundedBackground(PhoneStyle.surfaceHigh, PhoneStyle.RADIUS_PILL)
                 } else null
                 setPadding(context.dp(6), 0, context.dp(6), 0)
-                setOnClickListener {
-                    rememberCurrentFeed()
-                    selection = selection.with(row.type, id)
-                    renderFilters()
-                    showSelectedFeed()
+                if (interactive) {
+                    setOnClickListener {
+                        rememberCurrentFeed()
+                        selection = selection.with(row.type, id)
+                        renderFilters()
+                        showSelectedFeed()
+                    }
                 }
             }, LayoutParams(LayoutParams.WRAP_CONTENT, LayoutParams.WRAP_CONTENT).apply {
                 rightMargin = context.dp(1)
@@ -390,6 +483,8 @@ class PhoneCategoryPage(
         panelGeneration++
         panelJob = null
         panelLoadingKey = ""
+        prefetchJobs.values.forEach { it.cancel() }
+        prefetchJobs.clear()
         scope.cancel()
     }
 }
