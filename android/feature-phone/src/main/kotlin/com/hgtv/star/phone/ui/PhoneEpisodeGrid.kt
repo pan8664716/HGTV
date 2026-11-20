@@ -7,9 +7,11 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.HorizontalScrollView
+import android.widget.FrameLayout
 import android.widget.ScrollView
 import android.widget.LinearLayout
 import android.widget.TextView
+import com.hgtv.star.core.EpisodePaging
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.shared.ui.SoftStyle
 import com.hgtv.star.shared.feature.catalog.EpisodeGridState
@@ -105,6 +107,17 @@ class PhoneEpisodeGrid(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ))
     }
+    /** 翻页动画期间铺在目标方向上的下一页 / 上一页。 */
+    private val previewGrid = LinearLayout(context).apply { orientation = VERTICAL }
+    private val previewScroll = ScrollView(context).apply {
+        isVerticalScrollBarEnabled = false
+        overScrollMode = View.OVER_SCROLL_NEVER
+        visibility = View.GONE
+        addView(previewGrid, ViewGroup.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+    }
+    private val gridArea = FrameLayout(context)
     private val range = TextView(context).apply {
         setTextColor(PhoneStyle.textDim)
         phoneSize(if (tvStyle) 14 else if (compact) 11 else 12)
@@ -190,7 +203,13 @@ class PhoneEpisodeGrid(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = context.dp(if(tvStyle) 3 else 6) })
 
-        addView(gridScroll, LayoutParams(
+        gridArea.addView(gridScroll, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        gridArea.addView(previewScroll, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+        ))
+        addView(gridArea, LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
         ).apply { topMargin = context.dp(if(tvStyle) 4 else 8) })
 
@@ -211,6 +230,9 @@ class PhoneEpisodeGrid(
     private var animating = false
     /** 滑出动画期间已经确定、但还没渲染的目标页。连续操作时先提交它，再计算下一页。 */
     private var pendingPage = -1
+    /** 当前预览层对应的目标页；-1 表示没有预览。 */
+    private var previewPage = -1
+    private var previewDirection = 0
 
     /** 一页的宽度：跟手位移与滑出距离都以它为基准。 */
     private fun pageWidth(): Float =
@@ -228,11 +250,19 @@ class PhoneEpisodeGrid(
         if (gridScroll.layerType != View.LAYER_TYPE_HARDWARE) {
             gridScroll.setLayerType(View.LAYER_TYPE_HARDWARE, null)
         }
+        if (previewScroll.visibility == View.VISIBLE &&
+            previewScroll.layerType != View.LAYER_TYPE_HARDWARE
+        ) {
+            previewScroll.setLayerType(View.LAYER_TYPE_HARDWARE, null)
+        }
     }
 
     private fun endDragLayer() {
         if (gridScroll.layerType != View.LAYER_TYPE_NONE) {
             gridScroll.setLayerType(View.LAYER_TYPE_NONE, null)
+        }
+        if (previewScroll.layerType != View.LAYER_TYPE_NONE) {
+            previewScroll.setLayerType(View.LAYER_TYPE_NONE, null)
         }
     }
 
@@ -248,18 +278,7 @@ class PhoneEpisodeGrid(
             android.view.MotionEvent.ACTION_DOWN -> {
                 // 上一段翻页动画还没走完就再按下来：立刻收掉它，让新手势接管。
                 // 否则用户连着滑两下，第二下会被动画挡掉，读起来就是「卡了一下」。
-                if (animating) {
-                    gridScroll.animate().cancel()
-                    if (pendingPage >= 0) {
-                        page = pendingPage
-                        pendingPage = -1
-                        render()
-                        gridScroll.scrollTo(0, 0)
-                    }
-                    gridScroll.translationX = 0f
-                    animating = false
-                    endDragLayer()
-                }
+                if (animating) cancelRunningAnimation()
                 downX = ev.x
                 downY = ev.y
                 downAt = ev.eventTime
@@ -282,6 +301,21 @@ class PhoneEpisodeGrid(
             }
         }
         return interceptingSwipe || super.onInterceptTouchEvent(ev)
+    }
+
+    private fun cancelRunningAnimation() {
+        gridScroll.animate().cancel()
+        previewScroll.animate().cancel()
+        if (pendingPage >= 0) {
+            page = pendingPage
+            pendingPage = -1
+            render()
+        }
+        gridScroll.scrollTo(0, 0)
+        gridScroll.translationX = 0f
+        removePreview()
+        animating = false
+        endDragLayer()
     }
 
     override fun onTouchEvent(ev: android.view.MotionEvent): Boolean {
@@ -314,10 +348,46 @@ class PhoneEpisodeGrid(
     /** 手指拖动时只有网格那一块跟手；到页边界后不再位移，与推荐页关闭 overScroll 的行为一致。 */
     private fun applyDrag(dx: Float) {
         val w = pageWidth()
-        val hasNext = paging.canMove(1)
-        val hasPrev = paging.canMove(-1)
-        val blocked = (dx < 0 && !hasNext) || (dx > 0 && !hasPrev)
-        gridScroll.translationX = if (blocked) 0f else dx.coerceIn(-w, w)
+        val direction = if (dx < 0f) 1 else -1
+        val movable = paging.canMove(direction)
+        if (movable) showPreview(direction) else removePreview()
+        gridScroll.translationX = if (movable) dx.coerceIn(-w, w) else 0f
+        previewScroll.translationX = if (movable) direction * w + dx else direction * w
+    }
+
+    /** 把目标页铺到预览层；连续拖动同一方向时复用，不重复构建 100 个格子。 */
+    private fun showPreview(direction: Int, target: Int = page + direction) {
+        if (target !in 0 until pageCount() || previewPage == target &&
+            previewScroll.visibility == View.VISIBLE
+        ) return
+        previewPage = target
+        previewDirection = direction
+        val height = fillGrid(previewGrid, target, interactive = false)
+        updateScrollHeight(previewScroll, height)
+        previewScroll.scrollTo(0, 0)
+        previewScroll.translationX = direction * pageWidth()
+        previewScroll.visibility = View.VISIBLE
+        gridArea.bringChildToFront(previewScroll)
+        beginDragLayer()
+    }
+
+    private fun commitPreview(target: Int) {
+        page = target
+        pendingPage = -1
+        render()
+        gridScroll.scrollTo(0, 0)
+        gridScroll.translationX = 0f
+        removePreview()
+        animating = false
+        endDragLayer()
+    }
+
+    private fun removePreview() {
+        previewScroll.animate().cancel()
+        previewScroll.visibility = View.GONE
+        previewScroll.translationX = 0f
+        previewPage = -1
+        previewDirection = 0
     }
 
     /**
@@ -344,21 +414,31 @@ class PhoneEpisodeGrid(
                 distancePx = kotlin.math.abs(target - gridScroll.translationX),
                 viewportPx = w.toInt(),
             )
-            gridScroll.animate().translationX(target).setDuration(duration)
-                .setInterpolator(PhonePagerMotion.interpolator).withEndAction {
-                page = nextPage
-                pendingPage = -1
-                render()
-                gridScroll.scrollTo(0, 0)
-                gridScroll.translationX = dir * w
-                val enterDuration = PhonePagerMotion.duration(w, w.toInt())
-                gridScroll.animate().translationX(0f).setDuration(enterDuration)
-                    .setInterpolator(PhonePagerMotion.interpolator)
-                    .withEndAction {
-                        animating = false
-                        endDragLayer()
+            showPreview(dir)
+            if (previewPage == nextPage) {
+                gridScroll.animate().translationX(target).setDuration(duration)
+                    .setInterpolator(PhonePagerMotion.interpolator).start()
+                previewScroll.animate().translationX(0f).setDuration(duration)
+                    .setInterpolator(PhonePagerMotion.interpolator).withEndAction {
+                        commitPreview(nextPage)
                     }.start()
-            }.start()
+            } else {
+                gridScroll.animate().translationX(target).setDuration(duration)
+                    .setInterpolator(PhonePagerMotion.interpolator).withEndAction {
+                        page = nextPage
+                        pendingPage = -1
+                        render()
+                        gridScroll.scrollTo(0, 0)
+                        gridScroll.translationX = dir * w
+                        val enterDuration = PhonePagerMotion.duration(w, w.toInt())
+                        gridScroll.animate().translationX(0f).setDuration(enterDuration)
+                            .setInterpolator(PhonePagerMotion.interpolator)
+                            .withEndAction {
+                                animating = false
+                                endDragLayer()
+                            }.start()
+                    }.start()
+            }
         } else {
             animateBack()
         }
@@ -373,11 +453,21 @@ class PhoneEpisodeGrid(
             viewportPx = pageWidth().toInt(),
         )
         gridScroll.animate().translationX(0f).setDuration(duration)
-            .setInterpolator(PhonePagerMotion.interpolator)
-            .withEndAction {
+            .setInterpolator(PhonePagerMotion.interpolator).start()
+        if (previewPage >= 0) {
+            previewScroll.animate().translationX(previewDirection * pageWidth())
+                .setDuration(duration).setInterpolator(PhonePagerMotion.interpolator)
+                .withEndAction {
+                    removePreview()
+                    animating = false
+                    endDragLayer()
+                }.start()
+        } else {
+            gridScroll.animate().withEndAction {
                 animating = false
                 endDragLayer()
             }.start()
+        }
     }
 
     /** 页数与区间文案走 `:core`（`EpisodePaging`，电视端同一份）：两端读起来必须逐字相同。 */
@@ -439,48 +529,8 @@ class PhoneEpisodeGrid(
 
         // 网格：按本页**实际**集数铺行，缺的位置用空格子补满，半行里的格子不会被拉宽。
         // 区间同样来自 `:core`：页码 → 集号只有一个算法。
-        val cellRange = paging.range
-        val start = cellRange.first
-        val end = if (cellRange.isEmpty()) 0 else cellRange.last + 1
-        grid.removeAllViews()
         rowLines.clear()
-        // 格子高度按 50% 字阶定：12 号字落成 18px，28dp 的格子上下各留 6dp，
-        // 仍是一根能点准的按钮（38dp 的旧值在缩字之后会变成四个字悬在一大块空白里）。
-        val lines = ((end - start + columns - 1) / columns).coerceAtLeast(1)
-        val cellH = if(tvStyle) tvCellHeight(lines) else
-            dp(if (columns >= 10) 24 else if (compact) 26 else 28)
-        // 10 列时把格距再收一档，横屏简介页和播放浮层都能完整铺开。
-        val gap = dp(if (columns >= 10) 2 else if (compact) 3 else 4)
-        val rowGap = if(tvStyle) dp(4) else gap
-        for (r in 0 until lines) {
-            val line = LinearLayout(context).apply { orientation = HORIZONTAL }
-            for (c in 0 until columns) {
-                val i = start + r * columns + c
-                if (i < end) {
-                    line.addView(cell(i), LayoutParams(0, cellH, 1f).apply {
-                        if (c < columns - 1) rightMargin = gap
-                    })
-                } else {
-                    line.addView(View(context), LayoutParams(0, cellH, 1f).apply {
-                        if (c < columns - 1) rightMargin = gap
-                    })
-                }
-            }
-            grid.addView(line, LayoutParams(
-                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-            ).apply { if (r > 0) topMargin = rowGap })
-            rowLines += line
-        }
-
-        // 网格高度：内容多高就多高，但不超过上限——超出的部分交给内部滚动，
-        // 而不是把整个浮层顶出屏幕（一页 100 集 = 20 行，必然超出）。
-        val natural = lines * cellH + (lines - 1) * rowGap
-        val lp = gridScroll.layoutParams as? LayoutParams
-        val want = natural.coerceAtMost(maxGridHeight.coerceAtLeast(cellH))
-        if (lp != null && lp.height != want) {
-            lp.height = want
-            gridScroll.layoutParams = lp
-        }
+        updateScrollHeight(gridScroll, fillGrid(grid, page, interactive = true))
         if(tvStyle) gridScroll.post { fitTvCellHeights() }
 
         // 当前页那一枚芯片滚进可视区（翻页时焦点不一定在芯片上）。
@@ -497,8 +547,60 @@ class PhoneEpisodeGrid(
         }
     }
 
+    /**
+     * 把指定页铺进网格容器，返回网格外壳应有的高度。
+     *
+     * 主网格和翻页预览共用这一份布局，保证翻页中途看到的下一页与松手后完全一致。
+     */
+    private fun fillGrid(
+        target: LinearLayout,
+        targetPage: Int,
+        interactive: Boolean,
+    ): Int {
+        target.removeAllViews()
+        val cellRange = EpisodePaging.range(count, perPage, targetPage)
+        val start = cellRange.first
+        val end = if (cellRange.isEmpty()) 0 else cellRange.last + 1
+        // 格子高度按 50% 字阶定：12 号字落成 18px，28dp 的格子上下各留 6dp，
+        // 仍是一根能点准的按钮（38dp 的旧值在缩字之后会变成四个字悬在一大块空白里）。
+        val lines = ((end - start + columns - 1) / columns).coerceAtLeast(1)
+        val cellH = if(tvStyle) tvCellHeight(lines) else
+            dp(if (columns >= 10) 24 else if (compact) 26 else 28)
+        // 10 列时把格距再收一档，横屏简介页和播放浮层都能完整铺开。
+        val gap = dp(if (columns >= 10) 2 else if (compact) 3 else 4)
+        val rowGap = if(tvStyle) dp(4) else gap
+        for (r in 0 until lines) {
+            val line = LinearLayout(context).apply { orientation = HORIZONTAL }
+            for (c in 0 until columns) {
+                val i = start + r * columns + c
+                if (i < end) {
+                    line.addView(cell(i, interactive), LayoutParams(0, cellH, 1f).apply {
+                        if (c < columns - 1) rightMargin = gap
+                    })
+                } else {
+                    line.addView(View(context), LayoutParams(0, cellH, 1f).apply {
+                        if (c < columns - 1) rightMargin = gap
+                    })
+                }
+            }
+            target.addView(line, LayoutParams(
+                ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { if (r > 0) topMargin = rowGap })
+            if (target === grid) rowLines += line
+        }
+        val natural = lines * cellH + (lines - 1) * rowGap
+        return natural.coerceAtMost(maxGridHeight.coerceAtLeast(cellH))
+    }
+
+    private fun updateScrollHeight(scroll: ScrollView, height: Int) {
+        val lp = scroll.layoutParams as? FrameLayout.LayoutParams ?: return
+        if (lp.height == height) return
+        lp.height = height
+        scroll.layoutParams = lp
+    }
+
     /** 一个集数格：当前集高亮，点一下切集。 */
-    private fun cell(i: Int): TextView {
+    private fun cell(i: Int, interactive: Boolean = true): TextView {
         val on = i == current
         return TextView(context).apply {
             text = "${i + 1}"
@@ -526,7 +628,7 @@ class PhoneEpisodeGrid(
                 )
             }
             contentDescription = "第 ${i + 1} 集" + if (on) "，当前播放" else ""
-            setOnClickListener { onPick(i) }
+            if (interactive) setOnClickListener { onPick(i) }
         }
     }
 
@@ -557,7 +659,7 @@ class PhoneEpisodeGrid(
             }
         }
         val natural=rowLines.size*height+(rowLines.size-1)*dp(4)
-        val params=gridScroll.layoutParams as? LayoutParams ?: return
+        val params=gridScroll.layoutParams as? FrameLayout.LayoutParams ?: return
         val want=natural.coerceAtMost(maxGridHeight.coerceAtLeast(height))
         if(params.height!=want) {
             params.height=want
@@ -568,41 +670,41 @@ class PhoneEpisodeGrid(
     /**
      * 翻到第 [target] 页（点分页芯片）。
      *
-     * 点芯片不再瞬间换内容：新页从翻页方向滑进来（下一页从右侧进、上一页从左侧进），
-     * 与手势翻页同一套观感，只是省掉「当前页滑出」那一段——点芯片本来就知道要去哪。
+     * 点芯片与手势翻页共用双页动画：当前页向翻页方向滑出，目标页从另一侧同步进入。
      */
     private fun jump(target: Int) {
         if (target !in 0 until pageCount() || target == page) return
-        if (animating) {
-            gridScroll.animate().cancel()
-            if (pendingPage >= 0) {
-                page = pendingPage
-                pendingPage = -1
-                render()
-                gridScroll.scrollTo(0, 0)
-            }
-            gridScroll.translationX = 0f
-            animating = false
-            endDragLayer()
-            if (target == page) return
-        }
+        if (animating) cancelRunningAnimation()
+        if (target == page) return
         val dir = if (target > page) 1 else -1
-        page = target
-        render()
-        // 换页之后从这一页的第一行看起：停在上一次的滚动位置会让人以为翻页没生效。
-        gridScroll.scrollTo(0, 0)
-        gridScroll.translationX = dir * pageWidth() * PhonePagerMotion.SNAP_DISTANCE_RATIO
+        showPreview(dir, target)
         animating = true
         beginDragLayer()
-        val duration = PhonePagerMotion.duration(
-            distancePx = kotlin.math.abs(gridScroll.translationX),
-            viewportPx = pageWidth().toInt(),
-        )
-        gridScroll.animate().translationX(0f).setDuration(duration)
-            .setInterpolator(PhonePagerMotion.interpolator)
-            .withEndAction {
-                animating = false
-                endDragLayer()
-            }.start()
+        val w = pageWidth()
+        if (previewPage == target) {
+            gridScroll.translationX = 0f
+            val duration = PhonePagerMotion.duration(w, w.toInt())
+            gridScroll.animate().translationX(-dir * w).setDuration(duration)
+                .setInterpolator(PhonePagerMotion.interpolator).start()
+            previewScroll.animate().translationX(0f).setDuration(duration)
+                .setInterpolator(PhonePagerMotion.interpolator).withEndAction {
+                    commitPreview(target)
+                }.start()
+        } else {
+            page = target
+            render()
+            gridScroll.scrollTo(0, 0)
+            gridScroll.translationX = dir * w * PhonePagerMotion.SNAP_DISTANCE_RATIO
+            val duration = PhonePagerMotion.duration(
+                distancePx = kotlin.math.abs(gridScroll.translationX),
+                viewportPx = w.toInt(),
+            )
+            gridScroll.animate().translationX(0f).setDuration(duration)
+                .setInterpolator(PhonePagerMotion.interpolator)
+                .withEndAction {
+                    animating = false
+                    endDragLayer()
+                }.start()
+        }
     }
 }

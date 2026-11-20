@@ -752,7 +752,7 @@ android/
 | `PhoneChipRow.kt` | 自动换行的芯片容器（搜索历史 / 热门搜索 / 题材标签）。 | class PhoneChipRow |
 | `PhoneDebugOverlay.kt` | 手机端的「调试模式」面板（设置 → 设备与性能 → 调试模式）。 | class PhoneDebugOverlay |
 | `PhoneDialog.kt` | 手机端统一弹窗：与电视端 TvDialog 同一套结构。 | class PhoneDialog |
-| `PhoneEpisodeGrid.kt` | 选集网格（**带分页**，做法照 TV 端的 EpisodeGrid）。 | class PhoneEpisodeGrid |
+| `PhoneEpisodeGrid.kt` | 选集网格（**带分页**）；滑动和点分页芯片时当前页与目标页同步参与翻页动画。 | class PhoneEpisodeGrid |
 | `PhoneGlyph.kt` | 通用矢量图标（自绘），包含播放器锁定 / 解锁图标。 | class PhoneGlyph、val SETTINGS_PATH_DATA |
 | `PhonePagerMotion.kt` | 手机端所有整页翻动的统一运动参数。 | object PhonePagerMotion、class PhonePagerSnapHelper |
 | `PhoneTabSwipe.kt` | 分类 / 榜单 / 我的页的横向切页容器，复用推荐页的半页吸附、快甩阈值与方向锁，并同步铺出邻页预览。 | class PhoneTabSwipeHost、DIRECTION_PREV、DIRECTION_NEXT |
