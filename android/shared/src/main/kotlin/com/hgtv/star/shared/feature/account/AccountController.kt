@@ -153,6 +153,9 @@ class AccountController(
      * 只刷新一页历史。首屏 / 下拉分页使用，不等待收藏、点赞、预约。
      */
     suspend fun refreshHistory(offset: Int, limit: Int): HistoryPageResult {
+        if (!repository.signedIn) {
+            return HistoryPageResult(null, data, com.hgtv.star.core.SignInRequiredException())
+        }
         val page = withContext(Dispatchers.IO) {
             runCatching { repository.accountHistoryPage(offset, limit) }
         }.getOrElse { problem ->
@@ -389,9 +392,13 @@ class AccountController(
         if (missing.isNotEmpty() && repository.signedIn) {
             worker.launch {
                 missing.forEach { series ->
-                    withContext(Dispatchers.IO) {
-                        runCatching { repository.accountAddFavorite(series.id) }
+                    val ok = withContext(Dispatchers.IO) {
+                        runCatching { repository.accountAddFavorite(series.id) }.getOrDefault(false)
                     }
+                    android.util.Log.i(
+                        "HGTV-ACCOUNT",
+                        "favorite sync series=${series.id} ok=$ok",
+                    )
                 }
             }
         }
@@ -401,6 +408,13 @@ class AccountController(
     private fun pushAhead(rows: List<BackupProgress>) {
         if (rows.isEmpty()) return
         worker.launch {
+            if (!repository.signedIn) {
+                android.util.Log.i(
+                    "HGTV-ACCOUNT",
+                    "history sync skipped signedIn=false rows=${rows.size}",
+                )
+                return@launch
+            }
             rows.forEach { progress ->
                 val key = progress.series.id
                 if (pushed[key] == progress.updatedAt) return@forEach
@@ -418,6 +432,11 @@ class AccountController(
                         )
                     }.getOrDefault(false)
                 }
+                android.util.Log.i(
+                    "HGTV-ACCOUNT",
+                    "history sync series=$key episode=${progress.episodeIndex + 1} " +
+                        "position=${progress.position} ok=$ok",
+                )
                 if (!ok && pushed[key] == progress.updatedAt) pushed.remove(key)
             }
         }

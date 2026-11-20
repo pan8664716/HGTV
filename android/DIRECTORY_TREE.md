@@ -509,7 +509,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `AccountApi.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 AccountApi 主要包含 class ContentAccountTransport、object ContentAccountRequests。 | class ContentAccountTransport、object ContentAccountRequests |
-| `AccountService.kt` | 账号资料、历史分页、历史元数据补齐与按栏目并发取数。 | fun ContentRepository.accountHistoryPageImpl、fun ContentRepository.accountDataImpl、fun ContentRepository.accountHistoryImpl |
+| `AccountService.kt` | 账号资料、历史分页、元数据补齐与账号写接口；分页和进度上传要求已登录。 | fun ContentRepository.accountHistoryPageImpl、fun ContentRepository.accountUploadProgressImpl、fun ContentRepository.accountDataImpl |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/catalog/`
 
@@ -1215,7 +1215,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AccountController.kt` | 账号状态与写入入口；支持按栏目刷新、历史分页、历史双向对账和收藏双向补全。 | class AccountController、fun AccountController.refresh、fun AccountController.refreshHistory |
+| `AccountController.kt` | 账号状态与写入入口；历史分页要求登录，本地独有历史 / 收藏在账号绑定后补传并记录结果。 | class AccountController、fun AccountController.refresh、fun AccountController.refreshHistory |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/feature/catalog/`
 

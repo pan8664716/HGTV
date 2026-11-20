@@ -7,6 +7,25 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 2026-11-21：本地历史批量同步身份保护
+
+状态：已实现，`:app:assembleDebug` 通过，待 Phone / TV 真机验证。
+
+- 现场日志：本地历史批量同步发出 11 条 `read_progress/upload/v` 请求（start/response 共 22 行），
+  但当时 `HGTV-PHONE identity signedIn=false`，请求全部标记为 `identity=main`；后续播放过程中
+  的 12 条进度请求（共 24 行）才是 `identity=account`。平台均返回 200 SUCCESS，
+  但前一批不属于账号。
+- 根因：账号历史分页请求和进度上传接口没有检查 `repository.signedIn`。账号绑定尚未完成时，
+  本地历史被匿名主身份接收，账号侧自然看不到。
+- 修复：账号历史分页与进度上传都要求 `signedIn=true`；未登录时只保留本地，不发账号写请求。
+  未登录时 `pushAhead` 直接跳过，不写入去重表，登录绑定后的下一次历史刷新会重新补传。
+- 新增 `HGTV-ACCOUNT history sync skipped/uploaded` 与 `favorite sync` 日志，后续可直接确认
+  同步使用账号身份以及逐条成功状态。
+- 未改版本号、versionCode、依赖或目录结构；只编译 Android debug，未运行单元测试或真机测试；
+  未推送、未创建 tag 或 Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-21：我的历史 / 收藏同步规则统一
 
 状态：已实现，`:app:assembleDebug` 通过，待 Phone / TV 真机验证。

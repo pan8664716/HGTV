@@ -56,6 +56,7 @@ import java.io.IOException
         offset: Int,
         limit: Int,
     ): AccountHistoryPage {
+        if (!signedIn) throw SignInRequiredException()
         val safeOffset = offset.coerceAtLeast(0)
         val safeLimit = limit.coerceIn(1, MULTI_DETAIL_LIMIT)
         val raw = retryBlank {
@@ -273,6 +274,7 @@ import java.io.IOException
      * `progress_rate` 是 0~1 的小数串，平台用它画进度条。
      */
     internal fun ContentRepository.accountUploadProgressImpl(seriesId: String,episodeId: String,episodeIndex: Int,position: Long,duration: Long,episodeCount: Int=0): Boolean {
+        if(!signedIn) return false
         if(!seriesId.matches(Regex("[0-9]{1,30}"))) return false
         if(!episodeId.matches(Regex("[0-9]{1,30}"))) return false
         val body=ContentAccountRequests.uploadProgress(
