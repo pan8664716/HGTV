@@ -266,13 +266,16 @@ enum AppConfig {
         static let gridColumnOptions = [1, 2, 3]
 
         /// 默认界面字号倍率。
-        static let uiScale: Float = 1.6
+        static let uiScale: Float = 1.5
 
         /// 旧版默认字号倍率，只用于一次性迁移。
         static let legacyUiScale: Float = 1.3
 
+        /// 上一版默认字号倍率，只用于迁移到 1.5。
+        static let previousUiScale: Float = 1.6
+
         /// 设置页字号倍率档位。
-        static let uiScaleOptions: [Float] = [1.3, 1.45, 1.6, 1.75, 1.9]
+        static let uiScaleOptions: [Float] = [1.3, 1.45, 1.5, 1.75, 1.9]
 
         /// 偏好修改后的写盘防抖时间。
         static let saveDebounceNanoseconds: UInt64 = 250_000_000

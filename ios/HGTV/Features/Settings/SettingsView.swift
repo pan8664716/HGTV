@@ -308,7 +308,7 @@ struct SettingsView: View {
         switch library.prefs.uiScale {
         case 1.3: return "超小"
         case 1.45: return "较小"
-        case 1.6: return "标准"
+        case 1.5, 1.6: return "标准"
         case 1.75: return "较大"
         case 1.9: return "超大"
         default: return "标准"

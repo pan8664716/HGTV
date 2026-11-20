@@ -158,7 +158,7 @@ fun Context.phoneScale(): Float {
  * 手机端字体与控件大小的统一倍率。
  *
  * 只放大文字会让单行文案挤进原来的按钮，因此 [phoneScale] 把这一档同时乘进
- * 字号、按钮高度、图标、内边距与卡片尺寸。默认 1.2，可选 1.0–2.0 共十一档，
+ * 字号、按钮高度、图标、内边距与卡片尺寸。默认 1.5，可选 1.0–2.0 共十一档，
  * 每 0.1 一档；保留原来的 1.0–1.5，再补 1.6 / 1.7 / 1.8 / 1.9 / 2.0。
  */
 object PhoneUiScale {
@@ -178,13 +178,15 @@ object PhoneUiScale {
     }
 
     val sizes = Size.entries
-    val default = Size.X12.scale
+    val default = Size.X15.scale
 
     private const val PREFS = "phone-display-v1"
     /** 旧版单值键：只用于首次拆分迁移。 */
     private const val KEY_LEGACY = "uiScale"
     private const val KEY_LEGACY_DEFAULT_MIGRATED = "hugeDefaultMigrated"
     private const val LEGACY_DEFAULT = 1.3f
+    private const val KEY_DEFAULT_150_MIGRATED = "defaultScale150Migrated"
+    private const val PREVIOUS_DEFAULT = 1.2f
     private const val KEY_PORTRAIT = "uiScalePortrait"
     private const val KEY_LANDSCAPE = "uiScaleLandscape"
     private const val KEY_ORIENTATION_SPLIT_MIGRATED = "uiScaleOrientationSplitMigrated"
@@ -237,6 +239,18 @@ object PhoneUiScale {
                     .putBoolean(KEY_ORIENTATION_SPLIT_MIGRATED, true)
                     .apply()
             }
+            if(!prefs.getBoolean(KEY_DEFAULT_150_MIGRATED, false)) {
+                val portrait = prefs.getFloat(KEY_PORTRAIT, default)
+                val landscape = prefs.getFloat(KEY_LANDSCAPE, default)
+                val editor = prefs.edit()
+                if(abs(portrait - PREVIOUS_DEFAULT) < .001f) {
+                    editor.putFloat(KEY_PORTRAIT, default)
+                }
+                if(abs(landscape - PREVIOUS_DEFAULT) < .001f) {
+                    editor.putFloat(KEY_LANDSCAPE, default)
+                }
+                editor.putBoolean(KEY_DEFAULT_150_MIGRATED, true).apply()
+            }
             portraitValue=normalize(prefs.getFloat(KEY_PORTRAIT, default))
             landscapeValue=normalize(prefs.getFloat(KEY_LANDSCAPE, default))
             current=if(isLandscape(context)) landscapeValue else portraitValue
@@ -257,7 +271,7 @@ object PhoneUiScale {
         if(isLandscape(context)) landscapeValue=next else portraitValue=next
     }
 
-    /** 恢复默认设置时横竖屏两份一起回到 1.2。 */
+    /** 恢复默认设置时横竖屏两份一起回到 1.5。 */
     fun reset(context: Context) {
         current=default
         portraitValue=default

@@ -98,14 +98,28 @@ final class Library: ObservableObject {
         migrateDefaultsIfNeeded()
     }
 
-    /// 旧版默认倍率是 1.3，升级后只迁移这一个默认值（与 `PhoneUiScale` 同一条规则）。
+    /// 旧版默认倍率 1.3、上一版 1.6 分别一次性迁移到当前默认 1.5。
     private func migrateDefaultsIfNeeded() {
-        let key = "uiScaleDefaultMigrated"
-        if !UserDefaults.standard.bool(forKey: key) {
+        var changed = false
+        let legacyKey = "uiScaleDefaultMigrated"
+        if !UserDefaults.standard.bool(forKey: legacyKey) {
             if abs(prefs.uiScale - AppConfig.LibraryDefaults.legacyUiScale) < 0.001 {
                 prefs.uiScale = AppConfig.LibraryDefaults.uiScale
             }
-            UserDefaults.standard.set(true, forKey: key)
+            UserDefaults.standard.set(true, forKey: legacyKey)
+            changed = true
+        }
+
+        let previousDefaultKey = "uiScale150DefaultMigrated"
+        if !UserDefaults.standard.bool(forKey: previousDefaultKey) {
+            if abs(prefs.uiScale - AppConfig.LibraryDefaults.previousUiScale) < 0.001 {
+                prefs.uiScale = AppConfig.LibraryDefaults.uiScale
+            }
+            UserDefaults.standard.set(true, forKey: previousDefaultKey)
+            changed = true
+        }
+
+        if changed {
             scheduleSave()
         }
     }
