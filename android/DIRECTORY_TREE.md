@@ -641,7 +641,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PhoneCategoryPage.kt` | 分类页：**完全按 TV 端的两层筛选结构**。 | class PhoneCategoryPage |
-| `PhoneMinePage.kt` | 我的页：缓存优先、历史 20 条分页、消费半程继续加载；其他栏目按点击懒加载。 | class PhoneMinePage、fun PhoneMinePage.requestHistoryOnNextShow |
+| `PhoneMinePage.kt` | 我的页：缓存优先、历史 20 条分页、其他栏目点击懒加载；历史首屏并行补取资料，收藏结束加载态后再重绘。 | class PhoneMinePage、fun PhoneMinePage.requestHistoryOnNextShow |
 | `PhoneRankPage.kt` | 榜单页：八个榜单 + 带名次的海报网格，并保存每榜分页游标。 | class PhoneRankPage |
 | `PhoneRecommendPage.kt` | 推荐页：外层横向 ViewPager2 承载四条体裁流，每页内部再用竖向 ViewPager2 承载视频；顶栏高度同步给弹幕层，底部系统 inset 与尺寸变化同步给已创建视频页，重建时恢复当前体裁、当前剧与播放位置。 | class PhoneRecommendPage、class RecommendGenrePager、fun currentGenreKey、fun currentSeriesId、fun currentPositionMs |
 

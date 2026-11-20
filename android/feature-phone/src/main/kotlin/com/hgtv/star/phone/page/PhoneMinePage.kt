@@ -374,7 +374,18 @@ class PhoneMinePage(
             historyLoading = false
         }
         when (currentTab) {
-            "历史" -> loadHistory(reset = true, manual = manual, force = force)
+            "历史" -> {
+                loadHistory(reset = true, manual = manual, force = force)
+                // 历史首屏不等待资料，但头像 / 昵称仍要在后台补齐。
+                // 首次登录没有磁盘快照，因此这里必须主动取一次；有缓存时不重复请求。
+                if (force || PhoneAccountSync.data?.profile == null) {
+                    loadAccount(
+                        force = force,
+                        columns = setOf("资料"),
+                        manual = false,
+                    )
+                }
+            }
             "收藏" -> loadAccount(
                 force = force,
                 columns = setOf("收藏"),
@@ -456,6 +467,7 @@ class PhoneMinePage(
         controller.ensureBoundCredentials()
         accountLoading = true
         accountLoadingColumns = columns
+        android.util.Log.i("HGTV-PHONE", "account refresh start columns=$columns")
         val requestedColumnEmpty = columns.any { column ->
             when (column) {
                 "资料" -> controller.data?.profile == null
@@ -466,7 +478,7 @@ class PhoneMinePage(
                 else -> false
             }
         }
-        if (requestedColumnEmpty) {
+        if (requestedColumnEmpty && columns != setOf("资料")) {
             renderContent()
         }
         val token = ++accountToken
@@ -475,21 +487,31 @@ class PhoneMinePage(
             try {
                 val result = controller.refresh(columns)
                 if (token != accountToken || !isAttachedToWindow) return@launch
+                // 重绘前先结束加载态：收藏为空时若仍带着 true，会一直显示 loading，
+                // 而 finally 清掉标志后没有第二次重绘。
+                accountLoading = false
+                accountLoadingColumns = emptySet()
                 failure = result.error
+                android.util.Log.i(
+                    "HGTV-PHONE",
+                    "account refresh done columns=$columns error=${failure?.message.orEmpty()} " +
+                        "favorites=${controller.data?.favorites?.size ?: -1} " +
+                        "profile=${controller.data?.profile != null}",
+                )
                 if (failure == null) {
                     accountError = null
                     accountRetry = 0
                     accountRetryTask?.let(::removeCallbacks)
                     accountRetryTask = null
-                    render()
+                    if (columns == setOf("资料")) updateTopAccount() else render()
                 } else {
                     accountError = failure
                     com.hgtv.star.shared.debug.DebugLog.record(
                         "账号",
                         "资料读取失败 · ${failure.message.orEmpty().take(140)}",
                     )
-                    render()
-                    if (controller.data == null && accountRetry < ACCOUNT_RETRIES) {
+                    if (columns == setOf("资料")) updateTopAccount() else render()
+                    if (requestedColumnEmpty && accountRetry < ACCOUNT_RETRIES) {
                         accountRetry++
                         accountRetryTask?.let(::removeCallbacks)
                         val task = Runnable {
