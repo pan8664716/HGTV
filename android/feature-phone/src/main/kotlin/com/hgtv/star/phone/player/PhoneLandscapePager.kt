@@ -3,13 +3,11 @@ package com.hgtv.star.phone
 
 import android.content.Context
 import android.graphics.Color
-import android.view.Gravity
 import android.view.MotionEvent
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.TextView
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.google.android.exoplayer2.Player
@@ -19,7 +17,6 @@ import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
 import com.hgtv.star.phone.ui.PhoneTouch
 import com.hgtv.star.phone.ui.dp
-import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.shared.media.DanmakuView
@@ -49,13 +46,6 @@ internal class LandscapePlayerPage(
         }
     }
     val letterbox = PhoneLetterboxMask(host)
-    val title = TextView(host).apply {
-        setTextColor(Color.WHITE)
-        phoneSize(15)
-        setTypeface(typeface, android.graphics.Typeface.BOLD)
-        maxLines = 1
-        ellipsize = android.text.TextUtils.TruncateAt.END
-    }
     private val touch = View(host)
 
     init {
@@ -64,14 +54,6 @@ internal class LandscapePlayerPage(
         addView(cover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(danmaku, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(letterbox, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(title, LayoutParams(
-            LayoutParams.WRAP_CONTENT,
-            LayoutParams.WRAP_CONTENT,
-            Gravity.TOP or Gravity.START,
-        ).apply {
-            topMargin = dp(14)
-            leftMargin = dp(16)
-        })
         touch.setOnTouchListener(
             PhoneTouch(
                 host = touch,
@@ -122,7 +104,6 @@ internal class LandscapePlayerPage(
     }
 
     fun bind(detail: Detail, index: Int) {
-        title.text = "${detail.series.title} 第${index + 1}集"
         video.resizeMode =
             (host.library?.frameMode ?: VideoFrameMode.FIT).toFit().resizeMode()
     }
