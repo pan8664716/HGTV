@@ -187,6 +187,16 @@ fun TvMainActivity.loadAccount(
     columns: Set<String> = AccountSnapshot.KEYS,
 ) {
     if(accountLoading && !force && accountLoadingColumns==columns) return
+    val requestedColumnEmpty = columns.any { column ->
+        when(column) {
+            "资料" -> accountData?.profile==null
+            "收藏" -> accountData?.favorites.isNullOrEmpty()
+            "历史" -> accountData?.history.isNullOrEmpty()
+            "点赞" -> accountData?.likes.isNullOrEmpty()
+            "预约" -> accountData?.reserves.isNullOrEmpty()
+            else -> false
+        }
+    }
     val cache=library.accountCache()
     val now=System.currentTimeMillis()
     // 先铺本地缓存，再继续发网络请求做增量刷新。缓存只负责首屏速度，不能替代网络。
@@ -233,10 +243,16 @@ fun TvMainActivity.loadAccount(
         accountLoading=false
         accountLoadingColumns=emptySet()
         val failure=result.error
+        android.util.Log.i(
+            "HGTV",
+            "Account fetch done columns=$columns error=${failure?.message.orEmpty()} " +
+                "favorites=${accountData?.favorites?.size ?: -1} profile=${accountData?.profile!=null}",
+        )
         if(failure==null) {
             accountError=null
             accountRetry=0
             if(result.changed.isNotEmpty()) refreshAccountViews(result.changed)
+            else refreshCurrentAccountTabIfEmpty()
             if(result.localWrites>0) refreshLocalHistoryViews()
             // 手动刷新给一句结果。`changed` 为空时界面上不会有任何变化（那本来就是对的），
             // 没有这句话用户只会读到「按了刷新没反应」。
@@ -258,13 +274,24 @@ fun TvMainActivity.loadAccount(
             hideCenterLoading()
             showHint(accountFailureText(failure) ?: "账号数据刷新失败，请稍后再试")
         }
-        if(accountData==null && (tab==TAB_PROFILE || collection!=null)) showCatalog()
-        if(accountData==null && accountRetry<ACCOUNT_RETRIES) {
+        if(accountData==null && (tab==TAB_PROFILE || collection!=null)) {
+            showCatalog()
+        } else {
+            refreshCurrentAccountTabIfEmpty()
+        }
+        if(requestedColumnEmpty && accountRetry<ACCOUNT_RETRIES) {
             accountRetry++
             main.postDelayed({
                 if(!isDestroyed && foreground) loadAccount(columns=columns)
             },ACCOUNT_RETRY_MS)
         }
+    }
+}
+
+/** 空列表没有 changed 差异，也必须重画一次，才能把等待态换成空态或错误态。 */
+private fun TvMainActivity.refreshCurrentAccountTabIfEmpty() {
+    if(tab==TAB_PROFILE && screen=="catalog" && accountItems(accountTab).isEmpty()) {
+        refreshAccountListIfVisible()
     }
 }
 
@@ -276,7 +303,12 @@ fun TvMainActivity.loadAccount(
  */
 fun TvMainActivity.loadCurrentAccountTab(force: Boolean=false) {
     when(accountTab) {
-        "history" -> loadAccountHistory(reset=true,force=force)
+        "history" -> {
+            loadAccountHistory(reset=true,force=force)
+            if(force || accountData?.profile==null) {
+                loadAccount(force=force,columns=setOf("资料"))
+            }
+        }
         "favorites" -> loadAccount(force=force,columns=setOf("收藏"))
         "likes" -> loadAccount(force=force,columns=setOf("点赞"))
         "reserves" -> loadAccount(force=force,columns=setOf("预约"))

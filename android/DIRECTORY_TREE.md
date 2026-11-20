@@ -851,7 +851,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AccountActions.kt` | 账号导入、登录落地与按栏目加载；历史首屏 / 继续加载均为 20 条，登录后直接进入历史。 | fun TvMainActivity.loadAccount、fun TvMainActivity.loadCurrentAccountTab、fun TvMainActivity.loadAccountHistory、fun TvMainActivity.loadMoreAccountHistory |
+| `AccountActions.kt` | 账号导入、登录落地与按栏目加载；历史首屏并行补资料，空栏目请求结束后显式重画以退出 loading。 | fun TvMainActivity.loadAccount、fun TvMainActivity.loadCurrentAccountTab、fun TvMainActivity.loadAccountHistory、fun TvMainActivity.refreshCurrentAccountTabIfEmpty |
 | `AccountPanel.kt` | 「我的」页的登录界面：未登录时直接铺在身份行下方，不再有入口按钮，也不再有弹窗。 | val ACCOUNT_PANEL_PHONE、val ACCOUNT_PANEL_QR、val ACCOUNT_LOGIN_MODES、val QR_LOGIN_SIZE、val dialCodes、fun TvMainActivity.showAccountPanel |
 | `AccountSync.kt` | 收藏 / 进度的账号侧同步；账号历史页重建时保留分页是否还有下一页。 | fun TvMainActivity.refreshAccountListIfVisible、fun TvMainActivity.syncFavorite、fun TvMainActivity.syncProgress、fun TvMainActivity.storeAccount |
 

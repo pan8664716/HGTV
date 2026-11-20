@@ -7,9 +7,9 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
-## 2026-11-21：Phone 登录头像与收藏加载态
+## 2026-11-21：Phone / TV 登录头像与收藏加载态
 
-状态：已实现，`:app:assembleDebug` 通过，待 Phone 真机验证。
+状态：已实现，`:app:assembleDebug` 通过，待 Phone / TV 真机验证。
 
 - 现场日志：收藏接口 `/reading/bookapi/bookshelf/video/info/v` 返回 200，响应体约 42B，
   即账号收藏为空；`user/info` 与 `basic_info` 也成功返回。设备账号缓存中存在有效昵称、
@@ -20,8 +20,11 @@
   清掉标志却没有再次重绘。收藏为空时 `loading` 视图因此永久保留。
 - 修复：历史首屏继续不等待资料，但同时后台请求 `资料`；资料返回后只更新顶部头像 / 昵称，
   不重建历史列表。账号请求在重绘前结束加载态，空收藏或失败都会退出 loading。
+- TV 端存在同样的头像缺失和空收藏 loading 条件：历史栏现在并行补取资料；收藏等栏目
+  在 `changed` 为空时也会显式重建当前列表，把等待态替换为空态或错误态。
 - 账号失败重试条件改为“本次请求的栏目仍为空”，资料首次拉取失败也能自动重试。
-- 新增 `HGTV-PHONE account refresh start/done` 日志，记录栏目、错误、收藏数量与资料状态。
+- Phone 新增 `HGTV-PHONE account refresh start/done` 日志，TV 增加 `HGTV Account fetch done`
+  日志，记录栏目、错误、收藏数量与资料状态。
 - 未改版本号、versionCode、依赖或目录结构；只编译 Android debug，未运行单元测试或真机测试；
   未推送、未创建 tag 或 Release。
 
