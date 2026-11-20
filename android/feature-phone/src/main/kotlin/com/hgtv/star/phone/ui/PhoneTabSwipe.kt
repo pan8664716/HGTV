@@ -17,6 +17,7 @@ import kotlin.math.abs
  *
  * 判定参数与推荐页一致：越过半页吸附，或达到系统最小快甩速度即切页；
  * 第一次越过 touch slop 时按 1:1 锁定横纵轴。筛选 chips 等横向滚动区域不接管。
+ * 拖动时会同步铺出目标邻页预览，避免当前页移开时露出深色背景。
  */
 internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
 
@@ -29,6 +30,8 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     private val minimumFlingVelocity =
         PhonePagerMotion.minimumFlingVelocityPxPerSecond(context).toFloat()
     private var content: View? = null
+    private var preview: View? = null
+    private var previewDirection = 0
     private var velocityTracker: VelocityTracker? = null
     private var downX = 0f
     private var downY = 0f
@@ -40,6 +43,8 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
 
     var canSwipe: (Int) -> Boolean = { false }
     var onSwipe: (Int) -> Unit = {}
+    var previewProvider: ((Int) -> View?)? = null
+    var previewReleaser: ((View) -> Unit)? = null
     var swipeEnabled = true
         set(value) {
             field = value
@@ -65,6 +70,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         velocityTracker = null
         content?.animate()?.cancel()
         content?.translationX = 0f
+        removePreview()
         tracking = false
         intercepting = false
         settling = false
@@ -113,6 +119,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
                         return false
                     }
                     intercepting = true
+                    ensurePreview(directionFor(dx))
                     parent?.requestDisallowInterceptTouchEvent(true)
                 }
                 if (axis == 2) {
@@ -136,6 +143,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
                 val direction = commitDirection(dx, velocity)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 if (direction != 0 && canSwipe(direction)) {
+                    ensurePreview(direction)
                     settleCommit(direction)
                 } else {
                     settleBack()
@@ -165,10 +173,18 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     private fun applyDrag(dx: Float) {
         val view = content ?: return
         val pageWidth = width.toFloat().coerceAtLeast(1f)
-        view.translationX = if (canSwipe(directionFor(dx))) {
+        val direction = directionFor(dx)
+        val movable = canSwipe(direction)
+        if (movable) ensurePreview(direction) else removePreview()
+        view.translationX = if (movable) {
             dx.coerceIn(-pageWidth, pageWidth)
         } else {
             dx * 0.22f
+        }
+        preview?.translationX = if (movable) {
+            direction * pageWidth + dx
+        } else {
+            direction * pageWidth
         }
     }
 
@@ -195,18 +211,29 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
             .translationX(target)
             .setDuration(duration)
             .setInterpolator(PhonePagerMotion.interpolator)
+            .start()
+        val previewView = preview
+        if (previewView == null) {
+            view.postDelayed({
+                onSwipe(direction)
+                settleWithoutPreview(direction, pageWidth)
+            }, duration)
+            return
+        }
+        previewView.animate()
+            .translationX(0f)
+            .setDuration(duration)
+            .setInterpolator(PhonePagerMotion.interpolator)
             .withEndAction {
                 onSwipe(direction)
-                view.translationX = direction * pageWidth.toFloat()
-                val enterDuration = PhonePagerMotion.duration(
-                    distancePx = pageWidth.toFloat(),
-                    viewportPx = pageWidth,
-                )
-                view.animate()
-                    .translationX(0f)
-                    .setDuration(enterDuration)
-                    .setInterpolator(PhonePagerMotion.interpolator)
-                    .withEndAction { settling = false }
+                view.translationX = 0f
+                previewView.animate()
+                    .alpha(0f)
+                    .setDuration(120L)
+                    .withEndAction {
+                        removePreview()
+                        settling = false
+                    }
                     .start()
             }
             .start()
@@ -227,8 +254,56 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
             .translationX(0f)
             .setDuration(duration)
             .setInterpolator(PhonePagerMotion.interpolator)
+        val previewView = preview
+        if (previewView == null) {
+            view.animate().withEndAction { settling = false }.start()
+            return
+        }
+        previewView.animate()
+            .translationX(previewDirection * pageWidth.toFloat())
+            .setDuration(duration)
+            .setInterpolator(PhonePagerMotion.interpolator)
+            .withEndAction {
+                removePreview()
+                settling = false
+            }
+            .start()
+    }
+
+    private fun settleWithoutPreview(direction: Int, pageWidth: Int) {
+        val view = content ?: return
+        onSwipe(direction)
+        view.translationX = direction * pageWidth.toFloat()
+        val enterDuration = PhonePagerMotion.duration(
+            distancePx = pageWidth.toFloat(),
+            viewportPx = pageWidth,
+        )
+        view.animate()
+            .translationX(0f)
+            .setDuration(enterDuration)
+            .setInterpolator(PhonePagerMotion.interpolator)
             .withEndAction { settling = false }
             .start()
+    }
+
+    private fun ensurePreview(direction: Int) {
+        if (previewDirection == direction && preview != null) return
+        removePreview()
+        val view = previewProvider?.invoke(direction) ?: return
+        preview = view
+        previewDirection = direction
+        view.translationX = direction * width.toFloat()
+        addView(view, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        bringChildToFront(view)
+    }
+
+    private fun removePreview() {
+        val view = preview ?: return
+        view.animate().cancel()
+        removeView(view)
+        previewReleaser?.invoke(view)
+        preview = null
+        previewDirection = 0
     }
 
     private fun addVelocitySample(tracker: VelocityTracker, event: MotionEvent) {

@@ -87,6 +87,8 @@ class PhoneRankPage(
         swipeHost.onSwipe = { direction ->
             selectBoard((selected + direction).coerceIn(boards.indices))
         }
+        swipeHost.previewProvider = ::previewFor
+        swipeHost.previewReleaser = { (it as? PhonePosterFeed)?.release() }
         swipeHost.refreshSwipeSetting()
         // 顶栏在上、网格在下：垂直排列，网格不会被顶栏盖住。
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
@@ -197,6 +199,38 @@ class PhoneRankPage(
                 visible
             }
         }
+    }
+
+    private fun previewFor(direction: Int): PhonePosterFeed? {
+        val index = selected + direction
+        if (index !in boards.indices) return null
+        val board = boards[index]
+        val loader = loaderFor(board)
+        val preview = PhonePosterFeed(context).apply {
+            ranked = true
+            applyColumnsFromSettings()
+            bottomInset = context.tabBarInset() + context.dp(8)
+        }
+        val cachedFeed = feedCache[board]
+        if (cachedFeed?.loaded == true) {
+            preview.restore(cachedFeed, loader)
+            return preview
+        }
+        val lib = PhoneServices.library(context)
+        val cached = CatalogPageCache.loadRank(board)
+            ?: runCatching { lib.cachedHome(board) }.getOrNull()
+        if (cached != null) {
+            val visible = CatalogFilter.visible(
+                cached,
+                runCatching { lib.hidden() }.getOrDefault(emptySet()),
+            )
+            if (visible.items.isNotEmpty()) {
+                preview.restore(snapshotOf(visible), loader)
+                return preview
+            }
+        }
+        preview.load(loader)
+        return preview
     }
 
     fun scrollToTop() = feed.scrollToTop()

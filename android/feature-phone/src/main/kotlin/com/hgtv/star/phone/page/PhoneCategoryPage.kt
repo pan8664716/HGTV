@@ -109,6 +109,8 @@ class PhoneCategoryPage(
         swipeHost.onSwipe = { direction ->
             selectGenre((genreIndex + direction).coerceIn(CategoryGenres.options.indices))
         }
+        swipeHost.previewProvider = ::previewFor
+        swipeHost.previewReleaser = { (it as? PhonePosterFeed)?.release() }
         swipeHost.refreshSwipeSetting()
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(swipeHost, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))
@@ -246,6 +248,30 @@ class PhoneCategoryPage(
     ): suspend (Int) -> CatalogPage? {
         val repo=PhoneServices.repository(context)
         return { page -> visible(repo.categoryFeed(snapshot,page).page) }
+    }
+
+    private fun previewFor(direction: Int): View? {
+        val index = genreIndex + direction
+        if (index !in CategoryGenres.options.indices) return null
+        val previewSelection = selection.newGenre(CategoryGenres.options[index].id)
+        val preview = PhonePosterFeed(context).apply {
+            applyColumnsFromSettings()
+            gridTopInset = 0
+            bottomInset = context.tabBarInset() + context.dp(8)
+        }
+        val loader = loaderFor(previewSelection)
+        val cachedFeed = feedCache[previewSelection.key()]
+        if (cachedFeed?.loaded == true) {
+            preview.restore(cachedFeed, loader)
+            return preview
+        }
+        val cachedPage = CatalogPageCache.load(previewSelection)
+        if (cachedPage != null) {
+            preview.restore(snapshotOf(visible(cachedPage)), loader)
+        } else {
+            preview.load { page, _ -> loader(page) }
+        }
+        return preview
     }
 
     private fun rememberCurrentFeed() {
