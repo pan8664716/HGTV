@@ -382,6 +382,54 @@ internal fun PhonePlayerActivity.attachCurrentPlayerToPagerPage(
     return true
 }
 
+/**
+ * 重建正式播放页的三页输出窗口。
+ *
+ * 非相邻集切换时，ViewPager2 会同时回收旧页、创建目标页和它的前后页。只依赖各页
+ * 创建回调去“碰巧”绑定，会留下旧页仍持主播放器、目标页尚未接稳的窗口。
+ *
+ * 这里显式固定映射：
+ * * 中间当前页 → 主播放器；
+ * * 前后各一页 → 各自相邻集池播放器；
+ * * 窗口外页面 → 全部解绑。
+ */
+internal fun PhonePlayerActivity.reconcilePlayerPagerWindow() {
+    if (playerLandscapeMode || !playerEpisodePagerInitialized) return
+    val d = detail ?: return
+    val keep = LinkedHashSet<PhoneVideoPage>(3)
+
+    playerEpisodePager.pageAt(index)?.let { current ->
+        keep += current
+        attachCurrentPlayerToPagerPage()
+    }
+
+    for (target in intArrayOf(index - 1, index + 1)) {
+        if (target !in d.episodes.indices) continue
+        val page = playerEpisodePager.pageAt(target) ?: continue
+        keep += page
+        val episodeId = d.episodes[target]
+        val slot = playerAdjacentState.slots[target]
+        if (
+            slot != null &&
+            slot.episodeId == episodeId &&
+            slot.detail?.series?.id == d.series.id
+        ) {
+            attachAdjacentToPagerPage(target)
+        } else {
+            if (slot != null) releaseAdjacentSlot(target)
+            detachPlayerPagerPage(page)
+            page.showEpisodeCover(
+                d.episodeCover(episodeId).ifBlank { d.series.cover }
+            )
+            ensureAdjacentEpisode(target)
+        }
+    }
+
+    playerEpisodePager.pages()
+        .filterNot(keep::contains)
+        .forEach(::detachPlayerPagerPage)
+}
+
 internal fun PhonePlayerActivity.detachPlayerPagerOutputsExcept(keep: PhoneVideoPage?) {
     if (!playerEpisodePagerInitialized) return
     playerEpisodePager.pages().forEach { page ->

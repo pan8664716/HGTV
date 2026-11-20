@@ -33,7 +33,9 @@ internal fun PhonePlayerActivity.scheduleCurrentPlayerSurfaceRebind(
     fun attachCurrent(): Boolean = if (playerLandscapeMode) {
         attachCurrentPlayerToLandscapePagerPage(force = true)
     } else {
-        attachCurrentPlayerToPagerPage(force = true)
+        attachCurrentPlayerToPagerPage(force = true).also { attached ->
+            if (attached) reconcilePlayerPagerWindow()
+        }
     }
 
     fun verifySurface(remaining: Int) {

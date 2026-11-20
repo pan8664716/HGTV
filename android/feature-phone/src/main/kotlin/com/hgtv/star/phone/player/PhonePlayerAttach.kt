@@ -86,7 +86,11 @@ internal fun PhonePlayerActivity.attach(
     if (rebindSurface && !playerFeedUnderlay) {
         // 非相邻集切换时，目标页和旧页可能复用同一个进程级播放器。PlayerView 与
         // ExoPlayer 都会把“同一个 player / surface”当成无需重绑，实际输出面却还
-        // 停在旧页，表现为一直缓冲。等目标页建好后强制重交一次当前集 Surface。
+        // 停在旧页，表现为一直缓冲。这里显式固定三页映射，并立即补目标集前后两集，
+        // 不等待主播放器缓冲到某个阈值后才开始预热。
+        reconcilePlayerPagerWindow()
+        ensureAdjacentEpisode(index - 1)
+        ensureAdjacentEpisode(index + 1)
         android.util.Log.i(
             "HGTV-PHONE",
             "surface rebind queued episode=${episodeIndex + 1}",
