@@ -4,6 +4,7 @@ package com.hgtv.star.phone.ui
 import android.content.Context
 import android.graphics.Color
 import android.view.Gravity
+import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewGroup
 import android.widget.HorizontalScrollView
@@ -223,6 +224,9 @@ class PhoneEpisodeGrid(
     private var interceptingSwipe = false
     private var swipeAllowed = false
     private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+    private val minimumFlingVelocity =
+        PhonePagerMotion.minimumFlingVelocityPxPerSecond(context).toFloat()
+    private var velocityTracker: VelocityTracker? = null
     /** 翻页动画进行中：这一小段时间不再接新手势，避免两段动画叠在一起把位移算歪。 */
     private var animating = false
     /** 滑出动画期间已经确定、但还没渲染的目标页。连续操作时先提交它，再计算下一页。 */
@@ -281,8 +285,13 @@ class PhoneEpisodeGrid(
                 interceptingSwipe = false
                 // 分页芯片那一行本身要能横向滚动，左右翻页只从网格区域起手。
                 swipeAllowed = ev.y >= gridScroll.top
+                velocityTracker?.recycle()
+                velocityTracker = VelocityTracker.obtain().also {
+                    addVelocitySample(it, ev)
+                }
             }
             android.view.MotionEvent.ACTION_MOVE -> {
+                velocityTracker?.let { addVelocitySample(it, ev) }
                 val dx = ev.x - downX
                 val dy = ev.y - downY
                 // 与推荐页横向 pager 一致：越过系统 touch slop 后按 1:1 主轴锁定。
@@ -322,14 +331,23 @@ class PhoneEpisodeGrid(
                 return true
             }
             android.view.MotionEvent.ACTION_UP -> {
+                velocityTracker?.let { tracker ->
+                    addVelocitySample(tracker, ev)
+                    tracker.computeCurrentVelocity(1_000)
+                }
                 val dx = ev.x - downX
+                val velocity = velocityTracker?.xVelocity ?: 0f
+                velocityTracker?.recycle()
+                velocityTracker = null
                 parent?.requestDisallowInterceptTouchEvent(false)
                 interceptingSwipe = false
                 swipeAllowed = false
-                settleDrag(dx)
+                settleDrag(dx, velocity)
                 return true
             }
             android.view.MotionEvent.ACTION_CANCEL -> {
+                velocityTracker?.recycle()
+                velocityTracker = null
                 parent?.requestDisallowInterceptTouchEvent(false)
                 interceptingSwipe = false
                 swipeAllowed = false
@@ -390,12 +408,13 @@ class PhoneEpisodeGrid(
      *
      * 松手后按原翻页手感吸附；顶部焦点由主页面在翻页动画后段处理。
      */
-    private fun settleDrag(dx: Float) {
+    private fun settleDrag(dx: Float, velocity: Float) {
         val w = pageWidth()
+        val velocityPxPerSecond = velocity * 1_000f
         val threshold = w * PhonePagerMotion.SNAP_DISTANCE_RATIO
         val dir = when {
-            dx <= -threshold -> 1
-            dx >= threshold -> -1
+            dx <= -threshold || velocityPxPerSecond <= -minimumFlingVelocity -> 1
+            dx >= threshold || velocityPxPerSecond >= minimumFlingVelocity -> -1
             else -> 0
         }
         if (paging.canMove(dir)) {
@@ -590,6 +609,13 @@ class PhoneEpisodeGrid(
         if (lp.height == height) return
         lp.height = height
         scroll.layoutParams = lp
+    }
+
+    private fun addVelocitySample(tracker: VelocityTracker, event: android.view.MotionEvent) {
+        val copy = android.view.MotionEvent.obtain(event)
+        copy.offsetLocation(event.rawX - event.x, event.rawY - event.y)
+        tracker.addMovement(copy)
+        copy.recycle()
     }
 
     /** 一个集数格：当前集高亮，点一下切集。 */

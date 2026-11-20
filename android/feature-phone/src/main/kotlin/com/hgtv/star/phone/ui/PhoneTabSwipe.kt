@@ -3,6 +3,7 @@ package com.hgtv.star.phone.ui
 
 import android.content.Context
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.view.View
 import android.view.ViewConfiguration
 import android.view.ViewGroup
@@ -27,6 +28,8 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     }
 
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
+    private val minimumFlingVelocity =
+        PhonePagerMotion.minimumFlingVelocityPxPerSecond(context).toFloat()
     private var content: View? = null
     private var preview: View? = null
     private var previewDirection = 0
@@ -38,6 +41,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     private var intercepting = false
     private var settling = false
     private var focusRunnable: Runnable? = null
+    private var velocityTracker: VelocityTracker? = null
 
     var canSwipe: (Int) -> Boolean = { false }
     var onSwipe: (Int) -> Unit = {}
@@ -68,6 +72,8 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     fun cancelSwipe() {
         cancelScheduledFocus()
         onFocusDirection?.invoke(0)
+        velocityTracker?.recycle()
+        velocityTracker = null
         content?.animate()?.cancel()
         content?.translationX = 0f
         removePreview()
@@ -99,11 +105,13 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         downX = event.x
         downY = event.y
         tracking = true
+        velocityTracker = VelocityTracker.obtain().also { addVelocitySample(it, event) }
     }
 
     private fun handleMove(event: MotionEvent): Boolean {
         when (event.actionMasked) {
             MotionEvent.ACTION_MOVE -> {
+                velocityTracker?.let { addVelocitySample(it, event) }
                 val dx = event.x - downX
                 val dy = event.y - downY
                 if (axis == 0 && (abs(dx) > slop || abs(dy) > slop)) {
@@ -132,8 +140,15 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
                     resetGesture()
                     return false
                 }
+                velocityTracker?.let { tracker ->
+                    addVelocitySample(tracker, event)
+                    tracker.computeCurrentVelocity(1_000)
+                }
                 val dx = event.x - downX
-                val direction = commitDirection(dx)
+                val velocity = velocityTracker?.xVelocity ?: 0f
+                velocityTracker?.recycle()
+                velocityTracker = null
+                val direction = commitDirection(dx, velocity)
                 parent?.requestDisallowInterceptTouchEvent(false)
                 if (direction != 0 && canSwipe(direction)) {
                     ensurePreview(direction)
@@ -179,11 +194,11 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         }
     }
 
-    private fun commitDirection(dx: Float): Int {
+    private fun commitDirection(dx: Float, velocity: Float): Int {
         val threshold = width.toFloat().coerceAtLeast(1f) * COMMIT_DISTANCE_RATIO
         return when {
-            dx <= -threshold -> DIRECTION_NEXT
-            dx >= threshold -> DIRECTION_PREV
+            dx <= -threshold || velocity <= -minimumFlingVelocity -> DIRECTION_NEXT
+            dx >= threshold || velocity >= minimumFlingVelocity -> DIRECTION_PREV
             else -> 0
         }
     }
@@ -328,9 +343,18 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     }
 
     private fun resetGesture() {
+        velocityTracker?.recycle()
+        velocityTracker = null
         tracking = false
         intercepting = false
         axis = 0
+    }
+
+    private fun addVelocitySample(tracker: VelocityTracker, event: MotionEvent) {
+        val copy = MotionEvent.obtain(event)
+        copy.offsetLocation(event.rawX - event.x, event.rawY - event.y)
+        tracker.addMovement(copy)
+        copy.recycle()
     }
 
     private fun containsHorizontalScroller(view: View, x: Float, y: Float): Boolean {
