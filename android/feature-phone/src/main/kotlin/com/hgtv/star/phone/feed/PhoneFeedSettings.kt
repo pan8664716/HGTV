@@ -44,7 +44,7 @@ internal fun PhoneFeedView.openSettingsImpl() {
             onDanmaku = {
                 val page = feedPageAt(feedPlayingIndex) ?: feedBoundPage
                 if (page != null) {
-                    val wasHidden = page.danmakuView.visibility == View.GONE
+                    val wasHidden = page.danmakuView.mode == DanmakuMode.HIDDEN
                     applyDanmakuSettingsForSettings(page)
                     if (wasHidden && lib.danmakuMode != DanmakuMode.HIDDEN) {
                         val loader = feedDanmakuLoaderOf(feedPlayingIndex)

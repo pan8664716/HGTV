@@ -1283,11 +1283,11 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         ensureSpriteAtlas()
         nextSpriteRefreshAt=0L
         refreshSpriteAtlas(clockPositionMillis())
-        requestFrame()
+        if(surfaceHidden) clearSurfaceNow() else requestFrame()
     }
 
     override fun surfaceChanged(holder: SurfaceHolder,format: Int,width: Int,height: Int) {
-        requestFrame()
+        if(surfaceHidden) clearSurfaceNow() else requestFrame()
     }
 
     override fun surfaceDestroyed(holder: SurfaceHolder) {

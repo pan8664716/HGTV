@@ -3,7 +3,6 @@ package com.hgtv.star.phone
 
 import android.view.View
 import com.google.android.exoplayer2.Player
-import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.shared.debug.StartupDeferredTasks
 
 internal fun PhonePlayerActivity.danmakuTarget(): com.hgtv.star.shared.media.DanmakuView? = when {
@@ -53,8 +52,9 @@ internal fun PhonePlayerActivity.applyDanmakuSettingsToView(
     view.mergeRepeats = lib.danmakuMerge
     view.mergeMinCount = lib.danmakuMergeMin
     view.effectsEnabled = lib.danmakuEffects
-    // 隐藏弹幕时整层不参与绘制，也就不必让它的请求跑下去。
-    view.visibility = if (lib.danmakuMode == DanmakuMode.HIDDEN) View.GONE else View.VISIBLE
+    // 0 行不能隐藏 SurfaceView：销毁独立 Surface 后，部分机型会留下黑色图层。
+    // mode=HIDDEN 会停止绘制并提交透明帧，View 本身必须继续存活。
+    view.visibility = View.VISIBLE
 }
 
 /**

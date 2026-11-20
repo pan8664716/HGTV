@@ -78,7 +78,7 @@ internal fun PhonePlayerActivity.buildSettingsRowsImpl(
             }
         },
         onDanmaku = {
-            val wasHidden = playerPage.danmakuView.visibility == View.GONE
+            val wasHidden = playerPage.danmakuView.mode == DanmakuMode.HIDDEN
             applyDanmakuSettingsForChips()
             if (
                 wasHidden &&

@@ -37,7 +37,8 @@ internal fun PhoneFeedView.applyDanmakuSettingsImpl(page: PhoneVideoPage) {
     view.mergeRepeats = lib.danmakuMerge
     view.mergeMinCount = lib.danmakuMergeMin
     view.effectsEnabled = lib.danmakuEffects
-    view.visibility = if (lib.danmakuMode == DanmakuMode.HIDDEN) View.GONE else View.VISIBLE
+    // 0 行时保持 SurfaceView 存活，只由 mode=HIDDEN 停止绘制并清成透明。
+    view.visibility = View.VISIBLE
 }
 
 /** 推荐页顶栏尺寸变化后，同时更新当前已铺出的相邻信息流页。 */
