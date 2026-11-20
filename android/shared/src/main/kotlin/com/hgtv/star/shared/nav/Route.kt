@@ -73,6 +73,7 @@ sealed interface Route {
      * @property episode 要播第几集（从 0 起）。`null` = 按本机进度续播。
      *   **不能**用 `0` 表示「没指定」：手机端读的是 `getIntExtra(EXTRA_EPISODE, -1)`，
      *   传 0 会被当成「用户指定第 1 集」，续播当场失效。这是这条路由最容易写错的一处。
+     * @property positionMs 从这一集的第几毫秒开始；`null` = 由历史合并结果决定。
      * @property fromRecommend 是否从推荐流进来：决定播放页的控制层长什么样
      *   （推荐流进来的没有「选集」按钮）。
      * @property fullscreen 推荐流的「观看完整短剧」用它进横屏全屏。
@@ -83,6 +84,7 @@ sealed interface Route {
         val seriesId: String,
         val title: String = "",
         val episode: Int? = null,
+        val positionMs: Long? = null,
         val fromRecommend: Boolean = false,
         val fullscreen: Boolean = false,
         val noTransition: Boolean = false,

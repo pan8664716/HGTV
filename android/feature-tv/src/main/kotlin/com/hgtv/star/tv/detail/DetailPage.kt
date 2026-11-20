@@ -47,6 +47,7 @@ fun TvMainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boo
     val memo=detailMemo[series.id]
     if(memo!=null) {
         detail=memo
+        episodeIndex=resumeTargetFor(memo.series.id,memo.episodes).index
         showDetail(false)
         hideCenterLoading()
     } else {
@@ -61,6 +62,7 @@ fun TvMainActivity.openDetail(series: Series,resume: Boolean=false,autoplay: Boo
             // 已经从内存缓存铺过了就不再拿磁盘那一份覆盖（磁盘可能更旧）。
             if(detail==null && screen=="detail") {
                 detail=cached
+                episodeIndex=resumeTargetFor(cached.series.id,cached.episodes).index
                 hideCenterLoading()
                 showDetail(false)
             }
@@ -438,7 +440,6 @@ fun TvMainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
     val narrowActions=widthDp()<900
     if(!narrowActions) info.addView(actions,lp(-1,-2).apply { leftMargin=-dp(TvStyle.FOCUS_BLEED); rightMargin=-dp(TvStyle.FOCUS_BLEED) })
     val progress=library.progress(data.series.id)
-    val watched=library.watched(data.series.id)
     // 播放按钮的**文案固定为「播放」**，不随状态变（曾按状态显示「开始观看 / 继续第 N 集 / 重新观看」，
     // 用户要求统一成一个词）。续播目标仍然照算——`ResumePlayback.target` 处理了
     // 「上一集看完 → 从下一集开头」「看到一半 → 回到那一集的那个位置」两种情况，
@@ -466,7 +467,6 @@ fun TvMainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
         size=ButtonSize.HERO,weight=1f,pad=actionPad,
         icon=if(upcoming) R.drawable.ic_action_reserve else R.drawable.ic_action_play) {
         if(upcoming) reserveSeries(data.series,play,reserved)
-        else if(watched) playEpisode(0,0,clearDanmakuOnSwitch=true)
         else playEpisode(target.index,target.position,clearDanmakuOnSwitch=true)
     }
     // 未上架的剧**不摆收藏**：它没有分集，收藏更新检查（`FavoriteUpdate.observe` 要求集数 > 0）

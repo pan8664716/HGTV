@@ -131,6 +131,11 @@ class AccountController(
             else withoutDeletedLikes.copy(history = kept)
         }
         val outcome = reconcile(merged)
+        val favoriteWrites = if ("收藏" in columns && "收藏" !in fresh.errors) {
+            reconcileFavorites(outcome.data)
+        } else {
+            0
+        }
         val changed = AccountSnapshot.changedKeys(before, outcome.data)
         storeRaw(outcome.data)
         val uploads = if ("历史" in fresh.errors) emptyList() else outcome.uploads
@@ -138,7 +143,7 @@ class AccountController(
         return RefreshResult(
             data = outcome.data,
             changed = changed,
-            localWrites = outcome.localWrites,
+            localWrites = outcome.localWrites + favoriteWrites,
             uploads = uploads,
             failedColumns = fresh.errors.keys,
         )
@@ -167,10 +172,13 @@ class AccountController(
             }
             next.sortedByDescending { it.updatedAt }
         }
-        val next = (before ?: AccountData(null, emptyList(), emptyList(), emptyList(), emptyList()))
+        val merged = (before ?: AccountData(null, emptyList(), emptyList(), emptyList(), emptyList()))
             .copy(history = mergedRows)
-        storeRaw(next)
-        return HistoryPageResult(page.copy(rows = rows), next, null)
+        val outcome = HistoryReconcile.run(merged, library.history(), System.currentTimeMillis())
+        outcome.writes.forEach { runCatching { library.save(it) } }
+        pushAhead(outcome.uploads)
+        storeRaw(outcome.data)
+        return HistoryPageResult(page.copy(rows = rows), outcome.data, null)
     }
 
     /** 收藏 / 取消收藏：本机账号缓存先改，云端随后推。 */
@@ -363,6 +371,31 @@ class AccountController(
         val outcome = HistoryReconcile.run(value, library.history(), System.currentTimeMillis())
         outcome.writes.forEach { runCatching { library.save(it) } }
         return Reconcile(outcome.data, outcome.uploads, outcome.writes.size)
+    }
+
+    /**
+     * 收藏也遵守“本地 + 网络两端都有”：
+     * 网络独有补进本机收藏，本机独有异步补传账号。
+     */
+    private fun reconcileFavorites(value: AccountData): Int {
+        val accountIds = value.favorites.mapTo(HashSet()) { it.series.id }
+        var writes = 0
+        value.favorites.forEach { row ->
+            if (!library.favorite(row.series.id)) {
+                if (library.toggle(row.series)) writes++
+            }
+        }
+        val missing = library.favorites().filterNot { it.id in accountIds }
+        if (missing.isNotEmpty() && repository.signedIn) {
+            worker.launch {
+                missing.forEach { series ->
+                    withContext(Dispatchers.IO) {
+                        runCatching { repository.accountAddFavorite(series.id) }
+                    }
+                }
+            }
+        }
+        return writes
     }
 
     private fun pushAhead(rows: List<BackupProgress>) {

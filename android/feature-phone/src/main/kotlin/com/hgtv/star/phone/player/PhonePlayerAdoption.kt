@@ -23,6 +23,10 @@ private fun PhonePlayerActivity.adoptReject(seriesId: String): String? {
     if (sessionIndex !in d.episodes.indices) return "bad-index"
     val wanted = intent.getIntExtra(PhonePlayerActivity.EXTRA_EPISODE, -1)
     if (wanted >= 0 && wanted != sessionIndex) return "episode-mismatch"
+    val wantedPosition = intent.getLongExtra(PhonePlayerActivity.EXTRA_POSITION_MS, -1L)
+    if (wantedPosition >= 0 && kotlin.math.abs(PhoneSession.positionMs - wantedPosition) > 1_500L) {
+        return "position-mismatch"
+    }
     val exo = PhoneServices.peekPlayer() ?: return "no-player"
     // IDLE **不等于**接不上。swapMediaSource 是「先 stop 再挂源」（见 PlayerSourceSwap），
     // 从挂源到 prepare 之间播放器就是 IDLE；推荐页片尾交接、刚起播一屏时都正好落在

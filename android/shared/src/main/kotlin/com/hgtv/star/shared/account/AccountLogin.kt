@@ -3,9 +3,15 @@ package com.hgtv.star.shared.account
 
 import com.hgtv.star.core.AccountCredentials
 import com.hgtv.star.core.AccountCredentialsParser
+import com.hgtv.star.core.AccountFavorite
+import com.hgtv.star.core.AccountHistory
 import com.hgtv.star.core.ContentRepository
+import com.hgtv.star.core.Series
+import com.hgtv.star.core.WatchSync
 import com.hgtv.star.core.accountProfile
+import com.hgtv.star.core.isFinished
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.data.WatchProgress
 import com.hgtv.star.shared.data.account
 import com.hgtv.star.shared.data.accountDevice
 import com.hgtv.star.shared.data.saveAccountDevice
@@ -109,17 +115,126 @@ object AccountLogin {
     }
 }
 
+/** 本机 + 账号合并后的一条历史；剧集、进度、集号和时间都来自实际胜出的那条记录。 */
+data class MergedHistory(
+    val series: Series,
+    val episodeIndex: Int,
+    val episodeId: String,
+    val position: Long,
+    val episodes: Int,
+    val updatedAt: Long,
+    val finished: Boolean,
+)
+
 /**
  * 本机记录与账号记录的合并（电视端与手机端共用一份）。
  *
- * 规则只有一条：**本机在前，账号侧补后面，同一部剧只出现一次**（以本机那条为准，
- * 因为本机那条带着更新状态 / 进度）。两端各写一遍的话，迟早会出现
- * 「电视上是 12 条、手机上 15 条」这种对不上的情况。
+ * 历史同一部剧只保留一条：先比集号，再比集内位置，最后比更新时间；
+ * 合并后的排序统一按两边较新的更新时间倒序。收藏有网络收藏时间的按时间倒序，
+ * 本地独有项保留本机原有顺序。
  */
 object AccountMerge {
 
-    fun series(local: List<com.hgtv.star.core.Series>, account: List<com.hgtv.star.core.Series>): List<com.hgtv.star.core.Series> {
+    fun series(local: List<Series>, account: List<Series>): List<Series> {
         val seen = local.mapTo(HashSet()) { it.id }
         return local + account.filterNot { it.id in seen }
+    }
+
+    fun history(local: List<WatchProgress>, account: List<AccountHistory>): List<MergedHistory> {
+        val localById = linkedMapOf<String, WatchProgress>()
+        local.forEach { row ->
+            val previous = localById[row.series.id]
+            if (previous == null || compareProgress(row, previous) > 0) {
+                localById[row.series.id] = row
+            }
+        }
+        val accountById = linkedMapOf<String, AccountHistory>()
+        account.forEach { row ->
+            val previous = accountById[row.series.id]
+            if (previous == null || compareAccount(row, previous) > 0) {
+                accountById[row.series.id] = row
+            }
+        }
+        val ids = LinkedHashSet<String>(localById.size + accountById.size).apply {
+            addAll(localById.keys)
+            addAll(accountById.keys)
+        }
+        return ids.mapNotNull { id ->
+            mergeHistory(id, localById[id], accountById[id])
+        }.sortedWith(
+            compareByDescending<MergedHistory> { it.updatedAt }
+                .thenByDescending { it.episodeIndex }
+                .thenBy { it.series.id }
+        )
+    }
+
+    fun historyForSeries(
+        local: List<WatchProgress>,
+        account: List<AccountHistory>,
+        seriesId: String,
+    ): MergedHistory? = history(local, account).firstOrNull { it.series.id == seriesId }
+
+    fun favorites(local: List<Series>, account: List<AccountFavorite>): List<Series> {
+        val accountById = account.associateBy { it.series.id }
+        val localIds = local.mapTo(HashSet()) { it.id }
+        val rows = ArrayList<Pair<Series, Long>>(local.size + account.size)
+        local.forEach { series ->
+            rows += series to (accountById[series.id]?.collectTime ?: 0L)
+        }
+        account.forEach { row ->
+            if (row.series.id !in localIds) rows += row.series to row.collectTime
+        }
+        return rows.sortedByDescending { it.second }.map { it.first }
+    }
+
+    private fun compareProgress(a: WatchProgress, b: WatchProgress): Int =
+        compareValuesBy(a, b, { it.episodeIndex }, { it.position }, { it.updatedAt })
+
+    private fun compareAccount(a: AccountHistory, b: AccountHistory): Int =
+        compareValuesBy(
+            a,
+            b,
+            { it.episodeIndex },
+            { it.position },
+            { WatchSync.millis(it.updatedAt) },
+        )
+
+    private fun mergeHistory(
+        id: String,
+        local: WatchProgress?,
+        account: AccountHistory?,
+    ): MergedHistory? {
+        if (local == null && account == null) return null
+        val localFinished = local?.isFinished() == true
+        val accountFinished = account?.isFinished() == true
+        val localWins = when {
+            local == null -> false
+            account == null -> true
+            local.episodeIndex != account.episodeIndex -> local.episodeIndex > account.episodeIndex
+            local.position != account.position -> local.position > account.position
+            else -> local.updatedAt >= WatchSync.millis(account.updatedAt)
+        }
+        val total = maxOf(
+            local?.series?.episodeCount ?: 0,
+            account?.episodes ?: 0,
+            account?.series?.episodeCount ?: 0,
+        )
+        val chosenSeries = when {
+            localWins -> local!!.series
+            account != null -> account.series
+            else -> local!!.series
+        }
+        return MergedHistory(
+            series = if (total > 0) chosenSeries.copy(episodeCount = total) else chosenSeries,
+            episodeIndex = if (localWins) local!!.episodeIndex else account?.episodeIndex ?: 0,
+            episodeId = if (localWins) local!!.episodeId else account?.episodeId.orEmpty(),
+            position = if (localWins) local!!.position else account?.position ?: 0L,
+            episodes = total,
+            updatedAt = maxOf(
+                local?.updatedAt ?: 0L,
+                WatchSync.millis(account?.updatedAt ?: 0L),
+            ),
+            finished = localFinished || accountFinished,
+        )
     }
 }

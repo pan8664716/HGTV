@@ -409,14 +409,14 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `HistoryReconcile.kt` | 本机进度与账号历史的**对账**（电视端与手机端共用一份，纯计算、可单测）。 | object HistoryReconcile |
+| `HistoryReconcile.kt` | 本机进度与账号历史双向对账：网络独有写本地，本地独有补传网络，重复项选更超前记录。 | object HistoryReconcile |
 | `LatestWriteQueue.kt` | Serial persistence with one pending value per key; serialization belongs inside write. | class LatestWriteQueue |
 | `LibraryBackup.kt` | 本机记录备份的编码、解码、范围校验与局域网同步数据校验；首页栏位 key、弹幕顶部避让、历史卡片优先简介等设置默认值也在这里。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT、object LibraryBackup |
 | `LibraryIndex.kt` | Main-thread-owned library. JSON is parsed once, and getters never parse or sort；记录“打开应用进入推荐”是否已在磁盘显式保存。 | class LibraryIndex、val launchRecommendStored、object LibraryDisk |
 | `LibraryTransferServer.kt` | Short-lived LAN transfer. Uploaded records are validated here, but only the TV may apply them. | class LibraryTransferServer |
 | `LruPut.kt` | 往定长 LRU 里写一条：写完把最久没用过的那条挤出去。 | fun LinkedHashMap |
 | `ViewingTools.kt` | 一条搜索历史：只有关键词。 | class RecentSearch、object SearchHistory、object EpisodeTarget |
-| `WatchSync.kt` | 本机观看进度（BackupProgress）与账号侧观看历史（AccountHistory）的对账规则。 | object WatchSync |
+| `WatchSync.kt` | 本机观看进度与账号历史的时间归一、超前比较和双向转换规则。 | object WatchSync |
 | `Watching.kt` | 本机书库、历史、进度、备份与写队列；提供本机进度与账号历史的当前季完播判断。 | object PlaybackQuality、class RecoveryBudget、class ResumeTarget、object ResumePlayback、fun BackupProgress.isFinished、fun AccountHistory.isFinished、class FavoriteUpdate、object EpisodePageSize |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/media/`
@@ -607,7 +607,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PhoneDetailActivity.kt` | 详情页：**与 TV 端的详情页一一对应**，按手机形态重排；底部内容使用真实 WindowInsets 安全区。 | class PhoneDetailActivity |
+| `PhoneDetailActivity.kt` | 手机详情页；按本机 + 网络合并后的集号定位选集，播放时携带该集和集内时间。 | class PhoneDetailActivity |
 | `PhoneDetailSections.kt` | 手机详情页与竖屏视频版面。文件 PhoneDetailSections 主要包含 fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks。 | fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks、fun PhoneDetailActivity.sectionHead、fun PhoneDetailActivity.cardRow |
 | `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、目标集预览封面、弹幕 Surface 黑边、信息区和控制层；WindowInsets 晚到时显式重写操作条底部边距；不再挂普通 View 黑边兜底；正式播放器选集行末尾提供圆形锁定按钮。 | class PhoneVideoPage、fun showEpisodeCover、fun hideEpisodeCover、fun setPlaybackLocked |
 | `PhoneVideoPageState.kt` | 手机详情页与竖屏视频版面。文件 PhoneVideoPageState 主要包含 fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode。 | fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode、fun PhoneVideoPage.showCenterIcon、fun PhoneVideoPage.hideCenterIcon、fun PhoneVideoPage.setResizeMode、fun PhoneVideoPage.setVideoSurfaceVisible |
@@ -641,7 +641,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PhoneCategoryPage.kt` | 分类页：**完全按 TV 端的两层筛选结构**。 | class PhoneCategoryPage |
-| `PhoneMinePage.kt` | 我的页：缓存优先、历史 20 条分页、其他栏目点击懒加载；历史首屏并行补取资料，收藏结束加载态后再重绘。 | class PhoneMinePage、fun PhoneMinePage.requestHistoryOnNextShow |
+| `PhoneMinePage.kt` | 我的页：历史 / 收藏均为本地 + 网络合并，历史先显示本地再分页请求网络。 | class PhoneMinePage、fun PhoneMinePage.requestHistoryOnNextShow |
 | `PhoneRankPage.kt` | 榜单页：八个榜单 + 带名次的海报网格，并保存每榜分页游标。 | class PhoneRankPage |
 | `PhoneRecommendPage.kt` | 推荐页：外层横向 ViewPager2 承载四条体裁流，每页内部再用竖向 ViewPager2 承载视频；顶栏高度同步给弹幕层，底部系统 inset 与尺寸变化同步给已创建视频页，重建时恢复当前体裁、当前剧与播放位置。 | class PhoneRecommendPage、class RecommendGenrePager、fun currentGenreKey、fun currentSeriesId、fun currentPositionMs |
 
@@ -690,11 +690,11 @@ android/
 | `PhonePlayerLandscapeSettingsFacade.kt` | 横屏播放设置：只保留右侧 40% 的可改栏。 | fun PhonePlayerActivity.openLandscapeSettings、fun PhonePlayerActivity.syncLandscapeSettingsInfo、fun PhonePlayerActivity.dismissLandscapeSettings、fun PhonePlayerActivity.dismissLandscapeSettingsForRelated、fun PhonePlayerActivity.buildSettingsRowsForLandscape、fun PhonePlayerActivity.setChromeVisibleForLandscape |
 | `PhonePlayerLifecycle.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerLifecycle 主要包含 fun PhonePlayerActivity.releasePlayerImpl、fun PhonePlayerActivity.detachForHandoffImpl。 | fun PhonePlayerActivity.releasePlayerImpl、fun PhonePlayerActivity.detachForHandoffImpl |
 | `PhonePlayerListener.kt` | 正式页播放器监听只接受当前实例回调；旧实例排队中的状态、首帧、尺寸和错误事件不会暂停新播放器或改写新页面；同季与跨季共用一份界面/进度交接。 | fun PhonePlayerActivity.attachPlayerListener、fun PhonePlayerActivity.onAdvanced、fun PhonePlayerActivity.finishAdvanced |
-| `PhonePlayerLoad.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerLoad 主要包含 fun PhonePlayerActivity.load。 | fun PhonePlayerActivity.load |
+| `PhonePlayerLoad.kt` | 手机播放起播恢复；按显式路由或历史合并结果定位集号与毫秒位置。 | fun PhonePlayerActivity.load |
 | `PhonePlayerMode.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerMode 主要包含 fun PhonePlayerActivity.applyMode。 | fun PhonePlayerActivity.applyMode |
 | `PhonePlayerModeSupport.kt` | 新形态入场、横竖屏输出面延迟重交与短时无帧兜底、竖屏弹幕落点及横屏画面模式。 | fun DanmakuView.alignBelowPhonePortraitChrome、fun PhonePlayerActivity.scheduleCurrentPlayerSurfaceRebind、fun PhonePlayerActivity.animateModeEnter、fun PhonePlayerActivity.syncDanmakuTopInset、fun PhonePlayerActivity.applyLandscapeResize |
 | `PhonePlayerPageFactory.kt` | 建一页正式播放界面并接线：竖屏纵向翻集交给 ViewPager2，页面处理单击、双击、长按、锁定与横滑进度。 | fun PhonePlayerActivity.makePage、fun PhonePlayerActivity.wirePage |
-| `PhonePlayerPager.kt` | 竖屏正式播放页 ViewPager2 容器：显示时前后集 SurfaceView 常驻，拖动开始暂停、过半预览一次触发、IDLE 提交，并同步自动连播与选集直达的当前页；顶部、底部系统手势区的纵向拖动不翻集。 | class VerticalEpisodePager、class PhonePlayerPagerAdapter、fun PhonePlayerActivity.installPlayerPagerCallbacks、fun PhonePlayerActivity.preparePlayerPager、fun PhonePlayerActivity.attachCurrentPlayerToPagerPage |
+| `PhonePlayerPager.kt` | 竖屏正式播放页 ViewPager2 容器：显示时前后集 SurfaceView 常驻，拖动开始暂停、过半预览一次触发、IDLE 提交，并显式重建当前集主播放器与前后两集池播放器的三页映射；顶部、底部系统手势区的纵向拖动不翻集。 | class VerticalEpisodePager、class PhonePlayerPagerAdapter、fun PhonePlayerActivity.installPlayerPagerCallbacks、fun PhonePlayerActivity.preparePlayerPager、fun PhonePlayerActivity.attachCurrentPlayerToPagerPage、fun PhonePlayerActivity.reconcilePlayerPagerWindow |
 | `PhonePlayerPause.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerPause 主要包含 fun PhonePlayerActivity.handlePlayerPause。 | fun PhonePlayerActivity.handlePlayerPause |
 | `PhonePlayerPlay.kt` | 播放入口：打开会话、接预热源或后台取流并准备播放；手动换集先清掉旧帧。 | fun PhonePlayerActivity.play |
 | `PhonePlayerPlayInfo.kt` | 把「播放显示」四项铺到竖屏与横屏的信息行：剧名 / 集数靠左，网速 / 时间靠右。 | fun PhonePlayerActivity.syncPlayInfoImpl、fun PhonePlayerActivity.syncLandscapeSettingsInfoImpl |
@@ -875,7 +875,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `HomePage.kt` | 首页本机三栏与八个榜单剧架；账号侧只按需刷新历史 / 收藏。 | val SHELF_SIZE、fun TvMainActivity.renderHome、fun TvMainActivity.homeShelves、fun TvMainActivity.localShelf、fun TvMainActivity.rankShelf |
+| `HomePage.kt` | 首页本机三栏与八个榜单剧架；历史 / 收藏使用本机 + 网络统一合并。 | val SHELF_SIZE、fun TvMainActivity.historyRows、fun TvMainActivity.favoriteRows、fun TvMainActivity.homeShelves |
 | `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址优先；推荐播放链接首次批量 20 个，先批量补详情，再按播放档案补首集模型；预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
 | `RecommendControls.kt` | 上下键换剧；反向操作优先于未完成的向下补页，索引变化交给播放选择层先摘除旧播放层，再准备下一部；补页期间合并连续下键。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
 | `RecommendCover.kt` | 切换过渡：换作瞬间全黑，新片源真实出帧且宽高就绪后才淡出；加载期不暴露上一部旧帧，淡出完成可回调撤 loading。 | val COVER_OUT_MS、val COVER_OUT_FAST_MS、fun TvMainActivity.showRecommendCover、fun TvMainActivity.revealRecommendCover、val PICTURE_RECOVERY_LIMIT |
@@ -927,7 +927,7 @@ android/
 | `TvLayout.kt` | 本文件是从 TvMainActivity.kt 拆出来的「尺寸换算、控件工厂（按钮 / 文本 / 行 / 页骨架）与窗口背景、主题切换」这一块。 | fun TvMainActivity.dp、fun TvMainActivity.widthDp、fun TvMainActivity.pageInset、fun TvMainActivity.pageBleed、fun TvMainActivity.applyPerformanceProfile、fun TvMainActivity.lp |
 | `TvMainStateRestore.kt` | 按 onSaveInstanceState 存下的现场回到原来的页面。 | fun TvMainActivity.restoreLastScreenForResume |
 | `TvMainTick.kt` | 播放页每秒调度：定时停止、界面刷新、预取、进度采样和落盘节拍。 | fun TvMainActivity.runTvMainTick |
-| `TvNavigation.kt` | 顶部入口、切页、分类与榜单芯片、页头导航；进入“我的”后加载当前栏目并支持历史分页尾部。 | fun TvMainActivity.switchTab、fun TvMainActivity.autoAppendCatalog、fun TvMainActivity.switchRankBoard、fun TvMainActivity.rememberCategoryState |
+| `TvNavigation.kt` | 顶部入口、切页、分类与榜单芯片；本机历史集合页使用统一历史合并与排序。 | fun TvMainActivity.switchTab、fun TvMainActivity.localItems、fun TvMainActivity.autoAppendCatalog |
 | `TvNavigator.kt` | 电视端的路由落地：把 Route 翻译成「切 screen + 重建视图树」。 | class TvNavigator |
 | `TvScreenConstants.kt` | 全站常量与静态表；包含账号历史 20 条页大小和“当前是否在账号历史”的判定。 | val ACCOUNT_HISTORY_PAGE_SIZE、fun TvMainActivity.accountHistoryPaging、val TAB_HOME、val TAB_PROFILE |
 
@@ -1039,7 +1039,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AccountLogin.kt` | 账号凭据的落地校验（电视端与手机端共用一份）。 | object AccountLogin、object AccountMerge |
+| `AccountLogin.kt` | 账号凭据落地校验；`AccountMerge` 提供两端共用的历史 / 收藏合并、进度胜出和最近时间排序。 | object AccountLogin、object AccountMerge、class MergedHistory |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/architecture/`
 
@@ -1157,7 +1157,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `Navigator.kt` | 页面跳转的唯一入口。 | interface Navigator |
-| `Route.kt` | 页面清单：两端「有哪些页面、每个页面要什么参数」的唯一来源。 | interface Route |
+| `Route.kt` | 页面清单；播放路由支持指定集号与集内毫秒位置。 | interface Route、class Route.Player |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/search/`
 
@@ -1215,7 +1215,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AccountController.kt` | 账号侧唯一状态与写入入口；支持按栏目刷新、20 条历史分页与本地墓碑过滤。 | class AccountController、fun AccountController.refresh、fun AccountController.refreshHistory |
+| `AccountController.kt` | 账号状态与写入入口；支持按栏目刷新、历史分页、历史双向对账和收藏双向补全。 | class AccountController、fun AccountController.refresh、fun AccountController.refreshHistory |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/feature/catalog/`
 
@@ -1227,7 +1227,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `DetailController.kt` | 详情页的行为层。 | class DetailController |
+| `DetailController.kt` | 详情页行为层；续播目标来自本机 + 网络历史合并后的胜出记录。 | class DetailController、fun DetailController.resumeTarget |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/feature/lan/`
 

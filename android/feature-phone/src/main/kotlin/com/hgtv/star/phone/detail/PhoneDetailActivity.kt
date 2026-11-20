@@ -545,9 +545,17 @@ class PhoneDetailActivity : PhoneActivity() {
 
         bindDescription(s.description.replace('\n', ' ').trim())
 
-        // 主按钮：有记录 → 「继续」；未上架 → 「预约」；否则「播放」。
-        val saved = runCatching { library?.progress(s.id) }.getOrNull()
-        val resume = saved?.let { p -> d.episodes.indexOf(p.episodeId).takeIf { it >= 0 } }
+        // 主按钮：本机 + 账号历史合并后定位到实际看到的那一集。
+        val merged = runCatching {
+            com.hgtv.star.shared.account.AccountMerge.historyForSeries(
+                library?.history().orEmpty(),
+                com.hgtv.star.shared.data.AppRuntime.accountController(this)
+                    .data?.history.orEmpty(),
+                s.id,
+            )
+        }.getOrNull()
+        val target = detailController.resumeTarget(s.id, d.episodes)
+        val resume = merged?.let { target.index }
         when {
             d.upcoming -> {
                 // 状态取本机「最后已知」，接口值只在本地没有记录时兜底：用户自己点过的那一次
@@ -670,9 +678,8 @@ class PhoneDetailActivity : PhoneActivity() {
             )
             return
         }
-        val saved = runCatching { library?.progress(d.series.id) }.getOrNull()
-        val index = saved?.let { p -> d.episodes.indexOf(p.episodeId).takeIf { it >= 0 } } ?: 0
-        openPlayer(index)
+        val target = detailController.resumeTarget(d.series.id, d.episodes)
+        openPlayer(target.index, target.position)
     }
 
     private fun paintReserve(reserved: Boolean) {
@@ -684,9 +691,16 @@ class PhoneDetailActivity : PhoneActivity() {
         android.widget.Toast.makeText(this, message, android.widget.Toast.LENGTH_SHORT).show()
     }
 
-    private fun openPlayer(index: Int) {
+    private fun openPlayer(index: Int, positionMs: Long = 0L) {
         val d = detail ?: return
-        phoneNav().open(Route.Player(d.series.id, d.series.title, episode = index))
+        phoneNav().open(
+            Route.Player(
+                d.series.id,
+                d.series.title,
+                episode = index,
+                positionMs = positionMs,
+            )
+        )
     }
 
     /**

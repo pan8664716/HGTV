@@ -79,6 +79,7 @@ class PhoneNavigator(private val context: Context) : Navigator {
             putExtra(PhonePlayerActivity.EXTRA_SERIES_ID, route.seriesId)
             putExtra(PhonePlayerActivity.EXTRA_TITLE, route.title)
             route.episode?.let { putExtra(PhonePlayerActivity.EXTRA_EPISODE, it) }
+            route.positionMs?.let { putExtra(PhonePlayerActivity.EXTRA_POSITION_MS, it) }
             if (route.fromRecommend) putExtra(PhonePlayerActivity.EXTRA_RECOMMEND, true)
             if (route.fullscreen) putExtra(PhonePlayerActivity.EXTRA_FULLSCREEN, true)
             // 推荐流交接专用：不要系统转场，见 [Route.Player.noTransition]。

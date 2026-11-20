@@ -155,17 +155,16 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
  * 本机进度本来就在书库里，先铺它可以让栏目顺序和焦点都保持稳定。
  */
 fun TvMainActivity.historyRows(): List<HomeScreen.Entry> {
-    // 历史栏的点击方式由设置统一决定；账号侧没有本机进度时，
-    // 详情控制器仍会用账号历史算出续播目标。
+    // 历史栏的点击方式由设置统一决定；详情控制器读取同一份本机 + 账号合并结果。
     val directPlay=!library.historyPreferDetail
-    val local=library.history()
+    return com.hgtv.star.shared.account.AccountMerge.history(
+        library.history(),
+        accountData?.history.orEmpty(),
+    )
+        .filterNot { library.historyDeleted(it.series.id) }
         .take(SHELF_SIZE)
         .map { row ->
-            val card=row.series.copy(
-                badge=if(row.isFinished()) "看完了" else
-                    "第 ${row.episodeIndex+1} 集" +
-                        if(row.position>0) " · ${formatTime(row.position)}" else "",
-            )
+            val card=mergedHistoryCard(row)
             HomeScreen.Entry(
                 series=card,
                 label=card.badge,
@@ -174,23 +173,6 @@ fun TvMainActivity.historyRows(): List<HomeScreen.Entry> {
                 time=card.badge,
             )
         }
-    val seen=local.mapTo(HashSet(local.size)) { it.series.id }
-    val account=accountData?.history.orEmpty()
-        .asSequence()
-        .filterNot { library.historyDeleted(it.series.id) }
-        .filter { it.series.id !in seen }
-        .map { row ->
-            val card=accountHistoryCard(row)
-            HomeScreen.Entry(
-                series=card,
-                label=card.badge,
-                resume=directPlay,
-                progress=null,
-                time=card.badge,
-            )
-        }
-        .toList()
-    return (local+account).take(SHELF_SIZE)
 }
 /**
  * 首页「我的收藏」栏：本机收藏在前（带「更新至第几集」状态），账号侧的收藏补在后面。
@@ -198,12 +180,15 @@ fun TvMainActivity.historyRows(): List<HomeScreen.Entry> {
  * 两边都有的剧只出现一次（以本机那条为准，因为它带更新状态）。
  */
 fun TvMainActivity.favoriteRows(local: List<Series>): List<HomeScreen.Entry> {
-    val rows=local.take(10).map { HomeScreen.Entry(it,library.favoriteLabel(it.id)) }.toMutableList()
-    val seen=rows.map { it.series.id }.toSet()
-    accountData?.favorites?.filterNot { it.series.id in seen }?.take(10-rows.size)?.forEach { row ->
-        rows+=HomeScreen.Entry(row.series,"账号 · 收藏于 ${shortDate(row.collectTime)}")
-    }
-    return rows
+    val account=accountData?.favorites.orEmpty()
+    val localIds=local.mapTo(HashSet()) { it.id }
+    val accountTime=account.associate { it.series.id to it.collectTime }
+    return com.hgtv.star.shared.account.AccountMerge.favorites(local,account)
+        .take(10)
+        .map { series ->
+            if(series.id in localIds) HomeScreen.Entry(series,library.favoriteLabel(series.id))
+            else HomeScreen.Entry(series,"账号 · 收藏于 ${shortDate(accountTime[series.id] ?: 0L)}")
+        }
 }
 fun TvMainActivity.homeShelves(): List<HomeScreen.Shelf> {
     val favorites=library.favorites()

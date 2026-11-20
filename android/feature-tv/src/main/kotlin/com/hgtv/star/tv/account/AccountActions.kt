@@ -330,7 +330,7 @@ fun TvMainActivity.loadAccountHistory(reset: Boolean,force: Boolean=false) {
     val manualRefresh=force && accountRefreshing
     if(reset) {
         accountHistoryOffset=0
-        accountHistoryVisibleCount=ACCOUNT_HISTORY_PAGE_SIZE
+        accountHistoryVisibleCount=maxOf(ACCOUNT_HISTORY_PAGE_SIZE,library.history().size)
         accountHistoryEmptyPages=0
     }
     accountHistoryLoading=true
@@ -388,7 +388,7 @@ fun TvMainActivity.loadAccountHistory(reset: Boolean,force: Boolean=false) {
             }
             accountHistoryEmptyPages=0
             accountHistoryVisibleCount=if(reset) {
-                ACCOUNT_HISTORY_PAGE_SIZE
+                maxOf(ACCOUNT_HISTORY_PAGE_SIZE,library.history().size+page.rows.size)
             } else {
                 accountHistoryVisibleCount+page.rows.size
             }
@@ -463,7 +463,7 @@ fun TvMainActivity.applyAccount() {
     accountData=accountController.bindCredentials()
     accountError=null
     accountHistoryFilter=null
-    accountHistoryVisibleCount=ACCOUNT_HISTORY_PAGE_SIZE
+    accountHistoryVisibleCount=maxOf(ACCOUNT_HISTORY_PAGE_SIZE,library.history().size)
     accountHistoryOffset=0
     accountHistoryHasMore=true
     accountHistoryEmptyPages=0

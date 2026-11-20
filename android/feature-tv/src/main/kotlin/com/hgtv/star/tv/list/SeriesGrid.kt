@@ -413,7 +413,11 @@ fun TvMainActivity.bindGridCard(card: PosterCard,item: Series) {
  * 不捕获某一次的 item。
  */
 fun TvMainActivity.wireGridCard(card: PosterCard) {
-    card.setOnClickListener { card.series?.let { item -> openSeries(item,collection=="history") } }
+        card.setOnClickListener { card.series?.let { item ->
+            val historyContext=collection=="history" ||
+                (tab==TAB_PROFILE && accountTab=="history")
+            openSeries(item,historyContext)
+        } }
     card.setOnLongClickListener { card.series?.let { item -> seriesMenu(item,card) }; true }
     card.setOnKeyListener { _,key,event ->
         val item=card.series

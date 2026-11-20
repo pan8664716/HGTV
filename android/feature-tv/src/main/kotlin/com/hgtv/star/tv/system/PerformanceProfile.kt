@@ -152,18 +152,24 @@ fun TvMainActivity.profileHead(row: LinearLayout) {
  * 界面走「本页没有更多内容」那一支的文案。
  */
 fun TvMainActivity.accountItems(key: String): List<Series> {
-    val data=accountData ?: return emptyList()
+    val data=accountData
     return when(key) {
-        "favorites" -> data.favorites.map { it.series }
+        "favorites" -> com.hgtv.star.shared.account.AccountMerge.favorites(
+            library.favorites(),
+            data?.favorites.orEmpty(),
+        )
         // 本机删过的那几条不再出现（见 [Library.historyDeleted]），再按「已看完 / 未看完」筛一次。
-        "history" -> data.history
+        "history" -> com.hgtv.star.shared.account.AccountMerge.history(
+            library.history(),
+            data?.history.orEmpty(),
+        )
             .filterNot { library.historyDeleted(it.series.id) }
             .filter { row -> accountHistoryFilter?.let { want -> historyFinished(row)==want } ?: true }
             .take(accountHistoryVisibleCount)
-            .map(::accountHistoryCard)
-        "likes" -> data.likes.map { it.series }
+            .map(::mergedHistoryCard)
+        "likes" -> data?.likes?.map { it.series }.orEmpty()
         // 预约按「已上线 / 待上线」筛（见 [accountReserveFilter]）。
-        "reserves" -> data.reserves
+        "reserves" -> data?.reserves.orEmpty()
             .filter { row -> accountReserveFilter?.let { want -> row.online==want } ?: true }
             .map { it.series }
         else -> emptyList()
@@ -200,9 +206,18 @@ fun TvMainActivity.historyFinished(row: AccountHistory): Boolean {
     val total=row.episodes.takeIf { it>0 } ?: row.series.episodeCount
     return local?.isFinished(total)==true || row.isFinished()
 }
+fun TvMainActivity.historyFinished(row: com.hgtv.star.shared.account.MergedHistory): Boolean =
+    row.finished
+
 fun TvMainActivity.accountHistoryCard(row: AccountHistory): Series =
     row.series.copy(
         badge=if(row.isFinished()) "看完了" else
+            "第 ${row.episodeIndex+1} 集"+(if(row.position>0) " · ${formatTime(row.position)}" else ""),
+    )
+
+fun TvMainActivity.mergedHistoryCard(row: com.hgtv.star.shared.account.MergedHistory): Series =
+    row.series.copy(
+        badge=if(row.finished) "看完了" else
             "第 ${row.episodeIndex+1} 集"+(if(row.position>0) " · ${formatTime(row.position)}" else ""),
     )
 /**

@@ -49,20 +49,27 @@ internal fun PhonePlayerActivity.load(seriesId: String) {
             return@launch
         }
 
-        val saved = withContext(Dispatchers.IO) {
-            runCatching { lib.progress(seriesId) }.getOrNull()
+        val merged = withContext(Dispatchers.IO) {
+            com.hgtv.star.shared.account.AccountMerge.historyForSeries(
+                lib.history(),
+                com.hgtv.star.shared.data.AppRuntime.accountController(activity)
+                    .data?.history.orEmpty(),
+                seriesId,
+            )
         }
-        val resumeIndex = saved?.let { s ->
-            d.episodes.indexOf(s.episodeId).takeIf { it >= 0 }
-        } ?: 0
-        val resumeAt = if (saved != null && resumeIndex == d.episodes.indexOf(saved.episodeId)) {
-            saved.position
-        } else {
-            0L
+        val resumeIndex = merged?.let { row ->
+            d.episodes.indexOf(row.episodeId).takeIf { it >= 0 } ?: row.episodeIndex
+        }?.coerceIn(0, d.episodes.lastIndex) ?: 0
+        val resumeAt = merged?.position ?: 0L
+        val requestedIndex = intent.getIntExtra(PhonePlayerActivity.EXTRA_EPISODE, -1)
+            .takeIf { it in d.episodes.indices }
+        val requestedPosition = intent.getLongExtra(PhonePlayerActivity.EXTRA_POSITION_MS, -1L)
+        val start = requestedIndex ?: resumeIndex
+        val startAt = when {
+            requestedIndex != null && requestedPosition >= 0 -> requestedPosition
+            start == resumeIndex -> resumeAt
+            else -> 0L
         }
-        val start = intent.getIntExtra(PhonePlayerActivity.EXTRA_EPISODE, -1)
-            .takeIf { it in d.episodes.indices } ?: resumeIndex
-        val startAt = if (start == resumeIndex) resumeAt else 0L
         PhoneServices.artwork(activity).prefetchWindow(
             ((start - 2)..(start + 10)).mapNotNull { at ->
                 d.episodes.getOrNull(at)?.let(d::episodeCover)

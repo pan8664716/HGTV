@@ -83,6 +83,7 @@ open class PhonePlayerActivity : PhoneActivity() {
         const val EXTRA_FULLSCREEN = "fullscreen"
 
         const val EXTRA_EPISODE = "episode"
+        const val EXTRA_POSITION_MS = "position_ms"
 
         const val EXTRA_RECOMMEND = "recommend"
 

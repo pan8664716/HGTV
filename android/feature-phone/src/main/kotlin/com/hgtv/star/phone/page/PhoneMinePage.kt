@@ -410,7 +410,7 @@ class PhoneMinePage(
         if (!reset && (!historyHasMore || historyVisibleCount <= 0)) return
         ensureLoadScope()
         if (reset) {
-            historyVisibleCount = HISTORY_PAGE_SIZE
+            historyVisibleCount = maxOf(HISTORY_PAGE_SIZE, library.history().size)
             historyOffset = 0
             historyHasMore = true
             historyEmptyPages = 0
@@ -446,7 +446,7 @@ class PhoneMinePage(
                 }
                 historyEmptyPages = 0
                 historyVisibleCount = if (reset) {
-                    maxOf(HISTORY_PAGE_SIZE, count)
+                    maxOf(HISTORY_PAGE_SIZE, library.history().size + count)
                 } else {
                     historyVisibleCount + count
                 }
@@ -874,21 +874,23 @@ class PhoneMinePage(
     private fun renderContent() {
         val cached = PhoneAccountSync.data ?: runCatching { library.accountCache() }.getOrNull()?.data
         val rows = when (tabs.getOrNull(tab) ?: "历史") {
-            "历史" -> cached?.history
-                ?.filterNot { library.historyDeleted(it.series.id) }
-                ?.filter { row -> historyFilter?.let { want -> historyFinished(row) == want } ?: true }
-                ?.take(historyVisibleCount)
-                // 平台那条记录里「看到第几集 / 集内秒数」是单独字段，卡片只认 `badge`。
-                ?.map { row ->
+            "历史" -> com.hgtv.star.shared.account.AccountMerge.history(
+                library.history(),
+                cached?.history.orEmpty(),
+            )
+                .filterNot { library.historyDeleted(it.series.id) }
+                .filter { row -> historyFilter?.let { want -> historyFinished(row) == want } ?: true }
+                .take(historyVisibleCount)
+                .map { row ->
                     row.series.copy(
-                        badge = if (historyFinished(row)) "看完了" else
+                        badge = if (row.finished) "看完了" else
                             "第 ${row.episodeIndex + 1} 集" +
                                 if (row.position > 0) " · ${clock(row.position)}" else "",
                     )
-                }.orEmpty()
-            "收藏" -> com.hgtv.star.shared.account.AccountMerge.series(
+                }
+            "收藏" -> com.hgtv.star.shared.account.AccountMerge.favorites(
                 runCatching { library.favorites() }.getOrDefault(emptyList()),
-                cached?.favorites?.map { it.series }.orEmpty(),
+                cached?.favorites.orEmpty(),
             )
             "稍后看" -> runCatching { library.later() }.getOrDefault(emptyList())
             "点赞" -> cached?.likes?.map { it.series }.orEmpty()
@@ -917,6 +919,9 @@ class PhoneMinePage(
         return local?.isFinished(total) == true || row.isFinished()
     }
 
+    private fun historyFinished(row: com.hgtv.star.shared.account.MergedHistory): Boolean =
+        row.finished
+
     /** 位置读数：与电视端 `formatTime` 同一份（`:core` 的 `PlaybackInfoLine.time`）。 */
     private fun clock(ms: Long): String = com.hgtv.star.core.PlaybackInfoLine.time(ms)
 
@@ -931,7 +936,7 @@ class PhoneMinePage(
     private fun resetHistoryPaging() {
         historyToken++
         historyLoading = false
-        historyVisibleCount = HISTORY_PAGE_SIZE
+        historyVisibleCount = maxOf(HISTORY_PAGE_SIZE, library.history().size)
         historyOffset = 0
         historyHasMore = true
         historyEmptyPages = 0

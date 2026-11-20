@@ -523,20 +523,21 @@ fun TvMainActivity.localCatalog()=collection!=null
  * （账号里的历史只在「我的」页与首页出现过），用户读到的就是「历史记录没有任何记录」。
  */
 fun TvMainActivity.localItems(): List<Series> = when(collection) {
-    "favorites" -> mergeAccount(library.favorites()) { accountData?.favorites?.map { it.series }.orEmpty() }
-    // 账号那一半带上「第几集 + 集内秒数」（见 accountHistoryCard）：卡片上要看得见看到哪儿了。
+    "favorites" -> com.hgtv.star.shared.account.AccountMerge.favorites(
+        library.favorites(),
+        accountData?.favorites.orEmpty(),
+    )
+    // 两边同一部剧按「集号 → 集内位置 → 更新时间」选更完整的一条。
     // 账号侧那半份要滤掉**本机删过的**（[Library.historyDeleted]）：平台的「删除观看记录」
     // 走的是阅读历史那条软删，短剧进度列表不一定真的摘掉，不滤就会「删了过一会儿又回来」。
     // 完成度筛选与「我的 → 历史」共用（见 [accountHistoryFilter]）：两处看到的是同一档。
-    "history" -> mergeAccount(
-        library.history().filter { p -> accountHistoryFilter?.let { want -> p.isFinished()==want } ?: true }
-            .map { it.series }
-    ) {
-        accountData?.history
-            ?.filterNot { library.historyDeleted(it.series.id) }
-            ?.filter { row -> accountHistoryFilter?.let { want -> historyFinished(row)==want } ?: true }
-            ?.map(::accountHistoryCard).orEmpty()
-    }
+    "history" -> com.hgtv.star.shared.account.AccountMerge.history(
+        library.history(),
+        accountData?.history.orEmpty(),
+    )
+        .filterNot { library.historyDeleted(it.series.id) }
+        .filter { row -> accountHistoryFilter?.let { want -> historyFinished(row)==want } ?: true }
+        .map(::mergedHistoryCard)
     "later" -> library.later()
     else -> library.history().map { it.series }
 }

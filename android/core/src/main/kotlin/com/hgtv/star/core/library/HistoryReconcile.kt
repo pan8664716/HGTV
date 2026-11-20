@@ -19,6 +19,7 @@ package com.hgtv.star.core
  * * 本机更超前 → 用本机那一份改写账号那一行（[WatchSync.toAccount]），「我的 → 历史」
  *   不再显示旧集数；同时把这条本机进度交给调用方推回云端（[Result.uploads]），
  *   第三台设备不会又看到旧的。
+ * * 只有一边存在 → 网络独有写入本机，本机独有补传网络，保证两端最终都有记录。
  *
  * 这里**只算不改**：要写盘的本机进度放在 [Result.writes]，由调用方自己落盘
  * （电视与手机的写队列不是同一个对象，但「写哪几条」这条判断必须只有一份）。
@@ -43,7 +44,12 @@ object HistoryReconcile {
         val uploads = mutableListOf<BackupProgress>()
         val writes = mutableListOf<BackupProgress>()
         val rows = data.history.map { row ->
-            val own = mine[row.series.id] ?: return@map row
+            val own = mine[row.series.id]
+            if (own == null) {
+                // 网络端独有：补一条本机进度，离线打开也能立即看到。
+                writes += WatchSync.toLocal(row, null, now)
+                return@map row
+            }
             val accountAhead = WatchSync.ahead(
                 row.episodeIndex, row.updatedAt, row.position,
                 own.episodeIndex, own.updatedAt, own.position,
@@ -58,6 +64,11 @@ object HistoryReconcile {
                 if (!WatchSync.matches(row, own)) uploads += own
                 WatchSync.toAccount(own, row)
             }
+        }
+        val accountIds = data.history.mapTo(HashSet()) { it.series.id }
+        local.filterNot { it.series.id in accountIds }.forEach { own ->
+            // 本机独有：补传网络端，换设备后也能看到这条历史。
+            uploads += own
         }
         // 顺序也统一成「按时间倒序」：账号那份是云端给的顺序，本机更超前的那条在云端还排在
         // 后面，不重排的话「我的 → 历史」里第 400 集那条会沉到第 200 集下面。

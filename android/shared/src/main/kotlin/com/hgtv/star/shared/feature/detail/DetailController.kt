@@ -12,6 +12,7 @@ import com.hgtv.star.core.authorsOf
 import com.hgtv.star.core.detail
 import com.hgtv.star.core.related
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.account.AccountMerge
 import com.hgtv.star.shared.feature.account.AccountController
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -145,18 +146,21 @@ class DetailController(
         }
     }
 
-    /** 续播目标：本机进度优先，账号历史兜底。 */
+    /** 续播目标：本机与账号历史按“集号 → 集内位置 → 更新时间”合并后取胜出记录。 */
     fun resumeTarget(seriesId: String, episodes: List<String>): ResumeTarget {
         if (episodes.isEmpty()) return ResumeTarget(0, 0)
-        val local = library.progress(seriesId)
-        val accountRow = account?.data?.history
-            ?.firstOrNull { it.series.id == seriesId && !library.historyDeleted(seriesId) }
+        if (library.historyDeleted(seriesId)) return ResumeTarget(0, 0)
+        val merged = AccountMerge.historyForSeries(
+            library.history(),
+            account?.data?.history.orEmpty(),
+            seriesId,
+        ) ?: return ResumeTarget(0, 0)
         return ResumePlayback.target(
             episodes = episodes,
-            episodeId = local?.episodeId ?: accountRow?.episodeId,
-            position = local?.position ?: accountRow?.position ?: 0L,
-            completed = local?.completed == true,
-            fallbackIndex = accountRow?.episodeIndex ?: -1,
+            episodeId = merged.episodeId,
+            position = merged.position,
+            completed = false,
+            fallbackIndex = merged.episodeIndex,
         )
     }
 

@@ -82,7 +82,7 @@ object WatchSync {
             episodeIndex=row.episodeIndex,
             position=row.position.coerceAtLeast(0),
             duration=if(same) local!!.duration.coerceAtLeast(0) else 0,
-            completed=same && local!!.completed,
+            completed=(same && local!!.completed) || row.isFinished(),
             updatedAt=at(row.updatedAt,now)
         )
     }
