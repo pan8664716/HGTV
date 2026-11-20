@@ -153,10 +153,17 @@ class PhoneMinePage(
     private var refreshing = false
     private var refreshOverlay: FrameLayout? = null
     private var accountLoading = false
+    private var accountLoadingColumns: Set<String> = emptySet()
     private var accountError: Throwable? = null
     private var accountRetry = 0
     private var accountToken = 0
+    private var historyToken = 0
     private var accountRetryTask: Runnable? = null
+    private var historyVisibleCount = HISTORY_PAGE_SIZE
+    private var historyOffset = 0
+    private var historyHasMore = true
+    private var historyLoading = false
+    private var historyEmptyPages = 0
     private var avatarUrl: String = ""
     /** 当前栏目是否处于批量选择模式；切换栏目 / 筛选或删除后退出。 */
     private var batchMode = false
@@ -227,6 +234,9 @@ class PhoneMinePage(
             context.phoneNav().open(Route.Detail(series.id, series.title))
         }
         feed.onSelectionChanged = { updateBatchBar() }
+        feed.onLoadMore = {
+            if (tabs.getOrNull(tab) == "历史") loadHistory(reset = false)
+        }
 
         // 栏目交给网格当第一项：它和海报共用同一个滚动容器，
         // 上滑时自然滚出屏幕，不再有独立页头的自动收起 / 展开。
@@ -286,6 +296,11 @@ class PhoneMinePage(
         // 切到别的 tab 时页面会被复用，只停掉这一轮在途请求；重新挂载时由 ensureLoadScope 恢复。
         accountRetryTask?.let(::removeCallbacks)
         accountRetryTask = null
+        historyToken++
+        accountToken++
+        historyLoading = false
+        accountLoading = false
+        accountLoadingColumns = emptySet()
         updateBadgeJob?.cancel()
         updateBadgeJob = null
         loadScope.cancel()
@@ -302,8 +317,18 @@ class PhoneMinePage(
         // 不重新挂窗口时不会走 `PhonePosterFeed.onAttachedToWindow`，必须在这里主动对齐列数。
         feed.applyColumnsFromSettings()
         exitBatchMode()
+        val showHistory = consumeHistoryOnNextShow()
+        if (showHistory) {
+            tab = 0
+            historyFilter = null
+            resetHistoryPaging()
+        }
         if (skipNextOnShownRefresh) {
             skipNextOnShownRefresh = false
+            if (showHistory) {
+                render()
+                loadCurrentTab()
+            }
             return
         }
         refresh()
@@ -331,25 +356,124 @@ class PhoneMinePage(
         render()
         // 进这一页顺手检查一次收藏更新（有 1 小时门槛，不会反复请求）。
         runCatching { monitor.check() }
-        loadAccount()
+        loadCurrentTab()
     }
 
     /**
      * 与电视端 [com.hgtv.star.tv.loadAccount] 同一套同步顺序：
      * 缓存先铺、网络刷新、失败重试、数据落地后重绘。
      */
-    private fun loadAccount(force: Boolean = false) {
+    private fun loadCurrentTab(force: Boolean = false, manual: Boolean = false) {
+        val currentTab = tabs.getOrNull(tab) ?: "历史"
+        if (currentTab == "历史") {
+            accountToken++
+            accountLoading = false
+            accountLoadingColumns = emptySet()
+        } else {
+            historyToken++
+            historyLoading = false
+        }
+        when (currentTab) {
+            "历史" -> loadHistory(reset = true, manual = manual, force = force)
+            "收藏" -> loadAccount(
+                force = force,
+                columns = setOf("收藏"),
+                manual = manual,
+            )
+            "稍后看" -> if (manual) finishRefresh(null)
+            "点赞" -> loadAccount(
+                force = force,
+                columns = setOf("点赞"),
+                manual = manual,
+            )
+            "预约" -> loadAccount(
+                force = force,
+                columns = setOf("预约"),
+                manual = manual,
+            )
+        }
+    }
+
+    private fun loadHistory(reset: Boolean, manual: Boolean = false, force: Boolean = false) {
+        if (historyLoading && !force) return
+        if (!reset && (!historyHasMore || historyVisibleCount <= 0)) return
+        ensureLoadScope()
+        if (reset) {
+            historyVisibleCount = HISTORY_PAGE_SIZE
+            historyOffset = 0
+            historyHasMore = true
+            historyEmptyPages = 0
+        }
+        historyLoading = true
+        if (PhoneAccountSync.data?.history.isNullOrEmpty()) renderContent()
+        val offset = if (reset) 0 else historyOffset
+        val token = ++historyToken
+        loadScope.launch {
+            val result = PhoneAccountSync.historyPage(context, offset, HISTORY_PAGE_SIZE)
+            if (token != historyToken || !isAttachedToWindow ||
+                tabs.getOrNull(tab) != "历史"
+            ) return@launch
+            historyLoading = false
+            accountError = result.error
+            val page = result.page
+            if (page != null) {
+                val count = page.rows.size
+                historyOffset = page.nextOffset
+                historyHasMore = page.hasMore
+                if (count == 0 && page.hasMore) {
+                    if (historyEmptyPages < HISTORY_EMPTY_PAGE_LIMIT) {
+                        historyEmptyPages++
+                        historyLoading = false
+                        loadHistory(reset = false, manual = manual)
+                        return@launch
+                    }
+                    historyHasMore = false
+                    accountError = IllegalStateException("历史记录分页未返回可显示内容")
+                    renderContent()
+                    if (manual) finishRefresh(accountError)
+                    return@launch
+                }
+                historyEmptyPages = 0
+                historyVisibleCount = if (reset) {
+                    maxOf(HISTORY_PAGE_SIZE, count)
+                } else {
+                    historyVisibleCount + count
+                }
+                renderContent()
+            }
+            if (manual) finishRefresh(result.error)
+        }
+    }
+
+    private fun loadAccount(
+        force: Boolean = false,
+        columns: Set<String> = com.hgtv.star.core.AccountSnapshot.KEYS,
+        manual: Boolean = false,
+    ) {
         if (!library.isLoaded) return
-        if (accountLoading && !force) return
+        if (accountLoading && !force && columns == accountLoadingColumns) return
         val controller = com.hgtv.star.shared.data.AppRuntime.accountController(context)
         controller.ensureBoundCredentials()
         accountLoading = true
-        val manual = force && refreshing
+        accountLoadingColumns = columns
+        val requestedColumnEmpty = columns.any { column ->
+            when (column) {
+                "资料" -> controller.data?.profile == null
+                "收藏" -> controller.data?.favorites.isNullOrEmpty()
+                "历史" -> controller.data?.history.isNullOrEmpty()
+                "点赞" -> controller.data?.likes.isNullOrEmpty()
+                "预约" -> controller.data?.reserves.isNullOrEmpty()
+                else -> false
+            }
+        }
+        if (requestedColumnEmpty) {
+            renderContent()
+        }
         val token = ++accountToken
         loadScope.launch {
             var failure: Throwable? = null
             try {
-                val result = controller.refresh()
+                val result = controller.refresh(columns)
                 if (token != accountToken || !isAttachedToWindow) return@launch
                 failure = result.error
                 if (failure == null) {
@@ -370,14 +494,19 @@ class PhoneMinePage(
                         accountRetryTask?.let(::removeCallbacks)
                         val task = Runnable {
                             accountRetryTask = null
-                            if (isAttachedToWindow && accountError != null) loadAccount()
+                            if (isAttachedToWindow && accountError != null) {
+                                loadAccount(columns = columns)
+                            }
                         }
                         accountRetryTask = task
                         postDelayed(task, ACCOUNT_RETRY_MS)
                     }
                 }
             } finally {
-                if (token == accountToken) accountLoading = false
+                if (token == accountToken) {
+                    accountLoading = false
+                    accountLoadingColumns = emptySet()
+                }
                 if (manual && token == accountToken) finishRefresh(failure)
             }
         }
@@ -389,7 +518,7 @@ class PhoneMinePage(
         ensureLoadScope()
         refreshing = true
         showRefreshLoading()
-        loadAccount(force = true)
+        loadCurrentTab(force = true, manual = true)
     }
 
     private fun showRefreshLoading() {
@@ -554,7 +683,7 @@ class PhoneMinePage(
                     exitBatchMode()
                     tab = index
                     render()
-                    loadAccount()
+                    loadCurrentTab()
                 }
             })
         }
@@ -726,6 +855,7 @@ class PhoneMinePage(
             "历史" -> cached?.history
                 ?.filterNot { library.historyDeleted(it.series.id) }
                 ?.filter { row -> historyFilter?.let { want -> historyFinished(row) == want } ?: true }
+                ?.take(historyVisibleCount)
                 // 平台那条记录里「看到第几集 / 集内秒数」是单独字段，卡片只认 `badge`。
                 ?.map { row ->
                     row.series.copy(
@@ -744,8 +874,17 @@ class PhoneMinePage(
                 ?.filter { row -> reserveFilter?.let { want -> row.online == want } ?: true }
                 ?.map { it.series }.orEmpty()
         }
-        val waitingForAccount = accountLoading && cached == null
-        feed.submit(rows, loading = waitingForAccount)
+        val currentTab = tabs.getOrNull(tab) ?: "历史"
+        val waitingForAccount = rows.isEmpty() && when (currentTab) {
+            "历史" -> historyLoading
+            "稍后看" -> false
+            else -> accountLoading
+        }
+        feed.submit(
+            rows,
+            more = currentTab == "历史" && historyHasMore,
+            loading = waitingForAccount,
+        )
         updateBatchBar()
     }
 
@@ -767,8 +906,31 @@ class PhoneMinePage(
         feed.scrollToTop()
     }
 
-    private companion object {
-        const val ACCOUNT_RETRY_MS = com.hgtv.star.core.AppConfig.Ui.ACCOUNT_RETRY_MS
-        const val ACCOUNT_RETRIES = com.hgtv.star.core.AppConfig.Ui.ACCOUNT_RETRIES
+    private fun resetHistoryPaging() {
+        historyToken++
+        historyLoading = false
+        historyVisibleCount = HISTORY_PAGE_SIZE
+        historyOffset = 0
+        historyHasMore = true
+        historyEmptyPages = 0
+    }
+
+    companion object {
+        private var showHistoryOnNextShow = false
+
+        internal fun requestHistoryOnNextShow() {
+            showHistoryOnNextShow = true
+        }
+
+        private fun consumeHistoryOnNextShow(): Boolean {
+            val requested = showHistoryOnNextShow
+            showHistoryOnNextShow = false
+            return requested
+        }
+
+        private const val HISTORY_PAGE_SIZE = 20
+        private const val HISTORY_EMPTY_PAGE_LIMIT = 3
+        private const val ACCOUNT_RETRY_MS = com.hgtv.star.core.AppConfig.Ui.ACCOUNT_RETRY_MS
+        private const val ACCOUNT_RETRIES = com.hgtv.star.core.AppConfig.Ui.ACCOUNT_RETRIES
     }
 }

@@ -148,10 +148,9 @@ fun TvMainActivity.importAccount(text: String,anchor: View?) {
                         com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force=true)
                         hideCenterLoading()
                         showHint("账号参数已导入")
-                        // 先发起唯一一次强制刷新，再重建页面。反过来 showCatalog() 会先自动拉一次，
-                        // 紧接着这里的 force 又发一次；两条账号请求并发时，后一条可能被前一条的
-                        // 在途写请求拖成空响应，历史页就会一直停在加载态。
-                        loadAccount(force=true)
+                        // 登录成功直接落在「我的 → 历史」：只取第一页历史，其他栏目等点击再取。
+                        accountTab="history"
+                        loadAccountHistory(reset=true,force=true)
                         showCatalog()
                     }
                 }
@@ -183,8 +182,11 @@ fun TvMainActivity.parseCredentials(text: String): AccountCredentials =
  * 界面上就是「一直显示正在读取，很久没有结果」。这里自己管一个序号：
  * 只有最后一次请求的回调会落地，且无论成功失败都会把 [accountLoading] 放回去。
  */
-fun TvMainActivity.loadAccount(force: Boolean=false) {
-    if(accountLoading && !force) return
+fun TvMainActivity.loadAccount(
+    force: Boolean=false,
+    columns: Set<String> = AccountSnapshot.KEYS,
+) {
+    if(accountLoading && !force && accountLoadingColumns==columns) return
     val cache=library.accountCache()
     val now=System.currentTimeMillis()
     // 先铺本地缓存，再继续发网络请求做增量刷新。缓存只负责首屏速度，不能替代网络。
@@ -201,14 +203,25 @@ fun TvMainActivity.loadAccount(force: Boolean=false) {
     }
     // 真正要发请求了才留一行日志：账号数据这一路在电视上没法调试，
     // 「启动时到底有没有去拉」只有这一行说得清。
-    android.util.Log.i("HGTV","Account fetch force=$force cache=${cache!=null} tab=$tab screen=$screen")
+    android.util.Log.i(
+        "HGTV",
+        "Account fetch force=$force columns=$columns cache=${cache!=null} tab=$tab screen=$screen",
+    )
     accountLoading=true
+    accountLoadingColumns=columns
+    if(tab==TAB_PROFILE && accountTabWaiting(accountTab)) {
+        main.post {
+            if(!isDestroyed && tab==TAB_PROFILE && accountTabWaiting(accountTab)) {
+                refreshAccountListIfVisible()
+            }
+        }
+    }
     // 「用户按了刷新按钮」与「别处顺手强制拉一次（导入 / 登录 / 换集）」要分开：
     // 只有前者才改按钮文案、才额外报一句结果，否则会把「账号参数已导入」这类提示顶掉。
     val manualRefresh=force && accountRefreshing
     val token=++accountToken
     appScope.launch {
-        val result=accountController.refresh()
+        val result=accountController.refresh(columns)
         if(isDestroyed || token!=accountToken) {
             // 这一发被后来的一次作废了：标志与加载框都不能留着（否则它会一直转）。
             if(!isDestroyed && manualRefresh) {
@@ -218,6 +231,7 @@ fun TvMainActivity.loadAccount(force: Boolean=false) {
             return@launch
         }
         accountLoading=false
+        accountLoadingColumns=emptySet()
         val failure=result.error
         if(failure==null) {
             accountError=null
@@ -247,7 +261,112 @@ fun TvMainActivity.loadAccount(force: Boolean=false) {
         if(accountData==null && (tab==TAB_PROFILE || collection!=null)) showCatalog()
         if(accountData==null && accountRetry<ACCOUNT_RETRIES) {
             accountRetry++
-            main.postDelayed({ if(!isDestroyed && foreground) loadAccount() },ACCOUNT_RETRY_MS)
+            main.postDelayed({
+                if(!isDestroyed && foreground) loadAccount(columns=columns)
+            },ACCOUNT_RETRY_MS)
+        }
+    }
+}
+
+/**
+ * 只加载「我的」页当前选中的栏目。
+ *
+ * 历史走分页接口，其余三栏只请求各自那一列；缓存由 `applyAccount()` 预先铺好，
+ * 因此切栏时先看到已有内容，没有缓存才显示加载态。
+ */
+fun TvMainActivity.loadCurrentAccountTab(force: Boolean=false) {
+    when(accountTab) {
+        "history" -> loadAccountHistory(reset=true,force=force)
+        "favorites" -> loadAccount(force=force,columns=setOf("收藏"))
+        "likes" -> loadAccount(force=force,columns=setOf("点赞"))
+        "reserves" -> loadAccount(force=force,columns=setOf("预约"))
+    }
+}
+
+fun TvMainActivity.loadMoreAccountHistory() {
+    loadAccountHistory(reset=false)
+}
+
+/**
+ * 账号历史首屏 / 继续加载。每次只取 [ACCOUNT_HISTORY_PAGE_SIZE] 条，并按服务端
+ * 原始条数推进 offset；本地墓碑过滤不会让下一页重复。
+ */
+fun TvMainActivity.loadAccountHistory(reset: Boolean,force: Boolean=false) {
+    if(accountHistoryLoading && !force) return
+    if(!reset && !accountHistoryHasMore) return
+    val offset=if(reset) 0 else accountHistoryOffset
+    val manualRefresh=force && accountRefreshing
+    if(reset) {
+        accountHistoryOffset=0
+        accountHistoryVisibleCount=ACCOUNT_HISTORY_PAGE_SIZE
+        accountHistoryEmptyPages=0
+    }
+    accountHistoryLoading=true
+    accountError=null
+    if(accountData?.history.isNullOrEmpty()) {
+        main.post {
+            if(!isDestroyed && accountHistoryPaging() && accountData?.history.isNullOrEmpty()) {
+                refreshAccountListIfVisible()
+            }
+        }
+    }
+    val token=++accountHistoryToken
+    android.util.Log.i(
+        "HGTV",
+        "Account history fetch offset=$offset limit=$ACCOUNT_HISTORY_PAGE_SIZE reset=$reset",
+    )
+    appScope.launch {
+        val result=accountController.refreshHistory(offset,ACCOUNT_HISTORY_PAGE_SIZE)
+        if(isDestroyed || token!=accountHistoryToken) return@launch
+        accountHistoryLoading=false
+        val failure=result.error
+        if(failure!=null) {
+            accountError=failure
+            DebugLog.record("账号","历史读取失败 · ${failure.message.orEmpty().take(140)}")
+            if(tab==TAB_PROFILE && accountData?.history.isNullOrEmpty()) {
+                refreshAccountListIfVisible()
+            }
+            if(manualRefresh) {
+                finishProfileRefresh()
+                hideCenterLoading()
+                showHint(accountFailureText(failure) ?: "历史记录加载失败，请稍后再试")
+            }
+            return@launch
+        }
+        val page=result.page
+        if(page!=null) {
+            accountHistoryOffset=page.nextOffset
+            accountHistoryHasMore=page.hasMore
+            if(page.rows.isEmpty() && page.hasMore) {
+                if(accountHistoryEmptyPages<ACCOUNT_HISTORY_EMPTY_PAGE_LIMIT) {
+                    accountHistoryEmptyPages++
+                    accountHistoryLoading=false
+                    loadAccountHistory(reset=false,force=manualRefresh)
+                    return@launch
+                }
+                accountHistoryHasMore=false
+                accountError=IllegalStateException("历史记录分页未返回可显示内容")
+                refreshAccountListIfVisible()
+                if(manualRefresh) {
+                    finishProfileRefresh()
+                    hideCenterLoading()
+                    showHint("历史记录分页异常，请稍后再试")
+                }
+                return@launch
+            }
+            accountHistoryEmptyPages=0
+            accountHistoryVisibleCount=if(reset) {
+                ACCOUNT_HISTORY_PAGE_SIZE
+            } else {
+                accountHistoryVisibleCount+page.rows.size
+            }
+            accountError=null
+            accountRetry=0
+            refreshAccountViews(setOf("历史"))
+        }
+        if(manualRefresh) {
+            finishProfileRefresh()
+            hideCenterLoading()
         }
     }
 }
@@ -271,7 +390,14 @@ fun TvMainActivity.refreshAccountViews(changed: Set<String>) {
         // 资料变了：头像与昵称长在页头那一行里，只有整页重建才换得掉。
         if("资料" in changed) { showCatalog(); return }
         // 只有**当前这一栏**变了才重画（切到别的栏目时它自己会读新数据）。
-        if(accountTab in changed) refreshAccountListIfVisible()
+        val column=when(accountTab) {
+            "favorites" -> "收藏"
+            "history" -> "历史"
+            "likes" -> "点赞"
+            "reserves" -> "预约"
+            else -> ""
+        }
+        if(column in changed) refreshAccountListIfVisible()
         return
     }
     if(screen!="catalog") return
@@ -304,9 +430,17 @@ fun TvMainActivity.applyAccount() {
     // 「我的 → 历史」读的是缓存，两边不一致的话用户一开电视就看到两个集数。
     accountData=accountController.bindCredentials()
     accountError=null
+    accountHistoryFilter=null
+    accountHistoryVisibleCount=ACCOUNT_HISTORY_PAGE_SIZE
+    accountHistoryOffset=0
+    accountHistoryHasMore=true
+    accountHistoryEmptyPages=0
     // 换凭据就把在途的那一次作废，并把「正在读」放回去：否则新凭据要等旧请求的超时才发。
     accountToken++
+    accountHistoryToken++
     accountLoading=false
+    accountLoadingColumns=emptySet()
+    accountHistoryLoading=false
     // 换凭据就等于「换了一个人」：上一次账号那几次重试计数作废（见 [loadAccount] 的失败分支）。
     accountRetry=0
 }
@@ -592,7 +726,8 @@ fun TvMainActivity.savePhoneLogin(credentials: AccountCredentials,anchor: View?)
                         com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force=true)
                         hideCenterLoading()
                         showHint("已登录")
-                        loadAccount(force=true)
+                        accountTab="history"
+                        loadAccountHistory(reset=true,force=true)
                         showCatalog()
                     }
                 }

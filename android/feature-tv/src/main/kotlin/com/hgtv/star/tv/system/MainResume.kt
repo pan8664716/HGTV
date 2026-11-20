@@ -43,7 +43,10 @@ internal fun TvMainActivity.resumeAfterSuper(resumeStarted: Long) {
     // 与首页历史栏都靠这一次刷新才跟上。[loadAccount] 自己按 [ACCOUNT_FRESH_MS] 节流
     // （一分钟内拉过就跳过），因此按 Home 再来一次不会多发请求；
     // 拉回来之后由 [refreshAccountViews] / [reconcileHistory] 只重画真的变了的那几处。
-    if(library.isLoaded && repository.signedIn) loadAccount()
+    if(library.isLoaded && repository.signedIn) {
+        if(tab==TAB_PROFILE) loadCurrentAccountTab()
+        else if(tab==TAB_HOME) loadAccount(columns=setOf("历史","收藏"))
+    }
     if(library.isLoaded) {
         ensureTvLaunchRecommendDefault(library)
         val contentStarted=StartupTrace.now()

@@ -60,6 +60,7 @@ import com.hgtv.star.tv.homeShelves
 import com.hgtv.star.tv.inlineHeadChips
 import com.hgtv.star.tv.invalidatePage
 import com.hgtv.star.tv.loadAccount
+import com.hgtv.star.tv.loadAccountHistory
 import com.hgtv.star.tv.loadHotSearches
 import com.hgtv.star.tv.localCatalog
 import com.hgtv.star.tv.localItems
@@ -623,7 +624,12 @@ fun TvMainActivity.showCatalog(
     } else container.addView(body,lp(-1,0).apply { weight=1f })
     if(localCatalog()) {
         catalog=localItems(); ranking=null; page=1; hasMore=false
-        if(collection!=null && accountData==null && accountError==null) loadAccount()
+        if(collection!=null && accountData==null && accountError==null) {
+            when(collection) {
+                "history" -> loadAccountHistory(reset=true)
+                "favorites" -> loadAccount(columns=setOf("收藏"))
+            }
+        }
     }
     if(load && !localCatalog()) {
         if(page==1) catalogPageOneFresh=false

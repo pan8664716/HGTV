@@ -29,6 +29,7 @@ import com.hgtv.star.phone.ui.phoneEdgeToEdge
 import com.hgtv.star.phone.ui.phoneNavigationBarUsesLightIcons
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
+import com.hgtv.star.phone.page.PhoneMinePage
 import com.hgtv.star.shared.account.AccountLogin
 import com.hgtv.star.shared.data.account
 import com.hgtv.star.shared.data.accountCache
@@ -426,9 +427,13 @@ class PhoneAccountActivity : PhoneActivity() {
             result.onSuccess { credentials ->
                 lib.saveAccount(credentials)
                 PhoneIdentity.apply(this@PhoneAccountActivity, lib)
+                com.hgtv.star.shared.data.AppRuntime
+                    .accountController(this@PhoneAccountActivity)
+                    .bindCredentials()
                 com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force = true)
                 toast("账号参数已导入")
-                render()
+                PhoneMinePage.requestHistoryOnNextShow()
+                finish()
             }.onFailure { failure ->
                 toast(failure.message.orEmpty().ifBlank { "导入失败" })
             }
@@ -459,10 +464,13 @@ class PhoneAccountActivity : PhoneActivity() {
             val prepared=result.getOrThrow()
             lib.saveAccount(prepared)
             PhoneIdentity.apply(this@PhoneAccountActivity, lib)
+            com.hgtv.star.shared.data.AppRuntime
+                .accountController(this@PhoneAccountActivity)
+                .bindCredentials()
             com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force = true)
             toast("${how}成功")
-            PhoneAccountSync.refresh(this@PhoneAccountActivity)
-            render()
+            PhoneMinePage.requestHistoryOnNextShow()
+            finish()
         }
     }
 

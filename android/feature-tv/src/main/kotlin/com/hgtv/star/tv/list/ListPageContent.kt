@@ -31,7 +31,11 @@ fun TvMainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Bo
     gridCardWidth=0; gridGap=0; gridPosterHeight=0
     gridRestoring=true
     if(tab==TAB_HOME && page==1 && collection==null) { renderHome(body,focusNav,focusType,loading); return }
-    if(tab==TAB_PROFILE) { catalog=accountItems(accountTab); hasMore=false; ranking=null }
+    if(tab==TAB_PROFILE) {
+        catalog=accountItems(accountTab)
+        hasMore=collection==null && accountTab=="history" && accountHistoryHasMore
+        ranking=null
+    }
     val wanted=moreFocus; moreFocus=null
     moreButton=null
     topArea.filter { it.parent==null }.forEach { row ->
@@ -69,7 +73,14 @@ fun TvMainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Bo
     if(displayed.isEmpty()) {
         if(tab==TAB_SEARCH && collection==null && query.isNotBlank() && !loading)
             noteDebugProblem("搜索「${query.take(16)}」· ${SearchDiag.explain()}")
-        if(tab==TAB_PROFILE && accountData?.profile==null) {
+        if(tab==TAB_PROFILE && accountTabWaiting(accountTab)) {
+            loading(list)
+            focusFirstCardOnLanding=false
+            ensureFocusView { chipControl(chipFocusKey) ?: firstHeadControl() ?: navEntry() }
+            return
+        }
+        if(tab==TAB_PROFILE &&
+            (accountError!=null || (accountTab!="history" && accountData?.profile==null))) {
             accountNotice(list)
             focusFirstCardOnLanding=false
             ensureFocusView { chipControl(chipFocusKey) ?: firstHeadControl() ?: navEntry() }
@@ -124,7 +135,7 @@ fun TvMainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Bo
     syncGridWindow(force=true)
     val paging=row(); paging.gravity=Gravity.CENTER
     var prev: View?=null; var next: View?=null
-    if(appendCatalog()) {
+    if(appendCatalog() || accountHistoryPaging()) {
         gridPaging=paging
         fillPagingRow(paging)
         list.addView(paging,lp(-1,dp(TvStyle.BUTTON_NORMAL+2*TvStyle.SOFT_BAND+TvStyle.GAP_TIGHT)))

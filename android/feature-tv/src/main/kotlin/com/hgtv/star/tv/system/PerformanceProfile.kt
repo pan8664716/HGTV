@@ -120,7 +120,7 @@ fun TvMainActivity.profileHead(row: LinearLayout) {
         // 等待态走**屏幕正中的加载框**（浮在整页之上，不占布局位置）：
         // 数据没变时界面不会有任何变化，没有这一层用户只会读到「按了没反应」。
         showCenterLoading("正在刷新账号数据…")
-        loadAccount(force=true)
+        loadCurrentAccountTab(force=true)
     }
     // 「清空全部记录」：只在**历史**这一栏、而且确实有记录时出现，排在「退出 / 刷新」之后。
     // 它是这一栏的批量动作（收藏 / 点赞 / 预约没有这种「一次清空」的语义），
@@ -144,13 +144,6 @@ fun TvMainActivity.profileHead(row: LinearLayout) {
         logout.nextFocusLeftId=(leftOfLogout ?: logout).id
     }
     leftOfLogout?.let { chip -> chip.nextFocusRightId=logout.id }
-    // 每次铺这一行都问一次 [loadAccount]：它自己按 [ACCOUNT_FRESH_MS] 决定要不要联网，
-    // 因此「进「我的」页就补一次历史」是免费的——一分钟之内反复进出不会多发一个请求。
-    // 早先这里只在 `accountData==null` 时才拉，于是**只要拉到过一次，就再也不会自动刷新**：
-    // 用户在手机上看完几集回来，电视上的「我的 → 历史」还是进应用那一刻的那一份。
-    // 失败过就不再自动重发：否则「失败 → showCatalog → 再拉」会变成无限重试，
-    // 重试交给下面 [accountNotice] 里那个按钮。
-    if(accountError==null) loadAccount()
 }
 /**
  * 「我的」页当前栏目里的条目（转成 [Series]，直接喂给统一的卡片栅格）。
@@ -166,6 +159,7 @@ fun TvMainActivity.accountItems(key: String): List<Series> {
         "history" -> data.history
             .filterNot { library.historyDeleted(it.series.id) }
             .filter { row -> accountHistoryFilter?.let { want -> historyFinished(row)==want } ?: true }
+            .take(accountHistoryVisibleCount)
             .map(::accountHistoryCard)
         "likes" -> data.likes.map { it.series }
         // 预约按「已上线 / 待上线」筛（见 [accountReserveFilter]）。
@@ -174,6 +168,12 @@ fun TvMainActivity.accountItems(key: String): List<Series> {
             .map { it.series }
         else -> emptyList()
     }
+}
+
+/** 当前账号栏目是否正在等第一页；有缓存时不算等待，先让缓存留在屏幕上。 */
+fun TvMainActivity.accountTabWaiting(key: String): Boolean {
+    if(accountItems(key).isNotEmpty()) return false
+    return if(key=="history") accountHistoryLoading else accountLoading
 }
 /**
  * 账号侧一条历史 → 卡片上用的 [Series]。
@@ -222,6 +222,7 @@ fun TvMainActivity.switchAccountTab(key: String) {
     chipFocusKey="account:$key"
     focusFirstCardOnLanding=false
     showCatalog(keepChip=true)
+    loadCurrentAccountTab()
 }
 /** 「我的」页身份行里所有可聚焦控件（按钮），按左右顺序。 */
 fun TvMainActivity.profileHeadControls(): List<View> {
@@ -277,13 +278,17 @@ fun TvMainActivity.accountNotice(parent: LinearLayout) {
         val card=profilePanel(parent,"读取账号信息失败")
         card.addView(text(problem.message.orEmpty().replace(Regex("https?://\\S+"),"[地址]").take(200)
             .ifBlank { "请检查电视的网络后重试。" },15f,TvStyle.textDim))
-        addButton(card,"重试",tone=ButtonTone.PRIMARY) { accountError=null; loadAccount(force=true); showCatalog() }
+        addButton(card,"重试",tone=ButtonTone.PRIMARY) {
+            accountError=null
+            loadCurrentAccountTab(force=true)
+            showCatalog()
+        }
         return
     }
     val data=accountData
     if(data==null) {
         loading(parent,180)
-        loadAccount()
+        loadCurrentAccountTab()
         return
     }
     val card=profilePanel(parent,"参数未通过验证")

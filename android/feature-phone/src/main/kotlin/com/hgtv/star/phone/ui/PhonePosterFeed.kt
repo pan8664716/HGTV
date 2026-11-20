@@ -207,6 +207,8 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
 
     /** 列表被程序性置顶或重新挂载：直接同步页头，不受收展动画的状态锁影响。 */
     var onScrollSettled: ((Int) -> Unit)? = null
+    /** 外部数据源（收藏 / 历史）的继续加载入口；只在已滚过当前数据一半时触发。 */
+    var onLoadMore: (() -> Unit)? = null
 
     /** 当前滚动量（像素）。子项还没铺出来时一律按 0 算（见 `onScrolled` 那条注释）。 */
     fun scrollY(): Int = if (grid.childCount > 0) grid.computeVerticalScrollOffset() else 0
@@ -263,10 +265,17 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             override fun onScrolled(rv: RecyclerView, dx: Int, dy: Int) {
                 val last = (rv.layoutManager as GridLayoutManager).findLastVisibleItemPosition()
                 val lastPoster=(last-adapter.posterStart).coerceAtMost(items.lastIndex)
+                val external = onLoadMore
+                if (external != null) {
+                    if (items.isNotEmpty() && lastPoster + 1 >= (items.size + 1) / 2) {
+                        external.invoke()
+                    }
+                } else {
                 // 与 TV 同一阈值：当前页只剩 50 条时提前取下一页。
                 val remaining=items.size-(lastPoster+1)
                 if(items.isNotEmpty() && CatalogPaging.shouldPrefetch(remaining)) requestMore()
                 else if(remaining>CATALOG_PREFETCH_REMAINING) prefetchChain=0
+                }
                 // **只在真的铺出子项之后**才报位置：首帧布局里 RecyclerView 还没量过
                 // 子项，`computeVerticalScrollOffset` 可能返回一个非 0 的估值。
                 if (rv.childCount > 0) {

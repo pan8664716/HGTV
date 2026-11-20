@@ -55,6 +55,15 @@ object PhoneAccountSync {
     suspend fun refresh(context: Context): AccountData? =
         AppRuntime.accountController(context).refresh().data
 
+    suspend fun refresh(context: Context, columns: Set<String>): AccountData? =
+        AppRuntime.accountController(context).refresh(columns).data
+
+    suspend fun historyPage(
+        context: Context,
+        offset: Int,
+        limit: Int,
+    ) = AppRuntime.accountController(context).refreshHistory(offset, limit)
+
     fun store(context: Context, value: AccountData?) =
         AppRuntime.accountController(context).store(value)
 

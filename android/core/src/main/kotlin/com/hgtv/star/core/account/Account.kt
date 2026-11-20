@@ -81,6 +81,18 @@ data class AccountData(
 }
 
 /**
+ * 一页观看历史。
+ *
+ * [nextOffset] 按服务端原始条目数前进，不能按 [rows] 算：本地墓碑过滤或元数据缺失
+ * 都可能让展示条数少于服务端这一页的条数，用它做下一次 offset 会重复拉同一页。
+ */
+data class AccountHistoryPage(
+    val rows: List<AccountHistory>,
+    val hasMore: Boolean,
+    val nextOffset: Int,
+)
+
+/**
  * 从模拟器导出的凭据（`cookieStore.xml` 解析后的结果）。
  *
  * 与 [ContentRepository.sessionToken] 的区别：这里存的是**结构化的整套登录态**

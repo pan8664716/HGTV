@@ -4,6 +4,8 @@ package com.hgtv.star.core
 fun ContentRepository.accountProfile(): AccountProfile? = accountProfileImpl()
 fun ContentRepository.accountFavorites(): List<AccountFavorite> = accountFavoritesImpl()
 fun ContentRepository.accountHistory(): List<AccountHistory> = accountHistoryImpl()
+fun ContentRepository.accountHistoryPage(offset: Int, limit: Int): AccountHistoryPage =
+    accountHistoryPageImpl(offset, limit)
 fun ContentRepository.accountLikes(): List<AccountLike> = accountLikesImpl()
 fun ContentRepository.accountReserves(): List<AccountReserve> = accountReservesImpl()
 fun ContentRepository.accountReserve(seriesId: String, subscribe: Boolean): Boolean =
@@ -28,6 +30,7 @@ fun ContentRepository.accountDeleteHistories(seriesIds: List<String>): Boolean =
 fun ContentRepository.accountHistoryIds(): List<String> = accountHistoryIdsImpl()
 fun ContentRepository.accountClearHistory(extra: List<String> = emptyList()): Boolean =
     accountClearHistoryImpl(extra)
-fun ContentRepository.accountData(): AccountData = accountDataImpl()
+fun ContentRepository.accountData(columns: Set<String> = AccountSnapshot.KEYS): AccountData =
+    accountDataImpl(columns)
 internal fun ContentRepository.authorOf(id: String): String = authorOfImpl(id)
 fun ContentRepository.authorsOf(ids: List<String>): Map<String,String> = authorsOfImpl(ids)

@@ -89,6 +89,11 @@ fun TvMainActivity.switchTab(next: Int) {
         focusFirstCardOnLanding=false
     } else if(needsLoad) focusFirstCardOnLanding=true
     showCatalog(load=needsLoad,keepCatalog=seededRank)
+    if(next==TAB_PROFILE) {
+        main.post {
+            if(!isDestroyed && foreground && tab==TAB_PROFILE) loadCurrentAccountTab()
+        }
+    }
     // 进「我的」页先交代一次「这是第三方客户端」：这一页是唯一会用到账号（登录 / 收藏 / 历史）
     // 的入口，声明放在这里最贴题。确认过就不再弹（见 [ensureThirdPartyAccepted]）。
     //
@@ -508,7 +513,7 @@ fun TvMainActivity.fullList()=collection!=null || tab==TAB_PROFILE
  * 所有远端卡片列表都不再给「展示更多」按钮：滚到剩余 50 条（或焦点接近末尾）
  * 就自动取下一页，底部只留一行不可聚焦的进度文字。
  */
-fun TvMainActivity.autoAppendCatalog()=appendCatalog()
+fun TvMainActivity.autoAppendCatalog()=appendCatalog() || accountHistoryPaging()
 /** 本机记录集合页（我的收藏 / 历史记录 / 稍后观看）。 */
 fun TvMainActivity.localCatalog()=collection!=null
 /**

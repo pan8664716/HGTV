@@ -73,7 +73,9 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
     // 首页没有切换芯片：焦点不在顶部入口上时直接落到第一栏第一张卡。
     // 先把账号读取排进后台，缓存或本机历史可让历史栏在首帧就有稳定位置；
     // 真正的网络回调仍走 refreshAccountViews，不会在这里同步等待。
-    if(library.isLoaded && accountData==null && accountError==null && !accountLoading) loadAccount()
+    if(library.isLoaded && accountData==null && accountError==null && !accountLoading) {
+        loadAccount(columns=setOf("历史","收藏"))
+    }
     val shelves=homeShelves()
     val canRequestFocus=!focusNav && !loading && !homeFocusRequested
     val structural=shelves.flatMap { shelf ->
@@ -107,7 +109,11 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
     // 在渲染过程中再进 [showCatalog] 会边建边拆（同 [loadAccount] 里那条注释）。
     // 已经有数据、或正在读、或上一次失败过，[loadAccount] 自己会跳过，不会重复打请求。
     if(accountData==null && accountError==null && !accountLoading) {
-        body.post { if(!isDestroyed && foreground && screen=="catalog") loadAccount() }
+        body.post {
+            if(!isDestroyed && foreground && screen=="catalog") {
+                loadAccount(columns=setOf("历史","收藏"))
+            }
+        }
     }
     navIcons().forEach { it.nextFocusDownId=home.firstId() }
     // 导航栏首位那枚「推荐」按钮：按下进第一栏第一张卡，按上停在原地。

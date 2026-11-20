@@ -15,6 +15,7 @@ import com.hgtv.star.core.accountAddFavorite
 import com.hgtv.star.core.accountClearHistory
 import com.hgtv.star.core.accountData
 import com.hgtv.star.core.accountDeleteHistories
+import com.hgtv.star.core.accountHistoryPage
 import com.hgtv.star.core.accountRemoveFavorite
 import com.hgtv.star.core.accountReserve
 import com.hgtv.star.core.accountUploadProgress
@@ -67,6 +68,12 @@ class AccountController(
         val remoteRequested: Boolean,
     )
 
+    data class HistoryPageResult(
+        val page: com.hgtv.star.core.AccountHistoryPage?,
+        val data: AccountData?,
+        val error: Throwable? = null,
+    )
+
     /**
      * 身份变化时调用：登录账号或匿名主设备都先用各自的本地缓存顶上。
      */
@@ -97,14 +104,26 @@ class AccountController(
      * 合并、过滤墓碑、对账和本机超前项回推都在这里完成。页面只需根据
      * [RefreshResult.changed] / [RefreshResult.localWrites] 重画对应区域。
      */
-    suspend fun refresh(): RefreshResult {
+    suspend fun refresh(
+        columns: Set<String> = AccountSnapshot.KEYS,
+    ): RefreshResult {
         val fresh = withContext(Dispatchers.IO) {
-            runCatching { repository.accountData() }
+            runCatching { repository.accountData(columns) }
         }.getOrElse { problem ->
             return RefreshResult(data, emptySet(), 0, emptyList(), emptySet(), problem)
         }
         val before = data
-        val merged = AccountSnapshot.merge(before, fresh).let { snapshot ->
+        val partial = AccountSnapshot.merge(before, fresh).let { snapshot ->
+            if(before == null || columns == AccountSnapshot.KEYS) snapshot
+            else snapshot.copy(
+                profile = if("资料" in columns) snapshot.profile else before.profile,
+                favorites = if("收藏" in columns) snapshot.favorites else before.favorites,
+                history = if("历史" in columns) snapshot.history else before.history,
+                likes = if("点赞" in columns) snapshot.likes else before.likes,
+                reserves = if("预约" in columns) snapshot.reserves else before.reserves,
+            )
+        }
+        val merged = partial.let { snapshot ->
             val withoutDeletedLikes = if (deletedLikes.isEmpty()) snapshot
             else snapshot.copy(likes = snapshot.likes.filterNot { it.series.id in deletedLikes })
             val kept = withoutDeletedLikes.history.filterNot { library.historyDeleted(it.series.id) }
@@ -123,6 +142,35 @@ class AccountController(
             uploads = uploads,
             failedColumns = fresh.errors.keys,
         )
+    }
+
+    /**
+     * 只刷新一页历史。首屏 / 下拉分页使用，不等待收藏、点赞、预约。
+     */
+    suspend fun refreshHistory(offset: Int, limit: Int): HistoryPageResult {
+        val page = withContext(Dispatchers.IO) {
+            runCatching { repository.accountHistoryPage(offset, limit) }
+        }.getOrElse { problem ->
+            return HistoryPageResult(null, data, problem)
+        }
+        val before = data
+        val rows = page.rows.filterNot { library.historyDeleted(it.series.id) }
+        val mergedRows = if(offset == 0) {
+            rows + before?.history.orEmpty().filterNot { cached ->
+                rows.any { it.series.id == cached.series.id }
+            }
+        } else {
+            val next = before?.history.orEmpty().toMutableList()
+            rows.forEach { row ->
+                val at = next.indexOfFirst { it.series.id == row.series.id }
+                if(at >= 0) next[at] = row else next += row
+            }
+            next.sortedByDescending { it.updatedAt }
+        }
+        val next = (before ?: AccountData(null, emptyList(), emptyList(), emptyList(), emptyList()))
+            .copy(history = mergedRows)
+        storeRaw(next)
+        return HistoryPageResult(page.copy(rows = rows), next, null)
     }
 
     /** 收藏 / 取消收藏：本机账号缓存先改，云端随后推。 */

@@ -14,11 +14,13 @@ import com.hgtv.star.tv.PREFETCH_PAGES
 import com.hgtv.star.tv.PREFETCH_TRIGGER_ITEMS
 import com.hgtv.star.tv.TAB_CATEGORY
 import com.hgtv.star.tv.TAB_HOME
+import com.hgtv.star.tv.TAB_PROFILE
 import com.hgtv.star.tv.TAB_RANK
 import com.hgtv.star.tv.TAB_SEARCH
 import com.hgtv.star.tv.TvButton
 import com.hgtv.star.tv.TvMainActivity
 import com.hgtv.star.tv.TvStyle
+import com.hgtv.star.tv.accountHistoryPaging
 import com.hgtv.star.tv.appendCatalog
 import com.hgtv.star.tv.autoAppendCatalog
 import com.hgtv.star.tv.button
@@ -26,6 +28,7 @@ import com.hgtv.star.tv.catalogSelectionInFlight
 import com.hgtv.star.tv.dp
 import com.hgtv.star.tv.gapInto
 import com.hgtv.star.tv.gridColumns
+import com.hgtv.star.tv.loadMoreAccountHistory
 import com.hgtv.star.tv.lp
 import com.hgtv.star.tv.noteDebugProblem
 import com.hgtv.star.tv.showHint
@@ -37,6 +40,10 @@ fun TvMainActivity.moreLabel(): String = when {
 }
 
 fun TvMainActivity.loadMore() {
+    if(tab==TAB_PROFILE && collection==null && accountTab=="history") {
+        loadMoreAccountHistory()
+        return
+    }
     if(!hasMore || !appendCatalog()) return
     if(gridList==null || gridItems.isEmpty()) {
         moreFocus=null; page++; catalogFocus=""
@@ -49,6 +56,11 @@ fun TvMainActivity.loadMore() {
 
 fun TvMainActivity.prefetchNextPage() {
     if(catalogSelectionInFlight()) return
+    if(accountHistoryPaging()) {
+        if(!hasMore || accountHistoryLoading || gridList==null) return
+        if(accountHistoryHalfConsumed()) loadMoreAccountHistory()
+        return
+    }
     if(workJob?.isDone==false) return
     if(screen!="catalog" || !appendCatalog() || !hasMore || moreInFlight || gridList==null) return
     if(moreFailed) {
@@ -81,8 +93,16 @@ fun TvMainActivity.applyNextPage(next: Int,result: CatalogPage,userInitiated: Bo
 }
 
 fun TvMainActivity.nearGridEnd(): Boolean {
+    if(accountHistoryPaging()) return accountHistoryHalfConsumed()
     if(gridItems.isEmpty()) return false
     return CatalogPaging.shouldPrefetch(itemsLeftAfterConsumed())
+}
+
+/** 电视端与手机一致：当前历史已消费到一半时再取下一页 20 条。 */
+fun TvMainActivity.accountHistoryHalfConsumed(): Boolean {
+    if(!accountHistoryPaging() || gridItems.isEmpty()) return false
+    val consumed=gridConsumedIndex()
+    return consumed>=0 && consumed+1>=(gridItems.size+1)/2
 }
 
 fun TvMainActivity.itemsLeftAfterConsumed(): Int {

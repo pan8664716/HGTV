@@ -206,7 +206,8 @@ fun TvMainActivity.applyAccountHistoryDelete(series: Series) {
 fun TvMainActivity.refreshAccountListIfVisible() {
     if(screen!="catalog" || tab!=TAB_PROFILE) return
     val index=gridItems.map { it.id }.indexOf(catalogFocus).coerceAtLeast(0)
-    catalog=accountItems(accountTab); page=1; hasMore=false
+    catalog=accountItems(accountTab); page=1
+    hasMore=accountHistoryPaging() && accountHistoryHasMore
     catalogFocus=catalog.getOrNull(index.coerceAtMost((catalog.size-1).coerceAtLeast(0)))?.id.orEmpty()
     rememberScroll(catalogPageKey,catalogScroll?.scrollY ?: 0)
     artwork.cancelPage()

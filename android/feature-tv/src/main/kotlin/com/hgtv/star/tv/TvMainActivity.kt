@@ -255,9 +255,16 @@ class TvMainActivity: Activity() {
     var pendingAccountUri: android.net.Uri?=null
     var accountError: Throwable?=null
     var accountLoading=false
+    var accountLoadingColumns: Set<String> = emptySet()
     var accountRefreshing=false
     var accountToken=0
     var accountRetry=0
+    var accountHistoryVisibleCount=20
+    var accountHistoryOffset=0
+    var accountHistoryHasMore=true
+    var accountHistoryLoading=false
+    var accountHistoryToken=0
+    var accountHistoryEmptyPages=0
     /** 权限授予后最多补读一次旧镜像，避免每次 onResume 都触发 MediaStore 查询。 */
     var mirrorRestoreRetried=false
     val historyPushedAt=mutableMapOf<String,Long>()

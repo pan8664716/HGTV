@@ -43,14 +43,66 @@ import java.io.IOException
      */
     internal fun ContentRepository.accountHistoryImpl(): List<AccountHistory> {
         val rows=historyRows().let(AccountParser::history)
+        return enrichHistory(rows)
+    }
+
+    /**
+     * 历史首屏 / 下拉分页：只取一页，并且只补齐这一页的剧集元数据。
+     *
+     * `book_type=2` 是短剧历史；分页字段沿用官方请求的 `offset` / `limit`。
+     * 首页 / 我的页面不再为了显示前 20 条而等待整段历史全部补齐。
+     */
+    internal fun ContentRepository.accountHistoryPageImpl(
+        offset: Int,
+        limit: Int,
+    ): AccountHistoryPage {
+        val safeOffset = offset.coerceAtLeast(0)
+        val safeLimit = limit.coerceIn(1, MULTI_DETAIL_LIMIT)
+        val raw = retryBlank {
+            accountJson("/reading/bookapi/read_history/list/v", mapOf(
+                "book_type" to "2",
+                "offset" to safeOffset.toString(),
+                "limit" to safeLimit.toString(),
+                "query_soft_deleted" to "false",
+                "is_first_load" to (safeOffset == 0).toString(),
+                "last_min_read_timestamp_ms" to "0",
+                "full_field" to "false",
+            ))
+        }
+        val rows = AccountParser.history(raw)
+        val data = raw.optJSONObject("data")
+        val fetchedCount = data?.optJSONArray("data_list")?.length()
+            ?: raw.optJSONArray("video_data")?.length()
+            ?: data?.optJSONArray("video_data")?.length()
+            ?: rows.size
+        val hasMore = data?.optBoolean("has_more", fetchedCount >= safeLimit)
+            ?: raw.optBoolean("has_more", fetchedCount >= safeLimit)
+        return AccountHistoryPage(
+            rows = enrichHistory(rows),
+            hasMore = hasMore,
+            nextOffset = safeOffset + fetchedCount,
+        )
+    }
+
+    /** 补齐历史卡片的标题 / 封面；分片并发，避免历史越多越按 50 条串行等待。 */
+    private fun ContentRepository.enrichHistory(rows: List<AccountHistory>): List<AccountHistory> {
         if(rows.isEmpty()) return rows
         val details=linkedMapOf<String,Series>()
-        rows.map { it.series.id }.distinct().chunked(MULTI_DETAIL_LIMIT).forEach { chunk ->
-            val part=runCatching {
-                retryBlank {
-                    accountJson("/reading/bookapi/multi-detail/v",
-                        mapOf("book_id" to chunk.joinToString(","),"book_type" to "2"))
-                }.let(AccountParser::multiDetail)
+        val chunks=rows.map { it.series.id }.distinct().chunked(MULTI_DETAIL_LIMIT)
+        val parts=chunks.map { chunk ->
+            accountPool.submit<Pair<List<String>, Result<Map<String,Series>>>> {
+                chunk to runCatching {
+                    retryBlank {
+                        accountJson("/reading/bookapi/multi-detail/v",
+                            mapOf("book_id" to chunk.joinToString(","),"book_type" to "2"))
+                    }.let(AccountParser::multiDetail)
+                }
+            }
+        }
+        parts.forEach { future ->
+            val (chunk, part) = runCatching { future.get() }.getOrElse {
+                writeLog("历史元数据分片失败 size=? ${it.message}")
+                return@forEach
             }
             part.onFailure { writeLog("历史元数据分片失败 size=${chunk.size} ${it.message}") }
             details.putAll(part.getOrDefault(emptyMap()))
@@ -384,23 +436,39 @@ import java.io.IOException
      * 四条列表彼此独立：某一条失败只让它空着、把原因记进 [AccountData.errors]，
      * 其余三条照常显示。未登录时资料拉不到，但设备级历史 / 收藏 / 预约列表仍会请求。
      */
-    internal fun ContentRepository.accountDataImpl(): AccountData {
+    internal fun ContentRepository.accountDataImpl(
+        columns: Set<String> = AccountSnapshot.KEYS,
+    ): AccountData {
         val errors=java.util.concurrent.ConcurrentHashMap<String,String>()
         fun <T> part(name: String, action: ()->T, fallback: T): T = try { action() } catch(e: Exception) {
             errors[name]=e.message.orEmpty().take(120); fallback
         }
         // 五个任务**并发**发出去：它们彼此独立，串行发要两三秒（每个请求都带签名，
         // 平台首包 200~600ms，个别还要重试）。并发之后整体耗时取决于最慢的那一个。
-        val profile=accountPool.submit<AccountProfile?> { part("资料",{accountProfileImpl()},null) }
-        val favorites=accountPool.submit<List<AccountFavorite>> { part("收藏",{accountFavoritesImpl()},emptyList()) }
-        val history=accountPool.submit<List<AccountHistory>> { part("历史",{accountHistoryImpl()},emptyList()) }
-        val likes=accountPool.submit<List<AccountLike>> { part("点赞",{accountLikesImpl()},emptyList()) }
-        val reserves=accountPool.submit<List<AccountReserve>> { part("预约",{accountReservesImpl()},emptyList()) }
+        val profile=if("资料" in columns) accountPool.submit<AccountProfile?> {
+            part("资料",{accountProfileImpl()},null)
+        } else null
+        val favorites=if("收藏" in columns) accountPool.submit<List<AccountFavorite>> {
+            part("收藏",{accountFavoritesImpl()},emptyList())
+        } else null
+        val history=if("历史" in columns) accountPool.submit<List<AccountHistory>> {
+            part("历史",{accountHistoryImpl()},emptyList())
+        } else null
+        val likes=if("点赞" in columns) accountPool.submit<List<AccountLike>> {
+            part("点赞",{accountLikesImpl()},emptyList())
+        } else null
+        val reserves=if("预约" in columns) accountPool.submit<List<AccountReserve>> {
+            part("预约",{accountReservesImpl()},emptyList())
+        } else null
         fun <T> take(future: java.util.concurrent.Future<T>, fallback: T): T =
             runCatching { future.get() }.getOrDefault(fallback)
         return AccountData(
-            take(profile,null),take(favorites,emptyList()),take(history,emptyList()),
-            take(likes,emptyList()),take(reserves,emptyList()),errors.toMap()
+            profile?.let { take(it,null) },
+            favorites?.let { take(it,emptyList()) }.orEmpty(),
+            history?.let { take(it,emptyList()) }.orEmpty(),
+            likes?.let { take(it,emptyList()) }.orEmpty(),
+            reserves?.let { take(it,emptyList()) }.orEmpty(),
+            errors.toMap()
         )
     }
 

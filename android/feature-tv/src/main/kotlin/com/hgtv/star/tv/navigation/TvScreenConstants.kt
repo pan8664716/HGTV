@@ -35,6 +35,14 @@ const val TAB_SETTINGS=4
  */
 const val TAB_PROFILE=5
 
+/** 「我的 → 历史」的分页大小；首屏和每次继续加载都只取 20 条。 */
+const val ACCOUNT_HISTORY_PAGE_SIZE=20
+const val ACCOUNT_HISTORY_EMPTY_PAGE_LIMIT=3
+
+/** 当前是否正在看「我的」页的账号历史，而不是本机历史集合页。 */
+fun TvMainActivity.accountHistoryPaging()=
+    tab==TAB_PROFILE && collection==null && accountTab=="history"
+
 /**
  * 「本机文件导入账号参数」的请求码（[Activity.startActivityForResult]）。
  *

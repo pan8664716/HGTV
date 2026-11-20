@@ -32,6 +32,7 @@ import com.hgtv.star.tv.TAB_SEARCH
 import com.hgtv.star.shared.ui.LoadingDotsView
 import com.hgtv.star.tv.appendCatalog
 import com.hgtv.star.tv.autoAppendCatalog
+import com.hgtv.star.tv.accountHistoryPaging
 import com.hgtv.star.tv.button
 import com.hgtv.star.tv.catalogSelectionInFlight
 import com.hgtv.star.tv.dp
@@ -459,7 +460,8 @@ fun TvMainActivity.wireGridCard(card: PosterCard) {
                         gridFocusIndex()==target
                     }
                     // 最后一行再按下键就是「继续往下看」：不经过底部按钮，直接把下一页接上。
-                    key==KeyEvent.KEYCODE_DPAD_DOWN && isGridTail(holder) && appendCatalog() && hasMore -> { loadMore(); true }
+                    key==KeyEvent.KEYCODE_DPAD_DOWN && isGridTail(holder) &&
+                        (appendCatalog() || accountHistoryPaging()) && hasMore -> { loadMore(); true }
                     else -> false
                 }
             }

@@ -109,7 +109,7 @@ fun TvMainActivity.loadLibrary() {
             )
             root.post { StartupTrace.mark("main.firstContent.firstFrame") }
             favoriteMonitor.check()
-            if(repository.signedIn) loadAccount()
+            if(repository.signedIn) loadAccount(columns=setOf("历史","收藏"))
         }
     }
 }
