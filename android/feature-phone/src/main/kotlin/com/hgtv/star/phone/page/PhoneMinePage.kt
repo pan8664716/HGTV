@@ -27,6 +27,7 @@ import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhonePosterFeed
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.phone.ui.PhoneStyle
+import com.hgtv.star.phone.ui.PhoneTabSwipeHost
 import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
@@ -140,6 +141,7 @@ class PhoneMinePage(
     /** 账号、历史/收藏等栏目作为列表第一项，和海报一起滚动，不自动隐藏。 */
     private val body = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val feed = PhonePosterFeed(context)
+    private val swipeHost = PhoneTabSwipeHost(context)
 
     /** 默认落在「历史」：用户进「我的」最常见的是接着看，不是先看收藏。 */
     private var tab = initialState?.tab ?: 0
@@ -204,11 +206,7 @@ class PhoneMinePage(
         applySystemBottomInset(0)
         // 历史与电视端一样把账号进度写在第二行；收藏则写「更新至 N 集」。
         feed.subtitleOf = { series ->
-            when (tabs.getOrNull(tab)) {
-                "历史" -> series.badge.takeIf { it.isNotBlank() }
-                "收藏" -> library.favoriteLabel(series.id)
-                else -> null
-            }
+            subtitleFor(tab, series)
         }
         // 「我的」卡片只显示状态文字，不画播放进度条。
         feed.progressOf = null
@@ -241,6 +239,14 @@ class PhoneMinePage(
         // 栏目交给网格当第一项：它和海报共用同一个滚动容器，
         // 上滑时自然滚出屏幕，不再有独立页头的自动收起 / 展开。
         feed.setHeader(body)
+        swipeHost.setContent(feed)
+        swipeHost.canSwipe = { direction -> tab + direction in tabs.indices }
+        swipeHost.onSwipe = { direction ->
+            selectTab((tab + direction).coerceIn(tabs.indices))
+        }
+        swipeHost.previewProvider = ::previewFor
+        swipeHost.previewReleaser = { (it.tag as? PhonePosterFeed)?.release() }
+        swipeHost.refreshSwipeSetting()
         // 头像之外的上下留白缩到 20%，状态栏安全区由顶栏单独保留。
         topBar.setLeadingView(
             topAccount,
@@ -257,7 +263,7 @@ class PhoneMinePage(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ))
-        pageContent.addView(feed, LinearLayout.LayoutParams(
+        pageContent.addView(swipeHost, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
             0,
             1f,
@@ -301,6 +307,7 @@ class PhoneMinePage(
         historyLoading = false
         accountLoading = false
         accountLoadingColumns = emptySet()
+        swipeHost.cancelSwipe()
         updateBadgeJob?.cancel()
         updateBadgeJob = null
         loadScope.cancel()
@@ -316,6 +323,7 @@ class PhoneMinePage(
         // 设置页可能刚改过「列表每行」：这一页一直留在 Activity 里，
         // 不重新挂窗口时不会走 `PhonePosterFeed.onAttachedToWindow`，必须在这里主动对齐列数。
         feed.applyColumnsFromSettings()
+        swipeHost.refreshSwipeSetting()
         exitBatchMode()
         val showHistory = consumeHistoryOnNextShow()
         if (showHistory) {
@@ -583,7 +591,7 @@ class PhoneMinePage(
         updateTopAccount()
         feed.hideTags = tabs.getOrNull(tab) == "历史"
         body.removeAllViews()
-        body.addView(buildTabs())
+        body.addView(buildTabs(tab, interactive = true))
         batchBar = buildBatchBar()
         batchBar?.let { body.addView(it) }
         feed.refreshHeader()
@@ -674,16 +682,25 @@ class PhoneMinePage(
      * 点已选中的那一枚 = 取消筛选回到「全部」，与 TV 的 `ToggleChip` 同一条语义：
      * 一个筛选只该有两种状态（选中 / 不选），不需要第三枚「全部」占地方。
      */
-    private fun filterOptions(): List<Pair<Boolean, String>> = when (tabs.getOrNull(tab)) {
+    private fun filterOptions(tabIndex: Int = tab): List<Pair<Boolean, String>> =
+        when (tabs.getOrNull(tabIndex)) {
             "历史" -> listOf(true to "已看完", false to "未看完")
             "预约" -> listOf(true to "已上线", false to "待上线")
             else -> emptyList()
         }
 
-    private fun currentFilter(): Boolean? =
-        if (tabs.getOrNull(tab) == "历史") historyFilter else reserveFilter
+    private fun currentFilter(tabIndex: Int = tab): Boolean? =
+        if (tabs.getOrNull(tabIndex) == "历史") historyFilter else reserveFilter
 
-    private fun buildTabs(): View {
+    private fun selectTab(index: Int) {
+        if (index == tab || index !in tabs.indices) return
+        exitBatchMode()
+        tab = index
+        render()
+        loadCurrentTab()
+    }
+
+    private fun buildTabs(selected: Int, interactive: Boolean): View {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
@@ -694,18 +711,14 @@ class PhoneMinePage(
             row.addView(TextView(context).apply {
                 text = label
                 phoneSize(16)
-                setTextColor(if (index == tab) PhoneStyle.text else PhoneStyle.textFaint)
+                setTextColor(if (index == selected) PhoneStyle.text else PhoneStyle.textFaint)
                 setTypeface(
                     typeface,
-                    if (index == tab) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
+                    if (index == selected) android.graphics.Typeface.BOLD else android.graphics.Typeface.NORMAL
                 )
                 setPadding(0, context.dp(6), context.dp(24), context.dp(4))
-                setOnClickListener {
-                    if (tab == index) return@setOnClickListener
-                    exitBatchMode()
-                    tab = index
-                    render()
-                    loadCurrentTab()
+                if (interactive) {
+                    setOnClickListener { selectTab(index) }
                 }
             })
         }
@@ -718,12 +731,12 @@ class PhoneMinePage(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
             ))
             post {
-                val selected = row.getChildAt(tab) ?: return@post
+                val selectedView = row.getChildAt(selected) ?: return@post
                 val edge = context.dp(16)
                 when {
-                    selected.left < scrollX -> smoothScrollTo(selected.left - edge, 0)
-                    selected.right > scrollX + width ->
-                        smoothScrollTo(selected.right - width + edge, 0)
+                    selectedView.left < scrollX -> smoothScrollTo(selectedView.left - edge, 0)
+                    selectedView.right > scrollX + width ->
+                        smoothScrollTo(selectedView.right - width + edge, 0)
                 }
             }
         }
@@ -862,6 +875,62 @@ class PhoneMinePage(
         render()
     }
 
+    private fun previewFor(direction: Int): View? {
+        val target = tab + direction
+        if (target !in tabs.indices) return null
+        val preview = PhonePosterFeed(context).apply {
+            applyColumnsFromSettings()
+            bottomInset = context.tabBarInset() + context.dp(8)
+            subtitleOf = { series -> subtitleFor(target, series) }
+            progressOf = null
+            hideTags = tabs.getOrNull(target) == "历史"
+        }
+        preview.setHeader(buildPreviewHeader(target))
+        val rows = rowsFor(target)
+        preview.submit(rows, loading = waitingForAccount(target, rows))
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.VERTICAL
+            setBackgroundColor(PhoneStyle.background)
+            tag = preview
+            addView(preview, LinearLayout.LayoutParams(
+                LinearLayout.LayoutParams.MATCH_PARENT,
+                0,
+                1f,
+            ))
+        }
+    }
+
+    private fun buildPreviewHeader(target: Int): View {
+        val header = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
+        header.addView(buildTabs(target, interactive = false))
+        buildPreviewFilterRow(target)?.let(header::addView)
+        return header
+    }
+
+    private fun buildPreviewFilterRow(target: Int): View? {
+        val options = filterOptions(target)
+        if (options.isEmpty()) return null
+        val selected = currentFilter(target)
+        return LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(context.dp(16), 0, context.dp(16), context.dp(2))
+            options.forEach { (value, label) ->
+                addView(TextView(context).apply {
+                    text = label
+                    phoneSize(12)
+                    setTextColor(if (selected == value) PhoneStyle.accent else PhoneStyle.textDim)
+                    setTypeface(
+                        typeface,
+                        if (selected == value) android.graphics.Typeface.BOLD
+                        else android.graphics.Typeface.NORMAL,
+                    )
+                    setPadding(0, context.dp(4), context.dp(18), context.dp(4))
+                })
+            }
+        }
+    }
+
     /**
      * 内容网格。
      *
@@ -872,8 +941,19 @@ class PhoneMinePage(
      * 平台对短剧进度列表的删除是软删，不滤就会「删了过一会儿又回来」。
      */
     private fun renderContent() {
+        val rows = rowsFor(tab)
+        val currentTab = tabs.getOrNull(tab) ?: "历史"
+        feed.submit(
+            rows,
+            more = currentTab == "历史" && historyHasMore,
+            loading = waitingForAccount(tab, rows),
+        )
+        updateBatchBar()
+    }
+
+    private fun rowsFor(tabIndex: Int): List<Series> {
         val cached = PhoneAccountSync.data ?: runCatching { library.accountCache() }.getOrNull()?.data
-        val rows = when (tabs.getOrNull(tab) ?: "历史") {
+        return when (tabs.getOrNull(tabIndex) ?: "历史") {
             "历史" -> com.hgtv.star.shared.account.AccountMerge.history(
                 library.history(),
                 cached?.history.orEmpty(),
@@ -898,19 +978,23 @@ class PhoneMinePage(
                 ?.filter { row -> reserveFilter?.let { want -> row.online == want } ?: true }
                 ?.map { it.series }.orEmpty()
         }
-        val currentTab = tabs.getOrNull(tab) ?: "历史"
-        val waitingForAccount = rows.isEmpty() && when (currentTab) {
-            "历史" -> historyLoading
-            "稍后看" -> false
-            else -> accountLoading
-        }
-        feed.submit(
-            rows,
-            more = currentTab == "历史" && historyHasMore,
-            loading = waitingForAccount,
-        )
-        updateBatchBar()
     }
+
+    private fun waitingForAccount(tabIndex: Int, rows: List<Series>): Boolean {
+        if (rows.isNotEmpty()) return false
+        return when (tabs.getOrNull(tabIndex) ?: "历史") {
+            "历史" -> historyLoading || PhoneAccountSync.data?.history == null
+            "稍后看" -> false
+            else -> accountLoading || PhoneAccountSync.data == null
+        }
+    }
+
+    private fun subtitleFor(tabIndex: Int, series: Series): String? =
+        when (tabs.getOrNull(tabIndex)) {
+            "历史" -> series.badge.takeIf { it.isNotBlank() }
+            "收藏" -> library.favoriteLabel(series.id)
+            else -> null
+        }
 
     /** 本机同剧进度或平台记录表明当前季已经看完。 */
     private fun historyFinished(row: com.hgtv.star.core.AccountHistory): Boolean {

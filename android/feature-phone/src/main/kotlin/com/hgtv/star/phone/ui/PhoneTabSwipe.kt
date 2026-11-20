@@ -13,7 +13,7 @@ import com.hgtv.star.phone.PhoneServices
 import kotlin.math.abs
 
 /**
- * 分类 / 榜单页的横向切页容器。
+ * 分类 / 榜单 / 我的页的横向切页容器。
  *
  * 判定参数与推荐页一致：越过半页吸附，或达到系统最小快甩速度即切页；
  * 第一次越过 touch slop 时按 1:1 锁定横纵轴。筛选 chips 等横向滚动区域不接管。

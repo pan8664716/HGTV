@@ -165,7 +165,7 @@ internal fun PhoneSettingsActivity.renderAppearance() {
         settingsLibrary.recommendSwipe = it
         renderSettings()
     }
-    hintImpl("关闭后推荐、分类和榜单只能用顶部标签切换，手指左右划不会整页翻走。")
+    hintImpl("关闭后推荐、分类、榜单和我的只能用顶部标签切换，手指左右划不会整页翻走。")
 
     // 主题放在最后：二十套色卡占的地方最大，日常不需要频繁改。
     hintImpl("当前：${PhoneStyle.theme.label} · ${PhoneStyle.theme.scene}　（${TvTheme.entries.size} 套，选中即生效）")

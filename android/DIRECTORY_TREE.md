@@ -641,7 +641,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PhoneCategoryPage.kt` | 分类页：按 TV 端两层筛选结构展示，并为横向切页预取相邻体裁的面板、筛选行和首屏。 | class PhoneCategoryPage |
-| `PhoneMinePage.kt` | 我的页：历史 / 收藏均为本地 + 网络合并，历史先显示本地再分页请求网络。 | class PhoneMinePage、fun PhoneMinePage.requestHistoryOnNextShow |
+| `PhoneMinePage.kt` | 我的页：历史 / 收藏均为本地 + 网络合并，历史先显示本地再分页请求网络；栏目支持横向切页与目标栏目预览。 | class PhoneMinePage、fun PhoneMinePage.requestHistoryOnNextShow |
 | `PhoneRankPage.kt` | 榜单页：八个榜单 + 带名次的海报网格，并保存每榜分页游标。 | class PhoneRankPage |
 | `PhoneRecommendPage.kt` | 推荐页：外层横向 ViewPager2 承载四条体裁流，每页内部再用竖向 ViewPager2 承载视频；顶栏高度同步给弹幕层，底部系统 inset 与尺寸变化同步给已创建视频页，重建时恢复当前体裁、当前剧与播放位置。 | class PhoneRecommendPage、class RecommendGenrePager、fun currentGenreKey、fun currentSeriesId、fun currentPositionMs |
 
@@ -755,7 +755,7 @@ android/
 | `PhoneEpisodeGrid.kt` | 选集网格（**带分页**，做法照 TV 端的 EpisodeGrid）。 | class PhoneEpisodeGrid |
 | `PhoneGlyph.kt` | 通用矢量图标（自绘），包含播放器锁定 / 解锁图标。 | class PhoneGlyph、val SETTINGS_PATH_DATA |
 | `PhonePagerMotion.kt` | 手机端所有整页翻动的统一运动参数。 | object PhonePagerMotion、class PhonePagerSnapHelper |
-| `PhoneTabSwipe.kt` | 分类 / 榜单页的横向切页容器，复用推荐页的半页吸附、快甩阈值与方向锁，并同步铺出邻页预览。 | class PhoneTabSwipeHost、DIRECTION_PREV、DIRECTION_NEXT |
+| `PhoneTabSwipe.kt` | 分类 / 榜单 / 我的页的横向切页容器，复用推荐页的半页吸附、快甩阈值与方向锁，并同步铺出邻页预览。 | class PhoneTabSwipeHost、DIRECTION_PREV、DIRECTION_NEXT |
 | `PhonePosterCard.kt` | 手机端统一海报卡：网格页与详情页 / 播放页的横排相关剧集共用。 | class PhonePosterCard、fun phonePosterScale、val PHONE_POSTER_INSET、val PHONE_SOFT_BAND、val PHONE_BADGE_TEXT_SCALE、val PHONE_TITLE_TEXT_SCALE |
 | `PhonePosterFeed.kt` | 海报网格；支持外部数据源消费到当前列表一半时触发继续加载。 | class PhonePosterFeed、var PhonePosterFeed.onLoadMore |
 | `PhoneSettingControls.kt` | 设置页整行开关：左侧项名，右侧一枚自绘轨道。 | class PhoneSwitchRow、class PhoneSettingSlider |
