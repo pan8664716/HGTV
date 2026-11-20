@@ -40,7 +40,7 @@ internal fun PhonePlayerActivity.attach(video: RemoteVideo, startAt: Long) {
     val landscape = playerLandscapeMode
     if (landscape) {
         playerPage.playerView.player = null
-        playerLandscapeVideo.player = exo
+        scheduleCurrentLandscapeAttach()
     } else {
         playerLandscapeVideo.player = null
         if (!(playerFeedUnderlay && attachUnderlay())) {

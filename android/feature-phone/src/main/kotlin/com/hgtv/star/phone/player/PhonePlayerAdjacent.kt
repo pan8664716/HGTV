@@ -449,7 +449,7 @@ private fun PhonePlayerActivity.attachCurrentPlayerOutput() {
     val exo = player ?: return
     if (playerLandscapeMode) {
         playerPage.playerView.player = null
-        attachCurrentPlayerToLandscapePagerPage()
+        scheduleCurrentLandscapeAttach()
     } else {
         playerLandscapeVideo.player = null
         attachCurrentPlayerToPagerPage()

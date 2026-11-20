@@ -35,7 +35,7 @@ internal fun PhonePlayerActivity.applyMode() {
         // 横屏这一层此后要长期出画面：换集时保留上一帧，避免闪黑。
         selectLandscapePagerEpisode(index)
         playerLandscapeVideo.setKeepContentOnPlayerReset(true)
-        attachCurrentPlayerToLandscapePagerPage()
+        scheduleCurrentLandscapeAttach()
         // 输出被横屏这一层拿走了：推荐页那边不能再认为「Surface 一直在」。
         PhoneSession.underlayActive = false
         playerUnderlayBound = false

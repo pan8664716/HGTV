@@ -22,6 +22,7 @@ internal fun PhoneFeedView.handleFeedSizeChanged(w: Int, h: Int) {
     if (w <= 0 || h <= 0 || feedItems.isEmpty()) return
     val index = feedPlayingIndex.coerceAtLeast(0)
     feedList.post { runCatching { feedList.scrollToPosition(index) } }
+    rebindCurrentSurfaceAfterSizeChangeImpl()
 }
 
 internal fun PhoneFeedView.clockImpl(ms: Long): String =

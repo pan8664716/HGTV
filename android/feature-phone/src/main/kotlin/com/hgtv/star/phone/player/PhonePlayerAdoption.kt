@@ -104,7 +104,7 @@ private fun PhonePlayerActivity.finishAdoptFromSession(
     syncVideoFrameForAdoption()
     if (playerLandscapeMode) {
         playerPage.playerView.player = null
-        playerLandscapeVideo.player = exo
+        scheduleCurrentLandscapeAttach()
     } else {
         playerLandscapeVideo.player = null
         // 借下层 Surface：不挂本页的视频层，播放器连输出都没换过。

@@ -446,23 +446,41 @@ internal fun PhonePlayerActivity.bindLandscapePagerPage(
     }
 }
 
-internal fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage() {
+/**
+ * 等横屏当前集页真正建出来后，再把当前播放器挂到它自己的 Surface。
+ *
+ * 转屏时 `ViewPager2` 要先可见、再测量、再创建 ViewHolder；早一帧读取会拿不到当前页。
+ * 这里只按集号取页，不再回退到 `playerLandscapeVideo`：后者可能还指向 pager 缓存里的
+ * 旧页，挂错后就是“声音在走、当前页全黑”，切一次集又碰巧恢复。
+ */
+internal fun PhonePlayerActivity.scheduleCurrentLandscapeAttach(attempts: Int = 5) {
     if (!playerLandscapeMode || !playerLandscapePagerInitialized) return
     val exo = player ?: return
+    playerLandscapePager.postDelayed({
+        if (!playerLandscapeMode || player !== exo) return@postDelayed
+        selectLandscapePagerEpisode(index)
+        if (!attachCurrentPlayerToLandscapePagerPage() && attempts > 1) {
+            scheduleCurrentLandscapeAttach(attempts - 1)
+        }
+    }, if (attempts == 5) 0L else 32L)
+}
+
+internal fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage(): Boolean {
+    if (!playerLandscapeMode || !playerLandscapePagerInitialized) return false
+    val exo = player ?: return false
+    val current = playerLandscapePager.pageAt(index) ?: return false
     playerLandscapePager.pages().forEach { page ->
-        if (page.video !== playerLandscapeVideo && page.video.player === exo) {
+        if (page !== current && page.video.player === exo) {
             detachLandscapePagerPage(page)
         }
     }
-    val current = playerLandscapePager.pages().firstOrNull {
-        it.video === playerLandscapeVideo
-    } ?: playerLandscapePager.pageAt(index) ?: return
     playerLandscapeVideoSlot = current.video
     playerLandscapeCover = current.cover
     playerLandDanmakuSlot = current.danmaku
     playerLandLetterboxSlot = current.letterbox
     current.video.visibility = View.VISIBLE
     if (current.video.player !== exo) current.video.player = exo
+    return true
 }
 
 internal fun PhonePlayerActivity.detachLandscapePagerOutputsExcept(
