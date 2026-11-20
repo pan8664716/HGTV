@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -95,7 +96,7 @@ class SettingSlider(
     private var pendingValue: Float? = null
 
     private fun describe() {
-        contentDescription = "$label ${format(value)}，左右键调节"
+        contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0003, label, format(value))
     }
 
     private fun normalize(candidate: Float) =

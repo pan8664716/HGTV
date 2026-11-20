@@ -3,6 +3,7 @@
 @file:JvmMultifileClass
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.shared.compat.hasInternet
 import com.hgtv.star.shared.compat.isMeteredConnection
 
@@ -73,10 +74,10 @@ fun TvMainActivity.cancelRecovery() {
 }
 fun TvMainActivity.scheduleRecovery() {
     if(!foreground || !playError || !autoRecovery || retryPending) return
-    if(!playbackCoordinator.autoRetryAvailable) { autoRecovery=false; playbackText.text="已自动重试 3 次，仍无法播放。可手动重试或切换清晰度。"; return }
-    if(!networkAvailable()) { playbackText.text="网络已断开，联网后自动续播 · 第 ${episodeIndex+1} 集 ${formatTime(retryPosition)}"; return }
+    if(!playbackCoordinator.autoRetryAvailable) { autoRecovery=false; playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0082); return }
+    if(!networkAvailable()) { playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0206, episodeIndex+1, formatTime(retryPosition)); return }
     val delay=playbackCoordinator.autoRetryDelayMs ?: return
-    playbackText.text="${if(retryAutoplay) "准备恢复播放" else "准备恢复暂停位置"} · ${delay/1000f} 秒后重试 ${playbackCoordinator.autoRetryAttempts+1}/3 · ${formatTime(retryPosition)}"
+    playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0012, if(retryAutoplay) UiText.get(com.hgtv.star.shared.R.string.ui_0301) else UiText.get(com.hgtv.star.shared.R.string.ui_0302), delay/1000f, playbackCoordinator.autoRetryAttempts+1, formatTime(retryPosition))
     retryEpisodeId=detail?.episodes?.getOrNull(episodeIndex).orEmpty()
     retryPending=true; main.postDelayed(retryRunnable,delay)
 }
@@ -539,7 +540,7 @@ fun TvMainActivity.playerFailure(problem: Throwable) {
     }
     addButton(actions,"返回选集") { returnToDetail(true) }
     if(retryable && !sleepStopped) {
-        addButton(controls,"停止自动重试") { cancelRecovery(); playbackText.text="自动重试已停止，观看位置已保留。" }
+        addButton(controls,UiText.get(com.hgtv.star.shared.R.string.ui_0027)) { cancelRecovery(); playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0210) }
         autoRecovery=true; scheduleRecovery()
     }
     // 错误界面挂一枚短码（同一行，不加行——这一行高度是钉死的 47dp）。
@@ -551,7 +552,7 @@ fun TvMainActivity.playerFailure(problem: Throwable) {
     // 这种两三字符的短码，现场就出现「播放失败 · Y1」，用户报上来谁也查不到（1.2.7 实测）。
     // 因此这里只输出 [playbackFailureTag] 里的稳定常量。
     val code=(problem as? PlaybackException)?.errorCode ?: 0
-    if(code!=0) playbackText.text="${playbackText.text} · 错误码 $code"
+    if(code!=0) playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0014, playbackText.text, code)
     else playbackText.text="${playbackText.text} · ${playbackFailureTag(problem)}"+
         // 为什么还要把原因挂上去：`本地准备失败` 底下有十几种完全不同的原因
         //（容器不认 / 索引不在文件头 / 加密索引缺失 / 索引截断 / 资源换了……），

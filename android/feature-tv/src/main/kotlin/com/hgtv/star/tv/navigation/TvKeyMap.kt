@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.KeyEvent
 import android.view.View
 import com.hgtv.star.core.KeyMap
@@ -58,11 +59,11 @@ fun TvMainActivity.showKeyActionPicker(key: PlayerKey,anchor: View,onChanged: ()
         PlayerKeyAction.SEEK_FORWARD -> "快进 · 每次 ${step} 秒，连按 5 次后每次 ${step*3} 秒"
         else -> action.hint
     }
-    val picker=TvDialog(this,"${key.label}的动作").choices(options.map(::hintOf),options.indexOf(library.keyMap.action(key))) { index ->
+    val picker=TvDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0013, key.label)).choices(options.map(::hintOf),options.indexOf(library.keyMap.action(key))) { index ->
         library.keyMap=library.keyMap.customize(key,options[index])
         onChanged()
     }
-    picker.button("取消", icon=R.drawable.ic_menu_close)
+    picker.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon=R.drawable.ic_menu_close)
     picker.show(anchor)
 }
 

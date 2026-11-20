@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -523,7 +524,7 @@ class PhoneVideoPage(
                 background = roundedBackground(0x33FFFFFF, context.dp(8).toFloat())
                 addView(fullscreenGlyph, LinearLayout.LayoutParams(context.dp(10), context.dp(10)))
                 addView(TextView(context).apply {
-                    text = "全屏"
+                    text = UiText.get(com.hgtv.star.shared.R.string.ui_0031)
                     setTextColor(Color.WHITE)
                     phoneSize(9)
                     setPadding(context.dp(3), 0, 0, 0)
@@ -764,7 +765,7 @@ class PhoneVideoPage(
         }
         tagRow.visibility = if (tags.isEmpty() && heat.isEmpty() && ranking.isEmpty()) GONE else VISIBLE
 
-        episodeIndex.text = episodeLabel.ifBlank { "第1集" }
+        episodeIndex.text = episodeLabel.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0203) }
         episodeDesc.text = series.description.replace('\n', ' ').trim()
         episodeDesc.visibility = if (episodeDesc.text.isBlank()) GONE else VISIBLE
 

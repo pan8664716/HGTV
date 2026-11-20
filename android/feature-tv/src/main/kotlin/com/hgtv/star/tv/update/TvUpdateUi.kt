@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 import com.hgtv.star.tv.R
 import kotlinx.coroutines.flow.first
@@ -47,48 +48,48 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
         showUpdateCheckingDialog(anchor)
         return
     }
-    val dialog=TvDialog(this,"版本更新")
+    val dialog=TvDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0172))
     val update=state.available
     when {
         update==null && (state.checking || !state.checked) ->
-            dialog.message("正在检查更新…")
+            dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0152))
         update==null && state.error.isNotBlank() -> {
             dialog.message(state.error)
-            dialog.button("重新检查",icon=R.drawable.ic_toolbar_update) {
+            dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0259),icon=R.drawable.ic_toolbar_update) {
                 updateController.check(force=true)
             }
         }
         update==null -> {
-            dialog.message("当前版本 ${AppVersion.name} 已是最新")
-            dialog.button("检查更新",icon=R.drawable.ic_toolbar_update) {
+            dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0099, AppVersion.name))
+            dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0143),icon=R.drawable.ic_toolbar_update) {
                 updateController.check(force=true)
             }
         }
         else -> {
             dialog.message("${update.versionName} · ${"%.1f".format(update.size / 1048576.0)} MB")
-            dialog.message(update.notes.ifBlank { "新版已发布。" })
+            dialog.message(update.notes.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0122) })
             if (state.ready) {
-                dialog.button("安装更新",tone=ButtonTone.PRIMARY,icon=R.drawable.ic_toolbar_update) {
+                dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0058),tone=ButtonTone.PRIMARY,icon=R.drawable.ic_toolbar_update) {
                     updateController.install()
                 }
             } else if (state.downloading) {
-                dialog.message("正在下载更新 · ${state.progress}%")
+                dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0144, state.progress))
             } else {
-                dialog.button("下载并安装",tone=ButtonTone.PRIMARY,icon=R.drawable.ic_toolbar_update) {
+                dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0018),tone=ButtonTone.PRIMARY,icon=R.drawable.ic_toolbar_update) {
                     updateController.downloadAndInstall()
                 }
             }
             if (state.error.isNotBlank()) dialog.message(state.error)
         }
     }
-    dialog.button("关闭",icon=R.drawable.ic_menu_close)
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035),icon=R.drawable.ic_menu_close)
     dialog.show(anchor)
 }
 
 private fun TvMainActivity.showUpdateCheckingDialog(anchor: View?) {
-    val dialog=TvDialog(this,"版本更新")
-    dialog.message("正在检查版本更新…")
-    dialog.button("关闭",icon=R.drawable.ic_menu_close)
+    val dialog=TvDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0172))
+    dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0153))
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035),icon=R.drawable.ic_menu_close)
     var advance=false
     val job=appScope.launch {
         updateController.state.first { !it.checking }

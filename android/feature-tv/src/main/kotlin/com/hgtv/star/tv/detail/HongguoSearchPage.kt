@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.text.TextUtils
 import android.view.View
 import android.widget.EditText
@@ -33,7 +34,7 @@ fun TvMainActivity.setSearchKeyboard(useHongguo: Boolean) {
  */
 fun TvMainActivity.keyboardSwitchButton(): View {
     val hongguo=hongguoKeyboardMode()
-    val label=if(hongguo) "系统键盘" else "HG键盘"
+    val label=if(hongguo) UiText.get(com.hgtv.star.shared.R.string.ui_0345) else UiText.get(com.hgtv.star.shared.R.string.ui_0292)
     return IconButton(this,com.hgtv.star.tv.R.drawable.ic_toolbar_keyboard,"切换到$label") {
         setSearchKeyboard(!hongguo)
     }.apply {
@@ -158,7 +159,7 @@ private fun TvMainActivity.renderHongguoList(items: List<String>,emptyHint: Stri
                 ellipsize=if(focused) TextUtils.TruncateAt.MARQUEE else TextUtils.TruncateAt.END
                 if(focused) { isSelected=true; scrollTo(0,0) }
             }
-            contentDescription="$word，搜索"
+            contentDescription=UiText.get(com.hgtv.star.shared.R.string.ui_0010, word)
         }
         column.addView(chip,lp(-1,-2).apply { if(index>0) topMargin=dp(2) })
     }

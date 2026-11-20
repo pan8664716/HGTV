@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv.player
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.shared.compat.drawRoundRectCompat
 import com.hgtv.star.shared.ui.SliderDrag
 
@@ -63,13 +64,13 @@ class DanmakuSlider(
             val next = normalize(newValue)
             if (field == next) return
             field = next
-            contentDescription = "$label ${format(next)}，左右键调节"
+            contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0002, label, format(next))
             invalidate()
         }
 
     init {
         value = initial
-        contentDescription = "$label ${format(value)}，左右键调节"
+        contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0003, label, format(value))
         // 触屏（手机 / 平板）：按下拖动、轻点轨道都能直接改值（见 [onTouchEvent]）。
         isClickable = true
     }

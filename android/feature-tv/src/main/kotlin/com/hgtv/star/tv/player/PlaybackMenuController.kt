@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.view.*
 import android.widget.*
@@ -129,7 +130,7 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
         },
     ))
     menu
-        .addRow("清晰度",PlaybackQuality.options.mapIndexed { index,value ->
+        .addRow(UiText.get(com.hgtv.star.shared.R.string.ui_0166),PlaybackQuality.options.mapIndexed { index,value ->
             PlaybackMenu.Choice("${value}P",value==playbackMaxQuality) {
                 val changed=library.maxQuality!=value || playbackSessionState.effectiveMaxQuality!=null
                 library.maxQuality=value
@@ -153,7 +154,7 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
             player?.setPlaybackSpeed(value)
             updatePlaybackText()
         }
-        .addRow("画面模式",VideoFrameMode.entries.mapIndexed { index,mode ->
+        .addRow(UiText.get(com.hgtv.star.shared.R.string.ui_0176),VideoFrameMode.entries.mapIndexed { index,mode ->
             PlaybackMenu.Choice(mode.label,mode==library.frameMode) {
                 library.frameMode=mode; applyResizeMode()
                 menu.select(MENU_ROW_FRAME,index); updatePlaybackText()
@@ -162,7 +163,7 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
         // 弹幕显示方式：七档进度条。选完立刻作用在画面上的弹幕层，并存进本机设置。
         // 解码方式：硬件（省电、4K 稳）/ 软件（兼容性好，花屏、绿屏、音画不同步时用）。
         // 选中会重建播放器并从当前位置续播，画面闪一下属正常。
-        .addRow("解码",VideoDecoderMode.entries.mapIndexed { index,mode ->
+        .addRow(UiText.get(com.hgtv.star.shared.R.string.ui_0215),VideoDecoderMode.entries.mapIndexed { index,mode ->
             PlaybackMenu.Choice(mode.label,mode==playbackDecoderMode) {
                 if(playbackDecoderMode!=mode) {
                     library.decoderMode=mode
@@ -194,26 +195,26 @@ private fun TvMainActivity.buildPlaybackMenu(showsStyle: Boolean): PlaybackMenu 
     // 弹幕的三项可调项：移动速度（三档，选中后整批重排轨道）+ 两项连续外观（字号缩放与不透明度）。
     // 速度排在字号前面：它决定同一条轨道能排多密，是「弹幕挤不挤」的第一观感。
     if(showsStyle) menu
-        .addRow("弹幕速度",DanmakuSpeed.entries.mapIndexed { index,option ->
+        .addRow(UiText.get(com.hgtv.star.shared.R.string.ui_0096),DanmakuSpeed.entries.mapIndexed { index,option ->
             PlaybackMenu.Choice(option.label,option==library.danmakuSpeed) {
                 library.danmakuSpeed=option; danmakuView?.speed=option
                 menu.select(MENU_ROW_DANMAKU_SPEED,index); updatePlaybackText()
             }
         })
-        .addSlider("弹幕大小",DanmakuStyle.SCALE_MIN,DanmakuStyle.SCALE_MAX,DanmakuStyle.SCALE_STEP,library.danmakuScale) { value ->
+        .addSlider(UiText.get(com.hgtv.star.shared.R.string.ui_0093),DanmakuStyle.SCALE_MIN,DanmakuStyle.SCALE_MAX,DanmakuStyle.SCALE_STEP,library.danmakuScale) { value ->
             library.danmakuScale=value; danmakuView?.textScale=value
         }
-        .addSlider("弹幕透明度",DanmakuStyle.ALPHA_MIN,DanmakuStyle.ALPHA_MAX,DanmakuStyle.ALPHA_STEP,library.danmakuAlpha) { value ->
+        .addSlider(UiText.get(com.hgtv.star.shared.R.string.ui_0095),DanmakuStyle.ALPHA_MIN,DanmakuStyle.ALPHA_MAX,DanmakuStyle.ALPHA_STEP,library.danmakuAlpha) { value ->
             library.danmakuAlpha=value; danmakuView?.textAlpha=value
         }
     // 画面缩放：跟在「弹幕透明度」之后、「定时」之前。只缩播放画面本身，
     // 弹幕层不动（弹幕仍然按整屏坐标滚动）。
     // 与弹幕大小 / 透明度是同一种控件（[com.hgtv.star.tv.SettingSlider]），1..100 直接就是百分比。
-    menu.addSlider("画面缩放",1f,100f,1f,library.videoScale,format={ "${it.toInt()}%" }) { value ->
+    menu.addSlider(UiText.get(com.hgtv.star.shared.R.string.ui_0179),1f,100f,1f,library.videoScale,format={ "${it.toInt()}%" }) { value ->
         library.videoScale=value
         applyVideoScale()
     }
-    menu.addRow("定时",sleepChoices(menu))
+    menu.addRow(UiText.get(com.hgtv.star.shared.R.string.ui_0059),sleepChoices(menu))
     menu.wire()
     return menu
 }
@@ -315,15 +316,15 @@ fun TvMainActivity.warmPlaybackMenu(delayMs: Long=1500L) {
 }
 fun TvMainActivity.showQualityPicker(anchor: TextView,inPlayer: Boolean) {
     val options=PlaybackQuality.options
-    val picker=TvDialog(this,"全局默认清晰度").choices(options.map { "${it}P" },options.indexOf(library.maxQuality)) { index ->
+    val picker=TvDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0030)).choices(options.map { "${it}P" },options.indexOf(library.maxQuality)) { index ->
         val target=options[index]; val changed=library.maxQuality!=target
         library.maxQuality=target
         // 用户手动改全局默认：会话里的自动降档与预算一起作废（见 `SessionPlaybackPolicy`）。
         playbackCoordinator.onManualQualityChange()
-        if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "清晰度 " else "默认清晰度  ·  ")+"${target}P"
+        if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) UiText.get(com.hgtv.star.shared.R.string.ui_0167) else UiText.get(com.hgtv.star.shared.R.string.ui_0276))+"${target}P"
         if(inPlayer && changed) playEpisode(episodeIndex,currentPosition(),player?.playWhenReady ?: requestedAutoplay)
     }
-    picker.button("取消", icon=R.drawable.ic_menu_close)
+    picker.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon=R.drawable.ic_menu_close)
     picker.show(anchor)
 }
 /**

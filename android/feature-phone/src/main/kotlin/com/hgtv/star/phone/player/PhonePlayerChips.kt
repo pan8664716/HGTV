@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 import com.hgtv.star.core.PlaybackSpeed
 
@@ -10,12 +11,12 @@ internal fun PhonePlayerActivity.syncChips() {
     chipQuality.text = "${library?.maxQuality ?: 1080}P"
     // 弹幕那颗：显示当前 0..6 档位。
     val mode=library?.danmakuMode ?: com.hgtv.star.core.DanmakuMode.DEFAULT
-    chipDanmaku.text="弹幕 ${mode.optionLabel}"
+    chipDanmaku.text=UiText.get(com.hgtv.star.shared.R.string.ui_0091, mode.optionLabel)
     // **选集按钮永远显示**：之前按 `recommend` 把它藏了，而从推荐流进全屏正是最常见
     // 的路径（`PhoneFeedView` 一律带 `EXTRA_RECOMMEND=true`），结果就是「全屏里没有选集按钮」。
     // 文案带总数（用户要求）：`选集 3/171`，一眼知道现在在第几集、全剧多少集。
     val total = detail?.episodes?.size ?: 0
-    chipEpisode.text = if (total > 0) "选集 ${index + 1}/$total" else "选集 ${index + 1}"
+    chipEpisode.text = if (total > 0) UiText.get(com.hgtv.star.shared.R.string.ui_0255, index + 1, total) else UiText.get(com.hgtv.star.shared.R.string.ui_0254, index + 1)
     chipEpisode.visibility = View.VISIBLE
 }
 
@@ -44,7 +45,7 @@ internal fun PhonePlayerActivity.cycleDanmaku() {
     playerPage.danmakuView.mode = next
     applyDanmakuSettingsForChips()
     syncChips()
-    hint.text = "弹幕 ${next.optionLabel}"
+    hint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0092, next.optionLabel)
     hint.visibility = View.VISIBLE
     hint.bringToFront()
     val token = chipHintToken
@@ -77,7 +78,7 @@ internal fun PhonePlayerActivity.cycleSpeed() {
     lib.playbackSpeed = next
     player?.setPlaybackSpeed(next)
     syncChips()
-    hint.text = "倍速 ${PlaybackSpeed.label(next)}"
+    hint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0026, PlaybackSpeed.label(next))
     hint.visibility = View.VISIBLE
     hint.bringToFront()
     val token = chipHintToken

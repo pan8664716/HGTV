@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.tv.list.attachBackToTop
 import com.hgtv.star.tv.list.HomeScreen
 import com.hgtv.star.tv.list.recycleGridRow
@@ -41,7 +42,7 @@ fun TvMainActivity.showStartupShell() {
         orientation=LinearLayout.VERTICAL
         gravity=Gravity.CENTER
         addView(LoadingDotsView(this@showStartupShell).apply {
-            label="正在准备应用…"
+            label=UiText.get(com.hgtv.star.shared.R.string.ui_0325)
         })
     }
     root.addView(center,FrameLayout.LayoutParams(-1,-1,Gravity.CENTER))
@@ -57,7 +58,7 @@ fun TvMainActivity.showStartupLoading() {
         orientation=LinearLayout.VERTICAL
         gravity=Gravity.CENTER
         addView(LoadingDotsView(this@showStartupLoading).apply {
-            label="正在读取本机数据…"
+            label=UiText.get(com.hgtv.star.shared.R.string.ui_0328)
         })
     }
     body.addView(center,LinearLayout.LayoutParams(-1,0,1f))
@@ -414,7 +415,7 @@ fun TvMainActivity.error(parent: LinearLayout,problem: Throwable,stage: String,r
     // 右上角调试面板单独记一条「这一页为什么空」：上报那条会去重，面板这条每次刷新都能看到。
     notePageFailure(stage,problem)
     // 设备还没注册上不是网络问题：这时候让用户去检查路由器只会把问题推远一步。
-    message(parent,if(problem is DeviceNotRegisteredException) "设备正在初始化，请稍后重试。" else "暂时无法加载，请检查网络后重试。")
+    message(parent,if(problem is DeviceNotRegisteredException) UiText.get(com.hgtv.star.shared.R.string.ui_0217) else UiText.get(com.hgtv.star.shared.R.string.ui_0130))
     val detail=contentErrorDetail(problem)
     parent.addView(text(detail,13f,muted).apply { setPadding(pageBleed(),0,pageBleed(),0) })
     // 重试按钮与上面的提示文字共用同一条内容线：纵向间距由 addButton 给，横向自己补回焦点余量。

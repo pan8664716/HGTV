@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.shared.debug.DebugLog
 import android.os.Build
 import com.google.android.exoplayer2.C
@@ -708,6 +709,6 @@ fun TvMainActivity.recoverFormalPicture(reason: String) {
     val at=runCatching { p.currentPosition }.getOrDefault(0L).coerceAtLeast(0)
     android.util.Log.w("HGTV","Formal picture lost ($reason) episode=${episodeIndex+1} at=${at}ms try=${playbackCoordinator.pictureRecoveryCount}")
     // 重建期间画面层会被整块换掉：这一句告诉用户「不是卡死，是在重来」，比一块黑屏强。
-    playbackText.text="画面停止刷新，正在重建播放…"
+    playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0175)
     playEpisode(episodeIndex,at,p.playWhenReady,recovering=true)
 }

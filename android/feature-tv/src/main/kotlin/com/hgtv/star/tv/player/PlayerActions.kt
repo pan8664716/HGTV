@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.text.TextUtils
 import android.view.View
 import com.hgtv.star.core.*
@@ -40,7 +41,7 @@ private fun TvMainActivity.showPlayerWorksStrip(author: Boolean) {
     val series=data.series
     val name=series.author.trim()
     // 取不到作者就不弹这一层：按空名字去搜只会搜出一批无关作品（与简介页不摆这枚按钮同一条理由）。
-    if(author && name.isEmpty()) { tvTools.toast("这一部没有作者信息"); return }
+    if(author && name.isEmpty()) { tvTools.toast(UiText.get(com.hgtv.star.shared.R.string.ui_0244)); return }
     // 播放设置先收起：浮层要占住下半屏，两块叠在一起会互相压字（与选集面板同一套收尾）。
     dismissPlaybackMenu()
     val body=column().apply {
@@ -91,15 +92,15 @@ private fun TvMainActivity.showPlayerWorksStrip(author: Boolean) {
             val loading=authorLoading || (works==null && !authorFailed && name.isNotEmpty() && authorFor==name)
             when {
                 name.isEmpty() -> {
-                    status.text="没能取到作者信息"
+                    status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0165)
                     close.requestFocus()
                 }
                 loading -> {
-                    status.text="正在查找 $name 的作品…"
+                    status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0150, name)
                     close.requestFocus()
                 }
                 works==null && authorFailed -> {
-                    status.text="没能取到 $name 的作品"
+                    status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0164, name)
                     retry.visibility=View.VISIBLE
                     close.requestFocus()
                 }
@@ -107,7 +108,7 @@ private fun TvMainActivity.showPlayerWorksStrip(author: Boolean) {
                     // 「正在看的这一部」提到第一张（它的其它季紧跟其后），其余顺序原样不动——
                     // 顺序由服务端给（见 `ContentRepository.authorWorks`），界面不再自己排一遍。
                     val items=listOf(series)+works.orEmpty().filter { it.id!=series.id }
-                    status.text=if(items.size<=1) "$name · 暂时只有这一部作品" else "$name · 共 ${items.size} 部作品"
+                    status.text=if(items.size<=1) UiText.get(com.hgtv.star.shared.R.string.ui_0009, name) else UiText.get(com.hgtv.star.shared.R.string.ui_0008, name, items.size)
                     if(items.size<=1) close.requestFocus()
                     else showCards(HomeScreen.Shelf("author","全部作品",
                         items.map { item -> HomeScreen.Entry(item,if(item.upcoming) item.notice else "") }))
@@ -119,20 +120,20 @@ private fun TvMainActivity.showPlayerWorksStrip(author: Boolean) {
         val loading=relatedLoading || (works==null && !relatedFailed)
         when {
             loading -> {
-                status.text="正在查找同系列…"
+                status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0151)
                 close.requestFocus()
             }
             works==null && relatedFailed -> {
-                status.text="相关剧集加载失败"
+                status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0192)
                 retry.visibility=View.VISIBLE
                 close.requestFocus()
             }
             works==null || works.items.isEmpty() -> {
-                status.text="这一部暂时没有相关剧集"
+                status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0242)
                 close.requestFocus()
             }
             else -> {
-                status.text=if(works.seasons.size>1) "同系列 ${works.seasons.size} 季" else "共 ${works.items.size} 部"
+                status.text=if(works.seasons.size>1) UiText.get(com.hgtv.star.shared.R.string.ui_0053, works.seasons.size) else UiText.get(com.hgtv.star.shared.R.string.ui_0033, works.items.size)
                 // 标题由卡片行自己的 SectionHeading 画（「相关剧集」/「同系列 N 季 · 相关剧集」），
                 // 这里不再另起一行重复同一句话。
                 val cards=buildRelatedRow(close,works,series,{ target ->
@@ -202,10 +203,10 @@ fun TvMainActivity.showPlayerIntro() {
             append(series.tags)
         }
     }
-    val dialog=TvDialog(this,"简介")
+    val dialog=TvDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0204))
     dialog.header(series.title,subtitle,series.cover,::loadCover)
-    dialog.message(series.description.ifBlank { "这一部暂时没有简介。" })
-    dialog.button("关闭",icon=R.drawable.ic_menu_close)
+    dialog.message(series.description.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0243) })
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035),icon=R.drawable.ic_menu_close)
     dialog.show(null) { if(screen=="player" && foreground) showHud() }
 }
 
@@ -237,7 +238,7 @@ fun TvMainActivity.togglePlayerFavorite(): String {
         library.observeFavorite(data.series.id,data.episodes.size,System.currentTimeMillis(),acknowledge=true)
     // 先报这一条，再同步云端：没导入凭据时 `syncFavorite` 会再弹一条「需要登录」，
     // 那条比「已加入收藏」重要，让它留在屏幕上（`toast` 后一条覆盖前一条）。
-    tvTools.toast(if(saved) "已加入收藏" else "已取消收藏")
+    tvTools.toast(if(saved) UiText.get(com.hgtv.star.shared.R.string.ui_0073) else UiText.get(com.hgtv.star.shared.R.string.ui_0075))
     syncFavorite(data.series,saved)
     return if(saved) "已收藏" else "加入收藏"
 }

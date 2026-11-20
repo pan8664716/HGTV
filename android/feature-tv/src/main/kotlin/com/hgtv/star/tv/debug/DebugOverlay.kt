@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.shared.debug.DebugLog
 
 import android.graphics.Typeface
@@ -331,7 +332,7 @@ private fun TvMainActivity.buildDebugPanel(): LinearLayout {
         isClickable=false
         importantForAccessibility=View.IMPORTANT_FOR_ACCESSIBILITY_NO
     }
-    panel.addView(text("调试 · HGTV ${AppVersion.name}(${AppVersion.code})",14f,TvStyle.playerText).apply {
+    panel.addView(text(UiText.get(com.hgtv.star.shared.R.string.ui_0347, AppVersion.name, AppVersion.code),14f,TvStyle.playerText).apply {
         setTypeface(null,Typeface.BOLD)
         // 与下面每一条的标头同一条起始线：整块面板从左边一列对齐。
         gravity=Gravity.START
@@ -708,7 +709,7 @@ private fun TvMainActivity.playerDebugRows(): List<DebugRow> {
         // 「问题」只写**现在仍然成立**的事（见 [livePlaybackProblem]）：画面已经回来了就不再挂着
         // 「有声音无画面」这类旧结论——那正是用户反馈的「面板显示得不对」。
         val live=livePlaybackProblem()
-        add(DebugRow("问题",problemText(listOf(live+if(live.isBlank()) "" else code,qualityProblem)
+        add(DebugRow(UiText.get(com.hgtv.star.shared.R.string.ui_0351),problemText(listOf(live+if(live.isBlank()) "" else code,qualityProblem)
             .filter { it.isNotBlank() }.joinToString(" · "))))
         // 「错误」那一行跟着「问题」走：没有当前问题时它也只是历史，留在「近况」里就够了。
         if(live.isNotBlank() && d.lastError.isNotBlank() && d.lastError!="-") add(DebugRow("错误",d.lastError.take(400)))

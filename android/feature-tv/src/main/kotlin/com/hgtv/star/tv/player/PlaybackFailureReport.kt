@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.os.Build
 import com.google.android.exoplayer2.C
 import com.google.android.exoplayer2.PlaybackException
@@ -103,7 +104,7 @@ fun stageTitle(stage: String): String =
 
 fun TvMainActivity.noteDegrade(plan: PlaybackRetryPlan) {
     val tier=plan.maxQuality ?: 0
-    val text="自动处置 "+when(plan.reason) {
+    val text=UiText.get(com.hgtv.star.shared.R.string.ui_0209)+when(plan.reason) {
         DegradationKind.SAME_QUALITY_REBUILD -> "原档重建 ${playbackMaxQuality}P"
         DegradationKind.QUALITY_DOWN -> "降档 → ${tier}P"
     }

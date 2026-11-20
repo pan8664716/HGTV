@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 import com.google.android.exoplayer2.Player
 import com.hgtv.star.phone.ui.PhoneGlyph
@@ -148,7 +149,7 @@ internal fun PhonePlayerActivity.beginTempSpeed() {
     playerTempSpeed = true
     player?.setPlaybackSpeed(2f)
     playerHintSticky = true
-    hint.text = "2 倍速播放中"
+    hint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0015)
     hint.visibility = View.VISIBLE
     hint.bringToFront()
 }

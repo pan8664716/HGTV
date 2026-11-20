@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.graphics.Color
 import android.graphics.Typeface
 import android.text.TextUtils
@@ -176,11 +177,11 @@ internal fun TvMainActivity.buildPlaybackSurface() {
         options.addView(item,lp(-2,-2).apply { rightMargin=dp(34) })
         return item
     }
-    qualityOption=option("清晰度 ${playbackMaxQuality}P") { showPlaybackMenu(MENU_ROW_QUALITY) }
-    speedOption=option("倍速 ${PlaybackSpeed.label(library.playbackSpeed)}") { showPlaybackMenu(MENU_ROW_SPEED) }
-    frameOption=option("画面 ${library.frameMode.label}") { showPlaybackMenu(MENU_ROW_FRAME) }
-    danmakuOption=option("弹幕 ${library.danmakuMode.optionLabel}") { showPlaybackMenu(MENU_ROW_DANMAKU) }
-    sleepOption=option("定时 ${sleepTimer.label()}") { showPlaybackMenu(sleepRow(library.danmakuMode.showsStyle)) }
+    qualityOption=option(UiText.get(com.hgtv.star.shared.R.string.ui_0331, playbackMaxQuality)) { showPlaybackMenu(MENU_ROW_QUALITY) }
+    speedOption=option(UiText.get(com.hgtv.star.shared.R.string.ui_0297, PlaybackSpeed.label(library.playbackSpeed))) { showPlaybackMenu(MENU_ROW_SPEED) }
+    frameOption=option(UiText.get(com.hgtv.star.shared.R.string.ui_0334, library.frameMode.label)) { showPlaybackMenu(MENU_ROW_FRAME) }
+    danmakuOption=option(UiText.get(com.hgtv.star.shared.R.string.ui_0312, library.danmakuMode.optionLabel)) { showPlaybackMenu(MENU_ROW_DANMAKU) }
+    sleepOption=option(UiText.get(com.hgtv.star.shared.R.string.ui_0308, sleepTimer.label())) { showPlaybackMenu(sleepRow(library.danmakuMode.showsStyle)) }
     hud.addView(options,lp(-1,-2))
     hudEpisodeArrow=ImageView(this).apply {
         setVectorIcon(R.drawable.ic_chevron_down)

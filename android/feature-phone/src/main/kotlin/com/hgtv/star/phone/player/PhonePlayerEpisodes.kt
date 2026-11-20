@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.core.Detail
 
 internal fun PhonePlayerActivity.openEpisodes() {
@@ -8,7 +9,7 @@ internal fun PhonePlayerActivity.openEpisodes() {
     val d = detail
     if (d == null) {
         // 详情还没到：给一句提示，别让按钮看起来是坏的。
-        toast("剧集还在加载…")
+        toast(UiText.get(com.hgtv.star.shared.R.string.ui_0041))
         return
     }
     if (playerLandscapeMode) openLandscapeEpisodes(d) else openPortraitEpisodes(d)

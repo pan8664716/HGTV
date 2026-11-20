@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Intent
 import android.content.res.Configuration
 import android.graphics.BitmapFactory
@@ -51,7 +52,11 @@ class PhoneAccountActivity : PhoneActivity() {
         const val LOGIN_PHONE = 1
         const val LOGIN_IMPORT = 2
         const val STATE_LOGIN_MODE = "phone_account_login_mode"
-        val LOGIN_LABELS = listOf("扫码登录", "手机号登录", "导入账号参数")
+        val LOGIN_LABELS = listOf(
+            UiText.get(com.hgtv.star.shared.R.string.ui_0318),
+            UiText.get(com.hgtv.star.shared.R.string.ui_0363),
+            UiText.get(com.hgtv.star.shared.R.string.ui_0364),
+        )
     }
 
     internal lateinit var root: FrameLayout
@@ -106,7 +111,7 @@ class PhoneAccountActivity : PhoneActivity() {
             }
         }
         title = TextView(this).apply {
-            text = "账号"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0230)
             setTextColor(PhoneStyle.text)
             phoneSize(if (landscape) 13 else 18)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -243,7 +248,7 @@ class PhoneAccountActivity : PhoneActivity() {
                 PhoneStyle.RADIUS_PILL,
                 3f,
             )
-            chip.contentDescription = LOGIN_LABELS[index] + if (active) "，当前方式" else ""
+            chip.contentDescription = LOGIN_LABELS[index] + if (active) UiText.get(com.hgtv.star.shared.R.string.ui_0283) else ""
         }
     }
 
@@ -300,7 +305,7 @@ class PhoneAccountActivity : PhoneActivity() {
             setPadding(dp(14), 0, 0, 0)
         }
         names.addView(TextView(this).apply {
-            text = profile?.nickname?.takeIf { it.isNotBlank() } ?: "已登录"
+            text = profile?.nickname?.takeIf { it.isNotBlank() } ?: UiText.get(com.hgtv.star.shared.R.string.ui_0080)
             setTextColor(PhoneStyle.text)
             phoneSize(17)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -313,7 +318,7 @@ class PhoneAccountActivity : PhoneActivity() {
             profile?.follows?.let { add("关注 $it") }
         }.joinToString(" · ")
         names.addView(TextView(this).apply {
-            text = sub.ifBlank { "登录态有效" }
+            text = sub.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0187) }
             setTextColor(PhoneStyle.textFaint)
             phoneSize(12)
             setPadding(0, dp(4), 0, 0)
@@ -345,10 +350,10 @@ class PhoneAccountActivity : PhoneActivity() {
     }
 
     private fun confirmSignOut() {
-        PhoneDialog(this, "退出登录")
-            .message("退出后本机记录仍保留；账号侧的收藏与历史不再显示。")
-            .button("取消")
-            .button("退出", danger = true) {
+        PhoneDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0249))
+            .message(UiText.get(com.hgtv.star.shared.R.string.ui_0248))
+            .button(UiText.get(com.hgtv.star.shared.R.string.ui_0046))
+            .button(UiText.get(com.hgtv.star.shared.R.string.ui_0247), danger = true) {
                 com.hgtv.star.shared.data.SessionBootstrap.onLogout()
                 val lib = PhoneServices.library(this)
                 runCatching { lib.clearAccount() }
@@ -380,7 +385,7 @@ class PhoneAccountActivity : PhoneActivity() {
             "参数只保存在本机，不会上传到任何服务器。导入后会先验证登录态，验证失败不会覆盖当前账号。"
         ), blockTop())
         val input = EditText(this).apply {
-            hint = "粘贴 cookieStore.xml 全文，或一个 sessionid"
+            hint = UiText.get(com.hgtv.star.shared.R.string.ui_0205)
             setHintTextColor(PhoneStyle.textFaint)
             setTextColor(PhoneStyle.text)
             phoneSize(if (landscape) 13 else 15)
@@ -398,7 +403,7 @@ class PhoneAccountActivity : PhoneActivity() {
 
     private fun showImportDialog() {
         val input = EditText(this).apply {
-            hint = "粘贴 cookieStore.xml 全文，或一个 sessionid"
+            hint = UiText.get(com.hgtv.star.shared.R.string.ui_0205)
             setHintTextColor(PhoneStyle.textFaint)
             setTextColor(PhoneStyle.text)
             phoneSize(13)
@@ -408,16 +413,16 @@ class PhoneAccountActivity : PhoneActivity() {
             setPadding(dp(14), dp(12), dp(14), dp(12))
             applyWell(PhoneStyle.well, 14f, 4f)
         }
-        PhoneDialog(this, "导入账号参数")
+        PhoneDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0067))
             .content(input)
-            .button("取消")
-            .button("导入", primary = true) { importText(input.text?.toString().orEmpty()) }
+            .button(UiText.get(com.hgtv.star.shared.R.string.ui_0046))
+            .button(UiText.get(com.hgtv.star.shared.R.string.ui_0065), primary = true) { importText(input.text?.toString().orEmpty()) }
             .show()
     }
 
     private fun importText(text: String) {
         if (text.isBlank()) return
-        toast("正在验证账号参数…")
+        toast(UiText.get(com.hgtv.star.shared.R.string.ui_0161))
         scope.launch {
             val repo = PhoneServices.repository(this@PhoneAccountActivity)
             val lib = PhoneServices.library(this@PhoneAccountActivity)
@@ -431,11 +436,11 @@ class PhoneAccountActivity : PhoneActivity() {
                     .accountController(this@PhoneAccountActivity)
                     .bindCredentials()
                 com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force = true)
-                toast("账号参数已导入")
+                toast(UiText.get(com.hgtv.star.shared.R.string.ui_0231))
                 PhoneMinePage.requestHistoryOnNextShow()
                 finish()
             }.onFailure { failure ->
-                toast(failure.message.orEmpty().ifBlank { "导入失败" })
+                toast(failure.message.orEmpty().ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0066) })
             }
         }
     }
@@ -468,7 +473,7 @@ class PhoneAccountActivity : PhoneActivity() {
                 .accountController(this@PhoneAccountActivity)
                 .bindCredentials()
             com.hgtv.star.shared.data.SessionBootstrap.onAppStart(force = true)
-            toast("${how}成功")
+            toast(UiText.get(com.hgtv.star.shared.R.string.ui_0011, how))
             PhoneMinePage.requestHistoryOnNextShow()
             finish()
         }

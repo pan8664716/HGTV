@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -65,7 +66,7 @@ internal fun TvTools.qr(url: String): FrameLayout {
     val code=ImageView(activity).apply {
         setImageBitmap(Bitmap.createBitmap(pixels,360,360,Bitmap.Config.ARGB_8888))
         scaleType=ImageView.ScaleType.FIT_CENTER
-        contentDescription="二维码"
+        contentDescription=UiText.get(com.hgtv.star.shared.R.string.ui_0019)
     }
     val inset=dp(TvStyle.SOFT_BAND)+dp(4)
     return FrameLayout(activity).apply {
@@ -94,7 +95,7 @@ fun TvTools.lanAddress(): String? {
 
 internal fun TvTools.smsFallback(number: String,content: String): LinearLayout {
     val box=column()
-    listOf("收件号码" to number,"短信内容" to content).forEachIndexed { index,(title,value) ->
+    listOf(UiText.get(com.hgtv.star.shared.R.string.ui_0322) to number,UiText.get(com.hgtv.star.shared.R.string.ui_0335) to content).forEachIndexed { index,(title,value) ->
         val item=column().apply {
             background=TvStyle.well(activity,TvStyle.well,TvStyle.RADIUS_CARD,TvStyle.SOFT_BAND)
             val band=dp(TvStyle.SOFT_BAND)
@@ -110,18 +111,18 @@ internal fun TvTools.smsFallback(number: String,content: String): LinearLayout {
 }
 
 fun TvTools.accountImport(anchor: View?,onImport: (String)->Unit,onLocalFile: ()->Unit) {
-    val pick=TvDialog(activity,"导入账号参数")
-    pick.message("需要官方 App 的 cookieStore.xml，或者整段 Cookie；也可以只填 sessionid。\n\n三种方式：\n· 本机文件 —— 电视上已经有这个文件时用（U 盘 / 文件管理应用放进来的）；\n· 手机扫码 —— 手机与电视连同一局域网，用手机把文件或口令传过来；\n· 输入 sessionid —— 只拿到那一串时直接手填（其余字段平台不校验）。")
-    pick.button("取消", icon=R.drawable.ic_menu_close) {}
-    pick.button("手机扫码", icon=R.drawable.ic_menu_search) { phoneUpload(anchor,onImport) }
-    pick.button("本机文件", icon=R.drawable.ic_menu_info) { onLocalFile() }
-    pick.button("输入 sessionid", icon=R.drawable.ic_menu_key) { sessionIdEntry(anchor,onImport) }
+    val pick=TvDialog(activity,UiText.get(com.hgtv.star.shared.R.string.ui_0067))
+    pick.message(UiText.get(com.hgtv.star.shared.R.string.ui_0262))
+    pick.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon=R.drawable.ic_menu_close) {}
+    pick.button(UiText.get(com.hgtv.star.shared.R.string.ui_0106), icon=R.drawable.ic_menu_search) { phoneUpload(anchor,onImport) }
+    pick.button(UiText.get(com.hgtv.star.shared.R.string.ui_0139), icon=R.drawable.ic_menu_info) { onLocalFile() }
+    pick.button(UiText.get(com.hgtv.star.shared.R.string.ui_0234), icon=R.drawable.ic_menu_key) { sessionIdEntry(anchor,onImport) }
     open(pick,anchor)
 }
 
 private fun TvTools.sessionIdEntry(anchor: View?,onImport: (String)->Unit) {
-    val next=TvDialog(activity,"输入 sessionid")
-    next.message("填官方 App 登录态里的 sessionid：**32 位十六进制**，形如 cf98cf3cd41f0b56188dd3f2226a10c4。\n\n" +
+    val next=TvDialog(activity,UiText.get(com.hgtv.star.shared.R.string.ui_0234))
+    next.message(UiText.get(com.hgtv.star.shared.R.string.ui_0056) +
         "在 cookieStore.xml 里搜 sessionid 会看到 19 条同名的（不同网址下各一份），值都一样，挑任意一条即可——" +
         "但**不要粘那一长串十六进制**（那是 App 的序列化数据）。\n" +
         "整行 <string …>、整段 Cookie、或直接填那 32 位，这三种都认。")
@@ -132,8 +133,8 @@ private fun TvTools.sessionIdEntry(anchor: View?,onImport: (String)->Unit) {
         label("服务端只校验这一项，填对就能显示账号信息。",12f),
         LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(TvStyle.GAP_TIGHT) }
     )
-    val cancel=next.button("取消", icon=R.drawable.ic_menu_close) {}
-    val submit=next.button("导入",keepOpen=true, icon=R.drawable.ic_menu_check) {
+    val cancel=next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon=R.drawable.ic_menu_close) {}
+    val submit=next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0065),keepOpen=true, icon=R.drawable.ic_menu_check) {
         val value=normalizeSessionId(input.text.toString())
         if(value.isEmpty()) { input.error="请填 sessionid"; return@button }
         next.dismiss()
@@ -153,7 +154,7 @@ private fun TvTools.sessionIdField(): EditText {
     val band=dp(TvStyle.SOFT_BAND)
     return EditText(activity).apply {
         id=View.generateViewId()
-        hint="在此粘贴 sessionid，或整段 Cookie"
+        hint=UiText.get(com.hgtv.star.shared.R.string.ui_0055)
         designTextSize(SESSION_FIELD_TEXT)
         setTextColor(TvStyle.text); setHintTextColor(TvStyle.muted)
         isSingleLine=true; maxLines=1
@@ -189,8 +190,8 @@ private fun TvTools.phoneUpload(anchor: View?,onImport: (String)->Unit) {
     if(address==null) {
         info("导入账号参数","请让电视和手机连接同一局域网（Wi-Fi 或有线网络）后重试。",anchor); return
     }
-    val next=TvDialog(activity,"手机上传账号参数")
-    next.button("关闭")
+    val next=TvDialog(activity,UiText.get(com.hgtv.star.shared.R.string.ui_0103))
+    next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035))
     val status=label("正在生成二维码…"); next.content.addView(status)
     open(next,anchor)
     worker.execute {
@@ -204,7 +205,7 @@ private fun TvTools.phoneUpload(anchor: View?,onImport: (String)->Unit) {
             }
         } catch(e: Exception) {
             com.hgtv.star.shared.debug.Diagnostics.warn("HGTV-TOOLS","upload dialog failed: ${e.javaClass.simpleName}: ${e.message}",e)
-            main.post { if(dialog===next) status.text="无法开启上传页面，请检查网络后重试。" }
+            main.post { if(dialog===next) status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0123) }
         }
     }
 }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.core.detail
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -37,7 +38,7 @@ internal fun PhonePlayerActivity.load(seriesId: String) {
             }.getOrNull()
         }
         if (d == null) {
-            playerLandInfoLeft.text = "详情加载失败"
+            playerLandInfoLeft.text = UiText.get(com.hgtv.star.shared.R.string.ui_0222)
             return@launch
         }
         if (cached == null && fromDisk == null) {
@@ -45,7 +46,7 @@ internal fun PhonePlayerActivity.load(seriesId: String) {
         }
         detail = d
         if (d.episodes.isEmpty()) {
-            playerLandInfoLeft.text = if (d.upcoming) "尚未上线" else "暂无剧集"
+            playerLandInfoLeft.text = if (d.upcoming) UiText.get(com.hgtv.star.shared.R.string.ui_0069) else UiText.get(com.hgtv.star.shared.R.string.ui_0129)
             return@launch
         }
 

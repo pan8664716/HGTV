@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.ui
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
@@ -126,7 +127,7 @@ class PhoneSheet(private val host: FrameLayout) {
             ellipsize = android.text.TextUtils.TruncateAt.END
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         head.addView(TextView(host.context).apply {
-            text = "关闭"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0035)
             setTextColor(PhoneStyle.textDim)
             phoneSize(13)
             setPadding(dp(8), dp(5), 0, dp(5))
@@ -354,7 +355,7 @@ class PhoneSheet(private val host: FrameLayout) {
                     chip.background = choiceBackground(on, radius)
                     chip.setTextColor(if (on) Color.WHITE else PhoneStyle.textDim)
                     chip.isSelected = on
-                    chip.contentDescription = chip.text.toString() + if (on) "，已选中" else ""
+                    chip.contentDescription = chip.text.toString() + if (on) UiText.get(com.hgtv.star.shared.R.string.ui_0279) else ""
                 }
             }
 

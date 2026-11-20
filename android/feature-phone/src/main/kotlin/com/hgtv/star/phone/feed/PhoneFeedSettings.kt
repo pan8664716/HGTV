@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.toFit
@@ -20,7 +21,7 @@ internal fun PhoneFeedView.openSettingsImpl() {
         return
     }
     feedSheet.bottomInset = context.navigationBarPx()
-    feedSheet.show("播放设置", landscape = false, heightFraction = .5f) { panel ->
+    feedSheet.show(UiText.get(com.hgtv.star.shared.R.string.ui_0116), landscape = false, heightFraction = .5f) { panel ->
         buildPlaybackSettingsRows(
             host = this,
             panel = panel,

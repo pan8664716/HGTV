@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.graphics.drawable.ColorDrawable
 import android.text.SpannableString
 import android.text.Spanned
@@ -242,7 +243,7 @@ private fun PhoneSettingsActivity.switchThemeImpl(option: TvTheme) {
 internal fun PhoneSettingsActivity.renderRecommend() {
     sectionImpl("推荐设置")
     rowImpl("受众", genderLabelImpl(settingsLibrary.recommendGender)) {
-        pickImpl("推荐受众", listOf("不限", "男频", "女频"),
+        pickImpl(UiText.get(com.hgtv.star.shared.R.string.ui_0370), listOf(UiText.get(com.hgtv.star.shared.R.string.ui_0296), UiText.get(com.hgtv.star.shared.R.string.ui_0333), UiText.get(com.hgtv.star.shared.R.string.ui_0306)),
             genderIndexImpl(settingsLibrary.recommendGender)) { index ->
             settingsLibrary.recommendGender = listOf("", "male", "female")[index]
             renderSettings()

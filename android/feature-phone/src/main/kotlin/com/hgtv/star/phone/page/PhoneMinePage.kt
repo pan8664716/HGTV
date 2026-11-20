@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.page
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.view.Gravity
 import android.view.View
@@ -79,10 +80,10 @@ class PhoneMinePage(
             ViewGroup.LayoutParams.MATCH_PARENT,
             ViewGroup.LayoutParams.MATCH_PARENT,
         ))
-        contentDescription = "账号头像"
+        contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0232)
     }
     private val topName = TextView(context).apply {
-        text = "未登录"
+        text = UiText.get(com.hgtv.star.shared.R.string.ui_0135)
         setTextColor(PhoneStyle.text)
         phoneSize(if (compactTopBar) 15 else 17)
         setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -92,11 +93,11 @@ class PhoneMinePage(
     private val topRefresh = LinearLayout(context).apply {
         val size = context.dp(24)
         gravity = Gravity.CENTER
-        contentDescription = "刷新账号数据"
+        contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0040)
         background = null
         addView(PhoneGlyph(context, PhoneGlyph.Kind.REFRESH).apply {
             tint = PhoneStyle.text
-            contentDescription = "刷新账号数据"
+            contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0040)
         }, LinearLayout.LayoutParams(context.dp(16), context.dp(16)))
         setOnClickListener { refreshData() }
     }
@@ -128,7 +129,7 @@ class PhoneMinePage(
             context.dp(24),
             context.dp(24),
         ).apply { leftMargin = context.dp(8) })
-        contentDescription = "账号，未登录"
+        contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0233)
         setOnClickListener { context.phoneNav().open(Route.Account) }
     }
     private val library = PhoneServices.library(context)
@@ -551,10 +552,10 @@ class PhoneMinePage(
 
     private fun showRefreshLoading() {
         if (refreshOverlay != null) return
-        val dots = LoadingDotsView(context).apply { label = "正在刷新账号数据…" }
+        val dots = LoadingDotsView(context).apply { label = UiText.get(com.hgtv.star.shared.R.string.ui_0326) }
         val overlay = FrameLayout(context).apply {
             isClickable = true
-            contentDescription = "正在刷新账号数据"
+            contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0146)
             addView(dots, FrameLayout.LayoutParams(
                 ViewGroup.LayoutParams.WRAP_CONTENT,
                 ViewGroup.LayoutParams.WRAP_CONTENT,
@@ -666,6 +667,15 @@ class PhoneMinePage(
     private val tabs: List<String>
         get() = tabsLocal + if (signedIn()) tabsAccount else emptyList()
 
+    private fun tabLabel(key: String): String = when (key) {
+        "历史" -> UiText.get(com.hgtv.star.shared.R.string.ui_0356)
+        "收藏" -> UiText.get(com.hgtv.star.shared.R.string.ui_0357)
+        "稍后看" -> UiText.get(com.hgtv.star.shared.R.string.ui_0358)
+        "点赞" -> UiText.get(com.hgtv.star.shared.R.string.ui_0359)
+        "预约" -> UiText.get(com.hgtv.star.shared.R.string.ui_0360)
+        else -> key
+    }
+
     /**
      * 筛选芯片（历史：已看完 / 未看完；预约：已上线 / 待上线）。
      *
@@ -674,8 +684,8 @@ class PhoneMinePage(
      */
     private fun filterOptions(tabIndex: Int = tab): List<Pair<Boolean, String>> =
         when (tabs.getOrNull(tabIndex)) {
-            "历史" -> listOf(true to "已看完", false to "未看完")
-            "预约" -> listOf(true to "已上线", false to "待上线")
+            "历史" -> listOf(true to UiText.get(com.hgtv.star.shared.R.string.ui_0310), false to UiText.get(com.hgtv.star.shared.R.string.ui_0323))
+            "预约" -> listOf(true to UiText.get(com.hgtv.star.shared.R.string.ui_0309), false to UiText.get(com.hgtv.star.shared.R.string.ui_0316))
             else -> emptyList()
         }
 
@@ -699,7 +709,7 @@ class PhoneMinePage(
         }
         tabs.forEachIndexed { index, label ->
             row.addView(TextView(context).apply {
-                text = label
+                text = tabLabel(label)
                 phoneSize(16)
                 setTextColor(if (index == selected) PhoneStyle.text else PhoneStyle.textFaint)
                 setTypeface(
@@ -823,10 +833,10 @@ class PhoneMinePage(
         val selected = feed.selectedItems()
         if (selected.isEmpty()) return
         val activity = context as? android.app.Activity ?: return
-        PhoneDialog(activity, "批量删除")
-            .message("确定删除选中的 ${selected.size} 项吗？")
-            .button("取消")
-            .button("删除", danger = true) { performBatchDelete(selected) }
+        PhoneDialog(activity, UiText.get(com.hgtv.star.shared.R.string.ui_0108))
+            .message(UiText.get(com.hgtv.star.shared.R.string.ui_0197, selected.size))
+            .button(UiText.get(com.hgtv.star.shared.R.string.ui_0046))
+            .button(UiText.get(com.hgtv.star.shared.R.string.ui_0039), danger = true) { performBatchDelete(selected) }
             .show()
     }
 

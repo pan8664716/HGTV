@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.ui
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.graphics.Canvas
 import android.graphics.Paint
@@ -96,7 +97,7 @@ class PhoneSwitchRow(
     }
 
     private fun describe() {
-        contentDescription = "$label，${if (checkedValue) "开" else "关"}"
+        contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0004, label, if (checkedValue) UiText.get(com.hgtv.star.shared.R.string.ui_0311) else UiText.get(com.hgtv.star.shared.R.string.ui_0300))
     }
 }
 

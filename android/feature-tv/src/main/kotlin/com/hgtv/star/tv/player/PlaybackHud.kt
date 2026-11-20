@@ -3,6 +3,7 @@
 @file:JvmMultifileClass
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.shared.compat.hasInternet
 import com.hgtv.star.shared.compat.isMeteredConnection
 
@@ -155,21 +156,21 @@ fun TvMainActivity.updatePlaybackText() {
     if(screen=="recommend" && recommendScrubbing) return
     // 播放键图标与选项行的当前值：爆米花把状态放在图标和选项文字里，不额外占一行。
     transportIcon?.setVectorIcon(if(player?.playWhenReady==true) R.drawable.ic_player_pause else R.drawable.ic_player_play)
-    qualityOption?.text="清晰度 "+if(quality.isBlank()) "${playbackMaxQuality}P" else quality
-    speedOption?.text="倍速 "+PlaybackSpeed.label(if(playbackReady) player?.playbackParameters?.speed ?: library.playbackSpeed else library.playbackSpeed)
-    frameOption?.text="画面模式 "+library.frameMode.label
+    qualityOption?.text=UiText.get(com.hgtv.star.shared.R.string.ui_0167)+if(quality.isBlank()) "${playbackMaxQuality}P" else quality
+    speedOption?.text=UiText.get(com.hgtv.star.shared.R.string.ui_0025)+PlaybackSpeed.label(if(playbackReady) player?.playbackParameters?.speed ?: library.playbackSpeed else library.playbackSpeed)
+    frameOption?.text=UiText.get(com.hgtv.star.shared.R.string.ui_0177)+library.frameMode.label
     // 状态行只放显示方式：弹幕条数放在「设置 → 弹幕显示」那一行，
     // 播放界面的这一排已经够长，再加数字会被屏宽裁掉。
-    danmakuOption?.text="弹幕 "+library.danmakuMode.optionLabel
-    sleepOption?.text="定时 "+sleepTimer.label()
+    danmakuOption?.text=UiText.get(com.hgtv.star.shared.R.string.ui_0090)+library.danmakuMode.optionLabel
+    sleepOption?.text=UiText.get(com.hgtv.star.shared.R.string.ui_0060)+sleepTimer.label()
     syncBufferingDots()
     if(playError) return
-    if(sleepStopped) { playbackText.text="定时停止 · 按播放继续"; return }
+    if(sleepStopped) { playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0061); return }
     if(!playbackReady) { playbackText.text=""; return }
     val p=player ?: return
     val duration=p.duration.coerceAtLeast(0); val position=pendingSeek ?: p.currentPosition
     val span="${formatSpan(position)} / ${formatSpan(duration)}"
-    playbackText.text=if(p.playbackState==Player.STATE_ENDED) "本集已结束 · $span" else span
+    playbackText.text=if(p.playbackState==Player.STATE_ENDED) UiText.get(com.hgtv.star.shared.R.string.ui_0142, span) else span
     progressBar.progress=if(duration>0) position.toFloat()/duration else 0f
     progressBar.bufferedProgress=if(duration>0) {
         p.bufferedPosition.coerceIn(0,duration).toFloat()/duration
@@ -278,7 +279,7 @@ fun TvMainActivity.stopForSleep() {
     sleepChoice=0
     cancelRecovery(); player?.pause(); saveProgress()
     syncKeepScreenOn()
-    playbackText.text="定时停止已生效 · 观看位置已保存 · 按播放可继续"
+    playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0063)
     showHud(); if(playbackMenu!=null) showPlaybackMenu(sleepRow(library.danmakuMode.showsStyle)); syncMediaSession()
 
 }

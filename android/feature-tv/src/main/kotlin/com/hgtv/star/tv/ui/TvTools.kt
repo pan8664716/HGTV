@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.graphics.Bitmap
 import android.graphics.Color
@@ -98,7 +99,7 @@ class TvTools(internal val activity: Activity) {
     fun destroy() { close(); clearToast(); worker.shutdownNow() }
     fun info(title: String,message: String,anchor: View?) {
         val next=TvDialog(activity,title).message(message)
-        next.button("知道了", icon=R.drawable.ic_menu_check)
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0194), icon=R.drawable.ic_menu_check)
         open(next,anchor)
     }
     /**
@@ -114,8 +115,8 @@ class TvTools(internal val activity: Activity) {
      */
     fun confirm(title: String,message: String,anchor: View?,danger: Boolean=false,action: ()->Unit) {
         val next=TvDialog(activity,title).message(message)
-        next.button("取消", icon=R.drawable.ic_menu_close) {}
-        next.button("确认",tone=if(danger) ButtonTone.DANGER else ButtonTone.SECONDARY,
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon=R.drawable.ic_menu_close) {}
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0198),tone=if(danger) ButtonTone.DANGER else ButtonTone.SECONDARY,
             icon=if(danger) R.drawable.ic_menu_trash else R.drawable.ic_menu_check) { action() }
         open(next,anchor)
     }
@@ -143,7 +144,7 @@ class TvTools(internal val activity: Activity) {
         if(cover.isNotBlank() || subtitle.isNotBlank()) next.header(title,subtitle,cover,loadCover)
         next.choices(labels,icons=icons,danger=danger,onChoice=onChoice)
         if(extra!=null) next.button(extra, icon=R.drawable.ic_menu_trash) { onExtra() }
-        next.button("取消", icon=R.drawable.ic_menu_close) {}
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon=R.drawable.ic_menu_close) {}
         open(next,anchor)
     }
     /**
@@ -225,7 +226,7 @@ class TvTools(internal val activity: Activity) {
             info("手机输入","请让电视和手机连接同一局域网（Wi-Fi 或有线网络）后重试。",anchor); return
         }
         val next=TvDialog(activity,title)
-        next.button("关闭", icon=R.drawable.ic_menu_close)
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035), icon=R.drawable.ic_menu_close)
         val status=label("正在生成二维码…"); next.content.addView(status)
         open(next,anchor)
         worker.execute {
@@ -247,7 +248,7 @@ class TvTools(internal val activity: Activity) {
                 // 弹窗打不开时界面只给一句「请检查网络」，真正的原因（容器不支持、
                 // 端口占用、权限被拒）全被吞掉——这类反馈最难查，因为用户只会说「点了没反应」。
                 com.hgtv.star.shared.debug.Diagnostics.warn("HGTV-TOOLS","phone input dialog failed: ${e.javaClass.simpleName}: ${e.message}",e)
-                main.post { if(dialog===next) status.text="无法开启手机输入，请检查网络后重试。" }
+                main.post { if(dialog===next) status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0125) }
             }
         }
     }
@@ -305,7 +306,7 @@ class TvTools(internal val activity: Activity) {
                 com.hgtv.star.shared.debug.Diagnostics.trace("HGTV-LOGIN",line)
             }
         }
-        val next=TvDialog(activity,"手机号登录")
+        val next=TvDialog(activity,UiText.get(com.hgtv.star.shared.R.string.ui_0104))
         // 手机号不按中国大陆的 11 位判断：不同地区长度差别很大（6–15 位都有），
         // 输入框只留够 E.164（15 位）加上空格 / 横线 / `+` 的位置，归一在提交时做。
         val phoneField=LoginForm.field(activity,"手机号","请输入手机号",numeric=true,maxLength=20,phoneStyle=true)
@@ -324,7 +325,7 @@ class TvTools(internal val activity: Activity) {
         // 底部一排三枚：关闭 / 获取验证码 / 登录。后两枚用 `keepOpen`——
         // 发码要留在弹窗里接着填验证码、登录失败也要留在弹窗里改输入，
         // 登录成功时由回调自己关。
-        next.button("关闭", icon=R.drawable.ic_menu_close)
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035), icon=R.drawable.ic_menu_close)
         // 「获取验证码」的**防重复**：发码成功后进入倒计时，期间按钮置灰、文案带秒数；
         // 平台自己也有 `retry_time`（实测 60 秒），这里取两者的较大值，避免撞上它的限流
         // （`error_code=7 访问太频繁`）。
@@ -365,13 +366,13 @@ class TvTools(internal val activity: Activity) {
             if(System.currentTimeMillis()<cooldownUntil) return@send
             val phone=normalizePhone(phoneField.text.toString())
             if(phone.isEmpty()) {
-                note.text="请先填手机号。"
+                note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0223)
                 phoneField.requestFocus(); return@send
             }
             // 点下去立刻进入冷却（默认 60 秒，与平台自己的 `retry_time` 同档）：
             // 请求还没回来的这段时间里再点也不会发第二次。
             beginCooldown(60)
-            note.text="正在向 $phone 发送验证码…"
+            note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0148, phone)
             worker.execute {
                 val result=login.sendCode(phone,register)
                 main.post {
@@ -380,7 +381,7 @@ class TvTools(internal val activity: Activity) {
                         is PhoneLogin.Result.Sent -> {
                             // 平台给的等待时间更长时按它的来（实测 `retry_time` 是 60）。
                             beginCooldown(login.retryAfterSeconds.coerceAtLeast(60))
-                            note.text="验证码已发到 $phone，请查看短信。"
+                            note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0268, phone)
                             codeField.requestFocus()
                         }
                         is PhoneLogin.Result.NeedUpsms -> {
@@ -412,7 +413,7 @@ class TvTools(internal val activity: Activity) {
                             cooldownUntil=0
                             send.isEnabled=true
                             send.setLabel("获取验证码")
-                            note.text="验证码未发出，请稍后重试。"
+                            note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0270)
                         }
                     }
                 }
@@ -421,18 +422,18 @@ class TvTools(internal val activity: Activity) {
         // `lateinit` 是为了让按钮自己的动作里能把它置灰（见下面请求在途那一句）：
         // 用 `val` 的话，动作 lambda 捕获的是还没初始化的那个变量，编译不过。
         lateinit var submit: DialogItem
-        submit=next.button("登录",tone=ButtonTone.PRIMARY,keepOpen=true) {
+        submit=next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0180),tone=ButtonTone.PRIMARY,keepOpen=true) {
             val phone=normalizePhone(phoneField.text.toString())
             val code=codeField.text.toString().trim()
             if(phone.isEmpty()) {
-                note.text="请先填手机号。"
+                note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0223)
                 phoneField.requestFocus(); return@button
             }
             if(!code.matches(Regex("[0-9]{4,8}"))) {
-                note.text="验证码是 4—8 位数字。"
+                note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0269)
                 codeField.requestFocus(); return@button
             }
-            note.text="正在登录…"
+            note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0155)
             // 连点（遥控器上的重复键）会把 `sms_login` 发两遍，而平台的验证码是一次性的：
             // 第二次会把第一张消耗掉。这里**不把按钮置灰**——置灰的控件同时也不可聚焦，
             // 而「验证码」那一行的下键正指向这一行按钮，一旦置灰，用户在请求在途的几秒里
@@ -451,7 +452,7 @@ class TvTools(internal val activity: Activity) {
                                 restart={ phoneLoginForm(anchor,deviceProfile,deviceCookies,register,onLoggedIn,prefillPhone=phone) })
                         }
                         is PhoneLogin.Result.Failed -> note.text=result.message
-                        else -> note.text="登录失败，请稍后重试。"
+                        else -> note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0185)
                     }
                 }
             }
@@ -550,7 +551,7 @@ class TvTools(internal val activity: Activity) {
         onUpsmsVerified: (()->Unit)? = null
     ) {
         android.util.Log.i("HGTV-LOGIN","打开上行短信页 number=$number content=$content fromSendCode=${login.mfaFromSendCode}")
-        val next=TvDialog(activity,"还需要一条短信")
+        val next=TvDialog(activity,UiText.get(com.hgtv.star.shared.R.string.ui_0238))
         val deepLink="sms:$number?body="+java.net.URLEncoder.encode(content,"UTF-8")
         // 上行短信这一页除了扫码，还要把「收件号码 / 短信内容」原样写出来兜底
         // （不是所有扫码器都认 `sms:`）。两段内容放进两条凹陷槽，与上面三步说明分开。
@@ -571,7 +572,7 @@ class TvTools(internal val activity: Activity) {
         // 这里**没有**「我已发送」这种按钮：确认是电视自己在做的（见下面 [poll]），
         // 用户唯一的动作是在手机上把那条短信发出去。要他再回来按一下，只会让平台的
         // 「等待确认」多出几十秒空档，反而把挑战拖成「长时间未操作，验证已过期」。
-        next.button("取消", icon=R.drawable.ic_menu_close)
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon=R.drawable.ic_menu_close)
         open(next,anchor)
         // **从页面出现起就轮询**。
         //
@@ -598,7 +599,7 @@ class TvTools(internal val activity: Activity) {
                             is PhoneLogin.UpsmsResult.Pending -> {
                                 // `note` 有内容说明这次不是「还没看到短信」，而是平台回了别的东西
                                 // （网络抖动、未知错误码）。如实摆出来，别一直显示「还没看到」骗用户。
-                                status.text=verified.note.ifBlank { "平台还没看到这条短信…（正在重试）" }
+                                status.text=verified.note.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0088) }
                                 main.postDelayed(this, UPSMS_POLL_MS)
                             }
                             is PhoneLogin.UpsmsResult.Ticket -> {
@@ -673,15 +674,15 @@ class TvTools(internal val activity: Activity) {
      * 所以失败时把它一并摆出来。
      */
     private fun needNewCode(reason: String,anchor: View?,restart: ()->Unit,raw: String = "") {
-        val next=TvDialog(activity,"需要重新获取验证码")
+        val next=TvDialog(activity,UiText.get(com.hgtv.star.shared.R.string.ui_0263))
         next.message(reason)
-        if(raw.isNotBlank()) next.message("平台原文（已省略票据）：$raw",12f,TvStyle.muted)
+        if(raw.isNotBlank()) next.message(UiText.get(com.hgtv.star.shared.R.string.ui_0087, raw),12f,TvStyle.muted)
         next.message(
             "请在登录页重新获取验证码后再试一次（手机号已经帮你填好，只需填新的验证码）。",
             14f,TvStyle.muted
         )
-        next.button("关闭", icon=R.drawable.ic_menu_close)
-        next.button("重新获取验证码",tone=ButtonTone.PRIMARY, icon=R.drawable.ic_menu_restore) { restart() }
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035), icon=R.drawable.ic_menu_close)
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0260),tone=ButtonTone.PRIMARY, icon=R.drawable.ic_menu_restore) { restart() }
         open(next,anchor)
     }
     fun phoneLogin(
@@ -695,8 +696,8 @@ class TvTools(internal val activity: Activity) {
         if(address==null) {
             info("手机号登录","请让电视和手机连接同一局域网（Wi-Fi 或有线网络）后重试。",anchor); return
         }
-        val next=TvDialog(activity,"手机号登录")
-        next.button("关闭")
+        val next=TvDialog(activity,UiText.get(com.hgtv.star.shared.R.string.ui_0104))
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035))
         val status=label("正在生成二维码…"); next.content.addView(status)
         open(next,anchor)
         worker.execute {
@@ -720,7 +721,7 @@ class TvTools(internal val activity: Activity) {
                 }
             } catch(e: Exception) {
                 com.hgtv.star.shared.debug.Diagnostics.warn("HGTV-TOOLS","login dialog failed: ${e.javaClass.simpleName}: ${e.message}",e)
-                main.post { if(dialog===next) status.text="无法开启登录页面，请检查网络后重试。" }
+                main.post { if(dialog===next) status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0126) }
             }
         }
     }
@@ -729,8 +730,8 @@ class TvTools(internal val activity: Activity) {
         if(address==null) {
             info("备份与恢复","请让电视和手机连接同一局域网后重试。",anchor); return
         }
-        val next=TvDialog(activity,"手机备份与恢复")
-        next.button("关闭")
+        val next=TvDialog(activity,UiText.get(com.hgtv.star.shared.R.string.ui_0105))
+        next.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035))
         val status=label("正在生成二维码…"); next.content.addView(status)
         open(next,anchor)
         worker.execute {
@@ -738,8 +739,8 @@ class TvTools(internal val activity: Activity) {
                 val session=LibraryTransferServer(address,backup,{ data -> main.post {
                     if(dialog!==next) return@post
                     next.dismiss()
-                    val confirm=TvDialog(activity,"确认恢复本机记录")
-                    confirm.message("备份含 ${data.favorites.size} 部收藏、${data.history.size} 条观看记录、${data.searches.size} 条搜索、${data.later.size} 部稍后观看、${data.hidden.size} 部已隐藏的剧集。\n\n收藏合并，观看位置以较新的记录为准；已有收藏优先保留（最多 500 部），历史保留最近 200 条。")
+                    val confirm=TvDialog(activity,UiText.get(com.hgtv.star.shared.R.string.ui_0200))
+                    confirm.message(UiText.get(com.hgtv.star.shared.R.string.ui_0057, data.favorites.size, data.history.size, data.searches.size, data.later.size, data.hidden.size))
                     // 开关用全站统一的按钮：选中态是「按进去」的凹槽（不带颜色），
                     // 系统 CheckBox 的勾选色是自带的一套，与「选框不带颜色」的规则冲突。
                     var restoreSettings=false
@@ -750,8 +751,8 @@ class TvTools(internal val activity: Activity) {
                         settings.setLabel("同时恢复播放设置和内容分类 · ${if(restoreSettings) "开" else "关"}")
                     }
                     confirm.content.addView(settings,LinearLayout.LayoutParams(-1,-2).apply { topMargin=dp(TvStyle.GAP_BLOCK) })
-                    confirm.button("取消", icon=R.drawable.ic_menu_close) {}
-                    confirm.button("合并恢复", icon=R.drawable.ic_menu_restore) { restore(data,restoreSettings) }
+                    confirm.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon=R.drawable.ic_menu_close) {}
+                    confirm.button(UiText.get(com.hgtv.star.shared.R.string.ui_0050), icon=R.drawable.ic_menu_restore) { restore(data,restoreSettings) }
                     open(confirm,anchor)
                 } },{ main.post { if(dialog===next) { next.content.removeAllViews(); next.content.addView(label("二维码已过期，请关闭后重新打开。")) } } })
                 main.post {
@@ -761,7 +762,7 @@ class TvTools(internal val activity: Activity) {
                 }
             } catch(e: Exception) {
                 com.hgtv.star.shared.debug.Diagnostics.warn("HGTV-TOOLS","transfer dialog failed: ${e.javaClass.simpleName}: ${e.message}",e)
-                main.post { if(dialog===next) status.text="无法开启备份传输，请检查网络后重试。" }
+                main.post { if(dialog===next) status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0124) }
             }
         }
     }

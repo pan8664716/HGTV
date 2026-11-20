@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 
 /**
@@ -24,7 +25,7 @@ internal fun PhonePlayerActivity.applySleepChoice(choice: Int) {
         playerSleepChoice,
     )
     if (armed) {
-        hint.text = "定时已设置 · ${nextSeasonSleepTimer.label()}"
+        hint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0064, nextSeasonSleepTimer.label())
         hint.visibility = View.VISIBLE
     }
     if (!armed) hint.visibility = View.GONE
@@ -38,7 +39,7 @@ internal fun PhonePlayerActivity.stopForSleep() {
     nextSeasonSleepTimer.cancel()
     player?.pause()
     player?.let { runCatching { saveProgress(it.currentPosition, it.duration) } }
-    hint.text = "定时停止已生效 · 观看位置已保存"
+    hint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0062)
     hint.visibility = View.VISIBLE
     syncPlayGlyphForSleep()
     syncChips()

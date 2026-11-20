@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Intent
 import android.graphics.Color
 import android.os.Bundle
@@ -258,7 +259,7 @@ class PhoneDetailActivity : PhoneActivity() {
             setPadding(infoGap, dp(4), 0, dp(4))
         }
         titleView = TextView(this).apply {
-            text = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "加载中…" }
+            text = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0043) }
             setTextColor(PhoneStyle.text)
             phoneSize(18)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -371,7 +372,7 @@ class PhoneDetailActivity : PhoneActivity() {
             0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
         ))
         descToggle = TextView(this).apply {
-            text = "展开"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0070)
             setTextColor(PhoneStyle.accent)
             phoneSize(13)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -502,7 +503,7 @@ class PhoneDetailActivity : PhoneActivity() {
         detailToken++
         detailAuthorLoading=false
         val id = seriesId
-        titleView.text = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { "加载中…" }
+        titleView.text = intent.getStringExtra(EXTRA_TITLE).orEmpty().ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0043) }
         scope.launch {
             library = PhoneServices.awaitLibrary(this@PhoneDetailActivity)
             if (isFinishing || isDestroyed) return@launch
@@ -524,7 +525,7 @@ class PhoneDetailActivity : PhoneActivity() {
                     }
                 },
                 onError = {
-                    if (!isFinishing && !isDestroyed && detail == null) metaView.text = "详情加载失败"
+                    if (!isFinishing && !isDestroyed && detail == null) metaView.text = UiText.get(com.hgtv.star.shared.R.string.ui_0222)
                 },
             )
         }
@@ -577,7 +578,7 @@ class PhoneDetailActivity : PhoneActivity() {
         }
         // 横屏简介页使用 TV 同一套标题行；竖屏仍保留手机页面的小节标题。
         episodeHead.visibility = if(landscape) View.GONE else View.VISIBLE
-        episodeHead.text = "选集 · 全${d.episodes.size}集"
+        episodeHead.text = UiText.get(com.hgtv.star.shared.R.string.ui_0256, d.episodes.size)
         episodeBox.visibility = View.VISIBLE
         episodeBox.removeAllViews()
         val grid = PhoneEpisodeGrid(
@@ -608,7 +609,7 @@ class PhoneDetailActivity : PhoneActivity() {
         descView.text = text
         descView.maxLines = DESCRIPTION_COLLAPSED_LINES
         descView.ellipsize = android.text.TextUtils.TruncateAt.END
-        descToggle.text = "展开"
+        descToggle.text = UiText.get(com.hgtv.star.shared.R.string.ui_0070)
         descToggle.visibility = View.GONE
         descRow.visibility = if (text.isBlank()) View.GONE else View.VISIBLE
         if (text.isBlank()) return
@@ -620,7 +621,7 @@ class PhoneDetailActivity : PhoneActivity() {
         descView.maxLines = if (expanded) Int.MAX_VALUE else DESCRIPTION_COLLAPSED_LINES
         descView.ellipsize =
             if (expanded) null else android.text.TextUtils.TruncateAt.END
-        descToggle.text = if (expanded) "收起" else "展开"
+        descToggle.text = if (expanded) UiText.get(com.hgtv.star.shared.R.string.ui_0119) else UiText.get(com.hgtv.star.shared.R.string.ui_0070)
         descToggle.visibility = View.VISIBLE
         descView.requestLayout()
     }
@@ -661,7 +662,7 @@ class PhoneDetailActivity : PhoneActivity() {
                 this,
                 d.series,
                 next,
-                onNeedSignIn = { toast(if (next) "已预约 · 仅保存在本机" else "已取消预约") },
+                onNeedSignIn = { toast(if (next) UiText.get(com.hgtv.star.shared.R.string.ui_0085) else UiText.get(com.hgtv.star.shared.R.string.ui_0076)) },
                 onDone = { ok ->
                 // 失败：本机状态翻回去。用户在这期间又点过的话（本地已经不是 next）就不动，
                 // 免得把第二次点击的结果也一起抹掉。
@@ -672,7 +673,7 @@ class PhoneDetailActivity : PhoneActivity() {
                 if (!isFinishing && !isDestroyed && !ok) {
                     detail = detail?.copy(reserved = !next)
                     paintReserve(!next)
-                    toast(if (next) "预约失败，稍后再试" else "取消预约失败，稍后再试")
+                    toast(if (next) UiText.get(com.hgtv.star.shared.R.string.ui_0266) else UiText.get(com.hgtv.star.shared.R.string.ui_0049))
                 }
                 },
             )
@@ -683,7 +684,11 @@ class PhoneDetailActivity : PhoneActivity() {
     }
 
     private fun paintReserve(reserved: Boolean) {
-        val label = if (reserved) "已预约" else "预约"
+        val label = if (reserved) {
+            UiText.get(com.hgtv.star.shared.R.string.ui_0361)
+        } else {
+            UiText.get(com.hgtv.star.shared.R.string.ui_0362)
+        }
         primary.update(PhoneGlyph.Kind.STAR, label, reserved, label)
     }
 
@@ -721,7 +726,7 @@ class PhoneDetailActivity : PhoneActivity() {
             d.series.id,
         )
         PhoneAccountSync.favorite(this, d.series, adding) {
-            android.widget.Toast.makeText(this, "未登录，收藏只保存在本机", android.widget.Toast.LENGTH_SHORT).show()
+            android.widget.Toast.makeText(this, UiText.get(com.hgtv.star.shared.R.string.ui_0136), android.widget.Toast.LENGTH_SHORT).show()
         }
         refreshFavorite()
     }

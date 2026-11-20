@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.content.Intent
 import android.os.Bundle
@@ -75,7 +76,7 @@ class DeviceFormActivity : Activity() {
     }
 
     private fun showTvChooser() {
-        val picker=TvDialog(this,"设备类型")
+        val picker=TvDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0218))
         picker.choices(
             DeviceForm.pickerLabels(),
             selected=current?.let { DeviceForm.optionIndex(DeviceForm.storedValue(it)) } ?: -1,
@@ -84,7 +85,7 @@ class DeviceFormActivity : Activity() {
             choose(DeviceForm.SELECTABLE[index])
         }
         if(!firstRun) {
-            picker.button("取消",icon=TvR.drawable.ic_menu_close) { finishCanceled() }
+            picker.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046),icon=TvR.drawable.ic_menu_close) { finishCanceled() }
         }
         tvDialog=picker
         picker.show(mandatory=firstRun) {
@@ -106,7 +107,7 @@ class DeviceFormActivity : Activity() {
             },
         )
         if(!firstRun) {
-            picker.button("取消") { finishCanceled() }
+            picker.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046)) { finishCanceled() }
         }
         phoneDialog=picker
         picker.show {
@@ -134,7 +135,7 @@ class DeviceFormActivity : Activity() {
 
     private fun showTvConfirmation(form: DeviceForm) {
         if(finished || isFinishing || isDestroyed) return
-        val confirm=TvDialog(this,"确认切换到${form.label}")
+        val confirm=TvDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0199, form.label))
         confirmationMessages(form).forEach { confirm.message(it) }
         val countdownView=tvText("6 秒后自动取消",15f,TvStyle.textStrong)
         confirm.content.addView(
@@ -163,10 +164,10 @@ class DeviceFormActivity : Activity() {
 
     private fun showPhoneConfirmation(form: DeviceForm) {
         if(finished || isFinishing || isDestroyed) return
-        val confirm=PhoneDialog(this,"确认切换到${form.label}")
+        val confirm=PhoneDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0199, form.label))
         confirmationMessages(form).forEach { confirm.message(it) }
         val countdownView=TextView(this).apply {
-            text="6 秒后自动取消"
+            text=UiText.get(com.hgtv.star.shared.R.string.ui_0016)
             setTextColor(PhoneStyle.text)
             phoneSize(15)
             setPadding(0,dp(4),0,dp(4))
@@ -217,7 +218,7 @@ class DeviceFormActivity : Activity() {
         if(countdownTimeout==null) return
         countdownTick?.let(handler::removeCallbacks)
         countdownRemaining=6
-        countdownView?.text="6 秒后自动取消"
+        countdownView?.text=UiText.get(com.hgtv.star.shared.R.string.ui_0016)
         scheduleCountdownTick()
     }
 
@@ -232,7 +233,7 @@ class DeviceFormActivity : Activity() {
                     timeout?.invoke()
                     return
                 }
-                countdownView?.text="$countdownRemaining 秒后自动返回"
+                countdownView?.text=UiText.get(com.hgtv.star.shared.R.string.ui_0001, countdownRemaining)
                 handler.postDelayed(this,1000L)
             }
         }
@@ -255,7 +256,7 @@ class DeviceFormActivity : Activity() {
             .putString(KEY_DEVICE_FORM,selected)
             .commit()
         if(!formSaved) {
-            Toast.makeText(this,"设备类型保存失败，请重试",Toast.LENGTH_SHORT).show()
+            Toast.makeText(this,UiText.get(com.hgtv.star.shared.R.string.ui_0219),Toast.LENGTH_SHORT).show()
             closeDialogs()
             scheduleChooser()
             return
@@ -266,7 +267,7 @@ class DeviceFormActivity : Activity() {
                 .putBoolean(KEY_DEVICE_FORM_CONFIRMED,true)
                 .commit()
             if(!promptSaved) {
-                Toast.makeText(this,"首次选择保存失败，请重试",Toast.LENGTH_SHORT).show()
+                Toast.makeText(this,UiText.get(com.hgtv.star.shared.R.string.ui_0267),Toast.LENGTH_SHORT).show()
                 closeDialogs()
                 scheduleChooser()
                 return

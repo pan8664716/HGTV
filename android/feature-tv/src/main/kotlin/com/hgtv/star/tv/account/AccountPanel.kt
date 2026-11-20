@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
@@ -247,7 +248,7 @@ private fun TvMainActivity.buildQrLoginPanel(
     val code=ImageView(this).apply {
         id=View.generateViewId()
         scaleType=ImageView.ScaleType.FIT_CENTER
-        contentDescription="登录二维码"
+        contentDescription=UiText.get(com.hgtv.star.shared.R.string.ui_0182)
         background=softPanel(Color.WHITE,TvStyle.RADIUS_CARD)
         val inset=dp(TvStyle.SOFT_BAND+8)
         setPadding(inset,inset,inset,inset)
@@ -336,14 +337,14 @@ private fun TvMainActivity.buildQrLoginPanel(
         retry=null
         token=""
         status.setTextColor(TvStyle.textDim)
-        status.text=if(manual) "正在刷新二维码…" else "正在获取二维码…"
+        status.text=if(manual) UiText.get(com.hgtv.star.shared.R.string.ui_0145) else UiText.get(com.hgtv.star.shared.R.string.ui_0158)
         io.submit {
             val fresh=login.fetchCode()
             main.post {
                 if(closed || !alive()) return@post
                 if(fresh==null) {
                     status.setTextColor(TvStyle.focusLine)
-                    status.text=login.lastError.ifBlank { "二维码获取失败，正在重试…" }
+                    status.text=login.lastError.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0021) }
                     // 5 秒后再试一次：面板还开着就一直试，收起面板时 [stop] 会把它摘掉。
                     retry?.let { main.removeCallbacks(it) }
                     val again=object: Runnable {
@@ -363,7 +364,7 @@ private fun TvMainActivity.buildQrLoginPanel(
                 paint(fresh)
                 renewed=false
                 status.setTextColor(TvStyle.textDim)
-                status.text="请用手机上的官方 App 扫码"
+                status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0225)
                 // 出码成功才起轮询：这一刻之前没有 token 可问。
                 schedule(QrLogin.POLL_MS)
             }
@@ -393,22 +394,22 @@ private fun TvMainActivity.buildQrLoginPanel(
                         status.setTextColor(TvStyle.textDim)
                         // 刚自动换过码时保留那一句提示，否则 1.1 秒后就被盖掉，
                         // 用户只看到二维码变了一下、不知道是过期刷新。
-                        if(!renewed) status.text="请用手机上的官方 App 扫码"
+                        if(!renewed) status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0225)
                     }
                     is QrLogin.Outcome.Scanned -> {
                         renewed=false
                         status.setTextColor(TvStyle.textDim)
-                        status.text="已扫码，请在手机上确认登录"
+                        status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0078)
                     }
                     is QrLogin.Outcome.Renewed -> {
                         // 平台在 `expired` 的同一次响应里下发了新码：原地换掉，接着轮询。
                         paint(outcome.code)
                         renewed=true
                         status.setTextColor(TvStyle.textDim)
-                        status.text="二维码已过期，已自动刷新，请重新扫码"
+                        status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0020)
                     }
                     is QrLogin.Outcome.Confirmed -> {
-                        status.text="登录成功"
+                        status.text=UiText.get(com.hgtv.star.shared.R.string.ui_0188)
                         stop()
                         hideAccountPanel()
                         savePhoneLogin(outcome.credentials,trigger)
@@ -416,7 +417,7 @@ private fun TvMainActivity.buildQrLoginPanel(
                     }
                     is QrLogin.Outcome.Failed -> {
                         status.setTextColor(TvStyle.focusLine)
-                        status.text=outcome.message.ifBlank { "扫码状态读取失败，正在重试…" }
+                        status.text=outcome.message.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0107) }
                     }
                 }
                 // 失败（断网 / 网关挡掉）不是终局：隔得久一点再问，别按 1.1 秒硬敲。
@@ -562,7 +563,7 @@ private fun TvMainActivity.buildPhoneLoginPanel(
     /** 点「获取验证码」之后真正发码的那一段（须知确认前后都走这一份）。 */
     fun startSend(phone: String) {
         beginCooldown(60)
-        note.text="正在向 $phone 发送验证码…"
+        note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0148, phone)
         io.submit {
             val result=login.sendCode(phone) { profile -> registerForPhoneLogin(profile) }
             main.post {
@@ -570,7 +571,7 @@ private fun TvMainActivity.buildPhoneLoginPanel(
                 when(result) {
                     is PhoneLogin.Result.Sent -> {
                         beginCooldown(login.retryAfterSeconds.coerceAtLeast(60))
-                        note.text="验证码已发到 $phone，请查看短信。"
+                        note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0268, phone)
                         codeField.requestFocus()
                     }
                     is PhoneLogin.Result.NeedUpsms -> {
@@ -600,7 +601,7 @@ private fun TvMainActivity.buildPhoneLoginPanel(
                         cooldownUntil=0
                         send.isEnabled=true
                         send.setLabel("获取验证码")
-                        note.text="验证码未发出，请稍后重试。"
+                        note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0270)
                     }
                 }
             }
@@ -610,7 +611,7 @@ private fun TvMainActivity.buildPhoneLoginPanel(
         if(System.currentTimeMillis()<cooldownUntil) return@send
         val phone=normalizedPhone()
         if(phone==null) {
-            note.text="请先填手机号。"
+            note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0223)
             phoneField.requestFocus(); return@send
         }
         // **每一次**点「获取验证码」都先弹一次确认（见 [confirmSmsConsent]）：
@@ -647,14 +648,14 @@ private fun TvMainActivity.buildPhoneLoginPanel(
         val phone=normalizedPhone()
         val code=codeField.text.toString().trim()
         if(phone==null) {
-            note.text="请先填手机号。"
+            note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0223)
             phoneField.requestFocus(); return@SubmitButton
         }
         if(!code.matches(Regex("[0-9]{4,8}"))) {
-            note.text="验证码是 4—8 位数字。"
+            note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0269)
             codeField.requestFocus(); return@SubmitButton
         }
-        note.text="正在登录…"
+        note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0155)
         io.submit {
             val result=login.login(phone,code)
             main.post {
@@ -677,7 +678,7 @@ private fun TvMainActivity.buildPhoneLoginPanel(
                             })
                     }
                     is PhoneLogin.Result.Failed -> note.text=result.message
-                    else -> note.text="登录失败，请稍后重试。"
+                    else -> note.text=UiText.get(com.hgtv.star.shared.R.string.ui_0185)
                 }
             }
         }

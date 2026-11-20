@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.ui
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
@@ -65,7 +66,7 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
     }
     private val actionGlyph = PhoneGlyph(context, PhoneGlyph.Kind.SEARCH).apply {
         tint = PhoneStyle.text
-        contentDescription = "搜索"
+        contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0112)
     }
     private val actionDot = View(context).apply {
         background = GradientDrawable().apply {
@@ -83,7 +84,7 @@ class PhoneTopBar(context: Context) : LinearLayout(context) {
             topMargin = context.dp(1)
             rightMargin = context.dp(1)
         })
-        contentDescription = "搜索"
+        contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0112)
         setOnClickListener { (customAction ?: onSearch)?.invoke() }
     }
     private val extraActions = LinearLayout(context).apply {

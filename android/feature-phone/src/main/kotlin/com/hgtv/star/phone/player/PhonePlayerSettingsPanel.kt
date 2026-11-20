@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -48,13 +49,13 @@ internal object PhonePlayerSettingsPanel {
             gravity = Gravity.CENTER_VERTICAL
         }
         head.addView(TextView(activity).apply {
-            text = "播放设置"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0116)
             setTextColor(PhoneStyle.text)
             phoneSize(14)
             setTypeface(typeface, Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         head.addView(TextView(activity).apply {
-            text = "关闭"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0035)
             setTextColor(PhoneStyle.textDim)
             phoneSize(12)
             setPadding(activity.dp(6), activity.dp(4), 0, activity.dp(4))

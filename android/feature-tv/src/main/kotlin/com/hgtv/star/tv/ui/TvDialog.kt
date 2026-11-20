@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.app.AlertDialog
 import android.view.Gravity
@@ -357,7 +358,7 @@ class TvDialog(private val activity: Activity, title: String) {
                 }
             )
             item.setSelectedState(index == selected)
-            item.contentDescription = label + if (index == selected) "，当前选择" else ""
+            item.contentDescription = label + if (index == selected) UiText.get(com.hgtv.star.shared.R.string.ui_0284) else ""
             // 整行铺满面板宽度：设计稿里的选项是一条条横贯面板的胶囊，
             // 左边图标、右边文字，一列读下来像一份菜单，而不是几个悬浮的小按钮。
             items.addView(

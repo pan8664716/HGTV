@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv.player
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.graphics.Canvas
 import android.view.Gravity
@@ -398,7 +399,7 @@ class EpisodeGrid(
                     // 高度是动态算的（见 [fitCells]），可能低于常规档的 60dp：
                     // 留着这个下限，TextView 会把测量结果顶回 60，动态尺寸就失效了。
                     cell.allowCompactHeight()
-                    cell.contentDescription = "第 ${index + 1} 集" + if (index == current) "，当前播放" else ""
+                    cell.contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0202, index + 1) + if (index == current) UiText.get(com.hgtv.star.shared.R.string.ui_0282) else ""
                     line.addView(cell, cellParams(if (cellHeight > 0) cellHeight else provisionalCellHeight()))
                     page += cell
                 } else {

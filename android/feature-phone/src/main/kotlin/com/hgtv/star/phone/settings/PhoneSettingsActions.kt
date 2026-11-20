@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Intent
 import com.hgtv.star.core.LibraryBackup
 import com.hgtv.star.phone.ui.PhoneDialog
@@ -13,12 +14,12 @@ import com.hgtv.star.shared.ui.TvTheme
 internal fun PhoneSettingsActivity.appVersionName(): String = appVersionNameImpl()
 
 internal fun PhoneSettingsActivity.showAboutDialog() {
-    PhoneDialog(this, "关于")
-        .message("版本号：${appVersionName()}")
+    PhoneDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0034))
+        .message(UiText.get(com.hgtv.star.shared.R.string.ui_0171, appVersionName()))
         .message("GitHub：${ProjectInfo.GITHUB}")
-        .message("交流反馈：${ProjectInfo.TELEGRAM}")
-        .message("更新请前往项目页面查看项目更新。")
-        .button("关闭") {}
+        .message(UiText.get(com.hgtv.star.shared.R.string.ui_0022, ProjectInfo.TELEGRAM))
+        .message(UiText.get(com.hgtv.star.shared.R.string.ui_0132))
+        .button(UiText.get(com.hgtv.star.shared.R.string.ui_0035)) {}
         .show()
 }
 

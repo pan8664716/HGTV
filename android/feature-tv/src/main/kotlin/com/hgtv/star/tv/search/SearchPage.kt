@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.shared.debug.DebugLog
 
 import android.app.Activity
@@ -615,7 +616,7 @@ fun TvMainActivity.renderHintRow(items: List<String>) {
             (searchInput as? EditText)?.setText(label)
             runSearch(label)
         }
-        chip.contentDescription="$label，搜索"
+        chip.contentDescription=UiText.get(com.hgtv.star.shared.R.string.ui_0005, label)
         chips+=chip
         // 芯片之间用 6dp（与分类页筛选行一致）：它们是同一组候选，靠近一点才读得出「一组」。
         gapInto(line,chip,lp(-2,-2),6)
@@ -672,8 +673,8 @@ fun TvMainActivity.showSearchSourcePicker(anchor: TextView) {
         val selected=SearchSource.entries[index]
         val changed=searchController.state.value.source!=selected
         searchController.setSource(selected)
-        anchor.text="搜索源  ·  ${selected.label}"
-        anchor.contentDescription="搜索源，当前${selected.label}"
+        anchor.text=UiText.get(com.hgtv.star.shared.R.string.ui_0114, selected.label)
+        anchor.contentDescription=UiText.get(com.hgtv.star.shared.R.string.ui_0115, selected.label)
         if(changed) {
             showHint("搜索源已切换为${selected.label}，下次搜索生效")
             // 搜索页缓存的那一份结果来自**旧的源**：留着它会让「展示更多」接着问新源的第 2 页，
@@ -682,13 +683,13 @@ fun TvMainActivity.showSearchSourcePicker(anchor: TextView) {
             // 搜索页正开着且输入框为空：那一行是热搜词，换源之后重新铺一份。
             if(tab==TAB_SEARCH && (searchInput as? EditText)?.text?.toString()?.trim().isNullOrEmpty()) loadHotSearches()
         }
-    },subtitle="只影响搜索，分类 / 榜单 / 播放不受影响")
+    },subtitle=UiText.get(com.hgtv.star.shared.R.string.ui_0305))
 }
 fun TvMainActivity.showSearchHistory(anchor: View) {
     searchController.refreshHistory()
     val history=searchController.state.value.history
     if(history.isEmpty()) { tvTools.info("搜索历史","搜索过的剧名会保存在这里，最多保留 20 条。",anchor); return }
-    tvTools.choose("搜索历史",history,anchor,{ index -> runSearch(history[index]) },"清空历史") {
+    tvTools.choose(UiText.get(com.hgtv.star.shared.R.string.ui_0321),history,anchor,{ index -> runSearch(history[index]) },UiText.get(com.hgtv.star.shared.R.string.ui_0332)) {
         tvTools.confirm("清空搜索历史","清除本机保存的搜索词？",anchor,danger=true) { searchController.clearHistory() }
     }
 }
@@ -696,12 +697,12 @@ fun TvMainActivity.showSearchHistory(anchor: View) {
 fun TvMainActivity.showDefaultKeyboardPicker(anchor: TextView) {
     val options=SearchKeyboard.entries
     val labels=options.map { if(it==library.searchKeyboard) "${it.label}（当前）" else it.label }
-    tvTools.choose("默认输入法",labels,anchor,{ index ->
+    tvTools.choose(UiText.get(com.hgtv.star.shared.R.string.ui_0352),labels,anchor,{ index ->
         val selected=options[index]
         setSearchKeyboard(selected==SearchKeyboard.HONGGUO)
-        anchor.text="默认输入法  ·  ${selected.label}"
-        anchor.contentDescription="默认输入法，当前${selected.label}"
-    },subtitle="HG键盘常驻搜索页左侧；系统输入法保留原来的搜索框")
+        anchor.text=UiText.get(com.hgtv.star.shared.R.string.ui_0277, selected.label)
+        anchor.contentDescription=UiText.get(com.hgtv.star.shared.R.string.ui_0278, selected.label)
+    },subtitle=UiText.get(com.hgtv.star.shared.R.string.ui_0293))
 }
 /**
  * 本机记录 → 云端同步（尽力而为）。

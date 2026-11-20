@@ -6,6 +6,7 @@ import com.hgtv.star.shared.data.thirdPartyAccepted
 import com.hgtv.star.tv.ButtonTone
 import com.hgtv.star.tv.TvDialog
 import com.hgtv.star.tv.R
+import com.hgtv.star.shared.ui.UiText
 
 // 本文件是两条「知情同意」：进「我的」页的那条使用须知，与「获取验证码」前的那次确认。
 //
@@ -19,10 +20,10 @@ import com.hgtv.star.tv.R
 
 // 正文与按钮文案统一放在 `:core` 的 [com.hgtv.star.core.ThirdPartyNotice]：手机端用的是同一份，
 // 文案改一处两端同时生效，也就不会出现「电视上说了风险、手机上没说」。
-private val CONSENT_TEXT get()=com.hgtv.star.core.ThirdPartyNotice.USAGE
-private val SMS_CONSENT_TEXT get()=com.hgtv.star.core.ThirdPartyNotice.SMS
-private val CONSENT_TITLE get()=com.hgtv.star.core.ThirdPartyNotice.USAGE_TITLE
-private val SMS_CONSENT_TITLE get()=com.hgtv.star.core.ThirdPartyNotice.SMS_TITLE
+private val CONSENT_TEXT get()=UiText.get(com.hgtv.star.shared.R.string.ui_0381)
+private val SMS_CONSENT_TEXT get()=UiText.get(com.hgtv.star.shared.R.string.ui_0382)
+private val CONSENT_TITLE get()=UiText.get(com.hgtv.star.shared.R.string.ui_0379)
+private val SMS_CONSENT_TITLE get()=UiText.get(com.hgtv.star.shared.R.string.ui_0380)
 
 /**
  * 进「我的」页时弹一次使用须知，确认之后才继续。
@@ -42,7 +43,7 @@ fun TvMainActivity.ensureThirdPartyAccepted(anchor: View?=null, onAccepted: ()->
     val dialog=TvDialog(this,CONSENT_TITLE).message(CONSENT_TEXT)
     // 外观是**红色警示图标 + 空心红描边**：按下它等于承认「账号可能被平台处置、后果自负」。
     // 图标用警示三角而不是对勾：对勾读起来是「已完成」，而这里还什么都没完成。
-    dialog.button(com.hgtv.star.core.ThirdPartyNotice.ACCEPT,tone=ButtonTone.DANGER,icon=R.drawable.ic_menu_warning,outlined=true) {
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0383),tone=ButtonTone.DANGER,icon=R.drawable.ic_menu_warning,outlined=true) {
         library.thirdPartyAccepted=true
         consentShowing=false
         onAccepted()
@@ -70,8 +71,8 @@ fun TvMainActivity.confirmSmsConsent(anchor: View?, onAccepted: ()->Unit) {
     val dialog=TvDialog(this,SMS_CONSENT_TITLE).message(SMS_CONSENT_TEXT)
     // 「不同意」排在前面：弹窗的默认焦点是第一枚按钮，落在「不同意」上，
     // 误按一次确认键不会把手机号发出去。
-    dialog.button(com.hgtv.star.core.ThirdPartyNotice.DECLINE,icon=R.drawable.ic_menu_close) {}
-    dialog.button(com.hgtv.star.core.ThirdPartyNotice.ACCEPT,tone=ButtonTone.DANGER,icon=R.drawable.ic_menu_warning,outlined=true) {
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0384),icon=R.drawable.ic_menu_close) {}
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0383),tone=ButtonTone.DANGER,icon=R.drawable.ic_menu_warning,outlined=true) {
         consentShowing=false
         onAccepted()
     }

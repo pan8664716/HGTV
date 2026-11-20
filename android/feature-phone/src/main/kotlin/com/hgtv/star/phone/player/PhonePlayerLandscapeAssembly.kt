@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.graphics.Color
 import android.view.Gravity
 import android.view.View
@@ -132,7 +133,7 @@ internal fun PhonePlayerActivity.buildLandscapeTopControls() {
             tint = Color.WHITE
         }, android.widget.LinearLayout.LayoutParams(dp(10), dp(10)))
         addView(TextView(this@buildLandscapeTopControls).apply {
-            text = "全屏"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0031)
             setTextColor(Color.WHITE)
             phoneSize(9)
             setPadding(dp(3), 0, 0, 0)

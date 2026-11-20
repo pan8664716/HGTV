@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.ui
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.graphics.Color
 import android.view.Gravity
@@ -155,13 +156,13 @@ class PhoneEpisodeGrid(
                 gravity=Gravity.CENTER_VERTICAL
             }
             head.addView(TextView(context).apply {
-                text="选集"
+                text=UiText.get(com.hgtv.star.shared.R.string.ui_0253)
                 setTextColor(PhoneStyle.text)
                 phoneSize(20)
                 setTypeface(typeface,android.graphics.Typeface.BOLD)
             })
             head.addView(TextView(context).apply {
-                text="正在看第 ${current + 1} 集 · 共 $count 集"
+                text=UiText.get(com.hgtv.star.shared.R.string.ui_0156, current + 1, count)
                 setTextColor(PhoneStyle.textDim)
                 phoneSize(14)
             },LayoutParams(ViewGroup.LayoutParams.WRAP_CONTENT,ViewGroup.LayoutParams.WRAP_CONTENT).apply {
@@ -646,7 +647,7 @@ class PhoneEpisodeGrid(
                     dp(8).toFloat()
                 )
             }
-            contentDescription = "第 ${i + 1} 集" + if (on) "，当前播放" else ""
+            contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0201, i + 1) + if (on) UiText.get(com.hgtv.star.shared.R.string.ui_0282) else ""
             if (interactive) setOnClickListener { onPick(i) }
         }
     }

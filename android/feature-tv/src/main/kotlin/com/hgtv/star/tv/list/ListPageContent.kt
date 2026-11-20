@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv.list
 
+import com.hgtv.star.shared.ui.UiText
 import android.graphics.Canvas
 import android.view.Gravity
 import android.view.View
@@ -104,7 +105,7 @@ fun TvMainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Bo
             else -> "本页没有更多内容"
         })
         if(appendCatalog() && hasMore && !autoAppendCatalog()) addButton(list,moreLabel()) { loadMore() }
-        if(autoAppendCatalog() && hasMore) message(list,"向下滚动会自动加载更多")
+        if(autoAppendCatalog() && hasMore) message(list,UiText.get(com.hgtv.star.shared.R.string.ui_0054))
         focusFirstCardOnLanding=false
         ensureFocusView { hongguoKeyboard?.view?.takeIf { it.childCount>0 }?.let { keyboard ->
             hongguoKeyboard?.focusFirstKey(); keyboard
@@ -142,7 +143,7 @@ fun TvMainActivity.seriesList(body: LinearLayout,focusNav: Boolean,focusType: Bo
         next=moreButton?.takeIf { it.isFocusable }
     } else if(tab==TAB_SEARCH) {
         prev=addButton(paging,"上一页") { if(page>1) { page--; catalogFocus=""; showCatalog() } }.apply { isEnabled=page>1; isFocusable=page>1 }
-        gapInto(paging,text("第 $page 页",14f,muted).apply { gravity=Gravity.CENTER },lp(dp(95),dp(TvStyle.BUTTON_NORMAL+2*TvStyle.SOFT_BAND)))
+        gapInto(paging,text(UiText.get(com.hgtv.star.shared.R.string.ui_0340, page),14f,muted).apply { gravity=Gravity.CENTER },lp(dp(95),dp(TvStyle.BUTTON_NORMAL+2*TvStyle.SOFT_BAND)))
         next=addButton(paging,"下一页") { if(hasMore) { page++; catalogFocus=""; showCatalog() } }.apply { isEnabled=hasMore; isFocusable=hasMore }
         list.addView(paging,lp(-1,dp(TvStyle.BUTTON_NORMAL+2*TvStyle.SOFT_BAND+TvStyle.GAP_TIGHT)))
     }

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.ui
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.app.AlertDialog
 import android.content.Context
@@ -175,7 +176,7 @@ class PhoneDialog(private val activity: Activity, private val title: String) {
                     PhoneStyle.RADIUS_PILL,
                     4f,
                 )
-                contentDescription = label + if (index == selected) "，当前选择" else ""
+                contentDescription = label + if (index == selected) UiText.get(com.hgtv.star.shared.R.string.ui_0284) else ""
                 setOnClickListener {
                     beforeChoice()
                     dismiss()

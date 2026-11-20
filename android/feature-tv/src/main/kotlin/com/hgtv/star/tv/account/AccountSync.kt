@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.view.*
 import android.widget.*
@@ -50,7 +51,7 @@ fun TvMainActivity.syncFavorite(series: Series,added: Boolean) {
         added = added,
         onNeedSignIn = { tvTools.toast(SIGN_IN_TOAST) },
         onSyncError = {
-            tvTools.toast(if(added) "收藏同步失败，稍后再试" else "取消收藏同步失败，稍后再试")
+            tvTools.toast(if(added) UiText.get(com.hgtv.star.shared.R.string.ui_0118) else UiText.get(com.hgtv.star.shared.R.string.ui_0048))
         },
     )
     refreshAccountListIfVisible()
@@ -286,7 +287,7 @@ fun TvMainActivity.clearAllHistory(anchor: View?) {
         if(isDestroyed) return@remote
         // 成功不报「已清空 N 条」：列表自己会空掉，那就是最清楚的反馈。
         // 失败仍然要说——云端没删干净，用户需要知道要不要再试。
-        if(!ok) tvTools.toast("本机已清空；云端还有记录没删掉，请稍后重试")
+        if(!ok) tvTools.toast(UiText.get(com.hgtv.star.shared.R.string.ui_0138))
         hideCenterLoading()
     })
     cleared=(result.localIds+result.knownIds).distinct().size

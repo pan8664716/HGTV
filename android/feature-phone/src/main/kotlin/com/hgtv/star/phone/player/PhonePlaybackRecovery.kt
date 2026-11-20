@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.graphics.Color
 import android.view.Gravity
 import android.view.View
@@ -376,17 +377,17 @@ internal fun PhonePlayerActivity.scheduleAutoRetry(waitMs: Long) {
     retryJob = scope.launch {
         var left = (waitMs / 1000).coerceAtLeast(1)
         while (left > 0) {
-            autoRetryLabel?.text = "自动重试：${left} 秒后 · ${playbackCoordinator.autoRetryAttempts + 1}/3"
+            autoRetryLabel?.text = UiText.get(com.hgtv.star.shared.R.string.ui_0211, left, playbackCoordinator.autoRetryAttempts + 1)
             delay(1000)
             left--
         }
         if (isFinishing || isDestroyed) return@launch
         retryJob = null
         if (!playbackCoordinator.consumeAutoRetry()) {
-            autoRetryLabel?.text = "已自动重试 3 次，仍无法播放。可手动重试或切换清晰度。"
+            autoRetryLabel?.text = UiText.get(com.hgtv.star.shared.R.string.ui_0082)
             return@launch
         }
-        autoRetryLabel?.text = "正在重试…"
+        autoRetryLabel?.text = UiText.get(com.hgtv.star.shared.R.string.ui_0160)
         // 地址缓存必须先作废，否则重试会命中旧 URL，三次重试只是重放同一条失败流。
         prepareFreshRetrySource()
         val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
@@ -572,7 +573,7 @@ internal fun PhonePlayerActivity.showPlaybackError(
     if (autoRetryDelayMs != null) {
         column.addView(errorButton("停止自动重试") {
             cancelAutoRetry()
-            autoRetryLabel?.text = "自动重试已停止，观看位置已保留。"
+            autoRetryLabel?.text = UiText.get(com.hgtv.star.shared.R.string.ui_0210)
         }, LinearLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, dp(40)
         ).apply { topMargin = dp(8) })
@@ -689,7 +690,7 @@ internal fun PhonePlayerActivity.recoverLostPicture(reason: String) {
     if (playbackCoordinator.pictureRecoveryCoolingDown(now, 20_000L)) return
     if (playbackCoordinator.pictureRecoveryCount >= 1) {
         // 已经重建过一次还是没画面：如实告诉用户，别让它无限重建。
-        toast(if (reason == "stall_buffer") "这一集加载不动，可以换一集" else "这一集画面出不来，可以换一集")
+        toast(if (reason == "stall_buffer") UiText.get(com.hgtv.star.shared.R.string.ui_0245) else UiText.get(com.hgtv.star.shared.R.string.ui_0246))
         return
     }
     playbackCoordinator.notePictureRecovery(now)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.phone.ui.PhoneDialog
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
@@ -20,48 +21,48 @@ internal fun PhoneSettingsActivity.showUpdateDialog() {
         showUpdateCheckingDialog()
         return
     }
-    val dialog=PhoneDialog(this,"版本更新")
+    val dialog=PhoneDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0172))
     val update=state.available
     when {
         update==null && (state.checking || !state.checked) ->
-            dialog.message("正在检查更新…")
+            dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0152))
         update==null && state.error.isNotBlank() -> {
             dialog.message(state.error)
-            dialog.button("重新检查",primary=true) {
+            dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0259),primary=true) {
                 settingsUpdateController.check(force=true)
             }
         }
         update==null -> {
-            dialog.message("当前版本 ${appVersionName()} 已是最新")
-            dialog.button("检查更新",primary=true) {
+            dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0100, appVersionName()))
+            dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0143),primary=true) {
                 settingsUpdateController.check(force=true)
             }
         }
         else -> {
             dialog.message("${update.versionName} · ${"%.1f".format(update.size / 1048576.0)} MB")
-            dialog.message(update.notes.ifBlank { "新版已发布。" })
+            dialog.message(update.notes.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0122) })
             if(state.ready) {
-                dialog.button("安装更新",primary=true) {
+                dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0058),primary=true) {
                     settingsUpdateController.install()
                 }
             } else if(state.downloading) {
-                dialog.message("正在下载更新 · ${state.progress}%")
+                dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0144, state.progress))
             } else {
-                dialog.button("下载并安装",primary=true) {
+                dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0018),primary=true) {
                     settingsUpdateController.downloadAndInstall()
                 }
             }
             if(state.error.isNotBlank()) dialog.message(state.error)
         }
     }
-    dialog.button("关闭")
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035))
     dialog.show()
 }
 
 private fun PhoneSettingsActivity.showUpdateCheckingDialog() {
-    val dialog=PhoneDialog(this,"版本更新")
-    dialog.message("正在检查版本更新…")
-    dialog.button("关闭")
+    val dialog=PhoneDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0172))
+    dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0153))
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035))
     var advance=false
     val job=settingsScope.launch {
         settingsUpdateController.state.first { !it.checking }

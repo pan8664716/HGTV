@@ -6,6 +6,7 @@ import com.hgtv.star.core.ThirdPartyNotice
 import com.hgtv.star.phone.ui.PhoneDialog
 import com.hgtv.star.shared.data.Library
 import com.hgtv.star.shared.data.thirdPartyAccepted
+import com.hgtv.star.shared.ui.UiText
 
 /**
  * 手机端的两条「知情同意」，与电视端**同一份文案、同一条语义**（见 `:core` 的
@@ -38,9 +39,9 @@ object PhoneConsent {
         if (library.thirdPartyAccepted) { onAccepted(); return }
         if (shownThisRun) return
         shownThisRun = true
-        PhoneDialog(activity, ThirdPartyNotice.USAGE_TITLE)
-            .message(ThirdPartyNotice.USAGE)
-            .button(ThirdPartyNotice.ACCEPT, danger = true) {
+        PhoneDialog(activity, UiText.get(com.hgtv.star.shared.R.string.ui_0379))
+            .message(UiText.get(com.hgtv.star.shared.R.string.ui_0381))
+            .button(UiText.get(com.hgtv.star.shared.R.string.ui_0383), danger = true) {
                 library.thirdPartyAccepted = true
                 onAccepted()
             }
@@ -55,10 +56,10 @@ object PhoneConsent {
      * 只有点「我已知晓并同意使用」才执行 [onAccepted]（发码），点「不同意」一个请求都不发。
      */
     fun confirmSms(activity: Activity, onAccepted: () -> Unit) {
-        PhoneDialog(activity, ThirdPartyNotice.SMS_TITLE)
-            .message(ThirdPartyNotice.SMS)
-            .button(ThirdPartyNotice.DECLINE)
-            .button(ThirdPartyNotice.ACCEPT, danger = true) { onAccepted() }
+        PhoneDialog(activity, UiText.get(com.hgtv.star.shared.R.string.ui_0380))
+            .message(UiText.get(com.hgtv.star.shared.R.string.ui_0382))
+            .button(UiText.get(com.hgtv.star.shared.R.string.ui_0384))
+            .button(UiText.get(com.hgtv.star.shared.R.string.ui_0383), danger = true) { onAccepted() }
             .show()
     }
 

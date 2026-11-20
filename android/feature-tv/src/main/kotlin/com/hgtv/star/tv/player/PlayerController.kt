@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.content.Context
 import android.graphics.Color
@@ -350,7 +351,7 @@ fun TvMainActivity.playEpisode(
     // 用户会以为硬解在跑，而软解也放不动时界面上没有任何线索。
     if(playbackDecoderMode==VideoDecoderMode.HARDWARE && !hardwareHevcAvailable) {
         if(playbackToasts.shown("$targetId:hevc-hw")) {
-            runCatching { tvTools.toast("本机没有 HEVC 硬解，可在播放设置里切换为软件解码") }
+            runCatching { tvTools.toast(UiText.get(com.hgtv.star.shared.R.string.ui_0140)) }
         }
     }
     // 面板「解码」一栏记**实际生效**的那一档（[playerDecoderMode]）：本机没有视频硬解时
@@ -719,7 +720,7 @@ fun TvMainActivity.playEpisode(
                     else if(continuous && detail?.let { episodeIndex>=it.episodes.lastIndex }==true) {
                         detail?.series?.let { advanceToNextSeasonOrFinish(it) }
                     }
-                    else { requestedAutoplay=false; p.pause(); playbackText.text="本集已结束"; showHud() }
+                    else { requestedAutoplay=false; p.pause(); playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0141); showHud() }
                 }
             }
             /**

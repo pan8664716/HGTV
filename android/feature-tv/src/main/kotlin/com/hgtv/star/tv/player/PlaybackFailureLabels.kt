@@ -1,17 +1,19 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
+
 internal object PlaybackFailureLabels {
     fun tag(problem: Throwable?): String = when(problem) {
-        null -> "未知错误"
+        null -> UiText.get(com.hgtv.star.shared.R.string.ui_0385)
         else -> when {
-            networkOf(problem)!=null -> "取流失败"
-            hasCauseOf<PlaybackPrepareException>(problem) -> "本地准备失败"
-            hasCauseOf<com.hgtv.star.core.StreamExpiredException>(problem) -> "地址过期"
-            hasCauseOf<com.hgtv.star.core.VideoChangedException>(problem) -> "资源已变化"
-            hasCauseOf<java.io.IOException>(problem) -> "取流失败"
-            problem is OutOfMemoryError -> "内存不足"
-            else -> "未知错误"
+            networkOf(problem)!=null -> UiText.get(com.hgtv.star.shared.R.string.ui_0386)
+            hasCauseOf<PlaybackPrepareException>(problem) -> UiText.get(com.hgtv.star.shared.R.string.ui_0387)
+            hasCauseOf<com.hgtv.star.core.StreamExpiredException>(problem) -> UiText.get(com.hgtv.star.shared.R.string.ui_0388)
+            hasCauseOf<com.hgtv.star.core.VideoChangedException>(problem) -> UiText.get(com.hgtv.star.shared.R.string.ui_0389)
+            hasCauseOf<java.io.IOException>(problem) -> UiText.get(com.hgtv.star.shared.R.string.ui_0386)
+            problem is OutOfMemoryError -> UiText.get(com.hgtv.star.shared.R.string.ui_0390)
+            else -> UiText.get(com.hgtv.star.shared.R.string.ui_0385)
         }
     }
 
@@ -33,14 +35,14 @@ internal object PlaybackFailureLabels {
         var depth=0
         while(current!=null && depth<8) {
             when(current) {
-                is com.hgtv.star.core.AddressTimeoutException -> return "取播放地址超时"
-                is java.net.UnknownHostException -> return "视频服务器域名无法解析"
-                is java.net.SocketTimeoutException -> return "连接视频服务器超时"
-                is java.net.ConnectException -> return "连不上视频服务器"
-                is java.net.NoRouteToHostException -> return "网络不通，无法访问视频服务器"
-                is javax.net.ssl.SSLException -> return "视频连接加密握手失败"
+                is com.hgtv.star.core.AddressTimeoutException -> return UiText.get(com.hgtv.star.shared.R.string.ui_0391)
+                is java.net.UnknownHostException -> return UiText.get(com.hgtv.star.shared.R.string.ui_0392)
+                is java.net.SocketTimeoutException -> return UiText.get(com.hgtv.star.shared.R.string.ui_0393)
+                is java.net.ConnectException -> return UiText.get(com.hgtv.star.shared.R.string.ui_0394)
+                is java.net.NoRouteToHostException -> return UiText.get(com.hgtv.star.shared.R.string.ui_0395)
+                is javax.net.ssl.SSLException -> return UiText.get(com.hgtv.star.shared.R.string.ui_0396)
                 is java.io.InterruptedIOException ->
-                    if(current.message.orEmpty().contains("timeout",ignoreCase=true)) return "视频服务器响应超时"
+                    if(current.message.orEmpty().contains("timeout",ignoreCase=true)) return UiText.get(com.hgtv.star.shared.R.string.ui_0397)
             }
             current=current.cause
             depth++

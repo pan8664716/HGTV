@@ -28,6 +28,22 @@
 
 回滚：删除对应 Release / tag 后，对文档发布提交执行 `git revert`。
 
+## 2026-11-21：Android 界面文案资源化与繁中适配
+
+状态：已实现，`:app:assembleDebug` 通过，待 Phone / TV 真机验证。
+
+- 将手机、电视和共享界面的可展示文案迁入 `shared/src/main/res/values/strings.xml`，
+  业务代码统一通过 `UiText.get(...)` 读取资源，不再依赖运行时字符转换。
+- 新增 `values-zh-rTW`、`values-zh-rHK`、`values-zh-rMO` 繁体中文资源；系统地区为
+  台湾、香港或澳门时由 Android 资源系统自动选择，简体环境继续使用默认资源。
+- 资源目录覆盖页面标题、按钮、弹窗、提示、加载态、设置项、播放状态和常见错误文案；
+  日志、协议字段与内部状态键仍保留在代码中，不进入语言资源。
+- 新增 `UiText.kt` 作为共享资源读取入口，并在 `HgtvApplication` 启动时初始化。
+- 未改版本号、versionCode 或 iOS 代码；只编译 Android debug，未运行测试；
+  未推送、未创建 tag 或 Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 2026-11-21：Phone 选集翻页显示目标页
 
 状态：已实现，`:app:assembleDebug` 通过，待 Phone 真机验证。

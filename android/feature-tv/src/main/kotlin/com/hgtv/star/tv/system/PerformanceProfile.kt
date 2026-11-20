@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.graphics.Typeface
 import android.view.*
@@ -32,7 +33,7 @@ fun TvMainActivity.profileHead(row: LinearLayout) {
     // `ViewOutlineProvider`（API 21+），加 `clipToOutline` 就得到正圆。
     val avatar=ImageView(this).apply {
         scaleType=ImageView.ScaleType.CENTER_CROP
-        contentDescription="账号头像"
+        contentDescription=UiText.get(com.hgtv.star.shared.R.string.ui_0232)
         // API 19/20 没有 outline 裁剪：那边头像是方形（背景仍是圆形凹槽），不额外画遮罩位图。
         com.hgtv.star.shared.compat.clipToCircleCompat(this)
         // 还没读到资料时先给一块凹槽色：比空白好认，也不会让这一行忽高忽低。
@@ -58,8 +59,8 @@ fun TvMainActivity.profileHead(row: LinearLayout) {
     // 「我的」页的筛选芯片只有两处：历史看完成度、预约看上线状态。两处共用这一段：
     // 位置、间距、互斥语义与焦点链都一致，只是文案与状态字段不同。
     val filterChips: List<Pair<Boolean,String>>?=when(accountTab) {
-        "history" -> listOf(true to "已看完",false to "未看完")
-        "reserves" -> listOf(true to "已上线",false to "待上线")
+        "history" -> listOf(true to UiText.get(com.hgtv.star.shared.R.string.ui_0310),false to UiText.get(com.hgtv.star.shared.R.string.ui_0323))
+        "reserves" -> listOf(true to UiText.get(com.hgtv.star.shared.R.string.ui_0309),false to UiText.get(com.hgtv.star.shared.R.string.ui_0316))
         else -> null
     }
     if(filterChips!=null) {
@@ -291,7 +292,7 @@ fun TvMainActivity.accountNotice(parent: LinearLayout) {
     val problem=accountError
     if(problem!=null) {
         val card=profilePanel(parent,"读取账号信息失败")
-        card.addView(text(problem.message.orEmpty().replace(Regex("https?://\\S+"),"[地址]").take(200)
+        card.addView(text(problem.message.orEmpty().replace(Regex("https?://\\S+"),UiText.get(com.hgtv.star.shared.R.string.ui_0294)).take(200)
             .ifBlank { "请检查电视的网络后重试。" },15f,TvStyle.textDim))
         addButton(card,"重试",tone=ButtonTone.PRIMARY) {
             accountError=null
@@ -308,7 +309,7 @@ fun TvMainActivity.accountNotice(parent: LinearLayout) {
     }
     val card=profilePanel(parent,"参数未通过验证")
     val reason=data.errors["资料"]?.takeIf { it.isNotBlank() } ?: "平台没有返回账号资料"
-    card.addView(text("$reason\n\n登录状态可能已过期。请用页头的「退出」回到未登录状态，再重新登录。",15f,TvStyle.textDim))
+    card.addView(text(UiText.get(com.hgtv.star.shared.R.string.ui_0285, reason),15f,TvStyle.textDim))
 }
 fun TvMainActivity.shortDate(value: Long): String = if(value<=0) "时间未知" else java.text.SimpleDateFormat("yyyy-MM-dd",java.util.Locale.getDefault()).format(java.util.Date(value))
 /**

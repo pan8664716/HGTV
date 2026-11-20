@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 import android.widget.LinearLayout
 import com.hgtv.star.core.DanmakuMode
@@ -47,17 +48,17 @@ internal fun PhonePlayerActivity.buildSettingsRowsImpl(
         onRelated = {
             val d = detail
             if (d == null) {
-                toast("还在加载剧集")
+                toast(UiText.get(com.hgtv.star.shared.R.string.ui_0237))
             } else {
                 playerSheet.dismiss()
                 dismissLandscapeSettingsForRelated()
-                showRelated(d, "相关剧集", "换一部接着看")
+                showRelated(d, UiText.get(com.hgtv.star.shared.R.string.ui_0191), UiText.get(com.hgtv.star.shared.R.string.ui_0109))
             }
         },
         onAuthor = {
             val d = detail
             if (d == null) {
-                toast("还在加载剧集")
+                toast(UiText.get(com.hgtv.star.shared.R.string.ui_0237))
             } else {
                 playerSheet.dismiss()
                 dismissLandscapeSettingsForRelated()
@@ -71,7 +72,7 @@ internal fun PhonePlayerActivity.buildSettingsRowsImpl(
         onFavorite = {
             val d = detail
             if (d == null) {
-                toast("还在加载剧集")
+                toast(UiText.get(com.hgtv.star.shared.R.string.ui_0237))
                 false
             } else {
                 toggleFavorite(d.series)

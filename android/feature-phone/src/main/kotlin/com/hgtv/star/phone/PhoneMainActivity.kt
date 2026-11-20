@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.graphics.Color
 import android.graphics.drawable.ColorDrawable
 import android.os.Build
@@ -268,7 +269,7 @@ class PhoneMainActivity : PhoneActivity() {
             return
         }
         lastBackAt = now
-        Toast.makeText(this, "再按一次返回退出", Toast.LENGTH_SHORT).show()
+        Toast.makeText(this, UiText.get(com.hgtv.star.shared.R.string.ui_0036), Toast.LENGTH_SHORT).show()
     }
 
     /** 放行首屏。只执行一次；书库或注册失败也继续显示页面骨架。 */
@@ -614,11 +615,14 @@ class PhoneMainActivity : PhoneActivity() {
             debugOverlay = it
             com.hgtv.star.phone.ui.PhoneDebugOverlay.place(it, debugRoot, statusBarHeight() + dp(4))
         }
-        val page = arrayOf("推荐", "分类", "榜单", "我的").getOrNull(current) ?: "?"
+        val page = arrayOf(UiText.get(com.hgtv.star.shared.R.string.ui_0320), UiText.get(com.hgtv.star.shared.R.string.ui_0303), UiText.get(com.hgtv.star.shared.R.string.ui_0324), UiText.get(com.hgtv.star.shared.R.string.ui_0317)).getOrNull(current) ?: "?"
         overlay.update(
             PhoneDebugReport.lines(
                 this, page, lib,
-                extras = listOf("清晰度" to "上限 ${lib.maxQuality}P"),
+                extras = listOf(
+                    UiText.get(com.hgtv.star.shared.R.string.ui_0365) to
+                        UiText.get(com.hgtv.star.shared.R.string.ui_0295, lib.maxQuality),
+                ),
                 recent = 8,
             )
         )

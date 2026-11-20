@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.ui
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.view.View
 import com.hgtv.star.core.CardAction
@@ -123,7 +124,7 @@ object PhoneCardMenu {
                     onItemRemoved = onItemRemoved,
                 )
             }
-            .button("取消")
+            .button(UiText.get(com.hgtv.star.shared.R.string.ui_0046))
             .show()
     }
 
@@ -171,14 +172,14 @@ object PhoneCardMenu {
                     if(adding) RecommendBehavior.Event.FAVORITE else RecommendBehavior.Event.UNFAVORITE,
                     series.id,
                 )
-                toast(activity, if (adding) "已收藏" else "已取消收藏")
+                toast(activity, if (adding) UiText.get(com.hgtv.star.shared.R.string.ui_0079) else UiText.get(com.hgtv.star.shared.R.string.ui_0075))
                 itemOnly = true
             }
 
             CardAction.LATER -> {
                 val adding = runCatching { !lib.queued(series.id) }.getOrDefault(true)
                 runCatching { lib.toggleLater(series) }
-                toast(activity, if (adding) "已加入稍后观看" else "已移出稍后观看")
+                toast(activity, if (adding) UiText.get(com.hgtv.star.shared.R.string.ui_0074) else UiText.get(com.hgtv.star.shared.R.string.ui_0081))
                 itemOnly = true
             }
 
@@ -187,13 +188,13 @@ object PhoneCardMenu {
                 // 记进墓碑：否则下一次账号同步会把平台侧那条又合并回来。
                 runCatching { lib.markHistoryDeleted(listOf(series.id)) }
                 runCatching { PhoneAccountSync.historyDeleted(activity, series) }
-                toast(activity, "已删除这条记录")
+                toast(activity, UiText.get(com.hgtv.star.shared.R.string.ui_0072))
             }
 
             CardAction.HIDE_FROM_HOT -> {
                 runCatching { lib.hide(series.id) }
                 reportRecommendBehavior(activity, RecommendBehavior.Event.HIDE, series.id)
-                toast(activity, "已不在热播榜中显示")
+                toast(activity, UiText.get(com.hgtv.star.shared.R.string.ui_0071))
                 itemOnly = true
                 removedId = series.id
             }

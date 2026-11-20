@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -68,7 +69,7 @@ internal fun PhonePlayerActivity.showRelated(d: Detail, title: String, heading: 
     ) { panel ->
         // 状态行：加载中 / 共 N 部（同系列多季时点明季数，与 TV 的标题说法一致）。
         val state = TextView(this).apply {
-            text = if (cached != null) relatedHeadline(cached, heading) else "正在找相关剧集…"
+            text = if (cached != null) relatedHeadline(cached, heading) else UiText.get(com.hgtv.star.shared.R.string.ui_0149)
             setTextColor(PhoneStyle.textDim)
             phoneSize(12)
             setPadding(dp(2), 0, dp(2), dp(10))
@@ -95,7 +96,7 @@ internal fun PhonePlayerActivity.showRelated(d: Detail, title: String, heading: 
             }
             if (token != relatedState.relatedToken || isFinishing || isDestroyed) return@launch
             if (works == null) {
-                state.text = "相关剧集没能取到，稍后再试。"
+                state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0193)
                 return@launch
             }
             PhoneSession.rememberRelated(series.id, works)
@@ -128,7 +129,7 @@ internal fun PhonePlayerActivity.fillRelated(
     state: TextView,
 ) {
     if (works.items.isEmpty()) {
-        state.text = "暂时没有找到相关剧集，可以先返回看看别的。"
+        state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0131)
         return
     }
     host.removeAllViews()
@@ -157,7 +158,7 @@ internal fun PhonePlayerActivity.showAuthorWorks(d: Detail) {
     val series = d.series
     val name = series.author.trim()
     if (name.isEmpty()) {
-        toast("这一部没有作者信息")
+        toast(UiText.get(com.hgtv.star.shared.R.string.ui_0244))
         return
     }
     relatedChromeEpoch++
@@ -171,7 +172,7 @@ internal fun PhonePlayerActivity.showAuthorWorks(d: Detail) {
         heightFraction = if (playerLandscapeMode) .95f else .78f,
     ) { panel ->
         val state = TextView(this).apply {
-            text = if (cached != null) "正在读取作者作品…" else "正在查找 $name 的作品…"
+            text = if (cached != null) UiText.get(com.hgtv.star.shared.R.string.ui_0159) else UiText.get(com.hgtv.star.shared.R.string.ui_0150, name)
             setTextColor(PhoneStyle.textDim)
             phoneSize(12)
             setPadding(dp(2), 0, dp(2), dp(10))
@@ -186,10 +187,10 @@ internal fun PhonePlayerActivity.showAuthorWorks(d: Detail) {
         fun fill(works: List<Series>) {
             val items = (listOf(series) + works.filterNot { it.id == series.id })
                 .distinctBy { it.id }
-            state.text = "$name · 共 ${items.size} 部作品"
+            state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0008, name, items.size)
             host.removeAllViews()
             if (items.size <= 1) {
-                state.text = "$name · 暂时只有这一部作品"
+                state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0009, name)
                 return
             }
             host.addView(
@@ -224,7 +225,7 @@ internal fun PhonePlayerActivity.showAuthorWorks(d: Detail) {
             relatedState.authorWorksFor = series.id
             relatedState.authorWorks = works
             if (works == null) {
-                state.text = "作者作品没能取到，稍后再试。"
+                state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0024)
                 return@launch
             }
             fill(works)
@@ -240,15 +241,15 @@ internal fun PhonePlayerActivity.toggleFavorite(series: Series): Boolean {
     val current = runCatching { lib.favorite(series.id) }.getOrDefault(false) || accountFavorite
     if (current) {
         if (runCatching { lib.favorite(series.id) }.getOrDefault(false)) lib.toggle(series)
-        PhoneAccountSync.favorite(this, series, false) { toast("登录后可同步收藏") }
+        PhoneAccountSync.favorite(this, series, false) { toast(UiText.get(com.hgtv.star.shared.R.string.ui_0183)) }
         reportRecommendEvent(com.hgtv.star.core.RecommendBehavior.Event.UNFAVORITE)
-        toast("已取消收藏")
+        toast(UiText.get(com.hgtv.star.shared.R.string.ui_0075))
         return false
     }
     if (!runCatching { lib.favorite(series.id) }.getOrDefault(false)) lib.toggle(series)
-    PhoneAccountSync.favorite(this, series, true) { toast("登录后可同步收藏") }
+    PhoneAccountSync.favorite(this, series, true) { toast(UiText.get(com.hgtv.star.shared.R.string.ui_0183)) }
     reportRecommendEvent(com.hgtv.star.core.RecommendBehavior.Event.FAVORITE)
-    toast("已加入收藏")
+    toast(UiText.get(com.hgtv.star.shared.R.string.ui_0073))
     return true
 }
 

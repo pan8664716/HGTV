@@ -3,6 +3,7 @@ package com.hgtv.star
 import android.app.Application
 import android.content.Context
 import androidx.multidex.MultiDex
+import com.hgtv.star.shared.ui.UiText
 
 /**
  * 进程入口。
@@ -21,6 +22,7 @@ class HgtvApplication: Application() {
 
     override fun onCreate() {
         super.onCreate()
+        UiText.init(this)
         AppIntegrityGuard.install(this)
     }
 }

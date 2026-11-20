@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.graphics.BitmapFactory
 import android.text.InputType
 import android.view.Gravity
@@ -43,7 +44,7 @@ internal fun PhoneAccountActivity.renderQr() {
     ))
     val code = ImageView(this).apply {
         scaleType = ImageView.ScaleType.FIT_CENTER
-        contentDescription = "登录二维码"
+        contentDescription = UiText.get(com.hgtv.star.shared.R.string.ui_0182)
         background = roundedBackground(android.graphics.Color.WHITE, dp(12).toFloat())
         val inset = dp(10)
         setPadding(inset, inset, inset, inset)
@@ -60,7 +61,7 @@ internal fun PhoneAccountActivity.renderQr() {
         addView(code, FrameLayout.LayoutParams(qrSide, qrSide, Gravity.CENTER))
     }, blockTop())
     val state = TextView(this).apply {
-        text = "正在获取二维码…"
+        text = UiText.get(com.hgtv.star.shared.R.string.ui_0158)
         setTextColor(PhoneStyle.textDim)
         phoneSize(13)
         gravity = Gravity.CENTER
@@ -99,12 +100,12 @@ private fun PhoneAccountActivity.startQr(session: QrLogin, code: ImageView, stat
         qrTimer?.let { root.removeCallbacks(it) }
         qrTimer = null
         token = ""
-        state.text = if (manual) "正在刷新二维码…" else "正在获取二维码…"
+        state.text = if (manual) UiText.get(com.hgtv.star.shared.R.string.ui_0145) else UiText.get(com.hgtv.star.shared.R.string.ui_0158)
         scope.launch {
             val fresh = withContext(Dispatchers.IO) { runCatching { session.fetchCode() }.getOrNull() }
             if (qrClosed || isFinishing) return@launch
             if (fresh == null) {
-                state.text = session.lastError.ifBlank { "二维码获取失败，正在重试…" }
+                state.text = session.lastError.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0021) }
                 schedule(
                     QrLogin.POLL_MS *
                         com.hgtv.star.core.AppConfig.Ui.QR_REFRESH_POLL_MULTIPLIER,
@@ -112,7 +113,7 @@ private fun PhoneAccountActivity.startQr(session: QrLogin, code: ImageView, stat
                 return@launch
             }
             paint(fresh)
-            state.text = "请用官方 App 扫码"
+            state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0224)
             schedule(QrLogin.POLL_MS)
         }
     }
@@ -126,20 +127,20 @@ private fun PhoneAccountActivity.startQr(session: QrLogin, code: ImageView, stat
             if (qrClosed || isFinishing) return@launch
             if (token != current) return@launch
             when (outcome) {
-                is QrLogin.Outcome.Waiting -> state.text = "请用官方 App 扫码"
-                is QrLogin.Outcome.Scanned -> state.text = "已扫码，请在手机上确认"
+                is QrLogin.Outcome.Waiting -> state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0224)
+                is QrLogin.Outcome.Scanned -> state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0077)
                 is QrLogin.Outcome.Renewed -> {
                     paint(outcome.code)
-                    state.text = "二维码已过期，已自动刷新，请重新扫码"
+                    state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0020)
                 }
                 is QrLogin.Outcome.Confirmed -> {
-                    state.text = "登录成功，正在验证…"
+                    state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0189)
                     stopQr()
                     finishLogin(outcome.credentials, "扫码登录")
                     return@launch
                 }
                 is QrLogin.Outcome.Failed ->
-                    state.text = outcome.message.ifBlank { "扫码状态读取失败，正在重试…" }
+                    state.text = outcome.message.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0107) }
             }
             schedule(
                 if (outcome is QrLogin.Outcome.Failed) {
@@ -184,7 +185,7 @@ internal fun PhoneAccountActivity.renderPhoneLogin() {
     val region = regionButton(com.hgtv.star.core.PhoneRegion.dialOf(regionIndex))
     region.setOnClickListener {
         if (regionDialog?.isShowing == true) return@setOnClickListener
-        val dialog = PhoneDialog(this, "选择国家 / 地区")
+        val dialog = PhoneDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0251))
             .choices(com.hgtv.star.core.PhoneRegion.labels, regionIndex) { index ->
                 regionIndex = index
                 region.text = "${com.hgtv.star.core.PhoneRegion.dialOf(index)} ▾"
@@ -219,12 +220,12 @@ internal fun PhoneAccountActivity.renderPhoneLogin() {
             cooldownUntil = 0
             send.isEnabled = true
             send.alpha = 1f
-            send.text = "获取验证码"
+            send.text = UiText.get(com.hgtv.star.shared.R.string.ui_0212)
             return
         }
         send.isEnabled = false
         send.alpha = .45f
-        send.text = if (landscape) "$left 秒\n后可重发" else "$left 秒后可重发"
+        send.text = if (landscape) UiText.get(com.hgtv.star.shared.R.string.ui_0006, left) else UiText.get(com.hgtv.star.shared.R.string.ui_0007, left)
         val tick = object : Runnable { override fun run() = refreshCooldown() }
         cooldownTick = tick
         root.postDelayed(tick, 1000L)
@@ -233,7 +234,7 @@ internal fun PhoneAccountActivity.renderPhoneLogin() {
         cooldownTick?.let { root.removeCallbacks(it) }
         send.isEnabled = false
         send.alpha = .45f
-        send.text = "发送中…"
+        send.text = UiText.get(com.hgtv.star.shared.R.string.ui_0045)
         setState("正在发送验证码…")
         scope.launch {
             val result = withContext(Dispatchers.IO) {
@@ -257,13 +258,13 @@ internal fun PhoneAccountActivity.renderPhoneLogin() {
                     setState(result.message)
                     send.isEnabled = true
                     send.alpha = 1f
-                    send.text = "获取验证码"
+                    send.text = UiText.get(com.hgtv.star.shared.R.string.ui_0212)
                 }
                 null -> {
                     setState("网络异常，请稍后重试")
                     send.isEnabled = true
                     send.alpha = 1f
-                    send.text = "获取验证码"
+                    send.text = UiText.get(com.hgtv.star.shared.R.string.ui_0212)
                 }
             }
         }
@@ -317,7 +318,7 @@ private fun PhoneAccountActivity.doLogin(
             is com.hgtv.star.core.PhoneLogin.Result.NeedUpsms ->
                 renderUpsms(session, result.number, result.content)
             is com.hgtv.star.core.PhoneLogin.Result.Failed -> toast(result.message)
-            else -> toast("登录失败，请稍后重试")
+            else -> toast(UiText.get(com.hgtv.star.shared.R.string.ui_0184))
         }
     }
 }
@@ -341,13 +342,13 @@ private fun PhoneAccountActivity.renderUpsms(
         verifyButton.isEnabled = false
         verifyButton.alpha = .45f
         state.visibility = View.VISIBLE
-        state.text = "正在确认…"
+        state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0157)
         scope.launch {
             val result = withContext(Dispatchers.IO) { runCatching { session.verifyUpsms() }.getOrNull() }
             when (result) {
                 is com.hgtv.star.core.PhoneLogin.UpsmsResult.Ticket -> {
                     if (session.mfaFromSendCode) {
-                        state.text = "验证通过，正在重新获取验证码…"
+                        state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0273)
                         val resent = withContext(Dispatchers.IO) {
                             runCatching {
                                 session.sendCode(pendingPhone) { profile -> registerForLogin(profile) }
@@ -357,7 +358,7 @@ private fun PhoneAccountActivity.renderUpsms(
                             is com.hgtv.star.core.PhoneLogin.Result.Sent -> {
                                 pendingCode = ""
                                 renderPhoneLogin()
-                                toast("验证通过，新的验证码已发出")
+                                toast(UiText.get(com.hgtv.star.shared.R.string.ui_0271))
                             }
                             is com.hgtv.star.core.PhoneLogin.Result.NeedUpsms -> {
                                 pendingCode = ""
@@ -372,14 +373,14 @@ private fun PhoneAccountActivity.renderUpsms(
                                 verifyButton.alpha = 1f
                             }
                             null -> {
-                                state.text = "网络异常，请稍后重试。"
+                                state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0207)
                                 verifyButton.isEnabled = true
                                 verifyButton.alpha = 1f
                             }
                         }
                         return@launch
                     }
-                    state.text = "验证通过，正在登录…"
+                    state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0272)
                     val logged = withContext(Dispatchers.IO) {
                         runCatching {
                             session.login(pendingPhone, pendingCode, result.value)
@@ -395,12 +396,12 @@ private fun PhoneAccountActivity.renderUpsms(
                             verifyButton.alpha = 1f
                         }
                         is com.hgtv.star.core.PhoneLogin.Result.NeedUpsms -> {
-                            state.text = "平台仍要求二次验证，请重新获取验证码后再试。"
+                            state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0086)
                             verifyButton.isEnabled = true
                             verifyButton.alpha = 1f
                         }
                         else -> {
-                            state.text = "登录状态未确认，请重新获取验证码后再试。"
+                            state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0190)
                             verifyButton.isEnabled = true
                             verifyButton.alpha = 1f
                         }
@@ -412,7 +413,7 @@ private fun PhoneAccountActivity.renderUpsms(
                     verifyButton.alpha = 1f
                 }
                 else -> {
-                    state.text = "平台还没看到这条短信，稍等几秒再点一次。"
+                    state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0089)
                     verifyButton.isEnabled = true
                     verifyButton.alpha = 1f
                 }

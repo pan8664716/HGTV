@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.feature.settings
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.BackupData
@@ -37,7 +38,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Choice(
                     id = ID_QUALITY,
-                    title = "默认清晰度",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0275),
                     value = "${library.maxQuality}P",
                     options = PlaybackQuality.options.map { "${it}P" },
                 )
@@ -45,7 +46,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Slider(
                     id = ID_SPEED,
-                    title = "默认倍速",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0274),
                     value = library.playbackSpeed,
                     min = PlaybackSpeed.MIN,
                     max = PlaybackSpeed.MAX,
@@ -56,7 +57,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Choice(
                     id = ID_FRAME,
-                    title = "画面模式",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0176),
                     value = library.frameMode.label,
                     options = frames.map { it.label },
                 )
@@ -64,7 +65,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Choice(
                     id = ID_DECODER,
-                    title = "视频解码",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0213),
                     value = library.decoderMode.label,
                     options = decoders.map { it.label },
                 )
@@ -72,7 +73,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Slider(
                     id = ID_VIDEO_SCALE,
-                    title = "画面缩放",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0179),
                     value = library.videoScale,
                     min = 1f,
                     max = 100f,
@@ -84,7 +85,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Slider(
                     id = ID_DANMAKU_MODE,
-                    title = "显示方式",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0127),
                     value = library.danmakuMode.sliderValue,
                     min = 0f,
                     max = modes.lastIndex.toFloat(),
@@ -95,7 +96,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Choice(
                     id = ID_DANMAKU_SPEED,
-                    title = "弹幕速度",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0096),
                     value = library.danmakuSpeed.label,
                     options = danmakuSpeeds.map { it.label },
                 )
@@ -105,7 +106,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Slider(
                     id = ID_DANMAKU_MERGE_MIN,
-                    title = "聚合阈值",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0208),
                     value = library.danmakuMergeMin.toFloat(),
                     min = com.hgtv.star.core.DANMAKU_MERGE_MIN_RANGE.first.toFloat(),
                     max = com.hgtv.star.core.DANMAKU_MERGE_MIN_RANGE.last.toFloat(),
@@ -116,7 +117,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Slider(
                     id = ID_DANMAKU_SCALE,
-                    title = "弹幕大小",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0093),
                     value = library.danmakuScale,
                     min = DanmakuStyle.SCALE_MIN,
                     max = DanmakuStyle.SCALE_MAX,
@@ -127,7 +128,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Slider(
                     id = ID_DANMAKU_ALPHA,
-                    title = "弹幕透明度",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0095),
                     value = library.danmakuAlpha,
                     min = DanmakuStyle.ALPHA_MIN,
                     max = DanmakuStyle.ALPHA_MAX,
@@ -144,7 +145,7 @@ class SettingsController(
         add(
             SettingRowSpec.Slider(
                 id = ID_GRID_COLUMNS,
-                title = "每行卡片",
+                title = UiText.get(com.hgtv.star.shared.R.string.ui_0162),
                 value = library.homeColumns.toFloat(),
                 min = 4f,
                 max = 8f,
@@ -156,7 +157,7 @@ class SettingsController(
             add(
                 SettingRowSpec.Switch(
                     id = ID_RECOMMEND_SWIPE,
-                    title = "页面左右滑动",
+                    title = UiText.get(com.hgtv.star.shared.R.string.ui_0264),
                     checked = library.recommendSwipe,
                 )
             )
@@ -168,19 +169,19 @@ class SettingsController(
         add(
             SettingRowSpec.Choice(
                 id = ID_RECOMMEND_GENDER,
-                title = "推荐受众",
+                title = UiText.get(com.hgtv.star.shared.R.string.ui_0110),
                 value = when (library.recommendGender) {
                     "male" -> "男频"
                     "female" -> "女频"
                     else -> "不限"
                 },
-                options = listOf("不限", "男频", "女频"),
+                options = listOf(UiText.get(com.hgtv.star.shared.R.string.ui_0296), UiText.get(com.hgtv.star.shared.R.string.ui_0333), UiText.get(com.hgtv.star.shared.R.string.ui_0306)),
             )
         )
         add(
             SettingRowSpec.Choice(
                 id = ID_SEARCH_SOURCE,
-                title = "搜索源",
+                title = UiText.get(com.hgtv.star.shared.R.string.ui_0113),
                 value = library.searchSource.label,
                 options = SearchSource.entries.map { it.label },
             )

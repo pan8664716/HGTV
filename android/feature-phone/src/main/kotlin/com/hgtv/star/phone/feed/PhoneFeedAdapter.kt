@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 import android.view.ViewGroup
 import androidx.recyclerview.widget.RecyclerView
@@ -99,13 +100,13 @@ internal class PhoneFeedAdapter(
         val page = holder.itemView as PhoneVideoPage
         if (host.feedItems.isEmpty()) {
             page.bind(
-                Series(id = "", title = if (host.feedLoading) "加载中…" else "暂无内容"),
+                Series(id = "", title = if (host.feedLoading) UiText.get(com.hgtv.star.shared.R.string.ui_0043) else UiText.get(com.hgtv.star.shared.R.string.ui_0128)),
                 "",
             )
             return
         }
         val series = host.feedItems[position]
-        val label = "第${(host.feedCurrentEpisodeIndex[position] ?: 0) + 1}集"
+        val label = UiText.get(com.hgtv.star.shared.R.string.ui_0341, (host.feedCurrentEpisodeIndex[position] ?: 0) + 1)
         page.bind(series, label)
         // 快照恢复后先铺缓存封面，等播放器真正出首帧再撤掉。
         // 不能等 playIndex() 取完详情 / 地址才显示，否则冷启动首屏会先黑一段时间。

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.os.SystemClock
 import android.view.View
 import com.google.android.exoplayer2.upstream.DataSource
@@ -87,7 +88,7 @@ internal fun PhoneFeedView.onEpisodeEnded(index: Int) {
             playIndexForSettings(nextSeries, -1L, clearDanmakuOnSwitch = true)
         } else {
             loadMore()
-            feedHint.text = "全剧已播完，正在换下一部…"
+            feedHint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0029)
             feedHint.visibility = View.VISIBLE
             feedHint.bringToFront()
         }

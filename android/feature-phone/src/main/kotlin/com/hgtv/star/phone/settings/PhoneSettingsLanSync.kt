@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.widget.TextView
 import com.hgtv.star.phone.ui.PhoneDialog
 import com.hgtv.star.phone.ui.PhoneStyle
@@ -24,15 +25,15 @@ internal fun PhoneSettingsActivity.closeLanSyncSessionImpl() {
 
 internal fun PhoneSettingsActivity.showLanLibrarySync() {
     closeLanSyncSessionImpl()
-    PhoneDialog(this, "同步其他设备数据")
-        .message("请选择这台设备在本次同步中的角色。")
+    PhoneDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0051))
+        .message(UiText.get(com.hgtv.star.shared.R.string.ui_0227))
         .choices(
             listOf(
                 "我要同步其他设备的数据",
                 "其他设备要同步我的数据",
             ),
         ) { index -> startLanSyncRoleImpl(sourceOnly = index == 1) }
-        .button("取消")
+        .button(UiText.get(com.hgtv.star.shared.R.string.ui_0046))
         .show()
 }
 
@@ -49,10 +50,10 @@ private fun PhoneSettingsActivity.startLanSyncRoleImpl(sourceOnly: Boolean) {
 }
 
 private fun PhoneSettingsActivity.showLanSyncNoPeersImpl() {
-    PhoneDialog(this, "未发现同步设备")
-        .message("请确认两台设备连接同一局域网，并同时打开「同步其他设备数据」。")
-        .button("重新查找") { startLanSyncRoleImpl(sourceOnly = false) }
-        .button("取消")
+    PhoneDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0134))
+        .message(UiText.get(com.hgtv.star.shared.R.string.ui_0226))
+        .button(UiText.get(com.hgtv.star.shared.R.string.ui_0258)) { startLanSyncRoleImpl(sourceOnly = false) }
+        .button(UiText.get(com.hgtv.star.shared.R.string.ui_0046))
         .show()
 }
 
@@ -65,15 +66,15 @@ private fun PhoneSettingsActivity.showLanSyncRestoreConfirmImpl() {
         PhoneSwitchRow(this, label, checked, onToggle = onToggle).apply {
             minimumHeight = dp(if (settingsLandscape) 36 else 42)
         }
-    val dialog = PhoneDialog(this, "选择要同步的数据")
-        .message("登录、设备与设置会覆盖本机；播放和收藏等记录会合并，并保留进度更高的一项。")
+    val dialog = PhoneDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0252))
+        .message(UiText.get(com.hgtv.star.shared.R.string.ui_0181))
         .content(syncSwitch("登录信息", true) { login = it })
         .content(syncSwitch("设备参数", true) { device = it })
         .content(syncSwitch("播放、收藏等记录", true) { content = it })
         .content(syncSwitch("设置信息", true) { settings = it })
     dialog.buttonsInRow()
-    dialog.button("取消")
-    dialog.button("同步所选", primary = true) {
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046))
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0052), primary = true) {
         val selection = DeviceSyncSelection(
             login = login,
             device = device,
@@ -118,7 +119,7 @@ private fun PhoneSettingsActivity.renderLanSyncImpl(state: LanSyncController.Sta
                         "正在通过局域网查找其他设备。请在另一台设备上也打开这个功能。"
                     }
                 ).content(text)
-                dialog.button("取消")
+                dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046))
                 dialog.show {
                     if (settingsLanSyncDialog === dialog) closeLanSyncSessionImpl()
                 }
@@ -138,13 +139,13 @@ private fun PhoneSettingsActivity.renderLanSyncImpl(state: LanSyncController.Sta
             settingsLanSyncDialog?.dismiss()
             settingsLanSyncDialog = null
             val peers = state.peers
-            PhoneDialog(this, "选择同步设备")
-                .message("读取登录信息、设备参数、内容数据和全部设置。读取后仍需在本机确认，确认后会覆盖本机登录与设备身份。")
+            PhoneDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0250))
+                .message(UiText.get(com.hgtv.star.shared.R.string.ui_0229))
                 .choices(peers.map { "${it.displayName}  ·  ${it.host}" }) { index ->
                     peers.getOrNull(index)?.let(settingsLanSyncController::loadPeer)
                 }
-                .button("重新查找") { startLanSyncRoleImpl(sourceOnly = false) }
-                .button("取消") { closeLanSyncSessionImpl() }
+                .button(UiText.get(com.hgtv.star.shared.R.string.ui_0258)) { startLanSyncRoleImpl(sourceOnly = false) }
+                .button(UiText.get(com.hgtv.star.shared.R.string.ui_0046)) { closeLanSyncSessionImpl() }
                 .show()
         }
         LanSyncController.Step.LOADING, LanSyncController.Step.APPLYING -> {
@@ -154,7 +155,7 @@ private fun PhoneSettingsActivity.renderLanSyncImpl(state: LanSyncController.Sta
             val dialog = PhoneDialog(
                 this,
                 if (state.step == LanSyncController.Step.LOADING) "正在同步" else "正在应用同步数据",
-            ).message(state.message).button("取消") { closeLanSyncSessionImpl() }
+            ).message(state.message).button(UiText.get(com.hgtv.star.shared.R.string.ui_0046)) { closeLanSyncSessionImpl() }
             settingsLanSyncDialog = dialog
             dialog.show()
         }

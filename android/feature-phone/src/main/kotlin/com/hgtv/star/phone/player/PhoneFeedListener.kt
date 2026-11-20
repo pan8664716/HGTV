@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.Player
@@ -179,21 +180,21 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
             feedRecommendFailures++
             if (feedRecommendFailures > feedRecommendSkipLimit) {
                 // 连续几部都放不了：停在一句提示上，不再自动翻（否则会一路刷到底）。
-                feedHint.text = "这一部暂时无法播放，上滑换一部"
+                feedHint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0241)
                 feedHint.visibility = View.VISIBLE
                 feedHint.bringToFront()
                 return
             }
             val next = index + 1
             if (next < feedItems.size) {
-                feedHint.text = "这一部放不了，换下一部"
+                feedHint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0239)
                 feedHint.visibility = View.VISIBLE
                 feedHint.bringToFront()
                 feedSmoothScrollToPosition(next)
                 playIndexForSettings(next, -1L, clearDanmakuOnSwitch = true)
             } else {
                 loadMore()
-                feedHint.text = "这一部放不了，正在换下一部…"
+                feedHint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0240)
                 feedHint.visibility = View.VISIBLE
                 feedHint.bringToFront()
             }

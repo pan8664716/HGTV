@@ -9,6 +9,8 @@ import android.os.Build
 import android.util.DisplayMetrics
 import android.view.InputDevice
 import android.view.WindowManager
+import com.hgtv.star.shared.R
+import com.hgtv.star.shared.ui.UiText
 import kotlin.math.sqrt
 
 /**
@@ -21,11 +23,14 @@ import kotlin.math.sqrt
  *
  * 新安装必须由用户明确选择；[UNKNOWN] 只作为旧数据尚未迁移时的内部占位。
  */
-enum class DeviceForm(val label: String) {
-    PHONE("手机"),
-    TABLET("平板"),
-    TV("电视"),
-    UNKNOWN("未判定");
+enum class DeviceForm(private val labelId: Int) {
+    PHONE(R.string.ui_0372),
+    TABLET(R.string.ui_0373),
+    TV(R.string.ui_0374),
+    UNKNOWN(R.string.ui_0375);
+
+    val label: String
+        get() = UiText.get(labelId)
 
     companion object {
         /** 落盘用的字符串；`auto` 只保留为旧版本未选择的兼容值。 */
@@ -57,9 +62,9 @@ enum class DeviceForm(val label: String) {
          * 电视档没有触屏手势、手机档没有遥控器焦点，选错会立刻读出来。
          */
         fun pickerLabels(): List<String> = listOf(
-            "手机  ·  触屏手势 + 竖屏旋转",
-            "平板  ·  触屏手势 + 横屏旋转",
-            "电视  ·  遥控器 + 顺时针旋转",
+            UiText.get(R.string.ui_0376),
+            UiText.get(R.string.ui_0377),
+            UiText.get(R.string.ui_0378),
         )
 
         fun requiresTouch(form: DeviceForm): Boolean =

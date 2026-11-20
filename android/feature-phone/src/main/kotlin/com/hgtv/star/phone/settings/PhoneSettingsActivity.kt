@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Intent
 import android.content.Context
 import android.content.res.Configuration
@@ -208,7 +209,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         }
         if (!landscape) {
             bar.addView(TextView(this).apply {
-                text = "设置"
+                text = UiText.get(com.hgtv.star.shared.R.string.ui_0220)
                 setTextColor(PhoneStyle.text)
                 phoneSize(19)
                 setTypeface(typeface, Typeface.BOLD)
@@ -216,7 +217,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         }
         if (landscape) {
             bar.addView(TextView(this).apply {
-                text = "设置"
+                text = UiText.get(com.hgtv.star.shared.R.string.ui_0220)
                 setTextColor(PhoneStyle.text)
                 phoneSize(13)
                 setTypeface(typeface, Typeface.BOLD)
@@ -309,7 +310,7 @@ class PhoneSettingsActivity : PhoneActivity() {
         sectionHost = null
         if (!library.isLoaded) {
             container.addView(TextView(this).apply {
-                text = "设置读取失败"
+                text = UiText.get(com.hgtv.star.shared.R.string.ui_0221)
                 setTextColor(PhoneStyle.textFaint)
                 phoneSize(13)
                 gravity = Gravity.CENTER
@@ -338,7 +339,7 @@ class PhoneSettingsActivity : PhoneActivity() {
             }
         }
         container.addView(TextView(this).apply {
-            text = "HGTV  ·  收藏与进度保存在本机"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0017)
             setTextColor(PhoneStyle.textFaint)
             phoneSize(11)
             setPadding(dp(6), dp(22), dp(6), 0)

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.ui
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.os.SystemClock
 import android.view.Gravity
@@ -359,7 +360,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
         adapter.notifyItemRemoved(adapter.posterStart + index)
         val rest = items.size - index
         if (rest > 0) adapter.notifyItemRangeChanged(adapter.posterStart + index, rest)
-        if (items.isEmpty()) showEmpty("暂无内容")
+        if (items.isEmpty()) showEmpty(UiText.get(com.hgtv.star.shared.R.string.ui_0128))
     }
 
     /** 把一整行头部放进网格第一项：它会和海报一起滚动，不再由页面单独收起 / 展开。 */
@@ -447,7 +448,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             loading = false
             loadingVisible = false
             if (result == null) {
-                if (items.isEmpty()) showEmpty("加载失败，下拉重试")
+                if (items.isEmpty()) showEmpty(UiText.get(com.hgtv.star.shared.R.string.ui_0044))
                 return@launch
             }
             hasLoadedOnce = true
@@ -578,7 +579,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             if (result == null) {
                 loadFailed = true
                 loadFailedAt = SystemClock.elapsedRealtime()
-                if (items.isEmpty()) showEmpty("加载失败，下拉重试")
+                if (items.isEmpty()) showEmpty(UiText.get(com.hgtv.star.shared.R.string.ui_0044))
                 return@launch
             }
             hasLoadedOnce = true
@@ -605,7 +606,7 @@ class PhonePosterFeed(context: Context) : FrameLayout(context) {
             else if (fresh.isNotEmpty()) {
                 adapter.notifyItemRangeInserted(adapter.posterStart + start, fresh.size)
             }
-            if (items.isEmpty()) showEmpty("暂无内容")
+            if (items.isEmpty()) showEmpty(UiText.get(com.hgtv.star.shared.R.string.ui_0128))
             post {
                 if (loading || ended) return@post
                 val manager=grid.layoutManager as? GridLayoutManager ?: return@post

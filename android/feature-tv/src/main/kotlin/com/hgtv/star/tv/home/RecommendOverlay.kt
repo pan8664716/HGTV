@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.graphics.Color
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
@@ -125,7 +126,7 @@ fun TvMainActivity.attachRecommendOverlay(series: Series) {
     // 尾巴留一段弹性空白：这一组（类型 / 热度 / 排名）因此从左边起排，
     // 而不是被撑到行尾贴右边。
     details.addView(Space(this),lp(0,1).apply { weight=1f })
-    val hint=text("确定 追剧 · 上下 换剧 · 左右 快进退 · 菜单 播放设置 · 返回 主页面",16f,TvStyle.playerDim).apply {
+    val hint=text(UiText.get(com.hgtv.star.shared.R.string.ui_0196),16f,TvStyle.playerDim).apply {
         setPadding(0,dp(14),0,0)
         setShadowLayer(5f,0f,2f,0x99000000.toInt())
     }

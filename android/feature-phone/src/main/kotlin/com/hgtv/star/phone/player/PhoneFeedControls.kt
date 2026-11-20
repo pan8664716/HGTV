@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 
 internal fun PhoneFeedView.togglePlay() {
@@ -28,7 +29,7 @@ internal fun PhoneFeedView.beginTempSpeed() {
     }
     feedTempSpeed = true
     exo.setPlaybackSpeed(2f)
-    feedHint.text = "2 倍速播放中"
+    feedHint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0015)
     feedHint.visibility = View.VISIBLE
     feedHint.bringToFront()
 }

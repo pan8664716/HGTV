@@ -44,7 +44,7 @@ android/
 ├── core/  (229 files, 27 directories)
 ├── feature-phone/  (143 files, 11 directories)
 ├── feature-tv/  (159 files, 18 directories)
-├── shared/  (105 files, 25 directories)
+├── shared/  (112 files, 46 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
 ```
@@ -104,6 +104,8 @@ android/
 - `shared/nav/`：共享路由定义。
 - `shared/search/`：共享搜索状态。
 - `shared/ui/`：共享 UI 工具、颜色、滑块和对话框布局。
+- `shared/res/`：共享文案资源；`values/` 为简体，`values-zh-rTW`、`values-zh-rHK`、
+  `values-zh-rMO` 为繁体。
 - `shared/update/`：更新元数据、下载校验与系统安装入口。
 
 ## 文件清单与作用
@@ -1180,6 +1182,16 @@ android/
 | `Soft.kt` | 新拟态的底板形态。 | class SoftStyle、object Soft、class SoftDrawable |
 | `SoftPalette.kt` | 柔光位图要用到的四个颜色 + 主题标识。 | object SoftPalette |
 | `TvTheme.kt` | 主题：二十套新拟态配色（设置 → 主题外观）。 | class TvTheme、fun mix、fun alpha、object TvThemeStore |
+| `UiText.kt` | 共享界面文案资源读取入口；资源按 Android 标准 values 目录选择语言。 | object UiText |
+
+#### `shared/src/main/res/`
+
+| 文件 | 作用 | 关键符号 |
+| --- | --- | --- |
+| `values/strings.xml` | 简体中文界面文案资源。 | string/ui_* |
+| `values-zh-rTW/strings.xml` | 台湾繁体中文界面文案资源。 | string/ui_* |
+| `values-zh-rHK/strings.xml` | 香港繁体中文界面文案资源。 | string/ui_* |
+| `values-zh-rMO/strings.xml` | 澳门繁体中文界面文案资源。 | string/ui_* |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/update/`
 

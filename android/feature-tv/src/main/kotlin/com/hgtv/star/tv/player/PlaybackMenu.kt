@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv.player
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.text.TextUtils
 import android.view.Gravity
@@ -304,7 +305,7 @@ class PlaybackMenu(private val activity: Activity) : LinearLayout(activity) {
         }
 
         private fun describe() {
-            contentDescription = choice.label + if (choice.selected) "，已选中" else ""
+            contentDescription = choice.label + if (choice.selected) UiText.get(com.hgtv.star.shared.R.string.ui_0279) else ""
         }
     }
 

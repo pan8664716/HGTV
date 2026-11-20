@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.graphics.Typeface
 import android.graphics.drawable.GradientDrawable
 import android.text.TextUtils
@@ -189,7 +190,7 @@ internal fun PhoneSettingsActivity.pickImpl(
 ) {
     PhoneDialog(this, title)
         .choices(labels, selected, onPick)
-        .button("取消")
+        .button(UiText.get(com.hgtv.star.shared.R.string.ui_0046))
         .show()
 }
 
@@ -201,8 +202,8 @@ internal fun PhoneSettingsActivity.confirmImpl(
 ) {
     PhoneDialog(this, title)
         .message(message)
-        .button("取消")
-        .button(if (danger) "清空" else "确定", primary = true, danger = danger, run = onOk)
+        .button(UiText.get(com.hgtv.star.shared.R.string.ui_0046))
+        .button(if (danger) UiText.get(com.hgtv.star.shared.R.string.ui_0168) else UiText.get(com.hgtv.star.shared.R.string.ui_0195), primary = true, danger = danger, run = onOk)
         .show()
 }
 

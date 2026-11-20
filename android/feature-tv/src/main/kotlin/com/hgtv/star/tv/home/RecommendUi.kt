@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.graphics.Color
 import android.view.Gravity
 import android.view.View
@@ -111,7 +112,7 @@ fun TvMainActivity.showRecommendLoading(series: Series) {
         }, lp(-1,-2))
         // 等待统一用三点动画（与启动页 / 列表加载同一个控件），不再单独写一行「正在加载…」。
         box.addView(
-            LoadingDotsView(this).apply { label="正在加载…" },
+            LoadingDotsView(this).apply { label=UiText.get(com.hgtv.star.shared.R.string.ui_0327) },
             lp(-2,-2).apply { topMargin=dp(10) },
         )
         root.addView(box,FrameLayout.LayoutParams(-1,-1))

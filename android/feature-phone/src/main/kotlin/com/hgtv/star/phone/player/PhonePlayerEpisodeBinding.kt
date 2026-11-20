@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.core.Detail
 
 /** 把「第几集」这件事刷到所有界面上（竖屏信息栏 / 横屏标题 / 选集按钮）。 */
@@ -9,7 +10,7 @@ internal fun PhonePlayerActivity.bindEpisodeUi(
     episodeIndex: Int,
     clearDanmakuOnSwitch: Boolean = false,
 ) {
-    val label = "第${episodeIndex + 1}集"
+    val label = UiText.get(com.hgtv.star.shared.R.string.ui_0342, episodeIndex + 1)
     playerPage.bind(
         d.series,
         label,

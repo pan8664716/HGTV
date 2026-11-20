@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv.list
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.graphics.Canvas
 import android.graphics.Typeface
@@ -350,7 +351,7 @@ fun TvMainActivity.showCatalog(
         SETTINGS_TABS.forEachIndexed { index,label ->
             val chip=ToggleChip(this,label,settingsTab==index,ButtonSize.CHIP) { switchSettingsTab(index) }
             chip.tag=SETTINGS_TAG_TAB_PREFIX+index
-            chip.contentDescription=label+if(settingsTab==index) "，当前分区" else ""
+            chip.contentDescription=label+if(settingsTab==index) UiText.get(com.hgtv.star.shared.R.string.ui_0281) else ""
             gapInto(chipHost,chip,lp(-2,-2),TvStyle.GAP_INLINE)
             settingsTabChips+=chip
             chips+=chip
@@ -495,7 +496,7 @@ fun TvMainActivity.showCatalog(
                 val line=FrameLayout(this).apply {
                     clipChildren=true; clipToPadding=true
                 }
-                val title=filterRow.title.removePrefix("全部").ifBlank { filterRow.title }
+                val title=filterRow.title.removePrefix(UiText.get(com.hgtv.star.shared.R.string.ui_0032)).ifBlank { filterRow.title }
                 val label=text(title,12f,muted).apply {
                     gravity=Gravity.CENTER_VERTICAL
                     maxLines=1

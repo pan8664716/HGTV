@@ -3,6 +3,7 @@
 @file:JvmMultifileClass
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.shared.compat.hasInternet
 import com.hgtv.star.shared.compat.isMeteredConnection
 
@@ -708,7 +709,7 @@ private fun TvMainActivity.showNextSeasonNotice() {
         episodeIndex==data.episodes.lastIndex && nextSeasonFor==data.series.id
     if(!active) { hideNextSeasonNotice(); return }
     nextSeasonNotice?.apply {
-        text="将自动播放 ${SeriesSeasons.titleWithSeason(target)}"
+        text=UiText.get(com.hgtv.star.shared.R.string.ui_0068, SeriesSeasons.titleWithSeason(target))
         visibility=View.VISIBLE
     }
 }
@@ -793,7 +794,7 @@ private fun TvMainActivity.finishSeriesPlayback(series: Series) {
     hideNextSeasonNotice()
     requestedAutoplay=false
     player?.pause()
-    runCatching { playbackText.text="全剧已播完" }
+    runCatching { playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0028) }
     showHud()
     if (detail?.series?.id == series.id) showPlayerRelated()
 }

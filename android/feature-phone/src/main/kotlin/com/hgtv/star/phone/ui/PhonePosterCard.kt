@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone.ui
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.graphics.Color
 import android.graphics.Typeface
@@ -137,7 +138,7 @@ open class PhonePosterCard(
             if (selected) PhoneStyle.accent else 0x99000000.toInt(),
             size / 2f,
         )
-        selectionMark.contentDescription = if (selected) "已选中" else "未选中"
+        selectionMark.contentDescription = if (selected) UiText.get(com.hgtv.star.shared.R.string.ui_0083) else UiText.get(com.hgtv.star.shared.R.string.ui_0137)
     }
 }
 

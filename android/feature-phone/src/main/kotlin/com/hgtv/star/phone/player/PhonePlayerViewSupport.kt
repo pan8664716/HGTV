@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.content.Context
 import android.graphics.Color
@@ -250,7 +251,7 @@ internal object PhonePlayerViewSupport {
         box.background = roundedBackground(fill, box.context.dp(sizeDp / 2f).toFloat())
         glyph.kind = if (locked) PhoneGlyph.Kind.UNLOCK else PhoneGlyph.Kind.LOCK
         glyph.tint = if (locked) PhoneStyle.accent else Color.WHITE
-        val label = if (locked) "解锁播放控制" else "锁定播放控制"
+        val label = if (locked) UiText.get(com.hgtv.star.shared.R.string.ui_0346) else UiText.get(com.hgtv.star.shared.R.string.ui_0350)
         box.contentDescription = label
         glyph.contentDescription = label
     }

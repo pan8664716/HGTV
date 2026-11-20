@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.graphics.Typeface
 import android.view.*
@@ -483,7 +484,7 @@ fun TvMainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
             val saved=library.toggle(data.series)
             syncFavorite(data.series,saved)
             if(saved) library.observeFavorite(data.series.id,data.episodes.size,System.currentTimeMillis(),acknowledge=true)
-            favorite.text=if(saved) "已收藏" else "收藏"
+            favorite.text=if(saved) UiText.get(com.hgtv.star.shared.R.string.ui_0079) else UiText.get(com.hgtv.star.shared.R.string.ui_0117)
         }
         lastAction=favorite
     }
@@ -496,10 +497,10 @@ fun TvMainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
         if(relatedOpen) authorOpen=false
         // **只重铺下方那一块**，不整页重建：整页重建会让海报从首帧占位回填一次、
         // 封面重新解码一次，页面就会闪一下（见下面 [bottom] 的说明）。
-        relatedButton.text=if(relatedOpen) "收起相关" else "相关剧集"
+        relatedButton.text=if(relatedOpen) UiText.get(com.hgtv.star.shared.R.string.ui_0121) else UiText.get(com.hgtv.star.shared.R.string.ui_0191)
         relatedButton.contentDescription=relatedButton.text.toString()
         authorButton?.let { authorEntry ->
-            authorEntry.text=if(authorOpen) "收起作者" else "作者作品"
+            authorEntry.text=if(authorOpen) UiText.get(com.hgtv.star.shared.R.string.ui_0120) else UiText.get(com.hgtv.star.shared.R.string.ui_0023)
             authorEntry.contentDescription=authorEntry.text.toString()
         }
         // 先发请求再重铺：`prefetchRelated` 会**同步**把 `relatedLoading` 置真，
@@ -518,7 +519,7 @@ fun TvMainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
         val authorName=rawName.trim()
         if(authorName.isEmpty()) return
         authorButton?.let { existing ->
-            existing.text=if(authorOpen) "收起作者" else "作者作品"
+            existing.text=if(authorOpen) UiText.get(com.hgtv.star.shared.R.string.ui_0120) else UiText.get(com.hgtv.star.shared.R.string.ui_0023)
             existing.contentDescription=existing.text.toString()
             return
         }
@@ -529,9 +530,9 @@ fun TvMainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
         authorView=addButton(actions,if(authorOpen) "收起作者" else "作者作品",size=ButtonSize.HERO,weight=1f,pad=actionPad,icon=R.drawable.ic_toolbar_profile) {
             authorOpen=!authorOpen
             if(authorOpen) relatedOpen=false
-            authorView.text=if(authorOpen) "收起作者" else "作者作品"
+            authorView.text=if(authorOpen) UiText.get(com.hgtv.star.shared.R.string.ui_0120) else UiText.get(com.hgtv.star.shared.R.string.ui_0023)
             authorView.contentDescription=authorView.text.toString()
-            relatedButton.text=if(relatedOpen) "收起相关" else "相关剧集"
+            relatedButton.text=if(relatedOpen) UiText.get(com.hgtv.star.shared.R.string.ui_0121) else UiText.get(com.hgtv.star.shared.R.string.ui_0191)
             relatedButton.contentDescription=relatedButton.text.toString()
             // 同上：先发请求（同步置 `authorWorksLoading`），再重铺，点开就能看到三点在跑。
             if(authorOpen) ensureAuthorWorks(data.series.id,detail?.series ?: data.series)
@@ -621,20 +622,22 @@ fun TvMainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
                 // 等待统一用三点动画（与列表加载 / 启动页同一个控件），不再只留一行静止的字。
                 val holder=row().apply { setPadding(pageInset(),dp(24),pageInset(),dp(18)) }
                 holder.addView(
-                    com.hgtv.star.shared.ui.LoadingDotsView(this).apply { label="正在查找同系列…" },
+                    com.hgtv.star.shared.ui.LoadingDotsView(this).apply {
+                        label = UiText.get(com.hgtv.star.shared.R.string.ui_0367)
+                    },
                     lp(-2,-2),
                 )
                 bottom.addView(holder,lp(-1,-2))
             } else if(relatedFailed) {
                 // 失败给一个可重试的入口，而不是静默空列表。
                 val retry=row().apply { setPadding(pageInset(),dp(24),pageInset(),dp(18)) }
-                val label=text("相关剧集加载失败",16f,TvStyle.textDim).apply { setPadding(0,0,dp(TvStyle.GAP_BLOCK),0) }
+                val label=text(UiText.get(com.hgtv.star.shared.R.string.ui_0368),16f,TvStyle.textDim).apply { setPadding(0,0,dp(TvStyle.GAP_BLOCK),0) }
                 retry.addView(label,lp(-2,-2))
                 addButton(retry,"重试") { prefetchRelated(data.series.id) }
                 bottom.addView(retry,lp(-1,-2))
             } else if(works==null || works.items.isEmpty()) {
                 // 接口没给相关剧集（或这一部确实没有）：如实说明，不留一块空白。
-                bottom.addView(text("这一部暂时没有相关剧集",16f,TvStyle.textDim).apply {
+                bottom.addView(text(UiText.get(com.hgtv.star.shared.R.string.ui_0369),16f,TvStyle.textDim).apply {
                     setPadding(pageInset(),dp(28),pageInset(),dp(18))
                 },lp(-1,-2))
             } else {
@@ -832,7 +835,7 @@ fun TvMainActivity.showDetail(focusEpisode: Boolean, focusTarget: View?=null) {
 fun TvMainActivity.reserveSeries(series: Series, button: TvButton, current: Boolean = library.reserved(series.id)) {
     val target=!current
     fun paint(reserved: Boolean) {
-        button.text=if(reserved) "已预约" else "预约"
+        button.text=if(reserved) UiText.get(com.hgtv.star.shared.R.string.ui_0084) else UiText.get(com.hgtv.star.shared.R.string.ui_0265)
         button.contentDescription=button.text.toString()
     }
     // **先落本机**：预约是一份「开播提醒我」的清单，没登录也该记得住——按钮状态跟着变，
@@ -840,7 +843,7 @@ fun TvMainActivity.reserveSeries(series: Series, button: TvButton, current: Bool
     library.setReserved(series.id,target); paint(target)
     applyAccountReserve(series,target)
     if(!repository.signedIn) {
-        tvTools.toast(if(target) "已预约 · 仅保存在本机" else "已取消预约")
+        tvTools.toast(if(target) UiText.get(com.hgtv.star.shared.R.string.ui_0085) else UiText.get(com.hgtv.star.shared.R.string.ui_0076))
         return
     }
     io.submit {
@@ -852,7 +855,7 @@ fun TvMainActivity.reserveSeries(series: Series, button: TvButton, current: Bool
             } else {
                 library.setReserved(series.id,!target); paint(!target)
                 applyAccountReserve(series,!target)
-                tvTools.toast(if(target) "预约失败，稍后再试" else "取消预约失败，稍后再试")
+                tvTools.toast(if(target) UiText.get(com.hgtv.star.shared.R.string.ui_0266) else UiText.get(com.hgtv.star.shared.R.string.ui_0049))
             }
         }
     }

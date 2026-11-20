@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.view.*
 import android.widget.*
@@ -319,9 +320,15 @@ fun TvMainActivity.navIcons(): List<View> =
  * 卡片上的菜单键（长按菜单）优先——只有焦点**不在**卡片上时才由这里接管。
  */
 fun TvMainActivity.showNavPicker(anchor: View?) {
-    val labels=listOf("搜索","分类","榜单","设置","我的")
+    val labels=listOf(
+        UiText.get(com.hgtv.star.shared.R.string.ui_0353),
+        UiText.get(com.hgtv.star.shared.R.string.ui_0303),
+        UiText.get(com.hgtv.star.shared.R.string.ui_0324),
+        UiText.get(com.hgtv.star.shared.R.string.ui_0354),
+        UiText.get(com.hgtv.star.shared.R.string.ui_0317),
+    )
     val tabs=listOf(TAB_SEARCH,TAB_CATEGORY,TAB_RANK,TAB_SETTINGS,TAB_PROFILE)
-    tvTools.choose("前往",labels,anchor,{ index -> switchTab(tabs[index]) })
+    tvTools.choose(UiText.get(com.hgtv.star.shared.R.string.ui_0355),labels,anchor,{ index -> switchTab(tabs[index]) })
 }
 /**
  * 页头里「把焦点交回页头」时该落到哪一枚控件。

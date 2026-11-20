@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.Manifest
 import android.content.pm.PackageManager
 import android.os.Build
@@ -96,7 +97,7 @@ fun TvMainActivity.performLocalReset() {
     // releasePlayer 会把 foreground 还原成调用前的值，因此这一行必须放在它后面：
     // tick 下一次进入看到 false 就直接返回，不再重排自己，也不会去碰已经释放的播放器。
     foreground=false
-    tvTools.toast("正在清空应用缓存…")
+    tvTools.toast(UiText.get(com.hgtv.star.shared.R.string.ui_0154))
 
     Thread({
         // 封面线程可能正在写 cache/artwork-v4：等它真的停下再删，否则它会在删完之后

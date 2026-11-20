@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.os.Bundle
 import android.text.Editable
 import android.text.InputType
@@ -126,7 +127,7 @@ class PhoneSearchActivity : PhoneActivity() {
         }
 
         input = EditText(this).apply {
-            hint = "搜剧名、演员、题材"
+            hint = UiText.get(com.hgtv.star.shared.R.string.ui_0111)
             setHintTextColor(PhoneStyle.textFaint)
             setTextColor(PhoneStyle.text)
             phoneSize(14)
@@ -160,7 +161,7 @@ class PhoneSearchActivity : PhoneActivity() {
         bar.addView(box, LinearLayout.LayoutParams(0, dp(34), 1f))
 
         bar.addView(TextView(this).apply {
-            text = "搜索"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0112)
             setTextColor(PhoneStyle.accent)
             phoneSize(16)
             setPadding(dp(8), dp(6), dp(4), dp(6))
@@ -216,13 +217,13 @@ class PhoneSearchActivity : PhoneActivity() {
             gravity = Gravity.CENTER_VERTICAL
         }
         historyHeader.addView(TextView(this).apply {
-            text = "最近搜索"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0133)
             setTextColor(PhoneStyle.textDim)
             phoneSize(13)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
         }, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
         historyHeader.addView(TextView(this).apply {
-            text = "清空"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0168)
             setTextColor(PhoneStyle.textFaint)
             phoneSize(12)
             setPadding(dp(10), dp(6), dp(2), dp(6))
@@ -242,7 +243,7 @@ class PhoneSearchActivity : PhoneActivity() {
 
         // —— 热门搜索（本机还没有记录时铺这一块）——
         hotHeader = TextView(this).apply {
-            text = "热门搜索"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0169)
             setTextColor(PhoneStyle.textDim)
             phoneSize(13)
             setTypeface(typeface, android.graphics.Typeface.BOLD)
@@ -258,7 +259,7 @@ class PhoneSearchActivity : PhoneActivity() {
 
         // —— 联想词 ——
         suggestHeader = TextView(this).apply {
-            text = "猜你想搜"
+            text = UiText.get(com.hgtv.star.shared.R.string.ui_0173)
             setTextColor(PhoneStyle.textDim)
             phoneSize(13)
             setTypeface(typeface, android.graphics.Typeface.BOLD)

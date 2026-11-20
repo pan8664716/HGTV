@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.graphics.Typeface
 import android.view.*
@@ -36,7 +37,7 @@ import com.hgtv.star.tv.R
 fun TvMainActivity.settings(parent: LinearLayout) {
     val active=settingsTab.coerceIn(0,SETTINGS_TABS.lastIndex)
     settingsTab=active
-    parent.addView(text("偏好自动保存，下一部剧继续使用。",14f,TvStyle.muted).apply { setPadding(0,dp(10),0,dp(20)) })
+    parent.addView(text(UiText.get(com.hgtv.star.shared.R.string.ui_0298),14f,TvStyle.muted).apply { setPadding(0,dp(10),0,dp(20)) })
     val groupBand=dp(TvStyle.SOFT_BAND_LARGE)
     fun groupPanel(group: LinearLayout) {
         group.setPadding(dp(24)+groupBand,dp(20)+groupBand,dp(24)+groupBand,dp(20)+groupBand)
@@ -434,7 +435,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
                 setSpan(RelativeSizeSpan(.72f),0,1,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
             chip.setSelectedState(option==TvStyle.theme)
-            chip.contentDescription=option.label+"，"+option.scene+if(option==TvStyle.theme) "，当前主题" else ""
+            chip.contentDescription=option.label+"，"+option.scene+if(option==TvStyle.theme) UiText.get(com.hgtv.star.shared.R.string.ui_0280) else ""
             row.addView(chip,lp(0,-2).apply { weight=1f; if(index>0) leftMargin=dp(TvStyle.GAP_INLINE) })
             themeRows[option]=chip
         }
@@ -443,7 +444,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         themeGrid.addView(row,lp(-1,-2))
     }
     appearance.addView(
-        text("当前：${TvStyle.theme.label} · ${TvStyle.theme.scene}",13f,TvStyle.textDim)
+        text(UiText.get(com.hgtv.star.shared.R.string.ui_0315, TvStyle.theme.label, TvStyle.theme.scene),13f,TvStyle.textDim)
             .apply { setPadding(0,dp(TvStyle.GAP_BLOCK),0,0) },
         lp(-1,-2)
     )
@@ -526,7 +527,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     }
     fun buildGenderRow(options: List<CategoryFilterOption>) {
         if(genderCells.isNotEmpty() || options.isEmpty()) return
-        val entries=listOf("" to "全部")+options.map { it.id to it.label }
+        val entries=listOf("" to UiText.get(com.hgtv.star.shared.R.string.ui_0371))+options.map { it.id to it.label }
         entries.forEachIndexed { index,(id,label) ->
             val chip=ToggleChip(this,label,library.recommendGender==id,ButtonSize.NORMAL) {
                 applyRecommendGender(id)
@@ -554,7 +555,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     val contentRow=lineRow(content)
     lateinit var hidden: TvButton
     hidden=cellSetting(contentRow,"恢复隐藏的剧集  ·  ${library.hidden().size} 部") {
-        library.unhideAll(); hidden.text="恢复隐藏的剧集  ·  0 部"
+        library.unhideAll(); hidden.text=UiText.get(com.hgtv.star.shared.R.string.ui_0102)
     }
     lateinit var searchSourceButton: TvButton
     searchSourceButton=cellSetting(contentRow,"搜索源  ·  ${library.searchSource.label}") {
@@ -610,7 +611,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         reduceRow.isFocusableInTouchMode=false
         reduceRow.refresh()
         reduceRow.alpha=.72f
-        reduceRow.contentDescription="减少动画优化性能，低配设备固定开启，不可更改"
+        reduceRow.contentDescription=UiText.get(com.hgtv.star.shared.R.string.ui_0037)
     }
     cellSwitch(perfRow1,reduceRow)
     val debugRow=cellSwitch(perfRow1,TvSwitchRow(this,"调试模式",checked=library.debugMode,onToggle={ on ->
@@ -638,7 +639,7 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     SETTINGS_TABS.indices.forEach { wireRows(it) }
     rewireSidePanels()
     settingsTopRows={ index -> pageRows.getOrNull(index)?.firstOrNull { it.isNotEmpty() }.orEmpty() }
-    parent.addView(text("HGTV  /  ${AppVersion.name}    ·    收藏与进度保存在本机",12f,muted).apply { setPadding(dp(12),dp(20),0,dp(10)) })
+    parent.addView(text(UiText.get(com.hgtv.star.shared.R.string.ui_0291, AppVersion.name),12f,muted).apply { setPadding(dp(12),dp(20),0,dp(10)) })
     parent.post {
         refreshSettingsTabLanding()
         val pending=settingsPendingFocus
@@ -660,12 +661,12 @@ fun TvMainActivity.settings(parent: LinearLayout) {
 }
 
 private fun TvMainActivity.showAboutDialog(anchor: View) {
-    val dialog=TvDialog(this,"关于")
-    dialog.message("版本号：${AppVersion.name}")
+    val dialog=TvDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0034))
+    dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0170, AppVersion.name))
     dialog.message("GitHub：${ProjectInfo.GITHUB}")
-    dialog.message("交流反馈：${ProjectInfo.TELEGRAM}")
-    dialog.message("更新请前往项目页面查看项目更新。")
-    dialog.button("关闭") {}
+    dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0022, ProjectInfo.TELEGRAM))
+    dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0132))
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0035)) {}
     dialog.show(anchor)
 }
 
@@ -702,7 +703,7 @@ fun TvMainActivity.switchSettingsTab(index: Int,focusContent: Boolean=false) {
         settingsTab=index
         settingsTabChips.forEachIndexed { i,chip ->
             (chip as? ToggleChip)?.setActive(i==index)
-            chip.contentDescription=SETTINGS_TABS[i]+if(i==index) "，当前分区" else ""
+            chip.contentDescription=SETTINGS_TABS[i]+if(i==index) UiText.get(com.hgtv.star.shared.R.string.ui_0281) else ""
         }
         SETTINGS_TABS.indices.forEach { i ->
             findTagged(root,SETTINGS_TAG_PAGE_PREFIX+i)?.visibility=if(i==index) View.VISIBLE else View.GONE

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -105,16 +106,16 @@ fun buildPlaybackSettingsRows(
         }
         var index = 0
         onRelated?.let { callback ->
-            addAction(action("相关剧集", callback), index++ == 0)
+            addAction(action(UiText.get(com.hgtv.star.shared.R.string.ui_0191), callback), index++ == 0)
         }
         onAuthor?.let { callback ->
-            addAction(action("作者作品", callback), index++ == 0)
+            addAction(action(UiText.get(com.hgtv.star.shared.R.string.ui_0023), callback), index++ == 0)
         }
         onFavorite?.let { callback ->
             lateinit var button: TextView
             button = action(if (favorite) "取消收藏" else "加入收藏") {
                 val now = callback()
-                button.text = if (now) "取消收藏" else "加入收藏"
+                button.text = if (now) UiText.get(com.hgtv.star.shared.R.string.ui_0047) else UiText.get(com.hgtv.star.shared.R.string.ui_0042)
             }
             addAction(button, index++ == 0)
         }

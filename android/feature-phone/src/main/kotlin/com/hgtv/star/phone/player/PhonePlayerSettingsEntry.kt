@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.widget.LinearLayout
 import com.hgtv.star.shared.data.Library
 import kotlinx.coroutines.launch
@@ -35,7 +36,7 @@ internal fun PhonePlayerActivity.openSettings() {
  * 手指一滑就到底，既知道「面板就这么高」又不会找不到最后一项。
  */
 private fun PhonePlayerActivity.openPortraitSettings(lib: Library) {
-    playerSheet.show("播放设置", landscape = false, heightFraction = 1f / 3f) { panel ->
+    playerSheet.show(UiText.get(com.hgtv.star.shared.R.string.ui_0116), landscape = false, heightFraction = 1f / 3f) { panel ->
         buildSettingsRowsImpl(panel, lib, perLine = 0)
     }
     scheduleChromeHide()

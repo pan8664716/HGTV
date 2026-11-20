@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 import android.widget.TextView
 import com.hgtv.star.core.Detail
@@ -383,12 +384,12 @@ internal fun PhonePlayerActivity.finishSeriesPlayback(series: Series) {
     nextSeasonState.autoNextSeasonPending = false
     hideNextSeasonNotice()
     player?.pause()
-    hint.text = "全剧已播完"
+    hint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0028)
     nextSeasonHintSticky = true
     hint.visibility = View.VISIBLE
     hint.bringToFront()
     val finished = detail?.takeIf { it.series.id == series.id } ?: return
     if (rootReady && !isFinishing && !isDestroyed) {
-        showRelated(finished, "相关剧集", "换一部接着看")
+        showRelated(finished, UiText.get(com.hgtv.star.shared.R.string.ui_0191), UiText.get(com.hgtv.star.shared.R.string.ui_0109))
     }
 }

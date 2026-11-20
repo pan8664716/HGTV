@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.ViewGroup
 import android.widget.LinearLayout
 import android.widget.TextView
@@ -155,7 +156,7 @@ internal fun PhoneSettingsActivity.renderLandscapeAppearance() {
     val appearance=landscapePanel("主题外观","${TvTheme.entries.size} 套新拟态材质，选中即生效")
     themeGrid()
     appearance.addView(TextView(this).apply {
-        text="当前：${PhoneStyle.theme.label} · ${PhoneStyle.theme.scene}"
+        text=UiText.get(com.hgtv.star.shared.R.string.ui_0101, PhoneStyle.theme.label, PhoneStyle.theme.scene)
         setTextColor(PhoneStyle.textDim)
         phoneSize(11)
         setPadding(dp(4),dp(6),dp(4),0)
@@ -168,7 +169,7 @@ internal fun PhoneSettingsActivity.renderLandscapeRecommend() {
     val scope=landscapePanel("推荐设置","推荐受众")
     landscapeLine(scope).also { line ->
         landscapeCell(line,landscapeSetting("受众",genderLabelImpl(settingsLibrary.recommendGender)) {
-            pickImpl("推荐受众",listOf("不限","男频","女频"),genderIndexImpl(settingsLibrary.recommendGender)) { i ->
+            pickImpl(UiText.get(com.hgtv.star.shared.R.string.ui_0370),listOf(UiText.get(com.hgtv.star.shared.R.string.ui_0296),UiText.get(com.hgtv.star.shared.R.string.ui_0333),UiText.get(com.hgtv.star.shared.R.string.ui_0306)),genderIndexImpl(settingsLibrary.recommendGender)) { i ->
                 settingsLibrary.recommendGender=listOf("","male","female")[i]; renderSettings()
             }
         })

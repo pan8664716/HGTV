@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import android.content.Context
 import android.view.MotionEvent
 import android.view.View
@@ -310,7 +311,7 @@ internal fun PhonePlayerActivity.bindPlayerPagerPage(page: PhoneVideoPage, posit
         page.bind(
             Series(
                 id = "",
-                title = if (d == null) "加载中…" else "暂无内容",
+                title = if (d == null) UiText.get(com.hgtv.star.shared.R.string.ui_0043) else UiText.get(com.hgtv.star.shared.R.string.ui_0128),
             ),
             "",
         )
@@ -318,7 +319,7 @@ internal fun PhonePlayerActivity.bindPlayerPagerPage(page: PhoneVideoPage, posit
         page.setChromeVisible(playerChromeVisible)
         return
     }
-    val label = "第${position + 1}集"
+    val label = UiText.get(com.hgtv.star.shared.R.string.ui_0343, position + 1)
     page.bind(
         d.series,
         label,

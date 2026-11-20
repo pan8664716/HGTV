@@ -17,6 +17,7 @@ import com.hgtv.star.tv.ButtonSize
 import com.hgtv.star.tv.ButtonTone
 import com.hgtv.star.tv.TvStyle
 import com.hgtv.star.tv.R
+import com.hgtv.star.shared.ui.UiText
 
 // 本文件：触屏适配（平板 / 手机 / 触屏一体机）。
 //
@@ -631,7 +632,7 @@ fun TvMainActivity.showBoostHint(show: Boolean) {
         return
     }
     if(touchBoostHint!=null) return
-    val label=text("2 倍速播放中",17f,TvStyle.playerText).apply {
+    val label=text(UiText.get(com.hgtv.star.shared.R.string.ui_0366),17f,TvStyle.playerText).apply {
         gravity=Gravity.CENTER
         setPadding(dp(22),dp(10),dp(22),dp(10))
         background=TvStyle.shape(this@showBoostHint,0x66000000,radius=TvStyle.RADIUS_PILL)

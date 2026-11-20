@@ -3,6 +3,7 @@
 @file:JvmMultifileClass
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.shared.compat.hasInternet
 import com.hgtv.star.shared.compat.isMeteredConnection
 
@@ -450,9 +451,9 @@ fun TvMainActivity.updatePlaybackInfoReadings() {
     }
 }
 fun TvMainActivity.showFramePicker(anchor: TextView,inPlayer: Boolean) {
-    tvTools.choose("全局画面模式",listOf("完整画面 · 保留比例与全部内容","等比铺满 · 会裁掉部分画面与字幕","拉伸铺满 · 画面比例会改变"),anchor,{ index ->
+    tvTools.choose(UiText.get(com.hgtv.star.shared.R.string.ui_0299),listOf(UiText.get(com.hgtv.star.shared.R.string.ui_0307),UiText.get(com.hgtv.star.shared.R.string.ui_0344),UiText.get(com.hgtv.star.shared.R.string.ui_0319)),anchor,{ index ->
         library.frameMode=VideoFrameMode.entries[index]; applyResizeMode()
-        if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "画面 " else "画面模式  ·  ")+library.frameMode.label
+        if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) UiText.get(com.hgtv.star.shared.R.string.ui_0174) else UiText.get(com.hgtv.star.shared.R.string.ui_0178))+library.frameMode.label
     })
 }
 /**
@@ -463,14 +464,14 @@ fun TvMainActivity.showFramePicker(anchor: TextView,inPlayer: Boolean) {
  * [inPlayer] 为真时改完立刻重建播放器（[applyDecoderMode]），否则只落盘、下次起播生效。
  */
 fun TvMainActivity.showDecoderPicker(anchor: TextView,inPlayer: Boolean) {
-    val labels=listOf("硬件解码 · 省电，4K 更稳（默认）","软件解码 · 兼容性好，花屏 / 绿屏 / 音画不同步时用")
+    val labels=listOf(UiText.get(com.hgtv.star.shared.R.string.ui_0336),UiText.get(com.hgtv.star.shared.R.string.ui_0348))
     tvTools.choose("视频解码",labels,anchor,{ index ->
         val selected=VideoDecoderMode.entries[index]
         val changed=playbackDecoderMode!=selected
         library.decoderMode=selected
         // 用户手动改解码方式：撤销自动切换、归还「切软解」的预算（不动清晰度上限）。
         playbackCoordinator.onManualDecoderChange()
-        if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "解码 " else "视频解码  ·  ")+selected.label
+        if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) UiText.get(com.hgtv.star.shared.R.string.ui_0216) else UiText.get(com.hgtv.star.shared.R.string.ui_0214))+selected.label
         if(inPlayer && changed) applyDecoderMode() else if(inPlayer) updatePlaybackText()
     })
 }
@@ -483,14 +484,14 @@ fun TvMainActivity.showDecoderPicker(anchor: TextView,inPlayer: Boolean) {
  */
 fun TvMainActivity.showHomeColumnsPicker(anchor: TextView) {
     val options=listOf(4,5,6,7,8)
-    val labels=listOf("4 张 · 大卡片","5 张 · 中号卡片","6 张 · 紧凑（默认）","7 张 · 更紧凑","8 张 · 最紧凑")
+    val labels=listOf(UiText.get(com.hgtv.star.shared.R.string.ui_0286),UiText.get(com.hgtv.star.shared.R.string.ui_0287),UiText.get(com.hgtv.star.shared.R.string.ui_0288),UiText.get(com.hgtv.star.shared.R.string.ui_0289),UiText.get(com.hgtv.star.shared.R.string.ui_0290))
     val selected=options.indexOf(library.homeColumns).coerceAtLeast(0)
     if(homeColumnsDialog!=null) return
-    val picker=TvDialog(this,"每行卡片").choices(labels,selected) { index ->
+    val picker=TvDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0162)).choices(labels,selected) { index ->
         library.homeColumns=options[index]
-        anchor.text="每行卡片  ·  ${library.homeColumns} 张"
+        anchor.text=UiText.get(com.hgtv.star.shared.R.string.ui_0163, library.homeColumns)
     }
-    picker.button("取消", icon=R.drawable.ic_menu_close)
+    picker.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon=R.drawable.ic_menu_close)
     homeColumnsDialog=picker
     picker.show(anchor) {
         homeColumnsDialog=null
@@ -525,11 +526,11 @@ fun TvMainActivity.showBackToTopPicker(anchor: TextView) {
     val labels=options.map(::backToTopLabel)
     val selected=options.indexOf(library.backToTop).coerceAtLeast(0)
     if(backToTopDialog!=null) return
-    val picker=TvDialog(this,"返回顶部按钮").choices(labels,selected) { index ->
+    val picker=TvDialog(this,UiText.get(com.hgtv.star.shared.R.string.ui_0236)).choices(labels,selected) { index ->
         library.backToTop=options[index]
-        anchor.text="返回顶部  ·  "+backToTopShort(options[index])
+        anchor.text=UiText.get(com.hgtv.star.shared.R.string.ui_0235)+backToTopShort(options[index])
     }
-    picker.button("取消", icon=R.drawable.ic_menu_close)
+    picker.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon=R.drawable.ic_menu_close)
     backToTopDialog=picker
     picker.show(anchor) {
         backToTopDialog=null
@@ -545,12 +546,12 @@ fun TvMainActivity.showBackToTopPicker(anchor: TextView) {
  */
 fun TvMainActivity.showEpisodePageSizePicker(anchor: TextView) {
     val options=listOf(10,20,30,40,50)
-    val labels=listOf("每页 10 集 · 一屏一行","每页 20 集 · 一屏两行（默认）",
+    val labels=listOf(UiText.get(com.hgtv.star.shared.R.string.ui_0329),UiText.get(com.hgtv.star.shared.R.string.ui_0330),
         "每页 30 集 · 一屏三行","每页 40 集 · 一屏四行","每页 50 集 · 一屏五行")
-    tvTools.choose("选集分页数量",labels,anchor,{ index ->
+    tvTools.choose(UiText.get(com.hgtv.star.shared.R.string.ui_0349),labels,anchor,{ index ->
         val size=options[index]
         library.episodePageSize=size
-        anchor.text="选集分页  ·  $size 集"
+        anchor.text=UiText.get(com.hgtv.star.shared.R.string.ui_0257, size)
     })
 }
 /**
@@ -565,11 +566,11 @@ fun TvMainActivity.showEpisodePageSizePicker(anchor: TextView) {
  * 「弹幕透明度」三行（[DanmakuMode.showsStyle]）；播放设置面板走的是整块重建，不需要这个回调。
  */
 fun TvMainActivity.showDanmakuPicker(anchor: TextView,inPlayer: Boolean,onChanged: ()->Unit={}) {
-    tvTools.choose("弹幕显示方式",DanmakuMode.entries.map { it.optionHint },anchor,{ index ->
+    tvTools.choose(UiText.get(com.hgtv.star.shared.R.string.ui_0313),DanmakuMode.entries.map { it.optionHint },anchor,{ index ->
         val selected=DanmakuMode.entries[index]
         val changed=library.danmakuMode!=selected
         library.danmakuMode=selected; danmakuView?.mode=selected
-        if(anchor.tag!="playback-settings") anchor.text=danmakuLabel(if(inPlayer) "弹幕 " else "弹幕显示  ·  ")
+        if(anchor.tag!="playback-settings") anchor.text=danmakuLabel(if(inPlayer) UiText.get(com.hgtv.star.shared.R.string.ui_0090) else UiText.get(com.hgtv.star.shared.R.string.ui_0094))
         if(changed) onChanged()
     })
 }
@@ -581,11 +582,11 @@ fun TvMainActivity.showDanmakuPicker(anchor: TextView,inPlayer: Boolean,onChange
  * [onChanged] 在档位真的变了之后回调一次（设置页用它刷新那一行文案）。
  */
 fun TvMainActivity.showDanmakuSpeedPicker(anchor: TextView,inPlayer: Boolean,onChanged: ()->Unit={}) {
-    tvTools.choose("弹幕移动速度",DanmakuSpeed.entries.map { it.hint },anchor,{ index ->
+    tvTools.choose(UiText.get(com.hgtv.star.shared.R.string.ui_0314),DanmakuSpeed.entries.map { it.hint },anchor,{ index ->
         val selected=DanmakuSpeed.entries[index]
         val changed=library.danmakuSpeed!=selected
         library.danmakuSpeed=selected; danmakuView?.speed=selected
-        if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) "弹幕速度 " else "弹幕速度  ·  ")+selected.label
+        if(anchor.tag!="playback-settings") anchor.text=(if(inPlayer) UiText.get(com.hgtv.star.shared.R.string.ui_0097) else UiText.get(com.hgtv.star.shared.R.string.ui_0098))+selected.label
         if(changed) onChanged()
     })
 }

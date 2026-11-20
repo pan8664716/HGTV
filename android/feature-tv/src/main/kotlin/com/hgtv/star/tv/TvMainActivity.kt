@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.shared.debug.DebugLog
 
 import android.app.Activity
@@ -115,7 +116,7 @@ class TvMainActivity: Activity() {
             repository.sessionToken=null
             applySessionToken(); applyAccount()
             showCatalog()
-            runCatching { tvTools.toast("登录已失效，请重新登录") }
+            runCatching { tvTools.toast(UiText.get(com.hgtv.star.shared.R.string.ui_0186)) }
         }
     }
     internal val initializationSessionExpiredReceiver get()=sessionExpiredReceiver

@@ -37,7 +37,7 @@ class LoadingDotsView(context: Context) : View(context) {
     }
 
     init {
-        contentDescription="正在加载"
+        contentDescription=UiText.get(com.hgtv.star.shared.R.string.ui_0147)
     }
 
     /** 加载阶段文案；为空时保持原来的 64 × 18dp 纯三点动画。 */
@@ -47,7 +47,7 @@ class LoadingDotsView(context: Context) : View(context) {
             val next=value.toString()
             if(next==labelText) return
             labelText=next
-            contentDescription=next.ifBlank { "正在加载" }
+            contentDescription=next.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0147) }
             requestLayout()
             invalidate()
         }

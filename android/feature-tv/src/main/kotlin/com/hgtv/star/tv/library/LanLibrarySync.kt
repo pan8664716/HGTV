@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.tv
 
+import com.hgtv.star.shared.ui.UiText
 import android.view.View
 import android.widget.LinearLayout
 import com.hgtv.star.core.BackupData
@@ -28,8 +29,8 @@ fun TvMainActivity.closeLanSyncSession() {
 
 fun TvMainActivity.showLanLibrarySync(anchor: View) {
     closeLanSyncSession()
-    val dialog = TvDialog(this, "同步其他设备数据")
-    dialog.message("请选择这台设备在本次同步中的角色。")
+    val dialog = TvDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0051))
+    dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0227))
     dialog.choices(
         listOf(
             "我要同步其他设备的数据",
@@ -37,7 +38,7 @@ fun TvMainActivity.showLanLibrarySync(anchor: View) {
         ),
         onChoice = { index -> startLanSyncRole(anchor, sourceOnly = index == 1) },
     )
-    dialog.button("取消", icon = R.drawable.ic_menu_close)
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon = R.drawable.ic_menu_close)
     dialog.show(anchor)
 }
 
@@ -69,7 +70,7 @@ private fun TvMainActivity.renderLanSync(anchor: View, state: LanSyncController.
                 val status = tvText("", 15f, TvStyle.textStrong)
                 lanSyncUiStatus = status
                 dialog.content.addView(status, LinearLayout.LayoutParams(-1, -2))
-                dialog.button("取消", icon = R.drawable.ic_menu_close)
+                dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon = R.drawable.ic_menu_close)
                 dialog.setOnDismissExtra {
                     if (lanSyncUiDialog === dialog) closeLanSyncSession()
                 }
@@ -85,16 +86,16 @@ private fun TvMainActivity.renderLanSync(anchor: View, state: LanSyncController.
             lanSyncUiStep = state.step
             lanSyncUiDialog?.dismiss()
             lanSyncUiDialog = null
-            val dialog = TvDialog(this, "选择同步设备")
-            dialog.message("读取登录信息、设备参数、内容数据和全部设置。读取后仍需在本机确认。")
+            val dialog = TvDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0250))
+            dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0228))
             dialog.choices(
                 state.peers.map { "${it.displayName}  ·  ${it.host}" },
                 onChoice = { index -> state.peers.getOrNull(index)?.let(lanSyncController::loadPeer) },
             )
-            dialog.button("重新查找", icon = R.drawable.ic_menu_restore) {
+            dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0258), icon = R.drawable.ic_menu_restore) {
                 main.post { startLanSyncRole(anchor, sourceOnly = false) }
             }
-            dialog.button("取消", icon = R.drawable.ic_menu_close)
+            dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon = R.drawable.ic_menu_close)
             dialog.show(anchor)
         }
         LanSyncController.Step.LOADING, LanSyncController.Step.APPLYING -> {
@@ -105,7 +106,7 @@ private fun TvMainActivity.renderLanSync(anchor: View, state: LanSyncController.
                 this,
                 if (state.step == LanSyncController.Step.LOADING) "正在同步" else "正在应用同步数据",
             ).message(state.message)
-            dialog.button("取消", icon = R.drawable.ic_menu_close) { closeLanSyncSession() }
+            dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon = R.drawable.ic_menu_close) { closeLanSyncSession() }
             lanSyncUiDialog = dialog
             dialog.show(anchor)
         }
@@ -139,12 +140,12 @@ private fun TvMainActivity.renderLanSync(anchor: View, state: LanSyncController.
 }
 
 private fun TvMainActivity.showLanSyncNoPeers(anchor: View) {
-    val dialog = TvDialog(this, "未发现同步设备")
-    dialog.message("请确认两台设备连接同一局域网，并同时打开「同步其他设备数据」。")
-    dialog.button("重新查找", icon = R.drawable.ic_menu_restore) {
+    val dialog = TvDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0134))
+    dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0226))
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0258), icon = R.drawable.ic_menu_restore) {
         main.post { startLanSyncRole(anchor, sourceOnly = false) }
     }
-    dialog.button("取消", icon = R.drawable.ic_menu_close)
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon = R.drawable.ic_menu_close)
     dialog.show(anchor)
 }
 
@@ -153,8 +154,8 @@ private fun TvMainActivity.showLanSyncRestoreConfirm(anchor: View) {
     var device = true
     var content = true
     var settings = true
-    val dialog = TvDialog(this, "选择要同步的数据")
-    dialog.message("登录、设备与设置会覆盖本机；播放和收藏等记录会合并，并保留进度更高的一项。")
+    val dialog = TvDialog(this, UiText.get(com.hgtv.star.shared.R.string.ui_0252))
+    dialog.message(UiText.get(com.hgtv.star.shared.R.string.ui_0181))
     listOf(
         TvSwitchRow(this, "登录信息", true) { login = it },
         TvSwitchRow(this, "设备参数", true) { device = it },
@@ -170,8 +171,8 @@ private fun TvMainActivity.showLanSyncRestoreConfirm(anchor: View) {
         )
     }
     dialog.buttonsInRow()
-    dialog.button("取消", icon = R.drawable.ic_menu_close)
-    dialog.button("同步所选", icon = R.drawable.ic_menu_restore) {
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0046), icon = R.drawable.ic_menu_close)
+    dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0052), icon = R.drawable.ic_menu_restore) {
         val selection = DeviceSyncSelection(login, device, content, settings)
         if (!selection.hasAny) {
             tvTools.info("未选择同步内容", "请至少选择一类内容后再同步。", anchor)

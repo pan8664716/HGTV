@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star
 
+import com.hgtv.star.shared.ui.UiText
 import android.app.Activity
 import android.content.Context
 import android.content.Intent
@@ -90,12 +91,12 @@ class LaunchActivity : Activity() {
             orientation=LinearLayout.VERTICAL
             gravity=Gravity.CENTER_HORIZONTAL
         }
-        dots=LoadingDotsView(this).apply { label="正在准备应用…" }
+        dots=LoadingDotsView(this).apply { label=UiText.get(com.hgtv.star.shared.R.string.ui_0325) }
         content.addView(dots,LinearLayout.LayoutParams(dp(360),ViewGroup.LayoutParams.WRAP_CONTENT).apply {
             topMargin=dp(26)
         })
         errorText=TextView(this).apply {
-            text="初始化失败，请重试"
+            text=UiText.get(com.hgtv.star.shared.R.string.ui_0038)
             setTextColor(0xFFF2F5F8.toInt())
             textSize=15f
             gravity=Gravity.CENTER
@@ -106,7 +107,7 @@ class LaunchActivity : Activity() {
             ViewGroup.LayoutParams.WRAP_CONTENT,
         ).apply { topMargin=dp(24) })
         retryButton=TextView(this).apply {
-            text="重试"
+            text=UiText.get(com.hgtv.star.shared.R.string.ui_0261)
             setTextColor(0xFF4DA3FF.toInt())
             textSize=15f
             gravity=Gravity.CENTER

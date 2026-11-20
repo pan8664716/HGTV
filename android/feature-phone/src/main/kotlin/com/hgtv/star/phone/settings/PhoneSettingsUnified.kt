@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.phone
 
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.core.DANMAKU_MERGE_MIN_RANGE
 import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.DanmakuSpeed
@@ -184,7 +185,7 @@ internal fun PhoneSettingsActivity.renderUnifiedAppearance() {
                 "appearance.columns",
                 "列表每行",
                 "${settingsLibrary.gridColumns + 3} 张",
-                listOf("竖屏 1 张 · 横屏 4 张", "竖屏 2 张 · 横屏 5 张", "竖屏 3 张 · 横屏 6 张"),
+                listOf(UiText.get(com.hgtv.star.shared.R.string.ui_0337), UiText.get(com.hgtv.star.shared.R.string.ui_0338), UiText.get(com.hgtv.star.shared.R.string.ui_0339)),
             ),
             SettingRowSpec.Switch(
                 SettingsController.ID_RECOMMEND_SWIPE,
@@ -205,7 +206,7 @@ internal fun PhoneSettingsActivity.renderUnifiedRecommend() {
                 SettingsController.ID_RECOMMEND_GENDER,
                 "受众",
                 genderLabelImpl(settingsLibrary.recommendGender),
-                listOf("不限", "男频", "女频"),
+                listOf(UiText.get(com.hgtv.star.shared.R.string.ui_0296), UiText.get(com.hgtv.star.shared.R.string.ui_0333), UiText.get(com.hgtv.star.shared.R.string.ui_0306)),
             ),
             SettingRowSpec.Section("内容管理与来源"),
             SettingRowSpec.Action(
