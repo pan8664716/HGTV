@@ -90,7 +90,7 @@ class PhoneMinePage(
         ellipsize = null
     }
     private val topSub = TextView(context).apply {
-        text = "点这里登录 · 记录仅保存在本机"
+        text = "记录仅保存在本机"
         setTextColor(PhoneStyle.textDim)
         phoneSize(10)
         setPadding(0, context.dp(2) / 5, 0, 0)
@@ -617,7 +617,6 @@ class PhoneMinePage(
     private data class AccountState(
         val signedIn: Boolean,
         val nickname: String?,
-        val displayId: String?,
     )
 
     private fun accountState(): AccountState {
@@ -625,9 +624,7 @@ class PhoneMinePage(
         val profile = cached?.profile
         val signedIn = runCatching { library.account().configured }.getOrDefault(false) ||
             PhoneServices.repository(context).signedIn
-        val displayId = profile?.displayId?.takeIf { it.isNotBlank() }
-            ?: profile?.userId?.takeIf { it.isNotBlank() }
-        return AccountState(signedIn, profile?.nickname, displayId)
+        return AccountState(signedIn, profile?.nickname)
     }
 
     private fun accountAvatarUrl(): String =
@@ -656,11 +653,8 @@ class PhoneMinePage(
             !account.nickname.isNullOrBlank() -> account.nickname.orEmpty()
             else -> "已登录"
         }
-        topSub.text = when {
-            !account.signedIn -> "点这里登录 · 记录仅保存在本机"
-            !account.displayId.isNullOrBlank() -> account.displayId.orEmpty()
-            else -> "点这里查看账号"
-        }
+        topSub.text = if (account.signedIn) "" else "记录仅保存在本机"
+        topSub.visibility = if (account.signedIn) View.GONE else View.VISIBLE
         topAccount.contentDescription = if (account.signedIn) {
             "账号${account.nickname.orEmpty()}"
         } else {
