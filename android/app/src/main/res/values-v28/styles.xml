@@ -1,41 +1,20 @@
 <resources>
     <!--
-      播放页窗口（Android 9.0+：**半透明 + 没有窗口底色**）。
+      正式播放页统一使用不透明窗口。
 
-      播放页与推荐页是两个 Activity，却共用同一个进程级播放器（`PhoneServices.player`）。
-      窗口一旦不透明，系统在播放页打开时就会把下面的推荐页 `onStop` 掉——它的窗口被移除、
-      `SurfaceView` 的 Surface 被销毁。于是每进一次、每退一次都要重建 Surface、重画一帧，
-      用户读到的就是「内容断了一下、好像重新加载了」。
-
-      半透明窗口下，推荐页只走 `onPause`：窗口与 Surface 全程活着，播放器只是换了个宿主
-      View。进场时接着出帧，退场时把窗口一撤就露出推荐页，两边都不用重新 prepare、也不用
-      重建解码器。
-
-      从 9.0 才开始用，是因为 8.0 / 8.1 不允许「半透明窗口 + 固定方向」，而播放页要靠
-      转屏进横屏（见 values/styles.xml 里的说明）。
-
-      三条必须同时满足：
-      1. `windowBackground` 透明，否则那层底色就是「闪黑」本身；
-      2. `backgroundDimEnabled=false`，否则系统会给下层压一层灰；
-      3. 不设 `windowIsFloating`，播放页要占满整屏。
-
-      第四条（**没有窗口动画**）：
-      `windowAnimationStyle=@null` 直接关掉系统给本窗口排的入场 / 退场动画。
-      有动画时这一层会被逐帧改 alpha，画面那一层就必须从显示硬件的直通通道
-      （HWC overlay）退回 GPU 合成——切换那一下实测是一次 150~220ms 的整屏停顿，
-      用户读到的就是「进正式播放页时内容断了一下」。代码里那句
-      `overridePendingTransition(0, 0)` 只管「应用自己排的转场」，管不到系统动画，
-      所以要在主题里关。
+      推荐页和简介页都可能在下层保留独立 SurfaceView；半透明播放窗口无法保证普通
+      View 底板覆盖这些系统图层，会露出下层页面。播放器已经始终使用自己的 SurfaceView，
+      不再需要靠半透明窗口保活下层视频。
     -->
     <style name="PlayerTheme" parent="@style/AppTheme">
-        <item name="android:windowIsTranslucent">true</item>
-        <item name="android:windowBackground">@android:color/transparent</item>
+        <item name="android:windowIsTranslucent">false</item>
+        <item name="android:windowBackground">#000000</item>
         <item name="android:backgroundDimEnabled">false</item>
         <item name="android:windowAnimationStyle">@null</item>
         <item name="android:windowNoTitle">true</item>
     </style>
 
-    <!-- 非推荐页入口没有下层视频需要保活，窗口必须不透明，避免 SurfaceView 挖孔露页。 -->
+    <!-- 导航入口显式使用这份主题，避免以后基础主题调整时重新引入透明窗口。 -->
     <style name="PlayerOpaqueTheme" parent="@style/PlayerTheme">
         <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowBackground">#000000</item>

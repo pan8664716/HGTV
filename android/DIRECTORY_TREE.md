@@ -582,7 +582,7 @@ android/
 | `PhoneConsent.kt` | 手机端的两条「知情同意」，与电视端**同一份文案、同一条语义**（见 :core 的 com.hgtv.star.core.ThirdPartyNotice）。 | object PhoneConsent |
 | `PhoneFirstRunTip.kt` | 首次进入时的「先调一下显示」提示。 | object PhoneFirstRunTip |
 | `PhoneMainActivity.kt` | 手机 / 平板端主界面；统一从 WindowInsets 更新底部 tab 栏和四个 tab 页的安全区，处理系统导航栏透明、对比度蒙层和图标亮暗；推荐页横竖屏原地重排并保留视频 Surface。 | class PhoneMainActivity、fun revealPhoneStartup、fun warmStartupPlayer、fun applySystemBottomInset |
-| `PhoneNavigator.kt` | 手机端的路由落地：把 Route 翻译成一个 Intent，交给系统返回栈。 | class PhoneNavigator、fun Context.phoneNav |
+| `PhoneNavigator.kt` | 手机端的路由落地：把 Route 翻译成一个 Intent，交给系统返回栈；正式播放页所有入口统一落到不透明播放 Activity。 | class PhoneNavigator、fun Context.phoneNav |
 | `PhoneServices.kt` | 手机端服务入口；相邻播放器默认不申请音频焦点，激活当前集时才接管；推荐池通过 `newPlayer` 创建独立实例并由 `activate` 登记当前实例。 | object PhoneServices、object PhoneDecoder、fun player、fun newPlayer、fun enableAudioFocus、fun activate、fun warmPlayer、fun detachAndClear |
 | `PhoneSession.kt` | 手机端「这一台机器现在在放什么」的进程级事实。 | object PhoneSession |
 
@@ -665,7 +665,7 @@ android/
 | `PhonePlaybackSettings.kt` | 播放设置面板的各行：**推荐信息流与正式播放页共用这一份**。 | fun buildPlaybackSettingsRows |
 | `PhonePlayerActivity.kt` | 手机正式播放页基类，持有播放器、横竖屏 ViewPager2 集页、整层播放控制、跨形态播放锁定状态和页面生命周期；推荐页入口使用半透明主题，正式页弹幕加载器禁止用超时绕过首帧门闩。 | open class PhonePlayerActivity、playerControlsLocked |
 | `PhonePlayerAdjacent.kt` | 正式播放页前后相邻集播放器池：后台取源、独立 `ExoPlayer`、竖屏 / 横屏 ViewPager2 集页静音首帧预渲染、音频焦点隔离、无空档激活、上一集复用和资源回收。 | class PhonePlayerAdjacentSlot、fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup、fun PhonePlayerActivity.attachAdjacentToPagerPage、fun PhonePlayerActivity.attachAdjacentToLandscapePagerPage、fun PhonePlayerActivity.activateAdjacentEpisode、fun PhonePlayerActivity.releaseAllAdjacentPlayers |
-| `PhonePlayerOpaqueActivity.kt` | 非推荐页入口的正式播放页子类；Manifest 固定不透明主题，避免透明 SurfaceView 在上下滑时露出简介页。 | class PhonePlayerOpaqueActivity |
+| `PhonePlayerOpaqueActivity.kt` | 正式播放页导航入口子类；Manifest 固定不透明主题，避免推荐页或简介页的独立 SurfaceView 透出。 | class PhonePlayerOpaqueActivity |
 | `PhonePlayerAdoption.kt` | adoptFromSession 的前置检查；返回 null = 可以接，否则返回不能接的原因（只用于日志）。 | fun PhonePlayerActivity.adoptReject、fun PhonePlayerActivity.adoptFromSession |
 | `PhonePlayerAttach.kt` | 把已准备好的视频源挂到当前形态对应的 PlayerView，冻结旧比例并安排首帧前的 prepare。 | fun PhonePlayerActivity.attach |
 | `PhonePlayerBack.kt` | 返回键决策；true = 已消费，false = 交给 Activity 默认返回。 | fun PhonePlayerActivity.handlePlayerBack |

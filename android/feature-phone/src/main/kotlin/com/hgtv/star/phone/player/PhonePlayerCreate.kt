@@ -12,7 +12,7 @@ internal fun PhonePlayerActivity.initializePlayerActivity(tEnter: Long) {
     // 主题：播放页可能被系统单独拉起（最近任务 / 深链），不保证经过主页面。
     PhoneStyle.ensure(this)
     phoneEdgeToEdge()
-    // PlayerTheme 是半透明窗口；窗口本身先铺黑，首帧前也不透出推荐页或桌面。
+    // 窗口本身先铺黑，首帧前也不透出下层页面或桌面。
     window.setBackgroundDrawable(ColorDrawable(Color.BLACK))
     val seriesId = intent.getStringExtra(PhonePlayerActivity.EXTRA_SERIES_ID).orEmpty()
     if (seriesId.isBlank()) {

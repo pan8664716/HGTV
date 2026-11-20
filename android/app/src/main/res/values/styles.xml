@@ -13,34 +13,13 @@
         <item name="android:windowNoTitle">true</item>
     </style>
 
-    <!--
-      播放页窗口（**Android 9 以下用这一份：不透明**）。
-
-      为什么不透明版的理由在 `values-v28/styles.xml` 里：半透明窗口能让下层推荐页
-      不被 `onStop`（窗口与 Surface 都活着），这是「进 / 退都不重新加载」的关键。
-      但它有两个前置条件：
-
-      1. Android 8.0 / 8.1 上，**半透明 Activity 不允许固定方向**，`setRequestedOrientation`
-         会直接抛 `IllegalStateException: Only fullscreen opaque activities can request
-         orientation`（9.0 起放宽）。播放页要靠转屏进横屏，这一条在 Oreo 上就是硬限制。
-      2. 4.4–7.x 上「半透明窗口 + SurfaceView」部分机型不出图（视频层交给 GPU 合成，
-         老驱动的路径不完整）。
-
-      因此：9.0 起用半透明（values-v28），更早的系统用不透明。两种主题的**内容布局完全
-      相同**（页面自己铺黑底），差别只在窗口那一层，代码里不需要分支。
-    -->
+    <!-- 正式播放页始终使用不透明窗口，避免下层 Activity 的独立 SurfaceView 透出。 -->
     <style name="PlayerTheme" parent="@style/AppTheme">
         <item name="android:windowBackground">#000000</item>
         <item name="android:windowNoTitle">true</item>
     </style>
 
-    <!--
-      非推荐页入口的正式播放页使用不透明窗口。
-
-      详情页 / 搜索 / 卡片菜单没有下层视频需要交接；继续使用半透明窗口时，
-      弹幕 SurfaceView 的透明区域会在上下滑时直接露出下层简介页。
-      推荐页入口仍使用 PlayerTheme 保留交接能力。
-    -->
+    <!-- 导航入口显式使用这份主题，避免以后基础主题调整时重新引入透明窗口。 -->
     <style name="PlayerOpaqueTheme" parent="@style/PlayerTheme">
         <item name="android:windowIsTranslucent">false</item>
         <item name="android:windowBackground">#000000</item>
