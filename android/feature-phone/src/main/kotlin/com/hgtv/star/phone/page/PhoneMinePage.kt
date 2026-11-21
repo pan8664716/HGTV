@@ -987,9 +987,11 @@ class PhoneMinePage(
     private fun waitingForAccount(tabIndex: Int, rows: List<Series>): Boolean {
         if (rows.isNotEmpty()) return false
         return when (tabs.getOrNull(tabIndex) ?: "历史") {
-            "历史" -> historyLoading || PhoneAccountSync.data?.history == null
+            // data == null 只表示没有账号数据，不等于请求仍在进行。
+            // 请求结束后必须让空态显示出来，否则未登录/空账号会永久停在 loading。
+            "历史" -> historyLoading
             "稍后看" -> false
-            else -> accountLoading || PhoneAccountSync.data == null
+            else -> accountLoading
         }
     }
 
