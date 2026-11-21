@@ -65,8 +65,6 @@ object RecoverySnapshotManager {
         val skippedPublic = state.getBoolean(KEY_SKIPPED_PUBLIC, false)
         var restored = false
 
-        migrateLegacyIfNeeded(app, state, publicPermissionGranted)
-
         if (firstDecision) {
             if (publicPermissionGranted && RecoveryPermissions.isStorageMounted()) {
                 restored = readBest(store.readPublicCandidates())?.let { snapshot ->
@@ -78,7 +76,13 @@ object RecoverySnapshotManager {
                 .putBoolean(KEY_INITIALIZED, true)
                 .putBoolean(KEY_SKIPPED_PUBLIC, !publicPermissionGranted)
                 .commit()
-        } else if (skippedPublic && publicPermissionGranted) {
+        }
+
+        // 必须先恢复已有的完整快照，再执行旧版迁移。
+        // 反过来会在重装后的首次启动把空快照写到公共目录，覆盖真正的旧快照。
+        migrateLegacyIfNeeded(app, state, publicPermissionGranted)
+
+        if (!firstDecision && skippedPublic && publicPermissionGranted) {
             // 本次安装已经以「无公共权限」启动过：旧公共快照不再可信，
             // 当前数据才是用户此刻看到的数据。
             store.deletePublic()
@@ -97,6 +101,8 @@ object RecoverySnapshotManager {
 
     /** 权限回调、回到前台或设置页授权后调用。 */
     fun onPermissionChanged(context: Context, granted: Boolean) {
+        // 首次恢复尚未完成时由 restoreAtLaunch 统一处理，避免权限回调抢先写入空快照。
+        if (!initialized) return
         val app = context.applicationContext
         val state = statePrefs(app)
         Log.w(
