@@ -62,8 +62,8 @@ fun TvMainActivity.reportRecommendProgress() {
     val data=detail ?: return
     val p=player ?: return
     val episodeId=data.episodes.getOrNull(episodeIndex) ?: return
-    recommendPlaybackController.reportProgressById(
-        data.series.id,
+    recommendPlaybackController.reportProgress(
+        data.series,
         episodeId,
         episodeIndex,
         p.currentPosition.coerceAtLeast(0),

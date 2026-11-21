@@ -415,8 +415,8 @@ private fun TvMainActivity.finishSeamlessAdvance(
         val progress=WatchProgress.completed(previousData.series,previousData.episodes[previous],previous,duration)
         library.save(progress); syncProgress(progress,previousData.episodes.size)
         if(playbackFromRecommend) {
-            recommendPlaybackController.reportEventById(
-                previousData.series.id,
+            recommendPlaybackController.reportEvent(
+                previousData.series,
                 com.hgtv.star.core.RecommendBehavior.Event.PLAY_COMPLETE,
                 episodeId=previousData.episodes[previous],
                 episodeIndex=previous,
@@ -445,8 +445,8 @@ private fun TvMainActivity.finishSeamlessAdvance(
     detail=nextData
     sessionSeriesId=nextData.series.id
     if(playbackFromRecommend) {
-        recommendPlaybackController.reportEventById(
-            nextData.series.id,
+        recommendPlaybackController.reportEvent(
+            nextData.series,
             com.hgtv.star.core.RecommendBehavior.Event.PLAY_START,
             episodeId=nextData.episodes[next],
             episodeIndex=next,

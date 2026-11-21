@@ -292,8 +292,8 @@ fun TvMainActivity.playerFailure(problem: Throwable) {
         if(data!=null) {
             val failedEpisode=if(facts.queued) queuedEpisodeId.orEmpty()
             else data.episodes.getOrNull(episodeIndex).orEmpty()
-            recommendPlaybackController.reportEventById(
-                data.series.id,
+            recommendPlaybackController.reportEvent(
+                data.series,
                 com.hgtv.star.core.RecommendBehavior.Event.ERROR,
                 episodeId=failedEpisode,
                 episodeIndex=if(facts.queued) -1 else episodeIndex,

@@ -108,17 +108,58 @@ fun TvMainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
             }
         }
     }
+    clearRecommendPageForFormalPlayback()
 }
 
 /**
- * 回主页面（首页）。推荐页返回键与「从推荐进正片后按返回」共用这一条路（需求 4）。
+ * 正式播放不会返回推荐页，因此进入成功后立即释放推荐页状态。
  *
- * 与以前的区别有两点：
- * 1. 首页**一定重新取一次**（[showCatalog] 带 `load=true`）：用户从推荐页退出来，
- *    要看到的是首页最新的一批数据，而不是进来之前那一屏；
- * 2. 推荐列表本身**不清**（会话级缓存）：再点推荐按钮，接着上次那一部往下刷。
+ * 保留续流游标和落盘快照，下一次打开推荐仍可快速恢复；当前进程里的列表、详情、
+ * 预热和定时任务全部清掉，避免低内存设备在正式播放和首页重建时继续保留一整页推荐资源。
+ */
+private fun TvMainActivity.clearRecommendPageForFormalPlayback() {
+    cancelRecommendFeed()
+    closeRecommendCache()
+    cancelRecommendBatchModels()
+    recommendToken.incrementAndGet()
+    recommendPageToken.incrementAndGet()
+    recommendWaiters.clear()
+    recommendAdvancePending=0
+    recommendAdvanceWaiterQueued=false
+    recommendLoading=false
+    recommendItems=emptyList()
+    recommendIndex=0
+    recommendPage=0
+    recommendHasMore=true
+    recommendStarted=false
+    recommendRestored=false
+    recommendTasteCache=null
+    recommendDetails.clear()
+    recommendDetailLoading.clear()
+    recommendPlaybackController.clear()
+}
+
+/**
+ * 推荐页返回键回主页面（首页）。
+ *
+ * 推荐页没有正式播放页的队列和解码器，可以延迟回收视频资源，让首页先完成首帧；
+ * 从推荐进入正式播放后的返回走 [leaveRecommendPlaybackToHome]，使用播放页的立即收尾路径。
+ * 首页会重新取一次数据，推荐列表本身保留为会话级缓存。
  */
 fun TvMainActivity.goHomeFromRecommend() {
+    prepareToLeaveRecommend()
+    // 推荐页本身没有播放队列，可以延迟回收视频资源，先让首页完成首帧。
+    detachPlayerSurface(deferResources=true)
+    screen="catalog"
+    tab=TAB_HOME; page=1; collection=null; catalogFocus=""
+    initialCatalogPending=false; restoreStoppedPage=false
+    showCatalog(load=true)
+}
+
+/**
+ * 清掉推荐页的会话状态；播放器、Surface 和首页页面由调用方按来源分别收尾。
+ */
+private fun TvMainActivity.prepareToLeaveRecommend() {
     // 离开推荐页：把这一部的停留时长结掉（看了 → 30 天冷却，划走 → 14 天）。
     settleRecommendWatch()
     // 补页在途 / 排队的连按意图一起作废：回到首页后它们已经没有去处，
@@ -137,11 +178,6 @@ fun TvMainActivity.goHomeFromRecommend() {
     // 推荐详情可能在途中留下「正在加载《…》」；离开推荐页后不能再把它带进首页 / 设置。
     hideCenterLoading()
     detail=null
-    detachPlayerSurface(deferResources=true)
-    screen="catalog"
-    tab=TAB_HOME; page=1; collection=null; catalogFocus=""
-    initialCatalogPending=false; restoreStoppedPage=false
-    showCatalog(load=true)
 }
 
 /** 推荐页返回键：回主页面（首页）。不写历史、不回详情。 */
@@ -151,14 +187,14 @@ fun TvMainActivity.exitRecommendToHome() {
 }
 
 /**
- * 从推荐进入的正式播放，按返回**直接回主页**（需求 4）。
+ * 从推荐进入的正式播放，按返回**直接回主页**（需求 4），不经过简介页。
  *
- * 先按正式播放的规则写一次进度（这一集确实看过了），再走与推荐页返回同一条收尾：
- * 不经过简介页、首页重新取数据。
+ * 推荐页状态已在进入正式播放时清掉；这里只按普通播放的立即资源回收路径回首页。
  */
 fun TvMainActivity.leaveRecommendPlaybackToHome() {
     if(screen!="player") return
     sleepTimer.cancel(); sleepChoice=0; sleepStopped=false
     saveProgress(); library.flush(); invalidatePage()
-    goHomeFromRecommend()
+    directPlayback=true
+    returnToDetail()
 }
