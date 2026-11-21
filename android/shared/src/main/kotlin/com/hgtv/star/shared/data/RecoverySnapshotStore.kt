@@ -4,6 +4,7 @@ package com.hgtv.star.shared.data
 import android.content.ContentUris
 import android.content.ContentValues
 import android.content.Context
+import android.media.MediaScannerConnection
 import android.net.Uri
 import android.os.Build
 import android.os.Environment
@@ -40,12 +41,26 @@ internal class RecoverySnapshotStore(private val app: Context) {
             writeAtomic(dir, MAIN, BAK, TMP, text)
         }
         if (direct) {
-            // 直接写入成功后仍确认 MediaStore 能看到同一个逻辑文件；
-            // 已经存在则更新内容，不存在则补登记。
             if (Build.VERSION.SDK_INT >= 29) {
-                val backup = MediaStoreRecoveryCopy.copyMainToBak(app)
-                val indexed = MediaStoreRecoveryCopy.write(app, MAIN, text)
-                Log.w("HGTV-RECOVERY", "public direct success=true mediaBackup=$backup mediaIndexed=$indexed")
+                // 直接文件已经存在时不能再 insert 一个同名 MediaStore 条目，
+                // 否则系统会生成 `hgtv-recovery (1).json`。
+                val duplicatesRemoved = MediaStoreRecoveryCopy.deleteDuplicates(app, MAIN)
+                val dir = directDirs().firstOrNull()
+                val paths = listOfNotNull(
+                    dir?.let { File(it, MAIN).absolutePath },
+                    dir?.let { File(it, BAK).absolutePath },
+                ).toTypedArray()
+                MediaScannerConnection.scanFile(
+                    app,
+                    paths,
+                    Array(paths.size) { "application/json" },
+                    null,
+                )
+                Log.w(
+                    "HGTV-RECOVERY",
+                    "public direct success=true mediaScanRequested=${paths.size} " +
+                        "duplicatesRemoved=$duplicatesRemoved",
+                )
             }
             Log.w("HGTV-RECOVERY", "public snapshot write success=true path=${directDirs().firstOrNull()}/$MAIN")
             return true
@@ -251,7 +266,12 @@ private object MediaStoreRecoveryCopy {
     }
 
     fun copyMainToBak(app: Context): Boolean {
-        val current = read(app, "hgtv-recovery.json") ?: return false
+        val uri = uriFor(app, "hgtv-recovery.json") ?: return false
+        val current = runCatching {
+            app.contentResolver.openInputStream(uri)?.use { input ->
+                input.readBytes().toString(Charsets.UTF_8)
+            }
+        }.getOrNull() ?: return false
         return write(app, "hgtv-recovery.json.bak", current)
     }
 
@@ -304,6 +324,23 @@ private object MediaStoreRecoveryCopy {
     fun deleteAll(app: Context) {
         delete(app, "hgtv-recovery.json")
         delete(app, "hgtv-recovery.json.bak")
+        deleteDuplicates(app, "hgtv-recovery.json")
+    }
+
+    fun deleteDuplicates(app: Context, name: String): Boolean {
+        val selection =
+            "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND " +
+                "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ? AND " +
+                "${MediaStore.MediaColumns.DISPLAY_NAME}<>?"
+        return runCatching {
+            app.contentResolver.delete(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                selection,
+                arrayOf(RELATIVE_PATH, name.substringBeforeLast('.') + " (%).json", name),
+            )
+        }.onFailure {
+            Log.w("HGTV-RECOVERY", "MediaStore duplicate delete failed", it)
+        }.isSuccess
     }
 
     fun delete(app: Context, name: String): Boolean {

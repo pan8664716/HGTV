@@ -41,6 +41,8 @@ object RecoverySnapshotManager {
     )
 
     private val lock = Any()
+    private val migrationLock = Any()
+    private val writeLock = Any()
     private val executor = Executors.newSingleThreadScheduledExecutor { task ->
         Thread(task, "hgtv-recovery").apply { isDaemon = true }
     }
@@ -198,7 +200,7 @@ object RecoverySnapshotManager {
         initialized = false
     }
 
-    private fun writeNow(app: Context): Boolean {
+    private fun writeNow(app: Context): Boolean = synchronized(writeLock) {
         if (restoring || LocalReset.resetting) {
             Log.w("HGTV-RECOVERY", "snapshot write skipped restoring=$restoring resetting=${LocalReset.resetting}")
             return false
@@ -226,7 +228,7 @@ object RecoverySnapshotManager {
         app: Context,
         state: SharedPreferences,
         publicPermissionGranted: Boolean,
-    ) {
+    ): Unit = synchronized(migrationLock) {
         Log.w(
             "HGTV-RECOVERY",
             "legacy migration check granted=$publicPermissionGranted " +
