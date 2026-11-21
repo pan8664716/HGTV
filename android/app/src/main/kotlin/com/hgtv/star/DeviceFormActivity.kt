@@ -14,6 +14,7 @@ import android.widget.TextView
 import android.widget.Toast
 import com.hgtv.star.phone.ui.PhoneDialog
 import com.hgtv.star.phone.ui.PhoneStyle
+import com.hgtv.star.phone.ui.PhoneUiScale
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.shared.compat.DeviceForm
@@ -60,6 +61,7 @@ class DeviceFormActivity : Activity() {
         if(tvStyle) {
             TvStyle.applyTheme(TvThemeStore.load(this))
         } else {
+            PhoneUiScale.ensure(this)
             PhoneStyle.ensure(this)
         }
         current=DeviceForm.ofStored(

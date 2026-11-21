@@ -191,7 +191,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `AppIntegrityGuard.kt` | 应用级正版校验：累计前台运行三十分钟后核对包名与发布证书 SHA-256；异常时显示不可取消的下载正版提示。 | object AppIntegrityGuard、fun install、fun isOfficial、fun showInvalidDialog |
-| `DeviceFormActivity.kt` | 首页首次启动与设置页共用的设备类型选择器；按页面使用手机 / 电视拟态弹窗，电视支持遥控器，手机 / 平板触摸确认并 6 秒自动返回，电视直接进入；记录首次形态选择锚点。 | class DeviceFormActivity、fun showPhoneChooser、fun showTvChooser、fun startCountdown |
+| `DeviceFormActivity.kt` | 首页首次启动与设置页共用的设备类型选择器；按自动探测结果使用手机 / 电视拟态弹窗并加载对应字号，电视支持遥控器，手机 / 平板触摸确认并 6 秒自动返回。 | class DeviceFormActivity、fun showPhoneChooser、fun showTvChooser、fun startCountdown |
 | `HgtvApplication.kt` | 应用进程入口，负责 Application 级初始化、全局运行时装配和前后台恢复快照调度。 | class HgtvApplication |
 | `HgtvStartup.kt` | 启动页负责的本地初始化；首帧后启动缓存、书库、会话存储，并把心跳、TNC、推荐曝光配置和友盟延后到播放首帧或兜底超时。 | object HgtvStartup、fun afterFirstFrame、fun onDeviceFormSelected |
 | `LaunchActivity.kt` | 启动页与设备形态路由入口；Phone / TV 共用存储权限申请，先恢复公共旧快照再启动书库和页面；首次启动打开统一设备类型选择器。 | class LaunchActivity、fun beginRecovery、fun finishRecoveryAndRoute、fun openDeviceFormSelector、fun targetFor |

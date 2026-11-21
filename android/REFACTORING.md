@@ -14,6 +14,7 @@
 - 源码默认版本更新为 `versionName=1.3.8.12`、`versionCode=96`。
 - 本轮包含 Phone / TV 统一卸载恢复、旧版会话迁移、旧路径清理和完整快照兼容。
 - 恢复快照统一保存到动态解析的 `Download/HGTV/hgtv-recovery.json`。
+- 首次启动设备类型选择先按探测结果选择手机 / TV 弹窗样式，并加载手机字号倍率。
 - 只编译 Android debug，未运行功能测试。
 
 回滚：对版本提交执行 `git revert`，并删除本地 `v1.3.8.12` tag。
