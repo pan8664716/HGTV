@@ -24,7 +24,6 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     companion object {
         const val DIRECTION_PREV = -1
         const val DIRECTION_NEXT = 1
-        const val COMMIT_DISTANCE_RATIO = PhonePagerMotion.SNAP_DISTANCE_RATIO
     }
 
     private val slop = ViewConfiguration.get(context).scaledTouchSlop
@@ -194,12 +193,12 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     }
 
     private fun commitDirection(dx: Float, velocity: Float): Int {
-        val threshold = width.toFloat().coerceAtLeast(1f) * COMMIT_DISTANCE_RATIO
-        return when {
-            dx <= -threshold || velocity <= -minimumFlingVelocity -> DIRECTION_NEXT
-            dx >= threshold || velocity >= minimumFlingVelocity -> DIRECTION_PREV
-            else -> 0
-        }
+        return PhonePagerMotion.commitDirection(
+            distancePx = dx,
+            velocityPxPerSecond = velocity,
+            viewportPx = width,
+            minimumFlingVelocityPxPerSecond = minimumFlingVelocity,
+        )
     }
 
     private fun settleCommit(direction: Int) {

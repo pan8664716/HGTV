@@ -52,6 +52,29 @@ object PhonePagerMotion {
             .toLong()
             .coerceAtMost(MAX_DURATION_MS)
     }
+
+    /**
+     * 松手后是否提交翻页，返回 -1 / 0 / 1。
+     *
+     * 分类、榜单、我的和选集都走这一条：横向位移过半，或达到系统快甩速度。
+     * [velocityPxPerSecond] 必须使用 `VelocityTracker.computeCurrentVelocity(1_000)` 的返回值，
+     * 不能再乘 1000。
+     */
+    fun commitDirection(
+        distancePx: Float,
+        velocityPxPerSecond: Float,
+        viewportPx: Int,
+        minimumFlingVelocityPxPerSecond: Float,
+    ): Int {
+        val threshold = viewportPx.coerceAtLeast(1) * SNAP_DISTANCE_RATIO
+        return when {
+            distancePx <= -threshold ||
+                velocityPxPerSecond <= -minimumFlingVelocityPxPerSecond -> 1
+            distancePx >= threshold ||
+                velocityPxPerSecond >= minimumFlingVelocityPxPerSecond -> -1
+            else -> 0
+        }
+    }
 }
 
 /**

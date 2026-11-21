@@ -224,6 +224,8 @@ class PhoneEpisodeGrid(
     private var downY = 0f
     private var interceptingSwipe = false
     private var swipeAllowed = false
+    /** 0 = 未定性，1 = 纵向，2 = 横向。 */
+    private var axis = 0
     private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
     private val minimumFlingVelocity =
         PhonePagerMotion.minimumFlingVelocityPxPerSecond(context).toFloat()
@@ -269,13 +271,15 @@ class PhoneEpisodeGrid(
     }
 
     /**
-     * 左右滑翻页：在整块网格上识别「横向为主」的手势。
+     * 左右滑翻页：在分发阶段识别「横向为主」的手势。
      *
-     * 手势必须在这里拦截：集数格和分页芯片都是可点击的 TextView，事件会先被它们消费，
-     * 挂在内部 ScrollView 上的监听器根本收不到完整的滑动。
+     * 选集网格外面通常还套着一层竖向 `ScrollView`（播放浮层 / 简介页），
+     * 只靠 `onInterceptTouchEvent` 时，外层滚动容器或集数格会先吃掉一部分事件。
+     * 这里在网格自身分发事件时锁定横轴：纵向手势继续交给子 ScrollView，
+     * 确认横向后才接管整段手势。
      */
-    override fun onInterceptTouchEvent(ev: android.view.MotionEvent): Boolean {
-        if (!edgeTurn && !swipePages) return super.onInterceptTouchEvent(ev)
+    override fun dispatchTouchEvent(ev: android.view.MotionEvent): Boolean {
+        if (!edgeTurn && !swipePages) return super.dispatchTouchEvent(ev)
         when (ev.actionMasked) {
             android.view.MotionEvent.ACTION_DOWN -> {
                 // 上一段翻页动画还没走完就再按下来：立刻收掉它，让新手势接管。
@@ -284,29 +288,73 @@ class PhoneEpisodeGrid(
                 downX = ev.x
                 downY = ev.y
                 interceptingSwipe = false
+                axis = 0
                 // 分页芯片那一行本身要能横向滚动，左右翻页只从网格区域起手。
-                swipeAllowed = ev.y >= gridScroll.top
+                swipeAllowed = isGridTouch(ev)
                 velocityTracker?.recycle()
                 velocityTracker = VelocityTracker.obtain().also {
                     addVelocitySample(it, ev)
                 }
+                return super.dispatchTouchEvent(ev)
             }
             android.view.MotionEvent.ACTION_MOVE -> {
                 velocityTracker?.let { addVelocitySample(it, ev) }
                 val dx = ev.x - downX
                 val dy = ev.y - downY
-                // 与推荐页横向 pager 一致：越过系统 touch slop 后按 1:1 主轴锁定。
-                if (swipeAllowed && !interceptingSwipe && kotlin.math.abs(dx) > slop &&
-                    kotlin.math.abs(dx) > kotlin.math.abs(dy)
-                ) {
+                if (axis == 0 && (kotlin.math.abs(dx) > slop || kotlin.math.abs(dy) > slop)) {
+                    if (!swipeAllowed || kotlin.math.abs(dx) <= kotlin.math.abs(dy)) {
+                        axis = 1
+                        velocityTracker?.recycle()
+                        velocityTracker = null
+                        return super.dispatchTouchEvent(ev)
+                    }
+                    axis = 2
                     interceptingSwipe = true
                     parent?.requestDisallowInterceptTouchEvent(true)
-                    // 从这里开始整段手势都在平移网格：先挂硬件层，后面每一帧就只剩变换。
                     beginDragLayer()
                 }
+                if (axis == 2) {
+                    applyDrag(dx)
+                    return true
+                }
+                return super.dispatchTouchEvent(ev)
+            }
+            android.view.MotionEvent.ACTION_UP -> {
+                if (!interceptingSwipe) {
+                    resetGesture()
+                    return super.dispatchTouchEvent(ev)
+                }
+                velocityTracker?.let { tracker ->
+                    addVelocitySample(tracker, ev)
+                    tracker.computeCurrentVelocity(1_000)
+                }
+                val dx = ev.x - downX
+                val velocity = velocityTracker?.xVelocity ?: 0f
+                velocityTracker?.recycle()
+                velocityTracker = null
+                parent?.requestDisallowInterceptTouchEvent(false)
+                interceptingSwipe = false
+                swipeAllowed = false
+                axis = 0
+                settleDrag(dx, velocity)
+                return true
+            }
+            android.view.MotionEvent.ACTION_CANCEL -> {
+                if (!interceptingSwipe) {
+                    resetGesture()
+                    return super.dispatchTouchEvent(ev)
+                }
+                velocityTracker?.recycle()
+                velocityTracker = null
+                parent?.requestDisallowInterceptTouchEvent(false)
+                interceptingSwipe = false
+                swipeAllowed = false
+                axis = 0
+                animateBack()
+                return true
             }
         }
-        return interceptingSwipe || super.onInterceptTouchEvent(ev)
+        return super.dispatchTouchEvent(ev)
     }
 
     private fun cancelRunningAnimation() {
@@ -324,39 +372,23 @@ class PhoneEpisodeGrid(
         endDragLayer()
     }
 
-    override fun onTouchEvent(ev: android.view.MotionEvent): Boolean {
-        if (!interceptingSwipe) return super.onTouchEvent(ev)
-        when (ev.actionMasked) {
-            android.view.MotionEvent.ACTION_MOVE -> {
-                applyDrag(ev.x - downX)
-                return true
-            }
-            android.view.MotionEvent.ACTION_UP -> {
-                velocityTracker?.let { tracker ->
-                    addVelocitySample(tracker, ev)
-                    tracker.computeCurrentVelocity(1_000)
-                }
-                val dx = ev.x - downX
-                val velocity = velocityTracker?.xVelocity ?: 0f
-                velocityTracker?.recycle()
-                velocityTracker = null
-                parent?.requestDisallowInterceptTouchEvent(false)
-                interceptingSwipe = false
-                swipeAllowed = false
-                settleDrag(dx, velocity)
-                return true
-            }
-            android.view.MotionEvent.ACTION_CANCEL -> {
-                velocityTracker?.recycle()
-                velocityTracker = null
-                parent?.requestDisallowInterceptTouchEvent(false)
-                interceptingSwipe = false
-                swipeAllowed = false
-                animateBack()
-                return true
-            }
-        }
-        return true
+    private fun resetGesture() {
+        velocityTracker?.recycle()
+        velocityTracker = null
+        interceptingSwipe = false
+        swipeAllowed = false
+        axis = 0
+    }
+
+    /** 触摸是否从网格区域开始；分页芯片行不参与左右翻页。 */
+    private fun isGridTouch(ev: android.view.MotionEvent): Boolean {
+        if (gridScroll.width <= 0 || gridScroll.height <= 0) return true
+        val location = IntArray(2)
+        gridScroll.getLocationOnScreen(location)
+        val x = ev.rawX
+        val y = ev.rawY
+        return x >= location[0] && x <= location[0] + gridScroll.width &&
+            y >= location[1] && y <= location[1] + gridScroll.height
     }
 
     /** 手指拖动时只有网格那一块跟手；到页边界后不再位移，与推荐页关闭 overScroll 的行为一致。 */
@@ -411,13 +443,12 @@ class PhoneEpisodeGrid(
      */
     private fun settleDrag(dx: Float, velocity: Float) {
         val w = pageWidth()
-        val velocityPxPerSecond = velocity * 1_000f
-        val threshold = w * PhonePagerMotion.SNAP_DISTANCE_RATIO
-        val dir = when {
-            dx <= -threshold || velocityPxPerSecond <= -minimumFlingVelocity -> 1
-            dx >= threshold || velocityPxPerSecond >= minimumFlingVelocity -> -1
-            else -> 0
-        }
+        val dir = PhonePagerMotion.commitDirection(
+            distancePx = dx,
+            velocityPxPerSecond = velocity,
+            viewportPx = w.toInt(),
+            minimumFlingVelocityPxPerSecond = minimumFlingVelocity,
+        )
         if (paging.canMove(dir)) {
             val nextPage = page + dir
             pendingPage = nextPage
