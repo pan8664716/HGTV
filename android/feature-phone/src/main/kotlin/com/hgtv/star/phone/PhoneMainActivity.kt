@@ -337,7 +337,10 @@ class PhoneMainActivity : PhoneActivity() {
         // 状态栏跟着 tab 走：推荐页是满屏视频，顶部不挂状态栏；其余三页是列表，照常显示。
         // 放在 `index == current` 早退之前：切回同一个 tab（双击回到顶部）时也要对一次。
         applyStatusBarFor(index)
-        if (index == current) return
+        if (index == current) {
+            pages.getOrNull(index)?.let(::resetPagePosition)
+            return
+        }
         pages.getOrNull(current)?.let { old ->
             if (old is PhoneRecommendPage) old.onHidden()
         }
@@ -346,6 +349,7 @@ class PhoneMainActivity : PhoneActivity() {
         content.removeAllViews()
 
         val page = pages[index] ?: createPage(index).also { pages[index] = it }
+        resetPagePosition(page)
         content.addView(page, FrameLayout.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
         ))
@@ -383,9 +387,12 @@ class PhoneMainActivity : PhoneActivity() {
         val incoming = pages[to] ?: createPage(to).also { pages[to] = it }
         val width = content.width.coerceAtLeast(1)
         if (reduceMainTabAnimation()) {
+            resetPagePosition(outgoing)
             show(to)
             return
         }
+        resetPagePosition(outgoing)
+        resetPagePosition(incoming)
         (incoming.parent as? ViewGroup)?.removeView(incoming)
         incoming.translationX = direction * width.toFloat()
         content.addView(incoming, FrameLayout.LayoutParams(
@@ -445,6 +452,7 @@ class PhoneMainActivity : PhoneActivity() {
         outgoing?.animate()?.cancel()
         incoming?.animate()?.setUpdateListener(null)
         incoming?.animate()?.cancel()
+        outgoing?.translationX = 0f
         if (outgoing?.parent === content) content.removeView(outgoing)
         incoming?.translationX = 0f
         if (incoming != null) pages[to] = incoming
@@ -462,6 +470,12 @@ class PhoneMainActivity : PhoneActivity() {
     private fun reduceMainTabAnimation(): Boolean = runCatching {
         PhoneServices.library(this).takeIf { it.isLoaded }?.reduceAnim == true
     }.getOrDefault(false)
+
+    private fun resetPagePosition(page: View) {
+        page.animate().setUpdateListener(null)
+        page.animate().cancel()
+        page.translationX = 0f
+    }
 
     /**
      * 按当前 tab 决定状态栏显不显示。
