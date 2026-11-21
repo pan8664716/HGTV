@@ -25,6 +25,7 @@ import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneCardMenu
 import com.hgtv.star.phone.ui.PhoneDialog
 import com.hgtv.star.phone.ui.PhoneGlyph
+import com.hgtv.star.phone.ui.PhoneMainTabSwipeTarget
 import com.hgtv.star.phone.ui.PhonePosterFeed
 import com.hgtv.star.phone.ui.PhoneSoft.applySoft
 import com.hgtv.star.phone.ui.PhoneStyle
@@ -55,7 +56,7 @@ import kotlinx.coroutines.launch
 class PhoneMinePage(
     context: Context,
     initialState: State? = null,
-) : FrameLayout(context) {
+) : FrameLayout(context), PhoneMainTabSwipeTarget {
 
     data class State(
         val tab: Int,
@@ -137,6 +138,8 @@ class PhoneMinePage(
     private val body = LinearLayout(context).apply { orientation = LinearLayout.VERTICAL }
     private val feed = PhonePosterFeed(context)
     private val swipeHost = PhoneTabSwipeHost(context)
+    override var canSwipeToMainTab: ((Int) -> Boolean)? = null
+    override var onSwipeToMainTab: ((Int) -> Unit)? = null
 
     /** 默认落在「历史」：用户进「我的」最常见的是接着看，不是先看收藏。 */
     private var tab = initialState?.tab ?: 0
@@ -244,6 +247,10 @@ class PhoneMinePage(
         }
         swipeHost.previewProvider = ::previewFor
         swipeHost.previewReleaser = { (it.tag as? PhonePosterFeed)?.release() }
+        swipeHost.canHandOffSwipe = { direction ->
+            onSwipeToMainTab != null && canSwipeToMainTab?.invoke(direction) == true
+        }
+        swipeHost.onHandOffSwipe = { direction -> onSwipeToMainTab?.invoke(direction) }
         swipeHost.refreshSwipeSetting()
         // 头像之外的上下留白缩到 20%，状态栏安全区由顶栏单独保留。
         topBar.setLeadingView(

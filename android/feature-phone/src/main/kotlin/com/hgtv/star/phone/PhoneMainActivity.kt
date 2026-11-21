@@ -8,6 +8,7 @@ import android.os.Build
 import android.os.Bundle
 import android.os.SystemClock
 import android.view.Gravity
+import android.view.MotionEvent
 import android.view.View
 import android.view.ViewGroup
 import android.view.WindowManager
@@ -16,6 +17,8 @@ import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import com.hgtv.star.phone.ui.PhoneColor
+import com.hgtv.star.phone.ui.PhoneMainTabSwipeTarget
+import com.hgtv.star.phone.ui.PhonePagerMotion
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTabBar
 import com.hgtv.star.phone.ui.PhoneUiScale
@@ -78,6 +81,10 @@ class PhoneMainActivity : PhoneActivity() {
     private var lastTabTapIndex = -1
     private var lastTabTapAt = 0L
     private var lastBackAt = 0L
+    private var mainSwipeTo = -1
+    private var mainSwipeOutgoing: View? = null
+    private var mainSwipeIncoming: View? = null
+    private var mainSwipeGeneration = 0
     /**
      * 建这一屏时用的主题：从设置页回来时如果主题变了，整屏重建一次。
      *
@@ -212,6 +219,7 @@ class PhoneMainActivity : PhoneActivity() {
     }
 
     override fun rebuildOnSizeChange(newConfig: android.content.res.Configuration): Boolean {
+        finishMainTabSwipe()
         rememberPageStates()
         if (!resumed) {
             rebuildOnResume = true
@@ -233,6 +241,7 @@ class PhoneMainActivity : PhoneActivity() {
     }
 
     private fun rememberPageStates() {
+        finishMainTabSwipe()
         pendingRecommendGenre = null
         pendingRecommendSeriesId = null
         pendingRecommendPositionMs = -1L
@@ -250,11 +259,13 @@ class PhoneMainActivity : PhoneActivity() {
     }
 
     override fun onSaveInstanceState(outState: Bundle) {
+        finishMainTabSwipe()
         super.onSaveInstanceState(outState)
         if (current >= 0) outState.putInt(STATE_TAB, current)
     }
 
     override fun onBackPressed() {
+        finishMainTabSwipe()
         val now = SystemClock.uptimeMillis()
         if (now - lastBackAt <= EXIT_DOUBLE_BACK_MS) {
             lastBackAt = 0L
@@ -311,9 +322,7 @@ class PhoneMainActivity : PhoneActivity() {
 
     private fun preloadCategoryPage() {
         if(pages[1]!=null) return
-        val state=pendingCategoryState
-        pendingCategoryState=null
-        pages[1]=PhoneCategoryPage(this,state)
+        pages[1]=createPage(1)
     }
 
     private fun warmStartupPlayer(lib: com.hgtv.star.shared.data.Library) {
@@ -323,6 +332,7 @@ class PhoneMainActivity : PhoneActivity() {
     }
 
     private fun show(index: Int) {
+        finishMainTabSwipe()
         android.util.Log.i("HGTV-PAGE", "show index=$index current=$current pages=${pages.map { it?.javaClass?.simpleName }}")
         // 状态栏跟着 tab 走：推荐页是满屏视频，顶部不挂状态栏；其余三页是列表，照常显示。
         // 放在 `index == current` 早退之前：切回同一个 tab（双击回到顶部）时也要对一次。
@@ -353,6 +363,105 @@ class PhoneMainActivity : PhoneActivity() {
         // 调试面板的「页面」字段跟着 tab 走。
         if (::debugRoot.isInitialized) syncDebugOverlay()
     }
+
+    override fun dispatchTouchEvent(ev: MotionEvent): Boolean {
+        if (ev.actionMasked == MotionEvent.ACTION_DOWN) finishMainTabSwipe()
+        return super.dispatchTouchEvent(ev)
+    }
+
+    private fun canStartMainTabSwipe(direction: Int): Boolean {
+        val target = current + direction
+        return current in pages.indices && target in pages.indices
+    }
+
+    private fun startMainTabSwipe(direction: Int) {
+        finishMainTabSwipe()
+        if (!canStartMainTabSwipe(direction)) return
+        val from = current
+        val to = from + direction
+        val outgoing = (content.getChildAt(0) as? View) ?: pages.getOrNull(from) ?: return
+        val incoming = pages[to] ?: createPage(to).also { pages[to] = it }
+        val width = content.width.coerceAtLeast(1)
+        if (reduceMainTabAnimation()) {
+            show(to)
+            return
+        }
+        (incoming.parent as? ViewGroup)?.removeView(incoming)
+        incoming.translationX = direction * width.toFloat()
+        content.addView(incoming, FrameLayout.LayoutParams(
+            ViewGroup.LayoutParams.MATCH_PARENT,
+            ViewGroup.LayoutParams.MATCH_PARENT,
+        ))
+        content.bringChildToFront(incoming)
+        applyPageBottomInsets()
+        if (outgoing is PhoneRecommendPage) outgoing.onHidden()
+        when (incoming) {
+            is PhoneRecommendPage -> incoming.onShown()
+            is PhoneCategoryPage -> incoming.onShown()
+        }
+
+        mainSwipeTo = to
+        mainSwipeOutgoing = outgoing
+        mainSwipeIncoming = incoming
+        val generation = ++mainSwipeGeneration
+        var focusSent = false
+        val duration = PhonePagerMotion.duration(
+            distancePx = width.toFloat(),
+            viewportPx = width,
+        )
+        outgoing.animate()
+            .translationX(-direction * width.toFloat())
+            .setDuration(duration)
+            .setInterpolator(PhonePagerMotion.interpolator)
+            .start()
+        incoming.animate()
+            .translationX(0f)
+            .setDuration(duration)
+            .setInterpolator(PhonePagerMotion.interpolator)
+            .setUpdateListener {
+                if (generation != mainSwipeGeneration || focusSent) return@setUpdateListener
+                val progress =
+                    (1f - kotlin.math.abs(incoming.translationX) / width.toFloat())
+                        .coerceIn(0f, 1f)
+                if (progress >= PhonePagerMotion.FOCUS_SWITCH_PROGRESS) {
+                    focusSent = true
+                    tabBar.setSelected(to)
+                    applyStatusBarFor(to)
+                }
+            }
+            .withEndAction {
+                if (generation == mainSwipeGeneration) finishMainTabSwipe()
+            }
+            .start()
+    }
+
+    private fun finishMainTabSwipe() {
+        val to = mainSwipeTo
+        if (to < 0) return
+        val incoming = mainSwipeIncoming
+        val outgoing = mainSwipeOutgoing
+        mainSwipeGeneration++
+        outgoing?.animate()?.setUpdateListener(null)
+        outgoing?.animate()?.cancel()
+        incoming?.animate()?.setUpdateListener(null)
+        incoming?.animate()?.cancel()
+        if (outgoing?.parent === content) content.removeView(outgoing)
+        incoming?.translationX = 0f
+        if (incoming != null) pages[to] = incoming
+        current = to
+        mainSwipeTo = -1
+        mainSwipeOutgoing = null
+        mainSwipeIncoming = null
+        tabBar.setSelected(to)
+        applyStatusBarFor(to)
+        applyPageBottomInsets()
+        syncKeepScreenOn()
+        if (::debugRoot.isInitialized) syncDebugOverlay()
+    }
+
+    private fun reduceMainTabAnimation(): Boolean = runCatching {
+        PhoneServices.library(this).takeIf { it.isLoaded }?.reduceAnim == true
+    }.getOrDefault(false)
 
     /**
      * 按当前 tab 决定状态栏显不显示。
@@ -565,6 +674,7 @@ class PhoneMainActivity : PhoneActivity() {
     }
 
     override fun onPause() {
+        finishMainTabSwipe()
         super.onPause()
         resumed = false
         syncKeepScreenOn()
@@ -641,33 +751,46 @@ class PhoneMainActivity : PhoneActivity() {
     /** 面板的每秒刷新；关掉调试模式后不再排队（[syncDebugOverlay] 会提前返回）。 */
     private val debugTicker = Runnable { syncDebugOverlay() }
 
-    private fun createPage(index: Int): View = when (index) {
-        0 -> {
-            val genre = pendingRecommendGenre
-            val seriesId = pendingRecommendSeriesId
-            val positionMs = pendingRecommendPositionMs
-            pendingRecommendGenre = null
-            pendingRecommendSeriesId = null
-            pendingRecommendPositionMs = -1L
-            PhoneRecommendPage(this, genre, seriesId, positionMs).apply {
-                onPlayStateChanged = { syncKeepScreenOn() }
+    private fun createPage(index: Int): View {
+        val page: View = when (index) {
+            0 -> {
+                val genre = pendingRecommendGenre
+                val seriesId = pendingRecommendSeriesId
+                val positionMs = pendingRecommendPositionMs
+                pendingRecommendGenre = null
+                pendingRecommendSeriesId = null
+                pendingRecommendPositionMs = -1L
+                PhoneRecommendPage(this, genre, seriesId, positionMs).apply {
+                    onPlayStateChanged = { syncKeepScreenOn() }
+                }
+            }
+            1 -> {
+                val state = pendingCategoryState
+                pendingCategoryState = null
+                PhoneCategoryPage(this, state)
+            }
+            2 -> {
+                val state = pendingRankState
+                pendingRankState = null
+                PhoneRankPage(this, state)
+            }
+            else -> {
+                val state = pendingMineState
+                pendingMineState = null
+                PhoneMinePage(this, state)
             }
         }
-        1 -> {
-            val state = pendingCategoryState
-            pendingCategoryState = null
-            PhoneCategoryPage(this, state)
+        (page as? PhoneMainTabSwipeTarget)?.apply {
+            canSwipeToMainTab = { direction ->
+                finishMainTabSwipe()
+                pages.getOrNull(current) === page && canStartMainTabSwipe(direction)
+            }
+            onSwipeToMainTab = { direction ->
+                finishMainTabSwipe()
+                if (pages.getOrNull(current) === page) startMainTabSwipe(direction)
+            }
         }
-        2 -> {
-            val state = pendingRankState
-            pendingRankState = null
-            PhoneRankPage(this, state)
-        }
-        else -> {
-            val state = pendingMineState
-            pendingMineState = null
-            PhoneMinePage(this, state)
-        }
+        return page
     }
 
     /**
@@ -684,6 +807,7 @@ class PhoneMainActivity : PhoneActivity() {
 
     /** 双击底部当前导航按钮：回到这一页列表的第一条。 */
     private fun scrollPageToTop(index: Int) {
+        finishMainTabSwipe()
         when (val page = pages.getOrNull(index)) {
             is PhoneRecommendPage -> page.scrollToTop()
             is PhoneCategoryPage -> page.scrollToTop()

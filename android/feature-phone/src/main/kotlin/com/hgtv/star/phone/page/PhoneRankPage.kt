@@ -15,6 +15,7 @@ import com.hgtv.star.phone.PhoneServices
 import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneCardMenu
+import com.hgtv.star.phone.ui.PhoneMainTabSwipeTarget
 import com.hgtv.star.phone.ui.PhonePosterFeed
 import com.hgtv.star.phone.ui.PhoneTabSwipeHost
 import com.hgtv.star.phone.ui.PhoneTopBar
@@ -31,7 +32,7 @@ import com.hgtv.star.phone.ui.tabBarInset
 class PhoneRankPage(
     context: Context,
     initialState: State? = null,
-) : LinearLayout(context) {
+) : LinearLayout(context), PhoneMainTabSwipeTarget {
 
     data class State(
         val selected: Int,
@@ -42,6 +43,8 @@ class PhoneRankPage(
     private val topBar = PhoneTopBar(context)
     private val feed = PhonePosterFeed(context)
     private val swipeHost = PhoneTabSwipeHost(context)
+    override var canSwipeToMainTab: ((Int) -> Boolean)? = null
+    override var onSwipeToMainTab: ((Int) -> Unit)? = null
     private var selected = initialState?.selected ?: 0
     private val feedCache = linkedMapOf<RankBoard, PhonePosterFeed.Snapshot>().apply {
         putAll(initialState?.feeds.orEmpty())
@@ -92,6 +95,10 @@ class PhoneRankPage(
         }
         swipeHost.previewProvider = ::previewFor
         swipeHost.previewReleaser = { (it as? PhonePosterFeed)?.release() }
+        swipeHost.canHandOffSwipe = { direction ->
+            onSwipeToMainTab != null && canSwipeToMainTab?.invoke(direction) == true
+        }
+        swipeHost.onHandOffSwipe = { direction -> onSwipeToMainTab?.invoke(direction) }
         swipeHost.refreshSwipeSetting()
         // 顶栏在上、网格在下：垂直排列，网格不会被顶栏盖住。
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))

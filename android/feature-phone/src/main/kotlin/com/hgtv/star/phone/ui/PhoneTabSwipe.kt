@@ -13,11 +13,20 @@ import com.hgtv.star.phone.PhoneServices
 import kotlin.math.abs
 
 /**
+ * 页面顶部的横向导航到达首尾后，把继续同方向滑动交给底部主导航。
+ */
+interface PhoneMainTabSwipeTarget {
+    var canSwipeToMainTab: ((Int) -> Boolean)?
+    var onSwipeToMainTab: ((Int) -> Unit)?
+}
+
+/**
  * 分类 / 榜单 / 我的页的横向切页容器。
  *
  * 松手后页面自然翻动；翻页动画走到约 70% 时再切顶部焦点。
  * 第一次越过 touch slop 时按 1:1 锁定横纵轴。筛选 chips 等横向滚动区域不接管。
  * 拖动时会同步铺出目标邻页预览，避免当前页移开时露出深色背景。
+ * 顶部标签已在首尾时，继续同方向滑动交给底部主导航；顶部仍可翻时始终优先顶部。
  */
 internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
 
@@ -42,10 +51,13 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     private var settlingDirection = 0
     private var focusSent = false
     private var settleGeneration = 0
+    private var handOffDirection = 0
     private var velocityTracker: VelocityTracker? = null
 
     var canSwipe: (Int) -> Boolean = { false }
     var onSwipe: (Int) -> Unit = {}
+    var canHandOffSwipe: (Int) -> Boolean = { false }
+    var onHandOffSwipe: ((Int) -> Unit)? = null
     /** 翻页动画约走到 70% 后通知顶部标签切换到目标页。 */
     var onFocusDirection: ((Int) -> Unit)? = null
     var previewProvider: ((Int) -> View?)? = null
@@ -84,6 +96,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         settling = false
         settlingDirection = 0
         focusSent = false
+        handOffDirection = 0
         axis = 0
     }
 
@@ -124,12 +137,16 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
                         return false
                     }
                     axis = 2
-                    if (!canSwipe(directionFor(dx))) {
-                        resetGesture()
-                        return false
+                    val direction = directionFor(dx)
+                    when {
+                        canSwipe(direction) -> ensurePreview(direction)
+                        canHandOffSwipe(direction) -> handOffDirection = direction
+                        else -> {
+                            resetGesture()
+                            return false
+                        }
                     }
                     intercepting = true
-                    ensurePreview(directionFor(dx))
                     parent?.requestDisallowInterceptTouchEvent(true)
                 }
                 if (axis == 2) {
@@ -154,7 +171,16 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
                 velocityTracker = null
                 val direction = commitDirection(dx, velocity)
                 parent?.requestDisallowInterceptTouchEvent(false)
-                if (direction != 0 && canSwipe(direction)) {
+                if (handOffDirection != 0) {
+                    if (direction == handOffDirection && canHandOffSwipe(direction)) {
+                        content?.animate()?.cancel()
+                        content?.translationX = 0f
+                        handOffDirection = 0
+                        onHandOffSwipe?.invoke(direction)
+                    } else {
+                        settleBack()
+                    }
+                } else if (direction != 0 && canSwipe(direction)) {
                     ensurePreview(direction)
                     settleCommit(direction)
                 } else {
@@ -184,18 +210,16 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         val view = content ?: return
         val pageWidth = width.toFloat().coerceAtLeast(1f)
         val direction = directionFor(dx)
-        val movable = canSwipe(direction)
-        if (movable) ensurePreview(direction) else removePreview()
-        view.translationX = if (movable) {
-            dx.coerceIn(-pageWidth, pageWidth)
-        } else {
-            dx * 0.22f
+        if (canSwipe(direction)) {
+            handOffDirection = 0
+            ensurePreview(direction)
+            view.translationX = dx.coerceIn(-pageWidth, pageWidth)
+            preview?.translationX = direction * pageWidth + dx
+            return
         }
-        preview?.translationX = if (movable) {
-            direction * pageWidth + dx
-        } else {
-            direction * pageWidth
-        }
+        removePreview()
+        handOffDirection = if (canHandOffSwipe(direction)) direction else 0
+        view.translationX = dx * 0.18f
     }
 
     private fun commitDirection(dx: Float, velocity: Float): Int {
@@ -212,6 +236,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         settling = true
         settlingDirection = direction
         focusSent = false
+        handOffDirection = 0
         val generation = ++settleGeneration
         val pageWidth = width.coerceAtLeast(1)
         val target = -direction * pageWidth.toFloat()
@@ -264,6 +289,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         val generation = ++settleGeneration
         settlingDirection = 0
         focusSent = false
+        handOffDirection = 0
         view.animate().setUpdateListener(null)
         val distance = abs(view.translationX)
         if (distance < 1f) {
@@ -352,6 +378,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         settling = false
         settlingDirection = 0
         focusSent = false
+        handOffDirection = 0
     }
 
     /**
@@ -395,6 +422,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         tracking = false
         intercepting = false
         axis = 0
+        handOffDirection = 0
     }
 
     private fun addVelocitySample(tracker: VelocityTracker, event: MotionEvent) {

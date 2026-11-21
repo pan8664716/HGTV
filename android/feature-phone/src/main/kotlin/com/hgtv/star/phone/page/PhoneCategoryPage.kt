@@ -22,6 +22,7 @@ import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhonePosterFeed
 import com.hgtv.star.phone.ui.PhoneCardMenu
+import com.hgtv.star.phone.ui.PhoneMainTabSwipeTarget
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneTabSwipeHost
 import com.hgtv.star.phone.ui.PhoneTopBar
@@ -59,7 +60,7 @@ import kotlinx.coroutines.withContext
 class PhoneCategoryPage(
     context: Context,
     initialState: State? = null,
-) : LinearLayout(context) {
+) : LinearLayout(context), PhoneMainTabSwipeTarget {
 
     data class State(
         val selection: CategorySelection,
@@ -77,6 +78,8 @@ class PhoneCategoryPage(
     }
     private val feed = PhonePosterFeed(context)
     private val swipeHost = PhoneTabSwipeHost(context)
+    override var canSwipeToMainTab: ((Int) -> Boolean)? = null
+    override var onSwipeToMainTab: ((Int) -> Unit)? = null
     private var scope = newScope()
     private var panelJob: Job? = null
     private var panelLoadingKey = ""
@@ -117,6 +120,10 @@ class PhoneCategoryPage(
         }
         swipeHost.previewProvider = ::previewFor
         swipeHost.previewReleaser = { (it.tag as? PhonePosterFeed)?.release() }
+        swipeHost.canHandOffSwipe = { direction ->
+            onSwipeToMainTab != null && canSwipeToMainTab?.invoke(direction) == true
+        }
+        swipeHost.onHandOffSwipe = { direction -> onSwipeToMainTab?.invoke(direction) }
         swipeHost.refreshSwipeSetting()
         addView(topBar, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.WRAP_CONTENT))
         addView(swipeHost, LayoutParams(LayoutParams.MATCH_PARENT, 0, 1f))

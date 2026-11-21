@@ -5,6 +5,7 @@ import android.content.Context
 import android.view.View
 import android.view.ViewGroup
 import android.view.MotionEvent
+import android.view.VelocityTracker
 import android.widget.FrameLayout
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
@@ -13,6 +14,7 @@ import com.hgtv.star.phone.PhoneFeedView
 import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
 import com.hgtv.star.phone.ui.PhoneColor
+import com.hgtv.star.phone.ui.PhoneMainTabSwipeTarget
 import com.hgtv.star.phone.ui.PhoneTopBar
 import com.hgtv.star.phone.ui.navigationBarPx
 
@@ -40,7 +42,7 @@ class PhoneRecommendPage(
     initialGenre: String? = null,
     initialSeriesId: String? = null,
     initialPositionMs: Long = -1L,
-) : FrameLayout(context) {
+) : FrameLayout(context), PhoneMainTabSwipeTarget {
 
     /**
      * 这一屏要铺哪几条体裁流。
@@ -83,6 +85,8 @@ class PhoneRecommendPage(
     private var swipeEnabled = true
     /** 播放设置面板是否开着（开着时临时锁住横向翻页，见 `PhoneFeedView.onSheetVisibilityChanged`）。 */
     private var sheetOpen = false
+    override var canSwipeToMainTab: ((Int) -> Boolean)? = null
+    override var onSwipeToMainTab: ((Int) -> Unit)? = null
     /** 当前体裁流的播放意图变化：宿主据此同步窗口常亮。 */
     var onPlayStateChanged: (() -> Unit)? = null
     private val pageCallback = object : ViewPager2.OnPageChangeCallback() {
@@ -104,6 +108,10 @@ class PhoneRecommendPage(
         pager.onFocusTarget = { index ->
             if (index in genres.indices) topBar.applyTabSelection(index)
         }
+        pager.canHandOffSwipe = { direction ->
+            onSwipeToMainTab != null && canSwipeToMainTab?.invoke(direction) == true
+        }
+        pager.onHandOffSwipe = { direction -> onSwipeToMainTab?.invoke(direction) }
         buildUi()
         // 冷启动时书库还没读完，上面那一次读到的是兜底值（true）。
         // 读完必须再对一次，否则「关掉推荐页左右滑动」重启后不生效——
@@ -352,9 +360,14 @@ class PhoneRecommendPage(
      *
      * 外层只接明显横向的手势；纵向手势关闭本层输入，交给内部竖向信息流 ViewPager2。
      * 设置关闭或播放设置面板打开时整层锁定，不响应左右拖拽。
+     * 体裁页已在首尾时，继续同方向滑动交给底部主导航。
      */
     private class RecommendGenrePager(context: Context) : FrameLayout(context) {
         private val slop = android.view.ViewConfiguration.get(context).scaledTouchSlop
+        private val minimumFlingVelocity =
+            com.hgtv.star.phone.ui.PhonePagerMotion
+                .minimumFlingVelocityPxPerSecond(context)
+                .toFloat()
         private var downX = 0f
         private var downY = 0f
         private var startItem = 0
@@ -362,9 +375,13 @@ class PhoneRecommendPage(
         private var settleStart = 0
         private var settleTarget = -1
         private var focusSent = false
+        private var handOffDirection = 0
+        private var velocityTracker: VelocityTracker? = null
         /** 0 = 未定性，1 = 纵向，2 = 横向。 */
         private var axis = 0
         var onFocusTarget: ((Int) -> Unit)? = null
+        var canHandOffSwipe: ((Int) -> Boolean)? = null
+        var onHandOffSwipe: ((Int) -> Unit)? = null
 
         var userScroll = false
         var gesturesEnabled = true
@@ -446,17 +463,23 @@ class PhoneRecommendPage(
         override fun dispatchTouchEvent(e: MotionEvent): Boolean {
             when (e.actionMasked) {
                 MotionEvent.ACTION_DOWN -> {
+                    pager.animate().cancel()
+                    pager.translationX = 0f
                     downX = e.x
                     downY = e.y
                     startItem = pager.currentItem
                     dragDirection = 0
                     settleTarget = -1
                     focusSent = false
+                    handOffDirection = 0
                     axis = 0
                     userScroll = false
                     pager.isUserInputEnabled = gesturesEnabled
+                    velocityTracker?.recycle()
+                    velocityTracker = VelocityTracker.obtain().also { addVelocitySample(it, e) }
                 }
                 MotionEvent.ACTION_MOVE -> {
+                    velocityTracker?.let { addVelocitySample(it, e) }
                     if (axis == 0) {
                         val dx = Math.abs(e.x - downX)
                         val dy = Math.abs(e.y - downY)
@@ -473,16 +496,98 @@ class PhoneRecommendPage(
                     }
                     if (axis == 2 && Math.abs(e.x - downX) > slop) {
                         dragDirection = if (e.x < downX) 1 else -1
+                        updateHandOff(e.x - downX)
                     }
-                    if (axis == 1) pager.isUserInputEnabled = false
+                    if (axis == 1) {
+                        handOffDirection = 0
+                        pager.translationX = 0f
+                        pager.isUserInputEnabled = false
+                    }
                 }
                 MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
+                    val dx = e.x - downX
+                    velocityTracker?.let { tracker ->
+                        addVelocitySample(tracker, e)
+                        tracker.computeCurrentVelocity(1_000)
+                    }
+                    val velocity = velocityTracker?.xVelocity ?: 0f
+                    velocityTracker?.recycle()
+                    velocityTracker = null
+                    val handOff = handOffDirection
+                    if (handOff != 0) {
+                        val committed = com.hgtv.star.phone.ui.PhonePagerMotion.commitDirection(
+                            distancePx = dx,
+                            velocityPxPerSecond = velocity,
+                            viewportPx = width,
+                            minimumFlingVelocityPxPerSecond = minimumFlingVelocity,
+                        )
+                        if (e.actionMasked == MotionEvent.ACTION_UP &&
+                            committed == handOff &&
+                            canHandOffSwipe?.invoke(handOff) == true
+                        ) {
+                            pager.animate().cancel()
+                            pager.translationX = 0f
+                            onHandOffSwipe?.invoke(handOff)
+                        } else {
+                            settleHandOffBack()
+                        }
+                    }
                     axis = 0
+                    handOffDirection = 0
                     pager.isUserInputEnabled = gesturesEnabled
                     if (e.actionMasked == MotionEvent.ACTION_CANCEL) dragDirection = 0
                 }
             }
             return super.dispatchTouchEvent(e)
+        }
+
+        private fun updateHandOff(dx: Float) {
+            val direction = if (dx < 0f) 1 else -1
+            val itemCount = pager.adapter?.itemCount ?: 0
+            val canTopSwipe = pager.currentItem + direction in 0 until itemCount
+            if (canTopSwipe) {
+                handOffDirection = 0
+                pager.translationX = 0f
+                pager.isUserInputEnabled = gesturesEnabled
+                userScroll = gesturesEnabled
+                return
+            }
+            if (!gesturesEnabled || canHandOffSwipe?.invoke(direction) != true) {
+                handOffDirection = 0
+                pager.translationX = 0f
+                pager.isUserInputEnabled = gesturesEnabled
+                userScroll = false
+                return
+            }
+            handOffDirection = direction
+            userScroll = false
+            pager.isUserInputEnabled = false
+            pager.translationX = dx * 0.18f
+        }
+
+        private fun settleHandOffBack() {
+            val distance = Math.abs(pager.translationX)
+            if (distance < 1f) {
+                pager.translationX = 0f
+                return
+            }
+            pager.animate()
+                .translationX(0f)
+                .setDuration(
+                    com.hgtv.star.phone.ui.PhonePagerMotion.duration(
+                        distancePx = distance,
+                        viewportPx = width,
+                    )
+                )
+                .setInterpolator(com.hgtv.star.phone.ui.PhonePagerMotion.interpolator)
+                .start()
+        }
+
+        private fun addVelocitySample(tracker: VelocityTracker, event: MotionEvent) {
+            val copy = MotionEvent.obtain(event)
+            copy.offsetLocation(event.rawX - event.x, event.rawY - event.y)
+            tracker.addMovement(copy)
+            copy.recycle()
         }
     }
 }
