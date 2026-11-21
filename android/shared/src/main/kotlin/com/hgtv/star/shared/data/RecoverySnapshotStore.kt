@@ -15,7 +15,7 @@ import java.io.FileOutputStream
 /**
  * 快照文件存储。
  *
- * 私有副本始终存在；有存储权限时再写公共 Documents / Downloads 与 MediaStore 副本。
+ * 私有副本始终存在；有存储权限时再写公共 Download 与 MediaStore 副本。
  * 公共副本保持明文，供卸载重装后的新 UID 直接读取。
  */
 internal class RecoverySnapshotStore(private val app: Context) {
@@ -23,6 +23,7 @@ internal class RecoverySnapshotStore(private val app: Context) {
         const val MAIN = "hgtv-recovery.json"
         const val BAK = "hgtv-recovery.json.bak"
         const val TMP = "hgtv-recovery.json.tmp"
+        const val LEGACY_SESSION = "hgtv-session.json"
         const val FOLDER = "HGTV"
     }
 
@@ -32,15 +33,23 @@ internal class RecoverySnapshotStore(private val app: Context) {
         writeAtomic(privateDir, MAIN, BAK, TMP, text)
 
     fun writePublic(text: String): Boolean {
-        var wrote = false
-        directDirs().forEach { dir ->
-            if (writeAtomic(dir, MAIN, BAK, TMP, text)) wrote = true
+        val direct = directDirs().any { dir ->
+            writeAtomic(dir, MAIN, BAK, TMP, text)
+        }
+        if (direct) {
+            // 直接写入成功后仍确认 MediaStore 能看到同一个逻辑文件；
+            // 已经存在则更新内容，不存在则补登记。
+            if (Build.VERSION.SDK_INT >= 29) {
+                MediaStoreRecoveryCopy.copyMainToBak(app)
+                MediaStoreRecoveryCopy.write(app, MAIN, text)
+            }
+            return true
         }
         if (Build.VERSION.SDK_INT >= 29) {
-            if (MediaStoreRecoveryCopy.copyMainToBak(app)) wrote = true
-            if (MediaStoreRecoveryCopy.write(app, MAIN, text)) wrote = true
+            MediaStoreRecoveryCopy.copyMainToBak(app)
+            return MediaStoreRecoveryCopy.write(app, MAIN, text)
         }
-        return wrote
+        return false
     }
 
     fun readPrivateCandidates(): List<String> =
@@ -56,6 +65,19 @@ internal class RecoverySnapshotStore(private val app: Context) {
         return out.distinct()
     }
 
+    fun readLegacySessionCandidates(): List<String> {
+        val out = ArrayList<String>()
+        runCatching { File(app.filesDir, LEGACY_SESSION) }
+            .getOrNull()?.let { file -> readText(file)?.let(out::add) }
+        legacyDirectDirs().forEach { dir ->
+            readText(File(dir, LEGACY_SESSION))?.let(out::add)
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            MediaStoreRecoveryCopy.read(app, LEGACY_SESSION)?.let(out::add)
+        }
+        return out.filter { it.isNotBlank() }.distinct()
+    }
+
     fun deletePublic() {
         directDirs().forEach { dir ->
             listOf(MAIN, BAK, TMP).forEach { name ->
@@ -69,13 +91,47 @@ internal class RecoverySnapshotStore(private val app: Context) {
         runCatching { privateDir.deleteRecursively() }
     }
 
+    /** 删除旧会话镜像；返回 false 表示至少有一项删除失败或仍存在。 */
+    fun deleteLegacySessionFiles(): Boolean {
+        var clean = true
+        fun deleteFile(file: File) {
+            if (file.exists() && !runCatching { file.delete() }.getOrDefault(false)) {
+                clean = false
+            }
+        }
+        deleteFile(File(app.filesDir, LEGACY_SESSION))
+        legacyDirectDirs().forEach { dir ->
+            deleteFile(File(dir, LEGACY_SESSION))
+            if (dir.isDirectory && dir.list().isNullOrEmpty()) {
+                runCatching { dir.delete() }
+            }
+        }
+        if (Build.VERSION.SDK_INT >= 29) {
+            if (!MediaStoreRecoveryCopy.delete(app, LEGACY_SESSION)) clean = false
+        }
+        return clean
+    }
+
     private fun directDirs(): List<File> = buildList {
         runCatching {
             File(
-                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
                 FOLDER,
             )
         }.getOrNull()?.let(::add)
+    }.distinctBy { it.absolutePath }
+
+    private fun legacyDirectDirs(): List<File> = buildList {
+        runCatching { File(Environment.getExternalStorageDirectory(), ".hgtv") }
+            .getOrNull()?.let(::add)
+        runCatching {
+            File(
+                Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOCUMENTS),
+                ".hgtv",
+            )
+        }.getOrNull()?.let(::add)
+        runCatching { app.getExternalFilesDir(null) }
+            .getOrNull()?.let(::add)
         runCatching {
             File(
                 Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_DOWNLOADS),
@@ -92,6 +148,10 @@ internal class RecoverySnapshotStore(private val app: Context) {
             }.getOrNull()
         }
     }
+
+    private fun readText(file: File): String? = runCatching {
+        file.takeIf { it.isFile }?.readText(Charsets.UTF_8)
+    }.getOrNull()
 
     private fun writeAtomic(
         dir: File,
@@ -231,16 +291,21 @@ private object MediaStoreRecoveryCopy {
     }.getOrDefault(false)
 
     fun deleteAll(app: Context) {
+        delete(app, "hgtv-recovery.json")
+        delete(app, "hgtv-recovery.json.bak")
+    }
+
+    fun delete(app: Context, name: String): Boolean {
         val selection =
-            "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND ${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?"
-        runCatching {
+            "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND ${MediaStore.MediaColumns.DISPLAY_NAME}=?"
+        return runCatching {
             app.contentResolver.delete(
                 MediaStore.Downloads.EXTERNAL_CONTENT_URI,
                 selection,
-                arrayOf(RELATIVE_PATH, "hgtv-recovery%"),
+                arrayOf(RELATIVE_PATH, name),
             )
         }.onFailure {
             Log.w("HGTV-RECOVERY", "MediaStore delete failed", it)
-        }
+        }.isSuccess
     }
 }

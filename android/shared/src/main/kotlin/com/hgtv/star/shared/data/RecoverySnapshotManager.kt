@@ -16,12 +16,16 @@ import java.util.concurrent.TimeUnit
  *
  * 启动时先申请权限、读取公共快照并恢复；权限被拒时本次只写私有快照。
  * 如果用户之后才授权，旧公共快照会被丢弃，当前本机数据会覆盖公共快照。
+ * 公共快照统一为动态解析的 `Download/HGTV/hgtv-recovery.json`，直接文件优先，
+ * Android 10+ 由 MediaStore 补登记或兜底。
  */
 object RecoverySnapshotManager {
     const val MAX_BYTES = 8 * 1024 * 1024
     private const val STATE_PREFS = "recovery-state-v1"
     private const val KEY_INITIALIZED = "initialized"
     private const val KEY_SKIPPED_PUBLIC = "skipped-public"
+    private const val KEY_LEGACY_MIGRATION_DONE = "legacy-migration-done"
+    private const val KEY_LEGACY_CLEANUP_PENDING = "legacy-cleanup-pending"
     private const val LIBRARY_FILES = "library"
 
     private val prefFiles = listOf(
@@ -57,6 +61,8 @@ object RecoverySnapshotManager {
         val skippedPublic = state.getBoolean(KEY_SKIPPED_PUBLIC, false)
         var restored = false
 
+        migrateLegacyIfNeeded(app, state, publicPermissionGranted)
+
         if (firstDecision) {
             if (publicPermissionGranted && RecoveryPermissions.isStorageMounted()) {
                 restored = readBest(store.readPublicCandidates())?.let { snapshot ->
@@ -84,6 +90,7 @@ object RecoverySnapshotManager {
     fun onPermissionChanged(context: Context, granted: Boolean) {
         val app = context.applicationContext
         val state = statePrefs(app)
+        migrateLegacyIfNeeded(app, state, granted)
         if (granted && state.getBoolean(KEY_SKIPPED_PUBLIC, false)) {
             RecoverySnapshotStore(app).deletePublic()
             state.edit().putBoolean(KEY_SKIPPED_PUBLIC, false).commit()
@@ -94,10 +101,15 @@ object RecoverySnapshotManager {
     /** 从系统设置返回时补一次状态检查；权限没有变化就不重复写快照。 */
     fun onForeground(context: Context) {
         val app = context.applicationContext
-        if (RecoveryPermissions.hasPublicAccess(app) &&
-            statePrefs(app).getBoolean(KEY_SKIPPED_PUBLIC, false)
-        ) {
-            onPermissionChanged(app, true)
+        val granted = RecoveryPermissions.hasPublicAccess(app)
+        if (granted) {
+            val state = statePrefs(app)
+            if (!state.getBoolean(KEY_LEGACY_MIGRATION_DONE, false) ||
+                state.getBoolean(KEY_LEGACY_CLEANUP_PENDING, false) ||
+                state.getBoolean(KEY_SKIPPED_PUBLIC, false)
+            ) {
+                onPermissionChanged(app, true)
+            }
         }
     }
 
@@ -145,8 +157,10 @@ object RecoverySnapshotManager {
             scheduled?.cancel(false)
             scheduled = null
         }
-        RecoverySnapshotStore(app).deletePrivate()
-        RecoverySnapshotStore(app).deletePublic()
+        val store = RecoverySnapshotStore(app)
+        store.deletePrivate()
+        store.deletePublic()
+        LegacyRecoveryMigration.deleteLegacyFiles(store)
         statePrefs(app).edit().clear().commit()
         initialized = false
     }
@@ -161,6 +175,29 @@ object RecoverySnapshotManager {
             !state.getBoolean(KEY_SKIPPED_PUBLIC, false)
         ) {
             store.writePublic(text)
+        }
+    }
+
+    private fun migrateLegacyIfNeeded(
+        app: Context,
+        state: SharedPreferences,
+        publicPermissionGranted: Boolean,
+    ) {
+        if (!publicPermissionGranted || !RecoveryPermissions.isStorageMounted()) return
+        val store = RecoverySnapshotStore(app)
+        if (!state.getBoolean(KEY_LEGACY_MIGRATION_DONE, false)) {
+            LegacyRecoveryMigration.merge(app, store)
+            // 旧数据已经合并进偏好；即使新快照写失败，也按产品规则继续清理旧文件。
+            writeNow(app)
+            val cleanupOk = LegacyRecoveryMigration.deleteLegacyFiles(store)
+            state.edit()
+                .putBoolean(KEY_LEGACY_MIGRATION_DONE, true)
+                .putBoolean(KEY_LEGACY_CLEANUP_PENDING, !cleanupOk)
+                .commit()
+        } else if (state.getBoolean(KEY_LEGACY_CLEANUP_PENDING, false)) {
+            if (LegacyRecoveryMigration.deleteLegacyFiles(store)) {
+                state.edit().putBoolean(KEY_LEGACY_CLEANUP_PENDING, false).commit()
+            }
         }
     }
 

@@ -53,6 +53,8 @@ import org.json.JSONObject
  *
  * 这个文件是**明文凭据**。Android 9 及以下，任何拿到存储权限的应用都能读到它——
  * 与真机HGTV同一层级的取舍；用户「清除数据 / 恢复出厂」或换机器时它也一起没了。
+ *
+ * 新版本完成一次性迁移后由 [RecoverySnapshotManager] 接管持久化，旧镜像路径不再写入。
  */
 class SessionMirror(private val app: Context) {
     private companion object {
@@ -148,6 +150,10 @@ class SessionMirror(private val app: Context) {
      * 主线程因此不会被外部存储拖住。读完之后再把 [pending] 里那几项合并进来落盘。
      */
     fun preload() {
+        if (RecoverySnapshotManager.isInitialized()) {
+            synchronized(lock) { loaded=true }
+            return
+        }
         // 先快速判一次；真正的 I/O 在锁外做，主线程调 [string] 不会被它挡住。
         if(!synchronized(lock) { !discarded && !loaded }) return
         val text=readDisk()
@@ -422,6 +428,9 @@ class SessionMirror(private val app: Context) {
 
     /** 写盘：每个可写目录都写一份（能活过卸载的那一份最重要，其余当兜底）。 */
     private fun commit(batch: Map<String, () -> Any?>): Boolean {
+        // 新版本已由 RecoverySnapshotManager 负责持久化；旧镜像只负责首次迁移读取，
+        // 迁移完成后不能再把旧路径重新写回来。
+        if (RecoverySnapshotManager.isInitialized()) return true
         val text=batch.values.lastOrNull()?.invoke() as? String ?: return true
         var wrote=false
         val written=HashSet<String>()

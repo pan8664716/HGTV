@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-22。文件总数为 668；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-22。文件总数为 669；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -44,7 +44,7 @@ android/
 ├── core/  (229 files, 27 directories)
 ├── feature-phone/  (143 files, 11 directories)
 ├── feature-tv/  (159 files, 18 directories)
-├── shared/  (117 files, 46 directories)
+├── shared/  (118 files, 46 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
 ```
@@ -1102,6 +1102,7 @@ android/
 | `LibrarySearchTokenFacade.kt` | 搜索登录态（可选，App 抓到的 x-tt-token，整段 Cookie 也可以）。 | var Library.searchToken |
 | `LibrarySyncFacade.kt` | 导出局域网全量同步允许迁移的设备身份与登录会话。 | fun Library.exportSyncSession、fun Library.importSyncSession |
 | `LibrarySyncSession.kt` | 局域网全量同步时允许跨设备的会话键白名单。 | object LibrarySyncSessionKeys、fun Library.exportSyncSessionImpl、fun Library.importSyncSessionImpl |
+| `LegacyRecoveryMigration.kt` | 旧版 `hgtv-session.json` 一次性迁移：按 `saved_at` 取最新副本，补入缺失会话键，并配合清理旧路径。 | object LegacyRecoveryMigration、fun merge、fun deleteLegacyFiles |
 | `LocalReset.kt` | 本机数据的「恢复出厂」：把应用自己留下的所有东西、公共/私有恢复快照和恢复决策一起删干净。 | object LocalReset、val hasMultiVolumeDirs |
 | `NavKeys.kt` | 顶部导航栏里可以单独隐藏的入口 key。 | val NAV_KEY_RECOMMEND、val NAV_KEYS |
 | `PlaybackCapability.kt` | 这台设备能解什么。 | object PlaybackCapability |
@@ -1110,7 +1111,7 @@ android/
 | `RecoveryPermissions.kt` | Phone / TV 共用的外部存储读写权限检查与申请入口。 | object RecoveryPermissions、fun hasPublicAccess、fun request |
 | `RecoverySnapshotCodec.kt` | 完整恢复快照的明文 JSON 编解码、类型保持、schemaVersion 与 SHA-256 校验。 | data class RecoverySnapshot、object RecoverySnapshotCodec、class NewerRecoverySnapshotException |
 | `RecoverySnapshotManager.kt` | Phone / TV 共用的启动恢复、权限后授予覆盖、防抖保存、手动导入导出和重置删除。 | object RecoverySnapshotManager、fun restoreAtLaunch、fun onPermissionChanged、fun schedule、fun exportText、fun importText、fun deleteAll |
-| `RecoverySnapshotStore.kt` | 完整恢复快照的私有/公共原子写入、`.bak`、Documents / Downloads 与 MediaStore 副本。 | class RecoverySnapshotStore、object MediaStoreRecoveryCopy |
+| `RecoverySnapshotStore.kt` | 完整恢复快照的私有/公共原子写入、`.bak`、动态 Download/HGTV 与 MediaStore 副本，以及旧会话文件读取和清理。 | class RecoverySnapshotStore、object MediaStoreRecoveryCopy |
 | `SessionBootstrap.kt` | 会话装配；会话存储可先初始化，心跳客户端按首帧后延后创建。 | object SessionBootstrap、fun initStore、fun startKeeper |
 | `SessionEvents.kt` | 掉线通知。 | object SessionEvents |
 | `SessionMirror.kt` | 设备身份与登录会话的**兼容镜像**（沙盒、`.hgtv`、Documents 与 Android/data）；变化时同步触发完整恢复快照。 | class SessionMirror |
