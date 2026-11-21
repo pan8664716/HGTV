@@ -106,7 +106,7 @@ class PosterCard(
     private fun applyFocus(focused: Boolean) {
         plate.restyle(
             fill = if (focused) TvStyle.surfaceHigh else TvStyle.surface,
-            ring = if (focused) TvStyle.focusRing else Color.TRANSPARENT,
+            ring = if (focused) TvStyle.cardFocusRing else Color.TRANSPARENT,
             ringWidth = if (focused) context.designPx(TvStyle.RING).toFloat() else 0f,
             glow = if (focused) TvStyle.litGlow else Color.TRANSPARENT,
             depth = if (focused) PosterCardMaterial.FOCUS_DEPTH else 1f

@@ -254,6 +254,14 @@ enum class TvTheme(
     /** 焦点环：设计稿里的 `--focus`，压到 90% 不透明。 */
     val focusRing: Int get() = alpha(focus, .90f)
 
+    /**
+     * 海报卡焦点框：正文色压到 92% 不透明。
+     *
+     * 卡片封面颜色不可控，主题焦点色仍可能和封面撞色；正文色在深色主题是暖白、
+     * 浅色主题是深墨，与卡片底板始终保持高反差。
+     */
+    val cardFocusRing: Int get() = alpha(text, .92f)
+
     /** 凹陷控件（输入框）的聚焦线：同样取焦点色。 */
     val focusLine: Int get() = focus
 

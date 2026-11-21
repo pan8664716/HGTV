@@ -913,7 +913,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `BackToTop.kt` | 「回到顶部」浮层：栅格列表页上的一枚快捷按钮，固定在**右下角**。 | fun TvMainActivity.attachBackToTop、fun TvMainActivity.updateBackToTop、fun TvMainActivity.backToTopVisible、val BACK_TO_TOP_EDGE_GAP、fun TvMainActivity.positionBackToTop、fun TvMainActivity.backToTopTarget |
-| `HomeScreen.kt` | 电视首页横排剧架组件；首栏先建少量卡片，其余按帧增量补齐；数据刷新时按位置就地重绑（`rebindShelves`），只有栏目增删或卡片数变少才整页重建。 | class HomeScreen、fun HomeScreen.rebindShelves、val HOME_FIRST_BATCH、val HOME_FIRST_CARDS、val HOME_BATCH_BUDGET_MS、val HOME_BATCH_BUDGET_LOW_RAM_MS |
+| `HomeScreen.kt` | 电视首页横排剧架组件；首栏先建少量卡片，其余按帧增量补齐；数据刷新时按位置就地重绑（`rebindShelves`），只有栏目增删或卡片数变少才整页重建；「查看全部」卡片焦点框使用主题反差色。 | class HomeScreen、fun HomeScreen.rebindShelves、val HOME_FIRST_BATCH、val HOME_FIRST_CARDS、val HOME_BATCH_BUDGET_MS、val HOME_BATCH_BUDGET_LOW_RAM_MS |
 | `ListPage.kt` | 电视列表页页面骨架；榜单八枚两字芯片占满标题与圆形按钮之间的固定剩余宽度，右侧预留一个圆钮距离并横滑。 | fun equalChipWidths、fun TvMainActivity.showCatalog |
 | `ListPageContent.kt` | 电视列表、网格、剧架与分页；账号历史无缓存时显示加载态，并有独立的分页尾部。 | fun TvMainActivity.setRankSubtitle、fun TvMainActivity.seriesList、class ClipFrameLayout、fun lastFocusable、fun firstFocusable |
 | `SeriesActions.kt` | 剧卡上「点一下」与「长按 / 菜单键」这两个动作，全站只有这一份实现；历史卡片关闭“优先进入简介”时直接进入播放页。 | fun TvMainActivity.openSeries、fun TvMainActivity.seriesMenu |
@@ -1005,7 +1005,7 @@ android/
 | `HongguoKeyboard.kt` | HG键盘的字符表：字母与数字每行 6 个；功能行含专用扫码图标入口，复用电视手机输入二维码通道。 | val LETTER_ROWS、val NUMBER_ROWS、val KEY_COLUMNS、val FUNCTION_KEYS、val FOCUS_RADIUS、val ICON_SIZE |
 | `IconButton.kt` | 顶部导航的圆形图标入口（搜索 / 排行榜 / 设置）。 | class IconButton |
 | `LoginForm.kt` | 「手机号 + 验证码」登录表单的视觉件：输入框、字段说明、按钮行。 | object LoginForm |
-| `PosterCard.kt` | 电视端海报卡：结构来自 PosterCardView，这里只补电视的材质、字号、进度条与焦点。 | class PosterCard |
+| `PosterCard.kt` | 电视端海报卡：结构来自 PosterCardView，这里只补电视的材质、字号、进度条与焦点；焦点框使用主题正文反差色。 | class PosterCard |
 | `SectionHeading.kt` | 分区标题：一行粗体文字，从内容线开始。 | class SectionHeading |
 | `SeekIndicator.kt` | 播放进度条（对应播放器控制层，**不套新拟态**）。 | class SeekIndicator |
 | `SettingSlider.kt` | 设置页里「项名 + 滑轨」合成一行的滑动条。 | class SettingSlider |
@@ -1013,7 +1013,7 @@ android/
 | `TvComponents.kt` | 电视端通用控件集合，承载按钮、卡片、开关、标签等基础 UI；按钮可为主题当前项覆盖选中反差底色与前景。 | fun Context.tvDp、fun Context.softBand、fun Context.softBandLarge、fun Context.tvText、fun T.focusOverflow、fun ScrollView.focusBleed |
 | `TvDialog.kt` | 电视端统一模态框，管理标题、内容、列表、按钮、焦点与关闭动画；支持 mandatory、touch-only、remote-only 与窗口焦点后补落初始焦点。 | class TvDialog、fun show、fun requestInitialFocus |
 | `TvDialogFocus.kt` | 电视共用控件、弹窗、样式、键盘与工具。文件 TvDialogFocus 主要包含 fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable。 | fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable |
-| `TvStyle.kt` | 电视端设计令牌：新拟态（Neumorphism / Soft UI）。 | object TvStyle |
+| `TvStyle.kt` | 电视端设计令牌：新拟态（Neumorphism / Soft UI）；区分通用焦点环与卡片反差焦点框。 | object TvStyle |
 | `TvSwitchRow.kt` | 设置页的整行开关：左边是项名，右边是一枚自绘的轨道 + 圆钮。 | class TvSwitchRow |
 | `TvTools.kt` | 电视端弹窗、提示与手机扫码输入工具；扫码表单支持搜索词、登录态和更新地址。 | val TOAST_MS、val TOAST_FADE、val TOAST_MARGIN、fun TvTools.phoneInput |
 | `TvToolsPhone.kt` | 电视共用控件、弹窗、样式、键盘与工具。文件 TvToolsPhone 主要包含 fun TvTools.toast、fun TvTools.clearToast、fun TvTools.qr、fun TvTools.lanAddress。 | fun TvTools.toast、fun TvTools.clearToast、fun TvTools.qr、fun TvTools.lanAddress、fun TvTools.smsFallback、fun TvTools.accountImport |
@@ -1181,7 +1181,7 @@ android/
 | `SliderDrag.kt` | 横向滑杆的触摸状态机：**按下 → 越过 slop 判定拖动 / 轻点 → 抬起或取消**。 | class SliderDrag |
 | `Soft.kt` | 新拟态的底板形态。 | class SoftStyle、object Soft、class SoftDrawable |
 | `SoftPalette.kt` | 柔光位图要用到的四个颜色 + 主题标识。 | object SoftPalette |
-| `TvTheme.kt` | 主题：二十套新拟态配色（设置 → 主题外观），并提供强调色实心面的自动对比前景。 | class TvTheme、val TvTheme.onAccent、fun mix、fun alpha、object TvThemeStore |
+| `TvTheme.kt` | 主题：二十套新拟态配色（设置 → 主题外观），提供强调色实心面的自动对比前景与卡片焦点反差色。 | class TvTheme、val TvTheme.onAccent、val TvTheme.cardFocusRing、fun mix、fun alpha、object TvThemeStore |
 | `UiText.kt` | 共享界面文案资源读取入口；资源按 Android 标准 values 目录选择语言。 | object UiText |
 
 #### `shared/src/main/res/`

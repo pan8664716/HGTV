@@ -784,7 +784,7 @@ class HomeScreen(
     private fun paintMore(plate: FrameLayout, background: com.hgtv.star.shared.ui.SoftDrawable, focused: Boolean) {
         background.restyle(
             fill = if (focused) TvStyle.surfaceHigh else TvStyle.surface,
-            ring = if (focused) TvStyle.focusRing else Color.TRANSPARENT,
+            ring = if (focused) TvStyle.cardFocusRing else Color.TRANSPARENT,
             ringWidth = if (focused) context.tvDp(TvStyle.RING).toFloat() else 0f,
             glow = if (focused) TvStyle.litGlow else Color.TRANSPARENT,
             depth = if (focused) 1.35f else 1f
