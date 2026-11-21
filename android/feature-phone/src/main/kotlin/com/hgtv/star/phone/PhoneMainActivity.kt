@@ -34,6 +34,7 @@ import com.hgtv.star.phone.page.PhoneMinePage
 import com.hgtv.star.phone.page.PhoneRankPage
 import com.hgtv.star.phone.page.PhoneRecommendPage
 import com.hgtv.star.shared.architecture.AppExit
+import com.hgtv.star.shared.compat.setSystemBarColorsCompat
 import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.shared.debug.StartupDeferredTasks
 import com.hgtv.star.shared.debug.StartupTrace
@@ -537,8 +538,10 @@ class PhoneMainActivity : PhoneActivity() {
         }
         if (Build.VERSION.SDK_INT >= 21) {
             window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
-            window.statusBarColor = Color.TRANSPARENT
-            window.navigationBarColor = if (hideNavigation) Color.BLACK else Color.TRANSPARENT
+            setSystemBarColorsCompat(
+                Color.TRANSPARENT,
+                if (hideNavigation) Color.BLACK else Color.TRANSPARENT,
+            )
         }
         if (Build.VERSION.SDK_INT >= 28) {
             window.attributes = window.attributes.apply {
@@ -574,7 +577,7 @@ class PhoneMainActivity : PhoneActivity() {
                 View.SYSTEM_UI_FLAG_LAYOUT_HIDE_NAVIGATION
         }
         applyPhoneNavigationBar(if (hideNavigation) false else lightNavigationIcons)
-        if (hideNavigation) window.navigationBarColor = Color.BLACK
+        if (hideNavigation) setSystemBarColorsCompat(navigationColor=Color.BLACK)
         if (Build.VERSION.SDK_INT >= 30) {
             window.insetsController?.let { controller ->
                 if (immersive || hideNavigation) {

@@ -18,6 +18,7 @@ import com.hgtv.star.phone.PhoneMainActivity
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.DeviceFormSelection
 import com.hgtv.star.shared.compat.detectDeviceForm
+import com.hgtv.star.shared.compat.setSystemBarColorsCompat
 import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.shared.ui.LoadingDotsView
@@ -251,8 +252,7 @@ class LaunchActivity : Activity() {
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
             // 即使个别 ROM 暂时没有隐藏状态栏，也让它与启动页同色，避免露出系统黑底。
-            window.statusBarColor = BACKGROUND
-            window.navigationBarColor = BACKGROUND
+            setSystemBarColorsCompat(BACKGROUND,BACKGROUND)
         }
         if (android.os.Build.VERSION.SDK_INT >= 29) {
             window.isStatusBarContrastEnforced = false

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.shared.compat
+import android.app.Activity
 import android.app.ActivityManager
 import android.content.BroadcastReceiver
 import android.content.Context
@@ -35,6 +36,20 @@ import androidx.vectordrawable.graphics.drawable.VectorDrawableCompat
  */
 fun Context.activityManager(): ActivityManager? =
     getSystemService(Context.ACTIVITY_SERVICE) as? ActivityManager
+
+/**
+ * 设置系统栏底色。
+ *
+ * 个别设备会把 SDK 报成 21+，framework 里却没有对应的系统栏颜色方法。
+ * 直接赋值会在配置变化或页面切换时抛 `NoSuchMethodError`；系统栏只是观感，
+ * 取不到时保持主题默认色即可。
+ */
+@Suppress("DEPRECATION")
+fun Activity.setSystemBarColorsCompat(statusColor: Int? = null,navigationColor: Int? = null) {
+    if(Build.VERSION.SDK_INT<21) return
+    statusColor?.let { color -> runCatching { window.statusBarColor=color } }
+    navigationColor?.let { color -> runCatching { window.navigationBarColor=color } }
+}
 
 fun Context.connectivityManager(): ConnectivityManager? =
     getSystemService(Context.CONNECTIVITY_SERVICE) as? ConnectivityManager

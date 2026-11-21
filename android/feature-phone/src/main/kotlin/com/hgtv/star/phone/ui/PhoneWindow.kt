@@ -10,6 +10,7 @@ import android.view.View
 import android.view.WindowManager
 import androidx.core.view.ViewCompat
 import androidx.core.view.WindowInsetsCompat
+import com.hgtv.star.shared.compat.setSystemBarColorsCompat
 import java.util.WeakHashMap
 
 /**
@@ -28,8 +29,7 @@ fun Activity.phoneEdgeToEdge() {
             window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
             window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_STATUS)
             window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
-            window.statusBarColor = Color.TRANSPARENT
-            window.navigationBarColor = Color.TRANSPARENT
+            setSystemBarColorsCompat(Color.TRANSPARENT,Color.TRANSPARENT)
             if (Build.VERSION.SDK_INT >= 29) {
                 window.isNavigationBarContrastEnforced = false
             }
@@ -104,7 +104,7 @@ fun Activity.applyPhoneNavigationBar(lightIcons: Boolean = false) {
     if (Build.VERSION.SDK_INT >= 21) {
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
         window.clearFlags(WindowManager.LayoutParams.FLAG_TRANSLUCENT_NAVIGATION)
-        window.navigationBarColor = Color.TRANSPARENT
+        setSystemBarColorsCompat(navigationColor=Color.TRANSPARENT)
         if (Build.VERSION.SDK_INT >= 28) window.navigationBarDividerColor = Color.TRANSPARENT
     }
     if (Build.VERSION.SDK_INT >= 29) {

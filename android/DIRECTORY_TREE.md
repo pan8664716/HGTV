@@ -1065,7 +1065,7 @@ android/
 | `DeviceForm.kt` | 这台机器在用户的眼里的形态：手机 / 平板 / 电视。 | class DeviceForm、class DeviceProfile、fun Context.detectDeviceForm、fun Context.hasInputSource、class ScreenFacts、fun Context.screenFacts |
 | `DeviceFormSelection.kt` | 首页与设置页共用的设备类型选择 Activity action / extra 契约，包含样式与结果字段。 | object DeviceFormSelection、EXTRA_TV_STYLE |
 | `OutlineCompat.kt` | 圆角 / 圆形裁剪。 | fun roundCornersCompat、fun clipToCircleCompat、object RoundCornersApi21 |
-| `Platform.kt` | Android 4.4（API 19）到现在的平台差异都收在这个文件里。 | fun Context.activityManager、fun Context.connectivityManager、fun ConnectivityManager.activeNetworkOrNull、fun ConnectivityManager.capabilitiesOf、fun ConnectivityManager.hasInternet、fun ConnectivityManager.isMeteredConnection |
+| `Platform.kt` | Android 4.4（API 19）到现在的平台差异都收在这个文件里。 | fun Context.activityManager、fun Activity.setSystemBarColorsCompat、fun Context.connectivityManager、fun ConnectivityManager.activeNetworkOrNull、fun ConnectivityManager.capabilitiesOf、fun ConnectivityManager.hasInternet、fun ConnectivityManager.isMeteredConnection |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/data/`
 

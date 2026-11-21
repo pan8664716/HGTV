@@ -32,6 +32,7 @@ import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.phone.page.PhoneMinePage
 import com.hgtv.star.shared.account.AccountLogin
+import com.hgtv.star.shared.compat.setSystemBarColorsCompat
 import com.hgtv.star.shared.data.account
 import com.hgtv.star.shared.data.accountCache
 import com.hgtv.star.shared.data.clearAccount
@@ -625,8 +626,10 @@ class PhoneAccountActivity : PhoneActivity() {
         if (!landscape) return
         applyPhoneNavigationBar(false)
         if (android.os.Build.VERSION.SDK_INT >= 21) {
-            window.statusBarColor = android.graphics.Color.TRANSPARENT
-            window.navigationBarColor = android.graphics.Color.TRANSPARENT
+            setSystemBarColorsCompat(
+                android.graphics.Color.TRANSPARENT,
+                android.graphics.Color.TRANSPARENT,
+            )
         }
         window.addFlags(android.view.WindowManager.LayoutParams.FLAG_FULLSCREEN)
         window.decorView.systemUiVisibility = (

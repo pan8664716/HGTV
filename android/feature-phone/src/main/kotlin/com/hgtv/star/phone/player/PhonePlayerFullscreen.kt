@@ -7,6 +7,7 @@ import android.graphics.drawable.ColorDrawable
 import android.os.Build
 import android.view.View
 import android.view.WindowManager
+import com.hgtv.star.shared.compat.setSystemBarColorsCompat
 
 @Suppress("DEPRECATION")
 internal fun PhonePlayerActivity.enterImmersive() {
@@ -20,8 +21,7 @@ internal fun PhonePlayerActivity.enterImmersive() {
     if (Build.VERSION.SDK_INT >= 21) {
         window.addFlags(WindowManager.LayoutParams.FLAG_DRAWS_SYSTEM_BAR_BACKGROUNDS)
         // 系统栏被隐藏时黑色不可见；若新版系统短暂保留底板，也只会与视频黑边融合。
-        window.statusBarColor = Color.BLACK
-        window.navigationBarColor = Color.BLACK
+        setSystemBarColorsCompat(Color.BLACK,Color.BLACK)
     }
     if (Build.VERSION.SDK_INT >= 28) {
         window.attributes = window.attributes.apply {
