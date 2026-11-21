@@ -263,20 +263,23 @@ struct SettingsView: View {
                       spacing: m.dp(6)) {
                 ForEach(PhoneTheme.allCases) { option in
                     let active = library.prefs.theme == option.storedValue
+                    let foreground = active ? option.onAccent : theme.text
                     Button {
                         library.prefs.theme = option.storedValue
                     } label: {
                         HStack(spacing: m.dp(6)) {
-                            Circle().fill(option.accent).frame(width: m.dp(7), height: m.dp(7))
+                            Circle()
+                                .fill(active ? option.onAccent : option.accent)
+                                .frame(width: m.dp(7), height: m.dp(7))
                             Text(option.label)
                                 .font(.system(size: m.sp(13)))
-                                .foregroundStyle(active ? option.accent : theme.text)
+                                .foregroundStyle(foreground)
                                 .lineLimit(1)
                             Spacer(minLength: 0)
                         }
                         .padding(.horizontal, m.dp(10))
                         .frame(height: m.dp(38))
-                        .soft(active ? .inset : .raised, fill: theme.surface,
+                        .soft(.raised, fill: active ? option.accent : theme.surface,
                               radius: m.dp(PhoneDimen.radiusPill), depth: max(1, m.dp(3)))
                     }
                     .buttonStyle(.plain)

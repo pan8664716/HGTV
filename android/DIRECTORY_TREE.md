@@ -737,7 +737,7 @@ android/
 | `PhoneSettingsLandscapePages.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsLandscapePages 主要包含 fun PhoneSettingsActivity.renderLandscapePlayback、fun PhoneSettingsActivity.renderLandscapeAppearance、fun PhoneSettingsActivity.renderLandscapeRecommend、fun PhoneSettingsActivity.renderLandscapeSystem。 | fun PhoneSettingsActivity.renderLandscapePlayback、fun PhoneSettingsActivity.renderLandscapeAppearance、fun PhoneSettingsActivity.renderLandscapeRecommend、fun PhoneSettingsActivity.renderLandscapeSystem |
 | `PhoneSettingsLandscapeWidgets.kt` | 与 TV 设置页同一种结构：整宽面板 + 面板标题/说明 + 两列或四列设置格。 | fun PhoneSettingsActivity.landscapePanel、fun PhoneSettingsActivity.landscapeLine、fun PhoneSettingsActivity.landscapeCell、fun PhoneSettingsActivity.landscapeColumns、fun PhoneSettingsActivity.landscapeColumnCell、fun PhoneSettingsActivity.landscapeSetting |
 | `PhoneSettingsPageSelector.kt` | 四个大项排成两列两行，和「我的」页的四个入口使用同一组名称。 | fun PhoneSettingsActivity.renderPageSelector |
-| `PhoneSettingsPortrait.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsPortrait 主要包含 fun PhoneSettingsActivity.renderPlayback、fun PhoneSettingsActivity.renderDanmaku、fun PhoneSettingsActivity.renderAppearance、fun PhoneSettingsActivity.themeGrid。 | fun PhoneSettingsActivity.renderPlayback、fun PhoneSettingsActivity.renderDanmaku、fun PhoneSettingsActivity.renderAppearance、fun PhoneSettingsActivity.themeGrid、fun PhoneSettingsActivity.switchThemeImpl、fun PhoneSettingsActivity.renderRecommend |
+| `PhoneSettingsPortrait.kt` | 手机设置页、横竖屏布局与系统 UI；主题网格的当前项使用强调色反差底和自动黑 / 白前景。文件 PhoneSettingsPortrait 主要包含 fun PhoneSettingsActivity.renderPlayback、fun PhoneSettingsActivity.renderDanmaku、fun PhoneSettingsActivity.renderAppearance、fun PhoneSettingsActivity.themeGrid。 | fun PhoneSettingsActivity.renderPlayback、fun PhoneSettingsActivity.renderDanmaku、fun PhoneSettingsActivity.renderAppearance、fun PhoneSettingsActivity.themeGrid、fun PhoneSettingsActivity.switchThemeImpl、fun PhoneSettingsActivity.renderRecommend |
 | `PhoneSettingsScroll.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsScroll 主要包含 class ScrollAnchor、fun PhoneSettingsActivity.currentScrollAnchorImpl、fun PhoneSettingsActivity.anchorViewsImpl、fun PhoneSettingsActivity.topInContainerImpl。 | class ScrollAnchor、fun PhoneSettingsActivity.currentScrollAnchorImpl、fun PhoneSettingsActivity.anchorViewsImpl、fun PhoneSettingsActivity.topInContainerImpl、fun PhoneSettingsActivity.restoreScrollImpl |
 | `PhoneSettingsSupport.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsSupport 主要包含 fun PhoneSettingsActivity.appVersionNameImpl、fun PhoneSettingsActivity.settingsDpImpl、fun TextView.settingsTextSizeImpl、fun PhoneSettingsActivity.settingRowHeightImpl。 | fun PhoneSettingsActivity.appVersionNameImpl、fun PhoneSettingsActivity.settingsDpImpl、fun TextView.settingsTextSizeImpl、fun PhoneSettingsActivity.settingRowHeightImpl、fun PhoneSettingsActivity.settingRowGapImpl、fun anchorKeyImpl |
 | `PhoneSettingsSystem.kt` | 横屏设置页使用沉浸式：状态栏和底部系统导航都隐藏，只保留一小条分区导航。 | fun PhoneSettingsActivity.applyLandscapeImmersive、fun PhoneSettingsActivity.handleActivityResultImpl |
@@ -978,7 +978,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `SettingsPage.kt` | 电视设置页构建入口，组装播放、外观、推荐和系统设置分组；布局启动可切换历史卡片“优先进入简介”，弹幕设置支持首行避开顶部播放信息。 | fun TvMainActivity.settings、fun TvMainActivity.showAboutDialog、fun TvMainActivity.deviceFormSettingLabel、fun TvMainActivity.showDeviceFormPicker、fun TvMainActivity.applyDeviceFormSelection、fun TvMainActivity.showTouchOnlyDeviceFormConfirm |
+| `SettingsPage.kt` | 电视设置页构建入口，组装播放、外观、推荐和系统设置分组；主题当前项使用强调色反差底，布局启动可切换历史卡片“优先进入简介”，弹幕设置支持首行避开顶部播放信息。 | fun TvMainActivity.settings、fun TvMainActivity.showAboutDialog、fun TvMainActivity.deviceFormSettingLabel、fun TvMainActivity.showDeviceFormPicker、fun TvMainActivity.applyDeviceFormSelection、fun TvMainActivity.showTouchOnlyDeviceFormConfirm |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/system/`
 
@@ -1010,7 +1010,7 @@ android/
 | `SeekIndicator.kt` | 播放进度条（对应播放器控制层，**不套新拟态**）。 | class SeekIndicator |
 | `SettingSlider.kt` | 设置页里「项名 + 滑轨」合成一行的滑动条。 | class SettingSlider |
 | `ToggleChip.kt` | 互斥开关（排行榜页的八个榜单、分类页的大类与小类）：就是统一按钮的选中态——按进去的凹槽。 | class ToggleChip |
-| `TvComponents.kt` | 电视端通用控件集合，承载按钮、卡片、开关、标签等基础 UI。 | fun Context.tvDp、fun Context.softBand、fun Context.softBandLarge、fun Context.tvText、fun T.focusOverflow、fun ScrollView.focusBleed |
+| `TvComponents.kt` | 电视端通用控件集合，承载按钮、卡片、开关、标签等基础 UI；按钮可为主题当前项覆盖选中反差底色与前景。 | fun Context.tvDp、fun Context.softBand、fun Context.softBandLarge、fun Context.tvText、fun T.focusOverflow、fun ScrollView.focusBleed |
 | `TvDialog.kt` | 电视端统一模态框，管理标题、内容、列表、按钮、焦点与关闭动画；支持 mandatory、touch-only、remote-only 与窗口焦点后补落初始焦点。 | class TvDialog、fun show、fun requestInitialFocus |
 | `TvDialogFocus.kt` | 电视共用控件、弹窗、样式、键盘与工具。文件 TvDialogFocus 主要包含 fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable。 | fun TvDialog.wireListExitImpl、fun ViewGroup.firstChildOrNull、fun View.anyFocusable、fun View.firstFocusable |
 | `TvStyle.kt` | 电视端设计令牌：新拟态（Neumorphism / Soft UI）。 | object TvStyle |
@@ -1181,7 +1181,7 @@ android/
 | `SliderDrag.kt` | 横向滑杆的触摸状态机：**按下 → 越过 slop 判定拖动 / 轻点 → 抬起或取消**。 | class SliderDrag |
 | `Soft.kt` | 新拟态的底板形态。 | class SoftStyle、object Soft、class SoftDrawable |
 | `SoftPalette.kt` | 柔光位图要用到的四个颜色 + 主题标识。 | object SoftPalette |
-| `TvTheme.kt` | 主题：二十套新拟态配色（设置 → 主题外观）。 | class TvTheme、fun mix、fun alpha、object TvThemeStore |
+| `TvTheme.kt` | 主题：二十套新拟态配色（设置 → 主题外观），并提供强调色实心面的自动对比前景。 | class TvTheme、val TvTheme.onAccent、fun mix、fun alpha、object TvThemeStore |
 | `UiText.kt` | 共享界面文案资源读取入口；资源按 Android 标准 values 目录选择语言。 | object UiText |
 
 #### `shared/src/main/res/`

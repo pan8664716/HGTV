@@ -258,7 +258,15 @@ fun paintButton(
      * 焦点 / 选中切换只就地改配色（[SoftDrawable.restyle]），不新建 Drawable——
      * 新建的 Drawable 第一次 `draw` 时要查/建柔光位图，全部落在 UI 线程。
      */
-    plates: Array<SoftDrawable?> = arrayOfNulls(2)
+    plates: Array<SoftDrawable?> = arrayOfNulls(2),
+    /**
+     * 个别选择器（主题外观）的选中项需要实心反差色。
+     *
+     * 为空时沿用全站的「选中 = 凹槽」；设置后选中项保持凸起底板并换成指定底色，
+     * 即使拿到遥控焦点也不退回普通亮面。
+     */
+    selectedFill: Int? = null,
+    selectedText: Int? = null,
 ) {
     val context = view.context
     val dp = { value: Number -> context.tvDp(value) }
@@ -286,6 +294,7 @@ fun paintButton(
     view.setTextColor(
         when {
             !enabled -> TvStyle.muted
+            selected && selectedText != null -> selectedText
             focused -> TvStyle.onLit
             tone == ButtonTone.PRIMARY -> TvStyle.onLit
             tone == ButtonTone.DANGER -> TvStyle.danger
@@ -296,7 +305,7 @@ fun paintButton(
     // 底板只在按钮第一次绘制时建一次（凸 / 凹各一块），之后焦点变化只就地改配色：
     // 新建 Drawable 的代价不是分配本身，而是它第一次 `draw` 时要查/建柔光位图，全在 UI 线程。
     // 凸起与凹陷的 Layers 结构不同（位图 vs 渐变），因此两者各留一块、按需创建。
-    val useInset = selected && enabled && !focused
+    val useInset = selected && enabled && !focused && selectedFill == null
     val plate = plates[if(useInset) 1 else 0] ?: run {
         val made = if(useInset)
             TvStyle.well(context, TvStyle.selectedWell, pill, TvStyle.SOFT_BAND, depth = 1.15f)
@@ -307,8 +316,8 @@ fun paintButton(
     plate.restyle(
         fill = when {
             !enabled -> TvStyle.well
-            focused -> TvStyle.lit
-            selected -> TvStyle.selectedWell
+            focused -> if (selected) selectedFill ?: TvStyle.lit else TvStyle.lit
+            selected -> selectedFill ?: TvStyle.selectedWell
             tone == ButtonTone.PRIMARY -> TvStyle.lit
             tone == ButtonTone.SECONDARY -> TvStyle.surface
             tone == ButtonTone.DANGER -> TvStyle.surface
@@ -367,7 +376,9 @@ open class TvButton(
      *
      * 颜色跟着字色走（见 [paint]），因此焦点打亮、主操作、禁用三态都不需要各自再配一份图标。
      */
-    private val iconRes: Int? = null
+    private val iconRes: Int? = null,
+    private val selectedFill: Int? = null,
+    private val selectedText: Int? = null,
 ) : TextView(context) {
     private var selected = false
     /** 凸 / 凹两块底板，复用同一个 Drawable（见 [paintButton] 的 `plates`）。 */
@@ -501,7 +512,11 @@ open class TvButton(
     }
 
     private fun paint(focused: Boolean) {
-        paintButton(this, size, tone, focused, selected, isEnabled, pad ?: size.pad, plates)
+        paintButton(
+            this, size, tone, focused, selected, isEnabled, pad ?: size.pad, plates,
+            selectedFill = selectedFill,
+            selectedText = selectedText,
+        )
         // 图标颜色跟着字色：焦点（近黑）、主操作（近黑）、常态（正文色）、禁用（40%）都由
         // `paintButton` 算好，这里只取结果，不再单独维护一套状态判断。
         icon?.setColorFilter(currentTextColor, PorterDuff.Mode.SRC_IN)

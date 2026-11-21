@@ -5,6 +5,7 @@
 // 两端共用同一条派生规则，换主题只换色，不动几何。
 
 import SwiftUI
+import Foundation
 
 // MARK: - 颜色工具
 
@@ -183,6 +184,8 @@ enum PhoneTheme: String, CaseIterable, Identifiable {
     var textDim: Color { Color(rgb: Color.mix(palette.text, palette.sub, 0.55)) }
     var textFaint: Color { Color(rgb: palette.sub, alpha: 0.72) }
     var accent: Color { Color(rgb: palette.accent) }
+    /// 强调色实心面上的字色：按相对亮度在暖白与近黑之间取对比度更高的一档。
+    var onAccent: Color { Color(rgb: Self.contrastText(on: palette.accent)) }
     var danger: Color { Color(rgb: palette.danger) }
     var tips: Color { Color(rgb: palette.accent) }
     var separator: Color { Color(rgb: palette.text, alpha: 0.08) }
@@ -197,6 +200,23 @@ enum PhoneTheme: String, CaseIterable, Identifiable {
     static let playerText = Color(rgb: 0xF5F2EC)
     static let playerDim = Color(rgb: 0xF5F2EC, alpha: 0.70)
     static let playerLine = Color.white.opacity(0.20)
+
+    private static func relativeLuminance(_ rgb: UInt32) -> Double {
+        func channel(_ shift: UInt32) -> Double {
+            let value = Double((rgb >> shift) & 0xFF) / 255
+            return value <= 0.04045
+                ? value / 12.92
+                : pow((value + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+    }
+
+    private static func contrastText(on background: UInt32) -> UInt32 {
+        let luminance = relativeLuminance(background)
+        let lightContrast = 1.05 / (luminance + 0.05)
+        let darkContrast = (luminance + 0.05) / 0.05
+        return darkContrast >= lightContrast ? 0x15181C : 0xFFFFFF
+    }
 
     static func of(_ stored: String?) -> PhoneTheme {
         guard let stored else { return .deepSeaBlue }

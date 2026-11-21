@@ -196,18 +196,22 @@ internal fun PhoneSettingsActivity.themeGrid() {
                 return@repeat
             }
             val active = option == PhoneStyle.theme
+            val dotColor = if (active) option.onAccent else option.accent
             val chip = TextView(this).apply {
                 text = SpannableString("●  ${option.label}").apply {
-                    setSpan(ForegroundColorSpan(option.accent), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                    setSpan(ForegroundColorSpan(dotColor), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                     setSpan(RelativeSizeSpan(.72f), 0, 1, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 }
                 settingsTextSizeImpl(if (settingsLandscape) 12 else 13)
                 gravity = Gravity.CENTER_VERTICAL
                 setPadding(settingsDpImpl(14), 0, settingsDpImpl(10), 0)
-                setTextColor(if (active) PhoneStyle.accent else PhoneStyle.text)
+                setTextColor(if (active) option.onAccent else PhoneStyle.text)
                 applySoft(
-                    if (active) SoftStyle.INSET else SoftStyle.RAISED,
-                    PhoneStyle.surface, PhoneStyle.RADIUS_PILL, 4f
+                    SoftStyle.RAISED,
+                    if (active) option.accent else PhoneStyle.surface,
+                    PhoneStyle.RADIUS_PILL,
+                    4f,
+                    depth = if (active) 1.1f else 1f,
                 )
                 contentDescription = option.label + "，" + option.scene +
                     if (active) "，当前主题" else ""

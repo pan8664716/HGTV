@@ -275,11 +275,40 @@ enum class TvTheme(
     /** 名次星标与提示色：跟随强调色。 */
     val tips: Int get() = accent
 
+    /**
+     * 强调色实心面上的字色。
+     *
+     * 主题选择器的当前项改用强调色实心底后，不能再沿用页面正文色；
+     * 这里按 WCAG 相对亮度在暖白与近黑之间选对比度更高的一档。
+     */
+    val onAccent: Int
+        get() {
+            val light = 0xFFFFFFFF.toInt()
+            val dark = 0xFF15181C.toInt()
+            return if (contrastRatio(accent, light) >= contrastRatio(accent, dark)) light else dark
+        }
+
     // 柔光强度：深色底本身暗，投影要更实；浅色底的暗阴影已经是一块中灰。
     val shadowDark: Int get() = alpha(dark, if (isDark) .62f else .72f)
     val shadowLight: Int get() = alpha(light, if (isDark) .62f else .72f)
     val innerDark: Int get() = alpha(dark, if (isDark) .50f else .72f)
     val innerLight: Int get() = alpha(light, if (isDark) .10f else .50f)
+
+    /** WCAG 相对亮度，只用于在强调色实心底上挑前景色。 */
+    private fun relativeLuminance(color: Int): Double {
+        fun channel(shift: Int): Double {
+            val value = ((color shr shift) and 0xFF) / 255.0
+            return if (value <= 0.04045) value / 12.92
+            else Math.pow((value + 0.055) / 1.055, 2.4)
+        }
+        return 0.2126 * channel(16) + 0.7152 * channel(8) + 0.0722 * channel(0)
+    }
+
+    private fun contrastRatio(first: Int, second: Int): Double {
+        val lighter = maxOf(relativeLuminance(first), relativeLuminance(second))
+        val darker = minOf(relativeLuminance(first), relativeLuminance(second))
+        return (lighter + 0.05) / (darker + 0.05)
+    }
 
     companion object {
         /** 读不到偏好时用深海蓝：默认主题，也是设计稿的第一套。 */

@@ -429,13 +429,22 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     TvTheme.entries.chunked(THEME_GRID_COLUMNS).forEachIndexed { rowIndex,line ->
         val row=row().apply { if(rowIndex>0) setPadding(0,dp(TvStyle.GAP_INLINE),0,0) }
         line.forEachIndexed { index,option ->
-            val chip=TvButton(this,option.label,ButtonSize.COMPACT,ButtonTone.SECONDARY,action={ switchTheme(option) })
+            val active=option==TvStyle.theme
+            val chip=TvButton(
+                this,
+                option.label,
+                ButtonSize.COMPACT,
+                ButtonTone.SECONDARY,
+                action={ switchTheme(option) },
+                selectedFill=option.accent,
+                selectedText=option.onAccent,
+            )
             chip.text=SpannableString("●  ${option.label}").apply {
-                setSpan(ForegroundColorSpan(option.accent),0,1,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+                setSpan(ForegroundColorSpan(if(active) option.onAccent else option.accent),0,1,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
                 setSpan(RelativeSizeSpan(.72f),0,1,Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
             }
-            chip.setSelectedState(option==TvStyle.theme)
-            chip.contentDescription=option.label+"，"+option.scene+if(option==TvStyle.theme) UiText.get(com.hgtv.star.shared.R.string.ui_0280) else ""
+            chip.setSelectedState(active)
+            chip.contentDescription=option.label+"，"+option.scene+if(active) UiText.get(com.hgtv.star.shared.R.string.ui_0280) else ""
             row.addView(chip,lp(0,-2).apply { weight=1f; if(index>0) leftMargin=dp(TvStyle.GAP_INLINE) })
             themeRows[option]=chip
         }
