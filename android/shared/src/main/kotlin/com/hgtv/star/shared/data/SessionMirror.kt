@@ -152,6 +152,7 @@ class SessionMirror(private val app: Context) {
     fun preload() {
         if (RecoverySnapshotManager.isInitialized()) {
             synchronized(lock) { loaded=true }
+            Log.w("HGTV-RECOVERY", "legacy SessionMirror disabled after migration")
             return
         }
         // 先快速判一次；真正的 I/O 在锁外做，主线程调 [string] 不会被它挡住。

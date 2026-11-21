@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.data
 
 import android.content.Context
+import android.util.Log
 import org.json.JSONObject
 
 /**
@@ -15,10 +16,15 @@ internal object LegacyRecoveryMigration {
     private val longKeys = setOf("account-expires", "last-beat-at")
 
     fun merge(context: Context, store: RecoverySnapshotStore): Boolean {
-        val latest = store.readLegacySessionCandidates()
+        val candidates = store.readLegacySessionCandidates()
+        val latest = candidates
             .mapNotNull(::decode)
             .maxByOrNull { it.savedAt }
-            ?: return false
+        Log.w(
+            "HGTV-RECOVERY",
+            "legacy session candidates=${candidates.size} latestSavedAt=${latest?.savedAt ?: 0L}",
+        )
+        if (latest == null) return false
         val prefs = context.applicationContext
             .getSharedPreferences("native-session-v1", Context.MODE_PRIVATE)
         val edit = prefs.edit()
@@ -42,6 +48,10 @@ internal object LegacyRecoveryMigration {
             changed = true
         }
         if (changed) edit.commit()
+        Log.w(
+            "HGTV-RECOVERY",
+            "legacy session merged changed=$changed keys=${latest.values.length()}",
+        )
         return changed
     }
 

@@ -85,6 +85,11 @@ object RecoverySnapshotManager {
 
         initialized = true
         schedule(app, 0L)
+        Log.w(
+            "HGTV-RECOVERY",
+            "launch restore granted=$publicPermissionGranted restored=$restored " +
+                "skippedPublic=${state.getBoolean(KEY_SKIPPED_PUBLIC, false)}",
+        )
         return restored
     }
 
@@ -92,6 +97,12 @@ object RecoverySnapshotManager {
     fun onPermissionChanged(context: Context, granted: Boolean) {
         val app = context.applicationContext
         val state = statePrefs(app)
+        Log.w(
+            "HGTV-RECOVERY",
+            "permission changed granted=$granted " +
+                "migrationDone=${state.getBoolean(KEY_LEGACY_MIGRATION_DONE, false)} " +
+                "cleanupPending=${state.getBoolean(KEY_LEGACY_CLEANUP_PENDING, false)}",
+        )
         migrateLegacyIfNeeded(app, state, granted)
         if (granted && state.getBoolean(KEY_SKIPPED_PUBLIC, false)) {
             RecoverySnapshotStore(app).deletePublic()
@@ -187,17 +198,28 @@ object RecoverySnapshotManager {
         initialized = false
     }
 
-    private fun writeNow(app: Context) {
-        if (restoring || LocalReset.resetting) return
-        val text = capture(app)?.let(RecoverySnapshotCodec::encode) ?: return
-        val store = RecoverySnapshotStore(app)
-        store.writePrivate(text)
-        val state = statePrefs(app)
-        if (RecoveryPermissions.hasPublicAccess(app) &&
-            !state.getBoolean(KEY_SKIPPED_PUBLIC, false)
-        ) {
-            store.writePublic(text)
+    private fun writeNow(app: Context): Boolean {
+        if (restoring || LocalReset.resetting) {
+            Log.w("HGTV-RECOVERY", "snapshot write skipped restoring=$restoring resetting=${LocalReset.resetting}")
+            return false
         }
+        val text = capture(app)?.let(RecoverySnapshotCodec::encode)
+        if (text == null) {
+            Log.w("HGTV-RECOVERY", "snapshot capture returned null")
+            return false
+        }
+        val store = RecoverySnapshotStore(app)
+        val privateOk = store.writePrivate(text)
+        val state = statePrefs(app)
+        val publicRequested = RecoveryPermissions.hasPublicAccess(app) &&
+            !state.getBoolean(KEY_SKIPPED_PUBLIC, false)
+        val publicOk = if (publicRequested) store.writePublic(text) else false
+        Log.w(
+            "HGTV-RECOVERY",
+            "snapshot write bytes=${text.toByteArray(Charsets.UTF_8).size} " +
+                "private=$privateOk publicRequested=$publicRequested public=$publicOk",
+        )
+        return privateOk || publicOk
     }
 
     private fun migrateLegacyIfNeeded(
@@ -205,21 +227,34 @@ object RecoverySnapshotManager {
         state: SharedPreferences,
         publicPermissionGranted: Boolean,
     ) {
+        Log.w(
+            "HGTV-RECOVERY",
+            "legacy migration check granted=$publicPermissionGranted " +
+                "mounted=${RecoveryPermissions.isStorageMounted()} " +
+                "done=${state.getBoolean(KEY_LEGACY_MIGRATION_DONE, false)} " +
+                "cleanupPending=${state.getBoolean(KEY_LEGACY_CLEANUP_PENDING, false)}",
+        )
         if (!publicPermissionGranted || !RecoveryPermissions.isStorageMounted()) return
         val store = RecoverySnapshotStore(app)
         if (!state.getBoolean(KEY_LEGACY_MIGRATION_DONE, false)) {
-            LegacyRecoveryMigration.merge(app, store)
+            val merged = LegacyRecoveryMigration.merge(app, store)
             // 旧数据已经合并进偏好；即使新快照写失败，也按产品规则继续清理旧文件。
-            writeNow(app)
+            val snapshotOk = writeNow(app)
             val cleanupOk = LegacyRecoveryMigration.deleteLegacyFiles(store)
             state.edit()
                 .putBoolean(KEY_LEGACY_MIGRATION_DONE, true)
                 .putBoolean(KEY_LEGACY_CLEANUP_PENDING, !cleanupOk)
                 .commit()
+            Log.w(
+                "HGTV-RECOVERY",
+                "legacy migration finished merged=$merged snapshot=$snapshotOk cleanup=$cleanupOk",
+            )
         } else if (state.getBoolean(KEY_LEGACY_CLEANUP_PENDING, false)) {
-            if (LegacyRecoveryMigration.deleteLegacyFiles(store)) {
+            val cleanupOk = LegacyRecoveryMigration.deleteLegacyFiles(store)
+            if (cleanupOk) {
                 state.edit().putBoolean(KEY_LEGACY_CLEANUP_PENDING, false).commit()
             }
+            Log.w("HGTV-RECOVERY", "legacy cleanup retry success=$cleanupOk")
         }
     }
 

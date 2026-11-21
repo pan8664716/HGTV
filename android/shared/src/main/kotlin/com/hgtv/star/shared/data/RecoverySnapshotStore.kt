@@ -29,8 +29,11 @@ internal class RecoverySnapshotStore(private val app: Context) {
 
     private val privateDir = File(app.filesDir, "recovery")
 
-    fun writePrivate(text: String): Boolean =
-        writeAtomic(privateDir, MAIN, BAK, TMP, text)
+    fun writePrivate(text: String): Boolean {
+        val ok = writeAtomic(privateDir, MAIN, BAK, TMP, text)
+        Log.w("HGTV-RECOVERY", "private snapshot write success=$ok path=${File(privateDir, MAIN)}")
+        return ok
+    }
 
     fun writePublic(text: String): Boolean {
         val direct = directDirs().any { dir ->
@@ -40,15 +43,20 @@ internal class RecoverySnapshotStore(private val app: Context) {
             // 直接写入成功后仍确认 MediaStore 能看到同一个逻辑文件；
             // 已经存在则更新内容，不存在则补登记。
             if (Build.VERSION.SDK_INT >= 29) {
-                MediaStoreRecoveryCopy.copyMainToBak(app)
-                MediaStoreRecoveryCopy.write(app, MAIN, text)
+                val backup = MediaStoreRecoveryCopy.copyMainToBak(app)
+                val indexed = MediaStoreRecoveryCopy.write(app, MAIN, text)
+                Log.w("HGTV-RECOVERY", "public direct success=true mediaBackup=$backup mediaIndexed=$indexed")
             }
+            Log.w("HGTV-RECOVERY", "public snapshot write success=true path=${directDirs().firstOrNull()}/$MAIN")
             return true
         }
         if (Build.VERSION.SDK_INT >= 29) {
-            MediaStoreRecoveryCopy.copyMainToBak(app)
-            return MediaStoreRecoveryCopy.write(app, MAIN, text)
+            val backup = MediaStoreRecoveryCopy.copyMainToBak(app)
+            val media = MediaStoreRecoveryCopy.write(app, MAIN, text)
+            Log.w("HGTV-RECOVERY", "public direct success=false mediaBackup=$backup mediaWrite=$media")
+            return media
         }
+        Log.w("HGTV-RECOVERY", "public snapshot write success=false direct unavailable")
         return false
     }
 
@@ -95,9 +103,10 @@ internal class RecoverySnapshotStore(private val app: Context) {
     fun deleteLegacySessionFiles(): Boolean {
         var clean = true
         fun deleteFile(file: File) {
-            if (file.exists() && !runCatching { file.delete() }.getOrDefault(false)) {
-                clean = false
-            }
+            val exists = file.exists()
+            val ok = !exists || runCatching { file.delete() }.getOrDefault(false)
+            if (!ok) clean = false
+            Log.w("HGTV-RECOVERY", "legacy delete exists=$exists success=$ok path=$file")
         }
         deleteFile(File(app.filesDir, LEGACY_SESSION))
         legacyDirectDirs().forEach { dir ->
@@ -107,7 +116,9 @@ internal class RecoverySnapshotStore(private val app: Context) {
             }
         }
         if (Build.VERSION.SDK_INT >= 29) {
-            if (!MediaStoreRecoveryCopy.delete(app, LEGACY_SESSION)) clean = false
+            val ok = MediaStoreRecoveryCopy.delete(app, LEGACY_SESSION)
+            if (!ok) clean = false
+            Log.w("HGTV-RECOVERY", "legacy MediaStore delete success=$ok name=$LEGACY_SESSION")
         }
         return clean
     }
