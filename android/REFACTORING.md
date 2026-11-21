@@ -7,6 +7,24 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 车机 HEVC 解码器发现兜底
+
+状态：已实现，待 8295 车机真机验证。
+
+- 问题现场：8295 车机支持 HEVC，但调试面板与播放器都拿不到解码器；普通硬解、
+  软件解码切换后均无可播结果。
+- 原因边界：部分车机固件把 HEVC 解码器只暴露在平台 `MediaCodecList.ALL_CODECS`，
+  ExoPlayer 的默认解码器查询返回空表；原有 tunneled 回退不能覆盖普通硬解 / 软解。
+- 修复：能力探测继续以 `ALL_CODECS` 为准；TV 与手机的硬解 / 软解选择器在默认表为空时，
+  改用平台表构造 ExoPlayer 解码器信息。secure-required 与 tunnel-required 组件不混入
+  普通 Surface 播放。
+- 失败记录中的 `decoders=` 也改为 `ALL_CODECS`，并标出强制隧道 / 安全组件，便于区分
+  “平台没有 HEVC”与“ExoPlayer 查询漏项”。
+- 未改版本号、versionCode、依赖或 iOS 代码；只编译 Android debug，未运行测试；
+  未推送、未创建 tag 或 Release。
+
+回滚：对本次提交执行 `git revert`。
+
 ## TV 卡片焦点框反差色
 
 状态：已实现，debug 构建通过，待用户真机验证。

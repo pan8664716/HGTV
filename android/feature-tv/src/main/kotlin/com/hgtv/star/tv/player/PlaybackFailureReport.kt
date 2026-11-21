@@ -38,17 +38,28 @@ private fun availableDecoders(mime: String): String {
     synchronized(decoderTableCache) { decoderTableCache[mime]?.let { return it } }
     val value=runCatching {
         val infos: List<android.media.MediaCodecInfo> = if(Build.VERSION.SDK_INT>=21) {
-            android.media.MediaCodecList(android.media.MediaCodecList.REGULAR_CODECS).codecInfos.toList()
+            runCatching {
+                android.media.MediaCodecList(android.media.MediaCodecList.ALL_CODECS).codecInfos.toList()
+            }.getOrElse { legacyDecoderInfos() }
         } else {
-            (0 until android.media.MediaCodecList.getCodecCount()).mapNotNull {
-                runCatching { android.media.MediaCodecList.getCodecInfoAt(it) }.getOrNull()
-            }
+            legacyDecoderInfos()
         }
         val names=infos.filter { info ->
             !info.isEncoder && info.supportedTypes.any { it.equals(mime,true) }
         }.map { info ->
             val hardware=if(Build.VERSION.SDK_INT>=29) info.isHardwareAccelerated else !looksSoftware(info.name)
-            (if(hardware) "hw:" else "sw:")+info.name
+            val flags=runCatching {
+                val caps=info.getCapabilitiesForType(mime)
+                buildString {
+                    if(caps.isFeatureRequired(
+                            android.media.MediaCodecInfo.CodecCapabilities.FEATURE_TunneledPlayback,
+                        )) append("!tunnel")
+                    if(caps.isFeatureRequired(
+                            android.media.MediaCodecInfo.CodecCapabilities.FEATURE_SecurePlayback,
+                        )) append("!secure")
+                }
+            }.getOrDefault("")
+            (if(hardware) "hw:" else "sw:")+info.name+flags
         }
         if(names.isEmpty()) "none" else names.joinToString(",")
     }.getOrDefault("?")
@@ -61,6 +72,11 @@ private fun looksSoftware(name: String): Boolean {
     return lower.startsWith("omx.google.") || lower.contains(".sw.") || lower.contains("software") ||
         lower.contains("ffmpeg") || lower.contains("avcodec")
 }
+
+private fun legacyDecoderInfos(): List<android.media.MediaCodecInfo> =
+    (0 until android.media.MediaCodecList.getCodecCount()).mapNotNull {
+        runCatching { android.media.MediaCodecList.getCodecInfoAt(it) }.getOrNull()
+    }
 
 private fun PlaybackDiag.fillFormatFrom(problem: Throwable?,player: Player?) {
     var current=problem; var guard=0

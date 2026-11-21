@@ -128,6 +128,26 @@ object PlaybackCapability {
     }
 
     /**
+     * 平台 `ALL_CODECS` 里的普通 HEVC 解码器，按硬解 / 软解筛选。
+     *
+     * ExoPlayer 的默认查询在部分车机上会返回空表，即使平台已经注册了
+     * `c2.qti.hevc.decoder` 这类组件。这里直接把平台表转换成 ExoPlayer 可消费的
+     * [com.google.android.exoplayer2.mediacodec.MediaCodecInfo]，作为选择器最后一层兜底。
+     *
+     * 只返回能在普通 Surface 上工作的组件：secure-required 只能处理 DRM，
+     * tunnel-required 必须显式开启隧道播放。调用方仍须在后台线程调用。
+     */
+    fun platformHevcDecoders(hardware: Boolean): List<com.google.android.exoplayer2.mediacodec.MediaCodecInfo> {
+        return platformHevcInfos()
+            .asSequence()
+            .filter { !it.secureRequired && !it.tunnelRequired }
+            .filter { it.hardware==hardware }
+            .mapNotNull { it.exoInfo }
+            .distinctBy { it.name }
+            .toList()
+    }
+
+    /**
      * 本机解码能力：**硬解一行、软解一行**（调试模式面板用）。
      *
      * 与 [probe] 的区别：那一份只回答「HEVC 能不能解、到多高」，用来决定清晰度；
@@ -162,6 +182,7 @@ object PlaybackCapability {
         val maxHeight: Int,
         val tunnelRequired: Boolean,
         val secureRequired: Boolean,
+        val exoInfo: com.google.android.exoplayer2.mediacodec.MediaCodecInfo?,
     )
 
     private fun scanSummary(): DebugCapability {
@@ -249,11 +270,17 @@ object PlaybackCapability {
             if(name.isBlank()) return emptyList()
             val lower=name.lowercase()
             val hardware=!lower.startsWith("omx.google.") && !lower.startsWith("c2.android.")
-            return listOf(PlatformHevcCodec(name,hardware,1080,false,false))
+            val exoInfo=runCatching {
+                com.google.android.exoplayer2.mediacodec.MediaCodecInfo.newInstance(
+                    name,"video/hevc","video/hevc",null,hardware,!hardware,hardware,false,false,
+                )
+            }.getOrNull()
+            return listOf(PlatformHevcCodec(name,hardware,1080,false,false,exoInfo))
         }
         // `ALL_CODECS` 才能看到只注册给 secure / tunneled 路径的组件；
         // `REGULAR_CODECS` 会在一些电视固件上把唯一一颗 HEVC 硬解直接隐藏。
-        val infos=MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos
+        val infos=runCatching { MediaCodecList(MediaCodecList.ALL_CODECS).codecInfos.toList() }
+            .getOrElse { legacyCodecInfos() }
         return infos.mapNotNull { info ->
             if(info.isEncoder) return@mapNotNull null
             if(!info.supportedTypes.any { it.equals("video/hevc",ignoreCase=true) }) return@mapNotNull null
@@ -268,7 +295,19 @@ object PlaybackCapability {
             val secureRequired=caps?.isFeatureRequired(
                 android.media.MediaCodecInfo.CodecCapabilities.FEATURE_SecurePlayback,
             )==true
-            PlatformHevcCodec(info.name,hardware,height,tunnelRequired,secureRequired)
+            val exoInfo=runCatching {
+                com.google.android.exoplayer2.mediacodec.MediaCodecInfo.newInstance(
+                    info.name,"video/hevc","video/hevc",caps,hardware,!hardware,hardware,false,false,
+                )
+            }.getOrNull()
+            PlatformHevcCodec(info.name,hardware,height,tunnelRequired,secureRequired,exoInfo)
+        }
+    }
+
+    /** 少数车机 / 电视的 `ALL_CODECS` 构造会失败，退回旧版静态枚举接口。 */
+    private fun legacyCodecInfos(): List<android.media.MediaCodecInfo> {
+        return (0 until MediaCodecList.getCodecCount()).mapNotNull {
+            runCatching { MediaCodecList.getCodecInfoAt(it) }.getOrNull()
         }
     }
 

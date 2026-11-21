@@ -70,6 +70,20 @@ internal fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context
         VideoDecoderMode.HARDWARE -> {
             val hardware=all.filter { it.hardwareAccelerated }
             if(hardware.isNotEmpty()) return@MediaCodecSelector hardware
+            // 8295 等车机可能把 HEVC 只放在平台 `ALL_CODECS`，ExoPlayer 的普通查询
+            // 返回空表。平台表兜底时仍排除 secure / tunnel-required，保证能走当前 Surface。
+            if(!requiresSecureDecoder && !requiresTunnelingDecoder &&
+                mimeType.equals("video/hevc",ignoreCase=true)) {
+                val platform=com.hgtv.star.shared.data.PlaybackCapability.platformHevcDecoders(true)
+                if(platform.isNotEmpty()) {
+                    android.util.Log.w(
+                        "HGTV",
+                        "HEVC hardware hidden from ExoPlayer query; using platform decoders="+
+                            platform.joinToString(",") { it.name },
+                    )
+                    return@MediaCodecSelector platform
+                }
+            }
             // 部分电视把 HEVC 硬解只放进 ALL_CODECS：组件声明支持 tunneled，但并未要求
             // 必须隧道播放。ExoPlayer 默认的 REGULAR_CODECS 会漏掉它；这类组件可以安全地
             // 走普通 Surface，强制 tunneled 的组件则由 relaxedTunneledHevcDecoders 排除。
@@ -88,6 +102,22 @@ internal fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context
             }
             hardware
         }
-        VideoDecoderMode.SOFTWARE -> all.filter { !it.hardwareAccelerated }
+        VideoDecoderMode.SOFTWARE -> {
+            val software=all.filter { !it.hardwareAccelerated }
+            if(software.isNotEmpty()) return@MediaCodecSelector software
+            if(!requiresSecureDecoder && !requiresTunnelingDecoder &&
+                mimeType.equals("video/hevc",ignoreCase=true)) {
+                val platform=com.hgtv.star.shared.data.PlaybackCapability.platformHevcDecoders(false)
+                if(platform.isNotEmpty()) {
+                    android.util.Log.w(
+                        "HGTV",
+                        "HEVC software hidden from ExoPlayer query; using platform decoders="+
+                            platform.joinToString(",") { it.name },
+                    )
+                    return@MediaCodecSelector platform
+                }
+            }
+            software
+        }
     }
 }

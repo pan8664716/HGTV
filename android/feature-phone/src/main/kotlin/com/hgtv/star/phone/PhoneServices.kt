@@ -304,11 +304,20 @@ object PhoneDecoder {
                 val hardware=all.filter { !it.softwareOnly }
                 if(hardware.isNotEmpty()) hardware
                 else if(!secure && !tunnel && mimeType.equals("video/hevc",ignoreCase=true)) {
-                    com.hgtv.star.shared.data.PlaybackCapability
-                        .relaxedTunneledHevcDecoders()
+                    val platform=com.hgtv.star.shared.data.PlaybackCapability
+                        .platformHevcDecoders(true)
+                    platform.ifEmpty {
+                        com.hgtv.star.shared.data.PlaybackCapability.relaxedTunneledHevcDecoders()
+                    }
                 } else hardware
             }
-            com.hgtv.star.core.VideoDecoderMode.SOFTWARE -> all.filter { it.softwareOnly }
+            com.hgtv.star.core.VideoDecoderMode.SOFTWARE -> {
+                val software=all.filter { it.softwareOnly }
+                if(software.isNotEmpty()) software
+                else if(!secure && !tunnel && mimeType.equals("video/hevc",ignoreCase=true)) {
+                    com.hgtv.star.shared.data.PlaybackCapability.platformHevcDecoders(false)
+                } else software
+            }
         }
     }
 }
