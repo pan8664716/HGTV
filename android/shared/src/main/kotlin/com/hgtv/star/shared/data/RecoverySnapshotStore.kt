@@ -90,13 +90,16 @@ internal class RecoverySnapshotStore(private val app: Context) {
 
     fun readLegacySessionCandidates(): List<String> {
         val out = ArrayList<String>()
-        runCatching { File(app.filesDir, LEGACY_SESSION) }
-            .getOrNull()?.let { file -> readText(file)?.let(out::add) }
+        app.filesDir.listFiles()
+            ?.filter { it.isFile && isLegacySessionName(it.name) }
+            ?.forEach { file -> readText(file)?.let(out::add) }
         legacyDirectDirs().forEach { dir ->
-            readText(File(dir, LEGACY_SESSION))?.let(out::add)
+            dir.listFiles()
+                ?.filter { it.isFile && isLegacySessionName(it.name) }
+                ?.forEach { file -> readText(file)?.let(out::add) }
         }
         if (Build.VERSION.SDK_INT >= 29) {
-            MediaStoreRecoveryCopy.read(app, LEGACY_SESSION)?.let(out::add)
+            out += MediaStoreRecoveryCopy.readLegacySessions(app)
         }
         return out.filter { it.isNotBlank() }.distinct()
     }
@@ -123,20 +126,29 @@ internal class RecoverySnapshotStore(private val app: Context) {
             if (!ok) clean = false
             Log.w("HGTV-RECOVERY", "legacy delete exists=$exists success=$ok path=$file")
         }
-        deleteFile(File(app.filesDir, LEGACY_SESSION))
-        legacyDirectDirs().forEach { dir ->
-            deleteFile(File(dir, LEGACY_SESSION))
-            if (dir.isDirectory && dir.list().isNullOrEmpty()) {
+        fun deleteMatching(dir: File, removeEmptyDir: Boolean) {
+            dir.listFiles()
+                ?.filter { it.isFile && isLegacySessionName(it.name) }
+                ?.forEach(::deleteFile)
+            if (removeEmptyDir && dir.isDirectory && dir.list().isNullOrEmpty()) {
                 runCatching { dir.delete() }
             }
         }
+        deleteMatching(app.filesDir, removeEmptyDir = false)
+        legacyDirectDirs().forEach { dir ->
+            deleteMatching(dir, removeEmptyDir = true)
+        }
         if (Build.VERSION.SDK_INT >= 29) {
-            val ok = MediaStoreRecoveryCopy.delete(app, LEGACY_SESSION)
+            val ok = MediaStoreRecoveryCopy.deleteLegacySessions(app)
             if (!ok) clean = false
-            Log.w("HGTV-RECOVERY", "legacy MediaStore delete success=$ok name=$LEGACY_SESSION")
+            Log.w("HGTV-RECOVERY", "legacy MediaStore delete success=$ok pattern=hgtv-session*")
         }
         return clean
     }
+
+    private fun isLegacySessionName(name: String): Boolean =
+        name == LEGACY_SESSION ||
+            (name.startsWith("hgtv-session (") && name.endsWith(").json"))
 
     private fun directDirs(): List<File> = buildList {
         runCatching {
@@ -227,14 +239,23 @@ private object MediaStoreRecoveryCopy {
     private fun uriFor(app: Context, name: String): Uri? =
         rows(app, name).firstOrNull()
 
-    private fun rows(app: Context, name: String): List<Uri> = runCatching {
-        val selection =
-            "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.RELATIVE_PATH}=?"
+    private fun rows(app: Context, name: String): List<Uri> =
+        queryUris(
+            app,
+            "${MediaStore.MediaColumns.DISPLAY_NAME}=? AND ${MediaStore.MediaColumns.RELATIVE_PATH}=?",
+            arrayOf(name, RELATIVE_PATH),
+        )
+
+    private fun queryUris(
+        app: Context,
+        selection: String,
+        args: Array<String>,
+    ): List<Uri> = runCatching {
         app.contentResolver.query(
             MediaStore.Downloads.EXTERNAL_CONTENT_URI,
             arrayOf(MediaStore.MediaColumns._ID),
             selection,
-            arrayOf(name, RELATIVE_PATH),
+            args,
             "${MediaStore.MediaColumns.DATE_MODIFIED} DESC",
         )?.use { cursor ->
             val id = cursor.getColumnIndexOrThrow(MediaStore.MediaColumns._ID)
@@ -256,6 +277,22 @@ private object MediaStoreRecoveryCopy {
 
     fun read(app: Context, name: String): String? {
         val uri = uriFor(app, name) ?: return null
+        return readUri(app, uri)
+    }
+
+    fun readLegacySessions(app: Context): List<String> {
+        val selection =
+            "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND " +
+                "(${MediaStore.MediaColumns.DISPLAY_NAME}=? OR " +
+                "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?)"
+        return queryUris(
+            app,
+            selection,
+            arrayOf(RELATIVE_PATH, "hgtv-session.json", "hgtv-session (%).json"),
+        ).mapNotNull { uri -> readUri(app, uri) }
+    }
+
+    private fun readUri(app: Context, uri: Uri): String? {
         return runCatching {
             app.contentResolver.openInputStream(uri)?.use { input ->
                 input.readBytes().toString(Charsets.UTF_8)
@@ -354,6 +391,22 @@ private object MediaStoreRecoveryCopy {
             )
         }.onFailure {
             Log.w("HGTV-RECOVERY", "MediaStore delete failed", it)
+        }.isSuccess
+    }
+
+    fun deleteLegacySessions(app: Context): Boolean {
+        val selection =
+            "${MediaStore.MediaColumns.RELATIVE_PATH}=? AND " +
+                "(${MediaStore.MediaColumns.DISPLAY_NAME}=? OR " +
+                "${MediaStore.MediaColumns.DISPLAY_NAME} LIKE ?)"
+        return runCatching {
+            app.contentResolver.delete(
+                MediaStore.Downloads.EXTERNAL_CONTENT_URI,
+                selection,
+                arrayOf(RELATIVE_PATH, "hgtv-session.json", "hgtv-session (%).json"),
+            )
+        }.onFailure {
+            Log.w("HGTV-RECOVERY", "MediaStore legacy session delete failed", it)
         }.isSuccess
     }
 }
