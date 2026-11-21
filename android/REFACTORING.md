@@ -7,6 +7,30 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 1.3.8.11 发布准备
+
+状态：GitHub Release 已发布，待用户真机验证。
+
+- Release 构建使用环境变量固定版本 `versionName=1.3.8.11`、`versionCode=95`，
+  未提交任何源码文件；发布提交只包含 README、CHANGELOG 与本文档。
+- `:app:lintRelease`、`:app:assembleRelease` 通过；APK 的 `aapt` 元数据确认
+  `versionName=1.3.8.11`、`versionCode=95`、`minSdk=19`。
+- `:core:test` 在测试源码编译阶段失败：现有测试仍引用已移除的 `COMIC / REAL / AI / NEW`
+  枚举；该失败与本次发布产物无关，Release 构建不依赖该任务。
+- `apksigner` v1 / v2 校验通过，证书 SHA-256
+  `27da90725c2bcec6c334096ee438877b480875dfaa1339b5dbedc5fd9fcee019`
+  与 1.3.8.10 一致；`zipalign` 校验通过。
+- APK：`outputs/release-1.3.8.11/HGTV_1.3.8.11.apk`，大小 `4282713` 字节；
+  SHA-256 为 `af51cc263de1cab7753581967cb1243a493bab9a69ed7a9304a5f6420fdb6a5c`。
+- 发布 tag `1.3.8.11` 指向独立空树提交
+  `6e4f1d1a29b5cdd21b28ab639b2b5ecdb81a2645`，无父提交、文件数为 `0`。
+- Release 只上传 `HGTV_1.3.8.11.apk`、`SHA256SUMS`、`update.json`；
+  三个线上附件已重新下载并复验，APK 版本、校验和与元数据一致。
+- Release：
+  <https://github.com/pan8664716/HGTV/releases/tag/1.3.8.11>。
+
+回滚：删除对应 Release / tag 后，对文档发布提交执行 `git revert`。
+
 ## 1.3.8.10 发布准备
 
 状态：GitHub Release 已发布，待用户真机验证。
