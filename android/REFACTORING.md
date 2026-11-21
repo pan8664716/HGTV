@@ -2,14 +2,14 @@
 
 > 基线提交：`140665f89ea816e4a38da50d3aa9428ecb722ead`
 > 重构分支：`refactor/from-140665f`
-> 最后更新：2026-11-21
+> 最后更新：2026-11-22
 
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
 ## 1.3.8.12 版本准备
 
-状态：源码版本号已更新，debug 构建通过，待用户真机验证；未推送、未创建 Release。
+状态：GitHub Release 已发布，待用户真机验证。
 
 - 源码默认版本更新为 `versionName=1.3.8.12`、`versionCode=96`。
 - 本轮包含 Phone / TV 统一卸载恢复、旧版会话迁移、旧路径清理和完整快照兼容。
@@ -17,9 +17,18 @@
 - 首次启动设备类型选择先按探测结果选择手机 / TV 弹窗样式，并加载手机字号倍率。
 - 重装首次启动必须先恢复现有公共快照，再执行旧版迁移，禁止先写空快照。
 - 手机「我的」页无数据时只按实际请求状态显示加载，请求结束后落到空态。
-- 只编译 Android debug，未运行功能测试。
+- `:app:assembleDebug`、`:app:assembleRelease` 通过；APK 元数据确认
+  `versionName=1.3.8.12`、`versionCode=96`、`minSdk=19`。
+- APK：`outputs/release-1.3.8.12/HGTV_1.3.8.12.apk`，大小 `4293326` 字节；
+  SHA-256 为 `e4de01390d8ab8f23cc1c9d9285f403d2e5cab4f1ebe4002296d856207741656`。
+- 发布 tag `1.3.8.12` 指向独立空树提交
+  `1e7678a1bfc4a4f5c2750dc6dbbe01961b027c21`，无父提交、文件数为 `0`。
+- Release 只上传 `HGTV_1.3.8.12.apk`、`SHA256SUMS`、`update.json`；
+  三个线上附件已重新下载并复验，APK 版本、校验和与元数据一致。
+- Release：
+  <https://github.com/pan8664716/HGTV/releases/tag/1.3.8.12>。
 
-回滚：对版本提交执行 `git revert`，并删除本地 `v1.3.8.12` tag。
+回滚：删除对应 Release / tag 后，对文档发布提交执行 `git revert`。
 
 ## 1.3.8.11 发布准备
 
