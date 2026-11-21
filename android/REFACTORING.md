@@ -7,6 +7,28 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 1.3.8.10 发布准备
+
+状态：GitHub Release 已发布，待用户真机验证。
+
+- Release 构建使用环境变量固定版本 `versionName=1.3.8.10`、`versionCode=94`，
+  未提交任何源码文件；发布文档提交 `41ab0e6` 只包含 README 与 CHANGELOG。
+- `:app:assembleDebug`、`:app:assembleRelease` 通过；APK 的 `aapt` 元数据确认
+  `versionName=1.3.8.10`、`versionCode=94`、`minSdk=19`。
+- `apksigner` v1 / v2 校验通过，证书 SHA-256
+  `27da90725c2bcec6c334096ee438877b480875dfaa1339b5dbedc5fd9fcee019`
+  与 1.3.8.9 一致；`zipalign` 校验通过。
+- APK：`outputs/release-1.3.8.10/HGTV_1.3.8.10.apk`，大小 `4279546` 字节；
+  SHA-256 为 `092c8b88a2c25f1a03c1926d9b9518406f75df9b90c76bcb9af652f184ac4085`。
+- 发布 tag `1.3.8.10` 指向独立空树提交
+  `d8ee45ee34228725fde9081a5a20ee83536bfd67`，无父提交、文件数为 `0`。
+- Release 只上传 `HGTV_1.3.8.10.apk`、`SHA256SUMS`、`update.json`；
+  三个线上附件已重新下载并复验，APK 版本、校验和与元数据一致。
+- Release：
+  <https://github.com/pan8664716/HGTV/releases/tag/1.3.8.10>。
+
+回滚：删除对应 Release / tag 后，对文档发布提交执行 `git revert`。
+
 ## 账号记录远端权威同步
 
 状态：已实现，debug 构建通过，待用户真机验证。
