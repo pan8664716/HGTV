@@ -44,6 +44,7 @@ internal class TvPlaybackPager(
         addView(pager,LayoutParams(LayoutParams.MATCH_PARENT,LayoutParams.MATCH_PARENT))
         pageRecycler.isNestedScrollingEnabled=false
         pageRecycler.itemAnimator=null
+        pageRecycler.recycledViewPool.setMaxRecycledViews(0,2)
         pager.setCurrentItem(host.currentPlaybackPageIndex(),false)
     }
 
@@ -217,10 +218,12 @@ private class TvPlaybackPageAdapter(
         else -> 1
     }
 
-    override fun getItemViewType(position: Int): Int = position
+    // 所有作品页共用同一种 ViewHolder。按 position 生成 viewType 会让回收池把滑过的
+    // 每一页都当成独立类型保留，低内存电视上最终耗尽 Java 堆。
+    override fun getItemViewType(position: Int): Int = 0
 
     override fun onCreateViewHolder(parent: ViewGroup,viewType: Int): TvPlaybackPageHolder {
-        val page=if(initialAvailable && viewType==host.currentPlaybackPageIndex()) {
+        val page=if(initialAvailable) {
             initialAvailable=false
             initialPage
         } else TvPlaybackSurfacePage(host)

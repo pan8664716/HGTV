@@ -17,7 +17,7 @@ internal fun TvMainActivity.goBackImpl() {
         "player" -> when {
             playbackMenu!=null -> hidePlaybackOverlay()
             playbackFromRecommend -> leaveRecommendPlaybackToHome()
-            hud.visibility==View.VISIBLE && !playError -> hidePlaybackOverlay()
+            hudReady && hud.visibility==View.VISIBLE && !playError -> hidePlaybackOverlay()
             else -> returnToDetail()
         }
         // 推荐播放界面：返回键回主页面（需求 2 / 5）——不写历史、不回详情。

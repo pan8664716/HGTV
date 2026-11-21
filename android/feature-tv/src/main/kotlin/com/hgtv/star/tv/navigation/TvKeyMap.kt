@@ -96,7 +96,9 @@ fun TvMainActivity.playerKeyAction(keyCode: Int): PlayerKeyAction? = when(keyCod
  * 返回键不在这里，用户任何时候都退得出播放界面。
  */
 fun TvMainActivity.dispatchPlayerKey(action: PlayerKeyAction,event: KeyEvent): Boolean {
-    if(event.action==KeyEvent.ACTION_DOWN) when(action) {
+    // 历史直进播放时 screen 会先切到 player，播放层随后才由详情回调建好。
+    // 这段加载期收到的按键只吞掉，等播放层就绪后再执行。
+    if(event.action==KeyEvent.ACTION_DOWN && hudReady) when(action) {
         PlayerKeyAction.SETTINGS -> if(event.repeatCount==0) showPlaybackMenu()
         PlayerKeyAction.EPISODES -> if(event.repeatCount==0) showEpisodePanel(hud)
         PlayerKeyAction.HUD -> if(event.repeatCount==0) { if(hud.visibility==View.VISIBLE) hidePlaybackOverlay() else showHud() }

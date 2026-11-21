@@ -119,6 +119,7 @@ fun TvMainActivity.syncKeepScreenOn() {
 }
 
 fun TvMainActivity.showHud() {
+    if(!hudReady) return
     // 设置菜单打开时底部控制条保持收起，避免和菜单抢同一块画面。
     if(playbackMenu!=null) return
     // 推荐页：只有触屏设备才露这条控制条（它上面的那排按钮本来也只在触屏上存在）。
@@ -141,6 +142,7 @@ fun TvMainActivity.showHud() {
     scheduleOverlayAutoHide()
 }
 fun TvMainActivity.updatePlaybackText() {
+    if(!hudReady) return
     // 触屏设备上控制条多一排按钮，播放键的文案也要跟着播放状态改（电视上为空操作）。
     updateTouchPlayLabel()
     // 顶部那格「第 x / 共 N 集」跟着当前集号走：无感切集不走 `playEpisode`，

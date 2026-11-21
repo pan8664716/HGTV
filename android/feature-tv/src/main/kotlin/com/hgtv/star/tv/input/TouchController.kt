@@ -62,7 +62,7 @@ fun TvMainActivity.onTouchSeen() {
     // 正停在播放页：这一下手指多半就是「点在了画面上」，因此补完这三样之后
     // 顺手把控制条亮出来——否则这一下点击没有任何可见反馈（新挂上的手势层
     // 来不及收到本次事件，它是在事件分发途中才被加进树里的）。
-    if(screen=="player" || screen=="recommend") {
+    if((screen=="player" || screen=="recommend") && hudReady) {
         attachTouchLayer(); attachTouchBar(); wireSeekTouch()
         // 推荐页：这一页在触屏上**不建**底部那块浮层（见 `attachRecommendOverlay`
         // 开头那条提前返回），因此这里也不再重挂它——把已经挂上的那一块摘掉即可。
