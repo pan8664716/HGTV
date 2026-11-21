@@ -92,10 +92,11 @@ class PhoneRecommendPage(
     private val pageCallback = object : ViewPager2.OnPageChangeCallback() {
         override fun onPageScrollStateChanged(state: Int) {
             if (state != ViewPager2.SCROLL_STATE_IDLE) return
-            if (!pager.userScroll) return
             pager.userScroll = false
             val index = pager.currentItem
-            if (index != current) switchTo(index)
+            // 快速往返时，新手势的 DOWN 会清掉 userScroll；旧动画随后到达 IDLE
+            // 不能再因此漏提交，否则可见页已经停在 B，业务流和声音还留在 A。
+            if (index in genres.indices && index != current) switchTo(index)
         }
     }
 
