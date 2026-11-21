@@ -41,6 +41,7 @@ internal fun Library.storePendingProfileImpl(profile: Map<String,String>,seed: S
     val json=JSONObject(); profile.forEach { (key,value) -> json.put(key,value) }
     identitySessionPrefs.edit().putString("device-profile-pending",json.toString())
         .putString("device-profile-pending-seed",seed).apply()
+    RecoverySnapshotManager.schedule(identityApp)
 }
 
 /**
@@ -65,6 +66,7 @@ internal fun Library.commitPendingProfileImpl() {
     if(seed.isNotBlank()) identityMirror.put("device-seed",seed)
     identityMirror.flush()
     identityCachedProfileStamp=null
+    RecoverySnapshotManager.schedule(identityApp)
     Log.i("HGTV","Pending device profile promoted after successful registration")
 }
 

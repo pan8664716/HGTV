@@ -19,6 +19,8 @@ import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.DeviceFormSelection
 import com.hgtv.star.shared.compat.detectDeviceForm
 import com.hgtv.star.shared.compat.setSystemBarColorsCompat
+import com.hgtv.star.shared.data.RecoveryPermissions
+import com.hgtv.star.shared.data.RecoverySnapshotManager
 import com.hgtv.star.shared.debug.StartupTrace
 import com.hgtv.star.shared.debug.PlaybackStartupTrace
 import com.hgtv.star.shared.ui.LoadingDotsView
@@ -63,6 +65,11 @@ class LaunchActivity : Activity() {
     private var routed=false
     private var choosingForm=false
     private var traceStartedAt=0L
+    private var recoveryStarted=false
+    private var recoveryFinished=false
+    private val recoveryTimeout=Runnable {
+        if (!recoveryFinished) finishRecoveryAndRoute(false)
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         traceStartedAt=StartupTrace.now()
@@ -74,16 +81,45 @@ class LaunchActivity : Activity() {
         buildStartupView()
         setContentView(root)
         StartupTrace.done("launch.onCreate",traceStartedAt)
-        // 首帧可见后注册缓存目录、启动后台初始化，然后立即路由。
-        // 目标页负责在书库未就绪时先铺骨架 / 缓存，不能把路由卡在读盘上。
+        // 首帧可见后先完成权限与旧快照恢复，再启动书库和页面。
+        // 这样重装后的第一次初始化不会先写出新数据，再被旧快照覆盖。
         root.postOnAnimation {
             StartupTrace.done("launch.firstFrame",traceStartedAt)
             PlaybackStartupTrace.point("launch.firstFrame")
             if(!isFinishing && !isDestroyed) {
+                beginRecovery()
+            }
+        }
+    }
+
+    private fun beginRecovery() {
+        if (recoveryStarted || recoveryFinished) return
+        recoveryStarted=true
+        val requesting=runCatching {
+            RecoveryPermissions.request(this, RecoveryPermissions.LAUNCH_REQUEST_CODE)
+        }.getOrDefault(false)
+        if (requesting) {
+            // 个别电视 ROM 不回调权限结果；超时按拒绝处理，页面仍可正常进入。
+            root.postDelayed(recoveryTimeout,30_000L)
+            return
+        }
+        finishRecoveryAndRoute(RecoveryPermissions.hasPublicAccess(this))
+    }
+
+    private fun finishRecoveryAndRoute(publicPermissionGranted: Boolean) {
+        if (recoveryFinished) return
+        recoveryFinished=true
+        root.removeCallbacks(recoveryTimeout)
+        Thread({
+            runCatching {
+                RecoverySnapshotManager.restoreAtLaunch(this,publicPermissionGranted)
+            }
+            runOnUiThread {
+                if (isFinishing || isDestroyed) return@runOnUiThread
                 HgtvStartup.afterFirstFrame(this)
                 routeToTarget()
             }
-        }
+        },"hgtv-launch-recovery").apply { isDaemon=true }.start()
     }
 
     private fun buildStartupView() {
@@ -298,6 +334,7 @@ class LaunchActivity : Activity() {
 
     override fun onDestroy() {
         StartupTrace.mark("launch.onDestroy", "routed=$routed")
+        root.removeCallbacks(recoveryTimeout)
         super.onDestroy()
     }
 
@@ -307,6 +344,24 @@ class LaunchActivity : Activity() {
         if(requestCode!=REQUEST_DEVICE_FORM) return
         choosingForm=false
         if(!isFinishing && !isDestroyed) routeToTarget()
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        if (android.os.Build.VERSION.SDK_INT >= 23) {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        }
+        if (requestCode != RecoveryPermissions.LAUNCH_REQUEST_CODE) return
+        root.removeCallbacks(recoveryTimeout)
+        val granted=RecoveryPermissions.isGranted(grantResults)
+        if (!recoveryFinished) {
+            finishRecoveryAndRoute(granted)
+        } else {
+            RecoverySnapshotManager.onPermissionChanged(this,granted)
+        }
     }
 
     private fun dp(value: Int): Int =

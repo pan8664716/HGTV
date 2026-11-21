@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-18。文件总数为 664；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-22。文件总数为 668；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -44,7 +44,7 @@ android/
 ├── core/  (229 files, 27 directories)
 ├── feature-phone/  (143 files, 11 directories)
 ├── feature-tv/  (159 files, 18 directories)
-├── shared/  (113 files, 46 directories)
+├── shared/  (117 files, 46 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
 ```
@@ -192,9 +192,9 @@ android/
 | --- | --- | --- |
 | `AppIntegrityGuard.kt` | 应用级正版校验：累计前台运行三十分钟后核对包名与发布证书 SHA-256；异常时显示不可取消的下载正版提示。 | object AppIntegrityGuard、fun install、fun isOfficial、fun showInvalidDialog |
 | `DeviceFormActivity.kt` | 首页首次启动与设置页共用的设备类型选择器；按页面使用手机 / 电视拟态弹窗，电视支持遥控器，手机 / 平板触摸确认并 6 秒自动返回，电视直接进入；记录首次形态选择锚点。 | class DeviceFormActivity、fun showPhoneChooser、fun showTvChooser、fun startCountdown |
-| `HgtvApplication.kt` | 应用进程入口，负责 Application 级初始化和全局运行时装配。 | class HgtvApplication |
+| `HgtvApplication.kt` | 应用进程入口，负责 Application 级初始化、全局运行时装配和前后台恢复快照调度。 | class HgtvApplication |
 | `HgtvStartup.kt` | 启动页负责的本地初始化；首帧后启动缓存、书库、会话存储，并把心跳、TNC、推荐曝光配置和友盟延后到播放首帧或兜底超时。 | object HgtvStartup、fun afterFirstFrame、fun onDeviceFormSelected |
-| `LaunchActivity.kt` | 启动页与设备形态路由入口；首次启动打开统一设备类型选择器，完成后路由到对应主界面；窗口强制铺入状态栏和短边刘海区域，避免顶部黑条。 | class LaunchActivity、fun openDeviceFormSelector、fun targetFor |
+| `LaunchActivity.kt` | 启动页与设备形态路由入口；Phone / TV 共用存储权限申请，先恢复公共旧快照再启动书库和页面；首次启动打开统一设备类型选择器。 | class LaunchActivity、fun beginRecovery、fun finishRecoveryAndRoute、fun openDeviceFormSelector、fun targetFor |
 
 ### core
 
@@ -729,8 +729,8 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PhoneDanmakuSize.kt` | 手机端弹幕字号。 | object PhoneDanmakuSize |
-| `PhoneSettingsActions.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsActions 主要包含 fun PhoneSettingsActivity.appVersionName、fun PhoneSettingsActivity.showAboutDialog、fun PhoneSettingsActivity.restoreDefaults、fun PhoneSettingsActivity.exportBackup。 | fun PhoneSettingsActivity.appVersionName、fun PhoneSettingsActivity.showAboutDialog、fun PhoneSettingsActivity.restoreDefaults、fun PhoneSettingsActivity.exportBackup、fun PhoneSettingsActivity.importBackup、fun PhoneSettingsActivity.performReset |
-| `PhoneSettingsActivity.kt` | 手机设置页 Activity，协调横竖屏布局、设置写入和页面生命周期；竖屏底部内容按真实 WindowInsets 留白。 | class PhoneSettingsPage、val LAN_SYNC_SOURCE_TTL_MS、val TAG_LANDSCAPE_SETTING_ROW、val TAG_LANDSCAPE_SETTING_SPACER、val SETTINGS_DENSITY_SCALE、val SETTINGS_TEXT_SCALE |
+| `PhoneSettingsActions.kt` | 手机设置页动作：完整恢复快照导出、导入和清空本机数据；清空前使用公共权限流程。 | fun PhoneSettingsActivity.appVersionName、fun PhoneSettingsActivity.showAboutDialog、fun PhoneSettingsActivity.restoreDefaults、fun PhoneSettingsActivity.exportBackup、fun PhoneSettingsActivity.importBackup、fun PhoneSettingsActivity.performReset |
+| `PhoneSettingsActivity.kt` | 手机设置页 Activity，协调横竖屏布局、设置写入、页面生命周期和公共存储权限回调；竖屏底部内容按真实 WindowInsets 留白。 | class PhoneSettingsPage、val LAN_SYNC_SOURCE_TTL_MS、val TAG_LANDSCAPE_SETTING_ROW、val TAG_LANDSCAPE_SETTING_SPACER、val SETTINGS_DENSITY_SCALE、val SETTINGS_TEXT_SCALE |
 | `PhoneSettingsApply.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsApply 主要包含 fun PhoneSettingsActivity.applyChoiceImpl、fun PhoneSettingsActivity.applySwitchImpl、fun PhoneSettingsActivity.applySliderImpl。 | fun PhoneSettingsActivity.applyChoiceImpl、fun PhoneSettingsActivity.applySwitchImpl、fun PhoneSettingsActivity.applySliderImpl |
 | `PhoneSettingsLanSync.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsLanSync 主要包含 fun PhoneSettingsActivity.closeLanSyncSessionImpl、fun PhoneSettingsActivity.showLanLibrarySync、fun PhoneSettingsActivity.startLanSyncRoleImpl、fun PhoneSettingsActivity.showLanSyncNoPeersImpl。 | fun PhoneSettingsActivity.closeLanSyncSessionImpl、fun PhoneSettingsActivity.showLanLibrarySync、fun PhoneSettingsActivity.startLanSyncRoleImpl、fun PhoneSettingsActivity.showLanSyncNoPeersImpl、fun PhoneSettingsActivity.showLanSyncRestoreConfirmImpl、fun PhoneSettingsActivity.renderLanSyncImpl |
 | `PhoneSettingsLandscapePages.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsLandscapePages 主要包含 fun PhoneSettingsActivity.renderLandscapePlayback、fun PhoneSettingsActivity.renderLandscapeAppearance、fun PhoneSettingsActivity.renderLandscapeRecommend、fun PhoneSettingsActivity.renderLandscapeSystem。 | fun PhoneSettingsActivity.renderLandscapePlayback、fun PhoneSettingsActivity.renderLandscapeAppearance、fun PhoneSettingsActivity.renderLandscapeRecommend、fun PhoneSettingsActivity.renderLandscapeSystem |
@@ -977,14 +977,14 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `SettingsPage.kt` | 电视设置页构建入口，组装播放、外观、推荐和系统设置分组；主题当前项使用强调色反差底，布局启动可切换历史卡片“优先进入简介”，弹幕设置支持首行避开顶部播放信息。 | fun TvMainActivity.settings、fun TvMainActivity.showAboutDialog、fun TvMainActivity.deviceFormSettingLabel、fun TvMainActivity.showDeviceFormPicker、fun TvMainActivity.applyDeviceFormSelection、fun TvMainActivity.showTouchOnlyDeviceFormConfirm |
+| `SettingsPage.kt` | 电视设置页构建入口，组装播放、外观、推荐和系统设置分组；数据维护提供手机、局域网和本机完整快照导入导出。 | fun TvMainActivity.settings、fun TvMainActivity.showAboutDialog、fun TvMainActivity.deviceFormSettingLabel、fun TvMainActivity.showDeviceFormPicker、fun TvMainActivity.applyDeviceFormSelection、fun TvMainActivity.showTouchOnlyDeviceFormConfirm |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/system/`
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `ConsentDialogs.kt` | 本文件是两条「知情同意」：进「我的」页的那条使用须知，与「获取验证码」前的那次确认。 | val CONSENT_TEXT、val SMS_CONSENT_TEXT、val CONSENT_TITLE、val SMS_CONSENT_TITLE、fun TvMainActivity.ensureThirdPartyAccepted、fun TvMainActivity.confirmSmsConsent |
-| `LocalReset.kt` | 本文件是从 TvMainActivity.kt 拆出来的「清空应用缓存（恢复出厂）」这一块。 | fun TvMainActivity.clearLocalData、var resetStorageAsked、fun TvMainActivity.performLocalReset、fun TvMainActivity.resetStorageGranted、fun resetLabel |
+| `LocalReset.kt` | 本文件是从 TvMainActivity.kt 拆出来的「清空应用缓存（恢复出厂）」这一块；公共快照与旧会话镜像一起删除。 | fun TvMainActivity.clearLocalData、var resetStorageAsked、fun TvMainActivity.performLocalReset、fun resetLabel |
 | `MainBackgroundLifecycle.kt` | TvMainActivity 创建、配置、权限结果与现场保存。文件 MainBackgroundLifecycle 主要包含 fun TvMainActivity.onPauseImpl、fun TvMainActivity.onStopImpl、fun TvMainActivity.onDestroyImpl。 | fun TvMainActivity.onPauseImpl、fun TvMainActivity.onStopImpl、fun TvMainActivity.onDestroyImpl |
 | `MainInitialization.kt` | 第二阶段的完整主界面初始化。 | fun TvMainActivity.initializeMainAfterFirstFrameImpl |
 | `MainResume.kt` | onResume 页面恢复编排；前台刷新只加载当前账号栏目，首页只取历史 / 收藏。 | fun TvMainActivity.resumeAfterSuper |
@@ -992,7 +992,7 @@ android/
 | `PerformanceProfile.kt` | “我的”页抬头、四个栏目、账号数据与登录提示；栏目切换先铺缓存，再加载当前栏。 | fun TvMainActivity.profileHead、fun TvMainActivity.accountItems、fun TvMainActivity.accountTabWaiting、fun TvMainActivity.switchAccountTab |
 | `TvMainActivityConfig.kt` | TvMainActivity 创建、配置、权限结果与现场保存。文件 TvMainActivityConfig 主要包含 fun TvMainActivity.reloadAfterConfigurationChange。 | fun TvMainActivity.reloadAfterConfigurationChange |
 | `TvMainActivityCreate.kt` | TvMainActivity 创建、配置、权限结果与现场保存。文件 TvMainActivityCreate 主要包含 fun TvMainActivity.initializeMainShell。 | fun TvMainActivity.initializeMainShell |
-| `TvMainActivityResults.kt` | TvMainActivity 创建、配置、权限结果与现场保存。文件 TvMainActivityResults 主要包含 fun TvMainActivity.handleActivityResultImpl、fun TvMainActivity.handleRequestPermissionsResultImpl。 | fun TvMainActivity.handleActivityResultImpl、fun TvMainActivity.handleRequestPermissionsResultImpl |
+| `TvMainActivityResults.kt` | TvMainActivity 的 Activity / 权限结果处理，并承载完整恢复快照的本机文件导入导出。 | fun TvMainActivity.handleActivityResultImpl、fun TvMainActivity.handleRequestPermissionsResultImpl、fun TvMainActivity.exportRecoveryFile、fun TvMainActivity.importRecoveryFile |
 | `TvMainActivitySaveState.kt` | TvMainActivity 创建、配置、权限结果与现场保存。文件 TvMainActivitySaveState 主要包含 fun TvMainActivity.saveMainState。 | fun TvMainActivity.saveMainState |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/ui/`
@@ -1102,14 +1102,18 @@ android/
 | `LibrarySearchTokenFacade.kt` | 搜索登录态（可选，App 抓到的 x-tt-token，整段 Cookie 也可以）。 | var Library.searchToken |
 | `LibrarySyncFacade.kt` | 导出局域网全量同步允许迁移的设备身份与登录会话。 | fun Library.exportSyncSession、fun Library.importSyncSession |
 | `LibrarySyncSession.kt` | 局域网全量同步时允许跨设备的会话键白名单。 | object LibrarySyncSessionKeys、fun Library.exportSyncSessionImpl、fun Library.importSyncSessionImpl |
-| `LocalReset.kt` | 本机数据的「恢复出厂」：把应用自己留下的所有东西删干净。 | object LocalReset、val hasMultiVolumeDirs |
+| `LocalReset.kt` | 本机数据的「恢复出厂」：把应用自己留下的所有东西、公共/私有恢复快照和恢复决策一起删干净。 | object LocalReset、val hasMultiVolumeDirs |
 | `NavKeys.kt` | 顶部导航栏里可以单独隐藏的入口 key。 | val NAV_KEY_RECOMMEND、val NAV_KEYS |
 | `PlaybackCapability.kt` | 这台设备能解什么。 | object PlaybackCapability |
 | `PlaybackTransport.kt` | 播放链路（取地址 / 预热 / 分片读视频）共用的传输层。 | object PlaybackTransport |
 | `ProgressStore.kt` | 观看进度的落盘：**一剧一文件**；账号历史整表覆盖时清理远端已不存在的进度文件。 | class ProgressStore、fun ProgressStore.replaceAll |
+| `RecoveryPermissions.kt` | Phone / TV 共用的外部存储读写权限检查与申请入口。 | object RecoveryPermissions、fun hasPublicAccess、fun request |
+| `RecoverySnapshotCodec.kt` | 完整恢复快照的明文 JSON 编解码、类型保持、schemaVersion 与 SHA-256 校验。 | data class RecoverySnapshot、object RecoverySnapshotCodec、class NewerRecoverySnapshotException |
+| `RecoverySnapshotManager.kt` | Phone / TV 共用的启动恢复、权限后授予覆盖、防抖保存、手动导入导出和重置删除。 | object RecoverySnapshotManager、fun restoreAtLaunch、fun onPermissionChanged、fun schedule、fun exportText、fun importText、fun deleteAll |
+| `RecoverySnapshotStore.kt` | 完整恢复快照的私有/公共原子写入、`.bak`、Documents / Downloads 与 MediaStore 副本。 | class RecoverySnapshotStore、object MediaStoreRecoveryCopy |
 | `SessionBootstrap.kt` | 会话装配；会话存储可先初始化，心跳客户端按首帧后延后创建。 | object SessionBootstrap、fun initStore、fun startKeeper |
 | `SessionEvents.kt` | 掉线通知。 | object SessionEvents |
-| `SessionMirror.kt` | 设备身份与登录会话的**镜像**（同一份 JSON，沙盒 files/、/sdcard/.hgtv/、Android/data/ / 各存一份）。 | class SessionMirror |
+| `SessionMirror.kt` | 设备身份与登录会话的**兼容镜像**（沙盒、`.hgtv`、Documents 与 Android/data）；变化时同步触发完整恢复快照。 | class SessionMirror |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/debug/`
 

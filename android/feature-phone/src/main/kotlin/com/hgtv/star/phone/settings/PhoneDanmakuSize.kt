@@ -3,6 +3,7 @@ package com.hgtv.star.phone
 
 import android.content.Context
 import com.hgtv.star.core.DanmakuStyle
+import com.hgtv.star.shared.data.RecoverySnapshotManager
 
 /**
  * 手机端弹幕字号。
@@ -53,6 +54,7 @@ object PhoneDanmakuSize {
                 .edit()
                 .putInt(KEY, next)
                 .apply()
+            RecoverySnapshotManager.schedule(context.applicationContext)
         }
     }
 

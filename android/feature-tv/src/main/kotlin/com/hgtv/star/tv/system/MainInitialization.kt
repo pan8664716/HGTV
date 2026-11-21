@@ -197,9 +197,6 @@ internal fun TvMainActivity.initializeMainAfterFirstFrameImpl(state: Bundle?) {
     StartupTrace.done("main.favoriteMonitor",favoriteStarted)
     // 媒体会话不在这里创建：启动即建会把容器/ROM 的 media_session 故障放大成闪退，
     // 第一次同步播放状态时再按需创建（见 ensureMediaSession）。
-    // Android 6–9 还要一次外部存储授权，会话镜像（设备身份 + sessionid）才写得出去——
-    // 有了它，卸载重装才不必重新走一轮「注册 → 登录 → 发短信」。其他版本这里是空操作。
-    StartupTrace.section("main.requestMirrorStorage") { requestMirrorStorage() }
     // 调试包的启动期故障注入（见 [DebugFaults]）：正式包里 BuildConfig.DEBUG 是常量 false，
     // 整段被 R8 删掉。
     if(com.hgtv.star.tv.BuildConfig.DEBUG) main.postDelayed({

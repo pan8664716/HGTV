@@ -597,6 +597,10 @@ fun TvMainActivity.settings(parent: LinearLayout) {
     lateinit var lanSync: TvButton
     lanSync=cellSetting(dataRow,"同步其他设备数据") { showLanLibrarySync(lanSync) }
     track(3,backup,lanSync)
+    val fileRow=lineRow(data)
+    val localExport=cellSetting(fileRow,"导出到本机") { exportRecoveryFile() }
+    val localImport=cellSetting(fileRow,"从本机恢复") { importRecoveryFile() }
+    track(3,localExport,localImport)
     val resetRow=lineRow(data)
     lateinit var reset: TvButton
     reset=cellSetting(resetRow,resetLabel()) { clearLocalData(reset) }

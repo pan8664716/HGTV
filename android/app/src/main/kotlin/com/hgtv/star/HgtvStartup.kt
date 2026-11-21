@@ -7,6 +7,7 @@ import com.hgtv.star.core.refreshRecommendStatConfigAfterFirstFrame
 import com.hgtv.star.core.refreshTncAsync
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.data.IdentityBinder
+import com.hgtv.star.shared.data.RecoverySnapshotManager
 import com.hgtv.star.shared.data.SessionBootstrap
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.debug.Diagnostics
@@ -100,6 +101,7 @@ internal object HgtvStartup {
                     StartupTrace.section("startup.identityBind") {
                         IdentityBinder.bind(library,AppRuntime.repository(app))
                     }
+                    RecoverySnapshotManager.schedule(app)
                 },
             )
         },"hgtv-library-preload").apply { isDaemon=true }.start()
@@ -198,6 +200,7 @@ internal object HgtvStartup {
                 if(DeviceForm.ofStored(library.deviceForm)!=null) {
                     onDeviceFormSelected(context)
                 }
+                RecoverySnapshotManager.schedule(context.applicationContext)
                 StartupTrace.done("startup.prepare",startedAt)
                 complete()
             },

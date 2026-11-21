@@ -206,7 +206,7 @@ internal fun PhoneSettingsActivity.renderLandscapeSystem() {
     val data=landscapePanel("数据维护","收藏与进度存在本机，可导出、同步与恢复")
     landscapeLine(data).also { line ->
         landscapeCell(line,landscapeSetting("导出备份","存成 JSON 文件") { exportBackup() })
-        landscapeCell(line,landscapeSetting("从备份恢复","合并收藏、记录与设置") { importBackup() })
+                landscapeCell(line,landscapeSetting("从备份恢复","恢复登录、记录与设置") { importBackup() })
     }
     landscapeLine(data).also { line ->
         landscapeCell(line,landscapeSetting("清空应用缓存","恢复成刚安装的样子") {

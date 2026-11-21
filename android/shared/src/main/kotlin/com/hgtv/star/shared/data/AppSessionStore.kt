@@ -38,8 +38,13 @@ class AppSessionStore(
      * 结果是「恢复出厂之后还是登录着」。见 `LocalReset.resetting`。
      */
     private fun discarding(): Boolean = com.hgtv.star.shared.data.LocalReset.resetting
+    private val appContext = context.applicationContext
     private val sp: SharedPreferences =
-        context.applicationContext.getSharedPreferences(SP_NAME,Context.MODE_PRIVATE)
+        appContext.getSharedPreferences(SP_NAME,Context.MODE_PRIVATE)
+
+    private fun scheduleSnapshot() {
+        RecoverySnapshotManager.schedule(appContext)
+    }
 
     override val token: String
         get() = sp.getString(K_TOKEN,"").orEmpty().trim()
@@ -90,6 +95,7 @@ class AppSessionStore(
         edit.apply()
         mirror(K_TOKEN,clean)
         if(tsSign.isNotBlank()) mirror(K_TS_SIGN,tsSign.trim())
+        scheduleSnapshot()
         return true
     }
 
@@ -135,6 +141,7 @@ class AppSessionStore(
         edit.apply()
         mirror(K_COOKIE,merged)
         if(expires>0L) mirror(K_EXPIRES,expires.toString())
+        scheduleSnapshot()
         return true
     }
 
@@ -149,6 +156,7 @@ class AppSessionStore(
         edit.apply()
         mirror(K_COOKIE,clean)
         if(expires>0L) mirror(K_EXPIRES,expires.toString())
+        scheduleSnapshot()
         return true
     }
 
@@ -160,6 +168,7 @@ class AppSessionStore(
         val json = JSONObject().apply { clean.forEach { (key,value) -> put(key,value) } }.toString()
         sp.edit().putString(K_REGISTERED_COOKIES,json).apply()
         mirror(K_REGISTERED_COOKIES,json)
+        scheduleSnapshot()
     }
 
     /**
@@ -172,6 +181,7 @@ class AppSessionStore(
         set(value) {
             if(discarding()) return
             sp.edit().putString(K_FIRST_BEAT,value.toString()).apply()
+            scheduleSnapshot()
         }
 
     /**
@@ -188,6 +198,7 @@ class AppSessionStore(
             if(value>previous && value-previous<60_000L) return
             sp.edit().putLong(K_LAST_BEAT,value).apply()
             mirror(K_LAST_BEAT,value.toString())
+            scheduleSnapshot()
         }
 
     /** 只清会话，不动设备身份（`registered-*`）与设备档案。 */
@@ -201,6 +212,7 @@ class AppSessionStore(
         mirror(K_EXPIRES,null)
         mirror(K_LAST_BEAT,null)
         // `first-beat` 刻意保留：重登不代表「新设备首刷」
+        scheduleSnapshot()
     }
 
     companion object {

@@ -33,6 +33,7 @@ internal fun Library.clearRegistrationCookiesImpl() {
     if(identityDiscarding) return
     identitySessionPrefs.edit().remove("registered-cookies").commit()
     identityMirror.remove("registered-cookies")
+    RecoverySnapshotManager.schedule(identityApp)
 }
 
 internal fun Library.saveRegistrationCookiesImpl(cookies: Map<String,String>) {
@@ -45,4 +46,5 @@ internal fun Library.saveRegistrationCookiesImpl(cookies: Map<String,String>) {
     // 与身份同一次注册的产物：分开落盘就可能出现「device_id 在、install_id 不在」，
     // 那半份身份在服务端等于陌生设备（搜索空响应 / 播放 101000）。
     identityMirror.flush()
+    RecoverySnapshotManager.schedule(identityApp)
 }

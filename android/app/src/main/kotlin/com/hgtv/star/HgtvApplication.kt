@@ -1,8 +1,12 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star
 import android.app.Application
+import android.app.Activity
 import android.content.Context
+import android.os.Bundle
 import androidx.multidex.MultiDex
+import com.hgtv.star.shared.data.RecoveryPermissions
+import com.hgtv.star.shared.data.RecoverySnapshotManager
 import com.hgtv.star.shared.ui.UiText
 
 /**
@@ -24,5 +28,20 @@ class HgtvApplication: Application() {
         super.onCreate()
         UiText.init(this)
         AppIntegrityGuard.install(this)
+        registerActivityLifecycleCallbacks(object : ActivityLifecycleCallbacks {
+            override fun onActivityCreated(activity: Activity, savedInstanceState: Bundle?) = Unit
+            override fun onActivityStarted(activity: Activity) = Unit
+            override fun onActivityResumed(activity: Activity) {
+                if (RecoveryPermissions.hasPublicAccess(activity)) {
+                    RecoverySnapshotManager.onForeground(activity.applicationContext)
+                }
+            }
+            override fun onActivityPaused(activity: Activity) = Unit
+            override fun onActivityStopped(activity: Activity) {
+                RecoverySnapshotManager.schedule(activity.applicationContext, 0L)
+            }
+            override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
+            override fun onActivityDestroyed(activity: Activity) = Unit
+        })
     }
 }

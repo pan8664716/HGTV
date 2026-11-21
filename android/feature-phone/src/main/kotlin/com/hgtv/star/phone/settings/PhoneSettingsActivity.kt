@@ -30,7 +30,6 @@ import com.hgtv.star.core.DanmakuMode
 import com.hgtv.star.core.DanmakuSpeed
 import com.hgtv.star.core.DanmakuStyle
 import com.hgtv.star.core.EpisodePageSize
-import com.hgtv.star.core.LibraryBackup
 import com.hgtv.star.core.PLAYER_PANEL_TIMEOUT_RANGE
 import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackSpeed
@@ -54,6 +53,8 @@ import com.hgtv.star.shared.ProjectInfo
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.DeviceFormSelection
 import com.hgtv.star.shared.data.LocalReset
+import com.hgtv.star.shared.data.RecoveryPermissions
+import com.hgtv.star.shared.data.RecoverySnapshotManager
 import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.feature.lan.LanSyncController
 import com.hgtv.star.shared.feature.settings.SettingRowSpec
@@ -137,6 +138,7 @@ class PhoneSettingsActivity : PhoneActivity() {
     internal val settingsUpdateController get()=updateController
     private var updateState=AppUpdateState()
     internal val settingsUpdateState get()=updateState
+    internal var settingsResetStorageAsked=false
     private var updateCollector: Job? = null
     private var page = PhoneSettingsPage.PLAYBACK
     internal var settingsPage: PhoneSettingsPage
@@ -354,6 +356,22 @@ class PhoneSettingsActivity : PhoneActivity() {
     override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
         super.onActivityResult(requestCode, resultCode, data)
         handleActivityResultImpl(requestCode, resultCode, data)
+    }
+
+    override fun onRequestPermissionsResult(
+        requestCode: Int,
+        permissions: Array<out String>,
+        grantResults: IntArray,
+    ) {
+        if (android.os.Build.VERSION.SDK_INT >= 23) {
+            super.onRequestPermissionsResult(requestCode, permissions, grantResults)
+        }
+        if (requestCode != RecoveryPermissions.RESET_REQUEST_CODE) return
+        RecoverySnapshotManager.onPermissionChanged(
+            this,
+            RecoveryPermissions.isGranted(grantResults),
+        )
+        performReset()
     }
 
     // ---------------------------------------------------------------- 控件

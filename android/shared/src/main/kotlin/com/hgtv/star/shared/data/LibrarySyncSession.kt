@@ -107,6 +107,7 @@ internal fun Library.importSyncSessionImpl(
         if(value==null) identityMirror.remove(key) else identityMirror.put(key,value)
     }
     identityMirror.flush()
+    RecoverySnapshotManager.schedule(identityApp)
     identityLayoutInitialized=true
     identityMirrorChecked=true
     identityCachedProfileStamp=null

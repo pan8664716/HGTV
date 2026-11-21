@@ -4,11 +4,11 @@ package com.hgtv.star.phone
 import android.app.Activity
 import android.content.Intent
 import android.net.Uri
-import com.hgtv.star.core.LibraryBackup
 import com.hgtv.star.shared.architecture.AppRelaunch
 import com.hgtv.star.shared.compat.DeviceForm
 import com.hgtv.star.shared.compat.DeviceFormSelection
 import com.hgtv.star.shared.compat.setSystemBarColorsCompat
+import com.hgtv.star.shared.data.RecoverySnapshotManager
 import com.hgtv.star.phone.ui.applyPhoneNavigationBar
 
 /** 横屏设置页使用沉浸式：状态栏和底部系统导航都隐藏，只保留一小条分区导航。 */
@@ -93,7 +93,7 @@ internal fun PhoneSettingsActivity.handleActivityResultImpl(
         PhoneSettingsActivity.REQUEST_IMPORT -> {
             val text = runCatching {
                 contentResolver.openInputStream(uri)?.use { input ->
-                    val buffer = ByteArray(LibraryBackup.MAX_BYTES + 1)
+                    val buffer = ByteArray(RecoverySnapshotManager.MAX_BYTES + 1)
                     var read = 0
                     while (read < buffer.size) {
                         val n = input.read(buffer, read, buffer.size - read)
@@ -107,17 +107,12 @@ internal fun PhoneSettingsActivity.handleActivityResultImpl(
                 toastImpl("读不到这个文件")
                 return
             }
-            val backup = runCatching { LibraryBackup.decode(text) }.getOrNull()
-            if (backup == null) {
+            if (!RecoverySnapshotManager.importText(this,text)) {
                 toastImpl("备份格式不对")
                 return
             }
-            runCatching { settingsLibrary.restore(backup, true) }
-                .onSuccess {
-                    toastImpl("记录已合并恢复")
-                    renderSettings()
-                }
-                .onFailure { toastImpl("恢复失败") }
+            toastImpl("恢复完成，正在重启")
+            AppRelaunch.relaunchAndExit(this)
         }
     }
 }

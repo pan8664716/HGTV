@@ -85,6 +85,7 @@ internal fun Library.saveAccountImpl(credentials: AccountCredentials) {
     // 外部那份**永远是最新的**，重装后捞回来就能直接用，不会拿着过期的会话去请求。
     if(credentials.cookie.isNotBlank()) identityMirror.put("account-cookie",credentials.cookie.trim())
     if(credentials.expiresAt>0) identityMirror.put("account-expires",credentials.expiresAt)
+    RecoverySnapshotManager.schedule(identityApp)
 }
 
 internal fun Library.clearAccountImpl() {
@@ -98,4 +99,5 @@ internal fun Library.clearAccountImpl() {
     // 账号数据快照跟着一起清：留着它下次登录（甚至是**另一个**账号）就会先把别人的
     // 收藏 / 历史铺出来，再等刷新纠正——那几秒钟界面上是错的内容。
     clearAccountCache()
+    RecoverySnapshotManager.schedule(identityApp)
 }

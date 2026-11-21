@@ -310,7 +310,7 @@ internal fun PhoneSettingsActivity.renderSystem() {
     sectionImpl("数据维护")
     actionImpl("导出备份", "存成一份 JSON 文件") { exportBackup() }
     actionImpl("同步其他设备数据", "通过局域网 NSD 查找设备") { showLanLibrarySync() }
-    actionImpl("从备份恢复", "合并收藏、记录与设置") { importBackup() }
+    actionImpl("从备份恢复", "恢复登录、记录与设置") { importBackup() }
 
     sectionImpl("危险操作")
     actionImpl("清空应用缓存", "恢复成刚安装的样子") {

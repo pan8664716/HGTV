@@ -52,21 +52,8 @@ fun TvMainActivity.accountHistoryPaging()=
  */
 const val REQUEST_ACCOUNT_FILE=0x51
 
-/**
- * 「会话镜像要写外部存储」的授权请求码（见 [TvMainActivity.requestMirrorStorage]）。
- *
- * 只有 Android 6–9（23–28）会用到：那个区间写 `Android/data/<包名>/` 需要运行时授权，
- * 而 4.4–5.1 是安装期权限、10 起不需要权限。
- */
-const val REQUEST_MIRROR_STORAGE=0x52
-
-/**
- * 「清空应用缓存」要外部存储权限的请求码（见 [TvMainActivity.performLocalReset]）。
- *
- * 与 [REQUEST_MIRROR_STORAGE] 分开：那一条拿到权限后要去恢复会话，这一条只是让
- * `/sdcard/.hgtv` 删得掉；两者同时复用会让「恢复出厂」把刚清掉的会话又救回来。
- */
-const val REQUEST_RESET_STORAGE=0x53
+const val REQUEST_RECOVERY_EXPORT=0x56
+const val REQUEST_RECOVERY_IMPORT=0x57
 
 /**
  * 系统语音搜索（[android.speech.RecognizerIntent.ACTION_RECOGNIZE_SPEECH]）的请求码。

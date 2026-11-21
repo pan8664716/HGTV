@@ -10,12 +10,13 @@
     -->
     <uses-permission android:name="android.permission.WAKE_LOCK"/>
     <!--
-      外部存储读写：给会话镜像用——把 device_id / iid 与 sessionid 那一串写到自建的
-      `/sdcard/.hgtv/`（卸载不删），卸载重装后直接恢复登录，不必重新注册、重新收短信验证。
-      4.4–5.1 是安装期权限（装上就有）；6 及以上需要运行时授权（见 TvMainActivity.requestMirrorStorage）。
+      外部存储读写：给 Phone / TV 共用的卸载恢复快照用——把设备身份、登录会话、
+      收藏、历史、搜索、稍后看、隐藏项和全部用户配置写到公共目录，卸载重装后恢复。
+      4.4–5.1 是安装期权限（装上就有）；6 及以上由公共启动页统一运行时授权。
       传统存储模式下（见下面的 requestLegacyExternalStorage）这一个权限就等于整个公共存储的
       读写权，因此**不设 maxSdkVersion**。
     -->
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"/>
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"/>
     <uses-feature android:name="android.software.leanback" android:required="false"/>
     <uses-feature android:name="android.hardware.touchscreen" android:required="false"/>

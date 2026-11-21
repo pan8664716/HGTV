@@ -32,7 +32,7 @@ import org.json.JSONObject
  *    这种情况：注册一次成功，退出再进又成了未注册设备），它是唯一一定写得进去的那一份；
  * 2. `/sdcard/.hgtv/`（自建隐藏目录）—— **卸载不删**，只要用户没手动清存储就一直在。
  *    这一处是「卸载重装仍能恢复」的主力：靠 `targetSdk 29` + `requestLegacyExternalStorage`
- *    拿到的传统存储权限直接写公共目录（见 manifest 与 `TvMainActivity.requestMirrorStorage`）。
+ *    拿到的传统存储权限直接写公共目录（见 manifest 与公共启动恢复流程）。
  * 3. `Android/data/<包名>/files/`（[Context.getExternalFilesDir]）—— 不需要权限，
  *    标准 Android 在卸载时由 vold 清理，但很多真机（尤其国产 ROM）会把它残留下来。
  * 4. `Documents/.hgtv/`——Android 4.4 等没有 MediaStore Downloads 的版本使用这份直读兼容路径。
@@ -311,6 +311,7 @@ class SessionMirror(private val app: Context) {
             runCatching { writes.submit(mapOf("mirror" to { text })) }
                 .onFailure { Log.w("HGTV","Session mirror queue closed; change kept in memory only"); Diagnostics.warn("HGTV-MIRROR","queue closed; change kept in memory only") }
         }
+        RecoverySnapshotManager.schedule(app)
     }
 
     /**
@@ -327,6 +328,7 @@ class SessionMirror(private val app: Context) {
             runCatching { writes.submit(mapOf("mirror" to { text })) }
                 .onFailure { Log.w("HGTV","Session mirror queue closed; change kept in memory only"); Diagnostics.warn("HGTV-MIRROR","queue closed; change kept in memory only") }
         }
+        RecoverySnapshotManager.schedule(app)
     }
 
     /** 读盘之后把读盘之前的写入合并进来；有改动就整份落盘一次。 */
@@ -339,6 +341,7 @@ class SessionMirror(private val app: Context) {
         val text=encodeLocked()
         runCatching { writes.submit(mapOf("mirror" to { text })) }
             .onFailure { Log.w("HGTV","Session mirror queue closed; change kept in memory only"); Diagnostics.warn("HGTV-MIRROR","queue closed; change kept in memory only") }
+        RecoverySnapshotManager.schedule(app)
     }
 
     fun flush() { runCatching { writes.flush() } }

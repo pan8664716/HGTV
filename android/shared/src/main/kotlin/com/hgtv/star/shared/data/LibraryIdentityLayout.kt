@@ -60,14 +60,17 @@ internal fun Library.ensureIdentityLayoutImpl() {
             identityMirror.put(identityLayoutKeyValue,"1")
             identityMirror.flush()
             identityCachedProfileStamp=null
+            RecoverySnapshotManager.schedule(identityApp)
             Log.i("HGTV","Legacy device identity archived; new main identity will be registered")
         } else if(!identitySessionPrefs.contains(identityLayoutKeyValue)) {
             identitySessionPrefs.edit().putString(identityLayoutKeyValue,"1").commit()
+            RecoverySnapshotManager.schedule(identityApp)
         }
         // 手动 device_id 已下线：升级时把旧值和旧镜像一起清掉。
         if(identitySessionPrefs.contains("manual-device-id")) {
             identitySessionPrefs.edit().remove("manual-device-id").apply()
             identityMirror.remove("manual-device-id")
+            RecoverySnapshotManager.schedule(identityApp)
         }
         identityLayoutInitialized=true
     }

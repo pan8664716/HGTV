@@ -128,6 +128,7 @@ internal fun Library.invalidateRegistrationImpl() {
         "registered-cookies")
         .forEach(identityMirror::remove)
     identityCachedProfileStamp=null
+    RecoverySnapshotManager.schedule(identityApp)
 }
 
 /** 落盘注册结果；传空表示清除（下次启动重新注册）。 */
@@ -161,4 +162,5 @@ internal fun Library.saveDeviceIdentityImpl(
     // 不等 250 ms 的合并窗口：注册成功后用户可能马上就退出 / 强杀，
     // 那一次写没落盘，下一次进来就又成了「未注册设备」——正是用户报的那个现象。
     identityMirror.flush()
+    RecoverySnapshotManager.schedule(identityApp)
 }

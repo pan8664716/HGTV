@@ -27,6 +27,7 @@ internal fun Library.restoreFromMirrorImpl(): Boolean {
         edit.apply()
         Log.i("HGTV","Restored device identity / session from the external mirror")
         SessionBootstrap.onSessionRestored()
+        RecoverySnapshotManager.schedule(identityApp)
     }
     return changed
 }

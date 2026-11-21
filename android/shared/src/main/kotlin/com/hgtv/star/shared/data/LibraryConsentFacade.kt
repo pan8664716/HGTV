@@ -13,6 +13,7 @@ var Library.thirdPartyAccepted: Boolean
         if(identityDiscarding) return
         if(value==thirdPartyAccepted) return
         identitySessionPrefs.edit().putBoolean("third-party-accepted",value).apply()
+        RecoverySnapshotManager.schedule(identityApp)
     }
 
 /**

@@ -14,6 +14,7 @@ import android.graphics.drawable.GradientDrawable
 import android.util.TypedValue
 import android.widget.TextView
 import com.hgtv.star.core.AppConfig
+import com.hgtv.star.shared.data.RecoverySnapshotManager
 import kotlin.math.abs
 
 /**
@@ -268,6 +269,7 @@ object PhoneUiScale {
             .putBoolean(KEY_LEGACY_DEFAULT_MIGRATED, true)
             .putBoolean(KEY_ORIENTATION_SPLIT_MIGRATED, true)
             .apply()
+        RecoverySnapshotManager.schedule(context.applicationContext)
         if(isLandscape(context)) landscapeValue=next else portraitValue=next
     }
 
@@ -284,6 +286,7 @@ object PhoneUiScale {
             .putBoolean(KEY_LEGACY_DEFAULT_MIGRATED, true)
             .putBoolean(KEY_ORIENTATION_SPLIT_MIGRATED, true)
             .apply()
+        RecoverySnapshotManager.schedule(context.applicationContext)
     }
 
     fun sizeOf(value: Float): Size =

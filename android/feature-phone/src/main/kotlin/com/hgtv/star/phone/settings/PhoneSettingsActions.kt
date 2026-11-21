@@ -3,12 +3,13 @@ package com.hgtv.star.phone
 
 import com.hgtv.star.shared.ui.UiText
 import android.content.Intent
-import com.hgtv.star.core.LibraryBackup
 import com.hgtv.star.phone.ui.PhoneDialog
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.PhoneUiScale
 import com.hgtv.star.shared.ProjectInfo
 import com.hgtv.star.shared.data.LocalReset
+import com.hgtv.star.shared.data.RecoveryPermissions
+import com.hgtv.star.shared.data.RecoverySnapshotManager
 import com.hgtv.star.shared.ui.TvTheme
 
 internal fun PhoneSettingsActivity.appVersionName(): String = appVersionNameImpl()
@@ -49,20 +50,17 @@ internal fun PhoneSettingsActivity.restoreDefaults() {
 /**
  * 导出：走系统的「创建文档」。
  *
- * 与 TV 的「手机备份与恢复」（局域网把 JSON 传给手机）不同——手机上导出再传给自己没有意义，
- * 因此这里直接落到用户选的文件里（下载目录 / 网盘 / 聊天工具都行）。
- * 用的是 SAF，不需要任何存储权限，4.4 起就有。
+ * 导出的是 Phone / TV 共用的完整恢复快照，包含登录、设备 ID、记录和全部配置。
+ * SAF 本身不需要存储权限，4.4 起就有。
  */
 internal fun PhoneSettingsActivity.exportBackup() {
-    val encoded = runCatching {
-        LibraryBackup.encode(settingsLibrary.snapshot())
-    }.getOrNull()
+    val encoded = runCatching { RecoverySnapshotManager.exportText(this) }.getOrNull()
     if (encoded == null) {
         toastImpl("本机记录暂时无法导出")
         return
     }
     settingsPendingExport = encoded
-    val name = "hgtv-backup-${System.currentTimeMillis() / 1000}.json"
+    val name = "hgtv-recovery-${System.currentTimeMillis() / 1000}.json"
     runCatching {
         startActivityForResult(
             Intent(Intent.ACTION_CREATE_DOCUMENT)
@@ -74,7 +72,7 @@ internal fun PhoneSettingsActivity.exportBackup() {
     }.onFailure { toastImpl("这台设备没有文件选择器") }
 }
 
-/** 恢复：选一个 JSON，解码后按 TV 的同一套规则合并（设置一起带回来）。 */
+/** 恢复：选一个完整快照，覆盖本机数据后重启进程。 */
 internal fun PhoneSettingsActivity.importBackup() {
     runCatching {
         startActivityForResult(
@@ -94,6 +92,13 @@ internal fun PhoneSettingsActivity.importBackup() {
  * 会留在 .reset-pending 标记后面，下次启动不会再被捞回来）。
  */
 internal fun PhoneSettingsActivity.performReset() {
+    if (android.os.Build.VERSION.SDK_INT >= 23 &&
+        !RecoveryPermissions.hasPublicAccess(this) &&
+        !settingsResetStorageAsked
+    ) {
+        settingsResetStorageAsked=true
+        if (RecoveryPermissions.request(this,RecoveryPermissions.RESET_REQUEST_CODE)) return
+    }
     LocalReset.resetting = true
     runCatching { settingsLibrary.discardPendingWrites() }
     Thread({

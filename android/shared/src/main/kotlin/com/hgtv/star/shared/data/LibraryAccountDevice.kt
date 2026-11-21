@@ -28,4 +28,5 @@ internal fun Library.saveAccountDeviceImpl(device: Map<String,String>) {
     // 这份档案是**写接口一致性判定**用的（平台拿它比对请求头里的机型 / cdid 那一套），
     // 重装后会话能不能真的用起来就看它有没有跟着回来，所以一并镜像。
     identityMirror.put("account-device",json.toString())
+    RecoverySnapshotManager.schedule(identityApp)
 }

@@ -2,13 +2,10 @@
 package com.hgtv.star.tv
 
 import com.hgtv.star.shared.ui.UiText
-import android.Manifest
-import android.content.pm.PackageManager
 import android.os.Build
 import android.view.View
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import com.hgtv.star.shared.data.LocalReset
+import com.hgtv.star.shared.data.RecoveryPermissions
 
 // 本文件是从 TvMainActivity.kt 拆出来的「清空应用缓存（恢复出厂）」这一块。
 // 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
@@ -40,8 +37,7 @@ fun TvMainActivity.clearLocalData(anchor: View?) {
 /**
  * 本次进程里已经为「清除本地数据」要过一次外部存储权限（用户拒绝后不再纠缠）。
  *
- * 与 [requestMirrorStorage] 的那一次分开记：那一条只在启动时问、拿到权限后还要顺带恢复会话；
- * 这里问的目的只有一个——把 `/sdcard/.hgtv` 删掉。
+ * 启动时的恢复权限由公共启动页统一申请；这里只为删除公共快照再补一次授权。
  */
 private var resetStorageAsked=false
 
@@ -65,18 +61,10 @@ fun TvMainActivity.performLocalReset() {
     // `/sdcard/.hgtv` 在 Android 6–10 上要运行时权限才删得掉（targetSdk 29 + 传统存储模式，
     // 见 manifest）。没授权就先要一次：用户拒绝也照样继续（沙盒与 Android/data 仍然清空），
     // 只是那一份旧镜像可能留在外部存储里——那种情况由 `.reset-pending` 标记兜住。
-    // 与启动时那次 [requestMirrorStorage] 用同一个区间（>=23）。
-    //
-    // 早先这里写死 23..29：Android 11+ 上**永远不会**再申请。用户启动时拒绝过一次存储权限、
-    // 之后到设置里点「清空应用缓存」，`/sdcard/.hgtv/hgtv-session.json`（明文凭据）就删不掉，
-    // 永久留在卡上。`.reset-pending` 标记能挡住「下次启动把它捞回来」，
-    // 但文件本身还在——恢复出厂的说法就不成立了。
-    if(Build.VERSION.SDK_INT>=23 && !resetStorageGranted()) {
+    if(Build.VERSION.SDK_INT>=23 && !RecoveryPermissions.hasPublicAccess(this)) {
         if(!resetStorageAsked) {
             resetStorageAsked=true
-            runCatching {
-                ActivityCompat.requestPermissions(this,arrayOf(Manifest.permission.WRITE_EXTERNAL_STORAGE),REQUEST_RESET_STORAGE)
-            }
+            RecoveryPermissions.request(this,RecoveryPermissions.RESET_REQUEST_CODE)
             return
         }
     }
@@ -120,9 +108,6 @@ fun TvMainActivity.performLocalReset() {
         }
     }, "hgtv-local-reset").start()
 }
-
-private fun TvMainActivity.resetStorageGranted(): Boolean =
-    ContextCompat.checkSelfPermission(this,Manifest.permission.WRITE_EXTERNAL_STORAGE)==PackageManager.PERMISSION_GRANTED
 
 /** 设置页里那一枚按钮的文案：整栏宽的一行，与其它设置项同一档。 */
 fun resetLabel() = "清空应用缓存"

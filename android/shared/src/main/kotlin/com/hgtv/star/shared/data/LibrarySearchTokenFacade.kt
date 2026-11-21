@@ -20,4 +20,5 @@ var Library.searchToken: String
         // 清空令牌是明确的删除意图（用户在设置里清掉的），走 remove 而不是 put(null)：
         // 后者在读盘之前只会被当成「本机还没有」，盘上那份不会被抹掉。
         if(value.isBlank()) identityMirror.remove("x-tt-token") else identityMirror.put("x-tt-token",value.trim())
+        RecoverySnapshotManager.schedule(identityApp)
     }

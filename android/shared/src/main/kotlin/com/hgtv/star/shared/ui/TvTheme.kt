@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.ui
 import android.content.Context
 import android.graphics.Color
+import com.hgtv.star.shared.data.RecoverySnapshotManager
 
 /**
  * 主题：二十套新拟态配色（设置 → 主题外观）。
@@ -386,6 +387,7 @@ object TvThemeStore {
             .edit()
             .putString(KEY, theme.storedValue)
             .apply()
+        RecoverySnapshotManager.schedule(context.applicationContext)
     }
 
     fun saveNow(context: Context, theme: TvTheme): Boolean =
@@ -393,4 +395,5 @@ object TvThemeStore {
             .edit()
             .putString(KEY, theme.storedValue)
             .commit()
+            .also { if (it) RecoverySnapshotManager.schedule(context.applicationContext) }
 }

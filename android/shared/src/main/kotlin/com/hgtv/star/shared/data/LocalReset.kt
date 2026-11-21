@@ -14,7 +14,7 @@ import java.io.File
  *
  * 1. **沙盒**：`files/`、`cache/`、`shared_prefs/`、`databases/`、`no_backup/`；
  * 2. **外部私有目录**：`Android/data/<包名>/`（`getExternalFilesDir` 与 `getExternalCacheDir` 的父目录）；
- * 3. **自建公共目录**：`/sdcard/.hgtv/`（会话镜像，卸载不删的那一份）。
+ * 3. **公共目录**：`/sdcard/.hgtv/`、`Documents/HGTV/`、`Download/HGTV/`（恢复快照与会话镜像）。
  *
  * 为什么删完必须杀进程：Android 在进程内按文件名缓存了 `SharedPreferences` 实例，
  * 只删 XML 文件的话下一次 `getSharedPreferences` 拿到的仍是内存里那份旧值，
@@ -106,6 +106,8 @@ object LocalReset {
         }.getOrNull()?.let(::remove)
         // Android 10+ 的 MediaStore 副本也要一起删，否则恢复出厂后仍能从 Download/HGTV 捞回会话。
         runCatching { SessionPublicCopy.delete(app) }
+        // 完整卸载恢复快照也必须一起删；否则清空本机数据后重装会把旧登录和旧记录救回来。
+        runCatching { RecoverySnapshotManager.deleteAll(app) }
 
         return failures
     }

@@ -41,6 +41,7 @@ internal fun Library.deviceProfileImpl(): Map<String,String> {
                     identityMirror.put("device-profile",json)
                     identityMirror.flush()
                     identityCachedProfileStamp=null
+                    RecoverySnapshotManager.schedule(identityApp)
                     android.util.Log.i("HGTV","Device openudid upgraded to Android ID")
                 }
             }
@@ -57,6 +58,7 @@ internal fun Library.deviceProfileImpl(): Map<String,String> {
     identityMirror.put("device-profile",json.toString())
     identityMirror.flush()
     identityCachedProfileStamp=null
+    RecoverySnapshotManager.schedule(identityApp)
     return fresh
 }
 

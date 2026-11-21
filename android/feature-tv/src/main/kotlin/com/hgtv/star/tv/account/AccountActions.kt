@@ -28,67 +28,6 @@ import kotlinx.coroutines.launch
 // 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
-/**
- * 请求「会话镜像」要用的外部存储权限（Android 6 及以上）。
- *
- * 镜像（见 [com.hgtv.star.shared.data.SessionMirror]）把 `device_id` / `iid` 与 `sessionid` 那一串
- * 放到 `/sdcard/.hgtv/`（自建公共目录，卸载不删），卸载重装后靠它把设备身份与会话捞回来，
- * 省掉重新注册、重新登录、再发一次上行短信这一整轮。
- *
- * 写 `/sdcard` 需要 `WRITE_EXTERNAL_STORAGE`：4.4–5.1 是安装期权限（装上就有），
- * **6 及以上要运行时授权**。这正是 `targetSdk 29` + `requestLegacyExternalStorage` 的用途——
- * 传统存储模式下这一个权限就等于整个公共存储的读写权（见 manifest）。
- * 不给，这一层就是空的，用户每次重装都得重新验证一遍本人。
- *
- * 一个进程只问一次（[mirrorStorageAsked]）：用户拒绝之后不再纠缠，镜像退化为不可用，
- * 其他功能完全不受影响（`SessionMirror` 写不进去只留一行日志）。
- */
-private var mirrorStorageAsked=false
-fun TvMainActivity.requestMirrorStorage() {
-    if(android.os.Build.VERSION.SDK_INT<23 || mirrorStorageAsked) return
-    mirrorStorageAsked=true
-    val granted=android.content.pm.PackageManager.PERMISSION_GRANTED==
-        androidx.core.content.ContextCompat.checkSelfPermission(this,android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
-    if(granted) return
-    runCatching {
-        androidx.core.app.ActivityCompat.requestPermissions(
-            this,arrayOf(android.Manifest.permission.WRITE_EXTERNAL_STORAGE),REQUEST_MIRROR_STORAGE)
-    }
-}
-
-/**
- * 外部存储授权回来之后的收尾。
- *
- * 拿到权限的**那一刻**才是 `/sdcard/.hgtv` 第一次真读得到的时候，而启动时那次恢复已经跑过了
- * （那时读不到，等于什么都没补），所以这里必须重试一次：
- * 补到内容就立刻重新应用凭据并重画页面——**新装的应用因此可以直接回到登录状态**，
- * 不必重新注册设备、重新收短信验证。拒绝授权就什么都不做（镜像退化为 Android/data 那一份）。
- */
-fun TvMainActivity.onMirrorStorageResult(granted: Boolean) {
-    if(!granted) return
-    retryMirrorRestoreIfPermitted()
-}
-
-/**
- * 用户可能先在权限弹窗里拒绝，随后去系统设置重新打开存储权限。
- * 那种情况没有 `onRequestPermissionsResult`，必须在回到前台时再补读一次。
- */
-fun TvMainActivity.retryMirrorRestoreIfPermitted() {
-    if(mirrorRestoreRetried || !library.isLoaded || repository.signedIn) return
-    if(android.os.Build.VERSION.SDK_INT<23) return
-    val granted=android.content.pm.PackageManager.PERMISSION_GRANTED==
-        androidx.core.content.ContextCompat.checkSelfPermission(this,android.Manifest.permission.WRITE_EXTERNAL_STORAGE)
-    if(!granted) return
-    mirrorRestoreRetried=true
-    // 读盘交给 loader 线程：权限回调在主线程，这里不能碰 `/sdcard`（见 Library.retryMirrorRestore）。
-    library.retryMirrorRestore { restored ->
-        if(!restored || isDestroyed) return@retryMirrorRestore
-        // **不弹窗**：这一步是启动流程的一部分，用户没做任何操作，不需要被告知。
-        // 「恢复了什么」只留在日志里（`logcat -s HGTV`），界面上直接就是登录状态。
-        applySessionToken(); applyAccount(); showCatalog(load=true)
-    }
-}
-
 fun TvMainActivity.pickAccountFile() {
     val intent=android.content.Intent(android.content.Intent.ACTION_OPEN_DOCUMENT).apply {
         addCategory(android.content.Intent.CATEGORY_OPENABLE)

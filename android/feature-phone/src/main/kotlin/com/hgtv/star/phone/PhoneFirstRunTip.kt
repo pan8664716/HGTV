@@ -4,6 +4,7 @@ package com.hgtv.star.phone
 import android.app.Activity
 import android.content.Context
 import com.hgtv.star.phone.ui.PhoneDialog
+import com.hgtv.star.shared.data.RecoverySnapshotManager
 
 /**
  * 首次进入时的「先调一下显示」提示。
@@ -34,6 +35,7 @@ object PhoneFirstRunTip {
         if (prefs.getBoolean(KEY, false)) return
         // 先落盘再弹：用户在弹窗还没出来时切走 / 被杀进程，也不该在下次又弹一遍。
         prefs.edit().putBoolean(KEY, true).apply()
+        RecoverySnapshotManager.schedule(activity.applicationContext)
         PhoneDialog(activity, TITLE)
             .message(MESSAGE)
             .button(CANCEL)

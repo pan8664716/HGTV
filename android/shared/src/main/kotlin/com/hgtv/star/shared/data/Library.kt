@@ -256,6 +256,7 @@ class Library(context: Context) {
     private fun put(key: String, value: Any?) {
         if(discarding) return
         writes.submit(mapOf(key to { value }))
+        RecoverySnapshotManager.schedule(app)
     }
     private fun persist(vararg keys: String) {
         if(discarding) return
@@ -276,6 +277,7 @@ class Library(context: Context) {
             }
         }
         writes.submit(batch)
+        RecoverySnapshotManager.schedule(app)
     }
     fun favorites() = state().favorites()
     fun favorite(id: String) = state().favorite(id)
@@ -308,6 +310,7 @@ class Library(context: Context) {
         if (!state().save(progress)) return
         com.hgtv.star.core.WorkLanes.disk.executor.execute { progressStore.save(progress) }
         if (hadTombstone) persist("historyDeleted")
+        RecoverySnapshotManager.schedule(app)
     }
     fun replaceHistory(rows: List<WatchProgress>): Boolean {
         if (discarding) return false
@@ -679,6 +682,7 @@ class Library(context: Context) {
             commit(prefs, mapOf("deviceForm" to { clean }))
         }.getOrDefault(false)
         if(!saved) deviceFormCached=previous
+        if(saved) RecoverySnapshotManager.schedule(app,0L)
         return saved
     }
     @Volatile private var deviceFormCached: String="auto"
@@ -760,6 +764,7 @@ class Library(context: Context) {
             "keymap" to { merged.settings.keys },
             "historyPreferDetail" to { merged.settings.historyPreferDetail }))
         flush()
+        RecoverySnapshotManager.schedule(app)
     }
     fun flush() { writes.flush(); homeWrites.flush(); accountWrites.flush(); mirror.flush() }
     fun flushBlocking(timeoutMillis: Long = 5_000): Boolean {

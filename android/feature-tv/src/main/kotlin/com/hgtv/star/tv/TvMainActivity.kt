@@ -254,6 +254,7 @@ class TvMainActivity: Activity() {
             if(value==null) accountController.clear() else accountController.replace(value)
         }
     var pendingAccountUri: android.net.Uri?=null
+    var pendingRecoveryExport: String?=null
     var accountError: Throwable?=null
     var accountLoading=false
     var accountLoadingColumns: Set<String> = emptySet()
@@ -267,7 +268,6 @@ class TvMainActivity: Activity() {
     var accountHistoryToken=0
     var accountHistoryEmptyPages=0
     /** 权限授予后最多补读一次旧镜像，避免每次 onResume 都触发 MediaStore 查询。 */
-    var mirrorRestoreRetried=false
     var deviceRegistering=false
     var playbackHevcSupported=true
     val sessionPlayback=com.hgtv.star.core.SessionPlaybackPolicy()

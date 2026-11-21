@@ -13,11 +13,13 @@ import com.hgtv.star.core.OfficialDeviceIds
 internal fun Library.markRegistrationPendingImpl() {
     if(identityDiscarding) return
     identitySessionPrefs.edit().putBoolean("registration-pending",true).apply()
+    RecoverySnapshotManager.schedule(identityApp)
 }
 
 internal fun Library.clearRegistrationPendingImpl() {
     if(identityDiscarding) return
     identitySessionPrefs.edit().remove("registration-pending").apply()
+    RecoverySnapshotManager.schedule(identityApp)
 }
 
 internal fun Library.registrationPendingImpl(): Boolean {
