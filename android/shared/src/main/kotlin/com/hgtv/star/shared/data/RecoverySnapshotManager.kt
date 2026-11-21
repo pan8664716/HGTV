@@ -5,7 +5,9 @@ import android.content.Context
 import android.content.SharedPreferences
 import android.os.Build
 import android.util.Log
+import com.hgtv.star.core.LibraryBackup
 import com.hgtv.star.core.LibraryDisk
+import org.json.JSONObject
 import java.io.File
 import java.util.concurrent.Executors
 import java.util.concurrent.ScheduledFuture
@@ -134,6 +136,11 @@ object RecoverySnapshotManager {
     /** 手动导入：覆盖当前本机数据，调用方随后必须重启进程。 */
     fun importText(context: Context, text: String): Boolean = runCatching {
         val app = context.applicationContext
+        if (runCatching { JSONObject(text).optString("format") == "hgtv.library" }
+                .getOrDefault(false)
+        ) {
+            return@runCatching importLegacyLibrary(app, text)
+        }
         val snapshot = RecoverySnapshotCodec.decode(text)
         applySnapshot(app, snapshot)
         statePrefs(app).edit()
@@ -148,6 +155,21 @@ object RecoverySnapshotManager {
     }.getOrElse {
         Log.w("HGTV-RECOVERY", "manual import failed", it)
         false
+    }
+
+    private fun importLegacyLibrary(app: Context, text: String): Boolean {
+        val backup = LibraryBackup.decode(text)
+        val library = AppRuntime.library(app)
+        check(library.isLoaded) { "旧备份导入前本机书库尚未加载" }
+        library.restore(backup, restoreSettings = true)
+        library.flushBlocking(3_000L)
+        statePrefs(app).edit()
+            .putBoolean(KEY_INITIALIZED, true)
+            .putBoolean(KEY_SKIPPED_PUBLIC, false)
+            .commit()
+        initialized = true
+        writeNow(app)
+        return true
     }
 
     /** 应用内清空数据：公共、私有快照和恢复决策一起删除。 */

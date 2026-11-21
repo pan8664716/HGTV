@@ -1110,7 +1110,7 @@ android/
 | `ProgressStore.kt` | 观看进度的落盘：**一剧一文件**；账号历史整表覆盖时清理远端已不存在的进度文件。 | class ProgressStore、fun ProgressStore.replaceAll |
 | `RecoveryPermissions.kt` | Phone / TV 共用的外部存储读写权限检查与申请入口。 | object RecoveryPermissions、fun hasPublicAccess、fun request |
 | `RecoverySnapshotCodec.kt` | 完整恢复快照的明文 JSON 编解码、类型保持、schemaVersion 与 SHA-256 校验。 | data class RecoverySnapshot、object RecoverySnapshotCodec、class NewerRecoverySnapshotException |
-| `RecoverySnapshotManager.kt` | Phone / TV 共用的启动恢复、权限后授予覆盖、防抖保存、手动导入导出和重置删除。 | object RecoverySnapshotManager、fun restoreAtLaunch、fun onPermissionChanged、fun schedule、fun exportText、fun importText、fun deleteAll |
+| `RecoverySnapshotManager.kt` | Phone / TV 共用的启动恢复、旧数据迁移、权限后授予覆盖、防抖保存、手动导入导出（兼容旧 `hgtv.library`）和重置删除。 | object RecoverySnapshotManager、fun restoreAtLaunch、fun onPermissionChanged、fun schedule、fun exportText、fun importText、fun deleteAll |
 | `RecoverySnapshotStore.kt` | 完整恢复快照的私有/公共原子写入、`.bak`、动态 Download/HGTV 与 MediaStore 副本，以及旧会话文件读取和清理。 | class RecoverySnapshotStore、object MediaStoreRecoveryCopy |
 | `SessionBootstrap.kt` | 会话装配；会话存储可先初始化，心跳客户端按首帧后延后创建。 | object SessionBootstrap、fun initStore、fun startKeeper |
 | `SessionEvents.kt` | 掉线通知。 | object SessionEvents |
