@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-18。文件总数为 663；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-18。文件总数为 664；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -44,7 +44,7 @@ android/
 ├── core/  (229 files, 27 directories)
 ├── feature-phone/  (143 files, 11 directories)
 ├── feature-tv/  (159 files, 18 directories)
-├── shared/  (112 files, 46 directories)
+├── shared/  (113 files, 46 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
 ```
@@ -106,7 +106,7 @@ android/
 - `shared/ui/`：共享 UI 工具、颜色、滑块和对话框布局。
 - `shared/res/`：共享文案资源；`values/` 为简体，`values-zh-rTW`、`values-zh-rHK`、
   `values-zh-rMO` 为繁体。
-- `shared/update/`：更新元数据、下载校验与系统安装入口。
+- `shared/update/`：更新元数据、下载校验、系统会话安装、安装权限与回执。
 
 ## 文件清单与作用
 
@@ -1196,7 +1196,8 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AppUpdateController.kt` | 两端共用的更新控制器：内置写死 GitHub 更新地址（不可由用户设置），元数据与安装包均走 gh-proxy.org 镜像，下载校验、静默检查与系统安装入口。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
+| `AppUpdateController.kt` | 两端共用的更新控制器：内置写死 GitHub 更新地址（不可由用户设置），元数据与安装包均走 gh-proxy.org 镜像，下载校验、静默检查、安装权限与安装状态。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
+| `UpdateInstaller.kt` | 系统安装兼容层：API 21+ 使用 PackageInstaller 会话，显式处理待确认 Intent 和安装回执，失败时回退原生安装。 | object UpdateInstaller、class UpdateInstallReceiver |
 
 #### `shared/src/test/kotlin/com/hgtv/star/shared/debug/`
 

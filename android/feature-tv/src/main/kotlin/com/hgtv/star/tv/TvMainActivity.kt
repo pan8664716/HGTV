@@ -750,6 +750,7 @@ class TvMainActivity: Activity() {
         StartupTrace.mark("main.onResume.start")
         PlaybackStartupTrace.point("tvMain.onResume")
         super.onResume()
+        updateController.resumePendingInstall()
         resumeAfterSuper(resumeStarted)
     }
     override fun onPause() {

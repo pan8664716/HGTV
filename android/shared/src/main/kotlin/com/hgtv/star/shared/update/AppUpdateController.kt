@@ -3,9 +3,11 @@ package com.hgtv.star.shared.update
 
 import android.content.Context
 import android.content.Intent
+import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
-import androidx.core.content.FileProvider
+import android.provider.Settings
+import android.widget.Toast
 import com.hgtv.star.shared.architecture.AppExecutors
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -113,6 +115,8 @@ data class AppUpdateState(
     val available: AppUpdate? = null,
     val downloading: Boolean = false,
     val ready: Boolean = false,
+    val installing: Boolean = false,
+    val permissionRequired: Boolean = false,
     val progress: Int = 0,
     val error: String = "",
 ) {
@@ -123,14 +127,15 @@ data class AppUpdateState(
  * 静默检查 + 被动更新入口。
  *
  * 检查不会弹窗；TV / Phone 只读取 [state] 决定红点 / 角标。
- * 用户点击入口后才下载，下载完成后用系统安装器打开 APK，不建立
- * PackageInstaller 会话，也不等待安装结果广播。
+ * 用户点击入口后才下载，安装优先交给系统 PackageInstaller 会话，
+ * 并通过显式广播接收确认页与最终结果。
  */
 class AppUpdateController private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val repository = AppUpdateRepository()
     private val apk = File(appContext.filesDir, "updates/update.apk")
+    private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(AppUpdateState())
     private val checkedThisProcess = AtomicBoolean(false)
     val state: StateFlow<AppUpdateState> = _state.asStateFlow()
@@ -138,7 +143,7 @@ class AppUpdateController private constructor(context: Context) {
     fun check(force: Boolean = false): Boolean {
         val configured = AppUpdateSource.BUILT_IN
         val current = _state.value
-        if (current.checking || current.downloading) return false
+        if (current.checking || current.downloading || current.installing) return false
         if (!force && (current.checked || current.hasUpdate)) return false
         // 自动检查每个应用进程只发一次；用户主动点击检查仍可 force 重试。
         if (!force && !checkedThisProcess.compareAndSet(false, true)) return false
@@ -158,10 +163,14 @@ class AppUpdateController private constructor(context: Context) {
                         checking = false,
                         available = found,
                         ready = cached,
+                        installing = false,
+                        permissionRequired = false,
                         progress = if (cached) 100 else 0,
                         error = "",
                     )
                 }
+                if (found == null) preferences.edit().remove(KEY_PENDING_INSTALL).apply()
+                else if (cached) resumePendingInstall()
             } catch (e: Exception) {
                 _state.update {
                     it.copy(
@@ -178,6 +187,7 @@ class AppUpdateController private constructor(context: Context) {
     /** 用户明确点击“下载并安装”后才走这里。 */
     fun downloadAndInstall() {
         val update = _state.value.available ?: return
+        if (_state.value.installing) return
         if (_state.value.ready) {
             install()
             return
@@ -207,31 +217,119 @@ class AppUpdateController private constructor(context: Context) {
         }
     }
 
-    /** SmartTube 的入口：直接把 APK 交给系统安装器。 */
+    /** 会话安装优先，失败时回退到系统原生安装入口。 */
     fun install() {
-        if (!_state.value.ready || !apk.isFile) return
-        try {
-            val uri = installerUri(apk)
-            val intent = Intent(Intent.ACTION_VIEW)
-                .setDataAndType(uri, APK_MIME)
-                .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                .addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            appContext.startActivity(intent)
-        } catch (e: Exception) {
-            _state.update {
-                it.copy(error = "这台设备没有可用的系统安装器")
+        val current = _state.value
+        if (current.installing) return
+        if (!current.ready || !apk.isFile) {
+            showInstallError("安装包尚未准备好")
+            return
+        }
+        if (!UpdateInstaller.canRequestPackageInstalls(appContext)) {
+            requestInstallPermission()
+            return
+        }
+        preferences.edit().remove(KEY_PENDING_INSTALL).apply()
+        _state.update {
+            it.copy(installing = true, permissionRequired = false, error = "")
+        }
+        scope.launch {
+            val sessionStarted = Build.VERSION.SDK_INT >= 21 && withContext(AppExecutors.disk.dispatcher) {
+                runCatching { UpdateInstaller.installSession(appContext, apk) }.isSuccess
+            }
+            if (sessionStarted) return@launch
+            runCatching { UpdateInstaller.installNative(appContext, apk) }
+                .onSuccess {
+                    _state.update { it.copy(installing = false) }
+                }
+                .onFailure {
+                    showInstallError(it.message ?: "无法启动系统安装器")
+                }
+        }
+    }
+
+    /** 从“安装未知应用”设置页返回后继续未完成的安装。 */
+    fun resumePendingInstall() {
+        val pending = preferences.getBoolean(KEY_PENDING_INSTALL, false) ||
+            _state.value.permissionRequired
+        if (!pending || !_state.value.ready || _state.value.installing) return
+        if (UpdateInstaller.canRequestPackageInstalls(appContext)) install()
+    }
+
+    internal fun onInstallStatus(status: Int, detail: String?) {
+        when (status) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                _state.update {
+                    it.copy(installing = true, permissionRequired = false, error = "")
+                }
+            }
+            PackageInstaller.STATUS_SUCCESS -> {
+                preferences.edit().remove(KEY_PENDING_INSTALL).apply()
+                _state.update {
+                    it.copy(
+                        available = null,
+                        ready = false,
+                        installing = false,
+                        permissionRequired = false,
+                        progress = 0,
+                        error = "",
+                    )
+                }
+            }
+            else -> {
+                showInstallError(UpdateInstaller.failureMessage(status, detail))
             }
         }
     }
 
-    private fun installerUri(file: File): Uri =
-        if (Build.VERSION.SDK_INT >= 24) {
-            FileProvider.getUriForFile(appContext, "${appContext.packageName}.updates", file)
-        } else {
-            @Suppress("DEPRECATION")
-            file.setReadable(true, false)
-            Uri.fromFile(file)
+    private fun requestInstallPermission() {
+        preferences.edit().putBoolean(KEY_PENDING_INSTALL, true).apply()
+        _state.update {
+            it.copy(
+                installing = false,
+                permissionRequired = true,
+                error = "请允许 HGTV 安装应用",
+            )
         }
+        if (!openInstallSettings(UpdateInstaller.unknownSourcesIntent(appContext))) {
+            preferences.edit().remove(KEY_PENDING_INSTALL).apply()
+            _state.update {
+                it.copy(
+                    permissionRequired = false,
+                    error = "请到系统设置中允许 HGTV 安装应用",
+                )
+            }
+        }
+        notify("请允许 HGTV 安装应用")
+    }
+
+    private fun openInstallSettings(primary: Intent): Boolean {
+        val fallback = Intent(
+            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
+            Uri.parse("package:${appContext.packageName}"),
+        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+        for (intent in listOf(primary, fallback)) {
+            if (runCatching { appContext.startActivity(intent) }.isSuccess) return true
+        }
+        return false
+    }
+
+    private fun showInstallError(message: String) {
+        _state.update {
+            it.copy(
+                installing = false,
+                permissionRequired = false,
+                error = message,
+            )
+        }
+        notify(message)
+    }
+
+    private fun notify(message: String) {
+        runCatching {
+            Toast.makeText(appContext, message, Toast.LENGTH_LONG).show()
+        }
+    }
 
     @Suppress("DEPRECATION")
     private fun installedVersionCode(): Long {
@@ -240,7 +338,8 @@ class AppUpdateController private constructor(context: Context) {
     }
 
     companion object {
-        private const val APK_MIME = "application/vnd.android.package-archive"
+        private const val PREFERENCES = "app-update"
+        private const val KEY_PENDING_INSTALL = "pending-install"
         @Volatile private var instance: AppUpdateController? = null
 
         fun get(context: Context): AppUpdateController =

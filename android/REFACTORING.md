@@ -29,6 +29,23 @@
 
 回滚：删除对应 Release / tag 后，对文档发布提交执行 `git revert`。
 
+## 系统更新安装兼容性
+
+状态：已实现，debug 构建通过，待电视真机验证。
+
+- API 21 及以上优先使用 `PackageInstaller.Session` 写入 APK 并提交安装；系统返回
+  `STATUS_PENDING_USER_ACTION` 时，显式广播接收器直接打开系统给出的确认 Intent。
+- 会话创建、写入或提交失败时回退到 `ACTION_INSTALL_PACKAGE`；API 19-20 继续使用
+  `ACTION_VIEW` 与文件 URI。
+- Android 8 及以上安装前检查 `canRequestPackageInstalls()`，未授权时打开当前应用的
+  “安装未知应用”设置页；返回前台后自动继续待安装任务。
+- 安装回执覆盖成功、取消、阻止、冲突、不兼容、包损坏与存储不足；TV / Phone 更新弹窗
+  在安装失败时显示可感知结果。
+- 未改版本号、versionCode、依赖或发布元数据；只编译 Android debug，未运行测试；
+  未推送、未创建 tag 或 Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 账号记录远端权威同步
 
 状态：已实现，debug 构建通过，待用户真机验证。

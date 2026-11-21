@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
  *
  * 更新检查不会主动弹窗；这里只在用户点击设置行后显示版本信息和操作。
  * 更新地址写死在 AppUpdateSource.BUILT_IN，没有设置入口。
- * 下载完成后直接交给系统安装器，不等待安装回执。
+ * 下载完成后交给共享安装层，由系统会话或原生安装器完成覆盖安装。
  */
 internal fun PhoneSettingsActivity.showUpdateDialog() {
     val controller=settingsUpdateController
@@ -41,8 +41,12 @@ internal fun PhoneSettingsActivity.showUpdateDialog() {
         else -> {
             dialog.message("${update.versionName} · ${"%.1f".format(update.size / 1048576.0)} MB")
             dialog.message(update.notes.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0122) })
-            if(state.ready) {
-                dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0058),primary=true) {
+            if(state.installing) {
+                dialog.message("正在等待系统安装")
+            } else if(state.ready) {
+                val label=if(state.permissionRequired) "去授权" else UiText.get(com.hgtv.star.shared.R.string.ui_0058)
+                dialog.button(label,primary=true) {
+                    dialog.dismiss()
                     settingsUpdateController.install()
                 }
             } else if(state.downloading) {

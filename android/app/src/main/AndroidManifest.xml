@@ -53,6 +53,9 @@
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/update_paths"/>
         </provider>
+        <receiver
+            android:name="com.hgtv.star.shared.update.UpdateInstallReceiver"
+            android:exported="false"/>
         <!--
           不要注册 androidx.media.session.MediaButtonReceiver：它只把媒体键转给本包的
           MEDIA_BUTTON / MediaBrowserService，本应用没有这类 Service，一旦被系统调用就会在

@@ -26,9 +26,11 @@ internal fun TvMainActivity.bindUpdateEntry() {
 }
 
 internal fun TvMainActivity.settingsUpdateLabel(): String = when {
+    updateState.installing -> "检查更新  ·  正在安装"
+    updateState.permissionRequired -> "检查更新  ·  待授权"
     updateState.hasUpdate -> "检查更新  ·  发现新版本"
     updateState.checking -> "检查更新  ·  正在检查"
-    updateState.error.isNotBlank() -> "检查更新  ·  检查失败"
+    updateState.error.isNotBlank() -> "检查更新  ·  更新失败"
     else -> "检查更新"
 }
 
@@ -36,8 +38,8 @@ internal fun TvMainActivity.settingsUpdateLabel(): String = when {
  * 用户点击顶栏更新入口后才打开；启动检查本身不会弹窗。
  *
  * 更新地址写死在 AppUpdateSource.BUILT_IN，没有设置入口。
- * 安装按钮只调用 [com.hgtv.star.shared.update.AppUpdateController.install]，由系统
- * 安装器负责确认与覆盖安装，不在应用内等待安装结果。
+ * 安装按钮调用 [com.hgtv.star.shared.update.AppUpdateController.install]；共享安装层
+ * 负责系统会话、未知来源授权、确认页和安装结果。
  */
 internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
     if (!updateController.state.value.checked && !updateController.state.value.checking) {
@@ -68,8 +70,12 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
         else -> {
             dialog.message("${update.versionName} · ${"%.1f".format(update.size / 1048576.0)} MB")
             dialog.message(update.notes.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0122) })
-            if (state.ready) {
-                dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0058),tone=ButtonTone.PRIMARY,icon=R.drawable.ic_toolbar_update) {
+            if (state.installing) {
+                dialog.message("正在等待系统安装")
+            } else if (state.ready) {
+                val label=if(state.permissionRequired) "去授权" else UiText.get(com.hgtv.star.shared.R.string.ui_0058)
+                dialog.button(label,tone=ButtonTone.PRIMARY,icon=R.drawable.ic_toolbar_update) {
+                    dialog.dismiss()
                     updateController.install()
                 }
             } else if (state.downloading) {
