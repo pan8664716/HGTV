@@ -42,7 +42,7 @@ internal fun TvMainActivity.resumeAfterSuper(resumeStarted: Long) {
     // 回前台补一次账号数据：用户在手机 / 电脑上看过的剧，电视这边的「我的 → 历史」
     // 与首页历史栏都靠这一次刷新才跟上。[loadAccount] 自己按 [ACCOUNT_FRESH_MS] 节流
     // （一分钟内拉过就跳过），因此按 Home 再来一次不会多发请求；
-    // 拉回来之后由 [refreshAccountViews] / [reconcileHistory] 只重画真的变了的那几处。
+    // 拉回来之后由 [refreshAccountViews] 与本地历史刷新只重画真的变了的那几处。
     if(library.isLoaded && repository.signedIn) {
         if(tab==TAB_PROFILE) loadCurrentAccountTab()
         else if(tab==TAB_HOME) loadAccount(columns=setOf("历史","收藏"))
@@ -84,7 +84,7 @@ internal fun TvMainActivity.resumeAfterSuper(resumeStarted: Long) {
                 // 首页判空看的是八个剧架（[homeFeed]）：它的 catalog 本来就是空的，
                 // 用 catalog 判断会让每次回到前台都重打八个榜单。
                 else -> showCatalog(load=when {
-                    // 集合页的内容是「本机 + 账号」合并出来的：回前台只重建（栅格分支里会
+                    // 集合页读账号同步后的本机缓存：回前台只重建（栅格分支里会
                     // 触发一次 loadAccount，账号那边新收藏 / 新看的剧随之出现）。
                     localCatalog() -> false
                     tab==TAB_HOME -> homeFeed.isEmpty()

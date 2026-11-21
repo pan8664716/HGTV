@@ -10,7 +10,7 @@ import com.hgtv.star.shared.data.AppRuntime
 /**
  * Phone 侧的账号兼容壳。
  *
- * 真正的状态、对账、缓存写入和云端副作用已经收在
+ * 真正的状态、远端覆盖、缓存写入和云端副作用已经收在
  * [com.hgtv.star.shared.feature.account.AccountController]。保留这个对象只是为了让
  * 现有页面在迁移期继续用短调用点，后续可直接删除。
  */

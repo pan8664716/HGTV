@@ -149,13 +149,12 @@ fun TvMainActivity.renderHome(body: LinearLayout,focusNav: Boolean,focusType: Bo
  * 每栏最多十部；本机没有记录的三栏、远端取不到的榜单都不占位（[HomeScreen.render] 过滤空架子）。
  */
 /**
- * 首页「历史记录」栏：先用本机历史立即占位，账号历史回来后再按 id 合并。
+ * 首页「历史记录」栏：登录后读账号同步后的本机缓存，未登录时读本机历史。
  *
- * 账号历史单独读网络时，冷启动会在热播栏已经落焦后才从上方插入一整栏；
- * 本机进度本来就在书库里，先铺它可以让栏目顺序和焦点都保持稳定。
+ * 远端结果会先整表镜像进本机，因此栏目顺序与焦点在刷新前后保持稳定。
  */
 fun TvMainActivity.historyRows(): List<HomeScreen.Entry> {
-    // 历史栏的点击方式由设置统一决定；详情控制器读取同一份本机 + 账号合并结果。
+    // 历史栏的点击方式由设置统一决定；详情控制器读取同一份本机缓存。
     val directPlay=!library.historyPreferDetail
     return com.hgtv.star.shared.account.AccountMerge.history(
         library.history(),
@@ -175,9 +174,9 @@ fun TvMainActivity.historyRows(): List<HomeScreen.Entry> {
         }
 }
 /**
- * 首页「我的收藏」栏：本机收藏在前（带「更新至第几集」状态），账号侧的收藏补在后面。
+ * 首页「我的收藏」栏：登录后读账号同步后的本机缓存，未登录时读本机收藏。
  *
- * 两边都有的剧只出现一次（以本机那条为准，因为它带更新状态）。
+ * 本机缓存保留「更新至第几集」等卡片状态。
  */
 fun TvMainActivity.favoriteRows(local: List<Series>): List<HomeScreen.Entry> {
     val account=accountData?.favorites.orEmpty()
@@ -354,13 +353,11 @@ fun TvMainActivity.quickActions(series: Series,anchor: View,shelf: String?=null)
         when(items[index].action) {
             CardAction.RESUME -> openDetail(series,true)
             CardAction.FAVORITE -> {
-                // 菜单是按 [isFavorite] 出的文案（本机 + 账号侧任一说已收藏），
-                // 因此这里也必须按同一个判断决定「加」还是「删」：
-                // 只看本机的 [Library.toggle] 会把「只在账号侧收藏」的剧再加一条到本机，
-                // 与菜单上那句「取消收藏」正好相反。
+                // 菜单与动作都按同一份收藏状态判断。登录后本机缓存已经镜像远端，
+                // 因此这里不会再出现「账号已收藏、本机没收藏」的分叉。
                 val removing=isFavorite(series.id)
                 if(removing) {
-                    // 本机有就删本机；只在账号侧有就只改账号侧缓存。
+                    // 本机有就删本机缓存；账号缓存由共享控制器同步更新。
                     if(library.favorite(series.id)) library.toggle(series)
                     syncFavorite(series,false)
                 } else {

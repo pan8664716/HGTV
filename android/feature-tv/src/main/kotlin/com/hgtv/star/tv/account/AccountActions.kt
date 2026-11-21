@@ -410,12 +410,12 @@ private fun TvMainActivity.finishProfileRefresh() {
 /**
  * 账号数据落地后，按「变了哪几栏」决定重画哪几处。
  *
- * 三处界面读的都是**本机 + 账号**合并出来的列表，因此谁都不能少：
+ * 三处界面读的都是账号同步后的本机缓存，因此谁都不能少：
  * 「我的」页那四个栏目、首页的两栏、以及本机记录集合页（收藏 / 历史）。
  * 但**没变的那几处不必重画**——这正是原先每次刷新都整页重建的代价来源。
  *
- * 收藏与历史栏的本机那半份也在列表里（合并规则见 [localItems]），所以只有账号侧变了时
- * 也只需重建正在显示的那一页，别的页面下次进来自己会读到新数据。
+ * 收藏与历史栏由共享控制器整表镜像到本机，所以账号侧变了时只需重建正在显示的那一页，
+ * 别的页面下次进来自己会读到新数据。
  */
 fun TvMainActivity.refreshAccountViews(changed: Set<String>) {
     if(tab==TAB_PROFILE) {
@@ -433,17 +433,17 @@ fun TvMainActivity.refreshAccountViews(changed: Set<String>) {
         return
     }
     if(screen!="catalog") return
-    // 本机记录集合页：收藏 / 历史两栏的内容里有账号那一半。
+    // 本机记录集合页：收藏 / 历史两栏现在是账号同步后的缓存。
     if(collection=="favorites" && "收藏" in changed) { showCatalog(); return }
     if(collection=="history" && "历史" in changed) { showCatalog(); return }
-    // 首页：两个剧架里有账号那一半；只有这两栏变了才重建（榜单剧架与账号无关）。
+    // 首页：两个剧架读账号同步后的缓存；只有这两栏变了才重建（榜单剧架与账号无关）。
     if(tab==TAB_HOME && screen=="catalog" && ("收藏" in changed || "历史" in changed)) refreshLibraryCards("")
 }
 /**
  * 账号参数变化后同步到仓库。
  *
- * 首页「我的收藏」「历史记录」两栏是**本机 + 账号**合并的结果（见 [historyRows] / [favoriteRows]），
- * 因此这里只把凭据交给仓库，首页重建时自然带上账号里的条目。
+ * 首页「我的收藏」「历史记录」两栏读的是账号同步后的本机缓存，
+ * 因此这里先把账号缓存镜像进仓库，首页重建时自然带上远端条目。
  */
 fun TvMainActivity.applyAccount() {
     // 设备身份 / 账号凭据 / 注册 Cookie / 心跳档案 / 搜索口令：装配只有一份
@@ -458,8 +458,7 @@ fun TvMainActivity.applyAccount() {
     // 换凭据之后先用**缓存**顶上（同账号时它还在，指纹对不上时 [Library.accountCache] 会丢掉它），
     // 界面因此立刻有内容可铺，不必先空一屏再等请求回来。
     // 没有凭据时缓存按主设备身份隔离；页头是否显示登录态仍由 credentials 判断。
-    // 缓存里那一份也先对账一次：重启之后首页读的是本机进度、
-    // 「我的 → 历史」读的是缓存，两边不一致的话用户一开电视就看到两个集数。
+    // 缓存里那一份先整表镜像到本机：登录后首页与「我的 → 历史」都读同一份远端缓存。
     accountData=accountController.bindCredentials()
     accountError=null
     accountHistoryFilter=null

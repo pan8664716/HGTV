@@ -524,19 +524,15 @@ fun TvMainActivity.autoAppendCatalog()=appendCatalog() || accountHistoryPaging()
 /** 本机记录集合页（我的收藏 / 历史记录 / 稍后观看）。 */
 fun TvMainActivity.localCatalog()=collection!=null
 /**
- * 本机记录集合页的内容：**本机在前，账号侧补在后面**（与首页那两栏同一套合并规则）。
+ * 本机记录集合页的内容：登录后读账号同步后的本机缓存，未登录时读本机记录。
  *
- * 少了账号这一半，导入了账号参数却在这台设备上没看过剧时，历史页会是空的
- * （账号里的历史只在「我的」页与首页出现过），用户读到的就是「历史记录没有任何记录」。
+ * 共享控制器已把远端结果整表镜像到本机，因此这里不再把登录前的本地独有条目补进来。
  */
 fun TvMainActivity.localItems(): List<Series> = when(collection) {
     "favorites" -> com.hgtv.star.shared.account.AccountMerge.favorites(
         library.favorites(),
         accountData?.favorites.orEmpty(),
     )
-    // 两边同一部剧按「集号 → 集内位置 → 更新时间」选更完整的一条。
-    // 账号侧那半份要滤掉**本机删过的**（[Library.historyDeleted]）：平台的「删除观看记录」
-    // 走的是阅读历史那条软删，短剧进度列表不一定真的摘掉，不滤就会「删了过一会儿又回来」。
     // 完成度筛选与「我的 → 历史」共用（见 [accountHistoryFilter]）：两处看到的是同一档。
     "history" -> com.hgtv.star.shared.account.AccountMerge.history(
         library.history(),
@@ -548,7 +544,7 @@ fun TvMainActivity.localItems(): List<Series> = when(collection) {
     "later" -> library.later()
     else -> library.history().map { it.series }
 }
-/** 本机在前、账号在后，按 id 去重（同一部剧两边都有时以本机那条为准）。 */
+/** 登录后本机缓存已经是远端镜像；这里只保留离线 / 未登录时的去重兜底。 */
 fun TvMainActivity.mergeAccount(local: List<Series>,account: ()->List<Series>): List<Series> =
     // 合并规则搬到 `:shared`（`AccountMerge`）：手机端「我的」页用的是同一份，
     // 两边各写一遍迟早会出现条数对不上。

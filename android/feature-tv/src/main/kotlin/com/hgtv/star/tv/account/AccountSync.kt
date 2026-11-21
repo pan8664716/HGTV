@@ -15,30 +15,21 @@ import com.hgtv.star.tv.list.showCatalog
 import com.hgtv.star.shared.data.WatchProgress
 import com.hgtv.star.tv.R
 
-// 本文件是从 TvMainActivity.kt 拆出来的「收藏 / 进度的账号侧同步（本机改动推到账号，账号数据落到本机）」这一块。
+// 本文件是从 TvMainActivity.kt 拆出来的「收藏 / 进度的账号侧同步（用户动作直写远端，远端结果落本机）」这一块。
 // 这些成员仍然属于 TvMainActivity，只是以扩展成员（TvMainActivity.xxx）的形式放在这里，
 // 逻辑与拆之前逐行一致；改这里等于改 Activity 本体。
 
 /**
- * [TvMainActivity.historyPushedAt] 的条目上限。
+ * 远端历史整表覆盖本机缓存之后，重画**读本机进度**的那几处。
  *
- * 那张表只记「这份进度已经推回云端」，不是业务数据：超过上限整表清掉即可，
- * 最坏的结果是同一份进度多推一次（平台侧本来就是幂等覆盖）。
- */
-private const val HISTORY_PUSHED_LIMIT=com.hgtv.star.core.AppConfig.Library.HISTORY_PUSHED_LIMIT
-
-/**
- * 本机观看进度被账号那一份改写之后，重画**读本机进度**的那几处。
- *
- * 首页历史栏与历史集合页读的都是 `library.history()`，账号更超前时那份数据刚被
- * [reconcileHistory] 就地改写；不重画的话用户得先退出再进来才看得到新集数——
- * 而那正是「首页还是显示 200 集」这个反馈的另一半。
+ * 首页历史栏与历史集合页读的都是 `library.history()`；远端同步完成后这里立即重画，
+ * 用户不必先退出再进来才看到账号里的最新记录。
  * 「我的 → 历史」读的是账号那份，由 [refreshAccountViews] 自己管，这里不管。
  */
 fun TvMainActivity.refreshLocalHistoryViews() {
     if(screen!="catalog") return
     when {
-        // 历史集合页：内容就是本机 + 账号合并出来的，整页重铺一次。
+        // 历史集合页：本机缓存已按远端整表覆盖，整页重铺一次。
         collection=="history" -> { catalogFocus=""; showCatalog() }
         // 首页：只有历史栏读本机进度，重建剧架（结构没变时就地刷新，不会闪）。
         tab==TAB_HOME -> refreshLibraryCards("",true)
@@ -79,72 +70,6 @@ fun TvMainActivity.storeAccount(data: AccountData?) {
     accountController.store(data)
 }
 
-/** 一次历史对账的结果：账号侧那份（[data]）与本机更超前、需要推回云端的那些（[uploads]）。 */
-class HistoryMerge(var data: AccountData,val uploads: List<WatchProgress>) {
-    /** 本机进度被账号那一份改写过多少条（界面据此重建首页历史栏）。 */
-    var localWrites=0
-        set
-}
-
-/**
- * 本机进度与账号历史**对账**：同一部剧只留更超前的那一份，并且两边都写成它。
- *
- * ## 为什么必须在这里做
- *
- * 历史有两个来源：本机进度（首页历史栏、详情页续播读它）与账号历史（「我的 → 历史」、
- * 历史集合页读它）。原先两边各写各的：机器 1 看到第 200 集、机器 2 看到第 400 集，
- * 回到机器 1 首页还是 200，进「我的」有时 400 有时 200——取决于账号侧这一栏有没有刷新回来。
- * 用户读到的就是「两个历史在打架」。
- *
- * ## 规则
- *
- * 逐条比「谁更超前」（[WatchSync.ahead]，时间差有死区、集号更大优先）：
- * * 账号更超前 → 用账号那一份改写本机进度（[WatchSync.toLocal]），首页与续播立刻跟上；
- * * 本机更超前 → 用本机那一份改写账号那一行（[WatchSync.toAccount]），「我的 → 历史」不再显示旧集数；
- *   同时把这条本机进度交给调用方推回云端（[HistoryMerge.uploads]），第三台设备不会又看到旧的。
- *
- * 本机删过的剧（[Library.historyDeleted]）在调用前已经滤掉，这里不再处理；
- * 本机没有进度的剧原样保留账号那一份（这台设备从没看过，没有可比的）。
- */
-fun TvMainActivity.reconcileHistory(data: AccountData): HistoryMerge {
-    // 计算整段在 `:core` 的 `HistoryReconcile`（手机端用的是同一份）：
-    // 「谁更超前、哪几条要写回本机、哪几条要推回云端」这条判断只写一次。
-    val outcome=com.hgtv.star.core.HistoryReconcile.run(
-        data,
-        library.history(),
-        System.currentTimeMillis()
-    )
-    val result=HistoryMerge(outcome.data,outcome.uploads)
-    outcome.writes.forEach { pulled ->
-        library.save(pulled); result.localWrites++
-    }
-    return result
-}
-
-/**
- * 把「本机更超前」的那几条推回云端。
- *
- * 只在**本机确实更超前**时调用（见 [reconcileHistory] 的 uploads）。这里按剧去重、
- * 同一个时间戳只推一次：账号数据每次进「我的」页都会刷新一遍，不记一下就会反复上传
- * 同一份进度（平台那边每次都是一次写请求，还会改写 `last_watch_time`）。
- */
-fun TvMainActivity.pushHistoryAhead(rows: List<WatchProgress>) {
-    if(rows.isEmpty()) return
-    rows.forEach { progress ->
-        val key=progress.series.id
-        if(historyPushedAt[key]==progress.updatedAt) return@forEach
-        if(historyPushedAt.size>=HISTORY_PUSHED_LIMIT) historyPushedAt.clear()
-        historyPushedAt[key]=progress.updatedAt
-        val count=progress.series.episodeCount
-        io.submit {
-            val ok=repository.accountUploadProgress(key,progress.episodeId,progress.episodeIndex,
-                progress.position,progress.duration,count)
-            if(ok) return@submit
-            // 失败就忘掉这次去重标记：下次刷新还有机会补上。
-            main.post { if(!isDestroyed && historyPushedAt[key]==progress.updatedAt) historyPushedAt.remove(key) }
-        }
-    }
-}
 /**
  * 本机改动就地写回账号侧缓存：收藏加 / 删。
  *
@@ -183,7 +108,7 @@ fun TvMainActivity.applyAccountReserve(series: Series, reserved: Boolean) {
 fun TvMainActivity.applyAccountHistory(progress: WatchProgress,episodeCount: Int) {
     val data=accountData ?: return
     // 集内位置要一起带上来：少了它，「我的 → 历史」那张卡只有「第 12 集」，
-    // 与本机首页那一行（「第 12 集 · 03:21」）对不上；对账时还会被当成「两边不一致」。
+    // 与本机首页那一行（「第 12 集 · 03:21」）对不上。
     val row=AccountHistory(progress.series,progress.episodeIndex,progress.episodeId,progress.updatedAt,
         episodeCount,progress.position)
     storeAccount(data.copy(history=listOf(row)+data.history.filterNot { it.series.id==progress.series.id }))
@@ -257,7 +182,7 @@ fun TvMainActivity.historyClearButton(parent: LinearLayout,size: ButtonSize=Butt
 /**
  * 彻底清空观看记录：本机、账号缓存、云端三处一起清。
  *
- * 为什么要有它：历史那一栏是「本机进度 + 账号侧历史」合并出来的，逐条删只能删到眼前看得见的那几条，
+ * 为什么要有它：逐条删只能删到眼前看得见的那几条，
  * 手机上看过、这台设备上没看过的那些**只能从云端删**；一条条长按删掉几十条不是人干的事。
  *
  * 三处都要动，少一处就是「清空之后过一会儿又冒出来」：
@@ -270,8 +195,8 @@ fun TvMainActivity.historyClearButton(parent: LinearLayout,size: ButtonSize=Butt
  * 关键点：云端那一步**不再只删本机记得的 id**。账号侧缓存只覆盖这台设备上一次拉到的那一批，
  * 手机上有、这里没拉到的记录从来没进过 [accountData]，只删本机那几条，云端会剩下一大截。
  *
- * 云端失败不回滚本机：本机已经清干净、墓碑也已经落盘，下次刷新不会把它们合并回来；
- * 只是手机上还能看到，因此失败时给一句提示，由用户决定要不要再试。
+ * 云端失败不回滚本机；下次成功刷新仍以远端结果为准。失败时给一句提示，
+ * 由用户决定要不要再试。
  */
 fun TvMainActivity.clearAllHistory(anchor: View?) {
     if(!accountController.hasHistoryRecords()) {

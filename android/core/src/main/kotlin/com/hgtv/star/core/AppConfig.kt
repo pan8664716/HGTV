@@ -905,15 +905,6 @@ object AppConfig {
         /** 首页每个剧架最多缓存多少张卡片。 */
         const val HOME_CACHE_MAX_ITEMS = 30
 
-        /** 账号进度与本机进度时间差在此范围内视为同一时刻。 */
-        const val WATCH_SYNC_SAME_MS = 2_000L
-
-        /** 同一集比较进度时，时钟偏差小于此值仍以片内位置为准。 */
-        const val WATCH_SYNC_SKEW_MS = 120_000L
-
-        /** 已推送进度记录的内存表上限。 */
-        const val HISTORY_PUSHED_LIMIT = 300
-
         /** 播放设置面板自动收起的最小秒数。 */
         const val PLAYER_PANEL_TIMEOUT_MIN_SECONDS = 2
 

@@ -91,6 +91,12 @@ class ProgressStore(private val directory: File) {
         runCatching { directory.listFiles()?.forEach { it.delete() } }
     }
 
+    /** 账号同步的整表覆盖：先清掉远端已不存在的文件，再写入当前集合。 */
+    fun replaceAll(rows: List<BackupProgress>) {
+        clear()
+        rows.forEach(::save)
+    }
+
     /** 目录里有多少条（诊断用）。 */
     fun count(): Int = runCatching { directory.listFiles()?.count { it.name.endsWith(".json") } ?: 0 }.getOrDefault(0)
 

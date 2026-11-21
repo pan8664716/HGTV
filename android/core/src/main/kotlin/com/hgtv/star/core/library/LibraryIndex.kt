@@ -31,15 +31,8 @@ class LibraryIndex(
     /**
      * 用户在本机删掉过的观看记录（剧集 ID）。
      *
-     * 为什么要单独记一份：历史那一栏的内容是**本机进度 + 账号侧历史**合并出来的
-     * （见 `localItems` / `accountItems`），而账号侧那半份是从平台拉回来的。
-     * 平台对「删除观看记录」走 `read_history/update`，回读校验也必须看
-     * `read_history/list`；`read_progress/list` 是另一份当前进度数据。
-     * 于是删完那一刻界面上没了，**下次刷新（5 分钟后 / 按刷新 / 重启）它又回来了**，
-     * 用户读到的就是「删了没删掉」。
-     *
-     * 因此本机自己记一份墓碑：删过的 id 在合并时一律过滤掉，不论平台那边还回不回来。
-     * 只有**用户重新看这部剧**（写入新进度）时才摘掉墓碑——那时它本来就该重新出现。
+     * 登录后账号是唯一真源：每次远端历史整表覆盖本机时都会清空这份墓碑。
+     * 它只负责用户删除后、下一次成功同步前的短时本地过滤。
      */
     private var deletedHistoryIds: Set<String> =
         data.historyDeleted.take(AppConfig.Library.HISTORY_DELETED_LIMIT).toSet()
@@ -59,6 +52,28 @@ class LibraryIndex(
 
     fun favorites() = favoriteRows
     fun favorite(id: String) = id in favoriteIds
+    /**
+     * 账号同步结果整表覆盖本机收藏。
+     *
+     * 登录后账号是唯一真源：远端没有的收藏必须从本机删掉，不能保留成本地独有条目。
+     */
+    fun replaceFavorites(rows: List<Series>): Boolean {
+        val next = rows.distinctBy { it.id }.take(AppConfig.Library.FAVORITES_LIMIT)
+        val nextIds = next.map { it.id }.toSet()
+        val nextUpdates = updateRows.filterKeys { it in nextIds }
+        val nextUpdateCount = nextUpdates.values.count { it.added > 0 }
+        if (
+            next == favoriteRows &&
+            nextIds == favoriteIds &&
+            nextUpdates == updateRows &&
+            nextUpdateCount == updateCount
+        ) return false
+        favoriteRows = next
+        favoriteIds = nextIds
+        updateRows = nextUpdates
+        updateCount = nextUpdateCount
+        return true
+    }
     fun later() = laterRows
     fun queued(id: String) = id in laterIds
     fun history() = historyRows
@@ -111,6 +126,31 @@ class LibraryIndex(
         historyRows.forEach { progressById[it.series.id] = it }
         // 用户重新看了这部剧：墓碑摘掉，账号侧那一条也该重新出现。
         deletedHistoryIds = deletedHistoryIds - progress.series.id
+        return true
+    }
+    /**
+     * 账号历史同步结果整表覆盖本机进度。
+     *
+     * 远端不存在的历史不再留作本机记录；`watched` 与墓碑也只保留远端仍存在的条目。
+     */
+    fun replaceHistory(rows: List<BackupProgress>): Boolean {
+        val next = rows
+            .sortedByDescending { it.updatedAt }
+            .distinctBy { it.series.id }
+            .take(AppConfig.Library.HISTORY_LIMIT)
+        val nextIds = next.mapTo(HashSet()) { it.series.id }
+        val nextWatched = watchedIds.filterTo(HashSet()) { it in nextIds }
+        val nextDeleted = emptySet<String>()
+        if (
+            next == historyRows &&
+            nextWatched == watchedIds &&
+            nextDeleted == deletedHistoryIds
+        ) return false
+        historyRows = next
+        progressById.clear()
+        next.forEach { progressById[it.series.id] = it }
+        watchedIds = nextWatched
+        deletedHistoryIds = nextDeleted
         return true
     }
     fun setWatched(id: String, value: Boolean): Boolean {

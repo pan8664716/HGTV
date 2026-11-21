@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-18。文件总数为 664；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-18。文件总数为 663；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -411,14 +411,13 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `HistoryReconcile.kt` | 本机进度与账号历史双向对账：网络独有写本地，本地独有补传网络，重复项选更超前记录。 | object HistoryReconcile |
 | `LatestWriteQueue.kt` | Serial persistence with one pending value per key; serialization belongs inside write. | class LatestWriteQueue |
 | `LibraryBackup.kt` | 本机记录备份的编码、解码、范围校验与局域网同步数据校验；首页栏位 key、弹幕顶部避让、历史卡片优先简介等设置默认值也在这里。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT、object LibraryBackup |
-| `LibraryIndex.kt` | Main-thread-owned library. JSON is parsed once, and getters never parse or sort；记录“打开应用进入推荐”是否已在磁盘显式保存。 | class LibraryIndex、val launchRecommendStored、object LibraryDisk |
+| `LibraryIndex.kt` | Main-thread-owned library；支持账号收藏 / 历史整表替换，删除远端已不存在的本地缓存；记录“打开应用进入推荐”是否已在磁盘显式保存。 | class LibraryIndex、fun LibraryIndex.replaceFavorites、fun LibraryIndex.replaceHistory、val launchRecommendStored、object LibraryDisk |
 | `LibraryTransferServer.kt` | Short-lived LAN transfer. Uploaded records are validated here, but only the TV may apply them. | class LibraryTransferServer |
 | `LruPut.kt` | 往定长 LRU 里写一条：写完把最久没用过的那条挤出去。 | fun LinkedHashMap |
 | `ViewingTools.kt` | 一条搜索历史：只有关键词。 | class RecentSearch、object SearchHistory、object EpisodeTarget |
-| `WatchSync.kt` | 本机观看进度与账号历史的时间归一、超前比较和双向转换规则。 | object WatchSync |
+| `WatchSync.kt` | 本机观看进度与账号历史的时间归一和主动播放转换；登录后的远端历史由控制器整表覆盖本机。 | object WatchSync |
 | `Watching.kt` | 本机书库、历史、进度、备份与写队列；提供本机进度与账号历史的当前季完播判断。 | object PlaybackQuality、class RecoveryBudget、class ResumeTarget、object ResumePlayback、fun BackupProgress.isFinished、fun AccountHistory.isFinished、class FavoriteUpdate、object EpisodePageSize |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/media/`
@@ -854,9 +853,9 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AccountActions.kt` | 账号导入、登录落地与按栏目加载；历史首屏并行补资料，空栏目请求结束后显式重画以退出 loading。 | fun TvMainActivity.loadAccount、fun TvMainActivity.loadCurrentAccountTab、fun TvMainActivity.loadAccountHistory、fun TvMainActivity.refreshCurrentAccountTabIfEmpty |
+| `AccountActions.kt` | 账号导入、登录落地与按栏目加载；登录后账号缓存整表镜像本机，历史首屏并行补资料，空栏目请求结束后显式重画以退出 loading。 | fun TvMainActivity.loadAccount、fun TvMainActivity.loadCurrentAccountTab、fun TvMainActivity.loadAccountHistory、fun TvMainActivity.refreshCurrentAccountTabIfEmpty |
 | `AccountPanel.kt` | 「我的」页的登录界面：未登录时直接铺在身份行下方，不再有入口按钮，也不再有弹窗。 | val ACCOUNT_PANEL_PHONE、val ACCOUNT_PANEL_QR、val ACCOUNT_LOGIN_MODES、val QR_LOGIN_SIZE、val dialCodes、fun TvMainActivity.showAccountPanel |
-| `AccountSync.kt` | 收藏 / 进度的账号侧同步；账号历史页重建时保留分页是否还有下一页。 | fun TvMainActivity.refreshAccountListIfVisible、fun TvMainActivity.syncFavorite、fun TvMainActivity.syncProgress、fun TvMainActivity.storeAccount |
+| `AccountSync.kt` | 收藏 / 进度的账号侧同步；用户动作直写远端，远端结果由共享控制器落回本机缓存。 | fun TvMainActivity.refreshAccountListIfVisible、fun TvMainActivity.syncFavorite、fun TvMainActivity.syncProgress、fun TvMainActivity.storeAccount |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/debug/`
 
@@ -1042,7 +1041,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AccountLogin.kt` | 账号凭据落地校验；`AccountMerge` 提供两端共用的历史 / 收藏合并、进度胜出和最近时间排序。 | object AccountLogin、object AccountMerge、class MergedHistory |
+| `AccountLogin.kt` | 账号凭据落地校验；`AccountMerge` 提供两端未登录 / 离线时的历史与收藏展示兜底。 | object AccountLogin、object AccountMerge、class MergedHistory |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/architecture/`
 
@@ -1080,7 +1079,7 @@ android/
 | `DeviceRegistration.kt` | 设备注册的**唯一实现**：电视与手机共用；注册后的 TNC 刷新延后到播放首帧。 | object DeviceRegistration |
 | `FavoriteMonitor.kt` | Serial foreground checks; cancellation owns only calls made by this monitor. | class FavoriteMonitor |
 | `IdentityBinder.kt` | 把**本机身份与会话**灌进进程级仓库，并按实际设备形态选择电视统一设备档案。 | object IdentityBinder、fun Library.isTvDeviceForProfile |
-| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、推荐请求偏好、账号缓存和持久化；暴露“启动进入推荐”是否显式保存供 TV 首次默认迁移，并保存历史卡片“优先进入简介”设置。 | typealias WatchProgress、class Library、fun loadAsync、val launchRecommendStored、fun discardPendingWrites、fun close、val recommendHorizontalOnly |
+| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、推荐请求偏好、账号缓存和持久化；账号同步结果可整表替换收藏与历史。 | typealias WatchProgress、class Library、fun loadAsync、fun Library.replaceFavorites、fun Library.replaceHistory、val launchRecommendStored、fun discardPendingWrites、fun close、val recommendHorizontalOnly |
 | `LibraryAccountCache.kt` | 缓存身份：登录账号优先；未登录但设备已注册时，用主设备身份隔离匿名缓存。 | fun Library.cacheIdentityKeyImpl、fun Library.cacheIdentityAvailableImpl、fun Library.accountCacheImpl、fun Library.cacheAccountImpl、fun Library.clearAccountCacheImpl |
 | `LibraryAccountCredentials.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.accountImpl、fun Library.saveAccountImpl、fun Library.clearAccountImpl |
 | `LibraryAccountCredentialsFacade.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.account、fun Library.saveAccount、fun Library.clearAccount、fun Library.accountDevice、fun Library.saveAccountDevice |
@@ -1107,7 +1106,7 @@ android/
 | `NavKeys.kt` | 顶部导航栏里可以单独隐藏的入口 key。 | val NAV_KEY_RECOMMEND、val NAV_KEYS |
 | `PlaybackCapability.kt` | 这台设备能解什么。 | object PlaybackCapability |
 | `PlaybackTransport.kt` | 播放链路（取地址 / 预热 / 分片读视频）共用的传输层。 | object PlaybackTransport |
-| `ProgressStore.kt` | 观看进度的落盘：**一剧一文件**。 | class ProgressStore |
+| `ProgressStore.kt` | 观看进度的落盘：**一剧一文件**；账号历史整表覆盖时清理远端已不存在的进度文件。 | class ProgressStore、fun ProgressStore.replaceAll |
 | `SessionBootstrap.kt` | 会话装配；会话存储可先初始化，心跳客户端按首帧后延后创建。 | object SessionBootstrap、fun initStore、fun startKeeper |
 | `SessionEvents.kt` | 掉线通知。 | object SessionEvents |
 | `SessionMirror.kt` | 设备身份与登录会话的**镜像**（同一份 JSON，沙盒 files/、/sdcard/.hgtv/、Android/data/ / 各存一份）。 | class SessionMirror |
@@ -1228,7 +1227,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AccountController.kt` | 账号状态与写入入口；历史分页要求登录，本地独有历史 / 收藏在账号绑定后补传并记录结果。 | class AccountController、fun AccountController.refresh、fun AccountController.refreshHistory |
+| `AccountController.kt` | 账号状态与写入入口；登录后远端收藏 / 历史整表覆盖本机缓存，不再补传登录前本地记录，历史首屏取全量并清理远端已删除项。 | class AccountController、fun AccountController.refresh、fun AccountController.refreshHistory、fun AccountController.bindCredentials |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/feature/catalog/`
 

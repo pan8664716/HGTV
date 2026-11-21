@@ -268,7 +268,6 @@ class TvMainActivity: Activity() {
     var accountHistoryEmptyPages=0
     /** 权限授予后最多补读一次旧镜像，避免每次 onResume 都触发 MediaStore 查询。 */
     var mirrorRestoreRetried=false
-    val historyPushedAt=mutableMapOf<String,Long>()
     var deviceRegistering=false
     var playbackHevcSupported=true
     val sessionPlayback=com.hgtv.star.core.SessionPlaybackPolicy()

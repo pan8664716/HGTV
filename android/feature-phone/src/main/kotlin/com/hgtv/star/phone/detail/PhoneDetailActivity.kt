@@ -546,7 +546,7 @@ class PhoneDetailActivity : PhoneActivity() {
 
         bindDescription(s.description.replace('\n', ' ').trim())
 
-        // 主按钮：本机 + 账号历史合并后定位到实际看到的那一集。
+        // 主按钮：读账号同步后的本机历史缓存，定位到实际看到的那一集。
         val merged = runCatching {
             com.hgtv.star.shared.account.AccountMerge.historyForSeries(
                 library?.history().orEmpty(),

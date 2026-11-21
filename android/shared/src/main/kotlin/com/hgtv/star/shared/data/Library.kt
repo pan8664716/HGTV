@@ -279,6 +279,12 @@ class Library(context: Context) {
     }
     fun favorites() = state().favorites()
     fun favorite(id: String) = state().favorite(id)
+    fun replaceFavorites(rows: List<Series>): Boolean {
+        if (discarding) return false
+        val changed = state().replaceFavorites(rows)
+        if (changed) persist("favorites", "favoriteUpdates")
+        return changed
+    }
     fun later() = state().later()
     fun queued(id: String) = state().queued(id)
     fun history(): List<WatchProgress> = state().history()
@@ -302,6 +308,18 @@ class Library(context: Context) {
         if (!state().save(progress)) return
         com.hgtv.star.core.WorkLanes.disk.executor.execute { progressStore.save(progress) }
         if (hadTombstone) persist("historyDeleted")
+    }
+    fun replaceHistory(rows: List<WatchProgress>): Boolean {
+        if (discarding) return false
+        val changed = state().replaceHistory(rows)
+        if (!changed) return false
+        val snapshot = state().history()
+        com.hgtv.star.core.WorkLanes.disk.executor.execute { progressStore.replaceAll(snapshot) }
+        // 旧版本曾把整段历史放在 SharedPreferences 的 progress 键里；整表替换时一并删掉，
+        // 否则远端历史为空时，下次启动会把旧键重新迁回文件目录。
+        put("progress", null)
+        persist("watched", "historyDeleted")
+        return true
     }
     fun setWatched(id: String, value: Boolean) { if (state().setWatched(id, value)) persist("watched") }
     fun hide(id: String) { state().hide(id); persist("hidden") }

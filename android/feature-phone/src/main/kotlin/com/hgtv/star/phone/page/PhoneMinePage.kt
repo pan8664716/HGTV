@@ -941,11 +941,8 @@ class PhoneMinePage(
     /**
      * 内容网格。
      *
-     * 历史与电视端「我的 → 历史」一致，只读账号侧；收藏仍合并本机与账号，
-     * 避免手机端已收藏但账号侧尚未回包的条目短暂消失。
-     *
-     * 账号侧历史要滤掉「本机删过」的（[com.hgtv.star.shared.data.Library.historyDeleted]）：
-     * 平台对短剧进度列表的删除是软删，不滤就会「删了过一会儿又回来」。
+     * 历史与电视端「我的 → 历史」一致，读账号同步后的本机缓存；
+     * 登录后不再补入登录前的本地独有条目。
      */
     private fun renderContent() {
         val rows = rowsFor(tab)

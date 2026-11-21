@@ -159,7 +159,7 @@ fun TvMainActivity.accountItems(key: String): List<Series> {
             library.favorites(),
             data?.favorites.orEmpty(),
         )
-        // 本机删过的那几条不再出现（见 [Library.historyDeleted]），再按「已看完 / 未看完」筛一次。
+        // 登录后本机缓存已按远端整表覆盖，再按「已看完 / 未看完」筛一次。
         "history" -> com.hgtv.star.shared.account.AccountMerge.history(
             library.history(),
             data?.history.orEmpty(),
