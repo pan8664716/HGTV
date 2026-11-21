@@ -39,6 +39,9 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     private var tracking = false
     private var intercepting = false
     private var settling = false
+    private var settlingDirection = 0
+    private var focusSent = false
+    private var settleGeneration = 0
     private var velocityTracker: VelocityTracker? = null
 
     var canSwipe: (Int) -> Boolean = { false }
@@ -68,6 +71,7 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     }
 
     fun cancelSwipe() {
+        settleGeneration++
         onFocusDirection?.invoke(0)
         velocityTracker?.recycle()
         velocityTracker = null
@@ -78,16 +82,18 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         tracking = false
         intercepting = false
         settling = false
+        settlingDirection = 0
+        focusSent = false
         axis = 0
     }
 
     override fun onInterceptTouchEvent(event: MotionEvent): Boolean {
-        if (settling) return false
         if (event.actionMasked == MotionEvent.ACTION_DOWN) {
+            finishSettlingForGesture()
             begin(event)
             return false
         }
-        if (!tracking) return false
+        if (settling || !tracking) return false
         return handleMove(event)
     }
 
@@ -204,11 +210,14 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
     private fun settleCommit(direction: Int) {
         val view = content ?: return
         settling = true
+        settlingDirection = direction
+        focusSent = false
+        val generation = ++settleGeneration
         val pageWidth = width.coerceAtLeast(1)
         val target = -direction * pageWidth.toFloat()
         val startX = view.translationX
         val distance = abs(target - startX).coerceAtLeast(1f)
-        var focusSent = false
+        val previewView = preview
         val duration = PhonePagerMotion.duration(
             distancePx = target - startX,
             viewportPx = pageWidth,
@@ -218,41 +227,48 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
             .setDuration(duration)
             .setInterpolator(PhonePagerMotion.interpolator)
             .setUpdateListener {
-                if (focusSent || !settling) return@setUpdateListener
+                if (generation != settleGeneration ||
+                    settlingDirection != direction ||
+                    focusSent
+                ) {
+                    return@setUpdateListener
+                }
                 val progress = (abs(view.translationX - startX) / distance).coerceIn(0f, 1f)
                 if (progress >= PhonePagerMotion.FOCUS_SWITCH_PROGRESS) {
                     focusSent = true
                     onFocusDirection?.invoke(direction)
                 }
             }
-            .withEndAction { view.animate().setUpdateListener(null) }
+            .withEndAction {
+                if (generation != settleGeneration) return@withEndAction
+                view.animate().setUpdateListener(null)
+                if (previewView == null) {
+                    settleWithoutPreview(direction, pageWidth, generation)
+                }
+            }
             .start()
-        val previewView = preview
-        if (previewView == null) {
-            view.postDelayed({
-                onSwipe(direction)
-                settleWithoutPreview(direction, pageWidth)
-            }, duration)
-            return
-        }
+        if (previewView == null) return
         previewView.animate()
             .translationX(0f)
             .setDuration(duration)
             .setInterpolator(PhonePagerMotion.interpolator)
             .withEndAction {
-                onSwipe(direction)
-                view.translationX = 0f
-                releasePreviewAfterHandoff(previewView)
+                if (!finishCommittedPage(generation)) return@withEndAction
+                schedulePreviewRelease(previewView, generation)
             }
             .start()
     }
 
     private fun settleBack() {
         val view = content ?: return
+        val generation = ++settleGeneration
+        settlingDirection = 0
+        focusSent = false
         view.animate().setUpdateListener(null)
         val distance = abs(view.translationX)
         if (distance < 1f) {
             view.translationX = 0f
+            removePreview()
             settling = false
             return
         }
@@ -265,7 +281,11 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
             .setInterpolator(PhonePagerMotion.interpolator)
         val previewView = preview
         if (previewView == null) {
-            view.animate().withEndAction { settling = false }.start()
+            view.animate()
+                .withEndAction {
+                    if (generation == settleGeneration) settling = false
+                }
+                .start()
             return
         }
         previewView.animate()
@@ -273,15 +293,16 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
             .setDuration(duration)
             .setInterpolator(PhonePagerMotion.interpolator)
             .withEndAction {
+                if (generation != settleGeneration) return@withEndAction
                 removePreview()
                 settling = false
             }
             .start()
     }
 
-    private fun settleWithoutPreview(direction: Int, pageWidth: Int) {
+    private fun settleWithoutPreview(direction: Int, pageWidth: Int, generation: Int) {
+        if (!finishCommittedPage(generation)) return
         val view = content ?: return
-        onSwipe(direction)
         view.translationX = direction * pageWidth.toFloat()
         val enterDuration = PhonePagerMotion.duration(
             distancePx = pageWidth.toFloat(),
@@ -291,7 +312,9 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
             .translationX(0f)
             .setDuration(enterDuration)
             .setInterpolator(PhonePagerMotion.interpolator)
-            .withEndAction { settling = false }
+            .withEndAction {
+                if (generation == settleGeneration) settling = false
+            }
             .start()
     }
 
@@ -315,19 +338,49 @@ internal class PhoneTabSwipeHost(context: Context) : FrameLayout(context) {
         previewDirection = 0
     }
 
+    private fun finishSettlingForGesture() {
+        if (!settling) return
+        if (settlingDirection != 0) {
+            finishCommittedPage(settleGeneration)
+        }
+        settleGeneration++
+        content?.animate()?.setUpdateListener(null)
+        content?.animate()?.cancel()
+        preview?.animate()?.cancel()
+        content?.translationX = 0f
+        removePreview()
+        settling = false
+        settlingDirection = 0
+        focusSent = false
+    }
+
+    /**
+     * 只提交一次已决定的页。新触摸打断动画时也走这里，随后直接开始下一段手势。
+     */
+    private fun finishCommittedPage(generation: Int): Boolean {
+        if (generation != settleGeneration || settlingDirection == 0) return false
+        val direction = settlingDirection
+        settlingDirection = 0
+        content?.animate()?.setUpdateListener(null)
+        content?.animate()?.cancel()
+        if (!focusSent) {
+            focusSent = true
+            onFocusDirection?.invoke(direction)
+        }
+        onSwipe(direction)
+        content?.translationX = 0f
+        return true
+    }
+
     /**
      * 正式列表已在预览层下面完成换页。等两帧让它先完成绑定和绘制，再原子移除预览；
      * 不做交叉淡出，避免同一张卡片的左上角标签被两层重复绘制后看起来又亮了一次。
      */
-    private fun releasePreviewAfterHandoff(previewView: View) {
+    private fun schedulePreviewRelease(previewView: View, generation: Int) {
         previewView.postOnAnimation {
-            if (preview !== previewView) {
-                settling = false
-                return@postOnAnimation
-            }
+            if (generation != settleGeneration || preview !== previewView) return@postOnAnimation
             previewView.postOnAnimation {
-                if (preview !== previewView) {
-                    settling = false
+                if (generation != settleGeneration || preview !== previewView) {
                     return@postOnAnimation
                 }
                 removePreview()
