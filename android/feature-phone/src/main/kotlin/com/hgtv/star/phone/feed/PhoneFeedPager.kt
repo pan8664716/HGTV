@@ -8,6 +8,7 @@ import android.view.ViewConfiguration
 import android.widget.FrameLayout
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
+import com.hgtv.star.phone.ui.isSystemBarGestureOrigin
 
 /**
  * 竖向信息流容器：当前页前后各常驻一页。
@@ -27,6 +28,8 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
     private var axis = 0
     /** 当前这次滚动是否由真实纵向手势发起；布局补发的 IDLE 不得换播。 */
     var userScroll = false
+    /** 从系统状态栏 / 导航手势区起手时，这一下不交给纵向翻页。 */
+    private var systemBarGesture = false
 
     private val pager = ViewPager2(context).apply {
         orientation = ViewPager2.ORIENTATION_VERTICAL
@@ -98,7 +101,8 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
                 downY = e.y
                 axis = 0
                 userScroll = false
-                pager.isUserInputEnabled = true
+                systemBarGesture = isSystemBarGestureOrigin(e.rawY)
+                pager.isUserInputEnabled = !systemBarGesture
             }
             MotionEvent.ACTION_MOVE -> {
                 if (axis == 0) {
@@ -107,7 +111,7 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
                     if (dx > slop || dy > slop) {
                         axis = if (dy > dx) 1 else 2
                         if (axis == 1) {
-                            userScroll = true
+                            userScroll = !systemBarGesture
                         } else {
                             pager.isUserInputEnabled = false
                             parent?.requestDisallowInterceptTouchEvent(false)
@@ -118,6 +122,7 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
             }
             MotionEvent.ACTION_UP, MotionEvent.ACTION_CANCEL -> {
                 axis = 0
+                systemBarGesture = false
                 pager.isUserInputEnabled = true
             }
         }
