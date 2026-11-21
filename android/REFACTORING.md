@@ -7,6 +7,17 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 1.3.8.12 版本准备
+
+状态：源码版本号已更新，debug 构建通过，待用户真机验证；未推送、未创建 Release。
+
+- 源码默认版本更新为 `versionName=1.3.8.12`、`versionCode=96`。
+- 本轮包含 Phone / TV 统一卸载恢复、旧版会话迁移、旧路径清理和完整快照兼容。
+- 恢复快照统一保存到动态解析的 `Download/HGTV/hgtv-recovery.json`。
+- 只编译 Android debug，未运行功能测试。
+
+回滚：对版本提交执行 `git revert`，并删除本地 `v1.3.8.12` tag。
+
 ## 1.3.8.11 发布准备
 
 状态：GitHub Release 已发布，待用户真机验证。
