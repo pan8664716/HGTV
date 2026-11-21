@@ -338,15 +338,7 @@ class PhoneAccountActivity : PhoneActivity() {
         body.addView(note(
             if (cached == null) "正在读取账号数据…" else "收藏 ${cached.favorites.size} · 历史 ${cached.history.size} · 点赞 ${cached.likes.size}"
         ), blockTop())
-        body.addView(secondaryButton("刷新账号数据") { refreshAccount() }, blockTop())
         body.addView(secondaryButton("退出登录") { confirmSignOut() }, blockTop())
-    }
-
-    private fun refreshAccount() {
-        scope.launch {
-            PhoneAccountSync.refresh(this@PhoneAccountActivity)
-            render()
-        }
     }
 
     private fun confirmSignOut() {

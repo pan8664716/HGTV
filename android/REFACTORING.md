@@ -136,6 +136,7 @@
   主标题保持原字号，不再用固定最大宽度裁断。
 - 账号区移除副标题 View：未登录只显示「未登录」，登录后只显示昵称，不再显示
   「记录仅保存在本机」或账号 ID。
+- 账号页移除「刷新账号数据」按钮及其手动同步入口，自动同步与退出登录保持不变。
 - 新增 `PhoneTabSwipeHost`，并同步更新 `android/DIRECTORY_TREE.md`。
 - 未改版本号、versionCode、依赖或 iOS 代码；只编译 Android debug，未运行测试；
   未推送、未创建 tag 或 Release。
