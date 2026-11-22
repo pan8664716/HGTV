@@ -27,7 +27,6 @@ internal fun TvMainActivity.bindUpdateEntry() {
 
 internal fun TvMainActivity.settingsUpdateLabel(): String = when {
     updateState.installing -> "检查更新  ·  正在安装"
-    updateState.permissionRequired -> "检查更新  ·  待授权"
     updateState.hasUpdate -> "检查更新  ·  发现新版本"
     updateState.checking -> "检查更新  ·  正在检查"
     updateState.error.isNotBlank() -> "检查更新  ·  更新失败"
@@ -73,8 +72,7 @@ internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
             if (state.installing) {
                 dialog.message("正在等待系统安装")
             } else if (state.ready) {
-                val label=if(state.permissionRequired) "去授权" else UiText.get(com.hgtv.star.shared.R.string.ui_0058)
-                dialog.button(label,tone=ButtonTone.PRIMARY,icon=R.drawable.ic_toolbar_update) {
+                dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0058),tone=ButtonTone.PRIMARY,icon=R.drawable.ic_toolbar_update) {
                     dialog.dismiss()
                     updateController.install()
                 }

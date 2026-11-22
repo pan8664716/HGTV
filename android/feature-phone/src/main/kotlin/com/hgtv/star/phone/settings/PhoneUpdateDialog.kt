@@ -44,8 +44,7 @@ internal fun PhoneSettingsActivity.showUpdateDialog() {
             if(state.installing) {
                 dialog.message("正在等待系统安装")
             } else if(state.ready) {
-                val label=if(state.permissionRequired) "去授权" else UiText.get(com.hgtv.star.shared.R.string.ui_0058)
-                dialog.button(label,primary=true) {
+                dialog.button(UiText.get(com.hgtv.star.shared.R.string.ui_0058),primary=true) {
                     dialog.dismiss()
                     settingsUpdateController.install()
                 }

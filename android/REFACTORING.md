@@ -16,8 +16,8 @@
 - 确认已是最新版本时删除缓存中的旧 `update.apk`，避免残留安装包。
 - FileProvider authority 改为 `${applicationId}.update_provider`，路径只开放
   `cache-path`；安装时生成 `content://` URI，再用 `ACTION_VIEW` 拉起系统安装器。
-- 删除 `PackageInstaller` 会话、安装回执广播和对应 Manifest receiver；安装权限检查与
-  从授权页返回后继续安装的流程保留。
+- 删除 `PackageInstaller` 会话、安装回执广播和对应 Manifest receiver；运行时不再预检查
+  “安装未知应用”权限，也不跳授权页，未知来源处理完全交给系统安装器。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖、更新地址或元数据格式；
   未运行测试，未推送。
 
@@ -111,6 +111,9 @@
 回滚：对本节对应提交执行 `git revert`。
 
 ## 系统更新安装兼容性
+
+> 本节记录已废弃的 PackageInstaller 会话方案；当前安装权限与系统安装器行为以上方
+> “SmartTube 式更新包缓存与安装入口”为准。
 
 状态：已实现，debug 构建通过，待电视真机验证。
 

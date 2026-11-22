@@ -106,7 +106,7 @@ android/
 - `shared/ui/`：共享 UI 工具、颜色、滑块和对话框布局。
 - `shared/res/`：共享文案资源；`values/` 为简体，`values-zh-rTW`、`values-zh-rHK`、
   `values-zh-rMO` 为繁体。
-- `shared/update/`：更新元数据、下载校验、缓存安装包、安装权限与系统安装器拉起。
+- `shared/update/`：更新元数据、下载校验、缓存安装包与系统安装器拉起。
 
 ## 文件清单与作用
 
@@ -1201,8 +1201,8 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AppUpdateController.kt` | 两端共用的更新控制器：内置写死 GitHub 更新地址（不可由用户设置），元数据与安装包均走 gh-proxy.org 镜像；安装包写入内部缓存根目录，负责下载校验、静默检查、安装权限与安装状态。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
-| `UpdateInstaller.kt` | SmartTube 式系统安装入口：从内部缓存取 `update.apk`，经 FileProvider 生成 content URI，再用 ACTION_VIEW 拉起系统安装器；不创建 PackageInstaller 会话，不等待安装回执。 | object UpdateInstaller |
+| `AppUpdateController.kt` | 两端共用的更新控制器：内置写死 GitHub 更新地址（不可由用户设置），元数据与安装包均走 gh-proxy.org 镜像；安装包写入内部缓存根目录，负责下载校验、静默检查与安装状态。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
+| `UpdateInstaller.kt` | SmartTube 式系统安装入口：从内部缓存取 `update.apk`，经 FileProvider 生成 content URI，再用 ACTION_VIEW 拉起系统安装器；不预检查安装未知应用权限，不创建 PackageInstaller 会话，不等待安装回执。 | object UpdateInstaller |
 
 #### `shared/src/test/kotlin/com/hgtv/star/shared/debug/`
 

@@ -2,10 +2,7 @@
 package com.hgtv.star.shared.update
 
 import android.content.Context
-import android.content.Intent
-import android.net.Uri
 import android.os.Build
-import android.provider.Settings
 import android.widget.Toast
 import com.hgtv.star.shared.architecture.AppExecutors
 import kotlinx.coroutines.CoroutineScope
@@ -115,7 +112,6 @@ data class AppUpdateState(
     val downloading: Boolean = false,
     val ready: Boolean = false,
     val installing: Boolean = false,
-    val permissionRequired: Boolean = false,
     val progress: Int = 0,
     val error: String = "",
 ) {
@@ -134,7 +130,6 @@ class AppUpdateController private constructor(context: Context) {
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val repository = AppUpdateRepository()
     private val apk = File(appContext.cacheDir, "update.apk")
-    private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(AppUpdateState())
     private val checkedThisProcess = AtomicBoolean(false)
     val state: StateFlow<AppUpdateState> = _state.asStateFlow()
@@ -163,18 +158,14 @@ class AppUpdateController private constructor(context: Context) {
                         available = found,
                         ready = cached,
                         installing = false,
-                        permissionRequired = false,
                         progress = if (cached) 100 else 0,
                         error = "",
                     )
                 }
                 if (found == null) {
-                    preferences.edit().remove(KEY_PENDING_INSTALL).apply()
                     withContext(AppExecutors.disk.dispatcher) {
                         if (apk.exists()) apk.delete()
                     }
-                } else if (cached) {
-                    resumePendingInstall()
                 }
             } catch (e: Exception) {
                 _state.update {
@@ -230,13 +221,8 @@ class AppUpdateController private constructor(context: Context) {
             showInstallError("安装包尚未准备好")
             return
         }
-        if (!UpdateInstaller.canRequestPackageInstalls(appContext)) {
-            requestInstallPermission()
-            return
-        }
-        preferences.edit().remove(KEY_PENDING_INSTALL).apply()
         _state.update {
-            it.copy(installing = true, permissionRequired = false, error = "")
+            it.copy(installing = true, error = "")
         }
         runCatching { UpdateInstaller.install(appContext, apk) }
             .onSuccess {
@@ -247,51 +233,10 @@ class AppUpdateController private constructor(context: Context) {
             }
     }
 
-    /** 从“安装未知应用”设置页返回后继续未完成的安装。 */
-    fun resumePendingInstall() {
-        val pending = preferences.getBoolean(KEY_PENDING_INSTALL, false) ||
-            _state.value.permissionRequired
-        if (!pending || !_state.value.ready || _state.value.installing) return
-        if (UpdateInstaller.canRequestPackageInstalls(appContext)) install()
-    }
-
-    private fun requestInstallPermission() {
-        preferences.edit().putBoolean(KEY_PENDING_INSTALL, true).apply()
-        _state.update {
-            it.copy(
-                installing = false,
-                permissionRequired = true,
-                error = "请允许 HGTV 安装应用",
-            )
-        }
-        if (!openInstallSettings(UpdateInstaller.unknownSourcesIntent(appContext))) {
-            preferences.edit().remove(KEY_PENDING_INSTALL).apply()
-            _state.update {
-                it.copy(
-                    permissionRequired = false,
-                    error = "请到系统设置中允许 HGTV 安装应用",
-                )
-            }
-        }
-        notify("请允许 HGTV 安装应用")
-    }
-
-    private fun openInstallSettings(primary: Intent): Boolean {
-        val fallback = Intent(
-            Settings.ACTION_APPLICATION_DETAILS_SETTINGS,
-            Uri.parse("package:${appContext.packageName}"),
-        ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        for (intent in listOf(primary, fallback)) {
-            if (runCatching { appContext.startActivity(intent) }.isSuccess) return true
-        }
-        return false
-    }
-
     private fun showInstallError(message: String) {
         _state.update {
             it.copy(
                 installing = false,
-                permissionRequired = false,
                 error = message,
             )
         }
@@ -311,8 +256,6 @@ class AppUpdateController private constructor(context: Context) {
     }
 
     companion object {
-        private const val PREFERENCES = "app-update"
-        private const val KEY_PENDING_INSTALL = "pending-install"
         @Volatile private var instance: AppUpdateController? = null
 
         fun get(context: Context): AppUpdateController =

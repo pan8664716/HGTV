@@ -630,7 +630,6 @@ class PhoneMainActivity : PhoneActivity() {
 
     override fun onResume() {
         super.onResume()
-        AppUpdateController.get(this).resumePendingInstall()
         resumed = true
         if (rebuildOnResume) {
             rebuildOnResume = false

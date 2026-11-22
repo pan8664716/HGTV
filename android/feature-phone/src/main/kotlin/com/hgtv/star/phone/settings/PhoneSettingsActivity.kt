@@ -284,7 +284,6 @@ class PhoneSettingsActivity : PhoneActivity() {
 
     override fun onResume() {
         super.onResume()
-        updateController.resumePendingInstall()
         if (landscape) applyLandscapeImmersive()
         updateCollector?.cancel()
         updateCollector=settingsScope.launch {
