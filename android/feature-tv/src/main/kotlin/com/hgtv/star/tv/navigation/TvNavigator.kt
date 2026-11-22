@@ -76,8 +76,8 @@ class TvNavigator(private val host: TvMainActivity) : Navigator {
      */
     private fun toTab(tab: Int) {
         when (host.screen) {
-            // 播放页：从推荐进来的直接回推荐流，其余回详情页——与返回键同一套判断。
-            "player" -> if (host.playbackFromRecommend) host.leaveRecommendPlaybackToRecommend() else host.returnToDetail()
+            // 播放页：从推荐进来的直接回首页，其余回详情页——与返回键同一套判断。
+            "player" -> if (host.playbackFromRecommend) host.leaveRecommendPlaybackToHome() else host.returnToDetail()
             "recommend" -> host.exitRecommendToHome()
             // 详情页：`switchTab` 内部会经 `showCatalog` 重建，等价于在详情页按一次返回。
             "detail" -> host.showCatalog()

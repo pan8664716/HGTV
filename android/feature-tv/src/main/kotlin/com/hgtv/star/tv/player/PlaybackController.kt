@@ -305,6 +305,9 @@ fun TvMainActivity.enqueuePreparedNext() {
  * 队列项不按时间主动失效；真实播放错误时由正常失败路径摘除并重取地址。
  */
 fun TvMainActivity.maybeQueueNext() {
+    // 推荐页不把下一集挂进播放器队列；否则 ExoPlayer 会直接自动推进到下一集，
+    // 页面仍停在推荐流。预热结果留给片尾进入正式页时消费。
+    if(screen=="recommend") return
     if(queuedEpisodeId!=null) return
     val data=detail ?: return
     val seasonBoundary=episodeIndex==data.episodes.lastIndex
@@ -499,13 +502,12 @@ fun TvMainActivity.cancelPrefetch() {
 }
 fun TvMainActivity.maybePrefetch() {
     val p=player ?: return; val data=detail ?: return
-    // 推荐页不挂下一集：一集播完就进正片（见 STATE_ENDED 分支），由正片接着播，
-    // 这里再预取一集只会白占带宽，还会让片尾被 ExoPlayer 自己推进到队列里那一集。
-    if(screen=="recommend") return
+    val recommendHandoff=screen=="recommend"
     // 起播正在取地址：这会儿再发一次就是两个并发，而这条接口对并发极敏感
     //（20 并发 0 命中、单发 50~80% 命中）。让起播先拿到地址，下一帧再预热。
     if(playbackFetching) return
-    if(!foreground || !p.isPlaying || !library.autoNext || playError || sleepStopped) return
+    if(!foreground || !p.isPlaying || playError || sleepStopped) return
+    if(!recommendHandoff && !library.autoNext) return
     val seasonBoundary=episodeIndex==data.episodes.lastIndex
     // 同季只要片尾前 30 秒的数据；跨季还要先查详情、再取第 1 集，
     // 等到片尾窗口才发请求就已经晚了。进入最后一集后详情一就绪就提前预热。
@@ -562,9 +564,11 @@ fun TvMainActivity.maybePrefetch() {
                     "HGTV",
                     "${if(seasonBoundary) "Next season" else "Next episode"} prepared near end"
                 )
-                // 预热一落地就挂进队列，而不是等片尾那一下再挂：挂得越早，
-                // ExoPlayer 越有时间在后台把下一集的 period prepare 好（片尾推进时就不用等）。
-                main.post { if(!isDestroyed) enqueuePreparedNext() }
+                // 正式页预热一落地就挂进队列。推荐页只把结果留在 preparedNext，
+                // 等片尾进入正式页后由 playEpisode 直接接管，避免在推荐页被自动推进。
+                main.post {
+                    if(!isDestroyed && !recommendHandoff) enqueuePreparedNext()
+                }
             }
         } catch(failure: Exception) {
             remote?.close()

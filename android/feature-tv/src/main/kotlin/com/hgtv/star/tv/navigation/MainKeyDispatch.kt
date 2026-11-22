@@ -13,10 +13,10 @@ internal fun TvMainActivity.goBackImpl() {
     if(!mainInitialized || !library.isLoaded) { confirmExitImpl(); return }
     when(screen) {
         // 播放设置开着时先收菜单（浮层，返回键收浮层是通用手势）；
-        // 从推荐页进的正片返回时直接回到推荐流，不经过简介页。
+        // 从推荐页进的正片返回时直接回首页，不经过简介页或推荐流。
         "player" -> when {
             playbackMenu!=null -> hidePlaybackOverlay()
-            playbackFromRecommend -> leaveRecommendPlaybackToRecommend()
+            playbackFromRecommend -> leaveRecommendPlaybackToHome()
             hudReady && hud.visibility==View.VISIBLE && !playError -> hidePlaybackOverlay()
             else -> returnToDetail()
         }
@@ -211,8 +211,8 @@ internal fun TvMainActivity.handleDispatchKeyEvent(event: KeyEvent): Boolean? {
                 KeyEvent.KEYCODE_MEDIA_PREVIOUS -> if(screen=="recommend") switchRecommend(-1) else skipEpisode(-1)
                 KeyEvent.KEYCODE_MEDIA_STOP -> when {
                     screen=="recommend" -> exitRecommendToHome()
-                    // 从推荐进的正片：停止 = 回推荐流（与返回键同一条路）。
-                    playbackFromRecommend -> leaveRecommendPlaybackToRecommend()
+                    // 从推荐进的正片：停止 = 回首页（与返回键同一条路）。
+                    playbackFromRecommend -> leaveRecommendPlaybackToHome()
                     else -> returnToDetail()
                 }
                 KeyEvent.KEYCODE_MEDIA_FAST_FORWARD -> seek(1,0)
