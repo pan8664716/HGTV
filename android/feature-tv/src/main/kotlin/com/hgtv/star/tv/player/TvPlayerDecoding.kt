@@ -30,9 +30,9 @@ import com.hgtv.star.shared.debug.DebugFaults
  *
  * ## secure / tunneled 组件
  *
- * 部分老电视只把 HEVC 放进 `MediaCodecList.ALL_CODECS`。普通硬解为空时会补查
- * tunneled 组件，但只接受不强制 tunneled、也不是 secure-required 的实现；
- * 强制 tunneled 必须显式开启隧道播放，不能混进普通 Surface 路径。
+ * 部分老电视只把 HEVC 放进平台表。普通硬解为空时会补查首次合并并落盘的
+ * `REGULAR_CODECS + ALL_CODECS + LEGACY` 候选，但只接受不强制 tunneled、
+ * 也不是 secure-required 的实现；强制 tunneled 不能混进普通 Surface 路径。
  *
  * ## 视频为什么不再 `ifEmpty { all }`
  *
@@ -74,7 +74,7 @@ internal fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context
             // 返回空表。平台表兜底时仍排除 secure / tunnel-required，保证能走当前 Surface。
             if(!requiresSecureDecoder && !requiresTunnelingDecoder &&
                 mimeType.equals("video/hevc",ignoreCase=true)) {
-                val platform=com.hgtv.star.shared.data.PlaybackCapability.platformHevcDecoders(true)
+                val platform=com.hgtv.star.shared.data.PlaybackCapability.platformHevcDecoders(app,true)
                 if(platform.isNotEmpty()) {
                     android.util.Log.w(
                         "HGTV",
@@ -90,7 +90,7 @@ internal fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context
             if(!requiresSecureDecoder && !requiresTunnelingDecoder &&
                 mimeType.equals("video/hevc",ignoreCase=true)) {
                 val relaxed=com.hgtv.star.shared.data.PlaybackCapability
-                    .relaxedTunneledHevcDecoders()
+                    .relaxedTunneledHevcDecoders(app)
                 if(relaxed.isNotEmpty()) {
                     android.util.Log.w(
                         "HGTV",
@@ -107,7 +107,7 @@ internal fun decoderSelector(mode: VideoDecoderMode,app: android.content.Context
             if(software.isNotEmpty()) return@MediaCodecSelector software
             if(!requiresSecureDecoder && !requiresTunnelingDecoder &&
                 mimeType.equals("video/hevc",ignoreCase=true)) {
-                val platform=com.hgtv.star.shared.data.PlaybackCapability.platformHevcDecoders(false)
+                val platform=com.hgtv.star.shared.data.PlaybackCapability.platformHevcDecoders(app,false)
                 if(platform.isNotEmpty()) {
                     android.util.Log.w(
                         "HGTV",

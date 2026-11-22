@@ -596,7 +596,7 @@ private fun TvMainActivity.startCapabilityProbe() {
     if(debugCapability!=null || debugCapabilityLoading) return
     debugCapabilityLoading=true
     io.submit {
-        val summary=com.hgtv.star.shared.data.PlaybackCapability.debugSummary()
+        val summary=com.hgtv.star.shared.data.PlaybackCapability.debugSummary(this)
         main.post {
             debugCapability=summary
             debugCapabilityLoading=false

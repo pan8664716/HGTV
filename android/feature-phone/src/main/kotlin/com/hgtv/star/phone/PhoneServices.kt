@@ -279,11 +279,12 @@ object PhoneDecoder {
     val selector = com.google.android.exoplayer2.mediacodec.MediaCodecSelector { mimeType, secure, tunnel ->
         val all = com.google.android.exoplayer2.mediacodec.MediaCodecSelector.DEFAULT
             .getDecoderInfos(mimeType, secure, tunnel)
+        val context = app
         // 调试包的故障注入（与电视端同一个开关文件，见 `:shared` 的 `DebugFaults`）：
         // 「这台机器的解码器恰好不行」在开发机上几乎碰不到，没有它，自愈链路就只能靠线上用户验证。
         // 正式包里 `BuildConfig.DEBUG` 是常量 false，整段会被 R8 删掉。
         if (com.hgtv.star.shared.BuildConfig.DEBUG) {
-            when (com.hgtv.star.shared.debug.DebugFaults.mode(app ?: return@MediaCodecSelector all)) {
+            when (com.hgtv.star.shared.debug.DebugFaults.mode(context ?: return@MediaCodecSelector all)) {
                 com.hgtv.star.shared.debug.DebugFaults.Mode.DECODER_NONE -> return@MediaCodecSelector emptyList()
                 com.hgtv.star.shared.debug.DebugFaults.Mode.DECODER_BOGUS -> {
                     if (mimeType.startsWith("video/")) {
@@ -304,10 +305,13 @@ object PhoneDecoder {
                 val hardware=all.filter { !it.softwareOnly }
                 if(hardware.isNotEmpty()) hardware
                 else if(!secure && !tunnel && mimeType.equals("video/hevc",ignoreCase=true)) {
-                    val platform=com.hgtv.star.shared.data.PlaybackCapability
-                        .platformHevcDecoders(true)
+                    val platform=context?.let {
+                        com.hgtv.star.shared.data.PlaybackCapability.platformHevcDecoders(it,true)
+                    }.orEmpty()
                     platform.ifEmpty {
-                        com.hgtv.star.shared.data.PlaybackCapability.relaxedTunneledHevcDecoders()
+                        context?.let {
+                            com.hgtv.star.shared.data.PlaybackCapability.relaxedTunneledHevcDecoders(it)
+                        }.orEmpty()
                     }
                 } else hardware
             }
@@ -315,7 +319,9 @@ object PhoneDecoder {
                 val software=all.filter { it.softwareOnly }
                 if(software.isNotEmpty()) software
                 else if(!secure && !tunnel && mimeType.equals("video/hevc",ignoreCase=true)) {
-                    com.hgtv.star.shared.data.PlaybackCapability.platformHevcDecoders(false)
+                    context?.let {
+                        com.hgtv.star.shared.data.PlaybackCapability.platformHevcDecoders(it,false)
+                    }.orEmpty()
                 } else software
             }
         }

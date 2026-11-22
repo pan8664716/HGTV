@@ -7,6 +7,16 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## HEVC 解码器三表合并缓存
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- HEVC 能力首次探测合并 `REGULAR_CODECS`、`ALL_CODECS` 和 LEGACY，按 codec 名去重并保留来源。
+- 完整候选与枚举错误落盘到 `hgtv-playback`；后续启动、选择器兜底和调试面板直接读缓存。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构；未运行测试；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 手机播放页跨季相邻播放器校验
 
 状态：已实现，debug 构建通过，待用户真机验证。

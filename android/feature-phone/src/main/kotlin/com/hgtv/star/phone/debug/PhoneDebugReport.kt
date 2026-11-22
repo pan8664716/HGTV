@@ -80,7 +80,7 @@ internal object PhoneDebugReport {
                 runCatching { NetSpeed.sample() }
             }
             if (needCapability) {
-                capability = runCatching { PlaybackCapability.debugSummary() }.getOrNull()
+                capability = runCatching { PlaybackCapability.debugSummary(app) }.getOrNull()
             }
             synchronized(this) { sampling = false }
             main.post { onReady() }
