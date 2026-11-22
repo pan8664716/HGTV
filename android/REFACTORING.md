@@ -47,6 +47,26 @@
 
 回滚：对本节对应提交执行 `git revert`。
 
+## TV 推荐清屏、返回层级与弹幕跳转修复
+
+状态：已实现，debug 构建通过；已用设备日志验证比例与回调时序，待用户最终观感确认。
+
+- 推荐页换作时保持播放器与 PlayerView 绑定不变，强制显示 PlayerView 内部黑色快门；
+  新片源真实首帧后再隐藏快门，避免无缓存换作时上一部最后一帧被拉伸。
+- 推荐换作前先冻结当前内容框比例，再 `stop/clearMediaItems`；新片源地址和真实 `videoSize`
+  到达时先在快门后预摆目标比例，首帧前不再从旧比例临时改布局。
+- 稳定播放监听器给 `PlaybackBinding` 记录当前媒体 id；旧片源迟到的尺寸 / 首帧回调被丢弃，
+  队列自动切集时同步推进绑定 id，不阻断正式页连播。
+- 首帧揭黑统一经过 `revealRecommendWhenReady`，禁止 `syncBufferingDots` 绕过比例闸门；
+  低内存设备关闭动画时，切换遮罩至少保持 64ms，等 SurfaceFlinger 完成下一次合成。
+- 播放层整页重建时先把旧 PlayerView 从窗口树隐藏并移除，避免遗留视频 Surface。
+- 正式播放页按返回时先收起播放菜单和 HUD / 进度条，只有在这些浮层都已关闭后才退出首页。
+- 弹幕拖动或跳转后，向前、向后的大跨度时间变化都会重建当前活动轨道；仍在屏幕上的弹幕按原始
+  开始时间计算横向位置，不再从右边重新滑入，后续弹幕仍正常从右侧进入。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或 iOS；未运行自动化测试；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## TV 推荐与正式播放共用播放链路
 
 状态：已实现，debug 构建通过，待用户真机验证。
@@ -54,9 +74,11 @@
 - 正式播放的正常分集切换不再 `stop/clearMediaItems`，直接替换 `MediaSource` 复用同一个
   `ExoPlayer`、`MediaCodec`、`PlayerView`、视频 Surface 和弹幕 Surface；只有错误恢复、
   解码方式切换或同档解码器重建才释放重建。
-- 从推荐进入正式播放时保留推荐列表、详情、下标和单槽缓存，只暂停推荐取流与相邻预热。
-- 从推荐进入的正式播放按返回键直接回到推荐流，不跳首页、不重建播放器；当前正式视频继续播放，
-  上下键重新用于推荐流切换。
+- 从推荐进入正式播放时清掉推荐列表、详情和下标，正式页只维护当前剧的 `episodes` 分集列表；
+  播放器、PlayerView、视频 Surface 和弹幕 Surface 继续复用。
+- 推荐页片尾前预取下一集，但只留在预热槽、不挂播放器队列；片尾自动进入正式页后直接消费该片源，
+  不释放解码器并开始无感播放下一集。
+- 从推荐进入的正式播放按返回键直接回首页，不返回推荐流，也不经过简介页。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或 iOS；未运行测试或真机验证；未推送。
 
 回滚：对本节对应提交执行 `git revert`。
@@ -194,12 +216,33 @@
 - 确认已是最新版本时删除缓存中的旧 `update.apk`，避免残留安装包。
 - FileProvider authority 改为 `${applicationId}.update_provider`，路径只开放
   `cache-path`；安装时生成 `content://` URI，再用 `ACTION_VIEW` 拉起系统安装器。
-- 删除 `PackageInstaller` 会话、安装回执广播和对应 Manifest receiver；运行时不再预检查
-  “安装未知应用”权限，也不跳授权页，未知来源处理完全交给系统安装器。
+- 运行时不再预检查“安装未知应用”权限，也不跳授权页，未知来源处理完全交给系统安装器。
+- 保留 `PackageInstaller` 会话作为兜底：系统安装器 Activity 被设备禁用或无法解析时，
+  仍可通过会话完成安装；同时保留对应安装回执 receiver。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖、更新地址或元数据格式；
   未运行测试，未推送。
 
 回滚：对本节对应提交执行 `git revert`。
+
+## 1.3.9 版本准备
+
+状态：构建与产物校验通过，GitHub Release 待发布。
+
+- 源码默认版本更新为 `versionName=1.3.9`、`versionCode=98`。
+- `docs/CHANGELOG.md` 已按手机、TV 分节；README 已更新版本号、versionCode 与 APK 文件名。
+- 本轮包含手机启动页面选择、扫码登录返回修复、TV 推荐播放与弹幕跳转修复，
+  以及系统安装器不可用时的应用内更新兜底。
+- `:app:assembleDebug`、`:app:assembleRelease` 通过；未运行自动化测试。
+- APK 的 `aapt` 元数据确认 `versionName=1.3.9`、`versionCode=98`、`minSdk=19`。
+- `apksigner` v1 / v2 校验通过，证书 SHA-256 为
+  `27da90725c2bcec6c334096ee438877b480875dfaa1339b5dbedc5fd9fcee019`；
+  `zipalign` 校验通过。
+- APK：`outputs/release-1.3.9/HGTV_1.3.9.apk`，大小 `4290799` 字节；
+  SHA-256 为 `4ff30474c191b09a3a0cf99ec755a7e88ba7f2933a2d91475a037588e1285941`。
+- 发布 tag `1.3.9` 必须指向独立空树提交；Release 只允许上传 APK、`SHA256SUMS`
+  和 `update.json`，不得附带或暴露项目源码。
+
+回滚：删除对应 Release / tag 后，对文档发布提交执行 `git revert`。
 
 ## 1.3.8.12 版本准备
 

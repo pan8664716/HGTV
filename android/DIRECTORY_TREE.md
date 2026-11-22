@@ -792,7 +792,7 @@ android/
 | `HomePage.kt` | 首页本机三栏与八个榜单剧架；历史 / 收藏使用本机 + 网络统一合并。 | val SHELF_SIZE、fun TvMainActivity.historyRows、fun TvMainActivity.favoriteRows、fun TvMainActivity.homeShelves |
 | `RecommendBatchPreload.kt` | 相邻一部的详情 / 地址优先；推荐播放链接首次批量 20 个，先批量补详情，再按播放档案补首集模型；预热详情不补作者。 | val RECOMMEND_BATCH_MODEL_DELAY_MS、fun TvMainActivity.prefetchRecommendNeighbors、fun TvMainActivity.cancelRecommendBatchModels、fun TvMainActivity.prefetchRecommendBatchModels、fun TvMainActivity.prefetchFormalBatchModels |
 | `RecommendControls.kt` | 上下键换剧；反向操作优先于未完成的向下补页，索引变化交给播放选择层先摘除旧播放层，再准备下一部；补页期间合并连续下键。 | fun TvMainActivity.switchRecommend、fun TvMainActivity.seekRecommend |
-| `RecommendCover.kt` | 切换过渡：换作瞬间全黑，新片源真实出帧且宽高就绪后才淡出；加载期不暴露上一部旧帧，淡出完成可回调撤 loading。 | val COVER_OUT_MS、val COVER_OUT_FAST_MS、fun TvMainActivity.showRecommendCover、fun TvMainActivity.revealRecommendCover、val PICTURE_RECOVERY_LIMIT |
+| `RecommendCover.kt` | 切换过渡：换作瞬间全黑，新片源真实出帧且宽高就绪后才淡出；低内存设备关闭动画时仍保留最小合成等待，加载期不暴露上一部旧帧。 | val COVER_OUT_MS、val COVER_OUT_FAST_MS、val COVER_MIN_HOLD_MS、fun TvMainActivity.showRecommendCover、fun TvMainActivity.revealRecommendCover |
 | `RecommendEntry.kt` | 打开推荐页并自动播放一部推荐；冷启动按统一命名空间读取上次播放位置，快照第 0 条不被跳过；无快照时先取一个可播放条目，剩余列表在首帧后补齐。 | fun TvMainActivity.openRecommend、fun TvMainActivity.resumeIndex、fun TvMainActivity.nextRecommendIndex、val RESUME_CACHE_PROBE、fun TvMainActivity.mediaCached |
 | `RecommendEpisode.kt` | 推荐页单集起播、停留结算、曝光上报与每部起播时重置预热轮次；目标命中单槽时直接接管预准备 RemoteVideo，播放位置写入与快照一致的命名空间。 | val WATCH_DWELL_MS、val WATCH_PLAY_MS、val QUICK_SWIPE_MS、fun TvMainActivity.startRecommendEpisode、fun TvMainActivity.settleRecommendWatch、fun TvMainActivity.reportRecommendImpression、fun TvMainActivity.reportRecommendProgress |
 | `RecommendFeedControl.kt` | 冷启动续播时把「取推荐流」推迟到首帧之后；首屏按页补齐并逐页上屏；推荐范围或横屏请求变化时清列表、快照和游标。 | val RECOMMEND_FEED_DELAY_MS、fun TvMainActivity.requestRecommendFeedAfterFirstFrame、fun TvMainActivity.fireRecommendFeed、fun TvMainActivity.cancelRecommendFeed、fun TvMainActivity.invalidateRecommendForFilterChange、fun TvMainActivity.closeRecommendCache、fun TvMainActivity.cancelRecommendWarm |
@@ -800,7 +800,7 @@ android/
 | `RecommendNavigation.kt` | 推荐页进入正式播放与返回首页路由；进入正片时清理推荐列表并切换到正式分集上下文，播放器与 Surface 保持不动，返回直接回首页。 | fun TvMainActivity.enterFormalPlayback、fun TvMainActivity.goHomeFromRecommend、fun TvMainActivity.exitRecommendToHome、fun TvMainActivity.leaveRecommendPlaybackToHome |
 | `RecommendOverlay.kt` | 推荐页底部那块信息浮层：进度 + 剧名 + 操作说明；中心 loading 只在真实首帧后撤掉。 | fun TvMainActivity.attachRecommendOverlay、fun TvMainActivity.recommendChip、fun TvMainActivity.dismissRecommendOverlay、fun TvMainActivity.updateRecommendOverlay |
 | `RecommendPage.kt` | 本文件是「推荐」这一条独立的播放链路：抖音式的上下换剧、确定进正片、菜单开播放设置、返回回主页面；首屏目标 60 条，消费约 2/3 后预取。 | val RECOMMEND_SKIP_LIMIT、val RECOMMEND_MAX_CHAIN、val RECOMMEND_CACHE_NAMESPACE、val RECOMMEND_FIRST_LIMIT、val RECOMMEND_FIRST_ITEMS、val RECOMMEND_PAGE_LIMIT、val RECOMMEND_LOOKAHEAD |
-| `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部；保留单个 PlayerView，停止旧媒体、立即作废旧 work，目标匹配时优先使用单槽预准备片源，再显示当前作品 loading 并取详情。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend、fun TvMainActivity.resetRecommendPlaybackForSwitch |
+| `RecommendPlaybackSelection.kt` | 播放推荐列表里的第 index 部；保留单个 PlayerView 与播放器绑定，停止旧媒体并作废旧 work；换作时强制显示内部黑色快门，真实首帧后再揭开，避免旧帧被拉伸。 | fun TvMainActivity.playRecommendAt、fun TvMainActivity.skipRecommend、fun TvMainActivity.resetRecommendPlaybackForSwitch |
 | `RecommendUi.kt` | 本机兴趣画像（进推荐页时建一次，之后每页复用）。 | fun TvMainActivity.loadGenderOptions、fun TvMainActivity.showRecommendMessage、fun TvMainActivity.showRecommendLoading、fun TvMainActivity.showRecommendToast |
 | `RecommendWarm.kt` | 一次在途的相邻预热任务，以及推荐页单槽完整片源；单槽只保留一份 RemoteVideo，方向变化、离开页面或内存吃紧时关闭。 | class RecommendWarm、class RecommendPreparedSource |
 | `RecommendWarmDetail.kt` | 推荐相邻播放源预热；普通目标只取详情与单集直连地址，主方向最近一部额外解析索引并准备约 1MB 首块，不加载封面。 | val RECOMMEND_WARM_SLOTS、val RECOMMEND_WARM_SLOTS_METERED、fun TvMainActivity.warmRecommendDetail、fun TvMainActivity.hasWarmSlot、fun recommendPreparedKey |
@@ -856,20 +856,20 @@ android/
 | `PlaybackDiagnostics.kt` | 播放失败的可观测层：**正式包里唯一还活着的那份证据**。 | object PlaybackDiag、class PlaybackDiagnosticException、class PlaybackPrepareException、fun playbackStage、fun decoderOf、fun chainOf |
 | `PlaybackFailureLabels.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackFailureLabels 主要包含 object PlaybackFailureLabels。 | object PlaybackFailureLabels |
 | `PlaybackFailureReport.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackFailureReport 主要包含 fun TvMainActivity.playbackScene、val decoderTableCache、fun availableDecoders、fun looksSoftware。 | fun TvMainActivity.playbackScene、val decoderTableCache、fun availableDecoders、fun looksSoftware、fun PlaybackDiag.fillFormatFrom、fun formatLine |
-| `PlaybackGeometry.kt` | 电视播放几何与首帧比例：画面模式、缩放、旋转，以及换集期间冻结旧比例。 | class FixedFirstFramePlayerView、fun TvMainActivity.applyVideoGeometry、fun PlayerView.holdFirstFrameAspectRatio、fun PlayerView.completeFirstFrameAspectRatio |
+| `PlaybackGeometry.kt` | 电视播放几何与首帧比例：画面模式、缩放、旋转，以及换集期间冻结旧比例、按预期 / 真实片源尺寸预摆内容框。 | class FixedFirstFramePlayerView、fun TvMainActivity.applyVideoGeometry、fun PlayerView.holdFirstFrameAspectRatio、fun PlayerView.primeFirstFrameAspectRatio、fun PlayerView.completeFirstFrameAspectRatio |
 | `PlaybackHud.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackHud 主要包含 fun TvMainActivity.hidePlaybackOverlay、fun TvMainActivity.scheduleOverlayAutoHide、fun TvMainActivity.cancelOverlayAutoHide、fun TvMainActivity.hudShown。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.hidePlaybackOverlay、fun TvMainActivity.scheduleOverlayAutoHide、fun TvMainActivity.cancelOverlayAutoHide、fun TvMainActivity.hudShown、fun TvMainActivity.onPlaybackPage、fun TvMainActivity.syncKeepScreenOn |
 | `PlaybackLetterbox.kt` | 电视播放 FIT 黑边同步：按片源比例、缩放和旋转计算画面框，同时刷新弹幕 Surface 与普通 View 兜底。 | fun TvMainActivity.syncPlaybackLetterbox |
 | `PlaybackMenu.kt` | 播放器的底部设置面板（遥控器「上」打开）。 | class PlaybackMenu |
 | `PlaybackMenuController.kt` | 播放菜单与选择器、进度保存，以及页面切换时播放器 Surface/资源的分离回收。 | fun TvMainActivity.showPlaybackMenu、fun TvMainActivity.buildPlaybackMenu、fun TvMainActivity.obtainPlaybackMenu、fun TvMainActivity.detachPlayerSurface、fun menuShape、fun TvMainActivity.syncPlaybackMenu、fun TvMainActivity.dropPlaybackMenuCache |
 | `PlaybackRecovery.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackRecovery 主要包含 fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery、fun TvMainActivity.scheduleRecovery、fun playbackMediaKind |
-| `PlaybackSurfaceBuilder.kt` | 按页面重建电视播放器 surface 与覆盖层：推荐页与正式播放都使用单个 PlayerView；弹幕 / HUD / 控制层作为画面上方覆盖层。 | fun TvMainActivity.buildPlaybackSurface |
+| `PlaybackSurfaceBuilder.kt` | 按页面重建电视播放器 surface 与覆盖层：推荐页与正式播放都使用单个 PlayerView；重建前显式清理旧 PlayerView，避免遗留视频 Surface。 | fun TvMainActivity.buildPlaybackSurface、fun TvMainActivity.detachPlaybackViewForRebuild |
 | `PlayerActions.kt` | 播放设置面板**第一行那排动作**（相关剧集 / 作者作品 / 加入收藏 / 查看简介）的实现。 | fun TvMainActivity.showPlayerRelated、fun TvMainActivity.showPlayerAuthorWorks、fun TvMainActivity.showPlayerWorksStrip、fun TvMainActivity.refreshStripData、fun TvMainActivity.showPlayerIntro、fun TvMainActivity.playerFavoriteLabel |
 | `PlayerController.kt` | 电视播放起播内核，负责换集、播放源设置和播放页面装配；正式播放正常分集软换源不释放解码器，推荐跨作品和错误恢复才硬切。 | fun TvMainActivity.loadDanmaku、fun TvMainActivity.playEpisode、fun TvMainActivity.scheduleRecommendAfterFirstFrame |
 | `PreloadController.kt` | 推荐页的固定五窗口预加载编排：普通目标只取详情与播放地址，主方向最近一部提升为单槽完整片源；低配电视首帧先准备最近一部，再自动续补其余目标。 | fun TvMainActivity.preloadGateOpen、val PRELOAD_MAX_TARGETS、fun TvMainActivity.cancelScheduledPreload、fun TvMainActivity.scheduleRecommendPreload、fun TvMainActivity.scheduleRecommendDwell、fun TvMainActivity.preloadScheduler、fun TvMainActivity.applyRecommendPlan |
 | `RelatedPanel.kt` | 播放界面底部的「换一部接着看」浮层。 | class RelatedPanel |
 | `TvDanmakuClock.kt` | 把播放器的当前状态采样给弹幕层。 | fun TvMainActivity.syncDanmakuClock |
 | `TvPlaybackAnalytics.kt` | 播放链路的可观测点：记录解码器初始化耗时、换作阶段耗时、首帧、丢帧和音频断流。 | fun TvMainActivity.playbackAnalytics |
-| `TvPlaybackListener.kt` | 每个 ExoPlayer 只挂一次的稳定播放监听器；通过可替换的 PlaybackBinding 隔离旧片源回调，并统一处理 READY、首帧、片尾、尺寸和错误。 | class PlaybackBinding、fun TvMainActivity.ensureStablePlayerListener、fun TvMainActivity.detachStablePlayerListener、fun TvMainActivity.revealRecommendWhenReady |
+| `TvPlaybackListener.kt` | 每个 ExoPlayer 只挂一次的稳定播放监听器；通过可替换且带媒体 id 的 PlaybackBinding 隔离旧片源回调，并统一处理 READY、首帧、片尾、尺寸和错误。 | class PlaybackBinding、fun TvMainActivity.ensureStablePlayerListener、fun TvMainActivity.detachStablePlayerListener、fun TvMainActivity.revealRecommendWhenReady |
 | `TvPlaybackPreferences.kt` | 本次播放**实际生效**的清晰度上限。 | val TvMainActivity.playbackMaxQuality、val TvMainActivity.playbackDecoderMode、fun TvMainActivity.preparedKeyFor、fun TvMainActivity.playerDecoderMode |
 | `TvPlaybackRunnables.kt` | 播放设置、选集和控制条共用同一枚「无操作自动消失」计时器。 | fun TvMainActivity.runOverlayAutoHide、fun TvMainActivity.runPendingSeek、fun TvMainActivity.runForcedRetire |
 | `TvPlaybackWarmup.kt` | 把「首帧之前才发现很贵」的几处初始化提前做掉。 | fun TvMainActivity.primePlaybackClasses、fun TvMainActivity.probeHardwareHevcDecoder |
@@ -1063,7 +1063,7 @@ android/
 | `DanmakuEmojiStore.kt` | 弹幕表情图的解码与缓存。 | class DanmakuEmojiStore |
 | `DanmakuLoader.kt` | 「这一集拉到哪一步」的弹幕加载内核（电视端与手机端共用一份）；首包挂起等视频真正出帧后才铺开，并可关闭超时兜底供手机正式页严格等待。 | class DanmakuLoader |
 | `DanmakuSpriteAtlas.kt` | 弹幕文字图集。 | class DanmakuSpriteAtlas |
-| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；首批弹幕挂起等 onRenderedFirstFrame 才铺开（不用 STATE_READY，它在真机上会短暂假阳性），按首帧位置对齐，并可配置 5 秒兜底或严格等待首帧；聚合弹幕行距按放大后的计数高度算，多条并排不互相遮挡；隐藏时保持 Surface 存活，提交一帧全透明擦掉旧内容（不用 visibility 也不依赖 alpha，部分电视 ROM 上 alpha 不作用于独立图层），并通过 isSurfaceActive 告知宿主是否需要普通 View 兜底；TV 与手机竖屏追加 16dp 顶部呼吸位，手机横屏保持原位置；推荐流可把首行文字实际顶边锚定到顶部导航。 | class DanmakuView、fun beginTransition、val isSurfaceActive、val topGapDp、val topTextAnchorPx |
+| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；首批弹幕挂起等 onRenderedFirstFrame 才铺开，进度跳转时按新时间点重建仍在屏幕上的活动弹幕并计算正确横向位置，不整批从右边重播；隐藏时保持 Surface 存活。 | class DanmakuView、fun beginTransition、val isSurfaceActive、val topGapDp、val topTextAnchorPx |
 | `MediaSessionHost.kt` | 前台媒体会话：让**遥控器 / 耳机线控 / 锁屏与系统媒体面板**上的播放键能找到本应用。 | class MediaSessionHost |
 | `PlaybackFailures.kt` | 一次播放失败的归因：精确 Exo 分类、媒体轨道、可降档位和正常地址错误探测；不包含设备身份自愈。 | object PlaybackFailures |
 | `ExoFailureMapper.kt` | ExoPlayer 2.19.1 错误常量到跨平台 canonical code、阶段和可重试性的精确映射。 | object ExoFailureMapper |
@@ -1115,7 +1115,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `AppUpdateController.kt` | 两端共用的更新控制器：内置写死 GitHub 更新地址（不可由用户设置），元数据与安装包均走 gh-proxy.org 镜像；安装包写入内部缓存根目录，负责下载校验、静默检查与安装状态。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
-| `UpdateInstaller.kt` | SmartTube 式系统安装入口：从内部缓存取 `update.apk`，经 FileProvider 生成 content URI，再用 ACTION_VIEW 拉起系统安装器；不预检查安装未知应用权限，不创建 PackageInstaller 会话，不等待安装回执。 | object UpdateInstaller |
+| `UpdateInstaller.kt` | SmartTube 式系统安装入口：从内部缓存取 `update.apk`，经 FileProvider 生成 content URI，再用 ACTION_VIEW 拉起系统安装器；不预检查安装未知应用权限。系统安装器 Activity 不可用时回退 PackageInstaller 会话并处理安装回执。 | object UpdateInstaller、class UpdateInstallReceiver |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/feature/account/`
 
