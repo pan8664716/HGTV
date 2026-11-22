@@ -9,7 +9,7 @@ internal fun TvMainActivity.runTvMainTick(task: Runnable) {
     // 推荐页在「整屏一行提示」时还没有播放层（hud 是 `playEpisode` 建的），
     // 这一支必须先确认它已经存在，否则冷启动取不到推荐时每秒一次的 tick 会直接崩。
     if((screen=="player" || screen=="recommend") && hudReady) {
-        // 池实例可能在监听器挂上之前已经 READY；每秒用真实播放状态收口一次，
+        // 播放器实例可能在监听器挂上之前已经 READY；每秒用真实播放状态收口一次，
         // 防止旧 playbackReady 让“正在缓冲”永久留在画面上。
         syncBufferingDots()
         if(sleepTimer.poll()) stopForSleep()

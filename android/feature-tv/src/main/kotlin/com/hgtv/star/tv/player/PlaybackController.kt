@@ -82,7 +82,7 @@ fun TvMainActivity.syncBufferingDots() {
     if(actuallyPlaying) playbackReady=true
     val frameUp=actuallyPlaying && pictureUpNow()
     if(frameUp && screen=="recommend" && recommendCover?.alpha==1f) {
-        // 池实例的首帧回调可能已经被消耗掉；只要当前媒体确实在出帧，
+        // 播放器实例的首帧回调可能已经被消耗掉；只要当前媒体确实在出帧，
         // 这里补一次揭黑，避免 loading 和黑场永久叠在正常画面上。
         revealRecommendCover()
     }

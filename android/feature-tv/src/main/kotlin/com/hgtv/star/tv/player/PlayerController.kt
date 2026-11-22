@@ -125,35 +125,6 @@ fun TvMainActivity.playEpisode(
     if(!recommendEntry && screen!="player") playbackFromRecommend=false
     val selectedIndex=index.coerceIn(0,data.episodes.lastIndex)
     val targetId=data.episodes[selectedIndex]
-    val pageIndex=if(recommendEntry) recommendIndex else selectedIndex
-    if(recommendEntry && (position!=0L || recovering || keepMedia)) releaseTvPlaybackPool()
-    if(recommendEntry && tvPlaybackPager!=null && tvPlaybackPager?.screen!="recommend") {
-        // 从其他页面回到推荐流时，复用已有 pager，避免重建 Surface。
-        switchTvPlaybackPagerScreen("recommend",pageIndex)
-    }
-    // 相邻页池命中：把目标池实例提升为活动播放器，旧活动实例收进池里供返回。
-    // 这一步必须在 `reuse` 判定之前，下面的播放中控只面向新的活动实例。
-    val pooledAdopt=if(recommendEntry && !recovering && position==0L && prepared==null) {
-        takeTvPlaybackPooledSlot(pageIndex,data.series.id,targetId)
-    } else null
-    // 下一季、推荐补页或分集表变化后，adapter 的 itemCount 必须先刷新再定位。
-    if(recommendEntry) tvPlaybackPager?.refreshPages()
-    // 命中池实例时不能等平滑翻页结束才挂 Surface：先直接定位目标页，
-    // 否则播放器已经 READY，但当前页的 PlayerView 仍为空，用户会看到黑屏。
-    if(recommendEntry) {
-        tvPlaybackPager?.setCurrentIndex(pageIndex,smooth=pooledAdopt==null)
-        tvPlaybackPager?.pageAt(pageIndex)?.let { playerView=it.playerView }
-    }
-    if(pooledAdopt!=null) {
-        storeActivePlayerInTvPool()
-        pooledAdopt.listener?.let(pooledAdopt.player::removeListener)
-        pooledAdopt.listener=null
-        player=pooledAdopt.player
-        setTvPlayerAudioFocus(pooledAdopt.player,true)
-        video=pooledAdopt.remote
-        playbackHttp=pooledAdopt.http
-        if(recommendEntry) tvPlaybackPager?.pageAt(pageIndex)?.let { playerView=it.playerView }
-    }
     // 设置页改档不会经过 [applyDecoderMode]；进播放前发现实例档位不一致就先放掉。
     releasePlayerForDecoderMismatch()
     // 首帧 EWMA 更新后，下一次起播按新的缓冲档位重建；当前这一集不打断。
@@ -161,21 +132,15 @@ fun TvMainActivity.playEpisode(
     // `keepMedia`（同档重建）也要保住播放层：这一趟只为把解码器放掉重开，画面 / 弹幕 /
     // 控制层一个都不用换（见 [replayWithPlan]）。它和 `recovering` 是两件事——
     // 后者还包含降档、网络自愈、手动重试，那些真的需要重来一遍。
-    val pagerSurfaceReusable=recommendEntry && playerView!=null && tvPlaybackPager!=null
-    val reuse=(screen=="player" || recommendEntry) && (player!=null || pagerSurfaceReusable) &&
-        (playerView!=null || pooledAdopt!=null) &&
+    val reuse=(screen=="player" || recommendEntry) && player!=null && playerView!=null &&
         (!recovering || keepMedia) && !playError
     // 「这一集的数据也一并留着」：只有**还能用**的那一份才算数（已经 prepare 过、且没被
     // close）。预热被换出 / 已经关掉时读不出数据，必须落回「重新取地址 + 本地准备」那条路。
     // 此时视图仍然复用（`reuse` 看的是 `keepMedia`）——那一步不需要重建整棵树。
-    val keep=(keepMedia && video?.isReusable==true) || pooledAdopt!=null
+    val keep=keepMedia && video?.isReusable==true
     // 必须先冻结，再 stop/clearMediaItems：停旧媒体会让 PlayerView 收到一次 ratio=0，
     // 如果这时还没 hold，AspectRatioFrameLayout 会立刻撑满整屏，用户看到的就是拉伸首帧。
-    if((screen=="player" || recommendEntry) && reuse &&
-        (!keep || (pooledAdopt!=null && !pooledAdopt.firstFrameRendered))
-    ) {
-        // 池实例可能已经在另一页预渲染过，但当前页的 PlayerView 仍可能保留整屏比例；
-        // 先把比例冻结，等目标首帧/尺寸回调后再一次性落下去。
+    if((screen=="player" || recommendEntry) && reuse && !keep) {
         playerView?.holdFirstFrameAspectRatio()
     }
     // 「已看完」标记只在**正式播放**里清掉。推荐页还没进正片（需求 3：进正片才算开始看），
@@ -242,7 +207,7 @@ fun TvMainActivity.playEpisode(
     // 数据仍然来自预热缓存，因此不重新取地址、也不会变慢。过渡黑场本来就盖着这一下。
     // 同档重建**必须**走硬切（`!keep`）：这一趟的全部意义就是 `stop()` 把 MediaCodec 放掉。
     // 走无感那条路等于什么都不做，4001 / 4003 的现场原样留着。
-    val seamless=pooledAdopt!=null || (reuse && prefetched!=null && !recommendEntry && !keep)
+    val seamless=reuse && prefetched!=null && !recommendEntry && !keep
     // 队列里还挂着别的下一集（换清晰度、跳集）：先摘掉，别让它跟着新源一起进播放器。
     if(!fromQueue) dropQueuedEpisode()
     if(seamless || keep) suppressBufferingUi() else restoreBufferingUi()
@@ -280,11 +245,7 @@ fun TvMainActivity.playEpisode(
     // 下面读到的 `playbackMaxQuality` 又回到用户设置的那一档，下一发必然再撞同一个失败。
     // 真正离开播放页（`returnToDetail` / 进推荐页 / 换剧）走的是不带这个参数的默认值。
     } else {
-        // 推荐换作时当前实例已经收进池；这里只重建视图，不把可回看的池实例一起清掉。
-        detachPlayerSurface(
-            keepSession=true,
-            releasePlaybackPool=!(recommendEntry && player==null),
-        )
+        detachPlayerSurface(keepSession=true)
         // 重建播放层会清掉旧的过渡黑场；推荐换作必须在新 Surface 挂上之前重新盖黑，
         // 否则新 Surface 在视频尺寸回调前会先按整屏显示一帧。
         if(recommendEntry) showRecommendCover()
@@ -364,9 +325,6 @@ fun TvMainActivity.playEpisode(
             if(recommendEntry) "" else data.episodeCover(targetId).ifBlank { data.series.cover }
         )
     }
-    // 目标页可能刚创建 / 刚从 ViewPager2 的 RecyclerView 复用池里出来。
-    // 池实例命中时尤其不能只依赖一次同步，否则 player 已就绪但 Surface 还没挂上。
-    if(recommendEntry) tvPlaybackPager?.syncCurrentPlayerWhenReady(pageIndex)
     // 触屏设备：`reuse` 那一路不重建视图，因此这三步不能只放在 `!reuse` 里面——
     // 从推荐页进正片、换清晰度之后的回到播放页都走 `reuse`，漏了就整页点不动。
     // 三处调用都自带「已经有了就直接返回」，重复进播放页是空操作。
@@ -599,9 +557,6 @@ fun TvMainActivity.playEpisode(
                     }
                     playbackReady=true
                     syncBufferingDots()
-                    // 低端电视的首帧可能比 READY 晚几秒；池预热不能一直等到首帧，
-                    // 否则用户在这几秒内切换时一定没有下一页实例可用。
-                    if(recommendEntry) scheduleTvPlaybackPoolNeighbors()
                     // 从推荐页进正片时这一集还没 READY，历史由这里补写（见 [enterFormalPlayback]）。
                     if(recommendHistoryPending) saveProgress()
                     // 起播已经稳了：高端电视趁用户还没按菜单键，把播放设置面板先建好、画一遍
@@ -840,7 +795,6 @@ fun TvMainActivity.playEpisode(
                     // 真正的首帧已经上屏：现在才允许相邻预热和推荐补页。
                     scheduleRecommendAfterFirstFrame()
                 }
-                if(recommendEntry) scheduleTvPlaybackPoolNeighbors()
                 // 出帧即撤看门狗：这是「画面真的上屏了」的硬证据（READY 只代表解出了轨道）。
                 // 同时把面板上「没有画面」那条现场清掉，否则用户会看到「有画面却说我黑屏」
                 //（见 [PlaybackDiag.pictureUp]）。调试注入 STALL_FRAME 时它返回 false，
@@ -919,9 +873,7 @@ fun TvMainActivity.playEpisode(
         playerListener=listener; p.addListener(listener)
         val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(MimeTypes.VIDEO_MP4).build())
         // 正式播放换集：PlayerView 先冻结旧比例，等新首帧真的上屏后再应用新比例。
-        if((screen=="player" || screen=="recommend") &&
-            (pooledAdopt==null || !pooledAdopt.firstFrameRendered)
-        ) {
+        if(screen=="player" || screen=="recommend") {
             if(BuildConfig.DEBUG) android.util.Log.i(
                 "HGTV-RATIO",
                 "sourceSet screen=$screen episode=${episodeIndex+1} reuse=$reuse seamless=$seamless " +
@@ -945,50 +897,10 @@ fun TvMainActivity.playEpisode(
         videoSizeReady=false; firstFrameRendered=false
         PlaybackDiag.lastFrameAt=0L
         sourceSetAt=android.os.SystemClock.elapsedRealtime()
-        if(pooledAdopt==null) {
-            p.setMediaSource(source,position.coerceAtLeast(0))
-            p.prepare()
-        } else {
-            // 池实例已经挂好 MediaSource 并完成过预渲染：这里只把它提升为活动实例。
-            if(p.playbackState==Player.STATE_IDLE) p.prepare()
-            p.volume=1f
-        }
+        p.setMediaSource(source,position.coerceAtLeast(0))
+        p.prepare()
         p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle
         stage("sourceSet")
-        if(pooledAdopt==null && recommendEntry) {
-            // 不能等真正的首帧才开始准备下一页：低端电视首帧可能还要几秒，
-            // 这期间用户已经切页时池里一定没有目标实例。源已 set 后先让池线程
-            // 用 warm 路径准备下一集，READY / 首帧路径仍会幂等补一次。
-            main.postDelayed({
-                if(!isDestroyed && player===p && screen=="recommend") {
-                    scheduleTvPlaybackPoolNeighbors()
-                }
-            },300L)
-        }
-        if(pooledAdopt!=null) {
-            playerView?.setKeepContentOnPlayerReset(true)
-            playerView?.visibility=View.VISIBLE
-            if(playerView?.player!==p) attachPlayerView(p)
-            if(recommendEntry) tvPlaybackPager?.syncCurrentPlayer()
-            firstFrameRendered=pooledAdopt.firstFrameRendered
-            videoWidth=pooledAdopt.remote.info.videoWidth
-            videoHeight=pooledAdopt.remote.info.videoHeight
-            videoSizeReady=videoWidth>0 && videoHeight>0
-            applyResizeMode()
-            if(p.playbackState==Player.STATE_READY) playbackReady=true
-            if(firstFrameRendered) {
-                playbackReady=true
-                if(recommendEntry) recommendPlaybackHasFrame=true
-                playerView?.completeFirstFrameAspectRatio()
-                danmakuLoader.onFrameRendered(p.currentPosition)
-                revealRecommendWhenReady()
-                if(recommendEntry) {
-                    hideCenterLoading()
-                    reportRecommendImpression()
-                }
-                if(recommendEntry) scheduleTvPlaybackPoolNeighbors()
-            }
-        }
         // 起播看门狗：兜住「READY 了但一帧都没出」的黑屏——那条路不抛异常，进不了 [playerFailure]。
         if(autoplay) armPlaybackWatchdog(session)
         // 停帧看门狗：起播正常、播着播着不再出帧（自动连播几集后最常见的那种黑屏）。

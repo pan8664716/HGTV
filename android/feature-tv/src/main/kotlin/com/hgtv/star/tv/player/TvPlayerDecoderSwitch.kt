@@ -13,7 +13,6 @@ package com.hgtv.star.tv
  * 于是「切软解」永远从第 0 秒开始——用户看到的是画面倒退，而不是接着刚才那一下继续。
  */
 fun TvMainActivity.applyDecoderMode(position: Long = -1L, play: Boolean? = null) {
-    releaseTvPlaybackPool()
     if(screen!="player" && screen!="recommend") return
     val old=player ?: return
     val resumeAt=if(position>=0) position else currentPosition()

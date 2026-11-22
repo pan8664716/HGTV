@@ -26,39 +26,25 @@ internal fun TvMainActivity.buildPlaybackSurface() {
     playerLetterboxMask=null
     touchEntryTitle=null; touchEntryHint=null
     playbackBoost=false
-    if(screen=="recommend") {
-        val playbackPager=TvPlaybackPager(this)
-        tvPlaybackPager=playbackPager
-        root.addView(playbackPager,FrameLayout.LayoutParams(-1,-1))
-        val view=playbackPager.currentPage()?.playerView ?: playbackPager.initialPage.playerView
-        view.player=player
-        playerView=view
-        playbackPager.post {
-            if(isDestroyed || tvPlaybackPager!==playbackPager) return@post
-            playbackPager.syncCurrentPlayerWhenReady()
-            applyVideoGeometry()
-        }
+    // 推荐页与正式播放页统一使用一块 PlayerView。推荐换作时只替换媒体源，
+    // 不再保留相邻作品的独立 Surface / ExoPlayer。
+    val rotatedSurface=library.autoFullscreen && autoFullscreenAvailable()
+    val view=(if(rotatedSurface) {
+        layoutInflater.inflate(R.layout.player_surface_texture,root,false) as com.google.android.exoplayer2.ui.PlayerView
     } else {
-        // 正式播放页恢复原来的单 Surface 方案；推荐页的 ViewPager2 / 池不参与这里。
-        tvPlaybackPager=null
-        val rotatedSurface=library.autoFullscreen && autoFullscreenAvailable()
-        val view=(if(rotatedSurface) {
-            layoutInflater.inflate(R.layout.player_surface_texture,root,false) as com.google.android.exoplayer2.ui.PlayerView
-        } else {
-            FixedFirstFramePlayerView(this)
-        }).apply {
-            useController=false
-            resizeMode=frameResizeMode()
-            isFocusable=false
-            setKeepContentOnPlayerReset(true)
-            setShutterBackgroundColor(Color.BLACK)
-            setShowBuffering(com.google.android.exoplayer2.ui.PlayerView.SHOW_BUFFERING_NEVER)
-            setAspectRatioListener { _,_,_ -> syncPlaybackLetterbox() }
-        }
-        view.player=player
-        playerView=view
-        root.addView(view,FrameLayout.LayoutParams(-1,-1))
+        FixedFirstFramePlayerView(this)
+    }).apply {
+        useController=false
+        resizeMode=frameResizeMode()
+        isFocusable=false
+        setKeepContentOnPlayerReset(true)
+        setShutterBackgroundColor(Color.BLACK)
+        setShowBuffering(com.google.android.exoplayer2.ui.PlayerView.SHOW_BUFFERING_NEVER)
+        setAspectRatioListener { _,_,_ -> syncPlaybackLetterbox() }
     }
+    view.player=player
+    playerView=view
+    root.addView(view,FrameLayout.LayoutParams(-1,-1))
     bufferingDots=LoadingDotsView(this).apply { visibility=View.GONE }
     root.addView(bufferingDots,FrameLayout.LayoutParams(-2,-2,Gravity.CENTER))
     val layer=FrameLayout(this).apply { clipChildren=false; clipToPadding=false }

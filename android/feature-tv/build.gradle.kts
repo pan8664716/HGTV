@@ -25,5 +25,4 @@ dependencies {
     // PlayerView 与字幕 / 控制器样式。
     implementation("com.google.android.exoplayer:exoplayer-ui:2.19.1")
     implementation("androidx.recyclerview:recyclerview:1.3.1")
-    implementation("androidx.viewpager2:viewpager2:1.1.0")
 }

@@ -35,30 +35,9 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // removeAllViews / 新建 Surface 导致 FrameLayout 布局崩溃），但清空旧 Surface 内容、
     // 停止旧媒体并作废旧 work。旧作品不能再发声，新作品也不会继承旧首帧。
     val series=recommendItems[safe]
-    // 目标页通常已经由 offscreenPageLimit=1 常驻；先抓住它，切换后即使
-    // ViewPager2 正在重新布局，也不需要把起播硬等到底部那次 layout。
-    val targetPageBefore=tvPlaybackPager?.pageAt(safe)
-    switchTrace("target-page-before=${targetPageBefore!=null}")
-    val switching=safe!=recommendIndex && (player!=null || playerView!=null)
-    if(switching) {
-        // 旧活动实例先收进池：返回上一部时直接提升，不必重新取源。
-        storeActivePlayerInTvPool()
-        switchTrace("stored-active")
-        player=null
-        video=null
-        playbackHttp=null
-        resetRecommendPlaybackForSwitch()
-        playerView=null
-        switchTrace("reset-surface")
-    }
+    val switching=safe!=recommendIndex && playerView!=null
+    if(switching) resetRecommendPlaybackForSwitch()
     recommendIndex=safe; recommendShift=direction
-    if(tvPlaybackPager!=null && tvPlaybackPager?.screen!="recommend") {
-        switchTvPlaybackPagerScreen("recommend",safe)
-    }
-    tvPlaybackPager?.refreshPages()
-    tvPlaybackPager?.setCurrentIndex(safe,smooth=false)
-    switchTrace("pager-positioned")
-    (tvPlaybackPager?.pageAt(safe) ?: targetPageBefore)?.let { playerView=it.playerView }
     // 换剧方向与时刻：相邻预热按「用户正在走的方向」排优先级（见 [prefetchRecommendNeighbors]）。
     // 方向为 0 时（进页面第一次起播、重试同一部）不动它，沿用上一次的方向。
     if(direction!=0) {
@@ -84,27 +63,6 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // （缓存命中这条早退路径也必须换，否则上一次在途的结果会把刚切过来的这一部顶掉。）
     val token=recommendToken.incrementAndGet()
     val cached=recommendDetails[series.id]
-    fun startWhenPageReady(data: com.hgtv.star.core.Detail,entryToken: Long) {
-        val pager=tvPlaybackPager
-        if(pager==null) {
-            startRecommendEpisode(data,position,autoplay)
-            return
-        }
-        if(targetPageBefore!=null) {
-            showCenterLoading("正在加载《${data.series.title}》…")
-            startRecommendEpisode(data,position,autoplay)
-            switchTrace("started-existing-page")
-            return
-        }
-        pager.awaitPage(safe) {
-            if(isDestroyed || screen!="recommend" || entryToken!=recommendToken.get()) return@awaitPage
-            switchTrace("page-ready")
-            // 等目标页完成布局后再挂 loading 文案，避免它把 pager 的下一帧顶后。
-            showCenterLoading("正在加载《${data.series.title}》…")
-            startRecommendEpisode(data,position,autoplay)
-            switchTrace("started")
-        }
-    }
     // 硬切后没有播放层了：先在纯黑画面上显示当前作品的 loading，
     // 不能在详情缓存命中时直接带着上一部的根视图进入 playEpisode。
     if(playerView==null) {
@@ -117,7 +75,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     if(cached!=null) {
         StartupTrace.done("recommend.play.cached",playStarted)
         switchTrace("cached-detail")
-        startWhenPageReady(cached,token)
+        startRecommendEpisode(cached,position,autoplay)
         switchTrace("start-dispatched")
         return
     }
@@ -182,7 +140,7 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
                 }
                 // 同上：后台只把详情收进缓存，起播留给回到前台那一次。
                 if(!foreground) return@post
-                startWhenPageReady(data,token)
+                startRecommendEpisode(data,position,autoplay)
             }.onFailure { problem ->
                 if(token!=recommendToken.get()) return@post
                 android.util.Log.w("HGTV","Recommend detail failed id=${series.id}",problem)

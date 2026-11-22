@@ -102,8 +102,6 @@ class TvMainActivity: Activity() {
     val playbackSource by lazy {
         com.hgtv.star.shared.architecture.PlaybackSourceCoordinator(repository)
     }
-    internal var tvPlaybackPager: TvPlaybackPager?=null
-    internal val tvPlaybackPool=TvPlaybackPoolState()
 
     val networkCleanup get()=com.hgtv.star.shared.architecture.AppExecutors.network.executor
     private val sessionExpiredReceiver=object: android.content.BroadcastReceiver() {

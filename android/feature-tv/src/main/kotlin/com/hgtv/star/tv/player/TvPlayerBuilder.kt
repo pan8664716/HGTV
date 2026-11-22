@@ -109,7 +109,6 @@ internal fun TvMainActivity.releasePlayerForBufferMismatch() {
     val built=builtPlayerBufferProfile ?: return
     val wanted=resolveTvBufferProfile()
     if(built==wanted) return
-    releaseTvPlaybackPool()
     android.util.Log.i(
         "HGTV-BUFFER",
         "Rebuilding player for buffer profile ${built.name} -> ${wanted.name}",

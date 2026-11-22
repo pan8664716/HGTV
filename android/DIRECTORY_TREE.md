@@ -758,9 +758,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `AppVersion.kt` | 应用版本号。 | object AppVersion |
-| `TvMainActivity.kt` | 电视主界面 Activity，持有页面、账号分页与按栏目加载状态，以及推荐页 ViewPager2 / 播放器池引用。 | class TvMainActivity、var TvMainActivity.accountHistoryOffset、var TvMainActivity.accountLoadingColumns |
-| `TvPlaybackPager.kt` | 电视推荐页专用的竖向 ViewPager2 三页窗口；每页独立 PlayerView，当前页绑定活动播放器，前后页承载池化实例，换作保持即时直切。 | class TvPlaybackPager、class TvPlaybackSurfacePage、class TvPlaybackPageAdapter |
-| `TvPlaybackPool.kt` | 电视推荐页播放器池：相邻作品独立取源、静音预渲染首帧、命中后提升为活动播放器，按低配设备限制池大小并统一回收 RemoteVideo、HTTP 与播放器。 | class TvPlaybackPoolSlot、class TvPlaybackPoolState、fun TvMainActivity.scheduleTvPlaybackPoolNeighbors、fun TvMainActivity.storeActivePlayerInTvPool、fun TvMainActivity.takeTvPlaybackPooledSlot |
+| `TvMainActivity.kt` | 电视主界面 Activity，持有页面、账号分页与按栏目加载状态；推荐页和正式播放共用单个播放器实例。 | class TvMainActivity、var TvMainActivity.accountHistoryOffset、var TvMainActivity.accountLoadingColumns |
 | `TvMainLifecycleFacade.kt` | feature-tv 模块的 TvMainLifecycleFacade.kt 职责。文件 TvMainLifecycleFacade 主要包含 fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory。 | fun TvMainActivity.returnToDetail、fun TvMainActivity.releaseOffscreenCovers、fun TvMainActivity.resumeVisibleCovers、fun TvMainActivity.handleLowMemory、fun TvMainActivity.handleTrimMemory、fun TvMainActivity.handleDestroy |
 
 #### `feature-tv/src/main/kotlin/com/hgtv/star/tv/account/`
