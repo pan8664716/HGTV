@@ -5,7 +5,7 @@
 // 与 Android `PhoneSettingsActivity` 的项一一对应，写的是同一份偏好：
 // 默认清晰度、倍速、画面模式、画面缩放、自动连播、快进快退、播放显示四项、
 // 自动消失秒数、弹幕六项、20 套主题、字体大小、列表每行、推荐页左右滑动、
-// 推荐范围、受众、打开应用进入推荐、选集每页、搜索源、恢复隐藏、
+// 启动页面、推荐范围、受众、选集每页、搜索源、恢复隐藏、
 // 减少动画、调试模式、备份 / 恢复、清空缓存、恢复默认。
 
 import SwiftUI
@@ -256,6 +256,13 @@ struct SettingsView: View {
 
     private var appearance: some View {
         VStack(alignment: .leading, spacing: 0) {
+            SectionTitle(text: "启动页面")
+            ChoiceRow(label: "打开应用进入", value: launchTabLabel,
+                      options: AppConfig.Navigation.phoneTabKeys.map { key in
+                          (launchTabLabel(for: key), { library.prefs.launchTab = key })
+                      })
+            HintText(text: "下次打开应用时生效。")
+
             SectionTitle(text: "主题外观")
             HintText(text: "当前：\(PhoneTheme.of(library.prefs.theme).label) · \(PhoneTheme.of(library.prefs.theme).scene)　（\(PhoneTheme.allCases.count) 套，选中即生效）")
 
@@ -304,6 +311,19 @@ struct SettingsView: View {
             ])
             SwitchRow(label: "推荐页左右滑动", isOn: $library.prefs.recommendSwipe)
             HintText(text: "关闭后推荐页只能用顶部体裁标签换流，手指左右划不会整页翻走。")
+        }
+    }
+
+    private var launchTabLabel: String {
+        launchTabLabel(for: library.prefs.resolvedLaunchTab)
+    }
+
+    private func launchTabLabel(for key: String) -> String {
+        switch key {
+        case "category": return "分类"
+        case "rank": return "榜单"
+        case "mine": return "我的"
+        default: return "首页"
         }
     }
 
@@ -357,7 +377,6 @@ struct SettingsView: View {
                 ("男频", { library.prefs.recommendGender = "male" }),
                 ("女频", { library.prefs.recommendGender = "female" })
             ])
-            SwitchRow(label: "打开应用进入推荐", isOn: $library.prefs.launchRecommend)
 
             SectionTitle(text: "内容管理与来源")
             ChoiceRow(label: "选集每页", value: "\(library.prefs.episodePageSize) 集",

@@ -122,8 +122,9 @@ struct RootView: View {
                 feedActive = value == 0
             }
             .onAppear {
-                // 「打开应用进入推荐」关掉时落到分类页（与 Android 的启动落点一致）。
-                if !library.prefs.launchRecommend { tab = 1 }
+                // 手机启动落点由「设置 → 外观导航 → 打开应用进入」决定。
+                let key = library.prefs.resolvedLaunchTab
+                tab = AppConfig.Navigation.phoneTabKeys.firstIndex(of: key) ?? 0
             }
             .onChange(of: router.path) { _, value in
                 feedActive = tab == 0 && value.isEmpty

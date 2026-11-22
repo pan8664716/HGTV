@@ -62,6 +62,8 @@ swiftc -O HGTV/Core/Sign/*.swift HGTV/Core/API/*.swift HGTV/Core/MediaCrypto.swi
 - 层次只用「凸起 / 凹陷」与柔光表达，不描边、不用色块分区；品牌色只做线与小色块。
   主题选择器的当前项例外，使用该主题强调色实心反差底，文字与圆点自动选择黑 / 白前景。
 - 手机底栏使用透明底，只保留四枚等尺寸圆形凸起入口；当前项只切换图标强调色，切页与双击回顶语义与 Android 一致。
+- 「设置 → 外观导航 → 打开应用进入」可选首页 / 分类 / 榜单 / 我的；`LibraryPrefs.launchTab`
+  保存选择，旧版 `launchRecommend` 会自动迁移，`RootView` 启动时按同一份 tab key 落页。
 - 规则（热度、集数、季号、分页、去重、降级）全部在 `Core/Rules.swift`，页面不重复实现。
 - 内容接口、扫码登录、设备注册和官网搜索优先使用 `Core/API/TncConfigStore.swift`
   的 TNC 下发地址；TNC 未命中对应角色时才回退静态域名。

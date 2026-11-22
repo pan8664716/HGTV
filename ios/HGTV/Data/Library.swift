@@ -46,6 +46,8 @@ struct LibraryPrefs: Codable, Equatable {
     var debugMode: Bool = false
 
     var launchRecommend: Bool = true
+    /// 手机打开应用后进入的底部页面；nil 表示旧版本尚未迁移。
+    var launchTab: String? = nil
     var recommendSwipe: Bool = true
     var recommendGender: String = ""
     var recommendGenreOff: [String] = []
@@ -54,6 +56,16 @@ struct LibraryPrefs: Codable, Equatable {
     var uiScale: Float = AppConfig.LibraryDefaults.uiScale
 
     var isRecommendGenreEnabled: Bool { true }
+
+    var resolvedLaunchTab: String {
+        let value = launchTab ?? (launchRecommend ? "recommend" : "category")
+        return AppConfig.Navigation.phoneTabKeys.contains(value) ? value : "recommend"
+    }
+
+    mutating func migrateLaunchTabIfNeeded() {
+        guard launchTab == nil else { return }
+        launchTab = launchRecommend ? "recommend" : "category"
+    }
 
     func genreEnabled(_ id: String) -> Bool { !recommendGenreOff.contains(id) }
 }
@@ -95,6 +107,7 @@ final class Library: ObservableObject {
             .flatMap { try? decoder.decode(LibraryData.self, from: $0) } ?? LibraryData()
         prefs = FileManager.default.contents(atPath: prefsURL.path)
             .flatMap { try? decoder.decode(LibraryPrefs.self, from: $0) } ?? LibraryPrefs()
+        prefs.migrateLaunchTabIfNeeded()
         migrateDefaultsIfNeeded()
     }
 
@@ -300,6 +313,7 @@ final class Library: ObservableObject {
         }
         data = merged
         prefs = backup.prefs
+        prefs.migrateLaunchTabIfNeeded()
         saveNow()
         return true
     }
