@@ -127,8 +127,19 @@ internal fun PhoneSettingsActivity.renderLandscapePlayback() {
 }
 
 internal fun PhoneSettingsActivity.renderLandscapeAppearance() {
-    val layout=landscapePanel("布局启动","UI大小、列表排版与推荐页滑动")
+    val layout=landscapePanel("布局启动","启动落点、UI大小、列表排版与页面滑动")
     landscapeLine(layout).also { line ->
+        val launchTabs=com.hgtv.star.core.AppConfig.Navigation.PHONE_TAB_KEYS
+        landscapeCell(line,landscapeSetting("打开应用进入",launchTabLabel(settingsLibrary.phoneLaunchTab)) {
+            pickImpl(
+                "打开应用进入",
+                launchTabs.map(::launchTabLabel),
+                launchTabs.indexOf(settingsLibrary.phoneLaunchTab).coerceAtLeast(0),
+            ) { i ->
+                settingsLibrary.phoneLaunchTab=launchTabs[i]
+                renderSettings()
+            }
+        })
         landscapeCell(line,landscapeSetting("UI大小",PhoneUiScale.label(PhoneUiScale.value)) {
             val options=PhoneUiScale.sizes
             pickImpl("UI大小",options.map { it.label },

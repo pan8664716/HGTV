@@ -187,12 +187,19 @@ class LaunchActivity : Activity() {
         // 选择已经落盘：后台补绑设备身份，不阻塞目标页首帧。
         HgtvStartup.onDeviceFormSelected(this)
         val target = targetFor(form)
+        val targetIntent = Intent(this, target)
+        if (target == PhoneMainActivity::class.java) {
+            targetIntent.putExtra(
+                com.hgtv.star.core.AppConfig.Navigation.PHONE_LAUNCH_TAB_EXTRA,
+                storedPhoneLaunchTab(),
+            )
+        }
         // 用 `Log.w` 而不是 `Log.i`：R8 的 `-assumenosideeffects` 会把 `Log.i` 整条删掉，
         // 正式包里就再也看不到这一行——而「点图标没反应」恰恰只在正式包上出现过一次
         // （小明 Q1 Pro，2026-11）。这两条是现场唯一能把
         // 「路由没跑 / 路由跑了但目标没起来 / 目标起来了但画面没上屏」分开的证据，必须留住。
         android.util.Log.w("HGTV-FORM", "route -> ${target.simpleName}")
-        var started = runCatching { startActivity(Intent(this, target)) }.isSuccess
+        var started = runCatching { startActivity(targetIntent) }.isSuccess
         if (!started) {
             // 目标页起不来（理论上不会发生，但不能赌）：换成另一套界面再试一次。
             // 进错界面用户至少能看见东西、能从设置里切回来；什么都不显示就彻底没救。
@@ -237,6 +244,19 @@ class LaunchActivity : Activity() {
 
     private fun devicePrefs() =
         getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    private fun storedPhoneLaunchTab(): String {
+        val prefs = devicePrefs()
+        val saved = prefs.getString("phoneLaunchTab", null)
+        if (saved != null && saved in com.hgtv.star.core.AppConfig.Navigation.PHONE_TAB_KEYS) {
+            return saved
+        }
+        return if (prefs.getBoolean("launchRecommend", true)) {
+            com.hgtv.star.core.AppConfig.Navigation.PHONE_LAUNCH_TAB_DEFAULT
+        } else {
+            "category"
+        }
+    }
 
     private fun firstRunPrefs() =
         getSharedPreferences(FIRST_RUN_PREFS, Context.MODE_PRIVATE)

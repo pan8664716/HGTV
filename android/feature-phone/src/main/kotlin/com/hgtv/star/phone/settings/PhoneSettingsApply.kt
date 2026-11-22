@@ -13,6 +13,13 @@ import com.hgtv.star.phone.ui.PhoneUiScale
 import com.hgtv.star.shared.feature.settings.SettingsController
 import kotlin.math.roundToInt
 
+internal fun launchTabLabel(key: String): String = when (key) {
+    "category" -> "分类"
+    "rank" -> "榜单"
+    "mine" -> "我的"
+    else -> "首页"
+}
+
 internal fun PhoneSettingsActivity.applyChoiceImpl(id: String, index: Int) {
     when (id) {
         SettingsController.ID_QUALITY ->
@@ -33,6 +40,10 @@ internal fun PhoneSettingsActivity.applyChoiceImpl(id: String, index: Int) {
             PhoneUiScale.set(this, PhoneUiScale.sizes[index].scale)
             recreate()
         }
+        SettingsController.ID_LAUNCH_TAB ->
+            settingsControllerInstance.setPhoneLaunchTab(
+                com.hgtv.star.core.AppConfig.Navigation.PHONE_TAB_KEYS[index],
+            )
         "appearance.columns" -> settingsLibrary.gridColumns = index + 1
         "recommend.episodePage" ->
             settingsLibrary.episodePageSize = EpisodePageSize.phoneOptions[index]

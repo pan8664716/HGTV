@@ -539,6 +539,18 @@ class Library(context: Context) {
     /** 磁盘上是否已经显式保存过「打开应用进入推荐」。 */
     val launchRecommendStored: Boolean
         get() = state().launchRecommendStored
+    /** 手机打开应用后进入的底部页面。 */
+    var phoneLaunchTab: String
+        get() = state().settings.phoneLaunchTab
+            .takeIf { it in AppConfig.Navigation.PHONE_TAB_KEYS }
+            ?: AppConfig.Navigation.PHONE_LAUNCH_TAB_DEFAULT
+        set(value) {
+            val clean = value.takeIf { it in AppConfig.Navigation.PHONE_TAB_KEYS }
+                ?: AppConfig.Navigation.PHONE_LAUNCH_TAB_DEFAULT
+            if (clean == phoneLaunchTab) return
+            state().settings = state().settings.copy(phoneLaunchTab = clean)
+            put("phoneLaunchTab", clean)
+        }
     var historyPreferDetail: Boolean
         get() = state().settings.historyPreferDetail
         set(value) {
@@ -757,6 +769,7 @@ class Library(context: Context) {
             "hiddenNav" to { merged.settings.hiddenNav.split(',').filter { it.isNotBlank() }.toSet() },
             "debugMode" to { merged.settings.debugMode },
             "launchRecommend" to { merged.settings.launchRecommend },
+            "phoneLaunchTab" to { merged.settings.phoneLaunchTab },
             "recommendSwipe" to { merged.settings.recommendSwipe },
             "hiddenHome" to { merged.settings.hiddenHome.split(',').filter { it in HOME_KEYS }.toSet() },
             "reduceAnim" to { merged.settings.reduceAnim },

@@ -155,6 +155,14 @@ class SettingsController(
         )
         if (phone) {
             add(
+                SettingRowSpec.Choice(
+                    id = ID_LAUNCH_TAB,
+                    title = "打开应用进入",
+                    value = launchTabLabel(library.phoneLaunchTab),
+                    options = AppConfig.Navigation.PHONE_TAB_KEYS.map(::launchTabLabel),
+                )
+            )
+            add(
                 SettingRowSpec.Switch(
                     id = ID_RECOMMEND_SWIPE,
                     title = UiText.get(com.hgtv.star.shared.R.string.ui_0264),
@@ -213,6 +221,7 @@ class SettingsController(
     fun setDanmakuScale(value: Float) { library.danmakuScale = value }
     fun setDanmakuAlpha(value: Float) { library.danmakuAlpha = value }
     fun setGridColumns(value: Int) { library.homeColumns = value.coerceIn(4, 8) }
+    fun setPhoneLaunchTab(value: String) { library.phoneLaunchTab = value }
     fun setRecommendSwipe(value: Boolean) { library.recommendSwipe = value }
     fun setRecommendGender(value: String) { library.recommendGender = value }
     fun setSearchSource(value: SearchSource) { library.searchSource = value }
@@ -242,6 +251,7 @@ class SettingsController(
         library.danmakuAlpha = 1f
         library.danmakuAvoidPlaybackInfo = false
         library.homeColumns = 6
+        library.phoneLaunchTab = AppConfig.Navigation.PHONE_LAUNCH_TAB_DEFAULT
         library.recommendSwipe = true
         library.recommendGender = ""
         library.recommendHorizontalOnly = false
@@ -266,6 +276,7 @@ class SettingsController(
         const val ID_DANMAKU_SCALE = "danmaku.scale"
         const val ID_DANMAKU_ALPHA = "danmaku.alpha"
         const val ID_GRID_COLUMNS = "layout.columns"
+        const val ID_LAUNCH_TAB = "appearance.launchTab"
         const val ID_RECOMMEND_SWIPE = "recommend.swipe"
         const val ID_RECOMMEND_GENDER = "recommend.gender"
         const val ID_SEARCH_SOURCE = "search.source"
@@ -278,6 +289,13 @@ class SettingsController(
         const val ID_DEBUG_MODE = "system.debug"
         const val ID_REDUCE_ANIM = "system.reduceAnim"
     }
+}
+
+private fun launchTabLabel(key: String): String = when (key) {
+    "category" -> "分类"
+    "rank" -> "榜单"
+    "mine" -> "我的"
+    else -> "首页"
 }
 
 /**

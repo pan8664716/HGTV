@@ -1057,6 +1057,15 @@ object AppConfig {
         /** 顶部导航可隐藏入口顺序。 */
         val NAV_KEYS = listOf("recommend", "search", "category", "rank", "profile")
 
+        /** 手机底部主导航顺序，也是「打开应用进入」的可选页面。 */
+        val PHONE_TAB_KEYS = listOf("recommend", "category", "rank", "mine")
+
+        /** 手机默认打开首页。 */
+        const val PHONE_LAUNCH_TAB_DEFAULT = "recommend"
+
+        /** 启动页把已落盘的手机启动页面传给主界面。 */
+        const val PHONE_LAUNCH_TAB_EXTRA = "phone_launch_tab"
+
         /** 首页栏目默认顺序：本机三栏 + 八个榜单。 */
         val HOME_COLUMN_KEYS = listOf(
             "history",
@@ -1124,6 +1133,7 @@ object AppConfig {
         /** 外观与布局设置项顺序。 */
         val APPEARANCE_ORDER = listOf(
             "section:外观与布局",
+            "appearance.launchTab",
             "theme-grid",
             "layout.columns",
             "recommend.swipe",

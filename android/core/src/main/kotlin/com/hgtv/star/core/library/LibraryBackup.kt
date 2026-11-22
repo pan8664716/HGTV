@@ -288,7 +288,13 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
      * 只由 TV 设置页「布局启动」控制；开启后先进入详情页，由用户再点播放。
      * 旧备份 / 旧磁盘没有这个字段时按关闭处理。
      */
-    val historyPreferDetail: Boolean=false) {
+    val historyPreferDetail: Boolean=false,
+    /**
+     * 手机打开应用后进入的底部页面（recommend / category / rank / mine）。
+     *
+     * 与电视的 [launchRecommend] 分开保存；旧备份没有这个字段时，按旧开关迁移为首页或分类。
+     */
+    val phoneLaunchTab: String=AppConfig.Navigation.PHONE_LAUNCH_TAB_DEFAULT) {
     fun json()=JSONObject().put("quality",quality).put("speed",speed.toDouble()).put("autoNext",autoNext).put("type",type.storedValue).put("frame",frame.name).put("danmaku",danmaku.storedValue)
         .put("danmakuScale",danmakuScale.toDouble()).put("danmakuAlpha",danmakuAlpha.toDouble()).put("danmakuSpeed",danmakuSpeed.storedValue)
         .put("keys",keys)
@@ -318,6 +324,7 @@ data class BackupSettings(val quality: Int=1080,val speed: Float=1f,val autoNext
         .put("searchKeyboard",searchKeyboard.storedValue)
         .put("danmakuAvoidPlaybackInfo",danmakuAvoidPlaybackInfo)
         .put("historyPreferDetail",historyPreferDetail)
+        .put("phoneLaunchTab",phoneLaunchTab)
 }
 data class BackupData(
     val favorites: List<Series>,
@@ -463,6 +470,9 @@ object LibraryBackup {
         val hiddenNav=settings.optString("hiddenNav","").takeIf { it.length<=80 && it.none(Char::isISOControl) }.orEmpty()
         // 启动进入推荐：后加字段，旧备份没有它时按开启处理（与需求 1 的默认行为一致）。
         val launchRecommend=settings.optBoolean("launchRecommend",true)
+        val phoneLaunchTab=settings.optString("phoneLaunchTab")
+            .takeIf { settings.has("phoneLaunchTab") && it in AppConfig.Navigation.PHONE_TAB_KEYS }
+            ?: if(launchRecommend) AppConfig.Navigation.PHONE_LAUNCH_TAB_DEFAULT else "category"
         // 首页栏目显隐：旧备份没有它时使用首页模型默认隐藏集合；显式空串仍表示全部显示。
         // 十一栏的 key 全写满仍远低于上限，给到 120 以留出以后再加几栏的余量，
         // 又不至于让一份手改过的备份把任意长文本塞进设置（写进去的仍是白名单过滤后的集合）。
@@ -481,7 +491,7 @@ object LibraryBackup {
             // 兼容上一版刚引入的「直接续播」字段：旧值 true = 新字段 false。
             !settings.optBoolean("historyCardDirectPlay",true)
         }
-        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,danmakuEffects=danmakuEffects,searchKeyboard=searchKeyboard,danmakuAvoidPlaybackInfo=danmakuAvoidPlaybackInfo,historyPreferDetail=historyPreferDetail),later,hiddenIds)
+        return BackupData(favorites,history,watchedIds,searches,BackupSettings(quality,speed.toFloat(),autoNext,type,frame,danmaku,danmakuScale,danmakuAlpha,danmakuSpeed,keys,decoder,danmakuMerge,searchSource,homeColumns,hiddenNav,debugMode=false,launchRecommend=launchRecommend,hiddenHome=hiddenHome,reduceAnim=reduceAnim,playerTitle=playerTitle,playerEpisode=playerEpisode,playerClock=playerClock,playerSpeed=playerSpeed,videoScale=videoScale,autoFullscreen=autoFullscreen,episodePageSize=episodePageSize,episodeEdgeTurn=episodeEdgeTurn,backToTop=backToTop,danmakuMergeMin=danmakuMergeMin,playerPanelTimeout=playerPanelTimeout,seekStep=seekStep,gridColumns=gridColumns,recommendSwipe=recommendSwipe,danmakuEffects=danmakuEffects,searchKeyboard=searchKeyboard,danmakuAvoidPlaybackInfo=danmakuAvoidPlaybackInfo,historyPreferDetail=historyPreferDetail,phoneLaunchTab=phoneLaunchTab),later,hiddenIds)
     }
     /**
      * 同一部剧保留进度更高的一条：先看集数，再看是否看完，再看同集位置，

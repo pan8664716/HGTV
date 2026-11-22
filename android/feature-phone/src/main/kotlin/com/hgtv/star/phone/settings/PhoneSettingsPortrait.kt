@@ -134,9 +134,19 @@ internal fun PhoneSettingsActivity.renderDanmaku() {
 }
 
 internal fun PhoneSettingsActivity.renderAppearance() {
-    // 「外观与布局」这一组把最常调的三项放在最上面（UI 大小与列表布局放在一起），
-    // 二十套主题网格排在它们之后。
+    // 「外观与布局」先放启动落点、UI 大小与列表布局，主题网格排在它们之后。
     sectionImpl("外观与布局")
+    val launchTabs = com.hgtv.star.core.AppConfig.Navigation.PHONE_TAB_KEYS
+    rowImpl("打开应用进入", launchTabLabel(settingsLibrary.phoneLaunchTab)) {
+        pickImpl(
+            "打开应用进入",
+            launchTabs.map(::launchTabLabel),
+            launchTabs.indexOf(settingsLibrary.phoneLaunchTab).coerceAtLeast(0),
+        ) { index ->
+            settingsLibrary.phoneLaunchTab = launchTabs[index]
+            renderSettings()
+        }
+    }
     rowImpl("UI大小", PhoneUiScale.label(PhoneUiScale.value)) {
         val options = PhoneUiScale.sizes
         pickImpl(

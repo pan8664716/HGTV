@@ -295,7 +295,15 @@ object LibraryDisk {
             // 同时兼容上一版刚写入的「直接续播」布尔值。
             values["historyPreferDetail"] as? Boolean
                 ?: (values["historyCardDirectPlay"] as? Boolean)?.let { !it }
-                ?: false)
+                ?: false,
+            // 手机打开应用进入的页面：旧版本没有这个键时，沿用旧的「进入推荐」开关。
+            (values["phoneLaunchTab"] as? String)
+                ?.takeIf { it in AppConfig.Navigation.PHONE_TAB_KEYS }
+                ?: if (values["launchRecommend"] as? Boolean ?: true) {
+                    AppConfig.Navigation.PHONE_LAUNCH_TAB_DEFAULT
+                } else {
+                    "category"
+                })
         val reserves = runCatching { JSONObject(values["reserves"] as? String ?: "{}") }.getOrDefault(JSONObject())
         val index = LibraryIndex(BackupData(series("favorites"), history, ids("watched"),
             SearchHistory.decode(values["searches"] as? String ?: "[]"), settings, series("later"), ids("hidden"),

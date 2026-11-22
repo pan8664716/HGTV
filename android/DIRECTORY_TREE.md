@@ -196,7 +196,7 @@ android/
 | `DeviceFormActivity.kt` | 首页首次启动与设置页共用的设备类型选择器；按自动探测结果使用手机 / 电视拟态弹窗并加载对应字号，电视支持遥控器，手机 / 平板触摸确认并 6 秒自动返回。 | class DeviceFormActivity、fun showPhoneChooser、fun showTvChooser、fun startCountdown |
 | `HgtvApplication.kt` | 应用进程入口，负责 Application 级初始化、全局运行时装配和前后台恢复快照调度。 | class HgtvApplication |
 | `HgtvStartup.kt` | 启动页负责的本地初始化；首帧后启动缓存、书库、会话存储，并把心跳、TNC、推荐曝光配置和友盟延后到播放首帧或兜底超时。 | object HgtvStartup、fun afterFirstFrame、fun onDeviceFormSelected |
-| `LaunchActivity.kt` | 启动页与设备形态路由入口；Phone / TV 共用存储权限申请，先恢复公共旧快照再启动书库和页面；首次启动打开统一设备类型选择器。 | class LaunchActivity、fun beginRecovery、fun finishRecoveryAndRoute、fun openDeviceFormSelector、fun targetFor |
+| `LaunchActivity.kt` | 启动页与设备形态路由入口；Phone / TV 共用存储权限申请，先恢复公共旧快照再启动书库和页面；首次启动打开统一设备类型选择器，手机路由携带已落盘的启动页面。 | class LaunchActivity、fun beginRecovery、fun finishRecoveryAndRoute、fun openDeviceFormSelector、fun storedPhoneLaunchTab、fun targetFor |
 
 ### core
 
@@ -210,7 +210,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AppConfig.kt` | 应用级可调参数的唯一来源；除网络、内容、播放和缓存外，还集中导航/首页/设置顺序及手机 / 电视几何尺寸，供 core / shared / phone / TV 引用。 | object AppConfig |
+| `AppConfig.kt` | 应用级可调参数的唯一来源；除网络、内容、播放和缓存外，还集中导航/首页/设置顺序、手机启动页面 key 及手机 / 电视几何尺寸，供 core / shared / phone / TV 引用。 | object AppConfig |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/account/`
 
@@ -324,8 +324,8 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `LatestWriteQueue.kt` | Serial persistence with one pending value per key; serialization belongs inside write. | class LatestWriteQueue |
-| `LibraryBackup.kt` | 本机记录备份的编码、解码、范围校验与局域网同步数据校验；首页栏位 key、弹幕顶部避让、历史卡片优先简介等设置默认值也在这里。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT、object LibraryBackup |
-| `LibraryIndex.kt` | Main-thread-owned library；支持账号收藏 / 历史整表替换，删除远端已不存在的本地缓存；记录“打开应用进入推荐”是否已在磁盘显式保存。 | class LibraryIndex、fun LibraryIndex.replaceFavorites、fun LibraryIndex.replaceHistory、val launchRecommendStored、object LibraryDisk |
+| `LibraryBackup.kt` | 本机记录备份的编码、解码、范围校验与局域网同步数据校验；首页栏位 key、手机启动页面、弹幕顶部避让、历史卡片优先简介等设置默认值也在这里。 | val HOME_KEYS、val BACK_TO_TOP_ALWAYS、val BACK_TO_TOP_ROWS5、val BACK_TO_TOP_ROWS8、val BACK_TO_TOP_NEVER、val BACK_TO_TOP_DEFAULT、object LibraryBackup |
+| `LibraryIndex.kt` | Main-thread-owned library；支持账号收藏 / 历史整表替换，删除远端已不存在的本地缓存；兼容旧版“打开应用进入推荐”并迁移手机启动页面。 | class LibraryIndex、fun LibraryIndex.replaceFavorites、fun LibraryIndex.replaceHistory、val launchRecommendStored、object LibraryDisk |
 | `LibraryTransferServer.kt` | Short-lived LAN transfer. Uploaded records are validated here, but only the TV may apply them. | class LibraryTransferServer |
 | `LruPut.kt` | 往定长 LRU 里写一条：写完把最久没用过的那条挤出去。 | fun LinkedHashMap |
 | `ViewingTools.kt` | 一条搜索历史：只有关键词。 | class RecentSearch、object SearchHistory、object EpisodeTarget |
@@ -496,7 +496,7 @@ android/
 | `PhoneActivity.kt` | 手机端 Activity 基类：普通页面由系统在屏幕尺寸或方向变化时重建整页。 | class PhoneActivity |
 | `PhoneConsent.kt` | 手机端的两条「知情同意」，与电视端**同一份文案、同一条语义**（见 :core 的 com.hgtv.star.core.ThirdPartyNotice）。 | object PhoneConsent |
 | `PhoneFirstRunTip.kt` | 首次进入时的「先调一下显示」提示。 | object PhoneFirstRunTip |
-| `PhoneMainActivity.kt` | 手机 / 平板端主界面；推荐流播放时保持窗口常亮，窗口重新获得焦点和播放状态变化时都会重新校准。 | class PhoneMainActivity、fun PhoneMainActivity.syncKeepScreenOn |
+| `PhoneMainActivity.kt` | 手机 / 平板端主界面；冷启动按设置进入首页 / 分类 / 榜单 / 我的，推荐流播放时保持窗口常亮，窗口重新获得焦点和播放状态变化时都会重新校准。 | class PhoneMainActivity、fun PhoneMainActivity.syncKeepScreenOn |
 | `PhoneNavigator.kt` | 手机端的路由落地：把 Route 翻译成一个 Intent，交给系统返回栈；正式播放页所有入口统一落到不透明播放 Activity。 | class PhoneNavigator、fun Context.phoneNav |
 | `PhoneServices.kt` | 手机端服务入口；相邻播放器默认不申请音频焦点，激活当前集时才接管；推荐池通过 `newPlayer` 创建独立实例并由 `activate` 登记当前实例。 | object PhoneServices、object PhoneDecoder、fun player、fun newPlayer、fun enableAudioFocus、fun activate、fun warmPlayer、fun detachAndClear |
 | `PhoneSession.kt` | 手机端「这一台机器现在在放什么」的进程级事实。 | object PhoneSession |
@@ -645,16 +645,16 @@ android/
 | `PhoneDanmakuSize.kt` | 手机端弹幕字号。 | object PhoneDanmakuSize |
 | `PhoneSettingsActions.kt` | 手机设置页动作：完整恢复快照导出、导入和清空本机数据；清空前使用公共权限流程。 | fun PhoneSettingsActivity.appVersionName、fun PhoneSettingsActivity.showAboutDialog、fun PhoneSettingsActivity.restoreDefaults、fun PhoneSettingsActivity.exportBackup、fun PhoneSettingsActivity.importBackup、fun PhoneSettingsActivity.performReset |
 | `PhoneSettingsActivity.kt` | 手机设置页 Activity，协调横竖屏布局、设置写入、页面生命周期和公共存储权限回调；竖屏底部内容按真实 WindowInsets 留白。 | class PhoneSettingsPage、val LAN_SYNC_SOURCE_TTL_MS、val TAG_LANDSCAPE_SETTING_ROW、val TAG_LANDSCAPE_SETTING_SPACER、val SETTINGS_DENSITY_SCALE、val SETTINGS_TEXT_SCALE |
-| `PhoneSettingsApply.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsApply 主要包含 fun PhoneSettingsActivity.applyChoiceImpl、fun PhoneSettingsActivity.applySwitchImpl、fun PhoneSettingsActivity.applySliderImpl。 | fun PhoneSettingsActivity.applyChoiceImpl、fun PhoneSettingsActivity.applySwitchImpl、fun PhoneSettingsActivity.applySliderImpl |
+| `PhoneSettingsApply.kt` | 手机设置页的选项写回，包括外观导航中的启动页面。 | fun launchTabLabel、fun PhoneSettingsActivity.applyChoiceImpl、fun PhoneSettingsActivity.applySwitchImpl、fun PhoneSettingsActivity.applySliderImpl |
 | `PhoneSettingsLanSync.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsLanSync 主要包含 fun PhoneSettingsActivity.closeLanSyncSessionImpl、fun PhoneSettingsActivity.showLanLibrarySync、fun PhoneSettingsActivity.startLanSyncRoleImpl、fun PhoneSettingsActivity.showLanSyncNoPeersImpl。 | fun PhoneSettingsActivity.closeLanSyncSessionImpl、fun PhoneSettingsActivity.showLanLibrarySync、fun PhoneSettingsActivity.startLanSyncRoleImpl、fun PhoneSettingsActivity.showLanSyncNoPeersImpl、fun PhoneSettingsActivity.showLanSyncRestoreConfirmImpl、fun PhoneSettingsActivity.renderLanSyncImpl |
-| `PhoneSettingsLandscapePages.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsLandscapePages 主要包含 fun PhoneSettingsActivity.renderLandscapePlayback、fun PhoneSettingsActivity.renderLandscapeAppearance、fun PhoneSettingsActivity.renderLandscapeRecommend、fun PhoneSettingsActivity.renderLandscapeSystem。 | fun PhoneSettingsActivity.renderLandscapePlayback、fun PhoneSettingsActivity.renderLandscapeAppearance、fun PhoneSettingsActivity.renderLandscapeRecommend、fun PhoneSettingsActivity.renderLandscapeSystem |
+| `PhoneSettingsLandscapePages.kt` | 手机设置页、横竖屏布局与系统 UI；横屏外观页提供启动页面选择。文件 PhoneSettingsLandscapePages 主要包含 fun PhoneSettingsActivity.renderLandscapePlayback、fun PhoneSettingsActivity.renderLandscapeAppearance、fun PhoneSettingsActivity.renderLandscapeRecommend、fun PhoneSettingsActivity.renderLandscapeSystem。 | fun PhoneSettingsActivity.renderLandscapePlayback、fun PhoneSettingsActivity.renderLandscapeAppearance、fun PhoneSettingsActivity.renderLandscapeRecommend、fun PhoneSettingsActivity.renderLandscapeSystem |
 | `PhoneSettingsLandscapeWidgets.kt` | 与 TV 设置页同一种结构：整宽面板 + 面板标题/说明 + 两列或四列设置格。 | fun PhoneSettingsActivity.landscapePanel、fun PhoneSettingsActivity.landscapeLine、fun PhoneSettingsActivity.landscapeCell、fun PhoneSettingsActivity.landscapeColumns、fun PhoneSettingsActivity.landscapeColumnCell、fun PhoneSettingsActivity.landscapeSetting |
 | `PhoneSettingsPageSelector.kt` | 四个大项排成两列两行，和「我的」页的四个入口使用同一组名称。 | fun PhoneSettingsActivity.renderPageSelector |
-| `PhoneSettingsPortrait.kt` | 手机设置页、横竖屏布局与系统 UI；主题网格的当前项使用强调色反差底和自动黑 / 白前景。文件 PhoneSettingsPortrait 主要包含 fun PhoneSettingsActivity.renderPlayback、fun PhoneSettingsActivity.renderDanmaku、fun PhoneSettingsActivity.renderAppearance、fun PhoneSettingsActivity.themeGrid。 | fun PhoneSettingsActivity.renderPlayback、fun PhoneSettingsActivity.renderDanmaku、fun PhoneSettingsActivity.renderAppearance、fun PhoneSettingsActivity.themeGrid、fun PhoneSettingsActivity.switchThemeImpl、fun PhoneSettingsActivity.renderRecommend |
+| `PhoneSettingsPortrait.kt` | 手机设置页、横竖屏布局与系统 UI；竖屏外观页提供启动页面选择，主题网格的当前项使用强调色反差底和自动黑 / 白前景。文件 PhoneSettingsPortrait 主要包含 fun PhoneSettingsActivity.renderPlayback、fun PhoneSettingsActivity.renderDanmaku、fun PhoneSettingsActivity.renderAppearance、fun PhoneSettingsActivity.themeGrid。 | fun PhoneSettingsActivity.renderPlayback、fun PhoneSettingsActivity.renderDanmaku、fun PhoneSettingsActivity.renderAppearance、fun PhoneSettingsActivity.themeGrid、fun PhoneSettingsActivity.switchThemeImpl、fun PhoneSettingsActivity.renderRecommend |
 | `PhoneSettingsScroll.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsScroll 主要包含 class ScrollAnchor、fun PhoneSettingsActivity.currentScrollAnchorImpl、fun PhoneSettingsActivity.anchorViewsImpl、fun PhoneSettingsActivity.topInContainerImpl。 | class ScrollAnchor、fun PhoneSettingsActivity.currentScrollAnchorImpl、fun PhoneSettingsActivity.anchorViewsImpl、fun PhoneSettingsActivity.topInContainerImpl、fun PhoneSettingsActivity.restoreScrollImpl |
 | `PhoneSettingsSupport.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsSupport 主要包含 fun PhoneSettingsActivity.appVersionNameImpl、fun PhoneSettingsActivity.settingsDpImpl、fun TextView.settingsTextSizeImpl、fun PhoneSettingsActivity.settingRowHeightImpl。 | fun PhoneSettingsActivity.appVersionNameImpl、fun PhoneSettingsActivity.settingsDpImpl、fun TextView.settingsTextSizeImpl、fun PhoneSettingsActivity.settingRowHeightImpl、fun PhoneSettingsActivity.settingRowGapImpl、fun anchorKeyImpl |
 | `PhoneSettingsSystem.kt` | 横屏设置页使用沉浸式：状态栏和底部系统导航都隐藏，只保留一小条分区导航。 | fun PhoneSettingsActivity.applyLandscapeImmersive、fun PhoneSettingsActivity.handleActivityResultImpl |
-| `PhoneSettingsUnified.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsUnified 主要包含 fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend。 | fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend、fun PhoneSettingsActivity.renderUnifiedSystem、fun PhoneSettingsActivity.applyActionImpl |
+| `PhoneSettingsUnified.kt` | 手机设置页、横竖屏布局与系统 UI；统一设置列表的外观页包含启动页面。文件 PhoneSettingsUnified 主要包含 fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend。 | fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend、fun PhoneSettingsActivity.renderUnifiedSystem、fun PhoneSettingsActivity.applyActionImpl |
 | `PhoneSettingsWidgets.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsWidgets 主要包含 fun PhoneSettingsActivity.targetHostImpl、fun PhoneSettingsActivity.sectionImpl、fun PhoneSettingsActivity.hintImpl、fun PhoneSettingsActivity.rowImpl。 | fun PhoneSettingsActivity.targetHostImpl、fun PhoneSettingsActivity.sectionImpl、fun PhoneSettingsActivity.hintImpl、fun PhoneSettingsActivity.rowImpl、fun PhoneSettingsActivity.switchImpl、fun PhoneSettingsActivity.actionImpl |
 | `PhoneUpdateDialog.kt` | 手机设置页的被动更新入口：显示版本说明，下载校验后通过 FileProvider 拉起系统安装器；更新地址内置不可改。 | fun PhoneSettingsActivity.showUpdateDialog |
 
@@ -991,7 +991,7 @@ android/
 | `DeviceRegistration.kt` | 设备注册的**唯一实现**：电视与手机共用；注册后的 TNC 刷新延后到播放首帧。 | object DeviceRegistration |
 | `FavoriteMonitor.kt` | Serial foreground checks; cancellation owns only calls made by this monitor. | class FavoriteMonitor |
 | `IdentityBinder.kt` | 把**本机身份与会话**灌进进程级仓库，并按实际设备形态选择电视统一设备档案。 | object IdentityBinder、fun Library.isTvDeviceForProfile |
-| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、推荐请求偏好、账号缓存和持久化；账号同步结果可整表替换收藏与历史。 | typealias WatchProgress、class Library、fun loadAsync、fun Library.replaceFavorites、fun Library.replaceHistory、val launchRecommendStored、fun discardPendingWrites、fun close、val recommendHorizontalOnly |
+| `Library.kt` | 本机书库门面，统一管理历史、收藏、稍后看、设置、手机启动页面、推荐请求偏好、账号缓存和持久化；账号同步结果可整表替换收藏与历史。 | typealias WatchProgress、class Library、fun loadAsync、fun Library.replaceFavorites、fun Library.replaceHistory、val launchRecommendStored、val phoneLaunchTab、fun discardPendingWrites、fun close、val recommendHorizontalOnly |
 | `LibraryAccountCache.kt` | 缓存身份：登录账号优先；未登录但设备已注册时，用主设备身份隔离匿名缓存。 | fun Library.cacheIdentityKeyImpl、fun Library.cacheIdentityAvailableImpl、fun Library.accountCacheImpl、fun Library.cacheAccountImpl、fun Library.clearAccountCacheImpl |
 | `LibraryAccountCredentials.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.accountImpl、fun Library.saveAccountImpl、fun Library.clearAccountImpl |
 | `LibraryAccountCredentialsFacade.kt` | 账号参数（个人信息页导入的整套登录态）。 | fun Library.account、fun Library.saveAccount、fun Library.clearAccount、fun Library.accountDevice、fun Library.saveAccountDevice |
@@ -1164,7 +1164,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `SettingRowSpec.kt` | 设置页的行结构。 | interface SettingRowSpec |
-| `SettingsController.kt` | 设置页的共享读写入口。 | class SettingsController |
+| `SettingsController.kt` | 设置页的共享读写入口，包含手机启动页面选项与默认值恢复。 | class SettingsController |
 
 ### gradle
 

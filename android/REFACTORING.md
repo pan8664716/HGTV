@@ -7,6 +7,23 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 手机启动页面可选
+
+状态：Android / iOS 已实现，debug 构建通过，待用户真机验证。
+
+- 手机「设置 → 外观导航」新增「打开应用进入」，可选首页 / 分类 / 榜单 / 我的；
+  原「内容推荐 → 打开应用进入推荐」开关移除。
+- 新偏好为 `phoneLaunchTab`（`recommend / category / rank / mine`），进入本机设置、
+  备份恢复和局域网同步；旧版 `launchRecommend=false` 自动迁移为「分类」。
+- Android 启动页在后台读取落盘值，经 Intent 交给 `PhoneMainActivity`，避免书库异步
+  加载未完成时冷启动落点退回首页；重建页面仍优先恢复当前页。
+- iOS 用 `LibraryPrefs.launchTab` 保存，旧偏好缺失时按 `launchRecommend` 迁移；
+  `RootView` 首次出现时按 `phoneTabKeys` 选择底部页面。
+- 电视端 `launchRecommend` 行为保持不变；未改版本号、versionCode、依赖或推送。
+- `:app:assembleDebug` 与 iOS Simulator Debug 构建通过；未运行自动化测试或真机测试。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## HEVC 解码器三表合并缓存
 
 状态：已实现，debug 构建通过，待用户真机验证。

@@ -176,6 +176,12 @@ internal fun PhoneSettingsActivity.renderUnifiedAppearance() {
         listOf(
             SettingRowSpec.Section("外观与布局"),
             SettingRowSpec.Choice(
+                SettingsController.ID_LAUNCH_TAB,
+                "打开应用进入",
+                launchTabLabel(settingsLibrary.phoneLaunchTab),
+                com.hgtv.star.core.AppConfig.Navigation.PHONE_TAB_KEYS.map(::launchTabLabel),
+            ),
+            SettingRowSpec.Choice(
                 "appearance.uiScale",
                 "UI大小",
                 scale.label,

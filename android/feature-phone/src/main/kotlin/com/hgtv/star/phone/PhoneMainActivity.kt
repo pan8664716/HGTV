@@ -175,8 +175,7 @@ class PhoneMainActivity : PhoneActivity() {
                 else View.GONE
         }
         // 重建（改分辨率 / dpi / 主题）后回到原来那一页；冷启动才按设置决定首页。
-        // 「打开应用进入推荐」（设置 → 内容推荐）：关掉时落到分类页。
-        // 与 TV 的 `library.launchRecommend` 同一份落盘值。
+        // 「打开应用进入」（设置 → 外观导航）：首页 / 分类 / 榜单 / 我的。
         // 进程内的那一份优先：`wm size` 触发的 recreate 可能带着上一次（更早）的
         // Bundle 回来，那个值已经过时；pendingTab 才是「这一下重建前」的页号。
         val restored = pendingTab.takeIf { it in pages.indices }
@@ -292,7 +291,18 @@ class PhoneMainActivity : PhoneActivity() {
         content.visibility = View.VISIBLE
         tabBar.visibility = View.VISIBLE
         val lib = PhoneServices.library(this)
-        val start = restored ?: if (lib.isLoaded && !lib.launchRecommend) 1 else 0
+        val launchTab = intent
+            .getStringExtra(com.hgtv.star.core.AppConfig.Navigation.PHONE_LAUNCH_TAB_EXTRA)
+            ?.let { com.hgtv.star.core.AppConfig.Navigation.PHONE_TAB_KEYS.indexOf(it) }
+            ?.takeIf { it >= 0 }
+            ?: if (lib.isLoaded) {
+                com.hgtv.star.core.AppConfig.Navigation.PHONE_TAB_KEYS
+                    .indexOf(lib.phoneLaunchTab)
+                    .coerceAtLeast(0)
+            } else {
+                0
+            }
+        val start = restored ?: launchTab
         if (current < 0) show(start)
         // 与 TV 一样在进入分类页之前就把默认分类准备好；用户点分类时直接铺结果，
         // 不再现场创建页面并重新发第一页请求。
