@@ -91,10 +91,24 @@ private fun PhoneAccountActivity.startQr(session: QrLogin, code: ImageView, stat
         token = fresh.token
     }
     var poll: () -> Unit = {}
+    var pollInFlight = false
+    var pollAgain = false
     fun schedule(delayMs: Long) {
+        if (qrClosed || isFinishing) return
+        qrTimer?.let { root.removeCallbacks(it) }
         val run = Runnable { poll() }
         qrTimer = run
         root.postDelayed(run, delayMs)
+    }
+    fun pollNow() {
+        if (qrClosed || isFinishing) return
+        qrTimer?.let { root.removeCallbacks(it) }
+        qrTimer = null
+        if (pollInFlight) {
+            pollAgain = true
+            return
+        }
+        poll()
     }
     fun fetchCode(manual: Boolean) {
         qrTimer?.let { root.removeCallbacks(it) }
@@ -121,11 +135,23 @@ private fun PhoneAccountActivity.startQr(session: QrLogin, code: ImageView, stat
         if (qrClosed || isFinishing) return@poll
         val current = token
         if (current.isBlank()) return@poll
+        if (pollInFlight) {
+            pollAgain = true
+            return@poll
+        }
+        pollInFlight = true
         scope.launch {
             val outcome = withContext(Dispatchers.IO) { runCatching { session.check(current) }.getOrNull() }
                 ?: QrLogin.Outcome.Failed("网络异常")
+            pollInFlight = false
             if (qrClosed || isFinishing) return@launch
-            if (token != current) return@launch
+            if (token != current) {
+                if (pollAgain) {
+                    pollAgain = false
+                    pollNow()
+                }
+                return@launch
+            }
             when (outcome) {
                 is QrLogin.Outcome.Waiting -> state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0224)
                 is QrLogin.Outcome.Scanned -> state.text = UiText.get(com.hgtv.star.shared.R.string.ui_0077)
@@ -142,17 +168,23 @@ private fun PhoneAccountActivity.startQr(session: QrLogin, code: ImageView, stat
                 is QrLogin.Outcome.Failed ->
                     state.text = outcome.message.ifBlank { UiText.get(com.hgtv.star.shared.R.string.ui_0107) }
             }
-            schedule(
-                if (outcome is QrLogin.Outcome.Failed) {
-                    com.hgtv.star.core.AppConfig.Ui.QR_FAILURE_RETRY_MS
-                } else {
-                    QrLogin.POLL_MS
-                },
-            )
+            if (pollAgain) {
+                pollAgain = false
+                pollNow()
+            } else {
+                schedule(
+                    if (outcome is QrLogin.Outcome.Failed) {
+                        com.hgtv.star.core.AppConfig.Ui.QR_FAILURE_RETRY_MS
+                    } else {
+                        QrLogin.POLL_MS
+                    },
+                )
+            }
         }
     }
     fetchCode(manual = false)
     qrRefresh = { fetchCode(manual = true) }
+    qrPollNow = ::pollNow
 }
 
 internal fun PhoneAccountActivity.stopQr() {
@@ -161,6 +193,7 @@ internal fun PhoneAccountActivity.stopQr() {
     qrTimer = null
     qr = null
     qrRefresh = null
+    qrPollNow = null
 }
 
 internal fun PhoneAccountActivity.renderPhoneLogin() {

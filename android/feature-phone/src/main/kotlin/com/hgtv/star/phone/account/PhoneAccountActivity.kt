@@ -73,6 +73,7 @@ class PhoneAccountActivity : PhoneActivity() {
     internal var qrTimer: Runnable? = null
     internal var qrClosed = false
     internal var qrRefresh: (() -> Unit)? = null
+    internal var qrPollNow: (() -> Unit)? = null
 
     internal var login: com.hgtv.star.core.PhoneLogin? = null
     internal var pendingPhone = ""
@@ -671,6 +672,7 @@ class PhoneAccountActivity : PhoneActivity() {
     override fun onResume() {
         super.onResume()
         if (landscape) applyLandscapeImmersive()
+        qrPollNow?.invoke()
     }
 
     override fun onWindowFocusChanged(hasFocus: Boolean) {
@@ -685,7 +687,7 @@ class PhoneAccountActivity : PhoneActivity() {
 
     override fun onPause() {
         super.onPause()
-        stopQr()
+        // 扫码确认通常发生在切到官方 App 之后：后台继续轮询，回到前台再立即补查一次。
         cooldownTick?.let { root.removeCallbacks(it) }
     }
 
