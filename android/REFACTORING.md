@@ -17,6 +17,21 @@
 
 回滚：对本节对应提交执行 `git revert`。
 
+## TV 推荐播放链路复用优化
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 推荐流内 `ExoPlayer`、`PlayerView`、视频 Surface 和弹幕 Surface 全程复用；换作只替换媒体源，
+  并先清空上一部的弹幕数据与画面。
+- 推荐流内冻结缓冲档位变化，不再因首帧 EWMA 跨档而重建整个播放器；档位更新留到正式播放或下次构建。
+- 单槽片源预热直接复用地址预取的 `StreamInfo`，不再对同一集重复请求或查询播放地址。
+- 播放监听器改为每个 `ExoPlayer` 只挂一次；每次换源只替换 `PlaybackBinding`，旧片源回调按
+  generation / session / player 自动丢弃。
+- Debug 日志新增 `HGTV-SWITCH` 的 `stop-clear`、`source-set`、`decoder-init`、`first-frame` 阶段耗时。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或 iOS；未运行测试或真机验证；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## TV 推荐换作旧帧拉伸修复
 
 状态：已修复，debug 构建通过，待用户真机验证。

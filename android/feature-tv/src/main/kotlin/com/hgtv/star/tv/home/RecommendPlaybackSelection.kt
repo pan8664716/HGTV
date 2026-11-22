@@ -20,7 +20,8 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     if(screen!="recommend" || recommendItems.isEmpty()) return
     val safe=index.coerceIn(0,recommendItems.lastIndex)
     recommendPlaybackHasFrame=false
-    val switchStartedAt=android.os.SystemClock.elapsedRealtime()
+    recommendSwitchStartedAt=android.os.SystemClock.elapsedRealtime()
+    val switchStartedAt=recommendSwitchStartedAt
     fun switchTrace(label: String) {
         if(BuildConfig.DEBUG) {
             android.util.Log.i(
@@ -181,11 +182,19 @@ private fun TvMainActivity.resetRecommendPlaybackForSwitch() {
     cancelPrefetch()
     val p=player
     val view=playerView
-    playerListener?.let { listener -> p?.removeListener(listener) }
-    playerListener=null
+    // 监听器固定挂在同一个 ExoPlayer 上；换源只让旧绑定失效。
+    playbackBinding=null
     view?.setKeepContentOnPlayerReset(false)
     view?.setShutterBackgroundColor(android.graphics.Color.BLACK)
+    val stopStarted=android.os.SystemClock.elapsedRealtime()
     p?.let { runCatching { it.pause(); it.stop(); it.clearMediaItems() } }
+    if(BuildConfig.DEBUG && recommendSwitchStartedAt>0L) {
+        android.util.Log.i(
+            "HGTV-SWITCH",
+            "stop-clear +${android.os.SystemClock.elapsedRealtime()-recommendSwitchStartedAt}ms "+
+                "took=${android.os.SystemClock.elapsedRealtime()-stopStarted}ms",
+        )
+    }
     // PlayerView 与 ExoPlayer 的绑定不动，只停止并清空旧媒体源。
     // `setKeepContentOnPlayerReset(false)` 让 PlayerView 用黑色 shutter 清掉旧 Surface，
     // 新源直接复用同一块输出面；不需要解绑、重建或重新提交 Surface。

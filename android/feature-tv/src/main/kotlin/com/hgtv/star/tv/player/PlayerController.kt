@@ -70,7 +70,7 @@ fun TvMainActivity.loadDanmaku(episodeId: String,seriesId: String,clearOnSwitch:
  * [StartupDeferredTasks.scheduleLatestOnMain] 同时提供首帧前等待、首帧后执行和
  * 无首帧时的兜底；页面用本轮标记保证 READY 与真正首帧回调只执行一次，换剧后重置。
  */
-private fun TvMainActivity.scheduleRecommendAfterFirstFrame() {
+internal fun TvMainActivity.scheduleRecommendAfterFirstFrame() {
     if(recommendAfterFirstFrameScheduled) return
     recommendAfterFirstFrameScheduled=true
     StartupDeferredTasks.scheduleLatestOnMain(
@@ -128,7 +128,8 @@ fun TvMainActivity.playEpisode(
     // 设置页改档不会经过 [applyDecoderMode]；进播放前发现实例档位不一致就先放掉。
     releasePlayerForDecoderMismatch()
     // 首帧 EWMA 更新后，下一次起播按新的缓冲档位重建；当前这一集不打断。
-    releasePlayerForBufferMismatch()
+    // 推荐流内冻结缓冲档位：这里换作频繁，不能因为 EWMA 跨档而重建整个播放器。
+    if(!recommendEntry) releasePlayerForBufferMismatch()
     // `keepMedia`（同档重建）也要保住播放层：这一趟只为把解码器放掉重开，画面 / 弹幕 /
     // 控制层一个都不用换（见 [replayWithPlan]）。它和 `recovering` 是两件事——
     // 后者还包含降档、网络自愈、手动重试，那些真的需要重来一遍。
@@ -220,7 +221,6 @@ fun TvMainActivity.playEpisode(
     if(reuse) {
         cancelRecovery(); cancelPrefetch(); tvTools.close()
         episodePanel?.dismiss(); episodePanel=null; speedDialog?.dismiss(); speedDialog=null
-        playerListener?.let { player?.removeListener(it) }; playerListener=null
         // `stop()` 是这一步唯一必须的：它卸载媒体、释放 MediaCodec，正是 4001 / 4003 要的。
         //
         // 列表**不清**（同档重建时）：下面 `setMediaSource` 内部第一件事就是
@@ -274,32 +274,6 @@ fun TvMainActivity.playEpisode(
         resetEpisode = !recovering,
     ).toInt()
     playbackHttp=claimedHttp; video=prefetched
-    var firstReady=true; var firstFrame=true
-    // 新片源真正 setMediaSource 的时刻：READY 后的兜底只能认这之后的新帧，
-    // 不能把上一部残留的逐帧心跳当成当前作品已经出画面。
-    var sourceSetAt=0L
-    var videoSizeReady=false
-    var firstFrameRendered=false
-    var recommendRevealed=false
-    fun revealRecommendWhenReady() {
-        if(screen!="recommend" || recommendRevealed || !videoSizeReady) return
-        val frameReady=firstFrameRendered ||
-            (sourceSetAt>0L && PlaybackDiag.lastFrameAt>sourceSetAt)
-        if(!frameReady) return
-        recommendPlaybackHasFrame=true
-        recommendRevealed=true
-        // 新片源已经真实出帧，之后同一播放器的正常重置才允许保留画面。
-        playerView?.setKeepContentOnPlayerReset(true)
-        // 尺寸回调只代表播放器知道了比例，PlayerView 的 AspectRatioFrameLayout
-        // 还要等下一次布局才会把画面框到正确大小。延后一帧揭黑，避免用户先看到
-        // “整屏拉伸”再恢复成正确比例。
-        val coverToken=recommendCoverToken
-        main.post {
-            if(!isDestroyed && screen=="recommend" && recommendCoverToken==coverToken) {
-                revealRecommendCover { if(!isDestroyed) hideCenterLoading() }
-            }
-        }
-    }
     autoRecovery=false; readySince=0; lastEpisodeDuration=0; advancedAt=0
     startPosition=position.coerceAtLeast(0); requestedAutoplay=autoplay
     if(autoplay) sleepStopped=false
@@ -550,337 +524,17 @@ fun TvMainActivity.playEpisode(
         if(playerView?.player!==p) attachPlayerView(p)
         p.setPlaybackSpeed(library.playbackSpeed)
         stage("player")
-        val listener=object: Player.Listener {
-            // 片尾自动推进之后 mediaId 会变成下一集，因此这里不再拿它做判据；
-            // 但也不能什么判据都不留：用播放会话号，挡掉上一次 `playEpisode` 遗留的回调。
-            fun active()=player===p && generation==ticket && session==playbackSession
-            override fun onPlaybackStateChanged(state: Int) {
-                if(!active()) return
-                syncBufferingDots()
-                // 状态机是唯一事实来源：所有阶段迁移都从这里进（`playbackReady` 只是它的投影）。
-                playback.onPlayerState(state, p.playWhenReady)
-                if(state==Player.STATE_READY) {
-                    PlaybackDiag.tracksSelected=p.currentTracks.isTypeSelected(C.TRACK_TYPE_VIDEO)
-                    if(!PlaybackDiag.tracksSelected) {
-                        playerFailure(PlaybackException("资源没有可解码的视频轨道",null,PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED))
-                        return
-                    }
-                    playbackReady=true
-                    syncBufferingDots()
-                    // 从推荐页进正片时这一集还没 READY，历史由这里补写（见 [enterFormalPlayback]）。
-                    if(recommendHistoryPending) saveProgress()
-                    // 起播已经稳了：高端电视趁用户还没按菜单键，把播放设置面板先建好、画一遍
-                    //（见 [warmPlaybackMenu]）。低配电视跳过这段主线程预热，首开菜单再按需构建。
-                    if(!runCatching { lowEndTv() }.getOrDefault(true)) warmPlaybackMenu()
-                    // READY 只代表解出了轨道，不能保证画面已经上屏；相邻预热、
-                    // 批量模型和推荐补页统一由 `scheduleRecommendAfterFirstFrame` 在
-                    // 真正出帧后启动。这里只保留曝光兜底。
-                    if(screen=="recommend") {
-                        // READY 是首帧回调缺失时的兜底；真正的首次曝光在 onRenderedFirstFrame
-                        // 里再提交一次，由共用上报器按短时间去重。
-                        reportRecommendImpression()
-                        scheduleRecommendAfterFirstFrame()
-                    }
-                    // 正式播放页：首帧 READY 后还要再等缓冲填起来，才让 preload 去拉后 6 集。
-                    // 这样 player 场景已经保住当前集 + 后 2 集，后台补货不会和首帧抢闸门。
-                    if(screen=="player") {
-                        val coverToken=recommendCoverToken
-                        main.postDelayed({
-                            if(!isDestroyed && screen=="player" &&
-                                recommendCoverToken==coverToken &&
-                                sourceSetAt>0L &&
-                                PlaybackDiag.lastFrameAt>sourceSetAt) {
-                                revealRecommendCover()
-                            }
-                        },600L)
-                        main.postDelayed({
-                            val current=player
-                            if(!isDestroyed && screen=="player" && current===p &&
-                                p.isPlaying && p.bufferedPosition-p.currentPosition>=3_000L) {
-                                prefetchFormalBatchModels()
-                            }
-                        },10_000L)
-                    }
-                    // 推荐页真的出画面了：连续失败计数归零（取地址成功不算，能放才算）。
-                    if(screen=="recommend") {
-                        recommendPlaybackFailures=0
-                        // 过渡黑场的兜底出口：复用播放器时个别设备不会再报「首帧」，
-                        // 只等那一个回调会让黑场一直挂到 2.5 秒的上限。必须等逐帧心跳
-                        // 确认真的出过画面，不能只凭 READY 放掉黑场。
-                        val coverToken=recommendCoverToken
-                        main.postDelayed({
-                            if(!isDestroyed && screen=="recommend" && recommendCoverToken==coverToken) {
-                                if(!firstFrameRendered && sourceSetAt>0L &&
-                                    PlaybackDiag.lastFrameAt>sourceSetAt) {
-                                    firstFrameRendered=true
-                                    recommendPlaybackHasFrame=true
-                                }
-                                revealRecommendWhenReady()
-                            }
-                        },400)
-                    }
-                    // 不自动播的起播（用户进来先按了暂停、或从后台回来）也要有人盯着黑屏：
-                    // 上面那次 arm 只在 autoplay 时发生，这里补一次，已有就不动。
-                    // 判据是「有没有画面」而不是只认 `onRenderedFirstFrame`：
-                    // 隧道模式与个别老系统不回调那个方法，只认它会把正常播放误判成黑屏。
-                    if(playbackWatchdog==null && !pictureUpNow()) armPlaybackWatchdog(session)
-                    lastEpisodeDuration=p.duration.coerceAtLeast(0)
-                    // 新源已经出画面：这时候再收上一集的视频与传输最稳，顺手把缓冲指示恢复。
-                    markAutoTransitionReady(p.currentMediaItem?.mediaId.orEmpty())
-                    confirmPlayedItemRemoved()
-                    retirePreviousEpisode(); restoreBufferingUi()
-                    if(firstReady) { firstReady=false; readySince=android.os.SystemClock.elapsedRealtime(); android.util.Log.i("HGTV","Playback ready episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=${readySince-playbackStarted}") }
-                    if(hud.visibility==View.VISIBLE) updatePlaybackText()
-                }
-                syncMediaSession()
-                if(state==Player.STATE_ENDED) {
-                    // 推荐页：无干预播完一集 → 自动进入正式播放界面，并从下一集接着播（需求 4）。
-                    // 这里不写历史（`saveProgress` 在推荐页是空操作），进正片那一步才写。
-                    if(screen=="recommend") {
-                        main.post { if(!isDestroyed && screen=="recommend") enterFormalPlayback(advanceNext=true) }
-                        return
-                    }
-                    // 队列里还挂着下一集却没自动推进 = 下一集没接上。这里**不自己再切一次**：
-                    // 同一次故障的 `onPlayerError` 可能已经（或即将）走到 [playerFailure]，
-                    // 两处都切就是重复切换。统一交给 [playerFailure]，它带互斥窗与次数上限。
-                    val hasQueuedItem=runCatching {
-                        val current=p.currentMediaItemIndex.coerceAtLeast(0)
-                        p.mediaItemCount>current+1
-                    }.getOrDefault(false)
-                    val queuedSeason=queuedDetail
-                    if(queuedSeason!=null && queuedEpisodeId!=null && hasQueuedItem) {
-                        android.util.Log.w("HGTV","Queued next season did not advance; reopening it")
-                        dropQueuedEpisode()
-                        main.post { if(!isDestroyed && screen=="player") enterNextSeason(queuedSeason) }
-                        return
-                    }
-                    if(queuedEpisodeId!=null && hasQueuedItem) {
-                        playerFailure(PlaybackException("队列中的下一集没有接上",null,PlaybackException.ERROR_CODE_IO_UNSPECIFIED))
-                        return
-                    }
-                    // 标志残留但播放器实际已经没有下一项：清掉元数据后继续走
-                    // 下一季 / 全剧结束，不能把最后一集卡在 STATE_ENDED。
-                    if(queuedEpisodeId!=null && !hasQueuedItem) dropQueuedEpisode()
-                    saveProgress(true)
-                    // 「连着看」：还在前台、没有因为息屏 / 切后台被暂停、用户也没按过暂停。
-                    val continuous=foreground && requestedAutoplay && !pausedForLifecycle
-                    if(sleepTimer.episodeEnded()) stopForSleep()
-                    else if(continuous && library.autoNext &&
-                        detail?.let { episodeIndex<it.episodes.lastIndex }==true) {
-                        playEpisode(
-                            episodeIndex+1,
-                            autoplay=requestedAutoplay,
-                            direct=false,
-                        )
-                    }
-                    else if(continuous && detail?.let { episodeIndex>=it.episodes.lastIndex }==true) {
-                        detail?.series?.let { advanceToNextSeasonOrFinish(it) }
-                    }
-                    else { requestedAutoplay=false; p.pause(); playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0141); showHud() }
-                }
-            }
-            /**
-             * 片尾自动推进：ExoPlayer 把 playing period 换成队列里的下一集。
-             *
-             * 这条回调里**不能**调 `playEpisode`：那会把刚换上的源又 reset 一遍，
-             * 等于把无感切换重新做成了有感的。这里只交接状态。
-             */
-            override fun onMediaItemTransition(mediaItem: MediaItem?,reason: Int) {
-                if(!active()) return
-                if(reason!=Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
-                val mediaId=mediaItem?.mediaId.orEmpty()
-                val currentDetail=detail ?: return
-                val seasonTarget=queuedDetail?.takeIf {
-                    episodeIndex==currentDetail.episodes.lastIndex &&
-                        it.episodes.firstOrNull()==mediaId
-                }
-                if(seasonTarget!=null) {
-                    if(queuedEpisodeId!=mediaId || queuedVideo==null) {
-                        android.util.Log.w(
-                            "HGTV",
-                            "Next season transition mismatch: media=$mediaId queued=$queuedEpisodeId " +
-                                "video=${queuedVideo!=null}; rebuilding"
-                        )
-                        cancelAutoTransitionCleanup()
-                        main.post {
-                            if(!active()) return@post
-                            runCatching { p.stop(); p.clearMediaItems() }
-                            cancelPrefetch()
-                            dropQueuedEpisode()
-                            forceRetirePrevious()
-                            enterNextSeason(seasonTarget)
-                        }
-                        return
-                    }
-                    // 跨季会更换播放模型，部分设备仍会原地重配解码器并短暂进入 BUFFERING。
-                    // 用比同季更长的首帧窗口压住缓冲圈；READY / 出错都会提前恢复。
-                    suppressBufferingUi(4000L)
-                    onSeasonAdvanced(seasonTarget,mediaId)
-                    main.postDelayed({ if(!isDestroyed) maybeQueueNext() },3000)
-                    return
-                }
-                val next=currentDetail.episodes.indexOf(mediaId)
-                if(next<0 || next==episodeIndex) return
-                // 预取队列与播放器实际切换项不一致：不能再相信 `queuedVideo`，
-                // 先停掉当前错误项，再走一次完整的 `setMediaSource` 重建。
-                if(queuedEpisodeId!=mediaId || queuedVideo==null) {
-                    android.util.Log.w(
-                        "HGTV",
-                        "Auto transition mismatch: media=$mediaId queued=$queuedEpisodeId " +
-                            "video=${queuedVideo!=null}; rebuilding"
-                    )
-                    cancelAutoTransitionCleanup()
-                    main.post {
-                        if(!active()) return@post
-                        runCatching { p.stop(); p.clearMediaItems() }
-                        cancelPrefetch()
-                        dropQueuedEpisode()
-                        forceRetirePrevious()
-                        playEpisode(next,0,requestedAutoplay,direct=false)
-                    }
-                    return
-                }
-                onEpisodeAdvanced(next,mediaId)
-                // 队列空了：为新的这一集再准备下一集。等这一集 READY 再挂，
-                // 免得两个 period 同时抢加载带宽。
-                main.postDelayed({ if(!isDestroyed) maybeQueueNext() },3000)
-            }
-            /**
-             * 片源尺寸：**竖屏短剧全屏的判据之一**（另一个是屏幕尺寸，见 [autoFullscreenRotated]）。
-             *
-             * 换集、换清晰度、软解 / 硬解切换都会重新回调；尺寸没变时也同样会回调，
-             * 因此这里在尺寸没变时也重算一次（屏幕可能刚转过来），但不重建任何视图。
-             */
-            override fun onVideoSizeChanged(videoSize: com.google.android.exoplayer2.video.VideoSize) {
-                if(!active()) return
-                // 像素比不是 1 的片源（老盒子上很常见）：按显示尺寸算比例才是用户看到的形状。
-                val ratio=if(videoSize.pixelWidthHeightRatio>0f) videoSize.pixelWidthHeightRatio else 1f
-                // 带旋转元数据的片源（手机竖拍的常见形态）：解码器还没把那个角度转过来，
-                // 因此这里按「转过来之后」的宽高记，判据才不会反过来。
-                val swapped=videoSize.unappliedRotationDegrees==90 || videoSize.unappliedRotationDegrees==270
-                val rawW=if(swapped) videoSize.height else videoSize.width
-                val rawH=if(swapped) videoSize.width else videoSize.height
-                videoWidth=Math.round(rawW*ratio)
-                videoHeight=rawH
-                videoSizeReady=videoWidth>0 && videoHeight>0
-                syncPlaybackLetterbox()
-                if(BuildConfig.DEBUG) android.util.Log.i(
-                    "HGTV-RATIO",
-                    "videoSize=${videoSize.width}x${videoSize.height} applied=${videoWidth}x$videoHeight " +
-                        "firstFrame=$firstFrameRendered view=${playerView?.javaClass?.simpleName}"
-                )
-                applyResizeMode()
-                if(!recommendEntry && videoSizeReady && !firstFrameRendered && sourceSetAt>0L &&
-                    PlaybackDiag.lastFrameAt>sourceSetAt) {
-                    firstFrameRendered=true
-                    playerView?.completeFirstFrameAspectRatio()
-                }
-                revealRecommendWhenReady()
-            }
-            override fun onRenderedFirstFrame() {
-                if(!active()) return
-                firstFrameRendered=true
-                if(screen=="recommend") recommendPlaybackHasFrame=true
-                if(BuildConfig.DEBUG) android.util.Log.i(
-                    "HGTV-RATIO",
-                    "renderedFirstFrame view=${playerView?.javaClass?.simpleName} video=${videoWidth}x$videoHeight"
-                )
-                playerView?.completeFirstFrameAspectRatio()
-                syncPlaybackLetterbox()
-                PlaybackStartupTrace.firstFrame(
-                    "tv.player",
-                    "recommend=$recommendEntry preloaded=${prefetched!=null} reused=$reuse",
-                )
-                markAutoTransitionFirstFrame(p.currentMediaItem?.mediaId.orEmpty())
-                // 首帧的尺寸已经确定：竖屏短剧全屏在这之后再落一次
-                //（`onVideoSizeChanged` 在个别软解 / 隧道模式下不一定先于首帧回调，这里兜一次底）。
-                applyResizeMode()
-                if(screen=="player") revealRecommendCover()
-                // 推荐页：新一集的第一帧真的上屏了，过渡黑场这时候才淡出（见 [revealRecommendCover]）。
-                // 用「出帧」而不是 READY：READY 只代表解出了轨道，画面可能还要等几百毫秒。
-                if(screen=="recommend") {
-                    reportRecommendImpression()
-                    // 黑场淡出完成后再撤中心 loading，避免用户先看到一段黑场。
-                    revealRecommendWhenReady()
-                    // 真正的首帧已经上屏：现在才允许相邻预热和推荐补页。
-                    scheduleRecommendAfterFirstFrame()
-                }
-                // 出帧即撤看门狗：这是「画面真的上屏了」的硬证据（READY 只代表解出了轨道）。
-                // 同时把面板上「没有画面」那条现场清掉，否则用户会看到「有画面却说我黑屏」
-                //（见 [PlaybackDiag.pictureUp]）。调试注入 STALL_FRAME 时它返回 false，
-                // 看门狗照旧挂着——那条上报才测得了。
-                if(PlaybackDiag.pictureUp()) disarmPlaybackWatchdog()
-                // 换集之后起播看门狗会在 `onEpisodeAdvanced` 重新挂；停帧看门狗同理，
-                // 这里顺手把「这一集已经出过帧」的基线交回给它自己（lastFrameAt 由心跳刷新）。
-                if(playbackStallWatchdog==null) armFrameStallWatchdog(session)
-                // 这一集先前报过失败、现在真的出画面了：降级 / 重试救回来了，记一笔正样本。
-                // 它不是错误，**不发异常**（否则会把「救回来」也算成故障）；只写 logcat，
-                // 排查时与失败那条的 stage / 时间点对得上就够了。
-                // `cap` / `plan` 是「降级救回率」的另一半：与 `degrade reason=… target=…`
-                // 那一行成对出现，就能数出每个档位救回了几次、`QUALITY_DOWN_LIMIT` 够不够。
-                if(PlaybackDiag.takeRecovered()) android.util.Log.i("HGTV-PLAY","recovered mode="+
-                    (if(playbackDecoderMode==VideoDecoderMode.SOFTWARE) "sw" else "hw")+
-                    " cap=${playbackMaxQuality}P plan=${playbackSessionState.lastReason?.name ?: "-"}"+
-                    " codec=${PlaybackDiag.codecFamily} res=${PlaybackDiag.resolution}"+
-                    " dev=${android.os.Build.MANUFACTURER} ${android.os.Build.MODEL}")
-                // 画面真的上屏了才放行弹幕：READY 后还可能回 buffering 好几秒，
-                // 那时放行会让弹幕先跑、出帧后再清空重排（Phone / TV 同源）。
-                danmakuLoader.onFrameRendered(p.currentPosition)
-                syncDanmakuClock()
-                // 推荐页：时长一确定就把进度条右侧那段时间填上，不等下一次每秒 tick——
-                // 否则刚打开的那一两秒是「--:-- / --:--」，与点击唤出来的那一版不一致。
-                if(screen=="recommend") updateRecommendOverlay()
-                if(firstFrame) {
-                    firstFrame=false
-                    val elapsed=android.os.SystemClock.elapsedRealtime()-playbackStarted
-                    recordFirstFrameForBuffer(elapsed)
-                    android.util.Log.i("HGTV","Playback first frame episode=${episodeIndex+1} preloaded=${prefetched!=null} reused=$reuse elapsedMs=$elapsed")
-                }
-                // 片尾自动推进之后的第一帧：这是「无感」真正的验收数字。
-                // 它包含换 period + 新 period 起播的时间，不含重新取地址（那是老路才有的事）。
-                if(advancedAt>0) {
-                    val gap=android.os.SystemClock.elapsedRealtime()-advancedAt
-                    advancedAt=0
-                    android.util.Log.i("HGTV","Seamless first frame episode=${episodeIndex+1} afterMs=$gap")
-                }
-            }
-            override fun onIsPlayingChanged(playing: Boolean) {
-                if(!active()) return
-                // 播放 / 暂停本身就是一次「操作」：暂停之后控制条同样要按设置里的秒数收起
-                //（这里走 `showHud()`，它与唤出进度条走的是同一个计时器，见
-                // `TvMainActivity.scheduleOverlayAutoHide`）。控制条收着时这一支是空操作。
-                if(hud.visibility==View.VISIBLE) showHud()
-                // 播放 / 暂停是「屏幕该不该常亮」的直接判据（见 [syncKeepScreenOn]）。
-                syncKeepScreenOn()
-                syncMediaSession()
-                // 弹幕时钟跟着播放状态起停：暂停时停在当前帧，恢复播放时重新校准。
-                syncDanmakuClock()
-            }
-            override fun onPlaybackParametersChanged(parameters: PlaybackParameters) {
-                if(!active()) return
-                if(com.hgtv.star.tv.BuildConfig.DEBUG) android.util.Log.i(
-                    "HGTV",
-                    "Speed changed to ${parameters.speed} media=${p.currentMediaItem?.mediaId} at=${android.os.SystemClock.elapsedRealtime()}"
-                )
-                syncMediaSession()
-                // 倍速变了：外推的斜率要换，立刻按新倍速重新校准。
-                syncDanmakuClock()
-            }
-            override fun onPositionDiscontinuity(oldPosition: Player.PositionInfo,newPosition: Player.PositionInfo,reason: Int) {
-                if(!active()) return
-                syncMediaSession()
-                // 跳转之后弹幕要跟着画面走：指针从头重找一次，再画一帧。
-                danmakuView?.resetCursor(); syncDanmakuClock()
-            }
-            override fun onPlayerError(error: PlaybackException) { if(active()) playerFailure(error) }
-            override fun onTimelineChanged(
-                timeline: com.google.android.exoplayer2.Timeline,
-                reason: Int
-            ) {
-                if(active()) confirmPlayedItemRemoved()
-            }
-        }
-        playerListener=listener; p.addListener(listener)
+        ensureStablePlayerListener(p)
+        val bound=PlaybackBinding(
+            player=p,
+            generation=ticket,
+            session=session,
+            recommendEntry=recommendEntry,
+            playbackStarted=playbackStarted,
+            prefetched=prefetched!=null,
+            reuse=reuse,
+        )
+        playbackBinding=bound
         val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(MimeTypes.VIDEO_MP4).build())
         // 正式播放换集：PlayerView 先冻结旧比例，等新首帧真的上屏后再应用新比例。
         if(screen=="player" || screen=="recommend") {
@@ -898,13 +552,20 @@ fun TvMainActivity.playEpisode(
         // 旧帧心跳清到 0，并以这一刻作为新片源首帧的下限；否则 READY 兜底可能提前揭黑。
         // 尺寸也在这里重新归零：监听器已经挂上，旧片源的迟到尺寸回调不能算到新片源。
         videoWidth=0; videoHeight=0
-        videoSizeReady=false; firstFrameRendered=false
+        bound.videoSizeReady=false; bound.firstFrameRendered=false
         PlaybackDiag.lastFrameAt=0L
-        sourceSetAt=android.os.SystemClock.elapsedRealtime()
+        bound.sourceSetAt=android.os.SystemClock.elapsedRealtime()
         p.setMediaSource(source,position.coerceAtLeast(0))
         p.prepare()
         p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle
         stage("sourceSet")
+        if(BuildConfig.DEBUG && recommendSwitchStartedAt>0L) {
+            android.util.Log.i(
+                "HGTV-SWITCH",
+                "source-set +${android.os.SystemClock.elapsedRealtime()-recommendSwitchStartedAt}ms "+
+                    "episode=${episodeIndex+1}",
+            )
+        }
         // 起播看门狗：兜住「READY 了但一帧都没出」的黑屏——那条路不抛异常，进不了 [playerFailure]。
         if(autoplay) armPlaybackWatchdog(session)
         // 停帧看门狗：起播正常、播着播着不再出帧（自动连播几集后最常见的那种黑屏）。

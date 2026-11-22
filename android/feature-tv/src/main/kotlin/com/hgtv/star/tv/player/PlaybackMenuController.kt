@@ -457,7 +457,8 @@ fun TvMainActivity.detachPlayerSurface(
     cancelOverlayAutoHide(); main.removeCallbacks(seekRunnable); pendingSeek=null
     restoreBufferingUi()
     playedItemPending=false; playedItemId=""
-    playerListener?.let { player?.removeListener(it) }; playerListener=null
+    detachStablePlayerListener()
+    playbackBinding=null
     // 先给弹幕层停表并清空这一集：绘制循环不再回调播放器，下面 stop / clearMediaItems
     // 期间即使还有一帧在排队，也只会画到空数据，不会读到播放器的中间状态。
     danmakuView?.let { it.stopClock(); it.clear() }

@@ -186,6 +186,9 @@ class TvMainActivity: Activity() {
     var workScope: RequestScope?=null
     var workJob: java.util.concurrent.Future<*>?=null
     var playerListener: Player.Listener?=null
+    var playerListenerPlayer: ExoPlayer?=null
+    internal var playbackBinding: PlaybackBinding?=null
+    var recommendSwitchStartedAt=0L
     var pendingCodecReport: Runnable?=null
     var playbackWatchdog: Runnable?=null
     var playbackWatchdogSession=-1

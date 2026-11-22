@@ -113,7 +113,7 @@ internal fun TvMainActivity.releasePlayerForBufferMismatch() {
         "HGTV-BUFFER",
         "Rebuilding player for buffer profile ${built.name} -> ${wanted.name}",
     )
-    playerListener?.let { old.removeListener(it) }; playerListener=null
+    detachStablePlayerListener()
     playerView?.player=null
     playerBuildEpoch++
     player=null

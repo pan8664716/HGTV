@@ -65,14 +65,13 @@ fun TvMainActivity.warmRecommendDetail(
             if(!library.deviceRegistered()) { registerDeviceOnce(); source.inheritDevice(repository) }
             // 整段都在这一次预热自己的取消域里：划过去之后 `cancelRecommendWarm`
             // 能立刻把在途的取地址请求掐掉。
-            warm.scope.run {
+            val info=warm.scope.run {
                 warmCoordinator.prefetch(data,data.episodes.first(),quality)
             }
             level=CacheLevel.ADDRESS
-            if(full && preparedTicket!=null) {
+            if(full && preparedTicket!=null && info!=null) {
                 try {
                     val episode=data.episodes.first()
-                    val info=sourceCoordinator.stream(episode,quality,data.playback,direct=true)
                     val prepared=sourceCoordinator.warm(episode,info) {
                         it.warm(RECOMMEND_PREPARED_BYTES)
                     }

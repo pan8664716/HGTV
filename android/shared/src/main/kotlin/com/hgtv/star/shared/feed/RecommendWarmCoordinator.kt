@@ -7,6 +7,7 @@ import com.hgtv.star.core.Detail
 import com.hgtv.star.core.DetailCache
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.StageDeadline
+import com.hgtv.star.core.StreamInfo
 import com.hgtv.star.core.detail
 import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
 import com.hgtv.star.shared.data.Library
@@ -58,13 +59,17 @@ class RecommendWarmCoordinator(
         }
     }
 
-    /** 只把单集直连地址写入缓存；不解析索引，不读取首块。 */
+    /**
+     * 只把单集直连地址写入缓存；不解析索引，不读取首块。
+     *
+     * 返回值交给需要继续准备完整片源的调用方，避免同一部作品重复取地址。
+     */
     fun prefetch(
         detail: Detail,
         episodeId: String = detail.episodes.firstOrNull().orEmpty(),
         quality: Int,
-    ) {
-        if(episodeId.isEmpty()) return
-        source.stream(episodeId,quality,detail.playback,direct=true)
+    ): StreamInfo? {
+        if(episodeId.isEmpty()) return null
+        return source.stream(episodeId,quality,detail.playback,direct=true)
     }
 }

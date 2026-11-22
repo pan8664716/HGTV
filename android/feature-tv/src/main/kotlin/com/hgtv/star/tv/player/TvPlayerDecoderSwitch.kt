@@ -19,7 +19,7 @@ fun TvMainActivity.applyDecoderMode(position: Long = -1L, play: Boolean? = null)
     val resumePlay=play ?: old.playWhenReady
     // 先把这一集的进度落盘：下面立刻把 player 置空，playEpisode 里那次 saveProgress 就取不到播放器了。
     saveProgress()
-    playerListener?.let { old.removeListener(it) }; playerListener=null
+    detachStablePlayerListener()
     // 任何在切档前已经开始的异步构建都失效：即使稍后又切回同一档，也不能把旧实例装回来。
     playerBuildEpoch++
     playerView?.player=null; player=null; playbackReady=false
@@ -60,7 +60,7 @@ internal fun TvMainActivity.releasePlayerForDecoderMismatch() {
         "Releasing player for decoder mismatch built=${built?.name ?: "unknown"}"+
             " requested=${playbackDecoderMode.name}",
     )
-    playerListener?.let { old.removeListener(it) }; playerListener=null
+    detachStablePlayerListener()
     playerView?.player=null
     playerBuildEpoch++
     player=null

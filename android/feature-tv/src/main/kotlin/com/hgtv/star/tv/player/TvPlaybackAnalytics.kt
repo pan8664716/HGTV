@@ -17,6 +17,13 @@ fun TvMainActivity.playbackAnalytics()=object: AnalyticsListener {
     private fun tag()=player?.currentMediaItem?.mediaId ?: "-"
     override fun onVideoDecoderInitialized(eventTime: AnalyticsListener.EventTime,decoderName: String,initializedTimestampMs: Long,initializationDurationMs: Long) {
         android.util.Log.i("HGTV","Decoder init media=${tag()} name=$decoderName durationMs=$initializationDurationMs")
+        if(recommendSwitchStartedAt>0L) {
+            android.util.Log.i(
+                "HGTV-SWITCH",
+                "decoder-init +${android.os.SystemClock.elapsedRealtime()-recommendSwitchStartedAt}ms "+
+                    "durationMs=$initializationDurationMs name=$decoderName",
+            )
+        }
     }
     override fun onRenderedFirstFrame(eventTime: AnalyticsListener.EventTime,surface: Any,renderTimeMs: Long) {
         android.util.Log.i("HGTV","Rendered first frame media=${tag()} renderTimeMs=$renderTimeMs at=${android.os.SystemClock.elapsedRealtime()}")
