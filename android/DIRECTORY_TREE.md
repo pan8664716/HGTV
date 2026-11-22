@@ -106,7 +106,7 @@ android/
 - `shared/ui/`：共享 UI 工具、颜色、滑块和对话框布局。
 - `shared/res/`：共享文案资源；`values/` 为简体，`values-zh-rTW`、`values-zh-rHK`、
   `values-zh-rMO` 为繁体。
-- `shared/update/`：更新元数据、下载校验、系统会话安装、安装权限与回执。
+- `shared/update/`：更新元数据、下载校验、缓存安装包、安装权限与系统安装器拉起。
 
 ## 文件清单与作用
 
@@ -178,7 +178,7 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `network_security_config.xml` | XML 配置资源，根节点 network-security-config。 | network-security-config |
-| `update_paths.xml` | 更新 APK 的 FileProvider 路径，只暴露 `files/updates/`。 | files-path |
+| `update_paths.xml` | 更新 APK 的 FileProvider 路径，暴露内部缓存根目录给系统安装器读取。 | cache-path |
 
 #### `app/src/main/java/com/umeng/pagesdk/`
 
@@ -742,7 +742,7 @@ android/
 | `PhoneSettingsSystem.kt` | 横屏设置页使用沉浸式：状态栏和底部系统导航都隐藏，只保留一小条分区导航。 | fun PhoneSettingsActivity.applyLandscapeImmersive、fun PhoneSettingsActivity.handleActivityResultImpl |
 | `PhoneSettingsUnified.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsUnified 主要包含 fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend。 | fun PhoneSettingsActivity.renderSpecs、fun PhoneSettingsActivity.renderUnifiedPlayback、fun PhoneSettingsActivity.renderUnifiedAppearance、fun PhoneSettingsActivity.renderUnifiedRecommend、fun PhoneSettingsActivity.renderUnifiedSystem、fun PhoneSettingsActivity.applyActionImpl |
 | `PhoneSettingsWidgets.kt` | 手机设置页、横竖屏布局与系统 UI。文件 PhoneSettingsWidgets 主要包含 fun PhoneSettingsActivity.targetHostImpl、fun PhoneSettingsActivity.sectionImpl、fun PhoneSettingsActivity.hintImpl、fun PhoneSettingsActivity.rowImpl。 | fun PhoneSettingsActivity.targetHostImpl、fun PhoneSettingsActivity.sectionImpl、fun PhoneSettingsActivity.hintImpl、fun PhoneSettingsActivity.rowImpl、fun PhoneSettingsActivity.switchImpl、fun PhoneSettingsActivity.actionImpl |
-| `PhoneUpdateDialog.kt` | 手机设置页的被动更新入口：显示版本说明，下载校验后交给系统安装器；更新地址内置不可改。 | fun PhoneSettingsActivity.showUpdateDialog |
+| `PhoneUpdateDialog.kt` | 手机设置页的被动更新入口：显示版本说明，下载校验后通过 FileProvider 拉起系统安装器；更新地址内置不可改。 | fun PhoneSettingsActivity.showUpdateDialog |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/ui/`
 
@@ -1201,8 +1201,8 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AppUpdateController.kt` | 两端共用的更新控制器：内置写死 GitHub 更新地址（不可由用户设置），元数据与安装包均走 gh-proxy.org 镜像，下载校验、静默检查、安装权限与安装状态。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
-| `UpdateInstaller.kt` | 系统安装兼容层：API 21+ 使用 PackageInstaller 会话，显式处理待确认 Intent 和安装回执，失败时回退原生安装。 | object UpdateInstaller、class UpdateInstallReceiver |
+| `AppUpdateController.kt` | 两端共用的更新控制器：内置写死 GitHub 更新地址（不可由用户设置），元数据与安装包均走 gh-proxy.org 镜像；安装包写入内部缓存根目录，负责下载校验、静默检查、安装权限与安装状态。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
+| `UpdateInstaller.kt` | SmartTube 式系统安装入口：从内部缓存取 `update.apk`，经 FileProvider 生成 content URI，再用 ACTION_VIEW 拉起系统安装器；不创建 PackageInstaller 会话，不等待安装回执。 | object UpdateInstaller |
 
 #### `shared/src/test/kotlin/com/hgtv/star/shared/debug/`
 

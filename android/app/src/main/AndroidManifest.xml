@@ -47,16 +47,13 @@
         android:name=".HgtvApplication" android:label="HGTV" android:theme="@style/AppTheme" android:icon="@mipmap/ic_launcher" android:roundIcon="@mipmap/ic_launcher_round" android:banner="@drawable/tv_banner" android:allowBackup="false" android:enableOnBackInvokedCallback="false" android:usesCleartextTraffic="true" android:networkSecurityConfig="@xml/network_security_config" android:requestLegacyExternalStorage="true" android:supportsRtl="true">
         <provider
             android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.updates"
+            android:authorities="${applicationId}.update_provider"
             android:exported="false"
             android:grantUriPermissions="true">
             <meta-data
                 android:name="android.support.FILE_PROVIDER_PATHS"
                 android:resource="@xml/update_paths"/>
         </provider>
-        <receiver
-            android:name="com.hgtv.star.shared.update.UpdateInstallReceiver"
-            android:exported="false"/>
         <!--
           不要注册 androidx.media.session.MediaButtonReceiver：它只把媒体键转给本包的
           MEDIA_BUTTON / MediaBrowserService，本应用没有这类 Service，一旦被系统调用就会在

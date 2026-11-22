@@ -3,7 +3,6 @@ package com.hgtv.star.shared.update
 
 import android.content.Context
 import android.content.Intent
-import android.content.pm.PackageInstaller
 import android.net.Uri
 import android.os.Build
 import android.provider.Settings
@@ -127,14 +126,14 @@ data class AppUpdateState(
  * 静默检查 + 被动更新入口。
  *
  * 检查不会弹窗；TV / Phone 只读取 [state] 决定红点 / 角标。
- * 用户点击入口后才下载，安装优先交给系统 PackageInstaller 会话，
- * 并通过显式广播接收确认页与最终结果。
+ * 用户点击入口后才下载；安装包与 SmartTube 一样存放在内部缓存根目录的
+ * `update.apk`，下载完成后用 `ACTION_VIEW` 拉起系统安装器。
  */
 class AppUpdateController private constructor(context: Context) {
     private val appContext = context.applicationContext
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     private val repository = AppUpdateRepository()
-    private val apk = File(appContext.filesDir, "updates/update.apk")
+    private val apk = File(appContext.cacheDir, "update.apk")
     private val preferences = appContext.getSharedPreferences(PREFERENCES, Context.MODE_PRIVATE)
     private val _state = MutableStateFlow(AppUpdateState())
     private val checkedThisProcess = AtomicBoolean(false)
@@ -217,7 +216,7 @@ class AppUpdateController private constructor(context: Context) {
         }
     }
 
-    /** 会话安装优先，失败时回退到系统原生安装入口。 */
+    /** 与 SmartTube 相同：只把缓存中的 APK 交给系统安装器。 */
     fun install() {
         val current = _state.value
         if (current.installing) return
@@ -233,19 +232,13 @@ class AppUpdateController private constructor(context: Context) {
         _state.update {
             it.copy(installing = true, permissionRequired = false, error = "")
         }
-        scope.launch {
-            val sessionStarted = Build.VERSION.SDK_INT >= 21 && withContext(AppExecutors.disk.dispatcher) {
-                runCatching { UpdateInstaller.installSession(appContext, apk) }.isSuccess
+        runCatching { UpdateInstaller.install(appContext, apk) }
+            .onSuccess {
+                _state.update { it.copy(installing = false) }
             }
-            if (sessionStarted) return@launch
-            runCatching { UpdateInstaller.installNative(appContext, apk) }
-                .onSuccess {
-                    _state.update { it.copy(installing = false) }
-                }
-                .onFailure {
-                    showInstallError(it.message ?: "无法启动系统安装器")
-                }
-        }
+            .onFailure {
+                showInstallError(it.message ?: "无法启动系统安装器")
+            }
     }
 
     /** 从“安装未知应用”设置页返回后继续未完成的安装。 */
@@ -254,32 +247,6 @@ class AppUpdateController private constructor(context: Context) {
             _state.value.permissionRequired
         if (!pending || !_state.value.ready || _state.value.installing) return
         if (UpdateInstaller.canRequestPackageInstalls(appContext)) install()
-    }
-
-    internal fun onInstallStatus(status: Int, detail: String?) {
-        when (status) {
-            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
-                _state.update {
-                    it.copy(installing = true, permissionRequired = false, error = "")
-                }
-            }
-            PackageInstaller.STATUS_SUCCESS -> {
-                preferences.edit().remove(KEY_PENDING_INSTALL).apply()
-                _state.update {
-                    it.copy(
-                        available = null,
-                        ready = false,
-                        installing = false,
-                        permissionRequired = false,
-                        progress = 0,
-                        error = "",
-                    )
-                }
-            }
-            else -> {
-                showInstallError(UpdateInstaller.failureMessage(status, detail))
-            }
-        }
     }
 
     private fun requestInstallPermission() {

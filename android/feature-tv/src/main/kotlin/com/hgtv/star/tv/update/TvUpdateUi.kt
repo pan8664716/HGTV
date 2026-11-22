@@ -38,8 +38,8 @@ internal fun TvMainActivity.settingsUpdateLabel(): String = when {
  * 用户点击顶栏更新入口后才打开；启动检查本身不会弹窗。
  *
  * 更新地址写死在 AppUpdateSource.BUILT_IN，没有设置入口。
- * 安装按钮调用 [com.hgtv.star.shared.update.AppUpdateController.install]；共享安装层
- * 负责系统会话、未知来源授权、确认页和安装结果。
+ * 安装按钮调用 [com.hgtv.star.shared.update.AppUpdateController.install]；缓存中的 APK
+ * 经 FileProvider 生成 content URI 后，用 ACTION_VIEW 拉起系统安装器。
  */
 internal fun TvMainActivity.showUpdateDialog(anchor: View?) {
     if (!updateController.state.value.checked && !updateController.state.value.checking) {

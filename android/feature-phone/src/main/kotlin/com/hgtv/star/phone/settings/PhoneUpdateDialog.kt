@@ -11,7 +11,7 @@ import kotlinx.coroutines.launch
  *
  * 更新检查不会主动弹窗；这里只在用户点击设置行后显示版本信息和操作。
  * 更新地址写死在 AppUpdateSource.BUILT_IN，没有设置入口。
- * 下载完成后交给共享安装层，由系统会话或原生安装器完成覆盖安装。
+ * 下载完成后由共享安装层通过 FileProvider 和 ACTION_VIEW 拉起系统安装器。
  */
 internal fun PhoneSettingsActivity.showUpdateDialog() {
     val controller=settingsUpdateController

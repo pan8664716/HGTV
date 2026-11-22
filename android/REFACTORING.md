@@ -7,6 +7,21 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## SmartTube 式更新包缓存与安装入口
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 更新 APK 从 `filesDir/updates/update.apk` 改存到内部缓存根目录
+  `cacheDir/update.apk`，与 SmartTube 的固定缓存文件名一致。
+- FileProvider authority 改为 `${applicationId}.update_provider`，路径只开放
+  `cache-path`；安装时生成 `content://` URI，再用 `ACTION_VIEW` 拉起系统安装器。
+- 删除 `PackageInstaller` 会话、安装回执广播和对应 Manifest receiver；安装权限检查与
+  从授权页返回后继续安装的流程保留。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖、更新地址或元数据格式；
+  未运行测试，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 1.3.8.12 版本准备
 
 状态：GitHub Release 已发布，待用户真机验证。
