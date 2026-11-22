@@ -226,7 +226,7 @@
 
 ## 1.3.9 版本准备
 
-状态：构建与产物校验通过，GitHub Release 待发布。
+状态：GitHub Release 已发布，待用户真机验证。
 
 - 源码默认版本更新为 `versionName=1.3.9`、`versionCode=98`。
 - `docs/CHANGELOG.md` 已按手机、TV 分节；README 已更新版本号、versionCode 与 APK 文件名。
@@ -239,8 +239,12 @@
   `zipalign` 校验通过。
 - APK：`outputs/release-1.3.9/HGTV_1.3.9.apk`，大小 `4290799` 字节；
   SHA-256 为 `4ff30474c191b09a3a0cf99ec755a7e88ba7f2933a2d91475a037588e1285941`。
-- 发布 tag `1.3.9` 必须指向独立空树提交；Release 只允许上传 APK、`SHA256SUMS`
-  和 `update.json`，不得附带或暴露项目源码。
+- 发布 tag `1.3.9` 指向独立空树提交
+  `5cc6bb4eb52addb3ee089fa0a9a973ba1954dbf0`，无父提交、文件数为 `0`。
+- Release 只上传 `HGTV_1.3.9.apk`、`SHA256SUMS`、`update.json`；
+  三个线上附件已重新下载并复验，APK 版本、校验和与元数据一致。
+- Release：
+  <https://github.com/pan8664716/HGTV/releases/tag/1.3.9>。
 
 回滚：删除对应 Release / tag 后，对文档发布提交执行 `git revert`。
 
