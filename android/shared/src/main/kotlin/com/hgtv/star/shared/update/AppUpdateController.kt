@@ -2,6 +2,7 @@
 package com.hgtv.star.shared.update
 
 import android.content.Context
+import android.content.pm.PackageInstaller
 import android.os.Build
 import android.widget.Toast
 import com.hgtv.star.shared.architecture.AppExecutors
@@ -213,7 +214,7 @@ class AppUpdateController private constructor(context: Context) {
         }
     }
 
-    /** 与 SmartTube 相同：只把缓存中的 APK 交给系统安装器。 */
+    /** 优先与 SmartTube 一样交给系统安装器，Activity 不可用时回退 PackageInstaller。 */
     fun install() {
         val current = _state.value
         if (current.installing) return
@@ -224,13 +225,42 @@ class AppUpdateController private constructor(context: Context) {
         _state.update {
             it.copy(installing = true, error = "")
         }
-        runCatching { UpdateInstaller.install(appContext, apk) }
-            .onSuccess {
+        scope.launch {
+            val systemInstallerStarted = withContext(AppExecutors.disk.dispatcher) {
+                UpdateInstaller.install(appContext, apk)
+            }
+            if (systemInstallerStarted) {
                 _state.update { it.copy(installing = false) }
+                return@launch
             }
-            .onFailure {
-                showInstallError(it.message ?: "无法启动系统安装器")
+            val sessionStarted = Build.VERSION.SDK_INT >= 21 &&
+                withContext(AppExecutors.disk.dispatcher) {
+                    runCatching { UpdateInstaller.installSession(appContext, apk) }.isSuccess
+                }
+            if (!sessionStarted) {
+                showInstallError("系统安装器不可用")
             }
+        }
+    }
+
+    internal fun onInstallStatus(status: Int, detail: String?) {
+        when (status) {
+            PackageInstaller.STATUS_PENDING_USER_ACTION -> {
+                _state.update { it.copy(installing = true, error = "") }
+            }
+            PackageInstaller.STATUS_SUCCESS -> {
+                _state.update {
+                    it.copy(
+                        available = null,
+                        ready = false,
+                        installing = false,
+                        progress = 0,
+                        error = "",
+                    )
+                }
+            }
+            else -> showInstallError(UpdateInstaller.failureMessage(status, detail))
+        }
     }
 
     private fun showInstallError(message: String) {
