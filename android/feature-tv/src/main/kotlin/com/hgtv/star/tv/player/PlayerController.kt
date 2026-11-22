@@ -227,7 +227,15 @@ fun TvMainActivity.playEpisode(
         // `removeMediaSourceHolders(0, size)`（ExoPlayer 2.19 `setMediaSourcesInternal`），
         // 显式 `clearMediaItems()` 只是把同一件事做两遍，中间还多一次空列表的 BUFFERING。
         // 其它路径照旧清：那条路上旧项与 `video` 都要一起放掉。
-        if(!seamless) { player?.stop(); if(!keep) player?.clearMediaItems() }
+        if(!seamless) {
+            // 推荐换作在进入这里之前已经 stop + clear，此时播放器为空且已 IDLE。
+            // 不再重复走同一条释放链，避免无意义的渲染器状态切换。
+            val p=player
+            if(p!=null && (p.mediaItemCount>0 || p.playbackState!=Player.STATE_IDLE)) {
+                p.stop()
+                if(!keep && p.mediaItemCount>0) p.clearMediaItems()
+            }
+        }
         // 旧一集的视频与传输先记下来：无感切集不当场关（旧源可能还在收尾，当场关会让它读到
         // 一个已经关闭的视频而报错），等新源出画面再收；非无感路径下面紧接着就收掉。
         //
@@ -534,12 +542,9 @@ fun TvMainActivity.playEpisode(
         // 构造后的配置（音频属性 / 诊断监听 / 逐帧心跳）只能在主线程做，且是幂等的：
         // 预热线程那边 post 过来的那次可能还没跑到（见 [configurePlayer]）。
         configurePlayer(p)
-        // 复用那条路不重建播放器，也不重建 PlayerView：这里补一次绑定是幂等的。
-        // 推荐换作期间 PlayerView 只是 detach 了 player（保持 VISIBLE，避免 SurfaceView 的
-        // surface 被系统回收），等新源准备好后在这里重新挂回。
-        // 推荐换作时旧 Surface 里仍是上一部最后一帧。必须先让 PlayerView 用黑色快门
-        // 清掉旧内容，等这一部真实首帧后再恢复 keep-content；否则新比例一落地，
-        // 旧帧就会按当前视频大小被拉伸一瞬。
+        // 复用那条路不重建播放器，也不重建 PlayerView。推荐换作期间绑定关系保持不动，
+        // 只让黑色快门遮住旧内容，等这一部真实首帧后再恢复 keep-content。
+        // 这里的 attach 只服务首次进入、重建播放层或解码器换档，正常换作不会走到。
         playerView?.setKeepContentOnPlayerReset(!recommendEntry)
         playerView?.visibility=View.VISIBLE
         if(playerView?.player!==p) attachPlayerView(p)
