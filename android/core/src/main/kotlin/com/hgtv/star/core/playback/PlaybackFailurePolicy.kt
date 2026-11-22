@@ -255,13 +255,17 @@ object FailurePresentation {
         facts.audioOutput -> "音频输出初始化失败，可重试或稍后再试。"
         // 音频：走到这里说明本机的音频解码器全军覆没，换哪一档都一样。
         facts.pictureProblem && !facts.videoProblem -> "音频解码失败，这台设备无法播放该音轨。"
+        // 容器 / 封装解析失败：换软解和换清晰度都不作用在这条故障上。
+        facts.errorCode in 3000..3999 -> "当前视频内容异常，请重试或换集。"
         // 解码类降无可降：直接给出手动处置建议（换软解 / 换到具体哪一档）。
         // 必须带 `pictureProblem` 门槛：这条建议是上一次解码失败留下的，若这一集随后因为
         // 网络超时进来，把「请切换为软件解码」顶上去就是一句与故障无关的误导。
         manualHint != null && facts.pictureProblem -> manualHint
-        facts.pictureProblem && !hevcSupported -> "这台设备没有 HEVC 硬解，请在播放设置里切换为软件解码。"
-        facts.pictureProblem -> "无法解码当前视频，可在播放设置里换更低清晰度或软件解码。"
-        else -> "播放失败，可重试或切换清晰度。"
+        facts.decoding && !hevcSupported -> "这台设备没有 HEVC 硬解，请在播放设置里切换为软件解码。"
+        facts.decoding -> "无法解码当前视频，可在播放设置里换更低清晰度或软件解码。"
+        facts.errorCode in 2000..2999 || facts.errorCode == 1003 ->
+            "网络或视频读取异常，可重试或稍后再试。"
+        else -> "播放失败，可重试或换一集。"
     }
 
     /**
@@ -274,12 +278,26 @@ object FailurePresentation {
         facts: FailureFacts,
         attr: FailureAttribution,
         hevcSupported: Boolean,
-    ): Set<FailureCapability> {
-        val result = linkedSetOf(FailureCapability.RETRY)
-        if (facts.videoProblem && attr.currentMode == VideoDecoderMode.HARDWARE && hevcSupported) {
-            result += FailureCapability.SWITCH_SOFTWARE
+    ): Set<PlaybackFailureCapability> {
+        val result = linkedSetOf(PlaybackFailureCapability.RETRY)
+        if (facts.decoding && facts.errorCode in setOf(
+                PlaybackErrorCode.DECODER_QUERY_FAILED,
+                PlaybackErrorCode.FORMAT_EXCEEDS_CAPABILITIES,
+                PlaybackErrorCode.FORMAT_UNSUPPORTED,
+            ) &&
+            attr.currentMode == VideoDecoderMode.HARDWARE &&
+            hevcSupported
+        ) {
+            result += PlaybackFailureCapability.SWITCH_SOFTWARE
         }
-        if (facts.videoProblem && swapTarget(attr) > 0) result += FailureCapability.CHANGE_QUALITY
+        if (facts.errorCode in setOf(
+                PlaybackErrorCode.FORMAT_EXCEEDS_CAPABILITIES,
+                PlaybackErrorCode.FORMAT_UNSUPPORTED,
+            ) &&
+            swapTarget(attr) > 0
+        ) {
+            result += PlaybackFailureCapability.CHANGE_QUALITY
+        }
         return result
     }
 
@@ -300,7 +318,7 @@ object FailurePresentation {
 }
 
 /** 错误页上的一颗手动出口。 */
-enum class FailureCapability {
+enum class PlaybackFailureCapability {
     /** 立即重试。 */
     RETRY,
 

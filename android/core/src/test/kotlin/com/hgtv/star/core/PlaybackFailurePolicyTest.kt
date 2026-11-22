@@ -176,7 +176,42 @@ class PlaybackFailurePolicyTest {
     @Test fun `音频失败不给换软解与换档位`() {
         val a = attr(media = MediaKind.AUDIO, code = PlaybackErrorCode.DECODING_FAILED)
         val caps = FailurePresentation.capabilities(facts(code = PlaybackErrorCode.DECODING_FAILED, media = MediaKind.AUDIO), a, true)
-        assertEquals(setOf(FailureCapability.RETRY), caps)
+        assertEquals(setOf(PlaybackFailureCapability.RETRY), caps)
+    }
+
+    @Test fun `网络失败不给换软解与换档位`() {
+        val a = attr(code = 2000)
+        val caps = FailurePresentation.capabilities(facts(code = 2000), a, true)
+        assertEquals(setOf(PlaybackFailureCapability.RETRY), caps)
+    }
+
+    @Test fun `封装解析失败不给换软解与换档位`() {
+        val a = attr(code = 3001)
+        val caps = FailurePresentation.capabilities(facts(code = 3001), a, true)
+        assertEquals(setOf(PlaybackFailureCapability.RETRY), caps)
+    }
+
+    @Test fun `解码器初始化失败先重建不给换软解`() {
+        val a = attr(code = PlaybackErrorCode.DECODER_INIT_FAILED)
+        val caps = FailurePresentation.capabilities(facts(code = PlaybackErrorCode.DECODER_INIT_FAILED), a, true)
+        assertEquals(setOf(PlaybackFailureCapability.RETRY), caps)
+    }
+
+    @Test fun `格式超出能力才给换软解与降档`() {
+        val a = attr(code = PlaybackErrorCode.FORMAT_EXCEEDS_CAPABILITIES)
+        val caps = FailurePresentation.capabilities(
+            facts(code = PlaybackErrorCode.FORMAT_EXCEEDS_CAPABILITIES),
+            a,
+            true,
+        )
+        assertEquals(
+            setOf(
+                PlaybackFailureCapability.RETRY,
+                PlaybackFailureCapability.SWITCH_SOFTWARE,
+                PlaybackFailureCapability.CHANGE_QUALITY,
+            ),
+            caps,
+        )
     }
 
     @Test fun `换档目标必须严格低于刚刚失败的那一档`() {

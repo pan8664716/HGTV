@@ -105,6 +105,8 @@ object TncConfigStore {
     private val readyLatch=CountDownLatch(1)
     private val refreshLock=Any()
     private val snapshotLock=Any()
+    private val hostHealthLock=Any()
+    private val hostHealth=HashMap<String,HostHealth>()
     private val loader=Executors.newSingleThreadExecutor { task ->
         Thread(task,"hgtv-tnc-load").apply { isDaemon=true }
     }
@@ -151,9 +153,16 @@ object TncConfigStore {
     /** 最近成功域名排第一，其余保持 TNC 下发顺序。 */
     fun orderedApiHosts(): List<String> {
         val hosts=apiHosts()
+        val now=System.currentTimeMillis()
+        val healthy=synchronized(hostHealthLock) {
+            hosts.filter { host ->
+                val blockedUntil=hostHealth[host]?.blockedUntil ?: 0L
+                blockedUntil <= now
+            }
+        }.ifEmpty { hosts }
         val last=current()?.lastGoodHost.orEmpty()
-        if(last.isBlank() || last !in hosts) return hosts
-        return listOf(last)+hosts.filter { it!=last }
+        if(last.isBlank() || last !in healthy) return healthy
+        return listOf(last)+healthy.filter { it!=last }
     }
 
     /**
@@ -295,6 +304,7 @@ object TncConfigStore {
     fun markHostSuccess(host: String) {
         val value=host.trim()
         if(value.isEmpty()) return
+        synchronized(hostHealthLock) { hostHealth.remove(value) }
         val changed=synchronized(snapshotLock) {
             val current=snapshot ?: return@synchronized false
             if(current.lastGoodHost==value) return@synchronized false
@@ -303,6 +313,23 @@ object TncConfigStore {
         }
         if(!changed) return
         persistAsync()
+    }
+
+    /**
+     * 记录一次主机失败；达到阈值后短时间跳过该 host。
+     *
+     * 这里只影响进程内排序，不改 TNC 下发列表，也不把失败永久写进磁盘。
+     */
+    fun markHostFailure(host: String) {
+        val value=host.trim()
+        if(value.isEmpty()) return
+        val now=System.currentTimeMillis()
+        synchronized(hostHealthLock) {
+            val old=hostHealth[value]
+            val failures=if(old==null || now-old.lastFailureAt>HOST_FAILURE_RESET_MS) 1 else old.failures+1
+            val blockedUntil=if(failures>=HOST_FAILURE_BLOCK_COUNT) now+HOST_FAILURE_BLOCK_MS else 0L
+            hostHealth[value]=HostHealth(failures,now,blockedUntil)
+        }
     }
 
     private fun refreshDue(now: Long): Boolean {
@@ -485,4 +512,14 @@ object TncConfigStore {
         if(store==null) return
         runCatching { loadedLatch.await(LOAD_WAIT_MS,TimeUnit.MILLISECONDS) }
     }
+
+    private data class HostHealth(
+        val failures: Int,
+        val lastFailureAt: Long,
+        val blockedUntil: Long,
+    )
+
+    private const val HOST_FAILURE_BLOCK_COUNT=3
+    private const val HOST_FAILURE_BLOCK_MS=5L*60L*1_000L
+    private const val HOST_FAILURE_RESET_MS=10L*60L*1_000L
 }

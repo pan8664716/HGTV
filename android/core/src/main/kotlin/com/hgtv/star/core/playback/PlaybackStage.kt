@@ -32,13 +32,19 @@ object PlaybackStage {
     const val CODEC_ERROR = "playback_codec_error"
     const val STALL_FRAME = "playback_stall_frame"
     const val STALL_BUFFER = "playback_stall_buffer"
+    const val TIMEOUT = "playback_timeout"
+    const val AUDIO_OUTPUT = "playback_audio_output"
+    const val DRM = "playback_drm"
+    const val FRAME_PROCESSOR = "playback_frame_processor"
+    const val RUNTIME = "playback_runtime"
     const val OOM = "playback_oom"
     const val OTHER = "playback_other"
 
     /** 全部阶段：单测按它校验「每一档都有标题、且互不重复」。 */
     val ALL = listOf(
         SOURCE, IO, PARSE, PREPARE, DECODER_INIT, DECODER_QUERY, DECODING,
-        DECODER_LIMITS, DECODER_UNSUPPORTED, CODEC_ERROR, STALL_FRAME, STALL_BUFFER, OOM, OTHER,
+        DECODER_LIMITS, DECODER_UNSUPPORTED, CODEC_ERROR, STALL_FRAME, STALL_BUFFER,
+        TIMEOUT, AUDIO_OUTPUT, DRM, FRAME_PROCESSOR, RUNTIME, OOM, OTHER,
     )
 
     /** 阶段 → 一句稳定的话（错误页 / 调试面板标题）。未知阶段退回「播放失败」。 */
@@ -55,6 +61,11 @@ object PlaybackStage {
         CODEC_ERROR -> "解码失败：解码器报错"
         STALL_FRAME -> "解码失败：有声音无画面"
         STALL_BUFFER -> "播放失败：长时间无法起播"
+        TIMEOUT -> "播放失败：播放超时"
+        AUDIO_OUTPUT -> "播放失败：音频输出异常"
+        DRM -> "播放失败：受保护内容不可用"
+        FRAME_PROCESSOR -> "播放失败：视频帧处理异常"
+        RUNTIME -> "播放失败：播放器状态异常"
         OOM -> "播放失败：内存不足"
         else -> "播放失败"
     }

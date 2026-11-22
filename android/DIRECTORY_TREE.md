@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-22。文件总数为 669；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-22。文件总数为 675；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -15,6 +15,7 @@
 | --- | --- | --- |
 | 全局可调参数 | `core/` | `AppConfig.kt` |
 | 内容接口、账号/详情/搜索/推荐数据 | `core/content/` | `ContentRepository.kt` 及各子域 Service/Parser |
+| 错误模型、HTTP/Exo 映射、恢复预算 | `core/error/`、`shared/media/` | `ErrorPolicy.kt`、`HttpFailureMapper.kt`、`ExoFailureMapper.kt` |
 | 登录、设备注册、凭据 | `core/account/` | `PhoneLogin.kt`、`QrLogin.kt`、`DeviceRegister.kt` |
 | 播放地址、缓存、降级、速度 | `core/playback/` | `PlaybackCache.kt`、`PlaybackDegradation.kt` |
 | 本机历史、收藏、设置持久化 | `shared/data/`、`core/library/` | `Library.kt`、`LibraryIndex.kt` |
@@ -41,10 +42,10 @@
 ```text
 android/
 ├── app/  (23 files, 12 directories)
-├── core/  (229 files, 27 directories)
+├── core/  (234 files, 28 directories)
 ├── feature-phone/  (143 files, 11 directories)
 ├── feature-tv/  (159 files, 18 directories)
-├── shared/  (118 files, 46 directories)
+├── shared/  (119 files, 46 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
 ```
@@ -56,6 +57,7 @@ android/
 - `core/catalog/`：目录、分类、榜单、首页布局、筛选和回到顶部策略。
 - `core/common/`：跨域公共文案与进程级线程预算。
 - `core/content/`：内容仓库及其模型、解析、请求编排、缓存和各业务服务。
+- `core/error/`：统一错误事实、HTTP 映射、恢复计划、重试上下文和纯 JVM 决策。
 - `core/crypto/`：AES、Medusa、Argus、签名和字节编解码。
 - `core/identity/`：设备身份、设备等级、UA/版本档案。
 - `core/label/`：卡片标签、角标、菜单与海报文案模型。
@@ -262,6 +264,8 @@ android/
 | `LiveRegComboTest.kt` | 自动化测试，覆盖 LiveRegComboTest 相关行为。 | class LiveRegComboTest |
 | `LiveSigningProbeTest.kt` | 自动化测试，覆盖 LiveSigningProbeTest 相关行为。 | class LiveSigningProbeTest |
 | `LowEndPlaybackTest.kt` | 自动化测试，覆盖 LowEndPlaybackTest 相关行为。 | class LowEndPlaybackTest |
+| `ErrorPolicyTest.kt` | 纯 JVM 错误决策：离线等待、HTTP 有界恢复、设备自愈、非幂等写请求和精确播放器分类。 | class ErrorPolicyTest |
+| `HttpFailureMapperTest.kt` | HTTP 状态、Retry-After 和 DNS 异常到统一错误事实的映射。 | class HttpFailureMapperTest |
 | `MediaCryptoTest.kt` | 自动化测试，覆盖 MediaCryptoTest 相关行为。 | class MediaCryptoTest |
 | `OptionalFilterTest.kt` | 推荐筛选项的降级状态机（OptionalFilter）：回空页先重试、两次即永久关掉。 | class OptionalFilterTest |
 | `PassportSignerTest.kt` | Passport（branch 2）签名的固定向量测试。 | class PassportSignerTest |
@@ -434,7 +438,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `ContentTransport.kt` | DNS、TLS、HTTP、网络计时与请求作用域；旧超时常量保留为 `AppConfig.Network` 的兼容别名。 | fun JSONArray.objects、fun JSONObject.str、fun JSONObject.flag、fun cleanUrl、fun defaultContentHttpClient、class CatalogHttpException |
+| `ContentTransport.kt` | DNS、TLS、HTTP、网络计时与请求作用域；非 2xx 内容响应保留统一 `AppFailure` 事实。 | fun JSONArray.objects、fun JSONObject.str、fun JSONObject.flag、fun cleanUrl、fun defaultContentHttpClient、class CatalogHttpException、class ContentHttpException |
 | `HgtvDns.kt` | 带缓存的 DNS，替换 OkHttp 默认的「每次新建连接都问一遍系统」。 | object HgtvDns |
 | `HgtvTls.kt` | 全工程共用的 TLS 协商参数。 | object HgtvTls、class PrepareTlsSocketFactory |
 | `NetTiming.kt` | 一次请求的连接耗时分解（调试包专用，见 NetLog.timing）。 | class NetTiming |
@@ -442,7 +446,15 @@ android/
 | `PublicDns.kt` | 公共 DNS 兜底解析：自己发裸 UDP 查询，不经过系统解析器。 | object PublicDns |
 | `RequestScope.kt` | 请求生命周期与网络失败统一出口，支持取消、诊断、失败记录和启动阶段硬预算。 | fun isInterruption、object NetLog、class NetLogLevel、class RequestScope、class StageDeadline、class StageTimeoutException |
 | `TlsStatus.kt` | 调试面板读取的 TLS 现场。 | object TlsStatus |
-| `TncConfigStore.kt` | TNC 响应：正文以及下一轮条件请求要带的摘要 / ETag。 | class TncResponse、class TncSnapshot、object TncConfigStore |
+| `TncConfigStore.kt` | TNC 响应、域名排序和进程内 host 健康度；连续失败的主机短时降权。 | class TncResponse、class TncSnapshot、object TncConfigStore |
+
+#### `core/src/main/kotlin/com/hgtv/star/core/error/`
+
+| 文件 | 作用 | 关键符号 |
+| --- | --- | --- |
+| `ErrorModel.kt` | 跨业务统一错误事实、域、严重级别、操作级重试上下文、恢复计划和能力模型；`Retry-After` 归决策上下文。 | class AppFailure、class FailureContext、class RetryContext、class RecoveryPlan、class FailureCapability、object FailureCodes |
+| `ErrorPolicy.kt` | 纯 JVM 决策入口：根据错误事实、网络状态、幂等性和预算生成恢复计划或终态。 | object ErrorPolicy |
+| `HttpFailureMapper.kt` | HTTP 状态和传输异常到 `AppFailure` 的映射，并解析 Retry-After 供上下文使用，不决定业务重试。 | object HttpFailureMapper |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/playback/`
 
@@ -455,11 +467,11 @@ android/
 | `PlaybackCache.kt` | 播放地址、索引和首块缓存，负责过期判定与本地复用。 | object PlaybackCache |
 | `PlaybackComfort.kt` | 视频解码方式。 | class VideoDecoderMode、class VideoFrameMode、class VideoFit、fun VideoFrameMode.toFit、object SeekStep、class SleepTimer |
 | `PlaybackDegradation.kt` | 播放重试 / 降级的**全部决策**都收敛在这个文件里，纯逻辑、不碰 Android、可直接单测。 | class MediaKind、class DegradationKind、class PlaybackRetryPlan、class GiveUpReason、interface RetryDecision、class FailureAttribution |
-| `PlaybackFailurePolicy.kt` | 一次播放失败的**事实**：平台层负责从异常与现场里读出这些布尔量，决策层只认它们。 | class FailureFacts、interface FailureAction、object PlaybackFailurePolicy、object FailurePresentation、class FailureCapability |
+| `PlaybackFailurePolicy.kt` | 一次播放失败的**事实**：平台层负责从异常与现场里读出这些布尔量，决策层只认它们；错误页能力只对解码类开放。 | class FailureFacts、interface FailureAction、object PlaybackFailurePolicy、object FailurePresentation、class PlaybackFailureCapability |
 | `PlaybackInfoLine.kt` | 播放界面左上角那几项信息的**文案**：电视与手机共用这一份。 | object PlaybackInfoLine |
 | `PlaybackMachine.kt` | 驱动 PlaybackState 的事件。 | interface PlaybackEvent、object PlaybackMachine |
 | `PlaybackSpeed.kt` | 播放地址、缓存、探测、降级与预取。文件 PlaybackSpeed 主要包含 object PlaybackSpeed。 | object PlaybackSpeed |
-| `PlaybackStage.kt` | 播放失败的**阶段常量与标题表**：电视与手机共用这一份。 | object PlaybackStage |
+| `PlaybackStage.kt` | 播放失败的**阶段常量与标题表**：电视与手机共用，覆盖超时、音频、DRM、帧处理和运行时错误。 | object PlaybackStage |
 | `PlaybackState.kt` | 一次播放所处的阶段。 | class PlaybackPhase、class PlaybackState、class MediaTrack、class PlaybackFailure |
 | `PrefetchPolicy.kt` | 播放地址、缓存、探测、降级与预取。文件 PrefetchPolicy 主要包含 object PrefetchPolicy。 | object PrefetchPolicy |
 | `PreparedSlot.kt` | One cancellable speculative result. Claim transfers ownership; stale completions close themselves. ttl 默认 2 分钟，**比 PlaybackCache.PREPARED_FRESH_MS（10 分钟）更严格**，这是有意的： 这个槽位装的是 Remot… | class PreparedSlot |
@@ -704,7 +716,7 @@ android/
 | `PhonePlayerReopen.kt` | 原地换一条地址：**不换集、不换 Surface、不回片头**。 | fun PhonePlayerActivity.reopenCurrentEpisodeInPlace |
 | `PhonePlayerResume.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerResume 主要包含 fun PhonePlayerActivity.handlePlayerResume。 | fun PhonePlayerActivity.handlePlayerResume |
 | `PhonePlayerScreenState.kt` | 播放时保持屏幕常亮。 | fun PhonePlayerActivity.syncKeepScreenOn、fun PhonePlayerActivity.restoreUnderlayIfNeeded |
-| `PhonePlayerServices.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerServices 主要包含 class PhonePlayerRuntimeState、fun PhonePlayerActivity.ensureMediaSession、fun PhonePlayerActivity.syncMediaSession、fun PhonePlayerActivity.watchNetwork。 | class PhonePlayerRuntimeState、fun PhonePlayerActivity.ensureMediaSession、fun PhonePlayerActivity.syncMediaSession、fun PhonePlayerActivity.watchNetwork、fun PhonePlayerActivity.unwatchNetwork |
+| `PhonePlayerServices.kt` | 手机媒体会话、播放页网络监听和恢复边沿；只在断网转联网且处于取地址/错误态时重试。 | class PhonePlayerRuntimeState、fun PhonePlayerActivity.ensureMediaSession、fun PhonePlayerActivity.syncMediaSession、fun PhonePlayerActivity.watchNetwork、fun PhonePlayerActivity.unwatchNetwork |
 | `PhonePlayerSettingsEntry.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerSettingsEntry 主要包含 fun PhonePlayerActivity.openSettings、fun PhonePlayerActivity.openPortraitSettings。 | fun PhonePlayerActivity.openSettings、fun PhonePlayerActivity.openPortraitSettings |
 | `PhonePlayerSettingsPanel.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerSettingsPanel 主要包含 object PhonePlayerSettingsPanel。 | object PhonePlayerSettingsPanel |
 | `PhonePlayerSettingsRows.kt` | 播放设置的各行：清晰度、倍速、画面、解码、缩放、定时、相关剧集、收藏与弹幕。 | fun PhonePlayerActivity.buildSettingsRowsImpl |
@@ -1075,7 +1087,7 @@ android/
 | `ArtworkCache.kt` | 封面磁盘缓存：存的是**已经缩到卡片尺寸的 WebP**，不是原图。 | class ArtworkCache |
 | `ArtworkLoader.kt` | 封面加载器，负责请求调度、磁盘/内存缓存、解码、预取和低内存裁剪；换页时可保留后台预取，由前台绑定接管同一任务。 | class ArtworkLoader |
 | `ArtworkTiming.kt` | 封面加载的**计时统计**（只在 debug 包里用日志看，不参与界面逻辑）。 | class ArtworkTiming |
-| `DeviceHealer.kt` | 设备身份自愈：**服务端不认这份身份**时，换一台设备重注册。 | object DeviceHealer |
+| `DeviceHealer.kt` | 设备身份自愈：明确设备拒绝时单飞重注册，使用时间窗口预算并合并并发等待者。 | object DeviceHealer |
 | `DeviceRegistration.kt` | 设备注册的**唯一实现**：电视与手机共用；注册后的 TNC 刷新延后到播放首帧。 | object DeviceRegistration |
 | `FavoriteMonitor.kt` | Serial foreground checks; cancellation owns only calls made by this monitor. | class FavoriteMonitor |
 | `IdentityBinder.kt` | 把**本机身份与会话**灌进进程级仓库，并按实际设备形态选择电视统一设备档案。 | object IdentityBinder、fun Library.isTvDeviceForProfile |
@@ -1153,7 +1165,8 @@ android/
 | `DanmakuSpriteAtlas.kt` | 弹幕文字图集。 | class DanmakuSpriteAtlas |
 | `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；首批弹幕挂起等 onRenderedFirstFrame 才铺开（不用 STATE_READY，它在真机上会短暂假阳性），按首帧位置对齐，并可配置 5 秒兜底或严格等待首帧；聚合弹幕行距按放大后的计数高度算，多条并排不互相遮挡；隐藏时保持 Surface 存活，提交一帧全透明擦掉旧内容（不用 visibility 也不依赖 alpha，部分电视 ROM 上 alpha 不作用于独立图层），并通过 isSurfaceActive 告知宿主是否需要普通 View 兜底；TV 与手机竖屏追加 16dp 顶部呼吸位，手机横屏保持原位置；推荐流可把首行文字实际顶边锚定到顶部导航。 | class DanmakuView、fun beginTransition、val isSurfaceActive、val topGapDp、val topTextAnchorPx |
 | `MediaSessionHost.kt` | 前台媒体会话：让**遥控器 / 耳机线控 / 锁屏与系统媒体面板**上的播放键能找到本应用。 | class MediaSessionHost |
-| `PlaybackFailures.kt` | 一次播放失败的**归因**：这条错误落在哪条轨上、该按哪一档、哪些档位还能换。 | object PlaybackFailures |
+| `PlaybackFailures.kt` | 一次播放失败的**归因**：精确 Exo 分类、媒体轨道、可降档位和自愈 cause 探测。 | object PlaybackFailures |
+| `ExoFailureMapper.kt` | ExoPlayer 2.19.1 错误常量到跨平台 canonical code、阶段和可重试性的精确映射。 | object ExoFailureMapper |
 | `PlaybackMetrics.kt` | 播放现场的「解码事实」：解码器名、初始化耗时、编码格式、丢帧、音频欠载；首帧同时写入统一启动追踪。 | class PlaybackMetrics |
 | `PlayerLetterboxMask.kt` | TV 使用的 FIT 黑边普通 View 兜底遮罩；同时提供不绘制内容的画面矩形计算，供手机弹幕 Surface 复用，支持实际内容框提供器、片源比例和画面缩放。 | class PlayerLetterboxMask、fun videoPictureBounds |
 | `PlayerSourceSwap.kt` | 换媒体源：**先停、再挂**。 | fun ExoPlayer.swapMediaSource |

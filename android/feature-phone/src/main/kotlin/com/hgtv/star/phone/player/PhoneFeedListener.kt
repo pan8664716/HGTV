@@ -211,9 +211,6 @@ private fun com.google.android.exoplayer2.PlaybackException.isRecoverableSourceE
         com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_NETWORK_CONNECTION_TIMEOUT,
         com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_BAD_HTTP_STATUS,
         com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_FILE_NOT_FOUND,
-        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_NO_PERMISSION,
-        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_CLEARTEXT_NOT_PERMITTED,
-        com.google.android.exoplayer2.PlaybackException.ERROR_CODE_IO_READ_POSITION_OUT_OF_RANGE,
         -> true
         else -> false
     }

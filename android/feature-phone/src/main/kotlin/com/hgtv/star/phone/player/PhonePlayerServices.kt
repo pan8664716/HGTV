@@ -4,12 +4,15 @@ package com.hgtv.star.phone
 import com.google.android.exoplayer2.Player
 import com.hgtv.star.shared.compat.Cancellable
 import com.hgtv.star.shared.compat.NetworkWatcher
+import com.hgtv.star.shared.compat.connectivityManager
+import com.hgtv.star.shared.compat.hasInternet
 import com.hgtv.star.shared.media.MediaSessionHost
 
 internal class PhonePlayerRuntimeState {
     var mediaSession: MediaSessionHost? = null
     var mediaSessionFailed = false
     var networkWatch: Cancellable? = null
+    var networkWasUp = false
 }
 
 /**
@@ -76,12 +79,17 @@ internal fun PhonePlayerActivity.syncMediaSession() {
  */
 internal fun PhonePlayerActivity.watchNetwork() {
     if (runtimeState.networkWatch != null) return
+    runtimeState.networkWasUp = connectivityManager()?.hasInternet() ?: false
     // NetworkCallback 是 API 21 类。不能把这个类型放进播放页运行状态，否则 4.4 在
     // 进入 onResume 时就会因类解析失败崩溃；版本分流统一交给 NetworkWatcher。
     val watch = runCatching {
         NetworkWatcher.watch(this) {
             runOnUiThread {
                 if (isFinishing || isDestroyed) return@runOnUiThread
+                val up = connectivityManager()?.hasInternet() ?: false
+                val restored = up && !runtimeState.networkWasUp
+                runtimeState.networkWasUp = up
+                if (!restored) return@runOnUiThread
                 if (errorCard == null && sourceRetryState.count == 0) return@runOnUiThread
                 cancelAutoRetry()
                 val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
@@ -95,5 +103,6 @@ internal fun PhonePlayerActivity.watchNetwork() {
 internal fun PhonePlayerActivity.unwatchNetwork() {
     val watch = runtimeState.networkWatch ?: return
     runtimeState.networkWatch = null
+    runtimeState.networkWasUp = false
     watch.cancel()
 }

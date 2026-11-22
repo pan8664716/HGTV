@@ -50,8 +50,12 @@ object DeviceHealer {
     private val lock = Any()
     private var tried = 0
     private var at = 0L
+    private var windowStartedAt = 0L
     /** 已经处置过的「被拒」计数（见 [ContentRepository.deviceRejected]）。 */
     private var handled = 0
+    /** 当前是否已经有自愈流程在跑；并发请求只排队等结果，不重复注册。 */
+    private var inFlight = false
+    private val waiters = ArrayList<(Boolean) -> Unit>()
 
     /**
      * 注册是**阻塞**的网络请求，而且同一时刻只该有一次：单线程队列天然把并发收成一次。
@@ -75,11 +79,13 @@ object DeviceHealer {
         if (library == null || !library.isLoaded) return false
         // 本机根本没有身份：那是「还没注册」，不是「被拒」，同样值得补一次（见 [heal]）。
         val registered = library.deviceRegistered()
-        if (registered && !forceRotate && repository.deviceRejected <= 0) return false
         synchronized(lock) {
-            if (registered && !forceRotate && repository.deviceRejected <= handled) return false
-            val now = SystemClock.elapsedRealtime()
-            return tried < LIMIT && (at == 0L || now - at >= GAP_MS)
+            return budgetAvailableLocked(
+                registered = registered,
+                forceRotate = forceRotate,
+                repository = repository,
+                now = SystemClock.elapsedRealtime(),
+            )
         }
     }
 
@@ -100,12 +106,10 @@ object DeviceHealer {
     ): Boolean {
         if (library == null || !library.isLoaded) return false
         val registered = library.deviceRegistered()
-        if (registered && !forceRotate && repository.deviceRejected <= 0) return false
         // 先占预算再动网络：两个线程同时进来时只有一个能过，另一个直接退出。
         synchronized(lock) {
-            if (registered && !forceRotate && repository.deviceRejected <= handled) return false
             val now = SystemClock.elapsedRealtime()
-            if (tried >= LIMIT || (at > 0 && now - at < GAP_MS)) return false
+            if (!budgetAvailableLocked(registered, forceRotate, repository, now)) return false
             if (registered) handled = repository.deviceRejected
             tried++
             at = now
@@ -164,7 +168,20 @@ object DeviceHealer {
         forceRotate: Boolean = false,
         onResult: (Boolean) -> Unit,
     ): Boolean {
+        synchronized(lock) {
+            if (inFlight) {
+                waiters += onResult
+                return true
+            }
+        }
         if (!wouldHeal(library, repository, forceRotate)) return false
+        synchronized(lock) {
+            if (inFlight) {
+                waiters += onResult
+                return true
+            }
+            inFlight = true
+        }
         val firstTime = library?.deviceRegistered() != true
         DebugLog.record(
             "设备",
@@ -180,6 +197,12 @@ object DeviceHealer {
         )
         worker.execute {
             val healed = heal(library, repository, reason, forceRotate)
+            val queued = synchronized(lock) {
+                inFlight = false
+                val copy = waiters.toList()
+                waiters.clear()
+                copy
+            }
             main.post {
                 DebugLog.record(
                     "设备",
@@ -188,8 +211,30 @@ object DeviceHealer {
                     force = true,
                 )
                 onResult(healed)
+                queued.forEach { callback -> runCatching { callback(healed) } }
             }
         }
         return true
+    }
+
+    /**
+     * 预算只在锁内判定和消费，窗口到期后重新开始计数。
+     *
+     * 这里不把 `tried` 永久留在进程级：TV 常驻进程运行几天后，旧实现会把自愈额度
+     * 永久耗尽，下一次真实设备拒绝只能让用户清数据。
+     */
+    private fun budgetAvailableLocked(
+        registered: Boolean,
+        forceRotate: Boolean,
+        repository: ContentRepository,
+        now: Long,
+    ): Boolean {
+        if (registered && !forceRotate && repository.deviceRejected <= handled) return false
+        if (windowStartedAt == 0L || now - windowStartedAt >= AppConfig.Account.DEVICE_HEAL_WINDOW_MS) {
+            windowStartedAt = now
+            tried = 0
+            handled = 0
+        }
+        return tried < LIMIT && (at == 0L || now - at >= GAP_MS)
     }
 }

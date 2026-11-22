@@ -364,6 +364,9 @@ object AppConfig {
 
         /** 两次设备身份自愈之间的最小间隔。 */
         const val DEVICE_HEAL_GAP_MS = 20_000L
+
+        /** 设备身份自愈的滑动时间窗口；窗口内最多 [DEVICE_HEAL_LIMIT] 次。 */
+        const val DEVICE_HEAL_WINDOW_MS = 10L * 60L * 1_000L
     }
 
     /**

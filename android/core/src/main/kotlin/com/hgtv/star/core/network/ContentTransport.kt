@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-3.0-only
 package com.hgtv.star.core
 
+import com.hgtv.star.core.error.AppFailure
 import okhttp3.OkHttpClient
 import org.json.JSONArray
 import org.json.JSONObject
@@ -45,6 +46,13 @@ internal fun defaultContentHttpClient(): OkHttpClient {
 }
 
 internal class CatalogHttpException(val status: Int, message: String) : IOException(message)
+
+/** 内容接口的非 2xx 响应；保留统一事实，message 仍兼容旧调用点。 */
+class ContentHttpException(
+    val failure: AppFailure,
+    val retryAfterMs: Long?,
+    message: String,
+) : IOException(message)
 
 class AddressTimeoutException(message: String, cause: Throwable? = null) :
     IOException(message, cause)

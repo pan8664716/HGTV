@@ -7,6 +7,25 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 错误处理 v1.1：统一事实、HTTP/Exo 映射与恢复边界
+
+状态：已实现第一轮 Android 适配，debug 构建通过，待用户真机验证。
+
+- 新增 `core/error/` 纯 JVM 错误模型、HTTP 映射和决策入口：错误事实与恢复动作分离，
+  `Retry-After` 归决策上下文，操作级预算区分网络请求、恢复步骤、解码重建和降档。
+- `ContentRepository.text()` 的非 2xx 响应改为 `ContentHttpException`，保留 HTTP 状态、
+  host、logid 和 `Retry-After`；成功/失败会更新 TNC host 健康度，连续失败主机短时降权。
+- 新增 `ExoFailureMapper`，按 ExoPlayer 2.19.1 精确常量映射 `1xxx` 至 `7xxx`；
+  2006/2007/2008 不再进入普通网络重试，3xxx 不进入解码降级。
+- 错误页按钮改为只对解码类开放：2xxx/3xxx 不再显示换软解/换档位，4001/4003 先重建，
+  4004/4005 才允许降档。
+- 手机播放页网络监听改为“断网转联网”的恢复边沿；断网事件不再触发重新取地址。
+- `DeviceHealer` 改为 10 分钟窗口内最多 2 次、单飞执行，并合并并发等待者。
+- `:app:assembleDebug` 通过；`:core:test` 仍被仓库既有 `COMIC/REAL/AI/NEW` 测试源码
+  编译错误阻断，本轮新增测试尚未执行。未改版本号、versionCode、依赖或发布元数据，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## SmartTube 式更新包缓存与安装入口
 
 状态：已实现，debug 构建通过，待用户真机验证。

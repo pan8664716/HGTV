@@ -94,25 +94,11 @@ object PlaybackFailures {
      *（电视端的 `PlaybackDiagnosticException.stage`），这里只处理能从异常本身判出来的。
      */
     fun stageOf(problem: Throwable?): String {
-        val code = (problem as? PlaybackException)?.errorCode
-        if (code == null) return when (problem) {
+        val playback = problem as? PlaybackException
+        if (playback != null) return ExoFailureMapper.stageOf(playback.errorCode)
+        return when (problem) {
             is java.io.IOException -> com.hgtv.star.core.PlaybackStage.IO
             is OutOfMemoryError -> com.hgtv.star.core.PlaybackStage.OOM
-            else -> com.hgtv.star.core.PlaybackStage.OTHER
-        }
-        return when (code) {
-            in 1000..1999 -> com.hgtv.star.core.PlaybackStage.SOURCE
-            in 2000..2999 -> com.hgtv.star.core.PlaybackStage.IO
-            in 3000..3999 -> com.hgtv.star.core.PlaybackStage.PARSE
-            PlaybackException.ERROR_CODE_DECODER_INIT_FAILED -> com.hgtv.star.core.PlaybackStage.DECODER_INIT
-            PlaybackException.ERROR_CODE_DECODER_QUERY_FAILED -> com.hgtv.star.core.PlaybackStage.DECODER_QUERY
-            PlaybackException.ERROR_CODE_DECODING_FAILED -> com.hgtv.star.core.PlaybackStage.DECODING
-            PlaybackException.ERROR_CODE_DECODING_FORMAT_EXCEEDS_CAPABILITIES ->
-                com.hgtv.star.core.PlaybackStage.DECODER_LIMITS
-            PlaybackException.ERROR_CODE_DECODING_FORMAT_UNSUPPORTED ->
-                com.hgtv.star.core.PlaybackStage.DECODER_UNSUPPORTED
-            // 4xxx 里还有厂商自己塞进来的码：统一归到「解码」，别丢进 other。
-            in 4000..4999 -> com.hgtv.star.core.PlaybackStage.DECODING
             else -> com.hgtv.star.core.PlaybackStage.OTHER
         }
     }
@@ -139,16 +125,11 @@ object PlaybackFailures {
     fun isRetryable(problem: Throwable?): Boolean {
         val code = (problem as? PlaybackException)?.errorCode
         if (code == null) return problem is java.io.IOException
-        return code in 2000..2999 ||
-            code == PlaybackException.ERROR_CODE_TIMEOUT ||
-            code in 5000..5999
+        return ExoFailureMapper.retryable(code)
     }
 
     /** 同上，只给错误码的入口（手机端已经拿到 `errorCode`，不必再包一层异常）。 */
-    fun isRetryableCode(code: Int): Boolean =
-        code in 2000..2999 ||
-            code == PlaybackException.ERROR_CODE_TIMEOUT ||
-            code in 5000..5999
+    fun isRetryableCode(code: Int): Boolean = ExoFailureMapper.retryable(code)
 
     // ---------------------------------------------------------------- 自愈判据
     //

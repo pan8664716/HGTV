@@ -531,13 +531,13 @@ fun TvMainActivity.playerFailure(problem: Throwable) {
     // 档位抬回去——那是「这台机器这一刻放不了」的既成结论，与 `SessionPlaybackPolicy`
     // 里「不倒退」的口径一致。
     val softTarget=FailurePresentation.softwareTarget(attr)
-    if(FailureCapability.SWITCH_SOFTWARE in caps) addButton(actions,"切换为软解") {
+    if(PlaybackFailureCapability.SWITCH_SOFTWARE in caps) addButton(actions,"切换为软解") {
         library.decoderMode=VideoDecoderMode.SOFTWARE
         playbackCoordinator.onManualDecoderChange(softTarget)
         applyDecoderMode(retryPosition,retryAutoplay)
     }
     val swapTarget=FailurePresentation.swapTarget(attr)
-    if(FailureCapability.CHANGE_QUALITY in caps) addButton(actions,"换到 ${swapTarget}P") {
+    if(PlaybackFailureCapability.CHANGE_QUALITY in caps) addButton(actions,"换到 ${swapTarget}P") {
         prepareFreshPlaybackRetry()
         // 同「立即重试」：这是用户主动发起的新一轮尝试，自动重试 / 画面重建的额度一起还。
         // 档位在还款之后才落进会话层——`onManualRetry` 不动 `effectiveMaxQuality`，

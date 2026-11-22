@@ -14,7 +14,7 @@ import com.google.android.exoplayer2.Player
 import com.hgtv.star.core.DegradationKind
 import com.hgtv.star.core.FailureAction
 import com.hgtv.star.core.FailureAttribution
-import com.hgtv.star.core.FailureCapability
+import com.hgtv.star.core.PlaybackFailureCapability
 import com.hgtv.star.core.FailureFacts
 import com.hgtv.star.core.FailurePresentation
 import com.hgtv.star.core.GiveUpReason
@@ -532,7 +532,7 @@ internal fun PhonePlayerActivity.showPlaybackError(
     ).apply { topMargin = dp(4) })
 
     val second = LinearLayout(this).apply { orientation = LinearLayout.HORIZONTAL }
-    if (FailureCapability.SWITCH_SOFTWARE in caps) {
+    if (PlaybackFailureCapability.SWITCH_SOFTWARE in caps) {
         second.addView(errorButton("切换为软解") {
             library?.decoderMode = VideoDecoderMode.SOFTWARE
             playbackCoordinator.onManualDecoderChange()
@@ -541,7 +541,7 @@ internal fun PhonePlayerActivity.showPlaybackError(
             rebuildSameQuality(at)
         }, LinearLayout.LayoutParams(0, dp(40), 1f))
     }
-    if (FailureCapability.CHANGE_QUALITY in caps) {
+    if (PlaybackFailureCapability.CHANGE_QUALITY in caps) {
         second.addView(errorButton("换到 ${swapTarget}P") {
             library?.maxQuality = PlaybackQuality.normalize(swapTarget)
             playbackCoordinator.onManualQualityChange()

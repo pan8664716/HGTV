@@ -2,6 +2,7 @@
 package com.hgtv.star.core
 
 import com.hgtv.star.core.session.CookieRecord
+import com.hgtv.star.core.error.HttpFailureMapper
 import okhttp3.OkHttpClient
 import okhttp3.Request
 import okhttp3.MediaType
@@ -260,8 +261,27 @@ class ContentRepository(
         val raw=RequestScope.execute(client.newCall(request.build())) { response ->
             httpCode=response.code
             observe?.invoke(response)
+            if (response.isSuccessful || (allowNotModified && response.code==304)) {
+                TncConfigStore.markHostSuccess(response.request.url.host)
+            } else if (response.code==408 || response.code==429 || response.code>=500) {
+                TncConfigStore.markHostFailure(response.request.url.host)
+            }
             if (!response.isSuccessful && !(allowNotModified && response.code==304)) {
-                throw IOException("内容请求失败（HTTP ${response.code}）")
+                val retryAfterMs=HttpFailureMapper.parseRetryAfter(
+                    response.header("Retry-After"),
+                    System.currentTimeMillis(),
+                )
+                val failure=HttpFailureMapper.fromResponse(
+                    response,
+                    operation=runCatching {
+                        okhttp3.HttpUrl.parse(signed?.url ?: url)?.encodedPath
+                    }.getOrNull() ?: "content",
+                )
+                throw ContentHttpException(
+                    failure,
+                    retryAfterMs,
+                    "内容请求失败（HTTP ${response.code}）",
+                )
             }
             val body = response.body ?: throw IOException("内容响应为空")
             if (body.contentLength() > 16*1024*1024) throw IOException("内容响应过大")
