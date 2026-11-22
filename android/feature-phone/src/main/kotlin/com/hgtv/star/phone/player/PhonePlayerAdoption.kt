@@ -158,13 +158,6 @@ private fun PhonePlayerActivity.finishAdoptFromSession(
     if (listenerPendingFullscreen) {
         root.post { enterPendingFullscreenForAdoption() }
     }
-    // 地址已过窗口期：这一路还在出帧，但下一个 Range 请求会 403。
-    // 原地换一条地址，位置 / Surface / 播放状态都不动（见 reopenCurrentEpisodeInPlace）。
-    if (PhoneSession.urlExpired()) {
-        reopenCurrentEpisodeInPlaceForAdoption(
-            runCatching { exo.currentPosition }.getOrDefault(0L),
-        )
-    }
     android.util.Log.i(
         "HGTV-PHONE",
         "adopt session series=$seriesId episode=${sessionIndex + 1}",

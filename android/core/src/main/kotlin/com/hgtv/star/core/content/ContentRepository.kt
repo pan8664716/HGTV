@@ -26,7 +26,6 @@ class ContentRepository(
     httpClient: OkHttpClient? = null,
     internal val clock: () -> Long = System::currentTimeMillis,
     internal val modelSpacing: Long = MODEL_SPACING_MS,
-    internal val modelCacheTtl: Long = MODEL_CACHE_MS
 ) : RecommendDataSource {
     private val httpRef=lazy(LazyThreadSafetyMode.SYNCHRONIZED) { httpClient ?: defaultHttpClient() }
     val http: OkHttpClient get() = httpRef.value
@@ -55,7 +54,6 @@ class ContentRepository(
     internal fun accountHost(): String = TncConfigStore.preferredHost("sinfonlinea")
     internal fun videoHost(): String = TncConfigStore.preferredHost("sinfonlineb")
     internal val ACCOUNT_PRECONNECT_DELAY_MS=AppConfig.Content.ACCOUNT_PRECONNECT_DELAY_MS
-    private val ACCOUNT_RETRIES = AppConfig.Content.ACCOUNT_RETRIES
     internal val BOOK_TYPE_WATCH = 2
     internal val VIDEO_SHELF_ADD_SHELF = 0
     internal val VIDEO_SHELF_DEL_SHELF = 1
@@ -133,13 +131,11 @@ class ContentRepository(
         deviceIdentity=from.deviceIdentity
         tvDeviceProfile=from.tvDeviceProfile
         registrationCookies=from.registrationCookies
-        deviceLevel=from.deviceLevel
     }
     @Volatile var registerProfile: Map<String,String> = emptyMap()
         set(value) { field=value.filterValues { it.isNotBlank() }; signer.updateDevice(primaryProfile()) }
     @Volatile var lastRegisterError: Throwable? = null
         internal set
-    val deviceRejected: Int get()=deviceRejectedCountValue
     @Volatile internal var registrationCookies: Map<String,String> = emptyMap()
         set(value) { field=LinkedHashMap(value) }
     private fun deviceProfile(): Map<String,String> = deviceProfileImpl()
@@ -177,9 +173,8 @@ class ContentRepository(
     internal val publisherMisses=linkedMapOf<String,Long>()
     internal val PUBLISHER_MISS_TTL_MS=AppConfig.Content.PUBLISHER_MISS_TTL_MS
     internal fun commentHosts(): List<String> = commentHostsImpl()
-    /** 官方播放模型默认使用 4 档；空响应时兼容升到 5 档。 */
-    @Volatile var deviceLevel: Int = 4
-        set(value) { field = value.coerceIn(4,5) }
+    /** 官方播放模型固定使用 4 档。 */
+    val deviceLevel: Int = DIRECT_DEVICE_LEVEL
 
     internal val CATEGORY_PAGE_SIZE=CATALOG_PAGE_SIZE
 
@@ -195,8 +190,6 @@ class ContentRepository(
     internal val CATEGORY_ATTEMPTS=AppConfig.Content.CATEGORY_ATTEMPTS
     internal val FIRST_PAGE_ATTEMPTS=AppConfig.Content.FIRST_PAGE_ATTEMPTS
     internal val RECOMMEND_ATTEMPTS=AppConfig.Content.RECOMMEND_ATTEMPTS
-    internal val SEARCH_BLANK_RETRIES=AppConfig.Content.SEARCH_BLANK_RETRIES
-    internal val SEARCH_BLANK_RETRY_DELAY_MS=AppConfig.Catalog.SEARCH_BLANK_RETRY_DELAY_MS
     internal val SEARCH_PAGE_SIZE=CATALOG_PAGE_SIZE
     internal val SEARCH_FEED_TAB=11
     internal val SEARCH_FEED_SCOPE=-1
@@ -225,7 +218,6 @@ class ContentRepository(
         url: String,
         signed: Signer.Request? = null,
         client: OkHttpClient = http,
-        allowDomainFailover: Boolean = true,
         allowNotModified: Boolean = false,
         storeRegionHeaders: Boolean = true,
         userAgentProfile: Map<String,String>? = null,
@@ -257,65 +249,52 @@ class ContentRepository(
                 })
             }
         }
-        var httpCode=0
-        val raw=RequestScope.execute(client.newCall(request.build())) { response ->
-            httpCode=response.code
-            observe?.invoke(response)
-            if (response.isSuccessful || (allowNotModified && response.code==304)) {
-                TncConfigStore.markHostSuccess(response.request.url.host)
-            } else if (response.code==408 || response.code==429 || response.code>=500) {
-                TncConfigStore.markHostFailure(response.request.url.host)
-            }
-            if (!response.isSuccessful && !(allowNotModified && response.code==304)) {
-                val retryAfterMs=HttpFailureMapper.parseRetryAfter(
-                    response.header("Retry-After"),
-                    System.currentTimeMillis(),
-                )
-                val failure=HttpFailureMapper.fromResponse(
-                    response,
-                    operation=runCatching {
-                        okhttp3.HttpUrl.parse(signed?.url ?: url)?.encodedPath
-                    }.getOrNull() ?: "content",
-                )
-                throw ContentHttpException(
-                    failure,
-                    retryAfterMs,
-                    "内容请求失败（HTTP ${response.code}）",
-                )
-            }
-            val body = response.body ?: throw IOException("内容响应为空")
-            if (body.contentLength() > 16*1024*1024) throw IOException("内容响应过大")
-            val input=body.byteStream(); val out=java.io.ByteArrayOutputStream(); val buffer=ByteArray(8192)
-            while(out.size()<=16*1024*1024) { val n=input.read(buffer); if(n<0) break; out.write(buffer,0,n) }; val bytes=out.toByteArray()
-            if(bytes.size > AppConfig.Content.MAX_RESPONSE_BYTES) throw IOException("内容响应过大")
-            String(bytes,Charsets.UTF_8)
-        }
-        if(raw.isBlank() && httpCode==200 && !allowNotModified) {
-            NetLog.warn("[API] empty-body host=${signed?.let { runCatching { okhttp3.HttpUrl.parse(it.url)?.host }.getOrNull() }.orEmpty()} path=${signed?.let { runCatching { okhttp3.HttpUrl.parse(it.url)?.encodedPath }.getOrNull() }.orEmpty()}")
-        }
-        if(raw.isBlank() && httpCode==200 && allowDomainFailover && signed!=null) {
-            val currentHost=runCatching { okhttp3.HttpUrl.parse(signed.url)?.host }.getOrNull().orEmpty()
-            val profile=userAgentProfile ?: primaryProfile()
-            val hosts=alternateApiHosts(currentHost)
-            for((index,host) in hosts.withIndex()) {
-                NetLog.retry("domain_failover",index+1,hosts.size,"HTTP 200 empty body from $currentHost")
-                val retry=resignForHost(signed,host,profile) ?: continue
-                val value=text(
-                    retry.url,
-                    retry,
-                    client=client,
-                    allowDomainFailover=false,
-                    storeRegionHeaders=storeRegionHeaders,
-                    userAgentProfile=profile,
-                )
-                if(value.isNotBlank()) {
-                    TncConfigStore.markHostSuccess(host)
-                    NetLog.emit("domain failover accepted host=$host")
-                    return value
+        val requestSnapshot=request.build()
+        val result=retryEmptyBodyOnce(
+            scope="content",
+            call={
+                RequestScope.execute(client.newCall(requestSnapshot)) { response ->
+                    observe?.invoke(response)
+                    if (response.isSuccessful || (allowNotModified && response.code==304)) {
+                        TncConfigStore.markHostSuccess(response.request.url.host)
+                    } else if (response.code==408 || response.code==429 || response.code>=500) {
+                        TncConfigStore.markHostFailure(response.request.url.host)
+                    }
+                    if (!response.isSuccessful && !(allowNotModified && response.code==304)) {
+                        val retryAfterMs=HttpFailureMapper.parseRetryAfter(
+                            response.header("Retry-After"),
+                            System.currentTimeMillis(),
+                        )
+                        val failure=HttpFailureMapper.fromResponse(
+                            response,
+                            operation=runCatching {
+                                okhttp3.HttpUrl.parse(signed?.url ?: url)?.encodedPath
+                            }.getOrNull() ?: "content",
+                        )
+                        throw ContentHttpException(
+                            failure,
+                            retryAfterMs,
+                            "内容请求失败（HTTP ${response.code}）",
+                        )
+                    }
+                    val body=response.body ?: return@execute response.code to ""
+                    if (body.contentLength() > 16*1024*1024) throw IOException("内容响应过大")
+                    val input=body.byteStream()
+                    val out=java.io.ByteArrayOutputStream()
+                    val buffer=ByteArray(8192)
+                    while(out.size()<=16*1024*1024) {
+                        val n=input.read(buffer)
+                        if(n<0) break
+                        out.write(buffer,0,n)
+                    }
+                    val bytes=out.toByteArray()
+                    if(bytes.size > AppConfig.Content.MAX_RESPONSE_BYTES) throw IOException("内容响应过大")
+                    response.code to String(bytes,Charsets.UTF_8)
                 }
-            }
-        }
-        return raw
+            },
+            empty={ it.first==200 && it.second.isBlank() },
+        )
+        return result.second
     }
 
     internal val PROTOCOL_VALUES = linkedMapOf(
@@ -381,16 +360,12 @@ class ContentRepository(
             },
             withSession = { it.withSession() },
             text = { url, request -> text(url, request) },
-            retries = ACCOUNT_RETRIES,
         )
     }
     internal fun accountJson(path: String, params: Map<String,String> = emptyMap(), body: ByteArray? = null): JSONObject {
         return accountTransport.json(path,params,body)
     }
 
-    internal fun retryBlank(attempts: Int = ACCOUNT_RETRIES, action: () -> JSONObject): JSONObject {
-        return accountTransport.retryBlank(attempts,action)
-    }
 
     fun authorWorks(
         author: String,
@@ -410,10 +385,6 @@ class ContentRepository(
     internal val ADDRESS_ATTEMPT_TIMEOUT_MS=REQUEST_TIMEOUT_MS
     internal val addressClients=linkedMapOf<Long,OkHttpClient>()
     companion object {
-        @Volatile var deviceHeal: ((ContentRepository, String) -> Boolean)? = null
-        @Volatile private var deviceRejectedCount: Int = 0
-        internal val deviceRejectedCountValue get()=deviceRejectedCount
-        internal fun incrementDeviceRejectedCount() { deviceRejectedCount++ }
         internal val modelGate=java.util.concurrent.Semaphore(1,true)
         internal val foregroundModelWaiters=java.util.concurrent.atomic.AtomicInteger(0)
         @Volatile internal var backgroundModelScope: RequestScope?=null
@@ -421,7 +392,6 @@ class ContentRepository(
         internal val modelLastAttemptAt=java.util.concurrent.atomic.AtomicLong(0L)
         internal val deviceRotateLock=Any()
         @Volatile internal var modelCacheGen: Int=0
-        internal const val MODEL_CACHE_MS=PlaybackCache.URL_FRESH_MS
         internal const val PLAYER_MODEL_PATH="/novel/player/video_model/v1/"
         /** 前台直连和推荐流的默认档位；批量兼容路径也默认从这里开始。 */
         internal const val DIRECT_DEVICE_LEVEL=4
@@ -437,7 +407,6 @@ class ContentRepository(
             "pv_player","compliance_status","need_personal_recommend","player_so_load",
             "is_android_pad_screen","rom_version","iid","device_id","klink_egdi",
         )
-        internal const val STREAM_CACHE_MS=PlaybackCache.URL_FRESH_MS
         internal const val STREAM_CACHE_LIMIT=AppConfig.Playback.STREAM_CACHE_LIMIT
         internal const val MAX_DANMAKU=AppConfig.Playback.MAX_DANMAKU
         internal const val HOT_COMMENT_SOURCE=601

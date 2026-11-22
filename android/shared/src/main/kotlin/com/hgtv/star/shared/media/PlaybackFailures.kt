@@ -166,22 +166,6 @@ object PlaybackFailures {
     }
 
     /**
-     * 服务端说「**这台设备没注册过**」（不是地址、不是网络、不是解码）。
-     *
-     * 两个来源，语义相同：
-     *
-     * * 搜索接口 `200 + 0 字节` → [com.hgtv.star.core.DeviceNotRegisteredException]；
-     * * 播放模型接口在 5 档仍空响应或回 `code=101000` 时，也包装成同一异常。
-     *
-     * 命中之后唯一的正确动作是**换一套身份重注册**（见 `DeviceHealer`），
-     * 重取地址 / 换清晰度 / 换软解都只是在同一个坏身份上打转。
-     */
-    fun deviceRejected(problem: Throwable?): Boolean = hasCause(problem) {
-        it is com.hgtv.star.core.DeviceNotRegisteredException ||
-            it.message.orEmpty().contains("101000")
-    }
-
-    /**
      * 自愈前把「连接层缓存」一起清掉：视频域名的解析结果 + 进程级连接池。
      *
      * 为什么不能只丢播放地址：地址是按集签发的，但 **host 常常没变**（同一部剧的相邻几集

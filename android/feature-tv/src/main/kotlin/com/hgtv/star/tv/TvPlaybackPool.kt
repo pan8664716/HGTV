@@ -10,6 +10,7 @@ import com.google.android.exoplayer2.util.MimeTypes
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
+import com.hgtv.star.core.throwIfV5
 import com.hgtv.star.core.VideoDecoderMode
 import com.hgtv.star.core.detail
 import com.hgtv.star.core.lruPut
@@ -229,7 +230,6 @@ internal fun TvMainActivity.takeTvPlaybackPooledSlot(
     if(slot.pageIndex!=index) return null
     if(!slot.sourcePrepared || slot.player.playerError!=null ||
         slot.preparedAt<=0L ||
-        android.os.SystemClock.elapsedRealtime()-slot.preparedAt>PlaybackCache.URL_FRESH_MS ||
         slot.decoderMode!=playbackDecoderMode ||
         slot.bufferProfile!=resolveTvBufferProfile()
     ) {
@@ -422,7 +422,7 @@ private fun TvMainActivity.prepareTvPoolSlot(
             // 不在池线程上提前做一次完整 prepare；真正 prepare 交给池播放器，
             // 否则 S905 这类低端设备会把相邻页预热拖到 2 秒以上。
             playbackSource.warm(episodeId,info) { it.warm() }
-        }.getOrNull()
+        }.onFailure { it.throwIfV5() }.getOrNull()
         if(remote==null) {
             main.post { tvPlaybackPool.jobs.remove(key) }
             return@submit

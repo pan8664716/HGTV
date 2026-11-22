@@ -6,6 +6,7 @@ import com.google.android.exoplayer2.source.ProgressiveMediaSource
 import com.google.android.exoplayer2.upstream.DataSource
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.prefetchModels
+import com.hgtv.star.core.throwIfV5
 import com.hgtv.star.shared.media.VideoDataSource
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
@@ -27,7 +28,6 @@ internal fun PhonePlayerActivity.startTicker() {
                 playbackCoordinator.onProgress(position, duration)
                 PhoneSession.markPosition(position)
                 // 还在播就刷新会话时间戳（见 PhoneSession.touch）：退回推荐页时才敢接手。
-                if (p.isPlaying) PhoneSession.touch()
                 if (!progressDragging) updateProgress(position, duration)
                 // 媒体面板的进度 / 状态跟着走：锁屏上那条进度不能停在进入播放页那一刻。
                 syncMediaSessionForProgress()
@@ -36,7 +36,7 @@ internal fun PhonePlayerActivity.startTicker() {
                 // 调试面板：与进度同一节拍刷新（关着时这一步只是一次布尔判断）。
                 syncDebugOverlayForListener()
                 // 起播稳定后尽早准备下一集，手动上滑与片尾自动连播共用这一份。
-                maybePrefetchNext(position, duration)
+                maybePrefetchNext(position)
                 enqueueNextIfReady()
                 if (playbackCoordinator.progressDue()) {
                     reportRecommendEvent(
@@ -97,10 +97,9 @@ internal fun PhonePlayerActivity.saveProgress(position: Long, duration: Long) {
  * 稳定播放 2 秒后开始取地址与首块，并把它挂进播放列表；片尾自动推进与手动上滑
  * 都复用这一项，因此不会重新 release 播放器。
  *
- * 地址只有 10 分钟有效期（见 [PlaybackCache.URL_FRESH_MS]），所以长视频只会在
- * 剩余时长小于安全窗口时开始预热，避免下一集真正播放时地址已经过期。
+ * 地址不按时间主动失效；预热结果真正播放失败时再由正常错误路径重取。
  */
-internal fun PhonePlayerActivity.maybePrefetchNext(position: Long, duration: Long) {
+internal fun PhonePlayerActivity.maybePrefetchNext(position: Long) {
     val d = detail ?: return
     val lib = library ?: return
     if (!lib.autoNext) return
@@ -110,8 +109,6 @@ internal fun PhonePlayerActivity.maybePrefetchNext(position: Long, duration: Lon
     if (PhoneSession.nextRemote != null) return
     if (player?.isPlaying != true) return
     if (position < PhonePlayerActivity.prefetchStartMs) return
-    val remaining = duration - position
-    if (remaining <= 0 || remaining > PlaybackCache.URL_FRESH_MS - PhonePlayerActivity.prefetchUrlReserveMs) return
     val now = System.currentTimeMillis()
     if (now < listenerPrefetchAt) return
     val nextId = d.episodes[nextIndex]
@@ -128,6 +125,7 @@ internal fun PhonePlayerActivity.maybePrefetchNext(position: Long, duration: Lon
             runCatching {
                 playbackSource.stream(nextId, maxQuality, d.playback, queue = modelQueue)
             }
+                .onFailure { it.throwIfV5() }
                 .getOrNull()
         }
         val prepared = if (info == null) null else withContext(Dispatchers.IO) {
@@ -148,6 +146,7 @@ internal fun PhonePlayerActivity.maybePrefetchNext(position: Long, duration: Lon
                 PhoneServices.repository(activity)
                     .prefetchModels(d.episodes.drop(nextIndex).take(12), d.playback)
             }
+                .onFailure { it.throwIfV5() }
         }
     }
 }

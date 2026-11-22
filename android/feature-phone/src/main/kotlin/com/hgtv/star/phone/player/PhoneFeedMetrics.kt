@@ -6,6 +6,7 @@ import com.hgtv.star.core.DetailCache
 import com.hgtv.star.core.PlaybackProfile
 import com.hgtv.star.core.prefetchDetails
 import com.hgtv.star.core.prefetchModels
+import com.hgtv.star.core.throwIfV5
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -75,11 +76,14 @@ internal fun PhoneFeedView.scheduleRecommendBatchModels(anchor: Int) {
             }
             if(missingDetails.isNotEmpty()) {
                 runCatching { repo.prefetchDetails(missingDetails) }
+                    .onFailure { it.throwIfV5() }
             }
             for (series in candidates) {
                 if (models.values.sumOf { it.size } >= target) break
                 val item = runCatching { DetailCache.load(series.id) }.getOrNull()
-                    ?: runCatching { repo.detail(series.id) }.getOrNull()
+                    ?: runCatching { repo.detail(series.id) }
+                        .onFailure { it.throwIfV5() }
+                        .getOrNull()
                     ?: continue
                 val first = item.episodes.firstOrNull() ?: continue
                 if (models.values.none { first in it }) {
@@ -89,6 +93,7 @@ internal fun PhoneFeedView.scheduleRecommendBatchModels(anchor: Int) {
             models.forEach { (playback, ids) ->
                 if (ids.isNotEmpty()) {
                     runCatching { repo.prefetchModels(ids.distinct(), playback) }
+                        .onFailure { it.throwIfV5() }
                 }
             }
         }

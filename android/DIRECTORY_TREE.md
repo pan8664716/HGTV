@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-22。文件总数为 588；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-22。文件总数为 586；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -42,10 +42,10 @@
 ```text
 android/
 ├── app/  (23 files, 12 directories)
-├── core/  (152 files, 20 directories)
+├── core/  (151 files, 20 directories)
 ├── feature-phone/  (143 files, 11 directories)
 ├── feature-tv/  (159 files, 18 directories)
-├── shared/  (114 files, 36 directories)
+├── shared/  (113 files, 36 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
 ```
@@ -268,17 +268,17 @@ android/
 | `ContentDanmakuFacade.kt` | 取一集的弹幕，也就是「原 App」播放时看到的同一份数据。 | fun ContentRepository.danmaku、fun ContentRepository.danmakuRawWindow |
 | `ContentDetailFacade.kt` | 剧集详情（简介 + 分集列表）：走 App 播放侧的详情接口；后台批量详情预热由推荐预加载服务承接。 | fun ContentRepository.detail、fun ContentRepository.related、fun ContentRepository.seriesSeasons、fun ContentRepository.prefetchDetails |
 | `ContentDeviceFacade.kt` | @param profile 这一次注册用的设备档案；默认 ContentRepository.registerProfile。 | fun ContentRepository.registerDevice、fun ContentRepository.deviceCookiesSnapshot、fun ContentRepository.primaryCookiesSnapshot、fun ContentRepository.restoreDeviceCookies、fun ContentRepository.refreshTncAsync |
-| `ContentDeviceState.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentDeviceState 主要包含 fun ContentRepository.clearDeviceIdentityImpl、fun ContentRepository.noteDeviceRejectedImpl、fun ContentRepository.deviceCookiesSnapshotImpl、fun ContentRepository.primaryCookiesSnapshotImpl。 | fun ContentRepository.clearDeviceIdentityImpl、fun ContentRepository.noteDeviceRejectedImpl、fun ContentRepository.deviceCookiesSnapshotImpl、fun ContentRepository.primaryCookiesSnapshotImpl、fun ContentRepository.restoreDeviceCookiesImpl |
-| `ContentDeviceStateFacade.kt` | 设备身份与播放档位门面；每集重置 3 档，空响应时依次兼容升到 4、5。 | fun ContentRepository.clearDeviceIdentity、fun ContentRepository.noteDeviceRejected、fun ContentRepository.beginEpisode、fun ContentRepository.escalateDeviceLevel |
+| `ContentDeviceState.kt` | 设备身份、Cookie 快照与恢复；不包含错误触发的身份自愈。 | fun ContentRepository.clearDeviceIdentityImpl、fun ContentRepository.deviceCookiesSnapshotImpl、fun ContentRepository.primaryCookiesSnapshotImpl、fun ContentRepository.restoreDeviceCookiesImpl |
+| `ContentDeviceStateFacade.kt` | 设备身份清理门面，供注册流程重置当前身份。 | fun ContentRepository.clearDeviceIdentity |
 | `ContentPlaybackFacade.kt` | 用一次官方批量接口预取一组播放模型。 | fun ContentRepository.prefetchModels |
 | `ContentPrimaryIdentity.kt` | 当前唯一的主身份快照。 | class ContentPrimaryIdentity、fun ContentRepository.primaryIdentity、fun ContentRepository.recommendationValues |
 | `ContentRelated.kt` | 取详情页「相关作品」与自动连播「系列剧」两栏的原始条目。 | fun ContentRepository.relatedRows、fun ContentRepository.sameSeriesRows |
 | `ContentRelationFacade.kt` | 内容仓库、模型、解析、请求编排与缓存。文件 ContentRelationFacade 主要包含 fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame。 | fun ContentRepository.heatValue、fun ContentRepository.sameAuthor、fun ContentRepository.authorUnknownOrSame |
-| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址、缓存与设备形态；播放模型默认 4 档，空响应升 5 档兼容。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile、DIRECT_DEVICE_LEVEL |
+| `ContentRepository.kt` | 内容接口总仓库，编排账号、目录、详情、搜索、推荐、播放地址与缓存；播放模型固定 4 档，200 空体由 text() 统一重试一次。 | fun defaultHttpClient、val CATALOG_FIRST_PAGE_SIZE、class ContentRepository、tvDeviceProfile、effectiveDeviceProfile、DIRECT_DEVICE_LEVEL |
 | `ContentSearchFacade.kt` | 搜索提示词（联想词）：App 搜索框用的那个接口。 | fun ContentRepository.suggestions、fun ContentRepository.webSuggestions、fun ContentRepository.hotSearches |
 | `ContentSearchResultsFacade.kt` | 只搜一种内容类型：联调探针仍可显式指定 tab_type。 | fun ContentRepository.search、fun ContentRepository.webSearch |
-| `ContentSigning.kt` | 同一套业务参数与设备参数，只换接口域名后重签。 | fun ContentRepository.resignForHost、fun ContentRepository.alternateApiHosts、fun ContentRepository.urlWithHost |
-| `ContentStreamFacade.kt` | 取一集的播放地址，并区分主动点集的直连参数与后台兼容路径。 | fun ContentRepository.stream、fun ContentRepository.forgetStream、fun ContentRepository.forgetStreamAllQualities、fun ContentRepository.rotateDeviceForRetry |
+| `ContentSigning.kt` | 把已有地址切换到指定接口域名，不再为 200 空体自动换域重签。 | fun ContentRepository.urlWithHost |
+| `ContentStreamFacade.kt` | 取一集的播放地址，并区分主动点集的直连参数与后台兼容路径；重试只作废播放缓存，不更换设备身份。 | fun ContentRepository.stream、fun ContentRepository.forgetStream、fun ContentRepository.forgetStreamAllQualities、fun ContentRepository.invalidatePlaybackCacheForRetry |
 | `ContentTextFacade.kt` | 出品方：把接口给的 copyright 归一成能直接显示的名字。 | fun ContentRepository.publisher、fun ContentRepository.tagsOf |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/crypto/`
@@ -305,7 +305,6 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `ContentDeviceLevel.kt` | 设备身份、设备等级与版本档案。文件 ContentDeviceLevel 主要包含 fun ContentRepository.beginEpisodeImpl、fun ContentRepository.escalateDeviceLevelImpl。 | fun ContentRepository.beginEpisodeImpl、fun ContentRepository.escalateDeviceLevelImpl |
 | `ContentIdentity.kt` | 设备身份、设备等级与版本档案。文件 ContentIdentity 主要包含 fun ContentRepository.primaryIdentityImpl、fun ContentRepository.primaryProfileImpl、fun ContentRepository.primaryCookieHeaderImpl、fun Signer.Request.withSessionImpl。 | fun ContentRepository.primaryIdentityImpl、fun ContentRepository.primaryProfileImpl、fun ContentRepository.primaryCookieHeaderImpl、fun Signer.Request.withSessionImpl、fun Signer.Request.withAccountSessionImpl |
 | `ContentProfiles.kt` | 设备身份、设备等级与版本档案；电视 profile 覆盖本机真实字段并保留身份字段。 | fun ContentRepository.deviceProfileImpl、fun ContentRepository.accountDeviceProfileImpl、fun ContentRepository.relatedHostsImpl、fun ContentRepository.commentHostsImpl |
 | `VendorConstants.kt` | 设备身份、设备等级与版本档案；提供电视统一手机兼容 profile。 | object VendorConstants、fun VendorConstants.tvProfile |
@@ -347,7 +346,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `ContentTransport.kt` | DNS、TLS、HTTP、网络计时与请求作用域；非 2xx 内容响应保留统一 `AppFailure` 事实。 | fun JSONArray.objects、fun JSONObject.str、fun JSONObject.flag、fun cleanUrl、fun defaultContentHttpClient、class CatalogHttpException、class ContentHttpException |
+| `ContentTransport.kt` | DNS、TLS、HTTP、网络计时与请求作用域；200 空体同请求重试一次，仍空抛 `v5签名已失败`。 | fun JSONArray.objects、fun JSONObject.str、fun JSONObject.flag、fun cleanUrl、fun defaultContentHttpClient、class CatalogHttpException、class ContentHttpException、class V5SignatureFailedException |
 | `HgtvDns.kt` | 带缓存的 DNS，替换 OkHttp 默认的「每次新建连接都问一遍系统」。 | object HgtvDns |
 | `HgtvTls.kt` | 全工程共用的 TLS 协商参数。 | object HgtvTls、class PrepareTlsSocketFactory |
 | `NetTiming.kt` | 一次请求的连接耗时分解（调试包专用，见 NetLog.timing）。 | class NetTiming |
@@ -373,7 +372,7 @@ android/
 | `CodecProbe.kt` | 一次性探针：把播放接口返回的 video_list 原样摊开，看每个清晰度到底提供哪些编码。 | fun reflect、fun main |
 | `KeyMap.kt` | 播放界面里可自定义的六个键。 | class PlayerKey、class PlayerKeyAction、class KeyMap |
 | `PlaybackAttemptLedger.kt` | 正式播放页**按集计**的全部重试额度与账本：一处持有、三个入口重置。 | class PlaybackAttemptLedger |
-| `PlaybackCache.kt` | 播放地址、索引和首块缓存，负责过期判定与本地复用。 | object PlaybackCache |
+| `PlaybackCache.kt` | 播放地址、索引和首块缓存；地址不按时间主动失效，真实请求失败时显式作废。 | object PlaybackCache |
 | `PlaybackComfort.kt` | 视频解码方式。 | class VideoDecoderMode、class VideoFrameMode、class VideoFit、fun VideoFrameMode.toFit、object SeekStep、class SleepTimer |
 | `PlaybackDegradation.kt` | 播放重试 / 降级的**全部决策**都收敛在这个文件里，纯逻辑、不碰 Android、可直接单测。 | class MediaKind、class DegradationKind、class PlaybackRetryPlan、class GiveUpReason、interface RetryDecision、class FailureAttribution |
 | `PlaybackFailurePolicy.kt` | 一次播放失败的**事实**：平台层负责从异常与现场里读出这些布尔量，决策层只认它们；错误页能力只对解码类开放。 | class FailureFacts、interface FailureAction、object PlaybackFailurePolicy、object FailurePresentation、class PlaybackFailureCapability |
@@ -383,7 +382,7 @@ android/
 | `PlaybackStage.kt` | 播放失败的**阶段常量与标题表**：电视与手机共用，覆盖超时、音频、DRM、帧处理和运行时错误。 | object PlaybackStage |
 | `PlaybackState.kt` | 一次播放所处的阶段。 | class PlaybackPhase、class PlaybackState、class MediaTrack、class PlaybackFailure |
 | `PrefetchPolicy.kt` | 播放地址、缓存、探测、降级与预取。文件 PrefetchPolicy 主要包含 object PrefetchPolicy。 | object PrefetchPolicy |
-| `PreparedSlot.kt` | One cancellable speculative result. Claim transfers ownership; stale completions close themselves. ttl 默认 2 分钟，**比 PlaybackCache.PREPARED_FRESH_MS（10 分钟）更严格**，这是有意的： 这个槽位装的是 Remot… | class PreparedSlot |
+| `PreparedSlot.kt` | 可取消的预热槽位，默认 2 分钟内存 TTL，仅用于控制资源占用。 | class PreparedSlot |
 | `Probe.kt` | 弹幕里的表情标签：名字 / 【名字】 / ［名字］，与 DanmakuEmoji 同一条规则。 | val tag、fun main |
 | `RemoteVideo.kt` | 播放地址已经失效（HTTP 403/404）。 | class StreamExpiredException、class VideoChangedException、class RemoteVideo |
 | `SeekStepPump.kt` | 快进 / 快退的**调度外框**：连按计数、合并窗、待落地目标与最终那一次 seek。 | class SeekStepPump |
@@ -464,7 +463,7 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `PlaybackModelService.kt` | 取一集的播放模型；前台走 `video_model/v1`，后台走 `multi_video_model/preload/v1`，空响应按 3→4→5 档兼容升级。 | fun ContentRepository.videoModelImpl、fun ContentRepository.modelQueryProfile |
+| `PlaybackModelService.kt` | 取一集的播放模型；前台走 `video_model/v1`，后台走 `multi_video_model/preload/v1`，固定 4 档，200 空体不再升级或设备自愈。 | fun ContentRepository.videoModelImpl、fun ContentRepository.modelQueryProfile |
 | `PlaybackParser.kt` | 官方 `video_model` 单集请求体、`multi_video_model/preload` 批量请求体、内联 / fallback 清晰度解析；同时兼容对象与数组形态的 `video_list`。 | object ContentPlaybackParser |
 | `StreamCacheService.kt` | 播放地址内存 / 落盘缓存与取流；先解析模型内联 `video_list`，缺失时才请求 `fallback_api`。 | class ContentRepositoryStreamCacheEntry |
 
@@ -985,12 +984,11 @@ android/
 
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
-| `AppRuntime.kt` | TV 与手机共用的进程级运行时。 | object AppRuntime |
+| `AppRuntime.kt` | TV 与手机共用的进程级运行时；只保留仓库与 TNC 网络监听，不安装设备自愈钩子。 | object AppRuntime |
 | `AppSessionStore.kt` | SessionState 的落盘实现。 | class AppSessionStore |
 | `ArtworkCache.kt` | 封面磁盘缓存：存的是**已经缩到卡片尺寸的 WebP**，不是原图。 | class ArtworkCache |
 | `ArtworkLoader.kt` | 封面加载器，负责请求调度、磁盘/内存缓存、解码、预取和低内存裁剪；换页时可保留后台预取，由前台绑定接管同一任务。 | class ArtworkLoader |
 | `ArtworkTiming.kt` | 封面加载的**计时统计**（只在 debug 包里用日志看，不参与界面逻辑）。 | class ArtworkTiming |
-| `DeviceHealer.kt` | 设备身份自愈：明确设备拒绝时单飞重注册，使用时间窗口预算并合并并发等待者。 | object DeviceHealer |
 | `DeviceRegistration.kt` | 设备注册的**唯一实现**：电视与手机共用；注册后的 TNC 刷新延后到播放首帧。 | object DeviceRegistration |
 | `FavoriteMonitor.kt` | Serial foreground checks; cancellation owns only calls made by this monitor. | class FavoriteMonitor |
 | `IdentityBinder.kt` | 把**本机身份与会话**灌进进程级仓库，并按实际设备形态选择电视统一设备档案。 | object IdentityBinder、fun Library.isTvDeviceForProfile |
@@ -1068,7 +1066,7 @@ android/
 | `DanmakuSpriteAtlas.kt` | 弹幕文字图集。 | class DanmakuSpriteAtlas |
 | `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；首批弹幕挂起等 onRenderedFirstFrame 才铺开（不用 STATE_READY，它在真机上会短暂假阳性），按首帧位置对齐，并可配置 5 秒兜底或严格等待首帧；聚合弹幕行距按放大后的计数高度算，多条并排不互相遮挡；隐藏时保持 Surface 存活，提交一帧全透明擦掉旧内容（不用 visibility 也不依赖 alpha，部分电视 ROM 上 alpha 不作用于独立图层），并通过 isSurfaceActive 告知宿主是否需要普通 View 兜底；TV 与手机竖屏追加 16dp 顶部呼吸位，手机横屏保持原位置；推荐流可把首行文字实际顶边锚定到顶部导航。 | class DanmakuView、fun beginTransition、val isSurfaceActive、val topGapDp、val topTextAnchorPx |
 | `MediaSessionHost.kt` | 前台媒体会话：让**遥控器 / 耳机线控 / 锁屏与系统媒体面板**上的播放键能找到本应用。 | class MediaSessionHost |
-| `PlaybackFailures.kt` | 一次播放失败的**归因**：精确 Exo 分类、媒体轨道、可降档位和自愈 cause 探测。 | object PlaybackFailures |
+| `PlaybackFailures.kt` | 一次播放失败的归因：精确 Exo 分类、媒体轨道、可降档位和正常地址错误探测；不包含设备身份自愈。 | object PlaybackFailures |
 | `ExoFailureMapper.kt` | ExoPlayer 2.19.1 错误常量到跨平台 canonical code、阶段和可重试性的精确映射。 | object ExoFailureMapper |
 | `PlaybackMetrics.kt` | 播放现场的「解码事实」：解码器名、初始化耗时、编码格式、丢帧、音频欠载；首帧同时写入统一启动追踪。 | class PlaybackMetrics |
 | `PlayerLetterboxMask.kt` | TV 使用的 FIT 黑边普通 View 兜底遮罩；同时提供不绘制内容的画面矩形计算，供手机弹幕 Surface 复用，支持实际内容框提供器、片源比例和画面缩放。 | class PlayerLetterboxMask、fun videoPictureBounds |

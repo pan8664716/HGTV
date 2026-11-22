@@ -33,8 +33,7 @@ internal class FeedPlayerSlot(
     var preparedAt: Long = 0L
 
     fun sourceFresh(): Boolean =
-        preparedAt > 0L &&
-            android.os.SystemClock.elapsedRealtime() - preparedAt <= PlaybackCache.URL_FRESH_MS
+        preparedAt > 0L
 }
 
 internal fun PhoneFeedView.feedPlayerPoolLimit(): Int {

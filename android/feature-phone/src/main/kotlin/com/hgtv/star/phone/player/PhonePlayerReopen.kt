@@ -11,7 +11,7 @@ import kotlinx.coroutines.withContext
 /**
  * 原地换一条地址：**不换集、不换 Surface、不回片头**。
  *
- * 用在「会话里这一路还活着、只是签名地址过期」这一种情况（见 PhoneSession.urlExpired）。
+ * 用在真实 Range 请求失败、需要换一条播放地址，但当前 Surface 与播放位置仍然有效的情况。
  * 早先它走的是 play(index, at)：那一条会 releasePlayer() 把播放器从 PlayerView 上摘下来、
  * 关掉旧地址、重新 prepare——摘 Surface 那一下就是用户看到的闪黑，
  * 而这一路的内容其实一秒都没断过。

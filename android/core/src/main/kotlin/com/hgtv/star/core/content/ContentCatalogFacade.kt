@@ -59,7 +59,10 @@ fun ContentRepository.homeFeed(): Map<RankBoard,CatalogPage> {
         val outcome=runCatching { future.get() }
             .getOrElse { failure -> Result.failure(failure.cause ?: failure) }
         outcome.onSuccess { page -> result[board]=page }
-            .onFailure { failure -> if(firstFailure==null) firstFailure=failure }
+            .onFailure { failure ->
+                failure.throwIfV5()
+                if(firstFailure==null) firstFailure=failure
+            }
     }
     if(result.values.none { it.items.isNotEmpty() }) {
         val failure=firstFailure

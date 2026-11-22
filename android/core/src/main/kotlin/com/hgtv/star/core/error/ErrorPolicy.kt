@@ -113,6 +113,7 @@ object ErrorPolicy {
             FailureCodes.API_COMMUNITY_UNAVAILABLE,
             FailureCodes.API_UNKNOWN,
             -> final("error_server")
+            FailureCodes.V5_SIGNATURE_FAILED -> final("v5_signature_failed")
 
             FailureCodes.AUTH_CODE_1,
             FailureCodes.AUTH_CODE_3,

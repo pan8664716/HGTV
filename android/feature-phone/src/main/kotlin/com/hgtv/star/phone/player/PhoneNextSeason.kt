@@ -300,10 +300,7 @@ internal fun PhonePlayerActivity.activateNextSeasonPool(target: Detail): Boolean
     val key = current.episodes.size
     val slot = playerAdjacentState.slots[key] ?: return false
     if (slot.detail?.series?.id != target.series.id || slot.episodeIndex != 0) return false
-    if (slot.preparedAt <= 0L ||
-        android.os.SystemClock.elapsedRealtime() - slot.preparedAt >
-        com.hgtv.star.core.PlaybackCache.URL_FRESH_MS
-    ) {
+    if (slot.preparedAt <= 0L) {
         releaseAdjacentSlot(key)
         return false
     }

@@ -18,7 +18,6 @@ internal class ContentAccountTransport(
     ) -> Signer.Request,
     private val withSession: (Signer.Request) -> Signer.Request,
     private val text: (String, Signer.Request) -> String,
-    private val retries: Int,
 ) {
     fun json(path: String, params: Map<String,String> = emptyMap(), body: ByteArray? = null): JSONObject {
         val values=if(body!=null) writeValues() else accountValues()
@@ -30,27 +29,9 @@ internal class ContentAccountTransport(
             primaryProfile(),
         )
         val raw=text(signed.url,withSession(signed))
-        if(raw.isBlank()) throw IOException("账号接口暂无响应（空响应体）")
         return JSONObject(raw)
     }
 
-    fun retryBlank(attempts: Int = retries, action: () -> JSONObject): JSONObject {
-        var last: Exception?=null
-        repeat(attempts) { attempt ->
-            try { return action() } catch(e: Exception) {
-                last=e
-                if(!e.message.orEmpty().contains("空响应体")) throw e
-                val delay=300L+attempt*250L
-                if(attempt<attempts-1) {
-                    NetLog.retry("account_blank",attempt+2,attempts,e.message.orEmpty(),delay)
-                } else {
-                    NetLog.error("[API] error scope=account_blank attempts=$attempts reason=${e.message.orEmpty().take(220)}")
-                }
-                Thread.sleep(delay)
-            }
-        }
-        throw last ?: IOException("账号接口暂无响应")
-    }
 }
 
 internal object ContentAccountRequests {

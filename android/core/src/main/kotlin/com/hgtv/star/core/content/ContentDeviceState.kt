@@ -9,12 +9,6 @@ internal fun ContentRepository.clearDeviceIdentityImpl() {
     appSearchAlive=null
 }
 
-/** 记一次「服务端不认这份身份」。身份为空时不计：那是真的还没注册，不是被拒。 */
-internal fun ContentRepository.noteDeviceRejectedImpl() {
-    if(deviceIdentity["device_id"].isNullOrBlank()) return
-    ContentRepository.incrementDeviceRejectedCount()
-}
-
 internal fun ContentRepository.deviceCookiesSnapshotImpl(): Map<String,String> =
     LinkedHashMap(registrationCookies)
 

@@ -69,7 +69,6 @@ internal fun PhoneFeedView.startProgressTicker() {
                         }
                     }
                     // 还在播就刷新会话时间戳：连看十几分钟后切页，地址仍然算「新鲜」。
-                    if (exo.isPlaying) PhoneSession.touch()
                     if (!feedPaused) maybePrefetchNextForClock(position, duration)
                 }
                 // 片尾兜底：`STATE_ENDED` 只在状态**变化**时回调一次。如果那一下刚好

@@ -2,6 +2,7 @@
 package com.hgtv.star.core.error
 
 import okhttp3.Response
+import com.hgtv.star.core.V5SignatureFailedException
 import java.io.IOException
 import java.net.ConnectException
 import java.net.NoRouteToHostException
@@ -88,18 +89,22 @@ object HttpFailureMapper {
         host: String? = null,
     ): AppFailure {
         val current = rootCause(problem)
-        val code = when (current) {
-            is UnknownHostException -> FailureCodes.NET_DNS
-            is SocketTimeoutException -> FailureCodes.NET_TIMEOUT
-            is ConnectException,
-            is NoRouteToHostException,
-            -> FailureCodes.NET_CONNECT
-            is javax.net.ssl.SSLException -> FailureCodes.NET_TLS
-            is IOException -> FailureCodes.NET_IO
+        val code = when {
+            current is V5SignatureFailedException -> FailureCodes.V5_SIGNATURE_FAILED
+            current is UnknownHostException -> FailureCodes.NET_DNS
+            current is SocketTimeoutException -> FailureCodes.NET_TIMEOUT
+            current is ConnectException || current is NoRouteToHostException ->
+                FailureCodes.NET_CONNECT
+            current is javax.net.ssl.SSLException -> FailureCodes.NET_TLS
+            current is IOException -> FailureCodes.NET_IO
             else -> FailureCodes.UNKNOWN
         }
         return AppFailure(
-            domain = if (code == FailureCodes.UNKNOWN) FailureDomain.UNKNOWN else FailureDomain.TRANSPORT,
+            domain = when (code) {
+                FailureCodes.V5_SIGNATURE_FAILED -> FailureDomain.API
+                FailureCodes.UNKNOWN -> FailureDomain.UNKNOWN
+                else -> FailureDomain.TRANSPORT
+            },
             canonicalCode = code,
             operation = operation,
             stage = "transport",

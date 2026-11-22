@@ -16,19 +16,18 @@ internal data class ContentRepositoryStreamCacheEntry(val info: StreamInfo,val a
     ): StreamInfo {
         require(id.matches(Regex("[0-9]{1,30}")))
         // 同一集在两条路上同时被要时（起播 + 预热）只真正取一次：后来的那条等在锁上，
-        // 前一条取回来之后它直接吃缓存。见 [ContentRepository.STREAM_CACHE_MS]。
+        // 前一条取回来之后它直接吃缓存。真实播放错误会显式作废。
         val level=requestDeviceLevel(direct)
         val cacheKey=cacheKeyOf(id,maxQuality,playback,level)
         val lock=synchronized(streamLocks) { streamLocks.getOrPut(cacheKey) { Any() } }
         synchronized(lock) {
             val hit=synchronized(streamCache) { streamCache[cacheKey] }
-            if(hit!=null && clock()-hit.at<ContentRepository.STREAM_CACHE_MS) return hit.info
+            if(hit!=null) return hit.info
             // 落盘缓存：冷却启动（进程被杀）、退出再进、同一集重播都走这一条。
             //
             // 取一次地址实测 500~1100ms（`net POST … wait=892ms` 是服务端），而这
-            // 500~1100ms 在「已经看过这一集」的所有场景里都是白付的：地址在有效期内
-            // 逐字节相同。这里只缓存 [PlaybackCache.URL_FRESH_MS] 内的那一份，
-            // 过期或 403 就重新取（见 `RemoteVideo.range` 与 [forgetStreamImpl]）。
+            // 500~1100ms 在「已经看过这一集」的所有场景里都是白付的。缓存不按时间失效，
+            // 403 / Range 异常时由 `RemoteVideo.range` 与 [forgetStreamImpl] 显式作废。
             PlaybackCache.loadUrl(cacheKey)?.let { cached ->
                 if(NetLog.timing) NetLog.log("stream cache hit id=${id.takeLast(6)} quality=${cached.info.quality} age=${(System.currentTimeMillis()-cached.at)/1000}s")
                 rememberStream(cacheKey,cached.info,clock())
@@ -81,7 +80,7 @@ internal data class ContentRepositoryStreamCacheEntry(val info: StreamInfo,val a
         synchronized(streamCache) { streamCache.remove(key) }
         PlaybackCache.invalidateUrl(key)
         // 「这条地址不认了」= 下一次取地址当成一次全新尝试，作废旧模型缓存。
-        rotateDeviceForRetryImpl()
+        invalidateModelCache()
     }
 
     internal fun ContentRepository.forgetStreamAllQualitiesImpl(id: String) {
@@ -89,10 +88,8 @@ internal data class ContentRepositoryStreamCacheEntry(val info: StreamInfo,val a
             streamCache.keys.filter { it.startsWith("$id:") }.forEach(streamCache::remove)
         }
         PlaybackCache.invalidateUrlById(id)
-        rotateDeviceForRetryImpl()
+        invalidateModelCache()
     }
-
-    internal fun ContentRepository.rotateDeviceForRetryImpl(): String = invalidateModelCache()
 
     /** 真正去取播放地址（[streamImpl] 的缓存之外那一半）。 */
     private fun ContentRepository.fetchStream(

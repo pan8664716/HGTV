@@ -17,8 +17,12 @@ import java.io.IOException
      */
     internal fun ContentRepository.accountProfileImpl(): AccountProfile? {
         if(!signedIn) throw SignInRequiredException()
-        val info=runCatching { accountJson("/reading/user/info/v1/") }.getOrNull()?.optJSONObject("data")
-        val basic=runCatching { accountJson("/reading/user/basic_info/get/v1/") }.getOrNull()?.optJSONObject("data")
+        val info=runCatching { accountJson("/reading/user/info/v1/") }
+            .onFailure { it.throwIfV5() }
+            .getOrNull()?.optJSONObject("data")
+        val basic=runCatching { accountJson("/reading/user/basic_info/get/v1/") }
+            .onFailure { it.throwIfV5() }
+            .getOrNull()?.optJSONObject("data")
         return AccountParser.profile(info,basic)
     }
 
@@ -59,17 +63,15 @@ import java.io.IOException
         if (!signedIn) throw SignInRequiredException()
         val safeOffset = offset.coerceAtLeast(0)
         val safeLimit = limit.coerceIn(1, MULTI_DETAIL_LIMIT)
-        val raw = retryBlank {
-            accountJson("/reading/bookapi/read_history/list/v", mapOf(
-                "book_type" to "2",
-                "offset" to safeOffset.toString(),
-                "limit" to safeLimit.toString(),
-                "query_soft_deleted" to "false",
-                "is_first_load" to (safeOffset == 0).toString(),
-                "last_min_read_timestamp_ms" to "0",
-                "full_field" to "false",
-            ))
-        }
+        val raw = accountJson("/reading/bookapi/read_history/list/v", mapOf(
+            "book_type" to "2",
+            "offset" to safeOffset.toString(),
+            "limit" to safeLimit.toString(),
+            "query_soft_deleted" to "false",
+            "is_first_load" to (safeOffset == 0).toString(),
+            "last_min_read_timestamp_ms" to "0",
+            "full_field" to "false",
+        ))
         val rows = AccountParser.history(raw)
         val data = raw.optJSONObject("data")
         val fetchedCount = data?.optJSONArray("data_list")?.length()
@@ -93,10 +95,9 @@ import java.io.IOException
         val parts=chunks.map { chunk ->
             accountPool.submit<Pair<List<String>, Result<Map<String,Series>>>> {
                 chunk to runCatching {
-                    retryBlank {
-                        accountJson("/reading/bookapi/multi-detail/v",
-                            mapOf("book_id" to chunk.joinToString(","),"book_type" to "2"))
-                    }.let(AccountParser::multiDetail)
+                    accountJson("/reading/bookapi/multi-detail/v",
+                        mapOf("book_id" to chunk.joinToString(","),"book_type" to "2"))
+                        .let(AccountParser::multiDetail)
                 }
             }
         }
@@ -105,7 +106,10 @@ import java.io.IOException
                 writeLog("历史元数据分片失败 size=? ${it.message}")
                 return@forEach
             }
-            part.onFailure { writeLog("历史元数据分片失败 size=${chunk.size} ${it.message}") }
+            part.onFailure {
+                it.throwIfV5()
+                writeLog("历史元数据分片失败 size=${chunk.size} ${it.message}")
+            }
             details.putAll(part.getOrDefault(emptyMap()))
         }
         val kept=rows.mapNotNull { row -> details[row.series.id]?.let { row.copy(series=totalOf(it,row.episodes)) } }
@@ -136,11 +140,11 @@ import java.io.IOException
      *
      * `action_type=3` 是「我点赞的」，`object_type_list=6,15,10` 是短剧相关的内容类型
      * （实测给 16 只回空；老的 `praise/user/record` 只覆盖送花那类，短剧点赞不在里面）。
-     * 这个接口会间歇性回空响应体，重发即可。
+     * 空响应由 [ContentRepository.text] 统一重试一次。
      */
     internal fun ContentRepository.accountLikesImpl(): List<AccountLike> {
         val params=mapOf("count" to "50","object_type_list" to "6,15,10","offset" to "0","action_type" to "3")
-        return AccountParser.likes(retryBlank { accountJson("/reading/ugc/action/mget/v",params) })
+        return AccountParser.likes(accountJson("/reading/ugc/action/mget/v",params))
     }
 
     /**
@@ -157,7 +161,9 @@ import java.io.IOException
             mapOf("offset" to "0","limit" to "20","is_online" to online.toString(),"session_id" to "","tab_type" to "13",
                 "subscribe_order_type" to "0","swipe_type" to "0","need_calendar_schema" to "false","subscribe_offset" to "0")))
         val online=page(true)
-        val offline=runCatching { page(false) }.getOrDefault(emptyList())
+        val offline=runCatching { page(false) }
+            .onFailure { it.throwIfV5() }
+            .getOrDefault(emptyList())
         return (online+offline).distinctBy { it.series.id }.sortedByDescending { it.updatedAt }
     }
     /**
@@ -192,7 +198,10 @@ import java.io.IOException
                 val code=reply.optInt("code",-1)
                 if(code!=0) detail="code=$code message=${reply.optString("message")}"
                 code==0
-            }.onFailure { detail="异常 ${it.message}" }.getOrDefault(false)
+            }.onFailure {
+                it.throwIfV5()
+                detail="异常 ${it.message}"
+            }.getOrDefault(false)
             if(ok) return true
             writeLog("预约写接口失败 attempt=${attempt+1} subscribe=$subscribe id=$seriesId $detail")
             // 101144 是风控的短时限流：退避要够长（实测几秒后才放行），别原地连发。
@@ -245,8 +254,7 @@ import java.io.IOException
             VIDEO_SHELF_ADD_SHELF,
             VIDEO_SHELF_DEL_SHELF,
         )
-        // 风控是**偶发**的（同一条请求重发两三次里总有一次过），因此这里自己重试：
-        // [retryBlank] 只管空响应体，101144 要单独再发。
+        // 风控是**偶发**的（同一条请求重发两三次里总有一次过），因此这里自己重试。
         repeat(ACCOUNT_WRITE_ATTEMPTS) { attempt ->
             var detail=""
             val ok=runCatching {
@@ -254,7 +262,10 @@ import java.io.IOException
                 val code=reply.optInt("code",-1)
                 if(code!=0) detail="code=$code message=${reply.optString("message")}"
                 code==0
-            }.onFailure { detail="异常 ${it.message}" }.getOrDefault(false)
+            }.onFailure {
+                it.throwIfV5()
+                detail="异常 ${it.message}"
+            }.getOrDefault(false)
             if(ok) return true
             writeLog("收藏写接口失败 attempt=${attempt+1} operate=$operate id=$seriesId $detail")
             if(attempt<ACCOUNT_WRITE_ATTEMPTS-1) {
@@ -294,7 +305,10 @@ import java.io.IOException
                 val code=reply.optInt("code",-1)
                 if(code!=0) detail="code=$code message=${reply.optString("message")}"
                 code==0
-            }.onFailure { detail="异常 ${it.message}" }.getOrDefault(false)
+            }.onFailure {
+                it.throwIfV5()
+                detail="异常 ${it.message}"
+            }.getOrDefault(false)
             if(ok) return true
             writeLog("进度写接口失败 attempt=${attempt+1} id=$seriesId $detail")
             if(attempt<ACCOUNT_WRITE_ATTEMPTS-1) {
@@ -329,7 +343,7 @@ import java.io.IOException
         val known=runCatching {
             historyRows().optJSONObject("data")?.optJSONArray("data_list")?.objects().orEmpty()
                 .associateBy { it.str("book_id").ifEmpty { it.str("book_id_str") } }
-        }.getOrDefault(emptyMap())
+        }.onFailure { it.throwIfV5() }.getOrDefault(emptyMap())
         var ok=true
         ids.chunked(HISTORY_DELETE_BATCH).forEach { chunk ->
             val body=ContentAccountRequests.deleteHistory(
@@ -348,6 +362,7 @@ import java.io.IOException
                 }
                 code==0 && failed==0
             }.onFailure {
+                it.throwIfV5()
                 NetLog.error("[API] error scope=history_delete size=${chunk.size} ${it.javaClass.simpleName}: ${it.message.orEmpty().take(180)}")
                 writeLog("历史删除写接口异常 size=${chunk.size} ${it.message}")
             }.getOrDefault(false)
@@ -374,17 +389,15 @@ import java.io.IOException
     internal fun ContentRepository.historyRows(): JSONObject {
         val merged=JSONArray()
         HISTORY_BOOK_TYPES.forEach { type ->
-            val raw=retryBlank {
-                accountJson("/reading/bookapi/read_history/list/v", mapOf(
-                    "book_type" to type.toString(),
-                    "offset" to "0",
-                    "limit" to "0",
-                    "query_soft_deleted" to "false",
-                    "is_first_load" to "true",
-                    "last_min_read_timestamp_ms" to "0",
-                    "full_field" to "false",
-                ))
-            }
+            val raw=accountJson("/reading/bookapi/read_history/list/v", mapOf(
+                "book_type" to type.toString(),
+                "offset" to "0",
+                "limit" to "0",
+                "query_soft_deleted" to "false",
+                "is_first_load" to "true",
+                "last_min_read_timestamp_ms" to "0",
+                "full_field" to "false",
+            ))
             raw.optJSONObject("data")?.optJSONArray("data_list")?.objects().orEmpty().forEach(merged::put)
         }
         return JSONObject().put("data",JSONObject().put("data_list",merged))
@@ -411,16 +424,21 @@ import java.io.IOException
         val known=extra.filter { it.matches(Regex("[0-9]{1,30}")) }
         repeat(HISTORY_CLEAR_ATTEMPTS) { attempt ->
             val cloud=runCatching { accountHistoryIdsImpl() }
-                .onFailure { writeLog("清空历史：读取云端列表失败 attempt=${attempt+1} ${it.message}") }
+                .onFailure {
+                    it.throwIfV5()
+                    writeLog("清空历史：读取云端列表失败 attempt=${attempt+1} ${it.message}")
+                }
                 .getOrElse { return@repeat }
             val ids=(cloud+known).distinct()
             if(ids.isNotEmpty() && !accountDeleteHistoriesImpl(ids)) {
                 writeLog("清空历史：删除批次未全部成功 attempt=${attempt+1} size=${ids.size}")
             }
-            val left=runCatching { accountHistoryIdsImpl() }.getOrElse {
-                writeLog("清空历史：回读校验失败 attempt=${attempt+1} ${it.message}")
-                return@repeat
-            }
+            val left=runCatching { accountHistoryIdsImpl() }
+                .onFailure { it.throwIfV5() }
+                .getOrElse {
+                    writeLog("清空历史：回读校验失败 attempt=${attempt+1} ${it.message}")
+                    return@repeat
+                }
             if(left.isEmpty()) return true
             writeLog("清空历史：回读仍有 ${left.size} 条 attempt=${attempt+1}")
             if(attempt<HISTORY_CLEAR_ATTEMPTS-1) {
@@ -443,6 +461,7 @@ import java.io.IOException
     ): AccountData {
         val errors=java.util.concurrent.ConcurrentHashMap<String,String>()
         fun <T> part(name: String, action: ()->T, fallback: T): T = try { action() } catch(e: Exception) {
+            e.throwIfV5()
             errors[name]=e.message.orEmpty().take(120); fallback
         }
         // 五个任务**并发**发出去：它们彼此独立，串行发要两三秒（每个请求都带签名，
@@ -463,7 +482,7 @@ import java.io.IOException
             part("预约",{accountReservesImpl()},emptyList())
         } else null
         fun <T> take(future: java.util.concurrent.Future<T>, fallback: T): T =
-            runCatching { future.get() }.getOrDefault(fallback)
+            runCatching { future.get() }.onFailure { it.throwIfV5() }.getOrDefault(fallback)
         return AccountData(
             profile?.let { take(it,null) },
             favorites?.let { take(it,emptyList()) }.orEmpty(),

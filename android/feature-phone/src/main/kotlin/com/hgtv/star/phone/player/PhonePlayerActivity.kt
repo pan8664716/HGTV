@@ -54,7 +54,6 @@ import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.phone.ui.topScrim
 import com.hgtv.star.shared.data.Library
-import com.hgtv.star.shared.data.DeviceHealer
 import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.feature.player.PlaybackCoordinator
@@ -89,11 +88,8 @@ open class PhonePlayerActivity : PhoneActivity() {
 
         private const val PREFETCH_START_MS = com.hgtv.star.core.AppConfig.Playback.PHONE_PREFETCH_START_MS
 
-        private const val PREFETCH_URL_RESERVE_MS = com.hgtv.star.core.AppConfig.Playback.PHONE_PREFETCH_URL_RESERVE_MS
-
         private const val PLAYER_MODEL_QUEUE_SIZE = com.hgtv.star.core.AppConfig.Playback.PHONE_MODEL_QUEUE_SIZE
         internal val prefetchStartMs get()=PREFETCH_START_MS
-        internal val prefetchUrlReserveMs get()=PREFETCH_URL_RESERVE_MS
         internal val playerModelQueueSize get()=PLAYER_MODEL_QUEUE_SIZE
 
         internal const val MODE_TRANSITION_MS = com.hgtv.star.core.AppConfig.Playback.MODE_TRANSITION_MS

@@ -204,16 +204,7 @@ fun TvMainActivity.playEpisode(
     // 把它接过来当预热结果，省掉一次取地址。注意队列里那一项是「播完自动推进」用的，
     // 这里要从头重放，所以仍然要重挂一次源，只是不再走网络。
     //
-    // **地址有年龄上限**（见 [com.hgtv.star.core.PlaybackCache.PREPARED_FRESH_MS]）：
-    // 队列项里装的是带时效的播放地址，而它可能在播放列表里躺了很久——用户在片尾暂停、
-    // 去倒了杯水回来再按「下一集」，或者干脆停在那一集上没动。超过 10 分钟就当作没有预热，
-    // 丢掉队列走「重新取地址」那条路（多花半秒，好过拿一条已作废的地址撞 403）。
-    //
-    // 不这么判的现场表现就是：播几集后按「下一集」，界面报
-    // 「地址过期：播放地址已失效（HTTP 403）」；退出播放页再进又好了（队列被清掉）。
-    val queueFresh=com.hgtv.star.core.PlaybackCache.isPreparedFresh(
-        queuedAt,android.os.SystemClock.elapsedRealtime())
-    val fromQueue=queuedEpisodeId==targetId && position==0L && !recovering && queueFresh
+    val fromQueue=queuedEpisodeId==targetId && position==0L && !recovering
     // [prepared] 是调用方**已经预热好**的一份（推荐页上下切换：详情与首集数据都在本地），
     // 所有权当场转移过来，走的是与「预取下一集」同一条无感切集路径。
     val prefetched=when {
@@ -451,9 +442,7 @@ fun TvMainActivity.playEpisode(
             // 注册还没落地时先补一次，免得取地址落到内置那份被拉黑的档案上。
             if(!library.deviceRegistered()) registerDeviceOnce()
             stage("register")
-            // 播放默认按 4 档请求；取地址层遇到空响应会升到 5 再试一次。
-            // 故障重来也保持同一档，避免缓存键和请求参数无意义地变化。
-            if(!recovering) repository.beginEpisode()
+            // 播放固定按 4 档请求，不再因空响应动态升档。
             stage("deviceLevel ${repository.deviceLevel}")
             // 预热命中这条路不取地址，域名只能从预热结果里读（见 [lastStreamHost]）。
             if(prefetched!=null) lastStreamHost=prefetched.host
@@ -502,7 +491,7 @@ fun TvMainActivity.playEpisode(
                     }
                 }
                 // 索引缓存键：**只跟「哪一集 + 实际档位」有关**，与播放地址无关。
-                // 地址 20 分钟换一次，索引只要文件没换就一直有效（见 [PlaybackCache]）。
+                // 地址不按时间主动失效；索引只要文件没换就一直有效（见 [PlaybackCache]）。
                 //
                 // 用**实际档位**而不是请求上限：CDN 在「只有兼容 1080」与「有 720」之间变动时，
                 // 请求上限没变、文件却换了。按上限做键的话，旧索引会撞上新文件，
@@ -528,7 +517,7 @@ fun TvMainActivity.playEpisode(
                 } catch(e: PlaybackPrepareException) {
                     throw e
                 } catch(e: StreamExpiredException) {
-                    // 落盘地址过期：这条要原样抛出去，让外面换成新地址重来一次
+                    // 服务端明确拒绝这条地址：原样抛出去，让外面换成新地址重来一次
                     // （见 [playerFailure] 里的 `streamExpiredOf`）。
                     throw e
                 } catch(e: VideoChangedException) {
@@ -1002,14 +991,6 @@ fun TvMainActivity.playEpisode(
         armFrameStallWatchdog(session)
         syncDanmakuClock()
     }, { problem ->
-        // 取地址被平台当成「没注册过的设备」（`101000` / 空响应）时先自愈一次：
-        // 丢掉旧身份重注册，成功之后按原来的位置重新起播。这条正是「升级后所有剧都放不了、
-        // 清缓存才好」的根因，用户不该为了看一集去清一次缓存。
-        if(deviceRejectionOf(problem) && healDeviceIdentity("播放被拒") {
-                // 用**这一次**请求的起点重来（不是上一轮的 `retryPosition`）：
-                // 自愈发生在取地址阶段，播放器还没起来，位置只能从入参拿。
-                playEpisode(episodeIndex,position.coerceAtLeast(0),autoplay,direct=directRequest)
-            }) return@work
         playerFailure(problem)
     })
 }

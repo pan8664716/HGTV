@@ -36,6 +36,7 @@ internal data class ContentRepositoryDanmakuPage(
         for(index in 0 until windows) {
             if(shouldStop()) break
             val page=runCatching { hotCommentWindow(vid,seriesId,durationMs,startMs,cursor) }
+                .onFailure { it.throwIfV5() }
                 .getOrNull() ?: break
             if(mergeDanmaku(collected,page.items)>0) {
                 onWindow(collected.values.sortedBy { it.offsetMs })
@@ -120,7 +121,6 @@ internal data class ContentRepositoryDanmakuPage(
                     signed.copy(headers=headers),
                     userAgentProfile=values,
                 )
-                if(raw.isBlank()) throw IOException("弹幕接口暂无响应")
                 val data=JSONObject(raw)
                 if(data.optInt("code",-1)!=0) throw IOException("弹幕接口暂不可用（${data.optInt("code")}）")
                 val payload=data.optJSONObject("data") ?: throw IOException("弹幕数据为空")
@@ -140,6 +140,7 @@ internal data class ContentRepositoryDanmakuPage(
                     nextStart=next,
                 )
             } catch(e: Exception) {
+                if(e is V5SignatureFailedException) throw e
                 failure=e as? IOException ?: IOException(e.message ?: "弹幕请求失败")
             }
         }

@@ -66,7 +66,6 @@ internal fun ContentRepository.prefetchRecommendDetailsImpl(ids: List<String>): 
                 storeRegionHeaders=true,
                 userAgentProfile=values,
             )
-            if(raw.isBlank()) throw IOException("推荐详情预热暂无响应")
             val root=JSONObject(raw)
             if(root.optInt("code",-1)!=0) {
                 throw IOException("推荐详情预热暂不可用（${root.optInt("code")}）")
@@ -82,6 +81,7 @@ internal fun ContentRepository.prefetchRecommendDetailsImpl(ids: List<String>): 
                 stored++
             }
         } catch(failure: IOException) {
+            if(failure is V5SignatureFailedException) throw failure
             lastFailure=failure
         }
     }

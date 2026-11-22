@@ -82,9 +82,6 @@ object PhoneSession {
     @Volatile var positionMs: Long = 0
         private set
 
-    /** 发布时刻（`elapsedRealtime`）：超过地址窗口期就不该再被接手。 */
-    @Volatile private var publishedAt: Long = 0
-
     // ---------------------------------------------------------------- 下一集预热
 
     /** 已经预热好的下一集（`RemoteVideo` 实例，含地址与首块）。 */
@@ -333,7 +330,6 @@ object PhoneSession {
         this.seriesId = detail.series.id
         this.owner = by
         if (!sameEpisode) this.positionMs = 0
-        this.publishedAt = SystemClock.elapsedRealtime()
         if (previous != null && previous !== remote && closePrevious) {
             // 延后关：旧 MediaSource 可能还在 release，立刻关会让它报「读取被中断」。
             main.postDelayed(
@@ -392,20 +388,6 @@ object PhoneSession {
         handoffUntil = 0
     }
 
-    /**
-     * 「这一路还在真的播」的心跳。
-     *
-     * [adoptable] 用 `publishedAt` 判地址是否过期（10 分钟），但那个时间戳只在**设媒体源**
-     * 时写一次。用户如果在一集里连看了 12 分钟再切页，地址明明还在正常工作，
-     * 判据却已经过期——于是切页时不敢接手，重新取地址、重新 prepare，用户看到的就是
-     * 「进播放页 / 退回推荐页时内容断了」。
-     *
-     * 因此：**只要还在播**就刷新时间戳（暂停时不刷，长时间暂停之后仍然按过期处理）。
-     */
-    fun touch() {
-        if (remote != null) publishedAt = SystemClock.elapsedRealtime()
-    }
-
     fun markPosition(positionMs: Long) {
         this.positionMs = positionMs.coerceAtLeast(0)
     }
@@ -425,21 +407,10 @@ object PhoneSession {
         return this.seriesId == seriesId
     }
 
-    /**
-     * 签名地址是否已经超出窗口期（[PlaybackCache.URL_FRESH_MS]，与 TV 同值）。
-     *
-     * 过期只影响**后续 Range 请求**：已经在缓冲里的那一段照常播。
-     * 因此处置是「原地换一条地址、位置不动」，不是「重新加载这一集」。
-     */
-    fun urlExpired(): Boolean {
-        if (publishedAt <= 0) return true
-        return SystemClock.elapsedRealtime() - publishedAt > PlaybackCache.URL_FRESH_MS
-    }
+    /** 这一份状态能不能**直接接手**（活着、同一部剧）。 */
+    fun adoptable(seriesId: String): Boolean = live(seriesId)
 
-    /** 这一份状态能不能**直接接手**（活着、同一部剧、地址还在窗口期内）。 */
-    fun adoptable(seriesId: String): Boolean = live(seriesId) && !urlExpired()
-
-    /** 清掉「下一集」的预热结果（换剧、退出、地址过期时调）。 */
+    /** 清掉「下一集」的预热结果（换剧、退出或真实播放失败时调）。 */
     fun clearNext(close: Boolean = true) {
         val previous = nextRemote
         nextRemote = null
@@ -456,8 +427,7 @@ object PhoneSession {
     }
 
     /**
-     * 记下预热好的下一集。地址窗口期（10 分钟）之外的一律丢掉：
-     * 片尾暂停十几分钟再继续时，挂着的那一份地址早就失效了。
+     * 记下预热好的下一集。真实播放错误时再显式清空并重取地址。
      */
     fun putNext(episodeId: String, remote: RemoteVideo) {
         clearNext()
@@ -477,10 +447,6 @@ object PhoneSession {
         if (nextEpisodeId != episodeId) return null
         if (nextAt <= 0) return null
         if (maxQuality > 0 && nextQuality > maxQuality) {
-            clearNext()
-            return null
-        }
-        if (SystemClock.elapsedRealtime() - nextAt > PlaybackCache.URL_FRESH_MS) {
             clearNext()
             return null
         }
@@ -506,7 +472,6 @@ object PhoneSession {
         remote = null
         quality = ""
         positionMs = 0
-        publishedAt = 0
         feedSurface = null
         feedVideoOffset = null
         feedVideoResize = null

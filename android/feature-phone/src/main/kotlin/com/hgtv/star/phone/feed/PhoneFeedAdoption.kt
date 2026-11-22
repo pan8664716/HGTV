@@ -11,8 +11,8 @@ internal fun PhoneFeedView.adoptPlayingImpl(
     // 会话属于另一条体裁流：这一路不是本页的，不能接。
     if (!feedSessionBelongsToThisFeed()) return false
     val series = feedItems.getOrNull(feedPlayingIndex) ?: return false
-    // 只看「这一路还活着」，不看地址新不新鲜：切页只换了 Surface，媒体源与解码器一直在跑，
-    // 接上去就能出帧。地址过期由 reopenAtCurrentPosition 在接上之后单独处理。
+    // 只看「这一路还活着」：切页只换了 Surface，媒体源与解码器一直在跑，接上去就能出帧。
+    // 只有真实 Range 失败时才由正常错误路径换地址。
     if (!PhoneSession.live(series.id)) return false
     val d = PhoneSession.detail ?: return false
     fun episodeIdOf(player: ExoPlayer?): String =
@@ -161,9 +161,6 @@ internal fun PhoneFeedView.adoptPlayingImpl(
         if (at > 0) exo.seekTo(at)
     }
     startProgressTicker()
-    // 地址已经过了窗口期：这一路还能继续出帧，但下一个 Range 请求会 403。
-    // 原地换一条地址，位置与 Surface 都不动（见 reopenAtCurrentPosition）。
-    if (PhoneSession.urlExpired()) reopenAtCurrentPositionForResume(feedPlayingIndex)
     // 接上之后兜一次「在走」：Surface 换宿主之后偶尔会停在 READY + playWhenReady 却不推进。
     // 只补一次播放状态，不重设媒体源、不 seek。
     feedList.postDelayed({ keepLivePlaybackImpl() }, 1_500L)

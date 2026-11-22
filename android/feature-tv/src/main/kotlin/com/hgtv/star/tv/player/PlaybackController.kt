@@ -6,6 +6,7 @@ package com.hgtv.star.tv
 import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.shared.compat.hasInternet
 import com.hgtv.star.shared.compat.isMeteredConnection
+import com.hgtv.star.core.throwIfV5
 
 import android.app.Activity
 import android.view.*
@@ -275,9 +276,7 @@ fun TvMainActivity.enqueuePreparedNext() {
     val quality=playbackMaxQuality
     val key=preparedKeyFor(id)
     // **先读时刻、再取走**：`take` 会清空槽位，之后读不到 readyAt。
-    // `queuedAt` 记的是「地址是什么时候取的」，不是「什么时候挂进队列」——
-    // 两者最多差 2 分钟（预取完成到入队之间可能隔着一次暂停），按入队时刻算会让
-    // 10 分钟的窗口实际变成 12 分钟（见 `PreparedSlot.readyAtOf`）。
+    // 该时刻只用于诊断与 LRU，不再参与地址失效判断。
     val fetchedAt=preparedNext.readyAtOf(key)
     val remote=preparedNext.take(key) ?: return
     val http=prefetchHttp.also { prefetchHttp=null }
@@ -303,22 +302,10 @@ fun TvMainActivity.enqueuePreparedNext() {
 /**
  * tick 里的兜底：预热结果落地时那一次 post 可能被别的重建吞掉，这里再补一次。
  *
- * 同时负责**把躺太久的队列项换掉**：队列项里装的是带时效的播放地址，用户可能在片尾
- * 暂停十几分钟再继续，那时 ExoPlayer 会在片尾直接推进到这一项，根本不经过
- * `playEpisode` 的年龄校验（见 [com.hgtv.star.core.PlaybackCache.PREPARED_FRESH_MS]）。
- * 这里提前把它摘掉，下一次 tick 会按新地址重新预热 / 重新挂队列。
+ * 队列项不按时间主动失效；真实播放错误时由正常失败路径摘除并重取地址。
  */
 fun TvMainActivity.maybeQueueNext() {
-    val now=android.os.SystemClock.elapsedRealtime()
-    if(queuedEpisodeId!=null) {
-        if(com.hgtv.star.core.PlaybackCache.isPreparedFresh(queuedAt,now)) return
-        // 地址已经躺过期：摘掉（连同播放列表里那一项），让下面重新走一次预热。
-        //
-        // **不动 `preparedNext`**：它有自己的 2 分钟 TTL，如果刚刚落地一份新的，
-        // 下面 `isFresh` 会立刻把它挂上队列；清掉它等于白扔一次已经付过网络的预热。
-        android.util.Log.i("HGTV","Queued episode url too old; dropping id=$queuedEpisodeId age=${(now-queuedAt)/1000}s")
-        dropQueuedEpisode()
-    }
+    if(queuedEpisodeId!=null) return
     val data=detail ?: return
     val seasonBoundary=episodeIndex==data.episodes.lastIndex
     val nextId=if(seasonBoundary) {
@@ -579,7 +566,10 @@ fun TvMainActivity.maybePrefetch() {
                 // ExoPlayer 越有时间在后台把下一集的 period prepare 好（片尾推进时就不用等）。
                 main.post { if(!isDestroyed) enqueuePreparedNext() }
             }
-        } catch(_: Exception) { remote?.close() }
+        } catch(failure: Exception) {
+            remote?.close()
+            failure.throwIfV5()
+        }
     }
 }
 

@@ -419,7 +419,7 @@ fun TvMainActivity.applyAccount() {
  *
  * ## 为什么 `device_level` 不在这里给了
  *
- * `device_level` 默认 4，5 只在空响应时由取地址层升上去（见 `ContentRepository.deviceLevel`）。
+ * `device_level` 固定为 4，不再因空响应动态升档（见 `ContentRepository.deviceLevel`）。
  * 它与本机解码能力**无关**——
  * 两档下发的都是 HEVC，能不能播由硬解决定，而不是由档位决定。
  * 1/2/3 档的低清晰度是 `bytevc2`，Android 没有解码器，因此不参与播放请求。
@@ -538,11 +538,8 @@ fun TvMainActivity.registerDeviceOnce(force: Boolean = false, regenerate: Boolea
  * 1.2.3 换了注册线路与上报参数，旧身份在内容接口上会被当成陌生设备：搜索回 `200 + 0 字节`、
  * 播放回 `101000`；而「设置 → 清空缓存」能修好，正是因为它把这些数字删了重新注册。
  *
- * 与 [healDeviceIdentity] 的分工：
- *
- * * 这一条是**预防**：启动时发现身份比当前版本旧，就悄悄换一套；换新成功才替换，
- *   失败（网络 / 服务端拒绝）就继续用旧的那一对——不能因为一次注册失败让用户连首页都看不了。
- * * 那一条是**补救**：真被服务端拒了才丢身份重注册，并自动重试原来的请求。
+ * 启动时发现身份比当前版本旧，就悄悄换一套；换新成功才替换，
+ * 失败（网络 / 服务端拒绝）就继续用旧的那一对——不能因为一次注册失败让用户连首页都看不了。
  */
 fun TvMainActivity.refreshRegistrationIdentity() {
     if(deviceRegistering) return
@@ -574,67 +571,6 @@ fun TvMainActivity.refreshRegistrationIdentity() {
         }
     }
 }
-
-/**
- * 设备身份自愈：服务端把本机这份 `device_id` / `iid` 当成「没注册过」时，丢掉它重注册一台。
- *
- * ## 为什么需要这一步
- *
- * 升级到 1.2.3 后有一批老用户「搜索搜不出、播放放不了」，去「设置 → 清空缓存」就好了。
- * 清缓存做的事是**删掉本机身份重新注册**，所以症状等于：旧的注册结果还在，
- * 但平台已经不认它了。
- *
- * 不认的原因是注册身份与设备档案必须自洽——平台按 `cdid` / `openudid` 认设备，
- * 而 1.2.3 把这两项从「随机值」改成了「由系统标识符派生」（见 `StableDeviceIds`）。
- * 老用户盘上留着旧随机档案 + 旧 `device_id`，升级后档案按新规则重建，
- * 注册结果却还是旧的那一份；两者对不上，平台一律按陌生设备处理：
- * App 搜索回 `200 + 0 字节`、播放回 `101000 服务异常`。
- *
- * 而代码只判「本机有没有 `registered-device-id`」——有，就不再注册。于是这条状态会一直卡住，
- * 只有清缓存能出来。
- *
- * ## 判据与节流
- *
- * 判据是 [ContentRepository.deviceRejected]（服务端明确不认这份身份的次数），不是异常文案。
- * 预算（一次进程最多 2 次、两次之间至少隔 20 秒）、线程切换与注册本身全部在
- * [com.hgtv.star.shared.data.DeviceHealer] 里——**手机端走的是同一份**，
- * 这一层只负责电视侧的收尾。
- *
- * [retry] 在重建成功之后跑在主线程上——调用方（搜索页 / 播放页）把「重取这一页」交给它，
- * 用户看到的是一次自动恢复，而不是一个错误页。
- *
- * @return true 表示已经接手（调用方应当**直接返回**，不要再显示错误界面）。
- */
-fun TvMainActivity.healDeviceIdentity(reason: String,retry: ()->Unit): Boolean {
-    val taken=com.hgtv.star.shared.data.DeviceHealer.healAsync(library,repository,reason) { healed ->
-        if(isDestroyed) return@healAsync
-        if(!healed) {
-            // 重建失败（网络 / 服务端拒绝 / 预算用尽）：把原因留在面板上，错误页照常显示。
-            noteDebugProblem("设备身份重建失败 · ${Diagnostics.chainOf(repository.lastRegisterError)}")
-            return@healAsync
-        }
-        DebugEnv.invalidate()
-        retry()
-    }
-    // 面板上先留一句「正在重建」：注册是一次真实请求，慢的时候用户要能看到有动作。
-    if(taken) noteDebugProblem("设备身份被拒 · 正在自动重新注册")
-    return taken
-}
-
-/**
- * 这个失败是不是「服务端不认这台设备」。
- *
- * 判断本体在 `:shared` 的 [com.hgtv.star.shared.media.PlaybackFailures.deviceRejected]
- * ——手机端播放失败用的就是它。这里只是电视侧的别名，避免调用点都去写全限定名。
- *
- * 判据只有两条（接口明确的语义，不看中文文案的措辞）：
- *
- * * 搜索和播放最终都会抛 [DeviceNotRegisteredException]；
- * * 播放空响应先由取地址层升到 5 档重试，5 档仍为空才进入设备身份自愈。
- * * 明确的 `101000` 也按同一路径处理。
- */
-fun deviceRejectionOf(problem: Throwable?): Boolean =
-    com.hgtv.star.shared.media.PlaybackFailures.deviceRejected(problem)
 
 /**
  * 手机号登录的「注册设备」这一步：拿一份设备档案，匿名注册一台设备并把结果交给调用方。

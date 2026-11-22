@@ -58,11 +58,9 @@ import java.io.IOException
         val raw=text(
             signed.url,
             signed,
-            allowDomainFailover=true,
             storeRegionHeaders=true,
             userAgentProfile=identity.profile,
         )
-        if(raw.isBlank()) throw IOException("${board.label}接口暂无响应")
         val root=JSONObject(raw)
         if(root.optString("message").isNotBlank() &&
             !root.optString("message").equals("SUCCESS",ignoreCase=true)) {
@@ -309,25 +307,14 @@ import java.io.IOException
                         text
                     }
                 }
-                var raw=send(signed,identity.profile)
-                if(raw.isBlank()) {
-                    val currentHost=runCatching { okhttp3.HttpUrl.parse(signed.url)?.host }.getOrNull().orEmpty()
-                    val hosts=alternateApiHosts(currentHost)
-                    for((index,host) in hosts.withIndex()) {
-                        NetLog.retry("category_domain",index+1,hosts.size,"HTTP 200 empty body from $currentHost")
-                        val retry=resignForHost(signed,host,identity.profile) ?: continue
-                        raw=send(retry,identity.profile)
-                        if(raw.isNotBlank()) {
-                            TncConfigStore.markHostSuccess(host)
-                            NetLog.emit("category domain failover accepted host=$host")
-                            break
-                        }
-                    }
-                }
-                if(raw.isNotBlank()) return raw
-                problem=IOException("分类接口暂无响应")
+                return retryEmptyBodyOnce(
+                    scope="category",
+                    call={ send(signed,identity.profile) },
+                    empty={ it.isBlank() },
+                )
             } catch(failure: IOException) {
-                // 只重发「可能自己好」的那两类：空响应体（上面那个分支）与 5xx / 429。
+                if(failure is V5SignatureFailedException) throw failure
+                // 只重发可能自己好的 5xx / 429。
                 // 取消、明确的 4xx、以及连接层的硬错误（超时 / 断网）立刻抛出——
                 // 重发只是把同一次失败重复 8 遍，界面白等 4 秒还是一样的结果。
                 if(Thread.currentThread().isInterrupted || failure.message=="请求已取消") throw failure

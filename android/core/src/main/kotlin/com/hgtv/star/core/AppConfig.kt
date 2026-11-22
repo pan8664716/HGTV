@@ -172,9 +172,6 @@ object AppConfig {
         /** 搜索关键词最大长度，手机和电视共用。 */
         const val WEB_SEARCH_QUERY_MAX = 30
 
-        /** App 搜索返回空正文时的短重试间隔。 */
-        const val SEARCH_BLANK_RETRY_DELAY_MS = 160L
-
         /** 首页 / 分类快照的最长使用时间。 */
         const val SNAPSHOT_MAX_AGE_MS = 7L * 24L * 60L * 60L * 1_000L
 
@@ -205,8 +202,6 @@ object AppConfig {
         const val ACCOUNT_PRECONNECT_DELAY_MS = 2_000L
 
         /** 账号读请求失败后的重试次数。 */
-        const val ACCOUNT_RETRIES = 4
-
         /** 账号写请求失败后的重试次数。 */
         const val ACCOUNT_WRITE_ATTEMPTS = 4
 
@@ -285,9 +280,6 @@ object AppConfig {
         /** 推荐接口最多尝试次数。 */
         const val RECOMMEND_ATTEMPTS = 3
 
-        /** App 搜索空正文重试次数。 */
-        const val SEARCH_BLANK_RETRIES = 1
-
         /** 搜索游标缓存最多保留多少个查询上下文。 */
         const val SEARCH_CURSOR_LIMIT = 100
 
@@ -359,14 +351,6 @@ object AppConfig {
         /** 电视端上行短信服务轮询间隔。 */
         const val UPSMS_SERVER_POLL_MS = 3_000L
 
-        /** 一次进程最多触发几次设备身份自愈。 */
-        const val DEVICE_HEAL_LIMIT = 2
-
-        /** 两次设备身份自愈之间的最小间隔。 */
-        const val DEVICE_HEAL_GAP_MS = 20_000L
-
-        /** 设备身份自愈的滑动时间窗口；窗口内最多 [DEVICE_HEAL_LIMIT] 次。 */
-        const val DEVICE_HEAL_WINDOW_MS = 10L * 60L * 1_000L
     }
 
     /**
@@ -580,12 +564,6 @@ object AppConfig {
      * 播放地址、缓存、预取、看门狗和进度保存参数。
      */
     object Playback {
-        /** 播放地址统一有效期；内存、磁盘和预热结果共用。 */
-        const val URL_FRESH_MS = 10L * 60L * 1_000L
-
-        /** 已准备播放结果的有效期，必须与地址有效期一致。 */
-        const val PREPARED_FRESH_MS = URL_FRESH_MS
-
         /** 视频索引缓存兜底寿命。 */
         const val INDEX_TTL_MS = 7L * 24L * 60L * 60L * 1_000L
 
@@ -701,9 +679,6 @@ object AppConfig {
 
         /** 手机播放器首帧后多久开始预取相邻集。 */
         const val PHONE_PREFETCH_START_MS = 2_000L
-
-        /** 手机预取地址时给播放器预留的有效期。 */
-        const val PHONE_PREFETCH_URL_RESERVE_MS = 30_000L
 
         /** 手机播放模型队列长度。 */
         const val PHONE_MODEL_QUEUE_SIZE = 14

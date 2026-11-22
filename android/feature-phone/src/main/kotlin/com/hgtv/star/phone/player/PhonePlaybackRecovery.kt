@@ -25,12 +25,11 @@ import com.hgtv.star.core.RecommendBehavior
 import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackRetryPlan
 import com.hgtv.star.core.VideoDecoderMode
-import com.hgtv.star.core.rotateDeviceForRetry
+import com.hgtv.star.core.invalidatePlaybackCacheForRetry
 import com.hgtv.star.phone.ui.PhoneStyle
 import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
-import com.hgtv.star.shared.data.DeviceHealer
 import com.hgtv.star.shared.data.PlaybackCapability
 import com.hgtv.star.shared.media.PlaybackFailures
 import kotlinx.coroutines.delay
@@ -120,27 +119,6 @@ internal fun PhonePlayerActivity.handlePlayerFailure(error: PlaybackException) {
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
             PlaybackCapability.warmHardwareHevc(this@handlePlayerFailure)
         }
-    }
-
-    // 服务端说「这台设备没注册过」（`101000`）：**先换一套身份重注册，再重取地址**。
-    //
-    // 手机端原先完全没有这一层：同一台机器在电视上会自己恢复，手机上只能报错让用户
-    // 退出重进（重进也没用——身份还是那一份）。判定、预算、线程与注册全在 `:shared` 的
-    // `DeviceHealer`，与电视端 `healDeviceIdentity` 同一份；这里只写「成功之后做什么」。
-    //
-    // 成功之后必须重新 `play()`：模型缓存已随身份变化作废，重取回来的才是新身份的那一条。
-    if (PlaybackFailures.deviceRejected(error)) {
-        val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
-        val taken = DeviceHealer.healAsync(library, PhoneServices.repository(this), "播放被拒") { healed ->
-            if (healed) {
-                clearPlaybackError()
-                play(index, at)
-            } else {
-                // 换不成（预算用尽 / 注册失败）：回到正常决策，让错误页说明情况。
-                decideAndRun(error, attr)
-            }
-        }
-        if (taken) return
     }
 
     decideAndRun(error, attr)
@@ -357,7 +335,7 @@ private fun PhonePlayerActivity.prepareFreshRetrySource() {
     if (episodeId != null) {
         playbackSource.invalidate(episodeId, staleInfo)
     } else {
-        runCatching { PhoneServices.repository(this).rotateDeviceForRetry() }
+        runCatching { PhoneServices.repository(this).invalidatePlaybackCacheForRetry() }
     }
     resetSourceRetryForFreshAttempt()
 }

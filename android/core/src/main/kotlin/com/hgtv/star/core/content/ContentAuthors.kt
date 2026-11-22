@@ -35,7 +35,6 @@ internal fun ContentRepository.authorsOfImpl(ids: List<String>): Map<String,Stri
             values.putAll(mapOf("book_id" to chunk.joinToString(","),"book_type" to "2"))
             val signed=signer.sign("https://${accountHost()}/reading/bookapi/multi-detail/v",values)
             val raw=text(signed.url,signed.withSession())
-            if(raw.isBlank()) return@runCatching
             val rows=JSONObject(raw).optJSONArray("data") ?: return@runCatching
             for(index in 0 until rows.length()) {
                 val row=rows.optJSONObject(index) ?: continue
@@ -51,7 +50,7 @@ internal fun ContentRepository.authorsOfImpl(ids: List<String>): Map<String,Stri
                     }
                 }
             }
-        }
+        }.onFailure { if(it is V5SignatureFailedException) throw it }
     }
     return result
 }

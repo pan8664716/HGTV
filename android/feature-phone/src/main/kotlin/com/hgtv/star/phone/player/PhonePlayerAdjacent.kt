@@ -464,9 +464,7 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
     val d = detail ?: return false
     if (target !in d.episodes.indices || abs(target - index) != 1) return false
     val slot = playerAdjacentState.slots.remove(target) ?: return false
-    if (slot.preparedAt <= 0L ||
-        SystemClock.elapsedRealtime() - slot.preparedAt > PlaybackCache.URL_FRESH_MS
-    ) {
+    if (slot.preparedAt <= 0L) {
         playerAdjacentState.slots[target] = slot
         releaseAdjacentSlot(target)
         return false

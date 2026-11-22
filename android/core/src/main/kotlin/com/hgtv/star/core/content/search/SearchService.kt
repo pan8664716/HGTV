@@ -18,8 +18,7 @@ import java.io.IOException
         if(clean.isEmpty()) return emptyList()
         val wanted=count.coerceIn(1,AppConfig.Content.SUGGESTION_LIMIT)
         val url="$SITE_HOST/api/search/suggestion?query=${Signer.encode(clean)}&count=$wanted"
-        val raw=runCatching { siteText(url) }.getOrNull().orEmpty()
-        if(raw.isBlank()) return emptyList()
+        val raw=runCatching { siteText(url) }.onFailure { it.throwIfV5() }.getOrNull().orEmpty()
         return ContentSearchParser.parseWebSuggestions(raw,wanted)
     }
 
@@ -31,7 +30,6 @@ import java.io.IOException
         values["q"]=clean
         val signed=signer.sign("https://${accountHost()}/reading/bookapi/search/suggest/v:version/",values,deviceOverride=values)
         val raw=text(signed.url,signed.withSession())
-        if(raw.isBlank()) throw IOException("提示词暂不可用")
         return ContentSearchParser.parseAppSuggestions(raw,wanted)
     }
 
@@ -72,6 +70,7 @@ import java.io.IOException
     /** 一个种子词的候选：`(词, word_type)`，过滤掉剧名、过长过短的与重复的。 */
     private fun ContentRepository.suggestionsPool(seed: String,source: SearchSource): List<Pair<String,String>> =
         runCatching { suggestions(seed,AppConfig.Content.SUGGESTION_LIMIT,source) }
+            .onFailure { it.throwIfV5() }
             .getOrDefault(emptyList())
             .filter { it.series==null && it.name.length in 2..12 }
             .map { it.name to it.wordType }
@@ -90,7 +89,9 @@ import java.io.IOException
         fallbackPages: Int,
     ): CatalogPage {
         if(source==SearchSource.APP && isWebFallback(keyword,page)) {
-            val result=runCatching { webFallbackResult(keyword,page,fallbackPages) }.getOrNull()
+            val result=runCatching { webFallbackResult(keyword,page,fallbackPages) }
+                .onFailure { it.throwIfV5() }
+                .getOrNull()
             if(result!=null) {
                 SearchDiag.record(keyword,page,SearchSource.WEB,result.items.size,
                     note="App 搜索接口没有数据，已自动改用官网搜索",
@@ -102,73 +103,42 @@ import java.io.IOException
         // 不是页面上那句「没有找到相关剧集」。成功也要记——「0 条」只有配上
         // 「接口真的回答了」才等于「确实没有匹配」。
         //
-        // ## 失败时先自愈、再降级
-        //
-        // 顺序不能反。App 搜索空响应最常见的原因就是「这台设备在服务端没注册过」，
-        // 那时正确的动作是**换一套身份重注册再搜一次**；直接退到官网搜索只是绕开了故障，
-        // 设备仍然是坏的（播放照样回 `101000`），而且用户再也看不到「搜索能用」以外的修复。
-        // 早先这里是先降级官网、成功后直接 return，`DeviceNotRegisteredException` 根本
-        // 传不到界面层，电视端的自愈逻辑成了死代码。
-        //
-        // 自愈只做一次（[healed]），失败之后才走官网兜底；两条都不成，异常照旧抛给界面。
-        var healed = false
-        while (true) {
-            val registered = !deviceIdentity["device_id"].isNullOrBlank()
-            try {
-                val result = if(source==SearchSource.WEB) webSearch(keyword,page)
-                    else appSearchPage(keyword,page,SEARCH_PAGE_SIZE).also { clearWebFallback(keyword) }
-                // 官网这条「部分物理页失败」不算整页失败（其余页照常出内容），但要写进判读结论：
-                // 否则面板上是「有结果 37 条」加一行 502，用户不知道少掉的那几页去哪了。
-                val note = if(source==SearchSource.WEB) webSearchNote.get().orEmpty() else ""
-                SearchDiag.record(keyword,page,source,result.items.size,note=note,registered=registered,alive=appSearchAlive)
-                return result
-            } catch(e: Exception) {
-                // ① 设备被拒：换一套身份重注册，然后原地重搜一次。
-                if(!healed && source==SearchSource.APP && e is DeviceNotRegisteredException) {
-                    healed = true
-                    val ok = runCatching { ContentRepository.deviceHeal?.invoke(this,"搜索被拒") }.getOrNull()==true
-                    if(ok) {
-                        NetLog.retry("search_device_heal",2,2,"device rejected; identity rebuilt")
-                        NetLog.emit("device healed after search rejection; retrying app search")
-                        continue
-                    }
+        val registered = !deviceIdentity["device_id"].isNullOrBlank()
+        try {
+            val result = if(source==SearchSource.WEB) webSearch(keyword,page)
+                else appSearchPage(keyword,page,SEARCH_PAGE_SIZE).also { clearWebFallback(keyword) }
+            val note = if(source==SearchSource.WEB) webSearchNote.get().orEmpty() else ""
+            SearchDiag.record(keyword,page,source,result.items.size,note=note,registered=registered,alive=appSearchAlive)
+            return result
+        } catch(e: Exception) {
+            if(e is V5SignatureFailedException) throw e
+            if(source==SearchSource.APP && worthWebFallback(e)) {
+                val fallback=runCatching { webFallback(keyword,page,fallbackPages) }
+                    .onFailure { it.throwIfV5() }
+                    .getOrNull()
+                if(fallback!=null) {
+                    SearchDiag.record(
+                        keyword,page,SearchSource.WEB,fallback.items.size,
+                        note="App 搜索接口没有数据，已自动改用官网搜索",
+                        registered=registered,alive=appSearchAlive,degraded=true
+                    )
+                    return fallback
                 }
-                // ② **App 接口「答了但没数据」时自动改走官网**（issue #44）。
-                //
-                // 现场：`/reading/bookapi/search/tab/v` 回 HTTP 200 + 0 字节，或者回一份没有
-                // `search_tabs` 的 JSON。这两种都不是「网络不通」，而是这条接口这一刻不给数据；
-                // 官网那条（`/api/search/result`）同一时刻是 200 + 完整 JSON。
-                // 早先这里如实抛错，界面就只能整页挡住「接口没有返回任何 tab 数据」，
-                // 用户的第一反应是「电视坏了 / 网络坏了」。
-                //
-                // 只在「接口答了、只是没内容」时降级：真正断网时官网也一样不通，白等一个超时。
-                if(source==SearchSource.APP && worthWebFallback(e)) {
-                    val fallback=runCatching { webFallback(keyword,page,fallbackPages) }.getOrNull()
-                    if(fallback!=null) {
-                        SearchDiag.record(
-                            keyword,page,SearchSource.WEB,fallback.items.size,
-                            note="App 搜索接口没有数据，已自动改用官网搜索",
-                            registered=registered,alive=appSearchAlive,degraded=true
-                        )
-                        return fallback
-                    }
-                }
-                val (reason,detail)=SearchDiag.classify(e)
-                SearchDiag.record(keyword,page,source,0,reason,detail,registered,appSearchAlive)
-                throw e
             }
+            val (reason,detail)=SearchDiag.classify(e)
+            SearchDiag.record(keyword,page,source,0,reason,detail,registered,appSearchAlive)
+            throw e
         }
     }
 
     /**
      * 这次失败值不值得换官网再试一次。
      *
-     * 判据是「接口**答了**，只是没给内容」：设备没注册（空响应体）、响应里没有
-     * `search_tabs`。游标过期不算——那是回到第 1 页重搜的事，换源只会把页码搞乱；
+     * 判据是「接口**答了**，只是没给内容」：响应里没有 `search_tabs`。
+     * 游标过期不算——那是回到第 1 页重搜的事，换源只会把页码搞乱；
      * 网络类失败也不算——官网走的是同一根网线，换过去只会再等一次超时。
      */
     private fun worthWebFallback(e: Exception): Boolean = when(e) {
-        is DeviceNotRegisteredException -> true
         is SearchApiException ->
             e.reason==SearchDiag.FAILURE_DEVICE || e.reason==SearchDiag.FAILURE_FORMAT
         else -> false
@@ -235,10 +205,18 @@ import java.io.IOException
         val tasks=(first until first+wantedPages).map { physical ->
             pool.submit(java.util.concurrent.Callable {
                 // 取消（切页 / 重新搜索）沿着 [RequestScope] 传进这十条请求，一起收手。
-                RequestScope.withScope(scope) { runCatching { webSearchPageRetry(clean,physical) }.getOrNull() }
+                RequestScope.withScope(scope) {
+                    runCatching { webSearchPageRetry(clean,physical) }
+                        .onFailure { it.throwIfV5() }
+                        .getOrNull()
+                }
             })
         }
-        val parts=tasks.map { task -> runCatching { task.get() }.getOrNull() }
+        val parts=tasks.map { task ->
+            runCatching { task.get() }
+                .onFailure { it.throwIfV5() }
+                .getOrNull()
+        }
         // 十个物理页全部失败才算这一页失败：部分失败时把拿到的那些照常给界面。
         // 「查不到」不走这里：接口对没有结果的关键词回的是 200 + 空 `searchList`，
         // 因此走到这一句就是真的连不上（或后端整体不可用），该让界面给「重试」。
@@ -301,6 +279,7 @@ import java.io.IOException
             try {
                 return NetLog.quiet { webSearchPage(keyword,page) }
             } catch(problem: Throwable) {
+                if(problem is V5SignatureFailedException) throw problem
                 // 取消 / 打断不是「这一页坏了」：不重试，直接交回上层（上层按失败丢弃）。
                 if(Thread.currentThread().isInterrupted || isInterruption(problem)) throw problem
                 last=problem
@@ -337,16 +316,21 @@ import java.io.IOException
                 .header("Accept","application/json")
                 .get().build()
             try {
-                return RequestScope.execute(http.newCall(request)) { response ->
-                    val body=response.body ?: throw IOException("内容响应为空")
-                    if(body.contentLength()>16*1024*1024) throw IOException("内容响应过大")
-                    // 502 时响应体里仍然带着 `{"code":"upstream_unavailable"}`：读出来交给
-                    // 调用方判读，比只丢一句「HTTP 502」有用得多。
-                    val raw=body.string()
-                    if(!response.isSuccessful && raw.isBlank()) throw IOException("内容请求失败（HTTP ${response.code}）")
-                    raw
-                }
+                return retryEmptyBodyOnce(
+                    scope="site",
+                    call={
+                        RequestScope.execute(http.newCall(request)) { response ->
+                            val body=response.body ?: return@execute response.code to ""
+                            if(body.contentLength()>16*1024*1024) throw IOException("内容响应过大")
+                            // 502 时响应体里仍然带着 `{"code":"upstream_unavailable"}`：读出来交给
+                            // 调用方判读，比只丢一句「HTTP 502」有用得多。
+                            response.code to body.string()
+                        }
+                    },
+                    empty={ it.first==200 && it.second.isBlank() },
+                ).second
             } catch(problem: Throwable) {
+                if(problem is V5SignatureFailedException) throw problem
                 last=problem
             }
         }
@@ -360,8 +344,8 @@ import java.io.IOException
      * 官方 7.4.3.32 用一次不带 `tab_type` 的综合请求返回全部 tab，取首个有数据的 tab；
      * 第 2 页起带上一页的游标（`search_id` / `passback` / `next_offset`），见 [appSearch]。
      *
-     * 失败语义：接口回空响应体 = 这台设备没在服务端注册过（见 [registerDevice]），
-     * 如实抛错让界面提示，**不再**用别的数据源顶替；游标过期抛 [SearchSessionExpiredException]，
+     * 失败语义：`HTTP 200 + 空响应` 由 [ContentRepository.text] 统一重试一次，仍为空即失败；
+     * 游标过期抛 [SearchSessionExpiredException]，
      * 由界面回到第 1 页重搜。
      */
     internal fun ContentRepository.search(keyword: String, page: Int, types: List<ContentType>, count: Int): CatalogPage {
@@ -372,34 +356,6 @@ import java.io.IOException
     /** 官方形态的一次综合搜索。 */
     internal fun ContentRepository.appSearchPage(keyword: String,page: Int,count: Int): CatalogPage =
         appSearch(keyword,page,SEARCH_FEED_TAB,count)
-    /**
-     * 搜索接口空响应时的原地补发（见 [appSearch]）。
-     *
-     * 最多补 [SEARCH_BLANK_RETRIES] 次、每次隔 [SEARCH_BLANK_RETRY_DELAY_MS]。
-     * 间隔不能省：实测同一条请求连发（0 间隔）几乎全空，短暂停顿后才有命中。
-     */
-    internal fun ContentRepository.retryBlankSearch(raw: String, signed: Signer.Request): String {
-        var current=raw
-        repeat(SEARCH_BLANK_RETRIES) { attempt ->
-            if(current.isNotBlank()) return current
-            NetLog.retry(
-                "search_blank",
-                attempt+1,
-                SEARCH_BLANK_RETRIES,
-                "HTTP 200 empty body",
-                SEARCH_BLANK_RETRY_DELAY_MS,
-            )
-            try {
-                Thread.sleep(SEARCH_BLANK_RETRY_DELAY_MS)
-            } catch(e: InterruptedException) {
-                Thread.currentThread().interrupt()
-                throw IOException("请求已取消",e)
-            }
-            current=text(signed.url,signed.withSession())
-        }
-        return current
-    }
-
     internal fun ContentRepository.appSearch(keyword: String, page: Int, tabType: Int, count: Int): CatalogPage {
         val scope=if(tabType==SEARCH_FEED_TAB) SEARCH_FEED_SCOPE else tabType
         val signed=searchRequest(searchQuery(keyword,page,tabType,count))
@@ -443,19 +399,16 @@ import java.io.IOException
         return values
     }
     /**
-     * 发送搜索 GET，并处理空响应 / `100103`。空响应补发一次仍空才判设备未注册；
-     * 这样保留设备自愈路径，又不会在高峰期原地退避很多次。
+     * 发送搜索 GET，并处理 `100103`。空响应由 [ContentRepository.text] 统一处理。
      */
     private fun ContentRepository.searchResponse(signed: Signer.Request): String {
-        var raw=retryBlankSearch(text(signed.url,signed.withSession()),signed)
-        if(raw.isBlank()) { appSearchAlive=false; noteDeviceRejected(); throw DeviceNotRegisteredException() }
+        var raw=text(signed.url,signed.withSession())
         var attempt=0
         while(attempt<3 && raw.startsWith("""{"code":100103""")) {
             attempt++
             NetLog.retry("search_100103",attempt,3,"platform returned code=100103",120L)
             Thread.sleep(120L)
-            raw=retryBlankSearch(text(signed.url,signed.withSession()),signed)
-            if(raw.isBlank()) { appSearchAlive=false; noteDeviceRejected(); throw DeviceNotRegisteredException() }
+            raw=text(signed.url,signed.withSession())
         }
         appSearchAlive=true
         return raw

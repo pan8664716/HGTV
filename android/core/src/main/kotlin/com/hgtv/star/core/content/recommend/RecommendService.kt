@@ -361,13 +361,12 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                 val raw=text(
                     signed.url,
                     signed,
-                    allowDomainFailover=true,
                     storeRegionHeaders=true,
                     userAgentProfile=identity.profile,
                 )
-                if(raw.isNotBlank()) return raw
-                problem=IOException("推荐接口暂无响应")
+                return raw
             } catch(failure: IOException) {
+                if(failure is V5SignatureFailedException) throw failure
                 if(Thread.currentThread().isInterrupted) throw failure
                 problem=failure
             }
@@ -422,13 +421,12 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                 val raw=text(
                     signed.url,
                     signed,
-                    allowDomainFailover=true,
                     storeRegionHeaders=true,
                     userAgentProfile=identity.profile,
                 )
-                if(raw.isNotBlank()) return raw
-                problem=IOException("推荐接口暂无响应")
+                return raw
             } catch(failure: IOException) {
+                if(failure is V5SignatureFailedException) throw failure
                 if(Thread.currentThread().isInterrupted) throw failure
                 problem=failure
             }
@@ -600,7 +598,6 @@ private fun Series.isRecommendableShortDrama(): Boolean =
             storeRegionHeaders=true,
             userAgentProfile=identity.profile,
         )
-        if(raw.isBlank()) throw IOException("推荐上报暂无响应")
         val reply=JSONObject(raw)
         if(reply.optInt("code",-1)!=0) {
             throw IOException("推荐上报失败（code=${reply.optInt("code",-1)}）")
@@ -639,21 +636,19 @@ private fun Series.isRecommendableShortDrama(): Boolean =
                 val raw=text(
                     url,
                     request,
-                    allowDomainFailover=false,
                     storeRegionHeaders=true,
                     userAgentProfile=identity.profile,
                 )
-                if(raw.isNotBlank()) {
-                    if(RecommendStatConfigStore.applySettings(raw)) {
-                        RecommendBehavior.onConfigChanged()
-                        NetLog.log(
-                            "recommend stat config enable=${RecommendStatConfigStore.isEnabled()} "+
-                                "duration=${RecommendStatConfigStore.durationMs()}ms",
-                        )
-                    }
-                    ok=true
+                if(RecommendStatConfigStore.applySettings(raw)) {
+                    RecommendBehavior.onConfigChanged()
+                    NetLog.log(
+                        "recommend stat config enable=${RecommendStatConfigStore.isEnabled()} "+
+                            "duration=${RecommendStatConfigStore.durationMs()}ms",
+                    )
                 }
-            } catch(_: Exception) {
+                ok=true
+            } catch(failure: Exception) {
+                failure.throwIfV5()
                 ok=false
             } finally {
                 synchronized(recommendStatConfigLock) {

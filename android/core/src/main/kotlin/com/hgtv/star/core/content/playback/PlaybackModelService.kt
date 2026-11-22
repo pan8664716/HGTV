@@ -10,12 +10,8 @@ import java.util.concurrent.TimeUnit
      * 取一集的播放模型（`video_model`）。
      *
      * 平台要求请求里的 `device_id`、`iid`、签名密文和注册 Cookie 来自同一台设备。
-     * 2026-11-06 实测：注册下发的 `device_id` 返回 `code 0` 和完整模型，任意随机
-     * 15 位数字则稳定返回 `200 + 0 字节`。因此空响应必须按设备身份失效处理，
-     * 由界面层重新注册后再试，不能继续伪造新的 `device_id`。
-     *
-     * 候选表只保留「新路由 + 老路径」两条并串行探测；第一条业务失败才试第二条，
-     * 设备身份失效则立即停止探测并交给自愈流程。
+     * 候选表只保留「新路由 + 老路径」两条并串行探测；第一条业务失败才试第二条。
+     * `HTTP 200 + 空响应` 由 [ContentRepository.text] 统一重试一次，仍为空即失败。
      */
     internal fun ContentRepository.videoModelImpl(
         id: String,
@@ -37,8 +33,7 @@ import java.util.concurrent.TimeUnit
             else candidates.sortedByDescending { it==preferredModelPath }
         val scope=RequestScope.current()
         // 同一集刚取过就复用：推荐页预热、正片起播、下一集预取会**同时**要同一集的地址，
-        // 各发一轮就是三份并发（见下面的单飞闸门）。缓存很短（[MODEL_CACHE_MS]），
-        // 地址本身小时级有效，这里只是用来把「同一刻的重复请求」合并掉。
+        // 各发一轮就是三份并发（见下面的单飞闸门）。缓存只在真实播放错误时作废。
         // 键里带播放档案、[deviceLevel] 与 [modelCacheGen]：不同类型 / 平台不能复用模型。
         val requestLevel=if(direct) ContentRepository.DIRECT_DEVICE_LEVEL else deviceLevel
         cachedModel(id,playback,requestLevel)?.let { return it }
@@ -69,15 +64,13 @@ import java.util.concurrent.TimeUnit
                             playback,
                             bodyOverride=ContentPlaybackParser.directModelBody(id,playback),
                             requestLevel=ContentRepository.DIRECT_DEVICE_LEVEL,
-                            allowLevelEscalation=false,
-                            rejectDeviceOnBlank=false,
                             stage="model-direct",
                         )
                         rememberModel(id,playback,model,level=ContentRepository.DIRECT_DEVICE_LEVEL)
                         TncConfigStore.markHostSuccess(host)
                         NetLog.emit("model direct host=$host accepted level=${ContentRepository.DIRECT_DEVICE_LEVEL}")
                         return model
-                    } catch(e: DeviceNotRegisteredException) {
+                    } catch(e: V5SignatureFailedException) {
                         throw e
                     } catch(e: IOException) {
                         // 直连是前台加速路径；失败时仍回落到既有批量 / 兼容路径，不牺牲可播性。
@@ -112,7 +105,7 @@ import java.util.concurrent.TimeUnit
                             NetLog.emit("model batch host=$host accepted")
                             break
                         }
-                    } catch(e: DeviceNotRegisteredException) {
+                    } catch(e: V5SignatureFailedException) {
                         throw e
                     } catch(e: AddressTimeoutException) {
                         NetLog.emit("model batch host=$host timeout")
@@ -137,12 +130,8 @@ import java.util.concurrent.TimeUnit
         "$id@${playback.contentType}:${playback.videoPlatform}@$level@g${ContentRepository.modelCacheGen}"
 
     private fun ContentRepository.cachedModel(id: String,playback: PlaybackProfile,level: Int): JSONObject? {
-        if(modelCacheTtl<=0L) return null
         val key=modelCacheKey(id,playback,level)
-        val cached=modelCache[key] ?: return null
-        if(System.currentTimeMillis()-cached.first<=modelCacheTtl) return cached.second
-        modelCache.remove(key)
-        return null
+        return modelCache[key]?.second
     }
 
     private fun ContentRepository.rememberModel(
@@ -152,7 +141,6 @@ import java.util.concurrent.TimeUnit
         level: Int,
         at: Long = System.currentTimeMillis(),
     ) {
-        if(modelCacheTtl<=0L) return
         val key=modelCacheKey(id,playback,level)
         if(modelCache.size>=ContentRepository.MODEL_CACHE_LIMIT && !modelCache.containsKey(key)) {
             modelCache.minByOrNull { it.value.first }?.key?.let(modelCache::remove)
@@ -165,7 +153,7 @@ import java.util.concurrent.TimeUnit
         playback: PlaybackProfile,
         level: Int,
     ) {
-        if(models.isEmpty() || modelCacheTtl<=0L) return
+        if(models.isEmpty()) return
         val at=System.currentTimeMillis()
         models.forEach { (videoId,model) -> rememberModel(videoId,playback,model,level,at) }
     }
@@ -173,8 +161,8 @@ import java.util.concurrent.TimeUnit
     /**
      * [videoModelImpl] 里真正打请求的那一段（持锁执行，见那里的 `modelGate`）。
      *
-     * 平台只接受**注册下发的 `device_id`**。空响应先按额度/档位问题处理：
-     * 4 档升 5 重发一次；5 档仍为空才视为设备身份失效，交给界面层重注册。
+     * 平台只接受注册下发的 `device_id`。`HTTP 200 + 空响应` 由 [ContentRepository.text]
+     * 统一重试一次，仍为空直接失败。
      */
     private fun ContentRepository.fetchModel(
         id: String,
@@ -200,8 +188,7 @@ import java.util.concurrent.TimeUnit
                 } catch(e: IOException) {
                     // 用户切走了（取消域）：这不是「这条路不通」，不该再往下试。
                     if(isInterruption(e) || e.message=="请求已取消") throw e
-                    // 设备身份失效与路径 / 域名无关：换一条只会再被拒一次。
-                    if(e is DeviceNotRegisteredException) throw e
+                    if(e is V5SignatureFailedException) throw e
                     failure=e
                     null
                 }
@@ -222,8 +209,7 @@ import java.util.concurrent.TimeUnit
     /**
      * 在一条路径上请求一次播放模型。
      *
-     * 空响应先由 [probeModelPath] 升到 5 档重试；仍为空才抛出
-     * [DeviceNotRegisteredException]，让两端现有的设备自愈流程重新注册。
+     * 空响应由 [ContentRepository.text] 统一重试一次，仍为空直接失败。
      */
     private fun ContentRepository.tryModelPath(
         host: String,
@@ -283,17 +269,14 @@ import java.util.concurrent.TimeUnit
      * 重试时设备号本身不能伪造，只能等界面层重新注册；这里只保证下一次取流
      * 不会命中旧身份留下的模型。
      */
-    internal fun ContentRepository.invalidateModelCache(): String {
+    internal fun ContentRepository.invalidateModelCache() {
         synchronized(ContentRepository.deviceRotateLock) { ContentRepository.modelCacheGen++ }
-        return deviceIdentity["device_id"].orEmpty()
     }
 
     /**
      * 在 [path] 上打**一次**播放模型请求。
      *
-     * 2026-11-06 实测：同一个请求用注册下发的 `device_id` 返回 `code 0` 和完整模型，
-     * 改成任意随机 15 位数字则稳定返回 `200 + 0 字节`。因此空响应先升 5 档重发；
-     * 5 档仍为空时再按设备身份失效处理，交给界面层重新注册。
+     * `HTTP 200 + 空响应` 由 [ContentRepository.text] 统一重试一次，仍为空直接失败。
      */
     private fun ContentRepository.probeModelPath(
         host: String,
@@ -303,8 +286,6 @@ import java.util.concurrent.TimeUnit
         playback: PlaybackProfile,
         bodyOverride: String? = null,
         requestLevel: Int = deviceLevel,
-        allowLevelEscalation: Boolean = true,
-        rejectDeviceOnBlank: Boolean = true,
         stage: String = "model",
     ): JSONObject {
         val body=bodyOverride ?: ContentPlaybackParser.modelBody(id,path,playback,requestLevel)
@@ -341,32 +322,12 @@ import java.util.concurrent.TimeUnit
             signed.url,
             request,
             client=addressClient(ADDRESS_ATTEMPT_TIMEOUT_MS),
-            // 播放模型已经由本文件按 TNC 顺序逐域重签并限次尝试。
-            // 再走通用空响应换域会把一次直连放大成 11 个串行请求。
-            allowDomainFailover=false,
             storeRegionHeaders=false,
         ) { r -> stable=r.header("tt_stable")=="1" }
-        // 网关挡掉请求时是 200 + 0 字节：业务码取不到会默认成 0，必须先判空。
-        if(response.isBlank()) {
-            NetLog.emit("$stage path=$path type=${playback.contentType}/${playback.videoPlatform} level=$requestLevel id=${profile["device_id"]?.takeLast(6)} bytes=0 stable=$stable")
-            // 空响应按 3 -> 4 -> 5 逐级重发；5 仍为空才按设备身份失效交给自愈流程。
-            if(allowLevelEscalation && requestLevel<5) {
-                NetLog.retry("model_device_level",2,2,"empty model response at device_level=$deviceLevel")
-                escalateDeviceLevel()
-                return probeModelPath(host,path,id,cookie,playback)
-            }
-            if(!rejectDeviceOnBlank) throw IOException("播放信息为空（$stage）")
-            noteDeviceRejected()
-            invalidateModelCache()
-            throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
-        }
         val data=JSONObject(response)
         val code=data.optInt("Code",data.optInt("code",0))
         NetLog.emit("$stage path=$path type=${playback.contentType}/${playback.videoPlatform} level=$requestLevel id=${profile["device_id"]?.takeLast(6)} bytes=${response.length} code=$code")
         // 业务码非 0 就是这一条路不通（110001 是旧路径的「未知异常」，100001 是参数错误）。
-        // `101000 服务异常` 正是「这台设备没在服务端注册过」那一条，单独记一笔：
-        // 界面层据此换一份身份重注册，而不是让用户看到「所有影片都放不了」。
-        if(code==101000) { noteDeviceRejected(); invalidateModelCache() }
         if(code!=0) {
             throw IOException("播放接口暂不可用（${code}）")
         }
@@ -378,7 +339,6 @@ import java.util.concurrent.TimeUnit
     /**
      * 打一次官方批量播放模型请求，并解析 `data.<video_id>.video_model`。
      *
-     * 批量接口的空响应先升到 5 档重发一次；5 档仍为空才按设备身份失效处理。
      * 非空但业务失败时由调用方走单集兼容兜底。
      */
     private fun ContentRepository.tryBatchModel(
@@ -416,29 +376,12 @@ import java.util.concurrent.TimeUnit
             signed.url,
             request,
             client=addressClient(ADDRESS_ATTEMPT_TIMEOUT_MS),
-            // 域名切换由调用方的 hosts 循环负责，避免通用层再串行重试整张 TNC 表。
-            allowDomainFailover=false,
             storeRegionHeaders=false,
         ) { r -> stable=r.header("tt_stable")=="1" }
-        if(response.isBlank()) {
-            NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} bytes=0 stable=$stable")
-            if(deviceLevel<5) {
-                escalateDeviceLevel()
-                return tryBatchModel(host,path,scene,ids,cookie,playback)
-            }
-            noteDeviceRejected()
-            invalidateModelCache()
-            throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
-        }
         val data=JSONObject(response)
         val code=data.optInt("Code",data.optInt("code",0))
         val models=ContentPlaybackParser.parseBatchModels(data,ids)
         NetLog.emit("model batch path=$path scene=$scene type=${playback.contentType}/${playback.videoPlatform} level=$deviceLevel id=${profile["device_id"]?.takeLast(6)} bytes=${response.length} code=$code models=${models.size}/${ids.size}")
-        if(code==101000) {
-            noteDeviceRejected()
-            invalidateModelCache()
-            throw DeviceNotRegisteredException("播放接口暂不可用（设备身份已失效）")
-        }
         if(code!=0) {
             throw IOException("播放接口暂不可用（${code}）")
         }

@@ -44,32 +44,11 @@ object AppRuntime {
         repositoryInstance ?: synchronized(lock) {
             repositoryInstance ?: ContentRepository().apply {
                 writeLog = { line -> Diagnostics.trace("HGTV-WRITE", line) }
-                installDeviceHeal(context)
             }.also {
                 repositoryInstance = it
                 installTncNetworkWatch(context.applicationContext)
             }
         }
-
-    /**
-     * 把 `:core` 留的那个「设备身份自愈」钩子接到 [DeviceHealer]。
-     *
-     * 为什么在这里接：`ContentRepository` 建在 `core`（纯 Kotlin，没有 `Library`），
-     * 而自愈要读写本机身份、走 `:shared` 的注册流程。**两端共用**这一处接线，
-     * 手机端因此不需要另写一套——这正是它原先缺失的那一环。
-     *
-     * 只接一次（[ContentRepository.deviceHeal] 是进程级静态字段），预取 / 收藏那两个
-     * 仓库实例调用时传的是它们自己，自愈之后各自的内存身份由 [DeviceHealer] 收尾。
-     */
-    private fun installDeviceHeal(context: Context) {
-        val app = context.applicationContext
-        ContentRepository.deviceHeal = { repository, reason ->
-            DeviceHealer.heal(library(app), repository, reason)
-        }
-        // 一行启动读数：两端任何一端「搜索被拒却没人管」时，先看这行在不在——
-        // 不在就是钩子没接上（`core` 侧会当成「修不了」直接降级官网）。
-        android.util.Log.i("HGTV", "Device heal hook installed")
-    }
 
     /**
      * 网络切换后后台刷新一次 TNC。

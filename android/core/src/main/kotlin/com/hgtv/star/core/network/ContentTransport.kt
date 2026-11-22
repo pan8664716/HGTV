@@ -47,6 +47,27 @@ internal fun defaultContentHttpClient(): OkHttpClient {
 
 internal class CatalogHttpException(val status: Int, message: String) : IOException(message)
 
+/** HTTP 200 空响应重试一次后仍为空：按 v5 签名失败处理。 */
+class V5SignatureFailedException : IOException("v5签名已失败")
+
+fun Throwable.throwIfV5() {
+    if (this is V5SignatureFailedException) throw this
+    cause?.takeIf { it !== this }?.throwIfV5()
+}
+
+internal fun <T> retryEmptyBodyOnce(
+    scope: String,
+    call: () -> T,
+    empty: (T) -> Boolean,
+): T {
+    val first = call()
+    if (!empty(first)) return first
+    NetLog.retry("${scope}_empty", 2, 2, "HTTP 200 empty body")
+    val second = call()
+    if (empty(second)) throw V5SignatureFailedException()
+    return second
+}
+
 /** 内容接口的非 2xx 响应；保留统一事实，message 仍兼容旧调用点。 */
 class ContentHttpException(
     val failure: AppFailure,

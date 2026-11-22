@@ -5,7 +5,6 @@ import android.view.View
 import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.Detail
 import com.hgtv.star.core.StreamInfo
-import com.hgtv.star.shared.data.DeviceHealer
 import com.hgtv.star.shared.media.PlaybackFailures
 
 internal class PhoneSourceRetryState {
@@ -34,17 +33,6 @@ internal fun PhonePlayerActivity.onEpisodeSourceMissing(
     val episodeId = d.episodes.getOrNull(episodeIndex) ?: return
     val timedOut = problem != null && PlaybackFailures.timedOut(problem)
     if (problem != null && com.hgtv.star.core.isInterruption(problem) && !timedOut) return
-    if (problem != null && PlaybackFailures.deviceRejected(problem)) {
-        val taken = DeviceHealer.healAsync(
-            library,
-            PhoneServices.repository(this),
-            "取播放地址被拒",
-        ) { healed ->
-            if (healed) play(episodeIndex, at)
-            else onEpisodeSourceMissing(d, episodeIndex, at, problem)
-        }
-        if (taken) return
-    }
     if (problem != null) {
         android.util.Log.w(
             "HGTV-RECOVER",

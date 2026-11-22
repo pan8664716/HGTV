@@ -272,8 +272,6 @@ import java.io.IOException
             url,
             signed,
             client=tncHttp,
-            // TNC 的空 body 不能走业务域名 fallback；业务域名没有 /get_domains/v5/。
-            allowDomainFailover=false,
             allowNotModified=true,
             storeRegionHeaders=false,
         ) { response ->

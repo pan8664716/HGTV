@@ -14,18 +14,7 @@ import java.util.concurrent.TimeUnit
         val values=appValues()
         values["series_id"]=id
         val signed=signer.sign("https://${videoHost()}/novel/player/video_detail/v1/",values,JSONObject().toString().toByteArray())
-        val raw=text(signed.url,signed.withSession())
-        // 网关在业务处理前挡掉请求时是 200 + 0 字节（设备没注册也会这样）：先判空再解析。
-        //
-        // **空响应体先按 GET 再问一次**（2026-10-30 实测）：同一条路径 POST 回 `200 + 0 字节` 时，
-        // 改 GET（参数全在 query 里、不带 body）能正常拿到 106 KB 的完整详情；签名只覆盖
-        // query + body、不覆盖方法，因此同一个签名器直接换方法就行（搜索接口同一条经验）。
-        // 这一步把「详情偶发取不到 → 用户看到错误页」变成一次内部重试，界面上完全无感。
-        val body=if(raw.isBlank()) {
-            val retry=signer.sign("https://${videoHost()}/novel/player/video_detail/v1/",values,method="GET")
-            text(retry.url,retry.withSession())
-        } else raw
-        if(body.isBlank()) throw IOException("剧集详情暂不可用（稍后再试）")
+        val body=text(signed.url,signed.withSession())
         val detail=ContentDetailParser.parseDetail(body,id) {
             if(includeAuthor) authorOf(id) else ""
         }
@@ -58,7 +47,7 @@ import java.util.concurrent.TimeUnit
         require(id.matches(Regex("[0-9]{1,30}")))
         val current=title.trim()
         if(current.isNotEmpty()) synchronized(relatedCache) { relatedCache[id]?.let { return it } }
-        val rows=runCatching { relatedRows(id) }.getOrNull().orEmpty()
+        val rows=runCatching { relatedRows(id) }.onFailure { it.throwIfV5() }.getOrNull().orEmpty()
         if(rows.isNotEmpty()) {
             val seasons=SeriesSeasons.siblings(current,rows.map { it.series })
             val seasonIds=seasons.map { it.id }.toSet()
@@ -82,7 +71,7 @@ import java.util.concurrent.TimeUnit
      */
     internal fun ContentRepository.seriesSeasonsImpl(id: String): List<Series> {
         require(id.matches(Regex("[0-9]{1,30}")))
-        val rows=runCatching { sameSeriesRows(id) }.getOrNull().orEmpty()
+        val rows=runCatching { sameSeriesRows(id) }.onFailure { it.throwIfV5() }.getOrNull().orEmpty()
         return rows.map { it.series }
             .distinctBy { it.id }
             .sortedWith(compareBy({ SeriesSeasons.season(it) },{ it.title }))
@@ -242,7 +231,9 @@ import java.util.concurrent.TimeUnit
         var page=1
         while(more && page<PUBLISHER_PAGES) {
             if(cursor.isBlank()) break
-            val next=runCatching { publisherPage(identity.uid,tab,cursor) }.getOrNull() ?: break
+            val next=runCatching { publisherPage(identity.uid,tab,cursor) }
+                .onFailure { it.throwIfV5() }
+                .getOrNull() ?: break
             val before=works.size
             next.works.forEach { works[it.id]=it }
             // 游标没前进（服务端偶尔回同一个）就停，再问只是重复同一页。
@@ -280,7 +271,9 @@ import java.util.concurrent.TimeUnit
         values.putAll(linkedMapOf("query" to key,"count" to "20","offset" to "0","tab_type" to "27",
             "bookshelf_search_plan" to "4","use_correct" to "true","user_is_login" to "0"))
         val signed=runCatching { searchRequest(values) }.getOrNull() ?: return null
-        val raw=runCatching { retryBlankSearch(text(signed.url,signed.withSession()),signed) }.getOrNull().orEmpty()
+        val raw=runCatching { text(signed.url,signed.withSession()) }
+            .onFailure { it.throwIfV5() }
+            .getOrNull().orEmpty()
         if(raw.isBlank()) return null
         val rows=runCatching {
             ContentSearchParser.parseTab(raw,27,SEARCH_FEED_TAB).cells
@@ -354,18 +347,13 @@ import java.util.concurrent.TimeUnit
         val host=TncConfigStore.localHost("reading.snssdk.com","reading.snssdk.com")
         val url="https://$host/novel/commentapi/user/profile/$uid/v1/?"+
             values.entries.joinToString("&") { (k,v) -> "$k=$v" }
-        var raw=""
-        var attempt=0
-        while(attempt<3) {
-            raw=runCatching { publisherPost(url,body) }.getOrNull().orEmpty()
-            if(raw.isNotBlank()) break
-            attempt++
-            if(attempt<3) {
-                NetLog.retry("publisher",attempt+1,3,"HTTP 200 empty body",SEARCH_BLANK_RETRY_DELAY_MS)
-                runCatching { Thread.sleep(SEARCH_BLANK_RETRY_DELAY_MS) }
-            }
+        val raw=try {
+            publisherPost(url,body)
+        } catch(e: V5SignatureFailedException) {
+            throw e
+        } catch(_: Exception) {
+            return null
         }
-        if(raw.isBlank()) return null
         val root=runCatching { JSONObject(raw) }.getOrNull() ?: return null
         // `code` 有时是数字、有时是字符串（风控那条是 `"10001010A"`）：两种都按「非 0 即失败」判。
         if(root.opt("code")?.toString().orEmpty()!="0") return null
@@ -403,14 +391,12 @@ import java.util.concurrent.TimeUnit
         }
         val mainCookies=CookieRecord.headerToMap(primaryCookieHeader())
         val currentHost=runCatching { okhttp3.HttpUrl.parse(url)?.host }.getOrNull().orEmpty()
-        var raw=""
-        for(host in listOf(currentHost)+alternateApiHosts(currentHost)) {
-            raw=send(urlWithHost(url,host),mainCookies,primaryProfile(),anonymous=false)
-            if(raw.isNotBlank()) {
-                TncConfigStore.markHostSuccess(host)
-                return raw
-            }
-        }
+        val raw=retryEmptyBodyOnce(
+            scope="publisher",
+            call={ send(urlWithHost(url,currentHost),mainCookies,primaryProfile(),anonymous=false) },
+            empty={ it.isBlank() },
+        )
+        if(currentHost.isNotBlank()) TncConfigStore.markHostSuccess(currentHost)
         return raw
     }
     /**
@@ -460,18 +446,22 @@ import java.util.concurrent.TimeUnit
             // 直连先回来了：它一次就是全部作品（含搜索池里没有的季），比搜索更全，直接换掉。
             // 只在**页边界**看一次，不额外花时间（`isDone` 不阻塞）。
             if(probe!=null && probe.isDone) {
-                val direct=runCatching { probe.get() }.getOrNull()
+                val direct=runCatching { probe.get() }
+                    .onFailure { it.throwIfV5() }
+                    .getOrNull()
                 if(!direct.isNullOrEmpty()) return AuthorWorksResult(direct,true)
             }
-            // 一页最多试三次：这个平台的网关会**成片地**回空响应体（实测同一条请求连发里约一半是空的），
-            // 翻到第 3 页时恰好被挡一次就停，用户看到的就是「少了一截」——而重新进来一次又能全出来，
-            // 这正是「有的时候可以显示出来，有的时候显示不出来」。间隔 300ms 起，与 [retryBlankSearch] 同档。
+            // 一页最多试三次：业务格式异常或网络失败可重试；200 空响应由 text() 统一处理。
             var result: CatalogPage?=null
             var attempt=0
             while(attempt<AUTHOR_WORKS_PAGE_ATTEMPTS && result==null) {
-                result=runCatching {
+                result=try {
                     authorSearchPage(name,page)
-                }.getOrNull()
+                } catch(e: V5SignatureFailedException) {
+                    throw e
+                } catch(_: Exception) {
+                    null
+                }
                 if(result==null) {
                     attempt++
                     if(attempt<AUTHOR_WORKS_PAGE_ATTEMPTS) {
@@ -580,14 +570,16 @@ import java.util.concurrent.TimeUnit
             family to pool.submit(java.util.concurrent.Callable {
                 val page=runCatching {
                     search(family,1,ContentType.searchable,AUTHOR_WORKS_PAGE_SIZE)
-                }.getOrNull() ?: return@Callable emptyList<Series>()
+                }.onFailure { it.throwIfV5() }.getOrNull() ?: return@Callable emptyList<Series>()
                 page.items.filter { item ->
                     sameAuthor(item.author,name) && SeriesSeasons.normalize(item.title)==family
                 }
             })
         }
         baseTasks.forEach { (_,task) ->
-            val extra=runCatching { task.get(AUTHOR_WORKS_FAMILY_TIMEOUT_MS,TimeUnit.MILLISECONDS) }.getOrNull() ?: return@forEach
+            val extra=runCatching { task.get(AUTHOR_WORKS_FAMILY_TIMEOUT_MS,TimeUnit.MILLISECONDS) }
+                .onFailure { it.throwIfV5() }
+                .getOrNull() ?: return@forEach
             extra.forEach { item -> merged.getOrPut(item.id) { item } }
         }
         // 第二步：`related` 补那些**搜索池里根本没有**的季（未上线的季在搜索里是空，只有 related 有）。
@@ -603,7 +595,9 @@ import java.util.concurrent.TimeUnit
         }
         val relatedTasks=picks.map { (family,seed) ->
             pool.submit(java.util.concurrent.Callable {
-                val related=runCatching { relatedImpl(seed.id,seed.title) }.getOrNull() ?: return@Callable family to emptyList<Series>()
+                val related=runCatching { relatedImpl(seed.id,seed.title) }
+                    .onFailure { it.throwIfV5() }
+                    .getOrNull() ?: return@Callable family to emptyList<Series>()
                 // `related` 的 `items` 已经把同系列各季排在前面；这里仍按家族名再筛一遍，
                 // 免得把「同 IP 的另一个系列」（万妖图录传那类）混进来。
                 val extra=related.items.filter { SeriesSeasons.normalize(it.title)==family && authorUnknownOrSame(it.author,name) }

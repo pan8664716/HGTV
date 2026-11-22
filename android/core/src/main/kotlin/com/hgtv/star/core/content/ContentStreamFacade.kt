@@ -41,11 +41,7 @@ fun ContentRepository.forgetStream(
 fun ContentRepository.forgetStreamAllQualities(id: String) =
     forgetStreamAllQualitiesImpl(id)
 
-/**
- * 用户侧「再试一次」时作废当前设备签发的播放模型缓存。
- *
- * 设备号只能由平台注册下发；身份失效时由 `DeviceHealer` 重新注册。
- * 这里保留原方法名供两端调用，但不再伪造新的 `device_id`。
- */
-fun ContentRepository.rotateDeviceForRetry(): String =
-    rotateDeviceForRetryImpl()
+/** 用户侧「再试一次」时作废播放模型缓存；不会更换设备身份。 */
+fun ContentRepository.invalidatePlaybackCacheForRetry() {
+    invalidateModelCache()
+}
