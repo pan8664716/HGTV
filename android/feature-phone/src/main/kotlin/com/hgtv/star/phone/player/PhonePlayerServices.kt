@@ -44,7 +44,12 @@ internal fun PhonePlayerActivity.ensureMediaSession(): MediaSessionHost? {
 
 /** 把「正在放什么」同步给系统（每秒一次，与进度条同一个节拍）。 */
 internal fun PhonePlayerActivity.syncMediaSession() {
+    // 旧播放页可能还在返回栈里，ticker 也会继续跑；它不能把自己重新挂回系统媒体面板，
+    // 更不能拿当前全局播放器的进度去更新上一季的标题。
+    if (!playerForeground || isFinishing || isDestroyed) return
+    if (PhoneSession.owner != PhoneSession.Owner.PLAYER) return
     val d = detail ?: return
+    if (PhoneSession.seriesId != d.series.id || PhoneSession.index != index) return
     val session = ensureMediaSession() ?: return
     val p = player
     val state = when {

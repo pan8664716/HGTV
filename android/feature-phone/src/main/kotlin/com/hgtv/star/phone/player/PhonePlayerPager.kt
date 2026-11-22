@@ -319,6 +319,7 @@ internal fun PhonePlayerActivity.bindPlayerPagerPage(page: PhoneVideoPage, posit
         page.setChromeVisible(playerChromeVisible)
         return
     }
+    syncAdjacentDetail(d)
     val label = UiText.get(com.hgtv.star.shared.R.string.ui_0343, position + 1)
     page.bind(
         d.series,
@@ -346,6 +347,7 @@ internal fun PhonePlayerActivity.bindPlayerPagerPage(page: PhoneVideoPage, posit
             )
         }
     } else {
+        releaseStaleAdjacentSlot(position, d)
         val slot = playerAdjacentState.slots[position]
         if (slot != null) {
             attachAdjacentToPagerPage(position)

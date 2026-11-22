@@ -14,6 +14,7 @@ internal fun PhonePlayerActivity.play(
 ) {
     val d = detail ?: return
     if (episodeIndex !in d.episodes.indices) return
+    syncAdjacentDetail(d)
     nextSeasonState.nextSeasonFinishedFor = ""
     val sameEpisode = episodeIndex == index
     // 换集时旧 PlayerView 可能仍绑着同一个进程级播放器；attach 后必须强制重交

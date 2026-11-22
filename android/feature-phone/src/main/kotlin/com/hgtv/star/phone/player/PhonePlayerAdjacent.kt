@@ -43,7 +43,55 @@ internal class PhonePlayerAdjacentState {
     val slots = LinkedHashMap<Int, PhonePlayerAdjacentSlot>()
     val warming = mutableSetOf<Int>()
     var generation = 0
+    var detailKey = ""
     var warmRunnable: Runnable? = null
+}
+
+private fun adjacentDetailKey(detail: Detail): String =
+    "${detail.series.id}:${detail.episodes.hashCode()}"
+
+/**
+ * 当前详情变化时让旧的异步预热结果失效。
+ *
+ * 这里只递增 generation，不直接清槽位：下一季第一集也可能已经预热好，调用方会在
+ * 真正取用时再按 series/episode 身份判断，避免把合法的跨季预热误杀。
+ */
+internal fun PhonePlayerActivity.syncAdjacentDetail(detail: Detail) {
+    val key = adjacentDetailKey(detail)
+    if (playerAdjacentState.detailKey == key) return
+    playerAdjacentState.detailKey = key
+    playerAdjacentState.generation++
+    playerAdjacentState.warming.clear()
+}
+
+internal fun PhonePlayerActivity.adjacentSlotMatches(
+    slot: PhonePlayerAdjacentSlot,
+    detail: Detail,
+    position: Int,
+): Boolean {
+    if (position !in detail.episodes.indices) return false
+    return slot.index == position &&
+        slot.episodeIndex == position &&
+        slot.episodeId == detail.episodes[position] &&
+        slot.detail?.series?.id == detail.series.id
+}
+
+/**
+ * 取槽位前先按当前详情校验。旧播放页、换季或换剧后留下的槽位不能直接挂到新页面。
+ */
+internal fun PhonePlayerActivity.releaseStaleAdjacentSlot(
+    position: Int,
+    detail: Detail,
+): Boolean {
+    val slot = playerAdjacentState.slots[position] ?: return false
+    if (adjacentSlotMatches(slot, detail, position)) return false
+    android.util.Log.w(
+        "HGTV-PHONE",
+        "drop stale adjacent slot episode=${position + 1} " +
+            "series=${slot.detail?.series?.id.orEmpty()} expected=${detail.series.id}",
+    )
+    releaseAdjacentSlot(position)
+    return true
 }
 
 /**
@@ -76,6 +124,7 @@ internal fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup() {
 internal fun PhonePlayerActivity.ensureAdjacentEpisode(target: Int) {
     if (!playerForeground) return
     val d = detail ?: return
+    syncAdjacentDetail(d)
     if (target !in d.episodes.indices || target == index || abs(target - index) != 1) return
     if (playerAdjacentState.slots.containsKey(target) ||
         !playerAdjacentState.warming.add(target)
@@ -155,6 +204,7 @@ internal fun PhonePlayerActivity.ensureAdjacentEpisode(target: Int) {
 internal fun PhonePlayerActivity.ensureNextSeasonEpisode(targetDetail: Detail) {
     if (!playerForeground) return
     val current = detail ?: return
+    syncAdjacentDetail(current)
     if (index != current.episodes.lastIndex) return
     val episodeId = targetDetail.episodes.firstOrNull() ?: return
     val key = current.episodes.size
@@ -299,7 +349,13 @@ internal fun PhonePlayerActivity.attachAdjacentToPagerPage(target: Int) {
         attachAdjacentToLandscapePagerPage(target)
         return
     }
+    val d = detail ?: return
+    if (target !in d.episodes.indices || target == index) return
     val page = playerEpisodePager.pageAt(target) ?: run {
+        ensureAdjacentEpisode(target)
+        return
+    }
+    if (releaseStaleAdjacentSlot(target, d)) {
         ensureAdjacentEpisode(target)
         return
     }
@@ -307,8 +363,6 @@ internal fun PhonePlayerActivity.attachAdjacentToPagerPage(target: Int) {
         ensureAdjacentEpisode(target)
         return
     }
-    val d = detail ?: return
-    if (target !in d.episodes.indices || target == index) return
     val episodeId = d.episodes[target]
     val cover = d.episodeCover(episodeId).ifBlank { d.series.cover }
     if (page.playerView.player === slot.player) {
@@ -351,7 +405,13 @@ internal fun PhonePlayerActivity.attachAdjacentToLandscapePagerPage(target: Int)
         attachAdjacentToPagerPage(target)
         return
     }
+    val d = detail ?: return
+    if (target !in d.episodes.indices || target == index) return
     val page = playerLandscapePager.pageAt(target) ?: run {
+        ensureAdjacentEpisode(target)
+        return
+    }
+    if (releaseStaleAdjacentSlot(target, d)) {
         ensureAdjacentEpisode(target)
         return
     }
@@ -359,8 +419,6 @@ internal fun PhonePlayerActivity.attachAdjacentToLandscapePagerPage(target: Int)
         ensureAdjacentEpisode(target)
         return
     }
-    val d = detail ?: return
-    if (target !in d.episodes.indices || target == index) return
     val cover = d.episodeCover(d.episodes[target]).ifBlank { d.series.cover }
     if (page.video.player === slot.player) {
         startAdjacentPreRender(slot)
@@ -381,6 +439,8 @@ internal fun PhonePlayerActivity.attachAdjacentToLandscapePagerPage(target: Int)
 }
 
 private fun PhonePlayerActivity.startAdjacentPreRender(slot: PhonePlayerAdjacentSlot) {
+    val d = detail ?: return
+    if (releaseStaleAdjacentSlot(slot.index, d)) return
     if (slot.index == index || !slot.sourcePrepared || slot.firstFrameRendered ||
         slot.preRendering || slot.previewPlaying
     ) return
@@ -402,6 +462,8 @@ private fun PhonePlayerActivity.startAdjacentPreRender(slot: PhonePlayerAdjacent
 }
 
 internal fun PhonePlayerActivity.startAdjacentSwipePreview(target: Int): Boolean {
+    val d = detail ?: return false
+    if (releaseStaleAdjacentSlot(target, d)) return false
     val slot = playerAdjacentState.slots[target] ?: return false
     if (playerLandscapeMode) {
         val page = playerLandscapePager.pageAt(target) ?: return false
@@ -423,6 +485,8 @@ internal fun PhonePlayerActivity.startAdjacentSwipePreview(target: Int): Boolean
 }
 
 private fun PhonePlayerActivity.playAdjacentPreview(slot: PhonePlayerAdjacentSlot): Boolean {
+    val d = detail ?: return false
+    if (releaseStaleAdjacentSlot(slot.index, d)) return false
     if (slot.index == index || player === slot.player) return false
     slot.previewPlaying = true
     slot.preRendering = false
@@ -463,6 +527,7 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
 ): Boolean {
     val d = detail ?: return false
     if (target !in d.episodes.indices || abs(target - index) != 1) return false
+    if (releaseStaleAdjacentSlot(target, d)) return false
     val slot = playerAdjacentState.slots.remove(target) ?: return false
     if (slot.preparedAt <= 0L) {
         playerAdjacentState.slots[target] = slot
@@ -609,7 +674,13 @@ internal fun PhonePlayerActivity.pauseAdjacentPlayers() {
 }
 
 internal fun PhonePlayerActivity.reconcileAdjacentSlots() {
+    val d = detail ?: return
+    syncAdjacentDetail(d)
     if (playerAdjacentState.slots.containsKey(index)) releaseAdjacentSlot(index)
+    playerAdjacentState.slots.keys.toList().forEach { position ->
+        // `episodes.size` 是下一季第一集的专用槽位，身份由 activateNextSeasonPool 单独校验。
+        if (position != d.episodes.size) releaseStaleAdjacentSlot(position, d)
+    }
     trimAdjacentSlots()
 }
 
