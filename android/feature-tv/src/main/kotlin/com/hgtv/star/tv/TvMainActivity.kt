@@ -468,6 +468,7 @@ class TvMainActivity: Activity() {
     val recommendDetails=LinkedHashMap<String,Detail>(8,0.75f,true)
     val recommendDetailLoading=mutableSetOf<String>()
     val recommendWarmJobs=HashMap<String,RecommendWarm>()
+    val recommendPrepared=RecommendPreparedSource()
     val recommendPlaybackBatchState=com.hgtv.star.shared.feed.RecommendPlaybackBatchState()
     var recommendBatchKey=""
     var recommendBatchJob: java.util.concurrent.Future<*>?=null

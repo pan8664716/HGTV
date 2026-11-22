@@ -86,9 +86,9 @@ fun TvMainActivity.invalidateRecommendForFilterChange() {
 }
 
 /**
- * 丢掉所有预热好的相邻剧集（关闭画面、退出应用、内存吃紧时）。
+ * 丢掉所有预热好的相邻剧集与单槽片源（关闭画面、退出应用、内存吃紧时）。
  *
- * 推荐列表每次进页面都会重新取一页，相邻地址预热只在当前这一屏有意义。
+ * 推荐列表每次进页面都会重新取一页，相邻预热只在当前这一屏有意义。
  */
 fun TvMainActivity.closeRecommendCache() {
     cancelRecommendWarm()
@@ -108,6 +108,7 @@ fun TvMainActivity.cancelRecommendWarm(key: String) {
     val warm=recommendWarmJobs.remove(key) ?: return
     warm.future?.cancel(true)
     warm.scope.cancel()
+    if(warm.preparedKey.isNotEmpty()) recommendPrepared.cancel(warm.preparedKey)
 }
 
 /** 取消全部在途预热（离开推荐页 / 进正片 / 退出应用）。 */
@@ -116,4 +117,5 @@ fun TvMainActivity.cancelRecommendWarm() {
     recommendWarmJobs.clear()
     recommendStore().clearWarm()
     jobs.forEach { warm -> warm.future?.cancel(true); warm.scope.cancel() }
+    recommendPrepared.cancel()
 }

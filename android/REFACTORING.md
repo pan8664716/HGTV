@@ -2,7 +2,7 @@
 
 > 基线提交：`140665f89ea816e4a38da50d3aa9428ecb722ead`
 > 重构分支：`refactor/from-140665f`
-> 最后更新：2026-11-22
+> 最后更新：2026-11-23
 
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
@@ -14,6 +14,19 @@
 - HEVC 能力首次探测合并 `REGULAR_CODECS`、`ALL_CODECS` 和 LEGACY，按 codec 名去重并保留来源。
 - 完整候选与枚举错误落盘到 `hgtv-playback`；后续启动、选择器兜底和调试面板直接读缓存。
 - `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或目录结构；未运行测试；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
+## TV 推荐流单槽片源准备
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 推荐页继续使用单个 `ExoPlayer` 和稳定 `PlayerView`，不恢复相邻播放器池或 `ViewPager2`。
+- 相邻窗口仍只取详情与地址；主方向最近一部额外准备约 1MB 首块，写入单槽 `RemoteVideo`，
+  换剧时直接交给现有 `playEpisode(prepared=...)`，省掉换作路径上的索引解析和首块等待。
+- 单槽只保留一份片源，仅在非计费网络且当前播放器缓冲不少于 1.5 秒时启动；方向变化、
+  目标不匹配、进正片、离开推荐页、退后台和内存吃紧时立即取消并关闭。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、依赖或 iOS；未运行测试或真机验证；未推送。
 
 回滚：对本节对应提交执行 `git revert`。
 

@@ -31,7 +31,12 @@ internal fun TvMainActivity.onStopImpl(superOnStop: () -> Unit) {
     // 推荐页不写进度，只记下位置并卸掉画面；回到前台由 onResume 接着播。
     // 顺手结掉「这一部看了多久」：退到后台的那段时间不算进停留时长，
     // 否则放着不管一小时再回来，一部本来划走的剧会被记成「看了」。
-    else if(screen=="recommend") { startPosition=currentPosition(); detachPlayerSurface(keepSession=true); settleRecommendWatch() }
+    else if(screen=="recommend") {
+        startPosition=currentPosition()
+        detachPlayerSurface(keepSession=true)
+        recommendPrepared.cancel()
+        settleRecommendWatch()
+    }
     artwork.cancelPage(clearMemory=true); library.flush(); superOnStop()
 }
 

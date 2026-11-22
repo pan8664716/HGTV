@@ -35,6 +35,9 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
     // removeAllViews / 新建 Surface 导致 FrameLayout 布局崩溃），但清空旧 Surface 内容、
     // 停止旧媒体并作废旧 work。旧作品不能再发声，新作品也不会继承旧首帧。
     val series=recommendItems[safe]
+    val preparedKey=recommendPreparedKey(series.id,playbackMaxQuality)
+    // 目标已经备好或正在备好就留着交给本次起播；方向变了才关闭旧目标。
+    if(!recommendPrepared.matches(preparedKey)) recommendPrepared.cancel()
     val switching=safe!=recommendIndex && playerView!=null
     if(switching) resetRecommendPlaybackForSwitch()
     recommendIndex=safe; recommendShift=direction

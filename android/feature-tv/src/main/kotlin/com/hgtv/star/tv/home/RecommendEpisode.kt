@@ -98,7 +98,12 @@ internal fun TvMainActivity.startRecommendEpisode(data: Detail,position: Long,au
     // 换到另一部：上一次「画面丢了自动重建」的额度重新给满（见 [recoverRecommendPicture]）。
     // 不清的话，看过一部要重建两回的片子之后，后面每一部都只剩一次机会。
     pictureRecoveries=0; pictureRecoveryAt=0L
-    // 相邻项只预热详情与播放地址；当前这一部仍然由播放内核正常取源、解析并起播。
+    // 先取走已经完成的单槽片源，再清理同名在途任务。完成结果可能比主线程摘任务的
+    // post 更早落地；顺序反了会把刚备好的 RemoteVideo 一起取消。
+    val preparedKey=recommendPreparedKey(data.series.id,playbackMaxQuality)
+    val prepared=if(position<=0L) recommendPrepared.take(preparedKey) else null
+    if(prepared==null) recommendPrepared.cancel(preparedKey)
+    // 其余相邻项只预热详情与播放地址；当前这一部命中单槽时直接交给播放内核。
     val key=preparedKey(data)
     val fromStart=position<=0L
     val warmingCurrent=key.isNotEmpty() && recommendStore().isWarming(key)
@@ -120,11 +125,15 @@ internal fun TvMainActivity.startRecommendEpisode(data: Detail,position: Long,au
     // 过渡黑场必须先**完全不透明**再换源：命中预热缓存时换源是瞬时的，
     // 淡入还没走完就 reset 媒体，旧画面会带着半透明露出来（正是那一下拉伸）。
     recommendCover?.let { cover -> cover.animate().cancel(); cover.alpha=1f }
+    if(BuildConfig.DEBUG) {
+        android.util.Log.i("HGTV-PERF","recommend source prepared=${if(prepared!=null) 1 else 0} id=${data.series.id}")
+    }
     // 从后台回来那一次不自动播：画面停在那一帧，浮层上写「已暂停」，按播放键继续。
     playEpisode(
         0,
         position.coerceAtLeast(0),
         autoplay=autoplay,
+        prepared=prepared,
         clearDanmakuOnSwitch=true,
     )
     screen="recommend"

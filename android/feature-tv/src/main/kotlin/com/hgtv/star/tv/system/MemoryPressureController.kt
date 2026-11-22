@@ -80,6 +80,7 @@ internal fun TvMainActivity.onTrimMemoryImpl(level: Int) {
         // 推荐页不能整份清掉（正在播的那一部就在里面），只收窄后续预热窗口。
         else {
             cancelScheduledPreload()
+            recommendPrepared.cancel()
             slideCache.onTrimMemory(level>=ComponentCallbacks2.TRIM_MEMORY_RUNNING_CRITICAL)
         }
     }

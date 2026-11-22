@@ -96,7 +96,7 @@ fun TvMainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: Strin
         val summary=plan.targets.joinToString(",") { "${it.index}:${it.level.name.first()}" }
         android.util.Log.i("HGTV-PERF","preload reason=$reason mode=${plan.mode} anchor=${plan.anchor} targets=$summary")
     }
-    // 快速 fling：只留地址预取（文档 4.2）。数据预加载全部跳过——用户根本不会停在这些条目上。
+    // 快速 fling：只留地址预取（文档 4.2）。完整片源预加载全部跳过——用户根本不会停在这些条目上。
     if(plan.mode==SlideCacheManager.Mode.FLING) {
         if(BuildConfig.DEBUG) android.util.Log.i("HGTV-PERF","preloadSkip reason=fling anchor=${plan.anchor}")
     }
@@ -109,6 +109,15 @@ fun TvMainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: Strin
     } else {
         plan.targets
     }
+    // 只把顺序中的第一条提升为完整片源；其余仍只取地址。低配电视因此也只会多一份
+    // `RemoteVideo`，不会出现相邻播放器、解码器或 Surface。
+    val primaryIndex=if(plan.mode==SlideCacheManager.Mode.FLING) {
+        null
+    } else {
+        targets.firstOrNull {
+            it.index in recommendItems.indices && it.level!=com.hgtv.star.core.CacheLevel.NONE
+        }?.index
+    }
     // 一次最多派 [PRELOAD_MAX_TARGETS] 条：计划里的顺序就是优先级，后面那些
     // （更远的地址预取）留给下一次换剧时再补。四条以上同时发只会互相抢带宽。
     var dispatched=0
@@ -116,24 +125,31 @@ fun TvMainActivity.applyRecommendPlan(plan: SlideCacheManager.Plan,reason: Strin
         if(dispatched>=PRELOAD_MAX_TARGETS) break
         val series=recommendItems.getOrNull(target.index) ?: continue
         if(target.level==com.hgtv.star.core.CacheLevel.NONE) continue
-        val accepted=warmRecommend(series,target.index)
+        val accepted=warmRecommend(series,target.index,prepareSource=target.index==primaryIndex)
         if(accepted) dispatched++
     }
 }
 
 /**
- * 把「某一部」的详情与播放地址预热出去。
+ * 把「某一部」的详情与播放源预热出去。
  *
- * 详情没有就先取详情（受 [DETAIL_PREFETCH_LIMIT] 限制），拿到之后只取播放地址。
- * 不创建 RemoteVideo，因此不会解析索引，也不会读取任何视频字节。
+ * 详情没有就先取详情（受 [DETAIL_PREFETCH_LIMIT] 限制）。普通目标只取播放地址；
+ * [prepareSource] 为真时由详情预热链额外准备一份约 1MB 的完整片源。
  */
-fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int): Boolean {
+fun TvMainActivity.warmRecommend(
+    series: com.hgtv.star.core.Series,
+    index: Int,
+    prepareSource: Boolean=false,
+): Boolean {
     val cached=recommendDetails[series.id]
     if(BuildConfig.DEBUG) {
-        android.util.Log.i("HGTV-PERF","addressDispatch index=$index detail=${if(cached!=null) 1 else 0}")
+        android.util.Log.i(
+            "HGTV-PERF",
+            "warmDispatch index=$index detail=${if(cached!=null) 1 else 0} full=${if(prepareSource) 1 else 0}",
+        )
     }
     if(cached!=null) {
-        return warmRecommendDetail(cached,index)
+        return warmRecommendDetail(cached,index,prepareSource)
     }
     if(series.id in recommendDetailLoading) return false
     if(recommendDetailLoading.size>=DETAIL_PREFETCH_LIMIT) return false
@@ -149,7 +165,9 @@ fun TvMainActivity.warmRecommend(series: com.hgtv.star.core.Series,index: Int): 
                 recommendDetails.lruPut(RECOMMEND_DETAIL_LIMIT,series.id,data)
                 // 仍然在窗口里才继续（用户可能已经连着换了好几部）。
                 val position=recommendItems.indexOfFirst { it.id==series.id }
-                if(position>=0 && kotlin.math.abs(position-recommendIndex)<=4) warmRecommendDetail(data,position)
+                if(position>=0 && kotlin.math.abs(position-recommendIndex)<=4) {
+                    warmRecommendDetail(data,position,prepareSource)
+                }
             }.onFailure { problem ->
                 if(BuildConfig.DEBUG) {
                     android.util.Log.w(
