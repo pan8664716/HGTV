@@ -59,6 +59,8 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         const val LINE_RETENTION_MS=AppConfig.Danmaku.LINE_RETENTION_MS
         const val REPLACE_ACTIVE_GRACE_MS=AppConfig.Danmaku.REPLACE_ACTIVE_GRACE_MS
         const val SEEK_BACK_TOLERANCE_MS=AppConfig.Danmaku.SEEK_BACK_TOLERANCE_MS
+        /** 跳转重建时回看的历史窗口；足以覆盖仍在屏幕上的滚动弹幕。 */
+        const val ACTIVE_REBASE_HISTORY_MS=15_000L
         const val LINE_POOL_LIMIT=AppConfig.Danmaku.LINE_POOL_LIMIT
         const val LOW_END_SURFACE_MAX_WIDTH=AppConfig.Danmaku.LOW_END_SURFACE_MAX_WIDTH
         const val LOW_END_SURFACE_MAX_HEIGHT=AppConfig.Danmaku.LOW_END_SURFACE_MAX_HEIGHT
@@ -728,14 +730,64 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
 
     private fun rebaseScrollSchedule(nowMs: Long) {
         clearScrollLayer()
-        nextGroupIndex=0
         scheduledGroupKeys.clear()
         laneFreeMs=LongArray(laneCount)
         laneEntryFreeMs=LongArray(laneCount)
         scheduleDirty=false
         lastSchedulePositionMs=nowMs
+
+        val viewWidth=width.toFloat()
+        val pixelsPerSecond=speedPx(viewWidth/BASE_SCROLL_SECONDS)
+        val emojiSize=fill.textSize*EMOJI_SCALE
+        // 只回看当前仍可能停留在屏幕上的历史窗口，避免每次 seek 都从整集开头重算。
+        val historyStart=(nowMs-ACTIVE_REBASE_HISTORY_MS).coerceAtLeast(0L)
+        nextGroupIndex=groups.indexOfFirst { it.firstMs>=historyStart }.let {
+            if(it<0) groups.size else it
+        }
+        while(nextGroupIndex<groups.size && groups[nextGroupIndex].firstMs<nowMs) {
+            val group=groups[nextGroupIndex++]
+            if(!scheduledGroupKeys.add(group.key)) continue
+            if(group.key in highlightedKeys) continue
+            val parts=partsOf(group.label)
+            val widths=widthsOf(group.label,parts,emojiSize)
+            var textWidth=0f
+            widths.forEach { textWidth+=it }
+            val durationMs=(((viewWidth+textWidth)/pixelsPerSecond)*1000f).toLong()
+                .coerceAtLeast(1L)
+            val startMs=group.firstMs
+            val endMs=startMs+durationMs
+            var lane=0
+            var earliest=Long.MAX_VALUE
+            var available=-1
+            for(index in laneFreeMs.indices) {
+                if(laneFreeMs[index]<=startMs) {
+                    available=index
+                    break
+                }
+                if(laneFreeMs[index]<earliest) {
+                    earliest=laneFreeMs[index]
+                    lane=index
+                }
+            }
+            if(available>=0) lane=available
+            laneFreeMs[lane]=startMs+
+                (((textWidth+laneGap)/pixelsPerSecond)*1000f).toLong()
+            laneEntryFreeMs[lane]=maxOf(laneEntryFreeMs[lane],laneFreeMs[lane])
+            if(endMs<nowMs) continue
+            val spriteText=parts.takeIf { parts.all { it.asset==null } }
+                ?.joinToString(separator="") { it.text }
+                ?.takeIf { it.isNotEmpty() }
+            lines+=obtainLine().apply {
+                bind(startMs,durationMs,textWidth,lane,group.key,parts,widths,spriteText)
+                // 跳转重建时这是“正在屏幕上的历史弹幕”，必须按历史开始时间计算横向位置，
+                // 不能再按首次上屏锚到右边缘。
+                entered=true
+            }
+        }
         scheduleGroupsThrough(nowMs+SCHEDULE_AHEAD_MS,nowMs)
         backlogCutoffMs=Long.MIN_VALUE
+        setSurfaceShown(mode!=DanmakuMode.HIDDEN && raw.isNotEmpty())
+        requestFrame()
     }
 
     private fun releaseExpiredLines(nowMs: Long) {
@@ -925,7 +977,9 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         if(mode==DanmakuMode.HIDDEN || laneCount<=0) return
         val viewWidth=width.toFloat()
         val now=clockPositionMillis()
-        if(now+SEEK_BACK_TOLERANCE_MS<lastPosition) {
+        // 向前、向后的大跨度跳转都要重建当前活动轨道；只判断向后会漏掉向前拖动，
+        // 导致屏幕继续沿用旧时间点的弹幕。
+        if(lastPosition>=0L && kotlin.math.abs(now-lastPosition)>SEEK_BACK_TOLERANCE_MS) {
             scheduleDirty=true
             highlightCursor=0
             nextSpriteRefreshAt=0L

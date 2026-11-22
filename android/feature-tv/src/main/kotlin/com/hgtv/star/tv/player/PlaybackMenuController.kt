@@ -484,7 +484,7 @@ fun TvMainActivity.detachPlayerSurface(
         retiringVideo=null; retiringHttp=null
         orphanResources.clear()
         playbackHttp=null
-        playerView?.player=null; playerView=null
+        detachPlaybackViewForRebuild()
         main.postDelayed({
             runCatching { deferredVideo?.close() }
             runCatching { deferredQueuedVideo?.close() }
@@ -504,7 +504,7 @@ fun TvMainActivity.detachPlayerSurface(
         orphanResources.forEach { (v,h) -> v?.let { runCatching { it.close() } }; closeTransport(h) }
         orphanResources.clear()
         video?.close(); video=null
-        playerView?.player=null; playerView=null
+        detachPlaybackViewForRebuild()
         closeTransport(playbackHttp); playbackHttp=null
     }
     // 状态机回到 IDLE。`playbackReady` 是它的只读投影，这一句同时把 prepared 清掉。

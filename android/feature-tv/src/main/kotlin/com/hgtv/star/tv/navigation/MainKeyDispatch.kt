@@ -16,8 +16,8 @@ internal fun TvMainActivity.goBackImpl() {
         // 从推荐页进的正片返回时直接回首页，不经过简介页或推荐流。
         "player" -> when {
             playbackMenu!=null -> hidePlaybackOverlay()
-            playbackFromRecommend -> leaveRecommendPlaybackToHome()
             hudReady && hud.visibility==View.VISIBLE && !playError -> hidePlaybackOverlay()
+            playbackFromRecommend -> leaveRecommendPlaybackToHome()
             else -> returnToDetail()
         }
         // 推荐播放界面：返回键回主页面（需求 2 / 5）——不写历史、不回详情。

@@ -223,8 +223,10 @@ class FixedFirstFramePlayerView @JvmOverloads constructor(
 ) : PlayerView(context,attrs,defStyleAttr) {
     private var holdAspectRatio=false
     private var firstFrameSeen=false
+    private var firstFrameRatioReady=false
     private var pendingAspectRatio=0f
     private var appliedAspectRatio=0f
+    var onFirstFrameAspectRatioApplied: (() -> Unit)?=null
     private var contentFrame: AspectRatioFrameLayout?=null
     private var frameLayoutListener: View.OnLayoutChangeListener?=null
     private val shutterView by lazy {
@@ -268,7 +270,10 @@ class FixedFirstFramePlayerView @JvmOverloads constructor(
                 "applied=$appliedAspectRatio frame=${frameSize()} shutter=${shutterView?.visibility}"
         )
         if(holdAspectRatio) {
-            pendingAspectRatio=aspectRatio
+            // stop/clear 会先回调一次 ratio=0；它不能覆盖已经记录的新片源预期比例。
+            if(aspectRatio>0f) pendingAspectRatio=aspectRatio
+            // PlayerView 在 ratio=0 时可能自行隐藏 shutter；等待首帧期间必须重新盖住旧 Surface。
+            shutterView?.visibility=View.VISIBLE
             if(firstFrameSeen) completeFirstFrameAspectRatio()
             return
         }
@@ -283,7 +288,23 @@ class FixedFirstFramePlayerView @JvmOverloads constructor(
         )
         holdAspectRatio=true
         firstFrameSeen=false
+        firstFrameRatioReady=false
         pendingAspectRatio=0f
+    }
+
+    fun forceShutterVisible() {
+        firstFrameRatioReady=false
+        shutterView?.visibility=View.VISIBLE
+    }
+
+    fun forceShutterHidden() {
+        shutterView?.visibility=View.INVISIBLE
+    }
+
+    /** 只记录新片源的预期比例，不改旧 Surface 的布局；首帧到达后再在快门后应用。 */
+    fun expectFirstFrameAspectRatio(width: Int,height: Int) {
+        if(width<=0 || height<=0) return
+        pendingAspectRatio=width.toFloat()/height
     }
 
     /**
@@ -312,7 +333,14 @@ class FixedFirstFramePlayerView @JvmOverloads constructor(
         holdAspectRatio=false
         val frame=contentFrame ?: videoSurfaceView?.parent as? AspectRatioFrameLayout
         pendingAspectRatio=0f
-        if(frame==null || abs(ratio-appliedAspectRatio)<.0001f) return
+        if(frame==null) return
+        if(abs(ratio-appliedAspectRatio)<.0001f) {
+            appliedAspectRatio=ratio
+            firstFrameRatioReady=true
+            shutterView?.visibility=View.INVISIBLE
+            onFirstFrameAspectRatioApplied?.invoke()
+            return
+        }
         appliedAspectRatio=ratio
         val shutter=shutterView
         shutter?.visibility=View.VISIBLE
@@ -320,22 +348,47 @@ class FixedFirstFramePlayerView @JvmOverloads constructor(
         frame.requestLayout()
         val observer=frame.viewTreeObserver
         if(!observer.isAlive) {
+            firstFrameRatioReady=true
             shutter?.visibility=View.INVISIBLE
+            onFirstFrameAspectRatioApplied?.invoke()
             return
         }
         observer.addOnPreDrawListener(object: ViewTreeObserver.OnPreDrawListener {
             override fun onPreDraw(): Boolean {
                 if(observer.isAlive) observer.removeOnPreDrawListener(this)
                 ratioLog("reveal frame=${frameSize()} ratio=$ratio")
+                firstFrameRatioReady=true
                 shutter?.visibility=View.INVISIBLE
+                onFirstFrameAspectRatioApplied?.invoke()
                 return true
             }
         })
     }
+
+    fun isFirstFrameAspectRatioReady(): Boolean = firstFrameRatioReady
 }
 
 internal fun PlayerView.holdFirstFrameAspectRatio() {
     (this as? FixedFirstFramePlayerView)?.holdFirstFrameAspectRatio()
+}
+
+internal fun PlayerView.forceShutterVisible() {
+    (this as? FixedFirstFramePlayerView)?.forceShutterVisible()
+}
+
+internal fun PlayerView.forceShutterHidden() {
+    (this as? FixedFirstFramePlayerView)?.forceShutterHidden()
+}
+
+internal fun PlayerView.expectFirstFrameAspectRatio(width: Int,height: Int) {
+    (this as? FixedFirstFramePlayerView)?.expectFirstFrameAspectRatio(width,height)
+}
+
+internal fun PlayerView.isFirstFrameAspectRatioReady(): Boolean =
+    (this as? FixedFirstFramePlayerView)?.isFirstFrameAspectRatioReady() ?: true
+
+internal fun PlayerView.setFirstFrameAspectRatioAppliedListener(listener: (() -> Unit)?) {
+    (this as? FixedFirstFramePlayerView)?.onFirstFrameAspectRatioApplied=listener
 }
 
 internal fun PlayerView.completeFirstFrameAspectRatio() {

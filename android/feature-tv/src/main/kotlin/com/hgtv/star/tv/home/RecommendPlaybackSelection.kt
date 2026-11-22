@@ -186,6 +186,12 @@ private fun TvMainActivity.resetRecommendPlaybackForSwitch() {
     playbackBinding=null
     view?.setKeepContentOnPlayerReset(false)
     view?.setShutterBackgroundColor(android.graphics.Color.BLACK)
+    // 播放器与 PlayerView 的绑定保持不变。强制显示内部黑色快门，先盖住旧 Surface；
+    // 新片源真实首帧后再由同一个 PlayerView 隐藏快门，全程不解绑输出面。
+    // hold 必须在 stop/clear 之前：否则 PlayerView 收到 ratio=0 时会把内容框恢复成
+    // 整屏比例，旧 Surface 的最后一帧就会先被拉伸一帧。
+    view?.holdFirstFrameAspectRatio()
+    view?.forceShutterVisible()
     val stopStarted=android.os.SystemClock.elapsedRealtime()
     p?.let { runCatching { it.pause(); it.stop(); it.clearMediaItems() } }
     if(BuildConfig.DEBUG && recommendSwitchStartedAt>0L) {

@@ -82,9 +82,9 @@ fun TvMainActivity.syncBufferingDots() {
     if(actuallyPlaying) playbackReady=true
     val frameUp=actuallyPlaying && pictureUpNow()
     if(frameUp && screen=="recommend" && recommendCover?.alpha==1f) {
-        // 播放器实例的首帧回调可能已经被消耗掉；只要当前媒体确实在出帧，
-        // 这里补一次揭黑，避免 loading 和黑场永久叠在正常画面上。
-        revealRecommendCover()
+        // 播放器实例的首帧回调可能已经被消耗掉；这里只走统一闸门：
+        // 必须同时满足当前媒体尺寸、真实首帧和比例布局完成，不能直接撤黑。
+        playbackBinding?.let(::revealRecommendWhenReady)
     }
     if(frameUp && centerLoadingMessage!=null) {
         hideCenterLoading()

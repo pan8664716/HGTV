@@ -22,6 +22,11 @@ private const val COVER_OUT_MS=260L
  */
 private const val COVER_OUT_FAST_MS=120L
 /**
+ * 低内存设备关闭动画时，首帧回调也不等于 SurfaceFlinger 已经完成下一次合成。
+ * 至少保留两帧左右，避免旧 buffer 在新画面合成前露出来。
+ */
+private const val COVER_MIN_HOLD_MS=64L
+/**
  * 换剧那一下**立即**把目标集封面盖上去（没有封面时退回黑底），
  * 不能看到上一部旧帧被拉伸。
  *
@@ -54,6 +59,14 @@ fun TvMainActivity.showRecommendCover(imageUrl: String?=null) {
                 root.height.coerceAtLeast(360),
             )
         }
+        if(BuildConfig.DEBUG) {
+            android.util.Log.i(
+                "HGTV-RATIO",
+                "cover show existing parent=${existing.parent!=null} "+
+                    "size=${existing.width}x${existing.height} alpha=${existing.alpha} "+
+                    "root=${root.width}x${root.height} children=${root.childCount}",
+            )
+        }
     } else {
         val cover=ImageView(this).apply {
             setBackgroundColor(Color.BLACK)
@@ -74,6 +87,14 @@ fun TvMainActivity.showRecommendCover(imageUrl: String?=null) {
         }
         attachRecommendCoverView(cover)
         recommendCover=cover
+        if(BuildConfig.DEBUG) {
+            android.util.Log.i(
+                "HGTV-RATIO",
+                "cover show new parent=${cover.parent!=null} "+
+                    "size=${cover.width}x${cover.height} alpha=${cover.alpha} "+
+                    "root=${root.width}x${root.height} children=${root.childCount}",
+            )
+        }
     }
     recommendCoverShownAt=android.os.SystemClock.elapsedRealtime()
 }
@@ -126,14 +147,27 @@ fun TvMainActivity.recoverRecommendPicture(reason: String) {
 fun TvMainActivity.revealRecommendCover(onRevealed: (() -> Unit)? = null) {
     val cover=recommendCover
     if(cover==null) {
+        playerView?.forceShutterHidden()
         onRevealed?.invoke()
         return
     }
     val revealToken=++recommendCoverToken
+    if(BuildConfig.DEBUG) {
+        android.util.Log.i(
+            "HGTV-RATIO",
+            "cover reveal start size=${cover.width}x${cover.height} "+
+                "alpha=${cover.alpha} parent=${cover.parent!=null} children=${root.childCount}",
+        )
+    }
     cover.animate().cancel()
     if(!TvStyle.animate) {
-        dismissRecommendCover()
-        onRevealed?.invoke()
+        main.postDelayed({
+            if(recommendCover===cover && revealToken==recommendCoverToken) {
+                playerView?.forceShutterHidden()
+                dismissRecommendCover()
+                onRevealed?.invoke()
+            }
+        },COVER_MIN_HOLD_MS)
         return
     }
     // 连划（触屏）时淡出收短：一秒划两三部的时候，每一次都在「换源 0.2~0.6s + 淡出 0.26s」
@@ -144,6 +178,7 @@ fun TvMainActivity.revealRecommendCover(onRevealed: (() -> Unit)? = null) {
     val duration=if(rapid) COVER_OUT_FAST_MS else COVER_OUT_MS
     cover.animate().alpha(0f).setDuration(duration).withEndAction {
         if(recommendCover===cover && revealToken==recommendCoverToken) {
+            playerView?.forceShutterHidden()
             dismissRecommendCover()
             onRevealed?.invoke()
         }
@@ -184,6 +219,14 @@ fun TvMainActivity.reattachRecommendCover() {
 /** 立刻收掉过渡黑场（离开推荐页、切到整屏提示、重建画面时用）。 */
 fun TvMainActivity.dismissRecommendCover() {
     recommendCoverToken++
+    if(BuildConfig.DEBUG) {
+        val cover=recommendCover
+        android.util.Log.i(
+            "HGTV-RATIO",
+            "cover dismiss size=${cover?.width ?: 0}x${cover?.height ?: 0} "+
+                "parent=${cover?.parent!=null} children=${root.childCount}",
+        )
+    }
     recommendCover?.let { cover ->
         cover.animate().cancel()
         (cover.parent as? android.view.ViewGroup)?.removeView(cover)

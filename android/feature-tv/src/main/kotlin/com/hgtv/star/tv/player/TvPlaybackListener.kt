@@ -23,6 +23,7 @@ internal class PlaybackBinding(
     val player: ExoPlayer,
     val generation: Int,
     val session: Int,
+    var mediaId: String,
     val recommendEntry: Boolean,
     val playbackStarted: Long,
     val prefetched: Boolean,
@@ -66,9 +67,22 @@ private class TvPlaybackListener(
         return value
     }
 
+    /**
+     * Player.Listener 的首帧 / 尺寸回调没有携带 mediaId；换源时旧渲染器排队的回调
+     * 仍可能落到新绑定上。只接受播放器当前媒体项就是本绑定的那一条。
+     */
+    private fun currentBinding(): PlaybackBinding? {
+        val bound=binding() ?: return null
+        if(bound.player.currentMediaItem?.mediaId!=bound.mediaId) return null
+        return bound
+    }
+
     override fun onPlaybackStateChanged(state: Int) {
-        val bound=binding() ?: return
+        val bound=currentBinding() ?: return
         val p=bound.player
+        if(host.screen=="recommend" && host.playerView?.isFirstFrameAspectRatioReady()!=true) {
+            host.playerView?.forceShutterVisible()
+        }
         host.syncBufferingDots()
         host.playback.onPlayerState(state,p.playWhenReady)
         if(state==Player.STATE_READY) {
@@ -202,10 +216,13 @@ private class TvPlaybackListener(
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?,reason: Int) {
+        // 队列自动切到下一集时，currentMediaItem 已经是新集，不能先用旧 mediaId
+        // 做过滤；这里先接住绑定，再把绑定的媒体 id 推到新集。
         val bound=binding() ?: return
         if(reason!=Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
         val p=bound.player
         val mediaId=mediaItem?.mediaId.orEmpty()
+        if(mediaId.isNotEmpty()) bound.mediaId=mediaId
         val currentDetail=host.detail ?: return
         val seasonTarget=host.queuedDetail?.takeIf {
             host.episodeIndex==currentDetail.episodes.lastIndex &&
@@ -262,7 +279,13 @@ private class TvPlaybackListener(
     }
 
     override fun onVideoSizeChanged(videoSize: com.google.android.exoplayer2.video.VideoSize) {
-        val bound=binding() ?: return
+        val bound=currentBinding() ?: run {
+            if(host.screen=="recommend") host.playerView?.forceShutterVisible()
+            return
+        }
+        if(host.screen=="recommend" && host.playerView?.isFirstFrameAspectRatioReady()!=true) {
+            host.playerView?.forceShutterVisible()
+        }
         val ratio=if(videoSize.pixelWidthHeightRatio>0f) videoSize.pixelWidthHeightRatio else 1f
         val swapped=videoSize.unappliedRotationDegrees==90 || videoSize.unappliedRotationDegrees==270
         val rawW=if(swapped) videoSize.height else videoSize.width
@@ -287,14 +310,20 @@ private class TvPlaybackListener(
     }
 
     override fun onRenderedFirstFrame() {
-        val bound=binding() ?: return
+        val bound=currentBinding() ?: run {
+            // 旧片源的首帧可能晚于新绑定到达；PlayerView 自己的监听器会先隐藏快门，
+            // 这里必须重新盖住，直到当前媒体项真的出帧。
+            if(host.screen=="recommend") host.playerView?.forceShutterVisible()
+            return
+        }
         val p=bound.player
         bound.firstFrameRendered=true
         if(host.screen=="recommend") host.recommendPlaybackHasFrame=true
         if(BuildConfig.DEBUG) {
             android.util.Log.i(
                 "HGTV-RATIO",
-                "renderedFirstFrame view=${host.playerView?.javaClass?.simpleName} "+
+                "renderedFirstFrame media=${p.currentMediaItem?.mediaId} "+
+                    "view=${host.playerView?.javaClass?.simpleName} "+
                     "video=${host.videoWidth}x${host.videoHeight}",
             )
             val switchAge=host.recommendSwitchStartedAt.takeIf { it>0L }?.let {
@@ -356,7 +385,7 @@ private class TvPlaybackListener(
     }
 
     override fun onIsPlayingChanged(playing: Boolean) {
-        if(binding()==null) return
+        if(currentBinding()==null) return
         if(host.hud.visibility==View.VISIBLE) host.showHud()
         host.syncKeepScreenOn()
         host.syncMediaSession()
@@ -364,7 +393,7 @@ private class TvPlaybackListener(
     }
 
     override fun onPlaybackParametersChanged(parameters: PlaybackParameters) {
-        val bound=binding() ?: return
+        val bound=currentBinding() ?: return
         if(BuildConfig.DEBUG) android.util.Log.i(
             "HGTV",
             "Speed changed to ${parameters.speed} media=${bound.player.currentMediaItem?.mediaId} "+
@@ -379,26 +408,27 @@ private class TvPlaybackListener(
         newPosition: Player.PositionInfo,
         reason: Int,
     ) {
-        if(binding()==null) return
+        if(currentBinding()==null) return
         host.syncMediaSession()
         host.danmakuView?.resetCursor()
         host.syncDanmakuClock()
     }
 
     override fun onPlayerError(error: PlaybackException) {
-        if(binding()!=null) host.playerFailure(error)
+        if(currentBinding()!=null) host.playerFailure(error)
     }
 
     override fun onTimelineChanged(
         timeline: com.google.android.exoplayer2.Timeline,
         reason: Int,
     ) {
-        if(binding()!=null) host.confirmPlayedItemRemoved()
+        if(currentBinding()!=null) host.confirmPlayedItemRemoved()
     }
 }
 
 internal fun TvMainActivity.revealRecommendWhenReady(bound: PlaybackBinding) {
     if(playbackBinding!==bound || screen!="recommend" || bound.recommendRevealed || !bound.videoSizeReady) return
+    if(playerView?.isFirstFrameAspectRatioReady()!=true) return
     val frameReady=bound.firstFrameRendered ||
         (bound.sourceSetAt>0L && PlaybackDiag.lastFrameAt>bound.sourceSetAt)
     if(!frameReady) return

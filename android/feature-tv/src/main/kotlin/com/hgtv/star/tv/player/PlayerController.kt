@@ -529,12 +529,16 @@ fun TvMainActivity.playEpisode(
             player=p,
             generation=ticket,
             session=session,
+            mediaId=requestedId,
             recommendEntry=recommendEntry,
             playbackStarted=playbackStarted,
             prefetched=prefetched!=null,
             reuse=reuse,
         )
         playbackBinding=bound
+        playerView?.setFirstFrameAspectRatioAppliedListener {
+            if(screen=="recommend") playbackBinding?.let(::revealRecommendWhenReady)
+        }
         val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }.createMediaSource(MediaItem.Builder().setMediaId(requestedId).setUri("hgtv://episode/$requestedId").setMimeType(MimeTypes.VIDEO_MP4).build())
         // 正式播放换集：PlayerView 先冻结旧比例，等新首帧真的上屏后再应用新比例。
         if(screen=="player" || screen=="recommend") {

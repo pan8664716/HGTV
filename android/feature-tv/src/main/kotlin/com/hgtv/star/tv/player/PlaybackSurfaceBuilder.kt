@@ -18,6 +18,10 @@ import com.hgtv.star.shared.media.PlayerLetterboxMask
 import com.hgtv.star.shared.ui.LoadingDotsView
 
 internal fun TvMainActivity.buildPlaybackSurface() {
+    // 整页重建前先把旧 PlayerView 从窗口树里彻底摘掉。只 root.removeAllViews() 时，
+    // 某些电视的 SurfaceView 会留下一个仍然可见的旧 surface 图层，尺寸还是上一部的
+    // buffer，表现就是旧帧被拉伸后盖在新画面上。
+    detachPlaybackViewForRebuild()
     root.removeAllViews(); root.setBackgroundColor(Color.BLACK)
     touchLayer=null; touchBar=null; touchPlayLabel=null; touchSeekHint=null; touchBoostHint=null
     touchScrubHint=null
@@ -184,4 +188,19 @@ internal fun TvMainActivity.buildPlaybackSurface() {
     // 播放器 surface 重建会清空 root；推荐页从“加载详情”切到播放器时，
     // 中心 loading 必须跟着补挂回来，否则会提前露出黑场。正式播放页不挂这个等待。
     if(screen=="recommend") reattachCenterLoading()
+}
+
+/**
+ * 播放层整页重建时的 SurfaceView 清理。
+ *
+ * `PlayerView.setPlayer(null)` 会先让 PlayerView 清掉自己的输出面；再隐藏并移除
+ * 视图，SurfaceView 的旧图层才不会在当前 Activity 的窗口里继续保留。推荐页内部
+ * 换作不会调用这里——那条路径复用同一个 PlayerView，只替换 MediaSource。
+ */
+internal fun TvMainActivity.detachPlaybackViewForRebuild() {
+    val view=playerView ?: return
+    runCatching { view.player=null }
+    view.visibility=View.GONE
+    (view.parent as? android.view.ViewGroup)?.removeView(view)
+    playerView=null
 }
