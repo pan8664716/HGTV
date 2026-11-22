@@ -280,6 +280,8 @@ fun TvMainActivity.playEpisode(
         if(!frameReady) return
         recommendPlaybackHasFrame=true
         recommendRevealed=true
+        // 新片源已经真实出帧，之后同一播放器的正常重置才允许保留画面。
+        playerView?.setKeepContentOnPlayerReset(true)
         // 尺寸回调只代表播放器知道了比例，PlayerView 的 AspectRatioFrameLayout
         // 还要等下一次布局才会把画面框到正确大小。延后一帧揭黑，避免用户先看到
         // “整屏拉伸”再恢复成正确比例。
@@ -535,7 +537,10 @@ fun TvMainActivity.playEpisode(
         // 复用那条路不重建播放器，也不重建 PlayerView：这里补一次绑定是幂等的。
         // 推荐换作期间 PlayerView 只是 detach 了 player（保持 VISIBLE，避免 SurfaceView 的
         // surface 被系统回收），等新源准备好后在这里重新挂回。
-        playerView?.setKeepContentOnPlayerReset(true)
+        // 推荐换作时旧 Surface 里仍是上一部最后一帧。必须先让 PlayerView 用黑色快门
+        // 清掉旧内容，等这一部真实首帧后再恢复 keep-content；否则新比例一落地，
+        // 旧帧就会按当前视频大小被拉伸一瞬。
+        playerView?.setKeepContentOnPlayerReset(!recommendEntry)
         playerView?.visibility=View.VISIBLE
         if(playerView?.player!==p) attachPlayerView(p)
         p.setPlaybackSpeed(library.playbackSpeed)
@@ -881,12 +886,6 @@ fun TvMainActivity.playEpisode(
                     "source=${remote.info.videoWidth}x${remote.info.videoHeight}"
             )
             playerView?.holdFirstFrameAspectRatio()
-            if(recommendEntry) {
-                playerView?.primeFirstFrameAspectRatio(
-                    remote.info.videoWidth,
-                    remote.info.videoHeight,
-                )
-            }
         }
         // 起点一次设定：`setMediaSource(source, startPositionMs)` 内部先摘空旧项、
         // 再按给定位置掩码时间线，等价于「`setMediaSource` + `seekTo`」，少一次
