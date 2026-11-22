@@ -26,7 +26,7 @@ fun TvMainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
     screen="player"
     // 进正片：过渡黑场立刻收掉（画面本来就没断，继续盖着会黑一下）。
     dismissRecommendCover()
-    // 记下来源：从这里进的正片，返回键要直接回主页（需求 4），不回简介页。
+    // 记下来源：从这里进的正片，返回键回到推荐流，不回简介页。
     playbackFromRecommend=true
     // 在途的相邻预热到此为止：它们拉的是「别的剧」，进了正片就没人要了，
     // 留着只会和正片开头的「下一集预取」抢带宽（两条线程都在拉 1MB）。
@@ -102,16 +102,16 @@ fun TvMainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
             }
         }
     }
-    clearRecommendPageForFormalPlayback()
+    suspendRecommendForFormalPlayback()
 }
 
 /**
- * 正式播放不会返回推荐页，因此进入成功后立即释放推荐页状态。
+ * 进入正式播放时暂停推荐流的后台任务，但保留列表、详情和当前下标。
  *
- * 保留续流游标和落盘快照，下一次打开推荐仍可快速恢复；当前进程里的列表、详情、
- * 预热和定时任务全部清掉，避免低内存设备在正式播放和首页重建时继续保留一整页推荐资源。
+ * 正式播放期间不再拉推荐卡片和相邻片源，避免抢带宽；退出正式播放时直接恢复同一列推荐，
+ * 当前正在播放的视频、PlayerView、视频 Surface 和弹幕 Surface 都不动。
  */
-private fun TvMainActivity.clearRecommendPageForFormalPlayback() {
+private fun TvMainActivity.suspendRecommendForFormalPlayback() {
     cancelRecommendFeed()
     closeRecommendCache()
     cancelRecommendBatchModels()
@@ -121,23 +121,14 @@ private fun TvMainActivity.clearRecommendPageForFormalPlayback() {
     recommendAdvancePending=0
     recommendAdvanceWaiterQueued=false
     recommendLoading=false
-    recommendItems=emptyList()
-    recommendIndex=0
-    recommendPage=0
-    recommendHasMore=true
-    recommendStarted=false
-    recommendRestored=false
-    recommendTasteCache=null
-    recommendDetails.clear()
     recommendDetailLoading.clear()
-    recommendPlaybackController.clear()
 }
 
 /**
  * 推荐页返回键回主页面（首页）。
  *
  * 推荐页没有正式播放页的队列和解码器，可以延迟回收视频资源，让首页先完成首帧；
- * 从推荐进入正式播放后的返回走 [leaveRecommendPlaybackToHome]，使用播放页的立即收尾路径。
+ * 从推荐进入正式播放后的返回走 [leaveRecommendPlaybackToRecommend]。
  * 首页会重新取一次数据，推荐列表本身保留为会话级缓存。
  */
 fun TvMainActivity.goHomeFromRecommend() {
@@ -182,14 +173,36 @@ fun TvMainActivity.exitRecommendToHome() {
 }
 
 /**
- * 从推荐进入的正式播放，按返回**直接回主页**（需求 4），不经过简介页。
+ * 从推荐进入的正式播放，按返回直接回到推荐流。
  *
- * 推荐页状态已在进入正式播放时清掉；这里只按普通播放的立即资源回收路径回首页。
+ * 这里**不碰播放器和 Surface**：正在播放的正式视频继续播放，只把页面状态、浮层和按键
+ * 切回推荐模式。之后上下键重新用于切换推荐流。
  */
-fun TvMainActivity.leaveRecommendPlaybackToHome() {
-    if(screen!="player") return
-    sleepTimer.cancel(); sleepChoice=0; sleepStopped=false
+fun TvMainActivity.leaveRecommendPlaybackToRecommend() {
+    if(screen!="player" || !playbackFromRecommend) return
     saveProgress(); library.flush(); invalidatePage()
-    directPlayback=true
-    returnToDetail()
+    val data=detail
+    playbackFromRecommend=false
+    directPlayback=false
+    recommendHistoryPending=false
+    recommendPlaybackFailures=0
+    recommendPlaybackHasFrame=true
+    screen="recommend"
+    dismissRecommendCover()
+    dismissPlaybackMenu()
+    hud.visibility=View.GONE
+    if(data!=null) {
+        val at=recommendItems.indexOfFirst { it.id==data.series.id }
+        if(at>=0) recommendIndex=at
+        recommendPlaybackController.rememberShown(data.series)
+        recommendWatchingId=data.series.id
+        recommendWatchStart=android.os.SystemClock.elapsedRealtime()
+        attachRecommendOverlay(data.series)
+        updateRecommendOverlay()
+    }
+    syncPlaybackInfo()
+    syncMediaSession()
+    recommendToken.incrementAndGet()
+    scheduleRecommendPreload(300L,"return-from-player")
+    if(touchArmed) { attachTouchLayer(); resetTouchBar(); attachTouchBar(); wireSeekTouch() }
 }

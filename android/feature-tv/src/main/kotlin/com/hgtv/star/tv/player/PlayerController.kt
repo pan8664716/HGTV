@@ -193,11 +193,9 @@ fun TvMainActivity.playEpisode(
     // 否则那 1MB 与它的连接会一直挂着，没人再来取。
     if(prepared!=null && prefetched!==prepared) runCatching { prepared.close() }
     if(fromQueue) { queuedVideo=null; queuedEpisodeId=null; queuedQuality=""; queuedDetail=null; queuedAt=0 }
-    // 无感切集：同一个播放器复用、目标是下一集的开头、而且下一集**已经预热好**
-    //（播放地址 / moov / 首批数据都在本地，见 [maybePrefetch]）。
-    // 这时切集不再走「停播放器 → 清空 → 重新取地址 → 重建画面」那条路：
-    // 不清播放器（`stop()` / `clearMediaItems()` 会把画面掉到黑屏，编解码器还要重建一次），
-    // 不显示缓冲转圈，旧一集的视频等新源出画面之后再收。
+    // 正式播放的同一部剧分集切换不释放解码器：片源格式一致，直接替换 MediaSource，
+    // 让 MediaCodecRenderer 复用现有解码器。目标已经预热时旧一集继续播到新源挂上；
+    // 目标未预热时先暂停旧画面并盖过渡层，等取源完成后同样不清播放器。
     //
     // **推荐页换剧不能走这条路**（`!recommendEntry`）：无感切集不会 `stop()`，
     // 也就不会释放 MediaCodec——同一颗解码器要在原地跨剧重配。换的是**另一部片**，
@@ -208,10 +206,11 @@ fun TvMainActivity.playEpisode(
     // 数据仍然来自预热缓存，因此不重新取地址、也不会变慢。过渡黑场本来就盖着这一下。
     // 同档重建**必须**走硬切（`!keep`）：这一趟的全部意义就是 `stop()` 把 MediaCodec 放掉。
     // 走无感那条路等于什么都不做，4001 / 4003 的现场原样留着。
-    val seamless=reuse && prefetched!=null && !recommendEntry && !keep
+    val softSwitch=reuse && !recommendEntry && !keep
+    if(softSwitch && prefetched==null) player?.pause()
     // 队列里还挂着别的下一集（换清晰度、跳集）：先摘掉，别让它跟着新源一起进播放器。
     if(!fromQueue) dropQueuedEpisode()
-    if(seamless || keep) suppressBufferingUi() else restoreBufferingUi()
+    if(softSwitch || keep) suppressBufferingUi() else restoreBufferingUi()
     // 上一次切集留下的尾巴（正常情况为空：新源出画面时就收掉了，见 [retirePreviousEpisode]）。
     // 这里用强制版：下面马上要整条替换播放列表（setMediaSource / clearMediaItems），
     // 旧项不可能再被读；不强制的话，连续切集会把它顶掉、漏掉一次关闭。
@@ -221,13 +220,13 @@ fun TvMainActivity.playEpisode(
     if(reuse) {
         cancelRecovery(); cancelPrefetch(); tvTools.close()
         episodePanel?.dismiss(); episodePanel=null; speedDialog?.dismiss(); speedDialog=null
-        // `stop()` 是这一步唯一必须的：它卸载媒体、释放 MediaCodec，正是 4001 / 4003 要的。
+        // 错误恢复 / 同档重建才 `stop()`：它卸载媒体、释放 MediaCodec，正是 4001 / 4003 要的。
         //
         // 列表**不清**（同档重建时）：下面 `setMediaSource` 内部第一件事就是
         // `removeMediaSourceHolders(0, size)`（ExoPlayer 2.19 `setMediaSourcesInternal`），
         // 显式 `clearMediaItems()` 只是把同一件事做两遍，中间还多一次空列表的 BUFFERING。
         // 其它路径照旧清：那条路上旧项与 `video` 都要一起放掉。
-        if(!seamless) {
+        if(!softSwitch) {
             // 推荐换作在进入这里之前已经 stop + clear，此时播放器为空且已 IDLE。
             // 不再重复走同一条释放链，避免无意义的渲染器状态切换。
             val p=player
@@ -244,7 +243,8 @@ fun TvMainActivity.playEpisode(
         // 索引与首块白读一遍，改法也就白改了。
         if(!keep) { retiringVideo=video; retiringHttp=playbackHttp; video=null; playbackHttp=null }
         // 非无感路径刚刚 stop + clearMediaItems，旧项已不可能再被读，直接收。
-        if(!seamless) forceRetirePrevious() else scheduleRetire()
+        if(!softSwitch) forceRetirePrevious()
+        else if(prefetched!=null) scheduleRetire()
         cancelOverlayAutoHide(); main.removeCallbacks(seekRunnable); pendingSeek=null
     // `keepSession=true`：这里**不是**离开播放页，而是**重新起播这一集/这一部**。
     // 会话层（有效上限 / 预算 / 手动建议）必须活着穿过这次重建——`replayWithPlan` 刚写进去的
@@ -270,7 +270,7 @@ fun TvMainActivity.playEpisode(
         episodeIndex = episodeIndex,
         resumeAtMs = position.coerceAtLeast(0),
         autoplay = autoplay,
-        seamless = seamless,
+        seamless = softSwitch,
         resetEpisode = !recovering,
     ).toInt()
     playbackHttp=claimedHttp; video=prefetched
@@ -540,7 +540,7 @@ fun TvMainActivity.playEpisode(
         if(screen=="player" || screen=="recommend") {
             if(BuildConfig.DEBUG) android.util.Log.i(
                 "HGTV-RATIO",
-                "sourceSet screen=$screen episode=${episodeIndex+1} reuse=$reuse seamless=$seamless " +
+                "sourceSet screen=$screen episode=${episodeIndex+1} reuse=$reuse soft=$softSwitch " +
                     "view=${playerView?.javaClass?.simpleName} " +
                     "source=${remote.info.videoWidth}x${remote.info.videoHeight}"
             )
@@ -555,6 +555,7 @@ fun TvMainActivity.playEpisode(
         bound.videoSizeReady=false; bound.firstFrameRendered=false
         PlaybackDiag.lastFrameAt=0L
         bound.sourceSetAt=android.os.SystemClock.elapsedRealtime()
+        if(softSwitch && prefetched==null) scheduleRetire()
         p.setMediaSource(source,position.coerceAtLeast(0))
         p.prepare()
         p.playWhenReady=foreground && requestedAutoplay && !pausedForLifecycle
