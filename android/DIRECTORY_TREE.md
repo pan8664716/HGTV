@@ -1,6 +1,6 @@
 # Android 代码目录树与文件职责
 
-> 基线生成日期：2026-11-22。文件总数为 675；新增、移动、删除文件后必须同步更新本文件。
+> 基线生成日期：2026-11-22。文件总数为 588；新增、移动、删除文件后必须同步更新本文件。
 
 > 适用范围：`android/` 下的 Kotlin、Java、XML、Gradle、ProGuard、JSON、Baseline Profile 和构建属性文件。
 > 不包含：图片二进制、`build/`、`.gradle/`、`.idea/`、`.kotlin/`、`local.properties`、`keystore.properties`。
@@ -42,10 +42,10 @@
 ```text
 android/
 ├── app/  (23 files, 12 directories)
-├── core/  (234 files, 28 directories)
+├── core/  (152 files, 20 directories)
 ├── feature-phone/  (143 files, 11 directories)
 ├── feature-tv/  (159 files, 18 directories)
-├── shared/  (119 files, 46 directories)
+├── shared/  (114 files, 36 directories)
 ├── gradle/  (1 files, 1 directories)
 ├── root/config/  (3 files, 1 directories)
 ```
@@ -211,97 +211,6 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `AppConfig.kt` | 应用级可调参数的唯一来源；除网络、内容、播放和缓存外，还集中导航/首页/设置顺序及手机 / 电视几何尺寸，供 core / shared / phone / TV 引用。 | object AppConfig |
-
-#### `core/src/test/resources/`
-
-| 文件 | 作用 | 关键符号 |
-| --- | --- | --- |
-| `signing.json` | JSON 配置或数据文件。 | json |
-
-#### `core/src/test/kotlin/com/hgtv/star/core/`
-
-| 文件 | 作用 | 关键符号 |
-| --- | --- | --- |
-| `AccountCredentialsTest.kt` | cookieStore.xml 解析：用真实的 Java 序列化片段做输入。 | class AccountCredentialsTest |
-| `AccountSnapshotTest.kt` | 自动化测试，覆盖 AccountSnapshotTest 相关行为。 | class AccountSnapshotTest |
-| `ArtworkKeyTest.kt` | 封面请求的 Key 只由**地址**决定。 | class ArtworkKeyTest |
-| `ArtworkUrlTest.kt` | 自动化测试，覆盖 ArtworkUrlTest 相关行为。 | class ArtworkUrlTest |
-| `BackToTopPolicyTest.kt` | 「回到顶部」的显隐规则：两端共用这一份，因此锁死行为。 | class BackToTopPolicyTest |
-| `CardMenuTest.kt` | 自动化测试，覆盖 CardMenuTest 相关行为。 | class CardMenuTest |
-| `CategoryCatalogTest.kt` | 自动化测试，覆盖 CategoryCatalogTest 相关行为。 | class CategoryCatalogTest |
-| `ContentRepositoryTest.kt` | 自动化测试，覆盖 ContentRepositoryTest 相关行为。 | class ContentRepositoryTest |
-| `DanmakuEmojiTest.kt` | 自动化测试，覆盖 DanmakuEmojiTest 相关行为。 | class DanmakuEmojiTest |
-| `DanmakuTest.kt` | 自动化测试，覆盖 DanmakuTest 相关行为。 | class DanmakuTest |
-| `DetailCacheTest.kt` | 详情落盘缓存：推荐页起播的「详情」这一段（0.4~0.6s）靠它省掉。 | class DetailCacheTest |
-| `EpisodePagingTest.kt` | 选集分页的页码与区间文案（电视与手机共用同一份，见 EpisodePaging）。 | class EpisodePagingTest |
-| `FasterBrowsingTest.kt` | 自动化测试，覆盖 FasterBrowsingTest 相关行为。 | class FasterBrowsingTest |
-| `FeedCursorTest.kt` | 自动化测试，覆盖 FeedCursorTest 相关行为。 | class FeedCursorTest |
-| `HeatLabelTest.kt` | 热度文案的回归测试。 | class HeatLabelTest |
-| `LabelStyleTest.kt` | 系统标签配色的回归测试。 | class LabelStyleTest |
-| `LatestWriteQueueTest.kt` | 自动化测试，覆盖 LatestWriteQueueTest 相关行为。 | class LatestWriteQueueTest |
-| `LibraryBackupTest.kt` | 自动化测试，覆盖 LibraryBackupTest 相关行为。 | class LibraryBackupTest |
-| `LibraryIndexTest.kt` | 自动化测试，覆盖 LibraryIndexTest 相关行为。 | class LibraryIndexTest |
-| `LibraryTransferServerTest.kt` | 自动化测试，覆盖 LibraryTransferServerTest 相关行为。 | class LibraryTransferServerTest |
-| `LiveCooldownTest.kt` | 自动化测试，覆盖 LiveCooldownTest 相关行为。 | class LiveCooldownTest |
-| `LiveCoverDumpTest.kt` | 自动化测试，覆盖 LiveCoverDumpTest 相关行为。 | class LiveCoverDumpTest |
-| `LiveDiagTest.kt` | 诊断用：区分「IP 级风控」与「播放路径/参数问题」。 | class LiveDiagTest |
-| `LiveIsolateTest.kt` | 隔离变量：签名分支 / query 参数集 / 身份（随机 vs 已注册）/ Cookie。 | class LiveIsolateTest |
-| `LivePageSizeProbeTest.kt` | 自动化测试，覆盖 LivePageSizeProbeTest 相关行为。 | class LivePageSizeProbeTest |
-| `LivePassportSignTest.kt` | 用 branch-2 签名打真实的 Passport 端点，验证签名**被接受**。 | class LivePassportSignTest |
-| `LivePhoneLoginTest.kt` | 手机号登录链路的联网验收：注册设备 → 发码 → （人工给码后）换会话。 | class LivePhoneLoginTest |
-| `LivePlaybackApiCompareTest.kt` | 用同一份真实注册身份串行比较播放模型 API 的耗时、业务码与内联地址。 | class LivePlaybackApiCompareTest |
-| `LivePlaybackBranch2Test.kt` | 自动化测试，覆盖 LivePlaybackBranch2Test 相关行为。 | class LivePlaybackBranch2Test |
-| `LivePlaybackBurn2Test.kt` | 自动化测试，覆盖 LivePlaybackBurn2Test 相关行为。 | class LivePlaybackBurn2Test |
-| `LivePlaybackBurnTest.kt` | 自动化测试，覆盖 LivePlaybackBurnTest 相关行为。 | class LivePlaybackBurnTest |
-| `LivePlaybackBurstTest.kt` | 自动化测试，覆盖 LivePlaybackBurstTest 相关行为。 | class LivePlaybackBurstTest |
-| `LivePlaybackFieldsTest.kt` | 自动化测试，覆盖 LivePlaybackFieldsTest 相关行为。 | class LivePlaybackFieldsTest |
-| `LivePlaybackFreshTest.kt` | 自动化测试，覆盖 LivePlaybackFreshTest 相关行为。 | class LivePlaybackFreshTest |
-| `LivePlaybackMatrixTest.kt` | 自动化测试，覆盖 LivePlaybackMatrixTest 相关行为。 | class LivePlaybackMatrixTest |
-| `LivePlaybackOldProfileTest.kt` | 自动化测试，覆盖 LivePlaybackOldProfileTest 相关行为。 | class LivePlaybackOldProfileTest |
-| `LivePlaybackRecheckTest.kt` | 自动化测试，覆盖 LivePlaybackRecheckTest 相关行为。 | class LivePlaybackRecheckTest |
-| `LivePlaybackVariantTest.kt` | 自动化测试，覆盖 LivePlaybackVariantTest 相关行为。 | class LivePlaybackVariantTest |
-| `LiveQuotaTest.kt` | 自动化测试，覆盖 LiveQuotaTest 相关行为。 | class LiveQuotaTest |
-| `LiveRegComboTest.kt` | 自动化测试，覆盖 LiveRegComboTest 相关行为。 | class LiveRegComboTest |
-| `LiveSigningProbeTest.kt` | 自动化测试，覆盖 LiveSigningProbeTest 相关行为。 | class LiveSigningProbeTest |
-| `LowEndPlaybackTest.kt` | 自动化测试，覆盖 LowEndPlaybackTest 相关行为。 | class LowEndPlaybackTest |
-| `ErrorPolicyTest.kt` | 纯 JVM 错误决策：离线等待、HTTP 有界恢复、设备自愈、非幂等写请求和精确播放器分类。 | class ErrorPolicyTest |
-| `HttpFailureMapperTest.kt` | HTTP 状态、Retry-After 和 DNS 异常到统一错误事实的映射。 | class HttpFailureMapperTest |
-| `MediaCryptoTest.kt` | 自动化测试，覆盖 MediaCryptoTest 相关行为。 | class MediaCryptoTest |
-| `OptionalFilterTest.kt` | 推荐筛选项的降级状态机（OptionalFilter）：回空页先重试、两次即永久关掉。 | class OptionalFilterTest |
-| `PassportSignerTest.kt` | Passport（branch 2）签名的固定向量测试。 | class PassportSignerTest |
-| `PhoneLoginTest.kt` | 手机号登录的协议测试：把 Passport 的响应换成本地桩，钉住四件事—— 编码方式（XOR 0x05 + hex）、请求路径、成功判据、以及会话凭证的收集。 | class PhoneLoginTest |
-| `PhoneRegionTest.kt` | 区号与号码归一：两端（电视 / 手机）走同一份实现，这里钉住它。 | class PhoneRegionTest |
-| `PhoneSearchServerTest.kt` | 自动化测试，覆盖 PhoneSearchServerTest 相关行为。 | class PhoneSearchServerTest |
-| `PictureWatchdogTest.kt` | 自动化测试，覆盖 PictureWatchdogTest 相关行为。 | class PictureWatchdogTest |
-| `PlaybackAttemptLedgerTest.kt` | 按集重试额度的重置语义（与 PlaybackAttemptLedger 的注释一一对应）。 | class PlaybackAttemptLedgerTest |
-| `PlaybackCacheTest.kt` | 落盘缓存的两件事必须成立，否则二次启动会**更慢**（读坏数据 → 重新下载 → 再写一遍）： 1. 索引写出去再读回来，与原来逐字段一致（含样本偏移、长度、IV、加密子样本偏移）； 2. 数据坏了 / 文件总长对不上时返回 null，而不是把半个索引交给播放器。 | class PlaybackCacheTest |
-| `PlaybackCacheUrlByIdTest.kt` | 「按集作废地址」的边界。 | class PlaybackCacheUrlByIdTest |
-| `PlaybackComfortTest.kt` | 自动化测试，覆盖 PlaybackComfortTest 相关行为。 | class PlaybackComfortTest |
-| `PlaybackDegradationTest.kt` | 降级决策的规格表（与 PlaybackDegradation 的注释一一对应）。 | class PlaybackDegradationTest |
-| `PlaybackFailurePolicyTest.kt` | 两端共用的失败处置：钉住**判定顺序**与**额度记账的时机**。 | class PlaybackFailurePolicyTest |
-| `PlaybackInfoLineTest.kt` | 播放信息条的两段文案：两端共用，因此锁死格式。 | class PlaybackInfoLineTest |
-| `PlaybackSpeedTest.kt` | 自动化测试，覆盖 PlaybackSpeedTest 相关行为。 | class PlaybackSpeedTest |
-| `PlaybackStageTest.kt` | 阶段标题表的两条不变量： 1. 每个阶段都有**自己的**标题（两档共用一个标题，用户与调试面板都分不出来）； 2. 未知阶段退回「播放失败」，不能把常量本身当标题读给用户。 | class PlaybackStageTest |
-| `PreparedFreshnessTest.kt` | 「预热结果还能不能用」的判据。 | class PreparedFreshnessTest |
-| `PublicDnsTest.kt` | PublicDns 的活体校验：手写的 DNS 报文必须能被公共 DNS 认，解析结果必须能用。 | class PublicDnsTest |
-| `QrLoginUrlTest.kt` | 出码 / 轮询的 URL 拼装。 | class QrLoginUrlTest |
-| `RankBoardTest.kt` | 自动化测试，覆盖 RankBoardTest 相关行为。 | class RankBoardTest |
-| `RecommendCacheTest.kt` | 推荐快照 + 「停在哪一部」的落盘：冷启动续播（i → i+1）全靠这两份文件。 | class RecommendCacheTest |
-| `RecommendFlowFilterTest.kt` | 推荐取页的两条两端共用判定（RecommendFlow.fresh / RecommendFlow.stalled）。 | class RecommendFlowFilterTest |
-| `SearchDeviceHealTest.kt` | 搜索失败时的处置顺序：**先换设备重搜，再降级官网**。 | class SearchDeviceHealTest |
-| `SeekStepPumpTest.kt` | 快进 / 快退的调度外框（SeekStepPump）：合并窗里只落地一次、窗内连按会加速、 换集 / 手拖之后作废。 | class SeekStepPumpTest |
-| `SeekStepTest.kt` | 快进 / 快退的共用规则（SeekStep）：两端的手感靠这一份单测锁住。 | class SeekStepTest |
-| `SeriesSeasonsTest.kt` | 自动化测试，覆盖 SeriesSeasonsTest 相关行为。 | class SeriesSeasonsTest |
-| `SessionInterceptorTest.kt` | 注册请求的「匿名」开关。 | class SessionInterceptorTest |
-| `SignerTest.kt` | 自动化测试，覆盖 SignerTest 相关行为。 | class SignerTest |
-| `SleepTimerChoiceTest.kt` | 「定时关闭」八档的落点：**两端共用这一份**，因此档位与分钟 / 集数的对应关系 必须在这里钉住——早先电视与手机各写一遍字面量，改一端就会悄悄分叉。 | class SleepTimerChoiceTest |
-| `SlideCacheTest.kt` | 双向滑动的三条规则必须能各自单独验证，否则接进推荐页之后没法判断 「回看慢」到底是窗口没覆盖，还是被 fling 降级了。 | class SlideCacheTest |
-| `StableDeviceIdsTest.kt` | 设备标识派生的协议测试：钉住「同一个系统标识符永远派生出同一个值」。 | class StableDeviceIdsTest |
-| `VideoFitTest.kt` | 画面模式的两端共用判定（VideoFrameMode.toFit）。 | class VideoFitTest |
-| `ViewingToolsTest.kt` | 自动化测试，覆盖 ViewingToolsTest 相关行为。 | class ViewingToolsTest |
-| `VoiceQueryTest.kt` | 语音结果的清理规则。 | class VoiceQueryTest |
-| `WatchProgressFactoryTest.kt` | 观看进度的生成规则（电视与手机共用，见 BackupProgress.of / BackupProgress.completed）。 | class WatchProgressFactoryTest |
-| `WatchingTest.kt` | 自动化测试，覆盖 WatchingTest 相关行为。 | class WatchingTest |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/account/`
 
@@ -510,12 +419,6 @@ android/
 | `SessionInterceptor.kt` | 对齐原版 px7/a.java（Retrofit 拦截器）+ TTTokenManager.addRequestHeader / processResponseHeader。 | class SessionInterceptor |
 | `SessionKeeper.kt` | 心跳保活。 | class SessionKeeper |
 | `SessionState.kt` | 会话状态的最小接口。 | interface SessionState、object SessionBridge |
-
-#### `core/src/test/kotlin/com/hgtv/star/core/playback/`
-
-| 文件 | 作用 | 关键符号 |
-| --- | --- | --- |
-| `PlaybackMachineTest.kt` | 播放状态机的迁移规则。 | class PlaybackMachineTest |
 
 #### `core/src/main/kotlin/com/hgtv/star/core/content/account/`
 
@@ -1216,31 +1119,6 @@ android/
 | --- | --- | --- |
 | `AppUpdateController.kt` | 两端共用的更新控制器：内置写死 GitHub 更新地址（不可由用户设置），元数据与安装包均走 gh-proxy.org 镜像；安装包写入内部缓存根目录，负责下载校验、静默检查与安装状态。 | class AppUpdateController、data class AppUpdateSource、data class AppUpdate、data class AppUpdateState |
 | `UpdateInstaller.kt` | SmartTube 式系统安装入口：从内部缓存取 `update.apk`，经 FileProvider 生成 content URI，再用 ACTION_VIEW 拉起系统安装器；不预检查安装未知应用权限，不创建 PackageInstaller 会话，不等待安装回执。 | object UpdateInstaller |
-
-#### `shared/src/test/kotlin/com/hgtv/star/shared/debug/`
-
-| 文件 | 作用 | 关键符号 |
-| --- | --- | --- |
-| `TlsSummaryTest.kt` | TLS 读数压缩的回归测试。 | class TlsSummaryTest |
-
-#### `shared/src/test/kotlin/com/hgtv/star/shared/nav/`
-
-| 文件 | 作用 | 关键符号 |
-| --- | --- | --- |
-| `RouteTest.kt` | 页面清单的回归测试。 | class RouteTest |
-
-#### `shared/src/test/kotlin/com/hgtv/star/shared/ui/`
-
-| 文件 | 作用 | 关键符号 |
-| --- | --- | --- |
-| `AvatarColorTest.kt` | 头像底色的回归测试。 | class AvatarColorTest |
-| `SliderDragTest.kt` | 滑杆触摸状态机的回归测试。 | class SliderDragTest |
-
-#### `shared/src/test/kotlin/com/hgtv/star/shared/feed/`
-
-| 文件 | 作用 | 关键符号 |
-| --- | --- | --- |
-| `RecommendFeedPolicyTest.kt` | 推荐流首屏 60 条、消费约 2/3 后预取和播放链接批量补充节奏的回归测试。 | class RecommendFeedPolicyTest |
 
 #### `shared/src/main/kotlin/com/hgtv/star/shared/feature/account/`
 

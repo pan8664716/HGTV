@@ -7,6 +7,18 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## Android 测试源码清理
+
+状态：已删除，debug 构建通过。
+
+- 按用户要求删除 `core/src/test`、`shared/src/test` 下全部 87 个测试源码与测试资源，
+  同时移除 `DIRECTORY_TREE.md` 中对应章节并修正文件、目录计数。
+- `:core:test`、`:shared:test` 当前为 `NO-SOURCE`；保留 Gradle 测试任务与依赖配置，
+  后续如恢复测试可直接重新添加源码。
+- `:app:assembleDebug` 通过；未改版本号、versionCode、业务代码或发布元数据，未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 错误处理 v1.1：统一事实、HTTP/Exo 映射与恢复边界
 
 状态：已实现第一轮 Android 适配，debug 构建通过，待用户真机验证。
@@ -21,8 +33,8 @@
   4004/4005 才允许降档。
 - 手机播放页网络监听改为“断网转联网”的恢复边沿；断网事件不再触发重新取地址。
 - `DeviceHealer` 改为 10 分钟窗口内最多 2 次、单飞执行，并合并并发等待者。
-- `:app:assembleDebug` 通过；`:core:test` 仍被仓库既有 `COMIC/REAL/AI/NEW` 测试源码
-  编译错误阻断，本轮新增测试尚未执行。未改版本号、versionCode、依赖或发布元数据，未推送。
+- `:app:assembleDebug` 通过；旧测试源码后续已按用户要求统一删除，见上一节。
+  未改版本号、versionCode、依赖或发布元数据，未推送。
 
 回滚：对本节对应提交执行 `git revert`。
 
