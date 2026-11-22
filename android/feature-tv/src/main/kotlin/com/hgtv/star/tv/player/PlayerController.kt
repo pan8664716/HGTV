@@ -317,6 +317,7 @@ fun TvMainActivity.playEpisode(
         val frameReady=firstFrameRendered ||
             (sourceSetAt>0L && PlaybackDiag.lastFrameAt>sourceSetAt)
         if(!frameReady) return
+        recommendPlaybackHasFrame=true
         recommendRevealed=true
         // 尺寸回调只代表播放器知道了比例，PlayerView 的 AspectRatioFrameLayout
         // 还要等下一次布局才会把画面框到正确大小。延后一帧揭黑，避免用户先看到
@@ -647,6 +648,7 @@ fun TvMainActivity.playEpisode(
                                 if(!firstFrameRendered && sourceSetAt>0L &&
                                     PlaybackDiag.lastFrameAt>sourceSetAt) {
                                     firstFrameRendered=true
+                                    recommendPlaybackHasFrame=true
                                 }
                                 revealRecommendWhenReady()
                             }
@@ -813,6 +815,7 @@ fun TvMainActivity.playEpisode(
             override fun onRenderedFirstFrame() {
                 if(!active()) return
                 firstFrameRendered=true
+                if(screen=="recommend") recommendPlaybackHasFrame=true
                 if(BuildConfig.DEBUG) android.util.Log.i(
                     "HGTV-RATIO",
                     "renderedFirstFrame view=${playerView?.javaClass?.simpleName} video=${videoWidth}x$videoHeight"
@@ -975,6 +978,7 @@ fun TvMainActivity.playEpisode(
             if(p.playbackState==Player.STATE_READY) playbackReady=true
             if(firstFrameRendered) {
                 playbackReady=true
+                if(recommendEntry) recommendPlaybackHasFrame=true
                 playerView?.completeFirstFrameAspectRatio()
                 danmakuLoader.onFrameRendered(p.currentPosition)
                 revealRecommendWhenReady()

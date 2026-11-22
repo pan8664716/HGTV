@@ -166,7 +166,8 @@ private fun TvMainActivity.prepareToLeaveRecommend() {
     // 留着会让下次进推荐的第一次按键凭空多跨几部。
     recommendWaiters.clear(); recommendAdvancePending=0; recommendAdvanceWaiterQueued=false
     recommendToken.incrementAndGet(); recommendPageToken.incrementAndGet()
-    recommendPlaybackFailures=0; recommendHistoryPending=false; playbackFromRecommend=false
+    recommendPlaybackFailures=0; recommendPlaybackHasFrame=false
+    recommendHistoryPending=false; playbackFromRecommend=false
     dismissRecommendCover()
     // 在途的「取推荐流」这一下作废：它的回调会因为令牌 / 页面不对而丢弃，
     // 这个标记必须在这里一起清掉，否则下次进推荐会一直以为还在加载、什么都不做。

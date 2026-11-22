@@ -107,7 +107,10 @@ internal fun TvMainActivity.bindTvPlaybackPage(page: TvPlaybackSurfacePage,index
     val slot=entry?.value?.takeIf { tvPoolSlotMatches(it,index) }
     if(entry!=null && slot==null) releaseTvPoolEntry(entry.key)
     if(index==currentPlaybackPageIndex() && player!=null) {
-        page.playerView.player=player
+        if(page.playerView.player!==player) {
+            page.detachPlayerOutput()
+            page.playerView.player=player
+        }
         playerView=page.playerView
         return
     }
@@ -285,9 +288,7 @@ private fun TvMainActivity.trimTvPlaybackPool(anchor: Int) {
 
 internal fun TvMainActivity.releaseTvPlaybackPool() {
     tvPlaybackPool.slots.values.forEach { slot ->
-        tvPlaybackPager?.pageAt(slot.pageIndex)?.let { page ->
-            if(page.playerView.player===slot.player) page.detachPlayerOutput()
-        }
+        tvPlaybackPager?.detachPlayer(slot.player)
         closeTransport(slot.http)
     }
     tvPlaybackPool.clear()
@@ -312,9 +313,7 @@ private fun TvMainActivity.releaseTvPoolEntry(key: String) {
                 "screen=$screen current=${currentPlaybackPageIndex()}",
         )
     }
-    tvPlaybackPager?.pageAt(slot.pageIndex)?.let { page ->
-        if(page.playerView.player===slot.player) page.detachPlayerOutput()
-    }
+    tvPlaybackPager?.detachPlayer(slot.player)
     slot.preRendering=false
     slot.preRenderToken++
     closeTransport(slot.http)

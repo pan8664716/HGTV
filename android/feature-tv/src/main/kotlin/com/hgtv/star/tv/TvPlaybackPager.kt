@@ -9,6 +9,7 @@ import android.view.ViewGroup
 import android.widget.FrameLayout
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
+import com.google.android.exoplayer2.ExoPlayer
 import com.google.android.exoplayer2.ui.PlayerView
 
 /**
@@ -110,6 +111,22 @@ internal class TvPlaybackPager(
     fun currentPage(): TvPlaybackSurfacePage? = pageAt(pager.currentItem)
 
     /**
+     * 把某个播放器从所有现存页面上解绑。
+     *
+     * 池回收不能只依赖 `pageAt(slot.pageIndex)`：页面可能已经被 ViewPager2 回收，
+     * 但它的 `PlayerView` 仍持有旧播放器。先扫全部子页面再 release，避免旧 Surface
+     * 回调落到已经进入 `Uninitialized` 的 MediaCodec 上。
+     */
+    fun detachPlayer(player: ExoPlayer?) {
+        if (player == null) return
+        val recycler = pager.getChildAt(0) as? RecyclerView ?: return
+        for (index in 0 until recycler.childCount) {
+            val page = recycler.getChildAt(index) as? TvPlaybackSurfacePage ?: continue
+            if (page.playerView.player === player) page.detachPlayerOutput()
+        }
+    }
+
+    /**
      * 等 ViewPager2 真正创建目标页后再启动该页的播放器。
      *
      * 推荐页换作会同时触发 `notifyDataSetChanged` / `setCurrentItem`，ViewHolder
@@ -194,7 +211,10 @@ internal class TvPlaybackPager(
             }
         }
         host.playerView=page.playerView
-        if(page.playerView.player!==host.player) page.playerView.player=host.player
+        if(page.playerView.player!==host.player) {
+            page.detachPlayerOutput()
+            page.playerView.player=host.player
+        }
         return true
     }
 

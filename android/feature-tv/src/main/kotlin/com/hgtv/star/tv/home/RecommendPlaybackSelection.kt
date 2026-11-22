@@ -19,6 +19,7 @@ import com.hgtv.star.shared.debug.StartupTrace
 fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0,skipped: Int=0,autoplay: Boolean=true) {
     if(screen!="recommend" || recommendItems.isEmpty()) return
     val safe=index.coerceIn(0,recommendItems.lastIndex)
+    recommendPlaybackHasFrame=false
     val switchStartedAt=android.os.SystemClock.elapsedRealtime()
     fun switchTrace(label: String) {
         if(BuildConfig.DEBUG) {
@@ -46,8 +47,8 @@ fun TvMainActivity.playRecommendAt(index: Int,position: Long=0L,direction: Int=0
         player=null
         video=null
         playbackHttp=null
-        playerView=null
         resetRecommendPlaybackForSwitch()
+        playerView=null
         switchTrace("reset-surface")
     }
     recommendIndex=safe; recommendShift=direction

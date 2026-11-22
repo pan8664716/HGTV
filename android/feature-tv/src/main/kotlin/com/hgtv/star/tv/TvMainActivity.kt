@@ -504,6 +504,8 @@ class TvMainActivity: Activity() {
     var recommendNotice=""
     var recommendNoticeAt=0L
     var recommendPlaybackFailures=0
+    /** 当前推荐作品本次起播是否真的出过画面；用于区分“放不了”和“播放中断”。 */
+    var recommendPlaybackHasFrame=false
     var recommendIcon: View?=null
     var playbackFromRecommend=false
     var tab=0

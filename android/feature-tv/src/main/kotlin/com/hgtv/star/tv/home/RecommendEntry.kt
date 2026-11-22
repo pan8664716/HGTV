@@ -41,7 +41,7 @@ fun TvMainActivity.openRecommend() {
     initialCatalogPending=false
     restoreStoppedPage=false
     playbackFromRecommend=false
-    recommendHistoryPending=false; recommendPlaybackFailures=0
+    recommendHistoryPending=false; recommendPlaybackFailures=0; recommendPlaybackHasFrame=false
     // 每次进推荐页重建一次兴趣画像：上次会话里从别处看的剧，这次就该算进口味。
     recommendTasteCache=null
     recommendToken.incrementAndGet(); recommendPageToken.incrementAndGet()

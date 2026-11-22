@@ -18,6 +18,17 @@
 
 回滚：对本节对应提交执行 `git revert`。
 
+## TV 推荐页播放器池 Surface 生命周期修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 推荐换作清理前保留旧 `PlayerView` 引用，先解绑播放器再置空，避免旧 Surface 继续挂在池播放器上。
+- 池播放器释放和页面重绑前扫描所有页面解绑旧 Surface，避免 `setSurface()` 撞到已 `Uninitialized` 的 MediaCodec。
+- 推荐页增加本次起播的出帧标记；已经播放过的作品发生中断时停在当前作品，不再自动跳下一部。
+- `:app:assembleDebug`、`:app:assembleRelease` 通过；未改版本号、versionCode、依赖或目录结构；未运行单元测试或真机测试；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 错误处理 v1.2：空响应、设备自愈和 CDN 时间窗口收敛
 
 状态：已实现，debug 构建通过，待用户真机验证。

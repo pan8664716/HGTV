@@ -387,7 +387,7 @@ fun TvMainActivity.playerFailure(problem: Throwable) {
             val failed=detail?.series?.title ?: recommendItems.getOrNull(recommendIndex)?.title
             // 已经出过画面就不是「这一部放不了」，而是播放中断。此时继续自动换剧会把
             // 用户刚看到的作品直接划走，甚至连续跳过多部；停在当前作品让用户决定重试。
-            if(pictureUpNow()) {
+            if(recommendPlaybackHasFrame || pictureUpNow()) {
                 recommendPlaybackFailures=0
                 player?.pause()
                 showRecommendMessage("${if(failed!=null) "《$failed》" else "当前作品"}播放中断\n按确定键重试，按返回键回主页面")
