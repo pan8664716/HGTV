@@ -168,8 +168,14 @@ class AppUpdateController private constructor(context: Context) {
                         error = "",
                     )
                 }
-                if (found == null) preferences.edit().remove(KEY_PENDING_INSTALL).apply()
-                else if (cached) resumePendingInstall()
+                if (found == null) {
+                    preferences.edit().remove(KEY_PENDING_INSTALL).apply()
+                    withContext(AppExecutors.disk.dispatcher) {
+                        if (apk.exists()) apk.delete()
+                    }
+                } else if (cached) {
+                    resumePendingInstall()
+                }
             } catch (e: Exception) {
                 _state.update {
                     it.copy(

@@ -13,6 +13,7 @@
 
 - 更新 APK 从 `filesDir/updates/update.apk` 改存到内部缓存根目录
   `cacheDir/update.apk`，与 SmartTube 的固定缓存文件名一致。
+- 确认已是最新版本时删除缓存中的旧 `update.apk`，避免残留安装包。
 - FileProvider authority 改为 `${applicationId}.update_provider`，路径只开放
   `cache-path`；安装时生成 `content://` URI，再用 `ACTION_VIEW` 拉起系统安装器。
 - 删除 `PackageInstaller` 会话、安装回执广播和对应 Manifest receiver；安装权限检查与
