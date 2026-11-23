@@ -944,7 +944,10 @@ class DanmakuView(context: Context) : TextureView(context),DanmakuEmojiStore.Lis
     private fun layoutLanes() {
         val textBox=(fillMetrics.descent-fillMetrics.ascent)+fill.strokeWidth
         val emojiBox=fill.textSize*EMOJI_SCALE
-        laneGap=fill.textSize*LANE_GAP_TEXT
+        // 间距要覆盖**实际绘制宽度**：纯文本走图集贴图，贴图宽度含描边外扩，
+        // 比 `measureText` 宽出几个像素。只按字号算间距，弹幕一密这点差就被吃掉，
+        // 表现为同一行前后压字。
+        laneGap=fill.textSize*LANE_GAP_TEXT+edge.strokeWidth*2f
         val verticalGap=maxOf(fill.textSize*LANE_GAP_VERTICAL,density*LANE_MIN_GAP_DP)
         laneHeight=maxOf(textBox,emojiBox)+verticalGap
         if(mode==DanmakuMode.HIDDEN || laneHeight<=0f) { laneCount=0; return }

@@ -973,7 +973,7 @@ object AppConfig {
         const val BOTTOM_INSET_DP = 120
 
         /** 文字弹幕之间的横向安全间距系数。 */
-        const val LANE_GAP_TEXT = 0.9f
+        const val LANE_GAP_TEXT = 1.5f
 
         /** 轨道之间的纵向安全间距系数。 */
         const val LANE_GAP_VERTICAL = 0.35f
