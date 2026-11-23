@@ -123,9 +123,13 @@ internal fun PhonePlayerActivity.muteBufferingUi() {
 }
 
 internal fun PhonePlayerActivity.syncPlayGlyph() {
-    if (!playerLandPlayInitialized) return
     val wantsPlay = player?.playWhenReady == true
-    playerLandPlay.kind = if (wantsPlay) PhoneGlyph.Kind.PAUSE else PhoneGlyph.Kind.PLAY
+    // 横屏控制栏
+    if (playerLandPlayInitialized) {
+        playerLandPlay.kind = if (wantsPlay) PhoneGlyph.Kind.PAUSE else PhoneGlyph.Kind.PLAY
+    }
+    // 竖屏控制条（正式播放页每页一份，只有当前页可见）
+    if (playerPageInitialized) playerPage.setTransportPlaying(wantsPlay)
 }
 
 /** 屏幕中心的播放 / 暂停：暂停时一直亮着，播放中闪一下。 */

@@ -127,6 +127,17 @@ class PhoneVideoPage(
      * 是否**不挂**弹幕层（排查视频渲染问题时用）。
      */
     private val noDanmaku: Boolean = false,
+    /**
+     * 是否显示**播放控制条**（上一集 / 快退 / 播放暂停 / 快进 / 下一集）。
+     *
+     * 只有正式播放页开：一屏一集、有明确的「上一集 / 下一集」。
+     * 信息流里每屏是不同作品，翻页就是换片，没有集的概念。
+     *
+     * 打开后同时做两件事（用户要求）：
+     * * 去掉底部「第x集 ｜ 简介」那一行；
+     * * 把「第x集」并到第一行标题后面。
+     */
+    private val episodeTransport: Boolean = false,
     // 默认完整画面；真正的档位由宿主按用户的「画面模式」随后覆盖，
     // 不再按片源方向强制铺满。
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -191,6 +202,19 @@ class PhoneVideoPage(
                 if (onTitle != null) onTitle?.invoke() else onTap?.invoke()
             }
         }
+    }
+
+    /**
+     * 控制条模式下并到标题后面的「第N集」。
+     *
+     * 原先它在第三行（「第x集 ｜ 简介」），那一行在正式播放页被整行去掉，
+     * 集号就挪到这里。信息流不显示它。
+     */
+    private val episodeTag = TextView(context).apply {
+        setTextColor(0xCCFFFFFF.toInt())
+        phoneSize(12)
+        maxLines = 1
+        setPadding(context.dp(6), 0, context.dp(INFO_EDGE_DP), 0)
     }
 
     private val tagRow = LinearLayout(context).apply {
@@ -264,6 +288,22 @@ class PhoneVideoPage(
     }
     internal lateinit var centerBox: FrameLayout
 
+    /**
+     * 控制条里的播放 / 暂停图标。
+     *
+     * 与中心那颗分开：中心那颗是「点一下闪一下」的提示，这一颗是常驻状态显示，
+     * 由宿主在 `syncPlayGlyph` 里跟着 `playWhenReady` 更新。
+     */
+    private val transportPlay = PhoneGlyph(context, PhoneGlyph.Kind.PAUSE).apply {
+        tint = Color.WHITE
+        filled = true
+    }
+
+    /** 控制条的播放 / 暂停图标跟随真实播放意图。 */
+    internal fun setTransportPlaying(playing: Boolean) {
+        transportPlay.kind = if (playing) PhoneGlyph.Kind.PAUSE else PhoneGlyph.Kind.PLAY
+    }
+
     private var series: Series? = null
     private var playbackLocked = false
     private lateinit var watchRow: LinearLayout
@@ -318,6 +358,14 @@ class PhoneVideoPage(
 
     /** 点全屏（只有信息流有）。 */
     var onFullscreen: (() -> Unit)? = null
+
+    /** 控制条：上一集 / 下一集（只有正式播放页接）。 */
+    var onPrevEpisode: (() -> Unit)? = null
+    var onNextEpisode: (() -> Unit)? = null
+
+    /** 控制条：快退 / 快进（按固定步长，见宿主实现）。 */
+    var onRewind: (() -> Unit)? = null
+    var onForward: (() -> Unit)? = null
 
     // ------------------------------------------------------------------ 构建
 
@@ -384,6 +432,48 @@ class PhoneVideoPage(
         buildCenter()
     }
 
+    /**
+     * 播放控制条：上一集 / 快退 / 播放暂停 / 快进 / 下一集。
+     *
+     * 按钮热区 34dp、图标 18dp：竖屏一行放得下五颗，也不会挤到标题的左边线。
+     * 播放 / 暂停用共享的 [transportPlay]，宿主通过 [setTransportPlaying] 更新状态。
+     */
+    private fun buildTransport(): LinearLayout {
+        val row = LinearLayout(context).apply {
+            orientation = LinearLayout.HORIZONTAL
+            gravity = Gravity.CENTER_VERTICAL
+            setPadding(context.dp(INFO_EDGE_DP), 0, 0, 0)
+        }
+        fun addButton(kind: PhoneGlyph.Kind, action: () -> Unit) {
+            val glyph = PhoneGlyph(context, kind).apply { tint = Color.WHITE }
+            val box = FrameLayout(context).apply {
+                addView(
+                    glyph,
+                    FrameLayout.LayoutParams(context.dp(18), context.dp(18), Gravity.CENTER),
+                )
+                setOnClickListener { if (!playbackLocked) action() }
+            }
+            row.addView(box, LinearLayout.LayoutParams(
+                context.dp(34), context.dp(34)
+            ).apply { rightMargin = context.dp(2) })
+        }
+        addButton(PhoneGlyph.Kind.PREV_EPISODE) { onPrevEpisode?.invoke() }
+        addButton(PhoneGlyph.Kind.REWIND) { onRewind?.invoke() }
+        val playBox = FrameLayout(context).apply {
+            addView(
+                transportPlay,
+                FrameLayout.LayoutParams(context.dp(22), context.dp(22), Gravity.CENTER),
+            )
+            setOnClickListener { if (!playbackLocked) onTap?.invoke() }
+        }
+        row.addView(playBox, LinearLayout.LayoutParams(
+            context.dp(38), context.dp(38)
+        ).apply { rightMargin = context.dp(2) })
+        addButton(PhoneGlyph.Kind.FORWARD) { onForward?.invoke() }
+        addButton(PhoneGlyph.Kind.NEXT_EPISODE) { onNextEpisode?.invoke() }
+        return row
+    }
+
     private fun buildInfo() {
         val column = LinearLayout(context).apply {
             orientation = LinearLayout.VERTICAL
@@ -414,9 +504,13 @@ class PhoneVideoPage(
             phoneSize(13)
         })
         episodeRow.addView(episodeDesc, LinearLayout.LayoutParams(0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f))
-        column.addView(episodeRow, LinearLayout.LayoutParams(
-            LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-        ).apply { topMargin = context.dp(6) })
+        // 正式播放页把「第x集」并到标题行、这一行整行去掉（用户要求）；
+        // 信息流仍然保留「第x集 ｜ 简介」，那里没有集的概念要挪。
+        if (!episodeTransport) {
+            column.addView(episodeRow, LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ).apply { topMargin = context.dp(6) })
+        }
 
         // 观看完整短剧 / 选集：不再单独铺半透明底板，作为信息区最后一行直接排版。
         actionBar = LinearLayout(context).apply {
@@ -497,6 +591,12 @@ class PhoneVideoPage(
         column.addView(seekBar, LinearLayout.LayoutParams(
             LayoutParams.MATCH_PARENT, context.dp(18)
         ).apply { topMargin = context.dp(2) })
+        // 播放控制条：紧跟在进度条下面（用户要求）。只有正式播放页有。
+        if (episodeTransport) {
+            column.addView(buildTransport(), LinearLayout.LayoutParams(
+                LayoutParams.MATCH_PARENT, context.dp(38)
+            ).apply { topMargin = context.dp(2) })
+        }
         column.addView(actionBar, LinearLayout.LayoutParams(
             LayoutParams.MATCH_PARENT, context.dp(ACTION_BAR_DP)
         ))
@@ -734,6 +834,13 @@ class PhoneVideoPage(
         titleRow.addView(title, LinearLayout.LayoutParams(
             0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
         ))
+        // 正式播放页：集号并到标题后面（第三行整行已去掉）。
+        if (episodeTransport && episodeLabel.isNotBlank()) {
+            episodeTag.text = episodeLabel
+            titleRow.addView(episodeTag, LinearLayout.LayoutParams(
+                ViewGroup.LayoutParams.WRAP_CONTENT, ViewGroup.LayoutParams.WRAP_CONTENT
+            ))
+        }
 
         tagRow.removeAllViews()
         val tags = ArrayList<String>(5)

@@ -16,6 +16,8 @@ internal fun PhonePlayerActivity.makePage(): PhoneVideoPage = PhoneVideoPage(
     showLockButton = true,
     underlay = playerFeedUnderlay,
     transparentForPaging = true,
+    // 正式播放页：进度条下面加播放控制条，集号并到标题后面，去掉「第x集 ｜ 简介」。
+    episodeTransport = true,
 )
 
 /**
@@ -42,6 +44,18 @@ internal fun PhonePlayerActivity.wirePage(p: PhoneVideoPage) {
     p.onLock = { togglePlaybackLock() }
     p.onTitle = { detail?.series?.let { openSeries(it) } }
     p.onFullscreen = { enterFullscreen() }
+    // 竖屏控制条：上一集 / 下一集走完整起播（相邻集通常已预渲染），
+    // 快退快进按 10 秒步进。
+    p.onPrevEpisode = {
+        val count = detail?.episodes?.size ?: 0
+        if (index > 0 && index - 1 < count) play(index - 1, 0L, clearDanmakuOnSwitch = true)
+    }
+    p.onNextEpisode = {
+        val count = detail?.episodes?.size ?: 0
+        if (index >= 0 && index + 1 < count) play(index + 1, 0L, clearDanmakuOnSwitch = true)
+    }
+    p.onRewind = { seekBy(-10_000L) }
+    p.onForward = { seekBy(10_000L) }
     p.onSeekStart = { progressDragging = true }
     p.onSeek = { fraction -> showSeekHint(fraction) }
     p.onSeekEnd = { fraction ->

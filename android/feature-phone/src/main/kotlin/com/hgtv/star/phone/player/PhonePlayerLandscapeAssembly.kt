@@ -255,13 +255,13 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
         if (index > 0 && index - 1 < count) play(index - 1, 0L, clearDanmakuOnSwitch = true)
     }
     val (rewBox, _) = transportButton(PhoneGlyph.Kind.REWIND, 30, 15) {
-        seekByLandscape(-10_000L)
+        seekBy(-10_000L)
     }
     val (playBox, playGlyph) = transportButton(PhoneGlyph.Kind.PAUSE, 34, 18) {
         togglePlay()
     }
     val (ffwdBox, _) = transportButton(PhoneGlyph.Kind.FORWARD, 30, 15) {
-        seekByLandscape(10_000L)
+        seekBy(10_000L)
     }
     val (nextBox, _) = transportButton(PhoneGlyph.Kind.NEXT_EPISODE, 30, 15) {
         val count = detail?.episodes?.size ?: 0
@@ -328,12 +328,12 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
 }
 
 /**
- * 横屏控制栏的快退 / 快进：按 10 秒步进，夹在 `[0, duration]` 之间。
+ * 控制条的快退 / 快进（横竖屏共用）：按 10 秒步进，夹在 `[0, duration]` 之间。
  *
  * 不用 `seekTo` 的拖拽路径：那里要经过进度条回调与 `playerDragging` 状态，
  * 按钮点击是离散动作，直接定位更稳。
  */
-internal fun PhonePlayerActivity.seekByLandscape(deltaMs: Long) {
+internal fun PhonePlayerActivity.seekBy(deltaMs: Long) {
     val exo = player ?: return
     val duration = runCatching { exo.duration }.getOrDefault(0L)
     if (duration <= 0L) return

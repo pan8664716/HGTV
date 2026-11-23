@@ -7,6 +7,23 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 竖屏播放页控制条与集号上移
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 新增构造参数 `PhoneVideoPage.episodeTransport`（默认 false，只有正式播放页开）。
+  打开后：
+  - 进度条下面加播放控制条：上一集 / 快退 10s / 播放暂停 / 快进 10s / 下一集；
+  - 去掉底部「第x集 ｜ 简介」整行；
+  - 集号并到第一行标题后面（`episodeTag`，标题 `weight=1` 可省略，集号不被压缩）。
+- 信息流保持原样：每屏是不同作品，翻页就是换片，没有集的概念。
+- 控制条的播放 / 暂停图标由 `syncPlayGlyph` 跟着 `playWhenReady` 更新
+  （`PhoneVideoPage.setTransportPlaying`），与横屏控制栏同一份状态。
+- 快退 / 快进复用横屏的 `seekBy`（原 `seekByLandscape` 改名，横竖屏共用）。
+- 未改版本号、versionCode、依赖或 iOS；`:app:assembleDebug` 通过；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 横屏底栏按钮对齐与全屏返回
 
 状态：已实现，debug 构建通过，待用户真机验证。
