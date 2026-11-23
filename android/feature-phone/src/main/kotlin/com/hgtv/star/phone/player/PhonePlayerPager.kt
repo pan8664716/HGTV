@@ -189,13 +189,14 @@ internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
                 positionOffset: Float,
                 positionOffsetPixels: Int,
             ) {
-                if (playerLandscapeMode || !playerEpisodePager.userScroll) return
-                // 顶部播放信息挂在 pager 外层，翻页时按当前页真实位置跟着走；
-                // 页面自身的标题、进度、按钮都在各页里面，ViewPager2 会自然带着翻。
-                if (playerPageInitialized) {
+                // 顶部播放信息挂在 pager 外层，翻页时按当前页真实位置跟着走。
+                // **必须在 `userScroll` 判断之前**：自动连播、选集这类程序性翻集
+                // 不经过手势，放在后面就不会动，用户读作「信息停在上一集」。
+                if (playerPageInitialized && !playerLandscapeMode) {
                     playerPortraitTop.translationY =
                         playerEpisodePager.pageAt(position)?.top?.toFloat() ?: 0f
                 }
+                if (playerLandscapeMode || !playerEpisodePager.userScroll) return
                 val target = if (positionOffset > 0.5f) position + 1 else position
                 val size = detail?.episodes?.size ?: return
                 if (target in 0 until size) previewPlayerPagerTarget(target)

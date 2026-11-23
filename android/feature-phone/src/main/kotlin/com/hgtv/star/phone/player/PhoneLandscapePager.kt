@@ -25,12 +25,11 @@ import com.hgtv.star.shared.media.DanmakuView
 internal class LandscapePlayerPage(
     private val host: PhonePlayerActivity,
 ) : FrameLayout(host) {
-    val video = FixedFirstFramePlayerView(host).apply {
+    val video = createPhoneVideoPlayer(host).apply {
         useController = false
         resizeMode = AspectRatioFrameLayout.RESIZE_MODE_FIT
         setShutterBackgroundColor(Color.BLACK)
         setKeepContentOnPlayerReset(true)
-        PhonePlayerViewSupport.useOpaqueVideoSurface(this)
         setAspectRatioListener { _, _, _ ->
             if (host.playerLandscapeVideo === this) host.syncLandscapeLetterboxImpl()
         }
@@ -250,6 +249,38 @@ internal class VerticalLandscapePager(context: Context) : FrameLayout(context) {
     }
 }
 
+/**
+ * 横屏翻集时让**页面外**的控制层跟着当前集页横向移动。
+ *
+ * 顶部播放信息（剧名·集数 / 网速·时间）、设置入口、底部播放与进度层、
+ * 竖版片源的全屏入口都挂在 `playerLandscapeContainer` 上，不在 `ViewPager2`
+ * 的页面里，翻集时不会自己动。不处理的话画面在滑、这些 UI 钉在原地，
+ * 读起来就是「翻页只翻了画面，标题和进度条停在当前集」。
+ *
+ * 位移量直接取当前集页的真实 `left`：与竖屏 `playerPortraitTop` 用 `top`
+ * 是同一套，滚动方向、回弹、程序性切集都不用另判。
+ */
+internal fun PhonePlayerActivity.followLandscapePagerChrome(position: Int, offsetPixels: Int = 0) {
+    if (!playerLandscapePagerInitialized) return
+    // 用滚动像素算位移，不依赖 `pageAt(position)`：ViewHolder 在快速滑动中
+    // 可能取不到，取不到就会退回 0、控制层瞬间跳回原位。
+    val dx = -offsetPixels.toFloat()
+    if (playerLandInfoRowInitialized) playerLandInfoRow.translationX = dx
+    if (playerLandTopInitialized) playerLandTop.translationX = dx
+    if (playerLandBottomInitialized) playerLandBottom.translationX = dx
+    if (playerLandFullscreenInitialized) playerLandFullscreen.translationX = dx
+    if (com.hgtv.star.shared.BuildConfig.DEBUG && offsetPixels != lastLandChromeOffset) {
+        lastLandChromeOffset = offsetPixels
+        android.util.Log.i(
+            "HGTV-PHONE",
+            "land chrome follow pos=$position dx=$dx " +
+                "info=${playerLandInfoRowInitialized} bottom=${playerLandBottomInitialized}",
+        )
+    }
+}
+
+private var lastLandChromeOffset = Int.MIN_VALUE
+
 internal fun PhonePlayerActivity.installLandscapePlayerPagerCallbacks() {
     playerLandscapePager.registerOnPageChangeCallback(
         object : ViewPager2.OnPageChangeCallback() {
@@ -258,6 +289,9 @@ internal fun PhonePlayerActivity.installLandscapePlayerPagerCallbacks() {
                 positionOffset: Float,
                 positionOffsetPixels: Int,
             ) {
+                // 页面外的控制层要**先**跟上：自动连播、选集这类程序性翻集
+                // 不经过 `userScroll`，放在下面那行 return 之后就不会动。
+                followLandscapePagerChrome(position, positionOffsetPixels)
                 if (!playerLandscapeMode || !playerLandscapePager.userScroll) return
                 val target = if (positionOffset > 0.5f) position + 1 else position
                 val size = detail?.episodes?.size ?: return
@@ -265,12 +299,17 @@ internal fun PhonePlayerActivity.installLandscapePlayerPagerCallbacks() {
             }
 
             override fun onPageSelected(position: Int) {
+                followLandscapePagerChrome(position)
                 if (!playerLandscapePager.userScroll) {
                     syncLandscapePlayerPagerPage(position, attachCurrent = position == index)
                 }
             }
 
             override fun onPageScrollStateChanged(state: Int) {
+                if (state == ViewPager2.SCROLL_STATE_IDLE) {
+                    // 落定后页面本身归位，控制层也跟着回到 0，避免半像素残留。
+                    followLandscapePagerChrome(playerLandscapePager.currentItem)
+                }
                 if (!playerLandscapeMode) return
                 if (state == ViewPager2.SCROLL_STATE_DRAGGING) {
                     if (!playerLandscapePager.userScroll) return

@@ -1,0 +1,22 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <!--
+      信息流专用的 PlayerView 主题。
+
+      `PlayerView` 的 `surface_type` 由构造期的
+      `context.getTheme().obtainStyledAttributes(null, R.styleable.PlayerView, 0, 0)`
+      读取，写进 theme 就能让 `PlayerView(context)` 直接产出 TextureView。
+
+      **为什么信息流必须用 TextureView**：`SurfaceView` 是独立图层，走
+      `composition type=DEVICE`（HWC 叠加层）合成；标题、进度条、按钮走 GPU
+      合成的 window buffer。两条更新路径彼此独立，`ViewPager2` 滚动时视频层
+      会落后 window 内容若干帧——用户读到的就是「文字滑过去了、视频没跟着走」
+      以及「翻页时露出一段既不是当前页也不是下一页的画面」。
+
+      值写整数 2（SURFACE_TYPE_TEXTURE_VIEW），不写枚举名：部分 aapt 版本会把
+      枚举名按字符串存，`getInt` 读不到，结果静默退回 SurfaceView。
+    -->
+    <style name="HgtvFeedTexturePlayerView">
+        <item name="surface_type">texture_view</item>
+    </style>
+</resources>

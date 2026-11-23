@@ -19,8 +19,8 @@ internal class PhoneFeedAdapter(
             fullscreenEntry = true,
             dragSeek = false,
             clearFrameOnRebind = true,
-            // 前后各常驻一页：弹幕层不能浮到 media-overlay 上，否则相邻页会互相叠画。
-            danmakuMediaOverlay = false,
+            // 视频层用 TextureView：与文字同 buffer 合成，翻页时不会落后若干帧。
+            textureVideo = true,
         )
         page.layoutParams = RecyclerView.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,

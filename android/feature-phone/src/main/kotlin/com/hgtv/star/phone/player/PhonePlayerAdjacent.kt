@@ -384,8 +384,7 @@ internal fun PhonePlayerActivity.attachAdjacentToPagerPage(target: Int) {
     if (width > 0 && height > 0) page.updateVideoFrame(width, height)
     page.setVideoSurfaceVisible(true)
     if (page.playerView.player !== slot.player) {
-        detachAdjacentOutput(page.playerView)
-        page.playerView.player = slot.player
+        rebindAdjacentOutput(page.playerView, slot.player)
     }
     val duration = runCatching { slot.player.duration }.getOrDefault(0L)
     val position = runCatching { slot.player.currentPosition }.getOrDefault(0L)
@@ -424,8 +423,7 @@ internal fun PhonePlayerActivity.attachAdjacentToLandscapePagerPage(target: Int)
     attachAdjacentPlayerListener(slot)
     page.video.visibility = View.VISIBLE
     if (page.video.player !== slot.player) {
-        detachAdjacentOutput(page.video)
-        page.video.player = slot.player
+        rebindAdjacentOutput(page.video, slot.player)
     }
     if (slot.firstFrameRendered) page.hideCover() else page.showCover(cover)
     startAdjacentPreRender(slot)
@@ -713,4 +711,24 @@ private fun detachAdjacentOutput(view: PlayerView) {
     view.setKeepContentOnPlayerReset(false)
     view.player = null
     view.setKeepContentOnPlayerReset(true)
+}
+
+/**
+ * 把相邻集的播放器换到这一页上，**不清掉画面**。
+ *
+ * 早先这里先走 [detachAdjacentOutput]：`keepContentOnPlayerReset=false` 再把
+ * `player` 置空，`PlayerView` 会立刻合上快门——翻页过半时用户看到的就是
+ * 一次闪黑，然后才等新实例出首帧。
+ *
+ * 旧实例还活着时直接换实例即可：`PlayerView` 会把它从输出面摘掉，但
+ * `TextureView` 上最后一帧仍然保留，新实例首帧到达后自然覆盖，中间不黑。
+ * 只有旧实例已经 release（播放线程都退了）时才需要先彻底摘掉，否则
+ * 往死实例上解绑会抛异常。
+ */
+private fun rebindAdjacentOutput(view: PlayerView, player: com.google.android.exoplayer2.ExoPlayer) {
+    val old = view.player
+    if (old is com.google.android.exoplayer2.ExoPlayer && !old.isFeedPlayerAlive()) {
+        detachAdjacentOutput(view)
+    }
+    view.player = player
 }

@@ -9,6 +9,7 @@ import android.graphics.PixelFormat
 import android.graphics.RectF
 import android.os.Build
 import android.view.Gravity
+import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
 import android.view.Window
@@ -41,7 +42,27 @@ import kotlin.math.abs
  * 到达前被拉伸一下。这里先把新比例暂存，等 `onRenderedFirstFrame` 后一次性应用；
  * 应用时短暂合上快门，完成布局后再揭开，因此用户只会看到旧帧稳定停住，再切到新帧。
  */
-internal class FixedFirstFramePlayerView(context: Context) : PlayerView(context) {
+/**
+ * 手机端统一的视频层：`TextureView` 版本。
+ *
+ * **不要再用代码 `new SurfaceView` 的 `PlayerView`**：`SurfaceView` 是独立图层，
+ * 走 `composition type=DEVICE`（HWC 叠加层）合成，和 window 里的文字 / 按钮
+ * 不在同一条更新路径上。放在 `ViewPager2` 这类滚动容器里翻页时，视频层会落后
+ * 若干帧——用户读到的就是「文字滑过去了、视频没跟着走」，以及「翻页时露出一段
+ * 既不是当前页也不是下一页的画面」。`TextureView` 与文字同 buffer 合成，不会错位。
+ *
+ * `surface_type` 必须来自 layout 属性（`app:surface_type="texture_view"`）：
+ * `PlayerView` 在构造期读它，用 theme / `applyStyle` 合并进去读不到。
+ */
+internal fun createPhoneVideoPlayer(context: Context): PlayerView =
+    LayoutInflater.from(context)
+        .inflate(R.layout.phone_video_player, null, false) as PlayerView
+
+internal class FixedFirstFramePlayerView @JvmOverloads constructor(
+    context: Context,
+    attrs: android.util.AttributeSet? = null,
+    defStyleAttr: Int = 0,
+) : PlayerView(context, attrs, defStyleAttr) {
     private var holdAspectRatio = false
     private var firstFrameSeen = false
     private var pendingAspectRatio = 0f
@@ -109,20 +130,31 @@ internal fun PlayerView.completeFirstFrameAspectRatio() {
 }
 
 /**
- * 强制把播放器重新交给这一块 Surface。
+ * 强制把播放器重新交给这一块输出面。
  *
  * `PlayerView.setPlayer` 在实例相同时会直接返回；旋转后如果 View 上的 player 字段没变，
  * 但 ExoPlayer 的实际输出面已经被另一形态接管，单靠重新赋值不会恢复画面。
+ *
+ * 视频层现在是 `TextureView`（见 [createPhoneVideoPlayer]），走 `setVideoTextureView`；
+ * 仍保留 `SurfaceView` 分支给低版本回退路径。
  */
 internal fun PlayerView.forceBindVideoSurface(exo: ExoPlayer) {
     if (player !== exo) player = exo
-    val surface = videoSurfaceView as? SurfaceView ?: return
-    // ExoPlayer 对同一个 Surface 实例也会走“输出面没变”的短路。必须先清掉，
-    // 再把 holder 交回去，渲染器才会重新执行 setOutputSurface / 重建解码输出。
-    exo.clearVideoSurfaceView(surface)
-    exo.setVideoSurfaceView(surface)
-    surface.requestLayout()
-    surface.invalidate()
+    (videoSurfaceView as? SurfaceView)?.let { surface ->
+        // ExoPlayer 对同一个 Surface 实例也会走“输出面没变”的短路。必须先清掉，
+        // 再把 holder 交回去，渲染器才会重新执行 setOutputSurface / 重建解码输出。
+        exo.clearVideoSurfaceView(surface)
+        exo.setVideoSurfaceView(surface)
+        surface.requestLayout()
+        surface.invalidate()
+        return
+    }
+    (videoSurfaceView as? android.view.TextureView)?.let { texture ->
+        exo.clearVideoTextureView(texture)
+        exo.setVideoTextureView(texture)
+        texture.requestLayout()
+        texture.invalidate()
+    }
 }
 
 internal fun PhonePlayerActivity.holdFirstFrameAspectRatio() {

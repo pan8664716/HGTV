@@ -5,15 +5,14 @@ import android.graphics.Bitmap
 import android.graphics.Canvas
 import android.graphics.Color
 import android.graphics.Paint
-import android.graphics.PixelFormat
 import android.graphics.PorterDuff
 import android.graphics.RectF
+import android.graphics.SurfaceTexture
 import android.graphics.Typeface
 import android.os.Build
 import android.os.SystemClock
 import android.view.Choreographer
-import android.view.SurfaceHolder
-import android.view.SurfaceView
+import android.view.TextureView
 import android.view.View
 import com.hgtv.star.core.AppConfig
 import com.hgtv.star.core.Danmaku
@@ -32,7 +31,20 @@ import com.hgtv.star.shared.compat.attachedToWindow
 import com.hgtv.star.shared.compat.lowEndTv
 import kotlin.math.roundToInt
 
-class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Listener,SurfaceHolder.Callback {
+/**
+ * 弹幕层。
+ *
+ * **是 `TextureView` 而不是 `SurfaceView`**：`SurfaceView` 是独立图层，走
+ * `composition type=DEVICE`（HWC 叠加层）合成，和 window 里的文字 / 按钮
+ * 不在同一条更新路径上。放在 `ViewPager2` 这类滚动容器里时，翻页那一帧
+ * 弹幕层会落后若干帧，表现为弹幕整体漂移、和画面错位；视频层换成
+ * `TextureView` 后它还会被整块盖住（独立图层在 window 之下）。
+ *
+ * `TextureView` 是普通 View，与视频 / 文字同 buffer 合成，滚动时严格同帧。
+ * 代价是每帧多一次 GPU 合成，`lockCanvas` 是软件画布——弹幕文字量不大，
+ * 实测可接受。
+ */
+class DanmakuView(context: Context) : TextureView(context),DanmakuEmojiStore.Listener,TextureView.SurfaceTextureListener {
     private companion object {
         const val BASE_SCROLL_SECONDS=AppConfig.Danmaku.BASE_SCROLL_SECONDS
         const val BOTTOM_INSET_DP=AppConfig.Danmaku.BOTTOM_INSET_DP
@@ -434,9 +446,9 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         clockBaseAt=SystemClock.elapsedRealtime()
     }
     init {
-        holder.addCallback(this)
-        holder.setFormat(PixelFormat.TRANSLUCENT)
-        setZOrderMediaOverlay(true)
+        surfaceTextureListener=this
+        // TextureView 默认不透明；弹幕层必须透明，否则会把下面的画面整块盖住。
+        isOpaque=false
         isFocusable=false
         importantForAccessibility=IMPORTANT_FOR_ACCESSIBILITY_NO
         visibility=VISIBLE
@@ -446,12 +458,10 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     /**
      * 弹幕层是否处于「无内容」状态。
      *
-     * 不能用 visibility=INVISIBLE 来隐藏 SurfaceView：系统会直接销毁它的 surface，
-     * 下次显示重建时露一帧黑底（推荐页换剧因此亮暗跳变）。也不能只设 alpha=0：
-     * 在这台 S905L3B 上 alpha 不作用于独立 Surface 图层，最后一帧会继续盖在视频上。
-     *
-     * 所以保持 VISIBLE + alpha=1，用 [clearSurfaceNow] 提交一帧全透明来「隐藏」。
-     * 绘制循环在 surfaceHidden 时不再排帧，surface 上就停在那一帧透明画面上。
+     * 保持 VISIBLE + alpha=1，用 [clearSurfaceNow] 提交一帧全透明来「隐藏」。
+     * 绘制循环在 surfaceHidden 时不再排帧，画布上就停在那一帧透明画面上。
+     * 这条规则沿用自 SurfaceView 版本：改用 TextureView 之后 alpha 已经可靠，
+     * 但「清一帧透明再停帧」同样能避免最后一帧残留在画面上。
      */
     private var surfaceHidden=true
 
@@ -463,15 +473,13 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         if(changed) onRenderStateChangedListener?.invoke()
     }
 
-    /** 把 surface 擦成全透明（格式是 TRANSLUCENT，见 init）。 */
+    /** 把画布擦成全透明。 */
     private fun clearSurfaceNow() {
-        val canvas=runCatching {
-            if(Build.VERSION.SDK_INT>=26) holder.lockHardwareCanvas() else holder.lockCanvas()
-        }.getOrNull() ?: return
+        val canvas=runCatching { lockCanvas() }.getOrNull() ?: return
         try {
             canvas.drawColor(Color.TRANSPARENT,PorterDuff.Mode.CLEAR)
         } finally {
-            runCatching { holder.unlockCanvasAndPost(canvas) }
+            runCatching { unlockCanvasAndPost(canvas) }
         }
     }
 
@@ -876,7 +884,9 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         if(surfaceWidth==fixedSurfaceWidth && surfaceHeight==fixedSurfaceHeight) return
         fixedSurfaceWidth=surfaceWidth
         fixedSurfaceHeight=surfaceHeight
-        holder.setFixedSize(surfaceWidth,surfaceHeight)
+        // TextureView 没有 `holder.setFixedSize`：降采样改走 SurfaceTexture 的
+        // 默认缓冲尺寸，`drawSurfaceFrame` 里会按实际画布尺寸再缩放一次。
+        runCatching { surfaceTexture?.setDefaultBufferSize(surfaceWidth,surfaceHeight) }
     }
 
     private fun baseSizeFor(w: Int,h: Int): Float {
@@ -938,9 +948,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
     }
 
     private fun drawSurfaceFrame() {
-        val canvas=runCatching {
-            if(Build.VERSION.SDK_INT>=26) holder.lockHardwareCanvas() else holder.lockCanvas()
-        }.getOrNull() ?: return
+        val canvas=runCatching { lockCanvas() }.getOrNull() ?: return
         try {
             canvas.drawColor(Color.TRANSPARENT,PorterDuff.Mode.CLEAR)
             if(canvas.width!=width || canvas.height!=height) {
@@ -957,7 +965,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
                 drawFrame(canvas)
             }
         } finally {
-            runCatching { holder.unlockCanvasAndPost(canvas) }
+            runCatching { unlockCanvasAndPost(canvas) }
         }
     }
 
@@ -1331,7 +1339,7 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         }
     }
 
-    override fun surfaceCreated(holder: SurfaceHolder) {
+    override fun onSurfaceTextureAvailable(surface: SurfaceTexture,width: Int,height: Int) {
         surfaceReady=true
         onRenderStateChangedListener?.invoke()
         ensureSpriteAtlas()
@@ -1340,14 +1348,17 @@ class DanmakuView(context: Context) : SurfaceView(context),DanmakuEmojiStore.Lis
         if(surfaceHidden) clearSurfaceNow() else requestFrame()
     }
 
-    override fun surfaceChanged(holder: SurfaceHolder,format: Int,width: Int,height: Int) {
+    override fun onSurfaceTextureSizeChanged(surface: SurfaceTexture,width: Int,height: Int) {
         if(surfaceHidden) clearSurfaceNow() else requestFrame()
     }
 
-    override fun surfaceDestroyed(holder: SurfaceHolder) {
+    override fun onSurfaceTextureDestroyed(surface: SurfaceTexture): Boolean {
         surfaceReady=false
         onRenderStateChangedListener?.invoke()
         choreographer.removeFrameCallback(frameCallback)
         frameScheduled=false
+        return true
     }
+
+    override fun onSurfaceTextureUpdated(surface: SurfaceTexture) = Unit
 }

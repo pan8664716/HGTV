@@ -6,6 +6,7 @@ import android.content.Context
 import android.graphics.Color
 import android.graphics.drawable.GradientDrawable
 import android.os.Build
+import android.view.LayoutInflater
 import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
@@ -111,16 +112,21 @@ class PhoneVideoPage(
     /** 信息流翻页按整页切换，换绑定时清掉旧帧，避免复用 PageHolder 时闪出上一部。 */
     private val clearFrameOnRebind: Boolean = false,
     /**
-     * 弹幕层是否放到 media-overlay 层级。
+     * 视频层是否用 `TextureView` 而不是 `SurfaceView`。
      *
-     * **信息流必须关**（见 `REFACTORING.md`「手机推荐页滑动透出下一条视频修复」）：
-     * 推荐页前后各常驻一页，每页都有一块全屏透明弹幕 `SurfaceView`。放到 media-overlay
-     * 层时它位于所有视频 Surface 之上，透明区域会把相邻页的预渲染画面叠进当前页，
-     * 翻页时表现为「画面里混进了别的页」。
+     * **默认开**。`SurfaceView` 是独立图层（`composition type=DEVICE`，由 HWC
+     * 直接合成），而标题 / 进度条 / 按钮走 GPU 合成的 window buffer；两条更新
+     * 路径独立，滚动容器（`ViewPager2`）里翻页时视频层会落后若干帧——用户读到
+     * 的就是「文字滑过去了、视频没跟着走」，以及「翻页时露出不属于这一页的画面」。
+     * `TextureView` 是普通 View，与文字同 buffer 合成，物理上不会错位。
      *
-     * 正式播放页没有这个问题（一屏只有一集在出画面），保持原层级。
+     * 代价是每帧多一次 GPU 合成。手机上这是唯一能保证翻页不错位的路径。
      */
-    private val danmakuMediaOverlay: Boolean = true,
+    private val textureVideo: Boolean = true,
+    /**
+     * 是否**不挂**弹幕层（排查视频渲染问题时用）。
+     */
+    private val noDanmaku: Boolean = false,
     // 默认完整画面；真正的档位由宿主按用户的「画面模式」随后覆盖，
     // 不再按片源方向强制铺满。
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -139,13 +145,15 @@ class PhoneVideoPage(
         minTextSizeDp = 4f
         topGapDp = 16f
         setClock(0, false)
-        // 信息流里必须与视频层同层级：media-overlay 会浮在所有视频 Surface 之上，
-        // 相邻页的透明弹幕层会把别人的画面叠进来（见构造参数 `danmakuMediaOverlay`）。
-        // 此刻还没 addView / attach，改层级不会触发 surface 重建。
-        if (!danmakuMediaOverlay) setZOrderMediaOverlay(false)
     }
 
-    val playerView: PlayerView = FixedFirstFramePlayerView(context).apply {
+    val playerView: PlayerView = (
+        if (textureVideo) {
+            createPhoneVideoPlayer(context)
+        } else {
+            FixedFirstFramePlayerView(context)
+        }
+        ).apply {
         useController = false
         this.resizeMode = resizeMode
         // 借下层 Surface 时本层不出画面：快门也必须是透明的，否则它自己就是一块黑。
@@ -155,7 +163,8 @@ class PhoneVideoPage(
         setKeepContentOnPlayerReset(!clearFrameOnRebind)
         if (underlay) visibility = GONE
         setBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
-        PhonePlayerViewSupport.useOpaqueVideoSurface(this)
+        // 视频层是 TextureView（见构造参数 `textureVideo`）：没有独立 Surface 层级
+        // 可调，也不再需要显式 OPAQUE——它与文字同 buffer 合成。
     }
 
     // ------------------------------------------------------------------ 底部信息
@@ -320,8 +329,19 @@ class PhoneVideoPage(
         playerView.setAspectRatioListener { _, _, _ -> syncDanmakuLetterbox() }
         danmakuView.onRenderStateChangedListener = { syncDanmakuLetterbox() }
         addView(playerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        if (com.hgtv.star.shared.BuildConfig.DEBUG) {
+            android.util.Log.i(
+                "HGTV-PHONE",
+                "video layer texture=$textureVideo noDanmaku=$noDanmaku " +
+                    "surface=${playerView.videoSurfaceView?.javaClass?.simpleName}",
+            )
+        }
         // 弹幕压在画面之上，黑边也由这块透明 Surface 自己绘制。
-        addView(danmakuView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        // `noDanmaku` 时整层不挂进视图树：它是 punch-hole SurfaceView，会盖住
+        // TextureView 的视频层，验证视频渲染路径时必须先排除它。
+        if (!noDanmaku) {
+            addView(danmakuView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        }
 
         // 限高到屏高的一半：整屏铺开时哪怕渐变再陡，画面中间也会被压暗一层。
         // 真实高度在 onSizeChanged 里按本页高度算（信息流每一页的高度不一样）。

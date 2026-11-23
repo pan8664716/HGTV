@@ -150,6 +150,7 @@ open class PhonePlayerActivity : PhoneActivity() {
         get()=landTop
         set(value) { landTop=value }
     internal val playerLandTop get()=landTop
+    internal val playerLandTopInitialized get()=::landTop.isInitialized
     private lateinit var landFullscreen: LinearLayout
     internal val playerLandFullscreen get()=landFullscreen
     internal var playerLandFullscreenSlot: LinearLayout

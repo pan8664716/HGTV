@@ -7,6 +7,52 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 手机端视频 / 弹幕层全面改用 TextureView
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：推荐页上下翻页时偶发「文字滑过去了、视频没跟着走」「翻页露出一段既不是
+  当前页也不是下一页的画面」；播放页翻集也有同类错位。
+- 根因：`SurfaceView` 是独立图层，`dumpsys SurfaceFlinger` 显示视频层走
+  `composition type=DEVICE`（HWC 叠加层）合成；标题、进度条、按钮走 GPU 合成的
+  window buffer。两条更新路径彼此独立，`ViewPager2` 滚动时视频层必然落后若干帧。
+  任何 `translationY` 补偿都会把错位放大成双倍位移，无法根治。
+- 修复：`PlayerView` 的 `surface_type` 改为 `texture_view`，由 layout 属性提供
+  （`res/layout/phone_video_player.xml`）。**theme / `applyStyle` 合并进去读不到**，
+  实测会静默退回 SurfaceView，必须走编译过的 attrs。新增
+  `createPhoneVideoPlayer()` 统一构造，推荐页与竖屏 / 横屏播放页共用。
+- `DanmakuView` 基类由 `SurfaceView` 改为 `TextureView`：绘制改走
+  `lockCanvas / unlockCanvasAndPost`，surface 回调改为 `SurfaceTextureListener`，
+  降采样由 `holder.setFixedSize` 改为 `SurfaceTexture.setDefaultBufferSize`。
+  它与视频层同 buffer 合成，翻页时严格同帧，也不会再被 TextureView 的视频层盖住。
+- `forceBindVideoSurface` 增加 `setVideoTextureView` 分支；`useOpaqueVideoSurface`
+  不再被调用（TextureView 没有独立 Surface 层级可调）。
+- 验证：`dumpsys SurfaceFlinger` 里 `SurfaceView[com.hgtv.star]` 计数为 0；
+  `video layer ... surface=TextureView`；`feed first frame` 正常出现。
+
+## 播放页翻集控制层跟随与闪黑修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象一：横屏播放页翻集时，顶部播放信息、进度条、底部按钮停在原处，只有画面在滑。
+- 根因一：这些控制层挂在 `playerLandscapeContainer`（`ViewPager2` 页面之外），
+  不会随页面滚动；`onPageScrolled` 里原先也没有任何跟随逻辑。
+- 修复一：新增 `followLandscapePagerChrome(position, offsetPixels)`，用滚动像素
+  直接平移 `landInfoRow / landTop / landBottom / landFullscreen`。放在
+  `userScroll` 判断之前，自动连播与选集这类程序性翻集也会跟随；IDLE 时归零。
+  竖屏的 `playerPortraitTop` 同样把跟随提到 `userScroll` 判断之前。
+- 现象二：播放页翻集时画面会闪一下。
+- 根因二：`attachAdjacentToPagerPage` / `attachAdjacentToLandscapePagerPage` 在
+  换播放器前先调 `detachAdjacentOutput`，它把 `keepContentOnPlayerReset` 关掉再
+  把 `player` 置空——`PlayerView` 会立刻合上快门，用户看到一次闪黑，然后才等
+  新实例出首帧。
+- 修复二：新增 `rebindAdjacentOutput`：旧实例仍活着就直接换实例，`TextureView`
+  保留上一帧，新首帧到达后自然覆盖；只有旧实例已经 release 时才走原来的彻底摘除。
+- 未改版本号、versionCode、依赖或 iOS；`:app:assembleDebug` 通过；未运行自动化
+  测试；未推送、未创建 tag 或 Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 手机推荐页上下翻页帧错乱修复
 
 状态：已实现，debug 构建通过，待用户真机验证。

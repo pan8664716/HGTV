@@ -580,7 +580,7 @@ android/
 | `PhonePlaybackRecovery.kt` | 手机端执行统一播放恢复策略：静默重取、软解/降档、host 切换与非阻塞提示。 | val PhonePlayerActivity.playbackMaxQuality、val PhonePlayerActivity.playbackDecoderMode、fun PhonePlayerActivity.handleUnifiedPlaybackFailure、fun PhonePlayerActivity.showPassivePlaybackHint |
 | `PhonePlaybackSettings.kt` | 播放设置面板的各行：**推荐信息流与正式播放页共用这一份**。 | fun buildPlaybackSettingsRows |
 | `PhonePlayerActivity.kt` | 手机正式播放页基类，持有播放器、横竖屏 ViewPager2 集页、播放控制与生命周期；窗口重新获得焦点时重新校准常亮。 | open class PhonePlayerActivity、playerControlsLocked |
-| `PhonePlayerAdjacent.kt` | 正式播放页前后相邻集播放器池：后台取源、独立 `ExoPlayer`、竖屏 / 横屏 ViewPager2 集页静音首帧预渲染、音频焦点隔离、下一季第 1 集虚拟槽预载、无空档激活、上一集复用和资源回收。 | class PhonePlayerAdjacentSlot、fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup、fun PhonePlayerActivity.ensureNextSeasonEpisode、fun PhonePlayerActivity.activateAdjacentEpisode、fun PhonePlayerActivity.releaseAllAdjacentPlayers |
+| `PhonePlayerAdjacent.kt` | 正式播放页前后相邻集播放器池：后台取源、独立 `ExoPlayer`、竖屏 / 横屏 ViewPager2 集页静音首帧预渲染、音频焦点隔离、下一季第 1 集虚拟槽预载、无空档激活、上一集复用和资源回收；换实例时不清帧（`rebindAdjacentOutput`），避免翻集闪黑。 | class PhonePlayerAdjacentSlot、fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup、fun PhonePlayerActivity.ensureNextSeasonEpisode、fun PhonePlayerActivity.activateAdjacentEpisode、fun PhonePlayerActivity.releaseAllAdjacentPlayers、fun rebindAdjacentOutput |
 | `PhonePlayerOpaqueActivity.kt` | 正式播放页导航入口子类；Manifest 固定不透明主题，避免推荐页或简介页的独立 SurfaceView 透出。 | class PhonePlayerOpaqueActivity |
 | `PhonePlayerAdoption.kt` | adoptFromSession 的前置检查；返回 null = 可以接，否则返回不能接的原因（只用于日志）。 | fun PhonePlayerActivity.adoptReject、fun PhonePlayerActivity.adoptFromSession |
 | `PhonePlayerAttach.kt` | 把已准备好的视频源挂到当前形态对应的 PlayerView，冻结旧比例、安排首帧前的 prepare，在换集后强制重交当前集输出面，并为主源 prepare 提供旧页回调丢失时的兜底。 | fun PhonePlayerActivity.attach |
@@ -1063,7 +1063,7 @@ android/
 | `DanmakuEmojiStore.kt` | 弹幕表情图的解码与缓存。 | class DanmakuEmojiStore |
 | `DanmakuLoader.kt` | 「这一集拉到哪一步」的弹幕加载内核（电视端与手机端共用一份）；首包挂起等视频真正出帧后才铺开，并可关闭超时兜底供手机正式页严格等待。 | class DanmakuLoader |
 | `DanmakuSpriteAtlas.kt` | 弹幕文字图集。 | class DanmakuSpriteAtlas |
-| `DanmakuView.kt` | 弹幕绘制 View，负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；首批弹幕挂起等 onRenderedFirstFrame 才铺开，进度跳转时按新时间点重建仍在屏幕上的活动弹幕并计算正确横向位置，不整批从右边重播；隐藏时保持 Surface 存活。 | class DanmakuView、fun beginTransition、val isSurfaceActive、val topGapDp、val topTextAnchorPx |
+| `DanmakuView.kt` | 弹幕绘制 View（**TextureView**，与视频层同 buffer 合成，滚动容器里不会错位），负责轨道布局、滚动、高亮聚合、表情、绘制缓存和播放器黑边底层绘制；首批弹幕挂起等 onRenderedFirstFrame 才铺开，进度跳转时按新时间点重建仍在屏幕上的活动弹幕并计算正确横向位置，不整批从右边重播；无内容时提交全透明帧并停帧。 | class DanmakuView、fun beginTransition、val isSurfaceActive、val topGapDp、val topTextAnchorPx |
 | `MediaSessionHost.kt` | 前台媒体会话：让**遥控器 / 耳机线控 / 锁屏与系统媒体面板**上的播放键能找到本应用。 | class MediaSessionHost |
 | `PlaybackFailures.kt` | 一次播放失败的归因：精确 Exo 分类、媒体轨道、可降档位和正常地址错误探测；不包含设备身份自愈。 | object PlaybackFailures |
 | `ExoFailureMapper.kt` | ExoPlayer 2.19.1 错误常量到跨平台 canonical code、阶段和可重试性的精确映射。 | object ExoFailureMapper |
