@@ -34,12 +34,16 @@ internal fun PhoneFeedView.openSettingsImpl() {
                 feedPlayer?.setPlaybackSpeed(feedUserSpeed)
             },
             onQuality = {
+                PhoneSession.resetRecoveryOverrides()
                 val position = feedPlayer?.currentPosition ?: 0L
                 feedSheet.dismiss()
                 playIndexForSettings(feedPlayingIndex, position)
             },
             onFrame = { mode ->
                 feedBoundPage?.setResizeMode(mode.toFit().resizeMode())
+            },
+            onDecoder = {
+                PhoneSession.resetRecoveryOverrides()
             },
             onScale = { value -> feedBoundPage?.setVideoScale(value / 100f) },
             onDanmaku = {

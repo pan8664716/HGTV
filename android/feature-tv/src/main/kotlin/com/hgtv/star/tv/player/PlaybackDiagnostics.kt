@@ -12,7 +12,9 @@ import com.google.android.exoplayer2.decoder.DecoderReuseEvaluation
 import com.google.android.exoplayer2.mediacodec.MediaCodecRenderer
 import com.hgtv.star.shared.compat.isMeteredConnection
 import com.hgtv.star.core.DegradationKind
+import com.hgtv.star.core.PlaybackStage
 import com.hgtv.star.core.PlaybackRetryPlan
+import com.hgtv.star.core.RecoveryLayer
 import com.hgtv.star.shared.debug.Diagnostics
 import com.hgtv.star.shared.debug.DebugFaults
 
@@ -699,7 +701,10 @@ fun TvMainActivity.recoverFormalPicture(reason: String) {
     val now=android.os.SystemClock.elapsedRealtime()
     if(playbackCoordinator.pictureRecoveryCount>=FORMAL_PICTURE_RECOVERY_LIMIT) {
         // 已经重建过一次还是没画面：交给错误页，别再自己闪。
-        playerFailure(PlaybackDiagnosticException("playback_stall_frame","画面停止刷新，重建后仍未恢复"))
+        handleUnifiedPlaybackFailure(
+            PlaybackDiagnosticException(PlaybackStage.STALL_FRAME,"画面停止刷新，重建后仍未恢复"),
+            RecoveryLayer.PICTURE,
+        )
         return
     }
     if(playbackCoordinator.pictureRecoveryCoolingDown(now,FORMAL_PICTURE_RECOVERY_COOLDOWN_MS)) return

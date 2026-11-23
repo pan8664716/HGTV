@@ -2564,6 +2564,8 @@ JAVA_HOME="$(/usr/libexec/java_home -v 17)" ./gradlew --console=plain \
 
 状态：已完成。
 
+> 后续已被统一播放恢复策略取代：`PhoneSourceRetry.kt` 已删除，手机与 TV 的取地址、准备、播放器和推荐流错误统一走 `core/playback/UnifiedPlaybackRecovery.kt`。
+
 - 将换集 / 首集取地址失败的设备身份自愈、提示文案、立即与退避重试、次数归零和缓存作废
   移到 `player/PhoneSourceRetry.kt`。
 - 新增 `PhoneSourceRetryState` 内部状态容器；`cancelSourceRetry`、网络恢复判断和播放

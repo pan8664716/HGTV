@@ -546,10 +546,12 @@ open class PhonePlayerActivity : PhoneActivity() {
 
     internal var recovering = false
 
+    internal var hostSwitchPending = false
+    internal var recoveryHintActive = false
+
     internal var retryJob: Job? = null
     internal var playRequestJob: Job? = null
     internal var playRequestScope: com.hgtv.star.core.RequestScope? = null
-    internal val sourceRetryState = PhoneSourceRetryState()
 
     private val metrics get() = PhoneServices.metrics
 

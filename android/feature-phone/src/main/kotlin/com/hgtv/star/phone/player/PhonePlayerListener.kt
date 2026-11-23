@@ -9,6 +9,7 @@ import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
 import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.shared.debug.PlaybackStartupTrace
+import com.hgtv.star.shared.ui.UiText
 
 /** 挂播放器监听（换集时先摘旧的：进程单例上不能越积越多）。 */
 internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
@@ -39,27 +40,26 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
                 }, 600L)
             }
             if (state == Player.STATE_ENDED) {
-                // 进程级 `nextQueued` 可能比播放器列表晚一拍清掉。片尾只信
-                // 播放器当前真实是否还有下一项；没有就立刻走下一季 / 全剧结束。
-                val hasNextItem = runCatching {
-                    val exo = player ?: return@runCatching false
-                    val current = exo.currentMediaItemIndex.coerceAtLeast(0)
-                    exo.mediaItemCount > current + 1
-                }.getOrDefault(false)
-                if (hasNextItem) return
                 PhoneSession.nextQueued = false
-                next()
+                PhoneSession.clearNext()
+                player?.pause()
+                toast(UiText.get(com.hgtv.star.shared.R.string.ui_0141))
             }
         }
 
         /** 无感换集：自动推进或手动 seek 到队列下一项时回调。 */
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (player !== exo) return
+            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
+                player?.clearMediaItems()
+                PhoneSession.nextQueued = false
+                return
+            }
             val nextIndex = detail?.episodes?.indexOf(mediaItem?.mediaId).takeIf { it != null && it >= 0 }
                 ?: (index + 1)
             val manual = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK &&
                 listenerManualNextTarget == nextIndex
-            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && !manual) return
+            if (!manual) return
             if (manual) listenerManualNextTarget = -1
             if (manual) {
                 onAdvanced(
@@ -136,6 +136,11 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
             // 画面真的上屏才放行弹幕；STATE_READY 后还可能回 buffering，
             // 那时放行会让弹幕先跑、出帧后再清空重排（与 TV 端同一闸门）。
             playerDanmakuLoader.onFrameRendered(player?.currentPosition ?: 0L)
+            root.postDelayed({
+                if (player === exo && exo.isPlaying) {
+                    playbackSessionState.markStablePlayback()
+                }
+            }, com.hgtv.star.core.AppConfig.Playback.RECOVERY_STABLE_MS)
         }
 
         override fun onPlayerError(error: com.google.android.exoplayer2.PlaybackException) {

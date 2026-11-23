@@ -59,9 +59,6 @@ internal fun PhoneSettingsActivity.renderLandscapePlayback() {
     landscapeLine(pref).also { line ->
         landscapeCell(line,landscapeSlider("画面缩放",1f,100f,1f,settingsLibrary.videoScale,
             { "${it.roundToInt()}%" }) { settingsLibrary.videoScale=it })
-        landscapeCell(line,landscapeSwitch("自动连播",settingsLibrary.autoNext) {
-            settingsLibrary.autoNext=it; renderSettings()
-        })
     }
     landscapeLine(pref).also { line ->
         landscapeCell(line,landscapeSlider("快进快退",2f,20f,1f,settingsLibrary.seekStep.toFloat(),

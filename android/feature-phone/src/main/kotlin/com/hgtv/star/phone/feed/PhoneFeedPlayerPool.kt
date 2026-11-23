@@ -74,7 +74,7 @@ internal fun PhoneFeedView.ensurePooledPlayerSlot(
         remote = null,
         player = PhoneServices.newPlayer(
             context,
-            feedLibrary?.decoderMode,
+            PhoneSession.effectiveDecoderMode ?: feedLibrary?.decoderMode,
             handleAudioFocus = false,
         ),
     )

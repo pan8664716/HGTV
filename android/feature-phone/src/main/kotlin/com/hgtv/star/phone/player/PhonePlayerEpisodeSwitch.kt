@@ -13,7 +13,6 @@ package com.hgtv.star.phone
 internal fun PhonePlayerActivity.playSwipeTarget(target: Int) {
     cancelAutoRetry()
     cancelPlaybackRequest()
-    cancelSourceRetry()
     clearSwipePauseForSwitchImpl()
     prepareSwipePreviewForCommit(target)
     val previousPosition = player?.currentPosition?.coerceAtLeast(0L) ?: 0L

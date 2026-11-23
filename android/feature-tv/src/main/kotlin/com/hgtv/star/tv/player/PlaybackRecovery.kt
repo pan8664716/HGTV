@@ -76,10 +76,10 @@ fun TvMainActivity.scheduleRecovery() {
     if(!foreground || !playError || !autoRecovery || retryPending) return
     if(!playbackCoordinator.autoRetryAvailable) { autoRecovery=false; playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0082); return }
     if(!networkAvailable()) { playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0206, episodeIndex+1, formatTime(retryPosition)); return }
-    val delay=playbackCoordinator.autoRetryDelayMs ?: return
-    playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0012, if(retryAutoplay) UiText.get(com.hgtv.star.shared.R.string.ui_0301) else UiText.get(com.hgtv.star.shared.R.string.ui_0302), delay/1000f, playbackCoordinator.autoRetryAttempts+1, formatTime(retryPosition))
-    retryEpisodeId=detail?.episodes?.getOrNull(episodeIndex).orEmpty()
-    retryPending=true; main.postDelayed(retryRunnable,delay)
+    if(playbackCoordinator.consumeAutoRetry()) {
+        prepareFreshPlaybackRetry()
+        playEpisode(episodeIndex,retryPosition,retryAutoplay,recovering=true)
+    }
 }
 /**
  * 这次失败落在**哪条轨**上。
@@ -142,8 +142,8 @@ internal fun TvMainActivity.resetBudgetsForManualRetry() {
 /**
  * 重试前把这一集所有清晰度的地址与当前索引一起作废。
  *
- * 只换 `device_id` 不会绕过 `stream()` 的内存 / 落盘 URL 缓存，重试仍会拿到同一条
- * 失败地址；预取槽也要清掉，避免又接回失败前准备好的旧流。
+ * `stream()` 会先命中内存 / 落盘 URL 缓存；不先作废就会拿到同一条失败地址。
+ * 预取槽也要清掉，避免又接回失败前准备好的旧流。
  */
 internal fun TvMainActivity.prepareFreshPlaybackRetry() {
     val episodeId=detail?.episodes?.getOrNull(episodeIndex)
@@ -228,6 +228,159 @@ fun TvMainActivity.replayWithPlan(plan: PlaybackRetryPlan) {
 }
 
 fun TvMainActivity.playerFailure(problem: Throwable) {
+    handleUnifiedPlaybackFailure(problem, RecoveryLayer.PLAYER)
+}
+
+/**
+ * 两端共用的失败入口在电视端的执行适配。
+ *
+ * 所有动作顺序、错误码分类和每层 3 次额度都在 `:core` 的
+ * [UnifiedPlaybackRecoveryPolicy]；这里只做 TV 的播放器 / Surface / CDN 操作。
+ */
+fun TvMainActivity.handleUnifiedPlaybackFailure(problem: Throwable, layer: RecoveryLayer) {
+    if(isDestroyed) return
+    val now=android.os.SystemClock.elapsedRealtime()
+    if(layer==RecoveryLayer.PLAYER &&
+        failureHandledSession==playbackSession &&
+        now-failureHandledAt in 0..1500 &&
+        player?.playbackState!=Player.STATE_READY &&
+        player?.playbackState!=Player.STATE_BUFFERING
+    ) return
+    if(layer==RecoveryLayer.PLAYER) {
+        failureHandledSession=playbackSession
+        failureHandledAt=now
+    }
+    val queued=queuedEpisodeId!=null
+    val duration=player?.duration?.coerceAtLeast(0) ?: 0
+    val queuedNearEnd=queued && duration>0 &&
+        (player?.currentPosition ?: 0)>=duration-2_000
+    val info=if(queued) queuedVideo?.info else video?.info
+    val surface=if(screen=="recommend") RecoverySurface.RECOMMEND else RecoverySurface.FORMAL
+    val request=com.hgtv.star.shared.media.PlaybackFailures.recoveryRequest(
+        problem=problem,
+        layer=layer,
+        surface=surface,
+        info=info,
+        fallbackQuality=playbackMaxQuality,
+        mode=playerDecoderMode(),
+        networkAvailable=networkAvailable(),
+        queued=queued,
+        queuedNearEnd=queuedNearEnd,
+    )
+    val decision=playbackCoordinator.decideRecovery(request)
+    android.util.Log.i(
+        "HGTV-RECOVER",
+        "layer=${decision.layer} kind=${decision.kind} action=${decision.action::class.simpleName}"+
+            " attempt=${decision.attempt}/${decision.maxAttempts} episode=${episodeIndex+1}"+
+            " quality=${request.currentQuality} mode=${request.currentMode}",
+    )
+    val at=runCatching { player?.currentPosition ?: startPosition }.getOrDefault(startPosition)
+        .coerceAtLeast(0)
+    val autoplay=requestedAutoplay && !sleepStopped
+    when(val action=decision.action) {
+        RecoveryAction.RefetchAddress,
+        RecoveryAction.RetryPrepare -> {
+            if(queued) dropQueuedEpisode()
+            prepareFreshPlaybackRetry()
+            playEpisode(episodeIndex,at,autoplay,recovering=true)
+        }
+        RecoveryAction.RebuildPlayer -> {
+            if(queued) dropQueuedEpisode()
+            playEpisode(episodeIndex,at,autoplay,recovering=true)
+        }
+        is RecoveryAction.SwitchSoftware -> {
+            playbackCoordinator.setEffectiveDecoderMode(VideoDecoderMode.SOFTWARE)
+            action.maxQuality?.let(playbackCoordinator::setMaxQuality)
+            applyDecoderMode(at,autoplay)
+        }
+        is RecoveryAction.LowerQuality -> {
+            if(queued) dropQueuedEpisode()
+            playbackCoordinator.setMaxQuality(action.targetQuality)
+            prepareFreshPlaybackRetry()
+            playEpisode(episodeIndex,at,autoplay,recovering=true)
+        }
+        RecoveryAction.SwitchHostAndRefetch -> {
+            dropDeadTransport()
+            hostSwitchPending=true
+            prepareFreshPlaybackRetry()
+            playEpisode(episodeIndex,at,autoplay,recovering=true)
+        }
+        RecoveryAction.RecoverQueuedCurrent -> {
+            dropQueuedEpisode()
+            playEpisode(episodeIndex,at,autoplay,recovering=true)
+        }
+        RecoveryAction.WaitForNetwork -> {
+            showPassivePlaybackHint(
+                message="等待网络恢复…",
+                onRetry={ retryAfterPassiveHint(problem,layer,at,autoplay) },
+            )
+        }
+        RecoveryAction.ShowPassiveHint -> {
+            val facts=FailureFacts(
+                errorCode=request.errorCode,
+                stage=request.stage,
+                media=request.media,
+                retryable=request.retryable,
+                streamExpired=request.streamExpired,
+                videoChanged=request.videoChanged,
+                hostUnresolved=request.hostUnresolved,
+                transportDead=request.transportDead,
+                queued=request.queued,
+                queuedNearEnd=request.queuedNearEnd,
+            )
+            showPassivePlaybackHint(
+                message=FailurePresentation.message(facts,playbackCoordinator.manualHint,hardwareHevcAvailable),
+                onRetry={ retryAfterPassiveHint(problem,layer,at,autoplay) },
+            )
+        }
+    }
+}
+
+private fun TvMainActivity.retryAfterPassiveHint(
+    problem: Throwable,
+    layer: RecoveryLayer,
+    position: Long,
+    autoplay: Boolean,
+) {
+    clearPassivePlaybackHint()
+    playbackCoordinator.onManualRetry()
+    playbackCoordinator.resetRecoveryForManualRetry()
+    prepareFreshPlaybackRetry()
+    playEpisode(episodeIndex,position,autoplay,recovering=true)
+}
+
+/**
+ * 最终兜底提示：只占播放状态行和一小排按钮，不设置 `playError`，因此菜单、选集、
+ * 返回和方向键仍然可用。
+ */
+fun TvMainActivity.showPassivePlaybackHint(message: String,onRetry: ()->Unit) {
+    playError=false
+    recoveryHintActive=true
+    recoveryRetry=onRetry
+    player?.pause()
+    syncBufferingDots()
+    progressBar.visibility=View.GONE
+    hud.visibility=View.VISIBLE
+    controls.removeAllViews()
+    controls.visibility=View.VISIBLE
+    panel=true
+    playbackText.text=message
+    val actions=row()
+    controls.addView(actions)
+    addButton(actions,"重试") { onRetry() }
+    syncMediaSession()
+}
+
+fun TvMainActivity.clearPassivePlaybackHint() {
+    recoveryHintActive=false
+    recoveryRetry=null
+    if(!playError) {
+        controls.removeAllViews()
+        controls.visibility=View.GONE
+    }
+}
+
+private fun TvMainActivity.legacyPlayerFailure(problem: Throwable) {
     // 同一次片尾故障可能先来 onPlayerError、再来 STATE_ENDED（或反过来）。
     // 两条路都去「切下一集」就是重复切换：同一会话 1.5 秒内只处理第一条。
     // 判据带会话号，所以新一集自己的错误不会被这条规则误吞。

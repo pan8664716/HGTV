@@ -176,11 +176,14 @@ internal fun TvMainActivity.initializeMainAfterFirstFrameImpl(state: Bundle?) {
                 //（见 `ContentRepository.ADDRESS_ATTEMPT_TIMEOUT_MS`），但那是**兜底**：
                 // 能当场知道网络回来了，就不该白白等满。
                 if(restored) refetchAddressOnNetwork()
+                if(restored && recoveryHintActive) {
+                    recoveryRetry?.invoke()
+                    return@post
+                }
                 if(foreground && screen=="player" && playError && autoRecovery) {
                     // 网络**刚回来**、而自动重试正排着等待：把那段等待压掉。
                     //
-                    // 那 3 / 6 / 12 秒是为了躲开「平台还在抖」留的间隔，网络真正回来之后
-                    // 它只是白等——用户眼里就是「网都好了还停在错误页上数秒」。
+                    // 统一恢复没有固定等待；网络真正回来之后不应再等任何计时。
                     // 只在**恢复这个边沿**上压缩：只看 `retryPending` 的话，一个「接口在、
                     // 但其实上不了网」的假网络会把 3 次自动重试在十几秒里一次烧光。
                     if(restored && retryPending) {

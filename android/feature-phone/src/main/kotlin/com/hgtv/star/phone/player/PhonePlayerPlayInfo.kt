@@ -59,7 +59,7 @@ internal fun PhonePlayerActivity.syncLandscapeSettingsInfoImpl() {
     val parts = ArrayList<String>(4)
     parts += lib.frameMode.label
     parts += "缩放 ${Math.round(lib.videoScale)}%"
-    parts += lib.decoderMode.label
+    parts += playbackDecoderMode.label
     if (nextSeasonSleepTimer.active) parts += "定时 ${nextSeasonSleepTimer.label()}"
     playerLandSettingsInfo.text = parts.joinToString("  ·  ")
 }

@@ -17,7 +17,7 @@ internal fun PhonePlayerActivity.attach(
     val d = detail
     val episodeIndex = index
     val session = playbackSessionState.sessionId
-    val exo = PhoneServices.player(this, library?.decoderMode)
+    val exo = PhoneServices.player(this, playbackDecoderMode)
     val factory = DataSource.Factory { VideoDataSource(video) }
     val episodeId = d?.episodes?.getOrNull(index).orEmpty()
     if (d != null) {
@@ -115,10 +115,6 @@ internal fun PhonePlayerActivity.attach(
         )
         scheduleCurrentPlayerSurfaceRebind(baselineFrameAt = 0L, attempts = 24)
     }
-    // 这一集真的挂上了：取地址失败的重试计数归零（见 `onEpisodeSourceMissing`）。
-    // 不清的话，网络恢复回调会拿一个过期的计数把正常播放的这一集重来一遍。
-    sourceRetryState.episode = ""
-    sourceRetryState.count = 0
     scheduleAdjacentEpisodeWarmup()
 
     if (listenerPendingFullscreen) {

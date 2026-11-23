@@ -3,15 +3,15 @@ package com.hgtv.star.tv
 
 import android.view.View
 import com.google.android.exoplayer2.Player
+import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.tv.list.showCatalog
 
 /**
  * 确定键：进入正式播放界面。
  *
  * 这一刻才写观看历史（需求：只有进入正式播放界面才加入历史）。
- * [advanceNext] 为真时是「一集自动播完」那条路：进正片并从下一集接着播。
  */
-fun TvMainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
+fun TvMainActivity.enterFormalPlayback() {
     if(screen!="recommend") return
     val data=detail
     // 没有详情（还在取 / 上一次整屏停在提示上）或画面已经被收掉（连续失败后的重试）：
@@ -60,16 +60,14 @@ fun TvMainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
         val duration=p.duration.coerceAtLeast(0)
         duration>0 && p.currentPosition>=duration-2_000
     }.getOrDefault(true)
-    if(!advanceNext) {
-        recommendPlaybackController.reportEventById(
-            data.series.id,
-            com.hgtv.star.core.RecommendBehavior.Event.CLICK,
-            episodeId=data.episodes.getOrNull(episodeIndex).orEmpty(),
-            episodeIndex=episodeIndex,
-            positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
-            durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
-        )
-    }
+    recommendPlaybackController.reportEventById(
+        data.series.id,
+        com.hgtv.star.core.RecommendBehavior.Event.CLICK,
+        episodeId=data.episodes.getOrNull(episodeIndex).orEmpty(),
+        episodeIndex=episodeIndex,
+        positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
+        durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
+    )
     if(atEnd) {
         recommendPlaybackController.reportEventById(
             data.series.id,
@@ -80,27 +78,14 @@ fun TvMainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
             durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
         )
     }
-    if(advanceNext && atEnd) {
-        if(episodeIndex<data.episodes.lastIndex) {
-            // 上面那次 `saveProgress` 已经在「本集已播完」的状态下写了一条 completed 记录
-            //（此刻播放器停在片尾、时长已知），因此这里只管起播下一集。
-            playEpisode(episodeIndex+1,0L,autoplay=true)
-        } else {
-            advanceToNextSeasonOrFinish(data.series)
-        }
+    if(atEnd) {
+        requestedAutoplay=false
+        player?.pause()
+        playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0141)
+        showHud()
     } else {
-        // 停在当前这一集继续看：画面本来就没断，这里只把控制层交还给正式播放的按键。
-        // 这一集已经播到结尾（手动按确定时正好赶上片尾）：从头再放一次这一集没有意义，
-        // 直接按正片自己的连播规则往下走（有下一集就下一集，最后一集就交给「全剧已播完」）。
-        val ended=runCatching { player?.playbackState==Player.STATE_ENDED }.getOrDefault(false)
-        when {
-            ended && episodeIndex<data.episodes.lastIndex -> playEpisode(episodeIndex+1,0L,autoplay=true)
-            ended -> advanceToNextSeasonOrFinish(data.series)
-            else -> {
-                if(player?.isPlaying!=true && !playError) requestPlayback(true)
-                showHud()
-            }
-        }
+        if(player?.isPlaying!=true && !playError) requestPlayback(true)
+        showHud()
     }
     clearRecommendPageForFormalPlayback()
 }

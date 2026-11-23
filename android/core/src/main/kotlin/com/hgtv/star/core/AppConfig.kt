@@ -701,6 +701,12 @@ object AppConfig {
         /** 每集允许手动重试归还次数。 */
         const val MANUAL_RETRY_LIMIT = 2
 
+        /** 统一播放恢复：每个操作层最多实际发起 3 次。 */
+        const val RECOVERY_ATTEMPTS = 3
+
+        /** 稳定播放多久后视为新事件，重新获得分层恢复额度。 */
+        const val RECOVERY_STABLE_MS = 5_000L
+
         /** 音频轨每集允许同档重建次数。 */
         const val AUDIO_REBUILD_LIMIT = 1
 
@@ -721,12 +727,6 @@ object AppConfig {
 
         /** 连续操作加速倍数。 */
         const val SEEK_ACCEL_FACTOR = 3
-
-        /** 手机取播放地址失败后的重试次数。 */
-        const val PHONE_SOURCE_RETRY_LIMIT = 2
-
-        /** 手机取播放地址失败后的退避步长。 */
-        const val PHONE_SOURCE_RETRY_STEP_MS = 3_000L
 
         /** 电视队列项接回当前集的最多次数。 */
         const val TV_QUEUED_RECOVERY_LIMIT = 2

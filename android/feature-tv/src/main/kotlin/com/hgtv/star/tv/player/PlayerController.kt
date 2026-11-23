@@ -101,6 +101,7 @@ fun TvMainActivity.playEpisode(
 ) {
     val data=detail ?: return
     val directRequest=direct && !recovering
+    if(!recovering) hostSwitchPending=false
     // 用户主动换集 / 手动重来会开启新一轮起播；上一轮排着的自动重试必须先作废。
     // 已经进入取地址阶段的旧请求由下面的 work() 统一 cancelWork() 取消。
     if(!recovering) cancelRecovery()
@@ -334,6 +335,7 @@ fun TvMainActivity.playEpisode(
     // 画面模式同理：从设置页回来之后「竖屏短剧全屏」可能刚被改过。
     applyResizeMode()
     loadDanmaku(data.episodes[episodeIndex],data.series.id,clearOnSwitch=clearDanmakuOnSwitch)
+    clearPassivePlaybackHint()
     playbackText.text=""
     progressBar.progress=0f; progressBar.bufferedProgress=0f; progressBar.visibility=View.VISIBLE; hidePlaybackOverlay()
     syncBufferingDots()
@@ -355,6 +357,7 @@ fun TvMainActivity.playEpisode(
     // 建播放器也**立刻**派出去，不等 `work` 在 io 池里拿到线程（见 [buildPlayerAsync]）。
     // 它与上面的类预热、下面的取地址三条并行；`work` 里只等它的结果，不重复建。
     val playerBuild=runCatching { buildPlayerAsync() }.getOrNull()
+    var failureLayer=RecoveryLayer.ADDRESS
     work({
         // 这一段在跑 = 正在起播（建播放器 / 取播放地址 / 本地准备）。下一集预热
         //（[maybePrefetch]）看到这个标志就让路：两条取地址请求叠在一起会把这一轮两边都
@@ -400,7 +403,7 @@ fun TvMainActivity.playEpisode(
                     "stream",
                     "episode=$requestedId recommend=$recommendEntry",
                 )
-                val streamInfo=StageDeadline("playback.stream",StartupBudgets.STREAM_MS).use { deadline ->
+                var streamInfo=StageDeadline("playback.stream",StartupBudgets.STREAM_MS).use { deadline ->
                     deadline.run {
                         playbackSource.stream(
                             requestedId,
@@ -410,6 +413,10 @@ fun TvMainActivity.playEpisode(
                             direct=directRequest,
                         )
                     }
+                }
+                if(hostSwitchPending) {
+                    streamInfo=playbackSource.switchHost(streamInfo)
+                    hostSwitchPending=false
                 }
                 PlaybackStartupTrace.done(
                     "stream",
@@ -442,6 +449,7 @@ fun TvMainActivity.playEpisode(
                 // 「取地址」与「本地准备」分开包：前者失败是没有资源 / 没有可用清晰度，
                 // 后者是容器不认、索引不在文件头、加密索引读不出来——后者与设备无关，
                 // 但界面上同样说「解码失败」。换成 [PlaybackPrepareException]，上报里就能分开。
+                failureLayer=RecoveryLayer.PREPARE
                 val prepareStarted=PlaybackStartupTrace.begin(
                     "prepare",
                     "episode=$requestedId recommend=$recommendEntry",
@@ -577,6 +585,6 @@ fun TvMainActivity.playEpisode(
         armFrameStallWatchdog(session)
         syncDanmakuClock()
     }, { problem ->
-        playerFailure(problem)
+        handleUnifiedPlaybackFailure(problem,failureLayer)
     })
 }

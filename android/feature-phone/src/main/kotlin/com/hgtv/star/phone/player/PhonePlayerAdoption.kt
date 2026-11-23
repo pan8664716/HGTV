@@ -72,7 +72,7 @@ internal fun PhonePlayerActivity.adoptFromSession(seriesId: String): Boolean {
     val resumeAt = PhoneSession.positionMs
     val wasIdle = runCatching { PhoneServices.peekPlayer()?.playbackState }
         .getOrNull() == Player.STATE_IDLE
-    val exo = PhoneServices.player(this, library?.decoderMode)
+    val exo = PhoneServices.player(this, playbackDecoderMode)
 
     detail = d
     index = sessionIndex

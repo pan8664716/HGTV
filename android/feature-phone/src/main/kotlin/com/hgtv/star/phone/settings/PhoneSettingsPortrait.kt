@@ -73,10 +73,6 @@ internal fun PhoneSettingsActivity.renderPlayback() {
     sliderImpl("画面缩放", 1f, 100f, 1f, settingsLibrary.videoScale, { "${it.roundToInt()}%" }) {
         settingsLibrary.videoScale = it
     }
-    switchImpl("自动连播", settingsLibrary.autoNext) {
-        settingsLibrary.autoNext = it
-        renderSettings()
-    }
     sliderImpl("快进快退", 2f, 20f, 1f, settingsLibrary.seekStep.toFloat(), { "${it.roundToInt()} 秒" }) {
         settingsLibrary.seekStep = it.roundToInt()
     }

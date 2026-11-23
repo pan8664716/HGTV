@@ -4,6 +4,8 @@ package com.hgtv.star.shared.feature.player
 import com.hgtv.star.core.FailureAction
 import com.hgtv.star.core.FailureAttribution
 import com.hgtv.star.core.FailureFacts
+import com.hgtv.star.core.RecoveryDecision
+import com.hgtv.star.core.RecoveryRequest
 import com.hgtv.star.core.Series
 import com.hgtv.star.shared.architecture.PlaybackSession
 import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
@@ -48,6 +50,7 @@ class PlaybackCoordinator(
     val currentPositionMs: Long get() = host.currentPositionMs()
     val durationMs: Long get() = host.durationMs()
     val effectiveMaxQuality: Int? get() = session.effectiveMaxQuality
+    val effectiveDecoderMode: com.hgtv.star.core.VideoDecoderMode? get() = session.effectiveDecoderMode
     val autoRetryAttempts: Int get() = session.autoRetryAttempts
     val autoRetryAvailable: Boolean get() = session.autoRetryAvailable
     val autoRetryDelayMs: Long? get() = session.autoRetryDelayMs
@@ -93,6 +96,11 @@ class PlaybackCoordinator(
         recommendFailures: Int = 0,
     ): FailureAction = session.decideFailure(facts, attr, recommendFailures)
 
+    fun decideRecovery(request: RecoveryRequest): RecoveryDecision =
+        session.decideRecovery(request)
+
+    fun resetRecoveryForManualRetry() = session.resetRecoveryForManualRetry()
+
     fun onManualRetry(): Boolean = session.onManualRetry()
 
     fun onManualQualityChange() = session.onManualQualityChange()
@@ -103,6 +111,11 @@ class PlaybackCoordinator(
     fun onEpisodeSwitch(episodeId: String) = session.onEpisodeSwitch(episodeId)
     fun onEpisodeStart(episodeId: String) = session.onEpisodeStart(episodeId)
     fun setMaxQuality(value: Int) = session.setMaxQuality(value)
+
+    fun setEffectiveDecoderMode(value: com.hgtv.star.core.VideoDecoderMode) =
+        session.setEffectiveDecoderMode(value)
+
+    fun markStablePlayback() = session.markStablePlayback()
 
     fun applyRetryPlan(plan: com.hgtv.star.core.PlaybackRetryPlan) =
         session.applyRetryPlan(plan)

@@ -62,7 +62,6 @@ internal fun PhoneSettingsActivity.applySwitchImpl(id: String, checked: Boolean)
             settingsControllerInstance.setDebugMode(checked)
         SettingsController.ID_REDUCE_ANIM ->
             settingsControllerInstance.setReduceAnim(checked)
-        "playback.autoNext" -> settingsLibrary.autoNext = checked
         "play.title" -> settingsLibrary.playerTitle = checked
         "play.episode" -> settingsLibrary.playerEpisode = checked
         "play.speed" -> settingsLibrary.playerSpeed = checked

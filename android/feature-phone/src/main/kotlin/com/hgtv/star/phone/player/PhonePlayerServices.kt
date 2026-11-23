@@ -74,12 +74,11 @@ internal fun PhonePlayerActivity.syncMediaSession() {
 }
 
 /**
- * 网络恢复时**立刻重取地址**，不等退避计时（与电视端 `refetchAddressOnNetwork` 同一条）。
+ * 网络恢复时**立刻重取地址**，没有任何退避等待（与电视端同一条）。
  *
- * 手机切 Wi-Fi / 5G 比电视频繁：断网那一下正好在取地址，退避还要等 3~12 秒，
- * 而网络其实已经好了。电视端早就有这条，手机端原先连网络状态都不看。
+ * 手机切 Wi-Fi / 5G 比电视频繁：断网那一下正好在取地址时，网络一恢复就继续。
  *
- * 只在**正在等地址**（[sourceRetryState] 的计数 > 0）或**停在错误页**时动手，
+ * 只在**停在非阻塞恢复提示**时动手，
  * 正常播放期间网络抖动不该把这一集重来一遍。
  */
 internal fun PhonePlayerActivity.watchNetwork() {
@@ -95,7 +94,7 @@ internal fun PhonePlayerActivity.watchNetwork() {
                 val restored = up && !runtimeState.networkWasUp
                 runtimeState.networkWasUp = up
                 if (!restored) return@runOnUiThread
-                if (errorCard == null && sourceRetryState.count == 0) return@runOnUiThread
+                if (errorCard == null) return@runOnUiThread
                 cancelAutoRetry()
                 val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
                 play(index, at)

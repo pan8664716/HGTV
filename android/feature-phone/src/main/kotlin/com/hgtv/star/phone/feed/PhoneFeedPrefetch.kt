@@ -21,7 +21,7 @@ internal fun PhoneFeedView.maybePrefetchNextImpl(position: Long, duration: Long)
     if (PhoneSession.nextEpisodeId == nextId) return
     feedPrefetchingFor = nextId
     feedPrefetchAt = now + 5_000L
-    val maxQuality = lib.maxQuality
+    val maxQuality = PhoneSession.effectiveMaxQuality ?: lib.maxQuality
     feedScope.launch {
         val remote = withContext(Dispatchers.IO) {
             runCatching {

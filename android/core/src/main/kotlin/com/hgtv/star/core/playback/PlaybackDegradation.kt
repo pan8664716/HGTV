@@ -141,6 +141,14 @@ class SessionPlaybackPolicy {
     @Volatile var effectiveMaxQuality: Int? = null
         private set
 
+    /**
+     * 自动恢复选择的本机解码方式。
+     *
+     * 与 [effectiveMaxQuality] 一样只属于当前播放会话，不写用户设置。
+     */
+    @Volatile var effectiveDecoderMode: VideoDecoderMode? = null
+        private set
+
     /** 最近一次降级的理由，调试面板显示用。 */
     @Volatile var lastReason: DegradationKind? = null
         private set
@@ -215,6 +223,7 @@ class SessionPlaybackPolicy {
         used.clear()
         manualRetries=0
         effectiveMaxQuality=null
+        effectiveDecoderMode=null
         lastReason=null
         manualHint=null
         degradeFrom=0
@@ -251,9 +260,11 @@ class SessionPlaybackPolicy {
      */
     fun onManualDecoderChange() {
         manualHint=null
+        effectiveDecoderMode=null
     }
 
     fun setMaxQuality(value: Int) { effectiveMaxQuality=value }
+    fun setEffectiveDecoderMode(value: VideoDecoderMode) { effectiveDecoderMode=value }
     fun note(reason: DegradationKind) { lastReason=reason }
     fun noteManualHint(text: String) { manualHint=text }
 

@@ -9,6 +9,7 @@ import com.hgtv.star.core.StreamInfo
 import com.hgtv.star.core.forgetStreamAllQualities
 import com.hgtv.star.core.stream
 import com.hgtv.star.shared.data.PlaybackTransport
+import com.hgtv.star.shared.media.PlaybackFailures
 import okhttp3.OkHttpClient
 
 /**
@@ -96,4 +97,20 @@ class PlaybackSourceCoordinator(
 
     fun host(info: StreamInfo): String =
         runCatching { java.net.URI(info.url).host }.getOrNull().orEmpty()
+
+    /**
+     * 把同一档位的下一个 CDN 地址提升为主地址。
+     *
+     * 只在传输层重试时调用；不更换设备号，也不改写用户设置。
+     */
+    fun switchHost(info: StreamInfo): StreamInfo {
+        val urls = (listOf(info.url) + info.backupUrls).filter { it.isNotBlank() }.distinct()
+        if (urls.size < 2) return info
+        val rotated = urls.drop(1) + urls.first()
+        return info.copy(url = rotated.first(), backupUrls = rotated.drop(1))
+    }
+
+    fun dropTransport(hosts: Collection<String>) {
+        PlaybackFailures.dropTransportCaches(hosts)
+    }
 }

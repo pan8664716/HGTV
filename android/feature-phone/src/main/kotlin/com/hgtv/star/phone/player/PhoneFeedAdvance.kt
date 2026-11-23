@@ -45,54 +45,12 @@ internal fun PhoneFeedView.onEpisodeEnded(index: Int) {
         )
     }
 
-    val next = current + 1
-    if (next <= d.episodes.lastIndex) {
-        feedAdvancing = true
-        feedAdvancingAt = SystemClock.elapsedRealtime()
-        // 交接给正片：**不暂停**。两边用的是同一个进程级播放器，暂停只会让
-        // 切页那一下断一拍；播放页接手的是同一路解码，声音是连续的。
-        PhoneSession.resumeOnAdopt = true
-        PhoneSession.beginHandoff()
-        PhoneSession.takeOver(PhoneSession.Owner.PLAYER)
-        settleRecommendWatch()
-        runCatching { feedRecommendStore.markWatched(series) }
-        onHidden(handoff = true)
-        // **在切页之前**把下一集挂上播放器：这样正片一进来接的就是已经在解码的这一路，
-        // 声音不断、画面第一帧立刻有。不预热直接切页时，新窗口要等「取详情 → 取地址 →
-        // 解析首块 → 出第一帧」，那一段就是用户看到的黑屏。
-        val primed = primeHandoff(d, next)
-        android.util.Log.i("HGTV-PHONE", "handoff to formal episode=${next + 1} primed=$primed")
-        hideChromeForHandoff(series)
-        // 下一集从 0 秒开始（不是续播：这一集用户还没看过）。
-        // `noTransition` 关掉系统转场：滑动 / 淡入那 200ms 里新窗口还没画出视频，
-        // 用户看到的就是一次黑屏。
-        context.phoneNav().open(
-            Route.Player(
-                series.id,
-                series.title,
-                episode = next,
-                fromRecommend = true,
-                noTransition = true,
-            )
-        )
-        // 4.4–5.x 不认 FLAG_ACTIVITY_NO_ANIMATION 的入场：再显式关一次。
-        (context as? android.app.Activity)?.overridePendingTransition(0, 0)
-    } else {
-        // 最后一集：与 TV 的「全剧已播完 → 换一部接着看」等价——往下滑一屏。
-        // 同样上锁：否则每 500ms 的兜底检查会反复触发这一段（反复滚动 / 反复 loadMore）。
-        feedAdvancing = true
-        feedAdvancingAt = SystemClock.elapsedRealtime()
-        val nextSeries = index + 1
-        if (nextSeries < feedItems.size) {
-            feedSmoothScrollToPosition(nextSeries)
-            playIndexForSettings(nextSeries, -1L, clearDanmakuOnSwitch = true)
-        } else {
-            loadMore()
-            feedHint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0029)
-            feedHint.visibility = View.VISIBLE
-            feedHint.bringToFront()
-        }
-    }
+    feedAdvancing = true
+    feedAdvancingAt = SystemClock.elapsedRealtime()
+    exo.pause()
+    feedHint.text = "本集已结束，上滑换一部"
+    feedHint.visibility = View.VISIBLE
+    feedHint.bringToFront()
 }
 
 /**

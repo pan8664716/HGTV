@@ -2,9 +2,12 @@
 package com.hgtv.star.phone
 
 import android.os.SystemClock
+import android.view.View
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import com.hgtv.star.shared.compat.connectivityManager
+import com.hgtv.star.shared.compat.hasInternet
 
 internal fun PhoneFeedView.playIndexImpl(
     index: Int,
@@ -15,6 +18,7 @@ internal fun PhoneFeedView.playIndexImpl(
     prepareFeedSwipePreviewForCommit(index)
     clearFeedSwipePauseImpl()
     val previousIndex = feedPlayingIndex
+    if (previousIndex != index) feedRecovery.onEpisodeStart()
     PhoneSession.rememberRecommendSeries(series, feedCacheKey())
     if (feedPlayingIndex >= 0 && feedPlayingIndex != index) settleRecommendWatch()
     feedRecommendBatchJob?.cancel()
@@ -100,16 +104,17 @@ internal fun PhoneFeedView.playIndexImpl(
         val lib = feedLibrary ?: PhoneServices.awaitLibrary(context).also {
             feedLibrarySlot = it
         }
-        val prepared = withContext(Dispatchers.IO) {
+        val preparedResult = withContext(Dispatchers.IO) {
             runCatching {
                 feedRecommendPlayback.prepare(
                     series = series,
-                    maxQuality = lib.maxQuality,
+                    maxQuality = PhoneSession.effectiveMaxQuality ?: lib.maxQuality,
                     startAt = startAt,
                     resumeSaved = true,
                 )
-            }.getOrNull()
+            }
         }
+        val prepared = preparedResult.getOrNull()
         if (token != feedPlayToken) {
             prepared?.remote?.close()
             return@launch
@@ -123,6 +128,40 @@ internal fun PhoneFeedView.playIndexImpl(
                 episodeIndex=feedCurrentEpisodeIndex[index] ?: -1,
                 reason="prepare_failed",
             )
+            val problem=preparedResult.exceptionOrNull()
+                ?: java.io.IOException("推荐流播放准备失败")
+            val request=com.hgtv.star.shared.media.PlaybackFailures.recoveryRequest(
+                problem=problem,
+                layer=if(problem is java.io.IOException) {
+                    com.hgtv.star.core.RecoveryLayer.ADDRESS
+                } else {
+                    com.hgtv.star.core.RecoveryLayer.PREPARE
+                },
+                surface=com.hgtv.star.core.RecoverySurface.RECOMMEND,
+                info=null,
+                fallbackQuality=PhoneSession.effectiveMaxQuality ?: lib.maxQuality,
+                mode=PhoneSession.effectiveDecoderMode
+                    ?: lib.decoderMode,
+                networkAvailable=context.connectivityManager()?.hasInternet() != false,
+            )
+            val decision=feedRecovery.decide(request)
+            if(decision.action !is com.hgtv.star.core.RecoveryAction.ShowPassiveHint &&
+                decision.action != com.hgtv.star.core.RecoveryAction.WaitForNetwork
+            ) {
+                playIndexForSettings(index, startAt, clearDanmakuOnSwitch = false)
+            } else {
+                feedHint.text = "加载失败，点此重试"
+                feedHint.isClickable = true
+                feedHint.setOnClickListener {
+                    feedHint.setOnClickListener(null)
+                    feedHint.isClickable = false
+                    feedHint.visibility = View.GONE
+                    feedRecovery.onManualRetry()
+                    playIndexForSettings(index, startAt, clearDanmakuOnSwitch = false)
+                }
+                feedHint.visibility = View.VISIBLE
+                feedHint.bringToFront()
+            }
             return@launch
         }
         feedPlayingDetailSlot = prepared.detail

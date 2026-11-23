@@ -96,6 +96,7 @@ class PhoneFeedView(
 
     private val scope = CoroutineScope(SupervisorJob() + Dispatchers.Main.immediate)
     internal val feedScope get()=scope
+    internal val feedRecovery = com.hgtv.star.core.UnifiedPlaybackRecovery()
     private val playbackSource by lazy { PlaybackSourceCoordinator(PhoneServices.repository(context)) }
     internal val feedPlaybackSource get()=playbackSource
     private val items get()=recommendStore.items

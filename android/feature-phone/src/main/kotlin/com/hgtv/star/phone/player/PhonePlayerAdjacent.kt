@@ -163,7 +163,7 @@ internal fun PhonePlayerActivity.ensureAdjacentEpisode(target: Int) {
 
             val exo = PhoneServices.newPlayer(
                 this@ensureAdjacentEpisode,
-                library?.decoderMode,
+                playbackDecoderMode,
                 handleAudioFocus = false,
             )
             val factory = DataSource.Factory { VideoDataSource(prepared) }
@@ -249,7 +249,7 @@ internal fun PhonePlayerActivity.ensureNextSeasonEpisode(targetDetail: Detail) {
             }
             val exo = PhoneServices.newPlayer(
                 this@ensureNextSeasonEpisode,
-                library?.decoderMode,
+                playbackDecoderMode,
                 handleAudioFocus = false,
             )
             val factory = DataSource.Factory { VideoDataSource(prepared) }

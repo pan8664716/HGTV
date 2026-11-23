@@ -16,14 +16,12 @@ val TvMainActivity.playbackMaxQuality: Int
     get()=playbackSessionState.effectiveMaxQuality ?: library.maxQuality
 
 /**
- * 本次播放实际生效的解码方式：**就是用户设置**。
+ * 本次播放实际生效的解码方式。
  *
- * 降级不再自动改这一档（全站只有 HEVC，软解是用户的知情选择）：
- * 切软解的唯一入口是错误页上的「切换为软解」按钮与播放设置里的「解码」一行，
- * 两者都写 `library.decoderMode`（见 [applyDecoderMode]）。
+ * 自动恢复选择的软解只存在当前会话；用户手动改设置时清掉会话覆盖并回到用户设置。
  */
 val TvMainActivity.playbackDecoderMode: VideoDecoderMode
-    get()=library.decoderMode
+    get()=playbackSessionState.effectiveDecoderMode ?: library.decoderMode
 
 /**
  * 下一集预热槽的键：集 + 上限。
@@ -37,11 +35,6 @@ fun TvMainActivity.preparedKeyFor(id: String): String =
 /**
  * 建播放器时该用的解码方式。
  *
- * **就等于用户设置**（[playbackDecoderMode]）：本机有没有 HEVC 硬解**不再自动改这一档**。
- *
- * 需求口径是「优先硬解，不支持硬解时提示用户换成软解，由用户手动换」。
- * 早先这里会在探测到「本机没有视频硬解」时静默改成软解：用户以为开着硬解，实际在软解，
- * 而且一旦软解也放不动，界面上没有任何线索说明「是硬解根本没有」。
- * 现在硬解筛空 → 4002 → 错误页给出「切换软解 + 建议档位」的按钮，动作由用户发起。
+ * 读取会话覆盖后的实际值；自动恢复写会话，设置页写用户偏好。
  */
 fun TvMainActivity.playerDecoderMode(): VideoDecoderMode = playbackDecoderMode

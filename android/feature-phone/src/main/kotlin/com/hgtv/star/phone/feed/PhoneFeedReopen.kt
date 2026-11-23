@@ -36,7 +36,7 @@ internal fun PhoneFeedView.reopenAtCurrentPositionImpl(index: Int): Boolean {
         val lib = feedLibrary ?: PhoneServices.awaitLibrary(context).also {
             feedLibrarySlot = it
         }
-        val maxQuality = lib.maxQuality
+        val maxQuality = PhoneSession.effectiveMaxQuality ?: lib.maxQuality
         val prepared = withContext(Dispatchers.IO) {
             runCatching {
                 val info = feedPlaybackSource.stream(episodeId, maxQuality, d.playback, direct=true)

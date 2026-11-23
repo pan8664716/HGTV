@@ -6,6 +6,9 @@ import com.google.android.exoplayer2.ExoPlaybackException
 import com.google.android.exoplayer2.mediacodec.MediaCodecRenderer
 import com.hgtv.star.core.FailureAttribution
 import com.hgtv.star.core.MediaKind
+import com.hgtv.star.core.RecoveryLayer
+import com.hgtv.star.core.RecoveryRequest
+import com.hgtv.star.core.RecoverySurface
 import com.hgtv.star.core.StreamInfo
 import com.hgtv.star.core.VideoDecoderMode
 
@@ -80,6 +83,50 @@ object PlaybackFailures {
             currentQuality = quality,
             currentMode = mode,
             available = available,
+        )
+    }
+
+    /**
+     * 把平台异常与现场归一成共享恢复策略需要的同一份事实。
+     *
+     * 两端只传自己的 layer / surface 与当前流，不再各自推导错误类别。
+     */
+    fun recoveryRequest(
+        problem: Throwable?,
+        layer: RecoveryLayer,
+        surface: RecoverySurface,
+        info: StreamInfo?,
+        fallbackQuality: Int,
+        mode: VideoDecoderMode,
+        networkAvailable: Boolean,
+        queued: Boolean = false,
+        queuedNearEnd: Boolean = false,
+        stageOverride: String? = null,
+    ): RecoveryRequest {
+        val attr = attribution(
+            problem = problem,
+            code = (problem as? PlaybackException)?.errorCode ?: 0,
+            info = info,
+            fallbackQuality = fallbackQuality,
+            mode = mode,
+        )
+        return RecoveryRequest(
+            layer = layer,
+            surface = surface,
+            errorCode = attr.errorCode,
+            stage = stageOverride ?: stageOf(problem),
+            media = attr.media,
+            retryable = isRetryable(problem),
+            streamExpired = expired(problem),
+            videoChanged = videoChanged(problem),
+            hostUnresolved = hostUnresolved(problem),
+            transportDead = transportDead(problem),
+            currentQuality = attr.currentQuality,
+            available = attr.available,
+            currentMode = attr.currentMode,
+            networkAvailable = networkAvailable,
+            queued = queued,
+            queuedNearEnd = queuedNearEnd,
         )
     }
 

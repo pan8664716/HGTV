@@ -8,6 +8,7 @@ import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.core.Series
+import com.hgtv.star.core.VideoDecoderMode
 
 /**
  * 手机端「这一台机器现在在放什么」的进程级事实。
@@ -63,6 +64,10 @@ object PhoneSession {
         private set
     @Volatile var quality: String = ""
         private set
+
+    /** 推荐流自动恢复选择的会话级清晰度 / 解码方式，不写用户设置。 */
+    @Volatile var effectiveMaxQuality: Int? = null
+    @Volatile var effectiveDecoderMode: VideoDecoderMode? = null
 
     /**
      * 这一路属于推荐页的哪一条体裁流（`PhoneFeedView.cacheKey()`）。
@@ -121,6 +126,11 @@ object PhoneSession {
     fun rememberRecommendSeries(series: Series,feed: String = "") {
         recommendSeries=series
         if(feed.isNotEmpty()) feedKey=feed
+    }
+
+    fun resetRecoveryOverrides() {
+        effectiveMaxQuality = null
+        effectiveDecoderMode = null
     }
 
     /** 这一部剧的相关剧集（没取过 / 取的是别的剧就返回 null）。 */

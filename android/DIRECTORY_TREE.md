@@ -371,11 +371,12 @@ android/
 | `BitrateProbe.kt` | 一次性探针：抓几部短剧的 1080P 播放地址，从 MP4 头部量它们的真实码率。 | fun u32、fun u64、fun fourcc、fun boxes、fun find、class Track |
 | `CodecProbe.kt` | 一次性探针：把播放接口返回的 video_list 原样摊开，看每个清晰度到底提供哪些编码。 | fun reflect、fun main |
 | `KeyMap.kt` | 播放界面里可自定义的六个键。 | class PlayerKey、class PlayerKeyAction、class KeyMap |
-| `PlaybackAttemptLedger.kt` | 正式播放页**按集计**的全部重试额度与账本：一处持有、三个入口重置。 | class PlaybackAttemptLedger |
+| `PlaybackAttemptLedger.kt` | 旧版按集重试账本；新统一恢复使用 `UnifiedRecoveryBudget`，这里保留给旧诊断路径兼容。 | class PlaybackAttemptLedger |
 | `PlaybackCache.kt` | 播放地址、索引和首块缓存；地址不按时间主动失效，真实请求失败时显式作废。 | object PlaybackCache |
 | `PlaybackComfort.kt` | 视频解码方式。 | class VideoDecoderMode、class VideoFrameMode、class VideoFit、fun VideoFrameMode.toFit、object SeekStep、class SleepTimer |
 | `PlaybackDegradation.kt` | 播放重试 / 降级的**全部决策**都收敛在这个文件里，纯逻辑、不碰 Android、可直接单测。 | class MediaKind、class DegradationKind、class PlaybackRetryPlan、class GiveUpReason、interface RetryDecision、class FailureAttribution |
-| `PlaybackFailurePolicy.kt` | 一次播放失败的**事实**：平台层负责从异常与现场里读出这些布尔量，决策层只认它们；错误页能力只对解码类开放。 | class FailureFacts、interface FailureAction、object PlaybackFailurePolicy、object FailurePresentation、class PlaybackFailureCapability |
+| `PlaybackFailurePolicy.kt` | 旧版播放失败事实与展示兼容层；新播放恢复决策已迁到 `UnifiedPlaybackRecoveryPolicy`。 | class FailureFacts、interface FailureAction、object PlaybackFailurePolicy、object FailurePresentation、class PlaybackFailureCapability |
+| `UnifiedPlaybackRecovery.kt` | TV 与手机共用的播放恢复策略：分层 3 次额度、错误码分类、无固定等待、自动软解/降档和非阻塞终态。 | enum class RecoveryLayer、data class RecoveryRequest、sealed interface RecoveryAction、object UnifiedPlaybackRecoveryPolicy、class UnifiedPlaybackRecovery |
 | `PlaybackInfoLine.kt` | 播放界面左上角那几项信息的**文案**：电视与手机共用这一份。 | object PlaybackInfoLine |
 | `PlaybackMachine.kt` | 驱动 PlaybackState 的事件。 | interface PlaybackEvent、object PlaybackMachine |
 | `PlaybackSpeed.kt` | 播放地址、缓存、探测、降级与预取。文件 PlaybackSpeed 主要包含 object PlaybackSpeed。 | object PlaybackSpeed |
@@ -576,7 +577,7 @@ android/
 | `PhoneFeedPreload.kt` | 相邻页调度；主方向最近一条完整预热并创建独立播放器，其余目标按地址 / 索引分级预热，快滑时仍保证下一部可播。 | class PhoneFeedPreloadState、fun PhoneFeedView.preloadGateOpen、fun PhoneFeedView.scheduleDwell、fun PhoneFeedView.schedulePreload、fun PhoneFeedView.applyPreload |
 | `PhoneNextSeason.kt` | 手机下一季编排：提前取下一季详情与第 1 集模型，交给相邻集播放器池；片尾优先激活池实例并切换整页数据集，失败才回退完整起播。 | class PhoneNextSeasonState、fun PhonePlayerActivity.ensureNextSeason、fun PhonePlayerActivity.ensureNextSeasonDetail、fun PhonePlayerActivity.activateNextSeasonPool、fun PhonePlayerActivity.advanceToNextSeasonOrFinish |
 | `PhonePlaybackProgress.kt` | 手机正式播放页进度、预加载与定时停止；每秒进度 ticker 同时兜底同步屏幕常亮。 | fun PhonePlayerActivity.startTicker、fun PhonePlayerActivity.updateProgress、fun PhonePlayerActivity.maybePrefetchNext |
-| `PhonePlaybackRecovery.kt` | 手机端的播放失败自愈：**决策全部来自 :core，与电视端同一套**。 | val PhonePlayerActivity.playbackMaxQuality、fun PhonePlayerActivity.playbackAttribution、fun PhonePlayerActivity.handlePlayerFailure、fun PhonePlayerActivity.decideAndRun、fun PhonePlayerActivity.refetchAndReplay、fun PhonePlayerActivity.recoverQueuedCurrent |
+| `PhonePlaybackRecovery.kt` | 手机端执行统一播放恢复策略：静默重取、软解/降档、host 切换与非阻塞提示。 | val PhonePlayerActivity.playbackMaxQuality、val PhonePlayerActivity.playbackDecoderMode、fun PhonePlayerActivity.handleUnifiedPlaybackFailure、fun PhonePlayerActivity.showPassivePlaybackHint |
 | `PhonePlaybackSettings.kt` | 播放设置面板的各行：**推荐信息流与正式播放页共用这一份**。 | fun buildPlaybackSettingsRows |
 | `PhonePlayerActivity.kt` | 手机正式播放页基类，持有播放器、横竖屏 ViewPager2 集页、播放控制与生命周期；窗口重新获得焦点时重新校准常亮。 | open class PhonePlayerActivity、playerControlsLocked |
 | `PhonePlayerAdjacent.kt` | 正式播放页前后相邻集播放器池：后台取源、独立 `ExoPlayer`、竖屏 / 横屏 ViewPager2 集页静音首帧预渲染、音频焦点隔离、下一季第 1 集虚拟槽预载、无空档激活、上一集复用和资源回收。 | class PhonePlayerAdjacentSlot、fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup、fun PhonePlayerActivity.ensureNextSeasonEpisode、fun PhonePlayerActivity.activateAdjacentEpisode、fun PhonePlayerActivity.releaseAllAdjacentPlayers |
@@ -618,7 +619,7 @@ android/
 | `PhonePlayerReopen.kt` | 原地换一条地址：**不换集、不换 Surface、不回片头**。 | fun PhonePlayerActivity.reopenCurrentEpisodeInPlace |
 | `PhonePlayerResume.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerResume 主要包含 fun PhonePlayerActivity.handlePlayerResume。 | fun PhonePlayerActivity.handlePlayerResume |
 | `PhonePlayerScreenState.kt` | 播放时保持屏幕常亮。 | fun PhonePlayerActivity.syncKeepScreenOn、fun PhonePlayerActivity.restoreUnderlayIfNeeded |
-| `PhonePlayerServices.kt` | 手机媒体会话、播放页网络监听和恢复边沿；只在断网转联网且处于取地址/错误态时重试。 | class PhonePlayerRuntimeState、fun PhonePlayerActivity.ensureMediaSession、fun PhonePlayerActivity.syncMediaSession、fun PhonePlayerActivity.watchNetwork、fun PhonePlayerActivity.unwatchNetwork |
+| `PhonePlayerServices.kt` | 手机媒体会话、播放页网络监听和恢复边沿；网络恢复时立即继续统一恢复流程。 | class PhonePlayerRuntimeState、fun PhonePlayerActivity.ensureMediaSession、fun PhonePlayerActivity.syncMediaSession、fun PhonePlayerActivity.watchNetwork、fun PhonePlayerActivity.unwatchNetwork |
 | `PhonePlayerSettingsEntry.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerSettingsEntry 主要包含 fun PhonePlayerActivity.openSettings、fun PhonePlayerActivity.openPortraitSettings。 | fun PhonePlayerActivity.openSettings、fun PhonePlayerActivity.openPortraitSettings |
 | `PhonePlayerSettingsPanel.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerSettingsPanel 主要包含 object PhonePlayerSettingsPanel。 | object PhonePlayerSettingsPanel |
 | `PhonePlayerSettingsRows.kt` | 播放设置的各行：清晰度、倍速、画面、解码、缩放、定时、相关剧集、收藏与弹幕。 | fun PhonePlayerActivity.buildSettingsRowsImpl |
@@ -630,7 +631,6 @@ android/
 | `PhonePlayerViewFacade.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerViewFacade 主要包含 fun PhonePlayerActivity.seekTo、fun PhonePlayerActivity.syncVideoFrame、fun PhonePlayerActivity.applyVideoScale、fun PhonePlayerActivity.syncPlayInfo。 | fun PhonePlayerActivity.seekTo、fun PhonePlayerActivity.syncVideoFrame、fun PhonePlayerActivity.applyVideoScale、fun PhonePlayerActivity.syncPlayInfo |
 | `PhonePlayerViewSupport.kt` | 手机播放器视图支撑：SurfaceView 固定普通层级与 OPAQUE 格式、横竖屏强制清除并重交输出面、首帧比例冻结、目标集封面过渡、圆形锁定按钮，以及弹幕黑边所需的实际内容框计算。 | class FixedFirstFramePlayerView、fun PlayerView.forceBindVideoSurface、fun PhonePlayerViewSupport.useOpaqueVideoSurface、object PhonePlayerViewSupport、fun showEpisodeCover、fun hideEpisodeCover、fun PlayerView.visibleVideoBoundsIn |
 | `PhoneRelatedPanels.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneRelatedPanels 主要包含 class PhonePlayerRelatedState、fun PhonePlayerActivity.showRelated、fun PhonePlayerActivity.relatedHeadline、fun PhonePlayerActivity.fillRelated。 | class PhonePlayerRelatedState、fun PhonePlayerActivity.showRelated、fun PhonePlayerActivity.relatedHeadline、fun PhonePlayerActivity.fillRelated、fun PhonePlayerActivity.showAuthorWorks、fun PhonePlayerActivity.toggleFavorite |
-| `PhoneSourceRetry.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhoneSourceRetry 主要包含 class PhoneSourceRetryState、fun PhonePlayerActivity.resetSourceRetryForFreshAttempt、fun PhonePlayerActivity.onEpisodeSourceMissing、fun PhonePlayerActivity.invalidateEpisodeCacheForRetry。 | class PhoneSourceRetryState、fun PhonePlayerActivity.resetSourceRetryForFreshAttempt、fun PhonePlayerActivity.onEpisodeSourceMissing、fun PhonePlayerActivity.invalidateEpisodeCacheForRetry |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/search/`
 
@@ -861,7 +861,7 @@ android/
 | `PlaybackLetterbox.kt` | 电视播放 FIT 黑边同步：按片源比例、缩放和旋转计算画面框，同时刷新弹幕 Surface 与普通 View 兜底。 | fun TvMainActivity.syncPlaybackLetterbox |
 | `PlaybackMenu.kt` | 播放器的底部设置面板（遥控器「上」打开）。 | class PlaybackMenu |
 | `PlaybackMenuController.kt` | 播放菜单与选择器、进度保存，以及页面切换时播放器 Surface/资源的分离回收。 | fun TvMainActivity.showPlaybackMenu、fun TvMainActivity.buildPlaybackMenu、fun TvMainActivity.obtainPlaybackMenu、fun TvMainActivity.detachPlayerSurface、fun menuShape、fun TvMainActivity.syncPlaybackMenu、fun TvMainActivity.dropPlaybackMenuCache |
-| `PlaybackRecovery.kt` | 电视播放内核、HUD、恢复、渲染与诊断。文件 PlaybackRecovery 主要包含 fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.currentPosition、fun TvMainActivity.cancelRecovery、fun TvMainActivity.scheduleRecovery、fun playbackMediaKind |
+| `PlaybackRecovery.kt` | 电视播放内核、HUD、恢复、渲染与诊断；执行共享恢复计划并显示非阻塞提示。 @file:JvmName("MainActivityPlaybackKt") @file:JvmMultifileClass | fun TvMainActivity.networkAvailable、fun TvMainActivity.refetchAddressOnNetwork、fun TvMainActivity.handleUnifiedPlaybackFailure、fun TvMainActivity.showPassivePlaybackHint、fun TvMainActivity.clearPassivePlaybackHint |
 | `PlaybackSurfaceBuilder.kt` | 按页面重建电视播放器 surface 与覆盖层：推荐页与正式播放都使用单个 PlayerView；重建前显式清理旧 PlayerView，避免遗留视频 Surface。 | fun TvMainActivity.buildPlaybackSurface、fun TvMainActivity.detachPlaybackViewForRebuild |
 | `PlayerActions.kt` | 播放设置面板**第一行那排动作**（相关剧集 / 作者作品 / 加入收藏 / 查看简介）的实现。 | fun TvMainActivity.showPlayerRelated、fun TvMainActivity.showPlayerAuthorWorks、fun TvMainActivity.showPlayerWorksStrip、fun TvMainActivity.refreshStripData、fun TvMainActivity.showPlayerIntro、fun TvMainActivity.playerFavoriteLabel |
 | `PlayerController.kt` | 电视播放起播内核，负责换集、播放源设置和播放页面装配；正式播放正常分集软换源不释放解码器，推荐跨作品和错误恢复才硬切。 | fun TvMainActivity.loadDanmaku、fun TvMainActivity.playEpisode、fun TvMainActivity.scheduleRecommendAfterFirstFrame |

@@ -24,6 +24,7 @@ import com.hgtv.star.core.PlaybackFailurePolicy
 import com.hgtv.star.core.RecommendBehavior
 import com.hgtv.star.core.PlaybackQuality
 import com.hgtv.star.core.PlaybackRetryPlan
+import com.hgtv.star.core.StreamInfo
 import com.hgtv.star.core.VideoDecoderMode
 import com.hgtv.star.core.invalidatePlaybackCacheForRetry
 import com.hgtv.star.phone.ui.PhoneStyle
@@ -31,8 +32,9 @@ import com.hgtv.star.phone.ui.dp
 import com.hgtv.star.phone.ui.phoneSize
 import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.shared.data.PlaybackCapability
+import com.hgtv.star.shared.compat.connectivityManager
+import com.hgtv.star.shared.compat.hasInternet
 import com.hgtv.star.shared.media.PlaybackFailures
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 
 /**
@@ -51,17 +53,18 @@ import kotlinx.coroutines.launch
  * 手机端早先什么都没有：一次解码失败就停在那里，只有一行「播放失败 XXXX」的小字，
  * 用户只能退出重进。这里把同一套决策接进来，两端从此不会对同一台机器给出不同结论。
  *
- * ## 手机端多出来的两件事
- *
- * 1. **网络 / 源类失败自动退避重试**（3 / 6 / 12 秒，来自 `PlaybackAttemptLedger`）：
- *    手机上切网（Wi-Fi ↔ 5G）、地铁里丢包比电视常见得多，一次瞬态失败不该判死；
- * 2. **错误页是触控的**：三颗按钮（立即重试 / 换软解 / 换档位），能点的才出现——
- *    音频失败时那两颗视频按钮必须不出现，否则点了只会再撞一次同样的错。
+ * 手机只保留触控提示与播放器执行原语；次数、等待、软解、降档和错误码分类全部来自
+ * [com.hgtv.star.core.UnifiedPlaybackRecoveryPolicy]。
  */
 
 /** 本次播放**实际生效**的清晰度上限：会话层降档结果 > 用户设置。 */
 internal val PhonePlayerActivity.playbackMaxQuality: Int
     get() = playbackSessionState.effectiveMaxQuality ?: (library?.maxQuality ?: 1080)
+
+/** 自动软解只覆盖当前播放会话，不写用户设置。 */
+internal val PhonePlayerActivity.playbackDecoderMode: VideoDecoderMode
+    get() = playbackSessionState.effectiveDecoderMode
+        ?: (library?.decoderMode ?: VideoDecoderMode.HARDWARE)
 
 /** 把这一次失败整理成策略能吃的归因（判断本体在 `:shared`，与电视端同一份）。 */
 internal fun PhonePlayerActivity.playbackAttribution(code: Int): FailureAttribution =
@@ -70,7 +73,7 @@ internal fun PhonePlayerActivity.playbackAttribution(code: Int): FailureAttribut
         code = code,
         info = remote?.info,
         fallbackQuality = playbackMaxQuality,
-        mode = library?.decoderMode ?: VideoDecoderMode.HARDWARE,
+        mode = playbackDecoderMode,
     )
 
 /**
@@ -88,6 +91,157 @@ internal fun PhonePlayerActivity.playbackAttribution(code: Int): FailureAttribut
  * （2026-11 现场：「第三集播完进不了第四集，退也退不出去」）。
  */
 internal fun PhonePlayerActivity.handlePlayerFailure(error: PlaybackException) {
+    handleUnifiedPlaybackFailure(error, com.hgtv.star.core.RecoveryLayer.PLAYER)
+}
+
+/**
+ * 两端共用的恢复策略在手机端的执行适配。
+ */
+internal fun PhonePlayerActivity.handleUnifiedPlaybackFailure(
+    error: Throwable,
+    layer: com.hgtv.star.core.RecoveryLayer,
+) {
+    if (isFinishing || isDestroyed) return
+    if (layer == com.hgtv.star.core.RecoveryLayer.PLAYER &&
+        playbackCoordinator.claimFailure() == null
+    ) return
+    val playbackError = error as? PlaybackException
+    val code = playbackError?.errorCode ?: 0
+    failureStage = PlaybackFailures.stageOf(error)
+    val queued = queuedEpisodeId.isNotEmpty()
+    val duration = runCatching { player?.duration ?: 0L }.getOrDefault(0L)
+    val position = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
+    val queuedNearEnd = queued && duration > 0 && position >= duration - QUEUED_NEAR_END_MS
+    val info = if (queued) queuedVideo?.info else remote?.info
+    val request = PlaybackFailures.recoveryRequest(
+        problem = error,
+        layer = layer,
+        surface = com.hgtv.star.core.RecoverySurface.FORMAL,
+        info = info,
+        fallbackQuality = playbackMaxQuality,
+        mode = playbackDecoderMode,
+        networkAvailable = connectivityManager()?.hasInternet() != false,
+        queued = queued,
+        queuedNearEnd = queuedNearEnd,
+        stageOverride = failureStage,
+    )
+    val decision = playbackCoordinator.decideRecovery(request)
+    android.util.Log.i(
+        "HGTV-RECOVER",
+        "layer=${decision.layer} kind=${decision.kind} action=${decision.action::class.simpleName}"+
+            " attempt=${decision.attempt}/${decision.maxAttempts} episode=${index+1}"+
+            " quality=${request.currentQuality} mode=${request.currentMode}",
+    )
+    when (val action = decision.action) {
+        com.hgtv.star.core.RecoveryAction.RefetchAddress,
+        com.hgtv.star.core.RecoveryAction.RetryPrepare -> {
+            prepareFreshRetrySource()
+            play(index, position)
+        }
+        com.hgtv.star.core.RecoveryAction.RebuildPlayer -> rebuildSameQuality(position)
+        is com.hgtv.star.core.RecoveryAction.SwitchSoftware -> {
+            playbackCoordinator.setEffectiveDecoderMode(VideoDecoderMode.SOFTWARE)
+            action.maxQuality?.let(playbackCoordinator::setMaxQuality)
+            rebuildSameQuality(position)
+        }
+        is com.hgtv.star.core.RecoveryAction.LowerQuality -> {
+            playbackCoordinator.setMaxQuality(action.targetQuality)
+            prepareFreshRetrySource()
+            play(index, position)
+        }
+        com.hgtv.star.core.RecoveryAction.SwitchHostAndRefetch -> {
+            val hosts = linkedSetOf<String>()
+            remote?.host?.takeIf { it.isNotEmpty() }?.let(hosts::add)
+            queuedVideo?.host?.takeIf { it.isNotEmpty() }?.let(hosts::add)
+            PlaybackFailures.dropTransportCaches(hosts)
+            hostSwitchPending = true
+            prepareFreshRetrySource()
+            play(index, position)
+        }
+        com.hgtv.star.core.RecoveryAction.RecoverQueuedCurrent -> {
+            queuedVideo?.let { runCatching { it.close() } }
+            queuedVideo = null
+            queuedEpisodeId = ""
+            PhoneSession.clearNext()
+            rebuildSameQuality(position)
+        }
+        com.hgtv.star.core.RecoveryAction.WaitForNetwork -> {
+            showPassivePlaybackHint(
+                "等待网络恢复…",
+                onRetry = { retryAfterPassiveHint(position) },
+            )
+        }
+        com.hgtv.star.core.RecoveryAction.ShowPassiveHint -> {
+            val facts = FailureFacts(
+                errorCode = request.errorCode,
+                stage = request.stage,
+                media = request.media,
+                retryable = request.retryable,
+                streamExpired = request.streamExpired,
+                videoChanged = request.videoChanged,
+                hostUnresolved = request.hostUnresolved,
+                transportDead = request.transportDead,
+                queued = request.queued,
+                queuedNearEnd = request.queuedNearEnd,
+            )
+            showPassivePlaybackHint(
+                FailurePresentation.message(
+                    facts = facts,
+                    manualHint = playbackCoordinator.manualHint,
+                    hevcSupported = PlaybackCapability.cachedHardwareHevc() != false,
+                ),
+                onRetry = { retryAfterPassiveHint(position) },
+            )
+        }
+    }
+}
+
+private fun PhonePlayerActivity.retryAfterPassiveHint(position: Long) {
+    clearPlaybackError()
+    playbackCoordinator.onManualRetry()
+    playbackCoordinator.resetRecoveryForManualRetry()
+    prepareFreshRetrySource()
+    play(index, position)
+}
+
+internal fun PhonePlayerActivity.showPassivePlaybackHint(
+    message: String,
+    onRetry: () -> Unit,
+) {
+    clearPlaybackError()
+    recoveryHintActive = true
+    recovering = false
+    player?.pause()
+    syncPlayGlyph()
+    val banner = LinearLayout(this).apply {
+        orientation = LinearLayout.VERTICAL
+        setPadding(dp(18), dp(12), dp(18), dp(12))
+        background = roundedBackground(0xDD1A1A1A.toInt(), dp(10).toFloat())
+    }
+    banner.addView(TextView(this).apply {
+        text = message
+        setTextColor(PhoneStyle.textDim)
+        phoneSize(12)
+        setPadding(0, 0, 0, dp(8))
+    })
+    banner.addView(errorButton("重试", primary = true, onClick = onRetry), LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        dp(40),
+    ))
+    root.addView(banner, FrameLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT,
+        ViewGroup.LayoutParams.WRAP_CONTENT,
+        Gravity.BOTTOM,
+    ).apply {
+        leftMargin = dp(16)
+        rightMargin = dp(16)
+        bottomMargin = dp(24)
+    })
+    errorCard = banner
+    setBufferingLabel(null)
+}
+
+private fun PhonePlayerActivity.legacyHandlePlayerFailure(error: PlaybackException) {
     // **每次起播只处置一次**：一次失败会在几毫秒里连报两三条（渲染器报完、播放器再收尾），
     // 逐条处置会把预算在几十毫秒里烧光。用代次判断而不是布尔：布尔在「重建又失败」时
     // 永远留在 true，第二次失败就再也不会被处置（实测就卡在这里）。
@@ -117,7 +271,7 @@ internal fun PhonePlayerActivity.handlePlayerFailure(error: PlaybackException) {
         PlaybackCapability.invalidate(this)
         PlaybackCapability.invalidateHardwareHevc()
         scope.launch(kotlinx.coroutines.Dispatchers.IO) {
-            PlaybackCapability.warmHardwareHevc(this@handlePlayerFailure)
+            PlaybackCapability.warmHardwareHevc(this@legacyHandlePlayerFailure)
         }
     }
 
@@ -312,7 +466,7 @@ internal fun PhonePlayerActivity.rebuildSameQuality(at: Long) {
     playbackCoordinator.retry()
     recovering = true
     // 先把「解码方式」这一档写进选择器（用户可能刚点了「切换为软解」）。
-    PhoneServices.player(this, library?.decoderMode)
+    PhoneServices.player(this, playbackDecoderMode)
     runCatching { exo.stop() }
     runCatching { exo.prepare() }
     if (at > 0) runCatching { exo.seekTo(at) }
@@ -324,9 +478,8 @@ internal fun PhonePlayerActivity.rebuildSameQuality(at: Long) {
 /**
  * 手动 / 自动重试前把失败那一路的地址与索引一起作废。
  *
- * 只换 `device_id` 不够：`stream()` 会先命中内存或落盘 URL 缓存，根本没有机会用新身份
- * 重新取地址，于是每次重试都原样复用同一条失败地址。这里同时清掉预取槽，避免又接回
- * 一份失败前准备好的旧流。
+ * `stream()` 会先命中内存或落盘 URL 缓存，不先作废就会原样复用同一条失败地址。
+ * 这里同时清掉预取槽，避免又接回一份失败前准备好的旧流。
  */
 private fun PhonePlayerActivity.prepareFreshRetrySource() {
     val episodeId = detail?.episodes?.getOrNull(index)
@@ -337,40 +490,39 @@ private fun PhonePlayerActivity.prepareFreshRetrySource() {
     } else {
         runCatching { PhoneServices.repository(this).invalidatePlaybackCacheForRetry() }
     }
-    resetSourceRetryForFreshAttempt()
+}
+
+/** 清掉目标集当前所有缓存；不更换设备号。 */
+internal fun PhonePlayerActivity.invalidateEpisodeCacheForRetry(
+    episodeId: String,
+    info: StreamInfo?,
+) {
+    queuedVideo?.let { runCatching { it.close() } }
+    queuedVideo = null
+    queuedEpisodeId = ""
+    PhoneSession.clearNext()
+    playbackSource.invalidate(episodeId)
+    info?.let {
+        val host = runCatching { java.net.URI(it.url).host }.getOrNull().orEmpty()
+        if (host.isNotEmpty()) PlaybackFailures.dropTransportCaches(listOf(host))
+    }
 }
 
 /**
- * 排一次自动重试。
- *
- * **与电视端 `scheduleRecovery` 逐条对齐**：
- *
- * * 重试时**换设备号并作废旧地址 / 索引**，不是拿同一份媒体源重开；
- * * 额度在**重试真正跑起来那一刻**才扣（`consumeAttempt`），用户中途点「停止」不白烧；
- * * 倒计时写在错误页上（[PhonePlayerActivity.autoRetryLabel]），与电视端状态行同一个语义。
+ * 旧调用点兼容：立即执行一次重试，不再有倒计时或固定等待。
  */
 internal fun PhonePlayerActivity.scheduleAutoRetry(waitMs: Long) {
     cancelAutoRetry()
-    recovering = true
-    retryJob = scope.launch {
-        var left = (waitMs / 1000).coerceAtLeast(1)
-        while (left > 0) {
-            autoRetryLabel?.text = UiText.get(com.hgtv.star.shared.R.string.ui_0211, left, playbackCoordinator.autoRetryAttempts + 1)
-            delay(1000)
-            left--
-        }
-        if (isFinishing || isDestroyed) return@launch
-        retryJob = null
-        if (!playbackCoordinator.consumeAutoRetry()) {
-            autoRetryLabel?.text = UiText.get(com.hgtv.star.shared.R.string.ui_0082)
-            return@launch
-        }
-        autoRetryLabel?.text = UiText.get(com.hgtv.star.shared.R.string.ui_0160)
-        // 地址缓存必须先作废，否则重试会命中旧 URL，三次重试只是重放同一条失败流。
-        prepareFreshRetrySource()
-        val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
-        play(index, at)
+    if (isFinishing || isDestroyed) return
+    if (!playbackCoordinator.consumeAutoRetry()) {
+        autoRetryLabel?.text = UiText.get(com.hgtv.star.shared.R.string.ui_0082)
+        return
     }
+    recovering = true
+    autoRetryLabel?.text = UiText.get(com.hgtv.star.shared.R.string.ui_0160)
+    prepareFreshRetrySource()
+    val at = runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L).coerceAtLeast(0)
+    play(index, at)
 }
 
 internal fun PhonePlayerActivity.cancelAutoRetry() {
@@ -387,14 +539,10 @@ internal fun PhonePlayerActivity.cancelPlaybackRequest() {
 }
 
 /** 取地址失败后那段 3 / 6 秒延迟重试，换集后不再执行。 */
-internal fun PhonePlayerActivity.cancelSourceRetry() {
-    sourceRetryState.runnable?.let { root.removeCallbacks(it) }
-    sourceRetryState.runnable = null
-}
-
 /** 真正出画面了：重试窗口结束、错误页收起（与电视端的 `onRenderedFirstFrame` 同一职责）。 */
 internal fun PhonePlayerActivity.notePlaybackHealthy() {
     if (recovering) recovering = false
+    recoveryHintActive = false
     if (errorCard != null) clearPlaybackError()
 }
 
@@ -591,6 +739,7 @@ private fun PhonePlayerActivity.errorButton(
 }
 
 internal fun PhonePlayerActivity.clearPlaybackError() {
+    recoveryHintActive = false
     errorCard?.let { root.removeView(it) }
     errorCard = null
     errorAttr = null

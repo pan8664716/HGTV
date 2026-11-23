@@ -17,12 +17,12 @@ internal fun PhonePlayerActivity.play(
     syncAdjacentDetail(d)
     nextSeasonState.nextSeasonFinishedFor = ""
     val sameEpisode = episodeIndex == index
+    if (!sameEpisode) hostSwitchPending = false
     // 换集时旧 PlayerView 可能仍绑着同一个进程级播放器；attach 后必须强制重交
     // 当前集自己的 Surface，否则解码在跑但画面一直不上屏。
     val rebindSurfaceAfterAttach = !sameEpisode || player == null
     if (!sameEpisode) {
         cancelPlaybackRequest()
-        cancelSourceRetry()
         // 上一集的帧时间不能算到这一集头上；看门狗要靠它判断新画面是否真的上屏。
         lastFrameAt = 0L
         lastSurfaceFirstFrameAt = 0L
@@ -89,12 +89,19 @@ internal fun PhonePlayerActivity.play(
                 }
             }
             if (!isActive || playRequestScope !== requestScope) return@launch
-            val info = source.getOrNull()
+            var info = source.getOrNull()
             if (info == null) {
                 val problem = source.exceptionOrNull()
                 invalidateEpisodeCacheForRetry(episodeId, null)
-                onEpisodeSourceMissing(d, episodeIndex, startAt, problem)
+                handleUnifiedPlaybackFailure(
+                    problem ?: java.io.IOException("没有可用播放地址"),
+                    com.hgtv.star.core.RecoveryLayer.ADDRESS,
+                )
                 return@launch
+            }
+            if (hostSwitchPending) {
+                info = playbackSource.switchHost(info)
+                hostSwitchPending = false
             }
 
             val preparedSource = withContext(Dispatchers.IO) {
@@ -105,11 +112,14 @@ internal fun PhonePlayerActivity.play(
             if (prepared == null) {
                 val problem = preparedSource.exceptionOrNull()
                 // 本地准备会读落盘索引 / 首块；缓存对应的文件或地址不认了，
-                // 继续重试同一份缓存只会重复失败。先整体作废并换请求 device_id。
+                // 继续重试同一份缓存只会重复失败。先整体作废这一集的地址与索引。
                 if (problem == null || problem is java.io.IOException) {
                     invalidateEpisodeCacheForRetry(episodeId, info)
                 }
-                onEpisodeSourceMissing(d, episodeIndex, startAt, problem)
+                handleUnifiedPlaybackFailure(
+                    problem ?: java.io.IOException("播放准备失败"),
+                    com.hgtv.star.core.RecoveryLayer.PREPARE,
+                )
                 return@launch
             }
 

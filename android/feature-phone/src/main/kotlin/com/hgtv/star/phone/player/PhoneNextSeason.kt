@@ -34,21 +34,14 @@ internal class PhoneNextSeasonState {
     val noticeReady: Boolean get()=::nextSeasonNotice.isInitialized
 }
 
-/**
- * 兜底换集：预热没成功、或列表里没挂上时，片尾仍然要能往下走。
- *
- * 与 TV 的 `STATE_ENDED → playEpisode` 同一条路，只是没有「无感」可言（会重新取地址）。
- */
+/** 片尾只停在当前集；自动换集已禁用。 */
 internal fun PhonePlayerActivity.next() {
-    val d = detail ?: return
-    // 定时关闭（按集计）：片尾那一下先问计时器，到点就停在这里，不进下一集。
-    // 与 TV 的 `sleepTimer.episodeEnded()` 同一条判据，且**必须在换集之前**问——
-    // 换完再问就只能停在新一集的第一帧，用户读到的是「它已经跳过去了」。
     if (!sleepStopped && nextSeasonSleepTimer.episodesLeft > 0 && nextSeasonSleepTimer.episodeEnded()) {
         stopForSleepForNextSeason()
         return
     }
-    if (index + 1 < d.episodes.size) play(index + 1) else advanceToNextSeasonOrFinish(d)
+    player?.pause()
+    toast("本集已结束")
 }
 
 /**

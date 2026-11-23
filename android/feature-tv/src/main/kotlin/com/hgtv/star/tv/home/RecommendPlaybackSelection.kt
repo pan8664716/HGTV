@@ -215,30 +215,5 @@ private fun TvMainActivity.resetRecommendPlaybackForSwitch() {
 
 /** 这一部放不了：跳到下一部；连跳太多次就停在一句提示上，不无限空转。 */
 private fun TvMainActivity.skipRecommend(series: Series,index: Int,direction: Int,skipped: Int) {
-    if(skipped>=RECOMMEND_SKIP_LIMIT) {
-        showRecommendMessage("《${series.title}》暂时无法播放\n按确定键重试，按返回键回主页面")
-        return
-    }
-    val next=index+1
-    when {
-        next in recommendItems.indices -> playRecommendAt(next,0L,1,skipped+1)
-        // 末尾先补一页再往下走（这条流到底了，补页那一侧会换一条新流）。
-        // 补页发不出去 / 失败时回调会立刻到，那时列表没变长，就环绕回第一部，
-        // 别让用户停在一屏「放不了」上。
-        else -> {
-            // 补页回调可能来得比用户下一手还晚：起播令牌变了（已经换了另一部 / 进了正片）
-            // 就说明这一下补页的意图已经过时，直接放弃，别再把人拽回列表开头。
-            val guard=recommendToken.get()
-            loadRecommendPage(
-                append=true,
-                minItemsPerLoad=recommendItems.size+1,
-            ) {
-                if(recommendToken.get()!=guard) return@loadRecommendPage
-                val target=index+1
-                if(target in recommendItems.indices) playRecommendAt(target,0L,1,skipped+1)
-                else if(recommendItems.isNotEmpty()) playRecommendAt(0,0L,1,skipped+1)
-                else showRecommendMessage("暂时没有可播放的推荐\n按确定键重试，按返回键回主页面")
-            }
-        }
-    }
+    showRecommendMessage("《${series.title}》暂时无法播放\n按确定键重试，按返回键回主页面")
 }

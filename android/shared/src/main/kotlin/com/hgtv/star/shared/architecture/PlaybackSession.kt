@@ -7,7 +7,11 @@ import com.hgtv.star.core.FailureFacts
 import com.hgtv.star.core.PlaybackAttemptLedger
 import com.hgtv.star.core.PlaybackFailurePolicy
 import com.hgtv.star.core.PlaybackRetryPlan
+import com.hgtv.star.core.RecoveryDecision
+import com.hgtv.star.core.RecoveryRequest
 import com.hgtv.star.core.SessionPlaybackPolicy
+import com.hgtv.star.core.UnifiedPlaybackRecovery
+import com.hgtv.star.core.VideoDecoderMode
 import com.hgtv.star.core.playback.PlaybackFailure
 
 /**
@@ -25,6 +29,7 @@ class PlaybackSession(
     val controller: PlaybackController = PlaybackController(),
     val ledger: PlaybackAttemptLedger = PlaybackAttemptLedger(),
     val policy: SessionPlaybackPolicy = SessionPlaybackPolicy(),
+    val recovery: UnifiedPlaybackRecovery = UnifiedPlaybackRecovery(),
 ) {
     private var nextAttempt = 0L
     private var handledAttempt = -1L
@@ -34,6 +39,7 @@ class PlaybackSession(
     /** 当前起播尝试号；同一尝试只处置一次失败，重建 / 重试后进入下一次。 */
     val attemptId: Long get() = nextAttempt
     val effectiveMaxQuality: Int? get() = policy.effectiveMaxQuality
+    val effectiveDecoderMode: VideoDecoderMode? get() = policy.effectiveDecoderMode
     val manualHint: String? get() = policy.manualHint
     val lastReason: com.hgtv.star.core.DegradationKind? get() = policy.lastReason
 
@@ -76,6 +82,7 @@ class PlaybackSession(
     fun onEpisodeStart(episodeId: String) {
         policy.onEpisodeStart(episodeId)
         ledger.onEpisodeStart()
+        recovery.onEpisodeStart()
     }
 
     /**
@@ -86,6 +93,7 @@ class PlaybackSession(
     fun onEpisodeSwitch(episodeId: String) {
         policy.onEpisodeStart(episodeId)
         ledger.onEpisodeSwitch()
+        recovery.onEpisodeStart()
     }
 
     /**
@@ -96,6 +104,7 @@ class PlaybackSession(
     fun onManualRetry(): Boolean {
         if(!policy.onManualRetry()) return false
         ledger.onManualRetry()
+        recovery.onManualRetry()
         return true
     }
 
@@ -126,6 +135,16 @@ class PlaybackSession(
     }
 
     fun setMaxQuality(value: Int) = policy.setMaxQuality(value)
+
+    fun setEffectiveDecoderMode(value: VideoDecoderMode) =
+        policy.setEffectiveDecoderMode(value)
+
+    fun decideRecovery(request: RecoveryRequest): RecoveryDecision =
+        recovery.decide(request)
+
+    fun resetRecoveryForManualRetry() = recovery.onManualRetry()
+
+    fun markStablePlayback() = recovery.markStablePlayback()
 
     fun consumeAutoRetry(): Boolean = ledger.consumeAttempt()
 

@@ -9,6 +9,8 @@ import com.google.android.exoplayer2.video.VideoSize
 import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
 import com.hgtv.star.shared.debug.PlaybackStartupTrace
+import com.hgtv.star.shared.compat.connectivityManager
+import com.hgtv.star.shared.compat.hasInternet
 import com.hgtv.star.phone.ui.resizeMode
 
 /**
@@ -81,6 +83,11 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
                         feedPageAt(index)?.hideEpisodeCover()
                     }
                 }, 600L)
+                postDelayed({
+                    if (feedPlayer === exo && index == feedPlayingIndex && exo.isPlaying) {
+                        feedRecovery.markStablePlayback()
+                    }
+                }, com.hgtv.star.core.AppConfig.Playback.RECOVERY_STABLE_MS)
             }
             if (state == Player.STATE_ENDED && index == feedPlayingIndex) onEpisodeEnded(index)
         }
@@ -158,13 +165,6 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
             if (feedPaused || feedHidden) return
             val at = runCatching { feedPlayer?.currentPosition ?: -1L }.getOrDefault(-1L)
                 .takeIf { it > 0L } ?: PhoneSession.positionMs
-            if (error.isRecoverableSourceError() && shouldRetrySource(index)) {
-                feedSourceRecoveryIndex = index
-                feedSourceRecoveryAt = android.os.SystemClock.elapsedRealtime()
-                PhoneSession.markPosition(at)
-                playIndexForSettings(index, at, clearDanmakuOnSwitch = false)
-                return
-            }
             feedItems.getOrNull(index)?.let { series ->
                 feedRecommendPlayback.reportEvent(
                     series,
@@ -176,27 +176,53 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
                     reason=error.errorCodeName,
                 )
             }
-            runCatching { feedPlayer?.pause() }
-            feedRecommendFailures++
-            if (feedRecommendFailures > feedRecommendSkipLimit) {
-                // 连续几部都放不了：停在一句提示上，不再自动翻（否则会一路刷到底）。
-                feedHint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0241)
-                feedHint.visibility = View.VISIBLE
-                feedHint.bringToFront()
-                return
-            }
-            val next = index + 1
-            if (next < feedItems.size) {
-                feedHint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0239)
-                feedHint.visibility = View.VISIBLE
-                feedHint.bringToFront()
-                feedSmoothScrollToPosition(next)
-                playIndexForSettings(next, -1L, clearDanmakuOnSwitch = true)
-            } else {
-                loadMore()
-                feedHint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0240)
-                feedHint.visibility = View.VISIBLE
-                feedHint.bringToFront()
+            val request = com.hgtv.star.shared.media.PlaybackFailures.recoveryRequest(
+                problem=error,
+                layer=com.hgtv.star.core.RecoveryLayer.PLAYER,
+                surface=com.hgtv.star.core.RecoverySurface.RECOMMEND,
+                info=PhoneSession.remote?.info,
+                fallbackQuality=PhoneSession.effectiveMaxQuality
+                    ?: feedLibrary?.maxQuality ?: 1080,
+                mode=PhoneSession.effectiveDecoderMode
+                    ?: feedLibrary?.decoderMode
+                    ?: com.hgtv.star.core.VideoDecoderMode.HARDWARE,
+                networkAvailable=context.connectivityManager()?.hasInternet() != false,
+                stageOverride=com.hgtv.star.shared.media.PlaybackFailures.stageOf(error),
+            )
+            val decision=feedRecovery.decide(request)
+            when(val action=decision.action) {
+                com.hgtv.star.core.RecoveryAction.RefetchAddress,
+                com.hgtv.star.core.RecoveryAction.RetryPrepare,
+                com.hgtv.star.core.RecoveryAction.RebuildPlayer,
+                com.hgtv.star.core.RecoveryAction.SwitchHostAndRefetch,
+                com.hgtv.star.core.RecoveryAction.RecoverQueuedCurrent -> {
+                    playIndexForSettings(index, at, clearDanmakuOnSwitch = false)
+                }
+                is com.hgtv.star.core.RecoveryAction.SwitchSoftware -> {
+                    PhoneSession.effectiveDecoderMode =
+                        com.hgtv.star.core.VideoDecoderMode.SOFTWARE
+                    action.maxQuality?.let { PhoneSession.effectiveMaxQuality = it }
+                    playIndexForSettings(index, at, clearDanmakuOnSwitch = false)
+                }
+                is com.hgtv.star.core.RecoveryAction.LowerQuality -> {
+                    PhoneSession.effectiveMaxQuality = action.targetQuality
+                    playIndexForSettings(index, at, clearDanmakuOnSwitch = false)
+                }
+                com.hgtv.star.core.RecoveryAction.WaitForNetwork,
+                com.hgtv.star.core.RecoveryAction.ShowPassiveHint -> {
+                    runCatching { feedPlayer?.pause() }
+                    feedHint.text = "播放失败，点此重试"
+                    feedHint.isClickable = true
+                    feedHint.setOnClickListener {
+                        feedHint.setOnClickListener(null)
+                        feedHint.isClickable = false
+                        feedHint.visibility = View.GONE
+                        feedRecovery.onManualRetry()
+                        playIndexForSettings(index, at, clearDanmakuOnSwitch = false)
+                    }
+                    feedHint.visibility = View.VISIBLE
+                    feedHint.bringToFront()
+                }
             }
         }
     }

@@ -120,20 +120,15 @@ private const val PICTURE_RECOVERY_LIMIT=com.hgtv.star.core.AppConfig.Playback.P
 private const val PICTURE_RECOVERY_COOLDOWN_MS=com.hgtv.star.core.AppConfig.Playback.PICTURE_RECOVERY_COOLDOWN_MS
 
 fun TvMainActivity.recoverRecommendPicture(reason: String) {
-    // 只在推荐页动手：正式播放页有自己的错误界面与「重试 / 换清晰度」，不该被静默重建。
-    if(screen!="recommend" || !foreground || playError) return
+    if(screen!="recommend" || !foreground) return
     val data=detail ?: return
     if(episodeIndex !in data.episodes.indices) return
-    val p=player ?: return
-    val now=android.os.SystemClock.elapsedRealtime()
-    if(pictureRecoveries>=PICTURE_RECOVERY_LIMIT || (pictureRecoveryAt!=0L && now-pictureRecoveryAt<PICTURE_RECOVERY_COOLDOWN_MS)) return
-    pictureRecoveryAt=now; pictureRecoveries++
-    val position=currentPosition()
-    val autoplay=p.playWhenReady
-    android.util.Log.w("HGTV","Recommend picture lost ($reason) episode=${episodeIndex+1} at=${position}ms try=$pictureRecoveries")
-    // 下面这一下会把画面层整个换掉：先盖黑，别让旧画面按新比例被拉一下再消失。
-    showRecommendCover()
-    playEpisode(episodeIndex,position,autoplay,recovering=true)
+    val stage=if(reason=="stall_buffer") com.hgtv.star.core.PlaybackStage.STALL_BUFFER
+        else com.hgtv.star.core.PlaybackStage.STALL_FRAME
+    handleUnifiedPlaybackFailure(
+        PlaybackDiagnosticException(stage,"推荐画面停止刷新"),
+        com.hgtv.star.core.RecoveryLayer.PICTURE,
+    )
 }
 
 /**

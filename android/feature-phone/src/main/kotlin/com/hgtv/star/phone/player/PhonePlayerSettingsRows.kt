@@ -42,7 +42,10 @@ internal fun PhonePlayerActivity.buildSettingsRowsImpl(
             applyVideoScaleForSettings()
             syncChips()
         },
-        onDecoder = { syncChips() },
+        onDecoder = {
+            playbackSessionState.onManualDecoderChange()
+            syncChips()
+        },
         sleepChoice = if (nextSeasonSleepTimer.active) playerSleepChoice else 0,
         onSleep = { choice -> applySleepChoiceForSettings(choice) },
         onRelated = {

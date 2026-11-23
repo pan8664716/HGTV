@@ -24,14 +24,8 @@ object PlaybackQuality {
 class RecoveryBudget {
     var attempts=0; private set
     val remaining get()=attempts<3
-    /**
-     * 三次自动重试的间隔。
-     *
-     * 早先是 1s / 2.5s / 5s：整段 8.5 秒里连发几十个取地址请求，而这接口空响应是
-     * 网关按并发挡的（2026-10-27 实测 20 并发 0 命中、单发 50~80% 命中），
-     * 重试越密越起不来。现在拉长到 3s / 6s / 12s，让网关那边的窗口先过去。
-     */
-    val delayMillis get()=listOf(3000L,6000L,12000L).getOrNull(attempts)
+    /** 统一恢复不再使用固定等待；保留空值让旧调用点自然停用。 */
+    val delayMillis: Long? get()=null
     fun consume(): Boolean { if(!remaining) return false; attempts++; return true }
     fun reset() { attempts=0 }
 }

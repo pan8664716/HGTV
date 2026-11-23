@@ -251,53 +251,7 @@ fun TvMainActivity.confirmPlayedItemRemoved() {
  * 「当前 period 已完全缓冲」，所以提前挂不会抢正在播的这一集的带宽。
  */
 fun TvMainActivity.enqueuePreparedNext() {
-    val p=player ?: return
-    val data=detail ?: return
-    // 用户按过暂停 / 息屏 / 切后台：不要挂下一集，否则回来一按播放就自己跳到下一集了。
-    if(!foreground || screen!="player" || playError || sleepStopped || !requestedAutoplay || pausedForLifecycle) return
-    if(!library.autoNext) return
-    // 按集数计的定时必须在片尾那一下拦住，因此这种定时下不挂队列（走 STATE_ENDED 老路）。
-    // 按分钟计的定时由 tick 自己停，和片尾无关，仍然可以无感连播。
-    if(sleepTimer.episodesLeft>0) return
-    if(queuedEpisodeId!=null) return
-    // 不在片尾窗口里也没关系：`MediaPeriodQueue.shouldLoadNextMediaPeriod()` 要求
-    // 「当前 period 已完全缓冲」才会真的去 prepare 下一集，因此早挂不会抢当前这一集的带宽，
-    // 只是把「预热结果 → 播放器知道有下一集」这一步提前做完，片尾推进时少一次等待。
-    val seasonBoundary=episodeIndex==data.episodes.lastIndex
-    val targetDetail=if(seasonBoundary) {
-        nextSeasonDetail?.takeIf {
-            it.episodes.isNotEmpty() && nextSeason?.id==it.series.id
-        }
-    } else data
-    val target=targetDetail ?: return
-    val id=if(seasonBoundary) target.episodes.firstOrNull()
-        else target.episodes.getOrNull(episodeIndex+1)
-    if(id==null) return
-    val quality=playbackMaxQuality
-    val key=preparedKeyFor(id)
-    // **先读时刻、再取走**：`take` 会清空槽位，之后读不到 readyAt。
-    // 该时刻只用于诊断与 LRU，不再参与地址失效判断。
-    val fetchedAt=preparedNext.readyAtOf(key)
-    val remote=preparedNext.take(key) ?: return
-    val http=prefetchHttp.also { prefetchHttp=null }
-    if(http==null) { remote.close(); return }
-    queuedEpisodeId=id; queuedVideo=remote; queuedHttp=http; queuedQuality="${quality}P"
-    queuedDetail=if(seasonBoundary) targetDetail else null
-    queuedAt=if(fetchedAt>0L) fetchedAt else android.os.SystemClock.elapsedRealtime()
-    val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }
-        .createMediaSource(MediaItem.Builder().setMediaId(id).setUri("hgtv://episode/$id")
-            .setMimeType(com.google.android.exoplayer2.util.MimeTypes.VIDEO_MP4).build())
-    // 挂失败（列表被别处清空、播放器正好在重建）就当没预热过：把资源收回来，
-    // 片尾仍然走 `STATE_ENDED → playEpisode` 那条兜底，不会留下半截状态。
-    if(runCatching { p.addMediaSource(source) }.isFailure) {
-        queuedEpisodeId=null; queuedVideo=null; queuedHttp=null; queuedQuality=""; queuedDetail=null; queuedAt=0
-        runCatching { remote.close() }; closeTransport(http)
-        return
-    }
-    android.util.Log.i(
-        "HGTV",
-        "${if(seasonBoundary) "Next season" else "Next episode"} queued id=$id quality=$quality"
-    )
+    // 统一策略明确禁止任何自动切下一集；不再向播放器队列挂下一项。
 }
 /**
  * tick 里的兜底：预热结果落地时那一次 post 可能被别的重建吞掉，这里再补一次。
@@ -305,18 +259,7 @@ fun TvMainActivity.enqueuePreparedNext() {
  * 队列项不按时间主动失效；真实播放错误时由正常失败路径摘除并重取地址。
  */
 fun TvMainActivity.maybeQueueNext() {
-    // 推荐页不把下一集挂进播放器队列；否则 ExoPlayer 会直接自动推进到下一集，
-    // 页面仍停在推荐流。预热结果留给片尾进入正式页时消费。
-    if(screen=="recommend") return
-    if(queuedEpisodeId!=null) return
-    val data=detail ?: return
-    val seasonBoundary=episodeIndex==data.episodes.lastIndex
-    val nextId=if(seasonBoundary) {
-        nextSeasonDetail?.takeIf { nextSeason?.id==it.series.id }?.episodes?.firstOrNull()
-    } else data.episodes.getOrNull(episodeIndex+1)
-    if(nextId==null) return
-    if(!preparedNext.isFresh(preparedKeyFor(nextId))) return
-    enqueuePreparedNext()
+    // 保留方法供现有 tick / 回调调用；自动连播已禁用。
 }
 /**
  * 摘掉队列里的下一集。

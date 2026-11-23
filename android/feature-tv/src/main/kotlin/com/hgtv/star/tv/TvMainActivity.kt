@@ -122,6 +122,11 @@ class TvMainActivity: Activity() {
     val danmakuWorker get()=com.hgtv.star.shared.architecture.AppExecutors.danmaku.executor
     var prefetchHttp: okhttp3.OkHttpClient?=null
     @Volatile var playbackFetching=false
+    /** 下一次取到地址后把备用 CDN host 提升为主地址。 */
+    var hostSwitchPending=false
+    /** 非阻塞恢复提示是否占用播放状态行。 */
+    var recoveryHintActive=false
+    var recoveryRetry: (() -> Unit)?=null
     val playbackFetchSeq=java.util.concurrent.atomic.AtomicInteger(0)
     var playbackHttp: okhttp3.OkHttpClient?=null
     val preparedNext=PreparedSlot<RemoteVideo>({ android.os.SystemClock.elapsedRealtime() })

@@ -143,6 +143,7 @@ fun TvMainActivity.showHud() {
 }
 fun TvMainActivity.updatePlaybackText() {
     if(!hudReady) return
+    if(recoveryHintActive) return
     // 触屏设备上控制条多一排按钮，播放键的文案也要跟着播放状态改（电视上为空操作）。
     updateTouchPlayLabel()
     // 顶部那格「第 x / 共 N 集」跟着当前集号走：无感切集不走 `playEpisode`，
@@ -213,7 +214,7 @@ fun TvMainActivity.requestPlayback(play: Boolean) {
     else if(playError) {
         resetBudgetsForManualRetry()
         // 与错误页「立即重试」走同一条：按播放键也必须先作废当前集的地址 /
-        // 索引 / 首块并换请求 device_id，否则会原样命中刚才失败的缓存。
+        // 索引 / 首块，否则会原样命中刚才失败的缓存。
         prepareFreshPlaybackRetry()
         playEpisode(episodeIndex,retryPosition,true,recovering=true)
         return
