@@ -32,11 +32,6 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
             if (state == Player.STATE_READY) {
                 watchdog.onReady()
                 notePlaybackHealthy()
-                // 个别设备不回调 onRenderedFirstFrame：READY 后短暂兜底撤图，
-                // 避免封面一直盖着已经播放的画面。
-                root.postDelayed({
-                    if (player?.playbackState == Player.STATE_READY) hideEpisodeCover()
-                }, 600L)
             }
             if (state == Player.STATE_ENDED) {
                 val hasNextItem = runCatching {
@@ -128,7 +123,6 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
             lastSurfaceFirstFrameAt = android.os.SystemClock.elapsedRealtime()
             watchdog.onFrame()
             completeFirstFrameAspectRatio()
-            hideEpisodeCover()
             setBufferingLabel(null)
             PlaybackStartupTrace.firstFrame("phone.player")
             // 画面真的上屏才放行弹幕；STATE_READY 后还可能回 buffering，
@@ -245,9 +239,6 @@ internal fun PhonePlayerActivity.finishAdvanced(
     index = nextIndex
     selectPlayerPagerEpisode(nextIndex)
     attachCurrentPlayerToPagerPage()
-    showEpisodeCover(
-        nextData.episodeCover(nextData.episodes[nextIndex]).ifBlank { nextData.series.cover }
-    )
     reconcileAdjacentSlots()
     PhoneSession.nextQueued = false
     PhoneSession.clearNext()

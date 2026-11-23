@@ -37,7 +37,6 @@ internal fun PhonePlayerActivity.play(
     index = episodeIndex
     selectPlayerPagerEpisode(episodeIndex)
     val episodeId = d.episodes[episodeIndex]
-    showEpisodeCover(d.episodeCover(episodeId).ifBlank { d.series.cover })
     playbackCoordinator.open(
         seriesId = d.series.id,
         episodeId = episodeId,

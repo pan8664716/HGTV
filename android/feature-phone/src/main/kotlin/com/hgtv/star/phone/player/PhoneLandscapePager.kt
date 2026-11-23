@@ -35,7 +35,6 @@ internal class LandscapePlayerPage(
             if (host.playerLandscapeVideo === this) host.syncLandscapeLetterboxImpl()
         }
     }
-    val cover = episodeCoverView(host)
     val danmaku = DanmakuView(host).apply {
         mode = com.hgtv.star.core.DanmakuMode.DEFAULT
         minTextSizeDp = 4f
@@ -51,7 +50,6 @@ internal class LandscapePlayerPage(
     init {
         setBackgroundColor(Color.BLACK)
         addView(video, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(cover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(danmaku, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         touch.setOnTouchListener(
             PhoneTouch(
@@ -108,32 +106,11 @@ internal class LandscapePlayerPage(
     }
 
     fun showCover(url: String) {
-        cover.animate().cancel()
-        cover.alpha = 1f
-        cover.visibility = View.VISIBLE
-        if (url.isBlank()) {
-            cover.setImageDrawable(null)
-            return
-        }
-        val metrics = resources.displayMetrics
-        PhoneServices.artwork(context).load(
-            cover,
-            url,
-            ArtworkLoader.PRIORITY_FOCUSED,
-            metrics.widthPixels,
-            metrics.heightPixels,
-        )
+        // Phone 端不再使用分集封面。
     }
 
     fun hideCover() {
-        if (cover.visibility != View.VISIBLE) return
-        cover.animate().cancel()
-        cover.animate().alpha(0f).setDuration(120L).withEndAction {
-            if (cover.alpha == 0f) {
-                cover.visibility = View.GONE
-                cover.setImageDrawable(null)
-            }
-        }.start()
+        // Phone 端不再使用分集封面。
     }
 }
 
@@ -389,7 +366,6 @@ internal fun PhonePlayerActivity.syncLandscapePlayerPagerPage(
     if (!playerLandscapePagerInitialized) return false
     val page = playerLandscapePager.pageAt(position) ?: return false
     playerLandscapeVideoSlot = page.video
-    playerLandscapeCover = page.cover
     playerLandDanmakuSlot = page.danmaku
     if (attachCurrent && position == index && playerLandscapeMode) {
         attachCurrentPlayerToLandscapePagerPage()
@@ -451,7 +427,6 @@ internal fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage(
         }
     }
     playerLandscapeVideoSlot = current.video
-    playerLandscapeCover = current.cover
     playerLandDanmakuSlot = current.danmaku
     current.video.visibility = View.VISIBLE
     if (force) current.video.forceBindVideoSurface(exo)

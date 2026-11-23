@@ -20,9 +20,6 @@ internal fun PhonePlayerActivity.attach(
     val exo = PhoneServices.player(this, playbackDecoderMode)
     val factory = DataSource.Factory { VideoDataSource(video) }
     val episodeId = d?.episodes?.getOrNull(index).orEmpty()
-    if (d != null) {
-        showEpisodeCover(d.episodeCover(episodeId).ifBlank { d.series.cover })
-    }
     holdFirstFrameAspectRatio()
     // 先停再挂（见 `swapMediaSource`）：预热命中时播放器可能正在出帧，
     // 直接换源会在 flush 编解码器时抛 0x80000000，随即报 4003。

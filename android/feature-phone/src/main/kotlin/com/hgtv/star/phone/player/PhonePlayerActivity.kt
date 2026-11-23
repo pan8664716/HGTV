@@ -135,7 +135,6 @@ open class PhonePlayerActivity : PhoneActivity() {
     internal var playerLandscapeVideoSlot: PlayerView
         get()=landscapeVideo
         set(value) { landscapeVideo=value }
-    internal var playerLandscapeCover: ImageView?=null
     internal val playerLandscape get()=landscape
     internal val playerLandscapeVideo get()=landscapeVideo
     internal val playerLandscapeVideoInitialized get()=::landscapeVideo.isInitialized

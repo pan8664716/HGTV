@@ -365,13 +365,6 @@ internal fun PhonePlayerActivity.bindPlayerPagerPage(page: PhoneVideoPage, posit
     applyDanmakuSettingsToView(page.danmakuView)
     if (position == index && !playerLandscapeMode) {
         attachCurrentPlayerToPagerPage()
-        if (player?.playbackState == Player.STATE_READY && lastFrameAt > 0L) {
-            page.hideEpisodeCover()
-        } else {
-            page.showEpisodeCover(
-                d.episodeCover(d.episodes[position]).ifBlank { d.series.cover }
-            )
-        }
     } else {
         releaseStaleAdjacentSlot(position, d)
         val slot = playerAdjacentState.slots[position]
@@ -379,9 +372,6 @@ internal fun PhonePlayerActivity.bindPlayerPagerPage(page: PhoneVideoPage, posit
             attachAdjacentToPagerPage(position)
         } else {
             detachPlayerPagerPage(page)
-            page.showEpisodeCover(
-                d.episodeCover(d.episodes[position]).ifBlank { d.series.cover }
-            )
             ensureAdjacentEpisode(position)
         }
     }
@@ -447,9 +437,6 @@ internal fun PhonePlayerActivity.reconcilePlayerPagerWindow() {
         } else {
             if (slot != null) releaseAdjacentSlot(target)
             detachPlayerPagerPage(page)
-            page.showEpisodeCover(
-                d.episodeCover(episodeId).ifBlank { d.series.cover }
-            )
             ensureAdjacentEpisode(target)
         }
     }

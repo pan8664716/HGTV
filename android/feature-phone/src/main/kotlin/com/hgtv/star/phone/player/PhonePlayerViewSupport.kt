@@ -137,52 +137,6 @@ internal fun PhonePlayerActivity.completeFirstFrameAspectRatio() {
     if(playerFeedUnderlay) PhoneSession.completeFeedFirstFrameAspectRatio()
 }
 
-internal fun episodeCoverView(context: Context): ImageView = ImageView(context).apply {
-    setBackgroundColor(Color.BLACK)
-    scaleType = ImageView.ScaleType.FIT_CENTER
-    visibility = View.GONE
-    isFocusable = false
-    isClickable = false
-    importantForAccessibility = View.IMPORTANT_FOR_ACCESSIBILITY_NO
-}
-
-private fun PhonePlayerActivity.loadLandscapeEpisodeCover(url: String) {
-    val cover = playerLandscapeCover ?: return
-    cover.animate().cancel()
-    cover.alpha = 1f
-    cover.visibility = View.VISIBLE
-    if (url.isBlank()) {
-        cover.setImageDrawable(null)
-        return
-    }
-    val metrics = resources.displayMetrics
-    PhoneServices.artwork(this).load(
-        cover,
-        url,
-        ArtworkLoader.PRIORITY_FOCUSED,
-        metrics.widthPixels,
-        metrics.heightPixels,
-    )
-}
-
-internal fun PhonePlayerActivity.showEpisodeCover(url: String) {
-    if (playerPageInitialized) playerPage.showEpisodeCover(url)
-    loadLandscapeEpisodeCover(url)
-}
-
-internal fun PhonePlayerActivity.hideEpisodeCover() {
-    if (playerPageInitialized) playerPage.hideEpisodeCover()
-    listOfNotNull(playerLandscapeCover).forEach { cover ->
-        if (cover.visibility != View.VISIBLE) return@forEach
-        cover.animate().cancel()
-        cover.animate().alpha(0f).setDuration(120L).withEndAction {
-            if (cover.alpha == 0f) {
-                cover.visibility = View.GONE
-                cover.setImageDrawable(null)
-            }
-        }.start()
-    }
-}
 
 internal object PhonePlayerViewSupport {
     /**

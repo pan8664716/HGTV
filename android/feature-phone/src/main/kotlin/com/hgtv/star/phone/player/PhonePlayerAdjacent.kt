@@ -319,10 +319,6 @@ private fun PhonePlayerActivity.attachAdjacentPlayerListener(slot: PhonePlayerAd
                 playerLandscapePager.pageAt(slot.index)?.let { page ->
                     if (page.video.player === slot.player) page.hideCover()
                 }
-            } else {
-                playerEpisodePager.pageAt(slot.index)?.let { page ->
-                    if (page.playerView.player === slot.player) page.hideEpisodeCover()
-                }
             }
         }
 
@@ -364,7 +360,6 @@ internal fun PhonePlayerActivity.attachAdjacentToPagerPage(target: Int) {
         return
     }
     val episodeId = d.episodes[target]
-    val cover = d.episodeCover(episodeId).ifBlank { d.series.cover }
     if (page.playerView.player === slot.player) {
         startAdjacentPreRender(slot)
         if (swipePlaybackPreviewIndex == target) playAdjacentPreview(slot)
@@ -392,7 +387,6 @@ internal fun PhonePlayerActivity.attachAdjacentToPagerPage(target: Int) {
         detachAdjacentOutput(page.playerView)
         page.playerView.player = slot.player
     }
-    if (slot.firstFrameRendered) page.hideEpisodeCover() else page.showEpisodeCover(cover)
     val duration = runCatching { slot.player.duration }.getOrDefault(0L)
     val position = runCatching { slot.player.currentPosition }.getOrDefault(0L)
     page.setProgress(if (duration > 0L) position.toFloat() / duration else 0f)
@@ -602,7 +596,6 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
     runCatching { oldPlayer.pause() }
     if (firstFrameOnCurrentSurface) {
         completeFirstFrameAspectRatio()
-        hideEpisodeCover()
         playerDanmakuLoader.onFrameRendered(slot.player.currentPosition)
     } else {
         playerBufferingMutedUntil = 0L

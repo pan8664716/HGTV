@@ -33,7 +33,6 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     ))
     playerLandscapeContainer = landscape
     playerLandscapeVideoSlot = initialPage.video
-    playerLandscapeCover = initialPage.cover
     playerLandDanmakuSlot = initialPage.danmaku
 
 }
