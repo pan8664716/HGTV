@@ -365,11 +365,8 @@ private fun TvMainActivity.finishSeamlessAdvance(
 ) {
     val p=player ?: return
     if(next !in nextData.episodes.indices) return
-    if(screen=="player") {
-        showRecommendCover(
-            nextData.episodeCover(nextData.episodes[next]).ifBlank { nextData.series.cover }
-        )
-    }
+    // **正式播放页不使用任何封面**（用户要求）：无缝连播换集也不盖黑场，
+    // 上一集最后一帧留在 Surface 上，等下一集首帧直接覆盖。
     val previous=episodeIndex
     val queuedFor=queuedAt
     advancedAt=android.os.SystemClock.elapsedRealtime()

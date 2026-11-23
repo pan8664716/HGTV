@@ -166,18 +166,10 @@ fun TvMainActivity.playEpisode(
             1920,
             1080,
         )
-        // **正片内部换集不盖黑场**：`showRecommendCover` 的设计是「换台瞬间立即全黑，
-        // 等新源首帧再淡出」，用来避免露出上一部被拉伸的旧帧。选集是同一部剧的连续
-        // 播放，盖一层黑再淡出就是用户说的「选集先黑一下屏」。
-        //
-        // 只在「首次进正片」（从详情页 / 推荐页进来）时盖：那一刻下层是别的页面，
-        // 必须遮住它的旧帧。
-        if(sameSeriesEntry && screen=="player") {
-            // 顺带把上一次没淡完的封面层收掉，但不盖新的。
-            revealRecommendCover()
-        } else {
-            showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
-        }
+        // **正式播放页不使用任何封面**（用户要求）：首次进正片也不盖。
+        // `revealRecommendCover` 在没有封面层时只做一件事——隐藏快门，
+        // 那正是首帧前该有的状态；有残留层时顺手收掉。
+        revealRecommendCover()
     } else {
         showRecommendCover()
     }
@@ -323,10 +315,10 @@ fun TvMainActivity.playEpisode(
     syncKeepScreenOn()
     if(!reuse) {
         buildPlaybackSurface()
-        // 首次进入播放页会重建根层，前面挂上的封面会被 removeAllViews 摘掉，这里补挂一次。
-        showRecommendCover(
-            if(recommendEntry) "" else data.episodeCover(targetId).ifBlank { data.series.cover }
-        )
+        // 首次进入播放页会重建根层，前面挂上的封面会被 removeAllViews 摘掉。
+        // **正式播放页不再补挂封面**（用户要求：正片里不用任何封面）；
+        // 只有推荐流这一层仍然需要它来遮住换台旧帧。
+        if(recommendEntry) showRecommendCover()
     }
     // 触屏设备：`reuse` 那一路不重建视图，因此这三步不能只放在 `!reuse` 里面——
     // 从推荐页进正片、换清晰度之后的回到播放页都走 `reuse`，漏了就整页点不动。

@@ -7,6 +7,23 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## TV 正式播放页彻底去掉封面
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+用户要求：**只要在正式播放页就不要用任何封面**，首次进正片也不盖。
+
+- `PlayerController.playEpisode`：`!recommendEntry` 分支不再 `showRecommendCover`，
+  统一 `revealRecommendCover()`（无封面时只隐藏快门，首帧前是黑底）。
+- `PlayerController` 的 `!reuse` 重建分支：只在 `recommendEntry` 时补挂封面。
+- `PlaybackController.finishSeamlessAdvance`（片尾无缝连播）：删掉
+  `screen=="player"` 时的封面，上一集最后一帧留在 Surface 上等新首帧覆盖。
+- 推荐流（`screen=="recommend"`）保持原样：那里换的是不同作品，仍需要封面
+  遮住换台旧帧。
+- 未改版本号、versionCode、依赖或 iOS；`:app:assembleDebug` 通过；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## TV 正式播放页选集黑屏
 
 状态：已实现，debug 构建通过，待用户真机验证。
