@@ -10,6 +10,10 @@ internal fun PhoneFeedView.keepLivePlaybackImpl() {
     if (PhoneSession.owner != PhoneSession.Owner.FEED) return
     if (!feedSessionBelongsToThisFeed()) return
     val exo = feedPlayer ?: return
+    // 从正式播放页借画面回来时，PlayerView 可能还停在换集动画的平移量上。
+    // 推荐页自己翻页靠 ViewPager2 移动整页，画面层不能再保留这一份旧位移，
+    // 否则用户看到的就是「信息已经翻过去，视频还留在原处」。
+    feedBoundPage?.playerView?.takeIf { it.translationY != 0f }?.translationY = 0f
     if (exo.playbackState == Player.STATE_READY && exo.playWhenReady && !exo.isPlaying) {
         runCatching { exo.play() }
     }

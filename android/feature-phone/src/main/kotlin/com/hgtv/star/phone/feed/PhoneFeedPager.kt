@@ -103,6 +103,11 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
                 userScroll = false
                 systemBarGesture = isSystemBarGestureOrigin(e.rawY)
                 pager.isUserInputEnabled = !systemBarGesture
+                // 一但有新手指按下，就不可能还需要播放页借画面时留下的位移。
+                for (pageIndex in 0 until pageRecycler.childCount) {
+                    (pageRecycler.getChildAt(pageIndex) as? PhoneVideoPage)
+                        ?.playerView?.takeIf { it.translationY != 0f }?.translationY = 0f
+                }
             }
             MotionEvent.ACTION_MOVE -> {
                 if (axis == 0) {

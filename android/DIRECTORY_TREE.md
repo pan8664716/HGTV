@@ -542,14 +542,14 @@ android/
 | `PhoneFeedInitializer.kt` | 手机信息流页面初始化；ViewPager2 拖动时暂停当前页，过半只触发一次目标预览，IDLE 确认最终页。 | fun PhoneFeedView.initializeFeed |
 | `PhoneFeedLifecycle.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedLifecycle 主要包含 fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl。 | fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl |
 | `PhoneFeedPageSupport.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedPageSupport 主要包含 fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl。 | fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl |
-| `PhoneFeedPager.kt` | 竖向 ViewPager2 信息流容器：显示时前后页 SurfaceView 常驻，隐藏体裁页降为默认 offscreen 以减少合成；按 1.3.9 的自然顺序显示相邻页，只有明显纵向手势才翻页。 | class VerticalFeedPager、fun setActive、val pageRecycler、val userScroll、class PageHolder |
+| `PhoneFeedPager.kt` | 竖向 ViewPager2 信息流容器：显示时前后页 SurfaceView 常驻，隐藏体裁页降为默认 offscreen 以减少合成；按下时清掉播放页交接遗留的 PlayerView 位移，保证信息翻页时画面也跟整页一起移动。 | class VerticalFeedPager、fun setActive、val pageRecycler、val userScroll、class PageHolder |
 | `PhoneFeedPlayback.kt` | 推荐换作入口；使用方向 / 快滑 / 回看计划，优先激活已预热的独立播放器，池未命中时才走详情与地址准备。 | fun PhoneFeedView.playIndexImpl |
 | `PhoneFeedPlayerPool.kt` | 有上限的推荐播放器池；相邻页绑定时保留首帧封面，预渲染首帧到达后露出真实画面，池实例激活后显式通知宿主同步播放状态与屏幕常亮，并继续保护已交接给正式页的实例。 | class FeedPlayerSlot、fun PhoneFeedView.activatePreparedPooledPlayerImpl、fun PhoneFeedView.trimPooledPlayers |
 | `PhoneFeedPrefetch.kt` | 片尾 30 秒内用单集直连准备下一集地址与首块。 | fun PhoneFeedView.maybePrefetchNextImpl |
 | `PhoneFeedReopen.kt` | 手机信息流原地重开当前集；换地址后重新通知播放状态，避免常亮标志丢失。 | fun PhoneFeedView.reopenAtCurrentPositionImpl |
 | `PhoneFeedResume.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedResume 主要包含 fun PhoneFeedView.resumeOnShownImpl。 | fun PhoneFeedView.resumeOnShownImpl |
 | `PhoneFeedSettings.kt` | 信息流长按中间打开的播放设置面板；打开时使用当前真实系统底部 inset。 | fun PhoneFeedView.openSettingsImpl |
-| `PhoneFeedSurface.kt` | 手机信息流页面、适配器、手势与预取；下层 Surface 交接时同步画面模式、缩放和旧帧保留状态，尺寸变化后在布局结束后强制重交当前输出面。 | fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.rebindCurrentSurfaceAfterSizeChangeImpl、fun PhoneFeedView.setUnderlayModeImpl |
+| `PhoneFeedSurface.kt` | 手机信息流页面、适配器、手势与预取；下层 Surface 交接时同步画面模式、缩放和旧帧保留状态，回到推荐页时清掉遗留画面位移，尺寸变化后在布局结束后强制重交当前输出面。 | fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.rebindCurrentSurfaceAfterSizeChangeImpl、fun PhoneFeedView.setUnderlayModeImpl |
 | `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放器池、播放交接、预取和生命周期；系统 inset 变化时刷新各页底部安全区；横竖屏尺寸变化时按代次重交当前输出面；记录首帧后补流状态，并区分冷启动下一部与重建恢复当前剧及播放位置。 | class PhoneFeedView、feedPooledPlayers、feedPlayerListeners、fun refreshBottomInsets、fun currentSeriesId、fun takeRestoreSeriesId、fun takeRestorePositionMs |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/page/`
