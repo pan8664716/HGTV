@@ -458,7 +458,9 @@ internal fun PhonePlayerActivity.detachPlayerPagerOutputsExcept(keep: PhoneVideo
 
 internal fun PhonePlayerActivity.detachPlayerPagerPage(page: PhoneVideoPage) {
     if (page === playerPage && !playerLandscapeMode) return
-    page.playerView.setKeepContentOnPlayerReset(false)
+    // **不清帧**：先关 `keepContentOnPlayerReset` 再把 `player` 置空，`PlayerView`
+    // 会立刻合上快门。换集时被摘的这一页往往还在屏幕上（刚滑走、或相邻仍可见），
+    // 用户看到的就是一次闪黑——推荐页每页独立播放器、不会去摘别人的输出，所以不闪。
+    // 只摘引用，`TextureView` 上最后一帧留着；页面被复用时由 `bind` + 首帧覆盖。
     page.playerView.player = null
-    page.playerView.setKeepContentOnPlayerReset(true)
 }

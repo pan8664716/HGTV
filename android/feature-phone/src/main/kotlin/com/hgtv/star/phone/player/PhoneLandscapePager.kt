@@ -485,7 +485,7 @@ internal fun PhonePlayerActivity.detachLandscapePagerOutputsExcept(
 
 internal fun PhonePlayerActivity.detachLandscapePagerPage(page: LandscapePlayerPage) {
     if (page.video === playerLandscapeVideo && playerLandscapeMode) return
-    page.video.setKeepContentOnPlayerReset(false)
+    // 同竖屏：不清帧。关掉 `keepContentOnPlayerReset` 再置空会让快门立刻合上，
+    // 换集时这一页通常还在屏幕上，用户看到一次闪黑。
     page.video.player = null
-    page.video.setKeepContentOnPlayerReset(true)
 }
