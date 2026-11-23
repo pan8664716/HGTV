@@ -409,6 +409,9 @@ internal fun PhoneFeedView.attachPooledPlayerToPageImpl(
     val slot = pooledPlayerSlot(index) ?: return
     val series = feedItems.getOrNull(index) ?: return
     page.bind(series, "第${(slot.episodeIndex + 1)}集")
+    if (index != feedPlayingIndex) {
+        page.showEpisodeCover(series.cover)
+    }
     applyPageVideoSettingsImpl(page)
     val info = slot.remote?.info
     val width = info?.videoWidth?.takeIf { it > 0 } ?: 0

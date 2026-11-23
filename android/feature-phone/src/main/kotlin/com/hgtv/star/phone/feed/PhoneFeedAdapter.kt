@@ -110,6 +110,9 @@ internal class PhoneFeedAdapter(
         val series = host.feedItems[position]
         val label = UiText.get(com.hgtv.star.shared.R.string.ui_0341, (host.feedCurrentEpisodeIndex[position] ?: 0) + 1)
         page.bind(series, label)
+        if (position != host.feedPlayingIndex) {
+            page.showEpisodeCover(series.cover)
+        }
         if (position == host.feedPlayingIndex) {
             host.feedList.post { host.rebindCurrentPageForAdapter() }
         } else {

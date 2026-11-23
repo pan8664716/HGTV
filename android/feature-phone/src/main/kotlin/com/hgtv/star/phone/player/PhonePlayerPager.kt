@@ -40,6 +40,8 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
             if (!value) userScroll = false
             pager.isUserInputEnabled = value
         }
+    /** 拖动开始时先撤掉共享弹幕，避免它悬在旧页上。 */
+    var swipeStarted: (() -> Unit)? = null
 
     private val pager = ViewPager2(context).apply {
         orientation = ViewPager2.ORIENTATION_VERTICAL
@@ -114,6 +116,7 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
                         axis = if (dy > dx) 1 else 2
                         if (axis == 1) {
                             userScroll = gesturesEnabled && !systemBarGesture
+                            if (userScroll) swipeStarted?.invoke()
                         } else {
                             pager.isUserInputEnabled = false
                             parent?.requestDisallowInterceptTouchEvent(false)
@@ -178,22 +181,16 @@ internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
                 positionOffsetPixels: Int,
             ) {
                 if (playerLandscapeMode || !playerEpisodePager.userScroll) return
-                if (playerPageInitialized) {
-                    // 直接使用当前集页在 pager 中的真实 top，向上/向下拖动都能跟随，
-                    // 不再用高度和 offset 估算，避免不同机型页高/inset 下错位。
-                    playerPortraitTop.translationY =
-                        playerEpisodePager.pageAt(index)?.top?.toFloat() ?: 0f
-                }
+                syncPageChromeToCurrentEpisode()
                 val target = if (positionOffset > 0.5f) position + 1 else position
                 val size = detail?.episodes?.size ?: return
-                if (target in 0 until size) previewPlayerPagerTarget(target)
+                if (target !in 0 until size) return
+                previewPlayerPagerTarget(target)
             }
 
             override fun onPageSelected(position: Int) {
                 if (!playerEpisodePager.userScroll) {
-                    if (playerPageInitialized) {
-                        playerPortraitTop.translationY = 0f
-                    }
+                    syncPageChromeToCurrentEpisode()
                     syncPlayerPagerPage(position, attachCurrent = position == index)
                 }
             }
@@ -208,12 +205,10 @@ internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
                     return
                 }
                 if (state != ViewPager2.SCROLL_STATE_IDLE) return
-                if (playerPageInitialized) {
-                    playerPortraitTop.translationY = 0f
-                }
                 val target = playerEpisodePager.currentItem
                 val userScroll = playerEpisodePager.userScroll
                 playerEpisodePager.userScroll = false
+                syncPageChromeToCurrentEpisode()
                 if (!userScroll) {
                     syncPlayerPagerPage(target, attachCurrent = target == index)
                     return
@@ -230,6 +225,23 @@ internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
             }
         },
     )
+}
+
+/** 顶部信息行与页面自身的信息块都直接跟随当前集页的真实位置。 */
+private fun PhonePlayerActivity.syncPageChromeToCurrentEpisode() {
+    if (!playerEpisodePagerInitialized) return
+    val current = playerEpisodePager.pageAt(index)
+    if (current == null) {
+        if (playerPageInitialized) playerPortraitTop.translationY = 0f
+        return
+    }
+    val top = current.top.toFloat()
+    if (playerPageInitialized && playerPortraitTop.translationY != top) {
+        playerPortraitTop.translationY = top
+    }
+    playerEpisodePager.pages().forEach { page ->
+        page.setPageChromeVisible(page === current && playerChromeVisible)
+    }
 }
 
 private fun PhonePlayerActivity.previewPlayerPagerTarget(target: Int) {

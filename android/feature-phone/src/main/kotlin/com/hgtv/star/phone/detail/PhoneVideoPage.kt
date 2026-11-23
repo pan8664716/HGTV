@@ -173,6 +173,17 @@ class PhoneVideoPage(
         if (view.parent === this) removeView(view)
     }
 
+    /** 隐藏当前页自己的信息层；翻页时不要让底部信息停在屏幕上。 */
+    internal fun setPageChromeVisible(visible: Boolean) {
+        if (::infoColumn.isInitialized) infoColumn.visibility = if (visible) VISIBLE else GONE
+        if (actionBarInitialized) actionBar.visibility = if (visible) VISIBLE else GONE
+        if (::bottomShade.isInitialized) bottomShade.visibility = if (visible) VISIBLE else GONE
+        if (fullscreenEntry && fullscreenBoxInitialized) {
+            fullscreenBox.visibility = if (visible && wantsFullscreen) VISIBLE else GONE
+        }
+        if (!visible) hideCenterIcon()
+    }
+
     val playerView: PlayerView = FixedFirstFramePlayerView(context).apply {
         useController = false
         this.resizeMode = resizeMode

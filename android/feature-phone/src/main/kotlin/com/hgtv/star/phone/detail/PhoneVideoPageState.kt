@@ -7,13 +7,7 @@ import com.hgtv.star.phone.ui.PhoneGlyph
 
 fun PhoneVideoPage.setChromeVisible(visible: Boolean) {
     chromeVisible = visible
-    infoColumn.visibility = if (visible) View.VISIBLE else View.GONE
-    if (actionBarInitialized) actionBar.visibility = if (visible) View.VISIBLE else View.GONE
-    bottomShade.visibility = if (visible) View.VISIBLE else View.GONE
-    if (fullscreenEntry && fullscreenBoxInitialized) {
-        fullscreenBox.visibility = if (visible && wantsFullscreen) View.VISIBLE else View.GONE
-    }
-    if (!visible) hideCenterIcon()
+    setPageChromeVisible(visible)
 }
 
 fun PhoneVideoPage.isChromeVisible(): Boolean = chromeVisible

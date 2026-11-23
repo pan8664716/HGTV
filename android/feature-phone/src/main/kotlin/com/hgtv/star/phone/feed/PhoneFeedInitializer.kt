@@ -13,6 +13,15 @@ import kotlinx.coroutines.launch
 internal fun PhoneFeedView.initializeFeed() {
     setBackgroundColor(PhoneColor.BG)
     feedList.adapter = feedAdapter
+    feedList.swipeStarted = {
+        (feedDanmakuView.parent as? ViewGroup)?.removeView(feedDanmakuView)
+        feedList.pages().forEach { it.setPageChromeVisible(false) }
+    }
+    feedList.previewTarget = { target ->
+        feedList.pages().forEachIndexed { index, page ->
+            page.setPageChromeVisible(index == target)
+        }
+    }
     feedList.registerOnPageChangeCallback(object : ViewPager2.OnPageChangeCallback() {
         override fun onPageScrolled(
             position: Int,
@@ -20,8 +29,11 @@ internal fun PhoneFeedView.initializeFeed() {
             positionOffsetPixels: Int,
         ) {
             if (!feedList.userScroll || feedHidden || feedItems.isEmpty()) return
+            feedList.syncChromeToPosition(position, positionOffset <= 0.5f)
             val target = if (positionOffset > 0.5f) position + 1 else position
-            if (target in feedItems.indices) updateFeedSwipePreviewImpl(target)
+            if (target !in feedItems.indices) return
+            feedList.previewTarget?.invoke(target)
+            updateFeedSwipePreviewImpl(target)
         }
 
         override fun onPageScrollStateChanged(state: Int) {
@@ -39,6 +51,10 @@ internal fun PhoneFeedView.initializeFeed() {
             val index = feedList.currentItem
             val userScroll = feedList.userScroll
             feedList.userScroll = false
+            feedList.pages().forEachIndexed { pageIndex, page ->
+                page.translationY = 0f
+                page.setPageChromeVisible(pageIndex == index)
+            }
             if (userScroll) {
                 if (index in feedItems.indices && index != feedPlayingIndex) {
                     playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)

@@ -36,6 +36,7 @@ internal fun PhonePlayerActivity.buildLandscapeBase() {
     playerLandscapeVideoSlot = initialPage.video
     playerLandscapeCover = initialPage.cover
     playerLandDanmakuSlot = initialPage.danmaku
+    installLandscapeDanmakuSync()
 
 }
 

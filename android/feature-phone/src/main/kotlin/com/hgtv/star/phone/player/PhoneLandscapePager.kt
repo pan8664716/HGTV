@@ -210,6 +210,8 @@ internal class VerticalLandscapePager(context: Context) : FrameLayout(context) {
             if (!value) userScroll = false
             pager.isUserInputEnabled = value
         }
+    /** 拖动开始后撤掉共享弹幕，避免它跟着旧页一起移动。 */
+    var swipeStarted: (() -> Unit)? = null
 
     private val pager = ViewPager2(context).apply {
         orientation = ViewPager2.ORIENTATION_VERTICAL
@@ -279,6 +281,7 @@ internal class VerticalLandscapePager(context: Context) : FrameLayout(context) {
                         axis = if (dy > dx) 1 else 2
                         if (axis == 1) {
                             userScroll = gesturesEnabled && !systemBarGesture
+                            if (userScroll) swipeStarted?.invoke()
                         } else {
                             pager.isUserInputEnabled = false
                             parent?.requestDisallowInterceptTouchEvent(false)
@@ -346,6 +349,13 @@ internal fun PhonePlayerActivity.installLandscapePlayerPagerCallbacks() {
             }
         },
     )
+}
+
+/** 横屏共享弹幕只属于当前页；翻页开始时先摘掉，IDLE 后由现有 attach 流程挂回。 */
+internal fun PhonePlayerActivity.installLandscapeDanmakuSync() {
+    playerLandscapePager.swipeStarted = {
+        playerLandscapePager.pages().forEach { it.unmountSharedDanmaku(playerSharedDanmaku) }
+    }
 }
 
 private fun PhonePlayerActivity.previewLandscapePagerTarget(target: Int) {
