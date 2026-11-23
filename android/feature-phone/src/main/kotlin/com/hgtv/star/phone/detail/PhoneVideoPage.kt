@@ -367,6 +367,15 @@ class PhoneVideoPage(
     var onRewind: (() -> Unit)? = null
     var onForward: (() -> Unit)? = null
 
+    /**
+     * 控制条：播放 / 暂停。
+     *
+     * **不能复用 [onTap]**：正式播放页的单击语义是「显隐信息」，双击才是播放 / 暂停
+     * （见 `PhonePlayerPageFactory.wirePage`）。控制条上这颗按钮如果走 `onTap`，
+     * 点下去只是把信息栏收起来，看起来就是「按钮不好使」。
+     */
+    var onPlayPause: (() -> Unit)? = null
+
     // ------------------------------------------------------------------ 构建
 
     init {
@@ -435,40 +444,40 @@ class PhoneVideoPage(
     /**
      * 播放控制条：上一集 / 快退 / 播放暂停 / 快进 / 下一集。
      *
-     * 按钮热区 34dp、图标 18dp：竖屏一行放得下五颗，也不会挤到标题的左边线。
+     * 五颗按钮**等分整行宽度**（`weight=1`），图标 12dp、行高 26dp：
+     * 早先是左对齐 + 固定 34dp 热区，既占高度、右侧还空出一大片。
      * 播放 / 暂停用共享的 [transportPlay]，宿主通过 [setTransportPlaying] 更新状态。
      */
     private fun buildTransport(): LinearLayout {
         val row = LinearLayout(context).apply {
             orientation = LinearLayout.HORIZONTAL
             gravity = Gravity.CENTER_VERTICAL
-            setPadding(context.dp(INFO_EDGE_DP), 0, 0, 0)
         }
         fun addButton(kind: PhoneGlyph.Kind, action: () -> Unit) {
             val glyph = PhoneGlyph(context, kind).apply { tint = Color.WHITE }
             val box = FrameLayout(context).apply {
                 addView(
                     glyph,
-                    FrameLayout.LayoutParams(context.dp(18), context.dp(18), Gravity.CENTER),
+                    FrameLayout.LayoutParams(context.dp(10), context.dp(10), Gravity.CENTER),
                 )
                 setOnClickListener { if (!playbackLocked) action() }
             }
             row.addView(box, LinearLayout.LayoutParams(
-                context.dp(34), context.dp(34)
-            ).apply { rightMargin = context.dp(2) })
+                0, LayoutParams.MATCH_PARENT, 1f
+            ))
         }
         addButton(PhoneGlyph.Kind.PREV_EPISODE) { onPrevEpisode?.invoke() }
         addButton(PhoneGlyph.Kind.REWIND) { onRewind?.invoke() }
         val playBox = FrameLayout(context).apply {
             addView(
                 transportPlay,
-                FrameLayout.LayoutParams(context.dp(22), context.dp(22), Gravity.CENTER),
+                FrameLayout.LayoutParams(context.dp(12), context.dp(12), Gravity.CENTER),
             )
-            setOnClickListener { if (!playbackLocked) onTap?.invoke() }
+            setOnClickListener { if (!playbackLocked) onPlayPause?.invoke() }
         }
         row.addView(playBox, LinearLayout.LayoutParams(
-            context.dp(38), context.dp(38)
-        ).apply { rightMargin = context.dp(2) })
+            0, LayoutParams.MATCH_PARENT, 1f
+        ))
         addButton(PhoneGlyph.Kind.FORWARD) { onForward?.invoke() }
         addButton(PhoneGlyph.Kind.NEXT_EPISODE) { onNextEpisode?.invoke() }
         return row
@@ -592,10 +601,11 @@ class PhoneVideoPage(
             LayoutParams.MATCH_PARENT, context.dp(18)
         ).apply { topMargin = context.dp(2) })
         // 播放控制条：紧跟在进度条下面（用户要求）。只有正式播放页有。
+        // 行高 18dp：图标 10~12dp，它只是辅助操作条，不该和「观看完整短剧」一样高。
         if (episodeTransport) {
             column.addView(buildTransport(), LinearLayout.LayoutParams(
-                LayoutParams.MATCH_PARENT, context.dp(38)
-            ).apply { topMargin = context.dp(2) })
+                LayoutParams.MATCH_PARENT, context.dp(18)
+            ))
         }
         column.addView(actionBar, LinearLayout.LayoutParams(
             LayoutParams.MATCH_PARENT, context.dp(ACTION_BAR_DP)
@@ -710,7 +720,7 @@ class PhoneVideoPage(
         val lp = fullscreenBox.layoutParams as LayoutParams
         lp.gravity = Gravity.TOP or Gravity.CENTER_HORIZONTAL
 
-        val gap = context.dp(10)
+        val gap = context.dp(14)
         // 按钮实际高度还没量出来时按一行小字估：字体档位调大后它也会跟着变高。
         val buttonHeight = fullscreenBox.measuredHeight.takeIf { it > 0 } ?: context.dp(14)
         // 下方信息块（标题 / 标签 / 简介 / 进度条）的最上沿。字号调大时它会往上顶，
@@ -722,7 +732,10 @@ class PhoneVideoPage(
         val below = pictureBottom + gap
         // 竖版画面在横屏里会占满整屏高度，`pictureBottom` 已经落到信息层后面。
         // 此时只翻到画面内还不够，必须继续限制在信息块上沿，否则按钮仍会被底栏盖住。
-        val maxTop = infoTop - buttonHeight - gap
+        //
+        // 上沿余量单独用一个更小的值：早先两边共用 `gap`，按钮被 `maxTop` 顶得
+        // 比画面下边缘还高，看起来像「浮在画面中间」。
+        val maxTop = infoTop - buttonHeight - context.dp(6)
         val want = below.coerceAtMost(maxTop).toInt().coerceAtLeast(0)
         if (lp.topMargin != want) {
             lp.topMargin = want

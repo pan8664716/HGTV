@@ -157,7 +157,7 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
     // 底部三行（自上而下）：进度条 → 设置摘要 → 控制栏 + 功能按钮
     val bottom = android.widget.LinearLayout(this).apply {
         orientation = android.widget.LinearLayout.VERTICAL
-        setPadding(dp(16), dp(6), dp(16), dp(10))
+        setPadding(dp(16), dp(3), dp(16), dp(5))
         background = bottomScrim(215)
     }
 
@@ -220,7 +220,7 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
         phoneSize(11)
         maxLines = 1
         ellipsize = android.text.TextUtils.TruncateAt.END
-        setPadding(dp(2), dp(4), 0, dp(2))
+        setPadding(dp(2), dp(2), 0, dp(1))
         text = ""
     }
     bottom.addView(settingsInfo, android.widget.LinearLayout.LayoutParams(
@@ -250,28 +250,28 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
         return box to glyph
     }
 
-    val (prevBox, _) = transportButton(PhoneGlyph.Kind.PREV_EPISODE, 30, 15) {
+    val (prevBox, _) = transportButton(PhoneGlyph.Kind.PREV_EPISODE, 24, 12) {
         val count = detail?.episodes?.size ?: 0
         if (index > 0 && index - 1 < count) play(index - 1, 0L, clearDanmakuOnSwitch = true)
     }
-    val (rewBox, _) = transportButton(PhoneGlyph.Kind.REWIND, 30, 15) {
+    val (rewBox, _) = transportButton(PhoneGlyph.Kind.REWIND, 24, 12) {
         seekBy(-10_000L)
     }
-    val (playBox, playGlyph) = transportButton(PhoneGlyph.Kind.PAUSE, 34, 18) {
+    val (playBox, playGlyph) = transportButton(PhoneGlyph.Kind.PAUSE, 28, 14) {
         togglePlay()
     }
-    val (ffwdBox, _) = transportButton(PhoneGlyph.Kind.FORWARD, 30, 15) {
+    val (ffwdBox, _) = transportButton(PhoneGlyph.Kind.FORWARD, 24, 12) {
         seekBy(10_000L)
     }
-    val (nextBox, _) = transportButton(PhoneGlyph.Kind.NEXT_EPISODE, 30, 15) {
+    val (nextBox, _) = transportButton(PhoneGlyph.Kind.NEXT_EPISODE, 24, 12) {
         val count = detail?.episodes?.size ?: 0
         if (index >= 0 && index + 1 < count) play(index + 1, 0L, clearDanmakuOnSwitch = true)
     }
-    line2.addView(prevBox, android.widget.LinearLayout.LayoutParams(dp(30), dp(30)))
-    line2.addView(rewBox, android.widget.LinearLayout.LayoutParams(dp(30), dp(30)))
-    line2.addView(playBox, android.widget.LinearLayout.LayoutParams(dp(34), dp(34)))
-    line2.addView(ffwdBox, android.widget.LinearLayout.LayoutParams(dp(30), dp(30)))
-    line2.addView(nextBox, android.widget.LinearLayout.LayoutParams(dp(30), dp(30)))
+    line2.addView(prevBox, android.widget.LinearLayout.LayoutParams(dp(24), dp(24)))
+    line2.addView(rewBox, android.widget.LinearLayout.LayoutParams(dp(24), dp(24)))
+    line2.addView(playBox, android.widget.LinearLayout.LayoutParams(dp(28), dp(28)))
+    line2.addView(ffwdBox, android.widget.LinearLayout.LayoutParams(dp(24), dp(24)))
+    line2.addView(nextBox, android.widget.LinearLayout.LayoutParams(dp(24), dp(24)))
 
     // 中间弹性空隙：控制栏贴左，功能按钮贴右。
     line2.addView(android.view.View(this), android.widget.LinearLayout.LayoutParams(

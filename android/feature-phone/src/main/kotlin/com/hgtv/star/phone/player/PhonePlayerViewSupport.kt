@@ -208,11 +208,11 @@ internal object PhonePlayerViewSupport {
      * 比文字按钮矮一截，同一行里看着不齐。
      */
     fun chipLp(activity: Activity, left: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(
-        activity.dp(52), activity.dp(LANDSCAPE_CHIP_HEIGHT_DP)
+        activity.dp(46), activity.dp(LANDSCAPE_CHIP_HEIGHT_DP)
     ).apply { leftMargin = activity.dp(left) }
 
     /** 横屏底栏一行里所有按钮的统一高度（dp）。 */
-    const val LANDSCAPE_CHIP_HEIGHT_DP = 26
+    const val LANDSCAPE_CHIP_HEIGHT_DP = 22
 
     fun lockButton(
         context: Context,

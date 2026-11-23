@@ -56,6 +56,8 @@ internal fun PhonePlayerActivity.wirePage(p: PhoneVideoPage) {
     }
     p.onRewind = { seekBy(-10_000L) }
     p.onForward = { seekBy(10_000L) }
+    // 控制条的播放 / 暂停：与单击「显隐信息」分开，直接走播放切换。
+    p.onPlayPause = { if (!playerControlsLocked) togglePlay() }
     p.onSeekStart = { progressDragging = true }
     p.onSeek = { fraction -> showSeekHint(fraction) }
     p.onSeekEnd = { fraction ->
