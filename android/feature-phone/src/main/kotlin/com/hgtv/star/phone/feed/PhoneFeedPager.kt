@@ -94,6 +94,21 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
 
     fun pageChildAt(index: Int): View? = pageRecycler.getChildAt(index)
 
+    /** SurfaceView 的独立图层不会总跟普通 View 同步，翻页时手动同步它的位置。 */
+    fun syncVideoSurfaces() {
+        for (childIndex in 0 until pageRecycler.childCount) {
+            val page = pageRecycler.getChildAt(childIndex) as? PhoneVideoPage ?: continue
+            page.playerView.translationY = page.top.toFloat()
+        }
+    }
+
+    fun resetVideoSurfaces() {
+        for (childIndex in 0 until pageRecycler.childCount) {
+            (pageRecycler.getChildAt(childIndex) as? PhoneVideoPage)
+                ?.playerView?.translationY = 0f
+        }
+    }
+
     override fun dispatchTouchEvent(e: MotionEvent): Boolean {
         when (e.actionMasked) {
             MotionEvent.ACTION_DOWN -> {

@@ -20,6 +20,7 @@ internal fun PhoneFeedView.initializeFeed() {
             positionOffsetPixels: Int,
         ) {
             if (!feedList.userScroll || feedHidden || feedItems.isEmpty()) return
+            feedList.syncVideoSurfaces()
             val target = if (positionOffset > 0.5f) position + 1 else position
             if (target in feedItems.indices) updateFeedSwipePreviewImpl(target)
         }
@@ -39,6 +40,7 @@ internal fun PhoneFeedView.initializeFeed() {
             val index = feedList.currentItem
             val userScroll = feedList.userScroll
             feedList.userScroll = false
+            feedList.resetVideoSurfaces()
             if (userScroll) {
                 if (index in feedItems.indices && index != feedPlayingIndex) {
                     playIndexForSettings(index, -1L, clearDanmakuOnSwitch = true)
