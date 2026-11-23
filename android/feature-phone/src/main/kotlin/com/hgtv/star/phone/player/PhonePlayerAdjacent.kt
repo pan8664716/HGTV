@@ -370,7 +370,7 @@ internal fun PhonePlayerActivity.attachAdjacentToPagerPage(target: Int) {
         if (swipePlaybackPreviewIndex == target) playAdjacentPreview(slot)
         return
     }
-    if (!page.usesSharedDanmaku) page.danmakuView.clear()
+    page.danmakuView.clear()
     page.bind(
         d.series,
         "第${target + 1}集",

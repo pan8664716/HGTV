@@ -12,11 +12,9 @@ internal fun PhonePlayerActivity.buildUi() {
     root = FrameLayout(this).apply {
         setBackgroundColor(Color.BLACK)
     }
-    playerSharedDanmaku = createPhoneDanmakuView(this)
 
     PhoneUiScale.withOrientation(this, landscape = false) { buildPortrait() }
     PhoneUiScale.withOrientation(this, landscape = true) { buildLandscape() }
-    installPlayerDanmakuSync()
 
     buildPlayerCommonUi()
 
@@ -24,13 +22,6 @@ internal fun PhonePlayerActivity.buildUi() {
     root.bindPhoneInsets()
     syncPlaybackLockUi()
     applyMode()
-}
-
-/** 竖屏共享弹幕只属于当前集页；拖动开始先摘掉，IDLE 后由现有 attach 流程挂回。 */
-private fun PhonePlayerActivity.installPlayerDanmakuSync() {
-    playerEpisodePager.swipeStarted = {
-        playerEpisodePager.pages().forEach { it.unmountSharedDanmaku(playerSharedDanmaku) }
-    }
 }
 
 private fun PhonePlayerActivity.buildLandscape() {

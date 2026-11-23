@@ -28,10 +28,6 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
     private var axis = 0
     /** 当前这次滚动是否由真实纵向手势发起；布局补发的 IDLE 不得换播。 */
     var userScroll = false
-    /** 翻页手势开始后先撤掉共享弹幕，避免它跟着旧页移动到下一页。 */
-    var swipeStarted: (() -> Unit)? = null
-    /** 拖动过半后真正预览的是目标页，信息层也只留在目标页。 */
-    var previewTarget: ((Int) -> Unit)? = null
     /** 从系统状态栏 / 导航手势区起手时，这一下不交给纵向翻页。 */
     private var systemBarGesture = false
 
@@ -66,22 +62,6 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
 
     fun registerOnPageChangeCallback(callback: ViewPager2.OnPageChangeCallback) {
         pager.registerOnPageChangeCallback(callback)
-    }
-
-    fun positionOf(position: Int): PhoneVideoPage? =
-        pageRecycler.findViewHolderForAdapterPosition(position)?.itemView as? PhoneVideoPage
-
-    fun syncChromeToPosition(position: Int, active: Boolean) {
-        positionOf(position)?.let { page ->
-            if (active) page.translationY = 0f
-            page.setPageChromeVisible(active)
-        }
-    }
-
-    internal fun pages(): List<PhoneVideoPage> = buildList {
-        for (childIndex in 0 until pageRecycler.childCount) {
-            (pageRecycler.getChildAt(childIndex) as? PhoneVideoPage)?.let(::add)
-        }
     }
 
     fun setActive(active: Boolean) {
@@ -125,11 +105,6 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
                 pager.isUserInputEnabled = !systemBarGesture
             }
             MotionEvent.ACTION_MOVE -> {
-                if (currentPage()?.progressTouching == true) {
-                    pager.isUserInputEnabled = false
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    return super.dispatchTouchEvent(e)
-                }
                 if (axis == 0) {
                     val dx = Math.abs(e.x - downX)
                     val dy = Math.abs(e.y - downY)
@@ -137,7 +112,6 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
                         axis = if (dy > dx) 1 else 2
                         if (axis == 1) {
                             userScroll = !systemBarGesture
-                            if (userScroll) swipeStarted?.invoke()
                         } else {
                             pager.isUserInputEnabled = false
                             parent?.requestDisallowInterceptTouchEvent(false)
@@ -154,9 +128,6 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
         }
         return super.dispatchTouchEvent(e)
     }
-
-    private fun currentPage(): PhoneVideoPage? =
-        pageRecycler.findViewHolderForAdapterPosition(pager.currentItem)?.itemView as? PhoneVideoPage
 }
 
 internal class PageHolder(view: View) : RecyclerView.ViewHolder(view)

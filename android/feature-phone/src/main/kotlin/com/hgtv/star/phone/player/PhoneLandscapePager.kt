@@ -24,7 +24,6 @@ import com.hgtv.star.shared.media.DanmakuView
 
 internal class LandscapePlayerPage(
     private val host: PhonePlayerActivity,
-    private val sharedDanmaku: DanmakuView? = null,
 ) : FrameLayout(host) {
     val video = FixedFirstFramePlayerView(host).apply {
         useController = false
@@ -37,44 +36,23 @@ internal class LandscapePlayerPage(
         }
     }
     val cover = episodeCoverView(host)
-    val danmaku: DanmakuView = sharedDanmaku
-        ?: createPhoneDanmakuView(host).apply {
-            topGapDp = 0f
-            sizeFollowsLongEdge = true
-            onRenderStateChangedListener = {
-                if (host.playerLandDanmaku === this) host.syncLandscapeLetterboxImpl()
-            }
+    val danmaku = DanmakuView(host).apply {
+        mode = com.hgtv.star.core.DanmakuMode.DEFAULT
+        minTextSizeDp = 4f
+        topGapDp = 0f
+        sizeFollowsLongEdge = true
+        setClock(0, false)
+        onRenderStateChangedListener = {
+            if (host.playerLandDanmaku === this) host.syncLandscapeLetterboxImpl()
         }
+    }
     private val touch = View(host)
-
-    internal fun mountSharedDanmaku(view: DanmakuView) {
-        if (view.parent === this) return
-        (view.parent as? ViewGroup)?.removeView(view)
-        val coverIndex = indexOfChild(cover)
-        val videoIndex = indexOfChild(video)
-        val insertAt = when {
-            coverIndex >= 0 -> coverIndex + 1
-            videoIndex >= 0 -> videoIndex + 1
-            else -> childCount
-        }
-        addView(
-            view,
-            insertAt.coerceIn(0, childCount),
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
-        )
-    }
-
-    internal fun unmountSharedDanmaku(view: DanmakuView) {
-        if (view.parent === this) removeView(view)
-    }
 
     init {
         setBackgroundColor(Color.BLACK)
         addView(video, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(cover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        if (sharedDanmaku == null) {
-            addView(danmaku, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        }
+        addView(danmaku, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         touch.setOnTouchListener(
             PhoneTouch(
                 host = touch,
@@ -166,7 +144,6 @@ internal class LandscapePlayerPageHolder(
 internal class LandscapePlayerPagerAdapter(
     private val host: PhonePlayerActivity,
     private val initialPage: LandscapePlayerPage,
-    private val sharedDanmaku: DanmakuView? = null,
 ) : RecyclerView.Adapter<LandscapePlayerPageHolder>() {
     private var initialPageAvailable = true
 
@@ -178,7 +155,7 @@ internal class LandscapePlayerPagerAdapter(
             initialPageAvailable = false
             initialPage
         } else {
-            LandscapePlayerPage(host, sharedDanmaku)
+            LandscapePlayerPage(host)
         }
         page.layoutParams = RecyclerView.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -210,9 +187,6 @@ internal class VerticalLandscapePager(context: Context) : FrameLayout(context) {
             if (!value) userScroll = false
             pager.isUserInputEnabled = value
         }
-    /** 拖动开始后撤掉共享弹幕，避免它跟着旧页一起移动。 */
-    var swipeStarted: (() -> Unit)? = null
-
     private val pager = ViewPager2(context).apply {
         orientation = ViewPager2.ORIENTATION_VERTICAL
         offscreenPageLimit = 1
@@ -281,7 +255,6 @@ internal class VerticalLandscapePager(context: Context) : FrameLayout(context) {
                         axis = if (dy > dx) 1 else 2
                         if (axis == 1) {
                             userScroll = gesturesEnabled && !systemBarGesture
-                            if (userScroll) swipeStarted?.invoke()
                         } else {
                             pager.isUserInputEnabled = false
                             parent?.requestDisallowInterceptTouchEvent(false)
@@ -349,13 +322,6 @@ internal fun PhonePlayerActivity.installLandscapePlayerPagerCallbacks() {
             }
         },
     )
-}
-
-/** 横屏共享弹幕只属于当前页；翻页开始时先摘掉，IDLE 后由现有 attach 流程挂回。 */
-internal fun PhonePlayerActivity.installLandscapeDanmakuSync() {
-    playerLandscapePager.swipeStarted = {
-        playerLandscapePager.pages().forEach { it.unmountSharedDanmaku(playerSharedDanmaku) }
-    }
 }
 
 private fun PhonePlayerActivity.previewLandscapePagerTarget(target: Int) {
@@ -487,7 +453,6 @@ internal fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage(
     playerLandscapeVideoSlot = current.video
     playerLandscapeCover = current.cover
     playerLandDanmakuSlot = current.danmaku
-    current.mountSharedDanmaku(playerSharedDanmaku)
     current.video.visibility = View.VISIBLE
     if (force) current.video.forceBindVideoSurface(exo)
     else if (current.video.player !== exo) current.video.player = exo
@@ -505,7 +470,6 @@ internal fun PhonePlayerActivity.detachLandscapePagerOutputsExcept(
 
 internal fun PhonePlayerActivity.detachLandscapePagerPage(page: LandscapePlayerPage) {
     if (page.video === playerLandscapeVideo && playerLandscapeMode) return
-    page.unmountSharedDanmaku(playerSharedDanmaku)
     page.video.setKeepContentOnPlayerReset(false)
     page.video.player = null
     page.video.setKeepContentOnPlayerReset(true)

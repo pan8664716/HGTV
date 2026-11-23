@@ -13,9 +13,6 @@ internal fun PhoneFeedView.onHiddenImpl(handoff: Boolean = false) {
     closeSheet()
     val already = feedHidden
     feedHiddenSlot = true
-    // 共享弹幕层属于推荐页宿主，不随某一页回收；离开当前体裁前先清空，
-    // 避免外层横向切页时旧流的弹幕继续盖在新流上。
-    feedDanmakuView.clear()
     feedList.setActive(false)
     feedPaused = true
     feedChromeEpoch++

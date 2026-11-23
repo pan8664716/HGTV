@@ -63,18 +63,6 @@ import com.hgtv.star.phone.ui.tabBarInset
  * 手势挂在**本视图**上而不是盖一层透明 View：Android 的事件分发是子 View 先消费，
  * 按钮的点击不会被手势吃掉；反过来，如果盖一层全屏 View，按钮就永远点不到。
  */
-/** 创建手机端共享弹幕层；独立 Surface 只保留在当前宿主，不再按视频页重复创建。 */
-internal fun createPhoneDanmakuView(
-    context: Context,
-    mediaOverlay: Boolean = false,
-): DanmakuView = DanmakuView(context).apply {
-    mode = DanmakuMode.DEFAULT
-    minTextSizeDp = 4f
-    topGapDp = 16f
-    setClock(0, false)
-    if (!mediaOverlay) setZOrderMediaOverlay(false)
-}
-
 class PhoneVideoPage(
     context: Context,
     /** 首页是信息流，底部有 60dp 的导航栏；播放页没有。 */
@@ -114,21 +102,6 @@ class PhoneVideoPage(
      * 自己出画面，否则就是一整块透明。
      */
     private val underlay: Boolean = false,
-    /**
-     * 弹幕 Surface 是否使用媒体覆盖层。
-     *
-     * 正式播放页只有一个活动视频窗口，媒体覆盖层能稳定压住视频；推荐页池里同时保留
-     * 多块全屏 `SurfaceView`，媒体覆盖层会越过相邻页的视频层，滑动起手时把下一条画面
-     * 透进当前页。推荐页关闭它，让弹幕与自己的视频层按本页层级合成。
-     */
-    private val danmakuMediaOverlay: Boolean = true,
-    /**
-     * 由宿主提供的共享弹幕层。
-     *
-     * 传入时本页不创建、也不挂载自己的 DanmakuView；弹幕层由推荐页或正式播放页
-     * 宿主统一添加，所有相邻视频页共用这一块 Surface。
-     */
-    private val sharedDanmakuView: DanmakuView? = null,
     // 默认完整画面；真正的档位由宿主按用户的「画面模式」随后覆盖，
     // 不再按片源方向强制铺满。
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -141,47 +114,12 @@ class PhoneVideoPage(
      * （`unitScale` 留 0）；手机设置里的 100% 对应弹幕层原先的最小档，
      * 具体映射见 [PhoneDanmakuSize]。
      */
-    val danmakuView: DanmakuView = sharedDanmakuView
-        ?: createPhoneDanmakuView(context, danmakuMediaOverlay)
-    internal val usesSharedDanmaku: Boolean get() = sharedDanmakuView != null
-
-    /**
-     * 把宿主共享的弹幕层挂到当前视频页。
-     *
-     * 共享实例不能放在 pager 外层：那会压住页面自己的标题、操作条和进度层。
-     * 这里将它插在视频/封面之后、底部遮罩和控制层之前；翻页时同一实例从旧页
-     * remove 后挂到新页，保证全宿主仍然只有一块弹幕 Surface。
-     */
-    internal fun mountSharedDanmaku(view: DanmakuView) {
-        if (view.parent === this) return
-        (view.parent as? ViewGroup)?.removeView(view)
-        val coverIndex = indexOfChild(episodeCover)
-        val playerIndex = indexOfChild(playerView)
-        val insertAt = when {
-            coverIndex >= 0 -> coverIndex + 1
-            playerIndex >= 0 -> playerIndex + 1
-            else -> childCount
-        }
-        addView(
-            view,
-            insertAt.coerceIn(0, childCount),
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
-        )
-    }
-
-    internal fun unmountSharedDanmaku(view: DanmakuView) {
-        if (view.parent === this) removeView(view)
-    }
-
-    /** 隐藏当前页自己的信息层；翻页时不要让底部信息停在屏幕上。 */
-    internal fun setPageChromeVisible(visible: Boolean) {
-        if (::infoColumn.isInitialized) infoColumn.visibility = if (visible) VISIBLE else GONE
-        if (actionBarInitialized) actionBar.visibility = if (visible) VISIBLE else GONE
-        if (::bottomShade.isInitialized) bottomShade.visibility = if (visible) VISIBLE else GONE
-        if (fullscreenEntry && fullscreenBoxInitialized) {
-            fullscreenBox.visibility = if (visible && wantsFullscreen) VISIBLE else GONE
-        }
-        if (!visible) hideCenterIcon()
+    val danmakuView: DanmakuView = DanmakuView(context).apply {
+        mode = DanmakuMode.DEFAULT
+        // 手机端弹幕字号以原先的最小档为 100%，还要允许再调到 50%。
+        minTextSizeDp = 4f
+        topGapDp = 16f
+        setClock(0, false)
     }
 
     val playerView: PlayerView = FixedFirstFramePlayerView(context).apply {
@@ -363,9 +301,6 @@ class PhoneVideoPage(
     /** 点全屏（只有信息流有）。 */
     var onFullscreen: (() -> Unit)? = null
 
-    /** 进度条正在被拖动：父级 pager 不得在 MOVE 阶段重新打开拦截。 */
-    internal var progressTouching: Boolean = false
-
     // ------------------------------------------------------------------ 构建
 
     init {
@@ -376,9 +311,7 @@ class PhoneVideoPage(
         addView(playerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(episodeCover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // 弹幕压在画面之上，黑边也由这块透明 Surface 自己绘制。
-        if (sharedDanmakuView == null) {
-            addView(danmakuView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        }
+        addView(danmakuView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
 
         // 限高到屏高的一半：整屏铺开时哪怕渐变再陡，画面中间也会被压暗一层。
         // 真实高度在 onSizeChanged 里按本页高度算（信息流每一页的高度不一样）。
@@ -528,15 +461,11 @@ class PhoneVideoPage(
             // （PagerSnapHelper），不拦住的话手指一拖就被父容器当成翻页，进度条看着「推不动」。
             setOnTouchListener { v, e ->
                 when (e.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN -> {
-                        progressTouching = true
+                    android.view.MotionEvent.ACTION_DOWN ->
                         v.parent?.requestDisallowInterceptTouchEvent(true)
-                    }
                     android.view.MotionEvent.ACTION_UP,
-                    android.view.MotionEvent.ACTION_CANCEL -> {
-                        progressTouching = false
+                    android.view.MotionEvent.ACTION_CANCEL ->
                         v.parent?.requestDisallowInterceptTouchEvent(false)
-                    }
                 }
                 false
             }

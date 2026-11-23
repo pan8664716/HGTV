@@ -10,11 +10,9 @@ import android.widget.FrameLayout
 import androidx.recyclerview.widget.RecyclerView
 import androidx.viewpager2.widget.ViewPager2
 import com.hgtv.star.core.RecommendGenre
-import com.hgtv.star.phone.createPhoneDanmakuView
 import com.hgtv.star.phone.PhoneFeedView
 import com.hgtv.star.phone.phoneNav
 import com.hgtv.star.shared.nav.Route
-import com.hgtv.star.shared.media.DanmakuView
 import com.hgtv.star.phone.ui.PhoneColor
 import com.hgtv.star.phone.ui.PhoneMainTabSwipeTarget
 import com.hgtv.star.phone.ui.PhoneTopBar
@@ -65,8 +63,6 @@ class PhoneRecommendPage(
     private var feeds = arrayOfNulls<PhoneFeedView>(genres.size)
     private val adapter = PagerAdapter()
     private val pager = RecommendGenrePager(context)
-    /** 推荐页所有体裁、所有视频页共用的一块弹幕 Surface。 */
-    private val sharedDanmakuView: DanmakuView = createPhoneDanmakuView(context)
     /** 与分类 / 榜单共用同一个顶栏：tab 起点、字号和搜索按钮位置因此完全一致。 */
     private val topBar = PhoneTopBar(context).apply {
         makeOverlay()
@@ -325,7 +321,6 @@ class PhoneRecommendPage(
             val restorePosition = if (viewType == current) restorePositionMs else -1L
             val feed = PhoneFeedView(
                 context,
-                sharedDanmakuView = sharedDanmakuView,
                 initialGenre = genres[viewType].genre,
                 initialSeriesId = restoreSeries,
                 initialPositionMs = restorePosition,

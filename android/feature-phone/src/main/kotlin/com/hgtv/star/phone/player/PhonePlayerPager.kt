@@ -40,8 +40,6 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
             if (!value) userScroll = false
             pager.isUserInputEnabled = value
         }
-    /** 拖动开始时先撤掉共享弹幕，避免它悬在旧页上。 */
-    var swipeStarted: (() -> Unit)? = null
 
     private val pager = ViewPager2(context).apply {
         orientation = ViewPager2.ORIENTATION_VERTICAL
@@ -104,11 +102,6 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
                 pager.isUserInputEnabled = gesturesEnabled && !systemBarGesture
             }
             MotionEvent.ACTION_MOVE -> {
-                if (pageAt(pager.currentItem)?.progressTouching == true) {
-                    pager.isUserInputEnabled = false
-                    parent?.requestDisallowInterceptTouchEvent(true)
-                    return super.dispatchTouchEvent(e)
-                }
                 if (axis == 0) {
                     val dx = Math.abs(e.x - downX)
                     val dy = Math.abs(e.y - downY)
@@ -116,7 +109,6 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
                         axis = if (dy > dx) 1 else 2
                         if (axis == 1) {
                             userScroll = gesturesEnabled && !systemBarGesture
-                            if (userScroll) swipeStarted?.invoke()
                         } else {
                             pager.isUserInputEnabled = false
                             parent?.requestDisallowInterceptTouchEvent(false)
@@ -135,7 +127,6 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
     }
 }
 
-/** 让 ViewPager2 当前页最后绘制，避免相邻页的独立 Surface 在滑动起手时压到当前页。 */
 internal class PhonePlayerPageHolder(
     val page: PhoneVideoPage,
 ) : RecyclerView.ViewHolder(page)
@@ -181,16 +172,20 @@ internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
                 positionOffsetPixels: Int,
             ) {
                 if (playerLandscapeMode || !playerEpisodePager.userScroll) return
-                syncPageChromeToCurrentEpisode()
+                // 顶部播放信息挂在 pager 外层，翻页时按当前页真实位置跟着走；
+                // 页面自身的标题、进度、按钮都在各页里面，ViewPager2 会自然带着翻。
+                if (playerPageInitialized) {
+                    playerPortraitTop.translationY =
+                        playerEpisodePager.pageAt(position)?.top?.toFloat() ?: 0f
+                }
                 val target = if (positionOffset > 0.5f) position + 1 else position
                 val size = detail?.episodes?.size ?: return
-                if (target !in 0 until size) return
-                previewPlayerPagerTarget(target)
+                if (target in 0 until size) previewPlayerPagerTarget(target)
             }
 
             override fun onPageSelected(position: Int) {
                 if (!playerEpisodePager.userScroll) {
-                    syncPageChromeToCurrentEpisode()
+                    if (playerPageInitialized) playerPortraitTop.translationY = 0f
                     syncPlayerPagerPage(position, attachCurrent = position == index)
                 }
             }
@@ -205,10 +200,10 @@ internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
                     return
                 }
                 if (state != ViewPager2.SCROLL_STATE_IDLE) return
+                if (playerPageInitialized) playerPortraitTop.translationY = 0f
                 val target = playerEpisodePager.currentItem
                 val userScroll = playerEpisodePager.userScroll
                 playerEpisodePager.userScroll = false
-                syncPageChromeToCurrentEpisode()
                 if (!userScroll) {
                     syncPlayerPagerPage(target, attachCurrent = target == index)
                     return
@@ -225,23 +220,6 @@ internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
             }
         },
     )
-}
-
-/** 顶部信息行与页面自身的信息块都直接跟随当前集页的真实位置。 */
-private fun PhonePlayerActivity.syncPageChromeToCurrentEpisode() {
-    if (!playerEpisodePagerInitialized) return
-    val current = playerEpisodePager.pageAt(index)
-    if (current == null) {
-        if (playerPageInitialized) playerPortraitTop.translationY = 0f
-        return
-    }
-    val top = current.top.toFloat()
-    if (playerPageInitialized && playerPortraitTop.translationY != top) {
-        playerPortraitTop.translationY = top
-    }
-    playerEpisodePager.pages().forEach { page ->
-        page.setPageChromeVisible(page === current && playerChromeVisible)
-    }
 }
 
 private fun PhonePlayerActivity.previewPlayerPagerTarget(target: Int) {
@@ -402,7 +380,6 @@ internal fun PhonePlayerActivity.attachCurrentPlayerToPagerPage(
         playerPage
     }
     swipePlayerPage = current
-    current.mountSharedDanmaku(playerSharedDanmaku)
     if (playerEpisodePagerInitialized) {
         playerEpisodePager.pages().forEach { page ->
             if (page !== current && page.playerView.player === exo) {
@@ -475,7 +452,6 @@ internal fun PhonePlayerActivity.detachPlayerPagerOutputsExcept(keep: PhoneVideo
 
 internal fun PhonePlayerActivity.detachPlayerPagerPage(page: PhoneVideoPage) {
     if (page === playerPage && !playerLandscapeMode) return
-    page.unmountSharedDanmaku(playerSharedDanmaku)
     page.playerView.setKeepContentOnPlayerReset(false)
     page.playerView.player = null
     page.playerView.setKeepContentOnPlayerReset(true)

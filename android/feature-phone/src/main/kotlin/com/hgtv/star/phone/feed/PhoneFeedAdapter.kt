@@ -18,8 +18,6 @@ internal class PhoneFeedAdapter(
             withTabBar = true,
             fullscreenEntry = true,
             dragSeek = false,
-            danmakuMediaOverlay = false,
-            sharedDanmakuView = host.feedDanmakuView,
         )
         page.layoutParams = RecyclerView.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -110,7 +108,9 @@ internal class PhoneFeedAdapter(
         val series = host.feedItems[position]
         val label = UiText.get(com.hgtv.star.shared.R.string.ui_0341, (host.feedCurrentEpisodeIndex[position] ?: 0) + 1)
         page.bind(series, label)
-        if (position != host.feedPlayingIndex) {
+        // 快照恢复后先铺缓存封面，等播放器真正出首帧再撤掉。
+        // 不能等 playIndex() 取完详情 / 地址才显示，否则冷启动首屏会先黑一段时间。
+        if (host.pooledPlayerSlot(position)?.firstFrameRendered != true) {
             page.showEpisodeCover(series.cover)
         }
         if (position == host.feedPlayingIndex) {
