@@ -39,6 +39,26 @@
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 手机推荐页 / 正式播放页共享弹幕层
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 将 DanmakuView 从每个 `PhoneVideoPage` / `LandscapePlayerPage` 内部移出：
+  推荐页由 `PhoneRecommendPage` 持有并添加一个共享层，正式播放页由
+  `PhonePlayerActivity` 持有并添加一个共享层。
+- 推荐页所有体裁流、所有推荐视频页共用同一块弹幕 Surface；正式播放页竖屏、横屏
+  以及前后集页共用同一块弹幕 Surface。视频页仍各自保留 `PlayerView`，播放器池、
+  预渲染、静音预览和 Surface 交接行为不变。
+- `PhoneVideoPage` 和 `LandscapePlayerPage` 支持传入共享弹幕层；共享模式下不再
+  向页面添加自己的 DanmakuView。共享层继续使用独立 Surface 渲染，不改回普通 View，
+  避免全屏弹幕逐帧重绘整棵 Activity View 树。
+- 推荐页切体裁时清空共享弹幕数据，正式页换集时继续由现有 `DanmakuLoader` 切换
+  当前集弹幕；竖屏/横屏共用一个弹幕层，转屏不再重新创建第二块弹幕 Surface。
+- 未改版本号、versionCode、依赖或 iOS；`:app:assembleDebug` 通过；未运行自动化测试
+  或真机测试；未推送、未创建 tag 或 Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 手机启动页面可选
 
 状态：Android / iOS 已实现，debug 构建通过，待用户真机验证。

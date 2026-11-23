@@ -525,7 +525,7 @@ android/
 | --- | --- | --- |
 | `PhoneDetailActivity.kt` | 手机详情页；按本机 + 网络合并后的集号定位选集，播放时携带该集和集内时间。 | class PhoneDetailActivity |
 | `PhoneDetailSections.kt` | 手机详情页与竖屏视频版面。文件 PhoneDetailSections 主要包含 fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks。 | fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks、fun PhoneDetailActivity.sectionHead、fun PhoneDetailActivity.cardRow |
-| `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、目标集预览封面、弹幕 Surface 黑边、信息区和控制层；推荐页与竖屏正式播放页都关闭弹幕媒体覆盖层，避免播放器池相邻 Surface 在滑动时透层；WindowInsets 晚到时显式重写操作条底部边距；不再挂普通 View 黑边兜底；正式播放器选集行末尾提供圆形锁定按钮。 | class PhoneVideoPage、fun showEpisodeCover、fun hideEpisodeCover、fun setPlaybackLocked |
+| `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、目标集预览封面、弹幕 Surface 黑边、信息区和控制层；支持宿主传入共享弹幕层，共享模式下不再为每页创建 DanmakuView；推荐页与竖屏正式播放页关闭独立弹幕媒体覆盖层；WindowInsets 晚到时显式重写操作条底部边距；不再挂普通 View 黑边兜底；正式播放器选集行末尾提供圆形锁定按钮。 | class PhoneVideoPage、fun createPhoneDanmakuView、fun showEpisodeCover、fun hideEpisodeCover、fun setPlaybackLocked |
 | `PhoneVideoPageState.kt` | 手机详情页与竖屏视频版面。文件 PhoneVideoPageState 主要包含 fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode。 | fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode、fun PhoneVideoPage.showCenterIcon、fun PhoneVideoPage.hideCenterIcon、fun PhoneVideoPage.setResizeMode、fun PhoneVideoPage.setVideoSurfaceVisible |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/feed/`
@@ -533,13 +533,13 @@ android/
 | 文件 | 作用 | 关键符号 |
 | --- | --- | --- |
 | `PhoneFeedActions.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedActions 主要包含 fun PhoneFeedView.isPlayingNowImpl、fun PhoneFeedView.notifyPlayStateChangedImpl、fun PhoneFeedView.scrollToTopImpl、fun PhoneFeedView.stopOrphanPlaybackImpl。 | fun PhoneFeedView.isPlayingNowImpl、fun PhoneFeedView.notifyPlayStateChangedImpl、fun PhoneFeedView.scrollToTopImpl、fun PhoneFeedView.stopOrphanPlaybackImpl |
-| `PhoneFeedAdapter.kt` | 手机信息流页面、适配器、手势与预取；推荐页使用普通层级的弹幕 Surface，不铺首帧封面，由播放器池直接输出真实预渲染画面。 | class PhoneFeedAdapter |
+| `PhoneFeedAdapter.kt` | 手机信息流页面、适配器、手势与预取；推荐视频页使用推荐页宿主提供的共享弹幕层，不铺首帧封面，由播放器池直接输出真实预渲染画面。 | class PhoneFeedAdapter |
 | `PhoneFeedAdoption.kt` | 手机信息流接手正式页播放；接手已在播放的实例后显式通知宿主同步常亮。 | fun PhoneFeedView.adoptPlayingImpl |
 | `PhoneFeedChrome.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedChrome 主要包含 fun PhoneFeedView.currentChromePageImpl、fun PhoneFeedView.scheduleChromeHideImpl、fun PhoneFeedView.chromeTimeoutMsImpl、fun PhoneFeedView.revealChromeImpl。 | fun PhoneFeedView.currentChromePageImpl、fun PhoneFeedView.scheduleChromeHideImpl、fun PhoneFeedView.chromeTimeoutMsImpl、fun PhoneFeedView.revealChromeImpl |
-| `PhoneFeedDanmaku.kt` | 取（或建）某一屏的弹幕加载器；首帧前只保留最后一次加载请求，首帧后再拉取；0 行时保持弹幕 Surface 存活并清成透明；推荐页与正式播放页共用顶部信息栏下方的弹幕落点。 | fun PhoneFeedView.danmakuLoaderOfImpl、fun PhoneFeedView.applyDanmakuSettingsImpl、fun PhoneFeedView.applyDanmakuTopInsetImpl、fun PhoneFeedView.loadDanmakuImpl |
-| `PhoneFeedHide.kt` | 手机信息流隐藏、暂停与延迟回收；收起前记录当前播放位置，供重建或原地换地址时续播。 | fun PhoneFeedView.onHiddenImpl |
+| `PhoneFeedDanmaku.kt` | 取（或建）某一屏的弹幕加载器；所有推荐页视频页共用推荐页宿主的单一弹幕 Surface；首帧前只保留最后一次加载请求，首帧后再拉取；0 行时保持弹幕 Surface 存活并清成透明；推荐页与正式播放页共用顶部信息栏下方的弹幕落点。 | fun PhoneFeedView.danmakuLoaderOfImpl、fun PhoneFeedView.applyDanmakuSettingsImpl、fun PhoneFeedView.applyDanmakuTopInsetImpl、fun PhoneFeedView.loadDanmakuImpl |
+| `PhoneFeedHide.kt` | 手机信息流隐藏、暂停与延迟回收；收起前清空共享弹幕并记录当前播放位置，供重建或原地换地址时续播。 | fun PhoneFeedView.onHiddenImpl |
 | `PhoneFeedHost.kt` | 手机信息流页面、适配器、手势与预取；只有当前体裁上屏后才触发取流。 | fun PhoneFeedView.setGenreImpl、fun PhoneFeedView.onShownImpl、fun PhoneFeedView.onIdentityReadyImpl |
-| `PhoneFeedInitializer.kt` | 手机信息流页面初始化；ViewPager2 在拖动开始时暂停当前页，过半只触发一次目标预览，IDLE 确认最终页并保留相邻页预渲染。 | fun PhoneFeedView.initializeFeed |
+| `PhoneFeedInitializer.kt` | 手机信息流页面初始化；共享弹幕层由推荐页宿主添加，ViewPager2 在拖动开始时暂停当前页，过半只触发一次目标预览，IDLE 确认最终页并保留相邻页预渲染。 | fun PhoneFeedView.initializeFeed |
 | `PhoneFeedLifecycle.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedLifecycle 主要包含 fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl。 | fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl |
 | `PhoneFeedPageSupport.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedPageSupport 主要包含 fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl。 | fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl |
 | `PhoneFeedPager.kt` | 竖向 ViewPager2 信息流容器：显示时前后页 SurfaceView 常驻，隐藏体裁页降为默认 offscreen 以减少合成；始终最后绘制当前页，避免相邻 Surface 在起手时透层；只有明显纵向手势才翻页。 | class VerticalFeedPager、fun setActive、val pageRecycler、val userScroll、class PageHolder |
@@ -550,7 +550,7 @@ android/
 | `PhoneFeedResume.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedResume 主要包含 fun PhoneFeedView.resumeOnShownImpl。 | fun PhoneFeedView.resumeOnShownImpl |
 | `PhoneFeedSettings.kt` | 信息流长按中间打开的播放设置面板；打开时使用当前真实系统底部 inset。 | fun PhoneFeedView.openSettingsImpl |
 | `PhoneFeedSurface.kt` | 手机信息流页面、适配器、手势与预取；下层 Surface 交接时同步画面模式、缩放和旧帧保留状态，尺寸变化后在布局结束后强制重交当前输出面。 | fun PhoneFeedView.keepLivePlaybackImpl、fun PhoneFeedView.bindFeedSurfaceForHandoffImpl、fun PhoneFeedView.rebindCurrentPageImpl、fun PhoneFeedView.rebindCurrentSurfaceAfterSizeChangeImpl、fun PhoneFeedView.setUnderlayModeImpl |
-| `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放器池、播放交接、预取和生命周期；系统 inset 变化时刷新各页底部安全区；横竖屏尺寸变化时按代次重交当前输出面；记录首帧后补流状态，并区分冷启动下一部与重建恢复当前剧及播放位置。 | class PhoneFeedView、feedPooledPlayers、feedPlayerListeners、fun refreshBottomInsets、fun currentSeriesId、fun takeRestoreSeriesId、fun takeRestorePositionMs |
+| `PhoneFeedView.kt` | 手机信息流主视图，承载竖屏视频页、滑动切集、播放器池、播放交接、预取和生命周期；持有推荐页共享弹幕层引用；系统 inset 变化时刷新各页底部安全区；横竖屏尺寸变化时按代次重交当前输出面；记录首帧后补流状态，并区分冷启动下一部与重建恢复当前剧及播放位置。 | class PhoneFeedView、feedDanmakuView、feedPooledPlayers、feedPlayerListeners、fun refreshBottomInsets、fun currentSeriesId、fun takeRestoreSeriesId、fun takeRestorePositionMs |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/page/`
 
@@ -559,7 +559,7 @@ android/
 | `PhoneCategoryPage.kt` | 分类页：按 TV 端两层筛选结构展示，并为横向切页预取相邻体裁的面板、筛选行和首屏。 | class PhoneCategoryPage |
 | `PhoneMinePage.kt` | 我的页：历史 / 收藏均为本地 + 网络合并，历史先显示本地再分页请求网络；栏目支持横向切页与目标栏目预览。 | class PhoneMinePage、fun PhoneMinePage.requestHistoryOnNextShow |
 | `PhoneRankPage.kt` | 榜单页：八个榜单 + 带名次的海报网格，并保存每榜分页游标。 | class PhoneRankPage |
-| `PhoneRecommendPage.kt` | 推荐页：外层横向 ViewPager2 承载四条体裁流，每页内部再用竖向 ViewPager2 承载视频；顶栏高度同步给弹幕层，底部系统 inset 与尺寸变化同步给已创建视频页，重建时恢复当前体裁、当前剧与播放位置。 | class PhoneRecommendPage、class RecommendGenrePager、fun currentGenreKey、fun currentSeriesId、fun currentPositionMs |
+| `PhoneRecommendPage.kt` | 推荐页：外层横向 ViewPager2 承载四条体裁流，每页内部再用竖向 ViewPager2 承载视频；宿主只创建一块共享弹幕 Surface 供所有体裁和视频页复用；顶栏高度同步给弹幕层，底部系统 inset 与尺寸变化同步给已创建视频页，重建时恢复当前体裁、当前剧与播放位置。 | class PhoneRecommendPage、class RecommendGenrePager、sharedDanmakuView、fun currentGenreKey、fun currentSeriesId、fun currentPositionMs |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/player/`
 
@@ -579,7 +579,7 @@ android/
 | `PhonePlaybackProgress.kt` | 手机正式播放页进度、预加载与定时停止；每秒进度 ticker 同时兜底同步屏幕常亮。 | fun PhonePlayerActivity.startTicker、fun PhonePlayerActivity.updateProgress、fun PhonePlayerActivity.maybePrefetchNext |
 | `PhonePlaybackRecovery.kt` | 手机端执行统一播放恢复策略：静默重取、软解/降档、host 切换与非阻塞提示。 | val PhonePlayerActivity.playbackMaxQuality、val PhonePlayerActivity.playbackDecoderMode、fun PhonePlayerActivity.handleUnifiedPlaybackFailure、fun PhonePlayerActivity.showPassivePlaybackHint |
 | `PhonePlaybackSettings.kt` | 播放设置面板的各行：**推荐信息流与正式播放页共用这一份**。 | fun buildPlaybackSettingsRows |
-| `PhonePlayerActivity.kt` | 手机正式播放页基类，持有播放器、横竖屏 ViewPager2 集页、播放控制与生命周期；窗口重新获得焦点时重新校准常亮。 | open class PhonePlayerActivity、playerControlsLocked |
+| `PhonePlayerActivity.kt` | 手机正式播放页基类，持有播放器、横竖屏 ViewPager2 集页、宿主共享弹幕层、播放控制与生命周期；窗口重新获得焦点时重新校准常亮。 | open class PhonePlayerActivity、playerSharedDanmaku、playerControlsLocked |
 | `PhonePlayerAdjacent.kt` | 正式播放页前后相邻集播放器池：后台取源、独立 `ExoPlayer`、竖屏 / 横屏 ViewPager2 集页静音首帧预渲染、音频焦点隔离、下一季第 1 集虚拟槽预载、无空档激活、上一集复用和资源回收。 | class PhonePlayerAdjacentSlot、fun PhonePlayerActivity.scheduleAdjacentEpisodeWarmup、fun PhonePlayerActivity.ensureNextSeasonEpisode、fun PhonePlayerActivity.activateAdjacentEpisode、fun PhonePlayerActivity.releaseAllAdjacentPlayers |
 | `PhonePlayerOpaqueActivity.kt` | 正式播放页导航入口子类；Manifest 固定不透明主题，避免推荐页或简介页的独立 SurfaceView 透出。 | class PhonePlayerOpaqueActivity |
 | `PhonePlayerAdoption.kt` | adoptFromSession 的前置检查；返回 null = 可以接，否则返回不能接的原因（只用于日志）。 | fun PhonePlayerActivity.adoptReject、fun PhonePlayerActivity.adoptFromSession |
@@ -591,7 +591,7 @@ android/
 | `PhonePlayerConfiguration.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerConfiguration 主要包含 fun PhonePlayerActivity.handlePlayerConfigurationChanged。 | fun PhonePlayerActivity.handlePlayerConfigurationChanged |
 | `PhonePlayerControls.kt` | 手机播放控制与跨横竖屏播放锁定；按 `playWhenReady` 切换播放 / 暂停，恢复时重绑当前输出面；锁定时只保留单击显隐信息和解锁按钮。 | fun PhonePlayerActivity.togglePlay、fun PhonePlayerActivity.togglePlaybackLock、fun PhonePlayerActivity.syncPlaybackLockUi、fun PhonePlayerActivity.dragTo |
 | `PhonePlayerCreate.kt` | 手机正式播放页初始化：铺不透明窗口底色，固定使用本页不透明 SurfaceView，不借用推荐页 Surface。 | fun PhonePlayerActivity.initializePlayerActivity |
-| `PhonePlayerDanmaku.kt` | 手机播放器弹幕层与加载门面；设置同步到 ViewPager2 前后集页与横屏层，0 行时保持弹幕 Surface 存活并清成透明；首帧就绪后立即加载并对齐首帧，避免换集后弹幕一直挂起。 | fun PhonePlayerActivity.danmakuTarget、fun PhonePlayerActivity.applyDanmakuSettings、fun PhonePlayerActivity.applyDanmakuSettingsToView、fun PhonePlayerActivity.loadDanmaku、fun PhonePlayerActivity.syncDanmakuClock、fun PhonePlayerActivity.syncDanmakuClockNow、fun PhonePlayerActivity.replayDanmaku |
+| `PhonePlayerDanmaku.kt` | 手机播放器弹幕层与加载门面；设置同步到宿主唯一共享弹幕层，0 行时保持弹幕 Surface 存活并清成透明；首帧就绪后立即加载并对齐首帧，避免换集后弹幕一直挂起。 | fun PhonePlayerActivity.danmakuTarget、fun PhonePlayerActivity.applyDanmakuSettings、fun PhonePlayerActivity.applyDanmakuSettingsToView、fun PhonePlayerActivity.loadDanmaku、fun PhonePlayerActivity.syncDanmakuClock、fun PhonePlayerActivity.syncDanmakuClockNow、fun PhonePlayerActivity.replayDanmaku |
 | `PhonePlayerDebug.kt` | 调试模式那一块面板：打开就挂、关掉就摘。 | fun PhonePlayerActivity.syncDebugOverlayImpl、fun PhonePlayerActivity.debugLinesImpl |
 | `PhonePlayerDestroy.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerDestroy 主要包含 fun PhonePlayerActivity.handlePlayerDestroy。 | fun PhonePlayerActivity.handlePlayerDestroy |
 | `PhonePlayerEpisodeBinding.kt` | 把「第几集」这件事刷到所有界面上（竖屏信息栏 / 横屏标题 / 选集按钮）。 | fun PhonePlayerActivity.bindEpisodeUi |
@@ -600,8 +600,8 @@ android/
 | `PhonePlayerEpisodes.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerEpisodes 主要包含 fun PhonePlayerActivity.openEpisodes、fun PhonePlayerActivity.openPortraitEpisodes、fun PhonePlayerActivity.openLandscapeEpisodes。 | fun PhonePlayerActivity.openEpisodes、fun PhonePlayerActivity.openPortraitEpisodes、fun PhonePlayerActivity.openLandscapeEpisodes |
 | `PhonePlayerExit.kt` | 退出播放页：不要系统转场动画。 | fun PhonePlayerActivity.preparePlayerFinish、fun PhonePlayerActivity.handleNewPlayerIntent |
 | `PhonePlayerFullscreen.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerFullscreen 主要包含 fun PhonePlayerActivity.enterImmersive、fun PhonePlayerActivity.enterFullscreen、fun PhonePlayerActivity.requestOrientation、fun PhonePlayerActivity.autoRotateEnabled。 | fun PhonePlayerActivity.enterImmersive、fun PhonePlayerActivity.enterFullscreen、fun PhonePlayerActivity.requestOrientation、fun PhonePlayerActivity.autoRotateEnabled、fun PhonePlayerActivity.exitFullscreen、fun PhonePlayerActivity.enterPortraitFullscreen |
-| `PhonePlayerLandscapeAssembly.kt` | 横屏装配：横屏集页 ViewPager2、整层播放控制、透明手势层、弹幕 / 黑边与选集后的圆形锁定按钮。 | fun PhonePlayerActivity.buildLandscapeBase、fun PhonePlayerActivity.buildLandscapeTopControls、fun PhonePlayerActivity.buildLandscapeBottomControls |
-| `PhoneLandscapePager.kt` | 横屏正式播放页 ViewPager2：每集独立视频、封面和弹幕 Surface，弹幕保持普通层级且当前页最后绘制，避免滑动起手透出下一集；黑边由弹幕层自行绘制，显示时前后集常驻预渲染；过半预览一次触发，并同步自动连播、选集直达和横竖屏切换；转屏时等待当前集页创建后重挂输出；顶部、底部系统手势区的纵向拖动不翻集。 | class LandscapePlayerPage、class VerticalLandscapePager、class LandscapePlayerPagerAdapter、fun PhonePlayerActivity.installLandscapePlayerPagerCallbacks、fun PhonePlayerActivity.scheduleCurrentLandscapeAttach、fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage |
+| `PhonePlayerLandscapeAssembly.kt` | 横屏装配：横屏集页 ViewPager2、整层播放控制、透明手势层、宿主共享弹幕 / 黑边与选集后的圆形锁定按钮。 | fun PhonePlayerActivity.buildLandscapeBase、fun PhonePlayerActivity.buildLandscapeTopControls、fun PhonePlayerActivity.buildLandscapeBottomControls |
+| `PhoneLandscapePager.kt` | 横屏正式播放页 ViewPager2：每集独立视频和封面，弹幕使用正式播放页宿主共享层且当前页最后绘制，避免滑动起手透出下一集；黑边由共享弹幕层自行绘制，显示时前后集常驻预渲染；过半预览一次触发，并同步自动连播、选集直达和横竖屏切换；转屏时等待当前集页创建后重挂输出；顶部、底部系统手势区的纵向拖动不翻集。 | class LandscapePlayerPage、class VerticalLandscapePager、class LandscapePlayerPagerAdapter、fun PhonePlayerActivity.installLandscapePlayerPagerCallbacks、fun PhonePlayerActivity.scheduleCurrentLandscapeAttach、fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage |
 | `PhonePlayerLandscapePanel.kt` | 横屏播放设置外壳：左侧点击收起，右侧一栏承载同一套设置行。 | fun PhonePlayerActivity.openLandscapeSettingsImpl、fun PhonePlayerActivity.dismissLandscapeSettingsImpl、fun PhonePlayerActivity.syncFrameModeImpl、fun PhonePlayerActivity.applyFrameModeImpl |
 | `PhonePlayerLandscapeSettingsFacade.kt` | 横屏播放设置：只保留右侧 40% 的可改栏。 | fun PhonePlayerActivity.openLandscapeSettings、fun PhonePlayerActivity.syncLandscapeSettingsInfo、fun PhonePlayerActivity.dismissLandscapeSettings、fun PhonePlayerActivity.dismissLandscapeSettingsForRelated、fun PhonePlayerActivity.buildSettingsRowsForLandscape、fun PhonePlayerActivity.setChromeVisibleForLandscape |
 | `PhonePlayerLifecycle.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerLifecycle 主要包含 fun PhonePlayerActivity.releasePlayerImpl、fun PhonePlayerActivity.detachForHandoffImpl。 | fun PhonePlayerActivity.releasePlayerImpl、fun PhonePlayerActivity.detachForHandoffImpl |
@@ -609,7 +609,7 @@ android/
 | `PhonePlayerLoad.kt` | 手机播放起播恢复；按显式路由或历史合并结果定位集号与毫秒位置。 | fun PhonePlayerActivity.load |
 | `PhonePlayerMode.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerMode 主要包含 fun PhonePlayerActivity.applyMode。 | fun PhonePlayerActivity.applyMode |
 | `PhonePlayerModeSupport.kt` | 新形态入场、横竖屏输出面延迟重交与短时无帧兜底、竖屏弹幕落点及横屏画面模式。 | fun DanmakuView.alignBelowPhonePortraitChrome、fun PhonePlayerActivity.scheduleCurrentPlayerSurfaceRebind、fun PhonePlayerActivity.animateModeEnter、fun PhonePlayerActivity.syncDanmakuTopInset、fun PhonePlayerActivity.applyLandscapeResize |
-| `PhonePlayerPageFactory.kt` | 建一页正式播放界面并接线：竖屏纵向翻集交给 ViewPager2，弹幕使用普通层级避免相邻集透层，页面处理单击、双击、长按、锁定与横滑进度。 | fun PhonePlayerActivity.makePage、fun PhonePlayerActivity.wirePage |
+| `PhonePlayerPageFactory.kt` | 建一页正式播放界面并接线：竖屏纵向翻集交给 ViewPager2，页面复用正式播放页宿主共享弹幕层，页面处理单击、双击、长按、锁定与横滑进度。 | fun PhonePlayerActivity.makePage、fun PhonePlayerActivity.wirePage |
 | `PhonePlayerPager.kt` | 竖屏正式播放页 ViewPager2 容器：显示时前后集 SurfaceView 常驻，始终最后绘制当前页并提供横竖屏集页共用规则；拖动开始暂停、过半预览一次触发、IDLE 提交，并显式重建当前集主播放器与前后两集池播放器的三页映射；顶部、底部系统手势区的纵向拖动不翻集。 | class VerticalEpisodePager、class PhonePlayerPagerAdapter、fun RecyclerView.keepCurrentPagerItemOnTop、fun PhonePlayerActivity.installPlayerPagerCallbacks、fun PhonePlayerActivity.preparePlayerPager、fun PhonePlayerActivity.attachCurrentPlayerToPagerPage、fun PhonePlayerActivity.reconcilePlayerPagerWindow |
 | `PhonePlayerPause.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerPause 主要包含 fun PhonePlayerActivity.handlePlayerPause。 | fun PhonePlayerActivity.handlePlayerPause |
 | `PhonePlayerPlay.kt` | 播放入口：打开会话、接预热源或后台取流并准备播放；手动换集先清掉旧帧。 | fun PhonePlayerActivity.play |
@@ -625,7 +625,7 @@ android/
 | `PhonePlayerSettingsRows.kt` | 播放设置的各行：清晰度、倍速、画面、解码、缩放、定时、相关剧集、收藏与弹幕。 | fun PhonePlayerActivity.buildSettingsRowsImpl |
 | `PhonePlayerSleep.kt` | 应用「定时关闭」的选择。 | fun PhonePlayerActivity.applySleepChoice、fun PhonePlayerActivity.stopForSleep |
 | `PhonePlayerSwipe.kt` | 正式播放页横竖屏 ViewPager2 共用的滑动播放状态：起点暂停当前实例，弹回时恢复，提交时沿用已预览目标。 | fun PhonePlayerActivity.pauseCurrentForSwipeImpl、fun PhonePlayerActivity.resumeCurrentAfterSwipeImpl、fun PhonePlayerActivity.clearSwipePauseForSwitchImpl、fun PhonePlayerActivity.prepareSwipePreviewForCommit |
-| `PhonePlayerUiAssembly.kt` | 手机播放器装配；播放页根 View 绑定真实系统 inset，供播放浮层和底部安全区使用。 | fun PhonePlayerActivity.buildUi、fun PhonePlayerActivity.buildLandscape |
+| `PhonePlayerUiAssembly.kt` | 手机播放器装配；创建正式播放页宿主共享弹幕层，播放页根 View 绑定真实系统 inset，供播放浮层和底部安全区使用。 | fun PhonePlayerActivity.buildUi、fun PhonePlayerActivity.buildLandscape |
 | `PhonePlayerUnderlay.kt` | 把播放器的输出交回下层推荐页的 Surface。 | fun PhonePlayerActivity.attachUnderlay、fun PhonePlayerActivity.dropUnderlay |
 | `PhonePlayerVideoFrame.kt` | 把播放器当前的画面尺寸补到页面上（bind 之后调用），并同步横屏弹幕 Surface 的黑边背景。 | fun PhonePlayerActivity.syncVideoFrameImpl、fun PhonePlayerActivity.updateLandscapeVideoFrameImpl、fun PhonePlayerActivity.syncLandscapeLetterboxImpl、fun PhonePlayerActivity.placeLandscapeFullscreenImpl、fun PhonePlayerActivity.applyVideoScaleImpl、fun PhonePlayerActivity.applyLandscapeVideoScaleImpl |
 | `PhonePlayerViewFacade.kt` | 手机播放器、控制、选集、恢复与预加载。文件 PhonePlayerViewFacade 主要包含 fun PhonePlayerActivity.seekTo、fun PhonePlayerActivity.syncVideoFrame、fun PhonePlayerActivity.applyVideoScale、fun PhonePlayerActivity.syncPlayInfo。 | fun PhonePlayerActivity.seekTo、fun PhonePlayerActivity.syncVideoFrame、fun PhonePlayerActivity.applyVideoScale、fun PhonePlayerActivity.syncPlayInfo |

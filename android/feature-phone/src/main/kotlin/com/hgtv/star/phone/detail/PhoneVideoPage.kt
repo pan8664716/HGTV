@@ -63,6 +63,18 @@ import com.hgtv.star.phone.ui.tabBarInset
  * 手势挂在**本视图**上而不是盖一层透明 View：Android 的事件分发是子 View 先消费，
  * 按钮的点击不会被手势吃掉；反过来，如果盖一层全屏 View，按钮就永远点不到。
  */
+/** 创建手机端共享弹幕层；独立 Surface 只保留在当前宿主，不再按视频页重复创建。 */
+internal fun createPhoneDanmakuView(
+    context: Context,
+    mediaOverlay: Boolean = false,
+): DanmakuView = DanmakuView(context).apply {
+    mode = DanmakuMode.DEFAULT
+    minTextSizeDp = 4f
+    topGapDp = 16f
+    setClock(0, false)
+    if (!mediaOverlay) setZOrderMediaOverlay(false)
+}
+
 class PhoneVideoPage(
     context: Context,
     /** 首页是信息流，底部有 60dp 的导航栏；播放页没有。 */
@@ -110,6 +122,13 @@ class PhoneVideoPage(
      * 透进当前页。推荐页关闭它，让弹幕与自己的视频层按本页层级合成。
      */
     private val danmakuMediaOverlay: Boolean = true,
+    /**
+     * 由宿主提供的共享弹幕层。
+     *
+     * 传入时本页不创建、也不挂载自己的 DanmakuView；弹幕层由推荐页或正式播放页
+     * 宿主统一添加，所有相邻视频页共用这一块 Surface。
+     */
+    private val sharedDanmakuView: DanmakuView? = null,
     // 默认完整画面；真正的档位由宿主按用户的「画面模式」随后覆盖，
     // 不再按片源方向强制铺满。
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -122,14 +141,9 @@ class PhoneVideoPage(
      * （`unitScale` 留 0）；手机设置里的 100% 对应弹幕层原先的最小档，
      * 具体映射见 [PhoneDanmakuSize]。
      */
-    val danmakuView: DanmakuView = DanmakuView(context).apply {
-        mode = DanmakuMode.DEFAULT
-        // 手机端弹幕字号以原先的最小档为 100%，还要允许再调到 50%。
-        minTextSizeDp = 4f
-        topGapDp = 16f
-        setClock(0, false)
-        if (!danmakuMediaOverlay) setZOrderMediaOverlay(false)
-    }
+    val danmakuView: DanmakuView = sharedDanmakuView
+        ?: createPhoneDanmakuView(context, danmakuMediaOverlay)
+    internal val usesSharedDanmaku: Boolean get() = sharedDanmakuView != null
 
     val playerView: PlayerView = FixedFirstFramePlayerView(context).apply {
         useController = false
@@ -323,7 +337,9 @@ class PhoneVideoPage(
         addView(playerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(episodeCover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         // 弹幕压在画面之上，黑边也由这块透明 Surface 自己绘制。
-        addView(danmakuView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        if (sharedDanmakuView == null) {
+            addView(danmakuView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        }
 
         // 限高到屏高的一半：整屏铺开时哪怕渐变再陡，画面中间也会被压暗一层。
         // 真实高度在 onSizeChanged 里按本页高度算（信息流每一页的高度不一样）。

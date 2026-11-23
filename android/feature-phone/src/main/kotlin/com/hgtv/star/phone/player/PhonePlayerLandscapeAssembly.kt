@@ -20,9 +20,13 @@ import com.hgtv.star.phone.ui.phoneSize
 /** 横屏装配：相邻集页、视频、弹幕和透明手势层。 */
 internal fun PhonePlayerActivity.buildLandscapeBase() {
     val landscape = FrameLayout(this).apply { setBackgroundColor(Color.BLACK) }
-    val initialPage = LandscapePlayerPage(this)
+    val initialPage = LandscapePlayerPage(this, playerSharedDanmaku)
     playerLandscapePager = VerticalLandscapePager(this)
-    playerLandscapePagerAdapter = LandscapePlayerPagerAdapter(this, initialPage)
+    playerLandscapePagerAdapter = LandscapePlayerPagerAdapter(
+        this,
+        initialPage,
+        playerSharedDanmaku,
+    )
     playerLandscapePager.adapter = playerLandscapePagerAdapter
     installLandscapePlayerPagerCallbacks()
     landscape.addView(playerLandscapePager, FrameLayout.LayoutParams(

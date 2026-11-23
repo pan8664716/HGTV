@@ -58,6 +58,7 @@ import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
 import com.hgtv.star.shared.data.AppRuntime
 import com.hgtv.star.shared.feature.player.PlaybackCoordinator
 import com.hgtv.star.shared.feature.player.PlayerHost
+import com.hgtv.star.shared.media.DanmakuView
 import com.hgtv.star.shared.media.PlaybackFailures
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
@@ -98,6 +99,9 @@ open class PhonePlayerActivity : PhoneActivity() {
     internal lateinit var root: FrameLayout
     internal val rootReady: Boolean get()=::root.isInitialized
     internal val playerRootInitialized get()=::root.isInitialized
+    /** 正式播放页横竖屏、所有集页共用的一块弹幕 Surface。 */
+    internal lateinit var playerSharedDanmaku: DanmakuView
+    internal val playerSharedDanmakuInitialized get()=::playerSharedDanmaku.isInitialized
     private lateinit var portrait: FrameLayout
     internal var playerPortrait: FrameLayout
         get()=portrait

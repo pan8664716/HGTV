@@ -35,6 +35,7 @@ import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.phone.ui.roundedBackground
 import com.hgtv.star.shared.architecture.PlaybackSourceCoordinator
 import com.hgtv.star.shared.data.Library
+import com.hgtv.star.shared.media.DanmakuView
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
 import com.hgtv.star.shared.nav.Route
@@ -82,6 +83,10 @@ import java.util.IdentityHashMap
 class PhoneFeedView(
     context: Context,
     /**
+     * 推荐页宿主共享的弹幕层。为 null 时由本流自己创建，兼容单独使用本 View 的场景。
+     */
+    sharedDanmakuView: DanmakuView? = null,
+    /**
      * 这一条流绑定的体裁。
      *
      * **必须在构造时给定**，不能建完再 `setGenre`：`init` 里就会铺落盘快照并取第一页，
@@ -105,6 +110,9 @@ class PhoneFeedView(
     internal val feedAdapter get()=adapter
     private val list = VerticalFeedPager(context)
     internal val feedList get()=list
+    internal val ownsDanmaku = sharedDanmakuView == null
+    internal val feedDanmakuView: DanmakuView =
+        sharedDanmakuView ?: createPhoneDanmakuView(context)
 
     internal fun refreshBottomInsets(
         bottomInsetPx: Int = context.navigationBarPx(),

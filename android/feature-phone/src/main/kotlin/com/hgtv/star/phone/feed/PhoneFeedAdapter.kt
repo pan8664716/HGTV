@@ -19,6 +19,7 @@ internal class PhoneFeedAdapter(
             fullscreenEntry = true,
             dragSeek = false,
             danmakuMediaOverlay = false,
+            sharedDanmakuView = host.feedDanmakuView,
         )
         page.layoutParams = RecyclerView.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,

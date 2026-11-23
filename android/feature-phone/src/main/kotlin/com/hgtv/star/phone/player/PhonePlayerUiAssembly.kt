@@ -12,9 +12,17 @@ internal fun PhonePlayerActivity.buildUi() {
     root = FrameLayout(this).apply {
         setBackgroundColor(Color.BLACK)
     }
+    playerSharedDanmaku = createPhoneDanmakuView(this)
 
     PhoneUiScale.withOrientation(this, landscape = false) { buildPortrait() }
     PhoneUiScale.withOrientation(this, landscape = true) { buildLandscape() }
+    root.addView(
+        playerSharedDanmaku,
+        FrameLayout.LayoutParams(
+            FrameLayout.LayoutParams.MATCH_PARENT,
+            FrameLayout.LayoutParams.MATCH_PARENT,
+        ),
+    )
 
     buildPlayerCommonUi()
 

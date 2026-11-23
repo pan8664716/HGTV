@@ -18,6 +18,7 @@ internal fun PhonePlayerActivity.makePage(): PhoneVideoPage = PhoneVideoPage(
     // 正式页同样为前后集保留独立视频 Surface；弹幕若使用媒体覆盖层，
     // 透明区域会把相邻集预渲染画面叠到当前页上。
     danmakuMediaOverlay = false,
+    sharedDanmakuView = playerSharedDanmaku,
 )
 
 /**

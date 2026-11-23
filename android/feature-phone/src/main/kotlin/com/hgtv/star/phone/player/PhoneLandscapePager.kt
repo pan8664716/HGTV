@@ -24,6 +24,7 @@ import com.hgtv.star.shared.media.DanmakuView
 
 internal class LandscapePlayerPage(
     private val host: PhonePlayerActivity,
+    private val sharedDanmaku: DanmakuView? = null,
 ) : FrameLayout(host) {
     val video = FixedFirstFramePlayerView(host).apply {
         useController = false
@@ -36,26 +37,23 @@ internal class LandscapePlayerPage(
         }
     }
     val cover = episodeCoverView(host)
-    val danmaku = DanmakuView(host).apply {
-        mode = com.hgtv.star.core.DanmakuMode.DEFAULT
-        minTextSizeDp = 4f
-        topGapDp = 0f
-        sizeFollowsLongEdge = true
-        setClock(0, false)
-        // 每集页都有自己的视频 Surface；弹幕保持普通层级，避免透明覆盖层越过
-        // 相邻页的视频并透出下一集预渲染画面。
-        setZOrderMediaOverlay(false)
-        onRenderStateChangedListener = {
-            if (host.playerLandDanmaku === this) host.syncLandscapeLetterboxImpl()
+    val danmaku: DanmakuView = sharedDanmaku
+        ?: createPhoneDanmakuView(host).apply {
+            topGapDp = 0f
+            sizeFollowsLongEdge = true
+            onRenderStateChangedListener = {
+                if (host.playerLandDanmaku === this) host.syncLandscapeLetterboxImpl()
+            }
         }
-    }
     private val touch = View(host)
 
     init {
         setBackgroundColor(Color.BLACK)
         addView(video, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
         addView(cover, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(danmaku, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        if (sharedDanmaku == null) {
+            addView(danmaku, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
+        }
         touch.setOnTouchListener(
             PhoneTouch(
                 host = touch,
@@ -147,6 +145,7 @@ internal class LandscapePlayerPageHolder(
 internal class LandscapePlayerPagerAdapter(
     private val host: PhonePlayerActivity,
     private val initialPage: LandscapePlayerPage,
+    private val sharedDanmaku: DanmakuView? = null,
 ) : RecyclerView.Adapter<LandscapePlayerPageHolder>() {
     private var initialPageAvailable = true
 
@@ -158,7 +157,7 @@ internal class LandscapePlayerPagerAdapter(
             initialPageAvailable = false
             initialPage
         } else {
-            LandscapePlayerPage(host)
+            LandscapePlayerPage(host, sharedDanmaku)
         }
         page.layoutParams = RecyclerView.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
