@@ -102,6 +102,11 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
                 pager.isUserInputEnabled = gesturesEnabled && !systemBarGesture
             }
             MotionEvent.ACTION_MOVE -> {
+                if (pageAt(pager.currentItem)?.progressTouching == true) {
+                    pager.isUserInputEnabled = false
+                    parent?.requestDisallowInterceptTouchEvent(true)
+                    return super.dispatchTouchEvent(e)
+                }
                 if (axis == 0) {
                     val dx = Math.abs(e.x - downX)
                     val dy = Math.abs(e.y - downY)

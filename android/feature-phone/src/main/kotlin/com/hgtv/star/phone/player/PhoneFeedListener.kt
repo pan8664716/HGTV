@@ -79,11 +79,6 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
                 scheduleFeedFillAfterFirstFrame()
                 scheduleRecommendBatchModels(index)
                 postDelayed({
-                    if (feedPlayer === exo && index == feedPlayingIndex) {
-                        feedPageAt(index)?.hideEpisodeCover()
-                    }
-                }, 600L)
-                postDelayed({
                     if (feedPlayer === exo && index == feedPlayingIndex && exo.isPlaying) {
                         feedRecovery.markStablePlayback()
                     }
@@ -102,7 +97,6 @@ internal fun PhoneFeedView.attachFeedListener(exo: ExoPlayer, index: Int) {
                 finishPooledPreRenderImpl(index, exo)
                 return
             }
-            feedPageAt(index)?.hideEpisodeCover()
             // 画面真的上屏才放行弹幕；STATE_READY 后还可能回 buffering，
             // 那时放行会让弹幕先跑、出帧后再清空重排（与 TV 端同一闸门）。
             feedDanmakuLoaderOf(index).onFrameRendered(feedPlayer?.currentPosition ?: 0L)

@@ -51,7 +51,6 @@ internal fun PhoneFeedView.attachImpl(
             clearDanmakuOnSwitch = clearDanmakuOnSwitch,
             videoInfo = video.info,
         )
-        if (!slot.firstFrameRendered) page.showEpisodeCover(series.cover)
     }
 
     val factory = DataSource.Factory { VideoDataSource(video) }

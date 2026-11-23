@@ -102,6 +102,14 @@ class PhoneVideoPage(
      * 自己出画面，否则就是一整块透明。
      */
     private val underlay: Boolean = false,
+    /**
+     * 弹幕 Surface 是否使用媒体覆盖层。
+     *
+     * 正式播放页只有一个活动视频窗口，媒体覆盖层能稳定压住视频；推荐页池里同时保留
+     * 多块全屏 `SurfaceView`，媒体覆盖层会越过相邻页的视频层，滑动起手时把下一条画面
+     * 透进当前页。推荐页关闭它，让弹幕与自己的视频层按本页层级合成。
+     */
+    private val danmakuMediaOverlay: Boolean = true,
     // 默认完整画面；真正的档位由宿主按用户的「画面模式」随后覆盖，
     // 不再按片源方向强制铺满。
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -120,6 +128,7 @@ class PhoneVideoPage(
         minTextSizeDp = 4f
         topGapDp = 16f
         setClock(0, false)
+        if (!danmakuMediaOverlay) setZOrderMediaOverlay(false)
     }
 
     val playerView: PlayerView = FixedFirstFramePlayerView(context).apply {
@@ -301,6 +310,9 @@ class PhoneVideoPage(
     /** 点全屏（只有信息流有）。 */
     var onFullscreen: (() -> Unit)? = null
 
+    /** 进度条正在被拖动：父级 pager 不得在 MOVE 阶段重新打开拦截。 */
+    internal var progressTouching: Boolean = false
+
     // ------------------------------------------------------------------ 构建
 
     init {
@@ -461,11 +473,15 @@ class PhoneVideoPage(
             // （PagerSnapHelper），不拦住的话手指一拖就被父容器当成翻页，进度条看着「推不动」。
             setOnTouchListener { v, e ->
                 when (e.actionMasked) {
-                    android.view.MotionEvent.ACTION_DOWN ->
+                    android.view.MotionEvent.ACTION_DOWN -> {
+                        progressTouching = true
                         v.parent?.requestDisallowInterceptTouchEvent(true)
+                    }
                     android.view.MotionEvent.ACTION_UP,
-                    android.view.MotionEvent.ACTION_CANCEL ->
+                    android.view.MotionEvent.ACTION_CANCEL -> {
+                        progressTouching = false
                         v.parent?.requestDisallowInterceptTouchEvent(false)
+                    }
                 }
                 false
             }
