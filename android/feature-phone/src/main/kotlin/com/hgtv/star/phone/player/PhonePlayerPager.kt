@@ -67,6 +67,8 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
         )
         pageRecycler.isNestedScrollingEnabled = false
         pageRecycler.itemAnimator = null
+        // 当前页最后绘制：让标题、进度条、按钮这些普通 View 不被相邻页盖住。
+        pageRecycler.keepCurrentPagerItemOnTop { pager.currentItem }
     }
 
     fun registerOnPageChangeCallback(callback: ViewPager2.OnPageChangeCallback) {
@@ -124,6 +126,22 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
             }
         }
         return super.dispatchTouchEvent(e)
+    }
+}
+
+/** 让 ViewPager2 当前页最后绘制，页面内 UI 才能跟着画面一起翻。 */
+internal fun RecyclerView.keepCurrentPagerItemOnTop(currentPosition: () -> Int) {
+    setChildDrawingOrderCallback { childCount, drawingPosition ->
+        val currentChild = (0 until childCount).firstOrNull { childIndex ->
+            val child = getChildAt(childIndex)
+            child != null && getChildAdapterPosition(child) == currentPosition()
+        } ?: -1
+        when {
+            currentChild < 0 -> drawingPosition
+            drawingPosition == childCount - 1 -> currentChild
+            drawingPosition < currentChild -> drawingPosition
+            else -> drawingPosition + 1
+        }
     }
 }
 

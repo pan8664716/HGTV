@@ -53,7 +53,7 @@ fun PhoneVideoPage.setResizeMode(mode: Int) {
 
 fun PhoneVideoPage.setVideoSurfaceVisible(visible: Boolean) {
     playerView.visibility = if (visible) View.VISIBLE else View.GONE
-    setBackgroundColor(if (visible) Color.BLACK else Color.TRANSPARENT)
+    setBackgroundColor(if (visible && !transparentForPaging) Color.BLACK else Color.TRANSPARENT)
     if (visible) {
         playerView.setShutterBackgroundColor(Color.BLACK)
         playerView.setBackgroundColor(Color.BLACK)

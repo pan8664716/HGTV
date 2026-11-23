@@ -102,6 +102,14 @@ class PhoneVideoPage(
      * 自己出画面，否则就是一整块透明。
      */
     private val underlay: Boolean = false,
+    /**
+     * 正式播放页翻集时页面底板透明。
+     *
+     * ViewPager2 让当前页最后绘制时，当前页的 UI（标题、进度、按钮）才不会被相邻页
+     * 盖住；但黑色底板会同时挡住相邻页的视频 Surface。正式页打开这一项，只让底板
+     * 透明，播放器自己的画面层仍然不透明。
+     */
+    internal val transparentForPaging: Boolean = false,
     // 默认完整画面；真正的档位由宿主按用户的「画面模式」随后覆盖，
     // 不再按片源方向强制铺满。
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -305,7 +313,9 @@ class PhoneVideoPage(
 
     init {
         // 借下层 Surface 时整页透明：只画控制层，画面由推荐页那一层透上来。
-        setBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
+        setBackgroundColor(
+            if (underlay || transparentForPaging) Color.TRANSPARENT else Color.BLACK,
+        )
         playerView.setAspectRatioListener { _, _, _ -> syncDanmakuLetterbox() }
         danmakuView.onRenderStateChangedListener = { syncDanmakuLetterbox() }
         addView(playerView, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
