@@ -110,6 +110,17 @@ class PhoneVideoPage(
     internal val transparentForPaging: Boolean = false,
     /** 信息流翻页按整页切换，换绑定时清掉旧帧，避免复用 PageHolder 时闪出上一部。 */
     private val clearFrameOnRebind: Boolean = false,
+    /**
+     * 弹幕层是否放到 media-overlay 层级。
+     *
+     * **信息流必须关**（见 `REFACTORING.md`「手机推荐页滑动透出下一条视频修复」）：
+     * 推荐页前后各常驻一页，每页都有一块全屏透明弹幕 `SurfaceView`。放到 media-overlay
+     * 层时它位于所有视频 Surface 之上，透明区域会把相邻页的预渲染画面叠进当前页，
+     * 翻页时表现为「画面里混进了别的页」。
+     *
+     * 正式播放页没有这个问题（一屏只有一集在出画面），保持原层级。
+     */
+    private val danmakuMediaOverlay: Boolean = true,
     // 默认完整画面；真正的档位由宿主按用户的「画面模式」随后覆盖，
     // 不再按片源方向强制铺满。
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -128,6 +139,10 @@ class PhoneVideoPage(
         minTextSizeDp = 4f
         topGapDp = 16f
         setClock(0, false)
+        // 信息流里必须与视频层同层级：media-overlay 会浮在所有视频 Surface 之上，
+        // 相邻页的透明弹幕层会把别人的画面叠进来（见构造参数 `danmakuMediaOverlay`）。
+        // 此刻还没 addView / attach，改层级不会触发 surface 重建。
+        if (!danmakuMediaOverlay) setZOrderMediaOverlay(false)
     }
 
     val playerView: PlayerView = FixedFirstFramePlayerView(context).apply {
@@ -140,6 +155,7 @@ class PhoneVideoPage(
         setKeepContentOnPlayerReset(!clearFrameOnRebind)
         if (underlay) visibility = GONE
         setBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
+        PhonePlayerViewSupport.useOpaqueVideoSurface(this)
     }
 
     // ------------------------------------------------------------------ 底部信息

@@ -19,6 +19,8 @@ internal class PhoneFeedAdapter(
             fullscreenEntry = true,
             dragSeek = false,
             clearFrameOnRebind = true,
+            // 前后各常驻一页：弹幕层不能浮到 media-overlay 上，否则相邻页会互相叠画。
+            danmakuMediaOverlay = false,
         )
         page.layoutParams = RecyclerView.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,
@@ -108,6 +110,21 @@ internal class PhoneFeedAdapter(
         }
         val series = host.feedItems[position]
         val label = UiText.get(com.hgtv.star.shared.R.string.ui_0341, (host.feedCurrentEpisodeIndex[position] ?: 0) + 1)
+        // **先验归属，再换内容**。ViewHolder 会被复用：这一页上可能还挂着别的
+        // position 的播放器（它的画面此刻就在屏幕上）。如果不先摘掉，`bind` 把标题
+        // 换成新剧之后，视频层还留着上一部——用户读到的就是「文字是这一部，
+        // 画面既不是当前页也不是下一页」。
+        val slot = host.pooledPlayerSlot(position)
+        val attached = page.playerView.player
+        // 会话里还是别的剧时，`feedPlayer` 属于上一部，不能算这一页的。
+        val sessionMatches = PhoneSession.seriesId.isEmpty() ||
+            PhoneSession.seriesId == series.id
+        val owned = attached != null && sessionMatches && (
+            slot?.player === attached ||
+                (position == host.feedPlayingIndex && host.feedPlayer === attached))
+        if (attached != null && !owned) {
+            page.playerView.detachPooledOutput(false)
+        }
         page.bind(series, label)
         if (position == host.feedPlayingIndex) {
             host.feedList.post { host.rebindCurrentPageForAdapter() }

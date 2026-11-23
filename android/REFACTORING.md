@@ -7,6 +7,42 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 手机推荐页上下翻页帧错乱修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 现象：推荐页上下翻页时偶发「画面既不是当前页也不是下一页」；或「文字滑过去了、
+  视频没跟着走」。只在真机上偶发，正常翻页能看到下一页的预渲染画面。
+- 根因一（画面串台）：`rebindCurrentPageImpl` 只比较 `feedPlayer` 与页面上的实例，
+  不校验这一路属于哪部剧。翻页提交时 `feedPlayingIndex` 先变成新页，取详情 / 取地址
+  是异步的，这中间 `feedPlayer` 仍指向上一部；`onBindViewHolder` 对当前页 `post`
+  的那次重绑会把上一部的播放器挂到新页上——标题已换成新剧，画面还是上一部。
+- 根因二（ViewHolder 复用）：`onBindViewHolder` 先 `bind` 新剧内容、再决定挂哪个
+  播放器。复用来的页面上可能还挂着别的 position 的实例，中间这一帧就是旧画面。
+- 根因三（当前页定住）：`startFeedSwipePreviewImpl` 先 `pauseCurrentForFeedSwipeImpl`
+  再取目标页池槽；冷启动 / 快速滑页时池槽常常不存在，于是当前页被按停、目标页又没
+  起来，翻页动画里就是一张定格画面。
+- 根因四（视频层位移）：`e7057c24` 在 `onPageScrolled` 里写
+  `playerView.translationY = page.top`。`SurfaceView` 的位置本来已包含子 View 的
+  `top` 与父级滚动，再写一次是双倍位移，翻到一半视频层会跑出屏幕，露出别的页。
+- 修复一：`rebindCurrentPageImpl` 增加会话归属校验（`PhoneSession.seriesId`），
+  会话里还是别的剧就一律不挂，等 `attachImpl` 挂新实例。
+- 修复二：`onBindViewHolder` 先按池槽 / 当前活动实例校验归属，不属于这一页就先
+  `detachPooledOutput(false)` 清掉输出与残留帧，再 `bind` 新内容。
+- 修复三：`startFeedSwipePreviewImpl` 改为「先确认目标页能预览，再按停当前页」；
+  拖拽开始（`DRAGGING`）不再暂停当前页，让它一直播到目标页真的接手为止。
+- 修复四：删除 `translationY = page.top` 的补偿，改为 `clearVideoOffsets()` 只做
+  归零（起手、IDLE 各一次），不再制造位移。
+- 恢复两处被 `88df233d` 一起回退的已验证修复：推荐页列表用
+  `keepCurrentPagerItemOnTop` 让当前页最后绘制；推荐页 `PhoneVideoPage` 传
+  `danmakuMediaOverlay=false`，弹幕层不再浮在所有视频 Surface 之上，避免相邻页叠画。
+- 新增 DEBUG 日志 `feed idle settled`：翻页落定 900ms 后打印页面挂的实例是否就是
+  当前活动实例、会话剧集与列表剧集，便于下次复现时一眼定位串台。
+- 未改版本号、versionCode、依赖或 iOS；`:app:assembleDebug` 通过；未运行自动化测试
+  或真机测试；未推送、未创建 tag 或 Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 手机推荐页滑动透出下一条视频修复
 
 状态：已实现，debug 构建通过，待用户真机验证。

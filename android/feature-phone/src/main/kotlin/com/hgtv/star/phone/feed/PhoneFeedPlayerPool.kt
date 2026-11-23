@@ -12,7 +12,6 @@ import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.phone.ui.primeAspectRatio
-import com.hgtv.star.phone.ui.hideShutteruntilFirstFrame
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
 import kotlin.math.abs
@@ -418,7 +417,6 @@ internal fun PhoneFeedView.attachPooledPlayerToPageImpl(
     if (page.playerView.player !== slot.player) {
         page.playerView.detachPooledOutput(false)
         page.playerView.player = slot.player
-        page.playerView.hideShutteruntilFirstFrame()
     }
     val verticalSource = if (width > 0 && height > 0) height > width else series.vertical
     page.playerView.primeAspectRatio(width, height, verticalSource)

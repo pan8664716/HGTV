@@ -58,6 +58,9 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
         )
         // 横滑必须交给外层体裁 pager，竖滑才由本层消费。
         pageRecycler.isNestedScrollingEnabled = false
+        // 当前页最后绘制：相邻页先画，当前页的不透明底板与信息层压在最上面。
+        // 不做这一步时，翻页起手那一帧相邻页的 UI 会叠到当前页上（用户读作「帧混乱」）。
+        pageRecycler.keepCurrentPagerItemOnTop { pager.currentItem }
     }
 
     fun registerOnPageChangeCallback(callback: ViewPager2.OnPageChangeCallback) {
@@ -94,18 +97,23 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
 
     fun pageChildAt(index: Int): View? = pageRecycler.getChildAt(index)
 
-    /** SurfaceView 的独立图层不会总跟普通 View 同步，翻页时手动同步它的位置。 */
-    fun syncVideoSurfaces() {
+    /**
+     * 把每一页视频层的位移归零。
+     *
+     * **只清零，不做补偿**：`PlayerView` 里是 `SurfaceView`，它是一块独立图层，
+     * 位置由 `getLocationInWindow` 算——这个值**已经包含**了子 View 的 `top`
+     * 与父级滚动。再按 `top` 写一次 `translationY` 就是双倍位移：翻页到一半时
+     * 视频层会跑到屏幕外，用户看到的就是「文字滑过去了、视频没跟着走」，
+     * 甚至露出另一页的画面。
+     *
+     * 但残留的 `translationY` 仍然要清：播放页借画面回来时会把这一层临时平移，
+     * 交接中途退出就会留下偏移。这里在起手、停止滚动时各清一次。
+     */
+    fun clearVideoOffsets() {
         for (childIndex in 0 until pageRecycler.childCount) {
             val page = pageRecycler.getChildAt(childIndex) as? PhoneVideoPage ?: continue
-            page.playerView.translationY = page.top.toFloat()
-        }
-    }
-
-    fun resetVideoSurfaces() {
-        for (childIndex in 0 until pageRecycler.childCount) {
-            (pageRecycler.getChildAt(childIndex) as? PhoneVideoPage)
-                ?.playerView?.translationY = 0f
+            if (page.playerView.translationY != 0f) page.playerView.translationY = 0f
+            if (page.playerView.translationX != 0f) page.playerView.translationX = 0f
         }
     }
 
@@ -119,10 +127,7 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
                 systemBarGesture = isSystemBarGestureOrigin(e.rawY)
                 pager.isUserInputEnabled = !systemBarGesture
                 // 一但有新手指按下，就不可能还需要播放页借画面时留下的位移。
-                for (pageIndex in 0 until pageRecycler.childCount) {
-                    (pageRecycler.getChildAt(pageIndex) as? PhoneVideoPage)
-                        ?.playerView?.takeIf { it.translationY != 0f }?.translationY = 0f
-                }
+                clearVideoOffsets()
             }
             MotionEvent.ACTION_MOVE -> {
                 if (axis == 0) {

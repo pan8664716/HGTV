@@ -60,8 +60,15 @@ internal fun PhoneFeedView.rebindCurrentPageImpl() {
     val exo = feedPlayer ?: return
     val index = feedPlayingIndex
     if (index < 0 || index !in feedItems.indices) return
-    val page = feedPageAt(index) ?: return
     val series = feedItems[index]
+    // **归属校验**：`feedPlayer` 可能是上一部剧留下的实例。
+    // 翻页提交后 `feedPlayingIndex` 先变成新页，取详情 / 取地址是异步的，
+    // 这中间 `feedPlayer` 还指着上一部。此时把它挂到新页上，用户看到的就是
+    // 「标题是这一部、画面是上一部」——也就是「翻页翻出一个既不是当前页也不是
+    // 下一页的画面」。会话里还是别的剧就一律不挂，等 `attachImpl` 挂新实例。
+    val sessionSeries = PhoneSession.seriesId
+    if (sessionSeries.isNotEmpty() && sessionSeries != series.id) return
+    val page = feedPageAt(index) ?: return
     if (page.playerView.player === exo && feedBoundPage === page) return
     attachPageForSurface(
         exo,

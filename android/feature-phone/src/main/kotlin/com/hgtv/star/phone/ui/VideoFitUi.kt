@@ -2,7 +2,6 @@
 package com.hgtv.star.phone.ui
 
 import android.view.ViewTreeObserver
-import android.view.View
 import com.google.android.exoplayer2.ui.AspectRatioFrameLayout
 import com.google.android.exoplayer2.ui.PlayerView
 import com.hgtv.star.core.VideoFit
@@ -41,14 +40,6 @@ internal fun PlayerView.primeAspectRatio(
         if (verticalSource) 9f / 16f else 16f / 9f
     }
     (videoSurfaceView?.parent as? AspectRatioFrameLayout)?.setAspectRatio(aspectRatio)
-}
-
-/** 页面已经有正确比例但还没出帧时，先收起快门，别把上一页旧帧按新比例拉伸出来。 */
-internal fun PlayerView.hideShutteruntilFirstFrame() {
-    runCatching {
-        val shutter = findViewById<View>(com.google.android.exoplayer2.ui.R.id.exo_shutter)
-        shutter?.visibility = View.VISIBLE
-    }
 }
 
 /** 等预置的宽高比完成一次布局后再开始解码，避免首帧先落到旧尺寸的 Surface。 */

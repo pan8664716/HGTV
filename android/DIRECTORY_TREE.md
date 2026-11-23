@@ -525,7 +525,7 @@ android/
 | --- | --- | --- |
 | `PhoneDetailActivity.kt` | 手机详情页；按本机 + 网络合并后的集号定位选集，播放时携带该集和集内时间。 | class PhoneDetailActivity |
 | `PhoneDetailSections.kt` | 手机详情页与竖屏视频版面。文件 PhoneDetailSections 主要包含 fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks。 | fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks、fun PhoneDetailActivity.sectionHead、fun PhoneDetailActivity.cardRow |
-| `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、弹幕 Surface 黑边、信息区和控制层；不再使用分集封面；信息流页解绑播放器时清掉旧帧，避免复用 PageHolder 闪出第三张或半张画面；正式页保留旧帧以避免换集黑屏；沿用每页独立 DanmakuView，正式页支持透明底板保留翻页时相邻页画面；WindowInsets 晚到时显式重写操作条底部边距；正式播放器选集行末尾提供圆形锁定按钮。 | class PhoneVideoPage、fun setPlaybackLocked |
+| `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、弹幕 Surface 黑边、信息区和控制层；不再使用分集封面；信息流页解绑播放器时清掉旧帧，避免复用 PageHolder 闪出第三张或半张画面；正式页保留旧帧以避免换集黑屏；沿用每页独立 DanmakuView，信息流页可关闭弹幕的 media-overlay 层级避免相邻页叠画，正式页支持透明底板保留翻页时相邻页画面；WindowInsets 晚到时显式重写操作条底部边距；正式播放器选集行末尾提供圆形锁定按钮。 | class PhoneVideoPage、fun setPlaybackLocked |
 | `PhoneVideoPageState.kt` | 手机详情页与竖屏视频版面。文件 PhoneVideoPageState 主要包含 fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode；正式页透明底板翻页时保留透明背景。 | fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode、fun PhoneVideoPage.showCenterIcon、fun PhoneVideoPage.hideCenterIcon、fun PhoneVideoPage.setResizeMode、fun PhoneVideoPage.setVideoSurfaceVisible |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/feed/`
@@ -542,7 +542,7 @@ android/
 | `PhoneFeedInitializer.kt` | 手机信息流页面初始化；ViewPager2 拖动时同步画面层位移并暂停当前页，过半只触发一次目标预览，IDLE 复位画面层并确认最终页。 | fun PhoneFeedView.initializeFeed |
 | `PhoneFeedLifecycle.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedLifecycle 主要包含 fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl。 | fun PhoneFeedView.onFeedDetachedImpl、fun PhoneFeedView.releaseImpl |
 | `PhoneFeedPageSupport.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedPageSupport 主要包含 fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl。 | fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl |
-| `PhoneFeedPager.kt` | 竖向 ViewPager2 信息流容器：显示时前后页 SurfaceView 常驻，隐藏体裁页降为默认 offscreen 以减少合成；翻页时按页面真实位置同步 PlayerView 位移，IDLE 后复位，避免 SurfaceView 独立图层滞后。 | class VerticalFeedPager、fun setActive、val pageRecycler、val userScroll、fun syncVideoSurfaces、fun resetVideoSurfaces、class PageHolder |
+| `PhoneFeedPager.kt` | 竖向 ViewPager2 信息流容器：显示时前后页 SurfaceView 常驻，隐藏体裁页降为默认 offscreen 以减少合成；当前页最后绘制，相邻页 UI 不会叠到当前页上；`clearVideoOffsets` 只把视频层位移归零（不做补偿位移），避免 SurfaceView 独立图层错位。 | class VerticalFeedPager、fun setActive、val pageRecycler、val userScroll、fun clearVideoOffsets、class PageHolder |
 | `PhoneFeedPlayback.kt` | 推荐换作入口；使用方向 / 快滑 / 回看计划，优先激活已预热的独立播放器，池未命中时才走详情与地址准备。 | fun PhoneFeedView.playIndexImpl |
 | `PhoneFeedPlayerPool.kt` | 有上限的推荐播放器池；相邻页绑定前清掉旧帧并落黑快门，预渲染首帧到达后露出真实画面，池实例激活后显式通知宿主同步播放状态与屏幕常亮，并继续保护已交接给正式页的实例。 | class FeedPlayerSlot、fun PhoneFeedView.activatePreparedPooledPlayerImpl、fun PhoneFeedView.trimPooledPlayers、fun PlayerView.detachPooledOutput |
 | `PhoneFeedPrefetch.kt` | 片尾 30 秒内用单集直连准备下一集地址与首块。 | fun PhoneFeedView.maybePrefetchNextImpl |
