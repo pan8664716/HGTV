@@ -11,6 +11,14 @@ internal fun PhonePlayerActivity.handlePlayerBack(): Boolean {
         return true
     }
     if (playerLandscapeMode) {
+        // 用户在竖屏播放页点「全屏」进来的：返回先退回竖屏，再按一次才退出。
+        // 从推荐页点「全屏」直接进来（`landscapeEnteredFromPortrait=false`）照旧直接退出，
+        // 否则会先停在一个用户没见过的竖屏页上。
+        if (landscapeEnteredFromPortrait) {
+            landscapeEnteredFromPortrait = false
+            exitFullscreen()
+            return true
+        }
         finish()
         return true
     }

@@ -201,10 +201,18 @@ internal object PhonePlayerViewSupport {
         setOnClickListener { onClick() }
     }
 
-    /** 横屏底栏的功能按钮：整体收窄，把横向空间让给播放控制栏。 */
+    /**
+     * 横屏底栏的功能按钮：整体收窄，把横向空间让给播放控制栏。
+     *
+     * 高度固定成 [LANDSCAPE_CHIP_HEIGHT_DP]：锁定按钮是方形图标，不固定高度就会
+     * 比文字按钮矮一截，同一行里看着不齐。
+     */
     fun chipLp(activity: Activity, left: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(
-        activity.dp(52), ViewGroup.LayoutParams.WRAP_CONTENT
+        activity.dp(52), activity.dp(LANDSCAPE_CHIP_HEIGHT_DP)
     ).apply { leftMargin = activity.dp(left) }
+
+    /** 横屏底栏一行里所有按钮的统一高度（dp）。 */
+    const val LANDSCAPE_CHIP_HEIGHT_DP = 26
 
     fun lockButton(
         context: Context,

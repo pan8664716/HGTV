@@ -7,6 +7,21 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 横屏底栏按钮对齐与全屏返回
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 锁定按钮比同行的文字按钮矮一截：底栏 chip 是 `WRAP_CONTENT` 高度，锁定按钮是
+  固定 22dp 方形。统一成 `LANDSCAPE_CHIP_HEIGHT_DP = 26`，chip 与锁定按钮同高，
+  锁定按钮的圆角按 26/2 重算。
+- 竖屏点「全屏」进横屏后按返回直接退出播放页。新增
+  `landscapeEnteredFromPortrait`：只有用户从竖屏播放页点「全屏」时才置位，
+  返回键先 `exitFullscreen()` 退回竖屏，再按一次才退出。
+  从推荐页点「全屏」直接进来（`enterFullscreen(fromPortrait = false)`）保持原行为。
+- 未改版本号、versionCode、依赖或 iOS；`:app:assembleDebug` 通过；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 播放页入口起播、图标实时性与横屏底栏改造
 
 状态：已实现，debug 构建通过，待用户真机验证。

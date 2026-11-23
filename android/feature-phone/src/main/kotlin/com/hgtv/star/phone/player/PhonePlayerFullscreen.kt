@@ -79,9 +79,17 @@ internal fun PhonePlayerActivity.enterImmersive() {
  * 用户主动点全屏后固定横屏，不再把方向交还传感器；否则自动旋转会在全屏里
  * 根据手机姿态反复切回竖屏。退出全屏或离开播放页时再恢复系统方向策略。
  */
-internal fun PhonePlayerActivity.enterFullscreen() {
+/**
+ * 进入横屏全屏。
+ *
+ * @param fromPortrait 是不是**用户在竖屏播放页里点了「全屏」**进来的。
+ *   是的话按返回键要先退回竖屏，而不是直接退出播放页（见 `handlePlayerBack`）。
+ *   从推荐页点「全屏」直接进来时传 false——那种情况返回应当回推荐页。
+ */
+internal fun PhonePlayerActivity.enterFullscreen(fromPortrait: Boolean = true) {
     if (playerControlsLocked) return
     if (playerLandscapeMode) return
+    landscapeEnteredFromPortrait = fromPortrait
     // 全屏期间不再借用推荐页 Surface，避免转屏过程中透出下层的相邻页。
     dropUnderlay()
     // 主动进全屏：退出全屏时那把「钉住竖屏」的尺子要先收掉，

@@ -306,6 +306,14 @@ open class PhonePlayerActivity : PhoneActivity() {
         get()=landscapeMode
         set(value) { landscapeMode=value }
 
+    /**
+     * 当前这个横屏是不是**用户在竖屏播放页点「全屏」**进来的。
+     *
+     * 是的话返回键先退回竖屏，而不是直接退出播放页；从推荐页点「全屏」直接进来、
+     * 或者设备本来就是横着拿的时候为 false，返回照旧退出。
+     */
+    internal var landscapeEnteredFromPortrait = false
+
     private var portraitPin: android.view.OrientationEventListener? = null
     internal var playerPortraitPin: android.view.OrientationEventListener?
         get()=portraitPin

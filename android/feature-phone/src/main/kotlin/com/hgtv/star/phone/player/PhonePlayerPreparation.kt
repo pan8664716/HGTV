@@ -31,6 +31,7 @@ internal fun PhonePlayerActivity.enterPendingFullscreen() {
     if (playerLandscapeMode && playerLandVideoHeight > playerLandVideoWidth) {
         enterPortraitFullscreen()
     } else {
-        enterFullscreen()
+        // 从推荐页点「全屏」直接进来：返回键应当回推荐页，不该先转回竖屏。
+        enterFullscreen(fromPortrait = false)
     }
 }
