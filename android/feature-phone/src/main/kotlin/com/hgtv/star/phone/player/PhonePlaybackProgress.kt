@@ -161,5 +161,25 @@ internal fun PhonePlayerActivity.maybePrefetchNext(position: Long) {
  * `shouldLoadNextMediaPeriod()` 要求当前 period 已完全缓冲，所以早挂不会抢当前这一集的带宽。
  */
 internal fun PhonePlayerActivity.enqueueNextIfReady() {
-    // 统一策略禁止自动切下一集；不再把下一集挂进播放列表。
+    if (PhoneSession.nextQueued) return
+    if (!sleepStopped && nextSeasonSleepTimer.episodesLeft > 0) return
+    val d = detail ?: return
+    val exo = player ?: return
+    val nextIndex = index + 1
+    if (nextIndex > d.episodes.lastIndex) return
+    val nextId = d.episodes[nextIndex]
+    val video = PhoneSession.takeNext(nextId, playbackMaxQuality) ?: return
+
+    val factory = DataSource.Factory { VideoDataSource(video) }
+    val source = ProgressiveMediaSource.Factory(factory).createMediaSource(
+        MediaItem.Builder().setMediaId(nextId).setUri(video.info.url).build()
+    )
+    if (runCatching { exo.addMediaSource(source) }.isFailure) {
+        runCatching { video.close() }
+        return
+    }
+    queuedVideo = video
+    queuedEpisodeId = nextId
+    PhoneSession.nextQueued = true
+    android.util.Log.i("HGTV-PHONE", "next queued id=${nextId.takeLast(6)} episode=${nextIndex + 1}")
 }

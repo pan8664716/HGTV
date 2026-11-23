@@ -45,12 +45,43 @@ internal fun PhoneFeedView.onEpisodeEnded(index: Int) {
         )
     }
 
-    feedAdvancing = true
-    feedAdvancingAt = SystemClock.elapsedRealtime()
-    exo.pause()
-    feedHint.text = "本集已结束，上滑换一部"
-    feedHint.visibility = View.VISIBLE
-    feedHint.bringToFront()
+    val next = current + 1
+    if (next <= d.episodes.lastIndex) {
+        feedAdvancing = true
+        feedAdvancingAt = SystemClock.elapsedRealtime()
+        PhoneSession.resumeOnAdopt = true
+        PhoneSession.beginHandoff()
+        PhoneSession.takeOver(PhoneSession.Owner.PLAYER)
+        settleRecommendWatch()
+        runCatching { feedRecommendStore.markWatched(series) }
+        onHidden(handoff = true)
+        val primed = primeHandoff(d, next)
+        android.util.Log.i("HGTV-PHONE", "handoff to formal episode=${next + 1} primed=$primed")
+        hideChromeForHandoff(series)
+        context.phoneNav().open(
+            Route.Player(
+                series.id,
+                series.title,
+                episode = next,
+                fromRecommend = true,
+                noTransition = true,
+            )
+        )
+        (context as? android.app.Activity)?.overridePendingTransition(0, 0)
+    } else {
+        feedAdvancing = true
+        feedAdvancingAt = SystemClock.elapsedRealtime()
+        val nextSeries = index + 1
+        if (nextSeries < feedItems.size) {
+            feedSmoothScrollToPosition(nextSeries)
+            playIndexForSettings(nextSeries, -1L, clearDanmakuOnSwitch = true)
+        } else {
+            loadMore()
+            feedHint.text = UiText.get(com.hgtv.star.shared.R.string.ui_0029)
+            feedHint.visibility = View.VISIBLE
+            feedHint.bringToFront()
+        }
+    }
 }
 
 /**

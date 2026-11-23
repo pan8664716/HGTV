@@ -3,15 +3,15 @@ package com.hgtv.star.tv
 
 import android.view.View
 import com.google.android.exoplayer2.Player
-import com.hgtv.star.shared.ui.UiText
 import com.hgtv.star.tv.list.showCatalog
 
 /**
  * 确定键：进入正式播放界面。
  *
  * 这一刻才写观看历史（需求：只有进入正式播放界面才加入历史）。
+ * [advanceNext] 为真时是「一集自动播完」那条路：进正片并从下一集接着播。
  */
-fun TvMainActivity.enterFormalPlayback() {
+fun TvMainActivity.enterFormalPlayback(advanceNext: Boolean=false) {
     if(screen!="recommend") return
     val data=detail
     // 没有详情（还在取 / 上一次整屏停在提示上）或画面已经被收掉（连续失败后的重试）：
@@ -60,14 +60,16 @@ fun TvMainActivity.enterFormalPlayback() {
         val duration=p.duration.coerceAtLeast(0)
         duration>0 && p.currentPosition>=duration-2_000
     }.getOrDefault(true)
-    recommendPlaybackController.reportEventById(
-        data.series.id,
-        com.hgtv.star.core.RecommendBehavior.Event.CLICK,
-        episodeId=data.episodes.getOrNull(episodeIndex).orEmpty(),
-        episodeIndex=episodeIndex,
-        positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
-        durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
-    )
+    if(!advanceNext) {
+        recommendPlaybackController.reportEventById(
+            data.series.id,
+            com.hgtv.star.core.RecommendBehavior.Event.CLICK,
+            episodeId=data.episodes.getOrNull(episodeIndex).orEmpty(),
+            episodeIndex=episodeIndex,
+            positionMs=runCatching { player?.currentPosition ?: 0L }.getOrDefault(0L),
+            durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
+        )
+    }
     if(atEnd) {
         recommendPlaybackController.reportEventById(
             data.series.id,
@@ -78,14 +80,22 @@ fun TvMainActivity.enterFormalPlayback() {
             durationMs=runCatching { player?.duration ?: 0L }.getOrDefault(0L),
         )
     }
-    if(atEnd) {
-        requestedAutoplay=false
-        player?.pause()
-        playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0141)
-        showHud()
+    if(advanceNext && atEnd) {
+        if(episodeIndex<data.episodes.lastIndex) {
+            playEpisode(episodeIndex+1,0L,autoplay=true)
+        } else {
+            advanceToNextSeasonOrFinish(data.series)
+        }
     } else {
-        if(player?.isPlaying!=true && !playError) requestPlayback(true)
-        showHud()
+        val ended=runCatching { player?.playbackState==Player.STATE_ENDED }.getOrDefault(false)
+        when {
+            ended && episodeIndex<data.episodes.lastIndex -> playEpisode(episodeIndex+1,0L,autoplay=true)
+            ended -> advanceToNextSeasonOrFinish(data.series)
+            else -> {
+                if(player?.isPlaying!=true && !playError) requestPlayback(true)
+                showHud()
+            }
+        }
     }
     clearRecommendPageForFormalPlayback()
 }

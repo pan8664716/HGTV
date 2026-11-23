@@ -163,16 +163,50 @@ private class TvPlaybackListener(
         host.syncMediaSession()
         if(state==Player.STATE_ENDED) {
             if(host.screen=="recommend") {
-                host.requestedAutoplay=false
-                p.pause()
-                host.playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0141)
-                host.showHud()
+                host.main.post {
+                    if(!host.isDestroyed && host.screen=="recommend") {
+                        host.enterFormalPlayback(advanceNext=true)
+                    }
+                }
                 return
             }
-            if(host.queuedEpisodeId!=null) host.dropQueuedEpisode()
+            val hasQueuedItem=runCatching {
+                val current=p.currentMediaItemIndex.coerceAtLeast(0)
+                p.mediaItemCount>current+1
+            }.getOrDefault(false)
+            val queuedSeason=host.queuedDetail
+            if(queuedSeason!=null && host.queuedEpisodeId!=null && hasQueuedItem) {
+                android.util.Log.w("HGTV","Queued next season did not advance; reopening it")
+                host.dropQueuedEpisode()
+                host.main.post {
+                    if(!host.isDestroyed && host.screen=="player") host.enterNextSeason(queuedSeason)
+                }
+                return
+            }
+            if(host.queuedEpisodeId!=null && hasQueuedItem) {
+                host.playerFailure(
+                    PlaybackException(
+                        "队列中的下一集没有接上",
+                        null,
+                        PlaybackException.ERROR_CODE_IO_UNSPECIFIED,
+                    )
+                )
+                return
+            }
+            if(host.queuedEpisodeId!=null && !hasQueuedItem) host.dropQueuedEpisode()
             host.saveProgress(true)
+            val continuous=host.foreground && host.requestedAutoplay && !host.pausedForLifecycle
             if(host.sleepTimer.episodeEnded()) host.stopForSleep()
-            else {
+            else if(continuous && host.library.autoNext &&
+                host.detail?.let { host.episodeIndex<it.episodes.lastIndex }==true) {
+                host.playEpisode(
+                    host.episodeIndex+1,
+                    autoplay=host.requestedAutoplay,
+                    direct=false,
+                )
+            } else if(continuous && host.detail?.let { host.episodeIndex>=it.episodes.lastIndex }==true) {
+                host.detail?.series?.let(host::advanceToNextSeasonOrFinish)
+            } else {
                 host.requestedAutoplay=false
                 p.pause()
                 host.playbackText.text=UiText.get(com.hgtv.star.shared.R.string.ui_0141)
@@ -182,8 +216,66 @@ private class TvPlaybackListener(
     }
 
     override fun onMediaItemTransition(mediaItem: MediaItem?,reason: Int) {
-        // 统一策略禁止自动切下一集：即使播放器队列里意外还有下一项，也不接手。
-        if(reason==Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) host.dropQueuedEpisode()
+        // 队列自动切到下一集时，currentMediaItem 已经是新集，不能先用旧 mediaId
+        // 做过滤；这里先接住绑定，再把绑定的媒体 id 推到新集。
+        val bound=binding() ?: return
+        if(reason!=Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) return
+        val p=bound.player
+        val mediaId=mediaItem?.mediaId.orEmpty()
+        if(mediaId.isNotEmpty()) bound.mediaId=mediaId
+        val currentDetail=host.detail ?: return
+        val seasonTarget=host.queuedDetail?.takeIf {
+            host.episodeIndex==currentDetail.episodes.lastIndex &&
+                it.episodes.firstOrNull()==mediaId
+        }
+        if(seasonTarget!=null) {
+            if(host.queuedEpisodeId!=mediaId || host.queuedVideo==null) {
+                android.util.Log.w(
+                    "HGTV",
+                    "Next season transition mismatch: media=$mediaId queued=${host.queuedEpisodeId} "+
+                        "video=${host.queuedVideo!=null}; rebuilding",
+                )
+                host.cancelAutoTransitionCleanup()
+                host.main.post {
+                    if(binding()!==bound) return@post
+                    runCatching { p.stop(); p.clearMediaItems() }
+                    host.cancelPrefetch()
+                    host.dropQueuedEpisode()
+                    host.forceRetirePrevious()
+                    host.enterNextSeason(seasonTarget)
+                }
+                return
+            }
+            host.suppressBufferingUi(4000L)
+            host.onSeasonAdvanced(seasonTarget,mediaId)
+            host.main.postDelayed({
+                if(binding()===bound && !host.isDestroyed) host.maybeQueueNext()
+            },3000)
+            return
+        }
+        val next=currentDetail.episodes.indexOf(mediaId)
+        if(next<0 || next==host.episodeIndex) return
+        if(host.queuedEpisodeId!=mediaId || host.queuedVideo==null) {
+            android.util.Log.w(
+                "HGTV",
+                "Auto transition mismatch: media=$mediaId queued=${host.queuedEpisodeId} "+
+                    "video=${host.queuedVideo!=null}; rebuilding",
+            )
+            host.cancelAutoTransitionCleanup()
+            host.main.post {
+                if(binding()!==bound) return@post
+                runCatching { p.stop(); p.clearMediaItems() }
+                host.cancelPrefetch()
+                host.dropQueuedEpisode()
+                host.forceRetirePrevious()
+                host.playEpisode(next,0,host.requestedAutoplay,direct=false)
+            }
+            return
+        }
+        host.onEpisodeAdvanced(next,mediaId)
+        host.main.postDelayed({
+            if(binding()===bound && !host.isDestroyed) host.maybeQueueNext()
+        },3000)
     }
 
     override fun onVideoSizeChanged(videoSize: com.google.android.exoplayer2.video.VideoSize) {

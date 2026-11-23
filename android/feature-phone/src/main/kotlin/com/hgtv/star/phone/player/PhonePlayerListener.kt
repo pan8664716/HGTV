@@ -9,7 +9,6 @@ import com.hgtv.star.core.VideoFrameMode
 import com.hgtv.star.core.toFit
 import com.hgtv.star.phone.ui.resizeMode
 import com.hgtv.star.shared.debug.PlaybackStartupTrace
-import com.hgtv.star.shared.ui.UiText
 
 /** 挂播放器监听（换集时先摘旧的：进程单例上不能越积越多）。 */
 internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
@@ -40,26 +39,25 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
                 }, 600L)
             }
             if (state == Player.STATE_ENDED) {
+                val hasNextItem = runCatching {
+                    val exo = player ?: return@runCatching false
+                    val current = exo.currentMediaItemIndex.coerceAtLeast(0)
+                    exo.mediaItemCount > current + 1
+                }.getOrDefault(false)
+                if (hasNextItem) return
                 PhoneSession.nextQueued = false
-                PhoneSession.clearNext()
-                player?.pause()
-                toast(UiText.get(com.hgtv.star.shared.R.string.ui_0141))
+                next()
             }
         }
 
         /** 无感换集：自动推进或手动 seek 到队列下一项时回调。 */
         override fun onMediaItemTransition(mediaItem: MediaItem?, reason: Int) {
             if (player !== exo) return
-            if (reason == Player.MEDIA_ITEM_TRANSITION_REASON_AUTO) {
-                player?.clearMediaItems()
-                PhoneSession.nextQueued = false
-                return
-            }
             val nextIndex = detail?.episodes?.indexOf(mediaItem?.mediaId).takeIf { it != null && it >= 0 }
                 ?: (index + 1)
             val manual = reason == Player.MEDIA_ITEM_TRANSITION_REASON_SEEK &&
                 listenerManualNextTarget == nextIndex
-            if (!manual) return
+            if (reason != Player.MEDIA_ITEM_TRANSITION_REASON_AUTO && !manual) return
             if (manual) listenerManualNextTarget = -1
             if (manual) {
                 onAdvanced(

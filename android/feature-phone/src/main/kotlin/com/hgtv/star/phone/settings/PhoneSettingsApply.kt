@@ -66,6 +66,7 @@ internal fun PhoneSettingsActivity.applySwitchImpl(id: String, checked: Boolean)
         "play.episode" -> settingsLibrary.playerEpisode = checked
         "play.speed" -> settingsLibrary.playerSpeed = checked
         "play.clock" -> settingsLibrary.playerClock = checked
+        "playback.autoNext" -> settingsLibrary.autoNext = checked
     }
 }
 

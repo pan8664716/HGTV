@@ -92,6 +92,7 @@ internal fun PhoneSettingsActivity.renderUnifiedPlayback() {
                 1f,
                 "${settingsLibrary.videoScale.roundToInt()}%",
             ),
+            SettingRowSpec.Switch("playback.autoNext", "自动连播", settingsLibrary.autoNext),
             SettingRowSpec.Slider(
                 "playback.seekStep",
                 "快进快退",

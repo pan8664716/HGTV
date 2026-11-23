@@ -190,9 +190,17 @@ fun TvMainActivity.settings(parent: LinearLayout) {
         format={ "${it.toInt()} 秒" }
     ) { value -> library.seekStep=value.toInt() }
 
+    val prefRow4=lineRow(playback)
+    val autoNextRow=cellSwitch(prefRow4,TvSwitchRow(this,"自动连播",checked=library.autoNext,onToggle={ on ->
+        library.autoNext=on
+        if(!on) dropQueuedEpisode()
+    }))
+    padLine(prefRow4,1)
+
     track(0,qualityButton,defaultSpeed)
     track(0,frame,scaleSlider)
     track(0,decoderButton,seekSlider)
+    track(0,autoNextRow)
 
     val playInfoPanel=panel(playbackPage)
     heading(playInfoPanel,"播放显示","默认全关 · 唤出菜单或轻点时四项全部显示")

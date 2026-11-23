@@ -251,7 +251,43 @@ fun TvMainActivity.confirmPlayedItemRemoved() {
  * 「当前 period 已完全缓冲」，所以提前挂不会抢正在播的这一集的带宽。
  */
 fun TvMainActivity.enqueuePreparedNext() {
-    // 统一策略明确禁止任何自动切下一集；不再向播放器队列挂下一项。
+    val p=player ?: return
+    val data=detail ?: return
+    if(!foreground || screen!="player" || playError || sleepStopped || !requestedAutoplay || pausedForLifecycle) return
+    if(!library.autoNext) return
+    if(sleepTimer.episodesLeft>0) return
+    if(queuedEpisodeId!=null) return
+    val seasonBoundary=episodeIndex==data.episodes.lastIndex
+    val targetDetail=if(seasonBoundary) {
+        nextSeasonDetail?.takeIf {
+            it.episodes.isNotEmpty() && nextSeason?.id==it.series.id
+        }
+    } else data
+    val target=targetDetail ?: return
+    val id=if(seasonBoundary) target.episodes.firstOrNull()
+        else target.episodes.getOrNull(episodeIndex+1)
+    if(id==null) return
+    val quality=playbackMaxQuality
+    val key=preparedKeyFor(id)
+    val fetchedAt=preparedNext.readyAtOf(key)
+    val remote=preparedNext.take(key) ?: return
+    val http=prefetchHttp.also { prefetchHttp=null }
+    if(http==null) { remote.close(); return }
+    queuedEpisodeId=id; queuedVideo=remote; queuedHttp=http; queuedQuality="${quality}P"
+    queuedDetail=if(seasonBoundary) targetDetail else null
+    queuedAt=if(fetchedAt>0L) fetchedAt else android.os.SystemClock.elapsedRealtime()
+    val source=ProgressiveMediaSource.Factory { VideoDataSource(remote) }
+        .createMediaSource(MediaItem.Builder().setMediaId(id).setUri("hgtv://episode/$id")
+            .setMimeType(com.google.android.exoplayer2.util.MimeTypes.VIDEO_MP4).build())
+    if(runCatching { p.addMediaSource(source) }.isFailure) {
+        queuedEpisodeId=null; queuedVideo=null; queuedHttp=null; queuedQuality=""; queuedDetail=null; queuedAt=0
+        runCatching { remote.close() }; closeTransport(http)
+        return
+    }
+    android.util.Log.i(
+        "HGTV",
+        "${if(seasonBoundary) "Next season" else "Next episode"} queued id=$id quality=$quality"
+    )
 }
 /**
  * tick 里的兜底：预热结果落地时那一次 post 可能被别的重建吞掉，这里再补一次。
@@ -259,7 +295,16 @@ fun TvMainActivity.enqueuePreparedNext() {
  * 队列项不按时间主动失效；真实播放错误时由正常失败路径摘除并重取地址。
  */
 fun TvMainActivity.maybeQueueNext() {
-    // 保留方法供现有 tick / 回调调用；自动连播已禁用。
+    if(screen=="recommend") return
+    if(queuedEpisodeId!=null) return
+    val data=detail ?: return
+    val seasonBoundary=episodeIndex==data.episodes.lastIndex
+    val nextId=if(seasonBoundary) {
+        nextSeasonDetail?.takeIf { nextSeason?.id==it.series.id }?.episodes?.firstOrNull()
+    } else data.episodes.getOrNull(episodeIndex+1)
+    if(nextId==null) return
+    if(!preparedNext.isFresh(preparedKeyFor(nextId))) return
+    enqueuePreparedNext()
 }
 /**
  * 摘掉队列里的下一集。

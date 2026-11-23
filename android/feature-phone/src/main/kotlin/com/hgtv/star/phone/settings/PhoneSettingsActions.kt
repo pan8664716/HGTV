@@ -28,6 +28,7 @@ internal fun PhoneSettingsActivity.showAboutDialog() {
 internal fun PhoneSettingsActivity.restoreDefaults() {
     runCatching {
         settingsControllerInstance.restoreDefaults()
+        settingsLibrary.autoNext = true
         settingsLibrary.seekStep = 10
         settingsLibrary.autoFullscreen = false
         settingsLibrary.playerTitle = false
