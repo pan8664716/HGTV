@@ -145,6 +145,34 @@ class PhoneVideoPage(
         ?: createPhoneDanmakuView(context, danmakuMediaOverlay)
     internal val usesSharedDanmaku: Boolean get() = sharedDanmakuView != null
 
+    /**
+     * 把宿主共享的弹幕层挂到当前视频页。
+     *
+     * 共享实例不能放在 pager 外层：那会压住页面自己的标题、操作条和进度层。
+     * 这里将它插在视频/封面之后、底部遮罩和控制层之前；翻页时同一实例从旧页
+     * remove 后挂到新页，保证全宿主仍然只有一块弹幕 Surface。
+     */
+    internal fun mountSharedDanmaku(view: DanmakuView) {
+        if (view.parent === this) return
+        (view.parent as? ViewGroup)?.removeView(view)
+        val coverIndex = indexOfChild(episodeCover)
+        val playerIndex = indexOfChild(playerView)
+        val insertAt = when {
+            coverIndex >= 0 -> coverIndex + 1
+            playerIndex >= 0 -> playerIndex + 1
+            else -> childCount
+        }
+        addView(
+            view,
+            insertAt.coerceIn(0, childCount),
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
+    }
+
+    internal fun unmountSharedDanmaku(view: DanmakuView) {
+        if (view.parent === this) removeView(view)
+    }
+
     val playerView: PlayerView = FixedFirstFramePlayerView(context).apply {
         useController = false
         this.resizeMode = resizeMode

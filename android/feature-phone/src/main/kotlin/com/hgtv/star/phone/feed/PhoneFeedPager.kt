@@ -58,21 +58,6 @@ internal class VerticalFeedPager(context: Context) : FrameLayout(context) {
         )
         // 横滑必须交给外层体裁 pager，竖滑才由本层消费。
         pageRecycler.isNestedScrollingEnabled = false
-        // 当前页始终最后绘制。相邻页的 PlayerView / DanmakuView 都是独立 Surface，
-        // 起手时若后加入的相邻页压在上面，会从当前视频里透出下一部的预渲染画面。
-        pageRecycler.setChildDrawingOrderCallback { childCount, drawingPosition ->
-            val currentChild = (0 until childCount).firstOrNull { childIndex ->
-                val child = pageRecycler.getChildAt(childIndex)
-                child != null &&
-                    pageRecycler.getChildAdapterPosition(child) == pager.currentItem
-            } ?: -1
-            when {
-                currentChild < 0 -> drawingPosition
-                drawingPosition == childCount - 1 -> currentChild
-                drawingPosition < currentChild -> drawingPosition
-                else -> drawingPosition + 1
-            }
-        }
     }
 
     fun registerOnPageChangeCallback(callback: ViewPager2.OnPageChangeCallback) {

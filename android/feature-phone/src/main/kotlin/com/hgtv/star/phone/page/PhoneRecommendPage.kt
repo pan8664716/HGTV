@@ -189,10 +189,6 @@ class PhoneRecommendPage(
         applySwipeState()
         pager.adapter = adapter
         addView(pager, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
-        addView(
-            sharedDanmakuView,
-            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
-        )
 
         // 顶部渐变、体裁 tab 与右上角搜索都由同一个顶栏负责；推荐页是沉浸式视频，
         // 因此用 overlay 背板，位置和分类 / 榜单仍然落在同一条基线上。

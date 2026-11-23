@@ -47,6 +47,27 @@ internal class LandscapePlayerPage(
         }
     private val touch = View(host)
 
+    internal fun mountSharedDanmaku(view: DanmakuView) {
+        if (view.parent === this) return
+        (view.parent as? ViewGroup)?.removeView(view)
+        val coverIndex = indexOfChild(cover)
+        val videoIndex = indexOfChild(video)
+        val insertAt = when {
+            coverIndex >= 0 -> coverIndex + 1
+            videoIndex >= 0 -> videoIndex + 1
+            else -> childCount
+        }
+        addView(
+            view,
+            insertAt.coerceIn(0, childCount),
+            LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT),
+        )
+    }
+
+    internal fun unmountSharedDanmaku(view: DanmakuView) {
+        if (view.parent === this) removeView(view)
+    }
+
     init {
         setBackgroundColor(Color.BLACK)
         addView(video, LayoutParams(LayoutParams.MATCH_PARENT, LayoutParams.MATCH_PARENT))
@@ -216,7 +237,6 @@ internal class VerticalLandscapePager(context: Context) : FrameLayout(context) {
         )
         pageRecycler.isNestedScrollingEnabled = false
         pageRecycler.itemAnimator = null
-        pageRecycler.keepCurrentPagerItemOnTop { pager.currentItem }
     }
 
     fun registerOnPageChangeCallback(callback: ViewPager2.OnPageChangeCallback) {
@@ -457,6 +477,7 @@ internal fun PhonePlayerActivity.attachCurrentPlayerToLandscapePagerPage(
     playerLandscapeVideoSlot = current.video
     playerLandscapeCover = current.cover
     playerLandDanmakuSlot = current.danmaku
+    current.mountSharedDanmaku(playerSharedDanmaku)
     current.video.visibility = View.VISIBLE
     if (force) current.video.forceBindVideoSurface(exo)
     else if (current.video.player !== exo) current.video.player = exo
@@ -474,6 +495,7 @@ internal fun PhonePlayerActivity.detachLandscapePagerOutputsExcept(
 
 internal fun PhonePlayerActivity.detachLandscapePagerPage(page: LandscapePlayerPage) {
     if (page.video === playerLandscapeVideo && playerLandscapeMode) return
+    page.unmountSharedDanmaku(playerSharedDanmaku)
     page.video.setKeepContentOnPlayerReset(false)
     page.video.player = null
     page.video.setKeepContentOnPlayerReset(true)

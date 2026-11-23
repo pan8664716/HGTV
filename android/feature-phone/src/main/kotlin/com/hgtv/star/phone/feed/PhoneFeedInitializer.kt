@@ -61,15 +61,6 @@ internal fun PhoneFeedView.initializeFeed() {
             FrameLayout.LayoutParams.MATCH_PARENT,
         ),
     )
-    if (ownsDanmaku) {
-        addView(
-            feedDanmakuView,
-            FrameLayout.LayoutParams(
-                FrameLayout.LayoutParams.MATCH_PARENT,
-                FrameLayout.LayoutParams.MATCH_PARENT,
-            ),
-        )
-    }
     addView(
         feedHint,
         FrameLayout.LayoutParams(

@@ -110,7 +110,6 @@ class PhoneFeedView(
     internal val feedAdapter get()=adapter
     private val list = VerticalFeedPager(context)
     internal val feedList get()=list
-    internal val ownsDanmaku = sharedDanmakuView == null
     internal val feedDanmakuView: DanmakuView =
         sharedDanmakuView ?: createPhoneDanmakuView(context)
 

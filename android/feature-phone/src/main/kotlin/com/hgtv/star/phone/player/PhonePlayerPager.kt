@@ -67,7 +67,6 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
         )
         pageRecycler.isNestedScrollingEnabled = false
         pageRecycler.itemAnimator = null
-        pageRecycler.keepCurrentPagerItemOnTop { pager.currentItem }
     }
 
     fun registerOnPageChangeCallback(callback: ViewPager2.OnPageChangeCallback) {
@@ -134,21 +133,6 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
 }
 
 /** 让 ViewPager2 当前页最后绘制，避免相邻页的独立 Surface 在滑动起手时压到当前页。 */
-internal fun RecyclerView.keepCurrentPagerItemOnTop(currentPosition: () -> Int) {
-    setChildDrawingOrderCallback { childCount, drawingPosition ->
-        val currentChild = (0 until childCount).firstOrNull { childIndex ->
-            val child = getChildAt(childIndex)
-            child != null && getChildAdapterPosition(child) == currentPosition()
-        } ?: -1
-        when {
-            currentChild < 0 -> drawingPosition
-            drawingPosition == childCount - 1 -> currentChild
-            drawingPosition < currentChild -> drawingPosition
-            else -> drawingPosition + 1
-        }
-    }
-}
-
 internal class PhonePlayerPageHolder(
     val page: PhoneVideoPage,
 ) : RecyclerView.ViewHolder(page)
@@ -194,6 +178,12 @@ internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
                 positionOffsetPixels: Int,
             ) {
                 if (playerLandscapeMode || !playerEpisodePager.userScroll) return
+                if (playerPageInitialized) {
+                    // 直接使用当前集页在 pager 中的真实 top，向上/向下拖动都能跟随，
+                    // 不再用高度和 offset 估算，避免不同机型页高/inset 下错位。
+                    playerPortraitTop.translationY =
+                        playerEpisodePager.pageAt(index)?.top?.toFloat() ?: 0f
+                }
                 val target = if (positionOffset > 0.5f) position + 1 else position
                 val size = detail?.episodes?.size ?: return
                 if (target in 0 until size) previewPlayerPagerTarget(target)
@@ -201,6 +191,9 @@ internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
 
             override fun onPageSelected(position: Int) {
                 if (!playerEpisodePager.userScroll) {
+                    if (playerPageInitialized) {
+                        playerPortraitTop.translationY = 0f
+                    }
                     syncPlayerPagerPage(position, attachCurrent = position == index)
                 }
             }
@@ -215,6 +208,9 @@ internal fun PhonePlayerActivity.installPlayerPagerCallbacks() {
                     return
                 }
                 if (state != ViewPager2.SCROLL_STATE_IDLE) return
+                if (playerPageInitialized) {
+                    playerPortraitTop.translationY = 0f
+                }
                 val target = playerEpisodePager.currentItem
                 val userScroll = playerEpisodePager.userScroll
                 playerEpisodePager.userScroll = false
@@ -394,6 +390,7 @@ internal fun PhonePlayerActivity.attachCurrentPlayerToPagerPage(
         playerPage
     }
     swipePlayerPage = current
+    current.mountSharedDanmaku(playerSharedDanmaku)
     if (playerEpisodePagerInitialized) {
         playerEpisodePager.pages().forEach { page ->
             if (page !== current && page.playerView.player === exo) {
@@ -466,6 +463,7 @@ internal fun PhonePlayerActivity.detachPlayerPagerOutputsExcept(keep: PhoneVideo
 
 internal fun PhonePlayerActivity.detachPlayerPagerPage(page: PhoneVideoPage) {
     if (page === playerPage && !playerLandscapeMode) return
+    page.unmountSharedDanmaku(playerSharedDanmaku)
     page.playerView.setKeepContentOnPlayerReset(false)
     page.playerView.player = null
     page.playerView.setKeepContentOnPlayerReset(true)

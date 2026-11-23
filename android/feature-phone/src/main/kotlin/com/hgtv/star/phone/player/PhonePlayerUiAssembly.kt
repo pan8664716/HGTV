@@ -16,13 +16,6 @@ internal fun PhonePlayerActivity.buildUi() {
 
     PhoneUiScale.withOrientation(this, landscape = false) { buildPortrait() }
     PhoneUiScale.withOrientation(this, landscape = true) { buildLandscape() }
-    root.addView(
-        playerSharedDanmaku,
-        FrameLayout.LayoutParams(
-            FrameLayout.LayoutParams.MATCH_PARENT,
-            FrameLayout.LayoutParams.MATCH_PARENT,
-        ),
-    )
 
     buildPlayerCommonUi()
 
