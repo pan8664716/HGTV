@@ -67,6 +67,7 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
         )
         pageRecycler.isNestedScrollingEnabled = false
         pageRecycler.itemAnimator = null
+        pageRecycler.keepCurrentPagerItemOnTop { pager.currentItem }
     }
 
     fun registerOnPageChangeCallback(callback: ViewPager2.OnPageChangeCallback) {
@@ -129,6 +130,22 @@ internal class VerticalEpisodePager(context: Context) : FrameLayout(context) {
             }
         }
         return super.dispatchTouchEvent(e)
+    }
+}
+
+/** 让 ViewPager2 当前页最后绘制，避免相邻页的独立 Surface 在滑动起手时压到当前页。 */
+internal fun RecyclerView.keepCurrentPagerItemOnTop(currentPosition: () -> Int) {
+    setChildDrawingOrderCallback { childCount, drawingPosition ->
+        val currentChild = (0 until childCount).firstOrNull { childIndex ->
+            val child = getChildAt(childIndex)
+            child != null && getChildAdapterPosition(child) == currentPosition()
+        } ?: -1
+        when {
+            currentChild < 0 -> drawingPosition
+            drawingPosition == childCount - 1 -> currentChild
+            drawingPosition < currentChild -> drawingPosition
+            else -> drawingPosition + 1
+        }
     }
 }
 

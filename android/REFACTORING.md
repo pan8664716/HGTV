@@ -25,6 +25,20 @@
 
 回滚：对本节对应提交执行 `git revert`。
 
+## 手机正式播放页同类 SurfaceView 透层修复
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 复核结论：竖屏正式播放页和横屏正式播放页都使用 `offscreenPageLimit=1`，前后集各自
+  保留独立的视频与透明弹幕 `SurfaceView`，与推荐页具备同一套透层条件。
+- 修复：竖屏集页关闭弹幕媒体覆盖层；横屏每集页的弹幕同样改为普通 Surface 层级。
+- 竖屏与横屏集页 `ViewPager2` 都始终最后绘制当前页，避免相邻集页在滑动起手时压到
+  当前页上方。共用规则见 `RecyclerView.keepCurrentPagerItemOnTop`。
+- 未改版本号、versionCode、依赖或 iOS；`:app:assembleDebug` 通过；未运行自动化测试
+  或真机测试；未推送、未创建 tag 或 Release。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 手机启动页面可选
 
 状态：Android / iOS 已实现，debug 构建通过，待用户真机验证。

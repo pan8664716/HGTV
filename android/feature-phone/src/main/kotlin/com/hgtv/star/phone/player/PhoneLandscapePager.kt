@@ -42,6 +42,9 @@ internal class LandscapePlayerPage(
         topGapDp = 0f
         sizeFollowsLongEdge = true
         setClock(0, false)
+        // 每集页都有自己的视频 Surface；弹幕保持普通层级，避免透明覆盖层越过
+        // 相邻页的视频并透出下一集预渲染画面。
+        setZOrderMediaOverlay(false)
         onRenderStateChangedListener = {
             if (host.playerLandDanmaku === this) host.syncLandscapeLetterboxImpl()
         }
@@ -214,6 +217,7 @@ internal class VerticalLandscapePager(context: Context) : FrameLayout(context) {
         )
         pageRecycler.isNestedScrollingEnabled = false
         pageRecycler.itemAnimator = null
+        pageRecycler.keepCurrentPagerItemOnTop { pager.currentItem }
     }
 
     fun registerOnPageChangeCallback(callback: ViewPager2.OnPageChangeCallback) {
