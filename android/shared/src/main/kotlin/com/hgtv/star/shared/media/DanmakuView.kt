@@ -828,12 +828,25 @@ class DanmakuView(context: Context) : TextureView(context),DanmakuEmojiStore.Lis
             for(index in laneFreeMs.indices) {
                 // 新排入的行必须从当前帧开始向右移动；若补页回包晚于弹幕时间，
                 // 不能把 startMs 回填到过去，否则第一帧会直接出现在屏幕中间。
-                val candidate=maxOf(laneFreeMs[index],group.firstMs,notBeforeMs)
+                //
+                // **同时认 `laneEntryFreeMs`**：它记的是「实际入场」时间，只在首次
+                // 绘制时更新。只看排程表的话，密集弹幕会被排到同一行同一时刻，
+                // 绘制时才被发现要往后推，靠 `MAX_DELAY_MS` 兜 4 秒——那 4 秒里
+                // 这一行堆着一串弹幕往外走，用户读到的就是「弹幕多的时候重叠」。
+                val candidate=maxOf(
+                    laneFreeMs[index],
+                    laneEntryFreeMs[index],
+                    group.firstMs,
+                    notBeforeMs,
+                )
                 if(candidate<startMs) { startMs=candidate; lane=index }
             }
             if(startMs-group.firstMs>MAX_DELAY_MS) continue
             val endMs=startMs+durationMs
             laneFreeMs[lane]=startMs+(((width+laneGap)/pixelsPerSecond)*1000f).toLong()
+            // 排程表与实际入场表同步推进：只推 `laneFreeMs` 会让下一次调度
+            // 误判这一行还空着（见上面 `candidate` 的注释）。
+            laneEntryFreeMs[lane]=maxOf(laneEntryFreeMs[lane],laneFreeMs[lane])
             if(startMs<backlogCutoffMs) continue
             if(endMs<nowMs-LINE_RETENTION_MS) continue
             // 纯文本即使被表情解析器拆成多段，也可以拼回一张图集贴图；
