@@ -110,7 +110,7 @@ internal fun PhonePlayerActivity.buildLandscapeTopControls() {
         }, FrameLayout.LayoutParams(dp(18), dp(18), Gravity.CENTER))
         setOnClickListener { openSettings() }
     }
-    top.addView(more, android.widget.LinearLayout.LayoutParams(dp(28), dp(28)))
+    top.addView(more, android.widget.LinearLayout.LayoutParams(dp(24), dp(24)))
     landscape.addView(top, FrameLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT, Gravity.TOP
     ).apply {
@@ -157,7 +157,7 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
     // 底部三行（自上而下）：进度条 → 设置摘要 → 控制栏 + 功能按钮
     val bottom = android.widget.LinearLayout(this).apply {
         orientation = android.widget.LinearLayout.VERTICAL
-        setPadding(dp(16), dp(3), dp(16), dp(5))
+        setPadding(dp(16), dp(2), dp(16), dp(4))
         background = bottomScrim(215)
     }
 
@@ -250,28 +250,28 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
         return box to glyph
     }
 
-    val (prevBox, _) = transportButton(PhoneGlyph.Kind.PREV_EPISODE, 24, 12) {
+    val (prevBox, _) = transportButton(PhoneGlyph.Kind.PREV_EPISODE, 20, 10) {
         val count = detail?.episodes?.size ?: 0
         if (index > 0 && index - 1 < count) play(index - 1, 0L, clearDanmakuOnSwitch = true)
     }
-    val (rewBox, _) = transportButton(PhoneGlyph.Kind.REWIND, 24, 12) {
+    val (rewBox, _) = transportButton(PhoneGlyph.Kind.REWIND, 20, 10) {
         seekBy(-10_000L)
     }
-    val (playBox, playGlyph) = transportButton(PhoneGlyph.Kind.PAUSE, 28, 14) {
+    val (playBox, playGlyph) = transportButton(PhoneGlyph.Kind.PAUSE, 24, 12) {
         togglePlay()
     }
-    val (ffwdBox, _) = transportButton(PhoneGlyph.Kind.FORWARD, 24, 12) {
+    val (ffwdBox, _) = transportButton(PhoneGlyph.Kind.FORWARD, 20, 10) {
         seekBy(10_000L)
     }
-    val (nextBox, _) = transportButton(PhoneGlyph.Kind.NEXT_EPISODE, 24, 12) {
+    val (nextBox, _) = transportButton(PhoneGlyph.Kind.NEXT_EPISODE, 20, 10) {
         val count = detail?.episodes?.size ?: 0
         if (index >= 0 && index + 1 < count) play(index + 1, 0L, clearDanmakuOnSwitch = true)
     }
-    line2.addView(prevBox, android.widget.LinearLayout.LayoutParams(dp(24), dp(24)))
-    line2.addView(rewBox, android.widget.LinearLayout.LayoutParams(dp(24), dp(24)))
-    line2.addView(playBox, android.widget.LinearLayout.LayoutParams(dp(28), dp(28)))
-    line2.addView(ffwdBox, android.widget.LinearLayout.LayoutParams(dp(24), dp(24)))
-    line2.addView(nextBox, android.widget.LinearLayout.LayoutParams(dp(24), dp(24)))
+    line2.addView(prevBox, android.widget.LinearLayout.LayoutParams(dp(20), dp(20)))
+    line2.addView(rewBox, android.widget.LinearLayout.LayoutParams(dp(20), dp(20)))
+    line2.addView(playBox, android.widget.LinearLayout.LayoutParams(dp(24), dp(24)))
+    line2.addView(ffwdBox, android.widget.LinearLayout.LayoutParams(dp(20), dp(20)))
+    line2.addView(nextBox, android.widget.LinearLayout.LayoutParams(dp(20), dp(20)))
 
     // 中间弹性空隙：控制栏贴左，功能按钮贴右。
     line2.addView(android.view.View(this), android.widget.LinearLayout.LayoutParams(
@@ -285,7 +285,7 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
     // 电视上是遥控器一按就开菜单；手机上一次点击直接切下一档更省事，
     // 想细调（速度 / 字号 / 透明度）仍然长按中间开播放设置。
     val danmaku = PhonePlayerViewSupport.chip(this, "弹幕") { cycleDanmaku() }
-    val episode = PhonePlayerViewSupport.chip(this, "选集 1") { openEpisodes() }
+    val episode = PhonePlayerViewSupport.chip(this, "选集") { openEpisodes() }
     val (lock, lockGlyph) = PhonePlayerViewSupport.lockButton(
         this,
         PhonePlayerViewSupport.LANDSCAPE_CHIP_HEIGHT_DP.toFloat(),

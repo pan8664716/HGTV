@@ -397,6 +397,10 @@ internal fun PhonePlayerActivity.attachCurrentPlayerToPagerPage(
         }
     }
     current.setVideoSurfaceVisible(true)
+    // **换集后不能留着上一集的暂停图标**。相邻集的页面是预建好的，换集不会走
+    // `bind`，只在 `bind` 里清是清不到的：用户在上一集按了暂停，滑到下一集时
+    // 屏幕上还挂着那枚播放键，读起来就是「切过来是暂停的」。
+    current.hideCenterIcon()
     if (force) current.playerView.forceBindVideoSurface(exo)
     else if (current.playerView.player !== exo) current.playerView.player = exo
     return true

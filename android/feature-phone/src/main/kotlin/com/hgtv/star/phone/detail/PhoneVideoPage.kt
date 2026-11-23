@@ -305,6 +305,9 @@ class PhoneVideoPage(
     }
 
     private var series: Series? = null
+
+    /** 上一次 `bind` 的集号：用来判断「换集」，换集要清掉上一集的暂停图标。 */
+    private var boundEpisodeLabel: String = ""
     private var playbackLocked = false
     private lateinit var watchRow: LinearLayout
     private lateinit var lockBox: FrameLayout
@@ -809,6 +812,10 @@ class PhoneVideoPage(
         // 清了之后「全屏」按钮会先消失、等下一次 `onVideoSizeChanged` 才回来，
         // 用户看到的是按钮闪一下。换剧才重置。
         val sameSeries = this.series?.id == series.id
+        // 换集也算「换了内容」：暂停图标是「这一集暂停了」的提示，
+        // 换到下一集还留着，用户读作「新一集是暂停的」。
+        val episodeChanged = episodeLabel != boundEpisodeLabel
+        boundEpisodeLabel = episodeLabel
         this.series = series
         // bind 只给一个安全的初值：完整画面。真正的档位由宿主按**实际视频尺寸**随后覆盖；
         // 卡片上的 `vertical` 偶有标错，不能在这里先按它把横屏片放大。
@@ -819,11 +826,12 @@ class PhoneVideoPage(
         if (!sameSeries) {
             videoWidth = 0
             videoHeight = 0
-            // 换剧就清掉上一屏留下的暂停图标：ViewHolder 会被复用，`centerBox` 的状态
-            // 跟着同一个 View 走。不清的话，用户在上一屏按过暂停，滑到下一屏（复用同一页）
-            // 会先看到一枚暂停按钮，读起来就是「切过来是暂停的」。
-            hideCenterIcon()
         }
+        // 换剧**或换集**都清掉上一屏留下的暂停图标：ViewHolder 会被复用，
+        // `centerBox` 的状态跟着同一个 View 走。不清的话，用户在上一集按过暂停，
+        // 滑到下一集（同一页 ViewHolder）会先看到一枚播放键，读起来就是
+        // 「切过来是暂停的」。
+        if (!sameSeries || episodeChanged) hideCenterIcon()
         if (fullscreenEntry && ::fullscreenBox.isInitialized) {
             if (sameSeries && videoWidth > 0 && videoHeight > 0) {
                 placeFullscreenButton()

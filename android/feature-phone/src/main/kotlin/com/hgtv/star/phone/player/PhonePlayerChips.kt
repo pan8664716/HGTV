@@ -14,9 +14,9 @@ internal fun PhonePlayerActivity.syncChips() {
     chipDanmaku.text=UiText.get(com.hgtv.star.shared.R.string.ui_0091, mode.optionLabel)
     // **选集按钮永远显示**：之前按 `recommend` 把它藏了，而从推荐流进全屏正是最常见
     // 的路径（`PhoneFeedView` 一律带 `EXTRA_RECOMMEND=true`），结果就是「全屏里没有选集按钮」。
-    // 文案带总数（用户要求）：`选集 3/171`，一眼知道现在在第几集、全剧多少集。
-    val total = detail?.episodes?.size ?: 0
-    chipEpisode.text = if (total > 0) UiText.get(com.hgtv.star.shared.R.string.ui_0255, index + 1, total) else UiText.get(com.hgtv.star.shared.R.string.ui_0254, index + 1)
+    // 文案只写「选集」不带集数（用户要求）：底栏已经很窄，集数由标题和进度条那边的
+    // 集号承担，按钮再写一遍只是占宽度。
+    chipEpisode.text = "选集"
     chipEpisode.visibility = View.VISIBLE
 }
 
