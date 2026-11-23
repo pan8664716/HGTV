@@ -112,7 +112,14 @@ fun TvMainActivity.playEpisode(
     //
     // 判据按**剧**而不是按「有没有重建播放层」：同一部剧换集、换清晰度、重试、换解码方式
     // 都要沿用已经降下来的上限（否则每次重来都先撞一次 1080，白付一次失败）。
-    if(sessionSeriesId!=data.series.id) {
+    // 进这个函数之前是不是**已经在播这一部**。
+    //
+    // 用来区分「首次进正片」和「正片内部换集」：
+    // * 首次进正片：下层可能是详情页 / 推荐页，必须用封面或黑场盖住旧帧；
+    // * 正片内部换集：同一部剧的画面应当连续，盖一层「换台黑」再淡出，
+    //   用户读到的就是「选集先黑一下屏」。
+    val sameSeriesEntry=sessionSeriesId==data.series.id
+    if(!sameSeriesEntry) {
         sessionSeriesId=data.series.id
         playbackSessionState.onUserManualChange()
         playbackToasts.clear()
@@ -159,7 +166,18 @@ fun TvMainActivity.playEpisode(
             1920,
             1080,
         )
-        showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
+        // **正片内部换集不盖黑场**：`showRecommendCover` 的设计是「换台瞬间立即全黑，
+        // 等新源首帧再淡出」，用来避免露出上一部被拉伸的旧帧。选集是同一部剧的连续
+        // 播放，盖一层黑再淡出就是用户说的「选集先黑一下屏」。
+        //
+        // 只在「首次进正片」（从详情页 / 推荐页进来）时盖：那一刻下层是别的页面，
+        // 必须遮住它的旧帧。
+        if(sameSeriesEntry && screen=="player") {
+            // 顺带把上一次没淡完的封面层收掉，但不盖新的。
+            revealRecommendCover()
+        } else {
+            showRecommendCover(data.episodeCover(targetId).ifBlank { data.series.cover })
+        }
     } else {
         showRecommendCover()
     }
