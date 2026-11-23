@@ -250,30 +250,31 @@ internal class VerticalLandscapePager(context: Context) : FrameLayout(context) {
 }
 
 /**
- * 横屏翻集时让**页面外**的控制层跟着当前集页横向移动。
+ * 横屏翻集时让**页面外**的控制层跟着当前集页上下移动。
+ *
+ * 横屏的 `VerticalLandscapePager` 同样是 `ORIENTATION_VERTICAL`（上下翻集），
+ * 所以位移走 `translationY`，和竖屏 `playerPortraitTop` 完全一致。
  *
  * 顶部播放信息（剧名·集数 / 网速·时间）、设置入口、底部播放与进度层、
  * 竖版片源的全屏入口都挂在 `playerLandscapeContainer` 上，不在 `ViewPager2`
  * 的页面里，翻集时不会自己动。不处理的话画面在滑、这些 UI 钉在原地，
  * 读起来就是「翻页只翻了画面，标题和进度条停在当前集」。
  *
- * 位移量直接取当前集页的真实 `left`：与竖屏 `playerPortraitTop` 用 `top`
- * 是同一套，滚动方向、回弹、程序性切集都不用另判。
+ * 位移量直接用滚动像素：不依赖 `pageAt(position)`，ViewHolder 在快速滑动中
+ * 取不到时不会退回 0、控制层也不会瞬间跳回原位。
  */
 internal fun PhonePlayerActivity.followLandscapePagerChrome(position: Int, offsetPixels: Int = 0) {
     if (!playerLandscapePagerInitialized) return
-    // 用滚动像素算位移，不依赖 `pageAt(position)`：ViewHolder 在快速滑动中
-    // 可能取不到，取不到就会退回 0、控制层瞬间跳回原位。
-    val dx = -offsetPixels.toFloat()
-    if (playerLandInfoRowInitialized) playerLandInfoRow.translationX = dx
-    if (playerLandTopInitialized) playerLandTop.translationX = dx
-    if (playerLandBottomInitialized) playerLandBottom.translationX = dx
-    if (playerLandFullscreenInitialized) playerLandFullscreen.translationX = dx
+    val dy = -offsetPixels.toFloat()
+    if (playerLandInfoRowInitialized) playerLandInfoRow.translationY = dy
+    if (playerLandTopInitialized) playerLandTop.translationY = dy
+    if (playerLandBottomInitialized) playerLandBottom.translationY = dy
+    if (playerLandFullscreenInitialized) playerLandFullscreen.translationY = dy
     if (com.hgtv.star.shared.BuildConfig.DEBUG && offsetPixels != lastLandChromeOffset) {
         lastLandChromeOffset = offsetPixels
         android.util.Log.i(
             "HGTV-PHONE",
-            "land chrome follow pos=$position dx=$dx " +
+            "land chrome follow pos=$position dy=$dy " +
                 "info=${playerLandInfoRowInitialized} bottom=${playerLandBottomInitialized}",
         )
     }

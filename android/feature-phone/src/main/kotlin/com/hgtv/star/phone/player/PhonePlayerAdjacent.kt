@@ -596,8 +596,14 @@ internal fun PhonePlayerActivity.activateAdjacentEpisode(
         completeFirstFrameAspectRatio()
         playerDanmakuLoader.onFrameRendered(slot.player.currentPosition)
     } else {
-        playerBufferingMutedUntil = 0L
-        setBufferingLabel("正在准备第${target + 1}集…")
+        // 不清 `playerBufferingMutedUntil`：换集后播放器必然短暂 BUFFERING，
+        // 清掉压制窗口会让「正在缓冲…」盖在还留着的上一帧上——用户看到的就是
+        // 「画面明明有了，提示还挂着，然后突然消失」。让无感切集的静默窗口生效。
+        // 这一集**已经预渲染过首帧**时也不要挂「正在准备第N集…」：换到新输出面
+        // 只是重新出帧，通常一两帧就完成；只有真没预渲染过（要现取地址）才提示。
+        setBufferingLabel(
+            if (slot.firstFrameRendered) null else "正在准备第${target + 1}集…"
+        )
     }
     trimAdjacentSlots()
     android.util.Log.i("HGTV-PHONE", "adjacent activated episode=${target + 1}")
