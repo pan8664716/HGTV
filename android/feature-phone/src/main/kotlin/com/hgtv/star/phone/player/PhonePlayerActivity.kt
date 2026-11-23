@@ -164,6 +164,7 @@ open class PhonePlayerActivity : PhoneActivity() {
     internal val playerLandBottomInitialized get()=::landBottom.isInitialized
     private lateinit var landPlay: PhoneGlyph
     internal val playerLandPlay get()=landPlay
+    internal val playerLandPlayInitialized get()=::landPlay.isInitialized
     internal var playerLandPlaySlot: PhoneGlyph
         get()=landPlay
         set(value) { landPlay=value }

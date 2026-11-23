@@ -201,8 +201,9 @@ internal object PhonePlayerViewSupport {
         setOnClickListener { onClick() }
     }
 
+    /** 横屏底栏的功能按钮：整体收窄，把横向空间让给播放控制栏。 */
     fun chipLp(activity: Activity, left: Int): LinearLayout.LayoutParams = LinearLayout.LayoutParams(
-        activity.dp(64), ViewGroup.LayoutParams.WRAP_CONTENT
+        activity.dp(52), ViewGroup.LayoutParams.WRAP_CONTENT
     ).apply { leftMargin = activity.dp(left) }
 
     fun lockButton(

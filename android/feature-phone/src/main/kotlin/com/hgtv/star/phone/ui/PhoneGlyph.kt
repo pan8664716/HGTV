@@ -30,6 +30,14 @@ class PhoneGlyph(context: Context, kind: Kind) : View(context) {
         ROTATE_FULLSCREEN,
         /** 刷新：开口圆环 + 箭头。 */
         REFRESH,
+        /** 上一集：竖条 + 左三角。 */
+        PREV_EPISODE,
+        /** 下一集：右三角 + 竖条。 */
+        NEXT_EPISODE,
+        /** 快退：两个左三角。 */
+        REWIND,
+        /** 快进：两个右三角。 */
+        FORWARD,
     }
 
     var tint: Int = PhoneColor.TEXT
@@ -159,6 +167,56 @@ class PhoneGlyph(context: Context, kind: Kind) : View(context) {
                 path.lineTo(w * .3f, h * .5f)
                 path.lineTo(w * .6f, h * .8f)
                 canvas.drawPath(path, stroke)
+            }
+            Kind.PREV_EPISODE -> {
+                // |◀：竖条贴左，三角指向左
+                rect.set(w * .22f, h * .24f, w * .31f, h * .76f)
+                canvas.drawRoundRect(rect, w * .04f, w * .04f, fill)
+                path.reset()
+                path.moveTo(w * .82f, h * .24f)
+                path.lineTo(w * .4f, h * .5f)
+                path.lineTo(w * .82f, h * .76f)
+                path.close()
+                canvas.drawPath(path, fill)
+            }
+            Kind.NEXT_EPISODE -> {
+                // ▶|：三角指向右，竖条贴右
+                path.reset()
+                path.moveTo(w * .18f, h * .24f)
+                path.lineTo(w * .6f, h * .5f)
+                path.lineTo(w * .18f, h * .76f)
+                path.close()
+                canvas.drawPath(path, fill)
+                rect.set(w * .69f, h * .24f, w * .78f, h * .76f)
+                canvas.drawRoundRect(rect, w * .04f, w * .04f, fill)
+            }
+            Kind.REWIND -> {
+                path.reset()
+                path.moveTo(w * .5f, h * .26f)
+                path.lineTo(w * .2f, h * .5f)
+                path.lineTo(w * .5f, h * .74f)
+                path.close()
+                canvas.drawPath(path, fill)
+                path.reset()
+                path.moveTo(w * .84f, h * .26f)
+                path.lineTo(w * .54f, h * .5f)
+                path.lineTo(w * .84f, h * .74f)
+                path.close()
+                canvas.drawPath(path, fill)
+            }
+            Kind.FORWARD -> {
+                path.reset()
+                path.moveTo(w * .16f, h * .26f)
+                path.lineTo(w * .46f, h * .5f)
+                path.lineTo(w * .16f, h * .74f)
+                path.close()
+                canvas.drawPath(path, fill)
+                path.reset()
+                path.moveTo(w * .5f, h * .26f)
+                path.lineTo(w * .8f, h * .5f)
+                path.lineTo(w * .5f, h * .74f)
+                path.close()
+                canvas.drawPath(path, fill)
             }
             Kind.MORE -> {
                 val r = w * .06f

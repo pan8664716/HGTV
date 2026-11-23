@@ -152,25 +152,20 @@ internal fun PhonePlayerActivity.buildLandscapeTopControls() {
     playerLandFullscreenSlot = fullscreen
 }
 
-/** 横屏底栏：播放 / 进度、常驻摘要和快捷入口。 */
+/** 横屏底栏：进度条、播放设置摘要、播放控制栏与快捷入口。 */
 internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
-    // 底部两行
+    // 底部三行（自上而下）：进度条 → 设置摘要 → 控制栏 + 功能按钮
     val bottom = android.widget.LinearLayout(this).apply {
         orientation = android.widget.LinearLayout.VERTICAL
-        setPadding(dp(16), dp(8), dp(16), dp(12))
+        setPadding(dp(16), dp(6), dp(16), dp(10))
         background = bottomScrim(215)
     }
 
+    // ── 第一行：进度条（不再放播放键，播放控制统一挪到下面的控制栏）──
     val line1 = android.widget.LinearLayout(this).apply {
         orientation = android.widget.LinearLayout.HORIZONTAL
         gravity = Gravity.CENTER_VERTICAL
     }
-    val play = PhoneGlyph(this, PhoneGlyph.Kind.PAUSE).apply { tint = Color.WHITE }
-    val playBox = FrameLayout(this).apply {
-        addView(play, FrameLayout.LayoutParams(dp(20), dp(20), Gravity.CENTER))
-        setOnClickListener { togglePlay() }
-    }
-    line1.addView(playBox, android.widget.LinearLayout.LayoutParams(dp(34), dp(34)))
 
     val current = TextView(this).apply {
         setTextColor(PhoneStyle.playerText)
@@ -216,35 +211,71 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
     ))
 
-    // 进度条下面**只有一行**：左边是常驻摘要，右边是四颗入口。
+    // ── 第二行：播放设置摘要，紧贴进度条下方（画面 / 缩放 / 解码 / 定时等）──
     //
-    // 早先是两行（摘要独占一行 + 四颗按钮另起一行），在 1080 高的横屏上，
-    // 底栏加起来吃掉 150px 画面，而且两行之间没有视觉联系——用户看到的是
-    // 「一堆字」和「一排按钮」两块互不相干的东西。并成一行之后：
-    //
-    // ```
-    // ─────────────●──────────────────────────   ← 进度条
-    // 完整画面 · 缩放100% · 硬件解码   [1.0x][1080P][弹幕][选集 1]
-    // ```
-    //
-    // 摘要只写**四颗按钮上没有的东西**（画面 / 缩放 / 解码 / 定时），
-    // 清晰度、倍速、选集、弹幕已经由右侧按钮自己显示当前值，
-    // 再在左边重复一遍既是冗余、也会把这一行挤到省略号。
-    val line2 = android.widget.LinearLayout(this).apply {
-        orientation = android.widget.LinearLayout.HORIZONTAL
-        gravity = Gravity.CENTER_VERTICAL
-        setPadding(0, dp(6), 0, 0)
-    }
+    // 早先它和右侧四颗按钮挤在同一行，为了给按钮腾位置只能写一半就省略号。
+    // 单独一行之后可以完整显示，控制栏也才有横向空间。
     val settingsInfo = TextView(this).apply {
         setTextColor(PhoneStyle.playerDim)
         phoneSize(11)
         maxLines = 1
         ellipsize = android.text.TextUtils.TruncateAt.END
-        setPadding(dp(2), 0, dp(10), 0)
+        setPadding(dp(2), dp(4), 0, dp(2))
         text = ""
     }
-    line2.addView(settingsInfo, android.widget.LinearLayout.LayoutParams(
-        0, ViewGroup.LayoutParams.WRAP_CONTENT, 1f
+    bottom.addView(settingsInfo, android.widget.LinearLayout.LayoutParams(
+        ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
+    ))
+
+    // ── 第三行：播放控制栏（左）+ 倍速 / 画质 / 弹幕 / 选集 / 锁定（右）──
+    val line2 = android.widget.LinearLayout(this).apply {
+        orientation = android.widget.LinearLayout.HORIZONTAL
+        gravity = Gravity.CENTER_VERTICAL
+    }
+
+    /**
+     * 控制栏按钮：图标居中放在一个方形热区里，点击区域比图标本身大，横屏下更好按。
+     */
+    fun transportButton(
+        kind: PhoneGlyph.Kind,
+        boxDp: Int,
+        iconDp: Int,
+        onClick: () -> Unit,
+    ): Pair<FrameLayout, PhoneGlyph> {
+        val glyph = PhoneGlyph(this, kind).apply { tint = Color.WHITE }
+        val box = FrameLayout(this).apply {
+            addView(glyph, FrameLayout.LayoutParams(dp(iconDp), dp(iconDp), Gravity.CENTER))
+            setOnClickListener { if (!playerControlsLocked) onClick() }
+        }
+        return box to glyph
+    }
+
+    val (prevBox, _) = transportButton(PhoneGlyph.Kind.PREV_EPISODE, 30, 15) {
+        val count = detail?.episodes?.size ?: 0
+        if (index > 0 && index - 1 < count) play(index - 1, 0L, clearDanmakuOnSwitch = true)
+    }
+    val (rewBox, _) = transportButton(PhoneGlyph.Kind.REWIND, 30, 15) {
+        seekByLandscape(-10_000L)
+    }
+    val (playBox, playGlyph) = transportButton(PhoneGlyph.Kind.PAUSE, 34, 18) {
+        togglePlay()
+    }
+    val (ffwdBox, _) = transportButton(PhoneGlyph.Kind.FORWARD, 30, 15) {
+        seekByLandscape(10_000L)
+    }
+    val (nextBox, _) = transportButton(PhoneGlyph.Kind.NEXT_EPISODE, 30, 15) {
+        val count = detail?.episodes?.size ?: 0
+        if (index >= 0 && index + 1 < count) play(index + 1, 0L, clearDanmakuOnSwitch = true)
+    }
+    line2.addView(prevBox, android.widget.LinearLayout.LayoutParams(dp(30), dp(30)))
+    line2.addView(rewBox, android.widget.LinearLayout.LayoutParams(dp(30), dp(30)))
+    line2.addView(playBox, android.widget.LinearLayout.LayoutParams(dp(34), dp(34)))
+    line2.addView(ffwdBox, android.widget.LinearLayout.LayoutParams(dp(30), dp(30)))
+    line2.addView(nextBox, android.widget.LinearLayout.LayoutParams(dp(30), dp(30)))
+
+    // 中间弹性空隙：控制栏贴左，功能按钮贴右。
+    line2.addView(android.view.View(this), android.widget.LinearLayout.LayoutParams(
+        0, 1, 1f
     ))
 
     // 倍速与弹幕一样，点一次就换下一档；要细调仍可长按画面中间打开播放设置。
@@ -258,16 +289,16 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
     val (lock, lockGlyph) = PhonePlayerViewSupport.lockButton(this, 22f) {
         togglePlaybackLock()
     }
-    line2.addView(speed, PhonePlayerViewSupport.chipLp(this,0))
-    line2.addView(quality, PhonePlayerViewSupport.chipLp(this,6))
-    line2.addView(danmaku, PhonePlayerViewSupport.chipLp(this,6))
-    line2.addView(episode, PhonePlayerViewSupport.chipLp(this,6))
+    line2.addView(speed, PhonePlayerViewSupport.chipLp(this, 0))
+    line2.addView(quality, PhonePlayerViewSupport.chipLp(this, 6))
+    line2.addView(danmaku, PhonePlayerViewSupport.chipLp(this, 6))
+    line2.addView(episode, PhonePlayerViewSupport.chipLp(this, 6))
     line2.addView(lock, android.widget.LinearLayout.LayoutParams(
         dp(22), dp(22)
     ).apply { leftMargin = dp(6) })
     bottom.addView(line2, android.widget.LinearLayout.LayoutParams(
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.WRAP_CONTENT
-    ))
+    ).apply { topMargin = dp(2) })
 
     val landscape = playerLandscapeContainer
     landscape.addView(bottom, FrameLayout.LayoutParams(
@@ -278,7 +309,8 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
         ViewGroup.LayoutParams.MATCH_PARENT, ViewGroup.LayoutParams.MATCH_PARENT
     ))
     playerLandBottomSlot = bottom
-    playerLandPlaySlot = play
+    // 播放 / 暂停图标现在在控制栏里，`syncPlayGlyph` 更新的是这一颗。
+    playerLandPlaySlot = playGlyph
     progressLandCurrentSlot = current
     progressLandSeekSlot = seek
     progressLandTotalSlot = total
@@ -289,4 +321,19 @@ internal fun PhonePlayerActivity.buildLandscapeBottomControls() {
     chipEpisodeSlot = episode
     playerLandLockSlot = lock
     playerLandLockGlyphSlot = lockGlyph
+}
+
+/**
+ * 横屏控制栏的快退 / 快进：按 10 秒步进，夹在 `[0, duration]` 之间。
+ *
+ * 不用 `seekTo` 的拖拽路径：那里要经过进度条回调与 `playerDragging` 状态，
+ * 按钮点击是离散动作，直接定位更稳。
+ */
+internal fun PhonePlayerActivity.seekByLandscape(deltaMs: Long) {
+    val exo = player ?: return
+    val duration = runCatching { exo.duration }.getOrDefault(0L)
+    if (duration <= 0L) return
+    val target = (exo.currentPosition + deltaMs).coerceIn(0L, duration)
+    runCatching { exo.seekTo(target) }
+    syncProgressBarsNow()
 }

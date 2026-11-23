@@ -79,6 +79,10 @@ internal fun PhonePlayerActivity.attachPlayerListener(exo: ExoPlayer) {
 
         override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
             if (player !== exo) return
+            // 播放 / 暂停图标跟的是 `playWhenReady`（意图），必须在这里刷新：
+            // 只看 `onIsPlayingChanged` 时，缓冲中按暂停不会触发 `isPlaying` 变化，
+            // 图标就停在旧状态——用户读到的就是「明明是暂停，图标还是播放」。
+            syncPlayGlyphForListener()
             syncKeepScreenOnForListener()
             syncDanmakuClockNowForListener()
         }

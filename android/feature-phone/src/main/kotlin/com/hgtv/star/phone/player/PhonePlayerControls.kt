@@ -123,6 +123,7 @@ internal fun PhonePlayerActivity.muteBufferingUi() {
 }
 
 internal fun PhonePlayerActivity.syncPlayGlyph() {
+    if (!playerLandPlayInitialized) return
     val wantsPlay = player?.playWhenReady == true
     playerLandPlay.kind = if (wantsPlay) PhoneGlyph.Kind.PAUSE else PhoneGlyph.Kind.PLAY
 }

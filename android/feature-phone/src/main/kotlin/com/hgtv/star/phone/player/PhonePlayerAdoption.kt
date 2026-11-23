@@ -148,7 +148,12 @@ private fun PhonePlayerActivity.finishAdoptFromSession(
     // * 「全屏」按钮 → 沿用信息流里当时是播还是暂停。
     // 这里**不要**硬写 true：用户明明在信息流里暂停了，点全屏进来看见它自己动起来，
     // 就是「暂停没记住」。
-    exo.playWhenReady = PhoneSession.resumeOnAdopt
+    //
+    // **但从详情页 / 搜索进来是「我要看这一部」的明确意图**：那里没有"刚才暂停了"
+    // 这回事，继承上一次的暂停状态会变成「点进正片却是暂停的」。
+    // 只有从推荐页交接进来才沿用 `resumeOnAdopt`。
+    val fromRecommend = intent.getBooleanExtra(PhonePlayerActivity.EXTRA_RECOMMEND, false)
+    exo.playWhenReady = if (fromRecommend) PhoneSession.resumeOnAdopt else true
     // 接手完成：交接窗口到此为止，之后再退到后台就正常暂停。
     PhoneSession.endHandoff()
     syncPlayGlyphForAdoption()

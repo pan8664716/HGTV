@@ -7,6 +7,29 @@
 本文档用于记录 Android 行为等价重构的基线、批次边界和验证结果。现有根目录
 `docs/` 被 `.gitignore` 整体忽略，不能作为可回退的提交记录。
 
+## 播放页入口起播、图标实时性与横屏底栏改造
+
+状态：已实现，debug 构建通过，待用户真机验证。
+
+- 详情页 / 搜索进入播放页仍是暂停：`adoptFromSession` 直接沿用
+  `PhoneSession.resumeOnAdopt`。那一份是「上一次退出去时是不是在播」，
+  从推荐页点全屏进来确实该沿用，但从详情页进来是「我要看这一部」的明确意图，
+  不该继承旧暂停。改为：`EXTRA_RECOMMEND` 为真才沿用，否则强制 `playWhenReady=true`。
+- 播放 / 暂停图标偶发反向或滞后：`syncPlayGlyph` 跟的是 `playWhenReady`（点击后会
+  执行的动作），但只在 `onIsPlayingChanged` 里刷新。缓冲中按暂停不会触发 `isPlaying`
+  变化，图标就停在旧状态。在 `onPlayWhenReadyChanged` 里补一次刷新，并给
+  `syncPlayGlyph` 加 `playerLandPlayInitialized` 保护。
+- 横屏底栏重排：
+  - 去掉进度条左侧的播放键；
+  - 进度条下方单独一行显示播放设置摘要（不再和按钮抢宽度，可以完整显示）；
+  - 再下一行左侧是播放控制栏：上一集 / 快退 10s / 播放暂停 / 快进 10s / 下一集；
+  - 倍速、画质、弹幕、选集、锁定整体收窄（64 → 52dp）并靠右，给控制栏让位。
+  - `PhoneGlyph` 新增 `PREV_EPISODE`、`NEXT_EPISODE`、`REWIND`、`FORWARD` 四个图标。
+  - 新增 `seekByLandscape`：按钮按 10 秒步进定位，不走拖拽路径。
+- 未改版本号、versionCode、依赖或 iOS；`:app:assembleDebug` 通过；未推送。
+
+回滚：对本节对应提交执行 `git revert`。
+
 ## 手机端视频 / 弹幕层全面改用 TextureView
 
 状态：已实现，debug 构建通过，待用户真机验证。
