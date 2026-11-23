@@ -5,6 +5,7 @@ import com.google.android.exoplayer2.ExoPlayer
 import com.hgtv.star.core.Series
 import com.hgtv.star.core.StreamInfo
 import com.hgtv.star.phone.ui.primeAspectRatio
+import com.hgtv.star.phone.ui.hideShutteruntilFirstFrame
 
 internal fun PhoneFeedView.attachPageImpl(
     exo: ExoPlayer,
@@ -35,12 +36,14 @@ internal fun PhoneFeedView.attachPageImpl(
         if (PhoneSession.underlayActive && page.playerView.player === exo) {
             // Surface is already live; do not detach it for a no-op rebind.
         } else {
-            if (page.playerView.player === exo) page.playerView.detachPooledOutput()
+            if (page.playerView.player === exo) page.playerView.detachPooledOutput(false)
             page.playerView.player = exo
+            page.playerView.hideShutteruntilFirstFrame()
         }
     } else if (page.playerView.player !== exo) {
-        page.playerView.detachPooledOutput()
+        page.playerView.detachPooledOutput(false)
         page.playerView.player = exo
+        page.playerView.hideShutteruntilFirstFrame()
     }
     val verticalSource = if (width > 0 && height > 0) height > width else series.vertical
     page.playerView.primeAspectRatio(width, height, verticalSource)

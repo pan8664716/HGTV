@@ -12,6 +12,7 @@ import com.hgtv.star.core.Detail
 import com.hgtv.star.core.PlaybackCache
 import com.hgtv.star.core.RemoteVideo
 import com.hgtv.star.phone.ui.primeAspectRatio
+import com.hgtv.star.phone.ui.hideShutteruntilFirstFrame
 import com.hgtv.star.shared.media.VideoDataSource
 import com.hgtv.star.shared.media.swapMediaSource
 import kotlin.math.abs
@@ -112,7 +113,7 @@ internal fun PhoneFeedView.adoptPooledPlayerSlot(
     oldKeys.forEach { oldIndex ->
         val oldSlot = feedPooledPlayers[oldIndex]
         feedPageAt(oldIndex)?.let { page ->
-            if (page.playerView.player === player) page.playerView.detachPooledOutput()
+            if (page.playerView.player === player) page.playerView.detachPooledOutput(false)
         }
         feedPooledPlayers.remove(oldIndex)
         oldSlot?.remote?.takeIf { it !== PhoneSession.remote }?.let(::closeRemoteLater)
@@ -149,7 +150,7 @@ internal fun PhoneFeedView.releasePooledPlayerSlot(index: Int) {
         slot.player === PhoneServices.peekPlayer()
     detachFeedListener(slot.player)
     feedPageAt(index)?.let { page ->
-        if (page.playerView.player === slot.player) page.playerView.detachPooledOutput()
+        if (page.playerView.player === slot.player) page.playerView.detachPooledOutput(false)
     }
     if (feedPlayer === slot.player) feedPlayerSlot = null
     if (ownedByPlayerPage) {
@@ -216,7 +217,7 @@ internal fun PhoneFeedView.discardReleasedPooledPlayer(player: ExoPlayer): Boole
             found = true
             feedPlayerListeners.remove(slot.player)
             feedPageAt(index)?.let { page ->
-                if (page.playerView.player === slot.player) page.playerView.detachPooledOutput()
+            if (page.playerView.player === slot.player) page.playerView.detachPooledOutput(false)
             }
             slot.remote?.takeIf { it !== PhoneSession.remote }?.let(::closeRemoteLater)
         }
@@ -415,8 +416,9 @@ internal fun PhoneFeedView.attachPooledPlayerToPageImpl(
     val height = info?.videoHeight?.takeIf { it > 0 } ?: 0
     if (width > 0 && height > 0) page.updateVideoFrame(width, height)
     if (page.playerView.player !== slot.player) {
-        page.playerView.detachPooledOutput()
+        page.playerView.detachPooledOutput(false)
         page.playerView.player = slot.player
+        page.playerView.hideShutteruntilFirstFrame()
     }
     val verticalSource = if (width > 0 && height > 0) height > width else series.vertical
     page.playerView.primeAspectRatio(width, height, verticalSource)
@@ -430,7 +432,7 @@ internal fun PhoneFeedView.attachPooledPlayerForAdapter(
     index: Int,
 ) {
     if (pooledPlayerSlot(index) == null) {
-        page.playerView.detachPooledOutput()
+        page.playerView.detachPooledOutput(false)
         return
     }
     attachPooledPlayerToPageImpl(page, index)
@@ -442,10 +444,10 @@ internal fun PhoneFeedView.attachPooledPlayerForAdapter(
  * `keepContentOnPlayerReset=true` 会保留上一帧，适合同一页原地换源；页面已被回收时
  * 这一帧属于旧作品，必须关掉，否则下次复用到这个 ViewHolder 会先闪出旧画面。
  */
-internal fun PlayerView.detachPooledOutput() {
+internal fun PlayerView.detachPooledOutput(keepContentAfter: Boolean = true) {
     setKeepContentOnPlayerReset(false)
     player = null
-    setKeepContentOnPlayerReset(true)
+    setKeepContentOnPlayerReset(keepContentAfter)
 }
 
 /**

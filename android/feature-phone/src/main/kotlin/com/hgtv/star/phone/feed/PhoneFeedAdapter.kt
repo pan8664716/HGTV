@@ -18,6 +18,7 @@ internal class PhoneFeedAdapter(
             withTabBar = true,
             fullscreenEntry = true,
             dragSeek = false,
+            clearFrameOnRebind = true,
         )
         page.layoutParams = RecyclerView.LayoutParams(
             ViewGroup.LayoutParams.MATCH_PARENT,

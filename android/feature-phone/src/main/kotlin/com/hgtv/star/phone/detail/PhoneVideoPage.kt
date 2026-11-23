@@ -10,7 +10,6 @@ import android.view.Gravity
 import android.view.View
 import android.view.ViewGroup
 import android.widget.FrameLayout
-import android.widget.ImageView
 import android.widget.LinearLayout
 import android.widget.SeekBar
 import android.widget.TextView
@@ -21,7 +20,6 @@ import com.hgtv.star.core.HeatLabel
 import com.hgtv.star.core.LabelStyle
 import com.hgtv.star.shared.media.DanmakuView
 import com.hgtv.star.shared.media.videoPictureBounds
-import com.hgtv.star.shared.data.ArtworkLoader
 import com.hgtv.star.core.Series
 import com.hgtv.star.phone.ui.PhoneGlyph
 import com.hgtv.star.phone.ui.PhoneStyle
@@ -110,6 +108,8 @@ class PhoneVideoPage(
      * 透明，播放器自己的画面层仍然不透明。
      */
     internal val transparentForPaging: Boolean = false,
+    /** 信息流翻页按整页切换，换绑定时清掉旧帧，避免复用 PageHolder 时闪出上一部。 */
+    private val clearFrameOnRebind: Boolean = false,
     // 默认完整画面；真正的档位由宿主按用户的「画面模式」随后覆盖，
     // 不再按片源方向强制铺满。
     resizeMode: Int = AspectRatioFrameLayout.RESIZE_MODE_FIT,
@@ -137,10 +137,9 @@ class PhoneVideoPage(
         setShutterBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
         // 换媒体源时**保留上一帧**：片尾进正片 / 换清晰度重开这一集时，
         // 画面不会先黑一下再出新帧（用户读到的「闪黑屏」有一半来自这里）。
-        setKeepContentOnPlayerReset(true)
+        setKeepContentOnPlayerReset(!clearFrameOnRebind)
         if (underlay) visibility = GONE
         setBackgroundColor(if (underlay) Color.TRANSPARENT else Color.BLACK)
-        PhonePlayerViewSupport.useOpaqueVideoSurface(this)
     }
 
     // ------------------------------------------------------------------ 底部信息

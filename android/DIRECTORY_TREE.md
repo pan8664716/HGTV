@@ -525,7 +525,7 @@ android/
 | --- | --- | --- |
 | `PhoneDetailActivity.kt` | 手机详情页；按本机 + 网络合并后的集号定位选集，播放时携带该集和集内时间。 | class PhoneDetailActivity |
 | `PhoneDetailSections.kt` | 手机详情页与竖屏视频版面。文件 PhoneDetailSections 主要包含 fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks。 | fun PhoneDetailActivity.prefetchRelated、fun PhoneDetailActivity.renderRelated、fun PhoneDetailActivity.prefetchAuthorWorks、fun PhoneDetailActivity.renderAuthorWorks、fun PhoneDetailActivity.sectionHead、fun PhoneDetailActivity.cardRow |
-| `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、弹幕 Surface 黑边、信息区和控制层；不再使用分集封面；沿用每页独立 DanmakuView，正式页支持透明底板保留翻页时相邻页画面；WindowInsets 晚到时显式重写操作条底部边距；正式播放器选集行末尾提供圆形锁定按钮。 | class PhoneVideoPage、fun setPlaybackLocked |
+| `PhoneVideoPage.kt` | 手机竖屏视频版面，供信息流与正式播放页共用视频层、弹幕 Surface 黑边、信息区和控制层；不再使用分集封面；信息流页解绑播放器时清掉旧帧，避免复用 PageHolder 闪出第三张或半张画面；正式页保留旧帧以避免换集黑屏；沿用每页独立 DanmakuView，正式页支持透明底板保留翻页时相邻页画面；WindowInsets 晚到时显式重写操作条底部边距；正式播放器选集行末尾提供圆形锁定按钮。 | class PhoneVideoPage、fun setPlaybackLocked |
 | `PhoneVideoPageState.kt` | 手机详情页与竖屏视频版面。文件 PhoneVideoPageState 主要包含 fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode；正式页透明底板翻页时保留透明背景。 | fun PhoneVideoPage.setChromeVisible、fun PhoneVideoPage.setTopScrimVisible、fun PhoneVideoPage.isChromeVisible、fun PhoneVideoPage.setUnderlayMode、fun PhoneVideoPage.showCenterIcon、fun PhoneVideoPage.hideCenterIcon、fun PhoneVideoPage.setResizeMode、fun PhoneVideoPage.setVideoSurfaceVisible |
 
 #### `feature-phone/src/main/kotlin/com/hgtv/star/phone/feed/`
@@ -544,7 +544,7 @@ android/
 | `PhoneFeedPageSupport.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedPageSupport 主要包含 fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl。 | fun PhoneFeedView.pageAtImpl、fun PhoneFeedView.applyPageVideoSettingsImpl、fun PhoneFeedView.handleFeedSizeChanged、fun PhoneFeedView.clockImpl |
 | `PhoneFeedPager.kt` | 竖向 ViewPager2 信息流容器：显示时前后页 SurfaceView 常驻，隐藏体裁页降为默认 offscreen 以减少合成；按下时清掉播放页交接遗留的 PlayerView 位移，保证信息翻页时画面也跟整页一起移动。 | class VerticalFeedPager、fun setActive、val pageRecycler、val userScroll、class PageHolder |
 | `PhoneFeedPlayback.kt` | 推荐换作入口；使用方向 / 快滑 / 回看计划，优先激活已预热的独立播放器，池未命中时才走详情与地址准备。 | fun PhoneFeedView.playIndexImpl |
-| `PhoneFeedPlayerPool.kt` | 有上限的推荐播放器池；相邻页绑定时保留首帧封面，预渲染首帧到达后露出真实画面，池实例激活后显式通知宿主同步播放状态与屏幕常亮，并继续保护已交接给正式页的实例。 | class FeedPlayerSlot、fun PhoneFeedView.activatePreparedPooledPlayerImpl、fun PhoneFeedView.trimPooledPlayers |
+| `PhoneFeedPlayerPool.kt` | 有上限的推荐播放器池；相邻页绑定前清掉旧帧并落黑快门，预渲染首帧到达后露出真实画面，池实例激活后显式通知宿主同步播放状态与屏幕常亮，并继续保护已交接给正式页的实例。 | class FeedPlayerSlot、fun PhoneFeedView.activatePreparedPooledPlayerImpl、fun PhoneFeedView.trimPooledPlayers、fun PlayerView.detachPooledOutput |
 | `PhoneFeedPrefetch.kt` | 片尾 30 秒内用单集直连准备下一集地址与首块。 | fun PhoneFeedView.maybePrefetchNextImpl |
 | `PhoneFeedReopen.kt` | 手机信息流原地重开当前集；换地址后重新通知播放状态，避免常亮标志丢失。 | fun PhoneFeedView.reopenAtCurrentPositionImpl |
 | `PhoneFeedResume.kt` | 手机信息流页面、适配器、手势与预取。文件 PhoneFeedResume 主要包含 fun PhoneFeedView.resumeOnShownImpl。 | fun PhoneFeedView.resumeOnShownImpl |
@@ -683,7 +683,7 @@ android/
 | `PhoneTopCollapse.kt` | 列表上滑时把页头收起来、回到顶部再放出来（TV 的 onListScroll / setTopAreaHidden 同一条语义）。 | class PhoneTopCollapse |
 | `PhoneTouch.kt` | 播放界面的手势状态机与系统边缘手势判定；正式播放器横竖屏统一单击显隐信息、双击播放暂停，信息流保持单击播放暂停。 | class PhoneTouch、fun View.isTopSystemBarGestureOrigin、fun View.isSystemBarGestureOrigin |
 | `PhoneWindow.kt` | 手机端统一的沉浸式窗口设置与 WindowInsets 缓存；负责导航栏透明、对比度关闭、图标亮暗和底部安全区广播。 | fun Activity.phoneEdgeToEdge、fun View.bindPhoneInsets、fun Context.phoneBottomInsetPx、fun Activity.applyPhoneNavigationBar、fun Activity.phoneStatusBarHeight |
-| `VideoFitUi.kt` | 画面模式 → ExoPlayer 的 RESIZE_MODE_*，**手机端唯一的一处绑定**。 | fun VideoFit.resizeMode、fun PlayerView.primeAspectRatio、fun PlayerView.runAfterAspectRatioLayout |
+| `VideoFitUi.kt` | 画面模式 → ExoPlayer 的 RESIZE_MODE_*，**手机端唯一的一处绑定**；同时提供首帧前预置宽高比与推荐页重新绑定时落黑快门的工具。 | fun VideoFit.resizeMode、fun PlayerView.primeAspectRatio、fun PlayerView.hideShutteruntilFirstFrame、fun PlayerView.runAfterAspectRatioLayout |
 
 ### feature-tv
 

@@ -73,6 +73,7 @@
 - 正式播放页顶部那条播放信息挂在 pager 外层，拖动时按当前集页真实 `top` 跟随，IDLE 后复位。
 - 按用户要求移除 Phone 端分集封面：竖屏 `PhoneVideoPage` 与横屏 `LandscapePlayerPage` 都不再挂封面层，换集 / 翻页直接显示视频 Surface。
 - 修复推荐页偶发“信息滑、画面不滑”：从正式播放页借画面回来后，清掉遗留的 `PlayerView.translationY`；每次推荐页重新按下时也清掉未完成交接的位移，让画面始终跟整页一起翻。
+- 确认推荐页已无 `episodeCover`。翻页瞬间出现的第三张 / 半张画面来自播放器池复用时残留的旧 Surface 帧：推荐页解绑播放器不再保留上一帧，重新绑定时先落黑快门等新首帧；正式页继续保留旧帧避免换集黑屏。
 - 未改版本号、versionCode、依赖或 iOS；`:app:assembleDebug` 通过；未运行自动化测试或真机测试；未推送、未创建 tag 或 Release。
 
 回滚：对本节对应提交执行 `git revert`。
